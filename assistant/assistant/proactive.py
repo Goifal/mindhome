@@ -17,11 +17,14 @@ import asyncio
 import json
 import logging
 import random
+import time
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 import aiohttp
+import yaml
 
 from .config import settings, yaml_config, get_person_title
 from .constants import (
@@ -177,6 +180,10 @@ class ProactiveManager:
         if seasonal_cfg.get("enabled", True):
             self._seasonal_task = asyncio.create_task(self._run_seasonal_loop())
 
+        # Phase 11: Saugroboter-Automatik
+        vacuum_cfg = yaml_config.get("vacuum", {})
+        if vacuum_cfg.get("enabled") and vacuum_cfg.get("auto_clean", {}).get("enabled"):
+            self._vacuum_task = asyncio.create_task(self._run_vacuum_automation())
         # Emergency Protocols laden
         self._emergency_protocols = yaml_config.get("emergency_protocols", {})
 
@@ -1727,131 +1734,537 @@ class ProactiveManager:
     # Phase 7.9: Saisonale Rolladen-Automatik
     # ------------------------------------------------------------------
 
+    # ── Phase 11: Cover-Automation (Sonnenstand, Wetter, Temperatur, Zeitplan) ──
+
     async def _run_seasonal_loop(self):
-        """Periodisch Rolladen-Timing pruefen und saisonal anpassen."""
+        """Zentrale Cover-Automatik — ersetzt die alte saisonale Schleife.
+
+        Prueft alle 15 Minuten:
+        1. Wetter-Schutz (hoechste Prio): Sturm → Rolllaeden hoch, Regen → Markisen ein
+        2. Sonnenstand-Tracking: Azimut+Elevation → betroffene Fenster abdunkeln
+        3. Temperatur-basiert: Hitze → Sonnenschutz, Kaelte nachts → Isolierung
+        4. Zeitplan + Anwesenheit: Morgens hoch, abends runter, Urlaubssimulation
+        """
         await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY)
 
         seasonal_cfg = yaml_config.get("seasonal_actions", {})
-        check_interval = seasonal_cfg.get("check_interval_minutes", 30)
+        check_interval = seasonal_cfg.get("check_interval_minutes", 15)
         auto_level = seasonal_cfg.get("auto_execute_level", 3)
+        cover_cfg = seasonal_cfg.get("cover_automation", {})
         last_action_date = ""
-        last_action_type = ""  # "open" oder "close"
+        last_schedule_action = ""  # "open" oder "close" (Zeitplan-Dedup)
+        # Redis-Keys fuer Dedup von automatischen Aktionen
+        _redis = getattr(self.brain, "memory", None)
+        _redis = getattr(_redis, "redis", None) if _redis else None
 
         while self._running:
             try:
                 now = datetime.now()
                 today = now.strftime("%Y-%m-%d")
-                current_minutes = now.hour * 60 + now.minute
 
-                # Reset am neuen Tag
                 if last_action_date != today:
-                    last_action_type = ""
+                    last_schedule_action = ""
                     last_action_date = today
 
-                # Cover-Timing von ContextBuilder holen
                 states = await self.brain.ha.get_states()
-                timing = self.brain.context_builder.get_cover_timing(states)
-                open_time = timing.get("open_time", "07:30")
-                close_time = timing.get("close_time", "19:00")
-                season = timing.get("season", "")
-                reason = timing.get("reason", "")
+                if not states:
+                    await asyncio.sleep(check_interval * 60)
+                    continue
 
-                # Zeiten parsen
-                try:
-                    ot_parts = open_time.split(":")
-                    open_min = int(ot_parts[0]) * 60 + int(ot_parts[1])
-                    ct_parts = close_time.split(":")
-                    close_min = int(ct_parts[0]) * 60 + int(ct_parts[1])
-                except (ValueError, IndexError):
-                    open_min, close_min = 450, 1140  # 07:30, 19:00
+                sun = self._get_sun_data(states)
+                weather = self._get_weather_data(states)
+                cover_profiles = self._load_cover_profiles()
 
-                # Toleranz: ±15 Min um die optimale Zeit
-                tolerance = 15
-
-                # Morgens: Rolladen oeffnen (nur wenn niemand im Bett liegt)
-                if (last_action_type != "open"
-                        and abs(current_minutes - open_min) <= tolerance):
-                    if await self._is_bed_occupied(states):
-                        logger.info("Seasonal: Rolladen-Oeffnung uebersprungen — Bett belegt")
-                    else:
-                        await self._execute_seasonal_cover(
-                            "open", 100, season, reason, auto_level,
-                        )
-                        last_action_type = "open"
-
-                # Abends: Rolladen schliessen
-                elif (last_action_type != "close"
-                        and abs(current_minutes - close_min) <= tolerance):
-                    await self._execute_seasonal_cover(
-                        "close", 0, season, reason, auto_level,
+                # 1. WETTER-SCHUTZ (hoechste Prioritaet)
+                if cover_cfg.get("weather_protection", True):
+                    await self._cover_weather_protection(
+                        states, weather, cover_profiles, auto_level,
+                        _redis,
                     )
-                    last_action_type = "close"
 
-                # Sommer-Hitzeschutz: Mitte des Tages pruefen
-                elif (season == "summer" and last_action_type == "open"):
-                    outside_temp = None
-                    for s in (states or []):
-                        if s.get("entity_id", "").startswith("weather."):
-                            outside_temp = s.get("attributes", {}).get("temperature")
-                            break
-                    if outside_temp and outside_temp > 30 and 11 <= now.hour <= 15:
-                        await self._execute_seasonal_cover(
-                            "heat_protection", 20, season,
-                            f"Hitzeschutz: {outside_temp}°C Aussentemperatur",
-                            auto_level,
-                        )
-                        last_action_type = "close"
+                # 2. SONNENSTAND-TRACKING
+                if cover_cfg.get("sun_tracking", True) and sun:
+                    await self._cover_sun_tracking(
+                        states, sun, weather, cover_profiles, cover_cfg,
+                        auto_level, _redis,
+                    )
+
+                # 3. TEMPERATUR-BASIERT
+                if cover_cfg.get("temperature_based", True):
+                    await self._cover_temperature_logic(
+                        states, weather, cover_cfg, auto_level, _redis,
+                    )
+
+                # 4. ZEITPLAN + ANWESENHEIT
+                timing = self.brain.context_builder.get_cover_timing(states)
+                last_schedule_action = await self._cover_schedule_logic(
+                    states, timing, cover_cfg, auto_level,
+                    last_schedule_action, _redis,
+                )
 
             except Exception as e:
-                logger.error("Seasonal-Loop Fehler: %s", e)
+                logger.error("Cover-Automation Fehler: %s", e)
 
             await asyncio.sleep(check_interval * 60)
+
+    # ── Cover-Automation Hilfsmethoden ──────────────────────
+
+    @staticmethod
+    def _get_sun_data(states: list) -> dict:
+        """Extrahiert Sonnen-Daten (elevation, azimuth) aus HA states."""
+        for s in (states or []):
+            if s.get("entity_id") == "sun.sun":
+                attrs = s.get("attributes", {})
+                return {
+                    "state": s.get("state", ""),
+                    "elevation": attrs.get("elevation", 0),
+                    "azimuth": attrs.get("azimuth", 180),
+                }
+        return {}
+
+    @staticmethod
+    def _get_weather_data(states: list) -> dict:
+        """Extrahiert Wetter-Daten aus HA states."""
+        for s in (states or []):
+            if s.get("entity_id", "").startswith("weather."):
+                attrs = s.get("attributes", {})
+                try:
+                    temp = float(attrs.get("temperature", 10))
+                except (ValueError, TypeError):
+                    temp = 10
+                try:
+                    wind = float(attrs.get("wind_speed", 0))
+                except (ValueError, TypeError):
+                    wind = 0
+                return {
+                    "temperature": temp,
+                    "wind_speed": wind,
+                    "condition": s.get("state", ""),
+                }
+        return {}
+
+    @staticmethod
+    def _load_cover_profiles() -> list:
+        """Laedt Cover-Profile aus room_profiles.yaml."""
+        try:
+            _cfg = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
+            if _cfg.exists():
+                with open(_cfg) as f:
+                    data = yaml.safe_load(f) or {}
+                return data.get("cover_profiles", {}).get("covers", [])
+        except Exception:
+            pass
+        return []
+
+    async def _auto_cover_action(
+        self, entity_id: str, position: int, reason: str,
+        auto_level: int, redis_client=None,
+    ) -> bool:
+        """Fuehrt eine automatische Cover-Aktion aus (oder schlaegt vor).
+
+        Dedup: Gleiche entity+position nicht doppelt am selben Tag.
+        """
+        level = self.brain.autonomy.level
+
+        # Dedup per Redis
+        if redis_client:
+            dedup_key = f"mha:cover:auto:{entity_id}:{position}"
+            already = await redis_client.get(dedup_key)
+            if already:
+                return False
+            await redis_client.set(dedup_key, "1", ex=3600)  # 1h Cooldown
+
+        if level >= auto_level:
+            try:
+                states = await self.brain.ha.get_states()
+                state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
+                if not await self.brain.executor._is_safe_cover(entity_id, state):
+                    return False
+                await self.brain.ha.call_service(
+                    "cover", "set_cover_position",
+                    {"entity_id": entity_id, "position": position},
+                )
+                logger.info("Cover-Auto: %s -> %d%% (%s)", entity_id, position, reason)
+                return True
+            except Exception as e:
+                logger.error("Cover-Auto Fehler fuer %s: %s", entity_id, e)
+                return False
+        else:
+            desc = "oeffnen" if position > 50 else "schliessen"
+            await self._notify("seasonal_cover", LOW, {
+                "action": desc,
+                "message": f"Rollladen {desc}? ({reason})",
+                "suggestion": True,
+            })
+            return False
+
+    async def _cover_weather_protection(
+        self, states, weather, profiles, auto_level, redis_client,
+    ):
+        """Sturm → Rolllaeden HOCH. Regen → Markisen EINFAHREN."""
+        seasonal_cfg = yaml_config.get("seasonal_actions", {})
+        cover_cfg = seasonal_cfg.get("cover_automation", {})
+        storm_speed = cover_cfg.get("storm_wind_speed", 50)
+        wind = weather.get("wind_speed", 0)
+        condition = weather.get("condition", "")
+
+        # Sturmschutz: Alle Rolllaeden HOCH (damit Lamellen nicht brechen)
+        if wind >= storm_speed:
+            notified = False
+            for s in (states or []):
+                eid = s.get("entity_id", "")
+                if not eid.startswith("cover."):
+                    continue
+                if not await self.brain.executor._is_safe_cover(eid, s):
+                    continue
+                # Markisen UND Rolllaeden hoch
+                acted = await self._auto_cover_action(
+                    eid, 100, f"Sturmschutz (Wind {wind} km/h)",
+                    auto_level, redis_client,
+                )
+                if acted and not notified:
+                    await self._notify("weather_cover_protection", MEDIUM, {
+                        "message": f"Sturmwarnung: Rolllaeden zum Schutz hochgefahren (Wind {wind} km/h)",
+                    })
+                    notified = True
+
+        # Regen/Hagel: Nur Markisen einfahren (Position 0)
+        try:
+            _cfg = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
+            with open(_cfg) as f:
+                rp_data = yaml.safe_load(f) or {}
+            markise_cfg = rp_data.get("markisen", {})
+        except Exception:
+            markise_cfg = {}
+        markise_wind = markise_cfg.get("wind_retract_speed", 40)
+        rain_retract = markise_cfg.get("rain_retract", True)
+
+        rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy"}
+        if (rain_retract and condition in rain_conditions) or wind >= markise_wind:
+            for s in (states or []):
+                eid = s.get("entity_id", "")
+                if not eid.startswith("cover."):
+                    continue
+                if self.brain.executor._is_markise(eid, s):
+                    await self._auto_cover_action(
+                        eid, 0,
+                        f"Markise eingefahren ({condition}, Wind {wind} km/h)",
+                        auto_level, redis_client,
+                    )
+
+    async def _cover_sun_tracking(
+        self, states, sun, weather, profiles, cover_cfg, auto_level, redis_client,
+    ):
+        """Azimut-basiert: Betroffene Fenster abdunkeln bei Hitze + Sonne."""
+        elevation = sun.get("elevation", 0)
+        if elevation <= 0:
+            return  # Sonne unter Horizont — nichts zu tun
+
+        azimuth = sun.get("azimuth", 180)
+        temp = weather.get("temperature", 20)
+        heat_temp = cover_cfg.get("heat_protection_temp", 26)
+
+        for cover in profiles:
+            entity_id = cover.get("entity_id")
+            if not entity_id or not cover.get("allow_auto"):
+                continue
+            if not cover.get("heat_protection"):
+                continue
+
+            start = cover.get("sun_exposure_start", 0)
+            end = cover.get("sun_exposure_end", 360)
+
+            # Fenster bekommt direkte Sonne UND Temperatur > Schwelle
+            sun_hitting = start <= azimuth <= end
+            if sun_hitting and temp >= heat_temp:
+                await self._auto_cover_action(
+                    entity_id, 20,
+                    f"Sonnenschutz ({temp}°C, Azimut {azimuth}°)",
+                    auto_level, redis_client,
+                )
+            elif not sun_hitting:
+                # Sonne nicht mehr auf diesem Fenster — wieder oeffnen
+                # (nur wenn vorher wegen Sonne geschlossen)
+                if redis_client:
+                    key = f"mha:cover:auto:{entity_id}:20"
+                    was_sun_closed = await redis_client.get(key)
+                    if was_sun_closed:
+                        await self._auto_cover_action(
+                            entity_id, 100,
+                            "Sonne vorbei — Rollladen wieder offen",
+                            auto_level, redis_client,
+                        )
+
+    async def _cover_temperature_logic(
+        self, states, weather, cover_cfg, auto_level, redis_client,
+    ):
+        """Kaelte nachts → runter (Isolierung). Hitze → Sonnenschutz."""
+        temp = weather.get("temperature", 10)
+        hour = datetime.now().hour
+        frost_temp = cover_cfg.get("frost_protection_temp", 3)
+        night_insulation = cover_cfg.get("night_insulation", True)
+
+        # Nachts + kalt → alle Rolllaeden runter (Isolierung)
+        if night_insulation and (22 <= hour or hour < 6) and temp <= frost_temp:
+            for s in (states or []):
+                eid = s.get("entity_id", "")
+                if not eid.startswith("cover."):
+                    continue
+                if not await self.brain.executor._is_safe_cover(eid, s):
+                    continue
+                if self.brain.executor._is_markise(eid, s):
+                    continue  # Markisen bleiben raus
+                await self._auto_cover_action(
+                    eid, 0,
+                    f"Nacht-Isolierung ({temp}°C aussen)",
+                    auto_level, redis_client,
+                )
+
+    async def _cover_schedule_logic(
+        self, states, timing, cover_cfg, auto_level,
+        last_schedule_action, redis_client,
+    ) -> str:
+        """Morgens hoch, abends runter, Urlaubssimulation."""
+        now = datetime.now()
+        current_minutes = now.hour * 60 + now.minute
+        open_time = timing.get("open_time", "07:30")
+        close_time = timing.get("close_time", "19:00")
+        season = timing.get("season", "")
+        reason = timing.get("reason", "")
+
+        try:
+            ot = open_time.split(":")
+            open_min = int(ot[0]) * 60 + int(ot[1])
+            ct = close_time.split(":")
+            close_min = int(ct[0]) * 60 + int(ct[1])
+        except (ValueError, IndexError):
+            open_min, close_min = 450, 1140
+
+        tolerance = 15
+
+        # Morgens: oeffnen (nur wenn Bett frei)
+        if (last_schedule_action != "open"
+                and abs(current_minutes - open_min) <= tolerance):
+            if await self._is_bed_occupied(states):
+                logger.info("Cover-Zeitplan: Oeffnung uebersprungen — Bett belegt")
+            else:
+                count = 0
+                for s in (states or []):
+                    eid = s.get("entity_id", "")
+                    if not eid.startswith("cover."):
+                        continue
+                    if not await self.brain.executor._is_safe_cover(eid, s):
+                        continue
+                    if self.brain.executor._is_markise(eid, s):
+                        continue
+                    acted = await self._auto_cover_action(
+                        eid, 100, f"Morgens oeffnen ({reason})",
+                        auto_level, redis_client,
+                    )
+                    if acted:
+                        count += 1
+                if count > 0:
+                    await self._notify("seasonal_cover", LOW, {
+                        "action": "open",
+                        "message": f"Rolllaeden geoeffnet ({reason})",
+                        "count": count,
+                    })
+                return "open"
+
+        # Abends: schliessen
+        elif (last_schedule_action != "close"
+                and abs(current_minutes - close_min) <= tolerance):
+            count = 0
+            for s in (states or []):
+                eid = s.get("entity_id", "")
+                if not eid.startswith("cover."):
+                    continue
+                if not await self.brain.executor._is_safe_cover(eid, s):
+                    continue
+                if self.brain.executor._is_markise(eid, s):
+                    continue
+                acted = await self._auto_cover_action(
+                    eid, 0, f"Abends schliessen ({reason})",
+                    auto_level, redis_client,
+                )
+                if acted:
+                    count += 1
+            if count > 0:
+                await self._notify("seasonal_cover", LOW, {
+                    "action": "close",
+                    "message": f"Rolllaeden geschlossen ({reason})",
+                    "count": count,
+                })
+            return "close"
+
+        # Urlaubs-Simulation: Zufaellige Zeiten wenn vacation_mode aktiv
+        if cover_cfg.get("presence_simulation", True):
+            vacation_entity = cover_cfg.get("vacation_mode_entity", "")
+            if vacation_entity:
+                for s in (states or []):
+                    if s.get("entity_id") == vacation_entity and s.get("state") == "on":
+                        # Einfache Simulation: ±30min Variation
+                        import random
+                        if now.hour in (7, 8) and random.random() < 0.3:
+                            # Morgens zufaellig oeffnen
+                            for cs in (states or []):
+                                eid = cs.get("entity_id", "")
+                                if eid.startswith("cover.") and await self.brain.executor._is_safe_cover(eid, cs):
+                                    if not self.brain.executor._is_markise(eid, cs):
+                                        await self._auto_cover_action(
+                                            eid, 100, "Urlaubssimulation",
+                                            auto_level, redis_client,
+                                        )
+                        break
+
+        return last_schedule_action
 
     async def _execute_seasonal_cover(
         self, action: str, position: int, season: str, reason: str, auto_level: int,
     ):
-        """Fuehrt saisonale Rolladen-Aktion aus oder schlaegt sie vor."""
-        level = self.brain.autonomy.level
+        """Kompatibilitaets-Wrapper fuer alte Aufrufe (z.B. aus routine_engine)."""
+        states = await self.brain.ha.get_states()
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if eid.startswith("cover."):
+                if not await self.brain.executor._is_safe_cover(eid, s):
+                    continue
+                await self._auto_cover_action(eid, position, reason, auto_level)
 
-        if level >= auto_level:
-            # Automatisch ausfuehren
+    # ── Phase 11: Saugroboter-Automatik ────────────────────
+
+    async def _run_vacuum_automation(self):
+        """Saugroboter-Automatik: wenn niemand zuhause + keine Stoerung."""
+        await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 120)  # Spaeter starten
+
+        vacuum_cfg = yaml_config.get("vacuum", {})
+        auto_cfg = vacuum_cfg.get("auto_clean", {})
+        robots = vacuum_cfg.get("robots", {})
+        _redis = getattr(self.brain, "memory", None)
+        _redis = getattr(_redis, "redis", None) if _redis else None
+
+        while self._running:
             try:
+                if not auto_cfg.get("when_nobody_home"):
+                    await asyncio.sleep(900)
+                    continue
+
+                # Zeitfenster pruefen
+                hour = datetime.now().hour
+                start_h = auto_cfg.get("preferred_time_start", 10)
+                end_h = auto_cfg.get("preferred_time_end", 16)
+                if not (start_h <= hour < end_h):
+                    await asyncio.sleep(900)
+                    continue
+
+                # Niemand zuhause?
                 states = await self.brain.ha.get_states()
-                count = 0
+                persons_home = [
+                    s for s in (states or [])
+                    if s.get("entity_id", "").startswith("person.")
+                    and s.get("state") == "home"
+                ]
+                if persons_home:
+                    await asyncio.sleep(900)
+                    continue
+
+                # Kein Meeting/Schlafmodus?
+                not_during = auto_cfg.get("not_during", [])
+                blocking = False
                 for s in (states or []):
                     eid = s.get("entity_id", "")
-                    if eid.startswith("cover."):
-                        # Sicherheitsfilter: Garagentore/Tore ueberspringen
-                        if not await self.brain.executor._is_safe_cover(eid, s):
-                            logger.info("Seasonal: %s uebersprungen (Sicherheitsfilter)", eid)
-                            continue
-                        await self.brain.ha.call_service(
-                            "cover", "set_cover_position",
-                            {"entity_id": eid, "position": position},
-                        )
-                        count += 1
+                    if eid.startswith("calendar.") and s.get("state") == "on":
+                        title = (s.get("attributes", {}).get("message") or "").lower()
+                        if any(kw in title for kw in not_during):
+                            blocking = True
+                            break
+                if blocking:
+                    await asyncio.sleep(900)
+                    continue
 
-                if count > 0:
-                    desc = "geoeffnet" if position > 50 else "geschlossen"
-                    await self._notify("seasonal_cover", LOW, {
-                        "action": action,
-                        "message": f"Rolladen {desc} ({reason})",
-                        "count": count,
+                # Mindestabstand pro Roboter pruefen
+                min_hours = auto_cfg.get("min_hours_between", 24)
+                for floor, robot in robots.items():
+                    eid = robot.get("entity_id")
+                    if not eid:
+                        continue
+
+                    if _redis:
+                        last_key = f"mha:vacuum:{floor}:last_auto_clean"
+                        last = await _redis.get(last_key)
+                        if last:
+                            try:
+                                hours_since = (time.time() - float(last)) / 3600
+                                if hours_since < min_hours:
+                                    continue
+                            except (ValueError, TypeError):
+                                pass
+
+                    # Starten!
+                    await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
+                    if _redis:
+                        await _redis.set(f"mha:vacuum:{floor}:last_auto_clean", str(time.time()))
+                    nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
+                    await self._notify("vacuum_auto_start", LOW, {
+                        "message": f"{nickname} startet automatisch (niemand zuhause)",
                     })
-                    logger.info(
-                        "Seasonal: %d Rolladen auf %d%% (%s: %s)",
-                        count, position, season, reason,
-                    )
+                    logger.info("Vacuum-Auto: %s gestartet (%s)", eid, floor)
+
+                # Wartung pruefen (1x pro Durchlauf)
+                await self._check_vacuum_maintenance(robots, _redis)
+
             except Exception as e:
-                logger.error("Seasonal Cover-Aktion Fehler: %s", e)
-        else:
-            # Nur vorschlagen
-            desc = "oeffnen" if position > 50 else "schliessen"
-            await self._notify("seasonal_cover", LOW, {
-                "action": action,
-                "message": f"Rolladen {desc}? ({reason})",
-                "suggestion": True,
-            })
+                logger.error("Vacuum-Automation Fehler: %s", e)
+
+            await asyncio.sleep(900)  # 15 Minuten
+
+    async def _check_vacuum_maintenance(self, robots: dict, redis_client=None):
+        """Prueft Filter/Buerste/Mopp Verschleiss und erinnert."""
+        maint_cfg = yaml_config.get("vacuum", {}).get("maintenance", {})
+        if not maint_cfg.get("enabled", True):
+            return
+        warn_pct = maint_cfg.get("warn_at_percent", 10)
+
+        for floor, robot in robots.items():
+            eid = robot.get("entity_id")
+            if not eid:
+                continue
+
+            state = await self.brain.ha.get_state(eid)
+            if not state:
+                continue
+            attrs = state.get("attributes", {})
+            nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
+
+            checks = {
+                "Filter": attrs.get("filter_left"),
+                "Hauptbuerste": attrs.get("main_brush_left"),
+                "Seitenbuerste": attrs.get("side_brush_left"),
+                "Mopp": attrs.get("mop_left"),
+            }
+
+            for part, remaining in checks.items():
+                if remaining is None:
+                    continue
+                try:
+                    remaining = int(remaining)
+                except (ValueError, TypeError):
+                    continue
+                if remaining > warn_pct:
+                    continue
+
+                # Dedup: Nur 1x pro Tag pro Teil warnen
+                if redis_client:
+                    dedup_key = f"mha:vacuum:maint:{floor}:{part}"
+                    already = await redis_client.get(dedup_key)
+                    if already:
+                        continue
+                    await redis_client.set(dedup_key, "1", ex=86400)
+
+                await self._notify("vacuum_maintenance", MEDIUM, {
+                    "message": f"{nickname}: {part} bei {remaining}% — Wechsel empfohlen",
+                })
+                logger.info("Vacuum-Wartung: %s %s bei %d%%", floor, part, remaining)
 
     # ------------------------------------------------------------------
     # Bettbelegung

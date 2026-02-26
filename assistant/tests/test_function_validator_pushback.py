@@ -211,7 +211,7 @@ class TestFormatPushbackWarnings:
             ]
         }
         result = FunctionValidator.format_pushback_warnings(pushback)
-        assert "WIDERSPRUCH" in result or "Widerspruch" in result.lower() or "DATEN" in result
+        assert "SITUATIONSBEWUSSTSEIN" in result or "WIDERSPRUCH" in result or "DATEN" in result
         assert "Fenster Wohnzimmer ist offen" in result
         assert "Sonne" in result
 

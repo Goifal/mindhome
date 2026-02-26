@@ -92,6 +92,62 @@ FORMALITY_PROMPTS = {
     "freund": "TONFALL: Persoenlich und locker. Titel nur zur Betonung. Wie ein alter Freund der zufaellig dein Haus steuert.",
 }
 
+# Kontextueller Humor: Situations-basierte Kommentare nach Aktionen
+# Keys: (function_name, situation_key) → Liste von Templates
+# Platzhalter: {temp}, {hour}, {count}, {weather}, {room}, {title}
+CONTEXTUAL_HUMOR_TRIGGERS = {
+    # Klima-Humor
+    ("set_climate", "temp_high_night"): [
+        "Heizung {temp}°C um {hour} Uhr. Saunaabend, {title}?",
+        "{temp} Grad nachts. Tropischer Ehrgeiz.",
+        "Heizung auf {temp} um {hour} Uhr. Die Energieversorger applaudieren.",
+    ],
+    ("set_climate", "temp_changes_today"): [
+        "{count} Temperatur-Aenderungen heute. Der Thermostat fragt nach einer Gewerkschaft.",
+        "{count}. Aenderung. Ich fuehre Buch, {title}.",
+        "Aenderung Nummer {count}. Der Thermostat und ich — wir sprechen darueber.",
+    ],
+    # Licht-Humor
+    ("set_light", "all_off_late"): [
+        "Finsternis um {hour} Uhr. Revolutionaer.",
+        "Alles aus um {hour} Uhr. Dunkelheit als Lifestyle.",
+        "Licht aus, {hour} Uhr. Photonen-Sparplan aktiviert.",
+    ],
+    ("set_light", "rapid_toggle"): [
+        "Birne oder Geduld — was testen wir gerade?",
+        "An. Aus. An. Ich bin beeindruckt von der Entschlossenheit.",
+        "Licht-Disco. Soll ich Musik dazu spielen?",
+    ],
+    # Rollladen-Humor
+    ("set_cover", "open_rain"): [
+        "Rollladen hoch bei {weather}. Kuenstlerische Freiheit, {title}.",
+        "Offen bei {weather}. Naturerlebnis deluxe.",
+        "Rollladen auf bei {weather}. Mutig.",
+    ],
+    ("set_cover", "open_storm"): [
+        "Rollladen hoch bei {weather}. Adrenalin-Junkie, {title}?",
+        "Rollladen offen im Sturm. Furchtlos.",
+    ],
+    # Saugroboter-Humor
+    ("set_vacuum", "already_clean"): [
+        "Der Kleine war erst vor {hours} Stunden unterwegs. Zwangsneurose?",
+        "Schon wieder saugen? {hours} Stunden her. Ich sage nichts.",
+        "Nochmal saugen nach {hours}h. Der Boden ist beeindruckt, {title}.",
+    ],
+    ("set_vacuum", "night_clean"): [
+        "Saugen um {hour} Uhr. Die Nachbarn werden begeistert sein.",
+        "Naechtlicher Reinigungsdrang, {title}?",
+    ],
+    # Allgemein
+    ("any", "late_night_command"): [
+        "Noch wach um {hour} Uhr, {title}?",
+        "{hour} Uhr. Ich sage nichts.",
+    ],
+}
+
+# Humor-Kategorien fuer Feedback-Tracking
+HUMOR_CATEGORIES = ("temperature", "light", "cover", "vacuum", "time", "weather", "general")
+
 # Antwort-Varianz: Bestaetigungs-Pools (Phase 6)
 CONFIRMATIONS_SUCCESS = [
     "Erledigt.", "Gemacht.", "Ist passiert.", "Wie gewuenscht.",
@@ -260,6 +316,9 @@ class PersonalityEngine:
         self._last_interaction_times: dict[str, float] = {}
         # Sarkasmus-Fatigue: Counter fuer aufeinanderfolgende sarkastische Antworten
         self._sarcasm_streak: int = 0
+        # Kontextueller Humor: Zaehler fuer Humor-Fatigue (max 4 Witze in Folge)
+        self._humor_consecutive: int = 0
+        self._current_formality: int = self.formality_start
 
         # Easter Eggs laden
         self._easter_eggs = self._load_easter_eggs()
@@ -1043,6 +1102,206 @@ class PersonalityEngine:
         return None
 
     # ------------------------------------------------------------------
+    # Kontextueller Humor (Feature B: Sarkasmus + Humor vertiefen)
+    # ------------------------------------------------------------------
+
+    async def generate_contextual_humor(
+        self, func_name: str, func_args: dict, context: dict | None = None
+    ) -> Optional[str]:
+        """Erzeugt situationsbezogenen Humor nach einer Aktion.
+
+        Nur bei sarcasm_level >= 3 und passendem Mood.
+        Humor-Fatigue: Pause nach 4 Witzen in Folge.
+
+        Args:
+            func_name: Ausgefuehrte Funktion (z.B. "set_climate")
+            func_args: Argumente der Funktion
+            context: Optionaler Kontext (Wetter, Mood, etc.)
+
+        Returns:
+            Humor-Kommentar oder None
+        """
+        # Nur bei ausreichendem Sarkasmus-Level
+        if self.sarcasm_level < 3:
+            return None
+
+        # Mood-Check: Kein Humor bei Stress/Muedigkeit
+        mood = self._current_mood
+        if mood in ("tired", "stressed", "frustrated"):
+            return None
+
+        # Humor-Fatigue: Nach 4 Witzen Pause
+        if self._humor_consecutive >= 4:
+            self._humor_consecutive = 0
+            return None
+
+        # Situation erkennen
+        situation = self._detect_humor_situation(func_name, func_args, context)
+        if not situation:
+            # Kein Humor noetig — Reset
+            self._humor_consecutive = 0
+            return None
+
+        # Templates holen
+        key = (func_name, situation["key"])
+        templates = CONTEXTUAL_HUMOR_TRIGGERS.get(key)
+        if not templates:
+            # Fallback: "any" Kategorie
+            key = ("any", situation["key"])
+            templates = CONTEXTUAL_HUMOR_TRIGGERS.get(key)
+        if not templates:
+            return None
+
+        # Humor-Praeferenzen pruefen (ab 5 Datenpunkten bevorzugen wir erfolgreiche)
+        prefs = await self.get_humor_preferences()
+        category = self._humor_func_to_category(func_name)
+        if prefs and category in prefs:
+            cat_data = prefs[category]
+            if cat_data.get("total", 0) >= 5 and cat_data.get("success_rate", 1.0) < 0.3:
+                # Kategorie kommt nicht gut an — ueberspringen
+                return None
+
+        # Template waehlen + formatieren
+        template = random.choice(templates)
+        humor_text = template.format(
+            temp=situation.get("temp", "?"),
+            hour=situation.get("hour", datetime.now().hour),
+            count=situation.get("count", "?"),
+            weather=situation.get("weather", "?"),
+            room=situation.get("room", ""),
+            hours=situation.get("hours", "?"),
+            title=get_person_title(),
+        )
+
+        # Fatigue tracken
+        self._humor_consecutive += 1
+
+        # Erfolg tracken (async, fire-and-forget)
+        if self._redis:
+            try:
+                day = datetime.now().strftime("%Y-%m-%d")
+                await self._redis.incr(f"mha:humor:count:{day}")
+                await self._redis.expire(f"mha:humor:count:{day}", 7 * 86400)
+            except Exception:
+                pass
+
+        return humor_text
+
+    def _detect_humor_situation(
+        self, func_name: str, args: dict, context: dict | None = None
+    ) -> Optional[dict]:
+        """Erkennt ob eine Situation Humor-wuerdig ist.
+
+        Returns:
+            Dict mit 'key' und Kontext-Daten oder None.
+        """
+        hour = datetime.now().hour
+        room = (args.get("room") or "").lower()
+
+        # Spaete-Nacht Kommando (0-5 Uhr)
+        if 0 <= hour < 5:
+            return {"key": "late_night_command", "hour": hour, "room": room}
+
+        if func_name == "set_climate":
+            temp = args.get("temperature")
+            if temp is not None:
+                try:
+                    temp = float(temp)
+                except (ValueError, TypeError):
+                    temp = None
+            # Hohe Temperatur nachts (22-5 Uhr, >= 25°C)
+            if temp and temp >= 25 and (hour >= 22 or hour < 5):
+                return {"key": "temp_high_night", "temp": temp, "hour": hour}
+
+        elif func_name == "set_light":
+            state = (args.get("state") or "").lower()
+            # Alles aus spaet abends
+            if state == "off" and room == "all" and hour >= 23:
+                return {"key": "all_off_late", "hour": hour}
+
+        elif func_name == "set_cover":
+            action = (args.get("action") or "").lower()
+            is_opening = action in ("open", "auf", "hoch", "up")
+            if is_opening and context:
+                weather = context.get("house", {}).get("weather", {})
+                condition = weather.get("condition", "")
+                wind = weather.get("wind_speed", 0)
+                if condition in ("rainy", "pouring", "hail"):
+                    return {"key": "open_rain", "weather": condition, "room": room}
+                try:
+                    if float(wind) >= 50:
+                        return {"key": "open_storm", "weather": f"Wind {wind}km/h", "room": room}
+                except (ValueError, TypeError):
+                    pass
+
+        elif func_name == "set_vacuum":
+            # Naechtliches Saugen
+            if hour >= 22 or hour < 6:
+                return {"key": "night_clean", "hour": hour}
+
+        return None
+
+    @staticmethod
+    def _humor_func_to_category(func_name: str) -> str:
+        """Mappt Funktionsname auf Humor-Kategorie."""
+        mapping = {
+            "set_climate": "temperature",
+            "set_light": "light",
+            "set_cover": "cover",
+            "set_vacuum": "vacuum",
+        }
+        return mapping.get(func_name, "general")
+
+    async def track_humor_success(self, category: str, was_funny: bool):
+        """Trackt ob ein Humor-Kommentar gut ankam.
+
+        Redis-Bucketing pro Kategorie fuer Langzeit-Lernen.
+
+        Args:
+            category: Humor-Kategorie (temperature, light, cover, vacuum, general)
+            was_funny: True wenn positive Reaktion, False wenn negativ
+        """
+        if not self._redis:
+            return
+        try:
+            base = f"mha:humor:feedback:{category}"
+            await self._redis.incr(f"{base}:total")
+            await self._redis.expire(f"{base}:total", 90 * 86400)
+            if was_funny:
+                await self._redis.incr(f"{base}:positive")
+                await self._redis.expire(f"{base}:positive", 90 * 86400)
+        except Exception as e:
+            logger.debug("Humor-Feedback fehlgeschlagen: %s", e)
+
+    async def get_humor_preferences(self) -> dict:
+        """Liest Humor-Praeferenzen aus Redis.
+
+        Ab 5 Datenpunkten pro Kategorie: Berechnet Erfolgsrate.
+
+        Returns:
+            Dict[category] → {"total": int, "positive": int, "success_rate": float}
+        """
+        if not self._redis:
+            return {}
+        prefs = {}
+        try:
+            for cat in HUMOR_CATEGORIES:
+                base = f"mha:humor:feedback:{cat}"
+                total = await self._redis.get(f"{base}:total")
+                positive = await self._redis.get(f"{base}:positive")
+                total_int = int(total or 0)
+                positive_int = int(positive or 0)
+                if total_int > 0:
+                    prefs[cat] = {
+                        "total": total_int,
+                        "positive": positive_int,
+                        "success_rate": positive_int / max(1, total_int),
+                    }
+        except Exception as e:
+            logger.debug("Humor-Praeferenzen lesen fehlgeschlagen: %s", e)
+        return prefs
+
+    # ------------------------------------------------------------------
     # Phase 8: Langzeit-Persoenlichkeitsanpassung
     # ------------------------------------------------------------------
 
@@ -1628,6 +1887,8 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         "spuelmaschine": {"name": "die Gruendliche", "pron": "ihre"},
         "geschirrspueler": {"name": "die Gruendliche", "pron": "ihre"},
         "saugroboter": {"name": "der Kleine", "pron": "seine"},
+        "saugroboter_eg": {"name": "der Kleine unten", "pron": "seine"},
+        "saugroboter_og": {"name": "der Kleine oben", "pron": "seine"},
         "staubsauger": {"name": "der Kleine", "pron": "seine"},
         "kaffeemaschine": {"name": "die Barista", "pron": "ihre"},
         "heizung": {"name": "die Warmhalterin", "pron": "ihre"},

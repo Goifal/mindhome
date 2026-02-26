@@ -563,6 +563,17 @@ class AssistantBrain(BrainCallbacksMixin):
         "lass den quatsch", "reicht", "genug",
     ])
 
+    # Feature A: Kreative Problemloesung — Keywords die Problemloesungs-Intent erkennen
+    _PROBLEM_PATTERNS = frozenset([
+        "wie kann ich", "ich brauche", "zu warm", "zu kalt", "zu dunkel", "zu hell",
+        "strom sparen", "energie sparen", "hast du eine idee", "was schlaegst du vor",
+        "was wuerdest du", "loesung", "problem", "wie kriege ich", "was tun",
+        "vorschlag", "tipp", "empfehlung", "wie spare ich", "wie reduziere ich",
+        "zu laut", "zu leise", "hilf mir", "was mache ich", "alternative",
+        "wie geht das", "geht das besser", "optimieren", "verbessern",
+        "was empfiehlst du", "kannst du helfen",
+    ])
+
     def _detect_sarcasm_feedback(self, text: str) -> bool | None:
         """Erkennt ob der User auf Sarkasmus positiv/negativ reagiert.
 
@@ -628,6 +639,17 @@ class AssistantBrain(BrainCallbacksMixin):
                         name="sarcasm_feedback",
                     )
             self._last_response_was_snarky = False
+
+        # Feature B: Humor-Feedback — Reaktion auf vorherigen Humor-Kommentar
+        if hasattr(self, '_last_humor_category') and self._last_humor_category:
+            humor_fb = self._detect_sarcasm_feedback(text)
+            if humor_fb is not None:
+                cat = self._last_humor_category
+                self._task_registry.create_task(
+                    self.personality.track_humor_success(cat, humor_fb),
+                    name="humor_feedback",
+                )
+            self._last_humor_category = None
 
         # Phase 9.1: Pending Speaker-Rueckfrage aufloesen
         # Wenn eine "Wer bist du?"-Frage laeuft, wird die Antwort hier abgefangen
@@ -1877,6 +1899,9 @@ class AssistantBrain(BrainCallbacksMixin):
         if profile.need_rag:
             _mega_tasks.append(("rag", self._get_rag_context(text)))
 
+        # Feature A: Kreative Problemloesung — Haus-Daten parallel laden
+        _mega_tasks.append(("problem_solving", self._build_problem_solving_context(text)))
+
         _mega_keys, _mega_coros = zip(*_mega_tasks)
         _mega_results = await asyncio.gather(*_mega_coros, return_exceptions=True)
         _result_map = dict(zip(_mega_keys, _mega_results))
@@ -1931,6 +1956,7 @@ class AssistantBrain(BrainCallbacksMixin):
         summary_context = _safe_get("summary")
         rag_context = _safe_get("rag")
         situation_delta = _safe_get("situation_delta")
+        problem_solving_ctx = _safe_get("problem_solving")
 
         context["mood"] = mood_result
 
@@ -2038,6 +2064,10 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 17: Situation Delta (was hat sich seit letztem Gespraech geaendert?)
         if situation_delta:
             sections.append(("situation_delta", situation_delta, 2))
+
+        # Feature A: Kreative Problemloesung — Haus-Daten fuer Loesungsvorschlaege
+        if problem_solving_ctx:
+            sections.append(("problem_solving", problem_solving_ctx, 2))
 
         # --- Prio 3: Optional (RAG bei Wissensfragen Prio 1) ---
         if rag_context:
@@ -2512,13 +2542,14 @@ class AssistantBrain(BrainCallbacksMixin):
                             # Level 1: Warnung voranstellen, aber trotzdem ausfuehren
                             pushback_msg = pushback["message"]
 
-                    # Feature 10: Daten-basierter Widerspruch — Live-Daten pruefen
+                    # Feature 10+11: Situationsbewusstsein — JARVIS erklaert + Alternative
                     if not pushback_msg:
                         try:
                             live_pushback = await self.validator.get_pushback_context(func_name, final_args)
-                            if live_pushback:
-                                from .function_validator import FunctionValidator
-                                pushback_msg = FunctionValidator.format_pushback_warnings(live_pushback)
+                            if live_pushback and live_pushback.get("warnings"):
+                                pushback_msg = await self._generate_situational_warning(
+                                    func_name, final_args, live_pushback,
+                                )
                         except Exception as _pb_err:
                             logger.debug("Live-Pushback Fehler: %s", _pb_err)
 
@@ -2623,6 +2654,22 @@ class AssistantBrain(BrainCallbacksMixin):
                                 response_text = escalation
                     except Exception:
                         pass  # Eskalation ist optional
+
+                    # Feature B: Kontextueller Humor nach Aktion
+                    if not pushback_msg and not opinion:
+                        try:
+                            humor = await self.personality.generate_contextual_humor(
+                                func_name, final_args, context,
+                            )
+                            if humor:
+                                logger.info("Kontextueller Humor: '%s'", humor)
+                                if response_text:
+                                    response_text = f"{response_text} {humor}"
+                                else:
+                                    response_text = humor
+                                self._last_humor_category = self.personality._humor_func_to_category(func_name)
+                        except Exception:
+                            pass  # Humor ist optional
 
             # 8b. Query-Tool Antwort aufbereiten:
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
@@ -6293,6 +6340,124 @@ Regeln:
             logger.debug("Situation Snapshot Fehler: %s", e)
 
     # ------------------------------------------------------------------
+    # Feature A: Kreative Problemloesung
+    # ------------------------------------------------------------------
+
+    def _detect_problem_solving_intent(self, text: str) -> bool:
+        """Erkennt ob der User ein Problem beschreibt oder Rat sucht.
+
+        Rein pattern-basiert, kein LLM.
+        """
+        text_lower = text.lower().strip()
+        return any(p in text_lower for p in self._PROBLEM_PATTERNS)
+
+    async def _build_problem_solving_context(self, text: str) -> Optional[str]:
+        """Sammelt Haus-Daten fuer kreative Problemloesungs-Vorschlaege.
+
+        Wenn der User ein Problem beschreibt, werden relevante Live-Daten
+        gesammelt damit JARVIS konkrete Loesungen vorschlagen kann.
+
+        Returns:
+            Prompt-Abschnitt mit Haus-Daten fuer Problemloesung oder None
+        """
+        if not self._detect_problem_solving_intent(text):
+            return None
+
+        try:
+            states = await self.ha.get_states()
+        except Exception:
+            return None
+        if not states:
+            return None
+
+        # Relevante Daten sammeln
+        data = {
+            "weather": None,
+            "inside_temps": [],
+            "open_windows": [],
+            "active_lights": 0,
+            "covers_open": 0,
+            "covers_closed": 0,
+            "energy_sensors": [],
+        }
+
+        for s in states:
+            eid = s.get("entity_id", "")
+            state_val = s.get("state", "")
+            attrs = s.get("attributes", {})
+
+            # Wetter
+            if eid.startswith("weather.") and not data["weather"]:
+                data["weather"] = {
+                    "condition": state_val,
+                    "temp": attrs.get("temperature"),
+                    "humidity": attrs.get("humidity"),
+                    "wind": attrs.get("wind_speed"),
+                }
+
+            # Innentemperaturen
+            elif eid.startswith("climate.") and state_val != "unavailable":
+                current = attrs.get("current_temperature")
+                if current is not None:
+                    name = attrs.get("friendly_name", eid)
+                    data["inside_temps"].append(f"{name}: {current}°C")
+
+            # Offene Fenster
+            elif eid.startswith(("binary_sensor.fenster", "binary_sensor.window")):
+                if state_val == "on":
+                    name = attrs.get("friendly_name", eid)
+                    data["open_windows"].append(name)
+
+            # Lichter
+            elif eid.startswith("light.") and state_val == "on":
+                data["active_lights"] += 1
+
+            # Cover-Status
+            elif eid.startswith("cover."):
+                if state_val == "open":
+                    data["covers_open"] += 1
+                elif state_val == "closed":
+                    data["covers_closed"] += 1
+
+            # Energie-Sensoren
+            elif "energy" in eid or "power" in eid or "verbrauch" in eid:
+                if state_val not in ("unavailable", "unknown", ""):
+                    name = attrs.get("friendly_name", eid)
+                    unit = attrs.get("unit_of_measurement", "")
+                    data["energy_sensors"].append(f"{name}: {state_val} {unit}")
+
+        # Prompt zusammenbauen
+        lines = [
+            "\n\nPROBLEMLOESUNG — Du bist Ingenieur UND Butler. "
+            "Schlage 1-2 konkrete Loesungen vor, basierend auf diesen Haus-Daten. "
+            "Denke kreativ: Wenn das eine nicht geht, was noch? "
+            "Nutze die verfuegbaren Geraete als Werkzeuge.",
+        ]
+
+        if data["weather"]:
+            w = data["weather"]
+            lines.append(
+                f"Wetter: {w['condition']}, {w['temp']}°C, "
+                f"Luftfeuchtigkeit {w['humidity']}%, Wind {w['wind']} km/h"
+            )
+
+        if data["inside_temps"]:
+            lines.append("Innentemperaturen: " + " | ".join(data["inside_temps"][:5]))
+
+        if data["open_windows"]:
+            lines.append("Offene Fenster: " + ", ".join(data["open_windows"]))
+        else:
+            lines.append("Alle Fenster geschlossen.")
+
+        lines.append(f"Aktive Lichter: {data['active_lights']}")
+        lines.append(f"Rolllaeden offen: {data['covers_open']}, geschlossen: {data['covers_closed']}")
+
+        if data["energy_sensors"]:
+            lines.append("Energie: " + " | ".join(data["energy_sensors"][:5]))
+
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
     # Phase 8: Konversations-Kontinuitaet
     # ------------------------------------------------------------------
 
@@ -6763,6 +6928,75 @@ Regeln:
         import random
         templates = self._ERROR_PATTERNS[category]
         return random.choice(templates).format(device=device)
+
+    async def _generate_situational_warning(
+        self, func_name: str, func_args: dict, pushback: dict,
+    ) -> str:
+        """Generiert eine JARVIS-artige Warnung mit Daten und Alternative.
+
+        Phase 11: MCU-Stil: 'Sir, das wuerde ich nicht empfehlen —
+        Aussentemperatur liegt bei -5°C. Vorschlag: Rollladen auf 20%.'
+        """
+        warnings = pushback.get("warnings", [])
+        if not warnings:
+            return ""
+
+        title = get_person_title(self._current_person)
+
+        # Schneller Pfad: Einzel-Warnung → template-basiert (kein LLM)
+        if len(warnings) == 1:
+            w = warnings[0]
+            detail = w.get("detail", "")
+            alt = w.get("alternative", "")
+            if alt:
+                return f"{title}, kurzer Einwand — {detail}. Vorschlag: {alt}"
+            return f"{title}, zur Info — {detail}."
+
+        # Komplexer Pfad: 2+ Warnungen → LLM formuliert natuerlich
+        warning_text = "\n".join(
+            f"- {w['detail']}" + (f" (Alternative: {w['alternative']})" if w.get("alternative") else "")
+            for w in warnings
+        )
+
+        try:
+            messages = [{
+                "role": "system",
+                "content": (
+                    "Du bist JARVIS. Formuliere eine KNAPPE Warnung auf Deutsch "
+                    "im Butler-Ton. Nenne die Fakten, erklaere WARUM es problematisch ist, "
+                    f"und schlage eine Alternative vor. Sprich den User mit '{title}' an. "
+                    "Maximal 2 Saetze. Trocken, nicht belehrend."
+                ),
+            }, {
+                "role": "user",
+                "content": (
+                    f"Aktion: {func_name}({func_args})\n"
+                    f"Probleme:\n{warning_text}"
+                ),
+            }]
+
+            response = await asyncio.wait_for(
+                self.ollama.chat(
+                    messages=messages,
+                    model=self.model_router.model_fast,
+                    temperature=0.4,
+                    max_tokens=100,
+                    think=False,
+                ),
+                timeout=5.0,
+            )
+            if "error" not in response:
+                result = self._filter_response(
+                    response.get("message", {}).get("content", "")
+                )
+                if result and len(result) > 10:
+                    return result
+        except Exception as e:
+            logger.debug("Situational warning LLM Fehler: %s", e)
+
+        # Fallback: Statisches Format
+        from .function_validator import FunctionValidator
+        return FunctionValidator.format_pushback_warnings(pushback)
 
     async def _generate_error_recovery(self, func_name: str, func_args: dict, error: str) -> str:
         """Generiert eine JARVIS-Fehlermeldung mit Loesungsvorschlag.

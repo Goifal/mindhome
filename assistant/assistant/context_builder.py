@@ -359,6 +359,7 @@ class ContextBuilder:
                     "sunrise": attrs.get("next_rising", ""),
                     "sunset": attrs.get("next_setting", ""),
                     "elevation": attrs.get("elevation"),
+                    "azimuth": attrs.get("azimuth"),   # Phase 11: Sonnenrichtung
                 }
 
             # Alarm
