@@ -135,15 +135,40 @@ def apply_household_to_config() -> None:
 apply_household_to_config()
 
 
+# Active-Person Tracking: Wird von brain.py gesetzt wenn eine Person
+# identifiziert wird (Sprache, Praesenz, Speaker-Recognition).
+# Damit kann get_person_title() ohne Argument den richtigen Titel liefern.
+_active_person: str = ""
+
+
+def set_active_person(name: str) -> None:
+    """Setzt die aktuell aktive Person (vom brain/proactive Modul)."""
+    global _active_person
+    _active_person = name or ""
+
+
+def get_active_person() -> str:
+    """Gibt die aktuell aktive Person zurueck."""
+    return _active_person
+
+
 def get_person_title(name: str = "") -> str:
     """Gibt den konfigurierten Titel fuer eine Person zurueck.
 
-    Schaut in persons.titles (im UI konfigurierbar, z.B. 'Sir', 'Ma'am').
-    Fallback: Titel des primary_user, dann 'Sir'.
+    Reihenfolge:
+    1. Explizit uebergebener Name → dessen Titel
+    2. Aktive Person (von brain.py gesetzt) → deren Titel
+    3. Fallback: primary_user Titel
+    4. Fallback: 'Sir'
     """
     titles = (yaml_config.get("persons") or {}).get("titles") or {}
     if name:
         title = titles.get(name.lower())
+        if title:
+            return title
+    # Aktive Person (gesetzt durch brain.py bei Gespraech oder proactive bei Praesenz)
+    if not name and _active_person:
+        title = titles.get(_active_person.lower())
         if title:
             return title
     # Fallback: primary user Titel

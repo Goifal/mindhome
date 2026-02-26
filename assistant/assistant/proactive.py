@@ -26,7 +26,7 @@ from typing import Optional
 import aiohttp
 import yaml
 
-from .config import settings, yaml_config, get_person_title
+from .config import settings, yaml_config, get_person_title, set_active_person
 from .constants import (
     GEO_APPROACHING_COOLDOWN_MIN,
     GEO_ARRIVING_COOLDOWN_MIN,
@@ -1300,7 +1300,11 @@ class ProactiveManager:
         return titles.get(person_name.lower(), person_name)
 
     async def _get_persons_at_home(self) -> list[str]:
-        """Gibt die Liste der aktuell anwesenden Personen zurueck."""
+        """Gibt die Liste der aktuell anwesenden Personen zurueck.
+
+        Setzt automatisch die active_person wenn genau eine Person zuhause ist,
+        damit get_person_title() ohne Argument den richtigen Titel liefert.
+        """
         try:
             states = await self.brain.ha.get_states()
             if not states:
@@ -1312,6 +1316,12 @@ class ProactiveManager:
                         pname = s.get("attributes", {}).get("friendly_name", "")
                         if pname:
                             persons.append(pname)
+            # Active-Person setzen: bei genau einer Person → deren Titel,
+            # bei niemand zuhause → leeren (verhindert veraltete Anrede)
+            if len(persons) == 1:
+                set_active_person(persons[0])
+            elif len(persons) == 0:
+                set_active_person("")
             return persons
         except Exception:
             return []
