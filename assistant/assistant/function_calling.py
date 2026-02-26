@@ -4844,14 +4844,13 @@ class FunctionExecutor:
                 if media:
                     parts.append(f"Medien aktiv: {', '.join(str(m) for m in media)}")
 
-            # Offene Fenster/Tueren
+            # Offene Fenster/Tueren — is_window_or_door() nutzt MindHome-Domain,
+            # HA device_class und Keyword-Fallback (konsistent mit context_builder._extract_alerts)
             if "open_items" in enabled_sections:
                 open_items = []
                 for s in states:
                     eid = s.get("entity_id", "")
-                    if ("binary_sensor" in eid and
-                        ("window" in eid or "door" in eid or "fenster" in eid or "tuer" in eid) and
-                        s.get("state") == "on"):
+                    if is_window_or_door(eid, s) and s.get("state") == "on":
                         name = s.get("attributes", {}).get("friendly_name", eid)
                         open_items.append(name)
                 if open_items:
