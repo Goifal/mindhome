@@ -1271,6 +1271,16 @@ function entityPickSelect(item, entityId) {
   const dropdown = wrap.querySelector('.entity-pick-dropdown');
   if (dropdown) dropdown.style.display = 'none';
 
+  // Trigger-Modus: Input in pt-row/st-row → Wert setzen + Sync aufrufen
+  const triggerRow = input?.closest('.pt-row, .st-row');
+  if (triggerRow) {
+    input.value = entityId;
+    const editor = triggerRow.closest('.pt-editor, .st-editor');
+    if (editor?.classList.contains('pt-editor')) ptSync(editor);
+    if (editor?.classList.contains('st-editor')) stSync(editor);
+    return;
+  }
+
   // Room-Map Modus: Input-Wert setzen
   if (input?.dataset?.roomMap) {
     input.value = entityId;
@@ -4556,13 +4566,49 @@ function renderVacuum() {
   );
 }
 
+// Hilfsfunktion: Alle konfigurierten Vacuum-Raeume aus robots.*.rooms sammeln
+function _getVacuumRooms() {
+  const robots = getPath(S, 'vacuum.robots') || {};
+  const rooms = new Set();
+  for (const floor of Object.values(robots)) {
+    const rm = floor.rooms || {};
+    for (const name of Object.keys(rm)) rooms.add(name);
+  }
+  return [...rooms].sort();
+}
+
+// Hilfsfunktion: Entity-Dropdown mit Suchfeld rendern
+function _entityDropdownHtml(cls, domain, value, placeholder) {
+  return `<div class="entity-pick-wrap" style="position:relative;">
+    <input type="text" class="${cls} form-input entity-pick-input" value="${esc(value)}"
+      placeholder="${placeholder}" data-domains="${domain}"
+      oninput="entityPickFilter(this,'${domain}')" onfocus="entityPickFilter(this,'${domain}')"
+      style="font-size:12px;font-family:var(--mono);">
+    <div class="entity-pick-dropdown" style="display:none;"></div>
+  </div>`;
+}
+
+// Hilfsfunktion: Raum-Dropdown aus Vacuum-Rooms rendern
+function _roomSelectHtml(cls, value) {
+  const rooms = _getVacuumRooms();
+  let opts = '<option value="">-- Raum waehlen --</option>';
+  for (const r of rooms) {
+    opts += `<option value="${esc(r)}"${r === value ? ' selected' : ''}>${esc(r)}</option>`;
+  }
+  // Option fuer manuellen Eintrag falls value nicht in rooms
+  if (value && !rooms.includes(value)) {
+    opts += `<option value="${esc(value)}" selected>${esc(value)}</option>`;
+  }
+  return `<select class="${cls} form-input" style="font-size:12px;">${opts}</select>`;
+}
+
 function _renderPowerTriggerList() {
   const triggers = getPath(S, 'vacuum.power_trigger.triggers') || [];
   let rows = triggers.map((t, i) =>
     `<div class="pt-row" style="display:grid;grid-template-columns:1fr 80px 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;">
-       <input type="text" class="pt-entity form-input" value="${esc(t.entity || '')}" placeholder="sensor.steckdose_power" style="font-size:12px;font-family:var(--mono);">
+       ${_entityDropdownHtml('pt-entity', 'sensor', t.entity || '', '&#128269; Sensor suchen...')}
        <input type="number" class="pt-threshold form-input" value="${t.threshold ?? 5}" min="0" max="1000" step="1" placeholder="W" style="font-size:12px;text-align:center;">
-       <input type="text" class="pt-room form-input" value="${esc(t.room || '')}" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+       ${_roomSelectHtml('pt-room', t.room || '')}
        <button class="kv-rm" onclick="ptRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>
      </div>`
   ).join('');
@@ -4579,9 +4625,9 @@ function ptAdd(btn) {
   const row = document.createElement('div');
   row.className = 'pt-row';
   row.style.cssText = 'display:grid;grid-template-columns:1fr 80px 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;';
-  row.innerHTML = `<input type="text" class="pt-entity form-input" placeholder="sensor.steckdose_power" style="font-size:12px;font-family:var(--mono);">
+  row.innerHTML = `${_entityDropdownHtml('pt-entity', 'sensor', '', '&#128269; Sensor suchen...')}
     <input type="number" class="pt-threshold form-input" value="5" min="0" max="1000" step="1" placeholder="W" style="font-size:12px;text-align:center;">
-    <input type="text" class="pt-room form-input" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+    ${_roomSelectHtml('pt-room', '')}
     <button class="kv-rm" onclick="ptRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>`;
   editor.insertBefore(row, btn);
   ptSync(editor);
@@ -4596,7 +4642,7 @@ function ptSync(editor) {
   editor.querySelectorAll('.pt-row').forEach(row => {
     const entity = row.querySelector('.pt-entity').value.trim();
     const threshold = parseFloat(row.querySelector('.pt-threshold').value) || 5;
-    const room = row.querySelector('.pt-room').value.trim();
+    const room = row.querySelector('.pt-room').value;
     if (entity && room) triggers.push({ entity, threshold, room });
   });
   setPath(S, 'vacuum.power_trigger.triggers', triggers);
@@ -4606,14 +4652,14 @@ function _renderSceneTriggerList() {
   const triggers = getPath(S, 'vacuum.scene_trigger.triggers') || [];
   let rows = triggers.map((t, i) =>
     `<div class="st-row" style="display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;">
-       <input type="text" class="st-entity form-input" value="${esc(t.entity || '')}" placeholder="scene.kuche_aus" style="font-size:12px;font-family:var(--mono);">
-       <input type="text" class="st-room form-input" value="${esc(t.room || '')}" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+       ${_entityDropdownHtml('st-entity', 'scene', t.entity || '', '&#128269; Szene suchen...')}
+       ${_roomSelectHtml('st-room', t.room || '')}
        <button class="kv-rm" onclick="stRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>
      </div>`
   ).join('');
   return `<div class="st-editor" data-path="vacuum.scene_trigger.triggers">
     <div style="display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;margin-bottom:4px;font-size:11px;color:var(--text-muted);font-weight:600;">
-      <span>Szene (scene.*)</span><span>Raum</span><span></span>
+      <span>Szene</span><span>Raum</span><span></span>
     </div>
     ${rows}
     <button class="kv-add" onclick="stAdd(this)">+ Szenen-Trigger</button>
@@ -4624,8 +4670,8 @@ function stAdd(btn) {
   const row = document.createElement('div');
   row.className = 'st-row';
   row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;';
-  row.innerHTML = `<input type="text" class="st-entity form-input" placeholder="scene.kuche_aus" style="font-size:12px;font-family:var(--mono);">
-    <input type="text" class="st-room form-input" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+  row.innerHTML = `${_entityDropdownHtml('st-entity', 'scene', '', '&#128269; Szene suchen...')}
+    ${_roomSelectHtml('st-room', '')}
     <button class="kv-rm" onclick="stRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>`;
   editor.insertBefore(row, btn);
   stSync(editor);
@@ -4639,7 +4685,7 @@ function stSync(editor) {
   const triggers = [];
   editor.querySelectorAll('.st-row').forEach(row => {
     const entity = row.querySelector('.st-entity').value.trim();
-    const room = row.querySelector('.st-room').value.trim();
+    const room = row.querySelector('.st-room').value;
     if (entity && room) triggers.push({ entity, room });
   });
   setPath(S, 'vacuum.scene_trigger.triggers', triggers);
