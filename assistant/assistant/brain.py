@@ -1199,7 +1199,14 @@ class AssistantBrain(BrainCallbacksMixin):
                 weather_result = await self.executor.execute("get_weather", weather_args)
                 weather_msg = weather_result.get("message", "") if isinstance(weather_result, dict) else str(weather_result)
 
-                response_text = self._filter_response(self._humanize_weather(weather_msg))
+                # Wenn Vorhersage angefragt aber nicht verfuegbar: ehrlich antworten
+                if include_forecast and "VORHERSAGE" not in weather_msg:
+                    response_text = (
+                        f"Vorhersage ist leider nicht verfuegbar, {get_person_title(self._current_person)}. "
+                        f"{self._filter_response(self._humanize_weather(weather_msg))}"
+                    )
+                else:
+                    response_text = self._filter_response(self._humanize_weather(weather_msg))
                 logger.info("Wetter-Shortcut humanisiert: '%s' -> '%s'",
                             weather_msg[:60], response_text[:60])
 
@@ -6187,6 +6194,15 @@ class AssistantBrain(BrainCallbacksMixin):
                 return "tomorrow"
             if "heute" in t:
                 return "today"
+            # "nächster Termin", "wann habe ich einen Termin", etc.
+            # Kein Zeitwort → Default "week" (naechsten 7 Tage durchsuchen)
+            if any(kw in t for kw in [
+                "naechst", "nächst", "wann", "bald", "demnaechst", "demnächst",
+                "kommend", "anstehend",
+            ]):
+                return "week"
+            # Nur "termin"/"kalender" ohne alles → Default "today"
+            return "today"
 
         return None
 
