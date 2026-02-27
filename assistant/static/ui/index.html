@@ -889,6 +889,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       </div>
       <div class="nav-divider"></div>
       <div class="nav-item" data-page="entities"><span class="nav-icon">&#8801;</span>Entities</div>
+      <div class="nav-item" data-page="memory"><span class="nav-icon">&#129504;</span>Gedaechtnis</div>
       <div class="nav-item" data-page="knowledge"><span class="nav-icon">&#128218;</span>Wissen</div>
       <div class="nav-item" data-page="logs"><span class="nav-icon">&#9776;</span>Logs</div>
       <div class="nav-item" data-page="errors"><span class="nav-icon">&#9888;</span>Fehler<span id="errBadge" class="err-badge" style="display:none;">0</span></div>
@@ -983,6 +984,64 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           </div>
         </div>
         <div class="card entity-list-card"><div id="entityBrowser" class="entity-list"></div></div>
+      </div>
+
+      <!-- ============ MEMORY (Fakten + Episoden) ============ -->
+      <div id="page-memory" class="page">
+        <div class="section-header">
+          <div><h2>Gedaechtnis</h2><p>Fakten & Episoden verwalten</p></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-secondary" onclick="loadMemoryPage()">Aktualisieren</button>
+            <button class="btn btn-danger" onclick="showMemoryResetDialog()">Komplett zuruecksetzen</button>
+          </div>
+        </div>
+        <div id="memStats" class="grid grid-3" style="margin-bottom:16px;"></div>
+
+        <!-- Fakten -->
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>Fakten</h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select id="memFactFilter" onchange="filterMemoryFacts()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;">
+                <option value="">Alle Kategorien</option>
+              </select>
+              <select id="memPersonFilter" onchange="filterMemoryFacts()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;">
+                <option value="">Alle Personen</option>
+              </select>
+              <button class="btn btn-danger" id="memFactDeleteBtn" onclick="deleteSelectedFacts()" style="display:none;font-size:12px;padding:5px 12px;">Loeschen</button>
+            </div>
+          </div>
+          <div id="memFacts" style="max-height:500px;overflow-y:auto;"></div>
+        </div>
+
+        <!-- Episoden -->
+        <div class="card">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>Episoden</h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input type="text" id="memEpisodeSearch" placeholder="Episoden durchsuchen..." oninput="filterMemoryEpisodes()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;width:200px;">
+              <button class="btn btn-danger" id="memEpDeleteBtn" onclick="deleteSelectedEpisodes()" style="display:none;font-size:12px;padding:5px 12px;">Loeschen</button>
+            </div>
+          </div>
+          <div id="memEpisodes" style="max-height:500px;overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <!-- Memory Reset Dialog (Overlay) -->
+      <div id="memResetOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-primary);border:1px solid var(--danger);border-radius:12px;padding:28px;max-width:400px;width:90%;">
+          <h3 style="color:var(--danger);margin-bottom:12px;">Gedaechtnis zuruecksetzen</h3>
+          <p style="margin-bottom:16px;color:var(--text-muted);font-size:14px;">
+            ACHTUNG: Alle Fakten, Episoden und Konversationen werden unwiderruflich geloescht!
+            Gib zur Bestaetigung deinen PIN ein.
+          </p>
+          <input type="password" id="memResetPin" placeholder="PIN eingeben" style="width:100%;padding:10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:16px;margin-bottom:12px;box-sizing:border-box;" />
+          <div id="memResetError" style="color:var(--danger);font-size:13px;margin-bottom:10px;display:none;"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="hideMemoryResetDialog()">Abbrechen</button>
+            <button class="btn btn-danger" id="memResetConfirmBtn" onclick="confirmMemoryReset()">Zuruecksetzen</button>
+          </div>
+        </div>
       </div>
 
       <!-- ============ KNOWLEDGE ============ -->

@@ -379,6 +379,110 @@ class MemoryManager:
             str(new_score),
         )
 
+    # ----- Episoden-Verwaltung (UI) -----
+
+    async def get_all_episodes(self, offset: int = 0, limit: int = 50) -> list[dict]:
+        """Gibt alle Episoden aus ChromaDB zurueck (paginiert)."""
+        if not self.chroma_collection:
+            return []
+        try:
+            total = self.chroma_collection.count()
+            if total == 0:
+                return []
+            result = self.chroma_collection.get(
+                limit=limit,
+                offset=offset,
+                include=["documents", "metadatas"],
+            )
+            episodes = []
+            ids = result.get("ids", [])
+            docs = result.get("documents", [])
+            metas = result.get("metadatas", [])
+            for i, doc_id in enumerate(ids):
+                meta = metas[i] if i < len(metas) else {}
+                episodes.append({
+                    "id": doc_id,
+                    "content": docs[i] if i < len(docs) else "",
+                    "timestamp": meta.get("timestamp", "") if isinstance(meta, dict) else "",
+                    "type": meta.get("type", "") if isinstance(meta, dict) else "",
+                    "chunk_index": meta.get("chunk_index", "0") if isinstance(meta, dict) else "0",
+                    "total_chunks": meta.get("total_chunks", "1") if isinstance(meta, dict) else "1",
+                })
+            # Nach Timestamp sortieren (neueste zuerst)
+            episodes.sort(key=lambda e: e["timestamp"], reverse=True)
+            return episodes
+        except Exception as e:
+            logger.error("Fehler beim Laden der Episoden: %s", e)
+            return []
+
+    async def delete_episodes(self, episode_ids: list[str]) -> int:
+        """Loescht einzelne Episoden aus ChromaDB."""
+        if not self.chroma_collection or not episode_ids:
+            return 0
+        try:
+            self.chroma_collection.delete(ids=episode_ids)
+            logger.info("Episoden geloescht: %d", len(episode_ids))
+            return len(episode_ids)
+        except Exception as e:
+            logger.error("Fehler beim Loeschen der Episoden: %s", e)
+            return 0
+
+    async def clear_all_memory(self) -> dict:
+        """Loescht das gesamte Gedaechtnis (Episoden + Fakten + Working Memory).
+
+        ACHTUNG: Unwiderruflich! Nur ueber PIN-geschuetzten Endpoint aufrufen.
+        """
+        result = {"episodes_deleted": 0, "facts_deleted": 0, "working_cleared": False}
+
+        # 1. Episoden (ChromaDB Collection neu erstellen)
+        if self._chroma_client and self.chroma_collection:
+            try:
+                self._chroma_client.delete_collection("mha_conversations")
+                from .embeddings import get_embedding_function
+                ef = get_embedding_function()
+                col_kwargs = {
+                    "name": "mha_conversations",
+                    "metadata": {"description": "MindHome Assistant Gespraeche und Erinnerungen"},
+                }
+                if ef:
+                    col_kwargs["embedding_function"] = ef
+                self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+                result["episodes_deleted"] = -1  # -1 = alle
+                logger.info("Episodisches Gedaechtnis geloescht")
+            except Exception as e:
+                logger.error("Fehler beim Loeschen der Episoden: %s", e)
+
+        # 2. Fakten (Semantic Memory)
+        if self.semantic:
+            try:
+                deleted = await self.semantic.clear_all()
+                result["facts_deleted"] = deleted
+            except Exception as e:
+                logger.error("Fehler beim Loeschen der Fakten: %s", e)
+
+        # 3. Working Memory (Redis-Konversationen + Archive)
+        if self.redis:
+            try:
+                keys = []
+                async for key in self.redis.scan_iter(match="mha:archive:*"):
+                    keys.append(key)
+                async for key in self.redis.scan_iter(match="mha:context:*"):
+                    keys.append(key)
+                async for key in self.redis.scan_iter(match="mha:emotional_memory:*"):
+                    keys.append(key)
+                async for key in self.redis.scan_iter(match="mha:pending_topics"):
+                    keys.append(key)
+                keys.append("mha:conversations")
+                if keys:
+                    await self.redis.delete(*keys)
+                result["working_cleared"] = True
+                logger.info("Working Memory geloescht")
+            except Exception as e:
+                logger.error("Fehler beim Loeschen des Working Memory: %s", e)
+
+        logger.warning("GESAMTES GEDAECHTNIS ZURUECKGESETZT")
+        return result
+
     async def close(self):
         """Schliesst Verbindungen."""
         if self.redis:

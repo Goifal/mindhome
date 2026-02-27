@@ -975,3 +975,48 @@ class SemanticMemory:
         except Exception as e:
             logger.error("Fehler bei Stats: %s", e)
             return {"total_facts": 0, "categories": {}, "persons": []}
+
+    async def clear_all(self) -> int:
+        """Loescht alle Fakten aus ChromaDB und Redis. Gibt Anzahl geloeschter Fakten zurueck."""
+        deleted = 0
+
+        # Redis-Fakten aufraumen
+        if self.redis:
+            try:
+                fact_ids = await self.redis.smembers("mha:facts:all")
+                for fact_id in fact_ids:
+                    data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+                    if data:
+                        person = data.get("person", "unknown")
+                        category = data.get("category", "general")
+                        await self.redis.srem(f"mha:facts:person:{person}", fact_id)
+                        await self.redis.srem(f"mha:facts:category:{category}", fact_id)
+                    await self.redis.delete(f"mha:fact:{fact_id}")
+                    deleted += 1
+                await self.redis.delete("mha:facts:all")
+                # Person- und Category-Sets aufraeumen
+                async for key in self.redis.scan_iter(match="mha:facts:person:*"):
+                    await self.redis.delete(key)
+                async for key in self.redis.scan_iter(match="mha:facts:category:*"):
+                    await self.redis.delete(key)
+            except Exception as e:
+                logger.error("Fehler beim Loeschen der Redis-Fakten: %s", e)
+
+        # ChromaDB Collection neu erstellen
+        if self._chroma_client and self.chroma_collection:
+            try:
+                self._chroma_client.delete_collection("mha_semantic_facts")
+                from .embeddings import get_embedding_function
+                ef = get_embedding_function()
+                col_kwargs = {
+                    "name": "mha_semantic_facts",
+                    "metadata": {"description": "MindHome Assistant - Extrahierte Fakten"},
+                }
+                if ef:
+                    col_kwargs["embedding_function"] = ef
+                self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+                logger.info("Semantisches Gedaechtnis geloescht (%d Fakten)", deleted)
+            except Exception as e:
+                logger.error("Fehler beim Neuerstellen der ChromaDB-Collection: %s", e)
+
+        return deleted
