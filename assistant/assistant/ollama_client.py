@@ -47,10 +47,18 @@ _META_MARKERS = [
 
 # Haeufige deutsche Woerter (muessen in einer echten deutschen Meldung vorkommen)
 _GERMAN_MARKERS = [
-    "sir", "der", "die", "das", "ist", "ein", "und", "nicht",
+    "sir", "ma'am", "der", "die", "das", "ist", "ein", "und", "nicht",
     "ich", "hab", "mal", "aus", "auf", "mit", "bei", "zur",
     "noch", "nur", "etwas", "gerade", "bitte", "danke",
     "grad", "uhr", "haus", "licht", "heiz",
+    # Verben (haeufig in Notifications)
+    "wurde", "wird", "hat", "sind", "kann", "soll",
+    "sollte", "darf", "liegt", "steht", "scheint",
+    # Smart-Home Begriffe
+    "temperatur", "fenster", "wasser", "luft",
+    "befeuchter", "humidor", "sensor", "batterie",
+    # Allgemein
+    "bereits", "aktuell", "guten", "herr", "frau",
 ]
 
 
