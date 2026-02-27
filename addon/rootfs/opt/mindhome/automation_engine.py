@@ -10,6 +10,7 @@ import json
 import logging
 import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from sqlalchemy import func, text, and_
@@ -26,6 +27,20 @@ from models import (
 from helpers import get_setting
 
 logger = logging.getLogger("mindhome.automation_engine")
+
+
+@contextmanager
+def _safe_session(session_factory):
+    """Context-Manager fuer sichere DB-Sessions. Commit bei Erfolg, Rollback bei Fehler."""
+    session = session_factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 # ==============================================================================
@@ -278,124 +293,119 @@ class AutomationExecutor:
         if self._emergency_stop:
             return
 
-        session = self.Session()
         try:
-            # #23 Vacation mode check
-            vac = session.execute(
-                text("SELECT value FROM system_settings WHERE key='vacation_mode'")
-            ).fetchone()
-            is_vacation = vac and vac[0] == "true"
-
-            # #55 Absence simulation check
-            simulate = False
-            if is_vacation:
-                sim = session.execute(
-                    text("SELECT value FROM system_settings WHERE key='vacation_simulate'")
+            with _safe_session(self.Session) as session:
+                # #23 Vacation mode check
+                vac = session.execute(
+                    text("SELECT value FROM system_settings WHERE key='vacation_mode'")
                 ).fetchone()
-                simulate = sim and sim[0] == "true"
+                is_vacation = vac and vac[0] == "true"
 
-            active_patterns = session.query(LearnedPattern).filter_by(
-                status="active", is_active=True
-            ).all()
+                # #55 Absence simulation check
+                simulate = False
+                if is_vacation:
+                    sim = session.execute(
+                        text("SELECT value FROM system_settings WHERE key='vacation_simulate'")
+                    ).fetchone()
+                    simulate = sim and sim[0] == "true"
 
-            # Fix #10: Load exclusions for runtime filtering
-            from models import PatternExclusion
-            exclusions = session.query(PatternExclusion).all()
-            excluded_pairs = set()
-            for exc in exclusions:
-                excluded_pairs.add((exc.entity_a, exc.entity_b))
-                excluded_pairs.add((exc.entity_b, exc.entity_a))
+                active_patterns = session.query(LearnedPattern).filter_by(
+                    status="active", is_active=True
+                ).all()
 
-            now = datetime.now(timezone.utc)
+                # Fix #10: Load exclusions for runtime filtering
+                from models import PatternExclusion
+                exclusions = session.query(PatternExclusion).all()
+                excluded_pairs = set()
+                for exc in exclusions:
+                    excluded_pairs.add((exc.entity_a, exc.entity_b))
+                    excluded_pairs.add((exc.entity_b, exc.entity_a))
 
-            # Build per-entity conflict map: entity -> [(pattern, target_state, confidence)]
-            entity_pattern_map = defaultdict(list)
-            eligible_patterns = []
+                now = datetime.now(timezone.utc)
 
-            for pattern in active_patterns:
-                trigger = pattern.trigger_conditions or {}
-                trigger_type = trigger.get("type")
+                # Build per-entity conflict map: entity -> [(pattern, target_state, confidence)]
+                entity_pattern_map = defaultdict(list)
+                eligible_patterns = []
 
-                # Fix #5: Check confidence against domain-specific thresholds
-                action = pattern.action_definition or {}
-                entity_id = action.get("entity_id", "")
-                ha_domain = entity_id.split(".")[0] if entity_id else "_default"
-                thresholds = DOMAIN_THRESHOLDS.get(ha_domain, DOMAIN_THRESHOLDS["_default"])
-                if pattern.confidence < thresholds["auto"]:
-                    logger.debug(
-                        f"Pattern {pattern.id}: confidence {pattern.confidence:.2f} "
-                        f"< threshold {thresholds['auto']} for {ha_domain}, skipping"
-                    )
-                    continue
+                for pattern in active_patterns:
+                    trigger = pattern.trigger_conditions or {}
+                    trigger_type = trigger.get("type")
 
-                # Fix #10: Check exclusions at runtime (not just at analysis time)
-                trigger_entity = trigger.get("trigger_entity") or trigger.get("condition_entity", "")
-                action_entity = entity_id
-                if (trigger_entity, action_entity) in excluded_pairs:
-                    logger.debug(f"Pattern {pattern.id}: excluded pair {trigger_entity} <-> {action_entity}")
-                    continue
-
-                # Skip entities already covered by HA automations (avoid duplicates)
-                if self.ha:
-                    target_state = action.get("target_state", "")
-                    if self.ha.is_entity_ha_automated(entity_id, target_state or None):
-                        logger.info(
-                            f"Pattern {pattern.id}: {entity_id} ({target_state}) "
-                            f"already automated by HA, skipping"
+                    # Fix #5: Check confidence against domain-specific thresholds
+                    action = pattern.action_definition or {}
+                    entity_id = action.get("entity_id", "")
+                    ha_domain = entity_id.split(".")[0] if entity_id else "_default"
+                    thresholds = DOMAIN_THRESHOLDS.get(ha_domain, DOMAIN_THRESHOLDS["_default"])
+                    if pattern.confidence < thresholds["auto"]:
+                        logger.debug(
+                            f"Pattern {pattern.id}: confidence {pattern.confidence:.2f} "
+                            f"< threshold {thresholds['auto']} for {ha_domain}, skipping"
                         )
                         continue
 
-                # #23 Skip non-essential automations in vacation mode
-                # but #55 allow light toggles if simulation is on
-                if is_vacation and not simulate:
-                    continue
-                if is_vacation and simulate:
-                    if not entity_id.startswith("light."):
+                    # Fix #10: Check exclusions at runtime (not just at analysis time)
+                    trigger_entity = trigger.get("trigger_entity") or trigger.get("condition_entity", "")
+                    action_entity = entity_id
+                    if (trigger_entity, action_entity) in excluded_pairs:
+                        logger.debug(f"Pattern {pattern.id}: excluded pair {trigger_entity} <-> {action_entity}")
                         continue
 
-                if trigger_type == "time":
-                    target_state = action.get("target_state")
-                    if entity_id and target_state:
-                        entity_pattern_map[entity_id].append({
-                            "pattern": pattern,
-                            "target_state": target_state,
-                            "confidence": pattern.confidence or 0.0,
-                        })
-                    eligible_patterns.append((pattern, trigger))
-
-            # Resolve conflicts: when multiple patterns target the same entity
-            # with different states, only the highest-confidence pattern wins
-            conflict_losers = set()
-            for entity_id, entries in entity_pattern_map.items():
-                states = set(e["target_state"] for e in entries)
-                if len(states) > 1:
-                    # Conflict detected — pick winner by confidence
-                    entries.sort(key=lambda e: e["confidence"], reverse=True)
-                    winner = entries[0]
-                    for loser in entries[1:]:
-                        if loser["target_state"] != winner["target_state"]:
-                            conflict_losers.add(loser["pattern"].id)
+                    # Skip entities already covered by HA automations (avoid duplicates)
+                    if self.ha:
+                        target_state = action.get("target_state", "")
+                        if self.ha.is_entity_ha_automated(entity_id, target_state or None):
                             logger.info(
-                                f"Conflict resolved: {entity_id} — "
-                                f"Pattern {winner['pattern'].id} ({winner['target_state']}, "
-                                f"conf={winner['confidence']:.2f}) wins over "
-                                f"Pattern {loser['pattern'].id} ({loser['target_state']}, "
-                                f"conf={loser['confidence']:.2f})"
+                                f"Pattern {pattern.id}: {entity_id} ({target_state}) "
+                                f"already automated by HA, skipping"
                             )
+                            continue
 
-            for pattern, trigger in eligible_patterns:
-                if pattern.id in conflict_losers:
-                    logger.debug(f"Pattern {pattern.id}: skipped (conflict loser)")
-                    continue
-                self._check_time_trigger(session, pattern, trigger, now)
+                    # #23 Skip non-essential automations in vacation mode
+                    # but #55 allow light toggles if simulation is on
+                    if is_vacation and not simulate:
+                        continue
+                    if is_vacation and simulate:
+                        if not entity_id.startswith("light."):
+                            continue
 
-            session.commit()
+                    if trigger_type == "time":
+                        target_state = action.get("target_state")
+                        if entity_id and target_state:
+                            entity_pattern_map[entity_id].append({
+                                "pattern": pattern,
+                                "target_state": target_state,
+                                "confidence": pattern.confidence or 0.0,
+                            })
+                        eligible_patterns.append((pattern, trigger))
+
+                # Resolve conflicts: when multiple patterns target the same entity
+                # with different states, only the highest-confidence pattern wins
+                conflict_losers = set()
+                for entity_id, entries in entity_pattern_map.items():
+                    states = set(e["target_state"] for e in entries)
+                    if len(states) > 1:
+                        # Conflict detected — pick winner by confidence
+                        entries.sort(key=lambda e: e["confidence"], reverse=True)
+                        winner = entries[0]
+                        for loser in entries[1:]:
+                            if loser["target_state"] != winner["target_state"]:
+                                conflict_losers.add(loser["pattern"].id)
+                                logger.info(
+                                    f"Conflict resolved: {entity_id} — "
+                                    f"Pattern {winner['pattern'].id} ({winner['target_state']}, "
+                                    f"conf={winner['confidence']:.2f}) wins over "
+                                    f"Pattern {loser['pattern'].id} ({loser['target_state']}, "
+                                    f"conf={loser['confidence']:.2f})"
+                                )
+
+                for pattern, trigger in eligible_patterns:
+                    if pattern.id in conflict_losers:
+                        logger.debug(f"Pattern {pattern.id}: skipped (conflict loser)")
+                        continue
+                    self._check_time_trigger(session, pattern, trigger, now)
 
         except Exception as e:
-            session.rollback()
             logger.error(f"Automation check error: {e}")
-        finally:
-            session.close()
 
     def _check_time_trigger(self, session, pattern, trigger, now):
         """D5: Time-window based execution check."""
@@ -2036,6 +2046,12 @@ class AutomationScheduler:
 
     def stop(self):
         self._should_run = False
+        for t in self._threads:
+            t.join(timeout=5)
+        alive = sum(1 for t in self._threads if t.is_alive())
+        if alive:
+            logger.warning("Automation Scheduler: %d/%d Threads noch aktiv nach Timeout", alive, len(self._threads))
+        self._threads.clear()
         logger.info("Automation Scheduler stopped")
 
     def _watchdog_task(self):

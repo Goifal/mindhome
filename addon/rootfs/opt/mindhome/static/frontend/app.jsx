@@ -8631,10 +8631,16 @@ const EnergyPage = () => {
                                     </button>
                                 </div>
                             ))}
-                            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                                <input className="form-input" style={{ flex: 1, fontSize: 12 }} placeholder="switch.wallbox, switch.waschmaschine..."
-                                    value={newPvEntity} onChange={e => setNewPvEntity(e.target.value)} />
+                            <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'flex-end' }}>
+                                <div style={{ flex: 1 }}>
+                                    <EntitySearchDropdown
+                                        value={newPvEntity}
+                                        onChange={v => setNewPvEntity(v)}
+                                        entities={devices.filter(d => d.ha_entity_id && (d.ha_entity_id.startsWith('switch.') || d.ha_entity_id.startsWith('input_boolean.') || d.ha_entity_id.startsWith('sensor.')))}
+                                        placeholder="switch.wallbox, switch.waschmaschine..." />
+                                </div>
                                 <button className="btn btn-sm btn-primary" disabled={!newPvEntity.trim()}
+                                    style={{ flexShrink: 0, height: 38 }}
                                     onClick={() => {
                                         const updated = [...(config?.pv_priority_entities || []), newPvEntity.trim()];
                                         api.put('energy/pv-priorities', { priority_entities: updated }).then(() => {
@@ -9403,21 +9409,24 @@ const HealthPage = () => {
                                     <input type="text" className="form-input" placeholder="06:30" value={newWakeup.wake_time}
                                         onChange={e => setNewWakeup({ ...newWakeup, wake_time: e.target.value })} />
                                 </div>
-                                <div>
-                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Licht Entity' : 'Light entity'}</label>
-                                    <input type="text" className="form-input" placeholder="light.schlafzimmer" value={newWakeup.light_entity}
-                                        onChange={e => setNewWakeup({ ...newWakeup, light_entity: e.target.value })} />
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Rolladen Entity' : 'Cover entity'}</label>
-                                    <input type="text" className="form-input" placeholder="cover.schlafzimmer" value={newWakeup.cover_entity}
-                                        onChange={e => setNewWakeup({ ...newWakeup, cover_entity: e.target.value })} />
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Klima Entity' : 'Climate entity'}</label>
-                                    <input type="text" className="form-input" placeholder="climate.schlafzimmer" value={newWakeup.climate_entity}
-                                        onChange={e => setNewWakeup({ ...newWakeup, climate_entity: e.target.value })} />
-                                </div>
+                                <EntitySearchDropdown
+                                    label={lang === 'de' ? 'Licht Entity' : 'Light entity'}
+                                    value={newWakeup.light_entity}
+                                    onChange={v => setNewWakeup({ ...newWakeup, light_entity: v })}
+                                    entities={devices.filter(d => d.ha_entity_id?.startsWith('light.'))}
+                                    placeholder="light.schlafzimmer" />
+                                <EntitySearchDropdown
+                                    label={lang === 'de' ? 'Rolladen Entity' : 'Cover entity'}
+                                    value={newWakeup.cover_entity}
+                                    onChange={v => setNewWakeup({ ...newWakeup, cover_entity: v })}
+                                    entities={devices.filter(d => d.ha_entity_id?.startsWith('cover.'))}
+                                    placeholder="cover.schlafzimmer" />
+                                <EntitySearchDropdown
+                                    label={lang === 'de' ? 'Klima Entity' : 'Climate entity'}
+                                    value={newWakeup.climate_entity}
+                                    onChange={v => setNewWakeup({ ...newWakeup, climate_entity: v })}
+                                    entities={devices.filter(d => d.ha_entity_id?.startsWith('climate.'))}
+                                    placeholder="climate.schlafzimmer" />
                                 <div>
                                     <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{lang === 'de' ? 'Ramp-Dauer (Minuten)' : 'Ramp duration (minutes)'}</label>
                                     <input type="number" className="form-input" value={newWakeup.ramp_minutes}

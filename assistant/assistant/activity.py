@@ -198,6 +198,36 @@ class ActivityEngine:
         self._last_activity = RELAXING
         self._last_detection = None
 
+    def reload_config(self, activity_cfg: dict):
+        """Config aus YAML neu laden (wird von _reload_all_modules aufgerufen)."""
+        entities = activity_cfg.get("entities", {})
+        self.media_players = entities.get("media_players", [
+            "media_player.wohnzimmer",
+            "media_player.fernseher",
+            "media_player.tv",
+        ])
+        self.mic_sensors = entities.get("mic_sensors", [
+            "binary_sensor.mic_active",
+            "binary_sensor.microphone",
+        ])
+        self.bed_sensors = entities.get("bed_sensors", [
+            "binary_sensor.bed_occupancy",
+            "binary_sensor.bett",
+        ])
+        self.pc_sensors = entities.get("pc_sensors", [
+            "binary_sensor.pc_active",
+            "binary_sensor.computer",
+            "switch.pc",
+        ])
+
+        thresholds = activity_cfg.get("thresholds", {})
+        self.night_start = int(thresholds.get("night_start", 22))
+        self.night_end = int(thresholds.get("night_end", 7))
+        self.guest_person_count = int(thresholds.get("guest_person_count", 2))
+        self.focus_min_minutes = int(thresholds.get("focus_min_minutes", 30))
+        logger.info("ActivityDetector Config neu geladen (media_players=%d, bed_sensors=%d, night=%d-%d)",
+                     len(self.media_players), len(self.bed_sensors), self.night_start, self.night_end)
+
     def set_manual_override(self, activity: str, duration_minutes: int = 120):
         """Setzt einen manuellen Aktivitaets-Override.
 
@@ -367,11 +397,18 @@ class ActivityEngine:
         return True
 
     def _check_media_playing(self, states: list[dict]) -> bool:
-        """Prueft ob ein konfigurierter Media Player aktiv ist (TV, Film)."""
+        """Prueft ob ein konfigurierter Media Player aktiv ist (TV, Film).
+
+        Erkennt nicht nur "playing" sondern auch "on", "paused", "buffering" —
+        also jeden Zustand der bedeutet, dass der TV an ist und jemand zuschaut.
+        Nur "off", "standby", "unavailable", "unknown", "idle" gelten als inaktiv.
+        """
+        inactive_states = {"off", "standby", "unavailable", "unknown", "idle"}
         for state in states:
             entity_id = state.get("entity_id", "")
             if entity_id in self.media_players:
-                if state.get("state") == "playing":
+                s = state.get("state", "off").lower()
+                if s not in inactive_states:
                     return True
         return False
 
@@ -449,13 +486,17 @@ class ActivityEngine:
     def _classify(self, signals: dict) -> tuple[str, float]:
         """
         Klassifiziert die Aktivitaet basierend auf gesammelten Signalen.
-        Prioritaet: away > sleeping > in_call > watching > guests > focused > relaxing
+        Prioritaet: away > watching > sleeping > in_call > guests > focused > relaxing
         """
         # Niemand zu Hause
         if signals.get("away"):
             return AWAY, 0.95
 
-        # Schlaf hat hoechste Prioritaet (nach away)
+        # Media/TV hat Vorrang vor Schlaf: Wer TV schaut, schlaeft nicht
+        if signals.get("media_playing"):
+            return WATCHING, 0.85
+
+        # Schlaf (nur wenn kein Media aktiv — wird oben abgefangen)
         if signals.get("sleeping"):
             confidence = 0.90 if signals.get("lights_off") else 0.70
             return SLEEPING, confidence
@@ -463,10 +504,6 @@ class ActivityEngine:
         # Anruf hat hohe Prioritaet (darf nicht gestoert werden)
         if signals.get("in_call"):
             return IN_CALL, 0.95
-
-        # TV/Film schauen
-        if signals.get("media_playing"):
-            return WATCHING, 0.85
 
         # Gaeste anwesend
         if signals.get("guests"):

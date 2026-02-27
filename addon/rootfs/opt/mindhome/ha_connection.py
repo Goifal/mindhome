@@ -42,6 +42,8 @@ class HAConnection:
         self._ws_connected = False
         self._ws_id = 1
         self._ws_lock = threading.Lock()
+        self._cb_lock = threading.Lock()
+        self._queue_lock = threading.Lock()
         self._event_callbacks: List[dict] = []
         self._response_handlers: Dict[int, Callable] = {}
         self._reconnect_delay = 5
@@ -146,11 +148,15 @@ class HAConnection:
             payload = self._validate_climate_call(payload)
         result = self._api_request("POST", f"services/{domain}/{service}", payload)
         if result is None and not self._is_online:
-            self._offline_queue.append({
-                "domain": domain, "service": service,
-                "data": payload, "queued_at": datetime.now(timezone.utc).isoformat()
-            })
-            logger.warning(f"Action queued (offline): {domain}.{service}")
+            with self._queue_lock:
+                if len(self._offline_queue) < 1000:
+                    self._offline_queue.append({
+                        "domain": domain, "service": service,
+                        "data": payload, "queued_at": datetime.now(timezone.utc).isoformat()
+                    })
+                    logger.warning(f"Action queued (offline): {domain}.{service} ({len(self._offline_queue)} in queue)")
+                else:
+                    logger.warning(f"Offline queue voll (1000) — {domain}.{service} verworfen")
         return result
 
     def _validate_climate_call(self, payload):
@@ -261,8 +267,11 @@ class HAConnection:
             logger.warning(f"Failed to fetch automation configs: {e}")
             return self._auto_cfg_cache or []
 
-    def _extract_actions_flat(self, actions):
+    def _extract_actions_flat(self, actions, _depth=0):
         """Recursively flatten nested HA automation actions (choose/if/sequence)."""
+        if _depth > 20:
+            logger.warning("_extract_actions_flat: max depth (20) erreicht, abgebrochen")
+            return []
         if not actions:
             return []
         if not isinstance(actions, list):
@@ -276,25 +285,25 @@ class HAConnection:
                 flat.append(action)
             # Nested: sequence
             if "sequence" in action:
-                flat.extend(self._extract_actions_flat(action["sequence"]))
+                flat.extend(self._extract_actions_flat(action["sequence"], _depth + 1))
             # Nested: choose (each option has a sequence)
             for option in action.get("choose", []) or []:
                 if isinstance(option, dict):
-                    flat.extend(self._extract_actions_flat(option.get("sequence", [])))
+                    flat.extend(self._extract_actions_flat(option.get("sequence", []), _depth + 1))
             # choose default
             if "default" in action:
-                flat.extend(self._extract_actions_flat(action["default"]))
+                flat.extend(self._extract_actions_flat(action["default"], _depth + 1))
             # Nested: if/then/else
             if "then" in action:
-                flat.extend(self._extract_actions_flat(action["then"]))
+                flat.extend(self._extract_actions_flat(action["then"], _depth + 1))
             if "else" in action:
-                flat.extend(self._extract_actions_flat(action["else"]))
+                flat.extend(self._extract_actions_flat(action["else"], _depth + 1))
             # Nested: repeat
             if isinstance(action.get("repeat"), dict):
-                flat.extend(self._extract_actions_flat(action["repeat"].get("sequence", [])))
+                flat.extend(self._extract_actions_flat(action["repeat"].get("sequence", []), _depth + 1))
             # Nested: parallel
             if "parallel" in action:
-                flat.extend(self._extract_actions_flat(action["parallel"]))
+                flat.extend(self._extract_actions_flat(action["parallel"], _depth + 1))
         return flat
 
     def get_ha_automated_entities(self):
@@ -549,7 +558,8 @@ class HAConnection:
             self._response_handlers.pop(msg_id, None)
 
     def subscribe_events(self, callback: Callable, event_type: Optional[str] = None):
-        self._event_callbacks.append({"callback": callback, "event_type": event_type})
+        with self._cb_lock:
+            self._event_callbacks.append({"callback": callback, "event_type": event_type})
         if self._ws_connected:
             msg = {"id": self._next_ws_id(), "type": "subscribe_events"}
             if event_type:
@@ -581,7 +591,9 @@ class HAConnection:
                     self.get_timezone()
                 except Exception:
                     pass
-                for cb_info in list(self._event_callbacks):
+                with self._cb_lock:
+                    cbs = list(self._event_callbacks)
+                for cb_info in cbs:
                     msg = {"id": self._next_ws_id(), "type": "subscribe_events"}
                     if cb_info.get("event_type"):
                         msg["event_type"] = cb_info["event_type"]
@@ -600,11 +612,15 @@ class HAConnection:
                 event = data.get("event", {})
                 event_type = event.get("event_type", "")
                 self._stats["events_received"] += 1
-                if self._batch_callbacks:
+                with self._cb_lock:
+                    has_batch = bool(self._batch_callbacks)
+                if has_batch:
                     self._event_queue.put(event)
                     self._stats["events_batched"] += 1
                 else:
-                    for cb_info in list(self._event_callbacks):
+                    with self._cb_lock:
+                        cbs = list(self._event_callbacks)
+                    for cb_info in cbs:
                         if cb_info["event_type"] is None or cb_info["event_type"] == event_type:
                             try:
                                 cb_info["callback"](event)
@@ -656,7 +672,8 @@ class HAConnection:
     # ======================================================================
 
     def register_batch_callback(self, callback: Callable):
-        self._batch_callbacks.append(callback)
+        with self._cb_lock:
+            self._batch_callbacks.append(callback)
         if not self._batch_thread or not self._batch_thread.is_alive():
             self._batch_thread = threading.Thread(target=self._batch_worker, daemon=True)
             self._batch_thread.start()
@@ -672,7 +689,9 @@ class HAConnection:
                 except queue.Empty:
                     continue
             if batch:
-                for cb in list(self._batch_callbacks):
+                with self._cb_lock:
+                    cbs = list(self._batch_callbacks)
+                for cb in cbs:
                     try:
                         cb(batch)
                     except Exception as e:
@@ -714,11 +733,12 @@ class HAConnection:
         self._start_ws()
 
     def _process_offline_queue(self):
-        if not self._offline_queue:
-            return
-        logger.info(f"Processing {len(self._offline_queue)} queued actions...")
-        q = self._offline_queue.copy()
-        self._offline_queue.clear()
+        with self._queue_lock:
+            if not self._offline_queue:
+                return
+            logger.info(f"Processing {len(self._offline_queue)} queued actions...")
+            q = self._offline_queue.copy()
+            self._offline_queue.clear()
         for action in q:
             self.call_service(action["domain"], action["service"], action["data"])
 

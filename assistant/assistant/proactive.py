@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # ── Room-Profile-Cache fuer proactive.py (vermeidet wiederholtes YAML-Parsen) ──
 _room_profiles_cache: dict = {}
 _room_profiles_ts: float = 0.0
-_ROOM_PROFILES_TTL = 600  # 10 Min
+_ROOM_PROFILES_TTL = 60  # 1 Min
 
 
 def _get_room_profiles_cached() -> dict:
@@ -1217,7 +1217,7 @@ class ProactiveManager:
             )
 
         except Exception as e:
-            logger.error("Fehler bei proaktiver Meldung: %s", e)
+            logger.error("Fehler bei proaktiver Meldung [%s/%s]: %s", event_type, urgency, e, exc_info=True)
 
     async def _build_arrival_status(self, person_name: str) -> dict:
         """Baut einen Status-Bericht fuer eine ankommende Person."""
@@ -1484,6 +1484,7 @@ class ProactiveManager:
     async def _run_diagnostics_loop(self):
         """Periodischer Diagnostik-Check (Entity-Watchdog + Wartungs-Erinnerungen)."""
         await asyncio.sleep(PROACTIVE_DIAGNOSTICS_STARTUP_DELAY)
+        logger.info("Diagnostics-Loop gestartet")
 
         while self._running:
             try:
@@ -1674,6 +1675,7 @@ class ProactiveManager:
         LOW-Events nach dem konfigurierten batch_interval (default 30 Min).
         """
         await asyncio.sleep(PROACTIVE_BATCH_STARTUP_DELAY)
+        logger.info("Batch-Loop gestartet (interval=%ds)", self.batch_interval)
         medium_check_interval = 10 * 60  # 10 Min fuer MEDIUM
         timer = 0
 
@@ -2719,6 +2721,7 @@ class ProactiveManager:
     async def _run_threat_assessment_loop(self):
         """Periodischer Sicherheits- + Energie-Check."""
         await asyncio.sleep(PROACTIVE_THREAT_STARTUP_DELAY)
+        logger.info("Threat-Assessment-Loop gestartet")
 
         while self._running:
             # Threat Assessment
@@ -2809,6 +2812,7 @@ class ProactiveManager:
         all_quiet_prob = ambient_cfg.get("all_quiet_probability", 0.2)
 
         await asyncio.sleep(PROACTIVE_AMBIENT_CHECK_INTERVAL)
+        logger.info("Ambient-Presence-Loop gestartet (interval=%ds)", interval)
 
         while self._running:
             try:

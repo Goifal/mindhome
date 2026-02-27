@@ -62,7 +62,7 @@ class HomeAssistantClient:
         """Gibt die shared aiohttp Session zurueck (thread-safe lazy init)."""
         async with self._get_lock():
             if self._session is None or self._session.closed:
-                timeout = aiohttp.ClientTimeout(total=10)
+                timeout = aiohttp.ClientTimeout(total=20)
                 self._session = aiohttp.ClientSession(timeout=timeout)
             return self._session
 
