@@ -436,23 +436,20 @@ class ActivityEngine:
         """Prueft ob der Benutzer schlaeft.
 
         Bett belegt = schlaeft (unabhaengig von Tageszeit, auch Mittagsschlaf).
+        Der Bettsensor ist das staerkste Signal und wird NICHT durch TV/PC
+        ueberstimmt — wer im Bett liegt und der TV noch laeuft, ist eingeschlafen
+        oder will schlafen.
         Nacht + alle Lichter aus = wahrscheinlich schlaeft (Fallback ohne Bettsensor).
-        ABER: PC aktiv oder Media spielt → definitiv NICHT schlafen.
         """
-        # PC aktiv oder Media spielt → User ist wach, egal was andere Signale sagen
-        if self._check_pc_active(states) or self._check_media_playing(states):
-            return False
-
-        # Bett belegt? → Primaeres Signal, tageszeit-unabhaengig
-        bed_occupied = False
+        # Bett belegt? → Staerkstes Signal, ueberstimmt alles
         for state in states:
             if state.get("entity_id", "") in self.bed_sensors:
                 if state.get("state") == "on":
-                    bed_occupied = True
-                    break
+                    return True
 
-        if bed_occupied:
-            return True
+        # Ohne Bettsensor: PC aktiv oder Media spielt → User ist wach
+        if self._check_pc_active(states) or self._check_media_playing(states):
+            return False
 
         # Fallback: Nacht + alle Lichter aus (fuer Installationen ohne Bettsensor)
         now = datetime.now()
@@ -505,17 +502,13 @@ class ActivityEngine:
     def _classify(self, signals: dict) -> tuple[str, float]:
         """
         Klassifiziert die Aktivitaet basierend auf gesammelten Signalen.
-        Prioritaet: away > watching > sleeping > in_call > guests > focused > relaxing
+        Prioritaet: away > sleeping > in_call > watching > guests > focused > relaxing
         """
         # Niemand zu Hause
         if signals.get("away"):
             return AWAY, 0.95
 
-        # Media/TV hat Vorrang vor Schlaf: Wer TV schaut, schlaeft nicht
-        if signals.get("media_playing"):
-            return WATCHING, 0.85
-
-        # Schlaf (nur wenn kein Media aktiv — wird oben abgefangen)
+        # Schlaf hat Vorrang wenn Bettsensor aktiv (eingeschlafen mit TV an)
         if signals.get("sleeping"):
             confidence = 0.90 if signals.get("lights_off") else 0.70
             return SLEEPING, confidence
@@ -523,6 +516,10 @@ class ActivityEngine:
         # Anruf hat hohe Prioritaet (darf nicht gestoert werden)
         if signals.get("in_call"):
             return IN_CALL, 0.95
+
+        # Media/TV nur wenn nicht im Bett und nicht im Anruf
+        if signals.get("media_playing"):
+            return WATCHING, 0.85
 
         # Gaeste anwesend
         if signals.get("guests"):
