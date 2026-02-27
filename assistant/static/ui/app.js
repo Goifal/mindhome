@@ -1012,6 +1012,11 @@ const HELP_TEXTS = {
   'self_awareness.meta_humor': {title:'Meta-Humor', text:'Selbstironische Bemerkungen ueber eigene Algorithmen: "Meine Prognose-Modelle deuten auf... nennen wir es eine fundierte Vermutung." Ohne: sachlichere Selbsteinschaetzung.'},
   'proactive_personality.enabled': {title:'Proaktive Persoenlichkeit', text:'Proaktive Meldungen und Briefings bekommen Charakter basierend auf Tageszeit und Situation: "Ambitioniert, Sir." (6 Uhr morgens) oder "Das Wochenend-Briefing, wenn du gestattest."'},
   'proactive_personality.sarcasm_in_notifications': {title:'Sarkasmus in Meldungen', text:'Proaktive Meldungen duerfen trockenen Humor enthalten: "Waschmaschine fertig. Zum dritten Mal diese Woche — Rekordverdaechtig." Ohne: rein sachliche Meldungen.'},
+  'character_lock.enabled': {title:'Charakter-Lock', text:'Aktiviert den dreistufigen Schutz gegen LLM-Durchbruch. Verhindert dass Jarvis wie ein generischer KI-Assistent klingt statt wie J.A.R.V.I.S.'},
+  'character_lock.closing_anchor': {title:'Prompt-Anker', text:'Fuegt eine Charakter-Erinnerung am ENDE des System Prompts ein (nach allen Kontext-Daten). LLMs gewichten das Prompt-Ende stark — das ist die wirksamste Einzelmassnahme.'},
+  'character_lock.structural_filter': {title:'Struktureller Filter', text:'Erkennt typische LLM-Strukturen wie nummerierte Listen, Bullet Points und Aufzaehlungen und wandelt sie in Fliesstext um. JARVIS listet nicht auf — er spricht.'},
+  'character_lock.character_retry': {title:'Character-Retry', text:'Wenn eine Antwort trotz Filter noch zu LLM-artig klingt (Score >= Schwelle), wird automatisch ein zweiter Versuch mit hartem JARVIS-Prompt gestartet.'},
+  'character_lock.retry_threshold': {title:'Retry-Empfindlichkeit', text:'Ab welchem LLM-Score ein Retry ausgeloest wird. 1 = sehr empfindlich (fast jede Antwort wird geprueft), 3 = normal (nur bei deutlichem LLM-Durchbruch), 5 = nur bei starkem Bruch.'},
 };
 
 function helpBtn(path) {
@@ -2517,6 +2522,14 @@ function renderJarvisFeatures() {
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Proaktive Persoenlichkeit</div>' +
     fToggle('proactive_personality.enabled', 'Briefings mit Charakter') +
     fToggle('proactive_personality.sarcasm_in_notifications', 'Trockener Humor in Meldungen')
+  ) +
+  sectionWrap('&#128274;', 'Charakter-Schutz',
+    fInfo('Verhindert dass das LLM aus der JARVIS-Rolle faellt und typische KI-Floskeln verwendet. Dreistufiger Schutz: Prompt-Anker am Ende, struktureller Post-Filter und automatischer Character-Retry.') +
+    fToggle('character_lock.enabled', 'Charakter-Lock aktiviert') +
+    fToggle('character_lock.closing_anchor', 'Prompt-Anker (Erinnerung am Prompt-Ende)') +
+    fToggle('character_lock.structural_filter', 'Struktureller Filter (Listen/Aufzaehlungen entfernen)') +
+    fToggle('character_lock.character_retry', 'Automatischer Retry bei LLM-Durchbruch') +
+    fRange('character_lock.retry_threshold', 'Retry-Empfindlichkeit', 1, 5, 1, ['Sehr empfindlich','','Normal','','Nur bei starkem Bruch'])
   ) +
   sectionWrap('&#128221;', 'Benannte Protokolle',
     fInfo('Multi-Step-Sequenzen per Sprache erstellen und ausfuehren. Z.B. "Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu, TV an" — dann reicht "Filmabend" zum Ausfuehren.') +

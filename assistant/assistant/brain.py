@@ -3161,6 +3161,46 @@ class AssistantBrain(BrainCallbacksMixin):
                 # Fehlgeschlagene Anfrage merken fuer Retry bei "Ja"
                 self._last_failed_query = text
 
+        # Character-Lock: Retry wenn Antwort trotz Filter noch zu LLM-artig klingt
+        _cl_cfg = cfg.yaml_config.get("character_lock", {})
+        if (_cl_cfg.get("enabled", True) and _cl_cfg.get("character_retry", True)
+                and response_text and len(response_text) > 30):
+            _llm_score = self._calculate_llm_voice_score(response_text)
+            _retry_threshold = _cl_cfg.get("retry_threshold", 3)
+            if _llm_score >= _retry_threshold:
+                logger.warning(
+                    "Character-Retry: LLM-Score %d >= Schwelle %d, versuche erneut. Original: '%s'",
+                    _llm_score, _retry_threshold, response_text[:80],
+                )
+                _char_retry_msgs = [
+                    {"role": "system", "content": (
+                        "Du bist JARVIS. Trocken, kurz, praezise. Butler-Ton.\n"
+                        "VERBOTEN: Listen, Aufzaehlungen, Erklaerungen, Begeisterung, Floskeln.\n"
+                        "Maximal 2 Saetze. Fakt + Loesung. Sonst nichts.\n"
+                        "Formuliere die folgende Antwort als JARVIS um — "
+                        "kuerzer, trockener, ohne LLM-Floskeln:\n\n"
+                        f"Original: {response_text}"
+                    )},
+                ]
+                try:
+                    _char_resp = await self.ollama.chat(
+                        messages=_char_retry_msgs, model=model,
+                        temperature=0.2, max_tokens=128, think=False,
+                    )
+                    _char_text = _char_resp.get("message", {}).get("content", "")
+                    if _char_text:
+                        from .ollama_client import strip_think_tags
+                        _char_text = strip_think_tags(_char_text).strip()
+                    if _char_text:
+                        _char_text = self._filter_response(_char_text)
+                    if _char_text and len(_char_text) < len(response_text):
+                        response_text = _char_text
+                        logger.info("Character-Retry erfolgreich: '%s'", response_text[:80])
+                    else:
+                        logger.info("Character-Retry: Ergebnis nicht kuerzer, behalte Original")
+                except Exception as e:
+                    logger.warning("Character-Retry fehlgeschlagen: %s", e)
+
         # Phase 6.9: Running Gag an Antwort anhaengen
         if gag_response and response_text:
             response_text = f"{response_text} {gag_response}"
@@ -4254,6 +4294,54 @@ class AssistantBrain(BrainCallbacksMixin):
             "Das ist eine interessante Frage",
             "Wow,", "Wow!",
             "Oh,", "Oh!",
+            # Character-Lock: Erweiterte LLM-Floskeln
+            "Es gibt verschiedene Möglichkeiten",
+            "Es gibt verschiedene Moeglichkeiten",
+            "Es gibt mehrere Möglichkeiten",
+            "Es gibt mehrere Moeglichkeiten",
+            "Hier sind einige",
+            "Hier ist eine Übersicht",
+            "Hier ist eine Uebersicht",
+            "Lass mich das erklären",
+            "Lass mich das erklaeren",
+            "Zusammenfassend lässt sich sagen",
+            "Zusammenfassend laesst sich sagen",
+            "Zusammenfassend",
+            "Darüber hinaus",
+            "Darueber hinaus",
+            "Abschließend",
+            "Abschliessend",
+            "Ich würde empfehlen",
+            "Ich wuerde empfehlen",
+            "Es gibt einige Dinge zu beachten",
+            "Ich hoffe, das hilft",
+            "Ich hoffe das hilft",
+            "Folgende Punkte",
+            "Folgende Optionen",
+            "Im Folgenden",
+            "Es ist wichtig zu beachten",
+            "Es ist wichtig zu wissen",
+            "Hier eine kurze Zusammenfassung",
+            "Hier eine Zusammenfassung",
+            "Das sind die wichtigsten Punkte",
+            "Lass mich dir zeigen",
+            "Ich erkläre dir",
+            "Ich erklaere dir",
+            "Das Wichtigste zuerst",
+            "Zunächst möchte ich",
+            "Zunaechst moechte ich",
+            "Ich möchte darauf hinweisen",
+            "Ich moechte darauf hinweisen",
+            "Das ist ein guter Punkt",
+            "Das ist ein wichtiger Punkt",
+            "Verschiedene Aspekte",
+            "Mehrere Faktoren",
+            "In diesem Zusammenhang",
+            "Im Wesentlichen",
+            "Es lässt sich festhalten",
+            "Es laesst sich festhalten",
+            "Diesbezüglich",
+            "Diesbezueglich",
         ])
         for phrase in banned_phrases:
             # Case-insensitive Entfernung mit Wortgrenzen-Check
@@ -4402,6 +4490,34 @@ class AssistantBrain(BrainCallbacksMixin):
         text = re.sub(r"^\d+\.\s+", "", text, flags=re.MULTILINE)   # 1. numbered lists
         text = re.sub(r"`(.+?)`", r"\1", text)                      # `code`
 
+        # 3e. Character-Lock: Strukturelle LLM-Muster bereinigen
+        _cl_cfg = filter_config  # bereits geladen
+        _cl_global = cfg.yaml_config.get("character_lock", {})
+        if _cl_global.get("enabled", True) and _cl_global.get("structural_filter", True):
+            # Mehrzeilige Listen zu Fliesstext zusammenfuegen
+            # (Marker wurden oben entfernt, aber Zeilenumbrueche bleiben)
+            _lines = [l.strip() for l in text.split("\n") if l.strip()]
+            if len(_lines) >= 3:
+                # Wenn die meisten Zeilen kurz sind (< 80 Zeichen) = wahrscheinlich Liste
+                _short_lines = sum(1 for l in _lines if len(l) < 80)
+                if _short_lines >= len(_lines) * 0.6:
+                    text = " ".join(_lines)
+                    logger.debug("Strukturfilter: Listen-Zeilen zu Fliesstext zusammengefuegt")
+
+            # "Option A: ..." / "Variante 1: ..." Muster entfernen
+            text = re.sub(
+                r"(?:Option|Variante|M[oö]glichkeit|Moeglichkeit)\s+\w+:\s*",
+                "", text, flags=re.IGNORECASE
+            )
+
+            # LLM-Enthusiasmus daempfen: Mehr als 2 Ausrufezeichen → nur das erste behalten
+            if text.count("!") > 2:
+                _first_excl = text.index("!")
+                text = text[:_first_excl + 1] + text[_first_excl + 1:].replace("!", ".")
+
+            # Mehrfach-Ausrufezeichen (!! / !!!) → einzelner Punkt
+            text = re.sub(r"!{2,}", ".", text)
+
         # 4. Mehrere Leerzeichen / fuehrende Leerzeichen bereinigen
         text = re.sub(r"  +", " ", text).strip()
 
@@ -4455,6 +4571,48 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.debug("Response-Filter: '%s' -> '%s'", original[:80], text[:80])
 
         return text if text else original
+
+    @staticmethod
+    def _calculate_llm_voice_score(text: str) -> int:
+        """Berechnet einen LLM-Voice-Score. Hoeher = mehr LLM-artig.
+
+        0-1: Klingt wie JARVIS
+        2: Grenzwertig
+        3+: LLM-Durchbruch, Retry empfohlen
+        """
+        score = 0
+        t = text.lower()
+
+        # Strukturelle Signale
+        if re.search(r"^\d+\.", text, re.MULTILINE):
+            score += 2  # Nummerierte Liste
+        if text.count("!") > 2:
+            score += 1  # Ueberschwenglichkeit
+        if len(re.split(r"[.!?]+", text)) > 6:
+            score += 1  # Zu viele Saetze
+        if len(text) > 400:
+            score += 1  # Zu lang
+
+        # Inhaltliche Signale — typische LLM-Phrasen
+        _llm_phrases = [
+            "es gibt verschiedene", "es gibt mehrere", "hier sind",
+            "lass mich", "zusammenfassend", "darüber hinaus",
+            "darueber hinaus", "abschliessend", "abschließend",
+            "ich würde empfehlen", "ich wuerde empfehlen",
+            "folgende punkte", "folgende optionen", "im folgenden",
+            "es ist wichtig", "ich hoffe", "ich erkläre",
+            "ich erklaere", "das wichtigste", "zunächst möchte",
+            "zunaechst moechte", "guter punkt", "wichtiger punkt",
+            "verschiedene aspekte", "mehrere faktoren",
+            "in diesem zusammenhang", "grundsätzlich", "grundsaetzlich",
+            "prinzipiell", "im wesentlichen", "diesbezüglich",
+            "diesbezueglich", "hinsichtlich", "bezüglich", "bezueglich",
+        ]
+        for phrase in _llm_phrases:
+            if phrase in t:
+                score += 1
+
+        return score
 
     async def health_check(self) -> dict:
         """Prueft den Zustand aller Komponenten."""

@@ -1881,6 +1881,20 @@ class PersonalityEngine:
             prompt += "\n\nAKTUELLER KONTEXT:\n"
             prompt += self._format_context(context)
 
+        # Character Lock: Anker am Ende des Prompts (nach Kontext-Daten)
+        # LLMs gewichten das Prompt-Ende stark — das verhindert Character-Bruch
+        _cl_cfg = yaml_config.get("character_lock", {})
+        if _cl_cfg.get("enabled", True) and _cl_cfg.get("closing_anchor", True):
+            prompt += (
+                "\n\n--- CHARAKTER-LOCK ---\n"
+                "ERINNERUNG: Du bist J.A.R.V.I.S. NICHT ein hilfreicher KI-Assistent.\n"
+                "KURZ. TROCKEN. PRAEZISE. Kein Aufzaehlen, kein Erklaeren, kein Schwaermen.\n"
+                f"Fakt + Loesung. Fertig. Maximal {max_sentences} Saetze.\n"
+                "VERBOTEN: Listen (1. 2. 3.), 'Es gibt verschiedene...', 'Hier sind...', "
+                "'Lass mich erklaeren...', 'Zusammenfassend...', ueberschwengliche Begeisterung.\n"
+                "Du bist ein Butler. Handle entsprechend."
+            )
+
         return prompt
 
     @staticmethod

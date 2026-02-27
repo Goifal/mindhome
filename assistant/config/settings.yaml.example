@@ -46,6 +46,12 @@ self_awareness:
 proactive_personality:
   enabled: true
   sarcasm_in_notifications: true
+character_lock:
+  enabled: true
+  closing_anchor: true
+  structural_filter: true
+  character_retry: true
+  retry_threshold: 3
 mood_complexity:
   enabled: true
 wellness:
