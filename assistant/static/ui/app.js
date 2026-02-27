@@ -1992,7 +1992,7 @@ function renderRooms() {
     '<option value="heating_curve" ' + (hMode==='heating_curve'?'selected':'') + '>Heizkurve (Waermepumpe, Vorlauf-Offset)</option>' +
     '</select></div>' +
     (isCurve ?
-      fText('heating.curve_entity', 'Heizungs-Entity', 'z.B. climate.panasonic_heat_pump_main_z1_temp') +
+      fEntityPickerSingle('heating.curve_entity', 'Heizungs-Entity', ['climate'], 'z.B. climate.panasonic_heat_pump_main_z1_temp') +
       fRange('heating.curve_offset_min', 'Min. Offset (°C)', -10, 0, 0.5) +
       fRange('heating.curve_offset_max', 'Max. Offset (°C)', 0, 10, 0.5) +
       fRange('heating.night_offset', 'Nacht-Offset (°C)', -10, 0, 0.5) +
@@ -4218,7 +4218,7 @@ function renderCovers() {
   sectionWrap('&#127796;', 'Urlaubs-Simulation',
     fInfo('Simuliert Anwesenheit ueber Rolllaeden wenn der Urlaubsmodus aktiv ist. Erfordert eine input_boolean Entity in Home Assistant (z.B. input_boolean.vacation_mode).') +
     fToggle('seasonal_actions.cover_automation.presence_simulation', 'Urlaubs-Simulation aktiv') +
-    fText('seasonal_actions.cover_automation.vacation_mode_entity', 'Urlaubsmodus-Entity', 'z.B. input_boolean.vacation_mode') +
+    fEntityPickerSingle('seasonal_actions.cover_automation.vacation_mode_entity', 'Urlaubsmodus-Entity', ['input_boolean'], 'z.B. input_boolean.vacation_mode') +
     fRange('vacation_simulation.morning_hour', 'Morgens oeffnen um', 5, 11, 1) +
     fRange('vacation_simulation.evening_hour', 'Abends schliessen um', 16, 22, 1) +
     fRange('vacation_simulation.night_hour', 'Nachts komplett zu um', 21, 24, 1) +
@@ -4711,7 +4711,7 @@ function renderVacuumRobot(floor, floorLabel) {
   const prefix = 'vacuum.robots.' + floor;
   let html = '<div class="s-card" style="margin:10px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
   html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">&#129529; ' + floorLabel + '</div>';
-  html += fText(prefix + '.entity_id', 'Entity-ID', 'z.B. vacuum.dreame_' + floor);
+  html += fEntityPickerSingle(prefix + '.entity_id', 'Entity-ID', ['vacuum'], 'z.B. vacuum.dreame_' + floor);
   html += fText(prefix + '.name', 'Name', 'z.B. Saugroboter ' + floor.toUpperCase());
   html += fText(prefix + '.nickname', 'Spitzname', 'z.B. der Kleine');
   html += fKeyValue(prefix + '.rooms', 'Raum-Segmente (Dreame Raum-IDs)', 'Raumname', 'Segment-ID',
