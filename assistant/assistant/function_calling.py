@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 import yaml
 
-from .config import settings, yaml_config
+from .config import settings, yaml_config, get_room_profiles
 from .config_versioning import ConfigVersioning
 from .ha_client import HomeAssistantClient
 
@@ -29,31 +29,8 @@ _EDITABLE_CONFIGS = {
 
 logger = logging.getLogger(__name__)
 
-# ── Room-Profile-Cache: room_profiles.yaml einmal laden, nicht bei jedem Aufruf ──
-_room_profiles_cache: dict = {}
-_room_profiles_ts: float = 0.0
-_ROOM_PROFILES_TTL = 600  # 10 Minuten
-
-
-def _get_room_profiles() -> dict:
-    """Liefert room_profiles.yaml aus Cache (oder laedt bei Bedarf von Disk)."""
-    global _room_profiles_cache, _room_profiles_ts
-    now = time.time()
-    if _room_profiles_cache and (now - _room_profiles_ts) < _ROOM_PROFILES_TTL:
-        return _room_profiles_cache
-    try:
-        rp_file = _CONFIG_DIR / "room_profiles.yaml"
-        if rp_file.exists():
-            with open(rp_file) as f:
-                _room_profiles_cache = yaml.safe_load(f) or {}
-        else:
-            _room_profiles_cache = {}
-    except Exception as e:
-        logger.debug("Room-Profiles nicht ladbar: %s", e)
-        if not _room_profiles_cache:
-            _room_profiles_cache = {}
-    _room_profiles_ts = now
-    return _room_profiles_cache
+# Room-Profiles: zentraler Cache aus config.py
+_get_room_profiles = get_room_profiles
 
 
 # ── Entity-Katalog: Echte Raum- und Entity-Namen fuer Tool-Beschreibungen ──

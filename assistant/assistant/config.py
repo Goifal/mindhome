@@ -2,11 +2,15 @@
 Zentrale Konfiguration - liest .env und settings.yaml
 """
 
+import logging
 import os
+import time
 from pathlib import Path
 
 import yaml
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -237,3 +241,30 @@ def get_person_title(name: str = "") -> str:
         if title:
             return title
     return "Sir"
+
+
+# ── Room-Profile-Cache (zentral, von function_calling.py + proactive.py genutzt) ──
+_room_profiles_cache: dict = {}
+_room_profiles_ts: float = 0.0
+_ROOM_PROFILES_TTL = 120  # 2 Min (Kompromiss zwischen Aktualitaet und I/O)
+_ROOM_PROFILES_PATH = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
+
+
+def get_room_profiles() -> dict:
+    """Liefert room_profiles.yaml aus Cache (oder laedt bei Bedarf von Disk)."""
+    global _room_profiles_cache, _room_profiles_ts
+    now = time.time()
+    if _room_profiles_cache and (now - _room_profiles_ts) < _ROOM_PROFILES_TTL:
+        return _room_profiles_cache
+    try:
+        if _ROOM_PROFILES_PATH.exists():
+            with open(_ROOM_PROFILES_PATH) as f:
+                _room_profiles_cache = yaml.safe_load(f) or {}
+        else:
+            _room_profiles_cache = {}
+    except Exception as e:
+        logger.debug("Room-Profiles nicht ladbar: %s", e)
+        if not _room_profiles_cache:
+            _room_profiles_cache = {}
+    _room_profiles_ts = now
+    return _room_profiles_cache

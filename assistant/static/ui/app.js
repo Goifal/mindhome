@@ -2066,7 +2066,7 @@ function renderVoice() {
     {v:'notification',l:'Benachrichtigung'}
   ];
   return sectionWrap('&#127897;', 'Sprach-Engine (STT / TTS)',
-    fInfo('Whisper-Modell und Piper-Stimme. Aenderungen hier erfordern einen Container-Neustart (System → Neustart).') +
+    fInfo('Whisper-Modell und Piper-Stimme. Aenderungen werden automatisch uebernommen.') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Spracherkennung (Whisper STT)</div>' +
     fSelect('speech.stt_model', 'Whisper-Modell', [
       {v:'tiny',l:'Tiny — Schnellstes (schlechteste Qualitaet)'},

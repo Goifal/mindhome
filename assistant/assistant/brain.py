@@ -29,7 +29,8 @@ from typing import Optional
 from .action_planner import ActionPlanner
 from .activity import ActivityEngine
 from .autonomy import AutonomyManager
-from .config import settings, yaml_config, get_person_title, set_active_person
+from . import config as cfg
+from .config import settings, get_person_title, set_active_person
 from .context_builder import ContextBuilder
 from .cooking_assistant import CookingAssistant
 from .device_health import DeviceHealthMonitor
@@ -112,7 +113,7 @@ def _audit_log(action: str, details: dict = None):
 # Phase 7.5: Szenen-Intelligenz — Prompt fuer natuerliches Situationsverstaendnis
 def _build_scene_intelligence_prompt() -> str:
     """Baut den Szenen-Intelligenz-Prompt je nach Heizungsmodus."""
-    heating = yaml_config.get("heating", {})
+    heating = cfg.yaml_config.get("heating", {})
     mode = heating.get("mode", "room_thermostat")
 
     if mode == "heating_curve":
@@ -407,7 +408,7 @@ class AssistantBrain(BrainCallbacksMixin):
         self.spontaneous.set_notify_callback(self._handle_spontaneous_observation)
 
         # Jarvis-Feature 8: Woechentlicher Lern-Bericht (Background-Task)
-        weekly_cfg = yaml_config.get("learning", {}).get("weekly_report", {})
+        weekly_cfg = cfg.yaml_config.get("learning", {}).get("weekly_report", {})
         if weekly_cfg.get("enabled", True):
             self._task_registry.create_task(
                 self._weekly_learning_report_loop(), name="weekly_learning_report"
@@ -477,7 +478,7 @@ class AssistantBrain(BrainCallbacksMixin):
             if not states:
                 return None
 
-            multi_room_cfg = yaml_config.get("multi_room", {})
+            multi_room_cfg = cfg.yaml_config.get("multi_room", {})
             if not multi_room_cfg.get("enabled", True):
                 return None
 
@@ -816,7 +817,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Fallback: Wenn kein Person ermittelt, Primary User aus Household annehmen
         # (nur wenn explizit konfiguriert, nicht den Pydantic-Default "Max" nutzen)
         if not person:
-            primary = yaml_config.get("household", {}).get("primary_user", "")
+            primary = cfg.yaml_config.get("household", {}).get("primary_user", "")
             if primary:
                 person = primary
 
@@ -1031,7 +1032,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     s for s in (states or [])
                     if s.get("entity_id", "").startswith("calendar.")
                 ]
-                configured = yaml_config.get("calendar", {}).get("entities", [])
+                configured = cfg.yaml_config.get("calendar", {}).get("entities", [])
                 if isinstance(configured, str):
                     configured = [configured]
 
@@ -1606,7 +1607,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 if isinstance(raw_result, dict) and raw_result.get("success"):
                     raw_data = raw_result["message"]
                     title = get_person_title(self._current_person)
-                    _hs_cfg = yaml_config.get("house_status", {})
+                    _hs_cfg = cfg.yaml_config.get("house_status", {})
                     _detail = _hs_cfg.get("detail_level", "normal")
                     if _detail == "kompakt":
                         _prompt_style = (
@@ -1681,7 +1682,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 if isinstance(raw_result, dict) and raw_result.get("success"):
                     raw_data = raw_result["message"]
                     title = get_person_title(self._current_person)
-                    _hs_cfg = yaml_config.get("house_status", {})
+                    _hs_cfg = cfg.yaml_config.get("house_status", {})
                     _detail = _hs_cfg.get("detail_level", "normal")
                     if _detail == "kompakt":
                         _prompt_style = (
@@ -1846,7 +1847,7 @@ class AssistantBrain(BrainCallbacksMixin):
         await emit_thinking()
 
         # Feature 1: Progressive Antworten — "Denken laut"
-        _prog_cfg = yaml_config.get("progressive_responses", {})
+        _prog_cfg = cfg.yaml_config.get("progressive_responses", {})
         if not stream_callback and _prog_cfg.get("enabled", True):
             if _prog_cfg.get("show_context_step", True):
                 _prog_msg = self.personality.get_progress_message("context")
@@ -1862,7 +1863,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Continuity und What-If laufen gleichzeitig statt nacheinander.
         # Spart 500ms-1.5s Latenz gegenueber der seriellen Ausfuehrung.
         # ----------------------------------------------------------------
-        ctx_timeout = float((yaml_config.get("context") or {}).get("api_timeout", 10))
+        ctx_timeout = float((cfg.yaml_config.get("context") or {}).get("api_timeout", 10))
 
         async def _safe_security_score():
             try:
@@ -1995,7 +1996,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Sektionen werden nach Prioritaet sortiert und solange hinzugefuegt
         # bis das Token-Budget fuer Sektionen erschoepft ist.
         # ----------------------------------------------------------------
-        context_cfg = yaml_config.get("context", {})
+        context_cfg = cfg.yaml_config.get("context", {})
         max_context_tokens = context_cfg.get("max_context_tokens", 6000)
         base_tokens = len(system_prompt) // 3
         user_tokens_est = len(text) // 3
@@ -2326,7 +2327,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         await emit_progress("thinking", _think_msg)
 
             # 6b. Einfache Anfragen: Direkt LLM aufrufen (mit Timeout + Fallback)
-            llm_timeout = (yaml_config.get("context") or {}).get("llm_timeout", 60)
+            llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
             try:
                 response = await asyncio.wait_for(
                     self.ollama.chat(
@@ -2593,7 +2594,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "reason": f"pushback:{pushback['rule_id']}",
                                 }
-                                timeout = yaml_config.get("pushback", {}).get("confirmation_timeout", 120)
+                                timeout = cfg.yaml_config.get("pushback", {}).get("confirmation_timeout", 120)
                                 await self.memory.redis.setex(
                                     SECURITY_CONFIRM_KEY,
                                     timeout,
@@ -3561,7 +3562,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not raw or not raw.strip():
             return "Alles ruhig im Haus."
 
-        hs_cfg = yaml_config.get("house_status", {})
+        hs_cfg = cfg.yaml_config.get("house_status", {})
         detail = hs_cfg.get("detail_level", "normal")
 
         lines = raw.strip().split("\n")
@@ -3814,7 +3815,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not text:
             return text
 
-        filter_config = yaml_config.get("response_filter", {})
+        filter_config = cfg.yaml_config.get("response_filter", {})
         if not filter_config.get("enabled", True):
             return text
 
@@ -4387,7 +4388,7 @@ class AssistantBrain(BrainCallbacksMixin):
             return ""
 
         try:
-            rag_cfg = yaml_config.get("knowledge_base", {})
+            rag_cfg = cfg.yaml_config.get("knowledge_base", {})
             search_limit = rag_cfg.get("search_limit", 3)
             hits = await self.knowledge_base.search(text, limit=search_limit)
             if not hits:
@@ -4689,7 +4690,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
     async def _get_tutorial_hint(self, person: str) -> Optional[str]:
         """Gibt Tutorial-Hinweise fuer neue User zurueck (erste 10 Interaktionen)."""
-        tutorial_cfg = yaml_config.get("tutorial", {})
+        tutorial_cfg = cfg.yaml_config.get("tutorial", {})
         if not tutorial_cfg.get("enabled", True):
             return None
 
@@ -6559,7 +6560,7 @@ Regeln:
         Hinweis zurueck, statt nur das aelteste.
         Konfiguriert via conversation_continuity.* in settings.yaml.
         """
-        cont_cfg = yaml_config.get("conversation_continuity", {})
+        cont_cfg = cfg.yaml_config.get("conversation_continuity", {})
         if not cont_cfg.get("enabled", True):
             return None
 
@@ -6688,7 +6689,7 @@ Regeln:
         """Verarbeitet eine Korrektur und speichert sie als hochkonfidenten Fakt."""
         try:
             # Config-Werte fuer Korrektur-Lernen
-            corr_cfg = yaml_config.get("correction", {})
+            corr_cfg = cfg.yaml_config.get("correction", {})
             corr_confidence = float(corr_cfg.get("confidence", 0.95))
             corr_model = corr_cfg.get("model", "")
             corr_temperature = float(corr_cfg.get("temperature", 0.1))
@@ -6832,7 +6833,7 @@ Regeln:
         """Feature 8: Sendet woechentlich einen Lern-Bericht (konfigurierter Tag + Uhrzeit)."""
         while True:
             try:
-                weekly_cfg = yaml_config.get("learning", {}).get("weekly_report", {})
+                weekly_cfg = cfg.yaml_config.get("learning", {}).get("weekly_report", {})
                 target_day = int(weekly_cfg.get("day", 6))  # 0=Montag, 6=Sonntag
                 target_hour = int(weekly_cfg.get("hour", 19))
 
@@ -7199,7 +7200,7 @@ Regeln:
         Returns:
             Liste von Dicts: [{"message": str, "urgency": str, "type": str}]
         """
-        foresight_cfg = yaml_config.get("foresight", {})
+        foresight_cfg = cfg.yaml_config.get("foresight", {})
         if not foresight_cfg.get("enabled", True):
             return []
 
