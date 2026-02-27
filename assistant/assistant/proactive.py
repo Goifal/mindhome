@@ -2306,9 +2306,59 @@ class ProactiveManager:
 
             await asyncio.sleep(900)  # 15 Minuten
 
+    def _find_robot_for_room(self, robots: dict, room: str):
+        """Findet Roboter + Segment-ID fuer einen Raum (case-insensitive)."""
+        room_lower = room.lower()
+        for floor, r in robots.items():
+            rooms_map = r.get("rooms", {})
+            for rname, seg_id in rooms_map.items():
+                if rname.lower() == room_lower:
+                    return r, seg_id
+        # Fallback: ersten Roboter ohne Segment
+        if robots:
+            return next(iter(robots.values())), None
+        return None, None
+
+    async def _start_vacuum_room(self, robot: dict, segment_id, room: str, reason: str):
+        """Startet Vacuum fuer einen Raum mit Logging und Fehlerbehandlung."""
+        eid = robot.get("entity_id", "")
+        if not eid:
+            logger.warning("Vacuum-Trigger: Kein entity_id fuer Roboter konfiguriert")
+            return False
+
+        nickname = robot.get("nickname", "Saugroboter")
+        success = False
+
+        if segment_id is not None:
+            # Segment-ID als int sicherstellen (Dreame erwartet int)
+            try:
+                seg = int(segment_id)
+            except (ValueError, TypeError):
+                seg = segment_id
+
+            logger.info("Vacuum-Trigger: Starte %s (%s) fuer Raum '%s' Segment=%s", nickname, eid, room, seg)
+            success = await self.brain.ha.call_service("vacuum", "send_command", {
+                "entity_id": eid,
+                "command": "app_segment_clean",
+                "params": [seg],
+            })
+            if not success:
+                logger.warning("Vacuum-Trigger: send_command fehlgeschlagen, versuche vacuum.start")
+                success = await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
+        else:
+            logger.info("Vacuum-Trigger: Starte %s (%s) komplett (kein Segment fuer '%s')", nickname, eid, room)
+            success = await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
+
+        if success:
+            logger.info("Vacuum-Trigger: %s erfolgreich gestartet (%s)", nickname, reason)
+        else:
+            logger.error("Vacuum-Trigger: %s Start FEHLGESCHLAGEN (%s)", nickname, reason)
+
+        return success
+
     async def _run_vacuum_power_trigger(self):
         """Steckdosen-Trigger: Wenn Leistung unter Schwellwert → Raum saugen."""
-        await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 180)
+        await asyncio.sleep(30)  # Kurzer Startup-Delay
 
         import assistant.config as cfg
         _redis = getattr(self.brain, "memory", None)
@@ -2316,6 +2366,8 @@ class ProactiveManager:
 
         # Zustand: war die Steckdose vorher "an" (ueber Schwellwert)?
         was_above: dict[str, bool] = {}
+
+        logger.info("Vacuum-PowerTrigger: Task gestartet")
 
         while self._running:
             try:
@@ -2332,6 +2384,11 @@ class ProactiveManager:
                 delay_min = pt_cfg.get("delay_minutes", 5)
                 cooldown_h = pt_cfg.get("cooldown_hours", 12)
 
+                if not triggers:
+                    logger.debug("Vacuum-PowerTrigger: Keine Trigger konfiguriert")
+                    await asyncio.sleep(60)
+                    continue
+
                 for trigger in triggers:
                     entity = trigger.get("entity", "")
                     threshold = trigger.get("threshold", 5)
@@ -2341,16 +2398,21 @@ class ProactiveManager:
 
                     state = await self.brain.ha.get_state(entity)
                     if not state:
+                        logger.debug("Vacuum-PowerTrigger: Entity %s nicht gefunden", entity)
                         continue
 
                     try:
                         power = float(state.get("state", 0))
                     except (ValueError, TypeError):
+                        logger.debug("Vacuum-PowerTrigger: %s hat keinen numerischen State: %s", entity, state.get("state"))
                         continue
 
                     above = power >= threshold
                     prev_above = was_above.get(entity, True)
                     was_above[entity] = above
+
+                    logger.debug("Vacuum-PowerTrigger: %s = %.1fW (Schwelle: %sW, vorher_drueber: %s, jetzt_drueber: %s)",
+                                 entity, power, threshold, prev_above, above)
 
                     # Fallende Flanke: war ueber Schwellwert, jetzt drunter
                     if prev_above and not above:
@@ -2362,6 +2424,7 @@ class ProactiveManager:
                                 try:
                                     hours_since = (time.time() - float(last)) / 3600
                                     if hours_since < cooldown_h:
+                                        logger.info("Vacuum-PowerTrigger: %s Cooldown aktiv (%.1fh von %sh)", entity, hours_since, cooldown_h)
                                         continue
                                 except (ValueError, TypeError):
                                     pass
@@ -2377,51 +2440,36 @@ class ProactiveManager:
                         except (ValueError, TypeError):
                             recheck_power = threshold
                         if recheck_power >= threshold:
+                            logger.info("Vacuum-PowerTrigger: %s wieder ueber Schwelle (%.1fW) — abgebrochen", entity, recheck_power)
                             was_above[entity] = True
                             continue
 
                         # Raum → Roboter + Segment finden
-                        robot = None
-                        segment_id = None
-                        for floor, r in robots.items():
-                            rooms_map = r.get("rooms", {})
-                            if room in rooms_map:
-                                robot = r
-                                segment_id = rooms_map[room]
-                                break
+                        robot, segment_id = self._find_robot_for_room(robots, room)
+
                         if not robot:
-                            # Fallback: ersten Roboter nehmen
-                            if robots:
-                                robot = next(iter(robots.values()))
+                            logger.warning("Vacuum-PowerTrigger: Kein Roboter fuer Raum '%s' gefunden (robots: %s)", room, list(robots.keys()))
+                            continue
 
-                        if robot and robot.get("entity_id"):
-                            eid = robot["entity_id"]
-                            if segment_id is not None:
-                                await self.brain.ha.call_service("vacuum", "send_command", {
-                                    "entity_id": eid,
-                                    "command": "app_segment_clean",
-                                    "params": [segment_id],
-                                })
-                            else:
-                                await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
+                        reason = f"Steckdose {entity} abgeschaltet"
+                        success = await self._start_vacuum_room(robot, segment_id, room, reason)
 
+                        if success:
                             if _redis:
                                 await _redis.set(f"mha:vacuum:pt:{entity}", str(time.time()))
-
                             nickname = robot.get("nickname", "Saugroboter")
                             await self._notify("vacuum_power_trigger", LOW, {
-                                "message": f"{nickname} reinigt '{room}' — Steckdose {entity} abgeschaltet",
+                                "message": f"{nickname} reinigt '{room}' — {reason}",
                             })
-                            logger.info("Vacuum-PowerTrigger: %s → %s gestartet (Raum: %s)", entity, eid, room)
 
             except Exception as e:
-                logger.error("Vacuum-PowerTrigger Fehler: %s", e)
+                logger.error("Vacuum-PowerTrigger Fehler: %s", e, exc_info=True)
 
             await asyncio.sleep(60)  # 1 Minute Polling
 
     async def _run_vacuum_scene_trigger(self):
         """Szenen-Trigger: Wenn eine Szene aktiviert wird → Raum saugen."""
-        await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 200)
+        await asyncio.sleep(30)  # Kurzer Startup-Delay
 
         import assistant.config as cfg
         _redis = getattr(self.brain, "memory", None)
@@ -2429,6 +2477,8 @@ class ProactiveManager:
 
         # Letzter bekannter last_changed-Zeitstempel pro Entity
         last_seen: dict[str, str] = {}
+
+        logger.info("Vacuum-SceneTrigger: Task gestartet")
 
         while self._running:
             try:
@@ -2445,6 +2495,11 @@ class ProactiveManager:
                 delay_min = st_cfg.get("delay_minutes", 5)
                 cooldown_h = st_cfg.get("cooldown_hours", 12)
 
+                if not triggers:
+                    logger.debug("Vacuum-SceneTrigger: Keine Trigger konfiguriert")
+                    await asyncio.sleep(60)
+                    continue
+
                 for trigger in triggers:
                     entity = trigger.get("entity", "")
                     room = trigger.get("room", "")
@@ -2453,6 +2508,7 @@ class ProactiveManager:
 
                     state = await self.brain.ha.get_state(entity)
                     if not state:
+                        logger.debug("Vacuum-SceneTrigger: Entity %s nicht gefunden", entity)
                         continue
 
                     # Szenen haben als last_changed den Zeitpunkt der letzten Aktivierung
@@ -2462,10 +2518,13 @@ class ProactiveManager:
 
                     # Erster Durchlauf: nur merken, nicht triggern
                     if prev_changed is None:
+                        logger.debug("Vacuum-SceneTrigger: %s erster Check, merke last_changed=%s", entity, changed[:19] if changed else "?")
                         continue
 
                     # Szene wurde aktiviert (last_changed hat sich geaendert)
                     if changed != prev_changed:
+                        logger.info("Vacuum-SceneTrigger: %s aktiviert (changed: %s → %s)", entity, prev_changed[:19] if prev_changed else "?", changed[:19] if changed else "?")
+
                         # Cooldown pruefen
                         if _redis:
                             cd_key = f"mha:vacuum:st:{entity}"
@@ -2474,49 +2533,36 @@ class ProactiveManager:
                                 try:
                                     hours_since = (time.time() - float(last)) / 3600
                                     if hours_since < cooldown_h:
+                                        logger.info("Vacuum-SceneTrigger: %s Cooldown aktiv (%.1fh von %sh)", entity, hours_since, cooldown_h)
                                         continue
                                 except (ValueError, TypeError):
                                     pass
 
                         # Verzoegerung
                         scene_name = entity.replace("scene.", "").replace("_", " ").title()
-                        logger.info("Vacuum-SceneTrigger: %s aktiviert — warte %d Min", entity, delay_min)
+                        logger.info("Vacuum-SceneTrigger: %s — warte %d Min vor Start", entity, delay_min)
                         await asyncio.sleep(delay_min * 60)
 
                         # Raum → Roboter + Segment finden
-                        robot = None
-                        segment_id = None
-                        for floor, r in robots.items():
-                            rooms_map = r.get("rooms", {})
-                            if room in rooms_map:
-                                robot = r
-                                segment_id = rooms_map[room]
-                                break
-                        if not robot and robots:
-                            robot = next(iter(robots.values()))
+                        robot, segment_id = self._find_robot_for_room(robots, room)
 
-                        if robot and robot.get("entity_id"):
-                            eid = robot["entity_id"]
-                            if segment_id is not None:
-                                await self.brain.ha.call_service("vacuum", "send_command", {
-                                    "entity_id": eid,
-                                    "command": "app_segment_clean",
-                                    "params": [segment_id],
-                                })
-                            else:
-                                await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
+                        if not robot:
+                            logger.warning("Vacuum-SceneTrigger: Kein Roboter fuer Raum '%s' gefunden (robots: %s)", room, list(robots.keys()))
+                            continue
 
+                        reason = f"Szene '{scene_name}' aktiviert"
+                        success = await self._start_vacuum_room(robot, segment_id, room, reason)
+
+                        if success:
                             if _redis:
                                 await _redis.set(f"mha:vacuum:st:{entity}", str(time.time()))
-
                             nickname = robot.get("nickname", "Saugroboter")
                             await self._notify("vacuum_scene_trigger", LOW, {
-                                "message": f"{nickname} reinigt '{room}' — Szene '{scene_name}' aktiviert",
+                                "message": f"{nickname} reinigt '{room}' — {reason}",
                             })
-                            logger.info("Vacuum-SceneTrigger: %s → %s gestartet (Raum: %s)", entity, eid, room)
 
             except Exception as e:
-                logger.error("Vacuum-SceneTrigger Fehler: %s", e)
+                logger.error("Vacuum-SceneTrigger Fehler: %s", e, exc_info=True)
 
             await asyncio.sleep(60)  # 1 Minute Polling
 
