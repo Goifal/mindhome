@@ -4530,9 +4530,9 @@ function renderVacuum() {
     _renderPowerTriggerList()
   ) +
   sectionWrap('&#127917;', 'Szenen-Trigger',
-    fInfo('Wenn eine Aktivitaet (input_boolean) ausgeschaltet wird, reinigt der Saugroboter automatisch den zugehoerigen Raum. Z.B. "Kochen" aus → Kueche saugen.') +
+    fInfo('Wenn eine Szene aktiviert wird, reinigt der Saugroboter automatisch den zugehoerigen Raum. Z.B. scene.kuche_aus wird aktiviert → Kueche saugen.') +
     fToggle('vacuum.scene_trigger.enabled', 'Szenen-Trigger aktiv') +
-    fRange('vacuum.scene_trigger.delay_minutes', 'Verzoegerung nach Deaktivieren', 1, 30, 1, {1:'1 Min',2:'2 Min',5:'5 Min',10:'10 Min',15:'15 Min',20:'20 Min',30:'30 Min'}) +
+    fRange('vacuum.scene_trigger.delay_minutes', 'Verzoegerung nach Aktivierung', 1, 30, 1, {1:'1 Min',2:'2 Min',5:'5 Min',10:'10 Min',15:'15 Min',20:'20 Min',30:'30 Min'}) +
     fRange('vacuum.scene_trigger.cooldown_hours', 'Cooldown (nicht nochmal)', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',6:'6 Std',8:'8 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'}) +
     _renderSceneTriggerList()
   ) +
@@ -4594,14 +4594,14 @@ function _renderSceneTriggerList() {
   const triggers = getPath(S, 'vacuum.scene_trigger.triggers') || [];
   let rows = triggers.map((t, i) =>
     `<div class="st-row" style="display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;">
-       <input type="text" class="st-entity form-input" value="${esc(t.entity || '')}" placeholder="input_boolean.kochen" style="font-size:12px;font-family:var(--mono);">
+       <input type="text" class="st-entity form-input" value="${esc(t.entity || '')}" placeholder="scene.kuche_aus" style="font-size:12px;font-family:var(--mono);">
        <input type="text" class="st-room form-input" value="${esc(t.room || '')}" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
        <button class="kv-rm" onclick="stRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>
      </div>`
   ).join('');
   return `<div class="st-editor" data-path="vacuum.scene_trigger.triggers">
     <div style="display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;margin-bottom:4px;font-size:11px;color:var(--text-muted);font-weight:600;">
-      <span>Entity (input_boolean)</span><span>Raum</span><span></span>
+      <span>Szene (scene.*)</span><span>Raum</span><span></span>
     </div>
     ${rows}
     <button class="kv-add" onclick="stAdd(this)">+ Szenen-Trigger</button>
@@ -4612,7 +4612,7 @@ function stAdd(btn) {
   const row = document.createElement('div');
   row.className = 'st-row';
   row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;';
-  row.innerHTML = `<input type="text" class="st-entity form-input" placeholder="input_boolean.kochen" style="font-size:12px;font-family:var(--mono);">
+  row.innerHTML = `<input type="text" class="st-entity form-input" placeholder="scene.kuche_aus" style="font-size:12px;font-family:var(--mono);">
     <input type="text" class="st-room form-input" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
     <button class="kv-rm" onclick="stRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>`;
   editor.insertBefore(row, btn);

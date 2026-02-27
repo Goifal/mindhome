@@ -2410,7 +2410,7 @@ class ProactiveManager:
             await asyncio.sleep(60)  # 1 Minute Polling
 
     async def _run_vacuum_scene_trigger(self):
-        """Szenen-Trigger: Wenn input_boolean von on→off wechselt → Raum saugen."""
+        """Szenen-Trigger: Wenn eine Szene aktiviert wird → Raum saugen."""
         await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 200)
 
         vacuum_cfg = yaml_config.get("vacuum", {})
@@ -2419,7 +2419,8 @@ class ProactiveManager:
         _redis = getattr(self.brain, "memory", None)
         _redis = getattr(_redis, "redis", None) if _redis else None
 
-        was_on: dict[str, bool] = {}
+        # Letzter bekannter last_changed-Zeitstempel pro Entity
+        last_seen: dict[str, str] = {}
 
         while self._running:
             try:
@@ -2437,12 +2438,17 @@ class ProactiveManager:
                     if not state:
                         continue
 
-                    is_on = state.get("state") == "on"
-                    prev_on = was_on.get(entity, is_on)  # Erster Durchlauf: aktuellen Zustand merken
-                    was_on[entity] = is_on
+                    # Szenen haben als last_changed den Zeitpunkt der letzten Aktivierung
+                    changed = state.get("last_changed", "")
+                    prev_changed = last_seen.get(entity)
+                    last_seen[entity] = changed
 
-                    # Fallende Flanke: war on, jetzt off
-                    if prev_on and not is_on:
+                    # Erster Durchlauf: nur merken, nicht triggern
+                    if prev_changed is None:
+                        continue
+
+                    # Szene wurde aktiviert (last_changed hat sich geaendert)
+                    if changed != prev_changed:
                         # Cooldown pruefen
                         if _redis:
                             cd_key = f"mha:vacuum:st:{entity}"
@@ -2456,14 +2462,9 @@ class ProactiveManager:
                                     pass
 
                         # Verzoegerung
-                        logger.info("Vacuum-SceneTrigger: %s → off — warte %d Min", entity, delay_min)
+                        scene_name = entity.replace("scene.", "").replace("_", " ").title()
+                        logger.info("Vacuum-SceneTrigger: %s aktiviert — warte %d Min", entity, delay_min)
                         await asyncio.sleep(delay_min * 60)
-
-                        # Nochmal pruefen ob immer noch off
-                        recheck = await self.brain.ha.get_state(entity)
-                        if recheck and recheck.get("state") == "on":
-                            was_on[entity] = True
-                            continue
 
                         # Raum → Roboter + Segment finden
                         robot = None
@@ -2491,10 +2492,9 @@ class ProactiveManager:
                             if _redis:
                                 await _redis.set(f"mha:vacuum:st:{entity}", str(time.time()))
 
-                            entity_name = entity.replace("input_boolean.", "").replace("_", " ").title()
                             nickname = robot.get("nickname", "Saugroboter")
                             await self._notify("vacuum_scene_trigger", LOW, {
-                                "message": f"{nickname} reinigt '{room}' — '{entity_name}' beendet",
+                                "message": f"{nickname} reinigt '{room}' — Szene '{scene_name}' aktiviert",
                             })
                             logger.info("Vacuum-SceneTrigger: %s → %s gestartet (Raum: %s)", entity, eid, room)
 
