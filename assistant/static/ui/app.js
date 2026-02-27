@@ -965,6 +965,25 @@ const HELP_TEXTS = {
   'self_automation.enabled': {title:'Self-Automation', text:'Assistent erstellt eigenstaendig Automationen.'},
   'self_automation.max_per_day': {title:'Max. Automationen/Tag', text:'Max. Automationen die pro Tag erstellt werden.'},
   'self_automation.model': {title:'Automations-Modell', text:'KI-Modell fuer Automations-Erstellung.'},
+  // === LERN-SYSTEM ===
+  'learning.enabled': {title:'Lern-System (Global)', text:'Globaler Schalter fuer alle Lern-Features. Deaktivieren stoppt sofort: Wirkungstracker, Korrektur-Gedaechtnis, Response Quality, Error Patterns, Adaptive Thresholds und Self-Report.'},
+  'outcome_tracker.enabled': {title:'Wirkungstracker', text:'Beobachtet ob Aktionen rueckgaengig gemacht oder angepasst werden. Rolling Score 0-1 pro Aktionstyp.'},
+  'outcome_tracker.observation_delay_seconds': {title:'Beobachtungs-Verzoegerung', text:'Wartezeit bevor geprueft wird ob der User die Aktion geaendert hat.'},
+  'outcome_tracker.max_results': {title:'Max. Ergebnisse', text:'Wie viele Outcome-Ergebnisse in Redis gespeichert werden.'},
+  'correction_memory.enabled': {title:'Korrektur-Gedaechtnis', text:'Speichert User-Korrekturen strukturiert und injiziert relevante bei aehnlichen Aktionen.'},
+  'correction_memory.max_entries': {title:'Max. Eintraege', text:'Maximale Anzahl gespeicherter Korrekturen.'},
+  'correction_memory.max_context_entries': {title:'Max. Kontext-Eintraege', text:'Wie viele relevante Korrekturen dem LLM als Kontext mitgegeben werden.'},
+  'response_quality.enabled': {title:'Antwort-Qualitaet', text:'Misst wie effektiv Antworten sind anhand von Follow-Ups und Umformulierungen.'},
+  'response_quality.followup_window_seconds': {title:'Follow-Up Zeitfenster', text:'Innerhalb dieser Zeit gilt eine erneute Nachricht als Follow-Up (= Antwort war unklar).'},
+  'response_quality.rephrase_similarity_threshold': {title:'Umformulierungs-Schwelle', text:'Ab diesem Keyword-Overlap (0-1) gilt ein Text als Umformulierung des vorherigen.'},
+  'error_patterns.enabled': {title:'Fehlermuster-Erkennung', text:'Erkennt wiederkehrende Fehler und reagiert proaktiv (z.B. Fallback-Modell nutzen).'},
+  'error_patterns.min_occurrences_for_mitigation': {title:'Min. Fehler fuer Reaktion', text:'Wie oft ein Fehler auftreten muss bevor proaktiv reagiert wird.'},
+  'error_patterns.mitigation_ttl_hours': {title:'Reaktions-Dauer', text:'Wie lange eine Fehlermuster-Reaktion aktiv bleibt (Stunden).'},
+  'self_report.enabled': {title:'Selbst-Report', text:'Woechentlicher Bericht ueber alle Lernsysteme. Per Chat abrufbar.'},
+  'self_report.model': {title:'Report-Modell', text:'KI-Modell fuer die Selbst-Report-Generierung.'},
+  'adaptive_thresholds.enabled': {title:'Lernende Schwellwerte', text:'Passt Parameter automatisch an basierend auf Outcome-Daten. Nur innerhalb enger Grenzen, nur zur Laufzeit.'},
+  'adaptive_thresholds.auto_adjust': {title:'Auto-Anpassung', text:'Erlaubt automatische Anpassung ohne User-Bestaetigung (innerhalb enger Grenzen).'},
+  'adaptive_thresholds.analysis_interval_hours': {title:'Analyse-Intervall', text:'Wie oft die Schwellwert-Analyse laeuft (in Stunden). 168 = woechentlich.'},
   'feedback.auto_timeout_seconds': {title:'Feedback-Timeout', text:'Timeout fuer Feedback-Anfragen (Sek).'},
   'feedback.base_cooldown_seconds': {title:'Feedback-Abstand', text:'Min. Abstand zwischen Feedback-Anfragen.'},
   'feedback.score_suppress': {title:'Unterdruecken unter', text:'Unter diesem Score wird Feature unterdrueckt.'},
@@ -2971,6 +2990,14 @@ function renderAutonomie() {
     fNum('self_optimization.parameter_bounds.max_response_sentences.max', 'Saetze Max', 1, 10) +
     fNum('self_optimization.parameter_bounds.formality_min.min', 'Formalitaet-Min Min', 0, 100) +
     fNum('self_optimization.parameter_bounds.formality_min.max', 'Formalitaet-Min Max', 0, 100) +
+    fNum('self_optimization.parameter_bounds.insight_cooldown_hours.min', 'Insight-Cooldown Min (h)', 1, 24) +
+    fNum('self_optimization.parameter_bounds.insight_cooldown_hours.max', 'Insight-Cooldown Max (h)', 1, 24) +
+    fNum('self_optimization.parameter_bounds.anticipation_min_confidence.min', 'Antizipation-Conf Min', 0, 1, 0.05) +
+    fNum('self_optimization.parameter_bounds.anticipation_min_confidence.max', 'Antizipation-Conf Max', 0, 1, 0.05) +
+    fNum('self_optimization.parameter_bounds.feedback_base_cooldown.min', 'Feedback-Cooldown Min (s)', 30, 1800) +
+    fNum('self_optimization.parameter_bounds.feedback_base_cooldown.max', 'Feedback-Cooldown Max (s)', 30, 1800) +
+    fNum('self_optimization.parameter_bounds.spontaneous_max_per_day.min', 'Spontan/Tag Min', 0, 10) +
+    fNum('self_optimization.parameter_bounds.spontaneous_max_per_day.max', 'Spontan/Tag Max', 0, 10) +
     '</div>'
   ) +
   sectionWrap('&#128683;', 'Geschuetzte Bereiche (Immutable)',
@@ -2987,6 +3014,45 @@ function renderAutonomie() {
     fToggle('self_automation.enabled', 'Self-Automation aktiv') +
     fNum('self_automation.max_per_day', 'Max. Automationen pro Tag', 1, 20) +
     fModelSelect('self_automation.model', 'Modell fuer Automations-Erstellung')
+  ) +
+  sectionWrap('&#129504;', 'Lern-System (Global)',
+    fInfo('Globaler Schalter fuer ALLE Lern-Features. Deaktivieren stoppt sofort: Outcome Tracker, Korrektur-Gedaechtnis, Response Quality, Error Patterns, Adaptive Thresholds und Self-Report.') +
+    fToggle('learning.enabled', 'Alle Lern-Features aktiv')
+  ) +
+  sectionWrap('&#127919;', 'Wirkungstracker (Outcome Tracker)',
+    fInfo('Beobachtet ob Aktionen nach Ausfuehrung rueckgaengig gemacht, angepasst oder beibehalten werden. Verbales Feedback ("Danke") wird ebenfalls erfasst. Ergebnis: Rolling Score pro Aktionstyp.') +
+    fToggle('outcome_tracker.enabled', 'Wirkungstracker aktiv') +
+    fRange('outcome_tracker.observation_delay_seconds', 'Beobachtungs-Verzoegerung', 60, 600, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min',600:'10 Min'}) +
+    fNum('outcome_tracker.max_results', 'Max. gespeicherte Ergebnisse', 100, 2000, 100)
+  ) +
+  sectionWrap('&#128221;', 'Korrektur-Gedaechtnis',
+    fInfo('Speichert User-Korrekturen strukturiert. Vor aehnlichen Aktionen werden relevante Korrekturen ins LLM-Kontext injiziert. Leitet automatisch Regeln ab wenn gleiche Korrektur-Muster mehrfach auftreten.') +
+    fToggle('correction_memory.enabled', 'Korrektur-Gedaechtnis aktiv') +
+    fNum('correction_memory.max_entries', 'Max. Eintraege', 50, 500, 50) +
+    fNum('correction_memory.max_context_entries', 'Max. Kontext-Eintraege', 1, 10)
+  ) +
+  sectionWrap('&#128200;', 'Antwort-Qualitaet (Response Quality)',
+    fInfo('Misst wie effektiv Antworten sind. Follow-Up innerhalb des Zeitfensters = Antwort unklar. Wiederholung/Umformulierung = nicht verstanden. Einzelner Austausch = Erfolg.') +
+    fToggle('response_quality.enabled', 'Antwort-Qualitaet aktiv') +
+    fRange('response_quality.followup_window_seconds', 'Follow-Up Zeitfenster', 15, 120, 15, {15:'15s',30:'30s',60:'1 Min',90:'90s',120:'2 Min'}) +
+    fRange('response_quality.rephrase_similarity_threshold', 'Umformulierungs-Schwelle', 0.3, 0.9, 0.05)
+  ) +
+  sectionWrap('&#128163;', 'Fehlermuster-Erkennung (Error Patterns)',
+    fInfo('Erkennt wiederkehrende Fehler (Timeout, Service nicht erreichbar, Entity fehlt). Bei 3+ gleichen Fehlern wird proaktiv reagiert (z.B. Fallback-Modell, User-Hinweis).') +
+    fToggle('error_patterns.enabled', 'Fehlermuster-Erkennung aktiv') +
+    fNum('error_patterns.min_occurrences_for_mitigation', 'Min. Fehler fuer Reaktion', 2, 10) +
+    fNum('error_patterns.mitigation_ttl_hours', 'Reaktions-Dauer (Stunden)', 1, 24)
+  ) +
+  sectionWrap('&#128202;', 'Woechentlicher Selbst-Report',
+    fInfo('Aggregiert woechentlich Daten aus allen Lernsystemen und generiert einen natuerlichsprachlichen Selbstbericht. Per Chat abrufbar: "Wie lernst du?" / "Selbstbericht".') +
+    fToggle('self_report.enabled', 'Selbst-Report aktiv') +
+    fModelSelect('self_report.model', 'Report-Modell')
+  ) +
+  sectionWrap('&#9881;', 'Lernende Schwellwerte (Adaptive Thresholds)',
+    fInfo('Analysiert woechentlich Outcome-Daten und Feedback-Scores. Passt Schwellwerte automatisch innerhalb enger, hardcodierter Grenzen an. Alle Aenderungen nur zur Laufzeit — Reset bei Neustart.') +
+    fToggle('adaptive_thresholds.enabled', 'Lernende Schwellwerte aktiv') +
+    fToggle('adaptive_thresholds.auto_adjust', 'Auto-Anpassung') +
+    fNum('adaptive_thresholds.analysis_interval_hours', 'Analyse-Intervall (Stunden)', 24, 336, 24)
   ) +
   sectionWrap('&#128200;', 'Feedback-System',
     fInfo('Wie reagiert der Assistent auf positives/negatives Feedback? Scores bestimmen wie haeufig er sich meldet.') +

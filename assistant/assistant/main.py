@@ -2034,6 +2034,16 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("vacuum", "auto_clean", "schedule_time"): (0, 23),
         ("vacuum", "maintenance", "check_interval_hours"): (1, 72),
         ("vacuum", "maintenance", "warn_at_percent"): (1, 50),
+        # Self-Improvement Features
+        ("outcome_tracker", "observation_delay_seconds"): (60, 600),
+        ("outcome_tracker", "max_results"): (100, 2000),
+        ("correction_memory", "max_entries"): (50, 500),
+        ("correction_memory", "max_context_entries"): (1, 10),
+        ("response_quality", "followup_window_seconds"): (15, 120),
+        ("response_quality", "rephrase_similarity_threshold"): (0.3, 0.9),
+        ("error_patterns", "min_occurrences_for_mitigation"): (2, 10),
+        ("error_patterns", "mitigation_ttl_hours"): (1, 24),
+        ("adaptive_thresholds", "analysis_interval_hours"): (24, 336),
     }
     # Erlaubte Werte fuer Strings (Whitelist)
     ENUM_RULES = {
@@ -2522,6 +2532,36 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             dh.monitored_entities = cfg.get("monitored_entities", [])
             logger.info("DeviceHealth Settings aktualisiert")
         _try_reload("device_health", _reload_device_health)
+
+    # Self-Improvement Module: enabled-Flag + Config-Werte aktualisieren
+    _self_improvement_keys = {
+        "outcome_tracker", "correction_memory", "response_quality",
+        "error_patterns", "self_report", "adaptive_thresholds",
+    }
+    for si_key in _self_improvement_keys & set(changed_settings.keys()):
+        attr_name = si_key  # brain.outcome_tracker, brain.correction_memory, etc.
+        if hasattr(brain, attr_name):
+            def _make_reload(key, attr):
+                def _do():
+                    cfg = yaml_cfg.get(key, {})
+                    mod = getattr(brain, attr)
+                    mod.enabled = bool(cfg.get("enabled", True)) and mod.redis is not None
+                    mod._cfg = cfg
+                    logger.info("%s Settings aktualisiert (enabled=%s)", key, mod.enabled)
+                return _do
+            _try_reload(si_key, _make_reload(si_key, attr_name))
+
+    # Global Learning Kill Switch
+    if "learning" in changed_settings:
+        def _reload_learning():
+            learning_enabled = yaml_cfg.get("learning", {}).get("enabled", True)
+            for si_key in _self_improvement_keys:
+                if hasattr(brain, si_key):
+                    mod = getattr(brain, si_key)
+                    if not learning_enabled:
+                        mod.enabled = False
+            logger.info("Learning global: enabled=%s", learning_enabled)
+        _try_reload("learning", _reload_learning)
 
     if failed_modules:
         logger.warning("Settings-Reload: %d Module fehlgeschlagen: %s",
