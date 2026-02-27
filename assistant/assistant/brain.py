@@ -29,7 +29,8 @@ from typing import Optional
 from .action_planner import ActionPlanner
 from .activity import ActivityEngine
 from .autonomy import AutonomyManager
-from .config import settings, yaml_config, get_person_title, set_active_person
+from . import config as cfg
+from .config import settings, get_person_title, set_active_person
 from .context_builder import ContextBuilder
 from .cooking_assistant import CookingAssistant
 from .device_health import DeviceHealthMonitor
@@ -109,10 +110,10 @@ def _audit_log(action: str, details: dict = None):
     except Exception as exc:
         logger.warning("Audit-Log Fehler: %s", exc)
 
-# Phase 7.5: Szenen-Intelligenz — Prompt fuer natuerliches Situationsverstaendnis
+# Phase 7.5: Szenen-Intelligenz — Reasoning Framework statt Lookup-Tabelle
 def _build_scene_intelligence_prompt() -> str:
     """Baut den Szenen-Intelligenz-Prompt je nach Heizungsmodus."""
-    heating = yaml_config.get("heating", {})
+    heating = cfg.yaml_config.get("heating", {})
     mode = heating.get("mode", "room_thermostat")
 
     if mode == "heating_curve":
@@ -129,9 +130,23 @@ def _build_scene_intelligence_prompt() -> str:
     return f"""
 
 SZENEN-INTELLIGENZ:
-Verstehe natuerliche Situationsbeschreibungen und reagiere mit passenden Aktionen:
-- "Mir ist kalt" → {heat_cold}
-- "Mir ist warm" → {heat_warm}
+Du erkennst Situationen aus natuerlicher Sprache UND aus Sensordaten.
+
+REASONING-REGELN (wende diese IMMER an):
+1. URSACHE VOR AKTION: Bevor du handelst, pruefe WARUM etwas so ist.
+   "Mir ist kalt" → Pruefe erst: Fenster offen? Heizung aus? Aussentemperatur?
+   Dann handle entsprechend der Ursache, nicht pauschal.
+2. KONTEXT BEACHTEN: Gleiche Aussage, andere Reaktion je nach Tageszeit/Situation.
+   "Zu hell" um 14:00 → Rolladen. "Zu hell" um 23:00 → Licht dimmen.
+3. PERSONEN BERUECKSICHTIGEN: Wer ist noch da? Beeinflusst deine Aktion andere?
+4. KREUZ-REFERENZIERE: Verbinde Wetter + Raum + Zeit + Gewohnheiten.
+   Regen + Fenster offen → Warnen. Abend + niemand im Raum + Licht an → Hinweisen.
+5. DENKE EINEN SCHRITT WEITER: Was passiert NACH deiner Aktion?
+   Heizung hoch + Fenster offen = Energieverschwendung → erwaehne das.
+
+SITUATIONSBEISPIELE (als Orientierung, nicht als starre Regeln):
+- "Mir ist kalt" → {heat_cold} (aber ERST Fenster/Heizung pruefen)
+- "Mir ist warm" → {heat_warm} (aber ERST Ursache pruefen)
 - "Zu hell" → Rolladen runter ODER Licht dimmen (je nach Tageszeit)
 - "Zu dunkel" → Licht an oder heller
 - "Zu laut" → Musik leiser oder Fenster-Empfehlung
@@ -141,7 +156,8 @@ Verstehe natuerliche Situationsbeschreibungen und reagiere mit passenden Aktione
 - "Ich arbeite" → {heat_work}
 - "Party" → Musik an, Lichter bunt/hell, Gaeste-WLAN
 
-Nutze den aktuellen Raum-Kontext fuer die richtige Aktion.
+WICHTIG: Diese Liste ist nicht abschliessend. Leite die richtige Reaktion
+aus dem Kontext ab, auch fuer Situationen die hier nicht stehen.
 Frage nur bei Mehrdeutigkeit nach (z.B. "Welchen Raum?")."""
 
 
@@ -407,7 +423,7 @@ class AssistantBrain(BrainCallbacksMixin):
         self.spontaneous.set_notify_callback(self._handle_spontaneous_observation)
 
         # Jarvis-Feature 8: Woechentlicher Lern-Bericht (Background-Task)
-        weekly_cfg = yaml_config.get("learning", {}).get("weekly_report", {})
+        weekly_cfg = cfg.yaml_config.get("learning", {}).get("weekly_report", {})
         if weekly_cfg.get("enabled", True):
             self._task_registry.create_task(
                 self._weekly_learning_report_loop(), name="weekly_learning_report"
@@ -477,7 +493,7 @@ class AssistantBrain(BrainCallbacksMixin):
             if not states:
                 return None
 
-            multi_room_cfg = yaml_config.get("multi_room", {})
+            multi_room_cfg = cfg.yaml_config.get("multi_room", {})
             if not multi_room_cfg.get("enabled", True):
                 return None
 
@@ -816,7 +832,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Fallback: Wenn kein Person ermittelt, Primary User aus Household annehmen
         # (nur wenn explizit konfiguriert, nicht den Pydantic-Default "Max" nutzen)
         if not person:
-            primary = yaml_config.get("household", {}).get("primary_user", "")
+            primary = cfg.yaml_config.get("household", {}).get("primary_user", "")
             if primary:
                 person = primary
 
@@ -1031,7 +1047,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     s for s in (states or [])
                     if s.get("entity_id", "").startswith("calendar.")
                 ]
-                configured = yaml_config.get("calendar", {}).get("entities", [])
+                configured = cfg.yaml_config.get("calendar", {}).get("entities", [])
                 if isinstance(configured, str):
                     configured = [configured]
 
@@ -1606,7 +1622,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 if isinstance(raw_result, dict) and raw_result.get("success"):
                     raw_data = raw_result["message"]
                     title = get_person_title(self._current_person)
-                    _hs_cfg = yaml_config.get("house_status", {})
+                    _hs_cfg = cfg.yaml_config.get("house_status", {})
                     _detail = _hs_cfg.get("detail_level", "normal")
                     if _detail == "kompakt":
                         _prompt_style = (
@@ -1681,7 +1697,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 if isinstance(raw_result, dict) and raw_result.get("success"):
                     raw_data = raw_result["message"]
                     title = get_person_title(self._current_person)
-                    _hs_cfg = yaml_config.get("house_status", {})
+                    _hs_cfg = cfg.yaml_config.get("house_status", {})
                     _detail = _hs_cfg.get("detail_level", "normal")
                     if _detail == "kompakt":
                         _prompt_style = (
@@ -1846,7 +1862,7 @@ class AssistantBrain(BrainCallbacksMixin):
         await emit_thinking()
 
         # Feature 1: Progressive Antworten — "Denken laut"
-        _prog_cfg = yaml_config.get("progressive_responses", {})
+        _prog_cfg = cfg.yaml_config.get("progressive_responses", {})
         if not stream_callback and _prog_cfg.get("enabled", True):
             if _prog_cfg.get("show_context_step", True):
                 _prog_msg = self.personality.get_progress_message("context")
@@ -1862,7 +1878,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Continuity und What-If laufen gleichzeitig statt nacheinander.
         # Spart 500ms-1.5s Latenz gegenueber der seriellen Ausfuehrung.
         # ----------------------------------------------------------------
-        ctx_timeout = float((yaml_config.get("context") or {}).get("api_timeout", 10))
+        ctx_timeout = float((cfg.yaml_config.get("context") or {}).get("api_timeout", 10))
 
         async def _safe_security_score():
             try:
@@ -1920,6 +1936,12 @@ class AssistantBrain(BrainCallbacksMixin):
         # Feature A: Kreative Problemloesung — Haus-Daten parallel laden
         _mega_tasks.append(("problem_solving", self._build_problem_solving_context(text)))
 
+        # Intelligence Fusion: Anticipation + Learning + Insights + Experiential parallel laden
+        _mega_tasks.append(("anticipation", self.anticipation.get_suggestions()))
+        _mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns()))
+        _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
+        _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
+
         _mega_keys, _mega_coros = zip(*_mega_tasks)
         _mega_results = await asyncio.gather(*_mega_coros, return_exceptions=True)
         _result_map = dict(zip(_mega_keys, _mega_results))
@@ -1975,11 +1997,35 @@ class AssistantBrain(BrainCallbacksMixin):
         rag_context = _safe_get("rag")
         situation_delta = _safe_get("situation_delta")
         problem_solving_ctx = _safe_get("problem_solving")
+        anticipation_suggestions = _safe_get("anticipation") or []
+        learned_patterns = _safe_get("learned_patterns") or []
+        live_insights = _safe_get("insights_now") or []
+        experiential_hint = _safe_get("experiential")
 
         context["mood"] = mood_result
 
-        # 3. Modell waehlen
+        # 3. Modell waehlen (mit kontext-basiertem Upgrade)
         model = self.model_router.select_model(text)
+
+        # Kontext-basiertes Upgrade: Wenn viele Datenquellen relevant sind,
+        # braucht das LLM ein staerkeres Modell zum Reasoning
+        _upgrade_signals = 0
+        if problem_solving_ctx:
+            _upgrade_signals += 2  # Problemloesung braucht Deep
+        if whatif_prompt:
+            _upgrade_signals += 2  # Hypothetisches Denken braucht Deep
+        if anticipation_suggestions or learned_patterns:
+            _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
+        if live_insights:
+            _upgrade_signals += 1  # Aktive Insights = mehr zu verarbeiten
+        if sec_score and sec_score.get("level") in ("warning", "critical"):
+            _upgrade_signals += 2  # Sicherheit = immer Deep
+
+        if _upgrade_signals >= 2 and model != self.model_router.model_deep:
+            _upgraded = self.model_router._cap_model(self.model_router.model_deep)
+            if _upgraded != model:
+                logger.info("Model Upgrade %s -> %s (signals: %d)", model, _upgraded, _upgrade_signals)
+                model = _upgraded
 
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
         # Formality-Score cachen fuer Refinement-Prompts (Tool-Feedback)
@@ -1995,7 +2041,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Sektionen werden nach Prioritaet sortiert und solange hinzugefuegt
         # bis das Token-Budget fuer Sektionen erschoepft ist.
         # ----------------------------------------------------------------
-        context_cfg = yaml_config.get("context", {})
+        context_cfg = cfg.yaml_config.get("context", {})
         max_context_tokens = context_cfg.get("max_context_tokens", 6000)
         base_tokens = len(system_prompt) // 3
         user_tokens_est = len(text) // 3
@@ -2004,9 +2050,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Sektionen vorbereiten: (Name, Text, Prioritaet)
         # Prio 1: Sicherheit, Szenen, Mood — IMMER inkludieren
-        # Prio 2: Zeit, Timer, Gaeste, Warnungen, Erinnerungen
+        # Prio 2: Zeit, Timer, Gaeste, Warnungen, Erinnerungen, What-If, JARVIS DENKT MIT
         # Prio 3: RAG, Summaries, Cross-Room, Kontinuitaet
-        # Prio 4: Tutorial, What-If
+        # Prio 4: Tutorial
         sections: list[tuple[str, str, int]] = []
 
         # --- Prio 1: Core ---
@@ -2079,13 +2125,24 @@ class AssistantBrain(BrainCallbacksMixin):
             )
             sections.append(("conv_memory", conv_text, 2))
 
-        # Phase 17: Situation Delta (was hat sich seit letztem Gespraech geaendert?)
-        if situation_delta:
-            sections.append(("situation_delta", situation_delta, 2))
+        # Phase 17: Situation Delta — NICHT als System-Prompt-Sektion,
+        # sondern als Prefix der User-Message (wird dort prominenter beachtet).
+        # Siehe unten: messages.append({"role": "user", ...})
 
         # Feature A: Kreative Problemloesung — Haus-Daten fuer Loesungsvorschlaege
         if problem_solving_ctx:
             sections.append(("problem_solving", problem_solving_ctx, 2))
+
+        # Intelligence Fusion: JARVIS DENKT MIT
+        jarvis_thinks = self._build_jarvis_thinks_context(
+            anticipation_suggestions, learned_patterns, live_insights,
+        )
+        if jarvis_thinks:
+            sections.append(("jarvis_thinks", jarvis_thinks, 2))
+
+        # Experiential Memory: "Letztes Mal als du das gemacht hast..."
+        if experiential_hint:
+            sections.append(("experiential", f"\n\n{experiential_hint}", 3))
 
         # --- Prio 3: Optional (RAG bei Wissensfragen Prio 1) ---
         if rag_context:
@@ -2114,7 +2171,7 @@ class AssistantBrain(BrainCallbacksMixin):
             sections.append(("tutorial", tutorial_hint, 4))
 
         if whatif_prompt:
-            sections.append(("whatif", whatif_prompt, 4))
+            sections.append(("whatif", whatif_prompt, 2))
 
         # Sektionen nach Prioritaet sortieren und mit Budget einfuegen
         sections.sort(key=lambda s: s[2])
@@ -2154,7 +2211,12 @@ class AssistantBrain(BrainCallbacksMixin):
                 break
             messages.append({"role": conv["role"], "content": conv["content"]})
             conv_tokens_used += conv_tokens
-        messages.append({"role": "user", "content": text})
+        # Situation Delta als User-Message-Prefix (prominenter als System-Prompt-Sektion)
+        if situation_delta:
+            user_content = f"[KONTEXT: {situation_delta.strip()}]\n{text}"
+        else:
+            user_content = text
+        messages.append({"role": "user", "content": user_content})
 
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
         intent_type = self._classify_intent(text)
@@ -2325,14 +2387,25 @@ class AssistantBrain(BrainCallbacksMixin):
                     if _think_msg:
                         await emit_progress("thinking", _think_msg)
 
-            # 6b. Einfache Anfragen: Direkt LLM aufrufen (mit Timeout + Fallback)
-            llm_timeout = (yaml_config.get("context") or {}).get("llm_timeout", 60)
+            # 6b. Dynamische Token-Limits basierend auf Komplexitaet
+            # Device-Commands brauchen wenig Tokens, Analysen/What-If viel mehr
+            if problem_solving_ctx or whatif_prompt:
+                response_tokens = 768   # Problemloesung / What-If braucht Platz
+            elif profile.category == "knowledge" or rag_context:
+                response_tokens = 768   # Wissensfragen ausfuehrlich beantworten
+            elif profile.category == "device_command":
+                response_tokens = 150   # "Erledigt." braucht keine 256 Tokens
+            else:
+                response_tokens = 384   # Standard-Gespraech: doppelt so viel wie vorher
+
+            llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
             try:
                 response = await asyncio.wait_for(
                     self.ollama.chat(
                         messages=messages,
                         model=model,
                         tools=get_assistant_tools(),
+                        max_tokens=response_tokens,
                     ),
                     timeout=float(llm_timeout),
                 )
@@ -2348,6 +2421,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                 messages=messages,
                                 model=fallback_model,
                                 tools=get_assistant_tools(),
+                                max_tokens=response_tokens,
                             ),
                             timeout=float(llm_timeout * 0.66),
                         )
@@ -2593,7 +2667,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "reason": f"pushback:{pushback['rule_id']}",
                                 }
-                                timeout = yaml_config.get("pushback", {}).get("confirmation_timeout", 120)
+                                timeout = cfg.yaml_config.get("pushback", {}).get("confirmation_timeout", 120)
                                 await self.memory.redis.setex(
                                     SECURITY_CONFIRM_KEY,
                                     timeout,
@@ -3043,7 +3117,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 name="handle_correction",
             )
 
-        # Phase 8: Action-Logging fuer Anticipation Engine
+        # Phase 8: Action-Logging fuer Anticipation Engine + Experiential Memory
         for action in executed_actions:
             if isinstance(action.get("result"), dict) and action["result"].get("success"):
                 self._task_registry.create_task(
@@ -3052,6 +3126,19 @@ class AssistantBrain(BrainCallbacksMixin):
                     ),
                     name="log_anticipation",
                 )
+                # Experiential Memory: Aktion + Kontext speichern fuer "Letztes Mal..."
+                if self.memory.redis:
+                    outcome_entry = json.dumps({
+                        "action": action["function"],
+                        "args": action.get("args", {}),
+                        "timestamp": datetime.now().isoformat(),
+                        "person": person or "",
+                        "context_hint": situation_delta or "",
+                    })
+                    self._task_registry.create_task(
+                        self._log_experiential_memory(outcome_entry),
+                        name="log_experiential",
+                    )
 
         # Phase 8: Intent-Extraktion im Hintergrund
         if len(text.split()) > 5:
@@ -3561,7 +3648,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not raw or not raw.strip():
             return "Alles ruhig im Haus."
 
-        hs_cfg = yaml_config.get("house_status", {})
+        hs_cfg = cfg.yaml_config.get("house_status", {})
         detail = hs_cfg.get("detail_level", "normal")
 
         lines = raw.strip().split("\n")
@@ -3814,7 +3901,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not text:
             return text
 
-        filter_config = yaml_config.get("response_filter", {})
+        filter_config = cfg.yaml_config.get("response_filter", {})
         if not filter_config.get("enabled", True):
             return text
 
@@ -4387,7 +4474,7 @@ class AssistantBrain(BrainCallbacksMixin):
             return ""
 
         try:
-            rag_cfg = yaml_config.get("knowledge_base", {})
+            rag_cfg = cfg.yaml_config.get("knowledge_base", {})
             search_limit = rag_cfg.get("search_limit", 3)
             hits = await self.knowledge_base.search(text, limit=search_limit)
             if not hits:
@@ -4689,7 +4776,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
     async def _get_tutorial_hint(self, person: str) -> Optional[str]:
         """Gibt Tutorial-Hinweise fuer neue User zurueck (erste 10 Interaktionen)."""
-        tutorial_cfg = yaml_config.get("tutorial", {})
+        tutorial_cfg = cfg.yaml_config.get("tutorial", {})
         if not tutorial_cfg.get("enabled", True):
             return None
 
@@ -5934,13 +6021,20 @@ class AssistantBrain(BrainCallbacksMixin):
         Verhindert, dass das LLM bei Smalltalk aus dem Charakter bricht
         ("Ich bin ein KI-Modell und habe keine Gefuehle...").
 
+        Kontext-bewusst: Nutzt Tageszeit, aktive Meldungen und Haus-Status
+        fuer lebendigere Antworten statt canned Responses.
+
         Returns:
             JARVIS-Antwort als String oder None (kein Smalltalk).
         """
         t = text.lower().strip().rstrip("?!.")
         title = get_person_title(self._current_person)
+        hour = datetime.now().hour
 
-        # --- "Wie geht es dir?" Varianten ---
+        # Schneller Kontext (kein API-Call, nur gecachte Daten)
+        pending_alerts = len(getattr(self.proactive, '_batch_queue', []))
+
+        # --- "Wie geht es dir?" Varianten — kontext-bewusst ---
         _how_are_you = [
             "wie geht es dir", "wie gehts dir", "wie geht's dir",
             "wie geht es ihnen", "geht es dir gut", "geht's dir gut",
@@ -5948,13 +6042,30 @@ class AssistantBrain(BrainCallbacksMixin):
             "bist du gut drauf", "und dir",
         ]
         if any(kw in t for kw in _how_are_you):
-            _responses = [
-                f"Systeme laufen einwandfrei, {title}. Danke der Nachfrage.",
-                f"Bestens, {title}. Alle Systeme operativ.",
-                f"Voll funktionsfaehig, {title}.",
-                f"Mir geht es ausgezeichnet, {title}. Und dir?",
-                f"Alles im gruenen Bereich, {title}.",
-            ]
+            # Bei aktiven Meldungen: ehrlich antworten
+            if pending_alerts >= 3:
+                _responses = [
+                    f"Koennnte ruhiger sein, {title}. {pending_alerts} offene Meldungen. Ich behalte es im Griff.",
+                    f"Ehrlich? {pending_alerts} Sachen wollen Aufmerksamkeit. Aber laeuft, {title}.",
+                ]
+            elif pending_alerts == 1:
+                _responses = [
+                    f"Fast alles ruhig, {title}. Eine Meldung offen — nichts Dramatisches.",
+                    f"Gut, {title}. Eine Kleinigkeit auf dem Tisch, sonst alles operativ.",
+                ]
+            elif 0 <= hour < 5:
+                _responses = [
+                    f"Wach um {hour} Uhr, {title}? Mir geht es bestens. Und dir?",
+                    f"Systeme laufen, {title}. Um diese Uhrzeit ist es angenehm ruhig.",
+                ]
+            else:
+                _responses = [
+                    f"Bestens, {title}. Alles operativ.",
+                    f"Systeme laufen einwandfrei, {title}. Danke der Nachfrage.",
+                    f"Voll funktionsfaehig, {title}.",
+                    f"Mir geht es ausgezeichnet, {title}. Und dir?",
+                    f"Alles im gruenen Bereich, {title}. Ungewoehnlich ruhig heute.",
+                ]
             return random.choice(_responses)
 
         # --- "Frag mich wie es mir geht" / "Willst du nicht fragen..." ---
@@ -5987,32 +6098,52 @@ class AssistantBrain(BrainCallbacksMixin):
             ]
             return random.choice(_responses)
 
-        # --- Guten Morgen / Abend / Nacht ---
-        _greetings = {
-            "guten morgen": [
-                f"Guten Morgen, {title}. Systeme laufen.",
-                f"Morgen, {title}. Alles bereit.",
-            ],
-            "guten abend": [
+        # --- Guten Morgen / Abend / Nacht — tageszeit-bewusst ---
+        if "guten morgen" in t:
+            if hour < 6:
+                _responses = [
+                    f"Frueh wach, {title}. Alles bereit.",
+                    f"Morgen, {title}. Oder eher noch Nacht.",
+                ]
+            elif hour >= 11:
+                _responses = [
+                    f"Morgen — oder was davon uebrig ist, {title}.",
+                    f"{title}. Fast schon Mittag, aber: Morgen.",
+                ]
+            else:
+                _responses = [
+                    f"Guten Morgen, {title}. Systeme laufen.",
+                    f"Morgen, {title}. Alles bereit.",
+                ]
+            return random.choice(_responses)
+
+        if "guten abend" in t:
+            _responses = [
                 f"Guten Abend, {title}.",
                 f"{title}. Schoener Abend bis jetzt.",
-            ],
-            "gute nacht": [
+            ]
+            return random.choice(_responses)
+
+        if "gute nacht" in t:
+            _responses = [
                 f"Gute Nacht, {title}. Ich halte die Stellung.",
                 f"Gute Nacht, {title}. Alles unter Kontrolle.",
-            ],
-            "hallo jarvis": [
+            ]
+            return random.choice(_responses)
+
+        if "hallo jarvis" in t:
+            _responses = [
                 f"{title}.",
                 f"Zu Diensten, {title}.",
-            ],
-            "hey jarvis": [
+            ]
+            return random.choice(_responses)
+
+        if "hey jarvis" in t:
+            _responses = [
                 f"{title}. Was brauchst du?",
                 f"Bin da, {title}.",
-            ],
-        }
-        for greeting, responses in _greetings.items():
-            if greeting in t:
-                return random.choice(responses)
+            ]
+            return random.choice(_responses)
 
         # --- Wer bist du? ---
         _identity = [
@@ -6026,6 +6157,25 @@ class AssistantBrain(BrainCallbacksMixin):
                 f"Dein Hausassistent, {title}. Stets zu Diensten.",
                 f"JARVIS. Ich halte hier alles am Laufen, {title}.",
             ]
+            return random.choice(_responses)
+
+        # --- Was machst du? / Was tust du? — zeige echten Status ---
+        _what_doing = [
+            "was machst du", "was tust du", "was machst du gerade",
+            "was tust du gerade", "langweilig", "bist du beschaeftigt",
+        ]
+        if any(kw in t for kw in _what_doing):
+            if pending_alerts > 0:
+                _responses = [
+                    f"{pending_alerts} Meldungen im Blick behalten, {title}. Und auf dich warten.",
+                    f"Das Uebliche, {title}. Sensoren, {pending_alerts} offene Meldungen, Hausroutinen.",
+                ]
+            else:
+                _responses = [
+                    f"Sensoren ueberwachen, Routinen abarbeiten, auf dich warten, {title}.",
+                    f"Das Uebliche, {title}. Alles im Griff.",
+                    f"Haus hueten, {title}. Wie immer.",
+                ]
             return random.choice(_responses)
 
         # --- Lob / Gut gemacht ---
@@ -6520,8 +6670,9 @@ Regeln:
         # Prompt zusammenbauen
         lines = [
             "\n\nPROBLEMLOESUNG — Du bist Ingenieur UND Butler. "
-            "Schlage 1-2 konkrete Loesungen vor, basierend auf diesen Haus-Daten. "
-            "Denke kreativ: Wenn das eine nicht geht, was noch? "
+            "Schlage 2-3 konkrete Loesungen vor mit Vor-/Nachteilen. "
+            "Format: 'Option A: [Loesung] — Vorteil: X, Nachteil: Y'. "
+            "Empfehle die beste Option explizit. "
             "Nutze die verfuegbaren Geraete als Werkzeuge.",
         ]
 
@@ -6549,6 +6700,176 @@ Regeln:
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
+    # Experiential Memory: "Letztes Mal als du das gemacht hast..."
+    # Speichert Aktion + Kontext und recalled bei aehnlichen Aktionen.
+    # ------------------------------------------------------------------
+
+    async def _log_experiential_memory(self, entry_json: str) -> None:
+        """Speichert eine Action-Outcome-Entry in Redis."""
+        try:
+            await self.memory.redis.lpush("mha:action_outcomes", entry_json)
+            await self.memory.redis.ltrim("mha:action_outcomes", 0, 499)
+        except Exception as e:
+            logger.debug("Experiential Memory Log Fehler: %s", e)
+
+    async def _get_experiential_hints(self, text: str) -> Optional[str]:
+        """Sucht relevante vergangene Erfahrungen basierend auf User-Text.
+
+        Wird im Mega-Gather aufgerufen um dem LLM Kontext ueber
+        vergangene aehnliche Aktionen zu liefern.
+        """
+        if not self.memory.redis:
+            return None
+
+        text_lower = text.lower()
+        # Mapping: Keywords im User-Text → Funktionsnamen in action_outcomes
+        _ACTION_KEYWORDS = {
+            "licht": "set_light", "lampe": "set_light",
+            "heizung": "set_climate", "temperatur": "set_climate",
+            "rollladen": "set_cover", "rolladen": "set_cover", "jalousie": "set_cover",
+            "musik": "play_media", "alarm": "set_alarm", "schloss": "set_lock",
+        }
+        target_actions = set()
+        for kw, action in _ACTION_KEYWORDS.items():
+            if kw in text_lower:
+                target_actions.add(action)
+
+        if not target_actions:
+            return None
+
+        try:
+            recent_outcomes = await self.memory.redis.lrange("mha:action_outcomes", 0, 99)
+        except Exception:
+            return None
+
+        relevant = []
+        for raw in recent_outcomes:
+            try:
+                entry = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if entry.get("action") in target_actions:
+                try:
+                    ts = datetime.fromisoformat(entry["timestamp"])
+                    delta = datetime.now() - ts
+                    if 1 <= delta.days <= 30:  # Mindestens 1 Tag alt, max 30
+                        relevant.append((delta, entry))
+                except (KeyError, ValueError):
+                    continue
+
+        if not relevant:
+            return None
+
+        # Aelteste relevante Erfahrung nehmen (nicht die juengste — die ist trivial)
+        relevant.sort(key=lambda x: x[0], reverse=True)
+        _, best = relevant[0]
+        days_ago = (datetime.now() - datetime.fromisoformat(best["timestamp"])).days
+
+        time_ref = "gestern" if days_ago == 1 else f"vor {days_ago} Tagen"
+        hint = best.get("context_hint", "")
+
+        return (
+            f"ERFAHRUNG: {time_ref} wurde {best['action']} mit "
+            f"aehnlichen Parametern ausgefuehrt."
+            + (f" Kontext damals: {hint}" if hint else "")
+            + "\nErwaehne das nur wenn es relevant ist: 'Wie neulich...' / 'Das hattest du zuletzt am...'"
+        )
+
+    # ------------------------------------------------------------------
+    # Intelligence Fusion: JARVIS DENKT MIT
+    # Fusioniert Signale aus AnticipationEngine, LearningObserver und
+    # InsightEngine in eine kompakte Kontext-Sektion fuer das LLM.
+    # ------------------------------------------------------------------
+
+    def _build_jarvis_thinks_context(
+        self,
+        anticipation_suggestions: list[dict],
+        learned_patterns: list[dict],
+        live_insights: list[dict],
+    ) -> Optional[str]:
+        """Erzeugt eine 'JARVIS DENKT MIT'-Sektion fuer den System-Prompt.
+
+        Fusioniert die drei Intelligenz-Subsysteme in maximal 5 kompakte
+        Hinweise, sortiert nach Relevanz. Das LLM kann diese beilaeufig
+        in seine Antwort einfliessen lassen — MCU-JARVIS-Stil.
+
+        Returns:
+            Prompt-Sektion als String, oder None wenn keine Erkenntnisse.
+        """
+        hints: list[tuple[int, str]] = []  # (priority, text)
+
+        # --- Anticipation: Erkannte Muster die JETZT zutreffen ---
+        for s in anticipation_suggestions[:3]:
+            conf = s.get("confidence", 0)
+            desc = s.get("description", "")
+            pct = int(conf * 100)
+            mode = s.get("mode", "ask")
+            if not desc:
+                continue
+
+            if mode == "auto":
+                hints.append((1, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
+                              f"Du kannst das eigenstaendig uebernehmen und beilaeufig erwaehnen."))
+            elif mode == "suggest":
+                hints.append((2, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
+                              f"Erwaehne es beilaeufig: 'Wie gewohnt um diese Zeit — soll ich?'"))
+            else:
+                hints.append((3, f"BEOBACHTUNG ({pct}% sicher): {desc}. "
+                              f"Nur erwaehnen wenn es zum Gespraech passt."))
+
+        # --- Live-Insights: Aktuelle Haus-Erkenntnisse ---
+        for insight in live_insights[:3]:
+            msg = insight.get("message", "")
+            urgency = insight.get("urgency", "low")
+            if not msg:
+                continue
+
+            if urgency in ("high", "critical"):
+                hints.append((1, f"WICHTIG: {msg}"))
+            elif urgency == "medium":
+                hints.append((2, f"HINWEIS: {msg}"))
+            else:
+                hints.append((4, f"INFO: {msg}"))
+
+        # --- Gelernte Muster: Haeufige User-Aktionen ---
+        # Nur die Top-3 mit hoher Wiederholungszahl
+        strong_patterns = [p for p in learned_patterns if p.get("count", 0) >= 4]
+        if strong_patterns:
+            pattern_lines = []
+            for p in strong_patterns[:3]:
+                entity = p.get("entity", "")
+                slot = p.get("time_slot", "")
+                count = p.get("count", 0)
+                # Entity-ID lesbarer machen
+                friendly = entity.replace("_", " ").split(".")[-1] if "." in entity else entity
+                pattern_lines.append(f"  - {friendly} um {slot} Uhr ({count}x beobachtet)")
+            if pattern_lines:
+                hints.append((3,
+                    "GELERNTE GEWOHNHEITEN des Users:\n" + "\n".join(pattern_lines) + "\n"
+                    "Referenziere beilaeufig wenn passend: "
+                    "'Wie jeden Abend um diese Zeit?' / 'Das machst du oefters — soll ich das automatisieren?'"
+                ))
+
+        if not hints:
+            return None
+
+        # Nach Prioritaet sortieren, max 5 Hints
+        hints.sort(key=lambda h: h[0])
+        selected = [h[1] for h in hints[:5]]
+
+        section = (
+            "\n\nJARVIS DENKT MIT:\n"
+            "Die folgenden Erkenntnisse stammen aus deiner Muster-Erkennung, "
+            "Haus-Analyse und Lern-Beobachtung. Flechte relevante Punkte "
+            "BEILAEUFIG ein — wie ein aufmerksamer Butler, NICHT wie ein Bericht. "
+            "Nur erwaehnen was zum aktuellen Gespraech passt.\n\n"
+        )
+        for i, hint in enumerate(selected, 1):
+            section += f"{i}. {hint}\n"
+
+        return section
+
+    # ------------------------------------------------------------------
     # Phase 8: Konversations-Kontinuitaet
     # ------------------------------------------------------------------
 
@@ -6559,7 +6880,7 @@ Regeln:
         Hinweis zurueck, statt nur das aelteste.
         Konfiguriert via conversation_continuity.* in settings.yaml.
         """
-        cont_cfg = yaml_config.get("conversation_continuity", {})
+        cont_cfg = cfg.yaml_config.get("conversation_continuity", {})
         if not cont_cfg.get("enabled", True):
             return None
 
@@ -6688,7 +7009,7 @@ Regeln:
         """Verarbeitet eine Korrektur und speichert sie als hochkonfidenten Fakt."""
         try:
             # Config-Werte fuer Korrektur-Lernen
-            corr_cfg = yaml_config.get("correction", {})
+            corr_cfg = cfg.yaml_config.get("correction", {})
             corr_confidence = float(corr_cfg.get("confidence", 0.95))
             corr_model = corr_cfg.get("model", "")
             corr_temperature = float(corr_cfg.get("temperature", 0.1))
@@ -6748,6 +7069,9 @@ Regeln:
 
         F-027: Trust-Level der erkannten Person wird bei Auto-Execute geprueft.
         Nur Owner darf sicherheitsrelevante Aktionen automatisch ausfuehren.
+
+        MCU-JARVIS-Stil: Confidence-Werte werden natuerlichsprachlich
+        kommuniziert statt versteckt.
         """
         # Quiet Hours: Anticipation-Vorschlaege sind nicht kritisch
         if hasattr(self, 'proactive') and self.proactive._is_quiet_hours():
@@ -6757,10 +7081,13 @@ Regeln:
         mode = suggestion.get("mode", "ask")
         desc = suggestion.get("description", "")
         action = suggestion.get("action", "")
+        conf = suggestion.get("confidence", 0)
+        pct = int(conf * 100)
+        person = suggestion.get("person", "")
+        title = get_person_title(person)
 
         if mode == "auto" and self.autonomy.level >= 4:
             # F-027: Trust-Check vor Auto-Execute
-            person = suggestion.get("person", "")
             trust_level = self.autonomy.get_trust_level(person) if person else 0
             # Sicherheitsrelevante Aktionen nur fuer Owner
             from .conditional_commands import OWNER_ONLY_ACTIONS
@@ -6769,7 +7096,6 @@ Regeln:
                     "F-027: Anticipation auto-execute blockiert (%s) — Person '%s' hat Trust %d",
                     action, person, trust_level,
                 )
-                title = get_person_title(person)
                 text = f"{title}, {desc}. Soll ich das uebernehmen? (Bestaetigung erforderlich)"
                 await emit_proactive(text, "anticipation_suggest", "medium")
                 return
@@ -6777,19 +7103,26 @@ Regeln:
             # Automatisch ausfuehren + informieren
             args = suggestion.get("args", {})
             result = await self.executor.execute(action, args)
-            title = get_person_title(person)
-            text = f"{title}, {desc} — hab ich uebernommen."
+            text = f"{title}, {desc} — hab ich uebernommen. Wie jeden Tag um diese Zeit."
             await emit_proactive(text, "anticipation_auto", "medium")
-            logger.info("Anticipation auto-execute: %s", desc)
+            logger.info("Anticipation auto-execute: %s (confidence: %d%%)", desc, pct)
         else:
-            # Vorschlagen
-            title = get_person_title(person)
+            # Vorschlagen — mit Confidence-Kontext im JARVIS-Stil
             if mode == "suggest":
-                text = f"{title}, wenn ich darf — {desc}. Soll ich?"
+                if pct >= 90:
+                    text = f"{title}, wenn ich darf — {desc}. Das machst du mit {pct}%iger Regelmaessigkeit."
+                else:
+                    text = f"{title}, basierend auf deinem Muster — {desc}. Soll ich?"
             else:
-                text = f"Mir ist aufgefallen: {desc}. Soll ich das uebernehmen?"
+                if pct >= 75:
+                    text = (
+                        f"{title}, mir ist ein Muster aufgefallen: {desc}. "
+                        f"Wahrscheinlichkeit liegt bei {pct}%. Soll ich das uebernehmen?"
+                    )
+                else:
+                    text = f"Mir ist aufgefallen: {desc}. Soll ich das uebernehmen?"
             await emit_proactive(text, "anticipation_suggest", "low")
-            logger.info("Anticipation suggestion: %s (%s)", desc, mode)
+            logger.info("Anticipation suggestion: %s (%s, %d%%)", desc, mode, pct)
 
     async def _handle_insight(self, insight: dict):
         """Callback fuer InsightEngine — Jarvis denkt voraus."""
@@ -6832,7 +7165,7 @@ Regeln:
         """Feature 8: Sendet woechentlich einen Lern-Bericht (konfigurierter Tag + Uhrzeit)."""
         while True:
             try:
-                weekly_cfg = yaml_config.get("learning", {}).get("weekly_report", {})
+                weekly_cfg = cfg.yaml_config.get("learning", {}).get("weekly_report", {})
                 target_day = int(weekly_cfg.get("day", 6))  # 0=Montag, 6=Sonntag
                 target_hour = int(weekly_cfg.get("hour", 19))
 
@@ -7199,7 +7532,7 @@ Regeln:
         Returns:
             Liste von Dicts: [{"message": str, "urgency": str, "type": str}]
         """
-        foresight_cfg = yaml_config.get("foresight", {})
+        foresight_cfg = cfg.yaml_config.get("foresight", {})
         if not foresight_cfg.get("enabled", True):
             return []
 

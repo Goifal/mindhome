@@ -388,6 +388,27 @@ class ContextBuilder:
                 if name:
                     house["media"].append(f"{name}: {title}" if title else name)
 
+            # Energie-Sensoren (Strom-Verbrauch)
+            elif domain == "sensor" and s not in ("unavailable", "unknown", ""):
+                unit = attrs.get("unit_of_measurement", "")
+                if unit in ("W", "kW", "kWh", "Wh"):
+                    name = _sanitize_for_prompt(
+                        attrs.get("friendly_name", entity_id), 60, "energy_name"
+                    )
+                    if name:
+                        house.setdefault("energy", []).append(f"{name}: {s} {unit}")
+
+            # Kalender (naechster Termin aus HA State-Attribut)
+            elif domain == "calendar" and s == "on":
+                summary = attrs.get("message", "")
+                start = attrs.get("start_time", "")
+                if summary:
+                    summary = _sanitize_for_prompt(summary, 100, "calendar_summary")
+                    if summary:
+                        house.setdefault("calendar", []).append(
+                            f"{summary}" + (f" um {start}" if start else "")
+                        )
+
         # Mittelwert aus konfigurierten Sensoren (hat Vorrang vor climate entities)
         rt_sensors = yaml_config.get("room_temperature", {}).get("sensors", []) or []
         if rt_sensors:

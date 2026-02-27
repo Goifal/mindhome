@@ -129,6 +129,8 @@ class ActionPlanner:
         self._last_plan: Optional[ActionPlan] = None
         self._redis = None
         self._pending_plans: dict[str, dict] = {}  # In-Memory Cache fuer laufende Dialoge
+        self._max_pending_plans = 5  # Maximal gleichzeitige Planungen
+        self._max_plan_messages = 20  # Max Messages pro Plan (Memory-Schutz)
 
         # Phase 9: Narration Mode Konfiguration
         narr_cfg = yaml_config.get("narration", {})
@@ -472,6 +474,15 @@ Sobald ich die Details habe, kuemmere ich mich um alles."
 
             # Plan-State speichern fuer Follow-Up (mit Timestamp fuer Auto-Expiry)
             import time as _time
+            # Expired Plans aufraumen bevor neuer hinzukommt (Memory-Schutz)
+            self._cleanup_expired_plans()
+            # Aelteste Plans entfernen wenn Limit erreicht
+            while len(self._pending_plans) >= self._max_pending_plans:
+                oldest_id = min(self._pending_plans,
+                                key=lambda k: self._pending_plans[k].get("created_at", 0))
+                self._pending_plans.pop(oldest_id, None)
+                logger.info("Planungs-Dialog %s entfernt (max %d erreicht)",
+                            oldest_id, self._max_pending_plans)
             self._pending_plans[plan_id] = {
                 "original_request": text,
                 "person": person,
@@ -512,6 +523,13 @@ Sobald ich die Details habe, kuemmere ich mich um alles."
             return {"response": "Der Plan ist abgelaufen. Was soll ich planen?", "status": "error"}
 
         plan_state["messages"].append({"role": "user", "content": text})
+
+        # Memory-Schutz: Aelteste Messages trimmen wenn Limit erreicht
+        if len(plan_state["messages"]) > self._max_plan_messages:
+            # Erste und letzte Messages behalten, Mitte kuerzen
+            plan_state["messages"] = (
+                plan_state["messages"][:2] + plan_state["messages"][-(self._max_plan_messages - 2):]
+            )
 
         finalize_prompt = """Basierend auf den bisherigen Informationen:
 1. Erstelle einen konkreten Plan mit nummerierten Schritten
@@ -580,6 +598,17 @@ Frage am Ende ob der Plan so umgesetzt werden soll."""},
             self._pending_plans.pop(plan_id, None)
             logger.info("Planungs-Dialog %s nach Timeout entfernt", plan_id)
         return result
+
+    def _cleanup_expired_plans(self):
+        """Entfernt abgelaufene Plans (>10 Min). Wird vor neuen Plans aufgerufen."""
+        import time as _time
+        expired = [
+            pid for pid, state in self._pending_plans.items()
+            if (_time.time() - state.get("created_at", 0)) > 600
+        ]
+        for pid in expired:
+            self._pending_plans.pop(pid, None)
+            logger.info("Planungs-Dialog %s nach Timeout entfernt", pid)
 
     def clear_plan(self, plan_id: str):
         """Beendet einen Planungs-Dialog."""

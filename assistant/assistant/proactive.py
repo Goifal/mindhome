@@ -26,7 +26,7 @@ from typing import Optional
 import aiohttp
 import yaml
 
-from .config import settings, yaml_config, get_person_title, set_active_person, resolve_person_by_entity
+from .config import settings, yaml_config, get_person_title, set_active_person, resolve_person_by_entity, get_room_profiles
 from .constants import (
     GEO_APPROACHING_COOLDOWN_MIN,
     GEO_ARRIVING_COOLDOWN_MIN,
@@ -43,31 +43,8 @@ from .websocket import emit_proactive, emit_interrupt
 
 logger = logging.getLogger(__name__)
 
-# ── Room-Profile-Cache fuer proactive.py (vermeidet wiederholtes YAML-Parsen) ──
-_room_profiles_cache: dict = {}
-_room_profiles_ts: float = 0.0
-_ROOM_PROFILES_TTL = 60  # 1 Min
-
-
-def _get_room_profiles_cached() -> dict:
-    """Liefert room_profiles.yaml aus Cache (oder laedt bei Bedarf von Disk)."""
-    global _room_profiles_cache, _room_profiles_ts
-    now = time.time()
-    if _room_profiles_cache and (now - _room_profiles_ts) < _ROOM_PROFILES_TTL:
-        return _room_profiles_cache
-    try:
-        _cfg = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
-        if _cfg.exists():
-            with open(_cfg) as f:
-                _room_profiles_cache = yaml.safe_load(f) or {}
-        else:
-            _room_profiles_cache = {}
-    except Exception as e:
-        logger.debug("Room-Profiles nicht ladbar: %s", e)
-        if not _room_profiles_cache:
-            _room_profiles_cache = {}
-    _room_profiles_ts = now
-    return _room_profiles_cache
+# Room-Profiles: zentraler Cache aus config.py
+_get_room_profiles_cached = get_room_profiles
 
 
 # Event-Prioritaeten
@@ -1713,19 +1690,18 @@ class ProactiveManager:
             if not self._batch_queue:
                 return
 
+            # Quiet Hours VOR Entnahme pruefen (vermeidet unnoetige Remove+Re-Insert)
+            if self._is_quiet_hours():
+                logger.info("Batch unterdrueckt (Quiet Hours, %d Items in Queue)",
+                            len(self._batch_queue))
+                return
+
             # Queue leeren (atomar unter Lock)
             items = self._batch_queue[:self.batch_max_items]
             self._batch_queue = self._batch_queue[self.batch_max_items:]
 
         # Sortieren: MEDIUM zuerst, dann LOW
         items.sort(key=lambda x: 0 if x.get("urgency") == MEDIUM else 1)
-
-        # Quiet Hours: Batch nicht waehrend Ruhezeiten senden
-        if self._is_quiet_hours():
-            logger.info("Batch unterdrueckt (Quiet Hours, %d Items zurueck in Queue)", len(items))
-            async with self._state_lock:
-                self._batch_queue = items + self._batch_queue
-            return
 
         # Activity-Check: Nicht bei Schlaf/Call (aber MEDIUM weniger streng)
         highest_urgency = MEDIUM if any(b.get("urgency") == MEDIUM for b in items) else LOW

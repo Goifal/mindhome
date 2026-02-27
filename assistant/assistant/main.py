@@ -2102,6 +2102,7 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
         "feedback": "feedback",
         "situation_model": "situation_model",
         "interrupt_queue": "interrupt_queue",
+        "planner": "action_planner",
     }
 
     for config_key, attr_name in MODULE_CONFIG_MAP.items():
@@ -2119,9 +2120,19 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
     Module die bei jedem Zugriff yaml_config lesen profitieren automatisch.
     Module die im __init__ cachen werden hier explizit aktualisiert.
     """
-    try:
-        # Personality: Sarkasmus, Humor, Style direkt aktualisieren
-        if "personality" in changed_settings and hasattr(brain, "personality"):
+    failed_modules: list[str] = []
+
+    def _try_reload(name: str, fn):
+        """Fuehrt fn() aus und sammelt Fehler in failed_modules."""
+        try:
+            fn()
+        except Exception as e:
+            failed_modules.append(name)
+            logger.warning("Reload '%s' fehlgeschlagen: %s", name, e)
+
+    # Personality: Sarkasmus, Humor, Style direkt aktualisieren
+    if "personality" in changed_settings and hasattr(brain, "personality"):
+        def _reload_personality():
             p_cfg = yaml_cfg.get("personality", {})
             pe = brain.personality
             pe.sarcasm_level = int(p_cfg.get("sarcasm_level", pe.sarcasm_level))
@@ -2134,16 +2145,43 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             pe.formality_decay = float(p_cfg.get("formality_decay_per_day", pe.formality_decay))
             pe.time_layers = p_cfg.get("time_layers") or pe.time_layers
             logger.info("Personality Engine Settings aktualisiert")
+        _try_reload("personality", _reload_personality)
 
-        # Proactive: Cooldowns und Batch-Interval
-        if "proactive" in changed_settings and hasattr(brain, "proactive"):
+    # ActionPlanner: MAX_ITERATIONS + COMPLEX_KEYWORDS
+    if "planner" in changed_settings:
+        def _reload_planner():
+            import assistant.action_planner as ap
+            planner_cfg = yaml_cfg.get("planner", {})
+            ap.MAX_ITERATIONS = int(planner_cfg.get("max_iterations", ap._DEFAULT_MAX_ITERATIONS))
+            ap.COMPLEX_KEYWORDS = planner_cfg.get("complex_keywords", ap._DEFAULT_COMPLEX_KEYWORDS)
+            logger.info("ActionPlanner Settings aktualisiert (max_iterations=%d)", ap.MAX_ITERATIONS)
+        _try_reload("planner", _reload_planner)
+
+    # Proactive: Cooldowns, Batch-Settings und Quiet-Hours
+    if "proactive" in changed_settings and hasattr(brain, "proactive"):
+        def _reload_proactive():
             pro_cfg = yaml_cfg.get("proactive", {})
-            brain.proactive.batch_interval = int(pro_cfg.get("batch_interval", 30))
             brain.proactive.enabled = bool(pro_cfg.get("enabled", True))
+            brain.proactive.cooldown = int(pro_cfg.get("cooldown_seconds", 300))
+            batch_cfg = pro_cfg.get("batching", {})
+            brain.proactive.batch_enabled = bool(batch_cfg.get("enabled", True))
+            brain.proactive.batch_interval = int(batch_cfg.get("interval_minutes", 30))
+            brain.proactive.batch_max_items = int(batch_cfg.get("max_items", 10))
             logger.info("Proactive Settings aktualisiert")
+        _try_reload("proactive", _reload_proactive)
 
-        # Routines: Morning/Evening Briefing
-        if "routines" in changed_settings and hasattr(brain, "proactive"):
+    # Quiet Hours (aus ambient_presence)
+    if "ambient_presence" in changed_settings and hasattr(brain, "proactive"):
+        def _reload_quiet_hours():
+            quiet_cfg = yaml_cfg.get("ambient_presence", {})
+            brain.proactive._quiet_start = int(quiet_cfg.get("quiet_start", 22))
+            brain.proactive._quiet_end = int(quiet_cfg.get("quiet_end", 7))
+            logger.info("Quiet Hours aktualisiert")
+        _try_reload("ambient_presence", _reload_quiet_hours)
+
+    # Routines: Morning/Evening Briefing
+    if "routines" in changed_settings and hasattr(brain, "proactive"):
+        def _reload_routines():
             routines_cfg = yaml_cfg.get("routines", {})
             mb_cfg = routines_cfg.get("morning_briefing", {})
             brain.proactive._mb_enabled = bool(mb_cfg.get("enabled", True))
@@ -2154,29 +2192,37 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             brain.proactive._eb_window_start = int(eb_cfg.get("window_start_hour", 20))
             brain.proactive._eb_window_end = int(eb_cfg.get("window_end_hour", 22))
             logger.info("Routine Settings aktualisiert")
+        _try_reload("routines", _reload_routines)
 
-        # Autonomy: Trust-Levels
-        if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
+    # Autonomy: Trust-Levels
+    if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
+        def _reload_autonomy():
             auto_cfg = yaml_cfg.get("autonomy", {})
             brain.autonomy.level = int(auto_cfg.get("level", brain.autonomy.level))
             logger.info("Autonomy Settings aktualisiert")
+        _try_reload("autonomy", _reload_autonomy)
 
-        # Activity: Entity-Listen und Schwellwerte
-        if "activity" in changed_settings and hasattr(brain, "activity"):
+    # Activity: Entity-Listen und Schwellwerte
+    if "activity" in changed_settings and hasattr(brain, "activity"):
+        def _reload_activity():
             activity_cfg = yaml_cfg.get("activity", {})
             brain.activity.reload_config(activity_cfg)
+        _try_reload("activity", _reload_activity)
 
-        # Threat Assessment: Nacht-Zeiten
-        if "threat_assessment" in changed_settings and hasattr(brain, "threat_assessment"):
+    # Threat Assessment: Nacht-Zeiten
+    if "threat_assessment" in changed_settings and hasattr(brain, "threat_assessment"):
+        def _reload_threat():
             ta_cfg = yaml_cfg.get("threat_assessment", {})
             ta = brain.threat_assessment
             ta.night_start = int(ta_cfg.get("night_start_hour", ta.night_start))
             ta.night_end = int(ta_cfg.get("night_end_hour", ta.night_end))
             ta.enabled = bool(ta_cfg.get("enabled", ta.enabled))
             logger.info("Threat Assessment Settings aktualisiert")
+        _try_reload("threat_assessment", _reload_threat)
 
-        # TTS Enhancer
-        if "tts" in changed_settings and hasattr(brain, "tts_enhancer"):
+    # TTS Enhancer
+    if "tts" in changed_settings and hasattr(brain, "tts_enhancer"):
+        def _reload_tts():
             tts_cfg = yaml_cfg.get("tts", {})
             te = brain.tts_enhancer
             speed_val = tts_cfg.get("speed", getattr(te, "speed", 1.0))
@@ -2186,9 +2232,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             if not isinstance(pitch_val, dict):
                 te.pitch = float(pitch_val)
             logger.info("TTS Enhancer Settings aktualisiert")
+        _try_reload("tts", _reload_tts)
 
-        # Web Search
-        if "web_search" in changed_settings and hasattr(brain, "web_search"):
+    # Web Search
+    if "web_search" in changed_settings and hasattr(brain, "web_search"):
+        def _reload_web_search():
             ws_cfg = yaml_cfg.get("web_search", {})
             ws = brain.web_search
             ws.enabled = bool(ws_cfg.get("enabled", False))
@@ -2198,9 +2246,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             ws.timeout = int(ws_cfg.get("timeout_seconds", ws.timeout))
             logger.info("Web Search Settings aktualisiert (enabled=%s, engine=%s)",
                         ws.enabled, ws.engine)
+        _try_reload("web_search", _reload_web_search)
 
-        # Health Monitor: Schwellwerte + Exclude-Patterns
-        if "health_monitor" in changed_settings and hasattr(brain, "health_monitor"):
+    # Health Monitor: Schwellwerte + Exclude-Patterns
+    if "health_monitor" in changed_settings and hasattr(brain, "health_monitor"):
+        def _reload_health_monitor():
             hm_cfg = yaml_cfg.get("health_monitor", {})
             hm = brain.health_monitor
             hm.enabled = bool(hm_cfg.get("enabled", True))
@@ -2225,9 +2275,12 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             hm.humidor_warn_below = int(humidor_cfg.get("warn_below", 62))
             hm.humidor_warn_above = int(humidor_cfg.get("warn_above", 75))
             logger.info("Health Monitor Settings aktualisiert")
+        _try_reload("health_monitor", _reload_health_monitor)
 
-        # Humidor: Auch bei separater Aenderung (ohne health_monitor) hot-reloaden
-        if "humidor" in changed_settings and hasattr(brain, "health_monitor"):
+    # Humidor: Auch bei separater Aenderung (ohne health_monitor) hot-reloaden
+    if "humidor" in changed_settings and "health_monitor" not in changed_settings \
+            and hasattr(brain, "health_monitor"):
+        def _reload_humidor():
             humidor_cfg = yaml_cfg.get("humidor", {})
             hm = brain.health_monitor
             hm.humidor_enabled = bool(humidor_cfg.get("enabled", False))
@@ -2236,14 +2289,18 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             hm.humidor_warn_below = int(humidor_cfg.get("warn_below", 62))
             hm.humidor_warn_above = int(humidor_cfg.get("warn_above", 75))
             logger.info("Humidor Settings aktualisiert")
+        _try_reload("humidor", _reload_humidor)
 
-        # InsightEngine: Alle Einstellungen hot-reloadbar
-        if "insights" in changed_settings and hasattr(brain, "insight_engine"):
+    # InsightEngine: Alle Einstellungen hot-reloadbar
+    if "insights" in changed_settings and hasattr(brain, "insight_engine"):
+        def _reload_insights():
             brain.insight_engine.reload_config()
             logger.info("InsightEngine Settings aktualisiert")
+        _try_reload("insights", _reload_insights)
 
-        # Situation Model: Schwellwerte + Toggle
-        if "situation_model" in changed_settings and hasattr(brain, "situation_model"):
+    # Situation Model: Schwellwerte + Toggle
+    if "situation_model" in changed_settings and hasattr(brain, "situation_model"):
+        def _reload_situation_model():
             sm_cfg = yaml_cfg.get("situation_model", {})
             sm = brain.situation_model
             sm.enabled = bool(sm_cfg.get("enabled", True))
@@ -2251,24 +2308,26 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             sm.max_changes = int(sm_cfg.get("max_changes", 5))
             sm.temp_threshold = float(sm_cfg.get("temp_threshold", 2))
             logger.info("Situation Model Settings aktualisiert")
+        _try_reload("situation_model", _reload_situation_model)
 
-        # Music DJ: Config hot-reload
-        if "music_dj" in changed_settings and hasattr(brain, "music_dj"):
-            dj_cfg = yaml_cfg.get("music_dj", {})
-            brain.music_dj.reload_config(dj_cfg)
+    # Music DJ: Config hot-reload
+    if "music_dj" in changed_settings and hasattr(brain, "music_dj"):
+        dj_cfg = yaml_cfg.get("music_dj", {})
+        brain.music_dj.reload_config(dj_cfg)
 
-        # Wellness Advisor: Config hot-reload
-        if "wellness" in changed_settings and hasattr(brain, "wellness"):
-            well_cfg = yaml_cfg.get("wellness", {})
-            brain.wellness.reload_config(well_cfg)
+    # Wellness Advisor: Config hot-reload
+    if "wellness" in changed_settings and hasattr(brain, "wellness"):
+        well_cfg = yaml_cfg.get("wellness", {})
+        brain.wellness.reload_config(well_cfg)
 
-        # Interrupt-Queue: Wird direkt aus yaml_config gelesen (websocket.py),
-        # keine gecachten Attribute — nur Logging fuer Feedback
-        if "interrupt_queue" in changed_settings:
-            logger.info("Interrupt-Queue Settings aktualisiert (live aus yaml_config)")
+    # Interrupt-Queue: Wird direkt aus yaml_config gelesen (websocket.py),
+    # keine gecachten Attribute — nur Logging fuer Feedback
+    if "interrupt_queue" in changed_settings:
+        logger.info("Interrupt-Queue Settings aktualisiert (live aus yaml_config)")
 
-        # Vacuum-Trigger: Tasks starten wenn noetig (Config wird im Loop gelesen)
-        if "vacuum" in changed_settings and hasattr(brain, "proactive"):
+    # Vacuum-Trigger: Tasks starten wenn noetig (Config wird im Loop gelesen)
+    if "vacuum" in changed_settings and hasattr(brain, "proactive"):
+        def _reload_vacuum():
             pro = brain.proactive
             vacuum_cfg = yaml_cfg.get("vacuum", {})
             if vacuum_cfg.get("enabled") and pro._running:
@@ -2285,9 +2344,189 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                         pro._vacuum_scene_task = asyncio.create_task(pro._run_vacuum_scene_trigger())
                         logger.info("Vacuum Scene-Trigger Task (neu) gestartet")
             logger.info("Vacuum Settings aktualisiert")
+        _try_reload("vacuum", _reload_vacuum)
 
-    except Exception as e:
-        logger.warning("Settings-Propagation teilweise fehlgeschlagen: %s", e)
+    # --- Fehlende Hot-Reloads fuer Module die Config im __init__ cachen ---
+
+    # ConflictResolver: Fenster, Limits, Mediation
+    if "conflict_resolution" in changed_settings and hasattr(brain, "conflict_resolver"):
+        def _reload_conflict_resolver():
+            cfg = yaml_cfg.get("conflict_resolution", {})
+            cr = brain.conflict_resolver
+            cr.enabled = cfg.get("enabled", True)
+            cr._conflict_window = int(cfg.get("conflict_window_seconds", 300))
+            cr._max_commands = int(cfg.get("max_commands_per_person", 20))
+            cr._use_trust_priority = cfg.get("use_trust_priority", True)
+            cr._resolution_cooldown = int(cfg.get("resolution_cooldown_seconds", 120))
+            med_cfg = cfg.get("mediation", {})
+            cr._mediation_enabled = med_cfg.get("enabled", True)
+            cr._mediation_model = med_cfg.get("model", "qwen3:14b")
+            cr._mediation_max_tokens = int(med_cfg.get("max_tokens", 256))
+            cr._mediation_temperature = med_cfg.get("temperature", 0.7)
+            cr._domain_configs = cfg.get("conflict_domains", {})
+            logger.info("ConflictResolver Settings aktualisiert")
+        _try_reload("conflict_resolution", _reload_conflict_resolver)
+
+    # AmbientAudio: Sensor-Mappings, Cooldowns, Night-Mode
+    if "ambient_audio" in changed_settings and hasattr(brain, "ambient_audio"):
+        def _reload_ambient_audio():
+            cfg = yaml_cfg.get("ambient_audio", {})
+            aa = brain.ambient_audio
+            aa.enabled = cfg.get("enabled", True)
+            aa._sensor_mappings = cfg.get("sensor_mappings") or {}
+            cooldowns = cfg.get("cooldowns") or {}
+            aa._default_cooldown = cooldowns.get("default_seconds", 30)
+            aa._event_cooldowns = cooldowns.get("per_event") or {}
+            aa._reaction_overrides = cfg.get("reaction_overrides") or {}
+            night_cfg = cfg.get("night_mode") or {}
+            aa._night_start = int(night_cfg.get("start_hour", 22))
+            aa._night_end = int(night_cfg.get("end_hour", 7))
+            aa._night_escalate = night_cfg.get("escalate_severity", True)
+            aa._disabled_events = set(cfg.get("disabled_events") or [])
+            aa._poll_interval = cfg.get("poll_interval_seconds", 5)
+            logger.info("AmbientAudio Settings aktualisiert")
+        _try_reload("ambient_audio", _reload_ambient_audio)
+
+    # CameraManager: Vision-Model, Camera-Map
+    if "cameras" in changed_settings and hasattr(brain, "camera_manager"):
+        def _reload_cameras():
+            cfg = yaml_cfg.get("cameras", {})
+            cm = brain.camera_manager
+            cm.enabled = cfg.get("enabled", True)
+            cm.vision_model = cfg.get("vision_model", "llava")
+            cm.camera_map = cfg.get("camera_map", {})
+            logger.info("CameraManager Settings aktualisiert")
+        _try_reload("cameras", _reload_cameras)
+
+    # CookingAssistant: Portionen, Steps, Tokens
+    if "cooking" in changed_settings and hasattr(brain, "cooking"):
+        def _reload_cooking():
+            cfg = yaml_cfg.get("cooking", {})
+            ca = brain.cooking
+            ca.enabled = cfg.get("enabled", True)
+            ca.default_portions = int(cfg.get("default_portions", 2))
+            ca.max_steps = int(cfg.get("max_steps", 12))
+            ca.max_tokens = int(cfg.get("max_tokens", 1024))
+            ca.timer_notify_tts = cfg.get("timer_notify_tts", True)
+            logger.info("CookingAssistant Settings aktualisiert")
+        _try_reload("cooking", _reload_cooking)
+
+    # EnergyOptimizer: Sensoren, Schwellwerte
+    if "energy" in changed_settings and hasattr(brain, "energy_optimizer"):
+        def _reload_energy():
+            cfg = yaml_cfg.get("energy", {})
+            eo = brain.energy_optimizer
+            eo.enabled = cfg.get("enabled", True)
+            entities = cfg.get("entities", {})
+            eo.price_sensor = entities.get("electricity_price", "")
+            eo.consumption_sensor = entities.get("total_consumption", "")
+            eo.solar_sensor = entities.get("solar_production", "")
+            eo.grid_export_sensor = entities.get("grid_export", "")
+            thresholds = cfg.get("thresholds", {})
+            eo.price_low = thresholds.get("price_low_cent", 15)
+            eo.price_high = thresholds.get("price_high_cent", 35)
+            eo.solar_high_watts = thresholds.get("solar_high_watts", 2000)
+            eo.anomaly_percent = thresholds.get("anomaly_increase_percent", 30)
+            eo.essential_entities = set(cfg.get("essential_entities", []))
+            logger.info("EnergyOptimizer Settings aktualisiert")
+        _try_reload("energy", _reload_energy)
+
+    # LearningObserver: Repetitions, Zeitfenster
+    if "learning" in changed_settings and hasattr(brain, "learning_observer"):
+        def _reload_learning():
+            cfg = yaml_cfg.get("learning", {})
+            lo = brain.learning_observer
+            lo.enabled = cfg.get("enabled", True)
+            lo.min_repetitions = cfg.get("min_repetitions", 3)
+            lo.time_window_minutes = cfg.get("time_window_minutes", 30)
+            logger.info("LearningObserver Settings aktualisiert")
+        _try_reload("learning", _reload_learning)
+
+    # MusicDJ: Config + Enabled
+    if "music_dj" in changed_settings and hasattr(brain, "music_dj"):
+        def _reload_music_dj():
+            cfg = yaml_cfg.get("music_dj", {})
+            brain.music_dj._config = cfg
+            brain.music_dj.enabled = cfg.get("enabled", True)
+            logger.info("MusicDJ Settings aktualisiert")
+        _try_reload("music_dj", _reload_music_dj)
+
+    # ProtocolEngine: Max-Protocols, Max-Steps
+    if "protocols" in changed_settings and hasattr(brain, "protocol_engine"):
+        def _reload_protocols():
+            cfg = yaml_cfg.get("protocols", {})
+            pe = brain.protocol_engine
+            pe.enabled = cfg.get("enabled", True)
+            pe.max_protocols = cfg.get("max_protocols", 20)
+            pe.max_steps = cfg.get("max_steps", 10)
+            logger.info("ProtocolEngine Settings aktualisiert")
+        _try_reload("protocols", _reload_protocols)
+
+    # SelfAutomation: Config, Security, Limits
+    if "self_automation" in changed_settings and hasattr(brain, "self_automation"):
+        def _reload_self_automation():
+            cfg = yaml_cfg.get("self_automation", {})
+            sa = brain.self_automation
+            sa._cfg = cfg
+            raw_max = cfg.get("max_per_day", 5)
+            sa._max_per_day = max(1, min(20, int(raw_max)))
+            logger.info("SelfAutomation Settings aktualisiert (max_per_day=%d)",
+                        sa._max_per_day)
+        _try_reload("self_automation", _reload_self_automation)
+
+    # SelfOptimization: Approval-Mode, Intervall, Model, Bounds
+    if "self_optimization" in changed_settings and hasattr(brain, "self_optimization"):
+        def _reload_self_optimization():
+            cfg = yaml_cfg.get("self_optimization", {})
+            so = brain.self_optimization
+            so._cfg = cfg
+            so._enabled = cfg.get("enabled", False)
+            so._approval_mode = cfg.get("approval_mode", "manual")
+            so._interval = cfg.get("analysis_interval", "weekly")
+            so._max_proposals = cfg.get("max_proposals_per_cycle", 3)
+            so._model = cfg.get("model", "qwen3:14b")
+            so._bounds = cfg.get("parameter_bounds", {})
+            logger.info("SelfOptimization Settings aktualisiert (enabled=%s)", so._enabled)
+        _try_reload("self_optimization", _reload_self_optimization)
+
+    # VisitorManager: Guest-Mode, Cooldown, History-Max
+    if "visitor_management" in changed_settings and hasattr(brain, "visitor_manager"):
+        def _reload_visitor():
+            cfg = yaml_cfg.get("visitor_management", {})
+            vm = brain.visitor_manager
+            vm.enabled = cfg.get("enabled", True)
+            vm.auto_guest_mode = cfg.get("auto_guest_mode", False)
+            vm.ring_cooldown_seconds = cfg.get("ring_cooldown_seconds", 30)
+            vm.history_max = cfg.get("history_max", 100)
+            logger.info("VisitorManager Settings aktualisiert")
+        _try_reload("visitor_management", _reload_visitor)
+
+    # DeviceHealth: Alle Schwellwerte + Exclude-Patterns (erweitert partiellen Reload)
+    if "device_health" in changed_settings and hasattr(brain, "device_health"):
+        def _reload_device_health():
+            from assistant.device_health import DEFAULTS
+            cfg = yaml_cfg.get("device_health", {})
+            dh = brain.device_health
+            dh.enabled = cfg.get("enabled", True)
+            dh.check_interval = cfg.get("check_interval_minutes", DEFAULTS["check_interval_minutes"])
+            dh.baseline_days = cfg.get("baseline_history_days", DEFAULTS["baseline_history_days"])
+            dh.stddev_multiplier = cfg.get("stddev_multiplier", DEFAULTS["stddev_multiplier"])
+            dh.min_samples = cfg.get("min_samples", DEFAULTS["min_samples"])
+            dh.stale_days = cfg.get("stale_sensor_days", DEFAULTS["stale_sensor_days"])
+            dh.hvac_timeout = cfg.get("hvac_timeout_minutes", DEFAULTS["hvac_timeout_minutes"])
+            dh.hvac_tolerance = cfg.get("hvac_temp_tolerance", DEFAULTS["hvac_temp_tolerance"])
+            dh.alert_cooldown = cfg.get("alert_cooldown_minutes", DEFAULTS["alert_cooldown_minutes"])
+            dh.track_domains = cfg.get("track_domains", DEFAULTS["track_domains"])
+            dh.exclude_patterns = cfg.get("exclude_patterns", DEFAULTS["exclude_patterns"])
+            dh.energy_keywords = cfg.get("energy_sensor_keywords", DEFAULTS["energy_sensor_keywords"])
+            dh.monitored_entities = cfg.get("monitored_entities", [])
+            logger.info("DeviceHealth Settings aktualisiert")
+        _try_reload("device_health", _reload_device_health)
+
+    if failed_modules:
+        logger.warning("Settings-Reload: %d Module fehlgeschlagen: %s",
+                        len(failed_modules), ", ".join(failed_modules))
+    return failed_modules
 
 
 # Sicherheitskritische Keys die aus Bulk-Settings-Updates herausgefiltert werden.
@@ -2421,9 +2660,11 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
                 "message": f"Ungueltige Werte: {', '.join(validation_errors)}",
             }
 
-        # Aktuelle Config laden
-        with open(SETTINGS_YAML_PATH) as f:
-            config = yaml.safe_load(f) or {}
+        # Aktuelle Config laden (non-blocking)
+        def _read_yaml():
+            with open(SETTINGS_YAML_PATH) as f:
+                return yaml.safe_load(f) or {}
+        config = await asyncio.to_thread(_read_yaml)
 
         # Speech-Settings vor dem Merge merken (fuer Restart-Erkennung)
         old_speech = config.get("speech", {}).copy() if "speech" in config else {}
@@ -2431,9 +2672,11 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         # Deep Merge (nur bereinigte Settings)
         _deep_merge(config, safe_settings)
 
-        # Zurueckschreiben
-        with open(SETTINGS_YAML_PATH, "w") as f:
-            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        # Zurueckschreiben (non-blocking)
+        def _write_yaml():
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_write_yaml)
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
@@ -2446,10 +2689,7 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         if hasattr(brain, "model_router") and brain.model_router:
             brain.model_router.reload_config()
 
-        # DeviceHealth: monitored_entities aktualisieren
-        if hasattr(brain, "device_health"):
-            dh_cfg = cfg.yaml_config.get("device_health", {})
-            brain.device_health.monitored_entities = dh_cfg.get("monitored_entities", [])
+        # DeviceHealth: Vollstaendiger Reload jetzt in _reload_all_modules()
 
         # Diagnostics: monitored_entities aktualisieren
         if hasattr(brain, "diagnostics"):
@@ -2461,31 +2701,34 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
             sound_cfg = cfg.yaml_config.get("sounds", {})
             brain.sound_manager.alexa_speakers = sound_cfg.get("alexa_speakers", [])
 
-        # Speech-Engine: .env sync + Container automatisch neustarten
+        # Speech-Engine: .env sync + Container automatisch neustarten (non-blocking)
         new_speech = cfg.yaml_config.get("speech", {})
         speech_changed = (old_speech != new_speech)
-        speech_restarted = []
         if speech_changed:
             _sync_speech_to_env(new_speech)
-            speech_restarted = await _restart_speech_containers(old_speech, new_speech)
+            asyncio.create_task(_restart_speech_containers(old_speech, new_speech))
+            logger.info("Speech-Container Restart im Hintergrund gestartet")
 
         # F-038: Alle weiteren Module benachrichtigen die Config bei __init__ cachen
-        _reload_all_modules(cfg.yaml_config, safe_settings)
+        reload_failures = _reload_all_modules(cfg.yaml_config, safe_settings)
 
         # Audit-Log (mit Details ueber geschuetzte Keys)
         changed_keys = list(safe_settings.keys())
         audit_details = {"changed_sections": changed_keys}
         if stripped:
             audit_details["stripped_protected"] = stripped
-        if speech_restarted:
-            audit_details["speech_containers_restarted"] = speech_restarted
+        if speech_changed:
+            audit_details["speech_containers_restarting"] = True
+        if reload_failures:
+            audit_details["reload_failures"] = reload_failures
         _audit_log("settings_update", audit_details)
 
         reloaded_count = 4 + len(_get_reloaded_modules(safe_settings))
-        speech_hint = f" + Speech-Container neu gestartet: {', '.join(speech_restarted)}" if speech_restarted else ""
+        speech_hint = " — Speech-Container werden neu gestartet" if speech_changed else ""
+        fail_hint = f" (Fehler bei: {', '.join(reload_failures)})" if reload_failures else ""
         return {
             "success": True,
-            "message": f"Settings gespeichert ({reloaded_count} Module aktualisiert){speech_hint}",
+            "message": f"Settings gespeichert ({reloaded_count} Module aktualisiert){speech_hint}{fail_hint}",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
@@ -2760,20 +3003,10 @@ async def ui_update_room_profiles(request: Request, token: str = ""):
                 default_flow_style=False, sort_keys=False,
             )
 
-        # Caches invalidieren (function_calling + proactive haben 10-Min-TTL)
-        try:
-            from assistant.function_calling import _room_profiles_cache, _room_profiles_ts
-            import assistant.function_calling as fc_mod
-            fc_mod._room_profiles_cache = {}
-            fc_mod._room_profiles_ts = 0.0
-        except Exception:
-            pass
-        try:
-            import assistant.proactive as pro_mod
-            pro_mod._room_profiles_cache = {}
-            pro_mod._room_profiles_ts = 0.0
-        except Exception:
-            pass
+        # Zentralen Room-Profiles-Cache invalidieren (config.py)
+        import assistant.config as cfg_mod
+        cfg_mod._room_profiles_cache = {}
+        cfg_mod._room_profiles_ts = 0.0
 
         _audit_log("room_profiles_update", {"changed_sections": list(updates.keys())})
         return {"success": True, "message": "Room-Profiles gespeichert"}
