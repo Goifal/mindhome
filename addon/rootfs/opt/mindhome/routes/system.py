@@ -503,8 +503,8 @@ def api_onboarding_complete():
 def api_get_action_log():
     """Get action log with time filters and pagination."""
     with get_db_session() as session:
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = max(1, min(500, request.args.get("limit", 50, type=int)))
+        offset = max(0, request.args.get("offset", 0, type=int))
         action_type = request.args.get("type")
 
         # Fix 2: Time period filter
@@ -631,7 +631,7 @@ def api_undo_action(log_id):
 def api_get_data_collections():
     """Get recent tracked data (observations from ActionLog) with time filter."""
     with get_db_session() as session:
-        limit = request.args.get("limit", 200, type=int)
+        limit = max(1, min(1000, request.args.get("limit", 200, type=int)))
 
         # Fix 2: Time period filter
         period = request.args.get("period", "all")
@@ -1599,7 +1599,7 @@ def api_export_data(data_type):
                           "status": p.status, "match_count": p.match_count,
                           "description": p.description_de, "created": str(p.created_at)} for p in items]
             elif data_type == "history":
-                limit = int(request.args.get("limit", 1000))
+                limit = max(1, min(5000, int(request.args.get("limit", 1000))))
                 items = session.query(StateHistory).order_by(StateHistory.created_at.desc()).limit(limit).all()
                 data = [{"entity_id": h.entity_id, "old_state": h.old_state,
                           "new_state": h.new_state, "created": str(h.created_at)} for h in items]
@@ -1810,7 +1810,7 @@ def api_execute_device_group(group_id):
 def api_get_audit_trail():
     """Get audit trail entries."""
     with get_db_session() as session:
-        limit = request.args.get("limit", 100, type=int)
+        limit = max(1, min(500, request.args.get("limit", 100, type=int)))
         entries = session.query(AuditTrail).order_by(AuditTrail.created_at.desc()).limit(limit).all()
         return jsonify([{
             "id": e.id, "user_id": e.user_id, "action": e.action,

@@ -2252,6 +2252,16 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             sm.temp_threshold = float(sm_cfg.get("temp_threshold", 2))
             logger.info("Situation Model Settings aktualisiert")
 
+        # Music DJ: Config hot-reload
+        if "music_dj" in changed_settings and hasattr(brain, "music_dj"):
+            dj_cfg = yaml_cfg.get("music_dj", {})
+            brain.music_dj.reload_config(dj_cfg)
+
+        # Wellness Advisor: Config hot-reload
+        if "wellness" in changed_settings and hasattr(brain, "wellness"):
+            well_cfg = yaml_cfg.get("wellness", {})
+            brain.wellness.reload_config(well_cfg)
+
         # Interrupt-Queue: Wird direkt aus yaml_config gelesen (websocket.py),
         # keine gecachten Attribute — nur Logging fuer Feedback
         if "interrupt_queue" in changed_settings:

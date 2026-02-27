@@ -216,8 +216,8 @@ def api_chat_history():
         limit: Max messages to return (default 50)
         offset: Skip first N messages from the end (default 0)
     """
-    limit = request.args.get("limit", 50, type=int)
-    offset = request.args.get("offset", 0, type=int)
+    limit = max(1, min(500, request.args.get("limit", 50, type=int)))
+    offset = max(0, request.args.get("offset", 0, type=int))
 
     with _history_lock:
         total = len(_conversation_history)
