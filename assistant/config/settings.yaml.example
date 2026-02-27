@@ -550,6 +550,7 @@ multi_room:
     # buero: binary_sensor.motion_buero
     null
 person_profiles:
+  enabled: true
   profiles: null
 trust_levels:
   default: 0

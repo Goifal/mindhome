@@ -65,21 +65,31 @@ FRUSTRATED_PREFIXES = [
 
 
 class MoodDetector:
-    """Erkennt Stimmung, Stress und Muedigkeit aus User-Interaktionen."""
+    """Erkennt Stimmung, Stress und Muedigkeit aus User-Interaktionen.
+
+    Per-Person Tracking: Jede Person hat einen eigenen Stimmungszustand,
+    damit Stress von Person A nicht auf Person B uebertraegt.
+    """
 
     def __init__(self):
         self.redis: Optional[redis.Redis] = None
 
-        # In-Memory Ring-Buffer fuer schnelle Pattern-Erkennung
+        # Per-Person State Storage
+        # {person_key: {mood, stress, tiredness, frustration, positive,
+        #               times, lengths, sentiments, last_texts, last_decay_time,
+        #               voice_signals}}
+        self._person_states: dict[str, dict] = {}
+        self._active_person_key: str = "_default"
+
+        # Aktuelle Instanzvariablen (werden pro Person geladen/gespeichert)
         self._interaction_times: deque[float] = deque(maxlen=20)
         self._interaction_lengths: deque[int] = deque(maxlen=20)
         self._interaction_sentiments: deque[str] = deque(maxlen=10)
         self._last_texts: deque[str] = deque(maxlen=5)
 
-        # Aktueller Zustand
         self._current_mood: str = MOOD_NEUTRAL
-        self._stress_level: float = 0.0  # 0.0 = entspannt, 1.0 = maximal gestresst
-        self._tiredness_level: float = 0.0  # 0.0 = wach, 1.0 = sehr muede
+        self._stress_level: float = 0.0
+        self._tiredness_level: float = 0.0
         self._frustration_count: int = 0
         self._positive_count: int = 0
 
@@ -110,22 +120,130 @@ class MoodDetector:
         self.voice_weight = voice_cfg.get("voice_weight", 0.3)
         self._last_voice_signals: list[str] = []
 
+    # ------------------------------------------------------------------
+    # Per-Person State Management
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _person_key(person: str) -> str:
+        """Normalisiert Person-Name zu einem stabilen Key."""
+        p = (person or "").strip().lower()
+        return p if p and p != "user" else "_default"
+
+    def _load_person_state(self, person: str) -> str:
+        """Laedt den State einer Person in die Instanzvariablen.
+
+        Returns:
+            person_key
+        """
+        key = self._person_key(person)
+        s = self._person_states.get(key)
+        if s:
+            self._current_mood = s["mood"]
+            self._stress_level = s["stress"]
+            self._tiredness_level = s["tiredness"]
+            self._frustration_count = s["frustration"]
+            self._positive_count = s["positive"]
+            self._interaction_times = s["times"]
+            self._interaction_lengths = s["lengths"]
+            self._interaction_sentiments = s["sentiments"]
+            self._last_texts = s["last_texts"]
+            self._last_decay_time = s["last_decay_time"]
+            self._last_voice_signals = s.get("voice_signals", [])
+        else:
+            # Neue Person — frischer State
+            self._current_mood = MOOD_NEUTRAL
+            self._stress_level = 0.0
+            self._tiredness_level = 0.0
+            self._frustration_count = 0
+            self._positive_count = 0
+            self._interaction_times = deque(maxlen=20)
+            self._interaction_lengths = deque(maxlen=20)
+            self._interaction_sentiments = deque(maxlen=10)
+            self._last_texts = deque(maxlen=5)
+            self._last_decay_time = time.time()
+            self._last_voice_signals = []
+        self._active_person_key = key
+        return key
+
+    def _store_person_state(self):
+        """Speichert die Instanzvariablen zurueck in den Per-Person State."""
+        key = self._active_person_key
+        self._person_states[key] = {
+            "mood": self._current_mood,
+            "stress": self._stress_level,
+            "tiredness": self._tiredness_level,
+            "frustration": self._frustration_count,
+            "positive": self._positive_count,
+            "times": self._interaction_times,
+            "lengths": self._interaction_lengths,
+            "sentiments": self._interaction_sentiments,
+            "last_texts": self._last_texts,
+            "last_decay_time": self._last_decay_time,
+            "voice_signals": self._last_voice_signals,
+        }
+        # Begrenze auf 20 Personen
+        if len(self._person_states) > 20:
+            oldest = min(
+                (k for k in self._person_states if k != "_default"),
+                key=lambda k: self._person_states[k].get("last_decay_time", 0),
+                default=None,
+            )
+            if oldest:
+                del self._person_states[oldest]
+
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert mit Redis."""
         self.redis = redis_client
 
-        # Vorherigen Zustand aus Redis laden
+        # Per-Person States aus Redis laden
         if self.redis:
             try:
-                saved = await self.redis.hgetall("mha:mood:state")
-                if saved:
-                    self._current_mood = saved.get("mood", MOOD_NEUTRAL)
-                    self._stress_level = float(saved.get("stress", 0.0))
-                    self._tiredness_level = float(saved.get("tiredness", 0.0))
+                # Alle person-spezifischen Keys laden
+                keys = await self.redis.keys("mha:mood:state:*")
+                for rkey in (keys or []):
+                    saved = await self.redis.hgetall(rkey)
+                    if saved:
+                        # Key-Format: mha:mood:state:{person_key}
+                        person_key = rkey.rsplit(":", 1)[-1] if ":" in rkey else "_default"
+                        self._person_states[person_key] = {
+                            "mood": saved.get("mood", MOOD_NEUTRAL),
+                            "stress": float(saved.get("stress", 0.0)),
+                            "tiredness": float(saved.get("tiredness", 0.0)),
+                            "frustration": int(saved.get("frustration", 0)),
+                            "positive": int(saved.get("positive", 0)),
+                            "times": deque(maxlen=20),
+                            "lengths": deque(maxlen=20),
+                            "sentiments": deque(maxlen=10),
+                            "last_texts": deque(maxlen=5),
+                            "last_decay_time": time.time(),
+                            "voice_signals": [],
+                        }
+                # Legacy: alten globalen Key migrieren
+                legacy = await self.redis.hgetall("mha:mood:state")
+                if legacy and "_default" not in self._person_states:
+                    self._person_states["_default"] = {
+                        "mood": legacy.get("mood", MOOD_NEUTRAL),
+                        "stress": float(legacy.get("stress", 0.0)),
+                        "tiredness": float(legacy.get("tiredness", 0.0)),
+                        "frustration": int(legacy.get("frustration", 0)),
+                        "positive": int(legacy.get("positive", 0)),
+                        "times": deque(maxlen=20),
+                        "lengths": deque(maxlen=20),
+                        "sentiments": deque(maxlen=10),
+                        "last_texts": deque(maxlen=5),
+                        "last_decay_time": time.time(),
+                        "voice_signals": [],
+                    }
             except Exception as e:
-                logger.debug("Mood-State nicht geladen: %s", e)
+                logger.debug("Mood-States nicht geladen: %s", e)
 
-        logger.info("MoodDetector initialisiert (Stimmung: %s)", self._current_mood)
+        # Default laden
+        self._load_person_state("")
+        logger.info(
+            "MoodDetector initialisiert (Personen: %d, Default-Stimmung: %s)",
+            len(self._person_states), self._current_mood,
+        )
 
     async def analyze(self, text: str, person: str = "") -> dict:
         """
@@ -133,11 +251,14 @@ class MoodDetector:
 
         Args:
             text: User-Text
-            person: Name der Person
+            person: Name der Person (per-Person Tracking)
 
         Returns:
             Dict mit mood, stress_level, tiredness_level, signals
         """
+        # Per-Person State laden
+        self._load_person_state(person)
+
         now = time.time()
         self._apply_decay(now)
 
@@ -225,8 +346,9 @@ class MoodDetector:
         # 3. Gesamt-Stimmung bestimmen
         self._current_mood = self._determine_mood()
 
-        # 4. In Redis speichern
+        # 4. In Redis speichern + Per-Person State zurueckschreiben
         await self._save_state()
+        self._store_person_state()
 
         result = {
             "mood": self._current_mood,
@@ -238,21 +360,32 @@ class MoodDetector:
 
         if signals:
             logger.info(
-                "Mood: %s (Stress: %.2f, Muede: %.2f, Signale: %s)",
+                "Mood [%s]: %s (Stress: %.2f, Muede: %.2f, Signale: %s)",
+                person or "default",
                 self._current_mood, self._stress_level,
                 self._tiredness_level, ", ".join(signals),
             )
 
         return result
 
-    def get_current_mood(self) -> dict:
-        """Gibt den aktuellen Stimmungszustand zurueck."""
+    def get_current_mood(self, person: str = "") -> dict:
+        """Gibt den Stimmungszustand fuer eine Person zurueck."""
+        key = self._person_key(person)
+        s = self._person_states.get(key)
+        if not s:
+            return {
+                "mood": MOOD_NEUTRAL,
+                "stress_level": 0.0,
+                "tiredness_level": 0.0,
+                "frustration_count": 0,
+                "positive_count": 0,
+            }
         return {
-            "mood": self._current_mood,
-            "stress_level": round(self._stress_level, 2),
-            "tiredness_level": round(self._tiredness_level, 2),
-            "frustration_count": self._frustration_count,
-            "positive_count": self._positive_count,
+            "mood": s["mood"],
+            "stress_level": round(s["stress"], 2),
+            "tiredness_level": round(s["tiredness"], 2),
+            "frustration_count": s["frustration"],
+            "positive_count": s["positive"],
         }
 
     def _determine_mood(self) -> str:
@@ -290,13 +423,15 @@ class MoodDetector:
 
         return MOOD_NEUTRAL
 
-    def get_mood_trend(self) -> str:
+    def get_mood_trend(self, person: str = "") -> str:
         """Analysiert den Stimmungs-Trend ueber die letzten Interaktionen.
 
         Returns:
             'improving' | 'stable' | 'declining' | 'volatile'
         """
-        sentiments = list(self._interaction_sentiments)
+        key = self._person_key(person)
+        s = self._person_states.get(key)
+        sentiments = list(s["sentiments"]) if s else []
         if len(sentiments) < 3:
             return "stable"
 
@@ -470,32 +605,45 @@ class MoodDetector:
             logger.info("Mood-Aktionen ausgefuehrt: %d", len(executed))
         return executed
 
-    def get_mood_prompt_hint(self) -> str:
+    def get_mood_prompt_hint(self, person: str = "") -> str:
         """
         Gibt einen Prompt-Hinweis basierend auf emotionalem Kontext zurueck.
         Wird in den System Prompt eingebaut fuer kontextsensitive Antworten.
+
+        Args:
+            person: Name der Person (per-Person Mood)
         """
+        key = self._person_key(person)
+        s = self._person_states.get(key)
+        if not s:
+            return ""
+
+        mood = s["mood"]
+        stress = s["stress"]
+        frustration = s["frustration"]
+        sentiments = s["sentiments"]
+
         hints = []
 
-        if self._current_mood == MOOD_STRESSED:
+        if mood == MOOD_STRESSED:
             hints.append("User ist unter Stress. Antworte ruhig und effizient.")
-            if self._stress_level >= 0.7:
+            if stress >= 0.7:
                 hints.append("Stress-Level sehr hoch. Schlage bei Gelegenheit eine Pause vor.")
 
-        elif self._current_mood == MOOD_FRUSTRATED:
+        elif mood == MOOD_FRUSTRATED:
             hints.append("User ist frustriert. Nicht rechtfertigen, sondern loesen.")
-            if self._frustration_count >= 4:
+            if frustration >= 4:
                 hints.append("Anhaltende Frustration. Frage ob du anders helfen kannst.")
 
-        elif self._current_mood == MOOD_TIRED:
+        elif mood == MOOD_TIRED:
             hints.append("User ist muede. Minimal antworten. Kein Humor.")
 
-        elif self._current_mood == MOOD_GOOD:
+        elif mood == MOOD_GOOD:
             hints.append("User ist gut drauf. Etwas mehr Persoenlichkeit zeigen.")
 
         # Stress-Trend
-        if len(self._interaction_sentiments) >= 3:
-            recent = list(self._interaction_sentiments)[-3:]
+        if len(sentiments) >= 3:
+            recent = list(sentiments)[-3:]
             if all(s == "negative" for s in recent):
                 hints.append("WARNUNG: 3x negativ hintereinander. Eskalation vermeiden.")
 
@@ -688,11 +836,12 @@ class MoodDetector:
         return self._last_voice_signals
 
     async def _save_state(self):
-        """Speichert den aktuellen Zustand in Redis."""
+        """Speichert den aktuellen Zustand in Redis (per-Person Key)."""
         if not self.redis:
             return
         try:
-            await self.redis.hset("mha:mood:state", mapping={
+            redis_key = f"mha:mood:state:{self._active_person_key}"
+            await self.redis.hset(redis_key, mapping={
                 "mood": self._current_mood,
                 "stress": str(self._stress_level),
                 "tiredness": str(self._tiredness_level),
@@ -701,6 +850,6 @@ class MoodDetector:
                 "updated": datetime.now().isoformat(),
             })
             # 1h TTL - Reset nach laengerer Inaktivitaet
-            await self.redis.expire("mha:mood:state", 3600)
+            await self.redis.expire(redis_key, 3600)
         except Exception as e:
             logger.debug("Mood-State nicht gespeichert: %s", e)

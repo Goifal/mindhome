@@ -640,7 +640,19 @@ multi_room:
     # buero: binary_sensor.motion_buero
     null
 person_profiles:
+  enabled: true
   profiles: null
+  # Per-Person Persoenlichkeitsanpassung. Format:
+  # profiles:
+  #   max:
+  #     humor: 3              # 1-5 (1=ernst, 5=sarkastisch)
+  #     empathy: normal       # subtil | normal | ausfuehrlich | deaktiviert
+  #     response_style: normal  # kurz | normal | ausfuehrlich
+  #     formality_start: 80   # 20-100 (Override fuer diese Person)
+  #   anna:
+  #     humor: 2
+  #     empathy: ausfuehrlich
+  #     response_style: ausfuehrlich
 trust_levels:
   default: 0
   persons: null

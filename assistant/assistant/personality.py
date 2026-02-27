@@ -412,6 +412,25 @@ class PersonalityEngine:
         self._redis = redis_client
 
     # ------------------------------------------------------------------
+    # Person Profiles — Per-Person Persoenlichkeitsanpassung
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_person_profile(person: str) -> dict:
+        """Laedt das Persoenlichkeits-Profil fuer eine Person.
+
+        Fallback: Leeres Dict (= globale Defaults verwenden).
+        Config-Pfad: person_profiles.profiles.<name_lower>
+        """
+        pp_cfg = yaml_config.get("person_profiles", {})
+        if not pp_cfg.get("enabled", True):
+            return {}
+        profiles = pp_cfg.get("profiles") or {}
+        if not profiles:
+            return {}
+        return profiles.get(person.lower().strip(), {}) if person else {}
+
+    # ------------------------------------------------------------------
     # Easter Eggs (Phase 6.3)
     # ------------------------------------------------------------------
 
@@ -885,17 +904,24 @@ class PersonalityEngine:
     # Echte Empathie — JARVIS zeigt Verstaendnis durch Beobachtung
     # ------------------------------------------------------------------
 
-    def _build_empathy_section(self, mood: str, stress_level: float = 0.0) -> str:
+    def _build_empathy_section(
+        self, mood: str, stress_level: float = 0.0,
+        person_empathy_override: Optional[str] = None,
+    ) -> str:
         """Baut Empathie-Anweisungen basierend auf erkannter Stimmung.
 
         JARVIS-Empathie = Beobachtung + praktische Hilfe.
         KEINE Therapeuten-Floskeln ('Ich verstehe wie du dich fuehlst').
+        person_empathy_override: Per-Person Empathie-Stufe (subtil/normal/ausfuehrlich/deaktiviert).
         """
         emp_cfg = yaml_config.get("empathy", {})
         if not emp_cfg.get("enabled", True):
             return ""
 
-        intensity = emp_cfg.get("intensity", "normal")
+        # Per-Person Override hat Vorrang
+        if person_empathy_override == "deaktiviert":
+            return ""
+        intensity = person_empathy_override if person_empathy_override else emp_cfg.get("intensity", "normal")
         mood_ack = emp_cfg.get("mood_acknowledgment", True)
         practical = emp_cfg.get("practical_offers", True)
         good_mirror = emp_cfg.get("good_mood_mirror", True)
@@ -1015,13 +1041,17 @@ class PersonalityEngine:
     # Humor-Level (Phase 6.1)
     # ------------------------------------------------------------------
 
-    def _build_humor_section(self, mood: str, time_of_day: str, has_alerts: bool = False) -> str:
+    def _build_humor_section(
+        self, mood: str, time_of_day: str, has_alerts: bool = False,
+        person_humor_override: Optional[int] = None,
+    ) -> str:
         """Baut den Humor-Abschnitt basierend auf Level + Kontext.
 
         F-023: Bei aktiven Sicherheits-Alerts wird Sarkasmus komplett deaktiviert.
         Sarkasmus-Fatigue: Nach 4+ sarkastischen Antworten in Folge eine Stufe runter.
+        person_humor_override: Per-Person Humor-Level (1-5), ueberschreibt globalen Level.
         """
-        base_level = self.sarcasm_level
+        base_level = person_humor_override if person_humor_override is not None else self.sarcasm_level
 
         # F-023: Bei Sicherheits-Alerts KEIN Sarkasmus
         if has_alerts:
@@ -1802,31 +1832,46 @@ class PersonalityEngine:
         if mood_config["style_addon"]:
             mood_section = f"STIMMUNG: {mood_config['style_addon']}\n"
 
+        # Person + Profil laden (fuer per-Person Overrides)
+        current_person = "User"
+        if context:
+            current_person = (context.get("person") or {}).get("name", "User")
+        current_person_name = current_person if current_person != "User" else ""
+        person_profile = self._get_person_profile(current_person_name)
+
         # Empathie-Section (JARVIS-Verstaendnis durch Beobachtung)
         stress_level = (context.get("mood") or {}).get("stress_level", 0.0) if context else 0.0
-        empathy_section = self._build_empathy_section(mood, stress_level=stress_level)
+        empathy_section = self._build_empathy_section(
+            mood, stress_level=stress_level,
+            person_empathy_override=person_profile.get("empathy"),
+        )
+
+        # Per-Person Response-Style: max_sentences Override
+        _pp_style = person_profile.get("response_style")
+        if _pp_style == "kurz":
+            max_sentences = max(1, max_sentences - 1)
+        elif _pp_style == "ausfuehrlich":
+            max_sentences = max_sentences + 2
 
         # Phase 6: Formality-Section (mit Mood-Reset bei Stress)
         # MUSS vor person_addressing stehen — Titel-Evolution braucht den Score
         if formality_score is None:
-            formality_score = self.formality_start
+            # Per-Person Formality Override
+            formality_score = person_profile.get("formality_start", self.formality_start)
         self._current_formality = formality_score
         formality_section = self._build_formality_section(formality_score, mood=mood)
 
-        # Person + Anrede (nutzt self._current_formality fuer Titel-Haeufigkeit)
-        current_person = "User"
-        if context:
-            current_person = (context.get("person") or {}).get("name", "User")
+        # Person Anrede (nutzt self._current_formality fuer Titel-Haeufigkeit)
         person_addressing = self._build_person_addressing(current_person)
 
         # Phase 6: Humor-Section — F-023: Alerts unterdruecken Sarkasmus
         has_alerts = bool(context.get("alerts")) if context else False
-        humor_section = self._build_humor_section(mood, time_of_day, has_alerts=has_alerts)
+        humor_section = self._build_humor_section(
+            mood, time_of_day, has_alerts=has_alerts,
+            person_humor_override=person_profile.get("humor"),
+        )
 
         # Phase 6: Complexity-Section — F-022: person durchreichen fuer per-User Tracking
-        current_person_name = ""
-        if context:
-            current_person_name = (context.get("person") or {}).get("name", "")
         complexity_section = self._build_complexity_section(mood, time_of_day, person=current_person_name)
 
         # Phase 6: Self-Irony-Section
