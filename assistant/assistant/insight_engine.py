@@ -807,6 +807,55 @@ class InsightEngine:
         await self.redis.setex(key, ttl, "1")
 
     # ------------------------------------------------------------------
+    # On-Demand Check (fuer Inline-Nutzung im Conversation Flow)
+    # ------------------------------------------------------------------
+
+    async def run_checks_now(self) -> list[dict]:
+        """Fuehrt alle Checks SOFORT aus, OHNE Cooldown zu setzen.
+
+        Wird vom Brain im Conversation Flow aufgerufen um aktuelle
+        Insights in den LLM-Kontext zu injizieren. Kein Cooldown,
+        da die Insights hier nicht per TTS zugestellt werden sondern
+        als Kontext-Sektion fuer das LLM dienen.
+
+        Returns:
+            Liste von Insight-Dicts (check, message, urgency, data)
+        """
+        if not self.enabled:
+            return []
+
+        try:
+            data = await self._gather_data()
+            if not data["states"]:
+                return []
+
+            insights = []
+            check_methods = [
+                (self.check_weather_windows, self._check_weather_windows),
+                (self.check_frost_heating, self._check_frost_heating),
+                (self.check_calendar_travel, self._check_calendar_travel),
+                (self.check_energy_anomaly, self._check_energy_anomaly),
+                (self.check_away_devices, self._check_away_devices),
+                (self.check_temp_drop, self._check_temp_drop),
+                (self.check_window_temp, self._check_window_temp_drop),
+            ]
+
+            for enabled, method in check_methods:
+                if not enabled:
+                    continue
+                try:
+                    result = await method(data)
+                    if result:
+                        insights.append(result)
+                except Exception as e:
+                    logger.debug("On-Demand Check Fehler: %s", e)
+
+            return insights
+        except Exception as e:
+            logger.debug("run_checks_now Fehler: %s", e)
+            return []
+
+    # ------------------------------------------------------------------
     # Status & Diagnostik
     # ------------------------------------------------------------------
 

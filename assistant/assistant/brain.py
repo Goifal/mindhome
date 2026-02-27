@@ -1921,6 +1921,11 @@ class AssistantBrain(BrainCallbacksMixin):
         # Feature A: Kreative Problemloesung — Haus-Daten parallel laden
         _mega_tasks.append(("problem_solving", self._build_problem_solving_context(text)))
 
+        # Intelligence Fusion: Anticipation + Learning + Insights parallel laden
+        _mega_tasks.append(("anticipation", self.anticipation.get_suggestions()))
+        _mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns()))
+        _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
+
         _mega_keys, _mega_coros = zip(*_mega_tasks)
         _mega_results = await asyncio.gather(*_mega_coros, return_exceptions=True)
         _result_map = dict(zip(_mega_keys, _mega_results))
@@ -1976,6 +1981,9 @@ class AssistantBrain(BrainCallbacksMixin):
         rag_context = _safe_get("rag")
         situation_delta = _safe_get("situation_delta")
         problem_solving_ctx = _safe_get("problem_solving")
+        anticipation_suggestions = _safe_get("anticipation") or []
+        learned_patterns = _safe_get("learned_patterns") or []
+        live_insights = _safe_get("insights_now") or []
 
         context["mood"] = mood_result
 
@@ -2005,9 +2013,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Sektionen vorbereiten: (Name, Text, Prioritaet)
         # Prio 1: Sicherheit, Szenen, Mood — IMMER inkludieren
-        # Prio 2: Zeit, Timer, Gaeste, Warnungen, Erinnerungen
+        # Prio 2: Zeit, Timer, Gaeste, Warnungen, Erinnerungen, What-If, JARVIS DENKT MIT
         # Prio 3: RAG, Summaries, Cross-Room, Kontinuitaet
-        # Prio 4: Tutorial, What-If
+        # Prio 4: Tutorial
         sections: list[tuple[str, str, int]] = []
 
         # --- Prio 1: Core ---
@@ -2088,6 +2096,13 @@ class AssistantBrain(BrainCallbacksMixin):
         if problem_solving_ctx:
             sections.append(("problem_solving", problem_solving_ctx, 2))
 
+        # Intelligence Fusion: JARVIS DENKT MIT
+        jarvis_thinks = self._build_jarvis_thinks_context(
+            anticipation_suggestions, learned_patterns, live_insights,
+        )
+        if jarvis_thinks:
+            sections.append(("jarvis_thinks", jarvis_thinks, 2))
+
         # --- Prio 3: Optional (RAG bei Wissensfragen Prio 1) ---
         if rag_context:
             rag_prio = 1 if profile.category == "knowledge" else 3
@@ -2115,7 +2130,7 @@ class AssistantBrain(BrainCallbacksMixin):
             sections.append(("tutorial", tutorial_hint, 4))
 
         if whatif_prompt:
-            sections.append(("whatif", whatif_prompt, 4))
+            sections.append(("whatif", whatif_prompt, 2))
 
         # Sektionen nach Prioritaet sortieren und mit Budget einfuegen
         sections.sort(key=lambda s: s[2])
@@ -6618,6 +6633,100 @@ Regeln:
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
+    # Intelligence Fusion: JARVIS DENKT MIT
+    # Fusioniert Signale aus AnticipationEngine, LearningObserver und
+    # InsightEngine in eine kompakte Kontext-Sektion fuer das LLM.
+    # ------------------------------------------------------------------
+
+    def _build_jarvis_thinks_context(
+        self,
+        anticipation_suggestions: list[dict],
+        learned_patterns: list[dict],
+        live_insights: list[dict],
+    ) -> Optional[str]:
+        """Erzeugt eine 'JARVIS DENKT MIT'-Sektion fuer den System-Prompt.
+
+        Fusioniert die drei Intelligenz-Subsysteme in maximal 5 kompakte
+        Hinweise, sortiert nach Relevanz. Das LLM kann diese beilaeufig
+        in seine Antwort einfliessen lassen — MCU-JARVIS-Stil.
+
+        Returns:
+            Prompt-Sektion als String, oder None wenn keine Erkenntnisse.
+        """
+        hints: list[tuple[int, str]] = []  # (priority, text)
+
+        # --- Anticipation: Erkannte Muster die JETZT zutreffen ---
+        for s in anticipation_suggestions[:3]:
+            conf = s.get("confidence", 0)
+            desc = s.get("description", "")
+            pct = int(conf * 100)
+            mode = s.get("mode", "ask")
+            if not desc:
+                continue
+
+            if mode == "auto":
+                hints.append((1, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
+                              f"Du kannst das eigenstaendig uebernehmen und beilaeufig erwaehnen."))
+            elif mode == "suggest":
+                hints.append((2, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
+                              f"Erwaehne es beilaeufig: 'Wie gewohnt um diese Zeit — soll ich?'"))
+            else:
+                hints.append((3, f"BEOBACHTUNG ({pct}% sicher): {desc}. "
+                              f"Nur erwaehnen wenn es zum Gespraech passt."))
+
+        # --- Live-Insights: Aktuelle Haus-Erkenntnisse ---
+        for insight in live_insights[:3]:
+            msg = insight.get("message", "")
+            urgency = insight.get("urgency", "low")
+            if not msg:
+                continue
+
+            if urgency in ("high", "critical"):
+                hints.append((1, f"WICHTIG: {msg}"))
+            elif urgency == "medium":
+                hints.append((2, f"HINWEIS: {msg}"))
+            else:
+                hints.append((4, f"INFO: {msg}"))
+
+        # --- Gelernte Muster: Haeufige User-Aktionen ---
+        # Nur die Top-3 mit hoher Wiederholungszahl
+        strong_patterns = [p for p in learned_patterns if p.get("count", 0) >= 4]
+        if strong_patterns:
+            pattern_lines = []
+            for p in strong_patterns[:3]:
+                entity = p.get("entity", "")
+                slot = p.get("time_slot", "")
+                count = p.get("count", 0)
+                # Entity-ID lesbarer machen
+                friendly = entity.replace("_", " ").split(".")[-1] if "." in entity else entity
+                pattern_lines.append(f"  - {friendly} um {slot} Uhr ({count}x beobachtet)")
+            if pattern_lines:
+                hints.append((3,
+                    "GELERNTE GEWOHNHEITEN des Users:\n" + "\n".join(pattern_lines) + "\n"
+                    "Referenziere beilaeufig wenn passend: "
+                    "'Wie jeden Abend um diese Zeit?' / 'Das machst du oefters — soll ich das automatisieren?'"
+                ))
+
+        if not hints:
+            return None
+
+        # Nach Prioritaet sortieren, max 5 Hints
+        hints.sort(key=lambda h: h[0])
+        selected = [h[1] for h in hints[:5]]
+
+        section = (
+            "\n\nJARVIS DENKT MIT:\n"
+            "Die folgenden Erkenntnisse stammen aus deiner Muster-Erkennung, "
+            "Haus-Analyse und Lern-Beobachtung. Flechte relevante Punkte "
+            "BEILAEUFIG ein — wie ein aufmerksamer Butler, NICHT wie ein Bericht. "
+            "Nur erwaehnen was zum aktuellen Gespraech passt.\n\n"
+        )
+        for i, hint in enumerate(selected, 1):
+            section += f"{i}. {hint}\n"
+
+        return section
+
+    # ------------------------------------------------------------------
     # Phase 8: Konversations-Kontinuitaet
     # ------------------------------------------------------------------
 
@@ -6817,6 +6926,9 @@ Regeln:
 
         F-027: Trust-Level der erkannten Person wird bei Auto-Execute geprueft.
         Nur Owner darf sicherheitsrelevante Aktionen automatisch ausfuehren.
+
+        MCU-JARVIS-Stil: Confidence-Werte werden natuerlichsprachlich
+        kommuniziert statt versteckt.
         """
         # Quiet Hours: Anticipation-Vorschlaege sind nicht kritisch
         if hasattr(self, 'proactive') and self.proactive._is_quiet_hours():
@@ -6826,10 +6938,13 @@ Regeln:
         mode = suggestion.get("mode", "ask")
         desc = suggestion.get("description", "")
         action = suggestion.get("action", "")
+        conf = suggestion.get("confidence", 0)
+        pct = int(conf * 100)
+        person = suggestion.get("person", "")
+        title = get_person_title(person)
 
         if mode == "auto" and self.autonomy.level >= 4:
             # F-027: Trust-Check vor Auto-Execute
-            person = suggestion.get("person", "")
             trust_level = self.autonomy.get_trust_level(person) if person else 0
             # Sicherheitsrelevante Aktionen nur fuer Owner
             from .conditional_commands import OWNER_ONLY_ACTIONS
@@ -6838,7 +6953,6 @@ Regeln:
                     "F-027: Anticipation auto-execute blockiert (%s) — Person '%s' hat Trust %d",
                     action, person, trust_level,
                 )
-                title = get_person_title(person)
                 text = f"{title}, {desc}. Soll ich das uebernehmen? (Bestaetigung erforderlich)"
                 await emit_proactive(text, "anticipation_suggest", "medium")
                 return
@@ -6846,19 +6960,26 @@ Regeln:
             # Automatisch ausfuehren + informieren
             args = suggestion.get("args", {})
             result = await self.executor.execute(action, args)
-            title = get_person_title(person)
-            text = f"{title}, {desc} — hab ich uebernommen."
+            text = f"{title}, {desc} — hab ich uebernommen. Wie jeden Tag um diese Zeit."
             await emit_proactive(text, "anticipation_auto", "medium")
-            logger.info("Anticipation auto-execute: %s", desc)
+            logger.info("Anticipation auto-execute: %s (confidence: %d%%)", desc, pct)
         else:
-            # Vorschlagen
-            title = get_person_title(person)
+            # Vorschlagen — mit Confidence-Kontext im JARVIS-Stil
             if mode == "suggest":
-                text = f"{title}, wenn ich darf — {desc}. Soll ich?"
+                if pct >= 90:
+                    text = f"{title}, wenn ich darf — {desc}. Das machst du mit {pct}%iger Regelmaessigkeit."
+                else:
+                    text = f"{title}, basierend auf deinem Muster — {desc}. Soll ich?"
             else:
-                text = f"Mir ist aufgefallen: {desc}. Soll ich das uebernehmen?"
+                if pct >= 75:
+                    text = (
+                        f"{title}, mir ist ein Muster aufgefallen: {desc}. "
+                        f"Wahrscheinlichkeit liegt bei {pct}%. Soll ich das uebernehmen?"
+                    )
+                else:
+                    text = f"Mir ist aufgefallen: {desc}. Soll ich das uebernehmen?"
             await emit_proactive(text, "anticipation_suggest", "low")
-            logger.info("Anticipation suggestion: %s (%s)", desc, mode)
+            logger.info("Anticipation suggestion: %s (%s, %d%%)", desc, mode, pct)
 
     async def _handle_insight(self, insight: dict):
         """Callback fuer InsightEngine — Jarvis denkt voraus."""
