@@ -3682,7 +3682,19 @@ async function saveAllSettings() {
     const tabUpdates = collectSettings();
     deepMerge(S, tabUpdates);
     // Vollstaendiges Settings-Objekt senden (nicht nur aktiven Tab)
+    // Geschuetzte Keys entfernen die vom GET mitkommen aber per PUT
+    // nicht gesendet werden duerfen (sonst False-Positive Warnung im Log)
     const updates = JSON.parse(JSON.stringify(S));
+    delete updates.dashboard;
+    if (updates.security) {
+      delete updates.security.api_key;
+      delete updates.security.api_key_required;
+      if (Object.keys(updates.security).length === 0) delete updates.security;
+    }
+    if (updates.self_optimization) {
+      delete updates.self_optimization.immutable_keys;
+      if (Object.keys(updates.self_optimization).length === 0) delete updates.self_optimization;
+    }
     const result = await api('/api/ui/settings', 'PUT', {settings: updates});
 
     if (result && result.success === false) {

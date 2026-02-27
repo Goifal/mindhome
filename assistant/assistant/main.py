@@ -2687,7 +2687,7 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
             req.settings if isinstance(req.settings, dict) else {}
         )
         if stripped:
-            logger.warning("Settings-Update: Geschuetzte Keys herausgefiltert: %s", stripped)
+            logger.info("Settings-Update: Geschuetzte Keys herausgefiltert: %s", stripped)
 
         if not safe_settings:
             return {"success": True, "message": "Keine aenderbaren Settings vorhanden"}
