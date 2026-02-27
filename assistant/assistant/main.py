@@ -1255,7 +1255,7 @@ async def cooking_stop():
     """Phase 11: Koch-Session beenden."""
     if not brain.cooking.has_active_session:
         return {"stopped": False, "message": "Keine aktive Koch-Session."}
-    result = brain.cooking._stop_session()
+    result = await brain.cooking._stop_session()
     return {"stopped": True, "message": result}
 
 
@@ -3424,6 +3424,129 @@ async def ui_knowledge_upload(file: UploadFile = File(...), token: str = Form(""
     new_chunks = await brain.knowledge_base.ingest_file(target)
     _audit_log("knowledge_file_upload", {"filename": safe_name, "size": len(content), "chunks": new_chunks})
     stats = await brain.knowledge_base.get_stats()
+    return {"filename": safe_name, "new_chunks": new_chunks, "size": len(content), "stats": stats}
+
+
+# ---------------------------------------------------------------
+# Recipe Store (Dedizierte Rezeptdatenbank fuer den Koch-Assistenten)
+# ---------------------------------------------------------------
+
+@app.get("/api/ui/recipes")
+async def ui_recipes_info(token: str = ""):
+    """Recipe Store Statistiken und Dateiliste."""
+    _check_token(token)
+    stats = await brain.recipe_store.get_stats()
+    recipe_dir = Path(__file__).parent.parent / "config" / "recipes"
+    files = []
+    if recipe_dir.exists():
+        for f in sorted(recipe_dir.iterdir()):
+            if f.is_file() and f.suffix in {".txt", ".md", ".pdf", ".csv"}:
+                files.append({
+                    "name": f.name,
+                    "size": f.stat().st_size,
+                    "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                })
+    return {"stats": stats, "files": files}
+
+
+@app.post("/api/ui/recipes/ingest")
+async def ui_recipes_ingest(token: str = ""):
+    """Recipe Store neu einlesen (alle Dateien)."""
+    _check_token(token)
+    count = await brain.recipe_store.ingest_all()
+    stats = await brain.recipe_store.get_stats()
+    _audit_log("recipe_store_ingest", {"new_chunks": count, "total_chunks": stats.get("total_chunks", 0)})
+    return {"new_chunks": count, "stats": stats}
+
+
+@app.get("/api/ui/recipes/chunks")
+async def ui_recipes_chunks(token: str = "", source: str = "", offset: int = 0, limit: int = 50):
+    """Alle Rezept-Chunks auflisten (optional gefiltert nach Quelle)."""
+    _check_token(token)
+    chunks = await brain.recipe_store.get_chunks(source=source, offset=offset, limit=min(limit, 200))
+    stats = await brain.recipe_store.get_stats()
+    return {"chunks": chunks, "total": stats.get("total_chunks", 0)}
+
+
+@app.post("/api/ui/recipes/chunks/delete")
+async def ui_recipes_delete_chunks(request: Request, token: str = ""):
+    """Einzelne Rezept-Chunks loeschen."""
+    _check_token(token)
+    body = await request.json()
+    chunk_ids = body.get("ids", [])
+    if not chunk_ids:
+        raise HTTPException(status_code=400, detail="Keine Chunk-IDs angegeben")
+    deleted = await brain.recipe_store.delete_chunks(chunk_ids)
+    _audit_log("recipe_store_delete", {"deleted": deleted, "ids": chunk_ids[:5]})
+    stats = await brain.recipe_store.get_stats()
+    return {"deleted": deleted, "stats": stats}
+
+
+@app.post("/api/ui/recipes/file/delete")
+async def ui_recipes_file_delete(request: Request, token: str = ""):
+    """Alle Chunks einer Rezeptdatei loeschen."""
+    _check_token(token)
+    body = await request.json()
+    filename = body.get("filename", "")
+    if not filename:
+        raise HTTPException(status_code=400, detail="Kein Dateiname angegeben")
+    deleted = await brain.recipe_store.delete_source_chunks(filename)
+    _audit_log("recipe_file_delete", {"filename": filename, "deleted_chunks": deleted})
+    stats = await brain.recipe_store.get_stats()
+    return {"deleted": deleted, "filename": filename, "stats": stats}
+
+
+@app.post("/api/ui/recipes/file/reingest")
+async def ui_recipes_file_reingest(request: Request, token: str = ""):
+    """Einzelne Rezeptdatei loeschen und neu einlesen."""
+    _check_token(token)
+    body = await request.json()
+    filename = body.get("filename", "")
+    if not filename:
+        raise HTTPException(status_code=400, detail="Kein Dateiname angegeben")
+    new_chunks = await brain.recipe_store.reingest_file(filename)
+    _audit_log("recipe_file_reingest", {"filename": filename, "new_chunks": new_chunks})
+    stats = await brain.recipe_store.get_stats()
+    return {"new_chunks": new_chunks, "filename": filename, "stats": stats}
+
+
+@app.post("/api/ui/recipes/rebuild")
+async def ui_recipes_rebuild(token: str = ""):
+    """Recipe Store komplett neu aufbauen (Collection loeschen + alle Dateien neu einlesen)."""
+    _check_token(token)
+    result = await brain.recipe_store.rebuild()
+    _audit_log("recipe_store_rebuild", result)
+    return result
+
+
+@app.post("/api/ui/recipes/upload")
+async def ui_recipes_upload(file: UploadFile = File(...), token: str = Form("")):
+    """Rezeptdatei hochladen und sofort einlesen."""
+    _check_token(token)
+    from .recipe_store import REC_UPLOAD_MAX_SIZE, REC_UPLOAD_ALLOWED
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Keine Datei ausgewaehlt")
+
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in REC_UPLOAD_ALLOWED:
+        raise HTTPException(status_code=400, detail=f"Dateityp '{suffix}' nicht erlaubt. Erlaubt: {', '.join(sorted(REC_UPLOAD_ALLOWED))}")
+
+    content = await file.read()
+    if len(content) > REC_UPLOAD_MAX_SIZE:
+        mb = REC_UPLOAD_MAX_SIZE // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"Datei zu gross (max {mb} MB)")
+
+    safe_name = Path(file.filename).name.replace("/", "_").replace("\\", "_")
+    recipe_dir = Path(__file__).parent.parent / "config" / "recipes"
+    recipe_dir.mkdir(parents=True, exist_ok=True)
+    target = recipe_dir / safe_name
+
+    target.write_bytes(content)
+
+    new_chunks = await brain.recipe_store.ingest_file(target)
+    _audit_log("recipe_file_upload", {"filename": safe_name, "size": len(content), "chunks": new_chunks})
+    stats = await brain.recipe_store.get_stats()
     return {"filename": safe_name, "new_chunks": new_chunks, "size": len(content), "stats": stats}
 
 

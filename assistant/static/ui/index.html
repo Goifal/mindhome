@@ -863,6 +863,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           <div class="nav-item" data-page="memory"><span class="nav-icon">&#129504;</span>Gedaechtnis</div>
           <div class="nav-item" data-page="settings" data-tab="tab-memory"><span class="nav-icon">&#128218;</span>Gedaechtnis-Config</div>
           <div class="nav-item" data-page="knowledge"><span class="nav-icon">&#128218;</span>Wissen</div>
+          <div class="nav-item" data-page="recipes"><span class="nav-icon">&#127859;</span>Rezepte</div>
         </div>
       </div>
       <!-- Automatisierung -->
@@ -1071,6 +1072,39 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
             </div>
           </div>
           <div id="kbChunks" style="max-height:500px;overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <!-- ============ RECIPES ============ -->
+      <div id="page-recipes" class="page">
+        <div class="section-header">
+          <div><h2>Rezeptdatenbank</h2><p>Eigene Rezepte fuer den Koch-Assistenten &mdash; config/recipes/</p></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" onclick="ingestRecipes()">Neu einlesen</button>
+            <button class="btn btn-danger" onclick="rebuildRecipes()" title="Collection loeschen und alle Dateien mit aktuellem Embedding-Modell neu einlesen">Rebuild</button>
+          </div>
+        </div>
+        <div id="recipeStats" class="grid grid-3" style="margin-bottom:16px;"></div>
+        <div class="card" style="margin-bottom:16px;">
+          <div id="recipeDropzone" style="border:2px dashed var(--border);border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;transition:all .2s;" onclick="document.getElementById('recipeFileInput').click()">
+            <div style="font-size:28px;margin-bottom:6px;">&#127859;</div>
+            <div style="font-size:14px;font-weight:500;">Rezept hochladen</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Drag &amp; Drop oder klicken &mdash; .txt .md .pdf .csv &mdash; max 10 MB</div>
+          </div>
+          <input type="file" id="recipeFileInput" accept=".txt,.md,.pdf,.csv" style="display:none;" onchange="uploadRecipeFile(this.files[0])" />
+        </div>
+        <div class="card"><div class="card-header"><h3>Rezeptdateien</h3></div><div id="recipeFiles"></div></div>
+        <div class="card" style="margin-top:16px;">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>Rezeptinhalte</h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <select id="recipeSourceFilter" onchange="loadRecipeChunks()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;">
+                <option value="">Alle Quellen</option>
+              </select>
+              <button class="btn btn-danger" id="recipeDeleteBtn" onclick="deleteSelectedRecipeChunks()" style="display:none;font-size:12px;padding:5px 12px;">Ausgewaehlte loeschen</button>
+            </div>
+          </div>
+          <div id="recipeChunks" style="max-height:500px;overflow-y:auto;"></div>
         </div>
       </div>
 

@@ -701,6 +701,15 @@ knowledge_base:
   - .yml
   - .csv
   - .log
+recipe_store:
+  enabled: true
+  auto_ingest: true
+  chunk_size: 800
+  chunk_overlap: 100
+  max_distance: 1.0
+  search_limit: 5
+  min_relevance: 0.4
+  embedding_model: paraphrase-multilingual-MiniLM-L12-v2
 response_filter:
   enabled: true
   banned_phrases:
