@@ -338,13 +338,15 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
     loadSettings();
     // Settings-Titel aktualisieren
     const tabTitles = {
-      'tab-general':'Allgemein','tab-persons':'Personen','tab-personality':'Persoenlichkeit',
-      'tab-memory':'Gedaechtnis','tab-mood':'Stimmung','tab-rooms':'Raeume & Speaker',
-      'tab-devices':'Geraete','tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter','tab-routines':'Routinen',
-      'tab-proactive':'Proaktiv & Vorausdenken','tab-cooking':'Koch-Assistent',
-      'tab-autonomie':'Autonomie & Selbstoptimierung','tab-followme':'Follow-Me',
-      'tab-voice':'Stimme & TTS',
-      'tab-eastereggs':'Easter Eggs','tab-security':'Sicherheit & Notfall',
+      'tab-general':'Allgemein','tab-personality':'Persoenlichkeit',
+      'tab-memory':'Gedaechtnis-Einstellungen','tab-mood':'Stimmung',
+      'tab-rooms':'Raeume & Speaker','tab-devices':'Geraete',
+      'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter',
+      'tab-routines':'Routinen','tab-proactive':'Proaktiv & Vorausdenken',
+      'tab-cooking':'Koch-Assistent','tab-followme':'Follow-Me',
+      'tab-jarvis':'Jarvis-Features','tab-eastereggs':'Easter Eggs',
+      'tab-autonomie':'Autonomie & Selbstoptimierung',
+      'tab-voice':'Stimme & TTS','tab-security':'Sicherheit & Notfall',
       'tab-house-status':'Haus-Status & Health','tab-system':'System & Updates'
     };
     const el = document.getElementById('settingsTitle');
@@ -567,8 +569,7 @@ function renderCurrentTab() {
   });
   try {
     switch(currentTab) {
-      case 'tab-general': c.innerHTML = renderGeneral(); break;
-      case 'tab-persons': c.innerHTML = renderPersons(); loadMindHomeEntities(); break;
+      case 'tab-general': c.innerHTML = renderGeneral(); loadMindHomeEntities(); break;
       case 'tab-personality': c.innerHTML = renderPersonality(); break;
       case 'tab-memory': c.innerHTML = renderMemory(); loadPersonalDates(); break;
       case 'tab-mood': c.innerHTML = renderMood(); break;
@@ -1502,11 +1503,12 @@ function renderGeneral() {
     '</div>' +
     '<p style="font-size:11px;color:var(--danger);margin-top:6px;">Nach dem Generieren wird der Key nur EINMAL angezeigt. Notiere ihn sofort!</p>' +
     '</div>'
-  );
+  ) +
+  _renderPersonsSections();
 }
 
-// ---- Tab: Personen & Haushalt ----
-function renderPersons() {
+// Personen-Sektionen (eingebettet in Allgemein-Tab)
+function _renderPersonsSections() {
   const members = getPath(S, 'household.members') || [];
   const primaryUser = getPath(S, 'household.primary_user') || '';
 

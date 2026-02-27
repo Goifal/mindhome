@@ -830,23 +830,6 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
     <nav class="sidebar-nav" id="sidebarNav">
       <div class="nav-item active" data-page="dashboard"><span class="nav-icon">&#9632;</span>Dashboard</div>
       <div class="nav-divider"></div>
-      <!-- Basis -->
-      <div class="nav-group">
-        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Basis</span><span class="nav-group-arrow">&#9654;</span></div>
-        <div class="nav-group-items">
-          <div class="nav-item" data-page="settings" data-tab="tab-general"><span class="nav-icon">&#9881;</span>Allgemein</div>
-          <div class="nav-item" data-page="settings" data-tab="tab-persons"><span class="nav-icon">&#128100;</span>Personen</div>
-        </div>
-      </div>
-      <!-- KI & Persoenlichkeit -->
-      <div class="nav-group">
-        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>KI & Charakter</span><span class="nav-group-arrow">&#9654;</span></div>
-        <div class="nav-group-items">
-          <div class="nav-item" data-page="settings" data-tab="tab-personality"><span class="nav-icon">&#127917;</span>Persoenlichkeit</div>
-          <div class="nav-item" data-page="settings" data-tab="tab-memory"><span class="nav-icon">&#128218;</span>Gedaechtnis</div>
-          <div class="nav-item" data-page="settings" data-tab="tab-mood"><span class="nav-icon">&#128578;</span>Stimmung</div>
-        </div>
-      </div>
       <!-- Haus & Raeume -->
       <div class="nav-group">
         <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Haus & Raeume</span><span class="nav-group-arrow">&#9654;</span></div>
@@ -856,6 +839,25 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           <div class="nav-item" data-page="settings" data-tab="tab-devices"><span class="nav-icon">&#128268;</span>Geraete</div>
           <div class="nav-item" data-page="settings" data-tab="tab-covers"><span class="nav-icon">&#129695;</span>Rolllaeden</div>
           <div class="nav-item" data-page="settings" data-tab="tab-vacuum"><span class="nav-icon">&#129529;</span>Saugroboter</div>
+          <div class="nav-item" data-page="entities"><span class="nav-icon">&#8801;</span>Entities</div>
+        </div>
+      </div>
+      <!-- KI & Sprache -->
+      <div class="nav-group">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>KI & Sprache</span><span class="nav-group-arrow">&#9654;</span></div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="settings" data-tab="tab-personality"><span class="nav-icon">&#127917;</span>Persoenlichkeit</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-mood"><span class="nav-icon">&#128578;</span>Stimmung</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-voice"><span class="nav-icon">&#128266;</span>Stimme & TTS</div>
+        </div>
+      </div>
+      <!-- Gedaechtnis & Wissen -->
+      <div class="nav-group">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Gedaechtnis & Wissen</span><span class="nav-group-arrow">&#9654;</span></div>
+        <div class="nav-group-items">
+          <div class="nav-item" data-page="memory"><span class="nav-icon">&#129504;</span>Gedaechtnis</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-memory"><span class="nav-icon">&#128218;</span>Gedaechtnis-Config</div>
+          <div class="nav-item" data-page="knowledge"><span class="nav-icon">&#128218;</span>Wissen</div>
         </div>
       </div>
       <!-- Automatisierung -->
@@ -865,34 +867,24 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           <div class="nav-item" data-page="settings" data-tab="tab-routines"><span class="nav-icon">&#127748;</span>Routinen</div>
           <div class="nav-item" data-page="settings" data-tab="tab-proactive"><span class="nav-icon">&#128276;</span>Proaktiv</div>
           <div class="nav-item" data-page="settings" data-tab="tab-cooking"><span class="nav-icon">&#127859;</span>Koch-Assistent</div>
-          <div class="nav-item" data-page="settings" data-tab="tab-autonomie"><span class="nav-icon">&#129302;</span>Autonomie</div>
           <div class="nav-item" data-page="settings" data-tab="tab-followme"><span class="nav-icon">&#128694;</span>Follow-Me</div>
           <div class="nav-item" data-page="settings" data-tab="tab-jarvis"><span class="nav-icon">&#129497;</span>Jarvis-Features</div>
-        </div>
-      </div>
-      <!-- Sprache & Medien -->
-      <div class="nav-group">
-        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Sprache & Medien</span><span class="nav-group-arrow">&#9654;</span></div>
-        <div class="nav-group-items">
-          <div class="nav-item" data-page="settings" data-tab="tab-voice"><span class="nav-icon">&#128266;</span>Stimme & TTS</div>
           <div class="nav-item" data-page="settings" data-tab="tab-eastereggs"><span class="nav-icon">&#127881;</span>Easter Eggs</div>
         </div>
       </div>
-      <!-- Sicherheit & System -->
+      <!-- System -->
       <div class="nav-group">
-        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Sicherheit & System</span><span class="nav-group-arrow">&#9654;</span></div>
+        <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>System</span><span class="nav-group-arrow">&#9654;</span></div>
         <div class="nav-group-items">
+          <div class="nav-item" data-page="settings" data-tab="tab-general"><span class="nav-icon">&#9881;</span>Allgemein</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-autonomie"><span class="nav-icon">&#129302;</span>Autonomie</div>
           <div class="nav-item" data-page="settings" data-tab="tab-security"><span class="nav-icon">&#128274;</span>Sicherheit & Notfall</div>
           <div class="nav-item" data-page="settings" data-tab="tab-house-status"><span class="nav-icon">&#127777;</span>Haus-Status & Health</div>
           <div class="nav-item" data-page="settings" data-tab="tab-system"><span class="nav-icon">&#128296;</span>System & Updates</div>
+          <div class="nav-item" data-page="logs"><span class="nav-icon">&#9776;</span>Logs</div>
+          <div class="nav-item" data-page="errors"><span class="nav-icon">&#9888;</span>Fehler<span id="errBadge" class="err-badge" style="display:none;">0</span></div>
         </div>
       </div>
-      <div class="nav-divider"></div>
-      <div class="nav-item" data-page="entities"><span class="nav-icon">&#8801;</span>Entities</div>
-      <div class="nav-item" data-page="memory"><span class="nav-icon">&#129504;</span>Gedaechtnis</div>
-      <div class="nav-item" data-page="knowledge"><span class="nav-icon">&#128218;</span>Wissen</div>
-      <div class="nav-item" data-page="logs"><span class="nav-icon">&#9776;</span>Logs</div>
-      <div class="nav-item" data-page="errors"><span class="nav-icon">&#9888;</span>Fehler<span id="errBadge" class="err-badge" style="display:none;">0</span></div>
     </nav>
     <div class="sidebar-footer">MindHome Assistant v1.4.1</div>
   </aside>

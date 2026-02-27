@@ -389,9 +389,8 @@ class MemoryManager:
             total = self.chroma_collection.count()
             if total == 0:
                 return []
+            # ChromaDB .get() unterstuetzt kein limit/offset → in Python paginieren
             result = self.chroma_collection.get(
-                limit=limit,
-                offset=offset,
                 include=["documents", "metadatas"],
             )
             episodes = []
@@ -408,9 +407,9 @@ class MemoryManager:
                     "chunk_index": meta.get("chunk_index", "0") if isinstance(meta, dict) else "0",
                     "total_chunks": meta.get("total_chunks", "1") if isinstance(meta, dict) else "1",
                 })
-            # Nach Timestamp sortieren (neueste zuerst)
+            # Nach Timestamp sortieren (neueste zuerst), dann paginieren
             episodes.sort(key=lambda e: e["timestamp"], reverse=True)
-            return episodes
+            return episodes[offset:offset + limit]
         except Exception as e:
             logger.error("Fehler beim Laden der Episoden: %s", e)
             return []
