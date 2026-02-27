@@ -2252,6 +2252,25 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
         if "interrupt_queue" in changed_settings:
             logger.info("Interrupt-Queue Settings aktualisiert (live aus yaml_config)")
 
+        # Vacuum-Trigger: Tasks starten wenn noetig (Config wird im Loop gelesen)
+        if "vacuum" in changed_settings and hasattr(brain, "proactive"):
+            pro = brain.proactive
+            vacuum_cfg = yaml_cfg.get("vacuum", {})
+            if vacuum_cfg.get("enabled") and pro._running:
+                # Power-Trigger Task starten falls nicht laufend
+                pt_task = getattr(pro, "_vacuum_power_task", None)
+                if not pt_task or pt_task.done():
+                    if vacuum_cfg.get("power_trigger", {}).get("enabled"):
+                        pro._vacuum_power_task = asyncio.create_task(pro._run_vacuum_power_trigger())
+                        logger.info("Vacuum Power-Trigger Task (neu) gestartet")
+                # Scene-Trigger Task starten falls nicht laufend
+                st_task = getattr(pro, "_vacuum_scene_task", None)
+                if not st_task or st_task.done():
+                    if vacuum_cfg.get("scene_trigger", {}).get("enabled"):
+                        pro._vacuum_scene_task = asyncio.create_task(pro._run_vacuum_scene_trigger())
+                        logger.info("Vacuum Scene-Trigger Task (neu) gestartet")
+            logger.info("Vacuum Settings aktualisiert")
+
     except Exception as e:
         logger.warning("Settings-Propagation teilweise fehlgeschlagen: %s", e)
 

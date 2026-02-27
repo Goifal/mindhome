@@ -208,6 +208,9 @@ class ProactiveManager:
 
         # Phase 11: Saugroboter-Automatik
         vacuum_cfg = yaml_config.get("vacuum", {})
+        self._vacuum_task: Optional[asyncio.Task] = None
+        self._vacuum_power_task: Optional[asyncio.Task] = None
+        self._vacuum_scene_task: Optional[asyncio.Task] = None
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("auto_clean", {}).get("enabled"):
             self._vacuum_task = asyncio.create_task(self._run_vacuum_automation())
         # Steckdosen-Trigger fuer Saugroboter
@@ -2307,9 +2310,7 @@ class ProactiveManager:
         """Steckdosen-Trigger: Wenn Leistung unter Schwellwert → Raum saugen."""
         await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 180)
 
-        vacuum_cfg = yaml_config.get("vacuum", {})
-        pt_cfg = vacuum_cfg.get("power_trigger", {})
-        robots = vacuum_cfg.get("robots", {})
+        import assistant.config as cfg
         _redis = getattr(self.brain, "memory", None)
         _redis = getattr(_redis, "redis", None) if _redis else None
 
@@ -2318,6 +2319,15 @@ class ProactiveManager:
 
         while self._running:
             try:
+                # Config bei jeder Iteration neu lesen (UI-Aenderungen)
+                vacuum_cfg = cfg.yaml_config.get("vacuum", {})
+                pt_cfg = vacuum_cfg.get("power_trigger", {})
+                robots = vacuum_cfg.get("robots", {})
+
+                if not pt_cfg.get("enabled"):
+                    await asyncio.sleep(60)
+                    continue
+
                 triggers = pt_cfg.get("triggers", [])
                 delay_min = pt_cfg.get("delay_minutes", 5)
                 cooldown_h = pt_cfg.get("cooldown_hours", 12)
@@ -2413,9 +2423,7 @@ class ProactiveManager:
         """Szenen-Trigger: Wenn eine Szene aktiviert wird → Raum saugen."""
         await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 200)
 
-        vacuum_cfg = yaml_config.get("vacuum", {})
-        st_cfg = vacuum_cfg.get("scene_trigger", {})
-        robots = vacuum_cfg.get("robots", {})
+        import assistant.config as cfg
         _redis = getattr(self.brain, "memory", None)
         _redis = getattr(_redis, "redis", None) if _redis else None
 
@@ -2424,6 +2432,15 @@ class ProactiveManager:
 
         while self._running:
             try:
+                # Config bei jeder Iteration neu lesen (UI-Aenderungen)
+                vacuum_cfg = cfg.yaml_config.get("vacuum", {})
+                st_cfg = vacuum_cfg.get("scene_trigger", {})
+                robots = vacuum_cfg.get("robots", {})
+
+                if not st_cfg.get("enabled"):
+                    await asyncio.sleep(60)
+                    continue
+
                 triggers = st_cfg.get("triggers", [])
                 delay_min = st_cfg.get("delay_minutes", 5)
                 cooldown_h = st_cfg.get("cooldown_hours", 12)
