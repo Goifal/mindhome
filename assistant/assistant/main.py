@@ -666,7 +666,7 @@ async def chat(request: ChatRequest):
 
     # Phase 9: Voice-Metadaten an MoodDetector weiterleiten
     if request.voice_metadata:
-        brain.mood.analyze_voice_metadata(request.voice_metadata)
+        brain.mood.analyze_voice_metadata(request.voice_metadata, person=request.person or "")
 
     try:
         result = await asyncio.wait_for(
@@ -1487,7 +1487,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     if text:
                         # Phase 9: Voice-Metadaten verarbeiten
                         if voice_meta:
-                            brain.mood.analyze_voice_metadata(voice_meta)
+                            brain.mood.analyze_voice_metadata(voice_meta, person=person or "")
 
                         if use_stream:
                           try:

@@ -653,7 +653,7 @@ class MoodDetector:
     # Phase 9: Voice Emotion Detection
     # ------------------------------------------------------------------
 
-    def analyze_voice_metadata(self, metadata: dict) -> list[str]:
+    def analyze_voice_metadata(self, metadata: dict, person: str = "") -> list[str]:
         """
         Phase 9: Analysiert Sprach-Metadaten fuer Stimmungserkennung.
 
@@ -663,12 +663,16 @@ class MoodDetector:
                 volume: float - Lautstaerke (0.0-1.0)
                 duration: float - Dauer der Aufnahme in Sekunden
                 word_count: int - Anzahl erkannter Woerter
+            person: Name der Person (per-Person Tracking)
 
         Returns:
             Liste erkannter Voice-Signale
         """
         if not self.voice_enabled or not metadata:
             return []
+
+        # Per-Person State laden damit Voice-Aenderungen nicht verloren gehen
+        self._load_person_state(person)
 
         signals = []
 
@@ -716,6 +720,7 @@ class MoodDetector:
             logger.debug("Voice: schnelle Nachfrage -> Stress +%.2f", 0.1 * self.voice_weight)
 
         self._last_voice_signals = signals
+        self._store_person_state()
         return signals
 
     def detect_audio_emotion(self, metadata: dict) -> dict:

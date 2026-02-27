@@ -428,7 +428,17 @@ class PersonalityEngine:
         profiles = pp_cfg.get("profiles") or {}
         if not profiles:
             return {}
-        return profiles.get(person.lower().strip(), {}) if person else {}
+        if not person:
+            return {}
+        profile = dict(profiles.get(person.lower().strip(), {}))
+        # Numerische Felder: UI-Selects liefern Strings, Arithmetik braucht int
+        for int_field in ("humor", "formality_start"):
+            if int_field in profile:
+                try:
+                    profile[int_field] = int(profile[int_field])
+                except (ValueError, TypeError):
+                    del profile[int_field]
+        return profile
 
     # ------------------------------------------------------------------
     # Easter Eggs (Phase 6.3)
