@@ -3449,11 +3449,7 @@ async function saveAllSettings() {
       _rpDirty = false;
     }
 
-    if (result && result.restart_needed) {
-      toast('Gespeichert — Container-Neustart noetig fuer Sprach-Engine!', 'warning');
-    } else {
-      toast('Einstellungen gespeichert');
-    }
+    toast(result?.message || 'Einstellungen gespeichert');
   } catch(e) {
     toast('Fehler beim Speichern' + (e.message ? ': ' + e.message : ''), 'error');
   } finally {

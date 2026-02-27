@@ -2301,10 +2301,36 @@ _SETTINGS_STRIP_SUBKEYS = {
 }
 
 
+async def _restart_speech_containers(old_speech: dict, new_speech: dict):
+    """Startet nur die betroffenen Speech-Container automatisch neu.
+
+    Vergleicht alte und neue Speech-Config und startet gezielt:
+    - mha-whisper: wenn sich STT-Settings geaendert haben
+    - mha-piper:   wenn sich TTS-Settings geaendert haben
+    """
+    STT_KEYS = {"stt_model", "stt_language", "stt_beam_size", "stt_compute", "stt_device"}
+    TTS_KEYS = {"tts_voice"}
+
+    stt_changed = any(old_speech.get(k) != new_speech.get(k) for k in STT_KEYS)
+    tts_changed = any(old_speech.get(k) != new_speech.get(k) for k in TTS_KEYS)
+
+    restarted = []
+    if stt_changed:
+        ok = await _docker_restart("mha-whisper", timeout=10)
+        restarted.append(f"mha-whisper ({'OK' if ok else 'FEHLER'})")
+    if tts_changed:
+        ok = await _docker_restart("mha-piper", timeout=10)
+        restarted.append(f"mha-piper ({'OK' if ok else 'FEHLER'})")
+
+    if restarted:
+        logger.info("Speech-Container neu gestartet: %s", ", ".join(restarted))
+    return restarted
+
+
 def _sync_speech_to_env(speech_cfg: dict):
     """Synchronisiert speech-Settings aus settings.yaml in die .env Datei.
 
-    Damit docker-compose beim naechsten Neustart die neuen Werte verwendet.
+    Damit docker-compose die aktuellen Werte verwendet.
     Mapping: speech.stt_model → WHISPER_MODEL, speech.tts_voice → PIPER_VOICE, etc.
     """
     ENV_MAP = {
@@ -2435,11 +2461,13 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
             sound_cfg = cfg.yaml_config.get("sounds", {})
             brain.sound_manager.alexa_speakers = sound_cfg.get("alexa_speakers", [])
 
-        # Speech-Engine: Nur sync + restart-Hinweis wenn sich Speech tatsaechlich geaendert hat
+        # Speech-Engine: .env sync + Container automatisch neustarten
         new_speech = cfg.yaml_config.get("speech", {})
         speech_changed = (old_speech != new_speech)
+        speech_restarted = []
         if speech_changed:
             _sync_speech_to_env(new_speech)
+            speech_restarted = await _restart_speech_containers(old_speech, new_speech)
 
         # F-038: Alle weiteren Module benachrichtigen die Config bei __init__ cachen
         _reload_all_modules(cfg.yaml_config, safe_settings)
@@ -2449,14 +2477,15 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         audit_details = {"changed_sections": changed_keys}
         if stripped:
             audit_details["stripped_protected"] = stripped
+        if speech_restarted:
+            audit_details["speech_containers_restarted"] = speech_restarted
         _audit_log("settings_update", audit_details)
 
         reloaded_count = 4 + len(_get_reloaded_modules(safe_settings))
-        restart_hint = " — Container-Neustart noetig fuer Sprach-Engine!" if speech_changed else ""
+        speech_hint = f" + Speech-Container neu gestartet: {', '.join(speech_restarted)}" if speech_restarted else ""
         return {
             "success": True,
-            "message": f"Settings gespeichert ({reloaded_count} Module aktualisiert){restart_hint}",
-            "restart_needed": speech_changed,
+            "message": f"Settings gespeichert ({reloaded_count} Module aktualisiert){speech_hint}",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
