@@ -4605,7 +4605,7 @@ function _entityDropdownHtml(cls, domain, value, placeholder) {
 }
 
 // Hilfsfunktion: Raum-Dropdown aus Vacuum-Rooms rendern
-function _roomSelectHtml(cls, value) {
+function _roomSelectHtml(cls, value, syncFn) {
   const rooms = _getVacuumRooms();
   let opts = '<option value="">-- Raum waehlen --</option>';
   for (const r of rooms) {
@@ -4615,7 +4615,8 @@ function _roomSelectHtml(cls, value) {
   if (value && !rooms.includes(value)) {
     opts += `<option value="${esc(value)}" selected>${esc(value)}</option>`;
   }
-  return `<select class="${cls} form-input" style="font-size:12px;">${opts}</select>`;
+  const onchangeAttr = syncFn ? ` onchange="${syncFn}(this.closest('.${syncFn === 'ptSync' ? 'pt' : 'st'}-editor'))"` : '';
+  return `<select class="${cls} form-input" style="font-size:12px;"${onchangeAttr}>${opts}</select>`;
 }
 
 function _renderPowerTriggerList() {
@@ -4623,8 +4624,8 @@ function _renderPowerTriggerList() {
   let rows = triggers.map((t, i) =>
     `<div class="pt-row" style="display:grid;grid-template-columns:1fr 80px 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;">
        ${_entityDropdownHtml('pt-entity', 'sensor', t.entity || '', '&#128269; Sensor suchen...')}
-       <input type="number" class="pt-threshold form-input" value="${t.threshold ?? 5}" min="0" max="1000" step="1" placeholder="W" style="font-size:12px;text-align:center;">
-       ${_roomSelectHtml('pt-room', t.room || '')}
+       <input type="number" class="pt-threshold form-input" value="${t.threshold ?? 5}" min="0" max="1000" step="1" placeholder="W" style="font-size:12px;text-align:center;" onchange="ptSync(this.closest('.pt-editor'))">
+       ${_roomSelectHtml('pt-room', t.room || '', 'ptSync')}
        <button class="kv-rm" onclick="ptRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>
      </div>`
   ).join('');
@@ -4642,8 +4643,8 @@ function ptAdd(btn) {
   row.className = 'pt-row';
   row.style.cssText = 'display:grid;grid-template-columns:1fr 80px 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;';
   row.innerHTML = `${_entityDropdownHtml('pt-entity', 'sensor', '', '&#128269; Sensor suchen...')}
-    <input type="number" class="pt-threshold form-input" value="5" min="0" max="1000" step="1" placeholder="W" style="font-size:12px;text-align:center;">
-    ${_roomSelectHtml('pt-room', '')}
+    <input type="number" class="pt-threshold form-input" value="5" min="0" max="1000" step="1" placeholder="W" style="font-size:12px;text-align:center;" onchange="ptSync(this.closest('.pt-editor'))">
+    ${_roomSelectHtml('pt-room', '', 'ptSync')}
     <button class="kv-rm" onclick="ptRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>`;
   editor.insertBefore(row, btn);
   ptSync(editor);
@@ -4669,7 +4670,7 @@ function _renderSceneTriggerList() {
   let rows = triggers.map((t, i) =>
     `<div class="st-row" style="display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;">
        ${_entityDropdownHtml('st-entity', 'scene', t.entity || '', '&#128269; Szene suchen...')}
-       ${_roomSelectHtml('st-room', t.room || '')}
+       ${_roomSelectHtml('st-room', t.room || '', 'stSync')}
        <button class="kv-rm" onclick="stRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>
      </div>`
   ).join('');
@@ -4687,7 +4688,7 @@ function stAdd(btn) {
   row.className = 'st-row';
   row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;';
   row.innerHTML = `${_entityDropdownHtml('st-entity', 'scene', '', '&#128269; Szene suchen...')}
-    ${_roomSelectHtml('st-room', '')}
+    ${_roomSelectHtml('st-room', '', 'stSync')}
     <button class="kv-rm" onclick="stRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>`;
   editor.insertBefore(row, btn);
   stSync(editor);

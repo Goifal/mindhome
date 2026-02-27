@@ -198,6 +198,36 @@ class ActivityEngine:
         self._last_activity = RELAXING
         self._last_detection = None
 
+    def reload_config(self, activity_cfg: dict):
+        """Config aus YAML neu laden (wird von _reload_all_modules aufgerufen)."""
+        entities = activity_cfg.get("entities", {})
+        self.media_players = entities.get("media_players", [
+            "media_player.wohnzimmer",
+            "media_player.fernseher",
+            "media_player.tv",
+        ])
+        self.mic_sensors = entities.get("mic_sensors", [
+            "binary_sensor.mic_active",
+            "binary_sensor.microphone",
+        ])
+        self.bed_sensors = entities.get("bed_sensors", [
+            "binary_sensor.bed_occupancy",
+            "binary_sensor.bett",
+        ])
+        self.pc_sensors = entities.get("pc_sensors", [
+            "binary_sensor.pc_active",
+            "binary_sensor.computer",
+            "switch.pc",
+        ])
+
+        thresholds = activity_cfg.get("thresholds", {})
+        self.night_start = int(thresholds.get("night_start", 22))
+        self.night_end = int(thresholds.get("night_end", 7))
+        self.guest_person_count = int(thresholds.get("guest_person_count", 2))
+        self.focus_min_minutes = int(thresholds.get("focus_min_minutes", 30))
+        logger.info("ActivityDetector Config neu geladen (media_players=%d, bed_sensors=%d, night=%d-%d)",
+                     len(self.media_players), len(self.bed_sensors), self.night_start, self.night_end)
+
     def set_manual_override(self, activity: str, duration_minutes: int = 120):
         """Setzt einen manuellen Aktivitaets-Override.
 

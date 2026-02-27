@@ -2161,6 +2161,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             brain.autonomy.level = int(auto_cfg.get("level", brain.autonomy.level))
             logger.info("Autonomy Settings aktualisiert")
 
+        # Activity: Entity-Listen und Schwellwerte
+        if "activity" in changed_settings and hasattr(brain, "activity"):
+            activity_cfg = yaml_cfg.get("activity", {})
+            brain.activity.reload_config(activity_cfg)
+
         # Threat Assessment: Nacht-Zeiten
         if "threat_assessment" in changed_settings and hasattr(brain, "threat_assessment"):
             ta_cfg = yaml_cfg.get("threat_assessment", {})
