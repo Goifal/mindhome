@@ -210,6 +210,9 @@ class ProactiveManager:
         vacuum_cfg = yaml_config.get("vacuum", {})
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("auto_clean", {}).get("enabled"):
             self._vacuum_task = asyncio.create_task(self._run_vacuum_automation())
+        # Steckdosen-Trigger fuer Saugroboter
+        if vacuum_cfg.get("enabled") and vacuum_cfg.get("power_trigger", {}).get("enabled"):
+            self._vacuum_power_task = asyncio.create_task(self._run_vacuum_power_trigger())
         # Emergency Protocols laden
         self._emergency_protocols = yaml_config.get("emergency_protocols", {})
 
@@ -2296,6 +2299,112 @@ class ProactiveManager:
                 logger.error("Vacuum-Automation Fehler: %s", e)
 
             await asyncio.sleep(900)  # 15 Minuten
+
+    async def _run_vacuum_power_trigger(self):
+        """Steckdosen-Trigger: Wenn Leistung unter Schwellwert → Raum saugen."""
+        await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 180)
+
+        vacuum_cfg = yaml_config.get("vacuum", {})
+        pt_cfg = vacuum_cfg.get("power_trigger", {})
+        robots = vacuum_cfg.get("robots", {})
+        _redis = getattr(self.brain, "memory", None)
+        _redis = getattr(_redis, "redis", None) if _redis else None
+
+        # Zustand: war die Steckdose vorher "an" (ueber Schwellwert)?
+        was_above: dict[str, bool] = {}
+
+        while self._running:
+            try:
+                triggers = pt_cfg.get("triggers", [])
+                delay_min = pt_cfg.get("delay_minutes", 5)
+                cooldown_h = pt_cfg.get("cooldown_hours", 12)
+
+                for trigger in triggers:
+                    entity = trigger.get("entity", "")
+                    threshold = trigger.get("threshold", 5)
+                    room = trigger.get("room", "")
+                    if not entity or not room:
+                        continue
+
+                    state = await self.brain.ha.get_state(entity)
+                    if not state:
+                        continue
+
+                    try:
+                        power = float(state.get("state", 0))
+                    except (ValueError, TypeError):
+                        continue
+
+                    above = power >= threshold
+                    prev_above = was_above.get(entity, True)
+                    was_above[entity] = above
+
+                    # Fallende Flanke: war ueber Schwellwert, jetzt drunter
+                    if prev_above and not above:
+                        # Cooldown pruefen
+                        if _redis:
+                            cd_key = f"mha:vacuum:pt:{entity}"
+                            last = await _redis.get(cd_key)
+                            if last:
+                                try:
+                                    hours_since = (time.time() - float(last)) / 3600
+                                    if hours_since < cooldown_h:
+                                        continue
+                                except (ValueError, TypeError):
+                                    pass
+
+                        # Verzoegerung abwarten
+                        logger.info("Vacuum-PowerTrigger: %s unter %sW — warte %d Min", entity, threshold, delay_min)
+                        await asyncio.sleep(delay_min * 60)
+
+                        # Nochmal pruefen ob immer noch aus
+                        recheck = await self.brain.ha.get_state(entity)
+                        try:
+                            recheck_power = float(recheck.get("state", 0)) if recheck else threshold
+                        except (ValueError, TypeError):
+                            recheck_power = threshold
+                        if recheck_power >= threshold:
+                            was_above[entity] = True
+                            continue
+
+                        # Raum → Roboter + Segment finden
+                        robot = None
+                        segment_id = None
+                        for floor, r in robots.items():
+                            rooms_map = r.get("rooms", {})
+                            if room in rooms_map:
+                                robot = r
+                                segment_id = rooms_map[room]
+                                break
+                        if not robot:
+                            # Fallback: ersten Roboter nehmen
+                            if robots:
+                                robot = next(iter(robots.values()))
+
+                        if robot and robot.get("entity_id"):
+                            eid = robot["entity_id"]
+                            if segment_id is not None:
+                                await self.brain.ha.call_service("vacuum", "send_command", {
+                                    "entity_id": eid,
+                                    "command": "app_segment_clean",
+                                    "params": [segment_id],
+                                })
+                            else:
+                                await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
+
+                            if _redis:
+                                await _redis.set(f"mha:vacuum:pt:{entity}", str(time.time()))
+
+                            nickname = robot.get("nickname", "Saugroboter")
+                            await self._notify("vacuum_power_trigger", LOW, {
+                                "message": f"{nickname} reinigt '{room}' — Steckdose {entity} abgeschaltet",
+                            })
+                            logger.info("Vacuum-PowerTrigger: %s → %s gestartet (Raum: %s)", entity, eid, room)
+
+            except Exception as e:
+                logger.error("Vacuum-PowerTrigger Fehler: %s", e)
+
+            await asyncio.sleep(60)  # 1 Minute Polling
 
     async def _check_vacuum_maintenance(self, robots: dict, redis_client=None):
         """Prueft Filter/Buerste/Mopp Verschleiss und erinnert."""

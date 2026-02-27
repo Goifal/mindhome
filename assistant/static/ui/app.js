@@ -3306,6 +3306,18 @@ function collectSettings() {
     });
     setPath(updates, path, obj);
   });
+  // Power-Trigger editors (pt-editor divs) - collect from DOM
+  document.querySelectorAll('#settingsContent .pt-editor[data-path]').forEach(el => {
+    const path = el.dataset.path;
+    const triggers = [];
+    el.querySelectorAll('.pt-row').forEach(row => {
+      const entity = row.querySelector('.pt-entity').value.trim();
+      const threshold = parseFloat(row.querySelector('.pt-threshold').value) || 5;
+      const room = row.querySelector('.pt-room').value.trim();
+      if (entity && room) triggers.push({ entity, threshold, room });
+    });
+    setPath(updates, path, triggers);
+  });
   // Chip-Selects - already maintained in S via toggleChip()
   document.querySelectorAll('#settingsContent .chip-grid[data-path]').forEach(el => {
     const path = el.dataset.path;
@@ -4499,12 +4511,65 @@ function renderVacuum() {
       {v:'telefonat',l:'Telefonat'}
     ])
   ) +
+  sectionWrap('&#9889;', 'Steckdosen-Trigger',
+    fInfo('Wenn eine Steckdose mit Leistungsmessung abschaltet (Leistung faellt unter Schwellwert), wird automatisch der zugehoerige Raum gereinigt.') +
+    fToggle('vacuum.power_trigger.enabled', 'Steckdosen-Trigger aktiv') +
+    fRange('vacuum.power_trigger.delay_minutes', 'Verzoegerung nach Abschalten', 1, 30, 1, {1:'1 Min',2:'2 Min',5:'5 Min',10:'10 Min',15:'15 Min',20:'20 Min',30:'30 Min'}) +
+    fRange('vacuum.power_trigger.cooldown_hours', 'Cooldown (nicht nochmal)', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',6:'6 Std',8:'8 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'}) +
+    _renderPowerTriggerList()
+  ) +
   sectionWrap('&#128295;', 'Wartungs-Ueberwachung',
     fInfo('Jarvis warnt wenn Verschleissteile des Saugroboters gewechselt werden muessen.') +
     fToggle('vacuum.maintenance.enabled', 'Wartungs-Ueberwachung aktiv') +
     fRange('vacuum.maintenance.check_interval_hours', 'Pruef-Intervall', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'}) +
     fRange('vacuum.maintenance.warn_at_percent', 'Warnung bei', 5, 30, 5, {5:'5%',10:'10%',15:'15%',20:'20%',30:'30%'})
   );
+}
+
+function _renderPowerTriggerList() {
+  const triggers = getPath(S, 'vacuum.power_trigger.triggers') || [];
+  let rows = triggers.map((t, i) =>
+    `<div class="pt-row" style="display:grid;grid-template-columns:1fr 80px 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;">
+       <input type="text" class="pt-entity form-input" value="${esc(t.entity || '')}" placeholder="sensor.steckdose_power" style="font-size:12px;font-family:var(--mono);">
+       <input type="number" class="pt-threshold form-input" value="${t.threshold ?? 5}" min="0" max="1000" step="1" placeholder="W" style="font-size:12px;text-align:center;">
+       <input type="text" class="pt-room form-input" value="${esc(t.room || '')}" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+       <button class="kv-rm" onclick="ptRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>
+     </div>`
+  ).join('');
+  return `<div class="pt-editor" data-path="vacuum.power_trigger.triggers">
+    <div style="display:grid;grid-template-columns:1fr 80px 1fr 32px;gap:8px;margin-bottom:4px;font-size:11px;color:var(--text-muted);font-weight:600;">
+      <span>Steckdosen-Entity</span><span style="text-align:center;">Schwelle (W)</span><span>Raum</span><span></span>
+    </div>
+    ${rows}
+    <button class="kv-add" onclick="ptAdd(this)">+ Steckdosen-Trigger</button>
+  </div>`;
+}
+function ptAdd(btn) {
+  const editor = btn.closest('.pt-editor');
+  const row = document.createElement('div');
+  row.className = 'pt-row';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 80px 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;';
+  row.innerHTML = `<input type="text" class="pt-entity form-input" placeholder="sensor.steckdose_power" style="font-size:12px;font-family:var(--mono);">
+    <input type="number" class="pt-threshold form-input" value="5" min="0" max="1000" step="1" placeholder="W" style="font-size:12px;text-align:center;">
+    <input type="text" class="pt-room form-input" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+    <button class="kv-rm" onclick="ptRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>`;
+  editor.insertBefore(row, btn);
+  ptSync(editor);
+}
+function ptRemove(btn) {
+  const editor = btn.closest('.pt-editor');
+  btn.closest('.pt-row').remove();
+  ptSync(editor);
+}
+function ptSync(editor) {
+  const triggers = [];
+  editor.querySelectorAll('.pt-row').forEach(row => {
+    const entity = row.querySelector('.pt-entity').value.trim();
+    const threshold = parseFloat(row.querySelector('.pt-threshold').value) || 5;
+    const room = row.querySelector('.pt-room').value.trim();
+    if (entity && room) triggers.push({ entity, threshold, room });
+  });
+  setPath(S, 'vacuum.power_trigger.triggers', triggers);
 }
 
 function renderVacuumRobot(floor, floorLabel) {
