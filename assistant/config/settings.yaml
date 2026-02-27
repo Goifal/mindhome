@@ -756,7 +756,7 @@ maintenance:
   enabled: true
   config_file: config/maintenance.yaml
 self_optimization:
-  enabled: false
+  enabled: true
   analysis_interval: weekly
   approval_mode: manual
   max_proposals_per_cycle: 3
@@ -781,6 +781,18 @@ self_optimization:
     formality_start:
       min: 30
       max: 100
+    insight_cooldown_hours:
+      min: 2
+      max: 8
+    anticipation_min_confidence:
+      min: 0.5
+      max: 0.8
+    feedback_base_cooldown:
+      min: 120
+      max: 600
+    spontaneous_max_per_day:
+      min: 0
+      max: 5
   immutable_keys:
   - trust_levels
   - security
@@ -985,3 +997,33 @@ vacuum:
     enabled: true
     check_interval_hours: 24
     warn_at_percent: 10            # Warnung wenn Verschleissteil < 10%
+# --- Self-Improvement: Geschlossene Feedback-Loops ---
+# Wirkungstracker: Beobachtet ob Aktionen rueckgaengig gemacht werden
+outcome_tracker:
+  enabled: true
+  observation_delay_seconds: 180
+  max_results: 500
+# Korrektur-Gedaechtnis: Speichert User-Korrekturen strukturiert
+correction_memory:
+  enabled: true
+  max_entries: 200
+  max_context_entries: 3
+# Woechentlicher Selbst-Report ueber alle Lernsysteme
+self_report:
+  enabled: true
+  model: qwen3:14b
+# Lernende Schwellwerte: Passt Parameter automatisch an (enge Grenzen)
+adaptive_thresholds:
+  enabled: false          # Default OFF bis genug Daten gesammelt
+  analysis_interval_hours: 168
+  auto_adjust: true
+# Response Quality: Misst Antwort-Effektivitaet
+response_quality:
+  enabled: true
+  followup_window_seconds: 60
+  rephrase_similarity_threshold: 0.6
+# Error Pattern Analysis: Erkennt wiederkehrende Fehlermuster
+error_patterns:
+  enabled: true
+  min_occurrences_for_mitigation: 3
+  mitigation_ttl_hours: 1

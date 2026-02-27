@@ -34,6 +34,11 @@ _PARAMETER_PATHS = {
     "max_response_sentences": ["response_filter", "max_response_sentences"],
     "formality_min": ["personality", "formality_min"],
     "formality_start": ["personality", "formality_start"],
+    # Feature 9d: Erweiterte optimierbare Parameter
+    "insight_cooldown_hours": ["insights", "cooldown_hours"],
+    "anticipation_min_confidence": ["anticipation", "min_confidence"],
+    "feedback_base_cooldown": ["feedback", "base_cooldown_seconds"],
+    "spontaneous_max_per_day": ["spontaneous", "max_per_day"],
 }
 
 
@@ -69,8 +74,14 @@ class SelfOptimization:
     def is_enabled(self) -> bool:
         return self._enabled and self._approval_mode != "off"
 
-    async def run_analysis(self) -> list[dict]:
+    async def run_analysis(self, outcome_tracker=None, response_quality=None,
+                           correction_memory=None) -> list[dict]:
         """Fuehrt eine Analyse der letzten Interaktionen durch.
+
+        Args:
+            outcome_tracker: OutcomeTracker-Instanz (Feature 9a)
+            response_quality: ResponseQualityTracker-Instanz (Feature 9a)
+            correction_memory: CorrectionMemory-Instanz (Feature 9a)
 
         Returns: Liste von Vorschlaegen [{parameter, current, proposed, reason, confidence}]
         """
@@ -89,11 +100,20 @@ class SelfOptimization:
         corrections = await self._get_recent_corrections()
         feedback_stats = await self._get_feedback_stats()
 
-        if not corrections and not feedback_stats:
+        # Feature 9a: Mehr Datenquellen
+        outcome_stats = await self._get_outcome_stats(outcome_tracker)
+        quality_stats = await self._get_quality_stats(response_quality)
+        correction_patterns = await self._get_correction_patterns(correction_memory)
+
+        if not corrections and not feedback_stats and not outcome_stats:
             logger.info("Keine Daten fuer Analyse vorhanden")
             return []
 
-        proposals = await self._generate_proposals(corrections, feedback_stats)
+        proposals = await self._generate_proposals(
+            corrections, feedback_stats,
+            outcome_stats=outcome_stats, quality_stats=quality_stats,
+            correction_patterns=correction_patterns,
+        )
 
         valid_proposals = []
         for p in proposals[:self._max_proposals]:
@@ -262,9 +282,20 @@ class SelfOptimization:
 
         return True
 
-    async def _generate_proposals(self, corrections: list, feedback_stats: dict) -> list[dict]:
+    async def _generate_proposals(self, corrections: list, feedback_stats: dict,
+                                   outcome_stats: dict = None, quality_stats: dict = None,
+                                   correction_patterns: list = None) -> list[dict]:
         """Generiert Vorschlaege via LLM-Analyse."""
         current_values = self._get_current_values()
+
+        # Feature 9e: Trend-Metriken im Prompt
+        extra_data = ""
+        if outcome_stats:
+            extra_data += f"\nOUTCOME-STATISTIKEN:\n{json.dumps(outcome_stats, indent=2, ensure_ascii=False)}\n"
+        if quality_stats:
+            extra_data += f"\nANTWORT-QUALITAET:\n{json.dumps(quality_stats, indent=2, ensure_ascii=False)}\n"
+        if correction_patterns:
+            extra_data += f"\nKORREKTUR-MUSTER (Top 5):\n{json.dumps(correction_patterns[:5], indent=2, ensure_ascii=False)}\n"
 
         prompt = f"""Du bist Jarvis' Selbstoptimierungs-Modul.
 Analysiere die folgenden Interaktionsdaten und schlage Parameter-Aenderungen vor.
@@ -280,7 +311,7 @@ KORREKTUREN VOM USER (letzte Woche):
 
 FEEDBACK-STATISTIK:
 {json.dumps(feedback_stats, indent=2, ensure_ascii=False)}
-
+{extra_data}
 REGELN:
 - Nur Parameter aendern die EINDEUTIG verbesserbar sind
 - Kleine Schritte: max 1 Stufe pro Parameter pro Woche
@@ -378,6 +409,97 @@ Wenn keine Aenderung noetig: []"""
             return stats
         except Exception:
             return {}
+
+    # Feature 9a: Neue Datenquellen
+    async def _get_outcome_stats(self, outcome_tracker=None) -> dict:
+        """Holt Outcome-Statistiken (Feature 9a)."""
+        if not outcome_tracker:
+            return {}
+        try:
+            return await outcome_tracker.get_stats()
+        except Exception:
+            return {}
+
+    async def _get_quality_stats(self, response_quality=None) -> dict:
+        """Holt Response-Quality-Statistiken (Feature 9a)."""
+        if not response_quality:
+            return {}
+        try:
+            return await response_quality.get_stats()
+        except Exception:
+            return {}
+
+    async def _get_correction_patterns(self, correction_memory=None) -> list:
+        """Holt Korrektur-Muster (Feature 9a)."""
+        if not correction_memory:
+            return []
+        try:
+            return await correction_memory.get_correction_patterns()
+        except Exception:
+            return []
+
+    # Feature 9b: Effectiveness Tracking
+    async def save_baseline(self, param: str, outcome_tracker=None, response_quality=None):
+        """Speichert Baseline-Metriken vor einer Aenderung (Feature 9b)."""
+        if not self._redis:
+            return
+        baseline = {"timestamp": datetime.now().isoformat()}
+        if outcome_tracker:
+            try:
+                baseline["outcome_stats"] = await outcome_tracker.get_stats()
+            except Exception:
+                pass
+        if response_quality:
+            try:
+                baseline["quality_stats"] = await response_quality.get_stats()
+            except Exception:
+                pass
+        await self._redis.setex(
+            f"mha:self_opt:baseline:{param}", 30 * 86400,
+            json.dumps(baseline, ensure_ascii=False, default=str),
+        )
+
+    async def check_effectiveness(self, param: str, outcome_tracker=None,
+                                  response_quality=None) -> Optional[dict]:
+        """Vergleicht aktuelle Metriken mit Baseline (Feature 9b/9c)."""
+        if not self._redis:
+            return None
+        raw = await self._redis.get(f"mha:self_opt:baseline:{param}")
+        if not raw:
+            return None
+        try:
+            baseline = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+
+        current_outcomes = {}
+        current_quality = {}
+        if outcome_tracker:
+            try:
+                current_outcomes = await outcome_tracker.get_stats()
+            except Exception:
+                pass
+        if response_quality:
+            try:
+                current_quality = await response_quality.get_stats()
+            except Exception:
+                pass
+
+        # Einfacher Vergleich: Outcome-Score-Differenz
+        baseline_outcomes = baseline.get("outcome_stats", {})
+        score_changes = {}
+        for action, stats in current_outcomes.items():
+            if isinstance(stats, dict) and action in baseline_outcomes:
+                old_score = baseline_outcomes[action].get("score", 0.5)
+                new_score = stats.get("score", 0.5)
+                if isinstance(old_score, (int, float)) and isinstance(new_score, (int, float)):
+                    score_changes[action] = round(new_score - old_score, 3)
+
+        return {
+            "parameter": param,
+            "score_changes": score_changes,
+            "baseline_timestamp": baseline.get("timestamp", ""),
+        }
 
     def format_proposals_for_chat(self, proposals: list[dict]) -> str:
         """Formatiert Vorschlaege fuer die Chat-Ausgabe."""
