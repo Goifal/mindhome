@@ -52,6 +52,12 @@ character_lock:
   structural_filter: true
   character_retry: true
   retry_threshold: 3
+empathy:
+  enabled: true
+  intensity: normal
+  mood_acknowledgment: true
+  practical_offers: true
+  good_mood_mirror: true
 mood_complexity:
   enabled: true
 wellness:

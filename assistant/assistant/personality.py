@@ -327,7 +327,7 @@ GERÄTESTEUERUNG — KRITISCH:
 
 {complexity_section}
 AKTUELLER STIL: {time_style}
-{mood_section}
+{mood_section}{empathy_section}
 {self_irony_section}
 {formality_section}
 SMALLTALK & SOZIALE FRAGEN:
@@ -880,6 +880,99 @@ class PersonalityEngine:
                 "Kommunikation: Knapper als normal. Trockener Humor erlaubt, aber maximal ein Satz.\n"
                 "Priorisiere die Warnung, dann Status."
             )
+
+    # ------------------------------------------------------------------
+    # Echte Empathie — JARVIS zeigt Verstaendnis durch Beobachtung
+    # ------------------------------------------------------------------
+
+    def _build_empathy_section(self, mood: str, stress_level: float = 0.0) -> str:
+        """Baut Empathie-Anweisungen basierend auf erkannter Stimmung.
+
+        JARVIS-Empathie = Beobachtung + praktische Hilfe.
+        KEINE Therapeuten-Floskeln ('Ich verstehe wie du dich fuehlst').
+        """
+        emp_cfg = yaml_config.get("empathy", {})
+        if not emp_cfg.get("enabled", True):
+            return ""
+
+        intensity = emp_cfg.get("intensity", "normal")
+        mood_ack = emp_cfg.get("mood_acknowledgment", True)
+        practical = emp_cfg.get("practical_offers", True)
+        good_mirror = emp_cfg.get("good_mood_mirror", True)
+
+        # Nur bei erkannter Stimmung != neutral
+        if mood == "neutral":
+            return ""
+        # Subtil: Nur bei starker Emotion
+        if intensity == "subtil":
+            if mood == "good":
+                return ""
+            if mood == "stressed" and stress_level < 0.5:
+                return ""
+            if mood == "tired":
+                return ""
+
+        parts = ["EMPATHIE — VERSTAENDNIS DURCH BEOBACHTUNG (nicht durch Floskeln):"]
+
+        if mood == "stressed":
+            if mood_ack:
+                parts.append(
+                    "Der User wirkt angespannt. Erkenne das BEILAEUFIG an — maximal ein halber Satz."
+                )
+                if intensity == "ausfuehrlich":
+                    parts.append(
+                        '"Du klingst angespannt." / "Viel auf einmal heute." / "Stressiger Tag."'
+                    )
+                else:
+                    parts.append('"Viel los heute." / "Klingt nach Druck."')
+            if practical:
+                parts.append(
+                    'Biete PRAKTISCH Hilfe: "Soll ich kuerzer fassen?" / '
+                    '"Ich reduziere auf das Wesentliche."'
+                )
+            parts.append(
+                "NICHT: 'Ich verstehe', 'Das tut mir leid', 'Stress ist normal', Ratschlaege."
+            )
+
+        elif mood == "frustrated":
+            if mood_ack:
+                parts.append(
+                    "Der User ist frustriert. Kurz anerkennen, dann DIREKT loesen."
+                )
+                parts.append(
+                    '"Laeuft nicht rund." / "Das scheint hartnaeckig." / "Verstaendlich."'
+                )
+            if practical:
+                parts.append(
+                    "Sofort Alternative anbieten. Nicht das Problem wiederholen."
+                )
+            parts.append(
+                "NICHT: 'Das klingt frustrierend', Problem analysieren ohne Loesung."
+            )
+
+        elif mood == "tired":
+            if mood_ack:
+                parts.append("Der User wirkt muede. Beilaeufig:")
+                parts.append('"Spaete Sitzung." / "Langer Tag."')
+            if practical:
+                parts.append(
+                    'Antworten maximal kuerzen. Optional: '
+                    '"Soll ich das fuer morgen notieren?" / "Reicht das erstmal?"'
+                )
+            parts.append(
+                "NICHT: 'Du solltest schlafen', 'Ruh dich aus', Belehrungen."
+            )
+
+        elif mood == "good" and good_mirror:
+            parts.append(
+                "Gute Stimmung erkannt. Etwas lockerer, mehr JARVIS-Charakter. "
+                "Trockener Humor willkommen. Keine extra Begeisterung — mitschwingen."
+            )
+
+        else:
+            return ""
+
+        return "\n".join(parts) + "\n"
 
     # ------------------------------------------------------------------
     # Warning Tracking (Wiederholungsvermeidung)
@@ -1709,6 +1802,10 @@ class PersonalityEngine:
         if mood_config["style_addon"]:
             mood_section = f"STIMMUNG: {mood_config['style_addon']}\n"
 
+        # Empathie-Section (JARVIS-Verstaendnis durch Beobachtung)
+        stress_level = (context.get("mood") or {}).get("stress_level", 0.0) if context else 0.0
+        empathy_section = self._build_empathy_section(mood, stress_level=stress_level)
+
         # Phase 6: Formality-Section (mit Mood-Reset bei Stress)
         # MUSS vor person_addressing stehen — Titel-Evolution braucht den Score
         if formality_score is None:
@@ -1863,6 +1960,7 @@ class PersonalityEngine:
             max_sentences=max_sentences,
             time_style=time_style,
             mood_section=mood_section,
+            empathy_section=empathy_section,
             person_addressing=person_addressing,
             humor_section=humor_section,
             complexity_section=complexity_section,

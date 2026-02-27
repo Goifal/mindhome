@@ -1017,6 +1017,12 @@ const HELP_TEXTS = {
   'character_lock.structural_filter': {title:'Struktureller Filter', text:'Erkennt typische LLM-Strukturen wie nummerierte Listen, Bullet Points und Aufzaehlungen und wandelt sie in Fliesstext um. JARVIS listet nicht auf — er spricht.'},
   'character_lock.character_retry': {title:'Character-Retry', text:'Wenn eine Antwort trotz Filter noch zu LLM-artig klingt (Score >= Schwelle), wird automatisch ein zweiter Versuch mit hartem JARVIS-Prompt gestartet.'},
   'character_lock.retry_threshold': {title:'Retry-Empfindlichkeit', text:'Ab welchem LLM-Score ein Retry ausgeloest wird. 1 = sehr empfindlich (fast jede Antwort wird geprueft), 3 = normal (nur bei deutlichem LLM-Durchbruch), 5 = nur bei starkem Bruch.'},
+  // === ECHTE EMPATHIE ===
+  'empathy.enabled': {title:'Echte Empathie', text:'Jarvis zeigt Verstaendnis wenn er Stress, Frustration oder Muedigkeit erkennt — nicht durch Floskeln, sondern durch Beobachtung und praktische Hilfe. Wie MCU-JARVIS: "Du klingst angespannt. Soll ich kuerzen?"'},
+  'empathy.intensity': {title:'Empathie-Intensitaet', text:'Wie deutlich Jarvis empathisch reagiert. Subtil = nur bei starker Emotion. Normal = bei jeder erkannten Stimmung. Ausfuehrlich = aktiver, auch mit Vorschlaegen.'},
+  'empathy.mood_acknowledgment': {title:'Stimmung ansprechen', text:'Jarvis spricht die erkannte Stimmung beilaeufig an. Z.B. "Viel auf einmal heute." bei Stress oder "Langer Tag." bei Muedigkeit. JARVIS-Stil, keine Therapeuten-Sprache.'},
+  'empathy.practical_offers': {title:'Praktische Hilfe', text:'Bei Stress oder Frustration bietet Jarvis aktiv Hilfe an: "Soll ich das vereinfachen?", "Anderer Ansatz?", "Soll ich morgen erinnern?" — Handeln statt Reden.'},
+  'empathy.good_mood_mirror': {title:'Gute Stimmung spiegeln', text:'Bei guter Stimmung wird Jarvis lockerer — mehr trockener Humor, mehr Persoenlichkeit. Spiegelt die positive Energie zurueck.'},
 };
 
 function helpBtn(path) {
@@ -2522,6 +2528,14 @@ function renderJarvisFeatures() {
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Proaktive Persoenlichkeit</div>' +
     fToggle('proactive_personality.enabled', 'Briefings mit Charakter') +
     fToggle('proactive_personality.sarcasm_in_notifications', 'Trockener Humor in Meldungen')
+  ) +
+  sectionWrap('&#129505;', 'Echte Empathie',
+    fInfo('Jarvis zeigt echtes Verstaendnis — nicht durch Therapeuten-Floskeln, sondern durch Beobachtung und Handeln. "Du klingst angespannt." statt "Ich verstehe wie du dich fuehlst." Wie MCU-JARVIS: erkennen, beilaeufig ansprechen, praktisch helfen.') +
+    fToggle('empathy.enabled', 'Echte Empathie aktiv') +
+    fSelect('empathy.intensity', 'Intensitaet', [{v:'subtil',l:'Subtil (nur starke Emotionen)'},{v:'normal',l:'Normal'},{v:'ausfuehrlich',l:'Ausfuehrlich (aktiv mitfuehlend)'}]) +
+    fToggle('empathy.mood_acknowledgment', 'Stimmung beilaeufig ansprechen') +
+    fToggle('empathy.practical_offers', 'Praktische Hilfe anbieten') +
+    fToggle('empathy.good_mood_mirror', 'Gute Stimmung spiegeln')
   ) +
   sectionWrap('&#128274;', 'Charakter-Schutz',
     fInfo('Verhindert dass das LLM aus der JARVIS-Rolle faellt und typische KI-Floskeln verwendet. Dreistufiger Schutz: Prompt-Anker am Ende, struktureller Post-Filter und automatischer Character-Retry.') +
