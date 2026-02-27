@@ -2134,7 +2134,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # --- Prio 1: Core ---
         sections.append(("scene_intelligence", SCENE_INTELLIGENCE_PROMPT, 1))
 
-        mood_hint = self.mood.get_mood_prompt_hint() if profile.need_mood else ""
+        mood_hint = self.mood.get_mood_prompt_hint(person or "") if profile.need_mood else ""
         if mood_hint:
             sections.append(("mood", f"\n\nEMOTIONALE LAGE: {mood_hint}", 1))
 
@@ -4635,7 +4635,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "chromadb": "connected" if self.memory.chroma_collection else "disconnected",
                 "semantic_memory": "connected" if self.memory.semantic.chroma_collection else "disconnected",
                 "memory_extractor": "active" if self.memory_extractor else "inactive",
-                "mood_detector": f"active (mood: {self.mood.get_current_mood()['mood']})",
+                "mood_detector": f"active (mood: {self.mood.get_current_mood(self._current_person)['mood']})",
                 "action_planner": "active",
                 "feedback_tracker": "running" if self.feedback._running else "stopped",
                 "activity_engine": "active",

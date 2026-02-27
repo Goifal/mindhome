@@ -2743,18 +2743,35 @@ class FunctionExecutor:
 
     # ── Phase 11: Saugroboter (Dreame, 2 Etagen) ──────────
 
+    @staticmethod
+    def _normalize_room_key(room: str) -> str:
+        """Normalisiert Raumnamen fuer Config-Lookup (Umlaute, Leerzeichen, Case)."""
+        r = room.lower().strip()
+        r = r.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+        r = r.replace(" ", "_")
+        return r
+
     def _resolve_vacuum_room(self, room: str, robots: dict) -> tuple:
         """Findet den richtigen Roboter + Segment-ID fuer einen Raum.
 
         Returns:
             (robot_config: dict | None, segment_id: int | None)
         """
-        # Direkte Zuordnung: Raum in robots.{floor}.rooms
+        room_norm = self._normalize_room_key(room)
+        # Direkte Zuordnung: Raum in robots.{floor}.rooms (exakt oder normalisiert)
         for floor, robot in robots.items():
             rooms_map = robot.get("rooms", {})
+            # Exakter Match
             if room in rooms_map:
                 return robot, rooms_map[room]
-        # Fallback: Raum-Profil → floor → Roboter
+            # Normalisierter Match (Umlaute, Case)
+            if room_norm in rooms_map:
+                return robot, rooms_map[room_norm]
+            # Fuzzy: Config-Keys auch normalisieren
+            for cfg_key, seg_id in rooms_map.items():
+                if self._normalize_room_key(cfg_key) == room_norm:
+                    return robot, seg_id
+        # Fallback: Raum-Profil → floor → Roboter (OHNE Segment)
         _cfg_dir = Path(__file__).parent.parent / "config"
         try:
             with open(_cfg_dir / "room_profiles.yaml") as f:
@@ -2762,6 +2779,12 @@ class FunctionExecutor:
         except Exception:
             profiles = {}
         room_floor = profiles.get("rooms", {}).get(room, {}).get("floor")
+        if not room_floor:
+            # Auch normalisiert versuchen
+            for rname, rdata in profiles.get("rooms", {}).items():
+                if self._normalize_room_key(rname) == room_norm:
+                    room_floor = rdata.get("floor")
+                    break
         if room_floor and room_floor in robots:
             return robots[room_floor], None
         return None, None
@@ -2777,14 +2800,15 @@ class FunctionExecutor:
         if not robots:
             return {"success": False, "message": "Keine Saugroboter konfiguriert (settings.yaml → vacuum.robots)"}
 
-        # Raum-genaues Saugen
-        if action == "clean_room" and room:
+        # Raum-genaues Saugen (clean_room ODER start mit Raum-Angabe)
+        # Wenn ein konkreter Raum genannt wird → NUR diesen Raum saugen, nie das ganze Haus
+        if action in ("clean_room", "start") and room and room.lower() not in ("eg", "og"):
             robot, segment_id = self._resolve_vacuum_room(room, robots)
             if not robot:
                 return {"success": False, "message": f"Kein Saugroboter fuer '{room}' konfiguriert"}
             entity_id = robot.get("entity_id")
             if not entity_id:
-                return {"success": False, "message": f"Keine entity_id fuer Saugroboter konfiguriert"}
+                return {"success": False, "message": "Keine entity_id fuer Saugroboter konfiguriert"}
             nickname = robot.get("nickname", "der Kleine")
 
             if segment_id is not None:
@@ -2796,32 +2820,25 @@ class FunctionExecutor:
                 })
                 return {"success": success, "message": f"{nickname} saugt {room}"}
             else:
-                # Kein Segment konfiguriert — ganzen Roboter starten
-                success = await self.ha.call_service("vacuum", "start", {"entity_id": entity_id})
-                return {"success": success, "message": f"{nickname} startet (Raum '{room}' nicht als Segment konfiguriert — saugt komplett)"}
+                # KEIN stiller Fallback — wenn Raum gewuenscht aber kein Segment → Fehler
+                _floor = robot.get("floor", "?")
+                return {
+                    "success": False,
+                    "message": (
+                        f"Raum '{room}' hat keine Segment-ID. Ohne Segment-ID wuerde der "
+                        f"komplette Roboter starten und das ganze Stockwerk saugen. "
+                        f"In settings.yaml unter vacuum.robots.{_floor}.rooms die Segment-ID "
+                        f"fuer '{room}' eintragen."
+                    ),
+                }
 
-        # Ganzes Stockwerk
+        # Ganzes Stockwerk (explizit "sauge EG" / "sauge OG")
         if action == "start" and room and room.lower() in ("eg", "og"):
             robot = robots.get(room.lower())
             if not robot or not robot.get("entity_id"):
                 return {"success": False, "message": f"Kein Roboter fuer {room.upper()} konfiguriert"}
             success = await self.ha.call_service("vacuum", "start", {"entity_id": robot["entity_id"]})
             return {"success": success, "message": f"{robot.get('nickname', 'Saugroboter')} startet im {room.upper()}"}
-
-        # Start ohne Raum → Raum → floor-Zuordnung versuchen
-        if action == "start" and room:
-            robot, segment_id = self._resolve_vacuum_room(room, robots)
-            if robot and robot.get("entity_id"):
-                if segment_id is not None:
-                    success = await self.ha.call_service("vacuum", "send_command", {
-                        "entity_id": robot["entity_id"],
-                        "command": "app_segment_clean",
-                        "params": [segment_id],
-                    })
-                    return {"success": success, "message": f"{robot.get('nickname', 'Saugroboter')} saugt {room}"}
-                else:
-                    success = await self.ha.call_service("vacuum", "start", {"entity_id": robot["entity_id"]})
-                    return {"success": success, "message": f"{robot.get('nickname', 'Saugroboter')} startet (Raum '{room}' nicht als Segment konfiguriert — saugt komplett)"}
 
         # Stop/Pause/Dock → alle Roboter
         if action in ("stop", "pause", "dock"):

@@ -1017,6 +1017,18 @@ const HELP_TEXTS = {
   'character_lock.structural_filter': {title:'Struktureller Filter', text:'Erkennt typische LLM-Strukturen wie nummerierte Listen, Bullet Points und Aufzaehlungen und wandelt sie in Fliesstext um. JARVIS listet nicht auf — er spricht.'},
   'character_lock.character_retry': {title:'Character-Retry', text:'Wenn eine Antwort trotz Filter noch zu LLM-artig klingt (Score >= Schwelle), wird automatisch ein zweiter Versuch mit hartem JARVIS-Prompt gestartet.'},
   'character_lock.retry_threshold': {title:'Retry-Empfindlichkeit', text:'Ab welchem LLM-Score ein Retry ausgeloest wird. 1 = sehr empfindlich (fast jede Antwort wird geprueft), 3 = normal (nur bei deutlichem LLM-Durchbruch), 5 = nur bei starkem Bruch.'},
+  // === ECHTE EMPATHIE ===
+  'empathy.enabled': {title:'Echte Empathie', text:'Jarvis zeigt Verstaendnis wenn er Stress, Frustration oder Muedigkeit erkennt — nicht durch Floskeln, sondern durch Beobachtung und praktische Hilfe. Wie MCU-JARVIS: "Du klingst angespannt. Soll ich kuerzen?"'},
+  'empathy.intensity': {title:'Empathie-Intensitaet', text:'Wie deutlich Jarvis empathisch reagiert. Subtil = nur bei starker Emotion. Normal = bei jeder erkannten Stimmung. Ausfuehrlich = aktiver, auch mit Vorschlaegen.'},
+  'empathy.mood_acknowledgment': {title:'Stimmung ansprechen', text:'Jarvis spricht die erkannte Stimmung beilaeufig an. Z.B. "Viel auf einmal heute." bei Stress oder "Langer Tag." bei Muedigkeit. JARVIS-Stil, keine Therapeuten-Sprache.'},
+  'empathy.practical_offers': {title:'Praktische Hilfe', text:'Bei Stress oder Frustration bietet Jarvis aktiv Hilfe an: "Soll ich das vereinfachen?", "Anderer Ansatz?", "Soll ich morgen erinnern?" — Handeln statt Reden.'},
+  'empathy.good_mood_mirror': {title:'Gute Stimmung spiegeln', text:'Bei guter Stimmung wird Jarvis lockerer — mehr trockener Humor, mehr Persoenlichkeit. Spiegelt die positive Energie zurueck.'},
+  // === PERSONEN-PROFILE ===
+  'person_profiles.enabled': {title:'Personen-Profile', text:'Jede Person bekommt ein eigenes Persoenlichkeitsprofil: Humor-Level, Empathie-Stil, Antwortlaenge und Formalitaet koennen pro Person angepasst werden. Stimmung wird pro Person separat getrackt.'},
+  'person_profiles.humor': {title:'Per-Person Humor', text:'Ueberschreibt den globalen Sarkasmus-Level fuer diese Person. 1 = ernst/sachlich, 3 = normal, 5 = maximal sarkastisch. Standard = globaler Level.'},
+  'person_profiles.empathy': {title:'Per-Person Empathie', text:'Ueberschreibt die globale Empathie-Intensitaet fuer diese Person. Subtil, Normal, Ausfuehrlich oder komplett Deaktiviert.'},
+  'person_profiles.response_style': {title:'Per-Person Antwort-Stil', text:'Wie ausfuehrlich Jarvis dieser Person antwortet. Kurz = weniger Saetze, Ausfuehrlich = mehr Details. Standard = globale Einstellung.'},
+  'person_profiles.formality_start': {title:'Per-Person Formalitaet', text:'Start-Formalitaet fuer diese Person (20-100). Hoher Wert = formeller Ton, niedriger = lockerer. Ueberschreibt den globalen Startwert.'},
 };
 
 function helpBtn(path) {
@@ -1388,6 +1400,10 @@ function fPersonProfiles() {
     const prof = profiles[person] || {};
     const notifySvc = prof.notify_service || '';
     const prefRoom = prof.preferred_room || '';
+    const pHumor = prof.humor || '';
+    const pEmpathy = prof.empathy || '';
+    const pStyle = prof.response_style || '';
+    const pFormality = prof.formality_start || '';
     const roomOpts = rooms.map(r => `<option value="${esc(r)}" ${prefRoom.toLowerCase()===r?'selected':''}>${esc(r)}</option>`).join('');
     rows += `<div style="padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);margin-bottom:8px;">
       <div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128100; ${esc(person)}</div>
@@ -1407,6 +1423,54 @@ function fPersonProfiles() {
           <select data-person-profile="${esc(person)}" data-profile-field="preferred_room"
             style="font-size:11px;padding:5px 8px;width:100%;box-sizing:border-box;">
             <option value="">-- Kein Raum --</option>${roomOpts}
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);margin-bottom:4px;">Persoenlichkeit</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);">Humor-Level</label>
+          <select data-person-profile="${esc(person)}" data-profile-field="humor"
+            style="font-size:11px;padding:5px 8px;width:100%;box-sizing:border-box;">
+            <option value="" ${!pHumor?'selected':''}>-- Standard --</option>
+            <option value="1" ${pHumor==1?'selected':''}>1 - Ernst</option>
+            <option value="2" ${pHumor==2?'selected':''}>2 - Sachlich</option>
+            <option value="3" ${pHumor==3?'selected':''}>3 - Normal</option>
+            <option value="4" ${pHumor==4?'selected':''}>4 - Humorvoll</option>
+            <option value="5" ${pHumor==5?'selected':''}>5 - Sarkastisch</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);">Empathie</label>
+          <select data-person-profile="${esc(person)}" data-profile-field="empathy"
+            style="font-size:11px;padding:5px 8px;width:100%;box-sizing:border-box;">
+            <option value="" ${!pEmpathy?'selected':''}>-- Standard --</option>
+            <option value="subtil" ${pEmpathy==='subtil'?'selected':''}>Subtil</option>
+            <option value="normal" ${pEmpathy==='normal'?'selected':''}>Normal</option>
+            <option value="ausfuehrlich" ${pEmpathy==='ausfuehrlich'?'selected':''}>Ausfuehrlich</option>
+            <option value="deaktiviert" ${pEmpathy==='deaktiviert'?'selected':''}>Deaktiviert</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);">Antwort-Stil</label>
+          <select data-person-profile="${esc(person)}" data-profile-field="response_style"
+            style="font-size:11px;padding:5px 8px;width:100%;box-sizing:border-box;">
+            <option value="" ${!pStyle?'selected':''}>-- Standard --</option>
+            <option value="kurz" ${pStyle==='kurz'?'selected':''}>Kurz</option>
+            <option value="normal" ${pStyle==='normal'?'selected':''}>Normal</option>
+            <option value="ausfuehrlich" ${pStyle==='ausfuehrlich'?'selected':''}>Ausfuehrlich</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-muted);">Formalitaet</label>
+          <select data-person-profile="${esc(person)}" data-profile-field="formality_start"
+            style="font-size:11px;padding:5px 8px;width:100%;box-sizing:border-box;">
+            <option value="" ${!pFormality?'selected':''}>-- Standard --</option>
+            <option value="20" ${pFormality==20?'selected':''}>20 - Sehr locker</option>
+            <option value="40" ${pFormality==40?'selected':''}>40 - Locker</option>
+            <option value="60" ${pFormality==60?'selected':''}>60 - Normal</option>
+            <option value="80" ${pFormality==80?'selected':''}>80 - Formell</option>
+            <option value="100" ${pFormality==100?'selected':''}>100 - Sehr formell</option>
           </select>
         </div>
       </div>
@@ -2097,7 +2161,8 @@ function renderRooms() {
     fRange('activity.thresholds.focus_min_minutes', 'Fokus-Modus ab Minuten', 5, 120, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'})
   ) +
   sectionWrap('&#128101;', 'Personen-Profile',
-    fInfo('Erweiterte Einstellungen pro Person — Benachrichtigungs-Service und bevorzugter Raum.') +
+    fInfo('Pro Person individuell: Benachrichtigung, Raum, Humor-Level, Empathie-Stil, Antwortlaenge und Formalitaet. Stimmung wird ebenfalls pro Person separat getrackt.') +
+    fToggle('person_profiles.enabled', 'Persoenlichkeits-Profile aktiv') +
     fPersonProfiles()
   ) +
   // ── Raum-Profile (room_profiles.yaml) ─────────────────────
@@ -2522,6 +2587,14 @@ function renderJarvisFeatures() {
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Proaktive Persoenlichkeit</div>' +
     fToggle('proactive_personality.enabled', 'Briefings mit Charakter') +
     fToggle('proactive_personality.sarcasm_in_notifications', 'Trockener Humor in Meldungen')
+  ) +
+  sectionWrap('&#129505;', 'Echte Empathie',
+    fInfo('Jarvis zeigt echtes Verstaendnis — nicht durch Therapeuten-Floskeln, sondern durch Beobachtung und Handeln. "Du klingst angespannt." statt "Ich verstehe wie du dich fuehlst." Wie MCU-JARVIS: erkennen, beilaeufig ansprechen, praktisch helfen.') +
+    fToggle('empathy.enabled', 'Echte Empathie aktiv') +
+    fSelect('empathy.intensity', 'Intensitaet', [{v:'subtil',l:'Subtil (nur starke Emotionen)'},{v:'normal',l:'Normal'},{v:'ausfuehrlich',l:'Ausfuehrlich (aktiv mitfuehlend)'}]) +
+    fToggle('empathy.mood_acknowledgment', 'Stimmung beilaeufig ansprechen') +
+    fToggle('empathy.practical_offers', 'Praktische Hilfe anbieten') +
+    fToggle('empathy.good_mood_mirror', 'Gute Stimmung spiegeln')
   ) +
   sectionWrap('&#128274;', 'Charakter-Schutz',
     fInfo('Verhindert dass das LLM aus der JARVIS-Rolle faellt und typische KI-Floskeln verwendet. Dreistufiger Schutz: Prompt-Anker am Ende, struktureller Post-Filter und automatischer Character-Retry.') +
