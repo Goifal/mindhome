@@ -1088,7 +1088,7 @@ function fKeyValue(path, label, keyLabel='Schluessel', valLabel='Wert', hint='')
     `<div class="kv-row" data-idx="${i}">
        <input type="text" class="kv-key" value="${esc(String(k))}" placeholder="${keyLabel}">
        <span class="kv-arrow">&#8594;</span>
-       <input type="text" class="kv-val" value="${esc(String(v))}" placeholder="${valLabel}">
+       <input type="text" class="kv-val" value="${esc(v == null ? '' : String(v))}" placeholder="${valLabel}">
        <button class="kv-rm" onclick="kvRemove(this,'${path}')" title="Entfernen">&#10005;</button>
      </div>`
   ).join('');
@@ -1119,7 +1119,10 @@ function kvSync(editor, path) {
   editor.querySelectorAll('.kv-row').forEach(row => {
     const k = row.querySelector('.kv-key').value.trim();
     const v = row.querySelector('.kv-val').value.trim();
-    if (k) obj[k] = v;
+    if (k && v) {
+      const num = Number(v);
+      obj[k] = (v !== '' && !isNaN(num) && String(num) === v) ? num : v;
+    }
   });
   setPath(S, path, obj);
 }
@@ -3302,7 +3305,11 @@ function collectSettings() {
     el.querySelectorAll('.kv-row').forEach(row => {
       const k = row.querySelector('.kv-key').value.trim();
       const v = row.querySelector('.kv-val').value.trim();
-      if (k) obj[k] = v;
+      if (k && v) {
+        // Numerische Werte als Zahl speichern (z.B. Segment-IDs)
+        const num = Number(v);
+        obj[k] = (v !== '' && !isNaN(num) && String(num) === v) ? num : v;
+      }
     });
     setPath(updates, path, obj);
   });
@@ -3412,6 +3419,11 @@ async function saveAllSettings() {
     const updates = JSON.parse(JSON.stringify(S));
     const result = await api('/api/ui/settings', 'PUT', {settings: updates});
 
+    if (result && result.success === false) {
+      toast(result.message || 'Ungueltige Einstellungen', 'error');
+      return;
+    }
+
     // Room-Profiles separat speichern wenn geaendert
     if (_rpDirty) {
       collectRoomProfiles();
@@ -3425,7 +3437,7 @@ async function saveAllSettings() {
       toast('Einstellungen gespeichert');
     }
   } catch(e) {
-    toast('Fehler beim Speichern', 'error');
+    toast('Fehler beim Speichern' + (e.message ? ': ' + e.message : ''), 'error');
   } finally {
     _saving = false;
   }
