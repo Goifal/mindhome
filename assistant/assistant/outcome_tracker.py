@@ -187,11 +187,12 @@ class OutcomeTracker:
                 cursor, match="mha:outcome:stats:*", count=50
             )
             for key in keys:
-                # Skip person-specific keys for global stats
+                # Nur globale Stats: mha:outcome:stats:{action_type} (4 Teile)
+                # Skip room-specific (5 Teile) und person-specific (6 Teile) Keys
                 parts = key.split(":")
-                if "person" in parts:
+                if len(parts) != 4:
                     continue
-                action_type = key.replace("mha:outcome:stats:", "")
+                action_type = parts[3]
                 data = await self.redis.hgetall(f"mha:outcome:stats:{action_type}")
                 score = await self.redis.get(f"mha:outcome:score:{action_type}")
                 stats[action_type] = {

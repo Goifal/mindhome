@@ -120,10 +120,11 @@ class CorrectionMemory:
             if person and entry.get("person") == person:
                 score += 1.0
 
-            # Tageszeit-Aehnlichkeit
+            # Tageszeit-Aehnlichkeit (mit Mitternachts-Wrap)
             current_hour = datetime.now().hour
             entry_hour = entry.get("hour", 12)
-            if abs(current_hour - entry_hour) <= 2:
+            hour_diff = min(abs(current_hour - entry_hour), 24 - abs(current_hour - entry_hour))
+            if hour_diff <= 2:
                 score += 0.5
 
             if score > 0:

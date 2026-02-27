@@ -174,3 +174,19 @@ class TestGetStats:
         tracker.redis.scan.return_value = (0, [])
         stats = await tracker.get_stats()
         assert stats == {}
+
+    @pytest.mark.asyncio
+    async def test_filters_room_and_person_keys(self, tracker):
+        """Nur globale Stats (4-teilige Keys) sollen in get_stats() erscheinen."""
+        tracker.redis.scan.return_value = (0, [
+            "mha:outcome:stats:set_light",                      # Global ✓
+            "mha:outcome:stats:set_light:wohnzimmer",           # Room ✗
+            "mha:outcome:stats:set_light:person:Max",           # Person ✗
+        ])
+        tracker.redis.hgetall.return_value = {"positive": "5", "total": "10"}
+        tracker.redis.get.return_value = "0.75"
+        stats = await tracker.get_stats()
+        # Nur der globale Key sollte durchkommen
+        assert "set_light" in stats
+        assert "set_light:wohnzimmer" not in stats
+        assert "set_light:person:Max" not in stats
