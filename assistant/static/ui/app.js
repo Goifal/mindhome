@@ -323,7 +323,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
   // Seite wechseln
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(`page-${pg}`).classList.add('active');
-  const titles = {dashboard:'Dashboard',settings:'Einstellungen',presence:'Anwesenheit',entities:'Entities',knowledge:'Wissen',logs:'Logs',errors:'Fehler'};
+  const titles = {dashboard:'Dashboard',settings:'Einstellungen',presence:'Anwesenheit',entities:'Entities',memory:'Gedaechtnis',knowledge:'Wissen',logs:'Logs',errors:'Fehler'};
   document.getElementById('pageTitle').textContent = titles[pg] || pg;
   stopLiveRefresh();
   stopPresenceRefresh();
@@ -353,6 +353,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
     if (sub) sub.textContent = 'Einstellungen — ' + (tabTitles[currentTab] || '');
   }
   else if (pg === 'entities') loadEntities();
+  else if (pg === 'memory') loadMemoryPage();
   else if (pg === 'knowledge') { loadKnowledge(); setTimeout(initKbDropzone, 50); }
   else if (pg === 'logs') { if(currentLogTab==='audit') loadAudit(); else loadLogs(); }
   else if (pg === 'errors') loadErrors();
@@ -4912,6 +4913,223 @@ async function doUpdateModels() {
     if (logBox) logBox.textContent += '\nFehler: ' + e.message;
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '\u{1F916} Modelle aktualisieren'; }
+  }
+}
+
+// ============================================================
+// Gedaechtnis-Seite (Fakten + Episoden)
+// ============================================================
+
+let _memFacts = [];
+let _memEpisodes = [];
+
+const _factCategoryLabels = {
+  preference: 'Vorliebe',
+  person: 'Person',
+  habit: 'Gewohnheit',
+  health: 'Gesundheit',
+  work: 'Arbeit',
+  personal_date: 'Datum',
+  intent: 'Absicht',
+  conversation_topic: 'Thema',
+  general: 'Allgemein',
+};
+
+function _fmtTs(ts) {
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    return d.toLocaleDateString('de-DE', {day:'2-digit',month:'2-digit',year:'2-digit'}) + ' ' +
+           d.toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit'});
+  } catch(e) { return ts; }
+}
+
+async function loadMemoryPage() {
+  const statsEl = document.getElementById('memStats');
+  if (statsEl) statsEl.innerHTML = '<div class="stat-card"><div class="stat-label">Lade...</div></div>';
+
+  try {
+    const [factsData, episodesData] = await Promise.all([
+      api('/api/ui/memory/facts'),
+      api('/api/ui/memory/episodes?limit=500'),
+    ]);
+
+    _memFacts = factsData.facts || [];
+    _memEpisodes = episodesData.episodes || [];
+    const stats = factsData.stats || {};
+
+    // Stats rendern
+    if (statsEl) {
+      statsEl.innerHTML = `
+        <div class="stat-card"><div class="stat-label">Fakten</div><div class="stat-value">${stats.total_facts || 0}</div></div>
+        <div class="stat-card"><div class="stat-label">Episoden</div><div class="stat-value">${episodesData.total || 0}</div></div>
+        <div class="stat-card"><div class="stat-label">Personen</div><div class="stat-value">${(stats.persons || []).length}</div></div>
+      `;
+    }
+
+    // Filter befuellen
+    const catFilter = document.getElementById('memFactFilter');
+    if (catFilter) {
+      const cats = Object.keys(stats.categories || {});
+      catFilter.innerHTML = '<option value="">Alle Kategorien</option>' +
+        cats.map(c => `<option value="${c}">${_factCategoryLabels[c] || c} (${stats.categories[c]})</option>`).join('');
+    }
+    const persFilter = document.getElementById('memPersonFilter');
+    if (persFilter) {
+      const persons = (stats.persons || []).sort();
+      persFilter.innerHTML = '<option value="">Alle Personen</option>' +
+        persons.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+    }
+
+    renderFacts(_memFacts);
+    renderEpisodes(_memEpisodes);
+  } catch(e) {
+    toast('Fehler beim Laden: ' + e.message, 'error');
+  }
+}
+
+function filterMemoryFacts() {
+  const cat = document.getElementById('memFactFilter')?.value || '';
+  const pers = document.getElementById('memPersonFilter')?.value || '';
+  let filtered = _memFacts;
+  if (cat) filtered = filtered.filter(f => f.category === cat);
+  if (pers) filtered = filtered.filter(f => f.person === pers);
+  renderFacts(filtered);
+}
+
+function renderFacts(facts) {
+  const c = document.getElementById('memFacts');
+  if (!c) return;
+  if (facts.length === 0) {
+    c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Fakten vorhanden</div>';
+    return;
+  }
+  c.innerHTML = facts.map((f, i) => `
+    <div class="mem-item" style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-bottom:1px solid var(--border);${i%2?'background:var(--bg-secondary);':''}">
+      <input type="checkbox" class="mem-fact-cb" data-id="${esc(f.fact_id)}" onchange="updateMemFactDeleteBtn()" style="margin-top:3px;min-width:16px;" />
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:3px;">
+          <span style="font-size:11px;padding:1px 6px;border-radius:4px;background:var(--primary);color:#fff;">${esc(_factCategoryLabels[f.category] || f.category)}</span>
+          <span style="font-size:11px;padding:1px 6px;border-radius:4px;background:var(--bg-tertiary);color:var(--text-muted);">${esc(f.person)}</span>
+          <span style="font-size:11px;color:var(--text-muted);">${_fmtTs(f.created_at)}</span>
+        </div>
+        <div style="font-size:13px;line-height:1.4;word-break:break-word;">${esc(f.content)}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Konfidenz: ${(f.confidence * 100).toFixed(0)}% &middot; ${f.times_confirmed}x bestaetigt</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateMemFactDeleteBtn() {
+  const checked = document.querySelectorAll('.mem-fact-cb:checked');
+  const btn = document.getElementById('memFactDeleteBtn');
+  if (btn) {
+    btn.style.display = checked.length > 0 ? '' : 'none';
+    btn.textContent = checked.length + ' loeschen';
+  }
+}
+
+async function deleteSelectedFacts() {
+  const checked = document.querySelectorAll('.mem-fact-cb:checked');
+  if (checked.length === 0) return;
+  if (!confirm(checked.length + ' Fakten unwiderruflich loeschen?')) return;
+  const ids = Array.from(checked).map(cb => cb.dataset.id);
+  try {
+    const d = await api('/api/ui/memory/facts/delete', 'POST', { ids });
+    toast(d.deleted + ' Fakten geloescht', 'success');
+    loadMemoryPage();
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+function filterMemoryEpisodes() {
+  const q = (document.getElementById('memEpisodeSearch')?.value || '').toLowerCase();
+  if (!q) { renderEpisodes(_memEpisodes); return; }
+  renderEpisodes(_memEpisodes.filter(e => e.content.toLowerCase().includes(q)));
+}
+
+function renderEpisodes(episodes) {
+  const c = document.getElementById('memEpisodes');
+  if (!c) return;
+  if (episodes.length === 0) {
+    c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Episoden vorhanden</div>';
+    return;
+  }
+  c.innerHTML = episodes.map((ep, i) => `
+    <div class="mem-item" style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-bottom:1px solid var(--border);${i%2?'background:var(--bg-secondary);':''}">
+      <input type="checkbox" class="mem-ep-cb" data-id="${esc(ep.id)}" onchange="updateMemEpDeleteBtn()" style="margin-top:3px;min-width:16px;" />
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px;">
+          ${_fmtTs(ep.timestamp)}
+          ${ep.total_chunks > 1 ? ' &middot; Teil ' + (parseInt(ep.chunk_index)+1) + '/' + ep.total_chunks : ''}
+        </div>
+        <div style="font-size:13px;line-height:1.4;word-break:break-word;white-space:pre-wrap;">${esc(ep.content)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateMemEpDeleteBtn() {
+  const checked = document.querySelectorAll('.mem-ep-cb:checked');
+  const btn = document.getElementById('memEpDeleteBtn');
+  if (btn) {
+    btn.style.display = checked.length > 0 ? '' : 'none';
+    btn.textContent = checked.length + ' loeschen';
+  }
+}
+
+async function deleteSelectedEpisodes() {
+  const checked = document.querySelectorAll('.mem-ep-cb:checked');
+  if (checked.length === 0) return;
+  if (!confirm(checked.length + ' Episoden unwiderruflich loeschen?')) return;
+  const ids = Array.from(checked).map(cb => cb.dataset.id);
+  try {
+    const d = await api('/api/ui/memory/episodes/delete', 'POST', { ids });
+    toast(d.deleted + ' Episoden geloescht', 'success');
+    loadMemoryPage();
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+// ---- Gedaechtnis komplett zuruecksetzen (PIN-geschuetzt) ----
+
+function showMemoryResetDialog() {
+  const overlay = document.getElementById('memResetOverlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  const pinInput = document.getElementById('memResetPin');
+  if (pinInput) { pinInput.value = ''; pinInput.focus(); }
+  const err = document.getElementById('memResetError');
+  if (err) err.style.display = 'none';
+}
+
+function hideMemoryResetDialog() {
+  const overlay = document.getElementById('memResetOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+async function confirmMemoryReset() {
+  const pin = document.getElementById('memResetPin')?.value || '';
+  const errEl = document.getElementById('memResetError');
+  const btn = document.getElementById('memResetConfirmBtn');
+
+  if (!pin) {
+    if (errEl) { errEl.textContent = 'PIN eingeben'; errEl.style.display = 'block'; }
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Wird zurueckgesetzt...'; }
+
+  try {
+    const d = await api('/api/ui/memory/reset', 'POST', { pin });
+    hideMemoryResetDialog();
+    toast('Gedaechtnis komplett zurueckgesetzt', 'success');
+    loadMemoryPage();
+  } catch(e) {
+    if (errEl) {
+      errEl.textContent = e.message === 'Auth' ? 'Sitzung abgelaufen' : (e.message || 'Falscher PIN');
+      errEl.style.display = 'block';
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Zuruecksetzen'; }
   }
 }
 

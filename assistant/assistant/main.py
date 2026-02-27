@@ -803,6 +803,86 @@ async def memory_stats():
     }
 
 
+# ----- UI Memory Management (Episoden + Fakten + Reset) -----
+
+
+@app.get("/api/ui/memory/episodes")
+async def ui_get_episodes(token: str = "", offset: int = 0, limit: int = 100):
+    """Alle Episoden aus dem Langzeitgedaechtnis (PIN-geschuetzt)."""
+    _check_token(token)
+    episodes = await brain.memory.get_all_episodes(offset=offset, limit=limit)
+    total = 0
+    if brain.memory.chroma_collection:
+        try:
+            total = brain.memory.chroma_collection.count()
+        except Exception:
+            pass
+    return {"episodes": episodes, "total": total}
+
+
+@app.post("/api/ui/memory/episodes/delete")
+async def ui_delete_episodes(request: Request, token: str = ""):
+    """Einzelne Episoden loeschen (PIN-geschuetzt)."""
+    _check_token(token)
+    body = await request.json()
+    ids = body.get("ids", [])
+    if not ids:
+        raise HTTPException(status_code=400, detail="Keine Episode-IDs angegeben")
+    deleted = await brain.memory.delete_episodes(ids)
+    return {"deleted": deleted}
+
+
+@app.get("/api/ui/memory/facts")
+async def ui_get_facts(token: str = ""):
+    """Alle Fakten mit Statistiken (PIN-geschuetzt)."""
+    _check_token(token)
+    facts = await brain.memory.semantic.get_all_facts()
+    stats = await brain.memory.semantic.get_stats()
+    return {"facts": facts, "stats": stats}
+
+
+@app.post("/api/ui/memory/facts/delete")
+async def ui_delete_facts(request: Request, token: str = ""):
+    """Einzelne Fakten loeschen (PIN-geschuetzt)."""
+    _check_token(token)
+    body = await request.json()
+    ids = body.get("ids", [])
+    if not ids:
+        raise HTTPException(status_code=400, detail="Keine Fakt-IDs angegeben")
+    deleted = 0
+    for fact_id in ids:
+        if await brain.memory.semantic.delete_fact(fact_id):
+            deleted += 1
+    return {"deleted": deleted}
+
+
+class MemoryResetRequest(BaseModel):
+    pin: str
+
+
+@app.post("/api/ui/memory/reset")
+async def ui_memory_reset(req: MemoryResetRequest, token: str = ""):
+    """Gesamtes Gedaechtnis zuruecksetzen (PIN-Bestaetigung erforderlich)."""
+    _check_token(token)
+
+    # PIN nochmal verifizieren fuer diese kritische Aktion
+    env_pin = os.environ.get("JARVIS_UI_PIN")
+    if env_pin:
+        valid = secrets.compare_digest(req.pin, env_pin)
+    else:
+        stored_hash = _get_dashboard_config().get("pin_hash", "")
+        valid = stored_hash and _verify_hash(req.pin, stored_hash)
+
+    if not valid:
+        _audit_log("memory_reset", {"success": False, "reason": "wrong_pin"})
+        raise HTTPException(status_code=401, detail="Falscher PIN")
+
+    result = await brain.memory.clear_all_memory()
+    _audit_log("memory_reset", {"success": True, **result})
+    logger.warning("Gedaechtnis-Reset via UI durchgefuehrt")
+    return {"success": True, **result}
+
+
 # ----- Feedback Endpoints (Phase 5) -----
 
 @app.put("/api/assistant/feedback")
