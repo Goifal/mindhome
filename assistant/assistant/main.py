@@ -2031,11 +2031,13 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("vacuum", "auto_clean", "min_hours_between"): (1, 72),
         ("vacuum", "auto_clean", "preferred_time_start"): (0, 23),
         ("vacuum", "auto_clean", "preferred_time_end"): (0, 23),
+        ("vacuum", "auto_clean", "schedule_time"): (0, 23),
         ("vacuum", "maintenance", "check_interval_hours"): (1, 72),
         ("vacuum", "maintenance", "warn_at_percent"): (1, 50),
     }
     # Erlaubte Werte fuer Strings (Whitelist)
     ENUM_RULES = {
+        ("vacuum", "auto_clean", "mode"): ["smart", "schedule", "both"],
         ("speech", "stt_model"): ["tiny", "base", "small", "medium", "large-v3-turbo"],
         ("speech", "stt_compute"): ["int8", "float16", "float32"],
         ("speech", "stt_device"): ["cpu", "cuda"],

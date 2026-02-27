@@ -2206,50 +2206,63 @@ class ProactiveManager:
         _redis = getattr(self.brain, "memory", None)
         _redis = getattr(_redis, "redis", None) if _redis else None
 
+        DAY_MAP = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+
         while self._running:
             try:
-                if not auto_cfg.get("when_nobody_home"):
-                    await asyncio.sleep(900)
-                    continue
+                mode = auto_cfg.get("mode", "smart")
+                now = datetime.now()
+                hour = now.hour
 
-                # Zeitfenster pruefen
-                hour = datetime.now().hour
-                start_h = auto_cfg.get("preferred_time_start", 10)
-                end_h = auto_cfg.get("preferred_time_end", 16)
-                if not (start_h <= hour < end_h):
-                    await asyncio.sleep(900)
-                    continue
+                # ── Wochenplan-Trigger ──
+                schedule_trigger = False
+                if mode in ("schedule", "both"):
+                    schedule_days = auto_cfg.get("schedule_days", [])
+                    schedule_hour = auto_cfg.get("schedule_time", 10)
+                    today_key = [k for k, v in DAY_MAP.items() if v == now.weekday()]
+                    if today_key and today_key[0] in schedule_days and hour == schedule_hour:
+                        schedule_trigger = True
 
-                # Niemand zuhause?
-                states = await self.brain.ha.get_states()
-                persons_home = [
-                    s for s in (states or [])
-                    if s.get("entity_id", "").startswith("person.")
-                    and s.get("state") == "home"
-                ]
-                if persons_home:
+                # ── Smart-Trigger (niemand zuhause) ──
+                smart_trigger = False
+                if mode in ("smart", "both"):
+                    start_h = auto_cfg.get("preferred_time_start", 10)
+                    end_h = auto_cfg.get("preferred_time_end", 16)
+                    if start_h <= hour < end_h:
+                        states = await self.brain.ha.get_states()
+                        persons_home = [
+                            s for s in (states or [])
+                            if s.get("entity_id", "").startswith("person.")
+                            and s.get("state") == "home"
+                        ]
+                        nobody_home = auto_cfg.get("when_nobody_home", True)
+                        if not nobody_home or not persons_home:
+                            smart_trigger = True
+
+                if not schedule_trigger and not smart_trigger:
                     await asyncio.sleep(900)
                     continue
 
                 # Aktive Kalender-Events pruefen (z.B. "meeting" im Titel)
-                # HINWEIS: "schlafen" in not_during ist hier wirkungslos, da
-                # der Check nur laeuft wenn niemand zuhause ist. "schlafen"
-                # sollte aus der not_during-Config entfernt werden.
                 not_during = auto_cfg.get("not_during", [])
-                blocking = False
-                for s in (states or []):
-                    eid = s.get("entity_id", "")
-                    if eid.startswith("calendar.") and s.get("state") == "on":
-                        title = (s.get("attributes", {}).get("message") or "").lower()
-                        if any(kw in title for kw in not_during):
-                            blocking = True
-                            break
-                if blocking:
-                    await asyncio.sleep(900)
-                    continue
+                if not_during:
+                    if not smart_trigger:
+                        states = await self.brain.ha.get_states()
+                    blocking = False
+                    for s in (states or []):
+                        eid = s.get("entity_id", "")
+                        if eid.startswith("calendar.") and s.get("state") == "on":
+                            title = (s.get("attributes", {}).get("message") or "").lower()
+                            if any(kw in title for kw in not_during):
+                                blocking = True
+                                break
+                    if blocking:
+                        await asyncio.sleep(900)
+                        continue
 
                 # Mindestabstand pro Roboter pruefen
                 min_hours = auto_cfg.get("min_hours_between", 24)
+                trigger_reason = "Wochenplan" if schedule_trigger else "niemand zuhause"
                 for floor, robot in robots.items():
                     eid = robot.get("entity_id")
                     if not eid:
@@ -2272,9 +2285,9 @@ class ProactiveManager:
                         await _redis.set(f"mha:vacuum:{floor}:last_auto_clean", str(time.time()))
                     nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
                     await self._notify("vacuum_auto_start", LOW, {
-                        "message": f"{nickname} startet automatisch (niemand zuhause)",
+                        "message": f"{nickname} startet automatisch ({trigger_reason})",
                     })
-                    logger.info("Vacuum-Auto: %s gestartet (%s)", eid, floor)
+                    logger.info("Vacuum-Auto: %s gestartet (%s, %s)", eid, floor, trigger_reason)
 
                 # Wartung pruefen (1x pro Durchlauf)
                 await self._check_vacuum_maintenance(robots, _redis)
