@@ -1690,19 +1690,18 @@ class ProactiveManager:
             if not self._batch_queue:
                 return
 
+            # Quiet Hours VOR Entnahme pruefen (vermeidet unnoetige Remove+Re-Insert)
+            if self._is_quiet_hours():
+                logger.info("Batch unterdrueckt (Quiet Hours, %d Items in Queue)",
+                            len(self._batch_queue))
+                return
+
             # Queue leeren (atomar unter Lock)
             items = self._batch_queue[:self.batch_max_items]
             self._batch_queue = self._batch_queue[self.batch_max_items:]
 
         # Sortieren: MEDIUM zuerst, dann LOW
         items.sort(key=lambda x: 0 if x.get("urgency") == MEDIUM else 1)
-
-        # Quiet Hours: Batch nicht waehrend Ruhezeiten senden
-        if self._is_quiet_hours():
-            logger.info("Batch unterdrueckt (Quiet Hours, %d Items zurueck in Queue)", len(items))
-            async with self._state_lock:
-                self._batch_queue = items + self._batch_queue
-            return
 
         # Activity-Check: Nicht bei Schlaf/Call (aber MEDIUM weniger streng)
         highest_urgency = MEDIUM if any(b.get("urgency") == MEDIUM for b in items) else LOW
