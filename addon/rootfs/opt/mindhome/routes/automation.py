@@ -40,6 +40,31 @@ from models import (
 
 logger = logging.getLogger("mindhome.routes.automation")
 
+
+def _safe_json(raw, default=None):
+    """JSON sicher parsen mit Fallback bei korrupten Settings."""
+    if default is None:
+        default = {}
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return default
+
+
+def _safe_int(raw, default=0, min_val=None, max_val=None):
+    """Integer sicher parsen mit Grenzen."""
+    try:
+        val = int(raw) if raw else default
+    except (ValueError, TypeError):
+        val = default
+    if min_val is not None:
+        val = max(val, min_val)
+    if max_val is not None:
+        val = min(val, max_val)
+    return val
+
 automation_bp = Blueprint("automation", __name__)
 
 # Module-level dependencies (set by init function)
@@ -355,31 +380,31 @@ def api_get_extended_anomaly_settings():
     return jsonify({
         # Empfindlichkeit
         "global_sensitivity": get_setting("anomaly_sensitivity") or "medium",
-        "domain_sensitivity": json.loads(get_setting("anomaly_domain_sensitivity") or '{}'),
-        "device_sensitivity": json.loads(get_setting("anomaly_device_sensitivity") or '{}'),
+        "domain_sensitivity": _safe_json(get_setting("anomaly_domain_sensitivity")),
+        "device_sensitivity": _safe_json(get_setting("anomaly_device_sensitivity")),
         # Erkennungs-Typen
-        "detection_types": json.loads(get_setting("anomaly_detection_types") or '{"frequency": true, "time": true, "value": true, "offline": true, "stuck": true, "pattern_deviation": false}'),
-        "frequency_threshold": json.loads(get_setting("anomaly_freq_threshold") or '{"count": 20, "window_min": 5}'),
-        "value_deviation_pct": int(get_setting("anomaly_value_deviation") or "30"),
-        "offline_timeout_min": int(get_setting("anomaly_offline_timeout") or "60"),
-        "stuck_timeout_hours": int(get_setting("anomaly_stuck_timeout") or "12"),
+        "detection_types": _safe_json(get_setting("anomaly_detection_types"), {"frequency": True, "time": True, "value": True, "offline": True, "stuck": True, "pattern_deviation": False}),
+        "frequency_threshold": _safe_json(get_setting("anomaly_freq_threshold"), {"count": 20, "window_min": 5}),
+        "value_deviation_pct": _safe_int(get_setting("anomaly_value_deviation"), 30, 1, 200),
+        "offline_timeout_min": _safe_int(get_setting("anomaly_offline_timeout"), 60, 1, 1440),
+        "stuck_timeout_hours": _safe_int(get_setting("anomaly_stuck_timeout"), 12, 1, 168),
         # Ausnahmen
-        "device_whitelist": json.loads(get_setting("anomaly_device_whitelist") or '[]'),
-        "domain_exceptions": json.loads(get_setting("anomaly_domain_exceptions") or '[]'),
-        "time_exceptions": json.loads(get_setting("anomaly_time_exceptions") or '[]'),
+        "device_whitelist": _safe_json(get_setting("anomaly_device_whitelist"), []),
+        "domain_exceptions": _safe_json(get_setting("anomaly_domain_exceptions"), []),
+        "time_exceptions": _safe_json(get_setting("anomaly_time_exceptions"), []),
         "paused_until": get_setting("anomaly_paused_until"),
         # Reaktionen
-        "reactions": json.loads(get_setting("anomaly_reactions") or '{"low": "log", "medium": "push", "high": "push_tts", "critical": "push_tts_action"}'),
-        "auto_actions": json.loads(get_setting("anomaly_auto_actions") or '{}'),
-        "reaction_delay_min": int(get_setting("anomaly_reaction_delay") or "0"),
+        "reactions": _safe_json(get_setting("anomaly_reactions"), {"low": "log", "medium": "push", "high": "push_tts", "critical": "push_tts_action"}),
+        "auto_actions": _safe_json(get_setting("anomaly_auto_actions")),
+        "reaction_delay_min": _safe_int(get_setting("anomaly_reaction_delay"), 0, 0, 60),
         # Lernphase
-        "learning_mode": json.loads(get_setting("anomaly_learning_mode") or '{"enabled": false, "days_remaining": 0}'),
-        "seasonal_adjustment": json.loads(get_setting("anomaly_seasonal") or '{"enabled": true}'),
+        "learning_mode": _safe_json(get_setting("anomaly_learning_mode"), {"enabled": False, "days_remaining": 0}),
+        "seasonal_adjustment": _safe_json(get_setting("anomaly_seasonal"), {"enabled": True}),
         # Schwellwerte
-        "battery_threshold": int(get_setting("anomaly_battery_threshold") or "20"),
-        "temperature_limits": json.loads(get_setting("anomaly_temp_limits") or '{}'),
-        "power_limits": json.loads(get_setting("anomaly_power_limits") or '{}'),
-        "humidity_limits": json.loads(get_setting("anomaly_humidity_limits") or '{}'),
+        "battery_threshold": _safe_int(get_setting("anomaly_battery_threshold"), 20, 1, 100),
+        "temperature_limits": _safe_json(get_setting("anomaly_temp_limits")),
+        "power_limits": _safe_json(get_setting("anomaly_power_limits")),
+        "humidity_limits": _safe_json(get_setting("anomaly_humidity_limits")),
     })
 
 

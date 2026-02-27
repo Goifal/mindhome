@@ -418,12 +418,17 @@ def on_state_changed(event):
             return  # Skip duplicate
         _recent_events[dedup_key] = now
 
-        # Cleanup dedup cache periodically (evict expired entries, keep max 500)
-        if len(_recent_events) > 500:
-            cutoff = now - _DEDUP_WINDOW * 2
+        # Cleanup dedup cache: entferne abgelaufene Eintraege, hartes Limit bei 200
+        if len(_recent_events) > 200:
+            cutoff = now - _DEDUP_WINDOW * 3
             expired = [k for k, v in _recent_events.items() if v < cutoff]
             for k in expired:
                 del _recent_events[k]
+            # Hartes Limit: wenn immer noch zu gross, aelteste entfernen
+            if len(_recent_events) > 500:
+                sorted_keys = sorted(_recent_events, key=_recent_events.get)
+                for k in sorted_keys[:len(_recent_events) - 200]:
+                    del _recent_events[k]
 
     # Log to state_history via pattern engine
     try:

@@ -70,7 +70,7 @@ def _domain_manager():
 def api_upcoming_events():
     """Get upcoming calendar events from HA."""
     try:
-        hours = int(request.args.get("hours", 24))
+        hours = max(1, min(168, int(request.args.get("hours", 24))))
         events = _ha().get_upcoming_events(hours=hours)
         return jsonify({"events": events})
     except Exception as e:
