@@ -338,7 +338,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
     loadSettings();
     // Settings-Titel aktualisieren
     const tabTitles = {
-      'tab-general':'Allgemein','tab-personality':'Persoenlichkeit',
+      'tab-general':'Allgemein','tab-personality':'KI-Modelle & Stil',
       'tab-memory':'Gedaechtnis-Einstellungen','tab-mood':'Stimmung',
       'tab-rooms':'Raeume & Speaker','tab-devices':'Geraete',
       'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter',
@@ -1447,41 +1447,6 @@ function renderGeneral() {
     fText('assistant.version', 'Version', '', true) +
     fSelect('assistant.language', 'Sprache', [{v:'de',l:'Deutsch'},{v:'en',l:'English'}])
   ) +
-  sectionWrap('&#9889;', 'Autonomie',
-    fInfo('Wie selbststaendig darf der Assistent handeln? Je hoeher, desto mehr macht er eigenstaendig.') +
-    fRange('autonomy.level', 'Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
-  ) +
-  sectionWrap('&#129302;', 'Modell-Routing',
-    fInfo('Welche KI-Modelle sollen fuer welche Aufgaben genutzt werden? Deaktivierte Modelle werden uebersprungen — Fallback auf das naechstkleinere.') +
-    fToggle('models.enabled.fast', 'Fast — Einfache Befehle (Licht an, Timer, etc.)') +
-    fToggle('models.enabled.smart', 'Smart — Konversation & Standardanfragen') +
-    fToggle('models.enabled.deep', 'Deep — Komplexe Analyse & Planung') +
-    fModelSelect('models.fast', 'Fast-Modell', 'Fuer schnelle, einfache Befehle') +
-    fModelSelect('models.smart', 'Smart-Modell', 'Fuer normale Gespraeche') +
-    fModelSelect('models.deep', 'Deep-Modell', 'Fuer komplexe Aufgaben') +
-    fRange('models.deep_min_words', 'Deep ab Woertern', 5, 50, 1, {5:'5',10:'10',15:'15',20:'20',25:'25',30:'30',35:'35',40:'40',45:'45',50:'50'}) +
-    fRange('models.options.temperature', 'Kreativitaet (Temperatur)', 0, 2, 0.1, {0:'Exakt',0.5:'Konservativ',0.7:'Standard',1:'Kreativ',1.5:'Sehr kreativ',2:'Maximum'}) +
-    fRange('models.options.max_tokens', 'Antwortlaenge (Max Tokens)', 64, 4096, 64) +
-    fRange('ollama.num_ctx', 'Kontext-Fenster (num_ctx)', 2048, 16384, 1024, {2048:'2K',4096:'4K',6144:'6K',8192:'8K',12288:'12K',16384:'16K'})
-  ) +
-  sectionWrap('&#127991;', 'Schnell-Erkennung',
-    fInfo('Klicke auf Woerter, die das jeweilige Modell ausloesen sollen. Ausgewaehlte Woerter sind hervorgehoben.') +
-    fChipSelect('models.fast_keywords', 'Fast-Keywords — Woerter fuer schnelle Antworten', [
-      'licht','lampe','an','aus','timer','stopp','danke','ja','nein','ok','stop',
-      'wecker','alarm','pause','weiter','leiser','lauter','heller','dunkler',
-      'rolladen','hoch','runter','temperatur','heizung','musik'
-    ]) +
-    fChipSelect('models.deep_keywords', 'Deep-Keywords — Woerter fuer ausfuehrliche Analyse', [
-      'warum','erklaere','vergleiche','analysiere','plane','zusammenfassung',
-      'recherchiere','berechne','strategie','vor- und nachteile','unterschied',
-      'optimiere','hilf mir bei','was meinst du','ueberblick'
-    ]) +
-    fChipSelect('models.cooking_keywords', 'Koch-Keywords — Woerter die den Koch-Modus aktivieren', [
-      'rezept','kochen','backen','zubereiten','gericht','essen','zutaten',
-      'portion','mahlzeit','fruehstueck','mittagessen','abendessen','snack',
-      'dessert','kuchen','suppe','salat','pizza','pasta','sauce'
-    ])
-  ) +
   sectionWrap('&#128269;', 'Web-Suche',
     fInfo('Optionale Web-Recherche fuer Wissensfragen. Privacy-First: SearXNG (self-hosted) oder DuckDuckGo. Standardmaessig deaktiviert.') +
     fToggle('web_search.enabled', 'Web-Suche aktivieren') +
@@ -1489,20 +1454,6 @@ function renderGeneral() {
     fText('web_search.searxng_url', 'SearXNG URL', 'Nur relevant wenn SearXNG als Engine gewaehlt') +
     fNum('web_search.max_results', 'Max. Ergebnisse', 1, 20, 1) +
     fNum('web_search.timeout_seconds', 'Timeout (Sekunden)', 3, 30, 1)
-  ) +
-  sectionWrap('&#128274;', 'Dashboard & PIN',
-    fInfo('Der Zugang zum Dashboard ist mit einer PIN geschuetzt. Der Recovery-Key wird benoetigt wenn du die PIN vergisst.') +
-    '<div class="form-group"><label>PIN-Schutz</label>' +
-    '<p style="font-size:12px;color:var(--success);margin-bottom:8px;">PIN ist gesetzt und aktiv</p>' +
-    '<p style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">PIN aendern: "PIN vergessen?" auf dem Login-Screen nutzen.</p></div>' +
-    '<div class="form-group"><label>Recovery-Key</label>' +
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Falls du deine PIN vergisst, brauchst du diesen Key zum Zuruecksetzen. Sicher aufbewahren!</p>' +
-    '<div style="display:flex;gap:8px;align-items:center;">' +
-    '<input type="text" id="recoveryKeyDisplay" readonly style="flex:1;font-family:var(--mono);font-size:14px;letter-spacing:2px;text-align:center;" value="Versteckt — Klicke Generieren" />' +
-    '<button class="btn btn-primary" onclick="regenerateRecoveryKey()" style="white-space:nowrap;">Neu generieren</button>' +
-    '</div>' +
-    '<p style="font-size:11px;color:var(--danger);margin-top:6px;">Nach dem Generieren wird der Key nur EINMAL angezeigt. Notiere ihn sofort!</p>' +
-    '</div>'
   ) +
   _renderPersonsSections();
 }
@@ -1651,7 +1602,38 @@ function renderPersonality() {
     {v:'warm',l:'Warm — Herzlich und persoenlich'},
     {v:'muede',l:'Muede — Kurz, leise, sanft'}
   ];
-  return sectionWrap('&#127917;', 'Stil & Charakter',
+  return sectionWrap('&#129302;', 'Modell-Routing',
+    fInfo('Welche KI-Modelle sollen fuer welche Aufgaben genutzt werden? Deaktivierte Modelle werden uebersprungen — Fallback auf das naechstkleinere.') +
+    fToggle('models.enabled.fast', 'Fast — Einfache Befehle (Licht an, Timer, etc.)') +
+    fToggle('models.enabled.smart', 'Smart — Konversation & Standardanfragen') +
+    fToggle('models.enabled.deep', 'Deep — Komplexe Analyse & Planung') +
+    fModelSelect('models.fast', 'Fast-Modell', 'Fuer schnelle, einfache Befehle') +
+    fModelSelect('models.smart', 'Smart-Modell', 'Fuer normale Gespraeche') +
+    fModelSelect('models.deep', 'Deep-Modell', 'Fuer komplexe Aufgaben') +
+    fRange('models.deep_min_words', 'Deep ab Woertern', 5, 50, 1, {5:'5',10:'10',15:'15',20:'20',25:'25',30:'30',35:'35',40:'40',45:'45',50:'50'}) +
+    fRange('models.options.temperature', 'Kreativitaet (Temperatur)', 0, 2, 0.1, {0:'Exakt',0.5:'Konservativ',0.7:'Standard',1:'Kreativ',1.5:'Sehr kreativ',2:'Maximum'}) +
+    fRange('models.options.max_tokens', 'Antwortlaenge (Max Tokens)', 64, 4096, 64) +
+    fRange('ollama.num_ctx', 'Kontext-Fenster (num_ctx)', 2048, 16384, 1024, {2048:'2K',4096:'4K',6144:'6K',8192:'8K',12288:'12K',16384:'16K'})
+  ) +
+  sectionWrap('&#127991;', 'Schnell-Erkennung',
+    fInfo('Klicke auf Woerter, die das jeweilige Modell ausloesen sollen. Ausgewaehlte Woerter sind hervorgehoben.') +
+    fChipSelect('models.fast_keywords', 'Fast-Keywords — Woerter fuer schnelle Antworten', [
+      'licht','lampe','an','aus','timer','stopp','danke','ja','nein','ok','stop',
+      'wecker','alarm','pause','weiter','leiser','lauter','heller','dunkler',
+      'rolladen','hoch','runter','temperatur','heizung','musik'
+    ]) +
+    fChipSelect('models.deep_keywords', 'Deep-Keywords — Woerter fuer ausfuehrliche Analyse', [
+      'warum','erklaere','vergleiche','analysiere','plane','zusammenfassung',
+      'recherchiere','berechne','strategie','vor- und nachteile','unterschied',
+      'optimiere','hilf mir bei','was meinst du','ueberblick'
+    ]) +
+    fChipSelect('models.cooking_keywords', 'Koch-Keywords — Woerter die den Koch-Modus aktivieren', [
+      'rezept','kochen','backen','zubereiten','gericht','essen','zutaten',
+      'portion','mahlzeit','fruehstueck','mittagessen','abendessen','snack',
+      'dessert','kuchen','suppe','salat','pizza','pasta','sauce'
+    ])
+  ) +
+  sectionWrap('&#127917;', 'Stil & Charakter',
     fInfo('Wie soll sich der Assistent verhalten? Stil, Humor und Meinungsfreude einstellen.') +
     fSelect('personality.style', 'Grundstil', styleOpts) +
     fRange('personality.sarcasm_level', 'Sarkasmus-Level', 1, 5, 1, {1:'Sachlich',2:'Gelegentl. trocken',3:'Standard Butler',4:'Haeufig',5:'Vollgas Ironie'}) +
@@ -1788,6 +1770,33 @@ function renderMemory() {
         '<input type="text" id="pdLabel" class="form-input" placeholder="z.B. Hochzeitstag" style="font-size:13px;"></div>' +
       '<button class="btn" onclick="addPersonalDate()" style="height:36px;white-space:nowrap;">&#10010; Hinzufuegen</button>' +
     '</div>'
+  ) +
+  sectionWrap('&#128148;', 'Emotionales Gedaechtnis',
+    fInfo('Jarvis merkt sich emotionale Reaktionen auf Aktionen. Wenn du 2x negativ auf etwas reagiert hast (z.B. "Lass das!"), fragt Jarvis beim naechsten Mal vorher nach.') +
+    fToggle('emotional_memory.enabled', 'Emotionales Gedaechtnis aktiv') +
+    fRange('emotional_memory.negative_threshold', 'Warnung ab negativen Reaktionen', 1, 5, 1, {1:'1x',2:'2x',3:'3x',4:'4x',5:'5x'}) +
+    fRange('emotional_memory.decay_days', 'Erinnerung verfaellt nach', 30, 365, 30, {30:'1 Monat',60:'2 Monate',90:'3 Monate',180:'6 Monate',365:'1 Jahr'})
+  ) +
+  sectionWrap('&#128218;', 'Lern-Transparenz',
+    fInfo('"Was hast du beobachtet?" — Jarvis berichtet ueber erkannte Muster. Optional auch als woechentlicher automatischer Bericht.') +
+    fToggle('learning.weekly_report.enabled', 'Woechentlicher Lern-Bericht') +
+    fSelect('learning.weekly_report.day', 'Bericht-Tag', [
+      {v:0,l:'Montag'},{v:1,l:'Dienstag'},{v:2,l:'Mittwoch'},{v:3,l:'Donnerstag'},
+      {v:4,l:'Freitag'},{v:5,l:'Samstag'},{v:6,l:'Sonntag'}
+    ]) +
+    fNum('learning.weekly_report.hour', 'Bericht-Uhrzeit', 0, 23, 1, 'Stunde (0-23)')
+  ) +
+  sectionWrap('&#128203;', 'Absicht-Erkennung',
+    fInfo('Erkennt offene Absichten — z.B. "Ich muss noch einkaufen" wird als Aufgabe gemerkt und spaeter erinnert.') +
+    fToggle('intent_tracking.enabled', 'Absicht-Erkennung aktiv') +
+    fRange('intent_tracking.check_interval_minutes', 'Pruef-Intervall', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
+    fRange('intent_tracking.remind_hours_before', 'Erinnerung vorher', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'})
+  ) +
+  sectionWrap('&#128172;', 'Gespraechs-Fortfuehrung',
+    fInfo('Wenn ein Gespraech unterbrochen wird — soll der Assistent spaeter nachfragen? "Wolltest du vorhin noch was wegen...?"') +
+    fToggle('conversation_continuity.enabled', 'Gespraech fortsetzen') +
+    fRange('conversation_continuity.resume_after_minutes', 'Nachfragen nach', 1, 60, 1, {1:'1 Min',5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'}) +
+    fRange('conversation_continuity.expire_hours', 'Thema vergessen nach', 1, 72, 1, {1:'1 Std',6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'})
   );
 }
 
@@ -2365,18 +2374,6 @@ function renderProactive() {
     fRange('insights.thresholds.energy_anomaly_percent', 'Energie-Abweichung', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'}) +
     fRange('insights.thresholds.away_device_minutes', 'Abwesend-Hinweis nach', 30, 480, 30, {30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std',480:'8 Std'}) +
     fRange('insights.thresholds.temp_drop_degrees_per_2h', 'Temp-Abfall Schwelle', 1, 10, 1, {1:'1\u00B0C',2:'2\u00B0C',3:'3\u00B0C',5:'5\u00B0C',10:'10\u00B0C'})
-  ) +
-  sectionWrap('&#128203;', 'Absicht-Erkennung',
-    fInfo('Erkennt offene Absichten — z.B. "Ich muss noch einkaufen" wird als Aufgabe gemerkt und spaeter erinnert.') +
-    fToggle('intent_tracking.enabled', 'Absicht-Erkennung aktiv') +
-    fRange('intent_tracking.check_interval_minutes', 'Pruef-Intervall', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
-    fRange('intent_tracking.remind_hours_before', 'Erinnerung vorher', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'})
-  ) +
-  sectionWrap('&#128172;', 'Gespraechs-Fortfuehrung',
-    fInfo('Wenn ein Gespraech unterbrochen wird — soll der Assistent spaeter nachfragen? "Wolltest du vorhin noch was wegen...?"') +
-    fToggle('conversation_continuity.enabled', 'Gespraech fortsetzen') +
-    fRange('conversation_continuity.resume_after_minutes', 'Nachfragen nach', 1, 60, 1, {1:'1 Min',5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'}) +
-    fRange('conversation_continuity.expire_hours', 'Thema vergessen nach', 1, 72, 1, {1:'1 Std',6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'})
   );
 }
 
@@ -2412,21 +2409,6 @@ function renderJarvisFeatures() {
     fToggle('spontaneous.checks.streak', 'Wetter-Streaks & Fun Facts') +
     fToggle('spontaneous.checks.usage_record', 'Nutzungs-Rekorde') +
     fToggle('spontaneous.checks.device_milestone', 'Geraete-Meilensteine')
-  ) +
-  sectionWrap('&#128148;', 'Emotionales Gedaechtnis',
-    fInfo('Jarvis merkt sich emotionale Reaktionen auf Aktionen. Wenn du 2x negativ auf etwas reagiert hast (z.B. "Lass das!"), fragt Jarvis beim naechsten Mal vorher nach.') +
-    fToggle('emotional_memory.enabled', 'Emotionales Gedaechtnis aktiv') +
-    fRange('emotional_memory.negative_threshold', 'Warnung ab negativen Reaktionen', 1, 5, 1, {1:'1x',2:'2x',3:'3x',4:'4x',5:'5x'}) +
-    fRange('emotional_memory.decay_days', 'Erinnerung verfaellt nach', 30, 365, 30, {30:'1 Monat',60:'2 Monate',90:'3 Monate',180:'6 Monate',365:'1 Jahr'})
-  ) +
-  sectionWrap('&#128218;', 'Lern-Transparenz',
-    fInfo('"Was hast du beobachtet?" — Jarvis berichtet ueber erkannte Muster. Optional auch als woechentlicher automatischer Bericht.') +
-    fToggle('learning.weekly_report.enabled', 'Woechentlicher Lern-Bericht') +
-    fSelect('learning.weekly_report.day', 'Bericht-Tag', [
-      {v:0,l:'Montag'},{v:1,l:'Dienstag'},{v:2,l:'Mittwoch'},{v:3,l:'Donnerstag'},
-      {v:4,l:'Freitag'},{v:5,l:'Samstag'},{v:6,l:'Sonntag'}
-    ]) +
-    fNum('learning.weekly_report.hour', 'Bericht-Uhrzeit', 0, 23, 1, 'Stunde (0-23)')
   ) +
   sectionWrap('&#9888;', 'Daten-basierter Widerspruch',
     fInfo('Vor einer Aktion prueft Jarvis Live-Daten und warnt konkret — z.B. "Heizung auf 25? Das Bad-Fenster ist offen." Aktion wird trotzdem ausgefuehrt, aber die Warnung erwaehnt.') +
@@ -2473,7 +2455,21 @@ function renderSecurity() {
   const hMode = getPath(S, 'heating.mode') || 'room_thermostat';
   const isCurve = hMode === 'heating_curve';
 
-  return sectionWrap('&#128274;', 'Sicherheit',
+  return sectionWrap('&#128274;', 'Dashboard & PIN',
+    fInfo('Der Zugang zum Dashboard ist mit einer PIN geschuetzt. Der Recovery-Key wird benoetigt wenn du die PIN vergisst.') +
+    '<div class="form-group"><label>PIN-Schutz</label>' +
+    '<p style="font-size:12px;color:var(--success);margin-bottom:8px;">PIN ist gesetzt und aktiv</p>' +
+    '<p style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">PIN aendern: "PIN vergessen?" auf dem Login-Screen nutzen.</p></div>' +
+    '<div class="form-group"><label>Recovery-Key</label>' +
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Falls du deine PIN vergisst, brauchst du diesen Key zum Zuruecksetzen. Sicher aufbewahren!</p>' +
+    '<div style="display:flex;gap:8px;align-items:center;">' +
+    '<input type="text" id="recoveryKeyDisplay" readonly style="flex:1;font-family:var(--mono);font-size:14px;letter-spacing:2px;text-align:center;" value="Versteckt — Klicke Generieren" />' +
+    '<button class="btn btn-primary" onclick="regenerateRecoveryKey()" style="white-space:nowrap;">Neu generieren</button>' +
+    '</div>' +
+    '<p style="font-size:11px;color:var(--danger);margin-top:6px;">Nach dem Generieren wird der Key nur EINMAL angezeigt. Notiere ihn sofort!</p>' +
+    '</div>'
+  ) +
+  sectionWrap('&#128274;', 'Sicherheit',
     fInfo('Welche Aktionen brauchen eine Bestaetigung? Und welche Temperatur-Grenzen gelten?') +
     fChipSelect('security.require_confirmation', 'Bestaetigung erforderlich fuer', [
       {v:'alarm_disarm',l:'Alarm deaktivieren'},
@@ -2905,7 +2901,11 @@ async function regenerateRecoveryKey() {
 let SNAPSHOTS = [];
 
 function renderAutonomie() {
-  return sectionWrap('&#129302;', 'Selbstoptimierung',
+  return sectionWrap('&#9889;', 'Autonomie',
+    fInfo('Wie selbststaendig darf der Assistent handeln? Je hoeher, desto mehr macht er eigenstaendig.') +
+    fRange('autonomy.level', 'Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+  ) +
+  sectionWrap('&#129302;', 'Selbstoptimierung',
     fInfo('Der Assistent lernt aus euren Gespraechen und schlaegt Verbesserungen vor. Du entscheidest ob Vorschlaege angenommen werden. Die Kern-Identitaet ist geschuetzt.') +
     fToggle('self_optimization.enabled', 'Selbstoptimierung aktiv') +
     fSelect('self_optimization.approval_mode', 'Genehmigungsmodus', [
