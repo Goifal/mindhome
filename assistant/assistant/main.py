@@ -2818,20 +2818,10 @@ async def ui_update_room_profiles(request: Request, token: str = ""):
                 default_flow_style=False, sort_keys=False,
             )
 
-        # Caches invalidieren (function_calling + proactive haben 10-Min-TTL)
-        try:
-            from assistant.function_calling import _room_profiles_cache, _room_profiles_ts
-            import assistant.function_calling as fc_mod
-            fc_mod._room_profiles_cache = {}
-            fc_mod._room_profiles_ts = 0.0
-        except Exception:
-            pass
-        try:
-            import assistant.proactive as pro_mod
-            pro_mod._room_profiles_cache = {}
-            pro_mod._room_profiles_ts = 0.0
-        except Exception:
-            pass
+        # Zentralen Room-Profiles-Cache invalidieren (config.py)
+        import assistant.config as cfg_mod
+        cfg_mod._room_profiles_cache = {}
+        cfg_mod._room_profiles_ts = 0.0
 
         _audit_log("room_profiles_update", {"changed_sections": list(updates.keys())})
         return {"success": True, "message": "Room-Profiles gespeichert"}
