@@ -178,6 +178,8 @@ class SpontaneousObserver:
             checks.append(self._check_usage_record)
         if checks_cfg.get("device_milestone", True):
             checks.append(self._check_device_milestone)
+        if checks_cfg.get("house_efficiency", True):
+            checks.append(self._check_house_efficiency)
 
         random.shuffle(checks)
 
@@ -381,6 +383,67 @@ class SpontaneousObserver:
                     "type": "device_milestone",
                     "urgency": "low",
                 }
+        except Exception:
+            pass
+        return None
+
+    async def _check_house_efficiency(self) -> Optional[dict]:
+        """Analysiert die Haus-Effizienz und macht eine smarte Beobachtung.
+
+        MCU-JARVIS-Feature: 'Sir, mir ist aufgefallen, dass das Haus heute
+        besonders effizient laeuft — 18% weniger Heiz-Zyklen als ueblich.'
+        """
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return None
+
+            # Zaehle aktive Geraete vs. anwesende Personen
+            lights_on = 0
+            heating_active = 0
+            persons_home = 0
+
+            for s in states:
+                eid = s.get("entity_id", "")
+                state = s.get("state", "")
+
+                if eid.startswith("light.") and state == "on":
+                    lights_on += 1
+                elif eid.startswith("climate."):
+                    hvac = s.get("attributes", {}).get("hvac_action", "")
+                    if hvac in ("heating", "cooling"):
+                        heating_active += 1
+                elif eid.startswith("person.") and state == "home":
+                    persons_home += 1
+
+            title = await self._get_title_for_present()
+
+            # Niemand da aber alles laeuft
+            if persons_home == 0 and (lights_on > 2 or heating_active > 2):
+                return {
+                    "message": (
+                        f"{title}, das Haus verbraucht gerade Ressourcen "
+                        f"({lights_on} Lichter, {heating_active} Heizungen) "
+                        f"fuer eine leere Wohnung. Nur so als Beobachtung."
+                    ),
+                    "type": "house_efficiency",
+                    "urgency": "low",
+                }
+
+            # Alles optimiert (positives Feedback)
+            if persons_home > 0 and lights_on <= 1 and heating_active <= 1:
+                hour = datetime.now().hour
+                if 10 <= hour <= 20:
+                    return {
+                        "message": (
+                            f"{title}, das Haus laeuft heute bemerkenswert effizient. "
+                            f"Nur {lights_on} Licht und {heating_active} Heizung{'en' if heating_active != 1 else ''} aktiv. "
+                            f"Vorbildlich."
+                        ),
+                        "type": "house_efficiency",
+                        "urgency": "low",
+                    }
+
         except Exception:
             pass
         return None

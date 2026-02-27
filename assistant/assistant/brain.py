@@ -284,6 +284,9 @@ class AssistantBrain(BrainCallbacksMixin):
         # Aktuelle Person (gesetzt in process(), nutzbar fuer Executor-Methoden)
         self._current_person: str = ""
 
+        # MCU-JARVIS: Letzter Kontext fuer Cross-Referenzierung
+        self._last_context: dict = {}
+
         # Feature 5: Letzte ausgefuehrte Aktion (fuer emotionale Reaktionserkennung im naechsten Turn)
         self._last_executed_action: str = ""
         self._last_executed_action_args: dict = {}
@@ -2017,6 +2020,9 @@ class AssistantBrain(BrainCallbacksMixin):
         if person:
             context.setdefault("person", {})["name"] = person
 
+        # Cross-Referenz: Kontext fuer _detect_cross_references() speichern
+        self._last_context = context
+
         # --- Running Gag Ergebnis ---
         gag_response = _result_map.get("gag")
         if isinstance(gag_response, BaseException):
@@ -2209,6 +2215,18 @@ class AssistantBrain(BrainCallbacksMixin):
         )
         if jarvis_thinks:
             sections.append(("jarvis_thinks", jarvis_thinks, 2))
+
+        # MCU-JARVIS: Anomalie-Kontext — ungewoehnliche Zustaende beilaeufig erwaehnen
+        anomalies = context.get("anomalies", [])
+        if anomalies:
+            anomaly_text = (
+                "\n\nBEOBACHTUNGEN IM HAUS:\n"
+                + "\n".join(f"- {a}" for a in anomalies)
+                + "\nErwaehne maximal EINE dieser Beobachtungen beilaeufig, "
+                "wenn sie zum Gespraech passt. Nicht als Warnung, sondern "
+                "als beilaeufige Bemerkung. Beispiel: 'Uebrigens — [Beobachtung].'"
+            )
+            sections.append(("anomalies", anomaly_text, 3))
 
         # Experiential Memory: "Letztes Mal als du das gemacht hast..."
         if experiential_hint:
@@ -6313,6 +6331,44 @@ class AssistantBrain(BrainCallbacksMixin):
             ]
             return random.choice(_responses)
 
+        # --- MCU-Jarvis: "Ich bin da" / "Bin zuhause" / "Ich bin wieder da" ---
+        _home_announce = [
+            "ich bin da", "bin zuhause", "bin zu hause",
+            "bin wieder da", "ich bin wieder da", "bin daheim",
+            "ich bin daheim", "bin heimgekommen", "ich bin zurueck",
+            "bin zurueck",
+        ]
+        if any(kw in t for kw in _home_announce):
+            # Nicht matchen wenn ein Befehl folgt (z.B. "bin da, mach Licht an")
+            if len(t.split()) <= 5:
+                _responses = [
+                    f"Willkommen, {title}. Alles in Ordnung hier.",
+                    f"{title}. Schoen, dass du da bist.",
+                    f"Willkommen zurueck, {title}.",
+                ]
+                return random.choice(_responses)
+
+        # --- MCU-Jarvis: "Alles klar?" / "Gibt's was Neues?" / "Was hab ich verpasst?" ---
+        _status_check = [
+            "alles klar", "gibts was neues", "gibt es was neues",
+            "was hab ich verpasst", "was habe ich verpasst",
+            "irgendwas passiert", "was ist los",
+            "irgendwelche neuigkeiten", "was tut sich",
+        ]
+        if any(kw in t for kw in _status_check):
+            if pending_alerts > 0:
+                _responses = [
+                    f"{pending_alerts} Sache{'n' if pending_alerts > 1 else ''} auf dem Tisch, {title}. Soll ich durchgehen?",
+                    f"Tatsaechlich — {pending_alerts} Meldung{'en' if pending_alerts > 1 else ''}. Details?",
+                ]
+            else:
+                _responses = [
+                    f"Alles ruhig, {title}. Nichts Bemerkenswertes.",
+                    f"Stille auf allen Kanaelen, {title}.",
+                    f"Nichts Ungewoehnliches, {title}. Seltener als man denkt.",
+                ]
+            return random.choice(_responses)
+
         return None
 
     @staticmethod
@@ -6951,6 +7007,12 @@ Regeln:
             else:
                 hints.append((4, f"INFO: {msg}"))
 
+        # --- Cross-Referenz: Automatische Haus-Anomalien erkennen ---
+        # MCU-JARVIS wuerde auffaellige Kombinationen beilaeufig erwaehnen
+        cross_ref = self._detect_cross_references()
+        for cr in cross_ref[:2]:
+            hints.append((cr[0], cr[1]))
+
         # --- Gelernte Muster: Haeufige User-Aktionen ---
         # Nur die Top-3 mit hoher Wiederholungszahl
         strong_patterns = [p for p in learned_patterns if p.get("count", 0) >= 4]
@@ -6979,15 +7041,111 @@ Regeln:
 
         section = (
             "\n\nJARVIS DENKT MIT:\n"
-            "Die folgenden Erkenntnisse stammen aus deiner Muster-Erkennung, "
-            "Haus-Analyse und Lern-Beobachtung. Flechte relevante Punkte "
-            "BEILAEUFIG ein — wie ein aufmerksamer Butler, NICHT wie ein Bericht. "
-            "Nur erwaehnen was zum aktuellen Gespraech passt.\n\n"
+            "Du hast Zugriff auf folgende Beobachtungen und Erkenntnisse. "
+            "Waehle MAXIMAL EINE die zur aktuellen Anfrage passt und flechte sie "
+            "BEILAEUFIG ein — wie ein aufmerksamer Butler der etwas bemerkt hat. "
+            "Format: Zuerst die Antwort auf die Frage, dann beilaeufig der Hinweis. "
+            "Beispiel: 'Erledigt. Uebrigens — [Beobachtung].' "
+            "NICHT alle Punkte erwaehnen. NICHT als Liste. KEIN Hinweis wenn "
+            "nichts zum Gespraech passt.\n\n"
         )
         for i, hint in enumerate(selected, 1):
             section += f"{i}. {hint}\n"
 
         return section
+
+    def _detect_cross_references(self) -> list[tuple[int, str]]:
+        """Erkennt kreuz-referenzierte Anomalien im Haus-Kontext.
+
+        MCU-JARVIS-Feature: Verbindet verschiedene Datenquellen und
+        erkennt Zusammenhaenge die einzeln nicht auffallen wuerden.
+        Schnell und regelbasiert (kein LLM noetig).
+
+        Returns:
+            Liste von (priority, hint_text) Tuples.
+        """
+        results: list[tuple[int, str]] = []
+        try:
+            ctx = getattr(self, '_last_context', None)
+            if not ctx:
+                return results
+
+            house = ctx.get("house", {})
+            temps = house.get("temperatures", {})
+            lights = house.get("lights", [])
+            presence = house.get("presence", {})
+            weather = house.get("weather", {})
+            now = datetime.now()
+            hour = now.hour
+
+            # --- 1. Niemand zuhause aber Lichter an ---
+            home_persons = presence.get("home", [])
+            if not home_persons and lights:
+                light_names = [l.get("name", "") for l in lights if isinstance(l, dict)]
+                if not light_names:
+                    light_names = [str(l) for l in lights[:3]]
+                if light_names:
+                    results.append((2,
+                        f"Niemand zuhause, aber {len(light_names)} "
+                        f"Licht{'er' if len(light_names) > 1 else ''} noch an. "
+                        f"Erwaehne beilaeufig: 'Uebrigens, {light_names[0]} laeuft noch.'"
+                    ))
+
+            # --- 2. Kalte Aussentemperatur + Fenster-Kontakte offen ---
+            outdoor_temp = weather.get("temperature")
+            if outdoor_temp is not None:
+                try:
+                    outdoor_temp = float(outdoor_temp)
+                except (ValueError, TypeError):
+                    outdoor_temp = None
+            if outdoor_temp is not None and outdoor_temp < 5:
+                # Pruefen ob Fenster-Kontakte im Kontext sind
+                alerts = ctx.get("alerts", [])
+                open_windows = [a for a in alerts if "fenster" in str(a).lower() and "offen" in str(a).lower()]
+                if open_windows:
+                    results.append((1,
+                        f"Aussentemperatur {outdoor_temp}°C und Fenster offen. "
+                        f"Erwaehne als Ingenieur-Beobachtung: 'Bei {outdoor_temp} Grad und offenem Fenster "
+                        f"heizt du effektiv die Nachbarschaft mit.'"
+                    ))
+
+            # --- 3. Spaete Stunde + Lichter im ganzen Haus ---
+            if 23 <= hour or hour < 5:
+                if len(lights) >= 3:
+                    results.append((3,
+                        f"Es ist {hour}:{now.minute:02d} und {len(lights)} Lichter sind noch an. "
+                        f"Falls passend: 'Spaete Stunde. Soll ich das Haus herunterfahren?'"
+                    ))
+
+            # --- 4. Grosse Temperaturunterschiede zwischen Raeumen ---
+            if len(temps) >= 2:
+                temp_values = []
+                for room_name, temp_data in temps.items():
+                    if isinstance(temp_data, dict):
+                        t = temp_data.get("current")
+                    else:
+                        t = temp_data
+                    if t is not None:
+                        try:
+                            temp_values.append((room_name, float(t)))
+                        except (ValueError, TypeError):
+                            pass
+                if len(temp_values) >= 2:
+                    temp_values.sort(key=lambda x: x[1])
+                    coldest = temp_values[0]
+                    warmest = temp_values[-1]
+                    diff = warmest[1] - coldest[1]
+                    if diff >= 5:
+                        results.append((2,
+                            f"Temperaturgefaelle im Haus: {warmest[0]} hat {warmest[1]}°C, "
+                            f"{coldest[0]} nur {coldest[1]}°C (Differenz {diff:.1f}°C). "
+                            f"Erwaehne als Diagnose: '{coldest[0]} kuehl — Fenster oder Heizung?'"
+                        ))
+
+        except Exception as e:
+            logger.debug("Cross-Referenz Fehler: %s", e)
+
+        return results
 
     # ------------------------------------------------------------------
     # Phase 8: Konversations-Kontinuitaet

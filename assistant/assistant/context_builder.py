@@ -212,6 +212,11 @@ class ContextBuilder:
             # Warnungen
             context["alerts"] = self._extract_alerts(states)
 
+            # MCU-JARVIS: Anomalie-Kontext — ungewoehnliche Zustaende erkennen
+            anomalies = self._detect_anomalies(states)
+            if anomalies:
+                context["anomalies"] = anomalies
+
         # Semantisches Gedaechtnis - relevante Fakten zur Anfrage
         # Im Guest-Mode keine persoenlichen Fakten preisgeben
         if need_memories:
@@ -567,6 +572,64 @@ class ContextBuilder:
                     alerts.append(f"Offen: {name}")
 
         return alerts
+
+    @staticmethod
+    def _detect_anomalies(states: list[dict]) -> list[str]:
+        """Erkennt ungewoehnliche Zustaende im Haus.
+
+        MCU-JARVIS-Feature: Liefert beilaeufige Beobachtungen fuer den
+        System-Prompt, die der LLM in seine Antwort einfliessen lassen kann.
+
+        Beispiel: 'Waschmaschine seit 3 Stunden im Pause-Modus.'
+        """
+        anomalies = []
+        now = datetime.now()
+
+        for state in states:
+            eid = state.get("entity_id", "")
+            s = state.get("state", "")
+            attrs = state.get("attributes", {})
+            name = attrs.get("friendly_name", eid)
+
+            # Geraet seit langer Zeit in ungewoehnlichem Zustand
+            last_changed = attrs.get("last_changed") or state.get("last_changed", "")
+            if last_changed:
+                try:
+                    if isinstance(last_changed, str):
+                        changed_dt = datetime.fromisoformat(
+                            last_changed.replace("Z", "+00:00")
+                        )
+                        changed_dt = changed_dt.replace(tzinfo=None)
+                    else:
+                        changed_dt = None
+                except (ValueError, TypeError):
+                    changed_dt = None
+            else:
+                changed_dt = None
+
+            # Waschmaschine/Trockner laenger als 3 Stunden aktiv
+            if changed_dt and any(kw in eid for kw in ("washer", "dryer", "wasch", "trockner")):
+                if s in ("on", "running", "paused"):
+                    hours = (now - changed_dt).total_seconds() / 3600
+                    if hours >= 3:
+                        mode = "Pause" if s == "paused" else "aktiv"
+                        anomalies.append(
+                            f"{name} seit {hours:.0f} Stunden im {mode}-Modus."
+                        )
+
+            # Niedrige Batterie (<15%) — dringender als der Standard-Check
+            battery = attrs.get("battery_level") or attrs.get("battery")
+            if battery is not None:
+                try:
+                    bat_val = int(float(battery))
+                    if bat_val <= 10:
+                        anomalies.append(
+                            f"{name}: Batterie bei {bat_val}% — Wechsel empfohlen."
+                        )
+                except (ValueError, TypeError):
+                    pass
+
+        return anomalies[:3]  # Max 3 Anomalien im Kontext
 
     async def _get_mindhome_data(self) -> Optional[dict]:
         """Holt optionale MindHome-Daten (parallel fuer Geschwindigkeit)."""
