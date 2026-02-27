@@ -4499,25 +4499,13 @@ function renderVacuum() {
 
 function renderVacuumRobot(floor, floorLabel) {
   const prefix = 'vacuum.robots.' + floor;
-  const robot = getPath(S, prefix) || {};
-  const rooms = RP.rooms || {};
-  const floorRooms = Object.entries(rooms).filter(([n,r]) => r.floor === floor).map(([n]) => n);
   let html = '<div class="s-card" style="margin:10px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
   html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">&#129529; ' + floorLabel + '</div>';
   html += fText(prefix + '.entity_id', 'Entity-ID', 'z.B. vacuum.dreame_' + floor);
   html += fText(prefix + '.name', 'Name', 'z.B. Saugroboter ' + floor.toUpperCase());
   html += fText(prefix + '.nickname', 'Spitzname', 'z.B. der Kleine');
-  // Raum → Segment-ID Zuordnung
-  html += '<div style="margin:10px 0 4px;font-weight:600;font-size:12px;">Raum-Segmente (Dreame Raum-IDs)</div>';
-  html += '<div class="hint" style="margin-bottom:8px;">Welche Dreame-Segment-ID gehoert zu welchem Raum? IDs findest du in der Dreame-App (Raeume verwalten → Nummer).</div>';
-  const segments = robot.rooms || {};
-  for (const roomName of floorRooms) {
-    const segId = segments[roomName] || '';
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
-    html += '<span style="font-size:12px;min-width:140px;">' + esc(roomName) + '</span>';
-    html += '<input type="number" data-path="' + prefix + '.rooms.' + roomName + '" value="' + segId + '" min="0" max="99" step="1" style="width:70px;" placeholder="ID">';
-    html += '</div>';
-  }
+  html += fKeyValue(prefix + '.rooms', 'Raum-Segmente (Dreame Raum-IDs)', 'Raumname', 'Segment-ID',
+    'Raumname frei eingeben, Segment-ID aus der Dreame-App (Raeume verwalten → Nummer).');
   html += '</div>';
   return html;
 }
