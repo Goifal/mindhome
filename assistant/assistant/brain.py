@@ -42,6 +42,7 @@ from .function_validator import FunctionValidator
 from .ha_client import HomeAssistantClient
 from .inventory import InventoryManager
 from .knowledge_base import KnowledgeBase
+from .recipe_store import RecipeStore
 from .memory import MemoryManager
 from .memory_extractor import MemoryExtractor
 from .model_router import ModelRouter
@@ -245,6 +246,9 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 11.1: Knowledge Base (RAG)
         self.knowledge_base = KnowledgeBase()
 
+        # Recipe Store (dedizierte Rezeptdatenbank fuer den Koch-Assistenten)
+        self.recipe_store = RecipeStore()
+
         # Phase 17: Neue Jarvis-Features
         self.timer_manager = TimerManager()
         self.camera_manager = CameraManager(self.ha, self.ollama)
@@ -367,6 +371,10 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 11.1: Knowledge Base initialisieren
         await self.knowledge_base.initialize()
+
+        # Recipe Store initialisieren und mit Koch-Assistent verbinden
+        await self.recipe_store.initialize()
+        self.cooking.recipe_store = self.recipe_store
 
         # Phase 15.2: Inventory Manager initialisieren
         await self.inventory.initialize(redis_client=self.memory.redis)

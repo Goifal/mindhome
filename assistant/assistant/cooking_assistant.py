@@ -159,6 +159,25 @@ Regeln:
 Erstelle das Rezept fuer: {dish}"""
 
 
+STORED_RECIPE_PARSE_PROMPT = """Du bist ein Koch-Assistent. Du hast ein bestehendes Rezept erhalten.
+Wandle es in das folgende JSON-Format um. Passe die Mengen auf {portions} Portionen an.
+{preferences}
+
+WICHTIG: Antworte NUR im JSON-Format:
+{{
+  "dish": "Name des Gerichts",
+  "portions": {portions},
+  "ingredients": ["200g Zutat1", "100ml Zutat2"],
+  "steps": [
+    {{"number": 1, "instruction": "Schritt 1...", "timer_minutes": null}},
+    {{"number": 2, "instruction": "Schritt 2...", "timer_minutes": 5}}
+  ]
+}}
+
+Bestehendes Rezept:
+{recipe_text}"""
+
+
 class CookingAssistant:
     """Koch-Assistent mit Schritt-fuer-Schritt Fuehrung."""
 
@@ -168,6 +187,7 @@ class CookingAssistant:
     def __init__(self, ollama_client, semantic_memory=None):
         self.ollama = ollama_client
         self.semantic_memory = semantic_memory
+        self.recipe_store = None  # set by Brain after init
         self.redis = None
         self.session: Optional[CookingSession] = None
         self._timer_tasks: list[asyncio.Task] = []
@@ -223,8 +243,67 @@ class CookingAssistant:
                    NAV_INGREDIENTS + NAV_SAVE)
         return any(kw in text_lower for kw in all_nav)
 
+    async def _search_recipe_store(self, dish: str) -> Optional[str]:
+        """Durchsucht den Recipe Store nach einem passenden Rezept.
+
+        Gibt den Rezept-Text zurueck falls ein guter Treffer gefunden wird,
+        sonst None.
+        """
+        if not self.recipe_store:
+            return None
+
+        try:
+            rs_config = yaml_config.get("recipe_store", {})
+            min_relevance = rs_config.get("min_relevance", 0.4)
+            limit = rs_config.get("search_limit", 5)
+
+            hits = await self.recipe_store.search(dish, limit=limit)
+            good_hits = [h for h in hits if h.get("relevance", 0) >= min_relevance]
+
+            if not good_hits:
+                return None
+
+            best = good_hits[0]
+            logger.info(
+                "Rezept aus Recipe Store gefunden: '%s' (Relevanz: %.2f, Quelle: %s)",
+                dish, best.get("relevance", 0), best.get("source", "?"),
+            )
+            combined = "\n\n".join(h["content"] for h in good_hits)
+            return combined
+        except Exception as e:
+            logger.warning("Recipe Store Suche fehlgeschlagen: %s", e)
+            return None
+
+    async def _parse_stored_recipe(
+        self, recipe_text: str, dish: str, portions: int,
+        person: str, model: str, preferences: str,
+    ) -> Optional[CookingSession]:
+        """Wandelt gespeicherten Rezepttext in strukturierte CookingSession um."""
+        prompt = STORED_RECIPE_PARSE_PROMPT.format(
+            portions=portions,
+            preferences=preferences,
+            recipe_text=recipe_text[:3000],
+        )
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": f"Wandle das Rezept fuer {dish} um ({portions} Portionen)"},
+        ]
+        response = await self.ollama.chat(
+            messages=messages,
+            model=model,
+            temperature=0.3,
+            max_tokens=self.max_tokens,
+        )
+        if "error" in response:
+            logger.warning("Gespeichertes Rezept konnte nicht geparst werden: %s",
+                           response["error"])
+            return None
+
+        content = response.get("message", {}).get("content", "")
+        return self._parse_recipe(content, dish, portions, person)
+
     async def start_cooking(self, text: str, person: str, model: str) -> str:
-        """Startet eine Koch-Session: Generiert Rezept via LLM."""
+        """Startet eine Koch-Session: Sucht zuerst im Recipe Store, dann LLM."""
         # Bestehende Session aufraumen (Zombie-Timer verhindern)
         if self.session:
             for task in self._timer_tasks:
@@ -244,7 +323,30 @@ class CookingAssistant:
         logger.info("Koch-Session starten: '%s' fuer %d Portionen (Person: %s)",
                      dish, portions, person)
 
-        # Rezept via LLM generieren
+        # Zuerst im Recipe Store suchen
+        stored_recipe = await self._search_recipe_store(dish)
+        if stored_recipe:
+            session = await self._parse_stored_recipe(
+                stored_recipe, dish, portions, person, model, preferences,
+            )
+            if session and session.steps:
+                self.session = session
+                self.session.started_at = time.time()
+                await self._persist_session()
+
+                parts = [f"Ich habe ein gespeichertes Rezept fuer {dish} gefunden! ({portions} Portionen)"]
+                if preferences:
+                    parts.append("Ich habe deine Praeferenzen beruecksichtigt.")
+                parts.append(f"\nDu brauchst {len(session.ingredients)} Zutaten:")
+                for ing in session.ingredients:
+                    parts.append(f"  - {ing}")
+                parts.append(f"\nDas Rezept hat {session.total_steps} Schritte.")
+                parts.append("Sag 'weiter' wenn du bereit bist fuer den ersten Schritt.")
+                parts.append("Du kannst jederzeit 'zutaten', 'nochmal', 'zurueck' oder 'stop kochen' sagen.")
+                return "\n".join(parts)
+            logger.info("Gespeichertes Rezept nicht parsbar, Fallback auf LLM-Generierung")
+
+        # Kein Treffer oder Parse fehlgeschlagen: Rezept via LLM generieren
         prompt = RECIPE_GENERATION_PROMPT.format(
             dish=dish,
             portions=portions,

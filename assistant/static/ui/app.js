@@ -323,7 +323,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
   // Seite wechseln
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(`page-${pg}`).classList.add('active');
-  const titles = {dashboard:'Dashboard',settings:'Einstellungen',presence:'Anwesenheit',entities:'Entities',memory:'Gedaechtnis',knowledge:'Wissen',logs:'Logs',errors:'Fehler'};
+  const titles = {dashboard:'Dashboard',settings:'Einstellungen',presence:'Anwesenheit',entities:'Entities',memory:'Gedaechtnis',knowledge:'Wissen',recipes:'Rezepte',logs:'Logs',errors:'Fehler'};
   document.getElementById('pageTitle').textContent = titles[pg] || pg;
   stopLiveRefresh();
   stopPresenceRefresh();
@@ -357,6 +357,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
   else if (pg === 'entities') loadEntities();
   else if (pg === 'memory') loadMemoryPage();
   else if (pg === 'knowledge') { loadKnowledge(); setTimeout(initKbDropzone, 50); }
+  else if (pg === 'recipes') { loadRecipes(); setTimeout(initRecipeDropzone, 50); }
   else if (pg === 'logs') { if(currentLogTab==='audit') loadAudit(); else loadLogs(); }
   else if (pg === 'errors') loadErrors();
   closeSidebar();
@@ -4068,6 +4069,158 @@ async function deleteSelectedChunks() {
     const d = await api('/api/ui/knowledge/chunks/delete', 'POST', { ids });
     toast(`${d.deleted} Eintraege geloescht`, 'success');
     loadKnowledge();
+  } catch(e) { toast('Fehler beim Loeschen', 'error'); }
+}
+
+// ---- Recipe Store ----
+async function loadRecipes() {
+  try {
+    const d = await api('/api/ui/recipes');
+    const st = d.stats || {}, fi = d.files || [];
+    document.getElementById('recipeStats').innerHTML = `
+      <div class="stat-card"><div class="stat-label">Status</div>
+        <div class="stat-value" style="font-size:18px;color:${st.enabled?'var(--success)':'var(--danger)'};">${st.enabled?'Aktiv':'Aus'}</div></div>
+      <div class="stat-card"><div class="stat-label">Chunks</div><div class="stat-value">${st.total_chunks||0}</div></div>
+      <div class="stat-card"><div class="stat-label">Rezeptdateien</div><div class="stat-value">${(st.sources||[]).length}</div>
+        <div class="stat-sub">${(st.sources||[]).map(s=>esc(s)).join(', ')||'keine'}</div></div>`;
+    document.getElementById('recipeFiles').innerHTML = fi.length === 0
+      ? '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Rezeptdateien</div>'
+      : fi.map(f => `<div class="file-item" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);">
+          <span style="font-size:16px;">&#127859;</span>
+          <span class="file-name" style="flex:1;min-width:0;">${esc(f.name)}</span>
+          <span class="file-size" style="color:var(--text-muted);font-size:12px;white-space:nowrap;">${fmtBytes(f.size)}</span>
+          <button class="btn" onclick="reingestRecipeFile('${esc(f.name)}')" style="font-size:11px;padding:3px 10px;white-space:nowrap;" title="Chunks loeschen und Datei neu einlesen">Neu einlesen</button>
+          <button class="btn btn-danger" onclick="deleteRecipeFileChunks('${esc(f.name)}')" style="font-size:11px;padding:3px 10px;white-space:nowrap;" title="Alle Chunks dieser Datei loeschen">Entfernen</button>
+        </div>`).join('');
+    const sel = document.getElementById('recipeSourceFilter');
+    if (sel) {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Alle Quellen</option>' +
+        (st.sources||[]).map(s => `<option value="${esc(s)}" ${s===cur?'selected':''}>${esc(s)}</option>`).join('');
+    }
+    loadRecipeChunks();
+  } catch(e) { console.error('Recipe Store fail:', e); }
+}
+
+async function rebuildRecipes() {
+  if (!confirm('Rezeptdatenbank komplett neu aufbauen?\n\nAlle Vektoren werden geloescht und mit dem aktuellen Embedding-Modell neu berechnet.')) return;
+  try {
+    toast('Rebuild gestartet...', 'info');
+    const d = await api('/api/ui/recipes/rebuild', 'POST');
+    if (d.success) {
+      toast(`Rebuild fertig: ${d.new_chunks} Chunks mit ${d.embedding_model}`, 'success');
+    } else {
+      toast(d.error || 'Rebuild fehlgeschlagen', 'error');
+    }
+    loadRecipes();
+  } catch(e) { toast('Rebuild fehlgeschlagen', 'error'); }
+}
+
+async function uploadRecipeFile(file) {
+  if (!file) return;
+  const allowed = ['.txt','.md','.pdf','.csv'];
+  const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+  if (!allowed.includes(ext)) { toast('Dateityp nicht erlaubt. Nur: ' + allowed.join(', '), 'error'); return; }
+  if (file.size > 10 * 1024 * 1024) { toast('Datei zu gross (max 10 MB)', 'error'); return; }
+
+  const dz = document.getElementById('recipeDropzone');
+  if (dz) { dz.style.borderColor = 'var(--primary)'; dz.querySelector('div').textContent = 'Wird hochgeladen...'; }
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('token', TOKEN || '');
+
+  try {
+    const resp = await fetch('/api/ui/recipes/upload', { method: 'POST', body: fd });
+    if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.detail || 'Upload fehlgeschlagen'); }
+    const d = await resp.json();
+    toast(`"${d.filename}" hochgeladen — ${d.new_chunks} Chunks eingelesen`, 'success');
+    loadRecipes();
+  } catch(e) { toast(e.message || 'Upload fehlgeschlagen', 'error'); }
+  finally {
+    if (dz) { dz.style.borderColor = ''; dz.querySelector('div').textContent = '\u{1F373}'; }
+    const inp = document.getElementById('recipeFileInput');
+    if (inp) inp.value = '';
+  }
+}
+
+function initRecipeDropzone() {
+  const dz = document.getElementById('recipeDropzone');
+  if (!dz || dz.dataset.init) return;
+  dz.dataset.init = '1';
+  ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.style.borderColor = 'var(--primary)'; dz.style.background = 'var(--bg-secondary)'; }));
+  ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.style.borderColor = ''; dz.style.background = ''; }));
+  dz.addEventListener('drop', e => { if (e.dataTransfer.files.length) uploadRecipeFile(e.dataTransfer.files[0]); });
+}
+
+async function ingestRecipes() {
+  try {
+    const d = await api('/api/ui/recipes/ingest', 'POST');
+    toast(`${d.new_chunks} neue Chunks eingelesen`);
+    loadRecipes();
+  } catch(e) { toast('Fehler beim Einlesen', 'error'); }
+}
+
+async function deleteRecipeFileChunks(filename) {
+  if (!confirm(`Alle Rezeptinhalte von "${filename}" aus der Datenbank entfernen?`)) return;
+  try {
+    const d = await api('/api/ui/recipes/file/delete', 'POST', { filename });
+    toast(`${d.deleted} Chunks von "${filename}" entfernt`, 'success');
+    loadRecipes();
+  } catch(e) { toast('Fehler beim Entfernen', 'error'); }
+}
+
+async function reingestRecipeFile(filename) {
+  try {
+    toast(`"${filename}" wird neu eingelesen...`);
+    const d = await api('/api/ui/recipes/file/reingest', 'POST', { filename });
+    toast(`"${filename}": ${d.new_chunks} Chunks eingelesen`, 'success');
+    loadRecipes();
+  } catch(e) { toast('Fehler beim Einlesen', 'error'); }
+}
+
+let recipeChunksData = [];
+
+async function loadRecipeChunks() {
+  try {
+    const src = document.getElementById('recipeSourceFilter')?.value || '';
+    const params = src ? `&source=${encodeURIComponent(src)}` : '';
+    const d = await api(`/api/ui/recipes/chunks?limit=200${params}`);
+    recipeChunksData = d.chunks || [];
+    const c = document.getElementById('recipeChunks');
+    if (!c) return;
+    if (recipeChunksData.length === 0) {
+      c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Eintraege</div>';
+      return;
+    }
+    c.innerHTML = recipeChunksData.map((ch, i) => `
+      <div class="chunk-item" style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-bottom:1px solid var(--border);${i%2?'background:var(--bg-secondary);':''}">
+        <input type="checkbox" class="recipe-chunk-cb" data-id="${esc(ch.id)}" onchange="updateRecipeDeleteBtn()" style="margin-top:3px;min-width:16px;" />
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px;">${esc(ch.source)} #${ch.chunk_index}</div>
+          <div style="font-size:13px;line-height:1.4;word-break:break-word;">${esc(ch.content)}</div>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) { console.error('Recipe chunks fail:', e); }
+}
+
+function updateRecipeDeleteBtn() {
+  const checked = document.querySelectorAll('.recipe-chunk-cb:checked');
+  const btn = document.getElementById('recipeDeleteBtn');
+  if (btn) btn.style.display = checked.length > 0 ? '' : 'none';
+  if (btn && checked.length > 0) btn.textContent = `${checked.length} loeschen`;
+}
+
+async function deleteSelectedRecipeChunks() {
+  const checked = document.querySelectorAll('.recipe-chunk-cb:checked');
+  if (checked.length === 0) return;
+  if (!confirm(`${checked.length} Rezepteintraege unwiderruflich loeschen?`)) return;
+  const ids = Array.from(checked).map(cb => cb.dataset.id);
+  try {
+    const d = await api('/api/ui/recipes/chunks/delete', 'POST', { ids });
+    toast(`${d.deleted} Eintraege geloescht`, 'success');
+    loadRecipes();
   } catch(e) { toast('Fehler beim Loeschen', 'error'); }
 }
 
