@@ -194,6 +194,17 @@ class ActivityEngine:
         self.guest_person_count = int(thresholds.get("guest_person_count", 2))
         self.focus_min_minutes = int(thresholds.get("focus_min_minutes", 30))
 
+        # Haushaltsmitglieder-Entities sammeln (fuer praezise Guest-Detection)
+        household = yaml_config.get("household", {})
+        self._household_entities: set[str] = set()
+        primary_entity = (household.get("primary_user_entity") or "").strip().lower()
+        if primary_entity:
+            self._household_entities.add(primary_entity)
+        for m in (household.get("members") or []):
+            ha_entity = (m.get("ha_entity") or "").strip().lower()
+            if ha_entity:
+                self._household_entities.add(ha_entity)
+
         # Cache: letzte erkannte Aktivitaet
         self._last_activity = RELAXING
         self._last_detection = None
@@ -461,13 +472,21 @@ class ActivityEngine:
         return False
 
     def _check_guests(self, states: list[dict]) -> bool:
-        """Prueft ob Gaeste anwesend sind (mehrere Personen zu Hause)."""
+        """Prueft ob echte Gaeste anwesend sind (nicht nur Haushaltsmitglieder)."""
         persons_home = 0
+        unknown_home = 0
         for state in states:
-            if state.get("entity_id", "").startswith("person."):
+            entity_id = state.get("entity_id", "")
+            if entity_id.startswith("person."):
                 if state.get("state") == "home":
                     persons_home += 1
-        return persons_home >= self.guest_person_count
+                    if self._household_entities and entity_id.lower() not in self._household_entities:
+                        unknown_home += 1
+        # Wenn Haushaltsmitglieder konfiguriert: nur unbekannte Personen = Gaeste
+        if self._household_entities:
+            return unknown_home > 0
+        # Fallback: mehr Personen als konfigurierte Haushaltsmitglieder-Anzahl
+        return persons_home > self.guest_person_count
 
     def _check_lights_off(self, states: list[dict]) -> bool:
         """Prueft ob alle Lichter aus sind."""
