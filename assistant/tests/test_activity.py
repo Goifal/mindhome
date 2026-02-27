@@ -76,8 +76,17 @@ class TestSignalDetection:
         states = [{"entity_id": "media_player.wohnzimmer", "state": "playing"}]
         assert engine._check_media_playing(states) is True
 
-    def test_check_media_paused(self, engine):
+    def test_check_media_paused_is_active(self, engine):
+        """Paused zaehlt als aktiv (TV ist an, nur pausiert)."""
         states = [{"entity_id": "media_player.wohnzimmer", "state": "paused"}]
+        assert engine._check_media_playing(states) is True
+
+    def test_check_media_off_is_inactive(self, engine):
+        states = [{"entity_id": "media_player.wohnzimmer", "state": "off"}]
+        assert engine._check_media_playing(states) is False
+
+    def test_check_media_standby_is_inactive(self, engine):
+        states = [{"entity_id": "media_player.wohnzimmer", "state": "standby"}]
         assert engine._check_media_playing(states) is False
 
     def test_check_media_non_configured_player_ignored(self, engine):
@@ -101,15 +110,68 @@ class TestSignalDetection:
         states = [{"entity_id": "binary_sensor.pc_active", "state": "off"}]
         assert engine._check_pc_active(states) is False
 
-    def test_check_guests(self, engine):
-        """2+ Personen zuhause = Gaeste."""
+    def test_check_sleeping_bed_occupied_no_media(self, engine):
+        """Bettsensor belegt + kein TV = sleeping."""
+        states = [
+            {"entity_id": "binary_sensor.bed_occupancy", "state": "on"},
+        ]
+        assert engine._check_sleeping(states) is True
+
+    def test_check_sleeping_bed_occupied_with_media_is_not_sleeping(self, engine):
+        """Bettsensor belegt + TV an = NICHT sleeping (fernsehen im Bett)."""
+        states = [
+            {"entity_id": "binary_sensor.bed_occupancy", "state": "on"},
+            {"entity_id": "media_player.wohnzimmer", "state": "playing"},
+        ]
+        assert engine._check_sleeping(states) is False
+
+    def test_check_sleeping_bed_occupied_with_pc_is_not_sleeping(self, engine):
+        """Bettsensor belegt + PC an = NICHT sleeping."""
+        states = [
+            {"entity_id": "binary_sensor.bed_occupancy", "state": "on"},
+            {"entity_id": "binary_sensor.pc_active", "state": "on"},
+        ]
+        assert engine._check_sleeping(states) is False
+
+    def test_check_sleeping_no_bed_media_blocks(self, engine):
+        """Ohne Bettsensor: Media aktiv blockiert sleeping."""
+        states = [
+            {"entity_id": "media_player.wohnzimmer", "state": "playing"},
+            {"entity_id": "light.wohnzimmer", "state": "off"},
+        ]
+        assert engine._check_sleeping(states) is False
+
+    def test_check_bed_occupied(self, engine):
+        """bed_occupied Signal separat pruefbar."""
+        states = [
+            {"entity_id": "binary_sensor.bed_occupancy", "state": "on"},
+        ]
+        assert engine._check_bed_occupied(states) is True
+
+    def test_check_bed_not_occupied(self, engine):
+        states = [
+            {"entity_id": "binary_sensor.bed_occupancy", "state": "off"},
+        ]
+        assert engine._check_bed_occupied(states) is False
+
+    def test_check_guests_more_than_threshold(self, engine):
+        """Mehr als guest_person_count (default=2) = Gaeste."""
+        states = [
+            {"entity_id": "person.max", "state": "home"},
+            {"entity_id": "person.lisa", "state": "home"},
+            {"entity_id": "person.unknown", "state": "home"},
+        ]
+        assert engine._check_guests(states) is True
+
+    def test_check_no_guests_at_threshold(self, engine):
+        """Genau guest_person_count (2) = KEINE Gaeste (nur Haushalt)."""
         states = [
             {"entity_id": "person.max", "state": "home"},
             {"entity_id": "person.lisa", "state": "home"},
         ]
-        assert engine._check_guests(states) is True
+        assert engine._check_guests(states) is False
 
-    def test_check_no_guests(self, engine):
+    def test_check_no_guests_one_away(self, engine):
         states = [
             {"entity_id": "person.max", "state": "home"},
             {"entity_id": "person.lisa", "state": "not_home"},

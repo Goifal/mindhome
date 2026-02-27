@@ -307,6 +307,7 @@ class ActivityEngine:
         signals["away"] = self._check_away(states)
         signals["media_playing"] = self._check_media_playing(states)
         signals["in_call"] = self._check_in_call(states)
+        signals["bed_occupied"] = self._check_bed_occupied(states)
         signals["sleeping"] = self._check_sleeping(states)
         signals["pc_active"] = self._check_pc_active(states)
         signals["guests"] = self._check_guests(states)
@@ -432,26 +433,27 @@ class ActivityEngine:
                     return True
         return False
 
-    def _check_sleeping(self, states: list[dict]) -> bool:
-        """Prueft ob der Benutzer schlaeft.
-
-        Bett belegt = schlaeft (unabhaengig von Tageszeit, auch Mittagsschlaf).
-        Nacht + alle Lichter aus = wahrscheinlich schlaeft (Fallback ohne Bettsensor).
-        ABER: PC aktiv oder Media spielt → definitiv NICHT schlafen.
-        """
-        # PC aktiv oder Media spielt → User ist wach, egal was andere Signale sagen
-        if self._check_pc_active(states) or self._check_media_playing(states):
-            return False
-
-        # Bett belegt? → Primaeres Signal, tageszeit-unabhaengig
-        bed_occupied = False
+    def _check_bed_occupied(self, states: list[dict]) -> bool:
+        """Prueft ob der Bettsensor belegt ist (reines Sensor-Signal)."""
         for state in states:
             if state.get("entity_id", "") in self.bed_sensors:
                 if state.get("state") == "on":
-                    bed_occupied = True
-                    break
+                    return True
+        return False
 
-        if bed_occupied:
+    def _check_sleeping(self, states: list[dict]) -> bool:
+        """Prueft ob der Benutzer schlaeft.
+
+        Bett belegt + kein TV/PC = schlaeft (auch Mittagsschlaf).
+        Bett belegt + TV an = NICHT sleeping (fernsehen im Bett) → wird WATCHING.
+        Nacht + alle Lichter aus = wahrscheinlich schlaeft (Fallback ohne Bettsensor).
+        """
+        # PC aktiv oder Media spielt → User ist wach, auch im Bett
+        if self._check_pc_active(states) or self._check_media_playing(states):
+            return False
+
+        # Bett belegt + kein TV/PC → schlaeft
+        if self._check_bed_occupied(states):
             return True
 
         # Fallback: Nacht + alle Lichter aus (fuer Installationen ohne Bettsensor)
@@ -505,17 +507,13 @@ class ActivityEngine:
     def _classify(self, signals: dict) -> tuple[str, float]:
         """
         Klassifiziert die Aktivitaet basierend auf gesammelten Signalen.
-        Prioritaet: away > watching > sleeping > in_call > guests > focused > relaxing
+        Prioritaet: away > sleeping > in_call > watching > guests > focused > relaxing
         """
         # Niemand zu Hause
         if signals.get("away"):
             return AWAY, 0.95
 
-        # Media/TV hat Vorrang vor Schlaf: Wer TV schaut, schlaeft nicht
-        if signals.get("media_playing"):
-            return WATCHING, 0.85
-
-        # Schlaf (nur wenn kein Media aktiv — wird oben abgefangen)
+        # Schlaf: Bett belegt + kein TV/PC
         if signals.get("sleeping"):
             confidence = 0.90 if signals.get("lights_off") else 0.70
             return SLEEPING, confidence
@@ -523,6 +521,10 @@ class ActivityEngine:
         # Anruf hat hohe Prioritaet (darf nicht gestoert werden)
         if signals.get("in_call"):
             return IN_CALL, 0.95
+
+        # Media/TV aktiv (inkl. fernsehen im Bett)
+        if signals.get("media_playing"):
+            return WATCHING, 0.85
 
         # Gaeste anwesend
         if signals.get("guests"):
