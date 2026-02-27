@@ -37,6 +37,12 @@ return_briefing:
     low_battery: true
     maintenance_due: true
     conditional_executed: true
+mcu_intelligence:
+  proactive_thinking: true
+  engineering_diagnosis: true
+  cross_references: true
+  anomaly_detection: true
+  implicit_commands: true
 mood_complexity:
   enabled: true
   matrix:
@@ -463,6 +469,8 @@ insights:
     away_devices: true
     temp_drop: true
     window_temp_drop: true
+    calendar_weather_cross: true
+    comfort_contradiction: true
   thresholds:
     frost_temp_c: 2
     energy_anomaly_percent: 30
@@ -940,6 +948,7 @@ spontaneous:
     streak: true
     usage_record: true
     device_milestone: true
+    house_efficiency: true
 # --- Jarvis-Features: Emotionales Gedaechtnis ---
 emotional_memory:
   enabled: true

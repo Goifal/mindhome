@@ -82,6 +82,8 @@ class InsightEngine:
         self.check_away_devices = checks_cfg.get("away_devices", True)
         self.check_temp_drop = checks_cfg.get("temp_drop", True)
         self.check_window_temp = checks_cfg.get("window_temp_drop", True)
+        self.check_calendar_weather_cross = checks_cfg.get("calendar_weather_cross", True)
+        self.check_comfort_contradiction = checks_cfg.get("comfort_contradiction", True)
 
         # Schwellwerte
         thresholds = cfg.get("thresholds", {})
@@ -164,6 +166,8 @@ class InsightEngine:
         self.check_away_devices = checks_cfg.get("away_devices", True)
         self.check_temp_drop = checks_cfg.get("temp_drop", True)
         self.check_window_temp = checks_cfg.get("window_temp_drop", True)
+        self.check_calendar_weather_cross = checks_cfg.get("calendar_weather_cross", True)
+        self.check_comfort_contradiction = checks_cfg.get("comfort_contradiction", True)
 
         thresholds = cfg.get("thresholds", {})
         self.frost_temp = thresholds.get("frost_temp_c", 2)
@@ -386,8 +390,8 @@ class InsightEngine:
             (self.check_away_devices, self._check_away_devices),
             (self.check_temp_drop, self._check_temp_drop),
             (self.check_window_temp, self._check_window_temp_drop),
-            (True, self._check_calendar_weather_cross),
-            (True, self._check_comfort_contradiction),
+            (self.check_calendar_weather_cross, self._check_calendar_weather_cross),
+            (self.check_comfort_contradiction, self._check_comfort_contradiction),
         ]
 
         for enabled, method in check_methods:
@@ -1067,8 +1071,8 @@ class InsightEngine:
                 "away_devices": self.check_away_devices,
                 "temp_drop": self.check_temp_drop,
                 "window_temp_drop": self.check_window_temp,
-                "calendar_weather_cross": True,
-                "comfort_contradiction": True,
+                "calendar_weather_cross": self.check_calendar_weather_cross,
+                "comfort_contradiction": self.check_comfort_contradiction,
             },
         }
 

@@ -6444,6 +6444,11 @@ class AssistantBrain(BrainCallbacksMixin):
             ]
             return random.choice(_responses)
 
+        # --- MCU-Jarvis: Implizite Befehle (konfigurierbar) ---
+        _impl_enabled = cfg.yaml_config.get("mcu_intelligence", {}).get("implicit_commands", True)
+        if not _impl_enabled:
+            return None
+
         # --- MCU-Jarvis: "Ich bin da" / "Bin zuhause" / "Ich bin wieder da" ---
         _home_announce = [
             "ich bin da", "bin zuhause", "bin zu hause",
@@ -7122,9 +7127,11 @@ Regeln:
 
         # --- Cross-Referenz: Automatische Haus-Anomalien erkennen ---
         # MCU-JARVIS wuerde auffaellige Kombinationen beilaeufig erwaehnen
-        cross_ref = self._detect_cross_references()
-        for cr in cross_ref[:2]:
-            hints.append((cr[0], cr[1]))
+        _mcu_cfg = cfg.yaml_config.get("mcu_intelligence", {})
+        if _mcu_cfg.get("cross_references", True):
+            cross_ref = self._detect_cross_references()
+            for cr in cross_ref[:2]:
+                hints.append((cr[0], cr[1]))
 
         # --- Gelernte Muster: Haeufige User-Aktionen ---
         # Nur die Top-3 mit hoher Wiederholungszahl

@@ -990,6 +990,15 @@ const HELP_TEXTS = {
   'feedback.score_reduce': {title:'Reduzieren unter', text:'Unter diesem Score wird Feature reduziert.'},
   'feedback.score_normal': {title:'Normal ab', text:'Ab diesem Score normales Verhalten.'},
   'feedback.score_boost': {title:'Boost ab', text:'Ab diesem Score wird Feature verstaerkt.'},
+  // === MCU-INTELLIGENZ ===
+  'mcu_intelligence.proactive_thinking': {title:'Proaktives Mitdenken', text:'Jarvis denkt bei jeder Antwort mit und erwaehnt beilaeufig relevante Haus-Beobachtungen. Das Markenzeichen von MCU-JARVIS.'},
+  'mcu_intelligence.engineering_diagnosis': {title:'Diagnose-Stil', text:'Bei Problemen analysiert Jarvis wie ein Ingenieur: Beobachtung → Hypothese → Empfehlung. Statt nur "17 Grad" sagt er "17 Grad — Fenster offen seit 14:30, in 40 Min wieder auf Soll."'},
+  'mcu_intelligence.cross_references': {title:'Kreuz-Referenzierung', text:'Verbindet automatisch verschiedene Datenquellen: Licht an + niemand da, kalte Aussentemperatur + Fenster offen, spaete Stunde + viele Lichter, Temperatur-Gefaelle zwischen Raeumen.'},
+  'mcu_intelligence.anomaly_detection': {title:'Anomalie-Erkennung', text:'Erkennt ungewoehnliche Haus-Zustaende und liefert sie als Kontext: Waschmaschine seit 3h auf Pause, Batterie bei 10%, etc.'},
+  'mcu_intelligence.implicit_commands': {title:'Implizite Befehle', text:'Versteht natuerliche Phrasen wie "Bin da", "Alles klar?", "Gibts was Neues?" und antwortet kontextbezogen statt woertlich.'},
+  'insights.checks.calendar_weather_cross': {title:'Kalender + Wetter', text:'Termin morgen frueh + Regen = "Schirm nicht vergessen." MCU-JARVIS-Stil Kreuz-Referenz.'},
+  'insights.checks.comfort_contradiction': {title:'Komfort-Widerspruch', text:'Heizung laeuft + Fenster offen = "Energetisch nicht ganz optimal." Erkennt Komfort-Widersprueche.'},
+  'spontaneous.checks.house_efficiency': {title:'Haus-Effizienz', text:'Bemerkt wenn das Haus effizient laeuft ("Vorbildlich.") oder Ressourcen verschwendet ("Leere Wohnung, 5 Lichter an.").'},
 };
 
 function helpBtn(path) {
@@ -2448,6 +2457,8 @@ function renderProactive() {
     fToggle('insights.checks.away_devices', 'Abwesend + Licht/Fenster offen') +
     fToggle('insights.checks.temp_drop', 'Ungewoehnlicher Temperatur-Abfall') +
     fToggle('insights.checks.window_temp_drop', 'Fenster offen + grosse Temp-Differenz') +
+    fToggle('insights.checks.calendar_weather_cross', 'Kalender-Termin + Regen/Sturm') +
+    fToggle('insights.checks.comfort_contradiction', 'Heizung + offenes Fenster') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Schwellwerte</div>' +
     fRange('insights.thresholds.frost_temp_c', 'Frost-Warnung ab', -10, 10, 1, {'-5':'-5\u00B0C',0:'0\u00B0C',2:'2\u00B0C',5:'5\u00B0C'}) +
     fRange('insights.thresholds.energy_anomaly_percent', 'Energie-Abweichung', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'}) +
@@ -2464,6 +2475,14 @@ function renderJarvisFeatures() {
     fToggle('progressive_responses.show_context_step', '"Ich pruefe den Hausstatus..." anzeigen') +
     fToggle('progressive_responses.show_thinking_step', '"Einen Moment, ich ueberlege..." anzeigen') +
     fToggle('progressive_responses.show_action_step', '"Ich fuehre das aus..." anzeigen')
+  ) +
+  sectionWrap('&#129504;', 'MCU-Intelligenz',
+    fInfo('Kern-Features die Jarvis wie MCU-JARVIS denken lassen: Proaktives Mitdenken, Ingenieur-Diagnosen, Kreuz-Referenzierung, Anomalie-Erkennung und implizite Befehle. Jedes Feature kann einzeln deaktiviert werden. Aenderungen wirken sofort.') +
+    fToggle('mcu_intelligence.proactive_thinking', 'Proaktives Mitdenken') +
+    fToggle('mcu_intelligence.engineering_diagnosis', 'Ingenieur-Diagnose-Stil') +
+    fToggle('mcu_intelligence.cross_references', 'Kreuz-Referenzierung (Haus-Daten)') +
+    fToggle('mcu_intelligence.anomaly_detection', 'Anomalie-Erkennung im Kontext') +
+    fToggle('mcu_intelligence.implicit_commands', 'Implizite Befehle ("Bin da", "Alles klar?")')
   ) +
   sectionWrap('&#128221;', 'Benannte Protokolle',
     fInfo('Multi-Step-Sequenzen per Sprache erstellen und ausfuehren. Z.B. "Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu, TV an" — dann reicht "Filmabend" zum Ausfuehren.') +
@@ -2487,7 +2506,8 @@ function renderJarvisFeatures() {
     fToggle('spontaneous.checks.energy_comparison', 'Energie-Vergleich mit Vorwoche') +
     fToggle('spontaneous.checks.streak', 'Wetter-Streaks & Fun Facts') +
     fToggle('spontaneous.checks.usage_record', 'Nutzungs-Rekorde') +
-    fToggle('spontaneous.checks.device_milestone', 'Geraete-Meilensteine')
+    fToggle('spontaneous.checks.device_milestone', 'Geraete-Meilensteine') +
+    fToggle('spontaneous.checks.house_efficiency', 'Haus-Effizienz Beobachtungen')
   ) +
   sectionWrap('&#9888;', 'Daten-basierter Widerspruch',
     fInfo('Vor einer Aktion prueft Jarvis Live-Daten und warnt konkret — z.B. "Heizung auf 25? Das Bad-Fenster ist offen." Aktion wird trotzdem ausgefuehrt, aber die Warnung erwaehnt.') +

@@ -213,9 +213,10 @@ class ContextBuilder:
             context["alerts"] = self._extract_alerts(states)
 
             # MCU-JARVIS: Anomalie-Kontext — ungewoehnliche Zustaende erkennen
-            anomalies = self._detect_anomalies(states)
-            if anomalies:
-                context["anomalies"] = anomalies
+            if yaml_config.get("mcu_intelligence", {}).get("anomaly_detection", True):
+                anomalies = self._detect_anomalies(states)
+                if anomalies:
+                    context["anomalies"] = anomalies
 
         # Semantisches Gedaechtnis - relevante Fakten zur Anfrage
         # Im Guest-Mode keine persoenlichen Fakten preisgeben
