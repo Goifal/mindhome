@@ -82,6 +82,8 @@ class InsightEngine:
         self.check_away_devices = checks_cfg.get("away_devices", True)
         self.check_temp_drop = checks_cfg.get("temp_drop", True)
         self.check_window_temp = checks_cfg.get("window_temp_drop", True)
+        self.check_calendar_weather_cross = checks_cfg.get("calendar_weather_cross", True)
+        self.check_comfort_contradiction = checks_cfg.get("comfort_contradiction", True)
 
         # Schwellwerte
         thresholds = cfg.get("thresholds", {})
@@ -164,6 +166,8 @@ class InsightEngine:
         self.check_away_devices = checks_cfg.get("away_devices", True)
         self.check_temp_drop = checks_cfg.get("temp_drop", True)
         self.check_window_temp = checks_cfg.get("window_temp_drop", True)
+        self.check_calendar_weather_cross = checks_cfg.get("calendar_weather_cross", True)
+        self.check_comfort_contradiction = checks_cfg.get("comfort_contradiction", True)
 
         thresholds = cfg.get("thresholds", {})
         self.frost_temp = thresholds.get("frost_temp_c", 2)
@@ -386,6 +390,8 @@ class InsightEngine:
             (self.check_away_devices, self._check_away_devices),
             (self.check_temp_drop, self._check_temp_drop),
             (self.check_window_temp, self._check_window_temp_drop),
+            (self.check_calendar_weather_cross, self._check_calendar_weather_cross),
+            (self.check_comfort_contradiction, self._check_comfort_contradiction),
         ]
 
         for enabled, method in check_methods:
@@ -945,6 +951,111 @@ class InsightEngine:
     # Status & Diagnostik
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # MCU-JARVIS: Kreuz-Referenz Checks (Kalender x Wetter, Komfort-Widersprueche)
+    # ------------------------------------------------------------------
+
+    async def _check_calendar_weather_cross(self, data: dict) -> Optional[dict]:
+        """Kalender-Termin morgen frueh + schlechtes Wetter = Empfehlung.
+
+        MCU-JARVIS wuerde sagen: 'Du hast morgen frueh einen Termin,
+        und es soll regnen. Schirm nicht vergessen.'
+        """
+        if not data.get("calendar_events") or not data.get("forecast"):
+            return None
+
+        now = datetime.now()
+
+        # Termine in den naechsten 18 Stunden suchen
+        for event in data["calendar_events"]:
+            start = event.get("start")
+            if not start:
+                continue
+            try:
+                if isinstance(start, str):
+                    event_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+                    event_dt = event_dt.replace(tzinfo=None) if event_dt.tzinfo else event_dt
+                else:
+                    continue
+            except (ValueError, TypeError):
+                continue
+
+            hours_until = (event_dt - now).total_seconds() / 3600
+            if hours_until < 1 or hours_until > 18:
+                continue
+
+            # Schlechtes Wetter im gleichen Zeitfenster?
+            for fc in data["forecast"][:5]:
+                condition = str(fc.get("condition", "")).lower()
+                if condition not in _RAIN_CONDITIONS:
+                    continue
+
+                summary = event.get("summary", "Termin")
+                if hours_until < 3:
+                    time_hint = "in Kuerze"
+                elif hours_until < 6:
+                    time_hint = f"in {int(hours_until)} Stunden"
+                else:
+                    time_hint = f"morgen um {event_dt.strftime('%H:%M')}"
+
+                title = await self._get_title_for_home()
+                weather_word = "Sturm" if condition in _STORM_CONDITIONS else "Regen"
+
+                return {
+                    "check": "calendar_weather_cross",
+                    "urgency": "medium",
+                    "message": (
+                        f"{title}, du hast {time_hint} '{summary}' — "
+                        f"und es soll {weather_word} geben. "
+                        f"{'Schirm einpacken.' if condition not in _STORM_CONDITIONS else 'Regenkleidung empfohlen.'}"
+                    ),
+                    "data": {
+                        "event": summary,
+                        "weather": condition,
+                        "hours_until": round(hours_until, 1),
+                    },
+                }
+
+        return None
+
+    async def _check_comfort_contradiction(self, data: dict) -> Optional[dict]:
+        """Erkennt Komfort-Widersprueche im Haus.
+
+        MCU-JARVIS-Feature: Heizung laeuft + Fenster offen = Energieverschwendung.
+        Licht an + niemand im Raum = unnoetig.
+        """
+        # Heizung laeuft + Fenster offen im gleichen Bereich
+        if data.get("open_windows") and data.get("climate"):
+            heating_rooms = []
+            for c in data["climate"]:
+                hvac = c.get("hvac_action", "")
+                if hvac in ("heating", "cooling"):
+                    name = c.get("name", "")
+                    heating_rooms.append(name)
+
+            if heating_rooms and data["open_windows"]:
+                # Vereinfachter Match: Gibt es ein offenes Fenster
+                # waehrend eine Heizung laeuft?
+                title = await self._get_title_for_home()
+                heating_str = heating_rooms[0]
+                window_str = data["open_windows"][0]
+
+                return {
+                    "check": "comfort_contradiction",
+                    "urgency": "low",
+                    "message": (
+                        f"{title}, die Heizung in {heating_str} laeuft, "
+                        f"waehrend {window_str} offen steht. "
+                        f"Energetisch... nicht ganz optimal."
+                    ),
+                    "data": {
+                        "heating": heating_rooms,
+                        "windows": data["open_windows"],
+                    },
+                }
+
+        return None
+
     async def get_status(self) -> dict:
         """Gibt den aktuellen Status der Engine zurueck."""
         status = {
@@ -960,6 +1071,8 @@ class InsightEngine:
                 "away_devices": self.check_away_devices,
                 "temp_drop": self.check_temp_drop,
                 "window_temp_drop": self.check_window_temp,
+                "calendar_weather_cross": self.check_calendar_weather_cross,
+                "comfort_contradiction": self.check_comfort_contradiction,
             },
         }
 

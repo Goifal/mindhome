@@ -284,6 +284,9 @@ class AssistantBrain(BrainCallbacksMixin):
         # Aktuelle Person (gesetzt in process(), nutzbar fuer Executor-Methoden)
         self._current_person: str = ""
 
+        # MCU-JARVIS: Letzter Kontext fuer Cross-Referenzierung
+        self._last_context: dict = {}
+
         # Feature 5: Letzte ausgefuehrte Aktion (fuer emotionale Reaktionserkennung im naechsten Turn)
         self._last_executed_action: str = ""
         self._last_executed_action_args: dict = {}
@@ -1086,6 +1089,13 @@ class AssistantBrain(BrainCallbacksMixin):
                 "context_room": room or "unbekannt",
                 "_emitted": True,
             }
+
+        # ----- MCU-JARVIS: "Das Uebliche" / "Wie immer" Shortcut -----
+        # Erkennt implizite Routine-Befehle und verbindet sie mit der
+        # Anticipation Engine (gelernte Muster fuer die aktuelle Tageszeit).
+        _routine_result = await self._handle_das_uebliche(text, person, room, stream_callback)
+        if _routine_result is not None:
+            return _routine_result
 
         # ----- Schnelle Shortcuts (VOR Context Build — spart 1-4s Latenz) -----
 
@@ -1994,11 +2004,12 @@ class AssistantBrain(BrainCallbacksMixin):
         _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
         _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
 
-        # Self-Improvement: Korrektur-Kontext + gelernte Regeln parallel laden
+        # Self-Improvement: Korrektur-Kontext + gelernte Regeln + Lern-Bestaetigungen parallel laden
         _mega_tasks.append(("correction_ctx", self.correction_memory.get_relevant_corrections(
             action_type="", args=None, person=person or "",
         )))
         _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
+        _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
 
         _mega_keys, _mega_coros = zip(*_mega_tasks)
         _mega_results = await asyncio.gather(*_mega_coros, return_exceptions=True)
@@ -2016,6 +2027,9 @@ class AssistantBrain(BrainCallbacksMixin):
             context["room"] = room
         if person:
             context.setdefault("person", {})["name"] = person
+
+        # Cross-Referenz: Kontext fuer _detect_cross_references() speichern
+        self._last_context = context
 
         # --- Running Gag Ergebnis ---
         gag_response = _result_map.get("gag")
@@ -2061,6 +2075,7 @@ class AssistantBrain(BrainCallbacksMixin):
         experiential_hint = _safe_get("experiential")
         correction_ctx = _safe_get("correction_ctx")
         learned_rules = _safe_get("learned_rules") or []
+        pending_learnings = _safe_get("pending_learnings")
 
         context["mood"] = mood_result
 
@@ -2093,6 +2108,7 @@ class AssistantBrain(BrainCallbacksMixin):
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
             irony_count_today=irony_count,
+            user_text=text,
         )
 
         # ----------------------------------------------------------------
@@ -2210,9 +2226,32 @@ class AssistantBrain(BrainCallbacksMixin):
         if jarvis_thinks:
             sections.append(("jarvis_thinks", jarvis_thinks, 2))
 
+        # MCU-JARVIS: Anomalie-Kontext — ungewoehnliche Zustaende beilaeufig erwaehnen
+        anomalies = context.get("anomalies", [])
+        if anomalies:
+            anomaly_text = (
+                "\n\nBEOBACHTUNGEN IM HAUS:\n"
+                + "\n".join(f"- {a}" for a in anomalies)
+                + "\nErwaehne maximal EINE dieser Beobachtungen beilaeufig, "
+                "wenn sie zum Gespraech passt. Nicht als Warnung, sondern "
+                "als beilaeufige Bemerkung. Beispiel: 'Uebrigens — [Beobachtung].'"
+            )
+            sections.append(("anomalies", anomaly_text, 3))
+
         # Experiential Memory: "Letztes Mal als du das gemacht hast..."
         if experiential_hint:
             sections.append(("experiential", f"\n\n{experiential_hint}", 3))
+
+        # MCU-Persoenlichkeit: Lern-Bestaetigung (einmalig pro Regel)
+        if pending_learnings:
+            _la_text = (
+                "\n\nDU HAST GERADE ETWAS GELERNT:\n"
+                f"{pending_learnings}\n"
+                "Erwaehne dies EINMAL beilaeufig in deiner Antwort. "
+                "Beispiel: 'Uebrigens — ich habe mir gemerkt, dass [Regel].' "
+                "Nicht als Hauptthema, sondern als kurze Randnotiz."
+            )
+            sections.append(("learning_ack", _la_text, 3))
 
         # --- Prio 3: Optional (RAG bei Wissensfragen Prio 1) ---
         if rag_context:
@@ -3121,6 +3160,46 @@ class AssistantBrain(BrainCallbacksMixin):
                 response_text = self.personality.get_error_response("general")
                 # Fehlgeschlagene Anfrage merken fuer Retry bei "Ja"
                 self._last_failed_query = text
+
+        # Character-Lock: Retry wenn Antwort trotz Filter noch zu LLM-artig klingt
+        _cl_cfg = cfg.yaml_config.get("character_lock", {})
+        if (_cl_cfg.get("enabled", True) and _cl_cfg.get("character_retry", True)
+                and response_text and len(response_text) > 30):
+            _llm_score = self._calculate_llm_voice_score(response_text)
+            _retry_threshold = _cl_cfg.get("retry_threshold", 3)
+            if _llm_score >= _retry_threshold:
+                logger.warning(
+                    "Character-Retry: LLM-Score %d >= Schwelle %d, versuche erneut. Original: '%s'",
+                    _llm_score, _retry_threshold, response_text[:80],
+                )
+                _char_retry_msgs = [
+                    {"role": "system", "content": (
+                        "Du bist JARVIS. Trocken, kurz, praezise. Butler-Ton.\n"
+                        "VERBOTEN: Listen, Aufzaehlungen, Erklaerungen, Begeisterung, Floskeln.\n"
+                        "Maximal 2 Saetze. Fakt + Loesung. Sonst nichts.\n"
+                        "Formuliere die folgende Antwort als JARVIS um — "
+                        "kuerzer, trockener, ohne LLM-Floskeln:\n\n"
+                        f"Original: {response_text}"
+                    )},
+                ]
+                try:
+                    _char_resp = await self.ollama.chat(
+                        messages=_char_retry_msgs, model=model,
+                        temperature=0.2, max_tokens=128, think=False,
+                    )
+                    _char_text = _char_resp.get("message", {}).get("content", "")
+                    if _char_text:
+                        from .ollama_client import strip_think_tags
+                        _char_text = strip_think_tags(_char_text).strip()
+                    if _char_text:
+                        _char_text = self._filter_response(_char_text)
+                    if _char_text and len(_char_text) < len(response_text):
+                        response_text = _char_text
+                        logger.info("Character-Retry erfolgreich: '%s'", response_text[:80])
+                    else:
+                        logger.info("Character-Retry: Ergebnis nicht kuerzer, behalte Original")
+                except Exception as e:
+                    logger.warning("Character-Retry fehlgeschlagen: %s", e)
 
         # Phase 6.9: Running Gag an Antwort anhaengen
         if gag_response and response_text:
@@ -4215,6 +4294,54 @@ class AssistantBrain(BrainCallbacksMixin):
             "Das ist eine interessante Frage",
             "Wow,", "Wow!",
             "Oh,", "Oh!",
+            # Character-Lock: Erweiterte LLM-Floskeln
+            "Es gibt verschiedene Möglichkeiten",
+            "Es gibt verschiedene Moeglichkeiten",
+            "Es gibt mehrere Möglichkeiten",
+            "Es gibt mehrere Moeglichkeiten",
+            "Hier sind einige",
+            "Hier ist eine Übersicht",
+            "Hier ist eine Uebersicht",
+            "Lass mich das erklären",
+            "Lass mich das erklaeren",
+            "Zusammenfassend lässt sich sagen",
+            "Zusammenfassend laesst sich sagen",
+            "Zusammenfassend",
+            "Darüber hinaus",
+            "Darueber hinaus",
+            "Abschließend",
+            "Abschliessend",
+            "Ich würde empfehlen",
+            "Ich wuerde empfehlen",
+            "Es gibt einige Dinge zu beachten",
+            "Ich hoffe, das hilft",
+            "Ich hoffe das hilft",
+            "Folgende Punkte",
+            "Folgende Optionen",
+            "Im Folgenden",
+            "Es ist wichtig zu beachten",
+            "Es ist wichtig zu wissen",
+            "Hier eine kurze Zusammenfassung",
+            "Hier eine Zusammenfassung",
+            "Das sind die wichtigsten Punkte",
+            "Lass mich dir zeigen",
+            "Ich erkläre dir",
+            "Ich erklaere dir",
+            "Das Wichtigste zuerst",
+            "Zunächst möchte ich",
+            "Zunaechst moechte ich",
+            "Ich möchte darauf hinweisen",
+            "Ich moechte darauf hinweisen",
+            "Das ist ein guter Punkt",
+            "Das ist ein wichtiger Punkt",
+            "Verschiedene Aspekte",
+            "Mehrere Faktoren",
+            "In diesem Zusammenhang",
+            "Im Wesentlichen",
+            "Es lässt sich festhalten",
+            "Es laesst sich festhalten",
+            "Diesbezüglich",
+            "Diesbezueglich",
         ])
         for phrase in banned_phrases:
             # Case-insensitive Entfernung mit Wortgrenzen-Check
@@ -4363,6 +4490,34 @@ class AssistantBrain(BrainCallbacksMixin):
         text = re.sub(r"^\d+\.\s+", "", text, flags=re.MULTILINE)   # 1. numbered lists
         text = re.sub(r"`(.+?)`", r"\1", text)                      # `code`
 
+        # 3e. Character-Lock: Strukturelle LLM-Muster bereinigen
+        _cl_cfg = filter_config  # bereits geladen
+        _cl_global = cfg.yaml_config.get("character_lock", {})
+        if _cl_global.get("enabled", True) and _cl_global.get("structural_filter", True):
+            # Mehrzeilige Listen zu Fliesstext zusammenfuegen
+            # (Marker wurden oben entfernt, aber Zeilenumbrueche bleiben)
+            _lines = [l.strip() for l in text.split("\n") if l.strip()]
+            if len(_lines) >= 3:
+                # Wenn die meisten Zeilen kurz sind (< 80 Zeichen) = wahrscheinlich Liste
+                _short_lines = sum(1 for l in _lines if len(l) < 80)
+                if _short_lines >= len(_lines) * 0.6:
+                    text = " ".join(_lines)
+                    logger.debug("Strukturfilter: Listen-Zeilen zu Fliesstext zusammengefuegt")
+
+            # "Option A: ..." / "Variante 1: ..." Muster entfernen
+            text = re.sub(
+                r"(?:Option|Variante|M[oö]glichkeit|Moeglichkeit)\s+\w+:\s*",
+                "", text, flags=re.IGNORECASE
+            )
+
+            # LLM-Enthusiasmus daempfen: Mehr als 2 Ausrufezeichen → nur das erste behalten
+            if text.count("!") > 2:
+                _first_excl = text.index("!")
+                text = text[:_first_excl + 1] + text[_first_excl + 1:].replace("!", ".")
+
+            # Mehrfach-Ausrufezeichen (!! / !!!) → einzelner Punkt
+            text = re.sub(r"!{2,}", ".", text)
+
         # 4. Mehrere Leerzeichen / fuehrende Leerzeichen bereinigen
         text = re.sub(r"  +", " ", text).strip()
 
@@ -4416,6 +4571,48 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.debug("Response-Filter: '%s' -> '%s'", original[:80], text[:80])
 
         return text if text else original
+
+    @staticmethod
+    def _calculate_llm_voice_score(text: str) -> int:
+        """Berechnet einen LLM-Voice-Score. Hoeher = mehr LLM-artig.
+
+        0-1: Klingt wie JARVIS
+        2: Grenzwertig
+        3+: LLM-Durchbruch, Retry empfohlen
+        """
+        score = 0
+        t = text.lower()
+
+        # Strukturelle Signale
+        if re.search(r"^\d+\.", text, re.MULTILINE):
+            score += 2  # Nummerierte Liste
+        if text.count("!") > 2:
+            score += 1  # Ueberschwenglichkeit
+        if len(re.split(r"[.!?]+", text)) > 6:
+            score += 1  # Zu viele Saetze
+        if len(text) > 400:
+            score += 1  # Zu lang
+
+        # Inhaltliche Signale — typische LLM-Phrasen
+        _llm_phrases = [
+            "es gibt verschiedene", "es gibt mehrere", "hier sind",
+            "lass mich", "zusammenfassend", "darüber hinaus",
+            "darueber hinaus", "abschliessend", "abschließend",
+            "ich würde empfehlen", "ich wuerde empfehlen",
+            "folgende punkte", "folgende optionen", "im folgenden",
+            "es ist wichtig", "ich hoffe", "ich erkläre",
+            "ich erklaere", "das wichtigste", "zunächst möchte",
+            "zunaechst moechte", "guter punkt", "wichtiger punkt",
+            "verschiedene aspekte", "mehrere faktoren",
+            "in diesem zusammenhang", "grundsätzlich", "grundsaetzlich",
+            "prinzipiell", "im wesentlichen", "diesbezüglich",
+            "diesbezueglich", "hinsichtlich", "bezüglich", "bezueglich",
+        ]
+        for phrase in _llm_phrases:
+            if phrase in t:
+                score += 1
+
+        return score
 
     async def health_check(self) -> dict:
         """Prueft den Zustand aller Komponenten."""
@@ -6135,6 +6332,111 @@ class AssistantBrain(BrainCallbacksMixin):
 
         return None
 
+    # ------------------------------------------------------------------
+    # MCU-JARVIS: "Das Uebliche" / Implizite Routinen
+    # ------------------------------------------------------------------
+
+    _DAS_UEBLICHE_PATTERNS = [
+        "das uebliche", "das übliche", "wie immer",
+        "mach fertig", "mach alles fertig", "wie gewohnt",
+        "das gleiche wie immer", "du weisst schon",
+        "mach mal", "mach das ding",
+    ]
+
+    async def _handle_das_uebliche(
+        self, text: str, person: Optional[str], room: Optional[str],
+        stream_callback=None,
+    ) -> Optional[dict]:
+        """Erkennt 'Das Uebliche' und fuehrt gelernte Routinen aus.
+
+        Verbindet sich mit der AnticipationEngine: Was macht der User
+        normalerweise um diese Tageszeit? Bei hoher Confidence ausfuehren,
+        bei mittlerer nachfragen.
+
+        Returns:
+            Response-Dict oder None wenn kein Match.
+        """
+        t = text.lower().strip().rstrip("?!.")
+        if not any(p in t for p in self._DAS_UEBLICHE_PATTERNS):
+            return None
+
+        # Konfiguration pruefen
+        _du_cfg = cfg.yaml_config.get("das_uebliche", {})
+        if not _du_cfg.get("enabled", True):
+            return None
+
+        _auto_conf = _du_cfg.get("auto_execute_confidence", 0.8)
+        _suggest_conf = _du_cfg.get("suggest_confidence", 0.6)
+        title = get_person_title(person or self._current_person)
+
+        # Anticipation Engine nach Mustern fuer JETZT fragen
+        try:
+            suggestions = await self.anticipation.get_suggestions()
+        except Exception as e:
+            logger.debug("Das Uebliche: Anticipation-Fehler: %s", e)
+            suggestions = []
+
+        if not suggestions:
+            # Kein gelerntes Muster — Jarvis gesteht das elegant ein
+            response_text = (
+                f"Ich habe noch kein festes Muster fuer diese Uhrzeit gelernt, {title}. "
+                f"Was darf es sein?"
+            )
+            self._remember_exchange(text, response_text)
+            await self._speak_and_emit(response_text, room=room)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "das_uebliche_empty",
+                "context_room": room or "unbekannt",
+                "_emitted": True,
+            }
+
+        # Beste Suggestion ausfuehren oder vorschlagen
+        best = max(suggestions, key=lambda s: s.get("confidence", 0))
+        conf = best.get("confidence", 0)
+        action = best.get("action", "")
+        args = best.get("args", {})
+        desc = best.get("description", action)
+
+        if conf >= _auto_conf and action:
+            # Hohe Confidence → ausfuehren und beilaeufig erwaehnen
+            try:
+                result = await self.executor.execute(action, args)
+                success = isinstance(result, dict) and result.get("success", False)
+                if success:
+                    response_text = f"Wie gewohnt, {title}. {desc.split('→')[-1].strip() if '→' in desc else desc}."
+                else:
+                    response_text = f"{desc} — hat nicht funktioniert. Versuch es nochmal, {title}?"
+            except Exception as e:
+                logger.debug("Das Uebliche Ausfuehrung fehlgeschlagen: %s", e)
+                response_text = f"Das Uebliche wollte nicht so recht, {title}. Was genau brauchst du?"
+
+            self._remember_exchange(text, response_text)
+            await self._speak_and_emit(response_text, room=room)
+            return {
+                "response": response_text,
+                "actions": [{"function": action, "args": args}],
+                "model_used": "das_uebliche_auto",
+                "context_room": room or "unbekannt",
+                "_emitted": True,
+            }
+        else:
+            # Mittlere Confidence → nachfragen
+            response_text = (
+                f"Um diese Zeit machst du normalerweise: {desc}. "
+                f"Soll ich, {title}?"
+            )
+            self._remember_exchange(text, response_text)
+            await self._speak_and_emit(response_text, room=room)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "das_uebliche_suggest",
+                "context_room": room or "unbekannt",
+                "_emitted": True,
+            }
+
     def _detect_smalltalk(self, text: str) -> Optional[str]:
         """Erkennt soziale Fragen und gibt eine JARVIS-Antwort zurueck.
 
@@ -6311,6 +6613,49 @@ class AssistantBrain(BrainCallbacksMixin):
                 "Ich gebe mein Bestes.",
                 "Ich tue nur meine Pflicht.",
             ]
+            return random.choice(_responses)
+
+        # --- MCU-Jarvis: Implizite Befehle (konfigurierbar) ---
+        _impl_enabled = cfg.yaml_config.get("mcu_intelligence", {}).get("implicit_commands", True)
+        if not _impl_enabled:
+            return None
+
+        # --- MCU-Jarvis: "Ich bin da" / "Bin zuhause" / "Ich bin wieder da" ---
+        _home_announce = [
+            "ich bin da", "bin zuhause", "bin zu hause",
+            "bin wieder da", "ich bin wieder da", "bin daheim",
+            "ich bin daheim", "bin heimgekommen", "ich bin zurueck",
+            "bin zurueck",
+        ]
+        if any(kw in t for kw in _home_announce):
+            # Nicht matchen wenn ein Befehl folgt (z.B. "bin da, mach Licht an")
+            if len(t.split()) <= 5:
+                _responses = [
+                    f"Willkommen, {title}. Alles in Ordnung hier.",
+                    f"{title}. Schoen, dass du da bist.",
+                    f"Willkommen zurueck, {title}.",
+                ]
+                return random.choice(_responses)
+
+        # --- MCU-Jarvis: "Alles klar?" / "Gibt's was Neues?" / "Was hab ich verpasst?" ---
+        _status_check = [
+            "alles klar", "gibts was neues", "gibt es was neues",
+            "was hab ich verpasst", "was habe ich verpasst",
+            "irgendwas passiert", "was ist los",
+            "irgendwelche neuigkeiten", "was tut sich",
+        ]
+        if any(kw in t for kw in _status_check):
+            if pending_alerts > 0:
+                _responses = [
+                    f"{pending_alerts} Sache{'n' if pending_alerts > 1 else ''} auf dem Tisch, {title}. Soll ich durchgehen?",
+                    f"Tatsaechlich — {pending_alerts} Meldung{'en' if pending_alerts > 1 else ''}. Details?",
+                ]
+            else:
+                _responses = [
+                    f"Alles ruhig, {title}. Nichts Bemerkenswertes.",
+                    f"Stille auf allen Kanaelen, {title}.",
+                    f"Nichts Ungewoehnliches, {title}. Seltener als man denkt.",
+                ]
             return random.choice(_responses)
 
         return None
@@ -6896,6 +7241,38 @@ Regeln:
         )
 
     # ------------------------------------------------------------------
+    # MCU-Persoenlichkeit: Lern-Bestaetigung
+    # ------------------------------------------------------------------
+
+    async def _get_pending_learnings(self) -> Optional[str]:
+        """Holt ausstehende Lern-Bestaetigungen aus Redis (einmalig pro Regel).
+
+        MCU-JARVIS Feature: 'Ich habe mir gemerkt, dass du abends 20 Grad bevorzugst.'
+        Jede Bestaetigung erscheint nur einmal — danach wird sie aus der Queue entfernt.
+        """
+        _la_cfg = cfg.yaml_config.get("learning_acknowledgment", {})
+        if not _la_cfg.get("enabled", True):
+            return None
+        if not self.memory.redis:
+            return None
+
+        _max = _la_cfg.get("max_per_session", 1)
+        try:
+            # LPOP: Aelteste Bestaetigung zuerst, einmalig
+            entries = []
+            for _ in range(_max):
+                raw = await self.memory.redis.lpop("mha:learning_ack:pending")
+                if not raw:
+                    break
+                entries.append(raw if isinstance(raw, str) else raw.decode("utf-8"))
+            if not entries:
+                return None
+            return " | ".join(entries)
+        except Exception as e:
+            logger.debug("Lern-Bestaetigung Fehler: %s", e)
+            return None
+
+    # ------------------------------------------------------------------
     # Intelligence Fusion: JARVIS DENKT MIT
     # Fusioniert Signale aus AnticipationEngine, LearningObserver und
     # InsightEngine in eine kompakte Kontext-Sektion fuer das LLM.
@@ -6919,6 +7296,9 @@ Regeln:
         hints: list[tuple[int, str]] = []  # (priority, text)
 
         # --- Anticipation: Erkannte Muster die JETZT zutreffen ---
+        _pred_cfg = cfg.yaml_config.get("prediction_personality", {})
+        _pred_personality = _pred_cfg.get("enabled", True)
+        _pred_show_conf = _pred_cfg.get("show_confidence", False)
         for s in anticipation_suggestions[:3]:
             conf = s.get("confidence", 0)
             desc = s.get("description", "")
@@ -6927,15 +7307,38 @@ Regeln:
             if not desc:
                 continue
 
-            if mode == "auto":
-                hints.append((1, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
-                              f"Du kannst das eigenstaendig uebernehmen und beilaeufig erwaehnen."))
-            elif mode == "suggest":
-                hints.append((2, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
-                              f"Erwaehne es beilaeufig: 'Wie gewohnt um diese Zeit — soll ich?'"))
+            _conf_hint = f" ({pct}%)" if _pred_show_conf else ""
+
+            if _pred_personality:
+                # MCU-JARVIS Persoenlichkeit in Vorhersagen
+                if mode == "auto":
+                    hints.append((1, f"VORHERSAGE{_conf_hint}: {desc}. "
+                                  f"Uebernimm eigenstaendig und erwaehne beilaeufig: 'Ich habe mir erlaubt...'"))
+                elif mode == "suggest":
+                    if conf >= 0.85:
+                        hints.append((2, f"VORHERSAGE{_conf_hint}: {desc}. "
+                                      f"Erwaehne als Butler: 'Wie gewohnt — soll ich?' oder 'Ich bereite schon mal vor.'"))
+                    else:
+                        hints.append((2, f"VORHERSAGE{_conf_hint}: {desc}. "
+                                      f"Erwaehne beilaeufig: 'Wenn mich nicht alles taeuscht — [Muster]. Soll ich?'"))
+                else:
+                    if conf < 0.65:
+                        hints.append((3, f"BEOBACHTUNG{_conf_hint}: {desc}. "
+                                      f"Nur erwaehnen wenn es passt. Tonfall: 'Noch eine Vermutung, aber...'"))
+                    else:
+                        hints.append((3, f"BEOBACHTUNG{_conf_hint}: {desc}. "
+                                      f"Nur erwaehnen wenn es passt."))
             else:
-                hints.append((3, f"BEOBACHTUNG ({pct}% sicher): {desc}. "
-                              f"Nur erwaehnen wenn es zum Gespraech passt."))
+                # Generisch ohne Persoenlichkeit
+                if mode == "auto":
+                    hints.append((1, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
+                                  f"Du kannst das eigenstaendig uebernehmen und beilaeufig erwaehnen."))
+                elif mode == "suggest":
+                    hints.append((2, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
+                                  f"Erwaehne es beilaeufig: 'Wie gewohnt um diese Zeit — soll ich?'"))
+                else:
+                    hints.append((3, f"BEOBACHTUNG ({pct}% sicher): {desc}. "
+                                  f"Nur erwaehnen wenn es zum Gespraech passt."))
 
         # --- Live-Insights: Aktuelle Haus-Erkenntnisse ---
         for insight in live_insights[:3]:
@@ -6950,6 +7353,14 @@ Regeln:
                 hints.append((2, f"HINWEIS: {msg}"))
             else:
                 hints.append((4, f"INFO: {msg}"))
+
+        # --- Cross-Referenz: Automatische Haus-Anomalien erkennen ---
+        # MCU-JARVIS wuerde auffaellige Kombinationen beilaeufig erwaehnen
+        _mcu_cfg = cfg.yaml_config.get("mcu_intelligence", {})
+        if _mcu_cfg.get("cross_references", True):
+            cross_ref = self._detect_cross_references()
+            for cr in cross_ref[:2]:
+                hints.append((cr[0], cr[1]))
 
         # --- Gelernte Muster: Haeufige User-Aktionen ---
         # Nur die Top-3 mit hoher Wiederholungszahl
@@ -6979,15 +7390,111 @@ Regeln:
 
         section = (
             "\n\nJARVIS DENKT MIT:\n"
-            "Die folgenden Erkenntnisse stammen aus deiner Muster-Erkennung, "
-            "Haus-Analyse und Lern-Beobachtung. Flechte relevante Punkte "
-            "BEILAEUFIG ein — wie ein aufmerksamer Butler, NICHT wie ein Bericht. "
-            "Nur erwaehnen was zum aktuellen Gespraech passt.\n\n"
+            "Du hast Zugriff auf folgende Beobachtungen und Erkenntnisse. "
+            "Waehle MAXIMAL EINE die zur aktuellen Anfrage passt und flechte sie "
+            "BEILAEUFIG ein — wie ein aufmerksamer Butler der etwas bemerkt hat. "
+            "Format: Zuerst die Antwort auf die Frage, dann beilaeufig der Hinweis. "
+            "Beispiel: 'Erledigt. Uebrigens — [Beobachtung].' "
+            "NICHT alle Punkte erwaehnen. NICHT als Liste. KEIN Hinweis wenn "
+            "nichts zum Gespraech passt.\n\n"
         )
         for i, hint in enumerate(selected, 1):
             section += f"{i}. {hint}\n"
 
         return section
+
+    def _detect_cross_references(self) -> list[tuple[int, str]]:
+        """Erkennt kreuz-referenzierte Anomalien im Haus-Kontext.
+
+        MCU-JARVIS-Feature: Verbindet verschiedene Datenquellen und
+        erkennt Zusammenhaenge die einzeln nicht auffallen wuerden.
+        Schnell und regelbasiert (kein LLM noetig).
+
+        Returns:
+            Liste von (priority, hint_text) Tuples.
+        """
+        results: list[tuple[int, str]] = []
+        try:
+            ctx = getattr(self, '_last_context', None)
+            if not ctx:
+                return results
+
+            house = ctx.get("house", {})
+            temps = house.get("temperatures", {})
+            lights = house.get("lights", [])
+            presence = house.get("presence", {})
+            weather = house.get("weather", {})
+            now = datetime.now()
+            hour = now.hour
+
+            # --- 1. Niemand zuhause aber Lichter an ---
+            home_persons = presence.get("home", [])
+            if not home_persons and lights:
+                light_names = [l.get("name", "") for l in lights if isinstance(l, dict)]
+                if not light_names:
+                    light_names = [str(l) for l in lights[:3]]
+                if light_names:
+                    results.append((2,
+                        f"Niemand zuhause, aber {len(light_names)} "
+                        f"Licht{'er' if len(light_names) > 1 else ''} noch an. "
+                        f"Erwaehne beilaeufig: 'Uebrigens, {light_names[0]} laeuft noch.'"
+                    ))
+
+            # --- 2. Kalte Aussentemperatur + Fenster-Kontakte offen ---
+            outdoor_temp = weather.get("temperature")
+            if outdoor_temp is not None:
+                try:
+                    outdoor_temp = float(outdoor_temp)
+                except (ValueError, TypeError):
+                    outdoor_temp = None
+            if outdoor_temp is not None and outdoor_temp < 5:
+                # Pruefen ob Fenster-Kontakte im Kontext sind
+                alerts = ctx.get("alerts", [])
+                open_windows = [a for a in alerts if "fenster" in str(a).lower() and "offen" in str(a).lower()]
+                if open_windows:
+                    results.append((1,
+                        f"Aussentemperatur {outdoor_temp}°C und Fenster offen. "
+                        f"Erwaehne als Ingenieur-Beobachtung: 'Bei {outdoor_temp} Grad und offenem Fenster "
+                        f"heizt du effektiv die Nachbarschaft mit.'"
+                    ))
+
+            # --- 3. Spaete Stunde + Lichter im ganzen Haus ---
+            if 23 <= hour or hour < 5:
+                if len(lights) >= 3:
+                    results.append((3,
+                        f"Es ist {hour}:{now.minute:02d} und {len(lights)} Lichter sind noch an. "
+                        f"Falls passend: 'Spaete Stunde. Soll ich das Haus herunterfahren?'"
+                    ))
+
+            # --- 4. Grosse Temperaturunterschiede zwischen Raeumen ---
+            if len(temps) >= 2:
+                temp_values = []
+                for room_name, temp_data in temps.items():
+                    if isinstance(temp_data, dict):
+                        t = temp_data.get("current")
+                    else:
+                        t = temp_data
+                    if t is not None:
+                        try:
+                            temp_values.append((room_name, float(t)))
+                        except (ValueError, TypeError):
+                            pass
+                if len(temp_values) >= 2:
+                    temp_values.sort(key=lambda x: x[1])
+                    coldest = temp_values[0]
+                    warmest = temp_values[-1]
+                    diff = warmest[1] - coldest[1]
+                    if diff >= 5:
+                        results.append((2,
+                            f"Temperaturgefaelle im Haus: {warmest[0]} hat {warmest[1]}°C, "
+                            f"{coldest[0]} nur {coldest[1]}°C (Differenz {diff:.1f}°C). "
+                            f"Erwaehne als Diagnose: '{coldest[0]} kuehl — Fenster oder Heizung?'"
+                        ))
+
+        except Exception as e:
+            logger.debug("Cross-Referenz Fehler: %s", e)
+
+        return results
 
     # ------------------------------------------------------------------
     # Phase 8: Konversations-Kontinuitaet
@@ -7519,19 +8026,75 @@ Regeln:
         templates = self._ERROR_PATTERNS[category]
         return random.choice(templates).format(device=device)
 
+    # MCU-JARVIS: Eskalations-Phrasen pro Severity-Stufe
+    _ESCALATION_PREFIXES = {
+        1: [  # Beilaeufig — Info
+            "Uebrigens —",
+            "Nur am Rande —",
+            "Falls es relevant ist —",
+        ],
+        2: [  # Einwand — Effizienz
+            "{title}, darf ich anmerken —",
+            "{title}, kurzer Einwand —",
+            "Eine Beobachtung, {title} —",
+        ],
+        3: [  # Sorge — Sicherheit/Schaden
+            "{title}, wenn ich darauf hinweisen darf —",
+            "{title}, das wuerde ich nicht empfehlen.",
+            "Darf ich Bedenken aeussern, {title} —",
+        ],
+        4: [  # Resignation — nach ignorierter Warnung
+            "Wie du wuenschst, {title}.",
+            "Dein Wille, {title}.",
+            "Wird umgesetzt, {title}. Die Warnung steht noch.",
+        ],
+    }
+
     async def _generate_situational_warning(
         self, func_name: str, func_args: dict, pushback: dict,
     ) -> str:
-        """Generiert eine JARVIS-artige Warnung mit Daten und Alternative.
+        """Generiert eine JARVIS-artige Warnung mit Eskalations-Stufen.
 
-        Phase 11: MCU-Stil: 'Sir, das wuerde ich nicht empfehlen —
-        Aussentemperatur liegt bei -5°C. Vorschlag: Rollladen auf 20%.'
+        MCU-Stil mit 4-Tier Severity:
+        1 = beilaeufig: "Uebrigens — die Sonne steht hoch."
+        2 = Einwand: "Darf ich anmerken — Fenster offen bei Heizung."
+        3 = Sorge: "Das wuerde ich nicht empfehlen — Sturm draussen."
+        4 = Resignation: "Wie du wuenschst." (nach ignorierter Warnung)
         """
         warnings = pushback.get("warnings", [])
         if not warnings:
             return ""
 
         title = get_person_title(self._current_person)
+        severity = pushback.get("severity", 1)
+
+        # Eskalation konfigurierbar — wenn deaktiviert, immer Stufe 2 (Einwand)
+        _pushback_cfg = cfg.yaml_config.get("pushback", {})
+        _escalation_enabled = _pushback_cfg.get("escalation_enabled", True)
+        if not _escalation_enabled:
+            severity = 2
+
+        # Pruefen ob dieselbe Warnung kuerzlich schon gegeben wurde → Resignation
+        _resignation_ttl = _pushback_cfg.get("resignation_ttl_seconds", 1800)
+        _warn_key = f"mha:pushback:warned:{func_name}:{sorted(str(w.get('type','')) for w in warnings)}"
+        if _escalation_enabled and self.memory.redis:
+            try:
+                was_warned = await self.memory.redis.get(_warn_key)
+                if was_warned:
+                    severity = 4  # Resignation — User wurde bereits gewarnt
+                else:
+                    # Warnung merken (konfigurierbarer TTL)
+                    await self.memory.redis.setex(_warn_key, _resignation_ttl, "1")
+            except Exception:
+                pass
+
+        # Prefix basierend auf Severity
+        prefix = random.choice(self._ESCALATION_PREFIXES.get(severity, self._ESCALATION_PREFIXES[1]))
+        prefix = prefix.replace("{title}", title)
+
+        # Severity 4: Kurzer Kommentar, keine Erklaerung
+        if severity == 4:
+            return prefix
 
         # Schneller Pfad: Einzel-Warnung → template-basiert (kein LLM)
         if len(warnings) == 1:
@@ -7539,8 +8102,8 @@ Regeln:
             detail = w.get("detail", "")
             alt = w.get("alternative", "")
             if alt:
-                return f"{title}, kurzer Einwand — {detail}. Vorschlag: {alt}"
-            return f"{title}, zur Info — {detail}."
+                return f"{prefix} {detail}. Vorschlag: {alt}"
+            return f"{prefix} {detail}."
 
         # Komplexer Pfad: 2+ Warnungen → LLM formuliert natuerlich
         warning_text = "\n".join(
@@ -7548,12 +8111,21 @@ Regeln:
             for w in warnings
         )
 
+        # Severity bestimmt LLM-Ton
+        tone_map = {
+            1: "beilaeufig und informativ",
+            2: "sachlich mit leichtem Einwand",
+            3: "besorgt aber trocken — Understatement statt Dramatik",
+        }
+        tone = tone_map.get(severity, "sachlich")
+
         try:
             messages = [{
                 "role": "system",
                 "content": (
                     "Du bist JARVIS. Formuliere eine KNAPPE Warnung auf Deutsch "
-                    "im Butler-Ton. Nenne die Fakten, erklaere WARUM es problematisch ist, "
+                    f"im Butler-Ton. Tonart: {tone}. "
+                    "Nenne die Fakten, erklaere WARUM es problematisch ist, "
                     f"und schlage eine Alternative vor. Sprich den User mit '{title}' an. "
                     "Maximal 2 Saetze. Trocken, nicht belehrend."
                 ),

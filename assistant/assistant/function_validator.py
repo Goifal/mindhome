@@ -267,7 +267,10 @@ class FunctionValidator:
                             pass
                         break
 
-        return {"warnings": warnings} if warnings else None
+        result = {"warnings": warnings} if warnings else None
+        if result:
+            result["severity"] = self._calculate_severity(warnings)
+        return result
 
     async def _pushback_set_light(
         self, args: dict, checks: dict
@@ -310,7 +313,10 @@ class FunctionValidator:
                         pass
                     break
 
-        return {"warnings": warnings} if warnings else None
+        result = {"warnings": warnings} if warnings else None
+        if result:
+            result["severity"] = self._calculate_severity(warnings)
+        return result
 
     async def _pushback_set_cover(
         self, args: dict, checks: dict
@@ -382,7 +388,53 @@ class FunctionValidator:
                     "alternative": "Markise erst bei Windstille ausfahren",
                 })
 
-        return {"warnings": warnings} if warnings else None
+        result = {"warnings": warnings} if warnings else None
+        if result:
+            result["severity"] = self._calculate_severity(warnings)
+        return result
+
+    # ------------------------------------------------------------------
+    # MCU-JARVIS: Eskalations-Stufen (4-Tier Severity)
+    # ------------------------------------------------------------------
+
+    # Severity-Gewichte pro Warning-Typ
+    _SEVERITY_WEIGHTS = {
+        # Stufe 1: Beilaeuifig (Info)
+        "daylight": 1,
+        "empty_room": 1,
+        # Stufe 2: Einwand (Effizienz)
+        "open_window": 2,
+        "unnecessary_heating": 2,
+        "cold_outside": 2,
+        # Stufe 3: Sorge (Sicherheit/Schaden)
+        "storm_warning": 3,
+        "rain_markise": 3,
+        "wind_markise": 3,
+    }
+
+    @staticmethod
+    def _calculate_severity(warnings: list[dict]) -> int:
+        """Berechnet die Eskalationsstufe basierend auf den Warnungen.
+
+        4-Stufen-Modell wie MCU-JARVIS:
+        1 = beilaeufig: "Uebrigens..." (Info, kein Risiko)
+        2 = Einwand: "Darf ich anmerken..." (Effizienz-Bedenken)
+        3 = Sorge: "{title}, kurzer Einwand —" (Sicherheit/Schaden)
+        4 = Resignation: "Wie du wuenschst, {title}." (nach ignorierter Warnung)
+
+        Returns:
+            Severity 1-3 (4 wird zur Laufzeit bei Wiederholung gesetzt)
+        """
+        if not warnings:
+            return 1
+        max_weight = max(
+            FunctionValidator._SEVERITY_WEIGHTS.get(w.get("type", ""), 1)
+            for w in warnings
+        )
+        # Mehrere Warnungen gleichzeitig → Stufe mindestens 2
+        if len(warnings) >= 2 and max_weight < 2:
+            max_weight = 2
+        return min(3, max_weight)
 
     @staticmethod
     def format_pushback_warnings(pushback: dict) -> str:

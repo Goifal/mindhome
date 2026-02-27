@@ -990,6 +990,33 @@ const HELP_TEXTS = {
   'feedback.score_reduce': {title:'Reduzieren unter', text:'Unter diesem Score wird Feature reduziert.'},
   'feedback.score_normal': {title:'Normal ab', text:'Ab diesem Score normales Verhalten.'},
   'feedback.score_boost': {title:'Boost ab', text:'Ab diesem Score wird Feature verstaerkt.'},
+  // === MCU-INTELLIGENZ ===
+  'mcu_intelligence.proactive_thinking': {title:'Proaktives Mitdenken', text:'Jarvis denkt bei jeder Antwort mit und erwaehnt beilaeufig relevante Haus-Beobachtungen. Das Markenzeichen von MCU-JARVIS.'},
+  'mcu_intelligence.engineering_diagnosis': {title:'Diagnose-Stil', text:'Bei Problemen analysiert Jarvis wie ein Ingenieur: Beobachtung → Hypothese → Empfehlung. Statt nur "17 Grad" sagt er "17 Grad — Fenster offen seit 14:30, in 40 Min wieder auf Soll."'},
+  'mcu_intelligence.cross_references': {title:'Kreuz-Referenzierung', text:'Verbindet automatisch verschiedene Datenquellen: Licht an + niemand da, kalte Aussentemperatur + Fenster offen, spaete Stunde + viele Lichter, Temperatur-Gefaelle zwischen Raeumen.'},
+  'mcu_intelligence.anomaly_detection': {title:'Anomalie-Erkennung', text:'Erkennt ungewoehnliche Haus-Zustaende und liefert sie als Kontext: Waschmaschine seit 3h auf Pause, Batterie bei 10%, etc.'},
+  'mcu_intelligence.implicit_commands': {title:'Implizite Befehle', text:'Versteht natuerliche Phrasen wie "Bin da", "Alles klar?", "Gibts was Neues?" und antwortet kontextbezogen statt woertlich.'},
+  'insights.checks.calendar_weather_cross': {title:'Kalender + Wetter', text:'Termin morgen frueh + Regen = "Schirm nicht vergessen." MCU-JARVIS-Stil Kreuz-Referenz.'},
+  'insights.checks.comfort_contradiction': {title:'Komfort-Widerspruch', text:'Heizung laeuft + Fenster offen = "Energetisch nicht ganz optimal." Erkennt Komfort-Widersprueche.'},
+  'spontaneous.checks.house_efficiency': {title:'Haus-Effizienz', text:'Bemerkt wenn das Haus effizient laeuft ("Vorbildlich.") oder Ressourcen verschwendet ("Leere Wohnung, 5 Lichter an.").'},
+  // === MCU-PERSOENLICHKEIT ===
+  'conversation_callbacks.enabled': {title:'Konversations-Rueckbezuege', text:'Jarvis referenziert vergangene Gespraeche natuerlich: "Wie am Dienstag besprochen..." oder "Drittes Mal diese Woche, dass du die Heizung aenderst..." Nutzt das vorhandene Gedaechtnis mit Persoenlichkeit.'},
+  'conversation_callbacks.personality_style': {title:'Referenz-Stil', text:'Beilaeufig = trockener Humor und Understatement. Direkt = sachliche Referenzen ohne Witz.'},
+  'learning_acknowledgment.enabled': {title:'Lern-Bestaetigung', text:'Wenn Jarvis eine neue Regel lernt (z.B. "User bevorzugt 20 Grad abends"), erwaehnt er es einmalig: "Ich habe mir gemerkt, dass..." Erscheint nur 1x pro Regel.'},
+  'learning_acknowledgment.max_per_session': {title:'Max. pro Gespraech', text:'Wie viele Lern-Bestaetigungen Jarvis maximal pro Gespraechs-Session zeigt. Mehr = informativer, weniger = eleganter.'},
+  'prediction_personality.enabled': {title:'Vorhersage-Persoenlichkeit', text:'Vorhersagen werden mit Charakter formuliert statt generisch. "Wie gewohnt — soll ich?" statt "Erkanntes Muster: ...". Konfidenz beeinflusst den Ton.'},
+  'prediction_personality.show_confidence': {title:'Konfidenz anzeigen', text:'Zeigt den Sicherheitswert der Vorhersage in Prozent. Aus = eleganter Butler-Stil, An = transparenter Ingenieur-Stil.'},
+  'weather_personality.enabled': {title:'Wetter-Persoenlichkeit', text:'Jarvis flicht aktuelle Wetterdaten beilaeufig in Antworten ein: "Heizung auf 24 — bei 28 Grad draussen eher ambitioniert." oder "Guter Tag fuer offene Fenster."'},
+  'weather_personality.intensity': {title:'Wetter-Intensitaet', text:'Subtil = nur bei extremem Wetter. Normal = wenn es zur Anfrage passt. Ausfuehrlich = haeufiger mit Wetter-Kommentaren.'},
+  'self_awareness.enabled': {title:'Selbst-Bewusstsein', text:'Jarvis kommentiert eigene Faehigkeiten und Grenzen mit Charakter: "Das uebersteigt meine aktuelle Sensorik." Bei Fehlern: "Das war... suboptimal."'},
+  'self_awareness.meta_humor': {title:'Meta-Humor', text:'Selbstironische Bemerkungen ueber eigene Algorithmen: "Meine Prognose-Modelle deuten auf... nennen wir es eine fundierte Vermutung." Ohne: sachlichere Selbsteinschaetzung.'},
+  'proactive_personality.enabled': {title:'Proaktive Persoenlichkeit', text:'Proaktive Meldungen und Briefings bekommen Charakter basierend auf Tageszeit und Situation: "Ambitioniert, Sir." (6 Uhr morgens) oder "Das Wochenend-Briefing, wenn du gestattest."'},
+  'proactive_personality.sarcasm_in_notifications': {title:'Sarkasmus in Meldungen', text:'Proaktive Meldungen duerfen trockenen Humor enthalten: "Waschmaschine fertig. Zum dritten Mal diese Woche — Rekordverdaechtig." Ohne: rein sachliche Meldungen.'},
+  'character_lock.enabled': {title:'Charakter-Lock', text:'Aktiviert den dreistufigen Schutz gegen LLM-Durchbruch. Verhindert dass Jarvis wie ein generischer KI-Assistent klingt statt wie J.A.R.V.I.S.'},
+  'character_lock.closing_anchor': {title:'Prompt-Anker', text:'Fuegt eine Charakter-Erinnerung am ENDE des System Prompts ein (nach allen Kontext-Daten). LLMs gewichten das Prompt-Ende stark — das ist die wirksamste Einzelmassnahme.'},
+  'character_lock.structural_filter': {title:'Struktureller Filter', text:'Erkennt typische LLM-Strukturen wie nummerierte Listen, Bullet Points und Aufzaehlungen und wandelt sie in Fliesstext um. JARVIS listet nicht auf — er spricht.'},
+  'character_lock.character_retry': {title:'Character-Retry', text:'Wenn eine Antwort trotz Filter noch zu LLM-artig klingt (Score >= Schwelle), wird automatisch ein zweiter Versuch mit hartem JARVIS-Prompt gestartet.'},
+  'character_lock.retry_threshold': {title:'Retry-Empfindlichkeit', text:'Ab welchem LLM-Score ein Retry ausgeloest wird. 1 = sehr empfindlich (fast jede Antwort wird geprueft), 3 = normal (nur bei deutlichem LLM-Durchbruch), 5 = nur bei starkem Bruch.'},
 };
 
 function helpBtn(path) {
@@ -1987,6 +2014,22 @@ function renderMood() {
       'pennen','heia','einschlafen','nachts'
     ])
   ) +
+  sectionWrap('&#127919;', 'Stimmung x Komplexitaet — Antwortlaenge',
+    fInfo('MCU-JARVIS passt seine Antwortlaenge an deine Stimmung UND die Komplexitaet der Frage an. Bei Stress: ultra-kurz. Bei guter Laune und komplexer Frage: ausfuehrlich. Werte = maximale Saetze.') +
+    fToggle('mood_complexity.enabled', 'Mood x Complexity Matrix aktiv') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Gute Laune</div>' +
+    fRange('mood_complexity.matrix.good.simple', 'Einfacher Befehl', 1, 5, 1, {1:'1',2:'2',3:'3',4:'4',5:'5'}) +
+    fRange('mood_complexity.matrix.good.medium', 'Mittlere Frage', 1, 6, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6'}) +
+    fRange('mood_complexity.matrix.good.complex', 'Komplexe Analyse', 1, 8, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6',7:'7',8:'8'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Neutral</div>' +
+    fRange('mood_complexity.matrix.neutral.simple', 'Einfacher Befehl', 1, 5, 1, {1:'1',2:'2',3:'3',4:'4',5:'5'}) +
+    fRange('mood_complexity.matrix.neutral.medium', 'Mittlere Frage', 1, 6, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6'}) +
+    fRange('mood_complexity.matrix.neutral.complex', 'Komplexe Analyse', 1, 8, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6',7:'7',8:'8'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Gestresst / Frustriert / Muede</div>' +
+    fRange('mood_complexity.matrix.stressed.simple', 'Einfacher Befehl', 1, 5, 1, {1:'1',2:'2',3:'3',4:'4',5:'5'}) +
+    fRange('mood_complexity.matrix.stressed.medium', 'Mittlere Frage', 1, 6, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6'}) +
+    fRange('mood_complexity.matrix.stressed.complex', 'Komplexe Analyse', 1, 8, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6',7:'7',8:'8'})
+  ) +
   sectionWrap('&#127908;', 'Stimm-Analyse',
     fInfo('Der Assistent erkennt anhand deiner Sprechgeschwindigkeit ob du gestresst, muede oder entspannt bist.') +
     fToggle('voice_analysis.enabled', 'Stimm-Analyse aktiv') +
@@ -2404,6 +2447,21 @@ function renderProactive() {
     fRange('anticipation.thresholds.suggest', '...vorschlagen?', 0, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%'}) +
     fRange('anticipation.thresholds.auto', '...automatisch ausfuehren?', 0, 1, 0.05, {0.7:'70%',0.8:'80%',0.9:'90%',0.95:'95%',1:'100%'})
   ) +
+  sectionWrap('&#128218;', 'Rueckkehr-Briefing',
+    fInfo('Wenn du das Haus verlaesst, sammelt Jarvis alle Events. Bei Rueckkehr erhaeltst du ein kompaktes Briefing — z.B. "Waehrend deiner Abwesenheit (2h): Jemand hat geklingelt, Waschmaschine fertig."') +
+    fToggle('return_briefing.enabled', 'Rueckkehr-Briefing aktiv') +
+    fRange('return_briefing.max_events', 'Max. Events pro Briefing', 5, 50, 5, {5:'5',10:'10',15:'15',20:'20',30:'30',50:'50'}) +
+    fRange('return_briefing.ttl_hours', 'Max. Sammel-Dauer', 4, 48, 4, {4:'4 Std',8:'8 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Events im Briefing</div>' +
+    fToggle('return_briefing.event_types.doorbell', 'Tuerklingel') +
+    fToggle('return_briefing.event_types.person_arrived', 'Person angekommen') +
+    fToggle('return_briefing.event_types.person_left', 'Person gegangen') +
+    fToggle('return_briefing.event_types.washer_done', 'Waschmaschine/Trockner fertig') +
+    fToggle('return_briefing.event_types.weather_warning', 'Wetter-Warnungen') +
+    fToggle('return_briefing.event_types.low_battery', 'Batterie niedrig') +
+    fToggle('return_briefing.event_types.maintenance_due', 'Wartung faellig') +
+    fToggle('return_briefing.event_types.conditional_executed', 'Wenn-Dann-Regeln ausgefuehrt')
+  ) +
   sectionWrap('&#129504;', 'Jarvis denkt voraus',
     fInfo('Kreuz-referenziert Wetter, Kalender, Energie und Geraete-Status — und meldet sich proaktiv. Z.B. "Es wird gleich regnen, Fenster sind noch offen."') +
     fToggle('insights.enabled', 'Insights aktiv') +
@@ -2417,6 +2475,8 @@ function renderProactive() {
     fToggle('insights.checks.away_devices', 'Abwesend + Licht/Fenster offen') +
     fToggle('insights.checks.temp_drop', 'Ungewoehnlicher Temperatur-Abfall') +
     fToggle('insights.checks.window_temp_drop', 'Fenster offen + grosse Temp-Differenz') +
+    fToggle('insights.checks.calendar_weather_cross', 'Kalender-Termin + Regen/Sturm') +
+    fToggle('insights.checks.comfort_contradiction', 'Heizung + offenes Fenster') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Schwellwerte</div>' +
     fRange('insights.thresholds.frost_temp_c', 'Frost-Warnung ab', -10, 10, 1, {'-5':'-5\u00B0C',0:'0\u00B0C',2:'2\u00B0C',5:'5\u00B0C'}) +
     fRange('insights.thresholds.energy_anomaly_percent', 'Energie-Abweichung', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'}) +
@@ -2433,6 +2493,43 @@ function renderJarvisFeatures() {
     fToggle('progressive_responses.show_context_step', '"Ich pruefe den Hausstatus..." anzeigen') +
     fToggle('progressive_responses.show_thinking_step', '"Einen Moment, ich ueberlege..." anzeigen') +
     fToggle('progressive_responses.show_action_step', '"Ich fuehre das aus..." anzeigen')
+  ) +
+  sectionWrap('&#129504;', 'MCU-Intelligenz',
+    fInfo('Kern-Features die Jarvis wie MCU-JARVIS denken lassen: Proaktives Mitdenken, Ingenieur-Diagnosen, Kreuz-Referenzierung, Anomalie-Erkennung und implizite Befehle. Jedes Feature kann einzeln deaktiviert werden. Aenderungen wirken sofort.') +
+    fToggle('mcu_intelligence.proactive_thinking', 'Proaktives Mitdenken') +
+    fToggle('mcu_intelligence.engineering_diagnosis', 'Ingenieur-Diagnose-Stil') +
+    fToggle('mcu_intelligence.cross_references', 'Kreuz-Referenzierung (Haus-Daten)') +
+    fToggle('mcu_intelligence.anomaly_detection', 'Anomalie-Erkennung im Kontext') +
+    fToggle('mcu_intelligence.implicit_commands', 'Implizite Befehle ("Bin da", "Alles klar?")')
+  ) +
+  sectionWrap('&#127917;', 'MCU-Persoenlichkeit',
+    fInfo('Persoenlichkeits-Features die Jarvis mehr wie MCU-JARVIS wirken lassen: natuerliche Rueckbezuege auf vergangene Gespraeche, Lern-Bestaetigungen, Vorhersagen mit Charakter, Wetter-Kommentare, Selbst-Bewusstsein und proaktive Persoenlichkeit. Aenderungen wirken sofort.') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Konversations-Rueckbezuege</div>' +
+    fToggle('conversation_callbacks.enabled', 'Rueckbezuege auf vergangene Gespraeche') +
+    fSelect('conversation_callbacks.personality_style', 'Referenz-Stil', [{v:'beilaeufig',l:'Beilaeufig (trockener Humor)'},{v:'direkt',l:'Direkt (sachlich)'}]) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Lern-Bestaetigung</div>' +
+    fToggle('learning_acknowledgment.enabled', '"Ich habe mir gemerkt..." Meldungen') +
+    fRange('learning_acknowledgment.max_per_session', 'Max. pro Gespraech', 1, 3, 1, {1:'1x',2:'2x',3:'3x'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Vorhersage-Persoenlichkeit</div>' +
+    fToggle('prediction_personality.enabled', 'Vorhersagen mit Charakter') +
+    fToggle('prediction_personality.show_confidence', 'Konfidenz in Prozent anzeigen') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Wetter in Persoenlichkeit</div>' +
+    fToggle('weather_personality.enabled', 'Wetter beilaeufig einflechten') +
+    fSelect('weather_personality.intensity', 'Intensitaet', [{v:'subtil',l:'Subtil (nur Extreme)'},{v:'normal',l:'Normal'},{v:'ausfuehrlich',l:'Ausfuehrlich'}]) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Selbst-Bewusstsein &amp; Meta-Humor</div>' +
+    fToggle('self_awareness.enabled', 'Selbst-Bewusstsein aktiv') +
+    fToggle('self_awareness.meta_humor', 'Meta-Humor ueber eigene Algorithmen') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Proaktive Persoenlichkeit</div>' +
+    fToggle('proactive_personality.enabled', 'Briefings mit Charakter') +
+    fToggle('proactive_personality.sarcasm_in_notifications', 'Trockener Humor in Meldungen')
+  ) +
+  sectionWrap('&#128274;', 'Charakter-Schutz',
+    fInfo('Verhindert dass das LLM aus der JARVIS-Rolle faellt und typische KI-Floskeln verwendet. Dreistufiger Schutz: Prompt-Anker am Ende, struktureller Post-Filter und automatischer Character-Retry.') +
+    fToggle('character_lock.enabled', 'Charakter-Lock aktiviert') +
+    fToggle('character_lock.closing_anchor', 'Prompt-Anker (Erinnerung am Prompt-Ende)') +
+    fToggle('character_lock.structural_filter', 'Struktureller Filter (Listen/Aufzaehlungen entfernen)') +
+    fToggle('character_lock.character_retry', 'Automatischer Retry bei LLM-Durchbruch') +
+    fRange('character_lock.retry_threshold', 'Retry-Empfindlichkeit', 1, 5, 1, ['Sehr empfindlich','','Normal','','Nur bei starkem Bruch'])
   ) +
   sectionWrap('&#128221;', 'Benannte Protokolle',
     fInfo('Multi-Step-Sequenzen per Sprache erstellen und ausfuehren. Z.B. "Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu, TV an" — dann reicht "Filmabend" zum Ausfuehren.') +
@@ -2456,7 +2553,8 @@ function renderJarvisFeatures() {
     fToggle('spontaneous.checks.energy_comparison', 'Energie-Vergleich mit Vorwoche') +
     fToggle('spontaneous.checks.streak', 'Wetter-Streaks & Fun Facts') +
     fToggle('spontaneous.checks.usage_record', 'Nutzungs-Rekorde') +
-    fToggle('spontaneous.checks.device_milestone', 'Geraete-Meilensteine')
+    fToggle('spontaneous.checks.device_milestone', 'Geraete-Meilensteine') +
+    fToggle('spontaneous.checks.house_efficiency', 'Haus-Effizienz Beobachtungen')
   ) +
   sectionWrap('&#9888;', 'Daten-basierter Widerspruch',
     fInfo('Vor einer Aktion prueft Jarvis Live-Daten und warnt konkret — z.B. "Heizung auf 25? Das Bad-Fenster ist offen." Aktion wird trotzdem ausgefuehrt, aber die Warnung erwaehnt.') +
@@ -2466,7 +2564,11 @@ function renderJarvisFeatures() {
     fToggle('pushback.checks.empty_room', 'Leerer Raum bei Heizung/Licht') +
     fToggle('pushback.checks.daylight', 'Tageslicht bei Licht einschalten') +
     fToggle('pushback.checks.storm_warning', 'Sturmwarnung bei Rolladen oeffnen') +
-    fToggle('pushback.checks.unnecessary_heating', 'Heizung bei warmem Wetter')
+    fToggle('pushback.checks.unnecessary_heating', 'Heizung bei warmem Wetter') +
+    '<div style="margin:16px 0 12px;font-weight:600;font-size:13px;">Eskalations-Stufen</div>' +
+    fInfo('Wie MCU-JARVIS: Warnungen werden je nach Schwere anders formuliert. Stufe 1 = beilaeufig ("Uebrigens..."), Stufe 2 = Einwand ("Darf ich anmerken..."), Stufe 3 = Sorge ("Das wuerde ich nicht empfehlen."), Stufe 4 = Resignation bei wiederholter Warnung ("Wie du wuenschst.").') +
+    fToggle('pushback.escalation_enabled', 'Eskalations-Stufen aktiv') +
+    fRange('pushback.resignation_ttl_seconds', 'Wiederholungs-Erkennung', 300, 3600, 300, {300:'5 Min',600:'10 Min',900:'15 Min',1800:'30 Min',3600:'1 Std'})
   ) +
   sectionWrap('&#127925;', 'Smart DJ',
     fInfo('Jarvis empfiehlt kontextbewusst Musik basierend auf Stimmung, Aktivitaet und Tageszeit. Sag z.B. "Spiel mal was Passendes" — Jarvis waehlt das Genre und lernt aus deinem Feedback.') +
@@ -2482,6 +2584,12 @@ function renderJarvisFeatures() {
     fToggle('visitor_management.auto_guest_mode', 'Gaeste-Modus automatisch aktivieren') +
     fRange('visitor_management.ring_cooldown_seconds', 'Klingel-Cooldown', 10, 120, 10, {10:'10s',30:'30s',60:'1 Min',120:'2 Min'}) +
     fRange('visitor_management.history_max', 'Max. Besucher-History', 20, 500, 20, {20:'20',50:'50',100:'100',200:'200',500:'500'})
+  ) +
+  sectionWrap('&#128260;', '"Das Uebliche" — Implizite Routinen',
+    fInfo('Sage "das Uebliche", "wie immer" oder "mach fertig" — Jarvis erkennt gelernte Muster fuer die aktuelle Tageszeit und fuehrt sie aus. Basiert auf dem Vorausdenken-Modul (Anticipation Engine).') +
+    fToggle('das_uebliche.enabled', '"Das Uebliche" aktiv') +
+    fRange('das_uebliche.auto_execute_confidence', 'Auto-Ausfuehren ab Sicherheit', 0.5, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%',1:'100%'}) +
+    fRange('das_uebliche.suggest_confidence', 'Nachfragen ab Sicherheit', 0.3, 1, 0.05, {0.3:'30%',0.4:'40%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'})
   );
 }
 

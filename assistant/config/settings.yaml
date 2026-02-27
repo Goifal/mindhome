@@ -12,12 +12,84 @@ boot_sequence:
 pushback:
   enabled: true
   confirmation_timeout: 120
+  escalation_enabled: true
+  resignation_ttl_seconds: 1800
   checks:
     open_windows: true
     empty_room: true
     daylight: true
     storm_warning: true
     unnecessary_heating: true
+das_uebliche:
+  enabled: true
+  auto_execute_confidence: 0.8
+  suggest_confidence: 0.6
+return_briefing:
+  enabled: true
+  max_events: 20
+  ttl_hours: 24
+  event_types:
+    doorbell: true
+    person_arrived: true
+    person_left: true
+    washer_done: true
+    weather_warning: true
+    low_battery: true
+    maintenance_due: true
+    conditional_executed: true
+mcu_intelligence:
+  proactive_thinking: true
+  engineering_diagnosis: true
+  cross_references: true
+  anomaly_detection: true
+  implicit_commands: true
+conversation_callbacks:
+  enabled: true
+  personality_style: beilaeufig
+learning_acknowledgment:
+  enabled: true
+  max_per_session: 1
+prediction_personality:
+  enabled: true
+  show_confidence: false
+weather_personality:
+  enabled: true
+  intensity: normal
+self_awareness:
+  enabled: true
+  meta_humor: true
+proactive_personality:
+  enabled: true
+  sarcasm_in_notifications: true
+character_lock:
+  enabled: true
+  closing_anchor: true
+  structural_filter: true
+  character_retry: true
+  retry_threshold: 3
+mood_complexity:
+  enabled: true
+  matrix:
+    good:
+      simple: 2
+      medium: 3
+      complex: 5
+    neutral:
+      simple: 2
+      medium: 3
+      complex: 4
+    stressed:
+      simple: 1
+      medium: 2
+      complex: 3
+    frustrated:
+      simple: 1
+      medium: 2
+      complex: 3
+    tired:
+      simple: 1
+      medium: 2
+      complex: 3
 wellness:
   enabled: true
   check_interval_minutes: 60
@@ -421,6 +493,8 @@ insights:
     away_devices: true
     temp_drop: true
     window_temp_drop: true
+    calendar_weather_cross: true
+    comfort_contradiction: true
   thresholds:
     frost_temp_c: 2
     energy_anomaly_percent: 30
@@ -898,6 +972,7 @@ spontaneous:
     streak: true
     usage_record: true
     device_milestone: true
+    house_efficiency: true
 # --- Jarvis-Features: Emotionales Gedaechtnis ---
 emotional_memory:
   enabled: true

@@ -12,6 +12,48 @@ boot_sequence:
 pushback:
   enabled: true
   confirmation_timeout: 120
+  escalation_enabled: true
+  resignation_ttl_seconds: 1800
+das_uebliche:
+  enabled: true
+  auto_execute_confidence: 0.8
+  suggest_confidence: 0.6
+return_briefing:
+  enabled: true
+  max_events: 20
+  ttl_hours: 24
+mcu_intelligence:
+  proactive_thinking: true
+  engineering_diagnosis: true
+  cross_references: true
+  anomaly_detection: true
+  implicit_commands: true
+conversation_callbacks:
+  enabled: true
+  personality_style: beilaeufig
+learning_acknowledgment:
+  enabled: true
+  max_per_session: 1
+prediction_personality:
+  enabled: true
+  show_confidence: false
+weather_personality:
+  enabled: true
+  intensity: normal
+self_awareness:
+  enabled: true
+  meta_humor: true
+proactive_personality:
+  enabled: true
+  sarcasm_in_notifications: true
+character_lock:
+  enabled: true
+  closing_anchor: true
+  structural_filter: true
+  character_retry: true
+  retry_threshold: 3
+mood_complexity:
+  enabled: true
 wellness:
   enabled: true
   check_interval_minutes: 15

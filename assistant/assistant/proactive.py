@@ -402,6 +402,13 @@ class ProactiveManager:
                 if absence_summary:
                     status["absence_summary"] = absence_summary
 
+                # MCU-JARVIS: Rueckkehr-Briefing aus gesammelten Events
+                _rb_cfg = yaml_config.get("return_briefing", {})
+                if _rb_cfg.get("enabled", True):
+                    return_briefing = await self._build_return_briefing(name)
+                    if return_briefing:
+                        status["return_briefing"] = return_briefing
+
                 await self._notify("person_arrived", MEDIUM, {
                     "person": name,
                     "status_report": status,
@@ -413,6 +420,9 @@ class ProactiveManager:
                     "person": name,
                     "departure_check": True,
                 })
+                # MCU-JARVIS: Abwesenheits-Akkumulator starten
+                if yaml_config.get("return_briefing", {}).get("enabled", True):
+                    await self._start_absence_accumulator(name)
 
         # Phase 7.4: Geo-Fence Proximity (proximity.home Entity)
         elif entity_id.startswith("proximity.") or entity_id.startswith("sensor.") and "distance" in entity_id:
@@ -1018,6 +1028,12 @@ class ProactiveManager:
     async def _notify(self, event_type: str, urgency: str, data: dict):
         """Prueft ob gemeldet werden soll und erzeugt Meldung."""
 
+        # MCU-JARVIS: Event fuer Rueckkehr-Briefing akkumulieren
+        try:
+            await self._accumulate_event(event_type, urgency, data)
+        except Exception:
+            pass  # Akkumulation darf nie den Hauptpfad blockieren
+
         # Quiet Hours: Nur CRITICAL darf nachts durch
         if urgency != CRITICAL and self._is_quiet_hours():
             logger.info("Meldung unterdrueckt (Quiet Hours): [%s] %s", urgency, event_type)
@@ -1254,6 +1270,171 @@ class ProactiveManager:
             logger.debug("Fehler beim Status-Bericht: %s", e)
 
         return status
+
+    # ------------------------------------------------------------------
+    # MCU-JARVIS: Rueckkehr-Briefing (Event-Akkumulator)
+    # ------------------------------------------------------------------
+    # Sammelt Events waehrend eine Person weg ist und liefert ein
+    # kompaktes Briefing bei Rueckkehr. Wie JARVIS der Tony Stark
+    # nach der Landung auf dem Laufenden haelt.
+
+    _RETURN_BRIEFING_KEY = "mha:return_briefing:{person}"
+
+    # Default Event-Typen (ueberschrieben durch settings.yaml return_briefing.event_types)
+    _DEFAULT_BRIEFING_EVENT_TYPES = frozenset([
+        "doorbell", "person_arrived", "person_left",
+        "washer_done", "dryer_done", "weather_warning",
+        "low_battery", "entity_offline", "maintenance_due",
+        "conditional_executed", "learning_suggestion",
+        "threat_detected", "energy_price_high", "solar_surplus",
+    ])
+
+    def _get_briefing_config(self) -> tuple:
+        """Liest Return-Briefing Config: (ttl_seconds, max_events, event_types)."""
+        rb_cfg = yaml_config.get("return_briefing", {})
+        ttl = rb_cfg.get("ttl_hours", 24) * 3600
+        max_events = rb_cfg.get("max_events", 20)
+        # Event-Typen aus Config: nur aktivierte Typen
+        cfg_types = rb_cfg.get("event_types", {})
+        if cfg_types:
+            active = {k for k, v in cfg_types.items() if v}
+            event_types = active if active else self._DEFAULT_BRIEFING_EVENT_TYPES
+        else:
+            event_types = self._DEFAULT_BRIEFING_EVENT_TYPES
+        return ttl, max_events, event_types
+
+    async def _start_absence_accumulator(self, person_name: str):
+        """Startet die Event-Sammlung fuer eine weggehende Person."""
+        if not self.brain.memory.redis:
+            return
+        try:
+            ttl, _, _ = self._get_briefing_config()
+            key = self._RETURN_BRIEFING_KEY.format(person=person_name.lower())
+            # Initialer Eintrag mit Abgangszeit
+            initial = json.dumps({
+                "departed": datetime.now().isoformat(),
+                "events": [],
+            })
+            await self.brain.memory.redis.setex(key, ttl, initial)
+            logger.info("Rueckkehr-Briefing Akkumulator gestartet fuer %s", person_name)
+        except Exception as e:
+            logger.debug("Akkumulator-Start fehlgeschlagen: %s", e)
+
+    async def _accumulate_event(self, event_type: str, urgency: str, data: dict):
+        """Fuegt ein Event zum Rueckkehr-Briefing aller abwesender Personen hinzu.
+
+        Wird aus _notify() aufgerufen — sammelt nur relevante Events.
+        """
+        _, max_events, event_types = self._get_briefing_config()
+        if event_type not in event_types:
+            return
+        if not self.brain.memory.redis:
+            return
+
+        # Alle aktiven Akkumulatoren finden (person.* away)
+        try:
+            keys = []
+            async for key in self.brain.memory.redis.scan_iter("mha:return_briefing:*"):
+                keys.append(key)
+
+            if not keys:
+                return
+
+            event_entry = {
+                "type": event_type,
+                "urgency": urgency,
+                "summary": self.event_handlers.get(event_type, (MEDIUM, event_type))[1],
+                "time": datetime.now().strftime("%H:%M"),
+                "detail": data.get("person", data.get("entity", "")),
+            }
+
+            for key in keys:
+                raw = await self.brain.memory.redis.get(key)
+                if not raw:
+                    continue
+                briefing_data = json.loads(raw)
+                events = briefing_data.get("events", [])
+                # Max Events pro Abwesenheit (konfigurierbar)
+                if len(events) < max_events:
+                    events.append(event_entry)
+                    briefing_data["events"] = events
+                    ttl = await self.brain.memory.redis.ttl(key)
+                    if ttl and ttl > 0:
+                        await self.brain.memory.redis.setex(
+                            key, ttl, json.dumps(briefing_data)
+                        )
+        except Exception as e:
+            logger.debug("Event-Akkumulation fehlgeschlagen: %s", e)
+
+    async def _build_return_briefing(self, person_name: str) -> str:
+        """Baut ein kompaktes Rueckkehr-Briefing aus gesammelten Events.
+
+        Returns:
+            Briefing-Text oder leerer String.
+        """
+        if not self.brain.memory.redis:
+            return ""
+
+        key = self._RETURN_BRIEFING_KEY.format(person=person_name.lower())
+        try:
+            raw = await self.brain.memory.redis.get(key)
+            if not raw:
+                return ""
+
+            briefing_data = json.loads(raw)
+            events = briefing_data.get("events", [])
+            departed = briefing_data.get("departed", "")
+
+            # Aufraeumen — Akkumulator entfernen
+            await self.brain.memory.redis.delete(key)
+
+            if not events:
+                return ""
+
+            # Kompaktes Briefing zusammenbauen
+            # Gruppiere nach Typ, zaehle Mehrfach-Events
+            from collections import Counter
+            type_counts = Counter(e.get("type", "") for e in events)
+
+            lines = []
+            for evt_type, count in type_counts.most_common():
+                summary = self.event_handlers.get(evt_type, (MEDIUM, evt_type))[1]
+                # Details der letzten Instanz dieses Typs
+                last_event = next(
+                    (e for e in reversed(events) if e.get("type") == evt_type), {}
+                )
+                detail = last_event.get("detail", "")
+                time_str = last_event.get("time", "")
+
+                if count > 1:
+                    lines.append(f"{summary} ({count}x)")
+                elif detail:
+                    lines.append(f"{summary}: {detail} ({time_str})")
+                else:
+                    lines.append(f"{summary} ({time_str})")
+
+            if not lines:
+                return ""
+
+            # Abwesenheitsdauer berechnen
+            duration_str = ""
+            if departed:
+                try:
+                    dep_dt = datetime.fromisoformat(departed)
+                    diff = datetime.now() - dep_dt
+                    hours = diff.total_seconds() / 3600
+                    if hours >= 1:
+                        duration_str = f" (Abwesend: {int(hours)}h {int(diff.total_seconds() % 3600 / 60)}min)"
+                    else:
+                        duration_str = f" (Abwesend: {int(diff.total_seconds() / 60)} Min)"
+                except (ValueError, TypeError):
+                    pass
+
+            return f"Waehrend deiner Abwesenheit{duration_str}: " + ". ".join(lines) + "."
+
+        except Exception as e:
+            logger.debug("Rueckkehr-Briefing Aufbau fehlgeschlagen: %s", e)
+            return ""
 
     async def generate_status_report(self, person_name: str = "") -> str:
         """Generiert einen Jarvis-artigen Status-Bericht (kann auch manuell aufgerufen werden)."""
