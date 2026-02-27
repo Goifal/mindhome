@@ -1987,6 +1987,22 @@ function renderMood() {
       'pennen','heia','einschlafen','nachts'
     ])
   ) +
+  sectionWrap('&#127919;', 'Stimmung x Komplexitaet — Antwortlaenge',
+    fInfo('MCU-JARVIS passt seine Antwortlaenge an deine Stimmung UND die Komplexitaet der Frage an. Bei Stress: ultra-kurz. Bei guter Laune und komplexer Frage: ausfuehrlich. Werte = maximale Saetze.') +
+    fToggle('mood_complexity.enabled', 'Mood x Complexity Matrix aktiv') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Gute Laune</div>' +
+    fRange('mood_complexity.matrix.good.simple', 'Einfacher Befehl', 1, 5, 1, {1:'1',2:'2',3:'3',4:'4',5:'5'}) +
+    fRange('mood_complexity.matrix.good.medium', 'Mittlere Frage', 1, 6, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6'}) +
+    fRange('mood_complexity.matrix.good.complex', 'Komplexe Analyse', 1, 8, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6',7:'7',8:'8'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Neutral</div>' +
+    fRange('mood_complexity.matrix.neutral.simple', 'Einfacher Befehl', 1, 5, 1, {1:'1',2:'2',3:'3',4:'4',5:'5'}) +
+    fRange('mood_complexity.matrix.neutral.medium', 'Mittlere Frage', 1, 6, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6'}) +
+    fRange('mood_complexity.matrix.neutral.complex', 'Komplexe Analyse', 1, 8, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6',7:'7',8:'8'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Gestresst / Frustriert / Muede</div>' +
+    fRange('mood_complexity.matrix.stressed.simple', 'Einfacher Befehl', 1, 5, 1, {1:'1',2:'2',3:'3',4:'4',5:'5'}) +
+    fRange('mood_complexity.matrix.stressed.medium', 'Mittlere Frage', 1, 6, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6'}) +
+    fRange('mood_complexity.matrix.stressed.complex', 'Komplexe Analyse', 1, 8, 1, {1:'1',2:'2',3:'3',4:'4',5:'5',6:'6',7:'7',8:'8'})
+  ) +
   sectionWrap('&#127908;', 'Stimm-Analyse',
     fInfo('Der Assistent erkennt anhand deiner Sprechgeschwindigkeit ob du gestresst, muede oder entspannt bist.') +
     fToggle('voice_analysis.enabled', 'Stimm-Analyse aktiv') +
@@ -2404,6 +2420,21 @@ function renderProactive() {
     fRange('anticipation.thresholds.suggest', '...vorschlagen?', 0, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%'}) +
     fRange('anticipation.thresholds.auto', '...automatisch ausfuehren?', 0, 1, 0.05, {0.7:'70%',0.8:'80%',0.9:'90%',0.95:'95%',1:'100%'})
   ) +
+  sectionWrap('&#128218;', 'Rueckkehr-Briefing',
+    fInfo('Wenn du das Haus verlaesst, sammelt Jarvis alle Events. Bei Rueckkehr erhaeltst du ein kompaktes Briefing — z.B. "Waehrend deiner Abwesenheit (2h): Jemand hat geklingelt, Waschmaschine fertig."') +
+    fToggle('return_briefing.enabled', 'Rueckkehr-Briefing aktiv') +
+    fRange('return_briefing.max_events', 'Max. Events pro Briefing', 5, 50, 5, {5:'5',10:'10',15:'15',20:'20',30:'30',50:'50'}) +
+    fRange('return_briefing.ttl_hours', 'Max. Sammel-Dauer', 4, 48, 4, {4:'4 Std',8:'8 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Events im Briefing</div>' +
+    fToggle('return_briefing.event_types.doorbell', 'Tuerklingel') +
+    fToggle('return_briefing.event_types.person_arrived', 'Person angekommen') +
+    fToggle('return_briefing.event_types.person_left', 'Person gegangen') +
+    fToggle('return_briefing.event_types.washer_done', 'Waschmaschine/Trockner fertig') +
+    fToggle('return_briefing.event_types.weather_warning', 'Wetter-Warnungen') +
+    fToggle('return_briefing.event_types.low_battery', 'Batterie niedrig') +
+    fToggle('return_briefing.event_types.maintenance_due', 'Wartung faellig') +
+    fToggle('return_briefing.event_types.conditional_executed', 'Wenn-Dann-Regeln ausgefuehrt')
+  ) +
   sectionWrap('&#129504;', 'Jarvis denkt voraus',
     fInfo('Kreuz-referenziert Wetter, Kalender, Energie und Geraete-Status — und meldet sich proaktiv. Z.B. "Es wird gleich regnen, Fenster sind noch offen."') +
     fToggle('insights.enabled', 'Insights aktiv') +
@@ -2466,7 +2497,11 @@ function renderJarvisFeatures() {
     fToggle('pushback.checks.empty_room', 'Leerer Raum bei Heizung/Licht') +
     fToggle('pushback.checks.daylight', 'Tageslicht bei Licht einschalten') +
     fToggle('pushback.checks.storm_warning', 'Sturmwarnung bei Rolladen oeffnen') +
-    fToggle('pushback.checks.unnecessary_heating', 'Heizung bei warmem Wetter')
+    fToggle('pushback.checks.unnecessary_heating', 'Heizung bei warmem Wetter') +
+    '<div style="margin:16px 0 12px;font-weight:600;font-size:13px;">Eskalations-Stufen</div>' +
+    fInfo('Wie MCU-JARVIS: Warnungen werden je nach Schwere anders formuliert. Stufe 1 = beilaeufig ("Uebrigens..."), Stufe 2 = Einwand ("Darf ich anmerken..."), Stufe 3 = Sorge ("Das wuerde ich nicht empfehlen."), Stufe 4 = Resignation bei wiederholter Warnung ("Wie du wuenschst.").') +
+    fToggle('pushback.escalation_enabled', 'Eskalations-Stufen aktiv') +
+    fRange('pushback.resignation_ttl_seconds', 'Wiederholungs-Erkennung', 300, 3600, 300, {300:'5 Min',600:'10 Min',900:'15 Min',1800:'30 Min',3600:'1 Std'})
   ) +
   sectionWrap('&#127925;', 'Smart DJ',
     fInfo('Jarvis empfiehlt kontextbewusst Musik basierend auf Stimmung, Aktivitaet und Tageszeit. Sag z.B. "Spiel mal was Passendes" — Jarvis waehlt das Genre und lernt aus deinem Feedback.') +
@@ -2482,6 +2517,12 @@ function renderJarvisFeatures() {
     fToggle('visitor_management.auto_guest_mode', 'Gaeste-Modus automatisch aktivieren') +
     fRange('visitor_management.ring_cooldown_seconds', 'Klingel-Cooldown', 10, 120, 10, {10:'10s',30:'30s',60:'1 Min',120:'2 Min'}) +
     fRange('visitor_management.history_max', 'Max. Besucher-History', 20, 500, 20, {20:'20',50:'50',100:'100',200:'200',500:'500'})
+  ) +
+  sectionWrap('&#128260;', '"Das Uebliche" — Implizite Routinen',
+    fInfo('Sage "das Uebliche", "wie immer" oder "mach fertig" — Jarvis erkennt gelernte Muster fuer die aktuelle Tageszeit und fuehrt sie aus. Basiert auf dem Vorausdenken-Modul (Anticipation Engine).') +
+    fToggle('das_uebliche.enabled', '"Das Uebliche" aktiv') +
+    fRange('das_uebliche.auto_execute_confidence', 'Auto-Ausfuehren ab Sicherheit', 0.5, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%',1:'100%'}) +
+    fRange('das_uebliche.suggest_confidence', 'Nachfragen ab Sicherheit', 0.3, 1, 0.05, {0.3:'30%',0.4:'40%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'})
   );
 }
 

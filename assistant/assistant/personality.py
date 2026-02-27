@@ -844,8 +844,21 @@ class PersonalityEngine:
         return "medium"
 
     def get_mood_complexity_sentences(self, mood: str, text: str) -> int:
-        """Gibt max_sentences basierend auf Mood x Complexity zurueck."""
+        """Gibt max_sentences basierend auf Mood x Complexity zurueck.
+
+        Liest Matrix aus settings.yaml (mood_complexity.matrix), Fallback auf Defaults.
+        """
         complexity = self.classify_request_complexity(text)
+        # Config-Matrix hat Vorrang ueber Hardcoded-Defaults
+        cfg_matrix = yaml_config.get("mood_complexity", {}).get("matrix", {})
+        if cfg_matrix:
+            row = cfg_matrix.get(mood, cfg_matrix.get("neutral", {}))
+            if row and complexity in row:
+                try:
+                    return int(row[complexity])
+                except (ValueError, TypeError):
+                    pass
+        # Fallback auf Defaults
         row = self._MOOD_COMPLEXITY_MATRIX.get(mood, self._MOOD_COMPLEXITY_MATRIX["neutral"])
         return row.get(complexity, 2)
 
@@ -1702,8 +1715,9 @@ class PersonalityEngine:
         mood_config = MOOD_STYLES.get(mood, MOOD_STYLES["neutral"])
 
         # MCU-JARVIS: Mood x Complexity Matrix ueberschreibt zeit-basierte Defaults
-        # Wenn User-Text vorhanden, nutze die Matrix fuer praezisere Antwortlaenge
-        if user_text:
+        # Wenn User-Text vorhanden und Feature aktiv, nutze die Matrix
+        _mc_enabled = yaml_config.get("mood_complexity", {}).get("enabled", True)
+        if user_text and _mc_enabled:
             max_sentences = self.get_mood_complexity_sentences(mood, user_text)
         else:
             # Fallback auf zeit-basierte Berechnung mit Mood-Modifier

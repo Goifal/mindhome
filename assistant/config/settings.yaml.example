@@ -12,6 +12,18 @@ boot_sequence:
 pushback:
   enabled: true
   confirmation_timeout: 120
+  escalation_enabled: true
+  resignation_ttl_seconds: 1800
+das_uebliche:
+  enabled: true
+  auto_execute_confidence: 0.8
+  suggest_confidence: 0.6
+return_briefing:
+  enabled: true
+  max_events: 20
+  ttl_hours: 24
+mood_complexity:
+  enabled: true
 wellness:
   enabled: true
   check_interval_minutes: 15

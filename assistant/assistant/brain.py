@@ -6189,6 +6189,13 @@ class AssistantBrain(BrainCallbacksMixin):
         if not any(p in t for p in self._DAS_UEBLICHE_PATTERNS):
             return None
 
+        # Konfiguration pruefen
+        _du_cfg = cfg.yaml_config.get("das_uebliche", {})
+        if not _du_cfg.get("enabled", True):
+            return None
+
+        _auto_conf = _du_cfg.get("auto_execute_confidence", 0.8)
+        _suggest_conf = _du_cfg.get("suggest_confidence", 0.6)
         title = get_person_title(person or self._current_person)
 
         # Anticipation Engine nach Mustern fuer JETZT fragen
@@ -6221,7 +6228,7 @@ class AssistantBrain(BrainCallbacksMixin):
         args = best.get("args", {})
         desc = best.get("description", action)
 
-        if conf >= 0.8 and action:
+        if conf >= _auto_conf and action:
             # Hohe Confidence → ausfuehren und beilaeufig erwaehnen
             try:
                 result = await self.executor.execute(action, args)
@@ -7825,16 +7832,23 @@ Regeln:
         title = get_person_title(self._current_person)
         severity = pushback.get("severity", 1)
 
+        # Eskalation konfigurierbar — wenn deaktiviert, immer Stufe 2 (Einwand)
+        _pushback_cfg = cfg.yaml_config.get("pushback", {})
+        _escalation_enabled = _pushback_cfg.get("escalation_enabled", True)
+        if not _escalation_enabled:
+            severity = 2
+
         # Pruefen ob dieselbe Warnung kuerzlich schon gegeben wurde → Resignation
+        _resignation_ttl = _pushback_cfg.get("resignation_ttl_seconds", 1800)
         _warn_key = f"mha:pushback:warned:{func_name}:{sorted(str(w.get('type','')) for w in warnings)}"
-        if self.memory.redis:
+        if _escalation_enabled and self.memory.redis:
             try:
                 was_warned = await self.memory.redis.get(_warn_key)
                 if was_warned:
                     severity = 4  # Resignation — User wurde bereits gewarnt
                 else:
-                    # Warnung merken (30 Min TTL)
-                    await self.memory.redis.setex(_warn_key, 1800, "1")
+                    # Warnung merken (konfigurierbarer TTL)
+                    await self.memory.redis.setex(_warn_key, _resignation_ttl, "1")
             except Exception:
                 pass
 

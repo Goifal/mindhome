@@ -403,9 +403,11 @@ class ProactiveManager:
                     status["absence_summary"] = absence_summary
 
                 # MCU-JARVIS: Rueckkehr-Briefing aus gesammelten Events
-                return_briefing = await self._build_return_briefing(name)
-                if return_briefing:
-                    status["return_briefing"] = return_briefing
+                _rb_cfg = yaml_config.get("return_briefing", {})
+                if _rb_cfg.get("enabled", True):
+                    return_briefing = await self._build_return_briefing(name)
+                    if return_briefing:
+                        status["return_briefing"] = return_briefing
 
                 await self._notify("person_arrived", MEDIUM, {
                     "person": name,
@@ -419,7 +421,8 @@ class ProactiveManager:
                     "departure_check": True,
                 })
                 # MCU-JARVIS: Abwesenheits-Akkumulator starten
-                await self._start_absence_accumulator(name)
+                if yaml_config.get("return_briefing", {}).get("enabled", True):
+                    await self._start_absence_accumulator(name)
 
         # Phase 7.4: Geo-Fence Proximity (proximity.home Entity)
         elif entity_id.startswith("proximity.") or entity_id.startswith("sensor.") and "distance" in entity_id:
@@ -1276,10 +1279,9 @@ class ProactiveManager:
     # nach der Landung auf dem Laufenden haelt.
 
     _RETURN_BRIEFING_KEY = "mha:return_briefing:{person}"
-    _RETURN_BRIEFING_TTL = 86400  # 24h max Abwesenheit
 
-    # Event-Typen die im Rueckkehr-Briefing erscheinen sollen
-    _BRIEFING_EVENT_TYPES = frozenset([
+    # Default Event-Typen (ueberschrieben durch settings.yaml return_briefing.event_types)
+    _DEFAULT_BRIEFING_EVENT_TYPES = frozenset([
         "doorbell", "person_arrived", "person_left",
         "washer_done", "dryer_done", "weather_warning",
         "low_battery", "entity_offline", "maintenance_due",
@@ -1287,18 +1289,33 @@ class ProactiveManager:
         "threat_detected", "energy_price_high", "solar_surplus",
     ])
 
+    def _get_briefing_config(self) -> tuple:
+        """Liest Return-Briefing Config: (ttl_seconds, max_events, event_types)."""
+        rb_cfg = yaml_config.get("return_briefing", {})
+        ttl = rb_cfg.get("ttl_hours", 24) * 3600
+        max_events = rb_cfg.get("max_events", 20)
+        # Event-Typen aus Config: nur aktivierte Typen
+        cfg_types = rb_cfg.get("event_types", {})
+        if cfg_types:
+            active = {k for k, v in cfg_types.items() if v}
+            event_types = active if active else self._DEFAULT_BRIEFING_EVENT_TYPES
+        else:
+            event_types = self._DEFAULT_BRIEFING_EVENT_TYPES
+        return ttl, max_events, event_types
+
     async def _start_absence_accumulator(self, person_name: str):
         """Startet die Event-Sammlung fuer eine weggehende Person."""
         if not self.brain.memory.redis:
             return
         try:
+            ttl, _, _ = self._get_briefing_config()
             key = self._RETURN_BRIEFING_KEY.format(person=person_name.lower())
             # Initialer Eintrag mit Abgangszeit
             initial = json.dumps({
                 "departed": datetime.now().isoformat(),
                 "events": [],
             })
-            await self.brain.memory.redis.setex(key, self._RETURN_BRIEFING_TTL, initial)
+            await self.brain.memory.redis.setex(key, ttl, initial)
             logger.info("Rueckkehr-Briefing Akkumulator gestartet fuer %s", person_name)
         except Exception as e:
             logger.debug("Akkumulator-Start fehlgeschlagen: %s", e)
@@ -1308,7 +1325,8 @@ class ProactiveManager:
 
         Wird aus _notify() aufgerufen — sammelt nur relevante Events.
         """
-        if event_type not in self._BRIEFING_EVENT_TYPES:
+        _, max_events, event_types = self._get_briefing_config()
+        if event_type not in event_types:
             return
         if not self.brain.memory.redis:
             return
@@ -1336,8 +1354,8 @@ class ProactiveManager:
                     continue
                 briefing_data = json.loads(raw)
                 events = briefing_data.get("events", [])
-                # Max 20 Events pro Abwesenheit (die wichtigsten behalten)
-                if len(events) < 20:
+                # Max Events pro Abwesenheit (konfigurierbar)
+                if len(events) < max_events:
                     events.append(event_entry)
                     briefing_data["events"] = events
                     ttl = await self.brain.memory.redis.ttl(key)
