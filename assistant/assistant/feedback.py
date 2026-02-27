@@ -297,7 +297,8 @@ class FeedbackTracker:
 
     # ----- Private Hilfsmethoden -----
 
-    async def _update_score(self, event_type: str, delta: float) -> float:
+    async def _update_score(self, event_type: str, delta: float,
+                           person: str = "") -> float:
         """Aktualisiert den Score und gibt den neuen Wert zurueck."""
         if not self.redis:
             return DEFAULT_SCORE
@@ -305,7 +306,23 @@ class FeedbackTracker:
         current = await self.get_score(event_type)
         new_score = max(0.0, min(1.0, current + delta))
         await self.redis.setex(f"mha:feedback:score:{event_type}", 90 * 86400, str(new_score))
+
+        # Per-Person Score (Feature 6: Per-Person Learning)
+        if person:
+            person_key = f"mha:feedback:score:{event_type}:person:{person}"
+            person_current = await self.redis.get(person_key)
+            person_score = float(person_current) if person_current else DEFAULT_SCORE
+            person_new = max(0.0, min(1.0, person_score + delta))
+            await self.redis.setex(person_key, 90 * 86400, str(person_new))
+
         return new_score
+
+    async def get_person_score(self, event_type: str, person: str) -> float:
+        """Per-Person Feedback-Score (Feature 6)."""
+        if not self.redis or not person:
+            return DEFAULT_SCORE
+        score = await self.redis.get(f"mha:feedback:score:{event_type}:person:{person}")
+        return float(score) if score else DEFAULT_SCORE
 
     async def _increment_counter(self, event_type: str, counter_name: str):
         """Erhoeht einen Zaehler fuer einen Event-Typ."""

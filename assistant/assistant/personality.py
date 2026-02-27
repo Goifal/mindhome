@@ -1658,6 +1658,31 @@ class PersonalityEngine:
 
         return prompt
 
+    @staticmethod
+    def build_learned_rules_section(rules: list[dict]) -> str:
+        """Formatiert gelernte Regeln als Prompt-Abschnitt (Prompt Self-Refinement).
+
+        Args:
+            rules: Liste von Regel-Dicts mit 'text' und 'confidence' Keys.
+
+        Returns:
+            Formatierter String oder leerer String.
+        """
+        if not rules:
+            return ""
+
+        lines = ["GELERNTE PRAEFERENZEN:"]
+        for rule in rules[:5]:
+            text = rule.get("text", "")
+            confidence = rule.get("confidence", 0)
+            if text and confidence >= 0.6 and len(text) <= 200:
+                lines.append(f"- {text}")
+
+        if len(lines) <= 1:
+            return ""
+
+        return "\n".join(lines)
+
     def _build_person_addressing(self, person_name: str) -> str:
         """Baut die Anrede-Regeln basierend auf Person und Beziehungsstufe."""
         primary_user = settings.user_name  # dynamisch, nicht cached

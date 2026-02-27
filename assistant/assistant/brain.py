@@ -62,6 +62,12 @@ from .routine_engine import RoutineEngine
 from .config_versioning import ConfigVersioning
 from .self_automation import SelfAutomation
 from .self_optimization import SelfOptimization
+from .outcome_tracker import OutcomeTracker
+from .correction_memory import CorrectionMemory
+from .response_quality import ResponseQualityTracker
+from .error_patterns import ErrorPatternTracker
+from .self_report import SelfReport
+from .adaptive_thresholds import AdaptiveThresholds
 from .situation_model import SituationModel
 from .sound_manager import SoundManager
 from .speaker_recognition import SpeakerRecognition
@@ -264,6 +270,14 @@ class AssistantBrain(BrainCallbacksMixin):
         # Feature 12: Besucher-Management
         self.visitor_manager = VisitorManager(self.ha, self.camera_manager)
 
+        # Self-Improvement: Geschlossene Feedback-Loops
+        self.outcome_tracker = OutcomeTracker()
+        self.correction_memory = CorrectionMemory()
+        self.response_quality = ResponseQualityTracker()
+        self.error_patterns = ErrorPatternTracker()
+        self.self_report = SelfReport()
+        self.adaptive_thresholds = AdaptiveThresholds()
+
         # Letzte fehlgeschlagene Anfrage fuer Retry bei "Ja"
         self._last_failed_query: Optional[str] = None
 
@@ -272,6 +286,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Feature 5: Letzte ausgefuehrte Aktion (fuer emotionale Reaktionserkennung im naechsten Turn)
         self._last_executed_action: str = ""
+        self._last_executed_action_args: dict = {}
 
     async def initialize(self):
         """Initialisiert alle Komponenten."""
@@ -456,6 +471,29 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
         await _safe_init("SituationModel", self.situation_model.initialize(redis_client=self.memory.redis))
+
+        # Self-Improvement: Geschlossene Feedback-Loops
+        await _safe_init("OutcomeTracker", self.outcome_tracker.initialize(
+            redis_client=self.memory.redis, ha_client=self.ha, task_registry=self._task_registry,
+        ))
+        await _safe_init("CorrectionMemory", self.correction_memory.initialize(redis_client=self.memory.redis))
+        await _safe_init("ResponseQuality", self.response_quality.initialize(redis_client=self.memory.redis))
+        await _safe_init("ErrorPatterns", self.error_patterns.initialize(redis_client=self.memory.redis))
+        await _safe_init("SelfReport", self.self_report.initialize(
+            redis_client=self.memory.redis, ollama_client=self.ollama,
+        ))
+        await _safe_init("AdaptiveThresholds", self.adaptive_thresholds.initialize(redis_client=self.memory.redis))
+
+        # Global Learning Kill Switch
+        _learning_enabled = cfg.yaml_config.get("learning", {}).get("enabled", True)
+        if not _learning_enabled:
+            self.outcome_tracker.enabled = False
+            self.correction_memory.enabled = False
+            self.response_quality.enabled = False
+            self.error_patterns.enabled = False
+            self.self_report.enabled = False
+            self.adaptive_thresholds.enabled = False
+            logger.warning("GLOBAL: Alle Lern-Features deaktiviert (learning.enabled=false)")
 
         await self.proactive.start()
 
@@ -646,6 +684,20 @@ class AssistantBrain(BrainCallbacksMixin):
         self._current_person = person or ""
         if person:
             set_active_person(person)
+
+        # Self-Improvement: Response Quality — Follow-Up / Rephrase erkennen
+        _quality_followup = self.response_quality.check_followup(text)
+        if _quality_followup and (_quality_followup.get("is_followup") or _quality_followup.get("is_rephrase")):
+            prev_cat = _quality_followup.get("previous_category", "")
+            if prev_cat:
+                self._task_registry.create_task(
+                    self.response_quality.record_exchange(
+                        category=prev_cat, person=person or "",
+                        had_followup=_quality_followup.get("is_followup", False),
+                        was_rephrased=_quality_followup.get("is_rephrase", False),
+                    ),
+                    name="quality_followup",
+                )
 
         # Sarkasmus-Feedback: Reaktion auf vorherige sarkastische Antwort auswerten
         if self.personality.sarcasm_level >= 3 and hasattr(self, '_last_response_was_snarky'):
@@ -1942,6 +1994,12 @@ class AssistantBrain(BrainCallbacksMixin):
         _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
         _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
 
+        # Self-Improvement: Korrektur-Kontext + gelernte Regeln parallel laden
+        _mega_tasks.append(("correction_ctx", self.correction_memory.get_relevant_corrections(
+            action_type="", args=None, person=person or "",
+        )))
+        _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
+
         _mega_keys, _mega_coros = zip(*_mega_tasks)
         _mega_results = await asyncio.gather(*_mega_coros, return_exceptions=True)
         _result_map = dict(zip(_mega_keys, _mega_results))
@@ -2001,6 +2059,8 @@ class AssistantBrain(BrainCallbacksMixin):
         learned_patterns = _safe_get("learned_patterns") or []
         live_insights = _safe_get("insights_now") or []
         experiential_hint = _safe_get("experiential")
+        correction_ctx = _safe_get("correction_ctx")
+        learned_rules = _safe_get("learned_rules") or []
 
         context["mood"] = mood_result
 
@@ -2132,6 +2192,16 @@ class AssistantBrain(BrainCallbacksMixin):
         # Feature A: Kreative Problemloesung — Haus-Daten fuer Loesungsvorschlaege
         if problem_solving_ctx:
             sections.append(("problem_solving", problem_solving_ctx, 2))
+
+        # Self-Improvement: Korrektur-Kontext (Feature 2)
+        if correction_ctx:
+            sections.append(("correction_ctx", f"\n\n{correction_ctx}", 2))
+
+        # Self-Improvement: Gelernte Regeln (Feature 7: Prompt Self-Refinement)
+        if learned_rules:
+            rules_text = self.correction_memory.format_rules_for_prompt(learned_rules)
+            if rules_text:
+                sections.append(("learned_rules", f"\n\n{rules_text}", 2))
 
         # Intelligence Fusion: JARVIS DENKT MIT
         jarvis_thinks = self._build_jarvis_thinks_context(
@@ -2399,6 +2469,15 @@ class AssistantBrain(BrainCallbacksMixin):
                 response_tokens = 384   # Standard-Gespraech: doppelt so viel wie vorher
 
             llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
+
+            # Self-Improvement: Error Pattern Mitigation — Fallback frueher nutzen
+            _error_mitigation = await self.error_patterns.get_mitigation(action_type="llm_chat", model=model)
+            if _error_mitigation and _error_mitigation.get("type") == "use_fallback":
+                _fb = self.model_router.get_fallback_model(model)
+                if _fb and _fb != model:
+                    logger.info("Error-Mitigation: %s -> %s (%s)", model, _fb, _error_mitigation.get("reason", ""))
+                    model = _fb
+
             try:
                 response = await asyncio.wait_for(
                     self.ollama.chat(
@@ -2411,6 +2490,11 @@ class AssistantBrain(BrainCallbacksMixin):
                 )
             except asyncio.TimeoutError:
                 logger.error("LLM Timeout (%ss) fuer Modell %s", llm_timeout, model)
+                # Self-Improvement: Error Pattern Tracking
+                self._task_registry.create_task(
+                    self.error_patterns.record_error("timeout", action_type="llm_chat", model=model),
+                    name="error_pattern_timeout",
+                )
                 # Fallback: Schnelleres Modell versuchen
                 fallback_model = self.model_router.get_fallback_model(model)
                 if fallback_model and fallback_model != model:
@@ -2427,6 +2511,10 @@ class AssistantBrain(BrainCallbacksMixin):
                         )
                         model = fallback_model
                     except (asyncio.TimeoutError, Exception):
+                        self._task_registry.create_task(
+                            self.error_patterns.record_error("timeout", action_type="llm_chat", model=fallback_model),
+                            name="error_pattern_double_timeout",
+                        )
                         _err = "Beide Sprachmodelle reagieren nicht. Server moeglicherweise ueberlastet."
                         await self._speak_and_emit(_err, room=room)
                         return {
@@ -2742,6 +2830,15 @@ class AssistantBrain(BrainCallbacksMixin):
                                 self.learning_observer.mark_jarvis_action(entity_id),
                                 name="mark_jarvis_action",
                             )
+
+                        # Self-Improvement: Outcome Tracker — Wirkung der Aktion beobachten
+                        self._task_registry.create_task(
+                            self.outcome_tracker.track_action(
+                                action_type=func_name, args=final_args, result=result,
+                                person=person or "", room=room or "",
+                            ),
+                            name="outcome_track",
+                        )
 
                     # Befehl fuer Konflikt-Tracking aufzeichnen
                     if person:
@@ -3101,8 +3198,10 @@ class AssistantBrain(BrainCallbacksMixin):
         # Letzte ausgefuehrte Aktion merken (fuer naechsten Turn)
         if executed_actions:
             self._last_executed_action = executed_actions[-1].get("function", "")
+            self._last_executed_action_args = executed_actions[-1].get("args", {})
         else:
             self._last_executed_action = ""
+            self._last_executed_action_args = {}
 
         # Phase 17: Situation Snapshot speichern (fuer Delta beim naechsten Gespraech)
         self._task_registry.create_task(
@@ -3155,6 +3254,27 @@ class AssistantBrain(BrainCallbacksMixin):
             ),
             name="track_metrics",
         )
+
+        # Self-Improvement: Response Quality — Austausch aufzeichnen
+        _is_thanked = any(w in text.lower() for w in ("danke", "super", "perfekt", "klasse", "top"))
+        self._task_registry.create_task(
+            self.response_quality.record_exchange(
+                category=profile.category if profile else "unknown",
+                person=person or "",
+                was_thanked=_is_thanked,
+            ),
+            name="quality_record",
+        )
+        self.response_quality.update_last_exchange(text, profile.category if profile else "unknown")
+
+        # Self-Improvement: Outcome Tracker — "Danke" = POSITIVE
+        if _is_thanked and self._last_executed_action:
+            self._task_registry.create_task(
+                self.outcome_tracker.record_verbal_feedback(
+                    "positive", action_type=self._last_executed_action, person=person or "",
+                ),
+                name="outcome_thanks",
+            )
 
         # Markiere ob diese Antwort sarkastisch war (fuer Feedback bei naechster Nachricht)
         self._last_response_was_snarky = self.personality.sarcasm_level >= 3
@@ -7048,6 +7168,19 @@ Regeln:
                 )
                 await self.memory.semantic.store_fact(fact)
                 logger.info("Korrektur-Lernen: '%s' gespeichert (Person: %s)", fact_text, person)
+
+                # Self-Improvement: Correction Memory — strukturiert speichern
+                await self.correction_memory.store_correction(
+                    original_action=self._last_executed_action,
+                    original_args=self._last_executed_action_args,
+                    correction_text=fact_text,
+                    person=person,
+                )
+
+                # Self-Improvement: Outcome Tracker — Korrektur = NEGATIVE
+                await self.outcome_tracker.record_verbal_feedback(
+                    "negative", action_type=self._last_executed_action, person=person,
+                )
         except Exception as e:
             logger.debug("Fehler bei Korrektur-Lernen: %s", e)
 
@@ -7183,15 +7316,48 @@ Regeln:
                 if not weekly_cfg.get("enabled", True):
                     continue
 
-                report = await self.learning_observer.get_learning_report()
-                report_text = self.learning_observer.format_learning_report(report)
-                if report_text and report.get("total_observations", 0) > 0:
+                # Self-Improvement: Erweiterter Self-Report (alle Subsysteme)
+                report = await self.self_report.generate_report(
+                    outcome_tracker=self.outcome_tracker,
+                    correction_memory=self.correction_memory,
+                    feedback_tracker=self.feedback,
+                    anticipation=self.anticipation,
+                    insight_engine=self.insight_engine,
+                    learning_observer=self.learning_observer,
+                    response_quality=self.response_quality,
+                    error_patterns=self.error_patterns,
+                )
+                summary = report.get("summary", "")
+                if summary:
                     title = get_person_title()  # Background-Task: primary_user
-                    message = f"{title}, hier ist dein woechentlicher Lern-Bericht:\n{report_text}"
+                    message = f"{title}, hier ist dein woechentlicher Lern-Bericht:\n{summary}"
                     if await self._callback_should_speak("low"):
                         formatted = await self._safe_format(message, "low")
                         await self._speak_and_emit(formatted)
-                        logger.info("Woechentlicher Lern-Bericht gesendet")
+                        logger.info("Woechentlicher Self-Report gesendet")
+                else:
+                    # Fallback: Alter Bericht via Learning Observer
+                    lo_report = await self.learning_observer.get_learning_report()
+                    report_text = self.learning_observer.format_learning_report(lo_report)
+                    if report_text and lo_report.get("total_observations", 0) > 0:
+                        title = get_person_title()
+                        message = f"{title}, hier ist dein woechentlicher Lern-Bericht:\n{report_text}"
+                        if await self._callback_should_speak("low"):
+                            formatted = await self._safe_format(message, "low")
+                            await self._speak_and_emit(formatted)
+
+                # Self-Improvement: Adaptive Thresholds nach Report
+                try:
+                    adj_result = await self.adaptive_thresholds.run_analysis(
+                        outcome_tracker=self.outcome_tracker,
+                        correction_memory=self.correction_memory,
+                        feedback_tracker=self.feedback,
+                    )
+                    adjusted = adj_result.get("adjusted", [])
+                    if adjusted:
+                        logger.info("Adaptive Thresholds: %d Anpassungen", len(adjusted))
+                except Exception as _at_err:
+                    logger.debug("Adaptive Thresholds Fehler: %s", _at_err)
             except asyncio.CancelledError:
                 break
             except Exception as e:
