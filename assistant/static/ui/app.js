@@ -1785,7 +1785,7 @@ function renderMemory() {
     fRange('emotional_memory.negative_threshold', 'Warnung ab negativen Reaktionen', 1, 5, 1, {1:'1x',2:'2x',3:'3x',4:'4x',5:'5x'}) +
     fRange('emotional_memory.decay_days', 'Erinnerung verfaellt nach', 30, 365, 30, {30:'1 Monat',60:'2 Monate',90:'3 Monate',180:'6 Monate',365:'1 Jahr'})
   ) +
-  sectionWrap('&#128218;', 'Lern-Transparenz',
+  sectionWrap('&#128202;', 'Lern-Transparenz',
     fInfo('"Was hast du beobachtet?" — Jarvis berichtet ueber erkannte Muster. Optional auch als woechentlicher automatischer Bericht.') +
     fToggle('learning.weekly_report.enabled', 'Woechentlicher Lern-Bericht') +
     fSelect('learning.weekly_report.day', 'Bericht-Tag', [
@@ -1800,7 +1800,7 @@ function renderMemory() {
     fRange('intent_tracking.check_interval_minutes', 'Pruef-Intervall', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
     fRange('intent_tracking.remind_hours_before', 'Erinnerung vorher', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'})
   ) +
-  sectionWrap('&#128172;', 'Gespraechs-Fortfuehrung',
+  sectionWrap('&#128173;', 'Gespraechs-Fortfuehrung',
     fInfo('Wenn ein Gespraech unterbrochen wird — soll der Assistent spaeter nachfragen? "Wolltest du vorhin noch was wegen...?"') +
     fToggle('conversation_continuity.enabled', 'Gespraech fortsetzen') +
     fRange('conversation_continuity.resume_after_minutes', 'Nachfragen nach', 1, 60, 1, {1:'1 Min',5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'}) +
@@ -1977,7 +1977,7 @@ function renderRooms() {
       fRange('heating.night_offset', 'Nacht-Offset (°C)', -10, 0, 0.5) +
       fRange('heating.away_offset', 'Abwesenheits-Offset (°C)', -10, 0, 0.5)
     :
-      '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Jeder Raum hat seinen eigenen Thermostat. Temperatur-Grenzen findest du unter Sicherheit.</p>'
+      fInfo('Jeder Raum hat seinen eigenen Thermostat. Temperatur-Grenzen findest du unter Sicherheit.')
     )
   ) +
   sectionWrap('&#127777;', 'Raumtemperatur-Sensoren',
@@ -2018,7 +2018,7 @@ function renderRooms() {
     fPersonProfiles()
   ) +
   // ── Raum-Profile (room_profiles.yaml) ─────────────────────
-  sectionWrap('&#127777;', 'Raum-Profile (Temperatur & Licht)',
+  sectionWrap('&#128161;', 'Raum-Profile (Temperatur & Licht)',
     fInfo('Standard-Temperatur und Helligkeit pro Raum. Diese Werte werden fuer adaptive Helligkeit und Kontext-Empfehlungen genutzt.') +
     renderRoomProfileEditor()
   ) +
@@ -2293,7 +2293,7 @@ function renderRoutines() {
     fInfo('Welche Home Assistant Kalender sollen abgefragt werden? Wenn keiner gewaehlt ist, werden automatisch alle Kalender aus HA genutzt.') +
     fEntityPicker('calendar.entities', 'Kalender-Entities', ['calendar'], 'Nur ausgewaehlte Kalender abfragen — leer = alle')
   ) +
-  sectionWrap('&#127769;', 'Gute-Nacht-Routine',
+  sectionWrap('&#128164;', 'Gute-Nacht-Routine',
     fInfo('Automatische Aktionen wenn du "Gute Nacht" sagst — Lichter aus, Heizung runter, alles pruefen.') +
     fToggle('routines.good_night.enabled', 'Gute-Nacht-Routine aktiv') +
     fChipSelect('routines.good_night.triggers', 'Ausloese-Phrasen', [
@@ -2463,7 +2463,7 @@ function renderSecurity() {
   const hMode = getPath(S, 'heating.mode') || 'room_thermostat';
   const isCurve = hMode === 'heating_curve';
 
-  return sectionWrap('&#128274;', 'Dashboard & PIN',
+  return sectionWrap('&#128187;', 'Dashboard & PIN',
     fInfo('Der Zugang zum Dashboard ist mit einer PIN geschuetzt. Der Recovery-Key wird benoetigt wenn du die PIN vergisst.') +
     '<div class="form-group"><label>PIN-Schutz</label>' +
     '<p style="font-size:12px;color:var(--success);margin-bottom:8px;">PIN ist gesetzt und aktiv</p>' +
@@ -2493,11 +2493,11 @@ function renderSecurity() {
     (!isCurve ?
       fRange('security.climate_limits.min', 'Temperatur Min (°C)', 5, 25, 0.5) +
       fRange('security.climate_limits.max', 'Temperatur Max (°C)', 20, 35, 0.5)
-    : '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Im Heizkurven-Modus gelten die Offset-Grenzen (Raeume &rarr; Heizung).</p>'
+    : fInfo('Im Heizkurven-Modus gelten die Offset-Grenzen (Raeume &rarr; Heizung).')
     )
   ) +
   sectionWrap('&#128273;', 'API Key (Netzwerk-Schutz)',
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Schuetzt die Assistant-API gegen unbefugte Netzwerkzugriffe. Diesen Key im HA-Addon und in der HA-Integration eintragen, DANN Pruefung aktivieren.</p>' +
+    fInfo('Schuetzt die Assistant-API gegen unbefugte Netzwerkzugriffe. Diesen Key im HA-Addon und in der HA-Integration eintragen, DANN Pruefung aktivieren.') +
     '<div class="form-group" style="margin-bottom:12px;">' +
     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
     '<input type="checkbox" id="apiKeyEnforcement" onchange="toggleApiKeyEnforcement(this.checked)" style="width:18px;height:18px;" />' +
@@ -2928,19 +2928,19 @@ function renderAutonomie() {
     fModelSelect('self_optimization.model', 'Analyse-Modell')
   ) +
   sectionWrap('&#128203;', 'Vorschlaege (Approval-Workflow)',
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis macht nur Vorschlaege — DU entscheidest ob sie angewendet werden. Jede Aenderung wird vorher gesnapshot.</p>' +
+    fInfo('Jarvis macht nur Vorschlaege — DU entscheidest ob sie angewendet werden. Jede Aenderung wird vorher gesnapshot.') +
     '<div id="proposalsList" style="margin-bottom:12px;"></div>' +
     '<button class="btn btn-secondary" style="font-size:12px;" onclick="runAnalysis()">Analyse jetzt starten</button>'
   ) +
   sectionWrap('&#128190;', 'Rollback & Snapshots',
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jede Config-Aenderung wird gesichert. Rollback jederzeit moeglich.</p>' +
+    fInfo('Jede Config-Aenderung wird gesichert. Rollback jederzeit moeglich.') +
     fToggle('self_optimization.rollback.enabled', 'Rollback aktiv') +
     fNum('self_optimization.rollback.max_snapshots', 'Max. gespeicherte Snapshots', 5, 100) +
     fToggle('self_optimization.rollback.snapshot_on_every_edit', 'Snapshot bei jeder Aenderung') +
     '<div id="snapshotsList" style="margin-top:12px;"></div>'
   ) +
   sectionWrap('&#128295;', 'Parameter-Grenzen',
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis kann NUR innerhalb dieser Grenzen vorschlagen.</p>' +
+    fInfo('Jarvis kann NUR innerhalb dieser Grenzen vorschlagen.') +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
     fNum('self_optimization.parameter_bounds.sarcasm_level.min', 'Sarkasmus Min', 1, 5) +
     fNum('self_optimization.parameter_bounds.sarcasm_level.max', 'Sarkasmus Max', 1, 5) +
@@ -2953,7 +2953,7 @@ function renderAutonomie() {
     '</div>'
   ) +
   sectionWrap('&#128683;', 'Geschuetzte Bereiche (Immutable)',
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Diese Bereiche kann Jarvis NIEMALS selbst aendern.</p>' +
+    fInfo('Diese Bereiche kann Jarvis NIEMALS selbst aendern.') +
     fChipSelect('self_optimization.immutable_keys', 'Geschuetzte Bereiche (nicht aenderbar durch KI)', [
       'security','trust_levels','response_filter.banned_phrases',
       'response_filter.banned_starters','household','assistant.name',
@@ -2961,8 +2961,8 @@ function renderAutonomie() {
       'models.fast','models.smart','models.deep','autonomy.level'
     ], 'Klicke auf Bereiche die die KI NIEMALS selbst aendern darf.')
   ) +
-  sectionWrap('&#9889;', 'Self-Automation (Phase 13.2)',
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis erstellt HA-Automationen aus natuerlicher Sprache. Approval-Workflow: Du musst jede Automation bestaetigen.</p>' +
+  sectionWrap('&#127919;', 'Self-Automation (Phase 13.2)',
+    fInfo('Jarvis erstellt HA-Automationen aus natuerlicher Sprache. Approval-Workflow: Du musst jede Automation bestaetigen.') +
     fToggle('self_automation.enabled', 'Self-Automation aktiv') +
     fNum('self_automation.max_per_day', 'Max. Automationen pro Tag', 1, 20) +
     fModelSelect('self_automation.model', 'Modell fuer Automations-Erstellung')
@@ -2977,7 +2977,7 @@ function renderAutonomie() {
     fRange('feedback.score_boost', 'Boost ab', 0, 1, 0.05)
   ) +
   sectionWrap('&#128221;', 'Config-Selbstmodifikation (Phase 13.1)',
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Jarvis kann nur diese 3 Dateien editieren (Whitelist). settings.yaml ist NICHT editierbar durch Jarvis.</p>' +
+    fInfo('Jarvis kann nur diese 3 Dateien editieren (Whitelist). settings.yaml ist NICHT editierbar durch Jarvis.') +
     '<div style="display:flex;flex-direction:column;gap:8px;">' +
     '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">' +
       '<span style="color:var(--success);">&#9989;</span><span style="font-size:13px;">easter_eggs.yaml</span>' +
@@ -3677,7 +3677,7 @@ async function uploadKbFile(file) {
 
   const fd = new FormData();
   fd.append('file', file);
-  fd.append('token', sessionStorage.getItem('token') || '');
+  fd.append('token', TOKEN || '');
 
   try {
     const resp = await fetch('/api/ui/knowledge/upload', { method: 'POST', body: fd });
@@ -4557,7 +4557,7 @@ function renderDevices() {
       '<span style="color:var(--text-muted);font-size:11px;margin-left:10px;" id="diagEntityStatus"></span>' +
     '</div>'
   ) +
-  sectionWrap('&#128295;', 'Wartung',
+  sectionWrap('&#128736;', 'Wartung',
     fInfo('Automatische Wartungshinweise fuer Geraete im Haushalt.') +
     fToggle('maintenance.enabled', 'Wartungs-Erinnerungen aktiv')
   );
@@ -4714,7 +4714,7 @@ function renderSystem() {
     '<button class="btn btn-secondary" style="margin-top:12px;font-size:12px;" onclick="loadSystemStatus()">Status aktualisieren</button>'
   ) +
   sectionWrap('&#128640;', 'System-Update',
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Holt neuen Code von Git und baut die Container neu. Der Assistant startet dabei kurz neu.</p>' +
+    fInfo('Holt neuen Code von Git und baut die Container neu. Der Assistant startet dabei kurz neu.') +
     '<div id="sysUpdateCheck" style="margin-bottom:12px;"></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
       '<button class="btn btn-primary" id="btnSysUpdate" onclick="doSystemUpdate()">&#128640; System-Update starten</button>' +
@@ -4725,11 +4725,11 @@ function renderSystem() {
     '</div>'
   ) +
   sectionWrap('&#128260;', 'Container neustarten',
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Startet alle Container neu ohne Rebuild. Schneller als ein volles Update.</p>' +
+    fInfo('Startet alle Container neu ohne Rebuild. Schneller als ein volles Update.') +
     '<button class="btn btn-secondary" id="btnSysRestart" onclick="doSystemRestart()">&#128260; Container neustarten</button>'
   ) +
   sectionWrap('&#129302;', 'Ollama-Modelle aktualisieren',
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">Aktualisiert alle installierten LLM-Modelle auf die neueste Version.</p>' +
+    fInfo('Aktualisiert alle installierten LLM-Modelle auf die neueste Version.') +
     '<div id="sysModelsList" style="margin-bottom:12px;font-size:12px;color:var(--text-secondary);"></div>' +
     '<button class="btn btn-secondary" id="btnSysModels" onclick="doUpdateModels()">&#129302; Modelle aktualisieren</button>' +
     '<div id="sysModelsLog" style="display:none;margin-top:12px;font-size:12px;font-family:var(--font-mono);color:var(--text-secondary);"></div>'
