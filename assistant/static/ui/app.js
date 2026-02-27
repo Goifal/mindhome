@@ -999,6 +999,19 @@ const HELP_TEXTS = {
   'insights.checks.calendar_weather_cross': {title:'Kalender + Wetter', text:'Termin morgen frueh + Regen = "Schirm nicht vergessen." MCU-JARVIS-Stil Kreuz-Referenz.'},
   'insights.checks.comfort_contradiction': {title:'Komfort-Widerspruch', text:'Heizung laeuft + Fenster offen = "Energetisch nicht ganz optimal." Erkennt Komfort-Widersprueche.'},
   'spontaneous.checks.house_efficiency': {title:'Haus-Effizienz', text:'Bemerkt wenn das Haus effizient laeuft ("Vorbildlich.") oder Ressourcen verschwendet ("Leere Wohnung, 5 Lichter an.").'},
+  // === MCU-PERSOENLICHKEIT ===
+  'conversation_callbacks.enabled': {title:'Konversations-Rueckbezuege', text:'Jarvis referenziert vergangene Gespraeche natuerlich: "Wie am Dienstag besprochen..." oder "Drittes Mal diese Woche, dass du die Heizung aenderst..." Nutzt das vorhandene Gedaechtnis mit Persoenlichkeit.'},
+  'conversation_callbacks.personality_style': {title:'Referenz-Stil', text:'Beilaeufig = trockener Humor und Understatement. Direkt = sachliche Referenzen ohne Witz.'},
+  'learning_acknowledgment.enabled': {title:'Lern-Bestaetigung', text:'Wenn Jarvis eine neue Regel lernt (z.B. "User bevorzugt 20 Grad abends"), erwaehnt er es einmalig: "Ich habe mir gemerkt, dass..." Erscheint nur 1x pro Regel.'},
+  'learning_acknowledgment.max_per_session': {title:'Max. pro Gespraech', text:'Wie viele Lern-Bestaetigungen Jarvis maximal pro Gespraechs-Session zeigt. Mehr = informativer, weniger = eleganter.'},
+  'prediction_personality.enabled': {title:'Vorhersage-Persoenlichkeit', text:'Vorhersagen werden mit Charakter formuliert statt generisch. "Wie gewohnt — soll ich?" statt "Erkanntes Muster: ...". Konfidenz beeinflusst den Ton.'},
+  'prediction_personality.show_confidence': {title:'Konfidenz anzeigen', text:'Zeigt den Sicherheitswert der Vorhersage in Prozent. Aus = eleganter Butler-Stil, An = transparenter Ingenieur-Stil.'},
+  'weather_personality.enabled': {title:'Wetter-Persoenlichkeit', text:'Jarvis flicht aktuelle Wetterdaten beilaeufig in Antworten ein: "Heizung auf 24 — bei 28 Grad draussen eher ambitioniert." oder "Guter Tag fuer offene Fenster."'},
+  'weather_personality.intensity': {title:'Wetter-Intensitaet', text:'Subtil = nur bei extremem Wetter. Normal = wenn es zur Anfrage passt. Ausfuehrlich = haeufiger mit Wetter-Kommentaren.'},
+  'self_awareness.enabled': {title:'Selbst-Bewusstsein', text:'Jarvis kommentiert eigene Faehigkeiten und Grenzen mit Charakter: "Das uebersteigt meine aktuelle Sensorik." Bei Fehlern: "Das war... suboptimal."'},
+  'self_awareness.meta_humor': {title:'Meta-Humor', text:'Selbstironische Bemerkungen ueber eigene Algorithmen: "Meine Prognose-Modelle deuten auf... nennen wir es eine fundierte Vermutung." Ohne: sachlichere Selbsteinschaetzung.'},
+  'proactive_personality.enabled': {title:'Proaktive Persoenlichkeit', text:'Proaktive Meldungen und Briefings bekommen Charakter basierend auf Tageszeit und Situation: "Ambitioniert, Sir." (6 Uhr morgens) oder "Das Wochenend-Briefing, wenn du gestattest."'},
+  'proactive_personality.sarcasm_in_notifications': {title:'Sarkasmus in Meldungen', text:'Proaktive Meldungen duerfen trockenen Humor enthalten: "Waschmaschine fertig. Zum dritten Mal diese Woche — Rekordverdaechtig." Ohne: rein sachliche Meldungen.'},
 };
 
 function helpBtn(path) {
@@ -2483,6 +2496,27 @@ function renderJarvisFeatures() {
     fToggle('mcu_intelligence.cross_references', 'Kreuz-Referenzierung (Haus-Daten)') +
     fToggle('mcu_intelligence.anomaly_detection', 'Anomalie-Erkennung im Kontext') +
     fToggle('mcu_intelligence.implicit_commands', 'Implizite Befehle ("Bin da", "Alles klar?")')
+  ) +
+  sectionWrap('&#127917;', 'MCU-Persoenlichkeit',
+    fInfo('Persoenlichkeits-Features die Jarvis mehr wie MCU-JARVIS wirken lassen: natuerliche Rueckbezuege auf vergangene Gespraeche, Lern-Bestaetigungen, Vorhersagen mit Charakter, Wetter-Kommentare, Selbst-Bewusstsein und proaktive Persoenlichkeit. Aenderungen wirken sofort.') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Konversations-Rueckbezuege</div>' +
+    fToggle('conversation_callbacks.enabled', 'Rueckbezuege auf vergangene Gespraeche') +
+    fSelect('conversation_callbacks.personality_style', 'Referenz-Stil', [{v:'beilaeufig',l:'Beilaeufig (trockener Humor)'},{v:'direkt',l:'Direkt (sachlich)'}]) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Lern-Bestaetigung</div>' +
+    fToggle('learning_acknowledgment.enabled', '"Ich habe mir gemerkt..." Meldungen') +
+    fRange('learning_acknowledgment.max_per_session', 'Max. pro Gespraech', 1, 3, 1, {1:'1x',2:'2x',3:'3x'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Vorhersage-Persoenlichkeit</div>' +
+    fToggle('prediction_personality.enabled', 'Vorhersagen mit Charakter') +
+    fToggle('prediction_personality.show_confidence', 'Konfidenz in Prozent anzeigen') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Wetter in Persoenlichkeit</div>' +
+    fToggle('weather_personality.enabled', 'Wetter beilaeufig einflechten') +
+    fSelect('weather_personality.intensity', 'Intensitaet', [{v:'subtil',l:'Subtil (nur Extreme)'},{v:'normal',l:'Normal'},{v:'ausfuehrlich',l:'Ausfuehrlich'}]) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Selbst-Bewusstsein &amp; Meta-Humor</div>' +
+    fToggle('self_awareness.enabled', 'Selbst-Bewusstsein aktiv') +
+    fToggle('self_awareness.meta_humor', 'Meta-Humor ueber eigene Algorithmen') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Proaktive Persoenlichkeit</div>' +
+    fToggle('proactive_personality.enabled', 'Briefings mit Charakter') +
+    fToggle('proactive_personality.sarcasm_in_notifications', 'Trockener Humor in Meldungen')
   ) +
   sectionWrap('&#128221;', 'Benannte Protokolle',
     fInfo('Multi-Step-Sequenzen per Sprache erstellen und ausfuehren. Z.B. "Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu, TV an" — dann reicht "Filmabend" zum Ausfuehren.') +

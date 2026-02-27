@@ -334,6 +334,14 @@ class CorrectionMemory:
         self._rules_created_today += 1
         logger.info("Neue Regel: %s (confidence: %.2f)", rule_text, confidence)
 
+        # MCU-Persoenlichkeit: Lern-Bestaetigung in Queue pushen
+        try:
+            await self.redis.rpush("mha:learning_ack:pending", rule_text)
+            # Max 10 pending, aelteste verwerfen
+            await self.redis.ltrim("mha:learning_ack:pending", -10, -1)
+        except Exception:
+            pass
+
     def format_rules_for_prompt(self, rules: list[dict]) -> str:
         """Formatiert Regeln als Prompt-Abschnitt (Feature 7: Prompt Self-Refinement)."""
         if not rules:

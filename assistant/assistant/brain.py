@@ -2004,11 +2004,12 @@ class AssistantBrain(BrainCallbacksMixin):
         _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
         _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
 
-        # Self-Improvement: Korrektur-Kontext + gelernte Regeln parallel laden
+        # Self-Improvement: Korrektur-Kontext + gelernte Regeln + Lern-Bestaetigungen parallel laden
         _mega_tasks.append(("correction_ctx", self.correction_memory.get_relevant_corrections(
             action_type="", args=None, person=person or "",
         )))
         _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
+        _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
 
         _mega_keys, _mega_coros = zip(*_mega_tasks)
         _mega_results = await asyncio.gather(*_mega_coros, return_exceptions=True)
@@ -2074,6 +2075,7 @@ class AssistantBrain(BrainCallbacksMixin):
         experiential_hint = _safe_get("experiential")
         correction_ctx = _safe_get("correction_ctx")
         learned_rules = _safe_get("learned_rules") or []
+        pending_learnings = _safe_get("pending_learnings")
 
         context["mood"] = mood_result
 
@@ -2239,6 +2241,17 @@ class AssistantBrain(BrainCallbacksMixin):
         # Experiential Memory: "Letztes Mal als du das gemacht hast..."
         if experiential_hint:
             sections.append(("experiential", f"\n\n{experiential_hint}", 3))
+
+        # MCU-Persoenlichkeit: Lern-Bestaetigung (einmalig pro Regel)
+        if pending_learnings:
+            _la_text = (
+                "\n\nDU HAST GERADE ETWAS GELERNT:\n"
+                f"{pending_learnings}\n"
+                "Erwaehne dies EINMAL beilaeufig in deiner Antwort. "
+                "Beispiel: 'Uebrigens — ich habe mir gemerkt, dass [Regel].' "
+                "Nicht als Hauptthema, sondern als kurze Randnotiz."
+            )
+            sections.append(("learning_ack", _la_text, 3))
 
         # --- Prio 3: Optional (RAG bei Wissensfragen Prio 1) ---
         if rag_context:
@@ -7070,6 +7083,38 @@ Regeln:
         )
 
     # ------------------------------------------------------------------
+    # MCU-Persoenlichkeit: Lern-Bestaetigung
+    # ------------------------------------------------------------------
+
+    async def _get_pending_learnings(self) -> Optional[str]:
+        """Holt ausstehende Lern-Bestaetigungen aus Redis (einmalig pro Regel).
+
+        MCU-JARVIS Feature: 'Ich habe mir gemerkt, dass du abends 20 Grad bevorzugst.'
+        Jede Bestaetigung erscheint nur einmal — danach wird sie aus der Queue entfernt.
+        """
+        _la_cfg = cfg.yaml_config.get("learning_acknowledgment", {})
+        if not _la_cfg.get("enabled", True):
+            return None
+        if not self.memory.redis:
+            return None
+
+        _max = _la_cfg.get("max_per_session", 1)
+        try:
+            # LPOP: Aelteste Bestaetigung zuerst, einmalig
+            entries = []
+            for _ in range(_max):
+                raw = await self.memory.redis.lpop("mha:learning_ack:pending")
+                if not raw:
+                    break
+                entries.append(raw if isinstance(raw, str) else raw.decode("utf-8"))
+            if not entries:
+                return None
+            return " | ".join(entries)
+        except Exception as e:
+            logger.debug("Lern-Bestaetigung Fehler: %s", e)
+            return None
+
+    # ------------------------------------------------------------------
     # Intelligence Fusion: JARVIS DENKT MIT
     # Fusioniert Signale aus AnticipationEngine, LearningObserver und
     # InsightEngine in eine kompakte Kontext-Sektion fuer das LLM.
@@ -7093,6 +7138,9 @@ Regeln:
         hints: list[tuple[int, str]] = []  # (priority, text)
 
         # --- Anticipation: Erkannte Muster die JETZT zutreffen ---
+        _pred_cfg = cfg.yaml_config.get("prediction_personality", {})
+        _pred_personality = _pred_cfg.get("enabled", True)
+        _pred_show_conf = _pred_cfg.get("show_confidence", False)
         for s in anticipation_suggestions[:3]:
             conf = s.get("confidence", 0)
             desc = s.get("description", "")
@@ -7101,15 +7149,38 @@ Regeln:
             if not desc:
                 continue
 
-            if mode == "auto":
-                hints.append((1, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
-                              f"Du kannst das eigenstaendig uebernehmen und beilaeufig erwaehnen."))
-            elif mode == "suggest":
-                hints.append((2, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
-                              f"Erwaehne es beilaeufig: 'Wie gewohnt um diese Zeit — soll ich?'"))
+            _conf_hint = f" ({pct}%)" if _pred_show_conf else ""
+
+            if _pred_personality:
+                # MCU-JARVIS Persoenlichkeit in Vorhersagen
+                if mode == "auto":
+                    hints.append((1, f"VORHERSAGE{_conf_hint}: {desc}. "
+                                  f"Uebernimm eigenstaendig und erwaehne beilaeufig: 'Ich habe mir erlaubt...'"))
+                elif mode == "suggest":
+                    if conf >= 0.85:
+                        hints.append((2, f"VORHERSAGE{_conf_hint}: {desc}. "
+                                      f"Erwaehne als Butler: 'Wie gewohnt — soll ich?' oder 'Ich bereite schon mal vor.'"))
+                    else:
+                        hints.append((2, f"VORHERSAGE{_conf_hint}: {desc}. "
+                                      f"Erwaehne beilaeufig: 'Wenn mich nicht alles taeuscht — [Muster]. Soll ich?'"))
+                else:
+                    if conf < 0.65:
+                        hints.append((3, f"BEOBACHTUNG{_conf_hint}: {desc}. "
+                                      f"Nur erwaehnen wenn es passt. Tonfall: 'Noch eine Vermutung, aber...'"))
+                    else:
+                        hints.append((3, f"BEOBACHTUNG{_conf_hint}: {desc}. "
+                                      f"Nur erwaehnen wenn es passt."))
             else:
-                hints.append((3, f"BEOBACHTUNG ({pct}% sicher): {desc}. "
-                              f"Nur erwaehnen wenn es zum Gespraech passt."))
+                # Generisch ohne Persoenlichkeit
+                if mode == "auto":
+                    hints.append((1, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
+                                  f"Du kannst das eigenstaendig uebernehmen und beilaeufig erwaehnen."))
+                elif mode == "suggest":
+                    hints.append((2, f"ERKANNTES MUSTER ({pct}% sicher): {desc}. "
+                                  f"Erwaehne es beilaeufig: 'Wie gewohnt um diese Zeit — soll ich?'"))
+                else:
+                    hints.append((3, f"BEOBACHTUNG ({pct}% sicher): {desc}. "
+                                  f"Nur erwaehnen wenn es zum Gespraech passt."))
 
         # --- Live-Insights: Aktuelle Haus-Erkenntnisse ---
         for insight in live_insights[:3]:

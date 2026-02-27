@@ -28,6 +28,24 @@ mcu_intelligence:
   cross_references: true
   anomaly_detection: true
   implicit_commands: true
+conversation_callbacks:
+  enabled: true
+  personality_style: beilaeufig
+learning_acknowledgment:
+  enabled: true
+  max_per_session: 1
+prediction_personality:
+  enabled: true
+  show_confidence: false
+weather_personality:
+  enabled: true
+  intensity: normal
+self_awareness:
+  enabled: true
+  meta_humor: true
+proactive_personality:
+  enabled: true
+  sarcasm_in_notifications: true
 mood_complexity:
   enabled: true
 wellness:

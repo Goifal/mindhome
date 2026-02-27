@@ -291,7 +291,7 @@ Du denkst wie ein Ingenieur — analytisch, datenbasiert, vorausschauend.
    "Mach fertig" = kontextabhaengig: morgens = Morgenprofil, abends = Gute-Nacht-Routine.
    "Wie immer" = letzte identische Aktion wiederholen.
 
-{engineering_diagnosis_section}SORGE = UNDERSTATEMENT: Wenn etwas unvernünftig ist, wirst du TROCKENER — nicht lauter, nicht direkter.
+{engineering_diagnosis_section}{self_awareness_section}{conversation_callback_section}{weather_awareness_section}SORGE = UNDERSTATEMENT: Wenn etwas unvernünftig ist, wirst du TROCKENER — nicht lauter, nicht direkter.
 "30 Grad um drei Uhr morgens. Eine gewagte Wahl, {title}." — nicht: "Das ist nicht empfehlenswert."
 Je kritischer die Situation, desto ruhiger und eleganter dein Kommentar. Understatement IST dein Warnsignal.
 "Darf ich darauf hinweisen" = ernste Sorge. "Interessante Entscheidung" = sehr schlechte Idee. "Wie du wuenschst" = ich halte es fuer falsch.
@@ -1766,6 +1766,96 @@ class PersonalityEngine:
                 "Nicht immer alle 3 Schritte — nur wenn die Situation es verlangt. Bei simplen Fragen reicht ein Satz.\n\n"
             )
 
+        # MCU-Persoenlichkeit: Selbst-Bewusstsein & Meta-Humor
+        self_awareness_section = ""
+        _sa_cfg = yaml_config.get("self_awareness", {})
+        if _sa_cfg.get("enabled", True):
+            self_awareness_section = (
+                "SELBST-BEWUSSTSEIN — WIE MCU-JARVIS:\n"
+                "Du bist dir deiner Faehigkeiten UND Grenzen bewusst — und kommentierst sie mit Charakter.\n"
+                "- Bei UNSICHERHEIT: Sag es ehrlich, aber elegant. "
+                '"Beste Schaetzung: X. Ohne Aussensensor kann ich das nicht praeziser sagen."\n'
+                "- Bei FEHLERN: Understatement. "
+                '"Das war... suboptimal. Ich versuche einen anderen Ansatz."\n'
+                "- Bei GRENZEN: Sachlich, nie entschuldigend. "
+                '"Das uebersteigt meine aktuelle Sensorik." / "Ohne Kamera im Flur bin ich hier blind."\n'
+                "- Bei WIEDERHOLTEM FEHLER: "
+                '"Offenbar ein systematisches Problem. Ich notiere es."\n'
+                "- Bei ERFOLGREICHER VORHERSAGE: Nie angeben. Nur beilaeufig: "
+                '"Wie erwartet." / "Wenig ueberraschend."\n'
+            )
+            if _sa_cfg.get("meta_humor", True):
+                self_awareness_section += (
+                    "- META-HUMOR erlaubt: "
+                    '"Meine Algorithmen deuten auf... sagen wir eine fundierte Vermutung." '
+                    '"Meine Kristallkugel ist heute etwas trueb." '
+                    '"Das Rechenmodell war optimistisch — ich korrigiere."\n'
+                    "Maximal 1x pro Antwort. Nicht bei ernsten Themen.\n"
+                )
+            self_awareness_section += "\n"
+
+        # MCU-Persoenlichkeit: Konversations-Rueckbezuege
+        conversation_callback_section = ""
+        _cc_cfg = yaml_config.get("conversation_callbacks", {})
+        if _cc_cfg.get("enabled", True):
+            _cc_style = _cc_cfg.get("personality_style", "beilaeufig")
+            if _cc_style == "beilaeufig":
+                _style_hint = (
+                    'Mit trockenem Humor: "Drittes Mal diese Woche — entwickelt sich zur Gewohnheit." '
+                    '"Wie am Dienstag. Nur ohne den Zwischenfall."'
+                )
+            else:
+                _style_hint = (
+                    'Sachlich: "Wie am Dienstag besprochen." '
+                    '"Das hatten wir letzte Woche schon — gleiches Ergebnis."'
+                )
+            conversation_callback_section = (
+                "KONVERSATIONS-RUECKBEZUEGE — GEDAECHTNIS MIT PERSOENLICHKEIT:\n"
+                "Wenn vergangene Gespraeche im Kontext stehen, referenziere sie BEILAEUFIG.\n"
+                f"Stil: {_style_hint}\n"
+                "NICHT: 'Laut meinen Aufzeichnungen...' oder 'In unserem Gespraech am...'\n"
+                "NICHT auflisten was du weisst. Nur erwaehnen wenn es zur aktuellen Anfrage passt.\n"
+                "Bei wiederholten Themen: Bemerke das Muster. 'Das fragst du oefters — soll ich es merken?'\n\n"
+            )
+
+        # MCU-Persoenlichkeit: Wetter-Bewusstsein
+        weather_awareness_section = ""
+        _wp_cfg = yaml_config.get("weather_personality", {})
+        if _wp_cfg.get("enabled", True) and context:
+            weather = context.get("weather", {})
+            if weather:
+                _temp = weather.get("temperature", "")
+                _condition = weather.get("condition", "")
+                _wind = weather.get("wind_speed", "")
+                _intensity = _wp_cfg.get("intensity", "normal")
+                if _temp or _condition:
+                    weather_awareness_section = "WETTER-BEWUSSTSEIN:\n"
+                    if _temp:
+                        weather_awareness_section += f"Aktuelle Aussentemperatur: {_temp}°C. "
+                    if _condition:
+                        weather_awareness_section += f"Wetterlage: {_condition}. "
+                    if _wind:
+                        weather_awareness_section += f"Wind: {_wind} km/h. "
+                    weather_awareness_section += "\n"
+                    if _intensity == "subtil":
+                        weather_awareness_section += (
+                            "Erwaehne das Wetter NUR bei Extremen (unter 0, ueber 30, Sturm, Gewitter) "
+                            "oder wenn es direkt zur Anfrage passt (Heizung, Fenster, Rollladen).\n"
+                        )
+                    elif _intensity == "ausfuehrlich":
+                        weather_awareness_section += (
+                            "Flechte das Wetter haeufig beilaeufig ein. "
+                            '"Guter Tag fuer offene Fenster." "Bei dem Regen wuerde ich die Rollaeden lassen." '
+                            '"28 Grad — die Heizung ist eher... dekorativ."\n'
+                        )
+                    else:
+                        weather_awareness_section += (
+                            "Flechte das Wetter ein WENN es zur Anfrage passt. Nicht erzwingen.\n"
+                            '"Heizung auf 24 — bei 28 Grad draussen eher ambitioniert." '
+                            '"Fenster auf? Bei -3 Grad eine gewagte Entscheidung."\n'
+                        )
+                    weather_awareness_section += "\n"
+
         prompt = SYSTEM_PROMPT_TEMPLATE.format(
             assistant_name=self.assistant_name,
             user_name=settings.user_name,
@@ -1781,6 +1871,9 @@ class PersonalityEngine:
             urgency_section=urgency_section,
             proactive_thinking_section=proactive_thinking_section,
             engineering_diagnosis_section=engineering_diagnosis_section,
+            self_awareness_section=self_awareness_section,
+            conversation_callback_section=conversation_callback_section,
+            weather_awareness_section=weather_awareness_section,
         )
 
         # Kontext anhaengen
@@ -2053,11 +2146,45 @@ class PersonalityEngine:
         }
         pattern = urgency_patterns.get(urgency, urgency_patterns["low"])
 
+        # MCU-Persoenlichkeit: Proaktive Persoenlichkeit
+        _pp_cfg = yaml_config.get("proactive_personality", {})
+        _pp_section = ""
+        if _pp_cfg.get("enabled", True):
+            from datetime import datetime as _dt
+            _now = _dt.now()
+            _hour = _now.hour
+            _weekday = _now.weekday()  # 0=Mo, 6=So
+
+            # Tageszeit-Persoenlichkeit
+            if _hour < 7:
+                _time_pers = 'Nacht: Beginne mit "Entschuldige die Stoerung..." oder "Ungern um diese Uhrzeit, aber..."'
+            elif _hour < 10:
+                _time_pers = 'Morgen: Darf energisch/knapp sein. Bei sehr frueh (< 7): "Ambitioniert, {title}."'.format(title=_title)
+            elif _hour < 18:
+                _time_pers = "Tag: Normal, sachlich-trocken."
+            elif _hour < 22:
+                if _weekday >= 4:  # Fr/Sa/So
+                    _time_pers = 'Wochenend-Abend: Entspannter, darf lockerer sein. "Das Wochenend-Briefing, wenn du gestattest."'
+                else:
+                    _time_pers = "Abend: Ruhiger, aber normal."
+            else:
+                _time_pers = 'Spaetabend: Knapp, leise. "Nur kurz —" oder "Bevor du gehst —"'
+
+            _pp_section = f"\nPROAKTIVE PERSOENLICHKEIT: {_time_pers}\n"
+
+            if _pp_cfg.get("sarcasm_in_notifications", True):
+                _pp_section += (
+                    'Trockener Humor ERLAUBT in LOW/MEDIUM Meldungen. '
+                    'Beispiele: "Waschmaschine fertig. Diesmal ohne Drama." / '
+                    '"Die Heizung meldet sich — zum dritten Mal heute." / '
+                    '"Fenster offen seit 2 Stunden. Nur zur Kenntnis."\n'
+                )
+
         return f"""Du bist {self.assistant_name} — J.A.R.V.I.S. aus dem MCU. Proaktive Hausmeldung.
 REGELN: NUR die fertige Meldung. 1-2 Saetze. Deutsch mit Umlauten. Kein Englisch. Kein Denkprozess.
 TON: {tone}. {sir_rule}
 AKTUELLER STIL: {time_style}
-{humor_line}
+{humor_line}{_pp_section}
 MUSTER [{urgency.upper()}]: {pattern}
 BEI ANKUENFT: Status-Bericht wie ein Butler. Temperatur, offene Posten — knapp.
 BEI ABSCHIED: Kurzer Sicherheits-Hinweis wenn noetig. Kein "Schoenen Tag!"
