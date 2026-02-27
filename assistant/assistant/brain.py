@@ -1090,6 +1090,13 @@ class AssistantBrain(BrainCallbacksMixin):
                 "_emitted": True,
             }
 
+        # ----- MCU-JARVIS: "Das Uebliche" / "Wie immer" Shortcut -----
+        # Erkennt implizite Routine-Befehle und verbindet sie mit der
+        # Anticipation Engine (gelernte Muster fuer die aktuelle Tageszeit).
+        _routine_result = await self._handle_das_uebliche(text, person, room, stream_callback)
+        if _routine_result is not None:
+            return _routine_result
+
         # ----- Schnelle Shortcuts (VOR Context Build — spart 1-4s Latenz) -----
 
         # Kalender-Diagnose: "Welchen Kalender hast du?" etc.
@@ -2099,6 +2106,7 @@ class AssistantBrain(BrainCallbacksMixin):
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
             irony_count_today=irony_count,
+            user_text=text,
         )
 
         # ----------------------------------------------------------------
@@ -6153,6 +6161,104 @@ class AssistantBrain(BrainCallbacksMixin):
 
         return None
 
+    # ------------------------------------------------------------------
+    # MCU-JARVIS: "Das Uebliche" / Implizite Routinen
+    # ------------------------------------------------------------------
+
+    _DAS_UEBLICHE_PATTERNS = [
+        "das uebliche", "das übliche", "wie immer",
+        "mach fertig", "mach alles fertig", "wie gewohnt",
+        "das gleiche wie immer", "du weisst schon",
+        "mach mal", "mach das ding",
+    ]
+
+    async def _handle_das_uebliche(
+        self, text: str, person: Optional[str], room: Optional[str],
+        stream_callback=None,
+    ) -> Optional[dict]:
+        """Erkennt 'Das Uebliche' und fuehrt gelernte Routinen aus.
+
+        Verbindet sich mit der AnticipationEngine: Was macht der User
+        normalerweise um diese Tageszeit? Bei hoher Confidence ausfuehren,
+        bei mittlerer nachfragen.
+
+        Returns:
+            Response-Dict oder None wenn kein Match.
+        """
+        t = text.lower().strip().rstrip("?!.")
+        if not any(p in t for p in self._DAS_UEBLICHE_PATTERNS):
+            return None
+
+        title = get_person_title(person or self._current_person)
+
+        # Anticipation Engine nach Mustern fuer JETZT fragen
+        try:
+            suggestions = await self.anticipation.get_suggestions()
+        except Exception as e:
+            logger.debug("Das Uebliche: Anticipation-Fehler: %s", e)
+            suggestions = []
+
+        if not suggestions:
+            # Kein gelerntes Muster — Jarvis gesteht das elegant ein
+            response_text = (
+                f"Ich habe noch kein festes Muster fuer diese Uhrzeit gelernt, {title}. "
+                f"Was darf es sein?"
+            )
+            self._remember_exchange(text, response_text)
+            await self._speak_and_emit(response_text, room=room)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "das_uebliche_empty",
+                "context_room": room or "unbekannt",
+                "_emitted": True,
+            }
+
+        # Beste Suggestion ausfuehren oder vorschlagen
+        best = max(suggestions, key=lambda s: s.get("confidence", 0))
+        conf = best.get("confidence", 0)
+        action = best.get("action", "")
+        args = best.get("args", {})
+        desc = best.get("description", action)
+
+        if conf >= 0.8 and action:
+            # Hohe Confidence → ausfuehren und beilaeufig erwaehnen
+            try:
+                result = await self.executor.execute(action, args)
+                success = isinstance(result, dict) and result.get("success", False)
+                if success:
+                    response_text = f"Wie gewohnt, {title}. {desc.split('→')[-1].strip() if '→' in desc else desc}."
+                else:
+                    response_text = f"{desc} — hat nicht funktioniert. Versuch es nochmal, {title}?"
+            except Exception as e:
+                logger.debug("Das Uebliche Ausfuehrung fehlgeschlagen: %s", e)
+                response_text = f"Das Uebliche wollte nicht so recht, {title}. Was genau brauchst du?"
+
+            self._remember_exchange(text, response_text)
+            await self._speak_and_emit(response_text, room=room)
+            return {
+                "response": response_text,
+                "actions": [{"function": action, "args": args}],
+                "model_used": "das_uebliche_auto",
+                "context_room": room or "unbekannt",
+                "_emitted": True,
+            }
+        else:
+            # Mittlere Confidence → nachfragen
+            response_text = (
+                f"Um diese Zeit machst du normalerweise: {desc}. "
+                f"Soll ich, {title}?"
+            )
+            self._remember_exchange(text, response_text)
+            await self._speak_and_emit(response_text, room=room)
+            return {
+                "response": response_text,
+                "actions": [],
+                "model_used": "das_uebliche_suggest",
+                "context_room": room or "unbekannt",
+                "_emitted": True,
+            }
+
     def _detect_smalltalk(self, text: str) -> Optional[str]:
         """Erkennt soziale Fragen und gibt eine JARVIS-Antwort zurueck.
 
@@ -7677,19 +7783,68 @@ Regeln:
         templates = self._ERROR_PATTERNS[category]
         return random.choice(templates).format(device=device)
 
+    # MCU-JARVIS: Eskalations-Phrasen pro Severity-Stufe
+    _ESCALATION_PREFIXES = {
+        1: [  # Beilaeufig — Info
+            "Uebrigens —",
+            "Nur am Rande —",
+            "Falls es relevant ist —",
+        ],
+        2: [  # Einwand — Effizienz
+            "{title}, darf ich anmerken —",
+            "{title}, kurzer Einwand —",
+            "Eine Beobachtung, {title} —",
+        ],
+        3: [  # Sorge — Sicherheit/Schaden
+            "{title}, wenn ich darauf hinweisen darf —",
+            "{title}, das wuerde ich nicht empfehlen.",
+            "Darf ich Bedenken aeussern, {title} —",
+        ],
+        4: [  # Resignation — nach ignorierter Warnung
+            "Wie du wuenschst, {title}.",
+            "Dein Wille, {title}.",
+            "Wird umgesetzt, {title}. Die Warnung steht noch.",
+        ],
+    }
+
     async def _generate_situational_warning(
         self, func_name: str, func_args: dict, pushback: dict,
     ) -> str:
-        """Generiert eine JARVIS-artige Warnung mit Daten und Alternative.
+        """Generiert eine JARVIS-artige Warnung mit Eskalations-Stufen.
 
-        Phase 11: MCU-Stil: 'Sir, das wuerde ich nicht empfehlen —
-        Aussentemperatur liegt bei -5°C. Vorschlag: Rollladen auf 20%.'
+        MCU-Stil mit 4-Tier Severity:
+        1 = beilaeufig: "Uebrigens — die Sonne steht hoch."
+        2 = Einwand: "Darf ich anmerken — Fenster offen bei Heizung."
+        3 = Sorge: "Das wuerde ich nicht empfehlen — Sturm draussen."
+        4 = Resignation: "Wie du wuenschst." (nach ignorierter Warnung)
         """
         warnings = pushback.get("warnings", [])
         if not warnings:
             return ""
 
         title = get_person_title(self._current_person)
+        severity = pushback.get("severity", 1)
+
+        # Pruefen ob dieselbe Warnung kuerzlich schon gegeben wurde → Resignation
+        _warn_key = f"mha:pushback:warned:{func_name}:{sorted(str(w.get('type','')) for w in warnings)}"
+        if self.memory.redis:
+            try:
+                was_warned = await self.memory.redis.get(_warn_key)
+                if was_warned:
+                    severity = 4  # Resignation — User wurde bereits gewarnt
+                else:
+                    # Warnung merken (30 Min TTL)
+                    await self.memory.redis.setex(_warn_key, 1800, "1")
+            except Exception:
+                pass
+
+        # Prefix basierend auf Severity
+        prefix = random.choice(self._ESCALATION_PREFIXES.get(severity, self._ESCALATION_PREFIXES[1]))
+        prefix = prefix.replace("{title}", title)
+
+        # Severity 4: Kurzer Kommentar, keine Erklaerung
+        if severity == 4:
+            return prefix
 
         # Schneller Pfad: Einzel-Warnung → template-basiert (kein LLM)
         if len(warnings) == 1:
@@ -7697,8 +7852,8 @@ Regeln:
             detail = w.get("detail", "")
             alt = w.get("alternative", "")
             if alt:
-                return f"{title}, kurzer Einwand — {detail}. Vorschlag: {alt}"
-            return f"{title}, zur Info — {detail}."
+                return f"{prefix} {detail}. Vorschlag: {alt}"
+            return f"{prefix} {detail}."
 
         # Komplexer Pfad: 2+ Warnungen → LLM formuliert natuerlich
         warning_text = "\n".join(
@@ -7706,12 +7861,21 @@ Regeln:
             for w in warnings
         )
 
+        # Severity bestimmt LLM-Ton
+        tone_map = {
+            1: "beilaeufig und informativ",
+            2: "sachlich mit leichtem Einwand",
+            3: "besorgt aber trocken — Understatement statt Dramatik",
+        }
+        tone = tone_map.get(severity, "sachlich")
+
         try:
             messages = [{
                 "role": "system",
                 "content": (
                     "Du bist JARVIS. Formuliere eine KNAPPE Warnung auf Deutsch "
-                    "im Butler-Ton. Nenne die Fakten, erklaere WARUM es problematisch ist, "
+                    f"im Butler-Ton. Tonart: {tone}. "
+                    "Nenne die Fakten, erklaere WARUM es problematisch ist, "
                     f"und schlage eine Alternative vor. Sprich den User mit '{title}' an. "
                     "Maximal 2 Saetze. Trocken, nicht belehrend."
                 ),

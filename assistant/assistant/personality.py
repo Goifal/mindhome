@@ -795,6 +795,61 @@ class PersonalityEngine:
         return layer.get("max_sentences", 2)
 
     # ------------------------------------------------------------------
+    # MCU-JARVIS: Mood x Complexity Matrix
+    # ------------------------------------------------------------------
+    # Statt nur Tageszeit bestimmt die Kombination aus Stimmung und
+    # Anfrage-Komplexitaet die Antwortlaenge. MCU-JARVIS passt seinen
+    # Kommunikationsstil dynamisch an: Bei Stress ultra-kurz, bei guter
+    # Laune und komplexen Fragen ausfuehrlicher.
+    #
+    # Spalten: simple (1 Aktion), medium (Frage/Kontext), complex (Planung/Analyse)
+    # Zeilen: good, neutral, stressed, frustrated, tired
+    _MOOD_COMPLEXITY_MATRIX = {
+        #                simple  medium  complex
+        "good":       {"simple": 2, "medium": 3, "complex": 5},
+        "neutral":    {"simple": 2, "medium": 3, "complex": 4},
+        "stressed":   {"simple": 1, "medium": 2, "complex": 3},
+        "frustrated": {"simple": 1, "medium": 2, "complex": 3},
+        "tired":      {"simple": 1, "medium": 2, "complex": 3},
+    }
+
+    @staticmethod
+    def classify_request_complexity(text: str) -> str:
+        """Klassifiziert die Komplexitaet einer User-Anfrage.
+
+        simple: Einzelne Aktion ("Licht an", "Rollladen runter")
+        medium: Frage oder Kontext-Anfrage ("Wie ist das Wetter?", "Status")
+        complex: Planung, Analyse, Multi-Step ("Was waere wenn...", "Plane...")
+        """
+        t = text.lower().strip()
+        word_count = len(t.split())
+
+        # Complex: Planung, Analyse, Was-waere-wenn, Multi-Step
+        _complex_markers = [
+            "was waere wenn", "was wäre wenn", "was passiert wenn",
+            "was kostet", "plane", "planung", "analysiere",
+            "vergleich", "optimier", "strategie", "empfiehlst du",
+            "was schlaegst du vor", "vor und nachteile",
+            "wie spare ich", "wie reduziere ich", "wie optimiere ich",
+            "energie", "bericht", "zusammenfassung", "ueberblick",
+        ]
+        if any(m in t for m in _complex_markers) or word_count > 15:
+            return "complex"
+
+        # Simple: Einzelne Geraete-Aktionen, kurze Befehle
+        if word_count <= 5:
+            return "simple"
+
+        # Medium: Fragen, Status-Abfragen, mittlere Laenge
+        return "medium"
+
+    def get_mood_complexity_sentences(self, mood: str, text: str) -> int:
+        """Gibt max_sentences basierend auf Mood x Complexity zurueck."""
+        complexity = self.classify_request_complexity(text)
+        row = self._MOOD_COMPLEXITY_MATRIX.get(mood, self._MOOD_COMPLEXITY_MATRIX["neutral"])
+        return row.get(complexity, 2)
+
+    # ------------------------------------------------------------------
     # Urgency Detection (Dichte nach Dringlichkeit)
     # ------------------------------------------------------------------
 
@@ -1624,7 +1679,7 @@ class PersonalityEngine:
 
     def build_system_prompt(
         self, context: Optional[dict] = None, formality_score: Optional[int] = None,
-        irony_count_today: Optional[int] = None,
+        irony_count_today: Optional[int] = None, user_text: str = "",
     ) -> str:
         """
         Baut den vollstaendigen System Prompt.
@@ -1632,6 +1687,7 @@ class PersonalityEngine:
         Args:
             context: Optionaler Kontext (Raum, Person, etc.)
             formality_score: Aktueller Formality-Score (Phase 6)
+            user_text: Original User-Text (fuer Mood x Complexity Matrix)
 
         Returns:
             Fertiger System Prompt String
@@ -1645,8 +1701,13 @@ class PersonalityEngine:
         self._current_mood = mood
         mood_config = MOOD_STYLES.get(mood, MOOD_STYLES["neutral"])
 
-        # Max Sentences anpassen (nie unter 1)
-        max_sentences = max(1, max_sentences + mood_config["max_sentences_mod"])
+        # MCU-JARVIS: Mood x Complexity Matrix ueberschreibt zeit-basierte Defaults
+        # Wenn User-Text vorhanden, nutze die Matrix fuer praezisere Antwortlaenge
+        if user_text:
+            max_sentences = self.get_mood_complexity_sentences(mood, user_text)
+        else:
+            # Fallback auf zeit-basierte Berechnung mit Mood-Modifier
+            max_sentences = max(1, max_sentences + mood_config["max_sentences_mod"])
 
         # Mood-Abschnitt
         mood_section = ""
