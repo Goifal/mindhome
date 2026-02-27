@@ -2826,10 +2826,11 @@ async def ui_get_presence_settings(token: str = ""):
 
 
 @app.put("/api/ui/presence/settings")
-async def ui_update_presence_settings(token: str = "", data: dict = {}):
+async def ui_update_presence_settings(request: Request, token: str = ""):
     """Presence-Einstellungen im MindHome Addon aktualisieren."""
     _check_token(token)
     try:
+        data = await request.json()
         result = await brain.ha.mindhome_put("/api/presence/settings", data)
         return result or {"success": False}
     except Exception as e:
@@ -2891,7 +2892,11 @@ async def ui_update_notification_channels(
 
         cfg.setdefault("notifications", {})["channels"] = req.channels
         with open(config_path, "w") as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False)
+            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # In-memory config aktualisieren
+        import assistant.config as _cfg
+        _cfg.yaml_config = load_yaml_config()
 
         _audit_log("notification_channels_update", {"channels": list(req.channels.keys()) if isinstance(req.channels, dict) else []})
         return {"success": True, "channels": req.channels}

@@ -992,8 +992,9 @@ function fNum(path, label, min='', max='', step='1', hint='') {
 function fRange(path, label, min, max, step, labels=null) {
   const v = getPath(S,path) ?? min;
   const lbl = labels ? (labels[v]||v) : v;
+  const lblAttr = labels ? ` data-labels='${JSON.stringify(labels).replace(/'/g,"&#39;")}'` : '';
   return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
-    <div class="range-group"><input type="range" data-path="${path}" min="${min}" max="${max}" step="${step}" value="${v}"
+    <div class="range-group"><input type="range" data-path="${path}" min="${min}" max="${max}" step="${step}" value="${v}"${lblAttr}
       oninput="updRange(this)"><span class="range-value" id="rv_${path.replace(/\./g,'_')}">${lbl}</span></div></div>`;
 }
 function fToggle(path, label) {
@@ -1378,7 +1379,14 @@ function fPersonTitles() {
 
 function updRange(el) {
   const path = el.dataset.path;
-  document.getElementById('rv_'+path.replace(/\./g,'_')).textContent = el.value;
+  let display = el.value;
+  if (el.dataset.labels) {
+    try {
+      const labels = JSON.parse(el.dataset.labels);
+      display = labels[el.value] || labels[parseFloat(el.value)] || el.value;
+    } catch(e) {}
+  }
+  document.getElementById('rv_'+path.replace(/\./g,'_')).textContent = display;
 }
 function toggleSec(hdr) { hdr.classList.toggle('open'); hdr.nextElementSibling.classList.toggle('open'); }
 
@@ -2463,7 +2471,7 @@ function renderSecurity() {
     '<div class="form-group"><label>Recovery-Key</label>' +
     '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Falls du deine PIN vergisst, brauchst du diesen Key zum Zuruecksetzen. Sicher aufbewahren!</p>' +
     '<div style="display:flex;gap:8px;align-items:center;">' +
-    '<input type="text" id="recoveryKeyDisplay" readonly style="flex:1;font-family:var(--mono);font-size:14px;letter-spacing:2px;text-align:center;" value="Versteckt — Klicke Generieren" />' +
+    '<input type="text" id="settingsRecoveryKey" readonly style="flex:1;font-family:var(--mono);font-size:14px;letter-spacing:2px;text-align:center;" value="Versteckt — Klicke Generieren" />' +
     '<button class="btn btn-primary" onclick="regenerateRecoveryKey()" style="white-space:nowrap;">Neu generieren</button>' +
     '</div>' +
     '<p style="font-size:11px;color:var(--danger);margin-top:6px;">Nach dem Generieren wird der Key nur EINMAL angezeigt. Notiere ihn sofort!</p>' +
@@ -2886,7 +2894,7 @@ async function regenerateRecoveryKey() {
   if (!confirm('Neuen Recovery-Key generieren? Der alte Key wird ungueltig! Notiere dir den neuen Key sofort.')) return;
   try {
     const data = await api('/api/ui/recovery-key/regenerate', 'POST');
-    const el = document.getElementById('recoveryKeyDisplay');
+    const el = document.getElementById('settingsRecoveryKey');
     if (el && data.recovery_key) {
       el.value = data.recovery_key;
       el.style.color = 'var(--accent)';
