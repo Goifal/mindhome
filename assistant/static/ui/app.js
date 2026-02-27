@@ -3318,6 +3318,17 @@ function collectSettings() {
     });
     setPath(updates, path, triggers);
   });
+  // Scene-Trigger editors (st-editor divs) - collect from DOM
+  document.querySelectorAll('#settingsContent .st-editor[data-path]').forEach(el => {
+    const path = el.dataset.path;
+    const triggers = [];
+    el.querySelectorAll('.st-row').forEach(row => {
+      const entity = row.querySelector('.st-entity').value.trim();
+      const room = row.querySelector('.st-room').value.trim();
+      if (entity && room) triggers.push({ entity, room });
+    });
+    setPath(updates, path, triggers);
+  });
   // Chip-Selects - already maintained in S via toggleChip()
   document.querySelectorAll('#settingsContent .chip-grid[data-path]').forEach(el => {
     const path = el.dataset.path;
@@ -4518,6 +4529,13 @@ function renderVacuum() {
     fRange('vacuum.power_trigger.cooldown_hours', 'Cooldown (nicht nochmal)', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',6:'6 Std',8:'8 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'}) +
     _renderPowerTriggerList()
   ) +
+  sectionWrap('&#127917;', 'Szenen-Trigger',
+    fInfo('Wenn eine Aktivitaet (input_boolean) ausgeschaltet wird, reinigt der Saugroboter automatisch den zugehoerigen Raum. Z.B. "Kochen" aus → Kueche saugen.') +
+    fToggle('vacuum.scene_trigger.enabled', 'Szenen-Trigger aktiv') +
+    fRange('vacuum.scene_trigger.delay_minutes', 'Verzoegerung nach Deaktivieren', 1, 30, 1, {1:'1 Min',2:'2 Min',5:'5 Min',10:'10 Min',15:'15 Min',20:'20 Min',30:'30 Min'}) +
+    fRange('vacuum.scene_trigger.cooldown_hours', 'Cooldown (nicht nochmal)', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',6:'6 Std',8:'8 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'}) +
+    _renderSceneTriggerList()
+  ) +
   sectionWrap('&#128295;', 'Wartungs-Ueberwachung',
     fInfo('Jarvis warnt wenn Verschleissteile des Saugroboters gewechselt werden muessen.') +
     fToggle('vacuum.maintenance.enabled', 'Wartungs-Ueberwachung aktiv') +
@@ -4570,6 +4588,49 @@ function ptSync(editor) {
     if (entity && room) triggers.push({ entity, threshold, room });
   });
   setPath(S, 'vacuum.power_trigger.triggers', triggers);
+}
+
+function _renderSceneTriggerList() {
+  const triggers = getPath(S, 'vacuum.scene_trigger.triggers') || [];
+  let rows = triggers.map((t, i) =>
+    `<div class="st-row" style="display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;">
+       <input type="text" class="st-entity form-input" value="${esc(t.entity || '')}" placeholder="input_boolean.kochen" style="font-size:12px;font-family:var(--mono);">
+       <input type="text" class="st-room form-input" value="${esc(t.room || '')}" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+       <button class="kv-rm" onclick="stRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>
+     </div>`
+  ).join('');
+  return `<div class="st-editor" data-path="vacuum.scene_trigger.triggers">
+    <div style="display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;margin-bottom:4px;font-size:11px;color:var(--text-muted);font-weight:600;">
+      <span>Entity (input_boolean)</span><span>Raum</span><span></span>
+    </div>
+    ${rows}
+    <button class="kv-add" onclick="stAdd(this)">+ Szenen-Trigger</button>
+  </div>`;
+}
+function stAdd(btn) {
+  const editor = btn.closest('.st-editor');
+  const row = document.createElement('div');
+  row.className = 'st-row';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;';
+  row.innerHTML = `<input type="text" class="st-entity form-input" placeholder="input_boolean.kochen" style="font-size:12px;font-family:var(--mono);">
+    <input type="text" class="st-room form-input" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+    <button class="kv-rm" onclick="stRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>`;
+  editor.insertBefore(row, btn);
+  stSync(editor);
+}
+function stRemove(btn) {
+  const editor = btn.closest('.st-editor');
+  btn.closest('.st-row').remove();
+  stSync(editor);
+}
+function stSync(editor) {
+  const triggers = [];
+  editor.querySelectorAll('.st-row').forEach(row => {
+    const entity = row.querySelector('.st-entity').value.trim();
+    const room = row.querySelector('.st-room').value.trim();
+    if (entity && room) triggers.push({ entity, room });
+  });
+  setPath(S, 'vacuum.scene_trigger.triggers', triggers);
 }
 
 function renderVacuumRobot(floor, floorLabel) {
