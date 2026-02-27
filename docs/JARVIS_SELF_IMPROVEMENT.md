@@ -646,3 +646,392 @@ mha:param_changes                                    # LIST (max 200, TTL 180d)
 12. **Data Deletion:** "Vergiss alles ueber Max" → Log: "Person-Daten geloescht: max (47 Keys)"
 13. **Syntax-Check:** `python3 -m py_compile assistant/assistant/outcome_tracker.py` etc.
 14. **Logs:** `docker compose logs -f assistant` → Alle neuen Log-Eintraege pruefen
+
+---
+
+## Integrationsanalyse: Exakte Hook-Points in brain.py
+
+Basierend auf vollstaendiger Code-Analyse von `brain.py` (7764 Zeilen). Jeder Hook ist auf die exakte Zeile referenziert.
+
+### I1. Modul-Erstellung (`__init__`, Zeile 170-274)
+
+Neue Module werden am Ende des bestehenden Blocks eingefuegt (~Zeile 265):
+
+```python
+# Bestehende letzte Eintraege:
+self.music_dj = MusicDJ(self.mood, self.activity)          # Zeile 262
+self.visitor_manager = VisitorManager(self.ha, self.camera_manager)  # Zeile 265
+
+# NEU: Self-Improvement Features
+from .outcome_tracker import OutcomeTracker
+from .correction_memory import CorrectionMemory
+from .response_quality import ResponseQualityTracker
+from .error_patterns import ErrorPatternTracker
+from .self_report import SelfReport
+from .adaptive_thresholds import AdaptiveThresholds
+
+self.outcome_tracker = OutcomeTracker(self.ha)
+self.correction_memory = CorrectionMemory()
+self.response_quality = ResponseQualityTracker()
+self.error_patterns = ErrorPatternTracker()
+self.self_report = SelfReport(self.ollama)
+self.adaptive_thresholds = AdaptiveThresholds()
+```
+
+**Risiko:** Keines. Alle Konstruktoren sind sync und leichtgewichtig (nur Config lesen). Redis kommt erst in `initialize()`.
+
+**Potentieller Bug:** Import-Fehler wenn Modul-Datei fehlt → **Mitigation:** Imports innerhalb try/except im Kopf der Datei, Fallback auf `None`.
+
+### I2. Redis-Initialisierung (`initialize()`, Zeile 367-460)
+
+Neue Module nutzen das bestehende `_safe_init` Pattern (F-069, Graceful Degradation):
+
+```python
+# Nach bestehenden _safe_init Aufrufen (~Zeile 458):
+await _safe_init("OutcomeTracker", self.outcome_tracker.initialize(redis_client=self.memory.redis))
+await _safe_init("CorrectionMemory", self.correction_memory.initialize(redis_client=self.memory.redis))
+await _safe_init("ResponseQuality", self.response_quality.initialize(redis_client=self.memory.redis))
+await _safe_init("ErrorPatterns", self.error_patterns.initialize(redis_client=self.memory.redis))
+await _safe_init("SelfReport", self.self_report.initialize(redis_client=self.memory.redis))
+await _safe_init("AdaptiveThresholds", self.adaptive_thresholds.initialize(redis_client=self.memory.redis))
+
+# Global Learning Kill Switch pruefen:
+if not cfg.yaml_config.get("learning", {}).get("enabled", True):
+    self.outcome_tracker.enabled = False
+    self.correction_memory.enabled = False
+    self.response_quality.enabled = False
+    self.error_patterns.enabled = False
+    self.adaptive_thresholds.enabled = False
+    logger.warning("GLOBAL: Alle Lern-Features deaktiviert (learning.enabled=false)")
+```
+
+**Risiko:** Wenn ein Modul `initialize()` failt, wird es durch `_safe_init` als degraded markiert → Jarvis startet trotzdem. ✅
+
+**Potentieller Bug:** Reihenfolge ist wichtig! `SelfReport` braucht Referenzen zu den anderen Modulen. **Loesung:** `SelfReport` bekommt Referenzen NACH der Init-Phase via setter (wie bestehende Module):
+```python
+self.self_report.set_subsystems(
+    outcome_tracker=self.outcome_tracker,
+    correction_memory=self.correction_memory,
+    response_quality=self.response_quality,
+    error_patterns=self.error_patterns,
+    feedback=self.feedback,
+    learning_observer=self.learning_observer,
+)
+```
+
+### I3. Mega-Gather: Kontext laden (~Zeile 1940)
+
+Correction Memory Regeln werden parallel mit den bestehenden Intelligence-Fusion-Daten geladen:
+
+```python
+# Bestehend (Zeile 1940-1943):
+_mega_tasks.append(("anticipation", self.anticipation.get_suggestions()))
+_mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns()))
+_mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
+_mega_tasks.append(("experiential", self._get_experiential_hints(text)))
+
+# NEU:
+_mega_tasks.append(("correction_rules", self.correction_memory.get_active_rules()))
+_mega_tasks.append(("outcome_scores", self.outcome_tracker.get_action_scores()))
+_mega_tasks.append(("error_mitigations", self.error_patterns.get_active_mitigations()))
+```
+
+**Risiko:** Jeder Task im Mega-Gather laeuft mit `return_exceptions=True` → ein Fehler in einem neuen Task kann die anderen nicht blockieren. ✅
+
+**Potentieller Bug:** Mega-Gather hat schon 15+ Tasks. 3 weitere erhoehen die Parallelitaet. **Analyse:** Alle 3 neuen Tasks sind reine Redis-Reads (<1ms), keine HA-API oder Ollama-Calls → kein Performance-Problem.
+
+### I4. Tool-Execution Hook: Outcome Tracker (~Zeile 2732)
+
+DIREKT nach dem bestehenden Learning-Observer Hook:
+
+```python
+# Bestehend (Zeile 2730-2744):
+if isinstance(result, dict) and result.get("success"):
+    entity_id = final_args.get("entity_id", "")
+    if not entity_id:
+        r = final_args.get("room", "")
+        if r and func_name in ("set_light", "set_cover", "set_climate", "set_switch"):
+            domain = func_name.replace("set_", "")
+            entity_id = f"{domain}.{r.lower().replace(' ', '_')}"
+    if entity_id:
+        self._task_registry.create_task(
+            self.learning_observer.mark_jarvis_action(entity_id),
+            name="mark_jarvis_action",
+        )
+
+    # NEU: Outcome Tracker — beobachte ob Aktion gut war
+    self._task_registry.create_task(
+        self.outcome_tracker.track_action(
+            action_type=func_name,
+            args=final_args,
+            entity_id=entity_id,
+            room=final_args.get("room", room or ""),
+            person=person or "",
+        ),
+        name="track_outcome",
+    )
+```
+
+**Risiko:** `track_action()` startet einen 3-Minuten-Timer im Hintergrund (asyncio.sleep + HA state check). Max 20 gleichzeitige Observations verhindert Memory-Wachstum. ✅
+
+**Potentieller Bug:** Wenn `entity_id` leer ist (z.B. bei `web_search`, `get_weather`), kann der Outcome Tracker keinen State vergleichen. **Loesung:** `track_action()` prüft ob `entity_id` vorhanden — ohne Entity kein State-Snapshot, nur verbal feedback ("Danke") wird getrackt.
+
+### I5. Correction Hook: Erweiterung (~Zeile 3114)
+
+Die bestehende Correction-Erkennung wird ERWEITERT, nicht ersetzt:
+
+```python
+# Bestehend (Zeile 3113-3118):
+if self._is_correction(text):
+    self._task_registry.create_task(
+        self._handle_correction(text, response_text, person or "unknown"),
+        name="handle_correction",
+    )
+    # NEU: Auch in Correction Memory speichern
+    self._task_registry.create_task(
+        self.correction_memory.store_correction(
+            original_text=self._last_user_text or "",
+            correction_text=text,
+            response=response_text,
+            person=person or "",
+            room=room or "",
+            last_action=self._last_executed_action,
+        ),
+        name="store_correction_memory",
+    )
+    # NEU: Korrektur = NEGATIVE Outcome
+    if self._last_executed_action:
+        self._task_registry.create_task(
+            self.outcome_tracker.record_correction(self._last_executed_action),
+            name="outcome_correction",
+        )
+```
+
+**Risiko:** Zwei Background-Tasks statt einem. Beide sind fire-and-forget via `_task_registry` → kein Blockieren. ✅
+
+**Potentieller Bug:** `self._last_user_text` existiert noch nicht! **Loesung:** Am Anfang von `process()` (~Zeile 646): `self._last_user_text = text` speichern. Minimal-invasive Aenderung.
+
+### I6. Response Quality Hook: Anfang + Ende von process()
+
+Am **Anfang** von `process()` (~Zeile 646):
+```python
+self._current_person = person or ""
+# NEU: Response Quality — war die letzte Antwort unklar?
+rq_rephrase = await self.response_quality.check_rephrase(text)
+```
+
+Am **Ende** vor Return (~Zeile 3100):
+```python
+# NEU: Response Quality — Exchange loggen
+category = profile.category if profile else "unknown"
+self._task_registry.create_task(
+    self.response_quality.record_exchange(
+        text=text,
+        response=response_text,
+        category=category,
+        was_rephrase=rq_rephrase,
+        person=person or "",
+    ),
+    name="record_quality",
+)
+```
+
+**Potentieller Bug:** `check_rephrase()` ist ein async Call im Hot-Path von `process()`. **Analyse:** Es ist ein reiner Redis-Read (letzter User-Text vergleichen) → <1ms. Akzeptabel im Hot-Path.
+
+**Aber:** `check_rephrase()` muss VOR dem Mega-Gather laufen, weil es den vorherigen Text braucht. Position zwischen Person-Setup (~646) und Pre-Classification (~1872) ist korrekt.
+
+### I7. Error Pattern Hook: LLM-Timeout (~Zeile 2412)
+
+```python
+# Bestehend (Zeile 2412-2413):
+except asyncio.TimeoutError:
+    logger.error("LLM Timeout (%ss) fuer Modell %s", llm_timeout, model)
+
+    # NEU: Error Pattern tracken
+    self._task_registry.create_task(
+        self.error_patterns.record_error(
+            error_type="timeout",
+            action_type="llm_call",
+            model=model,
+            context=text[:100],
+        ),
+        name="track_error_timeout",
+    )
+
+    # Bestehend: Fallback-Modell versuchen
+    fallback_model = self.model_router.get_fallback_model(model)
+```
+
+Zusaetzlich bei Double-Timeout (~Zeile 2429):
+```python
+except (asyncio.TimeoutError, Exception):
+    # NEU:
+    self._task_registry.create_task(
+        self.error_patterns.record_error(
+            error_type="double_timeout",
+            action_type="llm_call",
+            model=model,
+        ),
+        name="track_error_double_timeout",
+    )
+    _err = "Beide Sprachmodelle reagieren nicht..."
+```
+
+Und bei General Exception (~Zeile 2445):
+```python
+except Exception as e:
+    logger.error("LLM Exception: %s", e)
+    # NEU:
+    self._task_registry.create_task(
+        self.error_patterns.record_error(
+            error_type="exception",
+            action_type="llm_call",
+            model=model,
+            detail=str(e)[:200],
+        ),
+        name="track_error_exception",
+    )
+```
+
+**Risiko:** Keines. Alles fire-and-forget in `except`-Bloecken. ✅
+
+### I8. Weekly Report Loop erweitern (~Zeile 7164)
+
+Der bestehende `_weekly_learning_report_loop` wird ersetzt durch eine erweiterte Version:
+
+```python
+async def _weekly_learning_report_loop(self):
+    """Erweiterter woechentlicher Bericht: Learning + Self-Report + Adaptive + Self-Opt."""
+    while True:
+        try:
+            weekly_cfg = cfg.yaml_config.get("learning", {}).get("weekly_report", {})
+            target_day = int(weekly_cfg.get("day", 6))
+            target_hour = int(weekly_cfg.get("hour", 19))
+            # ... bestehende Scheduling-Logik ...
+            await asyncio.sleep(max(wait_seconds, 60))
+
+            if not weekly_cfg.get("enabled", True):
+                continue
+
+            # 1. Bestehender Learning Report
+            report = await self.learning_observer.get_learning_report()
+
+            # 2. NEU: Self-Report generieren (Feature 3)
+            self_report = await self.self_report.generate_report()
+
+            # 3. NEU: Adaptive Thresholds Analyse (Feature 4)
+            adjustments = await self.adaptive_thresholds.run_analysis()
+
+            # 4. NEU: Self-Optimization+ Analyse (Feature 9)
+            proposals = await self.self_optimization.run_analysis()
+
+            # Bericht zusammenbauen und senden
+            if self_report:
+                title = get_person_title()
+                if await self._callback_should_speak("low"):
+                    formatted = await self._safe_format(self_report, "low")
+                    await self._speak_and_emit(formatted)
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.debug("Weekly Report Fehler: %s", e)
+            await asyncio.sleep(3600)
+```
+
+**Potentieller Bug:** Wenn `self_report.generate_report()` das Ollama LLM aufruft und es einen Timeout gibt, blockiert der gesamte Loop. **Loesung:** Timeout-Wrapper:
+```python
+try:
+    self_report = await asyncio.wait_for(
+        self.self_report.generate_report(), timeout=60
+    )
+except asyncio.TimeoutError:
+    self_report = self.self_report.generate_fallback_report()
+```
+
+### I9. Prompt-Injection fuer Correction Rules (Feature 7)
+
+Die Correction Rules muessen in den System-Prompt. Bestehender Pattern: `personality.py` baut den System-Prompt-String via `build_system_prompt()`.
+
+Integration in `brain.py` nach dem Mega-Gather (~Zeile 2070), wo der Message-Build passiert:
+
+```python
+# Correction Rules als Kontext-Sektion (wie Intelligence Fusion)
+correction_rules = _safe_get("correction_rules", [])
+if correction_rules:
+    rules_text = self.personality.build_learned_rules_section(correction_rules)
+    # rules_text wird dem system_prompt_additions hinzugefuegt
+```
+
+**Sicherheit:** `build_learned_rules_section()` in `personality.py` wendet `_sanitize_for_prompt()` an. Max 5 Regeln, max 200 Zeichen pro Regel. Kein User-Input wird direkt injiziert — Regeln werden aus Templates gebaut.
+
+---
+
+## Potentielle Bugs und Mitigationen
+
+### Bug 1: `self._last_user_text` existiert nicht
+**Wo:** Correction Hook (I5) braucht den vorherigen User-Text
+**Fix:** Einfache Zeile am Anfang von `process()`:
+```python
+self._last_user_text = text  # Zeile 646
+```
+**Risiko:** Minimal. String-Referenz, kein Memory-Leak.
+
+### Bug 2: Outcome Tracker Timer bei Container-Restart
+**Wo:** `track_action()` startet 3-Minuten-Timer. Wenn Container restartet, sind pending Observations weg.
+**Fix:** Pending Observations werden in Redis gespeichert (`mha:outcome:pending:{uuid}`, TTL 5min). Beim Start: `_recover_pending_observations()` prueft Redis fuer unabgeschlossene Observations.
+**Alternativ:** Ignorieren — verlorene Observations sind kein Problem, weil wir Rolling Averages nutzen.
+
+### Bug 3: Hot-Reload Kompatibilitaet
+**Wo:** `config_versioning.reload_config()` aktualisiert `yaml_config` global. Unsere neuen Module lesen Config im `__init__`.
+**Fix:** Module muessen `yaml_config` NICHT cachen, sondern bei jedem Aufruf lesen. Pattern:
+```python
+# FALSCH (cached, reagiert nicht auf Hot-Reload):
+self._enabled = cfg.get("enabled", True)
+
+# RICHTIG (dynamisch):
+@property
+def enabled(self):
+    return yaml_config.get("outcome_tracker", {}).get("enabled", True)
+```
+**Ausnahme:** Performance-kritische Werte (die im Hot-Path gelesen werden) duerfen gecached werden, aber muessen in `reload_config()` aktualisiert werden.
+
+### Bug 4: Race Condition bei Outcome Score Update
+**Wo:** Zwei gleichzeitige `track_action()` Callbacks updaten denselben Score
+**Fix:** Redis SET NX Lock (S3):
+```python
+async def _update_score(self, action_type, outcome):
+    lock_key = f"mha:lock:outcome:{action_type}"
+    if not await self.redis.set(lock_key, "1", nx=True, ex=5):
+        return  # Skip, anderer Task updatet gerade
+    try:
+        # Read-Modify-Write hier
+    finally:
+        await self.redis.delete(lock_key)
+```
+
+### Bug 5: Mega-Gather Timeout
+**Wo:** Wenn alle 18+ Mega-Gather Tasks gleichzeitig laufen und Redis langsam ist
+**Fix:** Der bestehende `asyncio.gather(*coros, return_exceptions=True)` faengt alle Fehler ab. Neue Tasks sind reine Redis-Reads (<1ms) → kein zusaetzliches Timeout-Risiko.
+
+### Bug 6: Self-Optimization + Adaptive Thresholds Konflikt
+**Wo:** Beide laufen im selben weekly-Loop (I8)
+**Fix:** Reihenfolge: Adaptive Thresholds ZUERST, dann Self-Optimization. Self-Opt sieht die auto-adjustments und kann sie in seine Analyse einbeziehen. Wenn Self-Opt einen Vorschlag fuer denselben Parameter hat → Adaptive-Adjustment wird nicht gespeichert (S4 Prioritaetssystem).
+
+### Bug 7: Correction Memory Regeln konfligierten
+**Wo:** Regel 1: "Abends meint User Schlafzimmer" vs Regel 2: "User meint Wohnzimmer"
+**Fix:** Confidence-System. Neuere Korrekturen erhoehen die Confidence der passenden Regel, aeltere decayen. Bei Konflikt gewinnt die hoehere Confidence. Max 20 Regeln mit Garbage Collection.
+
+---
+
+## Error Isolation: Kein Feature darf Jarvis crashen
+
+Jede Methode die von `process()` aufgerufen wird, ist durch mindestens eine dieser Schichten geschuetzt:
+
+1. **`_safe_init` (F-069):** Init-Fehler → Module degraded, Jarvis laeuft trotzdem
+2. **`_task_registry.create_task()`:** Background-Tasks fangen Exceptions intern
+3. **`return_exceptions=True` im Mega-Gather:** Fehler werden zu Werten statt Crashes
+4. **`if not self.enabled or not self.redis: return`:** Graceful Degradation
+5. **try/except in jedem Hook:** Explizites Error-Handling
+
+**Worst Case:** Alle 6 neuen Module fallen aus → Jarvis funktioniert exakt wie vorher, nur ohne Lern-Features. Kein bestehender Code wird geaendert oder gebrochen.
