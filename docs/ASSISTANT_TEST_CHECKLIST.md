@@ -849,10 +849,420 @@
 
 ## 51. Knowledge Base (RAG)
 
-### Technisch zu prüfen
-- Dokumente werden in ChromaDB indiziert
-- Vektor-Suche für relevante Informationen
-- Embedding-Modell konfiguriert in settings.yaml
+### Chat-Befehle zum Testen
+
+| # | Chat-Eingabe | Erwartetes Ergebnis |
+|---|---|---|
+| 51.1 | "Was steht in der Wissensdatenbank?" | Statistik: Anzahl Chunks, Quellen |
+| 51.2 | "Wissen hinzufügen: Die Waschmaschine steht im Keller links" | Wissen gespeichert (1 Chunk) |
+| 51.3 | "Neues Wissen: Der WLAN-Schlüssel für Gäste ist ABC123" | Wissen gespeichert |
+| 51.4 | "Wo steht die Waschmaschine?" | RAG-Suche findet "Im Keller links" |
+| 51.5 | "Wie ist das WLAN-Passwort für Gäste?" | RAG-Suche findet "ABC123" |
+| 51.6 | "Wissen Status" | Statistik anzeigen |
+
+### API-Endpoints prüfen
+
+| # | Endpoint | Methode | Beschreibung |
+|---|---|---|---|
+| 51.7 | `/api/ui/knowledge` | GET | Stats + Dateiliste (Chunks, Quellen) |
+| 51.8 | `/api/ui/knowledge/upload` | POST | Datei hochladen (multipart/form-data) |
+| 51.9 | `/api/ui/knowledge/ingest` | POST | Alle Dateien in `/config/knowledge/` einlesen |
+| 51.10 | `/api/ui/knowledge/chunks` | GET | Alle Chunks auflisten (mit Filter) |
+| 51.11 | `/api/ui/knowledge/chunks/delete` | POST | Ausgewählte Chunks löschen |
+| 51.12 | `/api/ui/knowledge/file/delete` | POST | Alle Chunks einer Datei löschen |
+| 51.13 | `/api/ui/knowledge/file/reingest` | POST | Datei löschen + neu einlesen |
+| 51.14 | `/api/ui/knowledge/rebuild` | POST | Gesamte DB löschen + neu aufbauen |
+
+### Technische Details
+
+- **Vektor-DB**: ChromaDB (Port 8100)
+- **Embedding-Modell**: `paraphrase-multilingual-MiniLM-L12-v2` (384 Dimensionen, 50+ Sprachen)
+- **Chunk-Größe**: 500 Zeichen (konfigurierbar)
+- **Chunk-Overlap**: 50 Zeichen
+- **Max Suchergebnisse**: 3 pro Anfrage
+- **Relevanz-Schwelle**: >= 0.3 (0.0 = irrelevant, 1.0 = perfekter Treffer)
+- **Max Distanz**: 1.2 (Treffer darüber werden verworfen)
+- **Max Dateigröße**: 10 MB
+- **Unterstützte Formate**: `.txt`, `.md`, `.pdf`, `.csv`
+- **Upload-Ordner**: `/config/knowledge/`
+- **Prompt-Injection-Schutz**: Alle RAG-Inhalte werden sanitisiert
+
+### Settings (settings.yaml)
+```yaml
+knowledge_base:
+  enabled: true
+  auto_ingest: true          # Dateien beim Start automatisch laden
+  chunk_size: 500            # Zeichen pro Chunk
+  chunk_overlap: 50          # Überlappung zwischen Chunks
+  max_distance: 1.2          # Relevanz-Schwelle (niedriger = strenger)
+  search_limit: 3            # Max. Treffer pro Suche
+  embedding_model: paraphrase-multilingual-MiniLM-L12-v2
+```
+
+---
+
+### Was SOLL in die Wissensdatenbank?
+
+> **Faustregel**: Alles was Jarvis wissen soll, was er nicht aus Home Assistant oder dem Internet bekommt.
+> Persönliches Haushaltswissen, das man sonst im Kopf hat oder auf einem Zettel an der Pinnwand.
+
+#### KATEGORIE 1: Haushalts-Wissen (Geräte, Standorte, Eigenheiten)
+
+| # | Beispiel-Dokument | Warum sinnvoll |
+|---|---|---|
+| 1 | Wo steht welches Gerät, wie bedient man es | Jarvis kann "Wo ist der Dampfreiniger?" beantworten |
+| 2 | Eigenheiten des Hauses (klemmendes Fenster, Sicherung springt) | Jarvis kann warnen oder Kontext geben |
+| 3 | Garten-Infos (Pflanzen, Gießplan, Mähroboter-Zeiten) | Jarvis hilft bei Gartenfragen |
+| 4 | Smart-Home-Besonderheiten die nicht in HA sichtbar sind | Jarvis versteht Zusammenhänge |
+
+**Beispiel-Datei** `haushalts-geraete.txt`:
+```
+Waschmaschine: Steht im Keller links neben der Treppe. Modell: Bosch Serie 6.
+Flusensieb alle 2 Wochen reinigen. Bei Fehler E18: Abpumpfilter prüfen.
+
+Trockner: Steht rechts neben der Waschmaschine. Kondenswasser-Behälter nach
+jedem Durchgang leeren. Flusensieb VOR jedem Durchgang reinigen.
+
+Spülmaschine: In der Küche unter der Arbeitsplatte rechts. Salz alle 4 Wochen
+nachfüllen. Klarspüler auf Stufe 3. Bei Geruch: Maschinenreiniger bei 65 Grad.
+
+Staubsauger (manuell): Im Abstellraum im EG hinter der Tür. Beutel wechseln
+wenn die rote Anzeige leuchtet. Ersatzbeutel liegen im selben Regal.
+
+Sicherungskasten: Im Keller rechts neben der Kellertür. Sicherung 12 ist das
+Büro, Sicherung 15 ist die Küche (springt manchmal wenn Wasserkocher +
+Mikrowelle gleichzeitig laufen).
+```
+
+#### KATEGORIE 2: WLAN, Passwörter und Zugangsdaten
+
+| # | Beispiel-Dokument | Warum sinnvoll |
+|---|---|---|
+| 1 | WLAN-Name und Passwort (Haupt + Gast) | "Wie ist das WLAN-Passwort?" |
+| 2 | PIN-Codes (Garage, Gartentür, Briefkasten) | "Was ist der Code für die Garage?" |
+| 3 | Kundennummern (Strom, Internet, Versicherung) | "Was ist unsere Kundennummer beim Stromanbieter?" |
+
+**Beispiel-Datei** `zugangsdaten.txt`:
+```
+WLAN Hauptnetzwerk: Name "MeinNetz-5G", Passwort "SuperSicher2024!"
+WLAN Gäste: Name "Gaeste-WLAN", Passwort "Willkommen2024"
+
+Garagentor-Code: 4711
+Briefkasten-Schlüssel: kleiner silberner am Schlüsselbund
+
+Internet-Anbieter: Telekom, Kundennummer 123456789, Vertragsnummer V-987654
+Stromanbieter: Stadtwerke, Kundennummer SW-2024-4567
+Hausverwaltung: Müller GmbH, Tel. 0123-456789, Ansprechpartner Frau Schmidt
+```
+
+#### KATEGORIE 3: Persönliche Vorlieben und Gewohnheiten
+
+| # | Beispiel-Dokument | Warum sinnvoll |
+|---|---|---|
+| 1 | Essens-Vorlieben und Allergien der Familie | Koch-Assistent, Einkaufsliste |
+| 2 | Lieblingsrezepte oder häufig gekochte Gerichte | "Was kochen wir heute?" |
+| 3 | Tagesablauf-Infos die nicht automatisch erkennbar sind | Bessere proaktive Vorschläge |
+
+**Beispiel-Datei** `familie-vorlieben.txt`:
+```
+Manuel: Mag kein Koriander und keine Oliven. Lieblingsessen: Schnitzel mit
+Pommes. Trinkt morgens immer Kaffee schwarz, 2 Tassen. Allergisch gegen
+Walnüsse. Fußball-Fan (Bayern München), schaut Spiele immer live.
+
+Julia: Vegetarierin seit 2023. Lieblingsessen: Pasta mit Pesto.
+Trinkt morgens grünen Tee. Mag keinen Fenchel. Joggt dienstags und
+donnerstags um 7 Uhr. Liest abends oft im Schlafzimmer.
+
+Kinder: Max (8) mag keine Paprika, isst am liebsten Nudeln mit Soße.
+Schlafenszeit 20 Uhr. Lisa (5) mag keinen Käse, braucht Nachtlicht.
+```
+
+#### KATEGORIE 4: Wartung, Verträge und Zyklen
+
+| # | Beispiel-Dokument | Warum sinnvoll |
+|---|---|---|
+| 1 | Wartungszyklen von Geräten | "Wann war die letzte Heizungswartung?" |
+| 2 | Verträge mit Kündigungsfristen | "Wann kann ich den Handyvertrag kündigen?" |
+| 3 | Müllabfuhr-Plan | "Welche Tonne kommt diese Woche?" |
+
+**Beispiel-Datei** `wartung-termine.txt`:
+```
+Heizungswartung: Jährlich im September. Firma Thermotec, Tel. 0172-1234567.
+Letzte Wartung: September 2025. Nächste fällig: September 2026.
+
+Schornsteinfeger: Kommt 2x im Jahr (März und September). Bezirk: Meier.
+
+Müllabfuhr:
+- Montag: Restmüll (graue Tonne)
+- Mittwoch: Biomüll (braune Tonne)
+- Freitag (alle 2 Wochen, gerade KW): Gelber Sack
+- Freitag (alle 4 Wochen, 1. Freitag im Monat): Papiertonne
+
+Wasserfilter Küche: Alle 3 Monate wechseln. Marke: Brita Maxtra+.
+Letzter Wechsel: Januar 2026.
+```
+
+#### KATEGORIE 5: Notfall-Informationen
+
+| # | Beispiel-Dokument | Warum sinnvoll |
+|---|---|---|
+| 1 | Notfall-Telefonnummern (Arzt, Apotheke, Nachbar) | Schneller Zugriff im Notfall |
+| 2 | Medikamente der Familienmitglieder | "Welche Medikamente nimmt Oma?" |
+| 3 | Versicherungs-Infos | "Wie ist die Nummer der Hausratversicherung?" |
+
+**Beispiel-Datei** `notfall-info.txt`:
+```
+Hausarzt: Dr. Müller, Tel. 0123-111222, Mo-Fr 8-12 und 14-17 Uhr.
+Kinderarzt: Dr. Weber, Tel. 0123-333444, nur mit Termin.
+Nächste Notaufnahme: Krankenhaus Mitte, Hauptstraße 50, Tel. 0123-555000.
+Giftnotruf: 030-19240 (24h)
+
+Nachbar links (Familie Schmitz): Tel. 0123-666777. Haben Ersatzschlüssel.
+Nachbar rechts (Herr Klein): Tel. 0123-888999. Hilft bei Handwerk.
+
+Hausratversicherung: Allianz, Policen-Nr. HV-2024-12345, Hotline 0800-123456.
+Haftpflicht: HUK, Policen-Nr. HP-2024-67890.
+
+Medikamente Oma (wenn zu Besuch): Blutdrucktabletten morgens (Ramipril 5mg),
+Metformin 500mg zu den Mahlzeiten. Liegen in der blauen Dose im Gästezimmer.
+```
+
+#### KATEGORIE 6: Haus und Technik
+
+| # | Beispiel-Dokument | Warum sinnvoll |
+|---|---|---|
+| 1 | Raum-Übersicht (welcher Raum wofür) | Kontext für Raumfragen |
+| 2 | Technische Installationen (Hauptwasserhahn, etc.) | "Wo drehe ich das Wasser ab?" |
+| 3 | Smart-Home-Hardware-Zuordnung | Debugging-Hilfe |
+
+**Beispiel-Datei** `haus-technik.txt`:
+```
+Hauptwasserhahn: Im Keller, direkt links nach der Treppe an der Wand.
+Roter Hebel nach rechts = zu. Im Notfall sofort zudrehen!
+
+FI-Schalter: Sicherungskasten Keller, ganz links oben.
+Vierteljährlich testen (Testknopf drücken).
+
+Erdgeschoss: Flur, Wohnzimmer (Süd), Küche (Ost), Gäste-WC, Abstellraum.
+Obergeschoss: Flur, Schlafzimmer (Süd), Manuel Büro (NO), Julia Büro (NW),
+Kinderzimmer Max (Ost), Kinderzimmer Lisa (West), Bad.
+Keller: Waschraum, Technikraum (Heizung, Server-Rack), Lagerraum.
+
+Server-Rack im Keller: Home Assistant (RPi4), MindHome Assistant (Ubuntu PC),
+Unifi Controller, NAS (Synology DS220+). USV für ca. 30 Min bei Stromausfall.
+
+Photovoltaik: 9.8 kWp auf Süddach. Batterie: 10 kWh BYD.
+Notstrom für Kühlschrank + Server bei Ausfall.
+```
+
+#### KATEGORIE 7: Anleitungen und Fehlerbehebung
+
+| # | Beispiel-Dokument | Warum sinnvoll |
+|---|---|---|
+| 1 | "Wie mache ich X?" für wiederkehrende Aufgaben | Jarvis erklärt Schritt-für-Schritt |
+| 2 | Bedienungsanleitungen komplizierter Geräte | "Wie bediene ich den Backofen?" |
+| 3 | Fehlerbehebung bei bekannten Problemen | "Waschmaschine zeigt E18" |
+
+**Beispiel-Datei** `anleitungen.txt`:
+```
+Backofen (Siemens iQ500): Oberhitze/Unterhitze = Symbol mit 2 Strichen.
+Umluft = Symbol mit Ventilator. Pizza: 220 Grad Umluft, mittlere Schiene.
+
+Kaffeevollautomat (DeLonghi Magnifica): Bohnen nur oben einfüllen.
+Wassertank täglich frisch. Alle 2 Wochen entkalken (Tabs in Wassertank).
+Trester-Behälter alle 2 Tage leeren.
+
+Wenn das Internet nicht geht:
+1. Router prüfen (Power-LED muss grün leuchten)
+2. Wenn LEDs aus: Steckdose Büro prüfen (Sicherung 12)
+3. Router neu starten: 30 Sekunden Strom weg, dann wieder an
+4. 3 Minuten warten bis WLAN wieder da ist
+5. Immer noch nicht: Telekom Störung 0800-3301000
+
+Wenn der Saugroboter sich verfängt:
+1. In der App "Home" setzen (zur Basis schicken)
+2. Wenn er sich nicht bewegt: manuell auf die Station setzen
+3. Bürsten auf Haare prüfen und befreien
+4. Sensoren unten mit trockenem Tuch abwischen
+```
+
+---
+
+### Was NICHT in die Wissensdatenbank gehört
+
+| # | Dokumenttyp | Warum NICHT | Besser so |
+|---|---|---|---|
+| 1 | **Anweisungen an Jarvis** | RAG = INFORMATIONEN, keine Befehle. Jarvis interpretiert RAG nicht als Instruktionen | Settings in `settings.yaml`, Easter Eggs in `easter_eggs.yaml` |
+| 2 | **Einzelne persönliche Fakten** | Dafür gibt es das Gedächtnis ("Merk dir: ...") | `Merk dir: Ich mag keinen Koriander` → SemanticMemory |
+| 3 | **Kalender-Termine** | RAG hat keinen Zeitbezug, alte Termine bleiben ewig | Kalender-Integration nutzen |
+| 4 | **Sehr lange PDFs (>50 Seiten)** | Wird in hunderte Chunks zerschnitten, Kontext geht verloren | Zusammenfassung schreiben, nur relevante Teile hochladen |
+| 5 | **Binärdateien** (Bilder, Excel, ZIP) | Nicht unterstützt. Nur `.txt`, `.md`, `.pdf`, `.csv` | Als Text extrahieren und `.txt` hochladen |
+| 6 | **Doppelte Informationen** | Ähnliche Chunks verwässern Suchergebnisse | Eine Quelle der Wahrheit pflegen |
+| 7 | **Fremdsprachen** (außer Deutsch/Englisch) | Jarvis antwortet Deutsch, fremdsprachige Chunks matchen schlechter | Auf Deutsch übersetzen |
+| 8 | **Code, Logs, technische Dumps** | Schlechte Semantik, wird als Textbrei zerschnitten | Relevante Info als Text-Zusammenfassung |
+| 9 | **Persönlichkeits-Anweisungen** | Prompt-Injection-Schutz blockiert Anweisungs-Muster | `personality` Config in `settings.yaml` |
+| 10 | **Sich häufig ändernde Daten** (Preise, Kurse) | RAG hat kein Ablaufdatum, veraltete Info bleibt | Web-Suche nutzen |
+
+---
+
+### Wie man Dokumente schreibt damit Jarvis sie optimal nutzt
+
+> Die Qualität der RAG-Antworten hängt zu **80% davon ab wie die Dokumente geschrieben sind**.
+> Das Embedding-Modell arbeitet semantisch — es muss den SINN verstehen können.
+
+#### Regel 1: Ein Thema pro Absatz
+
+Jeder Absatz (durch Leerzeile getrennt) wird als eigene Sinn-Einheit behandelt.
+Der Chunker trennt bevorzugt an Absatz-Grenzen.
+
+```
+SCHLECHT (zwei Themen vermischt):
+Die Waschmaschine steht im Keller und läuft am besten mit dem Eco-Programm.
+Der Trockner daneben braucht alle 2 Wochen eine Filterreinigung und das WLAN-
+Passwort für Gäste ist "Willkommen2024".
+
+GUT (sauber getrennt):
+Waschmaschine: Steht im Keller links. Eco-Programm für normale Wäsche.
+
+Trockner: Steht rechts neben der Waschmaschine. Filter vor jedem Durchgang
+reinigen.
+
+Gäste-WLAN: Netzwerkname "Gaeste-WLAN", Passwort "Willkommen2024".
+```
+
+#### Regel 2: Die Frage im Text beantworten
+
+Das Embedding-Modell vergleicht die USER-FRAGE mit dem TEXT-INHALT.
+Schreibe so, dass die wahrscheinliche Frage quasi als Antwort im Text steht.
+
+```
+SCHLECHT (kein Kontext):
+4711 Garage
+ABC123 Gast
+
+GUT (die Frage ist quasi beantwortet):
+Der Code für das Garagentor ist 4711. Eingabe am Tastenfeld rechts neben dem Tor.
+Das WLAN-Passwort für Gäste lautet ABC123. Netzwerkname: "Gaeste-WLAN".
+```
+
+#### Regel 3: Natürliche Sprache, keine Stichworte
+
+Das Embedding-Modell versteht SÄTZE besser als Stichworte oder Tabellen.
+
+```
+SCHLECHT:
+- WaMa: Keller, links
+- Trockner: Keller, rechts
+
+GUT:
+Die Waschmaschine steht im Keller links neben der Treppe.
+Der Trockner steht im Keller rechts neben der Waschmaschine.
+```
+
+#### Regel 4: Schlüsselbegriffe verwenden
+
+Denke daran wie jemand FRAGEN würde, und verwende diese Wörter im Text.
+
+```
+SCHLECHT:
+Abwasserhebeanlage PE300: Intervall-Check quartalsweise.
+
+GUT:
+Die Abwasserpumpe (Hebeanlage PE300) im Keller muss alle 3 Monate geprüft
+werden. Dazu den Deckel öffnen und schauen ob der Schwimmer sich frei bewegt.
+```
+
+#### Regel 5: Kurze Absätze (unter 400 Zeichen ideal)
+
+Der Chunk ist 500 Zeichen groß. Absätze unter 400 Zeichen passen garantiert
+in einen Chunk. Längere werden an Satzgrenzen zerschnitten.
+
+```
+SCHLECHT (ein Riesen-Absatz):
+Die Heizung ist eine Gas-Brennwerttherme von Viessmann Vitodens 200-W mit
+19 kW die im Keller steht und jedes Jahr im September von Thermotec gewartet
+wird deren Nummer 0172-1234567 ist und der Techniker heißt Herr Braun...
+
+GUT (aufgeteilt):
+Heizung: Gas-Brennwerttherme Viessmann Vitodens 200-W, 19 kW.
+Steht im Keller im Technikraum.
+
+Heizungswartung: Jährlich im September durch Firma Thermotec.
+Telefon: 0172-1234567. Techniker: Herr Braun (kommt meist mittwochs).
+```
+
+#### Regel 6: Kontext am Anfang des Absatzes
+
+Jeder Absatz sollte am Anfang klarstellen WORUM es geht.
+
+```
+SCHLECHT (Kontext fehlt):
+Er steht links neben der Treppe. Modell: Serie 6. Flusensieb alle 2 Wochen.
+
+GUT (selbsterklärend):
+Waschmaschine: Steht im Keller links neben der Treppe. Modell: Bosch Serie 6.
+Flusensieb alle 2 Wochen reinigen.
+```
+
+#### Regel 7: Dateiname = Thema
+
+Der Dateiname wird als Quelle angezeigt (`[Quelle: haushalts-geraete.txt]`).
+
+```
+SCHLECHT: notizen.txt, daten.txt, neu.txt, test123.txt
+GUT: haushalts-geraete.txt, wlan-zugangsdaten.txt, notfall-nummern.txt
+```
+
+#### Regel 8: CSV für strukturierte Daten
+
+Für tabellarische Informationen ist CSV besser als Fließtext.
+
+**Beispiel** `geraete-wartung.csv`:
+```csv
+Gerät,Standort,Wartung,Intervall,Zuletzt,Nächste
+Waschmaschine,Keller links,Flusensieb reinigen,alle 2 Wochen,15.02.2026,01.03.2026
+Trockner,Keller rechts,Filter reinigen,vor jedem Durchgang,-,-
+Spülmaschine,Küche rechts,Salz nachfüllen,alle 4 Wochen,10.02.2026,10.03.2026
+Kaffeevollautomat,Küche,Entkalken,alle 2 Wochen,20.02.2026,06.03.2026
+```
+
+#### Regel 9: Markdown für längere Dokumente
+
+Markdown-Überschriften helfen dem Chunker die Struktur zu erkennen.
+
+**Beispiel** `haus-regeln.md`:
+```markdown
+# Hausregeln
+
+## Nachtruhe
+Ab 22 Uhr keine laute Musik im Wohnzimmer.
+Kopfhörer verwenden oder ins Schlafzimmer wechseln.
+
+## Küche
+Geschirr nach dem Essen direkt in die Spülmaschine.
+Herd und Arbeitsplatte nach dem Kochen abwischen.
+
+## Wäsche
+Wäsche nicht länger als 1 Tag in der Maschine lassen.
+Trockenzeiten: Empfindlich 60 Min, Normal 90 Min.
+```
+
+---
+
+### Checkliste für gute RAG-Dokumente
+
+| # | Regel | Check |
+|---|---|---|
+| 1 | Ein Thema pro Absatz? | |
+| 2 | Absätze unter 400 Zeichen? | |
+| 3 | Natürliche vollständige Sätze (keine Stichworte)? | |
+| 4 | Kontext am Absatz-Anfang (worum geht es)? | |
+| 5 | Alltagssprache die ein User als Frage stellen würde? | |
+| 6 | Sprechender Dateiname? | |
+| 7 | Keine doppelten Informationen über mehrere Dateien? | |
+| 8 | Keine Anweisungen an Jarvis (nur Fakten/Wissen)? | |
+| 9 | Auf Deutsch geschrieben? | |
+| 10 | Datei unter 10 MB und als .txt / .md / .pdf / .csv? | |
 
 ---
 
