@@ -249,11 +249,15 @@ class ModelRouter:
     def get_fallback_model(self, current_model: str) -> str:
         """Gibt ein schnelleres Fallback-Modell zurueck wenn das aktuelle nicht antwortet.
 
-        Deep -> Smart -> Fast. Gibt None zurueck wenn kein Fallback moeglich.
+        Deep -> Smart -> Fast. Ueberspringt identische Modelle
+        (z.B. wenn Deep == Smart, direkt zu Fast).
+        Gibt leeren String zurueck wenn kein Fallback moeglich.
         """
         if current_model == self.model_deep:
-            if self._smart_available:
+            # Wenn Smart ein anderes Modell ist, dorthin fallen
+            if self._smart_available and self.model_smart != current_model:
                 return self.model_smart
+            # Sonst direkt zu Fast
             return self.model_fast
         if current_model == self.model_smart:
             return self.model_fast

@@ -2202,9 +2202,28 @@ class AssistantBrain(BrainCallbacksMixin):
                     collected_tokens.append(token)
                     await stream_callback(token)
                 if stream_error or not collected_tokens:
-                    response_text = "Mein Sprachmodell reagiert gerade nicht. Versuch es gleich nochmal."
-                    if stream_callback:
-                        await stream_callback(response_text)
+                    # Fallback: Schnelleres Modell versuchen
+                    fallback_model = self.model_router.get_fallback_model(model)
+                    if fallback_model and fallback_model != model:
+                        logger.info("Knowledge-Stream Fallback: %s -> %s", model, fallback_model)
+                        model = fallback_model
+                        collected_tokens = []
+                        stream_error = False
+                        async for token in self.ollama.stream_chat(
+                            messages=messages,
+                            model=fallback_model,
+                        ):
+                            if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
+                                stream_error = True
+                                continue
+                            collected_tokens.append(token)
+                            await stream_callback(token)
+                    if stream_error or not collected_tokens:
+                        response_text = "Mein Sprachmodell reagiert gerade nicht. Versuch es gleich nochmal."
+                        if stream_callback:
+                            await stream_callback(response_text)
+                    else:
+                        response_text = self._filter_response("".join(collected_tokens))
                 else:
                     response_text = self._filter_response("".join(collected_tokens))
             else:
@@ -2215,8 +2234,18 @@ class AssistantBrain(BrainCallbacksMixin):
                 response_text = self._filter_response(response.get("message", {}).get("content", ""))
 
                 if "error" in response:
-                    logger.error("LLM Fehler: %s", response["error"])
-                    response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
+                    logger.error("LLM Fehler (Deep): %s — Fallback", response["error"])
+                    fallback_model = self.model_router.get_fallback_model(model)
+                    if fallback_model and fallback_model != model:
+                        logger.info("Knowledge Fallback: %s -> %s", model, fallback_model)
+                        response = await self.ollama.chat(
+                            messages=messages,
+                            model=fallback_model,
+                        )
+                        model = fallback_model
+                        response_text = self._filter_response(response.get("message", {}).get("content", ""))
+                    if not response_text:
+                        response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
             executed_actions = []
         elif intent_type == "memory":
             # Phase 8: Erinnerungsfrage -> Memory-Suche + Deep-Model
@@ -2244,9 +2273,28 @@ class AssistantBrain(BrainCallbacksMixin):
                     collected_tokens.append(token)
                     await stream_callback(token)
                 if stream_error or not collected_tokens:
-                    response_text = "Mein Sprachmodell reagiert gerade nicht. Versuch es gleich nochmal."
-                    if stream_callback:
-                        await stream_callback(response_text)
+                    # Fallback: Schnelleres Modell
+                    fallback_model = self.model_router.get_fallback_model(model)
+                    if fallback_model and fallback_model != model:
+                        logger.info("Memory-Stream Fallback: %s -> %s", model, fallback_model)
+                        model = fallback_model
+                        collected_tokens = []
+                        stream_error = False
+                        async for token in self.ollama.stream_chat(
+                            messages=memory_messages,
+                            model=fallback_model,
+                        ):
+                            if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
+                                stream_error = True
+                                continue
+                            collected_tokens.append(token)
+                            await stream_callback(token)
+                    if stream_error or not collected_tokens:
+                        response_text = "Mein Sprachmodell reagiert gerade nicht. Versuch es gleich nochmal."
+                        if stream_callback:
+                            await stream_callback(response_text)
+                    else:
+                        response_text = self._filter_response("".join(collected_tokens))
                 else:
                     response_text = self._filter_response("".join(collected_tokens))
             else:
