@@ -80,6 +80,12 @@ class MusicDJ:
         self.enabled = self._config.get("enabled", True)
         logger.info("MusicDJ initialisiert (enabled=%s)", self.enabled)
 
+    def reload_config(self, cfg: dict):
+        """Hot-Reload der MusicDJ-Konfiguration."""
+        self._config = cfg
+        self.enabled = cfg.get("enabled", True)
+        logger.info("MusicDJ Config reloaded (enabled=%s)", self.enabled)
+
     def set_notify_callback(self, callback):
         """Registriert Callback fuer proaktive Benachrichtigungen."""
         self._notify_callback = callback

@@ -118,6 +118,23 @@ class WellnessAdvisor:
         else:
             logger.info("WellnessAdvisor deaktiviert")
 
+    def reload_config(self, cfg: dict):
+        """Hot-Reload der WellnessAdvisor-Konfiguration."""
+        self.enabled = cfg.get("enabled", True)
+        self.check_interval = cfg.get("check_interval_minutes", 15) * 60
+        self.pc_break_minutes = cfg.get("pc_break_reminder_minutes", 120)
+        self.stress_check = cfg.get("stress_check", True)
+        self.meal_reminders = cfg.get("meal_reminders", True)
+        self.meal_times = cfg.get("meal_times", {"lunch": 13, "dinner": 19})
+        self.late_night_nudge = cfg.get("late_night_nudge", True)
+        entities = cfg.get("entities", {})
+        self.pc_power_sensor = entities.get("pc_power", "")
+        self.kitchen_motion_sensor = entities.get("kitchen_motion", "")
+        self.hydration_check = cfg.get("hydration_reminder", True)
+        self.hydration_interval_hours = cfg.get("hydration_interval_hours", 2)
+        logger.info("WellnessAdvisor Config reloaded (enabled=%s, interval=%ds)",
+                     self.enabled, self.check_interval)
+
     def set_notify_callback(self, callback):
         """Setzt den Callback fuer Wellness-Meldungen."""
         self._notify_callback = callback

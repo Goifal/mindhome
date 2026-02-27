@@ -355,8 +355,8 @@ def camera_snapshots():
     mgr = _deps.get("camera_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
-    limit = request.args.get("limit", 50, type=int)
-    offset = request.args.get("offset", 0, type=int)
+    limit = max(1, min(500, request.args.get("limit", 50, type=int)))
+    offset = max(0, request.args.get("offset", 0, type=int))
     return jsonify(mgr.get_snapshots(limit=limit, offset=offset))
 
 
@@ -518,8 +518,8 @@ def access_log():
     mgr = _deps.get("access_control_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
-    limit = request.args.get("limit", 50, type=int)
-    offset = request.args.get("offset", 0, type=int)
+    limit = max(1, min(500, request.args.get("limit", 50, type=int)))
+    offset = max(0, request.args.get("offset", 0, type=int))
     entity_id = request.args.get("entity_id")
     return jsonify(mgr.get_log(limit=limit, offset=offset, entity_id=entity_id))
 
@@ -917,8 +917,8 @@ def security_dashboard():
 def security_events():
     """Get security event log (paginated, filterable)."""
     from models import SecurityEvent
-    limit = request.args.get("limit", 50, type=int)
-    offset = request.args.get("offset", 0, type=int)
+    limit = max(1, min(500, request.args.get("limit", 50, type=int)))
+    offset = max(0, request.args.get("offset", 0, type=int))
     event_type = request.args.get("type")
 
     try:

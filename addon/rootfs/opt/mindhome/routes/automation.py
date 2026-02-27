@@ -96,7 +96,7 @@ def api_get_predictions():
     with get_db_session() as session:
         lang = get_language()
         status = request.args.get("status")
-        limit = request.args.get("limit", 50, type=int)
+        limit = max(1, min(500, request.args.get("limit", 50, type=int)))
 
         query = session.query(Prediction).order_by(Prediction.created_at.desc())
 

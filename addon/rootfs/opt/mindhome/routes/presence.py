@@ -196,8 +196,8 @@ def api_presence_log():
     with get_db_session() as session:
         query = session.query(PresenceLog).order_by(PresenceLog.created_at.desc())
         total = query.count()
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = max(1, min(500, request.args.get("limit", 50, type=int)))
+        offset = max(0, request.args.get("offset", 0, type=int))
         logs = query.offset(offset).limit(limit).all()
         return jsonify({
             "items": [{"id":l.id,"mode_name":l.mode_name,"user_id":l.user_id,"trigger":l.trigger,"created_at":l.created_at.isoformat() if l.created_at else None} for l in logs],

@@ -95,8 +95,8 @@ def api_get_patterns():
             query = query.filter_by(is_active=True).filter(LearnedPattern.status != 'insight')
 
         total = query.count()
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = max(1, min(500, request.args.get("limit", 50, type=int)))
+        offset = max(0, request.args.get("offset", 0, type=int))
         patterns = query.offset(offset).limit(limit).all()
 
         # Check HA automation coverage for each pattern
@@ -262,7 +262,7 @@ def api_get_state_history():
         entity_id = request.args.get("entity_id")
         device_id = request.args.get("device_id", type=int)
         hours = request.args.get("hours", 24, type=int)
-        limit = request.args.get("limit", 200, type=int)
+        limit = max(1, min(1000, request.args.get("limit", 200, type=int)))
 
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         query = session.query(StateHistory).filter(
@@ -436,8 +436,8 @@ def api_get_rejected_patterns():
             LearnedPattern.rejected_at.desc()
         )
         total = query.count()
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = max(1, min(500, request.args.get("limit", 50, type=int)))
+        offset = max(0, request.args.get("offset", 0, type=int))
         patterns = query.offset(offset).limit(limit).all()
         lang = get_language()
         return jsonify({
