@@ -2062,11 +2062,20 @@ def _validate_settings_values(settings: dict) -> list[str]:
                     errors.append(f"{path_str}={val} (erlaubt: {min_val}-{max_val})")
             except (ValueError, TypeError):
                 errors.append(f"{path_str}={val} (kein gueltiger Wert)")
-    for (section, key), allowed in ENUM_RULES.items():
-        if section in settings and isinstance(settings[section], dict):
-            val = settings[section].get(key)
-            if val is not None and val not in allowed:
-                errors.append(f"{section}.{key}={val} (erlaubt: {', '.join(allowed)})")
+    for path_keys, allowed in ENUM_RULES.items():
+        obj = settings
+        for pk in path_keys[:-1]:
+            if isinstance(obj, dict) and pk in obj:
+                obj = obj[pk]
+            else:
+                obj = None
+                break
+        if obj is None or not isinstance(obj, dict):
+            continue
+        val = obj.get(path_keys[-1])
+        path_str = ".".join(path_keys)
+        if val is not None and val not in allowed:
+            errors.append(f"{path_str}={val} (erlaubt: {', '.join(allowed)})")
     return errors
 
 
