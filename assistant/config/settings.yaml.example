@@ -392,13 +392,13 @@ seasonal_actions:
   check_interval_minutes: 30
   auto_execute_level: 3
 speech:
-  # STT-Engine (Whisper) — Aenderungen erfordern Container-Neustart!
+  # STT-Engine (Whisper) — Aenderungen werden sofort uebernommen
   stt_model: small            # tiny, base, small, medium, large-v3-turbo
   stt_language: de            # Sprache fuer Transkription (de, en, fr, ...)
   stt_beam_size: 5            # Beam Search Breite (1-10, hoeher = genauer, langsamer)
   stt_compute: int8           # CPU: int8 | GPU: float16
   stt_device: cpu             # cpu oder cuda (GPU)
-  # TTS-Engine (Piper) — Aenderungen erfordern Container-Neustart!
+  # TTS-Engine (Piper) — Aenderungen werden sofort uebernommen
   tts_voice: de_DE-thorsten-high  # Piper Voice (de_DE-thorsten-high = beste Qualitaet)
   # Auto-Whisper: Nachts automatisch leiser sprechen
   auto_night_whisper: true
