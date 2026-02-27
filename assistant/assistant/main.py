@@ -2365,6 +2365,9 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         with open(SETTINGS_YAML_PATH) as f:
             config = yaml.safe_load(f) or {}
 
+        # Speech-Settings vor dem Merge merken (fuer Restart-Erkennung)
+        old_speech = config.get("speech", {}).copy() if "speech" in config else {}
+
         # Deep Merge (nur bereinigte Settings)
         _deep_merge(config, safe_settings)
 
@@ -2398,9 +2401,11 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
             sound_cfg = cfg.yaml_config.get("sounds", {})
             brain.sound_manager.alexa_speakers = sound_cfg.get("alexa_speakers", [])
 
-        # Speech-Engine: settings.yaml → .env synchronisieren (fuer docker-compose)
-        if "speech" in safe_settings:
-            _sync_speech_to_env(cfg.yaml_config.get("speech", {}))
+        # Speech-Engine: Nur sync + restart-Hinweis wenn sich Speech tatsaechlich geaendert hat
+        new_speech = cfg.yaml_config.get("speech", {})
+        speech_changed = (old_speech != new_speech)
+        if speech_changed:
+            _sync_speech_to_env(new_speech)
 
         # F-038: Alle weiteren Module benachrichtigen die Config bei __init__ cachen
         _reload_all_modules(cfg.yaml_config, safe_settings)
@@ -2413,11 +2418,11 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         _audit_log("settings_update", audit_details)
 
         reloaded_count = 4 + len(_get_reloaded_modules(safe_settings))
-        restart_hint = " — Container-Neustart noetig fuer Sprach-Engine!" if "speech" in safe_settings else ""
+        restart_hint = " — Container-Neustart noetig fuer Sprach-Engine!" if speech_changed else ""
         return {
             "success": True,
             "message": f"Settings gespeichert ({reloaded_count} Module aktualisiert){restart_hint}",
-            "restart_needed": "speech" in safe_settings,
+            "restart_needed": speech_changed,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
