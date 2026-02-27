@@ -11,6 +11,7 @@ from assistant.cooking_assistant import (
     CookingAssistant,
     CookingSession,
     CookingStep,
+    CookingTimer,
 )
 
 
@@ -181,16 +182,149 @@ class TestPersistence:
 
 
 class TestPortionScaling:
-    def test_scale_up(self, assistant):
+    @pytest.mark.asyncio
+    async def test_scale_up(self, assistant):
         assistant.session = _make_session()
-        result = assistant._adjust_portions(4)
+        result = await assistant._adjust_portions(4)
         assert "4" in result
         assert assistant.session.portions == 4
         # 200g → 400g
         assert "400" in assistant.session.ingredients[0]
 
-    def test_scale_down(self, assistant):
+    @pytest.mark.asyncio
+    async def test_scale_down(self, assistant):
         assistant.session = _make_session()
-        result = assistant._adjust_portions(1)
+        result = await assistant._adjust_portions(1)
         assert "1" in result
         assert "100" in assistant.session.ingredients[0]
+
+    @pytest.mark.asyncio
+    async def test_scale_persists_to_redis(self, assistant, redis_mock):
+        """Portionen-Aenderung muss in Redis gespeichert werden."""
+        assistant.session = _make_session()
+        await assistant._adjust_portions(4)
+        redis_mock.setex.assert_called()
+
+
+class TestRecipeParsing:
+    def test_valid_json(self, assistant):
+        content = json.dumps({
+            "dish": "Testgericht",
+            "portions": 2,
+            "ingredients": ["100g Mehl", "2 Eier"],
+            "steps": [
+                {"number": 1, "instruction": "Mehl sieben", "timer_minutes": None},
+                {"number": 2, "instruction": "Eier unterruehren", "timer_minutes": None},
+            ],
+        })
+        session = assistant._parse_recipe(content, "Testgericht", 2, "max")
+        assert session is not None
+        assert session.dish == "Testgericht"
+        assert len(session.steps) == 2
+        assert len(session.ingredients) == 2
+
+    def test_json_with_surrounding_text(self, assistant):
+        """LLM antwortet manchmal mit Text vor/nach dem JSON."""
+        content = 'Hier ist dein Rezept:\n{"dish":"Pasta","portions":2,"ingredients":["200g Pasta"],"steps":[{"number":1,"instruction":"Kochen","timer_minutes":8}]}\nGuten Appetit!'
+        session = assistant._parse_recipe(content, "Pasta", 2, "max")
+        assert session is not None
+        assert session.dish == "Pasta"
+        assert session.steps[0].timer_minutes == 8
+
+    def test_invalid_json(self, assistant):
+        session = assistant._parse_recipe("Das ist kein JSON", "Test", 2, "max")
+        assert session is None
+
+    def test_empty_steps(self, assistant):
+        content = json.dumps({"dish": "Leer", "portions": 1, "ingredients": [], "steps": []})
+        session = assistant._parse_recipe(content, "Leer", 1, "max")
+        assert session is None
+
+    def test_step_with_timer(self, assistant):
+        content = json.dumps({
+            "dish": "Nudeln",
+            "portions": 2,
+            "ingredients": ["500g Nudeln"],
+            "steps": [
+                {"number": 1, "instruction": "Nudeln kochen", "timer_minutes": 10},
+            ],
+        })
+        session = assistant._parse_recipe(content, "Nudeln", 2, "max")
+        assert session.steps[0].timer_minutes == 10
+
+
+class TestTimerDataclass:
+    def test_fresh_timer_remaining(self):
+        timer = CookingTimer(label="Test", duration_seconds=300)
+        assert timer.remaining_seconds == 0
+        assert not timer.is_done
+
+    def test_started_timer(self):
+        import time
+        timer = CookingTimer(label="Test", duration_seconds=300)
+        timer.start()
+        assert timer.remaining_seconds > 0
+        assert timer.remaining_seconds <= 300
+
+    def test_finished_timer(self):
+        timer = CookingTimer(label="Test", duration_seconds=60, finished=True)
+        assert timer.is_done
+        assert timer.remaining_seconds == 0
+
+    def test_format_remaining_minutes(self):
+        import time
+        timer = CookingTimer(label="Test", duration_seconds=125, started_at=time.time())
+        fmt = timer.format_remaining()
+        assert "Minuten" in fmt
+
+    def test_format_abgelaufen(self):
+        timer = CookingTimer(label="Test", duration_seconds=1, finished=True)
+        assert timer.format_remaining() == "abgelaufen"
+
+
+class TestExplicitPortions:
+    def test_explicit_with_keyword(self, assistant):
+        assert assistant._extract_explicit_portions("fuer 4 portionen") == 4
+        assert assistant._extract_explicit_portions("für 6 personen") == 6
+
+    def test_no_keyword_returns_zero(self, assistant):
+        """Ohne explizites Portionen/Personen-Keyword: 0 zurueckgeben."""
+        assert assistant._extract_explicit_portions("fuer was ist der timer") == 0
+        assert assistant._extract_explicit_portions("danke fuer die hilfe") == 0
+
+    def test_number_with_keyword(self, assistant):
+        assert assistant._extract_explicit_portions("8 portionen bitte") == 8
+
+    def test_max_20(self, assistant):
+        assert assistant._extract_explicit_portions("fuer 50 portionen") == 20
+
+
+class TestNavigationRouting:
+    @pytest.mark.asyncio
+    async def test_finish_all_steps(self, assistant):
+        """Letzter Schritt -> Fertig-Meldung."""
+        assistant.session = _make_session(steps=2, current_step=1)
+        result = await assistant._next_step()
+        assert "Fertig" in result or "abgeschlossen" in result
+
+    def test_repeat_no_current_step(self, assistant):
+        assistant.session = _make_session(current_step=-1)
+        result = assistant._repeat_step()
+        assert "keinen aktuellen Schritt" in result
+
+    def test_status_shows_dish(self, assistant):
+        assistant.session = _make_session(dish="Risotto")
+        result = assistant._show_status()
+        assert "Risotto" in result
+
+    @pytest.mark.asyncio
+    async def test_handle_navigation_stop(self, assistant):
+        assistant.session = _make_session()
+        result = await assistant.handle_navigation("stop kochen")
+        assert "beendet" in result
+        assert assistant.session is None
+
+    def test_disabled_no_intent(self, assistant):
+        """Deaktivierter Koch-Modus erkennt keine Intents."""
+        assistant.enabled = False
+        assert assistant.is_cooking_intent("Ich will Pasta kochen") is False

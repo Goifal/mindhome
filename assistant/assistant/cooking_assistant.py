@@ -340,10 +340,11 @@ class CookingAssistant:
         if any(kw in text_lower for kw in NAV_INGREDIENTS):
             return self._show_ingredients()
 
-        # Portionen aendern
-        if any(kw in text_lower for kw in NAV_PORTIONS) and self._extract_portions(text) > 0:
-            new_portions = self._extract_portions(text)
-            return self._adjust_portions(new_portions)
+        # Portionen aendern — nur wenn explizit eine Zahl mit Portionen/Personen genannt wird
+        if any(kw in text_lower for kw in NAV_PORTIONS):
+            new_portions = self._extract_explicit_portions(text)
+            if new_portions > 0:
+                return await self._adjust_portions(new_portions)
 
         # Timer setzen
         if any(kw in text_lower for kw in NAV_TIMER):
@@ -446,7 +447,7 @@ class CookingAssistant:
             parts.append(f"  - {ing}")
         return "\n".join(parts)
 
-    def _adjust_portions(self, new_portions: int) -> str:
+    async def _adjust_portions(self, new_portions: int) -> str:
         """Passt die Portionen an (einfache Skalierung)."""
         if new_portions < 1 or new_portions > 20:
             return "Portionen muessen zwischen 1 und 20 liegen."
@@ -475,6 +476,7 @@ class CookingAssistant:
                 new_ingredients.append(ing)
 
         self.session.ingredients = new_ingredients
+        await self._persist_session()
         return f"Portionen angepasst: {old} → {new_portions}. Die Zutaten wurden umgerechnet."
 
     async def _set_timer_from_text(self, text: str) -> str:
@@ -525,9 +527,12 @@ class CookingAssistant:
         """Ueberwacht einen Timer und benachrichtigt bei Ablauf."""
         try:
             remaining = timer.remaining_seconds
-            if remaining <= 0:
-                remaining = timer.duration_seconds  # Frisch gestartet, noch kein started_at
-            await asyncio.sleep(remaining)
+            if remaining <= 0 and timer.started_at == 0:
+                # Timer wurde noch nicht gestartet — sollte nicht vorkommen,
+                # aber Fallback auf volle Dauer statt sofortigem Ablauf
+                remaining = timer.duration_seconds
+            if remaining > 0:
+                await asyncio.sleep(remaining)
             timer.finished = True
             message = f"{get_person_title()}, der Timer fuer '{timer.label}' ist abgelaufen!"
             logger.info("Koch-Timer abgelaufen: %s", timer.label)
@@ -656,13 +661,26 @@ class CookingAssistant:
 
         return ""
 
-    def _extract_portions(self, text: str) -> int:
-        """Extrahiert die Portionenanzahl aus dem Text."""
-        match = re.search(r"(?:fuer|für)\s+(\d+)\s*(?:portionen?|personen?|leute)?", text.lower())
+    def _extract_explicit_portions(self, text: str) -> int:
+        """Extrahiert Portionen NUR wenn explizit Zahl+Keyword genannt wird. Gibt 0 zurueck wenn nicht."""
+        match = re.search(r"(?:fuer|für)\s+(\d+)\s*(?:portionen?|personen?|leute)", text.lower())
         if match:
             return min(int(match.group(1)), 20)
 
         match = re.search(r"(\d+)\s*(?:portionen?|personen?)", text.lower())
+        if match:
+            return min(int(match.group(1)), 20)
+
+        return 0
+
+    def _extract_portions(self, text: str) -> int:
+        """Extrahiert die Portionenanzahl aus dem Text (mit Default-Fallback fuer start_cooking)."""
+        explicit = self._extract_explicit_portions(text)
+        if explicit > 0:
+            return explicit
+
+        # Lockerer Match: "fuer 4" ohne Keyword reicht beim Session-Start
+        match = re.search(r"(?:fuer|für)\s+(\d+)", text.lower())
         if match:
             return min(int(match.group(1)), 20)
 

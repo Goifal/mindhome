@@ -1255,7 +1255,7 @@ async def cooking_stop():
     """Phase 11: Koch-Session beenden."""
     if not brain.cooking.has_active_session:
         return {"stopped": False, "message": "Keine aktive Koch-Session."}
-    result = brain.cooking._stop_session()
+    result = await brain.cooking._stop_session()
     return {"stopped": True, "message": result}
 
 
