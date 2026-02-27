@@ -9,22 +9,23 @@
 
 Jarvis hat 8 bestehende Lernsysteme (Anticipation, Learning Observer, Feedback Tracker, Experiential Memory, Insight Engine, Situation Model, Self-Optimization, Self-Automation). Keines davon hat einen geschlossenen Feedback-Loop. Jarvis sammelt Daten, validiert aber nie, ob seine Aktionen tatsaechlich gut waren.
 
-**Loesung:** 8 neue Features in 3 Phasen — von Datensammlung ueber Intelligenz bis zur automatischen Anpassung.
+**Loesung:** 9 Features in 3 Phasen — von Datensammlung ueber Intelligenz bis zur automatischen Anpassung.
 
 ---
 
-## Uebersicht: 8 Features in 3 Phasen
+## Uebersicht: 9 Features in 3 Phasen
 
-| Phase | # | Feature | Beschreibung | Neue Dateien |
-|-------|---|---------|-------------|--------------|
-| A | 1 | Outcome Tracker | Beobachtet ob Aktionen gut waren | outcome_tracker.py |
-| A | 2 | Korrektur-Gedaechtnis | Speichert + nutzt Korrekturen | correction_memory.py |
-| A | 5 | Response Quality | Trackt Antwort-Klarheit | response_quality.py |
-| A | 8 | Error Patterns | Erkennt wiederkehrende Fehler | error_patterns.py |
+| Phase | # | Feature | Beschreibung | Dateien |
+|-------|---|---------|-------------|---------|
+| A | 1 | Outcome Tracker | Beobachtet ob Aktionen gut waren | outcome_tracker.py (NEU) |
+| A | 2 | Korrektur-Gedaechtnis | Speichert + nutzt Korrekturen | correction_memory.py (NEU) |
+| A | 5 | Response Quality | Trackt Antwort-Klarheit | response_quality.py (NEU) |
+| A | 8 | Error Patterns | Erkennt wiederkehrende Fehler | error_patterns.py (NEU) |
 | B | 6 | Per-Person Learning | Individuelle Praeferenzen pro Person | (Erweiterung bestehender) |
 | B | 7 | Prompt Self-Refinement | Gelernte Regeln im Prompt | (Erweiterung correction_memory + personality) |
-| C | 3 | Self-Report | Woechentlicher Selbstbericht | self_report.py |
-| C | 4 | Adaptive Thresholds | Automatische Schwellwert-Anpassung | adaptive_thresholds.py |
+| C | 3 | Self-Report | Woechentlicher Selbstbericht | self_report.py (NEU) |
+| C | 4 | Adaptive Thresholds | Automatische Schwellwert-Anpassung | adaptive_thresholds.py (NEU) |
+| C | 9 | Self-Optimization+ | Erweiterte Selbstoptimierung | self_optimization.py (Modifiziert) |
 
 ---
 
@@ -274,6 +275,260 @@ adaptive_thresholds:
 
 ---
 
+### Feature 9: Self-Optimization+ (Erweiterte Selbstoptimierung)
+
+#### Was es tut
+Die bestehende `self_optimization.py` wird in 6 Bereichen erweitert:
+
+1. **Mehr Datenquellen:** Statt nur Corrections + Feedback-Stats fliessen jetzt Outcome-Scores, Response-Quality-Scores und Correction-Patterns in die Analyse ein.
+2. **Vorher/Nachher-Vergleich:** Nach jeder genehmigten Aenderung werden Metriken gesnapshotten. 7 Tage spaeter wird verglichen ob die Aenderung geholfen hat.
+3. **Auto-Rollback:** Wenn Metriken nach 7 Tagen signifikant schlechter sind (>10% Outcome Score Drop ODER >15% mehr Korrekturen), wird der vorherige Wert automatisch wiederhergestellt.
+4. **Mehr Parameter:** 4 neue optimierbare Parameter (insight_cooldown_hours, anticipation_min_confidence, feedback_base_cooldown, spontaneous_max_per_day).
+5. **Trend-Metriken:** Das LLM bekommt Wochen-Trends statt roher Zahlen — z.B. "set_climate Score: 0.71 → 0.65 → 0.62 → 0.58 (FALLEND)".
+6. **Aktivierung:** `enabled: true` (bisher `false`), weiterhin mit manueller Approval.
+
+#### Technische Details
+
+**9a. Erweiterte Datenquellen** (~Zeile 89 in run_analysis):
+```python
+# Bestehend:
+corrections = await self._get_recent_corrections()
+feedback_stats = await self._get_feedback_stats()
+# NEU:
+outcome_stats = await self._get_outcome_stats()
+quality_stats = await self._get_quality_stats()
+correction_patterns = await self._get_correction_patterns()
+```
+
+**9b. Effectiveness Tracking:**
+- Nach Genehmigung: Metriken-Snapshot in `mha:self_opt:baseline:{param}` (TTL 30d)
+- Nach 7 Tagen: Vergleich und Ergebnis in `mha:self_opt:effect:{param}` (TTL 90d)
+
+**9c. Auto-Rollback:**
+- Trigger: >10% Outcome Score Drop ODER >15% mehr Korrekturen
+- Mechanismus: `config_versioning.rollback()` auf gespeicherten Snapshot
+- User wird IMMER informiert
+
+**9d. Neue Parameter in `_PARAMETER_PATHS`:**
+```python
+_PARAMETER_PATHS = {
+    # Bestehend:
+    "sarcasm_level": ["personality", "sarcasm_level"],
+    "opinion_intensity": ["personality", "opinion_intensity"],
+    "max_response_sentences": ["response_filter", "max_response_sentences"],
+    "formality_min": ["personality", "formality_min"],
+    "formality_start": ["personality", "formality_start"],
+    # NEU:
+    "insight_cooldown_hours": ["insights", "cooldown_hours"],
+    "anticipation_min_confidence": ["anticipation", "min_confidence"],
+    "feedback_base_cooldown": ["feedback", "base_cooldown_seconds"],
+    "spontaneous_max_per_day": ["spontaneous", "max_per_day"],
+}
+```
+
+**9e. Trend-Metriken im LLM-Prompt:**
+```
+OUTCOME-TRENDS (letzte 4 Wochen):
+- set_light: Score 0.82 → 0.85 → 0.79 → 0.83 (stabil)
+- set_climate: Score 0.71 → 0.65 → 0.62 → 0.58 (FALLEND ↓)
+
+KORREKTUREN (Top 3):
+- Raum-Verwechslung: 12x (meistens abends)
+- Helligkeit zu hoch: 5x
+- Falsches Geraet: 3x
+```
+
+#### Einstellungen (settings.yaml)
+```yaml
+self_optimization:
+  enabled: true               # Bisher false
+  approval_mode: manual        # NICHT aendern
+  analysis_interval: weekly
+  max_proposals_per_cycle: 3
+  auto_rollback: true          # NEU
+  rollback_threshold_outcome: 0.10   # 10% Drop
+  rollback_threshold_corrections: 0.15   # 15% Anstieg
+  parameter_bounds:
+    # Bestehend:
+    sarcasm_level: {min: 1, max: 5}
+    opinion_intensity: {min: 0, max: 3}
+    max_response_sentences: {min: 1, max: 5}
+    formality_min: {min: 10, max: 80}
+    formality_start: {min: 30, max: 100}
+    # NEU:
+    insight_cooldown_hours: {min: 2, max: 8}
+    anticipation_min_confidence: {min: 0.5, max: 0.8}
+    feedback_base_cooldown: {min: 120, max: 600}
+    spontaneous_max_per_day: {min: 0, max: 5}
+```
+
+#### Sicherheit
+- Approval bleibt manuell — User muss jeden Vorschlag bestaetigen
+- Auto-Rollback geht nur ZURUECK (nie vorwaerts), nutzt config_versioning Snapshots
+- Neue Bounds sind hardcoded in settings.yaml
+- `_HARDCODED_IMMUTABLE` bleibt unangetastet
+- User wird bei Auto-Rollback immer informiert
+
+---
+
+## Risiko-Mitigationen (alle Features)
+
+Jedes Feature implementiert diese **7 Schutzschichten** aus bestehenden Codebase-Patterns:
+
+### Schicht 1: Minimum-Datenmenge vor Aktion
+Pattern-Referenz: `learning_observer.py:47,139` (`min_repetitions`)
+
+Kein Feature darf Schlussfolgerungen ziehen ohne genuegend Daten:
+
+| Feature | Minimum | Bevor... |
+|---|---|---|
+| Outcome Tracker | 10 Outcomes pro Aktionstyp | Score wird berechnet (vorher default 0.5) |
+| Correction Memory | 2 gleichartige Korrekturen | Regel abgeleitet wird |
+| Response Quality | 20 Exchanges pro Kategorie | Score als zuverlaessig gilt |
+| Error Patterns | 3 gleiche Fehler in 1h | Mitigation aktiviert wird |
+| Adaptive Thresholds | 50 Outcomes + 4 Wochen Daten | Schwellwert geaendert wird |
+| Self-Optimization+ | Outcome Score + 30 Samples | Vorschlag generiert wird |
+
+Jede Klasse hat einen `_has_sufficient_data()` Check.
+
+### Schicht 2: Score-Decay / Alterung
+Pattern-Referenz: `semantic_memory.py:317-395` (`apply_decay()`)
+
+- **Outcome Tracker:** Rolling Window der letzten 200 Ergebnisse. Aeltere zaehlen weniger.
+- **Correction Memory:** Regeln verlieren 5% Confidence pro 30 Tage. Unter 0.4 → Regel geloescht.
+- **Response Quality:** Exponential Moving Average (alpha=0.1) — neuere Daten zaehlen mehr.
+- **Error Patterns:** Counter pro Stunde, nicht kumulativ. 3 Fehler in der letzten Stunde ≠ 3 Fehler in 3 Monaten.
+
+### Schicht 3: Sanitization
+Pattern-Referenz: `context_builder.py:41-71` (`_sanitize_for_prompt()`)
+
+Alles was ins LLM-Kontext injiziert wird, durchlaeuft `_sanitize_for_prompt()`:
+- **Correction Memory:** `correction_text` wird sanitized (max 100 Zeichen, Injection-Filter)
+- **Prompt Self-Refinement:** Regel-Text wird aus Templates gebaut (nicht aus Raw-User-Input), trotzdem sanitized
+- **Self-Report:** LLM-Summary wird nicht in System-Prompt injiziert, nur als Chat-Nachricht ausgegeben
+
+### Schicht 4: Rate Limiting
+Pattern-Referenz: `self_automation.py:95-98` (bounds-checked `max_per_day`)
+
+| Feature | Limit | Reset |
+|---|---|---|
+| Outcome Tracker | Max 20 gleichzeitige Observations | Automatisch nach 5min TTL |
+| Correction Memory | Max 5 Regeln pro Tag ableiten | Taeglich |
+| Self-Report | Max 1 Report pro Tag | Taeglich |
+| Error Patterns | Max 1 Mitigation-Wechsel pro Stunde pro Aktionstyp | Stuendlich |
+| Adaptive Thresholds | Max 3 Auto-Adjustments pro Woche | Woechentlich |
+| Self-Optimization+ | Max 3 Proposals pro Zyklus | Woechentlich |
+
+### Schicht 5: Graceful Degradation
+Pattern-Referenz: `anticipation.py:81-82`
+
+Jede Methode beginnt mit:
+```python
+if not self.enabled or not self.redis:
+    return DEFAULT_VALUE  # [], None, 0.5, etc.
+```
+Wenn Redis ausfaellt, funktioniert Jarvis normal weiter — nur ohne Lern-Features.
+
+### Schicht 6: Audit-Logging
+Pattern-Referenz: `self_automation.py:1017-1048` (`_audit()`)
+
+Jede relevante Aktion wird geloggt:
+- `logger.info("Outcome [%s]: %s (Room: %s)", outcome, action, room)`
+- `logger.info("Korrektur gespeichert: %s -> %s", original, corrected)`
+- `logger.info("Neue Regel: %s (confidence: %.2f)", rule_text, conf)`
+- `logger.info("Auto-Adjust: %s %s -> %s (%s)", param, old, new, reason)`
+- `logger.info("Mitigation aktiviert: %s fuer %s (TTL: %dh)", type, action, ttl)`
+
+### Schicht 7: Circuit Breaker
+Pattern-Referenz: `circuit_breaker.py:29-198`
+
+- **Outcome Tracker → HA API:** Nutzt bestehenden `ha_breaker`. HA down → keine Snapshots statt Crash.
+- **Self-Report/Self-Opt → Ollama:** Nutzt bestehenden `ollama_breaker`. LLM down → Fallback-Formatierung.
+- **Alle → Redis:** Nutzt bestehenden `redis_breaker`. Graceful Degradation.
+
+---
+
+## Zusaetzliche Sicherheitsmassnahmen
+
+### S1. Global Learning Kill Switch
+
+Es gibt `disable_all_jarvis_automations()` fuer Self-Automation, aber keinen globalen Schalter fuer ALLE Lern-Features.
+
+**Loesung:** Neuer Config-Key in settings.yaml:
+```yaml
+learning:
+  enabled: true   # false = ALLE Lern-Features sofort deaktiviert
+```
+
+In `brain.py` wird bei `enabled: false` jedes Lern-Feature einzeln deaktiviert.
+Sprachbefehl: "Jarvis, stopp alles Lernen" → setzt Flag ueber Self-Automation.
+
+### S2. Data Retention / TTL-Strategie
+
+Alle neuen Redis-Keys haben explizite TTLs:
+
+| Key-Pattern | Feature | TTL | Grund |
+|---|---|---|---|
+| `mha:outcome:{action_id}` | Outcome Tracker | 90d | Trend-Analyse |
+| `mha:outcome:score:{action_type}` | Outcome Tracker | 180d | Langzeit-Scores |
+| `mha:correction:{hash}` | Correction Memory | 180d | Regeln leben laenger |
+| `mha:correction:rules` | Correction Memory | 365d | Aktive Regeln (mit Decay) |
+| `mha:resp_quality:{category}` | Response Quality | 90d | Rolling Window |
+| `mha:error_pattern:{type}` | Error Patterns | 30d | Kurzzeitig relevant |
+| `mha:error_mitigation:{type}` | Error Patterns | 24h | Automatisch ablaufend |
+| `mha:adaptive:{param}` | Adaptive Thresholds | 180d | Langzeit-Optimierung |
+| `mha:self_report:last` | Self-Report | 30d | Nur letzte Reports relevant |
+
+Hartes Limit: Kein Feature darf mehr als 5000 Redis-Keys erzeugen.
+
+### S3. Concurrency-Schutz
+
+Redis `SET NX`-Lock Pattern (wie bestehend in `semantic_memory.py:148-166`):
+
+```python
+lock_key = f"mha:lock:{lock_name}"
+acquired = await self.redis.set(lock_key, "1", nx=True, ex=10)
+if not acquired:
+    return  # Skip, anderer Prozess arbeitet gerade
+```
+
+Kritische Stellen mit Lock:
+- Adaptive Thresholds beim Schreiben neuer Schwellwerte
+- Self-Optimization beim Anwenden von Vorschlaegen
+- Outcome Tracker beim Score-Update (Read-Modify-Write)
+
+### S4. Feature-Konflikt-Aufloesung
+
+Adaptive Thresholds (Feature 4) und Self-Optimization (Feature 9) koennten denselben Parameter aendern.
+
+**Prioritaets-System:**
+1. Self-Optimization hat Vorrang (manuell approved)
+2. Adaptive Thresholds darf nur aendern was Self-Opt nicht gerade vorgeschlagen hat
+
+Beide Features loggen Aenderungen im selben Audit-Log (`mha:param_changes`).
+
+### S5. Data-Poisoning-Schutz
+
+Schutz gegen falsches Training (absichtlich oder versehentlich):
+
+1. **Anomalie-Erkennung:** >80% negative Outcomes bei >20 Samples → Alert statt Auto-Adjust
+2. **Max Change Rate:** Kein Score darf sich um mehr als 20% pro Tag aendern (Smoothing/Clamping)
+3. **Widerspruchs-Erkennung:** Gleichzeitig "Danke" + Rueckgaengig → Daten als unzuverlaessig markieren
+
+### S6. Per-Person Data Deletion
+
+Sprachbefehl: "Jarvis, vergiss alles ueber [Person]"
+
+Loescht alle personenbezogenen Daten aus:
+- Outcome-Stats pro Person
+- Correction-Patterns pro Person
+- Response-Quality-Scores pro Person
+- Semantic Memory Fakten mit `person={name}`
+
+Bestaetigung erforderlich. Immutable Fakten (Haushalts-Regeln) ausgenommen.
+
+---
+
 ## Sicherheits-Zusammenfassung
 
 | Feature | Schreibt settings.yaml? | Genehmigung? | Bounded? | Rollback? |
@@ -287,12 +542,21 @@ adaptive_thresholds:
 | 6. Per-Person | Nein | Nein | Gleiche Bounds | N/A |
 | 7. Prompt Refinement | Nein | Nein | Max 20 Regeln | TTL 90d |
 | 8. Error Patterns | Nein | Nein | TTL 1-24h | Auto-Reset |
+| 9. Self-Optimization+ | Ja (via approve) | Ja (manuell) | parameter_bounds | Auto-Rollback + config_versioning |
 
 **Kern-Schutz unangetastet:**
 - `_HARDCODED_IMMUTABLE` = {"trust_levels", "security", "autonomy", "dashboard", "models"}
 - `_EDITABLE_CONFIGS` = {easter_eggs, opinion_rules, room_profiles}
 - `_ALLOWED_FUNCTIONS` frozenset (69 Funktionen)
 - Kein exec/eval/subprocess in Tool-Pfaden
+
+**Zusaetzliche Schutzschichten:**
+- Global Kill Switch: `learning.enabled: false` deaktiviert ALLE Lern-Features
+- 7 Schutzschichten pro Feature (Min-Daten, Decay, Sanitization, Rate Limits, Degradation, Audit, Circuit Breaker)
+- Concurrency-Schutz via Redis SET NX Locks
+- Feature-Konflikt-Aufloesung (Self-Opt hat Vorrang vor Adaptive Thresholds)
+- Data-Poisoning-Schutz (Anomalie-Erkennung, Max Change Rate, Widerspruchs-Erkennung)
+- Per-Person Data Deletion ("Vergiss alles ueber X")
 
 ---
 
@@ -306,11 +570,11 @@ adaptive_thresholds:
 | `assistant/assistant/error_patterns.py` | **NEU** (~200 Zeilen) |
 | `assistant/assistant/self_report.py` | **NEU** (~250 Zeilen) |
 | `assistant/assistant/adaptive_thresholds.py` | **NEU** (~300 Zeilen) |
-| `assistant/assistant/brain.py` | Init + Hooks (~100 Zeilen) |
+| `assistant/assistant/brain.py` | Init + Hooks + Kill Switch + forget_person (~130 Zeilen) |
 | `assistant/assistant/personality.py` | Learned-Rules-Section (~20 Zeilen) |
 | `assistant/assistant/feedback.py` | Per-Person Scores (~15 Zeilen) |
-| `assistant/assistant/self_optimization.py` | Neue Parameter (~15 Zeilen) |
-| `assistant/config/settings.yaml` | Neue Sektionen (~40 Zeilen) |
+| `assistant/assistant/self_optimization.py` | 9a-9f: Datenquellen, Effectiveness, Auto-Rollback, Parameter, Trends (~80 Zeilen) |
+| `assistant/config/settings.yaml` | Neue Sektionen + Bounds + learning.enabled (~60 Zeilen) |
 
 ---
 
@@ -351,6 +615,17 @@ mha:feedback:score:{event_type}:person:{person}      # STRING (float)
 mha:errors:recent                                    # LIST (max 200, TTL 30d)
 mha:errors:pattern:{error_type}:{action_type}        # HASH
 mha:errors:mitigation:{action_type}                  # STRING (TTL 24h)
+
+# Feature 9: Self-Optimization+ (erweitert bestehende mha:self_opt:* Keys)
+mha:self_opt:baseline:{param}                        # HASH (Metriken vor Aenderung, TTL 30d)
+mha:self_opt:effect:{param}                          # HASH (Gemessener Effekt, TTL 90d)
+mha:self_opt:pending_param:{param}                   # STRING (Konflikt-Guard, TTL 7d)
+
+# Sicherheit: Global Kill Switch
+mha:lock:{feature}:{operation}                       # STRING (Concurrency Lock, TTL 10s)
+
+# Sicherheit: Audit
+mha:param_changes                                    # LIST (max 200, TTL 180d)
 ```
 
 ---
@@ -365,5 +640,9 @@ mha:errors:mitigation:{action_type}                  # STRING (TTL 24h)
 6. **Error Patterns:** LLM 3x Timeout → Log: "Mitigation: use_fallback" → Fallback-Modell
 7. **Self-Report:** "Wie lernst du?" → Bericht mit Zahlen pro Person und Verbesserungsvorschlaegen
 8. **Adaptive Thresholds:** Nach Wochenbericht → Log: "Auto-Adjust: insights.cooldown_hours 4 -> 5"
-9. **Syntax-Check:** `python3 -m py_compile assistant/assistant/outcome_tracker.py` etc.
-10. **Logs:** `docker compose logs -f assistant` → Alle neuen Log-Eintraege pruefen
+9. **Self-Optimization+:** Vorschlag genehmigen → 7 Tage → Log: "Effect: sarcasm_level 3->4: Outcome +5%"
+10. **Auto-Rollback:** Wenn Metriken schlechter → Log: "Auto-Rollback: sarcasm_level 4->3 (Outcome -12%)"
+11. **Kill Switch:** "Jarvis, stopp alles Lernen" → Log: "GLOBAL: Alle Lern-Features deaktiviert"
+12. **Data Deletion:** "Vergiss alles ueber Max" → Log: "Person-Daten geloescht: max (47 Keys)"
+13. **Syntax-Check:** `python3 -m py_compile assistant/assistant/outcome_tracker.py` etc.
+14. **Logs:** `docker compose logs -f assistant` → Alle neuen Log-Eintraege pruefen
