@@ -138,10 +138,33 @@ CONTEXTUAL_HUMOR_TRIGGERS = {
         "Reinigung um {hour} Uhr. Darf ich auf die Uhrzeit hinweisen, {title}?",
         "Saugen um {hour} Uhr. Selbstverstaendlich.",
     ],
+    # Medien-Humor
+    ("play_media", "repeated_content"): [
+        "Schon wieder, {title}? Wird gemacht.",
+        "Vertraute Wahl, {title}. Laeuft.",
+        "Solider Geschmack, {title}. Wie immer.",
+    ],
+    ("play_media", "late_night_media"): [
+        "Unterhaltung um {hour} Uhr. Lautstaerke angepasst, {title}.",
+        "{hour} Uhr und Medien. Nachbarn schlafen, {title}.",
+    ],
+    # Steckdosen-Humor
+    ("set_switch", "many_toggles_today"): [
+        "{count}. Schaltvorgang heute. Soll ich einen Zeitplan vorschlagen, {title}?",
+        "Nummer {count} fuer heute. Ich fuehre Buch, {title}.",
+    ],
     # Allgemein
     ("any", "late_night_command"): [
         "Noch wach, {title}? Sehr wohl.",
         "{hour} Uhr. Wird erledigt.",
+    ],
+    ("any", "early_riser"): [
+        "Frueh wach, {title}. Respekt.",
+        "{hour} Uhr. Der fruehe Vogel, {title}.",
+    ],
+    ("any", "weekend_morning"): [
+        "Wochenende und schon wach, {title}?",
+        "Samstagsmorgens? Ambitioniert, {title}.",
     ],
 }
 
@@ -534,6 +557,7 @@ class PersonalityEngine:
     def get_varied_confirmation(
         self, success: bool = True, partial: bool = False,
         action: str = "", room: str = "", person: str = "",
+        mood: str = "",
     ) -> str:
         """Gibt eine variierte, kontextbezogene Bestaetigung zurueck.
 
@@ -543,13 +567,27 @@ class PersonalityEngine:
             action: Ausgefuehrte Aktion (z.B. "set_light", "set_temperature")
             room: Raum der Aktion (z.B. "Wohnzimmer")
             person: F-021: Person fuer per-User Tracking
+            mood: Aktuelle Stimmung des Users (stressed/tired → kuerzere Antworten)
 
         Bei Sarkasmus-Level >= 4 werden spitzere Varianten beigemischt.
+        Bei stressed/tired: Nur die kuerzesten Bestaetigungen verwenden.
         Kontextbezogene Bestaetigungen werden bevorzugt wenn passend.
         """
+        effective_mood = mood or self._current_mood
+
         # F-021: Per-User History statt globaler Liste
         user_key = person or "_default"
         user_history = self._last_confirmations.get(user_key, [])
+
+        # Bei Stress/Muedigkeit: Ultra-kurze Bestaetigungen bevorzugen
+        if effective_mood in ("stressed", "tired") and success and not partial:
+            _short = ["Erledigt.", "Gemacht.", "Laeuft.", "Umgesetzt."]
+            available = [c for c in _short if c not in user_history[-2:]]
+            if available:
+                chosen = random.choice(available)
+                user_history.append(chosen)
+                self._last_confirmations[user_key] = user_history[-10:]
+                return chosen
 
         # Kontextbezogene Bestaetigung versuchen
         if success and not partial and action:
@@ -565,7 +603,8 @@ class PersonalityEngine:
             pool = list(CONFIRMATIONS_PARTIAL)
         elif success:
             pool = list(CONFIRMATIONS_SUCCESS)
-            if self.sarcasm_level >= 4:
+            # Bei frustriertem User: Keine snarky Bestaetigungen
+            if self.sarcasm_level >= 4 and effective_mood != "frustrated":
                 pool.extend(CONFIRMATIONS_SUCCESS_SNARKY)
         else:
             pool = list(CONFIRMATIONS_FAILED)
@@ -783,8 +822,8 @@ class PersonalityEngine:
         if has_alerts:
             effective_level = 1
         # Mood-Anpassung (Jarvis-Stil: unter Druck trockener, nicht stiller)
+        # Aber: Humor auf maximal EINEN trockenen Kommentar beschraenken
         elif mood in ("stressed", "frustrated"):
-            # Unter Druck bleibt Humor gleich — Jarvis wird trockener, nicht stiller
             effective_level = base_level
         elif mood == "tired":
             effective_level = min(base_level, 2)
@@ -811,7 +850,14 @@ class PersonalityEngine:
         self._last_effective_humor = effective_level
 
         template = HUMOR_TEMPLATES.get(effective_level, HUMOR_TEMPLATES[3])
-        return f"HUMOR: {template.replace('{title}', get_person_title())}"
+        humor_text = f"HUMOR: {template.replace('{title}', get_person_title())}"
+
+        # Bei Stress/Frustration: Humor auf einen Kommentar limitieren
+        # Verhindert Widerspruch mit MOOD_STYLES "Extrem knapp antworten"
+        if mood in ("stressed", "frustrated") and effective_level >= 3:
+            humor_text += "\nWICHTIG: Maximal EIN trockener Kommentar. Kein Humor-Dauerfeuer."
+
+        return humor_text
 
     def track_sarcasm_streak(self, was_snarky: bool, person_id: str = "default"):
         """Trackt aufeinanderfolgende sarkastische Antworten per User. 0ms — rein in-memory."""
@@ -1205,9 +1251,18 @@ class PersonalityEngine:
         hour = datetime.now().hour
         room = (args.get("room") or "").lower()
 
+        # Fruehaufsteher (5-6 Uhr)
+        if 5 <= hour < 6:
+            return {"key": "early_riser", "hour": hour, "room": room}
+
         # Spaete-Nacht Kommando (0-5 Uhr)
         if 0 <= hour < 5:
             return {"key": "late_night_command", "hour": hour, "room": room}
+
+        # Wochenende morgens
+        weekday = datetime.now().weekday()
+        if weekday >= 5 and 6 <= hour < 9:
+            return {"key": "weekend_morning", "hour": hour, "room": room}
 
         if func_name == "set_climate":
             temp = args.get("temperature")
@@ -1246,6 +1301,11 @@ class PersonalityEngine:
             if hour >= 22 or hour < 6:
                 return {"key": "night_clean", "hour": hour}
 
+        elif func_name == "play_media":
+            # Spaete Medien-Nutzung
+            if hour >= 23 or hour < 4:
+                return {"key": "late_night_media", "hour": hour, "room": room}
+
         return None
 
     @staticmethod
@@ -1256,6 +1316,8 @@ class PersonalityEngine:
             "set_light": "light",
             "set_cover": "cover",
             "set_vacuum": "vacuum",
+            "play_media": "general",
+            "set_switch": "general",
         }
         return mapping.get(func_name, "general")
 

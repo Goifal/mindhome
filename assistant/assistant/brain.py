@@ -2080,9 +2080,9 @@ class AssistantBrain(BrainCallbacksMixin):
             )
             sections.append(("conv_memory", conv_text, 2))
 
-        # Phase 17: Situation Delta (was hat sich seit letztem Gespraech geaendert?)
-        if situation_delta:
-            sections.append(("situation_delta", situation_delta, 2))
+        # Phase 17: Situation Delta — NICHT als System-Prompt-Sektion,
+        # sondern als Prefix der User-Message (wird dort prominenter beachtet).
+        # Siehe unten: messages.append({"role": "user", ...})
 
         # Feature A: Kreative Problemloesung — Haus-Daten fuer Loesungsvorschlaege
         if problem_solving_ctx:
@@ -2155,7 +2155,12 @@ class AssistantBrain(BrainCallbacksMixin):
                 break
             messages.append({"role": conv["role"], "content": conv["content"]})
             conv_tokens_used += conv_tokens
-        messages.append({"role": "user", "content": text})
+        # Situation Delta als User-Message-Prefix (prominenter als System-Prompt-Sektion)
+        if situation_delta:
+            user_content = f"[KONTEXT: {situation_delta.strip()}]\n{text}"
+        else:
+            user_content = text
+        messages.append({"role": "user", "content": user_content})
 
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
         intent_type = self._classify_intent(text)
@@ -5935,13 +5940,20 @@ class AssistantBrain(BrainCallbacksMixin):
         Verhindert, dass das LLM bei Smalltalk aus dem Charakter bricht
         ("Ich bin ein KI-Modell und habe keine Gefuehle...").
 
+        Kontext-bewusst: Nutzt Tageszeit, aktive Meldungen und Haus-Status
+        fuer lebendigere Antworten statt canned Responses.
+
         Returns:
             JARVIS-Antwort als String oder None (kein Smalltalk).
         """
         t = text.lower().strip().rstrip("?!.")
         title = get_person_title(self._current_person)
+        hour = datetime.now().hour
 
-        # --- "Wie geht es dir?" Varianten ---
+        # Schneller Kontext (kein API-Call, nur gecachte Daten)
+        pending_alerts = len(getattr(self.proactive, '_batch_queue', []))
+
+        # --- "Wie geht es dir?" Varianten — kontext-bewusst ---
         _how_are_you = [
             "wie geht es dir", "wie gehts dir", "wie geht's dir",
             "wie geht es ihnen", "geht es dir gut", "geht's dir gut",
@@ -5949,13 +5961,30 @@ class AssistantBrain(BrainCallbacksMixin):
             "bist du gut drauf", "und dir",
         ]
         if any(kw in t for kw in _how_are_you):
-            _responses = [
-                f"Systeme laufen einwandfrei, {title}. Danke der Nachfrage.",
-                f"Bestens, {title}. Alle Systeme operativ.",
-                f"Voll funktionsfaehig, {title}.",
-                f"Mir geht es ausgezeichnet, {title}. Und dir?",
-                f"Alles im gruenen Bereich, {title}.",
-            ]
+            # Bei aktiven Meldungen: ehrlich antworten
+            if pending_alerts >= 3:
+                _responses = [
+                    f"Koennnte ruhiger sein, {title}. {pending_alerts} offene Meldungen. Ich behalte es im Griff.",
+                    f"Ehrlich? {pending_alerts} Sachen wollen Aufmerksamkeit. Aber laeuft, {title}.",
+                ]
+            elif pending_alerts == 1:
+                _responses = [
+                    f"Fast alles ruhig, {title}. Eine Meldung offen — nichts Dramatisches.",
+                    f"Gut, {title}. Eine Kleinigkeit auf dem Tisch, sonst alles operativ.",
+                ]
+            elif 0 <= hour < 5:
+                _responses = [
+                    f"Wach um {hour} Uhr, {title}? Mir geht es bestens. Und dir?",
+                    f"Systeme laufen, {title}. Um diese Uhrzeit ist es angenehm ruhig.",
+                ]
+            else:
+                _responses = [
+                    f"Bestens, {title}. Alles operativ.",
+                    f"Systeme laufen einwandfrei, {title}. Danke der Nachfrage.",
+                    f"Voll funktionsfaehig, {title}.",
+                    f"Mir geht es ausgezeichnet, {title}. Und dir?",
+                    f"Alles im gruenen Bereich, {title}. Ungewoehnlich ruhig heute.",
+                ]
             return random.choice(_responses)
 
         # --- "Frag mich wie es mir geht" / "Willst du nicht fragen..." ---
@@ -5988,32 +6017,52 @@ class AssistantBrain(BrainCallbacksMixin):
             ]
             return random.choice(_responses)
 
-        # --- Guten Morgen / Abend / Nacht ---
-        _greetings = {
-            "guten morgen": [
-                f"Guten Morgen, {title}. Systeme laufen.",
-                f"Morgen, {title}. Alles bereit.",
-            ],
-            "guten abend": [
+        # --- Guten Morgen / Abend / Nacht — tageszeit-bewusst ---
+        if "guten morgen" in t:
+            if hour < 6:
+                _responses = [
+                    f"Frueh wach, {title}. Alles bereit.",
+                    f"Morgen, {title}. Oder eher noch Nacht.",
+                ]
+            elif hour >= 11:
+                _responses = [
+                    f"Morgen — oder was davon uebrig ist, {title}.",
+                    f"{title}. Fast schon Mittag, aber: Morgen.",
+                ]
+            else:
+                _responses = [
+                    f"Guten Morgen, {title}. Systeme laufen.",
+                    f"Morgen, {title}. Alles bereit.",
+                ]
+            return random.choice(_responses)
+
+        if "guten abend" in t:
+            _responses = [
                 f"Guten Abend, {title}.",
                 f"{title}. Schoener Abend bis jetzt.",
-            ],
-            "gute nacht": [
+            ]
+            return random.choice(_responses)
+
+        if "gute nacht" in t:
+            _responses = [
                 f"Gute Nacht, {title}. Ich halte die Stellung.",
                 f"Gute Nacht, {title}. Alles unter Kontrolle.",
-            ],
-            "hallo jarvis": [
+            ]
+            return random.choice(_responses)
+
+        if "hallo jarvis" in t:
+            _responses = [
                 f"{title}.",
                 f"Zu Diensten, {title}.",
-            ],
-            "hey jarvis": [
+            ]
+            return random.choice(_responses)
+
+        if "hey jarvis" in t:
+            _responses = [
                 f"{title}. Was brauchst du?",
                 f"Bin da, {title}.",
-            ],
-        }
-        for greeting, responses in _greetings.items():
-            if greeting in t:
-                return random.choice(responses)
+            ]
+            return random.choice(_responses)
 
         # --- Wer bist du? ---
         _identity = [
@@ -6027,6 +6076,25 @@ class AssistantBrain(BrainCallbacksMixin):
                 f"Dein Hausassistent, {title}. Stets zu Diensten.",
                 f"JARVIS. Ich halte hier alles am Laufen, {title}.",
             ]
+            return random.choice(_responses)
+
+        # --- Was machst du? / Was tust du? — zeige echten Status ---
+        _what_doing = [
+            "was machst du", "was tust du", "was machst du gerade",
+            "was tust du gerade", "langweilig", "bist du beschaeftigt",
+        ]
+        if any(kw in t for kw in _what_doing):
+            if pending_alerts > 0:
+                _responses = [
+                    f"{pending_alerts} Meldungen im Blick behalten, {title}. Und auf dich warten.",
+                    f"Das Uebliche, {title}. Sensoren, {pending_alerts} offene Meldungen, Hausroutinen.",
+                ]
+            else:
+                _responses = [
+                    f"Sensoren ueberwachen, Routinen abarbeiten, auf dich warten, {title}.",
+                    f"Das Uebliche, {title}. Alles im Griff.",
+                    f"Haus hueten, {title}. Wie immer.",
+                ]
             return random.choice(_responses)
 
         # --- Lob / Gut gemacht ---
