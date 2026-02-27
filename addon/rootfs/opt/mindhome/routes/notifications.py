@@ -70,8 +70,8 @@ def api_get_notifications():
     """Get notifications with pagination."""
     lang = get_language()
     unread = request.args.get("unread", "false").lower() == "true"
-    limit = request.args.get("limit", 50, type=int)
-    offset = request.args.get("offset", 0, type=int)
+    limit = max(1, min(500, request.args.get("limit", 50, type=int)))
+    offset = max(0, request.args.get("offset", 0, type=int))
 
     with get_db_session() as session:
         query = session.query(NotificationLog).order_by(NotificationLog.created_at.desc())

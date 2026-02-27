@@ -106,6 +106,9 @@ class SoundManager:
         self._states_cache_time: float = 0.0
         self._states_cache_ttl: float = 60.0  # 60s TTL
 
+        # Volume-Restore Tasks tracken fuer sauberes Cleanup
+        self._restore_tasks: list[asyncio.Task] = []
+
         # T-3: TTS-Entity einmal finden und cachen (aendert sich praktisch nie)
         self._cached_tts_entity: Optional[str] = None
 
@@ -546,12 +549,25 @@ class SoundManager:
                         "media_player", "volume_set",
                         {"entity_id": speaker_entity, "volume_level": volume},
                     )
-                    results = await asyncio.gather(vol_coro, tts_coro, return_exceptions=True)
-                    success = not isinstance(results[1], Exception) and results[1]
-                    if isinstance(results[0], Exception):
-                        logger.debug("Volume setzen fehlgeschlagen: %s", results[0])
+                    try:
+                        results = await asyncio.wait_for(
+                            asyncio.gather(vol_coro, tts_coro, return_exceptions=True),
+                            timeout=15,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("TTS+Volume Timeout nach 15s fuer %s", speaker_entity)
+                        success = False
+                        results = None
+                    if results is not None:
+                        success = not isinstance(results[1], Exception) and results[1]
+                        if isinstance(results[0], Exception):
+                            logger.debug("Volume setzen fehlgeschlagen: %s", results[0])
                 else:
-                    success = await tts_coro
+                    try:
+                        success = await asyncio.wait_for(tts_coro, timeout=15)
+                    except asyncio.TimeoutError:
+                        logger.warning("TTS Timeout nach 15s fuer %s", speaker_entity)
+                        success = False
 
                 if success:
                     logger.info(
@@ -560,17 +576,19 @@ class SoundManager:
                     )
                     # Volume wiederherstellen nach TTS-Dauer
                     if needs_volume_change and old_volume is not None:
-                        async def _restore_volume():
+                        async def _restore_volume(eid=speaker_entity, vol=old_volume):
                             await asyncio.sleep(8)
                             try:
                                 await self.ha.call_service(
                                     "media_player", "volume_set",
-                                    {"entity_id": speaker_entity, "volume_level": old_volume},
+                                    {"entity_id": eid, "volume_level": vol},
                                 )
-                                logger.debug("Volume wiederhergestellt: %s -> %.2f", speaker_entity, old_volume)
+                                logger.debug("Volume wiederhergestellt: %s -> %.2f", eid, vol)
                             except Exception as ex:
                                 logger.debug("Volume-Restore fehlgeschlagen: %s", ex)
-                        asyncio.create_task(_restore_volume())
+                        task = asyncio.create_task(_restore_volume())
+                        self._restore_tasks = [t for t in self._restore_tasks if not t.done()]
+                        self._restore_tasks.append(task)
                     return True
             except Exception as e:
                 logger.warning("TTS speak fehlgeschlagen: %s", e)
@@ -579,6 +597,18 @@ class SoundManager:
         # cloud_say wuerde nur 500er erzeugen wenn kein Cloud-TTS konfiguriert ist.
         logger.warning("TTS-Ausgabe fehlgeschlagen — kein TTS-Service verfuegbar")
         return False
+
+    async def cleanup(self):
+        """Wartet auf ausstehende Volume-Restore Tasks und cancelt sie nach Timeout."""
+        pending = [t for t in self._restore_tasks if not t.done()]
+        if pending:
+            logger.info("Warte auf %d Volume-Restore Task(s)...", len(pending))
+            done, not_done = await asyncio.wait(pending, timeout=12)
+            for t in not_done:
+                t.cancel()
+            logger.info("Volume-Restore Cleanup abgeschlossen (%d fertig, %d abgebrochen)",
+                        len(done), len(not_done))
+        self._restore_tasks.clear()
 
     def get_sound_info(self) -> dict:
         """Gibt Infos ueber verfuegbare Sounds zurueck."""
