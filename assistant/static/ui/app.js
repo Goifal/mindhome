@@ -1281,6 +1281,14 @@ function entityPickSelect(item, entityId) {
     return;
   }
 
+  // Cover-Profil: Entity-ID setzen + updateCoverProfile aufrufen
+  if (input?.dataset?.coverIdx !== undefined) {
+    input.value = entityId;
+    const idx = parseInt(input.dataset.coverIdx);
+    if (!isNaN(idx)) updateCoverProfile(idx, 'entity_id', entityId);
+    return;
+  }
+
   // Room-Map Modus: Input-Wert setzen
   if (input?.dataset?.roomMap) {
     input.value = entityId;
@@ -4381,8 +4389,16 @@ function renderCoverProfileList(covers, container) {
     html += '<span style="font-size:13px;font-weight:600;">' + typeLabel + ' — ' + esc(c.entity_id || 'Neu') + '</span>';
     html += '<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);font-size:11px;" onclick="removeCoverProfile(' + i + ')">Entfernen</button>';
     html += '</div>';
-    // Entity-ID
-    html += '<div class="form-group"><label>Entity-ID</label><input type="text" value="' + esc(c.entity_id||'') + '" placeholder="cover.rollladen_wohnzimmer" onchange="updateCoverProfile(' + i + ',\'entity_id\',this.value)"></div>';
+    // Entity-ID (Dropdown mit cover.* Entities)
+    html += '<div class="form-group"><label>Entity-ID</label>';
+    html += '<div class="entity-pick-wrap" style="position:relative;">';
+    html += '<input type="text" class="form-input entity-pick-input" value="' + esc(c.entity_id||'') + '"';
+    html += ' placeholder="&#128269; Cover suchen..." data-domains="cover" data-cover-idx="' + i + '"';
+    html += ' oninput="entityPickFilter(this,\'cover\')" onfocus="entityPickFilter(this,\'cover\')"';
+    html += ' onchange="updateCoverProfile(' + i + ',\'entity_id\',this.value)"';
+    html += ' style="font-family:var(--mono);font-size:13px;">';
+    html += '<div class="entity-pick-dropdown" style="display:none;"></div>';
+    html += '</div></div>';
     // Raum
     html += '<div class="form-group"><label>Raum</label><select onchange="updateCoverProfile(' + i + ',\'room\',this.value)">';
     html += '<option value="">— Bitte waehlen —</option>';
