@@ -110,7 +110,7 @@ def _audit_log(action: str, details: dict = None):
     except Exception as exc:
         logger.warning("Audit-Log Fehler: %s", exc)
 
-# Phase 7.5: Szenen-Intelligenz — Prompt fuer natuerliches Situationsverstaendnis
+# Phase 7.5: Szenen-Intelligenz — Reasoning Framework statt Lookup-Tabelle
 def _build_scene_intelligence_prompt() -> str:
     """Baut den Szenen-Intelligenz-Prompt je nach Heizungsmodus."""
     heating = cfg.yaml_config.get("heating", {})
@@ -130,9 +130,23 @@ def _build_scene_intelligence_prompt() -> str:
     return f"""
 
 SZENEN-INTELLIGENZ:
-Verstehe natuerliche Situationsbeschreibungen und reagiere mit passenden Aktionen:
-- "Mir ist kalt" → {heat_cold}
-- "Mir ist warm" → {heat_warm}
+Du erkennst Situationen aus natuerlicher Sprache UND aus Sensordaten.
+
+REASONING-REGELN (wende diese IMMER an):
+1. URSACHE VOR AKTION: Bevor du handelst, pruefe WARUM etwas so ist.
+   "Mir ist kalt" → Pruefe erst: Fenster offen? Heizung aus? Aussentemperatur?
+   Dann handle entsprechend der Ursache, nicht pauschal.
+2. KONTEXT BEACHTEN: Gleiche Aussage, andere Reaktion je nach Tageszeit/Situation.
+   "Zu hell" um 14:00 → Rolladen. "Zu hell" um 23:00 → Licht dimmen.
+3. PERSONEN BERUECKSICHTIGEN: Wer ist noch da? Beeinflusst deine Aktion andere?
+4. KREUZ-REFERENZIERE: Verbinde Wetter + Raum + Zeit + Gewohnheiten.
+   Regen + Fenster offen → Warnen. Abend + niemand im Raum + Licht an → Hinweisen.
+5. DENKE EINEN SCHRITT WEITER: Was passiert NACH deiner Aktion?
+   Heizung hoch + Fenster offen = Energieverschwendung → erwaehne das.
+
+SITUATIONSBEISPIELE (als Orientierung, nicht als starre Regeln):
+- "Mir ist kalt" → {heat_cold} (aber ERST Fenster/Heizung pruefen)
+- "Mir ist warm" → {heat_warm} (aber ERST Ursache pruefen)
 - "Zu hell" → Rolladen runter ODER Licht dimmen (je nach Tageszeit)
 - "Zu dunkel" → Licht an oder heller
 - "Zu laut" → Musik leiser oder Fenster-Empfehlung
@@ -142,7 +156,8 @@ Verstehe natuerliche Situationsbeschreibungen und reagiere mit passenden Aktione
 - "Ich arbeite" → {heat_work}
 - "Party" → Musik an, Lichter bunt/hell, Gaeste-WLAN
 
-Nutze den aktuellen Raum-Kontext fuer die richtige Aktion.
+WICHTIG: Diese Liste ist nicht abschliessend. Leite die richtige Reaktion
+aus dem Kontext ab, auch fuer Situationen die hier nicht stehen.
 Frage nur bei Mehrdeutigkeit nach (z.B. "Welchen Raum?")."""
 
 
@@ -1921,10 +1936,11 @@ class AssistantBrain(BrainCallbacksMixin):
         # Feature A: Kreative Problemloesung — Haus-Daten parallel laden
         _mega_tasks.append(("problem_solving", self._build_problem_solving_context(text)))
 
-        # Intelligence Fusion: Anticipation + Learning + Insights parallel laden
+        # Intelligence Fusion: Anticipation + Learning + Insights + Experiential parallel laden
         _mega_tasks.append(("anticipation", self.anticipation.get_suggestions()))
         _mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns()))
         _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
+        _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
 
         _mega_keys, _mega_coros = zip(*_mega_tasks)
         _mega_results = await asyncio.gather(*_mega_coros, return_exceptions=True)
@@ -1984,11 +2000,32 @@ class AssistantBrain(BrainCallbacksMixin):
         anticipation_suggestions = _safe_get("anticipation") or []
         learned_patterns = _safe_get("learned_patterns") or []
         live_insights = _safe_get("insights_now") or []
+        experiential_hint = _safe_get("experiential")
 
         context["mood"] = mood_result
 
-        # 3. Modell waehlen
+        # 3. Modell waehlen (mit kontext-basiertem Upgrade)
         model = self.model_router.select_model(text)
+
+        # Kontext-basiertes Upgrade: Wenn viele Datenquellen relevant sind,
+        # braucht das LLM ein staerkeres Modell zum Reasoning
+        _upgrade_signals = 0
+        if problem_solving_ctx:
+            _upgrade_signals += 2  # Problemloesung braucht Deep
+        if whatif_prompt:
+            _upgrade_signals += 2  # Hypothetisches Denken braucht Deep
+        if anticipation_suggestions or learned_patterns:
+            _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
+        if live_insights:
+            _upgrade_signals += 1  # Aktive Insights = mehr zu verarbeiten
+        if sec_score and sec_score.get("level") in ("warning", "critical"):
+            _upgrade_signals += 2  # Sicherheit = immer Deep
+
+        if _upgrade_signals >= 2 and model != self.model_router.model_deep:
+            _upgraded = self.model_router._cap_model(self.model_router.model_deep)
+            if _upgraded != model:
+                logger.info("Model Upgrade %s -> %s (signals: %d)", model, _upgraded, _upgrade_signals)
+                model = _upgraded
 
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
         # Formality-Score cachen fuer Refinement-Prompts (Tool-Feedback)
@@ -2102,6 +2139,10 @@ class AssistantBrain(BrainCallbacksMixin):
         )
         if jarvis_thinks:
             sections.append(("jarvis_thinks", jarvis_thinks, 2))
+
+        # Experiential Memory: "Letztes Mal als du das gemacht hast..."
+        if experiential_hint:
+            sections.append(("experiential", f"\n\n{experiential_hint}", 3))
 
         # --- Prio 3: Optional (RAG bei Wissensfragen Prio 1) ---
         if rag_context:
@@ -2346,7 +2387,17 @@ class AssistantBrain(BrainCallbacksMixin):
                     if _think_msg:
                         await emit_progress("thinking", _think_msg)
 
-            # 6b. Einfache Anfragen: Direkt LLM aufrufen (mit Timeout + Fallback)
+            # 6b. Dynamische Token-Limits basierend auf Komplexitaet
+            # Device-Commands brauchen wenig Tokens, Analysen/What-If viel mehr
+            if problem_solving_ctx or whatif_prompt:
+                response_tokens = 768   # Problemloesung / What-If braucht Platz
+            elif profile.category == "knowledge" or rag_context:
+                response_tokens = 768   # Wissensfragen ausfuehrlich beantworten
+            elif profile.category == "device_command":
+                response_tokens = 150   # "Erledigt." braucht keine 256 Tokens
+            else:
+                response_tokens = 384   # Standard-Gespraech: doppelt so viel wie vorher
+
             llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
             try:
                 response = await asyncio.wait_for(
@@ -2354,6 +2405,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         messages=messages,
                         model=model,
                         tools=get_assistant_tools(),
+                        max_tokens=response_tokens,
                     ),
                     timeout=float(llm_timeout),
                 )
@@ -2369,6 +2421,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                 messages=messages,
                                 model=fallback_model,
                                 tools=get_assistant_tools(),
+                                max_tokens=response_tokens,
                             ),
                             timeout=float(llm_timeout * 0.66),
                         )
@@ -3064,7 +3117,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 name="handle_correction",
             )
 
-        # Phase 8: Action-Logging fuer Anticipation Engine
+        # Phase 8: Action-Logging fuer Anticipation Engine + Experiential Memory
         for action in executed_actions:
             if isinstance(action.get("result"), dict) and action["result"].get("success"):
                 self._task_registry.create_task(
@@ -3073,6 +3126,19 @@ class AssistantBrain(BrainCallbacksMixin):
                     ),
                     name="log_anticipation",
                 )
+                # Experiential Memory: Aktion + Kontext speichern fuer "Letztes Mal..."
+                if self.memory.redis:
+                    outcome_entry = json.dumps({
+                        "action": action["function"],
+                        "args": action.get("args", {}),
+                        "timestamp": datetime.now().isoformat(),
+                        "person": person or "",
+                        "context_hint": situation_delta or "",
+                    })
+                    self._task_registry.create_task(
+                        self._log_experiential_memory(outcome_entry),
+                        name="log_experiential",
+                    )
 
         # Phase 8: Intent-Extraktion im Hintergrund
         if len(text.split()) > 5:
@@ -6604,8 +6670,9 @@ Regeln:
         # Prompt zusammenbauen
         lines = [
             "\n\nPROBLEMLOESUNG — Du bist Ingenieur UND Butler. "
-            "Schlage 1-2 konkrete Loesungen vor, basierend auf diesen Haus-Daten. "
-            "Denke kreativ: Wenn das eine nicht geht, was noch? "
+            "Schlage 2-3 konkrete Loesungen vor mit Vor-/Nachteilen. "
+            "Format: 'Option A: [Loesung] — Vorteil: X, Nachteil: Y'. "
+            "Empfehle die beste Option explizit. "
             "Nutze die verfuegbaren Geraete als Werkzeuge.",
         ]
 
@@ -6631,6 +6698,82 @@ Regeln:
             lines.append("Energie: " + " | ".join(data["energy_sensors"][:5]))
 
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Experiential Memory: "Letztes Mal als du das gemacht hast..."
+    # Speichert Aktion + Kontext und recalled bei aehnlichen Aktionen.
+    # ------------------------------------------------------------------
+
+    async def _log_experiential_memory(self, entry_json: str) -> None:
+        """Speichert eine Action-Outcome-Entry in Redis."""
+        try:
+            await self.memory.redis.lpush("mha:action_outcomes", entry_json)
+            await self.memory.redis.ltrim("mha:action_outcomes", 0, 499)
+        except Exception as e:
+            logger.debug("Experiential Memory Log Fehler: %s", e)
+
+    async def _get_experiential_hints(self, text: str) -> Optional[str]:
+        """Sucht relevante vergangene Erfahrungen basierend auf User-Text.
+
+        Wird im Mega-Gather aufgerufen um dem LLM Kontext ueber
+        vergangene aehnliche Aktionen zu liefern.
+        """
+        if not self.memory.redis:
+            return None
+
+        text_lower = text.lower()
+        # Mapping: Keywords im User-Text → Funktionsnamen in action_outcomes
+        _ACTION_KEYWORDS = {
+            "licht": "set_light", "lampe": "set_light",
+            "heizung": "set_climate", "temperatur": "set_climate",
+            "rollladen": "set_cover", "rolladen": "set_cover", "jalousie": "set_cover",
+            "musik": "play_media", "alarm": "set_alarm", "schloss": "set_lock",
+        }
+        target_actions = set()
+        for kw, action in _ACTION_KEYWORDS.items():
+            if kw in text_lower:
+                target_actions.add(action)
+
+        if not target_actions:
+            return None
+
+        try:
+            recent_outcomes = await self.memory.redis.lrange("mha:action_outcomes", 0, 99)
+        except Exception:
+            return None
+
+        relevant = []
+        for raw in recent_outcomes:
+            try:
+                entry = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if entry.get("action") in target_actions:
+                try:
+                    ts = datetime.fromisoformat(entry["timestamp"])
+                    delta = datetime.now() - ts
+                    if 1 <= delta.days <= 30:  # Mindestens 1 Tag alt, max 30
+                        relevant.append((delta, entry))
+                except (KeyError, ValueError):
+                    continue
+
+        if not relevant:
+            return None
+
+        # Aelteste relevante Erfahrung nehmen (nicht die juengste — die ist trivial)
+        relevant.sort(key=lambda x: x[0], reverse=True)
+        _, best = relevant[0]
+        days_ago = (datetime.now() - datetime.fromisoformat(best["timestamp"])).days
+
+        time_ref = "gestern" if days_ago == 1 else f"vor {days_ago} Tagen"
+        hint = best.get("context_hint", "")
+
+        return (
+            f"ERFAHRUNG: {time_ref} wurde {best['action']} mit "
+            f"aehnlichen Parametern ausgefuehrt."
+            + (f" Kontext damals: {hint}" if hint else "")
+            + "\nErwaehne das nur wenn es relevant ist: 'Wie neulich...' / 'Das hattest du zuletzt am...'"
+        )
 
     # ------------------------------------------------------------------
     # Intelligence Fusion: JARVIS DENKT MIT

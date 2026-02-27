@@ -838,6 +838,7 @@ class InsightEngine:
                 (self.check_away_devices, self._check_away_devices),
                 (self.check_temp_drop, self._check_temp_drop),
                 (self.check_window_temp, self._check_window_temp_drop),
+                (True, self._check_trend_prediction),  # Trend-Prediction immer aktiv
             ]
 
             for enabled, method in check_methods:
@@ -854,6 +855,91 @@ class InsightEngine:
         except Exception as e:
             logger.debug("run_checks_now Fehler: %s", e)
             return []
+
+    # ------------------------------------------------------------------
+    # Trend-Prediction: Temperatur-Extrapolation
+    # ------------------------------------------------------------------
+
+    async def _store_temp_snapshot(self, data: dict) -> None:
+        """Speichert aktuelle Raumtemperaturen fuer Trend-Analyse."""
+        if not self.redis:
+            return
+        temps = {}
+        for state in data.get("states", []):
+            eid = state.get("entity_id", "")
+            if eid.startswith("climate."):
+                current = state.get("attributes", {}).get("current_temperature")
+                if current is not None:
+                    try:
+                        temp_val = float(current)
+                        if -20 < temp_val < 50:
+                            name = state.get("attributes", {}).get("friendly_name", eid)
+                            temps[name] = temp_val
+                    except (ValueError, TypeError):
+                        pass
+        if temps:
+            try:
+                await self.redis.lpush(
+                    "mha:insight:temp_history",
+                    json.dumps({"ts": datetime.now().isoformat(), "temps": temps}),
+                )
+                await self.redis.ltrim("mha:insight:temp_history", 0, 5)
+                await self.redis.expire("mha:insight:temp_history", 6 * 3600)
+            except Exception:
+                pass
+
+    async def _check_trend_prediction(self, data: dict) -> Optional[dict]:
+        """Einfache lineare Trend-Extrapolation fuer Raumtemperaturen."""
+        if not self.redis:
+            return None
+
+        # Aktuellen Snapshot speichern
+        await self._store_temp_snapshot(data)
+
+        try:
+            snapshots_raw = await self.redis.lrange("mha:insight:temp_history", 0, 5)
+        except Exception:
+            return None
+
+        if len(snapshots_raw) < 3:
+            return None
+
+        try:
+            snapshots = [json.loads(s) for s in snapshots_raw]
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+        newest = snapshots[0].get("temps", {})
+        oldest = snapshots[-1].get("temps", {})
+        try:
+            newest_ts = datetime.fromisoformat(snapshots[0]["ts"])
+            oldest_ts = datetime.fromisoformat(snapshots[-1]["ts"])
+            hours_diff = (newest_ts - oldest_ts).total_seconds() / 3600
+        except (KeyError, ValueError):
+            return None
+
+        if hours_diff < 0.25:  # Mindestens 15 Min Beobachtungsfenster
+            return None
+
+        for room in newest:
+            if room in oldest:
+                try:
+                    rate_per_hour = (newest[room] - oldest[room]) / hours_diff
+                    predicted_2h = newest[room] + rate_per_hour * 2
+
+                    if predicted_2h < 17 and rate_per_hour < -0.5:
+                        return {
+                            "check": "trend_prediction",
+                            "urgency": "medium",
+                            "message": (
+                                f"{room}: Temperatur faellt ({rate_per_hour:+.1f}°C/h). "
+                                f"In 2 Stunden voraussichtlich {predicted_2h:.0f}°C."
+                            ),
+                        }
+                except (TypeError, ZeroDivisionError):
+                    continue
+
+        return None
 
     # ------------------------------------------------------------------
     # Status & Diagnostik

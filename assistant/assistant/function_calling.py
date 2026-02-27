@@ -19,6 +19,16 @@ from .config import settings, yaml_config, get_room_profiles
 from .config_versioning import ConfigVersioning
 from .ha_client import HomeAssistantClient
 
+# ============================================================
+# KERN-SCHUTZ: JARVIS darf seinen eigenen Kern NICHT aendern.
+# - settings.yaml ist NICHT in _EDITABLE_CONFIGS
+# - Kein exec/eval/subprocess/os.system in Tool-Pfaden
+# - _EDITABLE_CONFIGS ist eine geschlossene Whitelist
+# - Neue editierbare Configs MUESSEN hier explizit freigeschaltet werden
+# - Immutable Keys (security, trust_levels, autonomy, models, dashboard)
+#   sind in self_optimization.py per hardcoded frozenset geschuetzt
+# ============================================================
+
 # Config-Pfade fuer Phase 13.1 (Whitelist — nur diese darf Jarvis aendern)
 _CONFIG_DIR = Path(__file__).parent.parent / "config"
 _EDITABLE_CONFIGS = {

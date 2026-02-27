@@ -208,21 +208,50 @@ class SituationModel:
         # 1. Temperatur-Aenderungen (> 2 Grad)
         old_temps = old.get("temperatures", {})
         new_temps = new.get("temperatures", {})
+        temp_drops = {}  # name → diff (nur negative = gesunken)
+        temp_rises = {}
         for name in set(old_temps) & set(new_temps):
             diff = new_temps[name] - old_temps[name]
             if abs(diff) >= self.temp_threshold:
-                direction = "gestiegen" if diff > 0 else "gesunken"
-                changes.append((
-                    3,
-                    f"{name}: Temperatur um {abs(diff):.1f} Grad {direction} "
-                    f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C)"
-                ))
+                if diff < 0:
+                    temp_drops[name] = diff
+                else:
+                    temp_rises[name] = diff
 
         # 2. Fenster geoeffnet/geschlossen
         old_win = set(old.get("open_windows", []))
         new_win = set(new.get("open_windows", []))
         opened = new_win - old_win
         closed = old_win - new_win
+
+        # Kausale Verknuepfung: Fenster geoeffnet UND Temperatur gesunken
+        causal_matched_temps = set()
+        if opened and temp_drops:
+            window_names = ", ".join(sorted(opened))
+            for name, diff in temp_drops.items():
+                causal_matched_temps.add(name)
+                changes.append((
+                    2,
+                    f"{name}: Temperatur um {abs(diff):.1f} Grad gesunken "
+                    f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C) "
+                    f"— vermutlich weil {window_names} geoeffnet wurde"
+                ))
+
+        # Verbleibende Temperatur-Aenderungen (nicht kausal verknuepft)
+        for name, diff in temp_drops.items():
+            if name not in causal_matched_temps:
+                changes.append((
+                    3,
+                    f"{name}: Temperatur um {abs(diff):.1f} Grad gesunken "
+                    f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C)"
+                ))
+        for name, diff in temp_rises.items():
+            changes.append((
+                3,
+                f"{name}: Temperatur um {abs(diff):.1f} Grad gestiegen "
+                f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C)"
+            ))
+
         for w in opened:
             changes.append((2, f"{w} wurde geoeffnet"))
         for w in closed:
