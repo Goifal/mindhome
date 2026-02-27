@@ -3306,6 +3306,29 @@ function collectSettings() {
     });
     setPath(updates, path, obj);
   });
+  // Power-Trigger editors (pt-editor divs) - collect from DOM
+  document.querySelectorAll('#settingsContent .pt-editor[data-path]').forEach(el => {
+    const path = el.dataset.path;
+    const triggers = [];
+    el.querySelectorAll('.pt-row').forEach(row => {
+      const entity = row.querySelector('.pt-entity').value.trim();
+      const threshold = parseFloat(row.querySelector('.pt-threshold').value) || 5;
+      const room = row.querySelector('.pt-room').value.trim();
+      if (entity && room) triggers.push({ entity, threshold, room });
+    });
+    setPath(updates, path, triggers);
+  });
+  // Scene-Trigger editors (st-editor divs) - collect from DOM
+  document.querySelectorAll('#settingsContent .st-editor[data-path]').forEach(el => {
+    const path = el.dataset.path;
+    const triggers = [];
+    el.querySelectorAll('.st-row').forEach(row => {
+      const entity = row.querySelector('.st-entity').value.trim();
+      const room = row.querySelector('.st-room').value.trim();
+      if (entity && room) triggers.push({ entity, room });
+    });
+    setPath(updates, path, triggers);
+  });
   // Chip-Selects - already maintained in S via toggleChip()
   document.querySelectorAll('#settingsContent .chip-grid[data-path]').forEach(el => {
     const path = el.dataset.path;
@@ -4477,17 +4500,41 @@ function renderVacuum() {
     renderVacuumRobot('og', 'Obergeschoss (OG)')
   ) +
   sectionWrap('&#128296;', 'Auto-Clean',
-    fInfo('Automatische Reinigung wenn niemand zuhause ist.') +
+    fInfo('Automatische Reinigung — entweder an festen Wochentagen oder automatisch wenn niemand zuhause ist.') +
     fToggle('vacuum.auto_clean.enabled', 'Auto-Clean aktiv') +
-    fToggle('vacuum.auto_clean.when_nobody_home', 'Nur wenn niemand zuhause') +
+    fSelect('vacuum.auto_clean.mode', 'Modus', [
+      {v:'smart',l:'Smart (wenn niemand zuhause)'},
+      {v:'schedule',l:'Fester Wochenplan'},
+      {v:'both',l:'Beides (Wochenplan + Smart)'}
+    ]) +
+    fChipSelect('vacuum.auto_clean.schedule_days', 'Reinigungstage', [
+      {v:'mon',l:'Mo'}, {v:'tue',l:'Di'}, {v:'wed',l:'Mi'},
+      {v:'thu',l:'Do'}, {v:'fri',l:'Fr'}, {v:'sat',l:'Sa'}, {v:'sun',l:'So'}
+    ], 'Gilt fuer Modus "Fester Wochenplan" und "Beides".') +
+    fRange('vacuum.auto_clean.schedule_time', 'Uhrzeit (Wochenplan)', 6, 20, 1, {6:'06:00',7:'07:00',8:'08:00',9:'09:00',10:'10:00',11:'11:00',12:'12:00',13:'13:00',14:'14:00',15:'15:00',16:'16:00',17:'17:00',18:'18:00',19:'19:00',20:'20:00'}) +
+    fToggle('vacuum.auto_clean.when_nobody_home', 'Nur wenn niemand zuhause (Smart-Modus)') +
     fRange('vacuum.auto_clean.min_hours_between', 'Mindestabstand (Std)', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'}) +
-    fRange('vacuum.auto_clean.preferred_time_start', 'Bevorzugt ab (Uhr)', 6, 18, 1) +
-    fRange('vacuum.auto_clean.preferred_time_end', 'Bevorzugt bis (Uhr)', 10, 22, 1) +
+    fRange('vacuum.auto_clean.preferred_time_start', 'Smart: Bevorzugt ab (Uhr)', 6, 18, 1) +
+    fRange('vacuum.auto_clean.preferred_time_end', 'Smart: Bevorzugt bis (Uhr)', 10, 22, 1) +
     fChipSelect('vacuum.auto_clean.not_during', 'Nicht starten waehrend', [
       {v:'meeting',l:'Meeting'}, {v:'schlafen',l:'Schlafen'},
       {v:'gaeste',l:'Gaeste'}, {v:'filmabend',l:'Filmabend'},
       {v:'telefonat',l:'Telefonat'}
     ])
+  ) +
+  sectionWrap('&#9889;', 'Steckdosen-Trigger',
+    fInfo('Wenn eine Steckdose mit Leistungsmessung abschaltet (Leistung faellt unter Schwellwert), wird automatisch der zugehoerige Raum gereinigt.') +
+    fToggle('vacuum.power_trigger.enabled', 'Steckdosen-Trigger aktiv') +
+    fRange('vacuum.power_trigger.delay_minutes', 'Verzoegerung nach Abschalten', 1, 30, 1, {1:'1 Min',2:'2 Min',5:'5 Min',10:'10 Min',15:'15 Min',20:'20 Min',30:'30 Min'}) +
+    fRange('vacuum.power_trigger.cooldown_hours', 'Cooldown (nicht nochmal)', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',6:'6 Std',8:'8 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'}) +
+    _renderPowerTriggerList()
+  ) +
+  sectionWrap('&#127917;', 'Szenen-Trigger',
+    fInfo('Wenn eine Szene aktiviert wird, reinigt der Saugroboter automatisch den zugehoerigen Raum. Z.B. scene.kuche_aus wird aktiviert → Kueche saugen.') +
+    fToggle('vacuum.scene_trigger.enabled', 'Szenen-Trigger aktiv') +
+    fRange('vacuum.scene_trigger.delay_minutes', 'Verzoegerung nach Aktivierung', 1, 30, 1, {1:'1 Min',2:'2 Min',5:'5 Min',10:'10 Min',15:'15 Min',20:'20 Min',30:'30 Min'}) +
+    fRange('vacuum.scene_trigger.cooldown_hours', 'Cooldown (nicht nochmal)', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',6:'6 Std',8:'8 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'}) +
+    _renderSceneTriggerList()
   ) +
   sectionWrap('&#128295;', 'Wartungs-Ueberwachung',
     fInfo('Jarvis warnt wenn Verschleissteile des Saugroboters gewechselt werden muessen.') +
@@ -4497,27 +4544,104 @@ function renderVacuum() {
   );
 }
 
+function _renderPowerTriggerList() {
+  const triggers = getPath(S, 'vacuum.power_trigger.triggers') || [];
+  let rows = triggers.map((t, i) =>
+    `<div class="pt-row" style="display:grid;grid-template-columns:1fr 80px 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;">
+       <input type="text" class="pt-entity form-input" value="${esc(t.entity || '')}" placeholder="sensor.steckdose_power" style="font-size:12px;font-family:var(--mono);">
+       <input type="number" class="pt-threshold form-input" value="${t.threshold ?? 5}" min="0" max="1000" step="1" placeholder="W" style="font-size:12px;text-align:center;">
+       <input type="text" class="pt-room form-input" value="${esc(t.room || '')}" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+       <button class="kv-rm" onclick="ptRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>
+     </div>`
+  ).join('');
+  return `<div class="pt-editor" data-path="vacuum.power_trigger.triggers">
+    <div style="display:grid;grid-template-columns:1fr 80px 1fr 32px;gap:8px;margin-bottom:4px;font-size:11px;color:var(--text-muted);font-weight:600;">
+      <span>Steckdosen-Entity</span><span style="text-align:center;">Schwelle (W)</span><span>Raum</span><span></span>
+    </div>
+    ${rows}
+    <button class="kv-add" onclick="ptAdd(this)">+ Steckdosen-Trigger</button>
+  </div>`;
+}
+function ptAdd(btn) {
+  const editor = btn.closest('.pt-editor');
+  const row = document.createElement('div');
+  row.className = 'pt-row';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 80px 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;';
+  row.innerHTML = `<input type="text" class="pt-entity form-input" placeholder="sensor.steckdose_power" style="font-size:12px;font-family:var(--mono);">
+    <input type="number" class="pt-threshold form-input" value="5" min="0" max="1000" step="1" placeholder="W" style="font-size:12px;text-align:center;">
+    <input type="text" class="pt-room form-input" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+    <button class="kv-rm" onclick="ptRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>`;
+  editor.insertBefore(row, btn);
+  ptSync(editor);
+}
+function ptRemove(btn) {
+  const editor = btn.closest('.pt-editor');
+  btn.closest('.pt-row').remove();
+  ptSync(editor);
+}
+function ptSync(editor) {
+  const triggers = [];
+  editor.querySelectorAll('.pt-row').forEach(row => {
+    const entity = row.querySelector('.pt-entity').value.trim();
+    const threshold = parseFloat(row.querySelector('.pt-threshold').value) || 5;
+    const room = row.querySelector('.pt-room').value.trim();
+    if (entity && room) triggers.push({ entity, threshold, room });
+  });
+  setPath(S, 'vacuum.power_trigger.triggers', triggers);
+}
+
+function _renderSceneTriggerList() {
+  const triggers = getPath(S, 'vacuum.scene_trigger.triggers') || [];
+  let rows = triggers.map((t, i) =>
+    `<div class="st-row" style="display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;">
+       <input type="text" class="st-entity form-input" value="${esc(t.entity || '')}" placeholder="scene.kuche_aus" style="font-size:12px;font-family:var(--mono);">
+       <input type="text" class="st-room form-input" value="${esc(t.room || '')}" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+       <button class="kv-rm" onclick="stRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>
+     </div>`
+  ).join('');
+  return `<div class="st-editor" data-path="vacuum.scene_trigger.triggers">
+    <div style="display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;margin-bottom:4px;font-size:11px;color:var(--text-muted);font-weight:600;">
+      <span>Szene (scene.*)</span><span>Raum</span><span></span>
+    </div>
+    ${rows}
+    <button class="kv-add" onclick="stAdd(this)">+ Szenen-Trigger</button>
+  </div>`;
+}
+function stAdd(btn) {
+  const editor = btn.closest('.st-editor');
+  const row = document.createElement('div');
+  row.className = 'st-row';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;align-items:center;margin-bottom:6px;';
+  row.innerHTML = `<input type="text" class="st-entity form-input" placeholder="scene.kuche_aus" style="font-size:12px;font-family:var(--mono);">
+    <input type="text" class="st-room form-input" placeholder="Raum (z.B. kueche)" style="font-size:12px;">
+    <button class="kv-rm" onclick="stRemove(this)" title="Entfernen" style="font-size:14px;">&#10005;</button>`;
+  editor.insertBefore(row, btn);
+  stSync(editor);
+}
+function stRemove(btn) {
+  const editor = btn.closest('.st-editor');
+  btn.closest('.st-row').remove();
+  stSync(editor);
+}
+function stSync(editor) {
+  const triggers = [];
+  editor.querySelectorAll('.st-row').forEach(row => {
+    const entity = row.querySelector('.st-entity').value.trim();
+    const room = row.querySelector('.st-room').value.trim();
+    if (entity && room) triggers.push({ entity, room });
+  });
+  setPath(S, 'vacuum.scene_trigger.triggers', triggers);
+}
+
 function renderVacuumRobot(floor, floorLabel) {
   const prefix = 'vacuum.robots.' + floor;
-  const robot = getPath(S, prefix) || {};
-  const rooms = RP.rooms || {};
-  const floorRooms = Object.entries(rooms).filter(([n,r]) => r.floor === floor).map(([n]) => n);
   let html = '<div class="s-card" style="margin:10px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
   html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">&#129529; ' + floorLabel + '</div>';
   html += fText(prefix + '.entity_id', 'Entity-ID', 'z.B. vacuum.dreame_' + floor);
   html += fText(prefix + '.name', 'Name', 'z.B. Saugroboter ' + floor.toUpperCase());
   html += fText(prefix + '.nickname', 'Spitzname', 'z.B. der Kleine');
-  // Raum → Segment-ID Zuordnung
-  html += '<div style="margin:10px 0 4px;font-weight:600;font-size:12px;">Raum-Segmente (Dreame Raum-IDs)</div>';
-  html += '<div class="hint" style="margin-bottom:8px;">Welche Dreame-Segment-ID gehoert zu welchem Raum? IDs findest du in der Dreame-App (Raeume verwalten → Nummer).</div>';
-  const segments = robot.rooms || {};
-  for (const roomName of floorRooms) {
-    const segId = segments[roomName] || '';
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
-    html += '<span style="font-size:12px;min-width:140px;">' + esc(roomName) + '</span>';
-    html += '<input type="number" data-path="' + prefix + '.rooms.' + roomName + '" value="' + segId + '" min="0" max="99" step="1" style="width:70px;" placeholder="ID">';
-    html += '</div>';
-  }
+  html += fKeyValue(prefix + '.rooms', 'Raum-Segmente (Dreame Raum-IDs)', 'Raumname', 'Segment-ID',
+    'Raumname frei eingeben, Segment-ID aus der Dreame-App (Raeume verwalten → Nummer).');
   html += '</div>';
   return html;
 }

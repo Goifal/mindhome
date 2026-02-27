@@ -210,6 +210,12 @@ class ProactiveManager:
         vacuum_cfg = yaml_config.get("vacuum", {})
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("auto_clean", {}).get("enabled"):
             self._vacuum_task = asyncio.create_task(self._run_vacuum_automation())
+        # Steckdosen-Trigger fuer Saugroboter
+        if vacuum_cfg.get("enabled") and vacuum_cfg.get("power_trigger", {}).get("enabled"):
+            self._vacuum_power_task = asyncio.create_task(self._run_vacuum_power_trigger())
+        # Szenen-Trigger fuer Saugroboter
+        if vacuum_cfg.get("enabled") and vacuum_cfg.get("scene_trigger", {}).get("enabled"):
+            self._vacuum_scene_task = asyncio.create_task(self._run_vacuum_scene_trigger())
         # Emergency Protocols laden
         self._emergency_protocols = yaml_config.get("emergency_protocols", {})
 
@@ -2206,50 +2212,63 @@ class ProactiveManager:
         _redis = getattr(self.brain, "memory", None)
         _redis = getattr(_redis, "redis", None) if _redis else None
 
+        DAY_MAP = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+
         while self._running:
             try:
-                if not auto_cfg.get("when_nobody_home"):
-                    await asyncio.sleep(900)
-                    continue
+                mode = auto_cfg.get("mode", "smart")
+                now = datetime.now()
+                hour = now.hour
 
-                # Zeitfenster pruefen
-                hour = datetime.now().hour
-                start_h = auto_cfg.get("preferred_time_start", 10)
-                end_h = auto_cfg.get("preferred_time_end", 16)
-                if not (start_h <= hour < end_h):
-                    await asyncio.sleep(900)
-                    continue
+                # ── Wochenplan-Trigger ──
+                schedule_trigger = False
+                if mode in ("schedule", "both"):
+                    schedule_days = auto_cfg.get("schedule_days", [])
+                    schedule_hour = auto_cfg.get("schedule_time", 10)
+                    today_key = [k for k, v in DAY_MAP.items() if v == now.weekday()]
+                    if today_key and today_key[0] in schedule_days and hour == schedule_hour:
+                        schedule_trigger = True
 
-                # Niemand zuhause?
-                states = await self.brain.ha.get_states()
-                persons_home = [
-                    s for s in (states or [])
-                    if s.get("entity_id", "").startswith("person.")
-                    and s.get("state") == "home"
-                ]
-                if persons_home:
+                # ── Smart-Trigger (niemand zuhause) ──
+                smart_trigger = False
+                if mode in ("smart", "both"):
+                    start_h = auto_cfg.get("preferred_time_start", 10)
+                    end_h = auto_cfg.get("preferred_time_end", 16)
+                    if start_h <= hour < end_h:
+                        states = await self.brain.ha.get_states()
+                        persons_home = [
+                            s for s in (states or [])
+                            if s.get("entity_id", "").startswith("person.")
+                            and s.get("state") == "home"
+                        ]
+                        nobody_home = auto_cfg.get("when_nobody_home", True)
+                        if not nobody_home or not persons_home:
+                            smart_trigger = True
+
+                if not schedule_trigger and not smart_trigger:
                     await asyncio.sleep(900)
                     continue
 
                 # Aktive Kalender-Events pruefen (z.B. "meeting" im Titel)
-                # HINWEIS: "schlafen" in not_during ist hier wirkungslos, da
-                # der Check nur laeuft wenn niemand zuhause ist. "schlafen"
-                # sollte aus der not_during-Config entfernt werden.
                 not_during = auto_cfg.get("not_during", [])
-                blocking = False
-                for s in (states or []):
-                    eid = s.get("entity_id", "")
-                    if eid.startswith("calendar.") and s.get("state") == "on":
-                        title = (s.get("attributes", {}).get("message") or "").lower()
-                        if any(kw in title for kw in not_during):
-                            blocking = True
-                            break
-                if blocking:
-                    await asyncio.sleep(900)
-                    continue
+                if not_during:
+                    if not smart_trigger:
+                        states = await self.brain.ha.get_states()
+                    blocking = False
+                    for s in (states or []):
+                        eid = s.get("entity_id", "")
+                        if eid.startswith("calendar.") and s.get("state") == "on":
+                            title = (s.get("attributes", {}).get("message") or "").lower()
+                            if any(kw in title for kw in not_during):
+                                blocking = True
+                                break
+                    if blocking:
+                        await asyncio.sleep(900)
+                        continue
 
                 # Mindestabstand pro Roboter pruefen
                 min_hours = auto_cfg.get("min_hours_between", 24)
+                trigger_reason = "Wochenplan" if schedule_trigger else "niemand zuhause"
                 for floor, robot in robots.items():
                     eid = robot.get("entity_id")
                     if not eid:
@@ -2272,9 +2291,9 @@ class ProactiveManager:
                         await _redis.set(f"mha:vacuum:{floor}:last_auto_clean", str(time.time()))
                     nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
                     await self._notify("vacuum_auto_start", LOW, {
-                        "message": f"{nickname} startet automatisch (niemand zuhause)",
+                        "message": f"{nickname} startet automatisch ({trigger_reason})",
                     })
-                    logger.info("Vacuum-Auto: %s gestartet (%s)", eid, floor)
+                    logger.info("Vacuum-Auto: %s gestartet (%s, %s)", eid, floor, trigger_reason)
 
                 # Wartung pruefen (1x pro Durchlauf)
                 await self._check_vacuum_maintenance(robots, _redis)
@@ -2283,6 +2302,206 @@ class ProactiveManager:
                 logger.error("Vacuum-Automation Fehler: %s", e)
 
             await asyncio.sleep(900)  # 15 Minuten
+
+    async def _run_vacuum_power_trigger(self):
+        """Steckdosen-Trigger: Wenn Leistung unter Schwellwert → Raum saugen."""
+        await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 180)
+
+        vacuum_cfg = yaml_config.get("vacuum", {})
+        pt_cfg = vacuum_cfg.get("power_trigger", {})
+        robots = vacuum_cfg.get("robots", {})
+        _redis = getattr(self.brain, "memory", None)
+        _redis = getattr(_redis, "redis", None) if _redis else None
+
+        # Zustand: war die Steckdose vorher "an" (ueber Schwellwert)?
+        was_above: dict[str, bool] = {}
+
+        while self._running:
+            try:
+                triggers = pt_cfg.get("triggers", [])
+                delay_min = pt_cfg.get("delay_minutes", 5)
+                cooldown_h = pt_cfg.get("cooldown_hours", 12)
+
+                for trigger in triggers:
+                    entity = trigger.get("entity", "")
+                    threshold = trigger.get("threshold", 5)
+                    room = trigger.get("room", "")
+                    if not entity or not room:
+                        continue
+
+                    state = await self.brain.ha.get_state(entity)
+                    if not state:
+                        continue
+
+                    try:
+                        power = float(state.get("state", 0))
+                    except (ValueError, TypeError):
+                        continue
+
+                    above = power >= threshold
+                    prev_above = was_above.get(entity, True)
+                    was_above[entity] = above
+
+                    # Fallende Flanke: war ueber Schwellwert, jetzt drunter
+                    if prev_above and not above:
+                        # Cooldown pruefen
+                        if _redis:
+                            cd_key = f"mha:vacuum:pt:{entity}"
+                            last = await _redis.get(cd_key)
+                            if last:
+                                try:
+                                    hours_since = (time.time() - float(last)) / 3600
+                                    if hours_since < cooldown_h:
+                                        continue
+                                except (ValueError, TypeError):
+                                    pass
+
+                        # Verzoegerung abwarten
+                        logger.info("Vacuum-PowerTrigger: %s unter %sW — warte %d Min", entity, threshold, delay_min)
+                        await asyncio.sleep(delay_min * 60)
+
+                        # Nochmal pruefen ob immer noch aus
+                        recheck = await self.brain.ha.get_state(entity)
+                        try:
+                            recheck_power = float(recheck.get("state", 0)) if recheck else threshold
+                        except (ValueError, TypeError):
+                            recheck_power = threshold
+                        if recheck_power >= threshold:
+                            was_above[entity] = True
+                            continue
+
+                        # Raum → Roboter + Segment finden
+                        robot = None
+                        segment_id = None
+                        for floor, r in robots.items():
+                            rooms_map = r.get("rooms", {})
+                            if room in rooms_map:
+                                robot = r
+                                segment_id = rooms_map[room]
+                                break
+                        if not robot:
+                            # Fallback: ersten Roboter nehmen
+                            if robots:
+                                robot = next(iter(robots.values()))
+
+                        if robot and robot.get("entity_id"):
+                            eid = robot["entity_id"]
+                            if segment_id is not None:
+                                await self.brain.ha.call_service("vacuum", "send_command", {
+                                    "entity_id": eid,
+                                    "command": "app_segment_clean",
+                                    "params": [segment_id],
+                                })
+                            else:
+                                await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
+
+                            if _redis:
+                                await _redis.set(f"mha:vacuum:pt:{entity}", str(time.time()))
+
+                            nickname = robot.get("nickname", "Saugroboter")
+                            await self._notify("vacuum_power_trigger", LOW, {
+                                "message": f"{nickname} reinigt '{room}' — Steckdose {entity} abgeschaltet",
+                            })
+                            logger.info("Vacuum-PowerTrigger: %s → %s gestartet (Raum: %s)", entity, eid, room)
+
+            except Exception as e:
+                logger.error("Vacuum-PowerTrigger Fehler: %s", e)
+
+            await asyncio.sleep(60)  # 1 Minute Polling
+
+    async def _run_vacuum_scene_trigger(self):
+        """Szenen-Trigger: Wenn eine Szene aktiviert wird → Raum saugen."""
+        await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 200)
+
+        vacuum_cfg = yaml_config.get("vacuum", {})
+        st_cfg = vacuum_cfg.get("scene_trigger", {})
+        robots = vacuum_cfg.get("robots", {})
+        _redis = getattr(self.brain, "memory", None)
+        _redis = getattr(_redis, "redis", None) if _redis else None
+
+        # Letzter bekannter last_changed-Zeitstempel pro Entity
+        last_seen: dict[str, str] = {}
+
+        while self._running:
+            try:
+                triggers = st_cfg.get("triggers", [])
+                delay_min = st_cfg.get("delay_minutes", 5)
+                cooldown_h = st_cfg.get("cooldown_hours", 12)
+
+                for trigger in triggers:
+                    entity = trigger.get("entity", "")
+                    room = trigger.get("room", "")
+                    if not entity or not room:
+                        continue
+
+                    state = await self.brain.ha.get_state(entity)
+                    if not state:
+                        continue
+
+                    # Szenen haben als last_changed den Zeitpunkt der letzten Aktivierung
+                    changed = state.get("last_changed", "")
+                    prev_changed = last_seen.get(entity)
+                    last_seen[entity] = changed
+
+                    # Erster Durchlauf: nur merken, nicht triggern
+                    if prev_changed is None:
+                        continue
+
+                    # Szene wurde aktiviert (last_changed hat sich geaendert)
+                    if changed != prev_changed:
+                        # Cooldown pruefen
+                        if _redis:
+                            cd_key = f"mha:vacuum:st:{entity}"
+                            last = await _redis.get(cd_key)
+                            if last:
+                                try:
+                                    hours_since = (time.time() - float(last)) / 3600
+                                    if hours_since < cooldown_h:
+                                        continue
+                                except (ValueError, TypeError):
+                                    pass
+
+                        # Verzoegerung
+                        scene_name = entity.replace("scene.", "").replace("_", " ").title()
+                        logger.info("Vacuum-SceneTrigger: %s aktiviert — warte %d Min", entity, delay_min)
+                        await asyncio.sleep(delay_min * 60)
+
+                        # Raum → Roboter + Segment finden
+                        robot = None
+                        segment_id = None
+                        for floor, r in robots.items():
+                            rooms_map = r.get("rooms", {})
+                            if room in rooms_map:
+                                robot = r
+                                segment_id = rooms_map[room]
+                                break
+                        if not robot and robots:
+                            robot = next(iter(robots.values()))
+
+                        if robot and robot.get("entity_id"):
+                            eid = robot["entity_id"]
+                            if segment_id is not None:
+                                await self.brain.ha.call_service("vacuum", "send_command", {
+                                    "entity_id": eid,
+                                    "command": "app_segment_clean",
+                                    "params": [segment_id],
+                                })
+                            else:
+                                await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
+
+                            if _redis:
+                                await _redis.set(f"mha:vacuum:st:{entity}", str(time.time()))
+
+                            nickname = robot.get("nickname", "Saugroboter")
+                            await self._notify("vacuum_scene_trigger", LOW, {
+                                "message": f"{nickname} reinigt '{room}' — Szene '{scene_name}' aktiviert",
+                            })
+                            logger.info("Vacuum-SceneTrigger: %s → %s gestartet (Raum: %s)", entity, eid, room)
+
+            except Exception as e:
+                logger.error("Vacuum-SceneTrigger Fehler: %s", e)
+
+            await asyncio.sleep(60)  # 1 Minute Polling
 
     async def _check_vacuum_maintenance(self, robots: dict, redis_client=None):
         """Prueft Filter/Buerste/Mopp Verschleiss und erinnert."""
