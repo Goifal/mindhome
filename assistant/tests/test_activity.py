@@ -110,28 +110,28 @@ class TestSignalDetection:
         states = [{"entity_id": "binary_sensor.pc_active", "state": "off"}]
         assert engine._check_pc_active(states) is False
 
-    def test_check_sleeping_bed_occupied(self, engine):
-        """Bettsensor belegt = sleeping."""
+    def test_check_sleeping_bed_occupied_no_media(self, engine):
+        """Bettsensor belegt + kein TV = sleeping."""
         states = [
             {"entity_id": "binary_sensor.bed_occupancy", "state": "on"},
         ]
         assert engine._check_sleeping(states) is True
 
-    def test_check_sleeping_bed_occupied_overrides_media(self, engine):
-        """Bettsensor belegt + TV an = trotzdem sleeping (eingeschlafen mit TV)."""
+    def test_check_sleeping_bed_occupied_with_media_is_not_sleeping(self, engine):
+        """Bettsensor belegt + TV an = NICHT sleeping (fernsehen im Bett)."""
         states = [
             {"entity_id": "binary_sensor.bed_occupancy", "state": "on"},
             {"entity_id": "media_player.wohnzimmer", "state": "playing"},
         ]
-        assert engine._check_sleeping(states) is True
+        assert engine._check_sleeping(states) is False
 
-    def test_check_sleeping_bed_occupied_overrides_pc(self, engine):
-        """Bettsensor belegt + PC an = trotzdem sleeping."""
+    def test_check_sleeping_bed_occupied_with_pc_is_not_sleeping(self, engine):
+        """Bettsensor belegt + PC an = NICHT sleeping."""
         states = [
             {"entity_id": "binary_sensor.bed_occupancy", "state": "on"},
             {"entity_id": "binary_sensor.pc_active", "state": "on"},
         ]
-        assert engine._check_sleeping(states) is True
+        assert engine._check_sleeping(states) is False
 
     def test_check_sleeping_no_bed_media_blocks(self, engine):
         """Ohne Bettsensor: Media aktiv blockiert sleeping."""
@@ -140,6 +140,19 @@ class TestSignalDetection:
             {"entity_id": "light.wohnzimmer", "state": "off"},
         ]
         assert engine._check_sleeping(states) is False
+
+    def test_check_bed_occupied(self, engine):
+        """bed_occupied Signal separat pruefbar."""
+        states = [
+            {"entity_id": "binary_sensor.bed_occupancy", "state": "on"},
+        ]
+        assert engine._check_bed_occupied(states) is True
+
+    def test_check_bed_not_occupied(self, engine):
+        states = [
+            {"entity_id": "binary_sensor.bed_occupancy", "state": "off"},
+        ]
+        assert engine._check_bed_occupied(states) is False
 
     def test_check_guests_more_than_threshold(self, engine):
         """Mehr als guest_person_count (default=2) = Gaeste."""
@@ -198,12 +211,6 @@ class TestClassify:
         activity, conf = engine._classify(signals)
         assert activity == AWAY
         assert conf >= 0.9
-
-    def test_sleeping_over_watching(self, engine):
-        """Sleeping hat Vorrang vor Watching (eingeschlafen mit TV an)."""
-        signals = {"away": False, "sleeping": True, "media_playing": True}
-        activity, _ = engine._classify(signals)
-        assert activity == SLEEPING
 
     def test_sleeping_over_in_call(self, engine):
         signals = {"away": False, "sleeping": True, "in_call": True}
