@@ -2135,6 +2135,17 @@ class AssistantBrain(BrainCallbacksMixin):
         # ----------------------------------------------------------------
         context_cfg = cfg.yaml_config.get("context", {})
         max_context_tokens = context_cfg.get("max_context_tokens", 8000)
+        # Auto-Align: Prompt darf nicht groesser als num_ctx sein,
+        # sonst schneidet Ollama den Prompt stillschweigend ab.
+        # Reserve ~800 Tokens fuer die LLM-Antwort.
+        ollama_num_ctx = self.ollama.num_ctx
+        effective_max = ollama_num_ctx - 800
+        if max_context_tokens > effective_max:
+            logger.info(
+                "Token-Budget auto-align: max_context_tokens %d -> %d (num_ctx=%d, reserve=800)",
+                max_context_tokens, effective_max, ollama_num_ctx,
+            )
+            max_context_tokens = effective_max
         base_tokens = len(system_prompt) // 3
         user_tokens_est = len(text) // 3
         # Reserve: ~40% fuer Conversations + User-Text + Response-Space
