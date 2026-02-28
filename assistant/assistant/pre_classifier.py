@@ -115,8 +115,8 @@ PROFILE_GENERAL = RequestProfile(
 # -----------------------------------------------------------------
 
 _DEVICE_VERBS = re.compile(
-    r"^(mach|schalte|schalt|stell|setz|dreh|fahr|oeffne|schliess|aktivier|deaktivier"
-    r"|spiel|stopp|pause|lauter|leiser)\b",
+    r"^(mach|schalte?|schalt|stell|setz|dreh|fahr|oeffne|schliess|aktivier|deaktivier"
+    r"|spiel|stopp|pause|pausier|lauter|leiser)e?\b",
 )
 
 _DEVICE_NOUNS = [

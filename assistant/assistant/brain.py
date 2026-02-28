@@ -5821,8 +5821,10 @@ class AssistantBrain(BrainCallbacksMixin):
                     break
 
         # --- Steuerungsbefehle: "Licht aus", "Rollladen hoch" ---
+        _has_alle = "alle" in words or "alles" in words
+
         # Lichter an/aus/dimmen
-        if any(n in t for n in ["licht", "lampe", "leuchte"]):
+        if any(n in t for n in ["licht", "lichter", "lampe", "lampen", "leuchte"]):
             state = "on" if (words & {"an", "ein"}) else "off" if (words & {"aus"}) else None
             brightness = None
             pct_m = re.search(r'(\d{1,3})\s*(?:%|prozent)', t)
@@ -5830,7 +5832,9 @@ class AssistantBrain(BrainCallbacksMixin):
                 brightness = max(1, min(100, int(pct_m.group(1))))
                 state = "on"
             if state:
-                args = {"state": state, "room": _room}
+                # "alle Lichter" → set_light mit room (Executor handhabt "all"/Etagen)
+                effective_room = _room if _room else ("all" if _has_alle else "")
+                args = {"state": state, "room": effective_room}
                 if brightness is not None:
                     args["brightness"] = brightness
                 return {"function": {"name": "set_light", "arguments": args}}
@@ -5992,24 +5996,47 @@ class AssistantBrain(BrainCallbacksMixin):
             _SKIP = {"moment", "prinzip", "grunde", "allgemeinen"}
             if candidate.lower() not in _SKIP:
                 extracted_room = candidate
-        # Fallback: Raum direkt vor Geraete-Nomen ("Schlafzimmer Licht")
+        # Fallback: Raum vor ODER nach Geraete-Nomen
+        # "Schlafzimmer Licht an" → Raum vor Nomen
+        # "Rolladen Wohnzimmer runter" → Raum nach Nomen
         if not extracted_room:
+            _CMD = {"mach", "mache", "schalte", "schalt",
+                    "stell", "stelle", "setz", "setze",
+                    "dreh", "drehe", "fahr", "fahre",
+                    "oeffne", "schliess", "schliesse",
+                    "bitte", "mal", "das", "die", "den",
+                    "dem", "der"}
+            _ACTIONS = {"an", "aus", "ein", "hoch", "runter", "auf", "zu",
+                        "heller", "dunkler", "dünkler", "stopp", "stop",
+                        "halb", "bitte", "mal",
+                        "wärmer", "waermer", "kälter", "kaelter",
+                        "höher", "hoeher", "niedriger", "kühler",
+                        "kuehler", "grad", "prozent", "uhr"}
             for _noun in ["licht", "lampe", "leuchte", "rollladen", "rolladen",
-                          "rollo", "jalousie", "heizung", "thermostat"]:
+                          "rollo", "jalousie", "heizung", "thermostat",
+                          "steckdose", "schalter"]:
                 _idx = t.find(_noun)
+                if _idx < 0:
+                    continue
+                # Versuch 1: Raum VOR dem Nomen ("Schlafzimmer Licht")
                 if _idx > 0:
-                    _before = text[:_idx].strip().split()  # Original-Case
+                    _before = text[:_idx].strip().split()
                     if _before:
-                        _CMD = {"mach", "schalte", "schalt", "stell", "setz",
-                                "dreh", "fahr", "oeffne", "schliess", "bitte",
-                                "mal", "das", "die", "den", "dem", "der"}
-                        # Alle Nicht-Befehlswoerter als Raum zusammensetzen
-                        # ("schalte Manuel Buero Licht" → "Manuel Buero")
                         _room_words = [w for w in _before
                                        if w.lower() not in _CMD and len(w) > 2]
                         if _room_words:
                             extracted_room = " ".join(_room_words)
-                    break
+                # Versuch 2: Raum NACH dem Nomen ("Rolladen Wohnzimmer runter")
+                if not extracted_room:
+                    _after = text[_idx + len(_noun):].strip().split()
+                    if _after:
+                        _room_words = [w for w in _after
+                                       if w.lower() not in _ACTIONS
+                                       and w.lower() not in _CMD
+                                       and len(w) > 2]
+                        if _room_words:
+                            extracted_room = " ".join(_room_words)
+                break
         effective_room = extracted_room or room
 
         # --- LICHT ---
@@ -6027,10 +6054,10 @@ class AssistantBrain(BrainCallbacksMixin):
                 state = "on"
             elif _re.search(r'\baus\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
                 state = "off"
-            # Heller/Dunkler
-            elif "heller" in word_set:
+            # Heller/Dunkler (inkl. STT-Varianten mit Umlaut)
+            elif word_set & {"heller", "héller"}:
                 state = "brighter"
-            elif "dunkler" in word_set:
+            elif word_set & {"dunkler", "dünkler", "duenkler"}:
                 state = "dimmer"
 
             # Brightness: "auf 50%", "50 Prozent"
@@ -6115,6 +6142,42 @@ class AssistantBrain(BrainCallbacksMixin):
             if adjust:
                 args["adjust"] = adjust
             return {"function": "set_climate", "args": args}
+
+        # --- ALARMANLAGE ---
+        if any(n in t for n in ["alarm", "alarmanlage", "sicherheit"]):
+            # "Wecker" ist kein Alarm im Sicherheits-Sinne
+            if "wecker" not in t:
+                mode = None
+                # Disarm ZUERST pruefen ("deaktivieren" enthaelt "aktivieren" als Substring)
+                if any(kw in t for kw in ["unscharf", "ausschalten", "abschalten",
+                                           "deaktivieren", "entschärfen",
+                                           "entschaerfen"]):
+                    mode = "disarm"
+                elif _re.search(r'\baus\s*$', t):
+                    mode = "disarm"
+                elif any(kw in t for kw in ["scharf", "einschalten", "anschalten",
+                                             "aktivieren", "sichern"]):
+                    if any(kw in t for kw in ["abwesend", "weg", "away"]):
+                        mode = "arm_away"
+                    else:
+                        mode = "arm_home"
+                if mode:
+                    return {"function": "arm_security_system", "args": {"mode": mode}}
+
+        # --- STECKDOSE / SCHALTER ---
+        if any(n in t for n in ["steckdose", "schalter"]):
+            state = None
+            if any(v in t for v in ["einschalten", "anschalten", "anmachen"]):
+                state = "on"
+            elif any(v in t for v in ["ausschalten", "abschalten", "ausmachen"]):
+                state = "off"
+            elif _re.search(r'\b(?:an|ein)\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
+                state = "on"
+            elif _re.search(r'\baus\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
+                state = "off"
+            if state is None:
+                return None
+            return {"function": "set_switch", "args": {"room": effective_room, "state": state}}
 
         return None
 

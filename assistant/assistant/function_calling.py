@@ -1905,8 +1905,16 @@ class FunctionExecutor:
             return {"success": False, "message": "Kein Raum angegeben"}
 
         # Phase 11: Etagen-Steuerung (eg/og)
-        if room.lower() in ("eg", "og"):
-            return await self._exec_set_light_floor(room.lower(), args, state)
+        # Normalisierung: "obergeschoss"/"oben" -> "og", "erdgeschoss"/"unten" -> "eg"
+        _floor_map = {
+            "obergeschoss": "og", "oben": "og", "erster stock": "og",
+            "erdgeschoss": "eg", "unten": "eg", "parterre": "eg",
+        }
+        _room_lower = room.lower()
+        if _room_lower in _floor_map:
+            _room_lower = _floor_map[_room_lower]
+        if _room_lower in ("eg", "og"):
+            return await self._exec_set_light_floor(_room_lower, args, state)
 
         # Sonderfall: "all" -> alle Lichter schalten
         if room.lower() == "all":
