@@ -399,6 +399,12 @@ security:
     min: 15
     max: 28
   api_key: ''
+  known_device_patterns:
+  - ps5
+  - watch
+  - amazon
+  - re500
+  - h100
 routines:
   morning_briefing:
     enabled: true

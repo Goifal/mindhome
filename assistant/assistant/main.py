@@ -879,11 +879,48 @@ async def ui_memory_reset(req: MemoryResetRequest, token: str = ""):
 
     if not valid:
         _audit_log("memory_reset", {"success": False, "reason": "wrong_pin"})
-        raise HTTPException(status_code=401, detail="Falscher PIN")
+        raise HTTPException(status_code=403, detail="Falscher PIN")
 
     result = await brain.memory.clear_all_memory()
     _audit_log("memory_reset", {"success": True, **result})
     logger.warning("Gedaechtnis-Reset via UI durchgefuehrt")
+    return {"success": True, **result}
+
+
+class FactoryResetRequest(BaseModel):
+    pin: str
+    include_uploads: bool = False
+
+
+@app.post("/api/ui/factory-reset")
+async def ui_factory_reset(req: FactoryResetRequest, token: str = ""):
+    """Jarvis auf Grundeinstellung zuruecksetzen (PIN erforderlich).
+
+    Loescht allen gelernten State (Redis + ChromaDB), behaelt Einstellungen.
+    """
+    _check_token(token)
+
+    env_pin = os.environ.get("JARVIS_UI_PIN")
+    if env_pin:
+        valid = secrets.compare_digest(req.pin, env_pin)
+    else:
+        stored_hash = _get_dashboard_config().get("pin_hash", "")
+        valid = stored_hash and _verify_hash(req.pin, stored_hash)
+
+    if not valid:
+        _audit_log("factory_reset", {"success": False, "reason": "wrong_pin"})
+        raise HTTPException(status_code=403, detail="Falscher PIN")
+
+    # Knowledge Base + Recipe Store zuruecksetzen
+    kb_cleared = await brain.knowledge_base.clear()
+    recipes_cleared = await brain.recipe_store.clear()
+
+    result = await brain.memory.factory_reset(include_uploads=req.include_uploads)
+    result["knowledge_base_cleared"] = kb_cleared
+    result["recipes_cleared"] = recipes_cleared
+
+    _audit_log("factory_reset", {"success": True, **result})
+    logger.warning("FACTORY RESET via UI durchgefuehrt")
     return {"success": True, **result}
 
 

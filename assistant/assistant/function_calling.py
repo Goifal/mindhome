@@ -5041,8 +5041,18 @@ class FunctionExecutor:
                     "weather", "get_forecasts",
                     {"entity_id": entity_id, "type": "daily"},
                 )
-                if isinstance(result, dict):
-                    # Response: {"weather.xyz": {"forecast": [...]}}
+                if isinstance(result, list):
+                    # Format 1: [{entity_id: {forecast: [...]}}]
+                    for item in result:
+                        if isinstance(item, dict):
+                            for key, val in item.items():
+                                if isinstance(val, dict) and "forecast" in val:
+                                    forecast = val["forecast"] or []
+                                    break
+                        if forecast:
+                            break
+                elif isinstance(result, dict):
+                    # Format 2: {entity_id: {forecast: [...]}}
                     for key, val in result.items():
                         if isinstance(val, dict) and "forecast" in val:
                             forecast = val["forecast"] or []

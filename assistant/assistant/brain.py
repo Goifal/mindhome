@@ -6901,6 +6901,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "wetter übermorgen",
             "morgen regen", "wird es morgen", "wird es regnen",
             "brauche ich morgen",
+            "heute nacht", "wie kalt wird es", "wie warm wird es",
         ]
         if any(kw in t for kw in _forecast_kw):
             return "forecast"
