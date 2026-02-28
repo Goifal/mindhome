@@ -1793,7 +1793,7 @@ class FunctionExecutor:
             return await handler(arguments)
         except Exception as e:
             logger.error("Fehler bei %s: %s", function_name, e)
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": f"Da lief etwas schief: {e}"}
 
     # ── Phase 11: Adaptive Helligkeit (dim2warm) ──────────────
     @staticmethod
@@ -1988,7 +1988,7 @@ class FunctionExecutor:
         """Alle Lichter ein- oder ausschalten."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Ich kann gerade nicht auf die Geraete zugreifen. Versuch es bitte gleich nochmal."}
+            return {"success": False, "message": "Die Geraete sind momentan nicht ansprechbar. Ich versuche es gleich erneut."}
 
         service = "turn_on" if state == "on" else "turn_off"
         count = 0
@@ -2379,7 +2379,7 @@ class FunctionExecutor:
         attrs = current_state.get("attributes", {})
         base_temp = attrs.get("temperature")
         if base_temp is None:
-            return {"success": False, "message": f"Ich kann die aktuelle Temperatur von {entity_id} gerade nicht abrufen."}
+            return {"success": False, "message": f"Der Temperatursensor {entity_id} antwortet gerade nicht."}
 
         # Offset-Grenzen aus Config erzwingen
         offset_min = heating.get("curve_offset_min", -5)
@@ -2684,7 +2684,7 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Geraete nicht erreichbar"}
+            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
 
         count = 0
         for room_name in floor_rooms:
@@ -2719,7 +2719,7 @@ class FunctionExecutor:
         """Alle Markisen steuern — mit eigenen Wind/Regen-Sicherheits-Checks."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Geraete nicht erreichbar"}
+            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
 
         position, adjust, is_stop = self._resolve_cover_position(args)
 
@@ -2769,7 +2769,7 @@ class FunctionExecutor:
         """Alle Rolllaeden auf eine Position setzen (Garagentore ausgeschlossen)."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Geraete nicht erreichbar"}
+            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
 
         count = 0
         skipped = []
@@ -2798,7 +2798,7 @@ class FunctionExecutor:
         """Alle Rolllaeden: stop_cover etc."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Geraete nicht erreichbar"}
+            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
         count = 0
         for s in states:
             eid = s.get("entity_id", "")
@@ -3204,8 +3204,8 @@ class FunctionExecutor:
 
         return {
             "success": success,
-            "message": f"Musik von {from_room} nach {to_room} uebertragen" if success
-                       else f"Transfer nach {to_room} fehlgeschlagen",
+            "message": f"Musik laeuft jetzt im {to_room}." if success
+                       else f"Der Transfer nach {to_room} kam nicht zustande.",
         }
 
     async def _exec_arm_security_system(self, args: dict) -> dict:
@@ -3799,7 +3799,7 @@ class FunctionExecutor:
             }
         except Exception as e:
             logger.error("Kalender-Delete Fehler: %s", e)
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": f"Der Kalender macht Schwierigkeiten: {e}"}
 
     async def _exec_reschedule_calendar_event(self, args: dict) -> dict:
         """Phase 11.3: Kalender-Termin verschieben (Delete + Re-Create).
@@ -3825,7 +3825,7 @@ class FunctionExecutor:
         if not delete_result.get("success"):
             return {
                 "success": False,
-                "message": f"Verschieben fehlgeschlagen: {delete_result.get('message', '')}",
+                "message": f"Der Termin laesst sich nicht verschieben: {delete_result.get('message', '')}",
             }
 
         # 2. Neuen Termin erstellen
@@ -3857,7 +3857,7 @@ class FunctionExecutor:
             }
         return {
             "success": False,
-            "message": f"ACHTUNG: Alter Termin geloescht, neuer konnte nicht erstellt werden, Rollback fehlgeschlagen. Termin '{title}' manuell erstellen!",
+            "message": f"Das ist unangenehm — der alte Termin wurde entfernt, aber der neue liess sich nicht anlegen und die Wiederherstellung schlug fehl. Bitte den Termin '{title}' manuell neu erstellen.",
         }
 
     async def _exec_set_presence_mode(self, args: dict) -> dict:
@@ -4060,7 +4060,7 @@ class FunctionExecutor:
 
         except Exception as e:
             logger.error("Config-Edit fehlgeschlagen: %s", e)
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": f"Die Konfiguration laesst sich gerade nicht aendern: {e}"}
 
     # ------------------------------------------------------------------
     # Phase 15.2: Einkaufsliste (via HA Shopping List oder lokal)
@@ -4688,14 +4688,14 @@ class FunctionExecutor:
         # Speaker-Verfuegbarkeit pruefen
         speaker_state = await self.ha.get_state(speaker)
         if speaker_state and speaker_state.get("state") == "unavailable":
-            return {"success": False, "message": f"Lautsprecher '{speaker}' ist nicht erreichbar."}
+            return {"success": False, "message": f"Der Lautsprecher '{speaker}' schweigt sich aus. Nicht erreichbar."}
 
         # TTS senden
         ok = await self._send_tts_to_speaker(speaker, tts_message)
         target_desc = f"{target_person} im {target_room}" if target_person else target_room
         if ok:
             return {"success": True, "message": f"Durchsage an {target_desc}: \"{message}\""}
-        return {"success": False, "message": f"Durchsage an {target_desc} fehlgeschlagen."}
+        return {"success": False, "message": f"Die Durchsage an {target_desc} kam nicht durch. Ich pruefe die Verbindung."}
 
     async def _exec_get_camera_view(self, args: dict) -> dict:
         """Holt und beschreibt ein Kamera-Bild."""

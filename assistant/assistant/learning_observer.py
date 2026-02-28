@@ -239,7 +239,7 @@ class LearningObserver:
             Antwort-Text fuer den Benutzer
         """
         if not self.redis:
-            return "Fehler: Redis nicht verfuegbar."
+            return "Mein Gedaechtnis ist gerade nicht ansprechbar. Redis antwortet nicht."
 
         response = {
             "entity_id": entity_id,
@@ -393,9 +393,9 @@ class LearningObserver:
         suggestions = report.get("suggestions_made", 0)
 
         if not patterns and total == 0:
-            return "Ich habe noch keine Verhaltensmuster beobachtet."
+            return "Noch keine Verhaltensmuster erfasst. Zu frueh fuer belastbare Daten."
 
-        lines.append(f"Ich habe {total} manuelle Aktionen beobachtet.")
+        lines.append(f"{total} manuelle Aktionen erfasst.")
 
         if patterns:
             lines.append(f"\n{len(patterns)} erkannte Muster:")

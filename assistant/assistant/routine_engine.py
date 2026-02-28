@@ -1286,7 +1286,7 @@ class RoutineEngine:
         await self.redis.setex(KEY_VACATION_SIM, 30 * 86400, "active")
         self._vacation_task = asyncio.create_task(self._run_vacation_simulation())
         logger.info("Abwesenheits-Simulation gestartet")
-        return f"Ich werde dafuer sorgen, dass das Haus bewohnt aussieht, {get_person_title()}."
+        return f"Das Haus wird bewohnt wirken, {get_person_title()}. Alles Weitere uebernehme ich."
 
     async def stop_vacation_simulation(self) -> str:
         """Stoppt die Abwesenheits-Simulation."""

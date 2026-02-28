@@ -1330,7 +1330,7 @@ async def chat_upload(
     file_info = save_upload(file.filename, content)
 
     text = caption.strip() if caption.strip() else (
-        f"Ich habe eine Datei geschickt: {file_info['name']}"
+        f"Datei erhalten: {file_info['name']}"
     )
 
     # Process through brain with file context
@@ -3677,7 +3677,7 @@ async def ui_add_personal_date(request: Request, token: str = ""):
                 "date": date_mm_dd, "year": year,
             })
             return {"success": True, "message": f"{person_name} gespeichert"}
-        return {"success": False, "message": "Speichervorgang fehlgeschlagen"}
+        return {"success": False, "message": "Das liess sich nicht abspeichern."}
     except Exception as e:
         logger.error("Personal date add Fehler: %s", e)
         raise HTTPException(status_code=500, detail="Interner Fehler")

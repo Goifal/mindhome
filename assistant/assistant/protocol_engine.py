@@ -108,7 +108,7 @@ class ProtocolEngine:
         if not steps:
             return {
                 "success": False,
-                "message": "Ich konnte keine Schritte aus der Beschreibung erkennen.",
+                "message": "Aus dieser Beschreibung lassen sich keine konkreten Schritte ableiten.",
             }
 
         if len(steps) > self.max_steps:

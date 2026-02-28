@@ -303,7 +303,7 @@ class SelfAutomation:
                 return {
                     "success": True,
                     "automations": [],
-                    "message": "Ich habe noch keine Automationen erstellt.",
+                    "message": "Es liegen noch keine Automationen vor.",
                 }
 
             lines = [f"{len(jarvis_automations)} Jarvis-Automation(en):"]
@@ -342,7 +342,7 @@ class SelfAutomation:
                 }
             return {
                 "success": False,
-                "message": "Loeschen fehlgeschlagen.",
+                "message": "Die Automation liess sich nicht entfernen.",
             }
         except Exception as e:
             logger.error("Automation loeschen fehlgeschlagen: %s", e)

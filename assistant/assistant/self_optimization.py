@@ -513,7 +513,7 @@ Wenn keine Aenderung noetig: []"""
         if not proposals:
             return "Keine Optimierungsvorschlaege vorhanden."
 
-        lines = ["Ich habe folgende Optimierungsvorschlaege:", ""]
+        lines = ["Folgende Optimierungen bieten sich an:", ""]
         for i, p in enumerate(proposals):
             conf = int(p.get("confidence", 0) * 100)
             lines.append(
