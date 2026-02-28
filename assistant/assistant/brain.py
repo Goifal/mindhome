@@ -5821,8 +5821,10 @@ class AssistantBrain(BrainCallbacksMixin):
                     break
 
         # --- Steuerungsbefehle: "Licht aus", "Rollladen hoch" ---
+        _has_alle = "alle" in words or "alles" in words
+
         # Lichter an/aus/dimmen
-        if any(n in t for n in ["licht", "lampe", "leuchte"]):
+        if any(n in t for n in ["licht", "lichter", "lampe", "lampen", "leuchte"]):
             state = "on" if (words & {"an", "ein"}) else "off" if (words & {"aus"}) else None
             brightness = None
             pct_m = re.search(r'(\d{1,3})\s*(?:%|prozent)', t)
@@ -5830,7 +5832,9 @@ class AssistantBrain(BrainCallbacksMixin):
                 brightness = max(1, min(100, int(pct_m.group(1))))
                 state = "on"
             if state:
-                args = {"state": state, "room": _room}
+                # "alle Lichter" → set_light mit room (Executor handhabt "all"/Etagen)
+                effective_room = _room if _room else ("all" if _has_alle else "")
+                args = {"state": state, "room": effective_room}
                 if brightness is not None:
                     args["brightness"] = brightness
                 return {"function": {"name": "set_light", "arguments": args}}
