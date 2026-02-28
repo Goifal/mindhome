@@ -394,6 +394,29 @@ lighting:
     enabled: false
     mode: mindhome
     transition_seconds: 3
+    brightness_curve:
+      - {time: "05:00", pct: 10}
+      - {time: "06:00", pct: 40}
+      - {time: "07:00", pct: 70}
+      - {time: "08:00", pct: 90}
+      - {time: "09:00", pct: 100}
+      - {time: "12:00", pct: 100}
+      - {time: "16:00", pct: 100}
+      - {time: "18:00", pct: 80}
+      - {time: "19:00", pct: 60}
+      - {time: "20:00", pct: 40}
+      - {time: "21:00", pct: 25}
+      - {time: "22:00", pct: 10}
+      - {time: "23:00", pct: 5}
+    ct_curve:
+      - {time: "05:00", kelvin: 2200}
+      - {time: "07:00", kelvin: 3500}
+      - {time: "09:00", kelvin: 5000}
+      - {time: "12:00", kelvin: 5500}
+      - {time: "16:00", kelvin: 5000}
+      - {time: "18:00", kelvin: 3500}
+      - {time: "20:00", kelvin: 2700}
+      - {time: "22:00", kelvin: 2200}
 heating:
   mode: room_thermostat
   curve_entity: ''
