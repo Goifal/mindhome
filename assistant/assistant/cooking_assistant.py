@@ -580,7 +580,8 @@ class CookingAssistant:
 
         self.session.ingredients = new_ingredients
         await self._persist_session()
-        return f"Portionen angepasst: {old} → {new_portions}. Die Zutaten wurden umgerechnet."
+        ingredient_list = "\n".join(f"- {ing}" for ing in new_ingredients)
+        return f"Portionen angepasst: {old} → {new_portions}.\n\nZutaten fuer {new_portions} Portionen:\n{ingredient_list}"
 
     async def _set_timer_from_text(self, text: str) -> str:
         """Setzt einen Timer basierend auf Text-Eingabe."""
