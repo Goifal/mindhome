@@ -6013,7 +6013,8 @@ class AssistantBrain(BrainCallbacksMixin):
                         "höher", "hoeher", "niedriger", "kühler",
                         "kuehler", "grad", "prozent", "uhr"}
             for _noun in ["licht", "lampe", "leuchte", "rollladen", "rolladen",
-                          "rollo", "jalousie", "heizung", "thermostat"]:
+                          "rollo", "jalousie", "heizung", "thermostat",
+                          "steckdose", "schalter"]:
                 _idx = t.find(_noun)
                 if _idx < 0:
                     continue
@@ -6141,6 +6142,21 @@ class AssistantBrain(BrainCallbacksMixin):
             if adjust:
                 args["adjust"] = adjust
             return {"function": "set_climate", "args": args}
+
+        # --- STECKDOSE / SCHALTER ---
+        if any(n in t for n in ["steckdose", "schalter"]):
+            state = None
+            if any(v in t for v in ["einschalten", "anschalten", "anmachen"]):
+                state = "on"
+            elif any(v in t for v in ["ausschalten", "abschalten", "ausmachen"]):
+                state = "off"
+            elif _re.search(r'\b(?:an|ein)\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
+                state = "on"
+            elif _re.search(r'\baus\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
+                state = "off"
+            if state is None:
+                return None
+            return {"function": "set_switch", "args": {"room": effective_room, "state": state}}
 
         return None
 
