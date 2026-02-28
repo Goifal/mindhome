@@ -38,6 +38,12 @@ class ThreatAssessment:
         self.night_start = security_cfg.get("night_start_hour", 23)
         self.night_end = security_cfg.get("night_end_hour", 6)
 
+        # Bekannte Geraete-Patterns: Entity-IDs die diese Substrings enthalten
+        # werden nie als "unbekannt" gemeldet (z.B. "ps5", "amazon", "watch")
+        self._known_device_patterns = [
+            p.lower() for p in security_cfg.get("known_device_patterns", [])
+        ]
+
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis."""
         self.redis = redis_client
@@ -235,6 +241,14 @@ class ThreatAssessment:
         # Unbekannte Geraete
         for device in tracked_devices:
             if device not in known:
+                # Config-Allowlist: Patterns wie "ps5", "amazon", "watch" ueberspringen
+                device_lower = device.lower()
+                if any(pat in device_lower for pat in self._known_device_patterns):
+                    # Auto-learn: Als bekannt speichern damit kein erneuter Check
+                    await self.redis.sadd(KEY_KNOWN_DEVICES, device)
+                    logger.debug("Geraet per Allowlist akzeptiert: %s", device)
+                    continue
+
                 key = f"unknown_device_{device}"
                 if not await self._was_notified(key, cooldown_minutes=60):
                     await self._mark_notified(key, cooldown_minutes=60)

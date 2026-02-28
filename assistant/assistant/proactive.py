@@ -82,6 +82,7 @@ class ProactiveManager:
         self.batch_interval = batch_cfg.get("interval_minutes", 30)
         self.batch_max_items = batch_cfg.get("max_items", 10)
         self._batch_queue: list[dict] = []
+        self._batch_flushing = False  # Guard gegen konkurrierende Flushes
 
         # F-033: Lock fuer shared state (batch_queue, mb_triggered etc.)
         self._state_lock = asyncio.Lock()
@@ -1866,7 +1867,21 @@ class ProactiveManager:
 
         MEDIUM-Events werden im Batch hoeher priorisiert und zuerst erwaehnt.
         F-033: Lock fuer atomaren batch_queue Zugriff.
+        Concurrent-Guard: Verhindert mehrere gleichzeitige Flushes.
+        Dedup: Gleiche event_types werden zusammengefasst (letztes Vorkommen behalten).
         """
+        # Guard: Nur ein Flush gleichzeitig (verhindert 2 TTS-Nachrichten in 1 Sekunde)
+        if self._batch_flushing:
+            return
+        self._batch_flushing = True
+
+        try:
+            await self._flush_batch_inner()
+        finally:
+            self._batch_flushing = False
+
+    async def _flush_batch_inner(self):
+        """Innerer Flush — nimmt ALLE Items aus der Queue (nicht nur max_items)."""
         async with self._state_lock:
             if not self._batch_queue:
                 return
@@ -1877,9 +1892,15 @@ class ProactiveManager:
                             len(self._batch_queue))
                 return
 
-            # Queue leeren (atomar unter Lock)
-            items = self._batch_queue[:self.batch_max_items]
-            self._batch_queue = self._batch_queue[self.batch_max_items:]
+            # Gesamte Queue leeren (atomar unter Lock)
+            all_items = list(self._batch_queue)
+            self._batch_queue.clear()
+
+        # Dedup: Bei gleichen event_types nur das letzte Vorkommen behalten
+        seen = {}
+        for item in all_items:
+            seen[item.get("event_type", id(item))] = item
+        items = list(seen.values())
 
         # Sortieren: MEDIUM zuerst, dann LOW
         items.sort(key=lambda x: 0 if x.get("urgency") == MEDIUM else 1)
