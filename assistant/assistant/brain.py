@@ -5996,27 +5996,46 @@ class AssistantBrain(BrainCallbacksMixin):
             _SKIP = {"moment", "prinzip", "grunde", "allgemeinen"}
             if candidate.lower() not in _SKIP:
                 extracted_room = candidate
-        # Fallback: Raum direkt vor Geraete-Nomen ("Schlafzimmer Licht")
+        # Fallback: Raum vor ODER nach Geraete-Nomen
+        # "Schlafzimmer Licht an" → Raum vor Nomen
+        # "Rolladen Wohnzimmer runter" → Raum nach Nomen
         if not extracted_room:
+            _CMD = {"mach", "mache", "schalte", "schalt",
+                    "stell", "stelle", "setz", "setze",
+                    "dreh", "drehe", "fahr", "fahre",
+                    "oeffne", "schliess", "schliesse",
+                    "bitte", "mal", "das", "die", "den",
+                    "dem", "der"}
+            _ACTIONS = {"an", "aus", "ein", "hoch", "runter", "auf", "zu",
+                        "heller", "dunkler", "dünkler", "stopp", "stop",
+                        "halb", "bitte", "mal",
+                        "wärmer", "waermer", "kälter", "kaelter",
+                        "höher", "hoeher", "niedriger", "kühler",
+                        "kuehler", "grad", "prozent", "uhr"}
             for _noun in ["licht", "lampe", "leuchte", "rollladen", "rolladen",
                           "rollo", "jalousie", "heizung", "thermostat"]:
                 _idx = t.find(_noun)
+                if _idx < 0:
+                    continue
+                # Versuch 1: Raum VOR dem Nomen ("Schlafzimmer Licht")
                 if _idx > 0:
-                    _before = text[:_idx].strip().split()  # Original-Case
+                    _before = text[:_idx].strip().split()
                     if _before:
-                        _CMD = {"mach", "mache", "schalte", "schalt",
-                                "stell", "stelle", "setz", "setze",
-                                "dreh", "drehe", "fahr", "fahre",
-                                "oeffne", "schliess", "schliesse",
-                                "bitte", "mal", "das", "die", "den",
-                                "dem", "der"}
-                        # Alle Nicht-Befehlswoerter als Raum zusammensetzen
-                        # ("schalte Manuel Buero Licht" → "Manuel Buero")
                         _room_words = [w for w in _before
                                        if w.lower() not in _CMD and len(w) > 2]
                         if _room_words:
                             extracted_room = " ".join(_room_words)
-                    break
+                # Versuch 2: Raum NACH dem Nomen ("Rolladen Wohnzimmer runter")
+                if not extracted_room:
+                    _after = text[_idx + len(_noun):].strip().split()
+                    if _after:
+                        _room_words = [w for w in _after
+                                       if w.lower() not in _ACTIONS
+                                       and w.lower() not in _CMD
+                                       and len(w) > 2]
+                        if _room_words:
+                            extracted_room = " ".join(_room_words)
+                break
         effective_room = extracted_room or room
 
         # --- LICHT ---
