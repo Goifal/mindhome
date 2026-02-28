@@ -2525,6 +2525,21 @@ class AssistantBrain(BrainCallbacksMixin):
 
             llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
 
+            # Tool-Filter: set_vacuum/get_vacuum nur anbieten wenn User
+            # tatsaechlich ueber Staubsaugen spricht.  Verhindert dass das
+            # LLM bei unbekannten Befehlen auf set_vacuum defaulted.
+            _vacuum_kw = {"saug", "staubsaug", "vacuum", "saugen", "sauger",
+                          "roboter", "roborock", "dreame", "wischen", "mopp"}
+            _text_low = text.lower()
+            _has_vacuum = any(kw in _text_low for kw in _vacuum_kw)
+            if _has_vacuum:
+                _llm_tools = get_assistant_tools()
+            else:
+                _llm_tools = [
+                    t for t in get_assistant_tools()
+                    if t.get("function", {}).get("name") not in ("set_vacuum", "get_vacuum")
+                ]
+
             # Self-Improvement: Error Pattern Mitigation — Fallback frueher nutzen
             _error_mitigation = await self.error_patterns.get_mitigation(action_type="llm_chat", model=model)
             if _error_mitigation and _error_mitigation.get("type") == "use_fallback":
@@ -2538,7 +2553,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     self.ollama.chat(
                         messages=messages,
                         model=model,
-                        tools=get_assistant_tools(),
+                        tools=_llm_tools,
                         max_tokens=response_tokens,
                     ),
                     timeout=float(llm_timeout),
@@ -2559,7 +2574,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             self.ollama.chat(
                                 messages=messages,
                                 model=fallback_model,
-                                tools=get_assistant_tools(),
+                                tools=_llm_tools,
                                 max_tokens=response_tokens,
                             ),
                             timeout=float(llm_timeout * 0.66),
@@ -2654,7 +2669,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         self.ollama.chat(
                             messages=retry_messages,
                             model=model,
-                            tools=get_assistant_tools(),
+                            tools=_llm_tools,
                         ),
                         timeout=30.0,
                     )
