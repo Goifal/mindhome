@@ -240,17 +240,24 @@ class HealthMonitor:
                 if alert:
                     alerts.append(alert)
 
-            # Feuchtigkeits-Check (Humidor-Sensor wird separat geprueft)
+            # Feuchtigkeits-Check (Humidor-Sensoren separat behandeln)
             elif device_class == "humidity" or "humid" in entity_id.lower() or "feuchte" in entity_id.lower():
-                if self.humidor_enabled and entity_id.lower() == self.humidor_entity.lower():
-                    alert = self._check_humidor(entity_id, friendly_name, value)
+                _is_humidor = "humidor" in entity_id.lower() or "humidor" in friendly_name.lower()
+                if _is_humidor:
+                    # Humidor: nur den konfigurierten Sensor pruefen, Rest ignorieren
+                    if self.humidor_enabled and self.humidor_entity and entity_id.lower() == self.humidor_entity.lower():
+                        alert = self._check_humidor(entity_id, friendly_name, value)
+                    else:
+                        alert = None
                 else:
                     alert = self._check_humidity(entity_id, friendly_name, value)
                 if alert:
                     alerts.append(alert)
 
-            # Temperatur-Check (nur Indoor-Sensoren)
+            # Temperatur-Check (nur Indoor-Sensoren, keine Humidor-Temps)
             elif device_class == "temperature":
+                if "humidor" in entity_id.lower() or "humidor" in friendly_name.lower():
+                    continue
                 alert = self._check_temperature(entity_id, friendly_name, value)
                 if alert:
                     alerts.append(alert)
