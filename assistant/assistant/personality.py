@@ -2227,7 +2227,10 @@ class PersonalityEngine:
             # Termine: Nur naechste 2
             if "calendar" in house:
                 for event in (house["calendar"] or [])[:2]:
-                    lines.append(f"- Termin: {event.get('time', '?')} {event.get('title', '?')}")
+                    if isinstance(event, dict):
+                        lines.append(f"- Termin: {event.get('time', '?')} {event.get('title', '?')}")
+                    elif isinstance(event, str):
+                        lines.append(f"- Termin: {event}")
 
             if "active_scenes" in house and house["active_scenes"]:
                 lines.append(f"- Szenen: {', '.join(house['active_scenes'])}")
