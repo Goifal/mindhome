@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. Workshop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --accent: #00d4ff;
+            --accent-dim: #00d4ff33;
+            --bg-primary: #040810;
+            --bg-secondary: #0a1020;
+            --bg-card: #0d1528;
+            --text-primary: #e0e8f0;
+            --text-secondary: #7a8a9a;
+            --border: #1a2a3a;
+            --success: #00ff88;
+            --warning: #ffaa00;
+            --danger: #ff4444;
+            --glass: rgba(10, 16, 32, 0.85);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            overflow: hidden;
+        }
+
+        /* ===== Boot Screen ===== */
+        #boot-screen {
+            position: fixed; inset: 0; z-index: 1000;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: var(--bg-primary);
+            transition: opacity 0.8s ease;
+        }
+        #boot-screen.fade-out { opacity: 0; pointer-events: none; }
+        .boot-ring {
+            width: 120px; height: 120px;
+            border: 2px solid var(--accent-dim);
+            border-top: 2px solid var(--accent);
+            border-radius: 50%;
+            animation: spin 2s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #boot-text {
+            margin-top: 24px; font-size: 14px;
+            color: var(--accent); min-height: 20px;
+        }
+        .boot-title {
+            font-size: 24px; font-weight: 600;
+            color: var(--accent); margin-bottom: 32px;
+            letter-spacing: 4px;
+        }
+
+        /* ===== Main Grid ===== */
+        #workshop-main {
+            display: none; height: 100vh;
+            grid-template: "header header" 60px
+                           "sidebar main" 1fr
+                           "footer footer" 36px
+                           / 260px 1fr;
+        }
+
+        /* ===== Header ===== */
+        .header {
+            grid-area: header;
+            display: flex; align-items: center;
+            padding: 0 20px; gap: 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        .header-logo { color: var(--accent); font-size: 18px; font-weight: 600; letter-spacing: 2px; }
+        .header-project {
+            flex: 1; font-size: 13px; color: var(--text-secondary);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .header-project .proj-name { color: var(--text-primary); font-weight: 500; }
+        .header-status {
+            padding: 3px 10px; border-radius: 12px;
+            font-size: 11px; font-weight: 500; text-transform: uppercase;
+        }
+        .status-active { background: var(--success); color: #000; }
+        .status-paused { background: var(--warning); color: #000; }
+        .status-none { background: var(--border); color: var(--text-secondary); }
+        .header-actions { display: flex; gap: 8px; }
+        .header-actions button {
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text-secondary); padding: 6px 12px;
+            border-radius: 6px; cursor: pointer; font-size: 12px;
+            font-family: inherit; transition: all 0.2s;
+        }
+        .header-actions button:hover { border-color: var(--accent); color: var(--accent); }
+
+        /* ===== Sidebar ===== */
+        .sidebar {
+            grid-area: sidebar; overflow-y: auto;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            padding: 12px;
+        }
+        .sidebar h3 {
+            font-size: 11px; color: var(--text-secondary);
+            text-transform: uppercase; letter-spacing: 1px;
+            margin: 16px 0 8px; padding: 0 8px;
+        }
+        .sidebar h3:first-child { margin-top: 0; }
+        .nav-btn {
+            display: flex; align-items: center; gap: 8px;
+            width: 100%; padding: 8px 12px;
+            background: transparent; border: none;
+            color: var(--text-secondary); font-size: 12px;
+            font-family: inherit; cursor: pointer;
+            border-radius: 6px; transition: all 0.2s;
+            text-align: left;
+        }
+        .nav-btn:hover { background: var(--accent-dim); color: var(--text-primary); }
+        .nav-btn.active { background: var(--accent-dim); color: var(--accent); }
+        .nav-btn .icon { font-size: 16px; width: 20px; text-align: center; }
+        .project-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 12px; border-radius: 6px;
+            cursor: pointer; font-size: 11px;
+            color: var(--text-secondary); transition: all 0.2s;
+        }
+        .project-item:hover { background: var(--accent-dim); color: var(--text-primary); }
+        .project-item.active { color: var(--accent); }
+        .project-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--text-secondary); flex-shrink: 0;
+        }
+        .project-item.active .project-dot { background: var(--accent); }
+
+        /* ===== Main Content ===== */
+        .main {
+            grid-area: main; overflow-y: auto;
+            padding: 16px; display: flex;
+            flex-direction: column; gap: 16px;
+        }
+
+        /* ===== Widget ===== */
+        .widget {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px; padding: 16px;
+        }
+        .widget-header {
+            display: flex; align-items: center; gap: 8px;
+            margin-bottom: 12px; font-size: 12px;
+            color: var(--text-secondary); text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .widget-header .icon { font-size: 16px; }
+        .widget-title { font-weight: 600; color: var(--text-primary); }
+
+        /* Widget Grid Layouts */
+        .widget-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .widget-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+        @media (max-width: 1200px) {
+            .widget-row, .widget-row-3 { grid-template-columns: 1fr; }
+        }
+
+        /* ===== Projekt-Info Widget ===== */
+        .project-meta { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+        .meta-item { font-size: 12px; color: var(--text-secondary); }
+        .meta-item span { color: var(--text-primary); }
+
+        /* ===== Step Navigator ===== */
+        .step-list { list-style: none; }
+        .step-item {
+            padding: 8px 12px; border-left: 2px solid var(--border);
+            margin-left: 8px; font-size: 12px;
+            color: var(--text-secondary); cursor: pointer;
+            transition: all 0.2s;
+        }
+        .step-item:hover { color: var(--text-primary); }
+        .step-item.active { border-color: var(--accent); color: var(--accent); }
+        .step-item.done { border-color: var(--success); color: var(--success); }
+        .step-nav-btns { display: flex; gap: 8px; margin-top: 12px; }
+        .step-btn {
+            padding: 6px 16px; border-radius: 6px;
+            border: 1px solid var(--border);
+            background: transparent; color: var(--text-primary);
+            font-family: inherit; font-size: 12px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .step-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .progress-bar {
+            height: 4px; background: var(--border);
+            border-radius: 2px; margin-top: 8px; overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%; background: var(--accent);
+            border-radius: 2px; transition: width 0.3s;
+        }
+
+        /* ===== Parts List ===== */
+        .parts-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+        .parts-table th {
+            text-align: left; padding: 6px 8px;
+            color: var(--text-secondary); font-weight: 500;
+            border-bottom: 1px solid var(--border);
+        }
+        .parts-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+        .part-available { color: var(--success); }
+        .part-missing { color: var(--danger); }
+
+        /* ===== Code Editor ===== */
+        .code-container {
+            background: #1a1a2e; border-radius: 8px;
+            overflow: hidden; position: relative;
+        }
+        .code-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 12px; background: #12122a;
+            font-size: 11px; color: var(--text-secondary);
+        }
+        .code-content {
+            padding: 12px; font-size: 12px;
+            line-height: 1.6; overflow-x: auto;
+            max-height: 400px; overflow-y: auto;
+        }
+        .code-content pre { margin: 0; }
+        .code-content code { font-family: 'JetBrains Mono', monospace; }
+        .btn-copy {
+            background: transparent; border: 1px solid var(--border);
+            color: var(--text-secondary); padding: 2px 8px;
+            border-radius: 4px; cursor: pointer; font-size: 10px;
+            font-family: inherit;
+        }
+        .btn-copy:hover { color: var(--accent); border-color: var(--accent); }
+
+        /* ===== Schematic Viewer ===== */
+        .schematic-container {
+            background: #0a0a1a; border-radius: 8px;
+            padding: 16px; text-align: center; min-height: 200px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .schematic-container svg { max-width: 100%; height: auto; }
+        .schematic-empty { color: var(--text-secondary); font-size: 13px; }
+
+        /* ===== Chat Panel ===== */
+        .chat-messages {
+            max-height: 300px; overflow-y: auto;
+            padding: 8px; display: flex;
+            flex-direction: column; gap: 8px;
+        }
+        .chat-msg {
+            padding: 8px 12px; border-radius: 8px;
+            font-size: 12px; line-height: 1.5;
+            max-width: 85%;
+        }
+        .chat-msg.user {
+            align-self: flex-end;
+            background: var(--accent-dim); color: var(--accent);
+        }
+        .chat-msg.jarvis {
+            align-self: flex-start;
+            background: var(--bg-secondary); color: var(--text-primary);
+        }
+        .chat-input-row {
+            display: flex; gap: 8px; margin-top: 8px;
+        }
+        .chat-input {
+            flex: 1; background: var(--bg-secondary);
+            border: 1px solid var(--border); border-radius: 8px;
+            padding: 8px 12px; color: var(--text-primary);
+            font-family: inherit; font-size: 12px;
+        }
+        .chat-input:focus { outline: none; border-color: var(--accent); }
+        .btn-send, .btn-voice {
+            background: var(--accent-dim); border: 1px solid var(--accent);
+            color: var(--accent); padding: 8px 14px;
+            border-radius: 8px; cursor: pointer;
+            font-family: inherit; font-size: 12px;
+            transition: all 0.2s;
+        }
+        .btn-send:hover, .btn-voice:hover { background: var(--accent); color: var(--bg-primary); }
+        .btn-voice.recording { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+        /* ===== Environment Widget ===== */
+        .env-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .env-item { text-align: center; }
+        .env-value { font-size: 24px; font-weight: 600; color: var(--accent); }
+        .env-label { font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
+        .env-unit { font-size: 12px; color: var(--text-secondary); }
+
+        /* ===== Printer Status ===== */
+        .printer-progress {
+            display: flex; align-items: center; gap: 12px; margin: 8px 0;
+        }
+        .printer-bar { flex: 1; }
+        .printer-percent { font-size: 20px; font-weight: 600; color: var(--accent); }
+        .printer-temps { display: flex; gap: 16px; font-size: 12px; margin-top: 8px; }
+        .printer-temps span { color: var(--text-secondary); }
+        .printer-temps .val { color: var(--warning); }
+
+        /* ===== Arm Control ===== */
+        .arm-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .arm-btn {
+            padding: 10px; border-radius: 6px;
+            border: 1px solid var(--border); background: transparent;
+            color: var(--text-primary); font-family: inherit;
+            font-size: 11px; cursor: pointer; transition: all 0.2s;
+            text-align: center;
+        }
+        .arm-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .arm-btn.emergency {
+            border-color: var(--danger); color: var(--danger);
+            grid-column: span 3;
+        }
+        .arm-btn.emergency:hover { background: var(--danger); color: #fff; }
+
+        /* ===== Budget Tracker ===== */
+        .budget-bar-container { position: relative; margin: 12px 0; }
+        .budget-bar {
+            height: 20px; background: var(--border);
+            border-radius: 10px; overflow: hidden;
+        }
+        .budget-fill {
+            height: 100%; border-radius: 10px;
+            background: linear-gradient(90deg, var(--success), var(--accent));
+            transition: width 0.3s;
+        }
+        .budget-fill.over { background: linear-gradient(90deg, var(--warning), var(--danger)); }
+        .budget-labels {
+            display: flex; justify-content: space-between;
+            font-size: 11px; color: var(--text-secondary); margin-top: 4px;
+        }
+        .budget-amount { font-size: 20px; font-weight: 600; }
+
+        /* ===== File Browser ===== */
+        .file-list { list-style: none; }
+        .file-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 8px; border-radius: 4px;
+            font-size: 12px; cursor: pointer; transition: all 0.2s;
+        }
+        .file-item:hover { background: var(--accent-dim); }
+        .file-icon { width: 16px; text-align: center; }
+        .file-name { flex: 1; }
+        .file-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
+        .file-item:hover .file-actions { opacity: 1; }
+        .file-action-btn {
+            background: transparent; border: none;
+            color: var(--text-secondary); cursor: pointer;
+            font-size: 12px; padding: 2px;
+        }
+        .file-action-btn:hover { color: var(--accent); }
+
+        /* ===== Calculator ===== */
+        .calc-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .calc-btn {
+            padding: 6px 12px; border-radius: 6px;
+            border: 1px solid var(--border); background: transparent;
+            color: var(--text-secondary); font-family: inherit;
+            font-size: 11px; cursor: pointer; transition: all 0.2s;
+        }
+        .calc-btn:hover, .calc-btn.active { border-color: var(--accent); color: var(--accent); }
+        .calc-form { display: flex; flex-direction: column; gap: 8px; }
+        .calc-form label { font-size: 11px; color: var(--text-secondary); }
+        .calc-form input {
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: 6px; padding: 6px 10px;
+            color: var(--text-primary); font-family: inherit; font-size: 12px;
+        }
+        .calc-form input:focus { outline: none; border-color: var(--accent); }
+        .calc-result {
+            margin-top: 8px; padding: 10px;
+            background: var(--bg-secondary); border-radius: 6px;
+            font-size: 12px; line-height: 1.6;
+        }
+
+        /* ===== Journal ===== */
+        .journal-entries { display: flex; flex-direction: column; gap: 8px; }
+        .journal-entry {
+            padding: 8px 12px; border-left: 2px solid var(--accent);
+            font-size: 12px; line-height: 1.5;
+        }
+        .journal-time { font-size: 10px; color: var(--text-secondary); }
+
+        /* ===== Footer ===== */
+        .footer {
+            grid-area: footer;
+            display: flex; align-items: center;
+            padding: 0 16px; gap: 16px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            font-size: 10px; color: var(--text-secondary);
+        }
+        .footer-ws { display: flex; align-items: center; gap: 4px; }
+        .ws-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--danger);
+        }
+        .ws-dot.connected { background: var(--success); }
+
+        /* ===== Scrollbar ===== */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+        /* ===== Notification Toast ===== */
+        .toast {
+            position: fixed; top: 20px; right: 20px;
+            padding: 12px 20px; border-radius: 8px;
+            background: var(--glass); border: 1px solid var(--accent);
+            color: var(--text-primary); font-size: 12px;
+            z-index: 900; opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.3s;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+    </style>
+</head>
+<body>
+
+<!-- ===== Boot Screen ===== -->
+<div id="boot-screen">
+    <div class="boot-title">J.A.R.V.I.S. WORKSHOP</div>
+    <div class="boot-ring" id="boot-ring"></div>
+    <div id="boot-text"></div>
+</div>
+
+<!-- ===== Main Workshop Grid ===== -->
+<div id="workshop-main" class="workshop-grid" style="display:none">
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-logo">WORKSHOP</div>
+        <div class="header-project" id="header-project">
+            <span class="proj-name" id="header-proj-name">Kein Projekt</span>
+        </div>
+        <span class="header-status status-none" id="header-status">---</span>
+        <div class="header-actions">
+            <button onclick="showNewProject()">+ Projekt</button>
+            <button onclick="refreshAll()">&#8635;</button>
+            <button onclick="window.open('/ui/', '_blank')">Dashboard</button>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <h3>Navigation</h3>
+        <button class="nav-btn active" data-view="overview" onclick="switchView(this, 'overview')">
+            <span class="icon">&#128200;</span> Uebersicht
+        </button>
+        <button class="nav-btn" data-view="steps" onclick="switchView(this, 'steps')">
+            <span class="icon">&#128221;</span> Schritte
+        </button>
+        <button class="nav-btn" data-view="code" onclick="switchView(this, 'code')">
+            <span class="icon">&#128187;</span> Code & Dateien
+        </button>
+        <button class="nav-btn" data-view="hardware" onclick="switchView(this, 'hardware')">
+            <span class="icon">&#128268;</span> Hardware
+        </button>
+        <button class="nav-btn" data-view="chat" onclick="switchView(this, 'chat')">
+            <span class="icon">&#128172;</span> Chat
+        </button>
+        <button class="nav-btn" data-view="calc" onclick="switchView(this, 'calc')">
+            <span class="icon">&#129518;</span> Rechner
+        </button>
+        <button class="nav-btn" data-view="journal" onclick="switchView(this, 'journal')">
+            <span class="icon">&#128214;</span> Journal
+        </button>
+
+        <h3>Projekte</h3>
+        <div id="project-list"></div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main" id="main-content"></div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <div class="footer-ws">
+            <div class="ws-dot" id="ws-dot"></div>
+            <span id="ws-status">Getrennt</span>
+        </div>
+        <span id="footer-timer"></span>
+        <span style="flex:1"></span>
+        <span id="footer-env"></span>
+    </div>
+</div>
+
+<!-- Toast Notification -->
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-yaml.min.js"></script>
+<script>
+'use strict';
+
+// ===== State =====
+let ws = null;
+let currentProject = null;
+let projects = [];
+let currentView = 'overview';
+let isRecording = false;
+
+// ===== Boot Sequence =====
+async function bootWorkshop() {
+    const text = document.getElementById('boot-text');
+    const messages = [
+        'Werkstatt-Systeme initialisieren...',
+        'Sensor-Array verbunden.',
+        '3D-Drucker: Online.',
+        'Roboterarm: Bereit.',
+        'Workshop-Modus aktiv, Sir.'
+    ];
+    for (const msg of messages) {
+        await typewrite(text, msg, 40);
+        await sleep(600);
+    }
+    document.getElementById('boot-screen').classList.add('fade-out');
+    setTimeout(() => {
+        document.getElementById('boot-screen').style.display = 'none';
+        document.getElementById('workshop-main').style.display = 'grid';
+        connectWebSocket();
+        loadProjects();
+    }, 800);
+}
+
+function typewrite(el, text, speed) {
+    return new Promise(resolve => {
+        el.textContent = '';
+        let i = 0;
+        const iv = setInterval(() => {
+            el.textContent += text[i++];
+            if (i >= text.length) { clearInterval(iv); resolve(); }
+        }, speed);
+    });
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ===== API Helper =====
+async function apiCall(endpoint, method = 'GET', body = null) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const resp = await fetch('/api/workshop/' + endpoint, opts);
+    return await resp.json();
+}
+
+async function chatApi(text) {
+    const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, room: 'werkstatt' })
+    });
+    return await resp.json();
+}
+
+// ===== WebSocket =====
+function connectWebSocket() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws');
+    ws.onopen = () => {
+        document.getElementById('ws-dot').classList.add('connected');
+        document.getElementById('ws-status').textContent = 'Verbunden';
+    };
+    ws.onclose = () => {
+        document.getElementById('ws-dot').classList.remove('connected');
+        document.getElementById('ws-status').textContent = 'Getrennt';
+        setTimeout(connectWebSocket, 3000);
+    };
+    ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        handleWsEvent(msg);
+    };
+}
+
+function handleWsEvent(msg) {
+    switch (msg.event) {
+        case 'workshop.step':
+            updateStepNavigator(msg.data);
+            break;
+        case 'workshop.diagnosis':
+            showDiagnosis(msg.data);
+            break;
+        case 'workshop.file_created':
+            if (currentView === 'code') renderCodeView();
+            showToast('Neue Datei: ' + (msg.data.filename || ''));
+            break;
+        case 'workshop.printer':
+            updatePrinterWidget(msg.data);
+            break;
+        case 'workshop.environment':
+            updateEnvironment(msg.data);
+            break;
+        case 'workshop.timer':
+            showToast('Timer: ' + (msg.data.message || ''));
+            break;
+        case 'workshop.project':
+            loadProjects();
+            break;
+        case 'assistant.speaking':
+            addChatMessage('jarvis', msg.data.text);
+            break;
+        case 'assistant.stream_token':
+            appendStreamToken(msg.data.token);
+            break;
+        case 'assistant.stream_end':
+            finalizeStream(msg.data.text);
+            break;
+    }
+}
+
+// ===== Project Management =====
+async function loadProjects() {
+    try {
+        const res = await apiCall('projects');
+        projects = res.projects || [];
+        renderProjectList();
+        if (currentProject) {
+            const updated = projects.find(p => p.id === currentProject.id);
+            if (updated) { currentProject = updated; updateHeader(); }
+        }
+    } catch (e) { console.error('loadProjects:', e); }
+}
+
+function renderProjectList() {
+    const el = document.getElementById('project-list');
+    if (!projects.length) {
+        el.innerHTML = '<div style="font-size:11px;color:var(--text-secondary);padding:8px">Keine Projekte</div>';
+        return;
+    }
+    el.innerHTML = projects.map(p =>
+        '<div class="project-item' + (currentProject && currentProject.id === p.id ? ' active' : '') +
+        '" onclick="selectProject(\'' + p.id + '\')">' +
+        '<div class="project-dot"></div>' +
+        '<span>' + escHtml(p.title || p.id) + '</span></div>'
+    ).join('');
+}
+
+async function selectProject(id) {
+    try {
+        const p = await apiCall('project/' + id);
+        currentProject = p;
+        updateHeader();
+        renderProjectList();
+        renderView();
+    } catch (e) { showToast('Projekt nicht gefunden'); }
+}
+
+function updateHeader() {
+    if (!currentProject) {
+        document.getElementById('header-proj-name').textContent = 'Kein Projekt';
+        document.getElementById('header-status').textContent = '---';
+        document.getElementById('header-status').className = 'header-status status-none';
+        return;
+    }
+    document.getElementById('header-proj-name').textContent = currentProject.title || currentProject.id;
+    const st = currentProject.status || 'erstellt';
+    document.getElementById('header-status').textContent = st;
+    const cls = (st === 'in_arbeit' || st === 'diagnose') ? 'status-active' :
+                st === 'pausiert' ? 'status-paused' : 'status-none';
+    document.getElementById('header-status').className = 'header-status ' + cls;
+}
+
+async function showNewProject() {
+    const title = prompt('Projekt-Name:');
+    if (!title) return;
+    const desc = prompt('Beschreibung (optional):') || '';
+    try {
+        const res = await chatApi('Erstelle ein Werkstatt-Projekt: ' + title + (desc ? '. ' + desc : ''));
+        showToast('Projekt wird erstellt...');
+        setTimeout(loadProjects, 2000);
+    } catch (e) { showToast('Fehler beim Erstellen'); }
+}
+
+// ===== View Switching =====
+function switchView(btn, view) {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentView = view;
+    renderView();
+}
+
+function renderView() {
+    const main = document.getElementById('main-content');
+    switch (currentView) {
+        case 'overview': renderOverview(main); break;
+        case 'steps': renderStepsView(main); break;
+        case 'code': renderCodeView(main); break;
+        case 'hardware': renderHardwareView(main); break;
+        case 'chat': renderChatView(main); break;
+        case 'calc': renderCalcView(main); break;
+        case 'journal': renderJournalView(main); break;
+        default: main.innerHTML = '';
+    }
+}
+
+// ===== Overview View =====
+function renderOverview(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '';
+
+    // Project Info
+    html += '<div class="widget" id="w-project-info">';
+    html += '<div class="widget-header"><span class="icon">&#128204;</span><span class="widget-title">Projekt-Info</span></div>';
+    if (currentProject) {
+        html += '<div style="font-size:18px;font-weight:600;">' + escHtml(currentProject.title || '') + '</div>';
+        html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">' + escHtml(currentProject.description || '') + '</div>';
+        html += '<div class="project-meta">';
+        html += '<div class="meta-item">Kategorie: <span>' + escHtml(currentProject.category || '-') + '</span></div>';
+        html += '<div class="meta-item">Prioritaet: <span>' + escHtml(currentProject.priority || '-') + '</span></div>';
+        html += '<div class="meta-item">Status: <span>' + escHtml(currentProject.status || '-') + '</span></div>';
+        html += '</div>';
+    } else {
+        html += '<div style="color:var(--text-secondary);font-size:13px">Kein Projekt ausgewaehlt. Erstelle ein neues Projekt oder waehle eines aus der Sidebar.</div>';
+    }
+    html += '</div>';
+
+    // Stats + Environment Row
+    html += '<div class="widget-row">';
+
+    // Environment
+    html += '<div class="widget" id="w-environment">';
+    html += '<div class="widget-header"><span class="icon">&#127777;</span><span class="widget-title">Werkstatt-Umgebung</span></div>';
+    html += '<div class="env-grid">';
+    html += '<div class="env-item"><div class="env-value" id="env-temp">--</div><div class="env-label">Temperatur</div></div>';
+    html += '<div class="env-item"><div class="env-value" id="env-hum">--</div><div class="env-label">Feuchtigkeit</div></div>';
+    html += '<div class="env-item"><div class="env-value" id="env-co2">--</div><div class="env-label">CO2</div></div>';
+    html += '</div></div>';
+
+    // Budget
+    html += '<div class="widget" id="w-budget">';
+    html += '<div class="widget-header"><span class="icon">&#128176;</span><span class="widget-title">Budget</span></div>';
+    if (currentProject && currentProject.budget) {
+        const spent = currentProject.expenses_total || 0;
+        const budget = currentProject.budget || 0;
+        const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
+        html += '<div class="budget-amount">' + spent.toFixed(2) + ' / ' + budget.toFixed(2) + ' EUR</div>';
+        html += '<div class="budget-bar-container"><div class="budget-bar">';
+        html += '<div class="budget-fill' + (pct > 100 ? ' over' : '') + '" style="width:' + pct + '%"></div>';
+        html += '</div></div>';
+        html += '<div class="budget-labels"><span>0 EUR</span><span>' + budget.toFixed(0) + ' EUR</span></div>';
+    } else {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Kein Budget gesetzt</div>';
+    }
+    html += '</div>';
+
+    html += '</div>'; // end widget-row
+
+    // Parts List
+    if (currentProject && currentProject.parts && currentProject.parts.length) {
+        html += '<div class="widget" id="w-parts">';
+        html += '<div class="widget-header"><span class="icon">&#128295;</span><span class="widget-title">Teile-Liste</span></div>';
+        html += '<table class="parts-table"><thead><tr><th>Teil</th><th>Menge</th><th>Kosten</th><th>Status</th></tr></thead><tbody>';
+        currentProject.parts.forEach(p => {
+            const cls = p.available ? 'part-available' : 'part-missing';
+            html += '<tr><td>' + escHtml(p.name || '') + '</td><td>' + (p.quantity || 1) + '</td>';
+            html += '<td>' + (p.cost ? p.cost.toFixed(2) + ' EUR' : '-') + '</td>';
+            html += '<td class="' + cls + '">' + (p.available ? 'Vorhanden' : 'Fehlt') + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    main.innerHTML = html;
+}
+
+// ===== Steps View =====
+function renderStepsView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget" id="w-steps">';
+    html += '<div class="widget-header"><span class="icon">&#128221;</span><span class="widget-title">Reparatur-Schritte</span></div>';
+
+    if (currentProject && currentProject.steps && currentProject.steps.length) {
+        const steps = currentProject.steps;
+        const current = currentProject.current_step || 0;
+        const pct = steps.length > 0 ? ((current + 1) / steps.length) * 100 : 0;
+        html += '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
+        html += '<div style="font-size:11px;color:var(--text-secondary);margin:4px 0 12px">Schritt ' + (current + 1) + ' von ' + steps.length + '</div>';
+        html += '<ul class="step-list">';
+        steps.forEach((s, i) => {
+            const cls = i === current ? 'active' : (i < current ? 'done' : '');
+            html += '<li class="step-item ' + cls + '">';
+            html += '<strong>' + (i + 1) + '.</strong> ' + escHtml(s.title || s.description || '');
+            if (s.details) html += '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">' + escHtml(s.details) + '</div>';
+            html += '</li>';
+        });
+        html += '</ul>';
+        html += '<div class="step-nav-btns">';
+        html += '<button class="step-btn" onclick="navStep(\'prev\')">&#9664; Zurueck</button>';
+        html += '<button class="step-btn" onclick="navStep(\'next\')">Weiter &#9654;</button>';
+        html += '</div>';
+    } else {
+        html += '<div style="color:var(--text-secondary);font-size:13px">Keine Schritte vorhanden. Starte eine Diagnose um Reparatur-Schritte zu generieren.</div>';
+    }
+    html += '</div>';
+    main.innerHTML = html;
+}
+
+async function navStep(dir) {
+    await chatApi(dir === 'next' ? 'naechster schritt' : 'vorheriger schritt');
+}
+
+function updateStepNavigator(data) {
+    if (currentView === 'steps' || currentView === 'overview') {
+        if (currentProject) selectProject(currentProject.id);
+    }
+    showToast('Schritt ' + (data.step_number || '?') + ': ' + (data.title || ''));
+}
+
+// ===== Code & Files View =====
+async function renderCodeView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '';
+
+    // File Browser
+    html += '<div class="widget" id="w-files">';
+    html += '<div class="widget-header"><span class="icon">&#128193;</span><span class="widget-title">Dateien</span></div>';
+    if (currentProject) {
+        try {
+            const res = await apiCall('files/' + currentProject.id);
+            const files = res.files || [];
+            if (files.length) {
+                html += '<ul class="file-list">';
+                files.forEach(f => {
+                    const ext = (f.filename || '').split('.').pop();
+                    const icon = { py: '&#128013;', ino: '&#9889;', scad: '&#128230;', svg: '&#127912;', html: '&#127760;', js: '&#9889;', yaml: '&#128196;' }[ext] || '&#128196;';
+                    html += '<li class="file-item" onclick="viewFile(\'' + escHtml(f.filename) + '\')">';
+                    html += '<span class="file-icon">' + icon + '</span>';
+                    html += '<span class="file-name">' + escHtml(f.filename) + '</span>';
+                    html += '<span style="font-size:10px;color:var(--text-secondary)">' + (f.version ? 'v' + f.version : '') + '</span>';
+                    html += '<div class="file-actions">';
+                    html += '<button class="file-action-btn" onclick="event.stopPropagation();downloadFile(\'' + escHtml(f.filename) + '\')">&#11015;</button>';
+                    html += '</div></li>';
+                });
+                html += '</ul>';
+            } else {
+                html += '<div style="color:var(--text-secondary);font-size:12px">Keine Dateien. Generiere Code, 3D-Modelle oder Schaltplaene ueber den Chat.</div>';
+            }
+        } catch (e) {
+            html += '<div style="color:var(--text-secondary);font-size:12px">Dateien konnten nicht geladen werden.</div>';
+        }
+    } else {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Kein Projekt ausgewaehlt.</div>';
+    }
+    html += '</div>';
+
+    // Code Editor
+    html += '<div class="widget" id="w-code">';
+    html += '<div class="widget-header"><span class="icon">&#128187;</span><span class="widget-title">Code-Ansicht</span></div>';
+    html += '<div id="code-display">';
+    html += '<div style="color:var(--text-secondary);font-size:12px">Waehle eine Datei aus der Liste oben.</div>';
+    html += '</div></div>';
+
+    // Schematic Viewer
+    html += '<div class="widget" id="w-schematic">';
+    html += '<div class="widget-header"><span class="icon">&#128268;</span><span class="widget-title">Schaltplan</span></div>';
+    html += '<div class="schematic-container" id="schematic-display">';
+    html += '<div class="schematic-empty">Kein Schaltplan geladen</div>';
+    html += '</div></div>';
+
+    main.innerHTML = html;
+}
+
+async function viewFile(filename) {
+    if (!currentProject) return;
+    try {
+        const res = await apiCall('files/' + currentProject.id + '/' + filename);
+        const content = res.content || '';
+        const ext = filename.split('.').pop();
+        const display = document.getElementById('code-display');
+
+        if (ext === 'svg') {
+            document.getElementById('schematic-display').innerHTML = content;
+            return;
+        }
+
+        const langMap = { py: 'python', ino: 'cpp', cpp: 'cpp', c: 'c', js: 'javascript', yaml: 'yaml', html: 'markup' };
+        const lang = langMap[ext] || 'markup';
+        let highlighted = content;
+        try { highlighted = Prism.highlight(content, Prism.languages[lang] || Prism.languages.markup, lang); } catch(e) {}
+
+        display.innerHTML = '<div class="code-container">' +
+            '<div class="code-header"><span>' + escHtml(filename) + '</span>' +
+            '<button class="btn-copy" onclick="copyCode()">Kopieren</button></div>' +
+            '<div class="code-content"><pre><code id="code-block">' + highlighted + '</code></pre></div></div>';
+
+        document.getElementById('code-block').dataset.raw = content;
+    } catch (e) { showToast('Datei konnte nicht geladen werden'); }
+}
+
+function copyCode() {
+    const block = document.getElementById('code-block');
+    if (block && block.dataset.raw) {
+        navigator.clipboard.writeText(block.dataset.raw);
+        showToast('Kopiert!');
+    }
+}
+
+function downloadFile(filename) {
+    if (!currentProject) return;
+    window.open('/api/workshop/files/' + currentProject.id + '/' + filename, '_blank');
+}
+
+// ===== Hardware View =====
+function renderHardwareView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '';
+
+    // Printer Status
+    html += '<div class="widget" id="w-printer">';
+    html += '<div class="widget-header"><span class="icon">&#128424;</span><span class="widget-title">3D-Drucker</span></div>';
+    html += '<div id="printer-content">';
+    html += '<div style="color:var(--text-secondary);font-size:12px">Status wird geladen...</div>';
+    html += '</div></div>';
+
+    // Arm Control
+    html += '<div class="widget" id="w-arm">';
+    html += '<div class="widget-header"><span class="icon">&#129302;</span><span class="widget-title">Roboterarm</span></div>';
+    html += '<div class="arm-btns">';
+    html += '<button class="arm-btn" onclick="armCmd(\'home\')">&#127968; Home</button>';
+    html += '<button class="arm-btn" onclick="armCmd(\'open\')">&#9996; Oeffnen</button>';
+    html += '<button class="arm-btn" onclick="armCmd(\'close\')">&#9994; Greifen</button>';
+    html += '<button class="arm-btn" onclick="armPickTool()">&#128295; Werkzeug</button>';
+    html += '<button class="arm-btn" onclick="armPos(\'up\')">&#11014; Hoch</button>';
+    html += '<button class="arm-btn" onclick="armPos(\'down\')">&#11015; Runter</button>';
+    html += '<button class="arm-btn emergency" onclick="armCmd(\'stop\')">&#9888; NOTAUS</button>';
+    html += '</div>';
+    html += '<div style="margin-top:12px;font-size:11px;color:var(--text-secondary)" id="arm-status">Position: ---</div>';
+    html += '</div>';
+
+    // Environment (detailed)
+    html += '<div class="widget" id="w-env-detail">';
+    html += '<div class="widget-header"><span class="icon">&#127777;</span><span class="widget-title">Umgebungssensoren</span></div>';
+    html += '<div class="env-grid">';
+    html += '<div class="env-item"><div class="env-value" id="env-temp2">--</div><div class="env-label">Temperatur</div></div>';
+    html += '<div class="env-item"><div class="env-value" id="env-hum2">--</div><div class="env-label">Feuchtigkeit</div></div>';
+    html += '<div class="env-item"><div class="env-value" id="env-co22">--</div><div class="env-label">CO2</div></div>';
+    html += '</div></div>';
+
+    main.innerHTML = html;
+    loadPrinterStatus();
+}
+
+async function loadPrinterStatus() {
+    try {
+        const res = await chatApi('Drucker-Status');
+        document.getElementById('printer-content').innerHTML =
+            '<div style="font-size:12px;color:var(--text-secondary)">Status abgefragt. Warte auf Update...</div>';
+    } catch(e) {}
+}
+
+function updatePrinterWidget(data) {
+    const el = document.getElementById('printer-content');
+    if (!el) return;
+    const pct = data.progress || 0;
+    const state = data.state || 'idle';
+    let html = '<div class="printer-progress">';
+    html += '<div class="printer-bar"><div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div></div>';
+    html += '<div class="printer-percent">' + pct + '%</div></div>';
+    html += '<div style="font-size:12px;color:var(--text-secondary)">Status: ' + state + '</div>';
+    if (data.temps) {
+        html += '<div class="printer-temps">';
+        html += '<span>Nozzle: <span class="val">' + (data.temps.nozzle || '--') + '°C</span></span>';
+        html += '<span>Bed: <span class="val">' + (data.temps.bed || '--') + '°C</span></span>';
+        html += '</div>';
+    }
+    el.innerHTML = html;
+}
+
+async function armCmd(cmd) {
+    if (cmd === 'home') await chatApi('Arm Home');
+    else if (cmd === 'open') await chatApi('Greifer oeffnen');
+    else if (cmd === 'close') await chatApi('Greifer schliessen');
+    else if (cmd === 'stop') await chatApi('Notaus');
+}
+
+async function armPos(dir) {
+    const delta = dir === 'up' ? 50 : -50;
+    await chatApi('Arm bewegen z ' + delta);
+}
+
+async function armPickTool() {
+    const tool = prompt('Welches Werkzeug?');
+    if (tool) await chatApi('Arm hole ' + tool);
+}
+
+// ===== Chat View =====
+let chatMessages = [];
+let streamBuffer = '';
+
+function renderChatView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget" style="flex:1;display:flex;flex-direction:column">';
+    html += '<div class="widget-header"><span class="icon">&#128172;</span><span class="widget-title">Workshop-Chat</span></div>';
+    html += '<div class="chat-messages" id="chat-messages">';
+    chatMessages.forEach(m => {
+        html += '<div class="chat-msg ' + m.role + '">' + escHtml(m.text) + '</div>';
+    });
+    html += '</div>';
+    html += '<div class="chat-input-row">';
+    html += '<button class="btn-voice" id="btn-voice" onclick="toggleVoice()">&#127908;</button>';
+    html += '<input class="chat-input" id="chat-input" placeholder="Nachricht eingeben..." onkeydown="if(event.key===\'Enter\')sendChat()">';
+    html += '<button class="btn-send" onclick="sendChat()">&#10148;</button>';
+    html += '</div></div>';
+    main.innerHTML = html;
+    const msgs = document.getElementById('chat-messages');
+    if (msgs) msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addChatMessage(role, text) {
+    chatMessages.push({ role, text });
+    if (chatMessages.length > 100) chatMessages.shift();
+    if (currentView === 'chat') {
+        const el = document.getElementById('chat-messages');
+        if (el) {
+            el.innerHTML += '<div class="chat-msg ' + role + '">' + escHtml(text) + '</div>';
+            el.scrollTop = el.scrollHeight;
+        }
+    }
+}
+
+function appendStreamToken(token) {
+    streamBuffer += token;
+    if (currentView === 'chat') {
+        const el = document.getElementById('chat-messages');
+        if (!el) return;
+        let streaming = el.querySelector('.chat-msg.streaming');
+        if (!streaming) {
+            streaming = document.createElement('div');
+            streaming.className = 'chat-msg jarvis streaming';
+            el.appendChild(streaming);
+        }
+        streaming.textContent = streamBuffer;
+        el.scrollTop = el.scrollHeight;
+    }
+}
+
+function finalizeStream(fullText) {
+    if (currentView === 'chat') {
+        const el = document.getElementById('chat-messages');
+        if (el) {
+            const streaming = el.querySelector('.chat-msg.streaming');
+            if (streaming) streaming.remove();
+        }
+    }
+    streamBuffer = '';
+    addChatMessage('jarvis', fullText);
+}
+
+async function sendChat() {
+    const input = document.getElementById('chat-input');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    addChatMessage('user', text);
+    try {
+        const res = await chatApi(text);
+        if (res.response && !res._emitted) {
+            addChatMessage('jarvis', res.response);
+        }
+    } catch (e) {
+        addChatMessage('jarvis', 'Fehler bei der Kommunikation.');
+    }
+}
+
+// ===== Voice Input =====
+function toggleVoice() {
+    const btn = document.getElementById('btn-voice');
+    if (isRecording) {
+        isRecording = false;
+        btn.classList.remove('recording');
+        return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { showToast('Spracherkennung nicht unterstuetzt'); return; }
+    const recognition = new SR();
+    recognition.lang = 'de-DE';
+    recognition.continuous = false;
+    recognition.onstart = () => { isRecording = true; btn.classList.add('recording'); };
+    recognition.onresult = async (event) => {
+        const text = event.results[0][0].transcript;
+        const input = document.getElementById('chat-input');
+        if (input) input.value = text;
+        await sendChat();
+    };
+    recognition.onend = () => { isRecording = false; btn.classList.remove('recording'); };
+    recognition.onerror = () => { isRecording = false; btn.classList.remove('recording'); };
+    recognition.start();
+}
+
+// ===== Calculator View =====
+let activeCalc = 'ohms_law';
+
+function renderCalcView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#129518;</span><span class="widget-title">Werkstatt-Rechner</span></div>';
+    html += '<div class="calc-btns">';
+    const calcs = [
+        { id: 'ohms_law', label: 'Ohm\'sches Gesetz' },
+        { id: 'led_resistor', label: 'LED Widerstand' },
+        { id: 'resistor_divider', label: 'Spannungsteiler' },
+        { id: 'wire_gauge', label: 'Kabelquerschnitt' },
+        { id: '3d_print_weight', label: '3D-Druck Gewicht' },
+        { id: 'power_supply', label: 'Netzteil' },
+        { id: 'convert', label: 'Umrechnung' },
+    ];
+    calcs.forEach(c => {
+        html += '<button class="calc-btn' + (c.id === activeCalc ? ' active' : '') +
+                '" onclick="setCalc(\'' + c.id + '\')">' + c.label + '</button>';
+    });
+    html += '</div>';
+    html += '<div id="calc-form">' + getCalcForm(activeCalc) + '</div>';
+    html += '<div class="calc-result" id="calc-result"></div>';
+    html += '</div>';
+    main.innerHTML = html;
+}
+
+function setCalc(type) {
+    activeCalc = type;
+    document.querySelectorAll('.calc-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('.calc-btn[onclick*="' + type + '"]').classList.add('active');
+    document.getElementById('calc-form').innerHTML = getCalcForm(type);
+    document.getElementById('calc-result').innerHTML = '';
+}
+
+function getCalcForm(type) {
+    const forms = {
+        ohms_law: '<div class="calc-form"><label>Spannung (V)</label><input id="cp-v" type="number" step="any" placeholder="z.B. 5">' +
+                  '<label>Widerstand (Ohm)</label><input id="cp-r" type="number" step="any" placeholder="z.B. 100">' +
+                  '<label>Strom (A) — optional</label><input id="cp-i" type="number" step="any" placeholder="Berechnet">' +
+                  '<button class="step-btn" style="margin-top:8px" onclick="doCalc()">Berechnen</button></div>',
+        led_resistor: '<div class="calc-form"><label>Versorgungsspannung (V)</label><input id="cp-vs" type="number" step="any" value="5">' +
+                      '<label>LED Vorwaertsspannung (V)</label><input id="cp-vf" type="number" step="any" value="2">' +
+                      '<label>LED Strom (mA)</label><input id="cp-if" type="number" step="any" value="20">' +
+                      '<button class="step-btn" style="margin-top:8px" onclick="doCalc()">Berechnen</button></div>',
+        resistor_divider: '<div class="calc-form"><label>Eingangsspannung (V)</label><input id="cp-vin" type="number" step="any" value="12">' +
+                          '<label>Ausgangsspannung (V)</label><input id="cp-vout" type="number" step="any" value="3.3">' +
+                          '<label>R2 (Ohm) — optional</label><input id="cp-r2" type="number" step="any" placeholder="10000">' +
+                          '<button class="step-btn" style="margin-top:8px" onclick="doCalc()">Berechnen</button></div>',
+        wire_gauge: '<div class="calc-form"><label>Strom (A)</label><input id="cp-amp" type="number" step="any" value="10">' +
+                    '<label>Laenge (m)</label><input id="cp-len" type="number" step="any" value="5">' +
+                    '<label>Max. Spannungsabfall (V)</label><input id="cp-drop" type="number" step="any" value="0.5">' +
+                    '<button class="step-btn" style="margin-top:8px" onclick="doCalc()">Berechnen</button></div>',
+        '3d_print_weight': '<div class="calc-form"><label>Volumen (cm³)</label><input id="cp-vol" type="number" step="any">' +
+                           '<label>Material</label><select id="cp-mat" class="chat-input" style="padding:6px"><option>PLA</option><option>ABS</option><option>PETG</option><option>TPU</option><option>Nylon</option></select>' +
+                           '<label>Infill (%)</label><input id="cp-infill" type="number" step="any" value="20">' +
+                           '<button class="step-btn" style="margin-top:8px" onclick="doCalc()">Berechnen</button></div>',
+        power_supply: '<div class="calc-form"><label>Gesamtstrom (A)</label><input id="cp-total-a" type="number" step="any">' +
+                      '<label>Spannung (V)</label><input id="cp-psu-v" type="number" step="any" value="12">' +
+                      '<label>Sicherheitsmarge (%)</label><input id="cp-margin" type="number" step="any" value="20">' +
+                      '<button class="step-btn" style="margin-top:8px" onclick="doCalc()">Berechnen</button></div>',
+        convert: '<div class="calc-form"><label>Wert</label><input id="cp-val" type="number" step="any">' +
+                 '<label>Von</label><input id="cp-from" type="text" placeholder="z.B. inch">' +
+                 '<label>Nach</label><input id="cp-to" type="text" placeholder="z.B. mm">' +
+                 '<button class="step-btn" style="margin-top:8px" onclick="doCalc()">Berechnen</button></div>',
+    };
+    return forms[type] || '';
+}
+
+async function doCalc() {
+    let params = {};
+    switch (activeCalc) {
+        case 'ohms_law':
+            params = {};
+            const v = document.getElementById('cp-v')?.value;
+            const r = document.getElementById('cp-r')?.value;
+            const i = document.getElementById('cp-i')?.value;
+            if (v) params.v = parseFloat(v);
+            if (r) params.r = parseFloat(r);
+            if (i) params.i = parseFloat(i);
+            break;
+        case 'led_resistor':
+            params = { v_supply: parseFloat(document.getElementById('cp-vs')?.value || 5),
+                       v_forward: parseFloat(document.getElementById('cp-vf')?.value || 2),
+                       i_ma: parseFloat(document.getElementById('cp-if')?.value || 20) };
+            break;
+        case 'resistor_divider':
+            params = { v_in: parseFloat(document.getElementById('cp-vin')?.value || 12),
+                       v_out: parseFloat(document.getElementById('cp-vout')?.value || 3.3) };
+            const r2v = document.getElementById('cp-r2')?.value;
+            if (r2v) params.r2 = parseFloat(r2v);
+            break;
+        case 'wire_gauge':
+            params = { current_a: parseFloat(document.getElementById('cp-amp')?.value || 10),
+                       length_m: parseFloat(document.getElementById('cp-len')?.value || 5),
+                       max_drop_v: parseFloat(document.getElementById('cp-drop')?.value || 0.5) };
+            break;
+        case '3d_print_weight':
+            params = { volume_cm3: parseFloat(document.getElementById('cp-vol')?.value || 0),
+                       material: document.getElementById('cp-mat')?.value || 'PLA',
+                       infill_pct: parseFloat(document.getElementById('cp-infill')?.value || 20) };
+            break;
+        case 'power_supply':
+            params = { total_current_a: parseFloat(document.getElementById('cp-total-a')?.value || 0),
+                       voltage: parseFloat(document.getElementById('cp-psu-v')?.value || 12),
+                       margin_pct: parseFloat(document.getElementById('cp-margin')?.value || 20) };
+            break;
+        case 'convert':
+            params = { value: parseFloat(document.getElementById('cp-val')?.value || 0),
+                       from_unit: document.getElementById('cp-from')?.value || '',
+                       to_unit: document.getElementById('cp-to')?.value || '' };
+            break;
+    }
+    try {
+        const res = await apiCall('calculate', 'POST', { type: activeCalc, params });
+        const el = document.getElementById('calc-result');
+        if (res.error) {
+            el.innerHTML = '<span style="color:var(--danger)">' + escHtml(res.error) + '</span>';
+        } else {
+            el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + escHtml(JSON.stringify(res, null, 2)) + '</pre>';
+        }
+    } catch (e) {
+        document.getElementById('calc-result').innerHTML = '<span style="color:var(--danger)">Fehler</span>';
+    }
+}
+
+// ===== Journal View =====
+async function renderJournalView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#128214;</span><span class="widget-title">Workshop-Journal</span></div>';
+
+    try {
+        const res = await apiCall('journal');
+        const entries = res.entries || [];
+        if (entries.length) {
+            html += '<div class="journal-entries">';
+            entries.forEach(e => {
+                html += '<div class="journal-entry">';
+                html += '<div class="journal-time">' + escHtml(e.timestamp || '') + '</div>';
+                html += '<div>' + escHtml(e.text || '') + '</div>';
+                html += '</div>';
+            });
+            html += '</div>';
+        } else {
+            html += '<div style="color:var(--text-secondary);font-size:12px">Noch keine Journal-Eintraege.</div>';
+        }
+    } catch (e) {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Journal konnte nicht geladen werden.</div>';
+    }
+
+    html += '<div style="margin-top:12px;display:flex;gap:8px">';
+    html += '<input class="chat-input" id="journal-input" placeholder="Neuer Eintrag...">';
+    html += '<button class="btn-send" onclick="addJournalEntry()">+</button>';
+    html += '</div></div>';
+    main.innerHTML = html;
+}
+
+async function addJournalEntry() {
+    const input = document.getElementById('journal-input');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    await chatApi('Journal-Eintrag: ' + text);
+    setTimeout(() => renderJournalView(), 1000);
+}
+
+// ===== Environment Updates =====
+function updateEnvironment(data) {
+    const setVal = (id, val, unit) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val !== undefined ? val + unit : '--';
+    };
+    setVal('env-temp', data.temperatur, '°C');
+    setVal('env-hum', data.feuchtigkeit, '%');
+    setVal('env-co2', data.co2, 'ppm');
+    setVal('env-temp2', data.temperatur, '°C');
+    setVal('env-hum2', data.feuchtigkeit, '%');
+    setVal('env-co22', data.co2, 'ppm');
+
+    const footer = document.getElementById('footer-env');
+    if (footer && data.temperatur !== undefined) {
+        footer.textContent = data.temperatur + '°C | ' + (data.feuchtigkeit || '--') + '% | ' + (data.co2 || '--') + 'ppm';
+    }
+}
+
+function showDiagnosis(data) {
+    showToast('Diagnose abgeschlossen');
+    if (currentProject) selectProject(currentProject.id);
+}
+
+// ===== Utilities =====
+function escHtml(s) {
+    if (!s) return '';
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function showToast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+async function refreshAll() {
+    await loadProjects();
+    renderView();
+    showToast('Aktualisiert');
+}
+
+// ===== Init =====
+window.addEventListener('DOMContentLoaded', bootWorkshop);
+</script>
+</body>
+</html>

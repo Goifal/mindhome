@@ -4234,6 +4234,127 @@ async def chat_redirect():
     return RedirectResponse("/chat/")
 
 
+# ============================================================
+# Workshop-Modus: SPA + API
+# ============================================================
+
+_workshop_static_dir = Path(__file__).parent.parent / "static" / "workshop"
+_workshop_static_dir.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/workshop/{path:path}")
+async def workshop_serve(path: str = ""):
+    """Werkstatt-HUD — Single-Page App."""
+    if path and not path.endswith("/"):
+        asset = _workshop_static_dir / path
+        if asset.is_file() and asset.resolve().is_relative_to(_workshop_static_dir.resolve()):
+            media_types = {".js": "application/javascript", ".css": "text/css",
+                           ".png": "image/png", ".svg": "image/svg+xml"}
+            mt = media_types.get(asset.suffix, None)
+            return FileResponse(asset, media_type=mt, headers=_NO_CACHE_HEADERS)
+    index_path = _workshop_static_dir / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path, media_type="text/html", headers=_NO_CACHE_HEADERS)
+    return HTMLResponse("<h1>Workshop HUD — index.html nicht gefunden</h1>", status_code=404)
+
+
+@app.get("/workshop")
+async def workshop_redirect():
+    """Redirect /workshop zu /workshop/."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/workshop/")
+
+
+@app.get("/api/workshop/projects")
+async def workshop_list_projects(status: str = "", category: str = ""):
+    """Listet alle Workshop-Projekte."""
+    projects = await brain.repair_planner.list_projects(
+        status_filter=status or None, category_filter=category or None)
+    return {"success": True, "projects": projects, "count": len(projects)}
+
+
+@app.get("/api/workshop/project/{project_id}")
+async def workshop_get_project(project_id: str):
+    """Holt ein einzelnes Projekt."""
+    project = await brain.repair_planner.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Projekt nicht gefunden")
+    return project
+
+
+@app.get("/api/workshop/files/{project_id}")
+async def workshop_list_files(project_id: str):
+    """Listet Dateien eines Projekts."""
+    files = await brain.workshop_generator.list_files(project_id)
+    return {"success": True, "files": files}
+
+
+@app.get("/api/workshop/files/{project_id}/{filename}")
+async def workshop_get_file(project_id: str, filename: str):
+    """Liest eine Projekt-Datei."""
+    content = await brain.workshop_generator.read_file(project_id, filename)
+    if content is None:
+        raise HTTPException(404, "Datei nicht gefunden")
+    return {"success": True, "filename": filename, "content": content}
+
+
+@app.post("/api/workshop/calculate")
+async def workshop_calculate(request: Request):
+    """Fuehrt eine Werkstatt-Berechnung aus."""
+    data = await request.json()
+    calc_type = data.get("type", "")
+    params = data.get("params", {})
+    result = brain.workshop_generator.calculate(calc_type, **params)
+    return result
+
+
+@app.get("/api/workshop/journal")
+async def workshop_journal(period: str = "today"):
+    """Holt Workshop-Journal."""
+    return await brain.repair_planner.get_journal(period)
+
+
+@app.get("/api/workshop/stats")
+async def workshop_stats():
+    """Holt Workshop-Statistiken."""
+    return await brain.repair_planner.get_workshop_stats()
+
+
+@app.get("/api/workshop/library/stats")
+async def workshop_library_stats():
+    """Holt Library-Statistiken."""
+    return await brain.workshop_library.get_stats()
+
+
+@app.get("/api/workshop/library/documents")
+async def workshop_library_documents():
+    """Listet Library-Dokumente."""
+    return await brain.workshop_library.list_documents()
+
+
+@app.post("/api/workshop/library/ingest")
+async def workshop_library_ingest(file: UploadFile = File(...)):
+    """Importiert ein Dokument in die Workshop-Library."""
+    target = Path("/app/data/workshop/library") / file.filename
+    target.parent.mkdir(parents=True, exist_ok=True)
+    content = await file.read()
+    if len(content) > 200 * 1024 * 1024:  # 200MB Limit
+        raise HTTPException(413, "Datei zu gross (max 200MB)")
+    target.write_bytes(content)
+    result = await brain.workshop_library.ingest_document(str(target))
+    return result
+
+
+@app.get("/api/workshop/export/{project_id}")
+async def workshop_export(project_id: str):
+    """Exportiert Projekt als ZIP."""
+    zip_path = await brain.workshop_generator.export_project(project_id)
+    if not zip_path:
+        raise HTTPException(404, "Keine Dateien zum Exportieren")
+    return FileResponse(zip_path, filename=f"workshop_{project_id}.zip",
+                        media_type="application/zip")
+
+
 @app.get("/api/chat/config")
 async def chat_config():
     """Oeffentliche Chat-Konfiguration (keine Authentifizierung noetig).

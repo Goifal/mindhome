@@ -90,7 +90,10 @@ from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL
 from .task_registry import TaskRegistry
 from .protocol_engine import ProtocolEngine
 from .spontaneous_observer import SpontaneousObserver
-from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive, emit_progress
+from .repair_planner import RepairPlanner
+from .workshop_generator import WorkshopGenerator
+from .workshop_library import WorkshopLibrary
+from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive, emit_progress, emit_workshop
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +245,11 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 11: Koch-Assistent
         self.cooking = CookingAssistant(self.ollama)
+
+        # Workshop-Modus: Werkstatt-Ingenieur
+        self.repair_planner = RepairPlanner(self.ollama, self.ha)
+        self.workshop_generator = WorkshopGenerator(self.ollama)
+        self.workshop_library = WorkshopLibrary()
 
         # Phase 11.1: Knowledge Base (RAG)
         self.knowledge_base = KnowledgeBase()
@@ -436,6 +444,31 @@ class AssistantBrain(BrainCallbacksMixin):
         )
         await _safe_init("EnergyOptimizer", self.energy_optimizer.initialize(redis_client=self.memory.redis))
         await _safe_init("CookingAssistant", self.cooking.initialize(redis_client=self.memory.redis))
+
+        # Workshop-Modus initialisieren
+        await _safe_init("RepairPlanner", self.repair_planner.initialize(redis_client=self.memory.redis))
+        await _safe_init("WorkshopGenerator", self.workshop_generator.initialize(redis_client=self.memory.redis))
+        self.repair_planner.set_generator(self.workshop_generator)
+        self.repair_planner.set_model_router(self.model_router)
+        self.repair_planner.semantic_memory = self.memory.semantic
+        self.repair_planner.set_notify_callback(self._handle_workshop_timer)
+        self.workshop_generator.set_model_router(self.model_router)
+        # Workshop Library (gleiche ChromaDB-Instanz, eigene Collection)
+        try:
+            if self.knowledge_base._chroma_client:
+                from .embeddings import get_embedding_function
+                _ws_ef = get_embedding_function()
+                await self.workshop_library.initialize(
+                    chroma_client=self.knowledge_base._chroma_client,
+                    embedding_fn=_ws_ef,
+                )
+            else:
+                _degraded_modules.append("WorkshopLibrary")
+                logger.warning("WorkshopLibrary: ChromaDB nicht verfuegbar (KnowledgeBase ohne Client)")
+        except Exception as e:
+            _degraded_modules.append("WorkshopLibrary")
+            logger.error("F-069: WorkshopLibrary init fehlgeschlagen: %s", e)
+
         await _safe_init("ThreatAssessment", self.threat_assessment.initialize(redis_client=self.memory.redis))
         await _safe_init("LearningObserver", self.learning_observer.initialize(redis_client=self.memory.redis))
         self.learning_observer.set_notify_callback(self._handle_learning_suggestion)
@@ -1048,6 +1081,34 @@ class AssistantBrain(BrainCallbacksMixin):
                 "model_used": f"cooking_assistant ({cooking_model})",
                 "context_room": room or "unbekannt",
                 "tts": tts_data,
+                "_emitted": True,
+            }
+
+        # Workshop-Modus: Aktivierung/Deaktivierung
+        if self.repair_planner.is_activation_command(text):
+            logger.info("Workshop Aktivierung: '%s'", text)
+            workshop_response = await self.repair_planner.toggle_activation(text)
+            self._remember_exchange(text, workshop_response)
+            tts_data = self.tts_enhancer.enhance(workshop_response, message_type="casual")
+            await self._speak_and_emit(workshop_response, room=room, tts_data=tts_data)
+            return {
+                "response": workshop_response, "actions": [],
+                "model_used": "workshop_activation",
+                "context_room": room or "unbekannt", "tts": tts_data,
+                "_emitted": True,
+            }
+
+        # Workshop-Modus: Navigation — aktive Session hat Vorrang
+        if self.repair_planner.is_repair_navigation(text):
+            logger.info("Workshop-Navigation: '%s'", text)
+            workshop_response = await self.repair_planner.handle_navigation(text)
+            self._remember_exchange(text, workshop_response)
+            tts_data = self.tts_enhancer.enhance(workshop_response, message_type="casual")
+            await self._speak_and_emit(workshop_response, room=room, tts_data=tts_data)
+            return {
+                "response": workshop_response, "actions": [],
+                "model_used": "workshop_assistant",
+                "context_room": room or "unbekannt", "tts": tts_data,
                 "_emitted": True,
             }
 
@@ -5054,6 +5115,11 @@ class AssistantBrain(BrainCallbacksMixin):
         formatted = await self._safe_format(message, "high")
         await self._speak_and_emit(formatted, room=room)
         logger.info("Koch-Timer -> Meldung: %s", formatted)
+
+    async def _handle_workshop_timer(self, message: str):
+        """Callback fuer Workshop-Timer-Benachrichtigungen."""
+        await emit_proactive(message, event_type="workshop_timer", urgency="medium")
+        logger.info("Workshop-Timer: %s", message)
 
     async def _handle_time_alert(self, alert: dict):
         """Callback fuer TimeAwareness-Alerts — leitet an proaktive Meldung weiter."""

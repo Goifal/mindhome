@@ -1692,6 +1692,103 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    # --- Workshop-Modus: Reparatur & Werkstatt ---
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_repair",
+            "description": (
+                "Werkstatt-Assistent: Projekte verwalten, Diagnose, Code/3D/Schaltplan generieren, "
+                "Berechnungen, Simulation, 3D-Drucker, Roboterarm, Inventar, Journal. "
+                "Nutze dieses Tool wenn der User etwas reparieren, bauen, basteln, konstruieren, "
+                "programmieren, loeten, 3d-drucken, oder simulieren will."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "create_project", "list_projects", "get_project", "update_project",
+                            "complete_project", "add_note", "add_part", "diagnose",
+                            "generate_code", "generate_3d", "generate_schematic",
+                            "generate_website", "generate_bom", "generate_docs",
+                            "generate_tests", "calculate", "simulate", "troubleshoot",
+                            "suggest_improvements", "compare_components",
+                            "scan_object", "search_library",
+                            "add_workshop_item", "list_workshop",
+                            "set_budget", "add_expense",
+                            "printer_status", "start_print", "pause_print", "cancel_print",
+                            "arm_move", "arm_gripper", "arm_home", "arm_pick_tool",
+                            "start_timer", "pause_timer",
+                            "journal_add", "journal_get",
+                            "save_snippet", "get_snippet",
+                            "safety_checklist", "calibration_guide",
+                            "analyze_error_log", "evaluate_measurement",
+                            "lend_tool", "return_tool", "list_lent",
+                            "create_from_template", "get_stats",
+                            "switch_project", "export_project",
+                            "check_device", "link_device", "get_power",
+                        ],
+                        "description": "Die auszufuehrende Werkstatt-Aktion",
+                    },
+                    "project_id": {
+                        "type": "string",
+                        "description": "Projekt-ID (8-stellig, z.B. 'a1b2c3d4'). Wird bei den meisten Aktionen benoetigt.",
+                    },
+                    "title": {"type": "string", "description": "Projekt-Titel (fuer create_project)"},
+                    "description": {"type": "string", "description": "Beschreibung/Anforderung/Symptom"},
+                    "category": {
+                        "type": "string",
+                        "enum": ["reparatur", "bau", "maker", "erfindung", "renovierung"],
+                        "description": "Projekt-Kategorie",
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["niedrig", "normal", "hoch", "dringend"],
+                        "description": "Projekt-Prioritaet",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["erstellt", "diagnose", "teile_bestellt", "in_arbeit", "pausiert", "fertig"],
+                        "description": "Neuer Projekt-Status (fuer update_project)",
+                    },
+                    "language": {
+                        "type": "string",
+                        "enum": ["arduino", "python", "cpp", "html", "javascript", "yaml", "micropython"],
+                        "description": "Programmiersprache fuer Code-Generation",
+                    },
+                    "calc_type": {
+                        "type": "string",
+                        "enum": ["resistor_divider", "led_resistor", "wire_gauge", "ohms_law",
+                                 "3d_print_weight", "screw_torque", "convert", "power_supply"],
+                        "description": "Berechnungstyp",
+                    },
+                    "calc_params": {
+                        "type": "object",
+                        "description": "Parameter fuer die Berechnung (z.B. {\"v_in\": 12, \"v_out\": 3.3})",
+                    },
+                    "item": {"type": "string", "description": "Artikelname / Werkzeugname"},
+                    "quantity": {"type": "integer", "description": "Menge"},
+                    "cost": {"type": "number", "description": "Kosten in Euro"},
+                    "person": {"type": "string", "description": "Personenname (fuer Verleih, Skills)"},
+                    "text": {"type": "string", "description": "Freitext (Messwert, Log, Notiz, etc.)"},
+                    "filename": {"type": "string", "description": "Dateiname fuer File-Operationen"},
+                    "minutes": {"type": "integer", "description": "Timer-Dauer in Minuten"},
+                    "template": {"type": "string", "description": "Template-Name"},
+                    "entity_id": {"type": "string", "description": "HA Entity-ID"},
+                    "x": {"type": "number", "description": "Arm X-Position"},
+                    "y": {"type": "number", "description": "Arm Y-Position"},
+                    "z": {"type": "number", "description": "Arm Z-Position"},
+                    "budget": {"type": "number", "description": "Budget in Euro"},
+                    "component_a": {"type": "string", "description": "Erste Komponente (Vergleich)"},
+                    "component_b": {"type": "string", "description": "Zweite Komponente (Vergleich)"},
+                    "query": {"type": "string", "description": "Suchbegriff (Library/Projekte)"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]
 
 
@@ -1760,6 +1857,7 @@ class FunctionExecutor:
         "get_device_health", "get_learned_patterns", "describe_doorbell",
         "manage_protocol", "recommend_music", "manage_visitor",
         "set_vacuum", "get_vacuum",
+        "manage_repair",
     })
 
     # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
@@ -4630,6 +4728,256 @@ class FunctionExecutor:
                 else:
                     lines.append(f"- {item_data['name']}: noch {days} Tag(e)")
             return {"success": True, "message": "\n".join(lines)}
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    # ------------------------------------------------------------------
+    # Workshop-Modus: Reparatur & Werkstatt
+    # ------------------------------------------------------------------
+
+    async def _exec_manage_repair(self, args: dict) -> dict:
+        """Dispatch fuer alle Workshop-Aktionen."""
+        import assistant.main as main_module
+        brain = main_module.brain
+        planner = brain.repair_planner
+        generator = brain.workshop_generator
+
+        action = args["action"]
+        pid = args.get("project_id", "")
+
+        # --- Projekt-CRUD ---
+        if action == "create_project":
+            return await planner.create_project(
+                title=args.get("title", "Neues Projekt"),
+                description=args.get("description", ""),
+                category=args.get("category", "maker"),
+                priority=args.get("priority", "normal"))
+        elif action == "list_projects":
+            projects = await planner.list_projects(
+                status_filter=args.get("status"),
+                category_filter=args.get("category"))
+            return {"success": True, "projects": projects, "count": len(projects)}
+        elif action == "get_project":
+            p = await planner.get_project(pid)
+            return p if p else {"success": False, "message": "Projekt nicht gefunden"}
+        elif action == "update_project":
+            updates = {}
+            for k in ("status", "title", "category", "priority", "description"):
+                if k in args:
+                    updates[k] = args[k]
+            return await planner.update_project(pid, **updates)
+        elif action == "complete_project":
+            return await planner.complete_project(pid, notes=args.get("text", ""))
+        elif action == "add_note":
+            return await planner.add_project_note(pid, args.get("text", ""))
+        elif action == "add_part":
+            return await planner.add_part(
+                pid, args.get("item", ""), args.get("quantity", 1),
+                args.get("cost", 0))
+
+        # --- LLM-Features ---
+        elif action == "diagnose":
+            return {"success": True,
+                    "message": await planner.diagnose_problem(
+                        args.get("description", ""), args.get("person", ""))}
+        elif action == "simulate":
+            return {"success": True,
+                    "message": await planner.simulate_design(
+                        pid, args.get("description", ""))}
+        elif action == "troubleshoot":
+            return {"success": True,
+                    "message": await planner.troubleshoot(
+                        pid, args.get("description", ""))}
+        elif action == "suggest_improvements":
+            return {"success": True,
+                    "message": await planner.suggest_improvements(pid)}
+        elif action == "compare_components":
+            return {"success": True,
+                    "message": await planner.compare_components(
+                        args.get("component_a", ""), args.get("component_b", ""),
+                        use_case=args.get("description", ""))}
+        elif action == "safety_checklist":
+            return {"success": True,
+                    "message": await planner.generate_safety_checklist(pid)}
+        elif action == "calibration_guide":
+            return {"success": True,
+                    "message": await planner.calibration_guide(
+                        args.get("description", ""))}
+        elif action == "analyze_error_log":
+            return {"success": True,
+                    "message": await planner.analyze_error_log(
+                        pid, args.get("text", ""))}
+        elif action == "evaluate_measurement":
+            return {"success": True,
+                    "message": await planner.evaluate_measurement(
+                        pid, args.get("text", ""))}
+
+        # --- Generator ---
+        elif action == "generate_code":
+            if not generator:
+                return {"success": False,
+                        "message": "Workshop-Generator nicht verfuegbar"}
+            return await generator.generate_code(
+                pid, args.get("description", ""),
+                language=args.get("language", "arduino"))
+        elif action == "generate_3d":
+            if not generator:
+                return {"success": False,
+                        "message": "Workshop-Generator nicht verfuegbar"}
+            return await generator.generate_3d_model(
+                pid, args.get("description", ""))
+        elif action == "generate_schematic":
+            if not generator:
+                return {"success": False,
+                        "message": "Workshop-Generator nicht verfuegbar"}
+            return await generator.generate_schematic(
+                pid, args.get("description", ""))
+        elif action == "generate_website":
+            if not generator:
+                return {"success": False,
+                        "message": "Workshop-Generator nicht verfuegbar"}
+            return await generator.generate_website(
+                pid, args.get("description", ""))
+        elif action == "generate_bom":
+            if not generator:
+                return {"success": False,
+                        "message": "Workshop-Generator nicht verfuegbar"}
+            return await generator.generate_bom(pid)
+        elif action == "generate_docs":
+            if not generator:
+                return {"success": False,
+                        "message": "Workshop-Generator nicht verfuegbar"}
+            return await generator.generate_documentation(pid)
+        elif action == "generate_tests":
+            if not generator:
+                return {"success": False,
+                        "message": "Workshop-Generator nicht verfuegbar"}
+            return await generator.generate_tests(
+                pid, args.get("filename", ""))
+
+        # --- Berechnungen ---
+        elif action == "calculate":
+            if not generator:
+                return {"success": False,
+                        "message": "Workshop-Generator nicht verfuegbar"}
+            return generator.calculate(
+                args.get("calc_type", ""), **args.get("calc_params", {}))
+
+        # --- Scanner ---
+        elif action == "scan_object":
+            return await planner.scan_object(
+                description=args.get("description", ""))
+
+        # --- Library ---
+        elif action == "search_library":
+            if hasattr(brain, 'workshop_library') and brain.workshop_library:
+                results = await brain.workshop_library.search(
+                    args.get("query", ""))
+                return {"success": True, "results": results}
+            return {"success": False,
+                    "message": "Workshop-Library nicht verfuegbar"}
+
+        # --- Werkstatt-Inventar ---
+        elif action == "add_workshop_item":
+            return await planner.add_workshop_item(
+                args.get("item", ""), quantity=args.get("quantity", 1),
+                category=args.get("category", "werkzeug"))
+        elif action == "list_workshop":
+            items = await planner.list_workshop(
+                category=args.get("category"))
+            return {"success": True, "items": items}
+
+        # --- Budget ---
+        elif action == "set_budget":
+            return await planner.set_project_budget(
+                pid, args.get("budget", 0))
+        elif action == "add_expense":
+            return await planner.add_expense(
+                pid, args.get("item", ""), args.get("cost", 0))
+
+        # --- 3D-Drucker ---
+        elif action == "printer_status":
+            return await planner.get_printer_status()
+        elif action == "start_print":
+            return await planner.start_print(
+                project_id=pid, filename=args.get("filename", ""))
+        elif action == "pause_print":
+            return await planner.pause_print()
+        elif action == "cancel_print":
+            return await planner.cancel_print()
+
+        # --- Roboterarm ---
+        elif action == "arm_move":
+            return await planner.arm_move(
+                args.get("x", 0), args.get("y", 0), args.get("z", 0))
+        elif action == "arm_gripper":
+            return await planner.arm_gripper(
+                args.get("description", "open"))
+        elif action == "arm_home":
+            return await planner.arm_home()
+        elif action == "arm_pick_tool":
+            return await planner.arm_pick_tool(args.get("item", ""))
+
+        # --- Timer ---
+        elif action == "start_timer":
+            return await planner.start_timer(pid)
+        elif action == "pause_timer":
+            return await planner.pause_timer(pid)
+
+        # --- Journal ---
+        elif action == "journal_add":
+            return await planner.add_journal_entry(args.get("text", ""))
+        elif action == "journal_get":
+            return await planner.get_journal()
+
+        # --- Snippets ---
+        elif action == "save_snippet":
+            return await planner.save_snippet(
+                args.get("item", ""), args.get("text", ""),
+                language=args.get("language", ""))
+        elif action == "get_snippet":
+            return await planner.get_snippet(args.get("item", ""))
+
+        # --- Verleih ---
+        elif action == "lend_tool":
+            return await planner.lend_tool(
+                args.get("item", ""), args.get("person", ""))
+        elif action == "return_tool":
+            return await planner.return_tool(args.get("item", ""))
+        elif action == "list_lent":
+            return {"success": True,
+                    "lent_tools": await planner.list_lent_tools()}
+
+        # --- Templates ---
+        elif action == "create_from_template":
+            return await planner.create_from_template(
+                args.get("template", ""), title=args.get("title", ""))
+
+        # --- Stats ---
+        elif action == "get_stats":
+            return await planner.get_workshop_stats()
+
+        # --- Multi-Project ---
+        elif action == "switch_project":
+            return await planner.switch_project(pid)
+        elif action == "export_project":
+            if not generator:
+                return {"success": False,
+                        "message": "Workshop-Generator nicht verfuegbar"}
+            path = await generator.export_project(pid)
+            return ({"success": True, "zip_path": path} if path
+                    else {"success": False, "message": "Keine Dateien"})
+
+        # --- Devices ---
+        elif action == "check_device":
+            return await planner.check_device_online(
+                args.get("entity_id", ""))
+        elif action == "link_device":
+            return await planner.link_device_to_project(
+                pid, args.get("entity_id", ""))
+        elif action == "get_power":
+            return await planner.get_power_consumption(
+                args.get("entity_id", ""))
 
         return {"success": False, "message": f"Unbekannte Aktion: {action}"}
 
