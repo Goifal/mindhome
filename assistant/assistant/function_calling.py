@@ -4280,6 +4280,11 @@ class FunctionExecutor:
                             combined = f"{dev_name} {eid_name}"
                             if any(term in combined for term in _SPECIFIC_DEVICE_TERMS):
                                 penalty = 1000
+                        # Name-Match Bonus: Suchbegriff im Gerätenamen → bevorzugen
+                        # ("Licht Badezimmer" bei Suche "badezimmer" → Bonus)
+                        name_bonus = 0
+                        if search_norm in dev_name or search_norm in eid_name:
+                            name_bonus = -10
                         # Person-Kontext: Wenn der Personenname im Raum/Geraet vorkommt,
                         # Bonus geben (z.B. Manuel sagt "Buero" -> "Manuel Buero" bevorzugen)
                         person_bonus = 0
@@ -4287,7 +4292,7 @@ class FunctionExecutor:
                             combined_for_person = f"{dev_name} {dev_room}"
                             if person_norm in combined_for_person:
                                 person_bonus = -500
-                        score = name_len + penalty + person_bonus
+                        score = name_len + penalty + name_bonus + person_bonus
                         if score < best_score:
                             best = dev["ha_entity_id"]
                             best_score = score

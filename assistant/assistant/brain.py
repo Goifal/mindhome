@@ -1392,6 +1392,14 @@ class AssistantBrain(BrainCallbacksMixin):
         if device_cmd:
             func_name = device_cmd["function"]
             func_args = device_cmd["args"]
+            # Kein Raum erkannt → besetzten Raum als Fallback nutzen
+            if not func_args.get("room"):
+                try:
+                    occupied = await self._get_occupied_room()
+                    if occupied and occupied.lower() != "unbekannt":
+                        func_args["room"] = occupied
+                except Exception:
+                    pass
             logger.info("Geraete-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
             try:
                 # Security: Validation + Trust-Check
@@ -2517,6 +2525,21 @@ class AssistantBrain(BrainCallbacksMixin):
 
             llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
 
+            # Tool-Filter: set_vacuum/get_vacuum nur anbieten wenn User
+            # tatsaechlich ueber Staubsaugen spricht.  Verhindert dass das
+            # LLM bei unbekannten Befehlen auf set_vacuum defaulted.
+            _vacuum_kw = {"saug", "staubsaug", "vacuum", "saugen", "sauger",
+                          "roboter", "roborock", "dreame", "wischen", "mopp"}
+            _text_low = text.lower()
+            _has_vacuum = any(kw in _text_low for kw in _vacuum_kw)
+            if _has_vacuum:
+                _llm_tools = get_assistant_tools()
+            else:
+                _llm_tools = [
+                    t for t in get_assistant_tools()
+                    if t.get("function", {}).get("name") not in ("set_vacuum", "get_vacuum")
+                ]
+
             # Self-Improvement: Error Pattern Mitigation — Fallback frueher nutzen
             _error_mitigation = await self.error_patterns.get_mitigation(action_type="llm_chat", model=model)
             if _error_mitigation and _error_mitigation.get("type") == "use_fallback":
@@ -2530,7 +2553,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     self.ollama.chat(
                         messages=messages,
                         model=model,
-                        tools=get_assistant_tools(),
+                        tools=_llm_tools,
                         max_tokens=response_tokens,
                     ),
                     timeout=float(llm_timeout),
@@ -2551,7 +2574,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             self.ollama.chat(
                                 messages=messages,
                                 model=fallback_model,
-                                tools=get_assistant_tools(),
+                                tools=_llm_tools,
                                 max_tokens=response_tokens,
                             ),
                             timeout=float(llm_timeout * 0.66),
@@ -2646,7 +2669,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         self.ollama.chat(
                             messages=retry_messages,
                             model=model,
-                            tools=get_assistant_tools(),
+                            tools=_llm_tools,
                         ),
                         timeout=30.0,
                     )
@@ -6005,13 +6028,17 @@ class AssistantBrain(BrainCallbacksMixin):
                     "dreh", "drehe", "fahr", "fahre",
                     "oeffne", "schliess", "schliesse",
                     "bitte", "mal", "das", "die", "den",
-                    "dem", "der"}
+                    "dem", "der", "wieder", "nochmal",
+                    "jetzt", "sofort", "gleich", "einfach",
+                    "kurz", "etwas"}
             _ACTIONS = {"an", "aus", "ein", "hoch", "runter", "auf", "zu",
                         "heller", "dunkler", "dünkler", "stopp", "stop",
                         "halb", "bitte", "mal",
                         "wärmer", "waermer", "kälter", "kaelter",
                         "höher", "hoeher", "niedriger", "kühler",
-                        "kuehler", "grad", "prozent", "uhr"}
+                        "kuehler", "grad", "prozent", "uhr",
+                        "wieder", "nochmal", "jetzt", "sofort",
+                        "gleich", "etwas", "einfach", "kurz"}
             for _noun in ["licht", "lampe", "leuchte", "rollladen", "rolladen",
                           "rollo", "jalousie", "heizung", "thermostat",
                           "steckdose", "schalter"]:
@@ -6037,7 +6064,9 @@ class AssistantBrain(BrainCallbacksMixin):
                         if _room_words:
                             extracted_room = " ".join(_room_words)
                 break
-        effective_room = extracted_room or room
+        # "unbekannt" ist kein echter Raum — als leer behandeln
+        _room_fallback = room if room and room.lower() != "unbekannt" else ""
+        effective_room = extracted_room or _room_fallback
 
         # --- LICHT ---
         if any(n in t for n in ["licht", "lampe", "leuchte"]):
@@ -6073,6 +6102,18 @@ class AssistantBrain(BrainCallbacksMixin):
             if brightness is not None:
                 args["brightness"] = brightness
             return {"function": "set_light", "args": args}
+
+        # --- IMPLIZITES LICHT (kein Geraete-Nomen, aber eindeutiges Helligkeits-Keyword) ---
+        # "etwas dunkler", "heller bitte", "mach heller", "dünkler"
+        _brightness_words = word_set & {"heller", "dunkler", "dünkler", "duenkler",
+                                        "héller", "dimmen", "abdunkeln"}
+        if _brightness_words:
+            bw = next(iter(_brightness_words))
+            if bw in ("heller", "héller"):
+                state = "brighter"
+            else:
+                state = "dimmer"
+            return {"function": "set_light", "args": {"room": effective_room, "state": state}}
 
         # --- ROLLLADEN ---
         if any(n in t for n in ["rollladen", "rolladen", "rollo", "jalousie"]):
@@ -6231,7 +6272,9 @@ class AssistantBrain(BrainCallbacksMixin):
                      "lautsprecher", "maximum", "minimum", "prozent"}
             if candidate.lower() not in _SKIP:
                 extracted_room = candidate
-        effective_room = extracted_room or room
+        # "unbekannt" ist kein echter Raum — als leer behandeln
+        _room_fallback = room if room and room.lower() != "unbekannt" else ""
+        effective_room = extracted_room or _room_fallback
 
         # Action erkennen
         action = None
