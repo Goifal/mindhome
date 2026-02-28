@@ -254,13 +254,11 @@ class HealthMonitor:
                 if alert:
                     alerts.append(alert)
 
-            # Temperatur-Check (nur Indoor-Sensoren, keine Humidor-Temps)
-            elif device_class == "temperature":
-                if "humidor" in entity_id.lower() or "humidor" in friendly_name.lower():
-                    continue
-                alert = self._check_temperature(entity_id, friendly_name, value)
-                if alert:
-                    alerts.append(alert)
+            # Temperatur-Check deaktiviert — zu viele Fehlalarme bei normaler
+            # Raumtemperatur. Heizungs-/Klimasteuerung erfolgt ueber die
+            # Climate-Domain und Circadian Engine.
+            # elif device_class == "temperature":
+            #     ...
 
         return alerts
 
