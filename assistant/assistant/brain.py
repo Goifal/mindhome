@@ -1392,6 +1392,14 @@ class AssistantBrain(BrainCallbacksMixin):
         if device_cmd:
             func_name = device_cmd["function"]
             func_args = device_cmd["args"]
+            # Kein Raum erkannt → besetzten Raum als Fallback nutzen
+            if not func_args.get("room"):
+                try:
+                    occupied = await self._get_occupied_room()
+                    if occupied and occupied.lower() != "unbekannt":
+                        func_args["room"] = occupied
+                except Exception:
+                    pass
             logger.info("Geraete-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
             try:
                 # Security: Validation + Trust-Check
@@ -6037,7 +6045,9 @@ class AssistantBrain(BrainCallbacksMixin):
                         if _room_words:
                             extracted_room = " ".join(_room_words)
                 break
-        effective_room = extracted_room or room
+        # "unbekannt" ist kein echter Raum — als leer behandeln
+        _room_fallback = room if room and room.lower() != "unbekannt" else ""
+        effective_room = extracted_room or _room_fallback
 
         # --- LICHT ---
         if any(n in t for n in ["licht", "lampe", "leuchte"]):
@@ -6243,7 +6253,9 @@ class AssistantBrain(BrainCallbacksMixin):
                      "lautsprecher", "maximum", "minimum", "prozent"}
             if candidate.lower() not in _SKIP:
                 extracted_room = candidate
-        effective_room = extracted_room or room
+        # "unbekannt" ist kein echter Raum — als leer behandeln
+        _room_fallback = room if room and room.lower() != "unbekannt" else ""
+        effective_room = extracted_room or _room_fallback
 
         # Action erkennen
         action = None
