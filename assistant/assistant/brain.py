@@ -6681,6 +6681,26 @@ class AssistantBrain(BrainCallbacksMixin):
         title = get_person_title(self._current_person)
         hour = datetime.now().hour
 
+        # Wake-Word-Prefix entfernen: "Hey Jarvis weißt du wer ich bin?"
+        # → nur "weißt du wer ich bin" verarbeiten (statt als Begruessung zu antworten)
+        _wake_prefixes = ["hey jarvis", "hallo jarvis", "hi jarvis", "ok jarvis", "jarvis"]
+        _wake_matched = False
+        for _wp in _wake_prefixes:
+            if t.startswith(_wp):
+                rest = t[len(_wp):].strip().lstrip(",").strip()
+                if rest:
+                    t = rest  # Echte Frage nach dem Wake-Word → weiterverarbeiten
+                    _wake_matched = True
+                    break
+                # Nur Wake-Word ohne Frage → Begruessung
+                _greetings = [
+                    f"{title}. Was brauchst du?",
+                    f"Bin da, {title}.",
+                    f"Zu Diensten, {title}.",
+                    f"{title}.",
+                ]
+                return random.choice(_greetings)
+
         # Schneller Kontext (kein API-Call, nur gecachte Daten)
         pending_alerts = len(getattr(self.proactive, '_batch_queue', []))
 
@@ -6689,9 +6709,10 @@ class AssistantBrain(BrainCallbacksMixin):
             "wie geht es dir", "wie gehts dir", "wie geht's dir",
             "wie geht es ihnen", "geht es dir gut", "geht's dir gut",
             "alles gut bei dir", "alles klar bei dir",
-            "bist du gut drauf", "und dir",
+            "bist du gut drauf",
         ]
-        if any(kw in t for kw in _how_are_you):
+        # "und dir" nur als kurze Rueckfrage (max 4 Woerter), nicht in laengeren Saetzen
+        if any(kw in t for kw in _how_are_you) or (t.startswith("und dir") and len(t.split()) <= 4):
             # Bei aktiven Meldungen: ehrlich antworten
             if pending_alerts >= 3:
                 _responses = [
@@ -6781,18 +6802,29 @@ class AssistantBrain(BrainCallbacksMixin):
             ]
             return random.choice(_responses)
 
-        if "hallo jarvis" in t:
-            _responses = [
-                f"{title}.",
-                f"Zu Diensten, {title}.",
-            ]
-            return random.choice(_responses)
+        # "hallo jarvis" / "hey jarvis" werden bereits oben als Wake-Word-Prefix
+        # behandelt — kein separater Check mehr noetig.
 
-        if "hey jarvis" in t:
-            _responses = [
-                f"{title}. Was brauchst du?",
-                f"Bin da, {title}.",
-            ]
+        # --- Weisst du wer ICH bin? / Kennst du mich? ---
+        _know_me = [
+            "weisst du wer ich bin", "weißt du wer ich bin",
+            "kennst du mich", "wer bin ich",
+            "weisst du meinen namen", "weißt du meinen namen",
+            "wie heisse ich", "wie heiße ich",
+        ]
+        if any(kw in t for kw in _know_me):
+            person = self._current_person
+            if person:
+                _responses = [
+                    f"Natuerlich, {person}.",
+                    f"Selbstverstaendlich. Du bist {person}.",
+                    f"{person}. Dein Haus erkennt dich, {title}.",
+                ]
+            else:
+                _responses = [
+                    f"Ich konnte dich noch nicht zuordnen, {title}.",
+                    f"Aktuell leider nicht, {title}. Sprich mich nochmal mit Namen an.",
+                ]
             return random.choice(_responses)
 
         # --- Wer bist du? ---
@@ -6812,7 +6844,8 @@ class AssistantBrain(BrainCallbacksMixin):
         # --- Was machst du? / Was tust du? — zeige echten Status ---
         _what_doing = [
             "was machst du", "was tust du", "was machst du gerade",
-            "was tust du gerade", "langweilig", "bist du beschaeftigt",
+            "was tust du gerade", "bist du beschaeftigt",
+            "ist dir langweilig", "dir langweilig",
         ]
         if any(kw in t for kw in _what_doing):
             if pending_alerts > 0:
@@ -6832,9 +6865,10 @@ class AssistantBrain(BrainCallbacksMixin):
         _praise = [
             "gut gemacht", "super gemacht", "toll gemacht",
             "du bist toll", "du bist super", "du bist der beste",
-            "guter job", "klasse", "perfekt jarvis",
+            "guter job", "perfekt jarvis",
         ]
-        if any(kw in t for kw in _praise):
+        # "klasse" nur als kurzes Lob (1-2 Woerter), nicht in "welche Klasse..."
+        if any(kw in t for kw in _praise) or (t in ("klasse", "klasse jarvis")):
             _responses = [
                 f"Danke, {title}.",
                 f"Zu freundlich, {title}.",
@@ -6867,12 +6901,16 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # --- MCU-Jarvis: "Alles klar?" / "Gibt's was Neues?" / "Was hab ich verpasst?" ---
         _status_check = [
-            "alles klar", "gibts was neues", "gibt es was neues",
+            "gibts was neues", "gibt es was neues",
             "was hab ich verpasst", "was habe ich verpasst",
             "irgendwas passiert", "was ist los",
             "irgendwelche neuigkeiten", "was tut sich",
         ]
-        if any(kw in t for kw in _status_check):
+        # "alles klar" nur als kurze Frage (nicht "alles klar, mach das Licht an")
+        _is_status = any(kw in t for kw in _status_check) or (
+            "alles klar" in t and len(t.split()) <= 4
+        )
+        if _is_status:
             if pending_alerts > 0:
                 _responses = [
                     f"{pending_alerts} Sache{'n' if pending_alerts > 1 else ''} auf dem Tisch, {title}. Soll ich durchgehen?",
