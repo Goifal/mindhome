@@ -378,7 +378,7 @@ summarizer:
   max_tokens_weekly: 384
   max_tokens_monthly: 512
 context:
-  max_context_tokens: 8000
+  max_context_tokens: 12000
   recent_conversations: 5
   api_timeout: 10
   llm_timeout: 60
