@@ -6074,6 +6074,18 @@ class AssistantBrain(BrainCallbacksMixin):
                 args["brightness"] = brightness
             return {"function": "set_light", "args": args}
 
+        # --- IMPLIZITES LICHT (kein Geraete-Nomen, aber eindeutiges Helligkeits-Keyword) ---
+        # "etwas dunkler", "heller bitte", "mach heller", "dünkler"
+        _brightness_words = word_set & {"heller", "dunkler", "dünkler", "duenkler",
+                                        "héller", "dimmen", "abdunkeln"}
+        if _brightness_words:
+            bw = next(iter(_brightness_words))
+            if bw in ("heller", "héller"):
+                state = "brighter"
+            else:
+                state = "dimmer"
+            return {"function": "set_light", "args": {"room": effective_room, "state": state}}
+
         # --- ROLLLADEN ---
         if any(n in t for n in ["rollladen", "rolladen", "rollo", "jalousie"]):
             action = None
