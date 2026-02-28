@@ -4927,11 +4927,11 @@ function removeCoverProfile(idx) {
 // ── Licht-Tab (tab-lights) ─────────────────────────────────────
 function renderLights() {
   return sectionWrap('&#127968;', 'Raum-Licht-Zuordnung',
-    fInfo('Ordne jedem Raum seine Licht-Entities zu und konfiguriere Lampentyp und Helligkeit. Die Zuordnung wird in den Raum-Profilen gespeichert.') +
+    fInfo('Ordne jedem Raum seine Licht-Entities zu. Pro Lampe kannst du individuelle Helligkeit (Tag/Nacht) einstellen. Die Zuordnung wird in den Raum-Profilen gespeichert.') +
     '<div id="lightRoomContainer" style="padding:8px;color:var(--text-secondary);">Lade Raeume und Licht-Entities...</div>'
   ) +
   sectionWrap('&#9881;', 'Automatik-Regeln',
-    fInfo('Regeln fuer automatische Lichtsteuerung. Einmal konfigurieren — Jarvis erledigt den Rest.') +
+    fInfo('Regeln fuer automatische Lichtsteuerung. Einmal konfigurieren — Jarvis erledigt den Rest.<br>Die Bewegungsmelder aus dem Raeume-Tab werden fuer die Leer-Raum-Erkennung genutzt.') +
     fToggle('lighting.enabled', 'Lichtsteuerung aktiv') +
     fToggle('lighting.auto_on_dusk', 'Auto-An bei Daemmerung (wenn jemand zuhause)') +
     fToggle('lighting.auto_off_away', 'Auto-Aus bei Abwesenheit (alle weg)') +
@@ -4941,18 +4941,11 @@ function renderLights() {
     fRange('lighting.default_transition', 'Standard-Uebergang (Sekunden)', 0, 10, 1, {0:'Sofort',1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s'})
   ) +
   sectionWrap('&#127749;', 'Zirkadiane Beleuchtung',
-    fInfo('Passt Helligkeit (und bei tunable_white auch Farbtemperatur) automatisch an den Tagesverlauf an. dim2warm-Lampen regeln die Farbtemperatur ueber die Helligkeit in der Hardware — hier wird nur die Helligkeitskurve gesteuert.<br><br><strong>Modi:</strong><br>• <strong>MindHome:</strong> Jarvis steuert die Helligkeitskurve komplett<br>• <strong>Hybrid HCL:</strong> MDT AKD HCL laeuft als Basis, Jarvis ueberschreibt bei Events') +
+    fInfo('Passt Helligkeit (und bei tunable_white auch Farbtemperatur) automatisch an den Tagesverlauf an. dim2warm-Lampen regeln die Farbtemperatur ueber die Helligkeit in der Hardware — hier wird nur die Helligkeitskurve gesteuert.<br><br><strong>Modi:</strong><br>&bull; <strong>MindHome:</strong> Jarvis steuert die Helligkeitskurve komplett<br>&bull; <strong>Hybrid HCL:</strong> MDT AKD HCL laeuft als Basis, Jarvis ueberschreibt bei Events') +
     fToggle('lighting.circadian.enabled', 'Zirkadiane Beleuchtung aktiv') +
     fSelect('lighting.circadian.mode', 'Modus', [{v:'mindhome',l:'MindHome (Jarvis steuert)'},{v:'hybrid_hcl',l:'Hybrid HCL (MDT AKD Basis)'}]) +
     fRange('lighting.circadian.transition_seconds', 'Uebergangszeit (Sekunden)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
-    '<div class="info-box" style="margin-top:12px;font-size:11px;line-height:1.6;font-family:var(--mono);">' +
-    '<strong>Standard-Helligkeitskurve:</strong><br>' +
-    '05:00 → 10% &nbsp;|&nbsp; 06:00 → 40% &nbsp;|&nbsp; 07:00 → 70% &nbsp;|&nbsp; 08:00 → 90%<br>' +
-    '09:00 → 100% &nbsp;|&nbsp; 16:00 → 100% &nbsp;|&nbsp; 18:00 → 80%<br>' +
-    '19:00 → 60% &nbsp;|&nbsp; 20:00 → 40% &nbsp;|&nbsp; 21:00 → 25% &nbsp;|&nbsp; 22:00 → 10%<br>' +
-    '<br><strong>Farbtemperatur-Kurve (nur tunable_white):</strong><br>' +
-    '05:00 → 2200K &nbsp;|&nbsp; 07:00 → 3500K &nbsp;|&nbsp; 09:00 → 5000K &nbsp;|&nbsp; 12:00 → 5500K<br>' +
-    '16:00 → 5000K &nbsp;|&nbsp; 18:00 → 3500K &nbsp;|&nbsp; 20:00 → 2700K &nbsp;|&nbsp; 22:00 → 2200K</div>'
+    '<div id="circadianCurveEditor"></div>'
   ) +
   sectionWrap('&#127916;', 'Szenen-Uebergaenge',
     fInfo('Uebergangszeiten wenn Jarvis Licht-Szenen aktiviert. Laengere Zeiten = sanftere Uebergaenge.') +
@@ -4962,6 +4955,84 @@ function renderLights() {
     fRange('narration.scene_transitions.aufwachen', 'Aufwachen (Sek)', 1, 20, 1, {1:'1s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s',20:'20s'}) +
     fRange('narration.scene_transitions.gemuetlich', 'Gemuetlich (Sek)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',4:'4s',5:'5s',7:'7s',10:'10s',15:'15s'})
   );
+}
+
+// ── Zirkadiane Kurven Editor ──────────────────────────────────
+function renderCircadianCurveEditor() {
+  const container = document.getElementById('circadianCurveEditor');
+  if (!container) return;
+  const bCurve = getPath(S, 'lighting.circadian.brightness_curve') || [];
+  const ctCurve = getPath(S, 'lighting.circadian.ct_curve') || [];
+
+  let html = '<div style="margin-top:12px;">';
+
+  // Brightness Curve
+  html += '<div style="margin-bottom:16px;">';
+  html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Helligkeitskurve (% ueber den Tag)</div>';
+  html += '<div id="circBriCurve">';
+  html += _renderCurveRows(bCurve, 'pct', '%', 0, 100, 'bri');
+  html += '</div>';
+  html += '<button type="button" onclick="addCircadianPoint(\'bri\')" style="margin-top:4px;font-size:11px;padding:3px 10px;background:var(--bg-hover);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;">+ Zeitpunkt</button>';
+  html += '</div>';
+
+  // Color Temperature Curve
+  html += '<div>';
+  html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Farbtemperatur-Kurve (Kelvin, nur tunable_white)</div>';
+  html += '<div id="circCtCurve">';
+  html += _renderCurveRows(ctCurve, 'kelvin', 'K', 1800, 6500, 'ct');
+  html += '</div>';
+  html += '<button type="button" onclick="addCircadianPoint(\'ct\')" style="margin-top:4px;font-size:11px;padding:3px 10px;background:var(--bg-hover);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;">+ Zeitpunkt</button>';
+  html += '</div>';
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function _renderCurveRows(curve, valueKey, unit, min, max, curveType) {
+  if (!curve || curve.length === 0) return '<div style="color:var(--text-muted);font-size:11px;padding:4px;">Keine Kurven-Punkte definiert.</div>';
+  let html = '';
+  for (let i = 0; i < curve.length; i++) {
+    const entry = curve[i];
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">';
+    html += '<input type="time" value="' + esc(entry.time || '12:00') + '" onchange="updateCircadianPoint(\'' + curveType + '\',' + i + ',\'time\',this.value)" style="width:90px;font-size:11px;padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;">';
+    html += '<input type="number" value="' + (entry[valueKey] || 0) + '" min="' + min + '" max="' + max + '" step="' + (valueKey === 'kelvin' ? 100 : 5) + '" onchange="updateCircadianPoint(\'' + curveType + '\',' + i + ',\'' + valueKey + '\',parseInt(this.value))" style="width:70px;font-size:11px;padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;">';
+    html += '<span style="font-size:10px;color:var(--text-muted);min-width:16px;">' + unit + '</span>';
+    html += '<button type="button" onclick="removeCircadianPoint(\'' + curveType + '\',' + i + ')" style="font-size:10px;padding:1px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+    html += '</div>';
+  }
+  return html;
+}
+
+function updateCircadianPoint(curveType, index, field, value) {
+  const path = curveType === 'bri' ? 'lighting.circadian.brightness_curve' : 'lighting.circadian.ct_curve';
+  const curve = getPath(S, path) || [];
+  if (curve[index]) {
+    curve[index][field] = value;
+    setPath(S, path, curve);
+    scheduleAutoSave();
+  }
+}
+
+function addCircadianPoint(curveType) {
+  const path = curveType === 'bri' ? 'lighting.circadian.brightness_curve' : 'lighting.circadian.ct_curve';
+  const curve = getPath(S, path) || [];
+  if (curveType === 'bri') {
+    curve.push({time: '12:00', pct: 50});
+  } else {
+    curve.push({time: '12:00', kelvin: 4000});
+  }
+  setPath(S, path, curve);
+  scheduleAutoSave();
+  renderCircadianCurveEditor();
+}
+
+function removeCircadianPoint(curveType, index) {
+  const path = curveType === 'bri' ? 'lighting.circadian.brightness_curve' : 'lighting.circadian.ct_curve';
+  const curve = getPath(S, path) || [];
+  curve.splice(index, 1);
+  setPath(S, path, curve);
+  scheduleAutoSave();
+  renderCircadianCurveEditor();
 }
 
 async function loadLightEntities() {
@@ -4974,6 +5045,8 @@ async function loadLightEntities() {
   } catch (e) {
     container.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler beim Laden: ' + esc(e.message) + '</div>';
   }
+  // Render circadian curve editor after settings are loaded
+  renderCircadianCurveEditor();
 }
 
 function renderLightRoomAssignment(haLights, container) {
@@ -4994,6 +5067,8 @@ function renderLightRoomAssignment(haLights, container) {
     {v:'dim2warm', l:'dim2warm (Farbtemp ueber Helligkeit)'},
     {v:'tunable_white', l:'tunable_white (Helligkeit + Farbtemp)'}
   ];
+  // Motion sensors from settings for cross-reference
+  const motionSensors = getPath(S, 'multi_room.room_motion_sensors') || {};
 
   // Group rooms by floor
   const floors = {};
@@ -5011,15 +5086,28 @@ function renderLightRoomAssignment(haLights, container) {
     for (const name of floorRooms) {
       const r = rooms[name];
       const assigned = r.light_entities || [];
+      const lightBri = r.light_brightness || {};
       const icon = r.type==='bedroom' ? '&#128716;' : r.type==='kitchen' ? '&#127859;' :
                    r.type==='office' ? '&#128187;' : r.type==='bathroom' ? '&#128704;' :
                    r.type==='hallway' ? '&#128682;' : r.type==='living' ? '&#128715;' :
                    r.type==='dressing' ? '&#128087;' : '&#127968;';
+      // Find motion sensor for this room
+      const roomMotion = motionSensors[name] || '';
       html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
       html += '<span style="font-size:13px;font-weight:600;">' + icon + ' ' + esc(name) + '</span>';
       html += '<span style="font-size:10px;color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:3px;">' + (typeLabels[r.type] || r.type) + '</span>';
       html += '</div>';
+      // Motion sensor info badge
+      if (roomMotion) {
+        html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:8px;padding:4px 8px;background:var(--bg-primary);border-radius:4px;font-size:10px;color:var(--text-secondary);">';
+        html += '<span style="color:var(--success);">&#9679;</span> Praesenzmelder: <span style="font-family:var(--mono);color:var(--accent);">' + esc(roomMotion) + '</span>';
+        html += '</div>';
+      } else {
+        html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:8px;padding:4px 8px;background:var(--bg-primary);border-radius:4px;font-size:10px;color:var(--text-muted);">';
+        html += '<span style="opacity:0.4;">&#9679;</span> Kein Praesenzmelder zugeordnet <span style="opacity:0.6;">(konfigurierbar unter Raeume &rarr; Bewegungsmelder)</span>';
+        html += '</div>';
+      }
       // Light Entity Picker (multi-select checklist)
       html += '<div class="form-group"><label>Licht-Entities</label>';
       html += '<div style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:4px;background:var(--bg-primary);">';
@@ -5044,11 +5132,30 @@ function renderLightRoomAssignment(haLights, container) {
         html += '<option value="' + o.v + '"' + ((r.light_type||'standard')===o.v ? ' selected' : '') + '>' + o.l + '</option>';
       }
       html += '</select></div>';
-      // Brightness (Day/Night) — compact row
-      html += '<div style="display:flex;gap:12px;flex-wrap:wrap;">';
-      html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Helligkeit Tag (%)</label><input type="number" value="' + (r.default_brightness||70) + '" min="0" max="100" step="5" onchange="setRoomLightVal(\'' + esc(name) + '\',\'default_brightness\',parseInt(this.value))"></div>';
-      html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Helligkeit Nacht (%)</label><input type="number" value="' + (r.night_brightness||20) + '" min="0" max="100" step="5" onchange="setRoomLightVal(\'' + esc(name) + '\',\'night_brightness\',parseInt(this.value))"></div>';
-      html += '</div>';
+      // Per-light brightness (only for assigned lights)
+      if (assigned.length > 0) {
+        html += '<div style="margin-top:4px;">';
+        html += '<div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">Helligkeit pro Lampe</div>';
+        for (const entityId of assigned) {
+          const lightInfo = haLights.find(l => l.entity_id === entityId);
+          const displayName = lightInfo ? lightInfo.name : entityId.replace('light.','');
+          const perLight = lightBri[entityId] || {};
+          const dayVal = perLight.day != null ? perLight.day : (r.default_brightness || 70);
+          const nightVal = perLight.night != null ? perLight.night : (r.night_brightness || 20);
+          html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;padding:4px 6px;background:var(--bg-primary);border-radius:4px;">';
+          html += '<span style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(entityId) + '">' + esc(displayName) + '</span>';
+          html += '<label style="font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:3px;">Tag <input type="number" value="' + dayVal + '" min="0" max="100" step="5" style="width:48px;font-size:10px;padding:1px 3px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:3px;" onchange="setLightBrightness(\'' + esc(name) + '\',\'' + esc(entityId) + '\',\'day\',parseInt(this.value))">%</label>';
+          html += '<label style="font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:3px;">Nacht <input type="number" value="' + nightVal + '" min="0" max="100" step="5" style="width:48px;font-size:10px;padding:1px 3px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:3px;" onchange="setLightBrightness(\'' + esc(name) + '\',\'' + esc(entityId) + '\',\'night\',parseInt(this.value))">%</label>';
+          html += '</div>';
+        }
+        html += '</div>';
+      } else {
+        // Fallback: room-level brightness when no lights assigned
+        html += '<div style="display:flex;gap:12px;flex-wrap:wrap;">';
+        html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Helligkeit Tag (%)</label><input type="number" value="' + (r.default_brightness||70) + '" min="0" max="100" step="5" onchange="setRoomLightVal(\'' + esc(name) + '\',\'default_brightness\',parseInt(this.value))"></div>';
+        html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Helligkeit Nacht (%)</label><input type="number" value="' + (r.night_brightness||20) + '" min="0" max="100" step="5" onchange="setRoomLightVal(\'' + esc(name) + '\',\'night_brightness\',parseInt(this.value))"></div>';
+        html += '</div>';
+      }
       html += '</div>';
     }
     html += '</div>';
@@ -5080,6 +5187,15 @@ function setRoomLightType(room, lightType) {
 function setRoomLightVal(room, key, val) {
   if (!RP.rooms || !RP.rooms[room]) return;
   RP.rooms[room][key] = val;
+  _rpDirty = true;
+  scheduleAutoSave();
+}
+
+function setLightBrightness(room, entityId, timeOfDay, val) {
+  if (!RP.rooms || !RP.rooms[room]) return;
+  if (!RP.rooms[room].light_brightness) RP.rooms[room].light_brightness = {};
+  if (!RP.rooms[room].light_brightness[entityId]) RP.rooms[room].light_brightness[entityId] = {};
+  RP.rooms[room].light_brightness[entityId][timeOfDay] = val;
   _rpDirty = true;
   scheduleAutoSave();
 }
