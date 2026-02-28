@@ -304,6 +304,21 @@ class HomeAssistantClient:
             logger.warning("MindHome PUT %s fehlgeschlagen: %s", path, e)
             return None
 
+    async def mindhome_delete(self, path: str) -> Any:
+        """DELETE auf die MindHome Add-on API."""
+        session = await self._get_session()
+        try:
+            async with session.delete(
+                f"{self.mindhome_url}{path}",
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                logger.warning("MindHome DELETE %s -> %d", path, resp.status)
+                return None
+        except Exception as e:
+            logger.warning("MindHome DELETE %s fehlgeschlagen: %s", path, e)
+            return None
+
     # ----- Interne HTTP Methoden mit Retry -----
 
     async def _get_ha(self, path: str) -> Any:

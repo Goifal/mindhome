@@ -615,7 +615,7 @@ function renderCurrentTab() {
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-lights': c.innerHTML = renderLights(); loadLightEntities(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
-      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); break;
+      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); loadEmergencyProtocols(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
@@ -4656,9 +4656,52 @@ async function refreshErrBadge() {
 let _sysStatus = null;
 // ---- Tab: Geräte-Überwachung ----
 function renderCovers() {
-  return sectionWrap('&#129695;', 'Rolllaeden & Garagentore',
+  return sectionWrap('&#128225;', 'Live-Status & Steuerung',
+    fInfo('Aktuelle Positionen aller Rolllaeden. Ziehe den Schieberegler oder nutze die Buttons fuer direkte Steuerung. 0% = geschlossen, 100% = offen.') +
+    '<div style="display:flex;gap:6px;margin-bottom:10px;">' +
+      '<button class="btn btn-sm" onclick="coverLiveAll(100)" style="font-size:11px;">&#9650; Alle auf</button>' +
+      '<button class="btn btn-sm" onclick="coverLiveAll(0)" style="font-size:11px;">&#9660; Alle zu</button>' +
+      '<button class="btn btn-sm" onclick="coverLiveAll(50)" style="font-size:11px;">&#9644; Alle 50%</button>' +
+      '<button class="btn btn-sm" onclick="loadCoverLive()" style="font-size:11px;">&#128260; Aktualisieren</button>' +
+    '</div>' +
+    '<div id="coverLiveContainer" style="color:var(--text-secondary);padding:8px;">Lade Live-Positionen...</div>'
+  ) +
+  sectionWrap('&#129695;', 'Rolllaeden & Garagentore',
     fInfo('Hier legst du fest, welche Geraete Rolllaeden sind und welche Garagentore. <strong>Garagentore werden NIEMALS automatisch von Jarvis gesteuert.</strong>') +
     '<div id="coverListContainer" style="color:var(--text-secondary);padding:12px;">Lade Cover-Geraete...</div>'
+  ) +
+  // ── Cover-Gruppen ──────────────────────────────────────────
+  sectionWrap('&#128194;', 'Cover-Gruppen',
+    fInfo('Fasse mehrere Rolllaeden zu Gruppen zusammen (z.B. "EG Sued", "Schlafzimmer"). Gruppen koennen dann gemeinsam gesteuert oder in Zeitplaenen verwendet werden.') +
+    '<div id="coverGroupsContainer" style="color:var(--text-secondary);padding:8px;">Lade Gruppen...</div>' +
+    '<button class="btn btn-sm" onclick="addCoverGroup()" style="margin-top:8px;">+ Gruppe hinzufuegen</button>'
+  ) +
+  // ── Cover-Szenen ──────────────────────────────────────────
+  sectionWrap('&#127916;', 'Cover-Szenen',
+    fInfo('Vordefinierte Positionen fuer mehrere Rolllaeden gleichzeitig. Z.B. "Lueften" = 50%, "Kino" = 20%, "Nacht" = 0%. Szenen koennen per Sprache oder Zeitplan aktiviert werden.') +
+    '<div id="coverScenesContainer" style="color:var(--text-secondary);padding:8px;">Lade Szenen...</div>' +
+    '<button class="btn btn-sm" onclick="addCoverScene()" style="margin-top:8px;">+ Szene hinzufuegen</button>'
+  ) +
+  // ── Zeitplaene ────────────────────────────────────────────
+  sectionWrap('&#128339;', 'Zeitplaene',
+    fInfo('Automatische Rollladensteuerung zu festen Uhrzeiten. Pro Zeitplan: Uhrzeit, Wochentage, Ziel-Position und optional ein einzelnes Cover oder eine Gruppe.') +
+    '<div id="coverSchedulesContainer" style="color:var(--text-secondary);padding:8px;">Lade Zeitplaene...</div>' +
+    '<button class="btn btn-sm" onclick="addCoverSchedule()" style="margin-top:8px;">+ Zeitplan hinzufuegen</button>'
+  ) +
+  // ── Sensor-Zuordnungen ────────────────────────────────────
+  sectionWrap('&#127777;', 'Sensor-Zuordnungen',
+    fInfo('Ordne Sensoren der Cover-Automatik zu. Wind-, Regen-, Sonnen- und Temperatur-Sensoren werden fuer automatische Entscheidungen (Sturm, Hitze, Frost) genutzt.<br><br><strong>Rollen:</strong> sun_sensor = Helligkeit, temp_outdoor = Aussentemperatur, temp_indoor = Raumtemperatur, wind_sensor = Wind, rain_sensor = Regen') +
+    '<div id="coverSensorsContainer" style="color:var(--text-secondary);padding:8px;">Lade Sensor-Zuordnungen...</div>' +
+    '<button class="btn btn-sm" onclick="addCoverSensor()" style="margin-top:8px;">+ Sensor zuordnen</button>'
+  ) +
+  // ── Oeffnungs-Sensoren (Fenster/Tueren/Tore) ─────────────
+  sectionWrap('&#128682;', 'Oeffnungs-Sensoren (Fenster / Tueren / Tore)',
+    fInfo('Ordne jedem Kontakt-Sensor einen Typ zu: <strong>Fenster</strong> (Kippen/Offen), <strong>Tuer</strong> oder <strong>Tor</strong> (Gartentor, Garagentor).<br><br>Nur Fenster und Tueren in <strong>beheizten</strong> Raeumen loesen Heizungswarnungen aus. Tore und unbeheizte Bereiche werden ignoriert.<br><br>Sensoren ohne Eintrag hier werden automatisch als "Fenster / beheizt" behandelt (Fallback).') +
+    '<div id="openingSensorsContainer" style="color:var(--text-secondary);padding:8px;">Lade Oeffnungs-Sensoren...</div>' +
+    '<div style="display:flex;gap:6px;margin-top:8px;">' +
+      '<button class="btn btn-sm" onclick="discoverOpeningSensors()" style="font-size:11px;">&#128269; Auto-Erkennung aus HA</button>' +
+      '<button class="btn btn-sm" onclick="addOpeningSensor()" style="font-size:11px;">+ Manuell hinzufuegen</button>' +
+    '</div>'
   ) +
   // ── Cover-Automatik (settings.yaml) ─────────────────────
   sectionWrap('&#9728;', 'Cover-Automatik',
@@ -4922,6 +4965,646 @@ function removeCoverProfile(idx) {
   scheduleAutoSave();
   const container = document.getElementById('coverProfilesContainer');
   if (container) renderCoverProfileList(RP.cover_profiles.covers, container);
+}
+
+// ── Cover Live-Status & Steuerung ──────────────────────────────────
+let _coverLiveData = [];
+
+async function loadCoverLive() {
+  const container = document.getElementById('coverLiveContainer');
+  if (!container) return;
+  try {
+    const d = await api('/api/ui/covers/live');
+    _coverLiveData = (d.covers || []).filter(c => c.cover_type !== 'garage_door' && c.enabled !== false);
+    renderCoverLive(container);
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderCoverLive(container) {
+  if (_coverLiveData.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Keine aktiven Cover gefunden.</div>';
+    return;
+  }
+  let html = '';
+  for (const c of _coverLiveData) {
+    const pos = c.current_position != null ? c.current_position : '?';
+    const posNum = typeof pos === 'number' ? pos : 50;
+    const stateColor = c.state === 'open' ? 'var(--success)' : c.state === 'closed' ? 'var(--danger)' : 'var(--text-muted)';
+    const stateLabel = c.state === 'open' ? 'Offen' : c.state === 'closed' ? 'Zu' : c.state === 'opening' ? 'Oeffnet...' : c.state === 'closing' ? 'Schliesst...' : c.state;
+    const typeIcon = c.cover_type === 'awning' ? '&#127958;' : c.cover_type === 'blind' ? '&#129695;' : c.cover_type === 'roof_window' ? '&#127968;' : '&#129695;';
+    html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:6px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);">';
+    // Info
+    html += '<div style="flex:1;min-width:0;">';
+    html += '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + typeIcon + ' ' + esc(c.name) + '</div>';
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-top:2px;">';
+    html += '<span style="font-size:10px;color:' + stateColor + ';font-weight:600;">' + stateLabel + '</span>';
+    html += '<span style="font-size:10px;color:var(--text-muted);font-family:var(--mono);">' + pos + '%</span>';
+    html += '</div></div>';
+    // Position Slider
+    html += '<div style="flex:2;display:flex;align-items:center;gap:6px;">';
+    html += '<span style="font-size:10px;color:var(--text-muted);">0</span>';
+    html += '<input type="range" min="0" max="100" step="5" value="' + posNum + '" style="flex:1;accent-color:var(--accent);" onchange="setCoverLivePosition(\'' + esc(c.entity_id) + '\',parseInt(this.value))">';
+    html += '<span style="font-size:10px;color:var(--text-muted);">100</span>';
+    html += '</div>';
+    // Buttons
+    html += '<div style="display:flex;gap:4px;flex-shrink:0;">';
+    html += '<button class="btn btn-sm" onclick="coverLiveOpen(\'' + esc(c.entity_id) + '\')" title="Oeffnen" style="font-size:12px;padding:4px 8px;">&#9650;</button>';
+    html += '<button class="btn btn-sm" onclick="coverLiveStop(\'' + esc(c.entity_id) + '\')" title="Stopp" style="font-size:12px;padding:4px 8px;">&#9632;</button>';
+    html += '<button class="btn btn-sm" onclick="coverLiveClose(\'' + esc(c.entity_id) + '\')" title="Schliessen" style="font-size:12px;padding:4px 8px;">&#9660;</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+async function setCoverLivePosition(entityId, position) {
+  try {
+    await api('/api/ui/covers/' + entityId + '/position', 'POST', {position});
+    toast('Position ' + position + '% gesetzt');
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function coverLiveOpen(entityId) {
+  try {
+    await api('/api/ui/covers/' + entityId + '/open', 'POST');
+    toast('Oeffne...');
+    setTimeout(loadCoverLive, 2000);
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function coverLiveClose(entityId) {
+  try {
+    await api('/api/ui/covers/' + entityId + '/close', 'POST');
+    toast('Schliesse...');
+    setTimeout(loadCoverLive, 2000);
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function coverLiveStop(entityId) {
+  try {
+    await api('/api/ui/covers/' + entityId + '/stop', 'POST');
+    toast('Gestoppt');
+    setTimeout(loadCoverLive, 1000);
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function coverLiveAll(position) {
+  const promises = _coverLiveData.map(c =>
+    api('/api/ui/covers/' + c.entity_id + '/position', 'POST', {position}).catch(() => null)
+  );
+  await Promise.all(promises);
+  toast('Alle Cover auf ' + position + '%');
+  setTimeout(loadCoverLive, 3000);
+}
+
+// ── Cover-Gruppen CRUD ─────────────────────────────────────────────
+let _coverGroups = [];
+
+async function loadCoverGroups() {
+  const container = document.getElementById('coverGroupsContainer');
+  if (!container) return;
+  try {
+    const result = await api('/api/ui/covers/groups');
+    _coverGroups = Array.isArray(result) ? result : [];
+    renderCoverGroups(container);
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Gruppen nicht verfuegbar (Addon nicht erreichbar).</div>';
+  }
+}
+
+function renderCoverGroups(container) {
+  if (_coverGroups.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Gruppen konfiguriert.</div>';
+    return;
+  }
+  let html = '';
+  for (const g of _coverGroups) {
+    const entityList = (g.entity_ids || []).join(', ');
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+    html += '<span style="font-size:13px;font-weight:600;">&#128194; ' + esc(g.name) + '</span>';
+    html += '<div style="display:flex;gap:4px;">';
+    html += '<button class="btn btn-sm" onclick="controlCoverGroup(' + g.id + ',100)" title="Alle oeffnen" style="font-size:11px;">&#9650;</button>';
+    html += '<button class="btn btn-sm" onclick="controlCoverGroup(' + g.id + ',0)" title="Alle schliessen" style="font-size:11px;">&#9660;</button>';
+    html += '<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);font-size:11px;" onclick="deleteCoverGroup(' + g.id + ')">Entfernen</button>';
+    html += '</div></div>';
+    // Name Edit
+    html += '<div class="form-group"><label>Name</label><input type="text" value="' + esc(g.name) + '" onchange="updateCoverGroup(' + g.id + ',{name:this.value})" style="font-size:12px;"></div>';
+    // Entity IDs
+    html += '<div class="form-group"><label>Cover-Entities (kommagetrennt)</label>';
+    html += '<input type="text" value="' + esc(entityList) + '" placeholder="cover.wohnzimmer, cover.kueche" onchange="updateCoverGroup(' + g.id + ',{entity_ids:this.value.split(\',\').map(s=>s.trim()).filter(Boolean)})" style="font-size:11px;font-family:var(--mono);">';
+    html += '</div>';
+    // Position Slider
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-top:4px;">';
+    html += '<label style="font-size:11px;color:var(--text-secondary);min-width:60px;">Position:</label>';
+    html += '<input type="range" min="0" max="100" step="5" value="50" style="flex:1;accent-color:var(--accent);" id="grpSlider_' + g.id + '">';
+    html += '<button class="btn btn-sm" onclick="controlCoverGroup(' + g.id + ',parseInt(document.getElementById(\'grpSlider_' + g.id + '\').value))" style="font-size:11px;">Setzen</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+async function addCoverGroup() {
+  try {
+    const result = await api('/api/ui/covers/groups', 'POST', {name: 'Neue Gruppe', entity_ids: []});
+    toast('Gruppe erstellt');
+    loadCoverGroups();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function updateCoverGroup(groupId, data) {
+  try {
+    await api('/api/ui/covers/groups/' + groupId, 'PUT', data);
+    toast('Gruppe aktualisiert');
+    loadCoverGroups();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function deleteCoverGroup(groupId) {
+  if (!confirm('Gruppe wirklich loeschen?')) return;
+  try {
+    await api('/api/ui/covers/groups/' + groupId, 'DELETE');
+    toast('Gruppe geloescht');
+    loadCoverGroups();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function controlCoverGroup(groupId, position) {
+  try {
+    await api('/api/ui/covers/groups/' + groupId + '/control', 'POST', {position});
+    toast('Gruppe auf ' + position + '%');
+    setTimeout(loadCoverLive, 2000);
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+// ── Cover-Szenen CRUD ──────────────────────────────────────────────
+let _coverScenes = [];
+
+async function loadCoverScenes() {
+  const container = document.getElementById('coverScenesContainer');
+  if (!container) return;
+  try {
+    const result = await api('/api/ui/covers/scenes');
+    _coverScenes = Array.isArray(result) ? result : [];
+    renderCoverScenes(container);
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Szenen nicht verfuegbar (Addon nicht erreichbar).</div>';
+  }
+}
+
+function renderCoverScenes(container) {
+  if (_coverScenes.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Szenen konfiguriert.</div>';
+    return;
+  }
+  let html = '';
+  for (const s of _coverScenes) {
+    const positions = s.positions || {};
+    const posStr = Object.entries(positions).map(([eid, pos]) => {
+      if (typeof pos === 'object') return eid.replace('cover.','') + ':' + (pos.position != null ? pos.position + '%' : '') + (pos.tilt != null ? ' T' + pos.tilt : '');
+      return eid.replace('cover.','') + ':' + pos + '%';
+    }).join(', ');
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+    html += '<span style="font-size:13px;font-weight:600;">&#127916; ' + esc(s.name) + '</span>';
+    html += '<div style="display:flex;gap:4px;">';
+    html += '<button class="btn btn-sm" onclick="activateCoverScene(' + s.id + ')" style="font-size:11px;background:var(--accent);color:var(--bg-primary);border-color:var(--accent);">&#9654; Aktivieren</button>';
+    html += '<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);font-size:11px;" onclick="deleteCoverScene(' + s.id + ')">Entfernen</button>';
+    html += '</div></div>';
+    // Name Edit
+    html += '<div class="form-group"><label>Name</label><input type="text" value="' + esc(s.name) + '" onchange="updateCoverScene(' + s.id + ',{name:this.value})" style="font-size:12px;"></div>';
+    // Positions display
+    html += '<div class="form-group"><label>Positionen (entity:position)</label>';
+    html += '<div style="font-size:11px;color:var(--text-secondary);font-family:var(--mono);padding:6px 8px;background:var(--bg-primary);border-radius:4px;border:1px solid var(--border);min-height:24px;">';
+    html += posStr || '<em style="color:var(--text-muted);">Keine Positionen definiert</em>';
+    html += '</div></div>';
+    // Add position editor
+    html += '<div id="sceneEditor_' + s.id + '">';
+    html += _renderScenePositionEditor(s);
+    html += '</div>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+function _renderScenePositionEditor(scene) {
+  const positions = scene.positions || {};
+  const entries = Object.entries(positions);
+  let html = '<div style="margin-top:4px;">';
+  for (let i = 0; i < entries.length; i++) {
+    const [eid, pos] = entries[i];
+    const posVal = typeof pos === 'object' ? (pos.position || 0) : pos;
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">';
+    html += '<input type="text" value="' + esc(eid) + '" placeholder="cover.entity" style="flex:2;font-size:11px;font-family:var(--mono);padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;" data-scene-id="' + scene.id + '" data-pos-idx="' + i + '" data-field="entity">';
+    html += '<input type="number" value="' + posVal + '" min="0" max="100" step="5" style="width:60px;font-size:11px;padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;" data-scene-id="' + scene.id + '" data-pos-idx="' + i + '" data-field="position">';
+    html += '<span style="font-size:10px;color:var(--text-muted);">%</span>';
+    html += '<button type="button" onclick="removeScenePosition(' + scene.id + ',\'' + esc(eid) + '\')" style="font-size:10px;padding:1px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+    html += '</div>';
+  }
+  html += '<button type="button" onclick="addScenePosition(' + scene.id + ')" style="margin-top:4px;font-size:11px;padding:3px 10px;background:var(--bg-hover);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;">+ Position</button>';
+  html += '</div>';
+  return html;
+}
+
+async function addCoverScene() {
+  try {
+    await api('/api/ui/covers/scenes', 'POST', {name: 'Neue Szene', positions: {}});
+    toast('Szene erstellt');
+    loadCoverScenes();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function updateCoverScene(sceneId, data) {
+  try {
+    await api('/api/ui/covers/scenes/' + sceneId, 'PUT', data);
+    toast('Szene aktualisiert');
+    loadCoverScenes();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function deleteCoverScene(sceneId) {
+  if (!confirm('Szene wirklich loeschen?')) return;
+  try {
+    await api('/api/ui/covers/scenes/' + sceneId, 'DELETE');
+    toast('Szene geloescht');
+    loadCoverScenes();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function activateCoverScene(sceneId) {
+  try {
+    await api('/api/ui/covers/scenes/' + sceneId + '/activate', 'POST');
+    toast('Szene aktiviert');
+    setTimeout(loadCoverLive, 2000);
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+function addScenePosition(sceneId) {
+  const scene = _coverScenes.find(s => s.id === sceneId);
+  if (!scene) return;
+  const positions = scene.positions || {};
+  positions['cover.'] = 100;
+  updateCoverScene(sceneId, {positions});
+}
+
+function removeScenePosition(sceneId, entityId) {
+  const scene = _coverScenes.find(s => s.id === sceneId);
+  if (!scene) return;
+  const positions = {...(scene.positions || {})};
+  delete positions[entityId];
+  updateCoverScene(sceneId, {positions});
+}
+
+// ── Cover-Zeitplaene CRUD ──────────────────────────────────────────
+let _coverSchedules = [];
+
+async function loadCoverSchedules() {
+  const container = document.getElementById('coverSchedulesContainer');
+  if (!container) return;
+  try {
+    const result = await api('/api/ui/covers/schedules');
+    _coverSchedules = Array.isArray(result) ? result : [];
+    renderCoverSchedules(container);
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Zeitplaene nicht verfuegbar (Addon nicht erreichbar).</div>';
+  }
+}
+
+function renderCoverSchedules(container) {
+  if (_coverSchedules.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Zeitplaene konfiguriert.</div>';
+    return;
+  }
+  const dayLabels = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+  let html = '';
+  for (const s of _coverSchedules) {
+    const days = s.days || [0,1,2,3,4,5,6];
+    const target = s.entity_id ? s.entity_id : s.group_id ? 'Gruppe #' + s.group_id : 'Alle Cover';
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+    html += '<span style="font-size:13px;font-weight:600;">&#128339; ' + esc(s.time_str || '??:??') + ' &rarr; ' + s.position + '%</span>';
+    html += '<div style="display:flex;gap:4px;">';
+    html += '<label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;"><input type="checkbox"' + (s.is_active !== false ? ' checked' : '') + ' onchange="updateCoverSchedule(' + s.id + ',{is_active:this.checked})" style="accent-color:var(--accent);"> Aktiv</label>';
+    html += '<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);font-size:11px;" onclick="deleteCoverSchedule(' + s.id + ')">Entfernen</button>';
+    html += '</div></div>';
+    // Time
+    html += '<div style="display:flex;gap:12px;flex-wrap:wrap;">';
+    html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Uhrzeit</label><input type="time" value="' + esc(s.time_str || '08:00') + '" onchange="updateCoverSchedule(' + s.id + ',{time_str:this.value})" style="font-size:12px;"></div>';
+    html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Position (%)</label><input type="number" value="' + (s.position ?? 100) + '" min="0" max="100" step="5" onchange="updateCoverSchedule(' + s.id + ',{position:parseInt(this.value)})" style="font-size:12px;"></div>';
+    html += '</div>';
+    // Target
+    html += '<div class="form-group"><label>Ziel (Cover-Entity oder leer fuer alle)</label>';
+    html += '<input type="text" value="' + esc(s.entity_id || '') + '" placeholder="cover.wohnzimmer (oder leer)" onchange="updateCoverSchedule(' + s.id + ',{entity_id:this.value||null})" style="font-size:11px;font-family:var(--mono);">';
+    html += '</div>';
+    // Days
+    html += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">';
+    for (let d = 0; d < 7; d++) {
+      const active = days.includes(d);
+      const bgColor = active ? 'var(--accent)' : 'var(--bg-primary)';
+      const txtColor = active ? 'var(--bg-primary)' : 'var(--text-muted)';
+      html += '<button type="button" onclick="toggleScheduleDay(' + s.id + ',' + d + ')" style="width:32px;height:28px;font-size:11px;font-weight:600;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:' + bgColor + ';color:' + txtColor + ';">' + dayLabels[d] + '</button>';
+    }
+    html += '</div>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+async function addCoverSchedule() {
+  try {
+    await api('/api/ui/covers/schedules', 'POST', {
+      time_str: '08:00', position: 100, days: [0,1,2,3,4,5,6]
+    });
+    toast('Zeitplan erstellt');
+    loadCoverSchedules();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function updateCoverSchedule(scheduleId, data) {
+  try {
+    await api('/api/ui/covers/schedules/' + scheduleId, 'PUT', data);
+    toast('Zeitplan aktualisiert');
+    loadCoverSchedules();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function deleteCoverSchedule(scheduleId) {
+  if (!confirm('Zeitplan wirklich loeschen?')) return;
+  try {
+    await api('/api/ui/covers/schedules/' + scheduleId, 'DELETE');
+    toast('Zeitplan geloescht');
+    loadCoverSchedules();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+function toggleScheduleDay(scheduleId, day) {
+  const schedule = _coverSchedules.find(s => s.id === scheduleId);
+  if (!schedule) return;
+  const days = [...(schedule.days || [0,1,2,3,4,5,6])];
+  const idx = days.indexOf(day);
+  if (idx >= 0) days.splice(idx, 1); else days.push(day);
+  days.sort();
+  updateCoverSchedule(scheduleId, {days});
+}
+
+// ── Cover-Sensor-Zuordnungen ───────────────────────────────────────
+let _coverSensors = [];
+
+async function loadCoverSensors() {
+  const container = document.getElementById('coverSensorsContainer');
+  if (!container) return;
+  try {
+    const result = await api('/api/ui/covers/sensors');
+    _coverSensors = Array.isArray(result) ? result : [];
+    renderCoverSensors(container);
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Sensor-Zuordnungen nicht verfuegbar (Addon nicht erreichbar).</div>';
+  }
+}
+
+function renderCoverSensors(container) {
+  const roleLabels = {
+    sun_sensor: '&#9728; Sonnensensor',
+    temp_outdoor: '&#127777; Aussentemperatur',
+    temp_indoor: '&#127777; Innentemperatur',
+    wind_sensor: '&#127744; Windsensor',
+    rain_sensor: '&#127783; Regensensor',
+    cover: '&#129695; Cover',
+  };
+  const roleOptions = ['sun_sensor','temp_outdoor','temp_indoor','wind_sensor','rain_sensor'];
+
+  if (_coverSensors.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Sensoren zugeordnet. Fuege Sensoren hinzu damit die Cover-Automatik Wind, Regen und Temperatur erkennt.</div>';
+    return;
+  }
+
+  let html = '';
+  // Group by role
+  const byRole = {};
+  for (const s of _coverSensors) {
+    if (!byRole[s.role]) byRole[s.role] = [];
+    byRole[s.role].push(s);
+  }
+  for (const role of roleOptions) {
+    const items = byRole[role] || [];
+    if (items.length === 0) continue;
+    html += '<div style="margin-bottom:10px;">';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px;">' + (roleLabels[role] || role) + '</div>';
+    for (const s of items) {
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:3px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;">';
+      html += '<span style="flex:1;font-size:12px;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(s.entity_id) + '</span>';
+      html += '<span style="font-size:10px;color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:3px;">' + esc(s.role) + '</span>';
+      html += '<button type="button" onclick="deleteCoverSensor(' + s.id + ')" style="font-size:10px;padding:1px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  // Ungruppierte (cover role etc)
+  const other = _coverSensors.filter(s => !roleOptions.includes(s.role));
+  if (other.length > 0) {
+    html += '<div style="margin-bottom:10px;">';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;">Sonstige</div>';
+    for (const s of other) {
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:3px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;">';
+      html += '<span style="flex:1;font-size:12px;font-family:var(--mono);">' + esc(s.entity_id) + '</span>';
+      html += '<span style="font-size:10px;color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:3px;">' + esc(s.role) + '</span>';
+      html += '<button type="button" onclick="deleteCoverSensor(' + s.id + ')" style="font-size:10px;padding:1px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+async function addCoverSensor() {
+  const roleOptions = ['sun_sensor','temp_outdoor','temp_indoor','wind_sensor','rain_sensor'];
+  const roleLabels = {sun_sensor:'Sonnensensor',temp_outdoor:'Aussentemperatur',temp_indoor:'Innentemperatur',wind_sensor:'Windsensor',rain_sensor:'Regensensor'};
+  // Build a small inline form
+  const container = document.getElementById('coverSensorsContainer');
+  if (!container) return;
+  // Check if form already exists
+  if (document.getElementById('addSensorForm')) return;
+  const form = document.createElement('div');
+  form.id = 'addSensorForm';
+  form.style.cssText = 'margin-top:10px;padding:12px;border:2px solid var(--accent);border-radius:8px;background:var(--bg-card);';
+  let formHtml = '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Neuen Sensor zuordnen</div>';
+  formHtml += '<div class="form-group"><label>Entity-ID</label>';
+  formHtml += '<input type="text" id="newSensorEntity" placeholder="sensor.wind_speed oder binary_sensor.rain" style="font-size:11px;font-family:var(--mono);">';
+  formHtml += '</div>';
+  formHtml += '<div class="form-group"><label>Rolle</label><select id="newSensorRole" style="font-size:12px;">';
+  for (const r of roleOptions) formHtml += '<option value="' + r + '">' + (roleLabels[r]||r) + '</option>';
+  formHtml += '</select></div>';
+  formHtml += '<div style="display:flex;gap:6px;">';
+  formHtml += '<button class="btn btn-sm" onclick="submitCoverSensor()" style="font-size:11px;background:var(--accent);color:var(--bg-primary);border-color:var(--accent);">Hinzufuegen</button>';
+  formHtml += '<button class="btn btn-sm" onclick="document.getElementById(\'addSensorForm\').remove()" style="font-size:11px;">Abbrechen</button>';
+  formHtml += '</div>';
+  form.innerHTML = formHtml;
+  container.parentNode.insertBefore(form, container.nextSibling.nextSibling);
+}
+
+async function submitCoverSensor() {
+  const entityId = document.getElementById('newSensorEntity').value.trim();
+  const role = document.getElementById('newSensorRole').value;
+  if (!entityId) { toast('Entity-ID eingeben', 'error'); return; }
+  try {
+    await api('/api/ui/covers/sensors', 'POST', {entity_id: entityId, role: role});
+    toast('Sensor zugeordnet');
+    const form = document.getElementById('addSensorForm');
+    if (form) form.remove();
+    loadCoverSensors();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function deleteCoverSensor(assignmentId) {
+  try {
+    await api('/api/ui/covers/sensors/' + assignmentId, 'DELETE');
+    toast('Sensor-Zuordnung entfernt');
+    loadCoverSensors();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+// ── Oeffnungs-Sensoren (Fenster/Tueren/Tore) ──────────────────────
+let _openingSensors = {};
+
+async function loadOpeningSensors() {
+  const container = document.getElementById('openingSensorsContainer');
+  if (!container) return;
+  try {
+    const d = await api('/api/ui/opening-sensors');
+    _openingSensors = d.entities || {};
+    renderOpeningSensors(container);
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Fehler beim Laden: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderOpeningSensors(container) {
+  const entries = Object.entries(_openingSensors);
+  if (entries.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Oeffnungs-Sensoren konfiguriert. Nutze "Auto-Erkennung" um Sensoren aus Home Assistant zu importieren.</div>';
+    return;
+  }
+  const typeLabels = {window: '&#129695; Fenster', door: '&#128682; Tuer', gate: '&#9961; Tor'};
+  const typeColors = {window: 'var(--accent)', door: 'var(--success)', gate: 'var(--warning, #f59e0b)'};
+  const rooms = RP.rooms ? Object.keys(RP.rooms) : [];
+
+  let html = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Gesamt: ' + entries.length + ' Sensoren | ' +
+    entries.filter(([,c])=>c.type==='window').length + ' Fenster, ' +
+    entries.filter(([,c])=>c.type==='door').length + ' Tueren, ' +
+    entries.filter(([,c])=>c.type==='gate').length + ' Tore</div>';
+
+  for (const [entityId, cfg] of entries) {
+    const t = cfg.type || 'window';
+    const borderColor = cfg.heated === false ? 'var(--text-muted)' : typeColors[t] || 'var(--border)';
+    const opacity = cfg.heated === false ? '0.7' : '1';
+    html += '<div style="display:grid;grid-template-columns:1fr 100px 120px 70px 32px;gap:8px;align-items:center;padding:8px 10px;margin-bottom:4px;border-radius:6px;background:var(--bg-card);border:1px solid ' + borderColor + ';opacity:' + opacity + ';">';
+    // Entity ID
+    html += '<div style="font-size:11px;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(entityId) + '">' + esc(entityId) + '</div>';
+    // Typ
+    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'type\',this.value)" style="font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:2px 4px;">';
+    html += '<option value="window"' + (t==='window'?' selected':'') + '>Fenster</option>';
+    html += '<option value="door"' + (t==='door'?' selected':'') + '>Tuer</option>';
+    html += '<option value="gate"' + (t==='gate'?' selected':'') + '>Tor</option>';
+    html += '</select>';
+    // Raum
+    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'room\',this.value||null)" style="font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:2px 4px;">';
+    html += '<option value="">— kein Raum —</option>';
+    for (const r of rooms) html += '<option value="' + esc(r) + '"' + (cfg.room===r?' selected':'') + '>' + esc(r) + '</option>';
+    html += '</select>';
+    // Beheizt
+    html += '<label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer;" title="Beheizt = Heizungswarnung wenn offen">';
+    html += '<input type="checkbox"' + (cfg.heated !== false ? ' checked' : '') + ' onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'heated\',this.checked)" style="accent-color:var(--accent);">';
+    html += '<span>Beheizt</span></label>';
+    // Remove
+    html += '<button type="button" onclick="removeOpeningSensor(\'' + esc(entityId) + '\')" style="font-size:12px;padding:2px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+function updateOpeningSensor(entityId, field, value) {
+  if (!_openingSensors[entityId]) _openingSensors[entityId] = {type: 'window', heated: true};
+  _openingSensors[entityId][field] = value;
+  saveOpeningSensors();
+  const container = document.getElementById('openingSensorsContainer');
+  if (container) renderOpeningSensors(container);
+}
+
+function removeOpeningSensor(entityId) {
+  delete _openingSensors[entityId];
+  saveOpeningSensors();
+  const container = document.getElementById('openingSensorsContainer');
+  if (container) renderOpeningSensors(container);
+}
+
+async function saveOpeningSensors() {
+  try {
+    await api('/api/ui/opening-sensors', 'PUT', {entities: _openingSensors});
+  } catch (e) { toast('Fehler beim Speichern: ' + e.message, 'error'); }
+}
+
+function addOpeningSensor() {
+  const container = document.getElementById('openingSensorsContainer');
+  if (!container || document.getElementById('addOpeningForm')) return;
+  const form = document.createElement('div');
+  form.id = 'addOpeningForm';
+  form.style.cssText = 'margin-top:10px;padding:12px;border:2px solid var(--accent);border-radius:8px;background:var(--bg-card);';
+  let h = '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Neuen Sensor hinzufuegen</div>';
+  h += '<div class="form-group"><label>Entity-ID</label><input type="text" id="newOpeningEntity" placeholder="binary_sensor.fenster_wohnzimmer" style="font-size:11px;font-family:var(--mono);"></div>';
+  h += '<div style="display:flex;gap:8px;">';
+  h += '<div class="form-group" style="flex:1;"><label>Typ</label><select id="newOpeningType" style="font-size:11px;"><option value="window">Fenster</option><option value="door">Tuer</option><option value="gate">Tor</option></select></div>';
+  h += '<div class="form-group" style="flex:1;"><label>Beheizt</label><select id="newOpeningHeated" style="font-size:11px;"><option value="true">Ja</option><option value="false">Nein</option></select></div>';
+  h += '</div>';
+  h += '<div style="display:flex;gap:6px;">';
+  h += '<button class="btn btn-sm" onclick="submitOpeningSensor()" style="font-size:11px;background:var(--accent);color:var(--bg-primary);border-color:var(--accent);">Hinzufuegen</button>';
+  h += '<button class="btn btn-sm" onclick="document.getElementById(\'addOpeningForm\').remove()" style="font-size:11px;">Abbrechen</button>';
+  h += '</div>';
+  form.innerHTML = h;
+  container.parentNode.appendChild(form);
+}
+
+function submitOpeningSensor() {
+  const eid = document.getElementById('newOpeningEntity').value.trim();
+  if (!eid) { toast('Entity-ID eingeben', 'error'); return; }
+  const type = document.getElementById('newOpeningType').value;
+  const heated = document.getElementById('newOpeningHeated').value === 'true';
+  _openingSensors[eid] = {type, heated, room: null};
+  saveOpeningSensors();
+  const form = document.getElementById('addOpeningForm');
+  if (form) form.remove();
+  const container = document.getElementById('openingSensorsContainer');
+  if (container) renderOpeningSensors(container);
+  toast('Sensor hinzugefuegt');
+}
+
+async function discoverOpeningSensors() {
+  try {
+    const d = await api('/api/ui/opening-sensors/discover');
+    const sensors = d.sensors || [];
+    if (sensors.length === 0) { toast('Keine passenden Sensoren in HA gefunden'); return; }
+    let added = 0;
+    for (const s of sensors) {
+      if (!_openingSensors[s.entity_id]) {
+        _openingSensors[s.entity_id] = {
+          type: s.suggested_type || 'window',
+          heated: s.suggested_type !== 'gate',
+          room: null,
+        };
+        added++;
+      }
+    }
+    if (added > 0) {
+      await saveOpeningSensors();
+      toast(added + ' neue Sensoren importiert');
+    } else {
+      toast('Alle Sensoren bereits konfiguriert');
+    }
+    const container = document.getElementById('openingSensorsContainer');
+    if (container) renderOpeningSensors(container);
+  } catch (e) { toast('Fehler bei Auto-Erkennung: ' + e.message, 'error'); }
 }
 
 // ── Licht-Tab (tab-lights) ─────────────────────────────────────

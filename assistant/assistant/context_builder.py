@@ -562,15 +562,16 @@ class ContextBuilder:
                     )
                     alerts.append(f"ALARM: {name}")
 
-            # Fenster/Tueren offen — MindHome-Domain + device_class pruefen
-            # statt keyword-matching (verhindert false positives wie Steckdosen)
-            from .function_calling import is_window_or_door
+            # Fenster/Tueren offen — kategorisiert (Fenster/Tuer vs Tor)
+            from .function_calling import is_window_or_door, get_opening_type
             if is_window_or_door(entity_id, state):
                 if s == "on":
                     name = state.get("attributes", {}).get(
                         "friendly_name", entity_id
                     )
-                    alerts.append(f"Offen: {name}")
+                    opening_type = get_opening_type(entity_id, state)
+                    label = "Tor offen" if opening_type == "gate" else "Offen"
+                    alerts.append(f"{label}: {name}")
 
         return alerts
 

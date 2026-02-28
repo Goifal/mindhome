@@ -245,11 +245,13 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
                     except (ValueError, TypeError):
                         pass
 
-            # Offene Fenster/Tueren zaehlen — MindHome-Domain + device_class
-            from .function_calling import is_window_or_door
+            # Offene Fenster/Tueren zaehlen — kategorisiert
+            from .function_calling import is_window_or_door, get_opening_type
             if state_val == "on" and is_window_or_door(eid, s):
                 name = attrs.get("friendly_name", eid)
-                open_items.append(name)
+                opening_type = get_opening_type(eid, s)
+                if opening_type != "gate":
+                    open_items.append(name)
 
         # Boot-Nachricht zusammenbauen
         title = get_person_title()
@@ -3084,6 +3086,374 @@ async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
         return {"success": True, **payload}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Cover Live-Status & Control (Proxy zum Addon) ──────────────────
+
+@app.get("/api/ui/covers/live")
+async def ui_get_covers_live(token: str = ""):
+    """Cover-Entities mit Live-Position aus Home Assistant."""
+    _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        configs = load_cover_configs()
+        covers = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if not eid.startswith("cover."):
+                continue
+            attrs = s.get("attributes", {})
+            conf = configs.get(eid, {})
+            covers.append({
+                "entity_id": eid,
+                "name": attrs.get("friendly_name", eid),
+                "state": s.get("state", "unknown"),
+                "current_position": attrs.get("current_position"),
+                "current_tilt_position": attrs.get("current_tilt_position"),
+                "device_class": attrs.get("device_class", ""),
+                "cover_type": conf.get("cover_type", attrs.get("device_class", "shutter") or "shutter"),
+                "enabled": conf.get("enabled", True),
+            })
+        covers.sort(key=lambda c: c["name"])
+        return {"covers": covers}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/{entity_id:path}/position")
+async def ui_set_cover_position(entity_id: str, request: Request, token: str = ""):
+    """Cover-Position direkt setzen (0-100)."""
+    _check_token(token)
+    data = await request.json()
+    position = data.get("position")
+    if position is None:
+        raise HTTPException(status_code=400, detail="position required")
+    try:
+        await brain.ha.call_service("cover", "set_cover_position", {
+            "entity_id": entity_id, "position": int(position),
+        })
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/{entity_id:path}/open")
+async def ui_open_cover(entity_id: str, token: str = ""):
+    """Cover vollstaendig oeffnen."""
+    _check_token(token)
+    try:
+        await brain.ha.call_service("cover", "open_cover", {"entity_id": entity_id})
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/{entity_id:path}/close")
+async def ui_close_cover(entity_id: str, token: str = ""):
+    """Cover vollstaendig schliessen."""
+    _check_token(token)
+    try:
+        await brain.ha.call_service("cover", "close_cover", {"entity_id": entity_id})
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/{entity_id:path}/stop")
+async def ui_stop_cover(entity_id: str, token: str = ""):
+    """Cover stoppen."""
+    _check_token(token)
+    try:
+        await brain.ha.call_service("cover", "stop_cover", {"entity_id": entity_id})
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Cover Groups (Proxy zum Addon) ─────────────────────────────────
+
+@app.get("/api/ui/covers/groups")
+async def ui_get_cover_groups(token: str = ""):
+    """Cover-Gruppen vom Addon laden."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_get("/api/covers/groups")
+        return result or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/groups")
+async def ui_create_cover_group(request: Request, token: str = ""):
+    """Neue Cover-Gruppe erstellen."""
+    _check_token(token)
+    data = await request.json()
+    try:
+        result = await brain.ha.mindhome_post("/api/covers/groups", data)
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/covers/groups/{group_id}")
+async def ui_update_cover_group(group_id: int, request: Request, token: str = ""):
+    """Cover-Gruppe aktualisieren."""
+    _check_token(token)
+    data = await request.json()
+    try:
+        result = await brain.ha.mindhome_put(f"/api/covers/groups/{group_id}", data)
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.delete("/api/ui/covers/groups/{group_id}")
+async def ui_delete_cover_group(group_id: int, token: str = ""):
+    """Cover-Gruppe loeschen."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_delete(f"/api/covers/groups/{group_id}")
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/groups/{group_id}/control")
+async def ui_control_cover_group(group_id: int, request: Request, token: str = ""):
+    """Alle Cover einer Gruppe auf Position setzen."""
+    _check_token(token)
+    data = await request.json()
+    try:
+        result = await brain.ha.mindhome_post(f"/api/covers/groups/{group_id}/control", data)
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Cover Scenes (Proxy zum Addon) ─────────────────────────────────
+
+@app.get("/api/ui/covers/scenes")
+async def ui_get_cover_scenes(token: str = ""):
+    """Cover-Szenen vom Addon laden."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_get("/api/covers/scenes")
+        return result or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/scenes")
+async def ui_create_cover_scene(request: Request, token: str = ""):
+    """Neue Cover-Szene erstellen."""
+    _check_token(token)
+    data = await request.json()
+    try:
+        result = await brain.ha.mindhome_post("/api/covers/scenes", data)
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/covers/scenes/{scene_id}")
+async def ui_update_cover_scene(scene_id: int, request: Request, token: str = ""):
+    """Cover-Szene aktualisieren."""
+    _check_token(token)
+    data = await request.json()
+    try:
+        result = await brain.ha.mindhome_put(f"/api/covers/scenes/{scene_id}", data)
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.delete("/api/ui/covers/scenes/{scene_id}")
+async def ui_delete_cover_scene(scene_id: int, token: str = ""):
+    """Cover-Szene loeschen."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_delete(f"/api/covers/scenes/{scene_id}")
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/scenes/{scene_id}/activate")
+async def ui_activate_cover_scene(scene_id: int, token: str = ""):
+    """Cover-Szene aktivieren."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_post(f"/api/covers/scenes/{scene_id}/activate", {})
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Cover Schedules (Proxy zum Addon) ──────────────────────────────
+
+@app.get("/api/ui/covers/schedules")
+async def ui_get_cover_schedules(token: str = ""):
+    """Cover-Zeitplaene vom Addon laden."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_get("/api/covers/schedules")
+        return result or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/schedules")
+async def ui_create_cover_schedule(request: Request, token: str = ""):
+    """Neuen Cover-Zeitplan erstellen."""
+    _check_token(token)
+    data = await request.json()
+    try:
+        result = await brain.ha.mindhome_post("/api/covers/schedules", data)
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/covers/schedules/{schedule_id}")
+async def ui_update_cover_schedule(schedule_id: int, request: Request, token: str = ""):
+    """Cover-Zeitplan aktualisieren."""
+    _check_token(token)
+    data = await request.json()
+    try:
+        result = await brain.ha.mindhome_put(f"/api/covers/schedules/{schedule_id}", data)
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.delete("/api/ui/covers/schedules/{schedule_id}")
+async def ui_delete_cover_schedule(schedule_id: int, token: str = ""):
+    """Cover-Zeitplan loeschen."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_delete(f"/api/covers/schedules/{schedule_id}")
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Cover Sensor Assignments (Proxy zum Addon) ────────────────────
+
+@app.get("/api/ui/covers/sensors")
+async def ui_get_cover_sensors(token: str = ""):
+    """Sensor-Zuordnungen fuer Cover-Automatik vom Addon laden."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_get("/api/covers/entities")
+        return result or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/sensors")
+async def ui_add_cover_sensor(request: Request, token: str = ""):
+    """Sensor-Zuordnung fuer Cover-Automatik hinzufuegen."""
+    _check_token(token)
+    data = await request.json()
+    try:
+        result = await brain.ha.mindhome_post("/api/covers/entities", data)
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.delete("/api/ui/covers/sensors/{assignment_id}")
+async def ui_delete_cover_sensor(assignment_id: int, token: str = ""):
+    """Sensor-Zuordnung entfernen."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_delete(f"/api/covers/entities/{assignment_id}")
+        return result or {"error": "Addon nicht erreichbar"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/covers/discover")
+async def ui_discover_covers(token: str = ""):
+    """Verfuegbare Cover- und Sensor-Entities aus Home Assistant entdecken."""
+    _check_token(token)
+    try:
+        result = await brain.ha.mindhome_get("/api/covers/discover")
+        return result or {"covers": [], "sensors": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Opening Sensors (Fenster/Tueren/Tore Zuordnung) ───────────────
+
+@app.get("/api/ui/opening-sensors")
+async def ui_get_opening_sensors(token: str = ""):
+    """Oeffnungs-Sensoren Konfiguration lesen (settings.yaml)."""
+    _check_token(token)
+    from .config import yaml_config
+    entities = yaml_config.get("opening_sensors", {}).get("entities", {}) or {}
+    return {"entities": entities}
+
+
+@app.put("/api/ui/opening-sensors")
+async def ui_set_opening_sensors(request: Request, token: str = ""):
+    """Oeffnungs-Sensoren Konfiguration speichern (settings.yaml)."""
+    _check_token(token)
+    data = await request.json()
+    entities = data.get("entities", {})
+    # Validierung
+    valid_types = {"window", "door", "gate"}
+    for eid, cfg in entities.items():
+        if cfg.get("type") and cfg["type"] not in valid_types:
+            raise HTTPException(status_code=400, detail=f"Ungueltiger Typ fuer {eid}: {cfg['type']}")
+    # In settings.yaml schreiben (gleicher Pfad wie ui_update_settings)
+    settings_path = Path(__file__).parent.parent / "config" / "settings.yaml"
+    yaml_config.setdefault("opening_sensors", {})["entities"] = entities
+    try:
+        with open(settings_path, "w") as f:
+            yaml.dump(yaml_config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        return {"success": True, "count": len(entities)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/opening-sensors/discover")
+async def ui_discover_opening_sensors(token: str = ""):
+    """Verfuegbare Oeffnungs-Sensoren aus Home Assistant entdecken."""
+    _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        sensors = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if not eid.startswith("binary_sensor."):
+                continue
+            attrs = s.get("attributes", {})
+            device_class = attrs.get("device_class", "")
+            if device_class not in ("window", "door", "garage_door", "opening"):
+                # Keyword-Fallback
+                lower_id = eid.lower()
+                if not any(kw in lower_id for kw in ("window", "door", "fenster", "tuer", "tor", "gate")):
+                    continue
+            friendly = attrs.get("friendly_name", eid)
+            # Typ vorschlagen
+            if device_class == "garage_door" or any(kw in eid.lower() for kw in ("tor", "gate", "garage")):
+                suggested_type = "gate"
+            elif device_class == "door" or "tuer" in eid.lower() or "door" in eid.lower():
+                suggested_type = "door"
+            else:
+                suggested_type = "window"
+            sensors.append({
+                "entity_id": eid,
+                "name": friendly,
+                "state": s.get("state", "unknown"),
+                "device_class": device_class,
+                "suggested_type": suggested_type,
+            })
+        sensors.sort(key=lambda x: x["name"])
+        return {"sensors": sensors}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 

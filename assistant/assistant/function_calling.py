@@ -177,6 +177,77 @@ def is_window_or_door(entity_id: str, state: dict) -> bool:
     return False
 
 
+def get_opening_sensor_config(entity_id: str) -> dict:
+    """Liefert die Konfiguration eines Oeffnungs-Sensors (Fenster/Tuer/Tor).
+
+    Liest aus settings.yaml → opening_sensors.entities.
+    Gibt Defaults zurueck wenn kein Eintrag existiert.
+    """
+    from .config import yaml_config
+    entities = yaml_config.get("opening_sensors", {}).get("entities", {}) or {}
+    return entities.get(entity_id, {})
+
+
+def get_opening_type(entity_id: str, state: dict) -> str:
+    """Bestimmt den Typ eines Oeffnungs-Sensors: window, door, oder gate.
+
+    Prioritaet:
+    1. opening_sensors Config (explizit vom User)
+    2. HA device_class Mapping
+    3. Keyword-Fallback
+    """
+    # 1. User-Config
+    cfg = get_opening_sensor_config(entity_id)
+    if cfg.get("type"):
+        return cfg["type"]
+
+    # 2. device_class
+    attrs = state.get("attributes", {}) if isinstance(state, dict) else {}
+    device_class = attrs.get("device_class", "")
+    if device_class == "garage_door":
+        return "gate"
+    if device_class == "door":
+        return "door"
+    if device_class == "window":
+        return "window"
+
+    # 3. Keyword-Fallback
+    lower_id = entity_id.lower()
+    if any(kw in lower_id for kw in ("tor", "gate", "garage")):
+        return "gate"
+    if any(kw in lower_id for kw in ("tuer", "door")):
+        return "door"
+    return "window"
+
+
+def is_heating_relevant_opening(entity_id: str, state: dict) -> bool:
+    """Prueft ob ein Oeffnungs-Sensor heizungsrelevant ist.
+
+    Ein Sensor ist heizungsrelevant wenn:
+    - Er ein Fenster oder eine Tuer ist (NICHT ein Tor/Gate)
+    - Er in einem beheizten Bereich liegt (heated != false)
+
+    Tore (Garagentore, Gartentore) sind NIE heizungsrelevant,
+    es sei denn der User hat heated=true explizit gesetzt.
+    """
+    if not is_window_or_door(entity_id, state):
+        return False
+
+    cfg = get_opening_sensor_config(entity_id)
+    opening_type = get_opening_type(entity_id, state)
+
+    # Expliziter heated-Wert aus Config hat Vorrang
+    if "heated" in cfg:
+        return bool(cfg["heated"])
+
+    # Tore/Gates sind standardmaessig nicht heizungsrelevant
+    if opening_type == "gate":
+        return False
+
+    # Fenster und Tueren sind standardmaessig heizungsrelevant
+    return True
+
+
 async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
     """Laedt verfuegbare Entities aus HA und cached Raum-/Geraete-Namen.
 
@@ -5007,17 +5078,22 @@ class FunctionExecutor:
                 if media:
                     parts.append(f"Medien aktiv: {', '.join(str(m) for m in media)}")
 
-            # Offene Fenster/Tueren — is_window_or_door() nutzt MindHome-Domain,
-            # HA device_class und Keyword-Fallback (konsistent mit context_builder._extract_alerts)
+            # Offene Fenster/Tueren — kategorisiert nach Typ (Fenster/Tuer vs Tor)
             if "open_items" in enabled_sections:
-                open_items = []
+                open_windows_doors = []
+                open_gates = []
                 for s in states:
                     eid = s.get("entity_id", "")
                     if is_window_or_door(eid, s) and s.get("state") == "on":
                         name = s.get("attributes", {}).get("friendly_name", eid)
-                        open_items.append(name)
-                if open_items:
-                    parts.append(f"Offen: {', '.join(open_items)}")
+                        if get_opening_type(eid, s) == "gate":
+                            open_gates.append(name)
+                        else:
+                            open_windows_doors.append(name)
+                if open_windows_doors:
+                    parts.append(f"Offen: {', '.join(open_windows_doors)}")
+                if open_gates:
+                    parts.append(f"Tore offen: {', '.join(open_gates)}")
 
             # Offline Geraete
             if "offline" in enabled_sections:
