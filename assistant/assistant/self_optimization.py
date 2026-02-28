@@ -18,7 +18,8 @@ from typing import Optional
 
 import yaml
 
-from .config import settings, yaml_config
+import assistant.config as cfg_module
+from .config import settings, yaml_config, load_yaml_config
 from .config_versioning import ConfigVersioning
 from .ollama_client import OllamaClient
 
@@ -373,6 +374,12 @@ Wenn keine Aenderung noetig: []"""
 
             with open(_SETTINGS_PATH, "w") as f:
                 yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+            # Hot-Reload: yaml_config im Speicher aktualisieren
+            _new = load_yaml_config()
+            cfg_module.yaml_config.clear()
+            cfg_module.yaml_config.update(_new)
+            logger.info("yaml_config nach Parameter-Aenderung im Speicher aktualisiert")
 
             logger.info("Parameter angepasst: %s = %s", param, new_value)
             return {

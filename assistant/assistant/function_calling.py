@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 import yaml
 
+import assistant.config as cfg_module
 from .config import settings, yaml_config, get_room_profiles
 from .config_versioning import ConfigVersioning
 from .ha_client import HomeAssistantClient
@@ -4047,6 +4048,12 @@ class FunctionExecutor:
             # Zurueckschreiben
             with open(yaml_path, "w") as f:
                 yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+            # Cache invalidieren damit Aenderungen sofort wirken
+            if config_file == "room_profiles":
+                cfg_module._room_profiles_cache.clear()
+                cfg_module._room_profiles_ts = 0.0
+                logger.info("Room-Profiles-Cache invalidiert nach edit_config")
 
             logger.info("Config-Selbstmodifikation: %s (%s -> %s)", config_file, action, key)
             return {"success": True, "message": msg}

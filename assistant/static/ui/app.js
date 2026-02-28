@@ -4669,7 +4669,8 @@ function renderCovers() {
     fToggle('seasonal_actions.cover_automation.night_insulation', 'Nachts schliessen (Isolierung)') +
     fRange('seasonal_actions.cover_automation.heat_protection_temp', 'Hitzeschutz ab Aussentemp (°C)', 20, 40, 1, {20:'20°C',25:'25°C',26:'26°C',28:'28°C',30:'30°C',35:'35°C',40:'40°C'}) +
     fRange('seasonal_actions.cover_automation.frost_protection_temp', 'Frostschutz ab (°C)', -10, 10, 1, {'-5':'-5°C',0:'0°C',3:'3°C',5:'5°C',10:'10°C'}) +
-    fRange('seasonal_actions.cover_automation.storm_wind_speed', 'Sturm-Windgeschwindigkeit (km/h)', 20, 100, 5, {20:'20',30:'30',40:'40',50:'50',60:'60',80:'80',100:'100'})
+    fRange('seasonal_actions.cover_automation.storm_wind_speed', 'Sturm-Windgeschwindigkeit (km/h)', 20, 100, 5, {20:'20',30:'30',40:'40',50:'50',60:'60',80:'80',100:'100'}) +
+    fToggle('seasonal_actions.cover_automation.inverted_position', 'Positionen invertiert (0=offen, 100=zu, z.B. Shelly/MQTT)')
   ) +
   // ── Urlaubs-Simulation ─────────────────────────
   sectionWrap('&#127796;', 'Urlaubs-Simulation',
@@ -4880,6 +4881,7 @@ function renderCoverProfileList(covers, container) {
     html += '<div style="display:flex;gap:16px;flex-wrap:wrap;">';
     html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;"><input type="checkbox"' + (c.allow_auto!==false?' checked':'') + ' onchange="updateCoverProfile(' + i + ',\'allow_auto\',this.checked)" style="accent-color:var(--accent);"> Automatik erlaubt</label>';
     html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;"><input type="checkbox"' + (c.heat_protection?' checked':'') + ' onchange="updateCoverProfile(' + i + ',\'heat_protection\',this.checked)" style="accent-color:var(--accent);"> Hitzeschutz</label>';
+    html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;" title="Aktivieren wenn 0=offen und 100=zu (z.B. Shelly, MQTT)"><input type="checkbox"' + (c.inverted?' checked':'') + ' onchange="updateCoverProfile(' + i + ',\'inverted\',this.checked)" style="accent-color:var(--accent);"> Position invertiert</label>';
     html += '</div>';
     // Privacy close hour
     html += '<div class="form-group" style="margin-top:8px;"><label>Privatsph&auml;re schliessen ab (Uhr, optional)</label><input type="number" value="' + (c.privacy_close_hour||'') + '" min="0" max="23" placeholder="z.B. 17" onchange="updateCoverProfile(' + i + ',\'privacy_close_hour\',this.value?parseInt(this.value):null)"></div>';
@@ -4904,7 +4906,7 @@ function addCoverProfile() {
   RP.cover_profiles.covers.push({
     entity_id: '', room: '', type: 'rollladen', orientation: 'S',
     sun_exposure_start: 120, sun_exposure_end: 240,
-    allow_auto: true, heat_protection: true, privacy_close_hour: null
+    allow_auto: true, heat_protection: true, inverted: false, privacy_close_hour: null
   });
   _rpDirty = true;
   scheduleAutoSave();
