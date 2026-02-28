@@ -268,7 +268,10 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
         # Fehlende Komponenten pruefen
         _OK_PREFIXES = ("connected", "active", "running")
         components = health_data.get("components", {})
-        failed = [c for c, s in components.items() if not s.startswith(_OK_PREFIXES)]
+        failed = [
+            c for c, s in components.items()
+            if isinstance(s, str) and not s.startswith(_OK_PREFIXES)
+        ]
         if failed:
             msg += f" {len(failed)} {'System' if len(failed) == 1 else 'Systeme'} eingeschraenkt."
         elif not open_items:
