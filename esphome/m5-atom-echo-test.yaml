@@ -94,19 +94,34 @@ speaker:
     i2s_mode: primary
 
 # --- Wake Word (lokal auf dem ESP32) ---
+# VAD reduziert False Positives, wake_word-Parameter informiert HA
 micro_wake_word:
+  vad:
   models:
     - model: hey_jarvis
   on_wake_word_detected:
     - voice_assistant.start:
+        wake_word: !lambda return wake_word;
 
 # --- Voice Assistant (mit eingebautem Speaker) ---
+# WICHTIG: use_wake_word wird per Lambda auf false gesetzt,
+# weil micro_wake_word die lokale Erkennung uebernimmt.
 voice_assistant:
+  id: va
   microphone: atom_mic
   speaker: atom_speaker
-  use_wake_word: true
   noise_suppression_level: 2
   auto_gain: 31dBFS
+
+  # Nach Verbindung zu HA: Wake Word starten
+  on_client_connected:
+    - delay: 2s
+    - lambda: id(va).set_use_wake_word(false);
+    - micro_wake_word.start:
+
+  # Bei Verbindungsverlust: Wake Word stoppen
+  on_client_disconnected:
+    - micro_wake_word.stop:
 
   # LED-Feedback
   on_listening:
@@ -134,6 +149,11 @@ voice_assistant:
         brightness: 60%
         effect: none
   on_end:
+    - wait_until:
+        not:
+          speaker.is_playing:
+    - lambda: id(va).set_use_wake_word(false);
+    - micro_wake_word.start:
     - light.turn_off:
         id: led
   on_error:
@@ -145,6 +165,8 @@ voice_assistant:
         brightness: 75%
         effect: none
     - delay: 3s
+    - lambda: id(va).set_use_wake_word(false);
+    - micro_wake_word.start:
     - light.turn_off:
         id: led
 
@@ -157,7 +179,7 @@ light:
     chipset: SK6812
     rgb_order: GRB
 
-# --- Button (zum manuellen Aktivieren des Voice Assistant) ---
+# --- Button (Kurzerdruck = Wake Word neustarten, Langdruck 10s = Factory Reset) ---
 binary_sensor:
   - platform: gpio
     pin:
@@ -165,10 +187,30 @@ binary_sensor:
       inverted: true
     name: "Button"
     id: echo_button
-    on_press:
-      - voice_assistant.start:
-    on_release:
-      - voice_assistant.stop:
+    on_multi_click:
+      - timing:
+          - ON for at least 50ms
+          - OFF for at least 50ms
+        then:
+          - if:
+              condition:
+                voice_assistant.is_running:
+              then:
+                - voice_assistant.stop:
+              else:
+                - lambda: id(va).set_use_wake_word(false);
+                - micro_wake_word.start:
+      - timing:
+          - ON for at least 10s
+        then:
+          - button.press: factory_reset_btn
+
+# --- Factory Reset Button (intern) ---
+button:
+  - platform: factory_reset
+    id: factory_reset_btn
+    name: "Factory Reset"
+    entity_category: diagnostic
 
 # --- API & OTA ---
 api:
