@@ -5935,6 +5935,9 @@ class AssistantBrain(BrainCallbacksMixin):
         if "szene" in t:
             return None
 
+        # Satzzeichen am Ende entfernen (verhindert sonst Regex-Matches)
+        t = t.rstrip(".!,;:")
+
         words = [w for w in _re.split(r'[\s,.!?]+', t) if w]
         word_set = set(words)
 
