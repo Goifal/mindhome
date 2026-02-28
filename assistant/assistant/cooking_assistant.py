@@ -122,7 +122,9 @@ NAV_TIMER = ["timer", "stell timer", "stell einen timer", "weck mich",
 NAV_TIMER_CHECK = ["wie lange noch", "timer status", "laeuft der timer",
                    "läuft der timer"]
 NAV_STOP = ["stop kochen", "stopp kochen", "abbrechen", "koch session beenden",
-            "fertig kochen", "ich bin fertig"]
+            "fertig kochen", "ich bin fertig", "koch modus beenden",
+            "kochen beenden", "kochmodus beenden", "beende kochen",
+            "beende den koch", "kochen stopp", "kochen stop"]
 NAV_INGREDIENTS = ["zutaten", "was brauche ich", "einkaufsliste",
                    "welche zutaten"]
 NAV_PORTIONS = ["fuer", "für", "portionen", "personen"]
@@ -240,7 +242,7 @@ class CookingAssistant:
         text_lower = text.lower().strip()
         all_nav = (NAV_NEXT + NAV_PREV + NAV_REPEAT + NAV_STATUS +
                    NAV_TIMER + NAV_TIMER_CHECK + NAV_STOP +
-                   NAV_INGREDIENTS + NAV_SAVE)
+                   NAV_INGREDIENTS + NAV_PORTIONS + NAV_SAVE)
         return any(kw in text_lower for kw in all_nav)
 
     async def _search_recipe_store(self, dish: str) -> Optional[str]:
@@ -492,8 +494,7 @@ class CookingAssistant:
         response = f"Schritt {step.number} von {session.total_steps}:\n{step.instruction}"
 
         if step.timer_minutes:
-            response += f"\n(Dieser Schritt dauert {step.timer_minutes} Minuten — ich stelle automatisch einen Timer.)"
-            await self._start_step_timer(step)
+            response += f"\n(Dieser Schritt dauert {step.timer_minutes} Minuten. Sag 'timer' wenn ich einen stellen soll.)"
 
         return response
 
@@ -586,6 +587,10 @@ class CookingAssistant:
         # Minuten extrahieren
         match = re.search(r"(\d+)\s*(?:minuten?|min)", text.lower())
         if not match:
+            # Fallback: timer_minutes des aktuellen Schritts verwenden
+            step = self.session.get_current_step() if self.session else None
+            if step and step.timer_minutes:
+                return await self._start_step_timer_with_response(step)
             return "Wie viele Minuten? Sag z.B. 'Timer 8 Minuten fuer die Pasta'."
 
         minutes = int(match.group(1))
@@ -609,10 +614,10 @@ class CookingAssistant:
 
         return f"Timer gesetzt: {label} — {minutes} Minuten. Ich sage Bescheid wenn er abgelaufen ist."
 
-    async def _start_step_timer(self, step: CookingStep):
-        """Startet einen Timer fuer einen Koch-Schritt."""
+    async def _start_step_timer_with_response(self, step: CookingStep) -> str:
+        """Startet einen Timer fuer einen Koch-Schritt und gibt Bestaetigung zurueck."""
         if not step.timer_minutes:
-            return
+            return "Dieser Schritt hat keine Zeitangabe."
 
         label = f"Schritt {step.number}"
         timer = CookingTimer(label=label, duration_seconds=step.timer_minutes * 60)
@@ -624,6 +629,8 @@ class CookingAssistant:
 
         # Timer in Redis persistieren (fuer Neustart-Recovery)
         await self._persist_session()
+
+        return f"Timer gesetzt: {label} — {step.timer_minutes} Minuten. Ich sage Bescheid wenn er abgelaufen ist."
 
     async def _timer_watcher(self, timer: CookingTimer):
         """Ueberwacht einen Timer und benachrichtigt bei Ablauf."""
