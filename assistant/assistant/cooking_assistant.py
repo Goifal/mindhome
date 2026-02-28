@@ -341,9 +341,9 @@ class CookingAssistant:
                 self.session.started_at = time.time()
                 await self._persist_session()
 
-                parts = [f"Ich habe ein gespeichertes Rezept fuer {dish} gefunden! ({portions} Portionen)"]
+                parts = [f"Ein Rezept fuer {dish} liegt vor — {portions} Portionen."]
                 if preferences:
-                    parts.append("Ich habe deine Praeferenzen beruecksichtigt.")
+                    parts.append("Deine Praeferenzen sind beruecksichtigt.")
                 parts.append(f"\nDu brauchst {len(session.ingredients)} Zutaten:")
                 for ing in session.ingredients:
                     parts.append(f"  - {ing}")
@@ -415,10 +415,10 @@ class CookingAssistant:
         await self._persist_session()
 
         # Antwort zusammenbauen
-        parts = [f"Alles klar, {dish} fuer {portions} Portionen!"]
+        parts = [f"Sehr wohl — {dish} fuer {portions} Portionen."]
 
         if preferences:
-            parts.append("Ich habe deine Praeferenzen beruecksichtigt.")
+            parts.append("Deine Praeferenzen sind beruecksichtigt.")
 
         parts.append(f"\nDu brauchst {len(session.ingredients)} Zutaten:")
         for ing in session.ingredients:

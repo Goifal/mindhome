@@ -535,6 +535,7 @@ seasonal_actions:
     frost_protection_temp: 3         # Bei Frost Rolllaeden schliessen
     storm_wind_speed: 50             # km/h — Rolllaeden HOCH zum Schutz
     vacation_mode_entity: ""         # z.B. input_boolean.vacation_mode  HINWEIS: Urlaubs-Simulation ist erst aktiv wenn hier eine Entity eingetragen wird!
+    inverted_position: false         # true wenn ALLE Covers invertierte Positionen haben (0=offen, 100=zu). Pro Cover in room_profiles.yaml oder cover_configs.json konfigurierbar.
 tts:
   entity: tts.piper
   ssml_enabled: true

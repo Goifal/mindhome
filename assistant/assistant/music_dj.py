@@ -351,14 +351,14 @@ class MusicDJ:
             await self.redis.ltrim(fb_key, 0, 49)
         except Exception as e:
             logger.warning("Feedback-Speicherung Fehler: %s", e)
-            return {"success": False, "message": f"Fehler beim Speichern: {e}"}
+            return {"success": False, "message": f"Das liess sich nicht speichern: {e}"}
 
         label = GENRE_LABELS.get(genre, genre)
         if positive:
-            return {"success": True, "message": f"Notiert! {label} gefaellt dir — merke ich mir."}
+            return {"success": True, "message": f"Vermerkt. {label} kommt auf die Liste."}
         else:
-            blocked = " Wird in Zukunft vermieden." if new_score <= -3 else ""
-            return {"success": True, "message": f"Notiert! {label} ist nicht dein Ding.{blocked}"}
+            blocked = " Wird kuenftig gemieden." if new_score <= -3 else ""
+            return {"success": True, "message": f"Verstanden. {label} ist nicht nach deinem Geschmack.{blocked}"}
 
     async def get_music_status(self) -> dict:
         """Gibt den aktuellen Music-DJ-Status zurueck."""

@@ -1330,7 +1330,7 @@ async def chat_upload(
     file_info = save_upload(file.filename, content)
 
     text = caption.strip() if caption.strip() else (
-        f"Ich habe eine Datei geschickt: {file_info['name']}"
+        f"Datei erhalten: {file_info['name']}"
     )
 
     # Process through brain with file context
@@ -2143,6 +2143,7 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
         "personality": "personality",
         "proactive": "proactive",
         "routines": "proactive",
+        "seasonal_actions": "proactive",
         "autonomy": "autonomy",
         "threat_assessment": "threat_assessment",
         "energy": "energy_optimizer",
@@ -2232,20 +2233,30 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             logger.info("Quiet Hours aktualisiert")
         _try_reload("ambient_presence", _reload_quiet_hours)
 
-    # Routines: Morning/Evening Briefing
-    if "routines" in changed_settings and hasattr(brain, "proactive"):
+    # Routines: Morning/Evening Briefing (proactive) + RoutineEngine (actions, triggers)
+    if "routines" in changed_settings:
         def _reload_routines():
             routines_cfg = yaml_cfg.get("routines", {})
-            mb_cfg = routines_cfg.get("morning_briefing", {})
-            brain.proactive._mb_enabled = bool(mb_cfg.get("enabled", True))
-            brain.proactive._mb_window_start = int(mb_cfg.get("window_start_hour", 6))
-            brain.proactive._mb_window_end = int(mb_cfg.get("window_end_hour", 10))
-            eb_cfg = routines_cfg.get("evening_briefing", {})
-            brain.proactive._eb_enabled = bool(eb_cfg.get("enabled", True))
-            brain.proactive._eb_window_start = int(eb_cfg.get("window_start_hour", 20))
-            brain.proactive._eb_window_end = int(eb_cfg.get("window_end_hour", 22))
-            logger.info("Routine Settings aktualisiert")
+            # Proactive: Briefing-Fenster
+            if hasattr(brain, "proactive"):
+                mb_cfg = routines_cfg.get("morning_briefing", {})
+                brain.proactive._mb_enabled = bool(mb_cfg.get("enabled", True))
+                brain.proactive._mb_window_start = int(mb_cfg.get("window_start_hour", 6))
+                brain.proactive._mb_window_end = int(mb_cfg.get("window_end_hour", 10))
+                eb_cfg = routines_cfg.get("evening_briefing", {})
+                brain.proactive._eb_enabled = bool(eb_cfg.get("enabled", True))
+                brain.proactive._eb_window_start = int(eb_cfg.get("window_start_hour", 20))
+                brain.proactive._eb_window_end = int(eb_cfg.get("window_end_hour", 22))
+            # RoutineEngine: Morning-Actions, GoodNight-Actions, Guest-Mode
+            if hasattr(brain, "routines"):
+                brain.routines.reload_config()
+            logger.info("Routine Settings aktualisiert (proactive + routine_engine)")
         _try_reload("routines", _reload_routines)
+
+    # Seasonal Actions / Cover Automation: Config wird in seasonal_loop per Zyklus
+    # frisch aus yaml_config gelesen — kein expliziter Reload noetig, aber Logging.
+    if "seasonal_actions" in changed_settings:
+        logger.info("Seasonal Actions Settings aktualisiert (live aus yaml_config im naechsten Zyklus)")
 
     # Autonomy: Trust-Levels
     if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
@@ -3666,7 +3677,7 @@ async def ui_add_personal_date(request: Request, token: str = ""):
                 "date": date_mm_dd, "year": year,
             })
             return {"success": True, "message": f"{person_name} gespeichert"}
-        return {"success": False, "message": "Speichervorgang fehlgeschlagen"}
+        return {"success": False, "message": "Das liess sich nicht abspeichern."}
     except Exception as e:
         logger.error("Personal date add Fehler: %s", e)
         raise HTTPException(status_code=500, detail="Interner Fehler")

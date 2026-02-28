@@ -225,6 +225,9 @@ seasonal:
 # allow_auto: Darf Automatik diesen Rollladen steuern?
 # heat_protection: Bei Hitze + Sonne automatisch abdunkeln?
 # privacy_close_hour: Ab wann abends automatisch schliessen (optional)
+# inverted: true wenn HA-Position invertiert ist (0=offen, 100=zu statt 0=zu, 100=offen)
+#   Betrifft z.B. Shelly, manche MQTT-Covers. Pro Cover oder global konfigurierbar.
+#   Global: settings.yaml > seasonal_actions > cover_automation > inverted_position: true
 cover_profiles:
   covers: []
   # ── Beispiel-Template (bitte ausfuellen): ──
@@ -237,6 +240,7 @@ cover_profiles:
   #   allow_auto: true
   #   heat_protection: true
   #   privacy_close_hour: 17
+  #   inverted: false          # true bei Shelly/MQTT (0=offen, 100=zu)
   #
   # - entity_id: cover.rollladen_buero_manuel
   #   room: buero_manuel

@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 import yaml
 
+import assistant.config as cfg_module
 from .config import settings, yaml_config, get_room_profiles
 from .config_versioning import ConfigVersioning
 from .ha_client import HomeAssistantClient
@@ -1792,7 +1793,7 @@ class FunctionExecutor:
             return await handler(arguments)
         except Exception as e:
             logger.error("Fehler bei %s: %s", function_name, e)
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": f"Da lief etwas schief: {e}"}
 
     # ── Phase 11: Adaptive Helligkeit (dim2warm) ──────────────
     @staticmethod
@@ -1987,7 +1988,7 @@ class FunctionExecutor:
         """Alle Lichter ein- oder ausschalten."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Ich kann gerade nicht auf die Geraete zugreifen. Versuch es bitte gleich nochmal."}
+            return {"success": False, "message": "Die Geraete sind momentan nicht ansprechbar. Ich versuche es gleich erneut."}
 
         service = "turn_on" if state == "on" else "turn_off"
         count = 0
@@ -2111,6 +2112,11 @@ class FunctionExecutor:
                 status = ha.get("state", "unknown")
                 attrs = ha.get("attributes", {})
                 pos = attrs.get("current_position")
+                if pos is not None:
+                    try:
+                        pos = self._translate_cover_position_from_ha(eid, int(pos))
+                    except (ValueError, TypeError):
+                        pass
                 pos_str = f" ({pos}%)" if pos is not None else ""
                 covers.append(f"- {name} [{room}]: {status}{pos_str}")
         else:
@@ -2126,6 +2132,11 @@ class FunctionExecutor:
                 friendly = attrs.get("friendly_name", eid)
                 status = ha.get("state", "unknown")
                 pos = attrs.get("current_position")
+                if pos is not None:
+                    try:
+                        pos = self._translate_cover_position_from_ha(eid, int(pos))
+                    except (ValueError, TypeError):
+                        pass
                 pos_str = f" ({pos}%)" if pos is not None else ""
                 covers.append(f"- {friendly}: {status}{pos_str}")
 
@@ -2368,7 +2379,7 @@ class FunctionExecutor:
         attrs = current_state.get("attributes", {})
         base_temp = attrs.get("temperature")
         if base_temp is None:
-            return {"success": False, "message": f"Ich kann die aktuelle Temperatur von {entity_id} gerade nicht abrufen."}
+            return {"success": False, "message": f"Der Temperatursensor {entity_id} antwortet gerade nicht."}
 
         # Offset-Grenzen aus Config erzwingen
         offset_min = heating.get("curve_offset_min", -5)
@@ -2485,6 +2496,53 @@ class FunctionExecutor:
                 return True
         return False
 
+    def _is_cover_inverted(self, entity_id: str) -> bool:
+        """Prueft ob ein Cover invertierte Positionswerte hat.
+
+        Manche HA-Integrationen (Shelly, MQTT) nutzen invertierte Semantik:
+        Position 0 = offen (oben), Position 100 = geschlossen (unten).
+        Jarvis nutzt: 0 = geschlossen, 100 = offen.
+
+        Konfigurierbar pro Cover in cover_configs.json oder room_profiles.yaml.
+        Global via settings.yaml > cover_automation > inverted_position.
+        """
+        # 1. Per-Cover Config (cover_configs.json)
+        try:
+            from .cover_config import load_cover_configs
+            configs = load_cover_configs()
+            if configs and isinstance(configs, dict):
+                conf = configs.get(entity_id, {})
+                if "inverted" in conf:
+                    return bool(conf["inverted"])
+        except Exception:
+            pass
+
+        # 2. Per-Cover in room_profiles.yaml
+        profiles = _get_room_profiles()
+        for c in profiles.get("cover_profiles", {}).get("covers", []):
+            if c.get("entity_id") == entity_id and "inverted" in c:
+                return bool(c["inverted"])
+
+        # 3. Globale Einstellung (alle Covers invertiert)
+        from .config import yaml_config
+        cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
+        return bool(cover_cfg.get("inverted_position", False))
+
+    def _translate_cover_position(self, entity_id: str, position: int) -> int:
+        """Uebersetzt Jarvis-Position (0=zu, 100=offen) in HA-Position.
+
+        Bei invertierten Covers wird 0↔100 getauscht.
+        """
+        if self._is_cover_inverted(entity_id):
+            return 100 - position
+        return position
+
+    def _translate_cover_position_from_ha(self, entity_id: str, position: int) -> int:
+        """Uebersetzt HA-Position zurueck in Jarvis-Position (0=zu, 100=offen)."""
+        if self._is_cover_inverted(entity_id):
+            return 100 - position
+        return position
+
     def _resolve_cover_position(self, args: dict) -> tuple:
         """Bestimmt Position + Adjust aus action/state/adjust/position Args.
 
@@ -2546,7 +2604,9 @@ class FunctionExecutor:
             if is_stop:
                 return await self._exec_set_cover_all_action("stop_cover")
             final_pos = position if position is not None else 0
-            return await self._exec_set_cover_all(final_pos, cover_type)
+            # Ohne expliziten Typ: nur Rolllaeden (Markisen haben eigene Sicherheits-Checks)
+            effective_type = cover_type or "rollladen"
+            return await self._exec_set_cover_all(final_pos, effective_type)
 
         # Einzelraum
         entity_id = await self._find_entity("cover", room)
@@ -2569,7 +2629,9 @@ class FunctionExecutor:
             ha_state = await self.ha.get_state(entity_id)
             if ha_state:
                 try:
-                    current_position = int(ha_state.get("attributes", {}).get("current_position", 50))
+                    ha_pos = int(ha_state.get("attributes", {}).get("current_position", 50))
+                    # HA-Position in Jarvis-Position uebersetzen (0=zu, 100=offen)
+                    current_position = self._translate_cover_position_from_ha(entity_id, ha_pos)
                 except (ValueError, TypeError):
                     current_position = 50
             step = 20
@@ -2593,9 +2655,10 @@ class FunctionExecutor:
         if not await self._is_safe_cover(entity_id, entity_state):
             return {"success": False, "message": f"'{room}' ist ein Garagentor/Tor — nicht erlaubt."}
 
+        ha_position = self._translate_cover_position(entity_id, position)
         success = await self.ha.call_service(
             "cover", "set_cover_position",
-            {"entity_id": entity_id, "position": position},
+            {"entity_id": entity_id, "position": ha_position},
         )
         direction = ""
         if adjust == "up":
@@ -2621,7 +2684,7 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Geraete nicht erreichbar"}
+            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
 
         count = 0
         for room_name in floor_rooms:
@@ -2645,7 +2708,8 @@ class FunctionExecutor:
                     await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
                 else:
                     final_pos = position if position is not None else 0
-                    await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": final_pos})
+                    ha_pos = self._translate_cover_position(eid, final_pos)
+                    await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
                 count += 1
 
         action_str = "gestoppt" if is_stop else f"auf {position}%"
@@ -2655,18 +2719,13 @@ class FunctionExecutor:
         """Alle Markisen steuern — mit eigenen Wind/Regen-Sicherheits-Checks."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Geraete nicht erreichbar"}
+            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
 
         position, adjust, is_stop = self._resolve_cover_position(args)
 
         # Sicherheits-Check: Bei Wind/Regen Markisen nicht ausfahren
         if position is not None and position > 0 and not is_stop:
-            _cfg_dir = Path(__file__).parent.parent / "config"
-            try:
-                with open(_cfg_dir / "room_profiles.yaml") as f:
-                    profiles = yaml.safe_load(f) or {}
-            except Exception:
-                profiles = {}
+            profiles = _get_room_profiles()
             markise_cfg = profiles.get("markisen", {})
             wind_limit = markise_cfg.get("wind_retract_speed", 40)
             rain_retract = markise_cfg.get("rain_retract", True)
@@ -2697,7 +2756,8 @@ class FunctionExecutor:
                 await self.ha.call_service("cover", "stop_cover", {"entity_id": eid})
             else:
                 final_pos = position if position is not None else 0
-                await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": final_pos})
+                ha_pos = self._translate_cover_position(eid, final_pos)
+                await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
             count += 1
 
         if count == 0:
@@ -2709,7 +2769,7 @@ class FunctionExecutor:
         """Alle Rolllaeden auf eine Position setzen (Garagentore ausgeschlossen)."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Geraete nicht erreichbar"}
+            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
 
         count = 0
         skipped = []
@@ -2725,7 +2785,8 @@ class FunctionExecutor:
                 continue
             if cover_type == "markise" and not self._is_markise(eid, s):
                 continue
-            await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": position})
+            ha_pos = self._translate_cover_position(eid, position)
+            await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
             count += 1
 
         msg = f"Alle Rolllaeden auf {position}% ({count} geschaltet)"
@@ -2737,7 +2798,7 @@ class FunctionExecutor:
         """Alle Rolllaeden: stop_cover etc."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Geraete nicht erreichbar"}
+            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
         count = 0
         for s in states:
             eid = s.get("entity_id", "")
@@ -3143,8 +3204,8 @@ class FunctionExecutor:
 
         return {
             "success": success,
-            "message": f"Musik von {from_room} nach {to_room} uebertragen" if success
-                       else f"Transfer nach {to_room} fehlgeschlagen",
+            "message": f"Musik laeuft jetzt im {to_room}." if success
+                       else f"Der Transfer nach {to_room} kam nicht zustande.",
         }
 
     async def _exec_arm_security_system(self, args: dict) -> dict:
@@ -3738,7 +3799,7 @@ class FunctionExecutor:
             }
         except Exception as e:
             logger.error("Kalender-Delete Fehler: %s", e)
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": f"Der Kalender macht Schwierigkeiten: {e}"}
 
     async def _exec_reschedule_calendar_event(self, args: dict) -> dict:
         """Phase 11.3: Kalender-Termin verschieben (Delete + Re-Create).
@@ -3764,7 +3825,7 @@ class FunctionExecutor:
         if not delete_result.get("success"):
             return {
                 "success": False,
-                "message": f"Verschieben fehlgeschlagen: {delete_result.get('message', '')}",
+                "message": f"Der Termin laesst sich nicht verschieben: {delete_result.get('message', '')}",
             }
 
         # 2. Neuen Termin erstellen
@@ -3796,7 +3857,7 @@ class FunctionExecutor:
             }
         return {
             "success": False,
-            "message": f"ACHTUNG: Alter Termin geloescht, neuer konnte nicht erstellt werden, Rollback fehlgeschlagen. Termin '{title}' manuell erstellen!",
+            "message": f"Das ist unangenehm — der alte Termin wurde entfernt, aber der neue liess sich nicht anlegen und die Wiederherstellung schlug fehl. Bitte den Termin '{title}' manuell neu erstellen.",
         }
 
     async def _exec_set_presence_mode(self, args: dict) -> dict:
@@ -3988,12 +4049,18 @@ class FunctionExecutor:
             with open(yaml_path, "w") as f:
                 yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
+            # Cache invalidieren damit Aenderungen sofort wirken
+            if config_file == "room_profiles":
+                cfg_module._room_profiles_cache.clear()
+                cfg_module._room_profiles_ts = 0.0
+                logger.info("Room-Profiles-Cache invalidiert nach edit_config")
+
             logger.info("Config-Selbstmodifikation: %s (%s -> %s)", config_file, action, key)
             return {"success": True, "message": msg}
 
         except Exception as e:
             logger.error("Config-Edit fehlgeschlagen: %s", e)
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": f"Die Konfiguration laesst sich gerade nicht aendern: {e}"}
 
     # ------------------------------------------------------------------
     # Phase 15.2: Einkaufsliste (via HA Shopping List oder lokal)
@@ -4621,14 +4688,14 @@ class FunctionExecutor:
         # Speaker-Verfuegbarkeit pruefen
         speaker_state = await self.ha.get_state(speaker)
         if speaker_state and speaker_state.get("state") == "unavailable":
-            return {"success": False, "message": f"Lautsprecher '{speaker}' ist nicht erreichbar."}
+            return {"success": False, "message": f"Der Lautsprecher '{speaker}' schweigt sich aus. Nicht erreichbar."}
 
         # TTS senden
         ok = await self._send_tts_to_speaker(speaker, tts_message)
         target_desc = f"{target_person} im {target_room}" if target_person else target_room
         if ok:
             return {"success": True, "message": f"Durchsage an {target_desc}: \"{message}\""}
-        return {"success": False, "message": f"Durchsage an {target_desc} fehlgeschlagen."}
+        return {"success": False, "message": f"Die Durchsage an {target_desc} kam nicht durch. Ich pruefe die Verbindung."}
 
     async def _exec_get_camera_view(self, args: dict) -> dict:
         """Holt und beschreibt ein Kamera-Bild."""

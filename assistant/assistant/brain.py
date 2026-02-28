@@ -5398,8 +5398,8 @@ class AssistantBrain(BrainCallbacksMixin):
                         year=year,
                     )
                     if success:
-                        return f"Notiert: {name}s Geburtstag am {date_text.strip().rstrip('.')}."
-                    return "Speichervorgang fehlgeschlagen."
+                        return f"Vermerkt — {name}s Geburtstag am {date_text.strip().rstrip('.')}."
+                    return "Das konnte nicht gespeichert werden. Ein weiterer Versuch waere ratsam."
 
         # --- Speichern: Jahrestag/Hochzeitstag ---
         anniversary_patterns = [
@@ -5432,8 +5432,8 @@ class AssistantBrain(BrainCallbacksMixin):
                         label=label,
                     )
                     if success:
-                        return f"Notiert: {label} am {date_text.strip().rstrip('.')}."
-                    return "Speichervorgang fehlgeschlagen."
+                        return f"Vermerkt — {label} am {date_text.strip().rstrip('.')}."
+                    return "Das konnte nicht gespeichert werden. Ein weiterer Versuch waere ratsam."
 
         # --- Abfrage: "Wann hat Lisa Geburtstag?" ---
         query_patterns = [
@@ -5512,8 +5512,8 @@ class AssistantBrain(BrainCallbacksMixin):
                         content=content, person=person
                     )
                     if success:
-                        return f"Notiert: \"{content}\""
-                    return f"Speichervorgang fehlgeschlagen. Zweiter Versuch empfohlen, {get_person_title(person)}."
+                        return f"Vermerkt: \"{content}\""
+                    return f"Das liess sich nicht abspeichern, {get_person_title(person)}. Ein zweiter Versuch waere sinnvoll."
 
         # "Was weisst du ueber ...?"
         for trigger in ["was weisst du ueber ", "was weißt du über ",
@@ -5615,7 +5615,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "was sind deine", "zeig mir was du",
         ]):
             result = await self.executor.execute("list_capabilities", {})
-            return result.get("message", "Ich kann vieles. Frag einfach.")
+            return result.get("message", "Mein Repertoire ist umfangreich. Was schwebt dir vor?")
 
         # Phase 15.2: "Was steht auf der Einkaufsliste?"
         # Typo-tolerant: "einkaufliste", "einlaufsliste" etc.
@@ -6591,7 +6591,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not suggestions:
             # Kein gelerntes Muster — Jarvis gesteht das elegant ein
             response_text = (
-                f"Ich habe noch kein festes Muster fuer diese Uhrzeit gelernt, {title}. "
+                f"Fuer diese Uhrzeit fehlt mir noch ein belastbares Muster, {title}. "
                 f"Was darf es sein?"
             )
             self._remember_exchange(text, response_text)
@@ -7817,9 +7817,9 @@ Regeln:
         if result.get("success"):
             delivery = result.get("delivery", "")
             if delivery == "tts":
-                return f"Ich habe {target_person} die Nachricht durchgesagt."
+                return f"Nachricht an {target_person} durchgesagt."
             else:
-                return f"Ich habe {target_person} eine Nachricht geschickt."
+                return f"Nachricht an {target_person} ist raus."
         else:
             return f"Zustellung an {target_person} fehlgeschlagen. Empfaenger moeglicherweise nicht erreichbar."
 

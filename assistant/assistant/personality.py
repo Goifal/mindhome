@@ -194,11 +194,11 @@ CONFIRMATIONS_PARTIAL = [
 ]
 
 CONFIRMATIONS_FAILED = [
-    "Hat nicht funktioniert. Versuch es nochmal.",
-    "Negativ. Pruefe Alternative.",
-    "Fehlgeschlagen. Nochmal versuchen.",
-    "Nicht durchgegangen. Bleibe dran.",
-    "Geht gerade nicht. Workaround?",
+    "Das ging leider daneben. Einen Moment, {title}.",
+    "Negativ. Ich pruefe eine Alternative.",
+    "Nicht ganz nach Plan. Ich bleibe dran.",
+    "Das System wehrt sich gerade, {title}. Ich versuche es anders.",
+    "Nicht durchgegangen. Aber ich habe noch einen Weg.",
 ]
 
 # Sarkasmus-Level 4-5: Spitzere Fehler-Bestaetigungen
@@ -713,57 +713,61 @@ class PersonalityEngine:
         hour = datetime.now().hour
         room_short = room.split("_")[0].title() if room else ""
 
-        # Aktions-spezifische Bestaetigungen mit modaler Sprache
+        # Aktions-spezifische Bestaetigungen — immer im Jarvis-Ton
+        title = get_person_title()
         contextual_map = {
             "set_light": [
-                f"Licht {room_short}." if room_short else "Licht.",
-                "Wird hell." if hour >= 18 else "Erledigt.",
-                f"{room_short} beleuchtet." if room_short else "Beleuchtet.",
+                f"{room_short} ist beleuchtet, {title}." if room_short else f"Beleuchtung aktiv, {title}.",
+                f"Sehr wohl. {room_short} hat Licht." if room_short else "Sehr wohl. Beleuchtung laeuft.",
+                f"{room_short} erhellt." if room_short else "Wie gewuenscht.",
             ],
             "turn_off_light": [
-                f"{room_short} dunkel." if room_short else "Dunkel.",
-                "Lichter aus.",
-                f"{room_short} abgedunkelt." if room_short else "Abgedunkelt.",
+                f"{room_short} ist dunkel, {title}." if room_short else f"Beleuchtung deaktiviert, {title}.",
+                f"Sehr wohl. {room_short} abgedunkelt." if room_short else "Lichter sind aus.",
+                f"{room_short} liegt im Dunkeln." if room_short else "Dunkelheit hergestellt.",
             ],
             "set_temperature": [
-                f"Temperatur {room_short} angepasst." if room_short else "Temperatur angepasst.",
-                f"Heizung {room_short} laeuft." if room_short else "Heizung laeuft.",
+                f"Thermostat {room_short} ist eingestellt, {title}." if room_short else f"Temperatur angepasst, {title}.",
+                f"Heizung {room_short} reguliert." if room_short else "Heizung reguliert.",
+                f"Wie gewuenscht. {room_short} wird temperiert." if room_short else "Klimatisierung laeuft.",
             ],
             "set_cover": [
-                f"Rollladen {room_short}." if room_short else "Rollladen angepasst.",
-                f"{room_short} — Rollladen faehrt." if room_short else "Rollladen faehrt.",
+                f"Rollladen {room_short} faehrt, {title}." if room_short else f"Rollladen in Bewegung, {title}.",
+                f"Sehr wohl. {room_short} wird angepasst." if room_short else "Rollladen wird angepasst.",
             ],
             "play_media": [
-                "Laeuft.",
-                "Musik gestartet.",
-                "Wiedergabe laeuft.",
+                f"Wiedergabe laeuft, {title}.",
+                "Musik ist unterwegs.",
+                "Sehr wohl. Laeuft.",
             ],
             "set_volume": [
-                "Lautstaerke angepasst.",
+                f"Lautstaerke angepasst, {title}.",
+                "Pegel eingestellt.",
             ],
             "lock_door": [
-                "Verriegelt.",
-                "Schloss zu.",
-                "Tuer gesichert.",
+                f"Verriegelt, {title}.",
+                "Schloss ist zu. Alles gesichert.",
+                f"Tuer gesichert, {title}.",
             ],
             "unlock_door": [
-                "Entriegelt.",
-                "Schloss offen.",
+                f"Entriegelt, {title}.",
+                "Schloss ist offen.",
             ],
             "arm_security_system": [
-                "Alarm scharf.",
-                "Anlage aktiviert.",
+                f"Alarmanlage ist scharf, {title}.",
+                "System scharfgeschaltet. Alles unter Kontrolle.",
             ],
             "disarm_alarm": [
-                "Alarm deaktiviert.",
-                "Anlage aus.",
+                f"Alarm deaktiviert, {title}.",
+                "Anlage ist entspannt.",
             ],
             "activate_scene": [
-                "Szene aktiv.",
+                f"Szene aktiviert, {title}.",
+                "Wie gewuenscht eingerichtet.",
             ],
             "send_notification": [
-                "Nachricht raus.",
-                "Gesendet.",
+                f"Nachricht ist raus, {title}.",
+                "Zugestellt.",
             ],
         }
 

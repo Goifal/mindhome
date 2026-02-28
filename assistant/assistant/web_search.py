@@ -127,7 +127,7 @@ class WebSearch:
 
         except Exception as e:
             logger.error("Web-Suche fehlgeschlagen: %s", e)
-            return {"success": False, "message": f"Suche fehlgeschlagen: {e}"}
+            return {"success": False, "message": f"Die Suche kam nicht durch: {e}"}
 
     async def _search_searxng(self, query: str) -> list[dict]:
         """Suche via SearXNG (self-hosted)."""

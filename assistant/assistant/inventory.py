@@ -67,7 +67,7 @@ class InventoryManager:
             return {"success": True, "message": f"'{name}' (x{quantity}) zum Vorrat hinzugefuegt."}
         except Exception as e:
             logger.error("Vorrat-Fehler: %s", e)
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": f"Da gab es ein Problem: {e}"}
 
     async def remove_item(self, name: str) -> dict:
         """Entfernt einen Artikel aus dem Vorrat (nach Name suchen)."""
@@ -86,7 +86,7 @@ class InventoryManager:
                     return {"success": True, "message": f"'{name}' aus dem Vorrat entfernt."}
             return {"success": False, "message": f"'{name}' nicht im Vorrat gefunden."}
         except Exception as e:
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": f"Da gab es ein Problem: {e}"}
 
     async def update_quantity(self, name: str, quantity: int) -> dict:
         """Aktualisiert die Menge eines Artikels."""
@@ -104,7 +104,7 @@ class InventoryManager:
                     return {"success": True, "message": f"'{name}' Menge auf {quantity} aktualisiert."}
             return {"success": False, "message": f"'{name}' nicht im Vorrat gefunden."}
         except Exception as e:
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": f"Da gab es ein Problem: {e}"}
 
     async def list_items(self, category: str = "") -> dict:
         """Listet alle Vorratsartikel (optional nach Kategorie)."""
@@ -153,7 +153,7 @@ class InventoryManager:
 
             return {"success": True, "message": "\n".join(lines)}
         except Exception as e:
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": f"Da gab es ein Problem: {e}"}
 
     async def check_expiring(self, days_ahead: int = 3) -> list[dict]:
         """Prueft auf bald ablaufende Artikel."""

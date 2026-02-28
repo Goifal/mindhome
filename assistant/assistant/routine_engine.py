@@ -91,6 +91,37 @@ class RoutineEngine:
 
         logger.info("RoutineEngine initialisiert")
 
+    def reload_config(self):
+        """Hot-Reload: Aktualisiert gecachte Routines-Config aus yaml_config."""
+        routines_cfg = yaml_config.get("routines", {})
+
+        mb_cfg = routines_cfg.get("morning_briefing", {})
+        self.briefing_enabled = mb_cfg.get("enabled", True)
+        self.briefing_modules = mb_cfg.get("modules", [
+            "greeting", "weather", "calendar", "house_status", "travel",
+        ])
+        self.weekday_style = mb_cfg.get("weekday_style", "kurz")
+        self.weekend_style = mb_cfg.get("weekend_style", "ausfuehrlich")
+        self.morning_actions = mb_cfg.get("morning_actions", {})
+
+        gn_cfg = routines_cfg.get("good_night", {})
+        self.goodnight_enabled = gn_cfg.get("enabled", True)
+        self.goodnight_triggers = gn_cfg.get("triggers", [
+            "gute nacht", "ich gehe schlafen", "schlaf gut",
+        ])
+        self.goodnight_checks = gn_cfg.get("checks", [
+            "windows", "doors", "alarm", "lights",
+        ])
+        self.goodnight_actions = gn_cfg.get("actions", {})
+
+        gm_cfg = routines_cfg.get("guest_mode", {})
+        self.guest_triggers = gm_cfg.get("triggers", [
+            "ich habe besuch", "ich hab besuch", "gaeste kommen",
+        ])
+        self.guest_restrictions = gm_cfg.get("restrictions", {})
+
+        logger.info("RoutineEngine Config hot-reloaded")
+
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert mit Redis."""
         self.redis = redis_client
@@ -1255,7 +1286,7 @@ class RoutineEngine:
         await self.redis.setex(KEY_VACATION_SIM, 30 * 86400, "active")
         self._vacation_task = asyncio.create_task(self._run_vacation_simulation())
         logger.info("Abwesenheits-Simulation gestartet")
-        return f"Ich werde dafuer sorgen, dass das Haus bewohnt aussieht, {get_person_title()}."
+        return f"Das Haus wird bewohnt wirken, {get_person_title()}. Alles Weitere uebernehme ich."
 
     async def stop_vacation_simulation(self) -> str:
         """Stoppt die Abwesenheits-Simulation."""
