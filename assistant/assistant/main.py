@@ -3894,8 +3894,8 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
             # yaml_config im Speicher aktualisieren
             import assistant.config as cfg
             _new = load_yaml_config()
-        cfg.yaml_config.clear()
-        cfg.yaml_config.update(_new)
+            cfg.yaml_config.clear()
+            cfg.yaml_config.update(_new)
             _audit_log("config_rollback", {
                 "snapshot_id": req.snapshot_id,
                 "security_sections_preserved": list(_sections_to_preserve),
@@ -3934,8 +3934,8 @@ async def ui_self_opt_approve(req: ProposalAction, token: str = ""):
             # yaml_config im Speicher aktualisieren
             import assistant.config as cfg
             _new = load_yaml_config()
-        cfg.yaml_config.clear()
-        cfg.yaml_config.update(_new)
+            cfg.yaml_config.clear()
+            cfg.yaml_config.update(_new)
             _audit_log("self_opt_approve", {"index": req.index, "message": result.get("message", "")})
         return result
     except Exception as e:
