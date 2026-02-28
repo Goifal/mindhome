@@ -941,6 +941,11 @@ const DashboardPage = () => {
                                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                                     {lang === 'de' ? 'Vertrauen' : 'Confidence'}: {Math.round(pred.confidence * 100)}%
                                 </div>
+                                {pred.explanation && (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontStyle: 'italic' }}>
+                                        {pred.explanation}
+                                    </div>
+                                )}
                             </div>
                             <div style={{ display: 'flex', gap: 6 }}>
                                 <button className="btn btn-sm btn-success" onClick={async () => {
@@ -7665,6 +7670,11 @@ const NotificationsPage = () => {
                                     <span>{Math.round(pred.confidence * 100)}%</span>
                                     {pred.executed_at && <span>{new Date(pred.executed_at).toLocaleString()}</span>}
                                 </div>
+                                {pred.explanation && (
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontStyle: 'italic' }}>
+                                        {pred.explanation}
+                                    </div>
+                                )}
                             </div>
                             <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                                 {pred.status === 'pending' && (

@@ -3019,12 +3019,18 @@ class FunctionExecutor:
             nickname = robot.get("nickname", "der Kleine")
 
             if segment_id is not None:
-                # Dreame: Raum-Segment saugen
-                success = await self.ha.call_service("vacuum", "send_command", {
+                # Dreame (Tasshack): dreame_vacuum.vacuum_clean_segment
+                # Fallback: vacuum.send_command mit app_segment_clean (Roborock/Miio)
+                success = await self.ha.call_service("dreame_vacuum", "vacuum_clean_segment", {
                     "entity_id": entity_id,
-                    "command": "app_segment_clean",
-                    "params": [segment_id],
+                    "segments": [segment_id],
                 })
+                if not success:
+                    success = await self.ha.call_service("vacuum", "send_command", {
+                        "entity_id": entity_id,
+                        "command": "app_segment_clean",
+                        "params": [segment_id],
+                    })
                 return {"success": success, "message": f"{nickname} saugt {room}"}
             else:
                 # KEIN stiller Fallback — wenn Raum gewuenscht aber kein Segment → Fehler
