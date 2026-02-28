@@ -360,7 +360,11 @@ class FunctionValidator:
                 break
 
         is_opening = action in ("open", "auf", "offen", "hoch", "up")
-        is_opening = is_opening or (position is not None and int(position) > 50)
+        if position is not None:
+            try:
+                is_opening = is_opening or int(position) > 50
+            except (ValueError, TypeError):
+                pass
 
         # Sturmwarnung bei Oeffnen
         if is_opening and checks.get("storm_warning", True):

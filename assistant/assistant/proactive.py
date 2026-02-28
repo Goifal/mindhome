@@ -1999,11 +1999,26 @@ class ProactiveManager:
         check_interval = seasonal_cfg.get("check_interval_minutes", 15)
         auto_level = seasonal_cfg.get("auto_execute_level", 3)
         cover_cfg = seasonal_cfg.get("cover_automation", {})
-        last_action_date = ""
-        last_schedule_action = ""  # "open" oder "close" (Zeitplan-Dedup)
         # Redis-Keys fuer Dedup von automatischen Aktionen
         _redis = getattr(self.brain, "memory", None)
         _redis = getattr(_redis, "redis", None) if _redis else None
+
+        # Zeitplan-Dedup: aus Redis laden damit Restart kein Doppel-Trigger ausloest
+        _SCHEDULE_KEY = "mha:cover:last_schedule_action"
+        _SCHEDULE_DATE_KEY = "mha:cover:last_schedule_date"
+        last_action_date = ""
+        last_schedule_action = ""
+        if _redis:
+            try:
+                saved_date = await _redis.get(_SCHEDULE_DATE_KEY)
+                saved_action = await _redis.get(_SCHEDULE_KEY)
+                if saved_date:
+                    last_action_date = saved_date if isinstance(saved_date, str) else saved_date.decode()
+                if saved_action:
+                    last_schedule_action = saved_action if isinstance(saved_action, str) else saved_action.decode()
+                logger.debug("Cover-Schedule State aus Redis: date=%s action=%s", last_action_date, last_schedule_action)
+            except Exception:
+                pass
 
         while self._running:
             try:
@@ -2045,10 +2060,18 @@ class ProactiveManager:
 
                 # 4. ZEITPLAN + ANWESENHEIT
                 timing = self.brain.context_builder.get_cover_timing(states)
-                last_schedule_action = await self._cover_schedule_logic(
+                new_schedule_action = await self._cover_schedule_logic(
                     states, timing, cover_cfg, auto_level,
                     last_schedule_action, _redis,
                 )
+                # In Redis persistieren damit Restart kein Doppel-Trigger ausloest
+                if new_schedule_action != last_schedule_action and _redis:
+                    try:
+                        await _redis.set(_SCHEDULE_KEY, new_schedule_action, ex=86400)
+                        await _redis.set(_SCHEDULE_DATE_KEY, today, ex=86400)
+                    except Exception:
+                        pass
+                last_schedule_action = new_schedule_action
 
             except Exception as e:
                 logger.error("Cover-Automation Fehler: %s", e)
@@ -2122,11 +2145,12 @@ class ProactiveManager:
                 state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
                 if not await self.brain.executor._is_safe_cover(entity_id, state):
                     return False
+                ha_pos = self.brain.executor._translate_cover_position(entity_id, position)
                 await self.brain.ha.call_service(
                     "cover", "set_cover_position",
-                    {"entity_id": entity_id, "position": position},
+                    {"entity_id": entity_id, "position": ha_pos},
                 )
-                logger.info("Cover-Auto: %s -> %d%% (%s)", entity_id, position, reason)
+                logger.info("Cover-Auto: %s -> %d%% (HA: %d%%) (%s)", entity_id, position, ha_pos, reason)
                 return True
             except Exception as e:
                 logger.error("Cover-Auto Fehler fuer %s: %s", entity_id, e)
@@ -2150,7 +2174,8 @@ class ProactiveManager:
         wind = weather.get("wind_speed", 0)
         condition = weather.get("condition", "")
 
-        # Sturmschutz: Alle Rolllaeden HOCH (damit Lamellen nicht brechen)
+        # Sturmschutz: Markisen EINFAHREN (0%), Rolllaeden HOCH (100%)
+        # Jalousien/Raffstores: SCHLIESSEN (0%), da Wind in offene Lamellen greifen kann
         if wind >= storm_speed:
             notified = False
             for s in (states or []):
@@ -2159,14 +2184,25 @@ class ProactiveManager:
                     continue
                 if not await self.brain.executor._is_safe_cover(eid, s):
                     continue
-                # Markisen UND Rolllaeden hoch
+                # Markisen → einfahren (Position 0)
+                if self.brain.executor._is_markise(eid, s):
+                    storm_pos = 0
+                    storm_reason = f"Sturmschutz: Markise eingefahren (Wind {wind} km/h)"
+                # Jalousien/Raffstores → schliessen (Lamellen schuetzen)
+                elif s.get("attributes", {}).get("device_class") in ("blind", "shutter"):
+                    storm_pos = 0
+                    storm_reason = f"Sturmschutz: Jalousie geschlossen (Wind {wind} km/h)"
+                # Rolllaeden → hochfahren (offen = sicher)
+                else:
+                    storm_pos = 100
+                    storm_reason = f"Sturmschutz: Rollladen hochgefahren (Wind {wind} km/h)"
                 acted = await self._auto_cover_action(
-                    eid, 100, f"Sturmschutz (Wind {wind} km/h)",
+                    eid, storm_pos, storm_reason,
                     auto_level, redis_client,
                 )
                 if acted and not notified:
                     await self._notify("weather_cover_protection", MEDIUM, {
-                        "message": f"Sturmwarnung: Rolllaeden zum Schutz hochgefahren (Wind {wind} km/h)",
+                        "message": f"Sturmwarnung: Covers zum Schutz gesichert (Wind {wind} km/h)",
                     })
                     notified = True
 
