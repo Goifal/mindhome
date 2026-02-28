@@ -2134,7 +2134,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # bis das Token-Budget fuer Sektionen erschoepft ist.
         # ----------------------------------------------------------------
         context_cfg = cfg.yaml_config.get("context", {})
-        max_context_tokens = context_cfg.get("max_context_tokens", 6000)
+        max_context_tokens = context_cfg.get("max_context_tokens", 8000)
         base_tokens = len(system_prompt) // 3
         user_tokens_est = len(text) // 3
         # Reserve: ~40% fuer Conversations + User-Text + Response-Space
@@ -2203,7 +2203,9 @@ class AssistantBrain(BrainCallbacksMixin):
         memories = context.get("memories", {})
         memory_context = self._build_memory_context(memories)
         if memory_context:
-            sections.append(("memory", memory_context, 2))
+            # Prio 1: Memory IMMER inkludieren — ohne Erinnerungen an die Person
+            # weiss das LLM nicht wer spricht und antwortet generisch
+            sections.append(("memory", memory_context, 1))
 
         # Kontext-Kette: Relevante vergangene Gespraeche
         conv_memory = _safe_get("conv_memory")

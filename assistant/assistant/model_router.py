@@ -16,6 +16,7 @@ Ollama installiert sind.
 """
 
 import logging
+import re
 
 from .config import settings, yaml_config
 
@@ -196,6 +197,20 @@ class ModelRouter:
 
         return requested_model
 
+    @staticmethod
+    def _word_match(keyword: str, text: str) -> bool:
+        """Prueft ob ein Keyword als ganzes Wort im Text vorkommt.
+
+        Kurze Keywords (<=3 Zeichen) wie 'an', 'aus' werden als Wortgrenzen
+        geprueft um False Positives zu vermeiden ('Manuel' matched nicht 'an').
+        Laengere Keywords werden weiterhin als Substring geprueft ('temperatur'
+        in 'aussentemperatur').
+        """
+        if len(keyword) <= 3:
+            # Word-Boundary-Match fuer kurze Keywords
+            return bool(re.search(r'\b' + re.escape(keyword) + r'\b', text))
+        return keyword in text
+
     def select_model(self, text: str) -> str:
         """
         Waehlt das passende Modell fuer die Anfrage (3 Stufen).
@@ -214,13 +229,13 @@ class ModelRouter:
         # 1. Kurze Befehle -> schnelles Modell (wenn aktiviert)
         if word_count <= 6 and self._fast_enabled:
             for keyword in self.fast_keywords:
-                if keyword in text_lower:
+                if self._word_match(keyword, text_lower):
                     logger.debug("FAST model fuer: '%s' (keyword: %s)", text, keyword)
                     return self.model_fast
 
         # 2. Deep-Keywords -> Deep-Modell
         for keyword in self.deep_keywords:
-            if keyword in text_lower:
+            if self._word_match(keyword, text_lower):
                 model = self._cap_model(self.model_deep)
                 logger.debug("DEEP model fuer: '%s' (keyword: %s, actual: %s)",
                              text, keyword, model)
