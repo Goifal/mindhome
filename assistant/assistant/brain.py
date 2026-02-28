@@ -6881,6 +6881,18 @@ class AssistantBrain(BrainCallbacksMixin):
         """
         t = text.lower().strip()
 
+        # Schreib-Operationen (erstellen/loeschen/verschieben) → NICHT als
+        # Read-Shortcut behandeln, sondern ans LLM weiterleiten!
+        _write_verbs = [
+            "erstell", "anleg", "eintrag", "trag ein", "mach einen termin",
+            "neuer termin", "neuen termin", "termin anlegen", "termin erstellen",
+            "termin eintragen", "termin machen",
+            "lösch", "loesch", "entfern", "streich", "absag",
+            "verschieb", "verleg", "änder", "aender",
+        ]
+        if any(kw in t for kw in _write_verbs):
+            return None
+
         # "heute morgen" = this morning → today (NICHT tomorrow!)
         # Muss VOR den morgen-Patterns stehen, sonst gewinnt "morgen"
         if "heute morgen" in t or "heut morgen" in t:
