@@ -2196,7 +2196,7 @@ class PersonalityEngine:
             if "lights" in house:
                 lights_on = house.get("lights") or []
                 if lights_on:
-                    lines.append(f"- Lichter an: {', '.join(lights_on)}")
+                    lines.append(f"- Lichter an (nur Info, NICHT als Zielwert verwenden): {', '.join(lights_on)}")
 
             # Anwesenheit kompakt
             if "presence" in house:

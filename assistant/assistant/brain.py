@@ -5781,6 +5781,9 @@ class AssistantBrain(BrainCallbacksMixin):
         "Welche Lichter sind noch an?", "Rollladenstatus?", "Steckdosen Status?"
         ab, die _is_device_command nicht erkennt weil sie keine Aktionswörter
         enthalten.
+
+        WICHTIG: Steuerungsbefehle ("stell auf 10%", "einstellen", "dimmen")
+        werden NICHT als Status-Query erkannt, auch wenn sie "ist" enthalten.
         """
         t = text.lower()
         _NOUNS = [
@@ -5795,6 +5798,19 @@ class AssistantBrain(BrainCallbacksMixin):
         ]
         has_noun = any(n in t for n in _NOUNS)
         if not has_noun:
+            return False
+        # Ausschluss: Wenn Aktionswoerter vorhanden → Steuerbefehl, keine Query
+        _ACTION_EXCLUSIONS = [
+            "einstellen", "stellen", "stell ", "setzen", "setz ",
+            "dimmen", "dimm ", "heller", "dunkler",
+            "mach ", "schalte ", "dreh ", "aufdrehen", "andrehen",
+            "ausschalten", "einschalten", "anschalten", "abschalten",
+            "auf ", "runter", "hoch", "rauf",
+        ]
+        # Prozent-Angabe mit Aktionskontext: "auf 10%" ist ein Befehl
+        if re.search(r'auf\s+\d+\s*%', t):
+            return False
+        if any(a in t for a in _ACTION_EXCLUSIONS):
             return False
         _QUERY_MARKERS = [
             "welche", "sind ", "ist ", "status", "zeig", "liste",

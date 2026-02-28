@@ -80,8 +80,13 @@ class OutcomeTracker:
             logger.debug("OutcomeTracker: Max pending erreicht (%d)", self._max_pending)
             return
 
-        # Entity-ID bestimmen
-        entity_id = args.get("entity_id", "")
+        # Entity-ID bestimmen: bevorzuge aufgeloeste ID aus result (von _find_entity),
+        # dann args, dann konstruierte ID als Fallback
+        entity_id = ""
+        if isinstance(result, dict) and result.get("entity_id"):
+            entity_id = result["entity_id"]
+        if not entity_id:
+            entity_id = args.get("entity_id", "")
         if not entity_id:
             r = args.get("room", room or "")
             if r and action_type in ("set_light", "set_cover", "set_climate", "set_switch"):
