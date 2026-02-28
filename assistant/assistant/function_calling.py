@@ -399,7 +399,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "brightness": {
                         "type": "integer",
-                        "description": "Helligkeit 0-100 Prozent (optional, nur bei state='on'). Ohne Angabe wird adaptive Helligkeit nach Tageszeit berechnet.",
+                        "description": "Helligkeit 0-100 Prozent (optional, nur bei state='on'). WICHTIG: Wenn der User einen konkreten Wert nennt (z.B. 'auf 10%'), diesen EXAKT uebernehmen — NICHT den aktuellen Kontextwert verwenden. Ohne Angabe wird adaptive Helligkeit nach Tageszeit berechnet.",
                     },
                     "transition": {
                         "type": "integer",
@@ -2043,7 +2043,7 @@ class FunctionExecutor:
         if "transition" in args:
             extras.append(f"Transition: {args['transition']}s")
         extra_str = f" ({', '.join(extras)})" if extras else ""
-        return {"success": success, "message": f"Licht {room} {state}{extra_str}"}
+        return {"success": success, "message": f"Licht {room} {state}{extra_str}", "entity_id": entity_id}
 
     async def _exec_set_light_all(self, args: dict, state: str) -> dict:
         """Alle Lichter ein- oder ausschalten."""
