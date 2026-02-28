@@ -4240,9 +4240,15 @@ class FunctionExecutor:
                 best = None
                 best_score = float("inf")
                 for dev in devices:
+                    eid = dev.get("ha_entity_id", "")
+                    # Domain-Check: Entities aus falscher Domain ueberspringen
+                    # (DB kann z.B. sensor.* liefern obwohl domain=light)
+                    if domain and eid and not eid.startswith(f"{domain}."):
+                        logger.debug("_find_entity: Ueberspringe %s (domain=%s erwartet)", eid, domain)
+                        continue
                     dev_name = self._normalize_name(dev.get("name", ""))
                     dev_room = self._normalize_name(dev.get("room", "") or "")
-                    eid_name = self._normalize_name(dev.get("ha_entity_id", "").split(".", 1)[-1])
+                    eid_name = self._normalize_name(eid.split(".", 1)[-1])
 
                     matched = False
                     # Exakter Raum-Match hat hoechste Prioritaet
