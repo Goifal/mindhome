@@ -28,6 +28,8 @@ rooms:
     default_light: "warmweiss"
     default_brightness: 50
     night_brightness: 10
+    light_entities: []
+    light_type: "standard"
     alerts: []
     scenes: []
 
@@ -39,6 +41,8 @@ rooms:
     default_light: "tageslicht"
     default_brightness: 80
     night_brightness: 40
+    light_entities: []
+    light_type: "standard"
     alerts:
       - "keine_pause_3h"
     scenes:
@@ -53,6 +57,8 @@ rooms:
     default_light: "tageslicht"
     default_brightness: 80
     night_brightness: 40
+    light_entities: []
+    light_type: "standard"
     alerts:
       - "keine_pause_3h"
     scenes:
@@ -68,6 +74,8 @@ rooms:
     default_light: "warmweiss"
     default_brightness: 50
     night_brightness: 10
+    light_entities: []
+    light_type: "standard"
     alerts: []
     scenes: []
 
@@ -79,6 +87,8 @@ rooms:
     default_light: "warmweiss"
     default_brightness: 70
     night_brightness: 20
+    light_entities: []
+    light_type: "dim2warm"
     alerts: []
     scenes:
       - "gemuetlich"
@@ -93,6 +103,8 @@ rooms:
     default_light: "neutralweiss"
     default_brightness: 100
     night_brightness: 30
+    light_entities: []
+    light_type: "standard"
     alerts:
       - "ofen_lange_an"
       - "herd_an"
@@ -108,6 +120,8 @@ rooms:
     default_light: "warmweiss"
     default_brightness: 30
     night_brightness: 5
+    light_entities: []
+    light_type: "dim2warm"
     alerts:
       - "co2_hoch"
     scenes:
@@ -123,6 +137,8 @@ rooms:
     default_light: "warmweiss"
     default_brightness: 60
     night_brightness: 5
+    light_entities: []
+    light_type: "standard"
     alerts: []
     scenes:
       - "schlafen"
@@ -136,6 +152,8 @@ rooms:
     default_light: "warmweiss"
     default_brightness: 60
     night_brightness: 5
+    light_entities: []
+    light_type: "standard"
     alerts: []
     scenes:
       - "schlafen"
@@ -149,6 +167,8 @@ rooms:
     default_light: "warmweiss"
     default_brightness: 60
     night_brightness: 10
+    light_entities: []
+    light_type: "standard"
     alerts: []
     scenes:
       - "morgens"
@@ -162,6 +182,8 @@ rooms:
     default_light: "warmweiss"
     default_brightness: 50
     night_brightness: 10
+    light_entities: []
+    light_type: "standard"
     alerts: []
     scenes: []
 
@@ -173,6 +195,8 @@ rooms:
     default_light: "warmweiss"
     default_brightness: 70
     night_brightness: 15
+    light_entities: []
+    light_type: "standard"
     alerts: []
     scenes: []
 

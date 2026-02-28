@@ -372,7 +372,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
     const tabTitles = {
       'tab-general':'Allgemein','tab-personality':'KI-Modelle & Stil',
       'tab-memory':'Gedaechtnis-Einstellungen','tab-mood':'Stimmung',
-      'tab-rooms':'Raeume & Speaker','tab-devices':'Geraete',
+      'tab-rooms':'Raeume & Speaker','tab-lights':'Licht','tab-devices':'Geraete',
       'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter',
       'tab-routines':'Routinen','tab-proactive':'Proaktiv & Vorausdenken',
       'tab-cooking':'Koch-Assistent','tab-followme':'Follow-Me',
@@ -613,6 +613,7 @@ function renderCurrentTab() {
       case 'tab-proactive': c.innerHTML = renderProactive(); break;
       case 'tab-cooking': c.innerHTML = renderCooking(); break;
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
+      case 'tab-lights': c.innerHTML = renderLights(); loadLightEntities(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
       case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
@@ -4923,6 +4924,166 @@ function removeCoverProfile(idx) {
   if (container) renderCoverProfileList(RP.cover_profiles.covers, container);
 }
 
+// ── Licht-Tab (tab-lights) ─────────────────────────────────────
+function renderLights() {
+  return sectionWrap('&#127968;', 'Raum-Licht-Zuordnung',
+    fInfo('Ordne jedem Raum seine Licht-Entities zu und konfiguriere Lampentyp und Helligkeit. Die Zuordnung wird in den Raum-Profilen gespeichert.') +
+    '<div id="lightRoomContainer" style="padding:8px;color:var(--text-secondary);">Lade Raeume und Licht-Entities...</div>'
+  ) +
+  sectionWrap('&#9881;', 'Automatik-Regeln',
+    fInfo('Regeln fuer automatische Lichtsteuerung. Einmal konfigurieren — Jarvis erledigt den Rest.') +
+    fToggle('lighting.enabled', 'Lichtsteuerung aktiv') +
+    fToggle('lighting.auto_on_dusk', 'Auto-An bei Daemmerung (wenn jemand zuhause)') +
+    fToggle('lighting.auto_off_away', 'Auto-Aus bei Abwesenheit (alle weg)') +
+    fRange('lighting.auto_off_empty_room_minutes', 'Licht aus nach leerem Raum (Min)', 5, 120, 5, {5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',45:'45 Min',60:'1 Std',90:'1.5 Std',120:'2 Std'}) +
+    fToggle('lighting.night_dimming', 'Nacht-Dimming (automatisch dunkler ab 21 Uhr)') +
+    fToggle('lighting.daylight_off', 'Tageslicht-Hinweis (Licht an bei Sonnenschein)') +
+    fRange('lighting.default_transition', 'Standard-Uebergang (Sekunden)', 0, 10, 1, {0:'Sofort',1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s'})
+  ) +
+  sectionWrap('&#127749;', 'Zirkadiane Beleuchtung',
+    fInfo('Passt Helligkeit (und bei tunable_white auch Farbtemperatur) automatisch an den Tagesverlauf an. dim2warm-Lampen regeln die Farbtemperatur ueber die Helligkeit in der Hardware — hier wird nur die Helligkeitskurve gesteuert.<br><br><strong>Modi:</strong><br>• <strong>MindHome:</strong> Jarvis steuert die Helligkeitskurve komplett<br>• <strong>Hybrid HCL:</strong> MDT AKD HCL laeuft als Basis, Jarvis ueberschreibt bei Events') +
+    fToggle('lighting.circadian.enabled', 'Zirkadiane Beleuchtung aktiv') +
+    fSelect('lighting.circadian.mode', 'Modus', [{v:'mindhome',l:'MindHome (Jarvis steuert)'},{v:'hybrid_hcl',l:'Hybrid HCL (MDT AKD Basis)'}]) +
+    fRange('lighting.circadian.transition_seconds', 'Uebergangszeit (Sekunden)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
+    '<div class="info-box" style="margin-top:12px;font-size:11px;line-height:1.6;font-family:var(--mono);">' +
+    '<strong>Standard-Helligkeitskurve:</strong><br>' +
+    '05:00 → 10% &nbsp;|&nbsp; 06:00 → 40% &nbsp;|&nbsp; 07:00 → 70% &nbsp;|&nbsp; 08:00 → 90%<br>' +
+    '09:00 → 100% &nbsp;|&nbsp; 16:00 → 100% &nbsp;|&nbsp; 18:00 → 80%<br>' +
+    '19:00 → 60% &nbsp;|&nbsp; 20:00 → 40% &nbsp;|&nbsp; 21:00 → 25% &nbsp;|&nbsp; 22:00 → 10%<br>' +
+    '<br><strong>Farbtemperatur-Kurve (nur tunable_white):</strong><br>' +
+    '05:00 → 2200K &nbsp;|&nbsp; 07:00 → 3500K &nbsp;|&nbsp; 09:00 → 5000K &nbsp;|&nbsp; 12:00 → 5500K<br>' +
+    '16:00 → 5000K &nbsp;|&nbsp; 18:00 → 3500K &nbsp;|&nbsp; 20:00 → 2700K &nbsp;|&nbsp; 22:00 → 2200K</div>'
+  ) +
+  sectionWrap('&#127916;', 'Szenen-Uebergaenge',
+    fInfo('Uebergangszeiten wenn Jarvis Licht-Szenen aktiviert. Laengere Zeiten = sanftere Uebergaenge.') +
+    fRange('narration.default_transition', 'Standard-Uebergang (Sek)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
+    fRange('narration.scene_transitions.filmabend', 'Filmabend (Sek)', 1, 15, 1, {1:'1s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
+    fRange('narration.scene_transitions.gute_nacht', 'Gute Nacht (Sek)', 1, 20, 1, {1:'1s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s',20:'20s'}) +
+    fRange('narration.scene_transitions.aufwachen', 'Aufwachen (Sek)', 1, 20, 1, {1:'1s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s',20:'20s'}) +
+    fRange('narration.scene_transitions.gemuetlich', 'Gemuetlich (Sek)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',4:'4s',5:'5s',7:'7s',10:'10s',15:'15s'})
+  );
+}
+
+async function loadLightEntities() {
+  const container = document.getElementById('lightRoomContainer');
+  if (!container) return;
+  try {
+    const d = await api('/api/ui/lights');
+    const haLights = d.lights || [];
+    renderLightRoomAssignment(haLights, container);
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler beim Laden: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderLightRoomAssignment(haLights, container) {
+  const rooms = RP.rooms || {};
+  const roomNames = Object.keys(rooms);
+  if (roomNames.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Keine Raeume in room_profiles.yaml gefunden.</div>';
+    return;
+  }
+  const floorLabels = {eg:'EG', og:'OG'};
+  const typeLabels = {
+    living:'Wohnzimmer', bedroom:'Schlafzimmer', kitchen:'Kueche',
+    office:'Buero', bathroom:'Badezimmer', hallway:'Flur',
+    outdoor:'Aussen', dressing:'Ankleide'
+  };
+  const lightTypeOpts = [
+    {v:'standard', l:'Standard (nur Helligkeit)'},
+    {v:'dim2warm', l:'dim2warm (Farbtemp ueber Helligkeit)'},
+    {v:'tunable_white', l:'tunable_white (Helligkeit + Farbtemp)'}
+  ];
+
+  // Group rooms by floor
+  const floors = {};
+  for (const name of roomNames) {
+    const r = rooms[name];
+    const fl = r.floor || 'og';
+    if (!floors[fl]) floors[fl] = [];
+    floors[fl].push(name);
+  }
+
+  let html = '';
+  for (const [floor, floorRooms] of Object.entries(floors)) {
+    html += '<div style="margin-bottom:16px;">';
+    html += '<div style="font-size:14px;font-weight:700;color:var(--accent);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px;">' + (floorLabels[floor] || floor).toUpperCase() + '</div>';
+    for (const name of floorRooms) {
+      const r = rooms[name];
+      const assigned = r.light_entities || [];
+      const icon = r.type==='bedroom' ? '&#128716;' : r.type==='kitchen' ? '&#127859;' :
+                   r.type==='office' ? '&#128187;' : r.type==='bathroom' ? '&#128704;' :
+                   r.type==='hallway' ? '&#128682;' : r.type==='living' ? '&#128715;' :
+                   r.type==='dressing' ? '&#128087;' : '&#127968;';
+      html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+      html += '<span style="font-size:13px;font-weight:600;">' + icon + ' ' + esc(name) + '</span>';
+      html += '<span style="font-size:10px;color:var(--text-muted);background:var(--bg-primary);padding:1px 6px;border-radius:3px;">' + (typeLabels[r.type] || r.type) + '</span>';
+      html += '</div>';
+      // Light Entity Picker (multi-select checklist)
+      html += '<div class="form-group"><label>Licht-Entities</label>';
+      html += '<div style="max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:4px;background:var(--bg-primary);">';
+      if (haLights.length === 0) {
+        html += '<div style="color:var(--text-muted);font-size:11px;padding:4px;">Keine light.* Entities in HA gefunden.</div>';
+      } else {
+        for (const light of haLights) {
+          const isChecked = assigned.includes(light.entity_id);
+          const stateColor = light.state === 'on' ? 'var(--success)' : 'var(--text-muted)';
+          const briInfo = light.brightness != null ? ' (' + light.brightness + '%)' : '';
+          html += '<label style="display:flex;align-items:center;gap:6px;padding:3px 4px;cursor:pointer;font-size:12px;border-radius:4px;" onmouseover="this.style.background=\'var(--bg-hover)\'" onmouseout="this.style.background=\'none\'">';
+          html += '<input type="checkbox"' + (isChecked ? ' checked' : '') + ' onchange="toggleLightEntity(\'' + esc(name) + '\',\'' + esc(light.entity_id) + '\',this.checked)" style="accent-color:var(--accent);flex-shrink:0;">';
+          html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(light.name) + '</span>';
+          html += '<span style="font-size:10px;font-family:var(--mono);color:' + stateColor + ';flex-shrink:0;">' + light.state + briInfo + '</span>';
+          html += '</label>';
+        }
+      }
+      html += '</div></div>';
+      // Light type
+      html += '<div class="form-group"><label>Lampentyp</label><select onchange="setRoomLightType(\'' + esc(name) + '\',this.value)">';
+      for (const o of lightTypeOpts) {
+        html += '<option value="' + o.v + '"' + ((r.light_type||'standard')===o.v ? ' selected' : '') + '>' + o.l + '</option>';
+      }
+      html += '</select></div>';
+      // Brightness (Day/Night) — compact row
+      html += '<div style="display:flex;gap:12px;flex-wrap:wrap;">';
+      html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Helligkeit Tag (%)</label><input type="number" value="' + (r.default_brightness||70) + '" min="0" max="100" step="5" onchange="setRoomLightVal(\'' + esc(name) + '\',\'default_brightness\',parseInt(this.value))"></div>';
+      html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Helligkeit Nacht (%)</label><input type="number" value="' + (r.night_brightness||20) + '" min="0" max="100" step="5" onchange="setRoomLightVal(\'' + esc(name) + '\',\'night_brightness\',parseInt(this.value))"></div>';
+      html += '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+function toggleLightEntity(room, entityId, checked) {
+  if (!RP.rooms || !RP.rooms[room]) return;
+  if (!RP.rooms[room].light_entities) RP.rooms[room].light_entities = [];
+  const list = RP.rooms[room].light_entities;
+  if (checked && !list.includes(entityId)) {
+    list.push(entityId);
+  } else if (!checked) {
+    const idx = list.indexOf(entityId);
+    if (idx >= 0) list.splice(idx, 1);
+  }
+  _rpDirty = true;
+  scheduleAutoSave();
+}
+
+function setRoomLightType(room, lightType) {
+  if (!RP.rooms || !RP.rooms[room]) return;
+  RP.rooms[room].light_type = lightType;
+  _rpDirty = true;
+  scheduleAutoSave();
+}
+
+function setRoomLightVal(room, key, val) {
+  if (!RP.rooms || !RP.rooms[room]) return;
+  RP.rooms[room][key] = val;
+  _rpDirty = true;
+  scheduleAutoSave();
+}
+
 // ── Room-Profile Editor (room_profiles.yaml → rooms) ──────────
 function renderRoomProfileEditor() {
   const rooms = RP.rooms || {};
@@ -4957,12 +5118,8 @@ function renderRoomProfileEditor() {
     html += '<option value="eg"' + (r.floor==='eg'?' selected':'') + '>Erdgeschoss (EG)</option>';
     html += '<option value="og"' + (r.floor==='og'?' selected':'') + '>Obergeschoss (OG)</option>';
     html += '</select></div>';
-    // Temp, Brightness, Night
-    html += '<div style="display:flex;gap:12px;flex-wrap:wrap;">';
-    html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Standard-Temp (°C)</label><input type="number" data-rp-path="rooms.' + name + '.default_temp" value="' + (r.default_temp||20) + '" min="10" max="30" step="0.5" onchange="rpSetPath(\'rooms.' + name + '.default_temp\',parseFloat(this.value))"></div>';
-    html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Helligkeit (%)</label><input type="number" data-rp-path="rooms.' + name + '.default_brightness" value="' + (r.default_brightness||70) + '" min="0" max="100" step="5" onchange="rpSetPath(\'rooms.' + name + '.default_brightness\',parseInt(this.value))"></div>';
-    html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Nacht-Helligkeit (%)</label><input type="number" data-rp-path="rooms.' + name + '.night_brightness" value="' + (r.night_brightness||20) + '" min="0" max="100" step="5" onchange="rpSetPath(\'rooms.' + name + '.night_brightness\',parseInt(this.value))"></div>';
-    html += '</div>';
+    // Temp (Helligkeit ist jetzt im Licht-Tab)
+    html += '<div class="form-group"><label>Standard-Temp (°C)</label><input type="number" data-rp-path="rooms.' + name + '.default_temp" value="' + (r.default_temp||20) + '" min="10" max="30" step="0.5" onchange="rpSetPath(\'rooms.' + name + '.default_temp\',parseFloat(this.value))"></div>';
     // Zweck
     html += '<div class="form-group"><label>Zweck (fuer LLM-Kontext)</label><input type="text" data-rp-path="rooms.' + name + '.purpose" value="' + esc(r.purpose||'') + '" onchange="rpSetPath(\'rooms.' + name + '.purpose\',this.value)"></div>';
     html += '</div>';
