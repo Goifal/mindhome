@@ -1234,10 +1234,15 @@ function sectionWrap(icon, title, content) {
 }
 
 // ---- Entity-Picker Komponenten ----
-// Cached entities (lazy loaded)
+// Cached entities (lazy loaded, retries on empty)
 let _pickerEntities = null;
+let _pickerLastAttempt = 0;
 async function ensurePickerEntities() {
-  if (_pickerEntities) return _pickerEntities;
+  // Nur Cache verwenden wenn tatsaechlich Entities geladen wurden
+  if (_pickerEntities && _pickerEntities.length > 0) return _pickerEntities;
+  // Retry-Schutz: maximal alle 3 Sekunden neu versuchen
+  if (Date.now() - _pickerLastAttempt < 3000) return _pickerEntities || [];
+  _pickerLastAttempt = Date.now();
   if (ALL_ENTITIES.length > 0) { _pickerEntities = ALL_ENTITIES; return _pickerEntities; }
   try {
     const d = await api('/api/ui/entities');
@@ -1349,15 +1354,15 @@ async function entityPickFilter(input, domStr) {
   }
 
   dropdown.innerHTML = show.map(e =>
-    `<div class="entity-pick-item" onmousedown="entityPickSelect(this,'${esc(e.entity_id)}')">
+    `<div class="entity-pick-item" onmousedown="entityPickSelect(this,'${esc(e.entity_id)}')" ontouchend="entityPickSelect(this,'${esc(e.entity_id)}')">
       <span class="ename">${esc(e.name)}</span>
       <span class="eid">${esc(e.entity_id)}</span>
     </div>`
   ).join('');
   dropdown.style.display = 'block';
 
-  // Schliessen bei Blur
-  input.onblur = () => setTimeout(() => { dropdown.style.display = 'none'; }, 200);
+  // Schliessen bei Blur (laengerer Delay fuer Mobile-Touch)
+  input.onblur = () => setTimeout(() => { dropdown.style.display = 'none'; }, 400);
 }
 
 function entityPickSelect(item, entityId) {
