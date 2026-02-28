@@ -6000,9 +6000,12 @@ class AssistantBrain(BrainCallbacksMixin):
                 if _idx > 0:
                     _before = text[:_idx].strip().split()  # Original-Case
                     if _before:
-                        _CMD = {"mach", "schalte", "schalt", "stell", "setz",
-                                "dreh", "fahr", "oeffne", "schliess", "bitte",
-                                "mal", "das", "die", "den", "dem", "der"}
+                        _CMD = {"mach", "mache", "schalte", "schalt",
+                                "stell", "stelle", "setz", "setze",
+                                "dreh", "drehe", "fahr", "fahre",
+                                "oeffne", "schliess", "schliesse",
+                                "bitte", "mal", "das", "die", "den",
+                                "dem", "der"}
                         # Alle Nicht-Befehlswoerter als Raum zusammensetzen
                         # ("schalte Manuel Buero Licht" → "Manuel Buero")
                         _room_words = [w for w in _before
@@ -6027,10 +6030,10 @@ class AssistantBrain(BrainCallbacksMixin):
                 state = "on"
             elif _re.search(r'\baus\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
                 state = "off"
-            # Heller/Dunkler
-            elif "heller" in word_set:
+            # Heller/Dunkler (inkl. STT-Varianten mit Umlaut)
+            elif word_set & {"heller", "héller"}:
                 state = "brighter"
-            elif "dunkler" in word_set:
+            elif word_set & {"dunkler", "dünkler", "duenkler"}:
                 state = "dimmer"
 
             # Brightness: "auf 50%", "50 Prozent"

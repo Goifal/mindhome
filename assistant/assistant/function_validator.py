@@ -133,6 +133,15 @@ class FunctionValidator:
     def _validate_set_light(self, args: dict) -> ValidationResult:
         brightness = args.get("brightness")
         if brightness is not None:
+            # LLM sendet manchmal "dunkler"/"heller" als brightness statt als state
+            _brightness_to_state = {
+                "dunkler": "dimmer", "dimmer": "dimmer",
+                "heller": "brighter", "brighter": "brighter",
+            }
+            if isinstance(brightness, str) and brightness.lower() in _brightness_to_state:
+                args["state"] = _brightness_to_state[brightness.lower()]
+                del args["brightness"]
+                return ValidationResult(ok=True)
             try:
                 brightness = int(brightness)
             except (ValueError, TypeError):
