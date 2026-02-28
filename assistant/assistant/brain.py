@@ -6143,6 +6143,27 @@ class AssistantBrain(BrainCallbacksMixin):
                 args["adjust"] = adjust
             return {"function": "set_climate", "args": args}
 
+        # --- ALARMANLAGE ---
+        if any(n in t for n in ["alarm", "alarmanlage", "sicherheit"]):
+            # "Wecker" ist kein Alarm im Sicherheits-Sinne
+            if "wecker" not in t:
+                mode = None
+                # Disarm ZUERST pruefen ("deaktivieren" enthaelt "aktivieren" als Substring)
+                if any(kw in t for kw in ["unscharf", "ausschalten", "abschalten",
+                                           "deaktivieren", "entschärfen",
+                                           "entschaerfen"]):
+                    mode = "disarm"
+                elif _re.search(r'\baus\s*$', t):
+                    mode = "disarm"
+                elif any(kw in t for kw in ["scharf", "einschalten", "anschalten",
+                                             "aktivieren", "sichern"]):
+                    if any(kw in t for kw in ["abwesend", "weg", "away"]):
+                        mode = "arm_away"
+                    else:
+                        mode = "arm_home"
+                if mode:
+                    return {"function": "arm_security_system", "args": {"mode": mode}}
+
         # --- STECKDOSE / SCHALTER ---
         if any(n in t for n in ["steckdose", "schalter"]):
             state = None
