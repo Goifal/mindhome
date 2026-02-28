@@ -6000,12 +6000,15 @@ class AssistantBrain(BrainCallbacksMixin):
                 if _idx > 0:
                     _before = text[:_idx].strip().split()  # Original-Case
                     if _before:
-                        _cand = _before[-1]
                         _CMD = {"mach", "schalte", "schalt", "stell", "setz",
                                 "dreh", "fahr", "oeffne", "schliess", "bitte",
                                 "mal", "das", "die", "den", "dem", "der"}
-                        if _cand.lower() not in _CMD and len(_cand) > 2:
-                            extracted_room = _cand
+                        # Alle Nicht-Befehlswoerter als Raum zusammensetzen
+                        # ("schalte Manuel Buero Licht" → "Manuel Buero")
+                        _room_words = [w for w in _before
+                                       if w.lower() not in _CMD and len(w) > 2]
+                        if _room_words:
+                            extracted_room = " ".join(_room_words)
                     break
         effective_room = extracted_room or room
 
