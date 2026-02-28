@@ -5,6 +5,7 @@ Suggestions, execution, undo, conflict detection, phase management.
 Phase 3: Presence modes, plugin conflicts, quiet hours, holiday awareness.
 """
 
+import math
 import os
 import json
 import logging
@@ -60,6 +61,19 @@ DOMAIN_THRESHOLDS = {
     "_default":             {"suggest": 0.5,  "auto": 0.8},
 }
 
+# Confidence decay: patterns lose trust over time if not recently matched
+CONFIDENCE_DECAY_HALF_LIFE_DAYS = 90   # Confidence halves every 90 days of inactivity
+CONFIDENCE_DECAY_MIN = 0.05            # Never decay below this floor
+CONFIDENCE_DECAY_GRACE_DAYS = 14       # No decay within 14 days of last match
+
+# Context-aware threshold adjustments
+CONTEXT_THRESHOLD_ADJUSTMENTS = {
+    "vacation":    {"suggest": +0.10, "auto": +0.10},   # More cautious during vacation
+    "guests_home": {"suggest": +0.15, "auto": +0.15},   # Much more cautious with guests
+    "holiday":     {"suggest": +0.05, "auto": +0.05},   # Slightly more cautious on holidays
+    "night":       {"suggest": +0.05, "auto": +0.05},   # Slightly more cautious at night
+}
+
 # D5: Time window for execution tolerance
 EXECUTION_TIME_WINDOW_MIN = 10
 
@@ -68,6 +82,23 @@ UNDO_WINDOW_MINUTES = 30
 
 # Anomaly: how many standard deviations counts as anomaly
 ANOMALY_THRESHOLD_HOURS = 2  # e.g. light on at 3 AM when pattern says never
+
+
+def _apply_context_adjustments(base_thresholds, context):
+    """Apply context-aware adjustments to base thresholds.
+
+    Returns adjusted thresholds dict. Sets context['_adjusted'] if any adjustment was made.
+    """
+    adjusted = {"suggest": base_thresholds["suggest"], "auto": base_thresholds["auto"]}
+    was_adjusted = False
+    for ctx_key, adj in CONTEXT_THRESHOLD_ADJUSTMENTS.items():
+        if context.get(ctx_key):
+            adjusted["suggest"] = min(1.0, adjusted["suggest"] + adj["suggest"])
+            adjusted["auto"] = min(1.0, adjusted["auto"] + adj["auto"])
+            was_adjusted = True
+    if was_adjusted:
+        context["_adjusted"] = True
+    return adjusted
 
 
 # ==============================================================================
@@ -90,10 +121,13 @@ class SuggestionGenerator:
                 status="observed", is_active=True
             ).all()
 
+            # Determine current context for threshold adjustments
+            context = self._get_current_context(session)
+
             count = 0
             for pattern in patterns:
                 ha_domain = self._get_ha_domain(pattern)
-                thresholds = DOMAIN_THRESHOLDS.get(ha_domain, DOMAIN_THRESHOLDS["_default"])
+                thresholds = self._get_adjusted_thresholds(ha_domain, context)
 
                 if pattern.confidence >= thresholds["suggest"]:
                     # Check phase: room/domain must be at least SUGGESTING
@@ -108,6 +142,11 @@ class SuggestionGenerator:
                     pattern.status = "suggested"
                     pattern.updated_at = datetime.now(timezone.utc)
 
+                    # Generate explanation for the suggestion
+                    explanation_de, explanation_en = self._generate_explanation(
+                        session, pattern, thresholds, context
+                    )
+
                     # Create prediction (suggestion entry)
                     prediction = Prediction(
                         pattern_id=pattern.id,
@@ -117,6 +156,8 @@ class SuggestionGenerator:
                         status="pending",
                         description_de=pattern.description_de,
                         description_en=pattern.description_en,
+                        explanation_de=explanation_de,
+                        explanation_en=explanation_en,
                     )
                     session.add(prediction)
                     count += 1
@@ -134,6 +175,247 @@ class SuggestionGenerator:
             return 0
         finally:
             session.close()
+
+    def apply_confidence_decay(self):
+        """Apply time-based confidence decay to patterns that haven't matched recently.
+
+        Patterns lose confidence over time if they are not being triggered.
+        Uses exponential decay with a configurable half-life (default 90 days).
+        Patterns matched within the grace period (default 14 days) are not affected.
+        """
+        session = self.Session()
+        try:
+            now = datetime.now(timezone.utc)
+            grace_cutoff = now - timedelta(days=CONFIDENCE_DECAY_GRACE_DAYS)
+
+            # Find active patterns that haven't matched recently
+            stale_patterns = session.query(LearnedPattern).filter(
+                LearnedPattern.is_active == True,
+                LearnedPattern.status.in_(["observed", "suggested", "active"]),
+                LearnedPattern.confidence > CONFIDENCE_DECAY_MIN,
+            ).all()
+
+            decayed_count = 0
+            for pattern in stale_patterns:
+                # Use last_matched_at if available, fall back to updated_at, then created_at
+                last_activity = pattern.last_matched_at or pattern.updated_at or pattern.created_at
+                if not last_activity:
+                    continue
+
+                # Ensure timezone-aware comparison
+                if last_activity.tzinfo is None:
+                    last_activity = last_activity.replace(tzinfo=timezone.utc)
+
+                # Skip patterns within grace period
+                if last_activity >= grace_cutoff:
+                    continue
+
+                # Calculate days since last activity
+                days_inactive = (now - last_activity).total_seconds() / 86400
+
+                # Exponential decay: new_conf = old_conf * 0.5^(days / half_life)
+                decay_factor = math.pow(0.5, days_inactive / CONFIDENCE_DECAY_HALF_LIFE_DAYS)
+                new_confidence = max(CONFIDENCE_DECAY_MIN, pattern.confidence * decay_factor)
+
+                # Only apply if meaningful change (> 0.01 difference)
+                if pattern.confidence - new_confidence >= 0.01:
+                    old_conf = pattern.confidence
+                    pattern.confidence = round(new_confidence, 4)
+                    pattern.updated_at = now
+                    decayed_count += 1
+
+                    logger.debug(
+                        f"Confidence decay: pattern {pattern.id} "
+                        f"{old_conf:.3f} → {new_confidence:.3f} "
+                        f"(inactive {int(days_inactive)}d)"
+                    )
+
+                    # Auto-deactivate if confidence drops too low
+                    if pattern.confidence < 0.10 and pattern.status == "active":
+                        pattern.status = "observed"
+                        logger.info(
+                            f"Pattern {pattern.id} demoted to 'observed' "
+                            f"(confidence decayed to {pattern.confidence:.3f})"
+                        )
+
+            session.commit()
+            if decayed_count > 0:
+                logger.info(f"Confidence decay applied to {decayed_count} patterns")
+            return decayed_count
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Confidence decay error: {e}")
+            return 0
+        finally:
+            session.close()
+
+    def _get_current_context(self, session):
+        """Gather current context for threshold adjustments.
+
+        Returns a dict with boolean flags for active contexts:
+        vacation, guests_home, holiday, night.
+        """
+        context = {
+            "vacation": False,
+            "guests_home": False,
+            "holiday": False,
+            "night": False,
+            "active_contexts": [],  # Human-readable list for explanations
+        }
+
+        try:
+            # Check vacation mode
+            vac = session.execute(
+                text("SELECT value FROM system_settings WHERE key='vacation_mode'")
+            ).fetchone()
+            if vac and vac[0] == "true":
+                context["vacation"] = True
+                context["active_contexts"].append("vacation")
+
+            # Check guests via current presence mode
+            last_presence = session.query(PresenceLog).order_by(
+                PresenceLog.created_at.desc()
+            ).first()
+            if last_presence and last_presence.mode_id:
+                mode = session.get(PresenceMode, last_presence.mode_id)
+                if mode:
+                    auto_config = mode.auto_config or {}
+                    if auto_config.get("condition") == "guests_home":
+                        context["guests_home"] = True
+                        context["active_contexts"].append("guests")
+
+            # Check holidays
+            from models import Holiday
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            today_md = datetime.now().strftime("%m-%d")
+            is_holiday = session.query(Holiday).filter(
+                Holiday.is_active == True,
+                ((Holiday.date == today_str) |
+                 ((Holiday.is_recurring == True) & (Holiday.date == today_md)))
+            ).first()
+            if is_holiday:
+                context["holiday"] = True
+                context["active_contexts"].append("holiday")
+
+            # Check if it's night time (22:00-06:00)
+            try:
+                from helpers import local_now
+                now = local_now()
+            except Exception:
+                now = datetime.now()
+            if now.hour >= 22 or now.hour < 6:
+                context["night"] = True
+                context["active_contexts"].append("night")
+
+        except Exception as e:
+            logger.debug(f"Context detection error: {e}")
+
+        return context
+
+    def _get_adjusted_thresholds(self, ha_domain, context):
+        """Get domain thresholds adjusted for current context.
+
+        During vacation, with guests, on holidays, or at night,
+        thresholds are raised to make the system more cautious.
+        """
+        base = DOMAIN_THRESHOLDS.get(ha_domain, DOMAIN_THRESHOLDS["_default"])
+        adjusted = {"suggest": base["suggest"], "auto": base["auto"]}
+
+        for ctx_key, adjustments in CONTEXT_THRESHOLD_ADJUSTMENTS.items():
+            if context.get(ctx_key):
+                adjusted["suggest"] = min(1.0, adjusted["suggest"] + adjustments["suggest"])
+                adjusted["auto"] = min(1.0, adjusted["auto"] + adjustments["auto"])
+
+        return adjusted
+
+    def _generate_explanation(self, session, pattern, thresholds, context):
+        """Generate a human-readable explanation for why a suggestion was made.
+
+        Returns (explanation_de, explanation_en) tuple.
+        """
+        parts_de = []
+        parts_en = []
+
+        # 1. Confidence basis
+        conf_pct = int(pattern.confidence * 100)
+        parts_de.append(f"Vertrauen: {conf_pct}%")
+        parts_en.append(f"Confidence: {conf_pct}%")
+
+        # 2. Match statistics
+        if pattern.match_count and pattern.match_count > 0:
+            parts_de.append(f"{pattern.match_count}x beobachtet")
+            parts_en.append(f"Observed {pattern.match_count} times")
+
+        if pattern.times_confirmed and pattern.times_confirmed > 0:
+            parts_de.append(f"{pattern.times_confirmed}x bestaetigt")
+            parts_en.append(f"Confirmed {pattern.times_confirmed} times")
+
+        # 3. Timing info from trigger conditions
+        trigger = pattern.trigger_conditions or {}
+        if trigger.get("type") == "time":
+            hour = trigger.get("hour", -1)
+            minute = trigger.get("minute", 0)
+            if hour >= 0:
+                time_str = f"{hour:02d}:{minute:02d}"
+                if trigger.get("weekdays_only"):
+                    parts_de.append(f"Werktags um {time_str}")
+                    parts_en.append(f"Weekdays at {time_str}")
+                elif trigger.get("weekends_only"):
+                    parts_de.append(f"Am Wochenende um {time_str}")
+                    parts_en.append(f"Weekends at {time_str}")
+                else:
+                    parts_de.append(f"Taeglich um {time_str}")
+                    parts_en.append(f"Daily at {time_str}")
+
+        # 4. Season info
+        if pattern.season:
+            season_map_de = {"spring": "Fruehling", "summer": "Sommer",
+                             "autumn": "Herbst", "winter": "Winter"}
+            season_map_en = {"spring": "spring", "summer": "summer",
+                             "autumn": "autumn", "winter": "winter"}
+            parts_de.append(f"Saison: {season_map_de.get(pattern.season, pattern.season)}")
+            parts_en.append(f"Season: {season_map_en.get(pattern.season, pattern.season)}")
+
+        # 5. Person requirements
+        persons = (trigger.get("requires_persons") or [])
+        if persons:
+            names = [p.replace("person.", "").replace("_", " ").title() for p in persons]
+            parts_de.append(f"Wenn {', '.join(names)} zuhause")
+            parts_en.append(f"When {', '.join(names)} home")
+
+        # 6. Last matched info
+        if pattern.last_matched_at:
+            days_ago = (datetime.now(timezone.utc) - pattern.last_matched_at).days
+            if days_ago == 0:
+                parts_de.append("Zuletzt heute beobachtet")
+                parts_en.append("Last observed today")
+            elif days_ago == 1:
+                parts_de.append("Zuletzt gestern beobachtet")
+                parts_en.append("Last observed yesterday")
+            else:
+                parts_de.append(f"Zuletzt vor {days_ago} Tagen beobachtet")
+                parts_en.append(f"Last observed {days_ago} days ago")
+
+        # 7. Context info (if thresholds were adjusted)
+        if context.get("active_contexts"):
+            ctx_names_de = {
+                "vacation": "Urlaub", "guests": "Gaeste anwesend",
+                "holiday": "Feiertag", "night": "Nachtzeit"
+            }
+            ctx_names_en = {
+                "vacation": "vacation", "guests": "guests present",
+                "holiday": "holiday", "night": "nighttime"
+            }
+            active = context["active_contexts"]
+            ctx_de = ", ".join(ctx_names_de.get(c, c) for c in active)
+            ctx_en = ", ".join(ctx_names_en.get(c, c) for c in active)
+            parts_de.append(f"Kontext: {ctx_de} (erhoehte Schwellwerte)")
+            parts_en.append(f"Context: {ctx_en} (raised thresholds)")
+
+        explanation_de = " | ".join(parts_de)
+        explanation_en = " | ".join(parts_en)
+        return explanation_de, explanation_en
 
     def _get_ha_domain(self, pattern):
         """Extract HA domain from pattern data."""
@@ -327,19 +609,25 @@ class AutomationExecutor:
                 entity_pattern_map = defaultdict(list)
                 eligible_patterns = []
 
+                # Get context-aware thresholds
+                context = self._get_execution_context(session)
+
                 for pattern in active_patterns:
                     trigger = pattern.trigger_conditions or {}
                     trigger_type = trigger.get("type")
 
                     # Fix #5: Check confidence against domain-specific thresholds
+                    # Now with context-aware adjustments
                     action = pattern.action_definition or {}
                     entity_id = action.get("entity_id", "")
                     ha_domain = entity_id.split(".")[0] if entity_id else "_default"
-                    thresholds = DOMAIN_THRESHOLDS.get(ha_domain, DOMAIN_THRESHOLDS["_default"])
+                    base_thresholds = DOMAIN_THRESHOLDS.get(ha_domain, DOMAIN_THRESHOLDS["_default"])
+                    thresholds = _apply_context_adjustments(base_thresholds, context)
                     if pattern.confidence < thresholds["auto"]:
                         logger.debug(
                             f"Pattern {pattern.id}: confidence {pattern.confidence:.2f} "
-                            f"< threshold {thresholds['auto']} for {ha_domain}, skipping"
+                            f"< threshold {thresholds['auto']:.2f} for {ha_domain}"
+                            f"{' (context-adjusted)' if context.get('_adjusted') else ''}, skipping"
                         )
                         continue
 
@@ -636,6 +924,58 @@ class AutomationExecutor:
         except Exception:
             pass
         return "unknown"
+
+    def _get_execution_context(self, session):
+        """Gather context for execution threshold adjustments.
+
+        Reuses the same context keys as SuggestionGenerator._get_current_context
+        but is a lightweight check optimized for the 1-minute execution loop.
+        """
+        context = {"vacation": False, "guests_home": False, "holiday": False, "night": False}
+        try:
+            # Vacation
+            vac = session.execute(
+                text("SELECT value FROM system_settings WHERE key='vacation_mode'")
+            ).fetchone()
+            if vac and vac[0] == "true":
+                context["vacation"] = True
+
+            # Guests — check current presence mode condition
+            last_presence = session.query(PresenceLog).order_by(
+                PresenceLog.created_at.desc()
+            ).first()
+            if last_presence and last_presence.mode_id:
+                mode = session.get(PresenceMode, last_presence.mode_id)
+                if mode:
+                    ac = mode.auto_config or {}
+                    if ac.get("condition") == "guests_home":
+                        context["guests_home"] = True
+
+            # Holiday
+            from models import Holiday
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            today_md = datetime.now().strftime("%m-%d")
+            is_holiday = session.query(Holiday).filter(
+                Holiday.is_active == True,
+                ((Holiday.date == today_str) |
+                 ((Holiday.is_recurring == True) & (Holiday.date == today_md)))
+            ).first()
+            if is_holiday:
+                context["holiday"] = True
+
+            # Night (22:00-06:00)
+            try:
+                from helpers import local_now
+                now = local_now()
+            except Exception:
+                now = datetime.now()
+            if now.hour >= 22 or now.hour < 6:
+                context["night"] = True
+
+        except Exception as e:
+            logger.debug(f"Execution context error: {e}")
+
+        return context
 
 
 # ==============================================================================
@@ -2037,7 +2377,14 @@ class AutomationScheduler:
         t9.start()
         self._threads.append(t9)
 
-        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min, presence:2min, plugin-conflicts:5min, pattern-conflicts:5min, cal-triggers:5min, shift-sync:6h)")
+        # Confidence decay: every 12 hours (runs alongside phase transitions)
+        t10 = threading.Thread(target=self._run_periodic,
+                               args=(self.suggestion_gen.apply_confidence_decay, 12 * 3600, "confidence_decay"),
+                               daemon=True)
+        t10.start()
+        self._threads.append(t10)
+
+        logger.info("Automation Scheduler started (exec:1min, suggest:4h, phase:12h, anomaly:15min, presence:2min, plugin-conflicts:5min, pattern-conflicts:5min, cal-triggers:5min, shift-sync:6h, conf-decay:12h)")
 
         # #40 Watchdog: monitor thread health every 5 min
         t5 = threading.Thread(target=self._watchdog_task, daemon=True)

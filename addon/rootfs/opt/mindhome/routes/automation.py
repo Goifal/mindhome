@@ -111,6 +111,10 @@ def api_get_predictions():
             "description": p.description_de if lang == "de" else (p.description_en or p.description_de),
             "description_de": p.description_de,
             "description_en": p.description_en,
+            "explanation": (getattr(p, 'explanation_de', None) if lang == "de"
+                           else (getattr(p, 'explanation_en', None) or getattr(p, 'explanation_de', None))),
+            "explanation_de": getattr(p, 'explanation_de', None),
+            "explanation_en": getattr(p, 'explanation_en', None),
             "predicted_action": p.predicted_action,
             "confidence": round(p.confidence, 3),
             "status": p.status or "pending",

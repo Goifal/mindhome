@@ -275,6 +275,8 @@ class Prediction(Base):
     undone_at = Column(DateTime, nullable=True)
     description_de = Column(Text, nullable=True)
     description_en = Column(Text, nullable=True)
+    explanation_de = Column(Text, nullable=True)  # Why this suggestion was made
+    explanation_en = Column(Text, nullable=True)
 
     pattern = relationship("LearnedPattern")
 
@@ -2154,6 +2156,14 @@ MIGRATIONS = [
             "ALTER TABLE cover_configs ADD COLUMN enabled BOOLEAN DEFAULT 1",
         ]
     },
+    {
+        "version": 15,
+        "description": "Add explanation columns to predictions for suggestion reasoning",
+        "sql": [
+            "ALTER TABLE predictions ADD COLUMN explanation_de TEXT",
+            "ALTER TABLE predictions ADD COLUMN explanation_en TEXT",
+        ]
+    },
 ]
 
 
@@ -2242,6 +2252,10 @@ def run_migrations(engine):
         # Safety check: ensure critical columns exist (handles skipped migrations)
         _ensure_columns(session, "cover_configs", [
             ("enabled", "BOOLEAN DEFAULT 1"),
+        ])
+        _ensure_columns(session, "predictions", [
+            ("explanation_de", "TEXT"),
+            ("explanation_en", "TEXT"),
         ])
 
         final_v = max(m['version'] for m in MIGRATIONS) if MIGRATIONS else 0
