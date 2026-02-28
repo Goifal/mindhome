@@ -10,6 +10,35 @@ let RP = {};  // Room-Profiles cache (room_profiles.yaml)
 let _rpDirty = false;  // Room-Profiles geaendert?
 let ALL_ENTITIES = [];
 const API = '';
+let _autoSaveTimer = null;
+const _AUTO_SAVE_DELAY = 2000;  // 2 Sekunden Debounce
+
+// ---- Auto-Save: Aenderungen automatisch speichern ----
+function scheduleAutoSave() {
+  if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
+  const status = document.getElementById('autoSaveStatus');
+  if (status) { status.textContent = 'Ungespeichert...'; status.className = 'auto-save-status'; }
+  _autoSaveTimer = setTimeout(async () => {
+    _autoSaveTimer = null;
+    if (status) { status.textContent = 'Speichert...'; status.className = 'auto-save-status saving'; }
+    await saveAllSettings();
+    if (status && !_autoSaveTimer) {
+      status.textContent = 'Gespeichert'; status.className = 'auto-save-status saved';
+      setTimeout(() => { if (status && !_autoSaveTimer) { status.textContent = ''; } }, 3000);
+    }
+  }, _AUTO_SAVE_DELAY);
+}
+
+function _initAutoSave() {
+  const container = document.getElementById('settingsContent');
+  if (!container) return;
+  container.addEventListener('input', (e) => {
+    if (e.target.closest('[data-path]')) scheduleAutoSave();
+  });
+  container.addEventListener('change', (e) => {
+    if (e.target.closest('[data-path]')) scheduleAutoSave();
+  });
+}
 
 // ---- Mobile Sidebar Toggle mit Backdrop ----
 function toggleSidebar() {
@@ -554,6 +583,7 @@ async function loadSettings() {
     try { RP = await api('/api/ui/room-profiles'); } catch(e) { RP = {}; }
     _rpDirty = false;
     renderCurrentTab();
+    _initAutoSave();
   } catch(e) { console.error('Settings fail:', e); }
 }
 
@@ -1111,6 +1141,7 @@ function toggleChip(path, value) {
   if (idx >= 0) arr.splice(idx, 1); else arr.push(value);
   setPath(S, path, arr);
   renderCurrentTab();
+  scheduleAutoSave();
 }
 
 // Modell-Auswahl als Dropdown
@@ -1184,6 +1215,7 @@ function kvSync(editor, path) {
     }
   });
   setPath(S, path, obj);
+  scheduleAutoSave();
 }
 
 // Info-Box
@@ -1372,6 +1404,7 @@ function entityPickSelect(item, entityId) {
     arr.push(entityId);
     setPath(S, path, arr);
     renderCurrentTab();
+    scheduleAutoSave();
   }
 }
 
@@ -1382,6 +1415,7 @@ function rmEntityPick(el, path) {
   const arr = (getPath(S, path) || []).filter(k => k !== word);
   setPath(S, path, arr);
   renderCurrentTab();
+  scheduleAutoSave();
 }
 
 // Personen-Profile: Pro Haushaltsmitglied notify_service und preferred_room
@@ -1532,6 +1566,7 @@ function addKw(e, input, path) {
     arr.push(val);
     setPath(S, path, arr);
     renderCurrentTab();
+    scheduleAutoSave();
   }
 }
 function rmKw(el, path) {
@@ -1541,6 +1576,7 @@ function rmKw(el, path) {
   const arr = (getPath(S, path) || []).filter(k => k !== word);
   setPath(S, path, arr);
   renderCurrentTab();
+  scheduleAutoSave();
 }
 
 function bindFormEvents() {
@@ -1685,6 +1721,7 @@ function addHouseholdMember() {
   members.push({name: '', role: 'member', ha_entity: '', title: ''});
   setPath(S, 'household.members', members);
   renderCurrentTab();
+  scheduleAutoSave();
 }
 
 function removeHouseholdMember(idx) {
@@ -1693,6 +1730,7 @@ function removeHouseholdMember(idx) {
   members.splice(idx, 1);
   setPath(S, 'household.members', members);
   renderCurrentTab();
+  scheduleAutoSave();
 }
 
 function updateMemberRoleVisual(selectEl) {
@@ -3674,9 +3712,10 @@ function collectSettings() {
 }
 
 let _saving = false;
-async function saveAllSettings() {
+async function saveAllSettings(showToast) {
   if (_saving) return;
   _saving = true;
+  const status = document.getElementById('autoSaveStatus');
   try {
     // Erst aktuelle Tab-Werte in S uebernehmen, dann S als Basis nutzen
     const tabUpdates = collectSettings();
@@ -3698,6 +3737,7 @@ async function saveAllSettings() {
     const result = await api('/api/ui/settings', 'PUT', {settings: updates});
 
     if (result && result.success === false) {
+      if (status) { status.textContent = 'Fehler'; status.className = 'auto-save-status error'; }
       toast(result.message || 'Ungueltige Einstellungen', 'error');
       return;
     }
@@ -3709,8 +3749,9 @@ async function saveAllSettings() {
       _rpDirty = false;
     }
 
-    toast(result?.message || 'Einstellungen gespeichert');
+    if (showToast) toast(result?.message || 'Einstellungen gespeichert');
   } catch(e) {
+    if (status) { status.textContent = 'Fehler'; status.className = 'auto-save-status error'; }
     toast('Fehler beim Speichern' + (e.message ? ': ' + e.message : ''), 'error');
   } finally {
     _saving = false;
@@ -4722,6 +4763,7 @@ async function setCoverEnabled(entityId, enabled) {
 function rpGetPath(path) { return path.split('.').reduce((o,k)=>o?.[k], RP); }
 function rpSetPath(path, val) {
   _rpDirty = true;
+  scheduleAutoSave();
   const parts = path.split('.');
   let cur = RP;
   for(let i = 0; i < parts.length-1; i++) {
@@ -4844,6 +4886,7 @@ function updateCoverProfile(idx, key, value) {
   if (RP.cover_profiles.covers[idx]) {
     RP.cover_profiles.covers[idx][key] = value;
     _rpDirty = true;
+    scheduleAutoSave();
   }
 }
 
@@ -4856,6 +4899,7 @@ function addCoverProfile() {
     allow_auto: true, heat_protection: true, privacy_close_hour: null
   });
   _rpDirty = true;
+  scheduleAutoSave();
   const container = document.getElementById('coverProfilesContainer');
   if (container) renderCoverProfileList(RP.cover_profiles.covers, container);
 }
@@ -4864,6 +4908,7 @@ function removeCoverProfile(idx) {
   if (!RP.cover_profiles || !RP.cover_profiles.covers) return;
   RP.cover_profiles.covers.splice(idx, 1);
   _rpDirty = true;
+  scheduleAutoSave();
   const container = document.getElementById('coverProfilesContainer');
   if (container) renderCoverProfileList(RP.cover_profiles.covers, container);
 }
