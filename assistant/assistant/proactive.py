@@ -1995,10 +1995,6 @@ class ProactiveManager:
         """
         await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY)
 
-        seasonal_cfg = yaml_config.get("seasonal_actions", {})
-        check_interval = seasonal_cfg.get("check_interval_minutes", 15)
-        auto_level = seasonal_cfg.get("auto_execute_level", 3)
-        cover_cfg = seasonal_cfg.get("cover_automation", {})
         # Redis-Keys fuer Dedup von automatischen Aktionen
         _redis = getattr(self.brain, "memory", None)
         _redis = getattr(_redis, "redis", None) if _redis else None
@@ -2022,6 +2018,12 @@ class ProactiveManager:
 
         while self._running:
             try:
+                # Config bei jedem Zyklus frisch lesen (Hot-Reload aus UI)
+                seasonal_cfg = yaml_config.get("seasonal_actions", {})
+                check_interval = seasonal_cfg.get("check_interval_minutes", 15)
+                auto_level = seasonal_cfg.get("auto_execute_level", 3)
+                cover_cfg = seasonal_cfg.get("cover_automation", {})
+
                 now = datetime.now()
                 today = now.strftime("%Y-%m-%d")
 
