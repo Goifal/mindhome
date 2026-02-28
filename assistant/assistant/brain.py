@@ -4884,7 +4884,7 @@ class AssistantBrain(BrainCallbacksMixin):
     # Gueltige Urgency-Level in der Silence Matrix
     _VALID_URGENCIES = {"critical", "high", "medium", "low"}
 
-    async def _callback_should_speak(self, urgency: str = "medium") -> bool:
+    async def _callback_should_speak(self, urgency: str = "medium", source: str = "unknown") -> bool:
         """Prueft ob ein Callback sprechen darf (Activity + Silence Matrix).
 
         Wird von allen proaktiven Callbacks aufgerufen um sicherzustellen,
@@ -4905,7 +4905,9 @@ class AssistantBrain(BrainCallbacksMixin):
             delivery = result.get("delivery", "")
             if result.get("suppress") or delivery == "led_blink":
                 logger.info(
-                    "Callback unterdrueckt (Aktivitaet=%s, Delivery=%s)",
+                    "Callback unterdrueckt: Quelle=%s, Urgency=%s, "
+                    "Aktivitaet=%s, Delivery=%s",
+                    source, urgency,
                     result.get("activity"), delivery,
                 )
                 return False
@@ -4958,7 +4960,7 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 logger.warning("Alarm-Sound fehlgeschlagen: %s", e)
         else:
-            if not await self._callback_should_speak("medium"):
+            if not await self._callback_should_speak("medium", source="Timer"):
                 return
         formatted = await self._safe_format(message, "medium")
         await self._speak_and_emit(formatted, room=room)
@@ -4969,7 +4971,7 @@ class AssistantBrain(BrainCallbacksMixin):
         message = alert.get("message", "")
         if not message:
             return
-        if not await self._callback_should_speak("low"):
+        if not await self._callback_should_speak("low", source="LearningObserver"):
             return
         formatted = await self._safe_format(message, "low")
         await self._speak_and_emit(formatted)
@@ -4993,7 +4995,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not message:
             return
         # CRITICAL darf immer durch, Rest wird per Activity geprüft
-        if urgency != "critical" and not await self._callback_should_speak(urgency):
+        if urgency != "critical" and not await self._callback_should_speak(urgency, source="TimeAwareness"):
             return
         device_type = alert.get("device_type", "time_alert")
         formatted = await self._format_callback_with_escalation(
@@ -5006,7 +5008,7 @@ class AssistantBrain(BrainCallbacksMixin):
         """Callback fuer Health Monitor — leitet an proaktive Meldung weiter."""
         if not message:
             return
-        if urgency != "critical" and not await self._callback_should_speak(urgency):
+        if urgency != "critical" and not await self._callback_should_speak(urgency, source=f"HealthMonitor/{alert_type}"):
             return
         formatted = await self._format_callback_with_escalation(
             message, urgency, f"health_{alert_type}",
@@ -5020,7 +5022,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not message:
             return
         urgency = alert.get("urgency", "low")
-        if not await self._callback_should_speak(urgency):
+        if not await self._callback_should_speak(urgency, source=f"DeviceHealth/{alert.get('alert_type', '?')}"):
             return
         alert_type = alert.get("alert_type", "device")
         formatted = await self._format_callback_with_escalation(
@@ -5036,7 +5038,7 @@ class AssistantBrain(BrainCallbacksMixin):
         """Callback fuer Wellness Advisor — kuemmert sich um den User."""
         if not message:
             return
-        if not await self._callback_should_speak("low"):
+        if not await self._callback_should_speak("low", source=f"Wellness/{nudge_type}"):
             return
         formatted = await self._format_callback_with_escalation(
             message, "low", f"wellness_{nudge_type}",
@@ -5070,7 +5072,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # triggern ohne Verzoegerung durch den Activity-Check.
         # Nicht-kritische Events (Tuerklingel, Hund) sollen waehrend
         # Schlaf/Film komplett still bleiben — kein Sound, kein TTS.
-        if severity != "critical" and not await self._callback_should_speak(severity):
+        if severity != "critical" and not await self._callback_should_speak(severity, source=f"AmbientAudio/{event_type}"):
             return
 
         # Sound-Alarm abspielen (nur wenn erlaubt)
@@ -7779,7 +7781,7 @@ Regeln:
             return
         urgency = insight.get("urgency", "low")
         check = insight.get("check", "unknown")
-        if not await self._callback_should_speak(urgency):
+        if not await self._callback_should_speak(urgency, source=f"Insight/{check}"):
             logger.info("Insight unterdrueckt (Silence Matrix): [%s] %s", check, message[:60])
             return
         formatted = await self._safe_format(message, urgency)
@@ -7791,7 +7793,7 @@ Regeln:
         text = reminder.get("text", "")
         if not text:
             return
-        if not await self._callback_should_speak("medium"):
+        if not await self._callback_should_speak("medium", source="IntentReminder"):
             return
         await self._speak_and_emit(text)
         logger.info("Intent-Erinnerung: %s", text)
@@ -7802,7 +7804,7 @@ Regeln:
         if not message:
             return
         urgency = observation.get("urgency", "low")
-        if not await self._callback_should_speak(urgency):
+        if not await self._callback_should_speak(urgency, source="SpontaneousObserver"):
             logger.info("Spontane Beobachtung unterdrueckt: %s", message[:60])
             return
         formatted = await self._safe_format(message, urgency)
@@ -7846,7 +7848,7 @@ Regeln:
                 if summary:
                     title = get_person_title()  # Background-Task: primary_user
                     message = f"{title}, hier ist dein woechentlicher Lern-Bericht:\n{summary}"
-                    if await self._callback_should_speak("low"):
+                    if await self._callback_should_speak("low", source="WeeklyReport"):
                         formatted = await self._safe_format(message, "low")
                         await self._speak_and_emit(formatted)
                         logger.info("Woechentlicher Self-Report gesendet")
@@ -7857,7 +7859,7 @@ Regeln:
                     if report_text and lo_report.get("total_observations", 0) > 0:
                         title = get_person_title()
                         message = f"{title}, hier ist dein woechentlicher Lern-Bericht:\n{report_text}"
-                        if await self._callback_should_speak("low"):
+                        if await self._callback_should_speak("low", source="WeeklyReport/fallback"):
                             formatted = await self._safe_format(message, "low")
                             await self._speak_and_emit(formatted)
 

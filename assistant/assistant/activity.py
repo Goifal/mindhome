@@ -22,6 +22,7 @@ Zustellmethoden:
 """
 
 import logging
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -208,6 +209,8 @@ class ActivityEngine:
         # Cache: letzte erkannte Aktivitaet
         self._last_activity = RELAXING
         self._last_detection = None
+        self._cache_ts: float = 0.0  # monotonic timestamp
+        self._cache_ttl: float = 5.0  # Sekunden — verhindert Burst-Abfragen
 
     def reload_config(self, activity_cfg: dict):
         """Config aus YAML neu laden (wird von _reload_all_modules aufgerufen)."""
@@ -293,6 +296,11 @@ class ActivityEngine:
             else:
                 self.clear_manual_override()
 
+        # TTL-Cache: bei Callback-Bursts nicht mehrfach HA abfragen
+        now = time.monotonic()
+        if self._last_detection and (now - self._cache_ts) < self._cache_ttl:
+            return self._last_detection
+
         signals = {}
         states = await self.ha.get_states()
 
@@ -317,18 +325,21 @@ class ActivityEngine:
         activity, confidence = self._classify(signals)
 
         self._last_activity = activity
-        self._last_detection = datetime.now()
+
+        result = {
+            "activity": activity,
+            "confidence": confidence,
+            "signals": signals,
+        }
+        self._last_detection = result
+        self._cache_ts = now
 
         logger.debug(
             "Aktivitaet erkannt: %s (confidence: %.2f, signals: %s)",
             activity, confidence, signals,
         )
 
-        return {
-            "activity": activity,
-            "confidence": confidence,
-            "signals": signals,
-        }
+        return result
 
     def get_delivery_method(self, activity: str, urgency: str) -> str:
         """

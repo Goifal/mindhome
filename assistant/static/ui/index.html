@@ -331,6 +331,10 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .btn-danger { background:transparent; color:var(--danger); border:1px solid rgba(239,68,68,0.3); }
 .btn-danger:hover { border-color:var(--danger); background:var(--danger-dim); }
 .btn-sm { padding:5px 12px; font-size:11px; }
+.auto-save-status { font-size:12px; color:var(--text-muted); transition:opacity 0.3s; min-width:120px; text-align:right; }
+.auto-save-status.saving { color:var(--accent); }
+.auto-save-status.saved { color:var(--success, #22c55e); }
+.auto-save-status.error { color:var(--danger); }
 
 /* Tab Bar */
 .tab-bar { display:flex; gap:2px; background:rgba(21,29,48,0.5); padding:3px; border-radius:var(--radius-sm); margin-bottom:20px; flex-wrap:wrap; border:1px solid rgba(0,212,255,0.08); }
@@ -947,7 +951,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <div id="page-settings" class="page">
         <div class="section-header">
           <div><h2 id="settingsTitle">Einstellungen</h2><p id="settingsSub">Alle Konfigurationen aus settings.yaml</p></div>
-          <button class="btn btn-primary" onclick="saveAllSettings()">Speichern</button>
+          <span id="autoSaveStatus" class="auto-save-status"></span>
         </div>
         <div id="settingsContent"></div>
       </div>
