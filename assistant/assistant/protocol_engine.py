@@ -61,10 +61,10 @@ class ProtocolEngine:
         self.executor = executor
         self.redis: Optional[aioredis.Redis] = None
 
-        cfg = yaml_config.get("protocols", {})
+        cfg = yaml_config.get("protocols") or {}
         self.enabled = cfg.get("enabled", True)
-        self.max_protocols = cfg.get("max_protocols", 20)
-        self.max_steps = cfg.get("max_steps", 10)
+        self.max_protocols = cfg.get("max_protocols") or 20
+        self.max_steps = cfg.get("max_steps") or 10
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis."""
