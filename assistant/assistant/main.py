@@ -4784,8 +4784,15 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             _update_log.append(f"Update auf Branch: {target_branch or old_branch}")
 
         # 0. User-Konfiguration sichern (vor git pull!)
+        # ALLE user-editierbaren Config-Dateien — damit bei git pull
+        # keine Einstellungen verloren gehen (room_profiles, easter_eggs, etc.)
         _user_config_files = [
             _MHA_DIR / "config" / "settings.yaml",
+            _MHA_DIR / "config" / "room_profiles.yaml",
+            _MHA_DIR / "config" / "easter_eggs.yaml",
+            _MHA_DIR / "config" / "automation_templates.yaml",
+            _MHA_DIR / "config" / "opinion_rules.yaml",
+            _MHA_DIR / "config" / "maintenance.yaml",
             _MHA_DIR / ".env",
             Path("/app/data/cover_configs.json"),
         ]

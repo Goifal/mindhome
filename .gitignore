@@ -7,7 +7,13 @@ assistant/.env
 assistant/.env.backup.*
 assistant/data/
 assistant/data/**
+# User-editierbare Config-Dateien (werden beim Update via Save/Restore geschuetzt)
 assistant/config/settings.yaml
+assistant/config/room_profiles.yaml
+assistant/config/easter_eggs.yaml
+assistant/config/automation_templates.yaml
+assistant/config/opinion_rules.yaml
+assistant/config/maintenance.yaml
 
 # OS
 .DS_Store
