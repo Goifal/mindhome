@@ -6013,13 +6013,17 @@ class AssistantBrain(BrainCallbacksMixin):
                     "dreh", "drehe", "fahr", "fahre",
                     "oeffne", "schliess", "schliesse",
                     "bitte", "mal", "das", "die", "den",
-                    "dem", "der"}
+                    "dem", "der", "wieder", "nochmal",
+                    "jetzt", "sofort", "gleich", "einfach",
+                    "kurz", "etwas"}
             _ACTIONS = {"an", "aus", "ein", "hoch", "runter", "auf", "zu",
                         "heller", "dunkler", "dünkler", "stopp", "stop",
                         "halb", "bitte", "mal",
                         "wärmer", "waermer", "kälter", "kaelter",
                         "höher", "hoeher", "niedriger", "kühler",
-                        "kuehler", "grad", "prozent", "uhr"}
+                        "kuehler", "grad", "prozent", "uhr",
+                        "wieder", "nochmal", "jetzt", "sofort",
+                        "gleich", "etwas", "einfach", "kurz"}
             for _noun in ["licht", "lampe", "leuchte", "rollladen", "rolladen",
                           "rollo", "jalousie", "heizung", "thermostat",
                           "steckdose", "schalter"]:
