@@ -736,6 +736,11 @@ class RoutineEngine:
     def is_goodnight_intent(self, text: str) -> bool:
         """Prueft ob der Text ein Gute-Nacht-Intent ist."""
         text_lower = text.lower().strip()
+        # Wetter-Fragen mit "nacht" ausschliessen
+        _weather_excludes = ["wie kalt", "wie warm", "temperatur", "wetter",
+                             "grad", "regnet", "schneit"]
+        if any(ex in text_lower for ex in _weather_excludes):
+            return False
         return any(trigger in text_lower for trigger in self.goodnight_triggers)
 
     async def execute_goodnight(self, person: str = "") -> dict:
