@@ -2525,14 +2525,16 @@ class AssistantBrain(BrainCallbacksMixin):
 
             llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
 
-            # Tool-Filter: set_vacuum/get_vacuum nur anbieten wenn User
-            # tatsaechlich ueber Staubsaugen spricht.  Verhindert dass das
-            # LLM bei unbekannten Befehlen auf set_vacuum defaulted.
+            # Tool-Filter: set_vacuum/get_vacuum nur anbieten wenn
+            # (a) vacuum.enabled in settings.yaml UND
+            # (b) User tatsaechlich ueber Staubsaugen spricht.
+            # Verhindert dass das LLM bei unbekannten Befehlen auf set_vacuum defaulted.
+            _vacuum_enabled = cfg.yaml_config.get("vacuum", {}).get("enabled", True)
             _vacuum_kw = {"saug", "staubsaug", "vacuum", "saugen", "sauger",
                           "roboter", "roborock", "dreame", "wischen", "mopp"}
             _text_low = text.lower()
-            _has_vacuum = any(kw in _text_low for kw in _vacuum_kw)
-            if _has_vacuum:
+            _offer_vacuum = _vacuum_enabled and any(kw in _text_low for kw in _vacuum_kw)
+            if _offer_vacuum:
                 _llm_tools = get_assistant_tools()
             else:
                 _llm_tools = [
