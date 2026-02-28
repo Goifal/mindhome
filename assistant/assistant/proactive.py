@@ -614,7 +614,7 @@ class ProactiveManager:
                 return ""
 
             # Offene Fenster/Tueren — kategorisiert nach Typ
-            from .function_calling import is_window_or_door, get_opening_type, is_heating_relevant_opening
+            from .function_calling import is_window_or_door, get_opening_type
             open_items = []
             open_gates = []
             for s in states:

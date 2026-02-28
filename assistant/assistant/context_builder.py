@@ -549,6 +549,7 @@ class ContextBuilder:
 
     def _extract_alerts(self, states: list[dict]) -> list[str]:
         """Extrahiert aktive Warnungen."""
+        from .function_calling import is_window_or_door, get_opening_type
         alerts = []
         for state in states:
             entity_id = state.get("entity_id", "")
@@ -563,7 +564,6 @@ class ContextBuilder:
                     alerts.append(f"ALARM: {name}")
 
             # Fenster/Tueren offen — kategorisiert (Fenster/Tuer vs Tor)
-            from .function_calling import is_window_or_door, get_opening_type
             if is_window_or_door(entity_id, state):
                 if s == "on":
                     name = state.get("attributes", {}).get(
