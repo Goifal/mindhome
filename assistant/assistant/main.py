@@ -879,7 +879,7 @@ async def ui_memory_reset(req: MemoryResetRequest, token: str = ""):
 
     if not valid:
         _audit_log("memory_reset", {"success": False, "reason": "wrong_pin"})
-        raise HTTPException(status_code=401, detail="Falscher PIN")
+        raise HTTPException(status_code=403, detail="Falscher PIN")
 
     result = await brain.memory.clear_all_memory()
     _audit_log("memory_reset", {"success": True, **result})
@@ -909,7 +909,7 @@ async def ui_factory_reset(req: FactoryResetRequest, token: str = ""):
 
     if not valid:
         _audit_log("factory_reset", {"success": False, "reason": "wrong_pin"})
-        raise HTTPException(status_code=401, detail="Falscher PIN")
+        raise HTTPException(status_code=403, detail="Falscher PIN")
 
     # Knowledge Base + Recipe Store zuruecksetzen
     kb_cleared = await brain.knowledge_base.clear()
