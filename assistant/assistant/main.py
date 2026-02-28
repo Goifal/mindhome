@@ -3000,6 +3000,33 @@ async def ui_get_mindhome_entities(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+@app.get("/api/ui/lights")
+async def ui_get_lights(token: str = ""):
+    """Alle light.*-Entities aus HA mit aktuellem Status fuer Licht-Tab."""
+    _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        lights = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if not eid.startswith("light."):
+                continue
+            attrs = s.get("attributes", {})
+            brightness = None
+            if s.get("state") == "on" and "brightness" in attrs:
+                brightness = round(attrs["brightness"] / 255 * 100)
+            lights.append({
+                "entity_id": eid,
+                "name": attrs.get("friendly_name", eid),
+                "state": s.get("state", "unknown"),
+                "brightness": brightness,
+            })
+        lights.sort(key=lambda l: l["name"])
+        return {"lights": lights}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 @app.get("/api/ui/covers")
 async def ui_get_covers(token: str = ""):
     """Alle Cover-Entities mit Typ-Konfiguration (fuer Rollladen/Garagentor-Verwaltung)."""

@@ -1796,13 +1796,56 @@ class FunctionExecutor:
             return {"success": False, "message": f"Da lief etwas schief: {e}"}
 
     # ── Phase 11: Adaptive Helligkeit (dim2warm) ──────────────
+    # Zirkadiane Helligkeitskurve (Prozent pro Stunde)
+    _CIRCADIAN_BRIGHTNESS_CURVE = [
+        {"time": "05:00", "pct": 10},
+        {"time": "06:00", "pct": 40},
+        {"time": "07:00", "pct": 70},
+        {"time": "08:00", "pct": 90},
+        {"time": "09:00", "pct": 100},
+        {"time": "12:00", "pct": 100},
+        {"time": "16:00", "pct": 100},
+        {"time": "18:00", "pct": 80},
+        {"time": "19:00", "pct": 60},
+        {"time": "20:00", "pct": 40},
+        {"time": "21:00", "pct": 25},
+        {"time": "22:00", "pct": 10},
+        {"time": "23:00", "pct": 5},
+    ]
+
+    @staticmethod
+    def _interpolate_circadian(curve, key, now_h, now_m):
+        """Interpoliert Wert aus zeitbasierter Kurve."""
+        now_min = now_h * 60 + now_m
+        prev_entry = curve[-1]
+        for entry in curve:
+            parts = entry["time"].split(":")
+            entry_min = int(parts[0]) * 60 + int(parts[1])
+            if entry_min > now_min:
+                prev_parts = prev_entry["time"].split(":")
+                prev_min = int(prev_parts[0]) * 60 + int(prev_parts[1])
+                if prev_min > entry_min:
+                    prev_min -= 1440
+                span = entry_min - prev_min
+                if span <= 0:
+                    return entry[key]
+                elapsed = now_min - prev_min
+                if elapsed < 0:
+                    elapsed += 1440
+                ratio = elapsed / span
+                return prev_entry[key] + (entry[key] - prev_entry[key]) * ratio
+            prev_entry = entry
+        return curve[-1][key]
+
     @staticmethod
     def _get_adaptive_brightness(room: str) -> int:
         """Berechnet Helligkeit basierend auf Tageszeit + Raum-Profil.
 
+        Wenn lighting.circadian.enabled: nutzt interpolierte Helligkeitskurve.
+        Sonst: Minuten-basierte lineare Interpolation (default/night).
+
         dim2warm-Lampen regeln Farbtemperatur ueber die Helligkeit
         in Hardware — je dunkler, desto waermer.
-        Nutzt Minuten-Interpolation fuer sanfte Uebergaenge.
         """
         now = datetime.now()
         minutes = now.hour * 60 + now.minute
@@ -1811,7 +1854,20 @@ class FunctionExecutor:
         default_bright = room_cfg.get("default_brightness", 70)
         night_bright = room_cfg.get("night_brightness", 20)
 
-        # Minuten-basierte Interpolation (sanfte Uebergaenge statt Stunden-Spruenge)
+        # Zirkadiane Beleuchtung: feinere Kurve wenn aktiviert
+        lighting_cfg = yaml_config.get("lighting", {})
+        circadian = lighting_cfg.get("circadian", {})
+        if circadian.get("enabled"):
+            # Interpolierte Kurve liefert 0-100%, skaliert auf Raum-Profil
+            curve_pct = FunctionCalling._interpolate_circadian(
+                FunctionCalling._CIRCADIAN_BRIGHTNESS_CURVE, "pct",
+                now.hour, now.minute
+            )
+            # Skaliere Kurve auf Raum-spezifischen Bereich (night..default)
+            scaled = night_bright + (default_bright - night_bright) * (curve_pct / 100)
+            return max(1, int(scaled))
+
+        # Fallback: Minuten-basierte Interpolation (sanfte Uebergaenge)
         # 06:00-09:00 (360-540): aufsteigend (night → default)
         # 09:00-17:00 (540-1020): volle Helligkeit (default)
         # 17:00-21:00 (1020-1260): absteigend (default → night)
@@ -1969,6 +2025,11 @@ class FunctionExecutor:
             except (ValueError, TypeError):
                 # LLM schickt manchmal "smooth" statt Zahl — Default 2s
                 service_data["transition"] = 2
+        elif state == "on":
+            # Kein expliziter Transition: Default aus lighting-Config
+            _lt = yaml_config.get("lighting", {}).get("default_transition")
+            if _lt and int(_lt) > 0:
+                service_data["transition"] = int(_lt)
         # dim2warm: Farbtemperatur wird in Hardware ueber Helligkeit geregelt.
         # Kein color_temp_kelvin an HA senden — Lampen machen das selbst.
 

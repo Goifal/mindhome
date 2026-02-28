@@ -382,6 +382,18 @@ context:
   recent_conversations: 5
   api_timeout: 10
   llm_timeout: 60
+lighting:
+  enabled: true
+  auto_on_dusk: true
+  auto_off_away: true
+  auto_off_empty_room_minutes: 30
+  night_dimming: true
+  daylight_off: true
+  default_transition: 2
+  circadian:
+    enabled: false
+    mode: mindhome
+    transition_seconds: 3
 heating:
   mode: room_thermostat
   curve_entity: ''
