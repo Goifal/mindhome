@@ -1688,7 +1688,9 @@ def _save_dashboard_config(pin_hash: str, recovery_hash: str, setup_complete: bo
             yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
         # Config im Speicher aktualisieren
         import assistant.config as cfg
-        cfg.yaml_config = load_yaml_config()
+        _new = load_yaml_config()
+        cfg.yaml_config.clear()
+        cfg.yaml_config.update(_new)
     except Exception as e:
         logger.error("Dashboard-Config speichern fehlgeschlagen: %s", e)
         raise
@@ -2724,7 +2726,9 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
-        cfg.yaml_config = load_yaml_config()
+        _new = load_yaml_config()
+        cfg.yaml_config.clear()
+        cfg.yaml_config.update(_new)
 
         # Household → persons/trust_levels synchronisieren
         cfg.apply_household_to_config()
@@ -2877,7 +2881,9 @@ async def ui_set_room_temperature(req: Request, token: str = ""):
 
         # yaml_config im Speicher aktualisieren
         import assistant.config as cfg
-        cfg.yaml_config = load_yaml_config()
+        _new = load_yaml_config()
+        cfg.yaml_config.clear()
+        cfg.yaml_config.update(_new)
 
         return {"success": True, "count": len(sensor_list)}
     except HTTPException:
@@ -3252,7 +3258,9 @@ async def ui_update_notification_channels(
 
         # In-memory config aktualisieren
         import assistant.config as _cfg
-        _cfg.yaml_config = load_yaml_config()
+        _new = load_yaml_config()
+        _cfg.yaml_config.clear()
+        _cfg.yaml_config.update(_new)
 
         _audit_log("notification_channels_update", {"channels": list(req.channels.keys()) if isinstance(req.channels, dict) else []})
         return {"success": True, "channels": req.channels}
@@ -3885,7 +3893,9 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
 
             # yaml_config im Speicher aktualisieren
             import assistant.config as cfg
-            cfg.yaml_config = load_yaml_config()
+            _new = load_yaml_config()
+        cfg.yaml_config.clear()
+        cfg.yaml_config.update(_new)
             _audit_log("config_rollback", {
                 "snapshot_id": req.snapshot_id,
                 "security_sections_preserved": list(_sections_to_preserve),
@@ -3923,7 +3933,9 @@ async def ui_self_opt_approve(req: ProposalAction, token: str = ""):
         if result["success"]:
             # yaml_config im Speicher aktualisieren
             import assistant.config as cfg
-            cfg.yaml_config = load_yaml_config()
+            _new = load_yaml_config()
+        cfg.yaml_config.clear()
+        cfg.yaml_config.update(_new)
             _audit_log("self_opt_approve", {"index": req.index, "message": result.get("message", "")})
         return result
     except Exception as e:

@@ -29,9 +29,12 @@ function scheduleAutoSave() {
   }, _AUTO_SAVE_DELAY);
 }
 
+let _autoSaveInitialized = false;
 function _initAutoSave() {
+  if (_autoSaveInitialized) return;
   const container = document.getElementById('settingsContent');
   if (!container) return;
+  _autoSaveInitialized = true;
   container.addEventListener('input', (e) => {
     if (e.target.closest('[data-path]')) scheduleAutoSave();
   });
@@ -3712,8 +3715,9 @@ function collectSettings() {
 }
 
 let _saving = false;
+let _saveAgain = false;
 async function saveAllSettings(showToast) {
-  if (_saving) return;
+  if (_saving) { _saveAgain = true; return; }
   _saving = true;
   const status = document.getElementById('autoSaveStatus');
   try {
@@ -3755,6 +3759,10 @@ async function saveAllSettings(showToast) {
     toast('Fehler beim Speichern' + (e.message ? ': ' + e.message : ''), 'error');
   } finally {
     _saving = false;
+    if (_saveAgain) {
+      _saveAgain = false;
+      saveAllSettings();
+    }
   }
 }
 
