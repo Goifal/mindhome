@@ -153,20 +153,32 @@ class ThreatAssessment:
         if wind_speed_val < wind_threshold:  # kein Sturm
             return []
 
-        # Offene Fenster bei Sturm (nur binary_sensor Kontakt-Sensoren)
+        # Offene Fenster/Tueren bei Sturm — kategorisiert (Tore separat)
+        from .function_calling import is_window_or_door, get_opening_type
         open_windows = []
+        open_gates = []
         for s in states:
             eid = s.get("entity_id", "")
-            if not eid.startswith("binary_sensor."):
+            if not is_window_or_door(eid, s):
                 continue
-            if ("window" in eid or "fenster" in eid) and s.get("state") == "on":
-                friendly = s.get("attributes", {}).get("friendly_name", eid)
+            if s.get("state") != "on":
+                continue
+            friendly = s.get("attributes", {}).get("friendly_name", eid)
+            if get_opening_type(eid, s) == "gate":
+                open_gates.append(friendly)
+            else:
                 open_windows.append(friendly)
 
         if open_windows:
             threats.append({
                 "type": "storm_windows",
-                "message": f"Sturmwarnung ({wind_speed_val:.0f} km/h)! {len(open_windows)} Fenster noch offen: {', '.join(open_windows)}.",
+                "message": f"Sturmwarnung ({wind_speed_val:.0f} km/h)! {len(open_windows)} Fenster/Tueren noch offen: {', '.join(open_windows)}.",
+                "urgency": "high",
+            })
+        if open_gates:
+            threats.append({
+                "type": "storm_gates",
+                "message": f"Sturmwarnung ({wind_speed_val:.0f} km/h)! {len(open_gates)} Tore offen: {', '.join(open_gates)}.",
                 "urgency": "high",
             })
 
@@ -187,17 +199,22 @@ class ThreatAssessment:
         if anyone_home:
             return []
 
-        # Offene Tueren
+        # Offene Tueren/Fenster/Tore — konsistent mit is_window_or_door()
+        from .function_calling import is_window_or_door, get_opening_type
         for s in states:
             eid = s.get("entity_id", "")
-            if ("door" in eid or "tuer" in eid) and eid.startswith("binary_sensor."):
-                if s.get("state") == "on":
-                    friendly = s.get("attributes", {}).get("friendly_name", eid)
-                    threats.append({
-                        "type": "door_open_empty",
-                        "message": f"{friendly} ist offen und niemand ist zuhause!",
-                        "urgency": "critical",
-                    })
+            if not is_window_or_door(eid, s):
+                continue
+            if s.get("state") != "on":
+                continue
+            friendly = s.get("attributes", {}).get("friendly_name", eid)
+            opening_type = get_opening_type(eid, s)
+            type_label = {"door": "Tuer", "gate": "Tor", "window": "Fenster"}.get(opening_type, "Fenster")
+            threats.append({
+                "type": f"{opening_type}_open_empty",
+                "message": f"{friendly} ({type_label}) ist offen und niemand ist zuhause!",
+                "urgency": "critical",
+            })
 
         # Entriegelte Schloesser
         for s in states:
@@ -356,18 +373,23 @@ class ThreatAssessment:
         score = 100
         details = []
 
-        # Tueren/Fenster pruefen
+        # Tueren/Fenster/Tore pruefen — konsistent mit is_window_or_door()
+        from .function_calling import is_window_or_door, get_opening_type
         open_doors = 0
         open_windows = 0
+        open_gates = 0
         for s in states:
             eid = s.get("entity_id", "")
-            if not eid.startswith("binary_sensor."):
+            if not is_window_or_door(eid, s):
                 continue
             if s.get("state") != "on":
                 continue
-            if "door" in eid or "tuer" in eid:
+            opening_type = get_opening_type(eid, s)
+            if opening_type == "gate":
+                open_gates += 1
+            elif opening_type == "door":
                 open_doors += 1
-            elif "window" in eid or "fenster" in eid:
+            else:
                 open_windows += 1
 
         if open_doors > 0:
@@ -375,6 +397,9 @@ class ThreatAssessment:
             details.append(f"{open_doors} Tuer(en) offen")
         if open_windows > 0:
             score -= open_windows * 5
+        if open_gates > 0:
+            score -= open_gates * 10
+            details.append(f"{open_gates} Tor(e) offen")
             details.append(f"{open_windows} Fenster offen")
 
         # Schloesser pruefen

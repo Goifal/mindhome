@@ -7201,17 +7201,22 @@ class AssistantBrain(BrainCallbacksMixin):
                     for name, val in list(energy.items())[:6]:
                         data_lines.append(f"  - {name}: {val}")
 
-                # Offene Fenster/Tueren
-                open_items = []
+                # Offene Fenster/Tueren/Tore — kategorisiert
+                from .function_calling import is_window_or_door, get_opening_type
+                open_wd = []
+                open_gt = []
                 for s in states:
                     eid = s.get("entity_id", "")
-                    if (eid.startswith("binary_sensor.") and
-                            ("window" in eid or "door" in eid or "fenster" in eid or "tuer" in eid) and
-                            s.get("state") == "on"):
+                    if is_window_or_door(eid, s) and s.get("state") == "on":
                         name = s.get("attributes", {}).get("friendly_name", eid)
-                        open_items.append(name)
-                if open_items:
-                    data_lines.append(f"OFFENE FENSTER/TUEREN: {', '.join(open_items)}")
+                        if get_opening_type(eid, s) == "gate":
+                            open_gt.append(name)
+                        else:
+                            open_wd.append(name)
+                if open_wd:
+                    data_lines.append(f"OFFENE FENSTER/TUEREN: {', '.join(open_wd)}")
+                if open_gt:
+                    data_lines.append(f"OFFENE TORE: {', '.join(open_gt)}")
 
                 # Alarmsystem
                 for s in states:
@@ -7322,6 +7327,7 @@ Regeln:
             "weather": None,
             "inside_temps": [],
             "open_windows": [],
+            "open_gates": [],
             "active_lights": 0,
             "covers_open": 0,
             "covers_closed": 0,
@@ -7349,11 +7355,15 @@ Regeln:
                     name = attrs.get("friendly_name", eid)
                     data["inside_temps"].append(f"{name}: {current}°C")
 
-            # Offene Fenster
-            elif eid.startswith(("binary_sensor.fenster", "binary_sensor.window")):
-                if state_val == "on":
+            # Offene Fenster/Tueren/Tore — konsistent mit is_window_or_door()
+            elif state_val == "on":
+                from .function_calling import is_window_or_door, get_opening_type
+                if is_window_or_door(eid, s):
                     name = attrs.get("friendly_name", eid)
-                    data["open_windows"].append(name)
+                    if get_opening_type(eid, s) == "gate":
+                        data["open_gates"].append(name)
+                    else:
+                        data["open_windows"].append(name)
 
             # Lichter
             elif eid.startswith("light.") and state_val == "on":
@@ -7393,9 +7403,11 @@ Regeln:
             lines.append("Innentemperaturen: " + " | ".join(data["inside_temps"][:5]))
 
         if data["open_windows"]:
-            lines.append("Offene Fenster: " + ", ".join(data["open_windows"]))
+            lines.append("Offene Fenster/Tueren: " + ", ".join(data["open_windows"]))
         else:
-            lines.append("Alle Fenster geschlossen.")
+            lines.append("Alle Fenster/Tueren geschlossen.")
+        if data.get("open_gates"):
+            lines.append("Offene Tore: " + ", ".join(data["open_gates"]))
 
         lines.append(f"Aktive Lichter: {data['active_lights']}")
         lines.append(f"Rolllaeden offen: {data['covers_open']}, geschlossen: {data['covers_closed']}")
@@ -8649,15 +8661,16 @@ Regeln:
                                 pass
 
                         if rain_expected:
-                            # Offene Fenster zaehlen
+                            # Offene Fenster zaehlen (nur echte Fenster, keine Tore)
+                            from .function_calling import is_window_or_door, get_opening_type
                             open_windows = []
                             for ws in states:
                                 weid = ws.get("entity_id", "")
-                                wattrs = ws.get("attributes", {})
                                 if (ws.get("state") == "on" and
-                                    wattrs.get("device_class") == "window"):
+                                    is_window_or_door(weid, ws) and
+                                    get_opening_type(weid, ws) == "window"):
                                     open_windows.append(
-                                        wattrs.get("friendly_name", weid)
+                                        ws.get("attributes", {}).get("friendly_name", weid)
                                     )
 
                             if open_windows:

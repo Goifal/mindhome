@@ -5487,8 +5487,8 @@ function renderOpeningSensors(container) {
     container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Oeffnungs-Sensoren konfiguriert. Nutze "Auto-Erkennung" um Sensoren aus Home Assistant zu importieren.</div>';
     return;
   }
-  const typeLabels = {window: '&#129695; Fenster', door: '&#128682; Tuer', gate: '&#9961; Tor'};
   const typeColors = {window: 'var(--accent)', door: 'var(--success)', gate: 'var(--warning, #f59e0b)'};
+  const typeIcons = {window: '&#129695;', door: '&#128682;', gate: '&#9961;'};
   const rooms = RP.rooms ? Object.keys(RP.rooms) : [];
 
   let html = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Gesamt: ' + entries.length + ' Sensoren | ' +
@@ -5500,26 +5500,40 @@ function renderOpeningSensors(container) {
     const t = cfg.type || 'window';
     const borderColor = cfg.heated === false ? 'var(--text-muted)' : typeColors[t] || 'var(--border)';
     const opacity = cfg.heated === false ? '0.7' : '1';
-    html += '<div style="display:grid;grid-template-columns:1fr 100px 120px 70px 32px;gap:8px;align-items:center;padding:8px 10px;margin-bottom:4px;border-radius:6px;background:var(--bg-card);border:1px solid ' + borderColor + ';opacity:' + opacity + ';">';
-    // Entity ID
-    html += '<div style="font-size:11px;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(entityId) + '">' + esc(entityId) + '</div>';
+    // Friendly name aus entity_id ableiten (binary_sensor.fenster_wohnzimmer → Fenster Wohnzimmer)
+    const shortName = entityId.replace(/^binary_sensor\./, '').replace(/_/g, ' ');
+    html += '<div style="padding:8px 10px;margin-bottom:4px;border-radius:6px;background:var(--bg-card);border:1px solid ' + borderColor + ';opacity:' + opacity + ';">';
+    // Zeile 1: Name + Icon + Loeschen-Button
+    html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">';
+    html += '<span style="font-size:14px;">' + (typeIcons[t] || '') + '</span>';
+    html += '<div style="flex:1;min-width:0;">';
+    html += '<div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(shortName) + '</div>';
+    html += '<div style="font-size:10px;color:var(--text-muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(entityId) + '">' + esc(entityId) + '</div>';
+    html += '</div>';
+    html += '<button type="button" onclick="removeOpeningSensor(\'' + esc(entityId) + '\')" style="flex-shrink:0;font-size:12px;padding:2px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+    html += '</div>';
+    // Zeile 2: Controls (flex-wrap fuer Mobile)
+    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">';
     // Typ
-    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'type\',this.value)" style="font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:2px 4px;">';
+    html += '<div style="display:flex;align-items:center;gap:4px;min-width:90px;">';
+    html += '<span style="font-size:10px;color:var(--text-muted);">Typ</span>';
+    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'type\',this.value)" style="flex:1;font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:3px 4px;">';
     html += '<option value="window"' + (t==='window'?' selected':'') + '>Fenster</option>';
     html += '<option value="door"' + (t==='door'?' selected':'') + '>Tuer</option>';
     html += '<option value="gate"' + (t==='gate'?' selected':'') + '>Tor</option>';
-    html += '</select>';
+    html += '</select></div>';
     // Raum
-    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'room\',this.value||null)" style="font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:2px 4px;">';
+    html += '<div style="display:flex;align-items:center;gap:4px;flex:1;min-width:120px;">';
+    html += '<span style="font-size:10px;color:var(--text-muted);">Raum</span>';
+    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'room\',this.value||null)" style="flex:1;font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:3px 4px;">';
     html += '<option value="">— kein Raum —</option>';
     for (const r of rooms) html += '<option value="' + esc(r) + '"' + (cfg.room===r?' selected':'') + '>' + esc(r) + '</option>';
-    html += '</select>';
+    html += '</select></div>';
     // Beheizt
-    html += '<label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer;" title="Beheizt = Heizungswarnung wenn offen">';
-    html += '<input type="checkbox"' + (cfg.heated !== false ? ' checked' : '') + ' onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'heated\',this.checked)" style="accent-color:var(--accent);">';
+    html += '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;flex-shrink:0;" title="Beheizt = Heizungswarnung wenn offen">';
+    html += '<input type="checkbox"' + (cfg.heated !== false ? ' checked' : '') + ' onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'heated\',this.checked)" style="accent-color:var(--accent);width:16px;height:16px;">';
     html += '<span>Beheizt</span></label>';
-    // Remove
-    html += '<button type="button" onclick="removeOpeningSensor(\'' + esc(entityId) + '\')" style="font-size:12px;padding:2px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+    html += '</div>';
     html += '</div>';
   }
   container.innerHTML = html;
@@ -5554,11 +5568,11 @@ function addOpeningSensor() {
   form.style.cssText = 'margin-top:10px;padding:12px;border:2px solid var(--accent);border-radius:8px;background:var(--bg-card);';
   let h = '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Neuen Sensor hinzufuegen</div>';
   h += '<div class="form-group"><label>Entity-ID</label><input type="text" id="newOpeningEntity" placeholder="binary_sensor.fenster_wohnzimmer" style="font-size:11px;font-family:var(--mono);"></div>';
-  h += '<div style="display:flex;gap:8px;">';
-  h += '<div class="form-group" style="flex:1;"><label>Typ</label><select id="newOpeningType" style="font-size:11px;"><option value="window">Fenster</option><option value="door">Tuer</option><option value="gate">Tor</option></select></div>';
-  h += '<div class="form-group" style="flex:1;"><label>Beheizt</label><select id="newOpeningHeated" style="font-size:11px;"><option value="true">Ja</option><option value="false">Nein</option></select></div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+  h += '<div class="form-group" style="flex:1;min-width:100px;"><label>Typ</label><select id="newOpeningType" style="font-size:11px;"><option value="window">Fenster</option><option value="door">Tuer</option><option value="gate">Tor</option></select></div>';
+  h += '<div class="form-group" style="flex:1;min-width:100px;"><label>Beheizt</label><select id="newOpeningHeated" style="font-size:11px;"><option value="true">Ja</option><option value="false">Nein</option></select></div>';
   h += '</div>';
-  h += '<div style="display:flex;gap:6px;">';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
   h += '<button class="btn btn-sm" onclick="submitOpeningSensor()" style="font-size:11px;background:var(--accent);color:var(--bg-primary);border-color:var(--accent);">Hinzufuegen</button>';
   h += '<button class="btn btn-sm" onclick="document.getElementById(\'addOpeningForm\').remove()" style="font-size:11px;">Abbrechen</button>';
   h += '</div>';

@@ -231,6 +231,7 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
             if temps:
                 temp = sum(temps) / len(temps)
 
+        from .function_calling import is_window_or_door, get_opening_type
         for s in (states or []):
             eid = s.get("entity_id", "")
             state_val = s.get("state", "")
@@ -246,7 +247,6 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
                         pass
 
             # Offene Fenster/Tueren zaehlen — kategorisiert
-            from .function_calling import is_window_or_door, get_opening_type
             if state_val == "on" and is_window_or_door(eid, s):
                 name = attrs.get("friendly_name", eid)
                 opening_type = get_opening_type(eid, s)
@@ -3399,7 +3399,12 @@ async def ui_get_opening_sensors(token: str = ""):
 
 @app.put("/api/ui/opening-sensors")
 async def ui_set_opening_sensors(request: Request, token: str = ""):
-    """Oeffnungs-Sensoren Konfiguration speichern (settings.yaml)."""
+    """Oeffnungs-Sensoren Konfiguration speichern (settings.yaml).
+
+    Liest settings.yaml frisch vom Disk (wie ui_update_settings),
+    merged nur opening_sensors.entities, und schreibt zurueck.
+    Andere Einstellungen bleiben unberuehrt.
+    """
     _check_token(token)
     data = await request.json()
     entities = data.get("entities", {})
@@ -3408,12 +3413,25 @@ async def ui_set_opening_sensors(request: Request, token: str = ""):
     for eid, cfg in entities.items():
         if cfg.get("type") and cfg["type"] not in valid_types:
             raise HTTPException(status_code=400, detail=f"Ungueltiger Typ fuer {eid}: {cfg['type']}")
-    # In settings.yaml schreiben (gleicher Pfad wie ui_update_settings)
-    settings_path = Path(__file__).parent.parent / "config" / "settings.yaml"
-    yaml_config.setdefault("opening_sensors", {})["entities"] = entities
     try:
-        with open(settings_path, "w") as f:
-            yaml.dump(yaml_config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        # Frisch vom Disk lesen (nicht in-memory yaml_config verwenden!)
+        def _read():
+            with open(SETTINGS_YAML_PATH) as f:
+                return yaml.safe_load(f) or {}
+        config = await asyncio.to_thread(_read)
+
+        # Nur opening_sensors.entities mergen
+        config.setdefault("opening_sensors", {})["entities"] = entities
+
+        # Zurueckschreiben
+        def _write():
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_write)
+
+        # In-memory yaml_config auch aktualisieren
+        yaml_config.setdefault("opening_sensors", {})["entities"] = entities
+
         return {"success": True, "count": len(entities)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
@@ -4766,8 +4784,15 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             _update_log.append(f"Update auf Branch: {target_branch or old_branch}")
 
         # 0. User-Konfiguration sichern (vor git pull!)
+        # ALLE user-editierbaren Config-Dateien — damit bei git pull
+        # keine Einstellungen verloren gehen (room_profiles, easter_eggs, etc.)
         _user_config_files = [
             _MHA_DIR / "config" / "settings.yaml",
+            _MHA_DIR / "config" / "room_profiles.yaml",
+            _MHA_DIR / "config" / "easter_eggs.yaml",
+            _MHA_DIR / "config" / "automation_templates.yaml",
+            _MHA_DIR / "config" / "opinion_rules.yaml",
+            _MHA_DIR / "config" / "maintenance.yaml",
             _MHA_DIR / ".env",
             Path("/app/data/cover_configs.json"),
         ]

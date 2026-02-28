@@ -146,32 +146,38 @@ def get_mindhome_room(entity_id: str) -> str:
 
 
 def is_window_or_door(entity_id: str, state: dict) -> bool:
-    """Prueft zuverlaessig ob eine Entity ein Fenster/Tuer-Kontakt ist.
+    """Prueft zuverlaessig ob eine Entity ein Fenster/Tuer/Tor-Kontakt ist.
 
     Prueft in dieser Reihenfolge (erste Uebereinstimmung gewinnt):
-    1. MindHome Domain-Zuordnung (vom User konfiguriert)
-    2. HA device_class (automatisch von HA gesetzt)
-    3. Fallback: binary_sensor mit window/door/fenster/tuer im entity_id
+    1. opening_sensors Config (explizit vom User konfiguriert)
+    2. MindHome Domain-Zuordnung (vom User konfiguriert)
+    3. HA device_class (automatisch von HA gesetzt)
+    4. Fallback: binary_sensor mit window/door/fenster/tuer/tor/gate im entity_id
 
     Steckdosen, Schalter und Lichter werden NICHT als Fenster erkannt,
     auch wenn "fenster" im Entity-Namen vorkommt.
     """
-    # 1. MindHome-Domain (zuverlaessigste Quelle — vom User konfiguriert)
+    # 1. opening_sensors Config (zuverlaessigste Quelle)
+    cfg = get_opening_sensor_config(entity_id)
+    if cfg:
+        return True
+
+    # 2. MindHome-Domain (vom User konfiguriert)
     mh_domain = _mindhome_device_domains.get(entity_id, "")
     if mh_domain:
         return mh_domain == "door_window"
 
-    # 2. HA device_class
+    # 3. HA device_class
     attrs = state.get("attributes", {}) if isinstance(state, dict) else {}
     device_class = attrs.get("device_class", "")
     if device_class in ("window", "door", "garage_door"):
         return True
 
-    # 3. Fallback: Nur binary_sensor mit Keyword
+    # 4. Fallback: Nur binary_sensor mit Keyword (inkl. Tor/Gate)
     ha_domain = entity_id.split(".")[0] if "." in entity_id else ""
     if ha_domain == "binary_sensor":
         lower_id = entity_id.lower()
-        if any(kw in lower_id for kw in ("window", "door", "fenster", "tuer")):
+        if any(kw in lower_id for kw in ("window", "door", "fenster", "tuer", "tor", "gate")):
             return True
 
     return False
