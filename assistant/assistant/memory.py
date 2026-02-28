@@ -482,6 +482,47 @@ class MemoryManager:
         logger.warning("GESAMTES GEDAECHTNIS ZURUECKGESETZT")
         return result
 
+    async def factory_reset(self, include_uploads: bool = False) -> dict:
+        """Vollstaendiger Reset auf Grundeinstellung.
+
+        Loescht ALLEN gelernten State (Redis mha:* + ChromaDB),
+        behaelt Config-Dateien (settings.yaml, .env).
+        """
+        # 1. Bestehenden Memory-Reset ausfuehren (Episoden + Fakten + Working Memory)
+        result = await self.clear_all_memory()
+
+        # 2. Alle verbleibenden mha:* Keys aus Redis loeschen
+        #    (Korrekturen, Feedback, Learning, Mood, Besucher, Speaker, etc.)
+        if self.redis:
+            try:
+                all_keys = []
+                async for key in self.redis.scan_iter(match="mha:*"):
+                    all_keys.append(key)
+                if all_keys:
+                    await self.redis.delete(*all_keys)
+                result["redis_keys_deleted"] = len(all_keys)
+                logger.info("Redis Factory-Reset: %d Keys geloescht", len(all_keys))
+            except Exception as e:
+                logger.error("Fehler beim Redis Factory-Reset: %s", e)
+                result["redis_keys_deleted"] = 0
+
+        # 3. Uploads loeschen (optional)
+        if include_uploads:
+            try:
+                from .file_handler import UPLOAD_DIR
+                import shutil
+                if UPLOAD_DIR.exists():
+                    count = sum(1 for _ in UPLOAD_DIR.iterdir())
+                    shutil.rmtree(UPLOAD_DIR)
+                    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+                    result["uploads_deleted"] = count
+                    logger.info("Uploads geloescht: %d Dateien", count)
+            except Exception as e:
+                logger.error("Fehler beim Loeschen der Uploads: %s", e)
+
+        logger.warning("FACTORY RESET DURCHGEFUEHRT")
+        return result
+
     async def close(self):
         """Schliesst Verbindungen."""
         if self.redis:
