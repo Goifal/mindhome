@@ -5618,17 +5618,24 @@ class AssistantBrain(BrainCallbacksMixin):
             return result.get("message", "Ich kann vieles. Frag einfach.")
 
         # Phase 15.2: "Was steht auf der Einkaufsliste?"
-        if any(kw in text_lower for kw in [
-            "einkaufsliste", "shopping list", "was muss ich einkaufen",
+        # Typo-tolerant: "einkaufliste", "einlaufsliste" etc.
+        _has_shopping_kw = any(kw in text_lower for kw in [
+            "einkaufsliste", "einkaufliste", "einkauflist",
+            "einlaufsliste", "einkausfliste",
+            "shopping list", "was muss ich einkaufen",
             "was brauchen wir", "einkaufszettel",
-        ]):
+        ])
+        if _has_shopping_kw:
             # "Setz X auf die Einkaufsliste"
-            for trigger in ["setz ", "setze ", "pack ", "tu ", "schreib "]:
+            for trigger in ["setz ", "setze ", "pack ", "tu ",
+                            "schreib ", "schreibe "]:
                 if text_lower.startswith(trigger):
                     # Extrahiere den Artikel
                     rest = text[len(trigger):].strip()
                     # "X auf die Einkaufsliste"
-                    for sep in [" auf die einkaufsliste", " auf den einkaufszettel",
+                    for sep in [" auf die einkaufsliste", " auf die einkaufliste",
+                                " auf die einlaufsliste", " auf die einkausfliste",
+                                " auf den einkaufszettel",
                                 " auf die liste"]:
                         if sep in rest.lower():
                             item = rest[:rest.lower().index(sep)].strip()
@@ -5643,12 +5650,64 @@ class AssistantBrain(BrainCallbacksMixin):
                     )
                     return result.get("message", f"'{rest}' hinzugefuegt.")
 
+            # "Loesch X von der Einkaufsliste" / "Streich X von der Einkaufsliste"
+            for trigger in ["lösch ", "loesch ", "streich ", "entfern ",
+                            "lösche ", "streiche ", "entferne "]:
+                if text_lower.startswith(trigger):
+                    rest = text[len(trigger):].strip()
+                    for sep in [" von der einkaufsliste", " von der einkaufliste",
+                                " von der einlaufsliste", " von der einkausfliste",
+                                " von der liste", " vom einkaufszettel",
+                                " auf der einkaufsliste", " auf der einkaufliste"]:
+                        if sep in rest.lower():
+                            item = rest[:rest.lower().index(sep)].strip()
+                            if item:
+                                result = await self.executor.execute(
+                                    "manage_shopping_list", {"action": "complete", "item": item}
+                                )
+                                return result.get("message", f"'{item}' abgehakt.")
+                    # Fallback: ganzer Rest als Item
+                    item = rest.strip()
+                    if item:
+                        result = await self.executor.execute(
+                            "manage_shopping_list", {"action": "complete", "item": item}
+                        )
+                        return result.get("message", f"'{item}' abgehakt.")
+
+            # "X abhaken" / "hak X ab"
+            if "abhak" in text_lower or "abhaken" in text_lower:
+                # "milch abhaken auf der einkaufsliste" / "hak milch ab"
+                item = text_lower
+                for noise in ["abhaken", "abhak", "auf der einkaufsliste",
+                              "auf der einkaufliste", "auf der einlaufsliste",
+                              "von der einkaufsliste", "bitte", "mal", "hak ", "ab"]:
+                    item = item.replace(noise, "")
+                item = item.strip()
+                if item:
+                    result = await self.executor.execute(
+                        "manage_shopping_list", {"action": "complete", "item": item}
+                    )
+                    return result.get("message", f"'{item}' abgehakt.")
+
             # "Zeig die Einkaufsliste" / "Was steht auf der Einkaufsliste"
             if any(kw in text_lower for kw in ["zeig", "was steht", "was muss", "was brauchen"]):
                 result = await self.executor.execute(
                     "manage_shopping_list", {"action": "list"}
                 )
                 return result.get("message", "Einkaufsliste nicht verfuegbar.")
+
+        # "X abhaken" ohne explizites Einkaufsliste-Keyword
+        # z.B. "milch abhaken", "hak milch ab"
+        if not _has_shopping_kw and ("abhak" in text_lower or "hak " in text_lower):
+            item = text_lower
+            for noise in ["abhaken", "abhak", "bitte", "mal", "hak ", " ab"]:
+                item = item.replace(noise, "")
+            item = item.strip()
+            if item:
+                result = await self.executor.execute(
+                    "manage_shopping_list", {"action": "complete", "item": item}
+                )
+                return result.get("message", f"'{item}' abgehakt.")
 
         # Phase 15.2: Vorrats-Tracking
         if any(kw in text_lower for kw in [
@@ -6880,6 +6939,18 @@ class AssistantBrain(BrainCallbacksMixin):
         Wird VOR dem LLM aufgerufen, damit das LLM nicht das falsche Tool waehlt.
         """
         t = text.lower().strip()
+
+        # Schreib-Operationen (erstellen/loeschen/verschieben) → NICHT als
+        # Read-Shortcut behandeln, sondern ans LLM weiterleiten!
+        _write_verbs = [
+            "erstell", "anleg", "eintrag", "trag ein", "mach einen termin",
+            "neuer termin", "neuen termin", "termin anlegen", "termin erstellen",
+            "termin eintragen", "termin machen",
+            "lösch", "loesch", "entfern", "streich", "absag",
+            "verschieb", "verleg", "änder", "aender",
+        ]
+        if any(kw in t for kw in _write_verbs):
+            return None
 
         # "heute morgen" = this morning → today (NICHT tomorrow!)
         # Muss VOR den morgen-Patterns stehen, sonst gewinnt "morgen"

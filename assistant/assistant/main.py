@@ -2470,11 +2470,11 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
     # ProtocolEngine: Max-Protocols, Max-Steps
     if "protocols" in changed_settings and hasattr(brain, "protocol_engine"):
         def _reload_protocols():
-            cfg = yaml_cfg.get("protocols", {})
+            cfg = yaml_cfg.get("protocols") or {}
             pe = brain.protocol_engine
             pe.enabled = cfg.get("enabled", True)
-            pe.max_protocols = cfg.get("max_protocols", 20)
-            pe.max_steps = cfg.get("max_steps", 10)
+            pe.max_protocols = cfg.get("max_protocols") or 20
+            pe.max_steps = cfg.get("max_steps") or 10
             logger.info("ProtocolEngine Settings aktualisiert")
         _try_reload("protocols", _reload_protocols)
 
