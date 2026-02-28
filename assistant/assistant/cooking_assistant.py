@@ -124,7 +124,8 @@ NAV_TIMER_CHECK = ["wie lange noch", "timer status", "laeuft der timer",
 NAV_STOP = ["stop kochen", "stopp kochen", "abbrechen", "koch session beenden",
             "fertig kochen", "ich bin fertig", "koch modus beenden",
             "kochen beenden", "kochmodus beenden", "beende kochen",
-            "beende den koch", "kochen stopp", "kochen stop"]
+            "beende den koch", "kochen stopp", "kochen stop",
+            "kochen beende", "beenden"]
 NAV_INGREDIENTS = ["zutaten", "was brauche ich", "einkaufsliste",
                    "welche zutaten"]
 NAV_PORTIONS = ["fuer", "für", "portionen", "personen"]
@@ -222,6 +223,10 @@ class CookingAssistant:
         if not self.enabled:
             return False
         text_lower = text.lower().strip()
+
+        # Stopp-Phrasen ausschliessen – "kochen beende" ist kein Koch-Start
+        if any(kw in text_lower for kw in NAV_STOP):
+            return False
 
         # Direkte Rezept-Anfrage
         if any(kw in text_lower for kw in COOKING_KEYWORDS):
