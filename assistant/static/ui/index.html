@@ -995,6 +995,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           <div style="display:flex;gap:8px;">
             <button class="btn btn-secondary" onclick="loadMemoryPage()">Aktualisieren</button>
             <button class="btn btn-danger" onclick="showMemoryResetDialog()">Komplett zuruecksetzen</button>
+            <button class="btn btn-danger" onclick="showFactoryResetDialog()" style="background:#b91c1c;border-color:#b91c1c;" title="ALLES zuruecksetzen: Gedaechtnis, Korrekturen, Lernmuster, Feedback — Einstellungen bleiben">Grundeinstellung</button>
           </div>
         </div>
         <div id="memStats" class="grid grid-3" style="margin-bottom:16px;"></div>
@@ -1042,6 +1043,36 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           <div style="display:flex;gap:8px;justify-content:flex-end;">
             <button class="btn btn-secondary" onclick="hideMemoryResetDialog()">Abbrechen</button>
             <button class="btn btn-danger" id="memResetConfirmBtn" onclick="confirmMemoryReset()">Zuruecksetzen</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Factory Reset Dialog (Overlay) -->
+      <div id="factoryResetOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-primary);border:2px solid #b91c1c;border-radius:12px;padding:28px;max-width:440px;width:90%;">
+          <h3 style="color:#b91c1c;margin-bottom:12px;">&#9888; Jarvis auf Grundeinstellung</h3>
+          <p style="margin-bottom:12px;color:var(--text-muted);font-size:14px;">
+            <strong>ACHTUNG:</strong> Dieser Reset loescht <em>alles Gelernte</em> unwiderruflich:
+          </p>
+          <ul style="margin:0 0 16px 16px;color:var(--text-muted);font-size:13px;line-height:1.7;">
+            <li>Gedaechtnis (Fakten, Episoden, Konversationen)</li>
+            <li>Korrektur-Regeln &amp; Lernmuster</li>
+            <li>Feedback-Scores &amp; Stimmungs-State</li>
+            <li>Besucher- &amp; Speaker-Profile</li>
+            <li>Wissensdatenbank &amp; Rezepte</li>
+          </ul>
+          <p style="margin-bottom:16px;color:var(--text-primary);font-size:14px;font-weight:500;">
+            Einstellungen, Raeume und Routinen-Config bleiben erhalten.
+          </p>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;font-size:13px;color:var(--text-muted);">
+            <input type="checkbox" id="factoryResetUploads" style="width:16px;height:16px;">
+            Auch Uploads loeschen
+          </label>
+          <input type="password" id="factoryResetPin" placeholder="PIN eingeben" style="width:100%;padding:10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:16px;margin-bottom:12px;box-sizing:border-box;" />
+          <div id="factoryResetError" style="color:#b91c1c;font-size:13px;margin-bottom:10px;display:none;"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="hideFactoryResetDialog()">Abbrechen</button>
+            <button class="btn btn-danger" id="factoryResetConfirmBtn" onclick="confirmFactoryReset()" style="background:#b91c1c;border-color:#b91c1c;">Grundeinstellung</button>
           </div>
         </div>
       </div>

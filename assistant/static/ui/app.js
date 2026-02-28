@@ -5803,3 +5803,56 @@ async function confirmMemoryReset() {
   }
 }
 
+// ---- Grundeinstellung / Factory Reset (PIN-geschuetzt) ----
+
+function showFactoryResetDialog() {
+  const overlay = document.getElementById('factoryResetOverlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  const pinInput = document.getElementById('factoryResetPin');
+  if (pinInput) { pinInput.value = ''; pinInput.focus(); }
+  const uploads = document.getElementById('factoryResetUploads');
+  if (uploads) uploads.checked = false;
+  const err = document.getElementById('factoryResetError');
+  if (err) err.style.display = 'none';
+}
+
+function hideFactoryResetDialog() {
+  const overlay = document.getElementById('factoryResetOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+async function confirmFactoryReset() {
+  const pin = document.getElementById('factoryResetPin')?.value || '';
+  const includeUploads = document.getElementById('factoryResetUploads')?.checked || false;
+  const errEl = document.getElementById('factoryResetError');
+  const btn = document.getElementById('factoryResetConfirmBtn');
+
+  if (!pin) {
+    if (errEl) { errEl.textContent = 'PIN eingeben'; errEl.style.display = 'block'; }
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Wird zurueckgesetzt...'; }
+
+  try {
+    const d = await api('/api/ui/factory-reset', 'POST', { pin, include_uploads: includeUploads });
+    hideFactoryResetDialog();
+    const details = [];
+    if (d.redis_keys_deleted) details.push(d.redis_keys_deleted + ' Redis-Keys');
+    if (d.facts_deleted) details.push('Fakten');
+    if (d.knowledge_base_cleared) details.push('Wissensdatenbank');
+    if (d.recipes_cleared) details.push('Rezepte');
+    if (d.uploads_deleted) details.push(d.uploads_deleted + ' Uploads');
+    toast('Grundeinstellung wiederhergestellt' + (details.length ? ': ' + details.join(', ') : ''), 'success');
+    loadMemoryPage();
+  } catch(e) {
+    if (errEl) {
+      errEl.textContent = e.message === 'Auth' ? 'Sitzung abgelaufen' : (e.message || 'Falscher PIN');
+      errEl.style.display = 'block';
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Grundeinstellung'; }
+  }
+}
+
