@@ -197,6 +197,17 @@ models:
   - pro und contra
   - bewerte
   - bewertung
+  - programmier
+  - code
+  - website
+  - schaltplan
+  - schaltung
+  - firmware
+  - gehaeuse
+  - 3d modell
+  - simuliere
+  - diagnostik
+  - troubleshoot
   cooking_keywords:
   - kochen
   - backen
@@ -1172,3 +1183,37 @@ error_patterns:
   enabled: true
   min_occurrences_for_mitigation: 3
   mitigation_ttl_hours: 1
+# Workshop-Modus: Werkstatt-Ingenieur-Assistent
+workshop:
+  enabled: false
+  workshop_room: werkstatt
+  auto_safety_check: true
+  proactive_suggestions: true
+  default_category: maker
+  file_storage_path: /app/data/workshop/files
+  library_path: /app/data/workshop/library
+  max_file_size_mb: 50
+  printer_3d:
+    enabled: false
+    entity_prefix: octoprint
+    auto_monitor: true
+    monitor_interval_seconds: 30
+  robot_arm:
+    enabled: false
+    url: ''
+    max_speed: 80
+    home_on_idle: true
+    idle_timeout_minutes: 5
+  mqtt:
+    enabled: false
+    broker: ''
+    port: 1883
+    topic_prefix: workshop/
+    username: ''
+    password: ''
+  templates:
+    - esp_sensor
+    - led_strip
+    - 3d_enclosure
+    - furniture
+    - repair_standard

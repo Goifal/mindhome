@@ -612,6 +612,7 @@ function renderCurrentTab() {
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
       case 'tab-proactive': c.innerHTML = renderProactive(); break;
       case 'tab-cooking': c.innerHTML = renderCooking(); break;
+      case 'tab-workshop': c.innerHTML = renderWorkshop(); break;
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-lights': c.innerHTML = renderLights(); loadLightEntities(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
@@ -2725,6 +2726,37 @@ function renderCooking() {
     fRange('cooking.max_tokens', 'Rezept-Detailgrad', 256, 4096, 256, {256:'Kurz',512:'Normal',1024:'Ausfuehrlich',2048:'Sehr ausfuehrlich',4096:'Maximum'}) +
     fToggle('cooking.timer_notify_tts', 'Timer-Erinnerungen per Sprache')
   );
+}
+
+// ---- Werkstatt-Modus ----
+function renderWorkshop() {
+  return sectionWrap('&#128295;', 'Werkstatt-Modus',
+    fInfo('J.A.R.V.I.S. als Werkstatt-Ingenieur: Reparaturen, Elektronik, 3D-Druck, Robotik.') +
+    fToggle('workshop.enabled', 'Werkstatt-Modus aktiv') +
+    fText('workshop.workshop_room', 'Werkstatt-Raum (HA)', 'Name des Raums in Home Assistant fuer Sensor-Daten') +
+    fToggle('workshop.auto_safety_check', 'Auto-Sicherheits-Check') +
+    fToggle('workshop.proactive_suggestions', 'Proaktive Vorschlaege')
+  ) +
+  sectionWrap('&#128424;', '3D-Drucker',
+    fToggle('workshop.printer_3d.enabled', '3D-Drucker aktiviert') +
+    fText('workshop.printer_3d.entity_prefix', 'Entity-Prefix', 'z.B. octoprint, bambu') +
+    fToggle('workshop.printer_3d.auto_monitor', 'Auto-Monitoring') +
+    fNum('workshop.printer_3d.monitor_interval_seconds', 'Monitor-Intervall (Sek.)', 10, 300, 10)
+  ) +
+  sectionWrap('&#129302;', 'Roboterarm',
+    fToggle('workshop.robot_arm.enabled', 'Arm aktiviert') +
+    fText('workshop.robot_arm.url', 'Arm URL', 'z.B. http://192.168.1.100') +
+    fRange('workshop.robot_arm.max_speed', 'Max. Geschwindigkeit (%)', 10, 100, 5) +
+    fToggle('workshop.robot_arm.home_on_idle', 'Home bei Idle') +
+    fNum('workshop.robot_arm.idle_timeout_minutes', 'Idle-Timeout (Min.)', 1, 30, 1)
+  ) +
+  sectionWrap('&#128225;', 'MQTT',
+    fToggle('workshop.mqtt.enabled', 'MQTT aktiviert') +
+    fText('workshop.mqtt.broker', 'Broker-Adresse', 'z.B. 192.168.1.1') +
+    fNum('workshop.mqtt.port', 'Port', 1, 65535, 1) +
+    fText('workshop.mqtt.topic_prefix', 'Topic-Prefix', 'z.B. workshop/')
+  ) +
+  '<div style="margin-top:16px;"><a href="/workshop/" target="_blank" style="color:var(--accent);text-decoration:none;font-size:13px;">Workshop-HUD oeffnen &#8599;</a></div>';
 }
 
 /// ---- Tab 8: Sicherheit & Erweitert ----

@@ -165,6 +165,25 @@ async def emit_proactive(
     })
 
 
+async def emit_workshop(
+    sub_event: str,
+    data: dict | None = None,
+) -> None:
+    """Workshop-Event an alle Clients.
+
+    Sub-Events:
+      - workshop.step       — Schritt gewechselt (step_number, total, title)
+      - workshop.diagnosis  — Diagnose abgeschlossen (project, diagnosis)
+      - workshop.file_created — Neue Datei erstellt (project_id, filename)
+      - workshop.printer    — Drucker-Status Update (progress, state, temps)
+      - workshop.environment — Werkstatt-Sensordaten (temperatur, feuchtigkeit, co2)
+      - workshop.timer      — Timer abgelaufen (message)
+      - workshop.arm        — Arm-Status (position, gripper)
+      - workshop.project    — Projekt-Update (project_id, status)
+    """
+    await ws_manager.broadcast(f"workshop.{sub_event}", data or {})
+
+
 async def emit_interrupt(
     text: str,
     event_type: str,
