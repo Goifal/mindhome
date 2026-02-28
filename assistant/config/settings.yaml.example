@@ -418,6 +418,19 @@ time_awareness:
     pc_no_break: 360
   counters:
     coffee_machine: true
+# Oeffnungs-Sensoren: Typ (window/door/gate) und Raum-Zuordnung.
+# heated=false → keine Heizungswarnung (z.B. Gartentor, Garagentor)
+opening_sensors:
+  entities: {}
+  # entities:
+  #   binary_sensor.fenster_wohnzimmer:
+  #     type: window      # window | door | gate
+  #     room: wohnzimmer
+  #     heated: true
+  #   binary_sensor.gartentor:
+  #     type: gate
+  #     room: null
+  #     heated: false
 anticipation:
   enabled: true
   history_days: 30

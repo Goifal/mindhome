@@ -615,7 +615,7 @@ function renderCurrentTab() {
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-lights': c.innerHTML = renderLights(); loadLightEntities(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
-      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); break;
+      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); loadEmergencyProtocols(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
@@ -4694,6 +4694,15 @@ function renderCovers() {
     '<div id="coverSensorsContainer" style="color:var(--text-secondary);padding:8px;">Lade Sensor-Zuordnungen...</div>' +
     '<button class="btn btn-sm" onclick="addCoverSensor()" style="margin-top:8px;">+ Sensor zuordnen</button>'
   ) +
+  // ── Oeffnungs-Sensoren (Fenster/Tueren/Tore) ─────────────
+  sectionWrap('&#128682;', 'Oeffnungs-Sensoren (Fenster / Tueren / Tore)',
+    fInfo('Ordne jedem Kontakt-Sensor einen Typ zu: <strong>Fenster</strong> (Kippen/Offen), <strong>Tuer</strong> oder <strong>Tor</strong> (Gartentor, Garagentor).<br><br>Nur Fenster und Tueren in <strong>beheizten</strong> Raeumen loesen Heizungswarnungen aus. Tore und unbeheizte Bereiche werden ignoriert.<br><br>Sensoren ohne Eintrag hier werden automatisch als "Fenster / beheizt" behandelt (Fallback).') +
+    '<div id="openingSensorsContainer" style="color:var(--text-secondary);padding:8px;">Lade Oeffnungs-Sensoren...</div>' +
+    '<div style="display:flex;gap:6px;margin-top:8px;">' +
+      '<button class="btn btn-sm" onclick="discoverOpeningSensors()" style="font-size:11px;">&#128269; Auto-Erkennung aus HA</button>' +
+      '<button class="btn btn-sm" onclick="addOpeningSensor()" style="font-size:11px;">+ Manuell hinzufuegen</button>' +
+    '</div>'
+  ) +
   // ── Cover-Automatik (settings.yaml) ─────────────────────
   sectionWrap('&#9728;', 'Cover-Automatik',
     fInfo('Automatische Steuerung der Rolllaeden basierend auf Sonnenstand, Wetter und Temperatur. Funktioniert nur wenn Cover-Profile (unten) konfiguriert sind.') +
@@ -5455,6 +5464,147 @@ async function deleteCoverSensor(assignmentId) {
     toast('Sensor-Zuordnung entfernt');
     loadCoverSensors();
   } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+// ── Oeffnungs-Sensoren (Fenster/Tueren/Tore) ──────────────────────
+let _openingSensors = {};
+
+async function loadOpeningSensors() {
+  const container = document.getElementById('openingSensorsContainer');
+  if (!container) return;
+  try {
+    const d = await api('/api/ui/opening-sensors');
+    _openingSensors = d.entities || {};
+    renderOpeningSensors(container);
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Fehler beim Laden: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderOpeningSensors(container) {
+  const entries = Object.entries(_openingSensors);
+  if (entries.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Oeffnungs-Sensoren konfiguriert. Nutze "Auto-Erkennung" um Sensoren aus Home Assistant zu importieren.</div>';
+    return;
+  }
+  const typeLabels = {window: '&#129695; Fenster', door: '&#128682; Tuer', gate: '&#9961; Tor'};
+  const typeColors = {window: 'var(--accent)', door: 'var(--success)', gate: 'var(--warning, #f59e0b)'};
+  const rooms = RP.rooms ? Object.keys(RP.rooms) : [];
+
+  let html = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Gesamt: ' + entries.length + ' Sensoren | ' +
+    entries.filter(([,c])=>c.type==='window').length + ' Fenster, ' +
+    entries.filter(([,c])=>c.type==='door').length + ' Tueren, ' +
+    entries.filter(([,c])=>c.type==='gate').length + ' Tore</div>';
+
+  for (const [entityId, cfg] of entries) {
+    const t = cfg.type || 'window';
+    const borderColor = cfg.heated === false ? 'var(--text-muted)' : typeColors[t] || 'var(--border)';
+    const opacity = cfg.heated === false ? '0.7' : '1';
+    html += '<div style="display:grid;grid-template-columns:1fr 100px 120px 70px 32px;gap:8px;align-items:center;padding:8px 10px;margin-bottom:4px;border-radius:6px;background:var(--bg-card);border:1px solid ' + borderColor + ';opacity:' + opacity + ';">';
+    // Entity ID
+    html += '<div style="font-size:11px;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(entityId) + '">' + esc(entityId) + '</div>';
+    // Typ
+    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'type\',this.value)" style="font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:2px 4px;">';
+    html += '<option value="window"' + (t==='window'?' selected':'') + '>Fenster</option>';
+    html += '<option value="door"' + (t==='door'?' selected':'') + '>Tuer</option>';
+    html += '<option value="gate"' + (t==='gate'?' selected':'') + '>Tor</option>';
+    html += '</select>';
+    // Raum
+    html += '<select onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'room\',this.value||null)" style="font-size:11px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:2px 4px;">';
+    html += '<option value="">— kein Raum —</option>';
+    for (const r of rooms) html += '<option value="' + esc(r) + '"' + (cfg.room===r?' selected':'') + '>' + esc(r) + '</option>';
+    html += '</select>';
+    // Beheizt
+    html += '<label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer;" title="Beheizt = Heizungswarnung wenn offen">';
+    html += '<input type="checkbox"' + (cfg.heated !== false ? ' checked' : '') + ' onchange="updateOpeningSensor(\'' + esc(entityId) + '\',\'heated\',this.checked)" style="accent-color:var(--accent);">';
+    html += '<span>Beheizt</span></label>';
+    // Remove
+    html += '<button type="button" onclick="removeOpeningSensor(\'' + esc(entityId) + '\')" style="font-size:12px;padding:2px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+function updateOpeningSensor(entityId, field, value) {
+  if (!_openingSensors[entityId]) _openingSensors[entityId] = {type: 'window', heated: true};
+  _openingSensors[entityId][field] = value;
+  saveOpeningSensors();
+  const container = document.getElementById('openingSensorsContainer');
+  if (container) renderOpeningSensors(container);
+}
+
+function removeOpeningSensor(entityId) {
+  delete _openingSensors[entityId];
+  saveOpeningSensors();
+  const container = document.getElementById('openingSensorsContainer');
+  if (container) renderOpeningSensors(container);
+}
+
+async function saveOpeningSensors() {
+  try {
+    await api('/api/ui/opening-sensors', 'PUT', {entities: _openingSensors});
+  } catch (e) { toast('Fehler beim Speichern: ' + e.message, 'error'); }
+}
+
+function addOpeningSensor() {
+  const container = document.getElementById('openingSensorsContainer');
+  if (!container || document.getElementById('addOpeningForm')) return;
+  const form = document.createElement('div');
+  form.id = 'addOpeningForm';
+  form.style.cssText = 'margin-top:10px;padding:12px;border:2px solid var(--accent);border-radius:8px;background:var(--bg-card);';
+  let h = '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Neuen Sensor hinzufuegen</div>';
+  h += '<div class="form-group"><label>Entity-ID</label><input type="text" id="newOpeningEntity" placeholder="binary_sensor.fenster_wohnzimmer" style="font-size:11px;font-family:var(--mono);"></div>';
+  h += '<div style="display:flex;gap:8px;">';
+  h += '<div class="form-group" style="flex:1;"><label>Typ</label><select id="newOpeningType" style="font-size:11px;"><option value="window">Fenster</option><option value="door">Tuer</option><option value="gate">Tor</option></select></div>';
+  h += '<div class="form-group" style="flex:1;"><label>Beheizt</label><select id="newOpeningHeated" style="font-size:11px;"><option value="true">Ja</option><option value="false">Nein</option></select></div>';
+  h += '</div>';
+  h += '<div style="display:flex;gap:6px;">';
+  h += '<button class="btn btn-sm" onclick="submitOpeningSensor()" style="font-size:11px;background:var(--accent);color:var(--bg-primary);border-color:var(--accent);">Hinzufuegen</button>';
+  h += '<button class="btn btn-sm" onclick="document.getElementById(\'addOpeningForm\').remove()" style="font-size:11px;">Abbrechen</button>';
+  h += '</div>';
+  form.innerHTML = h;
+  container.parentNode.appendChild(form);
+}
+
+function submitOpeningSensor() {
+  const eid = document.getElementById('newOpeningEntity').value.trim();
+  if (!eid) { toast('Entity-ID eingeben', 'error'); return; }
+  const type = document.getElementById('newOpeningType').value;
+  const heated = document.getElementById('newOpeningHeated').value === 'true';
+  _openingSensors[eid] = {type, heated, room: null};
+  saveOpeningSensors();
+  const form = document.getElementById('addOpeningForm');
+  if (form) form.remove();
+  const container = document.getElementById('openingSensorsContainer');
+  if (container) renderOpeningSensors(container);
+  toast('Sensor hinzugefuegt');
+}
+
+async function discoverOpeningSensors() {
+  try {
+    const d = await api('/api/ui/opening-sensors/discover');
+    const sensors = d.sensors || [];
+    if (sensors.length === 0) { toast('Keine passenden Sensoren in HA gefunden'); return; }
+    let added = 0;
+    for (const s of sensors) {
+      if (!_openingSensors[s.entity_id]) {
+        _openingSensors[s.entity_id] = {
+          type: s.suggested_type || 'window',
+          heated: s.suggested_type !== 'gate',
+          room: null,
+        };
+        added++;
+      }
+    }
+    if (added > 0) {
+      await saveOpeningSensors();
+      toast(added + ' neue Sensoren importiert');
+    } else {
+      toast('Alle Sensoren bereits konfiguriert');
+    }
+    const container = document.getElementById('openingSensorsContainer');
+    if (container) renderOpeningSensors(container);
+  } catch (e) { toast('Fehler bei Auto-Erkennung: ' + e.message, 'error'); }
 }
 
 // ── Licht-Tab (tab-lights) ─────────────────────────────────────

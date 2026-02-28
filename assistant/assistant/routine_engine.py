@@ -513,17 +513,22 @@ class RoutineEngine:
                     room = attrs.get("friendly_name", "?")
                     parts.append(f"{room}: {temp}°C")
 
-        # Offene Fenster/Tueren — MindHome-Domain + device_class pruefen
-        # statt keyword-matching (verhindert false positives wie Steckdosen)
-        from .function_calling import is_window_or_door
-        open_items = []
+        # Offene Fenster/Tueren — kategorisiert nach Typ
+        from .function_calling import is_window_or_door, get_opening_type
+        open_windows_doors = []
+        open_gates = []
         for state in states:
             entity_id = state.get("entity_id", "")
             if is_window_or_door(entity_id, state) and state.get("state") == "on":
                 name = state.get("attributes", {}).get("friendly_name", entity_id)
-                open_items.append(name)
-        if open_items:
-            parts.append(f"Offen: {', '.join(open_items)}")
+                if get_opening_type(entity_id, state) == "gate":
+                    open_gates.append(name)
+                else:
+                    open_windows_doors.append(name)
+        if open_windows_doors:
+            parts.append(f"Offen: {', '.join(open_windows_doors)}")
+        if open_gates:
+            parts.append(f"Tore offen: {', '.join(open_gates)}")
 
         # Lichter
         lights_on = sum(
@@ -820,16 +825,18 @@ class RoutineEngine:
 
         for check in self.goodnight_checks:
             if check == "windows":
-                from .function_calling import is_window_or_door
+                from .function_calling import is_window_or_door, get_opening_type
                 for state in states:
                     eid = state.get("entity_id", "")
                     if is_window_or_door(eid, state) and state.get("state") == "on":
                         name = state.get("attributes", {}).get("friendly_name", eid)
+                        opening_type = get_opening_type(eid, state)
+                        type_label = "Tor" if opening_type == "gate" else "Fenster/Tuer"
                         issues.append({
-                            "type": "window_open",
+                            "type": "window_open" if opening_type != "gate" else "gate_open",
                             "entity": eid,
                             "name": name,
-                            "message": f"{name} ist noch offen",
+                            "message": f"{name} ist noch offen ({type_label})",
                             "critical": False,
                         })
 

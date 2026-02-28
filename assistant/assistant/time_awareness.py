@@ -267,7 +267,11 @@ class TimeAwareness:
         return alerts
 
     async def _check_windows_cold(self, states: list[dict]) -> list[dict]:
-        """Prueft ob Fenster bei kaltem Wetter offen sind."""
+        """Prueft ob Fenster bei kaltem Wetter offen sind.
+
+        Nutzt is_heating_relevant_opening() um nur Fenster/Tueren in
+        beheizten Raeumen zu pruefen. Tore/Gates werden ignoriert.
+        """
         alerts = []
 
         # Aussentemperatur holen
@@ -286,11 +290,11 @@ class TimeAwareness:
         if outside_temp is None or outside_temp >= 10:
             return alerts
 
-        # Offene Fenster finden — MindHome-Domain + device_class statt Keyword
-        from .function_calling import is_window_or_door
+        # Offene Fenster finden — nur heizungsrelevante (keine Tore/Gates)
+        from .function_calling import is_heating_relevant_opening, get_opening_type
         for state in states:
             entity_id = state.get("entity_id", "")
-            if not is_window_or_door(entity_id, state):
+            if not is_heating_relevant_opening(entity_id, state):
                 continue
             if state.get("state") != "on":
                 continue
@@ -301,16 +305,22 @@ class TimeAwareness:
                 if not await self._was_notified(device_key):
                     await self._mark_notified(device_key)
                     friendly = state.get("attributes", {}).get("friendly_name", entity_id)
+                    opening_type = get_opening_type(entity_id, state)
+                    type_label = "Ein Fenster" if opening_type == "window" else "Eine Tuer"
                     alerts.append({
                         "type": "window_open_cold",
                         "device": device_key,
-                        "message": f"{friendly} ist seit {int(minutes)} Minuten offen. Draussen sind es {outside_temp}°C.",
+                        "message": f"{type_label} ist seit {int(minutes)} Minuten offen ({friendly}). Draussen sind es {outside_temp}°C.",
                         "urgency": "medium",
                     })
         return alerts
 
     async def _check_heating_window_open(self, states: list[dict]) -> list[dict]:
-        """Prueft ob Heizung laeuft waehrend ein Fenster offen ist."""
+        """Prueft ob Heizung laeuft waehrend ein Fenster offen ist.
+
+        Nutzt is_heating_relevant_opening() um nur Sensoren in beheizten
+        Raeumen zu pruefen. Tore und unbeheizte Bereiche werden ignoriert.
+        """
         alerts = []
 
         # Pruefen ob irgendein Climate-Entity aktiv heizt
@@ -330,11 +340,11 @@ class TimeAwareness:
         if not heating_active:
             return alerts
 
-        # Offene Fenster finden — MindHome-Domain + device_class statt Keyword
-        from .function_calling import is_window_or_door
+        # Offene Fenster/Tueren finden — nur heizungsrelevante
+        from .function_calling import is_heating_relevant_opening, get_opening_type
         for state in states:
             entity_id = state.get("entity_id", "")
-            if not is_window_or_door(entity_id, state):
+            if not is_heating_relevant_opening(entity_id, state):
                 continue
             if state.get("state") != "on":
                 continue
@@ -343,10 +353,12 @@ class TimeAwareness:
             if not await self._was_notified(device_key):
                 await self._mark_notified(device_key)
                 friendly = state.get("attributes", {}).get("friendly_name", entity_id)
+                opening_type = get_opening_type(entity_id, state)
+                type_label = "Ein Fenster" if opening_type == "window" else "Eine Tuer"
                 alerts.append({
                     "type": "heating_window_open",
                     "device": device_key,
-                    "message": f"Ein Fenster ist offen ({friendly}) waehrend die Heizung laeuft.",
+                    "message": f"{type_label} ist offen ({friendly}) waehrend die Heizung laeuft.",
                     "urgency": "medium",
                 })
 

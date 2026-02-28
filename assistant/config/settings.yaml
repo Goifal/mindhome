@@ -520,6 +520,27 @@ time_awareness:
     pc_no_break: 360
   counters:
     coffee_machine: true
+# Oeffnungs-Sensoren (Fenster, Tueren, Tore) — Typ und Raum-Zuordnung.
+# Typ: window = Fenster (Kippen/Offen), door = Tuer, gate = Tor/Garagentor
+# heated: true = in beheiztem Raum (relevant fuer Heizungswarnungen)
+# heated: false = unbeheizt (Garage, Garten, Schuppen — KEINE Heizungswarnung)
+# Sensor ohne Eintrag hier → wird automatisch als window/heated behandelt (Fallback)
+opening_sensors:
+  entities: {}
+  # Beispiel:
+  # entities:
+  #   binary_sensor.fenster_wohnzimmer:
+  #     type: window
+  #     room: wohnzimmer
+  #     heated: true
+  #   binary_sensor.gartentor:
+  #     type: gate
+  #     room: null
+  #     heated: false
+  #   binary_sensor.haustuer:
+  #     type: door
+  #     room: flur_unten
+  #     heated: true
 anticipation:
   enabled: true
   history_days: 30

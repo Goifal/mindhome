@@ -216,13 +216,20 @@ class FunctionValidator:
             return None
 
         # Check: Fenster offen im gleichen Raum?
+        # Nutzt is_heating_relevant_opening um Tore/unbeheizte Bereiche auszuschliessen
         if checks.get("open_windows", True):
+            from .function_calling import is_heating_relevant_opening, get_opening_sensor_config
             for state in states:
                 eid = state.get("entity_id", "")
-                if not eid.startswith(("binary_sensor.fenster", "binary_sensor.window")):
+                if not is_heating_relevant_opening(eid, state):
                     continue
+                if state.get("state") != "on":
+                    continue
+                # Raum-Match: opening_sensors Config oder friendly_name Fallback
+                cfg = get_opening_sensor_config(eid)
+                sensor_room = (cfg.get("room") or "").lower()
                 friendly = (state.get("attributes", {}).get("friendly_name") or eid).lower()
-                if room in friendly and state.get("state") == "on":
+                if sensor_room == room or (not sensor_room and room in friendly):
                     window_name = state.get("attributes", {}).get("friendly_name", eid)
                     target_t = args.get("temperature", "?")
                     warnings.append({

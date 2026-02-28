@@ -613,14 +613,19 @@ class ProactiveManager:
             if not states:
                 return ""
 
-            # Offene Fenster/Tueren — is_window_or_door statt Keyword-Matching
-            from .function_calling import is_window_or_door
+            # Offene Fenster/Tueren — kategorisiert nach Typ
+            from .function_calling import is_window_or_door, get_opening_type, is_heating_relevant_opening
             open_items = []
+            open_gates = []
             for s in states:
                 eid = s.get("entity_id", "")
                 if is_window_or_door(eid, s) and s.get("state") == "on":
                     name = s.get("attributes", {}).get("friendly_name", eid)
-                    open_items.append(name)
+                    opening_type = get_opening_type(eid, s)
+                    if opening_type == "gate":
+                        open_gates.append(name)
+                    else:
+                        open_items.append(name)
 
             # Unverriegelte Schloesser
             unlocked = []
@@ -705,6 +710,8 @@ class ProactiveManager:
                 parts.append(weather_tomorrow)
             if open_items:
                 parts.append(f"Noch offen: {', '.join(open_items)}.")
+            if open_gates:
+                parts.append(f"Tore offen: {', '.join(open_gates)}.")
             if unlocked:
                 parts.append(f"Unverriegelt: {', '.join(unlocked)}.")
 
@@ -716,11 +723,13 @@ class ProactiveManager:
                 suggestions.append(f"{len(lights_on)} Lichter noch an.")
             if open_items:
                 suggestions.append("Fenster vor der Nacht schliessen?")
+            if open_gates:
+                suggestions.append("Tore schliessen?")
             if unlocked:
                 suggestions.append("Schloesser verriegeln?")
             if suggestions:
                 parts.append("Vorschlaege: " + " ".join(suggestions))
-            elif not open_items and not unlocked:
+            elif not open_items and not open_gates and not unlocked:
                 parts.append("Alles gesichert.")
 
             if not parts:
@@ -1248,17 +1257,22 @@ class ProactiveManager:
                     }
                     break
 
-            # Offene Fenster/Tueren
+            # Offene Fenster/Tueren — kategorisiert
+            from .function_calling import is_window_or_door, get_opening_type
             open_items = []
+            open_gates = []
             for s in states:
                 eid = s.get("entity_id", "")
-                if not eid.startswith("binary_sensor."):
-                    continue
-                if ("window" in eid or "door" in eid or "fenster" in eid or "tuer" in eid) and s.get("state") == "on":
+                if is_window_or_door(eid, s) and s.get("state") == "on":
                     name = s.get("attributes", {}).get("friendly_name", eid)
-                    open_items.append(name)
+                    if get_opening_type(eid, s) == "gate":
+                        open_gates.append(name)
+                    else:
+                        open_items.append(name)
             if open_items:
                 status["open_items"] = open_items
+            if open_gates:
+                status["open_gates"] = open_gates
 
             # Aktive Lichter
             lights_on = sum(
@@ -1566,6 +1580,9 @@ class ProactiveManager:
         open_items = status.get("open_items", [])
         if open_items:
             parts.append(f"Offen: {', '.join(open_items)}")
+        open_gates = status.get("open_gates", [])
+        if open_gates:
+            parts.append(f"Tore offen: {', '.join(open_gates)}")
 
         lights = status.get("lights_on", 0)
         parts.append(f"Lichter an: {lights}")

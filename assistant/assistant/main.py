@@ -245,11 +245,13 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
                     except (ValueError, TypeError):
                         pass
 
-            # Offene Fenster/Tueren zaehlen — MindHome-Domain + device_class
-            from .function_calling import is_window_or_door
+            # Offene Fenster/Tueren zaehlen — kategorisiert
+            from .function_calling import is_window_or_door, get_opening_type
             if state_val == "on" and is_window_or_door(eid, s):
                 name = attrs.get("friendly_name", eid)
-                open_items.append(name)
+                opening_type = get_opening_type(eid, s)
+                if opening_type != "gate":
+                    open_items.append(name)
 
         # Boot-Nachricht zusammenbauen
         title = get_person_title()
@@ -3380,6 +3382,78 @@ async def ui_discover_covers(token: str = ""):
     try:
         result = await brain.ha.mindhome_get("/api/covers/discover")
         return result or {"covers": [], "sensors": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Opening Sensors (Fenster/Tueren/Tore Zuordnung) ───────────────
+
+@app.get("/api/ui/opening-sensors")
+async def ui_get_opening_sensors(token: str = ""):
+    """Oeffnungs-Sensoren Konfiguration lesen (settings.yaml)."""
+    _check_token(token)
+    from .config import yaml_config
+    entities = yaml_config.get("opening_sensors", {}).get("entities", {}) or {}
+    return {"entities": entities}
+
+
+@app.put("/api/ui/opening-sensors")
+async def ui_set_opening_sensors(request: Request, token: str = ""):
+    """Oeffnungs-Sensoren Konfiguration speichern (settings.yaml)."""
+    _check_token(token)
+    data = await request.json()
+    entities = data.get("entities", {})
+    # Validierung
+    valid_types = {"window", "door", "gate"}
+    for eid, cfg in entities.items():
+        if cfg.get("type") and cfg["type"] not in valid_types:
+            raise HTTPException(status_code=400, detail=f"Ungueltiger Typ fuer {eid}: {cfg['type']}")
+    # In settings.yaml schreiben (gleicher Pfad wie ui_update_settings)
+    settings_path = Path(__file__).parent.parent / "config" / "settings.yaml"
+    yaml_config.setdefault("opening_sensors", {})["entities"] = entities
+    try:
+        with open(settings_path, "w") as f:
+            yaml.dump(yaml_config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        return {"success": True, "count": len(entities)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/opening-sensors/discover")
+async def ui_discover_opening_sensors(token: str = ""):
+    """Verfuegbare Oeffnungs-Sensoren aus Home Assistant entdecken."""
+    _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        sensors = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if not eid.startswith("binary_sensor."):
+                continue
+            attrs = s.get("attributes", {})
+            device_class = attrs.get("device_class", "")
+            if device_class not in ("window", "door", "garage_door", "opening"):
+                # Keyword-Fallback
+                lower_id = eid.lower()
+                if not any(kw in lower_id for kw in ("window", "door", "fenster", "tuer", "tor", "gate")):
+                    continue
+            friendly = attrs.get("friendly_name", eid)
+            # Typ vorschlagen
+            if device_class == "garage_door" or any(kw in eid.lower() for kw in ("tor", "gate", "garage")):
+                suggested_type = "gate"
+            elif device_class == "door" or "tuer" in eid.lower() or "door" in eid.lower():
+                suggested_type = "door"
+            else:
+                suggested_type = "window"
+            sensors.append({
+                "entity_id": eid,
+                "name": friendly,
+                "state": s.get("state", "unknown"),
+                "device_class": device_class,
+                "suggested_type": suggested_type,
+            })
+        sensors.sort(key=lambda x: x["name"])
+        return {"sensors": sensors}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
