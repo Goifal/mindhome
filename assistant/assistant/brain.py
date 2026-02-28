@@ -2831,13 +2831,42 @@ class AssistantBrain(BrainCallbacksMixin):
                             logger.debug("Live-Pushback Fehler: %s", _pb_err)
 
                     # Feature 5: Emotionales Gedaechtnis — negative Reaktions-History
+                    # Blockiert Ausfuehrung (Level 2) wenn User bereits negativ reagiert hat.
                     if not pushback_msg and person and self.memory_extractor:
                         try:
                             emo_ctx = await MemoryExtractor.get_emotional_context(
                                 func_name, person, redis_client=self.memory.redis,
                             )
                             if emo_ctx:
-                                pushback_msg = emo_ctx
+                                logger.info("Emotionales Gedaechtnis blockiert %s: %s", func_name, emo_ctx)
+                                action_label = func_name.replace("set_", "").replace("_", " ")
+                                response_text = (
+                                    f"Beim letzten Mal war das nicht gewuenscht. "
+                                    f"Soll ich {action_label} trotzdem ausfuehren?"
+                                )
+                                if self.memory.redis:
+                                    pending = {
+                                        "function": func_name,
+                                        "args": final_args,
+                                        "person": person or "",
+                                        "room": room or "",
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                        "reason": "emotional_memory",
+                                    }
+                                    timeout = cfg.yaml_config.get(
+                                        "pushback", {},
+                                    ).get("confirmation_timeout", 120)
+                                    await self.memory.redis.setex(
+                                        SECURITY_CONFIRM_KEY,
+                                        timeout,
+                                        json.dumps(pending),
+                                    )
+                                executed_actions.append({
+                                    "function": func_name,
+                                    "args": final_args,
+                                    "result": "emotional_memory_confirmation_needed",
+                                })
+                                continue
                         except Exception as _emo_err:
                             logger.debug("Emotionaler Kontext Fehler: %s", _emo_err)
 
