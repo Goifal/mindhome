@@ -2572,11 +2572,20 @@ class ProactiveManager:
                 seg = segment_id
 
             logger.info("Vacuum-Trigger: Starte %s (%s) fuer Raum '%s' Segment=%s", nickname, eid, room, seg)
-            success = await self.brain.ha.call_service("vacuum", "send_command", {
+
+            # Try Dreame-specific service first (Tasshack integration),
+            # then fall back to generic vacuum.send_command (Roborock/Miio)
+            success = await self.brain.ha.call_service("dreame_vacuum", "vacuum_clean_segment", {
                 "entity_id": eid,
-                "command": "app_segment_clean",
-                "params": [seg],
+                "segments": [seg],
             })
+            if not success:
+                logger.info("Vacuum-Trigger: dreame_vacuum.vacuum_clean_segment nicht verfuegbar, versuche vacuum.send_command")
+                success = await self.brain.ha.call_service("vacuum", "send_command", {
+                    "entity_id": eid,
+                    "command": "app_segment_clean",
+                    "params": [seg],
+                })
             if not success:
                 logger.warning("Vacuum-Trigger: send_command fehlgeschlagen, versuche vacuum.start")
                 success = await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
