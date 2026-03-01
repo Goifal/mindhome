@@ -25,6 +25,7 @@ from typing import Optional
 import yaml
 
 from .config import yaml_config, settings
+from .function_calling import get_entity_annotation, is_entity_hidden
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -108,10 +109,19 @@ class DiagnosticsEngine:
     def _should_monitor(self, entity_id: str) -> bool:
         """Prueft ob Entity ueberwacht werden soll.
 
-        Wenn monitored_entities gesetzt ist (Whitelist), werden NUR
-        diese Entities ueberwacht. Ansonsten: Domain-Filter + Exclude-Patterns.
+        Nutzt Entity-Annotations: Annotierte (nicht-hidden) Entities werden
+        automatisch ueberwacht. Ohne Annotation: Domain-Filter + Exclude-Patterns.
         """
-        # Whitelist-Modus: Nur explizit gewaehlte Entities
+        # Hidden-Entities nie ueberwachen
+        if is_entity_hidden(entity_id):
+            return False
+
+        # Annotierte Entities immer ueberwachen
+        ann = get_entity_annotation(entity_id)
+        if ann and ann.get("role"):
+            return True
+
+        # Legacy-Whitelist (falls noch in Config)
         if self.monitored_entities:
             return entity_id in self.monitored_entities
 
