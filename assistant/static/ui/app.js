@@ -375,6 +375,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
       'tab-rooms':'Raeume & Speaker','tab-lights':'Licht','tab-devices':'Geraete',
       'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter',
       'tab-routines':'Routinen','tab-proactive':'Proaktiv & Vorausdenken',
+      'tab-notifications':'Benachrichtigungen',
       'tab-cooking':'Koch-Assistent','tab-followme':'Follow-Me',
       'tab-jarvis':'Jarvis-Features','tab-eastereggs':'Easter Eggs',
       'tab-autonomie':'Autonomie & Selbstoptimierung',
@@ -611,6 +612,7 @@ function renderCurrentTab() {
       case 'tab-voice': c.innerHTML = renderVoice(); break;
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
       case 'tab-proactive': c.innerHTML = renderProactive(); break;
+      case 'tab-notifications': c.innerHTML = renderNotifications(); break;
       case 'tab-cooking': c.innerHTML = renderCooking(); break;
       case 'tab-workshop': c.innerHTML = renderWorkshop(); break;
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
@@ -783,6 +785,8 @@ const HELP_TEXTS = {
   'activity.thresholds.night_end': {title:'Nacht endet', text:'Bis wann Nachtruhe gilt.'},
   'activity.thresholds.guest_person_count': {title:'Besuch ab Personen', text:'Ab wie vielen Personen Gaeste-Modus aktiviert wird.'},
   'activity.thresholds.focus_min_minutes': {title:'Fokus-Modus', text:'Ab wie vielen Min ununterbrochener Arbeit Fokus erkannt wird.'},
+  'activity.silence_matrix': {title:'Stille-Matrix', text:'Bestimmt pro Aktivitaet und Dringlichkeit, wie Benachrichtigungen zugestellt werden: Laut (TTS), Leise, LED-Signal oder Unterdruecken.'},
+  'activity.volume_matrix': {title:'Lautstaerke-Matrix', text:'Lautstaerke fuer TTS-Durchsagen, abhaengig von Aktivitaet und Dringlichkeit. Werte 0-100%. Nachts wird automatisch zusaetzlich reduziert.'},
   // === COVER-AUTOMATIK ===
   'seasonal_actions.enabled': {title:'Saisonale Aktionen', text:'Automatische Aktionen basierend auf Jahreszeit, Wetter und Sonnenstand.'},
   'seasonal_actions.cover_automation.sun_tracking': {title:'Sonnenstand-Tracking', text:'Rolllaeden folgen automatisch dem Sonnenstand. Benoetigt konfigurierte Cover-Profile.'},
@@ -2599,6 +2603,152 @@ function renderProactive() {
   );
 }
 
+// ---- Benachrichtigungen (Silence Matrix + Volume Matrix) ----
+function renderNotifications() {
+  const activities = [
+    {key:'sleeping', label:'Schlafen', icon:'&#128164;'},
+    {key:'in_call',  label:'Im Telefonat', icon:'&#128222;'},
+    {key:'watching', label:'TV/Film', icon:'&#127916;'},
+    {key:'focused',  label:'Konzentriert', icon:'&#128187;'},
+    {key:'guests',   label:'Gaeste da', icon:'&#128101;'},
+    {key:'relaxing', label:'Entspannt', icon:'&#128524;'},
+    {key:'away',     label:'Abwesend', icon:'&#127968;'},
+  ];
+  const urgencies = ['critical','high','medium','low'];
+  const urgencyLabels = {critical:'Kritisch',high:'Hoch',medium:'Mittel',low:'Niedrig'};
+  const deliveryOpts = [
+    {v:'tts_loud',  l:'Laut (TTS)'},
+    {v:'tts_quiet', l:'Leise (TTS)'},
+    {v:'led_blink', l:'Nur LED'},
+    {v:'suppress',  l:'Unterdruecken'},
+  ];
+  // Defaults (hardcoded, matching activity.py)
+  const defaultSilence = {
+    sleeping:  {critical:'tts_loud',high:'led_blink',medium:'suppress',low:'suppress'},
+    in_call:   {critical:'tts_loud',high:'tts_quiet',medium:'suppress',low:'suppress'},
+    watching:  {critical:'tts_loud',high:'led_blink',medium:'suppress',low:'suppress'},
+    focused:   {critical:'tts_loud',high:'tts_quiet',medium:'tts_quiet',low:'suppress'},
+    guests:    {critical:'tts_loud',high:'tts_quiet',medium:'tts_quiet',low:'suppress'},
+    relaxing:  {critical:'tts_loud',high:'tts_loud',medium:'tts_quiet',low:'suppress'},
+    away:      {critical:'tts_loud',high:'suppress',medium:'suppress',low:'suppress'},
+  };
+  const defaultVolume = {
+    sleeping:  {critical:0.6,high:0.2,medium:0.15,low:0.1},
+    in_call:   {critical:0.3,high:0.2,medium:0.0,low:0.0},
+    watching:  {critical:0.7,high:0.4,medium:0.3,low:0.2},
+    focused:   {critical:0.8,high:0.5,medium:0.4,low:0.3},
+    guests:    {critical:0.8,high:0.5,medium:0.4,low:0.3},
+    relaxing:  {critical:1.0,high:0.8,medium:0.7,low:0.5},
+    away:      {critical:1.0,high:0.0,medium:0.0,low:0.0},
+  };
+
+  // Build silence matrix table
+  let silenceRows = '';
+  for (const act of activities) {
+    let cells = `<td class="nm-label">${act.icon} ${act.label}</td>`;
+    for (const urg of urgencies) {
+      const path = `activity.silence_matrix.${act.key}.${urg}`;
+      const val = getPath(S, path) ?? defaultSilence[act.key][urg];
+      let opts = deliveryOpts.map(o =>
+        `<option value="${o.v}" ${val===o.v?'selected':''}>${o.l}</option>`
+      ).join('');
+      cells += `<td><select class="nm-select" data-path="${path}" data-default="${defaultSilence[act.key][urg]}">${opts}</select></td>`;
+    }
+    silenceRows += `<tr>${cells}</tr>`;
+  }
+  const silenceTable = `<div class="nm-table-wrap"><table class="nm-table">
+    <thead><tr><th></th>${urgencies.map(u=>`<th>${urgencyLabels[u]}</th>`).join('')}</tr></thead>
+    <tbody>${silenceRows}</tbody></table></div>`;
+
+  // Build volume matrix table
+  let volumeRows = '';
+  for (const act of activities) {
+    let cells = `<td class="nm-label">${act.icon} ${act.label}</td>`;
+    for (const urg of urgencies) {
+      const path = `activity.volume_matrix.${act.key}.${urg}`;
+      const val = getPath(S, path) ?? defaultVolume[act.key][urg];
+      const pct = Math.round((val ?? 0) * 100);
+      cells += `<td><input type="range" class="nm-vol" min="0" max="100" step="5" value="${pct}"
+        data-path="${path}" data-default="${defaultVolume[act.key][urg]}"
+        oninput="this.nextElementSibling.textContent=this.value+'%'"
+        ><span class="nm-vol-label">${pct}%</span></td>`;
+    }
+    volumeRows += `<tr>${cells}</tr>`;
+  }
+  const volumeTable = `<div class="nm-table-wrap"><table class="nm-table">
+    <thead><tr><th></th>${urgencies.map(u=>`<th>${urgencyLabels[u]}</th>`).join('')}</tr></thead>
+    <tbody>${volumeRows}</tbody></table></div>`;
+
+  return sectionWrap('&#128263;', 'Stille-Matrix (Zustellung pro Aktivitaet)',
+    fInfo('Bestimmt WIE Benachrichtigungen zugestellt werden — abhaengig von deiner aktuellen Aktivitaet und der Dringlichkeit der Meldung. Kritische Meldungen (Sicherheit, Notfall) sollten immer hoerbar sein.') +
+    silenceTable +
+    `<div style="margin:8px 0 4px;font-size:11px;color:var(--text-muted);">Geaenderte Zellen werden beim Verlassen automatisch gespeichert. Nur Abweichungen vom Standard werden gespeichert.</div>`
+  ) +
+  sectionWrap('&#128266;', 'Lautstaerke-Matrix',
+    fInfo('Bestimmt die Lautstaerke von TTS-Durchsagen — abhaengig von Aktivitaet und Dringlichkeit. Nachts wird automatisch zusaetzlich reduziert.') +
+    volumeTable
+  );
+}
+
+// Notification Matrix: nur geaenderte Werte in S speichern (sparse)
+function _nmSync() {
+  document.querySelectorAll('.nm-select').forEach(sel => {
+    const path = sel.dataset.path;
+    const def = sel.dataset.default;
+    if (sel.value !== def) {
+      setPath(S, path, sel.value);
+    } else {
+      // Nicht-geaenderte Werte entfernen (damit nur Overrides gespeichert werden)
+      _nmRemovePath(path);
+    }
+  });
+  document.querySelectorAll('.nm-vol').forEach(range => {
+    const path = range.dataset.path;
+    const def = parseFloat(range.dataset.default);
+    const val = parseInt(range.value) / 100;
+    if (Math.abs(val - def) > 0.01) {
+      setPath(S, path, val);
+    } else {
+      _nmRemovePath(path);
+    }
+  });
+}
+function _nmRemovePath(path) {
+  // Entferne einen einzelnen Pfad aus S (z.B. activity.silence_matrix.watching.high)
+  const parts = path.split('.');
+  let cur = S;
+  const stack = [];
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (!cur || typeof cur !== 'object') return;
+    stack.push({obj: cur, key: parts[i]});
+    cur = cur[parts[i]];
+  }
+  if (cur && typeof cur === 'object') {
+    delete cur[parts[parts.length - 1]];
+  }
+  // Leere Eltern-Objekte aufraemen
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const {obj, key} = stack[i];
+    if (obj[key] && typeof obj[key] === 'object' && Object.keys(obj[key]).length === 0) {
+      delete obj[key];
+    }
+  }
+}
+
+// Hook nm-select/nm-vol change events into auto-save
+document.addEventListener('change', (e) => {
+  if (e.target.classList.contains('nm-select') || e.target.classList.contains('nm-vol')) {
+    _nmSync();
+    scheduleAutoSave();
+  }
+});
+document.addEventListener('input', (e) => {
+  if (e.target.classList.contains('nm-vol')) {
+    _nmSync();
+    scheduleAutoSave();
+  }
+});
+
 // ---- Jarvis-Features (Feature 1-11) ----
 function renderJarvisFeatures() {
   return sectionWrap('&#128172;', 'Progressive Antworten',
@@ -3603,6 +3753,7 @@ function collectSettings() {
     const path = el.dataset.path;
     const tag = el.tagName.toLowerCase();
     if (tag === 'div') return; // kw-editor handled separately
+    if (el.classList.contains('nm-select') || el.classList.contains('nm-vol')) return; // handled by _nmSync
     let val;
     if (el.type === 'checkbox') {
       val = el.checked;

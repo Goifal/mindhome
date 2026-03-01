@@ -553,6 +553,23 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .chip-opt.selected { background:var(--accent-dim); border-color:var(--accent); color:var(--accent); font-weight:600; box-shadow:0 0 10px rgba(0,212,255,0.15); }
 .chip-opt.selected::before { content:'✓ '; font-size:10px; }
 
+/* Notification Matrix Table */
+.nm-table-wrap { overflow-x:auto; margin-bottom:12px; }
+.nm-table { width:100%; border-collapse:collapse; font-size:12px; }
+.nm-table th { padding:8px 6px; text-align:center; font-size:10px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid rgba(0,212,255,0.1); }
+.nm-table td { padding:6px 4px; text-align:center; border-bottom:1px solid rgba(255,255,255,0.03); }
+.nm-table tr:hover { background:rgba(0,212,255,0.03); }
+.nm-label { text-align:left !important; white-space:nowrap; font-weight:500; padding-left:8px !important; font-size:12px; }
+.nm-select { background:var(--bg-primary); color:var(--text-primary); border:1px solid rgba(0,212,255,0.12); border-radius:4px; padding:4px 4px; font-size:11px; width:100%; min-width:100px; cursor:pointer; }
+.nm-select:focus { border-color:var(--accent); outline:none; box-shadow:0 0 6px rgba(0,212,255,0.2); }
+.nm-vol { width:60px; accent-color:var(--accent); vertical-align:middle; }
+.nm-vol-label { display:inline-block; width:32px; text-align:right; font-size:10px; color:var(--text-muted); font-family:var(--mono); }
+@media (max-width:640px) {
+  .nm-select { font-size:10px; min-width:80px; padding:3px 2px; }
+  .nm-label { font-size:11px; }
+  .nm-vol { width:45px; }
+}
+
 /* Info-Hint Box */
 .info-box { display:flex; align-items:flex-start; gap:8px; padding:10px 14px; background:var(--blue-dim); border:1px solid rgba(59,130,246,0.2); border-radius:var(--radius-sm); margin-bottom:14px; font-size:12px; color:var(--text-secondary); line-height:1.5; }
 .info-box .info-icon { font-size:14px; flex-shrink:0; margin-top:1px; }
@@ -877,6 +894,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
         <div class="nav-group-items">
           <div class="nav-item" data-page="settings" data-tab="tab-routines"><span class="nav-icon">&#127748;</span>Routinen</div>
           <div class="nav-item" data-page="settings" data-tab="tab-proactive"><span class="nav-icon">&#128276;</span>Proaktiv</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-notifications"><span class="nav-icon">&#128263;</span>Benachrichtigungen</div>
           <div class="nav-item" data-page="settings" data-tab="tab-cooking"><span class="nav-icon">&#127859;</span>Koch-Assistent</div>
           <div class="nav-item" data-page="settings" data-tab="tab-workshop"><span class="nav-icon">&#128295;</span>Werkstatt</div>
           <div class="nav-item" data-page="settings" data-tab="tab-followme"><span class="nav-icon">&#128694;</span>Follow-Me</div>
