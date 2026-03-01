@@ -5730,7 +5730,7 @@ function renderOpeningSensors(container) {
 function updateOpeningSensor(entityId, field, value) {
   if (!_openingSensors[entityId]) _openingSensors[entityId] = {type: 'window', heated: true};
   _openingSensors[entityId][field] = value;
-  saveOpeningSensors();
+  scheduleOpeningSensorSave();
   const container = document.getElementById('openingSensorsContainer');
   if (container) renderOpeningSensors(container);
 }
@@ -5742,10 +5742,36 @@ function removeOpeningSensor(entityId) {
   if (container) renderOpeningSensors(container);
 }
 
-async function saveOpeningSensors() {
+let _osSaveTimer = null;
+function scheduleOpeningSensorSave() {
+  if (_osSaveTimer) clearTimeout(_osSaveTimer);
+  const status = document.getElementById('autoSaveStatus');
+  if (status) { status.textContent = 'Ungespeichert...'; status.className = 'auto-save-status'; }
+  _osSaveTimer = setTimeout(() => _doSaveOpeningSensors(), 1500);
+}
+async function _doSaveOpeningSensors() {
+  _osSaveTimer = null;
+  const status = document.getElementById('autoSaveStatus');
+  if (status) { status.textContent = 'Speichert...'; status.className = 'auto-save-status saving'; }
   try {
     await api('/api/ui/opening-sensors', 'PUT', {entities: _openingSensors});
-  } catch (e) { toast('Fehler beim Speichern: ' + e.message, 'error'); }
+    if (status) { status.textContent = 'Gespeichert'; status.className = 'auto-save-status saved'; setTimeout(() => { if (status && !_osSaveTimer) status.textContent = ''; }, 3000); }
+  } catch (e) {
+    toast('Fehler beim Speichern: ' + e.message, 'error');
+    if (status) { status.textContent = 'Fehler!'; status.className = 'auto-save-status'; }
+  }
+}
+async function saveOpeningSensors() {
+  // Sofort-Save (fuer Loeschen/Hinzufuegen)
+  const status = document.getElementById('autoSaveStatus');
+  if (status) { status.textContent = 'Speichert...'; status.className = 'auto-save-status saving'; }
+  try {
+    await api('/api/ui/opening-sensors', 'PUT', {entities: _openingSensors});
+    if (status) { status.textContent = 'Gespeichert'; status.className = 'auto-save-status saved'; setTimeout(() => { if (status && !_osSaveTimer) status.textContent = ''; }, 3000); }
+  } catch (e) {
+    toast('Fehler beim Speichern: ' + e.message, 'error');
+    if (status) { status.textContent = 'Fehler!'; status.className = 'auto-save-status'; }
+  }
 }
 
 function addOpeningSensor() {
