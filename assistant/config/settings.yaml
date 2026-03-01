@@ -1243,3 +1243,24 @@ workshop:
     - 3d_enclosure
     - furniture
     - repair_standard
+# --- Entity-Annotations: Beschreibungen + Rollen fuer Sensoren/Aktoren ---
+entity_annotations: {}
+  # Pro Entity: description, role, room (optional), hidden (optional)
+  # Beispiel:
+  # sensor.aussen_temperatur:
+  #   description: "Aussensensor Nordseite, misst Aussentemperatur"
+  #   role: outdoor_temp
+  # binary_sensor.fenster_kueche:
+  #   description: "Fensterkontakt Kueche"
+  #   role: window_contact
+  #   room: kueche
+  # sensor.esphome_xyz:
+  #   hidden: true
+
+# --- Eigene Rollen (User-definiert, ergaenzen die Standard-Rollen) ---
+entity_roles: {}
+  # Eigene Rollen mit Label und Icon anlegen:
+  # aquarium:     { label: "Aquarium", icon: "🐠" }
+  # server_rack:  { label: "Server-Rack", icon: "🖥️" }
+  # pool:         { label: "Pool", icon: "🏊" }
+  # waermepumpe:  { label: "Waermepumpe", icon: "♨️" }

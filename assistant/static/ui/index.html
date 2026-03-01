@@ -520,8 +520,29 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 
 /* Entity Browser verbessert */
 .entity-list-card { padding:0; }
-.entity-list-card .entity-list { max-height:500px; }
-.entity-filter-bar { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:14px; }
+.entity-list-card .entity-list { max-height:600px; }
+.entity-filter-bar { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:14px; }
+
+/* Entity Annotation Styles */
+.entity-item { flex-wrap:wrap; }
+.entity-item.annotated { border-left:2px solid var(--accent); }
+.entity-item .role-badge { display:inline-block; font-size:9px; padding:1px 6px; border-radius:10px; background:rgba(0,212,255,0.12); color:var(--accent); white-space:nowrap; }
+.entity-item .hidden-badge { display:inline-block; font-size:9px; padding:1px 6px; border-radius:10px; background:rgba(255,100,100,0.12); color:var(--danger); white-space:nowrap; }
+.entity-detail { width:100%; padding:8px 0 4px 0; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.entity-detail .form-group { margin:0; }
+.entity-detail label { font-size:10px; color:var(--text-muted); margin-bottom:2px; display:block; }
+.entity-detail input, .entity-detail select { font-size:11px; padding:4px 8px; }
+.entity-detail .ann-full { grid-column:1/-1; }
+.entity-item .ann-check { width:14px; height:14px; flex-shrink:0; cursor:pointer; accent-color:var(--accent); }
+.ann-batch-bar { display:flex; align-items:center; gap:8px; padding:8px 12px; margin-bottom:10px; background:rgba(0,212,255,0.06); border:1px solid rgba(0,212,255,0.15); border-radius:var(--radius-sm); font-size:12px; }
+.ann-batch-bar span { color:var(--accent); font-weight:500; }
+#annDefaultRolesChips .role-chip { display:inline-block; font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(0,212,255,0.08); color:var(--text-muted); }
+#annCustomRolesEditor .cr-row { display:flex; gap:8px; align-items:center; margin-bottom:4px; }
+#annCustomRolesEditor .cr-row input { font-size:11px; padding:4px 8px; flex:1; }
+#annCustomRolesEditor .cr-row .btn-sm { padding:2px 8px; font-size:10px; }
+.ann-discover-list { max-height:300px; overflow-y:auto; }
+.ann-discover-item { display:flex; align-items:center; gap:8px; padding:6px 8px; font-size:11px; border-bottom:1px solid rgba(0,212,255,0.05); }
+.ann-discover-item label { flex:1; cursor:pointer; }
 
 /* Keyword tags editor */
 .kw-editor { display:flex; flex-wrap:wrap; gap:4px; padding:8px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); min-height:36px; cursor:text; }
@@ -1019,20 +1040,54 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
         <div style="text-align:center;color:var(--text-muted);font-size:12px;margin-top:8px;" id="presenceRefreshHint">Status wird alle 15 Sekunden aktualisiert</div>
       </div>
 
-      <!-- ============ ENTITIES ============ -->
+      <!-- ============ ENTITIES + ANNOTATIONS ============ -->
       <div id="page-entities" class="page">
         <div class="section-header">
-          <div><h2>Home Assistant Entities</h2><p>Alle Entities — klicke zum Kopieren</p></div>
-          <button class="btn btn-secondary" onclick="loadEntities()">Aktualisieren</button>
+          <div><h2>Entity Annotationen</h2><p>Beschreibe deine Entities — damit der Assistent sie versteht</p></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="annAutoSaveStatus" style="font-size:11px;color:var(--text-muted);"></span>
+            <button class="btn btn-secondary" onclick="discoverAnnotations()">Auto-Erkennung</button>
+            <button class="btn btn-secondary" onclick="loadEntities()">Aktualisieren</button>
+          </div>
         </div>
+
+        <!-- Eigene Rollen -->
+        <div id="annCustomRoles" class="card" style="margin-bottom:16px;padding:16px;">
+          <h3 style="margin:0 0 8px 0;font-size:14px;">Eigene Rollen</h3>
+          <div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px;" id="annDefaultRolesChips"></div>
+          <div id="annCustomRolesEditor"></div>
+          <button class="btn btn-secondary btn-sm" onclick="addCustomRole()" style="margin-top:8px;">+ Rolle hinzufuegen</button>
+        </div>
+
+        <!-- Filter-Bar -->
         <div class="entity-filter-bar">
           <div class="form-group mb-0">
             <select id="entityDomainFilter" onchange="filterEntities()"><option value="">Alle Domains</option></select>
           </div>
           <div class="form-group mb-0">
+            <select id="entityAnnotationFilter" onchange="filterEntities()">
+              <option value="">Alle</option>
+              <option value="annotated">Nur annotierte</option>
+              <option value="unannotated">Ohne Annotation</option>
+              <option value="hidden">Versteckte</option>
+            </select>
+          </div>
+          <div class="form-group mb-0">
             <input type="text" id="entitySearchInput" placeholder="Entity suchen..." oninput="filterEntities()">
           </div>
         </div>
+
+        <!-- Batch-Toolbar (nur sichtbar bei Auswahl) -->
+        <div id="annBatchBar" class="ann-batch-bar" style="display:none;">
+          <span id="annBatchCount">0 ausgewaehlt</span>
+          <select id="annBatchRole" style="font-size:12px;padding:2px 6px;"><option value="">Rolle zuweisen...</option></select>
+          <button class="btn btn-secondary btn-sm" onclick="batchSetRole()">Zuweisen</button>
+          <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(true)">Verstecken</button>
+          <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(false)">Einblenden</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearBatchSelection()">Auswahl aufheben</button>
+        </div>
+
+        <!-- Entity-Liste -->
         <div class="card entity-list-card"><div id="entityBrowser" class="entity-list"></div></div>
       </div>
 

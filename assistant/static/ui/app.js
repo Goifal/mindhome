@@ -9,6 +9,11 @@ let S = {};  // Settings cache
 let RP = {};  // Room-Profiles cache (room_profiles.yaml)
 let _rpDirty = false;  // Room-Profiles geaendert?
 let ALL_ENTITIES = [];
+let ENTITY_ANNOTATIONS = {};
+let ENTITY_ROLES_DEFAULT = {};
+let ENTITY_ROLES_CUSTOM = {};
+let _annSaveTimer = null;
+let _annBatchSelected = new Set();
 const API = '';
 let _autoSaveTimer = null;
 const _AUTO_SAVE_DELAY = 2000;  // 2 Sekunden Debounce
@@ -4327,11 +4332,60 @@ async function updatePresenceSetting(key, value) {
 }
 
 
-// ---- Entities ----
+// ---- Entities + Annotations ----
+
+// Standard-Rollen Labels (werden von API ueberschrieben)
+const _ROLE_LABELS = {
+  indoor_temp:'Raumtemperatur', outdoor_temp:'Aussentemperatur', humidity:'Luftfeuchtigkeit',
+  window_contact:'Fensterkontakt', door_contact:'Tuerkontakt', motion:'Bewegungsmelder',
+  presence:'Anwesenheit', water_leak:'Wassermelder', smoke:'Rauchmelder',
+  co2:'CO2-Sensor', light_level:'Lichtsensor', power_meter:'Strommesser',
+  energy:'Energiezaehler', battery:'Batterie', outlet:'Steckdose',
+  valve:'Ventil', fan:'Luefter', irrigation:'Bewaesserung',
+  garage_door:'Garagentor', water_temp:'Wassertemperatur', pressure:'Luftdruck',
+  vibration:'Vibration',
+};
+
+function _allRoles() {
+  const roles = {};
+  // Standard
+  for (const [k,v] of Object.entries(ENTITY_ROLES_DEFAULT)) roles[k] = v;
+  // Custom ueberschreibt
+  for (const [k,v] of Object.entries(ENTITY_ROLES_CUSTOM)) roles[k] = v;
+  return roles;
+}
+
+function _roleLabel(roleId) {
+  if (!roleId) return '';
+  const roles = _allRoles();
+  if (roles[roleId]) return roles[roleId].label || roleId;
+  return _ROLE_LABELS[roleId] || roleId;
+}
+
+function _roleOptionsHtml(selected) {
+  const roles = _allRoles();
+  let html = `<option value=""${!selected?' selected':''}>-- keine --</option>`;
+  for (const [k, v] of Object.entries(roles)) {
+    const label = (v.icon ? v.icon + ' ' : '') + (v.label || k);
+    html += `<option value="${esc(k)}"${k===selected?' selected':''}>${esc(label)}</option>`;
+  }
+  return html;
+}
+
 async function loadEntities() {
   try {
-    const data = await api('/api/ui/entities');
-    ALL_ENTITIES = data.entities || [];
+    // Parallel laden: Entities + Annotations + Roles
+    const [entData, annData, roleData] = await Promise.all([
+      api('/api/ui/entities'),
+      api('/api/ui/entity-annotations'),
+      api('/api/ui/entity-roles'),
+    ]);
+    ALL_ENTITIES = entData.entities || [];
+    ENTITY_ANNOTATIONS = annData.annotations || {};
+    ENTITY_ROLES_DEFAULT = roleData.default_roles || {};
+    ENTITY_ROLES_CUSTOM = roleData.custom_roles || {};
+
+    // Domain-Filter
     const domains = [...new Set(ALL_ENTITIES.map(e => e.domain))].sort();
     const sel = document.getElementById('entityDomainFilter');
     sel.innerHTML = `<option value="">Alle Domains (${ALL_ENTITIES.length})</option>`;
@@ -4339,25 +4393,318 @@ async function loadEntities() {
       const c = ALL_ENTITIES.filter(e => e.domain === d).length;
       sel.innerHTML += `<option value="${esc(d)}">${esc(d)} (${c})</option>`;
     }
+
+    // Batch-Toolbar Rollen-Dropdown
+    const batchSel = document.getElementById('annBatchRole');
+    if (batchSel) batchSel.innerHTML = `<option value="">Rolle zuweisen...</option>` + Object.entries(_allRoles()).map(([k,v]) =>
+      `<option value="${esc(k)}">${esc((v.icon||'') + ' ' + (v.label||k))}</option>`).join('');
+
+    // Eigene Rollen rendern
+    _renderCustomRoles();
+
+    _annBatchSelected.clear();
     filterEntities();
-  } catch(e) { console.error('Entities fail:', e); }
+  } catch(e) { console.error('Entities fail:', e); toast('Fehler beim Laden: ' + e.message, 'error'); }
+}
+
+function _renderCustomRoles() {
+  // Standard-Rollen als Chips
+  const chipsEl = document.getElementById('annDefaultRolesChips');
+  if (chipsEl) {
+    chipsEl.innerHTML = Object.entries(ENTITY_ROLES_DEFAULT).map(([k,v]) =>
+      `<span class="role-chip">${esc((v.icon||'') + ' ' + (v.label||k))}</span>`
+    ).join('');
+  }
+  // Eigene Rollen als editierbare Zeilen
+  const editorEl = document.getElementById('annCustomRolesEditor');
+  if (editorEl) {
+    const entries = Object.entries(ENTITY_ROLES_CUSTOM);
+    editorEl.innerHTML = entries.map(([k,v]) => `
+      <div class="cr-row" data-cr-id="${esc(k)}">
+        <input type="text" value="${esc(k)}" placeholder="rollen_id" data-cr-field="id" onchange="scheduleCustomRoleSave()">
+        <input type="text" value="${esc(v.label||'')}" placeholder="Label" data-cr-field="label" onchange="scheduleCustomRoleSave()">
+        <input type="text" value="${esc(v.icon||'')}" placeholder="Icon" style="width:50px" data-cr-field="icon" onchange="scheduleCustomRoleSave()">
+        <button class="btn btn-secondary btn-sm" onclick="this.closest('.cr-row').remove();scheduleCustomRoleSave();">x</button>
+      </div>`).join('');
+  }
+}
+
+function addCustomRole() {
+  const editorEl = document.getElementById('annCustomRolesEditor');
+  if (!editorEl) return;
+  const row = document.createElement('div');
+  row.className = 'cr-row';
+  row.innerHTML = `
+    <input type="text" value="" placeholder="rollen_id" data-cr-field="id" onchange="scheduleCustomRoleSave()">
+    <input type="text" value="" placeholder="Label" data-cr-field="label" onchange="scheduleCustomRoleSave()">
+    <input type="text" value="" placeholder="Icon" style="width:50px" data-cr-field="icon" onchange="scheduleCustomRoleSave()">
+    <button class="btn btn-secondary btn-sm" onclick="this.closest('.cr-row').remove();scheduleCustomRoleSave();">x</button>`;
+  editorEl.appendChild(row);
+}
+
+function _collectCustomRoles() {
+  const roles = {};
+  document.querySelectorAll('#annCustomRolesEditor .cr-row').forEach(row => {
+    const id = (row.querySelector('[data-cr-field="id"]')?.value || '').trim().toLowerCase().replace(/[^a-z0-9_]/g,'');
+    const label = (row.querySelector('[data-cr-field="label"]')?.value || '').trim();
+    const icon = (row.querySelector('[data-cr-field="icon"]')?.value || '').trim();
+    if (id && label) roles[id] = { label, icon };
+  });
+  return roles;
+}
+
+function scheduleCustomRoleSave() {
+  if (_annSaveTimer) clearTimeout(_annSaveTimer);
+  const st = document.getElementById('annAutoSaveStatus');
+  if (st) st.textContent = 'Ungespeichert...';
+  _annSaveTimer = setTimeout(async () => {
+    try {
+      const custom = _collectCustomRoles();
+      await api('/api/ui/entity-roles', 'PUT', { custom_roles: custom });
+      ENTITY_ROLES_CUSTOM = custom;
+      if (st) { st.textContent = 'Gespeichert'; setTimeout(() => { if (st) st.textContent = ''; }, 2000); }
+    } catch(e) { toast('Rollen-Speichern fehlgeschlagen: ' + e.message, 'error'); }
+  }, 1500);
 }
 
 function filterEntities() {
-  const domain = document.getElementById('entityDomainFilter').value;
-  const search = document.getElementById('entitySearchInput').value.toLowerCase();
+  const domain = document.getElementById('entityDomainFilter')?.value || '';
+  const annFilter = document.getElementById('entityAnnotationFilter')?.value || '';
+  const search = (document.getElementById('entitySearchInput')?.value || '').toLowerCase();
   let filtered = ALL_ENTITIES;
   if (domain) filtered = filtered.filter(e => e.domain === domain);
-  if (search) filtered = filtered.filter(e => e.entity_id.toLowerCase().includes(search) || e.name.toLowerCase().includes(search));
-  const show = filtered.slice(0, 100);
+  if (search) filtered = filtered.filter(e =>
+    e.entity_id.toLowerCase().includes(search) ||
+    e.name.toLowerCase().includes(search) ||
+    (ENTITY_ANNOTATIONS[e.entity_id]?.description || '').toLowerCase().includes(search)
+  );
+  if (annFilter === 'annotated') filtered = filtered.filter(e => ENTITY_ANNOTATIONS[e.entity_id]?.role || ENTITY_ANNOTATIONS[e.entity_id]?.description);
+  else if (annFilter === 'unannotated') filtered = filtered.filter(e => !ENTITY_ANNOTATIONS[e.entity_id]?.role && !ENTITY_ANNOTATIONS[e.entity_id]?.description);
+  else if (annFilter === 'hidden') filtered = filtered.filter(e => ENTITY_ANNOTATIONS[e.entity_id]?.hidden);
+
+  // Annotierte zuerst
+  filtered.sort((a,b) => {
+    const aAnn = ENTITY_ANNOTATIONS[a.entity_id] ? 0 : 1;
+    const bAnn = ENTITY_ANNOTATIONS[b.entity_id] ? 0 : 1;
+    if (aAnn !== bAnn) return aAnn - bAnn;
+    return a.name.localeCompare(b.name);
+  });
+
+  const show = filtered.slice(0, 150);
   const c = document.getElementById('entityBrowser');
-  c.innerHTML = show.map(e => `
-    <div class="entity-item" onclick="navigator.clipboard?.writeText('${esc(e.entity_id)}');toast('${esc(e.entity_id)} kopiert')">
-      <span class="ename">${esc(e.name)}</span>
-      <span class="eid">${esc(e.entity_id)}</span>
-      <span style="color:var(--text-muted);font-size:11px;">${esc(e.state)}</span>
-    </div>`).join('');
-  if (filtered.length > 100) c.innerHTML += `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:11px;">...und ${filtered.length-100} weitere</div>`;
+  c.innerHTML = show.map(e => _renderEntityRow(e)).join('');
+  if (filtered.length > 150) c.innerHTML += `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:11px;">...und ${filtered.length-150} weitere</div>`;
+  _updateBatchBar();
+}
+
+function _renderEntityRow(e) {
+  const ann = ENTITY_ANNOTATIONS[e.entity_id] || {};
+  const hasAnn = ann.role || ann.description;
+  const roleBadge = ann.role ? `<span class="role-badge">${esc(_roleLabel(ann.role))}</span>` : '';
+  const hiddenBadge = ann.hidden ? `<span class="hidden-badge">versteckt</span>` : '';
+  const isChecked = _annBatchSelected.has(e.entity_id);
+  const cssId = e.entity_id.replace(/[^a-zA-Z0-9]/g, '_');
+
+  // Raum-Optionen aus Room-Profiles
+  const rooms = Object.keys(RP || {});
+  const roomOpts = `<option value="">-- Standard --</option>` +
+    rooms.map(r => `<option value="${esc(r)}"${ann.room===r?' selected':''}>${esc(r)}</option>`).join('');
+
+  return `
+    <div class="entity-item${hasAnn ? ' annotated' : ''}">
+      <input type="checkbox" class="ann-check" data-eid="${esc(e.entity_id)}" ${isChecked?'checked':''} onclick="event.stopPropagation();toggleBatchSelect('${esc(e.entity_id)}',this.checked)">
+      <div style="flex:1;min-width:0;cursor:pointer;" onclick="toggleEntityDetail('${cssId}')">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <span class="ename">${esc(e.name)}</span>
+          ${roleBadge}${hiddenBadge}
+          <span class="eid">${esc(e.entity_id)}</span>
+          <span style="color:var(--text-muted);font-size:10px;">${esc(e.state)}</span>
+        </div>
+      </div>
+      <div class="entity-detail" id="detail-${cssId}" style="display:none;">
+        <div class="form-group ann-full">
+          <label>Beschreibung</label>
+          <input type="text" data-ann-eid="${esc(e.entity_id)}" data-ann-field="description"
+                 value="${esc(ann.description || '')}" placeholder="Was macht dieses Geraet?"
+                 onchange="onAnnotationChange('${esc(e.entity_id)}')">
+        </div>
+        <div class="form-group">
+          <label>Rolle</label>
+          <select data-ann-eid="${esc(e.entity_id)}" data-ann-field="role"
+                  onchange="onAnnotationChange('${esc(e.entity_id)}')">
+            ${_roleOptionsHtml(ann.role || '')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Raum (Override)</label>
+          <select data-ann-eid="${esc(e.entity_id)}" data-ann-field="room"
+                  onchange="onAnnotationChange('${esc(e.entity_id)}')">
+            ${roomOpts}
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+          <label style="margin:0;">Verstecken</label>
+          <input type="checkbox" data-ann-eid="${esc(e.entity_id)}" data-ann-field="hidden"
+                 ${ann.hidden ? 'checked' : ''} onchange="onAnnotationChange('${esc(e.entity_id)}')">
+        </div>
+      </div>
+    </div>`;
+}
+
+function toggleEntityDetail(cssId) {
+  const el = document.getElementById('detail-' + cssId);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+function onAnnotationChange(entityId) {
+  // Sammle Annotation aus DOM
+  const ann = {};
+  document.querySelectorAll(`[data-ann-eid="${entityId}"]`).forEach(el => {
+    const field = el.dataset.annField;
+    if (field === 'hidden') ann[field] = el.checked;
+    else ann[field] = el.value;
+  });
+  // Nur nicht-leere Felder speichern (sparse)
+  const clean = {};
+  if (ann.description) clean.description = ann.description;
+  if (ann.role) clean.role = ann.role;
+  if (ann.room) clean.room = ann.room;
+  if (ann.hidden) clean.hidden = true;
+  if (Object.keys(clean).length > 0) ENTITY_ANNOTATIONS[entityId] = clean;
+  else delete ENTITY_ANNOTATIONS[entityId];
+
+  scheduleAnnotationSave();
+}
+
+function scheduleAnnotationSave() {
+  if (_annSaveTimer) clearTimeout(_annSaveTimer);
+  const st = document.getElementById('annAutoSaveStatus');
+  if (st) st.textContent = 'Ungespeichert...';
+  _annSaveTimer = setTimeout(async () => {
+    try {
+      await api('/api/ui/entity-annotations', 'PUT', { annotations: ENTITY_ANNOTATIONS });
+      if (st) { st.textContent = 'Gespeichert'; setTimeout(() => { if (st) st.textContent = ''; }, 2000); }
+    } catch(e) { toast('Annotations-Speichern fehlgeschlagen: ' + e.message, 'error'); }
+  }, 2000);
+}
+
+// Batch-Operationen
+function toggleBatchSelect(eid, checked) {
+  if (checked) _annBatchSelected.add(eid); else _annBatchSelected.delete(eid);
+  _updateBatchBar();
+}
+
+function _updateBatchBar() {
+  const bar = document.getElementById('annBatchBar');
+  const cnt = document.getElementById('annBatchCount');
+  if (!bar || !cnt) return;
+  if (_annBatchSelected.size > 0) {
+    bar.style.display = 'flex';
+    cnt.textContent = _annBatchSelected.size + ' ausgewaehlt';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function clearBatchSelection() {
+  _annBatchSelected.clear();
+  document.querySelectorAll('.ann-check').forEach(el => el.checked = false);
+  _updateBatchBar();
+}
+
+function batchSetRole() {
+  const roleId = document.getElementById('annBatchRole')?.value;
+  if (!roleId) { toast('Bitte Rolle auswaehlen', 'error'); return; }
+  for (const eid of _annBatchSelected) {
+    if (!ENTITY_ANNOTATIONS[eid]) ENTITY_ANNOTATIONS[eid] = {};
+    ENTITY_ANNOTATIONS[eid].role = roleId;
+  }
+  scheduleAnnotationSave();
+  filterEntities(); // Re-render
+  toast(`Rolle "${_roleLabel(roleId)}" fuer ${_annBatchSelected.size} Entities gesetzt`);
+}
+
+function batchSetHidden(hidden) {
+  for (const eid of _annBatchSelected) {
+    if (!ENTITY_ANNOTATIONS[eid]) ENTITY_ANNOTATIONS[eid] = {};
+    if (hidden) ENTITY_ANNOTATIONS[eid].hidden = true;
+    else delete ENTITY_ANNOTATIONS[eid].hidden;
+    // Cleanup leere Annotations
+    const ann = ENTITY_ANNOTATIONS[eid];
+    if (!ann.description && !ann.role && !ann.room && !ann.hidden) delete ENTITY_ANNOTATIONS[eid];
+  }
+  scheduleAnnotationSave();
+  filterEntities();
+  toast(`${_annBatchSelected.size} Entities ${hidden ? 'versteckt' : 'eingeblendet'}`);
+}
+
+// Auto-Erkennung
+async function discoverAnnotations() {
+  try {
+    const data = await api('/api/ui/entity-annotations/discover');
+    const suggestions = data.suggestions || [];
+    if (suggestions.length === 0) { toast('Keine neuen Vorschlaege gefunden'); return; }
+
+    // Modal/Inline anzeigen
+    const c = document.getElementById('entityBrowser');
+    const oldContent = c.innerHTML;
+    c.innerHTML = `
+      <div style="padding:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <strong>${suggestions.length} Vorschlaege gefunden</strong>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-primary btn-sm" onclick="acceptDiscoverAll()">Alle uebernehmen</button>
+            <button class="btn btn-secondary btn-sm" onclick="acceptDiscoverSelected()">Ausgewaehlte uebernehmen</button>
+            <button class="btn btn-secondary btn-sm" onclick="filterEntities()">Abbrechen</button>
+          </div>
+        </div>
+        <div class="ann-discover-list">
+          ${suggestions.map((s,i) => `
+            <div class="ann-discover-item">
+              <input type="checkbox" checked class="disc-check" data-idx="${i}">
+              <label>${esc(s.name)} <span style="color:var(--text-muted);font-size:10px;">${esc(s.entity_id)}</span></label>
+              <span class="role-badge">${esc(_roleLabel(s.suggested_role))}</span>
+              <span style="color:var(--text-muted);font-size:10px;">${esc(s.state)}</span>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    // Speichere suggestions global fuer accept-Funktionen
+    window._discoverSuggestions = suggestions;
+  } catch(e) { toast('Auto-Erkennung fehlgeschlagen: ' + e.message, 'error'); }
+}
+
+function acceptDiscoverAll() {
+  const suggestions = window._discoverSuggestions || [];
+  for (const s of suggestions) {
+    if (!ENTITY_ANNOTATIONS[s.entity_id]) ENTITY_ANNOTATIONS[s.entity_id] = {};
+    ENTITY_ANNOTATIONS[s.entity_id].role = s.suggested_role;
+    if (s.suggested_description && !ENTITY_ANNOTATIONS[s.entity_id].description) {
+      ENTITY_ANNOTATIONS[s.entity_id].description = s.suggested_description;
+    }
+  }
+  scheduleAnnotationSave();
+  filterEntities();
+  toast(`${suggestions.length} Annotations uebernommen`);
+}
+
+function acceptDiscoverSelected() {
+  const suggestions = window._discoverSuggestions || [];
+  let count = 0;
+  document.querySelectorAll('.disc-check:checked').forEach(el => {
+    const idx = parseInt(el.dataset.idx);
+    const s = suggestions[idx];
+    if (s) {
+      if (!ENTITY_ANNOTATIONS[s.entity_id]) ENTITY_ANNOTATIONS[s.entity_id] = {};
+      ENTITY_ANNOTATIONS[s.entity_id].role = s.suggested_role;
+      if (s.suggested_description && !ENTITY_ANNOTATIONS[s.entity_id].description) {
+        ENTITY_ANNOTATIONS[s.entity_id].description = s.suggested_description;
+      }
+      count++;
+    }
+  });
+  scheduleAnnotationSave();
+  filterEntities();
+  toast(`${count} Annotations uebernommen`);
 }
 
 // ---- Knowledge ----
