@@ -4273,6 +4273,22 @@ async def workshop_list_projects(status: str = "", category: str = ""):
     return {"success": True, "projects": projects, "count": len(projects)}
 
 
+@app.post("/api/workshop/projects")
+async def workshop_create_project(request: Request):
+    """Erstellt ein neues Workshop-Projekt."""
+    data = await request.json()
+    title = data.get("title", "").strip()
+    if not title:
+        raise HTTPException(400, "Projekt-Titel erforderlich")
+    project = await brain.repair_planner.create_project(
+        title=title,
+        description=data.get("description", ""),
+        category=data.get("category", "maker"),
+        priority=data.get("priority", "normal"),
+    )
+    return {"success": True, "project": project}
+
+
 @app.get("/api/workshop/project/{project_id}")
 async def workshop_get_project(project_id: str):
     """Holt ein einzelnes Projekt."""
@@ -4280,6 +4296,33 @@ async def workshop_get_project(project_id: str):
     if not project:
         raise HTTPException(404, "Projekt nicht gefunden")
     return project
+
+
+@app.put("/api/workshop/project/{project_id}")
+async def workshop_update_project(project_id: str, request: Request):
+    """Aktualisiert ein Workshop-Projekt."""
+    data = await request.json()
+    project = await brain.repair_planner.update_project(project_id, **data)
+    if not project:
+        raise HTTPException(404, "Projekt nicht gefunden")
+    return {"success": True, "project": project}
+
+
+@app.delete("/api/workshop/project/{project_id}")
+async def workshop_delete_project(project_id: str):
+    """Loescht ein Workshop-Projekt."""
+    planner = brain.repair_planner
+    project = await planner.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Projekt nicht gefunden")
+    if planner.redis:
+        await planner.redis.delete(f"mha:repair:project:{project_id}")
+        await planner.redis.srem("mha:repair:projects:all", project_id)
+        for status_key in ("erstellt", "diagnose", "teile_bestellt",
+                           "in_arbeit", "pausiert", "fertig"):
+            await planner.redis.srem(
+                f"mha:repair:projects:status:{status_key}", project_id)
+    return {"success": True}
 
 
 @app.get("/api/workshop/files/{project_id}")
@@ -4312,6 +4355,24 @@ async def workshop_calculate(request: Request):
 async def workshop_journal(period: str = "today"):
     """Holt Workshop-Journal."""
     return await brain.repair_planner.get_journal(period)
+
+
+@app.post("/api/workshop/journal")
+async def workshop_add_journal(request: Request):
+    """Fuegt einen Journal-Eintrag hinzu."""
+    data = await request.json()
+    note = data.get("note", "").strip()
+    if not note:
+        raise HTTPException(400, "Journal-Text erforderlich")
+    result = await brain.repair_planner.add_journal_entry(note)
+    return {"success": True, **result}
+
+
+@app.get("/api/workshop/settings")
+async def workshop_get_settings():
+    """Holt Workshop-Einstellungen."""
+    ws = yaml_config.get("workshop") or {}
+    return {"success": True, "settings": ws}
 
 
 @app.get("/api/workshop/stats")
