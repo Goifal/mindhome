@@ -175,7 +175,7 @@ class DeclarativeToolRegistry:
             if not config.get("entity"):
                 return "entity erforderlich."
             thresholds = config.get("thresholds", {})
-            if not thresholds.get("min") and not thresholds.get("max"):
+            if thresholds.get("min") is None and thresholds.get("max") is None:
                 return "Mindestens min oder max Schwellwert erforderlich."
 
         elif tool_type == "trend_analyzer":
@@ -531,14 +531,26 @@ class DeclarativeToolExecutor:
         current_hour = now.hour
         current_minute = now.minute
         current_time_min = current_hour * 60 + current_minute
-        weekday = now.strftime("%A").lower()
+        # Locale-unabhaengige Wochentag-Namen (englisch + deutsch)
+        _WEEKDAY_NAMES = {
+            0: ("monday", "montag"),
+            1: ("tuesday", "dienstag"),
+            2: ("wednesday", "mittwoch"),
+            3: ("thursday", "donnerstag"),
+            4: ("friday", "freitag"),
+            5: ("saturday", "samstag"),
+            6: ("sunday", "sonntag"),
+        }
+        weekday_aliases = _WEEKDAY_NAMES.get(now.weekday(), ())
 
         active_schedule = None
         for sched in schedules:
             # Wochentage pruefen (optional)
             days = sched.get("days", [])
-            if days and weekday not in [d.lower() for d in days]:
-                continue
+            if days:
+                days_lower = [d.lower() for d in days]
+                if not any(alias in days_lower for alias in weekday_aliases):
+                    continue
 
             start = sched.get("start", "00:00")
             end = sched.get("end", "23:59")
@@ -825,11 +837,13 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
             elif dc == "battery":
                 battery_sensors.append({"eid": eid, "friendly": friendly})
         elif domain == "binary_sensor":
-            if dc in ("window", "opening") or "fenster" in lower_eid or "window" in lower_eid:
+            # Nur Name-Teil nach dem Punkt fuer Keyword-Matching (vermeidet False Positives)
+            name_part = "_" + lower_eid.split(".", 1)[1] + "_" if "." in lower_eid else lower_eid
+            if dc in ("window", "opening") or "_fenster" in name_part or ("_window" in name_part and "_windows_" not in name_part):
                 binary_window.append({"eid": eid, "friendly": friendly})
-            elif dc == "door" or "tuer" in lower_eid or ("door" in lower_eid and "window" not in lower_eid):
+            elif dc == "door" or "_tuer" in name_part or ("_door" in name_part and "_outdoor" not in name_part and "_indoor" not in name_part):
                 binary_door.append({"eid": eid, "friendly": friendly})
-            elif dc == "motion" or "motion" in lower_eid or "bewegung" in lower_eid:
+            elif dc == "motion" or "_motion" in name_part or "_bewegung" in name_part:
                 binary_motion.append({"eid": eid, "friendly": friendly})
         elif domain == "light":
             lights.append({"eid": eid, "friendly": friendly})
