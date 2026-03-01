@@ -1073,7 +1073,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
             </select>
           </div>
           <div class="form-group mb-0">
-            <input type="text" id="entitySearchInput" placeholder="Entity suchen..." oninput="filterEntities()">
+            <input type="text" id="entitySearchInput" placeholder="Entity suchen... (Name, ID, Rolle)" oninput="filterEntities()" style="min-width:250px;font-size:14px;">
           </div>
         </div>
 
@@ -1086,6 +1086,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           <button class="btn btn-secondary btn-sm" onclick="batchSetRoom()">Raum</button>
           <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(true)">Verstecken</button>
           <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(false)">Einblenden</button>
+          <button class="btn btn-danger btn-sm" onclick="batchClearAnnotations()">Annotation entfernen</button>
           <button class="btn btn-secondary btn-sm" onclick="clearBatchSelection()">Aufheben</button>
         </div>
 

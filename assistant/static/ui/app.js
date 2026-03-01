@@ -4469,33 +4469,101 @@ function scheduleCustomRoleSave() {
   }, 1500);
 }
 
+var _entityShowCount = 50; // Lazy-load batch size
+
 function filterEntities() {
   const domain = document.getElementById('entityDomainFilter')?.value || '';
   const annFilter = document.getElementById('entityAnnotationFilter')?.value || '';
-  const search = (document.getElementById('entitySearchInput')?.value || '').toLowerCase();
+  const search = (document.getElementById('entitySearchInput')?.value || '').toLowerCase().trim();
+  const hasActiveFilter = domain || annFilter || search;
   let filtered = ALL_ENTITIES;
   if (domain) filtered = filtered.filter(e => e.domain === domain);
-  if (search) filtered = filtered.filter(e =>
-    e.entity_id.toLowerCase().includes(search) ||
-    e.name.toLowerCase().includes(search) ||
-    (ENTITY_ANNOTATIONS[e.entity_id]?.description || '').toLowerCase().includes(search)
-  );
+  if (search) {
+    // Relevanz-Scoring: exakter Match > Anfang > enthält
+    const terms = search.split(/\s+/).filter(Boolean);
+    filtered = filtered.filter(e => {
+      const eid = e.entity_id.toLowerCase();
+      const ename = e.name.toLowerCase();
+      const desc = (ENTITY_ANNOTATIONS[e.entity_id]?.description || '').toLowerCase();
+      const role = (ENTITY_ANNOTATIONS[e.entity_id]?.role || '').toLowerCase();
+      return terms.every(t => eid.includes(t) || ename.includes(t) || desc.includes(t) || role.includes(t));
+    });
+    // Sortierung: Relevanz
+    filtered.sort((a,b) => {
+      const scoreEntity = (e) => {
+        const eid = e.entity_id.toLowerCase();
+        const ename = e.name.toLowerCase();
+        let s = 0;
+        for (const t of terms) {
+          if (ename === t || eid === t) s += 100;
+          else if (ename.startsWith(t) || eid.startsWith(t)) s += 50;
+          else if (ename.includes(t)) s += 20;
+          else if (eid.includes(t)) s += 10;
+        }
+        if (ENTITY_ANNOTATIONS[e.entity_id]) s += 5; // Annotierte leicht bevorzugen
+        return s;
+      };
+      return scoreEntity(b) - scoreEntity(a);
+    });
+  } else {
+    // Ohne Suchbegriff: annotierte zuerst
+    filtered.sort((a,b) => {
+      const aAnn = ENTITY_ANNOTATIONS[a.entity_id] ? 0 : 1;
+      const bAnn = ENTITY_ANNOTATIONS[b.entity_id] ? 0 : 1;
+      if (aAnn !== bAnn) return aAnn - bAnn;
+      return a.name.localeCompare(b.name);
+    });
+  }
   if (annFilter === 'annotated') filtered = filtered.filter(e => ENTITY_ANNOTATIONS[e.entity_id]?.role || ENTITY_ANNOTATIONS[e.entity_id]?.description);
   else if (annFilter === 'unannotated') filtered = filtered.filter(e => !ENTITY_ANNOTATIONS[e.entity_id]?.role && !ENTITY_ANNOTATIONS[e.entity_id]?.description);
   else if (annFilter === 'hidden') filtered = filtered.filter(e => ENTITY_ANNOTATIONS[e.entity_id]?.hidden);
 
-  // Annotierte zuerst
-  filtered.sort((a,b) => {
-    const aAnn = ENTITY_ANNOTATIONS[a.entity_id] ? 0 : 1;
-    const bAnn = ENTITY_ANNOTATIONS[b.entity_id] ? 0 : 1;
-    if (aAnn !== bAnn) return aAnn - bAnn;
-    return a.name.localeCompare(b.name);
-  });
-
-  const show = filtered.slice(0, 150);
   const c = document.getElementById('entityBrowser');
-  c.innerHTML = show.map(e => _renderEntityRow(e)).join('');
-  if (filtered.length > 150) c.innerHTML += `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:11px;">...und ${filtered.length-150} weitere</div>`;
+
+  // Such-zuerst: ohne aktiven Filter nur annotierte + Hinweis zeigen
+  if (!hasActiveFilter) {
+    const annotated = filtered.filter(e => ENTITY_ANNOTATIONS[e.entity_id]?.role || ENTITY_ANNOTATIONS[e.entity_id]?.description || ENTITY_ANNOTATIONS[e.entity_id]?.hidden);
+    const hint = `<div style="padding:16px 12px;text-align:center;color:var(--text-muted);font-size:12px;border-bottom:1px solid var(--border-color,rgba(255,255,255,0.06));">
+      <span style="font-size:18px;">&#128269;</span><br>
+      <b>${ALL_ENTITIES.length} Entities</b> vorhanden — Suchbegriff eingeben um zu finden<br>
+      <span style="font-size:11px;">z.B. "licht", "temperatur", "kuche", "sensor.motion"</span>
+    </div>`;
+    c.innerHTML = (annotated.length > 0
+      ? `<div style="padding:8px 12px;font-size:11px;color:var(--accent);font-weight:600;border-bottom:1px solid var(--border-color,rgba(255,255,255,0.06));">${annotated.length} annotierte Entities</div>`
+        + annotated.map(e => _renderEntityRow(e)).join('')
+      : '') + hint;
+    _updateBatchBar();
+    return;
+  }
+
+  // Mit Filter/Suche: alle Treffer zeigen (lazy-load)
+  _entityShowCount = 50;
+  _filteredEntitiesCache = filtered;
+  _renderEntityBatch();
+  _updateBatchBar();
+}
+
+var _filteredEntitiesCache = [];
+
+function _renderEntityBatch() {
+  const c = document.getElementById('entityBrowser');
+  const filtered = _filteredEntitiesCache;
+  const show = filtered.slice(0, _entityShowCount);
+  const remaining = filtered.length - _entityShowCount;
+  c.innerHTML = `<div style="padding:6px 12px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border-color,rgba(255,255,255,0.06));">${filtered.length} Treffer</div>`
+    + show.map(e => _renderEntityRow(e)).join('');
+  if (remaining > 0) {
+    c.innerHTML += `<div style="padding:12px;text-align:center;">
+      <button class="btn btn-secondary btn-sm" onclick="_entityShowMore()">
+        ${Math.min(remaining, 50)} weitere laden (${remaining} uebrig)
+      </button>
+    </div>`;
+  }
+}
+
+function _entityShowMore() {
+  _entityShowCount += 50;
+  _renderEntityBatch();
   _updateBatchBar();
 }
 
@@ -4549,6 +4617,7 @@ function _renderEntityRow(e) {
           <input type="checkbox" data-ann-eid="${esc(e.entity_id)}" data-ann-field="hidden"
                  ${ann.hidden ? 'checked' : ''} onchange="onAnnotationChange('${esc(e.entity_id)}')">
         </div>
+        ${hasAnn || ann.hidden ? `<div style="margin-top:6px;"><button class="btn btn-danger btn-sm" style="font-size:11px;padding:2px 8px;" onclick="event.stopPropagation();clearAnnotation('${esc(e.entity_id)}')">Annotation entfernen</button></div>` : ''}
       </div>
     </div>`;
 }
@@ -4652,6 +4721,24 @@ function batchSetRoom() {
   scheduleAnnotationSave();
   filterEntities();
   toast(`Raum "${room}" fuer ${_annBatchSelected.size} Entities gesetzt`);
+}
+
+function clearAnnotation(entityId) {
+  delete ENTITY_ANNOTATIONS[entityId];
+  scheduleAnnotationSave();
+  filterEntities();
+  toast('Annotation entfernt');
+}
+
+function batchClearAnnotations() {
+  const count = _annBatchSelected.size;
+  if (count === 0) return;
+  for (const eid of _annBatchSelected) {
+    delete ENTITY_ANNOTATIONS[eid];
+  }
+  scheduleAnnotationSave();
+  filterEntities();
+  toast(`Annotations fuer ${count} Entities entfernt`);
 }
 
 function batchSetHidden(hidden) {
