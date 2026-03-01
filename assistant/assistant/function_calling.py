@@ -6927,8 +6927,14 @@ class FunctionExecutor:
         return {"success": True, "remotes": results, "count": len(results)}
 
     # ── Deklarative Tools (Phase 13.3) ────────────────────────
+    def _decl_tools_enabled(self) -> bool:
+        """Prueft ob deklarative Tools aktiviert sind."""
+        return yaml_config.get("declarative_tools", {}).get("enabled", True)
+
     async def _exec_create_declarative_tool(self, args: dict) -> dict:
         """Erstellt ein deklaratives Analyse-Tool."""
+        if not self._decl_tools_enabled():
+            return {"success": False, "message": "Analyse-Tools sind deaktiviert. Aktivierung ueber Einstellungen."}
         import json as _json
         name = args.get("name", "").strip()
         description = args.get("description", "").strip()
@@ -6972,6 +6978,8 @@ class FunctionExecutor:
 
     async def _exec_run_declarative_tool(self, args: dict) -> dict:
         """Fuehrt ein deklaratives Tool aus."""
+        if not self._decl_tools_enabled():
+            return {"success": False, "message": "Analyse-Tools sind deaktiviert."}
         name = args.get("name", "").strip()
         if not name:
             return {"success": False, "message": "name ist erforderlich."}
