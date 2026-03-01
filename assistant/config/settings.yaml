@@ -374,6 +374,19 @@ activity:
     night_end: 7
     guest_person_count: 2
     focus_min_minutes: 30
+  # Stille-Matrix: Aktivitaet x Urgency -> Zustellmethode
+  # Werte: tts_loud, tts_quiet, led_blink, suppress
+  # Nur geaenderte Eintraege angeben — Rest bleibt Default.
+  # Beispiel: watching.medium auf tts_quiet statt suppress:
+  # silence_matrix:
+  #   watching:
+  #     high: tts_quiet
+  #     medium: tts_quiet
+  #   focused:
+  #     medium: led_blink
+  # volume_matrix:
+  #   watching:
+  #     high: 0.3
 feedback:
   auto_timeout_seconds: 120
   base_cooldown_seconds: 300

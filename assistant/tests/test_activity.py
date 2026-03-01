@@ -74,25 +74,27 @@ class TestSignalDetection:
 
     def test_check_media_playing(self, engine):
         states = [{"entity_id": "media_player.wohnzimmer", "state": "playing"}]
-        assert engine._check_media_playing(states) is True
+        result = engine._check_media_playing(states)
+        assert result == "media_player.wohnzimmer"
 
     def test_check_media_paused_is_active(self, engine):
         """Paused zaehlt als aktiv (TV ist an, nur pausiert)."""
         states = [{"entity_id": "media_player.wohnzimmer", "state": "paused"}]
-        assert engine._check_media_playing(states) is True
+        result = engine._check_media_playing(states)
+        assert result == "media_player.wohnzimmer"
 
     def test_check_media_off_is_inactive(self, engine):
         states = [{"entity_id": "media_player.wohnzimmer", "state": "off"}]
-        assert engine._check_media_playing(states) is False
+        assert engine._check_media_playing(states) == ""
 
     def test_check_media_standby_is_inactive(self, engine):
         states = [{"entity_id": "media_player.wohnzimmer", "state": "standby"}]
-        assert engine._check_media_playing(states) is False
+        assert engine._check_media_playing(states) == ""
 
     def test_check_media_non_configured_player_ignored(self, engine):
         """Nicht-konfigurierte Media-Player triggern kein WATCHING."""
         states = [{"entity_id": "media_player.kuechen_radio", "state": "playing"}]
-        assert engine._check_media_playing(states) is False
+        assert engine._check_media_playing(states) == ""
 
     def test_check_in_call(self, engine):
         states = [{"entity_id": "binary_sensor.mic_active", "state": "on"}]
@@ -218,31 +220,31 @@ class TestClassify:
         assert activity == SLEEPING
 
     def test_in_call_over_watching(self, engine):
-        signals = {"away": False, "sleeping": False, "in_call": True, "media_playing": True}
+        signals = {"away": False, "sleeping": False, "in_call": True, "media_playing": "media_player.wohnzimmer"}
         activity, _ = engine._classify(signals)
         assert activity == IN_CALL
 
     def test_watching_over_guests(self, engine):
         signals = {"away": False, "sleeping": False, "in_call": False,
-                   "media_playing": True, "guests": True}
+                   "media_playing": "media_player.wohnzimmer", "guests": True}
         activity, _ = engine._classify(signals)
         assert activity == WATCHING
 
     def test_guests_over_focused(self, engine):
         signals = {"away": False, "sleeping": False, "in_call": False,
-                   "media_playing": False, "guests": True, "pc_active": True}
+                   "media_playing": "", "guests": True, "pc_active": True}
         activity, _ = engine._classify(signals)
         assert activity == GUESTS
 
     def test_focused_from_pc(self, engine):
         signals = {"away": False, "sleeping": False, "in_call": False,
-                   "media_playing": False, "guests": False, "pc_active": True}
+                   "media_playing": "", "guests": False, "pc_active": True}
         activity, _ = engine._classify(signals)
         assert activity == FOCUSED
 
     def test_relaxing_default(self, engine):
         signals = {"away": False, "sleeping": False, "in_call": False,
-                   "media_playing": False, "guests": False, "pc_active": False}
+                   "media_playing": "", "guests": False, "pc_active": False}
         activity, _ = engine._classify(signals)
         assert activity == RELAXING
 
@@ -291,6 +293,27 @@ class TestDetectActivity:
         ])
         result = await engine.detect_activity()
         assert result["activity"] == IN_CALL
+
+    @pytest.mark.asyncio
+    async def test_detect_watching_has_trigger(self, engine, ha_mock):
+        """Bei watching muss der ausloesende Media Player im trigger stehen."""
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "person.max", "state": "home"},
+            {"entity_id": "media_player.wohnzimmer", "state": "playing"},
+        ])
+        result = await engine.detect_activity()
+        assert result["activity"] == WATCHING
+        assert result["trigger"] == "media_player.wohnzimmer"
+
+    @pytest.mark.asyncio
+    async def test_detect_relaxing_has_no_trigger(self, engine, ha_mock):
+        """Bei relaxing ist trigger leer."""
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "person.max", "state": "home"},
+        ])
+        result = await engine.detect_activity()
+        assert result["activity"] == RELAXING
+        assert result["trigger"] == ""
 
     @pytest.mark.asyncio
     async def test_ha_unavailable_returns_last(self, engine, ha_mock):
@@ -437,6 +460,32 @@ class TestVolumeMatrix:
 
 class TestShouldDeliver:
     """Tests fuer should_deliver() — kombinierte Erkennung + Zustellung."""
+
+    @pytest.mark.asyncio
+    async def test_config_silence_matrix_override(self, ha_mock):
+        """User-Config ueberschreibt einzelne Silence-Matrix-Eintraege."""
+        cfg = {
+            "activity": {
+                "silence_matrix": {
+                    "watching": {
+                        "high": "tts_quiet",
+                        "medium": "tts_quiet",
+                    }
+                }
+            }
+        }
+        with patch("assistant.activity.yaml_config", cfg):
+            eng = ActivityEngine(ha_mock)
+        # Overridden: watching.high = tts_quiet (statt led_blink)
+        assert eng.get_delivery_method(WATCHING, "high") == TTS_QUIET
+        # Overridden: watching.medium = tts_quiet (statt suppress)
+        assert eng.get_delivery_method(WATCHING, "medium") == TTS_QUIET
+        # Nicht ueberschrieben: watching.critical bleibt tts_loud
+        assert eng.get_delivery_method(WATCHING, "critical") == TTS_LOUD
+        # Nicht ueberschrieben: watching.low bleibt suppress
+        assert eng.get_delivery_method(WATCHING, "low") == SUPPRESS
+        # Andere Aktivitaeten unberuehrt
+        assert eng.get_delivery_method(RELAXING, "high") == TTS_LOUD
 
     @pytest.mark.asyncio
     async def test_deliver_has_all_fields(self, engine, ha_mock):

@@ -47,9 +47,9 @@ TTS_QUIET = "tts_quiet"
 LED_BLINK = "led_blink"
 SUPPRESS = "suppress"
 
-# Stille-Matrix: Aktivitaet x Urgency -> Zustellmethode
-# Format: {activity: {urgency: delivery_method}}
-SILENCE_MATRIX = {
+# Standard Stille-Matrix: Aktivitaet x Urgency -> Zustellmethode
+# Kann per settings.yaml ueberschrieben werden (activity.silence_matrix)
+_DEFAULT_SILENCE_MATRIX = {
     SLEEPING: {
         "critical": TTS_LOUD,
         "high": LED_BLINK,
@@ -94,9 +94,9 @@ SILENCE_MATRIX = {
     },
 }
 
-# Phase 9: Volume-Levels pro Aktivitaet (0.0 - 1.0)
-# Format: {activity: {urgency: volume}}
-VOLUME_MATRIX = {
+# Standard Volume-Levels pro Aktivitaet (0.0 - 1.0)
+# Kann per settings.yaml ueberschrieben werden (activity.volume_matrix)
+_DEFAULT_VOLUME_MATRIX = {
     SLEEPING: {
         "critical": 0.6,
         "high": 0.2,
@@ -140,6 +140,50 @@ VOLUME_MATRIX = {
         "low": 0.0,
     },
 }
+
+# Modul-Level Kopien fuer Rueckwaertskompatibilitaet (Tests, externer Zugriff)
+SILENCE_MATRIX = dict(_DEFAULT_SILENCE_MATRIX)
+VOLUME_MATRIX = dict(_DEFAULT_VOLUME_MATRIX)
+
+# Gueltige Zustellmethoden (fuer Config-Validierung)
+_VALID_DELIVERY_METHODS = {TTS_LOUD, TTS_QUIET, LED_BLINK, SUPPRESS}
+
+# Gueltige Aktivitaeten (fuer Config-Validierung)
+_VALID_ACTIVITIES = {SLEEPING, IN_CALL, WATCHING, FOCUSED, GUESTS, RELAXING, AWAY}
+
+
+def _build_matrix_from_config(config_matrix: dict, default_matrix: dict,
+                               validate_values: set | None = None) -> dict:
+    """Baut eine Matrix aus Config + Defaults.
+
+    Config-Werte ueberschreiben einzelne Eintraege, fehlende werden
+    aus den Defaults ergaenzt.
+
+    Args:
+        config_matrix: User-Overrides aus settings.yaml
+        default_matrix: Hardcoded Defaults
+        validate_values: Wenn gesetzt, werden Werte gegen diese Menge validiert
+
+    Returns:
+        Vollstaendige Matrix (Default + Overrides)
+    """
+    result = {}
+    for activity in _VALID_ACTIVITIES:
+        default_row = default_matrix.get(activity, {})
+        config_row = config_matrix.get(activity, {})
+        merged = dict(default_row)
+        for urgency, value in config_row.items():
+            if urgency not in ("critical", "high", "medium", "low"):
+                logger.warning("Unbekannte Urgency '%s' in silence_matrix.%s ignoriert",
+                               urgency, activity)
+                continue
+            if validate_values and value not in validate_values:
+                logger.warning("Ungueltiger Wert '%s' in silence_matrix.%s.%s ignoriert "
+                               "(erlaubt: %s)", value, activity, urgency, validate_values)
+                continue
+            merged[urgency] = value
+        result[activity] = merged
+    return result
 
 
 class ActivityEngine:
@@ -195,6 +239,17 @@ class ActivityEngine:
         self.guest_person_count = int(thresholds.get("guest_person_count", 2))
         self.focus_min_minutes = int(thresholds.get("focus_min_minutes", 30))
 
+        # Konfigurierbare Silence- und Volume-Matrix (Override aus settings.yaml)
+        self._silence_matrix = _build_matrix_from_config(
+            activity_cfg.get("silence_matrix", {}),
+            _DEFAULT_SILENCE_MATRIX,
+            validate_values=_VALID_DELIVERY_METHODS,
+        )
+        self._volume_matrix = _build_matrix_from_config(
+            activity_cfg.get("volume_matrix", {}),
+            _DEFAULT_VOLUME_MATRIX,
+        )
+
         # Haushaltsmitglieder-Entities sammeln (fuer praezise Guest-Detection)
         household = yaml_config.get("household", {})
         self._household_entities: set[str] = set()
@@ -239,6 +294,17 @@ class ActivityEngine:
         self.night_end = int(thresholds.get("night_end", 7))
         self.guest_person_count = int(thresholds.get("guest_person_count", 2))
         self.focus_min_minutes = int(thresholds.get("focus_min_minutes", 30))
+
+        # Silence- und Volume-Matrix neu laden
+        self._silence_matrix = _build_matrix_from_config(
+            activity_cfg.get("silence_matrix", {}),
+            _DEFAULT_SILENCE_MATRIX,
+            validate_values=_VALID_DELIVERY_METHODS,
+        )
+        self._volume_matrix = _build_matrix_from_config(
+            activity_cfg.get("volume_matrix", {}),
+            _DEFAULT_VOLUME_MATRIX,
+        )
         logger.info("ActivityDetector Config neu geladen (media_players=%d, bed_sensors=%d, night=%d-%d)",
                      len(self.media_players), len(self.bed_sensors), self.night_start, self.night_end)
 
@@ -326,17 +392,23 @@ class ActivityEngine:
 
         self._last_activity = activity
 
+        # Ausloesendes Geraet merken (z.B. media_player.wohnzimmer bei watching)
+        trigger = ""
+        if activity == WATCHING and signals.get("media_playing"):
+            trigger = signals["media_playing"]
+
         result = {
             "activity": activity,
             "confidence": confidence,
             "signals": signals,
+            "trigger": trigger,
         }
         self._last_detection = result
         self._cache_ts = now
 
         logger.debug(
-            "Aktivitaet erkannt: %s (confidence: %.2f, signals: %s)",
-            activity, confidence, signals,
+            "Aktivitaet erkannt: %s (confidence: %.2f, trigger: %s, signals: %s)",
+            activity, confidence, trigger, signals,
         )
 
         return result
@@ -352,7 +424,7 @@ class ActivityEngine:
         Returns:
             Zustellmethode (tts_loud, tts_quiet, led_blink, suppress)
         """
-        activity_row = SILENCE_MATRIX.get(activity, SILENCE_MATRIX[RELAXING])
+        activity_row = self._silence_matrix.get(activity, self._silence_matrix[RELAXING])
         return activity_row.get(urgency, TTS_LOUD)
 
     def get_volume_level(self, activity: str, urgency: str) -> float:
@@ -366,7 +438,7 @@ class ActivityEngine:
         Returns:
             Volume-Level 0.0 - 1.0
         """
-        activity_row = VOLUME_MATRIX.get(activity, VOLUME_MATRIX[RELAXING])
+        activity_row = self._volume_matrix.get(activity, self._volume_matrix[RELAXING])
         base_volume = activity_row.get(urgency, 0.7)
 
         # Tageszeit-Faktor: Abends/Nachts leiser
@@ -407,6 +479,7 @@ class ActivityEngine:
             "confidence": detection["confidence"],
             "signals": detection["signals"],
             "volume": volume,
+            "trigger": detection.get("trigger", ""),
         }
 
     # ----- Signal-Erkennung -----
@@ -419,12 +492,15 @@ class ActivityEngine:
                     return False
         return True
 
-    def _check_media_playing(self, states: list[dict]) -> bool:
+    def _check_media_playing(self, states: list[dict]) -> str:
         """Prueft ob ein konfigurierter Media Player aktiv ist (TV, Film).
 
         Erkennt nicht nur "playing" sondern auch "on", "paused", "buffering" —
         also jeden Zustand der bedeutet, dass der TV an ist und jemand zuschaut.
         Nur "off", "standby", "unavailable", "unknown", "idle" gelten als inaktiv.
+
+        Returns:
+            entity_id des aktiven Players (truthy) oder "" (falsy).
         """
         inactive_states = {"off", "standby", "unavailable", "unknown", "idle"}
         for state in states:
@@ -432,8 +508,8 @@ class ActivityEngine:
             if entity_id in self.media_players:
                 s = state.get("state", "off").lower()
                 if s not in inactive_states:
-                    return True
-        return False
+                    return entity_id
+        return ""
 
     def _check_in_call(self, states: list[dict]) -> bool:
         """Prueft ob ein Mikrofon aktiv ist (Call/Zoom)."""

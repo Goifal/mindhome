@@ -5032,11 +5032,13 @@ class AssistantBrain(BrainCallbacksMixin):
             result = await self.activity.should_deliver(urgency)
             delivery = result.get("delivery", "")
             if result.get("suppress") or delivery == "led_blink":
+                trigger_info = result.get("trigger", "")
                 logger.info(
                     "Callback unterdrueckt: Quelle=%s, Urgency=%s, "
-                    "Aktivitaet=%s, Delivery=%s",
+                    "Aktivitaet=%s, Delivery=%s%s",
                     source, urgency,
                     result.get("activity"), delivery,
+                    f", Trigger={trigger_info}" if trigger_info else "",
                 )
                 return False
             return True
