@@ -244,6 +244,7 @@ _DEFAULT_ROLES_DICT = {
     "motion":         {"label": "Bewegungsmelder", "icon": "\U0001f3c3"},
     "presence":       {"label": "Anwesenheit", "icon": "\U0001f464"},
     "occupancy":      {"label": "Raumbelegung", "icon": "\U0001f465"},
+    "bed_occupancy":  {"label": "Bettbelegung", "icon": "\U0001f6cf\ufe0f"},
     "vibration":      {"label": "Vibration", "icon": "\U0001f4f3"},
     # --- Energie & Strom ---
     "power_meter":    {"label": "Strommesser", "icon": "\u26a1"},
@@ -297,11 +298,16 @@ _DEFAULT_ROLES_DICT = {
     "receiver":       {"label": "AV-Receiver", "icon": "\U0001f3b5"},
     "projector":      {"label": "Beamer/Projektor", "icon": "\U0001f4fd\ufe0f"},
     "gaming":         {"label": "Spielkonsole", "icon": "\U0001f3ae"},
+    # --- Kommunikation ---
+    "phone":          {"label": "Telefon", "icon": "\U0001f4de"},
     # --- Netzwerk & IT ---
     "router":         {"label": "Router", "icon": "\U0001f4f6"},
     "server":         {"label": "Server", "icon": "\U0001f5a5\ufe0f"},
     "nas":            {"label": "NAS-Speicher", "icon": "\U0001f4be"},
     "printer":        {"label": "Drucker", "icon": "\U0001f5a8\ufe0f"},
+    "pc":             {"label": "PC/Computer", "icon": "\U0001f4bb"},
+    "adblocker":      {"label": "Adblocker", "icon": "\U0001f6e1\ufe0f"},
+    "speedtest":      {"label": "Internet-Geschwindigkeit", "icon": "\U0001f4f6"},
     "signal_strength": {"label": "Signalstaerke", "icon": "\U0001f4f6"},
     "connectivity":   {"label": "Verbindungsstatus", "icon": "\U0001f4f6"},
     # --- Haushaltsgeraete ---
@@ -453,6 +459,7 @@ _ROLE_KEYWORDS = {
     "motion": ["bewegung", "motion", "bewegungsmelder"],
     "presence": ["anwesenheit", "zuhause", "abwesend", "presence"],
     "occupancy": ["belegung", "besetzt", "raumbelegung"],
+    "bed_occupancy": ["bett", "bettbelegung", "bett sensor", "bed", "bed_occupancy", "schlafsensor"],
     # Energie
     "power_meter": ["strom", "leistung", "watt", "strommesser"],
     "energy": ["energie", "kwh", "energieverbrauch", "stromverbrauch"],
@@ -493,10 +500,15 @@ _ROLE_KEYWORDS = {
     "speaker": ["lautsprecher", "speaker", "box"],
     "media_player": ["mediaplayer", "player", "streamer"],
     "receiver": ["receiver", "verstaerker", "av-receiver"],
+    # Kommunikation
+    "phone": ["telefon", "phone", "sip", "anruf", "festnetz", "voip"],
     # Netzwerk
-    "router": ["router", "wlan", "wifi", "internet"],
+    "router": ["router", "wlan", "wifi"],
     "server": ["server"],
     "nas": ["nas", "netzwerkspeicher"],
+    "pc": ["pc", "computer", "desktop", "rechner", "workstation"],
+    "adblocker": ["adblocker", "adblock", "adguard", "pihole", "werbeblocker"],
+    "speedtest": ["speedtest", "internetgeschwindigkeit", "internet speed", "internet geschwindigkeit", "bandbreite", "download speed", "upload speed"],
     # Haushaltsgeraete
     "washing_machine": ["waschmaschine", "waschen"],
     "dryer": ["trockner"],
