@@ -456,7 +456,7 @@ class ContextBuilder:
                             "water_leak": "WASSER ERKANNT", "smoke": "RAUCH ERKANNT",
                             "gas": "GAS ERKANNT", "co": "CO ERKANNT",
                             "tamper": "MANIPULATION ERKANNT", "alarm": "ALARM AKTIV",
-                            "lock": "verriegelt", "connectivity": "verbunden",
+                            "connectivity": "verbunden",
                             "running": "laeuft", "problem": "PROBLEM",
                             "update": "Update verfuegbar", "doorbell": "klingelt",
                             "rain_sensor": "Regen erkannt",
@@ -464,7 +464,7 @@ class ContextBuilder:
                         _BINARY_STATE_MAP_OFF = {
                             "window_contact": "geschlossen", "door_contact": "geschlossen",
                             "garage_door": "geschlossen", "gate": "geschlossen",
-                            "lock": "entriegelt", "connectivity": "getrennt",
+                            "connectivity": "getrennt",
                             "running": "aus", "rain_sensor": "kein Regen",
                         }
                         if s == "on":
@@ -476,12 +476,21 @@ class ContextBuilder:
                             "_role": role,
                         })
 
-            # Schloesser (Lock-Status)
+            # Schloesser (Lock-Status) — nur annotierte
             elif domain == "lock" and s in ("locked", "unlocked"):
-                name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "lock_name")
-                if name:
-                    lock_text = "verriegelt" if s == "locked" else "entriegelt"
-                    house.setdefault("locks", []).append(f"{name}: {lock_text}")
+                ann = get_entity_annotation(entity_id)
+                role = ann.get("role", "")
+                if role:
+                    desc = ann.get("description", "")
+                    if not desc:
+                        desc = _sanitize_for_prompt(
+                            attrs.get("friendly_name", entity_id), 50, "lock_name"
+                        )
+                    else:
+                        desc = _sanitize_for_prompt(desc, 50, "lock_desc")
+                    if desc:
+                        lock_text = "verriegelt" if s == "locked" else "entriegelt"
+                        house.setdefault("locks", []).append(f"{desc}: {lock_text}")
 
             # Kalender (naechster Termin aus HA State-Attribut)
             elif domain == "calendar" and s == "on":
