@@ -8394,6 +8394,127 @@ function _updateDeclEnabledUI() {
   }
 }
 
+// ── Vorschlaege (Suggestions) ─────────────────────────────────
+let _declSuggestions = [];
+let _declSuggestLoading = false;
+
+async function generateDeclSuggestions() {
+  if (_declSuggestLoading) return;
+  _declSuggestLoading = true;
+  var btn = document.getElementById('declSuggestBtn');
+  var container = document.getElementById('declSuggestionsList');
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#9203; Analysiere Entities...'; }
+  if (container) container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Jarvis analysiert deine Home-Assistant-Entities und generiert Vorschlaege...</div>';
+  try {
+    var r = await api('/api/ui/declarative-tools/suggest', 'POST', {use_llm: true});
+    _declSuggestions = r.suggestions || [];
+    _renderDeclSuggestions();
+    if (_declSuggestions.length === 0) {
+      toast('Keine neuen Vorschlaege — alle sinnvollen Tools existieren bereits!', 'success');
+    } else {
+      toast(_declSuggestions.length + ' Vorschlaege generiert', 'success');
+    }
+  } catch(e) {
+    toast('Fehler: ' + (e.message || e), 'error');
+    if (container) container.innerHTML = '<div style="padding:16px;color:var(--danger);">Fehler beim Generieren: ' + esc(e.message || String(e)) + '</div>';
+  } finally {
+    _declSuggestLoading = false;
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#128161; Vorschlaege generieren'; }
+  }
+}
+
+function _renderDeclSuggestions() {
+  var container = document.getElementById('declSuggestionsList');
+  if (!container) return;
+  if (_declSuggestions.length === 0) {
+    container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Keine Vorschlaege vorhanden. Klicke "Vorschlaege generieren" um Jarvis deine Entities analysieren zu lassen.</div>';
+    return;
+  }
+  var h = '<div style="margin-bottom:8px;font-size:12px;color:var(--text-secondary);">' + _declSuggestions.length + ' Vorschlaege</div>';
+  _declSuggestions.forEach(function(s, i) {
+    var typeInfo = DECL_TOOL_TYPES.find(function(t) { return t.v === s.type; }) || {l: s.type};
+    h += '<div class="decl-suggestion" style="border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;margin-bottom:10px;background:var(--bg-card);border-left:3px solid var(--accent);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
+      '<div style="flex:1;">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+      '<strong style="color:var(--accent);font-size:14px;">' + esc(s.name) + '</strong>' +
+      '<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(0,212,255,0.08);color:var(--text-secondary);">' + esc(typeInfo.l) + '</span>' +
+      '</div>' +
+      '<div style="margin-top:6px;font-size:13px;color:var(--text-primary);">' + esc(s.description) + '</div>' +
+      '<div style="margin-top:4px;font-size:12px;color:var(--text-secondary);font-style:italic;">' + esc(s.reason || '') + '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;flex-shrink:0;">' +
+      '<button class="btn btn-sm" onclick="acceptDeclSuggestion(' + i + ')" style="padding:6px 12px;font-size:12px;background:var(--success);color:#fff;border:none;">&#10003; Annehmen</button>' +
+      '<button class="btn btn-sm" onclick="rejectDeclSuggestion(' + i + ')" style="padding:6px 12px;font-size:12px;">&#10005; Ablehnen</button>' +
+      '</div></div></div>';
+  });
+  // "Alle annehmen" Button wenn mehrere
+  if (_declSuggestions.length > 1) {
+    h += '<div style="display:flex;gap:8px;margin-top:8px;">' +
+      '<button class="btn btn-sm" onclick="acceptAllDeclSuggestions()" style="padding:6px 16px;font-size:12px;background:var(--success);color:#fff;border:none;">&#10003; Alle annehmen (' + _declSuggestions.length + ')</button>' +
+      '<button class="btn btn-sm" onclick="rejectAllDeclSuggestions()" style="padding:6px 16px;font-size:12px;">&#10005; Alle ablehnen</button>' +
+      '</div>';
+  }
+  container.innerHTML = h;
+}
+
+async function acceptDeclSuggestion(idx) {
+  var s = _declSuggestions[idx];
+  if (!s) return;
+  try {
+    await api('/api/ui/declarative-tools', 'POST', {
+      name: s.name, description: s.description, type: s.type, config: s.config
+    });
+    toast('Tool "' + s.name + '" erstellt', 'success');
+    _declSuggestions.splice(idx, 1);
+    _renderDeclSuggestions();
+    loadDeclarativeTools();
+  } catch(e) {
+    toast('Fehler: ' + (e.detail || e.message || e), 'error');
+  }
+}
+
+function rejectDeclSuggestion(idx) {
+  var s = _declSuggestions[idx];
+  if (!s) return;
+  _declSuggestions.splice(idx, 1);
+  _renderDeclSuggestions();
+  toast('Vorschlag "' + s.name + '" abgelehnt', 'success');
+}
+
+async function acceptAllDeclSuggestions() {
+  if (!confirm(_declSuggestions.length + ' Vorschlaege annehmen?')) return;
+  var accepted = 0;
+  var errors = 0;
+  // Copy before mutating
+  var all = _declSuggestions.slice();
+  for (var i = 0; i < all.length; i++) {
+    var s = all[i];
+    try {
+      await api('/api/ui/declarative-tools', 'POST', {
+        name: s.name, description: s.description, type: s.type, config: s.config
+      });
+      accepted++;
+    } catch(e) {
+      errors++;
+    }
+  }
+  _declSuggestions = [];
+  _renderDeclSuggestions();
+  loadDeclarativeTools();
+  if (errors > 0) {
+    toast(accepted + ' Tools erstellt, ' + errors + ' Fehler', 'warning');
+  } else {
+    toast(accepted + ' Tools erstellt', 'success');
+  }
+}
+
+function rejectAllDeclSuggestions() {
+  _declSuggestions = [];
+  _renderDeclSuggestions();
+  toast('Alle Vorschlaege abgelehnt', 'success');
+}
+
 // ── Haupt-Render ─────────────────────────────────────────────
 function renderDeclarativeTools() {
   return sectionWrap('&#128736;', 'Analyse-Tools',
@@ -8411,6 +8532,13 @@ function renderDeclarativeTools() {
   '<div id="declBody">' +
   sectionWrap('&#128202;', 'Aktive Tools',
     '<div id="declToolList" style="margin-top:12px;"><div style="padding:16px;color:var(--text-secondary);">Lade...</div></div>'
+  ) +
+  sectionWrap('&#128161;', 'Jarvis-Vorschlaege',
+    fInfo('Jarvis analysiert deine Home-Assistant-Entities und schlaegt passende Analyse-Tools vor. Du entscheidest bei jedem Vorschlag ob du ihn annimmst oder ablehnst.') +
+    '<div style="margin-top:12px;margin-bottom:12px;">' +
+    '<button class="btn btn-primary" id="declSuggestBtn" onclick="generateDeclSuggestions()" style="padding:8px 20px;">&#128161; Vorschlaege generieren</button>' +
+    '</div>' +
+    '<div id="declSuggestionsList"><div style="padding:16px;color:var(--text-secondary);font-style:italic;">Klicke "Vorschlaege generieren" um Jarvis deine Entities analysieren zu lassen.</div></div>'
   ) +
   sectionWrap('&#128220;', 'Vorlagen',
     fInfo('Vorgefertigte Vorlagen — ein Klick befuellt das Formular. Entity-IDs danach an dein System anpassen.') +
@@ -8441,7 +8569,7 @@ function renderDeclarativeTools() {
     '<button class="btn btn-secondary" id="declCancelBtn" onclick="cancelDeclEdit()" style="display:none;">Abbrechen</button>' +
     '</div>'
   ) + '</div>' +
-  sectionWrap('&#128161;', 'Tipps',
+  sectionWrap('&#128214;', 'Tipps',
     fInfo('Du kannst Jarvis auch bitten: "Jarvis, bau mir ein Tool das die Raumtemperaturen vergleicht" — er nutzt dann create_declarative_tool automatisch.') +
     '<div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">' +
     '<strong>Verfuegbare Typen:</strong><br>' +

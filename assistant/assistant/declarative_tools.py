@@ -741,3 +741,374 @@ def get_registry() -> DeclarativeToolRegistry:
     if _registry is None:
         _registry = DeclarativeToolRegistry()
     return _registry
+
+
+# ══════════════════════════════════════════════════════════════
+# Tool-Vorschlaege: Regel-basierte Analyse + LLM-Verfeinerung
+# ══════════════════════════════════════════════════════════════
+
+def _slugify(text: str) -> str:
+    """Erzeugt einen Tool-Namen aus einem Text."""
+    import re
+    slug = text.lower().replace(" ", "_").replace("-", "_")
+    slug = re.sub(r"[^a-z0-9_]", "", slug)
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug[:40]
+
+
+def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]:
+    """Analysiert HA-Entities und generiert Tool-Vorschlaege (regel-basiert).
+
+    Args:
+        states: Alle HA-Entity-States (von ha.get_states())
+        existing_tools: Bereits existierende Tools (name → config)
+
+    Returns:
+        Liste von Vorschlaegen: [{name, description, type, config, reason}]
+    """
+    existing_names = set(existing_tools.keys())
+
+    # Entities nach Typ gruppieren
+    temp_sensors: list[dict] = []      # {eid, friendly, outdoor}
+    humidity_sensors: list[dict] = []
+    energy_sensors: list[dict] = []
+    power_sensors: list[dict] = []
+    binary_window: list[dict] = []
+    binary_door: list[dict] = []
+    binary_motion: list[dict] = []
+    co2_sensors: list[dict] = []
+    battery_sensors: list[dict] = []
+    lights: list[dict] = []
+    climate_entities: list[dict] = []
+    media_players: list[dict] = []
+    switches: list[dict] = []
+
+    outdoor_kw = ("aussen", "outdoor", "balkon", "garten", "terrasse",
+                  "draussen", "exterior", "outside", "weather", "wetter")
+
+    for s in states:
+        eid = s.get("entity_id", "")
+        attrs = s.get("attributes", {}) or {}
+        friendly = attrs.get("friendly_name", "")
+        dc = attrs.get("device_class", "")
+        unit = attrs.get("unit_of_measurement", "")
+        if "." not in eid:
+            continue
+        domain = eid.split(".")[0]
+        lower_eid = eid.lower()
+        is_outdoor = any(kw in lower_eid for kw in outdoor_kw)
+
+        if domain == "sensor":
+            if dc == "temperature" or unit in ("°C", "°F"):
+                temp_sensors.append({"eid": eid, "friendly": friendly, "outdoor": is_outdoor})
+            elif dc == "humidity" or unit == "%rH":
+                humidity_sensors.append({"eid": eid, "friendly": friendly})
+            elif dc == "energy" or unit in ("kWh", "Wh"):
+                energy_sensors.append({"eid": eid, "friendly": friendly})
+            elif dc == "power" or unit in ("W", "kW"):
+                power_sensors.append({"eid": eid, "friendly": friendly})
+            elif dc in ("co2", "carbon_dioxide") or (unit == "ppm" and "co2" in lower_eid):
+                co2_sensors.append({"eid": eid, "friendly": friendly})
+            elif dc == "battery":
+                battery_sensors.append({"eid": eid, "friendly": friendly})
+        elif domain == "binary_sensor":
+            if dc in ("window", "opening") or "fenster" in lower_eid or "window" in lower_eid:
+                binary_window.append({"eid": eid, "friendly": friendly})
+            elif dc == "door" or "tuer" in lower_eid or ("door" in lower_eid and "window" not in lower_eid):
+                binary_door.append({"eid": eid, "friendly": friendly})
+            elif dc == "motion" or "motion" in lower_eid or "bewegung" in lower_eid:
+                binary_motion.append({"eid": eid, "friendly": friendly})
+        elif domain == "light":
+            lights.append({"eid": eid, "friendly": friendly})
+        elif domain == "climate":
+            climate_entities.append({"eid": eid, "friendly": friendly})
+        elif domain == "media_player":
+            media_players.append({"eid": eid, "friendly": friendly})
+        elif domain == "switch":
+            switches.append({"eid": eid, "friendly": friendly})
+
+    suggestions: list[dict] = []
+
+    def _add(name: str, desc: str, tool_type: str, config: dict, reason: str):
+        if name not in existing_names and not any(sg["name"] == name for sg in suggestions):
+            suggestions.append({
+                "name": name, "description": desc,
+                "type": tool_type, "config": config, "reason": reason,
+            })
+
+    # ── Temperatur-Vorschlaege ────────────────────────────────
+    indoor = [t for t in temp_sensors if not t["outdoor"]]
+    outdoor = [t for t in temp_sensors if t["outdoor"]]
+
+    # Innen vs. Aussen Vergleich
+    if indoor and outdoor:
+        _add("innen_vs_aussen",
+             f"Temperaturunterschied {indoor[0]['friendly'] or 'innen'} vs. {outdoor[0]['friendly'] or 'aussen'}",
+             "entity_comparison",
+             {"entity_a": indoor[0]["eid"], "entity_b": outdoor[0]["eid"], "operation": "difference"},
+             "Du hast Innen- und Aussen-Temperatursensoren — der Vergleich hilft bei Lueftungsentscheidungen.")
+
+    # Durchschnittstemperatur aller Raeume
+    if len(indoor) >= 2:
+        _add("raumtemperaturen",
+             f"Durchschnittstemperatur aller {len(indoor)} Raeume",
+             "entity_aggregator",
+             {"entities": [t["eid"] for t in indoor[:8]], "aggregation": "average"},
+             f"{len(indoor)} Temperatursensoren gefunden — so sehe ich den Durchschnitt und den kaeltesten Raum.")
+
+    # Kaeltester Raum
+    if len(indoor) >= 3:
+        _add("kaeltester_raum",
+             "Findet den kaeltesten Raum",
+             "entity_aggregator",
+             {"entities": [t["eid"] for t in indoor[:8]], "aggregation": "min"},
+             "Bei mehreren Raeumen kann ich erkennen wo es zu kalt ist.")
+
+    # Aussen-Temperatur Trend
+    if outdoor:
+        _add("temperatur_trend_aussen",
+             f"Temperatur-Trend aussen ({outdoor[0]['friendly'] or outdoor[0]['eid']})",
+             "trend_analyzer",
+             {"entity": outdoor[0]["eid"], "time_range": "24h"},
+             "Der Trend der Aussentemperatur hilft bei Empfehlungen zu Heizung und Lueftung.")
+
+    # Raumtemperatur Komfortbereich
+    if indoor:
+        _add("raumtemperatur_check",
+             f"Raumtemperatur Komfortbereich ({indoor[0]['friendly'] or 'Hauptsensor'})",
+             "threshold_monitor",
+             {"entity": indoor[0]["eid"], "thresholds": {"min": 19, "max": 23}},
+             "Ich kann warnen wenn die Raumtemperatur aus dem Wohlfuehlbereich faellt.")
+
+    # ── Luftfeuchtigkeit ──────────────────────────────────────
+    if humidity_sensors:
+        _add("luftfeuchtigkeit_check",
+             f"Luftfeuchtigkeit Komfortbereich ({humidity_sensors[0]['friendly'] or humidity_sensors[0]['eid']})",
+             "threshold_monitor",
+             {"entity": humidity_sensors[0]["eid"], "thresholds": {"min": 40, "max": 60}},
+             "Luftfeuchtigkeit zwischen 40-60% ist optimal — darauf kann ich hinweisen.")
+
+    if len(humidity_sensors) >= 2:
+        _add("feuchtester_raum",
+             "Hoechste Luftfeuchtigkeit finden",
+             "entity_aggregator",
+             {"entities": [h["eid"] for h in humidity_sensors[:6]], "aggregation": "max"},
+             f"{len(humidity_sensors)} Feuchtigkeitssensoren — ich finde den feuchtesten Raum.")
+
+    # ── CO2 ───────────────────────────────────────────────────
+    if co2_sensors:
+        _add("co2_warnung",
+             f"CO2-Warnung ({co2_sensors[0]['friendly'] or co2_sensors[0]['eid']})",
+             "threshold_monitor",
+             {"entity": co2_sensors[0]["eid"], "thresholds": {"max": 1000}},
+             "CO2 ueber 1000 ppm beeintraechtigt die Konzentration — ich kann rechtzeitig warnen.")
+
+    # ── Energie ───────────────────────────────────────────────
+    if energy_sensors:
+        _add("stromverbrauch_trend",
+             f"Stromverbrauch Trend ({energy_sensors[0]['friendly'] or energy_sensors[0]['eid']})",
+             "trend_analyzer",
+             {"entity": energy_sensors[0]["eid"], "time_range": "7d"},
+             "Ein 7-Tage-Trend zeigt ob der Stromverbrauch steigt oder sinkt.")
+
+        _add("strom_vs_gestern",
+             f"Stromverbrauch heute vs. gestern ({energy_sensors[0]['friendly'] or energy_sensors[0]['eid']})",
+             "time_comparison",
+             {"entity": energy_sensors[0]["eid"], "compare_period": "yesterday", "aggregation": "average"},
+             "Tagesvergleich zeigt ob heute mehr oder weniger Strom verbraucht wird.")
+
+    if len(energy_sensors) >= 2:
+        _add("gesamt_stromverbrauch",
+             "Summe aller Energiezaehler",
+             "multi_entity_formula",
+             {"entities": {_slugify(e["friendly"] or e["eid"].split(".")[1]): e["eid"]
+                           for e in energy_sensors[:5]},
+              "formula": "sum"},
+             f"{len(energy_sensors)} Energiezaehler — die Summe gibt den Gesamtverbrauch.")
+
+    # Strom: 2 Power-Sensoren vergleichen (z.B. Solar vs. Verbrauch)
+    if len(power_sensors) >= 2:
+        solar = [p for p in power_sensors if any(kw in p["eid"].lower() for kw in ("solar", "pv", "photovoltaik"))]
+        consumption = [p for p in power_sensors if p not in solar]
+        if solar and consumption:
+            _add("solar_vs_verbrauch",
+                 f"Solar vs. Verbrauch ({solar[0]['friendly'] or 'Solar'} / {consumption[0]['friendly'] or 'Verbrauch'})",
+                 "entity_comparison",
+                 {"entity_a": solar[0]["eid"], "entity_b": consumption[0]["eid"], "operation": "ratio"},
+                 "Verhaeltnis Solar-Erzeugung zu Verbrauch — zeigt die Eigenverbrauchs-Quote.")
+
+    # ── Batterie ──────────────────────────────────────────────
+    if battery_sensors:
+        lowest_bat = battery_sensors[0]
+        _add("batterie_check",
+             f"Batterie-Warnung ({lowest_bat['friendly'] or lowest_bat['eid']})",
+             "threshold_monitor",
+             {"entity": lowest_bat["eid"], "thresholds": {"min": 20}},
+             "Ich warne wenn die Batterie unter 20% faellt — bevor der Sensor ausfaellt.")
+
+    # ── Fenster ───────────────────────────────────────────────
+    if binary_window:
+        _add("fenster_oeffnungen",
+             f"Fenster-Oeffnungen zaehlen ({len(binary_window)} Sensoren)",
+             "event_counter",
+             {"entities": [w["eid"] for w in binary_window[:6]], "count_state": "on", "time_range": "24h"},
+             f"{len(binary_window)} Fensterkontakte — ich zaehle wie oft gelueftet wurde.")
+
+        _add("fenster_offen_dauer",
+             f"Fenster-Oeffnungsdauer ({binary_window[0]['friendly'] or binary_window[0]['eid']})",
+             "state_duration",
+             {"entity": binary_window[0]["eid"], "target_state": "on", "time_range": "24h"},
+             "Wie lange war das Fenster heute offen? Hilft bei der Heizungs-Optimierung.")
+
+    # ── Tueren ────────────────────────────────────────────────
+    if binary_door:
+        _add("tuer_oeffnungen",
+             f"Tuer-Oeffnungen zaehlen ({len(binary_door)} Sensoren)",
+             "event_counter",
+             {"entities": [d["eid"] for d in binary_door[:6]], "count_state": "on", "time_range": "24h"},
+             f"{len(binary_door)} Tuerkontakte — ich sehe wie aktiv der Haushalt ist.")
+
+    # ── Bewegung ──────────────────────────────────────────────
+    if binary_motion:
+        _add("bewegung_aktivitaet",
+             f"Bewegungsmelder-Aktivitaet ({len(binary_motion)} Sensoren)",
+             "event_counter",
+             {"entities": [m["eid"] for m in binary_motion[:6]], "count_state": "on", "time_range": "24h"},
+             f"{len(binary_motion)} Bewegungsmelder — zeigt Aktivitaetsmuster im Haus.")
+
+    # ── Heizung ───────────────────────────────────────────────
+    if climate_entities:
+        _add("heizung_laufzeit",
+             f"Heizungs-Laufzeit ({climate_entities[0]['friendly'] or climate_entities[0]['eid']})",
+             "state_duration",
+             {"entity": climate_entities[0]["eid"], "target_state": "heating", "time_range": "24h"},
+             "Wie viele Stunden hat die Heizung heute gelaufen? Wichtig fuer Energiekosten.")
+
+    # ── Medien ────────────────────────────────────────────────
+    if media_players:
+        tv = [m for m in media_players if any(kw in m["eid"].lower()
+              for kw in ("tv", "fernseh", "fire_tv", "apple_tv", "chromecast"))]
+        if tv:
+            _add("tv_nutzung",
+                 f"TV-Nutzung ({tv[0]['friendly'] or tv[0]['eid']})",
+                 "state_duration",
+                 {"entity": tv[0]["eid"], "target_state": "on", "time_range": "7d"},
+                 "Wie viele Stunden lief der Fernseher diese Woche?")
+
+    # ── Licht ─────────────────────────────────────────────────
+    if len(lights) >= 3:
+        _add("licht_schaltungen",
+             f"Licht-Schaltungen zaehlen ({len(lights)} Lichter)",
+             "event_counter",
+             {"entities": [l["eid"] for l in lights[:8]], "count_state": "on", "time_range": "24h"},
+             f"{len(lights)} Lichter — zeigt wie oft Lichter geschaltet wurden (Automatisierungs-Potential).")
+
+    return suggestions
+
+
+async def refine_suggestions_with_llm(
+    suggestions: list[dict],
+    ollama_client,
+    model: str = "",
+) -> list[dict]:
+    """Verfeinert Vorschlaege per LLM (Beschreibungen verbessern, Priorisierung).
+
+    Args:
+        suggestions: Regel-basierte Vorschlaege
+        ollama_client: OllamaClient Instanz
+        model: Optionaler Modellname
+
+    Returns:
+        Verfeinerte Vorschlaege mit besseren Beschreibungen und Prioritaet
+    """
+    if not suggestions:
+        return []
+
+    # Vorschlaege als kompaktes Format fuer das LLM aufbereiten
+    items = []
+    for i, s in enumerate(suggestions):
+        items.append(f"{i+1}. Name: {s['name']}, Typ: {s['type']}, "
+                     f"Beschreibung: {s['description']}, Grund: {s['reason']}")
+
+    prompt = (
+        "Du bist Jarvis, ein Smart-Home-Assistent. "
+        "Ich habe folgende Analyse-Tool-Vorschlaege basierend auf den vorhandenen Home-Assistant-Entities generiert. "
+        "Bitte:\n"
+        "1. Verbessere jede Beschreibung (kurz, deutsch, natuerlich formuliert)\n"
+        "2. Ordne die Vorschlaege nach Nuetzlichkeit (wichtigste zuerst)\n"
+        "3. Gib fuer jeden einen verbesserten 'reason' (1 Satz, warum das dem User hilft)\n\n"
+        "Vorschlaege:\n" + "\n".join(items) + "\n\n"
+        "Antworte NUR als JSON-Array. Jedes Element: "
+        '{\"index\": 1, \"description\": \"...\", \"reason\": \"...\"}\n'
+        "Keine Erklaerungen, nur das JSON-Array."
+    )
+
+    try:
+        if not model:
+            model = yaml_config.get("models", {}).get("mini", "")
+        if not model:
+            return suggestions
+
+        response = await ollama_client.chat(
+            messages=[{"role": "user", "content": prompt}],
+            model=model,
+            temperature=0.3,
+            max_tokens=2000,
+        )
+
+        content = response.get("message", {}).get("content", "").strip()
+
+        # JSON parsen
+        import json
+        text = content.strip()
+        start = text.find("[")
+        end = text.rfind("]")
+        if start == -1 or end == -1:
+            logger.debug("LLM-Antwort kein JSON-Array: %s", text[:200])
+            return suggestions
+
+        refined = json.loads(text[start:end + 1])
+        if not isinstance(refined, list):
+            return suggestions
+
+        # Index-basiertes Mapping: LLM-Reihenfolge bestimmt Prioritaet
+        idx_map = {}
+        for item in refined:
+            idx = item.get("index")
+            if isinstance(idx, int) and 1 <= idx <= len(suggestions):
+                idx_map[idx - 1] = item
+
+        # Beschreibungen + Reasons aktualisieren, Reihenfolge beibehalten
+        result = []
+        # Erst die vom LLM priorisierten (in LLM-Reihenfolge)
+        ordered_indices = []
+        for item in refined:
+            idx = item.get("index")
+            if isinstance(idx, int) and 1 <= idx <= len(suggestions):
+                ordered_indices.append(idx - 1)
+
+        seen = set()
+        for i in ordered_indices:
+            if i in seen or i >= len(suggestions):
+                continue
+            seen.add(i)
+            s = dict(suggestions[i])
+            if i in idx_map:
+                ref = idx_map[i]
+                if ref.get("description"):
+                    s["description"] = ref["description"]
+                if ref.get("reason"):
+                    s["reason"] = ref["reason"]
+            result.append(s)
+
+        # Restliche die das LLM nicht erwaehnt hat
+        for i, s in enumerate(suggestions):
+            if i not in seen:
+                result.append(s)
+
+        logger.info("LLM-Verfeinerung: %d/%d Vorschlaege verfeinert", len(idx_map), len(suggestions))
+        return result
+
+    except Exception as e:
+        logger.warning("LLM-Verfeinerung fehlgeschlagen (Fallback auf Regel-Basis): %s", e)
+        return suggestions

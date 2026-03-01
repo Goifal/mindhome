@@ -3632,6 +3632,44 @@ async def ui_create_declarative_tool(request: Request, token: str = ""):
     return result
 
 
+@app.post("/api/ui/declarative-tools/suggest")
+async def ui_suggest_declarative_tools(request: Request, token: str = ""):
+    """Generiert Tool-Vorschlaege basierend auf vorhandenen HA-Entities.
+
+    Hybrid: Regel-basierte Analyse + optionale LLM-Verfeinerung.
+    """
+    _check_token(token)
+    from .declarative_tools import get_registry, generate_suggestions, refine_suggestions_with_llm
+
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    use_llm = body.get("use_llm", True)
+
+    # 1. HA-Entities laden
+    try:
+        states = await brain.ha.get_states()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"HA nicht erreichbar: {e}")
+
+    if not states:
+        return {"suggestions": [], "count": 0}
+
+    # 2. Regel-basierte Vorschlaege generieren
+    registry = get_registry()
+    existing = {t["name"]: t for t in registry.list_tools()}
+    suggestions = generate_suggestions(states, existing)
+
+    # 3. Optional: LLM-Verfeinerung
+    if use_llm and suggestions and brain.ollama:
+        try:
+            suggestions = await refine_suggestions_with_llm(
+                suggestions, brain.ollama,
+            )
+        except Exception as e:
+            logger.warning("LLM-Verfeinerung uebersprungen: %s", e)
+
+    return {"suggestions": suggestions, "count": len(suggestions)}
+
+
 @app.delete("/api/ui/declarative-tools/{tool_name}")
 async def ui_delete_declarative_tool(tool_name: str, token: str = ""):
     """Deklaratives Tool loeschen."""
