@@ -3594,6 +3594,60 @@ async def ui_discover_opening_sensors(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+# ── Declarative Tools API (Phase 13.3) ────────────────────────────
+
+@app.get("/api/ui/declarative-tools")
+async def ui_get_declarative_tools(token: str = ""):
+    """Alle deklarativen Tools auflisten."""
+    _check_token(token)
+    from .declarative_tools import get_registry
+    registry = get_registry()
+    tools = registry.list_tools()
+    return {"tools": tools, "count": len(tools)}
+
+
+@app.post("/api/ui/declarative-tools")
+async def ui_create_declarative_tool(request: Request, token: str = ""):
+    """Deklaratives Tool erstellen oder aktualisieren."""
+    _check_token(token)
+    from .declarative_tools import get_registry
+    body = await request.json()
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name erforderlich")
+    registry = get_registry()
+    result = registry.create_tool(name, {
+        "type": body.get("type", ""),
+        "description": body.get("description", ""),
+        "config": body.get("config", {}),
+    })
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Fehler"))
+    return result
+
+
+@app.delete("/api/ui/declarative-tools/{tool_name}")
+async def ui_delete_declarative_tool(tool_name: str, token: str = ""):
+    """Deklaratives Tool loeschen."""
+    _check_token(token)
+    from .declarative_tools import get_registry
+    registry = get_registry()
+    result = registry.delete_tool(tool_name)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("message", "Nicht gefunden"))
+    return result
+
+
+@app.post("/api/ui/declarative-tools/{tool_name}/test")
+async def ui_test_declarative_tool(tool_name: str, token: str = ""):
+    """Deklaratives Tool testweise ausfuehren."""
+    _check_token(token)
+    from .declarative_tools import DeclarativeToolExecutor
+    executor = DeclarativeToolExecutor(brain.ha)
+    result = await executor.execute(tool_name)
+    return result
+
+
 # ── Entity-Annotations API ─────────────────────────────────────────
 
 @app.get("/api/ui/entity-annotations")

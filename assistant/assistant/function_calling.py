@@ -18,6 +18,7 @@ import yaml
 import assistant.config as cfg_module
 from .config import settings, yaml_config, get_room_profiles
 from .config_versioning import ConfigVersioning
+from .declarative_tools import DeclarativeToolExecutor, get_registry as get_decl_registry
 from .ha_client import HomeAssistantClient
 
 # ============================================================
@@ -2501,6 +2502,83 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    # ── Deklarative Tools (Phase 13.3) ────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "create_declarative_tool",
+            "description": "Erstellt ein neues deklaratives Analyse-Tool. Deklarative Tools fuehren vordefinierte Berechnungen auf HA-Entities aus (NUR Lese-Zugriff). Verfuegbare Typen: entity_comparison (Vergleich zweier Entities), multi_entity_formula (Kombination mehrerer Entities mit average/weighted_average/sum/min/max/difference), event_counter (zaehlt State-Aenderungen), threshold_monitor (prueft ob Wert in Bereich), trend_analyzer (Trend ueber Zeitraum), entity_aggregator (Aggregation ueber mehrere Entities), schedule_checker (zeitbasierte Checks). Max 20 Tools.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Eindeutiger Name fuer das Tool (z.B. 'stromvergleich', 'raumtemperaturen'). Nur Buchstaben, Zahlen, _ und -.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Kurze Beschreibung was das Tool tut.",
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["entity_comparison", "multi_entity_formula", "event_counter", "threshold_monitor", "trend_analyzer", "entity_aggregator", "schedule_checker"],
+                        "description": "Typ des Tools.",
+                    },
+                    "config_json": {
+                        "type": "string",
+                        "description": "Tool-Konfiguration als JSON-String. Beispiel fuer entity_comparison: {\"entity_a\": \"sensor.strom_heute\", \"entity_b\": \"sensor.strom_gestern\", \"operation\": \"difference\"}. Beispiel fuer entity_aggregator: {\"entities\": [\"sensor.temp_wohn\", \"sensor.temp_schlaf\"], \"aggregation\": \"average\"}. Beispiel fuer threshold_monitor: {\"entity\": \"sensor.luftfeuchtigkeit\", \"thresholds\": {\"min\": 40, \"max\": 60}}. Beispiel fuer trend_analyzer: {\"entity\": \"sensor.temperatur\", \"time_range\": \"24h\"}. Beispiel fuer event_counter: {\"entities\": [\"binary_sensor.tuer\"], \"count_state\": \"on\", \"time_range\": \"24h\"}.",
+                    },
+                },
+                "required": ["name", "description", "type", "config_json"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_declarative_tools",
+            "description": "Listet alle benutzerdefinierten deklarativen Analyse-Tools auf.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_declarative_tool",
+            "description": "Loescht ein deklaratives Analyse-Tool.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name des Tools das geloescht werden soll.",
+                    },
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_declarative_tool",
+            "description": "Fuehrt ein deklaratives Analyse-Tool aus und gibt das Ergebnis zurueck. Nutze list_declarative_tools um verfuegbare Tools zu sehen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name des auszufuehrenden Tools.",
+                    },
+                },
+                "required": ["name"],
+            },
+        },
+    },
 ]
 
 
@@ -2572,6 +2650,8 @@ class FunctionExecutor:
         "set_vacuum", "get_vacuum",
         "manage_repair",
         "remote_control", "get_remotes",
+        "create_declarative_tool", "list_declarative_tools",
+        "delete_declarative_tool", "run_declarative_tool",
     })
 
     # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
@@ -6845,3 +6925,55 @@ class FunctionExecutor:
             return {"success": True, "message": "Keine Fernbedienungen gefunden.", "remotes": []}
 
         return {"success": True, "remotes": results, "count": len(results)}
+
+    # ── Deklarative Tools (Phase 13.3) ────────────────────────
+    async def _exec_create_declarative_tool(self, args: dict) -> dict:
+        """Erstellt ein deklaratives Analyse-Tool."""
+        import json as _json
+        name = args.get("name", "").strip()
+        description = args.get("description", "").strip()
+        tool_type = args.get("type", "").strip()
+        config_json = args.get("config_json", "")
+
+        if not name or not description or not tool_type:
+            return {"success": False, "message": "name, description und type sind erforderlich."}
+
+        try:
+            config = _json.loads(config_json) if isinstance(config_json, str) else config_json
+        except _json.JSONDecodeError as e:
+            return {"success": False, "message": f"Ungueltiges JSON in config_json: {e}"}
+
+        registry = get_decl_registry()
+        return registry.create_tool(name, {
+            "type": tool_type,
+            "description": description,
+            "config": config,
+        })
+
+    async def _exec_list_declarative_tools(self, args: dict) -> dict:
+        """Listet alle deklarativen Tools."""
+        registry = get_decl_registry()
+        tools = registry.list_tools()
+        if not tools:
+            return {"success": True, "message": "Keine deklarativen Tools vorhanden.", "tools": []}
+
+        lines = [f"{len(tools)} deklarative Tool(s):"]
+        for t in tools:
+            lines.append(f"  - {t['name']} ({t.get('type', '?')}): {t.get('description', '')}")
+        return {"success": True, "message": "\n".join(lines), "tools": tools}
+
+    async def _exec_delete_declarative_tool(self, args: dict) -> dict:
+        """Loescht ein deklaratives Tool."""
+        name = args.get("name", "").strip()
+        if not name:
+            return {"success": False, "message": "name ist erforderlich."}
+        registry = get_decl_registry()
+        return registry.delete_tool(name)
+
+    async def _exec_run_declarative_tool(self, args: dict) -> dict:
+        """Fuehrt ein deklaratives Tool aus."""
+        name = args.get("name", "").strip()
+        if not name:
+            return {"success": False, "message": "name ist erforderlich."}
+        executor = DeclarativeToolExecutor(self.ha)
+        return await executor.execute(name)
