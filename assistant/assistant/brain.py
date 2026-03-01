@@ -328,6 +328,9 @@ class AssistantBrain(BrainCallbacksMixin):
         # Redis fuer Context Builder (Guest-Mode-Check)
         self.context_builder.set_redis(self.memory.redis)
 
+        # Autonomy Evolution: Redis fuer Interaktions-Tracking
+        self.autonomy.set_redis(self.memory.redis)
+
         # Mood Detector initialisieren
         await self.mood.initialize(redis_client=self.memory.redis)
         self.personality.set_mood_detector(self.mood)
@@ -340,6 +343,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Fact Decay: Einmal taeglich alte Fakten abbauen
         self._task_registry.create_task(self._run_daily_fact_decay(), name="daily_fact_decay")
+
+        # Autonomy Evolution: Woechentlich pruefen ob Level-Aufstieg moeglich
+        self._task_registry.create_task(self._run_autonomy_evolution(), name="autonomy_evolution")
 
         # Memory Extractor initialisieren
         self.memory_extractor = MemoryExtractor(self.ollama, self.memory.semantic)
@@ -2992,6 +2998,13 @@ class AssistantBrain(BrainCallbacksMixin):
                         "args": final_args,
                         "result": result,
                     })
+
+                    # Autonomy Evolution: Interaktion tracken
+                    _success = isinstance(result, dict) and result.get("success", True)
+                    self._task_registry.create_task(
+                        self.autonomy.track_interaction(func_name, _success),
+                        name="autonomy_track",
+                    )
 
                     # Phase 17: Learning Observer — Jarvis-Aktionen markieren
                     # damit sie nicht als "manuelle" Aktionen gezaehlt werden
@@ -8272,6 +8285,57 @@ Regeln:
             except Exception as e:
                 logger.error("Fact Decay Fehler: %s", e)
                 await asyncio.sleep(3600)  # Bei Fehler 1h warten
+
+    async def _run_autonomy_evolution(self):
+        """Prueft woechentlich ob ein Autonomy-Level-Aufstieg moeglich ist (Sonntag 05:00)."""
+        while True:
+            try:
+                now = datetime.now()
+                # Naechsten Sonntag 05:00 berechnen
+                days_until_sunday = (6 - now.weekday()) % 7
+                if days_until_sunday == 0 and now.hour >= 5:
+                    days_until_sunday = 7
+                target = (now + timedelta(days=days_until_sunday)).replace(
+                    hour=5, minute=0, second=0, microsecond=0,
+                )
+                wait_seconds = (target - now).total_seconds()
+                await asyncio.sleep(max(60, wait_seconds))
+
+                eval_result = await self.autonomy.evaluate_evolution()
+                if eval_result and eval_result.get("ready"):
+                    # Proaktiv vorschlagen statt automatisch anwenden
+                    new_level = eval_result["proposed_level"]
+                    names = {2: "Butler", 3: "Mitbewohner", 4: "Vertrauter"}
+                    name = names.get(new_level, f"Level {new_level}")
+                    msg = (
+                        f"Basierend auf {eval_result['total_interactions']} Interaktionen "
+                        f"und einer Akzeptanzrate von {eval_result['acceptance_rate']:.0%} "
+                        f"koennte ich auf Autonomie-Level {new_level} ({name}) aufsteigen. "
+                        f"Soll ich das aktivieren?"
+                    )
+                    from .websocket import emit_proactive
+                    await emit_proactive(
+                        msg,
+                        event_type="autonomy_evolution",
+                        urgency="low",
+                    )
+                    logger.info(
+                        "Autonomy Evolution Vorschlag: Level %d -> %d",
+                        eval_result["current_level"], new_level,
+                    )
+                elif eval_result:
+                    logger.debug(
+                        "Autonomy Evolution: noch nicht bereit (Tage: %d, Interaktionen: %d, Akzeptanz: %.1f%%)",
+                        eval_result.get("days_active", 0),
+                        eval_result.get("total_interactions", 0),
+                        eval_result.get("acceptance_rate", 0) * 100,
+                    )
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("Autonomy Evolution Fehler: %s", e)
+                await asyncio.sleep(3600)
 
     async def _entity_catalog_refresh_loop(self):
         """Proaktiver Background-Refresh fuer den Entity-Katalog (alle 270s).

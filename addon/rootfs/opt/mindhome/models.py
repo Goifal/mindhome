@@ -969,6 +969,7 @@ class ComfortScore(Base):
     score = Column(Float, nullable=False)  # 0-100
     factors = Column(JSON, nullable=True)  # {"temp": 85, "humidity": 70, "co2": 90, "light": 60}
     created_at = Column(DateTime, default=_utcnow, index=True)
+    is_aggregate = Column(Integer, default=0)  # 1 = daily average (from data retention)
 
     room = relationship("Room")
 
@@ -984,6 +985,7 @@ class HealthMetric(Base):
     unit = Column(String(20), nullable=True)  # "score", "minutes", "ppm"
     context = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=_utcnow, index=True)
+    is_aggregate = Column(Integer, default=0)  # 1 = weekly summary (from data retention)
 
     user = relationship("User")
 
@@ -1812,7 +1814,8 @@ MIGRATIONS = [
                 room_id INTEGER NOT NULL REFERENCES rooms(id),
                 score FLOAT NOT NULL,
                 factors JSON,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                is_aggregate INTEGER DEFAULT 0
             )""",
             "CREATE INDEX IF NOT EXISTS idx_comfort_scores_room ON comfort_scores(room_id, created_at)",
 
@@ -1824,7 +1827,8 @@ MIGRATIONS = [
                 value FLOAT NOT NULL,
                 unit VARCHAR(20),
                 context JSON,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                is_aggregate INTEGER DEFAULT 0
             )""",
             "CREATE INDEX IF NOT EXISTS idx_health_metrics_type ON health_metrics(metric_type, created_at)",
 
@@ -2164,6 +2168,14 @@ MIGRATIONS = [
             "ALTER TABLE predictions ADD COLUMN explanation_en TEXT",
         ]
     },
+    {
+        "version": 16,
+        "description": "Add is_aggregate flag for data retention aggregation",
+        "sql": [
+            "ALTER TABLE comfort_scores ADD COLUMN is_aggregate INTEGER DEFAULT 0",
+            "ALTER TABLE health_metrics ADD COLUMN is_aggregate INTEGER DEFAULT 0",
+        ]
+    },
 ]
 
 
@@ -2256,6 +2268,12 @@ def run_migrations(engine):
         _ensure_columns(session, "predictions", [
             ("explanation_de", "TEXT"),
             ("explanation_en", "TEXT"),
+        ])
+        _ensure_columns(session, "comfort_scores", [
+            ("is_aggregate", "INTEGER DEFAULT 0"),
+        ])
+        _ensure_columns(session, "health_metrics", [
+            ("is_aggregate", "INTEGER DEFAULT 0"),
         ])
 
         final_v = max(m['version'] for m in MIGRATIONS) if MIGRATIONS else 0
