@@ -4502,7 +4502,14 @@ class AssistantBrain(BrainCallbacksMixin):
             escaped = re.escape(phrase)
             # Wortgrenze am Ende nur wenn Phrase mit Buchstabe endet
             boundary = r"\b" if phrase[-1:].isalpha() else ""
-            text = re.sub(escaped + boundary, "", text, flags=re.IGNORECASE)
+            new_text = re.sub(escaped + boundary, "", text, flags=re.IGNORECASE)
+            if new_text != text:
+                # Phase 13.4: Phrase-Tracking fuer Self-Optimization
+                self._task_registry.create_task(
+                    self.self_optimization.track_filtered_phrase(phrase),
+                    name="track_phrase",
+                )
+            text = new_text
         # Bereinigung nach Phrasen-Entfernung
         text = re.sub(r"\s{2,}", " ", text).strip()
         text = re.sub(r"^[,;:\-–—]\s*", "", text).strip()
@@ -5423,11 +5430,34 @@ class AssistantBrain(BrainCallbacksMixin):
         SICHERHEIT: Jarvis kann NIEMALS selbst Vorschlaege genehmigen.
         Nur explizite User-Eingaben loesen approve_proposal() aus.
         """
+        text_lower = text.lower().strip().rstrip("!?.")
+
+        # Phase 13.4b: Phrase-Befehle funktionieren immer (auch ohne Parameter-Vorschlaege)
+        phrase_match = re.search(r"phrase\s+(\d+)\s+(sperren|bannen|blockieren)", text_lower)
+        if phrase_match:
+            suggestions = await self.self_optimization.detect_new_banned_phrases()
+            idx = int(phrase_match.group(1)) - 1
+            if 0 <= idx < len(suggestions):
+                result = await self.self_optimization.add_banned_phrase(suggestions[idx]["phrase"])
+                if result["success"]:
+                    _audit_log("self_opt_ban_phrase", {"phrase": suggestions[idx]["phrase"]})
+                return result.get("message", "")
+            return f"Phrase #{idx+1} existiert nicht"
+
+        if any(t in text_lower for t in ["alle phrasen sperren", "alle phrasen bannen"]):
+            suggestions = await self.self_optimization.detect_new_banned_phrases()
+            added = 0
+            for s in suggestions:
+                result = await self.self_optimization.add_banned_phrase(s["phrase"])
+                if result.get("success"):
+                    added += 1
+            _audit_log("self_opt_ban_all_phrases", {"count": added})
+            return f"{added} Phrase{'n' if added != 1 else ''} zur Sperrliste hinzugefuegt"
+
+        # Parameter-Vorschlaege brauchen pending proposals
         proposals = await self.self_optimization.get_pending_proposals()
         if not proposals:
             return None
-
-        text_lower = text.lower().strip().rstrip("!?.")
 
         # "Vorschlag 1 annehmen" / "Vorschlag 2 ablehnen"
         approve_match = re.search(r"vorschlag\s+(\d+)\s+(annehmen|genehmigen|akzeptieren|ok)", text_lower)
@@ -8221,6 +8251,7 @@ Regeln:
                     learning_observer=self.learning_observer,
                     response_quality=self.response_quality,
                     error_patterns=self.error_patterns,
+                    self_optimization=self.self_optimization,
                 )
                 summary = report.get("summary", "")
                 if summary:
@@ -8253,6 +8284,55 @@ Regeln:
                         logger.info("Adaptive Thresholds: %d Anpassungen", len(adjusted))
                 except Exception as _at_err:
                     logger.debug("Adaptive Thresholds Fehler: %s", _at_err)
+
+                # Phase 13.4: Prompt Self-Optimization — automatische Analyse
+                try:
+                    if self.self_optimization.is_enabled():
+                        proposals = await self.self_optimization.run_analysis(
+                            outcome_tracker=self.outcome_tracker,
+                            response_quality=self.response_quality,
+                            correction_memory=self.correction_memory,
+                        )
+                        if proposals:
+                            from .websocket import emit_proactive
+                            formatted = self.self_optimization.format_proposals_for_chat(proposals)
+                            title = get_person_title()
+                            opt_msg = (
+                                f"{title}, ich habe {len(proposals)} Optimierungsvorschlag"
+                                f"{'e' if len(proposals) > 1 else ''} basierend auf "
+                                f"unseren letzten Interaktionen:\n\n{formatted}"
+                            )
+                            await emit_proactive(
+                                opt_msg,
+                                event_type="self_optimization",
+                                urgency="low",
+                                notification_id="self_opt_weekly",
+                            )
+                            logger.info(
+                                "Self-Optimization: %d Vorschlaege generiert und gesendet",
+                                len(proposals),
+                            )
+
+                        # Phase 13.4b: Banned-Phrases Vorschlaege
+                        phrase_suggestions = await self.self_optimization.detect_new_banned_phrases()
+                        if phrase_suggestions:
+                            from .websocket import emit_proactive
+                            phrase_msg = self.self_optimization.format_phrase_suggestions(
+                                phrase_suggestions,
+                            )
+                            title = get_person_title()
+                            await emit_proactive(
+                                f"{title}, {phrase_msg}",
+                                event_type="self_optimization_phrases",
+                                urgency="low",
+                                notification_id="self_opt_phrases_weekly",
+                            )
+                            logger.info(
+                                "Self-Optimization: %d Phrase-Vorschlaege gesendet",
+                                len(phrase_suggestions),
+                            )
+                except Exception as _so_err:
+                    logger.debug("Self-Optimization Analyse Fehler: %s", _so_err)
             except asyncio.CancelledError:
                 break
             except Exception as e:
