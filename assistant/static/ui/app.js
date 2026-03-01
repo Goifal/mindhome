@@ -4514,22 +4514,7 @@ function filterEntities() {
   const c = document.getElementById('entityBrowser');
 
   // Such-zuerst: ohne aktiven Filter nur annotierte + Hinweis zeigen
-  if (!hasActiveFilter) {
-    const annotated = filtered.filter(e => ENTITY_ANNOTATIONS[e.entity_id]?.role || ENTITY_ANNOTATIONS[e.entity_id]?.description || ENTITY_ANNOTATIONS[e.entity_id]?.hidden);
-    const hint = `<div style="padding:16px 12px;text-align:center;color:var(--text-muted);font-size:12px;border-bottom:1px solid var(--border-color,rgba(255,255,255,0.06));">
-      <span style="font-size:18px;">&#128269;</span><br>
-      <b>${ALL_ENTITIES.length} Entities</b> vorhanden — Suchbegriff eingeben um zu finden<br>
-      <span style="font-size:11px;">z.B. "licht", "temperatur", "kuche", "sensor.motion"</span>
-    </div>`;
-    c.innerHTML = (annotated.length > 0
-      ? `<div style="padding:8px 12px;font-size:11px;color:var(--accent);font-weight:600;border-bottom:1px solid var(--border-color,rgba(255,255,255,0.06));">${annotated.length} annotierte Entities</div>`
-        + annotated.map(e => _renderEntityRow(e)).join('')
-      : '') + hint;
-    _updateBatchBar();
-    return;
-  }
-
-  // Mit Filter/Suche: alle Treffer zeigen (lazy-load)
+  // Alle Treffer zeigen (lazy-load)
   _entityShowCount = 50;
   _filteredEntitiesCache = filtered;
   _renderEntityBatch();
