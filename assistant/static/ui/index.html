@@ -520,8 +520,29 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 
 /* Entity Browser verbessert */
 .entity-list-card { padding:0; }
-.entity-list-card .entity-list { max-height:500px; }
-.entity-filter-bar { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:14px; }
+.entity-list-card .entity-list { max-height:600px; }
+.entity-filter-bar { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:14px; }
+
+/* Entity Annotation Styles */
+.entity-item { flex-wrap:wrap; }
+.entity-item.annotated { border-left:2px solid var(--accent); }
+.entity-item .role-badge { display:inline-block; font-size:9px; padding:1px 6px; border-radius:10px; background:rgba(0,212,255,0.12); color:var(--accent); white-space:nowrap; }
+.entity-item .hidden-badge { display:inline-block; font-size:9px; padding:1px 6px; border-radius:10px; background:rgba(255,100,100,0.12); color:var(--danger); white-space:nowrap; }
+.entity-detail { width:100%; padding:8px 0 4px 0; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.entity-detail .form-group { margin:0; }
+.entity-detail label { font-size:10px; color:var(--text-muted); margin-bottom:2px; display:block; }
+.entity-detail input, .entity-detail select { font-size:11px; padding:4px 8px; }
+.entity-detail .ann-full { grid-column:1/-1; }
+.entity-item .ann-check { width:14px; height:14px; flex-shrink:0; cursor:pointer; accent-color:var(--accent); }
+.ann-batch-bar { display:flex; align-items:center; gap:8px; padding:8px 12px; margin-bottom:10px; background:rgba(0,212,255,0.06); border:1px solid rgba(0,212,255,0.15); border-radius:var(--radius-sm); font-size:12px; }
+.ann-batch-bar span { color:var(--accent); font-weight:500; }
+#annDefaultRolesChips .role-chip { display:inline-block; font-size:10px; padding:2px 8px; border-radius:10px; background:rgba(0,212,255,0.08); color:var(--text-muted); }
+#annCustomRolesEditor .cr-row { display:flex; gap:8px; align-items:center; margin-bottom:4px; }
+#annCustomRolesEditor .cr-row input { font-size:11px; padding:4px 8px; flex:1; }
+#annCustomRolesEditor .cr-row .btn-sm { padding:2px 8px; font-size:10px; }
+.ann-discover-list { max-height:300px; overflow-y:auto; }
+.ann-discover-item { display:flex; align-items:center; gap:8px; padding:6px 8px; font-size:11px; border-bottom:1px solid rgba(0,212,255,0.05); }
+.ann-discover-item label { flex:1; cursor:pointer; }
 
 /* Keyword tags editor */
 .kw-editor { display:flex; flex-wrap:wrap; gap:4px; padding:8px; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); min-height:36px; cursor:text; }
@@ -552,6 +573,32 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .chip-opt:hover { border-color:var(--border-accent); color:var(--text-primary); background:rgba(0,212,255,0.05); }
 .chip-opt.selected { background:var(--accent-dim); border-color:var(--accent); color:var(--accent); font-weight:600; box-shadow:0 0 10px rgba(0,212,255,0.15); }
 .chip-opt.selected::before { content:'✓ '; font-size:10px; }
+
+/* Scene Configurator */
+.scene-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; }
+.scene-card { border:1px solid rgba(0,212,255,0.1); border-radius:var(--radius-sm); background:var(--bg-card); overflow:hidden; transition:all var(--fast); }
+.scene-card:hover { border-color:rgba(0,212,255,0.25); }
+.scene-card.scene-silence { border-left:3px solid var(--warning, #f59e0b); }
+.scene-card-hdr { display:flex; align-items:center; gap:8px; padding:10px 12px 6px; }
+.scene-icon { font-size:18px; flex-shrink:0; }
+.scene-card-title { flex:1; min-width:0; }
+.scene-name-input { width:100%; background:transparent; border:none; border-bottom:1px solid transparent; color:var(--text-primary); font-size:13px; font-weight:600; padding:2px 0; outline:none; }
+.scene-name-input:hover, .scene-name-input:focus { border-bottom-color:var(--accent); }
+.scene-id-hint { display:block; font-size:9px; color:var(--text-muted); font-family:var(--mono); margin-top:1px; }
+.scene-rm { background:none; border:1px solid var(--danger); color:var(--danger); border-radius:3px; padding:1px 6px; font-size:12px; cursor:pointer; opacity:0.6; flex-shrink:0; }
+.scene-rm:hover { opacity:1; }
+.scene-card-body { padding:4px 12px 10px; display:flex; flex-direction:column; gap:6px; }
+.scene-field { display:flex; align-items:center; gap:6px; }
+.scene-field-label { font-size:10px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; min-width:70px; flex-shrink:0; }
+.scene-field select { flex:1; background:var(--bg-primary); color:var(--text-primary); border:1px solid rgba(0,212,255,0.12); border-radius:4px; padding:3px 4px; font-size:11px; }
+.scene-field select:focus { border-color:var(--accent); outline:none; }
+.scene-field input[type="range"] { flex:1; accent-color:var(--accent); }
+.scene-silence-toggle { display:flex; align-items:center; gap:6px; font-size:11px; cursor:pointer; color:var(--text-secondary); }
+.scene-silence-toggle input { accent-color:var(--warning, #f59e0b); width:16px; height:16px; }
+@media (max-width:640px) {
+  .scene-grid { grid-template-columns:1fr; }
+  .scene-card-body { gap:4px; }
+}
 
 /* Notification Matrix Table */
 .nm-table-wrap { overflow-x:auto; margin-bottom:12px; }
@@ -866,6 +913,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           <div class="nav-item" data-page="settings" data-tab="tab-devices"><span class="nav-icon">&#128268;</span>Geraete</div>
           <div class="nav-item" data-page="settings" data-tab="tab-covers"><span class="nav-icon">&#129695;</span>Rolllaeden</div>
           <div class="nav-item" data-page="settings" data-tab="tab-vacuum"><span class="nav-icon">&#129529;</span>Saugroboter</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-remote"><span class="nav-icon">&#128261;</span>Fernbedienung</div>
           <div class="nav-item" data-page="entities"><span class="nav-icon">&#8801;</span>Entities</div>
         </div>
       </div>
@@ -892,6 +940,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <div class="nav-group">
         <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Automatisierung</span><span class="nav-group-arrow">&#9654;</span></div>
         <div class="nav-group-items">
+          <div class="nav-item" data-page="settings" data-tab="tab-scenes"><span class="nav-icon">&#127916;</span>Szenen</div>
           <div class="nav-item" data-page="settings" data-tab="tab-routines"><span class="nav-icon">&#127748;</span>Routinen</div>
           <div class="nav-item" data-page="settings" data-tab="tab-proactive"><span class="nav-icon">&#128276;</span>Proaktiv</div>
           <div class="nav-item" data-page="settings" data-tab="tab-notifications"><span class="nav-icon">&#128263;</span>Benachrichtigungen</div>
@@ -991,20 +1040,54 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
         <div style="text-align:center;color:var(--text-muted);font-size:12px;margin-top:8px;" id="presenceRefreshHint">Status wird alle 15 Sekunden aktualisiert</div>
       </div>
 
-      <!-- ============ ENTITIES ============ -->
+      <!-- ============ ENTITIES + ANNOTATIONS ============ -->
       <div id="page-entities" class="page">
         <div class="section-header">
-          <div><h2>Home Assistant Entities</h2><p>Alle Entities — klicke zum Kopieren</p></div>
-          <button class="btn btn-secondary" onclick="loadEntities()">Aktualisieren</button>
+          <div><h2>Entity Annotationen</h2><p>Beschreibe deine Entities — damit der Assistent sie versteht</p></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="annAutoSaveStatus" style="font-size:11px;color:var(--text-muted);"></span>
+            <button class="btn btn-secondary" onclick="discoverAnnotations()">Auto-Erkennung</button>
+            <button class="btn btn-secondary" onclick="loadEntities()">Aktualisieren</button>
+          </div>
         </div>
+
+        <!-- Eigene Rollen -->
+        <div id="annCustomRoles" class="card" style="margin-bottom:16px;padding:16px;">
+          <h3 style="margin:0 0 8px 0;font-size:14px;">Eigene Rollen</h3>
+          <div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px;" id="annDefaultRolesChips"></div>
+          <div id="annCustomRolesEditor"></div>
+          <button class="btn btn-secondary btn-sm" onclick="addCustomRole()" style="margin-top:8px;">+ Rolle hinzufuegen</button>
+        </div>
+
+        <!-- Filter-Bar -->
         <div class="entity-filter-bar">
           <div class="form-group mb-0">
             <select id="entityDomainFilter" onchange="filterEntities()"><option value="">Alle Domains</option></select>
           </div>
           <div class="form-group mb-0">
+            <select id="entityAnnotationFilter" onchange="filterEntities()">
+              <option value="">Alle</option>
+              <option value="annotated">Nur annotierte</option>
+              <option value="unannotated">Ohne Annotation</option>
+              <option value="hidden">Versteckte</option>
+            </select>
+          </div>
+          <div class="form-group mb-0">
             <input type="text" id="entitySearchInput" placeholder="Entity suchen..." oninput="filterEntities()">
           </div>
         </div>
+
+        <!-- Batch-Toolbar (nur sichtbar bei Auswahl) -->
+        <div id="annBatchBar" class="ann-batch-bar" style="display:none;">
+          <span id="annBatchCount">0 ausgewaehlt</span>
+          <select id="annBatchRole" style="font-size:12px;padding:2px 6px;"><option value="">Rolle zuweisen...</option></select>
+          <button class="btn btn-secondary btn-sm" onclick="batchSetRole()">Zuweisen</button>
+          <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(true)">Verstecken</button>
+          <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(false)">Einblenden</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearBatchSelection()">Auswahl aufheben</button>
+        </div>
+
+        <!-- Entity-Liste -->
         <div class="card entity-list-card"><div id="entityBrowser" class="entity-list"></div></div>
       </div>
 

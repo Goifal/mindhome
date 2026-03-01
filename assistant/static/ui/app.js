@@ -9,6 +9,11 @@ let S = {};  // Settings cache
 let RP = {};  // Room-Profiles cache (room_profiles.yaml)
 let _rpDirty = false;  // Room-Profiles geaendert?
 let ALL_ENTITIES = [];
+let ENTITY_ANNOTATIONS = {};
+let ENTITY_ROLES_DEFAULT = {};
+let ENTITY_ROLES_CUSTOM = {};
+let _annSaveTimer = null;
+let _annBatchSelected = new Set();
 const API = '';
 let _autoSaveTimer = null;
 const _AUTO_SAVE_DELAY = 2000;  // 2 Sekunden Debounce
@@ -373,8 +378,9 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
       'tab-general':'Allgemein','tab-personality':'KI-Modelle & Stil',
       'tab-memory':'Gedaechtnis-Einstellungen','tab-mood':'Stimmung',
       'tab-rooms':'Raeume & Speaker','tab-lights':'Licht','tab-devices':'Geraete',
-      'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter',
-      'tab-routines':'Routinen','tab-proactive':'Proaktiv & Vorausdenken',
+      'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter','tab-remote':'Fernbedienung',
+      'tab-scenes':'Szenen','tab-routines':'Routinen',
+      'tab-proactive':'Proaktiv & Vorausdenken',
       'tab-notifications':'Benachrichtigungen',
       'tab-cooking':'Koch-Assistent','tab-followme':'Follow-Me',
       'tab-jarvis':'Jarvis-Features','tab-eastereggs':'Easter Eggs',
@@ -610,6 +616,7 @@ function renderCurrentTab() {
       case 'tab-mood': c.innerHTML = renderMood(); break;
       case 'tab-rooms': c.innerHTML = renderRooms(); loadMindHomeEntities(); loadRoomTempAverage(); break;
       case 'tab-voice': c.innerHTML = renderVoice(); break;
+      case 'tab-scenes': c.innerHTML = renderScenes(); break;
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
       case 'tab-proactive': c.innerHTML = renderProactive(); break;
       case 'tab-notifications': c.innerHTML = renderNotifications(); break;
@@ -620,6 +627,7 @@ function renderCurrentTab() {
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
       case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
+      case 'tab-remote': c.innerHTML = renderRemote(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); loadEmergencyProtocols(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
@@ -787,6 +795,7 @@ const HELP_TEXTS = {
   'activity.thresholds.focus_min_minutes': {title:'Fokus-Modus', text:'Ab wie vielen Min ununterbrochener Arbeit Fokus erkannt wird.'},
   'activity.silence_matrix': {title:'Stille-Matrix', text:'Bestimmt pro Aktivitaet und Dringlichkeit, wie Benachrichtigungen zugestellt werden: Laut (TTS), Leise, LED-Signal oder Unterdruecken.'},
   'activity.volume_matrix': {title:'Lautstaerke-Matrix', text:'Lautstaerke fuer TTS-Durchsagen, abhaengig von Aktivitaet und Dringlichkeit. Werte 0-100%. Nachts wird automatisch zusaetzlich reduziert.'},
+  'scenes': {title:'Szenen', text:'Zentrale Szenen-Verwaltung. Jede Szene wird einer Aktivitaet zugeordnet (bestimmt Benachrichtigungs-Verhalten), hat eine Licht-Uebergangszeit und kann als "Nicht stoeren" markiert werden.'},
   // === COVER-AUTOMATIK ===
   'seasonal_actions.enabled': {title:'Saisonale Aktionen', text:'Automatische Aktionen basierend auf Jahreszeit, Wetter und Sonnenstand.'},
   'seasonal_actions.cover_automation.sun_tracking': {title:'Sonnenstand-Tracking', text:'Rolllaeden folgen automatisch dem Sonnenstand. Benoetigt konfigurierte Cover-Profile.'},
@@ -802,6 +811,7 @@ const HELP_TEXTS = {
   'vacation_simulation.evening_hour': {title:'Abends schliessen', text:'Uhrzeit fuer simuliertes Schliessen.'},
   'vacation_simulation.variation_minutes': {title:'Variation', text:'Zufaellige Abweichung in Minuten fuer realistischere Simulation.'},
   // === SAUGROBOTER ===
+  'remote.enabled': {title:'Fernbedienung', text:'Aktiviert die Fernbedienungs-Steuerung (Logitech Harmony) ueber Jarvis. Erlaubt Sprachsteuerung fuer TV, Receiver, etc.'},
   'vacuum.enabled': {title:'Saugroboter', text:'Aktiviert die Saugroboter-Steuerung ueber Jarvis.'},
   'vacuum.auto_clean.enabled': {title:'Auto-Clean', text:'Automatische Reinigung wenn niemand zuhause ist.'},
   'vacuum.auto_clean.when_nobody_home': {title:'Nur bei Abwesenheit', text:'Startet nur wenn alle Personen abwesend sind.'},
@@ -2339,16 +2349,15 @@ function renderVoice() {
     fSelect('sounds.events.goodnight', 'Gute-Nacht-Sound', soundOpts) +
     fRange('sounds.night_volume_factor', 'Nacht-Lautstaerke-Faktor', 0, 1, 0.1, {0:'Stumm',0.3:'Leise',0.5:'Halb',0.7:'Etwas leiser',1:'Normal'})
   ) +
-  sectionWrap('&#127916;', 'Szenen-Uebergaenge',
-    fInfo('Wie lange dauert der Uebergang bei Szenen-Wechsel? (z.B. Licht dimmen fuer Filmabend)') +
+  sectionWrap('&#127916;', 'Szenen & Narration',
+    fInfo('Szenen, Uebergangszeiten und "Nicht stoeren"-Einstellungen werden zentral im Szenen-Tab verwaltet. Hier nur die globalen Narrations-Einstellungen.') +
     fToggle('narration.enabled', 'Szenen-Narration aktiv') +
-    fRange('narration.default_transition', 'Standard (Sek.)', 1, 20, 1) +
-    fRange('narration.scene_transitions.filmabend', 'Filmabend (Sek.)', 1, 30, 1) +
-    fRange('narration.scene_transitions.gute_nacht', 'Gute Nacht (Sek.)', 1, 30, 1) +
-    fRange('narration.scene_transitions.aufwachen', 'Aufwachen (Sek.)', 1, 30, 1) +
-    fRange('narration.scene_transitions.gemuetlich', 'Gemuetlich (Sek.)', 1, 30, 1) +
+    fRange('narration.default_transition', 'Standard-Uebergang (Sek.)', 1, 20, 1) +
     fRange('narration.step_delay', 'Verzoegerung zwischen Schritten (Sek.)', 0, 10, 0.5) +
-    fToggle('narration.narrate_actions', 'Aktionen ansagen ("Licht wird gedimmt...")')
+    fToggle('narration.narrate_actions', 'Aktionen ansagen ("Licht wird gedimmt...")') +
+    `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
+      <span class="info-icon">&#127916;</span>Einzelne Szenen-Uebergaenge konfigurierst du im <strong>Szenen</strong>-Tab. Klicke hier.
+    </div>`
   ) +
   sectionWrap('&#128100;', 'Sprecher-Erkennung',
     fInfo('Erkennt wer spricht ueber 7 Methoden: Geraete-Zuordnung, Richtung (DoA), Raum, Anwesenheit, Stimmabdruck, Voice-Features und Cache. Lernt automatisch dazu.') +
@@ -2530,6 +2539,197 @@ function renderRoutines() {
   );
 }
 
+// ---- Szenen-Konfigurator (zentrales Management) ----
+// Vordefinierte Szenen — der User kann eigene hinzufuegen
+const _DEFAULT_SCENES = [
+  {id:'filmabend',     icon:'&#127916;', label:'Filmabend',    activity:'watching',  silence:true,  transition:5},
+  {id:'kino',          icon:'&#127871;', label:'Kino',         activity:'watching',  silence:true,  transition:5},
+  {id:'schlafen',      icon:'&#128164;', label:'Schlafen',     activity:'sleeping',  silence:true,  transition:7},
+  {id:'gute_nacht',    icon:'&#127769;', label:'Gute Nacht',   activity:'sleeping',  silence:true,  transition:7},
+  {id:'aufwachen',     icon:'&#127780;', label:'Aufwachen',    activity:'relaxing',  silence:false, transition:10},
+  {id:'gemuetlich',    icon:'&#128293;', label:'Gemuetlich',   activity:'relaxing',  silence:false, transition:4},
+  {id:'meditation',    icon:'&#129495;', label:'Meditation',   activity:'focused',   silence:true,  transition:3},
+  {id:'konzentration', icon:'&#128187;', label:'Konzentration',activity:'focused',   silence:true,  transition:2},
+  {id:'telefonat',     icon:'&#128222;', label:'Telefonat',    activity:'in_call',   silence:true,  transition:1},
+  {id:'meeting',       icon:'&#128188;', label:'Meeting',      activity:'in_call',   silence:true,  transition:1},
+  {id:'gaeste',        icon:'&#128101;', label:'Gaeste',       activity:'guests',    silence:false, transition:3},
+  {id:'nicht_stoeren', icon:'&#128683;', label:'Nicht stoeren',activity:'focused',   silence:true,  transition:1},
+  {id:'musik',         icon:'&#127925;', label:'Musik',        activity:'relaxing',  silence:false, transition:2},
+  {id:'arbeit',        icon:'&#128188;', label:'Arbeit',       activity:'focused',   silence:true,  transition:1},
+  {id:'kochen',        icon:'&#127859;', label:'Kochen',       activity:'relaxing',  silence:false, transition:1},
+  {id:'party',         icon:'&#127881;', label:'Party',        activity:'guests',    silence:false, transition:2},
+];
+
+const _ACTIVITY_OPTIONS = [
+  {v:'sleeping',  l:'Schlafen'},
+  {v:'in_call',   l:'Im Telefonat'},
+  {v:'watching',  l:'TV/Film schauen'},
+  {v:'focused',   l:'Konzentriert'},
+  {v:'guests',    l:'Gaeste da'},
+  {v:'relaxing',  l:'Entspannt'},
+  {v:'away',      l:'Abwesend'},
+];
+
+function _getScenes() {
+  // Szenen aus settings laden, sonst Defaults verwenden
+  const saved = getPath(S, 'scenes') || {};
+  const scenes = [];
+  // Defaults als Basis, Overrides anwenden
+  for (const def of _DEFAULT_SCENES) {
+    const override = saved[def.id] || {};
+    scenes.push({
+      id: def.id,
+      icon: override.icon ?? def.icon,
+      label: override.label ?? def.label,
+      activity: override.activity ?? def.activity,
+      silence: override.silence ?? def.silence,
+      transition: override.transition ?? def.transition,
+      custom: false,
+    });
+  }
+  // Custom Szenen (nicht in Defaults)
+  const defaultIds = new Set(_DEFAULT_SCENES.map(d => d.id));
+  for (const [id, cfg] of Object.entries(saved)) {
+    if (!defaultIds.has(id) && cfg._custom) {
+      scenes.push({
+        id, icon: cfg.icon || '&#127912;', label: cfg.label || id,
+        activity: cfg.activity || 'relaxing', silence: cfg.silence ?? false,
+        transition: cfg.transition ?? 3, custom: true,
+      });
+    }
+  }
+  return scenes;
+}
+
+function _saveScenes(scenes) {
+  // Nur Abweichungen vom Default + Custom Szenen speichern
+  const data = {};
+  const defaultMap = {};
+  for (const d of _DEFAULT_SCENES) defaultMap[d.id] = d;
+  for (const sc of scenes) {
+    const def = defaultMap[sc.id];
+    if (sc.custom) {
+      // Custom Szene: immer komplett speichern
+      data[sc.id] = {icon: sc.icon, label: sc.label, activity: sc.activity, silence: sc.silence, transition: sc.transition, _custom: true};
+    } else if (def) {
+      // Default Szene: nur Abweichungen
+      const diff = {};
+      if (sc.label !== def.label) diff.label = sc.label;
+      if (sc.activity !== def.activity) diff.activity = sc.activity;
+      if (sc.silence !== def.silence) diff.silence = sc.silence;
+      if (sc.transition !== def.transition) diff.transition = sc.transition;
+      if (sc.icon !== def.icon) diff.icon = sc.icon;
+      if (Object.keys(diff).length > 0) data[sc.id] = diff;
+    }
+  }
+  setPath(S, 'scenes', data);
+
+  // Abgeleitete Werte in anderen Settings synchronisieren:
+  // 1. proactive.silence_scenes
+  const silenceList = scenes.filter(s => s.silence).map(s => s.id);
+  setPath(S, 'proactive.silence_scenes', silenceList);
+  // 2. narration.scene_transitions
+  const transitions = {};
+  for (const sc of scenes) {
+    transitions[sc.id] = sc.transition;
+  }
+  setPath(S, 'narration.scene_transitions', transitions);
+
+  scheduleAutoSave();
+}
+
+function renderScenes() {
+  const scenes = _getScenes();
+  const activityLabels = {};
+  for (const a of _ACTIVITY_OPTIONS) activityLabels[a.v] = a.l;
+
+  let sceneCards = '';
+  for (const sc of scenes) {
+    const silenceChecked = sc.silence ? 'checked' : '';
+    let actOpts = _ACTIVITY_OPTIONS.map(a =>
+      `<option value="${a.v}" ${sc.activity===a.v?'selected':''}>${a.l}</option>`
+    ).join('');
+
+    sceneCards += `<div class="scene-card${sc.silence?' scene-silence':''}" data-scene-id="${sc.id}">
+      <div class="scene-card-hdr">
+        <span class="scene-icon">${sc.icon}</span>
+        <div class="scene-card-title">
+          <input type="text" class="scene-name-input" value="${esc(sc.label)}" data-field="label"
+            onchange="sceneFieldChanged('${esc(sc.id)}','label',this.value)">
+          <span class="scene-id-hint">${esc(sc.id)}</span>
+        </div>
+        ${sc.custom ? '<button class="scene-rm" onclick="removeScene(\'' + esc(sc.id) + '\')" title="Szene loeschen">&#10005;</button>' : ''}
+      </div>
+      <div class="scene-card-body">
+        <div class="scene-field">
+          <span class="scene-field-label">Aktivitaet</span>
+          <select data-field="activity" onchange="sceneFieldChanged('${esc(sc.id)}','activity',this.value)">${actOpts}</select>
+        </div>
+        <div class="scene-field">
+          <span class="scene-field-label">Uebergang</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="range" min="1" max="20" step="1" value="${sc.transition}" data-field="transition"
+              oninput="this.nextElementSibling.textContent=this.value+'s';sceneFieldChanged('${esc(sc.id)}','transition',parseInt(this.value))">
+            <span style="font-size:11px;color:var(--text-muted);min-width:24px;">${sc.transition}s</span>
+          </div>
+        </div>
+        <div class="scene-field">
+          <label class="scene-silence-toggle" title="Nicht stoeren — proaktive Meldungen werden unterdrueckt">
+            <input type="checkbox" ${silenceChecked} data-field="silence"
+              onchange="sceneFieldChanged('${esc(sc.id)}','silence',this.checked)">
+            <span>Nicht stoeren</span>
+          </label>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  return sectionWrap('&#127916;', 'Haus-Szenen',
+    fInfo('Definiere Szenen fuer dein Zuhause. Jede Szene wird auf eine Aktivitaet gemappt (bestimmt Benachrichtigungs-Verhalten), hat eine Uebergangszeit und kann als "Nicht stoeren" markiert werden. Szenen koennen per Sprache aktiviert werden: "Jarvis, Filmabend."') +
+    `<div class="scene-grid">${sceneCards}</div>
+    <button class="btn btn-sm" onclick="addCustomScene()" style="margin-top:12px;">+ Eigene Szene</button>`
+  ) +
+  sectionWrap('&#128276;', 'So wirken Szenen',
+    fInfo('Szenen steuern drei Dinge gleichzeitig:') +
+    `<div style="font-size:12px;line-height:1.8;color:var(--text-secondary);padding:4px 8px;">
+      <div><strong>1. Aktivitaet</strong> — Jede Szene ist einer Aktivitaet zugeordnet (z.B. Filmabend → "TV/Film"). Die Aktivitaet bestimmt ueber die <em>Stille-Matrix</em> (Tab "Benachrichtigungen") wie Meldungen zugestellt werden.</div>
+      <div style="margin-top:6px;"><strong>2. Nicht stoeren</strong> — Markierte Szenen unterdruecken proaktive Meldungen komplett (ausser Sicherheit/Notfall).</div>
+      <div style="margin-top:6px;"><strong>3. Uebergangszeit</strong> — Wie lange Licht-Uebergaenge dauern wenn Jarvis die Szene aktiviert.</div>
+    </div>`
+  );
+}
+
+function sceneFieldChanged(sceneId, field, value) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc) return;
+  sc[field] = value;
+  _saveScenes(scenes);
+  // Bei silence-Toggle visuell updaten (CSS-Klasse)
+  if (field === 'silence') {
+    const card = document.querySelector(`.scene-card[data-scene-id="${sceneId}"]`);
+    if (card) card.classList.toggle('scene-silence', value);
+  }
+}
+
+function addCustomScene() {
+  const id = 'szene_' + Date.now();
+  const scenes = _getScenes();
+  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, custom: true});
+  _saveScenes(scenes);
+  renderCurrentTab();
+}
+
+function removeScene(sceneId) {
+  const scenes = _getScenes().filter(s => s.id !== sceneId);
+  // Auch aus S entfernen
+  const saved = getPath(S, 'scenes') || {};
+  delete saved[sceneId];
+  setPath(S, 'scenes', saved);
+  _saveScenes(scenes);
+  renderCurrentTab();
+}
+
 // ---- Proaktiv & Vorausdenken (aus Routinen ausgelagert) ----
 function renderProactive() {
   return sectionWrap('&#128276;', 'Proaktive Meldungen',
@@ -2538,10 +2738,9 @@ function renderProactive() {
     fRange('proactive.cooldown_seconds', 'Mindestabstand zwischen Meldungen', 60, 3600, 60, {60:'1 Min',120:'2 Min',300:'5 Min',600:'10 Min',1800:'30 Min',3600:'1 Std'}) +
     fRange('proactive.music_follow_cooldown_minutes', 'Musik-Nachfolge Pause', 1, 30, 1) +
     fRange('proactive.min_autonomy_level', 'Ab Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fChipSelect('proactive.silence_scenes', 'Nicht stoeren bei', [
-      'filmabend','schlafen','meditation','telefonat','meeting',
-      'konzentration','gaeste','nicht_stoeren','musik','arbeit'
-    ])
+    `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
+      <span class="info-icon">&#127916;</span>"Nicht stoeren"-Szenen und Aktivitaets-Zuordnung werden jetzt zentral im <strong>Szenen</strong>-Tab verwaltet. Klicke hier um dorthin zu wechseln.
+    </div>`
   ) +
   sectionWrap('&#9200;', 'Zeitgefuehl',
     fInfo('Der Assistent erinnert dich wenn Geraete zu lange laufen — z.B. Ofen vergessen, PC-Pause noetig.') +
@@ -4133,11 +4332,60 @@ async function updatePresenceSetting(key, value) {
 }
 
 
-// ---- Entities ----
+// ---- Entities + Annotations ----
+
+// Standard-Rollen Labels (werden von API ueberschrieben)
+const _ROLE_LABELS = {
+  indoor_temp:'Raumtemperatur', outdoor_temp:'Aussentemperatur', humidity:'Luftfeuchtigkeit',
+  window_contact:'Fensterkontakt', door_contact:'Tuerkontakt', motion:'Bewegungsmelder',
+  presence:'Anwesenheit', water_leak:'Wassermelder', smoke:'Rauchmelder',
+  co2:'CO2-Sensor', light_level:'Lichtsensor', power_meter:'Strommesser',
+  energy:'Energiezaehler', battery:'Batterie', outlet:'Steckdose',
+  valve:'Ventil', fan:'Luefter', irrigation:'Bewaesserung',
+  garage_door:'Garagentor', water_temp:'Wassertemperatur', pressure:'Luftdruck',
+  vibration:'Vibration',
+};
+
+function _allRoles() {
+  const roles = {};
+  // Standard
+  for (const [k,v] of Object.entries(ENTITY_ROLES_DEFAULT)) roles[k] = v;
+  // Custom ueberschreibt
+  for (const [k,v] of Object.entries(ENTITY_ROLES_CUSTOM)) roles[k] = v;
+  return roles;
+}
+
+function _roleLabel(roleId) {
+  if (!roleId) return '';
+  const roles = _allRoles();
+  if (roles[roleId]) return roles[roleId].label || roleId;
+  return _ROLE_LABELS[roleId] || roleId;
+}
+
+function _roleOptionsHtml(selected) {
+  const roles = _allRoles();
+  let html = `<option value=""${!selected?' selected':''}>-- keine --</option>`;
+  for (const [k, v] of Object.entries(roles)) {
+    const label = (v.icon ? v.icon + ' ' : '') + (v.label || k);
+    html += `<option value="${esc(k)}"${k===selected?' selected':''}>${esc(label)}</option>`;
+  }
+  return html;
+}
+
 async function loadEntities() {
   try {
-    const data = await api('/api/ui/entities');
-    ALL_ENTITIES = data.entities || [];
+    // Parallel laden: Entities + Annotations + Roles
+    const [entData, annData, roleData] = await Promise.all([
+      api('/api/ui/entities'),
+      api('/api/ui/entity-annotations'),
+      api('/api/ui/entity-roles'),
+    ]);
+    ALL_ENTITIES = entData.entities || [];
+    ENTITY_ANNOTATIONS = annData.annotations || {};
+    ENTITY_ROLES_DEFAULT = roleData.default_roles || {};
+    ENTITY_ROLES_CUSTOM = roleData.custom_roles || {};
+
+    // Domain-Filter
     const domains = [...new Set(ALL_ENTITIES.map(e => e.domain))].sort();
     const sel = document.getElementById('entityDomainFilter');
     sel.innerHTML = `<option value="">Alle Domains (${ALL_ENTITIES.length})</option>`;
@@ -4145,25 +4393,318 @@ async function loadEntities() {
       const c = ALL_ENTITIES.filter(e => e.domain === d).length;
       sel.innerHTML += `<option value="${esc(d)}">${esc(d)} (${c})</option>`;
     }
+
+    // Batch-Toolbar Rollen-Dropdown
+    const batchSel = document.getElementById('annBatchRole');
+    if (batchSel) batchSel.innerHTML = `<option value="">Rolle zuweisen...</option>` + Object.entries(_allRoles()).map(([k,v]) =>
+      `<option value="${esc(k)}">${esc((v.icon||'') + ' ' + (v.label||k))}</option>`).join('');
+
+    // Eigene Rollen rendern
+    _renderCustomRoles();
+
+    _annBatchSelected.clear();
     filterEntities();
-  } catch(e) { console.error('Entities fail:', e); }
+  } catch(e) { console.error('Entities fail:', e); toast('Fehler beim Laden: ' + e.message, 'error'); }
+}
+
+function _renderCustomRoles() {
+  // Standard-Rollen als Chips
+  const chipsEl = document.getElementById('annDefaultRolesChips');
+  if (chipsEl) {
+    chipsEl.innerHTML = Object.entries(ENTITY_ROLES_DEFAULT).map(([k,v]) =>
+      `<span class="role-chip">${esc((v.icon||'') + ' ' + (v.label||k))}</span>`
+    ).join('');
+  }
+  // Eigene Rollen als editierbare Zeilen
+  const editorEl = document.getElementById('annCustomRolesEditor');
+  if (editorEl) {
+    const entries = Object.entries(ENTITY_ROLES_CUSTOM);
+    editorEl.innerHTML = entries.map(([k,v]) => `
+      <div class="cr-row" data-cr-id="${esc(k)}">
+        <input type="text" value="${esc(k)}" placeholder="rollen_id" data-cr-field="id" onchange="scheduleCustomRoleSave()">
+        <input type="text" value="${esc(v.label||'')}" placeholder="Label" data-cr-field="label" onchange="scheduleCustomRoleSave()">
+        <input type="text" value="${esc(v.icon||'')}" placeholder="Icon" style="width:50px" data-cr-field="icon" onchange="scheduleCustomRoleSave()">
+        <button class="btn btn-secondary btn-sm" onclick="this.closest('.cr-row').remove();scheduleCustomRoleSave();">x</button>
+      </div>`).join('');
+  }
+}
+
+function addCustomRole() {
+  const editorEl = document.getElementById('annCustomRolesEditor');
+  if (!editorEl) return;
+  const row = document.createElement('div');
+  row.className = 'cr-row';
+  row.innerHTML = `
+    <input type="text" value="" placeholder="rollen_id" data-cr-field="id" onchange="scheduleCustomRoleSave()">
+    <input type="text" value="" placeholder="Label" data-cr-field="label" onchange="scheduleCustomRoleSave()">
+    <input type="text" value="" placeholder="Icon" style="width:50px" data-cr-field="icon" onchange="scheduleCustomRoleSave()">
+    <button class="btn btn-secondary btn-sm" onclick="this.closest('.cr-row').remove();scheduleCustomRoleSave();">x</button>`;
+  editorEl.appendChild(row);
+}
+
+function _collectCustomRoles() {
+  const roles = {};
+  document.querySelectorAll('#annCustomRolesEditor .cr-row').forEach(row => {
+    const id = (row.querySelector('[data-cr-field="id"]')?.value || '').trim().toLowerCase().replace(/[^a-z0-9_]/g,'');
+    const label = (row.querySelector('[data-cr-field="label"]')?.value || '').trim();
+    const icon = (row.querySelector('[data-cr-field="icon"]')?.value || '').trim();
+    if (id && label) roles[id] = { label, icon };
+  });
+  return roles;
+}
+
+function scheduleCustomRoleSave() {
+  if (_annSaveTimer) clearTimeout(_annSaveTimer);
+  const st = document.getElementById('annAutoSaveStatus');
+  if (st) st.textContent = 'Ungespeichert...';
+  _annSaveTimer = setTimeout(async () => {
+    try {
+      const custom = _collectCustomRoles();
+      await api('/api/ui/entity-roles', 'PUT', { custom_roles: custom });
+      ENTITY_ROLES_CUSTOM = custom;
+      if (st) { st.textContent = 'Gespeichert'; setTimeout(() => { if (st) st.textContent = ''; }, 2000); }
+    } catch(e) { toast('Rollen-Speichern fehlgeschlagen: ' + e.message, 'error'); }
+  }, 1500);
 }
 
 function filterEntities() {
-  const domain = document.getElementById('entityDomainFilter').value;
-  const search = document.getElementById('entitySearchInput').value.toLowerCase();
+  const domain = document.getElementById('entityDomainFilter')?.value || '';
+  const annFilter = document.getElementById('entityAnnotationFilter')?.value || '';
+  const search = (document.getElementById('entitySearchInput')?.value || '').toLowerCase();
   let filtered = ALL_ENTITIES;
   if (domain) filtered = filtered.filter(e => e.domain === domain);
-  if (search) filtered = filtered.filter(e => e.entity_id.toLowerCase().includes(search) || e.name.toLowerCase().includes(search));
-  const show = filtered.slice(0, 100);
+  if (search) filtered = filtered.filter(e =>
+    e.entity_id.toLowerCase().includes(search) ||
+    e.name.toLowerCase().includes(search) ||
+    (ENTITY_ANNOTATIONS[e.entity_id]?.description || '').toLowerCase().includes(search)
+  );
+  if (annFilter === 'annotated') filtered = filtered.filter(e => ENTITY_ANNOTATIONS[e.entity_id]?.role || ENTITY_ANNOTATIONS[e.entity_id]?.description);
+  else if (annFilter === 'unannotated') filtered = filtered.filter(e => !ENTITY_ANNOTATIONS[e.entity_id]?.role && !ENTITY_ANNOTATIONS[e.entity_id]?.description);
+  else if (annFilter === 'hidden') filtered = filtered.filter(e => ENTITY_ANNOTATIONS[e.entity_id]?.hidden);
+
+  // Annotierte zuerst
+  filtered.sort((a,b) => {
+    const aAnn = ENTITY_ANNOTATIONS[a.entity_id] ? 0 : 1;
+    const bAnn = ENTITY_ANNOTATIONS[b.entity_id] ? 0 : 1;
+    if (aAnn !== bAnn) return aAnn - bAnn;
+    return a.name.localeCompare(b.name);
+  });
+
+  const show = filtered.slice(0, 150);
   const c = document.getElementById('entityBrowser');
-  c.innerHTML = show.map(e => `
-    <div class="entity-item" onclick="navigator.clipboard?.writeText('${esc(e.entity_id)}');toast('${esc(e.entity_id)} kopiert')">
-      <span class="ename">${esc(e.name)}</span>
-      <span class="eid">${esc(e.entity_id)}</span>
-      <span style="color:var(--text-muted);font-size:11px;">${esc(e.state)}</span>
-    </div>`).join('');
-  if (filtered.length > 100) c.innerHTML += `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:11px;">...und ${filtered.length-100} weitere</div>`;
+  c.innerHTML = show.map(e => _renderEntityRow(e)).join('');
+  if (filtered.length > 150) c.innerHTML += `<div style="padding:10px;text-align:center;color:var(--text-muted);font-size:11px;">...und ${filtered.length-150} weitere</div>`;
+  _updateBatchBar();
+}
+
+function _renderEntityRow(e) {
+  const ann = ENTITY_ANNOTATIONS[e.entity_id] || {};
+  const hasAnn = ann.role || ann.description;
+  const roleBadge = ann.role ? `<span class="role-badge">${esc(_roleLabel(ann.role))}</span>` : '';
+  const hiddenBadge = ann.hidden ? `<span class="hidden-badge">versteckt</span>` : '';
+  const isChecked = _annBatchSelected.has(e.entity_id);
+  const cssId = e.entity_id.replace(/[^a-zA-Z0-9]/g, '_');
+
+  // Raum-Optionen aus Room-Profiles
+  const rooms = Object.keys(RP || {});
+  const roomOpts = `<option value="">-- Standard --</option>` +
+    rooms.map(r => `<option value="${esc(r)}"${ann.room===r?' selected':''}>${esc(r)}</option>`).join('');
+
+  return `
+    <div class="entity-item${hasAnn ? ' annotated' : ''}">
+      <input type="checkbox" class="ann-check" data-eid="${esc(e.entity_id)}" ${isChecked?'checked':''} onclick="event.stopPropagation();toggleBatchSelect('${esc(e.entity_id)}',this.checked)">
+      <div style="flex:1;min-width:0;cursor:pointer;" onclick="toggleEntityDetail('${cssId}')">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <span class="ename">${esc(e.name)}</span>
+          ${roleBadge}${hiddenBadge}
+          <span class="eid">${esc(e.entity_id)}</span>
+          <span style="color:var(--text-muted);font-size:10px;">${esc(e.state)}</span>
+        </div>
+      </div>
+      <div class="entity-detail" id="detail-${cssId}" style="display:none;">
+        <div class="form-group ann-full">
+          <label>Beschreibung</label>
+          <input type="text" data-ann-eid="${esc(e.entity_id)}" data-ann-field="description"
+                 value="${esc(ann.description || '')}" placeholder="Was macht dieses Geraet?"
+                 onchange="onAnnotationChange('${esc(e.entity_id)}')">
+        </div>
+        <div class="form-group">
+          <label>Rolle</label>
+          <select data-ann-eid="${esc(e.entity_id)}" data-ann-field="role"
+                  onchange="onAnnotationChange('${esc(e.entity_id)}')">
+            ${_roleOptionsHtml(ann.role || '')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Raum (Override)</label>
+          <select data-ann-eid="${esc(e.entity_id)}" data-ann-field="room"
+                  onchange="onAnnotationChange('${esc(e.entity_id)}')">
+            ${roomOpts}
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+          <label style="margin:0;">Verstecken</label>
+          <input type="checkbox" data-ann-eid="${esc(e.entity_id)}" data-ann-field="hidden"
+                 ${ann.hidden ? 'checked' : ''} onchange="onAnnotationChange('${esc(e.entity_id)}')">
+        </div>
+      </div>
+    </div>`;
+}
+
+function toggleEntityDetail(cssId) {
+  const el = document.getElementById('detail-' + cssId);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+function onAnnotationChange(entityId) {
+  // Sammle Annotation aus DOM
+  const ann = {};
+  document.querySelectorAll(`[data-ann-eid="${entityId}"]`).forEach(el => {
+    const field = el.dataset.annField;
+    if (field === 'hidden') ann[field] = el.checked;
+    else ann[field] = el.value;
+  });
+  // Nur nicht-leere Felder speichern (sparse)
+  const clean = {};
+  if (ann.description) clean.description = ann.description;
+  if (ann.role) clean.role = ann.role;
+  if (ann.room) clean.room = ann.room;
+  if (ann.hidden) clean.hidden = true;
+  if (Object.keys(clean).length > 0) ENTITY_ANNOTATIONS[entityId] = clean;
+  else delete ENTITY_ANNOTATIONS[entityId];
+
+  scheduleAnnotationSave();
+}
+
+function scheduleAnnotationSave() {
+  if (_annSaveTimer) clearTimeout(_annSaveTimer);
+  const st = document.getElementById('annAutoSaveStatus');
+  if (st) st.textContent = 'Ungespeichert...';
+  _annSaveTimer = setTimeout(async () => {
+    try {
+      await api('/api/ui/entity-annotations', 'PUT', { annotations: ENTITY_ANNOTATIONS });
+      if (st) { st.textContent = 'Gespeichert'; setTimeout(() => { if (st) st.textContent = ''; }, 2000); }
+    } catch(e) { toast('Annotations-Speichern fehlgeschlagen: ' + e.message, 'error'); }
+  }, 2000);
+}
+
+// Batch-Operationen
+function toggleBatchSelect(eid, checked) {
+  if (checked) _annBatchSelected.add(eid); else _annBatchSelected.delete(eid);
+  _updateBatchBar();
+}
+
+function _updateBatchBar() {
+  const bar = document.getElementById('annBatchBar');
+  const cnt = document.getElementById('annBatchCount');
+  if (!bar || !cnt) return;
+  if (_annBatchSelected.size > 0) {
+    bar.style.display = 'flex';
+    cnt.textContent = _annBatchSelected.size + ' ausgewaehlt';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function clearBatchSelection() {
+  _annBatchSelected.clear();
+  document.querySelectorAll('.ann-check').forEach(el => el.checked = false);
+  _updateBatchBar();
+}
+
+function batchSetRole() {
+  const roleId = document.getElementById('annBatchRole')?.value;
+  if (!roleId) { toast('Bitte Rolle auswaehlen', 'error'); return; }
+  for (const eid of _annBatchSelected) {
+    if (!ENTITY_ANNOTATIONS[eid]) ENTITY_ANNOTATIONS[eid] = {};
+    ENTITY_ANNOTATIONS[eid].role = roleId;
+  }
+  scheduleAnnotationSave();
+  filterEntities(); // Re-render
+  toast(`Rolle "${_roleLabel(roleId)}" fuer ${_annBatchSelected.size} Entities gesetzt`);
+}
+
+function batchSetHidden(hidden) {
+  for (const eid of _annBatchSelected) {
+    if (!ENTITY_ANNOTATIONS[eid]) ENTITY_ANNOTATIONS[eid] = {};
+    if (hidden) ENTITY_ANNOTATIONS[eid].hidden = true;
+    else delete ENTITY_ANNOTATIONS[eid].hidden;
+    // Cleanup leere Annotations
+    const ann = ENTITY_ANNOTATIONS[eid];
+    if (!ann.description && !ann.role && !ann.room && !ann.hidden) delete ENTITY_ANNOTATIONS[eid];
+  }
+  scheduleAnnotationSave();
+  filterEntities();
+  toast(`${_annBatchSelected.size} Entities ${hidden ? 'versteckt' : 'eingeblendet'}`);
+}
+
+// Auto-Erkennung
+async function discoverAnnotations() {
+  try {
+    const data = await api('/api/ui/entity-annotations/discover');
+    const suggestions = data.suggestions || [];
+    if (suggestions.length === 0) { toast('Keine neuen Vorschlaege gefunden'); return; }
+
+    // Modal/Inline anzeigen
+    const c = document.getElementById('entityBrowser');
+    const oldContent = c.innerHTML;
+    c.innerHTML = `
+      <div style="padding:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <strong>${suggestions.length} Vorschlaege gefunden</strong>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-primary btn-sm" onclick="acceptDiscoverAll()">Alle uebernehmen</button>
+            <button class="btn btn-secondary btn-sm" onclick="acceptDiscoverSelected()">Ausgewaehlte uebernehmen</button>
+            <button class="btn btn-secondary btn-sm" onclick="filterEntities()">Abbrechen</button>
+          </div>
+        </div>
+        <div class="ann-discover-list">
+          ${suggestions.map((s,i) => `
+            <div class="ann-discover-item">
+              <input type="checkbox" checked class="disc-check" data-idx="${i}">
+              <label>${esc(s.name)} <span style="color:var(--text-muted);font-size:10px;">${esc(s.entity_id)}</span></label>
+              <span class="role-badge">${esc(_roleLabel(s.suggested_role))}</span>
+              <span style="color:var(--text-muted);font-size:10px;">${esc(s.state)}</span>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    // Speichere suggestions global fuer accept-Funktionen
+    window._discoverSuggestions = suggestions;
+  } catch(e) { toast('Auto-Erkennung fehlgeschlagen: ' + e.message, 'error'); }
+}
+
+function acceptDiscoverAll() {
+  const suggestions = window._discoverSuggestions || [];
+  for (const s of suggestions) {
+    if (!ENTITY_ANNOTATIONS[s.entity_id]) ENTITY_ANNOTATIONS[s.entity_id] = {};
+    ENTITY_ANNOTATIONS[s.entity_id].role = s.suggested_role;
+    if (s.suggested_description && !ENTITY_ANNOTATIONS[s.entity_id].description) {
+      ENTITY_ANNOTATIONS[s.entity_id].description = s.suggested_description;
+    }
+  }
+  scheduleAnnotationSave();
+  filterEntities();
+  toast(`${suggestions.length} Annotations uebernommen`);
+}
+
+function acceptDiscoverSelected() {
+  const suggestions = window._discoverSuggestions || [];
+  let count = 0;
+  document.querySelectorAll('.disc-check:checked').forEach(el => {
+    const idx = parseInt(el.dataset.idx);
+    const s = suggestions[idx];
+    if (s) {
+      if (!ENTITY_ANNOTATIONS[s.entity_id]) ENTITY_ANNOTATIONS[s.entity_id] = {};
+      ENTITY_ANNOTATIONS[s.entity_id].role = s.suggested_role;
+      if (s.suggested_description && !ENTITY_ANNOTATIONS[s.entity_id].description) {
+        ENTITY_ANNOTATIONS[s.entity_id].description = s.suggested_description;
+      }
+      count++;
+    }
+  });
+  scheduleAnnotationSave();
+  filterEntities();
+  toast(`${count} Annotations uebernommen`);
 }
 
 // ---- Knowledge ----
@@ -5730,7 +6271,7 @@ function renderOpeningSensors(container) {
 function updateOpeningSensor(entityId, field, value) {
   if (!_openingSensors[entityId]) _openingSensors[entityId] = {type: 'window', heated: true};
   _openingSensors[entityId][field] = value;
-  saveOpeningSensors();
+  scheduleOpeningSensorSave();
   const container = document.getElementById('openingSensorsContainer');
   if (container) renderOpeningSensors(container);
 }
@@ -5742,10 +6283,36 @@ function removeOpeningSensor(entityId) {
   if (container) renderOpeningSensors(container);
 }
 
-async function saveOpeningSensors() {
+let _osSaveTimer = null;
+function scheduleOpeningSensorSave() {
+  if (_osSaveTimer) clearTimeout(_osSaveTimer);
+  const status = document.getElementById('autoSaveStatus');
+  if (status) { status.textContent = 'Ungespeichert...'; status.className = 'auto-save-status'; }
+  _osSaveTimer = setTimeout(() => _doSaveOpeningSensors(), 1500);
+}
+async function _doSaveOpeningSensors() {
+  _osSaveTimer = null;
+  const status = document.getElementById('autoSaveStatus');
+  if (status) { status.textContent = 'Speichert...'; status.className = 'auto-save-status saving'; }
   try {
     await api('/api/ui/opening-sensors', 'PUT', {entities: _openingSensors});
-  } catch (e) { toast('Fehler beim Speichern: ' + e.message, 'error'); }
+    if (status) { status.textContent = 'Gespeichert'; status.className = 'auto-save-status saved'; setTimeout(() => { if (status && !_osSaveTimer) status.textContent = ''; }, 3000); }
+  } catch (e) {
+    toast('Fehler beim Speichern: ' + e.message, 'error');
+    if (status) { status.textContent = 'Fehler!'; status.className = 'auto-save-status'; }
+  }
+}
+async function saveOpeningSensors() {
+  // Sofort-Save (fuer Loeschen/Hinzufuegen)
+  const status = document.getElementById('autoSaveStatus');
+  if (status) { status.textContent = 'Speichert...'; status.className = 'auto-save-status saving'; }
+  try {
+    await api('/api/ui/opening-sensors', 'PUT', {entities: _openingSensors});
+    if (status) { status.textContent = 'Gespeichert'; status.className = 'auto-save-status saved'; setTimeout(() => { if (status && !_osSaveTimer) status.textContent = ''; }, 3000); }
+  } catch (e) {
+    toast('Fehler beim Speichern: ' + e.message, 'error');
+    if (status) { status.textContent = 'Fehler!'; status.className = 'auto-save-status'; }
+  }
 }
 
 function addOpeningSensor() {
@@ -5833,12 +6400,11 @@ function renderLights() {
     '<div id="circadianCurveEditor"></div>'
   ) +
   sectionWrap('&#127916;', 'Szenen-Uebergaenge',
-    fInfo('Uebergangszeiten wenn Jarvis Licht-Szenen aktiviert. Laengere Zeiten = sanftere Uebergaenge.') +
+    fInfo('Uebergangszeiten pro Szene konfigurierst du zentral im Szenen-Tab. Hier nur der globale Standard-Uebergang.') +
     fRange('narration.default_transition', 'Standard-Uebergang (Sek)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
-    fRange('narration.scene_transitions.filmabend', 'Filmabend (Sek)', 1, 15, 1, {1:'1s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
-    fRange('narration.scene_transitions.gute_nacht', 'Gute Nacht (Sek)', 1, 20, 1, {1:'1s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s',20:'20s'}) +
-    fRange('narration.scene_transitions.aufwachen', 'Aufwachen (Sek)', 1, 20, 1, {1:'1s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s',20:'20s'}) +
-    fRange('narration.scene_transitions.gemuetlich', 'Gemuetlich (Sek)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',4:'4s',5:'5s',7:'7s',10:'10s',15:'15s'})
+    `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
+      <span class="info-icon">&#127916;</span>Einzelne Szenen-Uebergaenge verwaltest du im <strong>Szenen</strong>-Tab. Klicke hier.
+    </div>`
   );
 }
 
@@ -6148,6 +6714,106 @@ function renderSeasonalEditor() {
     html += '</div>';
   }
   return html;
+}
+
+// ── Fernbedienung Tab (Harmony etc.) ──────────────────────────
+function renderRemote() {
+  const cfg = getPath(S, 'remote') || {};
+  const remotes = cfg.remotes || {};
+  const entries = Object.entries(remotes);
+
+  let remoteCards = '';
+  for (const [key, rcfg] of entries) {
+    const eid = rcfg.entity_id || '';
+    const name = rcfg.name || key;
+    const activities = rcfg.activities || {};
+    const actEntries = Object.entries(activities);
+
+    let actRows = actEntries.map(([alias, harmony]) =>
+      `<div class="kv-row">
+        <input type="text" class="kv-key" value="${esc(alias)}" placeholder="Alias (z.B. fernsehen)">
+        <span class="kv-arrow">&#8594;</span>
+        <input type="text" class="kv-val" value="${esc(harmony)}" placeholder="Harmony-Name (z.B. Watch TV)">
+        <button class="kv-rm" onclick="rmRemoteActivity('${esc(key)}',this)" title="Entfernen">&#10005;</button>
+      </div>`
+    ).join('');
+
+    remoteCards += `<div class="s-section" style="margin-bottom:14px;">
+      <div class="s-section-hdr" onclick="toggleSec(this)">
+        <h3>&#128261; ${esc(name)}</h3><span class="arrow">&#9660;</span>
+      </div>
+      <div class="s-section-body">
+        <div class="form-group">
+          <label>NAME</label>
+          <input type="text" data-path="remote.remotes.${esc(key)}.name" value="${esc(name)}">
+        </div>
+        <div class="form-group">
+          <label>ENTITY-ID (HOME ASSISTANT)</label>
+          <input type="text" data-path="remote.remotes.${esc(key)}.entity_id" value="${esc(eid)}" placeholder="remote.harmony_wohnzimmer" style="font-family:var(--mono);font-size:11px;">
+        </div>
+        <div class="form-group">
+          <label>AKTIVITAETEN-ALIASE</label>
+          <div class="info-box" style="margin-bottom:8px;font-size:11px;">
+            <span class="info-icon">&#128161;</span>Links: deutscher Name (fuer Sprachsteuerung). Rechts: exakter Harmony-Aktivitaetsname.
+          </div>
+          <div class="kv-editor" data-path="remote.remotes.${esc(key)}.activities">
+            ${actRows}
+            <button class="kv-add" onclick="kvAdd(this,'remote.remotes.${esc(key)}.activities','Alias','Harmony-Name')">+ Aktivitaet</button>
+          </div>
+        </div>
+        <button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);margin-top:8px;font-size:11px;" onclick="removeRemoteEntry('${esc(key)}')">Fernbedienung entfernen</button>
+      </div>
+    </div>`;
+  }
+
+  if (!remoteCards) {
+    remoteCards = '<div style="color:var(--text-muted);font-size:12px;padding:12px;">Keine Fernbedienungen konfiguriert. Fuege eine hinzu.</div>';
+  }
+
+  return sectionWrap('&#128261;', 'Fernbedienungen (Harmony)',
+    fInfo('Konfiguriere deine Logitech Harmony Fernbedienungen. Jarvis kann Aktivitaeten starten (z.B. "Fernseher an"), IR-Befehle senden und den aktuellen Status abfragen. Aktivitaeten werden per Sprachbefehl ueber den deutschen Alias angesprochen: "Jarvis, starte Fernsehen."') +
+    fToggle('remote.enabled', 'Fernbedienung-Steuerung aktiv') +
+    remoteCards +
+    '<button class="btn btn-sm" onclick="addRemoteEntry()" style="margin-top:8px;">+ Fernbedienung hinzufuegen</button>'
+  ) +
+  sectionWrap('&#127916;', 'Szenen-Integration',
+    fInfo('Wenn eine Szene eine Harmony-Aktivitaet enthaelt (z.B. Filmabend → "Watch TV"), startet Jarvis automatisch die passende Aktivitaet. Konfiguriere die Szenen-Zuordnung im Szenen-Tab.') +
+    `<div class="info-box" style="cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
+      <span class="info-icon">&#127916;</span>Szenen konfigurieren im <strong>Szenen</strong>-Tab. Klicke hier.
+    </div>`
+  ) +
+  sectionWrap('&#128218;', 'Sprachbefehle',
+    fInfo('So steuerst du die Fernbedienung per Sprache:') +
+    `<div style="font-size:12px;line-height:1.9;color:var(--text-secondary);padding:4px 8px;">
+      <div><code>"Jarvis, schalte den Fernseher ein"</code> — Startet die Standard-Aktivitaet</div>
+      <div><code>"Jarvis, starte Fernsehen"</code> — Startet eine benannte Aktivitaet</div>
+      <div><code>"Jarvis, mach den Fernseher aus"</code> — Schaltet alles aus (PowerOff)</div>
+      <div><code>"Jarvis, mach lauter / leiser"</code> — Sendet Volume-Befehle</div>
+      <div><code>"Jarvis, was laeuft gerade?"</code> — Zeigt aktive Aktivitaet</div>
+      <div><code>"Jarvis, welche Aktivitaeten hat die Fernbedienung?"</code> — Listet alle Optionen</div>
+    </div>`
+  );
+}
+
+function addRemoteEntry() {
+  const key = 'remote_' + Date.now();
+  setPath(S, `remote.remotes.${key}`, {entity_id: '', name: 'Neue Fernbedienung', activities: {aus: 'PowerOff'}});
+  scheduleAutoSave();
+  renderCurrentTab();
+}
+
+function removeRemoteEntry(key) {
+  const remotes = getPath(S, 'remote.remotes') || {};
+  delete remotes[key];
+  setPath(S, 'remote.remotes', remotes);
+  scheduleAutoSave();
+  renderCurrentTab();
+}
+
+function rmRemoteActivity(remoteKey, btn) {
+  btn.closest('.kv-row').remove();
+  const editor = document.querySelector(`.kv-editor[data-path="remote.remotes.${remoteKey}.activities"]`);
+  if (editor) kvSync(editor, `remote.remotes.${remoteKey}.activities`);
 }
 
 // ── Saugroboter Tab ──────────────────────────────────────

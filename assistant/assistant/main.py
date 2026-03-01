@@ -3476,6 +3476,136 @@ async def ui_discover_opening_sensors(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+# ── Entity-Annotations API ─────────────────────────────────────────
+
+@app.get("/api/ui/entity-annotations")
+async def ui_get_entity_annotations(token: str = ""):
+    """Entity-Annotationen aus settings.yaml lesen."""
+    _check_token(token)
+    annotations = yaml_config.get("entity_annotations", {}) or {}
+    return {"annotations": annotations, "count": len(annotations)}
+
+
+@app.put("/api/ui/entity-annotations")
+async def ui_set_entity_annotations(request: Request, token: str = ""):
+    """Entity-Annotationen in settings.yaml speichern.
+
+    Dynamische Rollen-Validierung: Standard-Rollen + eigene aus entity_roles.
+    """
+    _check_token(token)
+    data = await request.json()
+    annotations = data.get("annotations", {})
+
+    # Dynamische Validierung: Standard + eigene Rollen
+    from .function_calling import get_valid_roles
+    valid_roles = get_valid_roles() | {""}
+    for eid, ann in annotations.items():
+        role = ann.get("role", "")
+        if role and role not in valid_roles:
+            raise HTTPException(status_code=400, detail=f"Unbekannte Rolle: {role}")
+
+    try:
+        def _read():
+            with open(SETTINGS_YAML_PATH) as f:
+                return yaml.safe_load(f) or {}
+        config = await asyncio.to_thread(_read)
+
+        config["entity_annotations"] = annotations
+
+        def _write():
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_write)
+
+        yaml_config["entity_annotations"] = annotations
+
+        return {"success": True, "count": len(annotations)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/entity-annotations/discover")
+async def ui_discover_entity_annotations(token: str = ""):
+    """Auto-Erkennung: Schlaegt Annotationen vor basierend auf HA device_class."""
+    _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        existing = yaml_config.get("entity_annotations", {}) or {}
+        from .function_calling import auto_detect_role
+        suggestions = []
+
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if eid in existing:
+                continue
+            attrs = s.get("attributes", {})
+            device_class = attrs.get("device_class", "")
+            unit = attrs.get("unit_of_measurement", "")
+            friendly = attrs.get("friendly_name", "")
+            domain = eid.split(".")[0] if "." in eid else ""
+
+            role = auto_detect_role(domain, device_class, unit, eid)
+            if not role:
+                continue
+
+            suggestions.append({
+                "entity_id": eid,
+                "name": friendly or eid,
+                "state": s.get("state", ""),
+                "device_class": device_class,
+                "unit": unit,
+                "domain": domain,
+                "suggested_role": role,
+                "suggested_description": friendly if friendly != eid else "",
+            })
+
+        suggestions.sort(key=lambda x: (x["suggested_role"], x["name"]))
+        return {"suggestions": suggestions, "count": len(suggestions)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.get("/api/ui/entity-roles")
+async def ui_get_entity_roles(token: str = ""):
+    """Standard-Rollen + eigene Rollen laden."""
+    _check_token(token)
+    from .function_calling import _DEFAULT_ROLES_DICT
+    custom = yaml_config.get("entity_roles", {}) or {}
+    return {"default_roles": _DEFAULT_ROLES_DICT, "custom_roles": custom}
+
+
+@app.put("/api/ui/entity-roles")
+async def ui_set_entity_roles(request: Request, token: str = ""):
+    """Eigene Rollen in settings.yaml speichern."""
+    _check_token(token)
+    data = await request.json()
+    custom = data.get("custom_roles", {})
+
+    # Validierung: Jede Rolle braucht mindestens ein label
+    for role_id, role_def in custom.items():
+        if not isinstance(role_def, dict) or not role_def.get("label"):
+            raise HTTPException(status_code=400, detail=f"Rolle '{role_id}' braucht mindestens ein label")
+
+    try:
+        def _read():
+            with open(SETTINGS_YAML_PATH) as f:
+                return yaml.safe_load(f) or {}
+        config = await asyncio.to_thread(_read)
+
+        config["entity_roles"] = custom
+
+        def _write():
+            with open(SETTINGS_YAML_PATH, "w") as f:
+                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_write)
+
+        yaml_config["entity_roles"] = custom
+
+        return {"success": True, "count": len(custom)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 # ── Room-Profiles API (room_profiles.yaml) ─────────────────────────
 ROOM_PROFILES_YAML_PATH = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
 

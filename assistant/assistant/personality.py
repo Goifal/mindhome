@@ -2126,6 +2126,26 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             if "security" in house:
                 lines.append(f"- Sicherheit: {house['security']}")
 
+            # Annotierte Sensoren (Fenster, Bewegung, Temperatur etc.)
+            if house.get("annotated_sensors"):
+                lines.append(f"- Sensoren: {', '.join(house['annotated_sensors'][:15])}")
+
+            # Schloesser
+            if house.get("locks"):
+                lines.append(f"- Schloesser: {', '.join(house['locks'])}")
+
+            # Medien (aktuell abspielend)
+            if house.get("media"):
+                lines.append(f"- Medien: {', '.join(house['media'][:5])}")
+
+            # Fernbedienungen (Harmony etc.)
+            if house.get("remotes"):
+                lines.append(f"- Fernbedienungen: {', '.join(house['remotes'][:3])}")
+
+            # Energie-Sensoren
+            if house.get("energy"):
+                lines.append(f"- Energie: {', '.join(house['energy'][:5])}")
+
         # Warnungen immer
         if "alerts" in context and context["alerts"]:
             for alert in context["alerts"]:

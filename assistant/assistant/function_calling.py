@@ -194,6 +194,161 @@ def get_opening_sensor_config(entity_id: str) -> dict:
     return entities.get(entity_id, {})
 
 
+# --- Entity-Annotations: Beschreibungen + Rollen fuer Sensoren/Aktoren ---
+
+# Standard-Rollen (vordefiniert, User kann eigene in entity_roles hinzufuegen)
+_DEFAULT_ROLES = {
+    "indoor_temp", "outdoor_temp", "humidity", "window_contact", "door_contact",
+    "motion", "presence", "water_leak", "smoke", "co2", "light_level",
+    "power_meter", "energy", "battery", "outlet", "valve", "fan",
+    "irrigation", "garage_door", "water_temp", "pressure", "vibration",
+}
+
+_DEFAULT_ROLES_DICT = {
+    "indoor_temp":    {"label": "Raumtemperatur", "icon": "\U0001f321\ufe0f"},
+    "outdoor_temp":   {"label": "Aussentemperatur", "icon": "\U0001f324\ufe0f"},
+    "humidity":       {"label": "Luftfeuchtigkeit", "icon": "\U0001f4a7"},
+    "window_contact": {"label": "Fensterkontakt", "icon": "\U0001fa9f"},
+    "door_contact":   {"label": "Tuerkontakt", "icon": "\U0001f6aa"},
+    "motion":         {"label": "Bewegungsmelder", "icon": "\U0001f3c3"},
+    "presence":       {"label": "Anwesenheit", "icon": "\U0001f464"},
+    "water_leak":     {"label": "Wassermelder", "icon": "\U0001f6b0"},
+    "smoke":          {"label": "Rauchmelder", "icon": "\U0001f525"},
+    "co2":            {"label": "CO2-Sensor", "icon": "\U0001f32c\ufe0f"},
+    "light_level":    {"label": "Lichtsensor", "icon": "\u2600\ufe0f"},
+    "power_meter":    {"label": "Strommesser", "icon": "\u26a1"},
+    "energy":         {"label": "Energiezaehler", "icon": "\U0001f4ca"},
+    "battery":        {"label": "Batterie", "icon": "\U0001f50b"},
+    "outlet":         {"label": "Steckdose", "icon": "\U0001f50c"},
+    "valve":          {"label": "Ventil", "icon": "\U0001f527"},
+    "fan":            {"label": "Luefter", "icon": "\U0001f300"},
+    "irrigation":     {"label": "Bewaesserung", "icon": "\U0001f331"},
+    "garage_door":    {"label": "Garagentor", "icon": "\U0001f3e0"},
+    "water_temp":     {"label": "Wassertemperatur", "icon": "\U0001f30a"},
+    "pressure":       {"label": "Luftdruck", "icon": "\U0001f4a8"},
+    "vibration":      {"label": "Vibration", "icon": "\U0001f4f3"},
+}
+
+# Auto-Erkennung: device_class → role
+_DEVICE_CLASS_TO_ROLE = {
+    "temperature": "indoor_temp",
+    "humidity": "humidity",
+    "motion": "motion",
+    "occupancy": "presence",
+    "window": "window_contact",
+    "door": "door_contact",
+    "moisture": "water_leak",
+    "smoke": "smoke",
+    "co2": "co2",
+    "illuminance": "light_level",
+    "power": "power_meter",
+    "energy": "energy",
+    "battery": "battery",
+    "gas": "smoke",
+    "opening": "window_contact",
+    "pressure": "pressure",
+    "vibration": "vibration",
+}
+
+_OUTDOOR_KEYWORDS = ("aussen", "outdoor", "balkon", "garten", "terrasse", "draussen", "exterior")
+_WATER_TEMP_KEYWORDS = ("wasser", "water", "boiler", "pool")
+
+# Role-Keywords fuer natuerliche Sprache → Role-Matching
+_ROLE_KEYWORDS = {
+    "outdoor_temp": ["aussen", "draussen", "outdoor", "balkon", "aussentemperatur"],
+    "indoor_temp": ["innen", "raum", "drinnen", "raumtemperatur", "zimmertemperatur"],
+    "window_contact": ["fenster", "window"],
+    "door_contact": ["tuer", "tuerkontakt", "door"],
+    "motion": ["bewegung", "motion"],
+    "water_leak": ["wasser", "leck", "wasserleck"],
+    "smoke": ["rauch", "rauchmelder"],
+    "humidity": ["feuchtigkeit", "feuchte", "luftfeuchte"],
+    "co2": ["co2", "kohlendioxid"],
+    "battery": ["batterie", "akku"],
+    "power_meter": ["strom", "verbrauch", "leistung", "watt"],
+    "energy": ["energie", "kwh"],
+}
+
+
+def get_entity_annotation(entity_id: str) -> dict:
+    """Liefert die Annotation fuer eine Entity aus settings.yaml.
+
+    Returns dict mit keys: description, role, room, hidden.
+    Returns leeres dict wenn keine Annotation existiert.
+    """
+    annotations = yaml_config.get("entity_annotations", {}) or {}
+    return annotations.get(entity_id, {})
+
+
+def get_all_annotations() -> dict:
+    """Liefert alle Entity-Annotations aus settings.yaml."""
+    return yaml_config.get("entity_annotations", {}) or {}
+
+
+def is_entity_hidden(entity_id: str) -> bool:
+    """Prueft ob eine Entity als hidden markiert ist (vom LLM-Kontext ausgeschlossen)."""
+    ann = get_entity_annotation(entity_id)
+    return bool(ann.get("hidden", False))
+
+
+def get_all_roles() -> dict:
+    """Liefert Standard-Rollen + eigene Rollen. Eigene ueberschreiben Standard."""
+    roles = dict(_DEFAULT_ROLES_DICT)
+    custom = yaml_config.get("entity_roles", {}) or {}
+    roles.update(custom)
+    return roles
+
+
+def get_valid_roles() -> set:
+    """Liefert alle gueltigen Rollen-IDs (Standard + eigene)."""
+    custom_roles = set((yaml_config.get("entity_roles", {}) or {}).keys())
+    return _DEFAULT_ROLES | custom_roles
+
+
+def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) -> str:
+    """Erkennt die Rolle einer Entity aus HA-Attributen."""
+    lower_eid = entity_id.lower()
+
+    if domain == "binary_sensor":
+        return _DEVICE_CLASS_TO_ROLE.get(device_class, "")
+
+    if domain == "sensor":
+        if device_class == "temperature" or unit in ("\u00b0C", "\u00b0F"):
+            if any(kw in lower_eid for kw in _OUTDOOR_KEYWORDS):
+                return "outdoor_temp"
+            if any(kw in lower_eid for kw in _WATER_TEMP_KEYWORDS):
+                return "water_temp"
+            return "indoor_temp"
+        if device_class == "humidity":
+            return "humidity"
+        if device_class == "co2" or (unit == "ppm" and "co2" in lower_eid):
+            return "co2"
+        if device_class == "pressure" or unit in ("hPa", "mbar"):
+            return "pressure"
+        if device_class == "illuminance" or unit in ("lx", "lux"):
+            return "light_level"
+        if device_class == "power" or unit in ("W", "kW"):
+            return "power_meter"
+        if device_class == "energy" or unit in ("kWh", "Wh"):
+            return "energy"
+        if device_class == "battery":
+            return "battery"
+        return _DEVICE_CLASS_TO_ROLE.get(device_class, "")
+
+    if domain == "switch":
+        if device_class == "outlet":
+            return "outlet"
+        if any(kw in lower_eid for kw in ("ventilat", "lueft", "fan")):
+            return "fan"
+        if any(kw in lower_eid for kw in ("bewaesser", "irrigat", "sprinkl")):
+            return "irrigation"
+        if any(kw in lower_eid for kw in ("ventil", "valve")):
+            return "valve"
+        return "outlet"
+
+    return ""
+
+
 def get_opening_type(entity_id: str, state: dict) -> str:
     """Bestimmt den Typ eines Oeffnungs-Sensors: window, door, oder gate.
 
@@ -280,22 +435,61 @@ async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
     lights: list[str] = []
     switches: list[str] = []
     covers: list[str] = []
+    sensors: list[str] = []
+    binary_sensors: list[str] = []
+    scenes: list[str] = []
+
+    annotations = get_all_annotations()
+    all_roles = get_all_roles()
 
     for state in states:
         eid = state.get("entity_id", "")
-        friendly = state.get("attributes", {}).get("friendly_name", "")
+        attrs = state.get("attributes", {})
+        friendly = attrs.get("friendly_name", "")
         if "." not in eid:
             continue
         domain, name = eid.split(".", 1)
 
+        # Hidden-Entities ueberspringen
+        if is_entity_hidden(eid):
+            continue
+
+        # Annotation-Hint erzeugen (Beschreibung/Rolle an den Eintrag anhaengen)
+        ann = annotations.get(eid, {})
+        ann_hint = ""
+        if ann.get("description"):
+            ann_hint = f" [{ann['description'][:40]}]"
+        elif ann.get("role"):
+            role_label = all_roles.get(ann["role"], {}).get("label", ann["role"])
+            ann_hint = f" [{role_label}]"
+
         if domain == "light":
-            lights.append(f"{name} ({friendly})" if friendly else name)
-            # Raumnamen aus Entity-IDs extrahieren (best-effort)
+            entry = f"{name} ({friendly})" if friendly else name
+            lights.append(f"{entry}{ann_hint}" if ann_hint else entry)
             rooms.add(name)
         elif domain == "switch":
-            switches.append(f"{name} ({friendly})" if friendly else name)
+            entry = f"{name} ({friendly})" if friendly else name
+            switches.append(f"{entry}{ann_hint}" if ann_hint else entry)
         elif domain == "cover":
-            covers.append(f"{name} ({friendly})" if friendly else name)
+            entry = f"{name} ({friendly})" if friendly else name
+            covers.append(f"{entry}{ann_hint}" if ann_hint else entry)
+        elif domain == "scene":
+            scenes.append(f"{name} ({friendly})" if friendly else name)
+        elif domain in ("sensor", "binary_sensor"):
+            # Sensor/Binary-Sensor: Nur annotierte oder auto-erkannte aufnehmen
+            device_class = attrs.get("device_class", "")
+            unit = attrs.get("unit_of_measurement", "")
+            role = ann.get("role", "")
+            if not role:
+                role = auto_detect_role(domain, device_class, unit, eid)
+            if role:
+                role_label = all_roles.get(role, {}).get("label", role)
+                desc = ann.get("description", friendly or name)
+                entry = f"{name} ({desc}) [{role_label}]"
+                if domain == "sensor":
+                    sensors.append(entry)
+                else:
+                    binary_sensors.append(entry)
 
     # Config-Raeume immer hinzufuegen
     for r in _get_config_rooms():
@@ -309,11 +503,16 @@ async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
         "lights": sorted(lights),
         "switches": sorted(switches),
         "covers": sorted(covers),
+        "sensors": sorted(sensors),
+        "binary_sensors": sorted(binary_sensors),
+        "scenes": sorted(scenes),
     }
     _entity_catalog_ts = time.time()
     logger.info(
-        "Entity-Katalog aktualisiert: %d rooms, %d lights, %d switches, %d covers",
+        "Entity-Katalog aktualisiert: %d rooms, %d lights, %d switches, %d covers, "
+        "%d sensors, %d binary_sensors, %d scenes",
         len(rooms), len(lights), len(switches), len(covers),
+        len(sensors), len(binary_sensors), len(scenes),
     )
 
 
@@ -344,7 +543,7 @@ def _inject_entity_hints(tool: dict) -> dict:
     if rooms and room_prop:
         needs_copy = True
 
-    # --- Entity-Hints (Switches, Covers, Lights) ---
+    # --- Entity-Hints (Switches, Covers, Lights, Sensors, Scenes) ---
     entity_hint = ""
     _ENTITY_MAP = {
         "set_switch": "switches",
@@ -353,7 +552,15 @@ def _inject_entity_hints(tool: dict) -> dict:
         "get_covers": "covers",
         "set_light": "lights",
         "get_lights": "lights",
+        "activate_scene": "scenes",
     }
+    # get_entity_state bekommt Sensoren + Binary-Sensoren kombiniert
+    if fname == "get_entity_state":
+        combined = (_entity_catalog.get("sensors", []) +
+                    _entity_catalog.get("binary_sensors", []))
+        if combined:
+            entity_hint = ", ".join(combined[:30])
+            needs_copy = True
     catalog_key = _ENTITY_MAP.get(fname)
     if catalog_key and _entity_catalog.get(catalog_key):
         entities = _entity_catalog[catalog_key]
@@ -1789,6 +1996,62 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    # ── Fernbedienung (Harmony etc.) ──────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "remote_control",
+            "description": "Fernbedienung steuern (Logitech Harmony etc.). Kann Aktivitaeten starten/stoppen und IR-Befehle senden. Beispiele: 'Schalte den Fernseher ein' → activity='Fernsehen', 'Stell auf ARD um' → command='InputHdmi1' oder device+command, 'Mach alles aus' → action='off'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "remote": {
+                        "type": "string",
+                        "description": "Name der Fernbedienung oder Raum (z.B. 'wohnzimmer', 'schlafzimmer'). Optional wenn nur eine Fernbedienung konfiguriert ist.",
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["on", "off", "activity", "command"],
+                        "description": "on=einschalten (optional mit activity), off=alles ausschalten, activity=Aktivitaet wechseln, command=IR-Befehl senden.",
+                    },
+                    "activity": {
+                        "type": "string",
+                        "description": "Name der Harmony-Aktivitaet (z.B. 'Fernsehen', 'Watch TV', 'Musik hoeren', 'Netflix'). Nur bei action='on' oder 'activity'.",
+                    },
+                    "command": {
+                        "type": "string",
+                        "description": "IR-Befehl (z.B. 'VolumeUp', 'VolumeDown', 'Mute', 'ChannelUp', 'ChannelDown', 'Play', 'Pause', 'InputHdmi1'). Nur bei action='command'.",
+                    },
+                    "device": {
+                        "type": "string",
+                        "description": "Zielgeraet fuer den IR-Befehl (z.B. 'Samsung TV', 'Yamaha Receiver'). Optional — ohne device wird der Befehl an die aktive Aktivitaet gesendet.",
+                    },
+                    "num_repeats": {
+                        "type": "integer",
+                        "description": "Befehl mehrfach senden (z.B. 5x VolumeUp). Standard: 1.",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_remotes",
+            "description": "Zeigt alle Fernbedienungen mit aktuellem Status, aktiver Aktivitaet und verfuegbaren Aktivitaeten/Geraeten. Nutze dies wenn der User fragt was die Fernbedienung kann, welche Aktivitaeten es gibt oder was gerade laeuft.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "remote": {
+                        "type": "string",
+                        "description": "Name/Raum zum Filtern (optional)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -1858,6 +2121,7 @@ class FunctionExecutor:
         "manage_protocol", "recommend_music", "manage_visitor",
         "set_vacuum", "get_vacuum",
         "manage_repair",
+        "remote_control", "get_remotes",
     })
 
     # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
@@ -3686,6 +3950,15 @@ class FunctionExecutor:
     async def _exec_get_entity_state(self, args: dict) -> dict:
         entity_id = args["entity_id"]
         state = await self.ha.get_state(entity_id)
+
+        # Fallback: Fuzzy-Match wenn exakter ID nicht gefunden
+        if not state and "." in entity_id:
+            domain, search = entity_id.split(".", 1)
+            found = await self._find_entity(domain, search)
+            if found:
+                state = await self.ha.get_state(found)
+                entity_id = found
+
         if not state:
             return {"success": False, "message": f"Entity '{entity_id}' nicht gefunden"}
 
@@ -3694,9 +3967,19 @@ class FunctionExecutor:
         friendly_name = attrs.get("friendly_name", entity_id)
         unit = attrs.get("unit_of_measurement", "")
 
-        display = f"{friendly_name}: {current}"
+        # Annotation-Beschreibung in Antwort einbauen
+        annotation = get_entity_annotation(entity_id)
+        desc = annotation.get("description", "")
+        role = annotation.get("role", "")
+
+        label = desc or friendly_name
+        display = f"{label}: {current}"
         if unit:
             display += f" {unit}"
+        if role:
+            all_roles = get_all_roles()
+            role_label = all_roles.get(role, {}).get("label", role)
+            display += f" (Rolle: {role_label})"
 
         return {"success": True, "message": display, "state": current, "attributes": attrs}
 
@@ -4580,6 +4863,32 @@ class FunctionExecutor:
                           or dev_room in search_norm or dev_name in search_norm):
                         matched = True
 
+                    # Annotation-Bonus: Role/Description match
+                    annotation = get_entity_annotation(eid)
+                    annotation_bonus = 0
+                    if annotation:
+                        if annotation.get("hidden"):
+                            continue
+                        ann_role = annotation.get("role", "")
+                        ann_desc = self._normalize_name(annotation.get("description", ""))
+                        # Role-Keywords matchen
+                        if ann_role:
+                            role_kws = _ROLE_KEYWORDS.get(ann_role, [])
+                            if any(kw in search_norm for kw in role_kws):
+                                annotation_bonus = -800
+                                matched = True
+                        # Beschreibung matchen
+                        if ann_desc and search_norm in ann_desc:
+                            annotation_bonus = min(annotation_bonus, -200)
+                            matched = True
+                        # Raum-Override aus Annotation
+                        ann_room = annotation.get("room", "")
+                        if ann_room:
+                            ann_room_norm = self._normalize_name(ann_room)
+                            if ann_room_norm == search_norm:
+                                annotation_bonus = min(annotation_bonus, -600)
+                                matched = True
+
                     if matched:
                         name_len = len(dev_name) + len(dev_room)
                         # Ohne device_hint: Spezifische Geraete mit Malus versehen,
@@ -4601,7 +4910,7 @@ class FunctionExecutor:
                             combined_for_person = f"{dev_name} {dev_room}"
                             if person_norm in combined_for_person:
                                 person_bonus = -500
-                        score = name_len + penalty + name_bonus + person_bonus
+                        score = name_len + penalty + name_bonus + person_bonus + annotation_bonus
                         if score < best_score:
                             best = dev["ha_entity_id"]
                             best_score = score
@@ -4628,6 +4937,10 @@ class FunctionExecutor:
             if not entity_id.startswith(f"{domain}."):
                 continue
 
+            # Hidden-Entities ueberspringen
+            if is_entity_hidden(entity_id):
+                continue
+
             name = entity_id.split(".", 1)[1]
             name_norm = self._normalize_name(name)
             friendly = state.get("attributes", {}).get("friendly_name", "")
@@ -4652,13 +4965,28 @@ class FunctionExecutor:
             elif friendly_norm and (search_norm in friendly_norm or friendly_norm in search_norm):
                 matched = True
 
+            # Annotation-Match im HA-Fallback
+            annotation = get_entity_annotation(entity_id)
+            annotation_bonus = 0
+            if annotation:
+                ann_role = annotation.get("role", "")
+                ann_desc = self._normalize_name(annotation.get("description", ""))
+                if ann_role:
+                    role_kws = _ROLE_KEYWORDS.get(ann_role, [])
+                    if any(kw in search_norm for kw in role_kws):
+                        annotation_bonus = -800
+                        matched = True
+                if ann_desc and search_norm in ann_desc:
+                    annotation_bonus = min(annotation_bonus, -200)
+                    matched = True
+
             if matched:
                 penalty = 0
                 if not hint_norm:
                     combined = f"{name_norm} {friendly_norm}"
                     if any(term in combined for term in _SPECIFIC_DEVICE_TERMS):
                         penalty = 1000
-                score = len(name_norm) + penalty
+                score = len(name_norm) + penalty + annotation_bonus
                 if score < best_len:
                     best_match = entity_id
                     best_len = score
@@ -5847,3 +6175,146 @@ class FunctionExecutor:
                 return {"success": False, "message": f"Unbekannte Besucher-Aktion: {action}"}
         except Exception as e:
             return {"success": False, "message": f"Besucher-Management Fehler: {e}"}
+
+    # ── Fernbedienung (Harmony etc.) ──────────────────────────────
+
+    async def _find_remote_entity(self, remote_hint: str | None) -> str | None:
+        """Findet remote.* Entity anhand Raum-Name oder Konfiguration."""
+        cfg = yaml_config.get("remote", {})
+        remotes = cfg.get("remotes", {})
+
+        if not remote_hint and len(remotes) == 1:
+            # Nur eine Fernbedienung konfiguriert → direkt nehmen
+            return list(remotes.values())[0].get("entity_id")
+
+        if remote_hint:
+            hint = self._clean_room(remote_hint)
+            # In Konfig suchen
+            for key, rcfg in remotes.items():
+                if hint in key.lower() or hint in rcfg.get("name", "").lower():
+                    return rcfg.get("entity_id")
+            # Direkt in HA suchen
+            entity_id = await self._find_entity("remote", hint)
+            if entity_id:
+                return entity_id
+
+        # Fallback: erste remote.* Entity aus HA
+        states = await self.ha.get_states()
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if eid.startswith("remote."):
+                return eid
+        return None
+
+    async def _exec_remote_control(self, args: dict) -> dict:
+        """Fernbedienung steuern: Aktivitaet starten/stoppen, IR-Befehle senden."""
+        cfg = yaml_config.get("remote", {})
+        if not cfg.get("enabled", True):
+            return {"success": False, "message": "Fernbedienung-Steuerung ist deaktiviert. Aktiviere sie im Fernbedienung-Tab."}
+
+        action = args.get("action", "on")
+        remote_hint = args.get("remote")
+        entity_id = await self._find_remote_entity(remote_hint)
+
+        if not entity_id:
+            return {"success": False, "message": "Keine Fernbedienung gefunden. Bitte im Fernbedienung-Tab konfigurieren."}
+
+        activity = args.get("activity")
+        command = args.get("command")
+        device = args.get("device")
+        num_repeats = max(1, min(args.get("num_repeats", 1), 20))
+
+        # Aktivitaeten-Aliase aus Config auflösen
+        cfg = yaml_config.get("remote", {})
+        for _key, rcfg in cfg.get("remotes", {}).items():
+            if rcfg.get("entity_id") == entity_id and activity:
+                aliases = rcfg.get("activities", {})
+                # Alias-Lookup (case-insensitive)
+                for alias_key, alias_val in aliases.items():
+                    if activity.lower() in (alias_key.lower(), alias_val.lower()):
+                        activity = alias_val
+                        break
+                break
+
+        if action == "off":
+            success = await self.ha.call_service(
+                "remote", "turn_off", {"entity_id": entity_id}
+            )
+            return {"success": success, "message": "Fernbedienung ausgeschaltet — alle Geraete aus."}
+
+        elif action in ("on", "activity"):
+            service_data = {"entity_id": entity_id}
+            if activity:
+                service_data["activity"] = activity
+            success = await self.ha.call_service(
+                "remote", "turn_on", service_data
+            )
+            msg = f"Aktivitaet '{activity}' gestartet." if activity else "Fernbedienung eingeschaltet."
+            return {"success": success, "message": msg}
+
+        elif action == "command":
+            if not command:
+                return {"success": False, "message": "Kein Befehl angegeben."}
+            service_data = {
+                "entity_id": entity_id,
+                "command": command,
+            }
+            if device:
+                service_data["device"] = device
+            if num_repeats > 1:
+                service_data["num_repeats"] = num_repeats
+            success = await self.ha.call_service(
+                "remote", "send_command", service_data
+            )
+            repeat_hint = f" (x{num_repeats})" if num_repeats > 1 else ""
+            device_hint = f" an {device}" if device else ""
+            return {"success": success, "message": f"Befehl '{command}'{device_hint} gesendet{repeat_hint}."}
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    async def _exec_get_remotes(self, args: dict) -> dict:
+        """Listet alle Fernbedienungen mit Status und verfuegbaren Aktivitaeten."""
+        remote_hint = args.get("remote")
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Home Assistant nicht erreichbar."}
+
+        cfg = yaml_config.get("remote", {})
+        remotes_cfg = cfg.get("remotes", {})
+        results = []
+
+        for s in states:
+            eid = s.get("entity_id", "")
+            if not eid.startswith("remote."):
+                continue
+            if remote_hint:
+                hint = self._clean_room(remote_hint)
+                if hint not in eid.lower() and hint not in s.get("attributes", {}).get("friendly_name", "").lower():
+                    continue
+
+            attrs = s.get("attributes", {})
+            name = attrs.get("friendly_name", eid)
+            current_activity = attrs.get("current_activity", "PowerOff")
+            available = attrs.get("activity_list", [])
+            is_on = s.get("state") == "on"
+
+            # Config-Aliase hinzufuegen
+            aliases = {}
+            for _key, rcfg in remotes_cfg.items():
+                if rcfg.get("entity_id") == eid:
+                    aliases = rcfg.get("activities", {})
+                    break
+
+            results.append({
+                "entity_id": eid,
+                "name": name,
+                "is_on": is_on,
+                "current_activity": current_activity,
+                "available_activities": available,
+                "configured_aliases": aliases,
+            })
+
+        if not results:
+            return {"success": True, "message": "Keine Fernbedienungen gefunden.", "remotes": []}
+
+        return {"success": True, "remotes": results, "count": len(results)}

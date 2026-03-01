@@ -17,7 +17,7 @@ from typing import Optional
 import yaml
 
 from .config import yaml_config, resolve_person_by_entity
-from .function_calling import get_mindhome_room
+from .function_calling import get_mindhome_room, get_entity_annotation, get_all_annotations, is_entity_hidden, auto_detect_role, get_all_roles
 from .ha_client import HomeAssistantClient
 from .semantic_memory import SemanticMemory
 
@@ -75,7 +75,7 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
 RELEVANT_DOMAINS = [
     "light", "climate", "cover", "scene", "person",
     "weather", "sensor", "binary_sensor", "media_player",
-    "lock", "alarm_control_panel",
+    "lock", "alarm_control_panel", "remote",
 ]
 
 
@@ -291,6 +291,10 @@ class ContextBuilder:
             attrs = state.get("attributes", {})
             domain = entity_id.split(".")[0] if "." in entity_id else ""
 
+            # Hidden-Entities komplett ueberspringen
+            if is_entity_hidden(entity_id):
+                continue
+
             # Temperaturen (nur echte Raumthermostate, keine Waermepumpen/Fehler)
             if domain == "climate":
                 current_temp = attrs.get("current_temperature")
@@ -394,6 +398,14 @@ class ContextBuilder:
                 if name:
                     house["media"].append(f"{name}: {title}" if title else name)
 
+            # Fernbedienungen (Harmony etc.)
+            elif domain == "remote":
+                name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "remote_name")
+                if name:
+                    activity = attrs.get("current_activity", "PowerOff")
+                    info = f"{name}: {activity}" if activity and activity != "PowerOff" else f"{name}: aus"
+                    house.setdefault("remotes", []).append(info)
+
             # Energie-Sensoren (Strom-Verbrauch)
             elif domain == "sensor" and s not in ("unavailable", "unknown", ""):
                 unit = attrs.get("unit_of_measurement", "")
@@ -403,6 +415,68 @@ class ContextBuilder:
                     )
                     if name:
                         house.setdefault("energy", []).append(f"{name}: {s} {unit}")
+
+                # Annotierte Sensoren (Temperatur, Feuchtigkeit etc.)
+                ann = get_entity_annotation(entity_id)
+                role = ann.get("role", "")
+                if not role:
+                    device_class = attrs.get("device_class", "")
+                    role = auto_detect_role(domain, device_class, unit, entity_id)
+                if role and role not in ("power_meter", "energy"):
+                    desc = ann.get("description", "") if ann else ""
+                    if not desc:
+                        desc = _sanitize_for_prompt(
+                            attrs.get("friendly_name", entity_id), 60, "sensor_name"
+                        )
+                    else:
+                        desc = _sanitize_for_prompt(desc, 60, "sensor_desc")
+                    if desc:
+                        val_str = f"{s} {unit}".strip() if unit else s
+                        house.setdefault("annotated_sensors", []).append({
+                            "text": f"{desc}: {val_str}",
+                            "_role": role,
+                        })
+
+            # Binary-Sensoren (Fenster, Tueren, Bewegung etc.)
+            elif domain == "binary_sensor" and s not in ("unavailable", "unknown"):
+                ann = get_entity_annotation(entity_id)
+                role = ann.get("role", "") if ann else ""
+                if not role:
+                    device_class = attrs.get("device_class", "")
+                    role = auto_detect_role(domain, device_class, "", entity_id)
+                if role:
+                    desc = (ann.get("description", "") if ann else "") or ""
+                    if not desc:
+                        desc = _sanitize_for_prompt(
+                            attrs.get("friendly_name", entity_id), 60, "binary_name"
+                        )
+                    else:
+                        desc = _sanitize_for_prompt(desc, 60, "binary_desc")
+                    if desc:
+                        # Menschenlesbare Zustaende
+                        if s == "on" and role in ("window_contact", "door_contact"):
+                            state_text = "offen"
+                        elif s == "off" and role in ("window_contact", "door_contact"):
+                            state_text = "geschlossen"
+                        elif s == "on" and role == "motion":
+                            state_text = "Bewegung erkannt"
+                        elif s == "on" and role == "water_leak":
+                            state_text = "WASSER ERKANNT"
+                        elif s == "on" and role == "smoke":
+                            state_text = "RAUCH ERKANNT"
+                        else:
+                            state_text = "aktiv" if s == "on" else "inaktiv"
+                        house.setdefault("annotated_sensors", []).append({
+                            "text": f"{desc}: {state_text}",
+                            "_role": role,
+                        })
+
+            # Schloesser (Lock-Status)
+            elif domain == "lock" and s in ("locked", "unlocked"):
+                name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "lock_name")
+                if name:
+                    lock_text = "verriegelt" if s == "locked" else "entriegelt"
+                    house.setdefault("locks", []).append(f"{name}: {lock_text}")
 
             # Kalender (naechster Termin aus HA State-Attribut)
             elif domain == "calendar" and s == "on":
@@ -414,6 +488,40 @@ class ContextBuilder:
                         house.setdefault("calendar", []).append(
                             f"{summary}" + (f" um {start}" if start else "")
                         )
+
+        # Annotierte Sensoren: Priorisiert sortieren + auf Text reduzieren
+        _ROLE_PRIORITY = {
+            "window_contact": 0, "door_contact": 0,
+            "water_leak": 1, "smoke": 1,
+            "motion": 2, "presence": 2,
+            "outdoor_temp": 3, "indoor_temp": 4,
+            "humidity": 5, "co2": 5,
+            "pressure": 6, "light_level": 6,
+            "battery": 7, "vibration": 7,
+        }
+        if house.get("annotated_sensors"):
+            house["annotated_sensors"].sort(
+                key=lambda x: _ROLE_PRIORITY.get(x.get("_role", ""), 99)
+            )
+            house["sensors"] = [e["text"] for e in house["annotated_sensors"][:20]]
+            del house["annotated_sensors"]
+
+        # Annotierte Sensoren: Prioritaet sortieren und auf Text reduzieren
+        _ROLE_PRIORITY = {
+            "window_contact": 0, "door_contact": 0,
+            "water_leak": 1, "smoke": 1,
+            "motion": 2, "presence": 2,
+            "outdoor_temp": 3, "indoor_temp": 4,
+            "humidity": 5, "co2": 5,
+        }
+        if house.get("annotated_sensors"):
+            house["annotated_sensors"].sort(
+                key=lambda x: _ROLE_PRIORITY.get(x.get("_role", ""), 99)
+            )
+            # Auf max 20 begrenzen und nur Text-Strings behalten
+            house["annotated_sensors"] = [
+                e["text"] for e in house["annotated_sensors"][:20]
+            ]
 
         # Mittelwert aus konfigurierten Sensoren (hat Vorrang vor climate entities)
         rt_sensors = yaml_config.get("room_temperature", {}).get("sensors", []) or []

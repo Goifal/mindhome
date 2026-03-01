@@ -1123,6 +1123,19 @@ music_dj:
   - sleeping
   - in_call
   custom_queries: {}
+# --- Fernbedienung (Logitech Harmony etc.) ---
+remote:
+  enabled: true
+  remotes:
+    wohnzimmer:
+      entity_id: ""               # z.B. remote.harmony_wohnzimmer — bitte eintragen
+      name: "Wohnzimmer"
+      activities:                  # Aliase: deutscher Name → Harmony-Aktivitaet
+        fernsehen: "Watch TV"
+        musik: "Listen to Music"
+        # netflix: "Netflix"
+        # gaming: "Play Games"
+        aus: "PowerOff"
 # --- Saugroboter-Steuerung (Phase 11) ---
 vacuum:
   enabled: true
@@ -1230,3 +1243,24 @@ workshop:
     - 3d_enclosure
     - furniture
     - repair_standard
+# --- Entity-Annotations: Beschreibungen + Rollen fuer Sensoren/Aktoren ---
+entity_annotations: {}
+  # Pro Entity: description, role, room (optional), hidden (optional)
+  # Beispiel:
+  # sensor.aussen_temperatur:
+  #   description: "Aussensensor Nordseite, misst Aussentemperatur"
+  #   role: outdoor_temp
+  # binary_sensor.fenster_kueche:
+  #   description: "Fensterkontakt Kueche"
+  #   role: window_contact
+  #   room: kueche
+  # sensor.esphome_xyz:
+  #   hidden: true
+
+# --- Eigene Rollen (User-definiert, ergaenzen die Standard-Rollen) ---
+entity_roles: {}
+  # Eigene Rollen mit Label und Icon anlegen:
+  # aquarium:     { label: "Aquarium", icon: "🐠" }
+  # server_rack:  { label: "Server-Rack", icon: "🖥️" }
+  # pool:         { label: "Pool", icon: "🏊" }
+  # waermepumpe:  { label: "Waermepumpe", icon: "♨️" }
