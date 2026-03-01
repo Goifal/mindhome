@@ -4391,15 +4391,7 @@ async function loadEntities() {
       sel.innerHTML += `<option value="${esc(d)}">${esc(d)} (${c})</option>`;
     }
 
-    // Batch-Toolbar Rollen-Dropdown
-    const batchSel = document.getElementById('annBatchRole');
-    if (batchSel) batchSel.innerHTML = `<option value="">Rolle zuweisen...</option>` + Object.entries(_allRoles()).map(([k,v]) =>
-      `<option value="${esc(k)}">${esc((v.icon||'') + ' ' + (v.label||k))}</option>`).join('');
-
-    // Batch-Toolbar Raum-Dropdown
-    const batchRoom = document.getElementById('annBatchRoom');
-    if (batchRoom) batchRoom.innerHTML = `<option value="">Raum zuweisen...</option>` +
-      _getAllRooms().map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+    // Batch-Toolbar: Text-Inputs (Datalists werden on-the-fly befuellt)
 
     // Eigene Rollen rendern
     _renderCustomRoles();
@@ -4576,9 +4568,7 @@ function _renderEntityRow(e) {
   const isChecked = _annBatchSelected.has(e.entity_id);
   const cssId = e.entity_id.replace(/[^a-zA-Z0-9]/g, '_');
 
-  // Raum-Optionen: Room-Profiles + MindHome + bekannte Raeume kombiniert
-  const roomOpts = `<option value="">-- Standard --</option>` +
-    _getAllRooms().map(r => `<option value="${esc(r)}"${ann.room===r?' selected':''}>${esc(r)}</option>`).join('');
+  const roomDlId = 'dl-room-' + cssId;
 
   return `
     <div class="entity-item${hasAnn ? ' annotated' : ''}">
@@ -4600,17 +4590,21 @@ function _renderEntityRow(e) {
         </div>
         <div class="form-group">
           <label>Rolle</label>
-          <select data-ann-eid="${esc(e.entity_id)}" data-ann-field="role"
-                  onchange="onAnnotationChange('${esc(e.entity_id)}')">
-            ${_roleOptionsHtml(ann.role || '')}
-          </select>
+          <input type="text" data-ann-eid="${esc(e.entity_id)}" data-ann-field="role" data-is-role="1"
+                 value="${esc(ann.role ? _roleLabel(ann.role) : '')}" placeholder="Rolle eingeben..."
+                 list="dl-role-${cssId}" autocomplete="off"
+                 oninput="_updateRoleDatalist(this,'dl-role-${cssId}')"
+                 onchange="_onRoleInputChange(this,'${esc(e.entity_id)}')">
+          <datalist id="dl-role-${cssId}"></datalist>
         </div>
         <div class="form-group">
-          <label>Raum (Override)</label>
-          <select data-ann-eid="${esc(e.entity_id)}" data-ann-field="room"
-                  onchange="onAnnotationChange('${esc(e.entity_id)}')">
-            ${roomOpts}
-          </select>
+          <label>Raum</label>
+          <input type="text" data-ann-eid="${esc(e.entity_id)}" data-ann-field="room"
+                 value="${esc(ann.room || '')}" placeholder="Raum eingeben..."
+                 list="${roomDlId}" autocomplete="off"
+                 oninput="_updateRoomDatalist(this,'${roomDlId}')"
+                 onchange="onAnnotationChange('${esc(e.entity_id)}')">
+          <datalist id="${roomDlId}"></datalist>
         </div>
         <div class="form-group" style="display:flex;align-items:center;gap:8px;">
           <label style="margin:0;">Verstecken</label>
@@ -4627,12 +4621,25 @@ function toggleEntityDetail(cssId) {
   if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
+function _onRoleInputChange(input, entityId) {
+  const label = (input.value || '').trim();
+  const roleId = _roleLabelToId(label);
+  // Speichere nur wenn gültige Rolle oder leer (=entfernen)
+  if (roleId || !label) {
+    onAnnotationChange(entityId);
+  }
+}
+
 function onAnnotationChange(entityId) {
   // Sammle Annotation aus DOM
   const ann = {};
   document.querySelectorAll(`[data-ann-eid="${entityId}"]`).forEach(el => {
     const field = el.dataset.annField;
     if (field === 'hidden') ann[field] = el.checked;
+    else if (el.dataset.isRole) {
+      // Rolle: Label -> ID
+      ann[field] = _roleLabelToId(el.value || '');
+    }
     else ann[field] = el.value;
   });
   // Nur nicht-leere Felder speichern (sparse)
@@ -4684,15 +4691,53 @@ function clearBatchSelection() {
 }
 
 function batchSetRole() {
-  const roleId = document.getElementById('annBatchRole')?.value;
-  if (!roleId) { toast('Bitte Rolle auswaehlen', 'error'); return; }
+  const input = document.getElementById('annBatchRole');
+  const label = (input?.value || '').trim();
+  const roleId = _roleLabelToId(label);
+  if (!roleId) { toast('Rolle nicht gefunden — bitte aus Vorschlaegen waehlen', 'error'); return; }
   for (const eid of _annBatchSelected) {
     if (!ENTITY_ANNOTATIONS[eid]) ENTITY_ANNOTATIONS[eid] = {};
     ENTITY_ANNOTATIONS[eid].role = roleId;
   }
+  input.value = '';
   scheduleAnnotationSave();
-  filterEntities(); // Re-render
+  filterEntities();
   toast(`Rolle "${_roleLabel(roleId)}" fuer ${_annBatchSelected.size} Entities gesetzt`);
+}
+
+function _updateRoomDatalist(input, dlId) {
+  const val = (input.value || '').toLowerCase();
+  const dl = document.getElementById(dlId);
+  if (!dl) return;
+  const rooms = _getAllRooms();
+  const matches = val ? rooms.filter(r => r.toLowerCase().includes(val)) : rooms;
+  dl.innerHTML = matches.map(r => `<option value="${esc(r)}">`).join('');
+}
+
+function _updateRoleDatalist(input, dlId) {
+  const val = (input.value || '').toLowerCase();
+  const dl = document.getElementById(dlId);
+  if (!dl) return;
+  const roles = _allRoles();
+  const matches = Object.entries(roles).filter(([k, v]) => {
+    const label = ((v.icon || '') + ' ' + (v.label || k)).toLowerCase();
+    return !val || label.includes(val) || k.toLowerCase().includes(val);
+  });
+  dl.innerHTML = matches.map(([k, v]) => {
+    const label = (v.icon ? v.icon + ' ' : '') + (v.label || k);
+    return `<option value="${esc(label)}" data-role-id="${esc(k)}">`;
+  }).join('');
+}
+
+function _roleLabelToId(label) {
+  if (!label) return '';
+  const l = label.toLowerCase().trim();
+  const roles = _allRoles();
+  for (const [k, v] of Object.entries(roles)) {
+    const full = ((v.icon ? v.icon + ' ' : '') + (v.label || k)).toLowerCase();
+    if (full === l || (v.label || k).toLowerCase() === l || k.toLowerCase() === l) return k;
+  }
+  return '';
 }
 
 function _getAllRooms() {
@@ -4712,12 +4757,14 @@ function _getAllRooms() {
 }
 
 function batchSetRoom() {
-  const room = document.getElementById('annBatchRoom')?.value;
-  if (!room) { toast('Bitte Raum auswaehlen', 'error'); return; }
+  const input = document.getElementById('annBatchRoom');
+  const room = (input?.value || '').trim();
+  if (!room) { toast('Bitte Raum eingeben', 'error'); return; }
   for (const eid of _annBatchSelected) {
     if (!ENTITY_ANNOTATIONS[eid]) ENTITY_ANNOTATIONS[eid] = {};
     ENTITY_ANNOTATIONS[eid].room = room;
   }
+  input.value = '';
   scheduleAnnotationSave();
   filterEntities();
   toast(`Raum "${room}" fuer ${_annBatchSelected.size} Entities gesetzt`);

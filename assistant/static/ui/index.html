@@ -1080,9 +1080,11 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
         <!-- Batch-Toolbar (nur sichtbar bei Auswahl) -->
         <div id="annBatchBar" class="ann-batch-bar" style="display:none;">
           <span id="annBatchCount">0 ausgewaehlt</span>
-          <select id="annBatchRole" style="font-size:12px;padding:2px 6px;"><option value="">Rolle zuweisen...</option></select>
+          <input type="text" id="annBatchRole" placeholder="Rolle eingeben..." list="dl-batch-role" autocomplete="off" style="font-size:12px;padding:2px 6px;width:160px;" oninput="_updateRoleDatalist(this,'dl-batch-role')">
+          <datalist id="dl-batch-role"></datalist>
           <button class="btn btn-secondary btn-sm" onclick="batchSetRole()">Rolle</button>
-          <select id="annBatchRoom" style="font-size:12px;padding:2px 6px;"><option value="">Raum zuweisen...</option></select>
+          <input type="text" id="annBatchRoom" placeholder="Raum eingeben..." list="dl-batch-room" autocomplete="off" style="font-size:12px;padding:2px 6px;width:140px;" oninput="_updateRoomDatalist(this,'dl-batch-room')">
+          <datalist id="dl-batch-room"></datalist>
           <button class="btn btn-secondary btn-sm" onclick="batchSetRoom()">Raum</button>
           <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(true)">Verstecken</button>
           <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(false)">Einblenden</button>
