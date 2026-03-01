@@ -8486,8 +8486,10 @@ async function acceptAllDeclSuggestions() {
   if (!confirm(_declSuggestions.length + ' Vorschlaege annehmen?')) return;
   var accepted = 0;
   var errors = 0;
+  var lastError = '';
   // Copy before mutating
   var all = _declSuggestions.slice();
+  var failed = [];
   for (var i = 0; i < all.length; i++) {
     var s = all[i];
     try {
@@ -8497,13 +8499,15 @@ async function acceptAllDeclSuggestions() {
       accepted++;
     } catch(e) {
       errors++;
+      lastError = e.detail || e.message || String(e);
+      failed.push(s);
     }
   }
-  _declSuggestions = [];
+  _declSuggestions = failed;
   _renderDeclSuggestions();
   loadDeclarativeTools();
   if (errors > 0) {
-    toast(accepted + ' Tools erstellt, ' + errors + ' Fehler', 'warning');
+    toast(accepted + ' Tools erstellt, ' + errors + ' Fehler (' + lastError + ')', 'warning');
   } else {
     toast(accepted + ' Tools erstellt', 'success');
   }

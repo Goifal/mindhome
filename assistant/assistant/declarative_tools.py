@@ -753,7 +753,7 @@ def _slugify(text: str) -> str:
     slug = text.lower().replace(" ", "_").replace("-", "_")
     slug = re.sub(r"[^a-z0-9_]", "", slug)
     slug = re.sub(r"_+", "_", slug).strip("_")
-    return slug[:40]
+    return slug[:40] or "entity"
 
 
 def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]:
@@ -766,6 +766,9 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
     Returns:
         Liste von Vorschlaegen: [{name, description, type, config, reason}]
     """
+    if not states:
+        return []
+
     existing_names = set(existing_tools.keys())
 
     # Entities nach Typ gruppieren
@@ -801,7 +804,7 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
         if domain == "sensor":
             if dc == "temperature" or unit in ("°C", "°F"):
                 temp_sensors.append({"eid": eid, "friendly": friendly, "outdoor": is_outdoor})
-            elif dc == "humidity" or unit == "%rH":
+            elif dc == "humidity" or (unit in ("%", "%rH") and ("humid" in lower_eid or "feucht" in lower_eid or "luftfeuch" in lower_eid)):
                 humidity_sensors.append({"eid": eid, "friendly": friendly})
             elif dc == "energy" or unit in ("kWh", "Wh"):
                 energy_sensors.append({"eid": eid, "friendly": friendly})
@@ -918,12 +921,23 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
              "Tagesvergleich zeigt ob heute mehr oder weniger Strom verbraucht wird.")
 
     if len(energy_sensors) >= 2:
+        # Eindeutige Labels erzeugen (Kollisionsvermeidung)
+        energy_entities = {}
+        for e in energy_sensors[:5]:
+            label = _slugify(e["friendly"] or e["eid"].split(".")[1])
+            if label in energy_entities:
+                label = _slugify(e["eid"].split(".")[1])
+            # Immer noch Kollision? Suffix anhaengen
+            base = label
+            counter = 2
+            while label in energy_entities:
+                label = f"{base}_{counter}"
+                counter += 1
+            energy_entities[label] = e["eid"]
         _add("gesamt_stromverbrauch",
              "Summe aller Energiezaehler",
              "multi_entity_formula",
-             {"entities": {_slugify(e["friendly"] or e["eid"].split(".")[1]): e["eid"]
-                           for e in energy_sensors[:5]},
-              "formula": "sum"},
+             {"entities": energy_entities, "formula": "sum"},
              f"{len(energy_sensors)} Energiezaehler — die Summe gibt den Gesamtverbrauch.")
 
     # Strom: 2 Power-Sensoren vergleichen (z.B. Solar vs. Verbrauch)
@@ -1045,8 +1059,12 @@ async def refine_suggestions_with_llm(
 
     try:
         if not model:
-            model = yaml_config.get("models", {}).get("mini", "")
+            model = yaml_config.get("models", {}).get("fast", "")
         if not model:
+            # Fallback auf smart-Model
+            model = yaml_config.get("models", {}).get("smart", "")
+        if not model:
+            logger.debug("Kein LLM-Model konfiguriert — Verfeinerung uebersprungen")
             return suggestions
 
         response = await ollama_client.chat(
@@ -1056,6 +1074,11 @@ async def refine_suggestions_with_llm(
             max_tokens=2000,
         )
 
+        if not response or not isinstance(response, dict):
+            return suggestions
+        if "error" in response:
+            logger.debug("LLM-Fehler: %s", response["error"])
+            return suggestions
         content = response.get("message", {}).get("content", "").strip()
 
         # JSON parsen
@@ -1075,8 +1098,8 @@ async def refine_suggestions_with_llm(
         idx_map = {}
         for item in refined:
             idx = item.get("index")
-            if isinstance(idx, int) and 1 <= idx <= len(suggestions):
-                idx_map[idx - 1] = item
+            if isinstance(idx, (int, float)) and 1 <= int(idx) <= len(suggestions):
+                idx_map[int(idx) - 1] = item
 
         # Beschreibungen + Reasons aktualisieren, Reihenfolge beibehalten
         result = []
@@ -1084,8 +1107,8 @@ async def refine_suggestions_with_llm(
         ordered_indices = []
         for item in refined:
             idx = item.get("index")
-            if isinstance(idx, int) and 1 <= idx <= len(suggestions):
-                ordered_indices.append(idx - 1)
+            if isinstance(idx, (int, float)) and 1 <= int(idx) <= len(suggestions):
+                ordered_indices.append(int(idx) - 1)
 
         seen = set()
         for i in ordered_indices:
@@ -1096,9 +1119,9 @@ async def refine_suggestions_with_llm(
             if i in idx_map:
                 ref = idx_map[i]
                 if ref.get("description"):
-                    s["description"] = ref["description"]
+                    s["description"] = str(ref["description"])[:200]
                 if ref.get("reason"):
-                    s["reason"] = ref["reason"]
+                    s["reason"] = str(ref["reason"])[:200]
             result.append(s)
 
         # Restliche die das LLM nicht erwaehnt hat

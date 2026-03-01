@@ -3639,10 +3639,15 @@ async def ui_suggest_declarative_tools(request: Request, token: str = ""):
     Hybrid: Regel-basierte Analyse + optionale LLM-Verfeinerung.
     """
     _check_token(token)
+    if not yaml_config.get("declarative_tools", {}).get("enabled", True):
+        raise HTTPException(status_code=403, detail="Analyse-Tools sind deaktiviert")
     from .declarative_tools import get_registry, generate_suggestions, refine_suggestions_with_llm
 
-    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
-    use_llm = body.get("use_llm", True)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    use_llm = body.get("use_llm", True) if isinstance(body, dict) else True
 
     # 1. HA-Entities laden
     try:
