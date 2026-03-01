@@ -4396,6 +4396,11 @@ async function loadEntities() {
     if (batchSel) batchSel.innerHTML = `<option value="">Rolle zuweisen...</option>` + Object.entries(_allRoles()).map(([k,v]) =>
       `<option value="${esc(k)}">${esc((v.icon||'') + ' ' + (v.label||k))}</option>`).join('');
 
+    // Batch-Toolbar Raum-Dropdown
+    const batchRoom = document.getElementById('annBatchRoom');
+    if (batchRoom) batchRoom.innerHTML = `<option value="">Raum zuweisen...</option>` +
+      _getAllRooms().map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+
     // Eigene Rollen rendern
     _renderCustomRoles();
 
@@ -4498,14 +4503,14 @@ function _renderEntityRow(e) {
   const ann = ENTITY_ANNOTATIONS[e.entity_id] || {};
   const hasAnn = ann.role || ann.description;
   const roleBadge = ann.role ? `<span class="role-badge">${esc(_roleLabel(ann.role))}</span>` : '';
+  const roomBadge = ann.room ? `<span class="role-badge" style="background:rgba(100,200,100,0.12);color:#6a6;">${esc(ann.room)}</span>` : '';
   const hiddenBadge = ann.hidden ? `<span class="hidden-badge">versteckt</span>` : '';
   const isChecked = _annBatchSelected.has(e.entity_id);
   const cssId = e.entity_id.replace(/[^a-zA-Z0-9]/g, '_');
 
-  // Raum-Optionen aus Room-Profiles
-  const rooms = Object.keys(RP || {});
+  // Raum-Optionen: Room-Profiles + MindHome + bekannte Raeume kombiniert
   const roomOpts = `<option value="">-- Standard --</option>` +
-    rooms.map(r => `<option value="${esc(r)}"${ann.room===r?' selected':''}>${esc(r)}</option>`).join('');
+    _getAllRooms().map(r => `<option value="${esc(r)}"${ann.room===r?' selected':''}>${esc(r)}</option>`).join('');
 
   return `
     <div class="entity-item${hasAnn ? ' annotated' : ''}">
@@ -4513,7 +4518,7 @@ function _renderEntityRow(e) {
       <div style="flex:1;min-width:0;cursor:pointer;" onclick="toggleEntityDetail('${cssId}')">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <span class="ename">${esc(e.name)}</span>
-          ${roleBadge}${hiddenBadge}
+          ${roleBadge}${roomBadge}${hiddenBadge}
           <span class="eid">${esc(e.entity_id)}</span>
           <span style="color:var(--text-muted);font-size:10px;">${esc(e.state)}</span>
         </div>
@@ -4619,6 +4624,34 @@ function batchSetRole() {
   scheduleAnnotationSave();
   filterEntities(); // Re-render
   toast(`Rolle "${_roleLabel(roleId)}" fuer ${_annBatchSelected.size} Entities gesetzt`);
+}
+
+function _getAllRooms() {
+  // Raeume aus allen Quellen kombinieren: RP + MindHome + bekannte + Entity-Annotations
+  const rooms = new Set();
+  for (const r of Object.keys(RP || {})) rooms.add(r);
+  if (_mhEntities && _mhEntities.rooms) {
+    for (const r of Object.keys(_mhEntities.rooms)) rooms.add(r.toLowerCase());
+  }
+  // Raeume aus bestehenden Entity-Annotations
+  for (const ann of Object.values(ENTITY_ANNOTATIONS)) {
+    if (ann.room) rooms.add(ann.room);
+  }
+  // Raeume aus _getKnownRooms (room_speakers, room_motion_sensors)
+  try { for (const r of _getKnownRooms()) rooms.add(r); } catch(e) {}
+  return [...rooms].sort();
+}
+
+function batchSetRoom() {
+  const room = document.getElementById('annBatchRoom')?.value;
+  if (!room) { toast('Bitte Raum auswaehlen', 'error'); return; }
+  for (const eid of _annBatchSelected) {
+    if (!ENTITY_ANNOTATIONS[eid]) ENTITY_ANNOTATIONS[eid] = {};
+    ENTITY_ANNOTATIONS[eid].room = room;
+  }
+  scheduleAnnotationSave();
+  filterEntities();
+  toast(`Raum "${room}" fuer ${_annBatchSelected.size} Entities gesetzt`);
 }
 
 function batchSetHidden(hidden) {

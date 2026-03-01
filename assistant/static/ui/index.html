@@ -1081,10 +1081,12 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
         <div id="annBatchBar" class="ann-batch-bar" style="display:none;">
           <span id="annBatchCount">0 ausgewaehlt</span>
           <select id="annBatchRole" style="font-size:12px;padding:2px 6px;"><option value="">Rolle zuweisen...</option></select>
-          <button class="btn btn-secondary btn-sm" onclick="batchSetRole()">Zuweisen</button>
+          <button class="btn btn-secondary btn-sm" onclick="batchSetRole()">Rolle</button>
+          <select id="annBatchRoom" style="font-size:12px;padding:2px 6px;"><option value="">Raum zuweisen...</option></select>
+          <button class="btn btn-secondary btn-sm" onclick="batchSetRoom()">Raum</button>
           <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(true)">Verstecken</button>
           <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(false)">Einblenden</button>
-          <button class="btn btn-secondary btn-sm" onclick="clearBatchSelection()">Auswahl aufheben</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearBatchSelection()">Aufheben</button>
         </div>
 
         <!-- Entity-Liste -->
