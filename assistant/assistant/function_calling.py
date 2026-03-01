@@ -245,6 +245,7 @@ _DEFAULT_ROLES_DICT = {
     "presence":       {"label": "Anwesenheit", "icon": "\U0001f464"},
     "occupancy":      {"label": "Raumbelegung", "icon": "\U0001f465"},
     "bed_occupancy":  {"label": "Bettbelegung", "icon": "\U0001f6cf\ufe0f"},
+    "chair_occupancy": {"label": "Stuhlbelegung", "icon": "\U0001fa91"},
     "vibration":      {"label": "Vibration", "icon": "\U0001f4f3"},
     # --- Energie & Strom ---
     "power_meter":    {"label": "Strommesser", "icon": "\u26a1"},
@@ -460,6 +461,7 @@ _ROLE_KEYWORDS = {
     "presence": ["anwesenheit", "zuhause", "abwesend", "presence"],
     "occupancy": ["belegung", "besetzt", "raumbelegung"],
     "bed_occupancy": ["bett", "bettbelegung", "bett sensor", "bed", "bed_occupancy", "schlafsensor"],
+    "chair_occupancy": ["stuhl", "stuhlbelegung", "stuhlsensor", "chair", "sitzflaeche", "sitzsensor"],
     # Energie
     "power_meter": ["strom", "leistung", "watt", "strommesser"],
     "energy": ["energie", "kwh", "energieverbrauch", "stromverbrauch"],
