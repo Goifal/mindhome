@@ -373,7 +373,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
       'tab-general':'Allgemein','tab-personality':'KI-Modelle & Stil',
       'tab-memory':'Gedaechtnis-Einstellungen','tab-mood':'Stimmung',
       'tab-rooms':'Raeume & Speaker','tab-lights':'Licht','tab-devices':'Geraete',
-      'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter',
+      'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter','tab-remote':'Fernbedienung',
       'tab-scenes':'Szenen','tab-routines':'Routinen',
       'tab-proactive':'Proaktiv & Vorausdenken',
       'tab-notifications':'Benachrichtigungen',
@@ -622,6 +622,7 @@ function renderCurrentTab() {
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
       case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
+      case 'tab-remote': c.innerHTML = renderRemote(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); loadEmergencyProtocols(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
@@ -805,6 +806,7 @@ const HELP_TEXTS = {
   'vacation_simulation.evening_hour': {title:'Abends schliessen', text:'Uhrzeit fuer simuliertes Schliessen.'},
   'vacation_simulation.variation_minutes': {title:'Variation', text:'Zufaellige Abweichung in Minuten fuer realistischere Simulation.'},
   // === SAUGROBOTER ===
+  'remote.enabled': {title:'Fernbedienung', text:'Aktiviert die Fernbedienungs-Steuerung (Logitech Harmony) ueber Jarvis. Erlaubt Sprachsteuerung fuer TV, Receiver, etc.'},
   'vacuum.enabled': {title:'Saugroboter', text:'Aktiviert die Saugroboter-Steuerung ueber Jarvis.'},
   'vacuum.auto_clean.enabled': {title:'Auto-Clean', text:'Automatische Reinigung wenn niemand zuhause ist.'},
   'vacuum.auto_clean.when_nobody_home': {title:'Nur bei Abwesenheit', text:'Startet nur wenn alle Personen abwesend sind.'},
@@ -6365,6 +6367,106 @@ function renderSeasonalEditor() {
     html += '</div>';
   }
   return html;
+}
+
+// ── Fernbedienung Tab (Harmony etc.) ──────────────────────────
+function renderRemote() {
+  const cfg = getPath(S, 'remote') || {};
+  const remotes = cfg.remotes || {};
+  const entries = Object.entries(remotes);
+
+  let remoteCards = '';
+  for (const [key, rcfg] of entries) {
+    const eid = rcfg.entity_id || '';
+    const name = rcfg.name || key;
+    const activities = rcfg.activities || {};
+    const actEntries = Object.entries(activities);
+
+    let actRows = actEntries.map(([alias, harmony]) =>
+      `<div class="kv-row">
+        <input type="text" class="kv-key" value="${esc(alias)}" placeholder="Alias (z.B. fernsehen)">
+        <span class="kv-arrow">&#8594;</span>
+        <input type="text" class="kv-val" value="${esc(harmony)}" placeholder="Harmony-Name (z.B. Watch TV)">
+        <button class="kv-rm" onclick="rmRemoteActivity('${esc(key)}',this)" title="Entfernen">&#10005;</button>
+      </div>`
+    ).join('');
+
+    remoteCards += `<div class="s-section" style="margin-bottom:14px;">
+      <div class="s-section-hdr" onclick="toggleSec(this)">
+        <h3>&#128261; ${esc(name)}</h3><span class="arrow">&#9660;</span>
+      </div>
+      <div class="s-section-body">
+        <div class="form-group">
+          <label>NAME</label>
+          <input type="text" data-path="remote.remotes.${esc(key)}.name" value="${esc(name)}">
+        </div>
+        <div class="form-group">
+          <label>ENTITY-ID (HOME ASSISTANT)</label>
+          <input type="text" data-path="remote.remotes.${esc(key)}.entity_id" value="${esc(eid)}" placeholder="remote.harmony_wohnzimmer" style="font-family:var(--mono);font-size:11px;">
+        </div>
+        <div class="form-group">
+          <label>AKTIVITAETEN-ALIASE</label>
+          <div class="info-box" style="margin-bottom:8px;font-size:11px;">
+            <span class="info-icon">&#128161;</span>Links: deutscher Name (fuer Sprachsteuerung). Rechts: exakter Harmony-Aktivitaetsname.
+          </div>
+          <div class="kv-editor" data-path="remote.remotes.${esc(key)}.activities">
+            ${actRows}
+            <button class="kv-add" onclick="kvAdd(this,'remote.remotes.${esc(key)}.activities','Alias','Harmony-Name')">+ Aktivitaet</button>
+          </div>
+        </div>
+        <button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);margin-top:8px;font-size:11px;" onclick="removeRemoteEntry('${esc(key)}')">Fernbedienung entfernen</button>
+      </div>
+    </div>`;
+  }
+
+  if (!remoteCards) {
+    remoteCards = '<div style="color:var(--text-muted);font-size:12px;padding:12px;">Keine Fernbedienungen konfiguriert. Fuege eine hinzu.</div>';
+  }
+
+  return sectionWrap('&#128261;', 'Fernbedienungen (Harmony)',
+    fInfo('Konfiguriere deine Logitech Harmony Fernbedienungen. Jarvis kann Aktivitaeten starten (z.B. "Fernseher an"), IR-Befehle senden und den aktuellen Status abfragen. Aktivitaeten werden per Sprachbefehl ueber den deutschen Alias angesprochen: "Jarvis, starte Fernsehen."') +
+    fToggle('remote.enabled', 'Fernbedienung-Steuerung aktiv') +
+    remoteCards +
+    '<button class="btn btn-sm" onclick="addRemoteEntry()" style="margin-top:8px;">+ Fernbedienung hinzufuegen</button>'
+  ) +
+  sectionWrap('&#127916;', 'Szenen-Integration',
+    fInfo('Wenn eine Szene eine Harmony-Aktivitaet enthaelt (z.B. Filmabend → "Watch TV"), startet Jarvis automatisch die passende Aktivitaet. Konfiguriere die Szenen-Zuordnung im Szenen-Tab.') +
+    `<div class="info-box" style="cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
+      <span class="info-icon">&#127916;</span>Szenen konfigurieren im <strong>Szenen</strong>-Tab. Klicke hier.
+    </div>`
+  ) +
+  sectionWrap('&#128218;', 'Sprachbefehle',
+    fInfo('So steuerst du die Fernbedienung per Sprache:') +
+    `<div style="font-size:12px;line-height:1.9;color:var(--text-secondary);padding:4px 8px;">
+      <div><code>"Jarvis, schalte den Fernseher ein"</code> — Startet die Standard-Aktivitaet</div>
+      <div><code>"Jarvis, starte Fernsehen"</code> — Startet eine benannte Aktivitaet</div>
+      <div><code>"Jarvis, mach den Fernseher aus"</code> — Schaltet alles aus (PowerOff)</div>
+      <div><code>"Jarvis, mach lauter / leiser"</code> — Sendet Volume-Befehle</div>
+      <div><code>"Jarvis, was laeuft gerade?"</code> — Zeigt aktive Aktivitaet</div>
+      <div><code>"Jarvis, welche Aktivitaeten hat die Fernbedienung?"</code> — Listet alle Optionen</div>
+    </div>`
+  );
+}
+
+function addRemoteEntry() {
+  const key = 'remote_' + Date.now();
+  setPath(S, `remote.remotes.${key}`, {entity_id: '', name: 'Neue Fernbedienung', activities: {aus: 'PowerOff'}});
+  scheduleAutoSave();
+  renderCurrentTab();
+}
+
+function removeRemoteEntry(key) {
+  const remotes = getPath(S, 'remote.remotes') || {};
+  delete remotes[key];
+  setPath(S, 'remote.remotes', remotes);
+  scheduleAutoSave();
+  renderCurrentTab();
+}
+
+function rmRemoteActivity(remoteKey, btn) {
+  btn.closest('.kv-row').remove();
+  const editor = document.querySelector(`.kv-editor[data-path="remote.remotes.${remoteKey}.activities"]`);
+  if (editor) kvSync(editor, `remote.remotes.${remoteKey}.activities`);
 }
 
 // ── Saugroboter Tab ──────────────────────────────────────

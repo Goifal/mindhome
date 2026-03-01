@@ -1789,6 +1789,62 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    # ── Fernbedienung (Harmony etc.) ──────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "remote_control",
+            "description": "Fernbedienung steuern (Logitech Harmony etc.). Kann Aktivitaeten starten/stoppen und IR-Befehle senden. Beispiele: 'Schalte den Fernseher ein' → activity='Fernsehen', 'Stell auf ARD um' → command='InputHdmi1' oder device+command, 'Mach alles aus' → action='off'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "remote": {
+                        "type": "string",
+                        "description": "Name der Fernbedienung oder Raum (z.B. 'wohnzimmer', 'schlafzimmer'). Optional wenn nur eine Fernbedienung konfiguriert ist.",
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["on", "off", "activity", "command"],
+                        "description": "on=einschalten (optional mit activity), off=alles ausschalten, activity=Aktivitaet wechseln, command=IR-Befehl senden.",
+                    },
+                    "activity": {
+                        "type": "string",
+                        "description": "Name der Harmony-Aktivitaet (z.B. 'Fernsehen', 'Watch TV', 'Musik hoeren', 'Netflix'). Nur bei action='on' oder 'activity'.",
+                    },
+                    "command": {
+                        "type": "string",
+                        "description": "IR-Befehl (z.B. 'VolumeUp', 'VolumeDown', 'Mute', 'ChannelUp', 'ChannelDown', 'Play', 'Pause', 'InputHdmi1'). Nur bei action='command'.",
+                    },
+                    "device": {
+                        "type": "string",
+                        "description": "Zielgeraet fuer den IR-Befehl (z.B. 'Samsung TV', 'Yamaha Receiver'). Optional — ohne device wird der Befehl an die aktive Aktivitaet gesendet.",
+                    },
+                    "num_repeats": {
+                        "type": "integer",
+                        "description": "Befehl mehrfach senden (z.B. 5x VolumeUp). Standard: 1.",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_remotes",
+            "description": "Zeigt alle Fernbedienungen mit aktuellem Status, aktiver Aktivitaet und verfuegbaren Aktivitaeten/Geraeten. Nutze dies wenn der User fragt was die Fernbedienung kann, welche Aktivitaeten es gibt oder was gerade laeuft.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "remote": {
+                        "type": "string",
+                        "description": "Name/Raum zum Filtern (optional)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -1858,6 +1914,7 @@ class FunctionExecutor:
         "manage_protocol", "recommend_music", "manage_visitor",
         "set_vacuum", "get_vacuum",
         "manage_repair",
+        "remote_control", "get_remotes",
     })
 
     # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
@@ -5847,3 +5904,146 @@ class FunctionExecutor:
                 return {"success": False, "message": f"Unbekannte Besucher-Aktion: {action}"}
         except Exception as e:
             return {"success": False, "message": f"Besucher-Management Fehler: {e}"}
+
+    # ── Fernbedienung (Harmony etc.) ──────────────────────────────
+
+    async def _find_remote_entity(self, remote_hint: str | None) -> str | None:
+        """Findet remote.* Entity anhand Raum-Name oder Konfiguration."""
+        cfg = yaml_config.get("remote", {})
+        remotes = cfg.get("remotes", {})
+
+        if not remote_hint and len(remotes) == 1:
+            # Nur eine Fernbedienung konfiguriert → direkt nehmen
+            return list(remotes.values())[0].get("entity_id")
+
+        if remote_hint:
+            hint = self._clean_room(remote_hint)
+            # In Konfig suchen
+            for key, rcfg in remotes.items():
+                if hint in key.lower() or hint in rcfg.get("name", "").lower():
+                    return rcfg.get("entity_id")
+            # Direkt in HA suchen
+            entity_id = await self._find_entity("remote", hint)
+            if entity_id:
+                return entity_id
+
+        # Fallback: erste remote.* Entity aus HA
+        states = await self.ha.get_states()
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if eid.startswith("remote."):
+                return eid
+        return None
+
+    async def _exec_remote_control(self, args: dict) -> dict:
+        """Fernbedienung steuern: Aktivitaet starten/stoppen, IR-Befehle senden."""
+        cfg = yaml_config.get("remote", {})
+        if not cfg.get("enabled", True):
+            return {"success": False, "message": "Fernbedienung-Steuerung ist deaktiviert. Aktiviere sie im Fernbedienung-Tab."}
+
+        action = args.get("action", "on")
+        remote_hint = args.get("remote")
+        entity_id = await self._find_remote_entity(remote_hint)
+
+        if not entity_id:
+            return {"success": False, "message": "Keine Fernbedienung gefunden. Bitte im Fernbedienung-Tab konfigurieren."}
+
+        activity = args.get("activity")
+        command = args.get("command")
+        device = args.get("device")
+        num_repeats = max(1, min(args.get("num_repeats", 1), 20))
+
+        # Aktivitaeten-Aliase aus Config auflösen
+        cfg = yaml_config.get("remote", {})
+        for _key, rcfg in cfg.get("remotes", {}).items():
+            if rcfg.get("entity_id") == entity_id and activity:
+                aliases = rcfg.get("activities", {})
+                # Alias-Lookup (case-insensitive)
+                for alias_key, alias_val in aliases.items():
+                    if activity.lower() in (alias_key.lower(), alias_val.lower()):
+                        activity = alias_val
+                        break
+                break
+
+        if action == "off":
+            success = await self.ha.call_service(
+                "remote", "turn_off", {"entity_id": entity_id}
+            )
+            return {"success": success, "message": "Fernbedienung ausgeschaltet — alle Geraete aus."}
+
+        elif action in ("on", "activity"):
+            service_data = {"entity_id": entity_id}
+            if activity:
+                service_data["activity"] = activity
+            success = await self.ha.call_service(
+                "remote", "turn_on", service_data
+            )
+            msg = f"Aktivitaet '{activity}' gestartet." if activity else "Fernbedienung eingeschaltet."
+            return {"success": success, "message": msg}
+
+        elif action == "command":
+            if not command:
+                return {"success": False, "message": "Kein Befehl angegeben."}
+            service_data = {
+                "entity_id": entity_id,
+                "command": command,
+            }
+            if device:
+                service_data["device"] = device
+            if num_repeats > 1:
+                service_data["num_repeats"] = num_repeats
+            success = await self.ha.call_service(
+                "remote", "send_command", service_data
+            )
+            repeat_hint = f" (x{num_repeats})" if num_repeats > 1 else ""
+            device_hint = f" an {device}" if device else ""
+            return {"success": success, "message": f"Befehl '{command}'{device_hint} gesendet{repeat_hint}."}
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    async def _exec_get_remotes(self, args: dict) -> dict:
+        """Listet alle Fernbedienungen mit Status und verfuegbaren Aktivitaeten."""
+        remote_hint = args.get("remote")
+        states = await self.ha.get_states()
+        if not states:
+            return {"success": False, "message": "Home Assistant nicht erreichbar."}
+
+        cfg = yaml_config.get("remote", {})
+        remotes_cfg = cfg.get("remotes", {})
+        results = []
+
+        for s in states:
+            eid = s.get("entity_id", "")
+            if not eid.startswith("remote."):
+                continue
+            if remote_hint:
+                hint = self._clean_room(remote_hint)
+                if hint not in eid.lower() and hint not in s.get("attributes", {}).get("friendly_name", "").lower():
+                    continue
+
+            attrs = s.get("attributes", {})
+            name = attrs.get("friendly_name", eid)
+            current_activity = attrs.get("current_activity", "PowerOff")
+            available = attrs.get("activity_list", [])
+            is_on = s.get("state") == "on"
+
+            # Config-Aliase hinzufuegen
+            aliases = {}
+            for _key, rcfg in remotes_cfg.items():
+                if rcfg.get("entity_id") == eid:
+                    aliases = rcfg.get("activities", {})
+                    break
+
+            results.append({
+                "entity_id": eid,
+                "name": name,
+                "is_on": is_on,
+                "current_activity": current_activity,
+                "available_activities": available,
+                "configured_aliases": aliases,
+            })
+
+        if not results:
+            return {"success": True, "message": "Keine Fernbedienungen gefunden.", "remotes": []}
+
+        return {"success": True, "remotes": results, "count": len(results)}

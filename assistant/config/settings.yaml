@@ -1123,6 +1123,19 @@ music_dj:
   - sleeping
   - in_call
   custom_queries: {}
+# --- Fernbedienung (Logitech Harmony etc.) ---
+remote:
+  enabled: true
+  remotes:
+    wohnzimmer:
+      entity_id: ""               # z.B. remote.harmony_wohnzimmer — bitte eintragen
+      name: "Wohnzimmer"
+      activities:                  # Aliase: deutscher Name → Harmony-Aktivitaet
+        fernsehen: "Watch TV"
+        musik: "Listen to Music"
+        # netflix: "Netflix"
+        # gaming: "Play Games"
+        aus: "PowerOff"
 # --- Saugroboter-Steuerung (Phase 11) ---
 vacuum:
   enabled: true

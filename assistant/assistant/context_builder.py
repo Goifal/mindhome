@@ -75,7 +75,7 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
 RELEVANT_DOMAINS = [
     "light", "climate", "cover", "scene", "person",
     "weather", "sensor", "binary_sensor", "media_player",
-    "lock", "alarm_control_panel",
+    "lock", "alarm_control_panel", "remote",
 ]
 
 
@@ -393,6 +393,14 @@ class ContextBuilder:
                 title = _sanitize_for_prompt(attrs.get("media_title", ""), 100, "media_title")
                 if name:
                     house["media"].append(f"{name}: {title}" if title else name)
+
+            # Fernbedienungen (Harmony etc.)
+            elif domain == "remote":
+                name = _sanitize_for_prompt(attrs.get("friendly_name", entity_id), 50, "remote_name")
+                if name:
+                    activity = attrs.get("current_activity", "PowerOff")
+                    info = f"{name}: {activity}" if activity and activity != "PowerOff" else f"{name}: aus"
+                    house.setdefault("remotes", []).append(info)
 
             # Energie-Sensoren (Strom-Verbrauch)
             elif domain == "sensor" and s not in ("unavailable", "unknown", ""):
