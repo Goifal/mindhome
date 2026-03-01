@@ -18,6 +18,7 @@ import yaml
 import assistant.config as cfg_module
 from .config import settings, yaml_config, get_room_profiles
 from .config_versioning import ConfigVersioning
+from .declarative_tools import DeclarativeToolExecutor, get_registry as get_decl_registry
 from .ha_client import HomeAssistantClient
 
 # ============================================================
@@ -420,111 +421,169 @@ _DEVICE_CLASS_TO_ROLE = {
     "duration": "timer",
 }
 
-_OUTDOOR_KEYWORDS = ("aussen", "outdoor", "balkon", "garten", "terrasse", "draussen", "exterior")
-_WATER_TEMP_KEYWORDS = ("wasser", "water", "boiler", "pool")
-_SOIL_TEMP_KEYWORDS = ("boden", "soil", "erde", "ground")
+_OUTDOOR_KEYWORDS = (
+    "aussen", "outdoor", "balkon", "garten", "terrasse", "draussen", "exterior",
+    "outside", "patio", "roof", "dach", "carport", "garage", "weather", "wetter",
+    "yard", "hof", "pergola", "veranda", "loggia", "wintergarten",
+)
+_WATER_TEMP_KEYWORDS = (
+    "wasser", "water", "boiler", "pool", "heisswasser", "hot_water",
+    "brauchwasser", "warmwasser", "zirkulation", "ruecklauf", "vorlauf",
+    "flow_temp", "return_temp", "dhw",
+)
+_SOIL_TEMP_KEYWORDS = (
+    "boden", "soil", "erde", "ground", "earth", "gewaechshaus", "greenhouse",
+    "hochbeet", "raised_bed", "kompost", "compost",
+)
 
 # Role-Keywords fuer natuerliche Sprache → Role-Matching in _find_entity()
 _ROLE_KEYWORDS = {
     # Temperatur
-    "outdoor_temp": ["aussen", "draussen", "outdoor", "balkon", "aussentemperatur", "gartentemperatur"],
-    "indoor_temp": ["innen", "raum", "drinnen", "raumtemperatur", "zimmertemperatur"],
-    "water_temp": ["wassertemperatur", "boiler", "warmwasser", "pooltemperatur"],
-    "soil_temp": ["bodentemperatur", "erdtemperatur"],
+    "outdoor_temp": ["aussen", "draussen", "outdoor", "balkon", "aussentemperatur",
+                     "gartentemperatur", "outside temperature", "exterior",
+                     "patio", "garden temperature", "weather temperature"],
+    "indoor_temp": ["innen", "raum", "drinnen", "raumtemperatur", "zimmertemperatur",
+                    "indoor", "room temperature", "inside temperature"],
+    "water_temp": ["wassertemperatur", "boiler", "warmwasser", "pooltemperatur",
+                   "water temperature", "hot water", "dhw", "flow temperature",
+                   "return temperature"],
+    "soil_temp": ["bodentemperatur", "erdtemperatur", "soil temperature",
+                  "ground temperature", "greenhouse"],
     # Klima
-    "humidity": ["feuchtigkeit", "feuchte", "luftfeuchte", "luftfeuchtigkeit"],
-    "pressure": ["luftdruck", "druck", "barometer"],
+    "humidity": ["feuchtigkeit", "feuchte", "luftfeuchte", "luftfeuchtigkeit",
+                 "humidity", "relative humidity", "moisture"],
+    "pressure": ["luftdruck", "druck", "barometer",
+                 "air pressure", "barometric", "atmospheric"],
     # Luftqualitaet
-    "co2": ["co2", "kohlendioxid"],
-    "co": ["kohlenmonoxid", "co-melder"],
-    "voc": ["voc", "fluechtige", "organische"],
-    "pm25": ["feinstaub", "pm2.5", "pm25", "partikel"],
-    "air_quality": ["luftqualitaet", "luft qualitaet", "aqi"],
+    "co2": ["co2", "kohlendioxid", "carbon dioxide"],
+    "co": ["kohlenmonoxid", "co-melder", "carbon monoxide"],
+    "voc": ["voc", "fluechtige", "organische",
+            "volatile organic", "tvoc"],
+    "pm25": ["feinstaub", "pm2.5", "pm25", "partikel",
+             "particulate", "fine dust"],
+    "air_quality": ["luftqualitaet", "luft qualitaet", "aqi",
+                    "air quality", "air quality index"],
     # Wetter
-    "wind_speed": ["wind", "windgeschwindigkeit", "windstaerke"],
-    "rain": ["regen", "niederschlag", "rain"],
-    "uv_index": ["uv", "uv-index", "sonnenbrand"],
+    "wind_speed": ["wind", "windgeschwindigkeit", "windstaerke",
+                   "wind speed", "wind gust", "windboee"],
+    "rain": ["regen", "niederschlag", "rain", "precipitation", "rainfall"],
+    "uv_index": ["uv", "uv-index", "sonnenbrand", "ultraviolet"],
     # Sicherheit
-    "smoke": ["rauch", "rauchmelder"],
-    "gas": ["gas", "gasmelder", "erdgas"],
-    "water_leak": ["wasserleck", "leck", "wassermelder", "ueberschwemmung"],
-    "alarm": ["alarm", "alarmanlage", "einbruch"],
-    "tamper": ["manipulation", "tamper", "sabotage"],
+    "smoke": ["rauch", "rauchmelder", "smoke", "smoke detector"],
+    "gas": ["gas", "gasmelder", "erdgas", "gas detector", "natural gas"],
+    "water_leak": ["wasserleck", "leck", "wassermelder", "ueberschwemmung",
+                   "water leak", "flood", "leak detector"],
+    "alarm": ["alarm", "alarmanlage", "einbruch",
+              "security", "burglar", "intrusion", "sicherheit"],
+    "tamper": ["manipulation", "tamper", "sabotage", "tampering"],
     # Oeffnungen
-    "window_contact": ["fenster", "window"],
-    "door_contact": ["tuer", "tuerkontakt", "door", "haustuer", "eingangstuer"],
-    "garage_door": ["garage", "garagentor"],
-    "gate": ["tor", "einfahrt", "gate"],
-    "lock": ["schloss", "verriegelt", "lock"],
-    "doorbell": ["klingel", "tuerklingel", "doorbell"],
+    "window_contact": ["fenster", "window", "window sensor", "fensterkontakt"],
+    "door_contact": ["tuer", "tuerkontakt", "door", "haustuer", "eingangstuer",
+                     "front door", "entrance", "door sensor"],
+    "garage_door": ["garage", "garagentor", "garage door"],
+    "gate": ["tor", "einfahrt", "gate", "driveway"],
+    "lock": ["schloss", "verriegelt", "lock", "deadbolt", "locked", "unlocked"],
+    "doorbell": ["klingel", "tuerklingel", "doorbell", "ring", "chime"],
     # Bewegung
-    "motion": ["bewegung", "motion", "bewegungsmelder"],
-    "presence": ["anwesenheit", "zuhause", "abwesend", "presence"],
-    "occupancy": ["belegung", "besetzt", "raumbelegung"],
-    "bed_occupancy": ["bett", "bettbelegung", "bett sensor", "bed", "bed_occupancy", "schlafsensor"],
-    "chair_occupancy": ["stuhl", "stuhlbelegung", "stuhlsensor", "chair", "sitzflaeche", "sitzsensor"],
+    "motion": ["bewegung", "motion", "bewegungsmelder", "motion sensor",
+               "motion detector", "pir"],
+    "presence": ["anwesenheit", "zuhause", "abwesend", "presence",
+                 "home", "away", "at home", "not home"],
+    "occupancy": ["belegung", "besetzt", "raumbelegung",
+                  "occupancy", "occupied", "room occupancy"],
+    "bed_occupancy": ["bett", "bettbelegung", "bett sensor", "bed", "bed_occupancy",
+                      "schlafsensor", "bed sensor", "sleep sensor", "bed occupancy"],
+    "chair_occupancy": ["stuhl", "stuhlbelegung", "stuhlsensor", "chair",
+                        "sitzflaeche", "sitzsensor", "chair sensor", "seat sensor",
+                        "chair occupancy"],
     # Energie
-    "power_meter": ["strom", "leistung", "watt", "strommesser"],
-    "energy": ["energie", "kwh", "energieverbrauch", "stromverbrauch"],
-    "voltage": ["spannung", "volt"],
-    "battery": ["batterie", "akku"],
-    "solar": ["solar", "photovoltaik", "pv", "solaranlage"],
-    "ev_charger": ["wallbox", "ladestation", "e-auto", "elektroauto"],
+    "power_meter": ["strom", "leistung", "watt", "strommesser",
+                    "power", "power meter", "power consumption", "wattage"],
+    "energy": ["energie", "kwh", "energieverbrauch", "stromverbrauch",
+               "energy", "energy consumption", "electricity"],
+    "voltage": ["spannung", "volt", "voltage"],
+    "battery": ["batterie", "akku", "battery", "charge level"],
+    "solar": ["solar", "photovoltaik", "pv", "solaranlage",
+              "photovoltaic", "solar panel", "solar power"],
+    "ev_charger": ["wallbox", "ladestation", "e-auto", "elektroauto",
+                   "ev charger", "electric vehicle", "charging station", "evse"],
     # Verbrauch
-    "gas_consumption": ["gasverbrauch", "gasverbrauch", "kubikmeter"],
-    "water_consumption": ["wasserverbrauch"],
+    "gas_consumption": ["gasverbrauch", "kubikmeter",
+                        "gas consumption", "gas meter", "gas usage"],
+    "water_consumption": ["wasserverbrauch",
+                          "water consumption", "water meter", "water usage"],
     # Heizung & Klima
-    "thermostat": ["thermostat"],
-    "heating": ["heizung", "heizen"],
-    "cooling": ["kuehlung", "kuehlen", "klimaanlage"],
-    "heat_pump": ["waermepumpe"],
-    "boiler": ["boiler", "warmwasserspeicher"],
+    "thermostat": ["thermostat", "temperature setpoint", "solltemperatur"],
+    "heating": ["heizung", "heizen", "heating", "heat"],
+    "cooling": ["kuehlung", "kuehlen", "klimaanlage",
+                "cooling", "air conditioning", "ac", "hvac"],
+    "heat_pump": ["waermepumpe", "heat pump"],
+    "boiler": ["boiler", "warmwasserspeicher", "hot water tank"],
     "radiator": ["heizkoerper", "radiator"],
-    "floor_heating": ["fussbodenheizung", "fbh"],
+    "floor_heating": ["fussbodenheizung", "fbh",
+                      "underfloor heating", "floor heating", "ufh"],
     # Lueftung
-    "fan": ["luefter", "ventilator"],
-    "ventilation": ["lueftung", "lueftungsanlage", "kwl"],
-    "air_purifier": ["luftreiniger", "luftfilter"],
+    "fan": ["luefter", "ventilator", "fan", "exhaust"],
+    "ventilation": ["lueftung", "lueftungsanlage", "kwl",
+                    "ventilation", "hrv", "erv", "air exchange"],
+    "air_purifier": ["luftreiniger", "luftfilter",
+                     "air purifier", "air filter"],
     # Beschattung
-    "blinds": ["rolladen", "jalousie", "rollo"],
-    "shutter": ["rollladen"],
-    "awning": ["markise"],
-    "curtain": ["vorhang", "gardine"],
+    "blinds": ["rolladen", "jalousie", "rollo",
+               "blinds", "shades", "roller shutter"],
+    "shutter": ["rollladen", "shutter"],
+    "awning": ["markise", "awning"],
+    "curtain": ["vorhang", "gardine", "curtain", "drape"],
     # Steckdosen & Aktoren
-    "outlet": ["steckdose", "stecker"],
-    "valve": ["ventil"],
-    "pump": ["pumpe"],
+    "outlet": ["steckdose", "stecker", "outlet", "plug", "socket"],
+    "valve": ["ventil", "valve"],
+    "pump": ["pumpe", "pump"],
     # Garten
-    "irrigation": ["bewaesserung", "sprinkler", "gartenschlauch"],
-    "pool": ["pool", "schwimmbad", "whirlpool"],
-    "soil_moisture": ["bodenfeuchtigkeit", "erdfeuchte"],
+    "irrigation": ["bewaesserung", "sprinkler", "gartenschlauch",
+                   "irrigation", "watering", "lawn"],
+    "pool": ["pool", "schwimmbad", "whirlpool",
+             "swimming pool", "hot tub", "spa"],
+    "soil_moisture": ["bodenfeuchtigkeit", "erdfeuchte",
+                      "soil moisture", "soil humidity"],
     # Medien
     "tv": ["fernseher", "tv", "television"],
-    "speaker": ["lautsprecher", "speaker", "box"],
-    "media_player": ["mediaplayer", "player", "streamer"],
-    "receiver": ["receiver", "verstaerker", "av-receiver"],
+    "speaker": ["lautsprecher", "speaker", "box", "sonos", "echo", "homepod"],
+    "media_player": ["mediaplayer", "player", "streamer", "media player"],
+    "receiver": ["receiver", "verstaerker", "av-receiver",
+                 "amplifier", "av receiver"],
     # Kommunikation
-    "phone": ["telefon", "phone", "sip", "anruf", "festnetz", "voip"],
+    "phone": ["telefon", "phone", "sip", "anruf", "festnetz", "voip",
+              "landline", "call"],
     # Netzwerk
-    "router": ["router", "wlan", "wifi"],
+    "router": ["router", "wlan", "wifi", "access point", "mesh"],
     "server": ["server"],
-    "nas": ["nas", "netzwerkspeicher"],
+    "nas": ["nas", "netzwerkspeicher", "network storage"],
     "pc": ["pc", "computer", "desktop", "rechner", "workstation"],
-    "adblocker": ["adblocker", "adblock", "adguard", "pihole", "werbeblocker"],
-    "speedtest": ["speedtest", "internetgeschwindigkeit", "internet speed", "internet geschwindigkeit", "bandbreite", "download speed", "upload speed"],
+    "adblocker": ["adblocker", "adblock", "adguard", "pihole", "werbeblocker",
+                  "ad blocker", "dns filter"],
+    "speedtest": ["speedtest", "internetgeschwindigkeit", "internet speed",
+                  "internet geschwindigkeit", "bandbreite", "download speed",
+                  "upload speed", "bandwidth"],
     # Haushaltsgeraete
-    "washing_machine": ["waschmaschine", "waschen"],
-    "dryer": ["trockner"],
-    "dishwasher": ["spuelmaschine", "geschirrspueler"],
-    "vacuum": ["staubsauger", "saugroboter", "roborock"],
-    "coffee_machine": ["kaffeemaschine", "kaffee", "espresso"],
+    "washing_machine": ["waschmaschine", "waschen",
+                        "washing machine", "washer", "laundry"],
+    "dryer": ["trockner", "dryer", "tumble dryer"],
+    "dishwasher": ["spuelmaschine", "geschirrspueler",
+                   "dishwasher"],
+    "vacuum": ["staubsauger", "saugroboter", "roborock",
+               "vacuum", "robot vacuum", "roomba"],
+    "coffee_machine": ["kaffeemaschine", "kaffee", "espresso",
+                       "coffee", "coffee machine", "coffee maker"],
     # Fahrzeuge
-    "car": ["auto", "fahrzeug", "pkw"],
-    "car_battery": ["autobatterie", "soc", "ladestand"],
+    "car": ["auto", "fahrzeug", "pkw", "car", "vehicle"],
+    "car_battery": ["autobatterie", "soc", "ladestand",
+                    "car battery", "state of charge", "ev battery"],
     # Ueberwachung
-    "camera": ["kamera", "ueberwachung", "cam"],
+    "camera": ["kamera", "ueberwachung", "cam",
+               "camera", "surveillance", "cctv", "webcam"],
     # Zonen
-    "zone": ["zone", "zonen", "bereich", "gebiet", "standort", "geofence"],
+    "zone": ["zone", "zonen", "bereich", "gebiet", "standort", "geofence",
+             "area", "location"],
 }
 
 
@@ -635,9 +694,9 @@ def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) 
         if device_class == "frequency" or unit == "Hz":
             return "frequency"
         # Verbrauch
-        if device_class == "gas" or unit in ("m\u00b3",) and "gas" in lower_eid:
+        if device_class == "gas" or (unit in ("m\u00b3",) and "gas" in lower_eid):
             return "gas_consumption"
-        if device_class == "water" or unit in ("L", "m\u00b3") and "water" in lower_eid:
+        if device_class == "water" or (unit in ("L", "m\u00b3") and "water" in lower_eid):
             return "water_consumption"
         # Sonstiges
         if device_class == "signal_strength" or unit in ("dBm", "dB"):
@@ -659,16 +718,19 @@ def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) 
     if domain == "switch":
         if device_class == "outlet":
             return "outlet"
-        if any(kw in lower_eid for kw in ("ventilat", "lueft", "fan")):
+        if any(kw in lower_eid for kw in ("ventilat", "lueft", "fan", "exhaust")):
             return "fan"
-        if any(kw in lower_eid for kw in ("bewaesser", "irrigat", "sprinkl")):
+        if any(kw in lower_eid for kw in ("bewaesser", "irrigat", "sprinkl", "water"
+                                           "ing", "rasen", "lawn")):
             return "irrigation"
         if any(kw in lower_eid for kw in ("ventil", "valve")):
             return "valve"
-        if any(kw in lower_eid for kw in ("steckdose", "plug", "socket")):
+        if any(kw in lower_eid for kw in ("steckdose", "plug", "socket", "outlet")):
             return "outlet"
         if any(kw in lower_eid for kw in ("pump", "pumpe")):
             return "pump"
+        if any(kw in lower_eid for kw in ("heiz", "heat", "boiler")):
+            return "heating"
         return ""
 
     if domain == "cover":
@@ -682,6 +744,8 @@ def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) 
             return "garage_door"
         if device_class == "gate":
             return "gate"
+        if device_class == "window":
+            return "blinds"
         return ""
 
     if domain == "lock":
@@ -1395,6 +1459,27 @@ _ASSISTANT_TOOLS_STATIC = [
                     "entity_id": {
                         "type": "string",
                         "description": "Entity-ID (z.B. sensor.temperatur_buero, weather.forecast_home, switch.steckdose_kueche)",
+                    },
+                },
+                "required": ["entity_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_entity_history",
+            "description": "Historische Daten einer Entity abrufen (z.B. Temperaturverlauf, Schalthistorie, Energieverbrauch der letzten Stunden/Tage). Nutze dies wenn der User nach Verlaeufen, Trends oder vergangenen Werten fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "entity_id": {
+                        "type": "string",
+                        "description": "Entity-ID (z.B. sensor.temperatur_buero, switch.steckdose_kueche)",
+                    },
+                    "hours": {
+                        "type": "integer",
+                        "description": "Anzahl zurueckliegender Stunden (Standard: 24, Max: 720 = 30 Tage)",
                     },
                 },
                 "required": ["entity_id"],
@@ -2417,6 +2502,83 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    # ── Deklarative Tools (Phase 13.3) ────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "create_declarative_tool",
+            "description": "Erstellt ein neues deklaratives Analyse-Tool. Deklarative Tools fuehren vordefinierte Berechnungen auf HA-Entities aus (NUR Lese-Zugriff). Verfuegbare Typen: entity_comparison (Vergleich zweier Entities), multi_entity_formula (Kombination mehrerer Entities mit average/weighted_average/sum/min/max/difference), event_counter (zaehlt State-Aenderungen), threshold_monitor (prueft ob Wert in Bereich), trend_analyzer (Trend ueber Zeitraum), entity_aggregator (Aggregation ueber mehrere Entities), schedule_checker (zeitbasierte Checks). Max 20 Tools.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Eindeutiger Name fuer das Tool (z.B. 'stromvergleich', 'raumtemperaturen'). Nur Buchstaben, Zahlen, _ und -.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Kurze Beschreibung was das Tool tut.",
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["entity_comparison", "multi_entity_formula", "event_counter", "threshold_monitor", "trend_analyzer", "entity_aggregator", "schedule_checker"],
+                        "description": "Typ des Tools.",
+                    },
+                    "config_json": {
+                        "type": "string",
+                        "description": "Tool-Konfiguration als JSON-String. Beispiel fuer entity_comparison: {\"entity_a\": \"sensor.strom_heute\", \"entity_b\": \"sensor.strom_gestern\", \"operation\": \"difference\"}. Beispiel fuer entity_aggregator: {\"entities\": [\"sensor.temp_wohn\", \"sensor.temp_schlaf\"], \"aggregation\": \"average\"}. Beispiel fuer threshold_monitor: {\"entity\": \"sensor.luftfeuchtigkeit\", \"thresholds\": {\"min\": 40, \"max\": 60}}. Beispiel fuer trend_analyzer: {\"entity\": \"sensor.temperatur\", \"time_range\": \"24h\"}. Beispiel fuer event_counter: {\"entities\": [\"binary_sensor.tuer\"], \"count_state\": \"on\", \"time_range\": \"24h\"}.",
+                    },
+                },
+                "required": ["name", "description", "type", "config_json"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_declarative_tools",
+            "description": "Listet alle benutzerdefinierten deklarativen Analyse-Tools auf.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_declarative_tool",
+            "description": "Loescht ein deklaratives Analyse-Tool.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name des Tools das geloescht werden soll.",
+                    },
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_declarative_tool",
+            "description": "Fuehrt ein deklaratives Analyse-Tool aus und gibt das Ergebnis zurueck. Nutze list_declarative_tools um verfuegbare Tools zu sehen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name des auszufuehrenden Tools.",
+                    },
+                },
+                "required": ["name"],
+            },
+        },
+    },
 ]
 
 
@@ -2469,7 +2631,8 @@ class FunctionExecutor:
         "get_covers", "get_media", "get_climate", "get_switches", "set_switch",
         "call_service", "play_media", "transfer_playback", "arm_security_system",
         "lock_door", "send_notification", "send_message_to_person",
-        "play_sound", "get_entity_state", "get_calendar_events",
+        "play_sound", "get_entity_state", "get_entity_history",
+        "get_calendar_events",
         "create_calendar_event", "delete_calendar_event",
         "reschedule_calendar_event", "set_presence_mode", "edit_config",
         "manage_shopping_list", "list_capabilities", "create_automation",
@@ -2487,6 +2650,8 @@ class FunctionExecutor:
         "set_vacuum", "get_vacuum",
         "manage_repair",
         "remote_control", "get_remotes",
+        "create_declarative_tool", "list_declarative_tools",
+        "delete_declarative_tool", "run_declarative_tool",
     })
 
     # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
@@ -4347,6 +4512,83 @@ class FunctionExecutor:
             display += f" (Rolle: {role_label})"
 
         return {"success": True, "message": display, "state": current, "attributes": attrs}
+
+    async def _exec_get_entity_history(self, args: dict) -> dict:
+        """Historische Daten einer Entity abrufen."""
+        entity_id = args.get("entity_id", "")
+        hours = int(args.get("hours", 24))
+
+        if not entity_id:
+            return {"success": False, "message": "Entity-ID erforderlich"}
+
+        # Fuzzy-Match wenn exakter ID nicht gefunden
+        state = await self.ha.get_state(entity_id)
+        if not state and "." in entity_id:
+            domain, search = entity_id.split(".", 1)
+            found = await self._find_entity(domain, search)
+            if found:
+                entity_id = found
+
+        try:
+            history = await self.ha.get_history(entity_id, hours=hours)
+        except Exception as e:
+            logger.error("get_entity_history Fehler: %s", e)
+            return {"success": False, "message": f"Fehler: {e}"}
+
+        if not history:
+            return {"success": True, "message": f"Keine Historie fuer '{entity_id}' in den letzten {hours}h"}
+
+        # Numerische Werte: Min/Max/Avg berechnen
+        numeric_vals = []
+        for entry in history:
+            try:
+                numeric_vals.append(float(entry.get("state", "")))
+            except (ValueError, TypeError):
+                pass
+
+        friendly_name = entity_id
+        if state:
+            friendly_name = state.get("attributes", {}).get("friendly_name", entity_id)
+            unit = state.get("attributes", {}).get("unit_of_measurement", "")
+        else:
+            unit = ""
+
+        lines = [f"Historie {friendly_name} (letzte {hours}h, {len(history)} Eintraege):"]
+
+        if numeric_vals:
+            avg = sum(numeric_vals) / len(numeric_vals)
+            lines.append(
+                f"Min: {min(numeric_vals):.1f}{unit} | "
+                f"Max: {max(numeric_vals):.1f}{unit} | "
+                f"Durchschnitt: {avg:.1f}{unit}"
+            )
+            # Trend: Vergleiche erste und letzte 20%
+            n = len(numeric_vals)
+            if n >= 5:
+                first_avg = sum(numeric_vals[:n // 5]) / (n // 5)
+                last_avg = sum(numeric_vals[-(n // 5):]) / (n // 5)
+                diff = last_avg - first_avg
+                if abs(diff) > 0.1:
+                    trend = "steigend" if diff > 0 else "fallend"
+                    lines.append(f"Trend: {trend} ({diff:+.1f}{unit})")
+
+        # Letzte Aenderungen (max 10)
+        changes = []
+        prev_state = None
+        for entry in history:
+            s = entry.get("state", "")
+            if s != prev_state and s not in ("unavailable", "unknown"):
+                ts = entry.get("last_changed", "")
+                if ts:
+                    ts_short = ts[11:16] if len(ts) > 16 else ts  # HH:MM
+                    changes.append(f"{ts_short}: {s}{unit}")
+                prev_state = s
+        if changes:
+            # Letzte 10 Aenderungen
+            shown = changes[-10:]
+            lines.append("Letzte Aenderungen: " + " → ".join(shown))
+
+        return {"success": True, "message": "\n".join(lines)}
 
     def _get_write_calendar(self) -> Optional[str]:
         """Ersten konfigurierten Kalender fuer Schreib-Operationen zurueckgeben."""
@@ -6683,3 +6925,55 @@ class FunctionExecutor:
             return {"success": True, "message": "Keine Fernbedienungen gefunden.", "remotes": []}
 
         return {"success": True, "remotes": results, "count": len(results)}
+
+    # ── Deklarative Tools (Phase 13.3) ────────────────────────
+    async def _exec_create_declarative_tool(self, args: dict) -> dict:
+        """Erstellt ein deklaratives Analyse-Tool."""
+        import json as _json
+        name = args.get("name", "").strip()
+        description = args.get("description", "").strip()
+        tool_type = args.get("type", "").strip()
+        config_json = args.get("config_json", "")
+
+        if not name or not description or not tool_type:
+            return {"success": False, "message": "name, description und type sind erforderlich."}
+
+        try:
+            config = _json.loads(config_json) if isinstance(config_json, str) else config_json
+        except _json.JSONDecodeError as e:
+            return {"success": False, "message": f"Ungueltiges JSON in config_json: {e}"}
+
+        registry = get_decl_registry()
+        return registry.create_tool(name, {
+            "type": tool_type,
+            "description": description,
+            "config": config,
+        })
+
+    async def _exec_list_declarative_tools(self, args: dict) -> dict:
+        """Listet alle deklarativen Tools."""
+        registry = get_decl_registry()
+        tools = registry.list_tools()
+        if not tools:
+            return {"success": True, "message": "Keine deklarativen Tools vorhanden.", "tools": []}
+
+        lines = [f"{len(tools)} deklarative Tool(s):"]
+        for t in tools:
+            lines.append(f"  - {t['name']} ({t.get('type', '?')}): {t.get('description', '')}")
+        return {"success": True, "message": "\n".join(lines), "tools": tools}
+
+    async def _exec_delete_declarative_tool(self, args: dict) -> dict:
+        """Loescht ein deklaratives Tool."""
+        name = args.get("name", "").strip()
+        if not name:
+            return {"success": False, "message": "name ist erforderlich."}
+        registry = get_decl_registry()
+        return registry.delete_tool(name)
+
+    async def _exec_run_declarative_tool(self, args: dict) -> dict:
+        """Fuehrt ein deklaratives Tool aus."""
+        name = args.get("name", "").strip()
+        if not name:
+            return {"success": False, "message": "name ist erforderlich."}
+        executor = DeclarativeToolExecutor(self.ha)
+        return await executor.execute(name)

@@ -1497,6 +1497,8 @@ async def websocket_endpoint(websocket: WebSocket):
     _ws_msg_times: list[float] = []
     _WS_RATE_LIMIT = 30
     _WS_RATE_WINDOW = 10.0
+    # Interrupt-Flag: wird vom Interrupt-Handler gesetzt, vom Stream-Callback geprueft
+    _ws_interrupt_flag = False
     try:
         while True:
             data = await websocket.receive_text()
@@ -1528,6 +1530,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     ws_device_id = message.get("data", {}).get("device_id")
                     use_stream = message.get("data", {}).get("stream", False)
                     if text:
+                        # Interrupt-Flag zuruecksetzen vor neuer Verarbeitung
+                        _ws_interrupt_flag = False
+
                         # Phase 9: Voice-Metadaten verarbeiten
                         if voice_meta:
                             brain.mood.analyze_voice_metadata(voice_meta, person=person or "")
@@ -1549,9 +1554,42 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "okay, so", "right,", "let's ",
                             ]
 
+                            # Sentence-Level TTS: Saetze waehrend Streaming an TTS schicken
+                            _tts_sentence_buf = []  # Tokens seit letzter Satz-Grenze
+                            _tts_sentences_sent = 0
+                            _SENTENCE_ENDS = frozenset(".!?")
+                            _tts_enabled = (
+                                hasattr(brain, 'sound_manager')
+                                and brain.sound_manager.enabled
+                                and not getattr(brain, "_request_from_pipeline", False)
+                            )
+
+                            async def _flush_tts_sentence():
+                                """Sendet den aktuellen Satz-Buffer an TTS."""
+                                nonlocal _tts_sentences_sent
+                                sentence = "".join(_tts_sentence_buf).strip()
+                                _tts_sentence_buf.clear()
+                                if not sentence or len(sentence) < 3:
+                                    return
+                                _tts_sentences_sent += 1
+                                try:
+                                    tts_data = brain.tts_enhancer.enhance(
+                                        sentence, message_type="response",
+                                    )
+                                    asyncio.ensure_future(
+                                        brain.sound_manager.speak_response(
+                                            sentence, room=room, tts_data=tts_data,
+                                        )
+                                    )
+                                except Exception as e:
+                                    logger.debug("Sentence-TTS Fehler: %s", e)
+
                             async def _guarded_stream_token(token: str):
                                 """Buffert initiale Tokens um Reasoning zu erkennen."""
                                 nonlocal _stream_suppressed
+                                # Interrupt-Check: Wenn unterbrochen, nicht weiter streamen
+                                if _ws_interrupt_flag:
+                                    raise asyncio.CancelledError("Stream interrupted by user")
                                 if _stream_suppressed:
                                     return  # Reasoning erkannt — nichts senden
 
@@ -1582,22 +1620,84 @@ async def websocket_endpoint(websocket: WebSocket):
                                 stream_tokens_sent.append(token)
                                 await emit_stream_token(token)
 
-                            result = await brain.process(
-                                text, person, room=room,
-                                stream_callback=_guarded_stream_token,
-                                voice_metadata=voice_meta,
-                                device_id=ws_device_id,
-                            )
-                            tts_data = result.get("tts")
-                            if stream_tokens_sent:
-                                # Es wurden Tokens gestreamt → stream_end senden
-                                await emit_stream_end(result["response"], tts_data=tts_data)
-                            elif not result.get("_emitted"):
-                                # Keine Tokens gestreamt (z.B. Tool-Query mit Humanizer)
-                                # → normale Antwort senden statt leerer Stream-Blase
-                                # _emitted=True: Shortcut-Pfade in brain.py haben
-                                # bereits via _speak_and_emit gesendet
-                                await emit_speaking(result["response"], tts_data=tts_data)
+                                # Sentence-Level TTS: Satz-Grenzen erkennen
+                                if _tts_enabled:
+                                    _tts_sentence_buf.append(token)
+                                    stripped = token.rstrip()
+                                    if stripped and stripped[-1] in _SENTENCE_ENDS:
+                                        await _flush_tts_sentence()
+
+                            # brain.process als Task starten damit Interrupts empfangen werden
+                            async def _run_brain():
+                                return await brain.process(
+                                    text, person, room=room,
+                                    stream_callback=_guarded_stream_token,
+                                    voice_metadata=voice_meta,
+                                    device_id=ws_device_id,
+                                )
+
+                            _brain_task = asyncio.create_task(_run_brain())
+
+                            # Concurrent: Empfange Nachrichten waehrend brain laeuft
+                            result = None
+                            while not _brain_task.done():
+                                _recv_task = asyncio.create_task(websocket.receive_text())
+                                done, _ = await asyncio.wait(
+                                    [_brain_task, _recv_task],
+                                    return_when=asyncio.FIRST_COMPLETED,
+                                )
+                                if _recv_task in done:
+                                    try:
+                                        interim_data = _recv_task.result()
+                                        interim_msg = json.loads(interim_data)
+                                        if interim_msg.get("event") == "assistant.interrupt":
+                                            logger.info("Interrupt waehrend Streaming empfangen")
+                                            _ws_interrupt_flag = True
+                                            _brain_task.cancel()
+                                            # TTS stoppen
+                                            if hasattr(brain, 'sound_manager') and brain.sound_manager.enabled:
+                                                try:
+                                                    speaker = await brain.sound_manager._resolve_speaker(None)
+                                                    if speaker:
+                                                        asyncio.ensure_future(brain.ha.call_service(
+                                                            "media_player", "media_stop",
+                                                            {"entity_id": speaker},
+                                                        ))
+                                                except Exception:
+                                                    pass
+                                            if stream_tokens_sent:
+                                                await emit_stream_end(
+                                                    "".join(stream_tokens_sent),
+                                                    tts_data={"interrupted": True},
+                                                )
+                                            break
+                                        elif interim_msg.get("event") == "pong":
+                                            pass  # Keep-alive ignorieren
+                                    except (json.JSONDecodeError, Exception):
+                                        pass
+                                else:
+                                    # recv_task noch nicht fertig — canceln
+                                    _recv_task.cancel()
+                                if _brain_task in done:
+                                    _recv_task.cancel()
+                                    try:
+                                        result = _brain_task.result()
+                                    except (asyncio.CancelledError, Exception) as e:
+                                        logger.info("Brain-Task abgebrochen: %s", type(e).__name__)
+
+                            # Ergebnis verarbeiten (nur wenn nicht unterbrochen)
+                            if result and not _ws_interrupt_flag:
+                                # Restlichen Satz-Buffer an TTS senden
+                                if _tts_enabled and _tts_sentence_buf:
+                                    await _flush_tts_sentence()
+
+                                tts_data = result.get("tts")
+                                if stream_tokens_sent:
+                                    await emit_stream_end(result["response"], tts_data=tts_data)
+                                elif not result.get("_emitted"):
+                                    await emit_speaking(result["response"], tts_data=tts_data)
+                          except asyncio.CancelledError:
+                            logger.info("Streaming durch Interrupt abgebrochen")
                           except Exception as e:
                             logger.error("Streaming-Fehler: %s", e, exc_info=True)
                             # Sicherstellen dass der Client nicht haengen bleibt
@@ -1614,16 +1714,17 @@ async def websocket_endpoint(websocket: WebSocket):
                                                          device_id=ws_device_id)
 
                         # Aktionen ans Addon melden fuer Aktivitaeten-Log
-                        actions = result.get("actions", [])
-                        if actions:
-                            _ws_task = asyncio.ensure_future(brain.ha.log_actions(
-                                actions, user_text=text,
-                                response_text=result.get("response", ""),
-                            ))
-                            _ws_task.add_done_callback(
-                                lambda t: logger.warning("log_actions fehlgeschlagen: %s", t.exception())
-                                if t.exception() else None
-                            )
+                        if result:
+                            actions = result.get("actions", [])
+                            if actions:
+                                _ws_task = asyncio.ensure_future(brain.ha.log_actions(
+                                    actions, user_text=text,
+                                    response_text=result.get("response", ""),
+                                ))
+                                _ws_task.add_done_callback(
+                                    lambda t: logger.warning("log_actions fehlgeschlagen: %s", t.exception())
+                                    if t.exception() else None
+                                )
 
                 elif event == "assistant.feedback":
                     # Phase 5: Feedback ueber FeedbackTracker verarbeiten
@@ -1634,9 +1735,26 @@ async def websocket_endpoint(websocket: WebSocket):
                     identifier = notification_id or event_type
                     if identifier:
                         await brain.feedback.record_feedback(identifier, feedback_type)
+                        # Autonomy Evolution: Feedback als Interaktion tracken
+                        _fb_positive = feedback_type in ("acknowledged", "engaged", "thanked")
+                        asyncio.ensure_future(
+                            brain.autonomy.track_interaction("proactive_feedback", _fb_positive)
+                        )
 
                 elif event == "assistant.interrupt":
-                    pass  # Fuer spaetere Streaming-Unterbrechung
+                    # Interrupt ausserhalb von Streaming (z.B. TTS laeuft nach non-stream Antwort)
+                    logger.info("WebSocket Interrupt empfangen (nicht-streaming)")
+                    _ws_interrupt_flag = True
+                    if hasattr(brain, 'sound_manager') and brain.sound_manager.enabled:
+                        try:
+                            speaker = await brain.sound_manager._resolve_speaker(None)
+                            if speaker:
+                                asyncio.ensure_future(brain.ha.call_service(
+                                    "media_player", "media_stop",
+                                    {"entity_id": speaker},
+                                ))
+                        except Exception:
+                            pass
 
             except json.JSONDecodeError:
                 await ws_manager.send_personal(
@@ -3474,6 +3592,60 @@ async def ui_discover_opening_sensors(token: str = ""):
         return {"sensors": sensors}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Declarative Tools API (Phase 13.3) ────────────────────────────
+
+@app.get("/api/ui/declarative-tools")
+async def ui_get_declarative_tools(token: str = ""):
+    """Alle deklarativen Tools auflisten."""
+    _check_token(token)
+    from .declarative_tools import get_registry
+    registry = get_registry()
+    tools = registry.list_tools()
+    return {"tools": tools, "count": len(tools)}
+
+
+@app.post("/api/ui/declarative-tools")
+async def ui_create_declarative_tool(request: Request, token: str = ""):
+    """Deklaratives Tool erstellen oder aktualisieren."""
+    _check_token(token)
+    from .declarative_tools import get_registry
+    body = await request.json()
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name erforderlich")
+    registry = get_registry()
+    result = registry.create_tool(name, {
+        "type": body.get("type", ""),
+        "description": body.get("description", ""),
+        "config": body.get("config", {}),
+    })
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Fehler"))
+    return result
+
+
+@app.delete("/api/ui/declarative-tools/{tool_name}")
+async def ui_delete_declarative_tool(tool_name: str, token: str = ""):
+    """Deklaratives Tool loeschen."""
+    _check_token(token)
+    from .declarative_tools import get_registry
+    registry = get_registry()
+    result = registry.delete_tool(tool_name)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("message", "Nicht gefunden"))
+    return result
+
+
+@app.post("/api/ui/declarative-tools/{tool_name}/test")
+async def ui_test_declarative_tool(tool_name: str, token: str = ""):
+    """Deklaratives Tool testweise ausfuehren."""
+    _check_token(token)
+    from .declarative_tools import DeclarativeToolExecutor
+    executor = DeclarativeToolExecutor(brain.ha)
+    result = await executor.execute(tool_name)
+    return result
 
 
 # ── Entity-Annotations API ─────────────────────────────────────────

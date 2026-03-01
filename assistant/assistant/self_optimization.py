@@ -12,6 +12,7 @@ Phase 13.4: Kontrollierte Prompt-Selbstoptimierung.
 
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -525,6 +526,197 @@ Wenn keine Aenderung noetig: []"""
 
         lines.append("Sage 'Vorschlag 1 annehmen', 'alle ablehnen', oder 'Rollback'.")
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Phase 13.4b: Banned-Phrases Auto-Detection
+    # ------------------------------------------------------------------
+
+    async def track_filtered_phrase(self, phrase: str):
+        """Trackt eine Phrase die vom Response-Filter entfernt wurde.
+
+        Wird aus brain.py _filter_response() aufgerufen.
+        Bei 5+ Entfernungen der gleichen Phrase: Vorschlag zur dauerhaften Aufnahme.
+        """
+        if not self._redis or not phrase:
+            return
+        try:
+            clean = phrase.strip()[:100]
+            key = "mha:self_opt:phrase_filter_counts"
+            await self._redis.hincrby(key, clean, 1)
+            await self._redis.expire(key, 30 * 86400)
+        except Exception:
+            pass
+
+    async def track_user_phrase_correction(self, original_phrase: str):
+        """Trackt wenn User eine Phrase explizit korrigiert ('sag das nicht').
+
+        Wird aus correction_memory aufgerufen.
+        """
+        if not self._redis or not original_phrase:
+            return
+        try:
+            clean = original_phrase.strip()[:100]
+            key = "mha:self_opt:phrase_corrections"
+            await self._redis.hincrby(key, clean, 1)
+            await self._redis.expire(key, 90 * 86400)
+        except Exception:
+            pass
+
+    async def detect_new_banned_phrases(self) -> list[dict]:
+        """Erkennt Phrasen die haeufig gefiltert oder korrigiert werden.
+
+        Returns:
+            Liste von Vorschlaegen: [{"phrase": "...", "count": N, "source": "filter"|"correction"}]
+        """
+        if not self._redis:
+            return []
+
+        suggestions = []
+
+        # 1. Phrasen die der Filter oft entfernt (5+ mal)
+        try:
+            filter_counts = await self._redis.hgetall("mha:self_opt:phrase_filter_counts")
+            for phrase, count_str in (filter_counts or {}).items():
+                count = int(count_str or 0)
+                if count >= 5:
+                    suggestions.append({
+                        "phrase": phrase,
+                        "count": count,
+                        "source": "filter",
+                        "reason": f"Wurde {count}x vom Filter entfernt — dauerhaft aufnehmen?",
+                    })
+        except Exception:
+            pass
+
+        # 2. Phrasen die User explizit korrigiert hat (2+ mal)
+        try:
+            corrections = await self._redis.hgetall("mha:self_opt:phrase_corrections")
+            for phrase, count_str in (corrections or {}).items():
+                count = int(count_str or 0)
+                if count >= 2:
+                    suggestions.append({
+                        "phrase": phrase,
+                        "count": count,
+                        "source": "correction",
+                        "reason": f"User hat diese Formulierung {count}x korrigiert",
+                    })
+        except Exception:
+            pass
+
+        # Sortieren nach Haeufigkeit
+        suggestions.sort(key=lambda s: s["count"], reverse=True)
+        return suggestions[:5]
+
+    async def add_banned_phrase(self, phrase: str) -> dict:
+        """Fuegt eine Phrase zur banned_phrases Liste hinzu (nach User-Bestaetigung).
+
+        Returns: {"success": bool, "message": str}
+        """
+        if not phrase or len(phrase) < 3:
+            return {"success": False, "message": "Phrase zu kurz"}
+
+        try:
+            with open(_SETTINGS_PATH) as f:
+                config = yaml.safe_load(f) or {}
+
+            # Snapshot vor Aenderung
+            await self.versioning.create_snapshot(
+                "settings", _SETTINGS_PATH,
+                reason=f"add_banned_phrase:{phrase[:50]}",
+                changed_by="self_optimization",
+            )
+
+            if "response_filter" not in config:
+                config["response_filter"] = {}
+            if "banned_phrases" not in config["response_filter"]:
+                config["response_filter"]["banned_phrases"] = []
+
+            if phrase in config["response_filter"]["banned_phrases"]:
+                return {"success": False, "message": f"'{phrase}' ist bereits in der Liste"}
+
+            config["response_filter"]["banned_phrases"].append(phrase)
+
+            with open(_SETTINGS_PATH, "w") as f:
+                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+            # Hot-Reload
+            _new = load_yaml_config()
+            cfg_module.yaml_config.clear()
+            cfg_module.yaml_config.update(_new)
+
+            # Zaehler zuruecksetzen
+            if self._redis:
+                await self._redis.hdel("mha:self_opt:phrase_filter_counts", phrase)
+                await self._redis.hdel("mha:self_opt:phrase_corrections", phrase)
+
+            logger.info("Banned Phrase hinzugefuegt: '%s'", phrase)
+            return {"success": True, "message": f"'{phrase}' zur Sperrliste hinzugefuegt"}
+
+        except Exception as e:
+            logger.error("Banned Phrase Fehler: %s", e)
+            return {"success": False, "message": f"Fehler: {e}"}
+
+    def format_phrase_suggestions(self, suggestions: list[dict]) -> str:
+        """Formatiert Phrase-Vorschlaege fuer Chat-Ausgabe."""
+        if not suggestions:
+            return ""
+
+        lines = ["Wiederkehrende Phrasen die ich sperren sollte:", ""]
+        for i, s in enumerate(suggestions):
+            source_de = "oft vom Filter entfernt" if s["source"] == "filter" else "von dir korrigiert"
+            lines.append(f"  [{i+1}] \"{s['phrase']}\" ({s['count']}x {source_de})")
+        lines.append("")
+        lines.append("Sage 'Phrase 1 sperren' oder 'alle Phrasen sperren'.")
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Phase 13.4c: Weekly Summary Report
+    # ------------------------------------------------------------------
+
+    async def generate_weekly_summary(self, correction_memory=None) -> str:
+        """Generiert eine kompakte Zusammenfassung der Optimierungs-Aktivitaeten.
+
+        Returns:
+            Formatierter Text fuer den Weekly-Report.
+        """
+        parts = []
+
+        # 1. Optimierungs-Vorschlaege (Parameter)
+        proposals = await self.get_pending_proposals()
+        if proposals:
+            parts.append(f"- {len(proposals)} Optimierungsvorschlag{'e' if len(proposals) > 1 else ''} wartend")
+
+        # 2. Angewandte Aenderungen (letzte Woche)
+        if self._redis:
+            history = await self._redis.lrange("mha:self_opt:history", 0, 4)
+            recent = []
+            for item in (history or []):
+                try:
+                    entry = json.loads(item)
+                    if entry.get("applied_at"):
+                        recent.append(f"{entry['parameter']}: {entry.get('current')} -> {entry.get('proposed')}")
+                except (json.JSONDecodeError, KeyError):
+                    pass
+            if recent:
+                parts.append(f"- Letzte Aenderungen: {', '.join(recent[:3])}")
+
+        # 3. Phrase-Vorschlaege
+        phrase_suggestions = await self.detect_new_banned_phrases()
+        if phrase_suggestions:
+            parts.append(f"- {len(phrase_suggestions)} neue Phrase{'n' if len(phrase_suggestions) > 1 else ''} zum Sperren erkannt")
+
+        # 4. Korrektur-Statistiken
+        if correction_memory:
+            stats = await correction_memory.get_stats()
+            total = stats.get("total_corrections", 0)
+            rules = stats.get("active_rules", 0)
+            if total or rules:
+                parts.append(f"- Korrekturen: {total} gesamt, {rules} aktive Regeln")
+
+        if not parts:
+            return ""
+
+        return "Selbstoptimierung:\n" + "\n".join(parts)
 
     def health_status(self) -> dict:
         """Status fuer Diagnostik."""

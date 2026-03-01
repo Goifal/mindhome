@@ -470,3 +470,76 @@ class HealthMonitor:
         elif 16 <= temp < 18 or 25 < temp <= 27:
             return 50
         return 25
+
+    async def get_trend_summary(self, lookback_hours: int = 6) -> Optional[str]:
+        """Kompakter Trend-String fuer den LLM-Kontext.
+
+        Vergleicht aktuelle Werte mit dem Durchschnitt der letzten Stunden
+        und gibt einen einzeiligen Trend zurueck.
+
+        Returns:
+            z.B. "Raumklima 78/100 | CO2 steigend (520→680ppm) | Luft stabil"
+            oder None wenn keine Daten.
+        """
+        if not self.redis:
+            return None
+
+        try:
+            import json
+            now = datetime.now()
+            status = await self.get_status()
+            if not status.get("sensors"):
+                return None
+
+            # Aktuelle Durchschnitte pro Typ
+            current = {}
+            for sensor in status["sensors"]:
+                s_type = sensor.get("type", "")
+                if s_type:
+                    current.setdefault(s_type, []).append(sensor.get("value", 0))
+            current_avg = {
+                t: round(sum(v) / len(v), 1) for t, v in current.items() if v
+            }
+
+            # Historische Snapshots laden
+            historical = {}  # type -> [values]
+            for h in range(1, lookback_hours + 1):
+                ts = now - timedelta(hours=h)
+                key = f"mha:health:snapshot:{ts.strftime('%Y-%m-%d:%H')}"
+                raw = await self.redis.get(key)
+                if raw:
+                    snap = json.loads(raw)
+                    for t, v in snap.items():
+                        if t != "score" and isinstance(v, (int, float)):
+                            historical.setdefault(t, []).append(v)
+
+            if not historical and not current_avg:
+                return None
+
+            # Trend-Strings bauen
+            parts = [f"Raumklima {status.get('score', 0)}/100"]
+            _type_labels = {"co2": "CO2", "humidity": "Luft", "temperature": "Temp"}
+
+            for s_type, label in _type_labels.items():
+                cur = current_avg.get(s_type)
+                if cur is None:
+                    continue
+                hist_vals = historical.get(s_type, [])
+                if hist_vals:
+                    hist_avg = sum(hist_vals) / len(hist_vals)
+                    diff = cur - hist_avg
+                    unit = {"co2": "ppm", "humidity": "%", "temperature": "°C"}.get(s_type, "")
+                    if abs(diff) < 0.5:
+                        parts.append(f"{label} stabil ({cur:.0f}{unit})")
+                    else:
+                        trend = "steigend" if diff > 0 else "fallend"
+                        parts.append(f"{label} {trend} ({hist_avg:.0f}→{cur:.0f}{unit})")
+                else:
+                    unit = {"co2": "ppm", "humidity": "%", "temperature": "°C"}.get(s_type, "")
+                    parts.append(f"{label} {cur:.0f}{unit}")
+
+            return " | ".join(parts) if len(parts) > 1 else None
+
+        except Exception as e:
+            logger.debug("Trend-Summary Fehler: %s", e)
+            return None

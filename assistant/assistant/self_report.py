@@ -39,7 +39,8 @@ class SelfReport:
     async def generate_report(self, outcome_tracker=None, correction_memory=None,
                               feedback_tracker=None, anticipation=None,
                               insight_engine=None, learning_observer=None,
-                              response_quality=None, error_patterns=None) -> dict:
+                              response_quality=None, error_patterns=None,
+                              self_optimization=None) -> dict:
         """Sammelt Daten aus allen Subsystemen und generiert einen Bericht."""
         if not self.enabled or not self.redis:
             return {"error": "SelfReport nicht aktiv"}
@@ -91,6 +92,16 @@ class SelfReport:
                 data["errors"] = await error_patterns.get_stats()
             except Exception as e:
                 logger.debug("SelfReport: Error-Daten Fehler: %s", e)
+
+        if self_optimization:
+            try:
+                opt_summary = await self_optimization.generate_weekly_summary(
+                    correction_memory=correction_memory,
+                )
+                if opt_summary:
+                    data["self_optimization"] = opt_summary
+            except Exception as e:
+                logger.debug("SelfReport: Self-Optimization Fehler: %s", e)
 
         # LLM-Summary generieren
         summary = await self._generate_summary(data)
