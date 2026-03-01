@@ -535,5 +535,15 @@ class SpontaneousObserver:
         if tool_type == "event_counter":
             return result.get("count", 0) >= 5
 
+        if tool_type == "state_duration":
+            # Interessant wenn > 30% oder < 5% der Gesamtzeit
+            pct = result.get("percentage", 0)
+            return pct > 30 or (pct < 5 and result.get("duration_hours", 0) > 0)
+
+        if tool_type == "time_comparison":
+            # Interessant wenn > 15% Aenderung
+            pct_change = abs(result.get("pct_change", 0))
+            return pct_change > 15
+
         # multi_entity_formula, schedule_checker: immer erwaehnenswert
         return True

@@ -2507,7 +2507,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "create_declarative_tool",
-            "description": "Erstellt ein neues deklaratives Analyse-Tool. Deklarative Tools fuehren vordefinierte Berechnungen auf HA-Entities aus (NUR Lese-Zugriff). Verfuegbare Typen: entity_comparison (Vergleich zweier Entities), multi_entity_formula (Kombination mehrerer Entities mit average/weighted_average/sum/min/max/difference), event_counter (zaehlt State-Aenderungen), threshold_monitor (prueft ob Wert in Bereich), trend_analyzer (Trend ueber Zeitraum), entity_aggregator (Aggregation ueber mehrere Entities), schedule_checker (zeitbasierte Checks). Max 20 Tools.",
+            "description": "Erstellt ein neues deklaratives Analyse-Tool. Deklarative Tools fuehren vordefinierte Berechnungen auf HA-Entities aus (NUR Lese-Zugriff). Verfuegbare Typen: entity_comparison (Vergleich zweier Entities), multi_entity_formula (Kombination mehrerer Entities mit average/weighted_average/sum/min/max/difference), event_counter (zaehlt State-Aenderungen), threshold_monitor (prueft ob Wert in Bereich), trend_analyzer (Trend ueber Zeitraum), entity_aggregator (Aggregation ueber mehrere Entities), schedule_checker (zeitbasierte Checks), state_duration (wie lange war ein Zustand aktiv, z.B. Heizung lief X Stunden), time_comparison (Vergleich einer Entity mit sich selbst ueber verschiedene Zeitraeume: yesterday/last_week/last_month).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2521,12 +2521,12 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "type": {
                         "type": "string",
-                        "enum": ["entity_comparison", "multi_entity_formula", "event_counter", "threshold_monitor", "trend_analyzer", "entity_aggregator", "schedule_checker"],
+                        "enum": ["entity_comparison", "multi_entity_formula", "event_counter", "threshold_monitor", "trend_analyzer", "entity_aggregator", "schedule_checker", "state_duration", "time_comparison"],
                         "description": "Typ des Tools.",
                     },
                     "config_json": {
                         "type": "string",
-                        "description": "Tool-Konfiguration als JSON-String. Beispiel fuer entity_comparison: {\"entity_a\": \"sensor.strom_heute\", \"entity_b\": \"sensor.strom_gestern\", \"operation\": \"difference\"}. Beispiel fuer entity_aggregator: {\"entities\": [\"sensor.temp_wohn\", \"sensor.temp_schlaf\"], \"aggregation\": \"average\"}. Beispiel fuer threshold_monitor: {\"entity\": \"sensor.luftfeuchtigkeit\", \"thresholds\": {\"min\": 40, \"max\": 60}}. Beispiel fuer trend_analyzer: {\"entity\": \"sensor.temperatur\", \"time_range\": \"24h\"}. Beispiel fuer event_counter: {\"entities\": [\"binary_sensor.tuer\"], \"count_state\": \"on\", \"time_range\": \"24h\"}.",
+                        "description": "Tool-Konfiguration als JSON-String. Beispiele: entity_comparison: {\"entity_a\": \"sensor.strom_heute\", \"entity_b\": \"sensor.strom_gestern\", \"operation\": \"difference\"}. entity_aggregator: {\"entities\": [\"sensor.temp_wohn\", \"sensor.temp_schlaf\"], \"aggregation\": \"average\"}. threshold_monitor: {\"entity\": \"sensor.luftfeuchtigkeit\", \"thresholds\": {\"min\": 40, \"max\": 60}}. trend_analyzer: {\"entity\": \"sensor.temperatur\", \"time_range\": \"24h\"}. event_counter: {\"entities\": [\"binary_sensor.tuer\"], \"count_state\": \"on\", \"time_range\": \"24h\"}. state_duration: {\"entity\": \"climate.wohnzimmer\", \"target_state\": \"heating\", \"time_range\": \"24h\"}. time_comparison: {\"entity\": \"sensor.strom\", \"compare_period\": \"yesterday\", \"aggregation\": \"average\"}.",
                     },
                 },
                 "required": ["name", "description", "type", "config_json"],
@@ -2576,6 +2576,18 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                 },
                 "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "suggest_declarative_tools",
+            "description": "Analysiert alle Home-Assistant-Entities und schlaegt passende Analyse-Tools vor die dem User helfen koennten. Gibt Vorschlaege zurueck mit Name, Beschreibung, Typ, Config und Begruendung. Der User muss jeden Vorschlag bestaetigen bevor er erstellt wird. Nutze diese Funktion wenn der User fragt welche Tools sinnvoll waeren oder wenn du proaktiv Vorschlaege machen willst.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
             },
         },
     },
@@ -2652,6 +2664,7 @@ class FunctionExecutor:
         "remote_control", "get_remotes",
         "create_declarative_tool", "list_declarative_tools",
         "delete_declarative_tool", "run_declarative_tool",
+        "suggest_declarative_tools",
     })
 
     # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
@@ -6985,3 +6998,40 @@ class FunctionExecutor:
             return {"success": False, "message": "name ist erforderlich."}
         executor = DeclarativeToolExecutor(self.ha)
         return await executor.execute(name)
+
+    async def _exec_suggest_declarative_tools(self, args: dict) -> dict:
+        """Generiert Tool-Vorschlaege basierend auf vorhandenen HA-Entities."""
+        if not self._decl_tools_enabled():
+            return {"success": False, "message": "Analyse-Tools sind deaktiviert."}
+
+        from .declarative_tools import generate_suggestions
+
+        try:
+            states = await self.ha.get_states()
+        except Exception as e:
+            return {"success": False, "message": f"HA nicht erreichbar: {e}"}
+
+        if not states:
+            return {"success": True, "message": "Keine Entities in Home Assistant gefunden.", "suggestions": []}
+
+        registry = get_decl_registry()
+        existing = {t["name"]: t for t in registry.list_tools()}
+        suggestions = generate_suggestions(states, existing)
+
+        if not suggestions:
+            return {"success": True, "message": "Keine neuen Vorschlaege — alle sinnvollen Tools existieren bereits oder es fehlen passende Entities.", "suggestions": []}
+
+        lines = [f"{len(suggestions)} Vorschlag/Vorschlaege fuer neue Analyse-Tools:\n"]
+        for i, s in enumerate(suggestions, 1):
+            lines.append(f"{i}. **{s['name']}** ({s['type']})")
+            lines.append(f"   {s['description']}")
+            lines.append(f"   Grund: {s['reason']}\n")
+
+        lines.append("Frage den User welche Vorschlaege er annehmen moechte. "
+                      "Erstelle die gewuenschten Tools dann mit create_declarative_tool.")
+
+        return {
+            "success": True,
+            "message": "\n".join(lines),
+            "suggestions": suggestions,
+        }

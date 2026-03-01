@@ -7730,6 +7730,8 @@ const DECL_TOOL_TYPES = [
   {v:'trend_analyzer', l:'Trend-Analyse', desc:'Analysiert Trend ueber Zeitraum (steigend/fallend/stabil)'},
   {v:'entity_aggregator', l:'Entity-Aggregation', desc:'Aggregiert ueber mehrere Entities (Durchschnitt aller Raeume)'},
   {v:'schedule_checker', l:'Zeitplan-Check', desc:'Prueft zeitbasierte Regeln (Nachtmodus, Arbeitszeit)'},
+  {v:'state_duration', l:'Zustandsdauer', desc:'Wie lange war ein Zustand aktiv (z.B. Heizung lief X Stunden)'},
+  {v:'time_comparison', l:'Zeitvergleich', desc:'Vergleicht Entity mit sich selbst (heute vs. gestern/Woche/Monat)'},
 ];
 
 const DECL_OPERATIONS = [
@@ -7749,19 +7751,85 @@ const DECL_TIME_RANGES = [
   {v:'1h', l:'1 Stunde'},{v:'6h', l:'6 Stunden'},{v:'12h', l:'12 Stunden'},
   {v:'24h', l:'24 Stunden'},{v:'48h', l:'48 Stunden'},{v:'7d', l:'7 Tage'},{v:'30d', l:'30 Tage'},
 ];
+const DECL_COMPARE_PERIODS = [
+  {v:'yesterday', l:'Gestern'},{v:'last_week', l:'Letzte Woche'},{v:'last_month', l:'Letzter Monat'},
+];
 
 // ── Vorlagen ─────────────────────────────────────────────────
 const DECL_PRESETS = [
+  // ── Entity-Vergleich ──────────────────────────────
   {name:'stromvergleich', desc:'Vergleicht aktuellen mit gestrigem Stromverbrauch', type:'entity_comparison',
    config:{entity_a:'sensor.strom_heute', entity_b:'sensor.strom_gestern', operation:'difference'}},
-  {name:'raumtemperaturen', desc:'Durchschnittstemperatur aller Raeume', type:'entity_aggregator',
-   config:{entities:['sensor.wohnzimmer_temperatur','sensor.schlafzimmer_temperatur','sensor.kueche_temperatur'], aggregation:'average'}},
+  {name:'innen_vs_aussen', desc:'Temperaturunterschied innen vs. aussen', type:'entity_comparison',
+   config:{entity_a:'sensor.wohnzimmer_temperatur', entity_b:'sensor.aussen_temperatur', operation:'difference'}},
+  {name:'solar_vs_verbrauch', desc:'Solarertrag vs. Stromverbrauch (Verhaeltnis)', type:'entity_comparison',
+   config:{entity_a:'sensor.solar_produktion', entity_b:'sensor.stromverbrauch', operation:'ratio'}},
+
+  // ── Multi-Entity-Formel ───────────────────────────
+  {name:'komfort_index', desc:'Gewichteter Komfort-Index aus Temperatur und Luftfeuchtigkeit', type:'multi_entity_formula',
+   config:{entities:{temp:'sensor.wohnzimmer_temperatur', hum:'sensor.wohnzimmer_luftfeuchtigkeit'}, formula:'weighted_average', weights:{temp:0.6, hum:0.4}}},
+  {name:'gesamt_stromverbrauch', desc:'Summe aller Stromzaehler', type:'multi_entity_formula',
+   config:{entities:{kueche:'sensor.strom_kueche', wohnzimmer:'sensor.strom_wohnzimmer', buero:'sensor.strom_buero'}, formula:'sum'}},
+
+  // ── Event-Zaehler ─────────────────────────────────
   {name:'tuerbewegungen', desc:'Zaehlt Tueroeffnungen heute', type:'event_counter',
    config:{entities:['binary_sensor.haustuer_kontakt'], count_state:'on', time_range:'24h'}},
+  {name:'licht_schaltungen', desc:'Wie oft wurden Lichter heute geschaltet?', type:'event_counter',
+   config:{entities:['light.wohnzimmer','light.kueche','light.flur'], count_state:'on', time_range:'24h'}},
+  {name:'fenster_oeffnungen', desc:'Fenster-Oeffnungen diese Woche', type:'event_counter',
+   config:{entities:['binary_sensor.fenster_wohnzimmer','binary_sensor.fenster_schlafzimmer'], count_state:'on', time_range:'7d'}},
+
+  // ── Schwellwert-Monitor ───────────────────────────
   {name:'luftfeuchtigkeit_check', desc:'Prueft ob Luftfeuchtigkeit im Komfortbereich (40-60%)', type:'threshold_monitor',
    config:{entity:'sensor.wohnzimmer_luftfeuchtigkeit', thresholds:{min:40, max:60}}},
+  {name:'co2_warnung', desc:'CO2-Wert unter 1000 ppm halten', type:'threshold_monitor',
+   config:{entity:'sensor.co2', thresholds:{max:1000}}},
+  {name:'batterie_check', desc:'Batterie-Sensor nicht unter 20% fallen lassen', type:'threshold_monitor',
+   config:{entity:'sensor.tuersensor_batterie', thresholds:{min:20}}},
+  {name:'raumtemperatur_check', desc:'Raumtemperatur im Wohlfuehlbereich (19-23 Grad)', type:'threshold_monitor',
+   config:{entity:'sensor.wohnzimmer_temperatur', thresholds:{min:19, max:23}}},
+
+  // ── Trend-Analyse ─────────────────────────────────
   {name:'temperatur_trend', desc:'Temperatur-Trend der letzten 24 Stunden', type:'trend_analyzer',
    config:{entity:'sensor.aussen_temperatur', time_range:'24h'}},
+  {name:'stromverbrauch_trend', desc:'Stromverbrauch-Trend der letzten 7 Tage', type:'trend_analyzer',
+   config:{entity:'sensor.stromverbrauch', time_range:'7d'}},
+  {name:'luftfeuchtigkeit_trend', desc:'Luftfeuchtigkeit-Entwicklung letzte 12 Stunden', type:'trend_analyzer',
+   config:{entity:'sensor.wohnzimmer_luftfeuchtigkeit', time_range:'12h'}},
+
+  // ── Entity-Aggregation ────────────────────────────
+  {name:'raumtemperaturen', desc:'Durchschnittstemperatur aller Raeume', type:'entity_aggregator',
+   config:{entities:['sensor.wohnzimmer_temperatur','sensor.schlafzimmer_temperatur','sensor.kueche_temperatur'], aggregation:'average'}},
+  {name:'kaeltester_raum', desc:'Findet den kaeltesten Raum', type:'entity_aggregator',
+   config:{entities:['sensor.wohnzimmer_temperatur','sensor.schlafzimmer_temperatur','sensor.kueche_temperatur','sensor.bad_temperatur'], aggregation:'min'}},
+  {name:'feuchtester_raum', desc:'Hoechste Luftfeuchtigkeit aller Raeume', type:'entity_aggregator',
+   config:{entities:['sensor.wohnzimmer_luftfeuchtigkeit','sensor.schlafzimmer_luftfeuchtigkeit','sensor.bad_luftfeuchtigkeit'], aggregation:'max'}},
+
+  // ── Zeitplan-Check ────────────────────────────────
+  {name:'nachtmodus', desc:'Prueft ob Nachtmodus aktiv ist (22-07 Uhr)', type:'schedule_checker',
+   config:{schedules:[{label:'Nachtmodus', start:'22:00', end:'07:00'}]}},
+  {name:'arbeitszeit', desc:'Prueft Arbeitszeit (Mo-Fr 9-17 Uhr)', type:'schedule_checker',
+   config:{schedules:[{label:'Arbeitszeit', start:'09:00', end:'17:00', days:['monday','tuesday','wednesday','thursday','friday']}]}},
+
+  // ── Zustandsdauer (NEU) ───────────────────────────
+  {name:'heizung_laufzeit', desc:'Wie lange lief die Heizung heute?', type:'state_duration',
+   config:{entity:'climate.wohnzimmer', target_state:'heating', time_range:'24h'}},
+  {name:'licht_brenndauer', desc:'Wie lange brannte das Wohnzimmerlicht heute?', type:'state_duration',
+   config:{entity:'light.wohnzimmer', target_state:'on', time_range:'24h'}},
+  {name:'fenster_offen_dauer', desc:'Wie lange war das Fenster heute geoeffnet?', type:'state_duration',
+   config:{entity:'binary_sensor.fenster_wohnzimmer', target_state:'on', time_range:'24h'}},
+  {name:'tv_nutzung', desc:'Fernseher-Betriebsstunden diese Woche', type:'state_duration',
+   config:{entity:'media_player.fernseher', target_state:'on', time_range:'7d'}},
+  {name:'waermepumpe_laufzeit', desc:'Waermepumpe Laufzeit letzte 7 Tage', type:'state_duration',
+   config:{entity:'switch.waermepumpe', target_state:'on', time_range:'7d'}},
+
+  // ── Zeitvergleich (NEU) ───────────────────────────
+  {name:'strom_vs_gestern', desc:'Stromverbrauch heute vs. gestern', type:'time_comparison',
+   config:{entity:'sensor.stromverbrauch', compare_period:'yesterday', aggregation:'average'}},
+  {name:'temperatur_vs_vorwoche', desc:'Temperatur diese vs. letzte Woche', type:'time_comparison',
+   config:{entity:'sensor.aussen_temperatur', compare_period:'last_week', aggregation:'average'}},
+  {name:'heizkosten_monatsvergleich', desc:'Heizenergie diesen vs. letzten Monat', type:'time_comparison',
+   config:{entity:'sensor.heizung_verbrauch', compare_period:'last_month', aggregation:'sum'}},
 ];
 
 // ── Entity-Picker Helfer (standalone, ohne Settings-Binding) ─
@@ -7886,6 +7954,7 @@ async function loadDeclarativeTools() {
     _declTools = d.tools || [];
     _declEnabled = d.enabled !== false;
     _declSpontaneous = d.use_in_spontaneous !== false;
+    _declMaxTools = d.max_tools || 20;
     _renderDeclToolList();
     _updateDeclEnabledUI();
   } catch(e) { console.error('Declarative tools load fail:', e); }
@@ -7898,7 +7967,7 @@ function _renderDeclToolList() {
     container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Noch keine Analyse-Tools erstellt. Erstelle unten ein neues oder nutze eine Vorlage.</div>';
     return;
   }
-  let h = '<div style="margin-bottom:8px;font-size:12px;color:var(--text-secondary);">' + _declTools.length + '/20 Tools</div>';
+  let h = '<div style="margin-bottom:8px;font-size:12px;color:var(--text-secondary);">' + _declTools.length + '/' + _declMaxTools + ' Tools</div>';
   for (const t of _declTools) {
     const typeInfo = DECL_TOOL_TYPES.find(tt => tt.v === t.type) || {l: t.type};
     h += '<div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;margin-bottom:10px;background:var(--bg-card);">' +
@@ -8047,6 +8116,24 @@ function _prefillDeclConfig(type, config) {
       if (s) s.value = JSON.stringify(config.schedules || [], null, 2);
       break;
     }
+    case 'state_duration': {
+      var ent3 = document.getElementById('declCfg_entity');
+      var ts = document.getElementById('declCfg_target_state');
+      var tr3 = document.getElementById('declCfg_time_range');
+      if (ent3) ent3.value = config.entity || '';
+      if (ts) ts.value = config.target_state || '';
+      if (tr3) tr3.value = config.time_range || '24h';
+      break;
+    }
+    case 'time_comparison': {
+      var ent4 = document.getElementById('declCfg_entity');
+      var cp = document.getElementById('declCfg_compare_period');
+      var agg2 = document.getElementById('declCfg_aggregation');
+      if (ent4) ent4.value = config.entity || '';
+      if (cp) cp.value = config.compare_period || 'yesterday';
+      if (agg2) agg2.value = config.aggregation || 'average';
+      break;
+    }
   }
 }
 
@@ -8116,7 +8203,23 @@ function _declTypeConfigFields(type) {
     case 'schedule_checker':
       return '<div class="form-group"><label>Zeitplaene (JSON-Array)</label>' +
         '<textarea id="declCfg_schedules" rows="5" style="font-family:var(--mono);font-size:12px;" placeholder=\'[{"label":"Nachtmodus","start":"22:00","end":"06:00"}]\'></textarea>' +
-        '<div class="hint">label, start (HH:MM), end (HH:MM). Optional: days (Array)</div></div>';
+        '<div class="hint">label, start (HH:MM), end (HH:MM). Optional: days (Array). Nacht-Zeitplaene (22:00-06:00) werden korrekt erkannt.</div></div>';
+    case 'state_duration':
+      return _declEntityInput('declCfg_entity', 'Entity', ['sensor','binary_sensor','climate','switch','light','cover'], 'z.B. climate.wohnzimmer') +
+        '<div class="form-group"><label>Ziel-State</label>' +
+        '<input type="text" id="declCfg_target_state" placeholder="z.B. on, heating, open">' +
+        '<div class="hint">Der State-Wert dessen Dauer gemessen wird</div></div>' +
+        '<div class="form-group"><label>Zeitraum</label><select id="declCfg_time_range">' +
+        DECL_TIME_RANGES.map(o => '<option value="' + o.v + '"' + (o.v==='24h'?' selected':'') + '>' + o.l + '</option>').join('') +
+        '</select></div>';
+    case 'time_comparison':
+      return _declEntityInput('declCfg_entity', 'Entity', ['sensor','number','input_number'], 'z.B. sensor.stromverbrauch') +
+        '<div class="form-group"><label>Vergleichszeitraum</label><select id="declCfg_compare_period">' +
+        DECL_COMPARE_PERIODS.map(o => '<option value="' + o.v + '">' + o.l + '</option>').join('') +
+        '</select></div>' +
+        '<div class="form-group"><label>Aggregation</label><select id="declCfg_aggregation">' +
+        DECL_AGGREGATIONS.map(o => '<option value="' + o.v + '">' + o.l + '</option>').join('') +
+        '</select></div>';
     default:
       return '<div style="color:var(--text-secondary);padding:8px;">Bitte Typ waehlen.</div>';
   }
@@ -8172,6 +8275,19 @@ function _collectDeclConfig(type) {
       try { cfg.schedules = JSON.parse(document.getElementById('declCfg_schedules')?.value || '[]'); }
       catch(e) { errors.push('Zeitplaene: Ungueltiges JSON'); break; }
       if (!Array.isArray(cfg.schedules) || cfg.schedules.length === 0) errors.push('Mindestens ein Zeitplan erforderlich');
+      break;
+    case 'state_duration':
+      cfg.entity = (document.getElementById('declCfg_entity')?.value || '').trim();
+      cfg.target_state = (document.getElementById('declCfg_target_state')?.value || '').trim();
+      cfg.time_range = document.getElementById('declCfg_time_range')?.value || '24h';
+      if (!cfg.entity) errors.push('Entity ist erforderlich');
+      if (!cfg.target_state) errors.push('Ziel-State ist erforderlich');
+      break;
+    case 'time_comparison':
+      cfg.entity = (document.getElementById('declCfg_entity')?.value || '').trim();
+      cfg.compare_period = document.getElementById('declCfg_compare_period')?.value || 'yesterday';
+      cfg.aggregation = document.getElementById('declCfg_aggregation')?.value || 'average';
+      if (!cfg.entity) errors.push('Entity ist erforderlich');
       break;
   }
   if (errors.length > 0) { _showDeclValidation(errors); return null; }
@@ -8233,24 +8349,33 @@ async function createDeclTool() {
 // ── Feature-Toggle ───────────────────────────────────────────
 let _declEnabled = true;
 let _declSpontaneous = true;
+let _declMaxTools = 20;
 
 async function toggleDeclEnabled() {
   _declEnabled = !_declEnabled;
   try {
-    await api('/api/ui/settings', 'PUT', {declarative_tools: {enabled: _declEnabled}});
+    await api('/api/ui/settings', 'PUT', {settings: {declarative_tools: {enabled: _declEnabled}}});
     toast('Analyse-Tools ' + (_declEnabled ? 'aktiviert' : 'deaktiviert'), 'success');
-  } catch(e) { toast('Fehler: ' + e.message, 'error'); _declEnabled = !_declEnabled; }
+  } catch(e) { toast('Fehler: ' + (e.message || e), 'error'); _declEnabled = !_declEnabled; }
   _updateDeclEnabledUI();
 }
 
 async function toggleDeclSpontaneous() {
   _declSpontaneous = !_declSpontaneous;
   try {
-    await api('/api/ui/settings', 'PUT', {declarative_tools: {use_in_spontaneous: _declSpontaneous}});
+    await api('/api/ui/settings', 'PUT', {settings: {declarative_tools: {use_in_spontaneous: _declSpontaneous}}});
     toast('Proaktive Nutzung ' + (_declSpontaneous ? 'aktiviert' : 'deaktiviert'), 'success');
-  } catch(e) { toast('Fehler: ' + e.message, 'error'); _declSpontaneous = !_declSpontaneous; }
+  } catch(e) { toast('Fehler: ' + (e.message || e), 'error'); _declSpontaneous = !_declSpontaneous; }
   var t = document.getElementById('declSpontaneousToggle');
   if (t) t.checked = _declSpontaneous;
+}
+
+async function updateDeclMaxTools(val) {
+  _declMaxTools = parseInt(val) || 20;
+  try {
+    await api('/api/ui/settings', 'PUT', {settings: {declarative_tools: {max_tools: _declMaxTools}}});
+    toast('Max. Tools: ' + _declMaxTools, 'success');
+  } catch(e) { toast('Fehler: ' + (e.message || e), 'error'); }
 }
 
 function _updateDeclEnabledUI() {
@@ -8258,11 +8383,140 @@ function _updateDeclEnabledUI() {
   if (toggle) toggle.checked = _declEnabled;
   var spToggle = document.getElementById('declSpontaneousToggle');
   if (spToggle) spToggle.checked = _declSpontaneous;
+  var slider = document.getElementById('declMaxToolsSlider');
+  if (slider) slider.value = _declMaxTools;
+  var sliderVal = document.getElementById('declMaxToolsVal');
+  if (sliderVal) sliderVal.textContent = _declMaxTools;
   var body = document.getElementById('declBody');
   if (body) {
     body.style.opacity = _declEnabled ? '1' : '0.4';
     body.style.pointerEvents = _declEnabled ? 'auto' : 'none';
   }
+}
+
+// ── Vorschlaege (Suggestions) ─────────────────────────────────
+let _declSuggestions = [];
+let _declSuggestLoading = false;
+
+async function generateDeclSuggestions() {
+  if (_declSuggestLoading) return;
+  _declSuggestLoading = true;
+  var btn = document.getElementById('declSuggestBtn');
+  var container = document.getElementById('declSuggestionsList');
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#9203; Analysiere Entities...'; }
+  if (container) container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Jarvis analysiert deine Home-Assistant-Entities und generiert Vorschlaege...</div>';
+  try {
+    var r = await api('/api/ui/declarative-tools/suggest', 'POST', {use_llm: true});
+    _declSuggestions = r.suggestions || [];
+    _renderDeclSuggestions();
+    if (_declSuggestions.length === 0) {
+      toast('Keine neuen Vorschlaege — alle sinnvollen Tools existieren bereits!', 'success');
+    } else {
+      toast(_declSuggestions.length + ' Vorschlaege generiert', 'success');
+    }
+  } catch(e) {
+    toast('Fehler: ' + (e.message || e), 'error');
+    if (container) container.innerHTML = '<div style="padding:16px;color:var(--danger);">Fehler beim Generieren: ' + esc(e.message || String(e)) + '</div>';
+  } finally {
+    _declSuggestLoading = false;
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#128161; Vorschlaege generieren'; }
+  }
+}
+
+function _renderDeclSuggestions() {
+  var container = document.getElementById('declSuggestionsList');
+  if (!container) return;
+  if (_declSuggestions.length === 0) {
+    container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Keine Vorschlaege vorhanden. Klicke "Vorschlaege generieren" um Jarvis deine Entities analysieren zu lassen.</div>';
+    return;
+  }
+  var h = '<div style="margin-bottom:8px;font-size:12px;color:var(--text-secondary);">' + _declSuggestions.length + ' Vorschlaege</div>';
+  _declSuggestions.forEach(function(s, i) {
+    var typeInfo = DECL_TOOL_TYPES.find(function(t) { return t.v === s.type; }) || {l: s.type};
+    h += '<div class="decl-suggestion" style="border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;margin-bottom:10px;background:var(--bg-card);border-left:3px solid var(--accent);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">' +
+      '<div style="flex:1;">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+      '<strong style="color:var(--accent);font-size:14px;">' + esc(s.name) + '</strong>' +
+      '<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(0,212,255,0.08);color:var(--text-secondary);">' + esc(typeInfo.l) + '</span>' +
+      '</div>' +
+      '<div style="margin-top:6px;font-size:13px;color:var(--text-primary);">' + esc(s.description) + '</div>' +
+      '<div style="margin-top:4px;font-size:12px;color:var(--text-secondary);font-style:italic;">' + esc(s.reason || '') + '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;flex-shrink:0;">' +
+      '<button class="btn btn-sm" onclick="acceptDeclSuggestion(' + i + ')" style="padding:6px 12px;font-size:12px;background:var(--success);color:#fff;border:none;">&#10003; Annehmen</button>' +
+      '<button class="btn btn-sm" onclick="rejectDeclSuggestion(' + i + ')" style="padding:6px 12px;font-size:12px;">&#10005; Ablehnen</button>' +
+      '</div></div></div>';
+  });
+  // "Alle annehmen" Button wenn mehrere
+  if (_declSuggestions.length > 1) {
+    h += '<div style="display:flex;gap:8px;margin-top:8px;">' +
+      '<button class="btn btn-sm" onclick="acceptAllDeclSuggestions()" style="padding:6px 16px;font-size:12px;background:var(--success);color:#fff;border:none;">&#10003; Alle annehmen (' + _declSuggestions.length + ')</button>' +
+      '<button class="btn btn-sm" onclick="rejectAllDeclSuggestions()" style="padding:6px 16px;font-size:12px;">&#10005; Alle ablehnen</button>' +
+      '</div>';
+  }
+  container.innerHTML = h;
+}
+
+async function acceptDeclSuggestion(idx) {
+  var s = _declSuggestions[idx];
+  if (!s) return;
+  try {
+    await api('/api/ui/declarative-tools', 'POST', {
+      name: s.name, description: s.description, type: s.type, config: s.config
+    });
+    toast('Tool "' + s.name + '" erstellt', 'success');
+    _declSuggestions.splice(idx, 1);
+    _renderDeclSuggestions();
+    loadDeclarativeTools();
+  } catch(e) {
+    toast('Fehler: ' + (e.detail || e.message || e), 'error');
+  }
+}
+
+function rejectDeclSuggestion(idx) {
+  var s = _declSuggestions[idx];
+  if (!s) return;
+  _declSuggestions.splice(idx, 1);
+  _renderDeclSuggestions();
+  toast('Vorschlag "' + s.name + '" abgelehnt', 'success');
+}
+
+async function acceptAllDeclSuggestions() {
+  if (!confirm(_declSuggestions.length + ' Vorschlaege annehmen?')) return;
+  var accepted = 0;
+  var errors = 0;
+  var lastError = '';
+  // Copy before mutating
+  var all = _declSuggestions.slice();
+  var failed = [];
+  for (var i = 0; i < all.length; i++) {
+    var s = all[i];
+    try {
+      await api('/api/ui/declarative-tools', 'POST', {
+        name: s.name, description: s.description, type: s.type, config: s.config
+      });
+      accepted++;
+    } catch(e) {
+      errors++;
+      lastError = e.detail || e.message || String(e);
+      failed.push(s);
+    }
+  }
+  _declSuggestions = failed;
+  _renderDeclSuggestions();
+  loadDeclarativeTools();
+  if (errors > 0) {
+    toast(accepted + ' Tools erstellt, ' + errors + ' Fehler (' + lastError + ')', 'warning');
+  } else {
+    toast(accepted + ' Tools erstellt', 'success');
+  }
+}
+
+function rejectAllDeclSuggestions() {
+  _declSuggestions = [];
+  _renderDeclSuggestions();
+  toast('Alle Vorschlaege abgelehnt', 'success');
 }
 
 // ── Haupt-Render ─────────────────────────────────────────────
@@ -8274,11 +8528,21 @@ function renderDeclarativeTools() {
     '<div class="form-group"><div class="toggle-group"><label>Proaktive Nutzung (Jarvis erwaehnt Ergebnisse spontan)</label>' +
     '<label class="toggle"><input type="checkbox" id="declSpontaneousToggle" onchange="toggleDeclSpontaneous()" checked>' +
     '<span class="toggle-track"></span><span class="toggle-thumb"></span></label></div></div>' +
-    fInfo('Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus (nur Lese-Zugriff). Max. 20 Tools.' + helpBtn('decl_tools.overview'))
+    '<div class="form-group"><label>Maximale Anzahl Tools</label>' +
+    '<div class="range-group"><input type="range" id="declMaxToolsSlider" min="5" max="50" step="5" value="20" onchange="updateDeclMaxTools(this.value)" oninput="document.getElementById(\'declMaxToolsVal\').textContent=this.value">' +
+    '<span class="range-value" id="declMaxToolsVal">20</span></div></div>' +
+    fInfo('Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus (nur Lese-Zugriff).' + helpBtn('decl_tools.overview'))
   ) +
   '<div id="declBody">' +
   sectionWrap('&#128202;', 'Aktive Tools',
     '<div id="declToolList" style="margin-top:12px;"><div style="padding:16px;color:var(--text-secondary);">Lade...</div></div>'
+  ) +
+  sectionWrap('&#128161;', 'Jarvis-Vorschlaege',
+    fInfo('Jarvis analysiert deine Home-Assistant-Entities und schlaegt passende Analyse-Tools vor. Du entscheidest bei jedem Vorschlag ob du ihn annimmst oder ablehnst.') +
+    '<div style="margin-top:12px;margin-bottom:12px;">' +
+    '<button class="btn btn-primary" id="declSuggestBtn" onclick="generateDeclSuggestions()" style="padding:8px 20px;">&#128161; Vorschlaege generieren</button>' +
+    '</div>' +
+    '<div id="declSuggestionsList"><div style="padding:16px;color:var(--text-secondary);font-style:italic;">Klicke "Vorschlaege generieren" um Jarvis deine Entities analysieren zu lassen.</div></div>'
   ) +
   sectionWrap('&#128220;', 'Vorlagen',
     fInfo('Vorgefertigte Vorlagen — ein Klick befuellt das Formular. Entity-IDs danach an dein System anpassen.') +
@@ -8309,7 +8573,7 @@ function renderDeclarativeTools() {
     '<button class="btn btn-secondary" id="declCancelBtn" onclick="cancelDeclEdit()" style="display:none;">Abbrechen</button>' +
     '</div>'
   ) + '</div>' +
-  sectionWrap('&#128161;', 'Tipps',
+  sectionWrap('&#128214;', 'Tipps',
     fInfo('Du kannst Jarvis auch bitten: "Jarvis, bau mir ein Tool das die Raumtemperaturen vergleicht" — er nutzt dann create_declarative_tool automatisch.') +
     '<div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">' +
     '<strong>Verfuegbare Typen:</strong><br>' +

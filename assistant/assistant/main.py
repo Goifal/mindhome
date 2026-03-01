@@ -3604,9 +3604,10 @@ async def ui_get_declarative_tools(token: str = ""):
     decl_cfg = yaml_config.get("declarative_tools", {})
     enabled = decl_cfg.get("enabled", True)
     use_in_spontaneous = decl_cfg.get("use_in_spontaneous", True)
+    max_tools = decl_cfg.get("max_tools", 20)
     registry = get_registry()
     tools = registry.list_tools()
-    return {"tools": tools, "count": len(tools), "enabled": enabled, "use_in_spontaneous": use_in_spontaneous}
+    return {"tools": tools, "count": len(tools), "enabled": enabled, "use_in_spontaneous": use_in_spontaneous, "max_tools": max_tools}
 
 
 @app.post("/api/ui/declarative-tools")
@@ -3629,6 +3630,49 @@ async def ui_create_declarative_tool(request: Request, token: str = ""):
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("message", "Fehler"))
     return result
+
+
+@app.post("/api/ui/declarative-tools/suggest")
+async def ui_suggest_declarative_tools(request: Request, token: str = ""):
+    """Generiert Tool-Vorschlaege basierend auf vorhandenen HA-Entities.
+
+    Hybrid: Regel-basierte Analyse + optionale LLM-Verfeinerung.
+    """
+    _check_token(token)
+    if not yaml_config.get("declarative_tools", {}).get("enabled", True):
+        raise HTTPException(status_code=403, detail="Analyse-Tools sind deaktiviert")
+    from .declarative_tools import get_registry, generate_suggestions, refine_suggestions_with_llm
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    use_llm = body.get("use_llm", True) if isinstance(body, dict) else True
+
+    # 1. HA-Entities laden
+    try:
+        states = await brain.ha.get_states()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"HA nicht erreichbar: {e}")
+
+    if not states:
+        return {"suggestions": [], "count": 0}
+
+    # 2. Regel-basierte Vorschlaege generieren
+    registry = get_registry()
+    existing = {t["name"]: t for t in registry.list_tools()}
+    suggestions = generate_suggestions(states, existing)
+
+    # 3. Optional: LLM-Verfeinerung
+    if use_llm and suggestions and brain.ollama:
+        try:
+            suggestions = await refine_suggestions_with_llm(
+                suggestions, brain.ollama,
+            )
+        except Exception as e:
+            logger.warning("LLM-Verfeinerung uebersprungen: %s", e)
+
+    return {"suggestions": suggestions, "count": len(suggestions)}
 
 
 @app.delete("/api/ui/declarative-tools/{tool_name}")
