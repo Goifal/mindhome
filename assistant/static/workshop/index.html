@@ -28,7 +28,7 @@
             background: var(--bg-primary);
             color: var(--text-primary);
             font-family: 'JetBrains Mono', 'Fira Code', monospace;
-            overflow: hidden;
+            overflow-x: hidden;
         }
 
         /* ===== Boot Screen ===== */
@@ -60,7 +60,7 @@
 
         /* ===== Main Grid ===== */
         #workshop-main {
-            display: none; height: 100vh;
+            display: none; min-height: 100vh;
             grid-template: "header header" 60px
                            "sidebar main" 1fr
                            "footer footer" 36px
@@ -467,6 +467,33 @@
         }
         .toggle-switch.on::after { transform: translateX(16px); }
 
+        /* ===== Offline Banner ===== */
+        .offline-banner {
+            display: none; padding: 10px 16px;
+            background: var(--danger); color: #fff;
+            font-size: 12px; text-align: center;
+            font-family: inherit;
+            grid-column: 1 / -1;
+        }
+        .offline-banner.show { display: block; }
+
+        /* ===== Action Buttons Row ===== */
+        .action-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .action-btn {
+            padding: 8px 14px; border-radius: 6px;
+            border: 1px solid var(--accent); background: var(--accent-dim);
+            color: var(--accent); font-family: inherit; font-size: 12px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .action-btn:hover { background: var(--accent); color: var(--bg-primary); }
+        .action-btn.secondary {
+            border-color: var(--border); background: transparent;
+            color: var(--text-secondary);
+        }
+        .action-btn.secondary:hover { border-color: var(--accent); color: var(--accent); }
+        .action-btn.danger { border-color: var(--danger); color: var(--danger); background: transparent; }
+        .action-btn.danger:hover { background: var(--danger); color: #fff; }
+
         /* ===== Hamburger Button (Mobile) ===== */
         .hamburger {
             display: none; background: transparent; border: none;
@@ -519,7 +546,6 @@
             .calc-btn { padding: 5px 8px; font-size: 10px; }
             .chat-input-row { flex-wrap: nowrap; }
             .footer { padding: 0 8px; gap: 8px; font-size: 9px; }
-            body { overflow-y: auto; }
         }
 
         /* ===== Responsive: Small Phone (<= 380px) ===== */
@@ -542,6 +568,9 @@
 
 <!-- ===== Main Workshop Grid ===== -->
 <div id="workshop-main" class="workshop-grid" style="display:none">
+
+    <!-- Offline Banner -->
+    <div class="offline-banner" id="offline-banner">Server nicht erreichbar. Bitte pruefe ob der Jarvis-Assistent laeuft.</div>
 
     <!-- Header -->
     <div class="header">
@@ -694,39 +723,91 @@ function typewrite(el, text, speed) {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ===== API Helper =====
+let serverOnline = true;
+
+function setServerStatus(online) {
+    serverOnline = online;
+    const banner = document.getElementById('offline-banner');
+    if (banner) banner.classList.toggle('show', !online);
+}
+
 async function apiCall(endpoint, method = 'GET', body = null) {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
-    const resp = await fetch('/api/workshop/' + endpoint, opts);
-    return await resp.json();
+    try {
+        const resp = await fetch('/api/workshop/' + endpoint, opts);
+        setServerStatus(true);
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || err.message || 'Serverfehler ' + resp.status);
+        }
+        return await resp.json();
+    } catch (e) {
+        if (e.message && !e.message.startsWith('Serverfehler')) {
+            if (e.name === 'TypeError' || e.message.includes('fetch')) {
+                setServerStatus(false);
+            }
+        }
+        throw e;
+    }
 }
 
 async function chatApi(text) {
-    const resp = await fetch('/api/assistant/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, room: 'werkstatt' })
-    });
-    return await resp.json();
+    try {
+        const resp = await fetch('/api/assistant/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, room: 'werkstatt' })
+        });
+        setServerStatus(true);
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || 'Chat-Fehler ' + resp.status);
+        }
+        return await resp.json();
+    } catch (e) {
+        if (e.name === 'TypeError' || (e.message && e.message.includes('fetch'))) {
+            setServerStatus(false);
+        }
+        throw e;
+    }
 }
 
 // ===== WebSocket =====
+let wsRetryDelay = 2000;
+const WS_MAX_RETRY = 30000;
+
 function connectWebSocket() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(proto + '//' + location.host + '/ws');
+    try {
+        ws = new WebSocket(proto + '//' + location.host + '/ws');
+    } catch (e) {
+        scheduleWsReconnect();
+        return;
+    }
     ws.onopen = () => {
+        wsRetryDelay = 2000;
+        setServerStatus(true);
         document.getElementById('ws-dot').classList.add('connected');
         document.getElementById('ws-status').textContent = 'Verbunden';
     };
     ws.onclose = () => {
         document.getElementById('ws-dot').classList.remove('connected');
         document.getElementById('ws-status').textContent = 'Getrennt';
-        setTimeout(connectWebSocket, 3000);
+        scheduleWsReconnect();
     };
+    ws.onerror = () => {};
     ws.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        handleWsEvent(msg);
+        try {
+            const msg = JSON.parse(e.data);
+            handleWsEvent(msg);
+        } catch (err) { console.warn('WS parse error:', err); }
     };
+}
+
+function scheduleWsReconnect() {
+    setTimeout(connectWebSocket, wsRetryDelay);
+    wsRetryDelay = Math.min(wsRetryDelay * 1.5, WS_MAX_RETRY);
 }
 
 function handleWsEvent(msg) {
@@ -862,15 +943,22 @@ function showNewProjectModal() {
 }
 function closeNewProjectModal() {
     document.getElementById('new-project-modal').classList.add('hidden');
-    document.getElementById('modal-title').value = '';
-    document.getElementById('modal-desc').value = '';
+    const t = document.getElementById('modal-title');
+    const d = document.getElementById('modal-desc');
+    if (t) t.value = '';
+    if (d) d.value = '';
 }
 async function createProjectFromModal() {
-    const title = document.getElementById('modal-title').value.trim();
+    const titleEl = document.getElementById('modal-title');
+    const descEl = document.getElementById('modal-desc');
+    const catEl = document.getElementById('modal-cat');
+    const prioEl = document.getElementById('modal-prio');
+    if (!titleEl) return;
+    const title = titleEl.value.trim();
     if (!title) { showToast('Bitte Projekt-Name eingeben'); return; }
-    const desc = document.getElementById('modal-desc').value.trim();
-    const cat = document.getElementById('modal-cat').value;
-    const prio = document.getElementById('modal-prio').value;
+    const desc = descEl ? descEl.value.trim() : '';
+    const cat = catEl ? catEl.value : 'maker';
+    const prio = prioEl ? prioEl.value : 'normal';
     try {
         const res = await apiCall('projects', 'POST', {
             title, description: desc, category: cat, priority: prio
@@ -881,9 +969,9 @@ async function createProjectFromModal() {
             await loadProjects();
             selectProject(res.project.id);
         } else {
-            showToast('Fehler: ' + (res.detail || 'Unbekannt'));
+            showToast('Fehler: ' + (res.detail || res.message || 'Unbekannt'));
         }
-    } catch (e) { showToast('Fehler beim Erstellen'); }
+    } catch (e) { showToast('Fehler: ' + (e.message || 'Projekt konnte nicht erstellt werden')); }
 }
 
 // ===== Overview View =====
@@ -901,6 +989,15 @@ function renderOverview(main) {
         html += '<div class="meta-item">Kategorie: <span>' + escHtml(currentProject.category || '-') + '</span></div>';
         html += '<div class="meta-item">Prioritaet: <span>' + escHtml(currentProject.priority || '-') + '</span></div>';
         html += '<div class="meta-item">Status: <span>' + escHtml(currentProject.status || '-') + '</span></div>';
+        html += '<div class="meta-item">Erstellt: <span>' + escHtml((currentProject.created || '').split('T')[0] || '-') + '</span></div>';
+        html += '</div>';
+        // Project Action Buttons
+        html += '<div class="action-row" style="margin-top:12px">';
+        html += '<button class="action-btn secondary" onclick="showStatusChange()">Status aendern</button>';
+        html += '<button class="action-btn secondary" onclick="showBudgetDialog()">Budget setzen</button>';
+        html += '<button class="action-btn secondary" onclick="showAddPartDialog()">Teil hinzufuegen</button>';
+        html += '<button class="action-btn secondary" onclick="exportProject()">Exportieren</button>';
+        html += '<button class="action-btn danger" onclick="deleteProject(\'' + currentProject.id + '\')">Loeschen</button>';
         html += '</div>';
     } else {
         html += '<div style="color:var(--text-secondary);font-size:13px">Kein Projekt ausgewaehlt. Erstelle ein neues Projekt oder waehle eines aus der Sidebar.</div>';
@@ -922,15 +1019,16 @@ function renderOverview(main) {
     // Budget
     html += '<div class="widget" id="w-budget">';
     html += '<div class="widget-header"><span class="icon">&#128176;</span><span class="widget-title">Budget</span></div>';
-    if (currentProject && currentProject.budget) {
-        const spent = currentProject.expenses_total || 0;
-        const budget = currentProject.budget || 0;
-        const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
-        html += '<div class="budget-amount">' + spent.toFixed(2) + ' / ' + budget.toFixed(2) + ' EUR</div>';
+    const budgetNum = parseFloat(currentProject && currentProject.budget || 0) || 0;
+    if (currentProject && budgetNum > 0) {
+        const expenses = currentProject.expenses || [];
+        const spent = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+        const pct = budgetNum > 0 ? Math.min(100, (spent / budgetNum) * 100) : 0;
+        html += '<div class="budget-amount">' + spent.toFixed(2) + ' / ' + budgetNum.toFixed(2) + ' EUR</div>';
         html += '<div class="budget-bar-container"><div class="budget-bar">';
         html += '<div class="budget-fill' + (pct > 100 ? ' over' : '') + '" style="width:' + pct + '%"></div>';
         html += '</div></div>';
-        html += '<div class="budget-labels"><span>0 EUR</span><span>' + budget.toFixed(0) + ' EUR</span></div>';
+        html += '<div class="budget-labels"><span>0 EUR</span><span>' + budgetNum.toFixed(0) + ' EUR</span></div>';
     } else {
         html += '<div style="color:var(--text-secondary);font-size:12px">Kein Budget gesetzt</div>';
     }
@@ -945,8 +1043,9 @@ function renderOverview(main) {
         html += '<table class="parts-table"><thead><tr><th>Teil</th><th>Menge</th><th>Kosten</th><th>Status</th></tr></thead><tbody>';
         currentProject.parts.forEach(p => {
             const cls = p.available ? 'part-available' : 'part-missing';
+            const cost = parseFloat(p.cost || p.estimated_cost || 0);
             html += '<tr><td>' + escHtml(p.name || '') + '</td><td>' + (p.quantity || 1) + '</td>';
-            html += '<td>' + (p.cost ? p.cost.toFixed(2) + ' EUR' : '-') + '</td>';
+            html += '<td>' + (cost > 0 ? cost.toFixed(2) + ' EUR' : '-') + '</td>';
             html += '<td class="' + cls + '">' + (p.available ? 'Vorhanden' : 'Fehlt') + '</td></tr>';
         });
         html += '</tbody></table></div>';
@@ -956,44 +1055,101 @@ function renderOverview(main) {
 }
 
 // ===== Steps View =====
-function renderStepsView(main) {
+let activeSession = null;
+
+async function loadSession() {
+    try {
+        const res = await apiCall('session');
+        activeSession = res.active ? res.session : null;
+    } catch (e) {
+        activeSession = null;
+    }
+}
+
+async function renderStepsView(main) {
     if (!main) main = document.getElementById('main-content');
+    await loadSession();
     let html = '<div class="widget" id="w-steps">';
     html += '<div class="widget-header"><span class="icon">&#128221;</span><span class="widget-title">Reparatur-Schritte</span></div>';
 
-    if (currentProject && currentProject.steps && currentProject.steps.length) {
-        const steps = currentProject.steps;
-        const current = currentProject.current_step || 0;
+    if (activeSession && activeSession.steps && activeSession.steps.length) {
+        const steps = activeSession.steps;
+        const current = activeSession.current_step || 0;
         const pct = steps.length > 0 ? ((current + 1) / steps.length) * 100 : 0;
+        html += '<div style="font-size:13px;font-weight:500;margin-bottom:8px">' + escHtml(activeSession.title || '') + '</div>';
         html += '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
         html += '<div style="font-size:11px;color:var(--text-secondary);margin:4px 0 12px">Schritt ' + (current + 1) + ' von ' + steps.length + '</div>';
         html += '<ul class="step-list">';
         steps.forEach((s, i) => {
-            const cls = i === current ? 'active' : (i < current ? 'done' : '');
+            const cls = i === current ? 'active' : (s.completed ? 'done' : (i < current ? 'done' : ''));
             html += '<li class="step-item ' + cls + '">';
             html += '<strong>' + (i + 1) + '.</strong> ' + escHtml(s.title || s.description || '');
-            if (s.details) html += '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">' + escHtml(s.details) + '</div>';
+            if (s.description && s.title) html += '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">' + escHtml(s.description) + '</div>';
+            if (s.tools && s.tools.length) html += '<div style="font-size:10px;color:var(--warning);margin-top:2px">Werkzeug: ' + s.tools.map(escHtml).join(', ') + '</div>';
+            if (s.estimated_minutes) html += '<div style="font-size:10px;color:var(--text-secondary)">~' + s.estimated_minutes + ' Min.</div>';
             html += '</li>';
         });
         html += '</ul>';
         html += '<div class="step-nav-btns">';
-        html += '<button class="step-btn" onclick="navStep(\'prev\')">&#9664; Zurueck</button>';
-        html += '<button class="step-btn" onclick="navStep(\'next\')">Weiter &#9654;</button>';
+        html += '<button class="step-btn" onclick="navStep(\'zurueck\')">&#9664; Zurueck</button>';
+        html += '<button class="step-btn" onclick="navStep(\'weiter\')">Weiter &#9654;</button>';
+        html += '<button class="step-btn" onclick="navStep(\'wiederholen\')">&#128260; Wiederholen</button>';
+        html += '<button class="step-btn" style="border-color:var(--danger);color:var(--danger)" onclick="navStep(\'stopp\')">&#9632; Beenden</button>';
         html += '</div>';
     } else {
-        html += '<div style="color:var(--text-secondary);font-size:13px">Keine Schritte vorhanden. Starte eine Diagnose um Reparatur-Schritte zu generieren.</div>';
+        html += '<div style="color:var(--text-secondary);font-size:13px;margin-bottom:12px">Keine aktive Session. Starte eine Diagnose um Reparatur-Schritte zu generieren.</div>';
+        html += '<div class="action-row">';
+        html += '<button class="action-btn" onclick="showDiagnoseDialog()">Diagnose starten</button>';
+        html += '</div>';
     }
     html += '</div>';
     main.innerHTML = html;
 }
 
 async function navStep(dir) {
-    await chatApi(dir === 'next' ? 'naechster schritt' : 'vorheriger schritt');
+    try {
+        const res = await apiCall('session/navigate', 'POST', { command: dir });
+        showToast(res.message || 'OK');
+        renderStepsView();
+    } catch (e) {
+        showToast('Fehler: ' + e.message);
+    }
+}
+
+function showDiagnoseDialog() {
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Diagnose starten</h3>' +
+        '<label>Problembeschreibung *</label>' +
+        '<textarea id="diag-text" style="width:100%;min-height:80px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-family:inherit;font-size:12px;resize:vertical" placeholder="Beschreibe das Problem..."></textarea>' +
+        '<div class="modal-btns"><button onclick="closeDiagnoseDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="startDiagnose()">Diagnose starten</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+function closeDiagnoseDialog() {
+    document.getElementById('new-project-modal').classList.add('hidden');
+    resetProjectModal();
+}
+
+async function startDiagnose() {
+    const text = document.getElementById('diag-text')?.value.trim();
+    if (!text) { showToast('Bitte Problem beschreiben'); return; }
+    showToast('Diagnose wird durchgefuehrt...');
+    closeDiagnoseDialog();
+    try {
+        const res = await apiCall('diagnose', 'POST', { text });
+        showToast('Diagnose abgeschlossen');
+        await loadProjects();
+        await loadSession();
+        renderView();
+    } catch (e) {
+        showToast('Diagnose fehlgeschlagen: ' + e.message);
+    }
 }
 
 function updateStepNavigator(data) {
-    if (currentView === 'steps' || currentView === 'overview') {
-        if (currentProject) selectProject(currentProject.id);
+    if (currentView === 'steps') {
+        renderStepsView();
     }
     showToast('Schritt ' + (data.step_number || '?') + ': ' + (data.title || ''));
 }
@@ -1002,6 +1158,19 @@ function updateStepNavigator(data) {
 async function renderCodeView(main) {
     if (!main) main = document.getElementById('main-content');
     let html = '';
+
+    // Generation Actions
+    if (currentProject) {
+        html += '<div class="widget" id="w-gen">';
+        html += '<div class="widget-header"><span class="icon">&#9889;</span><span class="widget-title">Generieren</span></div>';
+        html += '<div class="action-row">';
+        html += '<button class="action-btn" onclick="showGenCodeDialog()">Code generieren</button>';
+        html += '<button class="action-btn" onclick="genSchematic()">Schaltplan (SVG)</button>';
+        html += '<button class="action-btn" onclick="gen3DModel()">3D-Modell</button>';
+        html += '<button class="action-btn secondary" onclick="genBOM()">BOM erstellen</button>';
+        html += '<button class="action-btn secondary" onclick="genDocs()">Dokumentation</button>';
+        html += '</div></div>';
+    }
 
     // File Browser
     html += '<div class="widget" id="w-files">';
@@ -1015,18 +1184,18 @@ async function renderCodeView(main) {
                 files.forEach(f => {
                     const fname = f.name || f.filename || '';
                     const ext = fname.split('.').pop();
-                    const icon = { py: '&#128013;', ino: '&#9889;', scad: '&#128230;', svg: '&#127912;', html: '&#127760;', js: '&#9889;', yaml: '&#128196;' }[ext] || '&#128196;';
+                    const icon = { py: '&#128013;', ino: '&#9889;', scad: '&#128230;', svg: '&#127912;', html: '&#127760;', js: '&#9889;', yaml: '&#128196;', md: '&#128196;' }[ext] || '&#128196;';
                     html += '<li class="file-item" onclick="viewFile(\'' + escHtml(fname) + '\')">';
                     html += '<span class="file-icon">' + icon + '</span>';
                     html += '<span class="file-name">' + escHtml(fname) + '</span>';
                     html += '<span style="font-size:10px;color:var(--text-secondary)">' + formatFileSize(f.size) + '</span>';
                     html += '<div class="file-actions">';
-                    html += '<button class="file-action-btn" onclick="event.stopPropagation();downloadFile(\'' + escHtml(fname) + '\')">&#11015;</button>';
+                    html += '<button class="file-action-btn" title="Download" onclick="event.stopPropagation();downloadFile(\'' + escHtml(fname) + '\')">&#11015;</button>';
                     html += '</div></li>';
                 });
                 html += '</ul>';
             } else {
-                html += '<div style="color:var(--text-secondary);font-size:12px">Keine Dateien. Generiere Code, 3D-Modelle oder Schaltplaene ueber den Chat.</div>';
+                html += '<div style="color:var(--text-secondary);font-size:12px">Keine Dateien. Nutze die Buttons oben zum Generieren.</div>';
             }
         } catch (e) {
             html += '<div style="color:var(--text-secondary);font-size:12px">Dateien konnten nicht geladen werden.</div>';
@@ -1051,6 +1220,84 @@ async function renderCodeView(main) {
     html += '</div></div>';
 
     main.innerHTML = html;
+}
+
+// Code Generation Dialogs
+function showGenCodeDialog() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Code generieren</h3>' +
+        '<label>Programmiersprache</label>' +
+        '<select id="gen-lang" style="width:100%;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-family:inherit;font-size:12px">' +
+        '<option value="arduino">Arduino</option><option value="python">Python</option><option value="cpp">C++</option>' +
+        '<option value="micropython">MicroPython</option><option value="javascript">JavaScript</option>' +
+        '<option value="html">HTML</option><option value="yaml">YAML</option></select>' +
+        '<label>Anforderung *</label>' +
+        '<textarea id="gen-req" style="width:100%;min-height:60px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-family:inherit;font-size:12px;resize:vertical" placeholder="Was soll der Code tun?"></textarea>' +
+        '<div class="modal-btns"><button onclick="closeGenDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doGenCode()">Generieren</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+function closeGenDialog() {
+    document.getElementById('new-project-modal').classList.add('hidden');
+    resetProjectModal();
+}
+
+async function doGenCode() {
+    const lang = document.getElementById('gen-lang')?.value || 'arduino';
+    const req = document.getElementById('gen-req')?.value.trim();
+    if (!req) { showToast('Bitte Anforderung eingeben'); return; }
+    closeGenDialog();
+    showToast('Code wird generiert...');
+    try {
+        await chatApi('Generiere ' + lang + ' Code: ' + req);
+        showToast('Code generiert');
+        renderCodeView();
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+async function genSchematic() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    const req = prompt('Schaltplan-Beschreibung:');
+    if (!req) return;
+    showToast('Schaltplan wird generiert...');
+    try {
+        await chatApi('Generiere SVG Schaltplan: ' + req);
+        showToast('Schaltplan generiert');
+        renderCodeView();
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+async function gen3DModel() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    const req = prompt('3D-Modell Beschreibung:');
+    if (!req) return;
+    showToast('3D-Modell wird generiert...');
+    try {
+        await chatApi('Generiere OpenSCAD 3D-Modell: ' + req);
+        showToast('3D-Modell generiert');
+        renderCodeView();
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+async function genBOM() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    showToast('BOM wird erstellt...');
+    try {
+        await chatApi('Erstelle BOM fuer das aktuelle Projekt');
+        showToast('BOM erstellt');
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+async function genDocs() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    showToast('Dokumentation wird erstellt...');
+    try {
+        await chatApi('Erstelle Projekt-Dokumentation');
+        showToast('Dokumentation erstellt');
+        renderCodeView();
+    } catch (e) { showToast('Fehler: ' + e.message); }
 }
 
 async function viewFile(filename) {
@@ -1090,7 +1337,7 @@ function copyCode() {
 
 function downloadFile(filename) {
     if (!currentProject) return;
-    window.open('/api/workshop/files/' + currentProject.id + '/' + filename, '_blank');
+    window.open('/api/workshop/download/' + currentProject.id + '/' + encodeURIComponent(filename), '_blank');
 }
 
 // ===== Hardware View =====
@@ -1138,7 +1385,10 @@ async function loadPrinterStatus() {
         const res = await chatApi('Drucker-Status');
         document.getElementById('printer-content').innerHTML =
             '<div style="font-size:12px;color:var(--text-secondary)">Status abgefragt. Warte auf Update...</div>';
-    } catch(e) {}
+    } catch(e) {
+        const el = document.getElementById('printer-content');
+        if (el) el.innerHTML = '<div style="font-size:12px;color:var(--text-secondary)">Drucker-Status nicht verfuegbar (Server offline)</div>';
+    }
 }
 
 function updatePrinterWidget(data) {
@@ -1160,20 +1410,45 @@ function updatePrinterWidget(data) {
 }
 
 async function armCmd(cmd) {
-    if (cmd === 'home') await chatApi('Arm Home');
-    else if (cmd === 'open') await chatApi('Greifer oeffnen');
-    else if (cmd === 'close') await chatApi('Greifer schliessen');
-    else if (cmd === 'stop') await chatApi('Notaus');
+    try {
+        if (cmd === 'home') await chatApi('Arm Home');
+        else if (cmd === 'open') await chatApi('Greifer oeffnen');
+        else if (cmd === 'close') await chatApi('Greifer schliessen');
+        else if (cmd === 'stop') await chatApi('Notaus');
+        showToast('Befehl gesendet: ' + cmd);
+    } catch (e) { showToast('Fehler: ' + e.message); }
 }
 
 async function armPos(dir) {
     const delta = dir === 'up' ? 50 : -50;
-    await chatApi('Arm bewegen z ' + delta);
+    try {
+        await chatApi('Arm bewegen z ' + delta);
+    } catch (e) { showToast('Fehler: ' + e.message); }
 }
 
-async function armPickTool() {
-    const tool = prompt('Welches Werkzeug?');
-    if (tool) await chatApi('Arm hole ' + tool);
+function armPickTool() {
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Werkzeug holen</h3>' +
+        '<label>Welches Werkzeug?</label>' +
+        '<input id="arm-tool" type="text" placeholder="z.B. Loetkolben" style="width:100%;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-family:inherit;font-size:12px">' +
+        '<div class="modal-btns"><button onclick="closeArmToolDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doArmPickTool()">Holen</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+function closeArmToolDialog() {
+    document.getElementById('new-project-modal').classList.add('hidden');
+    resetProjectModal();
+}
+
+async function doArmPickTool() {
+    const tool = document.getElementById('arm-tool')?.value.trim();
+    if (!tool) { showToast('Bitte Werkzeug eingeben'); return; }
+    closeArmToolDialog();
+    try {
+        await chatApi('Arm hole ' + tool);
+        showToast('Arm holt: ' + tool);
+    } catch (e) { showToast('Fehler: ' + e.message); }
 }
 
 // ===== Chat View =====
@@ -1252,7 +1527,11 @@ async function sendChat() {
             addChatMessage('jarvis', res.response);
         }
     } catch (e) {
-        addChatMessage('jarvis', 'Fehler bei der Kommunikation.');
+        if (!serverOnline) {
+            addChatMessage('jarvis', 'Server nicht erreichbar. Bitte starte den Jarvis-Assistenten.');
+        } else {
+            addChatMessage('jarvis', 'Fehler: ' + (e.message || 'Kommunikationsfehler'));
+        }
     }
 }
 
@@ -1336,7 +1615,7 @@ function getCalcForm(type) {
                     '<label>Max. Spannungsabfall (V)</label><input id="cp-drop" type="number" step="any" value="0.5">' +
                     '<button class="step-btn" style="margin-top:8px" onclick="doCalc()">Berechnen</button></div>',
         '3d_print_weight': '<div class="calc-form"><label>Volumen (cm³)</label><input id="cp-vol" type="number" step="any">' +
-                           '<label>Material</label><select id="cp-mat" class="chat-input" style="padding:6px"><option>PLA</option><option>ABS</option><option>PETG</option><option>TPU</option><option>Nylon</option></select>' +
+                           '<label>Material</label><select id="cp-mat" class="chat-input" style="padding:6px"><option>PLA</option><option>ABS</option><option>PETG</option><option>TPU</option><option>ASA</option></select>' +
                            '<label>Infill (%)</label><input id="cp-infill" type="number" step="any" value="20">' +
                            '<button class="step-btn" style="margin-top:8px" onclick="doCalc()">Berechnen</button></div>',
         power_supply: '<div class="calc-form"><label>Gesamtstrom (A)</label><input id="cp-total-a" type="number" step="any">' +
@@ -1422,8 +1701,8 @@ async function renderJournalView(main) {
             html += '<div class="journal-entries">';
             entries.forEach(e => {
                 html += '<div class="journal-entry">';
-                html += '<div class="journal-time">' + escHtml(e.timestamp || '') + '</div>';
-                html += '<div>' + escHtml(e.text || '') + '</div>';
+                html += '<div class="journal-time">' + escHtml(e.time || e.timestamp || '') + '</div>';
+                html += '<div>' + escHtml(e.text || e.note || '') + '</div>';
                 html += '</div>';
             });
             html += '</div>';
@@ -1593,9 +1872,14 @@ async function renderSettingsView(main) {
     try {
         const stats = await apiCall('stats');
         html += settingsRow('Projekte gesamt', stats.total_projects || 0);
-        html += settingsRow('Abgeschlossen', stats.completed_projects || 0);
-        html += settingsRow('In Arbeit', stats.active_projects || 0);
-        html += settingsRow('Gesamtzeit', stats.total_time || '-');
+        html += settingsRow('Abgeschlossen', stats.completed || 0);
+        html += settingsRow('In Arbeit', stats.in_progress || 0);
+        if (stats.categories) {
+            const cats = stats.categories;
+            html += settingsRow('Maker', cats.maker || 0);
+            html += settingsRow('Reparatur', cats.reparatur || 0);
+            html += settingsRow('Bau', cats.bau || 0);
+        }
     } catch (e) {
         html += '<div style="color:var(--text-secondary);font-size:12px">Statistiken nicht verfuegbar.</div>';
     }
@@ -1620,7 +1904,127 @@ async function deleteProject(id) {
         showToast('Projekt geloescht');
         await loadProjects();
         renderView();
-    } catch (e) { showToast('Fehler beim Loeschen'); }
+    } catch (e) { showToast('Fehler beim Loeschen: ' + e.message); }
+}
+
+// ===== Status Change =====
+function showStatusChange() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    const overlay = document.getElementById('new-project-modal');
+    const current = currentProject.status || 'erstellt';
+    const statuses = ['erstellt', 'diagnose', 'teile_bestellt', 'in_arbeit', 'pausiert', 'fertig'];
+    const labels = { erstellt: 'Erstellt', diagnose: 'Diagnose', teile_bestellt: 'Teile bestellt', in_arbeit: 'In Arbeit', pausiert: 'Pausiert', fertig: 'Fertig' };
+    let opts = statuses.map(s => '<option value="' + s + '"' + (s === current ? ' selected' : '') + '>' + labels[s] + '</option>').join('');
+    overlay.innerHTML = '<div class="modal"><h3>Status aendern</h3>' +
+        '<label>Neuer Status</label>' +
+        '<select id="status-sel" style="width:100%;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-family:inherit;font-size:12px">' + opts + '</select>' +
+        '<div class="modal-btns"><button onclick="closeStatusDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doStatusChange()">Speichern</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+function closeStatusDialog() {
+    document.getElementById('new-project-modal').classList.add('hidden');
+    resetProjectModal();
+}
+
+async function doStatusChange() {
+    const status = document.getElementById('status-sel')?.value;
+    if (!status || !currentProject) return;
+    closeStatusDialog();
+    try {
+        await apiCall('project/' + currentProject.id + '/status', 'POST', { status });
+        showToast('Status geaendert: ' + status);
+        await selectProject(currentProject.id);
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+// ===== Budget Dialog =====
+function showBudgetDialog() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    const overlay = document.getElementById('new-project-modal');
+    const current = parseFloat(currentProject.budget || 0) || 0;
+    overlay.innerHTML = '<div class="modal"><h3>Budget setzen</h3>' +
+        '<label>Budget (EUR)</label>' +
+        '<input id="budget-val" type="number" step="0.01" value="' + current + '" style="width:100%;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-family:inherit;font-size:12px">' +
+        '<div class="modal-btns"><button onclick="closeBudgetDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doBudgetSet()">Speichern</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+function closeBudgetDialog() {
+    document.getElementById('new-project-modal').classList.add('hidden');
+    resetProjectModal();
+}
+
+async function doBudgetSet() {
+    const val = parseFloat(document.getElementById('budget-val')?.value || 0);
+    if (!currentProject) return;
+    closeBudgetDialog();
+    try {
+        await apiCall('project/' + currentProject.id + '/budget', 'POST', { budget: val });
+        showToast('Budget gesetzt: ' + val.toFixed(2) + ' EUR');
+        await selectProject(currentProject.id);
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+// ===== Add Part Dialog =====
+function showAddPartDialog() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Teil hinzufuegen</h3>' +
+        '<label>Bauteil-Name *</label>' +
+        '<input id="part-name" type="text" placeholder="z.B. ESP32 DevKit" style="width:100%;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-family:inherit;font-size:12px">' +
+        '<label>Menge</label>' +
+        '<input id="part-qty" type="number" value="1" min="1" style="width:100%;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-family:inherit;font-size:12px">' +
+        '<label>Kosten (EUR)</label>' +
+        '<input id="part-cost" type="number" step="0.01" value="0" style="width:100%;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-family:inherit;font-size:12px">' +
+        '<div class="modal-btns"><button onclick="closePartDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doAddPart()">Hinzufuegen</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+function closePartDialog() {
+    document.getElementById('new-project-modal').classList.add('hidden');
+    resetProjectModal();
+}
+
+async function doAddPart() {
+    const name = document.getElementById('part-name')?.value.trim();
+    if (!name || !currentProject) { showToast('Bitte Bauteil-Name eingeben'); return; }
+    const qty = parseInt(document.getElementById('part-qty')?.value || 1);
+    const cost = parseFloat(document.getElementById('part-cost')?.value || 0);
+    closePartDialog();
+    try {
+        await apiCall('project/' + currentProject.id + '/parts', 'POST', { name, quantity: qty, cost });
+        showToast('Teil hinzugefuegt: ' + name);
+        await selectProject(currentProject.id);
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+// ===== Export Project =====
+async function exportProject() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    window.open('/api/workshop/export/' + currentProject.id, '_blank');
+}
+
+// ===== Reset Project Modal =====
+function resetProjectModal() {
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal">' +
+        '<h3>Neues Projekt erstellen</h3>' +
+        '<label>Projekt-Name *</label>' +
+        '<input id="modal-title" type="text" placeholder="z.B. ESP32 Wetterstation">' +
+        '<label>Beschreibung</label>' +
+        '<input id="modal-desc" type="text" placeholder="Kurze Beschreibung...">' +
+        '<label>Kategorie</label>' +
+        '<select id="modal-cat"><option value="maker">Maker</option><option value="reparatur">Reparatur</option><option value="bau">Bau</option><option value="erfindung">Erfindung</option><option value="renovierung">Renovierung</option></select>' +
+        '<label>Prioritaet</label>' +
+        '<select id="modal-prio"><option value="normal">Normal</option><option value="niedrig">Niedrig</option><option value="hoch">Hoch</option><option value="dringend">Dringend</option></select>' +
+        '<div class="modal-btns">' +
+        '<button onclick="closeNewProjectModal()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="createProjectFromModal()">Erstellen</button>' +
+        '</div></div>';
 }
 
 // ===== Init =====

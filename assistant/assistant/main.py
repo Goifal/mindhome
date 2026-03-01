@@ -4286,6 +4286,8 @@ async def workshop_create_project(request: Request):
         category=data.get("category", "maker"),
         priority=data.get("priority", "normal"),
     )
+    if isinstance(project, dict) and project.get("status") == "error":
+        raise HTTPException(500, project.get("message", "Projekt konnte nicht erstellt werden"))
     return {"success": True, "project": project}
 
 
@@ -4366,6 +4368,129 @@ async def workshop_add_journal(request: Request):
         raise HTTPException(400, "Journal-Text erforderlich")
     result = await brain.repair_planner.add_journal_entry(note)
     return {"success": True, **result}
+
+
+@app.get("/api/workshop/session")
+async def workshop_get_session():
+    """Holt die aktive Workshop-Session mit Schritten."""
+    planner = brain.repair_planner
+    if not planner._session:
+        return {"active": False, "session": None}
+    s = planner._session
+    step = s.get_current_step()
+    return {
+        "active": True,
+        "session": {
+            "project_id": s.project_id,
+            "title": s.title,
+            "category": s.category,
+            "current_step": s.current_step,
+            "total_steps": s.total_steps,
+            "started_at": s.started_at,
+            "steps": [
+                {
+                    "number": st.number,
+                    "title": st.title,
+                    "description": st.description,
+                    "tools": st.tools,
+                    "parts": st.parts,
+                    "estimated_minutes": st.estimated_minutes,
+                    "completed": st.completed,
+                }
+                for st in s.steps
+            ],
+            "current_step_detail": {
+                "number": step.number,
+                "title": step.title,
+                "description": step.description,
+                "tools": step.tools,
+                "parts": step.parts,
+            } if step else None,
+        },
+    }
+
+
+@app.post("/api/workshop/diagnose")
+async def workshop_diagnose(request: Request):
+    """Startet eine LLM-Diagnose fuer ein Problem."""
+    data = await request.json()
+    text = data.get("text", "").strip()
+    if not text:
+        raise HTTPException(400, "Problembeschreibung erforderlich")
+    result = await brain.repair_planner.diagnose_problem(text)
+    return {"success": True, "diagnosis": result}
+
+
+@app.post("/api/workshop/session/navigate")
+async def workshop_navigate(request: Request):
+    """Navigiert in der aktiven Session (next/prev/repeat/status/stop)."""
+    data = await request.json()
+    command = data.get("command", "").strip()
+    if not command:
+        raise HTTPException(400, "Navigations-Befehl erforderlich")
+    result = await brain.repair_planner.handle_navigation(command)
+    return {"success": True, "message": result}
+
+
+@app.post("/api/workshop/project/{project_id}/status")
+async def workshop_update_status(project_id: str, request: Request):
+    """Aendert den Status eines Projekts."""
+    data = await request.json()
+    new_status = data.get("status", "").strip()
+    valid = ("erstellt", "diagnose", "teile_bestellt", "in_arbeit", "pausiert", "fertig")
+    if new_status not in valid:
+        raise HTTPException(400, f"Ungueltiger Status. Erlaubt: {', '.join(valid)}")
+    project = await brain.repair_planner.update_project(project_id, status=new_status)
+    if not project:
+        raise HTTPException(404, "Projekt nicht gefunden")
+    return {"success": True, "project": project}
+
+
+@app.post("/api/workshop/project/{project_id}/parts")
+async def workshop_add_part(project_id: str, request: Request):
+    """Fuegt ein Bauteil zum Projekt hinzu."""
+    data = await request.json()
+    name = data.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "Bauteil-Name erforderlich")
+    result = await brain.repair_planner.add_part(
+        project_id, name,
+        quantity=data.get("quantity", 1),
+        estimated_cost=data.get("cost", 0),
+        source=data.get("source", ""),
+    )
+    if result.get("status") == "error":
+        raise HTTPException(404, result.get("message", "Fehler"))
+    return {"success": True, **result}
+
+
+@app.post("/api/workshop/project/{project_id}/budget")
+async def workshop_set_budget(project_id: str, request: Request):
+    """Setzt das Budget eines Projekts."""
+    data = await request.json()
+    budget = data.get("budget", 0)
+    project = await brain.repair_planner.update_project(project_id, budget=str(budget))
+    if not project:
+        raise HTTPException(404, "Projekt nicht gefunden")
+    return {"success": True, "project": project}
+
+
+@app.get("/api/workshop/download/{project_id}/{filename}")
+async def workshop_download_file(project_id: str, filename: str):
+    """Download einer Projekt-Datei als Rohdatei."""
+    filepath = brain.workshop_generator.FILES_DIR / project_id / filename
+    if not filepath.exists() or not filepath.resolve().is_relative_to(
+            brain.workshop_generator.FILES_DIR.resolve()):
+        raise HTTPException(404, "Datei nicht gefunden")
+    media_types = {
+        ".py": "text/x-python", ".ino": "text/plain", ".cpp": "text/x-c++src",
+        ".c": "text/x-csrc", ".js": "application/javascript", ".html": "text/html",
+        ".css": "text/css", ".yaml": "text/yaml", ".yml": "text/yaml",
+        ".json": "application/json", ".svg": "image/svg+xml",
+        ".scad": "text/plain", ".md": "text/markdown", ".txt": "text/plain",
+    }
+    mt = media_types.get(filepath.suffix.lower(), "application/octet-stream")
+    return FileResponse(filepath, filename=filename, media_type=mt)
 
 
 @app.get("/api/workshop/settings")
