@@ -417,6 +417,118 @@
             transition: all 0.3s;
         }
         .toast.show { opacity: 1; transform: translateY(0); }
+
+        /* ===== Modal / Dialog ===== */
+        .modal-overlay {
+            position: fixed; inset: 0; z-index: 800;
+            background: rgba(0,0,0,0.6);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .modal-overlay.hidden { display: none; }
+        .modal {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 24px; width: 90%; max-width: 420px;
+        }
+        .modal h3 { font-size: 14px; color: var(--accent); margin-bottom: 16px; }
+        .modal label { display: block; font-size: 11px; color: var(--text-secondary); margin: 8px 0 4px; }
+        .modal input, .modal select {
+            width: 100%; background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: 6px; padding: 8px 10px; color: var(--text-primary);
+            font-family: inherit; font-size: 12px;
+        }
+        .modal input:focus, .modal select:focus { outline: none; border-color: var(--accent); }
+        .modal-btns { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+        .modal-btns button {
+            padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border);
+            background: transparent; color: var(--text-primary); font-family: inherit;
+            font-size: 12px; cursor: pointer; transition: all 0.2s;
+        }
+        .modal-btns .btn-primary { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); }
+        .modal-btns button:hover { opacity: 0.8; }
+
+        /* ===== Settings View ===== */
+        .settings-group { margin-bottom: 16px; }
+        .settings-group h4 { font-size: 12px; color: var(--accent); margin-bottom: 8px; }
+        .settings-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+        }
+        .settings-row .label { color: var(--text-secondary); }
+        .settings-row .value { color: var(--text-primary); }
+        .toggle-switch {
+            width: 36px; height: 20px; background: var(--border); border-radius: 10px;
+            position: relative; cursor: pointer; transition: background 0.2s;
+        }
+        .toggle-switch.on { background: var(--accent); }
+        .toggle-switch::after {
+            content: ''; position: absolute; top: 2px; left: 2px;
+            width: 16px; height: 16px; background: #fff; border-radius: 50%;
+            transition: transform 0.2s;
+        }
+        .toggle-switch.on::after { transform: translateX(16px); }
+
+        /* ===== Hamburger Button (Mobile) ===== */
+        .hamburger {
+            display: none; background: transparent; border: none;
+            color: var(--accent); font-size: 22px; cursor: pointer;
+            padding: 4px 8px;
+        }
+
+        /* ===== Sidebar Backdrop (Mobile) ===== */
+        .sidebar-backdrop {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.5); z-index: 49;
+        }
+        .sidebar-backdrop.show { display: block; }
+
+        /* ===== Responsive: Tablet (<= 900px) ===== */
+        @media (max-width: 900px) {
+            #workshop-main {
+                grid-template: "header" 60px
+                               "main" 1fr
+                               "footer" 36px
+                               / 1fr;
+            }
+            .hamburger { display: block; }
+            .sidebar {
+                position: fixed; left: -280px; top: 60px; bottom: 36px;
+                width: 260px; z-index: 50;
+                transition: left 0.3s ease;
+            }
+            .sidebar.open { left: 0; }
+            .widget-row { grid-template-columns: 1fr; }
+            .widget-row-3 { grid-template-columns: 1fr; }
+            .header-actions button { padding: 6px 8px; font-size: 11px; }
+            .chat-messages { max-height: 50vh; }
+        }
+
+        /* ===== Responsive: Phone (<= 600px) ===== */
+        @media (max-width: 600px) {
+            .header { padding: 0 10px; gap: 8px; }
+            .header-logo { font-size: 14px; letter-spacing: 1px; }
+            .header-project { display: none; }
+            .header-status { font-size: 10px; padding: 2px 8px; }
+            .header-actions button { padding: 5px 6px; font-size: 10px; }
+            .main { padding: 8px; gap: 10px; }
+            .widget { padding: 12px; }
+            .env-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+            .env-value { font-size: 18px; }
+            .arm-btns { grid-template-columns: repeat(2, 1fr); }
+            .arm-btn.emergency { grid-column: span 2; }
+            .calc-btns { gap: 4px; }
+            .calc-btn { padding: 5px 8px; font-size: 10px; }
+            .chat-input-row { flex-wrap: nowrap; }
+            .footer { padding: 0 8px; gap: 8px; font-size: 9px; }
+            body { overflow-y: auto; }
+        }
+
+        /* ===== Responsive: Small Phone (<= 380px) ===== */
+        @media (max-width: 380px) {
+            .header-logo { font-size: 12px; }
+            .header-actions { gap: 4px; }
+            .widget { padding: 10px; border-radius: 8px; }
+            .nav-btn { padding: 6px 8px; font-size: 11px; }
+        }
     </style>
 </head>
 <body>
@@ -433,17 +545,21 @@
 
     <!-- Header -->
     <div class="header">
+        <button class="hamburger" onclick="toggleSidebar()">&#9776;</button>
         <div class="header-logo">WORKSHOP</div>
         <div class="header-project" id="header-project">
             <span class="proj-name" id="header-proj-name">Kein Projekt</span>
         </div>
         <span class="header-status status-none" id="header-status">---</span>
         <div class="header-actions">
-            <button onclick="showNewProject()">+ Projekt</button>
+            <button onclick="showNewProjectModal()">+ Projekt</button>
             <button onclick="refreshAll()">&#8635;</button>
             <button onclick="window.open('/ui/', '_blank')">Dashboard</button>
         </div>
     </div>
+
+    <!-- Sidebar Backdrop (Mobile) -->
+    <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
 
     <!-- Sidebar -->
     <div class="sidebar">
@@ -469,6 +585,9 @@
         <button class="nav-btn" data-view="journal" onclick="switchView(this, 'journal')">
             <span class="icon">&#128214;</span> Journal
         </button>
+        <button class="nav-btn" data-view="settings" onclick="switchView(this, 'settings')">
+            <span class="icon">&#9881;</span> Einstellungen
+        </button>
 
         <h3>Projekte</h3>
         <div id="project-list"></div>
@@ -491,6 +610,36 @@
 
 <!-- Toast Notification -->
 <div class="toast" id="toast"></div>
+
+<!-- New Project Modal -->
+<div class="modal-overlay hidden" id="new-project-modal">
+    <div class="modal">
+        <h3>Neues Projekt erstellen</h3>
+        <label>Projekt-Name *</label>
+        <input id="modal-title" type="text" placeholder="z.B. ESP32 Wetterstation">
+        <label>Beschreibung</label>
+        <input id="modal-desc" type="text" placeholder="Kurze Beschreibung...">
+        <label>Kategorie</label>
+        <select id="modal-cat">
+            <option value="maker">Maker</option>
+            <option value="reparatur">Reparatur</option>
+            <option value="bau">Bau</option>
+            <option value="erfindung">Erfindung</option>
+            <option value="renovierung">Renovierung</option>
+        </select>
+        <label>Prioritaet</label>
+        <select id="modal-prio">
+            <option value="normal">Normal</option>
+            <option value="niedrig">Niedrig</option>
+            <option value="hoch">Hoch</option>
+            <option value="dringend">Dringend</option>
+        </select>
+        <div class="modal-btns">
+            <button onclick="closeNewProjectModal()">Abbrechen</button>
+            <button class="btn-primary" onclick="createProjectFromModal()">Erstellen</button>
+        </div>
+    </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
@@ -553,7 +702,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 }
 
 async function chatApi(text) {
-    const resp = await fetch('/api/chat', {
+    const resp = await fetch('/api/assistant/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, room: 'werkstatt' })
@@ -668,22 +817,18 @@ function updateHeader() {
     document.getElementById('header-status').className = 'header-status ' + cls;
 }
 
-async function showNewProject() {
-    const title = prompt('Projekt-Name:');
-    if (!title) return;
-    const desc = prompt('Beschreibung (optional):') || '';
-    try {
-        const res = await chatApi('Erstelle ein Werkstatt-Projekt: ' + title + (desc ? '. ' + desc : ''));
-        showToast('Projekt wird erstellt...');
-        setTimeout(loadProjects, 2000);
-    } catch (e) { showToast('Fehler beim Erstellen'); }
-}
+// showNewProject is now showNewProjectModal (modal-based)
 
 // ===== View Switching =====
 function switchView(btn, view) {
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentView = view;
+    // Close sidebar on mobile
+    const sidebar = document.querySelector('.sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (sidebar) sidebar.classList.remove('open');
+    if (backdrop) backdrop.classList.remove('show');
     renderView();
 }
 
@@ -697,8 +842,48 @@ function renderView() {
         case 'chat': renderChatView(main); break;
         case 'calc': renderCalcView(main); break;
         case 'journal': renderJournalView(main); break;
+        case 'settings': renderSettingsView(main); break;
         default: main.innerHTML = '';
     }
+}
+
+// ===== Sidebar Toggle (Mobile) =====
+function toggleSidebar() {
+    const sidebar = document.querySelector('.sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    sidebar.classList.toggle('open');
+    backdrop.classList.toggle('show');
+}
+
+// ===== New Project Modal =====
+function showNewProjectModal() {
+    document.getElementById('new-project-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('modal-title').focus(), 100);
+}
+function closeNewProjectModal() {
+    document.getElementById('new-project-modal').classList.add('hidden');
+    document.getElementById('modal-title').value = '';
+    document.getElementById('modal-desc').value = '';
+}
+async function createProjectFromModal() {
+    const title = document.getElementById('modal-title').value.trim();
+    if (!title) { showToast('Bitte Projekt-Name eingeben'); return; }
+    const desc = document.getElementById('modal-desc').value.trim();
+    const cat = document.getElementById('modal-cat').value;
+    const prio = document.getElementById('modal-prio').value;
+    try {
+        const res = await apiCall('projects', 'POST', {
+            title, description: desc, category: cat, priority: prio
+        });
+        if (res.success && res.project) {
+            closeNewProjectModal();
+            showToast('Projekt erstellt: ' + title);
+            await loadProjects();
+            selectProject(res.project.id);
+        } else {
+            showToast('Fehler: ' + (res.detail || 'Unbekannt'));
+        }
+    } catch (e) { showToast('Fehler beim Erstellen'); }
 }
 
 // ===== Overview View =====
@@ -828,14 +1013,15 @@ async function renderCodeView(main) {
             if (files.length) {
                 html += '<ul class="file-list">';
                 files.forEach(f => {
-                    const ext = (f.filename || '').split('.').pop();
+                    const fname = f.name || f.filename || '';
+                    const ext = fname.split('.').pop();
                     const icon = { py: '&#128013;', ino: '&#9889;', scad: '&#128230;', svg: '&#127912;', html: '&#127760;', js: '&#9889;', yaml: '&#128196;' }[ext] || '&#128196;';
-                    html += '<li class="file-item" onclick="viewFile(\'' + escHtml(f.filename) + '\')">';
+                    html += '<li class="file-item" onclick="viewFile(\'' + escHtml(fname) + '\')">';
                     html += '<span class="file-icon">' + icon + '</span>';
-                    html += '<span class="file-name">' + escHtml(f.filename) + '</span>';
-                    html += '<span style="font-size:10px;color:var(--text-secondary)">' + (f.version ? 'v' + f.version : '') + '</span>';
+                    html += '<span class="file-name">' + escHtml(fname) + '</span>';
+                    html += '<span style="font-size:10px;color:var(--text-secondary)">' + formatFileSize(f.size) + '</span>';
                     html += '<div class="file-actions">';
-                    html += '<button class="file-action-btn" onclick="event.stopPropagation();downloadFile(\'' + escHtml(f.filename) + '\')">&#11015;</button>';
+                    html += '<button class="file-action-btn" onclick="event.stopPropagation();downloadFile(\'' + escHtml(fname) + '\')">&#11015;</button>';
                     html += '</div></li>';
                 });
                 html += '</ul>';
@@ -1062,7 +1248,7 @@ async function sendChat() {
     addChatMessage('user', text);
     try {
         const res = await chatApi(text);
-        if (res.response && !res._emitted) {
+        if (res.response) {
             addChatMessage('jarvis', res.response);
         }
     } catch (e) {
@@ -1179,7 +1365,7 @@ async function doCalc() {
             break;
         case 'led_resistor':
             params = { v_supply: parseFloat(document.getElementById('cp-vs')?.value || 5),
-                       v_forward: parseFloat(document.getElementById('cp-vf')?.value || 2),
+                       v_led: parseFloat(document.getElementById('cp-vf')?.value || 2),
                        i_ma: parseFloat(document.getElementById('cp-if')?.value || 20) };
             break;
         case 'resistor_divider':
@@ -1195,13 +1381,14 @@ async function doCalc() {
             break;
         case '3d_print_weight':
             params = { volume_cm3: parseFloat(document.getElementById('cp-vol')?.value || 0),
-                       material: document.getElementById('cp-mat')?.value || 'PLA',
+                       material: (document.getElementById('cp-mat')?.value || 'PLA').toLowerCase(),
                        infill_pct: parseFloat(document.getElementById('cp-infill')?.value || 20) };
             break;
         case 'power_supply':
-            params = { total_current_a: parseFloat(document.getElementById('cp-total-a')?.value || 0),
-                       voltage: parseFloat(document.getElementById('cp-psu-v')?.value || 12),
-                       margin_pct: parseFloat(document.getElementById('cp-margin')?.value || 20) };
+            const totalA = parseFloat(document.getElementById('cp-total-a')?.value || 0);
+            const psuV = parseFloat(document.getElementById('cp-psu-v')?.value || 12);
+            const margin = parseFloat(document.getElementById('cp-margin')?.value || 20) / 100;
+            params = { voltage: psuV, components: [{ current_ma: totalA * 1000, quantity: 1 }] };
             break;
         case 'convert':
             params = { value: parseFloat(document.getElementById('cp-val')?.value || 0),
@@ -1260,8 +1447,13 @@ async function addJournalEntry() {
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
-    await chatApi('Journal-Eintrag: ' + text);
-    setTimeout(() => renderJournalView(), 1000);
+    try {
+        await apiCall('journal', 'POST', { note: text });
+        showToast('Journal-Eintrag gespeichert');
+        renderJournalView();
+    } catch (e) {
+        showToast('Fehler beim Speichern');
+    }
 }
 
 // ===== Environment Updates =====
@@ -1291,7 +1483,16 @@ function showDiagnosis(data) {
 // ===== Utilities =====
 function escHtml(s) {
     if (!s) return '';
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB'];
+    let i = 0;
+    let size = bytes;
+    while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+    return size.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
 }
 
 function showToast(msg) {
@@ -1305,6 +1506,121 @@ async function refreshAll() {
     await loadProjects();
     renderView();
     showToast('Aktualisiert');
+}
+
+// ===== Settings View =====
+async function renderSettingsView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#9881;</span><span class="widget-title">Workshop-Einstellungen</span></div>';
+
+    try {
+        const res = await apiCall('settings');
+        const s = res.settings || {};
+
+        html += '<div class="settings-group"><h4>Allgemein</h4>';
+        html += settingsRow('Workshop aktiv', s.enabled ? 'Ja' : 'Nein');
+        html += settingsRow('Werkstatt-Raum', s.workshop_room || 'werkstatt');
+        html += settingsRow('Standard-Kategorie', s.default_category || 'maker');
+        html += settingsRow('Sicherheits-Check', s.auto_safety_check ? 'Aktiv' : 'Aus');
+        html += settingsRow('Proaktive Vorschlaege', s.proactive_suggestions ? 'Aktiv' : 'Aus');
+        html += '</div>';
+
+        html += '<div class="settings-group"><h4>Dateien</h4>';
+        html += settingsRow('Speicherpfad', s.file_storage_path || '-');
+        html += settingsRow('Max. Dateigroesse', (s.max_file_size_mb || 50) + ' MB');
+        html += settingsRow('Bibliothek-Pfad', s.library_path || '-');
+        html += '</div>';
+
+        const p3d = s.printer_3d || {};
+        html += '<div class="settings-group"><h4>3D-Drucker</h4>';
+        html += settingsRow('Aktiviert', p3d.enabled ? 'Ja' : 'Nein');
+        html += settingsRow('Entity-Prefix', p3d.entity_prefix || '-');
+        html += settingsRow('Auto-Monitor', p3d.auto_monitor ? 'Ja' : 'Nein');
+        html += settingsRow('Monitor-Intervall', (p3d.monitor_interval_seconds || 30) + 's');
+        html += '</div>';
+
+        const arm = s.robot_arm || {};
+        html += '<div class="settings-group"><h4>Roboterarm</h4>';
+        html += settingsRow('Aktiviert', arm.enabled ? 'Ja' : 'Nein');
+        html += settingsRow('URL', arm.url || 'Nicht konfiguriert');
+        html += settingsRow('Max. Geschwindigkeit', (arm.max_speed || 80) + '%');
+        html += '</div>';
+
+        const mqtt = s.mqtt || {};
+        html += '<div class="settings-group"><h4>MQTT</h4>';
+        html += settingsRow('Aktiviert', mqtt.enabled ? 'Ja' : 'Nein');
+        html += settingsRow('Broker', mqtt.broker || 'Nicht konfiguriert');
+        html += settingsRow('Port', mqtt.port || 1883);
+        html += settingsRow('Topic-Prefix', mqtt.topic_prefix || 'workshop/');
+        html += '</div>';
+
+        const templates = s.templates || [];
+        html += '<div class="settings-group"><h4>Projekt-Templates</h4>';
+        if (templates.length) {
+            html += '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0">';
+            templates.forEach(t => {
+                html += '<span style="padding:3px 10px;border-radius:12px;background:var(--accent-dim);color:var(--accent);font-size:11px">' + escHtml(t) + '</span>';
+            });
+            html += '</div>';
+        } else {
+            html += settingsRow('Templates', 'Keine konfiguriert');
+        }
+        html += '</div>';
+
+    } catch (e) {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Einstellungen konnten nicht geladen werden.</div>';
+    }
+
+    html += '<div style="margin-top:16px;font-size:11px;color:var(--text-secondary)">Einstellungen werden in <code>config/settings.yaml</code> konfiguriert. Aenderungen erfordern einen Neustart des Assistenten.</div>';
+    html += '</div>';
+
+    // Library Stats
+    html += '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#128218;</span><span class="widget-title">Workshop-Bibliothek</span></div>';
+    try {
+        const lib = await apiCall('library/stats');
+        html += settingsRow('Dokumente', lib.document_count || 0);
+        html += settingsRow('Chunks', lib.chunk_count || 0);
+    } catch (e) {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Bibliothek nicht verfuegbar.</div>';
+    }
+    html += '</div>';
+
+    // Workshop Stats
+    html += '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#128200;</span><span class="widget-title">Statistiken</span></div>';
+    try {
+        const stats = await apiCall('stats');
+        html += settingsRow('Projekte gesamt', stats.total_projects || 0);
+        html += settingsRow('Abgeschlossen', stats.completed_projects || 0);
+        html += settingsRow('In Arbeit', stats.active_projects || 0);
+        html += settingsRow('Gesamtzeit', stats.total_time || '-');
+    } catch (e) {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Statistiken nicht verfuegbar.</div>';
+    }
+    html += '</div>';
+
+    main.innerHTML = html;
+}
+
+function settingsRow(label, value) {
+    return '<div class="settings-row"><span class="label">' + escHtml(label) + '</span><span class="value">' + escHtml(String(value)) + '</span></div>';
+}
+
+// ===== Delete Project =====
+async function deleteProject(id) {
+    if (!confirm('Projekt wirklich loeschen?')) return;
+    try {
+        await apiCall('project/' + id, 'DELETE');
+        if (currentProject && currentProject.id === id) {
+            currentProject = null;
+            updateHeader();
+        }
+        showToast('Projekt geloescht');
+        await loadProjects();
+        renderView();
+    } catch (e) { showToast('Fehler beim Loeschen'); }
 }
 
 // ===== Init =====

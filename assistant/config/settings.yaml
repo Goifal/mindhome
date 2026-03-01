@@ -1185,7 +1185,7 @@ error_patterns:
   mitigation_ttl_hours: 1
 # Workshop-Modus: Werkstatt-Ingenieur-Assistent
 workshop:
-  enabled: false
+  enabled: true
   workshop_room: werkstatt
   auto_safety_check: true
   proactive_suggestions: true
