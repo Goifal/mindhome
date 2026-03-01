@@ -3604,9 +3604,10 @@ async def ui_get_declarative_tools(token: str = ""):
     decl_cfg = yaml_config.get("declarative_tools", {})
     enabled = decl_cfg.get("enabled", True)
     use_in_spontaneous = decl_cfg.get("use_in_spontaneous", True)
+    max_tools = decl_cfg.get("max_tools", 20)
     registry = get_registry()
     tools = registry.list_tools()
-    return {"tools": tools, "count": len(tools), "enabled": enabled, "use_in_spontaneous": use_in_spontaneous}
+    return {"tools": tools, "count": len(tools), "enabled": enabled, "use_in_spontaneous": use_in_spontaneous, "max_tools": max_tools}
 
 
 @app.post("/api/ui/declarative-tools")

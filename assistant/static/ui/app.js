@@ -7886,6 +7886,7 @@ async function loadDeclarativeTools() {
     _declTools = d.tools || [];
     _declEnabled = d.enabled !== false;
     _declSpontaneous = d.use_in_spontaneous !== false;
+    _declMaxTools = d.max_tools || 20;
     _renderDeclToolList();
     _updateDeclEnabledUI();
   } catch(e) { console.error('Declarative tools load fail:', e); }
@@ -7898,7 +7899,7 @@ function _renderDeclToolList() {
     container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Noch keine Analyse-Tools erstellt. Erstelle unten ein neues oder nutze eine Vorlage.</div>';
     return;
   }
-  let h = '<div style="margin-bottom:8px;font-size:12px;color:var(--text-secondary);">' + _declTools.length + '/20 Tools</div>';
+  let h = '<div style="margin-bottom:8px;font-size:12px;color:var(--text-secondary);">' + _declTools.length + '/' + _declMaxTools + ' Tools</div>';
   for (const t of _declTools) {
     const typeInfo = DECL_TOOL_TYPES.find(tt => tt.v === t.type) || {l: t.type};
     h += '<div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;margin-bottom:10px;background:var(--bg-card);">' +
@@ -8233,24 +8234,33 @@ async function createDeclTool() {
 // ── Feature-Toggle ───────────────────────────────────────────
 let _declEnabled = true;
 let _declSpontaneous = true;
+let _declMaxTools = 20;
 
 async function toggleDeclEnabled() {
   _declEnabled = !_declEnabled;
   try {
-    await api('/api/ui/settings', 'PUT', {declarative_tools: {enabled: _declEnabled}});
+    await api('/api/ui/settings', 'PUT', {settings: {declarative_tools: {enabled: _declEnabled}}});
     toast('Analyse-Tools ' + (_declEnabled ? 'aktiviert' : 'deaktiviert'), 'success');
-  } catch(e) { toast('Fehler: ' + e.message, 'error'); _declEnabled = !_declEnabled; }
+  } catch(e) { toast('Fehler: ' + (e.message || e), 'error'); _declEnabled = !_declEnabled; }
   _updateDeclEnabledUI();
 }
 
 async function toggleDeclSpontaneous() {
   _declSpontaneous = !_declSpontaneous;
   try {
-    await api('/api/ui/settings', 'PUT', {declarative_tools: {use_in_spontaneous: _declSpontaneous}});
+    await api('/api/ui/settings', 'PUT', {settings: {declarative_tools: {use_in_spontaneous: _declSpontaneous}}});
     toast('Proaktive Nutzung ' + (_declSpontaneous ? 'aktiviert' : 'deaktiviert'), 'success');
-  } catch(e) { toast('Fehler: ' + e.message, 'error'); _declSpontaneous = !_declSpontaneous; }
+  } catch(e) { toast('Fehler: ' + (e.message || e), 'error'); _declSpontaneous = !_declSpontaneous; }
   var t = document.getElementById('declSpontaneousToggle');
   if (t) t.checked = _declSpontaneous;
+}
+
+async function updateDeclMaxTools(val) {
+  _declMaxTools = parseInt(val) || 20;
+  try {
+    await api('/api/ui/settings', 'PUT', {settings: {declarative_tools: {max_tools: _declMaxTools}}});
+    toast('Max. Tools: ' + _declMaxTools, 'success');
+  } catch(e) { toast('Fehler: ' + (e.message || e), 'error'); }
 }
 
 function _updateDeclEnabledUI() {
@@ -8258,6 +8268,10 @@ function _updateDeclEnabledUI() {
   if (toggle) toggle.checked = _declEnabled;
   var spToggle = document.getElementById('declSpontaneousToggle');
   if (spToggle) spToggle.checked = _declSpontaneous;
+  var slider = document.getElementById('declMaxToolsSlider');
+  if (slider) slider.value = _declMaxTools;
+  var sliderVal = document.getElementById('declMaxToolsVal');
+  if (sliderVal) sliderVal.textContent = _declMaxTools;
   var body = document.getElementById('declBody');
   if (body) {
     body.style.opacity = _declEnabled ? '1' : '0.4';
@@ -8274,7 +8288,10 @@ function renderDeclarativeTools() {
     '<div class="form-group"><div class="toggle-group"><label>Proaktive Nutzung (Jarvis erwaehnt Ergebnisse spontan)</label>' +
     '<label class="toggle"><input type="checkbox" id="declSpontaneousToggle" onchange="toggleDeclSpontaneous()" checked>' +
     '<span class="toggle-track"></span><span class="toggle-thumb"></span></label></div></div>' +
-    fInfo('Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus (nur Lese-Zugriff). Max. 20 Tools.' + helpBtn('decl_tools.overview'))
+    '<div class="form-group"><label>Maximale Anzahl Tools</label>' +
+    '<div class="range-group"><input type="range" id="declMaxToolsSlider" min="5" max="50" step="5" value="20" onchange="updateDeclMaxTools(this.value)" oninput="document.getElementById(\'declMaxToolsVal\').textContent=this.value">' +
+    '<span class="range-value" id="declMaxToolsVal">20</span></div></div>' +
+    fInfo('Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus (nur Lese-Zugriff).' + helpBtn('decl_tools.overview'))
   ) +
   '<div id="declBody">' +
   sectionWrap('&#128202;', 'Aktive Tools',

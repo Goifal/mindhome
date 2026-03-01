@@ -25,11 +25,18 @@ from typing import Any, Optional
 
 import yaml
 
+from .config import yaml_config
+
 logger = logging.getLogger(__name__)
 
 # ── Konstanten ────────────────────────────────────────────────
-MAX_TOOLS = 20
+DEFAULT_MAX_TOOLS = 20
 TOOLS_FILE = Path(__file__).parent.parent / "config" / "declarative_tools.yaml"
+
+
+def _get_max_tools() -> int:
+    """Gibt das konfigurierte Maximum an Tools zurueck."""
+    return yaml_config.get("declarative_tools", {}).get("max_tools", DEFAULT_MAX_TOOLS)
 
 VALID_TYPES = frozenset({
     "entity_comparison",
@@ -105,8 +112,9 @@ class DeclarativeToolRegistry:
         if err:
             return {"success": False, "message": err}
 
-        if name not in self._tools and len(self._tools) >= MAX_TOOLS:
-            return {"success": False, "message": f"Maximum {MAX_TOOLS} Tools erreicht."}
+        max_tools = _get_max_tools()
+        if name not in self._tools and len(self._tools) >= max_tools:
+            return {"success": False, "message": f"Maximum {max_tools} Tools erreicht."}
 
         self._tools[name] = config
         self._save()
