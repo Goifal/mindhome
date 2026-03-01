@@ -2,161 +2,270 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>J.A.R.V.I.S. Workshop</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
     <style>
+        @font-face { font-family:'Outfit'; font-style:normal; font-weight:300 700; font-display:swap; src:local('Outfit'),local('Inter'),local('Segoe UI'); }
+        @font-face { font-family:'JetBrains Mono'; font-style:normal; font-weight:400 600; font-display:swap; src:local('JetBrains Mono'),local('SF Mono'),local('Consolas'),local('Menlo'); }
         :root {
-            --accent: #00d4ff;
-            --accent-dim: #00d4ff33;
             --bg-primary: #040810;
-            --bg-secondary: #0a1020;
-            --bg-card: #0d1528;
-            --text-primary: #e0e8f0;
-            --text-secondary: #7a8a9a;
-            --border: #1a2a3a;
-            --success: #00ff88;
+            --bg-secondary: #0a1018;
+            --bg-card: #0c1520;
+            --bg-card-hover: #111e2e;
+            --bg-input: #081018;
+            --accent: #00d4ff;
+            --accent-dim: rgba(0,212,255,0.1);
+            --accent-glow: rgba(0,212,255,0.35);
+            --text-primary: #c8dce8;
+            --text-secondary: #6889a0;
+            --text-muted: #3a5568;
+            --success: #00e676;
+            --success-dim: rgba(0,230,118,0.12);
             --warning: #ffaa00;
-            --danger: #ff4444;
-            --glass: rgba(10, 16, 32, 0.85);
+            --danger: #ff3d3d;
+            --danger-dim: rgba(255,61,61,0.12);
+            --border: rgba(0,212,255,0.06);
+            --border-hover: rgba(0,212,255,0.15);
+            --border-accent: rgba(0,212,255,0.25);
+            --shadow-glow: 0 0 30px rgba(0,212,255,0.15);
+            --font: 'Outfit',-apple-system,BlinkMacSystemFont,sans-serif;
+            --mono: 'JetBrains Mono','SF Mono',monospace;
+            --fast: 0.15s ease;
+            --normal: 0.25s ease;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             background: var(--bg-primary);
             color: var(--text-primary);
-            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-family: var(--font);
             overflow-x: hidden;
+            background-image: radial-gradient(circle at 20% 50%, rgba(0,212,255,0.015) 0%, transparent 50%),
+                              radial-gradient(circle at 80% 20%, rgba(0,212,255,0.01) 0%, transparent 40%);
         }
 
-        /* ===== Boot Screen ===== */
+        /* ===== Boot Screen (Jarvis HUD Style) ===== */
         #boot-screen {
             position: fixed; inset: 0; z-index: 1000;
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
-            background: var(--bg-primary);
+            background: radial-gradient(ellipse at center, rgba(0,212,255,0.04) 0%, var(--bg-primary) 70%);
             transition: opacity 0.8s ease;
         }
         #boot-screen.fade-out { opacity: 0; pointer-events: none; }
-        .boot-ring {
-            width: 120px; height: 120px;
-            border: 2px solid var(--accent-dim);
-            border-top: 2px solid var(--accent);
-            border-radius: 50%;
-            animation: spin 2s linear infinite;
+        .boot-hud-ring {
+            width: 200px; height: 200px; position: relative; margin-bottom: 32px;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        #boot-text {
-            margin-top: 24px; font-size: 14px;
-            color: var(--accent); min-height: 20px;
-        }
+        .boot-hud-ring svg { width: 100%; height: 100%; }
+        .boot-arc-outer { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 40 20; opacity: 0.6; animation: bootRotate 3s linear infinite; transform-origin: center; filter: drop-shadow(0 0 4px rgba(0,212,255,0.5)); }
+        .boot-arc-inner { fill: none; stroke: rgba(0,212,255,0.3); stroke-width: 1; stroke-dasharray: 15 25; opacity: 0.4; animation: bootRotateRev 6s linear infinite; transform-origin: center; }
+        .boot-arc-center { fill: none; stroke: var(--accent); stroke-width: 0.8; stroke-dasharray: 8 12; opacity: 0.3; animation: bootRotate 10s linear infinite; transform-origin: center; }
+        @keyframes bootRotate { to { transform: rotate(360deg); } }
+        @keyframes bootRotateRev { to { transform: rotate(-360deg); } }
         .boot-title {
-            font-size: 24px; font-weight: 600;
-            color: var(--accent); margin-bottom: 32px;
-            letter-spacing: 4px;
+            font-size: 28px; font-weight: 600;
+            color: var(--accent); margin-bottom: 12px;
+            letter-spacing: 6px; text-transform: uppercase;
+            text-shadow: 0 0 30px rgba(0,212,255,0.5), 0 0 60px rgba(0,212,255,0.2);
         }
+        .boot-subtitle {
+            font-size: 10px; color: var(--text-muted); letter-spacing: 3px;
+            text-transform: uppercase; font-family: var(--mono); margin-bottom: 32px;
+        }
+        #boot-text {
+            font-size: 12px; font-family: var(--mono);
+            color: var(--accent); min-height: 20px;
+            letter-spacing: 1px; text-shadow: 0 0 10px rgba(0,212,255,0.3);
+        }
+        .boot-systems {
+            display: flex; gap: 16px; margin-top: 24px;
+        }
+        .boot-sys-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--text-muted); transition: background 0.3s, box-shadow 0.3s;
+        }
+        .boot-sys-dot.online { background: var(--success); box-shadow: 0 0 8px rgba(0,230,118,0.5); }
 
-        /* ===== Main Grid ===== */
+        /* ===== Main Layout ===== */
         #workshop-main {
             display: none; min-height: 100vh;
-            grid-template: "header header" 60px
-                           "sidebar main" 1fr
-                           "footer footer" 36px
-                           / 260px 1fr;
         }
+        #workshop-main.active { display: flex; }
 
         /* ===== Header ===== */
         .header {
-            grid-area: header;
-            display: flex; align-items: center;
-            padding: 0 20px; gap: 16px;
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border);
+            height: 56px; display: flex; align-items: center;
+            justify-content: space-between; padding: 0 24px;
+            background: linear-gradient(90deg, rgba(8,14,24,0.97), rgba(10,16,28,0.95), rgba(8,14,24,0.97));
+            border-bottom: 1px solid rgba(0,212,255,0.1);
+            position: sticky; top: 0; z-index: 50;
+            backdrop-filter: blur(16px);
         }
-        .header-logo { color: var(--accent); font-size: 18px; font-weight: 600; letter-spacing: 2px; }
+        .header::after {
+            content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+            height: 1px; background: linear-gradient(90deg, transparent, rgba(0,212,255,0.6), transparent);
+            opacity: 0.3; filter: drop-shadow(0 0 4px rgba(0,212,255,0.3));
+        }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .header-logo {
+            font-size: 15px; font-weight: 600; letter-spacing: 3px;
+            color: var(--accent); text-transform: uppercase;
+            text-shadow: 0 0 15px rgba(0,212,255,0.2);
+        }
         .header-project {
-            flex: 1; font-size: 13px; color: var(--text-secondary);
+            font-size: 12px; color: var(--text-secondary);
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            font-family: var(--mono); max-width: 200px;
         }
         .header-project .proj-name { color: var(--text-primary); font-weight: 500; }
+        .header-right { display: flex; align-items: center; gap: 8px; }
         .header-status {
             padding: 3px 10px; border-radius: 12px;
-            font-size: 11px; font-weight: 500; text-transform: uppercase;
+            font-size: 10px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 1px; font-family: var(--mono);
         }
-        .status-active { background: var(--success); color: #000; }
-        .status-paused { background: var(--warning); color: #000; }
-        .status-none { background: var(--border); color: var(--text-secondary); }
-        .header-actions { display: flex; gap: 8px; }
+        .status-active { background: var(--success-dim); color: var(--success); border: 1px solid rgba(0,230,118,0.3); }
+        .status-paused { background: rgba(255,170,0,0.12); color: var(--warning); border: 1px solid rgba(255,170,0,0.3); }
+        .status-none { background: var(--accent-dim); color: var(--text-muted); border: 1px solid var(--border); }
+        .header-actions { display: flex; gap: 6px; }
         .header-actions button {
-            background: transparent; border: 1px solid var(--border);
+            background: rgba(0,212,255,0.04); border: 1px solid var(--border-hover);
             color: var(--text-secondary); padding: 6px 12px;
-            border-radius: 6px; cursor: pointer; font-size: 12px;
-            font-family: inherit; transition: all 0.2s;
+            border-radius: 4px; cursor: pointer; font-size: 11px;
+            font-family: var(--font); font-weight: 500; text-transform: uppercase;
+            letter-spacing: 0.5px; transition: all var(--fast);
         }
-        .header-actions button:hover { border-color: var(--accent); color: var(--accent); }
+        .header-actions button:hover {
+            border-color: var(--accent); color: var(--accent);
+            box-shadow: 0 0 12px rgba(0,212,255,0.15);
+        }
 
-        /* ===== Sidebar ===== */
+        /* ===== Sidebar (Jarvis Style) ===== */
         .sidebar {
-            grid-area: sidebar; overflow-y: auto;
-            background: var(--bg-secondary);
-            border-right: 1px solid var(--border);
-            padding: 12px;
+            width: 240px; background: var(--bg-secondary);
+            border-right: 1px solid rgba(0,212,255,0.1);
+            display: flex; flex-direction: column;
+            position: fixed; top: 0; left: 0; bottom: 0; z-index: 100;
+            overflow: hidden;
+        }
+        .sidebar::before {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(180deg, rgba(0,212,255,0.03) 0%, transparent 40%, transparent 60%, rgba(0,212,255,0.02) 100%);
+            pointer-events: none; z-index: 0;
+        }
+        .sidebar::after {
+            content: ''; position: absolute; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(0,212,255,0.6), transparent);
+            opacity: 0.2; animation: sidebarScan 6s ease-in-out infinite;
+            pointer-events: none; z-index: 1; filter: drop-shadow(0 0 4px rgba(0,212,255,0.4));
+        }
+        @keyframes sidebarScan { 0%,100% { top: 5%; } 50% { top: 95%; } }
+        .sidebar-logo {
+            padding: 18px 20px; border-bottom: 1px solid rgba(0,212,255,0.12);
+            display: flex; align-items: center; gap: 12px;
+            position: relative; z-index: 2;
+        }
+        .sidebar-logo .logo-icon {
+            width: 36px; height: 36px; border: 1.5px solid var(--accent);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 14px; font-weight: 700; color: var(--accent); font-family: var(--mono);
+            box-shadow: 0 0 15px rgba(0,212,255,0.3), inset 0 0 10px rgba(0,212,255,0.15);
+            animation: logoGlow 3s ease-in-out infinite;
+        }
+        @keyframes logoGlow { 0%,100% { box-shadow:0 0 15px rgba(0,212,255,0.3), inset 0 0 10px rgba(0,212,255,0.15); } 50% { box-shadow:0 0 25px rgba(0,212,255,0.5), inset 0 0 15px rgba(0,212,255,0.2); } }
+        .sidebar-logo .logo-text h2 {
+            font-size: 15px; font-weight: 600; letter-spacing: 4px;
+            color: var(--accent); text-shadow: 0 0 20px rgba(0,212,255,0.4);
+        }
+        .sidebar-logo .logo-text span {
+            font-size: 9px; color: var(--text-muted); display: block;
+            text-transform: uppercase; letter-spacing: 2px; font-family: var(--mono);
+        }
+        .sidebar-nav {
+            padding: 12px 8px; flex: 1; overflow-y: auto;
+            position: relative; z-index: 2;
         }
         .sidebar h3 {
-            font-size: 11px; color: var(--text-secondary);
-            text-transform: uppercase; letter-spacing: 1px;
-            margin: 16px 0 8px; padding: 0 8px;
+            font-size: 10px; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 1.5px;
+            margin: 14px 0 6px; padding: 0 14px; font-family: var(--mono);
         }
         .sidebar h3:first-child { margin-top: 0; }
         .nav-btn {
-            display: flex; align-items: center; gap: 8px;
-            width: 100%; padding: 8px 12px;
-            background: transparent; border: none;
+            display: flex; align-items: center; gap: 10px;
+            width: 100%; padding: 10px 14px;
+            background: transparent; border: 1px solid transparent;
             color: var(--text-secondary); font-size: 12px;
-            font-family: inherit; cursor: pointer;
-            border-radius: 6px; transition: all 0.2s;
-            text-align: left;
+            font-family: var(--font); font-weight: 500; cursor: pointer;
+            border-radius: 4px; transition: all var(--fast);
+            text-align: left; text-transform: uppercase; letter-spacing: 0.5px;
+            position: relative;
         }
-        .nav-btn:hover { background: var(--accent-dim); color: var(--text-primary); }
-        .nav-btn.active { background: var(--accent-dim); color: var(--accent); }
-        .nav-btn .icon { font-size: 16px; width: 20px; text-align: center; }
+        .nav-btn:hover { background: rgba(0,212,255,0.04); color: var(--text-primary); border-color: rgba(0,212,255,0.1); }
+        .nav-btn.active {
+            background: rgba(0,212,255,0.06); color: var(--accent);
+            border-color: rgba(0,212,255,0.2); box-shadow: 0 0 15px rgba(0,212,255,0.08);
+        }
+        .nav-btn.active::before {
+            content: ''; position: absolute; left: 0; width: 2px; height: 24px;
+            background: var(--accent); border-radius: 0 2px 2px 0; box-shadow: 0 0 10px var(--accent);
+        }
+        .nav-btn .icon { font-size: 14px; width: 20px; text-align: center; }
         .project-item {
             display: flex; align-items: center; gap: 8px;
-            padding: 6px 12px; border-radius: 6px;
+            padding: 8px 14px; border-radius: 4px;
             cursor: pointer; font-size: 11px;
-            color: var(--text-secondary); transition: all 0.2s;
+            color: var(--text-secondary); transition: all var(--fast);
+            font-family: var(--mono);
         }
-        .project-item:hover { background: var(--accent-dim); color: var(--text-primary); }
-        .project-item.active { color: var(--accent); }
+        .project-item:hover { background: rgba(0,212,255,0.04); color: var(--text-primary); }
+        .project-item.active { color: var(--accent); text-shadow: 0 0 10px rgba(0,212,255,0.3); }
         .project-dot {
             width: 6px; height: 6px; border-radius: 50%;
-            background: var(--text-secondary); flex-shrink: 0;
+            background: var(--text-muted); flex-shrink: 0;
         }
-        .project-item.active .project-dot { background: var(--accent); }
+        .project-item.active .project-dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+        .sidebar-footer {
+            padding: 12px; border-top: 1px solid rgba(0,212,255,0.1);
+            font-size: 10px; color: var(--text-muted); text-align: center;
+            position: relative; z-index: 2; font-family: var(--mono);
+            letter-spacing: 1px; text-transform: uppercase;
+        }
 
         /* ===== Main Content ===== */
         .main {
-            grid-area: main; overflow-y: auto;
-            padding: 16px; display: flex;
+            margin-left: 240px; flex: 1; min-height: 100vh;
+            overflow-x: hidden;
+        }
+        .main-content-area {
+            padding: 24px; display: flex;
             flex-direction: column; gap: 16px;
         }
 
-        /* ===== Widget ===== */
+        /* ===== Widget (Jarvis Card Style) ===== */
         .widget {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 10px; padding: 16px;
+            background: linear-gradient(135deg, rgba(12,21,32,0.95), rgba(8,16,24,0.98));
+            border: 1px solid rgba(0,212,255,0.12);
+            border-radius: 6px; padding: 20px;
+            backdrop-filter: blur(4px);
+            position: relative;
+            transition: border-color var(--fast), box-shadow var(--fast);
         }
+        .widget::before {
+            content: ''; position: absolute; top: 0; left: 20px; right: 20px;
+            height: 1px; background: linear-gradient(90deg, transparent, rgba(0,212,255,0.4), transparent);
+            opacity: 0.5;
+        }
+        .widget:hover { border-color: rgba(0,212,255,0.2); box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
         .widget-header {
             display: flex; align-items: center; gap: 8px;
-            margin-bottom: 12px; font-size: 12px;
+            margin-bottom: 14px; font-size: 11px;
             color: var(--text-secondary); text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 1.5px; font-weight: 600;
         }
-        .widget-header .icon { font-size: 16px; }
-        .widget-title { font-weight: 600; color: var(--text-primary); }
+        .widget-header .icon { font-size: 14px; }
+        .widget-title { color: var(--accent); text-shadow: 0 0 10px rgba(0,212,255,0.2); }
 
         /* Widget Grid Layouts */
         .widget-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -183,13 +292,14 @@
         .step-item.done { border-color: var(--success); color: var(--success); }
         .step-nav-btns { display: flex; gap: 8px; margin-top: 12px; }
         .step-btn {
-            padding: 6px 16px; border-radius: 6px;
-            border: 1px solid var(--border);
-            background: transparent; color: var(--text-primary);
-            font-family: inherit; font-size: 12px;
-            cursor: pointer; transition: all 0.2s;
+            padding: 8px 16px; border-radius: 4px;
+            border: 1px solid var(--border-hover);
+            background: rgba(0,212,255,0.04); color: var(--text-primary);
+            font-family: var(--font); font-size: 12px; font-weight: 500;
+            cursor: pointer; transition: all var(--fast);
+            text-transform: uppercase; letter-spacing: 0.5px;
         }
-        .step-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .step-btn:hover { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 12px rgba(0,212,255,0.15); }
         .progress-bar {
             height: 4px; background: var(--border);
             border-radius: 2px; margin-top: 8px; overflow: hidden;
@@ -246,42 +356,53 @@
 
         /* ===== Chat Panel ===== */
         .chat-messages {
-            max-height: 300px; overflow-y: auto;
+            max-height: 400px; overflow-y: auto;
             padding: 8px; display: flex;
             flex-direction: column; gap: 8px;
         }
         .chat-msg {
-            padding: 8px 12px; border-radius: 8px;
-            font-size: 12px; line-height: 1.5;
+            padding: 10px 14px; border-radius: 6px;
+            font-size: 13px; line-height: 1.6;
             max-width: 85%;
         }
         .chat-msg.user {
             align-self: flex-end;
-            background: var(--accent-dim); color: var(--accent);
+            background: rgba(0,212,255,0.08); color: var(--accent);
+            border: 1px solid rgba(0,212,255,0.2);
         }
         .chat-msg.jarvis {
             align-self: flex-start;
-            background: var(--bg-secondary); color: var(--text-primary);
+            background: rgba(12,21,32,0.9); color: var(--text-primary);
+            border: 1px solid var(--border);
         }
+        .chat-msg.streaming { opacity: 0.7; }
         .chat-input-row {
-            display: flex; gap: 8px; margin-top: 8px;
+            display: flex; gap: 8px; margin-top: 12px;
         }
         .chat-input {
-            flex: 1; background: var(--bg-secondary);
-            border: 1px solid var(--border); border-radius: 8px;
-            padding: 8px 12px; color: var(--text-primary);
-            font-family: inherit; font-size: 12px;
+            flex: 1; background: rgba(0,212,255,0.02);
+            border: 1px solid rgba(0,212,255,0.08); border-radius: 4px;
+            padding: 10px 14px; color: var(--text-primary);
+            font-family: var(--font); font-size: 13px;
         }
-        .chat-input:focus { outline: none; border-color: var(--accent); }
+        .chat-input:focus {
+            outline: none; border-color: var(--accent);
+            box-shadow: 0 0 20px rgba(0,212,255,0.12), inset 0 0 15px rgba(0,212,255,0.03);
+        }
         .btn-send, .btn-voice {
-            background: var(--accent-dim); border: 1px solid var(--accent);
-            color: var(--accent); padding: 8px 14px;
-            border-radius: 8px; cursor: pointer;
-            font-family: inherit; font-size: 12px;
-            transition: all 0.2s;
+            background: rgba(0,212,255,0.08); border: 1px solid var(--accent);
+            color: var(--accent); padding: 10px 16px;
+            border-radius: 4px; cursor: pointer;
+            font-family: var(--font); font-size: 12px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 1px;
+            transition: all var(--fast);
+            box-shadow: 0 0 10px rgba(0,212,255,0.1);
         }
-        .btn-send:hover, .btn-voice:hover { background: var(--accent); color: var(--bg-primary); }
-        .btn-voice.recording { background: var(--danger); border-color: var(--danger); color: #fff; }
+        .btn-send:hover, .btn-voice:hover {
+            background: rgba(0,212,255,0.15);
+            box-shadow: 0 0 20px rgba(0,212,255,0.25);
+        }
+        .btn-voice.recording { background: var(--danger-dim); border-color: var(--danger); color: var(--danger); box-shadow: 0 0 15px rgba(255,61,61,0.3); }
 
         /* ===== Environment Widget ===== */
         .env-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -386,19 +507,20 @@
 
         /* ===== Footer ===== */
         .footer {
-            grid-area: footer;
             display: flex; align-items: center;
-            padding: 0 16px; gap: 16px;
+            padding: 0 16px; gap: 16px; height: 36px;
             background: var(--bg-secondary);
-            border-top: 1px solid var(--border);
-            font-size: 10px; color: var(--text-secondary);
+            border-top: 1px solid rgba(0,212,255,0.1);
+            font-size: 10px; color: var(--text-muted);
+            font-family: var(--mono); letter-spacing: 0.5px;
         }
-        .footer-ws { display: flex; align-items: center; gap: 4px; }
+        .footer-ws { display: flex; align-items: center; gap: 6px; }
         .ws-dot {
             width: 6px; height: 6px; border-radius: 50%;
             background: var(--danger);
         }
-        .ws-dot.connected { background: var(--success); }
+        .ws-dot.connected { background: var(--success); animation: livePulse 2s ease-in-out infinite; }
+        @keyframes livePulse { 0%,100% { opacity: 1; box-shadow: 0 0 4px rgba(0,230,118,0.5); } 50% { opacity: 0.6; box-shadow: 0 0 8px rgba(0,230,118,0.8); } }
 
         /* ===== Scrollbar ===== */
         ::-webkit-scrollbar { width: 6px; }
@@ -409,63 +531,121 @@
         /* ===== Notification Toast ===== */
         .toast {
             position: fixed; top: 20px; right: 20px;
-            padding: 12px 20px; border-radius: 8px;
-            background: var(--glass); border: 1px solid var(--accent);
+            padding: 12px 20px; border-radius: 4px;
+            background: rgba(8,16,28,0.95); border: 1px solid var(--border-accent);
             color: var(--text-primary); font-size: 12px;
             z-index: 900; opacity: 0;
             transform: translateY(-10px);
             transition: all 0.3s;
+            backdrop-filter: blur(16px);
+            box-shadow: var(--shadow-glow);
+            font-family: var(--font);
         }
         .toast.show { opacity: 1; transform: translateY(0); }
 
-        /* ===== Modal / Dialog ===== */
+        /* ===== Modal / Dialog (Jarvis HUD) ===== */
         .modal-overlay {
             position: fixed; inset: 0; z-index: 800;
-            background: rgba(0,0,0,0.6);
+            background: rgba(4,8,16,0.85);
             display: flex; align-items: center; justify-content: center;
+            backdrop-filter: blur(4px);
         }
         .modal-overlay.hidden { display: none; }
         .modal {
-            background: var(--bg-card); border: 1px solid var(--border);
-            border-radius: 12px; padding: 24px; width: 90%; max-width: 420px;
+            background: rgba(8,16,28,0.95); border: 1px solid var(--border-accent);
+            border-radius: 6px; padding: 28px; width: 90%; max-width: 440px;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.6), var(--shadow-glow), inset 0 1px 0 rgba(0,212,255,0.1);
+            position: relative; backdrop-filter: blur(16px);
         }
-        .modal h3 { font-size: 14px; color: var(--accent); margin-bottom: 16px; }
-        .modal label { display: block; font-size: 11px; color: var(--text-secondary); margin: 8px 0 4px; }
-        .modal input, .modal select {
-            width: 100%; background: var(--bg-secondary); border: 1px solid var(--border);
-            border-radius: 6px; padding: 8px 10px; color: var(--text-primary);
-            font-family: inherit; font-size: 12px;
+        .modal::before {
+            content: ''; position: absolute; top: 0; left: 20px; right: 20px;
+            height: 1px; background: linear-gradient(90deg, transparent, rgba(0,212,255,0.5), transparent);
         }
-        .modal input:focus, .modal select:focus { outline: none; border-color: var(--accent); }
-        .modal-btns { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+        .modal .hud-corner { position: absolute; width: 16px; height: 16px; border-color: var(--accent); opacity: 0.4; }
+        .modal h3 {
+            font-size: 15px; color: var(--accent); margin-bottom: 20px;
+            letter-spacing: 2px; text-transform: uppercase; font-weight: 600;
+            text-shadow: 0 0 15px rgba(0,212,255,0.3);
+        }
+        .modal label {
+            display: block; font-size: 10px; color: var(--text-secondary);
+            margin: 10px 0 4px; text-transform: uppercase; letter-spacing: 1px;
+        }
+        .modal input, .modal select, .modal textarea {
+            width: 100%; background: rgba(0,212,255,0.02);
+            border: 1px solid rgba(0,212,255,0.08);
+            border-radius: 4px; padding: 10px 12px; color: var(--text-primary);
+            font-family: var(--font); font-size: 13px;
+        }
+        .modal input:focus, .modal select:focus, .modal textarea:focus {
+            outline: none; border-color: var(--accent);
+            box-shadow: 0 0 20px rgba(0,212,255,0.12), inset 0 0 15px rgba(0,212,255,0.03);
+        }
+        .modal-btns { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
         .modal-btns button {
-            padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border);
-            background: transparent; color: var(--text-primary); font-family: inherit;
-            font-size: 12px; cursor: pointer; transition: all 0.2s;
+            padding: 9px 18px; border-radius: 4px; border: 1px solid var(--border-hover);
+            background: transparent; color: var(--text-primary); font-family: var(--font);
+            font-size: 12px; font-weight: 600; cursor: pointer; transition: all var(--fast);
+            text-transform: uppercase; letter-spacing: 1px;
         }
-        .modal-btns .btn-primary { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); }
-        .modal-btns button:hover { opacity: 0.8; }
+        .modal-btns button:hover { border-color: var(--accent); color: var(--accent); }
+        .modal-btns .btn-primary {
+            background: rgba(0,212,255,0.08); color: var(--accent);
+            border-color: var(--accent); box-shadow: 0 0 15px rgba(0,212,255,0.15);
+        }
+        .modal-btns .btn-primary:hover { background: rgba(0,212,255,0.15); box-shadow: 0 0 25px rgba(0,212,255,0.3); }
 
         /* ===== Settings View ===== */
-        .settings-group { margin-bottom: 16px; }
-        .settings-group h4 { font-size: 12px; color: var(--accent); margin-bottom: 8px; }
+        .settings-group { margin-bottom: 20px; }
+        .settings-group h4 {
+            font-size: 11px; color: var(--accent); margin-bottom: 10px;
+            text-transform: uppercase; letter-spacing: 1.5px;
+            text-shadow: 0 0 10px rgba(0,212,255,0.2);
+        }
         .settings-row {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+            padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px;
         }
         .settings-row .label { color: var(--text-secondary); }
-        .settings-row .value { color: var(--text-primary); }
+        .settings-row .value { color: var(--text-primary); font-family: var(--mono); font-size: 12px; }
         .toggle-switch {
-            width: 36px; height: 20px; background: var(--border); border-radius: 10px;
-            position: relative; cursor: pointer; transition: background 0.2s;
+            width: 42px; height: 22px; background: rgba(0,212,255,0.03);
+            border: 1px solid var(--border-hover); border-radius: 11px;
+            position: relative; cursor: pointer; transition: all var(--fast);
         }
-        .toggle-switch.on { background: var(--accent); }
+        .toggle-switch.on { background: rgba(0,212,255,0.15); border-color: var(--accent); }
         .toggle-switch::after {
-            content: ''; position: absolute; top: 2px; left: 2px;
-            width: 16px; height: 16px; background: #fff; border-radius: 50%;
-            transition: transform 0.2s;
+            content: ''; position: absolute; top: 2px; left: 3px;
+            width: 16px; height: 16px; background: var(--text-muted); border-radius: 50%;
+            transition: all var(--fast);
         }
-        .toggle-switch.on::after { transform: translateX(16px); }
+        .toggle-switch.on::after { transform: translateX(20px); background: var(--accent); box-shadow: 0 0 8px rgba(0,212,255,0.6); }
+
+        /* ===== Coding Editor ===== */
+        .editor-container { display: flex; flex-direction: column; gap: 0; border: 1px solid rgba(0,212,255,0.12); border-radius: 6px; overflow: hidden; }
+        .editor-toolbar {
+            display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+            background: rgba(8,14,24,0.95); border-bottom: 1px solid rgba(0,212,255,0.08);
+            font-size: 11px; color: var(--text-secondary);
+        }
+        .editor-toolbar select, .editor-toolbar input {
+            background: rgba(0,212,255,0.02); border: 1px solid rgba(0,212,255,0.08);
+            border-radius: 3px; padding: 4px 8px; color: var(--text-primary);
+            font-family: var(--mono); font-size: 11px;
+        }
+        .editor-textarea {
+            width: 100%; min-height: 350px; padding: 16px;
+            background: #0a0a1a; border: none; color: var(--text-primary);
+            font-family: var(--mono); font-size: 13px; line-height: 1.7;
+            resize: vertical; tab-size: 4;
+        }
+        .editor-textarea:focus { outline: none; }
+        .editor-status {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 6px 12px; background: rgba(8,14,24,0.95);
+            border-top: 1px solid rgba(0,212,255,0.08);
+            font-size: 10px; color: var(--text-muted); font-family: var(--mono);
+        }
 
         /* ===== Offline Banner ===== */
         .offline-banner {
@@ -480,19 +660,21 @@
         /* ===== Action Buttons Row ===== */
         .action-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
         .action-btn {
-            padding: 8px 14px; border-radius: 6px;
-            border: 1px solid var(--accent); background: var(--accent-dim);
-            color: var(--accent); font-family: inherit; font-size: 12px;
-            cursor: pointer; transition: all 0.2s;
+            padding: 9px 18px; border-radius: 4px;
+            border: 1px solid var(--accent); background: rgba(0,212,255,0.08);
+            color: var(--accent); font-family: var(--font); font-size: 12px;
+            font-weight: 600; cursor: pointer; transition: all var(--fast);
+            text-transform: uppercase; letter-spacing: 1px;
+            box-shadow: 0 0 10px rgba(0,212,255,0.1), inset 0 0 10px rgba(0,212,255,0.03);
         }
-        .action-btn:hover { background: var(--accent); color: var(--bg-primary); }
+        .action-btn:hover { background: rgba(0,212,255,0.15); box-shadow: 0 0 20px rgba(0,212,255,0.25); }
         .action-btn.secondary {
-            border-color: var(--border); background: transparent;
-            color: var(--text-secondary);
+            border-color: var(--border-hover); background: transparent;
+            color: var(--text-secondary); box-shadow: none;
         }
-        .action-btn.secondary:hover { border-color: var(--accent); color: var(--accent); }
-        .action-btn.danger { border-color: var(--danger); color: var(--danger); background: transparent; }
-        .action-btn.danger:hover { background: var(--danger); color: #fff; }
+        .action-btn.secondary:hover { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 12px rgba(0,212,255,0.15); }
+        .action-btn.danger { border-color: rgba(255,61,61,0.3); color: var(--danger); background: transparent; box-shadow: none; }
+        .action-btn.danger:hover { background: var(--danger-dim); box-shadow: 0 0 12px rgba(255,61,61,0.2); }
 
         /* ===== Hamburger Button (Mobile) ===== */
         .hamburger {
@@ -510,34 +692,30 @@
 
         /* ===== Responsive: Tablet (<= 900px) ===== */
         @media (max-width: 900px) {
-            #workshop-main {
-                grid-template: "header" 60px
-                               "main" 1fr
-                               "footer" 36px
-                               / 1fr;
-            }
             .hamburger { display: block; }
             .sidebar {
-                position: fixed; left: -280px; top: 60px; bottom: 36px;
-                width: 260px; z-index: 50;
-                transition: left 0.3s ease;
+                transform: translateX(-100%); transition: transform var(--normal);
+                top: 0; bottom: 0;
             }
-            .sidebar.open { left: 0; }
+            .sidebar.open { transform: translateX(0); }
+            .main { margin-left: 0; }
+            .main-content-area { padding: 16px; }
             .widget-row { grid-template-columns: 1fr; }
             .widget-row-3 { grid-template-columns: 1fr; }
-            .header-actions button { padding: 6px 8px; font-size: 11px; }
+            .header { padding: 0 12px; }
+            .header-actions button { padding: 6px 8px; font-size: 10px; }
             .chat-messages { max-height: 50vh; }
         }
 
         /* ===== Responsive: Phone (<= 600px) ===== */
         @media (max-width: 600px) {
-            .header { padding: 0 10px; gap: 8px; }
-            .header-logo { font-size: 14px; letter-spacing: 1px; }
+            .header { padding: 0 10px; }
+            .header-logo { font-size: 13px; letter-spacing: 2px; }
             .header-project { display: none; }
-            .header-status { font-size: 10px; padding: 2px 8px; }
-            .header-actions button { padding: 5px 6px; font-size: 10px; }
-            .main { padding: 8px; gap: 10px; }
-            .widget { padding: 12px; }
+            .header-status { font-size: 9px; padding: 2px 8px; }
+            .header-actions button { padding: 5px 6px; font-size: 9px; }
+            .main-content-area { padding: 10px; gap: 10px; }
+            .widget { padding: 14px; }
             .env-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
             .env-value { font-size: 18px; }
             .arm-btns { grid-template-columns: repeat(2, 1fr); }
@@ -546,87 +724,133 @@
             .calc-btn { padding: 5px 8px; font-size: 10px; }
             .chat-input-row { flex-wrap: nowrap; }
             .footer { padding: 0 8px; gap: 8px; font-size: 9px; }
+            .action-btn { padding: 7px 12px; font-size: 11px; }
+            .editor-textarea { min-height: 200px; font-size: 12px; }
         }
 
         /* ===== Responsive: Small Phone (<= 380px) ===== */
         @media (max-width: 380px) {
-            .header-logo { font-size: 12px; }
-            .header-actions { gap: 4px; }
-            .widget { padding: 10px; border-radius: 8px; }
-            .nav-btn { padding: 6px 8px; font-size: 11px; }
+            .header-logo { font-size: 11px; }
+            .header-actions { gap: 3px; }
+            .widget { padding: 10px; }
+            .nav-btn { padding: 8px 10px; font-size: 11px; }
         }
     </style>
 </head>
 <body>
 
-<!-- ===== Boot Screen ===== -->
+<!-- ===== Boot Screen (Jarvis HUD) ===== -->
 <div id="boot-screen">
-    <div class="boot-title">J.A.R.V.I.S. WORKSHOP</div>
-    <div class="boot-ring" id="boot-ring"></div>
+    <div class="boot-hud-ring">
+        <svg viewBox="0 0 200 200">
+            <circle class="boot-arc-outer" cx="100" cy="100" r="90"/>
+            <circle class="boot-arc-inner" cx="100" cy="100" r="75"/>
+            <circle class="boot-arc-center" cx="100" cy="100" r="55"/>
+        </svg>
+    </div>
+    <div class="boot-title">WORKSHOP</div>
+    <div class="boot-subtitle">J.A.R.V.I.S. Engineering Mode</div>
     <div id="boot-text"></div>
+    <div class="boot-systems">
+        <div class="boot-sys-dot" id="bs-redis"></div>
+        <div class="boot-sys-dot" id="bs-llm"></div>
+        <div class="boot-sys-dot" id="bs-ws"></div>
+        <div class="boot-sys-dot" id="bs-gen"></div>
+    </div>
 </div>
 
-<!-- ===== Main Workshop Grid ===== -->
-<div id="workshop-main" class="workshop-grid" style="display:none">
-
-    <!-- Offline Banner -->
-    <div class="offline-banner" id="offline-banner">Server nicht erreichbar. Bitte pruefe ob der Jarvis-Assistent laeuft.</div>
-
-    <!-- Header -->
-    <div class="header">
-        <button class="hamburger" onclick="toggleSidebar()">&#9776;</button>
-        <div class="header-logo">WORKSHOP</div>
-        <div class="header-project" id="header-project">
-            <span class="proj-name" id="header-proj-name">Kein Projekt</span>
-        </div>
-        <span class="header-status status-none" id="header-status">---</span>
-        <div class="header-actions">
-            <button onclick="showNewProjectModal()">+ Projekt</button>
-            <button onclick="refreshAll()">&#8635;</button>
-            <button onclick="window.open('/ui/', '_blank')">Dashboard</button>
-        </div>
-    </div>
+<!-- ===== Main Workshop Layout ===== -->
+<div id="workshop-main">
 
     <!-- Sidebar Backdrop (Mobile) -->
     <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
 
-    <!-- Sidebar -->
-    <div class="sidebar">
-        <h3>Navigation</h3>
-        <button class="nav-btn active" data-view="overview" onclick="switchView(this, 'overview')">
-            <span class="icon">&#128200;</span> Uebersicht
-        </button>
-        <button class="nav-btn" data-view="steps" onclick="switchView(this, 'steps')">
-            <span class="icon">&#128221;</span> Schritte
-        </button>
-        <button class="nav-btn" data-view="code" onclick="switchView(this, 'code')">
-            <span class="icon">&#128187;</span> Code & Dateien
-        </button>
-        <button class="nav-btn" data-view="hardware" onclick="switchView(this, 'hardware')">
-            <span class="icon">&#128268;</span> Hardware
-        </button>
-        <button class="nav-btn" data-view="chat" onclick="switchView(this, 'chat')">
-            <span class="icon">&#128172;</span> Chat
-        </button>
-        <button class="nav-btn" data-view="calc" onclick="switchView(this, 'calc')">
-            <span class="icon">&#129518;</span> Rechner
-        </button>
-        <button class="nav-btn" data-view="journal" onclick="switchView(this, 'journal')">
-            <span class="icon">&#128214;</span> Journal
-        </button>
-        <button class="nav-btn" data-view="settings" onclick="switchView(this, 'settings')">
-            <span class="icon">&#9881;</span> Einstellungen
-        </button>
+    <!-- Sidebar (Jarvis Style) -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-logo">
+            <div class="logo-icon">W</div>
+            <div class="logo-text">
+                <h2>WORKSHOP</h2>
+                <span>Engineering Mode</span>
+            </div>
+        </div>
+        <div class="sidebar-nav">
+            <h3>Navigation</h3>
+            <button class="nav-btn active" data-view="overview" onclick="switchView(this, 'overview')">
+                <span class="icon">&#128200;</span> Uebersicht
+            </button>
+            <button class="nav-btn" data-view="steps" onclick="switchView(this, 'steps')">
+                <span class="icon">&#128221;</span> Schritte
+            </button>
+            <button class="nav-btn" data-view="code" onclick="switchView(this, 'code')">
+                <span class="icon">&#128187;</span> Code & Dateien
+            </button>
+            <button class="nav-btn" data-view="editor" onclick="switchView(this, 'editor')">
+                <span class="icon">&#9998;</span> Coding Agent
+            </button>
+            <button class="nav-btn" data-view="hardware" onclick="switchView(this, 'hardware')">
+                <span class="icon">&#128268;</span> Hardware
+            </button>
+            <button class="nav-btn" data-view="chat" onclick="switchView(this, 'chat')">
+                <span class="icon">&#128172;</span> Chat
+            </button>
+            <button class="nav-btn" data-view="calc" onclick="switchView(this, 'calc')">
+                <span class="icon">&#129518;</span> Rechner
+            </button>
+            <button class="nav-btn" data-view="journal" onclick="switchView(this, 'journal')">
+                <span class="icon">&#128214;</span> Journal
+            </button>
+            <button class="nav-btn" data-view="inventory" onclick="switchView(this, 'inventory')">
+                <span class="icon">&#128230;</span> Inventar
+            </button>
+            <button class="nav-btn" data-view="snippets" onclick="switchView(this, 'snippets')">
+                <span class="icon">&#128203;</span> Snippets
+            </button>
+            <button class="nav-btn" data-view="timer" onclick="switchView(this, 'timer')">
+                <span class="icon">&#9201;</span> Timer
+            </button>
+            <button class="nav-btn" data-view="safety" onclick="switchView(this, 'safety')">
+                <span class="icon">&#9888;</span> Sicherheit
+            </button>
+            <button class="nav-btn" data-view="settings" onclick="switchView(this, 'settings')">
+                <span class="icon">&#9881;</span> Einstellungen
+            </button>
 
-        <h3>Projekte</h3>
-        <div id="project-list"></div>
+            <h3>Projekte</h3>
+            <div id="project-list"></div>
+        </div>
+        <div class="sidebar-footer">JARVIS v2.0</div>
     </div>
 
-    <!-- Main Content -->
-    <div class="main" id="main-content"></div>
+    <!-- Main Area -->
+    <div class="main">
+        <!-- Offline Banner -->
+        <div class="offline-banner" id="offline-banner">Server nicht erreichbar — Jarvis-Assistent pruefen</div>
 
-    <!-- Footer -->
-    <div class="footer">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <button class="hamburger" onclick="toggleSidebar()">&#9776;</button>
+                <div class="header-logo">WORKSHOP</div>
+                <div class="header-project" id="header-project">
+                    <span class="proj-name" id="header-proj-name">Kein Projekt</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <span class="header-status status-none" id="header-status">---</span>
+                <div class="header-actions">
+                    <button onclick="showNewProjectModal()">+ Projekt</button>
+                    <button onclick="refreshAll()">&#8635;</button>
+                    <button onclick="window.open('/ui/', '_blank')">Dashboard</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content-area" id="main-content"></div>
+
+        <!-- Footer -->
+        <div class="footer">
         <div class="footer-ws">
             <div class="ws-dot" id="ws-dot"></div>
             <span id="ws-status">Getrennt</span>
@@ -635,7 +859,8 @@
         <span style="flex:1"></span>
         <span id="footer-env"></span>
     </div>
-</div>
+    </div><!-- end .main -->
+</div><!-- end #workshop-main -->
 
 <!-- Toast Notification -->
 <div class="toast" id="toast"></div>
@@ -689,21 +914,26 @@ let isRecording = false;
 // ===== Boot Sequence =====
 async function bootWorkshop() {
     const text = document.getElementById('boot-text');
+    const dots = ['bs-redis','bs-llm','bs-ws','bs-gen'];
     const messages = [
-        'Werkstatt-Systeme initialisieren...',
-        'Sensor-Array verbunden.',
-        '3D-Drucker: Online.',
-        'Roboterarm: Bereit.',
-        'Workshop-Modus aktiv, Sir.'
+        ['Werkstatt-Systeme initialisieren...', 0],
+        ['Redis-Datenbank verbunden.', 0],
+        ['LLM-Modelle geladen.', 1],
+        ['WebSocket-Kanal aktiv.', 2],
+        ['Code-Generator bereit.', 3],
+        ['Workshop-Modus aktiv, Sir.', -1]
     ];
-    for (const msg of messages) {
-        await typewrite(text, msg, 40);
-        await sleep(600);
+    for (const [msg, dotIdx] of messages) {
+        await typewrite(text, msg, 30);
+        if (dotIdx >= 0 && dots[dotIdx]) {
+            document.getElementById(dots[dotIdx])?.classList.add('online');
+        }
+        await sleep(400);
     }
     document.getElementById('boot-screen').classList.add('fade-out');
     setTimeout(() => {
         document.getElementById('boot-screen').style.display = 'none';
-        document.getElementById('workshop-main').style.display = 'grid';
+        document.getElementById('workshop-main').classList.add('active');
         connectWebSocket();
         loadProjects();
     }, 800);
@@ -754,7 +984,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 
 async function chatApi(text) {
     try {
-        const resp = await fetch('/api/assistant/chat', {
+        const resp = await fetch('/api/workshop/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, room: 'werkstatt' })
@@ -780,7 +1010,7 @@ const WS_MAX_RETRY = 30000;
 function connectWebSocket() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     try {
-        ws = new WebSocket(proto + '//' + location.host + '/ws');
+        ws = new WebSocket(proto + '//' + location.host + '/api/assistant/ws');
     } catch (e) {
         scheduleWsReconnect();
         return;
@@ -919,10 +1149,15 @@ function renderView() {
         case 'overview': renderOverview(main); break;
         case 'steps': renderStepsView(main); break;
         case 'code': renderCodeView(main); break;
+        case 'editor': renderEditorView(main); break;
         case 'hardware': renderHardwareView(main); break;
         case 'chat': renderChatView(main); break;
         case 'calc': renderCalcView(main); break;
         case 'journal': renderJournalView(main); break;
+        case 'inventory': renderInventoryView(main); break;
+        case 'snippets': renderSnippetsView(main); break;
+        case 'timer': renderTimerView(main); break;
+        case 'safety': renderSafetyView(main); break;
         case 'settings': renderSettingsView(main); break;
         default: main.innerHTML = '';
     }
@@ -1035,6 +1270,9 @@ function renderOverview(main) {
     html += '</div>';
 
     html += '</div>'; // end widget-row
+
+    // Quick Actions
+    html = addQuickActions(html);
 
     // Parts List
     if (currentProject && currentProject.parts && currentProject.parts.length) {
@@ -1257,28 +1495,28 @@ async function doGenCode() {
     } catch (e) { showToast('Fehler: ' + e.message); }
 }
 
-async function genSchematic() {
+function genSchematic() {
     if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
-    const req = prompt('Schaltplan-Beschreibung:');
-    if (!req) return;
-    showToast('Schaltplan wird generiert...');
-    try {
-        await chatApi('Generiere SVG Schaltplan: ' + req);
-        showToast('Schaltplan generiert');
-        renderCodeView();
-    } catch (e) { showToast('Fehler: ' + e.message); }
+    showInputModal('Schaltplan generieren', 'Beschreibung', 'z.B. LED-Schaltung mit Widerstand', async (req) => {
+        showToast('Schaltplan wird generiert...');
+        try {
+            await chatApi('Generiere SVG Schaltplan: ' + req);
+            showToast('Schaltplan generiert');
+            renderCodeView();
+        } catch (e) { showToast('Fehler: ' + e.message); }
+    });
 }
 
-async function gen3DModel() {
+function gen3DModel() {
     if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
-    const req = prompt('3D-Modell Beschreibung:');
-    if (!req) return;
-    showToast('3D-Modell wird generiert...');
-    try {
-        await chatApi('Generiere OpenSCAD 3D-Modell: ' + req);
-        showToast('3D-Modell generiert');
-        renderCodeView();
-    } catch (e) { showToast('Fehler: ' + e.message); }
+    showInputModal('3D-Modell generieren', 'Beschreibung', 'z.B. Gehaeuse 50x30x20mm mit Loecher', async (req) => {
+        showToast('3D-Modell wird generiert...');
+        try {
+            await chatApi('Generiere OpenSCAD 3D-Modell: ' + req);
+            showToast('3D-Modell generiert');
+            renderCodeView();
+        } catch (e) { showToast('Fehler: ' + e.message); }
+    });
 }
 
 async function genBOM() {
@@ -1735,6 +1973,197 @@ async function addJournalEntry() {
     }
 }
 
+// ===== Coding Agent / Editor View =====
+let editorFilename = '';
+let editorLanguage = 'python';
+let editorModified = false;
+
+function renderEditorView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '';
+
+    // Agent Chat Bar
+    html += '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#9998;</span><span class="widget-title">Coding Agent</span></div>';
+    html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Beschreibe was Jarvis programmieren soll. Er kann Code generieren, aendern, erklaeren oder Bugs fixen.</div>';
+    html += '<div class="chat-input-row">';
+    html += '<select id="editor-action" style="background:var(--bg-input);border:1px solid var(--border-hover);border-radius:4px;padding:8px;color:var(--text-primary);font-family:var(--font);font-size:12px">';
+    html += '<option value="generate">Generieren</option><option value="modify">Aendern</option><option value="explain">Erklaeren</option><option value="fix">Bug fixen</option>';
+    html += '</select>';
+    html += '<select id="editor-lang" style="background:var(--bg-input);border:1px solid var(--border-hover);border-radius:4px;padding:8px;color:var(--text-primary);font-family:var(--font);font-size:12px">';
+    html += '<option value="python">Python</option><option value="arduino">Arduino</option><option value="cpp">C++</option>';
+    html += '<option value="micropython">MicroPython</option><option value="javascript">JavaScript</option>';
+    html += '<option value="html">HTML</option><option value="yaml">YAML</option>';
+    html += '</select>';
+    html += '<input class="chat-input" id="editor-prompt" placeholder="z.B. ESP32 Temperatur-Logger mit WiFi..." onkeydown="if(event.key===\'Enter\')runCodingAgent()">';
+    html += '<button class="btn-send" onclick="runCodingAgent()">&#9654;</button>';
+    html += '</div></div>';
+
+    // Editor
+    html += '<div class="widget" style="padding:0">';
+    html += '<div class="editor-container">';
+    html += '<div class="editor-toolbar">';
+    html += '<input id="editor-filename" type="text" value="' + escHtml(editorFilename || 'new_file.py') + '" style="width:180px" placeholder="dateiname.py">';
+    html += '<span style="flex:1"></span>';
+    html += '<button class="action-btn secondary" style="padding:4px 10px;font-size:10px" onclick="editorSave()">Speichern</button>';
+    html += '<button class="action-btn secondary" style="padding:4px 10px;font-size:10px" onclick="editorLoadFile()">Datei laden</button>';
+    html += '<button class="action-btn secondary" style="padding:4px 10px;font-size:10px" onclick="editorUpload()">Upload</button>';
+    html += '</div>';
+    html += '<textarea class="editor-textarea" id="editor-code" placeholder="// Code hier eingeben oder von Jarvis generieren lassen..." spellcheck="false" oninput="editorModified=true"></textarea>';
+    html += '<div class="editor-status">';
+    html += '<span id="editor-status-text">Bereit</span>';
+    html += '<span id="editor-line-count">0 Zeilen</span>';
+    html += '</div></div></div>';
+
+    // File upload (hidden)
+    html += '<input type="file" id="editor-file-input" style="display:none" onchange="handleEditorUpload(event)">';
+
+    main.innerHTML = html;
+
+    // Restore editor content
+    const textarea = document.getElementById('editor-code');
+    if (textarea) {
+        textarea.addEventListener('input', () => {
+            const lines = textarea.value.split('\n').length;
+            const el = document.getElementById('editor-line-count');
+            if (el) el.textContent = lines + ' Zeilen';
+        });
+    }
+}
+
+async function runCodingAgent() {
+    const action = document.getElementById('editor-action')?.value || 'generate';
+    const language = document.getElementById('editor-lang')?.value || 'python';
+    const requirement = document.getElementById('editor-prompt')?.value.trim();
+    const existingCode = document.getElementById('editor-code')?.value || '';
+
+    if (!requirement && action !== 'fix') { showToast('Bitte Anforderung eingeben'); return; }
+    if (action === 'fix' && !existingCode) { showToast('Bitte Code zum Fixen eingeben'); return; }
+
+    const statusEl = document.getElementById('editor-status-text');
+    if (statusEl) statusEl.textContent = 'Jarvis denkt nach...';
+
+    try {
+        const res = await apiCall('coding-agent', 'POST', {
+            action, language, requirement,
+            existing_code: existingCode,
+            project_id: currentProject?.id || '',
+            filename: document.getElementById('editor-filename')?.value || '',
+        });
+
+        if (res.status === 'error') {
+            showToast('Fehler: ' + (res.message || 'Unbekannt'));
+            if (statusEl) statusEl.textContent = 'Fehler';
+            return;
+        }
+
+        if (action === 'explain') {
+            addChatMessage('jarvis', res.explanation || 'Keine Erklaerung');
+            showToast('Erklaerung im Chat');
+            if (statusEl) statusEl.textContent = 'Erklaerung generiert';
+        } else {
+            const code = res.code || '';
+            const textarea = document.getElementById('editor-code');
+            if (textarea) textarea.value = code;
+            if (res.filename) {
+                const fnEl = document.getElementById('editor-filename');
+                if (fnEl) fnEl.value = res.filename;
+                editorFilename = res.filename;
+            }
+            const lines = code.split('\n').length;
+            const lcEl = document.getElementById('editor-line-count');
+            if (lcEl) lcEl.textContent = lines + ' Zeilen';
+            if (statusEl) statusEl.textContent = 'Code generiert (' + (res.language || language) + ')';
+            showToast('Code generiert!');
+        }
+    } catch (e) {
+        showToast('Fehler: ' + e.message);
+        if (statusEl) statusEl.textContent = 'Fehler';
+    }
+}
+
+async function editorSave() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    const code = document.getElementById('editor-code')?.value || '';
+    const filename = document.getElementById('editor-filename')?.value.trim() || 'untitled.py';
+
+    try {
+        await apiCall('files/' + currentProject.id + '/save', 'POST', { filename, content: code });
+        editorModified = false;
+        showToast('Gespeichert: ' + filename);
+        const statusEl = document.getElementById('editor-status-text');
+        if (statusEl) statusEl.textContent = 'Gespeichert';
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+async function editorLoadFile() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    try {
+        const res = await apiCall('files/' + currentProject.id);
+        const files = res.files || [];
+        if (!files.length) { showToast('Keine Dateien vorhanden'); return; }
+        const names = files.map(f => f.name || f.filename).filter(Boolean);
+        showFilePickerModal(names, async (choice) => {
+            try {
+                const fileRes = await apiCall('files/' + currentProject.id + '/' + choice);
+                const textarea = document.getElementById('editor-code');
+                if (textarea) textarea.value = fileRes.content || '';
+                const fnEl = document.getElementById('editor-filename');
+                if (fnEl) fnEl.value = choice;
+                editorFilename = choice;
+                showToast('Geladen: ' + choice);
+            } catch (e) { showToast('Fehler: ' + e.message); }
+        });
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+function editorUpload() {
+    document.getElementById('editor-file-input')?.click();
+}
+
+async function handleEditorUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (!currentProject) {
+        // Read into editor directly
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const textarea = document.getElementById('editor-code');
+            if (textarea) textarea.value = e.target.result;
+            const fnEl = document.getElementById('editor-filename');
+            if (fnEl) fnEl.value = file.name;
+            editorFilename = file.name;
+            showToast('Datei geladen: ' + file.name);
+        };
+        reader.readAsText(file);
+        return;
+    }
+    // Upload to project
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const resp = await fetch('/api/workshop/files/' + currentProject.id + '/upload', {
+            method: 'POST', body: formData
+        });
+        const res = await resp.json();
+        if (res.success) {
+            showToast('Hochgeladen: ' + file.name);
+            // Load into editor
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const textarea = document.getElementById('editor-code');
+                if (textarea) textarea.value = e.target.result;
+                const fnEl = document.getElementById('editor-filename');
+                if (fnEl) fnEl.value = file.name;
+            };
+            reader.readAsText(file);
+        } else {
+            showToast('Fehler beim Upload');
+        }
+    } catch (e) { showToast('Upload fehlgeschlagen: ' + e.message); }
+    event.target.value = '';
+}
+
 // ===== Environment Updates =====
 function updateEnvironment(data) {
     const setVal = (id, val, unit) => {
@@ -1798,11 +2227,11 @@ async function renderSettingsView(main) {
         const s = res.settings || {};
 
         html += '<div class="settings-group"><h4>Allgemein</h4>';
-        html += settingsRow('Workshop aktiv', s.enabled ? 'Ja' : 'Nein');
+        html += settingsToggle('Workshop aktiv', 'enabled', !!s.enabled);
         html += settingsRow('Werkstatt-Raum', s.workshop_room || 'werkstatt');
         html += settingsRow('Standard-Kategorie', s.default_category || 'maker');
-        html += settingsRow('Sicherheits-Check', s.auto_safety_check ? 'Aktiv' : 'Aus');
-        html += settingsRow('Proaktive Vorschlaege', s.proactive_suggestions ? 'Aktiv' : 'Aus');
+        html += settingsToggle('Sicherheits-Check', 'auto_safety_check', !!s.auto_safety_check);
+        html += settingsToggle('Proaktive Vorschlaege', 'proactive_suggestions', !!s.proactive_suggestions);
         html += '</div>';
 
         html += '<div class="settings-group"><h4>Dateien</h4>';
@@ -1890,6 +2319,21 @@ async function renderSettingsView(main) {
 
 function settingsRow(label, value) {
     return '<div class="settings-row"><span class="label">' + escHtml(label) + '</span><span class="value">' + escHtml(String(value)) + '</span></div>';
+}
+
+function settingsToggle(label, key, isOn) {
+    return '<div class="settings-row"><span class="label">' + escHtml(label) + '</span>' +
+        '<div class="toggle-switch' + (isOn ? ' on' : '') + '" onclick="toggleSetting(\'' + key + '\', this)"></div></div>';
+}
+
+async function toggleSetting(key, el) {
+    const isOn = el.classList.contains('on');
+    const newVal = !isOn;
+    try {
+        await apiCall('settings/update', 'POST', { key, value: newVal });
+        el.classList.toggle('on');
+        showToast(key + ': ' + (newVal ? 'Aktiviert' : 'Deaktiviert'));
+    } catch (e) { showToast('Fehler: ' + e.message); }
 }
 
 // ===== Delete Project =====
@@ -2008,6 +2452,65 @@ async function exportProject() {
     window.open('/api/workshop/export/' + currentProject.id, '_blank');
 }
 
+// ===== Generic Input Modal (replaces prompt()) =====
+let _inputModalCb = null;
+
+function showInputModal(title, label, placeholder, callback) {
+    _inputModalCb = callback;
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>' + escHtml(title) + '</h3>' +
+        '<label>' + escHtml(label) + '</label>' +
+        '<input id="input-modal-val" type="text" placeholder="' + escHtml(placeholder) + '">' +
+        '<div class="modal-btns"><button onclick="closeInputModal()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="submitInputModal()">OK</button></div></div>';
+    overlay.classList.remove('hidden');
+    setTimeout(() => document.getElementById('input-modal-val')?.focus(), 100);
+}
+
+function closeInputModal() {
+    document.getElementById('new-project-modal').classList.add('hidden');
+    _inputModalCb = null;
+    resetProjectModal();
+}
+
+function submitInputModal() {
+    const val = document.getElementById('input-modal-val')?.value.trim();
+    if (!val) { showToast('Bitte Wert eingeben'); return; }
+    const cb = _inputModalCb;
+    closeInputModal();
+    if (cb) cb(val);
+}
+
+// ===== File Picker Modal (replaces prompt() for file list) =====
+let _filePickerCb = null;
+
+function showFilePickerModal(files, callback) {
+    _filePickerCb = callback;
+    const overlay = document.getElementById('new-project-modal');
+    let html = '<div class="modal"><h3>Datei laden</h3>';
+    html += '<div style="max-height:300px;overflow-y:auto">';
+    files.forEach(f => {
+        html += '<div class="file-item" style="padding:10px 12px;cursor:pointer;border:1px solid transparent;border-radius:4px;margin-bottom:4px" onclick="submitFilePicker(\'' + escHtml(f) + '\')">';
+        html += '<span class="file-icon">&#128196;</span><span class="file-name">' + escHtml(f) + '</span></div>';
+    });
+    html += '</div>';
+    html += '<div class="modal-btns"><button onclick="closeFilePicker()">Abbrechen</button></div></div>';
+    overlay.innerHTML = html;
+    overlay.classList.remove('hidden');
+}
+
+function closeFilePicker() {
+    document.getElementById('new-project-modal').classList.add('hidden');
+    _filePickerCb = null;
+    resetProjectModal();
+}
+
+function submitFilePicker(filename) {
+    const cb = _filePickerCb;
+    closeFilePicker();
+    if (cb) cb(filename);
+}
+
 // ===== Reset Project Modal =====
 function resetProjectModal() {
     const overlay = document.getElementById('new-project-modal');
@@ -2025,6 +2528,382 @@ function resetProjectModal() {
         '<button onclick="closeNewProjectModal()">Abbrechen</button>' +
         '<button class="btn-primary" onclick="createProjectFromModal()">Erstellen</button>' +
         '</div></div>';
+}
+
+// ===== Inventory View =====
+async function renderInventoryView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#128230;</span><span class="widget-title">Werkstatt-Inventar</span></div>';
+    html += '<div class="action-row" style="margin-bottom:12px">';
+    html += '<button class="action-btn" onclick="showAddInventoryDialog()">+ Artikel hinzufuegen</button>';
+    html += '<button class="action-btn secondary" onclick="renderInventoryView()">Aktualisieren</button>';
+    html += '</div>';
+
+    try {
+        const res = await apiCall('inventory');
+        const items = res.items || [];
+        if (items.length) {
+            html += '<table class="parts-table"><thead><tr><th>Artikel</th><th>Kategorie</th><th>Menge</th><th>Lagerort</th></tr></thead><tbody>';
+            items.forEach(item => {
+                const qtyClass = (item.quantity || 0) <= (item.min_quantity || 0) ? 'part-missing' : 'part-available';
+                html += '<tr><td>' + escHtml(item.name || '') + '</td>';
+                html += '<td>' + escHtml(item.category || '-') + '</td>';
+                html += '<td class="' + qtyClass + '">' + (item.quantity || 0) + (item.unit ? ' ' + item.unit : '') + '</td>';
+                html += '<td>' + escHtml(item.location || '-') + '</td></tr>';
+            });
+            html += '</tbody></table>';
+        } else {
+            html += '<div style="color:var(--text-secondary);font-size:12px">Kein Inventar vorhanden. Fuege Artikel hinzu um dein Werkstatt-Inventar zu verwalten.</div>';
+        }
+    } catch (e) {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Inventar konnte nicht geladen werden.</div>';
+    }
+    html += '</div>';
+
+    // Low Stock Warnings
+    html += '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#9888;</span><span class="widget-title">Nachbestellungen</span></div>';
+    html += '<div style="color:var(--text-secondary);font-size:12px">Artikel unter Mindestbestand werden hier angezeigt.</div>';
+    html += '</div>';
+
+    main.innerHTML = html;
+}
+
+function showAddInventoryDialog() {
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Artikel hinzufuegen</h3>' +
+        '<label>Artikelname *</label>' +
+        '<input id="inv-name" type="text" placeholder="z.B. ESP32 DevKit">' +
+        '<label>Kategorie</label>' +
+        '<select id="inv-cat"><option value="elektronik">Elektronik</option><option value="mechanik">Mechanik</option><option value="werkzeug">Werkzeug</option><option value="verbrauch">Verbrauchsmaterial</option><option value="filament">Filament</option><option value="sonstiges">Sonstiges</option></select>' +
+        '<label>Menge</label>' +
+        '<input id="inv-qty" type="number" value="1" min="0">' +
+        '<label>Lagerort</label>' +
+        '<input id="inv-loc" type="text" placeholder="z.B. Schublade A3">' +
+        '<div class="modal-btns"><button onclick="closeInventoryDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doAddInventory()">Hinzufuegen</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+function closeInventoryDialog() {
+    document.getElementById('new-project-modal').classList.add('hidden');
+    resetProjectModal();
+}
+
+async function doAddInventory() {
+    const name = document.getElementById('inv-name')?.value.trim();
+    if (!name) { showToast('Bitte Artikelname eingeben'); return; }
+    const category = document.getElementById('inv-cat')?.value || 'sonstiges';
+    const quantity = parseInt(document.getElementById('inv-qty')?.value || 1);
+    const location = document.getElementById('inv-loc')?.value.trim() || '';
+    closeInventoryDialog();
+    try {
+        await apiCall('inventory', 'POST', { name, category, quantity, location });
+        showToast('Artikel hinzugefuegt: ' + name);
+        renderInventoryView();
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+// ===== Snippets View =====
+let _snippetCodes = [];
+
+async function renderSnippetsView(main) {
+    if (!main) main = document.getElementById('main-content');
+    _snippetCodes = [];
+    let html = '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#128203;</span><span class="widget-title">Code-Snippets Bibliothek</span></div>';
+    html += '<div class="action-row" style="margin-bottom:12px">';
+    html += '<button class="action-btn" onclick="showAddSnippetDialog()">+ Snippet speichern</button>';
+    html += '<button class="action-btn secondary" onclick="renderSnippetsView()">Aktualisieren</button>';
+    html += '</div>';
+
+    try {
+        const res = await apiCall('snippets');
+        const snippets = res.snippets || [];
+        if (snippets.length) {
+            snippets.forEach((s, idx) => {
+                _snippetCodes.push(s.code || '');
+                html += '<div class="widget" style="margin-top:12px;padding:14px">';
+                html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
+                html += '<span style="font-size:13px;font-weight:600;color:var(--accent)">' + escHtml(s.title || s.name || 'Unbenannt') + '</span>';
+                html += '<span style="font-size:10px;color:var(--text-muted);font-family:var(--mono)">' + escHtml(s.language || '') + '</span>';
+                html += '</div>';
+                if (s.description) html += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px">' + escHtml(s.description) + '</div>';
+                html += '<div class="code-container"><div class="code-header"><span>' + escHtml(s.language || 'text') + '</span>';
+                html += '<button class="btn-copy" onclick="copySnippetCode(' + idx + ')">Kopieren</button></div>';
+                let highlighted = escHtml(s.code || '');
+                try {
+                    const lang = s.language || 'markup';
+                    const pl = Prism.languages[lang] || Prism.languages.markup;
+                    highlighted = Prism.highlight(s.code || '', pl, lang);
+                } catch(e) {}
+                html += '<div class="code-content"><pre><code>' + highlighted + '</code></pre></div></div>';
+                html += '</div>';
+            });
+        } else {
+            html += '<div style="color:var(--text-secondary);font-size:12px">Keine Snippets gespeichert. Speichere haeufig verwendete Code-Stuecke hier.</div>';
+        }
+    } catch (e) {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Snippets konnten nicht geladen werden.</div>';
+    }
+    html += '</div>';
+    main.innerHTML = html;
+}
+
+function copySnippetCode(idx) {
+    if (_snippetCodes[idx] !== undefined) {
+        navigator.clipboard.writeText(_snippetCodes[idx]);
+        showToast('Kopiert!');
+    }
+}
+
+function showAddSnippetDialog() {
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Snippet speichern</h3>' +
+        '<label>Titel *</label>' +
+        '<input id="snip-title" type="text" placeholder="z.B. WiFi Connect">' +
+        '<label>Sprache</label>' +
+        '<select id="snip-lang"><option value="python">Python</option><option value="arduino">Arduino</option><option value="cpp">C++</option><option value="javascript">JavaScript</option><option value="yaml">YAML</option><option value="html">HTML</option></select>' +
+        '<label>Beschreibung</label>' +
+        '<input id="snip-desc" type="text" placeholder="Kurze Beschreibung...">' +
+        '<label>Code *</label>' +
+        '<textarea id="snip-code" style="width:100%;min-height:100px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-family:var(--mono);font-size:12px;resize:vertical;tab-size:4" placeholder="Code hier einfuegen..."></textarea>' +
+        '<div class="modal-btns"><button onclick="closeSnippetDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doAddSnippet()">Speichern</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+function closeSnippetDialog() {
+    document.getElementById('new-project-modal').classList.add('hidden');
+    resetProjectModal();
+}
+
+async function doAddSnippet() {
+    const title = document.getElementById('snip-title')?.value.trim();
+    const code = document.getElementById('snip-code')?.value;
+    if (!title || !code) { showToast('Bitte Titel und Code eingeben'); return; }
+    const language = document.getElementById('snip-lang')?.value || 'python';
+    const description = document.getElementById('snip-desc')?.value.trim() || '';
+    closeSnippetDialog();
+    try {
+        await apiCall('snippets', 'POST', { title, code, language, description });
+        showToast('Snippet gespeichert: ' + title);
+        renderSnippetsView();
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+// ===== Timer View =====
+let timerRunning = false;
+let timerStartTime = 0;
+let timerElapsed = 0;
+let timerInterval = null;
+let timerLaps = [];
+
+function renderTimerView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget" style="text-align:center">';
+    html += '<div class="widget-header" style="justify-content:center"><span class="icon">&#9201;</span><span class="widget-title">Projekt-Timer</span></div>';
+
+    const elapsed = timerRunning ? timerElapsed + (Date.now() - timerStartTime) : timerElapsed;
+    html += '<div id="timer-display" style="font-size:48px;font-weight:600;color:var(--accent);font-family:var(--mono);letter-spacing:4px;margin:24px 0;text-shadow:0 0 30px rgba(0,212,255,0.3)">' + formatTimer(elapsed) + '</div>';
+
+    html += '<div class="action-row" style="justify-content:center">';
+    if (!timerRunning) {
+        html += '<button class="action-btn" onclick="startTimer()">&#9654; Start</button>';
+    } else {
+        html += '<button class="action-btn" style="border-color:var(--warning);color:var(--warning)" onclick="pauseTimer()">&#10074;&#10074; Pause</button>';
+    }
+    html += '<button class="action-btn secondary" onclick="lapTimer()">&#127937; Runde</button>';
+    html += '<button class="action-btn danger" onclick="resetTimer()">&#8634; Reset</button>';
+    html += '</div>';
+
+    // Laps
+    if (timerLaps.length) {
+        html += '<div style="margin-top:20px;text-align:left">';
+        html += '<div style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Runden</div>';
+        timerLaps.forEach((lap, i) => {
+            html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">';
+            html += '<span style="color:var(--text-secondary)">Runde ' + (i + 1) + '</span>';
+            html += '<span style="color:var(--accent);font-family:var(--mono)">' + formatTimer(lap) + '</span></div>';
+        });
+        html += '</div>';
+    }
+
+    html += '</div>';
+
+    // Stopwatch for current session
+    html += '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#128337;</span><span class="widget-title">Arbeitszeit heute</span></div>';
+    html += '<div style="font-size:12px;color:var(--text-secondary)">Die Arbeitszeit wird automatisch erfasst solange das Workshop-UI geoeffnet ist.</div>';
+    html += '<div style="margin-top:8px;font-size:18px;font-weight:600;color:var(--accent);font-family:var(--mono)">' + formatTimer(sessionWorkTime) + '</div>';
+    html += '</div>';
+
+    main.innerHTML = html;
+}
+
+function formatTimer(ms) {
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return (h > 0 ? String(h).padStart(2, '0') + ':' : '') +
+        String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+}
+
+function startTimer() {
+    timerRunning = true;
+    timerStartTime = Date.now();
+    timerInterval = setInterval(updateTimerDisplay, 100);
+    renderTimerView();
+}
+
+function pauseTimer() {
+    timerElapsed += Date.now() - timerStartTime;
+    timerRunning = false;
+    clearInterval(timerInterval);
+    renderTimerView();
+}
+
+function resetTimer() {
+    timerRunning = false;
+    timerElapsed = 0;
+    timerStartTime = 0;
+    timerLaps = [];
+    clearInterval(timerInterval);
+    renderTimerView();
+}
+
+function lapTimer() {
+    if (!timerRunning && timerElapsed === 0) return;
+    const elapsed = timerRunning ? timerElapsed + (Date.now() - timerStartTime) : timerElapsed;
+    timerLaps.push(elapsed);
+    renderTimerView();
+}
+
+function updateTimerDisplay() {
+    const el = document.getElementById('timer-display');
+    if (!el || !timerRunning) return;
+    const elapsed = timerElapsed + (Date.now() - timerStartTime);
+    el.textContent = formatTimer(elapsed);
+    // Update footer timer too
+    const ft = document.getElementById('footer-timer');
+    if (ft) ft.textContent = formatTimer(elapsed);
+}
+
+// Session work time tracking
+let sessionWorkTime = 0;
+let sessionWorkStart = Date.now();
+setInterval(() => {
+    sessionWorkTime = Date.now() - sessionWorkStart;
+    const ft = document.getElementById('footer-timer');
+    if (ft && !timerRunning) ft.textContent = formatTimer(sessionWorkTime);
+}, 1000);
+
+// ===== Safety Checklist View =====
+let safetyChecks = [
+    { id: 'glasses', label: 'Schutzbrille tragen', checked: false, category: 'persoenlich' },
+    { id: 'gloves', label: 'Handschuhe bei Bedarf', checked: false, category: 'persoenlich' },
+    { id: 'hearing', label: 'Gehoerschutz bei lauten Arbeiten', checked: false, category: 'persoenlich' },
+    { id: 'ventilation', label: 'Belueftung pruefen', checked: false, category: 'werkstatt' },
+    { id: 'fire', label: 'Feuerloescher erreichbar', checked: false, category: 'werkstatt' },
+    { id: 'firstaid', label: 'Erste-Hilfe-Kasten vorhanden', checked: false, category: 'werkstatt' },
+    { id: 'cables', label: 'Kabel ordentlich verlegt', checked: false, category: 'werkstatt' },
+    { id: 'power_off', label: 'Nicht benoetigte Geraete ausschalten', checked: false, category: 'elektro' },
+    { id: 'grounding', label: 'Erdung pruefen', checked: false, category: 'elektro' },
+    { id: 'soldering', label: 'Loetstation gesichert', checked: false, category: 'elektro' },
+    { id: 'printer_clear', label: '3D-Drucker Bereich frei', checked: false, category: '3d' },
+    { id: 'filament', label: 'Filament trocken gelagert', checked: false, category: '3d' },
+];
+
+function renderSafetyView(main) {
+    if (!main) main = document.getElementById('main-content');
+    const categories = {
+        'persoenlich': { title: 'Persoenliche Schutzausruestung', icon: '&#128694;' },
+        'werkstatt': { title: 'Werkstatt-Sicherheit', icon: '&#127968;' },
+        'elektro': { title: 'Elektro-Sicherheit', icon: '&#9889;' },
+        '3d': { title: '3D-Druck', icon: '&#128424;' },
+    };
+
+    let totalChecked = safetyChecks.filter(c => c.checked).length;
+    let totalItems = safetyChecks.length;
+    let pct = totalItems > 0 ? (totalChecked / totalItems) * 100 : 0;
+
+    let html = '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#9888;</span><span class="widget-title">Sicherheits-Checkliste</span></div>';
+    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">';
+    html += '<div style="flex:1"><div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%;background:' + (pct === 100 ? 'var(--success)' : 'var(--warning)') + '"></div></div></div>';
+    html += '<span style="font-size:14px;font-weight:600;color:' + (pct === 100 ? 'var(--success)' : 'var(--warning)') + '">' + totalChecked + '/' + totalItems + '</span>';
+    html += '</div>';
+
+    if (pct === 100) {
+        html += '<div style="padding:10px;border-radius:4px;background:var(--success-dim);border:1px solid rgba(0,230,118,0.3);color:var(--success);font-size:12px;margin-bottom:16px;text-align:center">&#10003; Alle Sicherheitschecks bestanden!</div>';
+    }
+
+    for (const [catId, cat] of Object.entries(categories)) {
+        const items = safetyChecks.filter(c => c.category === catId);
+        if (!items.length) continue;
+        html += '<div style="margin-bottom:16px">';
+        html += '<div style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px">' + cat.icon + ' ' + cat.title + '</div>';
+        items.forEach(item => {
+            html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="toggleSafetyCheck(\'' + item.id + '\')">';
+            html += '<div style="width:20px;height:20px;border:1.5px solid ' + (item.checked ? 'var(--success)' : 'var(--border-hover)') + ';border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--success);transition:all var(--fast)">' + (item.checked ? '&#10003;' : '') + '</div>';
+            html += '<span style="font-size:13px;color:' + (item.checked ? 'var(--success)' : 'var(--text-primary)') + ';text-decoration:' + (item.checked ? 'line-through' : 'none') + '">' + escHtml(item.label) + '</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    html += '<div class="action-row" style="margin-top:12px">';
+    html += '<button class="action-btn secondary" onclick="resetSafetyChecks()">Alle zuruecksetzen</button>';
+    html += '</div>';
+    html += '</div>';
+
+    main.innerHTML = html;
+}
+
+function toggleSafetyCheck(id) {
+    const item = safetyChecks.find(c => c.id === id);
+    if (item) {
+        item.checked = !item.checked;
+        renderSafetyView();
+    }
+}
+
+function resetSafetyChecks() {
+    safetyChecks.forEach(c => c.checked = false);
+    renderSafetyView();
+}
+
+// ===== Quick Actions on Overview =====
+function addQuickActions(html) {
+    html += '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#9889;</span><span class="widget-title">Schnellaktionen</span></div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px">';
+    const actions = [
+        { icon: '&#128172;', label: 'Quick Chat', fn: "switchToView('chat')" },
+        { icon: '&#9998;', label: 'Code schreiben', fn: "switchToView('editor')" },
+        { icon: '&#128221;', label: 'Diagnose', fn: 'showDiagnoseDialog()' },
+        { icon: '&#128230;', label: 'Inventar', fn: "switchToView('inventory')" },
+        { icon: '&#9201;', label: 'Timer starten', fn: "switchToView('timer');startTimer()" },
+        { icon: '&#9888;', label: 'Sicherheitscheck', fn: "switchToView('safety')" },
+    ];
+    actions.forEach(a => {
+        html += '<button class="action-btn secondary" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px" onclick="' + a.fn + '">';
+        html += '<span style="font-size:20px">' + a.icon + '</span>';
+        html += '<span style="font-size:10px">' + a.label + '</span>';
+        html += '</button>';
+    });
+    html += '</div></div>';
+    return html;
+}
+
+function switchToView(view) {
+    document.querySelectorAll('.nav-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.view === view);
+    });
+    currentView = view;
+    renderView();
 }
 
 // ===== Init =====

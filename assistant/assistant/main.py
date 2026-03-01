@@ -4541,6 +4541,268 @@ async def workshop_export(project_id: str):
                         media_type="application/zip")
 
 
+@app.post("/api/workshop/chat")
+async def workshop_chat(request: Request):
+    """Workshop-Chat Proxy — leitet an brain.process() weiter ohne API-Key.
+
+    Der regulaere /api/assistant/chat Endpoint erfordert einen API-Key.
+    Dieser Workshop-Proxy ist unter /api/workshop/ und damit nicht
+    durch die API-Key-Middleware geschuetzt.
+    """
+    data = await request.json()
+    text = data.get("text", "").strip()
+    if not text:
+        raise HTTPException(400, "Kein Text angegeben")
+
+    person = data.get("person", "")
+    room = data.get("room", "werkstatt")
+
+    try:
+        result = await asyncio.wait_for(
+            brain.process(text, person, room),
+            timeout=60.0,
+        )
+    except asyncio.TimeoutError:
+        return {"response": "Systeme ueberlastet. Bitte nochmal versuchen.", "actions": []}
+    except Exception as e:
+        logger.error("workshop_chat Fehler: %s", e, exc_info=True)
+        return {"response": "Fehler bei der Verarbeitung.", "actions": []}
+
+    return {
+        "response": result.get("response", ""),
+        "actions": result.get("actions", []),
+        "model_used": result.get("model_used", ""),
+    }
+
+
+@app.post("/api/workshop/files/{project_id}/upload")
+async def workshop_upload_file(project_id: str, file: UploadFile = File(...)):
+    """Laedt eine Datei in ein Workshop-Projekt hoch."""
+    project = await brain.repair_planner.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Projekt nicht gefunden")
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:  # 10MB Limit
+        raise HTTPException(413, "Datei zu gross (max 10MB)")
+
+    filename = file.filename or "upload"
+    # Sicherheit: Nur Dateiname ohne Pfad
+    filename = Path(filename).name
+
+    project_dir = brain.workshop_generator.FILES_DIR / project_id
+    project_dir.mkdir(parents=True, exist_ok=True)
+    filepath = project_dir / filename
+    filepath.write_bytes(content)
+
+    # In Redis registrieren
+    if brain.workshop_generator.redis:
+        await brain.workshop_generator.redis.rpush(
+            f"mha:repair:files:{project_id}", filename)
+
+    return {"success": True, "filename": filename, "size": len(content)}
+
+
+@app.post("/api/workshop/files/{project_id}/save")
+async def workshop_save_file(project_id: str, request: Request):
+    """Speichert eine Datei (aus dem Editor) in ein Workshop-Projekt."""
+    data = await request.json()
+    filename = data.get("filename", "").strip()
+    content = data.get("content", "")
+    if not filename:
+        raise HTTPException(400, "Dateiname erforderlich")
+
+    project = await brain.repair_planner.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Projekt nicht gefunden")
+
+    # Sicherheit: Nur Dateiname ohne Pfad
+    filename = Path(filename).name
+
+    project_dir = brain.workshop_generator.FILES_DIR / project_id
+    project_dir.mkdir(parents=True, exist_ok=True)
+    filepath = project_dir / filename
+    is_new = not filepath.exists()
+    filepath.write_text(content, encoding="utf-8")
+
+    # In Redis registrieren (nur bei neuen Dateien)
+    if is_new and brain.workshop_generator.redis:
+        await brain.workshop_generator.redis.rpush(
+            f"mha:repair:files:{project_id}", filename)
+
+    return {"success": True, "filename": filename, "size": len(content), "new": is_new}
+
+
+@app.post("/api/workshop/coding-agent")
+async def workshop_coding_agent(request: Request):
+    """Coding-Agent — generiert oder modifiziert Code mit LLM.
+
+    Anders als die Chat-API ist dieser Endpoint speziell fuer Code-Operationen
+    und gibt strukturierte Code-Ergebnisse zurueck.
+    """
+    data = await request.json()
+    action = data.get("action", "generate")  # generate, modify, explain, fix
+    project_id = data.get("project_id", "")
+    language = data.get("language", "python")
+    requirement = data.get("requirement", "")
+    existing_code = data.get("existing_code", "")
+    filename = data.get("filename", "")
+
+    if not requirement and action != "fix":
+        raise HTTPException(400, "Anforderung erforderlich")
+
+    gen = brain.workshop_generator
+    if action == "generate":
+        result = await gen.generate_code(
+            project_id, requirement, language=language,
+            existing_code=existing_code)
+        return result
+
+    elif action == "modify":
+        prompt_text = f"Modifiziere den folgenden {language} Code: {requirement}\n\nAktueller Code:\n{existing_code[:6000]}"
+        result = await gen.generate_code(
+            project_id, prompt_text, language=language,
+            existing_code=existing_code)
+        return result
+
+    elif action == "explain":
+        model = gen.model_router.model_smart if gen.model_router else None
+        if not model:
+            return {"status": "error", "message": "Kein LLM verfuegbar"}
+        prompt = f"Erklaere diesen Code detailliert auf Deutsch:\n\n{existing_code[:6000]}"
+        messages = [{"role": "system", "content": prompt}]
+        explanation = await gen.ollama.chat(
+            model=model, messages=messages,
+            temperature=0.3, max_tokens=2048)
+        return {"status": "ok", "explanation": explanation}
+
+    elif action == "fix":
+        if not existing_code:
+            raise HTTPException(400, "Code zum Fixen erforderlich")
+        prompt_text = f"Finde und behebe Fehler in diesem {language} Code. {requirement or 'Behebe alle Bugs.'}\n\nCode:\n{existing_code[:6000]}"
+        result = await gen.generate_code(
+            project_id, prompt_text, language=language,
+            existing_code=existing_code)
+        return result
+
+    raise HTTPException(400, f"Unbekannte Aktion: {action}")
+
+
+@app.post("/api/workshop/settings/update")
+async def workshop_update_settings(request: Request):
+    """Aktualisiert Workshop-Einstellungen in settings.yaml."""
+    data = await request.json()
+    key = data.get("key", "")
+    value = data.get("value")
+    if not key:
+        raise HTTPException(400, "Key erforderlich")
+
+    # Nur bestimmte Workshop-Keys erlauben
+    allowed_keys = {
+        "enabled", "workshop_room", "default_category",
+        "auto_safety_check", "proactive_suggestions",
+        "max_file_size_mb",
+    }
+    if key not in allowed_keys:
+        raise HTTPException(400, f"Key '{key}' nicht editierbar")
+
+    try:
+        config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
+        with open(config_path) as f:
+            cfg = yaml.safe_load(f) or {}
+        ws = cfg.setdefault("workshop", {})
+        ws[key] = value
+        with open(config_path, "w") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # Auch im laufenden yaml_config aktualisieren
+        ws_live = yaml_config.setdefault("workshop", {})
+        ws_live[key] = value
+
+        return {"success": True, "key": key, "value": value}
+    except Exception as e:
+        raise HTTPException(500, f"Fehler beim Speichern: {e}")
+
+
+@app.get("/api/workshop/inventory")
+async def workshop_inventory():
+    """Holt das Werkstatt-Inventar."""
+    if not brain.repair_planner.redis:
+        return {"items": []}
+    keys = []
+    cursor = 0
+    while True:
+        cursor, batch = await brain.repair_planner.redis.scan(
+            cursor, match="mha:repair:inventory:*", count=100)
+        keys.extend(batch)
+        if cursor == 0:
+            break
+    items = []
+    for key in keys:
+        item = await brain.repair_planner.redis.hgetall(key)
+        if item:
+            items.append(item)
+    return {"items": items}
+
+
+@app.get("/api/workshop/snippets")
+async def workshop_snippets():
+    """Holt alle Code-Snippets."""
+    if not brain.repair_planner.redis:
+        return {"snippets": []}
+    keys = []
+    cursor = 0
+    while True:
+        cursor, batch = await brain.repair_planner.redis.scan(
+            cursor, match="mha:repair:snippet:*", count=100)
+        keys.extend(batch)
+        if cursor == 0:
+            break
+    snippets = []
+    for key in keys:
+        s = await brain.repair_planner.redis.hgetall(key)
+        if s:
+            snippets.append(s)
+    return {"snippets": snippets}
+
+
+@app.post("/api/workshop/snippets")
+async def workshop_save_snippet(request: Request):
+    """Speichert ein Code-Snippet."""
+    data = await request.json()
+    name = data.get("title", data.get("name", "")).strip()
+    code = data.get("code", "")
+    language = data.get("language", "")
+    description = data.get("description", "")
+    if not name:
+        raise HTTPException(400, "Snippet-Name erforderlich")
+    result = await brain.repair_planner.save_snippet(
+        name, code, language=language, tags=data.get("tags", []))
+    return {"success": True, **result}
+
+
+@app.post("/api/workshop/inventory")
+async def workshop_add_inventory(request: Request):
+    """Fuegt einen Artikel zum Werkstatt-Inventar hinzu."""
+    data = await request.json()
+    name = data.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "Artikelname erforderlich")
+    if not brain.repair_planner.redis:
+        raise HTTPException(503, "Redis nicht verfuegbar")
+    key = f"mha:repair:inventory:{name.lower().replace(' ', '_')}"
+    await brain.repair_planner.redis.hset(key, mapping={
+        "name": name,
+        "category": data.get("category", "sonstiges"),
+        "quantity": str(data.get("quantity", 1)),
+        "unit": data.get("unit", "Stueck"),
+        "location": data.get("location", ""),
+        "min_quantity": str(data.get("min_quantity", 0)),
+        "added": datetime.now().isoformat(),
+    })
+    return {"success": True, "name": name}
+
+
 @app.get("/api/chat/config")
 async def chat_config():
     """Oeffentliche Chat-Konfiguration (keine Authentifizierung noetig).
