@@ -789,6 +789,12 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
     outdoor_kw = ("aussen", "outdoor", "balkon", "garten", "terrasse",
                   "draussen", "exterior", "outside", "weather", "wetter")
 
+    # Hidden-Entities filtern (is_entity_hidden aus function_calling)
+    try:
+        from .function_calling import is_entity_hidden
+    except ImportError:
+        is_entity_hidden = None
+
     for s in states:
         eid = s.get("entity_id", "")
         attrs = s.get("attributes", {}) or {}
@@ -797,9 +803,13 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
         unit = attrs.get("unit_of_measurement", "")
         if "." not in eid:
             continue
+        # Versteckte Entities ueberspringen
+        if is_entity_hidden and is_entity_hidden(eid):
+            continue
         domain = eid.split(".")[0]
         lower_eid = eid.lower()
-        is_outdoor = any(kw in lower_eid for kw in outdoor_kw)
+        lower_friendly = friendly.lower() if friendly else ""
+        is_outdoor = any(kw in lower_eid or kw in lower_friendly for kw in outdoor_kw)
 
         if domain == "sensor":
             if dc == "temperature" or unit in ("°C", "°F"):

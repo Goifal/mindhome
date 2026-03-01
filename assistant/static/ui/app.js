@@ -8529,7 +8529,7 @@ function renderDeclarativeTools() {
     '<label class="toggle"><input type="checkbox" id="declSpontaneousToggle" onchange="toggleDeclSpontaneous()" checked>' +
     '<span class="toggle-track"></span><span class="toggle-thumb"></span></label></div></div>' +
     '<div class="form-group"><label>Maximale Anzahl Tools</label>' +
-    '<div class="range-group"><input type="range" id="declMaxToolsSlider" min="5" max="50" step="5" value="20" onchange="updateDeclMaxTools(this.value)" oninput="document.getElementById(\'declMaxToolsVal\').textContent=this.value">' +
+    '<div class="range-group"><input type="range" id="declMaxToolsSlider" min="10" max="250" step="10" value="20" onchange="updateDeclMaxTools(this.value)" oninput="document.getElementById(\'declMaxToolsVal\').textContent=this.value">' +
     '<span class="range-value" id="declMaxToolsVal">20</span></div></div>' +
     fInfo('Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus (nur Lese-Zugriff).' + helpBtn('decl_tools.overview'))
   ) +
