@@ -326,17 +326,23 @@ class ActivityEngine:
 
         self._last_activity = activity
 
+        # Ausloesendes Geraet merken (z.B. media_player.wohnzimmer bei watching)
+        trigger = ""
+        if activity == WATCHING and signals.get("media_playing"):
+            trigger = signals["media_playing"]
+
         result = {
             "activity": activity,
             "confidence": confidence,
             "signals": signals,
+            "trigger": trigger,
         }
         self._last_detection = result
         self._cache_ts = now
 
         logger.debug(
-            "Aktivitaet erkannt: %s (confidence: %.2f, signals: %s)",
-            activity, confidence, signals,
+            "Aktivitaet erkannt: %s (confidence: %.2f, trigger: %s, signals: %s)",
+            activity, confidence, trigger, signals,
         )
 
         return result
@@ -407,6 +413,7 @@ class ActivityEngine:
             "confidence": detection["confidence"],
             "signals": detection["signals"],
             "volume": volume,
+            "trigger": detection.get("trigger", ""),
         }
 
     # ----- Signal-Erkennung -----
@@ -419,12 +426,15 @@ class ActivityEngine:
                     return False
         return True
 
-    def _check_media_playing(self, states: list[dict]) -> bool:
+    def _check_media_playing(self, states: list[dict]) -> str:
         """Prueft ob ein konfigurierter Media Player aktiv ist (TV, Film).
 
         Erkennt nicht nur "playing" sondern auch "on", "paused", "buffering" —
         also jeden Zustand der bedeutet, dass der TV an ist und jemand zuschaut.
         Nur "off", "standby", "unavailable", "unknown", "idle" gelten als inaktiv.
+
+        Returns:
+            entity_id des aktiven Players (truthy) oder "" (falsy).
         """
         inactive_states = {"off", "standby", "unavailable", "unknown", "idle"}
         for state in states:
@@ -432,8 +442,8 @@ class ActivityEngine:
             if entity_id in self.media_players:
                 s = state.get("state", "off").lower()
                 if s not in inactive_states:
-                    return True
-        return False
+                    return entity_id
+        return ""
 
     def _check_in_call(self, states: list[dict]) -> bool:
         """Prueft ob ein Mikrofon aktiv ist (Call/Zoom)."""

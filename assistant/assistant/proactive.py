@@ -1926,7 +1926,12 @@ class ProactiveManager:
         highest_urgency = MEDIUM if any(b.get("urgency") == MEDIUM for b in items) else LOW
         activity_result = await self.brain.activity.should_deliver(highest_urgency)
         if activity_result["suppress"]:
-            logger.info("Batch unterdrueckt: Aktivitaet=%s", activity_result["activity"])
+            trigger_info = activity_result.get("trigger", "")
+            if trigger_info:
+                logger.info("Batch unterdrueckt: Aktivitaet=%s, Trigger=%s",
+                            activity_result["activity"], trigger_info)
+            else:
+                logger.info("Batch unterdrueckt: Aktivitaet=%s", activity_result["activity"])
             # MEDIUM zurueck in Queue (sollen nicht verloren gehen)
             # F-033: Lock fuer atomaren batch_queue Zugriff nach await
             medium_items = [i for i in items if i.get("urgency") == MEDIUM]
