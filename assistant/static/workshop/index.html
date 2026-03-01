@@ -925,6 +925,102 @@
         .theme-dot { width: 20px; height: 20px; border-radius: 50%; }
         .theme-name { font-size: 12px; font-weight: 600; color: var(--text-primary); }
 
+        /* ===== Galerie Grid ===== */
+        .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+        .gallery-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; cursor: pointer; transition: all var(--fast); }
+        .gallery-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow-glow); }
+        .gallery-thumb { height: 120px; background: var(--bg-secondary); display: flex; align-items: center; justify-content: center; font-size: 48px; color: var(--text-muted); }
+        .gallery-info { padding: 10px; }
+        .gallery-title { font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+        .gallery-meta { font-size: 10px; color: var(--text-secondary); }
+        .gallery-stars { color: var(--warning); font-size: 14px; letter-spacing: 2px; }
+        .gallery-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+        .filter-chip { padding: 4px 10px; border-radius: 12px; font-size: 10px; border: 1px solid var(--border); color: var(--text-secondary); cursor: pointer; background: transparent; transition: all var(--fast); }
+        .filter-chip:hover, .filter-chip.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+        /* ===== Vergleich View ===== */
+        .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 700px) { .compare-grid { grid-template-columns: 1fr; } }
+        .compare-col { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+        .compare-col h4 { font-size: 13px; color: var(--accent); margin-bottom: 12px; }
+        .compare-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 11px; border-bottom: 1px solid var(--border); }
+        .compare-label { color: var(--text-secondary); }
+        .compare-val { color: var(--text-primary); font-weight: 600; }
+        .compare-common { background: var(--success-dim); border-left: 3px solid var(--success); padding: 4px 8px; margin: 2px 0; font-size: 11px; border-radius: 0 4px 4px 0; }
+        .compare-unique { background: var(--accent-dim); border-left: 3px solid var(--accent); padding: 4px 8px; margin: 2px 0; font-size: 11px; border-radius: 0 4px 4px 0; }
+
+        /* ===== Bulk Action Bar ===== */
+        .bulk-bar { position: sticky; top: 0; z-index: 50; background: var(--bg-secondary); border: 1px solid var(--accent); border-radius: 6px; padding: 8px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 12px; box-shadow: var(--shadow-glow); }
+        .bulk-count { font-size: 12px; font-weight: 600; color: var(--accent); }
+        .bulk-actions { display: flex; gap: 6px; margin-left: auto; }
+
+        /* ===== Gamification ===== */
+        .badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+        .badge-card { text-align: center; padding: 12px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); transition: all var(--fast); }
+        .badge-card.earned { border-color: var(--warning); background: rgba(255,170,0,0.05); }
+        .badge-card.locked { opacity: 0.4; filter: grayscale(1); }
+        .badge-icon { font-size: 32px; margin-bottom: 6px; }
+        .badge-name { font-size: 10px; font-weight: 600; color: var(--text-primary); }
+        .badge-desc { font-size: 9px; color: var(--text-secondary); margin-top: 2px; }
+        .xp-bar { height: 8px; background: var(--bg-secondary); border-radius: 4px; overflow: hidden; margin: 4px 0; }
+        .xp-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--warning)); border-radius: 4px; transition: width 0.5s ease; }
+        .level-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent); }
+
+        /* ===== Wiki / Wissensdatenbank ===== */
+        .wiki-grid { display: grid; gap: 8px; }
+        .wiki-entry { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 12px; cursor: pointer; transition: all var(--fast); }
+        .wiki-entry:hover { border-color: var(--accent); }
+        .wiki-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+        .wiki-excerpt { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+        .wiki-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+        .wiki-tag { font-size: 9px; padding: 2px 6px; border-radius: 8px; background: var(--accent-dim); color: var(--accent); }
+        .wiki-search { width: 100%; padding: 8px 12px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 12px; margin-bottom: 12px; }
+        .wiki-search:focus { outline: none; border-color: var(--accent); }
+
+        /* ===== Drag Indicator ===== */
+        .nav-btn.dragging { opacity: 0.5; border: 1px dashed var(--accent); }
+        .nav-btn.drag-over { border-top: 2px solid var(--accent); }
+        .nav-btn .drag-handle { cursor: grab; opacity: 0; margin-right: 4px; font-size: 10px; transition: opacity var(--fast); }
+        .nav-btn:hover .drag-handle { opacity: 0.5; }
+
+        /* ===== Schaltplan Editor ===== */
+        .sch-canvas { width: 100%; height: 400px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; cursor: crosshair; }
+        .sch-palette { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+        .sch-part-btn { padding: 6px 10px; font-size: 11px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); cursor: pointer; transition: all var(--fast); }
+        .sch-part-btn:hover, .sch-part-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+        /* ===== MQTT Monitor ===== */
+        .mqtt-feed { max-height: 400px; overflow-y: auto; font-family: var(--mono); font-size: 11px; }
+        .mqtt-msg { padding: 4px 8px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; }
+        .mqtt-topic { color: var(--accent); min-width: 150px; }
+        .mqtt-payload { color: var(--text-primary); word-break: break-all; }
+        .mqtt-time { color: var(--text-muted); font-size: 10px; min-width: 60px; }
+
+        /* ===== Multimeter ===== */
+        .meter-steps { counter-reset: meter-step; }
+        .meter-step { display: flex; gap: 12px; padding: 12px; margin-bottom: 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; counter-increment: meter-step; }
+        .meter-step::before { content: counter(meter-step); font-size: 18px; font-weight: 700; color: var(--accent); min-width: 28px; text-align: center; }
+        .meter-step-content { flex: 1; }
+        .meter-step-title { font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+        .meter-step-desc { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+        .meter-dial { width: 120px; height: 120px; }
+
+        /* ===== Zeiterfassung ===== */
+        .time-bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 120px; padding: 8px 0; }
+        .time-bar { flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-width: 20px; transition: height 0.3s ease; position: relative; }
+        .time-bar:hover { background: var(--accent-glow); }
+        .time-bar-label { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--text-muted); white-space: nowrap; }
+        .time-bar-value { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--accent); font-weight: 600; }
+        .time-tracking-btn { padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; border: 2px solid; cursor: pointer; transition: all var(--fast); }
+        .time-tracking-btn.start { border-color: var(--success); color: var(--success); background: var(--success-dim); }
+        .time-tracking-btn.stop { border-color: var(--danger); color: var(--danger); background: var(--danger-dim); }
+
+        /* ===== Dashboard Widgets Sortable ===== */
+        .dash-widget { position: relative; }
+        .dash-widget .dash-drag { position: absolute; top: 4px; right: 4px; cursor: grab; opacity: 0; font-size: 14px; color: var(--text-muted); transition: opacity var(--fast); padding: 4px; }
+        .dash-widget:hover .dash-drag { opacity: 0.6; }
+        .dash-widget.dragging { opacity: 0.5; border: 1px dashed var(--accent); }
+
         /* ===== Print Stylesheet ===== */
         @media print {
             .sidebar, .header, .footer, .ai-bubble, .ai-popup, .hamburger, .sidebar-backdrop, .notif-panel, .notif-backdrop, .ambient-overlay { display: none !important; }
@@ -1094,6 +1190,34 @@
             <h3>Boards</h3>
             <button class="nav-btn" data-view="kanban" onclick="switchView(this, 'kanban')">
                 <span class="icon">&#128203;</span> Kanban
+            </button>
+
+            <h3>Kreativ</h3>
+            <button class="nav-btn" data-view="schematic" onclick="switchView(this, 'schematic')">
+                <span class="icon">&#9999;</span> Schaltplan-Editor
+            </button>
+            <button class="nav-btn" data-view="gallery" onclick="switchView(this, 'gallery')">
+                <span class="icon">&#127912;</span> Galerie
+            </button>
+            <button class="nav-btn" data-view="wiki" onclick="switchView(this, 'wiki')">
+                <span class="icon">&#128218;</span> Wiki
+            </button>
+            <button class="nav-btn" data-view="compare" onclick="switchView(this, 'compare')">
+                <span class="icon">&#128260;</span> Vergleich
+            </button>
+
+            <h3>Monitoring</h3>
+            <button class="nav-btn" data-view="mqtt" onclick="switchView(this, 'mqtt')">
+                <span class="icon">&#128225;</span> MQTT
+            </button>
+            <button class="nav-btn" data-view="multimeter" onclick="switchView(this, 'multimeter')">
+                <span class="icon">&#128270;</span> Multimeter
+            </button>
+            <button class="nav-btn" data-view="timetrack" onclick="switchView(this, 'timetrack')">
+                <span class="icon">&#128336;</span> Zeiterfassung
+            </button>
+            <button class="nav-btn" data-view="gamification" onclick="switchView(this, 'gamification')">
+                <span class="icon">&#127942;</span> Erfolge
             </button>
 
             <h3>Sonstiges</h3>
@@ -1535,6 +1659,10 @@ function renderView() {
         settings: renderSettingsView, tools: renderToolsView, analysis: renderAnalysisView,
         devices: renderDevicesView, pinout: renderPinoutView, shopping: renderShoppingView,
         generators: renderGeneratorsView, kanban: renderKanbanView,
+        schematic: renderSchematicEditorView, gallery: renderGalleryView,
+        wiki: renderWikiView, compare: renderCompareView, mqtt: renderMqttView,
+        multimeter: renderMultimeterView, timetrack: renderTimeTrackView,
+        gamification: renderGamificationView,
     };
     const fn = views[currentView];
     if (fn) fn(main); else main.innerHTML = '';
@@ -1871,6 +1999,7 @@ async function renderCodeView(main) {
                     html += '<span style="font-size:10px;color:var(--text-secondary)">' + formatFileSize(f.size) + '</span>';
                     html += '<div class="file-actions">';
                     html += '<button class="file-action-btn" title="Download" onclick="event.stopPropagation();downloadFile(\'' + escHtml(fname) + '\')">&#11015;</button>';
+                    html += '<button class="file-action-btn" title="Loeschen" style="color:var(--danger)" onclick="event.stopPropagation();deleteProjectFile(\'' + escHtml(fname) + '\')">&#10005;</button>';
                     html += '</div></li>';
                 });
                 html += '</ul>';
@@ -2031,9 +2160,19 @@ function renderHardwareView(main) {
     html += '<button class="tab-btn' + (hwTab === 'printer' ? ' active' : '') + '" onclick="hwTab=\'printer\';renderHardwareView()">3D-Drucker</button>';
     html += '<button class="tab-btn' + (hwTab === 'arm' ? ' active' : '') + '" onclick="hwTab=\'arm\';renderHardwareView()">Roboterarm</button>';
     html += '<button class="tab-btn' + (hwTab === 'env' ? ' active' : '') + '" onclick="hwTab=\'env\';renderHardwareView()">Umgebung</button>';
+    html += '<button class="tab-btn' + (hwTab === 'camera' ? ' active' : '') + '" onclick="hwTab=\'camera\';renderHardwareView()">Kamera</button>';
     html += '</div>';
 
-    if (hwTab === 'printer') {
+    if (hwTab === 'camera') {
+        html += '<div style="text-align:center;padding:16px">';
+        html += '<div style="width:100%;max-width:480px;margin:0 auto;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;overflow:hidden">';
+        html += '<div style="padding:40px;color:var(--text-secondary);font-size:12px">&#128247; Kamera-Feed ueber Home Assistant</div>';
+        html += '</div>';
+        html += '<div class="action-row" style="margin-top:12px;justify-content:center">';
+        html += '<button class="action-btn" onclick="takeCameraSnapshot()">&#128247; Snapshot aufnehmen</button>';
+        html += '<button class="action-btn secondary" onclick="renderHardwareView()">&#8635; Aktualisieren</button>';
+        html += '</div></div>';
+    } else if (hwTab === 'printer') {
         html += '<div id="printer-content"><div style="color:var(--text-secondary);font-size:12px">Status wird geladen...</div></div>';
         html += '<div class="action-row" style="margin-top:12px">';
         html += '<button class="action-btn" onclick="printerAction(\'start\')">&#9654; Druck starten</button>';
@@ -2319,12 +2458,21 @@ function renderCalcView(main) {
     html += '<button class="tab-btn' + (calcTab === 'rechner' ? ' active' : '') + '" onclick="calcTab=\'rechner\';renderCalcView()">Rechner</button>';
     html += '<button class="tab-btn' + (calcTab === 'farbcode' ? ' active' : '') + '" onclick="calcTab=\'farbcode\';renderCalcView()">Farbcode</button>';
     html += '<button class="tab-btn' + (calcTab === 'loeten' ? ' active' : '') + '" onclick="calcTab=\'loeten\';renderCalcView()">Loetguide</button>';
+    html += '<button class="tab-btn' + (calcTab === 'holz' ? ' active' : '') + '" onclick="calcTab=\'holz\';renderCalcView()">Holz</button>';
+    html += '<button class="tab-btn' + (calcTab === '3ddruck' ? ' active' : '') + '" onclick="calcTab=\'3ddruck\';renderCalcView()">3D-Druck</button>';
+    html += '<button class="tab-btn' + (calcTab === 'kabel' ? ' active' : '') + '" onclick="calcTab=\'kabel\';renderCalcView()">Kabel</button>';
     html += '</div>';
 
     if (calcTab === 'farbcode') {
         html += renderResistorCalcTab();
     } else if (calcTab === 'loeten') {
         html += renderSolderGuideTab();
+    } else if (calcTab === 'holz') {
+        html += renderWoodCalcTab();
+    } else if (calcTab === '3ddruck') {
+        html += render3DPrintCalcTab();
+    } else if (calcTab === 'kabel') {
+        html += renderCableCalcTab();
     } else {
         html += '<div class="calc-btns">';
         const calcs = [
@@ -2728,11 +2876,14 @@ function formatFileSize(bytes) {
     return size.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
 }
 
-function showToast(msg) {
+function showToast(msg, type) {
     const el = document.getElementById('toast');
     el.textContent = msg;
     el.classList.add('show');
     setTimeout(() => el.classList.remove('show'), 3000);
+    if (type === 'error') playSound('error');
+    else if (type === 'success') playSound('success');
+    else playSound('click');
 }
 
 async function refreshAll() {
@@ -2763,9 +2914,20 @@ async function renderSettingsView(main) {
     const soundsOn = localStorage.getItem('ws-sounds') !== 'off';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">';
     html += '<span>Sound-Effekte</span><button class="action-btn secondary" style="padding:3px 10px;font-size:10px" onclick="localStorage.setItem(\'ws-sounds\',\'' + (soundsOn ? 'off' : 'on') + '\');renderSettingsView()">' + (soundsOn ? 'An' : 'Aus') + '</button></div>';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:12px">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">';
     html += '<span>Ambient-Modus</span><button class="action-btn secondary" style="padding:3px 10px;font-size:10px" onclick="enterAmbientMode()">Starten</button></div>';
+    const ambientAuto = localStorage.getItem('ws-ambient-auto') === 'on';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">';
+    html += '<span>Ambient Auto-Start (5min)</span><button class="action-btn secondary" style="padding:3px 10px;font-size:10px" onclick="localStorage.setItem(\'ws-ambient-auto\',\'' + (ambientAuto ? 'off' : 'on') + '\');resetAmbientIdle();renderSettingsView()">' + (ambientAuto ? 'An' : 'Aus') + '</button></div>';
     html += '</div>';
+
+    // Import/Export
+    html += '<div class="settings-group"><h4>Daten</h4>';
+    html += '<div style="display:flex;gap:8px;padding:8px 0">';
+    html += '<button class="action-btn" onclick="exportAllProjects()">&#128190; Alles exportieren</button>';
+    html += '<button class="action-btn secondary" onclick="importProjects()">&#128194; Importieren</button>';
+    html += '<button class="action-btn secondary" onclick="exportProjectQR()">&#128214; Projekt-QR</button>';
+    html += '</div></div>';
 
     try {
         const res = await apiCall('settings');
@@ -3076,9 +3238,24 @@ function resetProjectModal() {
 }
 
 // ===== Inventory View =====
+let _invItems = [];
+let _invSelected = new Set();
+
 async function renderInventoryView(main) {
     if (!main) main = document.getElementById('main-content');
-    let html = '<div class="widget">';
+    let html = '';
+
+    // Bulk action bar
+    if (_invSelected.size > 0) {
+        html += '<div class="bulk-bar"><span class="bulk-count">' + _invSelected.size + ' ausgewaehlt</span>';
+        html += '<div class="bulk-actions">';
+        html += '<button class="action-btn secondary" onclick="invBulkExport()">CSV Export</button>';
+        html += '<button class="action-btn danger" onclick="invBulkDelete()">Loeschen (' + _invSelected.size + ')</button>';
+        html += '<button class="action-btn secondary" onclick="invDeselectAll()">Abbrechen</button>';
+        html += '</div></div>';
+    }
+
+    html += '<div class="widget">';
     html += '<div class="widget-header"><span class="icon">&#128230;</span><span class="widget-title">Werkstatt-Inventar</span></div>';
     html += '<div class="action-row" style="margin-bottom:12px">';
     html += '<button class="action-btn" onclick="showAddInventoryDialog()">+ Artikel hinzufuegen</button>';
@@ -3087,19 +3264,25 @@ async function renderInventoryView(main) {
 
     try {
         const res = await apiCall('inventory');
-        const items = res.items || [];
-        if (items.length) {
-            html += '<table class="parts-table"><thead><tr><th>Artikel</th><th>Kategorie</th><th>Menge</th><th>Lagerort</th></tr></thead><tbody>';
-            items.forEach(item => {
+        _invItems = res.items || [];
+        if (_invItems.length) {
+            html += '<table class="parts-table"><thead><tr>';
+            html += '<th><input type="checkbox" onchange="invToggleAll(this.checked)" ' + (_invSelected.size === _invItems.length && _invItems.length > 0 ? 'checked' : '') + '></th>';
+            html += '<th>Artikel</th><th>Kategorie</th><th>Menge</th><th>Lagerort</th><th>Aktionen</th></tr></thead><tbody>';
+            _invItems.forEach((item, idx) => {
                 const qtyClass = (item.quantity || 0) <= (item.min_quantity || 0) ? 'part-missing' : 'part-available';
-                html += '<tr><td>' + escHtml(item.name || '') + '</td>';
+                const iname = escHtml(item.name || '');
+                const checked = _invSelected.has(idx) ? ' checked' : '';
+                html += '<tr><td><input type="checkbox"' + checked + ' onchange="invToggleItem(' + idx + ',this.checked)"></td>';
+                html += '<td>' + iname + '</td>';
                 html += '<td>' + escHtml(item.category || '-') + '</td>';
                 html += '<td class="' + qtyClass + '">' + (item.quantity || 0) + (item.unit ? ' ' + item.unit : '') + '</td>';
-                html += '<td>' + escHtml(item.location || '-') + '</td></tr>';
+                html += '<td>' + escHtml(item.location || '-') + '</td>';
+                html += '<td><button class="action-btn secondary" style="padding:2px 6px;font-size:10px" onclick="showInvQR(\'' + iname + '\')">QR</button></td></tr>';
             });
             html += '</tbody></table>';
         } else {
-            html += '<div style="color:var(--text-secondary);font-size:12px">Kein Inventar vorhanden. Fuege Artikel hinzu um dein Werkstatt-Inventar zu verwalten.</div>';
+            html += emptyState('Kein Inventar', 'Fuege Artikel hinzu um dein Werkstatt-Inventar zu verwalten.');
         }
     } catch (e) {
         html += '<div style="color:var(--text-secondary);font-size:12px">Inventar konnte nicht geladen werden.</div>';
@@ -3109,10 +3292,62 @@ async function renderInventoryView(main) {
     // Low Stock Warnings
     html += '<div class="widget">';
     html += '<div class="widget-header"><span class="icon">&#9888;</span><span class="widget-title">Nachbestellungen</span></div>';
-    html += '<div style="color:var(--text-secondary);font-size:12px">Artikel unter Mindestbestand werden hier angezeigt.</div>';
+    const lowStock = _invItems.filter(i => (i.quantity || 0) <= (i.min_quantity || 0) && i.min_quantity > 0);
+    if (lowStock.length) {
+        lowStock.forEach(i => {
+            html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">';
+            html += '<span style="color:var(--warning)">' + escHtml(i.name) + '</span>';
+            html += '<span style="color:var(--danger)">' + (i.quantity || 0) + ' / ' + i.min_quantity + '</span></div>';
+        });
+    } else {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Alle Bestaende OK.</div>';
+    }
     html += '</div>';
 
     main.innerHTML = html;
+}
+
+function invToggleAll(checked) {
+    if (checked) { _invItems.forEach((_, i) => _invSelected.add(i)); } else { _invSelected.clear(); }
+    renderInventoryView();
+}
+function invToggleItem(idx, checked) { if (checked) _invSelected.add(idx); else _invSelected.delete(idx); renderInventoryView(); }
+function invDeselectAll() { _invSelected.clear(); renderInventoryView(); }
+
+function invBulkExport() {
+    const selected = [..._invSelected].map(i => _invItems[i]).filter(Boolean);
+    let csv = 'Name,Kategorie,Menge,Lagerort\n';
+    selected.forEach(i => { csv += '"' + (i.name||'') + '","' + (i.category||'') + '",' + (i.quantity||0) + ',"' + (i.location||'') + '"\n'; });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'inventar_export.csv'; a.click();
+    showToast(selected.length + ' Artikel exportiert', 'success');
+}
+
+async function invBulkDelete() {
+    const count = _invSelected.size;
+    if (!confirm(count + ' Artikel wirklich loeschen?')) return;
+    const selected = [..._invSelected].map(i => _invItems[i]).filter(Boolean);
+    for (const item of selected) {
+        try { await apiCall('inventory/' + encodeURIComponent(item.name), 'DELETE'); } catch(e) {}
+    }
+    _invSelected.clear();
+    showToast(count + ' Artikel geloescht', 'success');
+    renderInventoryView();
+}
+
+function showInvQR(name) {
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>QR-Code: ' + name + '</h3>' +
+        generateQR('INVENTAR:' + name) +
+        '<div class="modal-btns"><button onclick="document.getElementById(\'new-project-modal\').classList.add(\'hidden\');resetProjectModal()">Schliessen</button>' +
+        '<button class="btn-primary" onclick="printInvQR(\'' + name + '\')">Drucken</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+function printInvQR(name) {
+    const w = window.open('', '_blank');
+    w.document.write('<html><body style="text-align:center;padding:40px">' + generateQR('INVENTAR:' + name) + '<p>' + name + '</p></body></html>');
+    w.document.close(); w.print();
 }
 
 function showAddInventoryDialog() {
@@ -3415,6 +3650,7 @@ function renderSafetyView(main) {
 
     html += '<div class="action-row" style="margin-top:12px">';
     html += '<button class="action-btn secondary" onclick="resetSafetyChecks()">Alle zuruecksetzen</button>';
+    html += '<button class="action-btn" onclick="generateProjectSafetyChecklist()">&#9889; Projekt-Checkliste generieren</button>';
     html += '</div>';
     html += '</div>';
 
@@ -4700,8 +4936,1010 @@ function renderWeekPlanWidget() {
     return html;
 }
 
-// ===== Update Keyboard Shortcuts (extended) =====
-// Patch existing keydown handler to add new shortcuts:
+// ===== Schritt 5: Datei-Loeschung =====
+async function deleteProjectFile(filename) {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt', 'error'); return; }
+    if (!confirm('Datei "' + filename + '" wirklich loeschen?')) return;
+    try {
+        await apiCall('files/' + currentProject.id + '/' + encodeURIComponent(filename), 'DELETE');
+        showToast(filename + ' geloescht', 'success');
+        renderCodeView();
+    } catch (e) { showToast('Fehler: ' + e.message, 'error'); }
+}
+
+// ===== Schritt 6: Drag & Drop Sidebar =====
+function initSidebarDragDrop() {
+    const nav = document.querySelector('.sidebar-nav');
+    if (!nav) return;
+    const btns = nav.querySelectorAll('.nav-btn');
+    btns.forEach(btn => {
+        btn.setAttribute('draggable', 'true');
+        btn.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', btn.dataset.view); btn.classList.add('dragging'); });
+        btn.addEventListener('dragend', () => { btn.classList.remove('dragging'); nav.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('drag-over')); });
+        btn.addEventListener('dragover', (e) => { e.preventDefault(); btn.classList.add('drag-over'); });
+        btn.addEventListener('dragleave', () => btn.classList.remove('drag-over'));
+        btn.addEventListener('drop', (e) => {
+            e.preventDefault();
+            btn.classList.remove('drag-over');
+            const fromView = e.dataTransfer.getData('text/plain');
+            const fromBtn = nav.querySelector('[data-view="' + fromView + '"]');
+            if (fromBtn && fromBtn !== btn) {
+                const parent = btn.parentNode;
+                const rect = btn.getBoundingClientRect();
+                const mid = rect.top + rect.height / 2;
+                if (e.clientY < mid) parent.insertBefore(fromBtn, btn);
+                else parent.insertBefore(fromBtn, btn.nextSibling);
+                saveSidebarOrder();
+            }
+        });
+    });
+    restoreSidebarOrder();
+}
+
+function saveSidebarOrder() {
+    const btns = document.querySelectorAll('.sidebar-nav .nav-btn');
+    const order = [...btns].map(b => b.dataset.view).filter(Boolean);
+    localStorage.setItem('ws-nav-order', JSON.stringify(order));
+}
+
+function restoreSidebarOrder() {
+    const saved = localStorage.getItem('ws-nav-order');
+    if (!saved) return;
+    try {
+        const order = JSON.parse(saved);
+        const nav = document.querySelector('.sidebar-nav');
+        order.forEach(view => {
+            const btn = nav.querySelector('[data-view="' + view + '"]');
+            if (btn) btn.parentNode.appendChild(btn);
+        });
+    } catch(e) {}
+}
+
+// ===== Schritt 8: Ambient Auto-Start =====
+let ambientIdleTimer = null;
+function resetAmbientIdle() {
+    if (ambientIdleTimer) clearTimeout(ambientIdleTimer);
+    if (localStorage.getItem('ws-ambient-auto') === 'on') {
+        ambientIdleTimer = setTimeout(() => {
+            if (typeof enterAmbientMode === 'function') enterAmbientMode();
+        }, 5 * 60 * 1000);
+    }
+}
+document.addEventListener('mousemove', resetAmbientIdle);
+document.addEventListener('keydown', resetAmbientIdle);
+document.addEventListener('touchstart', resetAmbientIdle);
+
+// ===== Schritt 9: Projekt-Sicherheits-Checkliste =====
+async function generateProjectSafetyChecklist() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt', 'error'); return; }
+    showToast('Generiere Sicherheits-Checkliste...');
+    try {
+        const res = await apiCall('project/' + currentProject.id + '/safety-checklist');
+        const items = res.checklist || res.items || [];
+        if (items.length) {
+            items.forEach((item, i) => {
+                safetyChecks.push({ id: 'proj_' + i, label: item.text || item.label || item, category: item.category || 'werkstatt', checked: false });
+            });
+            showToast(items.length + ' Sicherheitspunkte hinzugefuegt', 'success');
+            renderSafetyView();
+        } else {
+            showToast('Keine zusaetzlichen Sicherheitspunkte', 'error');
+        }
+    } catch (e) { showToast('Fehler: ' + e.message, 'error'); }
+}
+
+// ===== Schritt 10: Schaltplan-Editor =====
+let schParts = [];
+let schConnections = [];
+let schSelectedPart = null;
+let schMode = 'select';
+let schDragging = null;
+
+function renderSchematicEditorView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#9999;</span><span class="widget-title">Schaltplan-Editor</span></div>';
+
+    // Palette
+    html += '<div class="sch-palette">';
+    const parts = [
+        { type: 'resistor', label: 'Widerstand', icon: 'R' },
+        { type: 'capacitor', label: 'Kondensator', icon: 'C' },
+        { type: 'led', label: 'LED', icon: 'D' },
+        { type: 'ic', label: 'IC', icon: 'U' },
+        { type: 'wire', label: 'Kabel', icon: '—' },
+        { type: 'gnd', label: 'GND', icon: '⏚' },
+        { type: 'vcc', label: 'VCC', icon: '+' },
+    ];
+    parts.forEach(p => {
+        html += '<button class="sch-part-btn' + (schMode === p.type ? ' active' : '') + '" onclick="schSetMode(\'' + p.type + '\')">' + p.icon + ' ' + p.label + '</button>';
+    });
+    html += '<button class="sch-part-btn' + (schMode === 'select' ? ' active' : '') + '" onclick="schSetMode(\'select\')">&#9995; Auswahl</button>';
+    html += '</div>';
+
+    // Canvas (SVG)
+    html += '<svg class="sch-canvas" id="sch-svg" onmousedown="schMouseDown(event)" onmousemove="schMouseMove(event)" onmouseup="schMouseUp(event)">';
+    // Grid
+    html += '<defs><pattern id="sch-grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="10" cy="10" r="0.5" fill="rgba(0,212,255,0.15)"/></pattern></defs>';
+    html += '<rect width="100%" height="100%" fill="url(#sch-grid)"/>';
+    // Parts
+    schParts.forEach((p, i) => {
+        const color = i === schSelectedPart ? 'var(--accent)' : 'var(--text-primary)';
+        if (p.type === 'resistor') {
+            html += '<g transform="translate(' + p.x + ',' + p.y + ')" data-idx="' + i + '"><rect x="-20" y="-6" width="40" height="12" fill="none" stroke="' + color + '" stroke-width="1.5" rx="1"/><text x="0" y="3" text-anchor="middle" fill="' + color + '" font-size="8" font-family="var(--mono)">R</text></g>';
+        } else if (p.type === 'capacitor') {
+            html += '<g transform="translate(' + p.x + ',' + p.y + ')" data-idx="' + i + '"><line x1="-3" y1="-10" x2="-3" y2="10" stroke="' + color + '" stroke-width="2"/><line x1="3" y1="-10" x2="3" y2="10" stroke="' + color + '" stroke-width="2"/><text x="0" y="20" text-anchor="middle" fill="' + color + '" font-size="8">C</text></g>';
+        } else if (p.type === 'led') {
+            html += '<g transform="translate(' + p.x + ',' + p.y + ')" data-idx="' + i + '"><polygon points="-8,-8 -8,8 8,0" fill="none" stroke="' + color + '" stroke-width="1.5"/><line x1="8" y1="-8" x2="8" y2="8" stroke="' + color + '" stroke-width="1.5"/><text x="0" y="18" text-anchor="middle" fill="' + color + '" font-size="8">LED</text></g>';
+        } else if (p.type === 'ic') {
+            html += '<g transform="translate(' + p.x + ',' + p.y + ')" data-idx="' + i + '"><rect x="-20" y="-15" width="40" height="30" fill="none" stroke="' + color + '" stroke-width="1.5"/><text x="0" y="4" text-anchor="middle" fill="' + color + '" font-size="9" font-family="var(--mono)">IC</text></g>';
+        } else if (p.type === 'gnd') {
+            html += '<g transform="translate(' + p.x + ',' + p.y + ')" data-idx="' + i + '"><line x1="0" y1="-8" x2="0" y2="0" stroke="' + color + '" stroke-width="1.5"/><line x1="-10" y1="0" x2="10" y2="0" stroke="' + color + '" stroke-width="1.5"/><line x1="-6" y1="4" x2="6" y2="4" stroke="' + color + '" stroke-width="1.5"/><line x1="-2" y1="8" x2="2" y2="8" stroke="' + color + '" stroke-width="1.5"/></g>';
+        } else if (p.type === 'vcc') {
+            html += '<g transform="translate(' + p.x + ',' + p.y + ')" data-idx="' + i + '"><line x1="0" y1="8" x2="0" y2="0" stroke="' + color + '" stroke-width="1.5"/><text x="0" y="-4" text-anchor="middle" fill="' + color + '" font-size="10" font-weight="bold">+</text></g>';
+        }
+    });
+    // Connections
+    schConnections.forEach(c => {
+        html += '<line x1="' + c.x1 + '" y1="' + c.y1 + '" x2="' + c.x2 + '" y2="' + c.y2 + '" stroke="var(--accent)" stroke-width="1" opacity="0.6"/>';
+    });
+    html += '</svg>';
+
+    // Actions
+    html += '<div class="action-row" style="margin-top:8px">';
+    html += '<button class="action-btn secondary" onclick="schClear()">Leeren</button>';
+    html += '<button class="action-btn secondary" onclick="schExportSVG()">SVG Export</button>';
+    html += '<button class="action-btn" onclick="schAnalyze()">An Jarvis senden</button>';
+    if (schSelectedPart !== null) html += '<button class="action-btn danger" onclick="schDeleteSelected()">Loeschen</button>';
+    html += '</div></div>';
+
+    main.innerHTML = html;
+}
+
+function schSetMode(mode) { schMode = mode; renderSchematicEditorView(); }
+
+function schMouseDown(e) {
+    const svg = document.getElementById('sch-svg');
+    const rect = svg.getBoundingClientRect();
+    const x = Math.round((e.clientX - rect.left) / 20) * 20;
+    const y = Math.round((e.clientY - rect.top) / 20) * 20;
+
+    if (schMode === 'select') {
+        schSelectedPart = null;
+        schParts.forEach((p, i) => { if (Math.abs(p.x - x) < 25 && Math.abs(p.y - y) < 20) { schSelectedPart = i; schDragging = i; } });
+        renderSchematicEditorView();
+    } else if (schMode === 'wire') {
+        schConnections.push({ x1: x, y1: y, x2: x, y2: y, drawing: true });
+    } else {
+        schParts.push({ type: schMode, x, y });
+        playSound('click');
+        renderSchematicEditorView();
+    }
+}
+
+function schMouseMove(e) {
+    if (schDragging !== null) {
+        const svg = document.getElementById('sch-svg');
+        const rect = svg.getBoundingClientRect();
+        schParts[schDragging].x = Math.round((e.clientX - rect.left) / 20) * 20;
+        schParts[schDragging].y = Math.round((e.clientY - rect.top) / 20) * 20;
+        renderSchematicEditorView();
+    }
+    const active = schConnections.find(c => c.drawing);
+    if (active) {
+        const svg = document.getElementById('sch-svg');
+        const rect = svg.getBoundingClientRect();
+        active.x2 = Math.round((e.clientX - rect.left) / 20) * 20;
+        active.y2 = Math.round((e.clientY - rect.top) / 20) * 20;
+        renderSchematicEditorView();
+    }
+}
+
+function schMouseUp(e) {
+    schDragging = null;
+    const active = schConnections.find(c => c.drawing);
+    if (active) { delete active.drawing; playSound('click'); }
+}
+
+function schDeleteSelected() { if (schSelectedPart !== null) { schParts.splice(schSelectedPart, 1); schSelectedPart = null; renderSchematicEditorView(); } }
+function schClear() { schParts = []; schConnections = []; schSelectedPart = null; renderSchematicEditorView(); }
+
+function schExportSVG() {
+    const svg = document.getElementById('sch-svg');
+    const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'schaltplan.svg'; a.click();
+    showToast('SVG exportiert', 'success');
+}
+
+async function schAnalyze() {
+    const desc = schParts.map(p => p.type + ' bei (' + p.x + ',' + p.y + ')').join(', ');
+    showToast('Sende Schaltplan an Jarvis...');
+    try {
+        const res = await chatApi('Analysiere diesen Schaltplan: ' + desc);
+        showToast('Analyse abgeschlossen', 'success');
+    } catch(e) { showToast('Analyse fehlgeschlagen', 'error'); }
+}
+
+// ===== Schritt 11: Galerie =====
+let galleryFilter = 'all';
+let galleryRatings = JSON.parse(localStorage.getItem('ws-gallery-ratings') || '{}');
+
+function renderGalleryView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#127912;</span><span class="widget-title">Projekt-Galerie</span></div>';
+
+    // Filter
+    html += '<div class="gallery-filter">';
+    ['all', 'abgeschlossen', 'in_arbeit', 'diagnose', 'pausiert'].forEach(f => {
+        const label = f === 'all' ? 'Alle' : f.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
+        html += '<button class="filter-chip' + (galleryFilter === f ? ' active' : '') + '" onclick="galleryFilter=\'' + f + '\';renderGalleryView()">' + label + '</button>';
+    });
+    html += '</div>';
+
+    // Grid
+    const filtered = galleryFilter === 'all' ? projects : projects.filter(p => p.status === galleryFilter);
+    if (filtered.length) {
+        html += '<div class="gallery-grid">';
+        filtered.forEach(p => {
+            const rating = galleryRatings[p.id] || 0;
+            const statusIcons = { abgeschlossen: '&#10003;', in_arbeit: '&#9881;', diagnose: '&#128270;', pausiert: '&#10074;&#10074;' };
+            html += '<div class="gallery-card" onclick="selectProject(\'' + p.id + '\')">';
+            html += '<div class="gallery-thumb">' + (statusIcons[p.status] || '&#128268;') + '</div>';
+            html += '<div class="gallery-info">';
+            html += '<div class="gallery-title">' + escHtml(p.title || p.id) + '</div>';
+            html += '<div class="gallery-meta">' + escHtml(p.status || '') + '</div>';
+            html += '<div class="gallery-stars" onclick="event.stopPropagation()">';
+            for (let s = 1; s <= 5; s++) {
+                html += '<span style="cursor:pointer" onclick="setGalleryRating(\'' + p.id + '\',' + s + ')">' + (s <= rating ? '&#9733;' : '&#9734;') + '</span>';
+            }
+            html += '</div></div></div>';
+        });
+        html += '</div>';
+    } else {
+        html += emptyState('Keine Projekte', 'Erstelle ein neues Projekt um die Galerie zu fuellen.');
+    }
+    html += '</div>';
+
+    main.innerHTML = html;
+}
+
+function setGalleryRating(projectId, stars) {
+    galleryRatings[projectId] = stars;
+    localStorage.setItem('ws-gallery-ratings', JSON.stringify(galleryRatings));
+    renderGalleryView();
+    playSound('success');
+}
+
+// ===== Schritt 12: Material-Rechner Tabs =====
+// (Wird in renderCalcView als zusaetzliche Tabs integriert)
+
+// ===== Schritt 13: Projekt-Vergleich =====
+let compareA = null, compareB = null;
+
+function renderCompareView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128260;</span><span class="widget-title">Projekt-Vergleich</span></div>';
+
+    // Selektoren
+    html += '<div style="display:flex;gap:12px;margin-bottom:16px">';
+    html += '<div style="flex:1"><label style="font-size:10px;color:var(--text-secondary)">Projekt A</label>';
+    html += '<select style="width:100%;padding:6px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px" onchange="compareA=this.value;renderCompareView()">';
+    html += '<option value="">-- Waehlen --</option>';
+    projects.forEach(p => { html += '<option value="' + p.id + '"' + (compareA === p.id ? ' selected' : '') + '>' + escHtml(p.title || p.id) + '</option>'; });
+    html += '</select></div>';
+    html += '<div style="flex:1"><label style="font-size:10px;color:var(--text-secondary)">Projekt B</label>';
+    html += '<select style="width:100%;padding:6px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px" onchange="compareB=this.value;renderCompareView()">';
+    html += '<option value="">-- Waehlen --</option>';
+    projects.forEach(p => { html += '<option value="' + p.id + '"' + (compareB === p.id ? ' selected' : '') + '>' + escHtml(p.title || p.id) + '</option>'; });
+    html += '</select></div></div>';
+
+    if (compareA && compareB) {
+        const pA = projects.find(p => p.id === compareA);
+        const pB = projects.find(p => p.id === compareB);
+        if (pA && pB) {
+            html += '<div class="compare-grid">';
+            // Column A
+            html += '<div class="compare-col"><h4>' + escHtml(pA.title || pA.id) + '</h4>';
+            html += '<div class="compare-row"><span class="compare-label">Status</span><span class="compare-val">' + escHtml(pA.status || '-') + '</span></div>';
+            html += '<div class="compare-row"><span class="compare-label">Schritte</span><span class="compare-val">' + (pA.steps?.length || 0) + '</span></div>';
+            html += '<div class="compare-row"><span class="compare-label">Teile</span><span class="compare-val">' + (pA.parts?.length || 0) + '</span></div>';
+            html += '<div class="compare-row"><span class="compare-label">Budget</span><span class="compare-val">' + (pA.budget || '-') + '</span></div>';
+            const partsA = (pA.parts || []).map(p => p.name || p);
+            partsA.forEach(name => {
+                const inB = (pB.parts || []).some(p => (p.name || p) === name);
+                html += '<div class="' + (inB ? 'compare-common' : 'compare-unique') + '">' + escHtml(name) + '</div>';
+            });
+            html += '</div>';
+            // Column B
+            html += '<div class="compare-col"><h4>' + escHtml(pB.title || pB.id) + '</h4>';
+            html += '<div class="compare-row"><span class="compare-label">Status</span><span class="compare-val">' + escHtml(pB.status || '-') + '</span></div>';
+            html += '<div class="compare-row"><span class="compare-label">Schritte</span><span class="compare-val">' + (pB.steps?.length || 0) + '</span></div>';
+            html += '<div class="compare-row"><span class="compare-label">Teile</span><span class="compare-val">' + (pB.parts?.length || 0) + '</span></div>';
+            html += '<div class="compare-row"><span class="compare-label">Budget</span><span class="compare-val">' + (pB.budget || '-') + '</span></div>';
+            const partsB = (pB.parts || []).map(p => p.name || p);
+            partsB.forEach(name => {
+                const inA = partsA.includes(name);
+                html += '<div class="' + (inA ? 'compare-common' : 'compare-unique') + '">' + escHtml(name) + '</div>';
+            });
+            html += '</div></div>';
+            // Legend
+            html += '<div style="margin-top:12px;font-size:10px;display:flex;gap:16px">';
+            html += '<span><span style="display:inline-block;width:8px;height:8px;background:var(--success);border-radius:2px;margin-right:4px"></span>Gemeinsam</span>';
+            html += '<span><span style="display:inline-block;width:8px;height:8px;background:var(--accent);border-radius:2px;margin-right:4px"></span>Einzigartig</span>';
+            html += '</div>';
+        }
+    } else {
+        html += '<div style="color:var(--text-secondary);font-size:12px;text-align:center;padding:20px">Waehle zwei Projekte zum Vergleichen.</div>';
+    }
+    html += '</div>';
+    main.innerHTML = html;
+}
+
+// ===== Schritt 14: Wiki / Wissensdatenbank =====
+let wikiEntries = JSON.parse(localStorage.getItem('ws-wiki') || '[]');
+let wikiSearch = '';
+
+function renderWikiView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128218;</span><span class="widget-title">Wissensdatenbank</span></div>';
+
+    html += '<div class="action-row" style="margin-bottom:12px">';
+    html += '<button class="action-btn" onclick="showWikiAddDialog()">+ Eintrag</button>';
+    html += '<button class="action-btn secondary" onclick="wikiGenerateFromProjects()">Aus Projekten generieren</button>';
+    html += '</div>';
+
+    html += '<input class="wiki-search" placeholder="Suchen..." value="' + escHtml(wikiSearch) + '" oninput="wikiSearch=this.value;renderWikiView()">';
+
+    const filtered = wikiSearch ? wikiEntries.filter(e =>
+        (e.title || '').toLowerCase().includes(wikiSearch.toLowerCase()) ||
+        (e.content || '').toLowerCase().includes(wikiSearch.toLowerCase()) ||
+        (e.tags || []).some(t => t.toLowerCase().includes(wikiSearch.toLowerCase()))
+    ) : wikiEntries;
+
+    if (filtered.length) {
+        html += '<div class="wiki-grid">';
+        filtered.forEach((entry, idx) => {
+            html += '<div class="wiki-entry" onclick="showWikiEntry(' + idx + ')">';
+            html += '<div class="wiki-title">' + escHtml(entry.title) + '</div>';
+            html += '<div class="wiki-excerpt">' + escHtml((entry.content || '').substring(0, 120)) + '...</div>';
+            html += '<div class="wiki-tags">';
+            (entry.tags || []).forEach(t => { html += '<span class="wiki-tag">' + escHtml(t) + '</span>'; });
+            html += '</div></div>';
+        });
+        html += '</div>';
+    } else {
+        html += emptyState('Keine Eintraege', 'Erstelle Eintraege oder generiere sie aus abgeschlossenen Projekten.');
+    }
+    html += '</div>';
+    main.innerHTML = html;
+}
+
+function showWikiEntry(idx) {
+    const entry = wikiEntries[idx];
+    if (!entry) return;
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal" style="max-width:600px"><h3>' + escHtml(entry.title) + '</h3>' +
+        '<div style="font-size:12px;color:var(--text-primary);line-height:1.8;white-space:pre-wrap;max-height:400px;overflow-y:auto">' + escHtml(entry.content) + '</div>' +
+        '<div style="margin-top:8px">' + (entry.tags || []).map(t => '<span class="wiki-tag">' + escHtml(t) + '</span>').join(' ') + '</div>' +
+        '<div class="modal-btns"><button onclick="wikiDeleteEntry(' + idx + ')">Loeschen</button>' +
+        '<button class="btn-primary" onclick="document.getElementById(\'new-project-modal\').classList.add(\'hidden\');resetProjectModal()">Schliessen</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+function showWikiAddDialog() {
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Wiki-Eintrag</h3>' +
+        '<label>Titel *</label><input id="wiki-title" type="text" placeholder="z.B. ESP32 Deep Sleep">' +
+        '<label>Inhalt *</label><textarea id="wiki-content" style="width:100%;min-height:100px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text-primary);font-size:12px;resize:vertical" placeholder="Beschreibe die Loesung..."></textarea>' +
+        '<label>Tags (kommasepariert)</label><input id="wiki-tags" type="text" placeholder="z.B. ESP32, Sleep, Strom">' +
+        '<div class="modal-btns"><button onclick="document.getElementById(\'new-project-modal\').classList.add(\'hidden\');resetProjectModal()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doAddWiki()">Speichern</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+function doAddWiki() {
+    const title = document.getElementById('wiki-title')?.value.trim();
+    const content = document.getElementById('wiki-content')?.value.trim();
+    const tags = (document.getElementById('wiki-tags')?.value || '').split(',').map(t => t.trim()).filter(Boolean);
+    if (!title || !content) { showToast('Titel und Inhalt benoetigt', 'error'); return; }
+    wikiEntries.unshift({ title, content, tags, date: new Date().toISOString() });
+    localStorage.setItem('ws-wiki', JSON.stringify(wikiEntries));
+    document.getElementById('new-project-modal').classList.add('hidden');
+    resetProjectModal();
+    showToast('Wiki-Eintrag gespeichert', 'success');
+    renderWikiView();
+}
+
+function wikiDeleteEntry(idx) {
+    if (!confirm('Eintrag loeschen?')) return;
+    wikiEntries.splice(idx, 1);
+    localStorage.setItem('ws-wiki', JSON.stringify(wikiEntries));
+    document.getElementById('new-project-modal').classList.add('hidden');
+    resetProjectModal();
+    renderWikiView();
+}
+
+function wikiGenerateFromProjects() {
+    const completed = projects.filter(p => p.status === 'abgeschlossen');
+    if (!completed.length) { showToast('Keine abgeschlossenen Projekte', 'error'); return; }
+    let added = 0;
+    completed.forEach(p => {
+        if (wikiEntries.some(e => e.title === p.title)) return;
+        const steps = (p.steps || []).map(s => s.title || s.name || '').filter(Boolean).join('\n- ');
+        const parts = (p.parts || []).map(pt => pt.name || pt).filter(Boolean).join(', ');
+        wikiEntries.unshift({
+            title: p.title || p.id,
+            content: 'Projekt: ' + (p.title || p.id) + '\nSchritte:\n- ' + steps + '\nTeile: ' + parts,
+            tags: ['projekt', p.status, ...(p.tags || [])],
+            date: new Date().toISOString()
+        });
+        added++;
+    });
+    if (added) {
+        localStorage.setItem('ws-wiki', JSON.stringify(wikiEntries));
+        showToast(added + ' Eintraege generiert', 'success');
+        renderWikiView();
+    } else {
+        showToast('Alle Projekte bereits im Wiki');
+    }
+}
+
+// ===== Schritt 16: Zeiterfassung =====
+let timeTracking = JSON.parse(localStorage.getItem('ws-timetracking') || '{}');
+let timeTrackingActive = null;
+let timeTrackingStart = null;
+
+function renderTimeTrackView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128336;</span><span class="widget-title">Projekt-Zeiterfassung</span></div>';
+
+    // Active tracking
+    if (timeTrackingActive) {
+        const elapsed = Math.floor((Date.now() - timeTrackingStart) / 1000);
+        const mm = Math.floor(elapsed / 60);
+        const ss = elapsed % 60;
+        html += '<div style="text-align:center;padding:16px;background:var(--accent-dim);border-radius:6px;margin-bottom:12px">';
+        html += '<div style="font-size:11px;color:var(--text-secondary)">Aktiv: ' + escHtml(timeTrackingActive) + '</div>';
+        html += '<div style="font-size:32px;font-family:var(--mono);color:var(--accent);margin:8px 0">' + String(mm).padStart(2,'0') + ':' + String(ss).padStart(2,'0') + '</div>';
+        html += '<button class="time-tracking-btn stop" onclick="stopTimeTracking()">&#9632; Stoppen</button>';
+        html += '</div>';
+    } else {
+        html += '<div style="text-align:center;padding:16px;margin-bottom:12px">';
+        html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Projekt auswaehlen und Zeitmessung starten</div>';
+        html += '<select id="tt-project" style="padding:6px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;margin-bottom:8px">';
+        projects.forEach(p => { html += '<option value="' + escHtml(p.id) + '">' + escHtml(p.title || p.id) + '</option>'; });
+        html += '</select><br>';
+        html += '<button class="time-tracking-btn start" onclick="startTimeTracking()">&#9654; Starten</button>';
+        html += '</div>';
+    }
+
+    // Weekly chart
+    html += '<h4 style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px">Diese Woche</h4>';
+    const days = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+    const today = new Date();
+    const dayOfWeek = (today.getDay() + 6) % 7;
+    let maxMin = 1;
+    const weekData = days.map((d, i) => {
+        const date = new Date(today);
+        date.setDate(today.getDate() - dayOfWeek + i);
+        const key = date.toISOString().split('T')[0];
+        let total = 0;
+        Object.values(timeTracking).forEach(sessions => {
+            (sessions || []).forEach(s => { if (s.date === key) total += s.minutes || 0; });
+        });
+        if (total > maxMin) maxMin = total;
+        return { day: d, minutes: total, isToday: i === dayOfWeek };
+    });
+    html += '<div class="time-bar-chart">';
+    weekData.forEach(d => {
+        const h = d.minutes > 0 ? Math.max(10, (d.minutes / maxMin) * 100) : 4;
+        html += '<div class="time-bar" style="height:' + h + '%;' + (d.isToday ? 'background:var(--warning)' : '') + '">';
+        html += '<span class="time-bar-value">' + (d.minutes > 0 ? d.minutes + 'm' : '') + '</span>';
+        html += '<span class="time-bar-label">' + d.day + '</span>';
+        html += '</div>';
+    });
+    html += '</div>';
+
+    // Per-project totals
+    html += '<h4 style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin:32px 0 8px">Pro Projekt</h4>';
+    const totals = {};
+    Object.entries(timeTracking).forEach(([pid, sessions]) => {
+        totals[pid] = (sessions || []).reduce((sum, s) => sum + (s.minutes || 0), 0);
+    });
+    const sorted = Object.entries(totals).sort((a,b) => b[1] - a[1]);
+    if (sorted.length) {
+        sorted.forEach(([pid, mins]) => {
+            const proj = projects.find(p => p.id === pid);
+            const hrs = Math.floor(mins / 60);
+            const rm = mins % 60;
+            html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">';
+            html += '<span>' + escHtml(proj ? (proj.title || pid) : pid) + '</span>';
+            html += '<span style="color:var(--accent);font-family:var(--mono)">' + hrs + 'h ' + rm + 'm</span></div>';
+        });
+    } else {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Noch keine Zeiten erfasst.</div>';
+    }
+    html += '</div>';
+    main.innerHTML = html;
+}
+
+function startTimeTracking() {
+    const sel = document.getElementById('tt-project');
+    if (!sel || !sel.value) return;
+    timeTrackingActive = sel.value;
+    timeTrackingStart = Date.now();
+    renderTimeTrackView();
+    // Update every second
+    if (window._ttInterval) clearInterval(window._ttInterval);
+    window._ttInterval = setInterval(() => { if (currentView === 'timetrack') renderTimeTrackView(); }, 1000);
+    playSound('success');
+}
+
+function stopTimeTracking() {
+    if (!timeTrackingActive || !timeTrackingStart) return;
+    const elapsed = Math.floor((Date.now() - timeTrackingStart) / 60000);
+    const key = new Date().toISOString().split('T')[0];
+    if (!timeTracking[timeTrackingActive]) timeTracking[timeTrackingActive] = [];
+    timeTracking[timeTrackingActive].push({ date: key, minutes: Math.max(1, elapsed) });
+    localStorage.setItem('ws-timetracking', JSON.stringify(timeTracking));
+    if (window._ttInterval) clearInterval(window._ttInterval);
+    showToast(elapsed + ' Minuten erfasst', 'success');
+    timeTrackingActive = null;
+    timeTrackingStart = null;
+    renderTimeTrackView();
+}
+
+// ===== Schritt 17: MQTT Live-Monitor =====
+let mqttMessages = [];
+let mqttFilter = '';
+let mqttWs = null;
+
+function renderMqttView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128225;</span><span class="widget-title">MQTT Live-Monitor</span></div>';
+
+    // Connection & Filter
+    html += '<div style="display:flex;gap:8px;margin-bottom:12px">';
+    html += '<input class="wiki-search" style="margin-bottom:0;flex:1" placeholder="Topic-Filter..." value="' + escHtml(mqttFilter) + '" oninput="mqttFilter=this.value;renderMqttView()">';
+    html += '<button class="action-btn secondary" onclick="mqttClear()">Leeren</button>';
+    html += '</div>';
+
+    // Publish
+    html += '<div style="display:flex;gap:8px;margin-bottom:12px">';
+    html += '<input id="mqtt-pub-topic" class="wiki-search" style="margin-bottom:0;flex:1" placeholder="Topic...">';
+    html += '<input id="mqtt-pub-payload" class="wiki-search" style="margin-bottom:0;flex:1" placeholder="Payload...">';
+    html += '<button class="action-btn" onclick="mqttPublish()">Senden</button>';
+    html += '</div>';
+
+    // Feed
+    const filtered = mqttFilter ? mqttMessages.filter(m => m.topic.includes(mqttFilter)) : mqttMessages;
+    html += '<div class="mqtt-feed">';
+    if (filtered.length) {
+        filtered.slice(-100).reverse().forEach(m => {
+            html += '<div class="mqtt-msg">';
+            html += '<span class="mqtt-time">' + m.time + '</span>';
+            html += '<span class="mqtt-topic">' + escHtml(m.topic) + '</span>';
+            html += '<span class="mqtt-payload">' + escHtml(m.payload) + '</span>';
+            html += '</div>';
+        });
+    } else {
+        html += '<div style="color:var(--text-secondary);font-size:12px;text-align:center;padding:20px">Keine MQTT-Nachrichten.' +
+            (mqttFilter ? ' Filter: "' + escHtml(mqttFilter) + '"' : '') + '</div>';
+    }
+    html += '</div></div>';
+
+    // Sparklines for numeric topics
+    const numericTopics = {};
+    mqttMessages.forEach(m => {
+        const val = parseFloat(m.payload);
+        if (!isNaN(val)) {
+            if (!numericTopics[m.topic]) numericTopics[m.topic] = [];
+            numericTopics[m.topic].push(val);
+        }
+    });
+    const topicKeys = Object.keys(numericTopics);
+    if (topicKeys.length) {
+        html += '<div class="widget"><div class="widget-header"><span class="icon">&#128200;</span><span class="widget-title">Werte-Historie</span></div>';
+        topicKeys.slice(0, 6).forEach(topic => {
+            const vals = numericTopics[topic].slice(-20);
+            html += '<div style="margin-bottom:8px"><div style="font-size:10px;color:var(--text-secondary);margin-bottom:2px">' + escHtml(topic) + '</div>';
+            html += svgSparkline(vals, 200, 30);
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    main.innerHTML = html;
+}
+
+function mqttClear() { mqttMessages = []; renderMqttView(); }
+
+async function mqttPublish() {
+    const topic = document.getElementById('mqtt-pub-topic')?.value.trim();
+    const payload = document.getElementById('mqtt-pub-payload')?.value.trim();
+    if (!topic) { showToast('Topic benoetigt', 'error'); return; }
+    try {
+        await apiCall('notify', 'POST', { message: payload, title: topic, type: 'mqtt' });
+        mqttMessages.push({ topic, payload: payload || '', time: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+        showToast('MQTT gesendet', 'success');
+        renderMqttView();
+    } catch(e) { showToast('Senden fehlgeschlagen', 'error'); }
+}
+
+// ===== Schritt 18: Multimeter-Assistent =====
+let meterType = 'voltage';
+
+function renderMultimeterView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128270;</span><span class="widget-title">Multimeter-Assistent</span></div>';
+
+    // Type selector
+    html += '<div class="tab-bar" style="margin-bottom:16px">';
+    const types = [
+        { id: 'voltage', label: 'Spannung', icon: 'V' },
+        { id: 'current', label: 'Strom', icon: 'A' },
+        { id: 'resistance', label: 'Widerstand', icon: '\u03A9' },
+        { id: 'continuity', label: 'Durchgang', icon: '\u223F' },
+        { id: 'capacitance', label: 'Kapazitaet', icon: 'F' },
+    ];
+    types.forEach(t => {
+        html += '<button class="tab-btn' + (meterType === t.id ? ' active' : '') + '" onclick="meterType=\'' + t.id + '\';renderMultimeterView()">' + t.icon + ' ' + t.label + '</button>';
+    });
+    html += '</div>';
+
+    // Instructions
+    const instructions = {
+        voltage: [
+            { title: 'Messbereich waehlen', desc: 'Drehschalter auf V~ (Wechselspannung) oder V⎓ (Gleichspannung) stellen. Im Zweifel mit dem hoechsten Bereich beginnen.' },
+            { title: 'Messleitungen anschliessen', desc: 'Schwarze Leitung in COM-Buchse, rote Leitung in V/\u03A9-Buchse stecken.' },
+            { title: 'Parallel messen', desc: 'Messspitzen PARALLEL zum Bauteil anlegen. Nie in Reihe bei Spannungsmessung!' },
+            { title: 'Wert ablesen', desc: 'Display ablesen. Bei Gleichspannung zeigt Minus-Vorzeichen umgekehrte Polaritaet an.' },
+        ],
+        current: [
+            { title: 'Messbereich waehlen', desc: 'Drehschalter auf A~ oder A⎓ stellen. ACHTUNG: Immer mit dem hoechsten Bereich starten!' },
+            { title: 'Messleitungen anschliessen', desc: 'Schwarze Leitung in COM, rote Leitung in mA (oder 10A bei hohen Stroemen) Buchse.' },
+            { title: 'Schaltung unterbrechen', desc: 'Den Stromkreis UNTERBRECHEN und Multimeter IN REIHE einschleifen.' },
+            { title: 'Wert ablesen', desc: 'Strom fliesst jetzt durch das Multimeter. Wert ablesen, danach Schaltung wiederherstellen.' },
+        ],
+        resistance: [
+            { title: 'Bauteil stromfrei machen', desc: 'WICHTIG: Bauteil oder Schaltung MUSS stromfrei sein! Spannung kann Multimeter beschaedigen.' },
+            { title: 'Messbereich waehlen', desc: 'Drehschalter auf \u03A9 stellen. Auto-Range waehlt automatisch.' },
+            { title: 'Messleitungen anlegen', desc: 'Messspitzen an die beiden Enden des Bauteils halten.' },
+            { title: 'Wert ablesen', desc: 'Widerstandswert in Ohm ablesen. OL = Leitung unterbrochen / Wert zu hoch.' },
+        ],
+        continuity: [
+            { title: 'Durchgangsmodus waehlen', desc: 'Drehschalter auf das Durchgangs-Symbol (Schallwelle/Diode) stellen.' },
+            { title: 'Schaltung stromfrei machen', desc: 'Schaltung MUSS stromfrei sein fuer korrekte Messung.' },
+            { title: 'Messspitzen anlegen', desc: 'An die beiden zu pruefenden Punkte halten. Piepston = Durchgang vorhanden.' },
+            { title: 'Ergebnis interpretieren', desc: 'Piep = verbunden (< ~50\u03A9). Kein Piep = unterbrochen. Ideal fuer Kabel- und Loetstellentest.' },
+        ],
+        capacitance: [
+            { title: 'Kondensator entladen', desc: 'WICHTIG: Kondensator vorher entladen! Geladene Elkos koennen gefaehrlich sein.' },
+            { title: 'Kapazitaetsmodus waehlen', desc: 'Drehschalter auf F (Farad) stellen, falls vorhanden.' },
+            { title: 'Messleitungen anlegen', desc: 'Messspitzen an die Anschluesse des Kondensators halten. Polaritaet bei Elkos beachten.' },
+            { title: 'Wert ablesen', desc: 'Kapazitaet in pF, nF oder \u00B5F ablesen. Vergleiche mit aufgedrucktem Wert.' },
+        ],
+    };
+
+    html += '<div class="meter-steps">';
+    (instructions[meterType] || []).forEach(step => {
+        html += '<div class="meter-step"><div class="meter-step-content">';
+        html += '<div class="meter-step-title">' + step.title + '</div>';
+        html += '<div class="meter-step-desc">' + step.desc + '</div>';
+        html += '</div></div>';
+    });
+    html += '</div>';
+
+    // Quick evaluate
+    html += '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">';
+    html += '<div style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Messwert bewerten</div>';
+    html += '<div style="display:flex;gap:8px">';
+    html += '<input id="meter-value" type="number" step="any" placeholder="Messwert" style="flex:1;padding:6px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px">';
+    html += '<select id="meter-unit" style="padding:6px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px">';
+    html += '<option value="V">Volt</option><option value="mA">mA</option><option value="A">Ampere</option><option value="ohm">Ohm</option><option value="kOhm">k\u03A9</option><option value="uF">\u00B5F</option></select>';
+    html += '<button class="action-btn" onclick="evaluateMeterValue()">Bewerten</button>';
+    html += '</div>';
+    html += '<div id="meter-result" style="margin-top:8px;font-size:12px;color:var(--text-secondary)"></div>';
+    html += '</div>';
+
+    html += '</div>';
+    main.innerHTML = html;
+}
+
+async function evaluateMeterValue() {
+    const val = document.getElementById('meter-value')?.value;
+    const unit = document.getElementById('meter-unit')?.value;
+    if (!val) { showToast('Messwert eingeben', 'error'); return; }
+    const resultEl = document.getElementById('meter-result');
+    resultEl.innerHTML = '<div class="gen-loading"><div class="gen-loading-bar"></div></div>';
+    try {
+        const res = await chatApi('Bewerte diesen Messwert im Kontext einer Elektronik-Werkstatt: ' + val + ' ' + unit + '. Ist das normal? Worauf deutet es hin?');
+        resultEl.innerHTML = '<div style="background:var(--bg-card);padding:8px;border-radius:4px;border:1px solid var(--border)">' + escHtml(res.response || res.text || JSON.stringify(res)) + '</div>';
+    } catch(e) { resultEl.innerHTML = '<div style="color:var(--danger)">Bewertung fehlgeschlagen</div>'; }
+}
+
+// ===== Schritt 19: Import/Export =====
+function exportAllProjects() {
+    const data = {
+        projects: projects,
+        wiki: wikiEntries,
+        timeTracking: timeTracking,
+        galleryRatings: galleryRatings,
+        schematic: { parts: schParts, connections: schConnections },
+        exportDate: new Date().toISOString(),
+        version: '3.0'
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'workshop_backup_' + new Date().toISOString().split('T')[0] + '.json'; a.click();
+    showToast('Backup exportiert', 'success');
+}
+
+function importProjects() {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = '.json';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (data.wiki) { wikiEntries = data.wiki; localStorage.setItem('ws-wiki', JSON.stringify(wikiEntries)); }
+            if (data.timeTracking) { timeTracking = data.timeTracking; localStorage.setItem('ws-timetracking', JSON.stringify(timeTracking)); }
+            if (data.galleryRatings) { galleryRatings = data.galleryRatings; localStorage.setItem('ws-gallery-ratings', JSON.stringify(galleryRatings)); }
+            if (data.projects && data.projects.length) {
+                for (const p of data.projects) {
+                    try { await apiCall('projects', 'POST', p); } catch(e) {}
+                }
+                await loadProjects();
+            }
+            showToast('Import abgeschlossen', 'success');
+            renderView();
+        } catch(e) { showToast('Import fehlgeschlagen: ' + e.message, 'error'); }
+    };
+    input.click();
+}
+
+function exportProjectQR() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt', 'error'); return; }
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Projekt-QR: ' + escHtml(currentProject.title || currentProject.id) + '</h3>' +
+        generateQR(JSON.stringify({ id: currentProject.id, title: currentProject.title })) +
+        '<div class="modal-btns"><button onclick="document.getElementById(\'new-project-modal\').classList.add(\'hidden\');resetProjectModal()">Schliessen</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+
+// ===== Schritt 20: Gamification =====
+let xpData = JSON.parse(localStorage.getItem('ws-xp') || '{"xp":0,"level":1,"badges":[]}');
+
+const allBadges = [
+    { id: 'first_project', name: 'Erstling', icon: '&#127775;', desc: 'Erstes Projekt erstellt', check: () => projects.length >= 1 },
+    { id: 'five_projects', name: 'Sammler', icon: '&#128230;', desc: '5 Projekte erstellt', check: () => projects.length >= 5 },
+    { id: 'ten_projects', name: 'Meister', icon: '&#127942;', desc: '10 Projekte erstellt', check: () => projects.length >= 10 },
+    { id: 'first_complete', name: 'Abschluss', icon: '&#10003;', desc: 'Erstes Projekt abgeschlossen', check: () => projects.some(p => p.status === 'abgeschlossen') },
+    { id: 'wiki_author', name: 'Autor', icon: '&#128218;', desc: 'Wiki-Eintrag erstellt', check: () => wikiEntries.length >= 1 },
+    { id: 'time_tracker', name: 'Zeitjockey', icon: '&#128336;', desc: '1 Stunde erfasst', check: () => Object.values(timeTracking).flat().reduce((s,e) => s + (e.minutes||0), 0) >= 60 },
+    { id: 'night_owl', name: 'Nachteule', icon: '&#127769;', desc: 'Um Mitternacht aktiv', check: () => new Date().getHours() >= 0 && new Date().getHours() < 4 },
+    { id: 'schematic_pro', name: 'Schaltmeister', icon: '&#9999;', desc: 'Schaltplan mit 5+ Teilen', check: () => schParts.length >= 5 },
+    { id: 'safety_first', name: 'Sicherheit!', icon: '&#9888;', desc: 'Alle Sicherheitschecks bestanden', check: () => typeof safetyChecks !== 'undefined' && safetyChecks.length > 0 && safetyChecks.every(c => c.checked) },
+    { id: 'gallery_star', name: 'Kritiker', icon: '&#9733;', desc: '5 Projekte bewertet', check: () => Object.keys(galleryRatings).length >= 5 },
+];
+
+function checkBadges() {
+    let newBadges = false;
+    allBadges.forEach(b => {
+        if (!xpData.badges.includes(b.id) && b.check()) {
+            xpData.badges.push(b.id);
+            xpData.xp += 50;
+            newBadges = true;
+        }
+    });
+    xpData.level = Math.floor(xpData.xp / 100) + 1;
+    if (newBadges) {
+        localStorage.setItem('ws-xp', JSON.stringify(xpData));
+        showToast('Neues Badge freigeschaltet!', 'success');
+    }
+}
+
+function addXP(amount) {
+    xpData.xp += amount;
+    xpData.level = Math.floor(xpData.xp / 100) + 1;
+    localStorage.setItem('ws-xp', JSON.stringify(xpData));
+}
+
+function renderGamificationView(main) {
+    if (!main) main = document.getElementById('main-content');
+    checkBadges();
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#127942;</span><span class="widget-title">Erfolge & Level</span></div>';
+
+    // Level & XP
+    html += '<div style="text-align:center;margin-bottom:20px">';
+    html += '<div class="level-badge">Level ' + xpData.level + '</div>';
+    html += '<div style="font-size:24px;font-family:var(--mono);color:var(--accent);margin:8px 0">' + xpData.xp + ' XP</div>';
+    const nextLevel = xpData.level * 100;
+    const progress = ((xpData.xp % 100) / 100) * 100;
+    html += '<div style="max-width:300px;margin:0 auto">';
+    html += '<div class="xp-bar"><div class="xp-fill" style="width:' + progress + '%"></div></div>';
+    html += '<div style="font-size:10px;color:var(--text-secondary)">' + (xpData.xp % 100) + ' / 100 XP zum naechsten Level</div>';
+    html += '</div></div>';
+
+    // Badges
+    html += '<h4 style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Badges (' + xpData.badges.length + '/' + allBadges.length + ')</h4>';
+    html += '<div class="badge-grid">';
+    allBadges.forEach(b => {
+        const earned = xpData.badges.includes(b.id);
+        html += '<div class="badge-card ' + (earned ? 'earned' : 'locked') + '">';
+        html += '<div class="badge-icon">' + b.icon + '</div>';
+        html += '<div class="badge-name">' + b.name + '</div>';
+        html += '<div class="badge-desc">' + b.desc + '</div>';
+        html += '</div>';
+    });
+    html += '</div>';
+
+    // Stats
+    html += '<h4 style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin:20px 0 8px">Statistiken</h4>';
+    const stats = [
+        { label: 'Projekte gesamt', val: projects.length },
+        { label: 'Abgeschlossen', val: projects.filter(p => p.status === 'abgeschlossen').length },
+        { label: 'Wiki-Eintraege', val: wikiEntries.length },
+        { label: 'Stunden erfasst', val: Math.floor(Object.values(timeTracking).flat().reduce((s,e) => s + (e.minutes||0), 0) / 60) },
+        { label: 'Schaltplan-Teile', val: schParts.length },
+    ];
+    stats.forEach(s => {
+        html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">';
+        html += '<span style="color:var(--text-secondary)">' + s.label + '</span>';
+        html += '<span style="color:var(--accent);font-weight:600;font-family:var(--mono)">' + s.val + '</span></div>';
+    });
+
+    html += '</div>';
+
+    // Jarvis Zitat
+    const quotes = [
+        'Guten Tag, Sir. Darf ich Ihnen bei etwas behilflich sein?',
+        'Die Werkstatt ist bereit. Alle Systeme laufen nominal.',
+        'Soll ich die Kaffeemaschine aktivieren, Sir?',
+        'Ich habe alle Analysen vorbereitet. Sie muessen nur noch entscheiden.',
+        'Die Schaltplaene sehen vielversprechend aus, wenn ich das sagen darf.',
+        'Ihre Sicherheitschecks sind noch nicht abgeschlossen, Sir.',
+        'Manchmal frage ich mich, ob Sie auch schlafen, Sir.',
+        'Ich habe eine Optimierung fuer Ihr letztes Projekt gefunden.',
+    ];
+    html += '<div class="widget" style="text-align:center;font-style:italic">';
+    html += '<div style="font-size:12px;color:var(--text-secondary)">"' + quotes[Math.floor(Math.random() * quotes.length)] + '"</div>';
+    html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">— J.A.R.V.I.S.</div>';
+    html += '</div>';
+
+    main.innerHTML = html;
+}
+
+// ===== Konami Code Easter Egg =====
+let konamiPos = 0;
+const konamiCode = [38,38,40,40,37,39,37,39,66,65];
+document.addEventListener('keydown', (e) => {
+    if (e.keyCode === konamiCode[konamiPos]) {
+        konamiPos++;
+        if (konamiPos === konamiCode.length) {
+            konamiPos = 0;
+            document.body.style.animation = 'none';
+            document.body.offsetHeight;
+            document.body.style.animation = 'konamiFlash 0.5s ease 3';
+            addXP(100);
+            showToast('Easter Egg! +100 XP', 'success');
+        }
+    } else { konamiPos = 0; }
+});
+
+// ===== Settings Erweiterung: Import/Export + Ambient-Auto =====
+// (Wird in renderSettingsView integriert)
+
+// ===== Schritt 12: Material-Rechner Tabs =====
+function renderWoodCalcTab() {
+    let html = '<div style="padding:12px">';
+    html += '<div style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Holz-Rechner</div>';
+    html += '<div class="calc-form">';
+    html += '<label>Laenge (cm)</label><input id="wood-l" type="number" step="any" placeholder="100">';
+    html += '<label>Breite (cm)</label><input id="wood-w" type="number" step="any" placeholder="20">';
+    html += '<label>Dicke (cm)</label><input id="wood-d" type="number" step="any" placeholder="2">';
+    html += '<label>Holzart</label><select id="wood-type" style="width:100%;padding:6px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px">';
+    html += '<option value="0.5">Fichte (0.5 g/cm3)</option><option value="0.6">Kiefer (0.6 g/cm3)</option><option value="0.65">Buche (0.65 g/cm3)</option>';
+    html += '<option value="0.7">Eiche (0.7 g/cm3)</option><option value="0.45">Pappel (0.45 g/cm3)</option><option value="0.4">Balsa (0.4 g/cm3)</option></select>';
+    html += '<label>Preis pro m3 (EUR)</label><input id="wood-price" type="number" step="any" value="400">';
+    html += '<button class="step-btn" style="margin-top:8px" onclick="calcWood()">Berechnen</button>';
+    html += '</div><div id="wood-result" class="calc-result"></div></div>';
+    return html;
+}
+
+function calcWood() {
+    const l = parseFloat(document.getElementById('wood-l')?.value || 0);
+    const w = parseFloat(document.getElementById('wood-w')?.value || 0);
+    const d = parseFloat(document.getElementById('wood-d')?.value || 0);
+    const density = parseFloat(document.getElementById('wood-type')?.value || 0.5);
+    const price = parseFloat(document.getElementById('wood-price')?.value || 0);
+    const volCm3 = l * w * d;
+    const volM3 = volCm3 / 1000000;
+    const weightKg = (volCm3 * density) / 1000;
+    const cost = volM3 * price;
+    document.getElementById('wood-result').innerHTML =
+        '<div style="font-size:12px;color:var(--text-primary)">' +
+        '<div>Volumen: <b>' + volCm3.toFixed(1) + ' cm3</b> (' + (volM3 * 1000).toFixed(3) + ' dm3)</div>' +
+        '<div>Gewicht: <b>' + weightKg.toFixed(2) + ' kg</b></div>' +
+        '<div>Kosten: <b>' + cost.toFixed(2) + ' EUR</b></div></div>';
+}
+
+function render3DPrintCalcTab() {
+    let html = '<div style="padding:12px">';
+    html += '<div style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">3D-Druck Kosten</div>';
+    html += '<div class="calc-form">';
+    html += '<label>Geschaetztes Volumen (cm3)</label><input id="print-vol" type="number" step="any" placeholder="25">';
+    html += '<label>Fuellgrad (%)</label><input id="print-infill" type="number" value="20" min="0" max="100">';
+    html += '<label>Filament-Preis (EUR/kg)</label><input id="print-price" type="number" step="any" value="25">';
+    html += '<label>Filament-Typ</label><select id="print-type" style="width:100%;padding:6px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px">';
+    html += '<option value="1.24">PLA (1.24 g/cm3)</option><option value="1.04">ABS (1.04 g/cm3)</option>';
+    html += '<option value="1.27">PETG (1.27 g/cm3)</option><option value="1.14">TPU (1.14 g/cm3)</option></select>';
+    html += '<label>Druckgeschwindigkeit (mm/s)</label><input id="print-speed" type="number" value="60">';
+    html += '<button class="step-btn" style="margin-top:8px" onclick="calc3DPrint()">Berechnen</button>';
+    html += '</div><div id="print-result" class="calc-result"></div></div>';
+    return html;
+}
+
+function calc3DPrint() {
+    const vol = parseFloat(document.getElementById('print-vol')?.value || 0);
+    const infill = parseFloat(document.getElementById('print-infill')?.value || 20) / 100;
+    const price = parseFloat(document.getElementById('print-price')?.value || 25);
+    const density = parseFloat(document.getElementById('print-type')?.value || 1.24);
+    const speed = parseFloat(document.getElementById('print-speed')?.value || 60);
+    const shellVol = vol * 0.3;
+    const infillVol = vol * 0.7 * infill;
+    const totalVol = shellVol + infillVol;
+    const weightG = totalVol * density;
+    const cost = (weightG / 1000) * price;
+    const estTime = (totalVol * 1000) / (speed * 0.4 * 60);
+    const hours = Math.floor(estTime / 60);
+    const mins = Math.round(estTime % 60);
+    document.getElementById('print-result').innerHTML =
+        '<div style="font-size:12px;color:var(--text-primary)">' +
+        '<div>Material-Volumen: <b>' + totalVol.toFixed(1) + ' cm3</b></div>' +
+        '<div>Gewicht: <b>' + weightG.toFixed(1) + ' g</b></div>' +
+        '<div>Material-Kosten: <b>' + cost.toFixed(2) + ' EUR</b></div>' +
+        '<div>Gesch. Druckzeit: <b>' + hours + 'h ' + mins + 'm</b></div></div>';
+}
+
+function renderCableCalcTab() {
+    let html = '<div style="padding:12px">';
+    html += '<div style="font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Kabel-Laengen Rechner</div>';
+    html += '<div class="calc-form">';
+    html += '<label>Direkte Entfernung (cm)</label><input id="cable-dist" type="number" step="any" placeholder="50">';
+    html += '<label>Zugabe fuer Biegen (%)</label><input id="cable-extra" type="number" value="15">';
+    html += '<label>Anzahl Segmente</label><input id="cable-seg" type="number" value="1" min="1">';
+    html += '<label>Kabeltyp</label><select id="cable-type" style="width:100%;padding:6px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px">';
+    html += '<option value="0.5">Litze 0.5mm2</option><option value="0.75">Litze 0.75mm2</option><option value="1.5">Litze 1.5mm2</option>';
+    html += '<option value="2.5">Litze 2.5mm2</option><option value="dupont">Dupont-Kabel</option><option value="usb">USB-Kabel</option></select>';
+    html += '<button class="step-btn" style="margin-top:8px" onclick="calcCable()">Berechnen</button>';
+    html += '</div><div id="cable-result" class="calc-result"></div></div>';
+    return html;
+}
+
+function calcCable() {
+    const dist = parseFloat(document.getElementById('cable-dist')?.value || 0);
+    const extra = parseFloat(document.getElementById('cable-extra')?.value || 15) / 100;
+    const seg = parseInt(document.getElementById('cable-seg')?.value || 1);
+    const totalPerSeg = dist * (1 + extra);
+    const total = totalPerSeg * seg;
+    document.getElementById('cable-result').innerHTML =
+        '<div style="font-size:12px;color:var(--text-primary)">' +
+        '<div>Pro Segment: <b>' + totalPerSeg.toFixed(1) + ' cm</b></div>' +
+        '<div>Gesamt (' + seg + ' Segmente): <b>' + total.toFixed(1) + ' cm</b> (' + (total/100).toFixed(2) + ' m)</div>' +
+        '<div>Zugabe: <b>' + (dist * extra).toFixed(1) + ' cm</b> pro Segment</div></div>';
+}
+
+// ===== Init Drag & Drop Sidebar =====
+setTimeout(initSidebarDragDrop, 1000);
 
 // ===== Init =====
 window.addEventListener('DOMContentLoaded', bootWorkshop);

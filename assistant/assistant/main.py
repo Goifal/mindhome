@@ -4803,6 +4803,85 @@ async def workshop_add_inventory(request: Request):
     return {"success": True, "name": name}
 
 
+# ── Workshop: Phase 3 – Fehlende Endpoints ──────────────────
+
+
+@app.delete("/api/workshop/files/{project_id}/{filename}")
+async def workshop_delete_file(project_id: str, filename: str):
+    """Projektdatei loeschen."""
+    try:
+        await brain.workshop_gen.delete_file(project_id, filename)
+        return {"success": True, "message": f"{filename} geloescht"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/workshop/project/{project_id}/safety-checklist")
+async def workshop_safety_checklist(project_id: str):
+    """Projekt-spezifische Sicherheits-Checkliste."""
+    try:
+        result = await brain.repair_planner.generate_safety_checklist(
+            project_id)
+        return {"success": True, "checklist": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/workshop/environment")
+async def workshop_environment():
+    """Vollstaendiger Werkstatt-Umgebungsstatus."""
+    try:
+        result = await brain.repair_planner.get_workshop_environment()
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/workshop/snippets/{name}")
+async def workshop_get_snippet(name: str):
+    """Einzelnes Snippet abrufen."""
+    try:
+        result = await brain.repair_planner.get_snippet(name)
+        return {"success": True, "snippet": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/workshop/devices/check-all")
+async def workshop_check_all_devices():
+    """Alle verknuepften Geraete pruefen."""
+    try:
+        result = await brain.repair_planner.check_all_devices()
+        return {"success": True, "devices": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/notify")
+async def workshop_notify(request: Request):
+    """Push-Benachrichtigung senden."""
+    data = await request.json()
+    message = data.get("message", "").strip()
+    if not message:
+        raise HTTPException(400, "message erforderlich")
+    try:
+        result = await brain.repair_planner.notify_user(
+            message, level=data.get("level", "info"))
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/workshop/session/project")
+async def workshop_active_project():
+    """Aktuell aktives Projekt abfragen."""
+    try:
+        result = await brain.repair_planner.get_active_project()
+        return {"success": True, "project": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ── Workshop: Generators ────────────────────────────────────
 
 
