@@ -181,6 +181,11 @@ class SpontaneousObserver:
         if checks_cfg.get("house_efficiency", True):
             checks.append(self._check_house_efficiency)
 
+        # Deklarative Tools als zusaetzliche Checks
+        decl_cfg = yaml_config.get("declarative_tools", {})
+        if decl_cfg.get("enabled", True) and decl_cfg.get("use_in_spontaneous", True):
+            checks.append(self._check_declarative_tools)
+
         random.shuffle(checks)
 
         for check in checks:
@@ -447,3 +452,88 @@ class SpontaneousObserver:
         except Exception:
             pass
         return None
+
+    async def _check_declarative_tools(self) -> Optional[dict]:
+        """Fuehrt deklarierte Analyse-Tools aus und meldet interessante Ergebnisse.
+
+        Durchlaeuft alle vom User definierten Tools und prueft ob ein Ergebnis
+        erwaehnenswert ist (Schwellwerte ueberschritten, Trends erkannt etc.).
+        """
+        try:
+            from .declarative_tools import DeclarativeToolExecutor, get_registry
+
+            registry = get_registry()
+            tools = registry.list_tools()
+            if not tools:
+                return None
+
+            executor = DeclarativeToolExecutor(self.ha)
+            random.shuffle(tools)
+
+            for tool in tools[:5]:  # Max 5 Tools pro Durchlauf
+                tool_name = tool.get("name", "")
+                tool_type = tool.get("type", "")
+                cooldown_key = f"decl_tool_{tool_name}"
+
+                if await self._on_cooldown(cooldown_key):
+                    continue
+
+                result = await executor.execute(tool_name)
+                if not result.get("success"):
+                    continue
+
+                # Pruefen ob Ergebnis erwaehnenswert ist
+                interesting = self._is_tool_result_interesting(tool_type, result)
+                if not interesting:
+                    continue
+
+                title = await self._get_title_for_present()
+                tool_msg = result.get("message", "")
+                # Erste Zeile (Beschreibung) entfernen — Jarvis formuliert selbst
+                lines = tool_msg.split("\n")
+                data_lines = "\n".join(lines[1:]).strip() if len(lines) > 1 else tool_msg
+
+                message = (
+                    f"{title}, mir ist bei einer Routine-Analyse aufgefallen: "
+                    f"{data_lines}"
+                )
+
+                await self._set_cooldown(cooldown_key, 24 * 3600)
+                return {
+                    "message": message,
+                    "type": f"decl_tool_{tool_name}",
+                    "urgency": "low",
+                }
+
+        except Exception as e:
+            logger.debug("Declarative Tools Check Fehler: %s", e)
+        return None
+
+    @staticmethod
+    def _is_tool_result_interesting(tool_type: str, result: dict) -> bool:
+        """Entscheidet ob ein Tool-Ergebnis erwaehnenswert ist."""
+        if tool_type == "threshold_monitor":
+            return not result.get("in_range", True)
+
+        if tool_type == "trend_analyzer":
+            trend = result.get("trend", "stabil")
+            diff = abs(result.get("trend_diff", 0))
+            return trend != "stabil" and diff > 1.0
+
+        if tool_type == "entity_comparison":
+            val = result.get("result", 0)
+            return abs(val) > 0 and abs(val) > 0.5
+
+        if tool_type == "entity_aggregator":
+            values = result.get("values", {})
+            if len(values) >= 2:
+                vals = list(values.values())
+                spread = max(vals) - min(vals)
+                return spread > 3.0  # Signifikante Abweichung
+            return False
+
+        if tool_type == "event_counter":
+            return result.get("count", 0) >= 5
+
+        # multi_entity_formula, schedule_checker: immer erwaehnenswert
+        return True

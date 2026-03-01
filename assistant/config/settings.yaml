@@ -1053,6 +1053,10 @@ device_narration:
   enabled: true
   custom_nicknames: {}
     # waschmaschine: "Frau Waschkraft"
+# --- Deklarative Analyse-Tools ---
+declarative_tools:
+  enabled: true
+  use_in_spontaneous: true
 # --- Jarvis-Features: Spontane Beobachtungen ---
 spontaneous:
   enabled: true

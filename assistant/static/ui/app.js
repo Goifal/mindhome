@@ -7797,6 +7797,52 @@ function _declEntityListInput(id, label, domains, placeholder, values) {
 
 function declRmEntityTag(el) { el.parentElement.remove(); }
 
+// ── Multi-Entity-Formula Key-Value Editor ────────────────────
+var _declMefCounter = 0;
+
+function declMefAddRow(label, entityId, weight) {
+  var container = document.getElementById('declCfg_mef_rows');
+  if (!container) return;
+  var idx = _declMefCounter++;
+  var domStr = 'sensor,number,input_number';
+  var row = document.createElement('div');
+  row.className = 'decl-mef-row';
+  row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;';
+  row.innerHTML =
+    '<div style="flex:1;max-width:120px;">' +
+    '<input type="text" class="form-input" id="declMef_label_' + idx + '" value="' + esc(label || '') + '" placeholder="Label" style="font-size:12px;"></div>' +
+    '<div style="flex:2;" class="entity-pick-wrap">' +
+    '<input class="form-input entity-pick-input" id="declMef_entity_' + idx + '" value="' + esc(entityId || '') + '"' +
+    ' data-domains="' + domStr + '" placeholder="&#128269; Entity suchen..."' +
+    ' oninput="entityPickFilter(this,\'' + domStr + '\')" onfocus="entityPickFilter(this,\'' + domStr + '\')"' +
+    ' style="font-family:var(--mono);font-size:12px;">' +
+    '<div class="entity-pick-dropdown" style="display:none;"></div></div>' +
+    '<div style="flex:0 0 70px;">' +
+    '<input type="number" class="form-input" id="declMef_weight_' + idx + '" value="' + (weight != null ? weight : '') + '" placeholder="Gew." step="0.1" style="font-size:12px;"></div>' +
+    '<button type="button" class="btn btn-sm btn-danger" onclick="this.closest(\'.decl-mef-row\').remove()" style="padding:4px 8px;margin-top:1px;">&#10005;</button>';
+  container.appendChild(row);
+}
+
+function _collectDeclMefEntities() {
+  var container = document.getElementById('declCfg_mef_rows');
+  if (!container) return {entities: {}, weights: {}};
+  var entities = {}, weights = {};
+  var rows = container.querySelectorAll('.decl-mef-row');
+  rows.forEach(function(row) {
+    var labelEl = row.querySelector('[id^="declMef_label_"]');
+    var entityEl = row.querySelector('[id^="declMef_entity_"]');
+    var weightEl = row.querySelector('[id^="declMef_weight_"]');
+    var label = (labelEl?.value || '').trim();
+    var entity = (entityEl?.value || '').trim();
+    if (label && entity) {
+      entities[label] = entity;
+      var w = weightEl?.value;
+      if (w !== '' && w != null) weights[label] = parseFloat(w);
+    }
+  });
+  return {entities: entities, weights: weights};
+}
+
 function _getDeclEntityList(id) {
   const editor = document.getElementById(id);
   if (!editor) return [];
@@ -7838,7 +7884,10 @@ async function loadDeclarativeTools() {
   try {
     const d = await api('/api/ui/declarative-tools');
     _declTools = d.tools || [];
+    _declEnabled = d.enabled !== false;
+    _declSpontaneous = d.use_in_spontaneous !== false;
     _renderDeclToolList();
+    _updateDeclEnabledUI();
   } catch(e) { console.error('Declarative tools load fail:', e); }
 }
 
@@ -7941,12 +7990,16 @@ function _prefillDeclConfig(type, config) {
       break;
     }
     case 'multi_entity_formula': {
-      var e = document.getElementById('declCfg_entities');
       var f = document.getElementById('declCfg_formula');
-      var w = document.getElementById('declCfg_weights');
-      if (e) e.value = JSON.stringify(config.entities || {}, null, 2);
       if (f) f.value = config.formula || 'average';
-      if (w && config.weights) w.value = JSON.stringify(config.weights);
+      var ents = config.entities || {};
+      var wts = config.weights || {};
+      _declMefCounter = 0;
+      var mefContainer = document.getElementById('declCfg_mef_rows');
+      if (mefContainer) mefContainer.innerHTML = '';
+      Object.keys(ents).forEach(function(label) {
+        declMefAddRow(label, ents[label], wts[label]);
+      });
       break;
     }
     case 'event_counter':
@@ -8025,15 +8078,16 @@ function _declTypeConfigFields(type) {
         DECL_OPERATIONS.map(o => '<option value="' + o.v + '">' + o.l + '</option>').join('') +
         '</select></div>';
     case 'multi_entity_formula':
-      return '<div class="form-group"><label>Entities (JSON: {"label": "entity_id", ...})' + helpBtn('decl_tools.entities') + '</label>' +
-        '<textarea id="declCfg_entities" rows="3" placeholder=\'{"temp": "sensor.wohnzimmer_temp", "hum": "sensor.wohnzimmer_hum"}\' style="font-family:var(--mono);font-size:12px;"></textarea>' +
-        '<div class="hint">Labels werden in der Ausgabe als Bezeichner verwendet</div></div>' +
+      return '<div class="form-group"><label>Entities' + helpBtn('decl_tools.entities') + '</label>' +
+        '<div id="declCfg_mef_rows"></div>' +
+        '<button type="button" class="btn btn-sm" onclick="declMefAddRow()" style="margin-top:6px;">&#10010; Entity hinzufuegen</button>' +
+        '<div class="hint">Label = Bezeichner in der Ausgabe, Entity = HA-Sensor</div></div>' +
         '<div class="form-group"><label>Formel' + helpBtn('decl_tools.formula') + '</label><select id="declCfg_formula">' +
         DECL_FORMULAS.map(o => '<option value="' + o.v + '">' + o.l + '</option>').join('') +
         '</select></div>' +
-        '<div class="form-group"><label>Gewichte (optional, JSON)</label>' +
-        '<input type="text" id="declCfg_weights" placeholder=\'{"temp": 0.6, "hum": 0.4}\' style="font-family:var(--mono);font-size:12px;">' +
-        '<div class="hint">Nur bei "Gewichteter Durchschnitt"</div></div>';
+        '<div class="form-group"><label>Gewichte (optional)</label>' +
+        '<div class="hint">Gewichte pro Label (nur bei "Gewichteter Durchschnitt"). Leer = gleich gewichtet.</div>' +
+        '<div id="declCfg_weights_info" style="font-size:12px;color:var(--text-secondary);margin-top:4px;">Gewichte werden automatisch aus den Entity-Zeilen generiert.</div></div>';
     case 'event_counter':
       return _declEntityListInput('declCfg_entities_list', 'Entities', ['binary_sensor','sensor'], 'Entity suchen...') +
         '<div class="form-group"><label>State zaehlen</label>' +
@@ -8080,14 +8134,14 @@ function _collectDeclConfig(type) {
       if (!cfg.entity_a) errors.push('Entity A ist erforderlich');
       if (!cfg.entity_b) errors.push('Entity B ist erforderlich');
       break;
-    case 'multi_entity_formula':
-      try { cfg.entities = JSON.parse(document.getElementById('declCfg_entities')?.value || '{}'); }
-      catch(e) { errors.push('Entities: Ungueltiges JSON'); break; }
+    case 'multi_entity_formula': {
+      var mef = _collectDeclMefEntities();
+      cfg.entities = mef.entities;
       cfg.formula = document.getElementById('declCfg_formula')?.value || 'average';
-      if (Object.keys(cfg.entities).length < 2) errors.push('Mindestens 2 Entities erforderlich');
-      var wStr = (document.getElementById('declCfg_weights')?.value || '').trim();
-      if (wStr) { try { cfg.weights = JSON.parse(wStr); } catch(e) { errors.push('Gewichte: Ungueltiges JSON'); } }
+      if (Object.keys(cfg.entities).length < 2) errors.push('Mindestens 2 Entities mit Label erforderlich');
+      if (Object.keys(mef.weights).length > 0) cfg.weights = mef.weights;
       break;
+    }
     case 'event_counter':
       cfg.entities = _getDeclEntityList('declCfg_entities_list');
       cfg.count_state = (document.getElementById('declCfg_count_state')?.value || 'on').trim();
@@ -8145,6 +8199,12 @@ function onDeclTypeChange() {
   var descField = document.getElementById('declNewDesc');
   if (descField && !descField.value && typeInfo) descField.placeholder = typeInfo.desc;
   _clearDeclValidation();
+  // Bei multi_entity_formula: 2 leere Zeilen als Startpunkt
+  if (type === 'multi_entity_formula') {
+    _declMefCounter = 0;
+    declMefAddRow('', '', null);
+    declMefAddRow('', '', null);
+  }
 }
 
 async function createDeclTool() {
@@ -8170,10 +8230,54 @@ async function createDeclTool() {
   }
 }
 
+// ── Feature-Toggle ───────────────────────────────────────────
+let _declEnabled = true;
+let _declSpontaneous = true;
+
+async function toggleDeclEnabled() {
+  _declEnabled = !_declEnabled;
+  try {
+    await api('/api/ui/settings', 'PUT', {declarative_tools: {enabled: _declEnabled}});
+    toast('Analyse-Tools ' + (_declEnabled ? 'aktiviert' : 'deaktiviert'), 'success');
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); _declEnabled = !_declEnabled; }
+  _updateDeclEnabledUI();
+}
+
+async function toggleDeclSpontaneous() {
+  _declSpontaneous = !_declSpontaneous;
+  try {
+    await api('/api/ui/settings', 'PUT', {declarative_tools: {use_in_spontaneous: _declSpontaneous}});
+    toast('Proaktive Nutzung ' + (_declSpontaneous ? 'aktiviert' : 'deaktiviert'), 'success');
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); _declSpontaneous = !_declSpontaneous; }
+  var t = document.getElementById('declSpontaneousToggle');
+  if (t) t.checked = _declSpontaneous;
+}
+
+function _updateDeclEnabledUI() {
+  var toggle = document.getElementById('declEnabledToggle');
+  if (toggle) toggle.checked = _declEnabled;
+  var spToggle = document.getElementById('declSpontaneousToggle');
+  if (spToggle) spToggle.checked = _declSpontaneous;
+  var body = document.getElementById('declBody');
+  if (body) {
+    body.style.opacity = _declEnabled ? '1' : '0.4';
+    body.style.pointerEvents = _declEnabled ? 'auto' : 'none';
+  }
+}
+
 // ── Haupt-Render ─────────────────────────────────────────────
 function renderDeclarativeTools() {
-  return sectionWrap('&#128736;', 'Aktive Analyse-Tools',
-    fInfo('Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus (nur Lese-Zugriff). Max. 20 Tools.' + helpBtn('decl_tools.overview')) +
+  return sectionWrap('&#128736;', 'Analyse-Tools',
+    '<div class="form-group"><div class="toggle-group"><label>Analyse-Tools aktiviert</label>' +
+    '<label class="toggle"><input type="checkbox" id="declEnabledToggle" onchange="toggleDeclEnabled()" checked>' +
+    '<span class="toggle-track"></span><span class="toggle-thumb"></span></label></div></div>' +
+    '<div class="form-group"><div class="toggle-group"><label>Proaktive Nutzung (Jarvis erwaehnt Ergebnisse spontan)</label>' +
+    '<label class="toggle"><input type="checkbox" id="declSpontaneousToggle" onchange="toggleDeclSpontaneous()" checked>' +
+    '<span class="toggle-track"></span><span class="toggle-thumb"></span></label></div></div>' +
+    fInfo('Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus (nur Lese-Zugriff). Max. 20 Tools.' + helpBtn('decl_tools.overview'))
+  ) +
+  '<div id="declBody">' +
+  sectionWrap('&#128202;', 'Aktive Tools',
     '<div id="declToolList" style="margin-top:12px;"><div style="padding:16px;color:var(--text-secondary);">Lade...</div></div>'
   ) +
   sectionWrap('&#128220;', 'Vorlagen',
@@ -8211,5 +8315,6 @@ function renderDeclarativeTools() {
     '<strong>Verfuegbare Typen:</strong><br>' +
     DECL_TOOL_TYPES.map(function(t) { return '<span style="color:var(--accent);">' + t.l + '</span> — ' + t.desc; }).join('<br>') +
     '</div>'
-  );
+  ) +
+  '</div>'; // Ende declBody
 }

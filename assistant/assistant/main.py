@@ -3601,15 +3601,20 @@ async def ui_get_declarative_tools(token: str = ""):
     """Alle deklarativen Tools auflisten."""
     _check_token(token)
     from .declarative_tools import get_registry
+    decl_cfg = yaml_config.get("declarative_tools", {})
+    enabled = decl_cfg.get("enabled", True)
+    use_in_spontaneous = decl_cfg.get("use_in_spontaneous", True)
     registry = get_registry()
     tools = registry.list_tools()
-    return {"tools": tools, "count": len(tools)}
+    return {"tools": tools, "count": len(tools), "enabled": enabled, "use_in_spontaneous": use_in_spontaneous}
 
 
 @app.post("/api/ui/declarative-tools")
 async def ui_create_declarative_tool(request: Request, token: str = ""):
     """Deklaratives Tool erstellen oder aktualisieren."""
     _check_token(token)
+    if not yaml_config.get("declarative_tools", {}).get("enabled", True):
+        raise HTTPException(status_code=403, detail="Analyse-Tools sind deaktiviert")
     from .declarative_tools import get_registry
     body = await request.json()
     name = body.get("name", "").strip()
