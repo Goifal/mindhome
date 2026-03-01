@@ -2507,7 +2507,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "create_declarative_tool",
-            "description": "Erstellt ein neues deklaratives Analyse-Tool. Deklarative Tools fuehren vordefinierte Berechnungen auf HA-Entities aus (NUR Lese-Zugriff). Verfuegbare Typen: entity_comparison (Vergleich zweier Entities), multi_entity_formula (Kombination mehrerer Entities mit average/weighted_average/sum/min/max/difference), event_counter (zaehlt State-Aenderungen), threshold_monitor (prueft ob Wert in Bereich), trend_analyzer (Trend ueber Zeitraum), entity_aggregator (Aggregation ueber mehrere Entities), schedule_checker (zeitbasierte Checks). Max 20 Tools.",
+            "description": "Erstellt ein neues deklaratives Analyse-Tool. Deklarative Tools fuehren vordefinierte Berechnungen auf HA-Entities aus (NUR Lese-Zugriff). Verfuegbare Typen: entity_comparison (Vergleich zweier Entities), multi_entity_formula (Kombination mehrerer Entities mit average/weighted_average/sum/min/max/difference), event_counter (zaehlt State-Aenderungen), threshold_monitor (prueft ob Wert in Bereich), trend_analyzer (Trend ueber Zeitraum), entity_aggregator (Aggregation ueber mehrere Entities), schedule_checker (zeitbasierte Checks), state_duration (wie lange war ein Zustand aktiv, z.B. Heizung lief X Stunden), time_comparison (Vergleich einer Entity mit sich selbst ueber verschiedene Zeitraeume: yesterday/last_week/last_month).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2521,12 +2521,12 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "type": {
                         "type": "string",
-                        "enum": ["entity_comparison", "multi_entity_formula", "event_counter", "threshold_monitor", "trend_analyzer", "entity_aggregator", "schedule_checker"],
+                        "enum": ["entity_comparison", "multi_entity_formula", "event_counter", "threshold_monitor", "trend_analyzer", "entity_aggregator", "schedule_checker", "state_duration", "time_comparison"],
                         "description": "Typ des Tools.",
                     },
                     "config_json": {
                         "type": "string",
-                        "description": "Tool-Konfiguration als JSON-String. Beispiel fuer entity_comparison: {\"entity_a\": \"sensor.strom_heute\", \"entity_b\": \"sensor.strom_gestern\", \"operation\": \"difference\"}. Beispiel fuer entity_aggregator: {\"entities\": [\"sensor.temp_wohn\", \"sensor.temp_schlaf\"], \"aggregation\": \"average\"}. Beispiel fuer threshold_monitor: {\"entity\": \"sensor.luftfeuchtigkeit\", \"thresholds\": {\"min\": 40, \"max\": 60}}. Beispiel fuer trend_analyzer: {\"entity\": \"sensor.temperatur\", \"time_range\": \"24h\"}. Beispiel fuer event_counter: {\"entities\": [\"binary_sensor.tuer\"], \"count_state\": \"on\", \"time_range\": \"24h\"}.",
+                        "description": "Tool-Konfiguration als JSON-String. Beispiele: entity_comparison: {\"entity_a\": \"sensor.strom_heute\", \"entity_b\": \"sensor.strom_gestern\", \"operation\": \"difference\"}. entity_aggregator: {\"entities\": [\"sensor.temp_wohn\", \"sensor.temp_schlaf\"], \"aggregation\": \"average\"}. threshold_monitor: {\"entity\": \"sensor.luftfeuchtigkeit\", \"thresholds\": {\"min\": 40, \"max\": 60}}. trend_analyzer: {\"entity\": \"sensor.temperatur\", \"time_range\": \"24h\"}. event_counter: {\"entities\": [\"binary_sensor.tuer\"], \"count_state\": \"on\", \"time_range\": \"24h\"}. state_duration: {\"entity\": \"climate.wohnzimmer\", \"target_state\": \"heating\", \"time_range\": \"24h\"}. time_comparison: {\"entity\": \"sensor.strom\", \"compare_period\": \"yesterday\", \"aggregation\": \"average\"}.",
                     },
                 },
                 "required": ["name", "description", "type", "config_json"],

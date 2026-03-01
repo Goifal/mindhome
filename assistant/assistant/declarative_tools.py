@@ -9,12 +9,13 @@ Jarvis kann Tools definieren die auf vordefinierte Berechnungs-Typen zugreifen:
 - trend_analyzer: Trend-Analyse ueber Zeitraum
 - entity_aggregator: Aggregation ueber mehrere Entities
 - schedule_checker: Zeitbasierte Checks
+- state_duration: Wie lange war ein Zustand aktiv (z.B. Heizung lief X Stunden)
+- time_comparison: Vergleich einer Entity mit sich selbst ueber verschiedene Zeitraeume
 
 Sicherheit:
 - Kein Python-Code wird ausgefuehrt
 - Nur Lese-Zugriff auf HA-Daten (get_state, get_history)
 - Schema-Validierung fuer alle Configs
-- Max 20 aktive Tools
 """
 
 import logging
@@ -46,6 +47,8 @@ VALID_TYPES = frozenset({
     "trend_analyzer",
     "entity_aggregator",
     "schedule_checker",
+    "state_duration",
+    "time_comparison",
 })
 
 VALID_OPERATIONS = frozenset({
@@ -191,6 +194,19 @@ class DeclarativeToolRegistry:
             schedules = config.get("schedules", [])
             if not schedules:
                 return "Mindestens ein Schedule erforderlich."
+
+        elif tool_type == "state_duration":
+            if not config.get("entity"):
+                return "entity erforderlich."
+            if not config.get("target_state"):
+                return "target_state erforderlich (z.B. 'on', 'heating')."
+
+        elif tool_type == "time_comparison":
+            if not config.get("entity"):
+                return "entity erforderlich."
+            period = config.get("compare_period", "")
+            if period not in ("yesterday", "last_week", "last_month"):
+                return f"Ungueltiger compare_period '{period}'. Erlaubt: yesterday, last_week, last_month"
 
         return None
 
@@ -531,7 +547,13 @@ class DeclarativeToolExecutor:
             start_min = sh * 60 + sm
             end_min = eh * 60 + em
 
-            if start_min <= current_time_min <= end_min:
+            # Nacht-Zeitplaene (z.B. 22:00-06:00) beruecksichtigen
+            if start_min <= end_min:
+                match = start_min <= current_time_min <= end_min
+            else:
+                match = current_time_min >= start_min or current_time_min <= end_min
+
+            if match:
                 active_schedule = sched
                 break
 
@@ -546,6 +568,166 @@ class DeclarativeToolExecutor:
             "message": msg,
             "active": active_schedule is not None,
             "schedule": active_schedule.get("label", "") if active_schedule else "",
+        }
+
+
+    # ── state_duration ─────────────────────────────────────────
+    async def _exec_state_duration(self, config: dict, description: str) -> dict:
+        """Berechnet wie lange eine Entity in einem bestimmten Zustand war."""
+        entity_id = config["entity"]
+        target_state = config["target_state"]
+        hours = self._parse_time_range(config)
+
+        try:
+            history = await self.ha.get_history(entity_id, hours=hours)
+        except Exception as e:
+            return {"success": False, "message": f"Fehler: {e}"}
+
+        if not history:
+            return {"success": False, "message": f"Keine Historie fuer {entity_id}"}
+
+        name = await self._get_entity_name(entity_id)
+
+        # Dauer berechnen: Zeitdifferenz zwischen State-Wechseln
+        total_seconds = 0
+        in_target = False
+        last_ts = None
+
+        for entry in history:
+            state = entry.get("state", "")
+            ts_str = entry.get("last_changed", "") or entry.get("last_updated", "")
+            if not ts_str:
+                continue
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                continue
+
+            if in_target and last_ts:
+                total_seconds += (ts - last_ts).total_seconds()
+
+            in_target = state == target_state
+            last_ts = ts
+
+        # Wenn aktuell noch im Target-State: bis jetzt zaehlen
+        if in_target and last_ts:
+            from datetime import timezone
+            now = datetime.now(timezone.utc)
+            total_seconds += (now - last_ts).total_seconds()
+
+        total_minutes = total_seconds / 60
+        total_hours = total_seconds / 3600
+
+        if total_hours >= 1:
+            duration_text = f"{total_hours:.1f} Stunden"
+        else:
+            duration_text = f"{total_minutes:.0f} Minuten"
+
+        # Prozent der Gesamtzeit
+        total_period = hours * 3600
+        pct = (total_seconds / total_period * 100) if total_period else 0
+
+        msg = (
+            f"{description}\n"
+            f"{name}: '{target_state}' fuer {duration_text} (letzte {hours}h)\n"
+            f"Anteil: {pct:.1f}% der Gesamtzeit"
+        )
+        return {
+            "success": True, "message": msg,
+            "duration_seconds": total_seconds, "duration_hours": total_hours,
+            "percentage": pct,
+        }
+
+    # ── time_comparison ───────────────────────────────────────
+    async def _exec_time_comparison(self, config: dict, description: str) -> dict:
+        """Vergleicht eine Entity mit sich selbst ueber verschiedene Zeitraeume."""
+        entity_id = config["entity"]
+        compare_period = config.get("compare_period", "yesterday")
+        aggregation = config.get("aggregation", "average")
+
+        # Zeitraeume bestimmen
+        if compare_period == "yesterday":
+            current_hours = 24
+            offset_hours = 24
+            period_label = "gestern"
+        elif compare_period == "last_week":
+            current_hours = 168
+            offset_hours = 168
+            period_label = "letzte Woche"
+        elif compare_period == "last_month":
+            current_hours = 720
+            offset_hours = 720
+            period_label = "letzter Monat"
+        else:
+            current_hours = 24
+            offset_hours = 24
+            period_label = "vorheriger Zeitraum"
+
+        name = await self._get_entity_name(entity_id)
+        unit = await self._get_entity_unit(entity_id)
+
+        # Aktuelle Periode
+        try:
+            current_history = await self.ha.get_history(entity_id, hours=current_hours)
+        except Exception:
+            current_history = None
+
+        # Vorherige Periode (doppelter Zeitraum holen, erste Haelfte nehmen)
+        try:
+            full_history = await self.ha.get_history(entity_id, hours=current_hours + offset_hours)
+        except Exception:
+            full_history = None
+
+        def _aggregate(entries):
+            if not entries:
+                return None
+            vals = []
+            for e in entries:
+                try:
+                    vals.append(float(e.get("state", "")))
+                except (ValueError, TypeError):
+                    pass
+            if not vals:
+                return None
+            if aggregation == "average":
+                return sum(vals) / len(vals)
+            elif aggregation == "min":
+                return min(vals)
+            elif aggregation == "max":
+                return max(vals)
+            elif aggregation == "sum":
+                return sum(vals)
+            return sum(vals) / len(vals)
+
+        current_val = _aggregate(current_history)
+        if current_val is None:
+            return {"success": False, "message": f"Keine aktuellen Daten fuer {name}"}
+
+        # Vorherige Periode: alle Eintraege die NICHT in current_history sind
+        previous_val = None
+        if full_history and current_history:
+            current_count = len(current_history)
+            previous_entries = full_history[:-current_count] if current_count < len(full_history) else []
+            previous_val = _aggregate(previous_entries)
+
+        if previous_val is None:
+            return {"success": False, "message": f"Keine historischen Daten fuer Vergleich ({period_label})"}
+
+        diff = current_val - previous_val
+        pct_change = ((diff / previous_val) * 100) if previous_val != 0 else 0
+        trend = "hoeher" if diff > 0 else ("niedriger" if diff < 0 else "gleich")
+
+        msg = (
+            f"{description}\n"
+            f"{name} ({aggregation}):\n"
+            f"  Aktuell: {current_val:.1f}{unit}\n"
+            f"  {period_label.capitalize()}: {previous_val:.1f}{unit}\n"
+            f"  Aenderung: {diff:+.1f}{unit} ({pct_change:+.1f}%) — {trend}"
+        )
+        return {
+            "success": True, "message": msg,
+            "current": current_val, "previous": previous_val,
+            "diff": diff, "pct_change": pct_change,
         }
 
 

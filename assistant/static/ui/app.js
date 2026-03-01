@@ -7730,6 +7730,8 @@ const DECL_TOOL_TYPES = [
   {v:'trend_analyzer', l:'Trend-Analyse', desc:'Analysiert Trend ueber Zeitraum (steigend/fallend/stabil)'},
   {v:'entity_aggregator', l:'Entity-Aggregation', desc:'Aggregiert ueber mehrere Entities (Durchschnitt aller Raeume)'},
   {v:'schedule_checker', l:'Zeitplan-Check', desc:'Prueft zeitbasierte Regeln (Nachtmodus, Arbeitszeit)'},
+  {v:'state_duration', l:'Zustandsdauer', desc:'Wie lange war ein Zustand aktiv (z.B. Heizung lief X Stunden)'},
+  {v:'time_comparison', l:'Zeitvergleich', desc:'Vergleicht Entity mit sich selbst (heute vs. gestern/Woche/Monat)'},
 ];
 
 const DECL_OPERATIONS = [
@@ -7749,19 +7751,85 @@ const DECL_TIME_RANGES = [
   {v:'1h', l:'1 Stunde'},{v:'6h', l:'6 Stunden'},{v:'12h', l:'12 Stunden'},
   {v:'24h', l:'24 Stunden'},{v:'48h', l:'48 Stunden'},{v:'7d', l:'7 Tage'},{v:'30d', l:'30 Tage'},
 ];
+const DECL_COMPARE_PERIODS = [
+  {v:'yesterday', l:'Gestern'},{v:'last_week', l:'Letzte Woche'},{v:'last_month', l:'Letzter Monat'},
+];
 
 // ── Vorlagen ─────────────────────────────────────────────────
 const DECL_PRESETS = [
+  // ── Entity-Vergleich ──────────────────────────────
   {name:'stromvergleich', desc:'Vergleicht aktuellen mit gestrigem Stromverbrauch', type:'entity_comparison',
    config:{entity_a:'sensor.strom_heute', entity_b:'sensor.strom_gestern', operation:'difference'}},
-  {name:'raumtemperaturen', desc:'Durchschnittstemperatur aller Raeume', type:'entity_aggregator',
-   config:{entities:['sensor.wohnzimmer_temperatur','sensor.schlafzimmer_temperatur','sensor.kueche_temperatur'], aggregation:'average'}},
+  {name:'innen_vs_aussen', desc:'Temperaturunterschied innen vs. aussen', type:'entity_comparison',
+   config:{entity_a:'sensor.wohnzimmer_temperatur', entity_b:'sensor.aussen_temperatur', operation:'difference'}},
+  {name:'solar_vs_verbrauch', desc:'Solarertrag vs. Stromverbrauch (Verhaeltnis)', type:'entity_comparison',
+   config:{entity_a:'sensor.solar_produktion', entity_b:'sensor.stromverbrauch', operation:'ratio'}},
+
+  // ── Multi-Entity-Formel ───────────────────────────
+  {name:'komfort_index', desc:'Gewichteter Komfort-Index aus Temperatur und Luftfeuchtigkeit', type:'multi_entity_formula',
+   config:{entities:{temp:'sensor.wohnzimmer_temperatur', hum:'sensor.wohnzimmer_luftfeuchtigkeit'}, formula:'weighted_average', weights:{temp:0.6, hum:0.4}}},
+  {name:'gesamt_stromverbrauch', desc:'Summe aller Stromzaehler', type:'multi_entity_formula',
+   config:{entities:{kueche:'sensor.strom_kueche', wohnzimmer:'sensor.strom_wohnzimmer', buero:'sensor.strom_buero'}, formula:'sum'}},
+
+  // ── Event-Zaehler ─────────────────────────────────
   {name:'tuerbewegungen', desc:'Zaehlt Tueroeffnungen heute', type:'event_counter',
    config:{entities:['binary_sensor.haustuer_kontakt'], count_state:'on', time_range:'24h'}},
+  {name:'licht_schaltungen', desc:'Wie oft wurden Lichter heute geschaltet?', type:'event_counter',
+   config:{entities:['light.wohnzimmer','light.kueche','light.flur'], count_state:'on', time_range:'24h'}},
+  {name:'fenster_oeffnungen', desc:'Fenster-Oeffnungen diese Woche', type:'event_counter',
+   config:{entities:['binary_sensor.fenster_wohnzimmer','binary_sensor.fenster_schlafzimmer'], count_state:'on', time_range:'7d'}},
+
+  // ── Schwellwert-Monitor ───────────────────────────
   {name:'luftfeuchtigkeit_check', desc:'Prueft ob Luftfeuchtigkeit im Komfortbereich (40-60%)', type:'threshold_monitor',
    config:{entity:'sensor.wohnzimmer_luftfeuchtigkeit', thresholds:{min:40, max:60}}},
+  {name:'co2_warnung', desc:'CO2-Wert unter 1000 ppm halten', type:'threshold_monitor',
+   config:{entity:'sensor.co2', thresholds:{max:1000}}},
+  {name:'batterie_check', desc:'Batterie-Sensor nicht unter 20% fallen lassen', type:'threshold_monitor',
+   config:{entity:'sensor.tuersensor_batterie', thresholds:{min:20}}},
+  {name:'raumtemperatur_check', desc:'Raumtemperatur im Wohlfuehlbereich (19-23 Grad)', type:'threshold_monitor',
+   config:{entity:'sensor.wohnzimmer_temperatur', thresholds:{min:19, max:23}}},
+
+  // ── Trend-Analyse ─────────────────────────────────
   {name:'temperatur_trend', desc:'Temperatur-Trend der letzten 24 Stunden', type:'trend_analyzer',
    config:{entity:'sensor.aussen_temperatur', time_range:'24h'}},
+  {name:'stromverbrauch_trend', desc:'Stromverbrauch-Trend der letzten 7 Tage', type:'trend_analyzer',
+   config:{entity:'sensor.stromverbrauch', time_range:'7d'}},
+  {name:'luftfeuchtigkeit_trend', desc:'Luftfeuchtigkeit-Entwicklung letzte 12 Stunden', type:'trend_analyzer',
+   config:{entity:'sensor.wohnzimmer_luftfeuchtigkeit', time_range:'12h'}},
+
+  // ── Entity-Aggregation ────────────────────────────
+  {name:'raumtemperaturen', desc:'Durchschnittstemperatur aller Raeume', type:'entity_aggregator',
+   config:{entities:['sensor.wohnzimmer_temperatur','sensor.schlafzimmer_temperatur','sensor.kueche_temperatur'], aggregation:'average'}},
+  {name:'kaeltester_raum', desc:'Findet den kaeltesten Raum', type:'entity_aggregator',
+   config:{entities:['sensor.wohnzimmer_temperatur','sensor.schlafzimmer_temperatur','sensor.kueche_temperatur','sensor.bad_temperatur'], aggregation:'min'}},
+  {name:'feuchtester_raum', desc:'Hoechste Luftfeuchtigkeit aller Raeume', type:'entity_aggregator',
+   config:{entities:['sensor.wohnzimmer_luftfeuchtigkeit','sensor.schlafzimmer_luftfeuchtigkeit','sensor.bad_luftfeuchtigkeit'], aggregation:'max'}},
+
+  // ── Zeitplan-Check ────────────────────────────────
+  {name:'nachtmodus', desc:'Prueft ob Nachtmodus aktiv ist (22-07 Uhr)', type:'schedule_checker',
+   config:{schedules:[{label:'Nachtmodus', start:'22:00', end:'07:00'}]}},
+  {name:'arbeitszeit', desc:'Prueft Arbeitszeit (Mo-Fr 9-17 Uhr)', type:'schedule_checker',
+   config:{schedules:[{label:'Arbeitszeit', start:'09:00', end:'17:00', days:['monday','tuesday','wednesday','thursday','friday']}]}},
+
+  // ── Zustandsdauer (NEU) ───────────────────────────
+  {name:'heizung_laufzeit', desc:'Wie lange lief die Heizung heute?', type:'state_duration',
+   config:{entity:'climate.wohnzimmer', target_state:'heating', time_range:'24h'}},
+  {name:'licht_brenndauer', desc:'Wie lange brannte das Wohnzimmerlicht heute?', type:'state_duration',
+   config:{entity:'light.wohnzimmer', target_state:'on', time_range:'24h'}},
+  {name:'fenster_offen_dauer', desc:'Wie lange war das Fenster heute geoeffnet?', type:'state_duration',
+   config:{entity:'binary_sensor.fenster_wohnzimmer', target_state:'on', time_range:'24h'}},
+  {name:'tv_nutzung', desc:'Fernseher-Betriebsstunden diese Woche', type:'state_duration',
+   config:{entity:'media_player.fernseher', target_state:'on', time_range:'7d'}},
+  {name:'waermepumpe_laufzeit', desc:'Waermepumpe Laufzeit letzte 7 Tage', type:'state_duration',
+   config:{entity:'switch.waermepumpe', target_state:'on', time_range:'7d'}},
+
+  // ── Zeitvergleich (NEU) ───────────────────────────
+  {name:'strom_vs_gestern', desc:'Stromverbrauch heute vs. gestern', type:'time_comparison',
+   config:{entity:'sensor.stromverbrauch', compare_period:'yesterday', aggregation:'average'}},
+  {name:'temperatur_vs_vorwoche', desc:'Temperatur diese vs. letzte Woche', type:'time_comparison',
+   config:{entity:'sensor.aussen_temperatur', compare_period:'last_week', aggregation:'average'}},
+  {name:'heizkosten_monatsvergleich', desc:'Heizenergie diesen vs. letzten Monat', type:'time_comparison',
+   config:{entity:'sensor.heizung_verbrauch', compare_period:'last_month', aggregation:'sum'}},
 ];
 
 // ── Entity-Picker Helfer (standalone, ohne Settings-Binding) ─
@@ -8048,6 +8116,24 @@ function _prefillDeclConfig(type, config) {
       if (s) s.value = JSON.stringify(config.schedules || [], null, 2);
       break;
     }
+    case 'state_duration': {
+      var ent3 = document.getElementById('declCfg_entity');
+      var ts = document.getElementById('declCfg_target_state');
+      var tr3 = document.getElementById('declCfg_time_range');
+      if (ent3) ent3.value = config.entity || '';
+      if (ts) ts.value = config.target_state || '';
+      if (tr3) tr3.value = config.time_range || '24h';
+      break;
+    }
+    case 'time_comparison': {
+      var ent4 = document.getElementById('declCfg_entity');
+      var cp = document.getElementById('declCfg_compare_period');
+      var agg2 = document.getElementById('declCfg_aggregation');
+      if (ent4) ent4.value = config.entity || '';
+      if (cp) cp.value = config.compare_period || 'yesterday';
+      if (agg2) agg2.value = config.aggregation || 'average';
+      break;
+    }
   }
 }
 
@@ -8117,7 +8203,23 @@ function _declTypeConfigFields(type) {
     case 'schedule_checker':
       return '<div class="form-group"><label>Zeitplaene (JSON-Array)</label>' +
         '<textarea id="declCfg_schedules" rows="5" style="font-family:var(--mono);font-size:12px;" placeholder=\'[{"label":"Nachtmodus","start":"22:00","end":"06:00"}]\'></textarea>' +
-        '<div class="hint">label, start (HH:MM), end (HH:MM). Optional: days (Array)</div></div>';
+        '<div class="hint">label, start (HH:MM), end (HH:MM). Optional: days (Array). Nacht-Zeitplaene (22:00-06:00) werden korrekt erkannt.</div></div>';
+    case 'state_duration':
+      return _declEntityInput('declCfg_entity', 'Entity', ['sensor','binary_sensor','climate','switch','light','cover'], 'z.B. climate.wohnzimmer') +
+        '<div class="form-group"><label>Ziel-State</label>' +
+        '<input type="text" id="declCfg_target_state" placeholder="z.B. on, heating, open">' +
+        '<div class="hint">Der State-Wert dessen Dauer gemessen wird</div></div>' +
+        '<div class="form-group"><label>Zeitraum</label><select id="declCfg_time_range">' +
+        DECL_TIME_RANGES.map(o => '<option value="' + o.v + '"' + (o.v==='24h'?' selected':'') + '>' + o.l + '</option>').join('') +
+        '</select></div>';
+    case 'time_comparison':
+      return _declEntityInput('declCfg_entity', 'Entity', ['sensor','number','input_number'], 'z.B. sensor.stromverbrauch') +
+        '<div class="form-group"><label>Vergleichszeitraum</label><select id="declCfg_compare_period">' +
+        DECL_COMPARE_PERIODS.map(o => '<option value="' + o.v + '">' + o.l + '</option>').join('') +
+        '</select></div>' +
+        '<div class="form-group"><label>Aggregation</label><select id="declCfg_aggregation">' +
+        DECL_AGGREGATIONS.map(o => '<option value="' + o.v + '">' + o.l + '</option>').join('') +
+        '</select></div>';
     default:
       return '<div style="color:var(--text-secondary);padding:8px;">Bitte Typ waehlen.</div>';
   }
@@ -8173,6 +8275,19 @@ function _collectDeclConfig(type) {
       try { cfg.schedules = JSON.parse(document.getElementById('declCfg_schedules')?.value || '[]'); }
       catch(e) { errors.push('Zeitplaene: Ungueltiges JSON'); break; }
       if (!Array.isArray(cfg.schedules) || cfg.schedules.length === 0) errors.push('Mindestens ein Zeitplan erforderlich');
+      break;
+    case 'state_duration':
+      cfg.entity = (document.getElementById('declCfg_entity')?.value || '').trim();
+      cfg.target_state = (document.getElementById('declCfg_target_state')?.value || '').trim();
+      cfg.time_range = document.getElementById('declCfg_time_range')?.value || '24h';
+      if (!cfg.entity) errors.push('Entity ist erforderlich');
+      if (!cfg.target_state) errors.push('Ziel-State ist erforderlich');
+      break;
+    case 'time_comparison':
+      cfg.entity = (document.getElementById('declCfg_entity')?.value || '').trim();
+      cfg.compare_period = document.getElementById('declCfg_compare_period')?.value || 'yesterday';
+      cfg.aggregation = document.getElementById('declCfg_aggregation')?.value || 'average';
+      if (!cfg.entity) errors.push('Entity ist erforderlich');
       break;
   }
   if (errors.length > 0) { _showDeclValidation(errors); return null; }
