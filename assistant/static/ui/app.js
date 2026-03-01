@@ -13,6 +13,7 @@ let ENTITY_ANNOTATIONS = {};
 let ENTITY_ROLES_DEFAULT = {};
 let ENTITY_ROLES_CUSTOM = {};
 let _annSaveTimer = null;
+let _roleSaveTimer = null;
 let _annBatchSelected = new Set();
 const API = '';
 let _autoSaveTimer = null;
@@ -4041,15 +4042,8 @@ function collectSettings() {
   if (document.getElementById('householdMembers')) {
     setPath(updates, 'household.members', collectHouseholdMembers());
   }
-  // Monitored entities (device health entity picker)
-  if (document.getElementById('entityPickerContainer')) {
-    setPath(updates, 'device_health.monitored_entities', collectMonitoredEntities());
-  }
-  // Diagnostik monitored entities
-  if (document.getElementById('diagEntityPickerContainer')) {
-    const diagEnts = collectDiagEntities();
-    if (diagEnts.length > 0) setPath(updates, 'diagnostics.monitored_entities', diagEnts);
-  }
+  // Monitored entities: Nicht mehr noetig — Diagnostics und Device Health
+  // nutzen jetzt automatisch Entity-Annotations (annotierte = ueberwacht, hidden = ignoriert).
   // Room-Entity-Maps (room_speakers, room_motion_sensors)
   document.querySelectorAll('#settingsContent .room-entity-map[data-path]').forEach(container => {
     const path = container.dataset.path;
@@ -4374,16 +4368,19 @@ function _roleOptionsHtml(selected) {
 
 async function loadEntities() {
   try {
-    // Parallel laden: Entities + Annotations + Roles
-    const [entData, annData, roleData] = await Promise.all([
+    // Parallel laden: Entities + Annotations + Roles + Room-Profiles
+    const [entData, annData, roleData, rpData] = await Promise.all([
       api('/api/ui/entities'),
       api('/api/ui/entity-annotations'),
       api('/api/ui/entity-roles'),
+      api('/api/ui/room-profiles').catch(() => ({})),
     ]);
     ALL_ENTITIES = entData.entities || [];
     ENTITY_ANNOTATIONS = annData.annotations || {};
     ENTITY_ROLES_DEFAULT = roleData.default_roles || {};
     ENTITY_ROLES_CUSTOM = roleData.custom_roles || {};
+    // RP laden falls noch nicht geladen (fuer Raum-Dropdown in Entity-Annotations)
+    if (rpData && Object.keys(rpData).length > 0) RP = rpData;
 
     // Domain-Filter
     const domains = [...new Set(ALL_ENTITIES.map(e => e.domain))].sort();
@@ -4398,6 +4395,11 @@ async function loadEntities() {
     const batchSel = document.getElementById('annBatchRole');
     if (batchSel) batchSel.innerHTML = `<option value="">Rolle zuweisen...</option>` + Object.entries(_allRoles()).map(([k,v]) =>
       `<option value="${esc(k)}">${esc((v.icon||'') + ' ' + (v.label||k))}</option>`).join('');
+
+    // Batch-Toolbar Raum-Dropdown
+    const batchRoom = document.getElementById('annBatchRoom');
+    if (batchRoom) batchRoom.innerHTML = `<option value="">Raum zuweisen...</option>` +
+      _getAllRooms().map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
 
     // Eigene Rollen rendern
     _renderCustomRoles();
@@ -4454,10 +4456,10 @@ function _collectCustomRoles() {
 }
 
 function scheduleCustomRoleSave() {
-  if (_annSaveTimer) clearTimeout(_annSaveTimer);
+  if (_roleSaveTimer) clearTimeout(_roleSaveTimer);
   const st = document.getElementById('annAutoSaveStatus');
   if (st) st.textContent = 'Ungespeichert...';
-  _annSaveTimer = setTimeout(async () => {
+  _roleSaveTimer = setTimeout(async () => {
     try {
       const custom = _collectCustomRoles();
       await api('/api/ui/entity-roles', 'PUT', { custom_roles: custom });
@@ -4501,14 +4503,14 @@ function _renderEntityRow(e) {
   const ann = ENTITY_ANNOTATIONS[e.entity_id] || {};
   const hasAnn = ann.role || ann.description;
   const roleBadge = ann.role ? `<span class="role-badge">${esc(_roleLabel(ann.role))}</span>` : '';
+  const roomBadge = ann.room ? `<span class="role-badge" style="background:rgba(100,200,100,0.12);color:#6a6;">${esc(ann.room)}</span>` : '';
   const hiddenBadge = ann.hidden ? `<span class="hidden-badge">versteckt</span>` : '';
   const isChecked = _annBatchSelected.has(e.entity_id);
   const cssId = e.entity_id.replace(/[^a-zA-Z0-9]/g, '_');
 
-  // Raum-Optionen aus Room-Profiles
-  const rooms = Object.keys(RP || {});
+  // Raum-Optionen: Room-Profiles + MindHome + bekannte Raeume kombiniert
   const roomOpts = `<option value="">-- Standard --</option>` +
-    rooms.map(r => `<option value="${esc(r)}"${ann.room===r?' selected':''}>${esc(r)}</option>`).join('');
+    _getAllRooms().map(r => `<option value="${esc(r)}"${ann.room===r?' selected':''}>${esc(r)}</option>`).join('');
 
   return `
     <div class="entity-item${hasAnn ? ' annotated' : ''}">
@@ -4516,7 +4518,7 @@ function _renderEntityRow(e) {
       <div style="flex:1;min-width:0;cursor:pointer;" onclick="toggleEntityDetail('${cssId}')">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <span class="ename">${esc(e.name)}</span>
-          ${roleBadge}${hiddenBadge}
+          ${roleBadge}${roomBadge}${hiddenBadge}
           <span class="eid">${esc(e.entity_id)}</span>
           <span style="color:var(--text-muted);font-size:10px;">${esc(e.state)}</span>
         </div>
@@ -4622,6 +4624,34 @@ function batchSetRole() {
   scheduleAnnotationSave();
   filterEntities(); // Re-render
   toast(`Rolle "${_roleLabel(roleId)}" fuer ${_annBatchSelected.size} Entities gesetzt`);
+}
+
+function _getAllRooms() {
+  // Raeume aus allen Quellen kombinieren: RP + MindHome + bekannte + Entity-Annotations
+  const rooms = new Set();
+  for (const r of Object.keys(RP || {})) rooms.add(r);
+  if (_mhEntities && _mhEntities.rooms) {
+    for (const r of Object.keys(_mhEntities.rooms)) rooms.add(r.toLowerCase());
+  }
+  // Raeume aus bestehenden Entity-Annotations
+  for (const ann of Object.values(ENTITY_ANNOTATIONS)) {
+    if (ann.room) rooms.add(ann.room);
+  }
+  // Raeume aus _getKnownRooms (room_speakers, room_motion_sensors)
+  try { for (const r of _getKnownRooms()) rooms.add(r); } catch(e) {}
+  return [...rooms].sort();
+}
+
+function batchSetRoom() {
+  const room = document.getElementById('annBatchRoom')?.value;
+  if (!room) { toast('Bitte Raum auswaehlen', 'error'); return; }
+  for (const eid of _annBatchSelected) {
+    if (!ENTITY_ANNOTATIONS[eid]) ENTITY_ANNOTATIONS[eid] = {};
+    ENTITY_ANNOTATIONS[eid].room = room;
+  }
+  scheduleAnnotationSave();
+  filterEntities();
+  toast(`Raum "${room}" fuer ${_annBatchSelected.size} Entities gesetzt`);
 }
 
 function batchSetHidden(hidden) {
@@ -7015,33 +7045,23 @@ function renderDevices() {
     fRange('device_health.check_interval_minutes', 'Prüfintervall', 15, 180, 15, {15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std',180:'3 Std'}) +
     fRange('device_health.alert_cooldown_minutes', 'Alert-Cooldown', 60, 2880, 60, {60:'1 Std',360:'6 Std',720:'12 Std',1440:'24 Std',2880:'48 Std'})
   ) +
-  sectionWrap('&#127968;', 'Überwachte Entities',
-    fInfo('Entities aus MindHome. Haken setzen = wird überwacht. Ohne Auswahl werden alle Entities der aktiven Domains geprüft.') +
-    '<div id="entityPickerContainer" style="color:var(--text-secondary);padding:12px;">Lade Entities aus MindHome...</div>'
-  ) +
   sectionWrap('&#128295;', 'Diagnostik',
-    fInfo('Automatische Pruefung von Sensoren, Batterien und Geraetestatus.') +
+    fInfo('Automatische Pruefung von Sensoren, Batterien und Geraetestatus. Alle annotierten Entities (siehe Entities-Tab) werden automatisch ueberwacht. Versteckte Entities werden ignoriert.') +
     fToggle('diagnostics.enabled', 'Geraete-Diagnostik aktiv') +
     fRange('diagnostics.check_interval_minutes', 'Pruef-Intervall', 5, 120, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fRange('diagnostics.battery_warning_threshold', 'Batterie-Warnung ab', 5, 50, 5, {5:'5%',10:'10%',15:'15%',20:'20%',30:'30%',50:'50%'}) +
     fRange('diagnostics.stale_sensor_minutes', 'Sensor veraltet nach', 30, 600, 30, {30:'30 Min',60:'1 Std',120:'2 Std',300:'5 Std',600:'10 Std'}) +
     fRange('diagnostics.offline_threshold_minutes', 'Geraet offline nach', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fRange('diagnostics.alert_cooldown_minutes', 'Wiederholung fruehestens nach', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
-    fChipSelect('diagnostics.monitor_domains', 'Ueberwachte Domains', [
+    fChipSelect('diagnostics.monitor_domains', 'Ueberwachte Domains (fuer nicht-annotierte Entities)', [
         {v:'sensor',l:'Sensoren'}, {v:'binary_sensor',l:'Binaer-Sensoren'},
         {v:'light',l:'Lichter'}, {v:'switch',l:'Schalter'},
         {v:'cover',l:'Rolladen'}, {v:'climate',l:'Klima'},
         {v:'lock',l:'Schloesser'}, {v:'fan',l:'Ventilatoren'},
         {v:'water_heater',l:'Warmwasser'}, {v:'media_player',l:'Media Player'},
         {v:'camera',l:'Kameras'}, {v:'alarm_control_panel',l:'Alarmanlagen'}
-    ], 'Nur Entities aus diesen Domains werden ueberwacht') +
-    fKeywords('diagnostics.exclude_patterns', 'Ignorierte Patterns (Entity-ID)') +
-    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Ueberwachte Geraete</div>' +
-    fInfo('Waehle welche Geraete die Diagnostik ueberwachen soll. Klicke "Von MindHome importieren" um deine konfigurierten Geraete zu laden. Ohne Auswahl werden alle Entities der Standard-Domains geprueft.') +
-    '<div id="diagEntityPickerContainer" style="color:var(--text-secondary);padding:12px;">' +
-      '<button class="btn btn-primary btn-sm" onclick="loadDiagnosticsEntities()" style="font-size:12px;">&#127968; Von MindHome importieren</button>' +
-      '<span style="color:var(--text-muted);font-size:11px;margin-left:10px;" id="diagEntityStatus"></span>' +
-    '</div>'
+    ], 'Nicht-annotierte Entities werden nur aus diesen Domains geprueft') +
+    fKeywords('diagnostics.exclude_patterns', 'Ignorierte Patterns (Entity-ID)')
   ) +
   sectionWrap('&#128736;', 'Wartung',
     fInfo('Automatische Wartungshinweise fuer Geraete im Haushalt.') +
@@ -7049,147 +7069,14 @@ function renderDevices() {
   );
 }
 
+// Entity-Picker fuer Monitoring entfernt — Diagnostics und Device Health nutzen
+// jetzt automatisch Entity-Annotations (annotierte = ueberwacht, hidden = ignoriert).
 let _mhEntities = null;
 async function loadMindHomeEntities() {
+  // Laedt MindHome-Entities fuer Raumnamen-Erkennung (kein Entity-Picker mehr)
   try {
-    const d = await api('/api/ui/entities/mindhome');
-    _mhEntities = d;
-    const monitored = d.monitored_entities || [];
-    const container = document.getElementById('entityPickerContainer');
-    if (!container) return;
-
-    const rooms = d.rooms || {};
-    const roomNames = Object.keys(rooms).sort();
-
-    if (roomNames.length === 0) {
-      container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Keine Geräte in MindHome gefunden.</div>';
-      return;
-    }
-
-    let html = '<div style="display:flex;gap:8px;margin-bottom:12px;">' +
-      '<button class="btn btn-secondary btn-sm" onclick="toggleAllEntities(true)" style="font-size:11px;">Alle auswählen</button>' +
-      '<button class="btn btn-secondary btn-sm" onclick="toggleAllEntities(false)" style="font-size:11px;">Keine</button>' +
-      '<span style="color:var(--text-muted);font-size:11px;align-self:center;margin-left:auto;" id="entityCountLabel"></span>' +
-      '</div>';
-
-    for (const room of roomNames) {
-      const entities = rooms[room] || [];
-      html += '<div style="margin-bottom:16px;">';
-      html += '<div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:6px;border-bottom:1px solid var(--border);padding-bottom:4px;">&#127968; ' + esc(room) + ' <span style="color:var(--text-muted);font-weight:400;">(' + entities.length + ')</span></div>';
-
-      for (const e of entities) {
-        const checked = monitored.includes(e.entity_id) ? 'checked' : '';
-        const domain = e.domain || '';
-        const domainBadge = domain ? '<span style="font-size:10px;font-family:var(--mono);color:var(--text-muted);background:var(--bg-primary);padding:1px 5px;border-radius:3px;margin-left:6px;">' + esc(domain) + '</span>' : '';
-        html += '<label style="display:flex;align-items:center;gap:8px;padding:5px 8px;cursor:pointer;border-radius:6px;transition:background 0.15s;" onmouseover="this.style.background=\'var(--bg-card-hover)\'" onmouseout="this.style.background=\'transparent\'">' +
-          '<input type="checkbox" class="entity-check" data-entity="' + esc(e.entity_id) + '" ' + checked + ' onchange="updateEntityCount()" style="accent-color:var(--accent);width:16px;height:16px;">' +
-          '<span style="font-size:13px;">' + esc(e.name || e.entity_id) + '</span>' +
-          domainBadge +
-          '</label>';
-      }
-      html += '</div>';
-    }
-
-    container.innerHTML = html;
-    updateEntityCount();
-  } catch (e) {
-    const c = document.getElementById('entityPickerContainer');
-    if (c) c.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler beim Laden: ' + esc(e.message) + '</div>';
-  }
-}
-
-function updateEntityCount() {
-  const all = document.querySelectorAll('.entity-check');
-  const checked = document.querySelectorAll('.entity-check:checked');
-  const label = document.getElementById('entityCountLabel');
-  if (label) {
-    label.textContent = checked.length === 0
-      ? 'Keine Auswahl — alle Domains werden überwacht'
-      : checked.length + ' von ' + all.length + ' ausgewählt';
-  }
-}
-
-function toggleAllEntities(state) {
-  document.querySelectorAll('.entity-check').forEach(cb => cb.checked = state);
-  updateEntityCount();
-}
-
-function collectMonitoredEntities() {
-  const entities = [];
-  document.querySelectorAll('.entity-check:checked').forEach(cb => {
-    entities.push(cb.dataset.entity);
-  });
-  return entities;
-}
-
-// --- Diagnostik Entity Picker (MindHome Import) ---
-async function loadDiagnosticsEntities() {
-  const container = document.getElementById('diagEntityPickerContainer');
-  const status = document.getElementById('diagEntityStatus');
-  if (!container) return;
-  if (status) status.textContent = 'Lade...';
-  try {
-    const d = await api('/api/ui/entities/mindhome');
-    const rooms = d.rooms || {};
-    const roomNames = Object.keys(rooms).sort();
-    const current = getPath(S, 'diagnostics.monitored_entities') || [];
-
-    if (roomNames.length === 0) {
-      container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Keine Geraete in MindHome gefunden.</div>';
-      return;
-    }
-
-    let html = '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">' +
-      '<button class="btn btn-secondary btn-sm" onclick="toggleDiagEntities(true)" style="font-size:11px;">Alle</button>' +
-      '<button class="btn btn-secondary btn-sm" onclick="toggleDiagEntities(false)" style="font-size:11px;">Keine</button>' +
-      '<button class="btn btn-primary btn-sm" onclick="loadDiagnosticsEntities()" style="font-size:11px;">&#128260; Neu laden</button>' +
-      '<span style="color:var(--text-muted);font-size:11px;align-self:center;margin-left:auto;" id="diagCountLabel"></span>' +
-      '</div>';
-
-    for (const room of roomNames) {
-      const entities = rooms[room] || [];
-      html += '<div style="margin-bottom:14px;">';
-      html += '<div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px;border-bottom:1px solid var(--border);padding-bottom:3px;">&#127968; ' + esc(room) + ' <span style="color:var(--text-muted);font-weight:400;">(' + entities.length + ')</span></div>';
-      for (const e of entities) {
-        const checked = current.includes(e.entity_id) ? 'checked' : '';
-        const domain = e.domain || '';
-        const badge = domain ? '<span style="font-size:10px;font-family:var(--mono);color:var(--text-muted);background:var(--bg-primary);padding:1px 5px;border-radius:3px;margin-left:6px;">' + esc(domain) + '</span>' : '';
-        html += '<label style="display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;border-radius:6px;transition:background 0.15s;" onmouseover="this.style.background=\'var(--bg-card-hover)\'" onmouseout="this.style.background=\'transparent\'">' +
-          '<input type="checkbox" class="diag-entity-check" data-entity="' + esc(e.entity_id) + '" ' + checked + ' onchange="updateDiagCount()" style="accent-color:var(--accent);width:16px;height:16px;">' +
-          '<span style="font-size:13px;">' + esc(e.name || e.entity_id) + '</span>' + badge +
-          '</label>';
-      }
-      html += '</div>';
-    }
-    container.innerHTML = html;
-    updateDiagCount();
-  } catch(e) {
-    if (container) container.innerHTML = '<div style="color:var(--danger);padding:8px;">Fehler: ' + esc(e.message) + '</div>';
-  }
-}
-
-function updateDiagCount() {
-  const all = document.querySelectorAll('.diag-entity-check');
-  const checked = document.querySelectorAll('.diag-entity-check:checked');
-  const label = document.getElementById('diagCountLabel');
-  if (label) {
-    label.textContent = checked.length === 0
-      ? 'Keine Auswahl — Standard-Domains'
-      : checked.length + ' von ' + all.length + ' gewaehlt';
-  }
-}
-
-function toggleDiagEntities(state) {
-  document.querySelectorAll('.diag-entity-check').forEach(cb => cb.checked = state);
-  updateDiagCount();
-}
-
-function collectDiagEntities() {
-  const entities = [];
-  document.querySelectorAll('.diag-entity-check:checked').forEach(cb => {
-    entities.push(cb.dataset.entity);
-  });
-  return entities;
+    _mhEntities = await api('/api/ui/entities/mindhome');
+  } catch(e) { _mhEntities = null; }
 }
 
 let _updating = false;

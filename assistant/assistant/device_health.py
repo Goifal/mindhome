@@ -21,6 +21,7 @@ from typing import Optional
 import redis.asyncio as aioredis
 
 from .config import yaml_config
+from .function_calling import get_entity_annotation, is_entity_hidden
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -546,13 +547,21 @@ class DeviceHealthMonitor:
     # ------------------------------------------------------------------
 
     def _should_exclude(self, entity_id: str) -> bool:
-        """Prüft ob Entity ausgeschlossen werden soll.
+        """Prueft ob Entity ausgeschlossen werden soll.
 
-        Wenn monitored_entities gesetzt ist (Whitelist), werden NUR
-        diese Entities überwacht. Alles andere wird ausgeschlossen.
-        Sonst: Domain-Filter + Exclude-Patterns wie bisher.
+        Nutzt Entity-Annotations: Annotierte (nicht-hidden) Entities werden
+        automatisch ueberwacht. Ohne Annotation: Domain-Filter + Exclude-Patterns.
         """
-        # Whitelist-Modus: Nur explizit gewählte Entities
+        # Hidden-Entities immer ausschliessen
+        if is_entity_hidden(entity_id):
+            return True
+
+        # Annotierte Entities nie ausschliessen
+        ann = get_entity_annotation(entity_id)
+        if ann and ann.get("role"):
+            return False
+
+        # Legacy-Whitelist (falls noch in Config)
         if self.monitored_entities:
             return entity_id not in self.monitored_entities
 
