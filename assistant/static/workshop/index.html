@@ -4996,7 +4996,6 @@ function restoreSidebarOrder() {
 }
 
 // ===== Schritt 8: Ambient Auto-Start =====
-let ambientIdleTimer = null;
 function resetAmbientIdle() {
     if (ambientIdleTimer) clearTimeout(ambientIdleTimer);
     if (localStorage.getItem('ws-ambient-auto') === 'on') {
