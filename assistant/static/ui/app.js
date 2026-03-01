@@ -4672,6 +4672,16 @@ function toggleBatchSelect(eid, checked) {
   _updateBatchBar();
 }
 
+function toggleSelectAll(checked) {
+  // Alle aktuell sichtbaren Entities (de)selektieren
+  document.querySelectorAll('.ann-check').forEach(el => {
+    const eid = el.dataset.eid;
+    el.checked = checked;
+    if (checked) _annBatchSelected.add(eid); else _annBatchSelected.delete(eid);
+  });
+  _updateBatchBar();
+}
+
 function _updateBatchBar() {
   const bar = document.getElementById('annBatchBar');
   const cnt = document.getElementById('annBatchCount');
@@ -4687,6 +4697,8 @@ function _updateBatchBar() {
 function clearBatchSelection() {
   _annBatchSelected.clear();
   document.querySelectorAll('.ann-check').forEach(el => el.checked = false);
+  const selectAll = document.getElementById('annSelectAll');
+  if (selectAll) selectAll.checked = false;
   _updateBatchBar();
 }
 
