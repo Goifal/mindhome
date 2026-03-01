@@ -462,6 +462,32 @@ class TestShouldDeliver:
     """Tests fuer should_deliver() — kombinierte Erkennung + Zustellung."""
 
     @pytest.mark.asyncio
+    async def test_config_silence_matrix_override(self, ha_mock):
+        """User-Config ueberschreibt einzelne Silence-Matrix-Eintraege."""
+        cfg = {
+            "activity": {
+                "silence_matrix": {
+                    "watching": {
+                        "high": "tts_quiet",
+                        "medium": "tts_quiet",
+                    }
+                }
+            }
+        }
+        with patch("assistant.activity.yaml_config", cfg):
+            eng = ActivityEngine(ha_mock)
+        # Overridden: watching.high = tts_quiet (statt led_blink)
+        assert eng.get_delivery_method(WATCHING, "high") == TTS_QUIET
+        # Overridden: watching.medium = tts_quiet (statt suppress)
+        assert eng.get_delivery_method(WATCHING, "medium") == TTS_QUIET
+        # Nicht ueberschrieben: watching.critical bleibt tts_loud
+        assert eng.get_delivery_method(WATCHING, "critical") == TTS_LOUD
+        # Nicht ueberschrieben: watching.low bleibt suppress
+        assert eng.get_delivery_method(WATCHING, "low") == SUPPRESS
+        # Andere Aktivitaeten unberuehrt
+        assert eng.get_delivery_method(RELAXING, "high") == TTS_LOUD
+
+    @pytest.mark.asyncio
     async def test_deliver_has_all_fields(self, engine, ha_mock):
         ha_mock.get_states = AsyncMock(return_value=[
             {"entity_id": "person.max", "state": "home"},
