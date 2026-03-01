@@ -332,6 +332,7 @@ _DEFAULT_ROLES_DICT = {
     # --- Sonstiges ---
     "scene":          {"label": "Szene", "icon": "\U0001f3ac"},
     "automation":     {"label": "Automatisierung", "icon": "\u2699\ufe0f"},
+    "zone":           {"label": "Zone", "icon": "\U0001f4cd"},
     "timer":          {"label": "Timer/Zaehler", "icon": "\u23f0"},
     "counter":        {"label": "Zaehler", "icon": "\U0001f522"},
     "distance":       {"label": "Entfernung", "icon": "\U0001f4cf"},
@@ -522,6 +523,8 @@ _ROLE_KEYWORDS = {
     "car_battery": ["autobatterie", "soc", "ladestand"],
     # Ueberwachung
     "camera": ["kamera", "ueberwachung", "cam"],
+    # Zonen
+    "zone": ["zone", "zonen", "bereich", "gebiet", "standort", "geofence"],
 }
 
 
