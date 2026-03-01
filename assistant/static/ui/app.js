@@ -374,7 +374,8 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
       'tab-memory':'Gedaechtnis-Einstellungen','tab-mood':'Stimmung',
       'tab-rooms':'Raeume & Speaker','tab-lights':'Licht','tab-devices':'Geraete',
       'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter',
-      'tab-routines':'Routinen','tab-proactive':'Proaktiv & Vorausdenken',
+      'tab-scenes':'Szenen','tab-routines':'Routinen',
+      'tab-proactive':'Proaktiv & Vorausdenken',
       'tab-notifications':'Benachrichtigungen',
       'tab-cooking':'Koch-Assistent','tab-followme':'Follow-Me',
       'tab-jarvis':'Jarvis-Features','tab-eastereggs':'Easter Eggs',
@@ -610,6 +611,7 @@ function renderCurrentTab() {
       case 'tab-mood': c.innerHTML = renderMood(); break;
       case 'tab-rooms': c.innerHTML = renderRooms(); loadMindHomeEntities(); loadRoomTempAverage(); break;
       case 'tab-voice': c.innerHTML = renderVoice(); break;
+      case 'tab-scenes': c.innerHTML = renderScenes(); break;
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
       case 'tab-proactive': c.innerHTML = renderProactive(); break;
       case 'tab-notifications': c.innerHTML = renderNotifications(); break;
@@ -787,6 +789,7 @@ const HELP_TEXTS = {
   'activity.thresholds.focus_min_minutes': {title:'Fokus-Modus', text:'Ab wie vielen Min ununterbrochener Arbeit Fokus erkannt wird.'},
   'activity.silence_matrix': {title:'Stille-Matrix', text:'Bestimmt pro Aktivitaet und Dringlichkeit, wie Benachrichtigungen zugestellt werden: Laut (TTS), Leise, LED-Signal oder Unterdruecken.'},
   'activity.volume_matrix': {title:'Lautstaerke-Matrix', text:'Lautstaerke fuer TTS-Durchsagen, abhaengig von Aktivitaet und Dringlichkeit. Werte 0-100%. Nachts wird automatisch zusaetzlich reduziert.'},
+  'scenes': {title:'Szenen', text:'Zentrale Szenen-Verwaltung. Jede Szene wird einer Aktivitaet zugeordnet (bestimmt Benachrichtigungs-Verhalten), hat eine Licht-Uebergangszeit und kann als "Nicht stoeren" markiert werden.'},
   // === COVER-AUTOMATIK ===
   'seasonal_actions.enabled': {title:'Saisonale Aktionen', text:'Automatische Aktionen basierend auf Jahreszeit, Wetter und Sonnenstand.'},
   'seasonal_actions.cover_automation.sun_tracking': {title:'Sonnenstand-Tracking', text:'Rolllaeden folgen automatisch dem Sonnenstand. Benoetigt konfigurierte Cover-Profile.'},
@@ -2339,16 +2342,15 @@ function renderVoice() {
     fSelect('sounds.events.goodnight', 'Gute-Nacht-Sound', soundOpts) +
     fRange('sounds.night_volume_factor', 'Nacht-Lautstaerke-Faktor', 0, 1, 0.1, {0:'Stumm',0.3:'Leise',0.5:'Halb',0.7:'Etwas leiser',1:'Normal'})
   ) +
-  sectionWrap('&#127916;', 'Szenen-Uebergaenge',
-    fInfo('Wie lange dauert der Uebergang bei Szenen-Wechsel? (z.B. Licht dimmen fuer Filmabend)') +
+  sectionWrap('&#127916;', 'Szenen & Narration',
+    fInfo('Szenen, Uebergangszeiten und "Nicht stoeren"-Einstellungen werden zentral im Szenen-Tab verwaltet. Hier nur die globalen Narrations-Einstellungen.') +
     fToggle('narration.enabled', 'Szenen-Narration aktiv') +
-    fRange('narration.default_transition', 'Standard (Sek.)', 1, 20, 1) +
-    fRange('narration.scene_transitions.filmabend', 'Filmabend (Sek.)', 1, 30, 1) +
-    fRange('narration.scene_transitions.gute_nacht', 'Gute Nacht (Sek.)', 1, 30, 1) +
-    fRange('narration.scene_transitions.aufwachen', 'Aufwachen (Sek.)', 1, 30, 1) +
-    fRange('narration.scene_transitions.gemuetlich', 'Gemuetlich (Sek.)', 1, 30, 1) +
+    fRange('narration.default_transition', 'Standard-Uebergang (Sek.)', 1, 20, 1) +
     fRange('narration.step_delay', 'Verzoegerung zwischen Schritten (Sek.)', 0, 10, 0.5) +
-    fToggle('narration.narrate_actions', 'Aktionen ansagen ("Licht wird gedimmt...")')
+    fToggle('narration.narrate_actions', 'Aktionen ansagen ("Licht wird gedimmt...")') +
+    `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
+      <span class="info-icon">&#127916;</span>Einzelne Szenen-Uebergaenge konfigurierst du im <strong>Szenen</strong>-Tab. Klicke hier.
+    </div>`
   ) +
   sectionWrap('&#128100;', 'Sprecher-Erkennung',
     fInfo('Erkennt wer spricht ueber 7 Methoden: Geraete-Zuordnung, Richtung (DoA), Raum, Anwesenheit, Stimmabdruck, Voice-Features und Cache. Lernt automatisch dazu.') +
@@ -2530,6 +2532,197 @@ function renderRoutines() {
   );
 }
 
+// ---- Szenen-Konfigurator (zentrales Management) ----
+// Vordefinierte Szenen — der User kann eigene hinzufuegen
+const _DEFAULT_SCENES = [
+  {id:'filmabend',     icon:'&#127916;', label:'Filmabend',    activity:'watching',  silence:true,  transition:5},
+  {id:'kino',          icon:'&#127871;', label:'Kino',         activity:'watching',  silence:true,  transition:5},
+  {id:'schlafen',      icon:'&#128164;', label:'Schlafen',     activity:'sleeping',  silence:true,  transition:7},
+  {id:'gute_nacht',    icon:'&#127769;', label:'Gute Nacht',   activity:'sleeping',  silence:true,  transition:7},
+  {id:'aufwachen',     icon:'&#127780;', label:'Aufwachen',    activity:'relaxing',  silence:false, transition:10},
+  {id:'gemuetlich',    icon:'&#128293;', label:'Gemuetlich',   activity:'relaxing',  silence:false, transition:4},
+  {id:'meditation',    icon:'&#129495;', label:'Meditation',   activity:'focused',   silence:true,  transition:3},
+  {id:'konzentration', icon:'&#128187;', label:'Konzentration',activity:'focused',   silence:true,  transition:2},
+  {id:'telefonat',     icon:'&#128222;', label:'Telefonat',    activity:'in_call',   silence:true,  transition:1},
+  {id:'meeting',       icon:'&#128188;', label:'Meeting',      activity:'in_call',   silence:true,  transition:1},
+  {id:'gaeste',        icon:'&#128101;', label:'Gaeste',       activity:'guests',    silence:false, transition:3},
+  {id:'nicht_stoeren', icon:'&#128683;', label:'Nicht stoeren',activity:'focused',   silence:true,  transition:1},
+  {id:'musik',         icon:'&#127925;', label:'Musik',        activity:'relaxing',  silence:false, transition:2},
+  {id:'arbeit',        icon:'&#128188;', label:'Arbeit',       activity:'focused',   silence:true,  transition:1},
+  {id:'kochen',        icon:'&#127859;', label:'Kochen',       activity:'relaxing',  silence:false, transition:1},
+  {id:'party',         icon:'&#127881;', label:'Party',        activity:'guests',    silence:false, transition:2},
+];
+
+const _ACTIVITY_OPTIONS = [
+  {v:'sleeping',  l:'Schlafen'},
+  {v:'in_call',   l:'Im Telefonat'},
+  {v:'watching',  l:'TV/Film schauen'},
+  {v:'focused',   l:'Konzentriert'},
+  {v:'guests',    l:'Gaeste da'},
+  {v:'relaxing',  l:'Entspannt'},
+  {v:'away',      l:'Abwesend'},
+];
+
+function _getScenes() {
+  // Szenen aus settings laden, sonst Defaults verwenden
+  const saved = getPath(S, 'scenes') || {};
+  const scenes = [];
+  // Defaults als Basis, Overrides anwenden
+  for (const def of _DEFAULT_SCENES) {
+    const override = saved[def.id] || {};
+    scenes.push({
+      id: def.id,
+      icon: override.icon ?? def.icon,
+      label: override.label ?? def.label,
+      activity: override.activity ?? def.activity,
+      silence: override.silence ?? def.silence,
+      transition: override.transition ?? def.transition,
+      custom: false,
+    });
+  }
+  // Custom Szenen (nicht in Defaults)
+  const defaultIds = new Set(_DEFAULT_SCENES.map(d => d.id));
+  for (const [id, cfg] of Object.entries(saved)) {
+    if (!defaultIds.has(id) && cfg._custom) {
+      scenes.push({
+        id, icon: cfg.icon || '&#127912;', label: cfg.label || id,
+        activity: cfg.activity || 'relaxing', silence: cfg.silence ?? false,
+        transition: cfg.transition ?? 3, custom: true,
+      });
+    }
+  }
+  return scenes;
+}
+
+function _saveScenes(scenes) {
+  // Nur Abweichungen vom Default + Custom Szenen speichern
+  const data = {};
+  const defaultMap = {};
+  for (const d of _DEFAULT_SCENES) defaultMap[d.id] = d;
+  for (const sc of scenes) {
+    const def = defaultMap[sc.id];
+    if (sc.custom) {
+      // Custom Szene: immer komplett speichern
+      data[sc.id] = {icon: sc.icon, label: sc.label, activity: sc.activity, silence: sc.silence, transition: sc.transition, _custom: true};
+    } else if (def) {
+      // Default Szene: nur Abweichungen
+      const diff = {};
+      if (sc.label !== def.label) diff.label = sc.label;
+      if (sc.activity !== def.activity) diff.activity = sc.activity;
+      if (sc.silence !== def.silence) diff.silence = sc.silence;
+      if (sc.transition !== def.transition) diff.transition = sc.transition;
+      if (sc.icon !== def.icon) diff.icon = sc.icon;
+      if (Object.keys(diff).length > 0) data[sc.id] = diff;
+    }
+  }
+  setPath(S, 'scenes', data);
+
+  // Abgeleitete Werte in anderen Settings synchronisieren:
+  // 1. proactive.silence_scenes
+  const silenceList = scenes.filter(s => s.silence).map(s => s.id);
+  setPath(S, 'proactive.silence_scenes', silenceList);
+  // 2. narration.scene_transitions
+  const transitions = {};
+  for (const sc of scenes) {
+    transitions[sc.id] = sc.transition;
+  }
+  setPath(S, 'narration.scene_transitions', transitions);
+
+  scheduleAutoSave();
+}
+
+function renderScenes() {
+  const scenes = _getScenes();
+  const activityLabels = {};
+  for (const a of _ACTIVITY_OPTIONS) activityLabels[a.v] = a.l;
+
+  let sceneCards = '';
+  for (const sc of scenes) {
+    const silenceChecked = sc.silence ? 'checked' : '';
+    let actOpts = _ACTIVITY_OPTIONS.map(a =>
+      `<option value="${a.v}" ${sc.activity===a.v?'selected':''}>${a.l}</option>`
+    ).join('');
+
+    sceneCards += `<div class="scene-card${sc.silence?' scene-silence':''}" data-scene-id="${sc.id}">
+      <div class="scene-card-hdr">
+        <span class="scene-icon">${sc.icon}</span>
+        <div class="scene-card-title">
+          <input type="text" class="scene-name-input" value="${esc(sc.label)}" data-field="label"
+            onchange="sceneFieldChanged('${esc(sc.id)}','label',this.value)">
+          <span class="scene-id-hint">${esc(sc.id)}</span>
+        </div>
+        ${sc.custom ? '<button class="scene-rm" onclick="removeScene(\'' + esc(sc.id) + '\')" title="Szene loeschen">&#10005;</button>' : ''}
+      </div>
+      <div class="scene-card-body">
+        <div class="scene-field">
+          <span class="scene-field-label">Aktivitaet</span>
+          <select data-field="activity" onchange="sceneFieldChanged('${esc(sc.id)}','activity',this.value)">${actOpts}</select>
+        </div>
+        <div class="scene-field">
+          <span class="scene-field-label">Uebergang</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="range" min="1" max="20" step="1" value="${sc.transition}" data-field="transition"
+              oninput="this.nextElementSibling.textContent=this.value+'s';sceneFieldChanged('${esc(sc.id)}','transition',parseInt(this.value))">
+            <span style="font-size:11px;color:var(--text-muted);min-width:24px;">${sc.transition}s</span>
+          </div>
+        </div>
+        <div class="scene-field">
+          <label class="scene-silence-toggle" title="Nicht stoeren — proaktive Meldungen werden unterdrueckt">
+            <input type="checkbox" ${silenceChecked} data-field="silence"
+              onchange="sceneFieldChanged('${esc(sc.id)}','silence',this.checked)">
+            <span>Nicht stoeren</span>
+          </label>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  return sectionWrap('&#127916;', 'Haus-Szenen',
+    fInfo('Definiere Szenen fuer dein Zuhause. Jede Szene wird auf eine Aktivitaet gemappt (bestimmt Benachrichtigungs-Verhalten), hat eine Uebergangszeit und kann als "Nicht stoeren" markiert werden. Szenen koennen per Sprache aktiviert werden: "Jarvis, Filmabend."') +
+    `<div class="scene-grid">${sceneCards}</div>
+    <button class="btn btn-sm" onclick="addCustomScene()" style="margin-top:12px;">+ Eigene Szene</button>`
+  ) +
+  sectionWrap('&#128276;', 'So wirken Szenen',
+    fInfo('Szenen steuern drei Dinge gleichzeitig:') +
+    `<div style="font-size:12px;line-height:1.8;color:var(--text-secondary);padding:4px 8px;">
+      <div><strong>1. Aktivitaet</strong> — Jede Szene ist einer Aktivitaet zugeordnet (z.B. Filmabend → "TV/Film"). Die Aktivitaet bestimmt ueber die <em>Stille-Matrix</em> (Tab "Benachrichtigungen") wie Meldungen zugestellt werden.</div>
+      <div style="margin-top:6px;"><strong>2. Nicht stoeren</strong> — Markierte Szenen unterdruecken proaktive Meldungen komplett (ausser Sicherheit/Notfall).</div>
+      <div style="margin-top:6px;"><strong>3. Uebergangszeit</strong> — Wie lange Licht-Uebergaenge dauern wenn Jarvis die Szene aktiviert.</div>
+    </div>`
+  );
+}
+
+function sceneFieldChanged(sceneId, field, value) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc) return;
+  sc[field] = value;
+  _saveScenes(scenes);
+  // Bei silence-Toggle visuell updaten (CSS-Klasse)
+  if (field === 'silence') {
+    const card = document.querySelector(`.scene-card[data-scene-id="${sceneId}"]`);
+    if (card) card.classList.toggle('scene-silence', value);
+  }
+}
+
+function addCustomScene() {
+  const id = 'szene_' + Date.now();
+  const scenes = _getScenes();
+  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, custom: true});
+  _saveScenes(scenes);
+  renderCurrentTab();
+}
+
+function removeScene(sceneId) {
+  const scenes = _getScenes().filter(s => s.id !== sceneId);
+  // Auch aus S entfernen
+  const saved = getPath(S, 'scenes') || {};
+  delete saved[sceneId];
+  setPath(S, 'scenes', saved);
+  _saveScenes(scenes);
+  renderCurrentTab();
+}
+
 // ---- Proaktiv & Vorausdenken (aus Routinen ausgelagert) ----
 function renderProactive() {
   return sectionWrap('&#128276;', 'Proaktive Meldungen',
@@ -2538,10 +2731,9 @@ function renderProactive() {
     fRange('proactive.cooldown_seconds', 'Mindestabstand zwischen Meldungen', 60, 3600, 60, {60:'1 Min',120:'2 Min',300:'5 Min',600:'10 Min',1800:'30 Min',3600:'1 Std'}) +
     fRange('proactive.music_follow_cooldown_minutes', 'Musik-Nachfolge Pause', 1, 30, 1) +
     fRange('proactive.min_autonomy_level', 'Ab Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fChipSelect('proactive.silence_scenes', 'Nicht stoeren bei', [
-      'filmabend','schlafen','meditation','telefonat','meeting',
-      'konzentration','gaeste','nicht_stoeren','musik','arbeit'
-    ])
+    `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
+      <span class="info-icon">&#127916;</span>"Nicht stoeren"-Szenen und Aktivitaets-Zuordnung werden jetzt zentral im <strong>Szenen</strong>-Tab verwaltet. Klicke hier um dorthin zu wechseln.
+    </div>`
   ) +
   sectionWrap('&#9200;', 'Zeitgefuehl',
     fInfo('Der Assistent erinnert dich wenn Geraete zu lange laufen — z.B. Ofen vergessen, PC-Pause noetig.') +
@@ -5859,12 +6051,11 @@ function renderLights() {
     '<div id="circadianCurveEditor"></div>'
   ) +
   sectionWrap('&#127916;', 'Szenen-Uebergaenge',
-    fInfo('Uebergangszeiten wenn Jarvis Licht-Szenen aktiviert. Laengere Zeiten = sanftere Uebergaenge.') +
+    fInfo('Uebergangszeiten pro Szene konfigurierst du zentral im Szenen-Tab. Hier nur der globale Standard-Uebergang.') +
     fRange('narration.default_transition', 'Standard-Uebergang (Sek)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
-    fRange('narration.scene_transitions.filmabend', 'Filmabend (Sek)', 1, 15, 1, {1:'1s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
-    fRange('narration.scene_transitions.gute_nacht', 'Gute Nacht (Sek)', 1, 20, 1, {1:'1s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s',20:'20s'}) +
-    fRange('narration.scene_transitions.aufwachen', 'Aufwachen (Sek)', 1, 20, 1, {1:'1s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s',20:'20s'}) +
-    fRange('narration.scene_transitions.gemuetlich', 'Gemuetlich (Sek)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',4:'4s',5:'5s',7:'7s',10:'10s',15:'15s'})
+    `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
+      <span class="info-icon">&#127916;</span>Einzelne Szenen-Uebergaenge verwaltest du im <strong>Szenen</strong>-Tab. Klicke hier.
+    </div>`
   );
 }
 

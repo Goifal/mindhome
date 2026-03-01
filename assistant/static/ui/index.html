@@ -553,6 +553,32 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .chip-opt.selected { background:var(--accent-dim); border-color:var(--accent); color:var(--accent); font-weight:600; box-shadow:0 0 10px rgba(0,212,255,0.15); }
 .chip-opt.selected::before { content:'✓ '; font-size:10px; }
 
+/* Scene Configurator */
+.scene-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; }
+.scene-card { border:1px solid rgba(0,212,255,0.1); border-radius:var(--radius-sm); background:var(--bg-card); overflow:hidden; transition:all var(--fast); }
+.scene-card:hover { border-color:rgba(0,212,255,0.25); }
+.scene-card.scene-silence { border-left:3px solid var(--warning, #f59e0b); }
+.scene-card-hdr { display:flex; align-items:center; gap:8px; padding:10px 12px 6px; }
+.scene-icon { font-size:18px; flex-shrink:0; }
+.scene-card-title { flex:1; min-width:0; }
+.scene-name-input { width:100%; background:transparent; border:none; border-bottom:1px solid transparent; color:var(--text-primary); font-size:13px; font-weight:600; padding:2px 0; outline:none; }
+.scene-name-input:hover, .scene-name-input:focus { border-bottom-color:var(--accent); }
+.scene-id-hint { display:block; font-size:9px; color:var(--text-muted); font-family:var(--mono); margin-top:1px; }
+.scene-rm { background:none; border:1px solid var(--danger); color:var(--danger); border-radius:3px; padding:1px 6px; font-size:12px; cursor:pointer; opacity:0.6; flex-shrink:0; }
+.scene-rm:hover { opacity:1; }
+.scene-card-body { padding:4px 12px 10px; display:flex; flex-direction:column; gap:6px; }
+.scene-field { display:flex; align-items:center; gap:6px; }
+.scene-field-label { font-size:10px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; min-width:70px; flex-shrink:0; }
+.scene-field select { flex:1; background:var(--bg-primary); color:var(--text-primary); border:1px solid rgba(0,212,255,0.12); border-radius:4px; padding:3px 4px; font-size:11px; }
+.scene-field select:focus { border-color:var(--accent); outline:none; }
+.scene-field input[type="range"] { flex:1; accent-color:var(--accent); }
+.scene-silence-toggle { display:flex; align-items:center; gap:6px; font-size:11px; cursor:pointer; color:var(--text-secondary); }
+.scene-silence-toggle input { accent-color:var(--warning, #f59e0b); width:16px; height:16px; }
+@media (max-width:640px) {
+  .scene-grid { grid-template-columns:1fr; }
+  .scene-card-body { gap:4px; }
+}
+
 /* Notification Matrix Table */
 .nm-table-wrap { overflow-x:auto; margin-bottom:12px; }
 .nm-table { width:100%; border-collapse:collapse; font-size:12px; }
@@ -892,6 +918,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
       <div class="nav-group">
         <div class="nav-group-header" onclick="toggleNavGroup(this)"><span>Automatisierung</span><span class="nav-group-arrow">&#9654;</span></div>
         <div class="nav-group-items">
+          <div class="nav-item" data-page="settings" data-tab="tab-scenes"><span class="nav-icon">&#127916;</span>Szenen</div>
           <div class="nav-item" data-page="settings" data-tab="tab-routines"><span class="nav-icon">&#127748;</span>Routinen</div>
           <div class="nav-item" data-page="settings" data-tab="tab-proactive"><span class="nav-icon">&#128276;</span>Proaktiv</div>
           <div class="nav-item" data-page="settings" data-tab="tab-notifications"><span class="nav-icon">&#128263;</span>Benachrichtigungen</div>
