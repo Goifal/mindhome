@@ -432,6 +432,7 @@ class ContextBuilder:
                         house.setdefault("annotated_sensors", []).append({
                             "text": f"{desc}: {val_str}",
                             "_role": role,
+                            "_state": s,
                         })
 
             # Nur explizit annotierte Binary-Sensoren (User waehlt im UI aus)
@@ -474,6 +475,7 @@ class ContextBuilder:
                         house.setdefault("annotated_sensors", []).append({
                             "text": f"{desc}: {state_text}",
                             "_role": role,
+                            "_state": s,
                         })
 
             # Schloesser (Lock-Status) — nur annotierte
@@ -528,11 +530,20 @@ class ContextBuilder:
             # Sonstiges
             "light_level": 9, "vibration": 9, "battery": 9, "noise": 9,
         }
+        _CRITICAL_ROLES = {"water_leak", "smoke", "gas", "co", "tamper", "alarm"}
         if house.get("annotated_sensors"):
             house["annotated_sensors"].sort(
                 key=lambda x: _ROLE_PRIORITY.get(x.get("_role", ""), 99)
             )
-            house["sensors"] = [e["text"] for e in house["annotated_sensors"][:20]]
+            sensor_limit = yaml_config.get("sensor_context_limit", 20)
+            # Critical alarm sensors (active) are always included
+            critical = [e for e in house["annotated_sensors"]
+                        if e.get("_role") in _CRITICAL_ROLES
+                        and e.get("_state") in ("on", "detected", "aktiv")]
+            rest = [e for e in house["annotated_sensors"] if e not in critical]
+            remaining_slots = max(sensor_limit - len(critical), 0)
+            combined = critical + rest[:remaining_slots]
+            house["sensors"] = [e["text"] for e in combined]
             del house["annotated_sensors"]
 
         # Mittelwert aus konfigurierten Sensoren (hat Vorrang vor climate entities)

@@ -420,111 +420,169 @@ _DEVICE_CLASS_TO_ROLE = {
     "duration": "timer",
 }
 
-_OUTDOOR_KEYWORDS = ("aussen", "outdoor", "balkon", "garten", "terrasse", "draussen", "exterior")
-_WATER_TEMP_KEYWORDS = ("wasser", "water", "boiler", "pool")
-_SOIL_TEMP_KEYWORDS = ("boden", "soil", "erde", "ground")
+_OUTDOOR_KEYWORDS = (
+    "aussen", "outdoor", "balkon", "garten", "terrasse", "draussen", "exterior",
+    "outside", "patio", "roof", "dach", "carport", "garage", "weather", "wetter",
+    "yard", "hof", "pergola", "veranda", "loggia", "wintergarten",
+)
+_WATER_TEMP_KEYWORDS = (
+    "wasser", "water", "boiler", "pool", "heisswasser", "hot_water",
+    "brauchwasser", "warmwasser", "zirkulation", "ruecklauf", "vorlauf",
+    "flow_temp", "return_temp", "dhw",
+)
+_SOIL_TEMP_KEYWORDS = (
+    "boden", "soil", "erde", "ground", "earth", "gewaechshaus", "greenhouse",
+    "hochbeet", "raised_bed", "kompost", "compost",
+)
 
 # Role-Keywords fuer natuerliche Sprache → Role-Matching in _find_entity()
 _ROLE_KEYWORDS = {
     # Temperatur
-    "outdoor_temp": ["aussen", "draussen", "outdoor", "balkon", "aussentemperatur", "gartentemperatur"],
-    "indoor_temp": ["innen", "raum", "drinnen", "raumtemperatur", "zimmertemperatur"],
-    "water_temp": ["wassertemperatur", "boiler", "warmwasser", "pooltemperatur"],
-    "soil_temp": ["bodentemperatur", "erdtemperatur"],
+    "outdoor_temp": ["aussen", "draussen", "outdoor", "balkon", "aussentemperatur",
+                     "gartentemperatur", "outside temperature", "exterior",
+                     "patio", "garden temperature", "weather temperature"],
+    "indoor_temp": ["innen", "raum", "drinnen", "raumtemperatur", "zimmertemperatur",
+                    "indoor", "room temperature", "inside temperature"],
+    "water_temp": ["wassertemperatur", "boiler", "warmwasser", "pooltemperatur",
+                   "water temperature", "hot water", "dhw", "flow temperature",
+                   "return temperature"],
+    "soil_temp": ["bodentemperatur", "erdtemperatur", "soil temperature",
+                  "ground temperature", "greenhouse"],
     # Klima
-    "humidity": ["feuchtigkeit", "feuchte", "luftfeuchte", "luftfeuchtigkeit"],
-    "pressure": ["luftdruck", "druck", "barometer"],
+    "humidity": ["feuchtigkeit", "feuchte", "luftfeuchte", "luftfeuchtigkeit",
+                 "humidity", "relative humidity", "moisture"],
+    "pressure": ["luftdruck", "druck", "barometer",
+                 "air pressure", "barometric", "atmospheric"],
     # Luftqualitaet
-    "co2": ["co2", "kohlendioxid"],
-    "co": ["kohlenmonoxid", "co-melder"],
-    "voc": ["voc", "fluechtige", "organische"],
-    "pm25": ["feinstaub", "pm2.5", "pm25", "partikel"],
-    "air_quality": ["luftqualitaet", "luft qualitaet", "aqi"],
+    "co2": ["co2", "kohlendioxid", "carbon dioxide"],
+    "co": ["kohlenmonoxid", "co-melder", "carbon monoxide"],
+    "voc": ["voc", "fluechtige", "organische",
+            "volatile organic", "tvoc"],
+    "pm25": ["feinstaub", "pm2.5", "pm25", "partikel",
+             "particulate", "fine dust"],
+    "air_quality": ["luftqualitaet", "luft qualitaet", "aqi",
+                    "air quality", "air quality index"],
     # Wetter
-    "wind_speed": ["wind", "windgeschwindigkeit", "windstaerke"],
-    "rain": ["regen", "niederschlag", "rain"],
-    "uv_index": ["uv", "uv-index", "sonnenbrand"],
+    "wind_speed": ["wind", "windgeschwindigkeit", "windstaerke",
+                   "wind speed", "wind gust", "windboee"],
+    "rain": ["regen", "niederschlag", "rain", "precipitation", "rainfall"],
+    "uv_index": ["uv", "uv-index", "sonnenbrand", "ultraviolet"],
     # Sicherheit
-    "smoke": ["rauch", "rauchmelder"],
-    "gas": ["gas", "gasmelder", "erdgas"],
-    "water_leak": ["wasserleck", "leck", "wassermelder", "ueberschwemmung"],
-    "alarm": ["alarm", "alarmanlage", "einbruch"],
-    "tamper": ["manipulation", "tamper", "sabotage"],
+    "smoke": ["rauch", "rauchmelder", "smoke", "smoke detector"],
+    "gas": ["gas", "gasmelder", "erdgas", "gas detector", "natural gas"],
+    "water_leak": ["wasserleck", "leck", "wassermelder", "ueberschwemmung",
+                   "water leak", "flood", "leak detector"],
+    "alarm": ["alarm", "alarmanlage", "einbruch",
+              "security", "burglar", "intrusion", "sicherheit"],
+    "tamper": ["manipulation", "tamper", "sabotage", "tampering"],
     # Oeffnungen
-    "window_contact": ["fenster", "window"],
-    "door_contact": ["tuer", "tuerkontakt", "door", "haustuer", "eingangstuer"],
-    "garage_door": ["garage", "garagentor"],
-    "gate": ["tor", "einfahrt", "gate"],
-    "lock": ["schloss", "verriegelt", "lock"],
-    "doorbell": ["klingel", "tuerklingel", "doorbell"],
+    "window_contact": ["fenster", "window", "window sensor", "fensterkontakt"],
+    "door_contact": ["tuer", "tuerkontakt", "door", "haustuer", "eingangstuer",
+                     "front door", "entrance", "door sensor"],
+    "garage_door": ["garage", "garagentor", "garage door"],
+    "gate": ["tor", "einfahrt", "gate", "driveway"],
+    "lock": ["schloss", "verriegelt", "lock", "deadbolt", "locked", "unlocked"],
+    "doorbell": ["klingel", "tuerklingel", "doorbell", "ring", "chime"],
     # Bewegung
-    "motion": ["bewegung", "motion", "bewegungsmelder"],
-    "presence": ["anwesenheit", "zuhause", "abwesend", "presence"],
-    "occupancy": ["belegung", "besetzt", "raumbelegung"],
-    "bed_occupancy": ["bett", "bettbelegung", "bett sensor", "bed", "bed_occupancy", "schlafsensor"],
-    "chair_occupancy": ["stuhl", "stuhlbelegung", "stuhlsensor", "chair", "sitzflaeche", "sitzsensor"],
+    "motion": ["bewegung", "motion", "bewegungsmelder", "motion sensor",
+               "motion detector", "pir"],
+    "presence": ["anwesenheit", "zuhause", "abwesend", "presence",
+                 "home", "away", "at home", "not home"],
+    "occupancy": ["belegung", "besetzt", "raumbelegung",
+                  "occupancy", "occupied", "room occupancy"],
+    "bed_occupancy": ["bett", "bettbelegung", "bett sensor", "bed", "bed_occupancy",
+                      "schlafsensor", "bed sensor", "sleep sensor", "bed occupancy"],
+    "chair_occupancy": ["stuhl", "stuhlbelegung", "stuhlsensor", "chair",
+                        "sitzflaeche", "sitzsensor", "chair sensor", "seat sensor",
+                        "chair occupancy"],
     # Energie
-    "power_meter": ["strom", "leistung", "watt", "strommesser"],
-    "energy": ["energie", "kwh", "energieverbrauch", "stromverbrauch"],
-    "voltage": ["spannung", "volt"],
-    "battery": ["batterie", "akku"],
-    "solar": ["solar", "photovoltaik", "pv", "solaranlage"],
-    "ev_charger": ["wallbox", "ladestation", "e-auto", "elektroauto"],
+    "power_meter": ["strom", "leistung", "watt", "strommesser",
+                    "power", "power meter", "power consumption", "wattage"],
+    "energy": ["energie", "kwh", "energieverbrauch", "stromverbrauch",
+               "energy", "energy consumption", "electricity"],
+    "voltage": ["spannung", "volt", "voltage"],
+    "battery": ["batterie", "akku", "battery", "charge level"],
+    "solar": ["solar", "photovoltaik", "pv", "solaranlage",
+              "photovoltaic", "solar panel", "solar power"],
+    "ev_charger": ["wallbox", "ladestation", "e-auto", "elektroauto",
+                   "ev charger", "electric vehicle", "charging station", "evse"],
     # Verbrauch
-    "gas_consumption": ["gasverbrauch", "gasverbrauch", "kubikmeter"],
-    "water_consumption": ["wasserverbrauch"],
+    "gas_consumption": ["gasverbrauch", "kubikmeter",
+                        "gas consumption", "gas meter", "gas usage"],
+    "water_consumption": ["wasserverbrauch",
+                          "water consumption", "water meter", "water usage"],
     # Heizung & Klima
-    "thermostat": ["thermostat"],
-    "heating": ["heizung", "heizen"],
-    "cooling": ["kuehlung", "kuehlen", "klimaanlage"],
-    "heat_pump": ["waermepumpe"],
-    "boiler": ["boiler", "warmwasserspeicher"],
+    "thermostat": ["thermostat", "temperature setpoint", "solltemperatur"],
+    "heating": ["heizung", "heizen", "heating", "heat"],
+    "cooling": ["kuehlung", "kuehlen", "klimaanlage",
+                "cooling", "air conditioning", "ac", "hvac"],
+    "heat_pump": ["waermepumpe", "heat pump"],
+    "boiler": ["boiler", "warmwasserspeicher", "hot water tank"],
     "radiator": ["heizkoerper", "radiator"],
-    "floor_heating": ["fussbodenheizung", "fbh"],
+    "floor_heating": ["fussbodenheizung", "fbh",
+                      "underfloor heating", "floor heating", "ufh"],
     # Lueftung
-    "fan": ["luefter", "ventilator"],
-    "ventilation": ["lueftung", "lueftungsanlage", "kwl"],
-    "air_purifier": ["luftreiniger", "luftfilter"],
+    "fan": ["luefter", "ventilator", "fan", "exhaust"],
+    "ventilation": ["lueftung", "lueftungsanlage", "kwl",
+                    "ventilation", "hrv", "erv", "air exchange"],
+    "air_purifier": ["luftreiniger", "luftfilter",
+                     "air purifier", "air filter"],
     # Beschattung
-    "blinds": ["rolladen", "jalousie", "rollo"],
-    "shutter": ["rollladen"],
-    "awning": ["markise"],
-    "curtain": ["vorhang", "gardine"],
+    "blinds": ["rolladen", "jalousie", "rollo",
+               "blinds", "shades", "roller shutter"],
+    "shutter": ["rollladen", "shutter"],
+    "awning": ["markise", "awning"],
+    "curtain": ["vorhang", "gardine", "curtain", "drape"],
     # Steckdosen & Aktoren
-    "outlet": ["steckdose", "stecker"],
-    "valve": ["ventil"],
-    "pump": ["pumpe"],
+    "outlet": ["steckdose", "stecker", "outlet", "plug", "socket"],
+    "valve": ["ventil", "valve"],
+    "pump": ["pumpe", "pump"],
     # Garten
-    "irrigation": ["bewaesserung", "sprinkler", "gartenschlauch"],
-    "pool": ["pool", "schwimmbad", "whirlpool"],
-    "soil_moisture": ["bodenfeuchtigkeit", "erdfeuchte"],
+    "irrigation": ["bewaesserung", "sprinkler", "gartenschlauch",
+                   "irrigation", "watering", "lawn"],
+    "pool": ["pool", "schwimmbad", "whirlpool",
+             "swimming pool", "hot tub", "spa"],
+    "soil_moisture": ["bodenfeuchtigkeit", "erdfeuchte",
+                      "soil moisture", "soil humidity"],
     # Medien
     "tv": ["fernseher", "tv", "television"],
-    "speaker": ["lautsprecher", "speaker", "box"],
-    "media_player": ["mediaplayer", "player", "streamer"],
-    "receiver": ["receiver", "verstaerker", "av-receiver"],
+    "speaker": ["lautsprecher", "speaker", "box", "sonos", "echo", "homepod"],
+    "media_player": ["mediaplayer", "player", "streamer", "media player"],
+    "receiver": ["receiver", "verstaerker", "av-receiver",
+                 "amplifier", "av receiver"],
     # Kommunikation
-    "phone": ["telefon", "phone", "sip", "anruf", "festnetz", "voip"],
+    "phone": ["telefon", "phone", "sip", "anruf", "festnetz", "voip",
+              "landline", "call"],
     # Netzwerk
-    "router": ["router", "wlan", "wifi"],
+    "router": ["router", "wlan", "wifi", "access point", "mesh"],
     "server": ["server"],
-    "nas": ["nas", "netzwerkspeicher"],
+    "nas": ["nas", "netzwerkspeicher", "network storage"],
     "pc": ["pc", "computer", "desktop", "rechner", "workstation"],
-    "adblocker": ["adblocker", "adblock", "adguard", "pihole", "werbeblocker"],
-    "speedtest": ["speedtest", "internetgeschwindigkeit", "internet speed", "internet geschwindigkeit", "bandbreite", "download speed", "upload speed"],
+    "adblocker": ["adblocker", "adblock", "adguard", "pihole", "werbeblocker",
+                  "ad blocker", "dns filter"],
+    "speedtest": ["speedtest", "internetgeschwindigkeit", "internet speed",
+                  "internet geschwindigkeit", "bandbreite", "download speed",
+                  "upload speed", "bandwidth"],
     # Haushaltsgeraete
-    "washing_machine": ["waschmaschine", "waschen"],
-    "dryer": ["trockner"],
-    "dishwasher": ["spuelmaschine", "geschirrspueler"],
-    "vacuum": ["staubsauger", "saugroboter", "roborock"],
-    "coffee_machine": ["kaffeemaschine", "kaffee", "espresso"],
+    "washing_machine": ["waschmaschine", "waschen",
+                        "washing machine", "washer", "laundry"],
+    "dryer": ["trockner", "dryer", "tumble dryer"],
+    "dishwasher": ["spuelmaschine", "geschirrspueler",
+                   "dishwasher"],
+    "vacuum": ["staubsauger", "saugroboter", "roborock",
+               "vacuum", "robot vacuum", "roomba"],
+    "coffee_machine": ["kaffeemaschine", "kaffee", "espresso",
+                       "coffee", "coffee machine", "coffee maker"],
     # Fahrzeuge
-    "car": ["auto", "fahrzeug", "pkw"],
-    "car_battery": ["autobatterie", "soc", "ladestand"],
+    "car": ["auto", "fahrzeug", "pkw", "car", "vehicle"],
+    "car_battery": ["autobatterie", "soc", "ladestand",
+                    "car battery", "state of charge", "ev battery"],
     # Ueberwachung
-    "camera": ["kamera", "ueberwachung", "cam"],
+    "camera": ["kamera", "ueberwachung", "cam",
+               "camera", "surveillance", "cctv", "webcam"],
     # Zonen
-    "zone": ["zone", "zonen", "bereich", "gebiet", "standort", "geofence"],
+    "zone": ["zone", "zonen", "bereich", "gebiet", "standort", "geofence",
+             "area", "location"],
 }
 
 
@@ -635,9 +693,9 @@ def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) 
         if device_class == "frequency" or unit == "Hz":
             return "frequency"
         # Verbrauch
-        if device_class == "gas" or unit in ("m\u00b3",) and "gas" in lower_eid:
+        if device_class == "gas" or (unit in ("m\u00b3",) and "gas" in lower_eid):
             return "gas_consumption"
-        if device_class == "water" or unit in ("L", "m\u00b3") and "water" in lower_eid:
+        if device_class == "water" or (unit in ("L", "m\u00b3") and "water" in lower_eid):
             return "water_consumption"
         # Sonstiges
         if device_class == "signal_strength" or unit in ("dBm", "dB"):
@@ -659,16 +717,19 @@ def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) 
     if domain == "switch":
         if device_class == "outlet":
             return "outlet"
-        if any(kw in lower_eid for kw in ("ventilat", "lueft", "fan")):
+        if any(kw in lower_eid for kw in ("ventilat", "lueft", "fan", "exhaust")):
             return "fan"
-        if any(kw in lower_eid for kw in ("bewaesser", "irrigat", "sprinkl")):
+        if any(kw in lower_eid for kw in ("bewaesser", "irrigat", "sprinkl", "water"
+                                           "ing", "rasen", "lawn")):
             return "irrigation"
         if any(kw in lower_eid for kw in ("ventil", "valve")):
             return "valve"
-        if any(kw in lower_eid for kw in ("steckdose", "plug", "socket")):
+        if any(kw in lower_eid for kw in ("steckdose", "plug", "socket", "outlet")):
             return "outlet"
         if any(kw in lower_eid for kw in ("pump", "pumpe")):
             return "pump"
+        if any(kw in lower_eid for kw in ("heiz", "heat", "boiler")):
+            return "heating"
         return ""
 
     if domain == "cover":
@@ -682,6 +743,8 @@ def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) 
             return "garage_door"
         if device_class == "gate":
             return "gate"
+        if device_class == "window":
+            return "blinds"
         return ""
 
     if domain == "lock":
