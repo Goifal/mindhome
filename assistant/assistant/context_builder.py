@@ -86,6 +86,7 @@ class ContextBuilder:
         self.ha = ha_client
         self.semantic: Optional[SemanticMemory] = None
         self._activity_engine = None
+        self._health_monitor = None
         self._redis = None
         # Weather-Warning-Cache (aendert sich selten, spart Iteration pro Request)
         self._weather_cache: list[str] = []
@@ -103,6 +104,10 @@ class ContextBuilder:
     def set_activity_engine(self, activity_engine):
         """Setzt die Referenz zur Activity Engine (Phase 6)."""
         self._activity_engine = activity_engine
+
+    def set_health_monitor(self, health_monitor):
+        """Setzt die Referenz zum Health Monitor (fuer Trend-Indikatoren)."""
+        self._health_monitor = health_monitor
 
     async def build(
         self, trigger: str = "voice", user_text: str = "", person: str = "",
@@ -147,6 +152,10 @@ class ContextBuilder:
         # Aktivitaets-Erkennung (Phase 6)
         if (not profile or profile.need_activity) and self._activity_engine:
             parallel_tasks.append(("activity", self._activity_engine.detect_activity()))
+
+        # Health-Trend-Indikatoren (Raumklima-Trends aus Snapshots)
+        if self._health_monitor:
+            parallel_tasks.append(("health_trend", self._health_monitor.get_trend_summary()))
 
         # Semantisches Gedaechtnis — Guest-Mode-Check + Fakten parallel holen
         need_memories = not profile or profile.need_memories
@@ -218,6 +227,13 @@ class ContextBuilder:
                 if anomalies:
                     context["anomalies"] = anomalies
 
+        # Health-Trend-Indikatoren
+        health_trend = _result_map.get("health_trend")
+        if isinstance(health_trend, BaseException):
+            logger.debug("Health-Trend Fehler: %s", health_trend)
+        elif health_trend:
+            context["health_trend"] = health_trend
+
         # Semantisches Gedaechtnis - relevante Fakten zur Anfrage
         # Im Guest-Mode keine persoenlichen Fakten preisgeben
         if need_memories:
@@ -278,6 +294,7 @@ class ContextBuilder:
         house = {
             "temperatures": {},
             "lights": [],
+            "covers": [],
             "presence": {"home": [], "away": []},
             "weather": {},
             "active_scenes": [],
@@ -397,6 +414,40 @@ class ContextBuilder:
                 title = _sanitize_for_prompt(attrs.get("media_title", ""), 100, "media_title")
                 if name:
                     house["media"].append(f"{name}: {title}" if title else name)
+
+            # Cover-Status (Rolllaeden/Jalousien/Garagentore)
+            elif domain == "cover" and s not in ("unavailable", "unknown"):
+                mh_room = get_mindhome_room(entity_id)
+                if mh_room:
+                    name = _sanitize_for_prompt(mh_room, 50, "cover_name")
+                else:
+                    name = _sanitize_for_prompt(
+                        attrs.get("friendly_name", entity_id), 50, "cover_name"
+                    )
+                if name:
+                    pos = attrs.get("current_position")
+                    if pos is not None:
+                        house["covers"].append(f"{name}: {pos}%")
+                    else:
+                        state_de = {"open": "offen", "closed": "geschlossen",
+                                    "opening": "oeffnet", "closing": "schliesst"}.get(s, s)
+                        house["covers"].append(f"{name}: {state_de}")
+
+            # Annotierte Switches (vom User im UI markierte Schalter)
+            elif domain == "switch" and s not in ("unavailable", "unknown"):
+                ann = get_entity_annotation(entity_id)
+                role = ann.get("role", "")
+                if role:
+                    desc = ann.get("description", "")
+                    if not desc:
+                        desc = _sanitize_for_prompt(
+                            attrs.get("friendly_name", entity_id), 50, "switch_name"
+                        )
+                    else:
+                        desc = _sanitize_for_prompt(desc, 50, "switch_desc")
+                    if desc:
+                        switch_text = "an" if s == "on" else "aus"
+                        house.setdefault("switches", []).append(f"{desc}: {switch_text}")
 
             # Fernbedienungen (Harmony etc.)
             elif domain == "remote":

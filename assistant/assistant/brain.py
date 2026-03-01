@@ -322,6 +322,9 @@ class AssistantBrain(BrainCallbacksMixin):
         # Activity Engine mit Context Builder verbinden
         self.context_builder.set_activity_engine(self.activity)
 
+        # Health Monitor mit Context Builder verbinden (Trend-Indikatoren)
+        self.context_builder.set_health_monitor(self.health_monitor)
+
         # Redis fuer Context Builder (Guest-Mode-Check)
         self.context_builder.set_redis(self.memory.redis)
 

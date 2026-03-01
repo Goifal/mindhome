@@ -89,6 +89,29 @@ class HomeAssistantClient:
         """State einer einzelnen Entity."""
         return await self._get_ha(f"/api/states/{entity_id}")
 
+    async def get_history(
+        self, entity_id: str, hours: int = 24,
+    ) -> Optional[list]:
+        """Holt die History einer Entity von der HA REST API.
+
+        Args:
+            entity_id: Entity-ID (z.B. sensor.temperatur_buero)
+            hours: Anzahl zurueckliegender Stunden (max 720 = 30 Tage)
+
+        Returns:
+            Liste von State-Eintraegen oder None bei Fehler.
+            Jeder Eintrag: {"state": str, "last_changed": str, "attributes": dict}
+        """
+        from datetime import datetime, timedelta, timezone
+
+        hours = max(1, min(hours, 720))
+        start = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        path = f"/api/history/period/{start}?filter_entity_id={entity_id}&minimal_response&no_attributes"
+        result = await self._get_ha(path)
+        if result and isinstance(result, list) and len(result) > 0:
+            return result[0]  # HA gibt [[entries]] zurueck
+        return None
+
     async def api_get(self, path: str) -> Any:
         """Generischer GET auf die HA REST API (z.B. /api/shopping_list)."""
         return await self._get_ha(path)

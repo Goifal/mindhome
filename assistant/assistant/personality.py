@@ -2126,9 +2126,18 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             if "security" in house:
                 lines.append(f"- Sicherheit: {house['security']}")
 
+            # Cover-Status (Rolllaeden/Jalousien)
+            if house.get("covers"):
+                lines.append(f"- Rolllaeden: {', '.join(house['covers'][:8])}")
+
             # Annotierte Sensoren (Fenster, Bewegung, Temperatur etc.)
+            # sensor_context_limit wird bereits in context_builder angewendet
             if house.get("sensors"):
-                lines.append(f"- Sensoren: {', '.join(house['sensors'][:15])}")
+                lines.append(f"- Sensoren: {', '.join(house['sensors'])}")
+
+            # Annotierte Switches (vom User markierte Schalter)
+            if house.get("switches"):
+                lines.append(f"- Schalter: {', '.join(house['switches'])}")
 
             # Schloesser
             if house.get("locks"):
@@ -2145,6 +2154,61 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             # Energie-Sensoren
             if house.get("energy"):
                 lines.append(f"- Energie: {', '.join(house['energy'][:5])}")
+
+        # Saisonale Daten (Jahreszeit, Sonnenzeiten)
+        seasonal = context.get("seasonal")
+        if seasonal:
+            _season_de = {
+                "spring": "Fruehling", "summer": "Sommer",
+                "autumn": "Herbst", "winter": "Winter",
+            }
+            season_name = _season_de.get(seasonal.get("season", ""), "")
+            parts = []
+            if season_name:
+                parts.append(season_name)
+            sunrise = seasonal.get("sunrise_approx")
+            sunset = seasonal.get("sunset_approx")
+            if sunrise and sunset:
+                parts.append(f"Sonne {sunrise}-{sunset}")
+            outside = seasonal.get("outside_temp")
+            if outside is not None:
+                parts.append(f"Aussen {outside}°C")
+            vent = seasonal.get("ventilation_hint")
+            if vent:
+                parts.append(vent)
+            if parts:
+                lines.append(f"- Saison: {', '.join(parts)}")
+
+        # Raum-Praesenz (Multi-Room Tracking)
+        room_presence = context.get("room_presence")
+        if room_presence:
+            active = room_presence.get("active_rooms", [])
+            if active:
+                lines.append(f"- Aktive Raeume: {', '.join(active)}")
+            persons_by_room = room_presence.get("persons_by_room", {})
+            if persons_by_room:
+                for rm, persons in persons_by_room.items():
+                    if persons:
+                        lines.append(f"- Personen {rm}: {', '.join(persons)}")
+
+        # Aktivitaet (Activity Engine)
+        activity = context.get("activity")
+        if activity:
+            act_str = activity.get("current", "")
+            conf = activity.get("confidence", 0)
+            if act_str and conf > 0.4:
+                lines.append(f"- Aktivitaet: {act_str} ({conf:.0%})")
+
+        # Health-Trend-Indikatoren (Raumklima-Verlauf)
+        health_trend = context.get("health_trend")
+        if health_trend:
+            lines.append(f"- {health_trend}")
+
+        # Wetter-Warnungen
+        weather_warnings = context.get("weather_warnings")
+        if weather_warnings:
+            for ww in weather_warnings:
+                lines.append(f"- {ww}")
 
         # Warnungen immer
         if "alerts" in context and context["alerts"]:

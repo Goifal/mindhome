@@ -1467,6 +1467,27 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "get_entity_history",
+            "description": "Historische Daten einer Entity abrufen (z.B. Temperaturverlauf, Schalthistorie, Energieverbrauch der letzten Stunden/Tage). Nutze dies wenn der User nach Verlaeufen, Trends oder vergangenen Werten fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "entity_id": {
+                        "type": "string",
+                        "description": "Entity-ID (z.B. sensor.temperatur_buero, switch.steckdose_kueche)",
+                    },
+                    "hours": {
+                        "type": "integer",
+                        "description": "Anzahl zurueckliegender Stunden (Standard: 24, Max: 720 = 30 Tage)",
+                    },
+                },
+                "required": ["entity_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "send_message_to_person",
             "description": "Nachricht an eine bestimmte Person senden (TTS in deren Raum oder Push)",
             "parameters": {
@@ -2532,7 +2553,8 @@ class FunctionExecutor:
         "get_covers", "get_media", "get_climate", "get_switches", "set_switch",
         "call_service", "play_media", "transfer_playback", "arm_security_system",
         "lock_door", "send_notification", "send_message_to_person",
-        "play_sound", "get_entity_state", "get_calendar_events",
+        "play_sound", "get_entity_state", "get_entity_history",
+        "get_calendar_events",
         "create_calendar_event", "delete_calendar_event",
         "reschedule_calendar_event", "set_presence_mode", "edit_config",
         "manage_shopping_list", "list_capabilities", "create_automation",
@@ -4410,6 +4432,83 @@ class FunctionExecutor:
             display += f" (Rolle: {role_label})"
 
         return {"success": True, "message": display, "state": current, "attributes": attrs}
+
+    async def _exec_get_entity_history(self, args: dict) -> dict:
+        """Historische Daten einer Entity abrufen."""
+        entity_id = args.get("entity_id", "")
+        hours = int(args.get("hours", 24))
+
+        if not entity_id:
+            return {"success": False, "message": "Entity-ID erforderlich"}
+
+        # Fuzzy-Match wenn exakter ID nicht gefunden
+        state = await self.ha.get_state(entity_id)
+        if not state and "." in entity_id:
+            domain, search = entity_id.split(".", 1)
+            found = await self._find_entity(domain, search)
+            if found:
+                entity_id = found
+
+        try:
+            history = await self.ha.get_history(entity_id, hours=hours)
+        except Exception as e:
+            logger.error("get_entity_history Fehler: %s", e)
+            return {"success": False, "message": f"Fehler: {e}"}
+
+        if not history:
+            return {"success": True, "message": f"Keine Historie fuer '{entity_id}' in den letzten {hours}h"}
+
+        # Numerische Werte: Min/Max/Avg berechnen
+        numeric_vals = []
+        for entry in history:
+            try:
+                numeric_vals.append(float(entry.get("state", "")))
+            except (ValueError, TypeError):
+                pass
+
+        friendly_name = entity_id
+        if state:
+            friendly_name = state.get("attributes", {}).get("friendly_name", entity_id)
+            unit = state.get("attributes", {}).get("unit_of_measurement", "")
+        else:
+            unit = ""
+
+        lines = [f"Historie {friendly_name} (letzte {hours}h, {len(history)} Eintraege):"]
+
+        if numeric_vals:
+            avg = sum(numeric_vals) / len(numeric_vals)
+            lines.append(
+                f"Min: {min(numeric_vals):.1f}{unit} | "
+                f"Max: {max(numeric_vals):.1f}{unit} | "
+                f"Durchschnitt: {avg:.1f}{unit}"
+            )
+            # Trend: Vergleiche erste und letzte 20%
+            n = len(numeric_vals)
+            if n >= 5:
+                first_avg = sum(numeric_vals[:n // 5]) / (n // 5)
+                last_avg = sum(numeric_vals[-(n // 5):]) / (n // 5)
+                diff = last_avg - first_avg
+                if abs(diff) > 0.1:
+                    trend = "steigend" if diff > 0 else "fallend"
+                    lines.append(f"Trend: {trend} ({diff:+.1f}{unit})")
+
+        # Letzte Aenderungen (max 10)
+        changes = []
+        prev_state = None
+        for entry in history:
+            s = entry.get("state", "")
+            if s != prev_state and s not in ("unavailable", "unknown"):
+                ts = entry.get("last_changed", "")
+                if ts:
+                    ts_short = ts[11:16] if len(ts) > 16 else ts  # HH:MM
+                    changes.append(f"{ts_short}: {s}{unit}")
+                prev_state = s
+        if changes:
+            # Letzte 10 Aenderungen
+            shown = changes[-10:]
+            lines.append("Letzte Aenderungen: " + " → ".join(shown))
+
+        return {"success": True, "message": "\n".join(lines)}
 
     def _get_write_calendar(self) -> Optional[str]:
         """Ersten konfigurierten Kalender fuer Schreib-Operationen zurueckgeben."""
