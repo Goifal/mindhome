@@ -4330,6 +4330,7 @@ async function updatePresenceSetting(key, value) {
 
 // Standard-Rollen Labels (werden von API ueberschrieben)
 const _ROLE_LABELS = {
+  light:'Beleuchtung', dimmer:'Dimmer', color_light:'Farblicht/RGB',
   indoor_temp:'Raumtemperatur', outdoor_temp:'Aussentemperatur', humidity:'Luftfeuchtigkeit',
   window_contact:'Fensterkontakt', door_contact:'Tuerkontakt', motion:'Bewegungsmelder',
   presence:'Anwesenheit', water_leak:'Wassermelder', smoke:'Rauchmelder',

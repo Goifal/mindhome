@@ -222,6 +222,9 @@ _DEFAULT_ROLES_DICT = {
     "uv_index":       {"label": "UV-Index", "icon": "\u2600\ufe0f"},
     "solar_radiation": {"label": "Sonneneinstrahlung", "icon": "\u2600\ufe0f"},
     # --- Licht & Helligkeit ---
+    "light":          {"label": "Beleuchtung", "icon": "\U0001f4a1"},
+    "dimmer":         {"label": "Dimmer", "icon": "\U0001f4a1"},
+    "color_light":    {"label": "Farblicht/RGB", "icon": "\U0001f308"},
     "light_level":    {"label": "Lichtsensor", "icon": "\u2600\ufe0f"},
     # --- Sicherheit & Alarm ---
     "smoke":          {"label": "Rauchmelder", "icon": "\U0001f525"},
@@ -666,6 +669,16 @@ def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) 
 
     if domain == "lock":
         return "lock"
+
+    if domain == "light":
+        # Farblicht vs Dimmer vs einfaches Licht (kann nur per Attribute unterschieden werden)
+        if any(kw in lower_eid for kw in ("rgb", "color", "farb", "hue", "strip", "led_strip")):
+            return "color_light"
+        if any(kw in lower_eid for kw in ("dimm", "dim_")):
+            return "dimmer"
+        if any(kw in lower_eid for kw in ("garten", "garden", "aussen", "outdoor", "terrass")):
+            return "garden_light"
+        return "light"
 
     if domain == "fan":
         return "fan"
