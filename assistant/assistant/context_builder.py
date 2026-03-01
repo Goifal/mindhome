@@ -17,7 +17,7 @@ from typing import Optional
 import yaml
 
 from .config import yaml_config, resolve_person_by_entity
-from .function_calling import get_mindhome_room, get_entity_annotation, is_entity_hidden, auto_detect_role
+from .function_calling import get_mindhome_room, get_entity_annotation, is_entity_hidden
 from .ha_client import HomeAssistantClient
 from .semantic_memory import SemanticMemory
 
@@ -416,12 +416,9 @@ class ContextBuilder:
                     if name:
                         house.setdefault("energy", []).append(f"{name}: {s} {unit}")
 
-                # Annotierte Sensoren (Temperatur, Feuchtigkeit etc.)
+                # Nur explizit annotierte Sensoren (User waehlt im UI aus)
                 ann = get_entity_annotation(entity_id)
                 role = ann.get("role", "")
-                if not role:
-                    device_class = attrs.get("device_class", "")
-                    role = auto_detect_role(domain, device_class, unit, entity_id)
                 if role and role not in ("power_meter", "energy"):
                     desc = ann.get("description", "")
                     if not desc:
@@ -437,13 +434,10 @@ class ContextBuilder:
                             "_role": role,
                         })
 
-            # Binary-Sensoren (Fenster, Tueren, Bewegung etc.)
+            # Nur explizit annotierte Binary-Sensoren (User waehlt im UI aus)
             elif domain == "binary_sensor" and s not in ("unavailable", "unknown"):
                 ann = get_entity_annotation(entity_id)
                 role = ann.get("role", "")
-                if not role:
-                    device_class = attrs.get("device_class", "")
-                    role = auto_detect_role(domain, device_class, "", entity_id)
                 if role:
                     desc = ann.get("description", "")
                     if not desc:

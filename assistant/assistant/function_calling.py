@@ -478,12 +478,8 @@ async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
         elif domain == "scene":
             scenes.append(f"{name} ({friendly})" if friendly else name)
         elif domain in ("sensor", "binary_sensor"):
-            # Sensor/Binary-Sensor: Nur annotierte oder auto-erkannte aufnehmen
-            device_class = attrs.get("device_class", "")
-            unit = attrs.get("unit_of_measurement", "")
+            # Nur explizit annotierte Sensors/Binary-Sensors im Katalog
             role = ann.get("role", "")
-            if not role:
-                role = auto_detect_role(domain, device_class, unit, eid)
             if role:
                 role_label = all_roles.get(role, {}).get("label", role)
                 desc = ann.get("description", friendly or name)
