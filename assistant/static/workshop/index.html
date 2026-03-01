@@ -35,6 +35,25 @@
             --normal: 0.25s ease;
         }
 
+        /* ===== Theme: Stark (Rot/Gold) ===== */
+        [data-theme="stark"] {
+            --accent: #ff3d3d; --accent-dim: rgba(255,61,61,0.1);
+            --accent-glow: rgba(255,61,61,0.35);
+            --border: rgba(255,61,61,0.06); --border-hover: rgba(255,61,61,0.15);
+            --border-accent: rgba(255,61,61,0.25);
+            --shadow-glow: 0 0 30px rgba(255,61,61,0.15);
+            --warning: #ffaa00; --success: #00e676;
+        }
+        /* ===== Theme: Matrix (Gruen) ===== */
+        [data-theme="matrix"] {
+            --accent: #00e676; --accent-dim: rgba(0,230,118,0.1);
+            --accent-glow: rgba(0,230,118,0.35);
+            --border: rgba(0,230,118,0.06); --border-hover: rgba(0,230,118,0.15);
+            --border-accent: rgba(0,230,118,0.25);
+            --shadow-glow: 0 0 30px rgba(0,230,118,0.15);
+            --warning: #ffaa00; --danger: #ff3d3d;
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             background: var(--bg-primary);
@@ -812,6 +831,126 @@
         .template-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
         .template-desc { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
 
+        /* ===== SVG Progress Ring ===== */
+        .progress-ring { display: inline-block; }
+        .progress-ring circle { transition: stroke-dashoffset 0.8s ease; transform: rotate(-90deg); transform-origin: 50% 50%; }
+        .progress-ring .ring-bg { stroke: var(--border); fill: none; }
+        .progress-ring .ring-fg { fill: none; stroke-linecap: round; }
+        .progress-ring .ring-text { fill: var(--text-primary); font-size: 12px; font-weight: 700; font-family: var(--mono); dominant-baseline: central; text-anchor: middle; }
+
+        /* ===== Timeline ===== */
+        .timeline { position: relative; padding-left: 24px; }
+        .timeline::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 0; width: 1px; background: var(--border); }
+        .timeline-item { position: relative; padding: 6px 0 16px; }
+        .timeline-dot { position: absolute; left: -20px; top: 8px; width: 10px; height: 10px; border-radius: 50%; background: var(--bg-card); border: 2px solid var(--text-muted); }
+        .timeline-dot.active { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+        .timeline-time { font-size: 10px; color: var(--text-muted); font-family: var(--mono); }
+        .timeline-text { font-size: 12px; color: var(--text-primary); margin-top: 2px; }
+
+        /* ===== Empty State ===== */
+        .empty-state { text-align: center; padding: 48px 24px; color: var(--text-secondary); }
+        .empty-state-icon { font-size: 48px; opacity: 0.3; margin-bottom: 12px; }
+        .empty-state-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+        .empty-state-desc { font-size: 12px; margin-bottom: 16px; line-height: 1.6; }
+        .empty-state .action-btn { display: inline-block; }
+
+        /* ===== Notification Panel ===== */
+        .notif-panel { position: fixed; top: 0; right: -360px; width: 360px; height: 100vh; background: rgba(8,16,28,0.98); border-left: 1px solid var(--border-accent); z-index: 600; transition: right 0.3s ease; display: flex; flex-direction: column; backdrop-filter: blur(16px); }
+        .notif-panel.open { right: 0; }
+        .notif-header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+        .notif-list { flex: 1; overflow-y: auto; padding: 8px; }
+        .notif-item { padding: 12px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: flex-start; font-size: 12px; color: var(--text-secondary); cursor: pointer; transition: all var(--fast); }
+        .notif-item:hover { background: var(--accent-dim); color: var(--text-primary); }
+        .notif-icon { font-size: 18px; flex-shrink: 0; }
+        .notif-badge { background: var(--danger); color: #fff; font-size: 9px; font-weight: 700; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+        .notif-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 599; display: none; }
+        .notif-backdrop.show { display: block; }
+
+        /* ===== Undo Toast Extension ===== */
+        .toast .toast-undo { background: none; border: 1px solid currentColor; color: inherit; padding: 3px 10px; border-radius: 3px; font-size: 11px; cursor: pointer; margin-left: 12px; font-family: var(--font); }
+        .toast .toast-undo:hover { background: rgba(255,255,255,0.1); }
+
+        /* ===== Kanban Board ===== */
+        .kanban-board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; min-height: 300px; }
+        .kanban-column { min-width: 200px; flex: 1; background: rgba(0,212,255,0.02); border: 1px solid var(--border); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; }
+        .kanban-column-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-secondary); font-weight: 600; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+        .kanban-card { padding: 10px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 6px; cursor: grab; transition: all var(--fast); font-size: 12px; }
+        .kanban-card:hover { border-color: var(--accent); box-shadow: 0 2px 12px rgba(0,212,255,0.1); }
+        .kanban-card.dragging { opacity: 0.5; }
+        .kanban-card-title { font-weight: 600; color: var(--text-primary); }
+        .kanban-card-meta { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+        .kanban-drop-zone { min-height: 40px; border: 1px dashed transparent; border-radius: 4px; transition: all var(--fast); flex: 1; }
+        .kanban-drop-zone.over { border-color: var(--accent); background: var(--accent-dim); }
+
+        /* ===== Pomodoro ===== */
+        .pomodoro-display { text-align: center; padding: 24px; }
+        .pomodoro-time { font-size: 56px; font-family: var(--mono); font-weight: 700; color: var(--accent); text-shadow: 0 0 30px var(--accent-glow); }
+        .pomodoro-label { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-secondary); margin-top: 4px; }
+        .pomodoro-cycles { display: flex; justify-content: center; gap: 6px; margin-top: 12px; }
+        .pomodoro-dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--text-muted); }
+        .pomodoro-dot.done { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+
+        /* ===== Resistor Color Code ===== */
+        .resistor-svg { display: block; margin: 0 auto; }
+        .color-band-select { display: inline-flex; gap: 4px; margin: 8px 0; }
+        .color-swatch { width: 24px; height: 24px; border-radius: 3px; cursor: pointer; border: 2px solid transparent; transition: all var(--fast); }
+        .color-swatch:hover, .color-swatch.active { border-color: var(--text-primary); transform: scale(1.15); }
+        .resistor-value { font-size: 24px; font-family: var(--mono); font-weight: 700; color: var(--accent); text-align: center; margin-top: 12px; }
+
+        /* ===== Ambient Mode ===== */
+        .ambient-overlay { position: fixed; inset: 0; z-index: 9999; background: #000; display: none; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; }
+        .ambient-overlay.active { display: flex; }
+        .ambient-clock { font-size: 96px; font-family: var(--mono); font-weight: 700; color: var(--accent); text-shadow: 0 0 60px var(--accent-glow); }
+        .ambient-project { font-size: 18px; color: var(--text-secondary); margin-top: 16px; }
+        .ambient-env { font-size: 14px; color: var(--text-muted); margin-top: 24px; }
+        .ambient-ticker { position: absolute; bottom: 24px; font-size: 12px; color: var(--text-muted); white-space: nowrap; animation: ambientScroll 20s linear infinite; }
+        @keyframes ambientScroll { from { transform: translateX(100vw); } to { transform: translateX(-100%); } }
+
+        /* ===== Loading Pulse ===== */
+        .gen-loading { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin: 8px 0; }
+        .gen-loading-bar { height: 100%; width: 30%; background: var(--accent); border-radius: 2px; animation: genPulse 1.5s ease-in-out infinite; }
+        @keyframes genPulse { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
+        .gen-loading-text { font-size: 11px; color: var(--text-secondary); }
+        .gen-loading-text::after { content: ''; animation: dots 1.5s steps(3) infinite; }
+        @keyframes dots { 0% { content: '.'; } 33% { content: '..'; } 66% { content: '...'; } }
+
+        /* ===== Code Display ===== */
+        .code-result { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 12px; overflow-x: auto; font-family: var(--mono); font-size: 11px; line-height: 1.6; white-space: pre-wrap; max-height: 500px; overflow-y: auto; color: var(--text-primary); }
+        .code-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+        /* ===== Theme Preview Cards ===== */
+        .theme-card { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 6px; cursor: pointer; border: 2px solid var(--border); transition: all var(--fast); }
+        .theme-card:hover { border-color: var(--text-muted); }
+        .theme-card.active { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+        .theme-dot { width: 20px; height: 20px; border-radius: 50%; }
+        .theme-name { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+
+        /* ===== Print Stylesheet ===== */
+        @media print {
+            .sidebar, .header, .footer, .ai-bubble, .ai-popup, .hamburger, .sidebar-backdrop, .notif-panel, .notif-backdrop, .ambient-overlay { display: none !important; }
+            .main { margin-left: 0 !important; }
+            .main-content-area { padding: 0 !important; }
+            body { background: #fff !important; color: #000 !important; }
+            .widget { background: #fff !important; border: 1px solid #ccc !important; page-break-inside: avoid; box-shadow: none !important; }
+            .stat-card { background: #f5f5f5 !important; border-color: #ccc !important; }
+            .stat-value, .accent { color: #333 !important; text-shadow: none !important; }
+        }
+
+        /* ===== Shortcut Overlay ===== */
+        .shortcut-overlay { position: fixed; inset: 0; z-index: 800; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+        .shortcut-overlay.open { display: flex; }
+        .shortcut-box { background: var(--bg-card); border: 1px solid var(--border-accent); border-radius: 8px; padding: 24px; max-width: 480px; width: 90%; }
+        .shortcut-title { font-size: 14px; font-weight: 700; color: var(--accent); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
+        .shortcut-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 12px; border-bottom: 1px solid var(--border); }
+        .shortcut-key { font-family: var(--mono); color: var(--accent); background: var(--accent-dim); padding: 2px 6px; border-radius: 3px; font-size: 11px; }
+        .shortcut-desc { color: var(--text-secondary); }
+
+        /* ===== Soldering Guide Table ===== */
+        .solder-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .solder-table th { text-align: left; padding: 8px; background: var(--accent-dim); color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .solder-table td { padding: 8px; border-bottom: 1px solid var(--border); color: var(--text-secondary); }
+        .solder-table tr:hover td { background: var(--accent-dim); color: var(--text-primary); }
+
         /* ===== Responsive: Tablet (<= 900px) ===== */
         @media (max-width: 900px) {
             .hamburger { display: block; }
@@ -939,12 +1078,22 @@
                 <span class="icon">&#128204;</span> Pinout-Referenz
             </button>
 
+            <h3>Generatoren</h3>
+            <button class="nav-btn" data-view="generators" onclick="switchView(this, 'generators')">
+                <span class="icon">&#9881;</span> KI-Generatoren
+            </button>
+
             <h3>Analyse</h3>
             <button class="nav-btn" data-view="analysis" onclick="switchView(this, 'analysis')">
                 <span class="icon">&#128300;</span> Analyse & Debug
             </button>
             <button class="nav-btn" data-view="devices" onclick="switchView(this, 'devices')">
                 <span class="icon">&#128268;</span> Geraete
+            </button>
+
+            <h3>Boards</h3>
+            <button class="nav-btn" data-view="kanban" onclick="switchView(this, 'kanban')">
+                <span class="icon">&#128203;</span> Kanban
             </button>
 
             <h3>Sonstiges</h3>
@@ -987,6 +1136,7 @@
                     <input class="search-input" id="header-search" placeholder="Projekte suchen..." oninput="handleSearch(this.value)" onfocus="this.parentElement.querySelector('.search-results').classList.add('open')" onblur="setTimeout(()=>document.querySelector('.search-results').classList.remove('open'),200)">
                     <div class="search-results" id="search-results"></div>
                 </div>
+                <button onclick="toggleNotifPanel()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:16px;position:relative" title="Benachrichtigungen">&#128276;<span class="notif-badge" id="notif-count" style="position:absolute;top:-4px;right:-6px;display:none">0</span></button>
                 <span class="header-status status-none" id="header-status">---</span>
                 <div class="header-actions">
                     <button onclick="showNewProjectModal()">+ Projekt</button>
@@ -1015,6 +1165,44 @@
 
 <!-- Toast Notification -->
 <div class="toast" id="toast"></div>
+
+<!-- Notification Panel -->
+<div class="notif-backdrop" id="notif-backdrop" onclick="toggleNotifPanel()"></div>
+<div class="notif-panel" id="notif-panel">
+    <div class="notif-header"><span>Benachrichtigungen</span><button style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:16px" onclick="toggleNotifPanel()">&#10005;</button></div>
+    <div class="notif-list" id="notif-list"></div>
+</div>
+
+<!-- Shortcut Overlay -->
+<div class="shortcut-overlay" id="shortcut-overlay" onclick="if(event.target===this)toggleShortcuts()">
+    <div class="shortcut-box">
+        <div class="shortcut-title">Keyboard Shortcuts</div>
+        <div class="shortcut-row"><span class="shortcut-desc">Neues Projekt</span><span class="shortcut-key">Ctrl+N</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Suche</span><span class="shortcut-key">Ctrl+K</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Quick Chat</span><span class="shortcut-key">Ctrl+B</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Editor speichern</span><span class="shortcut-key">Ctrl+S</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Uebersicht</span><span class="shortcut-key">1</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Schritte</span><span class="shortcut-key">2</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Code</span><span class="shortcut-key">3</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Editor</span><span class="shortcut-key">4</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Hardware</span><span class="shortcut-key">5</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Chat</span><span class="shortcut-key">6</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Rechner</span><span class="shortcut-key">7</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Journal</span><span class="shortcut-key">8</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Analyse</span><span class="shortcut-key">9</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Pomodoro</span><span class="shortcut-key">P</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Shortcuts anzeigen</span><span class="shortcut-key">?</span></div>
+        <div class="shortcut-row"><span class="shortcut-desc">Schliessen</span><span class="shortcut-key">Esc</span></div>
+    </div>
+</div>
+
+<!-- Ambient Mode Overlay -->
+<div class="ambient-overlay" id="ambient-overlay" onclick="exitAmbientMode()">
+    <div class="ambient-clock" id="ambient-clock">--:--</div>
+    <div class="ambient-project" id="ambient-project"></div>
+    <div class="ambient-env" id="ambient-env"></div>
+    <div class="ambient-ticker" id="ambient-ticker"></div>
+</div>
 
 <!-- Floating AI Bubble -->
 <div class="ai-bubble" id="ai-bubble" onclick="toggleAiBubble()" title="Quick Chat mit Jarvis">&#128172;</div>
@@ -1099,8 +1287,15 @@ async function bootWorkshop() {
     setTimeout(() => {
         document.getElementById('boot-screen').style.display = 'none';
         document.getElementById('workshop-main').classList.add('active');
+        // Apply saved theme
+        const savedTheme = localStorage.getItem('ws-theme');
+        if (savedTheme && savedTheme !== 'jarvis') document.documentElement.setAttribute('data-theme', savedTheme);
         connectWebSocket();
         loadProjects();
+        // Load notifications on boot
+        setTimeout(loadNotifications, 2000);
+        // Periodic notification check
+        setInterval(loadNotifications, 60000);
     }, 800);
 }
 
@@ -1274,12 +1469,20 @@ function renderProjectList() {
         el.innerHTML = '<div style="font-size:11px;color:var(--text-secondary);padding:8px">Keine Projekte</div>';
         return;
     }
-    el.innerHTML = projects.map(p =>
-        '<div class="project-item' + (currentProject && currentProject.id === p.id ? ' active' : '') +
-        '" onclick="selectProject(\'' + p.id + '\')">' +
+    const pinned = getPinnedProjects();
+    const sorted = [...projects].sort((a, b) => {
+        const aPin = pinned.includes(a.id) ? 0 : 1;
+        const bPin = pinned.includes(b.id) ? 0 : 1;
+        return aPin - bPin;
+    });
+    el.innerHTML = sorted.map(p => {
+        const isPinned = pinned.includes(p.id);
+        return '<div class="project-item' + (currentProject && currentProject.id === p.id ? ' active' : '') +
+        '" onclick="selectProject(\'' + p.id + '\')" style="display:flex;align-items:center">' +
         '<div class="project-dot"></div>' +
-        '<span>' + escHtml(p.title || p.id) + '</span></div>'
-    ).join('');
+        '<span style="flex:1">' + escHtml(p.title || p.id) + '</span>' +
+        '<span style="cursor:pointer;font-size:10px;opacity:0.5" onclick="event.stopPropagation();togglePin(\'' + p.id + '\')" title="' + (isPinned ? 'Entpinnen' : 'Anpinnen') + '">' + (isPinned ? '&#9733;' : '&#9734;') + '</span></div>';
+    }).join('');
 }
 
 async function selectProject(id) {
@@ -1331,6 +1534,7 @@ function renderView() {
         snippets: renderSnippetsView, timer: renderTimerView, safety: renderSafetyView,
         settings: renderSettingsView, tools: renderToolsView, analysis: renderAnalysisView,
         devices: renderDevicesView, pinout: renderPinoutView, shopping: renderShoppingView,
+        generators: renderGeneratorsView, kanban: renderKanbanView,
     };
     const fn = views[currentView];
     if (fn) fn(main); else main.innerHTML = '';
@@ -1394,7 +1598,17 @@ function renderOverview(main) {
     html += '<div class="stat-card"><div class="stat-value">' + projects.length + '</div><div class="stat-label">Projekte</div></div>';
     html += '<div class="stat-card"><div class="stat-value" style="color:var(--success)">' + activeCount + '</div><div class="stat-label">Aktiv</div></div>';
     html += '<div class="stat-card"><div class="stat-value" style="color:var(--text-secondary)">' + completedCount + '</div><div class="stat-label">Fertig</div></div>';
-    html += '<div class="stat-card"><div class="stat-value" style="font-size:16px" id="ov-env-temp">--</div><div class="stat-label">Werkstatt</div></div>';
+    // Progress ring for current project
+    if (currentProject) {
+        const parts = currentProject.parts || [];
+        const steps = currentProject.steps || [];
+        const pctParts = parts.length ? Math.round(parts.filter(p => p.available).length / parts.length * 100) : 0;
+        const pctSteps = steps.length ? Math.round(steps.filter(s => s.done || s.completed).length / steps.length * 100) : 0;
+        const pct = steps.length ? pctSteps : pctParts;
+        html += '<div class="stat-card" style="text-align:center">' + svgProgressRing(pct, 50) + '<div class="stat-label">Fortschritt</div></div>';
+    } else {
+        html += '<div class="stat-card"><div class="stat-value" style="font-size:16px" id="ov-env-temp">--</div><div class="stat-label">Werkstatt</div></div>';
+    }
     html += '</div>';
 
     // Project Info
@@ -1416,6 +1630,8 @@ function renderOverview(main) {
         html += '<button class="action-btn secondary" onclick="showAddPartDialog()">Teil hinzufuegen</button>';
         html += '<button class="action-btn secondary" onclick="addProjectNote()">Notiz</button>';
         html += '<button class="action-btn secondary" onclick="showExpenseDialog()">Ausgabe</button>';
+        html += '<button class="action-btn secondary" onclick="duplicateProject()">Duplizieren</button>';
+        html += '<button class="action-btn secondary" onclick="window.print()">Drucken</button>';
         html += '<button class="action-btn secondary" onclick="exportProject()">Exportieren</button>';
         html += '<button class="action-btn danger" onclick="deleteProject(\'' + currentProject.id + '\')">Loeschen</button>';
         html += '</div>';
@@ -1457,7 +1673,14 @@ function renderOverview(main) {
         const expenses = currentProject.expenses || [];
         const spent = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
         const pct = budgetNum > 0 ? Math.min(100, (spent / budgetNum) * 100) : 0;
-        html += '<div class="budget-amount">' + spent.toFixed(2) + ' / ' + budgetNum.toFixed(2) + ' EUR</div>';
+        html += '<div class="budget-amount">' + spent.toFixed(2) + ' / ' + budgetNum.toFixed(2) + ' EUR';
+        // Add sparkline if expense history exists
+        if (expenses.length > 1) {
+            let cumulative = []; let sum = 0;
+            expenses.forEach(e => { sum += parseFloat(e.amount) || 0; cumulative.push(sum); });
+            html += ' ' + svgSparkline(cumulative, 80, 20);
+        }
+        html += '</div>';
         html += '<div class="budget-bar-container"><div class="budget-bar">';
         html += '<div class="budget-fill' + (pct > 100 ? ' over' : '') + '" style="width:' + pct + '%"></div>';
         html += '</div></div>';
@@ -1487,6 +1710,25 @@ function renderOverview(main) {
         html += '</tbody></table></div>';
     }
 
+    // Wochenplan Widget
+    html += renderWeekPlanWidget();
+
+    // Timeline from notes
+    if (currentProject) {
+        const notes = currentProject.notes || [];
+        if (notes.length > 1) {
+            html += '<div class="widget hud-corners">';
+            html += '<div class="widget-header"><span class="icon">&#128197;</span><span class="widget-title">Projekt-Verlauf</span></div>';
+            html += '<div class="timeline">';
+            notes.slice(-8).forEach((n, i, arr) => {
+                html += '<div class="timeline-item"><div class="timeline-dot' + (i === arr.length - 1 ? ' active' : '') + '"></div>';
+                html += '<div class="timeline-time">' + escHtml((n.time || '').split('T')[0] || '') + '</div>';
+                html += '<div class="timeline-text">' + escHtml(n.text || n.note || '') + '</div></div>';
+            });
+            html += '</div></div>';
+        }
+    }
+
     main.innerHTML = html;
 }
 
@@ -1506,7 +1748,9 @@ async function renderStepsView(main) {
     if (!main) main = document.getElementById('main-content');
     await loadSession();
     let html = '<div class="widget" id="w-steps">';
-    html += '<div class="widget-header"><span class="icon">&#128221;</span><span class="widget-title">Reparatur-Schritte</span></div>';
+    html += '<div class="widget-header"><span class="icon">&#128221;</span><span class="widget-title">Reparatur-Schritte</span>';
+    html += '<button class="action-btn secondary" style="margin-left:auto;padding:3px 10px;font-size:10px" onclick="toggleNarration()">' + (narrationActive ? '&#9632; Stopp' : '&#128266; Vorlesen') + '</button>';
+    html += '</div>';
 
     if (activeSession && activeSession.steps && activeSession.steps.length) {
         const steps = activeSession.steps;
@@ -2065,27 +2309,41 @@ function toggleVoice() {
 // ===== Calculator View =====
 let activeCalc = 'ohms_law';
 
+let calcTab = 'rechner';
 function renderCalcView(main) {
     if (!main) main = document.getElementById('main-content');
-    let html = '<div class="widget">';
+    let html = '<div class="widget hud-corners">';
     html += '<div class="widget-header"><span class="icon">&#129518;</span><span class="widget-title">Werkstatt-Rechner</span></div>';
-    html += '<div class="calc-btns">';
-    const calcs = [
-        { id: 'ohms_law', label: 'Ohm\'sches Gesetz' },
-        { id: 'led_resistor', label: 'LED Widerstand' },
-        { id: 'resistor_divider', label: 'Spannungsteiler' },
-        { id: 'wire_gauge', label: 'Kabelquerschnitt' },
-        { id: '3d_print_weight', label: '3D-Druck Gewicht' },
-        { id: 'power_supply', label: 'Netzteil' },
-        { id: 'convert', label: 'Umrechnung' },
-    ];
-    calcs.forEach(c => {
-        html += '<button class="calc-btn' + (c.id === activeCalc ? ' active' : '') +
-                '" onclick="setCalc(\'' + c.id + '\')">' + c.label + '</button>';
-    });
+
+    html += '<div class="tab-bar">';
+    html += '<button class="tab-btn' + (calcTab === 'rechner' ? ' active' : '') + '" onclick="calcTab=\'rechner\';renderCalcView()">Rechner</button>';
+    html += '<button class="tab-btn' + (calcTab === 'farbcode' ? ' active' : '') + '" onclick="calcTab=\'farbcode\';renderCalcView()">Farbcode</button>';
+    html += '<button class="tab-btn' + (calcTab === 'loeten' ? ' active' : '') + '" onclick="calcTab=\'loeten\';renderCalcView()">Loetguide</button>';
     html += '</div>';
-    html += '<div id="calc-form">' + getCalcForm(activeCalc) + '</div>';
-    html += '<div class="calc-result" id="calc-result"></div>';
+
+    if (calcTab === 'farbcode') {
+        html += renderResistorCalcTab();
+    } else if (calcTab === 'loeten') {
+        html += renderSolderGuideTab();
+    } else {
+        html += '<div class="calc-btns">';
+        const calcs = [
+            { id: 'ohms_law', label: 'Ohm\'sches Gesetz' },
+            { id: 'led_resistor', label: 'LED Widerstand' },
+            { id: 'resistor_divider', label: 'Spannungsteiler' },
+            { id: 'wire_gauge', label: 'Kabelquerschnitt' },
+            { id: '3d_print_weight', label: '3D-Druck Gewicht' },
+            { id: 'power_supply', label: 'Netzteil' },
+            { id: 'convert', label: 'Umrechnung' },
+        ];
+        calcs.forEach(c => {
+            html += '<button class="calc-btn' + (c.id === activeCalc ? ' active' : '') +
+                    '" onclick="setCalc(\'' + c.id + '\')">' + c.label + '</button>';
+        });
+        html += '</div>';
+        html += '<div id="calc-form">' + getCalcForm(activeCalc) + '</div>';
+        html += '<div class="calc-result" id="calc-result"></div>';
+    }
     html += '</div>';
     main.innerHTML = html;
 }
@@ -2488,6 +2746,26 @@ async function renderSettingsView(main) {
     if (!main) main = document.getElementById('main-content');
     let html = '<div class="widget">';
     html += '<div class="widget-header"><span class="icon">&#9881;</span><span class="widget-title">Workshop-Einstellungen</span></div>';
+
+    // Theme Switcher
+    html += '<div class="settings-group"><h4>Theme</h4>';
+    html += '<div style="display:flex;gap:12px;flex-wrap:wrap">';
+    const curTheme = getCurrentTheme();
+    [['jarvis','Jarvis','#00d4ff'],['stark','Stark','#ff3d3d'],['matrix','Matrix','#00e676']].forEach(([id,name,color]) => {
+        html += '<div class="theme-card' + (curTheme === id ? ' active' : '') + '" onclick="applyTheme(\'' + id + '\');renderSettingsView()">';
+        html += '<div class="theme-dot" style="background:' + color + '"></div>';
+        html += '<div class="theme-name">' + name + '</div></div>';
+    });
+    html += '</div></div>';
+
+    // Sound + Ambient toggles
+    html += '<div class="settings-group"><h4>Oberflaeche</h4>';
+    const soundsOn = localStorage.getItem('ws-sounds') !== 'off';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">';
+    html += '<span>Sound-Effekte</span><button class="action-btn secondary" style="padding:3px 10px;font-size:10px" onclick="localStorage.setItem(\'ws-sounds\',\'' + (soundsOn ? 'off' : 'on') + '\');renderSettingsView()">' + (soundsOn ? 'An' : 'Aus') + '</button></div>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:12px">';
+    html += '<span>Ambient-Modus</span><button class="action-btn secondary" style="padding:3px 10px;font-size:10px" onclick="enterAmbientMode()">Starten</button></div>';
+    html += '</div>';
 
     try {
         const res = await apiCall('settings');
@@ -2967,9 +3245,23 @@ let timerElapsed = 0;
 let timerInterval = null;
 let timerLaps = [];
 
+let timerTab = 'timer';
 function renderTimerView(main) {
     if (!main) main = document.getElementById('main-content');
-    let html = '<div class="widget" style="text-align:center">';
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#9201;</span><span class="widget-title">Timer</span></div>';
+    html += '<div class="tab-bar">';
+    html += '<button class="tab-btn' + (timerTab === 'timer' ? ' active' : '') + '" onclick="timerTab=\'timer\';renderTimerView()">Stoppuhr</button>';
+    html += '<button class="tab-btn' + (timerTab === 'pomodoro' ? ' active' : '') + '" onclick="timerTab=\'pomodoro\';renderTimerView()">Pomodoro</button>';
+    html += '</div>';
+
+    if (timerTab === 'pomodoro') {
+        html += renderPomodoroTab();
+        html += '</div>';
+        main.innerHTML = html;
+        return;
+    }
+    html += '</div><div class="widget" style="text-align:center">';
     html += '<div class="widget-header" style="justify-content:center"><span class="icon">&#9201;</span><span class="widget-title">Projekt-Timer</span></div>';
 
     const elapsed = timerRunning ? timerElapsed + (Date.now() - timerStartTime) : timerElapsed;
@@ -3774,20 +4066,642 @@ document.addEventListener('keydown', (e) => {
     }
     // Ctrl+B: Toggle AI Bubble
     if (e.ctrlKey && e.key === 'b') { e.preventDefault(); toggleAiBubble(); }
-    // Escape: Close modals
+    // Escape: Close modals/overlays
     if (e.key === 'Escape') {
         document.getElementById('new-project-modal').classList.add('hidden');
         document.getElementById('ai-popup').classList.remove('open');
+        document.getElementById('shortcut-overlay').classList.remove('open');
+        document.getElementById('notif-panel').classList.remove('open');
+        document.getElementById('notif-backdrop').classList.remove('show');
+        exitAmbientMode();
     }
-    // 1-9: Quick view switch (when not in input)
+    // 1-9, P, ?: Quick view switch / shortcuts (when not in input)
     if (!e.ctrlKey && !e.altKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
         const viewMap = { '1':'overview', '2':'steps', '3':'code', '4':'editor', '5':'hardware', '6':'chat', '7':'calc', '8':'journal', '9':'analysis' };
         if (viewMap[e.key]) { e.preventDefault(); switchToView(viewMap[e.key]); }
+        if (e.key === 'p' || e.key === 'P') { e.preventDefault(); if (pomodoroState === 'idle') pomodoroStart(); else pomodoroStop(); }
+        if (e.key === '?') { e.preventDefault(); toggleShortcuts(); }
     }
 });
 
-// ===== Update Overview with Notes + Expenses =====
-const _origRenderOverview = renderOverview;
+// ===== Helper: SVG Progress Ring =====
+function svgProgressRing(percent, size = 60) {
+    const r = (size - 6) / 2;
+    const c = 2 * Math.PI * r;
+    const offset = c - (percent / 100) * c;
+    const color = percent >= 75 ? 'var(--success)' : percent >= 25 ? 'var(--warning)' : 'var(--danger)';
+    return '<svg class="progress-ring" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
+        '<circle class="ring-bg" cx="' + size/2 + '" cy="' + size/2 + '" r="' + r + '" stroke-width="4"/>' +
+        '<circle class="ring-fg" cx="' + size/2 + '" cy="' + size/2 + '" r="' + r + '" stroke-width="4" stroke="' + color + '" stroke-dasharray="' + c + '" stroke-dashoffset="' + offset + '"/>' +
+        '<text class="ring-text" x="' + size/2 + '" y="' + size/2 + '">' + Math.round(percent) + '%</text></svg>';
+}
+
+// ===== Helper: SVG Sparkline =====
+function svgSparkline(values, width = 120, height = 30, color = 'var(--accent)') {
+    if (!values || !values.length) return '';
+    const max = Math.max(...values, 1);
+    const step = width / Math.max(values.length - 1, 1);
+    const points = values.map((v, i) => (i * step).toFixed(1) + ',' + (height - (v / max) * (height - 4) - 2).toFixed(1)).join(' ');
+    const last = values[values.length - 1];
+    const lx = ((values.length - 1) * step).toFixed(1);
+    const ly = (height - (last / max) * (height - 4) - 2).toFixed(1);
+    return '<svg width="' + width + '" height="' + height + '" style="display:inline-block;vertical-align:middle">' +
+        '<polyline fill="none" stroke="' + color + '" stroke-width="1.5" points="' + points + '"/>' +
+        '<circle cx="' + lx + '" cy="' + ly + '" r="2.5" fill="' + color + '"/></svg>';
+}
+
+// ===== Helper: Empty State =====
+function emptyState(icon, title, desc, actionLabel, actionFn) {
+    let html = '<div class="empty-state"><div class="empty-state-icon">' + icon + '</div>';
+    html += '<div class="empty-state-title">' + escHtml(title) + '</div>';
+    html += '<div class="empty-state-desc">' + escHtml(desc) + '</div>';
+    if (actionLabel && actionFn) {
+        html += '<button class="action-btn" onclick="' + actionFn + '">' + escHtml(actionLabel) + '</button>';
+    }
+    html += '</div>';
+    return html;
+}
+
+// ===== Helper: Loading Indicator =====
+function genLoadingHtml(text) {
+    return '<div class="gen-loading"><div class="gen-loading-bar"></div></div>' +
+        '<div class="gen-loading-text">' + escHtml(text || 'Jarvis generiert') + '</div>';
+}
+
+// ===== Generators View =====
+let genTab = '3d';
+
+function renderGeneratorsView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#9881;</span><span class="widget-title">KI-Generatoren</span></div>';
+
+    html += '<div class="tab-bar">';
+    ['3d','schematic','website','bom','docs','tests'].forEach(t => {
+        const labels = { '3d':'3D-Modell', schematic:'Schaltplan', website:'Website', bom:'Stueckliste', docs:'Dokumentation', tests:'Tests' };
+        html += '<button class="tab-btn' + (genTab === t ? ' active' : '') + '" onclick="genTab=\'' + t + '\';renderGeneratorsView()">' + labels[t] + '</button>';
+    });
+    html += '</div>';
+
+    const pid = currentProject?.id || '';
+    const pname = currentProject?.title || 'Kein Projekt';
+
+    switch (genTab) {
+        case '3d':
+            html += '<div class="info-box info"><span class="info-icon">&#128204;</span>Generiert OpenSCAD-Code fuer 3D-druckbare Modelle. Beschreibe Form, Masse und Toleranzen.</div>';
+            html += '<textarea id="gen-input" class="chat-input" style="width:100%;min-height:100px;resize:vertical" placeholder="z.B. Gehaeuse fuer ESP32, 80x50x30mm, mit Lueftungsschlitzen und USB-Ausschnitt...">' + restoreDraft('gen-3d') + '</textarea>';
+            html += '<button class="action-btn" style="margin-top:8px" id="gen-btn" onclick="runGenerator(\'3d-model\',\'gen-input\',\'requirement\')">3D-Modell generieren</button>';
+            break;
+        case 'schematic':
+            html += '<div class="info-box info"><span class="info-icon">&#128204;</span>Generiert einen SVG-Schaltplan. Beschreibe die Schaltung und Bauteile.</div>';
+            html += '<textarea id="gen-input" class="chat-input" style="width:100%;min-height:100px;resize:vertical" placeholder="z.B. ESP32 mit DHT22 Temperatursensor, I2C OLED Display und 2 LEDs...">' + restoreDraft('gen-schematic') + '</textarea>';
+            html += '<button class="action-btn" style="margin-top:8px" id="gen-btn" onclick="runGenerator(\'schematic\',\'gen-input\',\'requirement\')">Schaltplan generieren</button>';
+            break;
+        case 'website':
+            html += '<div class="info-box info"><span class="info-icon">&#128204;</span>Generiert eine komplette Single-Page Website fuer dein Projekt.</div>';
+            html += '<textarea id="gen-input" class="chat-input" style="width:100%;min-height:100px;resize:vertical" placeholder="z.B. Dashboard-Seite fuer meinen Temperatursensor mit Live-Grafik...">' + restoreDraft('gen-website') + '</textarea>';
+            html += '<button class="action-btn" style="margin-top:8px" id="gen-btn" onclick="runGenerator(\'website\',\'gen-input\',\'requirement\')">Website generieren</button>';
+            break;
+        case 'bom':
+            html += '<div class="info-box info"><span class="info-icon">&#128204;</span>Erstellt eine vollstaendige Stueckliste (Bill of Materials) aus deinem Projekt.</div>';
+            if (pid) {
+                html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Projekt: <strong style="color:var(--accent)">' + escHtml(pname) + '</strong></div>';
+                html += '<button class="action-btn" id="gen-btn" onclick="runGenerator(\'bom\')">Stueckliste generieren</button>';
+            } else {
+                html += emptyState('&#128230;', 'Kein Projekt', 'Waehle ein Projekt aus der Sidebar.', null, null);
+            }
+            break;
+        case 'docs':
+            html += '<div class="info-box info"><span class="info-icon">&#128204;</span>Generiert eine komplette Projekt-Dokumentation im Markdown-Format.</div>';
+            if (pid) {
+                html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Projekt: <strong style="color:var(--accent)">' + escHtml(pname) + '</strong></div>';
+                html += '<button class="action-btn" id="gen-btn" onclick="runGenerator(\'documentation\')">Dokumentation generieren</button>';
+            } else {
+                html += emptyState('&#128214;', 'Kein Projekt', 'Waehle ein Projekt aus der Sidebar.', null, null);
+            }
+            break;
+        case 'tests':
+            html += '<div class="info-box info"><span class="info-icon">&#128204;</span>Generiert Unit-Tests fuer eine Datei in deinem Projekt.</div>';
+            if (pid) {
+                html += '<input id="gen-filename" class="chat-input" style="width:100%;margin-bottom:8px" placeholder="Dateiname (z.B. main.cpp)">';
+                html += '<button class="action-btn" id="gen-btn" onclick="runGeneratorTests()">Tests generieren</button>';
+            } else {
+                html += emptyState('&#129518;', 'Kein Projekt', 'Waehle ein Projekt aus der Sidebar.', null, null);
+            }
+            break;
+    }
+
+    html += '<div id="gen-loading" style="display:none;margin-top:12px"></div>';
+    html += '<div id="gen-result" style="display:none;margin-top:12px"></div>';
+    html += '</div>';
+    main.innerHTML = html;
+    // Restore drafts
+    const inp = document.getElementById('gen-input');
+    if (inp) inp.addEventListener('input', () => saveDraft('gen-' + genTab, inp.value));
+}
+
+async function runGenerator(type, inputId, fieldName) {
+    const btn = document.getElementById('gen-btn');
+    const loading = document.getElementById('gen-loading');
+    const result = document.getElementById('gen-result');
+    const input = inputId ? document.getElementById(inputId)?.value?.trim() : '';
+
+    if (inputId && !input) { showToast('Bitte Beschreibung eingeben'); return; }
+    if (btn) btn.disabled = true;
+    loading.style.display = 'block';
+    loading.innerHTML = genLoadingHtml('Jarvis generiert');
+    result.style.display = 'none';
+
+    const body = { project_id: currentProject?.id || '' };
+    if (fieldName) body[fieldName] = input;
+
+    try {
+        const res = await apiCall('generate/' + type, 'POST', body);
+        loading.style.display = 'none';
+        result.style.display = 'block';
+
+        let content = res.code || res.svg || res.html || res.bom || res.documentation || res.tests || JSON.stringify(res, null, 2);
+        let displayHtml = '';
+
+        if (type === 'schematic' && res.svg) {
+            displayHtml += '<div style="background:#fff;padding:16px;border-radius:4px;text-align:center;margin-bottom:8px">' + res.svg + '</div>';
+        }
+        if (type === 'website' && res.html) {
+            displayHtml += '<iframe srcdoc="' + escHtml(res.html) + '" style="width:100%;height:300px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px" sandbox="allow-scripts"></iframe>';
+        }
+
+        displayHtml += '<div class="code-result">' + escHtml(content) + '</div>';
+        displayHtml += '<div class="code-actions">';
+        displayHtml += '<button class="action-btn secondary" onclick="navigator.clipboard.writeText(document.querySelector(\'.code-result\').textContent);showToast(\'Kopiert!\')">Kopieren</button>';
+        if (res.filename) displayHtml += '<button class="action-btn secondary" onclick="downloadGenResult(\'' + escHtml(res.filename) + '\')">Herunterladen</button>';
+        displayHtml += '</div>';
+        result.innerHTML = displayHtml;
+        if (inputId) clearDraft('gen-' + genTab);
+    } catch (e) {
+        loading.style.display = 'none';
+        result.style.display = 'block';
+        result.innerHTML = '<div class="info-box warning"><span class="info-icon">&#9888;</span>Fehler: ' + escHtml(e.message) + '</div>';
+    }
+    if (btn) btn.disabled = false;
+}
+
+async function runGeneratorTests() {
+    const filename = document.getElementById('gen-filename')?.value?.trim();
+    if (!filename) { showToast('Dateiname eingeben'); return; }
+    const btn = document.getElementById('gen-btn');
+    const loading = document.getElementById('gen-loading');
+    const result = document.getElementById('gen-result');
+    if (btn) btn.disabled = true;
+    loading.style.display = 'block';
+    loading.innerHTML = genLoadingHtml('Tests werden generiert');
+    result.style.display = 'none';
+    try {
+        const res = await apiCall('generate/tests', 'POST', { project_id: currentProject?.id || '', filename });
+        loading.style.display = 'none';
+        result.style.display = 'block';
+        const content = res.tests || res.code || JSON.stringify(res, null, 2);
+        result.innerHTML = '<div class="code-result">' + escHtml(content) + '</div>' +
+            '<div class="code-actions"><button class="action-btn secondary" onclick="navigator.clipboard.writeText(document.querySelector(\'.code-result\').textContent);showToast(\'Kopiert!\')">Kopieren</button></div>';
+    } catch (e) {
+        loading.style.display = 'none';
+        result.style.display = 'block';
+        result.innerHTML = '<div class="info-box warning"><span class="info-icon">&#9888;</span>Fehler: ' + escHtml(e.message) + '</div>';
+    }
+    if (btn) btn.disabled = false;
+}
+
+function downloadGenResult(filename) {
+    const content = document.querySelector('.code-result')?.textContent || '';
+    const blob = new Blob([content], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+}
+
+// ===== Kanban Board View =====
+function renderKanbanView(main) {
+    if (!main) main = document.getElementById('main-content');
+    const columns = [
+        { status: 'erstellt', label: 'Erstellt' },
+        { status: 'diagnose', label: 'Diagnose' },
+        { status: 'in_arbeit', label: 'In Arbeit' },
+        { status: 'pausiert', label: 'Pausiert' },
+        { status: 'fertig', label: 'Fertig' },
+    ];
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128203;</span><span class="widget-title">Kanban Board</span></div>';
+    html += '<div class="kanban-board">';
+    columns.forEach(col => {
+        const items = projects.filter(p => p.status === col.status);
+        html += '<div class="kanban-column" data-status="' + col.status + '" ondragover="kanbanDragOver(event)" ondrop="kanbanDrop(event,\'' + col.status + '\')">';
+        html += '<div class="kanban-column-title">' + col.label + ' (' + items.length + ')</div>';
+        items.forEach(p => {
+            const parts = p.parts || [];
+            const avail = parts.filter(pt => pt.available).length;
+            const pct = parts.length ? Math.round((avail / parts.length) * 100) : 0;
+            html += '<div class="kanban-card" draggable="true" ondragstart="kanbanDragStart(event,\'' + p.id + '\')" onclick="selectProject(\'' + p.id + '\')">';
+            html += '<div class="kanban-card-title">' + escHtml(p.title || p.id) + '</div>';
+            html += '<div class="kanban-card-meta">' + escHtml(p.category || '') + (parts.length ? ' | ' + pct + '% Teile' : '') + '</div>';
+            html += '</div>';
+        });
+        html += '<div class="kanban-drop-zone" ondragover="kanbanDragOver(event)" ondrop="kanbanDrop(event,\'' + col.status + '\')"></div>';
+        html += '</div>';
+    });
+    html += '</div></div>';
+    main.innerHTML = html;
+}
+
+let kanbanDragId = '';
+function kanbanDragStart(e, id) { kanbanDragId = id; e.dataTransfer.effectAllowed = 'move'; e.target.classList.add('dragging'); }
+function kanbanDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; const z = e.target.closest('.kanban-drop-zone,.kanban-column'); if (z) z.classList.add('over'); }
+async function kanbanDrop(e, newStatus) {
+    e.preventDefault();
+    document.querySelectorAll('.kanban-drop-zone,.kanban-column').forEach(el => el.classList.remove('over'));
+    document.querySelectorAll('.kanban-card.dragging').forEach(el => el.classList.remove('dragging'));
+    if (!kanbanDragId) return;
+    try {
+        await apiCall('project/' + kanbanDragId + '/status', 'POST', { status: newStatus });
+        const p = projects.find(pr => pr.id === kanbanDragId);
+        if (p) p.status = newStatus;
+        renderKanbanView();
+        showToast('Status geaendert');
+    } catch (e2) { showToast('Fehler: ' + e2.message); }
+    kanbanDragId = '';
+}
+
+// ===== Pomodoro Timer =====
+let pomodoroState = 'idle'; // idle, work, break, longbreak
+let pomodoroTime = 25 * 60;
+let pomodoroInterval = null;
+let pomodoroCycles = 0;
+
+function renderPomodoroTab() {
+    let html = '<div class="pomodoro-display">';
+    const mins = Math.floor(pomodoroTime / 60);
+    const secs = pomodoroTime % 60;
+    const pct = pomodoroState === 'work' ? ((25*60 - pomodoroTime) / (25*60)) * 100 :
+                pomodoroState === 'break' ? ((5*60 - pomodoroTime) / (5*60)) * 100 :
+                pomodoroState === 'longbreak' ? ((15*60 - pomodoroTime) / (15*60)) * 100 : 0;
+    html += svgProgressRing(pct, 140);
+    html += '<div class="pomodoro-time">' + String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0') + '</div>';
+    const labels = { idle: 'Bereit', work: 'Fokus-Phase', break: 'Kurze Pause', longbreak: 'Lange Pause' };
+    html += '<div class="pomodoro-label">' + labels[pomodoroState] + '</div>';
+    html += '<div class="pomodoro-cycles">';
+    for (let i = 0; i < 4; i++) html += '<div class="pomodoro-dot' + (i < pomodoroCycles % 4 ? ' done' : '') + '"></div>';
+    html += '</div>';
+    html += '<div style="margin-top:16px;display:flex;gap:8px;justify-content:center">';
+    if (pomodoroState === 'idle') {
+        html += '<button class="action-btn" onclick="pomodoroStart()">Fokus starten</button>';
+    } else {
+        html += '<button class="action-btn secondary" onclick="pomodoroStop()">Stoppen</button>';
+        html += '<button class="action-btn secondary" onclick="pomodoroSkip()">Ueberspringen</button>';
+    }
+    html += '<button class="action-btn secondary" onclick="pomodoroReset()">Reset</button>';
+    html += '</div></div>';
+    return html;
+}
+
+function pomodoroStart() {
+    pomodoroState = 'work';
+    pomodoroTime = 25 * 60;
+    pomodoroInterval = setInterval(pomodoroTick, 1000);
+    renderView();
+}
+function pomodoroTick() {
+    pomodoroTime--;
+    if (pomodoroTime <= 0) {
+        pomodoroBeep();
+        if (pomodoroState === 'work') {
+            pomodoroCycles++;
+            if (pomodoroCycles % 4 === 0) { pomodoroState = 'longbreak'; pomodoroTime = 15 * 60; }
+            else { pomodoroState = 'break'; pomodoroTime = 5 * 60; }
+        } else {
+            pomodoroState = 'work'; pomodoroTime = 25 * 60;
+        }
+    }
+    if (currentView === 'timer') renderView();
+}
+function pomodoroStop() { clearInterval(pomodoroInterval); pomodoroState = 'idle'; renderView(); }
+function pomodoroSkip() {
+    pomodoroTime = 0; pomodoroTick();
+}
+function pomodoroReset() { clearInterval(pomodoroInterval); pomodoroState = 'idle'; pomodoroTime = 25 * 60; pomodoroCycles = 0; renderView(); }
+function pomodoroBeep() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator(); const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.value = 880; gain.gain.value = 0.15;
+        osc.start(); osc.stop(ctx.currentTime + 0.3);
+    } catch(e) {}
+}
+
+// ===== Widerstandsfarbcode-Rechner =====
+const RES_COLORS = [
+    { name: 'Schwarz', hex: '#000000', val: 0, mult: 1, tol: null },
+    { name: 'Braun', hex: '#8B4513', val: 1, mult: 10, tol: 1 },
+    { name: 'Rot', hex: '#FF0000', val: 2, mult: 100, tol: 2 },
+    { name: 'Orange', hex: '#FF8C00', val: 3, mult: 1000, tol: null },
+    { name: 'Gelb', hex: '#FFD700', val: 4, mult: 10000, tol: null },
+    { name: 'Gruen', hex: '#008000', val: 5, mult: 100000, tol: 0.5 },
+    { name: 'Blau', hex: '#0000FF', val: 6, mult: 1000000, tol: 0.25 },
+    { name: 'Violett', hex: '#8B008B', val: 7, mult: 10000000, tol: 0.1 },
+    { name: 'Grau', hex: '#808080', val: 8, mult: 100000000, tol: 0.05 },
+    { name: 'Weiss', hex: '#FFFFFF', val: 9, mult: 1000000000, tol: null },
+    { name: 'Gold', hex: '#FFD700', val: null, mult: 0.1, tol: 5 },
+    { name: 'Silber', hex: '#C0C0C0', val: null, mult: 0.01, tol: 10 },
+];
+let resBands = [1, 0, 2, -1]; // band1, band2, multiplier, tolerance idx
+
+function renderResistorCalcTab() {
+    let html = '<div style="text-align:center;padding:16px">';
+    // SVG Resistor
+    html += '<svg width="300" height="80" viewBox="0 0 300 80" class="resistor-svg">';
+    html += '<line x1="0" y1="40" x2="60" y2="40" stroke="var(--text-muted)" stroke-width="2"/>';
+    html += '<rect x="60" y="15" width="180" height="50" rx="8" fill="#c4a882" stroke="#8B7355" stroke-width="1.5"/>';
+    html += '<line x1="240" y1="40" x2="300" y2="40" stroke="var(--text-muted)" stroke-width="2"/>';
+    // Color bands
+    const positions = [90, 120, 150, 200];
+    resBands.forEach((bi, i) => {
+        const c = bi >= 0 && bi < RES_COLORS.length ? RES_COLORS[bi] : null;
+        html += '<rect x="' + positions[i] + '" y="18" width="14" height="44" fill="' + (c ? c.hex : '#666') + '" rx="1"/>';
+    });
+    html += '</svg>';
+
+    // Band selectors
+    const bandLabels = ['Band 1', 'Band 2', 'Multiplikator', 'Toleranz'];
+    html += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:16px">';
+    bandLabels.forEach((label, bi) => {
+        html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px">' + label + '</div>';
+        html += '<div class="color-band-select">';
+        const maxColors = bi === 3 ? RES_COLORS.length : 10;
+        for (let ci = 0; ci < maxColors; ci++) {
+            const c = RES_COLORS[ci];
+            if (bi < 2 && c.val === null) continue;
+            if (bi === 2 && ci > 9) continue;
+            if (bi === 3 && c.tol === null) continue;
+            html += '<div class="color-swatch' + (resBands[bi] === ci ? ' active' : '') + '" style="background:' + c.hex + (c.hex === '#000000' ? ';border:1px solid #333' : '') + '" onclick="setResBand(' + bi + ',' + ci + ')" title="' + c.name + '"></div>';
+        }
+        html += '</div></div>';
+    });
+    html += '</div>';
+
+    // Calculate value
+    const b1 = RES_COLORS[resBands[0]]?.val || 0;
+    const b2 = RES_COLORS[resBands[1]]?.val || 0;
+    const mult = RES_COLORS[resBands[2]]?.mult || 1;
+    const tol = resBands[3] >= 0 ? RES_COLORS[resBands[3]]?.tol : null;
+    const value = (b1 * 10 + b2) * mult;
+    let display = value >= 1e6 ? (value / 1e6).toFixed(value % 1e6 === 0 ? 0 : 1) + ' M' :
+                  value >= 1e3 ? (value / 1e3).toFixed(value % 1e3 === 0 ? 0 : 1) + ' k' :
+                  value.toString();
+    html += '<div class="resistor-value">' + display + 'Ohm' + (tol !== null ? ' +-' + tol + '%' : '') + '</div>';
+    html += '</div>';
+    return html;
+}
+
+function setResBand(bandIdx, colorIdx) { resBands[bandIdx] = colorIdx; renderView(); }
+
+// ===== Loettemperatur Guide =====
+function renderSolderGuideTab() {
+    const data = [
+        ['Through-Hole (bleihaltig)', '320-350', 'Meisselform', 'Nicht zu lange halten, max 3s pro Pad'],
+        ['Through-Hole (bleifrei)', '350-380', 'Meisselform', 'Etwas heisser als bleihaltig, Flussmittel nutzen'],
+        ['SMD 0805/0603', '300-340', 'Feine Spitze', 'Erst ein Pad verzinnen, Bauteil positionieren, anderes Pad loeten'],
+        ['SMD QFP/TQFP', '320-350', 'Messer/Schleppspitze', 'Schleppltoen mit viel Flussmittel'],
+        ['BGA Nacharbeit', '380-420', 'Heissluft', 'Profil beachten, Nachbarteile schuetzen'],
+        ['Kabel/Litze (duenn)', '350-380', 'Meisselform', 'Kabel verzinnen, dann am Pad anlten'],
+        ['Kabel/Litze (dick)', '380-420', 'Grosse Meisselform', 'Mehr Leistung noetig, laenger vorwaermen'],
+        ['Stecker/Header', '330-360', 'Meisselform', 'Gerade ausrichten vor dem Loeten'],
+        ['Entloeten (Sauglitze)', '370-400', 'Breite Spitze', 'Sauglitze mit Flussmittel traenken'],
+        ['Entloeten (Pumpe)', '360-380', 'Standard', 'Schnell absaugen nach Erwaermung'],
+    ];
+    let html = '<table class="solder-table"><thead><tr><th>Bauteil</th><th>Temp (C)</th><th>Spitze</th><th>Tipps</th></tr></thead><tbody>';
+    data.forEach(r => {
+        html += '<tr><td style="font-weight:600">' + r[0] + '</td><td style="color:var(--warning);font-family:var(--mono)">' + r[1] + '</td><td>' + r[2] + '</td><td style="font-size:10px">' + r[3] + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    return html;
+}
+
+// ===== Theme Switcher =====
+function applyTheme(theme) {
+    if (theme === 'jarvis') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('ws-theme', theme);
+}
+
+function getCurrentTheme() { return localStorage.getItem('ws-theme') || 'jarvis'; }
+
+// ===== Notification Center =====
+let notifications = [];
+
+function toggleNotifPanel() {
+    const panel = document.getElementById('notif-panel');
+    const backdrop = document.getElementById('notif-backdrop');
+    panel.classList.toggle('open');
+    backdrop.classList.toggle('show');
+    if (panel.classList.contains('open')) loadNotifications();
+}
+
+async function loadNotifications() {
+    try {
+        const res = await apiCall('notifications');
+        notifications = res.notifications || [];
+        const countEl = document.getElementById('notif-count');
+        if (notifications.length > 0) { countEl.textContent = notifications.length; countEl.style.display = 'flex'; }
+        else { countEl.style.display = 'none'; }
+        renderNotifications();
+    } catch (e) { notifications = []; }
+}
+
+function renderNotifications() {
+    const el = document.getElementById('notif-list');
+    if (!el) return;
+    if (notifications.length === 0) {
+        el.innerHTML = emptyState('&#128276;', 'Keine Benachrichtigungen', 'Alles in Ordnung!');
+        return;
+    }
+    el.innerHTML = notifications.map((n, i) =>
+        '<div class="notif-item" onclick="handleNotif(' + i + ')"><span class="notif-icon">' + (n.icon || '&#128276;') + '</span><div><div style="color:var(--text-primary)">' + escHtml(n.message) + '</div><div style="font-size:10px;margin-top:2px">' + escHtml((n.time || '').split('T')[0]) + '</div></div></div>'
+    ).join('');
+}
+
+function handleNotif(idx) {
+    const n = notifications[idx];
+    if (n?.type === 'maintenance') { switchToView('tools'); toolsTab = 'maintenance'; }
+    else if (n?.type === 'lending') { switchToView('tools'); toolsTab = 'lending'; }
+    toggleNotifPanel();
+}
+
+// ===== Voice Narration =====
+let narrationActive = false;
+
+function toggleNarration() {
+    if (narrationActive) { window.speechSynthesis.cancel(); narrationActive = false; renderView(); return; }
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    const steps = currentProject.steps || [];
+    if (!steps.length) { showToast('Keine Schritte vorhanden'); return; }
+    narrationActive = true;
+    renderView();
+    readStepsAloud(steps, 0);
+}
+
+function readStepsAloud(steps, idx) {
+    if (idx >= steps.length || !narrationActive) { narrationActive = false; renderView(); return; }
+    const step = steps[idx];
+    const text = 'Schritt ' + (idx + 1) + ': ' + (step.title || step.name || step) + '. ' + (step.description || '');
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'de-DE'; utter.rate = 0.9;
+    utter.onend = () => readStepsAloud(steps, idx + 1);
+    window.speechSynthesis.speak(utter);
+}
+
+// ===== Project Duplication =====
+async function duplicateProject() {
+    if (!currentProject) return;
+    try {
+        const res = await apiCall('project/' + currentProject.id + '/duplicate', 'POST', {});
+        showToast('Projekt dupliziert: ' + (res.title || ''));
+        await loadProjects();
+        if (res.project_id) selectProject(res.project_id);
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+// ===== Favorites / Pins =====
+function getPinnedProjects() {
+    try { return JSON.parse(localStorage.getItem('ws-pinned') || '[]'); } catch(e) { return []; }
+}
+function togglePin(id) {
+    let pinned = getPinnedProjects();
+    if (pinned.includes(id)) pinned = pinned.filter(p => p !== id);
+    else pinned.push(id);
+    localStorage.setItem('ws-pinned', JSON.stringify(pinned));
+    renderProjectList();
+}
+
+// ===== LocalStorage Drafts =====
+function saveDraft(key, value) { localStorage.setItem('ws-draft-' + key, value); }
+function restoreDraft(key) { return localStorage.getItem('ws-draft-' + key) || ''; }
+function clearDraft(key) { localStorage.removeItem('ws-draft-' + key); }
+
+// ===== Undo System =====
+let lastUndoAction = null;
+let undoTimeout = null;
+
+function showUndoToast(msg, undoFn) {
+    const el = document.getElementById('toast');
+    el.innerHTML = escHtml(msg) + '<button class="toast-undo" onclick="executeUndo()">Rueckgaengig</button>';
+    el.classList.add('show');
+    lastUndoAction = undoFn;
+    clearTimeout(undoTimeout);
+    undoTimeout = setTimeout(() => { el.classList.remove('show'); lastUndoAction = null; }, 8000);
+}
+
+function executeUndo() {
+    if (lastUndoAction) { lastUndoAction(); lastUndoAction = null; }
+    document.getElementById('toast').classList.remove('show');
+    clearTimeout(undoTimeout);
+}
+
+// ===== Shortcut Overlay =====
+function toggleShortcuts() { document.getElementById('shortcut-overlay').classList.toggle('open'); }
+
+// ===== Ambient Mode =====
+let ambientInterval = null;
+let ambientIdleTimer = null;
+
+function enterAmbientMode() {
+    document.getElementById('ambient-overlay').classList.add('active');
+    updateAmbientClock();
+    ambientInterval = setInterval(updateAmbientClock, 1000);
+    const proj = currentProject?.title || 'Kein aktives Projekt';
+    document.getElementById('ambient-project').textContent = proj;
+}
+
+function exitAmbientMode() {
+    document.getElementById('ambient-overlay').classList.remove('active');
+    clearInterval(ambientInterval);
+}
+
+function updateAmbientClock() {
+    const now = new Date();
+    document.getElementById('ambient-clock').textContent = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    const envEl = document.getElementById('footer-env');
+    if (envEl) document.getElementById('ambient-env').textContent = envEl.textContent;
+}
+
+// ===== Sound Effects =====
+function playSound(type) {
+    if (localStorage.getItem('ws-sounds') === 'off') return;
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator(); const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        const hour = new Date().getHours();
+        const vol = (hour >= 22 || hour < 7) ? 0.03 : 0.08;
+        gain.gain.value = vol;
+        if (type === 'success') { osc.frequency.value = 523; osc.start(); osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1); osc.stop(ctx.currentTime + 0.2); }
+        else if (type === 'error') { osc.frequency.value = 220; osc.start(); osc.stop(ctx.currentTime + 0.2); }
+        else { osc.frequency.value = 1200; gain.gain.value = vol * 0.5; osc.start(); osc.stop(ctx.currentTime + 0.05); }
+    } catch(e) {}
+}
+
+// ===== QR Code Generator (simple) =====
+function generateQR(text) {
+    // Uses a simple QR code via an SVG pattern (basic encoding)
+    // For production, use a proper library. This creates a placeholder.
+    return '<div style="text-align:center;padding:16px"><div style="background:#fff;display:inline-block;padding:16px;border-radius:4px">' +
+        '<img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(text) + '" alt="QR Code" width="150" height="150">' +
+        '</div><div style="font-size:11px;color:var(--text-secondary);margin-top:8px">' + escHtml(text) + '</div></div>';
+}
+
+// ===== Camera Widget =====
+async function renderCameraWidget() {
+    let html = '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#128247;</span><span class="widget-title">Werkstatt-Kamera</span></div>';
+    html += '<div id="camera-feed" style="text-align:center;padding:16px">';
+    html += '<div style="color:var(--text-secondary);font-size:12px">Kamera-Feed wird ueber Home Assistant bereitgestellt.</div>';
+    html += '<button class="action-btn secondary" style="margin-top:8px" onclick="takeCameraSnapshot()">Snapshot aufnehmen</button>';
+    html += '</div></div>';
+    return html;
+}
+
+async function takeCameraSnapshot() {
+    showToast('Snapshot wird aufgenommen...');
+    try {
+        const res = await apiCall('scan-object', 'POST', { description: 'Werkstatt Snapshot', camera: 'werkstatt' });
+        showToast('Snapshot aufgenommen');
+    } catch (e) { showToast('Kamera nicht verfuegbar'); }
+}
+
+// ===== Wochenplan Widget =====
+function renderWeekPlanWidget() {
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128197;</span><span class="widget-title">Diese Woche</span></div>';
+
+    const activeProjects = projects.filter(p => p.status === 'in_arbeit' || p.status === 'diagnose');
+    if (activeProjects.length === 0) {
+        html += '<div style="font-size:12px;color:var(--text-secondary)">Keine aktiven Projekte.</div>';
+    } else {
+        html += '<div class="timeline">';
+        activeProjects.slice(0, 5).forEach(p => {
+            const steps = p.steps || [];
+            const nextStep = steps.find(s => !s.done && !s.completed);
+            html += '<div class="timeline-item"><div class="timeline-dot active"></div>';
+            html += '<div class="timeline-time">' + escHtml(p.title || p.id) + '</div>';
+            html += '<div class="timeline-text">' + (nextStep ? escHtml(nextStep.title || nextStep.name || 'Naechster Schritt') : 'Alle Schritte erledigt') + '</div>';
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+    html += '</div>';
+    return html;
+}
+
+// ===== Update Keyboard Shortcuts (extended) =====
+// Patch existing keydown handler to add new shortcuts:
 
 // ===== Init =====
 window.addEventListener('DOMContentLoaded', bootWorkshop);

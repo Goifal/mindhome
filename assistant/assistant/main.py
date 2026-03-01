@@ -4803,6 +4803,160 @@ async def workshop_add_inventory(request: Request):
     return {"success": True, "name": name}
 
 
+# ── Workshop: Generators ────────────────────────────────────
+
+
+@app.post("/api/workshop/generate/3d-model")
+async def workshop_gen_3d_model(request: Request):
+    """3D-Modell (OpenSCAD) generieren."""
+    data = await request.json()
+    project_id = data.get("project_id", "")
+    requirement = data.get("requirement", "").strip()
+    if not requirement:
+        raise HTTPException(400, "requirement erforderlich")
+    try:
+        result = await brain.workshop_gen.generate_3d_model(
+            project_id, requirement)
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/generate/schematic")
+async def workshop_gen_schematic(request: Request):
+    """SVG-Schaltplan generieren."""
+    data = await request.json()
+    project_id = data.get("project_id", "")
+    requirement = data.get("requirement", "").strip()
+    if not requirement:
+        raise HTTPException(400, "requirement erforderlich")
+    try:
+        result = await brain.workshop_gen.generate_schematic(
+            project_id, requirement)
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/generate/website")
+async def workshop_gen_website(request: Request):
+    """Website generieren."""
+    data = await request.json()
+    project_id = data.get("project_id", "")
+    requirement = data.get("requirement", "").strip()
+    context = data.get("context", "")
+    if not requirement:
+        raise HTTPException(400, "requirement erforderlich")
+    try:
+        result = await brain.workshop_gen.generate_website(
+            project_id, requirement, context=context)
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/generate/bom")
+async def workshop_gen_bom(request: Request):
+    """Bill of Materials generieren."""
+    data = await request.json()
+    project_id = data.get("project_id", "")
+    if not project_id:
+        raise HTTPException(400, "project_id erforderlich")
+    try:
+        result = await brain.workshop_gen.generate_bom(project_id)
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/generate/documentation")
+async def workshop_gen_docs(request: Request):
+    """Projekt-Dokumentation generieren."""
+    data = await request.json()
+    project_id = data.get("project_id", "")
+    if not project_id:
+        raise HTTPException(400, "project_id erforderlich")
+    try:
+        result = await brain.workshop_gen.generate_documentation(project_id)
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/generate/tests")
+async def workshop_gen_tests(request: Request):
+    """Tests generieren."""
+    data = await request.json()
+    project_id = data.get("project_id", "")
+    filename = data.get("filename", "")
+    if not project_id or not filename:
+        raise HTTPException(400, "project_id und filename erforderlich")
+    try:
+        result = await brain.workshop_gen.generate_tests(
+            project_id, filename)
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/project/{project_id}/duplicate")
+async def workshop_duplicate_project(project_id: str, request: Request):
+    """Projekt duplizieren."""
+    try:
+        data = await request.json() if request.headers.get(
+            "content-type", "").startswith("application/json") else {}
+    except Exception:
+        data = {}
+    try:
+        p = await brain.repair_planner.get_project(project_id)
+        if not p:
+            raise HTTPException(404, "Projekt nicht gefunden")
+        import copy
+        new_data = copy.deepcopy(p)
+        new_data["title"] = (new_data.get("title", "") + " (Kopie)").strip()
+        new_data["status"] = "erstellt"
+        new_id = await brain.repair_planner.create_project(
+            title=new_data.get("title", "Kopie"),
+            category=new_data.get("category", "maker"),
+            description=new_data.get("description", ""),
+            priority=new_data.get("priority", "normal"),
+        )
+        return {"success": True, "project_id": new_id, "title": new_data["title"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/workshop/notifications")
+async def workshop_notifications():
+    """Benachrichtigungen zusammenfassen."""
+    notifs = []
+    try:
+        maint = await brain.repair_planner.check_maintenance_due()
+        for m in (maint or []):
+            notifs.append({
+                "type": "maintenance",
+                "icon": "&#128295;",
+                "message": f"Wartung faellig: {m.get('tool_name', '')}",
+                "time": m.get("last_done", ""),
+            })
+    except Exception:
+        pass
+    try:
+        lent = await brain.repair_planner.list_lent_tools()
+        for t in (lent or []):
+            notifs.append({
+                "type": "lending",
+                "icon": "&#128230;",
+                "message": f"Verliehen: {t.get('tool_name', t.get('name', ''))} an {t.get('person', '')}",
+                "time": t.get("lent_at", t.get("date", "")),
+            })
+    except Exception:
+        pass
+    return {"notifications": notifs, "count": len(notifs)}
+
+
 # ── Workshop: Analysis & Diagnosis ──────────────────────────
 
 
