@@ -634,7 +634,7 @@ function renderCurrentTab() {
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
       case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); break;
-      case 'tab-declarative-tools': c.innerHTML = renderDeclarativeTools(); loadDeclarativeTools(); break;
+      case 'tab-declarative-tools': c.innerHTML = renderDeclarativeTools(); loadDeclarativeTools(); _renderDeclSuggestions(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
       case 'tab-system': c.innerHTML = renderSystem(); loadSystemStatus(); break;
     }
@@ -8397,6 +8397,7 @@ function _updateDeclEnabledUI() {
 // ── Vorschlaege (Suggestions) ─────────────────────────────────
 let _declSuggestions = [];
 let _declSuggestLoading = false;
+let _declSuggestBusy = false;  // Sperrt alle Suggestion-Buttons waehrend async Ops
 
 async function generateDeclSuggestions() {
   if (_declSuggestLoading) return;
@@ -8459,8 +8460,10 @@ function _renderDeclSuggestions() {
 }
 
 async function acceptDeclSuggestion(idx) {
+  if (_declSuggestBusy) return;
   var s = _declSuggestions[idx];
   if (!s) return;
+  _declSuggestBusy = true;
   try {
     await api('/api/ui/declarative-tools', 'POST', {
       name: s.name, description: s.description, type: s.type, config: s.config
@@ -8470,7 +8473,9 @@ async function acceptDeclSuggestion(idx) {
     _renderDeclSuggestions();
     loadDeclarativeTools();
   } catch(e) {
-    toast('Fehler: ' + (e.detail || e.message || e), 'error');
+    toast('Fehler: ' + (e.message || e), 'error');
+  } finally {
+    _declSuggestBusy = false;
   }
 }
 
@@ -8483,7 +8488,9 @@ function rejectDeclSuggestion(idx) {
 }
 
 async function acceptAllDeclSuggestions() {
+  if (_declSuggestBusy) return;
   if (!confirm(_declSuggestions.length + ' Vorschlaege annehmen?')) return;
+  _declSuggestBusy = true;
   var accepted = 0;
   var errors = 0;
   var lastError = '';
@@ -8499,10 +8506,11 @@ async function acceptAllDeclSuggestions() {
       accepted++;
     } catch(e) {
       errors++;
-      lastError = e.detail || e.message || String(e);
+      lastError = e.message || String(e);
       failed.push(s);
     }
   }
+  _declSuggestBusy = false;
   _declSuggestions = failed;
   _renderDeclSuggestions();
   loadDeclarativeTools();
@@ -8514,6 +8522,8 @@ async function acceptAllDeclSuggestions() {
 }
 
 function rejectAllDeclSuggestions() {
+  if (_declSuggestBusy) return;
+  if (!confirm(_declSuggestions.length + ' Vorschlaege ablehnen?')) return;
   _declSuggestions = [];
   _renderDeclSuggestions();
   toast('Alle Vorschlaege abgelehnt', 'success');
@@ -8529,7 +8539,7 @@ function renderDeclarativeTools() {
     '<label class="toggle"><input type="checkbox" id="declSpontaneousToggle" onchange="toggleDeclSpontaneous()" checked>' +
     '<span class="toggle-track"></span><span class="toggle-thumb"></span></label></div></div>' +
     '<div class="form-group"><label>Maximale Anzahl Tools</label>' +
-    '<div class="range-group"><input type="range" id="declMaxToolsSlider" min="5" max="50" step="5" value="20" onchange="updateDeclMaxTools(this.value)" oninput="document.getElementById(\'declMaxToolsVal\').textContent=this.value">' +
+    '<div class="range-group"><input type="range" id="declMaxToolsSlider" min="10" max="250" step="10" value="20" onchange="updateDeclMaxTools(this.value)" oninput="document.getElementById(\'declMaxToolsVal\').textContent=this.value">' +
     '<span class="range-value" id="declMaxToolsVal">20</span></div></div>' +
     fInfo('Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus (nur Lese-Zugriff).' + helpBtn('decl_tools.overview'))
   ) +

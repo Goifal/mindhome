@@ -990,8 +990,8 @@ def _inject_entity_hints(tool: dict) -> dict:
         if combined:
             entity_hint = ", ".join(combined[:30])
             needs_copy = True
-    catalog_key = _ENTITY_MAP.get(fname)
-    if catalog_key and _entity_catalog.get(catalog_key):
+    # elif statt if — verhindert dass get_entity_state-Hint ueberschrieben wird
+    elif (catalog_key := _ENTITY_MAP.get(fname)) and _entity_catalog.get(catalog_key):
         entities = _entity_catalog[catalog_key]
         if entities:
             entity_hint = ", ".join(entities[:30])  # Max 30 um Token zu sparen
