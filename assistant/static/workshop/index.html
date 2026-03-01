@@ -690,6 +690,128 @@
         }
         .sidebar-backdrop.show { display: block; }
 
+        /* ===== HUD Corner Brackets ===== */
+        .hud-corners { position: relative; }
+        .hud-corners::before, .hud-corners::after {
+            content: ''; position: absolute; width: 14px; height: 14px; pointer-events: none;
+            border-color: rgba(0,212,255,0.35); border-style: solid; border-width: 0;
+        }
+        .hud-corners::before { top: -1px; left: -1px; border-top-width: 1.5px; border-left-width: 1.5px; }
+        .hud-corners::after { bottom: -1px; right: -1px; border-bottom-width: 1.5px; border-right-width: 1.5px; }
+
+        /* ===== Stat Cards ===== */
+        .stat-card {
+            padding: 16px; border-radius: 6px;
+            background: linear-gradient(135deg, rgba(12,21,32,0.95), rgba(8,16,24,0.98));
+            border: 1px solid rgba(0,212,255,0.08); border-left: 3px solid var(--accent);
+        }
+        .stat-card::before {
+            content: ''; position: absolute; left: -3px; top: 0; bottom: 0; width: 3px;
+            background: var(--accent); animation: statPulse 2s ease-in-out infinite;
+        }
+        @keyframes statPulse { 0%,100% { box-shadow: 0 0 4px var(--accent); } 50% { box-shadow: 0 0 12px var(--accent); } }
+        .stat-value { font-size: 28px; font-weight: 700; color: var(--accent); font-family: var(--mono); text-shadow: 0 0 20px rgba(0,212,255,0.3); }
+        .stat-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 4px; }
+
+        /* ===== Tab Bar ===== */
+        .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+        .tab-btn {
+            padding: 10px 18px; background: none; border: none;
+            color: var(--text-secondary); font-family: var(--font);
+            font-size: 11px; font-weight: 500; cursor: pointer;
+            text-transform: uppercase; letter-spacing: 1px;
+            border-bottom: 2px solid transparent; transition: all var(--fast);
+        }
+        .tab-btn:hover { color: var(--text-primary); }
+        .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); text-shadow: 0 0 10px rgba(0,212,255,0.3); }
+
+        /* ===== Nav Badge ===== */
+        .nav-badge {
+            background: var(--accent); color: var(--bg-primary);
+            font-size: 9px; font-weight: 700; min-width: 16px; height: 16px;
+            border-radius: 8px; display: flex; align-items: center;
+            justify-content: center; margin-left: auto; padding: 0 4px;
+            font-family: var(--mono);
+        }
+
+        /* ===== Floating AI Bubble ===== */
+        .ai-bubble {
+            position: fixed; bottom: 52px; right: 20px; z-index: 500;
+            width: 48px; height: 48px; border-radius: 50%;
+            background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(0,212,255,0.05));
+            border: 1.5px solid var(--accent); color: var(--accent);
+            font-size: 20px; cursor: pointer; display: flex;
+            align-items: center; justify-content: center;
+            box-shadow: 0 0 20px rgba(0,212,255,0.25); transition: all 0.3s;
+            animation: bubblePulse 3s ease-in-out infinite;
+        }
+        .ai-bubble:hover { transform: scale(1.1); box-shadow: 0 0 30px rgba(0,212,255,0.4); }
+        @keyframes bubblePulse { 0%,100% { box-shadow: 0 0 20px rgba(0,212,255,0.25); } 50% { box-shadow: 0 0 30px rgba(0,212,255,0.35); } }
+        .ai-popup {
+            position: fixed; bottom: 108px; right: 20px; z-index: 501;
+            width: 360px; max-height: 450px;
+            background: rgba(8,16,28,0.97); border: 1px solid var(--border-accent);
+            border-radius: 8px; display: none; flex-direction: column;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.5), var(--shadow-glow);
+            backdrop-filter: blur(16px); overflow: hidden;
+        }
+        .ai-popup.open { display: flex; }
+        .ai-popup-header {
+            padding: 12px 16px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: 12px; color: var(--accent); font-weight: 600;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        .ai-popup-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; max-height: 300px; }
+        .ai-popup-input { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); }
+
+        /* ===== Search Bar ===== */
+        .search-container { position: relative; }
+        .search-input {
+            background: rgba(0,212,255,0.02); border: 1px solid rgba(0,212,255,0.08);
+            border-radius: 4px; padding: 6px 12px 6px 28px;
+            color: var(--text-primary); font-family: var(--font);
+            font-size: 11px; width: 160px; transition: all var(--fast);
+        }
+        .search-input:focus { width: 220px; outline: none; border-color: var(--accent); box-shadow: 0 0 15px rgba(0,212,255,0.1); }
+        .search-icon { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--text-muted); pointer-events: none; }
+        .search-results {
+            position: absolute; top: 100%; left: 0; right: 0;
+            background: rgba(8,16,28,0.97); border: 1px solid var(--border-accent);
+            border-radius: 4px; max-height: 200px; overflow-y: auto;
+            display: none; z-index: 200; margin-top: 4px;
+        }
+        .search-results.open { display: block; }
+        .search-result-item { padding: 8px 12px; font-size: 12px; cursor: pointer; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
+        .search-result-item:hover { background: var(--accent-dim); color: var(--text-primary); }
+
+        /* ===== Info Box ===== */
+        .info-box { padding: 12px 16px; border-radius: 4px; font-size: 12px; line-height: 1.6; margin: 8px 0; display: flex; align-items: flex-start; gap: 10px; }
+        .info-box.info { background: var(--accent-dim); border-left: 3px solid var(--accent); color: var(--text-primary); }
+        .info-box.warning { background: rgba(255,170,0,0.08); border-left: 3px solid var(--warning); color: var(--warning); }
+        .info-box.success { background: var(--success-dim); border-left: 3px solid var(--success); color: var(--success); }
+
+        /* ===== Analysis Result ===== */
+        .analysis-result { padding: 16px; border-radius: 6px; background: var(--bg-secondary); border: 1px solid var(--border); font-size: 13px; line-height: 1.7; white-space: pre-wrap; max-height: 500px; overflow-y: auto; }
+
+        /* ===== Pinout Grid ===== */
+        .pinout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+        .pinout-item { padding: 8px 10px; border-radius: 4px; background: rgba(0,212,255,0.03); border: 1px solid var(--border); font-size: 11px; font-family: var(--mono); }
+        .pinout-label { color: var(--accent); font-weight: 600; }
+        .pinout-pins { color: var(--text-secondary); margin-top: 2px; }
+
+        /* ===== Template Card ===== */
+        .template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+        .template-card {
+            padding: 16px; border-radius: 6px; cursor: pointer;
+            background: linear-gradient(135deg, rgba(12,21,32,0.95), rgba(8,16,24,0.98));
+            border: 1px solid var(--border); transition: all var(--fast); text-align: center;
+        }
+        .template-card:hover { border-color: var(--accent); box-shadow: 0 4px 20px rgba(0,212,255,0.15); transform: translateY(-2px); }
+        .template-icon { font-size: 28px; margin-bottom: 8px; }
+        .template-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .template-desc { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+
         /* ===== Responsive: Tablet (<= 900px) ===== */
         @media (max-width: 900px) {
             .hamburger { display: block; }
@@ -705,6 +827,9 @@
             .header { padding: 0 12px; }
             .header-actions button { padding: 6px 8px; font-size: 10px; }
             .chat-messages { max-height: 50vh; }
+            .ai-popup { width: 300px; right: 10px; bottom: 100px; }
+            .ai-bubble { right: 14px; bottom: 46px; width: 42px; height: 42px; font-size: 18px; }
+            .search-container { display: none; }
         }
 
         /* ===== Responsive: Phone (<= 600px) ===== */
@@ -800,17 +925,37 @@
             <button class="nav-btn" data-view="journal" onclick="switchView(this, 'journal')">
                 <span class="icon">&#128214;</span> Journal
             </button>
+            <h3>Werkzeuge</h3>
             <button class="nav-btn" data-view="inventory" onclick="switchView(this, 'inventory')">
                 <span class="icon">&#128230;</span> Inventar
+            </button>
+            <button class="nav-btn" data-view="tools" onclick="switchView(this, 'tools')">
+                <span class="icon">&#128295;</span> Verleih & Wartung
             </button>
             <button class="nav-btn" data-view="snippets" onclick="switchView(this, 'snippets')">
                 <span class="icon">&#128203;</span> Snippets
             </button>
+            <button class="nav-btn" data-view="pinout" onclick="switchView(this, 'pinout')">
+                <span class="icon">&#128204;</span> Pinout-Referenz
+            </button>
+
+            <h3>Analyse</h3>
+            <button class="nav-btn" data-view="analysis" onclick="switchView(this, 'analysis')">
+                <span class="icon">&#128300;</span> Analyse & Debug
+            </button>
+            <button class="nav-btn" data-view="devices" onclick="switchView(this, 'devices')">
+                <span class="icon">&#128268;</span> Geraete
+            </button>
+
+            <h3>Sonstiges</h3>
             <button class="nav-btn" data-view="timer" onclick="switchView(this, 'timer')">
                 <span class="icon">&#9201;</span> Timer
             </button>
             <button class="nav-btn" data-view="safety" onclick="switchView(this, 'safety')">
                 <span class="icon">&#9888;</span> Sicherheit
+            </button>
+            <button class="nav-btn" data-view="shopping" onclick="switchView(this, 'shopping')">
+                <span class="icon">&#128722;</span> Einkaufsliste
             </button>
             <button class="nav-btn" data-view="settings" onclick="switchView(this, 'settings')">
                 <span class="icon">&#9881;</span> Einstellungen
@@ -837,9 +982,15 @@
                 </div>
             </div>
             <div class="header-right">
+                <div class="search-container">
+                    <span class="search-icon">&#128269;</span>
+                    <input class="search-input" id="header-search" placeholder="Projekte suchen..." oninput="handleSearch(this.value)" onfocus="this.parentElement.querySelector('.search-results').classList.add('open')" onblur="setTimeout(()=>document.querySelector('.search-results').classList.remove('open'),200)">
+                    <div class="search-results" id="search-results"></div>
+                </div>
                 <span class="header-status status-none" id="header-status">---</span>
                 <div class="header-actions">
                     <button onclick="showNewProjectModal()">+ Projekt</button>
+                    <button onclick="showTemplatesModal()">&#128221; Template</button>
                     <button onclick="refreshAll()">&#8635;</button>
                     <button onclick="window.open('/ui/', '_blank')">Dashboard</button>
                 </div>
@@ -864,6 +1015,20 @@
 
 <!-- Toast Notification -->
 <div class="toast" id="toast"></div>
+
+<!-- Floating AI Bubble -->
+<div class="ai-bubble" id="ai-bubble" onclick="toggleAiBubble()" title="Quick Chat mit Jarvis">&#128172;</div>
+<div class="ai-popup" id="ai-popup">
+    <div class="ai-popup-header">
+        <span>&#128172; Quick Chat</span>
+        <button style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:16px" onclick="toggleAiBubble()">&#10005;</button>
+    </div>
+    <div class="ai-popup-messages" id="ai-popup-messages"></div>
+    <div class="ai-popup-input">
+        <input class="chat-input" id="ai-popup-input" placeholder="Schnelle Frage..." onkeydown="if(event.key==='Enter')sendAiBubble()" style="flex:1">
+        <button class="btn-send" onclick="sendAiBubble()" style="padding:8px 12px">&#10148;</button>
+    </div>
+</div>
 
 <!-- New Project Modal -->
 <div class="modal-overlay hidden" id="new-project-modal">
@@ -1082,11 +1247,25 @@ async function loadProjects() {
         const res = await apiCall('projects');
         projects = res.projects || [];
         renderProjectList();
+        updateNavBadges();
         if (currentProject) {
             const updated = projects.find(p => p.id === currentProject.id);
             if (updated) { currentProject = updated; updateHeader(); }
         }
     } catch (e) { console.error('loadProjects:', e); }
+}
+
+function updateNavBadges() {
+    const active = projects.filter(p => p.status === 'in_arbeit' || p.status === 'diagnose').length;
+    // Update overview badge
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        const existing = btn.querySelector('.nav-badge');
+        if (existing) existing.remove();
+        const view = btn.dataset.view;
+        if (view === 'overview' && active > 0) {
+            btn.insertAdjacentHTML('beforeend', '<span class="nav-badge">' + active + '</span>');
+        }
+    });
 }
 
 function renderProjectList() {
@@ -1145,22 +1324,16 @@ function switchView(btn, view) {
 
 function renderView() {
     const main = document.getElementById('main-content');
-    switch (currentView) {
-        case 'overview': renderOverview(main); break;
-        case 'steps': renderStepsView(main); break;
-        case 'code': renderCodeView(main); break;
-        case 'editor': renderEditorView(main); break;
-        case 'hardware': renderHardwareView(main); break;
-        case 'chat': renderChatView(main); break;
-        case 'calc': renderCalcView(main); break;
-        case 'journal': renderJournalView(main); break;
-        case 'inventory': renderInventoryView(main); break;
-        case 'snippets': renderSnippetsView(main); break;
-        case 'timer': renderTimerView(main); break;
-        case 'safety': renderSafetyView(main); break;
-        case 'settings': renderSettingsView(main); break;
-        default: main.innerHTML = '';
-    }
+    const views = {
+        overview: renderOverview, steps: renderStepsView, code: renderCodeView,
+        editor: renderEditorView, hardware: renderHardwareView, chat: renderChatView,
+        calc: renderCalcView, journal: renderJournalView, inventory: renderInventoryView,
+        snippets: renderSnippetsView, timer: renderTimerView, safety: renderSafetyView,
+        settings: renderSettingsView, tools: renderToolsView, analysis: renderAnalysisView,
+        devices: renderDevicesView, pinout: renderPinoutView, shopping: renderShoppingView,
+    };
+    const fn = views[currentView];
+    if (fn) fn(main); else main.innerHTML = '';
 }
 
 // ===== Sidebar Toggle (Mobile) =====
@@ -1214,8 +1387,18 @@ function renderOverview(main) {
     if (!main) main = document.getElementById('main-content');
     let html = '';
 
+    // Stat Cards Row
+    const activeCount = projects.filter(p => p.status === 'in_arbeit' || p.status === 'diagnose').length;
+    const completedCount = projects.filter(p => p.status === 'fertig').length;
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px">';
+    html += '<div class="stat-card"><div class="stat-value">' + projects.length + '</div><div class="stat-label">Projekte</div></div>';
+    html += '<div class="stat-card"><div class="stat-value" style="color:var(--success)">' + activeCount + '</div><div class="stat-label">Aktiv</div></div>';
+    html += '<div class="stat-card"><div class="stat-value" style="color:var(--text-secondary)">' + completedCount + '</div><div class="stat-label">Fertig</div></div>';
+    html += '<div class="stat-card"><div class="stat-value" style="font-size:16px" id="ov-env-temp">--</div><div class="stat-label">Werkstatt</div></div>';
+    html += '</div>';
+
     // Project Info
-    html += '<div class="widget" id="w-project-info">';
+    html += '<div class="widget hud-corners" id="w-project-info">';
     html += '<div class="widget-header"><span class="icon">&#128204;</span><span class="widget-title">Projekt-Info</span></div>';
     if (currentProject) {
         html += '<div style="font-size:18px;font-weight:600;">' + escHtml(currentProject.title || '') + '</div>';
@@ -1231,9 +1414,24 @@ function renderOverview(main) {
         html += '<button class="action-btn secondary" onclick="showStatusChange()">Status aendern</button>';
         html += '<button class="action-btn secondary" onclick="showBudgetDialog()">Budget setzen</button>';
         html += '<button class="action-btn secondary" onclick="showAddPartDialog()">Teil hinzufuegen</button>';
+        html += '<button class="action-btn secondary" onclick="addProjectNote()">Notiz</button>';
+        html += '<button class="action-btn secondary" onclick="showExpenseDialog()">Ausgabe</button>';
         html += '<button class="action-btn secondary" onclick="exportProject()">Exportieren</button>';
         html += '<button class="action-btn danger" onclick="deleteProject(\'' + currentProject.id + '\')">Loeschen</button>';
         html += '</div>';
+        // Project notes
+        const notes = currentProject.notes || [];
+        if (notes.length) {
+            html += '<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">';
+            html += '<div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Notizen</div>';
+            notes.slice(-5).forEach(n => {
+                html += '<div style="font-size:12px;color:var(--text-secondary);padding:4px 0;border-bottom:1px solid var(--border)">';
+                html += '<span style="color:var(--text-muted);font-size:10px;font-family:var(--mono)">' + escHtml((n.time || '').split('T')[0] || '') + '</span> ';
+                html += escHtml(n.text || n.note || '');
+                html += '</div>';
+            });
+            html += '</div>';
+        }
     } else {
         html += '<div style="color:var(--text-secondary);font-size:13px">Kein Projekt ausgewaehlt. Erstelle ein neues Projekt oder waehle eines aus der Sidebar.</div>';
     }
@@ -1579,43 +1777,109 @@ function downloadFile(filename) {
 }
 
 // ===== Hardware View =====
+let hwTab = 'printer';
+
 function renderHardwareView(main) {
     if (!main) main = document.getElementById('main-content');
-    let html = '';
-
-    // Printer Status
-    html += '<div class="widget" id="w-printer">';
-    html += '<div class="widget-header"><span class="icon">&#128424;</span><span class="widget-title">3D-Drucker</span></div>';
-    html += '<div id="printer-content">';
-    html += '<div style="color:var(--text-secondary);font-size:12px">Status wird geladen...</div>';
-    html += '</div></div>';
-
-    // Arm Control
-    html += '<div class="widget" id="w-arm">';
-    html += '<div class="widget-header"><span class="icon">&#129302;</span><span class="widget-title">Roboterarm</span></div>';
-    html += '<div class="arm-btns">';
-    html += '<button class="arm-btn" onclick="armCmd(\'home\')">&#127968; Home</button>';
-    html += '<button class="arm-btn" onclick="armCmd(\'open\')">&#9996; Oeffnen</button>';
-    html += '<button class="arm-btn" onclick="armCmd(\'close\')">&#9994; Greifen</button>';
-    html += '<button class="arm-btn" onclick="armPickTool()">&#128295; Werkzeug</button>';
-    html += '<button class="arm-btn" onclick="armPos(\'up\')">&#11014; Hoch</button>';
-    html += '<button class="arm-btn" onclick="armPos(\'down\')">&#11015; Runter</button>';
-    html += '<button class="arm-btn emergency" onclick="armCmd(\'stop\')">&#9888; NOTAUS</button>';
-    html += '</div>';
-    html += '<div style="margin-top:12px;font-size:11px;color:var(--text-secondary)" id="arm-status">Position: ---</div>';
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128268;</span><span class="widget-title">Hardware-Steuerung</span></div>';
+    html += '<div class="tab-bar">';
+    html += '<button class="tab-btn' + (hwTab === 'printer' ? ' active' : '') + '" onclick="hwTab=\'printer\';renderHardwareView()">3D-Drucker</button>';
+    html += '<button class="tab-btn' + (hwTab === 'arm' ? ' active' : '') + '" onclick="hwTab=\'arm\';renderHardwareView()">Roboterarm</button>';
+    html += '<button class="tab-btn' + (hwTab === 'env' ? ' active' : '') + '" onclick="hwTab=\'env\';renderHardwareView()">Umgebung</button>';
     html += '</div>';
 
-    // Environment (detailed)
-    html += '<div class="widget" id="w-env-detail">';
-    html += '<div class="widget-header"><span class="icon">&#127777;</span><span class="widget-title">Umgebungssensoren</span></div>';
-    html += '<div class="env-grid">';
-    html += '<div class="env-item"><div class="env-value" id="env-temp2">--</div><div class="env-label">Temperatur</div></div>';
-    html += '<div class="env-item"><div class="env-value" id="env-hum2">--</div><div class="env-label">Feuchtigkeit</div></div>';
-    html += '<div class="env-item"><div class="env-value" id="env-co22">--</div><div class="env-label">CO2</div></div>';
-    html += '</div></div>';
+    if (hwTab === 'printer') {
+        html += '<div id="printer-content"><div style="color:var(--text-secondary);font-size:12px">Status wird geladen...</div></div>';
+        html += '<div class="action-row" style="margin-top:12px">';
+        html += '<button class="action-btn" onclick="printerAction(\'start\')">&#9654; Druck starten</button>';
+        html += '<button class="action-btn secondary" onclick="printerAction(\'pause\')">&#10074;&#10074; Pausieren</button>';
+        html += '<button class="action-btn danger" onclick="printerAction(\'cancel\')">&#9632; Abbrechen</button>';
+        html += '<button class="action-btn secondary" onclick="loadPrinterStatusDirect()">&#8635; Aktualisieren</button>';
+        html += '</div>';
+    } else if (hwTab === 'arm') {
+        html += '<div class="arm-btns">';
+        html += '<button class="arm-btn" onclick="armDirect(\'home\')">&#127968; Home</button>';
+        html += '<button class="arm-btn" onclick="armDirect(\'gripper\',\'open\')">&#9996; Oeffnen</button>';
+        html += '<button class="arm-btn" onclick="armDirect(\'gripper\',\'close\')">&#9994; Greifen</button>';
+        html += '<button class="arm-btn" onclick="armPickTool()">&#128295; Werkzeug</button>';
+        html += '<button class="arm-btn" onclick="armDirect(\'move\',null,{z:50})">&#11014; Hoch</button>';
+        html += '<button class="arm-btn" onclick="armDirect(\'move\',null,{z:-50})">&#11015; Runter</button>';
+        html += '<button class="arm-btn emergency" onclick="armDirect(\'home\')">&#9888; NOTAUS</button>';
+        html += '</div>';
+        html += '<div style="margin-top:12px">';
+        html += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px" id="arm-status">Position: ---</div>';
+        html += '<div class="action-row">';
+        html += '<button class="action-btn secondary" onclick="showSaveArmPosDialog()">Position speichern</button>';
+        html += '<button class="action-btn secondary" onclick="showArmMoveDialog()">Koordinaten bewegen</button>';
+        html += '</div></div>';
+    } else {
+        html += '<div class="env-grid">';
+        html += '<div class="env-item"><div class="env-value" id="env-temp2">--</div><div class="env-label">Temperatur</div></div>';
+        html += '<div class="env-item"><div class="env-value" id="env-hum2">--</div><div class="env-label">Feuchtigkeit</div></div>';
+        html += '<div class="env-item"><div class="env-value" id="env-co22">--</div><div class="env-label">CO2</div></div>';
+        html += '</div>';
+    }
 
+    html += '</div>';
     main.innerHTML = html;
-    loadPrinterStatus();
+    if (hwTab === 'printer') loadPrinterStatusDirect();
+}
+
+async function printerAction(action) {
+    try {
+        await apiCall('printer/' + action, 'POST', { project_id: currentProject?.id || '' });
+        showToast('Drucker: ' + action);
+        setTimeout(loadPrinterStatusDirect, 1000);
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+async function loadPrinterStatusDirect() {
+    try {
+        const res = await apiCall('printer/status');
+        updatePrinterWidget(res);
+    } catch (e) {
+        const el = document.getElementById('printer-content');
+        if (el) el.innerHTML = '<div style="color:var(--text-secondary);font-size:12px">Drucker nicht erreichbar.</div>';
+    }
+}
+
+async function armDirect(cmd, action, coords) {
+    try {
+        if (cmd === 'home') await apiCall('arm/home', 'POST');
+        else if (cmd === 'gripper') await apiCall('arm/gripper', 'POST', { action: action || 'open' });
+        else if (cmd === 'move') await apiCall('arm/move', 'POST', { x: coords?.x || 0, y: coords?.y || 0, z: coords?.z || 0 });
+        showToast('Arm: ' + cmd);
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+function showSaveArmPosDialog() {
+    showInputModal('Arm-Position speichern', 'Name', 'z.B. Loetstation', async (name) => {
+        try { await apiCall('arm/save-position', 'POST', { name }); showToast('Position gespeichert: ' + name); }
+        catch (e) { showToast('Fehler: ' + e.message); }
+    });
+}
+
+function showArmMoveDialog() {
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Arm bewegen</h3>' +
+        '<label>X (mm)</label><input id="arm-x" type="number" value="0">' +
+        '<label>Y (mm)</label><input id="arm-y" type="number" value="0">' +
+        '<label>Z (mm)</label><input id="arm-z" type="number" value="0">' +
+        '<label>Geschwindigkeit (%)</label><input id="arm-spd" type="number" value="50" min="1" max="100">' +
+        '<div class="modal-btns"><button onclick="closeArmMoveDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doArmMove()">Bewegen</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+function closeArmMoveDialog() { document.getElementById('new-project-modal').classList.add('hidden'); resetProjectModal(); }
+async function doArmMove() {
+    const x = parseFloat(document.getElementById('arm-x')?.value || 0);
+    const y = parseFloat(document.getElementById('arm-y')?.value || 0);
+    const z = parseFloat(document.getElementById('arm-z')?.value || 0);
+    const speed = parseInt(document.getElementById('arm-spd')?.value || 50);
+    closeArmMoveDialog();
+    try { await apiCall('arm/move', 'POST', { x, y, z, speed }); showToast('Arm bewegt'); }
+    catch (e) { showToast('Fehler: ' + e.message); }
 }
 
 async function loadPrinterStatus() {
@@ -2181,6 +2445,9 @@ function updateEnvironment(data) {
     if (footer && data.temperatur !== undefined) {
         footer.textContent = data.temperatur + '°C | ' + (data.feuchtigkeit || '--') + '% | ' + (data.co2 || '--') + 'ppm';
     }
+    // Overview stat card
+    const ovTemp = document.getElementById('ov-env-temp');
+    if (ovTemp && data.temperatur !== undefined) ovTemp.textContent = data.temperatur + '°C';
 }
 
 function showDiagnosis(data) {
@@ -2905,6 +3172,622 @@ function switchToView(view) {
     currentView = view;
     renderView();
 }
+
+// ===== Analysis & Debug View =====
+let analysisTab = 'troubleshoot';
+
+function renderAnalysisView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128300;</span><span class="widget-title">Analyse & Debug</span></div>';
+
+    html += '<div class="tab-bar">';
+    ['troubleshoot','simulate','compare','errorlog','measurement','improvements','calibration','scan'].forEach(t => {
+        const labels = { troubleshoot:'Troubleshoot', simulate:'Simulation', compare:'Vergleich', errorlog:'Error-Log', measurement:'Messwerte', improvements:'Vorschlaege', calibration:'Kalibrierung', scan:'Scanner' };
+        html += '<button class="tab-btn' + (analysisTab === t ? ' active' : '') + '" onclick="analysisTab=\'' + t + '\';renderAnalysisView()">' + labels[t] + '</button>';
+    });
+    html += '</div>';
+
+    html += '<div id="analysis-content">';
+    switch (analysisTab) {
+        case 'troubleshoot':
+            html += '<div class="info-box info"><span class="info-icon">&#128161;</span>Beschreibe ein Symptom und Jarvis generiert einen systematischen Debug-Workflow.</div>';
+            html += '<textarea id="analysis-input" class="chat-input" style="width:100%;min-height:80px;resize:vertical" placeholder="z.B. ESP32 verbindet sich nicht mit WiFi..."></textarea>';
+            html += '<button class="action-btn" style="margin-top:8px" onclick="runAnalysis(\'troubleshoot\')">Troubleshoot starten</button>';
+            break;
+        case 'simulate':
+            html += '<div class="info-box info"><span class="info-icon">&#128161;</span>Pruefe Machbarkeit, Schwachstellen, Batterielebensdauer oder thermische Aspekte.</div>';
+            html += '<textarea id="analysis-input" class="chat-input" style="width:100%;min-height:80px;resize:vertical" placeholder="z.B. Reicht ein 18650-Akku fuer 24h Betrieb?"></textarea>';
+            html += '<button class="action-btn" style="margin-top:8px" onclick="runAnalysis(\'simulate\')">Simulieren</button>';
+            break;
+        case 'compare':
+            html += '<div class="info-box info"><span class="info-icon">&#128161;</span>Vergleiche zwei Bauteile mit Specs, Preis und Empfehlung.</div>';
+            html += '<div style="display:flex;gap:8px"><input id="comp-a" class="chat-input" style="flex:1" placeholder="Bauteil A (z.B. ESP32)"><input id="comp-b" class="chat-input" style="flex:1" placeholder="Bauteil B (z.B. Arduino Nano)"></div>';
+            html += '<input id="comp-usecase" class="chat-input" style="width:100%;margin-top:8px" placeholder="Anwendungsfall (optional)">';
+            html += '<button class="action-btn" style="margin-top:8px" onclick="runCompare()">Vergleichen</button>';
+            break;
+        case 'errorlog':
+            html += '<div class="info-box info"><span class="info-icon">&#128161;</span>Fuege Serial-Output oder Error-Logs ein — Jarvis analysiert und schlaegt Fixes vor.</div>';
+            html += '<textarea id="analysis-input" class="chat-input" style="width:100%;min-height:120px;resize:vertical;font-family:var(--mono);font-size:11px" placeholder="Serial-Output hier einfuegen..."></textarea>';
+            html += '<button class="action-btn" style="margin-top:8px" onclick="runAnalysis(\'errorlog\')">Log analysieren</button>';
+            break;
+        case 'measurement':
+            html += '<div class="info-box info"><span class="info-icon">&#128161;</span>Gib einen Messwert ein und Jarvis bewertet ihn im Projektkontext.</div>';
+            html += '<input id="analysis-input" class="chat-input" style="width:100%" placeholder="z.B. Spannung am Pin: 2.3V (erwartet: 3.3V)">';
+            html += '<button class="action-btn" style="margin-top:8px" onclick="runAnalysis(\'measurement\')">Bewerten</button>';
+            break;
+        case 'improvements':
+            html += '<div class="info-box info"><span class="info-icon">&#128161;</span>Jarvis analysiert dein Projekt und schlaegt Verbesserungen vor.</div>';
+            if (currentProject) {
+                html += '<button class="action-btn" onclick="runAnalysis(\'improvements\')">Verbesserungen vorschlagen</button>';
+            } else {
+                html += '<div style="color:var(--text-secondary);font-size:12px">Waehle zuerst ein Projekt aus.</div>';
+            }
+            break;
+        case 'calibration':
+            html += '<div class="info-box info"><span class="info-icon">&#128161;</span>Schritt-fuer-Schritt Kalibrierungsanleitung fuer Geraete.</div>';
+            html += '<input id="analysis-input" class="chat-input" style="width:100%" placeholder="z.B. Multimeter, 3D-Drucker Bett, Loetstation...">';
+            html += '<button class="action-btn" style="margin-top:8px" onclick="runAnalysis(\'calibration\')">Anleitung generieren</button>';
+            break;
+        case 'scan':
+            html += '<div class="info-box info"><span class="info-icon">&#128161;</span>Objekt-Scanner: Beschreibe ein Bauteil oder nutze eine Kamera.</div>';
+            html += '<input id="analysis-input" class="chat-input" style="width:100%" placeholder="Beschreibe das Objekt oder gib einen Kameranamen ein...">';
+            html += '<button class="action-btn" style="margin-top:8px" onclick="runAnalysis(\'scan\')">Scannen</button>';
+            break;
+    }
+    html += '</div>';
+    html += '<div class="analysis-result" id="analysis-result" style="margin-top:12px;display:none"></div>';
+    html += '</div>';
+    main.innerHTML = html;
+}
+
+async function runAnalysis(type) {
+    const input = document.getElementById('analysis-input')?.value?.trim();
+    const resultEl = document.getElementById('analysis-result');
+    if (!input && type !== 'improvements') { showToast('Bitte Eingabe machen'); return; }
+    resultEl.style.display = 'block';
+    resultEl.textContent = 'Jarvis analysiert...';
+
+    try {
+        let res;
+        switch (type) {
+            case 'troubleshoot':
+                res = await apiCall('troubleshoot', 'POST', { project_id: currentProject?.id || '', symptom: input });
+                break;
+            case 'simulate':
+                res = await apiCall('simulate', 'POST', { project_id: currentProject?.id || '', question: input });
+                break;
+            case 'errorlog':
+                res = await apiCall('analyze-error-log', 'POST', { project_id: currentProject?.id || '', log_text: input });
+                break;
+            case 'measurement':
+                res = await apiCall('evaluate-measurement', 'POST', { project_id: currentProject?.id || '', measurement: input });
+                break;
+            case 'improvements':
+                res = await apiCall('suggest-improvements', 'POST', { project_id: currentProject?.id || '' });
+                break;
+            case 'calibration':
+                res = await apiCall('calibration', 'POST', { device_type: input });
+                resultEl.textContent = res.guide || res.result || 'Keine Anleitung generiert.';
+                return;
+            case 'scan':
+                res = await apiCall('scan-object', 'POST', { description: input });
+                break;
+        }
+        resultEl.textContent = typeof res.result === 'string' ? res.result : JSON.stringify(res.result || res, null, 2);
+    } catch (e) {
+        resultEl.textContent = 'Fehler: ' + e.message;
+    }
+}
+
+async function runCompare() {
+    const a = document.getElementById('comp-a')?.value?.trim();
+    const b = document.getElementById('comp-b')?.value?.trim();
+    const usecase = document.getElementById('comp-usecase')?.value?.trim() || '';
+    if (!a || !b) { showToast('Beide Bauteile eingeben'); return; }
+    const resultEl = document.getElementById('analysis-result');
+    resultEl.style.display = 'block';
+    resultEl.textContent = 'Jarvis vergleicht...';
+    try {
+        const res = await apiCall('compare-components', 'POST', { component_a: a, component_b: b, use_case: usecase });
+        resultEl.textContent = typeof res.result === 'string' ? res.result : JSON.stringify(res.result || res, null, 2);
+    } catch (e) { resultEl.textContent = 'Fehler: ' + e.message; }
+}
+
+// ===== Tools View (Lending + Maintenance) =====
+let toolsTab = 'lending';
+
+async function renderToolsView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128295;</span><span class="widget-title">Werkzeug-Verwaltung</span></div>';
+    html += '<div class="tab-bar">';
+    html += '<button class="tab-btn' + (toolsTab === 'lending' ? ' active' : '') + '" onclick="toolsTab=\'lending\';renderToolsView()">Verleih</button>';
+    html += '<button class="tab-btn' + (toolsTab === 'maintenance' ? ' active' : '') + '" onclick="toolsTab=\'maintenance\';renderToolsView()">Wartung</button>';
+    html += '</div>';
+
+    if (toolsTab === 'lending') {
+        html += '<div class="action-row"><button class="action-btn" onclick="showLendToolDialog()">Werkzeug verleihen</button>';
+        html += '<button class="action-btn secondary" onclick="showReturnToolDialog()">Werkzeug zurueck</button></div>';
+        try {
+            const res = await apiCall('lent-tools');
+            const tools = res.tools || [];
+            if (tools.length) {
+                html += '<table class="parts-table"><thead><tr><th>Werkzeug</th><th>Verliehen an</th><th>Datum</th><th>Aktion</th></tr></thead><tbody>';
+                tools.forEach(t => {
+                    html += '<tr><td>' + escHtml(t.tool_name || t.name || '') + '</td>';
+                    html += '<td>' + escHtml(t.person || '') + '</td>';
+                    html += '<td>' + escHtml((t.lent_at || t.date || '').split('T')[0]) + '</td>';
+                    html += '<td><button class="action-btn secondary" style="padding:3px 8px;font-size:10px" onclick="doReturnTool(\'' + escHtml(t.tool_name || t.name || '') + '\')">Zurueck</button></td></tr>';
+                });
+                html += '</tbody></table>';
+            } else {
+                html += '<div style="color:var(--text-secondary);font-size:12px">Keine Werkzeuge verliehen.</div>';
+            }
+        } catch (e) { html += '<div style="color:var(--text-secondary);font-size:12px">Daten nicht verfuegbar.</div>'; }
+    } else {
+        html += '<div class="action-row"><button class="action-btn" onclick="showMaintenanceDialog()">Wartung planen</button></div>';
+        try {
+            const res = await apiCall('maintenance-due');
+            const items = res.items || [];
+            if (items.length) {
+                html += '<div class="info-box warning"><span class="info-icon">&#9888;</span>' + items.length + ' Werkzeuge brauchen Wartung!</div>';
+                html += '<table class="parts-table"><thead><tr><th>Werkzeug</th><th>Letzte Wartung</th><th>Intervall</th><th>Status</th></tr></thead><tbody>';
+                items.forEach(t => {
+                    html += '<tr><td>' + escHtml(t.tool_name || '') + '</td>';
+                    html += '<td>' + escHtml((t.last_done || '-').split('T')[0]) + '</td>';
+                    html += '<td>' + (t.interval_days || '?') + ' Tage</td>';
+                    html += '<td class="part-missing">Faellig</td></tr>';
+                });
+                html += '</tbody></table>';
+            } else {
+                html += '<div class="info-box success"><span class="info-icon">&#10003;</span>Alle Werkzeuge sind gewartet!</div>';
+            }
+        } catch (e) { html += '<div style="color:var(--text-secondary);font-size:12px">Wartungsdaten nicht verfuegbar.</div>'; }
+    }
+    html += '</div>';
+    main.innerHTML = html;
+}
+
+function showLendToolDialog() {
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Werkzeug verleihen</h3>' +
+        '<label>Werkzeug *</label><input id="lend-tool" type="text" placeholder="z.B. Multimeter">' +
+        '<label>Person *</label><input id="lend-person" type="text" placeholder="z.B. Max">' +
+        '<div class="modal-btns"><button onclick="closeLendDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doLendTool()">Verleihen</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+function closeLendDialog() { document.getElementById('new-project-modal').classList.add('hidden'); resetProjectModal(); }
+async function doLendTool() {
+    const tool = document.getElementById('lend-tool')?.value.trim();
+    const person = document.getElementById('lend-person')?.value.trim();
+    if (!tool || !person) { showToast('Werkzeug und Person eingeben'); return; }
+    closeLendDialog();
+    try { await apiCall('lend-tool', 'POST', { tool_name: tool, person }); showToast('Verliehen: ' + tool + ' an ' + person); renderToolsView(); }
+    catch (e) { showToast('Fehler: ' + e.message); }
+}
+function showReturnToolDialog() {
+    showInputModal('Werkzeug zurueckgeben', 'Werkzeugname', 'z.B. Multimeter', async (name) => {
+        try { await apiCall('return-tool', 'POST', { tool_name: name }); showToast('Zurueckgegeben: ' + name); renderToolsView(); }
+        catch (e) { showToast('Fehler: ' + e.message); }
+    });
+}
+async function doReturnTool(name) {
+    try { await apiCall('return-tool', 'POST', { tool_name: name }); showToast('Zurueckgegeben: ' + name); renderToolsView(); }
+    catch (e) { showToast('Fehler: ' + e.message); }
+}
+function showMaintenanceDialog() {
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Wartung planen</h3>' +
+        '<label>Werkzeug *</label><input id="maint-tool" type="text" placeholder="z.B. Loetstation">' +
+        '<label>Intervall (Tage)</label><input id="maint-days" type="number" value="30" min="1">' +
+        '<div class="modal-btns"><button onclick="closeMaintenanceDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doAddMaintenance()">Planen</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+function closeMaintenanceDialog() { document.getElementById('new-project-modal').classList.add('hidden'); resetProjectModal(); }
+async function doAddMaintenance() {
+    const tool = document.getElementById('maint-tool')?.value.trim();
+    const days = parseInt(document.getElementById('maint-days')?.value || 30);
+    if (!tool) { showToast('Werkzeugname eingeben'); return; }
+    closeMaintenanceDialog();
+    try { await apiCall('maintenance', 'POST', { tool_name: tool, interval_days: days }); showToast('Wartung geplant: ' + tool); renderToolsView(); }
+    catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+// ===== Devices View =====
+async function renderDevicesView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128268;</span><span class="widget-title">Geraete-Manager</span></div>';
+    html += '<div class="info-box info"><span class="info-icon">&#128161;</span>Verknuepfe Home-Assistant Geraete mit deinem Projekt um Status und Stromverbrauch zu ueberwachen.</div>';
+
+    if (currentProject) {
+        html += '<div class="action-row">';
+        html += '<button class="action-btn" onclick="showLinkDeviceDialog()">Geraet verknuepfen</button>';
+        html += '<button class="action-btn secondary" onclick="checkDeviceStatus()">Status pruefen</button>';
+        html += '</div>';
+
+        const devices = currentProject.devices || currentProject.linked_devices || [];
+        if (devices.length) {
+            html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:12px" id="device-cards">';
+            devices.forEach(d => {
+                const eid = typeof d === 'string' ? d : (d.entity_id || '');
+                html += '<div class="stat-card" id="dev-' + escHtml(eid).replace(/\./g,'_') + '">';
+                html += '<div style="font-size:11px;color:var(--text-secondary);font-family:var(--mono)">' + escHtml(eid) + '</div>';
+                html += '<div class="stat-value" style="font-size:16px;margin-top:4px">---</div>';
+                html += '<div class="stat-label">Laden...</div>';
+                html += '</div>';
+            });
+            html += '</div>';
+        } else {
+            html += '<div style="color:var(--text-secondary);font-size:12px;margin-top:12px">Keine Geraete verknuepft.</div>';
+        }
+    } else {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Waehle zuerst ein Projekt aus.</div>';
+    }
+    html += '</div>';
+
+    // Manual device check
+    html += '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#128269;</span><span class="widget-title">Geraet pruefen</span></div>';
+    html += '<div style="display:flex;gap:8px">';
+    html += '<input class="chat-input" id="device-entity" placeholder="entity_id (z.B. sensor.werkstatt_temp)" style="flex:1">';
+    html += '<button class="action-btn" onclick="checkSingleDevice()">Pruefen</button>';
+    html += '</div>';
+    html += '<div id="device-check-result" style="margin-top:8px"></div>';
+    html += '</div>';
+
+    main.innerHTML = html;
+    if (currentProject) loadDeviceStatuses();
+}
+
+async function loadDeviceStatuses() {
+    const devices = currentProject?.devices || currentProject?.linked_devices || [];
+    for (const d of devices) {
+        const eid = typeof d === 'string' ? d : (d.entity_id || '');
+        if (!eid) continue;
+        try {
+            const res = await apiCall('device/' + encodeURIComponent(eid) + '/status');
+            const card = document.getElementById('dev-' + eid.replace(/\./g, '_'));
+            if (card) {
+                const val = card.querySelector('.stat-value');
+                const label = card.querySelector('.stat-label');
+                if (val) val.textContent = res.state || res.status || 'Unbekannt';
+                if (label) label.textContent = res.online ? 'Online' : 'Offline';
+                card.style.borderLeftColor = res.online ? 'var(--success)' : 'var(--danger)';
+            }
+        } catch (e) {}
+    }
+}
+
+function showLinkDeviceDialog() {
+    if (!currentProject) return;
+    showInputModal('Geraet verknuepfen', 'Entity-ID', 'z.B. sensor.werkstatt_temperatur', async (entityId) => {
+        try {
+            await apiCall('project/' + currentProject.id + '/link-device', 'POST', { entity_id: entityId });
+            showToast('Geraet verknuepft: ' + entityId);
+            await selectProject(currentProject.id);
+            renderDevicesView();
+        } catch (e) { showToast('Fehler: ' + e.message); }
+    });
+}
+
+async function checkSingleDevice() {
+    const eid = document.getElementById('device-entity')?.value.trim();
+    if (!eid) { showToast('Entity-ID eingeben'); return; }
+    const el = document.getElementById('device-check-result');
+    el.innerHTML = 'Pruefe...';
+    try {
+        const res = await apiCall('device/' + encodeURIComponent(eid) + '/status');
+        const power = await apiCall('device/' + encodeURIComponent(eid) + '/power').catch(() => ({}));
+        el.innerHTML = '<div class="stat-card" style="margin-top:8px"><div class="stat-value" style="font-size:18px">' +
+            escHtml(res.state || 'Unbekannt') + '</div><div class="stat-label">' +
+            (res.online ? 'Online' : 'Offline') + (power.watts ? ' | ' + power.watts + ' W' : '') + '</div></div>';
+    } catch (e) { el.innerHTML = '<span style="color:var(--danger)">Fehler: ' + escHtml(e.message) + '</span>'; }
+}
+
+async function checkDeviceStatus() { loadDeviceStatuses(); showToast('Status wird aktualisiert...'); }
+
+// ===== Pinout Reference View =====
+function renderPinoutView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128204;</span><span class="widget-title">Pinout-Referenz</span></div>';
+
+    // ESP32 Pinout (hardcoded from WorkshopGenerator.ESP32_PINOUT)
+    const esp32 = {
+        'ADC1': 'GPIO32, GPIO33, GPIO34, GPIO35, GPIO36, GPIO39',
+        'ADC2': 'GPIO0, GPIO2, GPIO4, GPIO12, GPIO13, GPIO14, GPIO15, GPIO25, GPIO26, GPIO27',
+        'DAC': 'GPIO25 (DAC1), GPIO26 (DAC2)',
+        'I2C': 'SDA=GPIO21, SCL=GPIO22',
+        'SPI': 'MOSI=GPIO23, MISO=GPIO19, SCK=GPIO18, SS=GPIO5',
+        'UART0': 'TX=GPIO1, RX=GPIO3',
+        'UART2': 'TX=GPIO17, RX=GPIO16',
+        'PWM': 'Alle GPIOs (0-39), 16 Kanaele',
+        'Touch': 'T0=GPIO4, T2=GPIO2, T3=GPIO15, T4=GPIO13, T5=GPIO12, T6=GPIO14, T7=GPIO27, T8=GPIO33, T9=GPIO32',
+        'Strapping': 'GPIO0 (Boot), GPIO2, GPIO5, GPIO12 (JTAG), GPIO15',
+        'Input Only': 'GPIO34, GPIO35, GPIO36, GPIO39',
+        'Flash': 'GPIO6-GPIO11 (nicht verwenden!)',
+    };
+
+    html += '<div style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--accent)">ESP32 DevKit</div>';
+    html += '<div class="pinout-grid">';
+    for (const [label, pins] of Object.entries(esp32)) {
+        html += '<div class="pinout-item"><div class="pinout-label">' + escHtml(label) + '</div><div class="pinout-pins">' + escHtml(pins) + '</div></div>';
+    }
+    html += '</div>';
+
+    // Arduino Uno
+    html += '<div style="font-size:14px;font-weight:600;margin:20px 0 12px;color:var(--accent)">Arduino Uno</div>';
+    const arduino = {
+        'Digital': 'D0-D13 (D0/D1=Serial)',
+        'Analog': 'A0-A5',
+        'PWM': 'D3, D5, D6, D9, D10, D11',
+        'I2C': 'SDA=A4, SCL=A5',
+        'SPI': 'MOSI=D11, MISO=D12, SCK=D13, SS=D10',
+        'Serial': 'TX=D1, RX=D0',
+        'Interrupts': 'D2 (INT0), D3 (INT1)',
+        'LED': 'D13 (eingebaut)',
+    };
+    html += '<div class="pinout-grid">';
+    for (const [label, pins] of Object.entries(arduino)) {
+        html += '<div class="pinout-item"><div class="pinout-label">' + escHtml(label) + '</div><div class="pinout-pins">' + escHtml(pins) + '</div></div>';
+    }
+    html += '</div>';
+
+    // Common Component Pinouts
+    html += '<div style="font-size:14px;font-weight:600;margin:20px 0 12px;color:var(--accent)">Haeufige Bauteile</div>';
+    const components = {
+        'DHT22': 'VCC=3.3-5V, DATA=Digital, GND | 4.7kΩ Pull-Up',
+        'BME280': 'VCC=3.3V, GND, SDA, SCL | I2C: 0x76/0x77',
+        'OLED SSD1306': 'VCC=3.3V, GND, SDA, SCL | I2C: 0x3C',
+        'HC-SR04': 'VCC=5V, TRIG=Digital, ECHO=Digital, GND',
+        'WS2812B': 'VCC=5V, DIN=Digital, GND | 300-500Ω + 1000µF',
+        'MPU6050': 'VCC=3.3V, GND, SDA, SCL, INT | I2C: 0x68',
+        'MCP3008': 'VDD=3.3V, VREF, AGND, CLK, DOUT, DIN, CS, DGND',
+        'Relais-Modul': 'VCC=5V, GND, IN=Digital (LOW-aktiv) | Optokoppler',
+    };
+    html += '<div class="pinout-grid">';
+    for (const [label, pins] of Object.entries(components)) {
+        html += '<div class="pinout-item"><div class="pinout-label">' + escHtml(label) + '</div><div class="pinout-pins">' + escHtml(pins) + '</div></div>';
+    }
+    html += '</div>';
+
+    html += '</div>';
+    main.innerHTML = html;
+}
+
+// ===== Shopping List View =====
+async function renderShoppingView(main) {
+    if (!main) main = document.getElementById('main-content');
+    let html = '<div class="widget hud-corners">';
+    html += '<div class="widget-header"><span class="icon">&#128722;</span><span class="widget-title">Einkaufsliste</span></div>';
+
+    if (currentProject) {
+        html += '<div class="action-row">';
+        html += '<button class="action-btn" onclick="generateShoppingList()">Liste generieren</button>';
+        html += '</div>';
+
+        const parts = currentProject.parts || [];
+        const missing = parts.filter(p => !p.available);
+        if (missing.length) {
+            html += '<table class="parts-table"><thead><tr><th>&#9744;</th><th>Teil</th><th>Menge</th><th>Gesch. Kosten</th></tr></thead><tbody>';
+            let total = 0;
+            missing.forEach(p => {
+                const cost = parseFloat(p.cost || p.estimated_cost || 0);
+                total += cost * (p.quantity || 1);
+                html += '<tr><td><input type="checkbox" onchange="this.parentElement.parentElement.style.opacity=this.checked?\'0.4\':\'1\'"></td>';
+                html += '<td>' + escHtml(p.name || '') + '</td>';
+                html += '<td>' + (p.quantity || 1) + '</td>';
+                html += '<td>' + (cost > 0 ? cost.toFixed(2) + ' EUR' : '-') + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            html += '<div style="margin-top:8px;font-size:13px;font-weight:600;color:var(--accent)">Gesamt: ca. ' + total.toFixed(2) + ' EUR</div>';
+        } else {
+            html += '<div class="info-box success"><span class="info-icon">&#10003;</span>Alle Teile vorhanden! Keine Einkauefe noetig.</div>';
+        }
+    } else {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Waehle zuerst ein Projekt aus um die Einkaufsliste zu sehen.</div>';
+    }
+    html += '</div>';
+
+    // Shopping from all projects
+    html += '<div class="widget">';
+    html += '<div class="widget-header"><span class="icon">&#128203;</span><span class="widget-title">Alle fehlenden Teile</span></div>';
+    let allMissing = [];
+    projects.forEach(p => {
+        (p.parts || []).filter(pt => !pt.available).forEach(pt => {
+            allMissing.push({ ...pt, project: p.title || p.id });
+        });
+    });
+    if (allMissing.length) {
+        html += '<table class="parts-table"><thead><tr><th>Teil</th><th>Projekt</th><th>Menge</th></tr></thead><tbody>';
+        allMissing.forEach(p => {
+            html += '<tr><td>' + escHtml(p.name || '') + '</td>';
+            html += '<td style="font-size:11px;color:var(--text-secondary)">' + escHtml(p.project) + '</td>';
+            html += '<td>' + (p.quantity || 1) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+    } else {
+        html += '<div style="color:var(--text-secondary);font-size:12px">Keine fehlenden Teile in allen Projekten.</div>';
+    }
+    html += '</div>';
+    main.innerHTML = html;
+}
+
+async function generateShoppingList() {
+    if (!currentProject) return;
+    try {
+        const res = await apiCall('project/' + currentProject.id + '/shopping-list', 'POST');
+        showToast('Einkaufsliste aktualisiert');
+        renderShoppingView();
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+// ===== Templates Modal =====
+async function showTemplatesModal() {
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal" style="max-width:560px"><h3>Projekt aus Template</h3><div id="template-list">Lade Templates...</div>' +
+        '<div class="modal-btns"><button onclick="closeTemplatesModal()">Abbrechen</button></div></div>';
+    overlay.classList.remove('hidden');
+
+    try {
+        const res = await apiCall('templates');
+        const templates = res.templates || [];
+        let html = '<div class="template-grid">';
+        templates.forEach(t => {
+            html += '<div class="template-card" onclick="createFromTemplate(\'' + t.id + '\',\'' + escHtml(t.name) + '\')">';
+            html += '<div class="template-icon">' + (t.icon || '&#128230;') + '</div>';
+            html += '<div class="template-name">' + escHtml(t.name) + '</div>';
+            html += '<div class="template-desc">' + escHtml(t.description || '') + '</div>';
+            html += '</div>';
+        });
+        html += '</div>';
+        document.getElementById('template-list').innerHTML = html;
+    } catch (e) {
+        document.getElementById('template-list').innerHTML = '<div style="color:var(--danger)">Templates konnten nicht geladen werden.</div>';
+    }
+}
+
+function closeTemplatesModal() { document.getElementById('new-project-modal').classList.add('hidden'); resetProjectModal(); }
+
+async function createFromTemplate(templateId, templateName) {
+    closeTemplatesModal();
+    showToast('Erstelle Projekt aus Template...');
+    try {
+        const res = await apiCall('projects/from-template', 'POST', { template: templateId });
+        showToast('Projekt erstellt: ' + templateName);
+        await loadProjects();
+        if (res.project_id) selectProject(res.project_id);
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+// ===== Search =====
+let searchTimeout = null;
+async function handleSearch(query) {
+    clearTimeout(searchTimeout);
+    const el = document.getElementById('search-results');
+    if (!query.trim()) { el.innerHTML = ''; return; }
+    searchTimeout = setTimeout(async () => {
+        try {
+            const res = await apiCall('projects/search?q=' + encodeURIComponent(query.trim()));
+            const results = res.projects || [];
+            if (results.length) {
+                el.innerHTML = results.map(p =>
+                    '<div class="search-result-item" onmousedown="selectProject(\'' + p.id + '\');document.getElementById(\'header-search\').value=\'\'">' +
+                    escHtml(p.title || p.id) + '<span style="float:right;font-size:10px;color:var(--text-muted)">' + escHtml(p.status || '') + '</span></div>'
+                ).join('');
+            } else {
+                el.innerHTML = '<div class="search-result-item" style="color:var(--text-muted)">Keine Ergebnisse</div>';
+            }
+            el.classList.add('open');
+        } catch (e) {}
+    }, 300);
+}
+
+// ===== Floating AI Bubble =====
+let aiBubbleMessages = [];
+
+function toggleAiBubble() {
+    document.getElementById('ai-popup').classList.toggle('open');
+    const input = document.getElementById('ai-popup-input');
+    if (input) setTimeout(() => input.focus(), 100);
+}
+
+async function sendAiBubble() {
+    const input = document.getElementById('ai-popup-input');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    aiBubbleMessages.push({ role: 'user', text });
+    renderAiBubbleMessages();
+    try {
+        const res = await chatApi(text);
+        aiBubbleMessages.push({ role: 'jarvis', text: res.response || 'Keine Antwort' });
+    } catch (e) {
+        aiBubbleMessages.push({ role: 'jarvis', text: 'Fehler: ' + (e.message || 'Verbindungsfehler') });
+    }
+    renderAiBubbleMessages();
+}
+
+function renderAiBubbleMessages() {
+    const el = document.getElementById('ai-popup-messages');
+    if (!el) return;
+    el.innerHTML = aiBubbleMessages.slice(-20).map(m =>
+        '<div class="chat-msg ' + m.role + '" style="font-size:12px;padding:8px 10px">' + escHtml(m.text) + '</div>'
+    ).join('');
+    el.scrollTop = el.scrollHeight;
+}
+
+// ===== Project Notes (in Overview) =====
+async function addProjectNote() {
+    if (!currentProject) return;
+    showInputModal('Projekt-Notiz', 'Notiz', 'z.B. Lieferung kommt Montag...', async (note) => {
+        try {
+            await apiCall('project/' + currentProject.id + '/note', 'POST', { note });
+            showToast('Notiz hinzugefuegt');
+            await selectProject(currentProject.id);
+            renderView();
+        } catch (e) { showToast('Fehler: ' + e.message); }
+    });
+}
+
+// ===== Expenses =====
+function showExpenseDialog() {
+    if (!currentProject) { showToast('Kein Projekt ausgewaehlt'); return; }
+    const overlay = document.getElementById('new-project-modal');
+    overlay.innerHTML = '<div class="modal"><h3>Ausgabe erfassen</h3>' +
+        '<label>Artikel *</label><input id="exp-item" type="text" placeholder="z.B. ESP32 DevKit">' +
+        '<label>Kosten (EUR) *</label><input id="exp-cost" type="number" step="0.01" value="0">' +
+        '<div class="modal-btns"><button onclick="closeExpenseDialog()">Abbrechen</button>' +
+        '<button class="btn-primary" onclick="doAddExpense()">Hinzufuegen</button></div></div>';
+    overlay.classList.remove('hidden');
+}
+function closeExpenseDialog() { document.getElementById('new-project-modal').classList.add('hidden'); resetProjectModal(); }
+async function doAddExpense() {
+    const item = document.getElementById('exp-item')?.value.trim();
+    const cost = parseFloat(document.getElementById('exp-cost')?.value || 0);
+    if (!item) { showToast('Artikelname eingeben'); return; }
+    closeExpenseDialog();
+    try {
+        await apiCall('project/' + currentProject.id + '/expense', 'POST', { item, cost });
+        showToast('Ausgabe erfasst: ' + item + ' (' + cost.toFixed(2) + ' EUR)');
+        await selectProject(currentProject.id);
+        renderView();
+    } catch (e) { showToast('Fehler: ' + e.message); }
+}
+
+// ===== Keyboard Shortcuts =====
+document.addEventListener('keydown', (e) => {
+    // Ctrl+N: New Project
+    if (e.ctrlKey && e.key === 'n') { e.preventDefault(); showNewProjectModal(); }
+    // Ctrl+S: Save in editor
+    if (e.ctrlKey && e.key === 's' && currentView === 'editor') { e.preventDefault(); editorSave(); }
+    // Ctrl+K: Search
+    if (e.ctrlKey && e.key === 'k') {
+        e.preventDefault();
+        const s = document.getElementById('header-search');
+        if (s) { s.focus(); s.select(); }
+    }
+    // Ctrl+B: Toggle AI Bubble
+    if (e.ctrlKey && e.key === 'b') { e.preventDefault(); toggleAiBubble(); }
+    // Escape: Close modals
+    if (e.key === 'Escape') {
+        document.getElementById('new-project-modal').classList.add('hidden');
+        document.getElementById('ai-popup').classList.remove('open');
+    }
+    // 1-9: Quick view switch (when not in input)
+    if (!e.ctrlKey && !e.altKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
+        const viewMap = { '1':'overview', '2':'steps', '3':'code', '4':'editor', '5':'hardware', '6':'chat', '7':'calc', '8':'journal', '9':'analysis' };
+        if (viewMap[e.key]) { e.preventDefault(); switchToView(viewMap[e.key]); }
+    }
+});
+
+// ===== Update Overview with Notes + Expenses =====
+const _origRenderOverview = renderOverview;
 
 // ===== Init =====
 window.addEventListener('DOMContentLoaded', bootWorkshop);

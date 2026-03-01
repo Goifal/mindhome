@@ -4803,6 +4803,430 @@ async def workshop_add_inventory(request: Request):
     return {"success": True, "name": name}
 
 
+# ── Workshop: Analysis & Diagnosis ──────────────────────────
+
+
+@app.post("/api/workshop/troubleshoot")
+async def workshop_troubleshoot(request: Request):
+    """Systematisches Troubleshooting fuer ein Projekt."""
+    data = await request.json()
+    project_id = data.get("project_id", "")
+    symptom = data.get("symptom", "").strip()
+    if not project_id or not symptom:
+        raise HTTPException(400, "project_id und symptom erforderlich")
+    try:
+        result = await brain.repair_planner.troubleshoot(project_id, symptom)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/simulate")
+async def workshop_simulate(request: Request):
+    """Design-Simulation / Machbarkeitsanalyse."""
+    data = await request.json()
+    project_id = data.get("project_id", "")
+    question = data.get("question", "").strip()
+    if not project_id or not question:
+        raise HTTPException(400, "project_id und question erforderlich")
+    try:
+        result = await brain.repair_planner.simulate_design(project_id, question)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/compare-components")
+async def workshop_compare_components(request: Request):
+    """Vergleicht zwei elektronische Bauteile."""
+    data = await request.json()
+    comp_a = data.get("component_a", "").strip()
+    comp_b = data.get("component_b", "").strip()
+    use_case = data.get("use_case", "")
+    if not comp_a or not comp_b:
+        raise HTTPException(400, "component_a und component_b erforderlich")
+    try:
+        result = await brain.repair_planner.compare_components(comp_a, comp_b, use_case)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/analyze-error-log")
+async def workshop_analyze_error_log(request: Request):
+    """Analysiert Error-Logs / Serial-Output."""
+    data = await request.json()
+    project_id = data.get("project_id", "")
+    log_text = data.get("log_text", "").strip()
+    if not log_text:
+        raise HTTPException(400, "log_text erforderlich")
+    try:
+        result = await brain.repair_planner.analyze_error_log(
+            project_id, log_text)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/evaluate-measurement")
+async def workshop_evaluate_measurement(request: Request):
+    """Bewertet Messwerte im Projektkontext."""
+    data = await request.json()
+    project_id = data.get("project_id", "")
+    measurement_text = data.get("measurement", "").strip()
+    if not measurement_text:
+        raise HTTPException(400, "measurement erforderlich")
+    try:
+        result = await brain.repair_planner.evaluate_measurement(
+            project_id, measurement_text)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/suggest-improvements")
+async def workshop_suggest_improvements(request: Request):
+    """KI-gestuetzte Verbesserungsvorschlaege."""
+    data = await request.json()
+    project_id = data.get("project_id", "")
+    if not project_id:
+        raise HTTPException(400, "project_id erforderlich")
+    try:
+        result = await brain.repair_planner.suggest_improvements(project_id)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/calibration")
+async def workshop_calibration(request: Request):
+    """Kalibrierungsanleitung fuer Geraetetyp."""
+    data = await request.json()
+    device_type = data.get("device_type", "").strip()
+    if not device_type:
+        raise HTTPException(400, "device_type erforderlich")
+    try:
+        result = await brain.repair_planner.calibration_guide(device_type)
+        return {"success": True, "guide": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/scan-object")
+async def workshop_scan_object(request: Request):
+    """Objekt-Scanner via Kamera/Bild."""
+    data = await request.json()
+    description = data.get("description", "")
+    camera_name = data.get("camera", "")
+    try:
+        result = await brain.repair_planner.scan_object(
+            description=description, camera_name=camera_name)
+        return {"success": True, "result": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ── Workshop: Tool Lending & Maintenance ────────────────────
+
+
+@app.post("/api/workshop/lend-tool")
+async def workshop_lend_tool(request: Request):
+    """Werkzeug verleihen."""
+    data = await request.json()
+    tool_name = data.get("tool_name", "").strip()
+    person = data.get("person", "").strip()
+    if not tool_name or not person:
+        raise HTTPException(400, "tool_name und person erforderlich")
+    result = await brain.repair_planner.lend_tool(tool_name, person)
+    return {"success": True, **result}
+
+
+@app.post("/api/workshop/return-tool")
+async def workshop_return_tool(request: Request):
+    """Werkzeug zurueckgeben."""
+    data = await request.json()
+    tool_name = data.get("tool_name", "").strip()
+    if not tool_name:
+        raise HTTPException(400, "tool_name erforderlich")
+    result = await brain.repair_planner.return_tool(tool_name)
+    return {"success": True, **result}
+
+
+@app.get("/api/workshop/lent-tools")
+async def workshop_lent_tools():
+    """Alle verliehenen Werkzeuge."""
+    tools = await brain.repair_planner.list_lent_tools()
+    return {"tools": tools}
+
+
+@app.post("/api/workshop/maintenance")
+async def workshop_add_maintenance(request: Request):
+    """Wartungsplan fuer Werkzeug hinzufuegen."""
+    data = await request.json()
+    tool_name = data.get("tool_name", "").strip()
+    interval_days = data.get("interval_days", 30)
+    if not tool_name:
+        raise HTTPException(400, "tool_name erforderlich")
+    result = await brain.repair_planner.add_maintenance_schedule(
+        tool_name, interval_days)
+    return {"success": True, **result}
+
+
+@app.get("/api/workshop/maintenance-due")
+async def workshop_maintenance_due():
+    """Faellige Wartungen abfragen."""
+    items = await brain.repair_planner.check_maintenance_due()
+    return {"items": items}
+
+
+# ── Workshop: Project Extensions ────────────────────────────
+
+
+@app.post("/api/workshop/projects/from-template")
+async def workshop_from_template(request: Request):
+    """Projekt aus Template erstellen."""
+    data = await request.json()
+    template = data.get("template", "").strip()
+    title = data.get("title", "")
+    if not template:
+        raise HTTPException(400, "template erforderlich")
+    try:
+        result = await brain.repair_planner.create_from_template(
+            template, title=title)
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/workshop/projects/search")
+async def workshop_search_projects(q: str = "", include_completed: bool = True):
+    """Projekte durchsuchen."""
+    if not q.strip():
+        return {"projects": []}
+    results = await brain.repair_planner.search_projects(
+        q.strip(), include_completed=include_completed)
+    return {"projects": results}
+
+
+@app.post("/api/workshop/project/{project_id}/note")
+async def workshop_add_note(project_id: str, request: Request):
+    """Notiz zum Projekt hinzufuegen."""
+    data = await request.json()
+    note = data.get("note", "").strip()
+    if not note:
+        raise HTTPException(400, "note erforderlich")
+    result = await brain.repair_planner.add_project_note(project_id, note)
+    return {"success": True, **result}
+
+
+@app.post("/api/workshop/project/{project_id}/expense")
+async def workshop_add_expense(project_id: str, request: Request):
+    """Ausgabe zum Projekt hinzufuegen."""
+    data = await request.json()
+    item = data.get("item", "").strip()
+    cost = data.get("cost", 0)
+    if not item:
+        raise HTTPException(400, "item erforderlich")
+    result = await brain.repair_planner.add_expense(
+        project_id, item, float(cost))
+    return {"success": True, **result}
+
+
+@app.post("/api/workshop/project/{project_id}/shopping-list")
+async def workshop_shopping_list(project_id: str):
+    """Einkaufsliste aus fehlenden Teilen generieren."""
+    result = await brain.repair_planner.add_missing_to_shopping(project_id)
+    return result
+
+
+@app.post("/api/workshop/project/{project_id}/complete")
+async def workshop_complete_project(project_id: str, request: Request):
+    """Projekt als fertig markieren."""
+    data = await request.json()
+    notes = data.get("notes", "")
+    result = await brain.repair_planner.complete_project(
+        project_id, notes=notes)
+    return {"success": True, **result}
+
+
+# ── Workshop: Skills ────────────────────────────────────────
+
+
+@app.post("/api/workshop/skills")
+async def workshop_record_skill(request: Request):
+    """Faehigkeit aufzeichnen."""
+    data = await request.json()
+    person = data.get("person", "").strip()
+    skill = data.get("skill", "").strip()
+    level = data.get("level", "beginner")
+    if not person or not skill:
+        raise HTTPException(400, "person und skill erforderlich")
+    result = await brain.repair_planner.record_skill(person, skill, level)
+    return {"success": True, **result}
+
+
+# ── Workshop: Device Management ─────────────────────────────
+
+
+@app.get("/api/workshop/device/{entity_id}/status")
+async def workshop_device_status(entity_id: str):
+    """HA-Geraetestatus abfragen."""
+    result = await brain.repair_planner.check_device_online(entity_id)
+    return result
+
+
+@app.post("/api/workshop/project/{project_id}/link-device")
+async def workshop_link_device(project_id: str, request: Request):
+    """Geraet mit Projekt verknuepfen."""
+    data = await request.json()
+    entity_id = data.get("entity_id", "").strip()
+    if not entity_id:
+        raise HTTPException(400, "entity_id erforderlich")
+    result = await brain.repair_planner.link_device_to_project(
+        project_id, entity_id)
+    return {"success": True, **result}
+
+
+@app.get("/api/workshop/device/{entity_id}/power")
+async def workshop_device_power(entity_id: str):
+    """Stromverbrauch eines Geraets abfragen."""
+    result = await brain.repair_planner.get_power_consumption(entity_id)
+    return result
+
+
+# ── Workshop: 3D Printer Control ────────────────────────────
+
+
+@app.get("/api/workshop/printer/status")
+async def workshop_printer_status():
+    """3D-Drucker Status abfragen."""
+    try:
+        result = await brain.repair_planner.get_printer_status()
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/workshop/printer/start")
+async def workshop_printer_start(request: Request):
+    """3D-Druck starten."""
+    data = await request.json()
+    result = await brain.repair_planner.start_print(
+        project_id=data.get("project_id", ""),
+        filename=data.get("filename", ""))
+    return {"success": True, **result}
+
+
+@app.post("/api/workshop/printer/pause")
+async def workshop_printer_pause():
+    """3D-Druck pausieren."""
+    result = await brain.repair_planner.pause_print()
+    return {"success": True, **result}
+
+
+@app.post("/api/workshop/printer/cancel")
+async def workshop_printer_cancel():
+    """3D-Druck abbrechen."""
+    result = await brain.repair_planner.cancel_print()
+    return {"success": True, **result}
+
+
+# ── Workshop: Robot Arm Control ─────────────────────────────
+
+
+@app.post("/api/workshop/arm/move")
+async def workshop_arm_move(request: Request):
+    """Roboterarm bewegen."""
+    data = await request.json()
+    x = data.get("x", 0)
+    y = data.get("y", 0)
+    z = data.get("z", 0)
+    speed = data.get("speed", 50)
+    result = await brain.repair_planner.arm_move(x, y, z, speed)
+    return {"success": True, **result}
+
+
+@app.post("/api/workshop/arm/gripper")
+async def workshop_arm_gripper(request: Request):
+    """Greifer oeffnen/schliessen."""
+    data = await request.json()
+    action = data.get("action", "open")
+    result = await brain.repair_planner.arm_gripper(action)
+    return {"success": True, **result}
+
+
+@app.post("/api/workshop/arm/home")
+async def workshop_arm_home():
+    """Arm zur Home-Position."""
+    result = await brain.repair_planner.arm_home()
+    return {"success": True, **result}
+
+
+@app.post("/api/workshop/arm/save-position")
+async def workshop_arm_save_position(request: Request):
+    """Arm-Position speichern."""
+    data = await request.json()
+    name = data.get("name", "").strip()
+    position = data.get("position")
+    if not name:
+        raise HTTPException(400, "name erforderlich")
+    result = await brain.repair_planner.arm_save_position(name, position)
+    return {"success": True, **result}
+
+
+@app.post("/api/workshop/arm/pick-tool")
+async def workshop_arm_pick_tool(request: Request):
+    """Werkzeug automatisch greifen."""
+    data = await request.json()
+    tool_name = data.get("tool_name", "").strip()
+    if not tool_name:
+        raise HTTPException(400, "tool_name erforderlich")
+    result = await brain.repair_planner.arm_pick_tool(tool_name)
+    return {"success": True, **result}
+
+
+# ── Workshop: Pinout Reference ──────────────────────────────
+
+
+@app.get("/api/workshop/pinout/{board}")
+async def workshop_pinout(board: str):
+    """Pinout-Referenz fuer Boards."""
+    from assistant.workshop_generator import WorkshopGenerator
+    pinouts = {
+        "esp32": getattr(WorkshopGenerator, "ESP32_PINOUT", {}),
+    }
+    data = pinouts.get(board.lower(), {})
+    if not data:
+        return {"board": board, "pins": {}, "message": "Board nicht gefunden"}
+    return {"board": board, "pins": data}
+
+
+# ── Workshop: Templates List ────────────────────────────────
+
+
+@app.get("/api/workshop/templates")
+async def workshop_templates():
+    """Verfuegbare Projekt-Templates."""
+    templates = [
+        {"id": "esp_sensor", "name": "ESP32 Sensor-Projekt",
+         "description": "Temperatur/Feuchte-Sensor mit WiFi",
+         "category": "maker", "icon": "📡"},
+        {"id": "led_strip", "name": "LED-Strip Steuerung",
+         "description": "WS2812B LED-Streifen mit Effekten",
+         "category": "maker", "icon": "💡"},
+        {"id": "3d_enclosure", "name": "3D-Druck Gehaeuse",
+         "description": "Parametrisches Gehaeuse in OpenSCAD",
+         "category": "maker", "icon": "📦"},
+        {"id": "furniture", "name": "Moebel-Bau",
+         "description": "Holzprojekt mit Massangaben",
+         "category": "bau", "icon": "🪑"},
+        {"id": "repair_standard", "name": "Standard-Reparatur",
+         "description": "Diagnose und Reparatur-Workflow",
+         "category": "reparatur", "icon": "🔧"},
+    ]
+    return {"templates": templates}
+
+
 @app.get("/api/chat/config")
 async def chat_config():
     """Oeffentliche Chat-Konfiguration (keine Authentifizierung noetig).
