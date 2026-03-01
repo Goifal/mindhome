@@ -447,19 +447,30 @@ class ContextBuilder:
                     else:
                         desc = _sanitize_for_prompt(desc, 60, "binary_desc")
                     if desc:
-                        # Menschenlesbare Zustaende
-                        if s == "on" and role in ("window_contact", "door_contact"):
-                            state_text = "offen"
-                        elif s == "off" and role in ("window_contact", "door_contact"):
-                            state_text = "geschlossen"
-                        elif s == "on" and role == "motion":
-                            state_text = "Bewegung erkannt"
-                        elif s == "on" and role == "water_leak":
-                            state_text = "WASSER ERKANNT"
-                        elif s == "on" and role == "smoke":
-                            state_text = "RAUCH ERKANNT"
+                        # Menschenlesbare Zustaende je nach Rolle
+                        _BINARY_STATE_MAP_ON = {
+                            "window_contact": "offen", "door_contact": "offen",
+                            "garage_door": "offen", "gate": "offen",
+                            "motion": "Bewegung erkannt", "occupancy": "belegt",
+                            "presence": "anwesend", "vibration": "Vibration erkannt",
+                            "water_leak": "WASSER ERKANNT", "smoke": "RAUCH ERKANNT",
+                            "gas": "GAS ERKANNT", "co": "CO ERKANNT",
+                            "tamper": "MANIPULATION ERKANNT", "alarm": "ALARM AKTIV",
+                            "lock": "verriegelt", "connectivity": "verbunden",
+                            "running": "laeuft", "problem": "PROBLEM",
+                            "update": "Update verfuegbar", "doorbell": "klingelt",
+                            "rain_sensor": "Regen erkannt",
+                        }
+                        _BINARY_STATE_MAP_OFF = {
+                            "window_contact": "geschlossen", "door_contact": "geschlossen",
+                            "garage_door": "geschlossen", "gate": "geschlossen",
+                            "lock": "entriegelt", "connectivity": "getrennt",
+                            "running": "aus", "rain_sensor": "kein Regen",
+                        }
+                        if s == "on":
+                            state_text = _BINARY_STATE_MAP_ON.get(role, "aktiv")
                         else:
-                            state_text = "aktiv" if s == "on" else "inaktiv"
+                            state_text = _BINARY_STATE_MAP_OFF.get(role, "inaktiv")
                         house.setdefault("annotated_sensors", []).append({
                             "text": f"{desc}: {state_text}",
                             "_role": role,
@@ -484,14 +495,29 @@ class ContextBuilder:
                         )
 
         # Annotierte Sensoren: Priorisiert sortieren + auf Text reduzieren
+        # Niedrige Zahl = hoehere Prioritaet (wird zuerst angezeigt)
         _ROLE_PRIORITY = {
-            "window_contact": 0, "door_contact": 0,
-            "water_leak": 1, "smoke": 1,
-            "motion": 2, "presence": 2,
-            "outdoor_temp": 3, "indoor_temp": 4,
-            "humidity": 5, "co2": 5,
-            "pressure": 6, "light_level": 6,
-            "battery": 7, "vibration": 7,
+            # Alarme & Sicherheit (immer zuerst!)
+            "water_leak": 0, "smoke": 0, "gas": 0, "co": 0,
+            "tamper": 0, "alarm": 0,
+            # Oeffnungen (offene Fenster/Tueren wichtig)
+            "window_contact": 1, "door_contact": 1,
+            "garage_door": 1, "gate": 1, "lock": 1, "doorbell": 1,
+            # Aktivitaet
+            "motion": 2, "presence": 2, "occupancy": 2,
+            # Temperatur
+            "outdoor_temp": 3, "indoor_temp": 4, "water_temp": 4, "soil_temp": 5,
+            # Raumklima
+            "humidity": 5, "co2": 5, "voc": 5, "pm25": 5, "pm10": 5,
+            "air_quality": 5, "pressure": 6,
+            # Wetter
+            "wind_speed": 6, "rain": 6, "rain_sensor": 6, "uv_index": 6,
+            # Energie
+            "solar": 7, "power_meter": 7, "energy": 7, "ev_charger": 7,
+            # Geraete-Status
+            "running": 8, "problem": 8, "connectivity": 8, "update": 8,
+            # Sonstiges
+            "light_level": 9, "vibration": 9, "battery": 9, "noise": 9,
         }
         if house.get("annotated_sensors"):
             house["annotated_sensors"].sort(

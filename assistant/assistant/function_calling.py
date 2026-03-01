@@ -197,76 +197,314 @@ def get_opening_sensor_config(entity_id: str) -> dict:
 # --- Entity-Annotations: Beschreibungen + Rollen fuer Sensoren/Aktoren ---
 
 # Standard-Rollen (vordefiniert, User kann eigene in entity_roles hinzufuegen)
-_DEFAULT_ROLES = {
-    "indoor_temp", "outdoor_temp", "humidity", "window_contact", "door_contact",
-    "motion", "presence", "water_leak", "smoke", "co2", "light_level",
-    "power_meter", "energy", "battery", "outlet", "valve", "fan",
-    "irrigation", "garage_door", "water_temp", "pressure", "vibration",
-}
-
 _DEFAULT_ROLES_DICT = {
+    # --- Temperatur & Klima ---
     "indoor_temp":    {"label": "Raumtemperatur", "icon": "\U0001f321\ufe0f"},
     "outdoor_temp":   {"label": "Aussentemperatur", "icon": "\U0001f324\ufe0f"},
+    "water_temp":     {"label": "Wassertemperatur", "icon": "\U0001f30a"},
+    "soil_temp":      {"label": "Bodentemperatur", "icon": "\U0001f33f"},
     "humidity":       {"label": "Luftfeuchtigkeit", "icon": "\U0001f4a7"},
+    "pressure":       {"label": "Luftdruck", "icon": "\U0001f4a8"},
+    "dew_point":      {"label": "Taupunkt", "icon": "\U0001f4a7"},
+    # --- Luftqualitaet ---
+    "co2":            {"label": "CO2-Sensor", "icon": "\U0001f32c\ufe0f"},
+    "co":             {"label": "CO-Melder", "icon": "\u26a0\ufe0f"},
+    "voc":            {"label": "VOC-Sensor (fluechtige Stoffe)", "icon": "\U0001f4a8"},
+    "pm25":           {"label": "Feinstaub PM2.5", "icon": "\U0001f32b\ufe0f"},
+    "pm10":           {"label": "Feinstaub PM10", "icon": "\U0001f32b\ufe0f"},
+    "air_quality":    {"label": "Luftqualitaet", "icon": "\U0001f343"},
+    "radon":          {"label": "Radon", "icon": "\u2622\ufe0f"},
+    # --- Wetter ---
+    "wind_speed":     {"label": "Windgeschwindigkeit", "icon": "\U0001f4a8"},
+    "wind_direction": {"label": "Windrichtung", "icon": "\U0001f9ed"},
+    "rain":           {"label": "Niederschlag/Regen", "icon": "\U0001f327\ufe0f"},
+    "rain_sensor":    {"label": "Regensensor", "icon": "\U0001f327\ufe0f"},
+    "uv_index":       {"label": "UV-Index", "icon": "\u2600\ufe0f"},
+    "solar_radiation": {"label": "Sonneneinstrahlung", "icon": "\u2600\ufe0f"},
+    # --- Licht & Helligkeit ---
+    "light_level":    {"label": "Lichtsensor", "icon": "\u2600\ufe0f"},
+    # --- Sicherheit & Alarm ---
+    "smoke":          {"label": "Rauchmelder", "icon": "\U0001f525"},
+    "gas":            {"label": "Gasmelder", "icon": "\u26a0\ufe0f"},
+    "water_leak":     {"label": "Wassermelder", "icon": "\U0001f6b0"},
+    "tamper":         {"label": "Manipulationserkennung", "icon": "\U0001f6a8"},
+    "alarm":          {"label": "Alarmanlage", "icon": "\U0001f6a8"},
+    "siren":          {"label": "Sirene", "icon": "\U0001f4e2"},
+    # --- Tueren, Fenster, Oeffnungen ---
     "window_contact": {"label": "Fensterkontakt", "icon": "\U0001fa9f"},
     "door_contact":   {"label": "Tuerkontakt", "icon": "\U0001f6aa"},
+    "garage_door":    {"label": "Garagentor", "icon": "\U0001f3e0"},
+    "gate":           {"label": "Tor/Einfahrt", "icon": "\U0001f3e0"},
+    "lock":           {"label": "Schloss", "icon": "\U0001f510"},
+    "doorbell":       {"label": "Tuerklingel", "icon": "\U0001f514"},
+    # --- Bewegung & Anwesenheit ---
     "motion":         {"label": "Bewegungsmelder", "icon": "\U0001f3c3"},
     "presence":       {"label": "Anwesenheit", "icon": "\U0001f464"},
-    "water_leak":     {"label": "Wassermelder", "icon": "\U0001f6b0"},
-    "smoke":          {"label": "Rauchmelder", "icon": "\U0001f525"},
-    "co2":            {"label": "CO2-Sensor", "icon": "\U0001f32c\ufe0f"},
-    "light_level":    {"label": "Lichtsensor", "icon": "\u2600\ufe0f"},
+    "occupancy":      {"label": "Raumbelegung", "icon": "\U0001f465"},
+    "vibration":      {"label": "Vibration", "icon": "\U0001f4f3"},
+    # --- Energie & Strom ---
     "power_meter":    {"label": "Strommesser", "icon": "\u26a1"},
     "energy":         {"label": "Energiezaehler", "icon": "\U0001f4ca"},
+    "voltage":        {"label": "Spannung", "icon": "\u26a1"},
+    "current":        {"label": "Stromstaerke", "icon": "\u26a1"},
+    "power_factor":   {"label": "Leistungsfaktor", "icon": "\U0001f4ca"},
+    "frequency":      {"label": "Frequenz", "icon": "\U0001f4ca"},
     "battery":        {"label": "Batterie", "icon": "\U0001f50b"},
+    "battery_charging": {"label": "Batterie laden", "icon": "\U0001f50b"},
+    "solar":          {"label": "Solaranlage/PV", "icon": "\u2600\ufe0f"},
+    "grid_feed":      {"label": "Netzeinspeisung", "icon": "\u26a1"},
+    "grid_consumption": {"label": "Netzbezug", "icon": "\u26a1"},
+    # --- Gas & Wasser Verbrauch ---
+    "gas_consumption": {"label": "Gasverbrauch", "icon": "\U0001f525"},
+    "water_consumption": {"label": "Wasserverbrauch", "icon": "\U0001f4a7"},
+    # --- Heizung, Kuehlung, Klima ---
+    "thermostat":     {"label": "Thermostat", "icon": "\U0001f321\ufe0f"},
+    "heating":        {"label": "Heizung", "icon": "\U0001f525"},
+    "cooling":        {"label": "Kuehlung", "icon": "\u2744\ufe0f"},
+    "heat_pump":      {"label": "Waermepumpe", "icon": "\U0001f504"},
+    "boiler":         {"label": "Warmwasserboiler", "icon": "\U0001f6bf"},
+    "radiator":       {"label": "Heizkoerper", "icon": "\U0001f321\ufe0f"},
+    "floor_heating":  {"label": "Fussbodenheizung", "icon": "\U0001f321\ufe0f"},
+    # --- Lueftung ---
+    "fan":            {"label": "Luefter", "icon": "\U0001f300"},
+    "ventilation":    {"label": "Lueftungsanlage", "icon": "\U0001f32c\ufe0f"},
+    "air_purifier":   {"label": "Luftreiniger", "icon": "\U0001f343"},
+    "dehumidifier":   {"label": "Entfeuchter", "icon": "\U0001f4a7"},
+    "humidifier":     {"label": "Befeuchter", "icon": "\U0001f4a7"},
+    # --- Beschattung ---
+    "blinds":         {"label": "Rolladen/Jalousie", "icon": "\U0001fa9f"},
+    "shutter":        {"label": "Rollladen", "icon": "\U0001fa9f"},
+    "awning":         {"label": "Markise", "icon": "\u2602\ufe0f"},
+    "curtain":        {"label": "Vorhang", "icon": "\U0001fa9f"},
+    # --- Steckdosen & Aktoren ---
     "outlet":         {"label": "Steckdose", "icon": "\U0001f50c"},
     "valve":          {"label": "Ventil", "icon": "\U0001f527"},
-    "fan":            {"label": "Luefter", "icon": "\U0001f300"},
+    "pump":           {"label": "Pumpe", "icon": "\U0001f504"},
+    "motor":          {"label": "Motor", "icon": "\u2699\ufe0f"},
+    "relay":          {"label": "Relais", "icon": "\U0001f50c"},
+    # --- Garten & Aussen ---
     "irrigation":     {"label": "Bewaesserung", "icon": "\U0001f331"},
-    "garage_door":    {"label": "Garagentor", "icon": "\U0001f3e0"},
-    "water_temp":     {"label": "Wassertemperatur", "icon": "\U0001f30a"},
-    "pressure":       {"label": "Luftdruck", "icon": "\U0001f4a8"},
-    "vibration":      {"label": "Vibration", "icon": "\U0001f4f3"},
+    "pool":           {"label": "Pool/Schwimmbad", "icon": "\U0001f3ca"},
+    "soil_moisture":  {"label": "Bodenfeuchtigkeit", "icon": "\U0001f331"},
+    "garden_light":   {"label": "Gartenbeleuchtung", "icon": "\U0001f33b"},
+    # --- Medien & Unterhaltung ---
+    "tv":             {"label": "Fernseher", "icon": "\U0001f4fa"},
+    "speaker":        {"label": "Lautsprecher", "icon": "\U0001f50a"},
+    "media_player":   {"label": "Mediaplayer", "icon": "\u25b6\ufe0f"},
+    "receiver":       {"label": "AV-Receiver", "icon": "\U0001f3b5"},
+    "projector":      {"label": "Beamer/Projektor", "icon": "\U0001f4fd\ufe0f"},
+    "gaming":         {"label": "Spielkonsole", "icon": "\U0001f3ae"},
+    # --- Netzwerk & IT ---
+    "router":         {"label": "Router", "icon": "\U0001f4f6"},
+    "server":         {"label": "Server", "icon": "\U0001f5a5\ufe0f"},
+    "nas":            {"label": "NAS-Speicher", "icon": "\U0001f4be"},
+    "printer":        {"label": "Drucker", "icon": "\U0001f5a8\ufe0f"},
+    "signal_strength": {"label": "Signalstaerke", "icon": "\U0001f4f6"},
+    "connectivity":   {"label": "Verbindungsstatus", "icon": "\U0001f4f6"},
+    # --- Haushaltsgeraete ---
+    "washing_machine": {"label": "Waschmaschine", "icon": "\U0001f9f9"},
+    "dryer":          {"label": "Trockner", "icon": "\U0001f32c\ufe0f"},
+    "dishwasher":     {"label": "Spuelmaschine", "icon": "\U0001f37d\ufe0f"},
+    "oven":           {"label": "Backofen", "icon": "\U0001f373"},
+    "fridge":         {"label": "Kuehlschrank", "icon": "\u2744\ufe0f"},
+    "freezer":        {"label": "Gefrierschrank", "icon": "\u2744\ufe0f"},
+    "vacuum":         {"label": "Staubsauger-Roboter", "icon": "\U0001f9f9"},
+    "coffee_machine": {"label": "Kaffeemaschine", "icon": "\u2615"},
+    "charger":        {"label": "Ladegeraet", "icon": "\U0001f50b"},
+    # --- Fahrzeuge ---
+    "ev_charger":     {"label": "Wallbox/E-Auto-Lader", "icon": "\U0001f50c"},
+    "car":            {"label": "Auto/Fahrzeug", "icon": "\U0001f697"},
+    "car_battery":    {"label": "Auto-Batterie/SoC", "icon": "\U0001f50b"},
+    "car_location":   {"label": "Fahrzeug-Standort", "icon": "\U0001f4cd"},
+    # --- Ueberwachung ---
+    "camera":         {"label": "Kamera", "icon": "\U0001f4f7"},
+    "intercom":       {"label": "Gegensprechanlage", "icon": "\U0001f4de"},
+    # --- Sonstiges ---
+    "scene":          {"label": "Szene", "icon": "\U0001f3ac"},
+    "automation":     {"label": "Automatisierung", "icon": "\u2699\ufe0f"},
+    "timer":          {"label": "Timer/Zaehler", "icon": "\u23f0"},
+    "counter":        {"label": "Zaehler", "icon": "\U0001f522"},
+    "distance":       {"label": "Entfernung", "icon": "\U0001f4cf"},
+    "speed":          {"label": "Geschwindigkeit", "icon": "\U0001f4a8"},
+    "weight":         {"label": "Gewicht/Waage", "icon": "\u2696\ufe0f"},
+    "noise":          {"label": "Laermsensor", "icon": "\U0001f50a"},
+    "problem":        {"label": "Problem/Stoerung", "icon": "\u26a0\ufe0f"},
+    "update":         {"label": "Update verfuegbar", "icon": "\U0001f504"},
+    "running":        {"label": "Geraet laeuft", "icon": "\u25b6\ufe0f"},
+    "generic_sensor": {"label": "Sensor (allgemein)", "icon": "\U0001f4cb"},
+    "generic_switch": {"label": "Schalter (allgemein)", "icon": "\U0001f4a1"},
 }
 
-# Auto-Erkennung: device_class → role
+_DEFAULT_ROLES = set(_DEFAULT_ROLES_DICT.keys())
+
+# Auto-Erkennung: device_class → role (fuer Discovery-Endpoint)
 _DEVICE_CLASS_TO_ROLE = {
+    # Temperatur & Klima
     "temperature": "indoor_temp",
     "humidity": "humidity",
-    "motion": "motion",
-    "occupancy": "presence",
+    "pressure": "pressure",
+    "atmospheric_pressure": "pressure",
+    # Luftqualitaet
+    "co2": "co2",
+    "carbon_dioxide": "co2",
+    "carbon_monoxide": "co",
+    "volatile_organic_compounds": "voc",
+    "volatile_organic_compounds_parts": "voc",
+    "pm25": "pm25",
+    "pm10": "pm10",
+    "aqi": "air_quality",
+    "nitrogen_dioxide": "air_quality",
+    "ozone": "air_quality",
+    # Wetter
+    "wind_speed": "wind_speed",
+    "precipitation": "rain",
+    "precipitation_intensity": "rain",
+    "irradiance": "solar_radiation",
+    # Licht
+    "illuminance": "light_level",
+    # Sicherheit
+    "smoke": "smoke",
+    "gas": "gas",
+    "moisture": "water_leak",
+    "tamper": "tamper",
+    "safety": "alarm",
+    "problem": "problem",
+    # Oeffnungen
     "window": "window_contact",
     "door": "door_contact",
-    "moisture": "water_leak",
-    "smoke": "smoke",
-    "co2": "co2",
-    "illuminance": "light_level",
+    "garage_door": "garage_door",
+    "opening": "window_contact",
+    "lock": "lock",
+    # Bewegung & Anwesenheit
+    "motion": "motion",
+    "occupancy": "occupancy",
+    "presence": "presence",
+    "vibration": "vibration",
+    "moving": "motion",
+    "sound": "noise",
+    # Energie & Strom
     "power": "power_meter",
     "energy": "energy",
     "battery": "battery",
-    "gas": "smoke",
-    "opening": "window_contact",
-    "pressure": "pressure",
-    "vibration": "vibration",
+    "battery_charging": "battery_charging",
+    "voltage": "voltage",
+    "current": "current",
+    "power_factor": "power_factor",
+    "frequency": "frequency",
+    "apparent_power": "power_meter",
+    "reactive_power": "power_meter",
+    # Verbrauch
+    "gas": "gas_consumption",
+    "water": "water_consumption",
+    # Geraete
+    "connectivity": "connectivity",
+    "plug": "outlet",
+    "running": "running",
+    "update": "update",
+    "signal_strength": "signal_strength",
+    # Sonstiges
+    "distance": "distance",
+    "speed": "speed",
+    "weight": "weight",
+    "duration": "timer",
 }
 
 _OUTDOOR_KEYWORDS = ("aussen", "outdoor", "balkon", "garten", "terrasse", "draussen", "exterior")
 _WATER_TEMP_KEYWORDS = ("wasser", "water", "boiler", "pool")
+_SOIL_TEMP_KEYWORDS = ("boden", "soil", "erde", "ground")
 
-# Role-Keywords fuer natuerliche Sprache → Role-Matching
+# Role-Keywords fuer natuerliche Sprache → Role-Matching in _find_entity()
 _ROLE_KEYWORDS = {
-    "outdoor_temp": ["aussen", "draussen", "outdoor", "balkon", "aussentemperatur"],
+    # Temperatur
+    "outdoor_temp": ["aussen", "draussen", "outdoor", "balkon", "aussentemperatur", "gartentemperatur"],
     "indoor_temp": ["innen", "raum", "drinnen", "raumtemperatur", "zimmertemperatur"],
-    "window_contact": ["fenster", "window"],
-    "door_contact": ["tuer", "tuerkontakt", "door"],
-    "motion": ["bewegung", "motion"],
-    "water_leak": ["wasser", "leck", "wasserleck"],
-    "smoke": ["rauch", "rauchmelder"],
-    "humidity": ["feuchtigkeit", "feuchte", "luftfeuchte"],
+    "water_temp": ["wassertemperatur", "boiler", "warmwasser", "pooltemperatur"],
+    "soil_temp": ["bodentemperatur", "erdtemperatur"],
+    # Klima
+    "humidity": ["feuchtigkeit", "feuchte", "luftfeuchte", "luftfeuchtigkeit"],
+    "pressure": ["luftdruck", "druck", "barometer"],
+    # Luftqualitaet
     "co2": ["co2", "kohlendioxid"],
+    "co": ["kohlenmonoxid", "co-melder"],
+    "voc": ["voc", "fluechtige", "organische"],
+    "pm25": ["feinstaub", "pm2.5", "pm25", "partikel"],
+    "air_quality": ["luftqualitaet", "luft qualitaet", "aqi"],
+    # Wetter
+    "wind_speed": ["wind", "windgeschwindigkeit", "windstaerke"],
+    "rain": ["regen", "niederschlag", "rain"],
+    "uv_index": ["uv", "uv-index", "sonnenbrand"],
+    # Sicherheit
+    "smoke": ["rauch", "rauchmelder"],
+    "gas": ["gas", "gasmelder", "erdgas"],
+    "water_leak": ["wasserleck", "leck", "wassermelder", "ueberschwemmung"],
+    "alarm": ["alarm", "alarmanlage", "einbruch"],
+    "tamper": ["manipulation", "tamper", "sabotage"],
+    # Oeffnungen
+    "window_contact": ["fenster", "window"],
+    "door_contact": ["tuer", "tuerkontakt", "door", "haustuer", "eingangstuer"],
+    "garage_door": ["garage", "garagentor"],
+    "gate": ["tor", "einfahrt", "gate"],
+    "lock": ["schloss", "verriegelt", "lock"],
+    "doorbell": ["klingel", "tuerklingel", "doorbell"],
+    # Bewegung
+    "motion": ["bewegung", "motion", "bewegungsmelder"],
+    "presence": ["anwesenheit", "zuhause", "abwesend", "presence"],
+    "occupancy": ["belegung", "besetzt", "raumbelegung"],
+    # Energie
+    "power_meter": ["strom", "leistung", "watt", "strommesser"],
+    "energy": ["energie", "kwh", "energieverbrauch", "stromverbrauch"],
+    "voltage": ["spannung", "volt"],
     "battery": ["batterie", "akku"],
-    "power_meter": ["strom", "verbrauch", "leistung", "watt"],
-    "energy": ["energie", "kwh"],
+    "solar": ["solar", "photovoltaik", "pv", "solaranlage"],
+    "ev_charger": ["wallbox", "ladestation", "e-auto", "elektroauto"],
+    # Verbrauch
+    "gas_consumption": ["gasverbrauch", "gasverbrauch", "kubikmeter"],
+    "water_consumption": ["wasserverbrauch"],
+    # Heizung & Klima
+    "thermostat": ["thermostat"],
+    "heating": ["heizung", "heizen"],
+    "cooling": ["kuehlung", "kuehlen", "klimaanlage"],
+    "heat_pump": ["waermepumpe"],
+    "boiler": ["boiler", "warmwasserspeicher"],
+    "radiator": ["heizkoerper", "radiator"],
+    "floor_heating": ["fussbodenheizung", "fbh"],
+    # Lueftung
+    "fan": ["luefter", "ventilator"],
+    "ventilation": ["lueftung", "lueftungsanlage", "kwl"],
+    "air_purifier": ["luftreiniger", "luftfilter"],
+    # Beschattung
+    "blinds": ["rolladen", "jalousie", "rollo"],
+    "shutter": ["rollladen"],
+    "awning": ["markise"],
+    "curtain": ["vorhang", "gardine"],
+    # Steckdosen & Aktoren
+    "outlet": ["steckdose", "stecker"],
+    "valve": ["ventil"],
+    "pump": ["pumpe"],
+    # Garten
+    "irrigation": ["bewaesserung", "sprinkler", "gartenschlauch"],
+    "pool": ["pool", "schwimmbad", "whirlpool"],
+    "soil_moisture": ["bodenfeuchtigkeit", "erdfeuchte"],
+    # Medien
+    "tv": ["fernseher", "tv", "television"],
+    "speaker": ["lautsprecher", "speaker", "box"],
+    "media_player": ["mediaplayer", "player", "streamer"],
+    "receiver": ["receiver", "verstaerker", "av-receiver"],
+    # Netzwerk
+    "router": ["router", "wlan", "wifi", "internet"],
+    "server": ["server"],
+    "nas": ["nas", "netzwerkspeicher"],
+    # Haushaltsgeraete
+    "washing_machine": ["waschmaschine", "waschen"],
+    "dryer": ["trockner"],
+    "dishwasher": ["spuelmaschine", "geschirrspueler"],
+    "vacuum": ["staubsauger", "saugroboter", "roborock"],
+    "coffee_machine": ["kaffeemaschine", "kaffee", "espresso"],
+    # Fahrzeuge
+    "car": ["auto", "fahrzeug", "pkw"],
+    "car_battery": ["autobatterie", "soc", "ladestand"],
+    # Ueberwachung
+    "camera": ["kamera", "ueberwachung", "cam"],
 }
 
 
@@ -306,33 +544,96 @@ def get_valid_roles() -> set:
 
 
 def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) -> str:
-    """Erkennt die Rolle einer Entity aus HA-Attributen."""
+    """Erkennt die Rolle einer Entity aus HA-Attributen (fuer Discovery-Vorschlaege)."""
     lower_eid = entity_id.lower()
 
     if domain == "binary_sensor":
         return _DEVICE_CLASS_TO_ROLE.get(device_class, "")
 
     if domain == "sensor":
+        # Temperatur (mit Kontext-Erkennung: aussen/wasser/boden/innen)
         if device_class == "temperature" or unit in ("\u00b0C", "\u00b0F"):
             if any(kw in lower_eid for kw in _OUTDOOR_KEYWORDS):
                 return "outdoor_temp"
             if any(kw in lower_eid for kw in _WATER_TEMP_KEYWORDS):
                 return "water_temp"
+            if any(kw in lower_eid for kw in _SOIL_TEMP_KEYWORDS):
+                return "soil_temp"
             return "indoor_temp"
-        if device_class == "humidity":
+        # Klima
+        if device_class == "humidity" or unit == "%rH":
             return "humidity"
-        if device_class == "co2" or (unit == "ppm" and "co2" in lower_eid):
-            return "co2"
-        if device_class == "pressure" or unit in ("hPa", "mbar"):
+        if device_class in ("pressure", "atmospheric_pressure") or unit in ("hPa", "mbar"):
             return "pressure"
+        # Luftqualitaet
+        if device_class in ("co2", "carbon_dioxide") or (unit == "ppm" and "co2" in lower_eid):
+            return "co2"
+        if device_class == "carbon_monoxide":
+            return "co"
+        if device_class in ("volatile_organic_compounds", "volatile_organic_compounds_parts"):
+            return "voc"
+        if device_class == "pm25":
+            return "pm25"
+        if device_class == "pm10":
+            return "pm10"
+        if device_class in ("aqi", "nitrogen_dioxide", "ozone", "sulphur_dioxide"):
+            return "air_quality"
+        # Wetter
+        if device_class == "wind_speed" or unit in ("m/s", "km/h", "mph"):
+            if "wind" in lower_eid:
+                return "wind_speed"
+        if device_class in ("precipitation", "precipitation_intensity"):
+            return "rain"
+        if device_class == "irradiance" or unit in ("W/m\u00b2",):
+            return "solar_radiation"
+        if "uv" in lower_eid and (unit == "UV index" or "uv" in device_class):
+            return "uv_index"
+        # Licht
         if device_class == "illuminance" or unit in ("lx", "lux"):
             return "light_level"
+        # Energie & Strom
         if device_class == "power" or unit in ("W", "kW"):
+            if any(kw in lower_eid for kw in ("solar", "pv", "photovoltaik")):
+                return "solar"
+            if any(kw in lower_eid for kw in ("grid_feed", "einspeis")):
+                return "grid_feed"
+            if any(kw in lower_eid for kw in ("grid_consum", "netzbezug")):
+                return "grid_consumption"
             return "power_meter"
         if device_class == "energy" or unit in ("kWh", "Wh"):
+            if any(kw in lower_eid for kw in ("solar", "pv", "photovoltaik")):
+                return "solar"
             return "energy"
         if device_class == "battery":
             return "battery"
+        if device_class == "voltage" or unit == "V":
+            return "voltage"
+        if device_class == "current" or unit == "A":
+            return "current"
+        if device_class == "power_factor":
+            return "power_factor"
+        if device_class == "frequency" or unit == "Hz":
+            return "frequency"
+        # Verbrauch
+        if device_class == "gas" or unit in ("m\u00b3",) and "gas" in lower_eid:
+            return "gas_consumption"
+        if device_class == "water" or unit in ("L", "m\u00b3") and "water" in lower_eid:
+            return "water_consumption"
+        # Sonstiges
+        if device_class == "signal_strength" or unit in ("dBm", "dB"):
+            return "signal_strength"
+        if device_class == "distance" or unit in ("m", "cm", "mm", "km"):
+            if "entfern" in lower_eid or "distance" in lower_eid:
+                return "distance"
+        if device_class == "speed":
+            return "speed"
+        if device_class == "weight" or unit in ("kg", "g", "lb"):
+            return "weight"
+        if device_class == "duration":
+            return "timer"
+        if device_class == "sound_pressure" or unit == "dB":
+            return "noise"
+        # Fallback auf Mapping
         return _DEVICE_CLASS_TO_ROLE.get(device_class, "")
 
     if domain == "switch":
@@ -346,7 +647,43 @@ def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) 
             return "valve"
         if any(kw in lower_eid for kw in ("steckdose", "plug", "socket")):
             return "outlet"
+        if any(kw in lower_eid for kw in ("pump", "pumpe")):
+            return "pump"
         return ""
+
+    if domain == "cover":
+        if device_class in ("blind", "shutter"):
+            return "blinds"
+        if device_class == "awning":
+            return "awning"
+        if device_class == "curtain":
+            return "curtain"
+        if device_class == "garage":
+            return "garage_door"
+        if device_class == "gate":
+            return "gate"
+        return ""
+
+    if domain == "lock":
+        return "lock"
+
+    if domain == "fan":
+        return "fan"
+
+    if domain == "vacuum":
+        return "vacuum"
+
+    if domain == "camera":
+        return "camera"
+
+    if domain == "media_player":
+        if any(kw in lower_eid for kw in ("tv", "fernseh", "television", "fire_tv", "apple_tv", "chromecast")):
+            return "tv"
+        if any(kw in lower_eid for kw in ("receiver", "avr", "denon", "marantz", "yamaha")):
+            return "receiver"
+        if any(kw in lower_eid for kw in ("sonos", "speaker", "echo", "homepod", "lautsprecher")):
+            return "speaker"
+        return "media_player"
 
     return ""
 
