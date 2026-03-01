@@ -1082,6 +1082,17 @@ const HELP_TEXTS = {
   'person_profiles.empathy': {title:'Per-Person Empathie', text:'Ueberschreibt die globale Empathie-Intensitaet fuer diese Person. Subtil, Normal, Ausfuehrlich oder komplett Deaktiviert.'},
   'person_profiles.response_style': {title:'Per-Person Antwort-Stil', text:'Wie ausfuehrlich Jarvis dieser Person antwortet. Kurz = weniger Saetze, Ausfuehrlich = mehr Details. Standard = globale Einstellung.'},
   'person_profiles.formality_start': {title:'Per-Person Formalitaet', text:'Start-Formalitaet fuer diese Person (20-100). Hoher Wert = formeller Ton, niedriger = lockerer. Ueberschreibt den globalen Startwert.'},
+  // === DEKLARATIVE TOOLS ===
+  'decl_tools.overview': {title:'Analyse-Tools', text:'Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus.', detail:'<b>Sicherheit:</b> Kein Code — nur YAML-Config. Nur Lese-Zugriff auf HA-Daten.<br><b>Limit:</b> Max 20 Tools.<br><b>Tipp:</b> "Jarvis, bau mir ein Tool..." erstellt Tools per Sprache.'},
+  'decl_tools.type': {title:'Tool-Typ', text:'Welche Art von Berechnung soll dieses Tool ausfuehren?', detail:'<b>Entity-Vergleich:</b> Vergleicht 2 Sensoren (Differenz, Verhaeltnis, %)<br><b>Multi-Entity-Formel:</b> Kombiniert 3+ Entities (Durchschnitt, Summe, Min, Max)<br><b>Event-Zaehler:</b> Zaehlt State-Changes (z.B. Tueroeffnungen)<br><b>Schwellwert-Monitor:</b> Prueft ob Wert in Min/Max-Bereich<br><b>Trend-Analyse:</b> Trend ueber Zeitraum (steigend/fallend)<br><b>Entity-Aggregation:</b> Durchschnitt ueber mehrere Entities<br><b>Zeitplan-Check:</b> Prueft aktiven Zeitplan'},
+  'decl_tools.entity_a': {title:'Entity A', text:'Erster Sensor fuer den Vergleich. Suchfeld mit Autocomplete — tippe um Entities zu finden.'},
+  'decl_tools.entity_b': {title:'Entity B', text:'Zweiter Sensor fuer den Vergleich.'},
+  'decl_tools.entity': {title:'Entity', text:'Sensor dessen Wert analysiert wird.'},
+  'decl_tools.entities': {title:'Entities', text:'Mehrere Sensoren die aggregiert oder gezaehlt werden. Kommagetrennt oder per Suche hinzufuegen.'},
+  'decl_tools.operation': {title:'Operation', text:'Wie die zwei Entities verglichen werden.', detail:'<b>Differenz:</b> A minus B<br><b>Verhaeltnis:</b> A geteilt durch B<br><b>Prozentual:</b> Aenderung in Prozent'},
+  'decl_tools.formula': {title:'Formel', text:'Wie die Entities kombiniert werden.'},
+  'decl_tools.time_range': {title:'Zeitraum', text:'Ueber welchen Zeitraum die Analyse laeuft.'},
+  'decl_tools.thresholds': {title:'Schwellwerte', text:'Definierter Bereich. Status wird "ZU HOCH" oder "ZU NIEDRIG" wenn ausserhalb.'},
 };
 
 function helpBtn(path) {
@@ -7703,11 +7714,13 @@ async function confirmFactoryReset() {
   }
 }
 
+
 // ══════════════════════════════════════════════════════════════
 // Deklarative Analyse-Tools (Phase 13.3)
 // ══════════════════════════════════════════════════════════════
 
 let _declTools = [];
+let _declEditMode = null; // null = neues Tool, string = Name des editierten Tools
 
 const DECL_TOOL_TYPES = [
   {v:'entity_comparison', l:'Entity-Vergleich', desc:'Vergleicht zwei Entities (z.B. Strom heute vs. gestern)'},
@@ -7724,29 +7737,103 @@ const DECL_OPERATIONS = [
   {v:'ratio', l:'Verhaeltnis (A / B)'},
   {v:'percentage_change', l:'Prozentuale Aenderung'},
 ];
-
 const DECL_FORMULAS = [
-  {v:'average', l:'Durchschnitt'},
-  {v:'weighted_average', l:'Gewichteter Durchschnitt'},
-  {v:'sum', l:'Summe'},
-  {v:'min', l:'Minimum'},
-  {v:'max', l:'Maximum'},
+  {v:'average', l:'Durchschnitt'},{v:'weighted_average', l:'Gewichteter Durchschnitt'},
+  {v:'sum', l:'Summe'},{v:'min', l:'Minimum'},{v:'max', l:'Maximum'},
   {v:'difference', l:'Differenz (Erste - Zweite)'},
 ];
-
 const DECL_AGGREGATIONS = [
-  {v:'average', l:'Durchschnitt'},
-  {v:'min', l:'Minimum'},
-  {v:'max', l:'Maximum'},
-  {v:'sum', l:'Summe'},
+  {v:'average', l:'Durchschnitt'},{v:'min', l:'Minimum'},{v:'max', l:'Maximum'},{v:'sum', l:'Summe'},
 ];
-
 const DECL_TIME_RANGES = [
-  {v:'1h', l:'1 Stunde'}, {v:'6h', l:'6 Stunden'}, {v:'12h', l:'12 Stunden'},
-  {v:'24h', l:'24 Stunden'}, {v:'48h', l:'48 Stunden'},
-  {v:'7d', l:'7 Tage'}, {v:'30d', l:'30 Tage'},
+  {v:'1h', l:'1 Stunde'},{v:'6h', l:'6 Stunden'},{v:'12h', l:'12 Stunden'},
+  {v:'24h', l:'24 Stunden'},{v:'48h', l:'48 Stunden'},{v:'7d', l:'7 Tage'},{v:'30d', l:'30 Tage'},
 ];
 
+// ── Vorlagen ─────────────────────────────────────────────────
+const DECL_PRESETS = [
+  {name:'stromvergleich', desc:'Vergleicht aktuellen mit gestrigem Stromverbrauch', type:'entity_comparison',
+   config:{entity_a:'sensor.strom_heute', entity_b:'sensor.strom_gestern', operation:'difference'}},
+  {name:'raumtemperaturen', desc:'Durchschnittstemperatur aller Raeume', type:'entity_aggregator',
+   config:{entities:['sensor.wohnzimmer_temperatur','sensor.schlafzimmer_temperatur','sensor.kueche_temperatur'], aggregation:'average'}},
+  {name:'tuerbewegungen', desc:'Zaehlt Tueroeffnungen heute', type:'event_counter',
+   config:{entities:['binary_sensor.haustuer_kontakt'], count_state:'on', time_range:'24h'}},
+  {name:'luftfeuchtigkeit_check', desc:'Prueft ob Luftfeuchtigkeit im Komfortbereich (40-60%)', type:'threshold_monitor',
+   config:{entity:'sensor.wohnzimmer_luftfeuchtigkeit', thresholds:{min:40, max:60}}},
+  {name:'temperatur_trend', desc:'Temperatur-Trend der letzten 24 Stunden', type:'trend_analyzer',
+   config:{entity:'sensor.aussen_temperatur', time_range:'24h'}},
+];
+
+// ── Entity-Picker Helfer (standalone, ohne Settings-Binding) ─
+function _declEntityInput(id, label, domains, placeholder, value) {
+  const domStr = (domains||[]).join(',');
+  return '<div class="form-group"><label>' + label + '</label>' +
+    '<div class="entity-pick-wrap">' +
+    '<input class="form-input entity-pick-input" id="' + id + '" value="' + esc(value||'') + '"' +
+    ' data-room-map="' + id + '" data-domains="' + domStr + '"' +
+    ' placeholder="' + (placeholder||'&#128269; Entity suchen...') + '"' +
+    ' oninput="entityPickFilter(this,\'' + domStr + '\')" onfocus="entityPickFilter(this,\'' + domStr + '\')"' +
+    ' style="font-family:var(--mono);font-size:13px;">' +
+    '<div class="entity-pick-dropdown" style="display:none;"></div>' +
+    '</div></div>';
+}
+
+function _declEntityListInput(id, label, domains, placeholder, values) {
+  const domStr = (domains||[]).join(',');
+  const arr = values || [];
+  let tags = arr.map(function(k) {
+    return '<span class="kw-tag">' + esc(k) + '<span class="kw-rm" onclick="declRmEntityTag(this)">&#10005;</span></span>';
+  }).join('');
+  return '<div class="form-group"><label>' + label + '</label>' +
+    '<div class="entity-pick-wrap">' +
+    '<div class="kw-editor" id="' + id + '" data-domains="' + domStr + '" onclick="this.querySelector(\'input\')?.focus()">' +
+    tags + '<input class="kw-input entity-pick-input" placeholder="' + (placeholder||'&#128269; Entity suchen...') + '"' +
+    ' oninput="entityPickFilter(this,\'' + domStr + '\')" onfocus="entityPickFilter(this,\'' + domStr + '\')"' +
+    ' data-decl-list="' + id + '">' +
+    '</div>' +
+    '<div class="entity-pick-dropdown" style="display:none;"></div>' +
+    '</div></div>';
+}
+
+function declRmEntityTag(el) { el.parentElement.remove(); }
+
+function _getDeclEntityList(id) {
+  const editor = document.getElementById(id);
+  if (!editor) return [];
+  return [...editor.querySelectorAll('.kw-tag')].map(function(t) {
+    return (t.childNodes[0]?.textContent || '').trim();
+  }).filter(Boolean);
+}
+
+// Hook: entityPickSelect fuer data-decl-list Inputs
+(function() {
+  const _orig = window.entityPickSelect;
+  if (typeof _orig !== 'function') return;
+  window.entityPickSelect = function(item, entityId) {
+    var wrap = item.closest('.entity-pick-wrap');
+    var input = wrap ? wrap.querySelector('[data-decl-list]') : null;
+    if (input) {
+      var listId = input.dataset.declList;
+      var editor = document.getElementById(listId);
+      if (editor) {
+        var existing = _getDeclEntityList(listId);
+        if (!existing.includes(entityId)) {
+          var tag = document.createElement('span');
+          tag.className = 'kw-tag';
+          tag.innerHTML = esc(entityId) + '<span class="kw-rm" onclick="declRmEntityTag(this)">&#10005;</span>';
+          editor.insertBefore(tag, input);
+        }
+        input.value = '';
+        var dd = wrap.querySelector('.entity-pick-dropdown');
+        if (dd) dd.style.display = 'none';
+      }
+      return;
+    }
+    _orig(item, entityId);
+  };
+})();
+
+// ── Tool-Liste ───────────────────────────────────────────────
 async function loadDeclarativeTools() {
   try {
     const d = await api('/api/ui/declarative-tools');
@@ -7759,26 +7846,24 @@ function _renderDeclToolList() {
   const container = document.getElementById('declToolList');
   if (!container) return;
   if (_declTools.length === 0) {
-    container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Noch keine Analyse-Tools erstellt. Erstelle unten ein neues Tool oder bitte Jarvis, eins fuer dich zu bauen.</div>';
+    container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Noch keine Analyse-Tools erstellt. Erstelle unten ein neues oder nutze eine Vorlage.</div>';
     return;
   }
-  let h = '';
+  let h = '<div style="margin-bottom:8px;font-size:12px;color:var(--text-secondary);">' + _declTools.length + '/20 Tools</div>';
   for (const t of _declTools) {
     const typeInfo = DECL_TOOL_TYPES.find(tt => tt.v === t.type) || {l: t.type};
-    h += `<div class="decl-tool-card" style="border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;margin-bottom:10px;background:var(--bg-card);">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <strong style="color:var(--accent);font-size:14px;">${esc(t.name)}</strong>
-          <span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(0,212,255,0.08);color:var(--text-secondary);">${esc(typeInfo.l)}</span>
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button class="btn btn-sm" onclick="testDeclTool('${esc(t.name)}')" title="Testen" style="padding:4px 10px;font-size:12px;">&#9654; Test</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteDeclTool('${esc(t.name)}')" title="Loeschen" style="padding:4px 10px;font-size:12px;">&#10005;</button>
-        </div>
-      </div>
-      <div style="margin-top:6px;font-size:12px;color:var(--text-secondary);">${esc(t.description || '')}</div>
-      <div id="declTestResult_${esc(t.name)}" style="display:none;margin-top:10px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);font-size:12px;font-family:var(--mono);white-space:pre-wrap;"></div>
-    </div>`;
+    h += '<div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;margin-bottom:10px;background:var(--bg-card);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">' +
+      '<div><strong style="color:var(--accent);font-size:14px;">' + esc(t.name) + '</strong>' +
+      '<span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(0,212,255,0.08);color:var(--text-secondary);">' + esc(typeInfo.l) + '</span></div>' +
+      '<div style="display:flex;gap:6px;">' +
+      '<button class="btn btn-sm" onclick="testDeclTool(\'' + esc(t.name) + '\')" style="padding:4px 10px;font-size:12px;">&#9654; Test</button>' +
+      '<button class="btn btn-sm" onclick="editDeclTool(\'' + esc(t.name) + '\')" style="padding:4px 10px;font-size:12px;">&#9998; Bearbeiten</button>' +
+      '<button class="btn btn-sm btn-danger" onclick="deleteDeclTool(\'' + esc(t.name) + '\')" style="padding:4px 10px;font-size:12px;">&#10005;</button>' +
+      '</div></div>' +
+      '<div style="margin-top:6px;font-size:12px;color:var(--text-secondary);">' + esc(t.description || '') + '</div>' +
+      '<div id="declTestResult_' + esc(t.name) + '" style="display:none;margin-top:10px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);font-size:12px;font-family:var(--mono);white-space:pre-wrap;"></div>' +
+      '</div>';
   }
   container.innerHTML = h;
 }
@@ -7805,170 +7890,326 @@ async function deleteDeclTool(name) {
     await api('/api/ui/declarative-tools/' + encodeURIComponent(name), 'DELETE');
     toast('Tool "' + name + '" geloescht', 'success');
     loadDeclarativeTools();
-  } catch(e) {
-    toast('Fehler: ' + e.message, 'error');
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+// ── Bearbeiten ───────────────────────────────────────────────
+function editDeclTool(name) {
+  const tool = _declTools.find(t => t.name === name);
+  if (!tool) return;
+  _declEditMode = name;
+  const nameEl = document.getElementById('declNewName');
+  const descEl = document.getElementById('declNewDesc');
+  const typeEl = document.getElementById('declNewType');
+  const btnEl = document.getElementById('declSubmitBtn');
+  const cancelBtn = document.getElementById('declCancelBtn');
+  if (nameEl) { nameEl.value = name; nameEl.readOnly = true; nameEl.style.opacity = '0.6'; }
+  if (descEl) descEl.value = tool.description || '';
+  if (typeEl) { typeEl.value = tool.type || ''; onDeclTypeChange(); }
+  if (btnEl) btnEl.innerHTML = '&#9998; Tool aktualisieren';
+  if (cancelBtn) cancelBtn.style.display = 'inline-block';
+  setTimeout(function() { _prefillDeclConfig(tool.type, tool.config || {}); }, 60);
+  var formSection = document.getElementById('declFormSection');
+  if (formSection) formSection.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function cancelDeclEdit() {
+  _declEditMode = null;
+  var nameEl = document.getElementById('declNewName');
+  var descEl = document.getElementById('declNewDesc');
+  var typeEl = document.getElementById('declNewType');
+  var btnEl = document.getElementById('declSubmitBtn');
+  var cancelBtn = document.getElementById('declCancelBtn');
+  if (nameEl) { nameEl.value = ''; nameEl.readOnly = false; nameEl.style.opacity = '1'; }
+  if (descEl) descEl.value = '';
+  if (typeEl) typeEl.value = '';
+  if (btnEl) btnEl.innerHTML = '&#10010; Tool erstellen';
+  if (cancelBtn) cancelBtn.style.display = 'none';
+  document.getElementById('declConfigFields').innerHTML = '';
+  _clearDeclValidation();
+}
+
+function _prefillDeclConfig(type, config) {
+  switch(type) {
+    case 'entity_comparison': {
+      var a = document.getElementById('declCfg_entity_a');
+      var b = document.getElementById('declCfg_entity_b');
+      var op = document.getElementById('declCfg_operation');
+      if (a) a.value = config.entity_a || '';
+      if (b) b.value = config.entity_b || '';
+      if (op) op.value = config.operation || 'difference';
+      break;
+    }
+    case 'multi_entity_formula': {
+      var e = document.getElementById('declCfg_entities');
+      var f = document.getElementById('declCfg_formula');
+      var w = document.getElementById('declCfg_weights');
+      if (e) e.value = JSON.stringify(config.entities || {}, null, 2);
+      if (f) f.value = config.formula || 'average';
+      if (w && config.weights) w.value = JSON.stringify(config.weights);
+      break;
+    }
+    case 'event_counter':
+    case 'entity_aggregator': {
+      var listEl = document.getElementById('declCfg_entities_list');
+      if (listEl && Array.isArray(config.entities)) {
+        var inp = listEl.querySelector('.kw-input');
+        config.entities.forEach(function(eid) {
+          var tag = document.createElement('span');
+          tag.className = 'kw-tag';
+          tag.innerHTML = esc(eid) + '<span class="kw-rm" onclick="declRmEntityTag(this)">&#10005;</span>';
+          if (inp) listEl.insertBefore(tag, inp);
+        });
+      }
+      if (type === 'event_counter') {
+        var cs = document.getElementById('declCfg_count_state');
+        if (cs) cs.value = config.count_state || 'on';
+      }
+      if (type === 'entity_aggregator') {
+        var agg = document.getElementById('declCfg_aggregation');
+        if (agg) agg.value = config.aggregation || 'average';
+      }
+      var tr = document.getElementById('declCfg_time_range');
+      if (tr && config.time_range) tr.value = config.time_range;
+      break;
+    }
+    case 'threshold_monitor': {
+      var ent = document.getElementById('declCfg_entity');
+      var mn = document.getElementById('declCfg_th_min');
+      var mx = document.getElementById('declCfg_th_max');
+      if (ent) ent.value = config.entity || '';
+      if (mn && config.thresholds?.min != null) mn.value = config.thresholds.min;
+      if (mx && config.thresholds?.max != null) mx.value = config.thresholds.max;
+      break;
+    }
+    case 'trend_analyzer': {
+      var ent2 = document.getElementById('declCfg_entity');
+      var tr2 = document.getElementById('declCfg_time_range');
+      if (ent2) ent2.value = config.entity || '';
+      if (tr2) tr2.value = config.time_range || '24h';
+      break;
+    }
+    case 'schedule_checker': {
+      var s = document.getElementById('declCfg_schedules');
+      if (s) s.value = JSON.stringify(config.schedules || [], null, 2);
+      break;
+    }
   }
 }
 
+// ── Vorlagen laden ───────────────────────────────────────────
+function loadDeclPreset(idx) {
+  var preset = DECL_PRESETS[idx];
+  if (!preset) return;
+  cancelDeclEdit();
+  var nameEl = document.getElementById('declNewName');
+  var descEl = document.getElementById('declNewDesc');
+  var typeEl = document.getElementById('declNewType');
+  if (nameEl) nameEl.value = preset.name;
+  if (descEl) descEl.value = preset.desc;
+  if (typeEl) typeEl.value = preset.type;
+  onDeclTypeChange();
+  setTimeout(function() { _prefillDeclConfig(preset.type, preset.config); }, 60);
+  var formSection = document.getElementById('declFormSection');
+  if (formSection) formSection.scrollIntoView({behavior:'smooth', block:'start'});
+  toast('Vorlage "' + preset.name + '" geladen — Entity-IDs anpassen!', 'success');
+}
+
+// ── Config-Felder mit Entity-Picker ──────────────────────────
 function _declTypeConfigFields(type) {
   switch(type) {
     case 'entity_comparison':
-      return '<div class="form-group"><label>Entity A</label>' +
-        '<input type="text" id="declCfg_entity_a" placeholder="sensor.strom_heute"></div>' +
-        '<div class="form-group"><label>Entity B</label>' +
-        '<input type="text" id="declCfg_entity_b" placeholder="sensor.strom_gestern"></div>' +
-        '<div class="form-group"><label>Operation</label><select id="declCfg_operation">' +
-        DECL_OPERATIONS.map(o => `<option value="${o.v}">${o.l}</option>`).join('') +
+      return _declEntityInput('declCfg_entity_a', 'Entity A', ['sensor','number','input_number'], 'z.B. sensor.strom_heute') +
+        _declEntityInput('declCfg_entity_b', 'Entity B', ['sensor','number','input_number'], 'z.B. sensor.strom_gestern') +
+        '<div class="form-group"><label>Operation' + helpBtn('decl_tools.operation') + '</label><select id="declCfg_operation">' +
+        DECL_OPERATIONS.map(o => '<option value="' + o.v + '">' + o.l + '</option>').join('') +
         '</select></div>';
-
     case 'multi_entity_formula':
-      return '<div class="form-group"><label>Entities (JSON: {"label": "entity_id", ...})</label>' +
-        '<textarea id="declCfg_entities" rows="3" placeholder=\'{"temp": "sensor.wohnzimmer_temp", "hum": "sensor.wohnzimmer_hum"}\'></textarea></div>' +
-        '<div class="form-group"><label>Formel</label><select id="declCfg_formula">' +
-        DECL_FORMULAS.map(o => `<option value="${o.v}">${o.l}</option>`).join('') +
+      return '<div class="form-group"><label>Entities (JSON: {"label": "entity_id", ...})' + helpBtn('decl_tools.entities') + '</label>' +
+        '<textarea id="declCfg_entities" rows="3" placeholder=\'{"temp": "sensor.wohnzimmer_temp", "hum": "sensor.wohnzimmer_hum"}\' style="font-family:var(--mono);font-size:12px;"></textarea>' +
+        '<div class="hint">Labels werden in der Ausgabe als Bezeichner verwendet</div></div>' +
+        '<div class="form-group"><label>Formel' + helpBtn('decl_tools.formula') + '</label><select id="declCfg_formula">' +
+        DECL_FORMULAS.map(o => '<option value="' + o.v + '">' + o.l + '</option>').join('') +
         '</select></div>' +
         '<div class="form-group"><label>Gewichte (optional, JSON)</label>' +
-        '<input type="text" id="declCfg_weights" placeholder=\'{"temp": 0.6, "hum": 0.4}\'></div>';
-
+        '<input type="text" id="declCfg_weights" placeholder=\'{"temp": 0.6, "hum": 0.4}\' style="font-family:var(--mono);font-size:12px;">' +
+        '<div class="hint">Nur bei "Gewichteter Durchschnitt"</div></div>';
     case 'event_counter':
-      return '<div class="form-group"><label>Entities (kommagetrennt)</label>' +
-        '<input type="text" id="declCfg_entities_list" placeholder="binary_sensor.haustuer, binary_sensor.hintertuer"></div>' +
+      return _declEntityListInput('declCfg_entities_list', 'Entities', ['binary_sensor','sensor'], 'Entity suchen...') +
         '<div class="form-group"><label>State zaehlen</label>' +
-        '<input type="text" id="declCfg_count_state" placeholder="on" value="on"></div>' +
-        '<div class="form-group"><label>Zeitraum</label><select id="declCfg_time_range">' +
-        DECL_TIME_RANGES.map(o => `<option value="${o.v}"${o.v==='24h'?' selected':''}>${o.l}</option>`).join('') +
+        '<input type="text" id="declCfg_count_state" placeholder="on" value="on">' +
+        '<div class="hint">State-Wert der gezaehlt wird (z.B. "on", "open")</div></div>' +
+        '<div class="form-group"><label>Zeitraum' + helpBtn('decl_tools.time_range') + '</label><select id="declCfg_time_range">' +
+        DECL_TIME_RANGES.map(o => '<option value="' + o.v + '"' + (o.v==='24h'?' selected':'') + '>' + o.l + '</option>').join('') +
         '</select></div>';
-
     case 'threshold_monitor':
-      return '<div class="form-group"><label>Entity</label>' +
-        '<input type="text" id="declCfg_entity" placeholder="sensor.luftfeuchtigkeit"></div>' +
-        '<div class="form-group"><label>Minimum (optional)</label>' +
-        '<input type="number" id="declCfg_th_min" placeholder="40"></div>' +
-        '<div class="form-group"><label>Maximum (optional)</label>' +
-        '<input type="number" id="declCfg_th_max" placeholder="60"></div>';
-
+      return _declEntityInput('declCfg_entity', 'Entity', ['sensor','number','input_number'], 'z.B. sensor.luftfeuchtigkeit') +
+        '<div style="display:flex;gap:12px;">' +
+        '<div class="form-group" style="flex:1;"><label>Minimum' + helpBtn('decl_tools.thresholds') + '</label>' +
+        '<input type="number" id="declCfg_th_min" placeholder="z.B. 40"></div>' +
+        '<div class="form-group" style="flex:1;"><label>Maximum</label>' +
+        '<input type="number" id="declCfg_th_max" placeholder="z.B. 60"></div></div>';
     case 'trend_analyzer':
-      return '<div class="form-group"><label>Entity</label>' +
-        '<input type="text" id="declCfg_entity" placeholder="sensor.wohnzimmer_temperatur"></div>' +
-        '<div class="form-group"><label>Zeitraum</label><select id="declCfg_time_range">' +
-        DECL_TIME_RANGES.map(o => `<option value="${o.v}"${o.v==='24h'?' selected':''}>${o.l}</option>`).join('') +
+      return _declEntityInput('declCfg_entity', 'Entity', ['sensor','number'], 'z.B. sensor.temperatur') +
+        '<div class="form-group"><label>Zeitraum' + helpBtn('decl_tools.time_range') + '</label><select id="declCfg_time_range">' +
+        DECL_TIME_RANGES.map(o => '<option value="' + o.v + '"' + (o.v==='24h'?' selected':'') + '>' + o.l + '</option>').join('') +
         '</select></div>';
-
     case 'entity_aggregator':
-      return '<div class="form-group"><label>Entities (kommagetrennt)</label>' +
-        '<input type="text" id="declCfg_entities_list" placeholder="sensor.temp_wohn, sensor.temp_schlaf, sensor.temp_kueche"></div>' +
+      return _declEntityListInput('declCfg_entities_list', 'Entities (min. 2)', ['sensor','number','input_number'], 'Entity suchen...') +
         '<div class="form-group"><label>Aggregation</label><select id="declCfg_aggregation">' +
-        DECL_AGGREGATIONS.map(o => `<option value="${o.v}">${o.l}</option>`).join('') +
+        DECL_AGGREGATIONS.map(o => '<option value="' + o.v + '">' + o.l + '</option>').join('') +
         '</select></div>';
-
     case 'schedule_checker':
       return '<div class="form-group"><label>Zeitplaene (JSON-Array)</label>' +
-        '<textarea id="declCfg_schedules" rows="4" placeholder=\'[{"label": "Nachtmodus", "start": "22:00", "end": "06:00"}, {"label": "Arbeitszeit", "start": "08:00", "end": "17:00", "days": ["monday","tuesday","wednesday","thursday","friday"]}]\'></textarea></div>';
-
+        '<textarea id="declCfg_schedules" rows="5" style="font-family:var(--mono);font-size:12px;" placeholder=\'[{"label":"Nachtmodus","start":"22:00","end":"06:00"}]\'></textarea>' +
+        '<div class="hint">label, start (HH:MM), end (HH:MM). Optional: days (Array)</div></div>';
     default:
-      return '<div style="color:var(--text-secondary)">Bitte Typ waehlen.</div>';
+      return '<div style="color:var(--text-secondary);padding:8px;">Bitte Typ waehlen.</div>';
   }
 }
 
+// ── Config sammeln mit Validierung ───────────────────────────
 function _collectDeclConfig(type) {
-  const cfg = {};
+  var cfg = {};
+  var errors = [];
   switch(type) {
     case 'entity_comparison':
       cfg.entity_a = (document.getElementById('declCfg_entity_a')?.value || '').trim();
       cfg.entity_b = (document.getElementById('declCfg_entity_b')?.value || '').trim();
       cfg.operation = document.getElementById('declCfg_operation')?.value || 'difference';
+      if (!cfg.entity_a) errors.push('Entity A ist erforderlich');
+      if (!cfg.entity_b) errors.push('Entity B ist erforderlich');
       break;
     case 'multi_entity_formula':
-      try { cfg.entities = JSON.parse(document.getElementById('declCfg_entities')?.value || '{}'); } catch(e) { toast('Entities: Ungueltiges JSON', 'error'); return null; }
+      try { cfg.entities = JSON.parse(document.getElementById('declCfg_entities')?.value || '{}'); }
+      catch(e) { errors.push('Entities: Ungueltiges JSON'); break; }
       cfg.formula = document.getElementById('declCfg_formula')?.value || 'average';
-      const wStr = (document.getElementById('declCfg_weights')?.value || '').trim();
-      if (wStr) { try { cfg.weights = JSON.parse(wStr); } catch(e) { toast('Gewichte: Ungueltiges JSON', 'error'); return null; } }
+      if (Object.keys(cfg.entities).length < 2) errors.push('Mindestens 2 Entities erforderlich');
+      var wStr = (document.getElementById('declCfg_weights')?.value || '').trim();
+      if (wStr) { try { cfg.weights = JSON.parse(wStr); } catch(e) { errors.push('Gewichte: Ungueltiges JSON'); } }
       break;
     case 'event_counter':
-      cfg.entities = (document.getElementById('declCfg_entities_list')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+      cfg.entities = _getDeclEntityList('declCfg_entities_list');
       cfg.count_state = (document.getElementById('declCfg_count_state')?.value || 'on').trim();
       cfg.time_range = document.getElementById('declCfg_time_range')?.value || '24h';
+      if (cfg.entities.length === 0) errors.push('Mindestens eine Entity erforderlich');
       break;
     case 'threshold_monitor':
       cfg.entity = (document.getElementById('declCfg_entity')?.value || '').trim();
       cfg.thresholds = {};
-      const thMin = document.getElementById('declCfg_th_min')?.value;
-      const thMax = document.getElementById('declCfg_th_max')?.value;
+      var thMin = document.getElementById('declCfg_th_min')?.value;
+      var thMax = document.getElementById('declCfg_th_max')?.value;
       if (thMin !== '' && thMin != null) cfg.thresholds.min = parseFloat(thMin);
       if (thMax !== '' && thMax != null) cfg.thresholds.max = parseFloat(thMax);
+      if (!cfg.entity) errors.push('Entity ist erforderlich');
+      if (cfg.thresholds.min == null && cfg.thresholds.max == null) errors.push('Min oder Max Schwellwert erforderlich');
       break;
     case 'trend_analyzer':
       cfg.entity = (document.getElementById('declCfg_entity')?.value || '').trim();
       cfg.time_range = document.getElementById('declCfg_time_range')?.value || '24h';
+      if (!cfg.entity) errors.push('Entity ist erforderlich');
       break;
     case 'entity_aggregator':
-      cfg.entities = (document.getElementById('declCfg_entities_list')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+      cfg.entities = _getDeclEntityList('declCfg_entities_list');
       cfg.aggregation = document.getElementById('declCfg_aggregation')?.value || 'average';
+      if (cfg.entities.length < 2) errors.push('Mindestens 2 Entities erforderlich');
       break;
     case 'schedule_checker':
-      try { cfg.schedules = JSON.parse(document.getElementById('declCfg_schedules')?.value || '[]'); } catch(e) { toast('Zeitplaene: Ungueltiges JSON', 'error'); return null; }
+      try { cfg.schedules = JSON.parse(document.getElementById('declCfg_schedules')?.value || '[]'); }
+      catch(e) { errors.push('Zeitplaene: Ungueltiges JSON'); break; }
+      if (!Array.isArray(cfg.schedules) || cfg.schedules.length === 0) errors.push('Mindestens ein Zeitplan erforderlich');
       break;
   }
+  if (errors.length > 0) { _showDeclValidation(errors); return null; }
+  _clearDeclValidation();
   return cfg;
 }
 
+// ── Validierung ──────────────────────────────────────────────
+function _showDeclValidation(errors) {
+  var el = document.getElementById('declValidation');
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML = errors.map(function(e) { return '<div style="color:var(--danger);font-size:12px;margin-bottom:4px;">&#9888; ' + esc(e) + '</div>'; }).join('');
+}
+function _clearDeclValidation() {
+  var el = document.getElementById('declValidation');
+  if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+}
+
 function onDeclTypeChange() {
-  const type = document.getElementById('declNewType')?.value || '';
-  const container = document.getElementById('declConfigFields');
+  var type = document.getElementById('declNewType')?.value || '';
+  var container = document.getElementById('declConfigFields');
   if (container) container.innerHTML = _declTypeConfigFields(type);
-  // Beschreibung aus Typ-Info vorschlagen
-  const typeInfo = DECL_TOOL_TYPES.find(t => t.v === type);
-  const descField = document.getElementById('declNewDesc');
+  var typeInfo = DECL_TOOL_TYPES.find(function(t) { return t.v === type; });
+  var descField = document.getElementById('declNewDesc');
   if (descField && !descField.value && typeInfo) descField.placeholder = typeInfo.desc;
+  _clearDeclValidation();
 }
 
 async function createDeclTool() {
-  const name = (document.getElementById('declNewName')?.value || '').trim();
-  const desc = (document.getElementById('declNewDesc')?.value || '').trim();
-  const type = document.getElementById('declNewType')?.value || '';
-
-  if (!name) { toast('Name erforderlich', 'error'); return; }
-  if (!desc) { toast('Beschreibung erforderlich', 'error'); return; }
-  if (!type) { toast('Typ waehlen', 'error'); return; }
-
-  const config = _collectDeclConfig(type);
-  if (config === null) return; // JSON-Fehler, toast bereits gezeigt
-
+  var name = (document.getElementById('declNewName')?.value || '').trim();
+  var desc = (document.getElementById('declNewDesc')?.value || '').trim();
+  var type = document.getElementById('declNewType')?.value || '';
+  var errors = [];
+  if (!name) errors.push('Name ist erforderlich');
+  else if (!/^[a-zA-Z0-9_-]+$/.test(name)) errors.push('Name: Nur Buchstaben, Zahlen, _ und - erlaubt');
+  if (!desc) errors.push('Beschreibung ist erforderlich');
+  if (!type) errors.push('Bitte Typ waehlen');
+  if (errors.length > 0) { _showDeclValidation(errors); return; }
+  var config = _collectDeclConfig(type);
+  if (config === null) return;
+  var isEdit = _declEditMode != null;
   try {
-    await api('/api/ui/declarative-tools', 'POST', {name, description: desc, type, config});
-    toast('Tool "' + name + '" erstellt', 'success');
-    // Felder zuruecksetzen
-    document.getElementById('declNewName').value = '';
-    document.getElementById('declNewDesc').value = '';
+    await api('/api/ui/declarative-tools', 'POST', {name:name, description:desc, type:type, config:config});
+    toast('Tool "' + name + '" ' + (isEdit ? 'aktualisiert' : 'erstellt'), 'success');
+    cancelDeclEdit();
     loadDeclarativeTools();
   } catch(e) {
-    toast('Fehler: ' + (e.detail || e.message), 'error');
+    _showDeclValidation([e.detail || e.message || 'Unbekannter Fehler']);
   }
 }
 
+// ── Haupt-Render ─────────────────────────────────────────────
 function renderDeclarativeTools() {
   return sectionWrap('&#128736;', 'Aktive Analyse-Tools',
-    fInfo('Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus (nur Lese-Zugriff). Du kannst sie hier manuell erstellen oder Jarvis bitten, sie per Sprache zu bauen. Max. 20 Tools.') +
+    fInfo('Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus (nur Lese-Zugriff). Max. 20 Tools.' + helpBtn('decl_tools.overview')) +
     '<div id="declToolList" style="margin-top:12px;"><div style="padding:16px;color:var(--text-secondary);">Lade...</div></div>'
   ) +
+  sectionWrap('&#128220;', 'Vorlagen',
+    fInfo('Vorgefertigte Vorlagen — ein Klick befuellt das Formular. Entity-IDs danach an dein System anpassen.') +
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">' +
+    DECL_PRESETS.map(function(p, i) {
+      var ti = DECL_TOOL_TYPES.find(function(t) { return t.v === p.type; }) || {l:p.type};
+      return '<button class="btn btn-sm" onclick="loadDeclPreset(' + i + ')" style="padding:6px 12px;font-size:12px;text-align:left;">' +
+        '<span style="color:var(--accent);">' + esc(ti.l) + '</span><br>' +
+        '<span style="font-size:11px;">' + esc(p.desc) + '</span></button>';
+    }).join('') +
+    '</div>'
+  ) +
+  '<div id="declFormSection">' +
   sectionWrap('&#10010;', 'Neues Tool erstellen',
-    '<div class="form-group"><label>Name</label>' +
-    '<input type="text" id="declNewName" placeholder="z.B. stromvergleich, raumtemperaturen"></div>' +
+    '<div class="form-group"><label>Name' + helpBtn('decl_tools.overview') + '</label>' +
+    '<input type="text" id="declNewName" placeholder="z.B. stromvergleich, raumtemperaturen" oninput="_clearDeclValidation()">' +
+    '<div class="hint">Nur Buchstaben, Zahlen, _ und - erlaubt</div></div>' +
     '<div class="form-group"><label>Beschreibung</label>' +
-    '<input type="text" id="declNewDesc" placeholder="Was macht dieses Tool?"></div>' +
-    '<div class="form-group"><label>Typ</label><select id="declNewType" onchange="onDeclTypeChange()">' +
+    '<input type="text" id="declNewDesc" placeholder="Was macht dieses Tool?" oninput="_clearDeclValidation()"></div>' +
+    '<div class="form-group"><label>Typ' + helpBtn('decl_tools.type') + '</label><select id="declNewType" onchange="onDeclTypeChange()">' +
     '<option value="">-- Typ waehlen --</option>' +
-    DECL_TOOL_TYPES.map(t => `<option value="${t.v}">${t.l} — ${t.desc}</option>`).join('') +
+    DECL_TOOL_TYPES.map(function(t) { return '<option value="' + t.v + '">' + t.l + ' — ' + t.desc + '</option>'; }).join('') +
     '</select></div>' +
     '<div id="declConfigFields" style="margin-top:12px;"></div>' +
-    '<button class="btn btn-primary" onclick="createDeclTool()" style="margin-top:16px;">&#10010; Tool erstellen</button>'
-  ) +
+    '<div id="declValidation" style="display:none;margin-top:8px;padding:10px;background:rgba(255,61,61,0.05);border:1px solid rgba(255,61,61,0.2);border-radius:var(--radius-sm);"></div>' +
+    '<div style="display:flex;gap:8px;margin-top:16px;">' +
+    '<button class="btn btn-primary" id="declSubmitBtn" onclick="createDeclTool()">&#10010; Tool erstellen</button>' +
+    '<button class="btn btn-secondary" id="declCancelBtn" onclick="cancelDeclEdit()" style="display:none;">Abbrechen</button>' +
+    '</div>'
+  ) + '</div>' +
   sectionWrap('&#128161;', 'Tipps',
-    fInfo('Du kannst Jarvis auch bitten, Tools per Sprache zu erstellen: "Jarvis, bau mir ein Tool das die Raumtemperaturen vergleicht" — er nutzt dann create_declarative_tool automatisch.') +
+    fInfo('Du kannst Jarvis auch bitten: "Jarvis, bau mir ein Tool das die Raumtemperaturen vergleicht" — er nutzt dann create_declarative_tool automatisch.') +
     '<div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">' +
     '<strong>Verfuegbare Typen:</strong><br>' +
-    DECL_TOOL_TYPES.map(t => `<span style="color:var(--accent);">${t.l}</span> — ${t.desc}`).join('<br>') +
+    DECL_TOOL_TYPES.map(function(t) { return '<span style="color:var(--accent);">' + t.l + '</span> — ' + t.desc; }).join('<br>') +
     '</div>'
   );
 }
-
