@@ -17,7 +17,7 @@ from typing import Optional
 import yaml
 
 from .config import yaml_config, resolve_person_by_entity
-from .function_calling import get_mindhome_room, get_entity_annotation, get_all_annotations, is_entity_hidden, auto_detect_role, get_all_roles
+from .function_calling import get_mindhome_room, get_entity_annotation, is_entity_hidden, auto_detect_role
 from .ha_client import HomeAssistantClient
 from .semantic_memory import SemanticMemory
 
@@ -423,7 +423,7 @@ class ContextBuilder:
                     device_class = attrs.get("device_class", "")
                     role = auto_detect_role(domain, device_class, unit, entity_id)
                 if role and role not in ("power_meter", "energy"):
-                    desc = ann.get("description", "") if ann else ""
+                    desc = ann.get("description", "")
                     if not desc:
                         desc = _sanitize_for_prompt(
                             attrs.get("friendly_name", entity_id), 60, "sensor_name"
@@ -440,12 +440,12 @@ class ContextBuilder:
             # Binary-Sensoren (Fenster, Tueren, Bewegung etc.)
             elif domain == "binary_sensor" and s not in ("unavailable", "unknown"):
                 ann = get_entity_annotation(entity_id)
-                role = ann.get("role", "") if ann else ""
+                role = ann.get("role", "")
                 if not role:
                     device_class = attrs.get("device_class", "")
                     role = auto_detect_role(domain, device_class, "", entity_id)
                 if role:
-                    desc = (ann.get("description", "") if ann else "") or ""
+                    desc = ann.get("description", "")
                     if not desc:
                         desc = _sanitize_for_prompt(
                             attrs.get("friendly_name", entity_id), 60, "binary_name"
@@ -505,23 +505,6 @@ class ContextBuilder:
             )
             house["sensors"] = [e["text"] for e in house["annotated_sensors"][:20]]
             del house["annotated_sensors"]
-
-        # Annotierte Sensoren: Prioritaet sortieren und auf Text reduzieren
-        _ROLE_PRIORITY = {
-            "window_contact": 0, "door_contact": 0,
-            "water_leak": 1, "smoke": 1,
-            "motion": 2, "presence": 2,
-            "outdoor_temp": 3, "indoor_temp": 4,
-            "humidity": 5, "co2": 5,
-        }
-        if house.get("annotated_sensors"):
-            house["annotated_sensors"].sort(
-                key=lambda x: _ROLE_PRIORITY.get(x.get("_role", ""), 99)
-            )
-            # Auf max 20 begrenzen und nur Text-Strings behalten
-            house["annotated_sensors"] = [
-                e["text"] for e in house["annotated_sensors"][:20]
-            ]
 
         # Mittelwert aus konfigurierten Sensoren (hat Vorrang vor climate entities)
         rt_sensors = yaml_config.get("room_temperature", {}).get("sensors", []) or []

@@ -13,6 +13,7 @@ let ENTITY_ANNOTATIONS = {};
 let ENTITY_ROLES_DEFAULT = {};
 let ENTITY_ROLES_CUSTOM = {};
 let _annSaveTimer = null;
+let _roleSaveTimer = null;
 let _annBatchSelected = new Set();
 const API = '';
 let _autoSaveTimer = null;
@@ -4374,16 +4375,19 @@ function _roleOptionsHtml(selected) {
 
 async function loadEntities() {
   try {
-    // Parallel laden: Entities + Annotations + Roles
-    const [entData, annData, roleData] = await Promise.all([
+    // Parallel laden: Entities + Annotations + Roles + Room-Profiles
+    const [entData, annData, roleData, rpData] = await Promise.all([
       api('/api/ui/entities'),
       api('/api/ui/entity-annotations'),
       api('/api/ui/entity-roles'),
+      api('/api/ui/room-profiles').catch(() => ({})),
     ]);
     ALL_ENTITIES = entData.entities || [];
     ENTITY_ANNOTATIONS = annData.annotations || {};
     ENTITY_ROLES_DEFAULT = roleData.default_roles || {};
     ENTITY_ROLES_CUSTOM = roleData.custom_roles || {};
+    // RP laden falls noch nicht geladen (fuer Raum-Dropdown in Entity-Annotations)
+    if (rpData && Object.keys(rpData).length > 0) RP = rpData;
 
     // Domain-Filter
     const domains = [...new Set(ALL_ENTITIES.map(e => e.domain))].sort();
@@ -4454,10 +4458,10 @@ function _collectCustomRoles() {
 }
 
 function scheduleCustomRoleSave() {
-  if (_annSaveTimer) clearTimeout(_annSaveTimer);
+  if (_roleSaveTimer) clearTimeout(_roleSaveTimer);
   const st = document.getElementById('annAutoSaveStatus');
   if (st) st.textContent = 'Ungespeichert...';
-  _annSaveTimer = setTimeout(async () => {
+  _roleSaveTimer = setTimeout(async () => {
     try {
       const custom = _collectCustomRoles();
       await api('/api/ui/entity-roles', 'PUT', { custom_roles: custom });

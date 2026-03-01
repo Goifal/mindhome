@@ -2127,8 +2127,8 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
                 lines.append(f"- Sicherheit: {house['security']}")
 
             # Annotierte Sensoren (Fenster, Bewegung, Temperatur etc.)
-            if house.get("annotated_sensors"):
-                lines.append(f"- Sensoren: {', '.join(house['annotated_sensors'][:15])}")
+            if house.get("sensors"):
+                lines.append(f"- Sensoren: {', '.join(house['sensors'][:15])}")
 
             # Schloesser
             if house.get("locks"):

@@ -344,7 +344,9 @@ def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) 
             return "irrigation"
         if any(kw in lower_eid for kw in ("ventil", "valve")):
             return "valve"
-        return "outlet"
+        if any(kw in lower_eid for kw in ("steckdose", "plug", "socket")):
+            return "outlet"
+        return ""
 
     return ""
 
