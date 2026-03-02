@@ -1,7 +1,7 @@
 """
 Ollama API Client - Kommunikation mit dem lokalen LLM
 
-Qwen 3 / 3.5 Kompatibilitaet:
+Qwen 3 Kompatibilitaet:
 - Stripped automatisch <think>...</think> Bloecke aus Antworten
 - Thinking Mode wird fuer Fast-Tier deaktiviert (spart Latenz)
 """

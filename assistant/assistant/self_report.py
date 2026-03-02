@@ -26,7 +26,7 @@ class SelfReport:
         self.ollama = None
         self.enabled = False
         self._cfg = yaml_config.get("self_report", {})
-        self._model = self._cfg.get("model", "qwen3.5:9b")
+        self._model = self._cfg.get("model", "qwen3:14b")
         self._last_report_day: str = ""
 
     async def initialize(self, redis_client, ollama_client):
