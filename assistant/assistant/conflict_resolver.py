@@ -115,7 +115,7 @@ class ConflictResolver:
         # Mediations-Config
         med_cfg = cfg.get("mediation", {})
         self._mediation_enabled = med_cfg.get("enabled", True)
-        self._mediation_model = med_cfg.get("model", "qwen3:14b")
+        self._mediation_model = med_cfg.get("model", "qwen3.5:9b")
         self._mediation_max_tokens = int(med_cfg.get("max_tokens", 256))
         self._mediation_temperature = med_cfg.get("temperature", 0.7)
 
