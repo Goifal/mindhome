@@ -107,7 +107,7 @@ class TestSecurityScore:
     async def test_open_doors_reduce_score(self, threat):
         threat.ha.get_states.return_value = [
             {"entity_id": "binary_sensor.door_front", "state": "on"},
-            {"entity_id": "binary_sensor.door_garage", "state": "on"},
+            {"entity_id": "binary_sensor.door_back", "state": "on"},
         ]
         result = await threat.get_security_score()
         assert result["score"] <= 70
@@ -214,3 +214,44 @@ class TestDoorsNobodyHome:
             {"entity_id": "binary_sensor.door_front", "state": "on"},
         ]
         assert threat._check_doors_nobody_home(states) == []
+
+    def test_system_monitor_not_detected_as_gate(self, threat):
+        """System-Monitor-Prozesse duerfen NICHT als offene Tore erkannt werden.
+
+        Regression-Test: HA System Monitor Entities mit 'monitor', 'motor',
+        'actuator' im Namen loesten False-Positive 'Tor offen' Warnungen aus.
+        """
+        states = [
+            {"entity_id": "person.max", "state": "not_home"},
+            # System Monitor Prozess-Sensoren (binary_sensor mit "tor" als Substring)
+            {"entity_id": "binary_sensor.system_monitor_process", "state": "on",
+             "attributes": {"friendly_name": "System Monitor Prozess"}},
+            {"entity_id": "binary_sensor.motor_status", "state": "on",
+             "attributes": {"friendly_name": "Motor Status"}},
+            {"entity_id": "binary_sensor.actuator_valve", "state": "on",
+             "attributes": {"friendly_name": "Actuator Ventil"}},
+        ]
+        result = threat._check_doors_nobody_home(states)
+        assert result == [], f"System-Entities faelschlich als Tuer/Tor erkannt: {result}"
+
+    def test_real_gate_still_detected(self, threat):
+        """Echte Tore (gartentor, tor_einfahrt) muessen weiterhin erkannt werden."""
+        states = [
+            {"entity_id": "person.max", "state": "not_home"},
+            {"entity_id": "binary_sensor.gartentor", "state": "on",
+             "attributes": {"friendly_name": "Gartentor"}},
+        ]
+        result = threat._check_doors_nobody_home(states)
+        assert len(result) == 1
+        assert result[0]["urgency"] == "critical"
+        assert "Gartentor" in result[0]["message"]
+
+    def test_tor_segment_in_entity_id(self, threat):
+        """Entity-IDs mit 'tor' als Segment (z.B. _tor_, _tor) werden erkannt."""
+        states = [
+            {"entity_id": "person.max", "state": "not_home"},
+            {"entity_id": "binary_sensor.einfahrt_tor_status", "state": "on",
+             "attributes": {"friendly_name": "Einfahrtstor"}},
+        ]
+        result = threat._check_doors_nobody_home(states)
+        assert len(result) == 1

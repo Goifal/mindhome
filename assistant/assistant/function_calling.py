@@ -146,6 +146,31 @@ def get_mindhome_room(entity_id: str) -> str:
     return _mindhome_device_rooms.get(entity_id, "")
 
 
+# Woerter die "tor" als Substring enthalten aber KEINE Tore sind.
+# Verhindert False-Positives bei z.B. "system_monitor", "motor_status".
+_TOR_FALSE_POSITIVES = (
+    "monitor", "motor", "actuator", "senator", "factor", "vector",
+    "sector", "doctor", "director", "operator", "generator", "collector",
+    "connector", "detector", "protector", "reactor", "torsion", "tortoise",
+    "history", "factory", "store", "story", "restore", "storage",
+    "tutorial", "editor", "visitor", "mentor",
+)
+
+
+def _has_tor_keyword(entity_id_lower: str) -> bool:
+    """Prueft ob 'tor' in der Entity-ID ein echtes Tor (Gate) bedeutet.
+
+    Erkennt: gartentor, tor_sensor, einfahrtstor, garagentor
+    Ignoriert: system_monitor, motor_status, actuator_valve, detector
+    """
+    if "tor" not in entity_id_lower:
+        return False
+    # Blocklist: Wenn ein bekanntes False-Positive-Wort vorkommt → kein Tor
+    if any(fp in entity_id_lower for fp in _TOR_FALSE_POSITIVES):
+        return False
+    return True
+
+
 def is_window_or_door(entity_id: str, state: dict) -> bool:
     """Prueft zuverlaessig ob eine Entity ein Fenster/Tuer/Tor-Kontakt ist.
 
@@ -178,7 +203,12 @@ def is_window_or_door(entity_id: str, state: dict) -> bool:
     ha_domain = entity_id.split(".")[0] if "." in entity_id else ""
     if ha_domain == "binary_sensor":
         lower_id = entity_id.lower()
-        if any(kw in lower_id for kw in ("window", "door", "fenster", "tuer", "tor", "gate")):
+        # Einfache Substring-Keywords (selten False-Positives)
+        if any(kw in lower_id for kw in ("window", "door", "fenster", "tuer", "gate")):
+            return True
+        # "tor" mit Blocklist-Check um False-Positives
+        # wie "monitor", "motor", "actuator" zu vermeiden
+        if _has_tor_keyword(lower_id):
             return True
 
     return False
@@ -581,9 +611,91 @@ _ROLE_KEYWORDS = {
     # Ueberwachung
     "camera": ["kamera", "ueberwachung", "cam",
                "camera", "surveillance", "cctv", "webcam"],
+    "intercom": ["gegensprech", "sprechanlage", "tuersprechanlage", "klingelanlage",
+                 "intercom", "door station", "video doorbell"],
     # Zonen
     "zone": ["zone", "zonen", "bereich", "gebiet", "standort", "geofence",
              "area", "location"],
+    # --- Fehlende Rollen (fuer vollstaendiges LLM-Matching) ---
+    # Temperatur & Klima
+    "dew_point": ["taupunkt", "dew point"],
+    # Luftqualitaet
+    "pm10": ["pm10", "feinstaub pm10", "grobstaub",
+             "coarse dust", "particulate pm10"],
+    "radon": ["radon", "radon sensor", "radioaktiv"],
+    # Wetter
+    "wind_direction": ["windrichtung", "wind direction", "wind bearing"],
+    "rain_sensor": ["regensensor", "regenmelder", "rain sensor", "rain detector"],
+    "solar_radiation": ["sonneneinstrahlung", "solarstrahlung", "irradiance",
+                        "solar radiation", "sun intensity"],
+    # Licht & Helligkeit
+    "light": ["licht", "lampe", "beleuchtung", "leuchte",
+              "light", "lamp", "lighting"],
+    "dimmer": ["dimmer", "dimmen", "dimmbar", "dimmschalter",
+               "dimmer switch", "dimmable"],
+    "color_light": ["farblicht", "rgb", "farbig", "bunt", "farbwechsel",
+                    "color light", "rgb light", "hue", "color changing"],
+    "light_level": ["lichtsensor", "helligkeit", "lichtstaerke", "lux",
+                    "light sensor", "light level", "illuminance", "brightness sensor"],
+    # Sicherheit
+    "siren": ["sirene", "alarmsirene", "siren", "horn"],
+    # Bewegung & Anwesenheit
+    "vibration": ["vibration", "erschuetterung", "vibrationssensor",
+                  "vibration sensor", "shock sensor"],
+    # Energie & Strom
+    "current": ["stromstaerke", "ampere", "current", "amps"],
+    "power_factor": ["leistungsfaktor", "cos phi", "power factor"],
+    "frequency": ["frequenz", "hertz", "netzfrequenz", "frequency", "grid frequency"],
+    "battery_charging": ["batterie laden", "akku laden", "ladevorgang",
+                         "battery charging", "charging"],
+    "grid_feed": ["netzeinspeisung", "einspeisung", "einspeisen",
+                  "grid feed", "feed-in", "grid export"],
+    "grid_consumption": ["netzbezug", "strombezug", "netzverbrauch",
+                         "grid consumption", "grid import"],
+    # Heizung & Klima
+    "dehumidifier": ["entfeuchter", "luftentfeuchter", "raumentfeuchter",
+                     "dehumidifier"],
+    "humidifier": ["befeuchter", "luftbefeuchter", "raumbefeuchter",
+                   "humidifier"],
+    # Steckdosen & Aktoren
+    "motor": ["motor", "antrieb", "motor", "actuator", "drive"],
+    "relay": ["relais", "schaltrelais", "relay", "switch relay"],
+    # Garten
+    "garden_light": ["gartenlicht", "gartenbeleuchtung", "gartenlampe", "aussenleuchte",
+                     "garden light", "outdoor light", "landscape light"],
+    # Medien & Unterhaltung
+    "projector": ["beamer", "projektor", "projector"],
+    "gaming": ["spielkonsole", "konsole", "playstation", "xbox", "nintendo",
+               "gaming", "game console"],
+    # Netzwerk & IT
+    "printer": ["drucker", "printer", "3d-drucker", "3d printer"],
+    "signal_strength": ["signalstaerke", "empfang", "signal strength", "rssi", "snr"],
+    "connectivity": ["verbindung", "verbindungsstatus", "online", "erreichbar",
+                     "connectivity", "connection status"],
+    # Haushaltsgeraete
+    "oven": ["backofen", "ofen", "herd", "oven", "stove"],
+    "fridge": ["kuehlschrank", "kuehl", "fridge", "refrigerator"],
+    "freezer": ["gefrierschrank", "gefrier", "tiefkuehl",
+                "freezer", "deep freeze"],
+    "charger": ["ladegeraet", "lader", "charger"],
+    # Fahrzeuge
+    "car_location": ["auto standort", "fahrzeug standort", "auto position", "wo ist mein auto",
+                     "car location", "vehicle location", "car tracker"],
+    # Sonstiges
+    "scene": ["szene", "scene"],
+    "automation": ["automatisierung", "automation"],
+    "timer": ["timer", "countdown", "stoppuhr", "timer", "stopwatch"],
+    "counter": ["zaehler", "counter"],
+    "distance": ["entfernung", "abstand", "distance"],
+    "speed": ["geschwindigkeit", "speed", "tempo"],
+    "weight": ["gewicht", "waage", "weight", "scale"],
+    "noise": ["laerm", "lautstaerke", "geraeusch", "dezibel",
+              "noise", "sound level", "decibel"],
+    "problem": ["problem", "stoerung", "fehler", "problem", "fault", "error"],
+    "update": ["update", "aktualisierung", "firmware", "update available"],
+    "running": ["laeuft", "aktiv", "in betrieb", "running", "active"],
+    "generic_sensor": ["sensor", "messwert", "sensor", "reading"],
+    "generic_switch": ["schalter", "switch"],
 }
 
 
@@ -807,7 +919,8 @@ def get_opening_type(entity_id: str, state: dict) -> str:
 
     # 3. Keyword-Fallback
     lower_id = entity_id.lower()
-    if any(kw in lower_id for kw in ("tor", "gate", "garage")):
+    # "tor" mit Blocklist-Check um False-Positives (monitor, motor, ...) zu vermeiden
+    if _has_tor_keyword(lower_id) or any(kw in lower_id for kw in ("gate", "garage")):
         return "gate"
     if any(kw in lower_id for kw in ("tuer", "door")):
         return "door"

@@ -700,6 +700,8 @@ const HELP_TEXTS = {
   'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster fuer das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. 2048 empfohlen fuer 4B Modelle.'},
   'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster fuer das Smart-Modell (Gespraeche).', detail:'4096 = Standard. Mehr Kontext = besseres Gespraechsgedaechtnis, aber mehr VRAM.'},
   'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster fuer das Deep-Modell (komplexe Aufgaben).', detail:'MoE-Modelle (z.B. Qwen3.5-27B) sind VRAM-effizient und vertragen 8192+.'},
+  'planner.max_iterations': {title:'Max. Planungsschritte', text:'Wie viele Planungsrunden der Action Planner maximal durchlaeuft.', detail:'8 = Standard. Komplexe Aufgaben wie "Mach alles fertig fuer morgen" brauchen mehr Schritte. Bei Timeout-Problemen reduzieren.'},
+  'planner.max_tokens': {title:'Planner Antwortlaenge', text:'Maximale Tokens pro Planungsschritt.', detail:'512 = Standard. Erhoehen wenn der Planner Plaene abschneidet.'},
   'models.fast_keywords': {title:'Fast-Keywords', text:'Woerter die das schnelle Modell aktivieren.'},
   'models.deep_keywords': {title:'Deep-Keywords', text:'Woerter die das ausfuehrliche Modell aktivieren.'},
   'models.cooking_keywords': {title:'Koch-Keywords', text:'Woerter die den Koch-Modus aktivieren.'},
@@ -751,7 +753,8 @@ const HELP_TEXTS = {
   'summarizer.max_tokens_daily': {title:'Laenge taeglich', text:'Max. Laenge der taeglichen Zusammenfassung.'},
   'summarizer.max_tokens_weekly': {title:'Laenge woechentlich', text:'Max. Laenge der woechentlichen Zusammenfassung.'},
   'summarizer.max_tokens_monthly': {title:'Laenge monatlich', text:'Max. Laenge der monatlichen Zusammenfassung.'},
-  'context.recent_conversations': {title:'Gespraeche merken', text:'Wie viele vergangene Gespraeche im Kontext bleiben.'},
+  'context.recent_conversations': {title:'Gespraeche merken', text:'Wie viele vergangene Gespraeche Jarvis sich im normalen Modus merkt (pro Nachricht).'},
+  'context.conversation_mode_timeout': {title:'Gespraechsmodus Timeout', text:'Wenn die letzte Nachricht weniger als X Sekunden her ist, aktiviert Jarvis den Gespraechsmodus und merkt sich doppelt so viele Nachrichten. So kannst du laengere Gespraeche fuehren.'},
   'context.api_timeout': {title:'HA-API Timeout', text:'Timeout fuer Home-Assistant-Anfragen (Sek).'},
   'context.llm_timeout': {title:'LLM Timeout', text:'Timeout fuer KI-Anfragen (Sek). Groessere Modelle brauchen laenger.'},
   // === STIMMUNG ===
@@ -1907,6 +1910,11 @@ function renderPersonality() {
     fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 16384, 1024, {2048:'2K',4096:'4K',6144:'6K',8192:'8K',12288:'12K',16384:'16K'}) +
     fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K',24576:'24K',32768:'32K'})
   ) +
+  sectionWrap('&#129504;', 'Action Planner',
+    fInfo('Der Action Planner fuehrt komplexe Multi-Step Anfragen aus (z.B. "Mach alles fertig fuer morgen"). Er plant iterativ mit dem Deep-Modell und fuehrt Tool-Calls parallel aus.') +
+    fRange('planner.max_iterations', 'Max. Planungsschritte', 3, 15, 1, {3:'3',5:'5',8:'8',10:'10',15:'15'}) +
+    fRange('planner.max_tokens', 'Max. Tokens pro Planungsschritt', 256, 2048, 128)
+  ) +
   sectionWrap('&#127991;', 'Schnell-Erkennung',
     fInfo('Klicke auf Woerter, die das jeweilige Modell ausloesen sollen. Ausgewaehlte Woerter sind hervorgehoben.') +
     fChipSelect('models.fast_keywords', 'Fast-Keywords — Woerter fuer schnelle Antworten', [
@@ -2035,9 +2043,10 @@ function renderMemory() {
     fRange('summarizer.max_tokens_weekly', 'Laenge woechentlich', 128, 2048, 64) +
     fRange('summarizer.max_tokens_monthly', 'Laenge monatlich', 128, 2048, 64)
   ) +
-  sectionWrap('&#128172;', 'Kontext',
-    fInfo('Wie viel Gespraechsverlauf soll der Assistent bei jeder Antwort beruecksichtigen?') +
-    fRange('context.recent_conversations', 'Letzte Gespraeche merken', 1, 20, 1) +
+  sectionWrap('&#128172;', 'Kontext & Gespraechsmodus',
+    fInfo('Wie viel Gespraechsverlauf Jarvis sich merkt. Im Gespraechsmodus (aktives Chatten) merkt er sich automatisch doppelt so viele Nachrichten und fasst aeltere zusammen, damit der Kontext erhalten bleibt.') +
+    fRange('context.recent_conversations', 'Gespraeche merken (normal)', 1, 30, 1) +
+    fRange('context.conversation_mode_timeout', 'Gespraechsmodus aktiv (Sek.)', 60, 900, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min (Standard)',600:'10 Min',900:'15 Min'}) +
     fRange('context.api_timeout', 'HA-API Timeout (Sek.)', 1, 30, 1) +
     fRange('context.llm_timeout', 'LLM Timeout (Sek.)', 15, 120, 5, {15:'15s',30:'30s',45:'45s',60:'60s',90:'90s',120:'2 Min'})
   ) +

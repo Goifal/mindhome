@@ -719,6 +719,37 @@ class AssistantBrain(BrainCallbacksMixin):
 
         self._task_registry.create_task(_save(), name="memory_exchange")
 
+    async def _summarize_conversation_chunk(self, messages: list[dict]) -> Optional[str]:
+        """Fasst aeltere Gespraechs-Nachrichten zu einer kompakten Zusammenfassung zusammen.
+
+        Wird im Gespraechsmodus genutzt, wenn die volle History nicht ins
+        Token-Budget passt. So bleibt der Kontext erhalten, auch bei langen Gespraechen.
+        """
+        if not messages:
+            return None
+        try:
+            lines = []
+            for m in messages:
+                role = "User" if m.get("role") == "user" else "Jarvis"
+                lines.append(f"{role}: {m.get('content', '')}")
+            conversation_text = "\n".join(lines)
+            # Kurzes LLM-Summary mit dem schnellen Modell
+            prompt = (
+                "Fasse das folgende Gespraech in 2-3 Saetzen zusammen. "
+                "Behalte die wichtigsten Themen, Fragen und Entscheidungen. "
+                "Antworte NUR mit der Zusammenfassung, kein Kommentar.\n\n"
+                f"{conversation_text}"
+            )
+            summary = await self.ollama.generate(
+                prompt=prompt,
+                model=settings.model_fast,
+                max_tokens=200,
+            )
+            return summary.strip() if summary else None
+        except Exception as e:
+            logger.debug("Gespraechs-Zusammenfassung fehlgeschlagen: %s", e)
+            return None
+
     def _update_stt_context(self, user_text: str) -> None:
         """STT-3: Speichert die letzten User-Saetze in Redis fuer dynamischen Whisper-Kontext.
 
@@ -2226,6 +2257,26 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.info("Model Upgrade %s -> %s (signals: %d)", model, _upgraded, _upgrade_signals)
                 model = _upgraded
 
+        # 3b. Gespraechsmodus erkennen (VOR System-Prompt-Bau, damit Prompt angepasst wird)
+        _conversation_mode = False
+        try:
+            _conv_cfg = cfg.yaml_config.get("context", {})
+            _cm_timeout = int(_conv_cfg.get("conversation_mode_timeout", 300))
+            _cm_msgs = await self.memory.get_recent_conversations(limit=2)
+            if _cm_msgs:
+                from datetime import datetime as _dt_cm
+                _cm_ts = _cm_msgs[-1].get("timestamp", "")
+                if _cm_ts:
+                    _cm_age = (_dt_cm.now() - _dt_cm.fromisoformat(_cm_ts)).total_seconds()
+                    if _cm_age < _cm_timeout:
+                        _conversation_mode = True
+        except Exception:
+            pass
+        if context is None:
+            context = {}
+        context["conversation_mode"] = _conversation_mode
+        self._active_conversation_mode = _conversation_mode
+
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
         # Formality-Score cachen fuer Refinement-Prompts (Tool-Feedback)
         self._last_formality_score = formality_score if formality_score is not None else self.personality.formality_start
@@ -2468,10 +2519,32 @@ class AssistantBrain(BrainCallbacksMixin):
         # Token-Budget fuer Conversations: Restliches Budget nach System-Prompt + Sektionen
         system_tokens = len(system_prompt) // 3
         available_tokens = max(500, max_context_tokens - system_tokens - user_tokens_est - 200)
+        # Gespraeche laden — Anzahl aus yaml_config (UI-konfigurierbar)
+        conv_cfg = cfg.yaml_config.get("context", {})
+        conv_limit = int(conv_cfg.get("recent_conversations", 5))
+        # Nutze den bereits erkannten Gespraechsmodus (aus Schritt 3b)
+        conversation_mode = _conversation_mode
+        effective_limit = conv_limit * 2 if conversation_mode else conv_limit
+        if conversation_mode:
+            logger.info("Gespraechsmodus aktiv: Lade %d statt %d Nachrichten", effective_limit, conv_limit)
         # Dynamisch: Conversations laden bis Token-Budget aufgebraucht
-        recent = await self.memory.get_recent_conversations(limit=8)
+        recent = await self.memory.get_recent_conversations(limit=effective_limit)
         messages = [{"role": "system", "content": system_prompt}]
         conv_tokens_used = 0
+        # Im Gespraechsmodus: Wenn nicht alle Nachrichten reinpassen,
+        # aeltere zusammenfassen damit mehr Kontext erhalten bleibt
+        if conversation_mode and len(recent) > 4:
+            # Budget pruefen: Passen alle rein?
+            total_est = sum(len(c.get("content", "")) // 3 for c in recent)
+            if total_est > available_tokens:
+                # Aeltere Haelfte zusammenfassen, neuere 1:1 behalten
+                split = len(recent) // 2
+                older = recent[:split]
+                recent = recent[split:]
+                summary = await self._summarize_conversation_chunk(older)
+                if summary:
+                    messages.append({"role": "system", "content": f"[Bisheriges Gespraech]: {summary}"})
+                    conv_tokens_used += len(summary) // 3
         for conv in recent:
             conv_tokens = len(conv.get("content", "")) // 3
             if conv_tokens_used + conv_tokens > available_tokens:
@@ -2663,7 +2736,10 @@ class AssistantBrain(BrainCallbacksMixin):
             elif profile.category == "device_command":
                 response_tokens = 150   # "Erledigt." braucht keine 256 Tokens
             else:
-                response_tokens = 384   # Standard-Gespraech: doppelt so viel wie vorher
+                response_tokens = 384   # Standard-Gespraech
+            # Gespraechsmodus: Mehr Tokens fuer ausfuehrliche Antworten
+            if _conversation_mode and profile.category != "device_command":
+                response_tokens = max(response_tokens, 1024)
 
             llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
 
@@ -4777,8 +4853,11 @@ class AssistantBrain(BrainCallbacksMixin):
         text = re.sub(r"!\s*!", "!", text)
 
         # 6. Max Sentences begrenzen (Override hat Vorrang, z.B. Nachtmodus)
+        # Im Gespraechsmodus: Keine Satz-Begrenzung (Jarvis darf ausfuehrlich antworten)
         # Verbessertes Satz-Splitting: Schutzt Abkuerzungen, Dezimalzahlen und Auslassungspunkte
         max_sentences = max_sentences_override or filter_config.get("max_response_sentences", 0)
+        if max_sentences > 0 and not max_sentences_override and getattr(self, "_active_conversation_mode", False):
+            max_sentences = 0  # Unbegrenzt im Gespraechsmodus
         if max_sentences > 0:
             # Schutz-Tokens: Bekannte Abkuerzungen und Muster VOR dem Split ersetzen
             _protected = text

@@ -227,7 +227,7 @@ memory:
   episode_min_words: 3
   default_confidence: 0.7
 planner:
-  max_iterations: 5
+  max_iterations: 8
   model: qwen3.5:9b
   max_tokens: 512
   complex_keywords:
@@ -344,7 +344,8 @@ summarizer:
   max_tokens_weekly: 384
   max_tokens_monthly: 512
 context:
-  recent_conversations: 5
+  recent_conversations: 8
+  conversation_mode_timeout: 300  # Sek. — Gespraechsmodus aktiv wenn letzte Nachricht < X Sek
   api_timeout: 10
   llm_timeout: 60
 heating:
