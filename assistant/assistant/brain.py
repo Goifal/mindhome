@@ -719,6 +719,37 @@ class AssistantBrain(BrainCallbacksMixin):
 
         self._task_registry.create_task(_save(), name="memory_exchange")
 
+    async def _summarize_conversation_chunk(self, messages: list[dict]) -> Optional[str]:
+        """Fasst aeltere Gespraechs-Nachrichten zu einer kompakten Zusammenfassung zusammen.
+
+        Wird im Gespraechsmodus genutzt, wenn die volle History nicht ins
+        Token-Budget passt. So bleibt der Kontext erhalten, auch bei langen Gespraechen.
+        """
+        if not messages:
+            return None
+        try:
+            lines = []
+            for m in messages:
+                role = "User" if m.get("role") == "user" else "Jarvis"
+                lines.append(f"{role}: {m.get('content', '')}")
+            conversation_text = "\n".join(lines)
+            # Kurzes LLM-Summary mit dem schnellen Modell
+            prompt = (
+                "Fasse das folgende Gespraech in 2-3 Saetzen zusammen. "
+                "Behalte die wichtigsten Themen, Fragen und Entscheidungen. "
+                "Antworte NUR mit der Zusammenfassung, kein Kommentar.\n\n"
+                f"{conversation_text}"
+            )
+            summary = await self.ollama.generate(
+                prompt=prompt,
+                model=settings.model_fast,
+                max_tokens=200,
+            )
+            return summary.strip() if summary else None
+        except Exception as e:
+            logger.debug("Gespraechs-Zusammenfassung fehlgeschlagen: %s", e)
+            return None
+
     def _update_stt_context(self, user_text: str) -> None:
         """STT-3: Speichert die letzten User-Saetze in Redis fuer dynamischen Whisper-Kontext.
 
@@ -2468,10 +2499,46 @@ class AssistantBrain(BrainCallbacksMixin):
         # Token-Budget fuer Conversations: Restliches Budget nach System-Prompt + Sektionen
         system_tokens = len(system_prompt) // 3
         available_tokens = max(500, max_context_tokens - system_tokens - user_tokens_est - 200)
+        # Gespraeche laden — Anzahl aus yaml_config (UI-konfigurierbar)
+        conv_cfg = cfg.yaml_config.get("context", {})
+        conv_limit = int(conv_cfg.get("recent_conversations", 5))
+        # Gespraechsmodus: Wenn User aktiv chattet (letzte Nachricht < 5 Min),
+        # doppeltes History-Fenster fuer besseren Kontext
+        conversation_mode = False
+        try:
+            last_msgs = await self.memory.get_recent_conversations(limit=2)
+            if last_msgs:
+                from datetime import datetime as _dt
+                last_ts = last_msgs[-1].get("timestamp", "")
+                if last_ts:
+                    last_time = _dt.fromisoformat(last_ts)
+                    age_seconds = (_dt.now() - last_time).total_seconds()
+                    conv_mode_timeout = int(conv_cfg.get("conversation_mode_timeout", 300))
+                    if age_seconds < conv_mode_timeout:
+                        conversation_mode = True
+        except Exception:
+            pass
+        effective_limit = conv_limit * 2 if conversation_mode else conv_limit
+        if conversation_mode:
+            logger.info("Gespraechsmodus aktiv: Lade %d statt %d Nachrichten", effective_limit, conv_limit)
         # Dynamisch: Conversations laden bis Token-Budget aufgebraucht
-        recent = await self.memory.get_recent_conversations(limit=8)
+        recent = await self.memory.get_recent_conversations(limit=effective_limit)
         messages = [{"role": "system", "content": system_prompt}]
         conv_tokens_used = 0
+        # Im Gespraechsmodus: Wenn nicht alle Nachrichten reinpassen,
+        # aeltere zusammenfassen damit mehr Kontext erhalten bleibt
+        if conversation_mode and len(recent) > 4:
+            # Budget pruefen: Passen alle rein?
+            total_est = sum(len(c.get("content", "")) // 3 for c in recent)
+            if total_est > available_tokens:
+                # Aeltere Haelfte zusammenfassen, neuere 1:1 behalten
+                split = len(recent) // 2
+                older = recent[:split]
+                recent = recent[split:]
+                summary = await self._summarize_conversation_chunk(older)
+                if summary:
+                    messages.append({"role": "system", "content": f"[Bisheriges Gespraech]: {summary}"})
+                    conv_tokens_used += len(summary) // 3
         for conv in recent:
             conv_tokens = len(conv.get("content", "")) // 3
             if conv_tokens_used + conv_tokens > available_tokens:

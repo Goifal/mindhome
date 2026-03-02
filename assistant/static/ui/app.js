@@ -753,7 +753,8 @@ const HELP_TEXTS = {
   'summarizer.max_tokens_daily': {title:'Laenge taeglich', text:'Max. Laenge der taeglichen Zusammenfassung.'},
   'summarizer.max_tokens_weekly': {title:'Laenge woechentlich', text:'Max. Laenge der woechentlichen Zusammenfassung.'},
   'summarizer.max_tokens_monthly': {title:'Laenge monatlich', text:'Max. Laenge der monatlichen Zusammenfassung.'},
-  'context.recent_conversations': {title:'Gespraeche merken', text:'Wie viele vergangene Gespraeche im Kontext bleiben.'},
+  'context.recent_conversations': {title:'Gespraeche merken', text:'Wie viele vergangene Gespraeche Jarvis sich im normalen Modus merkt (pro Nachricht).'},
+  'context.conversation_mode_timeout': {title:'Gespraechsmodus Timeout', text:'Wenn die letzte Nachricht weniger als X Sekunden her ist, aktiviert Jarvis den Gespraechsmodus und merkt sich doppelt so viele Nachrichten. So kannst du laengere Gespraeche fuehren.'},
   'context.api_timeout': {title:'HA-API Timeout', text:'Timeout fuer Home-Assistant-Anfragen (Sek).'},
   'context.llm_timeout': {title:'LLM Timeout', text:'Timeout fuer KI-Anfragen (Sek). Groessere Modelle brauchen laenger.'},
   // === STIMMUNG ===
@@ -2042,9 +2043,10 @@ function renderMemory() {
     fRange('summarizer.max_tokens_weekly', 'Laenge woechentlich', 128, 2048, 64) +
     fRange('summarizer.max_tokens_monthly', 'Laenge monatlich', 128, 2048, 64)
   ) +
-  sectionWrap('&#128172;', 'Kontext',
-    fInfo('Wie viel Gespraechsverlauf soll der Assistent bei jeder Antwort beruecksichtigen?') +
-    fRange('context.recent_conversations', 'Letzte Gespraeche merken', 1, 20, 1) +
+  sectionWrap('&#128172;', 'Kontext & Gespraechsmodus',
+    fInfo('Wie viel Gespraechsverlauf Jarvis sich merkt. Im Gespraechsmodus (aktives Chatten) merkt er sich automatisch doppelt so viele Nachrichten und fasst aeltere zusammen, damit der Kontext erhalten bleibt.') +
+    fRange('context.recent_conversations', 'Gespraeche merken (normal)', 1, 30, 1) +
+    fRange('context.conversation_mode_timeout', 'Gespraechsmodus aktiv (Sek.)', 60, 900, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min (Standard)',600:'10 Min',900:'15 Min'}) +
     fRange('context.api_timeout', 'HA-API Timeout (Sek.)', 1, 30, 1) +
     fRange('context.llm_timeout', 'LLM Timeout (Sek.)', 15, 120, 5, {15:'15s',30:'30s',45:'45s',60:'60s',90:'90s',120:'2 Min'})
   ) +

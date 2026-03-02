@@ -344,7 +344,8 @@ summarizer:
   max_tokens_weekly: 384
   max_tokens_monthly: 512
 context:
-  recent_conversations: 5
+  recent_conversations: 8
+  conversation_mode_timeout: 300  # Sek. — Gespraechsmodus aktiv wenn letzte Nachricht < X Sek
   api_timeout: 10
   llm_timeout: 60
 heating:
