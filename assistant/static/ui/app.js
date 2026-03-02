@@ -15,6 +15,7 @@ let ENTITY_ROLES_CUSTOM = {};
 let _annSaveTimer = null;
 let _roleSaveTimer = null;
 let _annBatchSelected = new Set();
+let AVAILABLE_MODELS = [];  // Dynamisch von Ollama geladen
 const API = '';
 let _autoSaveTimer = null;
 const _AUTO_SAVE_DELAY = 2000;  // 2 Sekunden Debounce
@@ -591,8 +592,13 @@ function mergeCurrentTabIntoS() {
 async function loadSettings() {
   try {
     S = await api('/api/ui/settings');
-    // Room-Profiles parallel laden
-    try { RP = await api('/api/ui/room-profiles'); } catch(e) { RP = {}; }
+    // Room-Profiles + Ollama-Modelle parallel laden
+    const [rp, ml] = await Promise.all([
+      api('/api/ui/room-profiles').catch(() => ({})),
+      api('/api/ui/models/available').catch(() => ({models: []})),
+    ]);
+    RP = rp;
+    AVAILABLE_MODELS = ml.models || [];
     _rpDirty = false;
     renderCurrentTab();
     _initAutoSave();
@@ -1245,30 +1251,28 @@ function toggleChip(path, value) {
   scheduleAutoSave();
 }
 
-// Modell-Auswahl als Dropdown
+// Modell-Auswahl als Dropdown (dynamisch aus Ollama)
 function fModelSelect(path, label, hint='') {
   const v = getPath(S, path) ?? '';
-  const models = [
-    {v:'qwen3:4b', l:'Qwen3 4B (Schnell)'},
-    {v:'qwen3:8b', l:'Qwen3 8B (Ausgewogen)'},
-    {v:'qwen3:14b', l:'Qwen3 14B (Smart)'},
-    {v:'qwen3:32b', l:'Qwen3 32B (Deep)'},
-    {v:'llama3.2:3b', l:'Llama 3.2 3B'},
-    {v:'llama3.1:8b', l:'Llama 3.1 8B'},
-    {v:'gemma3:4b', l:'Gemma3 4B'},
-    {v:'gemma3:12b', l:'Gemma3 12B'},
-    {v:'gemma3:27b', l:'Gemma3 27B'},
-    {v:'phi4:14b', l:'Phi4 14B'},
-    {v:'mistral:7b', l:'Mistral 7B'},
-    {v:'deepseek-r1:14b', l:'DeepSeek-R1 14B'},
-    {v:'deepseek-r1:32b', l:'DeepSeek-R1 32B'},
-  ];
-  // Aktuellen Wert in Liste sicherstellen
+  // Dynamische Liste aus AVAILABLE_MODELS (von /api/ui/models/available)
+  const models = AVAILABLE_MODELS.map(name => ({v: name, l: _modelLabel(name)}));
+  // Aktuellen Wert in Liste sicherstellen (falls Modell deinstalliert wurde)
   const hasVal = models.some(m => m.v === v);
   let h = `<div class="form-group"><label>${label}${helpBtn(path)}</label><select data-path="${path}">`;
-  if (!hasVal && v) h += `<option value="${esc(v)}" selected>${esc(v)}</option>`;
+  if (!hasVal && v) h += `<option value="${esc(v)}" selected>${esc(v)} (nicht installiert)</option>`;
   for (const m of models) h += `<option value="${m.v}" ${v===m.v?'selected':''}>${m.l}</option>`;
   return h + `</select>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+
+// Menschenlesbare Labels fuer Ollama-Modellnamen
+function _modelLabel(name) {
+  const parts = name.split(':');
+  const base = parts[0] || name;
+  const tag = parts[1] || '';
+  const sizeMatch = tag.match(/^(\d+\.?\d*)b/i);
+  const size = sizeMatch ? sizeMatch[1] + 'B' : tag;
+  const pretty = base.charAt(0).toUpperCase() + base.slice(1);
+  return size ? `${pretty} ${size}` : pretty;
 }
 
 // Key-Value Mapping Editor (fuer Device-Mapping, DoA-Mapping etc.)
