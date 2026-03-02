@@ -1193,6 +1193,22 @@ vacuum:
     auto_fan_speed: "standard"
     # Modus fuer automatisches Saugen (optional, sonst default_mode)
     auto_mode: "vacuum"
+  # Anwesenheits-Steuerung: Vacuum nur wenn keiner zuhause.
+  # Gilt fuer ALLE Trigger (Auto-Clean, Steckdose, Szene).
+  presence_guard:
+    enabled: true
+    # Alarmanlage automatisch umschalten fuer Saugroboter:
+    # abwesend → anwesend VOR Reinigung (verhindert Fehlalarme durch Bewegung),
+    # anwesend → abwesend NACH Reinigung.
+    switch_alarm_for_cleaning: true
+    alarm_entity: ""               # z.B. alarm_control_panel.alarmo — leer = auto-detect
+    # Bei Heimkehr: Vacuum pausieren und zur Ladestation schicken
+    pause_on_arrival: true
+    # Reinigung fortsetzen wenn wieder alle weg sind
+    resume_on_departure: true
+    # Wartezeit bevor Reinigung fortgesetzt wird (Minuten)
+    # Verhindert Neustart wenn jemand nur kurz reinkommt
+    resume_delay_minutes: 5
   maintenance:
     enabled: true
     check_interval_hours: 24

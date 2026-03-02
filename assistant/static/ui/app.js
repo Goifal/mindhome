@@ -819,6 +819,14 @@ const HELP_TEXTS = {
   'vacuum.auto_clean.enabled': {title:'Auto-Clean', text:'Automatische Reinigung wenn niemand zuhause ist.'},
   'vacuum.auto_clean.when_nobody_home': {title:'Nur bei Abwesenheit', text:'Startet nur wenn alle Personen abwesend sind.'},
   'vacuum.auto_clean.min_hours_between': {title:'Mindestabstand', text:'Minimale Stunden zwischen zwei automatischen Reinigungen.'},
+  'vacuum.presence_guard.enabled': {title:'Anwesenheits-Steuerung', text:'Vacuum faehrt NUR wenn niemand zuhause ist. Gilt fuer alle Trigger (Auto-Clean, Steckdose, Szene).'},
+  'vacuum.presence_guard.switch_alarm_for_cleaning': {title:'Alarm umschalten', text:'Schaltet die Alarmanlage automatisch von abwesend auf anwesend bevor der Saugroboter startet (verhindert Fehlalarme). Nach der Reinigung wird zurueckgeschaltet.'},
+  'vacuum.presence_guard.alarm_entity': {title:'Alarm-Entity', text:'Entity-ID der Alarmanlage (z.B. alarm_control_panel.alarmo). Leer = automatische Erkennung.'},
+  'vacuum.presence_guard.pause_on_arrival': {title:'Pause bei Heimkehr', text:'Pausiert den Saugroboter und schickt ihn zur Ladestation wenn jemand nachhause kommt.'},
+  'vacuum.presence_guard.resume_on_departure': {title:'Fortsetzung bei Abwesenheit', text:'Setzt die unterbrochene Reinigung fort sobald wieder alle weg sind.'},
+  'vacuum.presence_guard.resume_delay_minutes': {title:'Verzoegerung Fortsetzung', text:'Wartet diese Minuten bevor die Reinigung fortgesetzt wird. Verhindert Neustart wenn jemand nur kurz reinkommt.'},
+  'vacuum.default_fan_speed': {title:'Standard-Saugstaerke', text:'Standard-Saugstaerke wenn nicht explizit angegeben.'},
+  'vacuum.default_mode': {title:'Standard-Modus', text:'Standard-Reinigungsmodus: nur saugen, nur wischen, oder beides.'},
   'vacuum.maintenance.enabled': {title:'Wartung', text:'Ueberwacht Verschleissteile (Filter, Buersten, Mopp).'},
   'vacuum.maintenance.warn_at_percent': {title:'Warnung bei', text:'Warnt wenn ein Verschleissteil unter diesen Prozentwert faellt.'},
   // === STIMME & TTS ===
@@ -6999,6 +7007,35 @@ function renderVacuum() {
     renderVacuumRobot('eg', 'Erdgeschoss (EG)') +
     renderVacuumRobot('og', 'Obergeschoss (OG)')
   ) +
+  sectionWrap('&#128168;', 'Reinigungsoptionen',
+    fInfo('Standard-Einstellungen fuer Saugstaerke und Reinigungsmodus wenn nichts anderes angegeben wird.') +
+    fSelect('vacuum.default_fan_speed', 'Standard-Saugstaerke', [
+      {v:'quiet',l:'Leise'}, {v:'standard',l:'Standard'},
+      {v:'strong',l:'Stark'}, {v:'turbo',l:'Turbo'}
+    ]) +
+    fSelect('vacuum.default_mode', 'Standard-Modus', [
+      {v:'vacuum',l:'Nur Saugen'}, {v:'mop',l:'Nur Wischen'},
+      {v:'vacuum_and_mop',l:'Saugen & Wischen'}
+    ])
+  ) +
+  sectionWrap('&#128694;', 'Anwesenheits-Steuerung',
+    fInfo('Steuert ob der Saugroboter nur bei Abwesenheit fahren darf. Gilt fuer ALLE Trigger (Auto-Clean, Steckdosen, Szenen). Kann die Alarmanlage automatisch umschalten.') +
+    fToggle('vacuum.presence_guard.enabled', 'Anwesenheits-Steuerung aktiv') +
+    fToggle('vacuum.presence_guard.switch_alarm_for_cleaning', 'Alarmanlage umschalten') +
+    '<div class="form-group"><label>Alarm-Entity' + helpBtn('vacuum.presence_guard.alarm_entity') + '</label>' +
+      '<div class="entity-pick-wrap" style="position:relative;">' +
+        '<input type="text" class="entity-pick-alarm form-input entity-pick-input" value="' + esc(getPath(S,'vacuum.presence_guard.alarm_entity')||'') + '"' +
+          ' placeholder="alarm_control_panel.alarmo" data-domains="alarm_control_panel"' +
+          ' oninput="entityPickFilter(this,\'alarm_control_panel\')" onfocus="entityPickFilter(this,\'alarm_control_panel\')"' +
+          ' onblur="setTimeout(function(){setPath(S,\'vacuum.presence_guard.alarm_entity\',document.querySelector(\'.entity-pick-alarm\').value.trim());scheduleAutoSave();},500)"' +
+          ' style="font-size:12px;font-family:var(--mono);">' +
+        '<div class="entity-pick-dropdown" style="display:none;"></div>' +
+      '</div>' +
+    '</div>' +
+    fToggle('vacuum.presence_guard.pause_on_arrival', 'Bei Heimkehr: Pausieren & Ladestation') +
+    fToggle('vacuum.presence_guard.resume_on_departure', 'Bei Abwesenheit: Reinigung fortsetzen') +
+    fRange('vacuum.presence_guard.resume_delay_minutes', 'Verzoegerung Fortsetzung (Min)', 1, 15, 1, {1:'1 Min',2:'2 Min',3:'3 Min',5:'5 Min',10:'10 Min',15:'15 Min'})
+  ) +
   sectionWrap('&#128296;', 'Auto-Clean',
     fInfo('Automatische Reinigung — entweder an festen Wochentagen oder automatisch wenn niemand zuhause ist.') +
     fToggle('vacuum.auto_clean.enabled', 'Auto-Clean aktiv') +
@@ -7941,6 +7978,16 @@ function _getDeclEntityList(id) {
         var dd = wrap.querySelector('.entity-pick-dropdown');
         if (dd) dd.style.display = 'none';
       }
+      return;
+    }
+    // Alarm-Entity Picker: Wert direkt in Settings speichern
+    var alarmInput = wrap ? wrap.querySelector('.entity-pick-alarm') : null;
+    if (alarmInput) {
+      alarmInput.value = entityId;
+      setPath(S, 'vacuum.presence_guard.alarm_entity', entityId);
+      scheduleAutoSave();
+      var dd2 = wrap.querySelector('.entity-pick-dropdown');
+      if (dd2) dd2.style.display = 'none';
       return;
     }
     _orig(item, entityId);

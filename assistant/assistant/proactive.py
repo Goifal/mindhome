@@ -189,6 +189,7 @@ class ProactiveManager:
         self._vacuum_task: Optional[asyncio.Task] = None
         self._vacuum_power_task: Optional[asyncio.Task] = None
         self._vacuum_scene_task: Optional[asyncio.Task] = None
+        self._vacuum_presence_task: Optional[asyncio.Task] = None
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("auto_clean", {}).get("enabled"):
             self._vacuum_task = asyncio.create_task(self._run_vacuum_automation())
         # Steckdosen-Trigger fuer Saugroboter
@@ -197,6 +198,9 @@ class ProactiveManager:
         # Szenen-Trigger fuer Saugroboter
         if vacuum_cfg.get("enabled") and vacuum_cfg.get("scene_trigger", {}).get("enabled"):
             self._vacuum_scene_task = asyncio.create_task(self._run_vacuum_scene_trigger())
+        # Anwesenheits-Monitor: Vacuum pausieren bei Heimkehr, fortsetzen bei Abwesenheit
+        if vacuum_cfg.get("enabled") and vacuum_cfg.get("presence_guard", {}).get("enabled"):
+            self._vacuum_presence_task = asyncio.create_task(self._run_vacuum_presence_monitor())
         # Emergency Protocols laden
         self._emergency_protocols = yaml_config.get("emergency_protocols", {})
 
@@ -2445,6 +2449,232 @@ class ProactiveManager:
 
     # ── Phase 11: Saugroboter-Automatik ────────────────────
 
+    async def _is_anyone_home(self) -> bool:
+        """Prueft ob mindestens eine Person zuhause ist (person.* == 'home')."""
+        states = await self.brain.ha.get_states()
+        for s in (states or []):
+            if s.get("entity_id", "").startswith("person.") and s.get("state") == "home":
+                return True
+        return False
+
+    async def _vacuum_alarm_switch(self, mode: str) -> bool:
+        """Schaltet die Alarmanlage fuer den Saugroboter um.
+
+        Args:
+            mode: 'arm_home' (Vacuum startet) oder 'arm_away' (Vacuum fertig)
+        Returns:
+            True wenn erfolgreich oder keine Alarmanlage konfiguriert
+        """
+        import assistant.config as cfg
+        guard_cfg = cfg.yaml_config.get("vacuum", {}).get("presence_guard", {})
+        if not guard_cfg.get("switch_alarm_for_cleaning"):
+            return True
+
+        alarm_entity = guard_cfg.get("alarm_entity", "")
+        if not alarm_entity:
+            # Automatisch erste Alarmanlage finden
+            states = await self.brain.ha.get_states()
+            for s in (states or []):
+                if s.get("entity_id", "").startswith("alarm_control_panel."):
+                    alarm_entity = s["entity_id"]
+                    break
+        if not alarm_entity:
+            return True  # Keine Alarmanlage vorhanden
+
+        # Aktuellen Alarm-Status pruefen
+        state = await self.brain.ha.get_state(alarm_entity)
+        current = state.get("state", "") if state else ""
+
+        service_map = {
+            "arm_home": "alarm_arm_home",
+            "arm_away": "alarm_arm_away",
+        }
+        service = service_map.get(mode)
+        if not service:
+            return False
+
+        # Nur umschalten wenn noetig
+        if mode == "arm_home" and current == "armed_away":
+            logger.info("Vacuum-Alarm: %s → arm_home (Saugroboter startet)", alarm_entity)
+            success = await self.brain.ha.call_service(
+                "alarm_control_panel", service, {"entity_id": alarm_entity}
+            )
+            if success:
+                # Merken dass wir den Alarm umgeschaltet haben
+                _redis = getattr(self.brain, "memory", None)
+                _redis = getattr(_redis, "redis", None) if _redis else None
+                if _redis:
+                    await _redis.set("mha:vacuum:alarm_switched", "1", ex=7200)
+            return success
+        elif mode == "arm_away" and current == "armed_home":
+            # Nur zurueckschalten wenn WIR den Alarm umgeschaltet haben
+            _redis = getattr(self.brain, "memory", None)
+            _redis = getattr(_redis, "redis", None) if _redis else None
+            if _redis:
+                was_switched = await _redis.get("mha:vacuum:alarm_switched")
+                if not was_switched:
+                    return True  # Wir haben nicht umgeschaltet → nichts tun
+                await _redis.delete("mha:vacuum:alarm_switched")
+            logger.info("Vacuum-Alarm: %s → arm_away (Reinigung beendet)", alarm_entity)
+            return await self.brain.ha.call_service(
+                "alarm_control_panel", service, {"entity_id": alarm_entity}
+            )
+        return True  # Kein Umschalten noetig
+
+    async def _vacuum_can_start(self) -> tuple[bool, str]:
+        """Prueft ob der Vacuum starten darf (Anwesenheits-Guard).
+
+        Returns:
+            (darf_starten: bool, grund: str)
+        """
+        import assistant.config as cfg
+        guard_cfg = cfg.yaml_config.get("vacuum", {}).get("presence_guard", {})
+        if not guard_cfg.get("enabled"):
+            return True, ""
+
+        if await self._is_anyone_home():
+            return False, "Jemand ist zuhause"
+        return True, ""
+
+    async def _vacuum_start_with_alarm(self, entity_id: str, nickname: str, reason: str) -> bool:
+        """Startet einen Vacuum mit Alarm-Management.
+
+        1. Prueft Anwesenheit
+        2. Schaltet Alarm von abwesend → anwesend
+        3. Startet den Vacuum
+        """
+        can_start, block_reason = await self._vacuum_can_start()
+        if not can_start:
+            logger.info("Vacuum-Guard: %s blockiert — %s", nickname, block_reason)
+            return False
+
+        # Alarm umschalten BEVOR Vacuum startet
+        await self._vacuum_alarm_switch("arm_home")
+
+        success = await self.brain.ha.call_service("vacuum", "start", {"entity_id": entity_id})
+        if success:
+            logger.info("Vacuum: %s gestartet (%s) — Alarm auf arm_home", nickname, reason)
+        else:
+            # Alarm zurueckschalten wenn Start fehlgeschlagen
+            await self._vacuum_alarm_switch("arm_away")
+        return success
+
+    async def _run_vacuum_presence_monitor(self):
+        """Ueberwacht Anwesenheit waehrend Vacuum-Reinigung.
+
+        - Wenn jemand nachhause kommt → alle Vacuums pausieren + zur Ladestation
+        - Wenn wieder alle weg sind → unterbrochene Reinigung fortsetzen
+        - Alarm-Management: Zurueckschalten wenn Reinigung beendet
+        """
+        await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 180)
+
+        _redis = getattr(self.brain, "memory", None)
+        _redis = getattr(_redis, "redis", None) if _redis else None
+
+        logger.info("Vacuum-PresenceMonitor: Task gestartet")
+
+        while self._running:
+            try:
+                import assistant.config as cfg
+                vacuum_cfg = cfg.yaml_config.get("vacuum", {})
+                guard_cfg = vacuum_cfg.get("presence_guard", {})
+                robots = vacuum_cfg.get("robots", {})
+
+                if not guard_cfg.get("enabled"):
+                    await asyncio.sleep(60)
+                    continue
+
+                anyone_home = await self._is_anyone_home()
+                states = await self.brain.ha.get_states()
+
+                # Welche Vacuums saugen gerade?
+                cleaning_robots = []
+                all_docked = True
+                for floor, robot in robots.items():
+                    eid = robot.get("entity_id")
+                    if not eid:
+                        continue
+                    for s in (states or []):
+                        if s.get("entity_id") == eid:
+                            vac_state = s.get("state", "")
+                            if vac_state in ("cleaning", "returning"):
+                                cleaning_robots.append((floor, eid, robot))
+                                all_docked = False
+                            elif vac_state not in ("docked", "idle"):
+                                all_docked = False
+                            break
+
+                # Fall 1: Jemand kommt heim + Vacuum saugt → Pausieren + Dock
+                if anyone_home and cleaning_robots and guard_cfg.get("pause_on_arrival"):
+                    logger.info("Vacuum-PresenceMonitor: Jemand ist zuhause — %d Roboter pausieren",
+                                len(cleaning_robots))
+                    interrupted = []
+                    for floor, eid, robot in cleaning_robots:
+                        await self.brain.ha.call_service("vacuum", "pause", {"entity_id": eid})
+                        await asyncio.sleep(2)
+                        await self.brain.ha.call_service("vacuum", "return_to_base", {"entity_id": eid})
+                        interrupted.append(floor)
+                        nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
+                        logger.info("Vacuum-PresenceMonitor: %s pausiert + zur Ladestation", nickname)
+
+                    # Unterbrochene Robots in Redis merken
+                    if _redis and interrupted:
+                        await _redis.set(
+                            "mha:vacuum:interrupted",
+                            ",".join(interrupted),
+                            ex=14400,  # 4 Stunden TTL
+                        )
+                    await self._notify("vacuum_paused_arrival", LOW, {
+                        "message": "Saugroboter pausiert — jemand ist nachhause gekommen",
+                    })
+
+                # Fall 2: Niemand zuhause + unterbrochene Reinigung → Fortsetzen
+                if not anyone_home and _redis and guard_cfg.get("resume_on_departure"):
+                    interrupted_str = await _redis.get("mha:vacuum:interrupted")
+                    if interrupted_str:
+                        delay = guard_cfg.get("resume_delay_minutes", 5)
+                        logger.info("Vacuum-PresenceMonitor: Alle weg — warte %d Min bevor Reinigung fortgesetzt wird", delay)
+                        await asyncio.sleep(delay * 60)
+
+                        # Nochmal pruefen ob wirklich alle weg sind
+                        if await self._is_anyone_home():
+                            logger.info("Vacuum-PresenceMonitor: Doch noch jemand da — Fortsetzung abgebrochen")
+                            await asyncio.sleep(30)
+                            continue
+
+                        floors = interrupted_str.split(",")
+                        await _redis.delete("mha:vacuum:interrupted")
+
+                        # Alarm umschalten
+                        await self._vacuum_alarm_switch("arm_home")
+
+                        for floor in floors:
+                            robot = robots.get(floor)
+                            if not robot:
+                                continue
+                            eid = robot.get("entity_id")
+                            if not eid:
+                                continue
+                            nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
+                            await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
+                            logger.info("Vacuum-PresenceMonitor: %s Reinigung fortgesetzt", nickname)
+
+                        await self._notify("vacuum_resumed", LOW, {
+                            "message": "Saugroboter setzt Reinigung fort — alle sind wieder weg",
+                        })
+
+                # Fall 3: Alle Vacuums fertig (docked) → Alarm zurueckschalten
+                if all_docked and not cleaning_robots:
+                    if _redis:
+                        was_switched = await _redis.get("mha:vacuum:alarm_switched")
+                        if was_switched:
+                            await self._vacuum_alarm_switch("arm_away")
+
+            except Exception as e:
+                logger.error("Vacuum-PresenceMonitor Fehler: %s", e)
+
+            await asyncio.sleep(30)  # 30 Sekunden Polling
+
     async def _run_vacuum_automation(self):
         """Saugroboter-Automatik: wenn niemand zuhause + keine Stoerung."""
         await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 120)  # Spaeter starten
@@ -2528,15 +2758,18 @@ class ProactiveManager:
                             except (ValueError, TypeError):
                                 pass
 
-                    # Starten!
-                    await self.brain.ha.call_service("vacuum", "start", {"entity_id": eid})
-                    if _redis:
-                        await _redis.set(f"mha:vacuum:{floor}:last_auto_clean", str(time.time()))
+                    # Anwesenheits-Guard + Alarm-Management
                     nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
-                    await self._notify("vacuum_auto_start", LOW, {
-                        "message": f"{nickname} startet automatisch ({trigger_reason})",
-                    })
-                    logger.info("Vacuum-Auto: %s gestartet (%s, %s)", eid, floor, trigger_reason)
+                    success = await self._vacuum_start_with_alarm(eid, nickname, trigger_reason)
+                    if success:
+                        if _redis:
+                            await _redis.set(f"mha:vacuum:{floor}:last_auto_clean", str(time.time()))
+                        await self._notify("vacuum_auto_start", LOW, {
+                            "message": f"{nickname} startet automatisch ({trigger_reason})",
+                        })
+                        logger.info("Vacuum-Auto: %s gestartet (%s, %s)", eid, floor, trigger_reason)
+                    else:
+                        logger.info("Vacuum-Auto: %s nicht gestartet (Guard blockiert)", nickname)
 
                 # Wartung pruefen (1x pro Durchlauf)
                 await self._check_vacuum_maintenance(robots, _redis)
@@ -2560,11 +2793,21 @@ class ProactiveManager:
         return None, None
 
     async def _start_vacuum_room(self, robot: dict, segment_id, room: str, reason: str):
-        """Startet Vacuum fuer einen Raum mit Logging und Fehlerbehandlung."""
+        """Startet Vacuum fuer einen Raum mit Logging, Anwesenheits-Guard und Alarm."""
         eid = robot.get("entity_id", "")
         if not eid:
             logger.warning("Vacuum-Trigger: Kein entity_id fuer Roboter konfiguriert")
             return False
+
+        # Anwesenheits-Guard: Nicht starten wenn jemand zuhause
+        can_start, block_reason = await self._vacuum_can_start()
+        if not can_start:
+            logger.info("Vacuum-Guard: %s fuer '%s' blockiert — %s (%s)",
+                         robot.get("nickname", "Saugroboter"), room, block_reason, reason)
+            return False
+
+        # Alarm umschalten (abwesend → anwesend)
+        await self._vacuum_alarm_switch("arm_home")
 
         nickname = robot.get("nickname", "Saugroboter")
         success = False
