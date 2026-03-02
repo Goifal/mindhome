@@ -6186,6 +6186,20 @@ async def _ollama_api(path: str, method: str = "GET", json_data: dict | None = N
         return False, str(e)
 
 
+@app.get("/api/ui/models/available")
+async def ui_models_available(token: str = ""):
+    """Liefert alle in Ollama installierten Modelle fuer die UI-Dropdowns."""
+    _check_token(token)
+    ok, data = await _ollama_api("/api/tags")
+    if not ok or not isinstance(data, dict):
+        return {"models": []}
+    models = sorted(
+        [m.get("name", "") for m in data.get("models", []) if m.get("name")],
+        key=lambda n: n.lower(),
+    )
+    return {"models": models}
+
+
 @app.get("/api/ui/system/status")
 async def ui_system_status(token: str = ""):
     """Systemstatus: Git, Container, Ollama, Speicher."""
