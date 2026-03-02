@@ -3133,8 +3133,9 @@ async def ui_get_lights(token: str = ""):
                 continue
             attrs = s.get("attributes", {})
             brightness = None
-            if s.get("state") == "on" and "brightness" in attrs:
-                brightness = round(attrs["brightness"] / 255 * 100)
+            raw_br = attrs.get("brightness")
+            if s.get("state") == "on" and raw_br is not None:
+                brightness = round(raw_br / 255 * 100)
             lights.append({
                 "entity_id": eid,
                 "name": attrs.get("friendly_name", eid),
