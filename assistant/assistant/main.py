@@ -2737,6 +2737,17 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             logger.info("Learning global: enabled=%s", learning_enabled)
         _try_reload("learning", _reload_learning)
 
+    # DeclarativeTools (Analyse-Tools): Registry neu laden + Settings sofort gueltig
+    if "declarative_tools" in changed_settings:
+        def _reload_declarative_tools():
+            from .declarative_tools import get_registry
+            registry = get_registry()
+            registry.reload_config()
+            logger.info("Declarative Tools Settings aktualisiert (enabled=%s, max_tools=%s)",
+                        yaml_cfg.get("declarative_tools", {}).get("enabled", True),
+                        yaml_cfg.get("declarative_tools", {}).get("max_tools", 20))
+        _try_reload("declarative_tools", _reload_declarative_tools)
+
     if failed_modules:
         logger.warning("Settings-Reload: %d Module fehlgeschlagen: %s",
                         len(failed_modules), ", ".join(failed_modules))

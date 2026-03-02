@@ -133,6 +133,10 @@ class DeclarativeToolRegistry:
         logger.info("Declarative Tool geloescht: %s", name)
         return {"success": True, "message": f"Tool '{name}' geloescht."}
 
+    def reload_config(self):
+        """Hot-Reload: Laedt Tools von Disk neu (z.B. nach Settings-Aenderung)."""
+        self._load()
+
     def _validate(self, name: str, cfg: dict) -> Optional[str]:
         """Validiert eine Tool-Config. Gibt Fehlertext oder None zurueck."""
         if not name or not name.replace("_", "").replace("-", "").isalnum():
@@ -217,7 +221,7 @@ class DeclarativeToolExecutor:
 
     def __init__(self, ha_client):
         self.ha = ha_client
-        self.registry = DeclarativeToolRegistry()
+        self.registry = get_registry()
 
     async def execute(self, tool_name: str) -> dict:
         """Fuehrt ein deklaratives Tool aus und gibt Ergebnis zurueck."""
