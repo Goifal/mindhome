@@ -37,7 +37,7 @@ from .websocket import emit_action, emit_speaking
 logger = logging.getLogger(__name__)
 
 # Defaults — werden von planner-Config in settings.yaml ueberschrieben
-_DEFAULT_MAX_ITERATIONS = 5
+_DEFAULT_MAX_ITERATIONS = 8
 _DEFAULT_COMPLEX_KEYWORDS = [
     "alles", "fertig machen", "vorbereiten",
     "gehe weg", "fahre weg", "verreise", "urlaub",
@@ -202,6 +202,7 @@ class ActionPlanner:
                 model=planner_model,
                 tools=get_assistant_tools(),
                 max_tokens=planner_max_tokens,
+                think=True,
             )
 
             if "error" in response:
@@ -221,6 +222,9 @@ class ActionPlanner:
 
             # Tool Calls ausfuehren
             tool_results = []
+
+            # Phase 1: Validierung + Trust-Check (sequentiell, kein I/O)
+            valid_steps: list[tuple[PlanStep, str, dict]] = []  # (step, func_name, func_args)
             for tool_call in tool_calls:
                 func = tool_call.get("function", {})
                 func_name = func.get("name", "")
@@ -276,63 +280,106 @@ class ActionPlanner:
                         )
                         continue
 
-                # Phase 9: Narration — Transition bei Licht-Aktionen injizieren
+                # Narration: Transition bei Licht-Aktionen injizieren
                 if self.narration_enabled and func_name == "set_light":
                     if "transition" not in func_args:
                         func_args["transition"] = self._get_transition(text)
-
-                # Phase 9: Narration — Kurze Pause zwischen Schritten
-                if self.narration_enabled and len(plan.steps) > 0 and self.step_delay > 0:
-                    await asyncio.sleep(self.step_delay)
 
                 # Rollback-Info VOR Ausfuehrung erfassen
                 step.rollback_function, step.rollback_args = self._get_rollback_info(
                     func_name, func_args
                 )
 
-                # Ausfuehren
-                step.status = "running"
-                result = await self.executor.execute(func_name, func_args)
-                step.result = result
-                step.status = "done" if result.get("success", False) else "failed"
+                valid_steps.append((step, func_name, func_args))
 
-                # Bei Fehlschlag: Vorherige erfolgreiche Steps zurueckrollen
-                if step.status == "failed" and len(plan.steps) > 0:
-                    rollback_count = await self._rollback_completed_steps(plan.steps)
-                    if rollback_count > 0:
-                        plan.rollback_performed = True
-                        logger.info(
-                            "Rollback: %d Step(s) nach Fehler in '%s' zurueckgerollt",
-                            rollback_count, func_name,
-                        )
-                        tool_results.append(
-                            f"ROLLBACK: {rollback_count} vorherige Aktion(en) zurueckgesetzt"
-                        )
+            # Phase 2: Ausfuehrung — parallel oder sequentiell (Narration)
+            use_parallel = len(valid_steps) > 1 and not (self.narration_enabled and self.step_delay > 0)
 
-                plan.steps.append(step)
-                all_actions.append({
-                    "function": func_name,
-                    "args": func_args,
-                    "result": result,
-                })
+            if use_parallel:
+                # Parallele Ausfuehrung: Alle Steps gleichzeitig starten
+                logger.info("Planner: %d Tool-Calls parallel ausfuehren", len(valid_steps))
 
-                # WebSocket: Aktion melden
-                await emit_action(func_name, func_args, result)
+                async def _run_step(s: PlanStep, fn: str, fa: dict) -> tuple[PlanStep, str, dict, dict]:
+                    s.status = "running"
+                    res = await self.executor.execute(fn, fa)
+                    s.result = res
+                    s.status = "done" if res.get("success", False) else "failed"
+                    return s, fn, fa, res
 
-                # Phase 9: Narration — beschreiben was passiert
-                if self.narration_enabled and self.narrate_actions and result.get("success"):
-                    narration = self._get_narration_text(func_name, func_args)
-                    if narration:
-                        await emit_speaking(narration)
-
-                tool_results.append(
-                    f"{func_name}: {result.get('message', 'OK')}"
+                results = await asyncio.gather(
+                    *[_run_step(s, fn, fa) for s, fn, fa in valid_steps],
+                    return_exceptions=True,
                 )
 
-                logger.info(
-                    "Planner Step: %s(%s) -> %s",
-                    func_name, func_args, result.get("message", ""),
-                )
+                for r in results:
+                    if isinstance(r, Exception):
+                        logger.error("Planner parallel Step Fehler: %s", r)
+                        continue
+                    step, func_name, func_args, result = r
+                    plan.steps.append(step)
+                    all_actions.append({
+                        "function": func_name,
+                        "args": func_args,
+                        "result": result,
+                    })
+                    await emit_action(func_name, func_args, result)
+                    tool_results.append(
+                        f"{func_name}: {result.get('message', 'OK')}"
+                    )
+                    logger.info(
+                        "Planner Step: %s(%s) -> %s",
+                        func_name, func_args, result.get("message", ""),
+                    )
+            else:
+                # Sequentielle Ausfuehrung (Narration-Modus oder einzelner Step)
+                for step, func_name, func_args in valid_steps:
+                    # Narration: Kurze Pause zwischen Schritten
+                    if self.narration_enabled and len(plan.steps) > 0 and self.step_delay > 0:
+                        await asyncio.sleep(self.step_delay)
+
+                    # Ausfuehren
+                    step.status = "running"
+                    result = await self.executor.execute(func_name, func_args)
+                    step.result = result
+                    step.status = "done" if result.get("success", False) else "failed"
+
+                    # Bei Fehlschlag: Vorherige erfolgreiche Steps zurueckrollen
+                    if step.status == "failed" and len(plan.steps) > 0:
+                        rollback_count = await self._rollback_completed_steps(plan.steps)
+                        if rollback_count > 0:
+                            plan.rollback_performed = True
+                            logger.info(
+                                "Rollback: %d Step(s) nach Fehler in '%s' zurueckgerollt",
+                                rollback_count, func_name,
+                            )
+                            tool_results.append(
+                                f"ROLLBACK: {rollback_count} vorherige Aktion(en) zurueckgesetzt"
+                            )
+
+                    plan.steps.append(step)
+                    all_actions.append({
+                        "function": func_name,
+                        "args": func_args,
+                        "result": result,
+                    })
+
+                    # WebSocket: Aktion melden
+                    await emit_action(func_name, func_args, result)
+
+                    # Narration: beschreiben was passiert
+                    if self.narration_enabled and self.narrate_actions and result.get("success"):
+                        narration = self._get_narration_text(func_name, func_args)
+                        if narration:
+                            await emit_speaking(narration)
+
+                    tool_results.append(
+                        f"{func_name}: {result.get('message', 'OK')}"
+                    )
+
+                    logger.info(
+                        "Planner Step: %s(%s) -> %s",
+                        func_name, func_args, result.get("message", ""),
+                    )
 
             # Ergebnisse zurueck an LLM fuer naechste Iteration
             # Aktuelle Antwort des LLM als assistant message hinzufuegen

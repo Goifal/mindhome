@@ -227,7 +227,7 @@ memory:
   episode_min_words: 3
   default_confidence: 0.7
 planner:
-  max_iterations: 5
+  max_iterations: 8
   model: qwen3.5:9b
   max_tokens: 512
   complex_keywords:

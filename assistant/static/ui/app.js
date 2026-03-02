@@ -700,6 +700,8 @@ const HELP_TEXTS = {
   'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster fuer das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. 2048 empfohlen fuer 4B Modelle.'},
   'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster fuer das Smart-Modell (Gespraeche).', detail:'4096 = Standard. Mehr Kontext = besseres Gespraechsgedaechtnis, aber mehr VRAM.'},
   'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster fuer das Deep-Modell (komplexe Aufgaben).', detail:'MoE-Modelle (z.B. Qwen3.5-27B) sind VRAM-effizient und vertragen 8192+.'},
+  'planner.max_iterations': {title:'Max. Planungsschritte', text:'Wie viele Planungsrunden der Action Planner maximal durchlaeuft.', detail:'8 = Standard. Komplexe Aufgaben wie "Mach alles fertig fuer morgen" brauchen mehr Schritte. Bei Timeout-Problemen reduzieren.'},
+  'planner.max_tokens': {title:'Planner Antwortlaenge', text:'Maximale Tokens pro Planungsschritt.', detail:'512 = Standard. Erhoehen wenn der Planner Plaene abschneidet.'},
   'models.fast_keywords': {title:'Fast-Keywords', text:'Woerter die das schnelle Modell aktivieren.'},
   'models.deep_keywords': {title:'Deep-Keywords', text:'Woerter die das ausfuehrliche Modell aktivieren.'},
   'models.cooking_keywords': {title:'Koch-Keywords', text:'Woerter die den Koch-Modus aktivieren.'},
@@ -1906,6 +1908,11 @@ function renderPersonality() {
     fRange('ollama.num_ctx_fast', 'Kontext Fast-Modell', 1024, 8192, 1024, {1024:'1K',2048:'2K',3072:'3K',4096:'4K',6144:'6K',8192:'8K'}) +
     fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 16384, 1024, {2048:'2K',4096:'4K',6144:'6K',8192:'8K',12288:'12K',16384:'16K'}) +
     fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K',24576:'24K',32768:'32K'})
+  ) +
+  sectionWrap('&#129504;', 'Action Planner',
+    fInfo('Der Action Planner fuehrt komplexe Multi-Step Anfragen aus (z.B. "Mach alles fertig fuer morgen"). Er plant iterativ mit dem Deep-Modell und fuehrt Tool-Calls parallel aus.') +
+    fRange('planner.max_iterations', 'Max. Planungsschritte', 3, 15, 1, {3:'3',5:'5',8:'8',10:'10',15:'15'}) +
+    fRange('planner.max_tokens', 'Max. Tokens pro Planungsschritt', 256, 2048, 128)
   ) +
   sectionWrap('&#127991;', 'Schnell-Erkennung',
     fInfo('Klicke auf Woerter, die das jeweilige Modell ausloesen sollen. Ausgewaehlte Woerter sind hervorgehoben.') +
