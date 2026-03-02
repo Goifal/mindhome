@@ -32,6 +32,12 @@ Regeln:
 - Keine Fakten ueber das Smart Home System selbst.
 - Keine trivialen Befehle ("Licht an") als Fakten speichern.
 - NUR Fakten die langfristig relevant sind.
+- UNTERSCHEIDE momentane Zustaende von dauerhaften Praeferenzen:
+  - "Mir ist warm" = momentan, NICHT speichern.
+  - "Ich mag es kuehl" = Praeferenz, speichern.
+  - "Ich bin muede" = momentan, NICHT speichern.
+  - "Ich stehe immer um 6 auf" = Gewohnheit, speichern.
+- Keine Gruesse, Danksagungen oder Smalltalk als Fakten.
 
 Antworte NUR mit einem JSON-Array. Wenn keine Fakten vorhanden, antworte mit [].
 
@@ -155,17 +161,48 @@ class MemoryExtractor:
         return stored_facts
 
     def _should_extract(self, user_text: str, assistant_response: str) -> bool:
-        """Prueeft ob eine Extraktion sinnvoll ist."""
-        # Zu kurze Texte ueberspringen
-        if len(user_text.split()) < self._min_words:
+        """Prueeft ob eine Extraktion sinnvoll ist.
+
+        Filtert Gruesse, Bestaetigungen, Einzelwort-Antworten und reine
+        Befehle heraus — diese enthalten keine speichernswerten Fakten.
+        """
+        text_lower = user_text.lower().strip().rstrip("!?.")
+
+        # Zu kurze Texte ueberspringen (erhoehtes Minimum)
+        if len(user_text.split()) < max(self._min_words, 5):
             return False
 
         # Reine Befehle ueberspringen (kein Fakten-Potenzial)
-        command_only = [
+        command_only = {
             "licht an", "licht aus", "stopp", "stop", "pause",
             "weiter", "lauter", "leiser", "gute nacht", "guten morgen",
-        ]
-        if user_text.lower().strip() in command_only:
+            "mach an", "mach aus", "schalte an", "schalte aus",
+            "rollladen hoch", "rollladen runter", "jalousie hoch", "jalousie runter",
+        }
+        if text_lower in command_only:
+            return False
+
+        # Gruesse und Smalltalk ueberspringen
+        greetings = {
+            "hallo", "hi", "hey", "moin", "morgen", "abend", "tag",
+            "guten tag", "guten abend", "guten morgen", "servus",
+            "wie gehts", "wie geht es dir", "alles klar", "was geht",
+        }
+        if text_lower in greetings:
+            return False
+
+        # Einzelwort-Bestaetigungen und Antworten
+        confirmations = {
+            "ja", "nein", "ok", "okay", "danke", "bitte", "genau",
+            "richtig", "falsch", "stimmt", "passt", "klar", "alles klar",
+            "gut", "super", "perfekt", "toll", "prima", "noe",
+            "hmm", "aha", "achso", "verstehe", "logo",
+        }
+        if text_lower in confirmations:
+            return False
+
+        # Proaktive Meldungs-Marker ueberspringen
+        if user_text.startswith("[proaktiv"):
             return False
 
         return True

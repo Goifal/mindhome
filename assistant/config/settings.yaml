@@ -595,6 +595,19 @@ seasonal_actions:
     storm_wind_speed: 50             # km/h — Rolllaeden HOCH zum Schutz
     vacation_mode_entity: ""         # z.B. input_boolean.vacation_mode  HINWEIS: Urlaubs-Simulation ist erst aktiv wenn hier eine Entity eingetragen wird!
     inverted_position: false         # true wenn ALLE Covers invertierte Positionen haben (0=offen, 100=zu). Pro Cover in room_profiles.yaml oder cover_configs.json konfigurierbar.
+    # --- Neue Features ---
+    night_start_hour: 22             # Nacht-Isolierung: Beginn (Bug 5)
+    night_end_hour: 6                # Nacht-Isolierung: Ende (Bug 5)
+    hysteresis_temp: 2               # Hysterese fuer Temperatur (Feature 10) — schliessen bei heat_temp, oeffnen bei heat_temp - hysterese
+    hysteresis_wind: 10              # Hysterese fuer Wind (Feature 10)
+    glare_protection: false          # Blendschutz bei besetztem Sitzplatz (Feature 14)
+    gradual_morning: false           # Sanftes Oeffnen am Morgen in 3 Stufen (Feature 6)
+    wave_open: false                 # Wellenfoermiges Oeffnen Ost→Sued→West (Feature 7)
+    heating_integration: false       # Heizungs-Integration: Isolierung bei laufender Heizung, passive Solarwaerme (Feature 8)
+    co2_ventilation: false           # CO2-Lueftungs-Unterstuetzung (Feature 12)
+    privacy_mode: false              # Abendlicher Sichtschutz bei Licht (Feature 16)
+    presence_aware: false            # Praesenz-basiert: niemand zuhause = alles zu (Feature 15)
+    manual_override_hours: 2         # Stunden nach manueller Bedienung ohne Automatik (Feature 2)
 tts:
   entity: tts.piper
   ssml_enabled: true
@@ -1142,8 +1155,17 @@ remote:
         # gaming: "Play Games"
         aus: "PowerOff"
 # --- Saugroboter-Steuerung (Phase 11) ---
+# Offizielle Dreame-Integration (HA) wird automatisch unterstuetzt.
+# Segment-IDs findet man in den HA Developer Tools → States → vacuum.dreame_xxx
+# unter dem Attribut "rooms" (Map-basierte Raum-IDs).
 vacuum:
   enabled: true
+  # Standard-Saugstaerke wenn nicht explizit angegeben
+  # quiet = leise, standard = normal, strong = stark, turbo = maximal
+  default_fan_speed: "standard"
+  # Standard-Reinigungsmodus wenn nicht explizit angegeben
+  # vacuum = nur saugen, mop = nur wischen, vacuum_and_mop = beides
+  default_mode: "vacuum"
   robots:
     eg:
       entity_id: ""               # z.B. vacuum.dreame_eg — bitte eintragen
@@ -1173,6 +1195,9 @@ vacuum:
       #   flur_oben: 7
   auto_clean:
     enabled: true
+    mode: "smart"                  # smart | schedule | both
+    schedule_days: []              # Wochentage fuer Modus "schedule"/"both": mon,tue,wed,thu,fri,sat,sun
+    schedule_time: 10              # Uhrzeit fuer Wochenplan (6-20)
     when_nobody_home: true         # Starten wenn alle weg sind
     not_during:                    # Nicht starten waehrend:
       - "meeting"                  # Kalender-Event enthaelt "meeting"
@@ -1180,6 +1205,26 @@ vacuum:
     min_hours_between: 24          # Mindestabstand zwischen Reinigungen
     preferred_time_start: 10       # Bevorzugt 10-16 Uhr
     preferred_time_end: 16
+    # Saugstaerke fuer automatisches Saugen (optional, sonst default_fan_speed)
+    auto_fan_speed: "standard"
+    # Modus fuer automatisches Saugen (optional, sonst default_mode)
+    auto_mode: "vacuum"
+  # Anwesenheits-Steuerung: Vacuum nur wenn keiner zuhause.
+  # Gilt fuer ALLE Trigger (Auto-Clean, Steckdose, Szene).
+  presence_guard:
+    enabled: true
+    # Alarmanlage automatisch umschalten fuer Saugroboter:
+    # abwesend → anwesend VOR Reinigung (verhindert Fehlalarme durch Bewegung),
+    # anwesend → abwesend NACH Reinigung.
+    switch_alarm_for_cleaning: true
+    alarm_entity: ""               # z.B. alarm_control_panel.alarmo — leer = auto-detect
+    # Bei Heimkehr: Vacuum pausieren und zur Ladestation schicken
+    pause_on_arrival: true
+    # Reinigung fortsetzen wenn wieder alle weg sind
+    resume_on_departure: true
+    # Wartezeit bevor Reinigung fortgesetzt wird (Minuten)
+    # Verhindert Neustart wenn jemand nur kurz reinkommt
+    resume_delay_minutes: 5
   maintenance:
     enabled: true
     check_interval_hours: 24

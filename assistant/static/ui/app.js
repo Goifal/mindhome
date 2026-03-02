@@ -627,7 +627,7 @@ function renderCurrentTab() {
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-lights': c.innerHTML = renderLights(); loadLightEntities(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
-      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); break;
+      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); loadCoverActionLog(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-remote': c.innerHTML = renderRemote(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); loadEmergencyProtocols(); break;
@@ -813,13 +813,50 @@ const HELP_TEXTS = {
   'vacation_simulation.morning_hour': {title:'Morgens oeffnen', text:'Uhrzeit fuer simuliertes Oeffnen der Rolllaeden.'},
   'vacation_simulation.evening_hour': {title:'Abends schliessen', text:'Uhrzeit fuer simuliertes Schliessen.'},
   'vacation_simulation.variation_minutes': {title:'Variation', text:'Zufaellige Abweichung in Minuten fuer realistischere Simulation.'},
+  'vacation_simulation.night_hour': {title:'Nachts komplett zu', text:'Uhrzeit ab der alle Rolllaeden in der Urlaubssimulation komplett geschlossen werden.'},
+  'seasonal_actions.cover_automation.inverted_position': {title:'Invertierte Positionen', text:'Aktivieren wenn ALLE Cover invertierte Werte nutzen (0=offen, 100=zu, z.B. Shelly/MQTT). Kann auch pro Cover in den Cover-Profilen gesetzt werden.'},
+  'seasonal_actions.cover_automation.night_start_hour': {title:'Nacht-Beginn', text:'Ab dieser Stunde gilt die Nacht-Isolierung. Im Winter frueher (z.B. 18), im Sommer spaeter (z.B. 23).'},
+  'seasonal_actions.cover_automation.night_end_hour': {title:'Nacht-Ende', text:'Bis zu dieser Stunde gilt die Nacht-Isolierung.'},
+  'seasonal_actions.cover_automation.hysteresis_temp': {title:'Temperatur-Hysterese', text:'Verhindert Oszillation: Schliessen bei Hitzeschutz-Temp, erst wieder oeffnen bei Hitzeschutz-Temp MINUS Hysterese. Z.B. 26°C zu, 24°C auf.'},
+  'seasonal_actions.cover_automation.hysteresis_wind': {title:'Wind-Hysterese', text:'Verhindert Oszillation bei Sturmschutz. Schliessen bei Sturm-Speed, oeffnen bei Sturm-Speed MINUS Hysterese.'},
+  'seasonal_actions.cover_automation.glare_protection': {title:'Blendschutz', text:'Wenn ein Sitzsensor (occupancy_sensor im Cover-Profil) belegt ist und Sonne auf das Fenster scheint, wird der Sonnenschutz aktiviert — auch unter der Hitzeschutz-Temperatur.'},
+  'seasonal_actions.cover_automation.gradual_morning': {title:'Sanftes Oeffnen', text:'Morgens werden die Rolllaeden in 3 Stufen geoeffnet (30% → 70% → 100%) mit je 5 Min Pause. Weniger abrupt als sofort 100%.'},
+  'seasonal_actions.cover_automation.wave_open': {title:'Wellenfoermiges Oeffnen', text:'Rolllaeden oeffnen nacheinander: Ost-Fenster zuerst, dann Sued, dann West. Natuerlicher und reduziert die Stromlast.'},
+  'seasonal_actions.cover_automation.heating_integration': {title:'Heizungs-Integration', text:'Wenn die Heizung laeuft + Aussentemp kalt: Nicht-sonnenbeschienene Fenster zu (Isolierung). Wenn Sonne + Heizung aus: Sonnenfenster auf (passive Solarwaerme).'},
+  'seasonal_actions.cover_automation.co2_ventilation': {title:'CO2-Lueftung', text:'Bei hohem CO2 (>1000 ppm) und gutem Wetter (10-25°C, kein Regen) wird eine Lueftungsempfehlung gegeben.'},
+  'seasonal_actions.cover_automation.privacy_mode': {title:'Privacy-Modus', text:'Abends nach Sonnenuntergang: Wenn im Raum Licht an ist, werden Rolllaeden mit privacy_mode=true im Cover-Profil geschlossen (Sichtschutz).'},
+  'seasonal_actions.cover_automation.presence_aware': {title:'Praesenz-basiert', text:'Wenn alle Personen das Haus verlassen haben, werden alle Rolllaeden geschlossen (Einbruchschutz + Energiesparen).'},
+  'seasonal_actions.cover_automation.manual_override_hours': {title:'Manueller Override', text:'Wenn ein Rollladen manuell (Taster/App) bedient wird, pausiert die Automatik fuer diese Anzahl Stunden. Verhindert dass die Automatik manuelle Einstellungen ueberschreibt.'},
   // === SAUGROBOTER ===
   'remote.enabled': {title:'Fernbedienung', text:'Aktiviert die Fernbedienungs-Steuerung (Logitech Harmony) ueber Jarvis. Erlaubt Sprachsteuerung fuer TV, Receiver, etc.'},
   'vacuum.enabled': {title:'Saugroboter', text:'Aktiviert die Saugroboter-Steuerung ueber Jarvis.'},
   'vacuum.auto_clean.enabled': {title:'Auto-Clean', text:'Automatische Reinigung wenn niemand zuhause ist.'},
+  'vacuum.auto_clean.mode': {title:'Auto-Clean Modus', text:'Smart: startet wenn niemand zuhause. Wochenplan: feste Tage/Uhrzeit. Beides: kombiniert.'},
+  'vacuum.auto_clean.schedule_days': {title:'Reinigungstage', text:'An welchen Wochentagen automatisch gereinigt wird (Modus Wochenplan/Beides).'},
+  'vacuum.auto_clean.schedule_time': {title:'Uhrzeit', text:'Um welche Uhrzeit der Wochenplan-Modus die Reinigung startet.'},
   'vacuum.auto_clean.when_nobody_home': {title:'Nur bei Abwesenheit', text:'Startet nur wenn alle Personen abwesend sind.'},
   'vacuum.auto_clean.min_hours_between': {title:'Mindestabstand', text:'Minimale Stunden zwischen zwei automatischen Reinigungen.'},
+  'vacuum.auto_clean.preferred_time_start': {title:'Bevorzugt ab', text:'Frueheste Uhrzeit fuer Smart-Modus Reinigung.'},
+  'vacuum.auto_clean.preferred_time_end': {title:'Bevorzugt bis', text:'Spaeteste Uhrzeit fuer Smart-Modus Reinigung.'},
+  'vacuum.auto_clean.auto_fan_speed': {title:'Saugstaerke (Auto)', text:'Saugstaerke fuer automatische Reinigungen. Ueberschreibt den Standard-Wert.'},
+  'vacuum.auto_clean.auto_mode': {title:'Modus (Auto)', text:'Reinigungsmodus fuer automatische Reinigungen: saugen, wischen, oder beides.'},
+  'vacuum.auto_clean.not_during': {title:'Nicht waehrend', text:'Situationen in denen der Saugroboter NICHT automatisch starten soll.'},
+  'vacuum.presence_guard.enabled': {title:'Anwesenheits-Steuerung', text:'Vacuum faehrt NUR wenn niemand zuhause ist. Gilt fuer alle Trigger (Auto-Clean, Steckdose, Szene).'},
+  'vacuum.presence_guard.switch_alarm_for_cleaning': {title:'Alarm umschalten', text:'Schaltet die Alarmanlage automatisch von abwesend auf anwesend bevor der Saugroboter startet (verhindert Fehlalarme). Nach der Reinigung wird zurueckgeschaltet.'},
+  'vacuum.presence_guard.alarm_entity': {title:'Alarm-Entity', text:'Entity-ID der Alarmanlage (z.B. alarm_control_panel.alarmo). Leer = automatische Erkennung.'},
+  'vacuum.presence_guard.pause_on_arrival': {title:'Pause bei Heimkehr', text:'Pausiert den Saugroboter und schickt ihn zur Ladestation wenn jemand nachhause kommt.'},
+  'vacuum.presence_guard.resume_on_departure': {title:'Fortsetzung bei Abwesenheit', text:'Setzt die unterbrochene Reinigung fort sobald wieder alle weg sind.'},
+  'vacuum.presence_guard.resume_delay_minutes': {title:'Verzoegerung Fortsetzung', text:'Wartet diese Minuten bevor die Reinigung fortgesetzt wird. Verhindert Neustart wenn jemand nur kurz reinkommt.'},
+  'vacuum.default_fan_speed': {title:'Standard-Saugstaerke', text:'Standard-Saugstaerke wenn nicht explizit angegeben.'},
+  'vacuum.default_mode': {title:'Standard-Modus', text:'Standard-Reinigungsmodus: nur saugen, nur wischen, oder beides.'},
+  'vacuum.power_trigger.enabled': {title:'Steckdosen-Trigger', text:'Startet Reinigung automatisch wenn eine ueberwachte Steckdose abschaltet (z.B. nach dem Kochen).'},
+  'vacuum.power_trigger.delay_minutes': {title:'Verzoegerung', text:'Wartet diese Minuten nach dem Abschalten bevor der Saugroboter startet.'},
+  'vacuum.power_trigger.cooldown_hours': {title:'Cooldown', text:'Nach einer Reinigung wird dieser Trigger fuer die angegebene Zeit deaktiviert.'},
+  'vacuum.scene_trigger.enabled': {title:'Szenen-Trigger', text:'Startet Reinigung automatisch wenn eine bestimmte HA-Szene aktiviert wird.'},
+  'vacuum.scene_trigger.delay_minutes': {title:'Verzoegerung', text:'Wartet diese Minuten nach Szenen-Aktivierung bevor der Saugroboter startet.'},
+  'vacuum.scene_trigger.cooldown_hours': {title:'Cooldown', text:'Nach einer Reinigung wird dieser Trigger fuer die angegebene Zeit deaktiviert.'},
   'vacuum.maintenance.enabled': {title:'Wartung', text:'Ueberwacht Verschleissteile (Filter, Buersten, Mopp).'},
+  'vacuum.maintenance.check_interval_hours': {title:'Pruef-Intervall', text:'Wie oft die Verschleissteile geprueft werden.'},
   'vacuum.maintenance.warn_at_percent': {title:'Warnung bei', text:'Warnt wenn ein Verschleissteil unter diesen Prozentwert faellt.'},
   // === STIMME & TTS ===
   'sounds.default_speaker': {title:'Standard-Speaker', text:'Standard-Geraet fuer Sprachausgabe und Sounds.'},
@@ -5607,6 +5644,12 @@ function renderCovers() {
       '<button class="btn btn-sm" onclick="addOpeningSensor()" style="font-size:11px;">+ Manuell hinzufuegen</button>' +
     '</div>'
   ) +
+  // ── Letzte Aktionen (Dashboard Feature 17) ────────────
+  sectionWrap('&#128203;', 'Letzte automatische Aktionen',
+    fInfo('Zeigt die letzten automatischen Cover-Bewegungen mit Zeitstempel, Cover-Name, Position und Grund.') +
+    '<div id="coverActionLogContainer" style="color:var(--text-secondary);padding:8px;font-size:12px;">Lade Aktions-Log...</div>' +
+    '<button class="btn btn-sm" onclick="loadCoverActionLog()" style="font-size:11px;margin-top:4px;">&#128260; Aktualisieren</button>'
+  ) +
   // ── Cover-Automatik (settings.yaml) ─────────────────────
   sectionWrap('&#9728;', 'Cover-Automatik',
     fInfo('Automatische Steuerung der Rolllaeden basierend auf Sonnenstand, Wetter und Temperatur. Funktioniert nur wenn Cover-Profile (unten) konfiguriert sind.') +
@@ -5619,6 +5662,30 @@ function renderCovers() {
     fRange('seasonal_actions.cover_automation.frost_protection_temp', 'Frostschutz ab (°C)', -10, 10, 1, {'-5':'-5°C',0:'0°C',3:'3°C',5:'5°C',10:'10°C'}) +
     fRange('seasonal_actions.cover_automation.storm_wind_speed', 'Sturm-Windgeschwindigkeit (km/h)', 20, 100, 5, {20:'20',30:'30',40:'40',50:'50',60:'60',80:'80',100:'100'}) +
     fToggle('seasonal_actions.cover_automation.inverted_position', 'Positionen invertiert (0=offen, 100=zu, z.B. Shelly/MQTT)')
+  ) +
+  // ── Nacht-Isolierung (Bug 5) ──────────────────────────
+  sectionWrap('&#127769;', 'Nacht-Isolierung',
+    fInfo('Konfiguriere wann die Nacht-Isolierung beginnt und endet. Im Winter frueher starten, im Sommer spaeter.') +
+    fRange('seasonal_actions.cover_automation.night_start_hour', 'Nacht beginnt um (Stunde)', 17, 24, 1, {17:'17',18:'18',19:'19',20:'20',21:'21',22:'22',23:'23',24:'24'}) +
+    fRange('seasonal_actions.cover_automation.night_end_hour', 'Nacht endet um (Stunde)', 4, 9, 1, {4:'4',5:'5',6:'6',7:'7',8:'8',9:'9'})
+  ) +
+  // ── Anti-Oszillation (Feature 10) ─────────────────────
+  sectionWrap('&#128200;', 'Hysterese (Anti-Oszillation)',
+    fInfo('Verhindert staendiges Auf/Zu an der Grenztemperatur. Beispiel: Schliessen bei 26°C, erst wieder oeffnen bei 24°C (2°C Hysterese).') +
+    fRange('seasonal_actions.cover_automation.hysteresis_temp', 'Temperatur-Hysterese (°C)', 0, 5, 1, {0:'Keine',1:'1°C',2:'2°C',3:'3°C',4:'4°C',5:'5°C'}) +
+    fRange('seasonal_actions.cover_automation.hysteresis_wind', 'Wind-Hysterese (km/h)', 0, 20, 5, {0:'Keine',5:'5',10:'10',15:'15',20:'20'})
+  ) +
+  // ── Intelligente Features ─────────────────────────────
+  sectionWrap('&#129504;', 'Intelligente Features',
+    fInfo('Erweiterte Automatik-Features fuer maximalen Komfort und Energieeffizienz.') +
+    fToggle('seasonal_actions.cover_automation.glare_protection', 'Blendschutz (bei besetztem Platz + Sonne)') +
+    fToggle('seasonal_actions.cover_automation.gradual_morning', 'Sanftes Oeffnen morgens (3 Stufen)') +
+    fToggle('seasonal_actions.cover_automation.wave_open', 'Wellenfoermiges Oeffnen (Ost→Sued→West)') +
+    fToggle('seasonal_actions.cover_automation.heating_integration', 'Heizungs-Integration (Isolierung + passive Solarwaerme)') +
+    fToggle('seasonal_actions.cover_automation.co2_ventilation', 'CO2-Lueftungs-Unterstuetzung') +
+    fToggle('seasonal_actions.cover_automation.privacy_mode', 'Privacy-Modus (Sichtschutz abends bei Licht)') +
+    fToggle('seasonal_actions.cover_automation.presence_aware', 'Praesenz-basiert (niemand zuhause = alles zu)') +
+    fRange('seasonal_actions.cover_automation.manual_override_hours', 'Manueller Override-Schutz (Stunden)', 0, 6, 1, {0:'Aus',1:'1h',2:'2h',3:'3h',4:'4h',5:'5h',6:'6h'})
   ) +
   // ── Urlaubs-Simulation ─────────────────────────
   sectionWrap('&#127796;', 'Urlaubs-Simulation',
@@ -5732,9 +5799,22 @@ function rpSetPath(path, val) {
 function rpRange(path, label, min, max, step, labels) {
   const v = rpGetPath(path) ?? min;
   const lbl = labels ? (labels[v]||v) : v;
+  const lblAttr = labels ? " data-labels='" + JSON.stringify(labels).replace(/'/g,'&#39;') + "'" : '';
   return '<div class="form-group"><label>' + label + '</label>' +
-    '<div class="range-group"><input type="range" data-rp-path="' + path + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + v + '" ' +
-    'oninput="updRange(this);rpSetPath(\'' + path + '\',parseFloat(this.value))"><span class="range-value" id="rv_rp_' + path.replace(/\./g,'_') + '">' + lbl + '</span></div></div>';
+    '<div class="range-group"><input type="range" data-rp-path="' + path + '"' + lblAttr + ' min="' + min + '" max="' + max + '" step="' + step + '" value="' + v + '" ' +
+    'oninput="updRpRange(this);rpSetPath(\'' + path + '\',parseFloat(this.value))"><span class="range-value" id="rv_rp_' + path.replace(/\./g,'_') + '">' + lbl + '</span></div></div>';
+}
+function updRpRange(el) {
+  const path = el.dataset.rpPath;
+  let display = el.value;
+  if (el.dataset.labels) {
+    try {
+      const labels = JSON.parse(el.dataset.labels);
+      display = labels[el.value] || labels[parseFloat(el.value)] || el.value;
+    } catch(e) {}
+  }
+  const span = document.getElementById('rv_rp_' + path.replace(/\./g,'_'));
+  if (span) span.textContent = display;
 }
 function rpToggle(path, label) {
   const v = rpGetPath(path);
@@ -6370,6 +6450,38 @@ async function deleteCoverSensor(assignmentId) {
   } catch (e) { toast('Fehler: ' + e.message, 'error'); }
 }
 
+// ── Cover Action Log (Dashboard Feature 17) ──────────────────────
+
+async function loadCoverActionLog() {
+  const container = document.getElementById('coverActionLogContainer');
+  if (!container) return;
+  try {
+    const result = await api('/api/ui/covers/action-log?limit=10');
+    const entries = Array.isArray(result) ? result : [];
+    if (entries.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Noch keine automatischen Aktionen aufgezeichnet.</div>';
+      return;
+    }
+    let html = '<div style="display:flex;flex-direction:column;gap:4px;">';
+    for (const e of entries) {
+      const ts = new Date(e.ts * 1000);
+      const timeStr = ts.toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+      const eid = (e.entity_id || '').replace('cover.', '');
+      const posColor = e.position > 50 ? 'var(--accent)' : e.position === 0 ? 'var(--danger)' : 'var(--text-secondary)';
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;">';
+      html += '<span style="font-size:10px;color:var(--text-muted);min-width:80px;font-family:var(--mono);">' + esc(timeStr) + '</span>';
+      html += '<span style="font-size:11px;font-weight:600;min-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(eid) + '</span>';
+      html += '<span style="font-size:11px;color:' + posColor + ';font-weight:600;min-width:35px;">' + e.position + '%</span>';
+      html += '<span style="font-size:10px;color:var(--text-muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(e.reason || '') + '</span>';
+      html += '</div>';
+    }
+    html += '</div>';
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Aktions-Log nicht verfuegbar.</div>';
+  }
+}
+
 // ── Oeffnungs-Sensoren (Fenster/Tueren/Tore) ──────────────────────
 let _openingSensors = {};
 
@@ -6999,6 +7111,35 @@ function renderVacuum() {
     renderVacuumRobot('eg', 'Erdgeschoss (EG)') +
     renderVacuumRobot('og', 'Obergeschoss (OG)')
   ) +
+  sectionWrap('&#128168;', 'Reinigungsoptionen',
+    fInfo('Standard-Einstellungen fuer Saugstaerke und Reinigungsmodus wenn nichts anderes angegeben wird.') +
+    fSelect('vacuum.default_fan_speed', 'Standard-Saugstaerke', [
+      {v:'quiet',l:'Leise'}, {v:'standard',l:'Standard'},
+      {v:'strong',l:'Stark'}, {v:'turbo',l:'Turbo'}
+    ]) +
+    fSelect('vacuum.default_mode', 'Standard-Modus', [
+      {v:'vacuum',l:'Nur Saugen'}, {v:'mop',l:'Nur Wischen'},
+      {v:'vacuum_and_mop',l:'Saugen & Wischen'}
+    ])
+  ) +
+  sectionWrap('&#128694;', 'Anwesenheits-Steuerung',
+    fInfo('Steuert ob der Saugroboter nur bei Abwesenheit fahren darf. Gilt fuer ALLE Trigger (Auto-Clean, Steckdosen, Szenen). Kann die Alarmanlage automatisch umschalten.') +
+    fToggle('vacuum.presence_guard.enabled', 'Anwesenheits-Steuerung aktiv') +
+    fToggle('vacuum.presence_guard.switch_alarm_for_cleaning', 'Alarmanlage umschalten') +
+    '<div class="form-group"><label>Alarm-Entity' + helpBtn('vacuum.presence_guard.alarm_entity') + '</label>' +
+      '<div class="entity-pick-wrap" style="position:relative;">' +
+        '<input type="text" class="entity-pick-alarm form-input entity-pick-input" value="' + esc(getPath(S,'vacuum.presence_guard.alarm_entity')||'') + '"' +
+          ' placeholder="alarm_control_panel.alarmo" data-domains="alarm_control_panel"' +
+          ' oninput="entityPickFilter(this,\'alarm_control_panel\')" onfocus="entityPickFilter(this,\'alarm_control_panel\')"' +
+          ' onblur="setTimeout(function(){setPath(S,\'vacuum.presence_guard.alarm_entity\',document.querySelector(\'.entity-pick-alarm\').value.trim());scheduleAutoSave();},500)"' +
+          ' style="font-size:12px;font-family:var(--mono);">' +
+        '<div class="entity-pick-dropdown" style="display:none;"></div>' +
+      '</div>' +
+    '</div>' +
+    fToggle('vacuum.presence_guard.pause_on_arrival', 'Bei Heimkehr: Pausieren & Ladestation') +
+    fToggle('vacuum.presence_guard.resume_on_departure', 'Bei Abwesenheit: Reinigung fortsetzen') +
+    fRange('vacuum.presence_guard.resume_delay_minutes', 'Verzoegerung Fortsetzung (Min)', 1, 15, 1, {1:'1 Min',2:'2 Min',3:'3 Min',5:'5 Min',10:'10 Min',15:'15 Min'})
+  ) +
   sectionWrap('&#128296;', 'Auto-Clean',
     fInfo('Automatische Reinigung — entweder an festen Wochentagen oder automatisch wenn niemand zuhause ist.') +
     fToggle('vacuum.auto_clean.enabled', 'Auto-Clean aktiv') +
@@ -7016,6 +7157,14 @@ function renderVacuum() {
     fRange('vacuum.auto_clean.min_hours_between', 'Mindestabstand (Std)', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'}) +
     fRange('vacuum.auto_clean.preferred_time_start', 'Smart: Bevorzugt ab (Uhr)', 6, 18, 1) +
     fRange('vacuum.auto_clean.preferred_time_end', 'Smart: Bevorzugt bis (Uhr)', 10, 22, 1) +
+    fSelect('vacuum.auto_clean.auto_fan_speed', 'Saugstaerke (Auto-Clean)', [
+      {v:'quiet',l:'Leise'}, {v:'standard',l:'Standard'},
+      {v:'strong',l:'Stark'}, {v:'turbo',l:'Turbo'}
+    ]) +
+    fSelect('vacuum.auto_clean.auto_mode', 'Modus (Auto-Clean)', [
+      {v:'vacuum',l:'Nur Saugen'}, {v:'mop',l:'Nur Wischen'},
+      {v:'vacuum_and_mop',l:'Saugen & Wischen'}
+    ]) +
     fChipSelect('vacuum.auto_clean.not_during', 'Nicht starten waehrend', [
       {v:'meeting',l:'Meeting'}, {v:'schlafen',l:'Schlafen'},
       {v:'gaeste',l:'Gaeste'}, {v:'filmabend',l:'Filmabend'},
@@ -7941,6 +8090,16 @@ function _getDeclEntityList(id) {
         var dd = wrap.querySelector('.entity-pick-dropdown');
         if (dd) dd.style.display = 'none';
       }
+      return;
+    }
+    // Alarm-Entity Picker: Wert direkt in Settings speichern
+    var alarmInput = wrap ? wrap.querySelector('.entity-pick-alarm') : null;
+    if (alarmInput) {
+      alarmInput.value = entityId;
+      setPath(S, 'vacuum.presence_guard.alarm_entity', entityId);
+      scheduleAutoSave();
+      var dd2 = wrap.querySelector('.entity-pick-dropdown');
+      if (dd2) dd2.style.display = 'none';
       return;
     }
     _orig(item, entityId);

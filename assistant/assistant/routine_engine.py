@@ -1309,14 +1309,12 @@ class RoutineEngine:
         return f"Abwesenheits-Simulation beendet. Willkommen zurueck, {get_person_title()}."
 
     async def _run_vacation_simulation(self):
-        """Hauptloop der Abwesenheits-Simulation."""
-        sim_cfg = yaml_config.get("vacation_simulation", {})
-        # Typische Zeiten (konfigurierbar)
-        morning_lights = int(sim_cfg.get("morning_hour", 7))
-        evening_lights = int(sim_cfg.get("evening_hour", 18))
-        night_off = int(sim_cfg.get("night_hour", 23))
-        variation_minutes = int(sim_cfg.get("variation_minutes", 30))
+        """Hauptloop der Abwesenheits-Simulation (nur Licht).
 
+        Bug 7: Cover-Aktionen (covers_up/covers_down) werden NICHT mehr hier gesteuert
+        — das macht proactive._cover_schedule_logic() ueber vacation_simulation.* Config.
+        Bug 9: Config wird bei jedem Zyklus frisch gelesen (Hot-Reload).
+        """
         while True:
             try:
                 if not self.redis:
@@ -1328,34 +1326,37 @@ class RoutineEngine:
                 if active_str != "active":
                     break
 
+                # Bug 9: Config bei jedem Zyklus frisch lesen (Hot-Reload)
+                sim_cfg = yaml_config.get("vacation_simulation", {})
+                morning_lights = int(sim_cfg.get("morning_hour", 7))
+                evening_lights = int(sim_cfg.get("evening_hour", 18))
+                night_off = int(sim_cfg.get("night_hour", 23))
+                variation_minutes = int(sim_cfg.get("variation_minutes", 30))
+
                 now = datetime.now()
                 hour = now.hour
 
-                # Morgens: Rolladen hoch, ein Licht an
+                # Morgens: NUR Licht an (Cover macht proactive.py)
                 if hour == morning_lights:
                     variation = random.randint(-variation_minutes, variation_minutes)
                     await asyncio.sleep(max(0, variation * 60))
-                    await self._sim_action("covers_up")
-                    await asyncio.sleep(random.randint(60, 300))
                     await self._sim_action("light_random_on")
 
-                # Abends: Lichter an
+                # Abends: NUR Lichter an (Cover macht proactive.py)
                 elif hour == evening_lights:
                     variation = random.randint(-variation_minutes, variation_minutes)
                     await asyncio.sleep(max(0, variation * 60))
                     await self._sim_action("light_random_on")
-                    await asyncio.sleep(random.randint(300, 900))
-                    await self._sim_action("covers_down")
 
-                # Nachts: Alles aus
+                # Nachts: Alle Lichter aus
                 elif hour == night_off:
                     variation = random.randint(-variation_minutes, variation_minutes)
                     await asyncio.sleep(max(0, variation * 60))
                     await self._sim_action("all_lights_off")
 
-                # Zufaellige Licht-Wechsel tagsüber (alle 1-3 Stunden)
+                # Zufaellige Licht-Wechsel tagsueber
                 elif morning_lights < hour < night_off:
-                    if random.random() < 0.3:  # 30% Chance pro Stunde
+                    if random.random() < 0.3:
                         await self._sim_action("light_toggle_random")
 
             except asyncio.CancelledError:
@@ -1363,39 +1364,21 @@ class RoutineEngine:
             except Exception as e:
                 logger.error("Vacation-Simulation Fehler: %s", e)
 
-            # Naechster Check in 30-90 Minuten
             await asyncio.sleep(random.randint(1800, 5400))
 
     async def _sim_action(self, action_type: str):
-        """Fuehrt eine Simulations-Aktion aus."""
+        """Fuehrt eine Simulations-Aktion aus (nur Licht, keine Covers)."""
+        # Bug 7: Cover-Aktionen entfernt — proactive.py steuert Covers
+        if action_type in ("covers_up", "covers_down"):
+            logger.debug("Vacation-Sim: Cover-Aktion '%s' uebersprungen (proactive.py)", action_type)
+            return
+
         try:
             states = await self.ha.get_states()
             if not states:
                 return
 
-            if action_type == "covers_up":
-                for s in states:
-                    eid = s.get("entity_id", "")
-                    if eid.startswith("cover."):
-                        # Sicherheitsfilter: Garagentore/Tore ueberspringen
-                        if self._executor and not await self._executor._is_safe_cover(eid, s):
-                            continue
-                        await self.ha.call_service("cover", "set_cover_position",
-                                                   {"entity_id": eid, "position": 100})
-                logger.info("Vacation-Sim: Rolladen hoch")
-
-            elif action_type == "covers_down":
-                for s in states:
-                    eid = s.get("entity_id", "")
-                    if eid.startswith("cover."):
-                        # Sicherheitsfilter: Garagentore/Tore ueberspringen
-                        if self._executor and not await self._executor._is_safe_cover(eid, s):
-                            continue
-                        await self.ha.call_service("cover", "set_cover_position",
-                                                   {"entity_id": eid, "position": 0})
-                logger.info("Vacation-Sim: Rolladen runter")
-
-            elif action_type == "light_random_on":
+            if action_type == "light_random_on":
                 lights = [s for s in states if s.get("entity_id", "").startswith("light.")
                           and s.get("state") == "off"]
                 if lights:

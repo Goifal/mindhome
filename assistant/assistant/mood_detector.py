@@ -45,18 +45,24 @@ NEGATIVE_KEYWORDS = _mood_cfg.get("negative_keywords", [
     "nein", "falsch", "nicht das", "stimmt nicht", "geht nicht",
     "funktioniert nicht", "kaputt", "nervig", "nervt", "schlecht",
     "mist", "verdammt", "scheisse", "bloed", "egal",
+    "naja", "nutzlos", "unbrauchbar", "geht so", "passt nicht",
+    "hilft nicht", "bringt nichts", "sinnlos", "quatsch", "unsinn",
 ])
 
 IMPATIENT_KEYWORDS = _mood_cfg.get("impatient_keywords", [
     "schnell", "sofort", "jetzt", "los", "mach schon", "beeil dich",
     "endlich", "nochmal", "schon wieder", "hab ich doch gesagt",
     "zum dritten mal", "wie oft noch", "kapierst du",
+    "wieso dauert das", "viel zu lange", "dauert ewig",
+    "wann endlich", "wird das noch", "komm schon",
 ])
 
 TIRED_KEYWORDS = _mood_cfg.get("tired_keywords", [
     "muede", "schlafen", "bett", "gute nacht", "nacht",
     "gaehn", "erschoepft", "fertig", "genug fuer heute",
     "schluss fuer heute", "feierabend", "ins bett",
+    "bin fertig", "hab keinen bock", "ko", "bin platt",
+    "keine energie", "bin am ende", "todmuede", "hundemuede",
 ])
 
 FRUSTRATED_PREFIXES = [
@@ -305,6 +311,17 @@ class MoodDetector:
             self._stress_level = min(1.0, self._stress_level + self.repetition_stress_boost)
             signals.append("repetition")
 
+        # Eskalations-Erkennung: Mehrere aehnliche Anfragen hintereinander
+        # → User versucht es wiederholt → starke Frustration
+        if len(self._last_texts) >= 2:
+            _recent = self._last_texts[-2:]
+            _rep_count = sum(1 for lt in _recent if self._word_overlap(text_lower, lt) > 0.5)
+            if _rep_count >= 2:
+                # 3x aehnlich = Eskalation → doppelter Stress-Boost
+                self._stress_level = min(1.0, self._stress_level + self.repetition_stress_boost * 2)
+                self._frustration_count += 2
+                signals.append("escalation")
+
         # Ausrufezeichen = Ungeduld/Frustration
         exclamation_count = text.count("!")
         if exclamation_count >= 2:
@@ -473,6 +490,15 @@ class MoodDetector:
             if len(words) > 1 and len(words & prev_words) / max(len(words), 1) > 0.7:
                 return True
         return False
+
+    @staticmethod
+    def _word_overlap(text_a: str, text_b: str) -> float:
+        """Berechnet Wort-Ueberlappung (0.0-1.0) zwischen zwei Texten."""
+        words_a = set(text_a.split())
+        words_b = set(text_b.split())
+        if not words_a or not words_b:
+            return 0.0
+        return len(words_a & words_b) / max(len(words_a), len(words_b))
 
     def _apply_decay(self, now: float):
         """Laesst Stress und Frustration ueber Zeit abklingen."""

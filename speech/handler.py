@@ -132,6 +132,8 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         compute_type: str = "int8",
         beam_size: int = 5,
         redis_url: str = "redis://redis:6379",
+        initial_prompt: str = "",
+        hotwords: str = "",
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -142,6 +144,8 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         self.compute_type = compute_type
         self.beam_size = beam_size
         self.redis_url = redis_url
+        self.initial_prompt = initial_prompt
+        self.hotwords = hotwords
 
         # Audio-Buffer fuer aktuelle Session
         self._audio_bytes = bytearray()
@@ -197,13 +201,26 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         self._audio_bytes = bytearray()
         start_time = time.monotonic()
 
+        # STT-4: Dynamischen Kontext aus Redis laden (letzte User-Saetze)
+        # brain.py schreibt nach jeder Verarbeitung die letzten Saetze nach Redis.
+        # Das gibt Whisper Gespraechskontext → bessere Erkennung von Referenzen.
+        dynamic_context = ""
+        try:
+            redis = await _get_redis(self.redis_url)
+            if redis:
+                dynamic_context = await redis.get("mha:stt:recent_context") or ""
+        except Exception:
+            pass  # Redis-Fehler sind nicht kritisch
+
         # C-7: Lock serialisiert Transkriptionen (CTranslate2 nicht thread-safe)
         # I-10: Timeout verhindert endlose Haenger bei korruptem Audio
         loop = asyncio.get_running_loop()
         async with _get_model_lock():
             try:
                 text = await asyncio.wait_for(
-                    loop.run_in_executor(None, self._transcribe, audio_bytes),
+                    loop.run_in_executor(
+                        None, self._transcribe, audio_bytes, dynamic_context
+                    ),
                     timeout=30.0,
                 )
             except asyncio.TimeoutError:
@@ -226,7 +243,7 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
 
         return text
 
-    def _transcribe(self, audio_bytes: bytes) -> str:
+    def _transcribe(self, audio_bytes: bytes, dynamic_context: str = "") -> str:
         """Transkribiert PCM-Audio mit faster-whisper (synchron, fuer Thread)."""
         model = _get_whisper_model(self.model_name, self.device, self.compute_type)
 
@@ -236,29 +253,141 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         if len(audio_array) < 1600:  # < 0.1s bei 16kHz
             return ""
 
+        # STT-1: Audio-Normalisierung — Lautstaerke auf einheitliches Niveau bringen.
+        # Zu leise Aufnahmen (weit vom Mikro) werden verstaerkt,
+        # zu laute (Clipping) werden reduziert.
+        audio_array = self._normalize_audio(audio_array)
+
+        # STT-5: Adaptive beam_size — kurze Utterances (<2s) bekommen
+        # groesseren Beam weil der Speed-Overhead minimal ist,
+        # aber die Qualitaet deutlich steigt.
+        audio_duration_sec = len(audio_array) / 16000.0
+        effective_beam = self.beam_size
+        if audio_duration_sec < 2.0 and self.beam_size < 5:
+            effective_beam = 5
+            logger.debug("Adaptive beam: %d → %d (kurzes Audio: %.1fs)",
+                         self.beam_size, effective_beam, audio_duration_sec)
+
+        # Gemeinsame Transcribe-Parameter
+        _transcribe_kwargs = {
+            "language": self.language,
+            "beam_size": effective_beam,
+            # Anti-Hallucination: Whisper halluziniert manchmal in stillen Passagen
+            # repetition_penalty reduziert wiederholte Phrasen
+            "repetition_penalty": 1.2,
+            # no_speech_threshold: Segmente mit hoher "kein Sprechen"-Wahrscheinlichkeit
+            # werden verworfen (0.6 = Standard, 0.4 = strenger)
+            "no_speech_threshold": 0.4,
+            # hallucination_silence_threshold: Wenn eine Pause > N Sekunden erkannt wird
+            # und trotzdem Text generiert wird → wahrscheinlich Halluzination → skippen
+            "hallucination_silence_threshold": 1.0,
+        }
+
+        # STT-3: initial_prompt mit dynamischem Kontext kombinieren.
+        # Statischer Prompt (Raumnamen, Vokabular) + letzte User-Saetze aus Redis.
+        _full_prompt = self.initial_prompt
+        if dynamic_context:
+            # Dynamischen Kontext VOR den statischen Prompt setzen
+            # (Whisper gewichtet den Anfang des Prompts staerker)
+            _full_prompt = f"{dynamic_context} {self.initial_prompt}"
+            # Whisper hat ein Limit fuer initial_prompt (~224 Tokens)
+            # Kuerzen wenn zu lang (grob: 1 Token ≈ 4 Zeichen fuer Deutsch)
+            if len(_full_prompt) > 800:
+                _full_prompt = _full_prompt[:800]
+
+        if _full_prompt:
+            _transcribe_kwargs["initial_prompt"] = _full_prompt
+
+        # hotwords: Boosted bestimmte Woerter im Beam-Search
+        if self.hotwords:
+            _transcribe_kwargs["hotwords"] = self.hotwords
+
         # W-9: VAD-Fallback — bei ValueError nochmal ohne VAD versuchen
         try:
             # S-3: min_silence von 500ms auf 250ms reduziert — schnellere
             # Endeerkennung bei kurzen Sprachbefehlen (~250ms Latenzgewinn)
-            segments, _info = model.transcribe(
+            segments_list = list(model.transcribe(
                 audio_array,
-                language=self.language,
-                beam_size=self.beam_size,
                 vad_filter=True,
                 vad_parameters={"min_silence_duration_ms": 250},
-            )
-            text = " ".join(seg.text.strip() for seg in segments)
+                **_transcribe_kwargs,
+            )[0])
         except ValueError as e:
             logger.warning("VAD-Fehler, Retry ohne VAD: %s", e)
-            segments, _info = model.transcribe(
+            segments_list = list(model.transcribe(
                 audio_array,
-                language=self.language,
-                beam_size=self.beam_size,
                 vad_filter=False,
-            )
-            text = " ".join(seg.text.strip() for seg in segments)
+                **_transcribe_kwargs,
+            )[0])
 
+        # STT-2: Confidence-Filter — Segmente mit sehr niedriger Confidence verwerfen.
+        # avg_logprob < -1.0 bedeutet Whisper ist sich sehr unsicher.
+        filtered_texts = []
+        for seg in segments_list:
+            seg_text = seg.text.strip()
+            if not seg_text:
+                continue
+            # Confidence-Logging fuer Diagnostik
+            logger.debug(
+                "Segment: '%s' (avg_logprob=%.3f, no_speech=%.3f)",
+                seg_text[:60], seg.avg_logprob, seg.no_speech_prob,
+            )
+            # Sehr niedrige Confidence → wahrscheinlich Halluzination oder Rauschen
+            if seg.avg_logprob < -1.0:
+                logger.info(
+                    "Segment verworfen (low confidence): '%s' (logprob=%.3f)",
+                    seg_text[:60], seg.avg_logprob,
+                )
+                continue
+            # Hohe no_speech_prob → kein Sprechen erkannt, aber trotzdem Text generiert
+            if seg.no_speech_prob > 0.8:
+                logger.info(
+                    "Segment verworfen (no_speech): '%s' (no_speech=%.3f)",
+                    seg_text[:60], seg.no_speech_prob,
+                )
+                continue
+            filtered_texts.append(seg_text)
+
+        text = " ".join(filtered_texts)
         return text.strip()
+
+    @staticmethod
+    def _normalize_audio(audio_array: np.ndarray, target_rms: float = 0.1) -> np.ndarray:
+        """Normalisiert Audio-Lautstaerke auf ein einheitliches Niveau.
+
+        Berechnet den RMS (Root Mean Square) und skaliert das Signal
+        auf target_rms (~-20dB). Verhindert Clipping bei > 0.95.
+
+        Dies hilft bei:
+        - Zu leisen Aufnahmen (User weit vom Mikro)
+        - Unterschiedlichen Mikrofon-Empfindlichkeiten pro Raum
+        - Schwankender Lautstaerke zwischen Personen
+        """
+        if len(audio_array) == 0:
+            return audio_array
+
+        # RMS berechnen
+        rms = np.sqrt(np.mean(audio_array ** 2))
+        if rms < 1e-6:  # Stille — nicht verstaerken (wuerde nur Rauschen verstaerken)
+            return audio_array
+
+        # Skalierungsfaktor berechnen (mit Clipping-Schutz)
+        gain = target_rms / rms
+        # Gain begrenzen: max 10x Verstaerkung (vermeidet Rausch-Explosion),
+        # min 0.1x Reduktion (bei extrem lautem Signal)
+        gain = np.clip(gain, 0.1, 10.0)
+
+        normalized = audio_array * gain
+
+        # Clipping verhindern — Werte auf [-0.95, 0.95] begrenzen
+        peak = np.max(np.abs(normalized))
+        if peak > 0.95:
+            normalized = normalized * (0.95 / peak)
+
+        if abs(gain - 1.0) > 0.1:
+            logger.debug("Audio normalisiert: RMS %.4f → %.4f (gain=%.2fx)", rms, target_rms, gain)
+
+        return normalized
 
     async def _extract_and_store_embedding(self, audio_bytes: bytes):
         """Extrahiert ECAPA-TDNN Embedding und speichert es in Redis.

@@ -711,6 +711,32 @@ class AssistantBrain(BrainCallbacksMixin):
 
         self._task_registry.create_task(_save(), name="memory_exchange")
 
+    def _update_stt_context(self, user_text: str) -> None:
+        """STT-3: Speichert die letzten User-Saetze in Redis fuer dynamischen Whisper-Kontext.
+
+        Der Whisper-Handler liest 'mha:stt:recent_context' und nutzt die letzten
+        Saetze als initial_prompt-Erweiterung. Das gibt Whisper Gespraechskontext
+        und verbessert die Erkennung von Referenzen und wiederkehrendem Vokabular.
+        """
+        async def _save_context():
+            try:
+                redis = self.memory.redis
+                if not redis:
+                    return
+                # Letzte 3 Saetze aus Redis lesen
+                prev = await redis.get("mha:stt:recent_context") or ""
+                # Neuen Satz anhaengen, auf max 3 Saetze kuerzen
+                sentences = [s.strip() for s in prev.split("|") if s.strip()]
+                sentences.append(user_text.strip())
+                sentences = sentences[-3:]  # Maximal 3 Saetze
+                context = " | ".join(sentences)
+                # Mit 5 Minuten TTL speichern (Kontext wird bei laengerem Schweigen irrelevant)
+                await redis.set("mha:stt:recent_context", context, ex=300)
+            except Exception as e:
+                logger.debug("STT-Kontext Update fehlgeschlagen (ignoriert): %s", e)
+
+        self._task_registry.create_task(_save_context(), name="stt_context_update")
+
     async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None, device_id: Optional[str] = None) -> dict:
         """
         Verarbeitet eine User-Eingabe.
@@ -731,7 +757,12 @@ class AssistantBrain(BrainCallbacksMixin):
             voice_metadata.get("source") == "ha_assist_pipeline" if voice_metadata else False
         )
 
+        # STT Text-Normalisierung: Typische Whisper-Fehler korrigieren
+        text = self._normalize_stt_text(text)
         logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
+
+        # STT-3: User-Text als Kontext fuer die naechste Whisper-Transkription speichern
+        self._update_stt_context(text)
 
         # Aktuelle Person merken (fuer Executor-Methoden wie manage_protocol)
         self._current_person = person or ""
@@ -2081,21 +2112,20 @@ class AssistantBrain(BrainCallbacksMixin):
         if profile.need_rag:
             _mega_tasks.append(("rag", self._get_rag_context(text)))
 
-        # Feature A: Kreative Problemloesung — Haus-Daten parallel laden
-        _mega_tasks.append(("problem_solving", self._build_problem_solving_context(text)))
-
-        # Intelligence Fusion: Anticipation + Learning + Insights + Experiential parallel laden
-        _mega_tasks.append(("anticipation", self.anticipation.get_suggestions()))
-        _mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns()))
-        _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
-        _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
-
-        # Self-Improvement: Korrektur-Kontext + gelernte Regeln + Lern-Bestaetigungen parallel laden
-        _mega_tasks.append(("correction_ctx", self.correction_memory.get_relevant_corrections(
-            action_type="", args=None, person=person or "",
-        )))
-        _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
-        _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
+        # Feature A, Intelligence Fusion, Self-Improvement:
+        # Bei einfachen Device-Commands (Licht an, Rollladen auf) ueberspringen
+        # um CPU/Redis I/O zu sparen — diese Daten sind dort nicht relevant.
+        if profile.category != "device_command":
+            _mega_tasks.append(("problem_solving", self._build_problem_solving_context(text)))
+            _mega_tasks.append(("anticipation", self.anticipation.get_suggestions()))
+            _mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns()))
+            _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
+            _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
+            _mega_tasks.append(("correction_ctx", self.correction_memory.get_relevant_corrections(
+                action_type="", args=None, person=person or "",
+            )))
+            _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
+            _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
 
         _mega_keys, _mega_coros = zip(*_mega_tasks)
         _mega_results = await asyncio.gather(*_mega_coros, return_exceptions=True)
@@ -2230,6 +2260,27 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # --- Prio 1: Core ---
         sections.append(("scene_intelligence", SCENE_INTELLIGENCE_PROMPT, 1))
+
+        # STT-6: Hinweis fuer das LLM bei Spracheingabe — das LLM soll
+        # moegliche STT-Fehler eigenstaendig erkennen und korrigieren.
+        if getattr(self, "_request_from_pipeline", False):
+            sections.append(("stt_hint", (
+                "\n\nSPRACHEINGABE: Der User spricht per Mikrofon. "
+                "Moegliche STT-Fehler beruecksichtigen — wenn ein Wort "
+                "im Kontext keinen Sinn ergibt, das phonetisch aehnlichste "
+                "sinnvolle Wort annehmen."
+            ), 2))
+
+        # Letzte ausgefuehrte Aktion im Kontext — wichtig fuer Korrekturen
+        # ("Nein, ich meinte das Schlafzimmer" → LLM weiss was zu korrigieren)
+        if self._last_executed_action:
+            _args_str = ", ".join(f"{k}={v}" for k, v in self._last_executed_action_args.items()) if self._last_executed_action_args else ""
+            _action_text = (
+                f"\n\nLETZTE AKTION: {self._last_executed_action}({_args_str})\n"
+                f"Wenn der User korrigiert ('Nein, ich meinte...'), "
+                f"fuehre die korrigierte Aktion aus."
+            )
+            sections.append(("last_action", _action_text, 1))
 
         mood_hint = self.mood.get_mood_prompt_hint(person or "") if profile.need_mood else ""
         if mood_hint:
@@ -2633,6 +2684,11 @@ class AssistantBrain(BrainCallbacksMixin):
                     logger.info("Error-Mitigation: %s -> %s (%s)", model, _fb, _error_mitigation.get("reason", ""))
                     model = _fb
 
+            # Think-Mode fuer komplexe Anfragen (What-If, Problemloesung)
+            # aktivieren — auch wenn Tools angeboten werden.
+            # Die Think-Tags werden von ollama_client automatisch entfernt.
+            _force_think = bool(problem_solving_ctx or whatif_prompt)
+
             try:
                 response = await asyncio.wait_for(
                     self.ollama.chat(
@@ -2640,6 +2696,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         model=model,
                         tools=_llm_tools,
                         max_tokens=response_tokens,
+                        think=True if _force_think else None,
                     ),
                     timeout=float(llm_timeout),
                 )
@@ -4363,9 +4420,36 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.info("Nur Meta-Narration, kein Antwort-Text gefunden")
 
         if not text:
-            # Alle Reasoning-Filter haben den Text verworfen → leer zurueckgeben
-            # damit der Sprach-Retry (Zeile ~1411) eine saubere Antwort generieren kann
-            return ""
+            # Multi-Pass Fallback: Wenn alle Reasoning-Filter den Text verworfen haben,
+            # versuche den Original-Text zu retten statt komplett leer zurueckzugeben.
+            # Pass 1: Nur Think-Tags entfernen, Rest behalten
+            _fallback = re.sub(r"<think>.*?</think>", "", original, flags=re.DOTALL).strip()
+            if _fallback:
+                # Pass 2: Nur nicht-lateinische Zeichen entfernen
+                _fb_alpha = sum(1 for c in _fallback if c.isalpha())
+                _fb_nonlatin = sum(1 for c in _fallback if '\u0600' <= c <= '\u06FF'
+                                   or '\u4E00' <= c <= '\u9FFF'
+                                   or '\u3040' <= c <= '\u30FF'
+                                   or '\uAC00' <= c <= '\uD7AF')
+                if _fb_alpha > 0 and _fb_nonlatin / _fb_alpha > 0.5:
+                    _fb_parts = re.split(r'[\u0600-\u06FF\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]+', _fallback)
+                    _fb_clean = [p.strip() for p in _fb_parts if p.strip() and len(p.strip()) > 5]
+                    if _fb_clean:
+                        text = " ".join(_fb_clean)
+                        logger.info("Multi-Pass Fallback: Nicht-lateinisch entfernt, Rest: '%s'", text[:100])
+                    else:
+                        return ""
+                else:
+                    # Nur die letzten 1-2 Saetze des Originals behalten (oft die eigentliche Antwort)
+                    _sentences = re.split(r'(?<=[.!?])\s+', _fallback)
+                    _last_sentences = _sentences[-2:] if len(_sentences) > 1 else _sentences
+                    text = " ".join(_last_sentences).strip()
+                    if text:
+                        logger.info("Multi-Pass Fallback: Letzte Saetze behalten: '%s'", text[:100])
+                    else:
+                        return ""
+            else:
+                return ""
 
         # 1. Banned Phrases komplett entfernen
         banned_phrases = filter_config.get("banned_phrases", [
@@ -4685,11 +4769,38 @@ class AssistantBrain(BrainCallbacksMixin):
         text = re.sub(r"!\s*!", "!", text)
 
         # 6. Max Sentences begrenzen (Override hat Vorrang, z.B. Nachtmodus)
+        # Verbessertes Satz-Splitting: Schutzt Abkuerzungen, Dezimalzahlen und Auslassungspunkte
         max_sentences = max_sentences_override or filter_config.get("max_response_sentences", 0)
         if max_sentences > 0:
-            sentences = re.split(r"(?<=[.!?])\s+", text)
+            # Schutz-Tokens: Bekannte Abkuerzungen und Muster VOR dem Split ersetzen
+            _protected = text
+            _abbreviations = [
+                ("z.B.", "z\x00B\x00"), ("z. B.", "z\x00 B\x00"),
+                ("d.h.", "d\x00h\x00"), ("d. h.", "d\x00 h\x00"),
+                ("bzw.", "bzw\x00"), ("ca.", "ca\x00"), ("etc.", "etc\x00"),
+                ("Nr.", "Nr\x00"), ("Dr.", "Dr\x00"), ("Mr.", "Mr\x00"),
+                ("Fr.", "Fr\x00"), ("Hr.", "Hr\x00"), ("Str.", "Str\x00"),
+                ("inkl.", "inkl\x00"), ("exkl.", "exkl\x00"),
+                ("ggf.", "ggf\x00"), ("evtl.", "evtl\x00"),
+                ("u.a.", "u\x00a\x00"), ("o.ä.", "o\x00ae\x00"),
+            ]
+            for abbr, token in _abbreviations:
+                _protected = _protected.replace(abbr, token)
+            # Auslassungspunkte schuetzen
+            _protected = _protected.replace("...", "\x01\x01\x01")
+            # Dezimalzahlen schuetzen (z.B. "21.5")
+            _protected = re.sub(r"(\d)\.(\d)", r"\1\x02\2", _protected)
+
+            sentences = re.split(r"(?<=[.!?])\s+", _protected)
             if len(sentences) > max_sentences:
-                text = " ".join(sentences[:max_sentences])
+                _protected = " ".join(sentences[:max_sentences])
+
+            # Schutz-Tokens zurueck ersetzen
+            for abbr, token in _abbreviations:
+                _protected = _protected.replace(token, abbr)
+            _protected = _protected.replace("\x01\x01\x01", "...")
+            _protected = re.sub(r"(\d)\x02(\d)", r"\1.\2", _protected)
+            text = _protected
 
         text = text.strip()
 
@@ -5160,6 +5271,8 @@ class AssistantBrain(BrainCallbacksMixin):
             message, urgency, f"time_{device_type}",
         )
         await self._speak_and_emit(formatted)
+        # Proaktive Meldung in Working Memory speichern fuer Konversations-Kontext
+        self._remember_exchange("[proaktiv: Zeiterkennung]", formatted)
         logger.info("TimeAwareness [%s] -> Meldung: %s", urgency, formatted)
 
     async def _handle_health_alert(self, alert_type: str, urgency: str, message: str):
@@ -5172,6 +5285,7 @@ class AssistantBrain(BrainCallbacksMixin):
             message, urgency, f"health_{alert_type}",
         )
         await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Raumklima]", formatted)
         logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, formatted)
 
     async def _handle_device_health_alert(self, alert: dict):
@@ -5187,6 +5301,7 @@ class AssistantBrain(BrainCallbacksMixin):
             message, urgency, f"device_{alert_type}",
         )
         await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Geraetestatus]", formatted)
         logger.info(
             "DeviceHealth [%s/%s]: %s",
             alert.get("alert_type", "?"), urgency, formatted,
@@ -5202,6 +5317,7 @@ class AssistantBrain(BrainCallbacksMixin):
             message, "low", f"wellness_{nudge_type}",
         )
         await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Wellness]", formatted)
         logger.info("Wellness [%s]: %s", nudge_type, formatted)
 
     # ------------------------------------------------------------------
@@ -5868,6 +5984,119 @@ class AssistantBrain(BrainCallbacksMixin):
         re.compile(r"^schick\s+(\w+)\s+eine?\s+nachricht"),
         re.compile(r"^nachricht\s+an\s+(\w+)"),
     ]
+
+    # STT-Korrekturen: Woerter die Whisper haeufig falsch erkennt (deutsch)
+    _STT_WORD_CORRECTIONS: dict[str, str] = {
+        # --- Fehlende Umlaute (Whisper gibt manchmal ASCII statt ä/ö/ü) ---
+        "uber": "über", "fur": "für", "tur": "Tür", "turen": "Türen",
+        "kuche": "Küche", "zuruck": "zurück", "naturlich": "natürlich",
+        "glucklicherweise": "glücklicherweise", "ubrigens": "übrigens",
+        "buro": "Büro", "grun": "grün", "mude": "müde", "muде": "müde",
+        "gemutlich": "gemütlich", "wunschen": "wünschen",
+        "fruhstuck": "Frühstück", "schlussel": "Schlüssel",
+        "kuhl": "kühl", "kuhlschrank": "Kühlschrank",
+        "offnen": "öffnen", "geoffnet": "geöffnet", "schliessen": "schließen",
+        "heiss": "heiß", "draussen": "draußen",
+        "stromungskanal": "Strömungskanal", "beleuchtungskorper": "Beleuchtungskörper",
+        # --- Zusammengeschriebene Smart-Home-Begriffe ---
+        "roll laden": "Rollladen", "rolladen": "Rollladen",
+        "wohn zimmer": "Wohnzimmer", "schlaf zimmer": "Schlafzimmer",
+        "bade zimmer": "Badezimmer", "kinder zimmer": "Kinderzimmer",
+        "ankleide zimmer": "Ankleide", "wasch maschine": "Waschmaschine",
+        "spul maschine": "Spülmaschine", "saug roboter": "Saugroboter",
+        "steck dose": "Steckdose", "laut sprecher": "Lautsprecher",
+        "bewegungs melder": "Bewegungsmelder",
+        # --- Whisper-Halluzinationen bei deutschen Befehlen ---
+        "ja weiß": "Jarvis", "ja weis": "Jarvis", "jarwis": "Jarvis",
+        "dschawis": "Jarvis", "tscharwis": "Jarvis", "dschavis": "Jarvis",
+        "javis": "Jarvis", "jarvis,": "Jarvis",
+        # --- Haeufige Whisper-Fehler bei kurzen Befehlen ---
+        "machte": "mach das", "macht": "mach",
+        "lichte": "Licht", "lich": "Licht",
+        "rolle": "Rollo", "rollos": "Rollos",
+        # --- Zahlen/Prozent-Korrekturen ---
+        "prozent": "%", "grad": "°",
+        # --- Gaengige Fehlerkennungen ---
+        "home assistant": "Home Assistant", "homeassistant": "Home Assistant",
+    }
+
+    # Mehrwort-Korrekturen (werden VOR Einzelwort-Korrekturen angewendet)
+    _STT_PHRASE_CORRECTIONS: list[tuple[str, str]] = [
+        ("roll laden", "Rollladen"),
+        ("wohn zimmer", "Wohnzimmer"),
+        ("schlaf zimmer", "Schlafzimmer"),
+        ("bade zimmer", "Badezimmer"),
+        ("kinder zimmer", "Kinderzimmer"),
+        ("ankleide zimmer", "Ankleide"),
+        ("wasch maschine", "Waschmaschine"),
+        ("spül maschine", "Spülmaschine"),
+        ("spul maschine", "Spülmaschine"),
+        ("saug roboter", "Saugroboter"),
+        ("steck dose", "Steckdose"),
+        ("laut sprecher", "Lautsprecher"),
+        ("bewegungs melder", "Bewegungsmelder"),
+        ("guten morgen", "Guten Morgen"),
+        ("gute nacht", "Gute Nacht"),
+        ("ja weiß", "Jarvis"),
+        ("ja weis", "Jarvis"),
+        ("mach das licht", "mach das Licht"),
+        ("mach die musik", "mach die Musik"),
+        ("wie viel uhr", "wie viel Uhr"),
+        ("wie spät", "wie spät"),
+    ]
+
+    @staticmethod
+    def _normalize_stt_text(text: str) -> str:
+        """Normalisiert STT-Output fuer bessere Verarbeitung.
+
+        Korrigiert typische Whisper-Fehler:
+        - Doppelte Leerzeichen
+        - Fehlende Umlaute (uber → über, kuche → Küche)
+        - Zusammengeschriebene/getrennte Komposita (wohn zimmer → Wohnzimmer)
+        - Whisper-Halluzinationen bei Eigennamen (ja weiß → Jarvis)
+        - Ueberfluessige Interpunktion und Whitespace
+        """
+        if not text:
+            return text
+
+        # 1. Whitespace normalisieren
+        text = re.sub(r"\s{2,}", " ", text).strip()
+
+        # 2. Fuehrende/abschliessende Interpunktion entfernen
+        text = text.strip(".,;:!? ")
+
+        # 3. Whisper-typische Artefakte entfernen
+        # Manchmal gibt Whisper "..." oder "[Musik]" oder "(Unverstaendlich)" aus
+        text = re.sub(r"\[.*?\]", "", text).strip()
+        text = re.sub(r"\(.*?\)", "", text).strip()
+
+        # 4. Mehrwort-Korrekturen (case-insensitive)
+        text_lower = text.lower()
+        for wrong, correct in Brain._STT_PHRASE_CORRECTIONS:
+            if wrong in text_lower:
+                # Case-insensitive Replace
+                pattern = re.compile(re.escape(wrong), re.IGNORECASE)
+                text = pattern.sub(correct, text)
+                text_lower = text.lower()
+
+        # 5. Einzelwort-Korrekturen
+        words = text.split()
+        corrected = []
+        for w in words:
+            w_lower = w.lower().rstrip(".,;:!?")
+            trailing = w[len(w.rstrip(".,;:!?")):]
+            if w_lower in Brain._STT_WORD_CORRECTIONS:
+                replacement = Brain._STT_WORD_CORRECTIONS[w_lower]
+                corrected.append(replacement + trailing)
+            else:
+                corrected.append(w)
+
+        text = " ".join(corrected)
+
+        # 6. Nochmal Whitespace normalisieren nach Korrekturen
+        text = re.sub(r"\s{2,}", " ", text).strip()
+
+        return text
 
     @staticmethod
     def _is_device_command(text: str) -> bool:
@@ -8163,6 +8392,7 @@ Regeln:
             result = await self.executor.execute(action, args)
             text = f"{title}, {desc} — hab ich uebernommen. Wie jeden Tag um diese Zeit."
             await emit_proactive(text, "anticipation_auto", "medium")
+            self._remember_exchange("[proaktiv: Antizipation]", text)
             logger.info("Anticipation auto-execute: %s (confidence: %d%%)", desc, pct)
         else:
             # Vorschlagen — mit Confidence-Kontext im JARVIS-Stil
@@ -8194,6 +8424,7 @@ Regeln:
             return
         formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Insight]", formatted)
         logger.info("Insight zugestellt [%s/%s]: %s", check, urgency, message[:80])
 
     async def _handle_intent_reminder(self, reminder: dict):
@@ -8204,6 +8435,7 @@ Regeln:
         if not await self._callback_should_speak("medium", source="IntentReminder"):
             return
         await self._speak_and_emit(text)
+        self._remember_exchange("[proaktiv: Erinnerung]", text)
         logger.info("Intent-Erinnerung: %s", text)
 
     async def _handle_spontaneous_observation(self, observation: dict):
@@ -8217,6 +8449,7 @@ Regeln:
             return
         formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Beobachtung]", formatted)
         logger.info("Spontane Beobachtung: %s", message[:80])
 
     async def _weekly_learning_report_loop(self):

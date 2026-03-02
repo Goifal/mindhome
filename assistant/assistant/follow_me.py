@@ -190,28 +190,59 @@ class FollowMeEngine:
         self, old_room: str, new_room: str,
         profile: dict, others_in_old: list,
     ) -> Optional[dict]:
-        """Schaltet Licht im neuen Raum ein, im alten aus."""
+        """Schaltet Licht im neuen Raum ein, im alten aus.
+
+        Nutzt light_entities aus room_profiles.yaml wenn vorhanden,
+        sonst Fallback auf generisches light.{room_name} Pattern.
+        """
         try:
+            from .config import get_room_profiles
+            room_profiles = get_room_profiles().get("rooms", {})
+            transition = int(
+                yaml_config.get("lighting", {}).get("default_transition", 2)
+            )
+
             # Neuen Raum einschalten mit Profil-Werten
             brightness = profile.get("light_brightness", 80)
             color_temp = profile.get("light_color_temp")
 
-            service_data = {
-                "entity_id": f"light.{new_room.lower().replace(' ', '_')}",
-                "brightness_pct": brightness,
-            }
-            if color_temp:
-                # Kelvin → Mireds umrechnen
-                service_data["color_temp_kelvin"] = color_temp
+            # Echte light_entities aus room_profiles nutzen
+            new_room_cfg = room_profiles.get(new_room, {})
+            new_entities = new_room_cfg.get("light_entities", [])
+            if not new_entities:
+                new_entities = [f"light.{new_room.lower().replace(' ', '_')}"]
 
-            await self.ha.call_service("light", "turn_on", service_data)
+            for entity_id in new_entities:
+                service_data = {
+                    "entity_id": entity_id,
+                    "brightness_pct": brightness,
+                    "transition": transition,
+                }
+                # Per-Lampe Helligkeit aus room_profiles (Tag/Nacht)
+                per_light = new_room_cfg.get("light_brightness", {}).get(entity_id)
+                if per_light:
+                    from datetime import datetime
+                    hour = datetime.now().hour
+                    if 7 <= hour < 21:
+                        bri = per_light.get("day", brightness)
+                    else:
+                        bri = per_light.get("night", brightness)
+                    service_data["brightness_pct"] = bri
+                if color_temp:
+                    service_data["color_temp_kelvin"] = color_temp
+                await self.ha.call_service("light", "turn_on", service_data)
 
             # Alten Raum ausschalten (nur wenn allein)
             if not others_in_old:
-                await self.ha.call_service(
-                    "light", "turn_off",
-                    {"entity_id": f"light.{old_room.lower().replace(' ', '_')}"},
-                )
+                old_room_cfg = room_profiles.get(old_room, {})
+                old_entities = old_room_cfg.get("light_entities", [])
+                if not old_entities:
+                    old_entities = [f"light.{old_room.lower().replace(' ', '_')}"]
+                for entity_id in old_entities:
+                    await self.ha.call_service(
+                        "light", "turn_off",
+                        {"entity_id": entity_id, "transition": transition},
+                    )
 
             logger.info("Follow-Me Licht: %s aus → %s an (%d%%)", old_room, new_room, brightness)
             return {"type": "lights", "from": old_room, "to": new_room}
