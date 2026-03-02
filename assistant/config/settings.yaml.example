@@ -95,6 +95,10 @@ persons:
   titles: null
 autonomy:
   level: 2
+ollama:
+  num_ctx_fast: 2048                       # Kontextfenster Fast-Modell (spart VRAM)
+  num_ctx_smart: 4096                      # Kontextfenster Smart-Modell
+  num_ctx_deep: 8192                       # Kontextfenster Deep-Modell (MoE-effizient)
 models:
   fast: qwen3.5:4b
   smart: qwen3.5:9b
