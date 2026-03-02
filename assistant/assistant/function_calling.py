@@ -2842,8 +2842,8 @@ class FunctionExecutor:
             return {"success": False, "message": f"Da lief etwas schief: {e}"}
 
     # ── Phase 11: Adaptive Helligkeit (dim2warm) ──────────────
-    # Zirkadiane Helligkeitskurve (Prozent pro Stunde)
-    _CIRCADIAN_BRIGHTNESS_CURVE = [
+    # Default-Kurve als Fallback (wird von settings.yaml ueberschrieben)
+    _CIRCADIAN_BRIGHTNESS_CURVE_DEFAULT = [
         {"time": "05:00", "pct": 10},
         {"time": "06:00", "pct": 40},
         {"time": "07:00", "pct": 70},
@@ -2858,6 +2858,16 @@ class FunctionExecutor:
         {"time": "22:00", "pct": 10},
         {"time": "23:00", "pct": 5},
     ]
+
+    @staticmethod
+    def _get_circadian_curve():
+        """Liefert Circadian-Kurve aus settings.yaml (oder Default)."""
+        curve = yaml_config.get("lighting", {}).get(
+            "circadian", {}
+        ).get("brightness_curve")
+        if curve and isinstance(curve, list) and len(curve) >= 2:
+            return curve
+        return FunctionCalling._CIRCADIAN_BRIGHTNESS_CURVE_DEFAULT
 
     @staticmethod
     def _interpolate_circadian(curve, key, now_h, now_m):
@@ -2884,11 +2894,14 @@ class FunctionExecutor:
         return curve[-1][key]
 
     @staticmethod
-    def _get_adaptive_brightness(room: str) -> int:
+    def _get_adaptive_brightness(room: str, entity_id: str = "") -> int:
         """Berechnet Helligkeit basierend auf Tageszeit + Raum-Profil.
 
         Wenn lighting.circadian.enabled: nutzt interpolierte Helligkeitskurve.
         Sonst: Minuten-basierte lineare Interpolation (default/night).
+
+        Per-Lampe Helligkeit: Wenn in room_profiles.yaml fuer diese entity_id
+        individuelle Tag/Nacht-Werte definiert sind, werden diese verwendet.
 
         dim2warm-Lampen regeln Farbtemperatur ueber die Helligkeit
         in Hardware — je dunkler, desto waermer.
@@ -2900,13 +2913,20 @@ class FunctionExecutor:
         default_bright = room_cfg.get("default_brightness", 70)
         night_bright = room_cfg.get("night_brightness", 20)
 
+        # Per-Lampe Helligkeit aus room_profiles (hat Vorrang)
+        if entity_id:
+            per_light = room_cfg.get("light_brightness", {}).get(entity_id)
+            if per_light and isinstance(per_light, dict):
+                default_bright = per_light.get("day", default_bright)
+                night_bright = per_light.get("night", night_bright)
+
         # Zirkadiane Beleuchtung: feinere Kurve wenn aktiviert
         lighting_cfg = yaml_config.get("lighting", {})
         circadian = lighting_cfg.get("circadian", {})
         if circadian.get("enabled"):
             # Interpolierte Kurve liefert 0-100%, skaliert auf Raum-Profil
             curve_pct = FunctionCalling._interpolate_circadian(
-                FunctionCalling._CIRCADIAN_BRIGHTNESS_CURVE, "pct",
+                FunctionCalling._get_circadian_curve(), "pct",
                 now.hour, now.minute
             )
             # Skaliere Kurve auf Raum-spezifischen Bereich (night..default)
@@ -2974,7 +2994,7 @@ class FunctionExecutor:
                     except (ValueError, TypeError):
                         pass
                 else:
-                    service_data["brightness_pct"] = self._get_adaptive_brightness(room_name)
+                    service_data["brightness_pct"] = self._get_adaptive_brightness(room_name, entity_id)
             await self.ha.call_service("light", service, service_data)
             count += 1
 
@@ -3047,6 +3067,13 @@ class FunctionExecutor:
             new_brightness = current_brightness + step if state == "brighter" else current_brightness - step
             new_brightness = max(5, min(100, new_brightness))
             service_data = {"entity_id": entity_id, "brightness_pct": new_brightness}
+            # Default-Transition anwenden
+            _lt = yaml_config.get("lighting", {}).get("default_transition")
+            if _lt:
+                try:
+                    service_data["transition"] = int(_lt)
+                except (ValueError, TypeError):
+                    pass
             success = await self.ha.call_service("light", "turn_on", service_data)
             direction = "heller" if state == "brighter" else "dunkler"
             return {"success": success, "message": f"Licht {room} {direction} auf {new_brightness}%"}
@@ -3062,7 +3089,7 @@ class FunctionExecutor:
                 pass
         elif state == "on" and "brightness" not in args:
             # Phase 11: Adaptive Helligkeit wenn keine explizite Angabe
-            brightness_pct = self._get_adaptive_brightness(room)
+            brightness_pct = self._get_adaptive_brightness(room, entity_id)
             service_data["brightness_pct"] = brightness_pct
         # Phase 9: Transition-Parameter (sanftes Dimmen) — muss int/float sein
         if "transition" in args:
@@ -3071,11 +3098,15 @@ class FunctionExecutor:
             except (ValueError, TypeError):
                 # LLM schickt manchmal "smooth" statt Zahl — Default 2s
                 service_data["transition"] = 2
-        elif state == "on":
-            # Kein expliziter Transition: Default aus lighting-Config
+        else:
+            # Kein expliziter Transition: Default aus lighting-Config (on + off)
             _lt = yaml_config.get("lighting", {}).get("default_transition")
-            if _lt and int(_lt) > 0:
-                service_data["transition"] = int(_lt)
+            if _lt:
+                try:
+                    if int(_lt) > 0:
+                        service_data["transition"] = int(_lt)
+                except (ValueError, TypeError):
+                    pass
         # dim2warm: Farbtemperatur wird in Hardware ueber Helligkeit geregelt.
         # Kein color_temp_kelvin an HA senden — Lampen machen das selbst.
 
@@ -3113,7 +3144,7 @@ class FunctionExecutor:
                     else:
                         # Adaptive Helligkeit wenn keine explizite Angabe
                         room_name = eid.split(".", 1)[1] if "." in eid else ""
-                        service_data["brightness_pct"] = self._get_adaptive_brightness(room_name)
+                        service_data["brightness_pct"] = self._get_adaptive_brightness(room_name, eid)
                 await self.ha.call_service("light", service, service_data)
                 count += 1
 

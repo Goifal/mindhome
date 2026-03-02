@@ -313,8 +313,10 @@ class FunctionValidator:
         if not states:
             return None
 
-        # Check: Helles Tageslicht?
-        if checks.get("daylight", True):
+        # Check: Helles Tageslicht? (lighting.daylight_off aus settings.yaml)
+        from .config import yaml_config as _fv_yaml_config
+        _daylight_enabled = _fv_yaml_config.get("lighting", {}).get("daylight_off", True)
+        if _daylight_enabled and checks.get("daylight", True):
             for state in states:
                 eid = state.get("entity_id", "")
                 if eid == "sun.sun":

@@ -717,13 +717,15 @@ class ProactiveManager:
                     name = s.get("attributes", {}).get("friendly_name", eid)
                     covers_open.append(name)
 
-            # Lichter noch an?
+            # Lichter noch an? (nur wenn lighting.enabled)
+            lighting_cfg = yaml_config.get("lighting", {})
             lights_on = []
-            for s in states:
-                eid = s.get("entity_id", "")
-                if eid.startswith("light.") and s.get("state") == "on":
-                    name = s.get("attributes", {}).get("friendly_name", eid)
-                    lights_on.append(name)
+            if lighting_cfg.get("enabled", True):
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if eid.startswith("light.") and s.get("state") == "on":
+                        name = s.get("attributes", {}).get("friendly_name", eid)
+                        lights_on.append(name)
 
             # Prompt bauen
             parts = []

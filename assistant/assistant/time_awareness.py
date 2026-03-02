@@ -221,15 +221,45 @@ class TimeAwareness:
         return None
 
     async def _check_lights_empty_rooms(self, states: list[dict]) -> list[dict]:
-        """Prueft ob Lichter in leeren Raeumen an sind."""
+        """Prueft ob Lichter in leeren Raeumen an sind.
+
+        Liest lighting.* Settings aus settings.yaml:
+        - lighting.enabled: Master-Schalter fuer Lichtsteuerung
+        - lighting.auto_off_empty_room_minutes: Threshold UND Auto-Off
+        - time_awareness.thresholds.light_empty_room: Fallback-Threshold (nur Hinweis)
+
+        Wenn auto_off_empty_room_minutes gesetzt: Lichter werden automatisch
+        ausgeschaltet UND ein Alert erzeugt. Sonst nur Hinweis.
+        """
+        lighting_cfg = yaml_config.get("lighting", {})
+        if not lighting_cfg.get("enabled", True):
+            return []
+
         alerts = []
+
+        # Auto-Off Threshold aus lighting-Config (hat Vorrang)
+        auto_off_minutes = lighting_cfg.get("auto_off_empty_room_minutes")
+        if auto_off_minutes:
+            try:
+                auto_off_minutes = int(auto_off_minutes)
+            except (ValueError, TypeError):
+                auto_off_minutes = None
+        # Fallback: time_awareness Threshold (nur Hinweis, kein Auto-Off)
+        threshold = auto_off_minutes or self.threshold_light_empty
 
         # Welche Raeume haben Bewegung?
         active_rooms = set()
+        # Konfigurierte Motion-Sensoren aus multi_room nutzen
+        room_motion = yaml_config.get("multi_room", {}).get("room_motion_sensors", {})
+        motion_to_room = {}
+        for room_name, sensor_id in room_motion.items():
+            if sensor_id:
+                motion_to_room[sensor_id] = room_name.lower()
         for state in states:
             entity_id = state.get("entity_id", "")
-            if entity_id.startswith("binary_sensor.motion") and state.get("state") == "on":
-                # Raum-Name aus Entity-ID extrahieren
+            if entity_id in motion_to_room and state.get("state") == "on":
+                active_rooms.add(motion_to_room[entity_id])
+            elif entity_id.startswith("binary_sensor.motion") and state.get("state") == "on":
                 room = entity_id.replace("binary_sensor.motion_", "").replace("binary_sensor.bewegung_", "")
                 active_rooms.add(room)
 
@@ -242,28 +272,67 @@ class TimeAwareness:
                 if zone:
                     active_rooms.add(zone.lower())
 
+        # Raum-zu-Licht Zuordnung aus room_profiles
+        from .config import get_room_profiles
+        room_profiles = get_room_profiles().get("rooms", {})
+        entity_to_room = {}
+        for room_name, room_cfg in room_profiles.items():
+            for eid in room_cfg.get("light_entities", []):
+                entity_to_room[eid] = room_name.lower()
+
         # Lichter pruefen
         for state in states:
             entity_id = state.get("entity_id", "")
             if not entity_id.startswith("light.") or state.get("state") != "on":
                 continue
 
-            light_room = entity_id.split(".", 1)[1].split("_")[0]
+            # Raum des Lichts bestimmen: Erst room_profiles, dann Heuristik
+            light_room = entity_to_room.get(
+                entity_id,
+                entity_id.split(".", 1)[1].split("_")[0],
+            )
             if light_room in active_rooms:
                 continue
 
             device_key = f"light_{light_room}"
             minutes = await self._get_running_minutes(entity_id, device_key)
-            if minutes and minutes >= self.threshold_light_empty:
+            if minutes and minutes >= threshold:
                 if not await self._was_notified(device_key):
                     await self._mark_notified(device_key)
                     friendly = state.get("attributes", {}).get("friendly_name", entity_id)
-                    alerts.append({
-                        "type": "light_empty_room",
-                        "device": device_key,
-                        "message": f"{friendly} ist seit {int(minutes)} Minuten an, aber niemand scheint dort zu sein.",
-                        "urgency": "low",
-                    })
+
+                    # Auto-Off: Licht tatsaechlich ausschalten
+                    if auto_off_minutes:
+                        try:
+                            transition = int(lighting_cfg.get("default_transition", 2))
+                            await self.ha.call_service(
+                                "light", "turn_off",
+                                {"entity_id": entity_id, "transition": transition},
+                            )
+                            alerts.append({
+                                "type": "light_auto_off",
+                                "device": device_key,
+                                "entity_id": entity_id,
+                                "message": f"{friendly} war {int(minutes)} Minuten an ohne Bewegung — ausgeschaltet.",
+                                "urgency": "low",
+                            })
+                            logger.info("Auto-Off: %s nach %d Min (leerer Raum %s)", entity_id, int(minutes), light_room)
+                        except Exception as e:
+                            logger.debug("Auto-Off fehlgeschlagen fuer %s: %s", entity_id, e)
+                            alerts.append({
+                                "type": "light_empty_room",
+                                "device": device_key,
+                                "message": f"{friendly} ist seit {int(minutes)} Minuten an, aber niemand scheint dort zu sein.",
+                                "urgency": "low",
+                            })
+                    else:
+                        # Nur Hinweis (kein Auto-Off konfiguriert)
+                        alerts.append({
+                            "type": "light_empty_room",
+                            "device": device_key,
+                            "message": f"{friendly} ist seit {int(minutes)} Minuten an, aber niemand scheint dort zu sein.",
+                            "urgency": "low",
+                        })
         return alerts
 
     async def _check_windows_cold(self, states: list[dict]) -> list[dict]:
