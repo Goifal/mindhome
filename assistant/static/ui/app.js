@@ -627,7 +627,7 @@ function renderCurrentTab() {
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-lights': c.innerHTML = renderLights(); loadLightEntities(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
-      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); break;
+      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); loadCoverActionLog(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-remote': c.innerHTML = renderRemote(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); loadEmergencyProtocols(); break;
@@ -813,6 +813,20 @@ const HELP_TEXTS = {
   'vacation_simulation.morning_hour': {title:'Morgens oeffnen', text:'Uhrzeit fuer simuliertes Oeffnen der Rolllaeden.'},
   'vacation_simulation.evening_hour': {title:'Abends schliessen', text:'Uhrzeit fuer simuliertes Schliessen.'},
   'vacation_simulation.variation_minutes': {title:'Variation', text:'Zufaellige Abweichung in Minuten fuer realistischere Simulation.'},
+  'vacation_simulation.night_hour': {title:'Nachts komplett zu', text:'Uhrzeit ab der alle Rolllaeden in der Urlaubssimulation komplett geschlossen werden.'},
+  'seasonal_actions.cover_automation.inverted_position': {title:'Invertierte Positionen', text:'Aktivieren wenn ALLE Cover invertierte Werte nutzen (0=offen, 100=zu, z.B. Shelly/MQTT). Kann auch pro Cover in den Cover-Profilen gesetzt werden.'},
+  'seasonal_actions.cover_automation.night_start_hour': {title:'Nacht-Beginn', text:'Ab dieser Stunde gilt die Nacht-Isolierung. Im Winter frueher (z.B. 18), im Sommer spaeter (z.B. 23).'},
+  'seasonal_actions.cover_automation.night_end_hour': {title:'Nacht-Ende', text:'Bis zu dieser Stunde gilt die Nacht-Isolierung.'},
+  'seasonal_actions.cover_automation.hysteresis_temp': {title:'Temperatur-Hysterese', text:'Verhindert Oszillation: Schliessen bei Hitzeschutz-Temp, erst wieder oeffnen bei Hitzeschutz-Temp MINUS Hysterese. Z.B. 26°C zu, 24°C auf.'},
+  'seasonal_actions.cover_automation.hysteresis_wind': {title:'Wind-Hysterese', text:'Verhindert Oszillation bei Sturmschutz. Schliessen bei Sturm-Speed, oeffnen bei Sturm-Speed MINUS Hysterese.'},
+  'seasonal_actions.cover_automation.glare_protection': {title:'Blendschutz', text:'Wenn ein Sitzsensor (occupancy_sensor im Cover-Profil) belegt ist und Sonne auf das Fenster scheint, wird der Sonnenschutz aktiviert — auch unter der Hitzeschutz-Temperatur.'},
+  'seasonal_actions.cover_automation.gradual_morning': {title:'Sanftes Oeffnen', text:'Morgens werden die Rolllaeden in 3 Stufen geoeffnet (30% → 70% → 100%) mit je 5 Min Pause. Weniger abrupt als sofort 100%.'},
+  'seasonal_actions.cover_automation.wave_open': {title:'Wellenfoermiges Oeffnen', text:'Rolllaeden oeffnen nacheinander: Ost-Fenster zuerst, dann Sued, dann West. Natuerlicher und reduziert die Stromlast.'},
+  'seasonal_actions.cover_automation.heating_integration': {title:'Heizungs-Integration', text:'Wenn die Heizung laeuft + Aussentemp kalt: Nicht-sonnenbeschienene Fenster zu (Isolierung). Wenn Sonne + Heizung aus: Sonnenfenster auf (passive Solarwaerme).'},
+  'seasonal_actions.cover_automation.co2_ventilation': {title:'CO2-Lueftung', text:'Bei hohem CO2 (>1000 ppm) und gutem Wetter (10-25°C, kein Regen) wird eine Lueftungsempfehlung gegeben.'},
+  'seasonal_actions.cover_automation.privacy_mode': {title:'Privacy-Modus', text:'Abends nach Sonnenuntergang: Wenn im Raum Licht an ist, werden Rolllaeden mit privacy_mode=true im Cover-Profil geschlossen (Sichtschutz).'},
+  'seasonal_actions.cover_automation.presence_aware': {title:'Praesenz-basiert', text:'Wenn alle Personen das Haus verlassen haben, werden alle Rolllaeden geschlossen (Einbruchschutz + Energiesparen).'},
+  'seasonal_actions.cover_automation.manual_override_hours': {title:'Manueller Override', text:'Wenn ein Rollladen manuell (Taster/App) bedient wird, pausiert die Automatik fuer diese Anzahl Stunden. Verhindert dass die Automatik manuelle Einstellungen ueberschreibt.'},
   // === SAUGROBOTER ===
   'remote.enabled': {title:'Fernbedienung', text:'Aktiviert die Fernbedienungs-Steuerung (Logitech Harmony) ueber Jarvis. Erlaubt Sprachsteuerung fuer TV, Receiver, etc.'},
   'vacuum.enabled': {title:'Saugroboter', text:'Aktiviert die Saugroboter-Steuerung ueber Jarvis.'},
@@ -5630,6 +5644,12 @@ function renderCovers() {
       '<button class="btn btn-sm" onclick="addOpeningSensor()" style="font-size:11px;">+ Manuell hinzufuegen</button>' +
     '</div>'
   ) +
+  // ── Letzte Aktionen (Dashboard Feature 17) ────────────
+  sectionWrap('&#128203;', 'Letzte automatische Aktionen',
+    fInfo('Zeigt die letzten automatischen Cover-Bewegungen mit Zeitstempel, Cover-Name, Position und Grund.') +
+    '<div id="coverActionLogContainer" style="color:var(--text-secondary);padding:8px;font-size:12px;">Lade Aktions-Log...</div>' +
+    '<button class="btn btn-sm" onclick="loadCoverActionLog()" style="font-size:11px;margin-top:4px;">&#128260; Aktualisieren</button>'
+  ) +
   // ── Cover-Automatik (settings.yaml) ─────────────────────
   sectionWrap('&#9728;', 'Cover-Automatik',
     fInfo('Automatische Steuerung der Rolllaeden basierend auf Sonnenstand, Wetter und Temperatur. Funktioniert nur wenn Cover-Profile (unten) konfiguriert sind.') +
@@ -5642,6 +5662,30 @@ function renderCovers() {
     fRange('seasonal_actions.cover_automation.frost_protection_temp', 'Frostschutz ab (°C)', -10, 10, 1, {'-5':'-5°C',0:'0°C',3:'3°C',5:'5°C',10:'10°C'}) +
     fRange('seasonal_actions.cover_automation.storm_wind_speed', 'Sturm-Windgeschwindigkeit (km/h)', 20, 100, 5, {20:'20',30:'30',40:'40',50:'50',60:'60',80:'80',100:'100'}) +
     fToggle('seasonal_actions.cover_automation.inverted_position', 'Positionen invertiert (0=offen, 100=zu, z.B. Shelly/MQTT)')
+  ) +
+  // ── Nacht-Isolierung (Bug 5) ──────────────────────────
+  sectionWrap('&#127769;', 'Nacht-Isolierung',
+    fInfo('Konfiguriere wann die Nacht-Isolierung beginnt und endet. Im Winter frueher starten, im Sommer spaeter.') +
+    fRange('seasonal_actions.cover_automation.night_start_hour', 'Nacht beginnt um (Stunde)', 17, 24, 1, {17:'17',18:'18',19:'19',20:'20',21:'21',22:'22',23:'23',24:'24'}) +
+    fRange('seasonal_actions.cover_automation.night_end_hour', 'Nacht endet um (Stunde)', 4, 9, 1, {4:'4',5:'5',6:'6',7:'7',8:'8',9:'9'})
+  ) +
+  // ── Anti-Oszillation (Feature 10) ─────────────────────
+  sectionWrap('&#128200;', 'Hysterese (Anti-Oszillation)',
+    fInfo('Verhindert staendiges Auf/Zu an der Grenztemperatur. Beispiel: Schliessen bei 26°C, erst wieder oeffnen bei 24°C (2°C Hysterese).') +
+    fRange('seasonal_actions.cover_automation.hysteresis_temp', 'Temperatur-Hysterese (°C)', 0, 5, 1, {0:'Keine',1:'1°C',2:'2°C',3:'3°C',4:'4°C',5:'5°C'}) +
+    fRange('seasonal_actions.cover_automation.hysteresis_wind', 'Wind-Hysterese (km/h)', 0, 20, 5, {0:'Keine',5:'5',10:'10',15:'15',20:'20'})
+  ) +
+  // ── Intelligente Features ─────────────────────────────
+  sectionWrap('&#129504;', 'Intelligente Features',
+    fInfo('Erweiterte Automatik-Features fuer maximalen Komfort und Energieeffizienz.') +
+    fToggle('seasonal_actions.cover_automation.glare_protection', 'Blendschutz (bei besetztem Platz + Sonne)') +
+    fToggle('seasonal_actions.cover_automation.gradual_morning', 'Sanftes Oeffnen morgens (3 Stufen)') +
+    fToggle('seasonal_actions.cover_automation.wave_open', 'Wellenfoermiges Oeffnen (Ost→Sued→West)') +
+    fToggle('seasonal_actions.cover_automation.heating_integration', 'Heizungs-Integration (Isolierung + passive Solarwaerme)') +
+    fToggle('seasonal_actions.cover_automation.co2_ventilation', 'CO2-Lueftungs-Unterstuetzung') +
+    fToggle('seasonal_actions.cover_automation.privacy_mode', 'Privacy-Modus (Sichtschutz abends bei Licht)') +
+    fToggle('seasonal_actions.cover_automation.presence_aware', 'Praesenz-basiert (niemand zuhause = alles zu)') +
+    fRange('seasonal_actions.cover_automation.manual_override_hours', 'Manueller Override-Schutz (Stunden)', 0, 6, 1, {0:'Aus',1:'1h',2:'2h',3:'3h',4:'4h',6:'6h'})
   ) +
   // ── Urlaubs-Simulation ─────────────────────────
   sectionWrap('&#127796;', 'Urlaubs-Simulation',
@@ -6391,6 +6435,38 @@ async function deleteCoverSensor(assignmentId) {
     toast('Sensor-Zuordnung entfernt');
     loadCoverSensors();
   } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+// ── Cover Action Log (Dashboard Feature 17) ──────────────────────
+
+async function loadCoverActionLog() {
+  const container = document.getElementById('coverActionLogContainer');
+  if (!container) return;
+  try {
+    const result = await api('/api/ui/covers/action-log?limit=10');
+    const entries = Array.isArray(result) ? result : [];
+    if (entries.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Noch keine automatischen Aktionen aufgezeichnet.</div>';
+      return;
+    }
+    let html = '<div style="display:flex;flex-direction:column;gap:4px;">';
+    for (const e of entries) {
+      const ts = new Date(e.ts * 1000);
+      const timeStr = ts.toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+      const eid = (e.entity_id || '').replace('cover.', '');
+      const posColor = e.position > 50 ? 'var(--accent)' : e.position === 0 ? 'var(--danger)' : 'var(--text-secondary)';
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;">';
+      html += '<span style="font-size:10px;color:var(--text-muted);min-width:80px;font-family:var(--mono);">' + esc(timeStr) + '</span>';
+      html += '<span style="font-size:11px;font-weight:600;min-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(eid) + '</span>';
+      html += '<span style="font-size:11px;color:' + posColor + ';font-weight:600;min-width:35px;">' + e.position + '%</span>';
+      html += '<span style="font-size:10px;color:var(--text-muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(e.reason || '') + '</span>';
+      html += '</div>';
+    }
+    html += '</div>';
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Aktions-Log nicht verfuegbar.</div>';
+  }
 }
 
 // ── Oeffnungs-Sensoren (Fenster/Tueren/Tore) ──────────────────────

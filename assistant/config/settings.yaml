@@ -595,6 +595,19 @@ seasonal_actions:
     storm_wind_speed: 50             # km/h — Rolllaeden HOCH zum Schutz
     vacation_mode_entity: ""         # z.B. input_boolean.vacation_mode  HINWEIS: Urlaubs-Simulation ist erst aktiv wenn hier eine Entity eingetragen wird!
     inverted_position: false         # true wenn ALLE Covers invertierte Positionen haben (0=offen, 100=zu). Pro Cover in room_profiles.yaml oder cover_configs.json konfigurierbar.
+    # --- Neue Features ---
+    night_start_hour: 22             # Nacht-Isolierung: Beginn (Bug 5)
+    night_end_hour: 6                # Nacht-Isolierung: Ende (Bug 5)
+    hysteresis_temp: 2               # Hysterese fuer Temperatur (Feature 10) — schliessen bei heat_temp, oeffnen bei heat_temp - hysterese
+    hysteresis_wind: 10              # Hysterese fuer Wind (Feature 10)
+    glare_protection: false          # Blendschutz bei besetztem Sitzplatz (Feature 14)
+    gradual_morning: false           # Sanftes Oeffnen am Morgen in 3 Stufen (Feature 6)
+    wave_open: false                 # Wellenfoermiges Oeffnen Ost→Sued→West (Feature 7)
+    heating_integration: false       # Heizungs-Integration: Isolierung bei laufender Heizung, passive Solarwaerme (Feature 8)
+    co2_ventilation: false           # CO2-Lueftungs-Unterstuetzung (Feature 12)
+    privacy_mode: false              # Abendlicher Sichtschutz bei Licht (Feature 16)
+    presence_aware: false            # Praesenz-basiert: niemand zuhause = alles zu (Feature 15)
+    manual_override_hours: 2         # Stunden nach manueller Bedienung ohne Automatik (Feature 2)
 tts:
   entity: tts.piper
   ssml_enabled: true

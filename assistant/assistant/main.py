@@ -3290,216 +3290,310 @@ async def ui_stop_cover(entity_id: str, token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
-# ── Cover Groups (Proxy zum Addon) ─────────────────────────────────
+# ── Cover Groups (lokal gespeichert) ─────────────────────────────────
 
 @app.get("/api/ui/covers/groups")
 async def ui_get_cover_groups(token: str = ""):
-    """Cover-Gruppen vom Addon laden."""
+    """Cover-Gruppen aus lokaler JSON laden."""
     _check_token(token)
     try:
-        result = await brain.ha.mindhome_get("/api/covers/groups")
-        return result or []
+        from .cover_config import load_cover_groups
+        return load_cover_groups()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.post("/api/ui/covers/groups")
 async def ui_create_cover_group(request: Request, token: str = ""):
-    """Neue Cover-Gruppe erstellen."""
+    """Neue Cover-Gruppe erstellen (lokal)."""
     _check_token(token)
     data = await request.json()
     try:
-        result = await brain.ha.mindhome_post("/api/covers/groups", data)
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import create_cover_group
+        return create_cover_group(data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.put("/api/ui/covers/groups/{group_id}")
 async def ui_update_cover_group(group_id: int, request: Request, token: str = ""):
-    """Cover-Gruppe aktualisieren."""
+    """Cover-Gruppe aktualisieren (lokal)."""
     _check_token(token)
     data = await request.json()
     try:
-        result = await brain.ha.mindhome_put(f"/api/covers/groups/{group_id}", data)
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import update_cover_group
+        result = update_cover_group(group_id, data)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Gruppe nicht gefunden")
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.delete("/api/ui/covers/groups/{group_id}")
 async def ui_delete_cover_group(group_id: int, token: str = ""):
-    """Cover-Gruppe loeschen."""
+    """Cover-Gruppe loeschen (lokal)."""
     _check_token(token)
     try:
-        result = await brain.ha.mindhome_delete(f"/api/covers/groups/{group_id}")
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import delete_cover_group
+        if not delete_cover_group(group_id):
+            raise HTTPException(status_code=404, detail="Gruppe nicht gefunden")
+        return {"success": True}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.post("/api/ui/covers/groups/{group_id}/control")
 async def ui_control_cover_group(group_id: int, request: Request, token: str = ""):
-    """Alle Cover einer Gruppe auf Position setzen."""
+    """Alle Cover einer Gruppe auf Position setzen (direkt via HA)."""
     _check_token(token)
     data = await request.json()
+    position = data.get("position", 100)
     try:
-        result = await brain.ha.mindhome_post(f"/api/covers/groups/{group_id}/control", data)
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import load_cover_groups, _find_by_id
+        groups = load_cover_groups()
+        group = _find_by_id(groups, group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="Gruppe nicht gefunden")
+        count = 0
+        for eid in group.get("entity_ids", []):
+            try:
+                await brain.ha.call_service("cover", "set_cover_position", {
+                    "entity_id": eid, "position": int(position),
+                })
+                count += 1
+            except Exception as e:
+                logger.warning("Gruppen-Steuerung %s fehlgeschlagen: %s", eid, e)
+        return {"success": True, "count": count}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
-# ── Cover Scenes (Proxy zum Addon) ─────────────────────────────────
+# ── Cover Scenes (lokal gespeichert) ─────────────────────────────────
 
 @app.get("/api/ui/covers/scenes")
 async def ui_get_cover_scenes(token: str = ""):
-    """Cover-Szenen vom Addon laden."""
+    """Cover-Szenen aus lokaler JSON laden."""
     _check_token(token)
     try:
-        result = await brain.ha.mindhome_get("/api/covers/scenes")
-        return result or []
+        from .cover_config import load_cover_scenes
+        return load_cover_scenes()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.post("/api/ui/covers/scenes")
 async def ui_create_cover_scene(request: Request, token: str = ""):
-    """Neue Cover-Szene erstellen."""
+    """Neue Cover-Szene erstellen (lokal)."""
     _check_token(token)
     data = await request.json()
     try:
-        result = await brain.ha.mindhome_post("/api/covers/scenes", data)
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import create_cover_scene
+        return create_cover_scene(data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.put("/api/ui/covers/scenes/{scene_id}")
 async def ui_update_cover_scene(scene_id: int, request: Request, token: str = ""):
-    """Cover-Szene aktualisieren."""
+    """Cover-Szene aktualisieren (lokal)."""
     _check_token(token)
     data = await request.json()
     try:
-        result = await brain.ha.mindhome_put(f"/api/covers/scenes/{scene_id}", data)
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import update_cover_scene
+        result = update_cover_scene(scene_id, data)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Szene nicht gefunden")
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.delete("/api/ui/covers/scenes/{scene_id}")
 async def ui_delete_cover_scene(scene_id: int, token: str = ""):
-    """Cover-Szene loeschen."""
+    """Cover-Szene loeschen (lokal)."""
     _check_token(token)
     try:
-        result = await brain.ha.mindhome_delete(f"/api/covers/scenes/{scene_id}")
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import delete_cover_scene
+        if not delete_cover_scene(scene_id):
+            raise HTTPException(status_code=404, detail="Szene nicht gefunden")
+        return {"success": True}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.post("/api/ui/covers/scenes/{scene_id}/activate")
 async def ui_activate_cover_scene(scene_id: int, token: str = ""):
-    """Cover-Szene aktivieren."""
+    """Cover-Szene aktivieren (direkt via HA)."""
     _check_token(token)
     try:
-        result = await brain.ha.mindhome_post(f"/api/covers/scenes/{scene_id}/activate", {})
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import load_cover_scenes, _find_by_id
+        scenes = load_cover_scenes()
+        scene = _find_by_id(scenes, scene_id)
+        if not scene:
+            raise HTTPException(status_code=404, detail="Szene nicht gefunden")
+        count = 0
+        for eid, pos in (scene.get("positions") or {}).items():
+            position = pos.get("position", pos) if isinstance(pos, dict) else pos
+            try:
+                await brain.ha.call_service("cover", "set_cover_position", {
+                    "entity_id": eid, "position": int(position),
+                })
+                count += 1
+            except Exception as e:
+                logger.warning("Szenen-Aktivierung %s fehlgeschlagen: %s", eid, e)
+        return {"success": True, "count": count}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
-# ── Cover Schedules (Proxy zum Addon) ──────────────────────────────
+# ── Cover Schedules (lokal gespeichert) ──────────────────────────────
 
 @app.get("/api/ui/covers/schedules")
 async def ui_get_cover_schedules(token: str = ""):
-    """Cover-Zeitplaene vom Addon laden."""
+    """Cover-Zeitplaene aus lokaler JSON laden."""
     _check_token(token)
     try:
-        result = await brain.ha.mindhome_get("/api/covers/schedules")
-        return result or []
+        from .cover_config import load_cover_schedules
+        return load_cover_schedules()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.post("/api/ui/covers/schedules")
 async def ui_create_cover_schedule(request: Request, token: str = ""):
-    """Neuen Cover-Zeitplan erstellen."""
+    """Neuen Cover-Zeitplan erstellen (lokal)."""
     _check_token(token)
     data = await request.json()
     try:
-        result = await brain.ha.mindhome_post("/api/covers/schedules", data)
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import create_cover_schedule
+        return create_cover_schedule(data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.put("/api/ui/covers/schedules/{schedule_id}")
 async def ui_update_cover_schedule(schedule_id: int, request: Request, token: str = ""):
-    """Cover-Zeitplan aktualisieren."""
+    """Cover-Zeitplan aktualisieren (lokal)."""
     _check_token(token)
     data = await request.json()
     try:
-        result = await brain.ha.mindhome_put(f"/api/covers/schedules/{schedule_id}", data)
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import update_cover_schedule
+        result = update_cover_schedule(schedule_id, data)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Zeitplan nicht gefunden")
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.delete("/api/ui/covers/schedules/{schedule_id}")
 async def ui_delete_cover_schedule(schedule_id: int, token: str = ""):
-    """Cover-Zeitplan loeschen."""
+    """Cover-Zeitplan loeschen (lokal)."""
     _check_token(token)
     try:
-        result = await brain.ha.mindhome_delete(f"/api/covers/schedules/{schedule_id}")
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import delete_cover_schedule
+        if not delete_cover_schedule(schedule_id):
+            raise HTTPException(status_code=404, detail="Zeitplan nicht gefunden")
+        return {"success": True}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
-# ── Cover Sensor Assignments (Proxy zum Addon) ────────────────────
+# ── Cover Sensor Assignments (lokal gespeichert) ────────────────────
 
 @app.get("/api/ui/covers/sensors")
 async def ui_get_cover_sensors(token: str = ""):
-    """Sensor-Zuordnungen fuer Cover-Automatik vom Addon laden."""
+    """Sensor-Zuordnungen fuer Cover-Automatik aus lokaler JSON laden."""
     _check_token(token)
     try:
-        result = await brain.ha.mindhome_get("/api/covers/entities")
-        return result or []
+        from .cover_config import load_cover_sensors
+        return load_cover_sensors()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.post("/api/ui/covers/sensors")
 async def ui_add_cover_sensor(request: Request, token: str = ""):
-    """Sensor-Zuordnung fuer Cover-Automatik hinzufuegen."""
+    """Sensor-Zuordnung fuer Cover-Automatik hinzufuegen (lokal)."""
     _check_token(token)
     data = await request.json()
     try:
-        result = await brain.ha.mindhome_post("/api/covers/entities", data)
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import create_cover_sensor
+        return create_cover_sensor(data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.delete("/api/ui/covers/sensors/{assignment_id}")
 async def ui_delete_cover_sensor(assignment_id: int, token: str = ""):
-    """Sensor-Zuordnung entfernen."""
+    """Sensor-Zuordnung entfernen (lokal)."""
     _check_token(token)
     try:
-        result = await brain.ha.mindhome_delete(f"/api/covers/entities/{assignment_id}")
-        return result or {"error": "Addon nicht erreichbar"}
+        from .cover_config import delete_cover_sensor
+        if not delete_cover_sensor(assignment_id):
+            raise HTTPException(status_code=404, detail="Zuordnung nicht gefunden")
+        return {"success": True}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
 @app.get("/api/ui/covers/discover")
 async def ui_discover_covers(token: str = ""):
-    """Verfuegbare Cover- und Sensor-Entities aus Home Assistant entdecken."""
+    """Verfuegbare Cover- und Sensor-Entities aus Home Assistant entdecken (direkt)."""
     _check_token(token)
     try:
-        result = await brain.ha.mindhome_get("/api/covers/discover")
-        return result or {"covers": [], "sensors": []}
+        states = await brain.ha.get_states()
+        covers = []
+        sensors = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            attrs = s.get("attributes", {})
+            name = attrs.get("friendly_name", eid)
+            if eid.startswith("cover."):
+                covers.append({"entity_id": eid, "name": name})
+            elif eid.startswith("sensor."):
+                dc = attrs.get("device_class", "")
+                uom = attrs.get("unit_of_measurement", "")
+                if dc in ("temperature", "wind_speed", "illuminance", "humidity") or \
+                   uom in ("°C", "km/h", "lx", "mm/h", "mm", "W/m²"):
+                    sensors.append({"entity_id": eid, "name": name, "device_class": dc, "unit": uom})
+            elif eid.startswith("binary_sensor."):
+                dc = attrs.get("device_class", "")
+                if dc in ("moisture", "rain"):
+                    sensors.append({"entity_id": eid, "name": name, "device_class": dc, "unit": ""})
+        return {"covers": covers, "sensors": sensors}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Cover Action Log (Dashboard) ────────────────────────────────────
+
+@app.get("/api/ui/covers/action-log")
+async def ui_get_cover_action_log(token: str = "", limit: int = 10):
+    """Letzte automatische Cover-Aktionen fuer das Dashboard."""
+    _check_token(token)
+    try:
+        from .cover_config import load_cover_action_log
+        return load_cover_action_log(limit)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
