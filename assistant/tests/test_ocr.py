@@ -147,7 +147,7 @@ class TestOCREngine:
             from assistant.ocr import OCREngine
 
             mock_ollama = AsyncMock()
-            mock_ollama.list_models.return_value = ["llava:latest", "qwen3:4b"]
+            mock_ollama.list_models.return_value = ["llava:latest", "qwen3.5:4b"]
 
             engine = OCREngine(ollama_client=mock_ollama)
             await engine.initialize()
@@ -163,7 +163,7 @@ class TestOCREngine:
             from assistant.ocr import OCREngine
 
             mock_ollama = AsyncMock()
-            mock_ollama.list_models.return_value = ["qwen3:4b", "qwen3:14b"]
+            mock_ollama.list_models.return_value = ["qwen3.5:4b", "qwen3.5:9b"]
 
             engine = OCREngine(ollama_client=mock_ollama)
             await engine.initialize()

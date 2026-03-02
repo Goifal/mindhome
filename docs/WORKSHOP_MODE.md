@@ -28,7 +28,7 @@ mit ~70 Features, inspiriert von Tony Stark's J.A.R.V.I.S.
 | Settings UI | `static/ui/index.html` | 837-875 | Tab-Navigation + Form-Binding + Validation |
 | HUD Design | `static/ui/index.html` | 28-63 | CSS-Variablen: `--accent: #00d4ff`, `--bg-primary: #040810` |
 | Boot Animation | `static/ui/index.html` | 551-572 + `app.js` 50-121 | SVG-Ringe, Web Audio, Typewriter |
-| Model Routing | `model_router.py` | 199-247 | 3-Tier: fast(4B), smart(14B), deep(32B Qwen3) |
+| Model Routing | `model_router.py` | 199-247 | 3-Tier: fast(4B), smart(9B), deep(27B Qwen3.5) |
 | HA Service Calls | `ha_client.py` | 117-141 | `call_service(domain, service, data)` |
 | Knowledge Base RAG | `knowledge_base.py` | 1-543 | ChromaDB + Embeddings + PDF-Extraktion |
 

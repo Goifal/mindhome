@@ -85,7 +85,7 @@ class TestSelfOptimizationExtended:
                 "approval_mode": "manual",
                 "analysis_interval": "weekly",
                 "max_proposals_per_cycle": 3,
-                "model": "qwen3:14b",
+                "model": "qwen3.5:9b",
                 "parameter_bounds": {
                     "sarcasm_level": {"min": 1, "max": 5},
                     "insight_cooldown_hours": {"min": 2, "max": 8},

@@ -29,7 +29,7 @@ class TestRecordError:
     @pytest.mark.asyncio
     async def test_records_error(self, tracker):
         tracker.redis.incr.return_value = 1
-        await tracker.record_error("timeout", action_type="llm_chat", model="qwen3:14b")
+        await tracker.record_error("timeout", action_type="llm_chat", model="qwen3.5:9b")
         tracker.redis.lpush.assert_called_once()
         tracker.redis.incr.assert_called()
 
@@ -42,14 +42,14 @@ class TestRecordError:
     @pytest.mark.asyncio
     async def test_activates_mitigation_at_threshold(self, tracker):
         tracker.redis.incr.return_value = 3  # Threshold erreicht
-        await tracker.record_error("timeout", action_type="llm_chat", model="qwen3:14b")
+        await tracker.record_error("timeout", action_type="llm_chat", model="qwen3.5:9b")
         # Mitigation sollte aktiviert werden
         assert tracker.redis.setex.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_no_mitigation_below_threshold(self, tracker):
         tracker.redis.incr.return_value = 2  # Unter Threshold
-        await tracker.record_error("timeout", action_type="llm_chat", model="qwen3:14b")
+        await tracker.record_error("timeout", action_type="llm_chat", model="qwen3.5:9b")
         # Nur lpush + expire, kein mitigation setex
         # incr wird aufgerufen, aber kein setex fuer mitigation
         setex_calls = [c for c in tracker.redis.setex.call_args_list]
@@ -63,7 +63,7 @@ class TestGetMitigation:
     @pytest.mark.asyncio
     async def test_no_mitigation(self, tracker):
         tracker.redis.get.return_value = None
-        result = await tracker.get_mitigation("llm_chat", "qwen3:14b")
+        result = await tracker.get_mitigation("llm_chat", "qwen3.5:9b")
         assert result is None
 
     @pytest.mark.asyncio
@@ -71,10 +71,10 @@ class TestGetMitigation:
         mitigation = {
             "type": MITIGATION_USE_FALLBACK,
             "reason": "3x timeout",
-            "original_model": "qwen3:14b",
+            "original_model": "qwen3.5:9b",
         }
         tracker.redis.get.return_value = json.dumps(mitigation)
-        result = await tracker.get_mitigation(action_type="llm_chat", model="qwen3:14b")
+        result = await tracker.get_mitigation(action_type="llm_chat", model="qwen3.5:9b")
         assert result is not None
         assert result["type"] == MITIGATION_USE_FALLBACK
 

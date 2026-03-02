@@ -72,7 +72,7 @@ fi
 TOTAL_RAM_GB=$(awk '/MemTotal/ {printf "%.0f", $2/1024/1024}' /proc/meminfo)
 info "RAM: ${TOTAL_RAM_GB} GB"
 if [ "$TOTAL_RAM_GB" -lt 8 ]; then
-    warn "Weniger als 8 GB RAM. Nur das kleine Modell (qwen3:4b) wird funktionieren."
+    warn "Weniger als 8 GB RAM. Nur das kleine Modell (qwen3.5:4b) wird funktionieren."
 fi
 
 # CPU pruefen
@@ -378,32 +378,32 @@ step "[5/$STEPS_TOTAL] LLM-Modelle pruefen..."
 
 info "Modell-Verzeichnis: ~/.ollama/models (SSD 1)"
 
-if ! ollama list 2>/dev/null | grep -q "qwen3:4b"; then
-    info "Lade Qwen 3 4B (schnelles Modell, ~3 GB)..."
-    ollama pull qwen3:4b
-    success "Qwen 3 4B: OK"
+if ! ollama list 2>/dev/null | grep -q "qwen3.5:4b"; then
+    info "Lade Qwen 3.5 4B (schnelles Modell, ~3 GB)..."
+    ollama pull qwen3.5:4b
+    success "Qwen 3.5 4B: OK"
 else
-    success "Qwen 3 4B: bereits vorhanden"
+    success "Qwen 3.5 4B: bereits vorhanden"
 fi
 
-if ! ollama list 2>/dev/null | grep -q "qwen3:14b"; then
+if ! ollama list 2>/dev/null | grep -q "qwen3.5:9b"; then
     echo ""
-    echo "  Das schlaue Modell (Qwen 3 14B, ~9 GB) ist deutlich besser fuer"
-    echo "  komplexe Fragen und Konversation. Braucht ~16 GB RAM."
+    echo "  Das schlaue Modell (Qwen 3.5 9B, ~6 GB) ist deutlich besser fuer"
+    echo "  komplexe Fragen und Konversation. Braucht ~12 GB RAM."
     echo ""
-    if [ "$TOTAL_RAM_GB" -ge 16 ]; then
-        info "Du hast ${TOTAL_RAM_GB} GB RAM — 14B sollte gut laufen."
+    if [ "$TOTAL_RAM_GB" -ge 12 ]; then
+        info "Du hast ${TOTAL_RAM_GB} GB RAM — 9B sollte gut laufen."
     else
-        warn "Du hast nur ${TOTAL_RAM_GB} GB RAM — 14B koennte langsam sein."
+        warn "Du hast nur ${TOTAL_RAM_GB} GB RAM — 9B koennte langsam sein."
     fi
-    if ask_yes_no "Qwen 3 14B herunterladen?" "j"; then
-        ollama pull qwen3:14b
-        success "Qwen 3 14B: OK"
+    if ask_yes_no "Qwen 3.5 9B herunterladen?" "j"; then
+        ollama pull qwen3.5:9b
+        success "Qwen 3.5 9B: OK"
     else
-        info "Uebersprungen. Spaeter: ollama pull qwen3:14b"
+        info "Uebersprungen. Spaeter: ollama pull qwen3.5:9b"
     fi
 else
-    success "Qwen 3 14B: bereits vorhanden"
+    success "Qwen 3.5 9B: bereits vorhanden"
 fi
 
 echo ""

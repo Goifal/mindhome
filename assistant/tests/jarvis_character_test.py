@@ -1118,7 +1118,7 @@ if __name__ == "__main__":
     import sys
 
     parser = argparse.ArgumentParser(description="Jarvis Character Benchmark")
-    parser.add_argument("--model", default="qwen3:14b", help="Ollama-Modell")
+    parser.add_argument("--model", default="qwen3.5:9b", help="Ollama-Modell")
     parser.add_argument("--output", default="jarvis_benchmark_results.json", help="Output-Datei")
     parser.add_argument("--judge-model", default="", help="LLM-as-Judge Modell (optional)")
     args = parser.parse_args()
