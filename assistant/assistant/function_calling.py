@@ -3114,6 +3114,14 @@ class FunctionExecutor:
 
         service = "turn_on" if state == "on" else "turn_off"
         success = await self.ha.call_service("light", service, service_data)
+        # Manual Override markieren wenn User explizit Helligkeit gesetzt hat
+        if "brightness" in args or state in ("brighter", "dimmer"):
+            le = getattr(self, '_light_engine', None)
+            if le:
+                try:
+                    await le.record_manual_override(entity_id)
+                except Exception:
+                    pass
         extras = []
         if brightness_pct is not None:
             extras.append(f"{brightness_pct}%")

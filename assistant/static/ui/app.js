@@ -799,6 +799,37 @@ const HELP_TEXTS = {
   'activity.silence_matrix': {title:'Stille-Matrix', text:'Bestimmt pro Aktivitaet und Dringlichkeit, wie Benachrichtigungen zugestellt werden: Laut (TTS), Leise, LED-Signal oder Unterdruecken.'},
   'activity.volume_matrix': {title:'Lautstaerke-Matrix', text:'Lautstaerke fuer TTS-Durchsagen, abhaengig von Aktivitaet und Dringlichkeit. Werte 0-100%. Nachts wird automatisch zusaetzlich reduziert.'},
   'scenes': {title:'Szenen', text:'Zentrale Szenen-Verwaltung. Jede Szene wird einer Aktivitaet zugeordnet (bestimmt Benachrichtigungs-Verhalten), hat eine Licht-Uebergangszeit und kann als "Nicht stoeren" markiert werden.'},
+  // === LICHTSTEUERUNG ===
+  'lighting.enabled': {title:'Lichtsteuerung', text:'Master-Schalter fuer alle automatischen Licht-Funktionen.'},
+  'lighting.auto_on_dusk': {title:'Auto-An bei Daemmerung', text:'Schaltet Lichter automatisch ein wenn die Sonne untergeht und jemand zuhause ist.'},
+  'lighting.auto_off_away': {title:'Auto-Aus bei Abwesenheit', text:'Schaltet alle Lichter aus wenn niemand mehr zuhause ist.'},
+  'lighting.auto_off_empty_room_minutes': {title:'Leerer-Raum Timeout', text:'Nach wie vielen Minuten ohne Bewegung das Licht im Raum automatisch ausgeschaltet wird.'},
+  'lighting.night_dimming': {title:'Nacht-Dimming', text:'Dimmt Lichter automatisch nach der konfigurierten Startzeit auf die Nacht-Helligkeit herunter.'},
+  'lighting.night_dimming_start_hour': {title:'Night-Dimming Start', text:'Ab dieser Uhrzeit werden eingeschaltete Lichter langsam gedimmt.'},
+  'lighting.night_dimming_transition': {title:'Night-Dimming Dauer', text:'Wie lange der Dimm-Uebergang dauert. Laenger = sanfter.'},
+  'lighting.dusk_only_occupied_rooms': {title:'Daemmerung nur besetzte Raeume', text:'Bei Daemmerung nur in Raeumen Licht einschalten, in denen der Praesenzmelder kuerzlich Bewegung erkannt hat.'},
+  'lighting.default_transition': {title:'Standard-Uebergang', text:'Standard-Dimmzeit fuer alle Licht-Aktionen.'},
+  'lighting.presence_control.enabled': {title:'Praesenz-Steuerung', text:'Bewegungsmelder steuern das Licht automatisch. Bei Bewegung geht Licht an, ohne Bewegung nach eingestellter Zeit wieder aus.'},
+  'lighting.presence_control.auto_on_motion': {title:'Licht an bei Bewegung', text:'Wenn ein Praesenzmelder Bewegung erkennt, wird das Licht im Raum automatisch eingeschaltet — mit adaptiver Helligkeit je nach Tageszeit.'},
+  'lighting.presence_control.night_path_light': {title:'Nacht-Pfadlicht', text:'Wenn jemand nachts aufsteht, geht in konfigurierten Raeumen (Flur, Bad) ein sehr schwaches warmweisses Licht an — gerade genug zur Orientierung, ohne voll wach zu werden.'},
+  'lighting.presence_control.night_path_brightness': {title:'Pfadlicht-Helligkeit', text:'Wie hell das Nacht-Pfadlicht ist (in %). 3-5% reicht meist zur Orientierung.'},
+  'lighting.presence_control.night_path_timeout_minutes': {title:'Pfadlicht-Dauer', text:'Wie lange das Pfadlicht an bleibt bevor es automatisch ausgeht.'},
+  'lighting.presence_control.manual_override_minutes': {title:'Override-Schutz', text:'Nach manueller Licht-Bedienung (z.B. "Licht auf 80%") greift die Automatik fuer diese Zeit nicht ein. Verhindert Konflikte zwischen Benutzer und Automatik.'},
+  'lighting.presence_control.night_start_hour': {title:'Nacht beginnt', text:'Ab dieser Uhrzeit gilt das Nacht-Verhalten (Pfadlicht statt volle Helligkeit).'},
+  'lighting.presence_control.night_end_hour': {title:'Nacht endet', text:'Bis zu dieser Uhrzeit gilt das Nacht-Verhalten.'},
+  'lighting.bed_sensors.enabled': {title:'Bettsensor-Integration', text:'Erkennt ueber Bettsensoren ob jemand im Bett liegt. Steuert Sleep-Mode und Aufwach-Licht.'},
+  'lighting.bed_sensors.sleep_mode': {title:'Sleep-Mode', text:'Wenn der Bettsensor Belegung erkennt (nach der konfigurierten Startzeit), werden alle Lichter im Haus langsam gedimmt und ausgeschaltet.'},
+  'lighting.bed_sensors.sleep_dim_transition': {title:'Sleep-Dimming Dauer', text:'Wie lange das langsame Abdunkeln beim Einschlafen dauert. 300 Sekunden (5 Min) ist ein sanfter Uebergang.'},
+  'lighting.bed_sensors.sleep_start_hour': {title:'Schlafmodus ab', text:'Ab dieser Uhrzeit wird Bett-Belegung als Einschlafen gewertet und der Sleep-Mode aktiviert.'},
+  'lighting.bed_sensors.wakeup_light': {title:'Aufwach-Licht', text:'Wenn der Bettsensor morgens leer wird, wird im Schlafzimmer sanft Licht hochgefahren — wie ein natuerlicher Sonnenaufgang.'},
+  'lighting.bed_sensors.wakeup_brightness': {title:'Aufwach-Helligkeit', text:'Ziel-Helligkeit beim Aufwachen. Nicht zu hell (30-50% empfohlen).'},
+  'lighting.bed_sensors.wakeup_transition': {title:'Aufhell-Dauer', text:'Wie lange das Aufhellen beim Aufwachen dauert. Laenger = sanfter.'},
+  'lighting.bed_sensors.wakeup_window_start': {title:'Aufwach-Fenster Start', text:'Frueheste Uhrzeit ab der Aufwach-Licht aktiv wird.'},
+  'lighting.bed_sensors.wakeup_window_end': {title:'Aufwach-Fenster Ende', text:'Spaeteste Uhrzeit bis zu der Aufwach-Licht aktiv ist.'},
+  'lighting.lux_adaptive.enabled': {title:'Lux-Adaptiv', text:'Passt die kuenstliche Beleuchtung automatisch an das vorhandene Tageslicht an. Bei viel Sonne wird weniger Kunstlicht benoetigt. Braucht einen Lux-Sensor pro Raum.'},
+  'lighting.lux_adaptive.target_lux': {title:'Ziel-Beleuchtungsstaerke', text:'Gewuenschte Gesamthelligkeit im Raum (natuerlich + kuenstlich). 300-500 Lux ist typisch fuer Wohnraeume.'},
+  'lighting.lux_adaptive.min_brightness_pct': {title:'Min. Kunstlicht', text:'Minimale kuenstliche Helligkeit — auch bei viel Tageslicht bleibt mindestens dieser Wert.'},
+  'lighting.lux_adaptive.max_brightness_pct': {title:'Max. Kunstlicht', text:'Maximale kuenstliche Helligkeit bei komplett dunklem Raum.'},
   // === COVER-AUTOMATIK ===
   'seasonal_actions.enabled': {title:'Saisonale Aktionen', text:'Automatische Aktionen basierend auf Jahreszeit, Wetter und Sonnenstand.'},
   'seasonal_actions.cover_automation.sun_tracking': {title:'Sonnenstand-Tracking', text:'Rolllaeden folgen automatisch dem Sonnenstand. Benoetigt konfigurierte Cover-Profile.'},
@@ -6676,8 +6707,41 @@ function renderLights() {
     fToggle('lighting.auto_off_away', 'Auto-Aus bei Abwesenheit (alle weg)') +
     fRange('lighting.auto_off_empty_room_minutes', 'Licht aus nach leerem Raum (Min)', 5, 120, 5, {5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',45:'45 Min',60:'1 Std',90:'1.5 Std',120:'2 Std'}) +
     fToggle('lighting.night_dimming', 'Nacht-Dimming (automatisch dunkler ab 21 Uhr)') +
+    fRange('lighting.night_dimming_start_hour', 'Night-Dimming Start (Uhrzeit)', 19, 23, 1, {19:'19 Uhr',20:'20 Uhr',21:'21 Uhr',22:'22 Uhr',23:'23 Uhr'}) +
+    fRange('lighting.night_dimming_transition', 'Night-Dimming Uebergang (Sek)', 60, 600, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min',600:'10 Min'}) +
     fToggle('lighting.daylight_off', 'Tageslicht-Hinweis (Licht an bei Sonnenschein)') +
+    fToggle('lighting.dusk_only_occupied_rooms', 'Daemmerung: Nur Raeume mit Praesenz einschalten') +
     fRange('lighting.default_transition', 'Standard-Uebergang (Sekunden)', 0, 10, 1, {0:'Sofort',1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s'})
+  ) +
+  sectionWrap('&#128065;', 'Praesenz-gesteuerte Beleuchtung',
+    fInfo('Bewegung im Raum erkennen und Licht automatisch einschalten. Nachts wird statt voller Helligkeit nur ein sanftes Orientierungslicht in Flur und Bad aktiviert. Pro Raum konfigurierbar in der Raum-Zuordnung oben.') +
+    fToggle('lighting.presence_control.enabled', 'Praesenz-Steuerung aktiv') +
+    fToggle('lighting.presence_control.auto_on_motion', 'Licht an bei Bewegung') +
+    fToggle('lighting.presence_control.night_path_light', 'Nacht-Pfadlicht (sanftes Orientierungslicht)') +
+    fRange('lighting.presence_control.night_path_brightness', 'Pfadlicht-Helligkeit (%)', 3, 20, 1, {3:'3%',5:'5%',8:'8%',10:'10%',15:'15%',20:'20%'}) +
+    fRange('lighting.presence_control.night_path_timeout_minutes', 'Pfadlicht Auto-Aus (Min)', 2, 15, 1, {2:'2 Min',3:'3 Min',5:'5 Min',7:'7 Min',10:'10 Min',15:'15 Min'}) +
+    fRange('lighting.presence_control.manual_override_minutes', 'Override-Schutz nach manueller Bedienung (Min)', 5, 60, 5, {5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',45:'45 Min',60:'1 Std'}) +
+    fRange('lighting.presence_control.night_start_hour', 'Nacht beginnt (Uhrzeit)', 20, 24, 1, {20:'20 Uhr',21:'21 Uhr',22:'22 Uhr',23:'23 Uhr',24:'0 Uhr'}) +
+    fRange('lighting.presence_control.night_end_hour', 'Nacht endet (Uhrzeit)', 4, 8, 1, {4:'4 Uhr',5:'5 Uhr',6:'6 Uhr',7:'7 Uhr',8:'8 Uhr'})
+  ) +
+  sectionWrap('&#128716;', 'Bettsensor-Integration',
+    fInfo('Bettsensor erkennt Schlafen und Aufwachen. Bei Bett-Belegung abends werden alle Lichter sanft ausgeschaltet (Sleep-Mode). Beim Aufstehen morgens wird graduell aufgehellt. Nachts gibt es Pfadlicht in Flur/Bad. Bettsensor pro Raum zuordnen in der Raum-Zuordnung oben.') +
+    fToggle('lighting.bed_sensors.enabled', 'Bettsensor-Integration aktiv') +
+    fToggle('lighting.bed_sensors.sleep_mode', 'Sleep-Mode (alle Lichter aus bei Bett belegt)') +
+    fRange('lighting.bed_sensors.sleep_dim_transition', 'Sleep-Dimming Dauer (Sek)', 60, 600, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min',600:'10 Min'}) +
+    fRange('lighting.bed_sensors.sleep_start_hour', 'Schlafmodus ab (Uhrzeit)', 20, 24, 1, {20:'20 Uhr',21:'21 Uhr',22:'22 Uhr',23:'23 Uhr',24:'0 Uhr'}) +
+    fToggle('lighting.bed_sensors.wakeup_light', 'Aufwach-Licht (graduelles Aufhellen)') +
+    fRange('lighting.bed_sensors.wakeup_brightness', 'Aufwach-Helligkeit (%)', 10, 80, 5, {10:'10%',20:'20%',30:'30%',40:'40%',50:'50%',60:'60%',80:'80%'}) +
+    fRange('lighting.bed_sensors.wakeup_transition', 'Aufhell-Dauer (Sek)', 30, 300, 15, {30:'30s',60:'1 Min',90:'1.5 Min',120:'2 Min',180:'3 Min',300:'5 Min'}) +
+    fRange('lighting.bed_sensors.wakeup_window_start', 'Aufwach-Fenster Start', 4, 8, 1, {4:'4 Uhr',5:'5 Uhr',6:'6 Uhr',7:'7 Uhr',8:'8 Uhr'}) +
+    fRange('lighting.bed_sensors.wakeup_window_end', 'Aufwach-Fenster Ende', 7, 11, 1, {7:'7 Uhr',8:'8 Uhr',9:'9 Uhr',10:'10 Uhr',11:'11 Uhr'})
+  ) +
+  sectionWrap('&#9728;', 'Lux-adaptive Helligkeit',
+    fInfo('Passt kuenstliches Licht automatisch an das vorhandene Tageslicht an. Bei viel Sonnenlicht wird weniger Kunstlicht verwendet, bei wenig Licht mehr. Lux-Sensor pro Raum zuordnen in der Raum-Zuordnung oben.') +
+    fToggle('lighting.lux_adaptive.enabled', 'Lux-Adaptiv aktiv') +
+    fRange('lighting.lux_adaptive.target_lux', 'Ziel-Beleuchtungsstaerke (Lux)', 100, 800, 50, {100:'100',200:'200',300:'300',400:'400',500:'500',600:'600',800:'800'}) +
+    fRange('lighting.lux_adaptive.min_brightness_pct', 'Minimale Kunstlicht-Helligkeit (%)', 5, 30, 5, {5:'5%',10:'10%',15:'15%',20:'20%',25:'25%',30:'30%'}) +
+    fRange('lighting.lux_adaptive.max_brightness_pct', 'Maximale Kunstlicht-Helligkeit (%)', 50, 100, 10, {50:'50%',60:'60%',70:'70%',80:'80%',90:'90%',100:'100%'})
   ) +
   sectionWrap('&#127749;', 'Zirkadiane Beleuchtung',
     fInfo('Passt Helligkeit (und bei tunable_white auch Farbtemperatur) automatisch an den Tagesverlauf an. dim2warm-Lampen regeln die Farbtemperatur ueber die Helligkeit in der Hardware — hier wird nur die Helligkeitskurve gesteuert.<br><br><strong>Modi:</strong><br>&bull; <strong>MindHome:</strong> Jarvis steuert die Helligkeitskurve komplett<br>&bull; <strong>Hybrid HCL:</strong> MDT AKD HCL laeuft als Basis, Jarvis ueberschreibt bei Events') +
@@ -6894,6 +6958,36 @@ function renderLightRoomAssignment(haLights, container) {
         html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Helligkeit Nacht (%)</label><input type="number" value="' + (r.night_brightness||20) + '" min="0" max="100" step="5" onchange="setRoomLightVal(\'' + esc(name) + '\',\'night_brightness\',parseInt(this.value))"></div>';
         html += '</div>';
       }
+      // ── NEU: Sensor-Zuordnung + Praesenz-Optionen ──
+      html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">';
+      html += '<div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;">Sensor-Zuordnung &amp; Praesenz</div>';
+      // Bettsensor (nur bei bedroom/schlafzimmer)
+      if (r.type === 'bedroom') {
+        const bedSensor = r.bed_sensor || '';
+        html += '<div class="form-group" style="margin-bottom:4px;"><label style="font-size:10px;">Bettsensor</label>';
+        html += '<input type="text" value="' + esc(bedSensor) + '" placeholder="binary_sensor.bed_occupancy" style="font-size:11px;" onchange="setRoomLightVal(\'' + esc(name) + '\',\'bed_sensor\',this.value)">';
+        html += '</div>';
+      }
+      // Lux-Sensor
+      const luxSensor = r.lux_sensor || '';
+      html += '<div class="form-group" style="margin-bottom:4px;"><label style="font-size:10px;">Lux-Sensor</label>';
+      html += '<input type="text" value="' + esc(luxSensor) + '" placeholder="sensor.lux_' + esc(name) + '" style="font-size:11px;" onchange="setRoomLightVal(\'' + esc(name) + '\',\'lux_sensor\',this.value)">';
+      html += '</div>';
+      // Toggles
+      html += '<div style="display:flex;gap:12px;flex-wrap:wrap;">';
+      const presAutoOn = r.presence_auto_on !== false;
+      html += '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;">';
+      html += '<input type="checkbox"' + (presAutoOn ? ' checked' : '') + ' onchange="setRoomLightVal(\'' + esc(name) + '\',\'presence_auto_on\',this.checked)" style="accent-color:var(--accent);">';
+      html += 'Praesenz-Auto-An</label>';
+      // Nacht-Pfadlicht (nur bei hallway/bathroom/flur/bad)
+      if (r.type === 'hallway' || r.type === 'bathroom') {
+        const nightPath = r.night_path_light || false;
+        html += '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;">';
+        html += '<input type="checkbox"' + (nightPath ? ' checked' : '') + ' onchange="setRoomLightVal(\'' + esc(name) + '\',\'night_path_light\',this.checked)" style="accent-color:var(--accent);">';
+        html += 'Nacht-Pfadlicht</label>';
+      }
+      html += '</div>';
+      html += '</div>';
       html += '</div>';
     }
     html += '</div>';

@@ -441,6 +441,39 @@ lighting:
       - {time: "18:00", kelvin: 3500}
       - {time: "20:00", kelvin: 2700}
       - {time: "22:00", kelvin: 2200}
+  # Praesenz-gesteuertes Licht
+  presence_control:
+    enabled: true
+    auto_on_motion: true              # Motion → Licht an
+    night_path_light: true            # Nacht-Orientierungslicht
+    night_path_brightness: 5          # Helligkeit Nachtlicht (%)
+    night_path_timeout_minutes: 5     # Wie lange Nachtlicht bleibt
+    manual_override_minutes: 30       # Schutz nach manueller Bedienung
+    night_start_hour: 22
+    night_end_hour: 6
+  # Bettsensor-Integration
+  bed_sensors:
+    enabled: true
+    sleep_mode: true                  # Bett belegt → alle Lichter aus
+    sleep_dim_transition: 300         # Dim-Dauer Sekunden
+    sleep_start_hour: 21             # Ab wann Schlafmodus moeglich
+    wakeup_light: true
+    wakeup_brightness: 40
+    wakeup_transition: 120
+    wakeup_window_start: 5
+    wakeup_window_end: 9
+  # Lux-adaptive Helligkeit
+  lux_adaptive:
+    enabled: false                    # Default aus (braucht Sensoren)
+    target_lux: 400
+    min_brightness_pct: 10
+    max_brightness_pct: 100
+  # Night-Dimming Details
+  night_dimming_start_hour: 21
+  night_dimming_transition: 300
+  # Daemmerung Details
+  dusk_sun_elevation: -2
+  dusk_only_occupied_rooms: true
 heating:
   mode: room_thermostat
   curve_entity: ''

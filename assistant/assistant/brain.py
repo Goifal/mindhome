@@ -54,6 +54,7 @@ from .ambient_audio import AmbientAudioClassifier
 from .ocr import OCREngine
 from .conflict_resolver import ConflictResolver
 from .follow_me import FollowMeEngine
+from .light_engine import LightEngine
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
@@ -197,6 +198,7 @@ class AssistantBrain(BrainCallbacksMixin):
         self.feedback = FeedbackTracker()
         self.activity = ActivityEngine(self.ha)
         self.follow_me = FollowMeEngine(self.ha)
+        self.light_engine = LightEngine(self.ha)
         self.proactive = ProactiveManager(self)
         self.summarizer = DailySummarizer(self.ollama)
         self.memory_extractor: Optional[MemoryExtractor] = None
@@ -365,6 +367,12 @@ class AssistantBrain(BrainCallbacksMixin):
         await self.time_awareness.initialize(redis_client=self.memory.redis)
         self.time_awareness.set_notify_callback(self._handle_time_alert)
         await self.time_awareness.start()
+
+        # LightEngine: Praesenz, Bettsensor, Lux-Adaptiv, Daemmerung, Override
+        await self.light_engine.initialize(redis_client=self.memory.redis)
+        await self.light_engine.start()
+        self.executor._light_engine = self.light_engine
+        self.time_awareness._light_engine = self.light_engine
 
         # Phase 7: RoutineEngine initialisieren
         await self.routines.initialize(redis_client=self.memory.redis)

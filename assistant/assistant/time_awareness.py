@@ -294,6 +294,15 @@ class TimeAwareness:
             if light_room in active_rooms:
                 continue
 
+            # Manual Override pruefen (LightEngine)
+            _le = getattr(self, '_light_engine', None)
+            if _le:
+                try:
+                    if await _le.is_manual_override_active(entity_id):
+                        continue
+                except Exception:
+                    pass
+
             device_key = f"light_{light_room}"
             minutes = await self._get_running_minutes(entity_id, device_key)
             if minutes and minutes >= threshold:
