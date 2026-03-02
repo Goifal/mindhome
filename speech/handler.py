@@ -132,6 +132,8 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         compute_type: str = "int8",
         beam_size: int = 5,
         redis_url: str = "redis://redis:6379",
+        initial_prompt: str = "",
+        hotwords: str = "",
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -142,6 +144,8 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         self.compute_type = compute_type
         self.beam_size = beam_size
         self.redis_url = redis_url
+        self.initial_prompt = initial_prompt
+        self.hotwords = hotwords
 
         # Audio-Buffer fuer aktuelle Session
         self._audio_bytes = bytearray()
@@ -236,25 +240,47 @@ class WhisperEmbeddingHandler(AsyncEventHandler):
         if len(audio_array) < 1600:  # < 0.1s bei 16kHz
             return ""
 
+        # Gemeinsame Transcribe-Parameter
+        _transcribe_kwargs = {
+            "language": self.language,
+            "beam_size": self.beam_size,
+            # Anti-Hallucination: Whisper halluziniert manchmal in stillen Passagen
+            # repetition_penalty reduziert wiederholte Phrasen
+            "repetition_penalty": 1.2,
+            # no_speech_threshold: Segmente mit hoher "kein Sprechen"-Wahrscheinlichkeit
+            # werden verworfen (0.6 = Standard, 0.4 = strenger)
+            "no_speech_threshold": 0.4,
+            # hallucination_silence_threshold: Wenn eine Pause > N Sekunden erkannt wird
+            # und trotzdem Text generiert wird → wahrscheinlich Halluzination → skippen
+            "hallucination_silence_threshold": 1.0,
+        }
+
+        # initial_prompt: Gibt Whisper Domain-Vokabular als Kontext
+        # Verbessert Erkennung von Eigennamen, Raumnamen, Fachbegriffen massiv
+        if self.initial_prompt:
+            _transcribe_kwargs["initial_prompt"] = self.initial_prompt
+
+        # hotwords: Boosted bestimmte Woerter im Beam-Search
+        if self.hotwords:
+            _transcribe_kwargs["hotwords"] = self.hotwords
+
         # W-9: VAD-Fallback — bei ValueError nochmal ohne VAD versuchen
         try:
             # S-3: min_silence von 500ms auf 250ms reduziert — schnellere
             # Endeerkennung bei kurzen Sprachbefehlen (~250ms Latenzgewinn)
             segments, _info = model.transcribe(
                 audio_array,
-                language=self.language,
-                beam_size=self.beam_size,
                 vad_filter=True,
                 vad_parameters={"min_silence_duration_ms": 250},
+                **_transcribe_kwargs,
             )
             text = " ".join(seg.text.strip() for seg in segments)
         except ValueError as e:
             logger.warning("VAD-Fehler, Retry ohne VAD: %s", e)
             segments, _info = model.transcribe(
                 audio_array,
-                language=self.language,
-                beam_size=self.beam_size,
                 vad_filter=False,
+                **_transcribe_kwargs,
             )
             text = " ".join(seg.text.strip() for seg in segments)
 

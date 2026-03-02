@@ -5946,47 +5946,118 @@ class AssistantBrain(BrainCallbacksMixin):
         re.compile(r"^nachricht\s+an\s+(\w+)"),
     ]
 
+    # STT-Korrekturen: Woerter die Whisper haeufig falsch erkennt (deutsch)
+    _STT_WORD_CORRECTIONS: dict[str, str] = {
+        # --- Fehlende Umlaute (Whisper gibt manchmal ASCII statt ä/ö/ü) ---
+        "uber": "über", "fur": "für", "tur": "Tür", "turen": "Türen",
+        "kuche": "Küche", "zuruck": "zurück", "naturlich": "natürlich",
+        "glucklicherweise": "glücklicherweise", "ubrigens": "übrigens",
+        "buro": "Büro", "grun": "grün", "mude": "müde", "muде": "müde",
+        "gemutlich": "gemütlich", "wunschen": "wünschen",
+        "fruhstuck": "Frühstück", "schlussel": "Schlüssel",
+        "kuhl": "kühl", "kuhlschrank": "Kühlschrank",
+        "offnen": "öffnen", "geoffnet": "geöffnet", "schliessen": "schließen",
+        "heiss": "heiß", "draussen": "draußen",
+        "stromungskanal": "Strömungskanal", "beleuchtungskorper": "Beleuchtungskörper",
+        # --- Zusammengeschriebene Smart-Home-Begriffe ---
+        "roll laden": "Rollladen", "rolladen": "Rollladen",
+        "wohn zimmer": "Wohnzimmer", "schlaf zimmer": "Schlafzimmer",
+        "bade zimmer": "Badezimmer", "kinder zimmer": "Kinderzimmer",
+        "ankleide zimmer": "Ankleide", "wasch maschine": "Waschmaschine",
+        "spul maschine": "Spülmaschine", "saug roboter": "Saugroboter",
+        "steck dose": "Steckdose", "laut sprecher": "Lautsprecher",
+        "bewegungs melder": "Bewegungsmelder",
+        # --- Whisper-Halluzinationen bei deutschen Befehlen ---
+        "ja weiß": "Jarvis", "ja weis": "Jarvis", "jarwis": "Jarvis",
+        "dschawis": "Jarvis", "tscharwis": "Jarvis", "dschavis": "Jarvis",
+        "javis": "Jarvis", "jarvis,": "Jarvis",
+        # --- Haeufige Whisper-Fehler bei kurzen Befehlen ---
+        "machte": "mach das", "macht": "mach",
+        "lichte": "Licht", "lich": "Licht",
+        "rolle": "Rollo", "rollos": "Rollos",
+        # --- Zahlen/Prozent-Korrekturen ---
+        "prozent": "%", "grad": "°",
+        # --- Gaengige Fehlerkennungen ---
+        "home assistant": "Home Assistant", "homeassistant": "Home Assistant",
+    }
+
+    # Mehrwort-Korrekturen (werden VOR Einzelwort-Korrekturen angewendet)
+    _STT_PHRASE_CORRECTIONS: list[tuple[str, str]] = [
+        ("roll laden", "Rollladen"),
+        ("wohn zimmer", "Wohnzimmer"),
+        ("schlaf zimmer", "Schlafzimmer"),
+        ("bade zimmer", "Badezimmer"),
+        ("kinder zimmer", "Kinderzimmer"),
+        ("ankleide zimmer", "Ankleide"),
+        ("wasch maschine", "Waschmaschine"),
+        ("spül maschine", "Spülmaschine"),
+        ("spul maschine", "Spülmaschine"),
+        ("saug roboter", "Saugroboter"),
+        ("steck dose", "Steckdose"),
+        ("laut sprecher", "Lautsprecher"),
+        ("bewegungs melder", "Bewegungsmelder"),
+        ("guten morgen", "Guten Morgen"),
+        ("gute nacht", "Gute Nacht"),
+        ("ja weiß", "Jarvis"),
+        ("ja weis", "Jarvis"),
+        ("mach das licht", "mach das Licht"),
+        ("mach die musik", "mach die Musik"),
+        ("wie viel uhr", "wie viel Uhr"),
+        ("wie spät", "wie spät"),
+    ]
+
     @staticmethod
     def _normalize_stt_text(text: str) -> str:
         """Normalisiert STT-Output fuer bessere Verarbeitung.
 
         Korrigiert typische Whisper-Fehler:
         - Doppelte Leerzeichen
-        - Fehlende Umlaute (uber → ueber, gross → groß)
-        - Ueberfluessige Interpunktion
+        - Fehlende Umlaute (uber → über, kuche → Küche)
+        - Zusammengeschriebene/getrennte Komposita (wohn zimmer → Wohnzimmer)
+        - Whisper-Halluzinationen bei Eigennamen (ja weiß → Jarvis)
+        - Ueberfluessige Interpunktion und Whitespace
         """
         if not text:
             return text
-        # Doppelte Leerzeichen entfernen
+
+        # 1. Whitespace normalisieren
         text = re.sub(r"\s{2,}", " ", text).strip()
-        # Fuehrende/abschliessende Interpunktion entfernen
+
+        # 2. Fuehrende/abschliessende Interpunktion entfernen
         text = text.strip(".,;:!? ")
-        # Typische STT-Umlaut-Fehler (nur ganze Woerter um false positives zu vermeiden)
-        _stt_corrections = {
-            "uber": "ueber",
-            "fur": "fuer",
-            "tur": "tuer",
-            "kuche": "kueche",
-            "zuruck": "zurueck",
-            "naturlich": "natuerlich",
-            "glucklicherweise": "gluecklicherweise",
-            "ubrigens": "uebrigens",
-            "buro": "buero",
-            "grun": "gruen",
-        }
+
+        # 3. Whisper-typische Artefakte entfernen
+        # Manchmal gibt Whisper "..." oder "[Musik]" oder "(Unverstaendlich)" aus
+        text = re.sub(r"\[.*?\]", "", text).strip()
+        text = re.sub(r"\(.*?\)", "", text).strip()
+
+        # 4. Mehrwort-Korrekturen (case-insensitive)
+        text_lower = text.lower()
+        for wrong, correct in Brain._STT_PHRASE_CORRECTIONS:
+            if wrong in text_lower:
+                # Case-insensitive Replace
+                pattern = re.compile(re.escape(wrong), re.IGNORECASE)
+                text = pattern.sub(correct, text)
+                text_lower = text.lower()
+
+        # 5. Einzelwort-Korrekturen
         words = text.split()
         corrected = []
         for w in words:
-            w_lower = w.lower()
-            if w_lower in _stt_corrections:
-                replacement = _stt_corrections[w_lower]
-                # Gross-/Kleinschreibung beibehalten
-                if w[0].isupper():
-                    replacement = replacement[0].upper() + replacement[1:]
-                corrected.append(replacement)
+            w_lower = w.lower().rstrip(".,;:!?")
+            trailing = w[len(w.rstrip(".,;:!?")):]
+            if w_lower in Brain._STT_WORD_CORRECTIONS:
+                replacement = Brain._STT_WORD_CORRECTIONS[w_lower]
+                corrected.append(replacement + trailing)
             else:
                 corrected.append(w)
-        return " ".join(corrected)
+
+        text = " ".join(corrected)
+
+        # 6. Nochmal Whitespace normalisieren nach Korrekturen
+        text = re.sub(r"\s{2,}", " ", text).strip()
+
+        return text
 
     @staticmethod
     def _is_device_command(text: str) -> bool:
