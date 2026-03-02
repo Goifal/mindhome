@@ -440,6 +440,12 @@ class ProactiveManager:
             await self._check_music_follow(entity_id)
             await self._check_night_motion_camera(entity_id)
             await self._check_follow_me(entity_id)
+            await self._check_presence_lighting(entity_id, new_val)
+
+        # Bettsensor + Lux-Sensor Events → LightEngine
+        if entity_id.startswith("binary_sensor.") or entity_id.startswith("sensor."):
+            await self._check_bed_sensor_event(entity_id, new_val, old_val)
+            await self._check_lux_sensor_event(entity_id, new_val)
 
         # Waschmaschine/Trockner (Power-Sensor faellt unter Schwellwert)
         elif "washer" in entity_id or "waschmaschine" in entity_id:
@@ -924,6 +930,72 @@ class ProactiveManager:
                 )
         except Exception as e:
             logger.debug("Follow-Me Check fehlgeschlagen: %s", e)
+
+    async def _check_presence_lighting(self, entity_id: str, new_val: str):
+        """Praesenz-Licht: Motion → LightEngine fuer Auto-On."""
+        try:
+            le = getattr(self.brain, "light_engine", None)
+            if not le:
+                return
+            motion_sensors = yaml_config.get("multi_room", {}).get("room_motion_sensors") or {}
+            room = None
+            for room_name, sensor_id in motion_sensors.items():
+                if sensor_id == entity_id:
+                    room = room_name
+                    break
+            if not room:
+                return
+            if new_val == "on":
+                await le.on_motion(entity_id, room)
+            else:
+                await le.on_motion_clear(entity_id, room)
+        except Exception as e:
+            logger.debug("Praesenz-Licht Check fehlgeschlagen: %s", e)
+
+    async def _check_bed_sensor_event(self, entity_id: str, new_val: str, old_val: str):
+        """Bettsensor → LightEngine fuer Sleep-Mode / Aufwach-Licht."""
+        try:
+            le = getattr(self.brain, "light_engine", None)
+            if not le:
+                return
+            profiles = get_room_profiles()
+            rooms = profiles.get("rooms", {})
+            room = None
+            for room_name, room_cfg in rooms.items():
+                if room_cfg.get("bed_sensor") == entity_id:
+                    room = room_name
+                    break
+            if not room:
+                return
+            if new_val == "on" and old_val != "on":
+                await le.on_bed_occupied(entity_id, room)
+            elif new_val == "off" and old_val == "on":
+                await le.on_bed_clear(entity_id, room)
+        except Exception as e:
+            logger.debug("Bettsensor-Licht Check fehlgeschlagen: %s", e)
+
+    async def _check_lux_sensor_event(self, entity_id: str, new_val: str):
+        """Lux-Sensor → LightEngine fuer adaptive Helligkeit."""
+        try:
+            le = getattr(self.brain, "light_engine", None)
+            if not le:
+                return
+            profiles = get_room_profiles()
+            rooms = profiles.get("rooms", {})
+            room = None
+            for room_name, room_cfg in rooms.items():
+                if room_cfg.get("lux_sensor") == entity_id:
+                    room = room_name
+                    break
+            if not room:
+                return
+            try:
+                lux_value = float(new_val)
+            except (ValueError, TypeError):
+                return
+            await le.on_lux_change(entity_id, room, lux_value)
+        except Exception as e:
+            logger.debug("Lux-Sensor Check fehlgeschlagen: %s", e)
 
     async def _check_music_follow(self, motion_entity: str):
         """Phase 10.1: Prueft ob Musik dem User in einen neuen Raum folgen soll."""
