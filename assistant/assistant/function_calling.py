@@ -2319,7 +2319,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_vacuum",
-            "description": "Saugroboter steuern. Raum angeben → richtiger Roboter (EG/OG) wird automatisch gewaehlt. Ohne Raum → ganzes Stockwerk oder alle.",
+            "description": "Saugroboter steuern. Raum angeben → richtiger Roboter (EG/OG) wird automatisch gewaehlt. Ohne Raum → ganzes Stockwerk oder alle. Saugstaerke und Modus einstellbar.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2332,6 +2332,20 @@ _ASSISTANT_TOOLS_STATIC = [
                         "type": "string",
                         "description": "Raumname fuer gezieltes Saugen (z.B. 'wohnzimmer', 'kueche'). Oder 'eg'/'og' fuer ganzes Stockwerk. Ohne → beide Roboter.",
                     },
+                    "fan_speed": {
+                        "type": "string",
+                        "enum": ["quiet", "standard", "strong", "turbo"],
+                        "description": "Saugstaerke: quiet=leise, standard=normal, strong=stark, turbo=maximal. User sagt 'leise saugen' → quiet, 'volle Power' → turbo.",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["vacuum", "mop", "vacuum_and_mop"],
+                        "description": "Reinigungsmodus: vacuum=nur saugen, mop=nur wischen, vacuum_and_mop=saugen+wischen. Default: vacuum.",
+                    },
+                    "repeat": {
+                        "type": "integer",
+                        "description": "Wie oft der Raum gereinigt werden soll (1-3). Default 1. User sagt '2x saugen' → 2.",
+                    },
                 },
                 "required": ["action"],
             },
@@ -2341,7 +2355,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_vacuum",
-            "description": "Status aller Saugroboter abfragen: Akku, Status, letzter Lauf, Wartungszustand.",
+            "description": "Status aller Saugroboter abfragen: Akku, Status, letzter Lauf, Wartungszustand, Reinigungsverlauf.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -3951,10 +3965,80 @@ class FunctionExecutor:
             return robots[room_floor], None
         return None, None
 
+    # Fan-Speed Mapping: Deutsche Begriffe → HA fan_speed Werte
+    _FAN_SPEED_MAP = {
+        "quiet": "quiet", "leise": "quiet", "silent": "quiet",
+        "standard": "standard", "normal": "standard",
+        "strong": "strong", "stark": "strong", "medium": "strong",
+        "turbo": "turbo", "max": "turbo", "voll": "turbo", "maximal": "turbo",
+    }
+
+    # Reinigungsmodus Mapping
+    _CLEAN_MODE_MAP = {
+        "vacuum": "sweeping", "saugen": "sweeping",
+        "mop": "mopping", "wischen": "mopping",
+        "vacuum_and_mop": "sweeping_and_mopping", "beides": "sweeping_and_mopping",
+    }
+
+    async def _set_vacuum_fan_speed(self, entity_id: str, fan_speed: str) -> bool:
+        """Setzt die Saugstaerke vor dem Start."""
+        resolved = self._FAN_SPEED_MAP.get(fan_speed.lower(), fan_speed)
+        return await self.ha.call_service("vacuum", "set_fan_speed", {
+            "entity_id": entity_id,
+            "fan_speed": resolved,
+        })
+
+    async def _set_vacuum_mode(self, entity_id: str, mode: str) -> bool:
+        """Setzt den Reinigungsmodus (saugen/wischen/beides) via select-Entity."""
+        resolved = self._CLEAN_MODE_MAP.get(mode.lower(), mode)
+        # Offizielle Dreame-Integration: select.{name}_cleaning_mode
+        # Entity-ID aus vacuum entity ableiten
+        base = entity_id.replace("vacuum.", "")
+        select_eid = f"select.{base}_cleaning_mode"
+        success = await self.ha.call_service("select", "select_option", {
+            "entity_id": select_eid,
+            "option": resolved,
+        })
+        if not success:
+            # Fallback: number/select mit anderem Naming
+            select_eid2 = f"select.{base}_mop_mode"
+            success = await self.ha.call_service("select", "select_option", {
+                "entity_id": select_eid2,
+                "option": resolved,
+            })
+        return success
+
+    async def _track_vacuum_clean(self, floor: str, room: str = "") -> None:
+        """Speichert den Reinigungszeitpunkt in Redis fuer den Verlauf."""
+        try:
+            redis = getattr(self, "_redis", None)
+            if not redis:
+                _mem = getattr(self, "memory", None) or getattr(getattr(self, "brain", None), "memory", None)
+                redis = getattr(_mem, "redis", None) if _mem else None
+            if not redis:
+                return
+            import time as _time
+            key = f"mha:vacuum:{floor}:last_clean"
+            if room:
+                key = f"mha:vacuum:{floor}:room:{room}:last_clean"
+            await redis.set(key, str(int(_time.time())), ex=86400 * 7)  # 7 Tage TTL
+        except Exception:
+            pass
+
     async def _exec_set_vacuum(self, args: dict) -> dict:
-        """Saugroboter steuern — waehlt automatisch EG/OG-Roboter."""
+        """Saugroboter steuern — waehlt automatisch EG/OG-Roboter.
+
+        Unterstuetzt offizielle Dreame-Integration:
+        - Saugstaerke (fan_speed): quiet/standard/strong/turbo
+        - Reinigungsmodus: vacuum/mop/vacuum_and_mop
+        - Raum-spezifisches Saugen via Segment-IDs
+        - Wiederholungen (repeat=1-3)
+        """
         action = args.get("action", "start")
         room = self._clean_room(args.get("room"))
+        fan_speed = args.get("fan_speed", "")
+        mode = args.get("mode", "")
+        repeat = min(max(args.get("repeat", 1), 1), 3)
         vacuum_cfg = yaml_config.get("vacuum", {})
         if not vacuum_cfg.get("enabled", True):
             return {"success": False, "message": "Saugroboter-Steuerung ist deaktiviert"}
@@ -3962,8 +4046,29 @@ class FunctionExecutor:
         if not robots:
             return {"success": False, "message": "Keine Saugroboter konfiguriert (settings.yaml → vacuum.robots)"}
 
+        # Stop/Pause/Dock → alle Roboter (kein fan_speed/mode noetig)
+        if action in ("stop", "pause", "dock"):
+            service_map = {"stop": "stop", "pause": "pause", "dock": "return_to_base"}
+            service = service_map[action]
+            results = []
+            for floor, robot in robots.items():
+                eid = robot.get("entity_id")
+                if eid:
+                    success = await self.ha.call_service("vacuum", service, {"entity_id": eid})
+                    results.append(success)
+            action_de = {"stop": "gestoppt", "pause": "pausiert", "dock": "zur Ladestation"}
+            return {"success": any(results), "message": f"Saugroboter {action_de.get(action, action)}"}
+
+        # --- Ab hier: Start/Clean --- Vorbereitungen (fan_speed + mode) ---
+
+        async def _prepare_robot(entity_id: str):
+            """Fan-Speed und Modus setzen bevor der Roboter startet."""
+            if fan_speed:
+                await self._set_vacuum_fan_speed(entity_id, fan_speed)
+            if mode:
+                await self._set_vacuum_mode(entity_id, mode)
+
         # Raum-genaues Saugen (clean_room ODER start mit Raum-Angabe)
-        # Wenn ein konkreter Raum genannt wird → NUR diesen Raum saugen, nie das ganze Haus
         if action in ("clean_room", "start") and room and room.lower() not in ("eg", "og"):
             robot, segment_id = self._resolve_vacuum_room(room, robots)
             if not robot:
@@ -3974,21 +4079,37 @@ class FunctionExecutor:
             nickname = robot.get("nickname", "der Kleine")
 
             if segment_id is not None:
-                # Dreame (Tasshack): dreame_vacuum.vacuum_clean_segment
-                # Fallback: vacuum.send_command mit app_segment_clean (Roborock/Miio)
-                success = await self.ha.call_service("dreame_vacuum", "vacuum_clean_segment", {
+                await _prepare_robot(entity_id)
+                # Offizielle Dreame-Integration: vacuum.send_command
+                # Tasshack-Fallback: dreame_vacuum.vacuum_clean_segment
+                success = await self.ha.call_service("vacuum", "send_command", {
                     "entity_id": entity_id,
-                    "segments": [segment_id],
+                    "command": "app_segment_clean",
+                    "params": {"segments": [segment_id], "repeat": repeat},
                 })
                 if not success:
+                    # Fallback: Tasshack-Service
+                    success = await self.ha.call_service("dreame_vacuum", "vacuum_clean_segment", {
+                        "entity_id": entity_id,
+                        "segments": [segment_id],
+                        "repeat": repeat,
+                    })
+                if not success:
+                    # Letzter Fallback: params als Liste (aeltere Roborock/Miio)
                     success = await self.ha.call_service("vacuum", "send_command", {
                         "entity_id": entity_id,
                         "command": "app_segment_clean",
                         "params": [segment_id],
                     })
-                return {"success": success, "message": f"{nickname} saugt {room}"}
+                if success:
+                    await self._track_vacuum_clean(robot.get("floor", "?"), room)
+                _mode_hint = ""
+                if mode:
+                    _modes_de = {"vacuum": "saugt", "mop": "wischt", "vacuum_and_mop": "saugt+wischt"}
+                    _mode_hint = f" ({_modes_de.get(mode, mode)})"
+                _repeat_hint = f" ({repeat}x)" if repeat > 1 else ""
+                return {"success": success, "message": f"{nickname}{_mode_hint} {room}{_repeat_hint}"}
             else:
-                # KEIN stiller Fallback — wenn Raum gewuenscht aber kein Segment → Fehler
                 _floor = robot.get("floor", "?")
                 return {
                     "success": False,
@@ -4005,21 +4126,12 @@ class FunctionExecutor:
             robot = robots.get(room.lower())
             if not robot or not robot.get("entity_id"):
                 return {"success": False, "message": f"Kein Roboter fuer {room.upper()} konfiguriert"}
-            success = await self.ha.call_service("vacuum", "start", {"entity_id": robot["entity_id"]})
+            eid = robot["entity_id"]
+            await _prepare_robot(eid)
+            success = await self.ha.call_service("vacuum", "start", {"entity_id": eid})
+            if success:
+                await self._track_vacuum_clean(room.lower())
             return {"success": success, "message": f"{robot.get('nickname', 'Saugroboter')} startet im {room.upper()}"}
-
-        # Stop/Pause/Dock → alle Roboter
-        if action in ("stop", "pause", "dock"):
-            service_map = {"stop": "stop", "pause": "pause", "dock": "return_to_base"}
-            service = service_map[action]
-            results = []
-            for floor, robot in robots.items():
-                eid = robot.get("entity_id")
-                if eid:
-                    success = await self.ha.call_service("vacuum", service, {"entity_id": eid})
-                    results.append(success)
-            action_de = {"stop": "gestoppt", "pause": "pausiert", "dock": "zur Ladestation"}
-            return {"success": any(results), "message": f"Saugroboter {action_de.get(action, action)}"}
 
         # Start ohne Raum → alle starten
         results = []
@@ -4027,17 +4139,28 @@ class FunctionExecutor:
         for floor, robot in robots.items():
             eid = robot.get("entity_id")
             if eid:
+                await _prepare_robot(eid)
                 success = await self.ha.call_service("vacuum", "start", {"entity_id": eid})
                 results.append(success)
                 names.append(robot.get("nickname", f"Roboter {floor.upper()}"))
+                if success:
+                    await self._track_vacuum_clean(floor)
         return {"success": any(results), "message": f"{', '.join(names)} gestartet"}
 
     async def _exec_get_vacuum(self, args: dict) -> dict:
-        """Status aller Saugroboter abfragen."""
+        """Status aller Saugroboter abfragen — inkl. Reinigungsverlauf und Wartung."""
         vacuum_cfg = yaml_config.get("vacuum", {})
         robots = vacuum_cfg.get("robots", {})
         if not robots:
             return {"success": False, "message": "Keine Saugroboter konfiguriert"}
+
+        # Redis fuer Reinigungsverlauf
+        redis = None
+        try:
+            _mem = getattr(self, "memory", None) or getattr(getattr(self, "brain", None), "memory", None)
+            redis = getattr(_mem, "redis", None) if _mem else None
+        except Exception:
+            pass
 
         status_list = []
         for floor, robot in robots.items():
@@ -4052,27 +4175,82 @@ class FunctionExecutor:
             state = await self.ha.get_state(entity_id)
             if state:
                 attrs = state.get("attributes", {})
+                _state_de = {
+                    "cleaning": "saugt gerade", "docked": "an Ladestation",
+                    "returning": "faehrt zur Ladestation", "paused": "pausiert",
+                    "idle": "bereit", "error": "FEHLER",
+                }
                 entry = {
                     "name": robot.get("name", f"Saugroboter {floor.upper()}"),
                     "nickname": robot.get("nickname", ""),
                     "floor": floor.upper(),
-                    "state": state.get("state", "unknown"),
-                    "battery": attrs.get("battery_level", "?"),
+                    "state": _state_de.get(state.get("state", ""), state.get("state", "unknown")),
+                    "battery": f"{attrs.get('battery_level', '?')}%",
                 }
-                # Dreame-spezifische Attribute
+                # Aktuelle Saugstaerke
+                fan_speed = attrs.get("fan_speed")
+                if fan_speed:
+                    entry["saugstaerke"] = fan_speed
+                # Aktuelle Reinigungsfläche (laufender Durchgang)
                 if attrs.get("total_clean_area"):
-                    entry["area_cleaned_m2"] = attrs["total_clean_area"]
+                    entry["gereinigt_m2"] = attrs["total_clean_area"]
                 if attrs.get("cleaning_time"):
-                    entry["cleaning_time_min"] = attrs["cleaning_time"]
+                    entry["reinigungszeit_min"] = attrs["cleaning_time"]
+                # Fehlermeldung
+                status_raw = attrs.get("status")
+                if status_raw and "error" in str(status_raw).lower():
+                    entry["fehler"] = status_raw
+                # Verfuegbare Saugstaerken
+                fan_speeds = attrs.get("fan_speed_list")
+                if fan_speeds:
+                    entry["verfuegbare_stufen"] = fan_speeds
                 # Wartungszustand
                 maint = {}
-                for key, label in [("filter_left", "Filter"), ("main_brush_left", "Hauptbuerste"),
-                                   ("side_brush_left", "Seitenbuerste"), ("mop_left", "Mopp")]:
+                for key, label in [
+                    ("filter_left", "Filter"), ("filter_life_left", "Filter"),
+                    ("main_brush_left", "Hauptbuerste"), ("main_brush_life_left", "Hauptbuerste"),
+                    ("side_brush_left", "Seitenbuerste"), ("side_brush_life_left", "Seitenbuerste"),
+                    ("mop_left", "Mopp"), ("mop_life_left", "Mopp"),
+                    ("sensor_dirty_left", "Sensoren"),
+                ]:
                     val = attrs.get(key)
-                    if val is not None:
+                    if val is not None and label not in maint:
                         maint[label] = f"{val}%"
+                        if int(val) < 15:
+                            maint[label] += " ⚠ WECHSELN"
                 if maint:
                     entry["wartung"] = maint
+
+                # Reinigungsverlauf aus Redis
+                if redis:
+                    try:
+                        last_clean = await redis.get(f"mha:vacuum:{floor}:last_clean")
+                        if last_clean:
+                            import time as _time
+                            ago_sec = int(_time.time()) - int(last_clean)
+                            if ago_sec < 3600:
+                                entry["letzter_lauf"] = f"vor {ago_sec // 60} Minuten"
+                            elif ago_sec < 86400:
+                                entry["letzter_lauf"] = f"vor {ago_sec // 3600} Stunden"
+                            else:
+                                entry["letzter_lauf"] = f"vor {ago_sec // 86400} Tagen"
+                        # Raum-spezifischer Verlauf
+                        rooms_map = robot.get("rooms", {})
+                        room_history = {}
+                        for rname in rooms_map:
+                            last_room = await redis.get(f"mha:vacuum:{floor}:room:{rname}:last_clean")
+                            if last_room:
+                                import time as _time
+                                ago = int(_time.time()) - int(last_room)
+                                if ago < 86400:
+                                    room_history[rname] = f"vor {ago // 3600}h"
+                                else:
+                                    room_history[rname] = f"vor {ago // 86400}d"
+                        if room_history:
+                            entry["raum_verlauf"] = room_history
+                    except Exception:
+                        pass
+
                 status_list.append(entry)
             else:
                 status_list.append({

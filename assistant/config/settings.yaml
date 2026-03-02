@@ -1142,8 +1142,17 @@ remote:
         # gaming: "Play Games"
         aus: "PowerOff"
 # --- Saugroboter-Steuerung (Phase 11) ---
+# Offizielle Dreame-Integration (HA) wird automatisch unterstuetzt.
+# Segment-IDs findet man in den HA Developer Tools → States → vacuum.dreame_xxx
+# unter dem Attribut "rooms" (Map-basierte Raum-IDs).
 vacuum:
   enabled: true
+  # Standard-Saugstaerke wenn nicht explizit angegeben
+  # quiet = leise, standard = normal, strong = stark, turbo = maximal
+  default_fan_speed: "standard"
+  # Standard-Reinigungsmodus wenn nicht explizit angegeben
+  # vacuum = nur saugen, mop = nur wischen, vacuum_and_mop = beides
+  default_mode: "vacuum"
   robots:
     eg:
       entity_id: ""               # z.B. vacuum.dreame_eg — bitte eintragen
@@ -1180,6 +1189,10 @@ vacuum:
     min_hours_between: 24          # Mindestabstand zwischen Reinigungen
     preferred_time_start: 10       # Bevorzugt 10-16 Uhr
     preferred_time_end: 16
+    # Saugstaerke fuer automatisches Saugen (optional, sonst default_fan_speed)
+    auto_fan_speed: "standard"
+    # Modus fuer automatisches Saugen (optional, sonst default_mode)
+    auto_mode: "vacuum"
   maintenance:
     enabled: true
     check_interval_hours: 24

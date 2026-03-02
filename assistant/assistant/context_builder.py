@@ -543,6 +543,27 @@ class ContextBuilder:
                     lock_text = "verriegelt" if s == "locked" else "entriegelt"
                     house.setdefault("locks", []).append(f"{desc}: {lock_text}")
 
+            # Saugroboter (Vacuum) — Status, Akku, aktuelle Taetigkeit
+            elif domain == "vacuum":
+                name = _sanitize_for_prompt(
+                    attrs.get("friendly_name", entity_id), 50, "vacuum_name"
+                )
+                if name:
+                    _vac_de = {
+                        "cleaning": "saugt", "docked": "Ladestation",
+                        "returning": "faehrt zurueck", "paused": "pausiert",
+                        "idle": "bereit", "error": "FEHLER",
+                    }
+                    status = _vac_de.get(s, s)
+                    battery = attrs.get("battery_level")
+                    parts = [f"{name}: {status}"]
+                    if battery is not None:
+                        parts.append(f"Akku {battery}%")
+                    fan_speed = attrs.get("fan_speed")
+                    if fan_speed and s == "cleaning":
+                        parts.append(f"Stufe: {fan_speed}")
+                    house.setdefault("vacuum", []).append(", ".join(parts))
+
             # Kalender (naechster Termin aus HA State-Attribut)
             # state="on" = Termin findet GERADE statt
             # state="off" = kein aktueller Termin, aber start_time zeigt den naechsten
