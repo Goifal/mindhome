@@ -1368,17 +1368,17 @@ class RoutineEngine:
 
     async def _sim_action(self, action_type: str):
         """Fuehrt eine Simulations-Aktion aus (nur Licht, keine Covers)."""
+        # Bug 7: Cover-Aktionen entfernt — proactive.py steuert Covers
+        if action_type in ("covers_up", "covers_down"):
+            logger.debug("Vacation-Sim: Cover-Aktion '%s' uebersprungen (proactive.py)", action_type)
+            return
+
         try:
             states = await self.ha.get_states()
             if not states:
                 return
 
-            # Bug 7: Cover-Aktionen entfernt — proactive.py steuert Covers
-            if action_type in ("covers_up", "covers_down"):
-                logger.debug("Vacation-Sim: Cover-Aktion '%s' uebersprungen (proactive.py)", action_type)
-                return
-
-            elif action_type == "light_random_on":
+            if action_type == "light_random_on":
                 lights = [s for s in states if s.get("entity_id", "").startswith("light.")
                           and s.get("state") == "off"]
                 if lights:

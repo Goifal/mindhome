@@ -35,7 +35,9 @@ def load_cover_configs() -> dict:
     """Cover-Configs aus lokaler JSON-Datei laden."""
     try:
         if _COVER_CONFIG_FILE.exists():
-            return json.loads(_COVER_CONFIG_FILE.read_text())
+            data = json.loads(_COVER_CONFIG_FILE.read_text())
+            if isinstance(data, dict):
+                return data
     except Exception as e:
         logger.warning("Cover-Config laden fehlgeschlagen: %s", e)
     return {}
@@ -65,14 +67,19 @@ def _load_list(filepath: Path) -> list:
 
 
 def _save_list(filepath: Path, items: list) -> None:
-    _ensure_dir()
-    filepath.write_text(json.dumps(items, indent=2, ensure_ascii=False))
+    try:
+        _ensure_dir()
+        filepath.write_text(json.dumps(items, indent=2, ensure_ascii=False))
+    except Exception as e:
+        logger.error("Speichern von %s fehlgeschlagen: %s", filepath.name, e)
+        raise
 
 
 def _next_id(items: list) -> int:
     if not items:
         return 1
-    return max(item.get("id", 0) for item in items) + 1
+    ids = [item.get("id", 0) for item in items if isinstance(item.get("id", 0), int)]
+    return (max(ids) + 1) if ids else 1
 
 
 def _find_by_id(items: list, item_id: int) -> Optional[dict]:

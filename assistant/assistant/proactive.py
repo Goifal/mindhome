@@ -454,12 +454,12 @@ class ProactiveManager:
         # Feature 2: Manual Override Detection fuer Covers
         if entity_id.startswith("cover.") and new_val != old_val:
             try:
-                redis_client = self._get_redis()
+                redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
                 if redis_client:
                     acting_key = f"mha:cover:jarvis_acting:{entity_id}"
                     jarvis_triggered = await redis_client.get(acting_key)
                     if not jarvis_triggered:
-                        override_hours = yaml_config.get("cover_automation", {}).get("manual_override_hours", 2)
+                        override_hours = yaml_config.get("seasonal_actions", {}).get("cover_automation", {}).get("manual_override_hours", 2)
                         override_ttl = int(override_hours * 3600)
                         override_key = f"mha:cover:manual_override:{entity_id}"
                         await redis_client.set(override_key, "1", ex=override_ttl)
@@ -2100,7 +2100,7 @@ class ProactiveManager:
                 # 1. WETTER-SCHUTZ (hoechste Prioritaet)
                 if cover_cfg.get("weather_protection", True):
                     await self._cover_weather_protection(
-                        states, weather, cover_profiles, auto_level,
+                        states, weather, cover_profiles, cover_cfg, auto_level,
                         _redis,
                     )
 
@@ -2343,18 +2343,31 @@ class ProactiveManager:
             return False
 
     async def _cover_weather_protection(
-        self, states, weather, profiles, auto_level, redis_client,
+        self, states, weather, profiles, cover_cfg, auto_level, redis_client,
     ):
         """Sturm → Rolllaeden HOCH. Regen → Markisen EINFAHREN."""
-        seasonal_cfg = yaml_config.get("seasonal_actions", {})
-        cover_cfg = seasonal_cfg.get("cover_automation", {})
         storm_speed = cover_cfg.get("storm_wind_speed", 50)
         # Feature 10: Hysterese — Storm erst beenden bei storm_speed - hysteresis_wind
         hysteresis_wind = cover_cfg.get("hysteresis_wind", 10)
         wind = weather.get("wind_speed", 0)
         condition = weather.get("condition", "")
 
+        # Sturmschutz mit Hysterese: Aktivieren bei storm_speed, Entwarnung bei storm_speed - hysteresis_wind
+        storm_active_key = "mha:cover:storm_active"
+        storm_was_active = False
+        if redis_client:
+            try:
+                storm_was_active = bool(await redis_client.get(storm_active_key))
+            except Exception:
+                pass
+
         if wind >= storm_speed:
+            # Sturm aktiv: Covers sichern
+            if redis_client:
+                try:
+                    await redis_client.set(storm_active_key, "1", ex=7200)
+                except Exception:
+                    pass
             notified = False
             for s in (states or []):
                 eid = s.get("entity_id", "")
@@ -2380,6 +2393,15 @@ class ProactiveManager:
                         "message": f"Sturmwarnung: Covers zum Schutz gesichert (Wind {wind} km/h)",
                     })
                     notified = True
+        elif storm_was_active and wind < (storm_speed - hysteresis_wind):
+            # Sturm vorbei (mit Hysterese): Storm-Flag loeschen
+            if redis_client:
+                try:
+                    await redis_client.delete(storm_active_key)
+                except Exception:
+                    pass
+            logger.info("Cover-Wetter: Sturmwarnung aufgehoben (Wind %d km/h < %d km/h Schwelle)",
+                        wind, storm_speed - hysteresis_wind)
 
         # Regen/Hagel: Nur Markisen einfahren
         rp_data = _get_room_profiles_cached()
@@ -2494,29 +2516,38 @@ class ProactiveManager:
                         reason_parts.append(f"{int(lux)} Lux")
                     reason = ", ".join(reason_parts) + f", Azimut {azimuth}°)"
 
-                    await self._auto_cover_action(
+                    acted = await self._auto_cover_action(
                         entity_id, target_pos, reason,
                         auto_level, redis_client,
                     )
+                    # Merken, dass wir dieses Cover wegen Sonne geschlossen haben
+                    if acted and redis_client:
+                        try:
+                            await redis_client.set(
+                                f"mha:cover:sun_closed:{entity_id}", "1", ex=7200,
+                            )
+                        except Exception:
+                            pass
             elif not sun_hitting:
                 # Sonne nicht mehr auf Fenster — wieder oeffnen
                 # ABER: Nicht oeffnen wenn Bettsensor aktiv (Feature 13)
                 if bed_occupied:
                     continue
                 if redis_client:
-                    # Pruefen ob wir dieses Cover wegen Sonne geschlossen haben
-                    for pos_check in range(0, 51):
-                        key = f"mha:cover:auto:{entity_id}:{pos_check}"
-                        was_sun_closed = await redis_client.get(key)
-                        if was_sun_closed:
-                            # Feature 10: Hysterese beim Oeffnen
-                            if effective_temp <= (heat_temp - hysteresis_temp):
-                                await self._auto_cover_action(
-                                    entity_id, 100,
-                                    "Sonne vorbei — Rollladen wieder offen",
-                                    auto_level, redis_client,
-                                )
-                            break
+                    sun_closed_key = f"mha:cover:sun_closed:{entity_id}"
+                    was_sun_closed = await redis_client.get(sun_closed_key)
+                    if was_sun_closed:
+                        # Feature 10: Hysterese beim Oeffnen
+                        if effective_temp <= (heat_temp - hysteresis_temp):
+                            await self._auto_cover_action(
+                                entity_id, 100,
+                                "Sonne vorbei — Rollladen wieder offen",
+                                auto_level, redis_client,
+                            )
+                            try:
+                                await redis_client.delete(sun_closed_key)
+                            except Exception:
+                                pass
 
     async def _cover_temperature_logic(
         self, states, weather, cover_cfg, cover_profiles, auto_level, redis_client,
@@ -2704,7 +2735,7 @@ class ProactiveManager:
                             if acted:
                                 count += 1
                         if step_pos < 100:
-                            await asyncio.sleep(300)  # 5 Min zwischen Stufen
+                            await asyncio.sleep(300)  # 5 Min zwischen Stufen (blockiert Loop ~10 Min gesamt)
                 else:
                     for eid, _ in covers_to_open:
                         acted = await self._auto_cover_action(
@@ -2762,7 +2793,6 @@ class ProactiveManager:
                         break
 
                 if vacation_active:
-                    import random
                     # Bug 1: Config aus vacation_simulation.* lesen (NICHT hardcoded!)
                     vac_cfg = yaml_config.get("vacation_simulation", {})
                     morning_hour = vac_cfg.get("morning_hour", 7)
@@ -2770,8 +2800,20 @@ class ProactiveManager:
                     night_hour = vac_cfg.get("night_hour", 23)
                     variation = vac_cfg.get("variation_minutes", 30)
 
-                    # Variation anwenden
-                    var_offset = random.randint(-variation, variation) if variation > 0 else 0
+                    # Variation einmal pro Tag berechnen (in Redis speichern)
+                    var_offset = 0
+                    if variation > 0 and redis_client:
+                        try:
+                            stored = await redis_client.get("mha:cover:vac_var_offset")
+                            if stored:
+                                var_offset = int(stored)
+                            else:
+                                var_offset = random.randint(-variation, variation)
+                                await redis_client.set("mha:cover:vac_var_offset", str(var_offset), ex=86400)
+                        except Exception:
+                            var_offset = random.randint(-variation, variation)
+                    elif variation > 0:
+                        var_offset = random.randint(-variation, variation)
                     morning_min = morning_hour * 60 + var_offset
                     evening_min = evening_hour * 60 + var_offset
                     night_min = night_hour * 60 + var_offset
@@ -2912,22 +2954,43 @@ class ProactiveManager:
         if is_raining or temp < 10 or temp > 25:
             return
 
+        high_co2_rooms = []
         for s in (states or []):
             eid = s.get("entity_id", "")
             if not eid.startswith("sensor."):
                 continue
             dc = s.get("attributes", {}).get("device_class", "")
-            uom = s.get("attributes", {}).get("unit_of_measurement", "")
-            if dc == "carbon_dioxide" or uom == "ppm":
-                try:
-                    co2 = float(s.get("state", 0))
-                except (ValueError, TypeError):
+            if dc != "carbon_dioxide":
+                continue
+            try:
+                co2 = float(s.get("state", 0))
+            except (ValueError, TypeError):
+                continue
+            if co2 > 1000:
+                # Raum aus Sensor-Entity extrahieren
+                room = eid.replace("sensor.", "").split("_")[0]
+                high_co2_rooms.append((room, co2))
+
+        if high_co2_rooms:
+            # Covers in betroffenen Raeumen oeffnen
+            for s in (states or []):
+                eid = s.get("entity_id", "")
+                if not eid.startswith("cover."):
                     continue
-                if co2 > 1000:
-                    await self._notify("co2_ventilation", LOW, {
-                        "message": f"CO2 hoch ({int(co2)} ppm) — bitte lueften!",
-                    })
-                    break
+                if not await self.brain.executor._is_safe_cover(eid, s):
+                    continue
+                cover_room = eid.replace("cover.", "").split("_")[0]
+                for room, co2 in high_co2_rooms:
+                    if room and room in cover_room:
+                        await self._auto_cover_action(
+                            eid, 100,
+                            f"CO2-Lueftung: {int(co2)} ppm im Raum",
+                            auto_level, redis_client,
+                        )
+                        break
+            await self._notify("co2_ventilation", LOW, {
+                "message": f"CO2 hoch ({int(high_co2_rooms[0][1])} ppm) — Rolllaeden geoeffnet + bitte lueften!",
+            })
 
     # Feature 16: Privacy-Modus (Abendlicher Sichtschutz)
     async def _cover_privacy_mode(self, states, sun, cover_profiles, auto_level, redis_client):
@@ -2962,6 +3025,13 @@ class ProactiveManager:
     # Feature 15: Praesenz-basierte Cover-Steuerung
     async def _cover_presence_logic(self, states, cover_cfg, auto_level, redis_client):
         """Niemand zuhause → alle zu. Person betritt Raum → auf."""
+        # Nicht wenn Urlaubssimulation aktiv (die steuert Covers eigenstaendig)
+        vacation_entity = cover_cfg.get("vacation_mode_entity", "")
+        if vacation_entity:
+            for s in (states or []):
+                if s.get("entity_id") == vacation_entity and s.get("state") == "on":
+                    return
+
         anyone_home = False
         for s in (states or []):
             if s.get("entity_id", "").startswith("person.") and s.get("state") == "home":

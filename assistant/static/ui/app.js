@@ -5685,7 +5685,7 @@ function renderCovers() {
     fToggle('seasonal_actions.cover_automation.co2_ventilation', 'CO2-Lueftungs-Unterstuetzung') +
     fToggle('seasonal_actions.cover_automation.privacy_mode', 'Privacy-Modus (Sichtschutz abends bei Licht)') +
     fToggle('seasonal_actions.cover_automation.presence_aware', 'Praesenz-basiert (niemand zuhause = alles zu)') +
-    fRange('seasonal_actions.cover_automation.manual_override_hours', 'Manueller Override-Schutz (Stunden)', 0, 6, 1, {0:'Aus',1:'1h',2:'2h',3:'3h',4:'4h',6:'6h'})
+    fRange('seasonal_actions.cover_automation.manual_override_hours', 'Manueller Override-Schutz (Stunden)', 0, 6, 1, {0:'Aus',1:'1h',2:'2h',3:'3h',4:'4h',5:'5h',6:'6h'})
   ) +
   // ── Urlaubs-Simulation ─────────────────────────
   sectionWrap('&#127796;', 'Urlaubs-Simulation',
@@ -5799,9 +5799,22 @@ function rpSetPath(path, val) {
 function rpRange(path, label, min, max, step, labels) {
   const v = rpGetPath(path) ?? min;
   const lbl = labels ? (labels[v]||v) : v;
+  const lblAttr = labels ? " data-labels='" + JSON.stringify(labels).replace(/'/g,'&#39;') + "'" : '';
   return '<div class="form-group"><label>' + label + '</label>' +
-    '<div class="range-group"><input type="range" data-rp-path="' + path + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + v + '" ' +
-    'oninput="updRange(this);rpSetPath(\'' + path + '\',parseFloat(this.value))"><span class="range-value" id="rv_rp_' + path.replace(/\./g,'_') + '">' + lbl + '</span></div></div>';
+    '<div class="range-group"><input type="range" data-rp-path="' + path + '"' + lblAttr + ' min="' + min + '" max="' + max + '" step="' + step + '" value="' + v + '" ' +
+    'oninput="updRpRange(this);rpSetPath(\'' + path + '\',parseFloat(this.value))"><span class="range-value" id="rv_rp_' + path.replace(/\./g,'_') + '">' + lbl + '</span></div></div>';
+}
+function updRpRange(el) {
+  const path = el.dataset.rpPath;
+  let display = el.value;
+  if (el.dataset.labels) {
+    try {
+      const labels = JSON.parse(el.dataset.labels);
+      display = labels[el.value] || labels[parseFloat(el.value)] || el.value;
+    } catch(e) {}
+  }
+  const span = document.getElementById('rv_rp_' + path.replace(/\./g,'_'));
+  if (span) span.textContent = display;
 }
 function rpToggle(path, label) {
   const v = rpGetPath(path);

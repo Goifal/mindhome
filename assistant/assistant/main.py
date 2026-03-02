@@ -3444,7 +3444,9 @@ async def ui_activate_cover_scene(scene_id: int, token: str = ""):
             raise HTTPException(status_code=404, detail="Szene nicht gefunden")
         count = 0
         for eid, pos in (scene.get("positions") or {}).items():
-            position = pos.get("position", pos) if isinstance(pos, dict) else pos
+            position = pos.get("position") if isinstance(pos, dict) else pos
+            if position is None:
+                continue
             try:
                 await brain.ha.call_service("cover", "set_cover_position", {
                     "entity_id": eid, "position": int(position),
