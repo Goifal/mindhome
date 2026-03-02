@@ -2708,9 +2708,6 @@ class ProactiveManager:
         """Saugroboter-Automatik: wenn niemand zuhause + keine Stoerung."""
         await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY + 120)  # Spaeter starten
 
-        vacuum_cfg = yaml_config.get("vacuum", {})
-        auto_cfg = vacuum_cfg.get("auto_clean", {})
-        robots = vacuum_cfg.get("robots", {})
         _redis = getattr(self.brain, "memory", None)
         _redis = getattr(_redis, "redis", None) if _redis else None
 
@@ -2718,6 +2715,11 @@ class ProactiveManager:
 
         while self._running:
             try:
+                # Config bei jedem Durchlauf frisch lesen (Hot-Reload aus UI)
+                vacuum_cfg = yaml_config.get("vacuum", {})
+                auto_cfg = vacuum_cfg.get("auto_clean", {})
+                robots = vacuum_cfg.get("robots", {})
+
                 mode = auto_cfg.get("mode", "smart")
                 now = datetime.now()
                 hour = now.hour
