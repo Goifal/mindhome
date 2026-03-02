@@ -196,6 +196,20 @@ class SituationModel:
             elif eid.startswith("media_player.") and state_val == "playing":
                 snapshot["media_playing"].append(friendly)
 
+            # Batterien: Nur kritische Level (<20%) tracken
+            battery = attrs.get("battery_level") or attrs.get("battery")
+            if battery is not None:
+                try:
+                    bat_val = int(float(battery))
+                    if bat_val < 20:
+                        snapshot.setdefault("low_batteries", {})[friendly] = bat_val
+                except (ValueError, TypeError):
+                    pass
+
+            # Saugroboter
+            if eid.startswith("vacuum."):
+                snapshot.setdefault("vacuum_states", {})[friendly] = state_val
+
         return snapshot
 
     def _compare_snapshots(self, old: dict, new: dict) -> list[str]:
@@ -252,6 +266,29 @@ class SituationModel:
                 f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C)"
             ))
 
+        # Temperatur-Drift: Kleine Aenderungen (<threshold) die ueber laengere Zeit
+        # in eine Richtung gehen. Nur melden wenn altes Snapshot >1h alt ist
+        # und Diff zwischen 0.5 und threshold liegt.
+        old_ts = old.get("timestamp", "")
+        if old_ts:
+            try:
+                old_dt = datetime.fromisoformat(old_ts)
+                hours_elapsed = (datetime.now() - old_dt).total_seconds() / 3600
+                if hours_elapsed >= 1.0:
+                    for name in set(old_temps) & set(new_temps):
+                        if name in temp_drops or name in temp_rises:
+                            continue  # Bereits als grosse Aenderung gemeldet
+                        diff = new_temps[name] - old_temps[name]
+                        if 0.5 <= abs(diff) < self.temp_threshold:
+                            direction = "gesunken" if diff < 0 else "gestiegen"
+                            changes.append((
+                                5,
+                                f"{name}: Temperatur langsam um {abs(diff):.1f} Grad {direction} "
+                                f"(ueber {hours_elapsed:.0f}h, {old_temps[name]:.1f} → {new_temps[name]:.1f}°C)"
+                            ))
+            except (ValueError, TypeError):
+                pass
+
         for w in opened:
             changes.append((2, f"{w} wurde geoeffnet"))
         for w in closed:
@@ -305,6 +342,30 @@ class SituationModel:
             changes.append((4, f"{m} spielt jetzt Musik"))
         for m in (old_media - new_media):
             changes.append((5, f"{m} wurde gestoppt"))
+
+        # 8. Batterien: Neue niedrige Batterien melden
+        old_bat = old.get("low_batteries", {})
+        new_bat = new.get("low_batteries", {})
+        for name, level in new_bat.items():
+            if name not in old_bat:
+                changes.append((3, f"{name}: Batterie bei {level}%"))
+            elif old_bat[name] - level >= 5:
+                changes.append((3, f"{name}: Batterie von {old_bat[name]}% auf {level}% gefallen"))
+
+        # 9. Saugroboter
+        old_vac = old.get("vacuum_states", {})
+        new_vac = new.get("vacuum_states", {})
+        for name in set(old_vac) | set(new_vac):
+            old_s = old_vac.get(name, "")
+            new_s = new_vac.get(name, "")
+            if old_s != new_s and new_s:
+                _vac_states_de = {
+                    "cleaning": "saugt", "returning": "faehrt zurueck",
+                    "docked": "in Station", "paused": "pausiert",
+                    "idle": "bereit", "error": "FEHLER",
+                }
+                state_de = _vac_states_de.get(new_s, new_s)
+                changes.append((4, f"{name}: {state_de}"))
 
         # Sortieren nach Prioritaet (niedrig = wichtig)
         changes.sort(key=lambda c: c[0])

@@ -2752,7 +2752,57 @@ class FunctionExecutor:
             logger.info("Room EN->DE: '%s' -> '%s'", room, translated)
             return translated
 
+        # 4. Fuzzy-Match gegen bekannte Raumnamen aus room_profiles
+        # Korrigiert STT-Fehler wie "wohn zimer" → "wohnzimmer"
+        room_profiles = yaml_config.get("room_profiles", {}).get("rooms", {})
+        if room_profiles and room_lower not in {rn.lower() for rn in room_profiles}:
+            # Normalisieren: Leerzeichen entfernen + Umlaut-Varianten
+            room_collapsed = room_lower.replace(" ", "").replace("_", "")
+            room_collapsed = room_collapsed.replace("ae", "ä").replace("oe", "ö").replace("ue", "ü")
+            room_collapsed_noum = room_lower.replace(" ", "").replace("_", "")
+
+            best_match = None
+            best_dist = 999
+            for known_room in room_profiles:
+                known_lower = known_room.lower()
+                # Exakter Match nach Collapse
+                known_collapsed = known_lower.replace(" ", "").replace("_", "")
+                if room_collapsed == known_collapsed or room_collapsed_noum == known_collapsed:
+                    best_match = known_room
+                    best_dist = 0
+                    break
+                # Levenshtein-Distanz (einfache Implementierung)
+                dist = cls._levenshtein(room_collapsed_noum, known_collapsed)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_match = known_room
+
+            # Threshold: Max 2 Edits bei kurzen Raeumen, max 3 bei langen
+            max_dist = 2 if len(room_collapsed_noum) <= 8 else 3
+            if best_match and best_dist <= max_dist:
+                logger.info("Fuzzy Room-Match: '%s' -> '%s' (dist=%d)", room, best_match, best_dist)
+                return best_match
+
         return room
+
+    @staticmethod
+    def _levenshtein(s1: str, s2: str) -> int:
+        """Berechnet Levenshtein-Distanz zwischen zwei Strings."""
+        if len(s1) < len(s2):
+            return FunctionExecutor._levenshtein(s2, s1)
+        if len(s2) == 0:
+            return len(s1)
+        prev_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            curr_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                # Einfuegen, Loeschen, Ersetzen
+                insertions = prev_row[j + 1] + 1
+                deletions = curr_row[j] + 1
+                substitutions = prev_row[j] + (c1 != c2)
+                curr_row.append(min(insertions, deletions, substitutions))
+            prev_row = curr_row
+        return prev_row[-1]
 
     async def execute(self, function_name: str, arguments: dict) -> dict:
         """

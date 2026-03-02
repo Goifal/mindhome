@@ -529,31 +529,40 @@ class ContextBuilder:
                             "_state": s,
                         })
 
-            # Schloesser (Lock-Status) — nur annotierte
+            # Schloesser (Lock-Status) — alle lock.* Entities
             elif domain == "lock" and s in ("locked", "unlocked"):
                 ann = get_entity_annotation(entity_id)
-                role = ann.get("role", "")
-                if role:
-                    desc = ann.get("description", "")
-                    if not desc:
-                        desc = _sanitize_for_prompt(
-                            attrs.get("friendly_name", entity_id), 50, "lock_name"
-                        )
-                    else:
-                        desc = _sanitize_for_prompt(desc, 50, "lock_desc")
-                    if desc:
-                        lock_text = "verriegelt" if s == "locked" else "entriegelt"
-                        house.setdefault("locks", []).append(f"{desc}: {lock_text}")
+                desc = ann.get("description", "")
+                if not desc:
+                    desc = _sanitize_for_prompt(
+                        attrs.get("friendly_name", entity_id), 50, "lock_name"
+                    )
+                else:
+                    desc = _sanitize_for_prompt(desc, 50, "lock_desc")
+                if desc:
+                    lock_text = "verriegelt" if s == "locked" else "entriegelt"
+                    house.setdefault("locks", []).append(f"{desc}: {lock_text}")
 
             # Kalender (naechster Termin aus HA State-Attribut)
-            elif domain == "calendar" and s == "on":
+            # state="on" = Termin findet GERADE statt
+            # state="off" = kein aktueller Termin, aber start_time zeigt den naechsten
+            elif domain == "calendar":
                 summary = attrs.get("message", "")
                 start = attrs.get("start_time", "")
-                if summary:
+                if summary and s == "on":
                     summary = _sanitize_for_prompt(summary, 100, "calendar_summary")
                     if summary:
                         house.setdefault("calendar", []).append(
                             f"{summary}" + (f" um {start}" if start else "")
+                        )
+                elif s == "off" and start:
+                    # Naechster anstehender Termin (nicht aktiv)
+                    summary = _sanitize_for_prompt(
+                        attrs.get("message", ""), 100, "calendar_next"
+                    )
+                    if summary:
+                        house.setdefault("calendar", []).append(
+                            f"[naechster] {summary} um {start}"
                         )
 
         # Annotierte Sensoren: Priorisiert sortieren + auf Text reduzieren

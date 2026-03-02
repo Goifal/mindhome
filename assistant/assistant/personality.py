@@ -2031,9 +2031,30 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         """Formatiert den Kontext kompakt fuer den System Prompt.
 
         Optimiert: Nur relevante Daten, kompaktes Format, aktiver Raum hervorgehoben.
+        Priorisierter Header: Kritische Fakten stehen ganz oben.
         """
         lines = []
         current_room = context.get("room", "")
+
+        # --- Priorisierter Header: Kritische Fakten GANZ OBEN ---
+        # LLMs verarbeiten den Anfang des Kontexts am staerksten.
+        # Alerts, Anomalien und nahende Termine kommen deshalb zuerst.
+        _urgent_facts = []
+        if "alerts" in context and context["alerts"]:
+            for alert in context["alerts"][:3]:
+                _urgent_facts.append(str(alert))
+        if "anomalies" in context and context["anomalies"]:
+            for anomaly in context["anomalies"][:2]:
+                _urgent_facts.append(str(anomaly))
+        # Nahender Termin (Kalenderdaten aus house.calendar)
+        house = context.get("house") or {}
+        _cal_events = house.get("calendar") or []
+        if _cal_events:
+            _next_event = _cal_events[0] if isinstance(_cal_events[0], str) else _cal_events[0].get("title", "")
+            if _next_event:
+                _urgent_facts.append(f"Termin: {_next_event}")
+        if _urgent_facts:
+            lines.append("WICHTIG: " + " | ".join(_urgent_facts[:3]))
 
         # Zeit + Person kompakt in einer Zeile
         time_str = ""
@@ -2055,9 +2076,21 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         if "house" in context:
             house = context["house"] or {}
 
-            # Temperaturen: Mittelwert bevorzugt, sonst Einzelraeume
+            # Temperaturen: Mittelwert ODER Einzelraeume (nicht beides)
             if house.get("avg_temperature") is not None:
-                lines.append(f"- Raumtemperatur: {house['avg_temperature']}°C (Durchschnitt)")
+                # Durchschnitt vorhanden → kompakt. Aktuellen Raum extra zeigen.
+                avg = house["avg_temperature"]
+                temps = house.get("temperatures") or {}
+                current_temp = None
+                if current_room:
+                    for rm, data in temps.items():
+                        if rm.lower() == current_room.lower():
+                            current_temp = data.get("current")
+                            break
+                if current_temp is not None and current_temp != avg:
+                    lines.append(f"- Raumtemperatur: {avg}°C (Schnitt), **{current_room}: {current_temp}°C**")
+                else:
+                    lines.append(f"- Raumtemperatur: {avg}°C (Durchschnitt)")
             elif "temperatures" in house:
                 temps = house["temperatures"] or {}
                 temp_parts = []
@@ -2126,9 +2159,17 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             if "security" in house:
                 lines.append(f"- Sicherheit: {house['security']}")
 
-            # Cover-Status (Rolllaeden/Jalousien)
+            # Cover-Status: Aktueller Raum + nicht-geschlossene (kompakt)
             if house.get("covers"):
-                lines.append(f"- Rolllaeden: {', '.join(house['covers'][:8])}")
+                covers = house["covers"]
+                # Priorisierung: Aktueller Raum zuerst, dann max 5 weitere
+                if current_room:
+                    current_covers = [c for c in covers if current_room.lower() in c.lower()]
+                    other_covers = [c for c in covers if c not in current_covers]
+                    covers = current_covers + other_covers[:5]
+                else:
+                    covers = covers[:5]
+                lines.append(f"- Rolllaeden: {', '.join(covers)}")
 
             # Annotierte Sensoren (Fenster, Bewegung, Temperatur etc.)
             # sensor_context_limit wird bereits in context_builder angewendet
@@ -2143,9 +2184,9 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             if house.get("locks"):
                 lines.append(f"- Schloesser: {', '.join(house['locks'])}")
 
-            # Medien (aktuell abspielend)
+            # Medien (aktuell abspielend, kompakt)
             if house.get("media"):
-                lines.append(f"- Medien: {', '.join(house['media'][:5])}")
+                lines.append(f"- Medien: {', '.join(house['media'][:2])}")
 
             # Fernbedienungen (Harmony etc.)
             if house.get("remotes"):
