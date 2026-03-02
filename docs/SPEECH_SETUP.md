@@ -628,7 +628,7 @@ Das Medium-Modell ist 3x groesser und erkennt Dialekt besser, braucht aber laeng
 ### VRAM-Rechnung (RTX 3090 Ti = 24 GB)
 
 ```
-Ollama Qwen3-14B:              ~8 GB
+Ollama Qwen3.5-9B:             ~6 GB
 faster-whisper large-v3-turbo:  ~6 GB
 Piper TTS:                     ~0.5 GB
 SpeechBrain ECAPA-TDNN:        ~0.3 GB
@@ -637,7 +637,7 @@ Gesamt:                        ~14.8 GB
 Frei:                           ~9.2 GB
 ```
 
-Alles passt locker in 24 GB. Sogar Qwen3-32B (~20 GB) waere moeglich wenn du die anderen Modelle auf CPU laesst.
+Alles passt locker in 24 GB. Sogar Qwen3.5-27B (~17 GB) waere moeglich wenn du die anderen Modelle auf CPU laesst.
 
 ---
 

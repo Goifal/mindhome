@@ -350,7 +350,7 @@ class TestExtractAndStore:
         )
 
         call_kwargs = ollama_mock.chat.call_args[1]
-        # Model kommt aus settings.yaml (extraction_model), Default waere qwen3:14b
+        # Model kommt aus settings.yaml (extraction_model), Default waere qwen3.5:9b
         assert "model" in call_kwargs
         assert call_kwargs["temperature"] == 0.1
 

@@ -412,7 +412,7 @@ Du solltest eine JSON-Antwort mit Jarvis' Antwort bekommen.
 ollama list
 ```
 
-Sollte mindestens `qwen3:4b` zeigen.
+Sollte mindestens `qwen3.5:4b` zeigen.
 
 ---
 
@@ -472,7 +472,7 @@ Das Install-Script fragt alles interaktiv ab — kein manuelles `.env`-Editieren
 | `docker compose up -d` | Alles starten |
 | `docker compose build && docker compose up -d` | Neu bauen nach Code-Aenderung |
 | `ollama list` | Installierte LLM-Modelle anzeigen |
-| `ollama pull qwen3:14b` | Weiteres Modell herunterladen |
+| `ollama pull qwen3.5:9b` | Weiteres Modell herunterladen |
 
 ---
 
@@ -492,7 +492,7 @@ curl -s -o /dev/null -w "%{http_code}" http://DEINE-HA-IP:8123/api/
 
 ```bash
 ollama list                  # welche Modelle sind da?
-ollama pull qwen3:4b         # fehlendes Modell laden
+ollama pull qwen3.5:4b       # fehlendes Modell laden
 sudo systemctl restart ollama
 ```
 
@@ -695,11 +695,11 @@ Das Dashboard hat 8 Tabs. Hier ist was du wo findest und was du anpassen solltes
 
 **Modelle:**
 Jarvis waehlt automatisch das passende Modell:
-- "Licht an" → Fast-Modell (`qwen3:4b`)
-- "Was meinst du zum Wetter?" → Smart-Modell (`qwen3:14b`)
-- "Erklaere mir den Unterschied zwischen..." → Deep-Modell (`qwen3:32b`)
+- "Licht an" → Fast-Modell (`qwen3.5:4b`)
+- "Was meinst du zum Wetter?" → Smart-Modell (`qwen3.5:9b`)
+- "Erklaere mir den Unterschied zwischen..." → Deep-Modell (`qwen3.5:27b`)
 
-Wenn du nur `qwen3:4b` installiert hast, setze alle drei auf `qwen3:4b`.
+Wenn du nur `qwen3.5:4b` installiert hast, setze alle drei auf `qwen3.5:4b`.
 
 ---
 
@@ -862,7 +862,7 @@ Diese Features laufen sofort nach Schritt 1 + 2 — kein Dashboard noetig:
 - [ ] `.env`: `USER_NAME` = Dein Vorname
 - [ ] MindHome Add-on: Assistant URL eintragen
 - [ ] Firewall: Port 8200 und 11434 offen
-- [ ] Ollama: Mindestens `qwen3:4b` installiert
+- [ ] Ollama: Mindestens `qwen3.5:4b` installiert
 
 ### Empfohlen (im Jarvis Dashboard unter `http://<assistant-ip>:8200/ui/`):
 

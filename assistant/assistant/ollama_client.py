@@ -185,6 +185,7 @@ def _model_options(model: str, temperature: float, max_tokens: int, num_ctx: int
     if _is_qwen35(model):
         opts["top_k"] = 20
         opts["min_p"] = 0.0
+        opts["repeat_penalty"] = 1.1
         if think_enabled:
             opts["temperature"] = min(temperature, 0.6)
             opts["top_p"] = 0.95
@@ -212,6 +213,8 @@ class OllamaClient:
     # Default (32768+) zu VRAM-Ueberlauf.
     # Qwen 3.5 MoE-Modelle sind effizienter, daher num_ctx angepasst.
     _DEFAULT_NUM_CTX = 4096
+    _DEFAULT_NUM_CTX_FAST = 2048
+    _DEFAULT_NUM_CTX_DEEP = 8192
 
     def __init__(self):
         self.base_url = settings.ollama_url
@@ -219,11 +222,31 @@ class OllamaClient:
         self._session: Optional[aiohttp.ClientSession] = None
         self._session_lock: asyncio.Lock = asyncio.Lock()
 
+    def num_ctx_for(self, model: str) -> int:
+        """Liest num_ctx pro Modell-Tier aus yaml_config.
+
+        Konfigurierbar in settings.yaml:
+          ollama:
+            num_ctx_fast: 2048
+            num_ctx_smart: 4096
+            num_ctx_deep: 8192
+        """
+        from .config import yaml_config
+        ollama_cfg = yaml_config.get("ollama") or {}
+
+        if model == settings.model_fast:
+            return int(ollama_cfg.get("num_ctx_fast", self._DEFAULT_NUM_CTX_FAST))
+        elif model == settings.model_deep:
+            return int(ollama_cfg.get("num_ctx_deep", self._DEFAULT_NUM_CTX_DEEP))
+        else:
+            return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
+
     @property
     def num_ctx(self) -> int:
-        """Liest num_ctx live aus yaml_config (aendert sich bei Settings-Update)."""
+        """Liest num_ctx (Smart-Tier) aus yaml_config — Rueckwaertskompatibel."""
         from .config import yaml_config
-        return int((yaml_config.get("ollama") or {}).get("num_ctx", self._DEFAULT_NUM_CTX))
+        ollama_cfg = yaml_config.get("ollama") or {}
+        return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Gibt die shared aiohttp Session zurueck (thread-safe lazy init)."""
@@ -294,7 +317,7 @@ class OllamaClient:
             "messages": messages,
             "stream": False,
             "options": _model_options(
-                model, temperature, max_tokens, self.num_ctx,
+                model, temperature, max_tokens, self.num_ctx_for(model),
                 think_enabled=bool(think_enabled),
             ),
         }
@@ -385,7 +408,7 @@ class OllamaClient:
             "messages": messages,
             "stream": True,
             "options": _model_options(
-                model, temperature, max_tokens, self.num_ctx,
+                model, temperature, max_tokens, self.num_ctx_for(model),
                 think_enabled=bool(think_enabled) if think_enabled is not None else False,
             ),
         }
@@ -516,7 +539,7 @@ class OllamaClient:
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-                "num_ctx": self.num_ctx,
+                "num_ctx": self.num_ctx_for(model),
             },
         }
 

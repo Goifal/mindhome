@@ -128,7 +128,7 @@ def ollama_mock():
     })
     mock.generate = AsyncMock(return_value="Test-Antwort")
     mock.stream_chat = AsyncMock()
-    mock.list_models = AsyncMock(return_value=["qwen3:4b", "qwen3:14b"])
+    mock.list_models = AsyncMock(return_value=["qwen3.5:4b", "qwen3.5:9b"])
     mock.is_available = AsyncMock(return_value=True)
     return mock
 

@@ -13,7 +13,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from .config import yaml_config
+from .config import settings, yaml_config
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class SelfReport:
         self.ollama = None
         self.enabled = False
         self._cfg = yaml_config.get("self_report", {})
-        self._model = self._cfg.get("model", "qwen3:14b")
+        self._model = self._cfg.get("model", settings.model_deep)
         self._last_report_day: str = ""
 
     async def initialize(self, redis_client, ollama_client):

@@ -216,13 +216,13 @@ Beispiel-Output:
 - **brain.py:** Erweitert `_weekly_learning_report_loop()` (~Zeile 7164) — aggregiert alle Subsysteme
 - **brain.py:** Chat-Trigger fuer "Selbstbericht", "Wie lernst du?" (~Zeile 5188)
 - **Redis:** `mha:self_report:latest` (TTL 14d), `mha:self_report:history` (max 12, TTL 365d)
-- LLM-generierte Summary (qwen3:14b) mit Fallback-Formatierung
+- LLM-generierte Summary (qwen3.5:9b) mit Fallback-Formatierung
 
 #### Einstellungen (settings.yaml)
 ```yaml
 self_report:
   enabled: true
-  model: qwen3:14b
+  model: qwen3.5:9b
 ```
 Scheduling nutzt bestehende `learning.weekly_report` Config (Tag: Sonntag, Uhrzeit: 19:00).
 

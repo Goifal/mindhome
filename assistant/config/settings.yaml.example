@@ -95,10 +95,14 @@ persons:
   titles: null
 autonomy:
   level: 2
+ollama:
+  num_ctx_fast: 2048                       # Kontextfenster Fast-Modell (spart VRAM)
+  num_ctx_smart: 4096                      # Kontextfenster Smart-Modell
+  num_ctx_deep: 8192                       # Kontextfenster Deep-Modell (MoE-effizient)
 models:
-  fast: qwen3:4b
-  smart: qwen3:14b
-  deep: qwen3:32b
+  fast: qwen3.5:4b
+  smart: qwen3.5:9b
+  deep: qwen3.5:27b
   enabled:
     fast: true
     smart: true
@@ -213,7 +217,7 @@ proactive:
 memory:
   extraction_enabled: true
   extraction_min_words: 5
-  extraction_model: qwen3:4b
+  extraction_model: qwen3.5:4b
   extraction_temperature: 0.1
   extraction_max_tokens: 512
   max_person_facts_in_context: 5
@@ -224,7 +228,7 @@ memory:
   default_confidence: 0.7
 planner:
   max_iterations: 5
-  model: qwen3:14b
+  model: qwen3.5:9b
   max_tokens: 512
   complex_keywords:
   - alles
@@ -335,7 +339,7 @@ feedback:
 summarizer:
   run_hour: 3
   run_minute: 0
-  model: qwen3:14b
+  model: qwen3.5:9b
   max_tokens_daily: 512
   max_tokens_weekly: 384
   max_tokens_monthly: 512
@@ -658,7 +662,7 @@ response_filter:
   max_response_sentences: 0
 correction:
   confidence: 0.95
-  model: qwen3:4b
+  model: qwen3.5:4b
   temperature: 0.1
 dashboard:
   setup_complete: false
@@ -734,7 +738,7 @@ conflict_resolution:
   use_trust_priority: true
   mediation:
     enabled: true
-    model: qwen3:14b
+    model: qwen3.5:9b
     max_tokens: 256
     temperature: 0.7
   conflict_domains:
@@ -758,7 +762,7 @@ self_optimization:
   analysis_interval: weekly
   approval_mode: manual
   max_proposals_per_cycle: 3
-  model: qwen3:14b
+  model: qwen3.5:9b
   rollback:
     enabled: true
     max_snapshots: 20
@@ -790,7 +794,7 @@ self_optimization:
 self_automation:
   enabled: true
   max_per_day: 5
-  model: qwen3:14b
+  model: qwen3.5:9b
   templates_file: config/automation_templates.yaml
 # --- Kamera-Integration ---
 cameras:

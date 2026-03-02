@@ -22,7 +22,7 @@ from typing import Optional
 
 import redis.asyncio as aioredis
 
-from .config import yaml_config, get_person_title
+from .config import settings, yaml_config, get_person_title
 from .ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
@@ -371,7 +371,7 @@ class ProtocolEngine:
         try:
             response = await self.ollama.chat(
                 messages=[{"role": "user", "content": prompt}],
-                model=yaml_config.get("models", {}).get("fast", "qwen3:4b"),
+                model=yaml_config.get("models", {}).get("fast", settings.model_fast),
                 temperature=0.1,
                 max_tokens=512,
             )
