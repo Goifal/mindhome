@@ -371,7 +371,7 @@ class ProtocolEngine:
         try:
             response = await self.ollama.chat(
                 messages=[{"role": "user", "content": prompt}],
-                model=yaml_config.get("models", {}).get("fast", "qwen3:4b"),
+                model=yaml_config.get("models", {}).get("fast", "qwen3.5:4b"),
                 temperature=0.1,
                 max_tokens=512,
             )
