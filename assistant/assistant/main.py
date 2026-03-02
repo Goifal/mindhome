@@ -2544,7 +2544,7 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             cr._resolution_cooldown = int(cfg.get("resolution_cooldown_seconds", 120))
             med_cfg = cfg.get("mediation", {})
             cr._mediation_enabled = med_cfg.get("enabled", True)
-            cr._mediation_model = med_cfg.get("model", settings.model_smart)
+            cr._mediation_model = med_cfg.get("model", settings.model_deep)
             cr._mediation_max_tokens = int(med_cfg.get("max_tokens", 256))
             cr._mediation_temperature = med_cfg.get("temperature", 0.7)
             cr._domain_configs = cfg.get("conflict_domains", {})
