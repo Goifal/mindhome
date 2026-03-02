@@ -6080,7 +6080,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # 4. Mehrwort-Korrekturen (case-insensitive)
         text_lower = text.lower()
-        for wrong, correct in self._STT_PHRASE_CORRECTIONS:
+        for wrong, correct in AssistantBrain._STT_PHRASE_CORRECTIONS:
             if wrong in text_lower:
                 # Case-insensitive Replace
                 pattern = re.compile(re.escape(wrong), re.IGNORECASE)
@@ -6093,8 +6093,8 @@ class AssistantBrain(BrainCallbacksMixin):
         for w in words:
             w_lower = w.lower().rstrip(".,;:!?")
             trailing = w[len(w.rstrip(".,;:!?")):]
-            if w_lower in self._STT_WORD_CORRECTIONS:
-                replacement = self._STT_WORD_CORRECTIONS[w_lower]
+            if w_lower in AssistantBrain._STT_WORD_CORRECTIONS:
+                replacement = AssistantBrain._STT_WORD_CORRECTIONS[w_lower]
                 corrected.append(replacement + trailing)
             else:
                 corrected.append(w)

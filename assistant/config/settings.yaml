@@ -616,7 +616,7 @@ conversation_continuity:
 seasonal_actions:
   enabled: true
   check_interval_minutes: 15
-  auto_execute_level: 3
+  auto_execute_level: 2
   cover_automation:
     sun_tracking: true               # Sonnenstand-basiert (Azimut + Elevation)
     temperature_based: true          # Temperatur-basiert (Hitze/Kaelte)
