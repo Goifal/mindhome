@@ -146,6 +146,31 @@ def get_mindhome_room(entity_id: str) -> str:
     return _mindhome_device_rooms.get(entity_id, "")
 
 
+# Woerter die "tor" als Substring enthalten aber KEINE Tore sind.
+# Verhindert False-Positives bei z.B. "system_monitor", "motor_status".
+_TOR_FALSE_POSITIVES = (
+    "monitor", "motor", "actuator", "senator", "factor", "vector",
+    "sector", "doctor", "director", "operator", "generator", "collector",
+    "connector", "detector", "protector", "reactor", "torsion", "tortoise",
+    "history", "factory", "store", "story", "restore", "storage",
+    "tutorial", "editor", "visitor", "mentor",
+)
+
+
+def _has_tor_keyword(entity_id_lower: str) -> bool:
+    """Prueft ob 'tor' in der Entity-ID ein echtes Tor (Gate) bedeutet.
+
+    Erkennt: gartentor, tor_sensor, einfahrtstor, garagentor
+    Ignoriert: system_monitor, motor_status, actuator_valve, detector
+    """
+    if "tor" not in entity_id_lower:
+        return False
+    # Blocklist: Wenn ein bekanntes False-Positive-Wort vorkommt → kein Tor
+    if any(fp in entity_id_lower for fp in _TOR_FALSE_POSITIVES):
+        return False
+    return True
+
+
 def is_window_or_door(entity_id: str, state: dict) -> bool:
     """Prueft zuverlaessig ob eine Entity ein Fenster/Tuer/Tor-Kontakt ist.
 
@@ -178,7 +203,12 @@ def is_window_or_door(entity_id: str, state: dict) -> bool:
     ha_domain = entity_id.split(".")[0] if "." in entity_id else ""
     if ha_domain == "binary_sensor":
         lower_id = entity_id.lower()
-        if any(kw in lower_id for kw in ("window", "door", "fenster", "tuer", "tor", "gate")):
+        # Einfache Substring-Keywords (selten False-Positives)
+        if any(kw in lower_id for kw in ("window", "door", "fenster", "tuer", "gate")):
+            return True
+        # "tor" mit Blocklist-Check um False-Positives
+        # wie "monitor", "motor", "actuator" zu vermeiden
+        if _has_tor_keyword(lower_id):
             return True
 
     return False
@@ -889,7 +919,8 @@ def get_opening_type(entity_id: str, state: dict) -> str:
 
     # 3. Keyword-Fallback
     lower_id = entity_id.lower()
-    if any(kw in lower_id for kw in ("tor", "gate", "garage")):
+    # "tor" mit Blocklist-Check um False-Positives (monitor, motor, ...) zu vermeiden
+    if _has_tor_keyword(lower_id) or any(kw in lower_id for kw in ("gate", "garage")):
         return "gate"
     if any(kw in lower_id for kw in ("tuer", "door")):
         return "door"
