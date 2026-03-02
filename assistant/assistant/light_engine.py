@@ -30,7 +30,7 @@ from typing import Optional
 
 from .config import yaml_config, get_room_profiles
 from .ha_client import HomeAssistantClient
-from .function_calling import FunctionCalling
+from .function_calling import FunctionExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ class LightEngine:
             if ha_state and ha_state.get("state") == "on":
                 continue
 
-            brightness = FunctionCalling._get_adaptive_brightness(room, light_id)
+            brightness = FunctionExecutor._get_adaptive_brightness(room, light_id)
             service_data = {"entity_id": light_id, "brightness_pct": brightness}
             transition = cfg.get("default_transition")
             if transition:
@@ -307,7 +307,7 @@ class LightEngine:
                 ha_state = await self.ha.get_state(light_id)
                 if ha_state and ha_state.get("state") == "on":
                     continue
-                brightness = FunctionCalling._get_adaptive_brightness(room_name, light_id)
+                brightness = FunctionExecutor._get_adaptive_brightness(room_name, light_id)
                 data = {"entity_id": light_id, "brightness_pct": brightness}
                 try:
                     data["transition"] = int(transition)
