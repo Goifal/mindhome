@@ -711,6 +711,32 @@ class AssistantBrain(BrainCallbacksMixin):
 
         self._task_registry.create_task(_save(), name="memory_exchange")
 
+    def _update_stt_context(self, user_text: str) -> None:
+        """STT-3: Speichert die letzten User-Saetze in Redis fuer dynamischen Whisper-Kontext.
+
+        Der Whisper-Handler liest 'mha:stt:recent_context' und nutzt die letzten
+        Saetze als initial_prompt-Erweiterung. Das gibt Whisper Gespraechskontext
+        und verbessert die Erkennung von Referenzen und wiederkehrendem Vokabular.
+        """
+        async def _save_context():
+            try:
+                redis = self.memory.redis
+                if not redis:
+                    return
+                # Letzte 3 Saetze aus Redis lesen
+                prev = await redis.get("mha:stt:recent_context") or ""
+                # Neuen Satz anhaengen, auf max 3 Saetze kuerzen
+                sentences = [s.strip() for s in prev.split("|") if s.strip()]
+                sentences.append(user_text.strip())
+                sentences = sentences[-3:]  # Maximal 3 Saetze
+                context = " | ".join(sentences)
+                # Mit 5 Minuten TTL speichern (Kontext wird bei laengerem Schweigen irrelevant)
+                await redis.set("mha:stt:recent_context", context, ex=300)
+            except Exception as e:
+                logger.debug("STT-Kontext Update fehlgeschlagen (ignoriert): %s", e)
+
+        self._task_registry.create_task(_save_context(), name="stt_context_update")
+
     async def process(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None, device_id: Optional[str] = None) -> dict:
         """
         Verarbeitet eine User-Eingabe.
@@ -734,6 +760,9 @@ class AssistantBrain(BrainCallbacksMixin):
         # STT Text-Normalisierung: Typische Whisper-Fehler korrigieren
         text = self._normalize_stt_text(text)
         logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
+
+        # STT-3: User-Text als Kontext fuer die naechste Whisper-Transkription speichern
+        self._update_stt_context(text)
 
         # Aktuelle Person merken (fuer Executor-Methoden wie manage_protocol)
         self._current_person = person or ""
@@ -2231,6 +2260,16 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # --- Prio 1: Core ---
         sections.append(("scene_intelligence", SCENE_INTELLIGENCE_PROMPT, 1))
+
+        # STT-6: Hinweis fuer das LLM bei Spracheingabe — das LLM soll
+        # moegliche STT-Fehler eigenstaendig erkennen und korrigieren.
+        if getattr(self, "_request_from_pipeline", False):
+            sections.append(("stt_hint", (
+                "\n\nSPRACHEINGABE: Der User spricht per Mikrofon. "
+                "Moegliche STT-Fehler beruecksichtigen — wenn ein Wort "
+                "im Kontext keinen Sinn ergibt, das phonetisch aehnlichste "
+                "sinnvolle Wort annehmen."
+            ), 2))
 
         # Letzte ausgefuehrte Aktion im Kontext — wichtig fuer Korrekturen
         # ("Nein, ich meinte das Schlafzimmer" → LLM weiss was zu korrigieren)
