@@ -2668,7 +2668,7 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             so._approval_mode = cfg.get("approval_mode", "manual")
             so._interval = cfg.get("analysis_interval", "weekly")
             so._max_proposals = cfg.get("max_proposals_per_cycle", 3)
-            so._model = cfg.get("model", settings.model_smart)
+            so._model = cfg.get("model", settings.model_deep)
             so._bounds = cfg.get("parameter_bounds", {})
             logger.info("SelfOptimization Settings aktualisiert (enabled=%s)", so._enabled)
         _try_reload("self_optimization", _reload_self_optimization)
