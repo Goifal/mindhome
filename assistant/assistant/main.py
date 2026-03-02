@@ -1673,13 +1673,26 @@ async def websocket_endpoint(websocket: WebSocket):
                                             break
                                         elif interim_msg.get("event") == "pong":
                                             pass  # Keep-alive ignorieren
-                                    except (json.JSONDecodeError, Exception):
+                                    except json.JSONDecodeError:
                                         pass
+                                    except Exception as _interim_err:
+                                        logger.warning(
+                                            "Interim-Nachricht Fehler: %s", _interim_err,
+                                        )
                                 else:
-                                    # recv_task noch nicht fertig — canceln
+                                    # recv_task noch nicht fertig — canceln und awaiten
                                     _recv_task.cancel()
+                                    try:
+                                        await _recv_task
+                                    except (asyncio.CancelledError, Exception):
+                                        pass
                                 if _brain_task in done:
-                                    _recv_task.cancel()
+                                    if not _recv_task.done():
+                                        _recv_task.cancel()
+                                        try:
+                                            await _recv_task
+                                        except (asyncio.CancelledError, Exception):
+                                            pass
                                     try:
                                         result = _brain_task.result()
                                     except (asyncio.CancelledError, Exception) as e:
@@ -1760,6 +1773,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 await ws_manager.send_personal(
                     websocket, "error", {"message": "Ungueltiges JSON"}
                 )
+            except Exception as _ws_proc_err:
+                # Alle unerwarteten Fehler abfangen — Verbindung darf NICHT sterben
+                logger.error(
+                    "WebSocket Nachricht-Verarbeitung Fehler: %s",
+                    _ws_proc_err, exc_info=True,
+                )
+                try:
+                    await ws_manager.send_personal(
+                        websocket, "error",
+                        {"message": "Interner Fehler bei der Verarbeitung"},
+                    )
+                except Exception:
+                    pass
     except WebSocketDisconnect:
         pass
     finally:
