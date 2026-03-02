@@ -581,9 +581,91 @@ _ROLE_KEYWORDS = {
     # Ueberwachung
     "camera": ["kamera", "ueberwachung", "cam",
                "camera", "surveillance", "cctv", "webcam"],
+    "intercom": ["gegensprech", "sprechanlage", "tuersprechanlage", "klingelanlage",
+                 "intercom", "door station", "video doorbell"],
     # Zonen
     "zone": ["zone", "zonen", "bereich", "gebiet", "standort", "geofence",
              "area", "location"],
+    # --- Fehlende Rollen (fuer vollstaendiges LLM-Matching) ---
+    # Temperatur & Klima
+    "dew_point": ["taupunkt", "dew point"],
+    # Luftqualitaet
+    "pm10": ["pm10", "feinstaub pm10", "grobstaub",
+             "coarse dust", "particulate pm10"],
+    "radon": ["radon", "radon sensor", "radioaktiv"],
+    # Wetter
+    "wind_direction": ["windrichtung", "wind direction", "wind bearing"],
+    "rain_sensor": ["regensensor", "regenmelder", "rain sensor", "rain detector"],
+    "solar_radiation": ["sonneneinstrahlung", "solarstrahlung", "irradiance",
+                        "solar radiation", "sun intensity"],
+    # Licht & Helligkeit
+    "light": ["licht", "lampe", "beleuchtung", "leuchte",
+              "light", "lamp", "lighting"],
+    "dimmer": ["dimmer", "dimmen", "dimmbar", "dimmschalter",
+               "dimmer switch", "dimmable"],
+    "color_light": ["farblicht", "rgb", "farbig", "bunt", "farbwechsel",
+                    "color light", "rgb light", "hue", "color changing"],
+    "light_level": ["lichtsensor", "helligkeit", "lichtstaerke", "lux",
+                    "light sensor", "light level", "illuminance", "brightness sensor"],
+    # Sicherheit
+    "siren": ["sirene", "alarmsirene", "siren", "horn"],
+    # Bewegung & Anwesenheit
+    "vibration": ["vibration", "erschuetterung", "vibrationssensor",
+                  "vibration sensor", "shock sensor"],
+    # Energie & Strom
+    "current": ["stromstaerke", "ampere", "current", "amps"],
+    "power_factor": ["leistungsfaktor", "cos phi", "power factor"],
+    "frequency": ["frequenz", "hertz", "netzfrequenz", "frequency", "grid frequency"],
+    "battery_charging": ["batterie laden", "akku laden", "ladevorgang",
+                         "battery charging", "charging"],
+    "grid_feed": ["netzeinspeisung", "einspeisung", "einspeisen",
+                  "grid feed", "feed-in", "grid export"],
+    "grid_consumption": ["netzbezug", "strombezug", "netzverbrauch",
+                         "grid consumption", "grid import"],
+    # Heizung & Klima
+    "dehumidifier": ["entfeuchter", "luftentfeuchter", "raumentfeuchter",
+                     "dehumidifier"],
+    "humidifier": ["befeuchter", "luftbefeuchter", "raumbefeuchter",
+                   "humidifier"],
+    # Steckdosen & Aktoren
+    "motor": ["motor", "antrieb", "motor", "actuator", "drive"],
+    "relay": ["relais", "schaltrelais", "relay", "switch relay"],
+    # Garten
+    "garden_light": ["gartenlicht", "gartenbeleuchtung", "gartenlampe", "aussenleuchte",
+                     "garden light", "outdoor light", "landscape light"],
+    # Medien & Unterhaltung
+    "projector": ["beamer", "projektor", "projector"],
+    "gaming": ["spielkonsole", "konsole", "playstation", "xbox", "nintendo",
+               "gaming", "game console"],
+    # Netzwerk & IT
+    "printer": ["drucker", "printer", "3d-drucker", "3d printer"],
+    "signal_strength": ["signalstaerke", "empfang", "signal strength", "rssi", "snr"],
+    "connectivity": ["verbindung", "verbindungsstatus", "online", "erreichbar",
+                     "connectivity", "connection status"],
+    # Haushaltsgeraete
+    "oven": ["backofen", "ofen", "herd", "oven", "stove"],
+    "fridge": ["kuehlschrank", "kuehl", "fridge", "refrigerator"],
+    "freezer": ["gefrierschrank", "gefrier", "tiefkuehl",
+                "freezer", "deep freeze"],
+    "charger": ["ladegeraet", "lader", "charger"],
+    # Fahrzeuge
+    "car_location": ["auto standort", "fahrzeug standort", "auto position", "wo ist mein auto",
+                     "car location", "vehicle location", "car tracker"],
+    # Sonstiges
+    "scene": ["szene", "scene"],
+    "automation": ["automatisierung", "automation"],
+    "timer": ["timer", "countdown", "stoppuhr", "timer", "stopwatch"],
+    "counter": ["zaehler", "counter"],
+    "distance": ["entfernung", "abstand", "distance"],
+    "speed": ["geschwindigkeit", "speed", "tempo"],
+    "weight": ["gewicht", "waage", "weight", "scale"],
+    "noise": ["laerm", "lautstaerke", "geraeusch", "dezibel",
+              "noise", "sound level", "decibel"],
+    "problem": ["problem", "stoerung", "fehler", "problem", "fault", "error"],
+    "update": ["update", "aktualisierung", "firmware", "update available"],
+    "running": ["laeuft", "aktiv", "in betrieb", "running", "active"],
+    "generic_sensor": ["sensor", "messwert", "sensor", "reading"],
+    "generic_switch": ["schalter", "switch"],
 }
 
 
