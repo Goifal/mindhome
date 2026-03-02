@@ -2257,6 +2257,26 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.info("Model Upgrade %s -> %s (signals: %d)", model, _upgraded, _upgrade_signals)
                 model = _upgraded
 
+        # 3b. Gespraechsmodus erkennen (VOR System-Prompt-Bau, damit Prompt angepasst wird)
+        _conversation_mode = False
+        try:
+            _conv_cfg = cfg.yaml_config.get("context", {})
+            _cm_timeout = int(_conv_cfg.get("conversation_mode_timeout", 300))
+            _cm_msgs = await self.memory.get_recent_conversations(limit=2)
+            if _cm_msgs:
+                from datetime import datetime as _dt_cm
+                _cm_ts = _cm_msgs[-1].get("timestamp", "")
+                if _cm_ts:
+                    _cm_age = (_dt_cm.now() - _dt_cm.fromisoformat(_cm_ts)).total_seconds()
+                    if _cm_age < _cm_timeout:
+                        _conversation_mode = True
+        except Exception:
+            pass
+        if context is None:
+            context = {}
+        context["conversation_mode"] = _conversation_mode
+        self._active_conversation_mode = _conversation_mode
+
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
         # Formality-Score cachen fuer Refinement-Prompts (Tool-Feedback)
         self._last_formality_score = formality_score if formality_score is not None else self.personality.formality_start
@@ -2502,22 +2522,8 @@ class AssistantBrain(BrainCallbacksMixin):
         # Gespraeche laden — Anzahl aus yaml_config (UI-konfigurierbar)
         conv_cfg = cfg.yaml_config.get("context", {})
         conv_limit = int(conv_cfg.get("recent_conversations", 5))
-        # Gespraechsmodus: Wenn User aktiv chattet (letzte Nachricht < 5 Min),
-        # doppeltes History-Fenster fuer besseren Kontext
-        conversation_mode = False
-        try:
-            last_msgs = await self.memory.get_recent_conversations(limit=2)
-            if last_msgs:
-                from datetime import datetime as _dt
-                last_ts = last_msgs[-1].get("timestamp", "")
-                if last_ts:
-                    last_time = _dt.fromisoformat(last_ts)
-                    age_seconds = (_dt.now() - last_time).total_seconds()
-                    conv_mode_timeout = int(conv_cfg.get("conversation_mode_timeout", 300))
-                    if age_seconds < conv_mode_timeout:
-                        conversation_mode = True
-        except Exception:
-            pass
+        # Nutze den bereits erkannten Gespraechsmodus (aus Schritt 3b)
+        conversation_mode = _conversation_mode
         effective_limit = conv_limit * 2 if conversation_mode else conv_limit
         if conversation_mode:
             logger.info("Gespraechsmodus aktiv: Lade %d statt %d Nachrichten", effective_limit, conv_limit)
@@ -2730,7 +2736,10 @@ class AssistantBrain(BrainCallbacksMixin):
             elif profile.category == "device_command":
                 response_tokens = 150   # "Erledigt." braucht keine 256 Tokens
             else:
-                response_tokens = 384   # Standard-Gespraech: doppelt so viel wie vorher
+                response_tokens = 384   # Standard-Gespraech
+            # Gespraechsmodus: Mehr Tokens fuer ausfuehrliche Antworten
+            if _conversation_mode and profile.category != "device_command":
+                response_tokens = max(response_tokens, 1024)
 
             llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
 
@@ -4844,8 +4853,11 @@ class AssistantBrain(BrainCallbacksMixin):
         text = re.sub(r"!\s*!", "!", text)
 
         # 6. Max Sentences begrenzen (Override hat Vorrang, z.B. Nachtmodus)
+        # Im Gespraechsmodus: Keine Satz-Begrenzung (Jarvis darf ausfuehrlich antworten)
         # Verbessertes Satz-Splitting: Schutzt Abkuerzungen, Dezimalzahlen und Auslassungspunkte
         max_sentences = max_sentences_override or filter_config.get("max_response_sentences", 0)
+        if max_sentences > 0 and not max_sentences_override and getattr(self, "_active_conversation_mode", False):
+            max_sentences = 0  # Unbegrenzt im Gespraechsmodus
         if max_sentences > 0:
             # Schutz-Tokens: Bekannte Abkuerzungen und Muster VOR dem Split ersetzen
             _protected = text
