@@ -591,8 +591,11 @@ function mergeCurrentTabIntoS() {
 async function loadSettings() {
   try {
     S = await api('/api/ui/settings');
-    // Room-Profiles parallel laden
-    try { RP = await api('/api/ui/room-profiles'); } catch(e) { RP = {}; }
+    // Room-Profiles und Ollama-Modelle parallel laden
+    await Promise.all([
+      (async () => { try { RP = await api('/api/ui/room-profiles'); } catch(e) { RP = {}; } })(),
+      loadOllamaModels(),
+    ]);
     _rpDirty = false;
     renderCurrentTab();
     _initAutoSave();
@@ -1245,24 +1248,27 @@ function toggleChip(path, value) {
   scheduleAutoSave();
 }
 
-// Modell-Auswahl als Dropdown
+// Installierte Ollama-Modelle (wird beim Start geladen)
+let _ollamaModels = [];
+
+async function loadOllamaModels() {
+  try {
+    const data = await api('/api/ui/system/ollama-models');
+    if (data.success && data.models) {
+      _ollamaModels = data.models.map(m => ({
+        v: m.name,
+        l: `${m.name} (${m.size_gb} GB)`
+      }));
+    }
+  } catch(e) {
+    console.warn('Ollama-Modelle konnten nicht geladen werden:', e);
+  }
+}
+
+// Modell-Auswahl als Dropdown (zeigt nur installierte Modelle)
 function fModelSelect(path, label, hint='') {
   const v = getPath(S, path) ?? '';
-  const models = [
-    {v:'qwen3:4b', l:'Qwen3 4B (Schnell)'},
-    {v:'qwen3:8b', l:'Qwen3 8B (Ausgewogen)'},
-    {v:'qwen3:14b', l:'Qwen3 14B (Smart)'},
-    {v:'qwen3:32b', l:'Qwen3 32B (Deep)'},
-    {v:'llama3.2:3b', l:'Llama 3.2 3B'},
-    {v:'llama3.1:8b', l:'Llama 3.1 8B'},
-    {v:'gemma3:4b', l:'Gemma3 4B'},
-    {v:'gemma3:12b', l:'Gemma3 12B'},
-    {v:'gemma3:27b', l:'Gemma3 27B'},
-    {v:'phi4:14b', l:'Phi4 14B'},
-    {v:'mistral:7b', l:'Mistral 7B'},
-    {v:'deepseek-r1:14b', l:'DeepSeek-R1 14B'},
-    {v:'deepseek-r1:32b', l:'DeepSeek-R1 32B'},
-  ];
+  const models = _ollamaModels.length > 0 ? _ollamaModels : [{v, l: v || 'Kein Modell'}];
   // Aktuellen Wert in Liste sicherstellen
   const hasVal = models.some(m => m.v === v);
   let h = `<div class="form-group"><label>${label}${helpBtn(path)}</label><select data-path="${path}">`;

@@ -2,9 +2,9 @@
 Model Router - 3-Stufen LLM Routing (fast / smart / deep)
 
 Waehlt das richtige lokale LLM basierend auf Komplexitaet der Anfrage:
-  - Fast (3B): Einfache Befehle ("Licht an", "Musik stopp")
-  - Smart (14B): Fragen, Konversation, Standard-Interaktion
-  - Deep (32B): Komplexe Planung, Multi-Step Reasoning, Simulationen
+  - Fast (4B): Einfache Befehle ("Licht an", "Musik stopp")
+  - Smart (9B): Fragen, Konversation, Standard-Interaktion
+  - Deep (27B): Komplexe Planung, Multi-Step Reasoning, Simulationen
 
 Auto-Capability: Erkennt beim Start welche Modelle verfuegbar sind.
 Wenn das 32B-Modell nicht installiert ist, wird automatisch auf
