@@ -2536,12 +2536,37 @@ class ProactiveManager:
             return False, "Jemand ist zuhause"
         return True, ""
 
-    async def _vacuum_start_with_alarm(self, entity_id: str, nickname: str, reason: str) -> bool:
+    _FAN_SPEED_MAP = {
+        "quiet": "quiet", "standard": "standard",
+        "strong": "strong", "turbo": "turbo",
+    }
+    _CLEAN_MODE_MAP = {
+        "vacuum": "sweeping", "mop": "mopping",
+        "vacuum_and_mop": "sweeping_and_mopping",
+    }
+
+    async def _prepare_vacuum(self, entity_id: str, fan_speed: str = "", mode: str = "") -> None:
+        """Setzt Saugstaerke und Reinigungsmodus vor dem Start."""
+        if fan_speed:
+            resolved = self._FAN_SPEED_MAP.get(fan_speed, fan_speed)
+            await self.brain.ha.call_service("vacuum", "set_fan_speed", {
+                "entity_id": entity_id, "fan_speed": resolved,
+            })
+        if mode:
+            resolved = self._CLEAN_MODE_MAP.get(mode, mode)
+            base = entity_id.replace("vacuum.", "")
+            await self.brain.ha.call_service("select", "select_option", {
+                "entity_id": f"select.{base}_cleaning_mode", "option": resolved,
+            })
+
+    async def _vacuum_start_with_alarm(self, entity_id: str, nickname: str, reason: str,
+                                       fan_speed: str = "", mode: str = "") -> bool:
         """Startet einen Vacuum mit Alarm-Management.
 
         1. Prueft Anwesenheit
         2. Schaltet Alarm von abwesend → anwesend
-        3. Startet den Vacuum
+        3. Setzt Saugstaerke/Modus
+        4. Startet den Vacuum
         """
         can_start, block_reason = await self._vacuum_can_start()
         if not can_start:
@@ -2550,6 +2575,10 @@ class ProactiveManager:
 
         # Alarm umschalten BEVOR Vacuum startet
         await self._vacuum_alarm_switch("arm_home")
+
+        # Saugstaerke und Modus setzen
+        if fan_speed or mode:
+            await self._prepare_vacuum(entity_id, fan_speed, mode)
 
         success = await self.brain.ha.call_service("vacuum", "start", {"entity_id": entity_id})
         if success:
@@ -2758,9 +2787,15 @@ class ProactiveManager:
                             except (ValueError, TypeError):
                                 pass
 
+                    # Saugstaerke + Modus fuer Auto-Clean
+                    auto_fan = auto_cfg.get("auto_fan_speed", "") or vacuum_cfg.get("default_fan_speed", "")
+                    auto_mode = auto_cfg.get("auto_mode", "") or vacuum_cfg.get("default_mode", "")
+
                     # Anwesenheits-Guard + Alarm-Management
                     nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
-                    success = await self._vacuum_start_with_alarm(eid, nickname, trigger_reason)
+                    success = await self._vacuum_start_with_alarm(
+                        eid, nickname, trigger_reason, fan_speed=auto_fan, mode=auto_mode,
+                    )
                     if success:
                         if _redis:
                             await _redis.set(f"mha:vacuum:{floor}:last_auto_clean", str(time.time()))

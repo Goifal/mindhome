@@ -1182,6 +1182,9 @@ vacuum:
       #   flur_oben: 7
   auto_clean:
     enabled: true
+    mode: "smart"                  # smart | schedule | both
+    schedule_days: []              # Wochentage fuer Modus "schedule"/"both": mon,tue,wed,thu,fri,sat,sun
+    schedule_time: 10              # Uhrzeit fuer Wochenplan (6-20)
     when_nobody_home: true         # Starten wenn alle weg sind
     not_during:                    # Nicht starten waehrend:
       - "meeting"                  # Kalender-Event enthaelt "meeting"

@@ -817,8 +817,16 @@ const HELP_TEXTS = {
   'remote.enabled': {title:'Fernbedienung', text:'Aktiviert die Fernbedienungs-Steuerung (Logitech Harmony) ueber Jarvis. Erlaubt Sprachsteuerung fuer TV, Receiver, etc.'},
   'vacuum.enabled': {title:'Saugroboter', text:'Aktiviert die Saugroboter-Steuerung ueber Jarvis.'},
   'vacuum.auto_clean.enabled': {title:'Auto-Clean', text:'Automatische Reinigung wenn niemand zuhause ist.'},
+  'vacuum.auto_clean.mode': {title:'Auto-Clean Modus', text:'Smart: startet wenn niemand zuhause. Wochenplan: feste Tage/Uhrzeit. Beides: kombiniert.'},
+  'vacuum.auto_clean.schedule_days': {title:'Reinigungstage', text:'An welchen Wochentagen automatisch gereinigt wird (Modus Wochenplan/Beides).'},
+  'vacuum.auto_clean.schedule_time': {title:'Uhrzeit', text:'Um welche Uhrzeit der Wochenplan-Modus die Reinigung startet.'},
   'vacuum.auto_clean.when_nobody_home': {title:'Nur bei Abwesenheit', text:'Startet nur wenn alle Personen abwesend sind.'},
   'vacuum.auto_clean.min_hours_between': {title:'Mindestabstand', text:'Minimale Stunden zwischen zwei automatischen Reinigungen.'},
+  'vacuum.auto_clean.preferred_time_start': {title:'Bevorzugt ab', text:'Frueheste Uhrzeit fuer Smart-Modus Reinigung.'},
+  'vacuum.auto_clean.preferred_time_end': {title:'Bevorzugt bis', text:'Spaeteste Uhrzeit fuer Smart-Modus Reinigung.'},
+  'vacuum.auto_clean.auto_fan_speed': {title:'Saugstaerke (Auto)', text:'Saugstaerke fuer automatische Reinigungen. Ueberschreibt den Standard-Wert.'},
+  'vacuum.auto_clean.auto_mode': {title:'Modus (Auto)', text:'Reinigungsmodus fuer automatische Reinigungen: saugen, wischen, oder beides.'},
+  'vacuum.auto_clean.not_during': {title:'Nicht waehrend', text:'Situationen in denen der Saugroboter NICHT automatisch starten soll.'},
   'vacuum.presence_guard.enabled': {title:'Anwesenheits-Steuerung', text:'Vacuum faehrt NUR wenn niemand zuhause ist. Gilt fuer alle Trigger (Auto-Clean, Steckdose, Szene).'},
   'vacuum.presence_guard.switch_alarm_for_cleaning': {title:'Alarm umschalten', text:'Schaltet die Alarmanlage automatisch von abwesend auf anwesend bevor der Saugroboter startet (verhindert Fehlalarme). Nach der Reinigung wird zurueckgeschaltet.'},
   'vacuum.presence_guard.alarm_entity': {title:'Alarm-Entity', text:'Entity-ID der Alarmanlage (z.B. alarm_control_panel.alarmo). Leer = automatische Erkennung.'},
@@ -827,7 +835,14 @@ const HELP_TEXTS = {
   'vacuum.presence_guard.resume_delay_minutes': {title:'Verzoegerung Fortsetzung', text:'Wartet diese Minuten bevor die Reinigung fortgesetzt wird. Verhindert Neustart wenn jemand nur kurz reinkommt.'},
   'vacuum.default_fan_speed': {title:'Standard-Saugstaerke', text:'Standard-Saugstaerke wenn nicht explizit angegeben.'},
   'vacuum.default_mode': {title:'Standard-Modus', text:'Standard-Reinigungsmodus: nur saugen, nur wischen, oder beides.'},
+  'vacuum.power_trigger.enabled': {title:'Steckdosen-Trigger', text:'Startet Reinigung automatisch wenn eine ueberwachte Steckdose abschaltet (z.B. nach dem Kochen).'},
+  'vacuum.power_trigger.delay_minutes': {title:'Verzoegerung', text:'Wartet diese Minuten nach dem Abschalten bevor der Saugroboter startet.'},
+  'vacuum.power_trigger.cooldown_hours': {title:'Cooldown', text:'Nach einer Reinigung wird dieser Trigger fuer die angegebene Zeit deaktiviert.'},
+  'vacuum.scene_trigger.enabled': {title:'Szenen-Trigger', text:'Startet Reinigung automatisch wenn eine bestimmte HA-Szene aktiviert wird.'},
+  'vacuum.scene_trigger.delay_minutes': {title:'Verzoegerung', text:'Wartet diese Minuten nach Szenen-Aktivierung bevor der Saugroboter startet.'},
+  'vacuum.scene_trigger.cooldown_hours': {title:'Cooldown', text:'Nach einer Reinigung wird dieser Trigger fuer die angegebene Zeit deaktiviert.'},
   'vacuum.maintenance.enabled': {title:'Wartung', text:'Ueberwacht Verschleissteile (Filter, Buersten, Mopp).'},
+  'vacuum.maintenance.check_interval_hours': {title:'Pruef-Intervall', text:'Wie oft die Verschleissteile geprueft werden.'},
   'vacuum.maintenance.warn_at_percent': {title:'Warnung bei', text:'Warnt wenn ein Verschleissteil unter diesen Prozentwert faellt.'},
   // === STIMME & TTS ===
   'sounds.default_speaker': {title:'Standard-Speaker', text:'Standard-Geraet fuer Sprachausgabe und Sounds.'},
@@ -7053,6 +7068,14 @@ function renderVacuum() {
     fRange('vacuum.auto_clean.min_hours_between', 'Mindestabstand (Std)', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'}) +
     fRange('vacuum.auto_clean.preferred_time_start', 'Smart: Bevorzugt ab (Uhr)', 6, 18, 1) +
     fRange('vacuum.auto_clean.preferred_time_end', 'Smart: Bevorzugt bis (Uhr)', 10, 22, 1) +
+    fSelect('vacuum.auto_clean.auto_fan_speed', 'Saugstaerke (Auto-Clean)', [
+      {v:'quiet',l:'Leise'}, {v:'standard',l:'Standard'},
+      {v:'strong',l:'Stark'}, {v:'turbo',l:'Turbo'}
+    ]) +
+    fSelect('vacuum.auto_clean.auto_mode', 'Modus (Auto-Clean)', [
+      {v:'vacuum',l:'Nur Saugen'}, {v:'mop',l:'Nur Wischen'},
+      {v:'vacuum_and_mop',l:'Saugen & Wischen'}
+    ]) +
     fChipSelect('vacuum.auto_clean.not_during', 'Nicht starten waehrend', [
       {v:'meeting',l:'Meeting'}, {v:'schlafen',l:'Schlafen'},
       {v:'gaeste',l:'Gaeste'}, {v:'filmabend',l:'Filmabend'},
