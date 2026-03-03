@@ -154,6 +154,7 @@ _TOR_FALSE_POSITIVES = (
     "connector", "detector", "protector", "reactor", "torsion", "tortoise",
     "history", "factory", "store", "story", "restore", "storage",
     "tutorial", "editor", "visitor", "mentor",
+    "process", "prozess",
 )
 
 
@@ -176,30 +177,37 @@ def is_window_or_door(entity_id: str, state: dict) -> bool:
 
     Prueft in dieser Reihenfolge (erste Uebereinstimmung gewinnt):
     1. opening_sensors Config (explizit vom User konfiguriert)
-    2. MindHome Domain-Zuordnung (vom User konfiguriert)
-    3. HA device_class (automatisch von HA gesetzt)
-    4. Fallback: binary_sensor mit window/door/fenster/tuer/tor/gate im entity_id
+    2. Negative-Filter: Non-Physical binary_sensors (System Monitor etc.)
+    3. MindHome Domain-Zuordnung (vom User konfiguriert)
+    4. HA device_class (automatisch von HA gesetzt)
+    5. Fallback: binary_sensor mit window/door/fenster/tuer/tor/gate im entity_id
 
     Steckdosen, Schalter und Lichter werden NICHT als Fenster erkannt,
     auch wenn "fenster" im Entity-Namen vorkommt.
     """
-    # 1. opening_sensors Config (zuverlaessigste Quelle)
+    # 1. opening_sensors Config (zuverlaessigste Quelle — User hat explizit konfiguriert)
     cfg = get_opening_sensor_config(entity_id)
     if cfg:
         return True
 
-    # 2. MindHome-Domain (vom User konfiguriert)
+    # 2. Negative-Filter: Entities die definitiv KEINE physischen Oeffnungssensoren sind.
+    #    Verhindert False-Positives durch System Monitor Prozess-Sensoren,
+    #    die ueber MindHome-Domain oder Keyword-Fallback faelschlich erkannt werden.
+    attrs = state.get("attributes", {}) if isinstance(state, dict) else {}
+    device_class = attrs.get("device_class", "")
+    if device_class in ("running", "connectivity", "plug", "power", "update"):
+        return False
+
+    # 3. MindHome-Domain (vom User konfiguriert)
     mh_domain = _mindhome_device_domains.get(entity_id, "")
     if mh_domain:
         return mh_domain == "door_window"
 
-    # 3. HA device_class
-    attrs = state.get("attributes", {}) if isinstance(state, dict) else {}
-    device_class = attrs.get("device_class", "")
+    # 4. HA device_class
     if device_class in ("window", "door", "garage_door"):
         return True
 
-    # 4. Fallback: Nur binary_sensor mit Keyword (inkl. Tor/Gate)
+    # 5. Fallback: Nur binary_sensor mit Keyword (inkl. Tor/Gate)
     ha_domain = entity_id.split(".")[0] if "." in entity_id else ""
     if ha_domain == "binary_sensor":
         lower_id = entity_id.lower()
@@ -3193,10 +3201,7 @@ class FunctionExecutor:
 
         # State ableiten wenn nicht explizit angegeben
         if not state:
-            if args.get("brightness"):
-                state = "on"
-            else:
-                state = "off"
+            state = "on"
 
         if not room:
             return {"success": False, "message": "Kein Raum angegeben"}

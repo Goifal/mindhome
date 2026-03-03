@@ -6673,6 +6673,15 @@ class AssistantBrain(BrainCallbacksMixin):
         import re as _re
         t = text.lower().strip()
 
+        # Anrede und Fuellwoerter am Anfang entfernen:
+        # "Jarvis bitte schalte..." → "schalte..."
+        # "Hey Jarvis, mach..." → "mach..."
+        t = _re.sub(
+            r'^(?:hey\s+)?(?:jarvis|assistant)[,]?\s*',
+            '', t,
+        ).strip()
+        t = _re.sub(r'^bitte\s+', '', t).strip()
+
         # --- Ausschluss: Fragen, Multi-Target, Szenen ---
         if t.endswith("?") or any(t.startswith(q) for q in [
             "was ", "wie ", "warum ", "wer ", "welch", "kannst ",
