@@ -955,5 +955,8 @@ class SpeakerRecognition:
         """Gibt den Status zurueck."""
         if not self.enabled:
             return "disabled"
-        embeds = "embeddings:on" if embeddings_available() else "embeddings:off"
+        try:
+            embeds = "embeddings:on" if embeddings_available() else "embeddings:off"
+        except Exception:
+            embeds = "embeddings:error"
         return f"active ({len(self._profiles)} profiles, {len(self._device_mapping)} devices, {embeds})"

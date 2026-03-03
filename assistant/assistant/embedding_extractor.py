@@ -107,5 +107,5 @@ def is_available() -> bool:
         import speechbrain  # noqa: F401
         import torchaudio  # noqa: F401
         return True
-    except ImportError:
+    except (ImportError, AttributeError, Exception):
         return False
