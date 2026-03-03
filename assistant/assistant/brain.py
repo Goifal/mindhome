@@ -2944,6 +2944,29 @@ class AssistantBrain(BrainCallbacksMixin):
             tool_calls = message.get("tool_calls", [])
             executed_actions = []
 
+            # 7a. LLM hat Text + Tool-Calls: Text verwerfen bei Action-Tools.
+            # Lokale LLMs erzeugen oft "Ich stelle das Licht auf 80 Prozent"
+            # PLUS den Tool-Call. Der Text wuerde die saubere Bestaetigung
+            # (get_varied_confirmation) verhindern und Rohdaten per TTS sprechen.
+            if tool_calls and response_text:
+                _action_tool_names = {
+                    "set_light", "set_light_all", "set_climate", "set_climate_curve",
+                    "set_climate_room", "activate_scene", "set_cover", "set_cover_all",
+                    "set_switch", "call_service", "play_media", "transfer_playback",
+                    "arm_security_system", "lock_door", "send_notification",
+                    "play_sound",
+                }
+                _tc_names = {
+                    tc.get("function", {}).get("name", "")
+                    for tc in tool_calls
+                }
+                if _tc_names and _tc_names <= _action_tool_names:
+                    logger.info(
+                        "LLM-Text verworfen (Action-Tool-Calls vorhanden): '%s'",
+                        response_text[:80],
+                    )
+                    response_text = ""
+
             # 7b. Deterministischer Tool-Call hat Vorrang vor Text-Extraktion.
             # Text-Extraktion aus Reasoning ist unzuverlaessig (z.B. extrahiert
             # get_house_status wenn get_lights gemeint war).
@@ -3874,6 +3897,17 @@ class AssistantBrain(BrainCallbacksMixin):
             elif response_text.lstrip().startswith("AKTUELL:"):
                 logger.warning("Rohdaten-Leak (Wetter) vor Senden erkannt")
                 response_text = self._humanize_weather(response_text)
+            # Tool-Result-Muster: "Licht wohnzimmer on (80%)" oder aehnliche
+            # Rohdaten die nicht per TTS gesprochen werden sollen
+            elif _re.search(r'Licht \w+ (on|off)\b', response_text):
+                logger.warning("Rohdaten-Leak (Licht-Result) vor Senden erkannt: '%s'", response_text[:80])
+                response_text = self.personality.get_varied_confirmation(
+                    success=True, action="set_light",
+                )
+            # HA-Service-Call-Artefakte im Text (z.B. "tts.speak", "light.turn_on")
+            elif _re.search(r'\b(tts\.speak|light\.turn_|cover\.(?:open|close|set)|climate\.set)\b', response_text):
+                logger.warning("Rohdaten-Leak (Service-Call) vor Senden erkannt: '%s'", response_text[:80])
+                response_text = self.personality.get_varied_confirmation(success=True)
 
         result = {
             "response": response_text,
