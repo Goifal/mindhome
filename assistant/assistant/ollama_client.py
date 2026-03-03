@@ -216,6 +216,9 @@ class OllamaClient:
     _DEFAULT_NUM_CTX_FAST = 2048
     _DEFAULT_NUM_CTX_DEEP = 8192
 
+    # Standard keep_alive: Modell nach 120s Idle aus VRAM entladen (spart ~10W GPU)
+    _DEFAULT_KEEP_ALIVE = "120s"
+
     def __init__(self):
         self.base_url = settings.ollama_url
         # Shared Session (wird lazy initialisiert) — spart TCP-Handshake pro Request
@@ -247,6 +250,18 @@ class OllamaClient:
         from .config import yaml_config
         ollama_cfg = yaml_config.get("ollama") or {}
         return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
+
+    @property
+    def keep_alive(self) -> str:
+        """Liest keep_alive aus yaml_config.
+
+        Steuert wie lange Ollama ein Modell nach dem letzten Request im VRAM haelt.
+        Kuerzere Werte sparen GPU-Strom im Idle (~10W bei RTX 3070).
+        Konfigurierbar in settings.yaml unter ollama.keep_alive (z.B. '120s', '5m', '0').
+        """
+        from .config import yaml_config
+        ollama_cfg = yaml_config.get("ollama") or {}
+        return str(ollama_cfg.get("keep_alive", self._DEFAULT_KEEP_ALIVE))
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Gibt die shared aiohttp Session zurueck (thread-safe lazy init)."""
@@ -316,6 +331,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": False,
+            "keep_alive": self.keep_alive,
             "options": _model_options(
                 model, temperature, max_tokens, self.num_ctx_for(model),
                 think_enabled=bool(think_enabled),
@@ -407,6 +423,7 @@ class OllamaClient:
             "model": model,
             "messages": messages,
             "stream": True,
+            "keep_alive": self.keep_alive,
             "options": _model_options(
                 model, temperature, max_tokens, self.num_ctx_for(model),
                 think_enabled=bool(think_enabled) if think_enabled is not None else False,
@@ -536,6 +553,7 @@ class OllamaClient:
             "model": model,
             "prompt": prompt,
             "stream": False,
+            "keep_alive": self.keep_alive,
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,

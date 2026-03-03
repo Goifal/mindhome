@@ -133,6 +133,7 @@ autonomy:
   level: 2
 ollama:
   num_ctx: 4096
+  keep_alive: 120s
 models:
   fast: qwen3:4b
   smart: qwen3:14b
