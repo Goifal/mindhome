@@ -6,11 +6,13 @@ zu kontextsensitiven Wellness-Hinweisen:
 - PC-Pause nach langer Bildschirmarbeit
 - Stress-Intervention bei erkanntem Stress
 - Mahlzeiten-Erinnerung
-- Late-Night-Hinweis
+- Late-Night-Hinweis mit Kalender-Vorschau
+- Hydration-Erinnerung
 """
 
 import asyncio
 import logging
+import random
 from datetime import datetime
 from typing import Optional
 
@@ -258,11 +260,37 @@ class WellnessAdvisor:
             time_str = f"{mins} Minuten"
 
         addressing = await self._get_addressing()
-        await self._send_nudge(
-            "pc_break",
-            f"Du sitzt seit {time_str} am Rechner, {addressing}. "
-            f"Eine kurze Pause waere nicht das Schlechteste.",
-        )
+        mood_data = self.mood.get_current_mood()
+        mood = mood_data.get("mood", "neutral")
+
+        # Mood-abhaengige Nachrichten: Bei Stress direkter, bei Muedigkeit sanfter
+        if mood == "stressed" and hours >= 2:
+            msg = random.choice([
+                f"{addressing}, {time_str} am Rechner bei diesem Stresspegel. Kurze Pause — nicht optional.",
+                f"{time_str} durchgehend, {addressing}. Fuenf Minuten Fenster auf, Augen zu. Ich pass hier auf.",
+            ])
+            urgency = "medium"
+        elif mood == "tired":
+            msg = random.choice([
+                f"{addressing}, {time_str} am Rechner. Vielleicht reicht es fuer heute.",
+                f"Seit {time_str} am Bildschirm, {addressing}. Morgen ist auch ein Tag.",
+            ])
+            urgency = "medium"
+        elif hours >= 3:
+            msg = random.choice([
+                f"{time_str} am Rechner, {addressing}. Ich mache mir langsam Gedanken.",
+                f"{addressing}, {time_str} ohne Pause. Darf ich anmerken — das ist ambitioniert.",
+            ])
+            urgency = "low"
+        else:
+            msg = random.choice([
+                f"Du sitzt seit {time_str} am Rechner, {addressing}. Eine kurze Pause waere nicht das Schlechteste.",
+                f"{time_str} Bildschirmzeit, {addressing}. Kurz aufstehen — ich halte die Stellung.",
+                f"{addressing}, {time_str} durchgehend. Ein Glas Wasser und fuenf Minuten stehen.",
+            ])
+            urgency = "low"
+
+        await self._send_nudge("pc_break", msg, urgency=urgency)
         await self.redis.setex("mha:wellness:last_break_reminder", 86400, now.isoformat())
         # Timer zuruecksetzen damit nach Cooldown nicht sofort wieder feuert
         await self.redis.setex("mha:wellness:pc_start", 86400, now.isoformat())
@@ -296,14 +324,32 @@ class WellnessAdvisor:
         await self.redis.setex("mha:wellness:last_stress_nudge", 86400, datetime.now().isoformat())
 
         addressing = await self._get_addressing()
-        if stress_level >= 0.7:
-            msg = f"{addressing}, der Stresspegel ist deutlich erhoert. Soll ich das Licht etwas dimmen?"
-        elif mood == "frustrated":
-            msg = f"Ich bemerke etwas Frustration, {addressing}. Kann ich irgendwie helfen?"
-        else:
-            msg = f"{addressing}, wenn ich anmerken darf — es scheint etwas stressig. Kurze Pause?"
+        hour = datetime.now().hour
 
-        await self._send_nudge("stress_detected", msg)
+        if stress_level >= 0.7:
+            # Hoher Stress: Konkreter Aktionsvorschlag
+            if hour >= 20:
+                msg = f"{addressing}, deutlich erhoehter Stress um {hour} Uhr. Soll ich das Licht dimmen und Feierabend einlaeuten?"
+            else:
+                msg = random.choice([
+                    f"{addressing}, der Stresspegel ist deutlich erhoert. Licht auf 40%, fuenf Minuten — ich manage den Rest.",
+                    f"Das Stresslevel ist hoch, {addressing}. Soll ich das Licht runterfahren und fuer fuenf Minuten Ruhe sorgen?",
+                ])
+            urgency = "medium"
+        elif mood == "frustrated":
+            msg = random.choice([
+                f"Laeuft nicht rund, {addressing}. Sag mir was du brauchst — ich kuemmer mich.",
+                f"{addressing}, ich merk das. Kurz durchatmen — ich halte die Stellung.",
+            ])
+            urgency = "low"
+        else:
+            msg = random.choice([
+                f"{addressing}, wenn ich anmerken darf — es scheint etwas stressig. Kurze Pause?",
+                f"Viel auf einmal heute, {addressing}. Fuenf Minuten vom Bildschirm wuerden helfen.",
+            ])
+            urgency = "low"
+
+        await self._send_nudge("stress_detected", msg, urgency=urgency)
 
     # ------------------------------------------------------------------
     # Mahlzeiten-Erinnerung
@@ -353,17 +399,36 @@ class WellnessAdvisor:
 
             meal_de = "Mittagessen" if meal == "lunch" else "Abendessen"
             addressing = await self._get_addressing()
-            await self._send_nudge(
-                "meal_reminder",
-                f"Es ist {hour} Uhr, {addressing}. Schon {meal_de.lower()} gehabt?",
-            )
+
+            # Mood-abhaengig: Bei Stress kuerzer, bei guter Laune lockerer
+            mood_data = self.mood.get_current_mood()
+            mood = mood_data.get("mood", "neutral")
+
+            if mood == "stressed":
+                msg = f"{addressing}, {hour} Uhr. {meal_de.capitalize()}?"
+            elif mood == "good":
+                msg = random.choice([
+                    f"Es ist {hour} Uhr, {addressing}. Wie sieht's mit {meal_de.lower()} aus?",
+                    f"{addressing}, {hour} Uhr. Dein Magen wird sich ueber {meal_de.lower()} freuen.",
+                ])
+            else:
+                msg = random.choice([
+                    f"Es ist {hour} Uhr, {addressing}. Schon {meal_de.lower()} gehabt?",
+                    f"{addressing}, nur zur Erinnerung — {hour} Uhr, {meal_de.lower()} steht an.",
+                ])
+
+            await self._send_nudge("meal_reminder", msg)
 
     # ------------------------------------------------------------------
     # Late-Night-Hinweis
     # ------------------------------------------------------------------
 
     async def _check_late_night(self):
-        """Nach Mitternacht: Sanfter Hinweis auf die Uhrzeit."""
+        """Nach Mitternacht: Sanfter Hinweis auf die Uhrzeit + Kalender-Vorschau.
+
+        Phase 17.4: Kalender-aware — wenn morgen frueh ein Termin ist,
+        wird das erwaehnt. Jarvis kuemmert sich.
+        """
         if not self.late_night_nudge or not self.redis:
             return
 
@@ -390,10 +455,83 @@ class WellnessAdvisor:
         await self.redis.setex(key, 6 * 3600, "1")
 
         addressing = await self._get_addressing()
-        await self._send_nudge(
-            "late_night",
-            f"Es ist {hour} Uhr, {addressing}. Nur zur Kenntnis.",
-        )
+
+        # Kalender-Vorschau: Erster Termin morgen
+        tomorrow_hint = await self._get_tomorrow_first_appointment()
+
+        # Mood-abhaengige Nachricht
+        mood_data = self.mood.get_current_mood()
+        mood = mood_data.get("mood", "neutral")
+
+        if tomorrow_hint and mood == "stressed":
+            msg = (
+                f"{addressing}, {hour} Uhr. {tomorrow_hint} "
+                f"Vielleicht solltest du Schluss machen."
+            )
+            urgency = "medium"
+        elif tomorrow_hint:
+            msg = (
+                f"Es ist {hour} Uhr, {addressing}. {tomorrow_hint} "
+                f"Nur als freundliche Erinnerung."
+            )
+            urgency = "low"
+        elif hour >= 2:
+            msg = random.choice([
+                f"{addressing}, es ist {hour} Uhr. Darf ich den Feierabend vorschlagen?",
+                f"{hour} Uhr, {addressing}. Das Bett wartet — ich hab hier alles im Griff.",
+            ])
+            urgency = "low"
+        else:
+            msg = f"Es ist {hour} Uhr, {addressing}. Nur zur Kenntnis."
+            urgency = "low"
+
+        await self._send_nudge("late_night", msg, urgency=urgency)
+
+    async def _get_tomorrow_first_appointment(self) -> str:
+        """Holt den ersten Termin von morgen aus HA-Kalender-Entities.
+
+        Returns:
+            String wie 'Morgen um 8 Uhr: Blutabnahme.' oder '' wenn nichts ansteht.
+        """
+        if not self.ha:
+            return ""
+
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return ""
+
+            for state in states:
+                eid = state.get("entity_id", "")
+                if not eid.startswith("calendar."):
+                    continue
+
+                attrs = state.get("attributes", {})
+                message = attrs.get("message", "")
+                start_time = attrs.get("start_time", "")
+
+                if not message or not start_time:
+                    continue
+
+                # Pruefen ob der Termin morgen ist
+                try:
+                    # HA liefert start_time als "2026-03-04 08:00:00"
+                    from datetime import timedelta
+                    tomorrow = (datetime.now() + timedelta(days=1)).date()
+                    event_dt = datetime.fromisoformat(start_time)
+                    if event_dt.date() == tomorrow:
+                        event_hour = event_dt.strftime("%H:%M")
+                        if event_dt.hour < 12:
+                            return f"Morgen um {event_hour} steht '{message}' an."
+                        else:
+                            return f"Morgen Nachmittag: {message} um {event_hour}."
+                except (ValueError, TypeError):
+                    continue
+
+        except Exception as e:
+            logger.debug("Kalender-Check fuer Late-Night fehlgeschlagen: %s", e)
+
+        return ""
 
     # ------------------------------------------------------------------
     # Hydration-Erinnerung
@@ -431,23 +569,47 @@ class WellnessAdvisor:
 
         await self.redis.setex(key, 86400, datetime.now().isoformat())
         addressing = await self._get_addressing()
-        await self._send_nudge(
-            "hydration",
-            f"{addressing}, ein Glas Wasser waere jetzt keine schlechte Idee.",
-        )
+
+        mood_data = self.mood.get_current_mood()
+        mood = mood_data.get("mood", "neutral")
+
+        if mood == "stressed":
+            msg = f"{addressing}. Wasser."
+        else:
+            msg = random.choice([
+                f"{addressing}, ein Glas Wasser waere jetzt keine schlechte Idee.",
+                f"Kurze Erinnerung, {addressing} — trinken nicht vergessen.",
+                f"{addressing}, Hydration. Dein Koerper wird es dir danken.",
+            ])
+
+        await self._send_nudge("hydration", msg)
 
     # ------------------------------------------------------------------
     # Nudge senden
     # ------------------------------------------------------------------
 
-    async def _send_nudge(self, nudge_type: str, message: str):
-        """Sendet einen Wellness-Hinweis ueber den Callback."""
+    async def _send_nudge(self, nudge_type: str, message: str, urgency: str = "low"):
+        """Sendet einen Wellness-Hinweis ueber den Callback.
+
+        Args:
+            nudge_type: Art des Nudge (pc_break, stress_detected, etc.)
+            message: Die Nachricht
+            urgency: Priority-Level (low, medium, high) — beeinflusst ob
+                     der Nudge bei Quiet Hours / Schlaf durchkommt.
+        """
         if not self._notify_callback:
             logger.debug("Wellness-Nudge ohne Callback: %s", message)
             return
 
         try:
-            await self._notify_callback(nudge_type, message)
-            logger.info("Wellness [%s]: %s", nudge_type, message)
+            await self._notify_callback(nudge_type, message, urgency)
+            logger.info("Wellness [%s/%s]: %s", nudge_type, urgency, message)
+        except TypeError:
+            # Fallback: Alter Callback ohne urgency-Parameter
+            try:
+                await self._notify_callback(nudge_type, message)
+                logger.info("Wellness [%s]: %s", nudge_type, message)
+            except Exception as e:
+                logger.error("Wellness-Nudge Fehler: %s", e)
         except Exception as e:
             logger.error("Wellness-Nudge Fehler: %s", e)

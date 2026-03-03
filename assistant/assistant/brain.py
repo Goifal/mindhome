@@ -3607,6 +3607,33 @@ class AssistantBrain(BrainCallbacksMixin):
                     sa.get("priority", "?"), sa.get("action", "?"), sa.get("reason", ""),
                 )
 
+        # Phase 17.4: Mood-Aware Response Post-Processing
+        # Wenn User gestresst/frustriert/muede: Gags unterdruecken, Response kuerzen
+        _current_mood = (mood_result or {}).get("mood", "neutral")
+        _mood_config = self.personality.get_mood_response_config(_current_mood)
+
+        if _mood_config.get("suppress_humor") and gag_response and response_text:
+            # Gag wurde oben angefuegt — bei Stress/Muedigkeit wieder entfernen
+            if response_text.endswith(gag_response):
+                response_text = response_text[:-len(gag_response)].rstrip()
+                logger.debug("Mood [%s]: Running Gag unterdrueckt", _current_mood)
+
+        if _mood_config.get("suppress_suggestions") and response_text:
+            # Unaufgeforderte Vorschlaege am Ende entfernen
+            # Pattern: "Uebrigens..." / "Soll ich..." / "Moechtest du..."
+            import re as _mood_re
+            _suggestion_pattern = _mood_re.compile(
+                r'\s*(?:Uebrigens|Übrigens|Soll ich|Moechtest du|Möchtest du|'
+                r'Falls du|Wenn du magst|Tipp:|Hinweis:).*$',
+                _mood_re.IGNORECASE | _mood_re.DOTALL,
+            )
+            _cleaned = _suggestion_pattern.sub('', response_text).rstrip()
+            if _cleaned and len(_cleaned) >= 5:
+                if len(_cleaned) < len(response_text):
+                    logger.debug("Mood [%s]: Vorschlag-Anhang gekuerzt (%d -> %d Zeichen)",
+                                 _current_mood, len(response_text), len(_cleaned))
+                response_text = _cleaned
+
         # Phase 9: Warning-Sound bei Warnungen im Response
         if response_text and any(w in response_text.lower() for w in [
             "warnung", "achtung", "vorsicht", "offen", "alarm", "offline",
@@ -3788,10 +3815,22 @@ class AssistantBrain(BrainCallbacksMixin):
             activity=current_activity,
         )
 
+        # Phase 17.4: Mood-Aware TTS — Geschwindigkeit an Stimmung anpassen
+        # Muede/gestresst = langsamer und leiser sprechen (Fuersorge)
+        _mood_tts_speed = _mood_config.get("tts_speed", 100)
+        if _mood_tts_speed != 100 and "speed" in tts_data:
+            tts_data["speed"] = tts_data.get("speed", 1.0) * (_mood_tts_speed / 100)
+        elif _mood_tts_speed != 100:
+            tts_data["speed"] = _mood_tts_speed / 100
+
         # Activity-Volume ueberschreibt TTS-Volume (ausser Whisper-Modus)
         # Mindest-Lautstaerke fuer direkte User-Antworten sicherstellen
         if not self.tts_enhancer.is_whisper_mode and urgency != "critical":
             tts_data["volume"] = max(activity_volume, 0.5)
+
+        # Phase 17.4: Bei Muedigkeit leiser sprechen (Fuersorge)
+        if _current_mood == "tired" and not self.tts_enhancer.is_whisper_mode:
+            tts_data["volume"] = min(tts_data.get("volume", 0.8), 0.6)
 
         # Phase 10: Multi-Room TTS — Speaker anhand Raum bestimmen
         if room:
@@ -5518,18 +5557,22 @@ class AssistantBrain(BrainCallbacksMixin):
             alert.get("alert_type", "?"), urgency, formatted,
         )
 
-    async def _handle_wellness_nudge(self, nudge_type: str, message: str):
-        """Callback fuer Wellness Advisor — kuemmert sich um den User."""
+    async def _handle_wellness_nudge(self, nudge_type: str, message: str, urgency: str = "low"):
+        """Callback fuer Wellness Advisor — kuemmert sich um den User.
+
+        Phase 17.4: Urgency ist jetzt mood-abhaengig (Wellness Advisor setzt
+        hoehere Prioritaet bei Stress/Muedigkeit).
+        """
         if not message:
             return
-        if not await self._callback_should_speak("low", source=f"Wellness/{nudge_type}"):
+        if not await self._callback_should_speak(urgency, source=f"Wellness/{nudge_type}"):
             return
         formatted = await self._format_callback_with_escalation(
-            message, "low", f"wellness_{nudge_type}",
+            message, urgency, f"wellness_{nudge_type}",
         )
         await self._speak_and_emit(formatted)
         self._remember_exchange("[proaktiv: Wellness]", formatted)
-        logger.info("Wellness [%s]: %s", nudge_type, formatted)
+        logger.info("Wellness [%s/%s]: %s", nudge_type, urgency, formatted)
 
     # ------------------------------------------------------------------
     # Phase 14.2b: Music DJ + Visitor Callbacks (uebernommen aus Mixin)
