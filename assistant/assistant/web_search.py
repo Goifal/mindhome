@@ -8,6 +8,15 @@ Features:
 - Config-Flag: web_search.enabled (default off)
 - Privacy-First: Kein Tracking, kein Google
 
+Sicherheit:
+- F-012: SSRF-Schutz (IP-Blocklist, Hostname-Blocklist)
+- F-069: DNS-Rebinding-Schutz (DNS vor Request aufloesen)
+- F-070: Redirect-Blocking (allow_redirects=False)
+- F-071: Response-Size-Limit (max 5 MB)
+- F-072: Content-Type-Validation (nur application/json)
+- F-073: DNS-Resolution-Timeout (5 Sekunden)
+- F-074: URLs in Suchergebnissen validieren
+
 WICHTIG: Standardmaessig DEAKTIVIERT (lokales Prinzip bleibt erhalten).
 Muss explizit in settings.yaml aktiviert werden.
 """
@@ -24,6 +33,12 @@ import aiohttp
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
+
+# F-071: Maximale Response-Groesse (5 MB) — verhindert OOM bei boesartigem Server
+_MAX_RESPONSE_BYTES = 5 * 1024 * 1024
+
+# F-073: Timeout fuer DNS-Aufloesung in Sekunden
+_DNS_RESOLVE_TIMEOUT = 5.0
 
 # F-012: SSRF-Schutz — Interne Netzwerke blockieren
 _BLOCKED_NETWORKS = [
@@ -93,12 +108,19 @@ async def _resolve_and_check(hostname: str) -> bool:
     except ValueError:
         pass
     # DNS-Aufloesung im Thread-Pool (blockiert nicht den Event-Loop)
+    # F-073: Timeout verhindert Slowloris-artige DNS-Angriffe
     loop = asyncio.get_running_loop()
     try:
-        infos = await loop.run_in_executor(
-            None,
-            lambda: socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM),
+        infos = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM),
+            ),
+            timeout=_DNS_RESOLVE_TIMEOUT,
         )
+    except asyncio.TimeoutError:
+        logger.warning("DNS-Aufloesung Timeout nach %.0fs fuer '%s'", _DNS_RESOLVE_TIMEOUT, hostname)
+        return False
     except socket.gaierror:
         logger.warning("DNS-Aufloesung fehlgeschlagen fuer '%s'", hostname)
         return False
@@ -118,6 +140,43 @@ async def _resolve_and_check(hostname: str) -> bool:
         except ValueError:
             return False  # Kann IP nicht parsen — sicherheitshalber blockieren
     return True
+
+
+async def _safe_read_json(resp: aiohttp.ClientResponse, max_bytes: int = _MAX_RESPONSE_BYTES) -> dict | None:
+    """F-071 + F-072: Sichere JSON-Antwort lesen mit Size-Limit und Content-Type-Check.
+
+    Returns:
+        Parsed JSON dict oder None bei Fehler/Ueberschreitung.
+    """
+    # F-072: Content-Type pruefen (tolerant: "application/json" oder "application/json; charset=utf-8")
+    content_type = resp.headers.get("Content-Type", "")
+    if "json" not in content_type.lower():
+        logger.warning(
+            "Content-Type-Schutz: Erwartet JSON, erhalten '%s'",
+            content_type[:80],
+        )
+        return None
+    # F-071: Groesse pruefen — erst Header, dann Inhalt
+    content_length = resp.content_length
+    if content_length is not None and content_length > max_bytes:
+        logger.warning(
+            "Response-Size-Schutz: %d Bytes ueberschreitet Limit von %d",
+            content_length, max_bytes,
+        )
+        return None
+    raw = await resp.content.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        logger.warning(
+            "Response-Size-Schutz: Body ueberschreitet %d Bytes (gelesen: %d)",
+            max_bytes, len(raw),
+        )
+        return None
+    import json
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        logger.warning("JSON-Parse-Fehler: %s", e)
+        return None
 
 
 class WebSearch:
@@ -206,17 +265,30 @@ class WebSearch:
             return []
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+            # F-070: allow_redirects=False verhindert SSRF via Redirect
+            async with session.get(
+                url, params=params,
+                timeout=aiohttp.ClientTimeout(total=self.timeout),
+                allow_redirects=False,
+            ) as resp:
                 if resp.status != 200:
                     logger.warning("SearXNG returned %d", resp.status)
                     return []
-                data = await resp.json()
+                # F-071 + F-072: Sichere JSON-Verarbeitung
+                data = await _safe_read_json(resp)
+                if data is None:
+                    return []
                 results = []
                 for r in data.get("results", [])[:self.max_results]:
+                    # F-074: URLs in Suchergebnissen validieren
+                    result_url = r.get("url", "")
+                    if result_url and not _is_safe_url(result_url):
+                        logger.debug("Ergebnis-URL blockiert: %s", result_url[:100])
+                        result_url = ""
                     results.append({
                         "title": r.get("title", ""),
                         "snippet": r.get("content", ""),
-                        "url": r.get("url", ""),
+                        "url": result_url,
                     })
                 return results
 
@@ -237,29 +309,45 @@ class WebSearch:
             return []
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+            # F-070: allow_redirects=False verhindert SSRF via Redirect
+            async with session.get(
+                url, params=params,
+                timeout=aiohttp.ClientTimeout(total=self.timeout),
+                allow_redirects=False,
+            ) as resp:
                 if resp.status != 200:
                     return []
-                data = await resp.json()
+                # F-071 + F-072: Sichere JSON-Verarbeitung
+                data = await _safe_read_json(resp)
+                if data is None:
+                    return []
 
                 results = []
 
                 # Abstract (Hauptergebnis)
                 abstract = data.get("AbstractText", "")
                 if abstract:
+                    # F-074: URL validieren
+                    abs_url = data.get("AbstractURL", "")
+                    if abs_url and not _is_safe_url(abs_url):
+                        abs_url = ""
                     results.append({
                         "title": data.get("Heading", query),
                         "snippet": abstract,
-                        "url": data.get("AbstractURL", ""),
+                        "url": abs_url,
                     })
 
                 # Related Topics
                 for topic in data.get("RelatedTopics", [])[:self.max_results - 1]:
                     if isinstance(topic, dict) and "Text" in topic:
+                        # F-074: URL validieren
+                        topic_url = topic.get("FirstURL", "")
+                        if topic_url and not _is_safe_url(topic_url):
+                            topic_url = ""
                         results.append({
                             "title": topic.get("Text", "")[:80],
                             "snippet": topic.get("Text", ""),
-                            "url": topic.get("FirstURL", ""),
+                            "url": topic_url,
                         })
 
                 return results
