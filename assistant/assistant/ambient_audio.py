@@ -123,6 +123,19 @@ class AmbientAudioClassifier:
         # Reaktions-Overrides aus Config
         self._reaction_overrides: dict[str, dict] = cfg.get("reaction_overrides") or {}
 
+        # Default-Reaktionen aus YAML (Fallback: hardcoded DEFAULT_EVENT_REACTIONS)
+        yaml_reactions = cfg.get("default_reactions")
+        if yaml_reactions and isinstance(yaml_reactions, dict):
+            self._default_reactions = dict(DEFAULT_EVENT_REACTIONS)
+            for evt, info in yaml_reactions.items():
+                if isinstance(info, dict):
+                    if evt in self._default_reactions:
+                        self._default_reactions[evt] = {**self._default_reactions[evt], **info}
+                    else:
+                        self._default_reactions[evt] = info
+        else:
+            self._default_reactions = dict(DEFAULT_EVENT_REACTIONS)
+
         # Nachmodus: Strengere Reaktionen nachts
         night_cfg = cfg.get("night_mode") or {}
         self._night_start = int(night_cfg.get("start_hour", 22))
@@ -407,11 +420,11 @@ class AmbientAudioClassifier:
         # Erst Config-Overrides pruefen
         if event_type in self._reaction_overrides:
             # Merge mit Default
-            default = DEFAULT_EVENT_REACTIONS.get(event_type, {})
+            default = self._default_reactions.get(event_type, {})
             merged = {**default, **self._reaction_overrides[event_type]}
             return merged
 
-        return DEFAULT_EVENT_REACTIONS.get(event_type)
+        return self._default_reactions.get(event_type)
 
     def _is_night(self) -> bool:
         """Prueft ob Nachtmodus aktiv ist."""
@@ -500,7 +513,7 @@ class AmbientAudioClassifier:
             "disabled_events": list(self._disabled_events),
             "event_history_count": len(self._event_history),
             "recent_events": self.get_recent_events(5),
-            "supported_events": list(DEFAULT_EVENT_REACTIONS.keys()),
+            "supported_events": list(self._default_reactions.keys()),
             "night_mode": self._is_night(),
             "cooldowns": {
                 "default": self._default_cooldown,

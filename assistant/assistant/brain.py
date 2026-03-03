@@ -305,6 +305,90 @@ class AssistantBrain(BrainCallbacksMixin):
         self._last_executed_action: str = ""
         self._last_executed_action_args: dict = {}
 
+        # --- Konfigurierbare Daten aus YAML laden (Fallback: Hardcoded) ---
+        self._load_configurable_data()
+
+    def _load_configurable_data(self):
+        """Laedt alle konfigurierbaren Daten aus YAML mit Hardcoded-Fallback."""
+        # STT-Korrekturen
+        stt_cfg = cfg.yaml_config.get("stt_corrections", {})
+        self._stt_word_corrections = stt_cfg.get("word_corrections") or dict(self._STT_WORD_CORRECTIONS)
+        raw_phrases = stt_cfg.get("phrase_corrections")
+        if raw_phrases and isinstance(raw_phrases, dict):
+            self._stt_phrase_corrections = [(k, v) for k, v in raw_phrases.items()]
+        else:
+            self._stt_phrase_corrections = list(self._STT_PHRASE_CORRECTIONS)
+
+        # Error-Templates + Escalation-Prefixes (aus personality-Sektion)
+        pers_cfg = cfg.yaml_config.get("personality", {})
+        self._error_templates = pers_cfg.get("error_templates") or dict(self._ERROR_PATTERNS)
+        raw_esc = pers_cfg.get("escalation_prefixes")
+        if raw_esc:
+            self._escalation_prefixes = {int(k): v for k, v in raw_esc.items()}
+        else:
+            self._escalation_prefixes = dict(self._ESCALATION_PREFIXES)
+
+        # Sarkasmus-Feedback Patterns
+        pos = pers_cfg.get("sarcasm_positive_patterns")
+        self._sarcasm_positive = frozenset(pos) if pos else self._SARCASM_POSITIVE_PATTERNS
+        neg = pers_cfg.get("sarcasm_negative_patterns")
+        self._sarcasm_negative = frozenset(neg) if neg else self._SARCASM_NEGATIVE_PATTERNS
+
+        # Output-Filter (sorry, refusal, chatbot)
+        filter_cfg = cfg.yaml_config.get("response_filter", {})
+        self._sorry_patterns = filter_cfg.get("sorry_patterns") or None
+        self._refusal_patterns_cfg = filter_cfg.get("refusal_patterns") or None
+        self._chatbot_phrases_cfg = filter_cfg.get("chatbot_phrases") or None
+
+        # Das Uebliche Patterns
+        du_cfg = cfg.yaml_config.get("das_uebliche", {})
+        self._das_uebliche_patterns = du_cfg.get("patterns") or list(self._DAS_UEBLICHE_PATTERNS)
+
+        # Command Detection
+        cmd_cfg = cfg.yaml_config.get("command_detection", {})
+        self._device_nouns = cmd_cfg.get("device_nouns") or [
+            "rollladen", "rolladen", "rollo", "jalousie",
+            "licht", "lampe", "leuchte", "beleuchtung",
+            "heizung", "thermostat", "klima",
+            "steckdose", "schalter", "musik", "lautsprecher",
+            "wecker", "timer", "erinnerung",
+        ]
+        self._action_words = set(cmd_cfg.get("action_words") or [
+            "auf", "zu", "an", "aus", "hoch", "runter",
+            "offen", "ein", "ab", "halb", "stopp",
+            "oeffne", "schliess", "oeffnen", "schliessen",
+        ])
+        self._command_verbs = cmd_cfg.get("command_verbs") or [
+            "mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess",
+        ]
+        self._query_markers = cmd_cfg.get("query_markers") or [
+            "welche", "sind ", "ist ", "status", "zeig", "liste",
+            "was ist", "wie ist", "noch an", "noch auf", "noch offen",
+            "abgedreht", "eingeschaltet", "ausgeschaltet", "angelassen",
+            "brennt", "brennen", "laeuft", "laufen", "offen", "alle ", "alles ",
+        ]
+        self._action_exclusions = cmd_cfg.get("action_exclusions") or [
+            "einstellen", "stellen", "stell ", "setzen", "setz ",
+            "dimmen", "dimm ", "heller", "dunkler",
+            "mach ", "schalte ", "dreh ", "aufdrehen", "andrehen",
+            "ausschalten", "einschalten", "anschalten", "abschalten",
+            "auf ", "runter", "hoch", "rauf",
+        ]
+        self._status_nouns = cmd_cfg.get("status_nouns") or [
+            "rollladen", "rolladen", "rollo", "jalousie",
+            "rolllaeden", "rollaeden",
+            "licht", "lichter", "lampe", "lampen", "leuchte", "beleuchtung",
+            "heizung", "thermostat", "klima", "temperatur",
+            "steckdose", "steckdosen", "schalter",
+            "musik", "lautsprecher", "media", "wecker", "alarm",
+            "haus", "hausstatus", "haus-status",
+        ]
+
+    def reload_configurable_data(self):
+        """Hot-Reload aller konfigurierbaren Brain-Daten (nach UI-Aenderung)."""
+        self._load_configurable_data()
+        logger.info("Brain: Konfigurierbare Daten neu geladen")
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
@@ -699,10 +783,10 @@ class AssistantBrain(BrainCallbacksMixin):
         # Kurze positive Reaktionen (1-3 Woerter)
         words = text_lower.split()
         if len(words) <= 3:
-            if any(p in text_lower for p in self._SARCASM_POSITIVE_PATTERNS):
+            if any(p in text_lower for p in self._sarcasm_positive):
                 return True
         # Explizite Ablehnung (beliebige Laenge)
-        if any(p in text_lower for p in self._SARCASM_NEGATIVE_PATTERNS):
+        if any(p in text_lower for p in self._sarcasm_negative):
             return False
         # Unklar — kein Feedback tracken
         return None
@@ -4704,7 +4788,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     text = text[0].upper() + text[1:]
 
         # 3. "Es tut mir leid" Varianten durch Fakt ersetzen
-        sorry_patterns = [
+        _sorry_defaults = [
             "es tut mir leid,", "es tut mir leid.", "es tut mir leid ",
             "es tut mir leid!", "leider ", "leider,", "leider.",
             "entschuldigung,", "entschuldigung.", "entschuldigung!",
@@ -4712,6 +4796,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "ich entschuldige mich,", "tut mir leid,", "tut mir leid.",
             "bedauerlicherweise ", "ich bedaure,", "ich bedaure.",
         ]
+        sorry_patterns = self._sorry_patterns or _sorry_defaults
         for pattern in sorry_patterns:
             idx = text.lower().find(pattern)
             if idx != -1:
@@ -4786,27 +4871,33 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.info("Sie->du Korrektur angewendet: '%s'", text[:80])
 
         # 3c. LLM-Refusals entfernen (LLM verweigert manchmal trotz gueltiger Daten)
-        _refusal_patterns = [
-            r"[Aa]ber ich kann diese Anfrage nicht erf[uü]llen\.?",
-            r"[Ii]ch kann diese Anfrage nicht erf[uü]llen\.?",
-            r"[Ii]ch kann dir dabei (?:leider )?nicht helfen\.?",
-            r"[Dd]as kann ich (?:leider )?nicht (?:tun|machen|beantworten|erf[uü]llen)\.?",
-            r"[Ii]ch bin nicht in der Lage,? (?:das|dies|diese Anfrage).*?(?:\.|!|$)",
-            r"[Dd]iese Anfrage kann ich (?:leider )?nicht.*?(?:\.|!|$)",
-            r"[Ii]ch habe (?:leider )?keinen Zugriff.*?(?:\.|!|$)",
-            r"[Ii]ch habe (?:leider )?keine M[oö]glichkeit.*?(?:\.|!|$)",
-        ]
+        if self._refusal_patterns_cfg:
+            _refusal_patterns = [re.escape(p) + r".*?(?:\.|!|$)" for p in self._refusal_patterns_cfg]
+        else:
+            _refusal_patterns = [
+                r"[Aa]ber ich kann diese Anfrage nicht erf[uü]llen\.?",
+                r"[Ii]ch kann diese Anfrage nicht erf[uü]llen\.?",
+                r"[Ii]ch kann dir dabei (?:leider )?nicht helfen\.?",
+                r"[Dd]as kann ich (?:leider )?nicht (?:tun|machen|beantworten|erf[uü]llen)\.?",
+                r"[Ii]ch bin nicht in der Lage,? (?:das|dies|diese Anfrage).*?(?:\.|!|$)",
+                r"[Dd]iese Anfrage kann ich (?:leider )?nicht.*?(?:\.|!|$)",
+                r"[Ii]ch habe (?:leider )?keinen Zugriff.*?(?:\.|!|$)",
+                r"[Ii]ch habe (?:leider )?keine M[oö]glichkeit.*?(?:\.|!|$)",
+            ]
         for rp in _refusal_patterns:
             text = re.sub(rp, "", text, flags=re.IGNORECASE).strip()
 
         # 3d. Chatbot-Floskeln entfernen die trotz Prompt durchkommen
-        _chatbot_floskels = [
-            r"Wenn (?:du|Sie) (?:noch |weitere )?Fragen ha(?:ben|st).*?(?:\.|!|$)",
-            r"(?:Ich )?[Ss]tehe? (?:dir|Ihnen) (?:gerne |jederzeit )?zur Verf[uü]gung.*?(?:\.|!|$)",
-            r"Zögern? (?:du|Sie) nicht.*?(?:\.|!|$)",
-            r"(?:Ich bin )?(?:hier,? )?um (?:dir|Ihnen) zu helfen.*?(?:\.|!|$)",
-            r"Lass(?:e|t)? (?:es )?mich wissen.*?(?:\.|!|$)",
-        ]
+        if self._chatbot_phrases_cfg:
+            _chatbot_floskels = [re.escape(p) + r".*?(?:\.|!|$)" for p in self._chatbot_phrases_cfg]
+        else:
+            _chatbot_floskels = [
+                r"Wenn (?:du|Sie) (?:noch |weitere )?Fragen ha(?:ben|st).*?(?:\.|!|$)",
+                r"(?:Ich )?[Ss]tehe? (?:dir|Ihnen) (?:gerne |jederzeit )?zur Verf[uü]gung.*?(?:\.|!|$)",
+                r"Zögern? (?:du|Sie) nicht.*?(?:\.|!|$)",
+                r"(?:Ich bin )?(?:hier,? )?um (?:dir|Ihnen) zu helfen.*?(?:\.|!|$)",
+                r"Lass(?:e|t)? (?:es )?mich wissen.*?(?:\.|!|$)",
+            ]
         for floskel in _chatbot_floskels:
             text = re.sub(floskel, "", text, flags=re.IGNORECASE).strip()
 
@@ -6133,8 +6224,7 @@ class AssistantBrain(BrainCallbacksMixin):
         ("wie spät", "wie spät"),
     ]
 
-    @staticmethod
-    def _normalize_stt_text(text: str) -> str:
+    def _normalize_stt_text(self, text: str) -> str:
         """Normalisiert STT-Output fuer bessere Verarbeitung.
 
         Korrigiert typische Whisper-Fehler:
@@ -6160,7 +6250,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # 4. Mehrwort-Korrekturen (case-insensitive)
         text_lower = text.lower()
-        for wrong, correct in AssistantBrain._STT_PHRASE_CORRECTIONS:
+        for wrong, correct in self._stt_phrase_corrections:
             if wrong in text_lower:
                 # Case-insensitive Replace
                 pattern = re.compile(re.escape(wrong), re.IGNORECASE)
@@ -6173,8 +6263,8 @@ class AssistantBrain(BrainCallbacksMixin):
         for w in words:
             w_lower = w.lower().rstrip(".,;:!?")
             trailing = w[len(w.rstrip(".,;:!?")):]
-            if w_lower in AssistantBrain._STT_WORD_CORRECTIONS:
-                replacement = AssistantBrain._STT_WORD_CORRECTIONS[w_lower]
+            if w_lower in self._stt_word_corrections:
+                replacement = self._stt_word_corrections[w_lower]
                 corrected.append(replacement + trailing)
             else:
                 corrected.append(w)
@@ -6186,8 +6276,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         return text
 
-    @staticmethod
-    def _is_device_command(text: str) -> bool:
+    def _is_device_command(self, text: str) -> bool:
         """Erkennt ob der Text ein Geraete-Steuerungsbefehl ist.
 
         Prueft auf Kombination von Geraete-Nomen + Aktion/Prozent.
@@ -6195,30 +6284,15 @@ class AssistantBrain(BrainCallbacksMixin):
         aber der Text offensichtlich ein Geraetebefehl ist.
         """
         t = text.lower()
-        _NOUNS = [
-            "rollladen", "rolladen", "rollo", "jalousie",
-            "licht", "lampe", "leuchte", "beleuchtung",
-            "heizung", "thermostat", "klima",
-            "steckdose", "schalter",
-            "musik", "lautsprecher",
-            "wecker", "timer", "erinnerung",
-        ]
-        has_noun = any(n in t for n in _NOUNS)
+        has_noun = any(n in t for n in self._device_nouns)
         # Wort-genaue Aktionserkennung (kein Partial-Match auf "eine", "Auge" etc.)
         words = set(re.split(r'[\s,.!?]+', t))
-        _ACTION_WORDS = {
-            "auf", "zu", "an", "aus", "hoch", "runter",
-            "offen", "ein", "ab", "halb", "stopp",
-            "oeffne", "schliess", "oeffnen", "schliessen",
-        }
-        has_action = bool(words & _ACTION_WORDS) or "%" in t
+        has_action = bool(words & self._action_words) or "%" in t
         # Verb-Start: "mach licht an", "schalte heizung ein"
-        _VERBS = ["mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess"]
-        verb_start = any(t.startswith(v) for v in _VERBS)
+        verb_start = any(t.startswith(v) for v in self._command_verbs)
         return (has_noun and has_action) or (verb_start and has_noun)
 
-    @staticmethod
-    def _is_status_query(text: str) -> bool:
+    def _is_status_query(self, text: str) -> bool:
         """Erkennt ob der Text eine Geraete-Status-Abfrage ist.
 
         Faengt Fragen wie "Sind alle Licht abgedreht?", "Ist das Licht an?",
@@ -6230,40 +6304,16 @@ class AssistantBrain(BrainCallbacksMixin):
         werden NICHT als Status-Query erkannt, auch wenn sie "ist" enthalten.
         """
         t = text.lower()
-        _NOUNS = [
-            "rollladen", "rolladen", "rollo", "jalousie",
-            "rolllaeden", "rollaeden",  # Plural (ASCII ae)
-            "licht", "lichter", "lampe", "lampen", "leuchte", "beleuchtung",
-            "heizung", "thermostat", "klima", "temperatur",
-            "steckdose", "steckdosen", "schalter",
-            "musik", "lautsprecher", "media",
-            "wecker", "alarm",
-            "haus", "hausstatus", "haus-status",
-        ]
-        has_noun = any(n in t for n in _NOUNS)
+        has_noun = any(n in t for n in self._status_nouns)
         if not has_noun:
             return False
         # Ausschluss: Wenn Aktionswoerter vorhanden → Steuerbefehl, keine Query
-        _ACTION_EXCLUSIONS = [
-            "einstellen", "stellen", "stell ", "setzen", "setz ",
-            "dimmen", "dimm ", "heller", "dunkler",
-            "mach ", "schalte ", "dreh ", "aufdrehen", "andrehen",
-            "ausschalten", "einschalten", "anschalten", "abschalten",
-            "auf ", "runter", "hoch", "rauf",
-        ]
         # Prozent-Angabe mit Aktionskontext: "auf 10%" ist ein Befehl
         if re.search(r'auf\s+\d+\s*%', t):
             return False
-        if any(a in t for a in _ACTION_EXCLUSIONS):
+        if any(a in t for a in self._action_exclusions):
             return False
-        _QUERY_MARKERS = [
-            "welche", "sind ", "ist ", "status", "zeig", "liste",
-            "was ist", "wie ist", "noch an", "noch auf", "noch offen",
-            "abgedreht", "eingeschaltet", "ausgeschaltet", "angelassen",
-            "brennt", "brennen", "laeuft", "laufen", "offen",
-            "alle ", "alles ",
-        ]
-        if any(m in t for m in _QUERY_MARKERS):
+        if any(m in t for m in self._query_markers):
             return True
         # Fragen mit ? die ein Geraete-Nomen enthalten: "Rolllaeden?", "Lichter?"
         if t.rstrip().endswith("?"):
@@ -7029,7 +7079,7 @@ class AssistantBrain(BrainCallbacksMixin):
             Response-Dict oder None wenn kein Match.
         """
         t = text.lower().strip().rstrip("?!.")
-        if not any(p in t for p in self._DAS_UEBLICHE_PATTERNS):
+        if not any(p in t for p in self._das_uebliche_patterns):
             return None
 
         # Konfiguration pruefen
@@ -8863,7 +8913,7 @@ Regeln:
             category = "generic"
 
         import random
-        templates = self._ERROR_PATTERNS[category]
+        templates = self._error_templates.get(category, self._ERROR_PATTERNS.get(category, ["{device} — Fehler."]))
         return random.choice(templates).format(device=device)
 
     # MCU-JARVIS: Eskalations-Phrasen pro Severity-Stufe
@@ -8929,7 +8979,7 @@ Regeln:
                 pass
 
         # Prefix basierend auf Severity
-        prefix = random.choice(self._ESCALATION_PREFIXES.get(severity, self._ESCALATION_PREFIXES[1]))
+        prefix = random.choice(self._escalation_prefixes.get(severity, self._escalation_prefixes.get(1, ["Uebrigens —"])))
         prefix = prefix.replace("{title}", title)
 
         # Severity 4: Kurzer Kommentar, keine Erklaerung

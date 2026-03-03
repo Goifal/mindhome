@@ -75,6 +75,15 @@ class AutonomyManager:
             "lock_door", "arm_security_system", "set_presence_mode",
         ]))
 
+        # Konfigurierbare Action-Permissions und Evolution-Criteria
+        auto_cfg = yaml_config.get("autonomy", {})
+        self._action_permissions = auto_cfg.get("action_permissions") or dict(ACTION_PERMISSIONS)
+        raw_evo = auto_cfg.get("evolution_criteria")
+        if raw_evo:
+            self._evolution_criteria = {int(k): v for k, v in raw_evo.items()}
+        else:
+            self._evolution_criteria = dict(self._EVOLUTION_CRITERIA)
+
     def can_act(self, action_type: str) -> bool:
         """
         Prueft ob der Assistent diese Aktion ausfuehren darf.
@@ -85,7 +94,7 @@ class AutonomyManager:
         Returns:
             True wenn erlaubt
         """
-        required_level = ACTION_PERMISSIONS.get(action_type, 5)
+        required_level = self._action_permissions.get(action_type, 5)
         allowed = self.level >= required_level
         if not allowed:
             logger.debug(
@@ -312,7 +321,7 @@ class AutonomyManager:
         if next_level > max_level or next_level > 4:
             return None  # Level 5 nur manuell
 
-        criteria = self._EVOLUTION_CRITERIA.get(next_level)
+        criteria = self._evolution_criteria.get(next_level)
         if not criteria:
             return None
 
@@ -404,7 +413,7 @@ class AutonomyManager:
         """Gibt Info ueber den Evolution-Status zurueck (synchron, fuer API)."""
         evolution_cfg = yaml_config.get("autonomy", {}).get("evolution", {})
         next_level = self.level + 1
-        criteria = self._EVOLUTION_CRITERIA.get(next_level, {})
+        criteria = self._evolution_criteria.get(next_level, {})
         return {
             "enabled": evolution_cfg.get("enabled", True),
             "max_level": evolution_cfg.get("max_level", 3),

@@ -746,6 +746,44 @@ const HELP_TEXTS = {
   'response_filter.max_response_sentences': {title:'Max. Saetze', text:'Max. Saetze pro Antwort. 0 = unbegrenzt.'},
   'response_filter.banned_phrases': {title:'Verbotene Phrasen', text:'Phrasen die der Assistent nie verwenden soll.'},
   'response_filter.banned_starters': {title:'Verbotene Satzanfaenge', text:'Satzanfaenge die vermieden werden sollen.'},
+  'response_filter.sorry_patterns': {title:'Entschuldigungs-Filter', text:'Entschuldigungs-Phrasen die aus LLM-Antworten entfernt werden.'},
+  'response_filter.refusal_patterns': {title:'Verweigerungs-Filter', text:'Verweigerungs-Phrasen die aus Antworten entfernt werden.'},
+  'response_filter.chatbot_phrases': {title:'Chatbot-Floskeln-Filter', text:'Typische Chatbot-Floskeln die aus Antworten entfernt werden.'},
+  'personality.error_templates.unavailable': {title:'Fehler: Nicht erreichbar', text:'Fehlermeldungen wenn ein Geraet nicht erreichbar ist. Platzhalter: {device}'},
+  'personality.error_templates.timeout': {title:'Fehler: Timeout', text:'Fehlermeldungen bei Zeitueberschreitung. Platzhalter: {device}'},
+  'personality.error_templates.not_found': {title:'Fehler: Nicht gefunden', text:'Fehlermeldungen wenn ein Geraet nicht gefunden wird. Platzhalter: {device}'},
+  'personality.error_templates.unauthorized': {title:'Fehler: Nicht berechtigt', text:'Fehlermeldungen bei fehlender Berechtigung. Platzhalter: {device}'},
+  'personality.error_templates.generic': {title:'Fehler: Allgemein', text:'Allgemeine Fehlermeldungen. Platzhalter: {device}'},
+  'personality.escalation_prefixes.1': {title:'Eskalation: Beilaeufig', text:'Info-Einleitungen (geringste Warnstufe). Platzhalter: {title}'},
+  'personality.escalation_prefixes.2': {title:'Eskalation: Einwand', text:'Einwand-Einleitungen. Platzhalter: {title}'},
+  'personality.escalation_prefixes.3': {title:'Eskalation: Sorge', text:'Besorgnis-Einleitungen. Platzhalter: {title}'},
+  'personality.escalation_prefixes.4': {title:'Eskalation: Resignation', text:'Resignation-Einleitungen (hoechste Warnstufe). Platzhalter: {title}'},
+  'personality.sarcasm_positive_patterns': {title:'Sarkasmus: Positiv', text:'Erkennungsmuster fuer positives Feedback auf Sarkasmus.'},
+  'personality.sarcasm_negative_patterns': {title:'Sarkasmus: Negativ', text:'Erkennungsmuster fuer negatives Feedback auf Sarkasmus.'},
+  'stt_corrections.word_corrections': {title:'STT Wort-Korrekturen', text:'Einzelwort-Korrekturen fuer haeufige Spracherkennungsfehler.'},
+  'stt_corrections.phrase_corrections': {title:'STT Phrasen-Korrekturen', text:'Mehrwort-Korrekturen. Werden VOR Einzelwort-Korrekturen angewendet.'},
+  'command_detection.device_nouns': {title:'Geraete-Substantive', text:'Woerter die der Assistent als Geraete-Befehle erkennt.'},
+  'command_detection.action_words': {title:'Aktions-Woerter', text:'Woerter die eine Geraete-Aktion signalisieren.'},
+  'command_detection.command_verbs': {title:'Befehls-Verben', text:'Verben die einen Geraete-Befehl einleiten.'},
+  'command_detection.query_markers': {title:'Abfrage-Marker', text:'Woerter die eine Status-Abfrage erkennen.'},
+  'command_detection.action_exclusions': {title:'Aktions-Ausnahmen', text:'Woerter die als Aktion aussehen aber keine sind.'},
+  'command_detection.status_nouns': {title:'Status-Substantive', text:'Woerter die eine Status-Abfrage signalisieren.'},
+  'das_uebliche.patterns': {title:'Das-Uebliche Trigger', text:'Phrasen die die "Das Uebliche"-Routine ausloesen.'},
+  'autonomy.action_permissions': {title:'Aktions-Berechtigungen', text:'Mindest-Autonomie-Level pro Aktionstyp (1-5).'},
+  'autonomy.evolution_criteria': {title:'Evolution-Kriterien', text:'Kriterien fuer automatischen Autonomie-Aufstieg.'},
+  'activity.silence_keywords.watching': {title:'Stille: Film/TV', text:'Keywords die den "Film schauen"-Modus ausloesen.'},
+  'activity.silence_keywords.focused': {title:'Stille: Konzentration', text:'Keywords die den "Nicht stoeren"-Modus ausloesen.'},
+  'activity.silence_keywords.sleeping': {title:'Stille: Schlafen', text:'Keywords die den Schlaf-Modus ausloesen.'},
+  'memory.category_confidence.health': {title:'Konfidenz: Gesundheit', text:'Mindest-Sicherheit fuer Gesundheits-Fakten.'},
+  'memory.category_confidence.person': {title:'Konfidenz: Personen', text:'Mindest-Sicherheit fuer Personen-Fakten.'},
+  'memory.category_confidence.preference': {title:'Konfidenz: Vorlieben', text:'Mindest-Sicherheit fuer Vorlieben-Fakten.'},
+  'memory.category_confidence.habit': {title:'Konfidenz: Gewohnheiten', text:'Mindest-Sicherheit fuer Gewohnheits-Fakten.'},
+  'memory.category_confidence.work': {title:'Konfidenz: Arbeit', text:'Mindest-Sicherheit fuer Arbeits-Fakten.'},
+  'memory.category_confidence.intent': {title:'Konfidenz: Absichten', text:'Mindest-Sicherheit fuer Absichts-Fakten (kann sich aendern).'},
+  'memory.category_confidence.general': {title:'Konfidenz: Allgemein', text:'Mindest-Sicherheit fuer allgemeine Fakten.'},
+  'proactive.event_handlers': {title:'Event-Handler', text:'Prioritaeten und Beschreibungen fuer Event-Typen.'},
+  'ambient_audio.default_reactions': {title:'Audio-Reaktionen', text:'Standard-Reaktionen auf erkannte Audio-Events.'},
+  'entity_roles': {title:'Entity-Rollen', text:'Eigene Entity-Rollen fuer Geraete-Erkennung. Ueberschreiben Defaults aus entity_roles_defaults.yaml.'},
   // === GEDAECHTNIS ===
   'memory.extraction_enabled': {title:'Fakten-Extraktion', text:'Automatisch Fakten aus Gespraechen lernen und merken.'},
   'memory.extraction_min_words': {title:'Min. Nachrichtenlaenge', text:'Mindestlaenge damit Fakten extrahiert werden.'},
@@ -2151,6 +2189,26 @@ function renderPersonality() {
     fTextarea('personality.diagnostic_openers', 'Diagnose-Einleitungen', 'z.B. "Mir ist aufgefallen, dass" — wird zufaellig gewaehlt.') +
     fTextarea('personality.casual_warnings', 'Beilaeufige Warnungen', 'z.B. "Nur zur Kenntnis —" — Butler-Stil Understatement.')
   ) +
+  sectionWrap('&#9888;', 'Fehler-Templates',
+    fInfo('Fehlermeldungs-Templates pro Fehler-Kategorie. Platzhalter: {device} = Geraetename. Eine Phrase pro Zeile.') +
+    fTextarea('personality.error_templates.unavailable', 'Geraet nicht erreichbar') +
+    fTextarea('personality.error_templates.timeout', 'Zeitueberschreitung') +
+    fTextarea('personality.error_templates.not_found', 'Geraet nicht gefunden') +
+    fTextarea('personality.error_templates.unauthorized', 'Keine Berechtigung') +
+    fTextarea('personality.error_templates.generic', 'Allgemeiner Fehler')
+  ) +
+  sectionWrap('&#128227;', 'Eskalations-Phrasen',
+    fInfo('Formulierungen pro Warnstufe. Platzhalter: {title} = Anrede. Eine pro Zeile.') +
+    fTextarea('personality.escalation_prefixes.1', 'Stufe 1 — Beilaeufig (Info)') +
+    fTextarea('personality.escalation_prefixes.2', 'Stufe 2 — Einwand') +
+    fTextarea('personality.escalation_prefixes.3', 'Stufe 3 — Sorge') +
+    fTextarea('personality.escalation_prefixes.4', 'Stufe 4 — Resignation')
+  ) +
+  sectionWrap('&#128520;', 'Sarkasmus-Feedback',
+    fInfo('Erkennungsmuster fuer User-Feedback auf Sarkasmus. Wenn erkannt, wird Sarkasmus angepasst.') +
+    fTextarea('personality.sarcasm_positive_patterns', 'Positives Feedback (mehr Sarkasmus)', 'z.B. "haha", "witzig", "nice"') +
+    fTextarea('personality.sarcasm_negative_patterns', 'Negatives Feedback (weniger Sarkasmus)', 'z.B. "hoer auf", "nervt", "nicht witzig"')
+  ) +
   sectionWrap('&#128683;', 'Antwort-Filter',
     fInfo('Unerwuenschte Phrasen aus den Antworten filtern und maximale Antwortlaenge begrenzen.') +
     fToggle('response_filter.enabled', 'Antwort-Filter aktiv') +
@@ -2164,7 +2222,10 @@ function renderPersonality() {
       'Natuerlich!','Selbstverstaendlich!','Klar!','Gerne!',
       'Absolut!','Definitiv!','Auf jeden Fall!','Sicher!',
       'Das ist eine gute Frage','Ich verstehe'
-    ])
+    ]) +
+    fTextarea('response_filter.sorry_patterns', 'Entschuldigungs-Filter', 'Phrasen die aus Antworten entfernt werden. Eine pro Zeile.') +
+    fTextarea('response_filter.refusal_patterns', 'Verweigerungs-Filter', 'Verweigerungs-Phrasen die entfernt werden. Eine pro Zeile.') +
+    fTextarea('response_filter.chatbot_phrases', 'Chatbot-Floskeln-Filter', 'Typische Chatbot-Floskeln die entfernt werden. Eine pro Zeile.')
   );
 }
 
@@ -2182,7 +2243,16 @@ function renderMemory() {
     fRange('memory.min_confidence_for_context', 'Min. Sicherheit fuer Nutzung', 0, 1, 0.05, {0:'Alles nutzen',0.3:'Niedrig',0.5:'Mittel',0.6:'Standard',0.8:'Hoch',1:'Nur sichere'}) +
     fRange('memory.duplicate_threshold', 'Duplikat-Erkennung', 0, 1, 0.05, {0:'Streng',0.5:'Mittel',0.8:'Locker',1:'Aus'}) +
     fRange('memory.episode_min_words', 'Min. Woerter fuer Episode', 1, 20, 1) +
-    fRange('memory.default_confidence', 'Standard-Sicherheit neuer Fakten', 0, 1, 0.05)
+    fRange('memory.default_confidence', 'Standard-Sicherheit neuer Fakten', 0, 1, 0.05) +
+    '<div style="margin:14px 0 6px;font-weight:600;font-size:13px;">Kategorie-Sicherheit</div>' +
+    fInfo('Mindest-Konfidenz pro Fakten-Kategorie. Gesundheit/Sicherheit hoeher, Smalltalk niedriger.') +
+    fRange('memory.category_confidence.health', 'Gesundheit', 0, 1, 0.05) +
+    fRange('memory.category_confidence.person', 'Personen', 0, 1, 0.05) +
+    fRange('memory.category_confidence.preference', 'Vorlieben', 0, 1, 0.05) +
+    fRange('memory.category_confidence.habit', 'Gewohnheiten', 0, 1, 0.05) +
+    fRange('memory.category_confidence.work', 'Arbeit', 0, 1, 0.05) +
+    fRange('memory.category_confidence.intent', 'Absichten/Plaene', 0, 1, 0.05) +
+    fRange('memory.category_confidence.general', 'Allgemein', 0, 1, 0.05)
   ) +
   sectionWrap('&#128218;', 'Wissensdatenbank (RAG)',
     fInfo('Eigene Dokumente als Wissensquelle. Dateien in config/knowledge/ werden automatisch eingelesen.') +
@@ -2633,6 +2703,15 @@ function renderVoice() {
       <span class="info-icon">&#127916;</span>Einzelne Szenen-Uebergaenge konfigurierst du im <strong>Szenen</strong>-Tab. Klicke hier.
     </div>`
   ) +
+  sectionWrap('&#128295;', 'STT-Korrekturen',
+    fInfo('Spracherkennung macht Fehler — hier kannst du haeufige Korrekturen definieren. Mehrwort-Korrekturen werden VOR Einzelwort angewendet.') +
+    fKeyValue('stt_corrections.word_corrections', 'Einzelwort-Korrekturen',
+      'Falsch erkannt', 'Korrektur',
+      'z.B. "uber" → "ueber", "kuche" → "Kueche"') +
+    fKeyValue('stt_corrections.phrase_corrections', 'Mehrwort-Korrekturen',
+      'Falsche Phrase', 'Korrektur',
+      'z.B. "roll laden" → "Rollladen", "wohn zimmer" → "Wohnzimmer"')
+  ) +
   sectionWrap('&#128100;', 'Sprecher-Erkennung',
     fInfo('Erkennt wer spricht ueber 7 Methoden: Geraete-Zuordnung, Richtung (DoA), Raum, Anwesenheit, Stimmabdruck, Voice-Features und Cache. Lernt automatisch dazu.') +
     fToggle('speaker_recognition.enabled', 'Sprecher-Erkennung aktiv') +
@@ -2709,6 +2788,12 @@ function renderHouseStatus() {
     fNum('humidor.target_humidity', 'Ziel-Feuchtigkeit (%)', 50, 85, 1) +
     fNum('humidor.warn_below', 'Warnung unter (%)', 40, 80, 1) +
     fNum('humidor.warn_above', 'Warnung ueber (%)', 55, 90, 1)
+  ) +
+  sectionWrap('&#128164;', 'Stille-Keywords',
+    fInfo('Woerter die eine Aktivitaet erkennen und den "Nicht stoeren"-Modus ausloesen. Ein Wort pro Zeile.') +
+    fTextarea('activity.silence_keywords.watching', 'Film/TV schauen', 'z.B. "filmabend", "netflix", "serie schauen"') +
+    fTextarea('activity.silence_keywords.focused', 'Konzentriert/Meditieren', 'z.B. "meditation", "fokus", "nicht stoeren"') +
+    fTextarea('activity.silence_keywords.sleeping', 'Schlafen', 'z.B. "gute nacht", "ich geh schlafen"')
   );
 }
 
@@ -3073,6 +3158,10 @@ function renderProactive() {
     fRange('insights.thresholds.energy_anomaly_percent', 'Energie-Abweichung', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'}) +
     fRange('insights.thresholds.away_device_minutes', 'Abwesend-Hinweis nach', 30, 480, 30, {30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std',480:'8 Std'}) +
     fRange('insights.thresholds.temp_drop_degrees_per_2h', 'Temp-Abfall Schwelle', 1, 10, 1, {1:'1\u00B0C',2:'2\u00B0C',3:'3\u00B0C',5:'5\u00B0C',10:'10\u00B0C'})
+  ) +
+  sectionWrap('&#128226;', 'Event-Handler',
+    fInfo('Prioritaeten fuer verschiedene Event-Typen. Event-Typen mit hoeherer Prioritaet durchbrechen "Nicht stoeren". In settings.yaml unter proactive.event_handlers anpassbar.') +
+    fTextarea('proactive.event_handlers', 'Event-Handler (JSON)', 'Format: {"event_name": {"priority": "critical|high|medium|low", "description": "..."}}')
   );
 }
 
@@ -3334,7 +3423,17 @@ function renderJarvisFeatures() {
     fInfo('Sage "das Uebliche", "wie immer" oder "mach fertig" — Jarvis erkennt gelernte Muster fuer die aktuelle Tageszeit und fuehrt sie aus. Basiert auf dem Vorausdenken-Modul (Anticipation Engine).') +
     fToggle('das_uebliche.enabled', '"Das Uebliche" aktiv') +
     fRange('das_uebliche.auto_execute_confidence', 'Auto-Ausfuehren ab Sicherheit', 0.5, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%',1:'100%'}) +
-    fRange('das_uebliche.suggest_confidence', 'Nachfragen ab Sicherheit', 0.3, 1, 0.05, {0.3:'30%',0.4:'40%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'})
+    fRange('das_uebliche.suggest_confidence', 'Nachfragen ab Sicherheit', 0.3, 1, 0.05, {0.3:'30%',0.4:'40%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'}) +
+    fTextarea('das_uebliche.patterns', 'Trigger-Phrasen', 'Phrasen die "Das Uebliche" ausloesen. Eine pro Zeile.')
+  ) +
+  sectionWrap('&#127899;', 'Geraete-Erkennung',
+    fInfo('Woerter die der Assistent zur Erkennung von Geraete-Befehlen und Status-Abfragen nutzt. Ein Wort pro Zeile.') +
+    fTextarea('command_detection.device_nouns', 'Geraete-Substantive', 'z.B. "rollladen", "licht", "lampe"') +
+    fTextarea('command_detection.action_words', 'Aktions-Woerter', 'z.B. "auf", "zu", "an", "aus"') +
+    fTextarea('command_detection.command_verbs', 'Befehls-Verben', 'z.B. "mach ", "schalte ", "stell "') +
+    fTextarea('command_detection.query_markers', 'Abfrage-Marker', 'z.B. "welche", "status", "zeig"') +
+    fTextarea('command_detection.action_exclusions', 'Aktions-Ausnahmen', 'z.B. "einstellen", "dimmen"') +
+    fTextarea('command_detection.status_nouns', 'Status-Substantive', 'z.B. "rollladen", "rollo" (inkl. Plurale)')
   );
 }
 
@@ -3489,6 +3588,25 @@ function renderSecurity() {
     fRange('situation_model.min_pause_minutes', 'Mindest-Pause zwischen Deltas (Min)', 5, 120, 5) +
     fRange('situation_model.max_changes', 'Max. gemeldete Aenderungen', 1, 10, 1) +
     fRange('situation_model.temp_threshold', 'Temperatur-Schwelle (°C)', 1, 5, 0.5)
+  ) +
+  sectionWrap('&#9878;', 'Konflikt-Sicherheitsgrenzen',
+    fInfo('Sicherheitsgrenzen fuer Kompromiss-Werte bei Konflikten (z.B. wenn zwei Personen verschiedene Temperaturen wollen).') +
+    '<div style="margin:8px 0;font-weight:600;font-size:13px;">Klima</div>' +
+    fRange('conflict_resolution.safe_limits.climate.temperature.0', 'Temperatur Min (°C)', 10, 20, 0.5) +
+    fRange('conflict_resolution.safe_limits.climate.temperature.1', 'Temperatur Max (°C)', 22, 35, 0.5) +
+    fRange('conflict_resolution.safe_limits.climate.offset.0', 'Offset Min (°C)', -5, 0, 0.5) +
+    fRange('conflict_resolution.safe_limits.climate.offset.1', 'Offset Max (°C)', 0, 5, 0.5) +
+    '<div style="margin:8px 0;font-weight:600;font-size:13px;">Licht / Rollladen / Medien</div>' +
+    fRange('conflict_resolution.safe_limits.light.brightness.0', 'Helligkeit Min (%)', 0, 50, 5) +
+    fRange('conflict_resolution.safe_limits.light.brightness.1', 'Helligkeit Max (%)', 50, 100, 5) +
+    fRange('conflict_resolution.safe_limits.cover.position.0', 'Rollladen Min (%)', 0, 50, 5) +
+    fRange('conflict_resolution.safe_limits.cover.position.1', 'Rollladen Max (%)', 50, 100, 5) +
+    fRange('conflict_resolution.safe_limits.media.volume.0', 'Lautstaerke Min (%)', 0, 50, 5) +
+    fRange('conflict_resolution.safe_limits.media.volume.1', 'Lautstaerke Max (%)', 50, 100, 5)
+  ) +
+  sectionWrap('&#127911;', 'Audio-Event-Reaktionen',
+    fInfo('Standard-Reaktionen auf erkannte Audio-Events (Glasbruch, Rauch, etc.). In settings.yaml unter ambient_audio.default_reactions anpassbar.') +
+    fTextarea('ambient_audio.default_reactions', 'Reaktionen (JSON)', 'Format: {"event_typ": {"severity": "critical|high|info", "message_de": "...", "actions": [...]}}')
   );
 }
 
@@ -3836,6 +3954,14 @@ function renderAutonomie() {
   return sectionWrap('&#9889;', 'Autonomie',
     fInfo('Wie selbststaendig darf der Assistent handeln? Je hoeher, desto mehr macht er eigenstaendig.') +
     fRange('autonomy.level', 'Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+  ) +
+  sectionWrap('&#128272;', 'Aktions-Berechtigungen',
+    fInfo('Mindest-Autonomie-Level pro Aktionstyp. Werte 1-5. In settings.yaml unter autonomy.action_permissions anpassbar.') +
+    fTextarea('autonomy.action_permissions', 'Berechtigungen (JSON)', 'Format: {"aktion": level}. z.B. {"proactive_info": 2, "adjust_temperature_small": 3}')
+  ) +
+  sectionWrap('&#128200;', 'Evolution-Kriterien',
+    fInfo('Kriterien fuer automatischen Autonomie-Aufstieg. Level 5 nur manuell. In settings.yaml unter autonomy.evolution_criteria anpassbar.') +
+    fTextarea('autonomy.evolution_criteria', 'Kriterien (JSON)', 'Format: {"2": {"min_days": 30, "min_interactions": 200, "min_acceptance": 0.7}}')
   ) +
   sectionWrap('&#129302;', 'Selbstoptimierung',
     fInfo('Der Assistent lernt aus euren Gespraechen und schlaegt Verbesserungen vor. Du entscheidest ob Vorschlaege angenommen werden. Die Kern-Identitaet ist geschuetzt.') +
@@ -7646,6 +7772,10 @@ function renderDevices() {
   sectionWrap('&#128736;', 'Wartung',
     fInfo('Automatische Wartungshinweise fuer Geraete im Haushalt.') +
     fToggle('maintenance.enabled', 'Wartungs-Erinnerungen aktiv')
+  ) +
+  sectionWrap('&#127899;', 'Entity-Rollen',
+    fInfo('Standard-Rollen fuer Entity-Erkennung werden aus config/entity_roles_defaults.yaml geladen. Eigene Rollen oder Overrides hier definieren (ueberschreiben Defaults).') +
+    fTextarea('entity_roles', 'Eigene Entity-Rollen (JSON)', 'Format: {"rolle_id": {"label": "Name", "icon": "Emoji", "keywords": ["wort1", "wort2"]}}')
   );
 }
 

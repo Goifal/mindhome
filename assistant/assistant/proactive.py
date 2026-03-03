@@ -111,51 +111,42 @@ class ProactiveManager:
         self._ws_window_end = ws_cfg.get("window_end_hour", 9)
         self._ws_briefing_delay = ws_cfg.get("briefing_delay_seconds", 45)
 
-        # Event-Mapping: HA Event -> Prioritaet + Beschreibung
+        # Event-Mapping: HA Event -> Prioritaet + Beschreibung (Hardcoded Defaults)
+        _PRIORITY_MAP = {"critical": CRITICAL, "high": HIGH, "medium": MEDIUM, "low": LOW}
         self.event_handlers = {
-            # CRITICAL - Immer melden
             "alarm_triggered": (CRITICAL, "Alarm ausgeloest"),
             "smoke_detected": (CRITICAL, "Rauch erkannt"),
             "water_leak": (CRITICAL, "Wasseraustritt erkannt"),
-
-            # HIGH - Melden wenn wach
             "motion_detected_night": (HIGH, "Naechtliche Bewegung"),
-
-            # MEDIUM - Melden wenn passend
             "person_arrived": (MEDIUM, "Person angekommen"),
             "person_left": (MEDIUM, "Person gegangen"),
             "washer_done": (MEDIUM, "Waschmaschine fertig"),
             "dryer_done": (MEDIUM, "Trockner fertig"),
             "doorbell": (MEDIUM, "Jemand hat geklingelt"),
             "night_motion_camera": (MEDIUM, "Naechtliche Bewegung erkannt"),
-
-            # LOW - Melden wenn entspannt
             "weather_warning": (LOW, "Wetterwarnung"),
             "window_open_rain": (LOW, "Fenster offen bei Regen"),
-
-            # Phase 10: Diagnostik + Wartung
             "entity_offline": (MEDIUM, "Entity offline"),
             "low_battery": (MEDIUM, "Batterie niedrig"),
             "stale_sensor": (LOW, "Sensor reagiert nicht"),
             "maintenance_due": (LOW, "Wartungsaufgabe faellig"),
-
-            # Phase 10.1: Musik-Follow
             "music_follow": (LOW, "Musik folgen"),
-
-            # Phase 7.4: Geo-Fence
             "person_approaching": (LOW, "Person naehert sich"),
             "person_arriving": (MEDIUM, "Person gleich zuhause"),
-
-            # Phase 7.9: Saisonale Aktionen
             "seasonal_cover": (LOW, "Rolladen saisonal angepasst"),
-
-            # Phase 17: Neue Features
             "conditional_executed": (MEDIUM, "Bedingte Aktion ausgefuehrt"),
             "learning_suggestion": (LOW, "Automatisierungs-Vorschlag"),
             "threat_detected": (HIGH, "Sicherheitswarnung"),
             "energy_price_high": (LOW, "Teurer Strom"),
             "solar_surplus": (LOW, "Solar-Ueberschuss"),
         }
+        # YAML-Overrides anwenden (Event-Handler konfigurierbar)
+        yaml_handlers = pro_cfg.get("event_handlers", {})
+        for event_name, info in yaml_handlers.items():
+            if isinstance(info, dict):
+                prio = _PRIORITY_MAP.get(info.get("priority", "low"), LOW)
+                desc = info.get("description", event_name)
+                self.event_handlers[event_name] = (prio, desc)
 
     def _is_quiet_hours(self) -> bool:
         """Prueft ob gerade Quiet Hours aktiv sind (z.B. 22:00-07:00)."""

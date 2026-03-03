@@ -1,0 +1,628 @@
+# Entity-Roles Defaults: Rollen-Definitionen fuer Entity-Erkennung
+#
+# Dieses File definiert Rollen, die der Assistant zur Geraete-Erkennung nutzt.
+# Aenderungen hier ueberschreiben die Python-Defaults.
+# User-spezifische Overrides koennen in settings.yaml unter 'entity_roles:' definiert werden.
+#
+# Format pro Rolle:
+#   role_id:
+#     label: "Anzeigename"
+#     icon: "Emoji"
+#     keywords: ["keyword1", "keyword2", ...]
+#
+# Die Keywords werden fuer natuerliche-Sprache Matching verwendet:
+#   "Wie warm ist es draussen?" -> keywords ["aussen", "draussen"] -> outdoor_temp
+#
+# device_class_to_role: Mapping von HA device_class auf Rollen-ID
+#   (wird bei automatischer Entity-Erkennung verwendet)
+
+roles:
+  # --- Temperatur & Klima ---
+  indoor_temp:
+    label: "Raumtemperatur"
+    icon: "\U0001F321\uFE0F"
+    keywords: ["innen", "raum", "drinnen", "raumtemperatur", "zimmertemperatur",
+               "indoor", "room temperature", "inside temperature"]
+  outdoor_temp:
+    label: "Aussentemperatur"
+    icon: "\U0001F324\uFE0F"
+    keywords: ["aussen", "draussen", "outdoor", "balkon", "aussentemperatur",
+               "gartentemperatur", "outside temperature", "exterior",
+               "patio", "garden temperature", "weather temperature"]
+  water_temp:
+    label: "Wassertemperatur"
+    icon: "\U0001F30A"
+    keywords: ["wassertemperatur", "boiler", "warmwasser", "pooltemperatur",
+               "water temperature", "hot water", "dhw", "flow temperature",
+               "return temperature"]
+  soil_temp:
+    label: "Bodentemperatur"
+    icon: "\U0001F33F"
+    keywords: ["bodentemperatur", "erdtemperatur", "soil temperature",
+               "ground temperature", "greenhouse"]
+  humidity:
+    label: "Luftfeuchtigkeit"
+    icon: "\U0001F4A7"
+    keywords: ["feuchtigkeit", "feuchte", "luftfeuchte", "luftfeuchtigkeit",
+               "humidity", "relative humidity", "moisture"]
+  pressure:
+    label: "Luftdruck"
+    icon: "\U0001F4A8"
+    keywords: ["luftdruck", "druck", "barometer",
+               "air pressure", "barometric", "atmospheric"]
+  dew_point:
+    label: "Taupunkt"
+    icon: "\U0001F4A7"
+    keywords: ["taupunkt", "dew point"]
+
+  # --- Luftqualitaet ---
+  co2:
+    label: "CO2-Sensor"
+    icon: "\U0001F32C\uFE0F"
+    keywords: ["co2", "kohlendioxid", "carbon dioxide"]
+  co:
+    label: "CO-Melder"
+    icon: "\u26A0\uFE0F"
+    keywords: ["kohlenmonoxid", "co-melder", "carbon monoxide"]
+  voc:
+    label: "VOC-Sensor (fluechtige Stoffe)"
+    icon: "\U0001F4A8"
+    keywords: ["voc", "fluechtige", "organische", "volatile organic", "tvoc"]
+  pm25:
+    label: "Feinstaub PM2.5"
+    icon: "\U0001F32B\uFE0F"
+    keywords: ["feinstaub", "pm2.5", "pm25", "partikel", "particulate", "fine dust"]
+  pm10:
+    label: "Feinstaub PM10"
+    icon: "\U0001F32B\uFE0F"
+    keywords: ["pm10", "feinstaub pm10", "grobstaub", "coarse dust", "particulate pm10"]
+  air_quality:
+    label: "Luftqualitaet"
+    icon: "\U0001F343"
+    keywords: ["luftqualitaet", "luft qualitaet", "aqi", "air quality", "air quality index"]
+  radon:
+    label: "Radon"
+    icon: "\u2622\uFE0F"
+    keywords: ["radon", "radon sensor", "radioaktiv"]
+
+  # --- Wetter ---
+  wind_speed:
+    label: "Windgeschwindigkeit"
+    icon: "\U0001F4A8"
+    keywords: ["wind", "windgeschwindigkeit", "windstaerke", "wind speed", "wind gust", "windboee"]
+  wind_direction:
+    label: "Windrichtung"
+    icon: "\U0001F9ED"
+    keywords: ["windrichtung", "wind direction", "wind bearing"]
+  rain:
+    label: "Niederschlag/Regen"
+    icon: "\U0001F327\uFE0F"
+    keywords: ["regen", "niederschlag", "rain", "precipitation", "rainfall"]
+  rain_sensor:
+    label: "Regensensor"
+    icon: "\U0001F327\uFE0F"
+    keywords: ["regensensor", "regenmelder", "rain sensor", "rain detector"]
+  uv_index:
+    label: "UV-Index"
+    icon: "\u2600\uFE0F"
+    keywords: ["uv", "uv-index", "sonnenbrand", "ultraviolet"]
+  solar_radiation:
+    label: "Sonneneinstrahlung"
+    icon: "\u2600\uFE0F"
+    keywords: ["sonneneinstrahlung", "solarstrahlung", "irradiance", "solar radiation", "sun intensity"]
+
+  # --- Licht & Helligkeit ---
+  light:
+    label: "Beleuchtung"
+    icon: "\U0001F4A1"
+    keywords: ["licht", "lampe", "beleuchtung", "leuchte", "light", "lamp", "lighting"]
+  dimmer:
+    label: "Dimmer"
+    icon: "\U0001F4A1"
+    keywords: ["dimmer", "dimmen", "dimmbar", "dimmschalter", "dimmer switch", "dimmable"]
+  color_light:
+    label: "Farblicht/RGB"
+    icon: "\U0001F308"
+    keywords: ["farblicht", "rgb", "farbig", "bunt", "farbwechsel", "color light", "rgb light", "hue", "color changing"]
+  light_level:
+    label: "Lichtsensor"
+    icon: "\u2600\uFE0F"
+    keywords: ["lichtsensor", "helligkeit", "lichtstaerke", "lux", "light sensor", "light level", "illuminance", "brightness sensor"]
+
+  # --- Sicherheit & Alarm ---
+  smoke:
+    label: "Rauchmelder"
+    icon: "\U0001F525"
+    keywords: ["rauch", "rauchmelder", "smoke", "smoke detector"]
+  gas:
+    label: "Gasmelder"
+    icon: "\u26A0\uFE0F"
+    keywords: ["gas", "gasmelder", "erdgas", "gas detector", "natural gas"]
+  water_leak:
+    label: "Wassermelder"
+    icon: "\U0001F6B0"
+    keywords: ["wasserleck", "leck", "wassermelder", "ueberschwemmung", "water leak", "flood", "leak detector"]
+  tamper:
+    label: "Manipulationserkennung"
+    icon: "\U0001F6A8"
+    keywords: ["manipulation", "tamper", "sabotage", "tampering"]
+  alarm:
+    label: "Alarmanlage"
+    icon: "\U0001F6A8"
+    keywords: ["alarm", "alarmanlage", "einbruch", "security", "burglar", "intrusion", "sicherheit"]
+  siren:
+    label: "Sirene"
+    icon: "\U0001F4E2"
+    keywords: ["sirene", "alarmsirene", "siren", "horn"]
+
+  # --- Tueren, Fenster, Oeffnungen ---
+  window_contact:
+    label: "Fensterkontakt"
+    icon: "\U0001FA9F"
+    keywords: ["fenster", "window", "window sensor", "fensterkontakt"]
+  door_contact:
+    label: "Tuerkontakt"
+    icon: "\U0001F6AA"
+    keywords: ["tuer", "tuerkontakt", "door", "haustuer", "eingangstuer", "front door", "entrance", "door sensor"]
+  garage_door:
+    label: "Garagentor"
+    icon: "\U0001F3E0"
+    keywords: ["garage", "garagentor", "garage door"]
+  gate:
+    label: "Tor/Einfahrt"
+    icon: "\U0001F3E0"
+    keywords: ["tor", "einfahrt", "gate", "driveway"]
+  lock:
+    label: "Schloss"
+    icon: "\U0001F510"
+    keywords: ["schloss", "verriegelt", "lock", "deadbolt", "locked", "unlocked"]
+  doorbell:
+    label: "Tuerklingel"
+    icon: "\U0001F514"
+    keywords: ["klingel", "tuerklingel", "doorbell", "ring", "chime"]
+
+  # --- Bewegung & Anwesenheit ---
+  motion:
+    label: "Bewegungsmelder"
+    icon: "\U0001F3C3"
+    keywords: ["bewegung", "motion", "bewegungsmelder", "motion sensor", "motion detector", "pir"]
+  presence:
+    label: "Anwesenheit"
+    icon: "\U0001F464"
+    keywords: ["anwesenheit", "zuhause", "abwesend", "presence", "home", "away", "at home", "not home"]
+  occupancy:
+    label: "Raumbelegung"
+    icon: "\U0001F465"
+    keywords: ["belegung", "besetzt", "raumbelegung", "occupancy", "occupied", "room occupancy"]
+  bed_occupancy:
+    label: "Bettbelegung"
+    icon: "\U0001F6CF\uFE0F"
+    keywords: ["bett", "bettbelegung", "bett sensor", "bed", "bed_occupancy", "schlafsensor", "bed sensor", "sleep sensor", "bed occupancy"]
+  chair_occupancy:
+    label: "Stuhlbelegung"
+    icon: "\U0001FA91"
+    keywords: ["stuhl", "stuhlbelegung", "stuhlsensor", "chair", "sitzflaeche", "sitzsensor", "chair sensor", "seat sensor", "chair occupancy"]
+  vibration:
+    label: "Vibration"
+    icon: "\U0001F4F3"
+    keywords: ["vibration", "erschuetterung", "vibrationssensor", "vibration sensor", "shock sensor"]
+
+  # --- Energie & Strom ---
+  power_meter:
+    label: "Strommesser"
+    icon: "\u26A1"
+    keywords: ["strom", "leistung", "watt", "strommesser", "power", "power meter", "power consumption", "wattage"]
+  energy:
+    label: "Energiezaehler"
+    icon: "\U0001F4CA"
+    keywords: ["energie", "kwh", "energieverbrauch", "stromverbrauch", "energy", "energy consumption", "electricity"]
+  voltage:
+    label: "Spannung"
+    icon: "\u26A1"
+    keywords: ["spannung", "volt", "voltage"]
+  current:
+    label: "Stromstaerke"
+    icon: "\u26A1"
+    keywords: ["stromstaerke", "ampere", "current", "amps"]
+  power_factor:
+    label: "Leistungsfaktor"
+    icon: "\U0001F4CA"
+    keywords: ["leistungsfaktor", "cos phi", "power factor"]
+  frequency:
+    label: "Frequenz"
+    icon: "\U0001F4CA"
+    keywords: ["frequenz", "hertz", "netzfrequenz", "frequency", "grid frequency"]
+  battery:
+    label: "Batterie"
+    icon: "\U0001F50B"
+    keywords: ["batterie", "akku", "battery", "charge level"]
+  battery_charging:
+    label: "Batterie laden"
+    icon: "\U0001F50B"
+    keywords: ["batterie laden", "akku laden", "ladevorgang", "battery charging", "charging"]
+  solar:
+    label: "Solaranlage/PV"
+    icon: "\u2600\uFE0F"
+    keywords: ["solar", "photovoltaik", "pv", "solaranlage", "photovoltaic", "solar panel", "solar power"]
+  grid_feed:
+    label: "Netzeinspeisung"
+    icon: "\u26A1"
+    keywords: ["netzeinspeisung", "einspeisung", "einspeisen", "grid feed", "feed-in", "grid export"]
+  grid_consumption:
+    label: "Netzbezug"
+    icon: "\u26A1"
+    keywords: ["netzbezug", "strombezug", "netzverbrauch", "grid consumption", "grid import"]
+
+  # --- Gas & Wasser Verbrauch ---
+  gas_consumption:
+    label: "Gasverbrauch"
+    icon: "\U0001F525"
+    keywords: ["gasverbrauch", "kubikmeter", "gas consumption", "gas meter", "gas usage"]
+  water_consumption:
+    label: "Wasserverbrauch"
+    icon: "\U0001F4A7"
+    keywords: ["wasserverbrauch", "water consumption", "water meter", "water usage"]
+
+  # --- Heizung, Kuehlung, Klima ---
+  thermostat:
+    label: "Thermostat"
+    icon: "\U0001F321\uFE0F"
+    keywords: ["thermostat", "temperature setpoint", "solltemperatur"]
+  heating:
+    label: "Heizung"
+    icon: "\U0001F525"
+    keywords: ["heizung", "heizen", "heating", "heat"]
+  cooling:
+    label: "Kuehlung"
+    icon: "\u2744\uFE0F"
+    keywords: ["kuehlung", "kuehlen", "klimaanlage", "cooling", "air conditioning", "ac", "hvac"]
+  heat_pump:
+    label: "Waermepumpe"
+    icon: "\U0001F504"
+    keywords: ["waermepumpe", "heat pump"]
+  boiler:
+    label: "Warmwasserboiler"
+    icon: "\U0001F6BF"
+    keywords: ["boiler", "warmwasserspeicher", "hot water tank"]
+  radiator:
+    label: "Heizkoerper"
+    icon: "\U0001F321\uFE0F"
+    keywords: ["heizkoerper", "radiator"]
+  floor_heating:
+    label: "Fussbodenheizung"
+    icon: "\U0001F321\uFE0F"
+    keywords: ["fussbodenheizung", "fbh", "underfloor heating", "floor heating", "ufh"]
+
+  # --- Lueftung ---
+  fan:
+    label: "Luefter"
+    icon: "\U0001F300"
+    keywords: ["luefter", "ventilator", "fan", "exhaust"]
+  ventilation:
+    label: "Lueftungsanlage"
+    icon: "\U0001F32C\uFE0F"
+    keywords: ["lueftung", "lueftungsanlage", "kwl", "ventilation", "hrv", "erv", "air exchange"]
+  air_purifier:
+    label: "Luftreiniger"
+    icon: "\U0001F343"
+    keywords: ["luftreiniger", "luftfilter", "air purifier", "air filter"]
+  dehumidifier:
+    label: "Entfeuchter"
+    icon: "\U0001F4A7"
+    keywords: ["entfeuchter", "luftentfeuchter", "raumentfeuchter", "dehumidifier"]
+  humidifier:
+    label: "Befeuchter"
+    icon: "\U0001F4A7"
+    keywords: ["befeuchter", "luftbefeuchter", "raumbefeuchter", "humidifier"]
+
+  # --- Beschattung ---
+  blinds:
+    label: "Rolladen/Jalousie"
+    icon: "\U0001FA9F"
+    keywords: ["rolladen", "jalousie", "rollo", "blinds", "shades", "roller shutter"]
+  shutter:
+    label: "Rollladen"
+    icon: "\U0001FA9F"
+    keywords: ["rollladen", "shutter"]
+  awning:
+    label: "Markise"
+    icon: "\u2602\uFE0F"
+    keywords: ["markise", "awning"]
+  curtain:
+    label: "Vorhang"
+    icon: "\U0001FA9F"
+    keywords: ["vorhang", "gardine", "curtain", "drape"]
+
+  # --- Steckdosen & Aktoren ---
+  outlet:
+    label: "Steckdose"
+    icon: "\U0001F50C"
+    keywords: ["steckdose", "stecker", "outlet", "plug", "socket"]
+  valve:
+    label: "Ventil"
+    icon: "\U0001F527"
+    keywords: ["ventil", "valve"]
+  pump:
+    label: "Pumpe"
+    icon: "\U0001F504"
+    keywords: ["pumpe", "pump"]
+  motor:
+    label: "Motor"
+    icon: "\u2699\uFE0F"
+    keywords: ["motor", "antrieb", "actuator", "drive"]
+  relay:
+    label: "Relais"
+    icon: "\U0001F50C"
+    keywords: ["relais", "schaltrelais", "relay", "switch relay"]
+
+  # --- Garten & Aussen ---
+  irrigation:
+    label: "Bewaesserung"
+    icon: "\U0001F331"
+    keywords: ["bewaesserung", "sprinkler", "gartenschlauch", "irrigation", "watering", "lawn"]
+  pool:
+    label: "Pool/Schwimmbad"
+    icon: "\U0001F3CA"
+    keywords: ["pool", "schwimmbad", "whirlpool", "swimming pool", "hot tub", "spa"]
+  soil_moisture:
+    label: "Bodenfeuchtigkeit"
+    icon: "\U0001F331"
+    keywords: ["bodenfeuchtigkeit", "erdfeuchte", "soil moisture", "soil humidity"]
+  garden_light:
+    label: "Gartenbeleuchtung"
+    icon: "\U0001F33B"
+    keywords: ["gartenlicht", "gartenbeleuchtung", "gartenlampe", "aussenleuchte", "garden light", "outdoor light", "landscape light"]
+
+  # --- Medien & Unterhaltung ---
+  tv:
+    label: "Fernseher"
+    icon: "\U0001F4FA"
+    keywords: ["fernseher", "tv", "television"]
+  speaker:
+    label: "Lautsprecher"
+    icon: "\U0001F50A"
+    keywords: ["lautsprecher", "speaker", "box", "sonos", "echo", "homepod"]
+  media_player:
+    label: "Mediaplayer"
+    icon: "\u25B6\uFE0F"
+    keywords: ["mediaplayer", "player", "streamer", "media player"]
+  receiver:
+    label: "AV-Receiver"
+    icon: "\U0001F3B5"
+    keywords: ["receiver", "verstaerker", "av-receiver", "amplifier", "av receiver"]
+  projector:
+    label: "Beamer/Projektor"
+    icon: "\U0001F4FD\uFE0F"
+    keywords: ["beamer", "projektor", "projector"]
+  gaming:
+    label: "Spielkonsole"
+    icon: "\U0001F3AE"
+    keywords: ["spielkonsole", "konsole", "playstation", "xbox", "nintendo", "gaming", "game console"]
+
+  # --- Kommunikation ---
+  phone:
+    label: "Telefon"
+    icon: "\U0001F4DE"
+    keywords: ["telefon", "phone", "sip", "anruf", "festnetz", "voip", "landline", "call"]
+
+  # --- Netzwerk & IT ---
+  router:
+    label: "Router"
+    icon: "\U0001F4F6"
+    keywords: ["router", "wlan", "wifi", "access point", "mesh"]
+  server:
+    label: "Server"
+    icon: "\U0001F5A5\uFE0F"
+    keywords: ["server"]
+  nas:
+    label: "NAS-Speicher"
+    icon: "\U0001F4BE"
+    keywords: ["nas", "netzwerkspeicher", "network storage"]
+  printer:
+    label: "Drucker"
+    icon: "\U0001F5A8\uFE0F"
+    keywords: ["drucker", "printer", "3d-drucker", "3d printer"]
+  pc:
+    label: "PC/Computer"
+    icon: "\U0001F4BB"
+    keywords: ["pc", "computer", "desktop", "rechner", "workstation"]
+  adblocker:
+    label: "Adblocker"
+    icon: "\U0001F6E1\uFE0F"
+    keywords: ["adblocker", "adblock", "adguard", "pihole", "werbeblocker", "ad blocker", "dns filter"]
+  speedtest:
+    label: "Internet-Geschwindigkeit"
+    icon: "\U0001F4F6"
+    keywords: ["speedtest", "internetgeschwindigkeit", "internet speed", "internet geschwindigkeit", "bandbreite", "download speed", "upload speed", "bandwidth"]
+  signal_strength:
+    label: "Signalstaerke"
+    icon: "\U0001F4F6"
+    keywords: ["signalstaerke", "empfang", "signal strength", "rssi", "snr"]
+  connectivity:
+    label: "Verbindungsstatus"
+    icon: "\U0001F4F6"
+    keywords: ["verbindung", "verbindungsstatus", "online", "erreichbar", "connectivity", "connection status"]
+
+  # --- Haushaltsgeraete ---
+  washing_machine:
+    label: "Waschmaschine"
+    icon: "\U0001F9F9"
+    keywords: ["waschmaschine", "waschen", "washing machine", "washer", "laundry"]
+  dryer:
+    label: "Trockner"
+    icon: "\U0001F32C\uFE0F"
+    keywords: ["trockner", "dryer", "tumble dryer"]
+  dishwasher:
+    label: "Spuelmaschine"
+    icon: "\U0001F37D\uFE0F"
+    keywords: ["spuelmaschine", "geschirrspueler", "dishwasher"]
+  oven:
+    label: "Backofen"
+    icon: "\U0001F373"
+    keywords: ["backofen", "ofen", "herd", "oven", "stove"]
+  fridge:
+    label: "Kuehlschrank"
+    icon: "\u2744\uFE0F"
+    keywords: ["kuehlschrank", "kuehl", "fridge", "refrigerator"]
+  freezer:
+    label: "Gefrierschrank"
+    icon: "\u2744\uFE0F"
+    keywords: ["gefrierschrank", "gefrier", "tiefkuehl", "freezer", "deep freeze"]
+  vacuum:
+    label: "Staubsauger-Roboter"
+    icon: "\U0001F9F9"
+    keywords: ["staubsauger", "saugroboter", "roborock", "vacuum", "robot vacuum", "roomba"]
+  coffee_machine:
+    label: "Kaffeemaschine"
+    icon: "\u2615"
+    keywords: ["kaffeemaschine", "kaffee", "espresso", "coffee", "coffee machine", "coffee maker"]
+  charger:
+    label: "Ladegeraet"
+    icon: "\U0001F50B"
+    keywords: ["ladegeraet", "lader", "charger"]
+
+  # --- Fahrzeuge ---
+  ev_charger:
+    label: "Wallbox/E-Auto-Lader"
+    icon: "\U0001F50C"
+    keywords: ["wallbox", "ladestation", "e-auto", "elektroauto", "ev charger", "electric vehicle", "charging station", "evse"]
+  car:
+    label: "Auto/Fahrzeug"
+    icon: "\U0001F697"
+    keywords: ["auto", "fahrzeug", "pkw", "car", "vehicle"]
+  car_battery:
+    label: "Auto-Batterie/SoC"
+    icon: "\U0001F50B"
+    keywords: ["autobatterie", "soc", "ladestand", "car battery", "state of charge", "ev battery"]
+  car_location:
+    label: "Fahrzeug-Standort"
+    icon: "\U0001F4CD"
+    keywords: ["auto standort", "fahrzeug standort", "auto position", "wo ist mein auto", "car location", "vehicle location", "car tracker"]
+
+  # --- Ueberwachung ---
+  camera:
+    label: "Kamera"
+    icon: "\U0001F4F7"
+    keywords: ["kamera", "ueberwachung", "cam", "camera", "surveillance", "cctv", "webcam"]
+  intercom:
+    label: "Gegensprechanlage"
+    icon: "\U0001F4DE"
+    keywords: ["gegensprech", "sprechanlage", "tuersprechanlage", "klingelanlage", "intercom", "door station", "video doorbell"]
+
+  # --- Sonstiges ---
+  scene:
+    label: "Szene"
+    icon: "\U0001F3AC"
+    keywords: ["szene", "scene"]
+  automation:
+    label: "Automatisierung"
+    icon: "\u2699\uFE0F"
+    keywords: ["automatisierung", "automation"]
+  zone:
+    label: "Zone"
+    icon: "\U0001F4CD"
+    keywords: ["zone", "zonen", "bereich", "gebiet", "standort", "geofence", "area", "location"]
+  timer:
+    label: "Timer/Zaehler"
+    icon: "\u23F0"
+    keywords: ["timer", "countdown", "stoppuhr", "stopwatch"]
+  counter:
+    label: "Zaehler"
+    icon: "\U0001F522"
+    keywords: ["zaehler", "counter"]
+  distance:
+    label: "Entfernung"
+    icon: "\U0001F4CF"
+    keywords: ["entfernung", "abstand", "distance"]
+  speed:
+    label: "Geschwindigkeit"
+    icon: "\U0001F4A8"
+    keywords: ["geschwindigkeit", "speed", "tempo"]
+  weight:
+    label: "Gewicht/Waage"
+    icon: "\u2696\uFE0F"
+    keywords: ["gewicht", "waage", "weight", "scale"]
+  noise:
+    label: "Laermsensor"
+    icon: "\U0001F50A"
+    keywords: ["laerm", "lautstaerke", "geraeusch", "dezibel", "noise", "sound level", "decibel"]
+  problem:
+    label: "Problem/Stoerung"
+    icon: "\u26A0\uFE0F"
+    keywords: ["problem", "stoerung", "fehler", "fault", "error"]
+  update:
+    label: "Update verfuegbar"
+    icon: "\U0001F504"
+    keywords: ["update", "aktualisierung", "firmware", "update available"]
+  running:
+    label: "Geraet laeuft"
+    icon: "\u25B6\uFE0F"
+    keywords: ["laeuft", "aktiv", "in betrieb", "running", "active"]
+  generic_sensor:
+    label: "Sensor (allgemein)"
+    icon: "\U0001F4CB"
+    keywords: ["sensor", "messwert", "reading"]
+  generic_switch:
+    label: "Schalter (allgemein)"
+    icon: "\U0001F4A1"
+    keywords: ["schalter", "switch"]
+
+
+# HA device_class → Rollen-ID Mapping (fuer Auto-Erkennung)
+device_class_to_role:
+  temperature: "indoor_temp"
+  humidity: "humidity"
+  pressure: "pressure"
+  atmospheric_pressure: "pressure"
+  co2: "co2"
+  carbon_dioxide: "co2"
+  carbon_monoxide: "co"
+  volatile_organic_compounds: "voc"
+  volatile_organic_compounds_parts: "voc"
+  pm25: "pm25"
+  pm10: "pm10"
+  aqi: "air_quality"
+  nitrogen_dioxide: "air_quality"
+  ozone: "air_quality"
+  wind_speed: "wind_speed"
+  precipitation: "rain"
+  precipitation_intensity: "rain"
+  irradiance: "solar_radiation"
+  illuminance: "light_level"
+  smoke: "smoke"
+  gas: "gas"
+  moisture: "water_leak"
+  tamper: "tamper"
+  safety: "alarm"
+  problem: "problem"
+  window: "window_contact"
+  door: "door_contact"
+  garage_door: "garage_door"
+  opening: "window_contact"
+  lock: "lock"
+  motion: "motion"
+  occupancy: "occupancy"
+  presence: "presence"
+  vibration: "vibration"
+  moving: "motion"
+  sound: "noise"
+  power: "power_meter"
+  energy: "energy"
+  battery: "battery"
+  battery_charging: "battery_charging"
+  voltage: "voltage"
+  current: "current"
+  power_factor: "power_factor"
+  frequency: "frequency"
+  apparent_power: "power_meter"
+  reactive_power: "power_meter"
+  water: "water_consumption"
+  connectivity: "connectivity"
+  plug: "outlet"
+  running: "running"
+  update: "update"
+  signal_strength: "signal_strength"
+  distance: "distance"
+  speed: "speed"
+  weight: "weight"
+  duration: "timer"

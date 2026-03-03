@@ -2274,6 +2274,51 @@ def _validate_settings_values(settings: dict) -> list[str]:
         for conf_key, conf_list in confs.items():
             if isinstance(conf_list, list) and len(conf_list) == 0:
                 errors.append(f"personality.confirmations.{conf_key}: mindestens 1 Eintrag noetig")
+    # Autonomie-Permissions: Werte 1-5
+    ap = (settings.get("autonomy") or {}).get("action_permissions", {})
+    if isinstance(ap, dict):
+        for key, val in ap.items():
+            try:
+                iv = int(val)
+                if iv < 1 or iv > 5:
+                    errors.append(f"autonomy.action_permissions.{key}={val} (erlaubt: 1-5)")
+            except (ValueError, TypeError):
+                errors.append(f"autonomy.action_permissions.{key}: ungueltig")
+    # Evolution Criteria: acceptance 0.5-1.0
+    ec = (settings.get("autonomy") or {}).get("evolution_criteria", {})
+    if isinstance(ec, dict):
+        for level, criteria in ec.items():
+            if isinstance(criteria, dict):
+                acc = criteria.get("min_acceptance")
+                if acc is not None:
+                    try:
+                        fv = float(acc)
+                        if fv < 0.5 or fv > 1.0:
+                            errors.append(f"autonomy.evolution_criteria.{level}.min_acceptance={acc} (erlaubt: 0.5-1.0)")
+                    except (ValueError, TypeError):
+                        errors.append(f"autonomy.evolution_criteria.{level}.min_acceptance: ungueltig")
+    # Memory Category Confidence: 0.0-1.0
+    cc = (settings.get("memory") or {}).get("category_confidence", {})
+    if isinstance(cc, dict):
+        for cat, val in cc.items():
+            try:
+                fv = float(val)
+                if fv < 0.0 or fv > 1.0:
+                    errors.append(f"memory.category_confidence.{cat}={val} (erlaubt: 0.0-1.0)")
+            except (ValueError, TypeError):
+                errors.append(f"memory.category_confidence.{cat}: ungueltig")
+    # Safe Limits: min < max
+    sl = (settings.get("conflict_resolution") or {}).get("safe_limits", {})
+    if isinstance(sl, dict):
+        for domain, limits in sl.items():
+            if isinstance(limits, dict):
+                for param, range_val in limits.items():
+                    if isinstance(range_val, list) and len(range_val) == 2:
+                        try:
+                            if float(range_val[0]) >= float(range_val[1]):
+                                errors.append(f"conflict_resolution.safe_limits.{domain}.{param}: min muss < max sein")
+                        except (ValueError, TypeError):
+                            pass
     # Erlaubte Werte fuer Strings (Whitelist)
     ENUM_RULES = {
         ("vacuum", "auto_clean", "mode"): ["smart", "schedule", "both"],
@@ -2343,6 +2388,12 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
         "situation_model": "situation_model",
         "interrupt_queue": "interrupt_queue",
         "planner": "action_planner",
+        "stt_corrections": "brain",
+        "command_detection": "brain",
+        "das_uebliche": "brain",
+        "conflict_resolution": "conflict_resolver",
+        "memory": "memory_extractor",
+        "entity_roles": "function_calling",
     }
 
     for config_key, attr_name in MODULE_CONFIG_MAP.items():
@@ -2434,9 +2485,14 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
     # Autonomy: Trust-Levels
     if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
         def _reload_autonomy():
+            from .autonomy import ACTION_PERMISSIONS
             auto_cfg = yaml_cfg.get("autonomy", {})
             brain.autonomy.level = int(auto_cfg.get("level", brain.autonomy.level))
-            logger.info("Autonomy Settings aktualisiert")
+            brain.autonomy._action_permissions = auto_cfg.get("action_permissions") or dict(ACTION_PERMISSIONS)
+            raw_evo = auto_cfg.get("evolution_criteria")
+            if raw_evo:
+                brain.autonomy._evolution_criteria = {int(k): v for k, v in raw_evo.items()}
+            logger.info("Autonomy Settings aktualisiert (inkl. Permissions + Evolution)")
         _try_reload("autonomy", _reload_autonomy)
 
     # Activity: Entity-Listen und Schwellwerte
@@ -2601,7 +2657,16 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             cr._mediation_max_tokens = int(med_cfg.get("max_tokens", 256))
             cr._mediation_temperature = med_cfg.get("temperature", 0.7)
             cr._domain_configs = cfg.get("conflict_domains", {})
-            logger.info("ConflictResolver Settings aktualisiert")
+            # Safe-Limits neu laden
+            raw_sl = cfg.get("safe_limits", {})
+            if isinstance(raw_sl, dict):
+                cr._safe_limits = {}
+                for domain, limits in raw_sl.items():
+                    cr._safe_limits[domain] = {}
+                    for param, vals in limits.items():
+                        if isinstance(vals, list) and len(vals) == 2:
+                            cr._safe_limits[domain][param] = (float(vals[0]), float(vals[1]))
+            logger.info("ConflictResolver Settings aktualisiert (inkl. Safe-Limits)")
         _try_reload("conflict_resolution", _reload_conflict_resolver)
 
     # AmbientAudio: Sensor-Mappings, Cooldowns, Night-Mode
@@ -2621,7 +2686,20 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             aa._night_escalate = night_cfg.get("escalate_severity", True)
             aa._disabled_events = set(cfg.get("disabled_events") or [])
             aa._poll_interval = cfg.get("poll_interval_seconds", 5)
-            logger.info("AmbientAudio Settings aktualisiert")
+            # Default-Reaktionen neu laden
+            from .ambient_audio import DEFAULT_EVENT_REACTIONS
+            yaml_reactions = cfg.get("default_reactions")
+            if yaml_reactions and isinstance(yaml_reactions, dict):
+                aa._default_reactions = dict(DEFAULT_EVENT_REACTIONS)
+                for evt, info in yaml_reactions.items():
+                    if isinstance(info, dict):
+                        if evt in aa._default_reactions:
+                            aa._default_reactions[evt] = {**aa._default_reactions[evt], **info}
+                        else:
+                            aa._default_reactions[evt] = info
+            else:
+                aa._default_reactions = dict(DEFAULT_EVENT_REACTIONS)
+            logger.info("AmbientAudio Settings aktualisiert (inkl. Reaktionen)")
         _try_reload("ambient_audio", _reload_ambient_audio)
 
     # CameraManager: Vision-Model, Camera-Map
@@ -2789,6 +2867,31 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                         mod.enabled = False
             logger.info("Learning global: enabled=%s", learning_enabled)
         _try_reload("learning", _reload_learning)
+
+    # --- Brain: Konfigurierbare Daten (STT, Fehler-Templates, Befehls-Erkennung, etc.) ---
+    _brain_config_keys = {
+        "stt_corrections", "command_detection", "response_filter",
+        "das_uebliche", "personality",
+    }
+    if _brain_config_keys & set(changed_settings.keys()) and brain:
+        _try_reload("brain_configurable_data", brain.reload_configurable_data)
+
+    # Memory: Category-Confidence
+    if "memory" in changed_settings and hasattr(brain, "memory_extractor"):
+        def _reload_memory():
+            from .memory_extractor import CATEGORY_CONFIDENCE
+            mem_cfg = yaml_cfg.get("memory", {})
+            brain.memory_extractor._category_confidence = mem_cfg.get("category_confidence") or dict(CATEGORY_CONFIDENCE)
+            logger.info("MemoryExtractor Category-Confidence aktualisiert")
+        _try_reload("memory_category_confidence", _reload_memory)
+
+    # Entity-Roles: Separate YAML + User-Overrides
+    if "entity_roles" in changed_settings:
+        def _reload_entity_roles():
+            from .function_calling import reload_entity_roles
+            reload_entity_roles()
+            logger.info("Entity-Roles aktualisiert")
+        _try_reload("entity_roles", _reload_entity_roles)
 
     if failed_modules:
         logger.warning("Settings-Reload: %d Module fehlgeschlagen: %s",

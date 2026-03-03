@@ -699,6 +699,67 @@ _ROLE_KEYWORDS = {
 }
 
 
+def _load_entity_roles_from_yaml():
+    """Laedt Entity-Roles aus entity_roles_defaults.yaml (wenn vorhanden).
+
+    Merged YAML-Daten ueber die Python-Defaults. Struktur:
+      roles:
+        indoor_temp:
+          label: "Raumtemperatur"
+          icon: "🌡️"
+          keywords: ["innen", "raum", ...]
+      device_class_to_role:
+        temperature: "indoor_temp"
+    """
+    path = _CONFIG_DIR / "entity_roles_defaults.yaml"
+    if not path.exists():
+        return
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return
+        raw_roles = data.get("roles") or {}
+        for role_id, info in raw_roles.items():
+            if not isinstance(info, dict):
+                continue
+            _DEFAULT_ROLES_DICT[role_id] = {
+                "label": info.get("label", role_id),
+                "icon": info.get("icon", ""),
+            }
+            kw = info.get("keywords")
+            if kw and isinstance(kw, list):
+                _ROLE_KEYWORDS[role_id] = kw
+        dc = data.get("device_class_to_role")
+        if isinstance(dc, dict):
+            _DEVICE_CLASS_TO_ROLE.update(dc)
+        # _DEFAULT_ROLES aktualisieren
+        _DEFAULT_ROLES.update(_DEFAULT_ROLES_DICT.keys())
+        logger.debug("Entity-Roles aus YAML geladen (%d Rollen)", len(raw_roles))
+    except Exception as e:
+        logger.warning("entity_roles_defaults.yaml nicht ladbar: %s", e)
+
+
+def reload_entity_roles():
+    """Laedt Entity-Roles aus YAML neu (fuer Hot-Reload)."""
+    _load_entity_roles_from_yaml()
+    # User-Overrides aus settings.yaml erneut anwenden
+    custom = yaml_config.get("entity_roles", {}) or {}
+    for role_id, info in custom.items():
+        if isinstance(info, dict):
+            _DEFAULT_ROLES_DICT[role_id] = {
+                "label": info.get("label", role_id),
+                "icon": info.get("icon", ""),
+            }
+            kw = info.get("keywords")
+            if kw and isinstance(kw, list):
+                _ROLE_KEYWORDS[role_id] = kw
+    _DEFAULT_ROLES.update(_DEFAULT_ROLES_DICT.keys())
+
+
+# Beim Import laden
+_load_entity_roles_from_yaml()
+
+
 def get_entity_annotation(entity_id: str) -> dict:
     """Liefert die Annotation fuer eine Entity aus settings.yaml.
 
