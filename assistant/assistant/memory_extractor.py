@@ -94,6 +94,9 @@ class MemoryExtractor:
         self._default_confidence = float(mem_cfg.get("default_confidence", 0.7))
         self._duplicate_threshold = float(mem_cfg.get("duplicate_threshold", 0.15))
 
+        # Konfigurierbare Category-Confidence (Fallback: hardcoded CATEGORY_CONFIDENCE)
+        self._category_confidence = mem_cfg.get("category_confidence") or dict(CATEGORY_CONFIDENCE)
+
     async def extract_and_store(
         self,
         user_text: str,
@@ -138,7 +141,7 @@ class MemoryExtractor:
                 continue
 
             # Confidence basierend auf Kategorie (Gesundheit > Smalltalk)
-            initial_confidence = CATEGORY_CONFIDENCE.get(category, 0.5)
+            initial_confidence = self._category_confidence.get(category, 0.5)
 
             fact = SemanticFact(
                 content=content,

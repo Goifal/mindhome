@@ -305,6 +305,90 @@ class AssistantBrain(BrainCallbacksMixin):
         self._last_executed_action: str = ""
         self._last_executed_action_args: dict = {}
 
+        # --- Konfigurierbare Daten aus YAML laden (Fallback: Hardcoded) ---
+        self._load_configurable_data()
+
+    def _load_configurable_data(self):
+        """Laedt alle konfigurierbaren Daten aus YAML mit Hardcoded-Fallback."""
+        # STT-Korrekturen
+        stt_cfg = cfg.yaml_config.get("stt_corrections", {})
+        self._stt_word_corrections = stt_cfg.get("word_corrections") or dict(self._STT_WORD_CORRECTIONS)
+        raw_phrases = stt_cfg.get("phrase_corrections")
+        if raw_phrases and isinstance(raw_phrases, dict):
+            self._stt_phrase_corrections = [(k, v) for k, v in raw_phrases.items()]
+        else:
+            self._stt_phrase_corrections = list(self._STT_PHRASE_CORRECTIONS)
+
+        # Error-Templates + Escalation-Prefixes (aus personality-Sektion)
+        pers_cfg = cfg.yaml_config.get("personality", {})
+        self._error_templates = pers_cfg.get("error_templates") or dict(self._ERROR_PATTERNS)
+        raw_esc = pers_cfg.get("escalation_prefixes")
+        if raw_esc:
+            self._escalation_prefixes = {int(k): v for k, v in raw_esc.items()}
+        else:
+            self._escalation_prefixes = dict(self._ESCALATION_PREFIXES)
+
+        # Sarkasmus-Feedback Patterns
+        pos = pers_cfg.get("sarcasm_positive_patterns")
+        self._sarcasm_positive = frozenset(pos) if pos else self._SARCASM_POSITIVE_PATTERNS
+        neg = pers_cfg.get("sarcasm_negative_patterns")
+        self._sarcasm_negative = frozenset(neg) if neg else self._SARCASM_NEGATIVE_PATTERNS
+
+        # Output-Filter (sorry, refusal, chatbot)
+        filter_cfg = cfg.yaml_config.get("response_filter", {})
+        self._sorry_patterns = filter_cfg.get("sorry_patterns") or None
+        self._refusal_patterns_cfg = filter_cfg.get("refusal_patterns") or None
+        self._chatbot_phrases_cfg = filter_cfg.get("chatbot_phrases") or None
+
+        # Das Uebliche Patterns
+        du_cfg = cfg.yaml_config.get("das_uebliche", {})
+        self._das_uebliche_patterns = du_cfg.get("patterns") or list(self._DAS_UEBLICHE_PATTERNS)
+
+        # Command Detection
+        cmd_cfg = cfg.yaml_config.get("command_detection", {})
+        self._device_nouns = cmd_cfg.get("device_nouns") or [
+            "rollladen", "rolladen", "rollo", "jalousie",
+            "licht", "lampe", "leuchte", "beleuchtung",
+            "heizung", "thermostat", "klima",
+            "steckdose", "schalter", "musik", "lautsprecher",
+            "wecker", "timer", "erinnerung",
+        ]
+        self._action_words = set(cmd_cfg.get("action_words") or [
+            "auf", "zu", "an", "aus", "hoch", "runter",
+            "offen", "ein", "ab", "halb", "stopp",
+            "oeffne", "schliess", "oeffnen", "schliessen",
+        ])
+        self._command_verbs = cmd_cfg.get("command_verbs") or [
+            "mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess",
+        ]
+        self._query_markers = cmd_cfg.get("query_markers") or [
+            "welche", "sind ", "ist ", "status", "zeig", "liste",
+            "was ist", "wie ist", "noch an", "noch auf", "noch offen",
+            "abgedreht", "eingeschaltet", "ausgeschaltet", "angelassen",
+            "brennt", "brennen", "laeuft", "laufen", "offen", "alle ", "alles ",
+        ]
+        self._action_exclusions = cmd_cfg.get("action_exclusions") or [
+            "einstellen", "stellen", "stell ", "setzen", "setz ",
+            "dimmen", "dimm ", "heller", "dunkler",
+            "mach ", "schalte ", "dreh ", "aufdrehen", "andrehen",
+            "ausschalten", "einschalten", "anschalten", "abschalten",
+            "auf ", "runter", "hoch", "rauf",
+        ]
+        self._status_nouns = cmd_cfg.get("status_nouns") or [
+            "rollladen", "rolladen", "rollo", "jalousie",
+            "rolllaeden", "rollaeden",
+            "licht", "lichter", "lampe", "lampen", "leuchte", "beleuchtung",
+            "heizung", "thermostat", "klima", "temperatur",
+            "steckdose", "steckdosen", "schalter",
+            "musik", "lautsprecher", "media", "wecker", "alarm",
+            "haus", "hausstatus", "haus-status",
+        ]
+
+    def reload_configurable_data(self):
+        """Hot-Reload aller konfigurierbaren Brain-Daten (nach UI-Aenderung)."""
+        self._load_configurable_data()
+        logger.info("Brain: Konfigurierbare Daten neu geladen")
+
     async def initialize(self):
         """Initialisiert alle Komponenten."""
         await self.memory.initialize()
@@ -699,10 +783,10 @@ class AssistantBrain(BrainCallbacksMixin):
         # Kurze positive Reaktionen (1-3 Woerter)
         words = text_lower.split()
         if len(words) <= 3:
-            if any(p in text_lower for p in self._SARCASM_POSITIVE_PATTERNS):
+            if any(p in text_lower for p in self._sarcasm_positive):
                 return True
         # Explizite Ablehnung (beliebige Laenge)
-        if any(p in text_lower for p in self._SARCASM_NEGATIVE_PATTERNS):
+        if any(p in text_lower for p in self._sarcasm_negative):
             return False
         # Unklar — kein Feedback tracken
         return None
@@ -2866,7 +2950,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     tool_calls = [fallback_tc]
                     response_text = ""
 
-            # 7c. Tool-Calls aus Text extrahieren (Qwen3 gibt sie manchmal als Text aus)
+            # 7c. Tool-Calls aus Text extrahieren (LLM gibt manchmal Tool-Calls als Text aus)
             if not tool_calls and response_text:
                 tool_calls = self._extract_tool_calls_from_text(response_text)
                 if tool_calls:
@@ -2875,7 +2959,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     # Erklaerungstext entfernen — nur Antwort behalten
                     response_text = ""
 
-            # 7d. Retry: Qwen3 hat bei Geraetebefehl/Status-Query keinen Tool-Call gemacht
+            # 7d. Retry: LLM hat bei Geraetebefehl/Status-Query keinen Tool-Call gemacht
             if not tool_calls and (self._is_device_command(text) or self._is_status_query(text)):
                 logger.warning("Geraetebefehl ohne Tool-Call erkannt: '%s' -> Retry mit Hint", text)
                 hint_msg = (
@@ -2955,7 +3039,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     func = tool_call.get("function", {})
                     func_name = func.get("name", "")
                     func_args = func.get("arguments", {})
-                    # Qwen kann arguments als JSON-String statt Dict liefern
+                    # LLM kann arguments als JSON-String statt Dict liefern
                     if isinstance(func_args, str):
                         try:
                             func_args = json.loads(func_args)
@@ -3231,6 +3315,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         try:
                             humor = await self.personality.generate_contextual_humor(
                                 func_name, final_args, context,
+                                person=self._current_person,
                             )
                             if humor:
                                 logger.info("Kontextueller Humor: '%s'", humor)
@@ -3650,8 +3735,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Markiere ob diese Antwort sarkastisch war (fuer Feedback bei naechster Nachricht)
         self._last_response_was_snarky = self.personality.sarcasm_level >= 3
-        # Sarkasmus-Fatigue: Streak tracken (in-memory, 0ms)
-        self.personality.track_sarcasm_streak(self._last_response_was_snarky)
+        # Sarkasmus-Fatigue: Streak tracken (in-memory, 0ms, per User)
+        self.personality.track_sarcasm_streak(self._last_response_was_snarky, self._current_person)
 
         # Phase 8: Offenes Thema markieren (wenn Frage ohne klare Antwort)
         # Triviale Fragen ("Wie spaet ist es?", "Wie warm ist es?") nicht als
@@ -3759,12 +3844,12 @@ class AssistantBrain(BrainCallbacksMixin):
         return result
 
     # ------------------------------------------------------------------
-    # Phase 7b: Robuste Tool-Call-Extraktion aus Qwen3-Text
+    # Phase 7b: Robuste Tool-Call-Extraktion aus LLM-Text
     # ------------------------------------------------------------------
 
     # Bekannte Argument-Keys pro Funktion (fuer Bare-JSON-Erkennung)
     _ARG_KEY_TO_FUNC: dict[str, str] = {
-        # set_light hat "room"+"state", aber Qwen3 schickt oft "entity_id"+"state"
+        # set_light hat "room"+"state", aber LLM schickt manchmal "entity_id"+"state"
         "brightness": "set_light",
         "color_temp": "set_light",
         # set_cover
@@ -3775,9 +3860,9 @@ class AssistantBrain(BrainCallbacksMixin):
     }
 
     def _extract_tool_calls_from_text(self, text: str) -> list[dict]:
-        """Extrahiert Tool-Calls aus Qwen3-Textantworten.
+        """Extrahiert Tool-Calls aus LLM-Textantworten.
 
-        Qwen3 gibt manchmal keine echten tool_calls zurueck, sondern:
+        Manche LLMs geben keine echten tool_calls zurueck, sondern:
         1. {"name": "func", "arguments": {...}}         — Standard-Fallback
         2. <tool_call>{"name": "func", "arguments": {...}}</tool_call>
         3. `func_name` ... ```json {...} ```             — Erklaerungsmodus
@@ -3816,7 +3901,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 pass
 
         # --- Muster 3: `func_name` + JSON-Code-Block ---
-        # Qwen3 schreibt z.B.: `set_light` ... ```json {"entity_id": "...", "state": "on"} ```
+        # LLM schreibt z.B.: `set_light` ... ```json {"entity_id": "...", "state": "on"} ```
         m_func = re.search(r'`(\w+)`', text)
         m_json = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
         if m_func and m_json:
@@ -3829,7 +3914,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     pass
 
         # --- Muster 4: Bare JSON mit bekannten Keys ---
-        # Qwen3 gibt manchmal nur {"entity_id": "light.x", "state": "on"} aus
+        # LLM gibt manchmal nur {"entity_id": "light.x", "state": "on"} aus
         m_bare = re.search(r'\{[^{}]*"(?:entity_id|room|state|position|adjust)"[^{}]*\}', text)
         if m_bare:
             try:
@@ -4399,8 +4484,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
         original = text
 
-        # 0. qwen3 Thinking-Tags entfernen (<think>...</think>)
-        # qwen3-Modelle geben Chain-of-Thought in <think> Tags aus
+        # 0. LLM Thinking-Tags entfernen (<think>...</think>)
+        # Manche LLMs geben Chain-of-Thought in <think> Tags aus
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
         # Falls nur ein oeffnender Tag ohne schliessenden (Streaming-Abbruch)
         if "<think>" in text:
@@ -4410,7 +4495,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not text:
             return original
 
-        # 0a. Nicht-lateinische Schrift entfernen (Qwen3 denkt manchmal in Arabisch/Chinesisch/Hebräisch)
+        # 0a. Nicht-lateinische Schrift entfernen (multilinguale LLMs denken manchmal in nicht-lat. Schrift)
         # Zaehle Anteil nicht-lateinischer Zeichen — wenn dominant, nur deutsche Teile behalten
         _non_latin = sum(1 for c in text if '\u0600' <= c <= '\u06FF'    # Arabisch
                          or '\u0590' <= c <= '\u05FF'                    # Hebraeisch
@@ -4430,7 +4515,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.warning("Komplett nicht-lateinische Antwort verworfen: '%s'", text[:100])
                 return ""
 
-        # 0b. Implizites Reasoning entfernen (qwen3 ohne <think> Tags)
+        # 0b. Implizites Reasoning entfernen (LLM gibt CoT ohne <think> Tags aus)
         # Erkennt englisches Chain-of-Thought das als normaler Text ausgegeben wird
         _reasoning_starters = [
             "Okay, the user", "Ok, the user", "The user",
@@ -4468,7 +4553,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     text = ""
                 break
 
-        # 0c. Deutsches Reasoning entfernen (Qwen denkt manchmal auf Deutsch laut)
+        # 0c. Deutsches Reasoning entfernen (LLM denkt manchmal auf Deutsch laut)
         # Muster: "Was ist passiert: ... Was du stattdessen tust: ..."
         # oder "Analyse: ... Ergebnis: ... Aktion: ..."
         _de_reasoning_patterns = [
@@ -4703,7 +4788,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     text = text[0].upper() + text[1:]
 
         # 3. "Es tut mir leid" Varianten durch Fakt ersetzen
-        sorry_patterns = [
+        _sorry_defaults = [
             "es tut mir leid,", "es tut mir leid.", "es tut mir leid ",
             "es tut mir leid!", "leider ", "leider,", "leider.",
             "entschuldigung,", "entschuldigung.", "entschuldigung!",
@@ -4711,6 +4796,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "ich entschuldige mich,", "tut mir leid,", "tut mir leid.",
             "bedauerlicherweise ", "ich bedaure,", "ich bedaure.",
         ]
+        sorry_patterns = self._sorry_patterns or _sorry_defaults
         for pattern in sorry_patterns:
             idx = text.lower().find(pattern)
             if idx != -1:
@@ -4718,7 +4804,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 if text:
                     text = text[0].upper() + text[1:]
 
-        # 3b. Formelles "Sie" → informelles "du" (Qwen3 ignoriert Du-Anweisung)
+        # 3b. Formelles "Sie" → informelles "du" (LLM ignoriert manchmal Du-Anweisung)
         # "Ihnen/Ihre/Ihrem" sind eindeutig formell (kein Lowercase-Pendant fuer "sie"=she)
         _has_formal = bool(re.search(
             r"\b(?:Ihnen|Ihre[mnrs]?)\b"
@@ -4784,28 +4870,34 @@ class AssistantBrain(BrainCallbacksMixin):
                 text = re.sub(pattern, replacement, text)
             logger.info("Sie->du Korrektur angewendet: '%s'", text[:80])
 
-        # 3c. LLM-Refusals entfernen (Qwen3 verweigert manchmal trotz gueltiger Daten)
-        _refusal_patterns = [
-            r"[Aa]ber ich kann diese Anfrage nicht erf[uü]llen\.?",
-            r"[Ii]ch kann diese Anfrage nicht erf[uü]llen\.?",
-            r"[Ii]ch kann dir dabei (?:leider )?nicht helfen\.?",
-            r"[Dd]as kann ich (?:leider )?nicht (?:tun|machen|beantworten|erf[uü]llen)\.?",
-            r"[Ii]ch bin nicht in der Lage,? (?:das|dies|diese Anfrage).*?(?:\.|!|$)",
-            r"[Dd]iese Anfrage kann ich (?:leider )?nicht.*?(?:\.|!|$)",
-            r"[Ii]ch habe (?:leider )?keinen Zugriff.*?(?:\.|!|$)",
-            r"[Ii]ch habe (?:leider )?keine M[oö]glichkeit.*?(?:\.|!|$)",
-        ]
+        # 3c. LLM-Refusals entfernen (LLM verweigert manchmal trotz gueltiger Daten)
+        if self._refusal_patterns_cfg:
+            _refusal_patterns = [re.escape(p) + r".*?(?:\.|!|$)" for p in self._refusal_patterns_cfg]
+        else:
+            _refusal_patterns = [
+                r"[Aa]ber ich kann diese Anfrage nicht erf[uü]llen\.?",
+                r"[Ii]ch kann diese Anfrage nicht erf[uü]llen\.?",
+                r"[Ii]ch kann dir dabei (?:leider )?nicht helfen\.?",
+                r"[Dd]as kann ich (?:leider )?nicht (?:tun|machen|beantworten|erf[uü]llen)\.?",
+                r"[Ii]ch bin nicht in der Lage,? (?:das|dies|diese Anfrage).*?(?:\.|!|$)",
+                r"[Dd]iese Anfrage kann ich (?:leider )?nicht.*?(?:\.|!|$)",
+                r"[Ii]ch habe (?:leider )?keinen Zugriff.*?(?:\.|!|$)",
+                r"[Ii]ch habe (?:leider )?keine M[oö]glichkeit.*?(?:\.|!|$)",
+            ]
         for rp in _refusal_patterns:
             text = re.sub(rp, "", text, flags=re.IGNORECASE).strip()
 
         # 3d. Chatbot-Floskeln entfernen die trotz Prompt durchkommen
-        _chatbot_floskels = [
-            r"Wenn (?:du|Sie) (?:noch |weitere )?Fragen ha(?:ben|st).*?(?:\.|!|$)",
-            r"(?:Ich )?[Ss]tehe? (?:dir|Ihnen) (?:gerne |jederzeit )?zur Verf[uü]gung.*?(?:\.|!|$)",
-            r"Zögern? (?:du|Sie) nicht.*?(?:\.|!|$)",
-            r"(?:Ich bin )?(?:hier,? )?um (?:dir|Ihnen) zu helfen.*?(?:\.|!|$)",
-            r"Lass(?:e|t)? (?:es )?mich wissen.*?(?:\.|!|$)",
-        ]
+        if self._chatbot_phrases_cfg:
+            _chatbot_floskels = [re.escape(p) + r".*?(?:\.|!|$)" for p in self._chatbot_phrases_cfg]
+        else:
+            _chatbot_floskels = [
+                r"Wenn (?:du|Sie) (?:noch |weitere )?Fragen ha(?:ben|st).*?(?:\.|!|$)",
+                r"(?:Ich )?[Ss]tehe? (?:dir|Ihnen) (?:gerne |jederzeit )?zur Verf[uü]gung.*?(?:\.|!|$)",
+                r"Zögern? (?:du|Sie) nicht.*?(?:\.|!|$)",
+                r"(?:Ich bin )?(?:hier,? )?um (?:dir|Ihnen) zu helfen.*?(?:\.|!|$)",
+                r"Lass(?:e|t)? (?:es )?mich wissen.*?(?:\.|!|$)",
+            ]
         for floskel in _chatbot_floskels:
             text = re.sub(floskel, "", text, flags=re.IGNORECASE).strip()
 
@@ -6132,8 +6224,7 @@ class AssistantBrain(BrainCallbacksMixin):
         ("wie spät", "wie spät"),
     ]
 
-    @staticmethod
-    def _normalize_stt_text(text: str) -> str:
+    def _normalize_stt_text(self, text: str) -> str:
         """Normalisiert STT-Output fuer bessere Verarbeitung.
 
         Korrigiert typische Whisper-Fehler:
@@ -6159,7 +6250,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # 4. Mehrwort-Korrekturen (case-insensitive)
         text_lower = text.lower()
-        for wrong, correct in AssistantBrain._STT_PHRASE_CORRECTIONS:
+        for wrong, correct in self._stt_phrase_corrections:
             if wrong in text_lower:
                 # Case-insensitive Replace
                 pattern = re.compile(re.escape(wrong), re.IGNORECASE)
@@ -6172,8 +6263,8 @@ class AssistantBrain(BrainCallbacksMixin):
         for w in words:
             w_lower = w.lower().rstrip(".,;:!?")
             trailing = w[len(w.rstrip(".,;:!?")):]
-            if w_lower in AssistantBrain._STT_WORD_CORRECTIONS:
-                replacement = AssistantBrain._STT_WORD_CORRECTIONS[w_lower]
+            if w_lower in self._stt_word_corrections:
+                replacement = self._stt_word_corrections[w_lower]
                 corrected.append(replacement + trailing)
             else:
                 corrected.append(w)
@@ -6185,39 +6276,23 @@ class AssistantBrain(BrainCallbacksMixin):
 
         return text
 
-    @staticmethod
-    def _is_device_command(text: str) -> bool:
+    def _is_device_command(self, text: str) -> bool:
         """Erkennt ob der Text ein Geraete-Steuerungsbefehl ist.
 
         Prueft auf Kombination von Geraete-Nomen + Aktion/Prozent.
-        Wird fuer Tool-Call-Retry genutzt: Wenn Qwen3 keinen Tool-Call macht
+        Wird fuer Tool-Call-Retry genutzt: Wenn das LLM keinen Tool-Call macht
         aber der Text offensichtlich ein Geraetebefehl ist.
         """
         t = text.lower()
-        _NOUNS = [
-            "rollladen", "rolladen", "rollo", "jalousie",
-            "licht", "lampe", "leuchte", "beleuchtung",
-            "heizung", "thermostat", "klima",
-            "steckdose", "schalter",
-            "musik", "lautsprecher",
-            "wecker", "timer", "erinnerung",
-        ]
-        has_noun = any(n in t for n in _NOUNS)
+        has_noun = any(n in t for n in self._device_nouns)
         # Wort-genaue Aktionserkennung (kein Partial-Match auf "eine", "Auge" etc.)
         words = set(re.split(r'[\s,.!?]+', t))
-        _ACTION_WORDS = {
-            "auf", "zu", "an", "aus", "hoch", "runter",
-            "offen", "ein", "ab", "halb", "stopp",
-            "oeffne", "schliess", "oeffnen", "schliessen",
-        }
-        has_action = bool(words & _ACTION_WORDS) or "%" in t
+        has_action = bool(words & self._action_words) or "%" in t
         # Verb-Start: "mach licht an", "schalte heizung ein"
-        _VERBS = ["mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess"]
-        verb_start = any(t.startswith(v) for v in _VERBS)
+        verb_start = any(t.startswith(v) for v in self._command_verbs)
         return (has_noun and has_action) or (verb_start and has_noun)
 
-    @staticmethod
-    def _is_status_query(text: str) -> bool:
+    def _is_status_query(self, text: str) -> bool:
         """Erkennt ob der Text eine Geraete-Status-Abfrage ist.
 
         Faengt Fragen wie "Sind alle Licht abgedreht?", "Ist das Licht an?",
@@ -6229,40 +6304,16 @@ class AssistantBrain(BrainCallbacksMixin):
         werden NICHT als Status-Query erkannt, auch wenn sie "ist" enthalten.
         """
         t = text.lower()
-        _NOUNS = [
-            "rollladen", "rolladen", "rollo", "jalousie",
-            "rolllaeden", "rollaeden",  # Plural (ASCII ae)
-            "licht", "lichter", "lampe", "lampen", "leuchte", "beleuchtung",
-            "heizung", "thermostat", "klima", "temperatur",
-            "steckdose", "steckdosen", "schalter",
-            "musik", "lautsprecher", "media",
-            "wecker", "alarm",
-            "haus", "hausstatus", "haus-status",
-        ]
-        has_noun = any(n in t for n in _NOUNS)
+        has_noun = any(n in t for n in self._status_nouns)
         if not has_noun:
             return False
         # Ausschluss: Wenn Aktionswoerter vorhanden → Steuerbefehl, keine Query
-        _ACTION_EXCLUSIONS = [
-            "einstellen", "stellen", "stell ", "setzen", "setz ",
-            "dimmen", "dimm ", "heller", "dunkler",
-            "mach ", "schalte ", "dreh ", "aufdrehen", "andrehen",
-            "ausschalten", "einschalten", "anschalten", "abschalten",
-            "auf ", "runter", "hoch", "rauf",
-        ]
         # Prozent-Angabe mit Aktionskontext: "auf 10%" ist ein Befehl
         if re.search(r'auf\s+\d+\s*%', t):
             return False
-        if any(a in t for a in _ACTION_EXCLUSIONS):
+        if any(a in t for a in self._action_exclusions):
             return False
-        _QUERY_MARKERS = [
-            "welche", "sind ", "ist ", "status", "zeig", "liste",
-            "was ist", "wie ist", "noch an", "noch auf", "noch offen",
-            "abgedreht", "eingeschaltet", "ausgeschaltet", "angelassen",
-            "brennt", "brennen", "laeuft", "laufen", "offen",
-            "alle ", "alles ",
-        ]
-        if any(m in t for m in _QUERY_MARKERS):
+        if any(m in t for m in self._query_markers):
             return True
         # Fragen mit ? die ein Geraete-Nomen enthalten: "Rolllaeden?", "Lichter?"
         if t.rstrip().endswith("?"):
@@ -6397,8 +6448,8 @@ class AssistantBrain(BrainCallbacksMixin):
         """Erkennt Wecker-Befehle und gibt Aktions-Dict zurueck.
 
         Returns dict mit action/time/label oder None (kein Wecker-Match).
-        Wird VOR dem LLM aufgerufen, weil Qwen den set_wakeup_alarm Tool-Call
-        nicht zuverlaessig generiert.
+        Wird VOR dem LLM aufgerufen, weil manche LLMs den set_wakeup_alarm Tool-Call
+        nicht zuverlaessig generieren.
         """
         import re as _re
         t = text.lower().strip()
@@ -7028,7 +7079,7 @@ class AssistantBrain(BrainCallbacksMixin):
             Response-Dict oder None wenn kein Match.
         """
         t = text.lower().strip().rstrip("?!.")
-        if not any(p in t for p in self._DAS_UEBLICHE_PATTERNS):
+        if not any(p in t for p in self._das_uebliche_patterns):
             return None
 
         # Konfiguration pruefen
@@ -8862,7 +8913,7 @@ Regeln:
             category = "generic"
 
         import random
-        templates = self._ERROR_PATTERNS[category]
+        templates = self._error_templates.get(category, self._ERROR_PATTERNS.get(category, ["{device} — Fehler."]))
         return random.choice(templates).format(device=device)
 
     # MCU-JARVIS: Eskalations-Phrasen pro Severity-Stufe
@@ -8928,7 +8979,7 @@ Regeln:
                 pass
 
         # Prefix basierend auf Severity
-        prefix = random.choice(self._ESCALATION_PREFIXES.get(severity, self._ESCALATION_PREFIXES[1]))
+        prefix = random.choice(self._escalation_prefixes.get(severity, self._escalation_prefixes.get(1, ["Uebrigens —"])))
         prefix = prefix.replace("{title}", title)
 
         # Severity 4: Kurzer Kommentar, keine Erklaerung

@@ -18,6 +18,80 @@ das_uebliche:
   enabled: true
   auto_execute_confidence: 0.8
   suggest_confidence: 0.6
+  patterns:
+    - "das uebliche"
+    - "das übliche"
+    - "wie immer"
+    - "mach fertig"
+    - "mach alles fertig"
+    - "wie gewohnt"
+    - "das gleiche wie immer"
+    - "du weisst schon"
+    - "mach mal"
+    - "mach das ding"
+
+# --- STT-Korrekturen: Whisper-Fehler korrigieren ---
+stt_corrections:
+  word_corrections:
+    uber: "über"
+    fur: "für"
+    tur: "Tür"
+    kuche: "Küche"
+    rolladen: "Rollladen"
+    ja weiß: "Jarvis"
+    jarwis: "Jarvis"
+    prozent: "%"
+    grad: "°"
+    # Weitere Korrekturen nach Bedarf ergaenzen
+  phrase_corrections:
+    "roll laden": "Rollladen"
+    "wohn zimmer": "Wohnzimmer"
+    "schlaf zimmer": "Schlafzimmer"
+    "guten morgen": "Guten Morgen"
+    "gute nacht": "Gute Nacht"
+    "ja weiß": "Jarvis"
+    # Weitere Phrasen nach Bedarf ergaenzen
+
+# --- Geraete-Befehls-Erkennung ---
+command_detection:
+  device_nouns:
+    - "rollladen"
+    - "licht"
+    - "lampe"
+    - "heizung"
+    - "steckdose"
+    - "musik"
+    - "wecker"
+  action_words:
+    - "auf"
+    - "zu"
+    - "an"
+    - "aus"
+    - "hoch"
+    - "runter"
+  command_verbs:
+    - "mach "
+    - "schalte "
+    - "stell "
+  query_markers:
+    - "welche"
+    - "status"
+    - "zeig"
+    - "was ist"
+    - "wie ist"
+  action_exclusions:
+    - "einstellen"
+    - "dimmen"
+    - "heller"
+    - "dunkler"
+  status_nouns:
+    - "rollladen"
+    - "licht"
+    - "lichter"
+    - "heizung"
+    - "temperatur"
+    - "haus"
+
 return_briefing:
   enabled: true
   max_events: 20
@@ -95,6 +169,18 @@ persons:
   titles: null
 autonomy:
   level: 2
+  action_permissions:
+    respond_to_command: 1
+    execute_function_call: 1
+    proactive_info: 2
+    morning_briefing: 2
+    security_alert: 1
+    adjust_temperature_small: 3
+    create_automation: 5
+  evolution_criteria:
+    2: { min_days: 30, min_interactions: 200, min_acceptance: 0.7 }
+    3: { min_days: 90, min_interactions: 500, min_acceptance: 0.8 }
+    4: { min_days: 180, min_interactions: 1000, min_acceptance: 0.85 }
 ollama:
   num_ctx_fast: 2048                       # Kontextfenster Fast-Modell (spart VRAM)
   num_ctx_smart: 4096                      # Kontextfenster Smart-Modell
@@ -174,6 +260,44 @@ models:
   options:
     temperature: 0.7
     max_tokens: 256
+
+# LLM Model Profiles: Parameter und Capabilities pro Modell-Familie.
+# Neues Modell hinzufuegen = nur hier einen Eintrag ergaenzen, kein Code noetig.
+# Match: Laengster Key der im Modellnamen vorkommt gewinnt.
+# z.B. "qwen3.5:9b" matcht "qwen3.5" (nicht "qwen3"), "llama3.1:70b" matcht "llama".
+model_profiles:
+  default:
+    supports_think_tags: false
+    supports_think_with_tools: false
+    temperature: 0.7
+    top_p: 0.9
+    top_k: 40
+    min_p: 0.0
+    repeat_penalty: 1.0
+    think_temperature: 0.6
+    think_top_p: 0.95
+  "qwen3.5":
+    supports_think_tags: true
+    supports_think_with_tools: true
+    top_p: 0.8
+    top_k: 20
+    min_p: 0.0
+    repeat_penalty: 1.1
+  "qwen3":
+    supports_think_tags: true
+    supports_think_with_tools: false
+    top_p: 0.8
+    top_k: 20
+  "llama":
+    repeat_penalty: 1.1
+    top_k: 40
+  "deepseek":
+    supports_think_tags: true
+  "mistral":
+    top_k: 40
+  "gemma":
+    top_k: 40
+
 personality:
   style: butler
   sarcasm_level: 3
@@ -200,6 +324,120 @@ personality:
     night:
       style: nur Notfaelle, absolute Stille. Fluestern wenn ueberhaupt.
       max_sentences: 1
+  mood_styles:
+    good:
+      style_addon: "User ist gut drauf. Etwas mehr Humor, locker bleiben."
+      max_sentences_mod: 1
+    neutral:
+      style_addon: ""
+      max_sentences_mod: 0
+    stressed:
+      style_addon: "User ist gestresst. Extrem knapp antworten. Keine Rueckfragen. Einfach machen. Trockener Humor erlaubt — gerade jetzt. Kurz, schneidend, ein Satz."
+      max_sentences_mod: -1
+    frustrated:
+      style_addon: "User ist frustriert. Nicht rechtfertigen. Sofort handeln. Wenn etwas nicht geklappt hat, kurz sagen was du stattdessen tust. Trockener Kommentar erlaubt — aber nur einer, und er muss sitzen."
+      max_sentences_mod: 0
+    tired:
+      style_addon: "User ist muede. Minimal antworten. Kein Humor. Nur das Noetigste. Leise, ruhig."
+      max_sentences_mod: -1
+  humor_templates:
+    1: "Kein Humor. Sachlich, knapp, professionell. Keine Kommentare."
+    2: "Gelegentlich trocken. Nicht aktiv witzig, aber wenn sich eine elegante Bemerkung anbietet — erlaubt."
+    3: "Trocken-britischer Humor. Wie ein Butler der innerlich schmunzelt. Subtil, nie platt. Timing ist alles."
+    4: "Haeufig trocken-sarkastisch. Bemerkungen mit Understatement — wie ein Butler der alles sieht."
+    5: "Durchgehend trockener Humor. Du kommentierst elegant und mit Understatement. Nie platt, nie laut."
+  complexity_prompts:
+    kurz: "MODUS: Ultra-kurz. Maximal 1 Satz. Keine Extras. Kein Smalltalk."
+    normal: "MODUS: Normal. 1-2 Saetze. Gelegentlich Kontext wenn hilfreich."
+    ausfuehrlich: "MODUS: Ausfuehrlich. Zusatz-Infos und Vorschlaege erlaubt. Bis 4 Saetze."
+  formality_prompts:
+    formal: "TONFALL: Professionell und respektvoll. Titel haeufig verwenden. Duzen, aber gewaehlt. Wie J.A.R.V.I.S. am Anfang."
+    butler: "TONFALL: Souveraener Butler-Ton. Titel verwenden, warm aber nicht kumpelhaft. Der klassische Jarvis."
+    locker: "TONFALL: Entspannt und vertraut. Titel gelegentlich. Wie ein Vertrauter der alles im Griff hat."
+    freund: "TONFALL: Persoenlich und locker. Titel nur zur Betonung. Wie ein alter Freund der zufaellig dein Haus steuert."
+  confirmations:
+    success:
+      - "Erledigt."
+      - "Gemacht."
+      - "Wie gewuenscht."
+      - "Sehr wohl."
+      - "Wurde umgesetzt."
+      - "Schon geschehen."
+      - "Umgesetzt."
+      - "Selbstverstaendlich."
+      - "Auf den Punkt."
+      - "Wie gewohnt."
+      - "Wird gemacht."
+      - "Sofort, Sir."
+      - "Ist eingerichtet."
+    success_snarky:
+      - "Bereits erledigt, {title}."
+      - "Darf es sonst noch etwas sein?"
+      - "Hab ich mir erlaubt, schon umzusetzen."
+      - "Wie gewohnt — zuverlaessig und diskret."
+      - "Selbstverstaendlich. Wie immer."
+      - "Erledigt. Ueberraschend reibungslos."
+      - "Gern geschehen, {title}."
+    partial:
+      - "Fast alles geschafft."
+      - "Zum Teil umgesetzt."
+      - "Teilweise durch."
+    failed:
+      - "Das ging leider daneben. Einen Moment, {title}."
+      - "Negativ. Ich pruefe eine Alternative."
+      - "Nicht ganz nach Plan. Ich bleibe dran."
+      - "Das System wehrt sich gerade, {title}. Ich versuche es anders."
+      - "Nicht durchgegangen. Aber ich habe noch einen Weg."
+    failed_snarky:
+      - "Nicht ganz wie geplant. Ich versuche einen anderen Weg."
+      - "Nicht mein bester Moment, {title}. Einen Augenblick."
+      - "Das war... suboptimal. Ich bleibe dran."
+      - "Negativ. Aber ich habe bereits eine Alternative."
+  diagnostic_openers:
+    - "Mir ist aufgefallen, dass"
+    - "Nebenbei bemerkt —"
+    - "Dazu eine Beobachtung:"
+    - "Falls es relevant ist —"
+    - "Apropos —"
+    - "Uebrigens,"
+    - "Am Rande:"
+  casual_warnings:
+    - "Nur zur Kenntnis —"
+    - "Darf ich kurz anmerken —"
+    - "Eine Kleinigkeit am Rande:"
+    - "Nicht dringend, aber:"
+    - "Falls du es wissen moechtest —"
+  error_templates:
+    unavailable:
+      - "{device} reagiert nicht. Pruefe Stromversorgung."
+      - "{device} offline. Ich behalte das im Auge."
+    timeout:
+      - "{device} antwortet nicht rechtzeitig. Zweiter Versuch laeuft."
+    not_found:
+      - "{device} nicht gefunden. Existiert die Entity noch?"
+    unauthorized:
+      - "Keine Berechtigung fuer {device}. Token pruefen."
+    generic:
+      - "{device} — unerwarteter Fehler. Ich bleibe dran."
+  escalation_prefixes:
+    1: ["Uebrigens —", "Nur am Rande —"]
+    2: ["{title}, darf ich anmerken —"]
+    3: ["{title}, das wuerde ich nicht empfehlen."]
+    4: ["Wie du wuenschst, {title}."]
+  sarcasm_positive_patterns:
+    - "haha"
+    - "lol"
+    - "witzig"
+    - "lustig"
+    - "stimmt"
+    - "passt"
+    - "nice"
+  sarcasm_negative_patterns:
+    - "hoer auf"
+    - "lass das"
+    - "sei ernst"
+    - "nicht witzig"
+    - "nervt"
 proactive:
   enabled: true
   cooldown_seconds: 300
@@ -214,6 +452,13 @@ proactive:
     enabled: true
     interval_minutes: 30
     max_items: 10
+  event_handlers:
+    alarm_triggered: { priority: "critical", description: "Alarm ausgeloest" }
+    smoke_detected: { priority: "critical", description: "Rauch erkannt" }
+    water_leak: { priority: "critical", description: "Wasseraustritt erkannt" }
+    person_arrived: { priority: "medium", description: "Person angekommen" }
+    doorbell: { priority: "medium", description: "Jemand hat geklingelt" }
+    weather_warning: { priority: "low", description: "Wetterwarnung" }
 memory:
   extraction_enabled: true
   extraction_min_words: 5
@@ -226,6 +471,14 @@ memory:
   duplicate_threshold: 0.15
   episode_min_words: 3
   default_confidence: 0.7
+  category_confidence:
+    health: 0.9
+    person: 0.85
+    preference: 0.75
+    habit: 0.7
+    work: 0.7
+    intent: 0.6
+    general: 0.5
 planner:
   max_iterations: 8
   model: qwen3.5:9b
@@ -329,6 +582,10 @@ activity:
     night_end: 7
     guest_person_count: 2
     focus_min_minutes: 30
+  silence_keywords:
+    watching: ["filmabend", "film", "kino", "netflix", "serie schauen", "fernsehen"]
+    focused: ["meditation", "meditieren", "fokus", "nicht stören", "ruhe", "arbeiten"]
+    sleeping: ["gute nacht", "schlaf gut", "ich geh schlafen"]
 feedback:
   auto_timeout_seconds: 120
   base_cooldown_seconds: 300
@@ -661,6 +918,20 @@ response_filter:
   - Tatsächlich,
   - Tatsaechlich,
   max_response_sentences: 0
+  sorry_patterns:
+    - "es tut mir leid,"
+    - "leider "
+    - "entschuldigung,"
+    - "tut mir leid,"
+    - "bedauerlicherweise "
+  refusal_patterns:
+    - "ich kann diese Anfrage nicht erfüllen"
+    - "ich kann dir dabei nicht helfen"
+    - "das kann ich nicht tun"
+  chatbot_phrases:
+    - "Wenn du weitere Fragen hast"
+    - "Ich stehe dir gerne zur Verfügung"
+    - "Lass es mich wissen"
 correction:
   confidence: 0.95
   model: qwen3.5:4b
@@ -732,6 +1003,22 @@ ambient_audio:
     end_hour: 7
     escalate_severity: true
   reaction_overrides: null
+  default_reactions:
+    glass_break:
+      severity: "critical"
+      message_de: "Glasbruch{room_suffix}. Licht ist an, Kameras laufen."
+      sound_event: "alarm"
+      actions: ["lights_on", "notify_owner"]
+    smoke_alarm:
+      severity: "critical"
+      message_de: "Rauchmelder schlaegt an in {room}. Sofort pruefen."
+      sound_event: "alarm"
+      actions: ["lights_on", "notify_all"]
+    doorbell:
+      severity: "info"
+      message_de: "Jemand an der Tuer."
+      sound_event: "doorbell"
+      actions: ["notify_present"]
 conflict_resolution:
   enabled: true
   conflict_window_seconds: 300
@@ -755,6 +1042,16 @@ conflict_resolution:
       threshold: 40
       strategy: trust_priority
   resolution_cooldown_seconds: 120
+  safe_limits:
+    climate:
+      temperature: [15.0, 28.0]
+      offset: [-3.0, 3.0]
+    light:
+      brightness: [0, 100]
+    cover:
+      position: [0, 100]
+    media:
+      volume: [0, 100]
 maintenance:
   enabled: true
   config_file: config/maintenance.yaml

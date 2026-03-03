@@ -319,6 +319,24 @@ class PersonalityEngine:
         self.formality_min = personality_config.get("formality_min", 30)
         self.formality_decay = personality_config.get("formality_decay_per_day", 0.5)
 
+        # Konfigurierbare Persoenlichkeits-Daten aus YAML laden (Fallback: Hardcoded)
+        self._mood_styles = personality_config.get("mood_styles") or dict(MOOD_STYLES)
+        self._humor_templates = self._load_humor_templates(personality_config)
+        self._complexity_prompts = personality_config.get("complexity_prompts") or dict(COMPLEXITY_PROMPTS)
+        self._formality_prompts = personality_config.get("formality_prompts") or dict(FORMALITY_PROMPTS)
+
+        # Bestaetigungen
+        _confs = personality_config.get("confirmations") or {}
+        self._confirmations_success = _confs.get("success") or list(CONFIRMATIONS_SUCCESS)
+        self._confirmations_success_snarky = _confs.get("success_snarky") or list(CONFIRMATIONS_SUCCESS_SNARKY)
+        self._confirmations_partial = _confs.get("partial") or list(CONFIRMATIONS_PARTIAL)
+        self._confirmations_failed = _confs.get("failed") or list(CONFIRMATIONS_FAILED)
+        self._confirmations_failed_snarky = _confs.get("failed_snarky") or list(CONFIRMATIONS_FAILED_SNARKY)
+
+        # Phrasen-Pools
+        self._diagnostic_openers = personality_config.get("diagnostic_openers") or list(DIAGNOSTIC_OPENERS)
+        self._casual_warnings = personality_config.get("casual_warnings") or list(CASUAL_WARNINGS)
+
         # State
         self._current_mood: str = "neutral"
         self._mood_detector = None
@@ -339,6 +357,9 @@ class PersonalityEngine:
         # Opinion Rules laden
         self._opinion_rules = self._load_opinion_rules()
 
+        # Kontextueller Humor aus separater Datei
+        self._humor_triggers = self._load_humor_triggers()
+
         logger.info(
             "PersonalityEngine initialisiert (Sarkasmus: %d, Meinung: %d, Ironie: %s)",
             self.sarcasm_level, self.opinion_intensity, self.self_irony_enabled,
@@ -351,6 +372,75 @@ class PersonalityEngine:
     def set_redis(self, redis_client):
         """Setzt Redis-Client fuer State-Persistenz."""
         self._redis = redis_client
+
+    # ------------------------------------------------------------------
+    # Config-Laden Hilfsmethoden
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _load_humor_templates(personality_config: dict) -> dict:
+        """Laedt Humor-Templates aus Config — konvertiert YAML-String-Keys zu int."""
+        raw = personality_config.get("humor_templates")
+        if not raw:
+            return dict(HUMOR_TEMPLATES)
+        try:
+            return {int(k): str(v) for k, v in raw.items()}
+        except (ValueError, TypeError):
+            return dict(HUMOR_TEMPLATES)
+
+    def _load_humor_triggers(self) -> dict:
+        """Laedt humor_triggers.yaml — Fallback: hardcoded CONTEXTUAL_HUMOR_TRIGGERS."""
+        path = Path(__file__).parent.parent / "config" / "humor_triggers.yaml"
+        if not path.exists():
+            return dict(CONTEXTUAL_HUMOR_TRIGGERS)
+        try:
+            with open(path) as f:
+                data = yaml.safe_load(f)
+            raw = data.get("humor_triggers") or {}
+            # YAML-Struktur (func -> situation -> [templates]) -> Tuple-Keys
+            result = {}
+            for func_name, situations in raw.items():
+                if isinstance(situations, dict):
+                    for sit_key, templates in situations.items():
+                        if isinstance(templates, list):
+                            result[(func_name, sit_key)] = templates
+            if result:
+                logger.info("Humor-Triggers geladen: %d Situationen", len(result))
+                return result
+            return dict(CONTEXTUAL_HUMOR_TRIGGERS)
+        except Exception as e:
+            logger.warning("humor_triggers.yaml nicht ladbar: %s", e)
+            return dict(CONTEXTUAL_HUMOR_TRIGGERS)
+
+    def reload_config(self):
+        """Laedt Persoenlichkeits-Konfiguration neu (nach UI-Aenderung)."""
+        personality_config = yaml_config.get("personality") or {}
+        self.sarcasm_level = personality_config.get("sarcasm_level", 3)
+        self.opinion_intensity = personality_config.get("opinion_intensity", 2)
+        self.self_irony_enabled = personality_config.get("self_irony_enabled", True)
+        self.self_irony_max_per_day = personality_config.get("self_irony_max_per_day", 3)
+        self.character_evolution = personality_config.get("character_evolution", True)
+        self.formality_start = personality_config.get("formality_start", 80)
+        self.formality_min = personality_config.get("formality_min", 30)
+        self.formality_decay = personality_config.get("formality_decay_per_day", 0.5)
+        self.time_layers = personality_config.get("time_layers") or {}
+        # Konfigurierbare Persoenlichkeits-Daten
+        self._mood_styles = personality_config.get("mood_styles") or dict(MOOD_STYLES)
+        self._humor_templates = self._load_humor_templates(personality_config)
+        self._complexity_prompts = personality_config.get("complexity_prompts") or dict(COMPLEXITY_PROMPTS)
+        self._formality_prompts = personality_config.get("formality_prompts") or dict(FORMALITY_PROMPTS)
+        _confs = personality_config.get("confirmations") or {}
+        self._confirmations_success = _confs.get("success") or list(CONFIRMATIONS_SUCCESS)
+        self._confirmations_success_snarky = _confs.get("success_snarky") or list(CONFIRMATIONS_SUCCESS_SNARKY)
+        self._confirmations_partial = _confs.get("partial") or list(CONFIRMATIONS_PARTIAL)
+        self._confirmations_failed = _confs.get("failed") or list(CONFIRMATIONS_FAILED)
+        self._confirmations_failed_snarky = _confs.get("failed_snarky") or list(CONFIRMATIONS_FAILED_SNARKY)
+        self._diagnostic_openers = personality_config.get("diagnostic_openers") or list(DIAGNOSTIC_OPENERS)
+        self._casual_warnings = personality_config.get("casual_warnings") or list(CASUAL_WARNINGS)
+        self._humor_triggers = self._load_humor_triggers()
+        self._easter_eggs = self._load_easter_eggs()
+        self._opinion_rules = self._load_opinion_rules()
+        logger.info("PersonalityEngine: Config neu geladen")
 
     # ------------------------------------------------------------------
     # Person Profiles — Per-Person Persoenlichkeitsanpassung
@@ -614,16 +704,16 @@ class PersonalityEngine:
                 return contextual
 
         if partial:
-            pool = list(CONFIRMATIONS_PARTIAL)
+            pool = list(self._confirmations_partial)
         elif success:
-            pool = list(CONFIRMATIONS_SUCCESS)
+            pool = list(self._confirmations_success)
             # Bei frustriertem User: Keine snarky Bestaetigungen
             if self.sarcasm_level >= 4 and effective_mood != "frustrated":
-                pool.extend(CONFIRMATIONS_SUCCESS_SNARKY)
+                pool.extend(self._confirmations_success_snarky)
         else:
-            pool = list(CONFIRMATIONS_FAILED)
+            pool = list(self._confirmations_failed)
             if self.sarcasm_level >= 4:
-                pool.extend(CONFIRMATIONS_FAILED_SNARKY)
+                pool.extend(self._confirmations_failed_snarky)
 
         # Filter: Nicht die letzten 3 verwendeten
         available = [c for c in pool if c not in user_history[-3:]]
@@ -998,13 +1088,14 @@ class PersonalityEngine:
 
     def _build_humor_section(
         self, mood: str, time_of_day: str, has_alerts: bool = False,
-        person_humor_override: Optional[int] = None,
+        person_humor_override: Optional[int] = None, person: str = "",
     ) -> str:
         """Baut den Humor-Abschnitt basierend auf Level + Kontext.
 
         F-023: Bei aktiven Sicherheits-Alerts wird Sarkasmus komplett deaktiviert.
         Sarkasmus-Fatigue: Nach 4+ sarkastischen Antworten in Folge eine Stufe runter.
         person_humor_override: Per-Person Humor-Level (1-5), ueberschreibt globalen Level.
+        person: Name der Person fuer per-User Streak-Tracking.
         """
         base_level = person_humor_override if person_humor_override is not None else self.sarcasm_level
 
@@ -1024,7 +1115,8 @@ class PersonalityEngine:
 
         # Sarkasmus-Fatigue: Nach 4+ Antworten in Folge etwas zuruecknehmen
         # Jarvis wird nie repetitiv — ein echter Butler variiert
-        streak = self._sarcasm_streak.get("default", 0)
+        user_key = person.lower().strip() if person else "_default"
+        streak = self._sarcasm_streak.get(user_key, 0)
         if streak >= 6 and effective_level >= 3:
             effective_level = max(2, effective_level - 2)
         elif streak >= 4 and effective_level >= 3:
@@ -1036,10 +1128,7 @@ class PersonalityEngine:
         elif time_of_day == "night":
             effective_level = min(effective_level, 1)
 
-        # Streak tracken (wird in track_sarcasm_streak aufgerufen)
-        self._last_effective_humor = effective_level
-
-        template = HUMOR_TEMPLATES.get(effective_level, HUMOR_TEMPLATES[3])
+        template = self._humor_templates.get(effective_level, self._humor_templates.get(3, ""))
         humor_text = f"HUMOR: {template.replace('{title}', get_person_title())}"
 
         # Bei Stress/Frustration: Humor auf einen Kommentar limitieren
@@ -1049,12 +1138,20 @@ class PersonalityEngine:
 
         return humor_text
 
-    def track_sarcasm_streak(self, was_snarky: bool, person_id: str = "default"):
+    def track_sarcasm_streak(self, was_snarky: bool, person_id: str = "_default"):
         """Trackt aufeinanderfolgende sarkastische Antworten per User. 0ms — rein in-memory."""
+        key = person_id.lower().strip() if person_id else "_default"
         if was_snarky:
-            self._sarcasm_streak[person_id] = self._sarcasm_streak.get(person_id, 0) + 1
+            self._sarcasm_streak[key] = self._sarcasm_streak.get(key, 0) + 1
         else:
-            self._sarcasm_streak[person_id] = 0
+            self._sarcasm_streak[key] = 0
+        # Memory-Leak-Schutz: Max 50 User tracken
+        if len(self._sarcasm_streak) > 50:
+            oldest = next(iter(self._sarcasm_streak))
+            del self._sarcasm_streak[oldest]
+        if len(self._humor_consecutive) > 50:
+            oldest = next(iter(self._humor_consecutive))
+            del self._humor_consecutive[oldest]
 
     # ------------------------------------------------------------------
     # Adaptive Komplexitaet (Phase 6.8)
@@ -1091,7 +1188,7 @@ class PersonalityEngine:
         else:
             mode = "normal"
 
-        return COMPLEXITY_PROMPTS.get(mode, COMPLEXITY_PROMPTS["normal"])
+        return self._complexity_prompts.get(mode, self._complexity_prompts.get("normal", ""))
 
     # ------------------------------------------------------------------
     # Selbstironie (Phase 6.4)
@@ -1218,13 +1315,13 @@ class PersonalityEngine:
             effective_score = min(formality_score + 20, 70)
 
         if effective_score >= 70:
-            return FORMALITY_PROMPTS["formal"]
+            return self._formality_prompts.get("formal", "")
         elif effective_score >= 50:
-            return FORMALITY_PROMPTS["butler"]
+            return self._formality_prompts.get("butler", "")
         elif effective_score >= 35:
-            return FORMALITY_PROMPTS["locker"]
+            return self._formality_prompts.get("locker", "")
         else:
-            return FORMALITY_PROMPTS["freund"]
+            return self._formality_prompts.get("freund", "")
 
     # ------------------------------------------------------------------
     # Running Gags (Phase 6.9)
@@ -1348,7 +1445,8 @@ class PersonalityEngine:
     # ------------------------------------------------------------------
 
     async def generate_contextual_humor(
-        self, func_name: str, func_args: dict, context: dict | None = None
+        self, func_name: str, func_args: dict, context: dict | None = None,
+        person: str = "",
     ) -> Optional[str]:
         """Erzeugt situationsbezogenen Humor nach einer Aktion.
 
@@ -1373,25 +1471,26 @@ class PersonalityEngine:
             return None
 
         # Humor-Fatigue: Nach 4 Witzen Pause (per User)
-        _hc = self._humor_consecutive.get("default", 0)
+        _hc_key = person.lower().strip() if person else "_default"
+        _hc = self._humor_consecutive.get(_hc_key, 0)
         if _hc >= 4:
-            self._humor_consecutive["default"] = 0
+            self._humor_consecutive[_hc_key] = 0
             return None
 
         # Situation erkennen
         situation = self._detect_humor_situation(func_name, func_args, context)
         if not situation:
             # Kein Humor noetig — Reset
-            self._humor_consecutive["default"] = 0
+            self._humor_consecutive[_hc_key] = 0
             return None
 
         # Templates holen
         key = (func_name, situation["key"])
-        templates = CONTEXTUAL_HUMOR_TRIGGERS.get(key)
+        templates = self._humor_triggers.get(key)
         if not templates:
             # Fallback: "any" Kategorie
             key = ("any", situation["key"])
-            templates = CONTEXTUAL_HUMOR_TRIGGERS.get(key)
+            templates = self._humor_triggers.get(key)
         if not templates:
             return None
 
@@ -1417,7 +1516,7 @@ class PersonalityEngine:
         )
 
         # Fatigue tracken (per User)
-        self._humor_consecutive["default"] = self._humor_consecutive.get("default", 0) + 1
+        self._humor_consecutive[_hc_key] = self._humor_consecutive.get(_hc_key, 0) + 1
 
         # Erfolg tracken (async, fire-and-forget)
         if self._redis:
@@ -1771,7 +1870,8 @@ class PersonalityEngine:
         # Stimmungsabhaengige Anpassung
         mood = (context.get("mood") or {}).get("mood", "neutral") if context else "neutral"
         self._current_mood = mood
-        mood_config = MOOD_STYLES.get(mood, MOOD_STYLES["neutral"])
+        _neutral_fallback = self._mood_styles.get("neutral", {"style_addon": "", "max_sentences_mod": 0})
+        mood_config = self._mood_styles.get(mood, _neutral_fallback)
 
         # MCU-JARVIS: Mood x Complexity Matrix ueberschreibt zeit-basierte Defaults
         # Wenn User-Text vorhanden und Feature aktiv, nutze die Matrix
@@ -1824,6 +1924,7 @@ class PersonalityEngine:
         humor_section = self._build_humor_section(
             mood, time_of_day, has_alerts=has_alerts,
             person_humor_override=person_profile.get("humor"),
+            person=current_person_name,
         )
 
         # Phase 6: Complexity-Section — F-022: person durchreichen fuer per-User Tracking

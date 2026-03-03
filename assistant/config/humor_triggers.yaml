@@ -1,0 +1,62 @@
+# Kontextueller Humor: Situations-basierte Kommentare nach Aktionen
+# Platzhalter: {temp}, {hour}, {count}, {weather}, {room}, {title}, {hours}
+#
+# Struktur: function_name → situation_key → Liste von Templates
+# Wird von personality.py geladen und intern zu (function, situation) Tuple-Keys konvertiert.
+humor_triggers:
+  set_climate:
+    temp_high_night:
+      - "{temp} Grad um {hour} Uhr. Ambitioniert, {title}."
+      - "{temp} Grad nachts. Darf ich das als bewusste Entscheidung verbuchen?"
+      - "Heizung auf {temp} um {hour} Uhr. Wird umgesetzt."
+    temp_changes_today:
+      - "{count}. Aenderung heute. Ich notiere es, {title}."
+      - "Aenderung Nummer {count}. Ich behalte den Ueberblick."
+      - "Die {count}. Anpassung heute. Selbstverstaendlich."
+  set_light:
+    all_off_late:
+      - "Alles dunkel um {hour} Uhr. Sehr wohl."
+      - "Licht aus um {hour} Uhr. Wird umgesetzt."
+      - "Dunkelheit um {hour} Uhr. Wie gewuenscht, {title}."
+    rapid_toggle:
+      - "Darf ich fragen, ob wir uns auf einen Zustand einigen?"
+      - "An. Aus. An. Ich bleibe flexibel, {title}."
+      - "Soll ich bei einem Zustand bleiben, oder testen wir weiter?"
+  set_cover:
+    open_rain:
+      - "Rollladen hoch bei {weather}. Nur zur Kenntnis, {title}."
+      - "Bei {weather} geoeffnet. Bewusste Entscheidung, nehme ich an."
+      - "Rollladen auf bei {weather}. Wird gemacht."
+    open_storm:
+      - "Rollladen hoch bei {weather}. Darf ich darauf hinweisen, {title}?"
+      - "Bei {weather} geoeffnet. Ich behalte die Lage im Auge."
+  set_vacuum:
+    already_clean:
+      - "Der letzte Durchgang war vor {hours} Stunden. Trotzdem, {title}?"
+      - "Erst vor {hours} Stunden gereinigt. Soll ich dennoch starten?"
+      - "Erneuter Einsatz nach {hours} Stunden. Wird veranlasst."
+    night_clean:
+      - "Reinigung um {hour} Uhr. Darf ich auf die Uhrzeit hinweisen, {title}?"
+      - "Saugen um {hour} Uhr. Selbstverstaendlich."
+  play_media:
+    repeated_content:
+      - "Schon wieder, {title}? Wird gemacht."
+      - "Vertraute Wahl, {title}. Laeuft."
+      - "Solider Geschmack, {title}. Wie immer."
+    late_night_media:
+      - "Unterhaltung um {hour} Uhr. Lautstaerke angepasst, {title}."
+      - "{hour} Uhr und Medien. Nachbarn schlafen, {title}."
+  set_switch:
+    many_toggles_today:
+      - "{count}. Schaltvorgang heute. Soll ich einen Zeitplan vorschlagen, {title}?"
+      - "Nummer {count} fuer heute. Ich fuehre Buch, {title}."
+  any:
+    late_night_command:
+      - "Noch wach, {title}? Sehr wohl."
+      - "{hour} Uhr. Wird erledigt."
+    early_riser:
+      - "Frueh wach, {title}. Respekt."
+      - "{hour} Uhr. Der fruehe Vogel, {title}."
+    weekend_morning:
+      - "Wochenende und schon wach, {title}?"
+      - "Samstagsmorgens? Ambitioniert, {title}."

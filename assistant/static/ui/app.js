@@ -700,6 +700,17 @@ const HELP_TEXTS = {
   'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster fuer das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. 2048 empfohlen fuer 4B Modelle.'},
   'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster fuer das Smart-Modell (Gespraeche).', detail:'4096 = Standard. Mehr Kontext = besseres Gespraechsgedaechtnis, aber mehr VRAM.'},
   'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster fuer das Deep-Modell (komplexe Aufgaben).', detail:'MoE-Modelle (z.B. Qwen3.5-27B) sind VRAM-effizient und vertragen 8192+.'},
+  // === MODELL-PROFILE ===
+  'model_profiles': {title:'Modell-Profile', text:'LLM-Parameter pro Modell-Familie. Neues Modell = nur Profil hier anlegen. Match: Laengster Key der im Modellnamen vorkommt gewinnt.', detail:'Beispiel: "qwen3.5:9b" matcht Profil "qwen3.5" (nicht "qwen3"). Unbekannte Modelle nutzen das "default" Profil. Spezifische Profile erben vom Default und ueberschreiben nur gesetzte Werte.'},
+  'model_profiles.default.supports_think_tags': {title:'Think-Tags (Default)', text:'Ob das Modell &lt;think&gt;-Tags fuer Chain-of-Thought Reasoning nutzt.', detail:'Qwen3, DeepSeek und aehnliche Modelle geben ihren Denkprozess in &lt;think&gt;-Tags aus. Diese werden automatisch aus der Antwort entfernt.'},
+  'model_profiles.default.supports_think_with_tools': {title:'Think + Tools (Default)', text:'Ob Think-Tags gleichzeitig mit Tool-Calls funktionieren.', detail:'Qwen 3.5 unterstuetzt Think+Tools nativ. Bei aelteren Modellen stoeren Think-Tags die Tool-Generierung — dann deaktivieren.'},
+  'model_profiles.default.temperature': {title:'Temperatur (Default)', text:'Kreativitaet der Antworten. 0 = deterministisch, 0.7 = Standard.'},
+  'model_profiles.default.top_p': {title:'Top-P (Default)', text:'Nucleus Sampling. Niedrigere Werte = fokussiertere Antworten.'},
+  'model_profiles.default.top_k': {title:'Top-K (Default)', text:'Nur die K wahrscheinlichsten Tokens beruecksichtigen.'},
+  'model_profiles.default.min_p': {title:'Min-P (Default)', text:'Minimum Probability. Filtert sehr unwahrscheinliche Tokens.'},
+  'model_profiles.default.repeat_penalty': {title:'Repeat Penalty (Default)', text:'Bestraft Wiederholungen. 1.0 = aus, 1.1 = leicht, 1.5 = stark.'},
+  'model_profiles.default.think_temperature': {title:'Think-Temperatur (Default)', text:'Temperatur im Thinking-Modus. Empfohlen: 0.6 (fokussierter als normal).'},
+  'model_profiles.default.think_top_p': {title:'Think Top-P (Default)', text:'Top-P im Thinking-Modus. Empfohlen: 0.95 (breiter als normal).'},
   'planner.max_iterations': {title:'Max. Planungsschritte', text:'Wie viele Planungsrunden der Action Planner maximal durchlaeuft.', detail:'8 = Standard. Komplexe Aufgaben wie "Mach alles fertig fuer morgen" brauchen mehr Schritte. Bei Timeout-Problemen reduzieren.'},
   'planner.max_tokens': {title:'Planner Antwortlaenge', text:'Maximale Tokens pro Planungsschritt.', detail:'512 = Standard. Erhoehen wenn der Planner Plaene abschneidet.'},
   'models.fast_keywords': {title:'Fast-Keywords', text:'Woerter die das schnelle Modell aktivieren.'},
@@ -720,10 +731,59 @@ const HELP_TEXTS = {
   'personality.formality_start': {title:'Anfangs-Formalitaet', text:'Wie formell am Anfang (100%=Sie, 0%=sehr locker).'},
   'personality.formality_min': {title:'Minimale Formalitaet', text:'Wie locker der Assistent maximal werden darf.'},
   'personality.formality_decay_per_day': {title:'Formalitaets-Abbau', text:'Wie schnell der Assistent lockerer wird (Punkte/Tag).'},
+  'personality.mood_styles': {title:'Stimmungs-Stile', text:'Wie Jarvis auf verschiedene User-Stimmungen reagiert. Stil-Anweisung beeinflusst den Ton, Satz-Modifier die Antwortlaenge.'},
+  'personality.humor_templates': {title:'Humor-Templates', text:'Humor-Anweisungen pro Sarkasmus-Level (1-5). Diese Texte werden dem System-Prompt hinzugefuegt und steuern den Humor-Grad.'},
+  'personality.complexity_prompts': {title:'Komplexitaets-Modi', text:'Text-Anweisungen pro Antwort-Modus (kurz/normal/ausfuehrlich). Wird automatisch je nach Kontext gewaehlt.'},
+  'personality.formality_prompts': {title:'Formalitaets-Stufen', text:'Ton-Anweisungen pro Formalitaets-Score. Der Score sinkt automatisch mit der Charakter-Entwicklung.'},
+  'personality.confirmations.success': {title:'Erfolgs-Bestaetigungen', text:'Phrasen die Jarvis nach erfolgreicher Aktion verwendet. Werden zufaellig gewaehlt, nie zweimal hintereinander.'},
+  'personality.confirmations.success_snarky': {title:'Snarky Bestaetigungen', text:'Spitzere Bestaetigungen die ab Sarkasmus-Level 4 eingemischt werden.'},
+  'personality.confirmations.partial': {title:'Teil-Bestaetigungen', text:'Phrasen fuer teilweise erfolgreiche Aktionen.'},
+  'personality.confirmations.failed': {title:'Fehler-Bestaetigungen', text:'Phrasen wenn eine Aktion fehlgeschlagen ist.'},
+  'personality.confirmations.failed_snarky': {title:'Snarky Fehler', text:'Spitzere Fehler-Phrasen ab Sarkasmus-Level 4.'},
+  'personality.diagnostic_openers': {title:'Diagnose-Einleitungen', text:'Einleitungs-Phrasen fuer technische Beobachtungen im MCU-Jarvis Engineering-Stil.'},
+  'personality.casual_warnings': {title:'Beilaeufige Warnungen', text:'Understatement-Einleitungen fuer Warnungen — der typische Butler-Stil.'},
   'response_filter.enabled': {title:'Antwort-Filter', text:'Filtert unerwuenschte Phrasen und begrenzt Antwortlaenge.'},
   'response_filter.max_response_sentences': {title:'Max. Saetze', text:'Max. Saetze pro Antwort. 0 = unbegrenzt.'},
   'response_filter.banned_phrases': {title:'Verbotene Phrasen', text:'Phrasen die der Assistent nie verwenden soll.'},
   'response_filter.banned_starters': {title:'Verbotene Satzanfaenge', text:'Satzanfaenge die vermieden werden sollen.'},
+  'response_filter.sorry_patterns': {title:'Entschuldigungs-Filter', text:'Entschuldigungs-Phrasen die aus LLM-Antworten entfernt werden.'},
+  'response_filter.refusal_patterns': {title:'Verweigerungs-Filter', text:'Verweigerungs-Phrasen die aus Antworten entfernt werden.'},
+  'response_filter.chatbot_phrases': {title:'Chatbot-Floskeln-Filter', text:'Typische Chatbot-Floskeln die aus Antworten entfernt werden.'},
+  'personality.error_templates.unavailable': {title:'Fehler: Nicht erreichbar', text:'Fehlermeldungen wenn ein Geraet nicht erreichbar ist. Platzhalter: {device}'},
+  'personality.error_templates.timeout': {title:'Fehler: Timeout', text:'Fehlermeldungen bei Zeitueberschreitung. Platzhalter: {device}'},
+  'personality.error_templates.not_found': {title:'Fehler: Nicht gefunden', text:'Fehlermeldungen wenn ein Geraet nicht gefunden wird. Platzhalter: {device}'},
+  'personality.error_templates.unauthorized': {title:'Fehler: Nicht berechtigt', text:'Fehlermeldungen bei fehlender Berechtigung. Platzhalter: {device}'},
+  'personality.error_templates.generic': {title:'Fehler: Allgemein', text:'Allgemeine Fehlermeldungen. Platzhalter: {device}'},
+  'personality.escalation_prefixes.1': {title:'Eskalation: Beilaeufig', text:'Info-Einleitungen (geringste Warnstufe). Platzhalter: {title}'},
+  'personality.escalation_prefixes.2': {title:'Eskalation: Einwand', text:'Einwand-Einleitungen. Platzhalter: {title}'},
+  'personality.escalation_prefixes.3': {title:'Eskalation: Sorge', text:'Besorgnis-Einleitungen. Platzhalter: {title}'},
+  'personality.escalation_prefixes.4': {title:'Eskalation: Resignation', text:'Resignation-Einleitungen (hoechste Warnstufe). Platzhalter: {title}'},
+  'personality.sarcasm_positive_patterns': {title:'Sarkasmus: Positiv', text:'Erkennungsmuster fuer positives Feedback auf Sarkasmus.'},
+  'personality.sarcasm_negative_patterns': {title:'Sarkasmus: Negativ', text:'Erkennungsmuster fuer negatives Feedback auf Sarkasmus.'},
+  'stt_corrections.word_corrections': {title:'STT Wort-Korrekturen', text:'Einzelwort-Korrekturen fuer haeufige Spracherkennungsfehler.'},
+  'stt_corrections.phrase_corrections': {title:'STT Phrasen-Korrekturen', text:'Mehrwort-Korrekturen. Werden VOR Einzelwort-Korrekturen angewendet.'},
+  'command_detection.device_nouns': {title:'Geraete-Substantive', text:'Woerter die der Assistent als Geraete-Befehle erkennt.'},
+  'command_detection.action_words': {title:'Aktions-Woerter', text:'Woerter die eine Geraete-Aktion signalisieren.'},
+  'command_detection.command_verbs': {title:'Befehls-Verben', text:'Verben die einen Geraete-Befehl einleiten.'},
+  'command_detection.query_markers': {title:'Abfrage-Marker', text:'Woerter die eine Status-Abfrage erkennen.'},
+  'command_detection.action_exclusions': {title:'Aktions-Ausnahmen', text:'Woerter die als Aktion aussehen aber keine sind.'},
+  'command_detection.status_nouns': {title:'Status-Substantive', text:'Woerter die eine Status-Abfrage signalisieren.'},
+  'das_uebliche.patterns': {title:'Das-Uebliche Trigger', text:'Phrasen die die "Das Uebliche"-Routine ausloesen.'},
+  'autonomy.action_permissions': {title:'Aktions-Berechtigungen', text:'Mindest-Autonomie-Level pro Aktionstyp (1-5).'},
+  'autonomy.evolution_criteria': {title:'Evolution-Kriterien', text:'Kriterien fuer automatischen Autonomie-Aufstieg.'},
+  'activity.silence_keywords.watching': {title:'Stille: Film/TV', text:'Keywords die den "Film schauen"-Modus ausloesen.'},
+  'activity.silence_keywords.focused': {title:'Stille: Konzentration', text:'Keywords die den "Nicht stoeren"-Modus ausloesen.'},
+  'activity.silence_keywords.sleeping': {title:'Stille: Schlafen', text:'Keywords die den Schlaf-Modus ausloesen.'},
+  'memory.category_confidence.health': {title:'Konfidenz: Gesundheit', text:'Mindest-Sicherheit fuer Gesundheits-Fakten.'},
+  'memory.category_confidence.person': {title:'Konfidenz: Personen', text:'Mindest-Sicherheit fuer Personen-Fakten.'},
+  'memory.category_confidence.preference': {title:'Konfidenz: Vorlieben', text:'Mindest-Sicherheit fuer Vorlieben-Fakten.'},
+  'memory.category_confidence.habit': {title:'Konfidenz: Gewohnheiten', text:'Mindest-Sicherheit fuer Gewohnheits-Fakten.'},
+  'memory.category_confidence.work': {title:'Konfidenz: Arbeit', text:'Mindest-Sicherheit fuer Arbeits-Fakten.'},
+  'memory.category_confidence.intent': {title:'Konfidenz: Absichten', text:'Mindest-Sicherheit fuer Absichts-Fakten (kann sich aendern).'},
+  'memory.category_confidence.general': {title:'Konfidenz: Allgemein', text:'Mindest-Sicherheit fuer allgemeine Fakten.'},
+  'proactive.event_handlers': {title:'Event-Handler', text:'Prioritaeten und Beschreibungen fuer Event-Typen.'},
+  'ambient_audio.default_reactions': {title:'Audio-Reaktionen', text:'Standard-Reaktionen auf erkannte Audio-Events.'},
+  'entity_roles': {title:'Entity-Rollen', text:'Eigene Entity-Rollen fuer Geraete-Erkennung. Ueberschreiben Defaults aus entity_roles_defaults.yaml.'},
   // === GEDAECHTNIS ===
   'memory.extraction_enabled': {title:'Fakten-Extraktion', text:'Automatisch Fakten aus Gespraechen lernen und merken.'},
   'memory.extraction_min_words': {title:'Min. Nachrichtenlaenge', text:'Mindestlaenge damit Fakten extrahiert werden.'},
@@ -1730,6 +1790,96 @@ async function loadRoomTempAverage() {
   }
 }
 
+// ---- Model Profiles Sektion (eingebettet in Persoenlichkeit-Tab) ----
+function _renderModelProfiles() {
+  const profiles = getPath(S, 'model_profiles') || {};
+  const profileKeys = Object.keys(profiles).filter(k => k !== 'default');
+  const defaultP = profiles['default'] || {};
+
+  // Profil-Felder mit Labels und Ranges
+  const PROFILE_FIELDS = [
+    {key:'supports_think_tags', label:'Think-Tags', type:'toggle', hint:'LLM nutzt <think>-Tags fuer Chain-of-Thought'},
+    {key:'supports_think_with_tools', label:'Think + Tools', type:'toggle', hint:'Think-Tags bleiben bei Tool-Calls aktiv'},
+    {key:'temperature', label:'Temperatur', type:'range', min:0, max:2, step:0.1},
+    {key:'top_p', label:'Top-P', type:'range', min:0, max:1, step:0.05},
+    {key:'top_k', label:'Top-K', type:'range', min:1, max:100, step:1},
+    {key:'min_p', label:'Min-P', type:'range', min:0, max:0.5, step:0.01},
+    {key:'repeat_penalty', label:'Repeat Penalty', type:'range', min:1, max:2, step:0.05},
+    {key:'think_temperature', label:'Think-Temperatur', type:'range', min:0, max:1, step:0.05},
+    {key:'think_top_p', label:'Think Top-P', type:'range', min:0, max:1, step:0.05},
+  ];
+
+  function renderProfileCard(name, p, isDefault) {
+    const prefix = 'model_profiles.' + name;
+    const icon = isDefault ? '&#9881;' : '&#129302;';
+    const title = isDefault ? 'default (Fallback)' : name;
+    const removable = !isDefault;
+    let html = '<div class="mp-card" style="margin-bottom:12px;padding:14px;background:var(--bg-secondary);border-radius:var(--radius-sm);border-left:3px solid ' +
+      (isDefault ? 'var(--text-muted)' : 'var(--accent)') + ';">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
+    html += '<span style="font-weight:600;font-size:14px;">' + icon + ' ' + esc(title) + '</span>';
+    if (removable) {
+      html += '<button class="btn btn-danger btn-sm" onclick="removeModelProfile(\'' + esc(name) + '\')" style="padding:4px 8px;min-width:auto;font-size:11px;" title="Profil entfernen">&#128465;</button>';
+    }
+    html += '</div>';
+    for (const f of PROFILE_FIELDS) {
+      const val = p[f.key] ?? defaultP[f.key] ?? '';
+      const path = prefix + '.' + f.key;
+      if (f.type === 'toggle') {
+        const checked = val ? 'checked' : '';
+        html += '<div class="form-group" style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">' +
+          '<label style="font-size:12px;margin:0;">' + f.label + '</label>' +
+          '<label class="switch" style="margin:0;"><input type="checkbox" data-path="' + path + '" ' + checked + '><span class="slider"></span></label></div>';
+      } else {
+        html += '<div class="form-group" style="margin-bottom:6px;">' +
+          '<label style="font-size:12px;">' + f.label + '</label>' +
+          '<div style="display:flex;gap:8px;align-items:center;">' +
+          '<input type="range" data-path="' + path + '" min="' + f.min + '" max="' + f.max + '" step="' + f.step + '" value="' + val + '" style="flex:1;" oninput="this.nextElementSibling.textContent=this.value">' +
+          '<span style="min-width:40px;text-align:right;font-family:var(--mono);font-size:12px;">' + val + '</span>' +
+          '</div></div>';
+      }
+    }
+    html += '</div>';
+    return html;
+  }
+
+  let body = fInfo('Modell-Profile definieren LLM-Parameter pro Modell-Familie. Neues Modell = nur Profil hier anlegen, kein Code noetig. Match: Laengster Key der im Modellnamen vorkommt gewinnt (z.B. "qwen3.5:9b" &rarr; Profil "qwen3.5").') +
+    renderProfileCard('default', defaultP, true);
+
+  for (const name of profileKeys) {
+    body += renderProfileCard(name, profiles[name] || {}, false);
+  }
+
+  body += '<div style="display:flex;gap:8px;margin-top:8px;">' +
+    '<input type="text" id="mpNewName" placeholder="Profilname (z.B. phi4, command-r)" style="flex:1;font-size:13px;">' +
+    '<button class="btn btn-secondary" onclick="addModelProfile()" style="white-space:nowrap;">+ Profil</button>' +
+    '</div>';
+
+  return sectionWrap('&#9881;', 'Modell-Profile', body);
+}
+
+function addModelProfile() {
+  const input = document.getElementById('mpNewName');
+  const name = (input.value || '').trim().toLowerCase();
+  if (!name || name === 'default') return;
+  mergeCurrentTabIntoS();
+  if (!S.model_profiles) S.model_profiles = {};
+  if (!S.model_profiles[name]) {
+    S.model_profiles[name] = {};
+  }
+  renderCurrentTab();
+  scheduleAutoSave();
+}
+
+function removeModelProfile(name) {
+  mergeCurrentTabIntoS();
+  if (S.model_profiles && S.model_profiles[name]) {
+    delete S.model_profiles[name];
+  }
+  renderCurrentTab();
+  scheduleAutoSave();
+}
+
 // ---- Tab 1: Allgemein ----
 function renderGeneral() {
   return sectionWrap('&#9881;', 'Assistent',
@@ -1910,6 +2060,7 @@ function renderPersonality() {
     fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 16384, 1024, {2048:'2K',4096:'4K',6144:'6K',8192:'8K',12288:'12K',16384:'16K'}) +
     fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K',24576:'24K',32768:'32K'})
   ) +
+  _renderModelProfiles() +
   sectionWrap('&#129504;', 'Action Planner',
     fInfo('Der Action Planner fuehrt komplexe Multi-Step Anfragen aus (z.B. "Mach alles fertig fuer morgen"). Er plant iterativ mit dem Deep-Modell und fuehrt Tool-Calls parallel aus.') +
     fRange('planner.max_iterations', 'Max. Planungsschritte', 3, 15, 1, {3:'3',5:'5',8:'8',10:'10',15:'15'}) +
@@ -1976,6 +2127,88 @@ function renderPersonality() {
     fRange('personality.time_layers.night.max_sentences', 'Max. Saetze', 1, 10, 1) +
     '</div>'
   ) +
+  sectionWrap('&#128566;', 'Stimmungs-Stile',
+    fInfo('Wie Jarvis auf verschiedene User-Stimmungen reagiert. Stil-Anweisung wird dem System-Prompt hinzugefuegt, Satz-Modifier passt die maximale Antwortlaenge an.') +
+    '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+    '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128522; Gut gelaunt</div>' +
+    fText('personality.mood_styles.good.style_addon', 'Stil-Anweisung') +
+    fRange('personality.mood_styles.good.max_sentences_mod', 'Satz-Modifier', -3, 3, 1) +
+    '</div>' +
+    '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+    '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128528; Neutral</div>' +
+    fText('personality.mood_styles.neutral.style_addon', 'Stil-Anweisung') +
+    fRange('personality.mood_styles.neutral.max_sentences_mod', 'Satz-Modifier', -3, 3, 1) +
+    '</div>' +
+    '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+    '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128544; Gestresst</div>' +
+    fText('personality.mood_styles.stressed.style_addon', 'Stil-Anweisung') +
+    fRange('personality.mood_styles.stressed.max_sentences_mod', 'Satz-Modifier', -3, 3, 1) +
+    '</div>' +
+    '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+    '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128548; Frustriert</div>' +
+    fText('personality.mood_styles.frustrated.style_addon', 'Stil-Anweisung') +
+    fRange('personality.mood_styles.frustrated.max_sentences_mod', 'Satz-Modifier', -3, 3, 1) +
+    '</div>' +
+    '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+    '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128564; Muede</div>' +
+    fText('personality.mood_styles.tired.style_addon', 'Stil-Anweisung') +
+    fRange('personality.mood_styles.tired.max_sentences_mod', 'Satz-Modifier', -3, 3, 1) +
+    '</div>'
+  ) +
+  sectionWrap('&#128514;', 'Humor-Templates',
+    fInfo('Humor-Anweisungen pro Sarkasmus-Level. Diese Texte steuern wie witzig Jarvis sein darf (1=sachlich, 5=durchgehend trocken).') +
+    fTextarea('personality.humor_templates.1', 'Level 1 — Sachlich') +
+    fTextarea('personality.humor_templates.2', 'Level 2 — Gelegentlich') +
+    fTextarea('personality.humor_templates.3', 'Level 3 — Butler') +
+    fTextarea('personality.humor_templates.4', 'Level 4 — Sarkastisch') +
+    fTextarea('personality.humor_templates.5', 'Level 5 — Durchgehend')
+  ) +
+  sectionWrap('&#128203;', 'Komplexitaets-Modi',
+    fInfo('Text-Anweisungen pro Antwort-Modus. Der Modus wird automatisch anhand von Stimmung, Tageszeit und Befehls-Frequenz gewaehlt.') +
+    fTextarea('personality.complexity_prompts.kurz', 'Kurz-Modus') +
+    fTextarea('personality.complexity_prompts.normal', 'Normal-Modus') +
+    fTextarea('personality.complexity_prompts.ausfuehrlich', 'Ausfuehrlich-Modus')
+  ) +
+  sectionWrap('&#127913;', 'Formalitaets-Stufen',
+    fInfo('Ton-Anweisungen pro Formalitaets-Level. Der Score sinkt automatisch mit der Zeit (Charakter-Entwicklung).') +
+    fTextarea('personality.formality_prompts.formal', 'Formal (Score >= 70)') +
+    fTextarea('personality.formality_prompts.butler', 'Butler (Score >= 50)') +
+    fTextarea('personality.formality_prompts.locker', 'Locker (Score >= 35)') +
+    fTextarea('personality.formality_prompts.freund', 'Freund (Score < 35)')
+  ) +
+  sectionWrap('&#9989;', 'Bestaetigungen',
+    fInfo('Phrasen-Pools fuer Aktions-Bestaetigungen. Eine Phrase pro Zeile. Platzhalter: {title} = Anrede-Titel.') +
+    fTextarea('personality.confirmations.success', 'Erfolg') +
+    fTextarea('personality.confirmations.success_snarky', 'Erfolg (sarkastisch, ab Level 4)') +
+    fTextarea('personality.confirmations.partial', 'Teilweise erfolgreich') +
+    fTextarea('personality.confirmations.failed', 'Fehlgeschlagen') +
+    fTextarea('personality.confirmations.failed_snarky', 'Fehlgeschlagen (sarkastisch, ab Level 4)')
+  ) +
+  sectionWrap('&#128172;', 'Phrasen-Pools',
+    fInfo('Einleitungs-Phrasen fuer Diagnosen und Warnungen. Eine Phrase pro Zeile.') +
+    fTextarea('personality.diagnostic_openers', 'Diagnose-Einleitungen', 'z.B. "Mir ist aufgefallen, dass" — wird zufaellig gewaehlt.') +
+    fTextarea('personality.casual_warnings', 'Beilaeufige Warnungen', 'z.B. "Nur zur Kenntnis —" — Butler-Stil Understatement.')
+  ) +
+  sectionWrap('&#9888;', 'Fehler-Templates',
+    fInfo('Fehlermeldungs-Templates pro Fehler-Kategorie. Platzhalter: {device} = Geraetename. Eine Phrase pro Zeile.') +
+    fTextarea('personality.error_templates.unavailable', 'Geraet nicht erreichbar') +
+    fTextarea('personality.error_templates.timeout', 'Zeitueberschreitung') +
+    fTextarea('personality.error_templates.not_found', 'Geraet nicht gefunden') +
+    fTextarea('personality.error_templates.unauthorized', 'Keine Berechtigung') +
+    fTextarea('personality.error_templates.generic', 'Allgemeiner Fehler')
+  ) +
+  sectionWrap('&#128227;', 'Eskalations-Phrasen',
+    fInfo('Formulierungen pro Warnstufe. Platzhalter: {title} = Anrede. Eine pro Zeile.') +
+    fTextarea('personality.escalation_prefixes.1', 'Stufe 1 — Beilaeufig (Info)') +
+    fTextarea('personality.escalation_prefixes.2', 'Stufe 2 — Einwand') +
+    fTextarea('personality.escalation_prefixes.3', 'Stufe 3 — Sorge') +
+    fTextarea('personality.escalation_prefixes.4', 'Stufe 4 — Resignation')
+  ) +
+  sectionWrap('&#128520;', 'Sarkasmus-Feedback',
+    fInfo('Erkennungsmuster fuer User-Feedback auf Sarkasmus. Wenn erkannt, wird Sarkasmus angepasst.') +
+    fTextarea('personality.sarcasm_positive_patterns', 'Positives Feedback (mehr Sarkasmus)', 'z.B. "haha", "witzig", "nice"') +
+    fTextarea('personality.sarcasm_negative_patterns', 'Negatives Feedback (weniger Sarkasmus)', 'z.B. "hoer auf", "nervt", "nicht witzig"')
+  ) +
   sectionWrap('&#128683;', 'Antwort-Filter',
     fInfo('Unerwuenschte Phrasen aus den Antworten filtern und maximale Antwortlaenge begrenzen.') +
     fToggle('response_filter.enabled', 'Antwort-Filter aktiv') +
@@ -1989,7 +2222,10 @@ function renderPersonality() {
       'Natuerlich!','Selbstverstaendlich!','Klar!','Gerne!',
       'Absolut!','Definitiv!','Auf jeden Fall!','Sicher!',
       'Das ist eine gute Frage','Ich verstehe'
-    ])
+    ]) +
+    fTextarea('response_filter.sorry_patterns', 'Entschuldigungs-Filter', 'Phrasen die aus Antworten entfernt werden. Eine pro Zeile.') +
+    fTextarea('response_filter.refusal_patterns', 'Verweigerungs-Filter', 'Verweigerungs-Phrasen die entfernt werden. Eine pro Zeile.') +
+    fTextarea('response_filter.chatbot_phrases', 'Chatbot-Floskeln-Filter', 'Typische Chatbot-Floskeln die entfernt werden. Eine pro Zeile.')
   );
 }
 
@@ -2007,7 +2243,16 @@ function renderMemory() {
     fRange('memory.min_confidence_for_context', 'Min. Sicherheit fuer Nutzung', 0, 1, 0.05, {0:'Alles nutzen',0.3:'Niedrig',0.5:'Mittel',0.6:'Standard',0.8:'Hoch',1:'Nur sichere'}) +
     fRange('memory.duplicate_threshold', 'Duplikat-Erkennung', 0, 1, 0.05, {0:'Streng',0.5:'Mittel',0.8:'Locker',1:'Aus'}) +
     fRange('memory.episode_min_words', 'Min. Woerter fuer Episode', 1, 20, 1) +
-    fRange('memory.default_confidence', 'Standard-Sicherheit neuer Fakten', 0, 1, 0.05)
+    fRange('memory.default_confidence', 'Standard-Sicherheit neuer Fakten', 0, 1, 0.05) +
+    '<div style="margin:14px 0 6px;font-weight:600;font-size:13px;">Kategorie-Sicherheit</div>' +
+    fInfo('Mindest-Konfidenz pro Fakten-Kategorie. Gesundheit/Sicherheit hoeher, Smalltalk niedriger.') +
+    fRange('memory.category_confidence.health', 'Gesundheit', 0, 1, 0.05) +
+    fRange('memory.category_confidence.person', 'Personen', 0, 1, 0.05) +
+    fRange('memory.category_confidence.preference', 'Vorlieben', 0, 1, 0.05) +
+    fRange('memory.category_confidence.habit', 'Gewohnheiten', 0, 1, 0.05) +
+    fRange('memory.category_confidence.work', 'Arbeit', 0, 1, 0.05) +
+    fRange('memory.category_confidence.intent', 'Absichten/Plaene', 0, 1, 0.05) +
+    fRange('memory.category_confidence.general', 'Allgemein', 0, 1, 0.05)
   ) +
   sectionWrap('&#128218;', 'Wissensdatenbank (RAG)',
     fInfo('Eigene Dokumente als Wissensquelle. Dateien in config/knowledge/ werden automatisch eingelesen.') +
@@ -2458,6 +2703,15 @@ function renderVoice() {
       <span class="info-icon">&#127916;</span>Einzelne Szenen-Uebergaenge konfigurierst du im <strong>Szenen</strong>-Tab. Klicke hier.
     </div>`
   ) +
+  sectionWrap('&#128295;', 'STT-Korrekturen',
+    fInfo('Spracherkennung macht Fehler — hier kannst du haeufige Korrekturen definieren. Mehrwort-Korrekturen werden VOR Einzelwort angewendet.') +
+    fKeyValue('stt_corrections.word_corrections', 'Einzelwort-Korrekturen',
+      'Falsch erkannt', 'Korrektur',
+      'z.B. "uber" → "ueber", "kuche" → "Kueche"') +
+    fKeyValue('stt_corrections.phrase_corrections', 'Mehrwort-Korrekturen',
+      'Falsche Phrase', 'Korrektur',
+      'z.B. "roll laden" → "Rollladen", "wohn zimmer" → "Wohnzimmer"')
+  ) +
   sectionWrap('&#128100;', 'Sprecher-Erkennung',
     fInfo('Erkennt wer spricht ueber 7 Methoden: Geraete-Zuordnung, Richtung (DoA), Raum, Anwesenheit, Stimmabdruck, Voice-Features und Cache. Lernt automatisch dazu.') +
     fToggle('speaker_recognition.enabled', 'Sprecher-Erkennung aktiv') +
@@ -2534,6 +2788,12 @@ function renderHouseStatus() {
     fNum('humidor.target_humidity', 'Ziel-Feuchtigkeit (%)', 50, 85, 1) +
     fNum('humidor.warn_below', 'Warnung unter (%)', 40, 80, 1) +
     fNum('humidor.warn_above', 'Warnung ueber (%)', 55, 90, 1)
+  ) +
+  sectionWrap('&#128164;', 'Stille-Keywords',
+    fInfo('Woerter die eine Aktivitaet erkennen und den "Nicht stoeren"-Modus ausloesen. Ein Wort pro Zeile.') +
+    fTextarea('activity.silence_keywords.watching', 'Film/TV schauen', 'z.B. "filmabend", "netflix", "serie schauen"') +
+    fTextarea('activity.silence_keywords.focused', 'Konzentriert/Meditieren', 'z.B. "meditation", "fokus", "nicht stoeren"') +
+    fTextarea('activity.silence_keywords.sleeping', 'Schlafen', 'z.B. "gute nacht", "ich geh schlafen"')
   );
 }
 
@@ -2898,6 +3158,10 @@ function renderProactive() {
     fRange('insights.thresholds.energy_anomaly_percent', 'Energie-Abweichung', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'}) +
     fRange('insights.thresholds.away_device_minutes', 'Abwesend-Hinweis nach', 30, 480, 30, {30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std',480:'8 Std'}) +
     fRange('insights.thresholds.temp_drop_degrees_per_2h', 'Temp-Abfall Schwelle', 1, 10, 1, {1:'1\u00B0C',2:'2\u00B0C',3:'3\u00B0C',5:'5\u00B0C',10:'10\u00B0C'})
+  ) +
+  sectionWrap('&#128226;', 'Event-Handler',
+    fInfo('Prioritaeten fuer verschiedene Event-Typen. Event-Typen mit hoeherer Prioritaet durchbrechen "Nicht stoeren". In settings.yaml unter proactive.event_handlers anpassbar.') +
+    fTextarea('proactive.event_handlers', 'Event-Handler (JSON)', 'Format: {"event_name": {"priority": "critical|high|medium|low", "description": "..."}}')
   );
 }
 
@@ -3159,7 +3423,17 @@ function renderJarvisFeatures() {
     fInfo('Sage "das Uebliche", "wie immer" oder "mach fertig" — Jarvis erkennt gelernte Muster fuer die aktuelle Tageszeit und fuehrt sie aus. Basiert auf dem Vorausdenken-Modul (Anticipation Engine).') +
     fToggle('das_uebliche.enabled', '"Das Uebliche" aktiv') +
     fRange('das_uebliche.auto_execute_confidence', 'Auto-Ausfuehren ab Sicherheit', 0.5, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%',1:'100%'}) +
-    fRange('das_uebliche.suggest_confidence', 'Nachfragen ab Sicherheit', 0.3, 1, 0.05, {0.3:'30%',0.4:'40%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'})
+    fRange('das_uebliche.suggest_confidence', 'Nachfragen ab Sicherheit', 0.3, 1, 0.05, {0.3:'30%',0.4:'40%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'}) +
+    fTextarea('das_uebliche.patterns', 'Trigger-Phrasen', 'Phrasen die "Das Uebliche" ausloesen. Eine pro Zeile.')
+  ) +
+  sectionWrap('&#127899;', 'Geraete-Erkennung',
+    fInfo('Woerter die der Assistent zur Erkennung von Geraete-Befehlen und Status-Abfragen nutzt. Ein Wort pro Zeile.') +
+    fTextarea('command_detection.device_nouns', 'Geraete-Substantive', 'z.B. "rollladen", "licht", "lampe"') +
+    fTextarea('command_detection.action_words', 'Aktions-Woerter', 'z.B. "auf", "zu", "an", "aus"') +
+    fTextarea('command_detection.command_verbs', 'Befehls-Verben', 'z.B. "mach ", "schalte ", "stell "') +
+    fTextarea('command_detection.query_markers', 'Abfrage-Marker', 'z.B. "welche", "status", "zeig"') +
+    fTextarea('command_detection.action_exclusions', 'Aktions-Ausnahmen', 'z.B. "einstellen", "dimmen"') +
+    fTextarea('command_detection.status_nouns', 'Status-Substantive', 'z.B. "rollladen", "rollo" (inkl. Plurale)')
   );
 }
 
@@ -3314,6 +3588,25 @@ function renderSecurity() {
     fRange('situation_model.min_pause_minutes', 'Mindest-Pause zwischen Deltas (Min)', 5, 120, 5) +
     fRange('situation_model.max_changes', 'Max. gemeldete Aenderungen', 1, 10, 1) +
     fRange('situation_model.temp_threshold', 'Temperatur-Schwelle (°C)', 1, 5, 0.5)
+  ) +
+  sectionWrap('&#9878;', 'Konflikt-Sicherheitsgrenzen',
+    fInfo('Sicherheitsgrenzen fuer Kompromiss-Werte bei Konflikten (z.B. wenn zwei Personen verschiedene Temperaturen wollen).') +
+    '<div style="margin:8px 0;font-weight:600;font-size:13px;">Klima</div>' +
+    fRange('conflict_resolution.safe_limits.climate.temperature.0', 'Temperatur Min (°C)', 10, 20, 0.5) +
+    fRange('conflict_resolution.safe_limits.climate.temperature.1', 'Temperatur Max (°C)', 22, 35, 0.5) +
+    fRange('conflict_resolution.safe_limits.climate.offset.0', 'Offset Min (°C)', -5, 0, 0.5) +
+    fRange('conflict_resolution.safe_limits.climate.offset.1', 'Offset Max (°C)', 0, 5, 0.5) +
+    '<div style="margin:8px 0;font-weight:600;font-size:13px;">Licht / Rollladen / Medien</div>' +
+    fRange('conflict_resolution.safe_limits.light.brightness.0', 'Helligkeit Min (%)', 0, 50, 5) +
+    fRange('conflict_resolution.safe_limits.light.brightness.1', 'Helligkeit Max (%)', 50, 100, 5) +
+    fRange('conflict_resolution.safe_limits.cover.position.0', 'Rollladen Min (%)', 0, 50, 5) +
+    fRange('conflict_resolution.safe_limits.cover.position.1', 'Rollladen Max (%)', 50, 100, 5) +
+    fRange('conflict_resolution.safe_limits.media.volume.0', 'Lautstaerke Min (%)', 0, 50, 5) +
+    fRange('conflict_resolution.safe_limits.media.volume.1', 'Lautstaerke Max (%)', 50, 100, 5)
+  ) +
+  sectionWrap('&#127911;', 'Audio-Event-Reaktionen',
+    fInfo('Standard-Reaktionen auf erkannte Audio-Events (Glasbruch, Rauch, etc.). In settings.yaml unter ambient_audio.default_reactions anpassbar.') +
+    fTextarea('ambient_audio.default_reactions', 'Reaktionen (JSON)', 'Format: {"event_typ": {"severity": "critical|high|info", "message_de": "...", "actions": [...]}}')
   );
 }
 
@@ -3661,6 +3954,14 @@ function renderAutonomie() {
   return sectionWrap('&#9889;', 'Autonomie',
     fInfo('Wie selbststaendig darf der Assistent handeln? Je hoeher, desto mehr macht er eigenstaendig.') +
     fRange('autonomy.level', 'Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+  ) +
+  sectionWrap('&#128272;', 'Aktions-Berechtigungen',
+    fInfo('Mindest-Autonomie-Level pro Aktionstyp. Werte 1-5. In settings.yaml unter autonomy.action_permissions anpassbar.') +
+    fTextarea('autonomy.action_permissions', 'Berechtigungen (JSON)', 'Format: {"aktion": level}. z.B. {"proactive_info": 2, "adjust_temperature_small": 3}')
+  ) +
+  sectionWrap('&#128200;', 'Evolution-Kriterien',
+    fInfo('Kriterien fuer automatischen Autonomie-Aufstieg. Level 5 nur manuell. In settings.yaml unter autonomy.evolution_criteria anpassbar.') +
+    fTextarea('autonomy.evolution_criteria', 'Kriterien (JSON)', 'Format: {"2": {"min_days": 30, "min_interactions": 200, "min_acceptance": 0.7}}')
   ) +
   sectionWrap('&#129302;', 'Selbstoptimierung',
     fInfo('Der Assistent lernt aus euren Gespraechen und schlaegt Verbesserungen vor. Du entscheidest ob Vorschlaege angenommen werden. Die Kern-Identitaet ist geschuetzt.') +
@@ -7471,6 +7772,10 @@ function renderDevices() {
   sectionWrap('&#128736;', 'Wartung',
     fInfo('Automatische Wartungshinweise fuer Geraete im Haushalt.') +
     fToggle('maintenance.enabled', 'Wartungs-Erinnerungen aktiv')
+  ) +
+  sectionWrap('&#127899;', 'Entity-Rollen',
+    fInfo('Standard-Rollen fuer Entity-Erkennung werden aus config/entity_roles_defaults.yaml geladen. Eigene Rollen oder Overrides hier definieren (ueberschreiben Defaults).') +
+    fTextarea('entity_roles', 'Eigene Entity-Rollen (JSON)', 'Format: {"rolle_id": {"label": "Name", "icon": "Emoji", "keywords": ["wort1", "wort2"]}}')
   );
 }
 

@@ -122,6 +122,26 @@ class ConflictResolver:
         # Domain-spezifische Konfiguration
         self._domain_configs: dict[str, dict] = cfg.get("conflict_domains", {})
 
+        # Konfigurierbare Safe-Limits (Fallback: hardcoded)
+        _DEFAULT_SAFE_LIMITS = {
+            "climate": {"temperature": (15.0, 28.0), "offset": (-3.0, 3.0)},
+            "light": {"brightness": (0, 100)},
+            "cover": {"position": (0, 100)},
+            "media": {"volume": (0, 100)},
+        }
+        raw_limits = cfg.get("safe_limits")
+        if raw_limits and isinstance(raw_limits, dict):
+            self._safe_limits = {}
+            for domain, params in raw_limits.items():
+                self._safe_limits[domain] = {}
+                for param, val in params.items():
+                    if isinstance(val, list) and len(val) == 2:
+                        self._safe_limits[domain][param] = (float(val[0]), float(val[1]))
+                    else:
+                        self._safe_limits[domain][param] = val
+        else:
+            self._safe_limits = _DEFAULT_SAFE_LIMITS
+
         # State: Letzte Befehle pro Person
         self._recent_commands: dict[str, list[dict]] = defaultdict(list)
         # State: Letzte Konfliktloesungen (Cooldown)
@@ -466,14 +486,7 @@ class ConflictResolver:
             unit = conflict_detail.get("unit", "")
 
             # F-054: Kompromiss durch Validator lassen (Limits erzwingen)
-            # Sicherheitsgrenzen pro Domain (Hardcoded-Minima/Maxima)
-            _SAFE_LIMITS = {
-                "climate": {"temperature": (15.0, 28.0), "offset": (-3.0, 3.0)},
-                "light": {"brightness": (0, 100)},
-                "cover": {"position": (0, 100)},
-                "media": {"volume": (0, 100)},
-            }
-            limits = _SAFE_LIMITS.get(domain, {}).get(key)
+            limits = self._safe_limits.get(domain, {}).get(key)
             if limits:
                 min_val, max_val = limits
                 if compromise < min_val or compromise > max_val:

@@ -211,6 +211,17 @@ class ActivityEngine:
         # Konfiguration aus YAML
         activity_cfg = yaml_config.get("activity", {})
 
+        # Konfigurierbare Silence-Keywords (Fallback: Klassen-Variable)
+        sk_cfg = activity_cfg.get("silence_keywords")
+        if sk_cfg and isinstance(sk_cfg, dict):
+            from . import activity as _act_mod
+            self._silence_keywords = {
+                getattr(_act_mod, k.upper(), k): v
+                for k, v in sk_cfg.items()
+            }
+        else:
+            self._silence_keywords = dict(self.SILENCE_KEYWORDS)
+
         # Entity-IDs (konfigurierbar pro Installation)
         entities = activity_cfg.get("entities", {})
         self.media_players = entities.get("media_players", [
@@ -295,6 +306,17 @@ class ActivityEngine:
         self.guest_person_count = int(thresholds.get("guest_person_count", 2))
         self.focus_min_minutes = int(thresholds.get("focus_min_minutes", 30))
 
+        # Silence-Keywords neu laden
+        sk_cfg = activity_cfg.get("silence_keywords")
+        if sk_cfg and isinstance(sk_cfg, dict):
+            from . import activity as _act_mod
+            self._silence_keywords = {
+                getattr(_act_mod, k.upper(), k): v
+                for k, v in sk_cfg.items()
+            }
+        else:
+            self._silence_keywords = dict(self.SILENCE_KEYWORDS)
+
         # Silence- und Volume-Matrix neu laden
         self._silence_matrix = _build_matrix_from_config(
             activity_cfg.get("silence_matrix", {}),
@@ -333,7 +355,7 @@ class ActivityEngine:
             Aktivitaets-String oder None
         """
         text_lower = text.lower().strip()
-        for activity, keywords in self.SILENCE_KEYWORDS.items():
+        for activity, keywords in self._silence_keywords.items():
             if any(kw in text_lower for kw in keywords):
                 return activity
         return None

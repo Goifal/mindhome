@@ -5,6 +5,7 @@ Zentrale Konfiguration - liest .env und settings.yaml
 import logging
 import os
 import time
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 import yaml
@@ -23,7 +24,7 @@ class Settings(BaseSettings):
     # MindHome
     mindhome_url: str = "http://192.168.1.100:8099"
 
-    # Ollama
+    # Ollama (Fallback-Defaults — werden von settings.yaml ueberschrieben)
     ollama_url: str = "http://localhost:11434"
     model_fast: str = "qwen3.5:4b"
     model_notify: str = "qwen3.5:9b"
@@ -71,6 +72,65 @@ def load_yaml_config() -> dict:
         except yaml.YAMLError:
             return {}
     return {}
+
+
+# ---------------------------------------------------------------------------
+# Model Profile: LLM-agnostische Konfiguration pro Modell-Familie
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ModelProfile:
+    """LLM-Modell-Profil — konfiguriert Verhalten pro Modell-Familie.
+
+    Wird aus settings.yaml (model_profiles Sektion) geladen.
+    Unbekannte Modelle erhalten das 'default' Profil.
+    """
+    supports_think_tags: bool = False
+    supports_think_with_tools: bool = False
+    temperature: float = 0.7
+    top_p: float = 0.9
+    top_k: int = 40
+    min_p: float = 0.0
+    repeat_penalty: float = 1.0
+    think_temperature: float = 0.6
+    think_top_p: float = 0.95
+
+
+_MODEL_PROFILE_FIELDS = {f.name for f in fields(ModelProfile)}
+
+
+def get_model_profile(model_name: str) -> ModelProfile:
+    """Findet das passende ModelProfile per Longest-Substring-Match.
+
+    Match-Reihenfolge:
+    1. Laengster Key in model_profiles der in model_name vorkommt
+       z.B. model_name="qwen3.5:9b" → Key "qwen3.5" schlaegt "qwen3"
+    2. Fallback: "default" Profil
+    3. Fallback: ModelProfile() mit Standardwerten
+
+    Profil-Keys werden gegen den lowercase model_name gematcht.
+    Spezifische Profile erben alle Werte vom default-Profil und
+    ueberschreiben nur die explizit gesetzten Keys.
+    """
+    profiles_raw = yaml_config.get("model_profiles", {})
+    default_raw = profiles_raw.get("default", {})
+    model_lower = model_name.lower()
+
+    # Longest substring match (spezifischerer Key gewinnt)
+    best_key = None
+    for key in profiles_raw:
+        if key != "default" and key in model_lower:
+            if best_key is None or len(key) > len(best_key):
+                best_key = key
+
+    # Default + spezifisches Profil mergen
+    merged = {**default_raw}
+    if best_key:
+        merged.update(profiles_raw[best_key])
+
+    # Nur bekannte Felder an ModelProfile uebergeben
+    clean = {k: v for k, v in merged.items() if k in _MODEL_PROFILE_FIELDS}
+    return ModelProfile(**clean)
 
 
 # Globale Instanzen
