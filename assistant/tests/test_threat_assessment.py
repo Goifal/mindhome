@@ -234,6 +234,23 @@ class TestDoorsNobodyHome:
         result = threat._check_doors_nobody_home(states)
         assert result == [], f"System-Entities faelschlich als Tuer/Tor erkannt: {result}"
 
+    def test_system_monitor_with_device_class_running(self, threat):
+        """System-Monitor Sensoren mit device_class='running' werden gefiltert.
+
+        Auch wenn MindHome-Domain sie als 'door_window' einstuft.
+        """
+        states = [
+            {"entity_id": "person.max", "state": "not_home"},
+            {"entity_id": "binary_sensor.prozess_s6_svscan", "state": "on",
+             "attributes": {"friendly_name": "System Monitor Prozess s6-svscan",
+                            "device_class": "running"}},
+            {"entity_id": "binary_sensor.prozess_python3", "state": "on",
+             "attributes": {"friendly_name": "System Monitor Prozess python3",
+                            "device_class": "running"}},
+        ]
+        result = threat._check_doors_nobody_home(states)
+        assert result == [], f"Prozess-Sensoren mit device_class=running faelschlich erkannt: {result}"
+
     def test_real_gate_still_detected(self, threat):
         """Echte Tore (gartentor, tor_einfahrt) muessen weiterhin erkannt werden."""
         states = [
