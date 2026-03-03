@@ -3201,10 +3201,7 @@ class FunctionExecutor:
 
         # State ableiten wenn nicht explizit angegeben
         if not state:
-            if args.get("brightness"):
-                state = "on"
-            else:
-                state = "off"
+            state = "on"
 
         if not room:
             return {"success": False, "message": "Kein Raum angegeben"}
