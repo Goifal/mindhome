@@ -693,6 +693,19 @@ class MoodDetector:
             if all(s == "negative" for s in recent):
                 hints.append("WARNUNG: 3x negativ hintereinander. Eskalation vermeiden.")
 
+        # Mood-Trend einbauen
+        trend = self.get_mood_trend(person)
+        if trend == "declining":
+            hints.append("Stimmungstrend: fallend. Vorsichtig agieren.")
+        elif trend == "volatile":
+            hints.append("Stimmungstrend: instabil. Neutral bleiben.")
+
+        # Voice-Signale als Kontext (wenn vorhanden)
+        voice_signals = self._last_voice_signals
+        if voice_signals:
+            voice_desc = ", ".join(voice_signals[:3])
+            hints.append(f"Stimm-Analyse: {voice_desc}.")
+
         return " ".join(hints)
 
     # ------------------------------------------------------------------

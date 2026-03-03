@@ -23,6 +23,15 @@ from .config import yaml_config, get_person_title
 logger = logging.getLogger(__name__)
 
 
+async def _safe_redis(redis_client, method: str, *args, **kwargs):
+    """Redis-Operation mit Fehlerbehandlung — gibt None bei Fehler zurueck."""
+    try:
+        return await getattr(redis_client, method)(*args, **kwargs)
+    except Exception as e:
+        logger.debug("Redis %s fehlgeschlagen: %s", method, e)
+        return None
+
+
 class WellnessAdvisor:
     """Kontextsensitive Wellness-Hinweise — Jarvis kuemmert sich."""
 
@@ -221,7 +230,7 @@ class WellnessAdvisor:
 
         if not user_at_pc:
             # Nicht am PC -> Timer zuruecksetzen
-            await self.redis.delete("mha:wellness:pc_start")
+            await _safe_redis(self.redis, "delete", "mha:wellness:pc_start")
             return
 
         now = datetime.now()
@@ -229,13 +238,13 @@ class WellnessAdvisor:
 
         if not pc_start:
             # Timer starten
-            await self.redis.setex("mha:wellness:pc_start", 86400, now.isoformat())
+            await _safe_redis(self.redis, "setex", "mha:wellness:pc_start", 86400, now.isoformat())
             return
 
         try:
             start_dt = datetime.fromisoformat(pc_start)
         except (ValueError, TypeError):
-            await self.redis.setex("mha:wellness:pc_start", 86400, now.isoformat())
+            await _safe_redis(self.redis, "setex", "mha:wellness:pc_start", 86400, now.isoformat())
             return
 
         minutes = (now - start_dt).total_seconds() / 60
@@ -293,9 +302,9 @@ class WellnessAdvisor:
             urgency = "low"
 
         await self._send_nudge("pc_break", msg, urgency=urgency)
-        await self.redis.setex("mha:wellness:last_break_reminder", 86400, now.isoformat())
+        await _safe_redis(self.redis, "setex", "mha:wellness:last_break_reminder", 86400, now.isoformat())
         # Timer zuruecksetzen damit nach Cooldown nicht sofort wieder feuert
-        await self.redis.setex("mha:wellness:pc_start", 86400, now.isoformat())
+        await _safe_redis(self.redis, "setex", "mha:wellness:pc_start", 86400, now.isoformat())
 
     # ------------------------------------------------------------------
     # Stress-Intervention
@@ -309,21 +318,30 @@ class WellnessAdvisor:
         mood_data = self.mood.get_current_mood()
         mood = mood_data.get("mood", "neutral")
         stress_level = mood_data.get("stress_level", 0.0)
+        mood_trend = self.mood.get_mood_trend()
 
         if mood not in ("stressed", "frustrated"):
             return
 
-        # Nur einmal pro Stress-Episode (30 Min Cooldown)
+        # Bei sich verschlechterndem Trend kuerzerer Cooldown (15 statt 30 Min)
+        cooldown_sec = 900 if mood_trend == "declining" else 1800
+
+        # Nur einmal pro Stress-Episode
         last = await self.redis.get("mha:wellness:last_stress_nudge")
         if last:
             try:
                 last_dt = datetime.fromisoformat(last)
-                if (datetime.now() - last_dt).total_seconds() < 1800:
+                if (datetime.now() - last_dt).total_seconds() < cooldown_sec:
                     return
             except (ValueError, TypeError):
                 pass
 
-        await self.redis.setex("mha:wellness:last_stress_nudge", 86400, datetime.now().isoformat())
+        await _safe_redis(self.redis, "setex", "mha:wellness:last_stress_nudge", 86400, datetime.now().isoformat())
+
+        # Trend-Eskalation: Bei "declining" deutlichere Nachricht
+        trend_hint = ""
+        if mood_trend == "declining":
+            trend_hint = "Ich sehe eine absteigende Tendenz. "
 
         addressing = await self._get_addressing()
         hour = datetime.now().hour
@@ -331,23 +349,23 @@ class WellnessAdvisor:
         if stress_level >= 0.7:
             # Hoher Stress: Konkreter Aktionsvorschlag
             if hour >= 20:
-                msg = f"{addressing}, deutlich erhoehter Stress um {hour} Uhr. Soll ich das Licht dimmen und Feierabend einlaeuten?"
+                msg = f"{addressing}, deutlich erhoehter Stress um {hour} Uhr. {trend_hint}Soll ich das Licht dimmen und Feierabend einlaeuten?"
             else:
                 msg = random.choice([
-                    f"{addressing}, der Stresspegel ist deutlich erhoert. Licht auf 40%, fuenf Minuten — ich manage den Rest.",
-                    f"Das Stresslevel ist hoch, {addressing}. Soll ich das Licht runterfahren und fuer fuenf Minuten Ruhe sorgen?",
+                    f"{addressing}, der Stresspegel ist deutlich erhoert. {trend_hint}Licht auf 40%, fuenf Minuten — ich manage den Rest.",
+                    f"Das Stresslevel ist hoch, {addressing}. {trend_hint}Soll ich das Licht runterfahren und fuer fuenf Minuten Ruhe sorgen?",
                 ])
             urgency = "medium"
         elif mood == "frustrated":
             msg = random.choice([
-                f"Laeuft nicht rund, {addressing}. Sag mir was du brauchst — ich kuemmer mich.",
-                f"{addressing}, ich merk das. Kurz durchatmen — ich halte die Stellung.",
+                f"Laeuft nicht rund, {addressing}. {trend_hint}Sag mir was du brauchst — ich kuemmer mich.",
+                f"{addressing}, ich merk das. {trend_hint}Kurz durchatmen — ich halte die Stellung.",
             ])
             urgency = "low"
         else:
             msg = random.choice([
-                f"{addressing}, wenn ich anmerken darf — es scheint etwas stressig. Kurze Pause?",
-                f"Viel auf einmal heute, {addressing}. Fuenf Minuten vom Bildschirm wuerden helfen.",
+                f"{addressing}, wenn ich anmerken darf — es scheint etwas stressig. {trend_hint}Kurze Pause?",
+                f"Viel auf einmal heute, {addressing}. {trend_hint}Fuenf Minuten vom Bildschirm wuerden helfen.",
             ])
             urgency = "low"
 
@@ -397,7 +415,7 @@ class WellnessAdvisor:
             except Exception as e:
                 logger.debug("Activity-Check fuer Mahlzeit fehlgeschlagen: %s", e)
 
-            await self.redis.setex(key, 86400, "1")  # 24h TTL
+            await _safe_redis(self.redis, "setex", key, 86400, "1")  # 24h TTL
 
             meal_de = "Mittagessen" if meal == "lunch" else "Abendessen"
             addressing = await self._get_addressing()
@@ -454,7 +472,7 @@ class WellnessAdvisor:
         if await self.redis.exists(key):
             return
 
-        await self.redis.setex(key, 6 * 3600, "1")
+        await _safe_redis(self.redis, "setex", key, 6 * 3600, "1")
 
         # Phase 17.4: Late-Night Pattern Tracking
         # Speichert Tage an denen der User nach Mitternacht wach war
@@ -571,8 +589,8 @@ class WellnessAdvisor:
             key = "mha:wellness:latenight_dates"
 
             # Heute hinzufuegen (Set — kein Duplikat)
-            await self.redis.sadd(key, today)
-            await self.redis.expire(key, 30 * 86400)  # 30 Tage aufbewahren
+            await _safe_redis(self.redis, "sadd", key, today)
+            await _safe_redis(self.redis, "expire", key, 30 * 86400)  # 30 Tage aufbewahren
 
             # Aufeinanderfolgende Naechte zaehlen (rueckwaerts von heute)
             consecutive = 1
@@ -628,7 +646,7 @@ class WellnessAdvisor:
             logger.debug("Hydration Activity-Check fehlgeschlagen: %s", e)
             return
 
-        await self.redis.setex(key, 86400, datetime.now().isoformat())
+        await _safe_redis(self.redis, "setex", key, 86400, datetime.now().isoformat())
         addressing = await self._get_addressing()
 
         mood_data = self.mood.get_current_mood()
@@ -688,7 +706,7 @@ class WellnessAdvisor:
         if not executed:
             return
 
-        await self.redis.setex(key, 86400, datetime.now().isoformat())
+        await _safe_redis(self.redis, "setex", key, 86400, datetime.now().isoformat())
 
         # Jarvis meldet was er getan hat — beilaeufig
         addressing = await self._get_addressing()

@@ -454,6 +454,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # LightEngine: Praesenz, Bettsensor, Lux-Adaptiv, Daemmerung, Override
         await self.light_engine.initialize(redis_client=self.memory.redis)
+        self.light_engine.mood = self.mood  # Mood-Awareness fuer adaptives Licht
         await self.light_engine.start()
         self.executor._light_engine = self.light_engine
         self.time_awareness._light_engine = self.light_engine

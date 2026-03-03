@@ -1191,6 +1191,19 @@ class ProactiveManager:
             if level < 2:  # Level 1 = nur Befehle
                 return
 
+        # Mood-Suppression: Bei Frustration/Stress nur HIGH+ durchlassen
+        if urgency not in (CRITICAL, HIGH):
+            try:
+                mood_data = self.brain.mood.get_current_mood()
+                mood = mood_data.get("mood", "neutral")
+                if mood in ("frustrated", "stressed"):
+                    logger.info(
+                        "Meldung unterdrueckt (Mood=%s): [%s] %s", mood, urgency, event_type
+                    )
+                    return
+            except Exception:
+                pass  # Mood-Check darf nie den Hauptpfad blockieren
+
         # Cooldown pruefen (mit adaptivem Cooldown aus Feedback)
         effective_cooldown = self.cooldown
         feedback = self.brain.feedback
