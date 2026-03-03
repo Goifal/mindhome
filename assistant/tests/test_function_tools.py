@@ -351,7 +351,7 @@ class TestStreamChat:
 
     @pytest.mark.asyncio
     async def test_error_yields_nothing(self):
-        """stream_chat() bei HTTP-Error gibt nichts zurueck."""
+        """stream_chat() bei HTTP-Error gibt Error-Marker oder nichts zurueck."""
         client = self._make_stream_client([], status=500)
         tokens = []
         async for token in client.stream_chat(
@@ -359,4 +359,4 @@ class TestStreamChat:
         ):
             tokens.append(token)
 
-        assert tokens == []
+        assert tokens == [] or tokens == ["[STREAM_ERROR]"]

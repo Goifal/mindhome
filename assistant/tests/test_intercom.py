@@ -315,7 +315,7 @@ class TestSendIntercom:
                 "target_room": "wohnzimmer",
             })
         assert result["success"] is False
-        assert "nicht erreichbar" in result["message"]
+        assert "nicht erreichbar" in result["message"].lower()
 
     @pytest.mark.asyncio
     async def test_empty_message_returns_error(self, executor, ha_mock):

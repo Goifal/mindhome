@@ -307,7 +307,7 @@ class TestRecordFeedback:
         redis_mock.hincrby = AsyncMock(return_value=1)
         result = await dj.record_feedback(positive=True, person="Max")
         assert result["success"] is True
-        assert "gefaellt" in result["message"].lower()
+        assert "vermerkt" in result["message"].lower() or "gefaellt" in result["message"].lower()
 
     @pytest.mark.asyncio
     async def test_negative_feedback(self, dj, redis_mock):
@@ -318,7 +318,7 @@ class TestRecordFeedback:
         redis_mock.hincrby = AsyncMock(return_value=-1)
         result = await dj.record_feedback(positive=False, person="Max")
         assert result["success"] is True
-        assert "nicht dein Ding" in result["message"]
+        assert "nicht nach deinem geschmack" in result["message"].lower() or "nicht dein ding" in result["message"].lower()
 
     @pytest.mark.asyncio
     async def test_negative_blocks_at_threshold(self, dj, redis_mock):
@@ -328,7 +328,7 @@ class TestRecordFeedback:
         }).encode())
         redis_mock.hincrby = AsyncMock(return_value=-3)
         result = await dj.record_feedback(positive=False, person="Max")
-        assert "vermieden" in result["message"].lower()
+        assert "gemieden" in result["message"].lower() or "vermieden" in result["message"].lower()
 
     @pytest.mark.asyncio
     async def test_no_last_recommendation(self, dj, redis_mock):

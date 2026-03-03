@@ -104,18 +104,42 @@ class TestMoodTrend:
         assert detector.get_mood_trend() == "stable"
 
     def test_declining_trend(self, detector):
+        from collections import deque
+        sentiments = deque(maxlen=10)
         for s in ["positive", "neutral", "negative", "negative", "negative"]:
-            detector._interaction_sentiments.append(s)
+            sentiments.append(s)
+        detector._interaction_sentiments = sentiments
+        detector._person_states["_default"] = {
+            "sentiments": sentiments, "mood": "neutral",
+            "stress": 0.0, "tiredness": 0.0, "frustration": 0, "positive_signals": 0,
+            "last_texts": deque(maxlen=5), "last_decay_time": 0.0,
+        }
         assert detector.get_mood_trend() == "declining"
 
     def test_improving_trend(self, detector):
+        from collections import deque
+        sentiments = deque(maxlen=10)
         for s in ["negative", "negative", "neutral", "positive", "positive"]:
-            detector._interaction_sentiments.append(s)
+            sentiments.append(s)
+        detector._interaction_sentiments = sentiments
+        detector._person_states["_default"] = {
+            "sentiments": sentiments, "mood": "neutral",
+            "stress": 0.0, "tiredness": 0.0, "frustration": 0, "positive_signals": 0,
+            "last_texts": deque(maxlen=5), "last_decay_time": 0.0,
+        }
         assert detector.get_mood_trend() == "improving"
 
     def test_volatile_trend(self, detector):
+        from collections import deque
+        sentiments = deque(maxlen=10)
         for s in ["positive", "negative", "positive", "negative", "positive"]:
-            detector._interaction_sentiments.append(s)
+            sentiments.append(s)
+        detector._interaction_sentiments = sentiments
+        detector._person_states["_default"] = {
+            "sentiments": sentiments, "mood": "neutral",
+            "stress": 0.0, "tiredness": 0.0, "frustration": 0, "positive_signals": 0,
+            "last_texts": deque(maxlen=5), "last_decay_time": 0.0,
+        }
         assert detector.get_mood_trend() == "volatile"
 
 

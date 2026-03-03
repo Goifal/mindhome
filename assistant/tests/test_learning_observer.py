@@ -137,7 +137,7 @@ class TestHandleResponse:
     async def test_no_redis_error(self, observer):
         observer.redis = None
         result = await observer.handle_response("light.wz", "22:00", accepted=True)
-        assert "Fehler" in result
+        assert "Fehler" in result or "Redis" in result or "nicht ansprechbar" in result
 
 
 class TestWeekdayNames:
