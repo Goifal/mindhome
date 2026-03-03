@@ -1182,7 +1182,9 @@ class ProactiveManager:
 
         # Quiet Hours: Nur CRITICAL darf nachts durch
         if urgency != CRITICAL and self._is_quiet_hours():
-            logger.info("Meldung unterdrueckt (Quiet Hours): [%s] %s", urgency, event_type)
+            detail = data.get("entity") or data.get("task") or data.get("message") or ""
+            logger.info("Meldung unterdrueckt (Quiet Hours): [%s] %s%s", urgency, event_type,
+                        f" ({detail})" if detail else "")
             return
 
         # Autonomie-Level pruefen
@@ -1197,8 +1199,10 @@ class ProactiveManager:
                 mood_data = self.brain.mood.get_current_mood()
                 mood = mood_data.get("mood", "neutral")
                 if mood in ("frustrated", "stressed"):
+                    detail = data.get("entity") or data.get("task") or data.get("message") or ""
                     logger.info(
-                        "Meldung unterdrueckt (Mood=%s): [%s] %s", mood, urgency, event_type
+                        "Meldung unterdrueckt (Mood=%s): [%s] %s%s", mood, urgency, event_type,
+                        f" ({detail})" if detail else ""
                     )
                     return
             except Exception:
@@ -1212,8 +1216,10 @@ class ProactiveManager:
             # Feedback-basierte Entscheidung
             decision = await feedback.should_notify(event_type, urgency)
             if not decision["allow"]:
+                detail = data.get("entity") or data.get("task") or data.get("message") or ""
                 logger.info(
-                    "Meldung unterdrueckt [%s]: %s", event_type, decision["reason"]
+                    "Meldung unterdrueckt [%s]%s: %s", event_type,
+                    f" ({detail})" if detail else "", decision["reason"]
                 )
                 return
             # Adaptiver Cooldown aus Feedback
