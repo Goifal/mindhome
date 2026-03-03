@@ -1711,6 +1711,14 @@ async def websocket_endpoint(websocket: WebSocket):
                                     await emit_speaking(result["response"], tts_data=tts_data)
                           except asyncio.CancelledError:
                             logger.info("Streaming durch Interrupt abgebrochen")
+                            # Stream sauber beenden damit Client nicht haengen bleibt
+                            if stream_tokens_sent:
+                                try:
+                                    await emit_stream_end(
+                                        "".join(stream_tokens_sent),
+                                        tts_data={"interrupted": True})
+                                except Exception:
+                                    pass
                           except Exception as e:
                             logger.error("Streaming-Fehler: %s", e, exc_info=True)
                             # Sicherstellen dass der Client nicht haengen bleibt

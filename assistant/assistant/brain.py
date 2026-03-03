@@ -2164,8 +2164,10 @@ class AssistantBrain(BrainCallbacksMixin):
         await emit_thinking()
 
         # Feature 1: Progressive Antworten — "Denken laut"
+        # Auch im Streaming-Modus senden: emit_progress ist WebSocket-basiert
+        # und unabhaengig vom Token-Streaming.
         _prog_cfg = cfg.yaml_config.get("progressive_responses", {})
-        if not stream_callback and _prog_cfg.get("enabled", True):
+        if _prog_cfg.get("enabled", True):
             if _prog_cfg.get("show_context_step", True):
                 _prog_msg = self.personality.get_progress_message("context")
                 if _prog_msg:
@@ -2807,7 +2809,9 @@ class AssistantBrain(BrainCallbacksMixin):
             # Kein lazy-load im Hot-Path noetig → spart 200-500ms.
 
             # Feature 1: Progressive Antworten — "Einen Moment, ich ueberlege..."
-            if not stream_callback and _prog_cfg.get("enabled", True):
+            # Auch im Streaming-Modus: Tool-Calls werden nie gestreamt,
+            # also braucht der User Progress-Feedback via WebSocket.
+            if _prog_cfg.get("enabled", True):
                 if _prog_cfg.get("show_thinking_step", True):
                     _think_msg = self.personality.get_progress_message("thinking")
                     if _think_msg:
@@ -3022,7 +3026,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
             if tool_calls:
                 # Feature 1: Progressive Antworten — "Ich fuehre das aus..."
-                if not stream_callback and _prog_cfg.get("enabled", True):
+                # Auch im Streaming-Modus: Tool-Calls werden nicht gestreamt.
+                if _prog_cfg.get("enabled", True):
                     if _prog_cfg.get("show_action_step", True):
                         _act_msg = self.personality.get_progress_message("action")
                         if _act_msg:
@@ -3357,7 +3362,10 @@ class AssistantBrain(BrainCallbacksMixin):
 
                 # Schritt 2: LLM fuer JARVIS-Feinschliff (optional, verbessert Stil)
                 if humanized_text:
-                    response_text = humanized_text  # Fallback steht schon
+                    # Bestehenden response_text (Conflict/Pushback/Opinion/Humor)
+                    # NICHT verwerfen — voranstellen damit beides ankommt
+                    _prefix = response_text.strip() if response_text else ""
+                    response_text = f"{_prefix} {humanized_text}".strip() if _prefix else humanized_text
                     try:
                         # Persoenlichkeits-Kontext fuer Refinement
                         _sarc = self.personality.sarcasm_level
@@ -3405,7 +3413,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                 messages=feedback_messages,
                                 model=model,
                                 temperature=0.4,
-                                max_tokens=150,
+                                max_tokens=300,
                                 think=False,
                             ),
                             timeout=15.0,
@@ -5440,8 +5448,14 @@ class AssistantBrain(BrainCallbacksMixin):
 
     async def _handle_workshop_timer(self, message: str):
         """Callback fuer Workshop-Timer-Benachrichtigungen."""
-        await emit_proactive(message, event_type="workshop_timer", urgency="medium")
-        logger.info("Workshop-Timer: %s", message)
+        if not message:
+            return
+        if not await self._callback_should_speak("medium", source="WorkshopTimer"):
+            return
+        formatted = await self._safe_format(message, "medium")
+        await self._speak_and_emit(formatted)
+        self._remember_exchange("[proaktiv: Workshop-Timer]", formatted)
+        logger.info("Workshop-Timer: %s", formatted)
 
     async def _handle_time_alert(self, alert: dict):
         """Callback fuer TimeAwareness-Alerts — leitet an proaktive Meldung weiter."""
@@ -5507,6 +5521,39 @@ class AssistantBrain(BrainCallbacksMixin):
         logger.info("Wellness [%s]: %s", nudge_type, formatted)
 
     # ------------------------------------------------------------------
+    # Phase 14.2b: Music DJ + Visitor Callbacks (uebernommen aus Mixin)
+    # ------------------------------------------------------------------
+
+    async def _handle_music_suggestion(self, alert: dict) -> None:
+        """Callback fuer Smart DJ — proaktive Musikvorschlaege."""
+        message = alert.get("message", "")
+        room = alert.get("room") or None
+        if not message:
+            return
+        if not await self._callback_should_speak("low", source="MusicDJ"):
+            return
+        formatted = await self._safe_format(message, "low")
+        await self._speak_and_emit(formatted, room=room)
+        self._remember_exchange("[proaktiv: Musik]", formatted)
+        logger.info("MusicDJ: %s (Raum: %s)", formatted, room or "auto")
+
+    async def _handle_visitor_event(self, alert: dict) -> None:
+        """Callback fuer Besucher-Management — Klingel-Events mit Kontext."""
+        message = alert.get("message", "")
+        room = alert.get("room") or None
+        if not message:
+            return
+        # Besucher/Klingel: Medium-Urgency, aber Activity-Check beachten
+        if not await self._callback_should_speak("medium", source="VisitorManager"):
+            return
+        formatted = await self._format_callback_with_escalation(
+            message, "medium", "visitor_event",
+        )
+        await self._speak_and_emit(formatted, room=room)
+        self._remember_exchange("[proaktiv: Besucher]", formatted)
+        logger.info("VisitorManager: %s (Raum: %s)", formatted, room or "auto")
+
+    # ------------------------------------------------------------------
     # Phase 14.3: Ambient Audio Callback
     # ------------------------------------------------------------------
 
@@ -5542,20 +5589,32 @@ class AssistantBrain(BrainCallbacksMixin):
         if sound_event and self.sound_manager.enabled:
             await self.sound_manager.play_event_sound(sound_event, room=room)
 
-        # HA-Aktionen ausfuehren
+        # F-026: HA-Aktionen ausfuehren — nur sichere Aktionen ohne Trust-Check
+        _RESTRICTED = frozenset({
+            "lock_door", "unlock_door", "arm_security_system", "disarm_alarm",
+            "open_garage", "close_garage",
+        })
         if actions:
-            if "lights_on" in actions and room:
-                try:
-                    await self.executor.execute("set_light", {
-                        "room": room,
-                        "state": "on",
-                        "brightness": 100,
-                    })
-                except Exception as e:
-                    logger.debug("Ambient Audio lights_on fehlgeschlagen: %s", e)
+            for action in actions:
+                if action in _RESTRICTED:
+                    logger.warning(
+                        "F-026: Ambient Audio Aktion '%s' blockiert — benoetigt Owner-Trust",
+                        action,
+                    )
+                    continue
+                if action == "lights_on" and room:
+                    try:
+                        await self.executor.execute("set_light", {
+                            "room": room,
+                            "state": "on",
+                            "brightness": 100,
+                        })
+                    except Exception as e:
+                        logger.debug("Ambient Audio lights_on fehlgeschlagen: %s", e)
 
-        # Nachricht via WebSocket + Speaker senden
-        await self._speak_and_emit(message)
+        # Nachricht mit Personality formatieren und senden
+        formatted = await self._safe_format(message, severity)
+        await self._speak_and_emit(formatted, room=room)
 
     # ------------------------------------------------------------------
     # Phase 16.2: Tutorial-Modus
