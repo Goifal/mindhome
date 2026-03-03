@@ -314,7 +314,7 @@ class MoodDetector:
         # Eskalations-Erkennung: Mehrere aehnliche Anfragen hintereinander
         # → User versucht es wiederholt → starke Frustration
         if len(self._last_texts) >= 2:
-            _recent = self._last_texts[-2:]
+            _recent = list(self._last_texts)[-2:]
             _rep_count = sum(1 for lt in _recent if self._word_overlap(text_lower, lt) > 0.5)
             if _rep_count >= 2:
                 # 3x aehnlich = Eskalation → doppelter Stress-Boost

@@ -30,6 +30,7 @@ class WellnessAdvisor:
         self.ha = ha_client
         self.activity = activity_engine
         self.mood = mood_detector
+        self.executor = None  # Phase 17.4: FunctionExecutor fuer Ambient Actions
         self.redis: Optional[aioredis.Redis] = None
         self._notify_callback = None
         self._task: Optional[asyncio.Task] = None
@@ -178,6 +179,7 @@ class WellnessAdvisor:
                 await self._check_meal_time()
                 await self._check_late_night()
                 await self._check_hydration()
+                await self._check_mood_ambient_actions()
             except Exception as e:
                 logger.error("Wellness-Check Fehler: %s", e)
 
@@ -454,6 +456,10 @@ class WellnessAdvisor:
 
         await self.redis.setex(key, 6 * 3600, "1")
 
+        # Phase 17.4: Late-Night Pattern Tracking
+        # Speichert Tage an denen der User nach Mitternacht wach war
+        consecutive_nights = await self._track_late_night_pattern()
+
         addressing = await self._get_addressing()
 
         # Kalender-Vorschau: Erster Termin morgen
@@ -463,26 +469,39 @@ class WellnessAdvisor:
         mood_data = self.mood.get_current_mood()
         mood = mood_data.get("mood", "neutral")
 
+        # Pattern-Eskalation: Mehrere Naechte hintereinander
+        pattern_hint = ""
+        if consecutive_nights >= 3:
+            pattern_hint = f"Das ist die {consecutive_nights}. Nacht in Folge. "
+        elif consecutive_nights == 2:
+            pattern_hint = "Gestern auch schon spaet. "
+
         if tomorrow_hint and mood == "stressed":
             msg = (
-                f"{addressing}, {hour} Uhr. {tomorrow_hint} "
+                f"{addressing}, {hour} Uhr. {pattern_hint}{tomorrow_hint} "
                 f"Vielleicht solltest du Schluss machen."
+            )
+            urgency = "medium"
+        elif consecutive_nights >= 3:
+            msg = (
+                f"{addressing}, es ist {hour} Uhr. {pattern_hint}"
+                f"Ich mache mir langsam ernsthaft Gedanken."
             )
             urgency = "medium"
         elif tomorrow_hint:
             msg = (
-                f"Es ist {hour} Uhr, {addressing}. {tomorrow_hint} "
+                f"Es ist {hour} Uhr, {addressing}. {pattern_hint}{tomorrow_hint} "
                 f"Nur als freundliche Erinnerung."
             )
             urgency = "low"
         elif hour >= 2:
             msg = random.choice([
-                f"{addressing}, es ist {hour} Uhr. Darf ich den Feierabend vorschlagen?",
-                f"{hour} Uhr, {addressing}. Das Bett wartet — ich hab hier alles im Griff.",
+                f"{addressing}, es ist {hour} Uhr. {pattern_hint}Darf ich den Feierabend vorschlagen?",
+                f"{hour} Uhr, {addressing}. {pattern_hint}Das Bett wartet — ich hab hier alles im Griff.",
             ])
             urgency = "low"
         else:
-            msg = f"Es ist {hour} Uhr, {addressing}. Nur zur Kenntnis."
+            msg = f"Es ist {hour} Uhr, {addressing}. {pattern_hint}Nur zur Kenntnis."
             urgency = "low"
 
         await self._send_nudge("late_night", msg, urgency=urgency)
@@ -532,6 +551,48 @@ class WellnessAdvisor:
             logger.debug("Kalender-Check fuer Late-Night fehlgeschlagen: %s", e)
 
         return ""
+
+    async def _track_late_night_pattern(self) -> int:
+        """Trackt Late-Night-Muster ueber Redis und gibt aufeinanderfolgende Naechte zurueck.
+
+        Speichert Datumsstempel fuer jede Nacht in der der User nach
+        Mitternacht noch wach war. Zaehlt aufeinanderfolgende Naechte.
+
+        Returns:
+            Anzahl aufeinanderfolgender Late-Night-Naechte (inkl. heute).
+        """
+        if not self.redis:
+            return 1
+
+        try:
+            from datetime import timedelta
+
+            today = datetime.now().date().isoformat()
+            key = "mha:wellness:latenight_dates"
+
+            # Heute hinzufuegen (Set — kein Duplikat)
+            await self.redis.sadd(key, today)
+            await self.redis.expire(key, 30 * 86400)  # 30 Tage aufbewahren
+
+            # Aufeinanderfolgende Naechte zaehlen (rueckwaerts von heute)
+            consecutive = 1
+            check_date = datetime.now().date()
+            for _ in range(14):  # Max 14 Tage zurueck
+                check_date = check_date - timedelta(days=1)
+                is_member = await self.redis.sismember(key, check_date.isoformat())
+                if is_member:
+                    consecutive += 1
+                else:
+                    break
+
+            if consecutive > 1:
+                logger.info("Late-Night Pattern: %d aufeinanderfolgende Naechte", consecutive)
+
+            return consecutive
+
+        except Exception as e:
+            logger.debug("Late-Night Pattern Tracking Fehler: %s", e)
+            return 1
 
     # ------------------------------------------------------------------
     # Hydration-Erinnerung
@@ -583,6 +644,65 @@ class WellnessAdvisor:
             ])
 
         await self._send_nudge("hydration", msg)
+
+    # ------------------------------------------------------------------
+    # Mood-Ambient-Actions: Jarvis handelt, nicht nur reden
+    # ------------------------------------------------------------------
+
+    async def _check_mood_ambient_actions(self):
+        """Fuehrt stimmungsbasierte Ambient-Aktionen aus.
+
+        Phase 17.4: Jarvis dimmt bei Stress das Licht, senkt bei
+        Muedigkeit die Musik-Lautstaerke — ohne gefragt zu werden.
+        Nutzt mood_detector.execute_suggested_actions() die bisher
+        nur geloggt aber nie aufgerufen wurde.
+        """
+        if not self.executor or not self.redis:
+            return
+
+        mood_data = self.mood.get_current_mood()
+        mood = mood_data.get("mood", "neutral")
+
+        # Nur bei negativen Stimmungen handeln
+        if mood in ("neutral", "good"):
+            return
+
+        # Cooldown: Max 1x pro 30 Minuten ambient actions ausfuehren
+        key = "mha:wellness:last_ambient_action"
+        last = await self.redis.get(key)
+        if last:
+            try:
+                last_dt = datetime.fromisoformat(last)
+                if (datetime.now() - last_dt).total_seconds() < 1800:
+                    return
+            except (ValueError, TypeError):
+                pass
+
+        # Mood-Aktionen ausfuehren (Szenen, Licht dimmen)
+        try:
+            executed = await self.mood.execute_suggested_actions(self.executor)
+        except Exception as e:
+            logger.warning("Mood-Ambient-Action Fehler: %s", e)
+            return
+
+        if not executed:
+            return
+
+        await self.redis.setex(key, 86400, datetime.now().isoformat())
+
+        # Jarvis meldet was er getan hat — beilaeufig
+        addressing = await self._get_addressing()
+        action_names = [a.get("action", "") for a in executed]
+
+        if "light.dimmen" in action_names:
+            msg = f"Ich hab das Licht etwas gedimmt, {addressing}. Schien mir angemessen."
+        elif any(a.startswith("scene.") for a in action_names):
+            msg = f"{addressing}, ich hab die Stimmung etwas angepasst."
+        else:
+            msg = f"Kleine Anpassung vorgenommen, {addressing}."
+
+        await self._send_nudge("ambient_action", msg)
+        logger.info("Mood-Ambient: %d Aktionen ausgefuehrt: %s", len(executed), action_names)
 
     # ------------------------------------------------------------------
     # Nudge senden

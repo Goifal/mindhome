@@ -605,6 +605,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Wellness Advisor initialisieren und starten
         await _safe_init("WellnessAdvisor", self.wellness_advisor.initialize(redis_client=self.memory.redis))
         self.wellness_advisor.set_notify_callback(self._handle_wellness_nudge)
+        self.wellness_advisor.executor = self.executor  # Phase 17.4: Ambient Actions
         if "WellnessAdvisor" not in _degraded_modules:
             await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
 
