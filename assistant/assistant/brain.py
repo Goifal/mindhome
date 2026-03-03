@@ -5341,13 +5341,15 @@ class AssistantBrain(BrainCallbacksMixin):
     _VALID_URGENCIES = {"critical", "high", "medium", "low"}
 
     async def _callback_should_speak(self, urgency: str = "medium", source: str = "unknown") -> bool:
-        """Prueft ob ein Callback sprechen darf (Activity + Silence Matrix).
+        """Prueft ob ein Callback sprechen darf (Quiet Hours + Activity + Silence Matrix).
 
         Wird von allen proaktiven Callbacks aufgerufen um sicherzustellen,
-        dass keine Durchsagen kommen waehrend der User schlaeft/Film schaut.
+        dass keine Durchsagen kommen waehrend der User schlaeft/Film schaut
+        oder Quiet Hours aktiv sind.
         Wecker (wakeup_alarm) und CRITICAL Events nutzen diese Methode NICHT.
 
         Blockiert TTS bei:
+          - Quiet Hours aktiv (gleiche Regeln wie proaktive Meldungen)
           - SUPPRESS: Komplett unterdrueckt (Schlaf + medium/low, Call + medium/low)
           - LED_BLINK: Nur visuelles Signal, kein TTS (Schlaf + high, Film + high)
         """
@@ -5356,6 +5358,15 @@ class AssistantBrain(BrainCallbacksMixin):
             # damit sie nicht auf den Default TTS_LOUD der Silence Matrix fallen
             if urgency not in self._VALID_URGENCIES:
                 urgency = "low"
+
+            # Quiet Hours: Gleiche Regeln wie ProactiveManager._notify() —
+            # Callbacks sollen nachts genauso still sein wie proaktive Meldungen.
+            if hasattr(self, "proactive") and self.proactive._is_quiet_hours():
+                logger.info(
+                    "Callback unterdrueckt (Quiet Hours): Quelle=%s, Urgency=%s",
+                    source, urgency,
+                )
+                return False
 
             result = await self.activity.should_deliver(urgency)
             delivery = result.get("delivery", "")

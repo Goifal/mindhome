@@ -156,6 +156,54 @@ class ProactiveManager:
             return hour >= self._quiet_start or hour < self._quiet_end
         return self._quiet_start <= hour < self._quiet_end
 
+    # ------------------------------------------------------------------
+    # Unified Delivery: WebSocket + TTS in einer Pipeline
+    # ------------------------------------------------------------------
+
+    async def _deliver(
+        self,
+        text: str,
+        event_type: str,
+        urgency: str,
+        notification_id: str = "",
+        delivery_method: str = "",
+        volume: float = 0.8,
+        room: str = "",
+    ):
+        """Einheitliche Zustellung: WebSocket-Notification + TTS.
+
+        Schliesst die Luecke zwischen proaktiven Meldungen (bisher nur
+        WebSocket) und Callback-Meldungen (bisher nur TTS).  Jetzt werden
+        beide Kanaele bedient — die WebSocket-UI bekommt die Notification
+        UND der Speaker spricht sie aus, sofern delivery_method es erlaubt.
+
+        Args:
+            text: Fertig formatierter Meldungstext
+            event_type: Event-Typ (fuer Tracking)
+            urgency: Dringlichkeit
+            notification_id: ID fuer Feedback-Tracking
+            delivery_method: tts_loud, tts_quiet, led_blink, suppress
+            volume: Lautstaerke 0.0-1.0 (aus ActivityEngine)
+            room: Zielraum (auto-detect wenn leer)
+        """
+        # 1. WebSocket: Proaktive Meldung an alle Clients
+        await emit_proactive(text, event_type, urgency, notification_id)
+
+        # 2. TTS: Nur wenn delivery_method Sprache erlaubt
+        if delivery_method in ("tts_loud", "tts_quiet"):
+            try:
+                if not room:
+                    room = await self.brain._get_occupied_room()
+                tts_data = {"volume": volume}
+                self.brain._task_registry.create_task(
+                    self.brain.sound_manager.speak_response(
+                        text, room=room, tts_data=tts_data,
+                    ),
+                    name="proactive_tts",
+                )
+            except Exception as e:
+                logger.warning("Proaktive TTS fehlgeschlagen: %s", e)
+
     async def start(self):
         """Startet den Event Listener."""
         if not self.enabled:
@@ -1214,6 +1262,22 @@ class ProactiveManager:
                 text += f" {data['camera_description']}"
 
             await emit_interrupt(text, event_type, protocol, actions_taken)
+
+            # CRITICAL muss IMMER hoerbar sein — auch ohne WebSocket-Client.
+            # Volume aus ActivityEngine (0.6-1.0 je nach Aktivitaet).
+            try:
+                crit_result = await self.brain.activity.should_deliver("critical")
+                crit_volume = crit_result.get("volume", 0.8)
+                crit_room = await self.brain._get_occupied_room()
+                self.brain._task_registry.create_task(
+                    self.brain.sound_manager.speak_response(
+                        text, room=crit_room, tts_data={"volume": crit_volume},
+                    ),
+                    name="critical_tts",
+                )
+            except Exception as e:
+                logger.warning("Critical TTS fehlgeschlagen: %s", e)
+
             await self.brain.memory.set_last_notification_time(event_type)
 
             logger.warning(
@@ -1263,7 +1327,11 @@ class ProactiveManager:
 
         if narration_text:
             text = narration_text
-            await emit_proactive(text, event_type, urgency, notification_id)
+            await self._deliver(
+                text, event_type, urgency, notification_id,
+                delivery_method=delivery_method,
+                volume=activity_result.get("volume", 0.8),
+            )
             await self.brain.memory.set_last_notification_time(event_type)
             await feedback.track_notification(notification_id, event_type)
             logger.info(
@@ -1292,8 +1360,12 @@ class ProactiveManager:
             if not text:
                 text = description
 
-            # WebSocket: Proaktive Meldung senden (mit Notification-ID + Delivery)
-            await emit_proactive(text, event_type, urgency, notification_id)
+            # Unified Delivery: WebSocket + TTS
+            await self._deliver(
+                text, event_type, urgency, notification_id,
+                delivery_method=delivery_method,
+                volume=activity_result.get("volume", 0.8),
+            )
 
             # Cooldown setzen
             await self.brain.memory.set_last_notification_time(event_type)
@@ -2078,7 +2150,11 @@ class ProactiveManager:
             )
             if text:
                 notification_id = f"notif_{uuid.uuid4().hex[:12]}"
-                await emit_proactive(text, "batch_summary", LOW, notification_id)
+                await self._deliver(
+                    text, "batch_summary", LOW, notification_id,
+                    delivery_method=activity_result.get("delivery", ""),
+                    volume=activity_result.get("volume", 0.5),
+                )
                 await self.brain.feedback.track_notification(notification_id, "batch_summary")
                 logger.info(
                     "Batch-Summary gesendet (%d Items, id: %s): %s",
