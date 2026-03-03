@@ -141,7 +141,7 @@ class ProactiveManager:
             "solar_surplus": (LOW, "Solar-Ueberschuss"),
         }
         # YAML-Overrides anwenden (Event-Handler konfigurierbar)
-        yaml_handlers = pro_cfg.get("event_handlers", {})
+        yaml_handlers = proactive_cfg.get("event_handlers", {})
         for event_name, info in yaml_handlers.items():
             if isinstance(info, dict):
                 prio = _PRIORITY_MAP.get(info.get("priority", "low"), LOW)

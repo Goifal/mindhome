@@ -2664,8 +2664,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # 6. Komplexe Anfragen ueber Action Planner routen
         if self.action_planner.is_complex_request(text):
+            _deep_model = self.model_router._cap_model(self.model_router.model_deep)
             logger.info("Komplexe Anfrage erkannt -> Action Planner (Deep: %s)",
-                         settings.model_deep)
+                         _deep_model)
             planner_result = await self.action_planner.plan_and_execute(
                 text=text,
                 system_prompt=system_prompt,
@@ -2676,13 +2677,14 @@ class AssistantBrain(BrainCallbacksMixin):
             )
             response_text = planner_result.get("response", "")
             executed_actions = planner_result.get("actions", [])
-            model = settings.model_deep
+            model = _deep_model
         elif intent_type == "knowledge":
             # Phase 8: Wissensfragen -> Deep-Model fuer bessere Qualitaet
+            _deep_model = self.model_router._cap_model(self.model_router.model_deep)
             logger.info("Wissensfrage erkannt -> LLM direkt (Deep: %s, keine Tools)",
-                         settings.model_deep)
+                         _deep_model)
             # Modell-Kaskade: Deep -> Smart -> Fast (dynamisch, ueberspringt identische)
-            model = settings.model_deep
+            model = _deep_model
             response_text = ""
             if stream_callback:
                 # Streaming: Kaskade durch alle Modelle
@@ -2748,7 +2750,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 memory_prompt += "\nBeantworte basierend auf diesen gespeicherten Fakten."
                 memory_messages[0] = {"role": "system", "content": memory_prompt}
 
-            model = settings.model_deep
+            model = self.model_router._cap_model(self.model_router.model_deep)
             if stream_callback:
                 # Streaming: Kaskade durch alle Modelle
                 current = model
@@ -3001,14 +3003,18 @@ class AssistantBrain(BrainCallbacksMixin):
 
             # 8. Function Calls ausfuehren
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
-            QUERY_TOOLS = {"get_entity_state", "send_message_to_person", "get_calendar_events",
+            QUERY_TOOLS = {"get_entity_state", "get_entity_history",
+                          "send_message_to_person", "get_calendar_events",
                           "create_automation", "list_jarvis_automations",
                           "get_timer_status", "list_conditionals", "get_energy_report",
                           "web_search", "get_camera_view", "get_security_score",
                           "get_room_climate", "get_active_intents",
                           "get_wellness_status", "get_device_health",
                           "get_learned_patterns", "describe_doorbell",
-                          "manage_protocol",
+                          "manage_protocol", "manage_shopping_list",
+                          "manage_inventory", "manage_visitor", "manage_repair",
+                          "get_vacuum", "get_remotes", "list_capabilities",
+                          "list_declarative_tools", "get_full_status_report",
                           "get_house_status", "get_weather", "get_lights",
                           "get_covers", "get_media", "get_climate", "get_switches",
                           "get_alarms", "set_wakeup_alarm", "cancel_alarm"}

@@ -5799,31 +5799,46 @@ class FunctionExecutor:
         """Phase 13.2: Erstellt eine Automation aus natuerlicher Sprache."""
         import assistant.main as main_module
         brain = main_module.brain
-        self_auto = brain.self_automation
+        try:
+            self_auto = brain.self_automation
+        except AttributeError:
+            return {"success": False, "message": "Self-Automation Modul nicht verfuegbar."}
 
         description = args.get("description", "")
         if not description:
             return {"success": False, "message": "Keine Beschreibung angegeben."}
 
-        return await self_auto.generate_automation(description)
+        try:
+            return await self_auto.generate_automation(description)
+        except Exception as e:
+            return {"success": False, "message": f"Automation-Erstellung fehlgeschlagen: {e}"}
 
     async def _exec_confirm_automation(self, args: dict) -> dict:
         """Phase 13.2: Bestaetigt eine ausstehende Automation."""
         import assistant.main as main_module
         brain = main_module.brain
-        self_auto = brain.self_automation
+        try:
+            self_auto = brain.self_automation
+        except AttributeError:
+            return {"success": False, "message": "Self-Automation Modul nicht verfuegbar."}
 
         pending_id = args.get("pending_id", "")
         if not pending_id:
             return {"success": False, "message": "Keine Pending-ID angegeben."}
 
-        return await self_auto.confirm_automation(pending_id)
+        try:
+            return await self_auto.confirm_automation(pending_id)
+        except Exception as e:
+            return {"success": False, "message": f"Automation-Bestaetigung fehlgeschlagen: {e}"}
 
     async def _exec_list_jarvis_automations(self, args: dict) -> dict:
         """Phase 13.2: Listet alle Jarvis-Automationen auf."""
         import assistant.main as main_module
         brain = main_module.brain
-        return await brain.self_automation.list_jarvis_automations()
+        try:
+            return await brain.self_automation.list_jarvis_automations()
+        except Exception as e:
+            return {"success": False, "message": f"Automationen laden fehlgeschlagen: {e}"}
 
     async def _exec_delete_jarvis_automation(self, args: dict) -> dict:
         """Phase 13.2: Loescht eine Jarvis-Automation."""
@@ -6073,11 +6088,12 @@ class FunctionExecutor:
 
     async def _exec_manage_inventory(self, args: dict) -> dict:
         """Verwaltet den Vorrat."""
-        # Inventory Manager aus dem brain holen
-        from .brain import AssistantBrain
         import assistant.main as main_module
         brain = main_module.brain
-        inventory = brain.inventory
+        try:
+            inventory = brain.inventory
+        except AttributeError:
+            return {"success": False, "message": "Vorrats-Tracking nicht verfuegbar."}
 
         action = args["action"]
         item = args.get("item", "")
@@ -6590,33 +6606,48 @@ class FunctionExecutor:
         """Erstellt einen bedingten Befehl."""
         import assistant.main as main_module
         brain = main_module.brain
-        return await brain.conditional_commands.create_conditional(
-            trigger_type=args["trigger_type"],
-            trigger_value=args["trigger_value"],
-            action_function=args["action_function"],
-            action_args=args.get("action_args", {}),
-            label=args.get("label", ""),
-            ttl_hours=args.get("ttl_hours", 24),
-            one_shot=args.get("one_shot", True),
-        )
+        try:
+            return await brain.conditional_commands.create_conditional(
+                trigger_type=args["trigger_type"],
+                trigger_value=args["trigger_value"],
+                action_function=args["action_function"],
+                action_args=args.get("action_args", {}),
+                label=args.get("label", ""),
+                ttl_hours=args.get("ttl_hours", 24),
+                one_shot=args.get("one_shot", True),
+            )
+        except Exception as e:
+            return {"success": False, "message": f"Bedingter Befehl fehlgeschlagen: {e}"}
 
     async def _exec_list_conditionals(self, args: dict) -> dict:
         """Listet bedingte Befehle auf."""
         import assistant.main as main_module
         brain = main_module.brain
-        return await brain.conditional_commands.list_conditionals()
+        try:
+            return await brain.conditional_commands.list_conditionals()
+        except Exception as e:
+            return {"success": False, "message": f"Bedingte Befehle laden fehlgeschlagen: {e}"}
 
     async def _exec_get_energy_report(self, args: dict) -> dict:
         """Zeigt Energie-Bericht an."""
         import assistant.main as main_module
         brain = main_module.brain
-        return await brain.energy_optimizer.get_energy_report()
+        try:
+            result = await brain.energy_optimizer.get_energy_report()
+            if isinstance(result, dict) and "message" in result:
+                return result
+            return {"success": True, "message": str(result)}
+        except Exception as e:
+            return {"success": False, "message": f"Energie-Report fehlgeschlagen: {e}"}
 
     async def _exec_web_search(self, args: dict) -> dict:
         """Fuehrt eine Web-Suche durch."""
         import assistant.main as main_module
         brain = main_module.brain
-        return await brain.web_search.search(query=args.get("query", ""))
+        try:
+            return await brain.web_search.search(query=args.get("query", ""))
+        except Exception as e:
+            return {"success": False, "message": f"Web-Suche fehlgeschlagen: {e}"}
 
     async def _exec_get_security_score(self, args: dict) -> dict:
         """Gibt den aktuellen Sicherheits-Score zurueck."""
@@ -6640,7 +6671,17 @@ class FunctionExecutor:
         brain = main_module.brain
         try:
             result = await brain.health_monitor.get_status()
-            return {"success": True, **result}
+            if isinstance(result, dict):
+                message = result.get("message", "")
+                if not message:
+                    # Strukturierte Daten in lesbaren Text umwandeln
+                    parts = []
+                    for key, val in result.items():
+                        if key not in ("success", "message"):
+                            parts.append(f"{key}: {val}")
+                    message = ", ".join(parts) if parts else str(result)
+                return {"success": True, "message": message}
+            return {"success": True, "message": str(result)}
         except Exception as e:
             return {"success": False, "message": f"Raumklima-Check fehlgeschlagen: {e}"}
 

@@ -218,6 +218,9 @@ class OllamaClient:
             return int(ollama_cfg.get("num_ctx_fast", self._DEFAULT_NUM_CTX_FAST))
         elif model == settings.model_deep:
             return int(ollama_cfg.get("num_ctx_deep", self._DEFAULT_NUM_CTX_DEEP))
+        elif model == settings.model_notify:
+            # Notify-Modell: Eigener ctx oder Fallback auf Fast-Wert (Notifications sind kurz)
+            return int(ollama_cfg.get("num_ctx_notify", ollama_cfg.get("num_ctx_fast", self._DEFAULT_NUM_CTX_FAST)))
         else:
             return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
 
@@ -247,6 +250,9 @@ class OllamaClient:
             return LLM_TIMEOUT_FAST
         elif model == settings.model_deep:
             return LLM_TIMEOUT_DEEP
+        elif model == settings.model_notify:
+            # Notify-Modell: Kurzere Antworten, Fast-Timeout reicht
+            return LLM_TIMEOUT_FAST
         else:
             return LLM_TIMEOUT_SMART
 
