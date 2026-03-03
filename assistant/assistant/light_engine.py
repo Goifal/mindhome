@@ -34,6 +34,16 @@ from .function_calling import FunctionExecutor
 
 logger = logging.getLogger(__name__)
 
+
+async def _safe_redis(redis_client, method: str, *args, **kwargs):
+    """Redis-Operation mit Fehlerbehandlung — gibt None bei Fehler zurueck."""
+    try:
+        return await getattr(redis_client, method)(*args, **kwargs)
+    except Exception as e:
+        logger.debug("Redis %s fehlgeschlagen: %s", method, e)
+        return None
+
+
 # Redis-Key Prefixe
 _R_OVERRIDE = "mha:light:override:"      # {entity_id} → TTL
 _R_DUSK = "mha:light:dusk_triggered"      # Tages-Flag
@@ -49,6 +59,7 @@ class LightEngine:
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
         self.redis = None
+        self.mood = None  # MoodDetector — fuer stimmungsadaptive Beleuchtung
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self._room_lux: dict[str, float] = {}
@@ -168,6 +179,19 @@ class LightEngine:
                 continue
 
             brightness = FunctionExecutor._get_adaptive_brightness(room, light_id)
+
+            # Mood-Awareness: Bei Stress gedaempfter, bei Muedigkeit minimal
+            if self.mood:
+                try:
+                    mood_data = self.mood.get_current_mood()
+                    mood = mood_data.get("mood", "neutral")
+                    if mood == "stressed":
+                        brightness = min(brightness, 50)  # Max 50% bei Stress
+                    elif mood == "tired":
+                        brightness = min(brightness, 30)  # Max 30% bei Muedigkeit
+                except Exception:
+                    pass
+
             service_data = {"entity_id": light_id, "brightness_pct": brightness}
             transition = cfg.get("default_transition")
             if transition:
@@ -202,7 +226,7 @@ class LightEngine:
 
         # Sleep-Flag setzen (12h TTL)
         if self.redis:
-            await self.redis.set(_R_SLEEP, "1", ex=43200)
+            await _safe_redis(self.redis, "set", _R_SLEEP, "1", ex=43200)
 
         # Sleep-Mode: Alle Lichter langsam aus
         if bed_cfg.get("sleep_mode", True):
@@ -219,7 +243,7 @@ class LightEngine:
 
         # Sleep-Flag loeschen
         if self.redis:
-            await self.redis.delete(_R_SLEEP)
+            await _safe_redis(self.redis, "delete", _R_SLEEP)
 
         now = datetime.now()
         pc = cfg.get("presence_control", {})
@@ -275,7 +299,7 @@ class LightEngine:
 
         # Tages-Flag setzen (24h TTL)
         if self.redis:
-            await self.redis.set(_R_DUSK, "1", ex=86400)
+            await _safe_redis(self.redis, "set", _R_DUSK, "1", ex=86400)
 
         logger.info("Daemmerung erkannt (Elevation %.1f°) → Auto-On", sun_elevation)
 
@@ -323,7 +347,7 @@ class LightEngine:
         if self._anyone_home(states):
             # Jemand ist da → Flag zuruecksetzen
             if self.redis:
-                await self.redis.delete(_R_AWAY_OFF)
+                await _safe_redis(self.redis, "delete", _R_AWAY_OFF)
             return
 
         # Schon ausgeschaltet?
@@ -331,7 +355,7 @@ class LightEngine:
             already = await self.redis.get(_R_AWAY_OFF)
             if already:
                 return
-            await self.redis.set(_R_AWAY_OFF, "1", ex=7200)
+            await _safe_redis(self.redis, "set", _R_AWAY_OFF, "1", ex=7200)
 
         logger.info("Niemand zuhause → alle Lichter aus")
         transition = cfg.get("default_transition", 2)
@@ -356,9 +380,9 @@ class LightEngine:
         if not (now.hour >= start_hour or now.hour < 6):
             # Tagsüber: Night-Dim Flags zuruecksetzen
             if self.redis and now.hour == 12:
-                keys = await self.redis.keys(f"{_R_NIGHT_DIM}*")
+                keys = await _safe_redis(self.redis, "keys", f"{_R_NIGHT_DIM}*") or []
                 for k in keys:
-                    await self.redis.delete(k)
+                    await _safe_redis(self.redis, "delete", k)
             return
 
         transition = cfg.get("night_dimming_transition", 300)
@@ -412,7 +436,7 @@ class LightEngine:
 
             # Flag setzen (12h TTL)
             if self.redis:
-                await self.redis.set(f"{_R_NIGHT_DIM}{eid}", "1", ex=43200)
+                await _safe_redis(self.redis, "set", f"{_R_NIGHT_DIM}{eid}", "1", ex=43200)
 
     # ── Sleep Mode ─────────────────────────────────────────────────────
 
@@ -456,7 +480,7 @@ class LightEngine:
 
             # TTL fuer Auto-Off setzen
             if self.redis:
-                await self.redis.set(
+                await _safe_redis(self.redis, "set",
                     f"{_R_PATHLIGHT}{light_id}",
                     room,
                     ex=timeout_min * 60,
@@ -468,9 +492,9 @@ class LightEngine:
             return
 
         # Alle Pathlight-Keys mit kurzer Restlaufzeit finden
-        keys = await self.redis.keys(f"{_R_PATHLIGHT}*")
+        keys = await _safe_redis(self.redis, "keys", f"{_R_PATHLIGHT}*") or []
         for key in keys:
-            ttl = await self.redis.ttl(key)
+            ttl = await _safe_redis(self.redis, "ttl", key) or -1
             if ttl <= 0:
                 # Key ist abgelaufen → Licht ausschalten
                 entity_id = key.decode() if isinstance(key, bytes) else key
@@ -579,7 +603,7 @@ class LightEngine:
             return
         cfg = yaml_config.get("lighting", {}).get("presence_control", {})
         ttl_min = cfg.get("manual_override_minutes", 30)
-        await self.redis.set(f"{_R_OVERRIDE}{entity_id}", "1", ex=ttl_min * 60)
+        await _safe_redis(self.redis, "set", f"{_R_OVERRIDE}{entity_id}", "1", ex=ttl_min * 60)
         logger.debug("Manual Override: %s fuer %d Min", entity_id, ttl_min)
 
     async def is_manual_override_active(self, entity_id: str) -> bool:

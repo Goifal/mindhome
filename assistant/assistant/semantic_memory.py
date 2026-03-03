@@ -194,6 +194,7 @@ class SemanticMemory:
                 logger.error("Fehler beim Speichern in ChromaDB: %s", e)
                 return False
 
+        redis_ok = True
         if self.redis:
             try:
                 await self.redis.hset(
@@ -210,12 +211,19 @@ class SemanticMemory:
                 )
                 await self.redis.sadd("mha:facts:all", fact.fact_id)
             except Exception as e:
-                logger.error("Fehler beim Redis-Index: %s", e)
+                logger.error("Fehler beim Redis-Index (Fakt in ChromaDB aber nicht indexiert): %s", e)
+                redis_ok = False
 
-        logger.info(
-            "Neuer Fakt gespeichert: [%s] %s (Person: %s)",
-            fact.category, fact.content, fact.person,
-        )
+        if redis_ok:
+            logger.info(
+                "Neuer Fakt gespeichert: [%s] (Person: %s)",
+                fact.category, fact.person,
+            )
+        else:
+            logger.warning(
+                "Fakt nur in ChromaDB gespeichert (Redis-Index fehlt): [%s] (Person: %s)",
+                fact.category, fact.person,
+            )
         return True
 
     async def _update_existing_fact(

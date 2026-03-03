@@ -24,7 +24,7 @@ from urllib.parse import quote, urlencode
 
 import aiohttp
 
-from .circuit_breaker import ha_breaker
+from .circuit_breaker import ha_breaker, mindhome_breaker
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -125,6 +125,9 @@ class HomeAssistantClient:
         Returns:
             Bild-Bytes (JPEG) oder None
         """
+        if not ha_breaker.is_available:
+            logger.debug("HA Circuit Breaker OPEN — Camera Snapshot %s uebersprungen", entity_id)
+            return None
         session = await self._get_session()
         try:
             async with session.get(
@@ -132,9 +135,11 @@ class HomeAssistantClient:
                 headers=self._ha_headers,
             ) as resp:
                 if resp.status == 200:
+                    ha_breaker.record_success()
                     return await resp.read()
                 logger.warning("Camera Snapshot %s -> %d", entity_id, resp.status)
         except Exception as e:
+            ha_breaker.record_failure()
             logger.error("Camera Snapshot Fehler: %s", e)
         return None
 
@@ -251,7 +256,11 @@ class HomeAssistantClient:
         return await self._get_mindhome(path)
 
     async def mindhome_post(self, path: str, data: dict, retries: int = 0) -> Any:
-        """POST auf die MindHome Add-on API."""
+        """POST auf die MindHome Add-on API mit Circuit Breaker."""
+        if not mindhome_breaker.is_available:
+            logger.debug("MindHome Circuit Breaker OPEN — POST %s uebersprungen", path)
+            return None
+
         last_err = None
         for attempt in range(1 + retries):
             session = await self._get_session()
@@ -261,6 +270,7 @@ class HomeAssistantClient:
                     json=data,
                 ) as resp:
                     if resp.status == 200:
+                        mindhome_breaker.record_success()
                         return await resp.json()
                     body = await resp.text()
                     logger.warning("MindHome POST %s -> %d: %s", path, resp.status, body[:300])
@@ -273,6 +283,7 @@ class HomeAssistantClient:
             if attempt < retries:
                 await asyncio.sleep(1.5)
         if last_err:
+            mindhome_breaker.record_failure()
             logger.warning("MindHome POST %s endgueltig fehlgeschlagen: %s", path, last_err)
         return None
 
@@ -312,7 +323,11 @@ class HomeAssistantClient:
             logger.info("log_actions: Erfolgreich %d Aktionen geloggt", len(safe_actions))
 
     async def mindhome_put(self, path: str, data: dict) -> Any:
-        """PUT auf die MindHome Add-on API (z.B. Cover-Config setzen)."""
+        """PUT auf die MindHome Add-on API mit Circuit Breaker."""
+        if not mindhome_breaker.is_available:
+            logger.debug("MindHome Circuit Breaker OPEN — PUT %s uebersprungen", path)
+            return None
+
         session = await self._get_session()
         try:
             async with session.put(
@@ -320,25 +335,33 @@ class HomeAssistantClient:
                 json=data,
             ) as resp:
                 if resp.status == 200:
+                    mindhome_breaker.record_success()
                     return await resp.json()
                 logger.warning("MindHome PUT %s -> %d", path, resp.status)
                 return None
         except Exception as e:
+            mindhome_breaker.record_failure()
             logger.warning("MindHome PUT %s fehlgeschlagen: %s", path, e)
             return None
 
     async def mindhome_delete(self, path: str) -> Any:
-        """DELETE auf die MindHome Add-on API."""
+        """DELETE auf die MindHome Add-on API mit Circuit Breaker."""
+        if not mindhome_breaker.is_available:
+            logger.debug("MindHome Circuit Breaker OPEN — DELETE %s uebersprungen", path)
+            return None
+
         session = await self._get_session()
         try:
             async with session.delete(
                 f"{self.mindhome_url}{path}",
             ) as resp:
                 if resp.status == 200:
+                    mindhome_breaker.record_success()
                     return await resp.json()
                 logger.warning("MindHome DELETE %s -> %d", path, resp.status)
                 return None
         except Exception as e:
+            mindhome_breaker.record_failure()
             logger.warning("MindHome DELETE %s fehlgeschlagen: %s", path, e)
             return None
 
@@ -418,6 +441,7 @@ class HomeAssistantClient:
                     json=data,
                 ) as resp:
                     if resp.status in (200, 201):
+                        ha_breaker.record_success()
                         return await resp.json()
                     if 400 <= resp.status < 500:
                         body = await resp.text()
@@ -449,11 +473,15 @@ class HomeAssistantClient:
                 wait = RETRY_BACKOFF_BASE * (attempt + 1)
                 await asyncio.sleep(wait)
 
+        ha_breaker.record_failure()
         logger.error("HA POST %s endgueltig fehlgeschlagen: %s", path, last_error)
         return None
 
     async def _put_ha(self, path: str, data: dict) -> Any:
-        """PUT-Request an Home Assistant mit Retry."""
+        """PUT-Request an Home Assistant mit Retry und Circuit Breaker."""
+        if not ha_breaker.is_available:
+            logger.debug("HA Circuit Breaker OPEN — PUT %s uebersprungen", path)
+            return None
         session = await self._get_session()
         last_error = None
 
@@ -465,6 +493,7 @@ class HomeAssistantClient:
                     json=data,
                 ) as resp:
                     if resp.status in (200, 201):
+                        ha_breaker.record_success()
                         return await resp.json()
                     if 400 <= resp.status < 500:
                         body = await resp.text()
@@ -496,11 +525,15 @@ class HomeAssistantClient:
                 wait = RETRY_BACKOFF_BASE * (attempt + 1)
                 await asyncio.sleep(wait)
 
+        ha_breaker.record_failure()
         logger.error("HA PUT %s endgueltig fehlgeschlagen: %s", path, last_error)
         return None
 
     async def _delete_ha(self, path: str) -> bool:
-        """DELETE-Request an Home Assistant mit Retry."""
+        """DELETE-Request an Home Assistant mit Retry und Circuit Breaker."""
+        if not ha_breaker.is_available:
+            logger.debug("HA Circuit Breaker OPEN — DELETE %s uebersprungen", path)
+            return False
         session = await self._get_session()
         last_error = None
 
@@ -511,6 +544,7 @@ class HomeAssistantClient:
                     headers=self._ha_headers,
                 ) as resp:
                     if resp.status in (200, 204):
+                        ha_breaker.record_success()
                         return True
                     if 400 <= resp.status < 500:
                         body = await resp.text()
@@ -542,6 +576,7 @@ class HomeAssistantClient:
                 wait = RETRY_BACKOFF_BASE * (attempt + 1)
                 await asyncio.sleep(wait)
 
+        ha_breaker.record_failure()
         logger.error("HA DELETE %s endgueltig fehlgeschlagen: %s", path, last_error)
         return False
 
@@ -578,7 +613,11 @@ class HomeAssistantClient:
         )
 
     async def _get_mindhome(self, path: str) -> Any:
-        """GET-Request an MindHome Add-on mit Retry und Logging."""
+        """GET-Request an MindHome Add-on mit Retry, Logging und Circuit Breaker."""
+        if not mindhome_breaker.is_available:
+            logger.debug("MindHome Circuit Breaker OPEN — GET %s uebersprungen", path)
+            return None
+
         session = await self._get_session()
         last_error = None
 
@@ -588,6 +627,7 @@ class HomeAssistantClient:
                     f"{self.mindhome_url}{path}",
                 ) as resp:
                     if resp.status == 200:
+                        mindhome_breaker.record_success()
                         return await resp.json()
                     if 400 <= resp.status < 500:
                         body = await resp.text()
@@ -619,6 +659,7 @@ class HomeAssistantClient:
                 wait = RETRY_BACKOFF_BASE * (attempt + 1)
                 await asyncio.sleep(wait)
 
+        mindhome_breaker.record_failure()
         logger.error(
             "MindHome GET %s endgueltig fehlgeschlagen nach %d Versuchen: %s",
             path, MAX_RETRIES, last_error,

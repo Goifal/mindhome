@@ -314,7 +314,7 @@ class MoodDetector:
         # Eskalations-Erkennung: Mehrere aehnliche Anfragen hintereinander
         # → User versucht es wiederholt → starke Frustration
         if len(self._last_texts) >= 2:
-            _recent = self._last_texts[-2:]
+            _recent = list(self._last_texts)[-2:]
             _rep_count = sum(1 for lt in _recent if self._word_overlap(text_lower, lt) > 0.5)
             if _rep_count >= 2:
                 # 3x aehnlich = Eskalation → doppelter Stress-Boost
@@ -542,6 +542,14 @@ class MoodDetector:
                     "priority": "medium",
                     "params": {"brightness_pct": 40},
                 })
+            # Musik leiser bei Stress
+            if self._stress_level >= 0.5:
+                suggestions.append({
+                    "action": "media_player.volume_down",
+                    "reason": "Stress erkannt - Musik-Lautstaerke reduzieren",
+                    "priority": "medium",
+                    "params": {"volume_pct": 30},
+                })
 
         elif self._current_mood == MOOD_FRUSTRATED:
             suggestions.append({
@@ -624,6 +632,18 @@ class MoodDetector:
                         "reason": suggestion["reason"],
                         "result": result,
                     })
+                elif action == "media_player.volume_down":
+                    params = suggestion.get("params", {})
+                    vol_pct = params.get("volume_pct", 30)
+                    result = await executor.execute("play_media", {
+                        "action": "volume",
+                        "volume": vol_pct,
+                    })
+                    executed.append({
+                        "action": action,
+                        "reason": suggestion["reason"],
+                        "result": result,
+                    })
             except Exception as e:
                 logger.warning("Mood-Aktion '%s' fehlgeschlagen: %s", action, e)
 
@@ -672,6 +692,19 @@ class MoodDetector:
             recent = list(sentiments)[-3:]
             if all(s == "negative" for s in recent):
                 hints.append("WARNUNG: 3x negativ hintereinander. Eskalation vermeiden.")
+
+        # Mood-Trend einbauen
+        trend = self.get_mood_trend(person)
+        if trend == "declining":
+            hints.append("Stimmungstrend: fallend. Vorsichtig agieren.")
+        elif trend == "volatile":
+            hints.append("Stimmungstrend: instabil. Neutral bleiben.")
+
+        # Voice-Signale als Kontext (wenn vorhanden)
+        voice_signals = self._last_voice_signals
+        if voice_signals:
+            voice_desc = ", ".join(voice_signals[:3])
+            hints.append(f"Stimm-Analyse: {voice_desc}.")
 
         return " ".join(hints)
 

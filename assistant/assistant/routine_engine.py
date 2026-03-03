@@ -170,6 +170,14 @@ class RoutineEngine:
         is_weekend = now.weekday() >= 5
         style = self.weekend_style if is_weekend else self.weekday_style
 
+        # Phase 17.4: Sleep-Awareness — nach spaeter Nacht kuerzeres Briefing
+        sleep_hint = await self._get_sleep_awareness()
+        if sleep_hint:
+            # Spaete Nacht → kuerzerer Stil, egal ob Wochentag
+            if sleep_hint.get("was_late"):
+                style = "kurz"
+            parts.append(sleep_hint.get("briefing_note", ""))
+
         for module in self.briefing_modules:
             content = await self._get_briefing_module(module, person, style)
             if content:
@@ -577,6 +585,66 @@ class RoutineEngine:
             f'Sprich den Hauptbenutzer mit "{get_person_title()}" an. Deutsch. Butler-Stil.\n'
             "VERBOTEN: leider, Entschuldigung, Es tut mir leid, Wie kann ich helfen?, Gerne!, Natuerlich!"
         )
+
+    async def _get_sleep_awareness(self) -> dict:
+        """Prueft ob der User letzte Nacht spaet ins Bett ging.
+
+        Phase 17.4: Liest das Late-Night-Pattern aus Redis
+        (geschrieben vom WellnessAdvisor) und passt das Briefing an.
+
+        Returns:
+            Dict mit was_late (bool), briefing_note (str) oder leeres Dict.
+        """
+        if not self.redis:
+            return {}
+
+        try:
+            # Gestern = die Nacht die gerade vorbei ist
+            # Late-Night-Nudge schreibt das Datum des Tages in dem
+            # der User nach Mitternacht noch wach war.
+            today = datetime.now().date().isoformat()
+            yesterday = (datetime.now().date() - timedelta(days=1)).isoformat()
+
+            # Pruefen ob heute (nach Mitternacht) oder gestern als Late-Night vermerkt
+            key = "mha:wellness:latenight_dates"
+            was_late_today = await self.redis.sismember(key, today)
+            was_late_yesterday = await self.redis.sismember(key, yesterday)
+
+            if not was_late_today and not was_late_yesterday:
+                return {}
+
+            # Konsekutive Naechte zaehlen
+            consecutive = 0
+            check_date = datetime.now().date()
+            for _ in range(7):
+                is_member = await self.redis.sismember(key, check_date.isoformat())
+                if is_member:
+                    consecutive += 1
+                    check_date = check_date - timedelta(days=1)
+                else:
+                    break
+
+            if consecutive >= 3:
+                note = (
+                    f"SCHLAF-HINWEIS: User war {consecutive} Naechte in Folge nach Mitternacht wach. "
+                    "Briefing kurz halten. Sanft auf Schlafmangel hinweisen. "
+                    "'Kurze Nacht, Sir.' reicht — nicht belehren."
+                )
+            elif was_late_today:
+                note = (
+                    "SCHLAF-HINWEIS: User war letzte Nacht nach Mitternacht noch wach. "
+                    "Briefing kuerzer halten. Beilaeufig erwaehnen: 'Nach der kurzen Nacht...' "
+                    "Kein Vortrag ueber Schlafhygiene."
+                )
+            else:
+                return {}
+
+            logger.info("Sleep-Awareness: Late-Night erkannt (consecutive=%d)", consecutive)
+            return {"was_late": True, "briefing_note": note}
+
+        except Exception as e:
+            logger.debug("Sleep-Awareness Check fehlgeschlagen: %s", e)
+            return {}
 
     async def _execute_morning_actions(self) -> list[dict]:
         """Fuehrt die Begleit-Aktionen beim Morning Briefing aus."""

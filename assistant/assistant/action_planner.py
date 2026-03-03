@@ -197,10 +197,23 @@ class ActionPlanner:
             # LLM aufrufen — Modell und max_tokens aus planner-Config
             planner_model = _planner_cfg.get("model", "") or settings.model_deep
             planner_max_tokens = int(_planner_cfg.get("max_tokens", 512))
+
+            # SICHERHEIT: Tools VOR dem LLM-Aufruf nach Trust-Level filtern
+            available_tools = get_assistant_tools()
+            if autonomy:
+                effective_person = person if person else "__anonymous_guest__"
+                available_tools = [
+                    t for t in available_tools
+                    if autonomy.can_person_act(
+                        effective_person,
+                        t.get("function", {}).get("name", ""),
+                    ).get("allowed", True)
+                ]
+
             response = await self.ollama.chat(
                 messages=planner_messages,
                 model=planner_model,
-                tools=get_assistant_tools(),
+                tools=available_tools,
                 max_tokens=planner_max_tokens,
                 think=True,
             )
@@ -311,9 +324,21 @@ class ActionPlanner:
                     return_exceptions=True,
                 )
 
-                for r in results:
+                for idx, r in enumerate(results):
                     if isinstance(r, Exception):
                         logger.error("Planner parallel Step Fehler: %s", r)
+                        # Fehlgeschlagenen Step trotzdem im Audit-Trail erfassen
+                        if idx < len(valid_steps):
+                            err_step, err_fn, err_fa = valid_steps[idx]
+                            err_step.status = "failed"
+                            err_step.result = {"success": False, "message": f"Exception: {r}"}
+                            plan.steps.append(err_step)
+                            all_actions.append({
+                                "function": err_fn,
+                                "args": err_fa,
+                                "result": err_step.result,
+                            })
+                            tool_results.append(f"{err_fn}: Fehler — {r}")
                         continue
                     step, func_name, func_args, result = r
                     plan.steps.append(step)

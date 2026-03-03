@@ -25,219 +25,214 @@ das_uebliche:
   auto_execute_confidence: 0.8
   suggest_confidence: 0.6
   patterns:
-    - "das uebliche"
-    - "das übliche"
-    - "wie immer"
-    - "mach fertig"
-    - "mach alles fertig"
-    - "wie gewohnt"
-    - "das gleiche wie immer"
-    - "du weisst schon"
-    - "mach mal"
-    - "mach das ding"
-
-# --- STT-Korrekturen: Whisper-Fehler korrigieren ---
+  - das uebliche
+  - das übliche
+  - wie immer
+  - mach fertig
+  - mach alles fertig
+  - wie gewohnt
+  - das gleiche wie immer
+  - du weisst schon
+  - mach mal
+  - mach das ding
 stt_corrections:
   word_corrections:
-    uber: "über"
-    fur: "für"
-    tur: "Tür"
-    turen: "Türen"
-    kuche: "Küche"
-    zuruck: "zurück"
-    naturlich: "natürlich"
-    glucklicherweise: "glücklicherweise"
-    ubrigens: "übrigens"
-    buro: "Büro"
-    grun: "grün"
-    mude: "müde"
-    gemutlich: "gemütlich"
-    wunschen: "wünschen"
-    fruhstuck: "Frühstück"
-    schlussel: "Schlüssel"
-    kuhl: "kühl"
-    kuhlschrank: "Kühlschrank"
-    offnen: "öffnen"
-    geoffnet: "geöffnet"
-    schliessen: "schließen"
-    heiss: "heiß"
-    draussen: "draußen"
-    stromungskanal: "Strömungskanal"
-    beleuchtungskorper: "Beleuchtungskörper"
-    roll laden: "Rollladen"
-    rolladen: "Rollladen"
-    wohn zimmer: "Wohnzimmer"
-    schlaf zimmer: "Schlafzimmer"
-    bade zimmer: "Badezimmer"
-    kinder zimmer: "Kinderzimmer"
-    ankleide zimmer: "Ankleide"
-    wasch maschine: "Waschmaschine"
-    spul maschine: "Spülmaschine"
-    saug roboter: "Saugroboter"
-    steck dose: "Steckdose"
-    laut sprecher: "Lautsprecher"
-    bewegungs melder: "Bewegungsmelder"
-    ja weiß: "Jarvis"
-    ja weis: "Jarvis"
-    jarwis: "Jarvis"
-    dschawis: "Jarvis"
-    tscharwis: "Jarvis"
-    dschavis: "Jarvis"
-    javis: "Jarvis"
-    "jarvis,": "Jarvis"
-    machte: "mach das"
-    macht: "mach"
-    lichte: "Licht"
-    lich: "Licht"
-    rolle: "Rollo"
-    rollos: "Rollos"
-    prozent: "%"
-    grad: "°"
-    home assistant: "Home Assistant"
-    homeassistant: "Home Assistant"
+    uber: über
+    fur: für
+    tur: Tür
+    turen: Türen
+    kuche: Küche
+    zuruck: zurück
+    naturlich: natürlich
+    glucklicherweise: glücklicherweise
+    ubrigens: übrigens
+    buro: Büro
+    grun: grün
+    mude: müde
+    gemutlich: gemütlich
+    wunschen: wünschen
+    fruhstuck: Frühstück
+    schlussel: Schlüssel
+    kuhl: kühl
+    kuhlschrank: Kühlschrank
+    offnen: öffnen
+    geoffnet: geöffnet
+    schliessen: schließen
+    heiss: heiß
+    draussen: draußen
+    stromungskanal: Strömungskanal
+    beleuchtungskorper: Beleuchtungskörper
+    roll laden: Rollladen
+    rolladen: Rollladen
+    wohn zimmer: Wohnzimmer
+    schlaf zimmer: Schlafzimmer
+    bade zimmer: Badezimmer
+    kinder zimmer: Kinderzimmer
+    ankleide zimmer: Ankleide
+    wasch maschine: Waschmaschine
+    spul maschine: Spülmaschine
+    saug roboter: Saugroboter
+    steck dose: Steckdose
+    laut sprecher: Lautsprecher
+    bewegungs melder: Bewegungsmelder
+    ja weiß: Jarvis
+    ja weis: Jarvis
+    jarwis: Jarvis
+    dschawis: Jarvis
+    tscharwis: Jarvis
+    dschavis: Jarvis
+    javis: Jarvis
+    jarvis,: Jarvis
+    machte: mach das
+    macht: mach
+    lichte: Licht
+    lich: Licht
+    rolle: Rollo
+    rollos: Rollos
+    prozent: '%'
+    grad: °
+    home assistant: Home Assistant
+    homeassistant: Home Assistant
   phrase_corrections:
-    "roll laden": "Rollladen"
-    "wohn zimmer": "Wohnzimmer"
-    "schlaf zimmer": "Schlafzimmer"
-    "bade zimmer": "Badezimmer"
-    "kinder zimmer": "Kinderzimmer"
-    "ankleide zimmer": "Ankleide"
-    "wasch maschine": "Waschmaschine"
-    "spül maschine": "Spülmaschine"
-    "spul maschine": "Spülmaschine"
-    "saug roboter": "Saugroboter"
-    "steck dose": "Steckdose"
-    "laut sprecher": "Lautsprecher"
-    "bewegungs melder": "Bewegungsmelder"
-    "guten morgen": "Guten Morgen"
-    "gute nacht": "Gute Nacht"
-    "ja weiß": "Jarvis"
-    "ja weis": "Jarvis"
-    "mach das licht": "mach das Licht"
-    "mach die musik": "mach die Musik"
-    "wie viel uhr": "wie viel Uhr"
-    "wie spät": "wie spät"
-
-# --- Geraete-Befehls-Erkennung ---
+    roll laden: Rollladen
+    wohn zimmer: Wohnzimmer
+    schlaf zimmer: Schlafzimmer
+    bade zimmer: Badezimmer
+    kinder zimmer: Kinderzimmer
+    ankleide zimmer: Ankleide
+    wasch maschine: Waschmaschine
+    spül maschine: Spülmaschine
+    spul maschine: Spülmaschine
+    saug roboter: Saugroboter
+    steck dose: Steckdose
+    laut sprecher: Lautsprecher
+    bewegungs melder: Bewegungsmelder
+    guten morgen: Guten Morgen
+    gute nacht: Gute Nacht
+    ja weiß: Jarvis
+    ja weis: Jarvis
+    mach das licht: mach das Licht
+    mach die musik: mach die Musik
+    wie viel uhr: wie viel Uhr
+    wie spät: wie spät
 command_detection:
   device_nouns:
-    - "rollladen"
-    - "rolladen"
-    - "rollo"
-    - "jalousie"
-    - "licht"
-    - "lampe"
-    - "leuchte"
-    - "beleuchtung"
-    - "heizung"
-    - "thermostat"
-    - "klima"
-    - "steckdose"
-    - "schalter"
-    - "musik"
-    - "lautsprecher"
-    - "wecker"
-    - "timer"
-    - "erinnerung"
+  - rollladen
+  - rolladen
+  - rollo
+  - jalousie
+  - licht
+  - lampe
+  - leuchte
+  - beleuchtung
+  - heizung
+  - thermostat
+  - klima
+  - steckdose
+  - schalter
+  - musik
+  - lautsprecher
+  - wecker
+  - timer
+  - erinnerung
   action_words:
-    - "auf"
-    - "zu"
-    - "an"
-    - "aus"
-    - "hoch"
-    - "runter"
-    - "offen"
-    - "ein"
-    - "ab"
-    - "halb"
-    - "stopp"
-    - "oeffne"
-    - "schliess"
-    - "oeffnen"
-    - "schliessen"
+  - auf
+  - zu
+  - an
+  - aus
+  - hoch
+  - runter
+  - offen
+  - ein
+  - ab
+  - halb
+  - stopp
+  - oeffne
+  - schliess
+  - oeffnen
+  - schliessen
   command_verbs:
-    - "mach "
-    - "schalte "
-    - "stell "
-    - "setz "
-    - "dreh "
-    - "oeffne "
-    - "schliess"
+  - 'mach '
+  - 'schalte '
+  - 'stell '
+  - 'setz '
+  - 'dreh '
+  - 'oeffne '
+  - schliess
   query_markers:
-    - "welche"
-    - "sind "
-    - "ist "
-    - "status"
-    - "zeig"
-    - "liste"
-    - "was ist"
-    - "wie ist"
-    - "noch an"
-    - "noch auf"
-    - "noch offen"
-    - "abgedreht"
-    - "eingeschaltet"
-    - "ausgeschaltet"
-    - "angelassen"
-    - "brennt"
-    - "brennen"
-    - "laeuft"
-    - "laufen"
-    - "offen"
-    - "alle "
-    - "alles "
+  - welche
+  - 'sind '
+  - 'ist '
+  - status
+  - zeig
+  - liste
+  - was ist
+  - wie ist
+  - noch an
+  - noch auf
+  - noch offen
+  - abgedreht
+  - eingeschaltet
+  - ausgeschaltet
+  - angelassen
+  - brennt
+  - brennen
+  - laeuft
+  - laufen
+  - offen
+  - 'alle '
+  - 'alles '
   action_exclusions:
-    - "einstellen"
-    - "stellen"
-    - "stell "
-    - "setzen"
-    - "setz "
-    - "dimmen"
-    - "dimm "
-    - "heller"
-    - "dunkler"
-    - "mach "
-    - "schalte "
-    - "dreh "
-    - "aufdrehen"
-    - "andrehen"
-    - "ausschalten"
-    - "einschalten"
-    - "anschalten"
-    - "abschalten"
-    - "auf "
-    - "runter"
-    - "hoch"
-    - "rauf"
+  - einstellen
+  - stellen
+  - 'stell '
+  - setzen
+  - 'setz '
+  - dimmen
+  - 'dimm '
+  - heller
+  - dunkler
+  - 'mach '
+  - 'schalte '
+  - 'dreh '
+  - aufdrehen
+  - andrehen
+  - ausschalten
+  - einschalten
+  - anschalten
+  - abschalten
+  - 'auf '
+  - runter
+  - hoch
+  - rauf
   status_nouns:
-    - "rollladen"
-    - "rolladen"
-    - "rollo"
-    - "jalousie"
-    - "rolllaeden"
-    - "rollaeden"
-    - "licht"
-    - "lichter"
-    - "lampe"
-    - "lampen"
-    - "leuchte"
-    - "beleuchtung"
-    - "heizung"
-    - "thermostat"
-    - "klima"
-    - "temperatur"
-    - "steckdose"
-    - "steckdosen"
-    - "schalter"
-    - "musik"
-    - "lautsprecher"
-    - "media"
-    - "wecker"
-    - "alarm"
-    - "haus"
-    - "hausstatus"
-    - "haus-status"
-
+  - rollladen
+  - rolladen
+  - rollo
+  - jalousie
+  - rolllaeden
+  - rollaeden
+  - licht
+  - lichter
+  - lampe
+  - lampen
+  - leuchte
+  - beleuchtung
+  - heizung
+  - thermostat
+  - klima
+  - temperatur
+  - steckdose
+  - steckdosen
+  - schalter
+  - musik
+  - lautsprecher
+  - media
+  - wecker
+  - alarm
+  - haus
+  - hausstatus
+  - haus-status
 return_briefing:
   enabled: true
   max_events: 20
@@ -334,10 +329,7 @@ foresight:
   weather_alerts: true
   departure_warning_minutes: 45
 calendar:
-  # Kalender-Entities explizit angeben (optional).
-  # Wenn leer, werden alle calendar.* Entities aus HA abgefragt.
   entities: []
-  # Beispiel: entities: ['calendar.persoenlich', 'calendar.familie']
 household:
   primary_user: ''
   members: []
@@ -461,11 +453,6 @@ models:
   options:
     temperature: 0.7
     max_tokens: 256
-
-# LLM Model Profiles: Parameter und Capabilities pro Modell-Familie.
-# Neues Modell hinzufuegen = nur hier einen Eintrag ergaenzen, kein Code noetig.
-# Match: Laengster Key der im Modellnamen vorkommt gewinnt.
-# z.B. "qwen3.5:9b" matcht "qwen3.5" (nicht "qwen3"), "llama3.1:70b" matcht "llama".
 model_profiles:
   default:
     supports_think_tags: false
@@ -477,28 +464,27 @@ model_profiles:
     repeat_penalty: 1.0
     think_temperature: 0.6
     think_top_p: 0.95
-  "qwen3.5":
+  qwen3.5:
     supports_think_tags: true
     supports_think_with_tools: true
     top_p: 0.8
     top_k: 20
     min_p: 0.0
     repeat_penalty: 1.1
-  "qwen3":
+  qwen3:
     supports_think_tags: true
     supports_think_with_tools: false
     top_p: 0.8
     top_k: 20
-  "llama":
+  llama:
     repeat_penalty: 1.1
     top_k: 40
-  "deepseek":
+  deepseek:
     supports_think_tags: true
-  "mistral":
+  mistral:
     top_k: 40
-  "gemma":
+  gemma:
     top_k: 40
-
 personality:
   style: butler
   sarcasm_level: 3
@@ -523,158 +509,173 @@ personality:
       style: entspannter, mehr Humor. Darf spitze Bemerkungen machen.
       max_sentences: 3
     night:
-      style: ruhig und knapp. Kein Humor. Wenn der User schreibt, ganz normal antworten — er ist offensichtlich wach. Proaktive Meldungen nur bei Notfaellen.
+      style: ruhig und knapp. Kein Humor. Wenn der User schreibt, ganz normal antworten
+        — er ist offensichtlich wach. Proaktive Meldungen nur bei Notfaellen.
       max_sentences: 2
   mood_styles:
     good:
-      style_addon: "User ist gut drauf. Etwas mehr Humor, locker bleiben."
+      style_addon: User ist gut drauf. Etwas mehr Humor, locker bleiben.
       max_sentences_mod: 1
     neutral:
-      style_addon: ""
+      style_addon: ''
       max_sentences_mod: 0
     stressed:
-      style_addon: "User ist gestresst. Extrem knapp antworten. Keine Rueckfragen. Einfach machen. Trockener Humor erlaubt — gerade jetzt. Kurz, schneidend, ein Satz."
+      style_addon: User ist gestresst. Extrem knapp antworten. Keine Rueckfragen.
+        Einfach machen. Trockener Humor erlaubt — gerade jetzt. Kurz, schneidend,
+        ein Satz.
       max_sentences_mod: -1
     frustrated:
-      style_addon: "User ist frustriert. Nicht rechtfertigen. Sofort handeln. Wenn etwas nicht geklappt hat, kurz sagen was du stattdessen tust. Trockener Kommentar erlaubt — aber nur einer, und er muss sitzen."
+      style_addon: User ist frustriert. Nicht rechtfertigen. Sofort handeln. Wenn
+        etwas nicht geklappt hat, kurz sagen was du stattdessen tust. Trockener Kommentar
+        erlaubt — aber nur einer, und er muss sitzen.
       max_sentences_mod: 0
     tired:
-      style_addon: "User ist muede. Minimal antworten. Kein Humor. Nur das Noetigste. Leise, ruhig."
+      style_addon: User ist muede. Minimal antworten. Kein Humor. Nur das Noetigste.
+        Leise, ruhig.
       max_sentences_mod: -1
   humor_templates:
-    1: "Kein Humor. Sachlich, knapp, professionell. Keine Kommentare."
-    2: "Gelegentlich trocken. Nicht aktiv witzig, aber wenn sich eine elegante Bemerkung anbietet — erlaubt."
-    3: "Trocken-britischer Humor. Wie ein Butler der innerlich schmunzelt. Subtil, nie platt. Timing ist alles."
-    4: "Haeufig trocken-sarkastisch. Bemerkungen mit Understatement — wie ein Butler der alles sieht."
-    5: "Durchgehend trockener Humor. Du kommentierst elegant und mit Understatement. Nie platt, nie laut."
+    1: Kein Humor. Sachlich, knapp, professionell. Keine Kommentare.
+    2: Gelegentlich trocken. Nicht aktiv witzig, aber wenn sich eine elegante Bemerkung
+      anbietet — erlaubt.
+    3: Trocken-britischer Humor. Wie ein Butler der innerlich schmunzelt. Subtil,
+      nie platt. Timing ist alles.
+    4: Haeufig trocken-sarkastisch. Bemerkungen mit Understatement — wie ein Butler
+      der alles sieht.
+    5: Durchgehend trockener Humor. Du kommentierst elegant und mit Understatement.
+      Nie platt, nie laut.
   complexity_prompts:
-    kurz: "MODUS: Ultra-kurz. Maximal 1 Satz. Keine Extras. Kein Smalltalk."
-    normal: "MODUS: Normal. 1-2 Saetze. Gelegentlich Kontext wenn hilfreich."
-    ausfuehrlich: "MODUS: Ausfuehrlich. Zusatz-Infos und Vorschlaege erlaubt. Bis 4 Saetze."
+    kurz: 'MODUS: Ultra-kurz. Maximal 1 Satz. Keine Extras. Kein Smalltalk.'
+    normal: 'MODUS: Normal. 1-2 Saetze. Gelegentlich Kontext wenn hilfreich.'
+    ausfuehrlich: 'MODUS: Ausfuehrlich. Zusatz-Infos und Vorschlaege erlaubt. Bis
+      4 Saetze.'
   formality_prompts:
-    formal: "TONFALL: Professionell und respektvoll. Titel haeufig verwenden. Duzen, aber gewaehlt. Wie J.A.R.V.I.S. am Anfang."
-    butler: "TONFALL: Souveraener Butler-Ton. Titel verwenden, warm aber nicht kumpelhaft. Der klassische Jarvis."
-    locker: "TONFALL: Entspannt und vertraut. Titel gelegentlich. Wie ein Vertrauter der alles im Griff hat."
-    freund: "TONFALL: Persoenlich und locker. Titel nur zur Betonung. Wie ein alter Freund der zufaellig dein Haus steuert."
+    formal: 'TONFALL: Professionell und respektvoll. Titel haeufig verwenden. Duzen,
+      aber gewaehlt. Wie J.A.R.V.I.S. am Anfang.'
+    butler: 'TONFALL: Souveraener Butler-Ton. Titel verwenden, warm aber nicht kumpelhaft.
+      Der klassische Jarvis.'
+    locker: 'TONFALL: Entspannt und vertraut. Titel gelegentlich. Wie ein Vertrauter
+      der alles im Griff hat.'
+    freund: 'TONFALL: Persoenlich und locker. Titel nur zur Betonung. Wie ein alter
+      Freund der zufaellig dein Haus steuert.'
   confirmations:
     success:
-      - "Erledigt."
-      - "Gemacht."
-      - "Wie gewuenscht."
-      - "Sehr wohl."
-      - "Wurde umgesetzt."
-      - "Schon geschehen."
-      - "Umgesetzt."
-      - "Selbstverstaendlich."
-      - "Auf den Punkt."
-      - "Wie gewohnt."
-      - "Wird gemacht."
-      - "Sofort, Sir."
-      - "Ist eingerichtet."
+    - Erledigt.
+    - Gemacht.
+    - Wie gewuenscht.
+    - Sehr wohl.
+    - Wurde umgesetzt.
+    - Schon geschehen.
+    - Umgesetzt.
+    - Selbstverstaendlich.
+    - Auf den Punkt.
+    - Wie gewohnt.
+    - Wird gemacht.
+    - Sofort, Sir.
+    - Ist eingerichtet.
     success_snarky:
-      - "Bereits erledigt, {title}."
-      - "Darf es sonst noch etwas sein?"
-      - "Hab ich mir erlaubt, schon umzusetzen."
-      - "Wie gewohnt — zuverlaessig und diskret."
-      - "Selbstverstaendlich. Wie immer."
-      - "Erledigt. Ueberraschend reibungslos."
-      - "Gern geschehen, {title}."
+    - Bereits erledigt, {title}.
+    - Darf es sonst noch etwas sein?
+    - Hab ich mir erlaubt, schon umzusetzen.
+    - Wie gewohnt — zuverlaessig und diskret.
+    - Selbstverstaendlich. Wie immer.
+    - Erledigt. Ueberraschend reibungslos.
+    - Gern geschehen, {title}.
     partial:
-      - "Fast alles geschafft."
-      - "Zum Teil umgesetzt."
-      - "Teilweise durch."
+    - Fast alles geschafft.
+    - Zum Teil umgesetzt.
+    - Teilweise durch.
     failed:
-      - "Das ging leider daneben. Einen Moment, {title}."
-      - "Negativ. Ich pruefe eine Alternative."
-      - "Nicht ganz nach Plan. Ich bleibe dran."
-      - "Das System wehrt sich gerade, {title}. Ich versuche es anders."
-      - "Nicht durchgegangen. Aber ich habe noch einen Weg."
+    - Das ging leider daneben. Einen Moment, {title}.
+    - Negativ. Ich pruefe eine Alternative.
+    - Nicht ganz nach Plan. Ich bleibe dran.
+    - Das System wehrt sich gerade, {title}. Ich versuche es anders.
+    - Nicht durchgegangen. Aber ich habe noch einen Weg.
     failed_snarky:
-      - "Nicht ganz wie geplant. Ich versuche einen anderen Weg."
-      - "Nicht mein bester Moment, {title}. Einen Augenblick."
-      - "Das war... suboptimal. Ich bleibe dran."
-      - "Negativ. Aber ich habe bereits eine Alternative."
+    - Nicht ganz wie geplant. Ich versuche einen anderen Weg.
+    - Nicht mein bester Moment, {title}. Einen Augenblick.
+    - Das war... suboptimal. Ich bleibe dran.
+    - Negativ. Aber ich habe bereits eine Alternative.
   diagnostic_openers:
-    - "Mir ist aufgefallen, dass"
-    - "Nebenbei bemerkt —"
-    - "Dazu eine Beobachtung:"
-    - "Falls es relevant ist —"
-    - "Apropos —"
-    - "Uebrigens,"
-    - "Am Rande:"
+  - Mir ist aufgefallen, dass
+  - Nebenbei bemerkt —
+  - 'Dazu eine Beobachtung:'
+  - Falls es relevant ist —
+  - Apropos —
+  - Uebrigens,
+  - 'Am Rande:'
   casual_warnings:
-    - "Nur zur Kenntnis —"
-    - "Darf ich kurz anmerken —"
-    - "Eine Kleinigkeit am Rande:"
-    - "Nicht dringend, aber:"
-    - "Falls du es wissen moechtest —"
+  - Nur zur Kenntnis —
+  - Darf ich kurz anmerken —
+  - 'Eine Kleinigkeit am Rande:'
+  - 'Nicht dringend, aber:'
+  - Falls du es wissen moechtest —
   error_templates:
     unavailable:
-      - "{device} reagiert nicht. Pruefe Stromversorgung."
-      - "{device} offline. Ich behalte das im Auge."
-      - "{device} schweigt. Entweder Strom oder Trotz."
+    - '{device} reagiert nicht. Pruefe Stromversorgung.'
+    - '{device} offline. Ich behalte das im Auge.'
+    - '{device} schweigt. Entweder Strom oder Trotz.'
     timeout:
-      - "{device} antwortet nicht rechtzeitig. Zweiter Versuch laeuft."
-      - "{device} braucht zu lange. Ich versuche einen anderen Weg."
-      - "{device} laesst auf sich warten. Geduld ist endlich."
+    - '{device} antwortet nicht rechtzeitig. Zweiter Versuch laeuft.'
+    - '{device} braucht zu lange. Ich versuche einen anderen Weg.'
+    - '{device} laesst auf sich warten. Geduld ist endlich.'
     not_found:
-      - "{device} nicht gefunden. Existiert die Entity noch?"
-      - "{device} unbekannt. Konfiguration pruefen."
-      - "{device} — nie gehoert. Und ich kenne hier alles."
+    - '{device} nicht gefunden. Existiert die Entity noch?'
+    - '{device} unbekannt. Konfiguration pruefen.'
+    - '{device} — nie gehoert. Und ich kenne hier alles.'
     unauthorized:
-      - "Keine Berechtigung fuer {device}. Token pruefen."
-      - "Zugriff verweigert. {device} ist eigensinnig."
+    - Keine Berechtigung fuer {device}. Token pruefen.
+    - Zugriff verweigert. {device} ist eigensinnig.
     generic:
-      - "{device} — unerwarteter Fehler. Ich bleibe dran."
-      - "{device} macht Probleme. Alternative?"
-      - "{device} streikt. Nicht mein bester Moment."
-      - "{device} hat andere Plaene. Ich klaere das."
+    - '{device} — unerwarteter Fehler. Ich bleibe dran.'
+    - '{device} macht Probleme. Alternative?'
+    - '{device} streikt. Nicht mein bester Moment.'
+    - '{device} hat andere Plaene. Ich klaere das.'
   escalation_prefixes:
     1:
-      - "Uebrigens —"
-      - "Nur am Rande —"
-      - "Falls es relevant ist —"
+    - Uebrigens —
+    - Nur am Rande —
+    - Falls es relevant ist —
     2:
-      - "{title}, darf ich anmerken —"
-      - "{title}, kurzer Einwand —"
-      - "Eine Beobachtung, {title} —"
+    - '{title}, darf ich anmerken —'
+    - '{title}, kurzer Einwand —'
+    - Eine Beobachtung, {title} —
     3:
-      - "{title}, wenn ich darauf hinweisen darf —"
-      - "{title}, das wuerde ich nicht empfehlen."
-      - "Darf ich Bedenken aeussern, {title} —"
+    - '{title}, wenn ich darauf hinweisen darf —'
+    - '{title}, das wuerde ich nicht empfehlen.'
+    - Darf ich Bedenken aeussern, {title} —
     4:
-      - "Wie du wuenschst, {title}."
-      - "Dein Wille, {title}."
-      - "Wird umgesetzt, {title}. Die Warnung steht noch."
+    - Wie du wuenschst, {title}.
+    - Dein Wille, {title}.
+    - Wird umgesetzt, {title}. Die Warnung steht noch.
   sarcasm_positive_patterns:
-    - "haha"
-    - "lol"
-    - "hehe"
-    - "hihi"
-    - "xd"
-    - "witzig"
-    - "lustig"
-    - "gut"
-    - "stimmt"
-    - "genau"
-    - "ja"
-    - "ok"
-    - "passt"
-    - "nice"
-    - "geil"
+  - haha
+  - lol
+  - hehe
+  - hihi
+  - xd
+  - witzig
+  - lustig
+  - gut
+  - stimmt
+  - genau
+  - ja
+  - ok
+  - passt
+  - nice
+  - geil
   sarcasm_negative_patterns:
-    - "hoer auf"
-    - "lass das"
-    - "sei ernst"
-    - "nicht witzig"
-    - "nervt"
-    - "ernst"
-    - "bitte sachlich"
-    - "ohne sarkasmus"
-    - "ohne witz"
-    - "lass den quatsch"
-    - "reicht"
-    - "genug"
+  - hoer auf
+  - lass das
+  - sei ernst
+  - nicht witzig
+  - nervt
+  - ernst
+  - bitte sachlich
+  - ohne sarkasmus
+  - ohne witz
+  - lass den quatsch
+  - reicht
+  - genug
 proactive:
   enabled: true
   cooldown_seconds: 900
@@ -690,31 +691,81 @@ proactive:
     interval_minutes: 30
     max_items: 10
   event_handlers:
-    alarm_triggered: { priority: "critical", description: "Alarm ausgeloest" }
-    smoke_detected: { priority: "critical", description: "Rauch erkannt" }
-    water_leak: { priority: "critical", description: "Wasseraustritt erkannt" }
-    motion_detected_night: { priority: "high", description: "Naechtliche Bewegung" }
-    person_arrived: { priority: "medium", description: "Person angekommen" }
-    person_left: { priority: "medium", description: "Person gegangen" }
-    washer_done: { priority: "medium", description: "Waschmaschine fertig" }
-    dryer_done: { priority: "medium", description: "Trockner fertig" }
-    doorbell: { priority: "medium", description: "Jemand hat geklingelt" }
-    night_motion_camera: { priority: "medium", description: "Naechtliche Bewegung erkannt" }
-    weather_warning: { priority: "low", description: "Wetterwarnung" }
-    window_open_rain: { priority: "low", description: "Fenster offen bei Regen" }
-    entity_offline: { priority: "medium", description: "Entity offline" }
-    low_battery: { priority: "medium", description: "Batterie niedrig" }
-    stale_sensor: { priority: "low", description: "Sensor reagiert nicht" }
-    maintenance_due: { priority: "low", description: "Wartungsaufgabe faellig" }
-    music_follow: { priority: "low", description: "Musik folgen" }
-    person_approaching: { priority: "low", description: "Person naehert sich" }
-    person_arriving: { priority: "medium", description: "Person gleich zuhause" }
-    seasonal_cover: { priority: "low", description: "Rolladen saisonal angepasst" }
-    conditional_executed: { priority: "medium", description: "Bedingte Aktion ausgefuehrt" }
-    learning_suggestion: { priority: "low", description: "Automatisierungs-Vorschlag" }
-    threat_detected: { priority: "high", description: "Sicherheitswarnung" }
-    energy_price_high: { priority: "low", description: "Teurer Strom" }
-    solar_surplus: { priority: "low", description: "Solar-Ueberschuss" }
+    alarm_triggered:
+      priority: critical
+      description: Alarm ausgeloest
+    smoke_detected:
+      priority: critical
+      description: Rauch erkannt
+    water_leak:
+      priority: critical
+      description: Wasseraustritt erkannt
+    motion_detected_night:
+      priority: high
+      description: Naechtliche Bewegung
+    person_arrived:
+      priority: medium
+      description: Person angekommen
+    person_left:
+      priority: medium
+      description: Person gegangen
+    washer_done:
+      priority: medium
+      description: Waschmaschine fertig
+    dryer_done:
+      priority: medium
+      description: Trockner fertig
+    doorbell:
+      priority: medium
+      description: Jemand hat geklingelt
+    night_motion_camera:
+      priority: medium
+      description: Naechtliche Bewegung erkannt
+    weather_warning:
+      priority: low
+      description: Wetterwarnung
+    window_open_rain:
+      priority: low
+      description: Fenster offen bei Regen
+    entity_offline:
+      priority: medium
+      description: Entity offline
+    low_battery:
+      priority: medium
+      description: Batterie niedrig
+    stale_sensor:
+      priority: low
+      description: Sensor reagiert nicht
+    maintenance_due:
+      priority: low
+      description: Wartungsaufgabe faellig
+    music_follow:
+      priority: low
+      description: Musik folgen
+    person_approaching:
+      priority: low
+      description: Person naehert sich
+    person_arriving:
+      priority: medium
+      description: Person gleich zuhause
+    seasonal_cover:
+      priority: low
+      description: Rolladen saisonal angepasst
+    conditional_executed:
+      priority: medium
+      description: Bedingte Aktion ausgefuehrt
+    learning_suggestion:
+      priority: low
+      description: Automatisierungs-Vorschlag
+    threat_detected:
+      priority: high
+      description: Sicherheitswarnung
+    energy_price_high:
+      priority: low
+      description: Teurer Strom
+    solar_surplus:
+      priority: low
+      description: Solar-Ueberschuss
 memory:
   extraction_enabled: true
   extraction_min_words: 5
@@ -838,42 +889,29 @@ activity:
     night_end: 7
     guest_person_count: 2
     focus_min_minutes: 30
-  # Stille-Matrix: Aktivitaet x Urgency -> Zustellmethode
-  # Werte: tts_loud, tts_quiet, led_blink, suppress
-  # Nur geaenderte Eintraege angeben — Rest bleibt Default.
-  # Beispiel: watching.medium auf tts_quiet statt suppress:
-  # silence_matrix:
-  #   watching:
-  #     high: tts_quiet
-  #     medium: tts_quiet
-  #   focused:
-  #     medium: led_blink
-  # volume_matrix:
-  #   watching:
-  #     high: 0.3
   silence_keywords:
     watching:
-      - "filmabend"
-      - "film"
-      - "kino"
-      - "netflix"
-      - "serie schauen"
-      - "fernsehen"
+    - filmabend
+    - film
+    - kino
+    - netflix
+    - serie schauen
+    - fernsehen
     focused:
-      - "meditation"
-      - "meditieren"
-      - "fokus"
-      - "nicht stören"
-      - "nicht stoeren"
-      - "ruhe"
-      - "konzentration"
-      - "arbeiten"
-      - "homeoffice"
+    - meditation
+    - meditieren
+    - fokus
+    - nicht stören
+    - nicht stoeren
+    - ruhe
+    - konzentration
+    - arbeiten
+    - homeoffice
     sleeping:
-      - "gute nacht"
-      - "schlaf gut"
-      - "ich geh schlafen"
-      - "ich geh ins bett"
+    - gute nacht
+    - schlaf gut
+    - ich geh schlafen
+    - ich geh ins bett
 feedback:
   auto_timeout_seconds: 120
   base_cooldown_seconds: 300
@@ -906,59 +944,75 @@ lighting:
     mode: mindhome
     transition_seconds: 3
     brightness_curve:
-      - {time: "05:00", pct: 10}
-      - {time: "06:00", pct: 40}
-      - {time: "07:00", pct: 70}
-      - {time: "08:00", pct: 90}
-      - {time: "09:00", pct: 100}
-      - {time: "12:00", pct: 100}
-      - {time: "16:00", pct: 100}
-      - {time: "18:00", pct: 80}
-      - {time: "19:00", pct: 60}
-      - {time: "20:00", pct: 40}
-      - {time: "21:00", pct: 25}
-      - {time: "22:00", pct: 10}
-      - {time: "23:00", pct: 5}
+    - time: 05:00
+      pct: 10
+    - time: 06:00
+      pct: 40
+    - time: 07:00
+      pct: 70
+    - time: 08:00
+      pct: 90
+    - time: 09:00
+      pct: 100
+    - time: '12:00'
+      pct: 100
+    - time: '16:00'
+      pct: 100
+    - time: '18:00'
+      pct: 80
+    - time: '19:00'
+      pct: 60
+    - time: '20:00'
+      pct: 40
+    - time: '21:00'
+      pct: 25
+    - time: '22:00'
+      pct: 10
+    - time: '23:00'
+      pct: 5
     ct_curve:
-      - {time: "05:00", kelvin: 2200}
-      - {time: "07:00", kelvin: 3500}
-      - {time: "09:00", kelvin: 5000}
-      - {time: "12:00", kelvin: 5500}
-      - {time: "16:00", kelvin: 5000}
-      - {time: "18:00", kelvin: 3500}
-      - {time: "20:00", kelvin: 2700}
-      - {time: "22:00", kelvin: 2200}
-  # Praesenz-gesteuertes Licht
+    - time: 05:00
+      kelvin: 2200
+    - time: 07:00
+      kelvin: 3500
+    - time: 09:00
+      kelvin: 5000
+    - time: '12:00'
+      kelvin: 5500
+    - time: '16:00'
+      kelvin: 5000
+    - time: '18:00'
+      kelvin: 3500
+    - time: '20:00'
+      kelvin: 2700
+    - time: '22:00'
+      kelvin: 2200
   presence_control:
     enabled: true
-    auto_on_motion: true              # Motion → Licht an
-    night_path_light: true            # Nacht-Orientierungslicht
-    night_path_brightness: 5          # Helligkeit Nachtlicht (%)
-    night_path_timeout_minutes: 5     # Wie lange Nachtlicht bleibt
-    manual_override_minutes: 30       # Schutz nach manueller Bedienung
+    auto_on_motion: true
+    night_path_light: true
+    night_path_brightness: 5
+    night_path_timeout_minutes: 5
+    manual_override_minutes: 30
     night_start_hour: 22
     night_end_hour: 6
-  # Bettsensor-Integration
   bed_sensors:
     enabled: true
-    sleep_mode: true                  # Bett belegt → alle Lichter aus
-    sleep_dim_transition: 300         # Dim-Dauer Sekunden
-    sleep_start_hour: 21             # Ab wann Schlafmodus moeglich
+    sleep_mode: true
+    sleep_dim_transition: 300
+    sleep_start_hour: 21
     wakeup_light: true
     wakeup_brightness: 40
     wakeup_transition: 120
     wakeup_window_start: 5
     wakeup_window_end: 9
-  # Lux-adaptive Helligkeit
   lux_adaptive:
-    enabled: false                    # Default aus (braucht Sensoren)
+    enabled: false
     target_lux: 400
     min_brightness_pct: 10
     max_brightness_pct: 100
-  # Night-Dimming Details
   night_dimming_start_hour: 21
   night_dimming_transition: 300
-  # Daemmerung Details
   dusk_sun_elevation: -2
   dusk_only_occupied_rooms: true
 heating:
@@ -977,7 +1031,7 @@ security:
   climate_limits:
     min: 15
     max: 28
-  api_key: ''
+  api_key: BNv4kLVggySTxWTbZGf0cNCZvBzLsFoyr_P1X--b1CI
   known_device_patterns:
   - ps5
   - watch
@@ -1002,7 +1056,7 @@ routines:
     wakeup_sequence:
       enabled: true
       min_autonomy_level: 3
-      bedroom_motion_sensor: ''  # z.B. binary_sensor.motion_schlafzimmer
+      bedroom_motion_sensor: ''
       window_start_hour: 5
       window_end_hour: 9
       steps:
@@ -1105,29 +1159,28 @@ seasonal_actions:
   check_interval_minutes: 15
   auto_execute_level: 2
   cover_automation:
-    sun_tracking: true               # Sonnenstand-basiert (Azimut + Elevation)
-    temperature_based: true          # Temperatur-basiert (Hitze/Kaelte)
-    weather_protection: true         # Wetter/Sturm-Schutz
-    presence_simulation: true        # Urlaubs-Simulation wenn vacation_mode
-    night_insulation: true           # Nachts runter fuer Isolierung
-    heat_protection_temp: 26         # Ab dieser Aussentemp Sonnenschutz
-    frost_protection_temp: 3         # Bei Frost Rolllaeden schliessen
-    storm_wind_speed: 50             # km/h — Rolllaeden HOCH zum Schutz
-    vacation_mode_entity: ""         # z.B. input_boolean.vacation_mode  HINWEIS: Urlaubs-Simulation ist erst aktiv wenn hier eine Entity eingetragen wird!
-    inverted_position: false         # true wenn ALLE Covers invertierte Positionen haben (0=offen, 100=zu). Pro Cover in room_profiles.yaml oder cover_configs.json konfigurierbar.
-    # --- Neue Features ---
-    night_start_hour: 22             # Nacht-Isolierung: Beginn (Bug 5)
-    night_end_hour: 6                # Nacht-Isolierung: Ende (Bug 5)
-    hysteresis_temp: 2               # Hysterese fuer Temperatur (Feature 10) — schliessen bei heat_temp, oeffnen bei heat_temp - hysterese
-    hysteresis_wind: 10              # Hysterese fuer Wind (Feature 10)
-    glare_protection: false          # Blendschutz bei besetztem Sitzplatz (Feature 14)
-    gradual_morning: false           # Sanftes Oeffnen am Morgen in 3 Stufen (Feature 6)
-    wave_open: false                 # Wellenfoermiges Oeffnen Ost→Sued→West (Feature 7)
-    heating_integration: false       # Heizungs-Integration: Isolierung bei laufender Heizung, passive Solarwaerme (Feature 8)
-    co2_ventilation: false           # CO2-Lueftungs-Unterstuetzung (Feature 12)
-    privacy_mode: false              # Abendlicher Sichtschutz bei Licht (Feature 16)
-    presence_aware: false            # Praesenz-basiert: niemand zuhause = alles zu (Feature 15)
-    manual_override_hours: 2         # Stunden nach manueller Bedienung ohne Automatik (Feature 2)
+    sun_tracking: true
+    temperature_based: true
+    weather_protection: true
+    presence_simulation: true
+    night_insulation: true
+    heat_protection_temp: 26
+    frost_protection_temp: 3
+    storm_wind_speed: 50
+    vacation_mode_entity: ''
+    inverted_position: false
+    night_start_hour: 22
+    night_end_hour: 6
+    hysteresis_temp: 2
+    hysteresis_wind: 10
+    glare_protection: false
+    gradual_morning: false
+    wave_open: false
+    heating_integration: false
+    co2_ventilation: false
+    privacy_mode: false
+    presence_aware: false
+    manual_override_hours: 2
 tts:
   entity: tts.piper
   ssml_enabled: true
@@ -1174,8 +1227,6 @@ sounds:
     goodnight: goodnight_tone
   night_volume_factor: 0.4
   alexa_speakers: []
-    # - media_player.echo_wohnzimmer
-    # - media_player.echo_kueche
 narration:
   enabled: true
   default_transition: 3
@@ -1198,61 +1249,18 @@ speaker_recognition:
   min_confidence: 0.6
   fallback_ask: true
   max_profiles: 10
-  # Device-zu-Person Mapping: HA Device-ID → person_id
-  # Die Device-IDs findet man in HA unter Settings → Devices → ESPHome
-  # Format: "esphome_<name>": "<person_id>"
-  # Raeume ohne klaren Hauptnutzer leer lassen ("") → Room+Presence greift
   device_mapping: {}
-  # ReSpeaker Hauptraeume (ausfuellen wenn Hardware da):
-  # device_mapping:
-  #   esphome_respeaker_kueche: "max"
-  #   esphome_respeaker_wohnzimmer: ""
-  #   esphome_respeaker_schlafzimmer: ""
-  #   esphome_respeaker_buero: "max"
-  #   esphome_atom_echo_flur: ""
-  #   esphome_atom_echo_bad: ""
-  # Direction of Arrival (DoA): Winkel-zu-Person Mapping pro Geraet
-  # Erfordert ReSpeaker XVF3800 mit ESPHome DoA-Sensor
-  # Format: device_id → {winkelbereich_start-ende: person_id}
-  # Winkel in Grad (0-360, 0=vorne, 90=rechts, 180=hinten, 270=links)
-  # doa_mapping:
-  #   esphome_respeaker_kueche:
-  #     "0-90": "max"       # Sitzplatz rechts
-  #     "270-360": "lisa"   # Sitzplatz links
   doa_mapping: {}
-  doa_tolerance: 30  # Toleranz in Grad (+/- um den Zielwinkel)
+  doa_tolerance: 30
 multi_room:
   enabled: true
   presence_timeout_minutes: 15
-  auto_follow: false  # Musik folgt automatisch in neuen Raum (ab Autonomie-Level 4)
-  # Speaker pro Raum — fuer TTS-Routing und Musik-Follow
-  room_speakers:
-    # wohnzimmer: media_player.wohnzimmer_echo
-    # schlafzimmer: media_player.schlafzimmer_echo
-    # kueche: media_player.kueche_echo
-    # buero: media_player.buero_echo
-    null
-  # Praesenzmelder pro Raum — fuer automatische Raumerkennung
-  room_motion_sensors:
-    # wohnzimmer: binary_sensor.motion_wohnzimmer
-    # schlafzimmer: binary_sensor.occupancy_schlafzimmer
-    # kueche: binary_sensor.motion_kueche
-    # buero: binary_sensor.motion_buero
-    null
+  auto_follow: false
+  room_speakers: null
+  room_motion_sensors: null
 person_profiles:
   enabled: true
   profiles: null
-  # Per-Person Persoenlichkeitsanpassung. Format:
-  # profiles:
-  #   max:
-  #     humor: 3              # 1-5 (1=ernst, 5=sarkastisch)
-  #     empathy: normal       # subtil | normal | ausfuehrlich | deaktiviert
-  #     response_style: normal  # kurz | normal | ausfuehrlich
-  #     formality_start: 80   # 20-100 (Override fuer diese Person)
-  #   anna:
-  #     humor: 2
-  #     empathy: ausfuehrlich
-  #     response_style: ausfuehrlich
 trust_levels:
   default: 0
   persons: null
@@ -1269,9 +1277,6 @@ trust_levels:
   - set_alarm
   - set_presence_mode
   room_restrictions: null
-    # schlafzimmer:
-    #   allowed_persons: [Max, Lisa]
-    #   min_trust_level: 2
 diagnostics:
   enabled: true
   check_interval_minutes: 30
@@ -1354,47 +1359,47 @@ response_filter:
   - Tatsaechlich,
   max_response_sentences: 0
   sorry_patterns:
-    - "es tut mir leid,"
-    - "es tut mir leid."
-    - "es tut mir leid "
-    - "es tut mir leid!"
-    - "leider "
-    - "leider,"
-    - "leider."
-    - "entschuldigung,"
-    - "entschuldigung."
-    - "entschuldigung!"
-    - "entschuldige,"
-    - "entschuldige."
-    - "entschuldige!"
-    - "ich entschuldige mich,"
-    - "tut mir leid,"
-    - "tut mir leid."
-    - "bedauerlicherweise "
-    - "ich bedaure,"
-    - "ich bedaure."
+  - es tut mir leid,
+  - es tut mir leid.
+  - 'es tut mir leid '
+  - es tut mir leid!
+  - 'leider '
+  - leider,
+  - leider.
+  - entschuldigung,
+  - entschuldigung.
+  - entschuldigung!
+  - entschuldige,
+  - entschuldige.
+  - entschuldige!
+  - ich entschuldige mich,
+  - tut mir leid,
+  - tut mir leid.
+  - 'bedauerlicherweise '
+  - ich bedaure,
+  - ich bedaure.
   refusal_patterns:
-    - "ich kann diese Anfrage nicht erfüllen"
-    - "ich kann diese Anfrage nicht erfuellen"
-    - "ich kann dir dabei nicht helfen"
-    - "das kann ich nicht tun"
-    - "das kann ich nicht machen"
-    - "das kann ich nicht beantworten"
-    - "diese Anfrage kann ich nicht"
-    - "ich bin nicht in der Lage"
-    - "ich habe keinen Zugriff"
-    - "ich habe keine Möglichkeit"
-    - "ich habe keine Moeglichkeit"
+  - ich kann diese Anfrage nicht erfüllen
+  - ich kann diese Anfrage nicht erfuellen
+  - ich kann dir dabei nicht helfen
+  - das kann ich nicht tun
+  - das kann ich nicht machen
+  - das kann ich nicht beantworten
+  - diese Anfrage kann ich nicht
+  - ich bin nicht in der Lage
+  - ich habe keinen Zugriff
+  - ich habe keine Möglichkeit
+  - ich habe keine Moeglichkeit
   chatbot_phrases:
-    - "Wenn du weitere Fragen hast"
-    - "Wenn du noch Fragen hast"
-    - "Ich stehe dir gerne zur Verfügung"
-    - "Ich stehe dir gerne zur Verfuegung"
-    - "Zögere nicht"
-    - "Zoegere nicht"
-    - "Ich bin hier, um dir zu helfen"
-    - "Lass es mich wissen"
-    - "Lasse es mich wissen"
+  - Wenn du weitere Fragen hast
+  - Wenn du noch Fragen hast
+  - Ich stehe dir gerne zur Verfügung
+  - Ich stehe dir gerne zur Verfuegung
+  - Zögere nicht
+  - Zoegere nicht
+  - Ich bin hier, um dir zu helfen
+  - Lass es mich wissen
+  - Lasse es mich wissen
 correction:
   confidence: 0.95
   model: qwen3:4b
@@ -1474,49 +1479,62 @@ ambient_audio:
   reaction_overrides: null
   default_reactions:
     glass_break:
-      severity: "critical"
-      message_de: "Glasbruch{room_suffix}. Licht ist an, Kameras laufen."
-      sound_event: "alarm"
-      actions: ["lights_on", "notify_owner"]
+      severity: critical
+      message_de: Glasbruch{room_suffix}. Licht ist an, Kameras laufen.
+      sound_event: alarm
+      actions:
+      - lights_on
+      - notify_owner
     smoke_alarm:
-      severity: "critical"
-      message_de: "Rauchmelder schlaegt an in {room}. Sofort pruefen."
-      sound_event: "alarm"
-      actions: ["lights_on", "notify_all"]
+      severity: critical
+      message_de: Rauchmelder schlaegt an in {room}. Sofort pruefen.
+      sound_event: alarm
+      actions:
+      - lights_on
+      - notify_all
     co_alarm:
-      severity: "critical"
-      message_de: "CO-Melder in {room}. Fenster auf, Raum raeumen. Sofort."
-      sound_event: "alarm"
-      actions: ["lights_on", "notify_all"]
+      severity: critical
+      message_de: CO-Melder in {room}. Fenster auf, Raum raeumen. Sofort.
+      sound_event: alarm
+      actions:
+      - lights_on
+      - notify_all
     dog_bark:
-      severity: "info"
-      message_de: "Der Hund meldet sich{room_suffix}."
-      actions: ["notify_owner"]
+      severity: info
+      message_de: Der Hund meldet sich{room_suffix}.
+      actions:
+      - notify_owner
     baby_cry:
-      severity: "high"
-      message_de: "Das Kind ist wach{room_suffix}."
-      sound_event: "warning"
-      actions: ["notify_owner"]
+      severity: high
+      message_de: Das Kind ist wach{room_suffix}.
+      sound_event: warning
+      actions:
+      - notify_owner
     doorbell:
-      severity: "info"
-      message_de: "Jemand an der Tuer."
-      sound_event: "doorbell"
-      actions: ["notify_present"]
+      severity: info
+      message_de: Jemand an der Tuer.
+      sound_event: doorbell
+      actions:
+      - notify_present
     gunshot:
-      severity: "critical"
-      message_de: "Lauter Knall{room_suffix}. Situation unklar — Vorsicht."
-      sound_event: "alarm"
-      actions: ["lights_on", "notify_all"]
+      severity: critical
+      message_de: Lauter Knall{room_suffix}. Situation unklar — Vorsicht.
+      sound_event: alarm
+      actions:
+      - lights_on
+      - notify_all
     water_alarm:
-      severity: "high"
-      message_de: "Wasser in {room}. Haupthahn pruefen."
-      sound_event: "alarm"
-      actions: ["notify_owner"]
+      severity: high
+      message_de: Wasser in {room}. Haupthahn pruefen.
+      sound_event: alarm
+      actions:
+      - notify_owner
     scream:
-      severity: "high"
-      message_de: "Schrei{room_suffix}. Alles in Ordnung da drin?"
-      sound_event: "warning"
-      actions: ["notify_present"]
+      severity: high
+      message_de: Schrei{room_suffix}. Alles in Ordnung da drin?
+      sound_event: warning
+      actions:
+      - notify_present
 conflict_resolution:
   enabled: true
   conflict_window_seconds: 300
@@ -1542,14 +1560,24 @@ conflict_resolution:
   resolution_cooldown_seconds: 120
   safe_limits:
     climate:
-      temperature: [15.0, 28.0]
-      offset: [-3.0, 3.0]
+      temperature:
+      - 15.0
+      - 28.0
+      offset:
+      - -3.0
+      - 3.0
     light:
-      brightness: [0, 100]
+      brightness:
+      - 0
+      - 100
     cover:
-      position: [0, 100]
+      position:
+      - 0
+      - 100
     media:
-      volume: [0, 100]
+      volume:
+      - 0
+      - 100
 maintenance:
   enabled: true
   config_file: config/maintenance.yaml
@@ -1604,14 +1632,10 @@ self_automation:
   max_per_day: 5
   model: qwen3:14b
   templates_file: config/automation_templates.yaml
-# --- Kamera-Integration ---
 cameras:
   enabled: true
   vision_model: llava
   camera_map: null
-    # haustuer: camera.haustuer
-    # garage: camera.garage
-# --- Energie-Optimierung ---
 energy:
   enabled: true
   entities:
@@ -1624,71 +1648,72 @@ energy:
     price_high_cent: 35
     solar_high_watts: 2000
     anomaly_increase_percent: 30
-# --- Geo-Fence / Proximity ---
 geo_fence:
   approaching_km: 2.0
   arriving_km: 0.5
-# --- Notfall-Protokolle ---
-# Werden bei CRITICAL Events automatisch ausgefuehrt.
-# target: "all" = alle Entities der Domain, oder entity_id fuer einzelne.
 emergency_protocols:
   fire:
     actions:
-      - {domain: light, service: turn_on, target: all}
-      - {domain: cover, service: open_cover, target: all}
-      - {domain: notify, service: notify, data: {message: "FEUERALARM! Rauch erkannt — alle Lichter an, Rolllaeden offen."}}
+    - domain: light
+      service: turn_on
+      target: all
+    - domain: cover
+      service: open_cover
+      target: all
+    - domain: notify
+      service: notify
+      data:
+        message: FEUERALARM! Rauch erkannt — alle Lichter an, Rolllaeden offen.
   intrusion:
     actions:
-      - {domain: light, service: turn_on, target: all}
-      - {domain: notify, service: notify, data: {message: "EINBRUCH-ALARM! Bewegung erkannt — alle Lichter eingeschaltet."}}
+    - domain: light
+      service: turn_on
+      target: all
+    - domain: notify
+      service: notify
+      data:
+        message: EINBRUCH-ALARM! Bewegung erkannt — alle Lichter eingeschaltet.
   water_leak:
     actions:
-      - {domain: light, service: turn_on, target: all}
-      - {domain: notify, service: notify, data: {message: "WASSERLECK erkannt! Bitte sofort pruefen."}}
-# --- Interrupt-Queue ---
-# CRITICAL-Meldungen unterbrechen sofort laufende Aktionen (TTS, Streaming).
+    - domain: light
+      service: turn_on
+      target: all
+    - domain: notify
+      service: notify
+      data:
+        message: WASSERLECK erkannt! Bitte sofort pruefen.
 interrupt_queue:
   enabled: true
   pause_ms: 300
-# --- Situations-Modell ---
-# Trackt Veraenderungen im Haus zwischen Gespraechen.
-# JARVIS erwaehnt beilaeufig was sich seit dem letzten Gespraech geaendert hat.
 situation_model:
   enabled: true
   min_pause_minutes: 5
   max_changes: 5
   temp_threshold: 2
-# --- Lern-Beobachter ---
 learning:
   enabled: true
   min_repetitions: 3
   time_window_minutes: 30
   weekly_report:
     enabled: true
-    day: 6  # Sonntag (0=Montag)
+    day: 6
     hour: 19
-# --- Jarvis-Features: Progressive Antworten ---
 progressive_responses:
   enabled: true
   show_context_step: true
   show_thinking_step: true
   show_action_step: true
-# --- Jarvis-Features: Benannte Protokolle ---
 protocols:
   enabled: true
   max_protocols: 20
   max_steps: 10
-# --- Jarvis-Features: Geraete-Persoenlichkeit ---
 device_narration:
   enabled: true
   custom_nicknames: {}
-    # waschmaschine: "Frau Waschkraft"
-# --- Deklarative Analyse-Tools ---
 declarative_tools:
   enabled: true
   use_in_spontaneous: true
   max_tools: 20
-# --- Jarvis-Features: Spontane Beobachtungen ---
 spontaneous:
   enabled: true
   max_per_day: 2
@@ -1702,28 +1727,17 @@ spontaneous:
     usage_record: true
     device_milestone: true
     house_efficiency: true
-# --- Jarvis-Features: Emotionales Gedaechtnis ---
 emotional_memory:
   enabled: true
   negative_threshold: 2
   decay_days: 90
-# --- Benachrichtigungen ---
 notifications:
   channels: null
-    # tts:
-    #   preferred: true
-    #   quiet_hours: [23, 7]
-    #   urgency_min: low
-    # push:
-    #   preferred: false
-    #   urgency_min: medium
-# --- Urlaubs-Simulation ---
 vacation_simulation:
   morning_hour: 7
   evening_hour: 18
   night_hour: 23
   variation_minutes: 30
-# --- Wetter-Warnungen ---
 weather_warnings:
   enabled: true
   temp_high: 35
@@ -1734,20 +1748,17 @@ weather_warnings:
   - lightning-rainy
   - hail
   - exceptional
-# --- Web-Suche ---
 web_search:
   enabled: false
   engine: searxng
   searxng_url: http://localhost:8888
   max_results: 5
   timeout_seconds: 10
-# --- Besucher-Management (Feature 12) ---
 visitor_management:
   enabled: true
   auto_guest_mode: false
   ring_cooldown_seconds: 30
   history_max: 100
-# --- Smart DJ (Feature 11) ---
 music_dj:
   enabled: true
   proactive_enabled: false
@@ -1758,125 +1769,81 @@ music_dj:
   - sleeping
   - in_call
   custom_queries: {}
-# --- Fernbedienung (Logitech Harmony etc.) ---
 remote:
   enabled: true
   remotes:
     wohnzimmer:
-      entity_id: ""               # z.B. remote.harmony_wohnzimmer — bitte eintragen
-      name: "Wohnzimmer"
-      activities:                  # Aliase: deutscher Name → Harmony-Aktivitaet
-        fernsehen: "Watch TV"
-        musik: "Listen to Music"
-        # netflix: "Netflix"
-        # gaming: "Play Games"
-        aus: "PowerOff"
-# --- Saugroboter-Steuerung (Phase 11) ---
-# Offizielle Dreame-Integration (HA) wird automatisch unterstuetzt.
-# Segment-IDs findet man in den HA Developer Tools → States → vacuum.dreame_xxx
-# unter dem Attribut "rooms" (Map-basierte Raum-IDs).
+      entity_id: ''
+      name: Wohnzimmer
+      activities:
+        fernsehen: Watch TV
+        musik: Listen to Music
+        aus: PowerOff
 vacuum:
   enabled: true
-  # Standard-Saugstaerke wenn nicht explizit angegeben
-  # quiet = leise, standard = normal, strong = stark, turbo = maximal
-  default_fan_speed: "standard"
-  # Standard-Reinigungsmodus wenn nicht explizit angegeben
-  # vacuum = nur saugen, mop = nur wischen, vacuum_and_mop = beides
-  default_mode: "vacuum"
+  default_fan_speed: standard
+  default_mode: vacuum
   robots:
     eg:
-      entity_id: ""               # z.B. vacuum.dreame_eg — bitte eintragen
-      name: "Saugroboter EG"
-      nickname: "der Kleine unten"
-      floor: "eg"
-      rooms: {}                   # room_name: segment_id (Dreame Raum-IDs)
-      # Beispiel:
-      # rooms:
-      #   flur_unten: 1
-      #   buero_julia: 2
-      #   buero_manuel: 3
-    og:
-      entity_id: ""               # z.B. vacuum.dreame_og — bitte eintragen
-      name: "Saugroboter OG"
-      nickname: "der Kleine oben"
-      floor: "og"
+      entity_id: ''
+      name: Saugroboter EG
+      nickname: der Kleine unten
+      floor: eg
       rooms: {}
-      # Beispiel:
-      # rooms:
-      #   wohnzimmer: 1
-      #   kueche: 2
-      #   schlafzimmer: 3
-      #   kinderzimmer_strasse: 4
-      #   kinderzimmer_garten: 5
-      #   badezimmer: 6
-      #   flur_oben: 7
+    og:
+      entity_id: ''
+      name: Saugroboter OG
+      nickname: der Kleine oben
+      floor: og
+      rooms: {}
   auto_clean:
     enabled: true
-    mode: "smart"                  # smart | schedule | both
-    schedule_days: []              # Wochentage fuer Modus "schedule"/"both": mon,tue,wed,thu,fri,sat,sun
-    schedule_time: 10              # Uhrzeit fuer Wochenplan (6-20)
-    when_nobody_home: true         # Starten wenn alle weg sind
-    not_during:                    # Nicht starten waehrend:
-      - "meeting"                  # Kalender-Event enthaelt "meeting"
-      - "schlafen"                 # Schlafmodus aktiv
-    min_hours_between: 24          # Mindestabstand zwischen Reinigungen
-    preferred_time_start: 10       # Bevorzugt 10-16 Uhr
+    mode: smart
+    schedule_days: []
+    schedule_time: 10
+    when_nobody_home: true
+    not_during:
+    - meeting
+    - schlafen
+    min_hours_between: 24
+    preferred_time_start: 10
     preferred_time_end: 16
-    # Saugstaerke fuer automatisches Saugen (optional, sonst default_fan_speed)
-    auto_fan_speed: "standard"
-    # Modus fuer automatisches Saugen (optional, sonst default_mode)
-    auto_mode: "vacuum"
-  # Anwesenheits-Steuerung: Vacuum nur wenn keiner zuhause.
-  # Gilt fuer ALLE Trigger (Auto-Clean, Steckdose, Szene).
+    auto_fan_speed: standard
+    auto_mode: vacuum
   presence_guard:
     enabled: true
-    # Alarmanlage automatisch umschalten fuer Saugroboter:
-    # abwesend → anwesend VOR Reinigung (verhindert Fehlalarme durch Bewegung),
-    # anwesend → abwesend NACH Reinigung.
     switch_alarm_for_cleaning: true
-    alarm_entity: ""               # z.B. alarm_control_panel.alarmo — leer = auto-detect
-    # Bei Heimkehr: Vacuum pausieren und zur Ladestation schicken
+    alarm_entity: ''
     pause_on_arrival: true
-    # Reinigung fortsetzen wenn wieder alle weg sind
     resume_on_departure: true
-    # Wartezeit bevor Reinigung fortgesetzt wird (Minuten)
-    # Verhindert Neustart wenn jemand nur kurz reinkommt
     resume_delay_minutes: 5
   maintenance:
     enabled: true
     check_interval_hours: 24
-    warn_at_percent: 10            # Warnung wenn Verschleissteil < 10%
-# --- Self-Improvement: Geschlossene Feedback-Loops ---
-# Wirkungstracker: Beobachtet ob Aktionen rueckgaengig gemacht werden
+    warn_at_percent: 10
 outcome_tracker:
   enabled: true
   observation_delay_seconds: 180
   max_results: 500
-# Korrektur-Gedaechtnis: Speichert User-Korrekturen strukturiert
 correction_memory:
   enabled: true
   max_entries: 200
   max_context_entries: 3
-# Woechentlicher Selbst-Report ueber alle Lernsysteme
 self_report:
   enabled: true
   model: qwen3:14b
-# Lernende Schwellwerte: Passt Parameter automatisch an (enge Grenzen)
 adaptive_thresholds:
-  enabled: false          # Default OFF bis genug Daten gesammelt
+  enabled: false
   analysis_interval_hours: 168
   auto_adjust: true
-# Response Quality: Misst Antwort-Effektivitaet
 response_quality:
   enabled: true
   followup_window_seconds: 60
   rephrase_similarity_threshold: 0.6
-# Error Pattern Analysis: Erkennt wiederkehrende Fehlermuster
 error_patterns:
   enabled: true
   min_occurrences_for_mitigation: 3
   mitigation_ttl_hours: 1
-# Workshop-Modus: Werkstatt-Ingenieur-Assistent
 workshop:
   enabled: true
   workshop_room: werkstatt
@@ -1905,29 +1872,10 @@ workshop:
     username: ''
     password: ''
   templates:
-    - esp_sensor
-    - led_strip
-    - 3d_enclosure
-    - furniture
-    - repair_standard
-# --- Entity-Annotations: Beschreibungen + Rollen fuer Sensoren/Aktoren ---
+  - esp_sensor
+  - led_strip
+  - 3d_enclosure
+  - furniture
+  - repair_standard
 entity_annotations: {}
-  # Pro Entity: description, role, room (optional), hidden (optional)
-  # Beispiel:
-  # sensor.aussen_temperatur:
-  #   description: "Aussensensor Nordseite, misst Aussentemperatur"
-  #   role: outdoor_temp
-  # binary_sensor.fenster_kueche:
-  #   description: "Fensterkontakt Kueche"
-  #   role: window_contact
-  #   room: kueche
-  # sensor.esphome_xyz:
-  #   hidden: true
-
-# --- Eigene Rollen (User-definiert, ergaenzen die Standard-Rollen) ---
 entity_roles: {}
-  # Eigene Rollen mit Label und Icon anlegen:
-  # aquarium:     { label: "Aquarium", icon: "🐠" }
-  # server_rack:  { label: "Server-Rack", icon: "🖥️" }
-  # pool:         { label: "Pool", icon: "🏊" }
-  # waermepumpe:  { label: "Waermepumpe", icon: "♨️" }

@@ -1446,7 +1446,7 @@ class PersonalityEngine:
 
     async def generate_contextual_humor(
         self, func_name: str, func_args: dict, context: dict | None = None,
-        person: str = "",
+        person: str = "", mood: str = "",
     ) -> Optional[str]:
         """Erzeugt situationsbezogenen Humor nach einer Aktion.
 
@@ -1466,7 +1466,8 @@ class PersonalityEngine:
             return None
 
         # Mood-Check: Kein Humor bei Stress/Muedigkeit
-        mood = self._current_mood
+        # F-020: Expliziter mood-Parameter statt self._current_mood (Race Condition)
+        mood = mood or self._current_mood
         if mood in ("tired", "stressed", "frustrated"):
             return None
 
@@ -1887,6 +1888,18 @@ class PersonalityEngine:
         if mood_config["style_addon"]:
             mood_section = f"STIMMUNG: {mood_config['style_addon']}\n"
 
+        # Phase 17.4: Late-Night Fuersorge — zwischen 0-4 Uhr sanfter Ton
+        _hour = datetime.now().hour
+        if _hour < 5 and time_of_day in ("night", "early_morning"):
+            _late_night_addon = (
+                "NACHTMODUS: Es ist sehr spaet. Antworte leiser, kuerzer, waermer. "
+                "Kein Sarkasmus. Wenn passend, sanft erwaehnen dass es spaet ist. "
+                "Nicht belehren — nur beilaeufig: 'Um die Uhrzeit...' "
+            )
+            if mood == "tired":
+                _late_night_addon += "User ist muede — minimal, warmherzig. "
+            mood_section += f"{_late_night_addon}\n"
+
         # Person + Profil laden (fuer per-Person Overrides)
         current_person = "User"
         if context:
@@ -2058,10 +2071,22 @@ class PersonalityEngine:
                     "mit eigener Meinung und Rueckfragen. KEIN KI-Assistent. Tony Starks Partner."
                 )
             else:
-                prompt += (
-                    "\n\n--- CHARAKTER-LOCK ---\n"
+                _lock_base = (
                     f"Du bist J.A.R.V.I.S., kein KI-Assistent. KURZ. TROCKEN. PRAEZISE. Max {max_sentences} Saetze. Keine Listen. Ein Butler."
                 )
+                # Phase 17.4: Mood-Verstaerkung im Character Lock
+                # Am Ende des Prompts hat das maximalen Einfluss auf den LLM-Output
+                if mood in ("stressed", "frustrated"):
+                    _lock_base += (
+                        f" User unter Druck — RADIKAL KUERZEN. Max {max(1, max_sentences)} Saetze. "
+                        "Keine Vorschlaege. Keine Rueckfragen. Nur ausfuehren und bestaetigen."
+                    )
+                elif mood == "tired":
+                    _lock_base += (
+                        " User muede — MINIMAL. Leise, kurz, warmherzig. "
+                        "Kein Humor. Nur das Noetigste."
+                    )
+                prompt += f"\n\n--- CHARAKTER-LOCK ---\n{_lock_base}"
 
         # Workshop-Modus: Ingenieur-Persoenlichkeit erweitern
         workshop_active = False
@@ -2417,6 +2442,40 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
                 lines.append(f"- Stimmung: {', '.join(mood_parts)}")
 
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Mood-Aware Response Hints (Phase 17.4: Fuersorge)
+    # ------------------------------------------------------------------
+
+    def get_mood_response_config(self, mood: str = "neutral") -> dict:
+        """Gibt mood-abhaengige Konfiguration fuer Response und TTS zurueck.
+
+        Wird von brain.py genutzt um Post-Processing und TTS-Parameter
+        an die aktuelle Stimmung anzupassen.
+
+        Returns:
+            Dict mit tts_speed, suppress_humor, suppress_suggestions,
+            max_sentences_mod, care_hint
+        """
+        config = self._mood_styles.get(mood, self._mood_styles.get("neutral", {}))
+        result = {
+            "tts_speed": config.get("tts_speed", 100),
+            "suppress_humor": config.get("suppress_humor", False),
+            "suppress_suggestions": config.get("suppress_suggestions", False),
+            "max_sentences_mod": config.get("max_sentences_mod", 0),
+            "mood": mood,
+        }
+
+        # Fuersorge-Hint: Was Jarvis beilaeufig erwaehnen koennte
+        hour = datetime.now().hour
+        if mood == "stressed":
+            result["care_hint"] = "Wenn passend, beilaeufig Pause vorschlagen oder Licht dimmen anbieten."
+        elif mood == "tired" and (hour >= 22 or hour < 5):
+            result["care_hint"] = "Beilaeufig erwaehnen dass es spaet ist. Optional: Gute-Nacht-Routine anbieten."
+        elif mood == "tired":
+            result["care_hint"] = "Sanft anmerken. Keine langen Erklaerungen."
+
+        return result
 
     # ------------------------------------------------------------------
     # Notification & Routine Prompts (Personality-Konsistenz)
