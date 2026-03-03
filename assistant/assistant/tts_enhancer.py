@@ -69,7 +69,7 @@ class TTSEnhancer:
     def __init__(self):
         # TTS Konfiguration
         tts_cfg = yaml_config.get("tts", {})
-        self.ssml_enabled = tts_cfg.get("ssml_enabled", True)
+        self.ssml_enabled = tts_cfg.get("ssml_enabled", False)
         self.prosody_variation = tts_cfg.get("prosody_variation", False)
 
         # Sprechgeschwindigkeit pro Typ
@@ -298,7 +298,10 @@ class TTSEnhancer:
         if pitch and pitch != "0%":
             prosody_attrs += f' pitch="{pitch}"'
 
-        parts.append(f'<speak><prosody{prosody_attrs}>')
+        if prosody_attrs:
+            parts.append(f'<speak><prosody{prosody_attrs}>')
+        else:
+            parts.append('<speak>')
 
         # F-059: User-Text XML-escapen um SSML-Injection zu verhindern
         # P-2: xml_escape jetzt auf Modul-Ebene importiert
@@ -334,7 +337,10 @@ class TTSEnhancer:
             if i < len(sentences) - 1:
                 parts.append(f'<break time="{self.pause_sentence}ms"/>')
 
-        parts.append('</prosody></speak>')
+        if prosody_attrs:
+            parts.append('</prosody></speak>')
+        else:
+            parts.append('</speak>')
 
         return "".join(parts)
 

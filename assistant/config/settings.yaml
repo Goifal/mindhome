@@ -1183,7 +1183,7 @@ seasonal_actions:
     manual_override_hours: 2
 tts:
   entity: tts.piper
-  ssml_enabled: true
+  ssml_enabled: false
   speed:
     confirmation: 105
     warning: 85
