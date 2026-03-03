@@ -2613,6 +2613,16 @@ class AssistantBrain(BrainCallbacksMixin):
         # Nutze den bereits erkannten Gespraechsmodus (aus Schritt 3b)
         conversation_mode = _conversation_mode
         effective_limit = conv_limit * 2 if conversation_mode else conv_limit
+        # Budget-Guard: Limit kappen wenn num_ctx zu klein
+        # ~100 Tokens pro Nachricht geschaetzt, max 60% des available_tokens fuer Conversations
+        max_by_budget = max(4, int(available_tokens * 0.6) // 100)
+        if effective_limit > max_by_budget:
+            _orig_limit = effective_limit
+            effective_limit = max_by_budget
+            logger.info(
+                "Conversation-Limit gekappt: %d -> %d (available_tokens=%d)",
+                _orig_limit, effective_limit, available_tokens,
+            )
         if conversation_mode:
             logger.info("Gespraechsmodus aktiv: Lade %d statt %d Nachrichten", effective_limit, conv_limit)
         # Dynamisch: Conversations laden bis Token-Budget aufgebraucht
@@ -2629,7 +2639,11 @@ class AssistantBrain(BrainCallbacksMixin):
                 split = len(recent) // 2
                 older = recent[:split]
                 recent = recent[split:]
-                summary = await self._summarize_conversation_chunk(older)
+                try:
+                    summary = await self._summarize_conversation_chunk(older)
+                except Exception as _sum_err:
+                    logger.warning("Gespraechs-Zusammenfassung fehlgeschlagen: %s", _sum_err)
+                    summary = None
                 if summary:
                     messages.append({"role": "system", "content": f"[Bisheriges Gespraech]: {summary}"})
                     conv_tokens_used += len(summary) // 3
@@ -2831,7 +2845,9 @@ class AssistantBrain(BrainCallbacksMixin):
                 response_tokens = 384   # Standard-Gespraech
             # Gespraechsmodus: Mehr Tokens fuer ausfuehrliche Antworten
             if _conversation_mode and profile.category != "device_command":
-                response_tokens = max(response_tokens, 1024)
+                # Cap: Response-Tokens duerfen max 25% von num_ctx sein
+                _max_resp = self.ollama.num_ctx // 4
+                response_tokens = max(response_tokens, min(1024, _max_resp))
 
             llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
 

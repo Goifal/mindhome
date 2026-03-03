@@ -367,6 +367,7 @@ autonomy:
       min_acceptance: 0.85
 ollama:
   num_ctx: 4096
+  keep_alive: 120s
 models:
   fast: qwen3:4b
   smart: qwen3:14b
