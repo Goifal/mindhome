@@ -2255,6 +2255,25 @@ def _validate_settings_values(settings: dict) -> list[str]:
                                 errors.append(f"model_profiles.{profile_name}.{field}: {val} (erlaubt: {lo}-{hi})")
                         except (ValueError, TypeError):
                             errors.append(f"model_profiles.{profile_name}.{field}: ungueltig")
+    # Personality: mood_styles.*.max_sentences_mod validieren
+    mood_styles = (settings.get("personality") or {}).get("mood_styles", {})
+    if isinstance(mood_styles, dict):
+        for mood_name, mood_cfg in mood_styles.items():
+            if isinstance(mood_cfg, dict):
+                mod_val = mood_cfg.get("max_sentences_mod")
+                if mod_val is not None:
+                    try:
+                        num = int(mod_val)
+                        if num < -3 or num > 3:
+                            errors.append(f"personality.mood_styles.{mood_name}.max_sentences_mod={mod_val} (erlaubt: -3 bis 3)")
+                    except (ValueError, TypeError):
+                        errors.append(f"personality.mood_styles.{mood_name}.max_sentences_mod: ungueltig")
+    # Personality: confirmations muessen Listen mit mind. 1 Eintrag sein
+    confs = (settings.get("personality") or {}).get("confirmations", {})
+    if isinstance(confs, dict):
+        for conf_key, conf_list in confs.items():
+            if isinstance(conf_list, list) and len(conf_list) == 0:
+                errors.append(f"personality.confirmations.{conf_key}: mindestens 1 Eintrag noetig")
     # Erlaubte Werte fuer Strings (Whitelist)
     ENUM_RULES = {
         ("vacuum", "auto_clean", "mode"): ["smart", "schedule", "both"],
@@ -2351,22 +2370,9 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             failed_modules.append(name)
             logger.warning("Reload '%s' fehlgeschlagen: %s", name, e)
 
-    # Personality: Sarkasmus, Humor, Style direkt aktualisieren
+    # Personality: Vollstaendiger Reload (inkl. Mood-Styles, Humor-Templates, Confirmations etc.)
     if "personality" in changed_settings and hasattr(brain, "personality"):
-        def _reload_personality():
-            p_cfg = yaml_cfg.get("personality", {})
-            pe = brain.personality
-            pe.sarcasm_level = int(p_cfg.get("sarcasm_level", pe.sarcasm_level))
-            pe.opinion_intensity = int(p_cfg.get("opinion_intensity", pe.opinion_intensity))
-            pe.self_irony_enabled = bool(p_cfg.get("self_irony_enabled", pe.self_irony_enabled))
-            pe.self_irony_max_per_day = int(p_cfg.get("self_irony_max_per_day", pe.self_irony_max_per_day))
-            pe.character_evolution = bool(p_cfg.get("character_evolution", pe.character_evolution))
-            pe.formality_start = int(p_cfg.get("formality_start", pe.formality_start))
-            pe.formality_min = int(p_cfg.get("formality_min", pe.formality_min))
-            pe.formality_decay = float(p_cfg.get("formality_decay_per_day", pe.formality_decay))
-            pe.time_layers = p_cfg.get("time_layers") or pe.time_layers
-            logger.info("Personality Engine Settings aktualisiert")
-        _try_reload("personality", _reload_personality)
+        _try_reload("personality", brain.personality.reload_config)
 
     # ActionPlanner: MAX_ITERATIONS + COMPLEX_KEYWORDS
     if "planner" in changed_settings:

@@ -731,6 +731,17 @@ const HELP_TEXTS = {
   'personality.formality_start': {title:'Anfangs-Formalitaet', text:'Wie formell am Anfang (100%=Sie, 0%=sehr locker).'},
   'personality.formality_min': {title:'Minimale Formalitaet', text:'Wie locker der Assistent maximal werden darf.'},
   'personality.formality_decay_per_day': {title:'Formalitaets-Abbau', text:'Wie schnell der Assistent lockerer wird (Punkte/Tag).'},
+  'personality.mood_styles': {title:'Stimmungs-Stile', text:'Wie Jarvis auf verschiedene User-Stimmungen reagiert. Stil-Anweisung beeinflusst den Ton, Satz-Modifier die Antwortlaenge.'},
+  'personality.humor_templates': {title:'Humor-Templates', text:'Humor-Anweisungen pro Sarkasmus-Level (1-5). Diese Texte werden dem System-Prompt hinzugefuegt und steuern den Humor-Grad.'},
+  'personality.complexity_prompts': {title:'Komplexitaets-Modi', text:'Text-Anweisungen pro Antwort-Modus (kurz/normal/ausfuehrlich). Wird automatisch je nach Kontext gewaehlt.'},
+  'personality.formality_prompts': {title:'Formalitaets-Stufen', text:'Ton-Anweisungen pro Formalitaets-Score. Der Score sinkt automatisch mit der Charakter-Entwicklung.'},
+  'personality.confirmations.success': {title:'Erfolgs-Bestaetigungen', text:'Phrasen die Jarvis nach erfolgreicher Aktion verwendet. Werden zufaellig gewaehlt, nie zweimal hintereinander.'},
+  'personality.confirmations.success_snarky': {title:'Snarky Bestaetigungen', text:'Spitzere Bestaetigungen die ab Sarkasmus-Level 4 eingemischt werden.'},
+  'personality.confirmations.partial': {title:'Teil-Bestaetigungen', text:'Phrasen fuer teilweise erfolgreiche Aktionen.'},
+  'personality.confirmations.failed': {title:'Fehler-Bestaetigungen', text:'Phrasen wenn eine Aktion fehlgeschlagen ist.'},
+  'personality.confirmations.failed_snarky': {title:'Snarky Fehler', text:'Spitzere Fehler-Phrasen ab Sarkasmus-Level 4.'},
+  'personality.diagnostic_openers': {title:'Diagnose-Einleitungen', text:'Einleitungs-Phrasen fuer technische Beobachtungen im MCU-Jarvis Engineering-Stil.'},
+  'personality.casual_warnings': {title:'Beilaeufige Warnungen', text:'Understatement-Einleitungen fuer Warnungen — der typische Butler-Stil.'},
   'response_filter.enabled': {title:'Antwort-Filter', text:'Filtert unerwuenschte Phrasen und begrenzt Antwortlaenge.'},
   'response_filter.max_response_sentences': {title:'Max. Saetze', text:'Max. Saetze pro Antwort. 0 = unbegrenzt.'},
   'response_filter.banned_phrases': {title:'Verbotene Phrasen', text:'Phrasen die der Assistent nie verwenden soll.'},
@@ -2077,6 +2088,68 @@ function renderPersonality() {
     fSelect('personality.time_layers.night.style', 'Stil', styleOpts) +
     fRange('personality.time_layers.night.max_sentences', 'Max. Saetze', 1, 10, 1) +
     '</div>'
+  ) +
+  sectionWrap('&#128566;', 'Stimmungs-Stile',
+    fInfo('Wie Jarvis auf verschiedene User-Stimmungen reagiert. Stil-Anweisung wird dem System-Prompt hinzugefuegt, Satz-Modifier passt die maximale Antwortlaenge an.') +
+    '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+    '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128522; Gut gelaunt</div>' +
+    fText('personality.mood_styles.good.style_addon', 'Stil-Anweisung') +
+    fRange('personality.mood_styles.good.max_sentences_mod', 'Satz-Modifier', -3, 3, 1) +
+    '</div>' +
+    '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+    '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128528; Neutral</div>' +
+    fText('personality.mood_styles.neutral.style_addon', 'Stil-Anweisung') +
+    fRange('personality.mood_styles.neutral.max_sentences_mod', 'Satz-Modifier', -3, 3, 1) +
+    '</div>' +
+    '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+    '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128544; Gestresst</div>' +
+    fText('personality.mood_styles.stressed.style_addon', 'Stil-Anweisung') +
+    fRange('personality.mood_styles.stressed.max_sentences_mod', 'Satz-Modifier', -3, 3, 1) +
+    '</div>' +
+    '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+    '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128548; Frustriert</div>' +
+    fText('personality.mood_styles.frustrated.style_addon', 'Stil-Anweisung') +
+    fRange('personality.mood_styles.frustrated.max_sentences_mod', 'Satz-Modifier', -3, 3, 1) +
+    '</div>' +
+    '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
+    '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128564; Muede</div>' +
+    fText('personality.mood_styles.tired.style_addon', 'Stil-Anweisung') +
+    fRange('personality.mood_styles.tired.max_sentences_mod', 'Satz-Modifier', -3, 3, 1) +
+    '</div>'
+  ) +
+  sectionWrap('&#128514;', 'Humor-Templates',
+    fInfo('Humor-Anweisungen pro Sarkasmus-Level. Diese Texte steuern wie witzig Jarvis sein darf (1=sachlich, 5=durchgehend trocken).') +
+    fTextarea('personality.humor_templates.1', 'Level 1 — Sachlich') +
+    fTextarea('personality.humor_templates.2', 'Level 2 — Gelegentlich') +
+    fTextarea('personality.humor_templates.3', 'Level 3 — Butler') +
+    fTextarea('personality.humor_templates.4', 'Level 4 — Sarkastisch') +
+    fTextarea('personality.humor_templates.5', 'Level 5 — Durchgehend')
+  ) +
+  sectionWrap('&#128203;', 'Komplexitaets-Modi',
+    fInfo('Text-Anweisungen pro Antwort-Modus. Der Modus wird automatisch anhand von Stimmung, Tageszeit und Befehls-Frequenz gewaehlt.') +
+    fTextarea('personality.complexity_prompts.kurz', 'Kurz-Modus') +
+    fTextarea('personality.complexity_prompts.normal', 'Normal-Modus') +
+    fTextarea('personality.complexity_prompts.ausfuehrlich', 'Ausfuehrlich-Modus')
+  ) +
+  sectionWrap('&#127913;', 'Formalitaets-Stufen',
+    fInfo('Ton-Anweisungen pro Formalitaets-Level. Der Score sinkt automatisch mit der Zeit (Charakter-Entwicklung).') +
+    fTextarea('personality.formality_prompts.formal', 'Formal (Score >= 70)') +
+    fTextarea('personality.formality_prompts.butler', 'Butler (Score >= 50)') +
+    fTextarea('personality.formality_prompts.locker', 'Locker (Score >= 35)') +
+    fTextarea('personality.formality_prompts.freund', 'Freund (Score < 35)')
+  ) +
+  sectionWrap('&#9989;', 'Bestaetigungen',
+    fInfo('Phrasen-Pools fuer Aktions-Bestaetigungen. Eine Phrase pro Zeile. Platzhalter: {title} = Anrede-Titel.') +
+    fTextarea('personality.confirmations.success', 'Erfolg') +
+    fTextarea('personality.confirmations.success_snarky', 'Erfolg (sarkastisch, ab Level 4)') +
+    fTextarea('personality.confirmations.partial', 'Teilweise erfolgreich') +
+    fTextarea('personality.confirmations.failed', 'Fehlgeschlagen') +
+    fTextarea('personality.confirmations.failed_snarky', 'Fehlgeschlagen (sarkastisch, ab Level 4)')
+  ) +
+  sectionWrap('&#128172;', 'Phrasen-Pools',
+    fInfo('Einleitungs-Phrasen fuer Diagnosen und Warnungen. Eine Phrase pro Zeile.') +
+    fTextarea('personality.diagnostic_openers', 'Diagnose-Einleitungen', 'z.B. "Mir ist aufgefallen, dass" — wird zufaellig gewaehlt.') +
+    fTextarea('personality.casual_warnings', 'Beilaeufige Warnungen', 'z.B. "Nur zur Kenntnis —" — Butler-Stil Understatement.')
   ) +
   sectionWrap('&#128683;', 'Antwort-Filter',
     fInfo('Unerwuenschte Phrasen aus den Antworten filtern und maximale Antwortlaenge begrenzen.') +
