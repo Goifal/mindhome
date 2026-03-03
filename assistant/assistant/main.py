@@ -2394,6 +2394,7 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
         "conflict_resolution": "conflict_resolver",
         "memory": "memory_extractor",
         "entity_roles": "function_calling",
+        "speaker_recognition": "speaker_recognition",
     }
 
     for config_key, attr_name in MODULE_CONFIG_MAP.items():
@@ -2892,6 +2893,34 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             reload_entity_roles()
             logger.info("Entity-Roles aktualisiert")
         _try_reload("entity_roles", _reload_entity_roles)
+
+    # SpeakerRecognition: Enabled, Confidence, Device-Mapping, DOA
+    if "speaker_recognition" in changed_settings and hasattr(brain, "speaker_recognition"):
+        def _reload_speaker_recognition():
+            cfg = yaml_cfg.get("speaker_recognition", {})
+            sr = brain.speaker_recognition
+            sr.enabled = cfg.get("enabled", False)
+            sr.min_confidence = cfg.get("min_confidence", 0.7)
+            sr.fallback_ask = cfg.get("fallback_ask", True)
+            sr.max_profiles = cfg.get("max_profiles", 10)
+            raw_mapping = cfg.get("device_mapping", {}) or {}
+            sr._device_person_map = {}
+            for device, person in raw_mapping.items():
+                if isinstance(person, str):
+                    sr._device_person_map[device.lower()] = person.lower()
+            raw_doa = cfg.get("doa_mapping", {}) or {}
+            sr._doa_person_map = {}
+            for angle_range, person in raw_doa.items():
+                if isinstance(person, str) and "-" in str(angle_range):
+                    parts = str(angle_range).split("-")
+                    if len(parts) == 2:
+                        try:
+                            sr._doa_person_map[(int(parts[0]), int(parts[1]))] = person.lower()
+                        except ValueError:
+                            pass
+            sr._doa_tolerance = cfg.get("doa_tolerance", 30)
+            logger.info("SpeakerRecognition Settings aktualisiert (enabled=%s)", sr.enabled)
+        _try_reload("speaker_recognition", _reload_speaker_recognition)
 
     if failed_modules:
         logger.warning("Settings-Reload: %d Module fehlgeschlagen: %s",

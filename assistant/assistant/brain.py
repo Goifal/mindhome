@@ -3316,6 +3316,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             humor = await self.personality.generate_contextual_humor(
                                 func_name, final_args, context,
                                 person=self._current_person,
+                                mood=(context.get("mood") or {}).get("mood", ""),
                             )
                             if humor:
                                 logger.info("Kontextueller Humor: '%s'", humor)

@@ -1446,7 +1446,7 @@ class PersonalityEngine:
 
     async def generate_contextual_humor(
         self, func_name: str, func_args: dict, context: dict | None = None,
-        person: str = "",
+        person: str = "", mood: str = "",
     ) -> Optional[str]:
         """Erzeugt situationsbezogenen Humor nach einer Aktion.
 
@@ -1466,7 +1466,8 @@ class PersonalityEngine:
             return None
 
         # Mood-Check: Kein Humor bei Stress/Muedigkeit
-        mood = self._current_mood
+        # F-020: Expliziter mood-Parameter statt self._current_mood (Race Condition)
+        mood = mood or self._current_mood
         if mood in ("tired", "stressed", "frustrated"):
             return None
 
