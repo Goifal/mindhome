@@ -12,8 +12,10 @@ WICHTIG: Standardmaessig DEAKTIVIERT (lokales Prinzip bleibt erhalten).
 Muss explizit in settings.yaml aktiviert werden.
 """
 
+import asyncio
 import ipaddress
 import logging
+import socket
 from typing import Optional
 from urllib.parse import quote_plus, urlparse
 
@@ -35,29 +37,87 @@ _BLOCKED_NETWORKS = [
 ]
 
 
+_BLOCKED_HOSTNAMES = frozenset(
+    {"localhost", "redis", "chromadb", "ollama", "homeassistant", "ha"}
+)
+
+
+def _is_ip_blocked(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Prueft ob eine aufgeloeste IP in einem blockierten Netzwerk liegt."""
+    for net in _BLOCKED_NETWORKS:
+        if addr in net:
+            return True
+    return False
+
+
 def _is_safe_url(url: str) -> bool:
-    """F-012: Prueft ob eine URL sicher ist (kein SSRF auf interne Services)."""
+    """F-012: Prueft ob eine URL sicher ist (kein SSRF auf interne Services).
+
+    HINWEIS: Synchrone Vorab-Pruefung (Scheme, Hostname-Blocklist, IP-Literal).
+    Fuer vollen DNS-Rebinding-Schutz muss _resolve_and_check() VOR dem
+    eigentlichen HTTP-Request aufgerufen werden.
+    """
     try:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
             return False
         hostname = parsed.hostname or ""
-        if hostname in ("localhost", ""):
+        if not hostname or hostname in _BLOCKED_HOSTNAMES:
             return False
-        # Versuche als IP zu parsen
+        # Direktes IP-Literal pruefen
         try:
             addr = ipaddress.ip_address(hostname)
-            for net in _BLOCKED_NETWORKS:
-                if addr in net:
-                    return False
-        except ValueError:
-            # Hostname, kein IP — erlaubt (z.B. searxng.example.com)
-            # Aber bekannte interne Hostnamen blockieren
-            if hostname in ("redis", "chromadb", "ollama", "homeassistant", "ha"):
+            if _is_ip_blocked(addr):
                 return False
+        except ValueError:
+            pass  # Hostname — wird spaeter per DNS aufgeloest
         return True
     except Exception:
         return False
+
+
+async def _resolve_and_check(hostname: str) -> bool:
+    """F-069: DNS-Rebinding-Schutz — Hostname aufloesen und ALLE IPs pruefen.
+
+    Loest den Hostnamen auf und stellt sicher, dass keine der
+    aufgeloesten IPs in einem blockierten Netzwerk liegt.
+    Verhindert DNS-Rebinding-Angriffe bei denen ein Hostname
+    zuerst auf eine oeffentliche IP und dann auf eine interne IP zeigt.
+    """
+    if not hostname or hostname in _BLOCKED_HOSTNAMES:
+        return False
+    # Direktes IP-Literal — kein DNS noetig
+    try:
+        addr = ipaddress.ip_address(hostname)
+        return not _is_ip_blocked(addr)
+    except ValueError:
+        pass
+    # DNS-Aufloesung im Thread-Pool (blockiert nicht den Event-Loop)
+    loop = asyncio.get_running_loop()
+    try:
+        infos = await loop.run_in_executor(
+            None,
+            lambda: socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM),
+        )
+    except socket.gaierror:
+        logger.warning("DNS-Aufloesung fehlgeschlagen fuer '%s'", hostname)
+        return False
+    if not infos:
+        return False
+    for family, _type, _proto, _canonname, sockaddr in infos:
+        ip_str = sockaddr[0]
+        try:
+            addr = ipaddress.ip_address(ip_str)
+            if _is_ip_blocked(addr):
+                logger.warning(
+                    "DNS-Rebinding-Schutz: '%s' loest auf blockierte IP %s auf",
+                    hostname,
+                    ip_str,
+                )
+                return False
+        except ValueError:
+            return False  # Kann IP nicht parsen — sicherheitshalber blockieren
+    return True
 
 
 class WebSearch:
@@ -139,6 +199,12 @@ class WebSearch:
             "categories": "general",
         }
 
+        # F-069: DNS-Rebinding-Schutz — vor dem Request pruefen
+        hostname = urlparse(url).hostname or ""
+        if not await _resolve_and_check(hostname):
+            logger.warning("DNS-Rebinding-Schutz: SearXNG-Host '%s' blockiert", hostname)
+            return []
+
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
                 if resp.status != 200:
@@ -163,6 +229,12 @@ class WebSearch:
             "no_html": 1,
             "skip_disambig": 1,
         }
+
+        # F-069: DNS-Rebinding-Schutz — vor dem Request pruefen
+        hostname = urlparse(url).hostname or ""
+        if not await _resolve_and_check(hostname):
+            logger.warning("DNS-Rebinding-Schutz: DuckDuckGo-Host '%s' blockiert", hostname)
+            return []
 
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:

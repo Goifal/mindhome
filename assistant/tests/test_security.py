@@ -1,13 +1,18 @@
 """
 Tests fuer Security-Fixes: Bearer Token Sanitization, Rate-Limiter,
-PIN Hashing, Garage-Cover Word-Boundary, Path Traversal, URL Parsing.
+PIN Hashing, Garage-Cover Word-Boundary, Path Traversal, URL Parsing,
+DNS-Rebinding-Schutz (F-069).
 """
 
+import asyncio
 import hashlib
+import ipaddress
 import os
 import re
 import secrets
+import socket
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 from urllib.parse import urlparse
 
 import pytest
@@ -223,3 +228,139 @@ class TestFunctionWhitelist:
         # Interne Methoden die nie via LLM aufrufbar sein duerfen
         for fn in ["_is_safe_cover", "close", "__init__", "set_config_versioning"]:
             assert fn not in FunctionExecutor._ALLOWED_FUNCTIONS
+
+
+# ---------------------------------------------------------------
+# F-069: DNS-Rebinding-Schutz
+# ---------------------------------------------------------------
+
+
+def _fake_getaddrinfo(ip_str: str):
+    """Erzeugt eine Mock-Funktion fuer socket.getaddrinfo die eine feste IP liefert."""
+    def _resolver(host, port, family=0, type=0):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip_str, 0))]
+    return _resolver
+
+
+class TestDnsRebindingProtection:
+    """F-069: DNS-Aufloesung VOR dem Request — verhindert Rebinding-Angriffe."""
+
+    def test_is_ip_blocked_loopback(self):
+        from assistant.web_search import _is_ip_blocked
+        assert _is_ip_blocked(ipaddress.ip_address("127.0.0.1"))
+        assert _is_ip_blocked(ipaddress.ip_address("127.0.0.53"))
+
+    def test_is_ip_blocked_private(self):
+        from assistant.web_search import _is_ip_blocked
+        assert _is_ip_blocked(ipaddress.ip_address("192.168.1.1"))
+        assert _is_ip_blocked(ipaddress.ip_address("10.0.0.1"))
+        assert _is_ip_blocked(ipaddress.ip_address("172.16.0.1"))
+
+    def test_is_ip_blocked_link_local(self):
+        from assistant.web_search import _is_ip_blocked
+        assert _is_ip_blocked(ipaddress.ip_address("169.254.1.1"))
+
+    def test_is_ip_blocked_ipv6_loopback(self):
+        from assistant.web_search import _is_ip_blocked
+        assert _is_ip_blocked(ipaddress.ip_address("::1"))
+
+    def test_is_ip_blocked_ipv6_private(self):
+        from assistant.web_search import _is_ip_blocked
+        assert _is_ip_blocked(ipaddress.ip_address("fd00::1"))
+
+    def test_is_ip_blocked_public_allowed(self):
+        from assistant.web_search import _is_ip_blocked
+        assert not _is_ip_blocked(ipaddress.ip_address("8.8.8.8"))
+        assert not _is_ip_blocked(ipaddress.ip_address("1.1.1.1"))
+        assert not _is_ip_blocked(ipaddress.ip_address("93.184.216.34"))
+
+    @pytest.mark.asyncio
+    async def test_resolve_blocks_hostname_resolving_to_loopback(self):
+        """Hostname der auf 127.0.0.1 aufloest muss blockiert werden."""
+        from assistant.web_search import _resolve_and_check
+        with patch("socket.getaddrinfo", _fake_getaddrinfo("127.0.0.1")):
+            assert not await _resolve_and_check("evil-rebind.com")
+
+    @pytest.mark.asyncio
+    async def test_resolve_blocks_hostname_resolving_to_private(self):
+        """Hostname der auf 192.168.x.x aufloest muss blockiert werden."""
+        from assistant.web_search import _resolve_and_check
+        with patch("socket.getaddrinfo", _fake_getaddrinfo("192.168.1.100")):
+            assert not await _resolve_and_check("evil-rebind.com")
+
+    @pytest.mark.asyncio
+    async def test_resolve_blocks_hostname_resolving_to_10_net(self):
+        from assistant.web_search import _resolve_and_check
+        with patch("socket.getaddrinfo", _fake_getaddrinfo("10.0.0.5")):
+            assert not await _resolve_and_check("attacker.com")
+
+    @pytest.mark.asyncio
+    async def test_resolve_allows_public_ip(self):
+        """Hostname der auf oeffentliche IP aufloest ist ok."""
+        from assistant.web_search import _resolve_and_check
+        with patch("socket.getaddrinfo", _fake_getaddrinfo("93.184.216.34")):
+            assert await _resolve_and_check("example.com")
+
+    @pytest.mark.asyncio
+    async def test_resolve_blocks_known_hostnames(self):
+        """Bekannte interne Hostnamen werden direkt blockiert, ohne DNS."""
+        from assistant.web_search import _resolve_and_check
+        for name in ("localhost", "redis", "chromadb", "ollama", "homeassistant", "ha"):
+            assert not await _resolve_and_check(name)
+
+    @pytest.mark.asyncio
+    async def test_resolve_blocks_ip_literal_private(self):
+        """IP-Literal wird direkt geprueft, ohne DNS-Aufloesung."""
+        from assistant.web_search import _resolve_and_check
+        assert not await _resolve_and_check("192.168.1.1")
+        assert not await _resolve_and_check("127.0.0.1")
+        assert not await _resolve_and_check("::1")
+
+    @pytest.mark.asyncio
+    async def test_resolve_allows_ip_literal_public(self):
+        from assistant.web_search import _resolve_and_check
+        assert await _resolve_and_check("8.8.8.8")
+
+    @pytest.mark.asyncio
+    async def test_resolve_blocks_on_dns_failure(self):
+        """Fehlgeschlagene DNS-Aufloesung wird sicherheitshalber blockiert."""
+        from assistant.web_search import _resolve_and_check
+        with patch("socket.getaddrinfo", side_effect=socket.gaierror("NXDOMAIN")):
+            assert not await _resolve_and_check("nonexistent.example.com")
+
+    @pytest.mark.asyncio
+    async def test_resolve_empty_hostname_blocked(self):
+        from assistant.web_search import _resolve_and_check
+        assert not await _resolve_and_check("")
+
+    @pytest.mark.asyncio
+    async def test_resolve_blocks_if_any_ip_is_private(self):
+        """Wenn ein Hostname auf mehrere IPs aufloest und EINE privat ist → blockieren."""
+        from assistant.web_search import _resolve_and_check
+
+        def _multi_resolve(host, port, family=0, type=0):
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 0)),
+                (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("192.168.1.1", 0)),
+            ]
+
+        with patch("socket.getaddrinfo", _multi_resolve):
+            assert not await _resolve_and_check("dual-homed-evil.com")
+
+    def test_is_safe_url_blocks_ftp(self):
+        """Scheme-Pruefung bleibt intakt."""
+        from assistant.web_search import _is_safe_url
+        assert not _is_safe_url("ftp://evil.com/payload")
+
+    def test_is_safe_url_blocks_localhost(self):
+        from assistant.web_search import _is_safe_url
+        assert not _is_safe_url("http://localhost:8080/admin")
+
+    def test_is_safe_url_blocks_internal_hostnames(self):
+        from assistant.web_search import _is_safe_url
+        for host in ("redis", "chromadb", "ollama", "homeassistant", "ha"):
+            assert not _is_safe_url(f"http://{host}:6379/")
+
+    def test_is_safe_url_allows_external(self):
+        from assistant.web_search import _is_safe_url
+        assert _is_safe_url("https://searxng.example.com/search")
