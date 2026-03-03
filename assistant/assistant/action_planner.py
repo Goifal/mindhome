@@ -197,10 +197,23 @@ class ActionPlanner:
             # LLM aufrufen — Modell und max_tokens aus planner-Config
             planner_model = _planner_cfg.get("model", "") or settings.model_deep
             planner_max_tokens = int(_planner_cfg.get("max_tokens", 512))
+
+            # SICHERHEIT: Tools VOR dem LLM-Aufruf nach Trust-Level filtern
+            available_tools = get_assistant_tools()
+            if autonomy:
+                effective_person = person if person else "__anonymous_guest__"
+                available_tools = [
+                    t for t in available_tools
+                    if autonomy.can_person_act(
+                        effective_person,
+                        t.get("function", {}).get("name", ""),
+                    ).get("allowed", True)
+                ]
+
             response = await self.ollama.chat(
                 messages=planner_messages,
                 model=planner_model,
-                tools=get_assistant_tools(),
+                tools=available_tools,
                 max_tokens=planner_max_tokens,
                 think=True,
             )

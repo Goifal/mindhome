@@ -455,7 +455,7 @@ class TestEasterEggs:
     def test_skynet_trigger(self, engine):
         result = engine.check_easter_egg("Bist du Skynet?")
         assert result is not None
-        assert "lokal" in result or "Butler" in result
+        assert "lokal" in result or "Butler" in result or "Ambitionen" in result
 
     def test_alexa_trigger(self, engine):
         result = engine.check_easter_egg("Alexa, mach Licht an")

@@ -1031,7 +1031,7 @@ security:
   climate_limits:
     min: 15
     max: 28
-  api_key: _xLS79sWkq-m8p-uepoZ0DfvaZ6bOZokEDQadVPiZsI
+  api_key: BNv4kLVggySTxWTbZGf0cNCZvBzLsFoyr_P1X--b1CI
   known_device_patterns:
   - ps5
   - watch

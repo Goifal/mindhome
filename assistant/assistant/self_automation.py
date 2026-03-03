@@ -650,8 +650,12 @@ REGELN:
             cleaned = unicodedata.normalize("NFKC", value)
             # HTML-Entities dekodieren (&#123; → {, &#x7b; → {)
             cleaned = html.unescape(cleaned)
-            # Zero-Width-Chars entfernen
-            cleaned = cleaned.replace('\u200b', '').replace('\u200c', '').replace('\u200d', '').replace('\ufeff', '')
+            # Alle unsichtbaren Unicode-Zeichen entfernen (Format, Mark, Control)
+            # Umfassender als einzelne Chars — deckt ALLE Zero-Width, RTL-Override etc. ab
+            cleaned = ''.join(
+                c for c in cleaned
+                if unicodedata.category(c) not in ('Cf', 'Cc', 'Mn')
+            )
             if "{{" in cleaned or "{%" in cleaned or "{#" in cleaned:
                 return True
             # states(), is_state(), etc. — HA Template-Funktionen

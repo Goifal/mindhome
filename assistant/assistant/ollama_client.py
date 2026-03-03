@@ -466,7 +466,9 @@ class OllamaClient:
                             in_think_block = False
                         if is_done:
                             break
-                        continue
+                        if in_think_block:
+                            continue
+                        # Think-Block geoeffnet UND geschlossen — weiter zur yield-Logik
 
                     # Kein Think-Tag — Buffer ausgeben
                     if _think_buffer:
