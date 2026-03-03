@@ -219,6 +219,44 @@ models:
   options:
     temperature: 0.7
     max_tokens: 256
+
+# LLM Model Profiles: Parameter und Capabilities pro Modell-Familie.
+# Neues Modell hinzufuegen = nur hier einen Eintrag ergaenzen, kein Code noetig.
+# Match: Laengster Key der im Modellnamen vorkommt gewinnt.
+# z.B. "qwen3.5:9b" matcht "qwen3.5" (nicht "qwen3"), "llama3.1:70b" matcht "llama".
+model_profiles:
+  default:
+    supports_think_tags: false
+    supports_think_with_tools: false
+    temperature: 0.7
+    top_p: 0.9
+    top_k: 40
+    min_p: 0.0
+    repeat_penalty: 1.0
+    think_temperature: 0.6
+    think_top_p: 0.95
+  "qwen3.5":
+    supports_think_tags: true
+    supports_think_with_tools: true
+    top_p: 0.8
+    top_k: 20
+    min_p: 0.0
+    repeat_penalty: 1.1
+  "qwen3":
+    supports_think_tags: true
+    supports_think_with_tools: false
+    top_p: 0.8
+    top_k: 20
+  "llama":
+    repeat_penalty: 1.1
+    top_k: 40
+  "deepseek":
+    supports_think_tags: true
+  "mistral":
+    top_k: 40
+  "gemma":
+    top_k: 40
+
 personality:
   style: butler
   sarcasm_level: 3

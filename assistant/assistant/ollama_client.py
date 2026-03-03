@@ -1,11 +1,11 @@
 """
 Ollama API Client - Kommunikation mit dem lokalen LLM
 
-Qwen 3 / 3.5 Kompatibilitaet:
+LLM Model Profile Kompatibilitaet:
 - Stripped automatisch <think>...</think> Bloecke aus Antworten
 - Thinking Mode wird fuer Fast-Tier deaktiviert (spart Latenz)
-- Qwen 3.5: Modell-optimierte Parameter (top_k, top_p, min_p)
-- Qwen 3.5: Thinking + Tool Calling gleichzeitig moeglich
+- Modell-optimierte Parameter (top_k, top_p, min_p) via Model Profiles
+- Think+Tools Kombination konfigurierbar pro Modell-Familie
 """
 
 import asyncio
@@ -29,7 +29,7 @@ from .constants import (
 
 logger = logging.getLogger(__name__)
 
-# Regex zum Entfernen von Qwen 3 Think-Bloecken
+# Regex zum Entfernen von LLM Think-Bloecken (<think>...</think>)
 _THINK_PATTERN = re.compile(r"<think>[\s\S]*?</think>\s*", re.DOTALL)
 
 # Woerter die auf Meta-Kommentar / Reasoning hindeuten (nicht in echter Meldung)
@@ -65,7 +65,7 @@ _GERMAN_MARKERS = [
 
 
 def strip_think_tags(text: str) -> str:
-    """Entfernt <think>...</think> Bloecke aus Qwen 3 Antworten."""
+    """Entfernt <think>...</think> Bloecke aus LLM-Antworten."""
     if not text or "<think>" not in text:
         return text
     cleaned = _THINK_PATTERN.sub("", text).strip()
@@ -155,51 +155,31 @@ def _extract_final_answer(text: str) -> str:
 strip_reasoning_leak = validate_notification
 
 
-def _is_qwen35(model: str) -> bool:
-    """Prueft ob ein Modell zur Qwen 3.5 Familie gehoert."""
-    return "qwen3.5" in model.lower()
-
-
-def _is_qwen3(model: str) -> bool:
-    """Prueft ob ein Modell zur Qwen 3.x Familie gehoert (inkl. 3.5)."""
-    return "qwen3" in model.lower()
-
-
 def _model_options(model: str, temperature: float, max_tokens: int, num_ctx: int,
                    think_enabled: bool = False) -> dict:
-    """Erzeugt modell-optimierte Ollama Options.
+    """Erzeugt modell-optimierte Ollama Options aus dem Model Profile.
 
-    Qwen 3.5 empfohlene Parameter (laut Alibaba):
-    - Thinking Mode: temp=0.6, top_p=0.95, top_k=20, min_p=0
-    - Non-Thinking:  temp=0.7, top_p=0.8,  top_k=20, min_p=0
-
-    Qwen 3.5 MoE-Modelle sind VRAM-effizient (35B nutzt nur 3B aktive Parameter),
-    daher koennen wir num_ctx groesser waehlen als bei Dense-Modellen.
+    Parameter (top_k, top_p, min_p, repeat_penalty, temperature) werden
+    aus dem passenden Model Profile in settings.yaml geladen.
+    Siehe config.get_model_profile() fuer die Match-Logik.
     """
+    from .config import get_model_profile
+    profile = get_model_profile(model)
+
     opts = {
         "temperature": temperature,
         "num_predict": max_tokens,
         "num_ctx": num_ctx,
+        "top_k": profile.top_k,
+        "min_p": profile.min_p,
+        "repeat_penalty": profile.repeat_penalty,
     }
 
-    if _is_qwen35(model):
-        opts["top_k"] = 20
-        opts["min_p"] = 0.0
-        opts["repeat_penalty"] = 1.1
-        if think_enabled:
-            opts["temperature"] = min(temperature, 0.6)
-            opts["top_p"] = 0.95
-        else:
-            opts["top_p"] = 0.8
-    elif _is_qwen3(model):
-        # Qwen 3: gleiche Empfehlungen wie 3.5
-        opts["top_k"] = 20
-        opts["min_p"] = 0.0
-        if think_enabled:
-            opts["temperature"] = min(temperature, 0.6)
-            opts["top_p"] = 0.95
-        else:
-            opts["top_p"] = 0.8
+    if think_enabled:
+        opts["temperature"] = min(temperature, profile.think_temperature)
+        opts["top_p"] = profile.think_top_p
+    else:
+        opts["top_p"] = profile.top_p
 
     return opts
 
@@ -211,7 +191,7 @@ class OllamaClient:
     # Ollama allokiert KV-Cache fuer das volle Kontextfenster im VRAM,
     # auch wenn der Prompt kurz ist. Bei 8GB GPUs fuehrt der
     # Default (32768+) zu VRAM-Ueberlauf.
-    # Qwen 3.5 MoE-Modelle sind effizienter, daher num_ctx angepasst.
+    # MoE-Modelle sind effizienter, Dense-Modelle brauchen kleinere Fenster.
     _DEFAULT_NUM_CTX = 4096
     _DEFAULT_NUM_CTX_FAST = 2048
     _DEFAULT_NUM_CTX_DEEP = 8192
@@ -288,28 +268,26 @@ class OllamaClient:
             tools: Function-Calling Tools (optional)
             temperature: Kreativitaet (0.0 - 1.0)
             max_tokens: Maximale Antwort-Laenge
-            think: Qwen 3 Thinking Mode (True/False/None=auto)
+            think: LLM Thinking Mode (True/False/None=auto)
 
         Returns:
             Ollama API Response dict
         """
+        from .config import get_model_profile
         model = model or settings.model_smart
+        profile = get_model_profile(model)
 
-        # Thinking Mode bestimmen
-        # Qwen 3.5: Kann Thinking + Tools gleichzeitig
-        # Qwen 3:   Tools stoeren Thinking → deaktivieren
+        # Thinking Mode bestimmen (via Model Profile)
         if think is not None:
             think_enabled = think
         elif model == settings.model_fast:
             think_enabled = False
-        elif tools and not _is_qwen35(model):
-            # Aeltere Modelle: Tools und Think vertragen sich nicht
+        elif tools and not profile.supports_think_with_tools:
+            # Modell kann Think+Tools nicht gleichzeitig
             think_enabled = False
         elif model == settings.model_deep and settings.model_deep == settings.model_smart:
             think_enabled = False
         else:
-            # Qwen 3.5 + Tools: Think bleibt an (native Unterstuetzung)
-            # Deep ohne Tools: Think an
             think_enabled = None  # Ollama/Modell entscheidet
 
         payload = {
@@ -391,9 +369,11 @@ class OllamaClient:
             logger.warning("Ollama Circuit OPEN — Stream abgebrochen")
             return
 
+        from .config import get_model_profile
         model = model or settings.model_smart
+        profile = get_model_profile(model)
 
-        # Thinking Mode (gleiche Logik wie chat())
+        # Thinking Mode (gleiche Logik wie chat(), via Model Profile)
         if think is not None:
             think_enabled = think
         elif model == settings.model_fast:

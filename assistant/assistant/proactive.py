@@ -1713,7 +1713,7 @@ class ProactiveManager:
     async def format_with_personality(self, raw_message: str, urgency: str = "low", person: str = "") -> str:
         """Reformuliert eine nackte Alert-Meldung im Jarvis-Stil.
 
-        Nutzt das Fast-Model (qwen3.5:4b) fuer minimale Latenz.
+        Nutzt das Fast-Model fuer minimale Latenz.
         Faellt auf raw_message zurueck bei Fehler.
 
         Args:

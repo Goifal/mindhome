@@ -2866,7 +2866,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     tool_calls = [fallback_tc]
                     response_text = ""
 
-            # 7c. Tool-Calls aus Text extrahieren (Qwen3 gibt sie manchmal als Text aus)
+            # 7c. Tool-Calls aus Text extrahieren (LLM gibt manchmal Tool-Calls als Text aus)
             if not tool_calls and response_text:
                 tool_calls = self._extract_tool_calls_from_text(response_text)
                 if tool_calls:
@@ -2875,7 +2875,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     # Erklaerungstext entfernen — nur Antwort behalten
                     response_text = ""
 
-            # 7d. Retry: Qwen3 hat bei Geraetebefehl/Status-Query keinen Tool-Call gemacht
+            # 7d. Retry: LLM hat bei Geraetebefehl/Status-Query keinen Tool-Call gemacht
             if not tool_calls and (self._is_device_command(text) or self._is_status_query(text)):
                 logger.warning("Geraetebefehl ohne Tool-Call erkannt: '%s' -> Retry mit Hint", text)
                 hint_msg = (
@@ -2955,7 +2955,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     func = tool_call.get("function", {})
                     func_name = func.get("name", "")
                     func_args = func.get("arguments", {})
-                    # Qwen kann arguments als JSON-String statt Dict liefern
+                    # LLM kann arguments als JSON-String statt Dict liefern
                     if isinstance(func_args, str):
                         try:
                             func_args = json.loads(func_args)
@@ -3759,12 +3759,12 @@ class AssistantBrain(BrainCallbacksMixin):
         return result
 
     # ------------------------------------------------------------------
-    # Phase 7b: Robuste Tool-Call-Extraktion aus Qwen3-Text
+    # Phase 7b: Robuste Tool-Call-Extraktion aus LLM-Text
     # ------------------------------------------------------------------
 
     # Bekannte Argument-Keys pro Funktion (fuer Bare-JSON-Erkennung)
     _ARG_KEY_TO_FUNC: dict[str, str] = {
-        # set_light hat "room"+"state", aber Qwen3 schickt oft "entity_id"+"state"
+        # set_light hat "room"+"state", aber LLM schickt manchmal "entity_id"+"state"
         "brightness": "set_light",
         "color_temp": "set_light",
         # set_cover
@@ -3775,9 +3775,9 @@ class AssistantBrain(BrainCallbacksMixin):
     }
 
     def _extract_tool_calls_from_text(self, text: str) -> list[dict]:
-        """Extrahiert Tool-Calls aus Qwen3-Textantworten.
+        """Extrahiert Tool-Calls aus LLM-Textantworten.
 
-        Qwen3 gibt manchmal keine echten tool_calls zurueck, sondern:
+        Manche LLMs geben keine echten tool_calls zurueck, sondern:
         1. {"name": "func", "arguments": {...}}         — Standard-Fallback
         2. <tool_call>{"name": "func", "arguments": {...}}</tool_call>
         3. `func_name` ... ```json {...} ```             — Erklaerungsmodus
@@ -3816,7 +3816,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 pass
 
         # --- Muster 3: `func_name` + JSON-Code-Block ---
-        # Qwen3 schreibt z.B.: `set_light` ... ```json {"entity_id": "...", "state": "on"} ```
+        # LLM schreibt z.B.: `set_light` ... ```json {"entity_id": "...", "state": "on"} ```
         m_func = re.search(r'`(\w+)`', text)
         m_json = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
         if m_func and m_json:
@@ -3829,7 +3829,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     pass
 
         # --- Muster 4: Bare JSON mit bekannten Keys ---
-        # Qwen3 gibt manchmal nur {"entity_id": "light.x", "state": "on"} aus
+        # LLM gibt manchmal nur {"entity_id": "light.x", "state": "on"} aus
         m_bare = re.search(r'\{[^{}]*"(?:entity_id|room|state|position|adjust)"[^{}]*\}', text)
         if m_bare:
             try:
@@ -4399,8 +4399,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
         original = text
 
-        # 0. qwen3 Thinking-Tags entfernen (<think>...</think>)
-        # qwen3-Modelle geben Chain-of-Thought in <think> Tags aus
+        # 0. LLM Thinking-Tags entfernen (<think>...</think>)
+        # Manche LLMs geben Chain-of-Thought in <think> Tags aus
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
         # Falls nur ein oeffnender Tag ohne schliessenden (Streaming-Abbruch)
         if "<think>" in text:
@@ -4410,7 +4410,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not text:
             return original
 
-        # 0a. Nicht-lateinische Schrift entfernen (Qwen3 denkt manchmal in Arabisch/Chinesisch/Hebräisch)
+        # 0a. Nicht-lateinische Schrift entfernen (multilinguale LLMs denken manchmal in nicht-lat. Schrift)
         # Zaehle Anteil nicht-lateinischer Zeichen — wenn dominant, nur deutsche Teile behalten
         _non_latin = sum(1 for c in text if '\u0600' <= c <= '\u06FF'    # Arabisch
                          or '\u0590' <= c <= '\u05FF'                    # Hebraeisch
@@ -4430,7 +4430,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.warning("Komplett nicht-lateinische Antwort verworfen: '%s'", text[:100])
                 return ""
 
-        # 0b. Implizites Reasoning entfernen (qwen3 ohne <think> Tags)
+        # 0b. Implizites Reasoning entfernen (LLM gibt CoT ohne <think> Tags aus)
         # Erkennt englisches Chain-of-Thought das als normaler Text ausgegeben wird
         _reasoning_starters = [
             "Okay, the user", "Ok, the user", "The user",
@@ -4468,7 +4468,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     text = ""
                 break
 
-        # 0c. Deutsches Reasoning entfernen (Qwen denkt manchmal auf Deutsch laut)
+        # 0c. Deutsches Reasoning entfernen (LLM denkt manchmal auf Deutsch laut)
         # Muster: "Was ist passiert: ... Was du stattdessen tust: ..."
         # oder "Analyse: ... Ergebnis: ... Aktion: ..."
         _de_reasoning_patterns = [
@@ -4718,7 +4718,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 if text:
                     text = text[0].upper() + text[1:]
 
-        # 3b. Formelles "Sie" → informelles "du" (Qwen3 ignoriert Du-Anweisung)
+        # 3b. Formelles "Sie" → informelles "du" (LLM ignoriert manchmal Du-Anweisung)
         # "Ihnen/Ihre/Ihrem" sind eindeutig formell (kein Lowercase-Pendant fuer "sie"=she)
         _has_formal = bool(re.search(
             r"\b(?:Ihnen|Ihre[mnrs]?)\b"
@@ -4784,7 +4784,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 text = re.sub(pattern, replacement, text)
             logger.info("Sie->du Korrektur angewendet: '%s'", text[:80])
 
-        # 3c. LLM-Refusals entfernen (Qwen3 verweigert manchmal trotz gueltiger Daten)
+        # 3c. LLM-Refusals entfernen (LLM verweigert manchmal trotz gueltiger Daten)
         _refusal_patterns = [
             r"[Aa]ber ich kann diese Anfrage nicht erf[uü]llen\.?",
             r"[Ii]ch kann diese Anfrage nicht erf[uü]llen\.?",
@@ -6190,7 +6190,7 @@ class AssistantBrain(BrainCallbacksMixin):
         """Erkennt ob der Text ein Geraete-Steuerungsbefehl ist.
 
         Prueft auf Kombination von Geraete-Nomen + Aktion/Prozent.
-        Wird fuer Tool-Call-Retry genutzt: Wenn Qwen3 keinen Tool-Call macht
+        Wird fuer Tool-Call-Retry genutzt: Wenn das LLM keinen Tool-Call macht
         aber der Text offensichtlich ein Geraetebefehl ist.
         """
         t = text.lower()
@@ -6397,8 +6397,8 @@ class AssistantBrain(BrainCallbacksMixin):
         """Erkennt Wecker-Befehle und gibt Aktions-Dict zurueck.
 
         Returns dict mit action/time/label oder None (kein Wecker-Match).
-        Wird VOR dem LLM aufgerufen, weil Qwen den set_wakeup_alarm Tool-Call
-        nicht zuverlaessig generiert.
+        Wird VOR dem LLM aufgerufen, weil manche LLMs den set_wakeup_alarm Tool-Call
+        nicht zuverlaessig generieren.
         """
         import re as _re
         t = text.lower().strip()

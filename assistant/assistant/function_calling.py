@@ -1198,7 +1198,7 @@ def _get_climate_tool_parameters() -> dict:
     }
 
 
-# Ollama Tool-Definitionen (Qwen 2.5 Function Calling Format)
+# Ollama Tool-Definitionen (Function Calling Format)
 # ASSISTANT_TOOLS wird als Funktion gebaut, damit set_climate
 # bei jedem Aufruf den aktuellen heating.mode aus yaml_config liest.
 _ASSISTANT_TOOLS_STATIC = [
@@ -2794,7 +2794,7 @@ class FunctionExecutor:
         "suggest_declarative_tools",
     })
 
-    # Qwen3 uebersetzt deutsche Raumnamen oft ins Englische
+    # LLMs uebersetzen deutsche Raumnamen manchmal ins Englische
     _EN_TO_DE_ROOMS: dict[str, str] = {
         "living_room": "wohnzimmer",
         "livingroom": "wohnzimmer",
@@ -2824,7 +2824,7 @@ class FunctionExecutor:
         "dining room": "esszimmer",
     }
 
-    # Geraetetyp-Woerter die Qwen3 manchmal in den Raumnamen packt
+    # Geraetetyp-Woerter die LLMs manchmal in den Raumnamen packen
     _DEVICE_TYPE_WORDS = {
         # Deutsch
         "licht", "lampe", "leuchte", "beleuchtung",
@@ -2845,7 +2845,7 @@ class FunctionExecutor:
     def _clean_room(cls, room: str) -> str:
         """Bereinigt room-Parameter: Prefixe, Geraetetypen, EN->DE.
 
-        Qwen3 schickt manchmal:
+        LLMs schicken manchmal:
         - 'licht.buero' statt 'buero' (Domain-Prefix)
         - 'living_room' statt 'wohnzimmer' (englische Uebersetzung)
         - 'schlafzimmer rollladen' statt 'schlafzimmer' (Geraetetyp im Raum)
@@ -3119,7 +3119,7 @@ class FunctionExecutor:
         device = args.get("device")
         person = args.pop("_person", "")
 
-        # Qwen3-Fallback: entity_id statt room akzeptieren
+        # LLM-Fallback: entity_id statt room akzeptieren
         if not room and args.get("entity_id"):
             eid = args["entity_id"]
             if eid.startswith("light."):
@@ -3127,7 +3127,7 @@ class FunctionExecutor:
             else:
                 room = eid
 
-        # Qwen3-Cleanup: Domain-Prefix aus room strippen
+        # LLM-Cleanup: Domain-Prefix aus room strippen
         room = self._clean_room(room)
 
         # State ableiten wenn nicht explizit angegeben
@@ -3585,7 +3585,7 @@ class FunctionExecutor:
         room = args.get("room")
         state = args.get("state")
 
-        # Qwen3-Fallback: entity_id statt room
+        # LLM-Fallback: entity_id statt room
         if not room and args.get("entity_id"):
             eid = args["entity_id"]
             room = eid.split(".", 1)[1] if "." in eid else eid
@@ -3659,7 +3659,7 @@ class FunctionExecutor:
     async def _exec_set_climate_room(self, args: dict) -> dict:
         """Raumthermostat-Modus: Temperatur pro Raum setzen."""
         room = args.get("room")
-        # Qwen3-Fallback: entity_id statt room
+        # LLM-Fallback: entity_id statt room
         if not room and args.get("entity_id"):
             eid = args["entity_id"]
             room = eid.split(".", 1)[1] if "." in eid else eid
@@ -3840,7 +3840,7 @@ class FunctionExecutor:
         room = args.get("room")
         cover_type = args.get("type")  # rollladen | markise | None
 
-        # Qwen3-Fallback: entity_id statt room
+        # LLM-Fallback: entity_id statt room
         if not room and args.get("entity_id"):
             eid = args["entity_id"]
             room = eid.split(".", 1)[1] if "." in eid else eid
