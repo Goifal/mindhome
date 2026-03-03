@@ -2233,7 +2233,28 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("error_patterns", "min_occurrences_for_mitigation"): (2, 10),
         ("error_patterns", "mitigation_ttl_hours"): (1, 24),
         ("adaptive_thresholds", "analysis_interval_hours"): (24, 336),
+        # Model Profiles — Wertebereiche fuer LLM-Parameter
+        # (Gilt fuer alle Profile: default, qwen3.5, llama, etc.)
     }
+    # Model Profiles dynamisch validieren (alle Sub-Profile)
+    MP_RANGES = {
+        "temperature": (0, 2), "top_p": (0, 1), "top_k": (1, 100),
+        "min_p": (0, 0.5), "repeat_penalty": (1, 2),
+        "think_temperature": (0, 1), "think_top_p": (0, 1),
+    }
+    mp = settings.get("model_profiles", {})
+    if isinstance(mp, dict):
+        for profile_name, profile in mp.items():
+            if isinstance(profile, dict):
+                for field, (lo, hi) in MP_RANGES.items():
+                    val = profile.get(field)
+                    if val is not None:
+                        try:
+                            fval = float(val)
+                            if fval < lo or fval > hi:
+                                errors.append(f"model_profiles.{profile_name}.{field}: {val} (erlaubt: {lo}-{hi})")
+                        except (ValueError, TypeError):
+                            errors.append(f"model_profiles.{profile_name}.{field}: ungueltig")
     # Erlaubte Werte fuer Strings (Whitelist)
     ENUM_RULES = {
         ("vacuum", "auto_clean", "mode"): ["smart", "schedule", "both"],

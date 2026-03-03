@@ -998,13 +998,14 @@ class PersonalityEngine:
 
     def _build_humor_section(
         self, mood: str, time_of_day: str, has_alerts: bool = False,
-        person_humor_override: Optional[int] = None,
+        person_humor_override: Optional[int] = None, person: str = "",
     ) -> str:
         """Baut den Humor-Abschnitt basierend auf Level + Kontext.
 
         F-023: Bei aktiven Sicherheits-Alerts wird Sarkasmus komplett deaktiviert.
         Sarkasmus-Fatigue: Nach 4+ sarkastischen Antworten in Folge eine Stufe runter.
         person_humor_override: Per-Person Humor-Level (1-5), ueberschreibt globalen Level.
+        person: Name der Person fuer per-User Streak-Tracking.
         """
         base_level = person_humor_override if person_humor_override is not None else self.sarcasm_level
 
@@ -1024,7 +1025,8 @@ class PersonalityEngine:
 
         # Sarkasmus-Fatigue: Nach 4+ Antworten in Folge etwas zuruecknehmen
         # Jarvis wird nie repetitiv — ein echter Butler variiert
-        streak = self._sarcasm_streak.get("default", 0)
+        user_key = person.lower().strip() if person else "_default"
+        streak = self._sarcasm_streak.get(user_key, 0)
         if streak >= 6 and effective_level >= 3:
             effective_level = max(2, effective_level - 2)
         elif streak >= 4 and effective_level >= 3:
@@ -1036,9 +1038,6 @@ class PersonalityEngine:
         elif time_of_day == "night":
             effective_level = min(effective_level, 1)
 
-        # Streak tracken (wird in track_sarcasm_streak aufgerufen)
-        self._last_effective_humor = effective_level
-
         template = HUMOR_TEMPLATES.get(effective_level, HUMOR_TEMPLATES[3])
         humor_text = f"HUMOR: {template.replace('{title}', get_person_title())}"
 
@@ -1049,12 +1048,20 @@ class PersonalityEngine:
 
         return humor_text
 
-    def track_sarcasm_streak(self, was_snarky: bool, person_id: str = "default"):
+    def track_sarcasm_streak(self, was_snarky: bool, person_id: str = "_default"):
         """Trackt aufeinanderfolgende sarkastische Antworten per User. 0ms — rein in-memory."""
+        key = person_id.lower().strip() if person_id else "_default"
         if was_snarky:
-            self._sarcasm_streak[person_id] = self._sarcasm_streak.get(person_id, 0) + 1
+            self._sarcasm_streak[key] = self._sarcasm_streak.get(key, 0) + 1
         else:
-            self._sarcasm_streak[person_id] = 0
+            self._sarcasm_streak[key] = 0
+        # Memory-Leak-Schutz: Max 50 User tracken
+        if len(self._sarcasm_streak) > 50:
+            oldest = next(iter(self._sarcasm_streak))
+            del self._sarcasm_streak[oldest]
+        if len(self._humor_consecutive) > 50:
+            oldest = next(iter(self._humor_consecutive))
+            del self._humor_consecutive[oldest]
 
     # ------------------------------------------------------------------
     # Adaptive Komplexitaet (Phase 6.8)
@@ -1348,7 +1355,8 @@ class PersonalityEngine:
     # ------------------------------------------------------------------
 
     async def generate_contextual_humor(
-        self, func_name: str, func_args: dict, context: dict | None = None
+        self, func_name: str, func_args: dict, context: dict | None = None,
+        person: str = "",
     ) -> Optional[str]:
         """Erzeugt situationsbezogenen Humor nach einer Aktion.
 
@@ -1373,16 +1381,17 @@ class PersonalityEngine:
             return None
 
         # Humor-Fatigue: Nach 4 Witzen Pause (per User)
-        _hc = self._humor_consecutive.get("default", 0)
+        _hc_key = person.lower().strip() if person else "_default"
+        _hc = self._humor_consecutive.get(_hc_key, 0)
         if _hc >= 4:
-            self._humor_consecutive["default"] = 0
+            self._humor_consecutive[_hc_key] = 0
             return None
 
         # Situation erkennen
         situation = self._detect_humor_situation(func_name, func_args, context)
         if not situation:
             # Kein Humor noetig — Reset
-            self._humor_consecutive["default"] = 0
+            self._humor_consecutive[_hc_key] = 0
             return None
 
         # Templates holen
@@ -1417,7 +1426,7 @@ class PersonalityEngine:
         )
 
         # Fatigue tracken (per User)
-        self._humor_consecutive["default"] = self._humor_consecutive.get("default", 0) + 1
+        self._humor_consecutive[_hc_key] = self._humor_consecutive.get(_hc_key, 0) + 1
 
         # Erfolg tracken (async, fire-and-forget)
         if self._redis:
@@ -1824,6 +1833,7 @@ class PersonalityEngine:
         humor_section = self._build_humor_section(
             mood, time_of_day, has_alerts=has_alerts,
             person_humor_override=person_profile.get("humor"),
+            person=current_person_name,
         )
 
         # Phase 6: Complexity-Section — F-022: person durchreichen fuer per-User Tracking

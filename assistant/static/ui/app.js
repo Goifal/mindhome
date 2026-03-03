@@ -700,6 +700,17 @@ const HELP_TEXTS = {
   'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster fuer das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. 2048 empfohlen fuer 4B Modelle.'},
   'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster fuer das Smart-Modell (Gespraeche).', detail:'4096 = Standard. Mehr Kontext = besseres Gespraechsgedaechtnis, aber mehr VRAM.'},
   'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster fuer das Deep-Modell (komplexe Aufgaben).', detail:'MoE-Modelle (z.B. Qwen3.5-27B) sind VRAM-effizient und vertragen 8192+.'},
+  // === MODELL-PROFILE ===
+  'model_profiles': {title:'Modell-Profile', text:'LLM-Parameter pro Modell-Familie. Neues Modell = nur Profil hier anlegen. Match: Laengster Key der im Modellnamen vorkommt gewinnt.', detail:'Beispiel: "qwen3.5:9b" matcht Profil "qwen3.5" (nicht "qwen3"). Unbekannte Modelle nutzen das "default" Profil. Spezifische Profile erben vom Default und ueberschreiben nur gesetzte Werte.'},
+  'model_profiles.default.supports_think_tags': {title:'Think-Tags (Default)', text:'Ob das Modell &lt;think&gt;-Tags fuer Chain-of-Thought Reasoning nutzt.', detail:'Qwen3, DeepSeek und aehnliche Modelle geben ihren Denkprozess in &lt;think&gt;-Tags aus. Diese werden automatisch aus der Antwort entfernt.'},
+  'model_profiles.default.supports_think_with_tools': {title:'Think + Tools (Default)', text:'Ob Think-Tags gleichzeitig mit Tool-Calls funktionieren.', detail:'Qwen 3.5 unterstuetzt Think+Tools nativ. Bei aelteren Modellen stoeren Think-Tags die Tool-Generierung — dann deaktivieren.'},
+  'model_profiles.default.temperature': {title:'Temperatur (Default)', text:'Kreativitaet der Antworten. 0 = deterministisch, 0.7 = Standard.'},
+  'model_profiles.default.top_p': {title:'Top-P (Default)', text:'Nucleus Sampling. Niedrigere Werte = fokussiertere Antworten.'},
+  'model_profiles.default.top_k': {title:'Top-K (Default)', text:'Nur die K wahrscheinlichsten Tokens beruecksichtigen.'},
+  'model_profiles.default.min_p': {title:'Min-P (Default)', text:'Minimum Probability. Filtert sehr unwahrscheinliche Tokens.'},
+  'model_profiles.default.repeat_penalty': {title:'Repeat Penalty (Default)', text:'Bestraft Wiederholungen. 1.0 = aus, 1.1 = leicht, 1.5 = stark.'},
+  'model_profiles.default.think_temperature': {title:'Think-Temperatur (Default)', text:'Temperatur im Thinking-Modus. Empfohlen: 0.6 (fokussierter als normal).'},
+  'model_profiles.default.think_top_p': {title:'Think Top-P (Default)', text:'Top-P im Thinking-Modus. Empfohlen: 0.95 (breiter als normal).'},
   'planner.max_iterations': {title:'Max. Planungsschritte', text:'Wie viele Planungsrunden der Action Planner maximal durchlaeuft.', detail:'8 = Standard. Komplexe Aufgaben wie "Mach alles fertig fuer morgen" brauchen mehr Schritte. Bei Timeout-Problemen reduzieren.'},
   'planner.max_tokens': {title:'Planner Antwortlaenge', text:'Maximale Tokens pro Planungsschritt.', detail:'512 = Standard. Erhoehen wenn der Planner Plaene abschneidet.'},
   'models.fast_keywords': {title:'Fast-Keywords', text:'Woerter die das schnelle Modell aktivieren.'},
@@ -1730,6 +1741,96 @@ async function loadRoomTempAverage() {
   }
 }
 
+// ---- Model Profiles Sektion (eingebettet in Persoenlichkeit-Tab) ----
+function _renderModelProfiles() {
+  const profiles = getPath(S, 'model_profiles') || {};
+  const profileKeys = Object.keys(profiles).filter(k => k !== 'default');
+  const defaultP = profiles['default'] || {};
+
+  // Profil-Felder mit Labels und Ranges
+  const PROFILE_FIELDS = [
+    {key:'supports_think_tags', label:'Think-Tags', type:'toggle', hint:'LLM nutzt <think>-Tags fuer Chain-of-Thought'},
+    {key:'supports_think_with_tools', label:'Think + Tools', type:'toggle', hint:'Think-Tags bleiben bei Tool-Calls aktiv'},
+    {key:'temperature', label:'Temperatur', type:'range', min:0, max:2, step:0.1},
+    {key:'top_p', label:'Top-P', type:'range', min:0, max:1, step:0.05},
+    {key:'top_k', label:'Top-K', type:'range', min:1, max:100, step:1},
+    {key:'min_p', label:'Min-P', type:'range', min:0, max:0.5, step:0.01},
+    {key:'repeat_penalty', label:'Repeat Penalty', type:'range', min:1, max:2, step:0.05},
+    {key:'think_temperature', label:'Think-Temperatur', type:'range', min:0, max:1, step:0.05},
+    {key:'think_top_p', label:'Think Top-P', type:'range', min:0, max:1, step:0.05},
+  ];
+
+  function renderProfileCard(name, p, isDefault) {
+    const prefix = 'model_profiles.' + name;
+    const icon = isDefault ? '&#9881;' : '&#129302;';
+    const title = isDefault ? 'default (Fallback)' : name;
+    const removable = !isDefault;
+    let html = '<div class="mp-card" style="margin-bottom:12px;padding:14px;background:var(--bg-secondary);border-radius:var(--radius-sm);border-left:3px solid ' +
+      (isDefault ? 'var(--text-muted)' : 'var(--accent)') + ';">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
+    html += '<span style="font-weight:600;font-size:14px;">' + icon + ' ' + esc(title) + '</span>';
+    if (removable) {
+      html += '<button class="btn btn-danger btn-sm" onclick="removeModelProfile(\'' + esc(name) + '\')" style="padding:4px 8px;min-width:auto;font-size:11px;" title="Profil entfernen">&#128465;</button>';
+    }
+    html += '</div>';
+    for (const f of PROFILE_FIELDS) {
+      const val = p[f.key] ?? defaultP[f.key] ?? '';
+      const path = prefix + '.' + f.key;
+      if (f.type === 'toggle') {
+        const checked = val ? 'checked' : '';
+        html += '<div class="form-group" style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">' +
+          '<label style="font-size:12px;margin:0;">' + f.label + '</label>' +
+          '<label class="switch" style="margin:0;"><input type="checkbox" data-path="' + path + '" ' + checked + '><span class="slider"></span></label></div>';
+      } else {
+        html += '<div class="form-group" style="margin-bottom:6px;">' +
+          '<label style="font-size:12px;">' + f.label + '</label>' +
+          '<div style="display:flex;gap:8px;align-items:center;">' +
+          '<input type="range" data-path="' + path + '" min="' + f.min + '" max="' + f.max + '" step="' + f.step + '" value="' + val + '" style="flex:1;" oninput="this.nextElementSibling.textContent=this.value">' +
+          '<span style="min-width:40px;text-align:right;font-family:var(--mono);font-size:12px;">' + val + '</span>' +
+          '</div></div>';
+      }
+    }
+    html += '</div>';
+    return html;
+  }
+
+  let body = fInfo('Modell-Profile definieren LLM-Parameter pro Modell-Familie. Neues Modell = nur Profil hier anlegen, kein Code noetig. Match: Laengster Key der im Modellnamen vorkommt gewinnt (z.B. "qwen3.5:9b" &rarr; Profil "qwen3.5").') +
+    renderProfileCard('default', defaultP, true);
+
+  for (const name of profileKeys) {
+    body += renderProfileCard(name, profiles[name] || {}, false);
+  }
+
+  body += '<div style="display:flex;gap:8px;margin-top:8px;">' +
+    '<input type="text" id="mpNewName" placeholder="Profilname (z.B. phi4, command-r)" style="flex:1;font-size:13px;">' +
+    '<button class="btn btn-secondary" onclick="addModelProfile()" style="white-space:nowrap;">+ Profil</button>' +
+    '</div>';
+
+  return sectionWrap('&#9881;', 'Modell-Profile', body);
+}
+
+function addModelProfile() {
+  const input = document.getElementById('mpNewName');
+  const name = (input.value || '').trim().toLowerCase();
+  if (!name || name === 'default') return;
+  mergeCurrentTabIntoS();
+  if (!S.model_profiles) S.model_profiles = {};
+  if (!S.model_profiles[name]) {
+    S.model_profiles[name] = {};
+  }
+  renderCurrentTab();
+  scheduleAutoSave();
+}
+
+function removeModelProfile(name) {
+  mergeCurrentTabIntoS();
+  if (S.model_profiles && S.model_profiles[name]) {
+    delete S.model_profiles[name];
+  }
+  renderCurrentTab();
+  scheduleAutoSave();
+}
+
 // ---- Tab 1: Allgemein ----
 function renderGeneral() {
   return sectionWrap('&#9881;', 'Assistent',
@@ -1910,6 +2011,7 @@ function renderPersonality() {
     fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 16384, 1024, {2048:'2K',4096:'4K',6144:'6K',8192:'8K',12288:'12K',16384:'16K'}) +
     fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K',24576:'24K',32768:'32K'})
   ) +
+  _renderModelProfiles() +
   sectionWrap('&#129504;', 'Action Planner',
     fInfo('Der Action Planner fuehrt komplexe Multi-Step Anfragen aus (z.B. "Mach alles fertig fuer morgen"). Er plant iterativ mit dem Deep-Modell und fuehrt Tool-Calls parallel aus.') +
     fRange('planner.max_iterations', 'Max. Planungsschritte', 3, 15, 1, {3:'3',5:'5',8:'8',10:'10',15:'15'}) +
