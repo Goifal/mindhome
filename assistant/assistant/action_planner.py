@@ -311,9 +311,21 @@ class ActionPlanner:
                     return_exceptions=True,
                 )
 
-                for r in results:
+                for idx, r in enumerate(results):
                     if isinstance(r, Exception):
                         logger.error("Planner parallel Step Fehler: %s", r)
+                        # Fehlgeschlagenen Step trotzdem im Audit-Trail erfassen
+                        if idx < len(valid_steps):
+                            err_step, err_fn, err_fa = valid_steps[idx]
+                            err_step.status = "failed"
+                            err_step.result = {"success": False, "message": f"Exception: {r}"}
+                            plan.steps.append(err_step)
+                            all_actions.append({
+                                "function": err_fn,
+                                "args": err_fa,
+                                "result": err_step.result,
+                            })
+                            tool_results.append(f"{err_fn}: Fehler — {r}")
                         continue
                     step, func_name, func_args, result = r
                     plan.steps.append(step)

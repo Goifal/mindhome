@@ -83,15 +83,18 @@ class MemoryManager:
         # P-5: Redis Pipeline — 5 Roundtrips auf 1 reduziert (~80-150ms gespart)
         today = datetime.now().strftime("%Y-%m-%d")
         archive_key = f"mha:archive:{today}"
-        pipe = self.redis.pipeline()
-        # Working Memory (letzte 50, mit 7-Tage-TTL als Sicherheitsnetz)
-        pipe.lpush("mha:conversations", entry_json)
-        pipe.ltrim("mha:conversations", 0, 49)
-        pipe.expire("mha:conversations", 7 * 86400)
-        # Tages-Archiv (Phase 7: fuer DailySummarizer)
-        pipe.rpush(archive_key, entry_json)
-        pipe.expire(archive_key, 30 * 86400)
-        await pipe.execute()
+        try:
+            pipe = self.redis.pipeline()
+            # Working Memory (letzte 50, mit 7-Tage-TTL als Sicherheitsnetz)
+            pipe.lpush("mha:conversations", entry_json)
+            pipe.ltrim("mha:conversations", 0, 49)
+            pipe.expire("mha:conversations", 7 * 86400)
+            # Tages-Archiv (Phase 7: fuer DailySummarizer)
+            pipe.rpush(archive_key, entry_json)
+            pipe.expire(archive_key, 30 * 86400)
+            await pipe.execute()
+        except Exception as e:
+            logger.warning("add_conversation Pipeline fehlgeschlagen: %s", e)
 
     async def get_recent_conversations(self, limit: int = 5) -> list[dict]:
         """Holt die letzten Gespraeche aus dem Working Memory."""

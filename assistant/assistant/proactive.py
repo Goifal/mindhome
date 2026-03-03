@@ -2865,18 +2865,38 @@ class ProactiveManager:
                     covers_to_open.sort(key=lambda x: x[1])
 
                 count = 0
-                # Feature 6: Graduelles Oeffnen
+                # Feature 6: Graduelles Oeffnen — als Background-Task damit
+                # der Haupt-Loop nicht blockiert wird.  Waehrend der 10 Min
+                # graduellem Oeffnen MUSS der Loop weiterlaufen, damit
+                # Wetter-Schutz (Sturm, Regen) sofort reagieren kann.
                 if gradual and covers_to_open:
-                    for step_pos in (30, 70, 100):
-                        for eid, _ in covers_to_open:
-                            acted = await self._auto_cover_action(
-                                eid, step_pos, f"Morgens oeffnen Stufe {step_pos}% ({reason})",
-                                auto_level, redis_client,
-                            )
-                            if acted:
-                                count += 1
-                        if step_pos < 100:
-                            await asyncio.sleep(300)  # 5 Min zwischen Stufen (blockiert Loop ~10 Min gesamt)
+                    async def _gradual_open(covers, _reason, _auto_level, _redis):
+                        _count = 0
+                        for step_pos in (30, 70, 100):
+                            for eid, _ in covers:
+                                acted = await self._auto_cover_action(
+                                    eid, step_pos,
+                                    f"Morgens oeffnen Stufe {step_pos}% ({_reason})",
+                                    _auto_level, _redis,
+                                )
+                                if acted:
+                                    _count += 1
+                            if step_pos < 100:
+                                await asyncio.sleep(300)
+                        if _count > 0:
+                            await self._notify("seasonal_cover", LOW, {
+                                "action": "open",
+                                "message": f"Rolllaeden geoeffnet ({_reason})",
+                                "count": _count,
+                            })
+
+                    self.brain._task_registry.create_task(
+                        _gradual_open(
+                            list(covers_to_open), reason, auto_level, redis_client,
+                        ),
+                        name="gradual_cover_open",
+                    )
+                    return "open"
                 else:
                     for eid, _ in covers_to_open:
                         acted = await self._auto_cover_action(

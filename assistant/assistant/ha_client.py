@@ -423,6 +423,7 @@ class HomeAssistantClient:
                     json=data,
                 ) as resp:
                     if resp.status in (200, 201):
+                        ha_breaker.record_success()
                         return await resp.json()
                     if 400 <= resp.status < 500:
                         body = await resp.text()
