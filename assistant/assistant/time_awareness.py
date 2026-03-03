@@ -250,7 +250,7 @@ class TimeAwareness:
         # Welche Raeume haben Bewegung?
         active_rooms = set()
         # Konfigurierte Motion-Sensoren aus multi_room nutzen
-        room_motion = yaml_config.get("multi_room", {}).get("room_motion_sensors", {})
+        room_motion = yaml_config.get("multi_room", {}).get("room_motion_sensors", {}) or {}
         motion_to_room = {}
         for room_name, sensor_id in room_motion.items():
             if sensor_id:
