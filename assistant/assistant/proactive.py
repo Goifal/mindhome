@@ -3417,7 +3417,7 @@ class ProactiveManager:
                     for s in (states or []):
                         if s.get("entity_id") == eid:
                             vac_state = s.get("state", "")
-                            if vac_state in ("cleaning", "returning"):
+                            if vac_state == "cleaning":
                                 cleaning_robots.append((floor, eid, robot))
                                 all_docked = False
                             elif vac_state not in ("docked", "idle"):
@@ -3425,7 +3425,9 @@ class ProactiveManager:
                             break
 
                 # Fall 1: Jemand kommt heim + Vacuum saugt → Pausieren + Dock
-                if anyone_home and cleaning_robots and guard_cfg.get("pause_on_arrival"):
+                # Guard: Nur wenn nicht schon pausiert (verhindert doppelte Befehle)
+                already_interrupted = _redis and await _redis.get("mha:vacuum:interrupted")
+                if anyone_home and cleaning_robots and guard_cfg.get("pause_on_arrival") and not already_interrupted:
                     logger.info("Vacuum-PresenceMonitor: Jemand ist zuhause — %d Roboter pausieren",
                                 len(cleaning_robots))
                     interrupted = []
