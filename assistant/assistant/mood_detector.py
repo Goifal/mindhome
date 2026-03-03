@@ -542,6 +542,14 @@ class MoodDetector:
                     "priority": "medium",
                     "params": {"brightness_pct": 40},
                 })
+            # Musik leiser bei Stress
+            if self._stress_level >= 0.5:
+                suggestions.append({
+                    "action": "media_player.volume_down",
+                    "reason": "Stress erkannt - Musik-Lautstaerke reduzieren",
+                    "priority": "medium",
+                    "params": {"volume_pct": 30},
+                })
 
         elif self._current_mood == MOOD_FRUSTRATED:
             suggestions.append({
@@ -618,6 +626,18 @@ class MoodDetector:
                     result = await executor.execute("set_light", {
                         "room": "wohnzimmer",
                         "brightness": params.get("brightness_pct", 40),
+                    })
+                    executed.append({
+                        "action": action,
+                        "reason": suggestion["reason"],
+                        "result": result,
+                    })
+                elif action == "media_player.volume_down":
+                    params = suggestion.get("params", {})
+                    vol_pct = params.get("volume_pct", 30)
+                    result = await executor.execute("play_media", {
+                        "action": "volume",
+                        "volume": vol_pct,
                     })
                     executed.append({
                         "action": action,

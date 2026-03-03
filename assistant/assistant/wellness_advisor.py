@@ -694,8 +694,12 @@ class WellnessAdvisor:
         addressing = await self._get_addressing()
         action_names = [a.get("action", "") for a in executed]
 
-        if "light.dimmen" in action_names:
+        if "light.dimmen" in action_names and "media_player.volume_down" in action_names:
+            msg = f"Licht gedimmt, Musik leiser, {addressing}. Schien mir angemessen."
+        elif "light.dimmen" in action_names:
             msg = f"Ich hab das Licht etwas gedimmt, {addressing}. Schien mir angemessen."
+        elif "media_player.volume_down" in action_names:
+            msg = f"Musik etwas leiser, {addressing}."
         elif any(a.startswith("scene.") for a in action_names):
             msg = f"{addressing}, ich hab die Stimmung etwas angepasst."
         else:
