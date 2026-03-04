@@ -4,8 +4,11 @@ Personality Engine - Definiert wie der Assistent redet und sich verhaelt.
 Phase 3: Stimmungsabhaengige Anpassung.
 Phase 6: Sarkasmus-Level, Eigene Meinung, Selbstironie, Charakter-Entwicklung,
          Antwort-Varianz, Running Gags, Adaptive Komplexitaet.
+Phase 18: MCU-Upgrade — Memory Callbacks, Running Gag Evolution,
+          Eskalierende Sorge, Neugier-Fragen, Think-Ahead.
 """
 
+import json
 import logging
 import random
 import time
@@ -360,6 +363,11 @@ class PersonalityEngine:
         # Kontextueller Humor aus separater Datei
         self._humor_triggers = self._load_humor_triggers()
 
+        # Phase 18: MCU-Upgrade State
+        # Curiosity-Limiter: max pro Tag (in-memory, resets bei Neustart)
+        self._curiosity_count_today: dict[str, int] = {}
+        self._curiosity_last_date: str = ""
+
         logger.info(
             "PersonalityEngine initialisiert (Sarkasmus: %d, Meinung: %d, Ironie: %s)",
             self.sarcasm_level, self.opinion_intensity, self.self_irony_enabled,
@@ -653,6 +661,349 @@ class PersonalityEngine:
             }
 
         return None
+
+    # ------------------------------------------------------------------
+    # Phase 18: MCU-Upgrade — Neugier-Fragen
+    # ------------------------------------------------------------------
+
+    async def check_curiosity(
+        self, action: str, args: dict, person: str, hour: int,
+    ) -> Optional[str]:
+        """Prueft ob Jarvis eine sanfte Neugier-Frage stellen soll.
+
+        Wird bei normalen-aber-untypischen Aktionen getriggert.
+        Max 2x pro Tag um nicht zu nerven.
+
+        Returns:
+            Neugier-Frage oder None
+        """
+        curiosity_cfg = yaml_config.get("curiosity", {})
+        if not curiosity_cfg.get("enabled", True):
+            return None
+
+        max_daily = curiosity_cfg.get("max_daily", 2)
+        title = get_person_title()
+
+        # Tages-Reset
+        today = datetime.now().strftime("%Y-%m-%d")
+        if self._curiosity_last_date != today:
+            self._curiosity_count_today = {}
+            self._curiosity_last_date = today
+
+        user_key = (person or "_default").lower().strip()
+        if self._curiosity_count_today.get(user_key, 0) >= max_daily:
+            return None
+
+        question = None
+
+        # Trigger 1: Ungewoehnliche Uhrzeit (Nacht-Aktionen)
+        if 1 <= hour <= 5:
+            if action in ("set_light", "play_media", "set_climate"):
+                question = f"Um diese Uhrzeit, {title}? Alles in Ordnung?"
+            elif action == "manage_repair":
+                question = f"Werkstatt um {hour} Uhr nachts, {title}? Ambitioniert."
+
+        # Trigger 2: Extreme Temperatur-Einstellungen
+        if action == "set_climate" and not question:
+            temp = args.get("temperature")
+            if temp is not None:
+                try:
+                    t = float(temp)
+                    if t >= 27:
+                        question = f"{t}°C — etwas anderes heute, {title}?"
+                    elif t <= 15:
+                        question = f"{t}°C — bewusste Entscheidung, {title}?"
+                except (ValueError, TypeError):
+                    pass
+
+        # Trigger 3: Alle Lichter aus tagsüber
+        if action == "set_light_all" and not question:
+            state = str(args.get("state", "")).lower()
+            if state == "off" and 9 <= hour <= 17:
+                question = f"Alles dunkel um {hour} Uhr? Etwas anderes heute, {title}?"
+
+        if question:
+            self._curiosity_count_today[user_key] = self._curiosity_count_today.get(user_key, 0) + 1
+            return question
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Phase 18: MCU-Upgrade — Memory Callbacks ("Remember When")
+    # ------------------------------------------------------------------
+
+    async def build_memory_callback_section(self, person: str) -> str:
+        """Baut Erinnerungs-Abschnitt aus bemerkenswerten vergangenen Interaktionen.
+
+        Liest aus Redis und injiziert 2-3 bemerkenswerte Ereignisse in den Prompt.
+        """
+        if not self._redis:
+            return ""
+        mem_cfg = yaml_config.get("memorable_interactions", {})
+        if not mem_cfg.get("enabled", True):
+            return ""
+
+        person_key = (person or "default").lower().strip()
+        redis_key = f"mha:personality:memorable:{person_key}"
+
+        try:
+            # Letzte 5 bemerkenswerte Interaktionen (ZSET, sortiert nach Timestamp)
+            raw_entries = await self._redis.zrevrange(redis_key, 0, 4)
+            if not raw_entries:
+                return ""
+
+            memories = []
+            for raw in raw_entries:
+                try:
+                    entry = json.loads(raw)
+                    summary = entry.get("summary", "")
+                    if summary:
+                        memories.append(summary)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            if not memories:
+                return ""
+
+            mem_text = "; ".join(memories[:3])
+            return (
+                "ERINNERUNGEN (beilaeufig referenzieren wenn passend, NIE 'laut meinen Aufzeichnungen'):\n"
+                f"{mem_text}\n\n"
+            )
+        except Exception as e:
+            logger.debug("Memory-Callback Fehler: %s", e)
+            return ""
+
+    async def record_memorable_interaction(
+        self, person: str, interaction_type: str, summary: str,
+    ) -> None:
+        """Speichert eine bemerkenswerte Interaktion in Redis.
+
+        Args:
+            person: Name der Person
+            interaction_type: Art (correction, gag, extreme, milestone)
+            summary: Kurze Beschreibung (max 120 Zeichen)
+        """
+        if not self._redis:
+            return
+        mem_cfg = yaml_config.get("memorable_interactions", {})
+        if not mem_cfg.get("enabled", True):
+            return
+
+        person_key = (person or "default").lower().strip()
+        redis_key = f"mha:personality:memorable:{person_key}"
+        max_entries = mem_cfg.get("max_entries", 20)
+        ttl_days = mem_cfg.get("ttl_days", 30)
+
+        entry = json.dumps({
+            "type": interaction_type,
+            "summary": summary[:120],
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        })
+
+        try:
+            score = time.time()
+            await self._redis.zadd(redis_key, {entry: score})
+            # Max-Eintraege begrenzen (aelteste entfernen)
+            count = await self._redis.zcard(redis_key)
+            if count > max_entries:
+                await self._redis.zremrangebyrank(redis_key, 0, count - max_entries - 1)
+            # TTL setzen/erneuern
+            await self._redis.expire(redis_key, ttl_days * 86400)
+        except Exception as e:
+            logger.debug("Memorable Interaction speichern fehlgeschlagen: %s", e)
+
+    # ------------------------------------------------------------------
+    # Phase 18: MCU-Upgrade — Running Gag Evolution
+    # ------------------------------------------------------------------
+
+    async def build_evolved_gag(self, gag_type: str, person: str) -> Optional[str]:
+        """Baut einen evolvierten Gag der auf fruehere Witze referenziert.
+
+        Statt Wiederholung: Callback auf den letzten Gag gleichen Typs.
+
+        Returns:
+            Evolvierter Gag-Text oder None (dann Standard-Gag verwenden)
+        """
+        if not self._redis:
+            return None
+        gag_cfg = yaml_config.get("running_gag_evolution", {})
+        if not gag_cfg.get("enabled", True):
+            return None
+
+        person_key = (person or "default").lower().strip()
+        redis_key = f"mha:personality:gag_history:{person_key}"
+        title = get_person_title()
+
+        try:
+            # Letzte 10 Gags laden
+            raw_history = await self._redis.lrange(redis_key, 0, 9)
+            recent_same_type = []
+            for raw in raw_history:
+                try:
+                    entry = json.loads(raw)
+                    if entry.get("type") == gag_type:
+                        recent_same_type.append(entry)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            evolved = None
+            if len(recent_same_type) >= 2:
+                # Meta-Level: 3+ gleiche Gags → "Wir kennen das Spiel"
+                evolved = f"Wir kennen das Spiel mittlerweile, {title}."
+            elif len(recent_same_type) == 1:
+                # Callback: "Wie am [Datum]"
+                last_date = recent_same_type[0].get("date", "Dienstag")
+                evolved = f"Wie am {last_date}. Wird umgesetzt, {title}."
+
+            # Aktuellen Gag loggen
+            new_entry = json.dumps({
+                "type": gag_type,
+                "date": datetime.now().strftime("%A"),  # Wochentag
+                "timestamp": time.time(),
+            })
+            await self._redis.lpush(redis_key, new_entry)
+            await self._redis.ltrim(redis_key, 0, 29)  # Max 30 Eintraege
+            await self._redis.expire(redis_key, 30 * 86400)  # 30 Tage TTL
+
+            return evolved
+        except Exception as e:
+            logger.debug("Gag-Evolution Fehler: %s", e)
+            return None
+
+    # ------------------------------------------------------------------
+    # Phase 18: MCU-Upgrade — Eskalierende echte Sorge
+    # ------------------------------------------------------------------
+
+    async def check_escalating_concern(
+        self, person: str, warning_type: str,
+    ) -> Optional[str]:
+        """Prueft ob Jarvis eine eskalierte Warnung geben soll.
+
+        Trackt wie oft der User gleiche Warnungen ignoriert hat.
+        Eskaliert den Ton von trocken zu ernsthaft besorgt.
+
+        Args:
+            person: Name der Person
+            warning_type: Art der Warnung (sleep_deprivation, window_rain, extreme_temp, security_gap)
+
+        Returns:
+            Eskalierte Warnung oder None (Standard-Warnung verwenden)
+        """
+        if not self._redis:
+            return None
+        concern_cfg = yaml_config.get("escalating_concern", {})
+        if not concern_cfg.get("enabled", True):
+            return None
+
+        person_key = (person or "default").lower().strip()
+        redis_key = f"mha:personality:ignored_warnings:{person_key}"
+        title = get_person_title()
+
+        thresholds = concern_cfg.get("escalation_thresholds", [1, 3, 5])
+
+        try:
+            count_raw = await self._redis.hget(redis_key, warning_type)
+            count = int(count_raw) if count_raw else 0
+            count += 1
+
+            # Counter erhoehen
+            await self._redis.hset(redis_key, warning_type, str(count))
+            await self._redis.expire(redis_key, 90 * 86400)  # 90 Tage TTL
+
+            # Eskalationsstufe bestimmen
+            if len(thresholds) >= 3 and count >= thresholds[2]:
+                # Stufe 3: Ernst, kein Humor
+                messages = {
+                    "sleep_deprivation": f"Ich muss darauf bestehen, {title}. Du hast wiederholt nicht geschlafen.",
+                    "window_rain": f"Das ist das {count}. Mal — die Fenster, {title}. Bitte.",
+                    "extreme_temp": f"Ich bestehe darauf — diese Temperatur ist nicht gesund, {title}.",
+                    "security_gap": f"Das Sicherheitssystem hat {count} Mal Luecken. Das beunruhigt mich, {title}.",
+                }
+                return messages.get(warning_type)
+            elif len(thresholds) >= 2 and count >= thresholds[1]:
+                # Stufe 2: Besorgt, direkt
+                messages = {
+                    "sleep_deprivation": f"Mir ist nicht wohl dabei, {title}. Das ist jetzt das {count}. Mal.",
+                    "window_rain": f"Erneut offene Fenster bei Regen, {title}. Soll ich das automatisieren?",
+                    "extreme_temp": f"Schon wieder diese Temperatur, {title}. Ist alles in Ordnung?",
+                    "security_gap": f"Zum {count}. Mal eine Sicherheitsluecke, {title}.",
+                }
+                return messages.get(warning_type)
+
+            # Stufe 1: Standard (kein Override — lasse normale Warnung durch)
+            return None
+        except Exception as e:
+            logger.debug("Escalating Concern Fehler: %s", e)
+            return None
+
+    async def reset_concern_counter(self, person: str, warning_type: str) -> None:
+        """Setzt den Warnungs-Counter zurueck wenn der User reagiert hat."""
+        if not self._redis:
+            return
+        person_key = (person or "default").lower().strip()
+        redis_key = f"mha:personality:ignored_warnings:{person_key}"
+        try:
+            await self._redis.hdel(redis_key, warning_type)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Phase 18: MCU-Upgrade — Think-Ahead (Proaktive Folgevorschlaege)
+    # ------------------------------------------------------------------
+
+    def build_next_step_hint(
+        self, last_action: str, last_args: dict, context: Optional[dict] = None,
+    ) -> str:
+        """Baut einen proaktiven Folgevorschlag basierend auf der letzten Aktion.
+
+        Statische Mapping-Tabelle — kein LLM-Overhead.
+
+        Returns:
+            Hint-Text fuer den Prompt oder leerer String
+        """
+        hint_cfg = yaml_config.get("next_step_hints", {})
+        if not hint_cfg.get("enabled", True):
+            return ""
+        if not context or not last_action:
+            return ""
+
+        house = context.get("house", {})
+        open_windows = house.get("open_windows", [])
+        hour = datetime.now().hour
+
+        hints = []
+
+        # Regel: Heizung hoch + Fenster offen
+        if last_action == "set_climate" and open_windows:
+            windows_str = ", ".join(open_windows[:3])
+            hints.append(f"Fenster {windows_str} sind noch offen.")
+
+        # Regel: Alarm scharf + Fenster offen
+        if last_action == "arm_security_system" and open_windows:
+            windows_str = ", ".join(open_windows[:3])
+            hints.append(f"Fenster {windows_str} sind noch offen.")
+
+        # Regel: Medien abspielen spaet nachts
+        if last_action == "play_media" and (hour >= 22 or hour < 6):
+            hints.append(f"Es ist {hour} Uhr — Lautstaerke anpassen?")
+
+        # Regel: Rollladen runter → Licht-Hinweis
+        if last_action == "set_cover":
+            position = last_args.get("position")
+            try:
+                if position is not None and int(position) <= 20:
+                    hints.append("Beleuchtung anpassen?")
+            except (ValueError, TypeError):
+                pass
+
+        if not hints:
+            return ""
+
+        return (
+            "NAECHSTER-SCHRITT-HINWEIS (beilaeufig am Ende anfuegen wenn passend):\n"
+            + " ".join(hints) + "\n"
+        )
 
     # ------------------------------------------------------------------
     # Antwort-Varianz (Phase 6.5)
@@ -1852,6 +2203,8 @@ class PersonalityEngine:
     def build_system_prompt(
         self, context: Optional[dict] = None, formality_score: Optional[int] = None,
         irony_count_today: Optional[int] = None, user_text: str = "",
+        last_action: str = "", last_args: Optional[dict] = None,
+        memory_callback_section: str = "",
     ) -> str:
         """
         Baut den vollstaendigen System Prompt.
@@ -1860,6 +2213,9 @@ class PersonalityEngine:
             context: Optionaler Kontext (Raum, Person, etc.)
             formality_score: Aktueller Formality-Score (Phase 6)
             user_text: Original User-Text (fuer Mood x Complexity Matrix)
+            last_action: Phase 18 — Letzte ausgefuehrte Aktion (fuer Think-Ahead)
+            last_args: Phase 18 — Argumente der letzten Aktion
+            memory_callback_section: Phase 18 — Vorgefertigter Memory-Abschnitt
 
         Returns:
             Fertiger System Prompt String
@@ -1994,6 +2350,17 @@ class PersonalityEngine:
                 "ERINNERUNGEN: Vergangene Gespraeche beilaeufig referenzieren. "
                 f"{_example} NICHT: 'Laut meinen Aufzeichnungen...'\n\n"
             )
+
+        # Phase 18: Memory-Callback-Section (echte Daten aus Redis)
+        if memory_callback_section:
+            conversation_callback_section += memory_callback_section
+
+        # Phase 18: Think-Ahead — Naechster-Schritt-Hinweis
+        next_step_section = self.build_next_step_hint(
+            last_action, last_args or {}, context,
+        )
+        if next_step_section:
+            conversation_callback_section += next_step_section
 
         # MCU-Persoenlichkeit: Wetter-Bewusstsein
         weather_awareness_section = ""

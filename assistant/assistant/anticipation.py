@@ -143,6 +143,10 @@ class AnticipationEngine:
             ctx_patterns = self._detect_context_patterns(entries)
             patterns.extend(ctx_patterns)
 
+            # 4. Phase 18: Kausale Ketten erkennen (3+ Aktionen als Zusammenhang)
+            causal_patterns = self._detect_causal_chains(entries)
+            patterns.extend(causal_patterns)
+
             return patterns
 
         except Exception as e:
@@ -375,6 +379,136 @@ class AnticipationEngine:
                     })
 
         return patterns
+
+    # ------------------------------------------------------------------
+    # Phase 18: Kausale Ketten-Erkennung
+    # ------------------------------------------------------------------
+
+    def _detect_causal_chains(self, entries: list[dict]) -> list[dict]:
+        """Erkennt kausale Ketten: Kontext-Trigger → Multi-Step-Folge.
+
+        Erweitert die Sequenz-Erkennung: Statt nur A→B werden Ketten aus
+        3+ Aktionen erkannt die immer im gleichen Kontext auftreten.
+
+        Zeitfenster: 10 Min (statt 5 bei Sequenzen) fuer laengere Ketten.
+        Min. 3 Wiederholungen der gleichen Kette.
+        """
+        causal_cfg = yaml_config.get("anticipation", {})
+        window_min = causal_cfg.get("causal_chain_window_min", 10)
+        min_occurrences = causal_cfg.get("causal_chain_min_occurrences", 3)
+        window_sec = window_min * 60
+
+        patterns = []
+        sorted_entries = sorted(entries, key=lambda e: e.get("timestamp", ""))
+
+        # Finde Cluster von 3+ Aktionen innerhalb des Zeitfensters
+        chain_counter: Counter = Counter()
+        chain_contexts: dict[str, list[str]] = defaultdict(list)
+
+        i = 0
+        while i < len(sorted_entries):
+            cluster = [sorted_entries[i]]
+            try:
+                t_start = datetime.fromisoformat(sorted_entries[i].get("timestamp", ""))
+            except (ValueError, TypeError):
+                i += 1
+                continue
+
+            # Sammle alle Aktionen innerhalb des Zeitfensters
+            j = i + 1
+            while j < len(sorted_entries):
+                try:
+                    t_j = datetime.fromisoformat(sorted_entries[j].get("timestamp", ""))
+                    if (t_j - t_start).total_seconds() <= window_sec:
+                        cluster.append(sorted_entries[j])
+                        j += 1
+                    else:
+                        break
+                except (ValueError, TypeError):
+                    j += 1
+                    continue
+
+            # Nur Cluster mit 3+ verschiedenen Aktionen
+            if len(cluster) >= 3:
+                actions = tuple(e.get("action", "") for e in cluster if e.get("action"))
+                unique_actions = tuple(dict.fromkeys(actions))  # Reihenfolge erhalten, Duplikate weg
+                if len(unique_actions) >= 3:
+                    chain_key = "|".join(unique_actions)
+                    chain_counter[chain_key] += 1
+                    # Kontext der ersten Aktion als Trigger
+                    ctx = cluster[0].get("weather", "") or f"hour:{cluster[0].get('hour', 0)}"
+                    chain_contexts[chain_key].append(ctx)
+
+            i = j if j > i + 1 else i + 1
+
+        # Patterns mit min_occurrences erzeugen
+        for chain_key, count in chain_counter.items():
+            if count < min_occurrences:
+                continue
+
+            actions = chain_key.split("|")
+            # Dominanter Kontext bestimmen
+            ctx_counter = Counter(chain_contexts.get(chain_key, []))
+            dominant_ctx = ctx_counter.most_common(1)[0][0] if ctx_counter else "unbekannt"
+
+            confidence = min(1.0, count / max(1, len(sorted_entries) / 20))
+            if confidence < self.min_confidence:
+                continue
+
+            desc_actions = " → ".join(actions)
+            patterns.append({
+                "type": "causal_chain",
+                "trigger": dominant_ctx,
+                "actions": actions,
+                "confidence": round(confidence, 2),
+                "occurrences": count,
+                "description": f"Kette ({dominant_ctx}): {desc_actions}",
+            })
+
+        return patterns
+
+    # ------------------------------------------------------------------
+    # Phase 18: Implizite Voraussetzungen
+    # ------------------------------------------------------------------
+
+    def detect_implicit_prerequisites(self, intent: str) -> list[str]:
+        """Erkennt implizite Aktions-Folgen fuer abstrakte Intents.
+
+        Wenn der User "entspannen" sagt, liefert dies die typischen
+        Vorbereitungs-Aktionen aus der Konfiguration.
+
+        Args:
+            intent: Abstraktes Intent (z.B. "entspannen", "schlafen", "gaeste")
+
+        Returns:
+            Liste von Aktions-Beschreibungen oder leer
+        """
+        intent_cfg = yaml_config.get("anticipation", {}).get("intent_sequences", {})
+        if not intent_cfg:
+            # Fallback: Hardcoded Defaults
+            intent_cfg = {
+                "entspannen": ["Rollladen runter", "Licht dimmen", "Temperatur senken", "Ambient-Musik"],
+                "arbeiten": ["Rollladen hoch", "Licht hell", "Temperatur normal"],
+                "schlafen": ["Tueren verriegeln", "Alle Lichter aus", "Heizung Eco", "Alarm scharf"],
+                "gaeste": ["Angenehme Beleuchtung", "Angenehme Temperatur", "Hintergrundmusik"],
+            }
+
+        # Fuzzy-Match mit Wort-Grenzen und Negations-Check
+        import re
+        intent_lower = intent.lower().strip()
+        # Negation erkennen
+        negation_patterns = ("nicht ", "kein ", "ohne ", "nie ")
+        for key, actions in intent_cfg.items():
+            match = re.search(rf'\b{re.escape(key)}\b', intent_lower)
+            if not match:
+                continue
+            # Pruefen ob Negation vor dem Keyword steht
+            before = intent_lower[:match.start()]
+            if any(before.rstrip().endswith(neg.strip()) for neg in negation_patterns):
+                continue
+            return actions
+
+        return []
 
     # ------------------------------------------------------------------
     # Proaktive Vorschlaege

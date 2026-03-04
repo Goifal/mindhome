@@ -223,6 +223,12 @@ class ProactiveManager:
         if seasonal_cfg.get("enabled", True):
             self._seasonal_task = asyncio.create_task(self._run_seasonal_loop())
 
+        # Phase 18: Unaufgeforderte Beobachtungen
+        obs_cfg = yaml_config.get("observation_loop", {})
+        self._observation_task: Optional[asyncio.Task] = None
+        if obs_cfg.get("enabled", True):
+            self._observation_task = asyncio.create_task(self._run_observation_loop())
+
         # Phase 11: Saugroboter-Automatik
         vacuum_cfg = yaml_config.get("vacuum", {})
         self._vacuum_task: Optional[asyncio.Task] = None
@@ -293,6 +299,13 @@ class ProactiveManager:
             self._ambient_task.cancel()
             try:
                 await self._ambient_task
+            except asyncio.CancelledError:
+                pass
+        # Phase 18: Observation-Task sauber beenden
+        if hasattr(self, "_observation_task") and self._observation_task:
+            self._observation_task.cancel()
+            try:
+                await self._observation_task
             except asyncio.CancelledError:
                 pass
         logger.info("Proactive Manager gestoppt")
@@ -2194,6 +2207,118 @@ class ProactiveManager:
     #   11 (Lux-based), 12 (CO2), 13 (Bed sensor), 14 (Seat sensor),
     #   15 (Presence), 16 (Privacy), 17 (Action log/Dashboard)
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Phase 18: Unaufgeforderte Beobachtungen
+    # ------------------------------------------------------------------
+
+    async def _run_observation_loop(self):
+        """Jarvis bemerkt Muster und teilt Beobachtungen mit.
+
+        Prueft alle 4 Stunden:
+        - Wiederholte Widersprueche (Heizung hoch → Fenster auf)
+        - Vergessene Routinen (Alarm nicht aktiviert seit 3 Tagen)
+        - Effizienz-Tipps (Heizung nachts auf 22 wenn erst um 23 Uhr schlafen)
+
+        Max 1 Beobachtung pro Tag. Delivery via _notify_callback mit LOW Priority.
+        """
+        obs_cfg = yaml_config.get("observation_loop", {})
+        interval_h = obs_cfg.get("interval_hours", 4)
+        max_daily = obs_cfg.get("max_daily", 1)
+
+        # Startup-Delay: 10 Minuten warten
+        await asyncio.sleep(600)
+
+        while self._running:
+            try:
+                # FIX-C1: Redis via brain.memory.redis (nicht self._redis)
+                _redis = getattr(getattr(self.brain, "memory", None), "redis", None)
+
+                # Cooldown pruefen: max 1 pro Tag
+                if _redis:
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    cooldown_key = f"mha:proactive:observation:{today}"
+                    count = await _redis.get(cooldown_key)
+                    if count and int(count) >= max_daily:
+                        await asyncio.sleep(interval_h * 3600)
+                        continue
+
+                observation = await self._generate_observation()
+
+                # FIX-C2: Nutze self._notify() statt self._notify_callback
+                if observation:
+                    await self._notify(
+                        "observation", "low",
+                        {"message": observation},
+                    )
+                    # Cooldown setzen
+                    if _redis:
+                        today = datetime.now().strftime("%Y-%m-%d")
+                        cooldown_key = f"mha:proactive:observation:{today}"
+                        await _redis.incr(cooldown_key)
+                        await _redis.expire(cooldown_key, 86400)
+
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.debug("Observation-Loop Fehler: %s", e)
+
+            await asyncio.sleep(interval_h * 3600)
+
+    async def _generate_observation(self) -> Optional[str]:
+        """Generiert eine Beobachtung basierend auf Haus-Zustand.
+
+        Returns:
+            Beobachtungs-Text oder None
+        """
+        try:
+            states = await self.brain.ha.get_states()
+            if not states:
+                return None
+
+            title = get_person_title()
+
+            # FIX-C1: Redis via brain.memory.redis
+            _redis = getattr(getattr(self.brain, "memory", None), "redis", None)
+
+            # Check 1: Alarm seit 3+ Tagen nicht aktiviert
+            if _redis:
+                last_alarm = await _redis.get("mha:proactive:last_alarm_armed")
+                if last_alarm:
+                    try:
+                        last_ts = float(last_alarm)
+                        days_since = (time.time() - last_ts) / 86400
+                        if days_since >= 3:
+                            return (
+                                f"Mir ist aufgefallen, {title} — der Alarm wurde seit "
+                                f"{int(days_since)} Tagen nicht aktiviert. Alles in Ordnung?"
+                            )
+                    except (ValueError, TypeError):
+                        pass
+
+            # Check 2: Heizung laeuft nachts auf hoher Temperatur
+            hour = datetime.now().hour
+            if 23 <= hour or hour < 5:
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if "climate" in eid:
+                        temp = s.get("attributes", {}).get("temperature")
+                        hvac = s.get("attributes", {}).get("hvac_action", "")
+                        if temp and hvac == "heating":
+                            try:
+                                if float(temp) >= 22:
+                                    name = s.get("attributes", {}).get("friendly_name", eid)
+                                    return (
+                                        f"Nebenbei bemerkt, {title} — die Heizung in {name} "
+                                        f"laeuft auf {temp}°C. Um diese Uhrzeit vielleicht etwas hoch?"
+                                    )
+                            except (ValueError, TypeError):
+                                pass
+
+            return None
+        except Exception as e:
+            logger.debug("Observation-Generierung fehlgeschlagen: %s", e)
+            return None
 
     async def _run_seasonal_loop(self):
         """Zentrale Cover-Automatik.

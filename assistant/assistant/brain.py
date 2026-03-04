@@ -94,6 +94,8 @@ from .spontaneous_observer import SpontaneousObserver
 from .repair_planner import RepairPlanner
 from .workshop_generator import WorkshopGenerator
 from .workshop_library import WorkshopLibrary
+from .proactive_planner import ProactiveSequencePlanner
+from .seasonal_insight import SeasonalInsightEngine
 from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive, emit_progress, emit_workshop
 
 logger = logging.getLogger(__name__)
@@ -275,6 +277,10 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Wellness Advisor (Caring Loops)
         self.wellness_advisor = WellnessAdvisor(self.ha, self.activity, self.mood)
+
+        # Phase 18: MCU-Upgrade — Proactive Planner + Seasonal Insight
+        self.proactive_planner = ProactiveSequencePlanner(self.ha, self.anticipation)
+        self.seasonal_insight = SeasonalInsightEngine()
 
         # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
         self.situation_model = SituationModel()
@@ -634,6 +640,17 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
         await _safe_init("SituationModel", self.situation_model.initialize(redis_client=self.memory.redis))
+
+        # Phase 18: ProactiveSequencePlanner
+        await _safe_init("ProactivePlanner", self.proactive_planner.initialize(
+            redis_client=self.memory.redis,
+        ))
+
+        # Phase 18: SeasonalInsightEngine
+        await _safe_init("SeasonalInsight", self.seasonal_insight.initialize(
+            redis_client=self.memory.redis,
+            notify_callback=self._handle_insight,
+        ))
 
         # Self-Improvement: Geschlossene Feedback-Loops
         await _safe_init("OutcomeTracker", self.outcome_tracker.initialize(

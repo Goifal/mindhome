@@ -3148,11 +3148,87 @@ class FunctionExecutor:
             return {"success": False, "message": f"Unbekannte Funktion: {function_name}"}
 
         try:
-            return await handler(arguments)
+            # Phase 18: Pre-Execution Consequence Check
+            consequence_hint = await self._check_consequences(function_name, arguments)
+
+            result = await handler(arguments)
+
+            # Phase 18: Consequence-Hint an Ergebnis anfuegen
+            if consequence_hint and isinstance(result, dict) and result.get("success"):
+                existing_msg = result.get("message", "")
+                result["message"] = f"{existing_msg} (Hinweis: {consequence_hint})"
+                result["consequence_hint"] = consequence_hint
+
+            return result
         except Exception as e:
             # F-088: Exception-Details NICHT an LLM/User leaken
             logger.error("Fehler bei %s: %s", function_name, e, exc_info=True)
             return {"success": False, "message": "Da lief etwas schief. Bitte versuche es erneut."}
+
+    # ── Phase 18: Pre-Execution Consequence Check ──────────────
+
+    async def _check_consequences(self, func_name: str, args: dict) -> Optional[str]:
+        """Prueft vor Ausfuehrung ob die Aktion im Kontext sinnvoll ist.
+
+        Statische Regeln — kein LLM-Overhead. Blockiert NICHT,
+        gibt nur einen Hinweis-String zurueck.
+
+        Returns:
+            Hinweis-String oder None
+        """
+        from .config import yaml_config
+        if not yaml_config.get("consequence_checks", {}).get("enabled", True):
+            return None
+
+        try:
+            hour = datetime.now().hour
+
+            # Regel: Heizung hoch + Fenster offen
+            if func_name == "set_climate":
+                states = await self.ha.get_states()
+                open_windows = [
+                    s.get("attributes", {}).get("friendly_name", s["entity_id"])
+                    for s in (states or [])
+                    if s.get("entity_id", "").startswith(("binary_sensor.fenster", "binary_sensor.window"))
+                    and s.get("state") == "on"
+                ]
+                if open_windows:
+                    room = args.get("room", "")
+                    windows_str = ", ".join(open_windows[:2])
+                    return f"Fenster {windows_str} offen — Heizung wird ineffizient."
+
+            # Regel: Medien laut + spaet nachts
+            if func_name == "play_media" and (hour >= 22 or hour < 6):
+                return f"Es ist {hour} Uhr — Lautstaerke beachten."
+
+            # Regel: Alarm scharf + Fenster offen
+            if func_name == "arm_security_system":
+                states = await self.ha.get_states()
+                open_windows = [
+                    s.get("attributes", {}).get("friendly_name", s["entity_id"])
+                    for s in (states or [])
+                    if s.get("entity_id", "").startswith(("binary_sensor.fenster", "binary_sensor.window"))
+                    and s.get("state") == "on"
+                ]
+                if open_windows:
+                    windows_str = ", ".join(open_windows[:3])
+                    return f"Fenster {windows_str} noch offen."
+
+            # Regel: Alle Lichter aus + jemand noch aktiv
+            if func_name == "set_light_all":
+                state = str(args.get("state", "")).lower()
+                if state == "off" and 8 <= hour <= 23:
+                    # Pruefen ob Aktivitaet erkannt
+                    import assistant.main as main_module
+                    if hasattr(main_module, "brain") and hasattr(main_module.brain, "activity"):
+                        activity = main_module.brain.activity.current_activity
+                        if activity in ("focused", "working", "watching"):
+                            return "Jemand scheint noch aktiv zu sein."
+
+            return None
+        except Exception as e:
+            logger.debug("Consequence-Check Fehler: %s", e)
+            return None
 
     # ── Phase 11: Adaptive Helligkeit (dim2warm) ──────────────
     # Default-Kurve als Fallback (wird von settings.yaml ueberschrieben)
