@@ -3015,6 +3015,33 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             logger.info("Autonomy Domain-Levels aktualisiert")
         _try_reload("autonomy_domains", _reload_autonomy_domains)
 
+    # ProactiveSequencePlanner: enabled + min_autonomy (cached in __init__)
+    if "proactive_planner" in changed_settings and hasattr(brain, "proactive_planner"):
+        def _reload_proactive_planner():
+            pp_cfg = yaml_cfg.get("proactive_planner", {})
+            brain.proactive_planner.enabled = bool(pp_cfg.get("enabled", True))
+            brain.proactive_planner.min_autonomy_for_auto = int(pp_cfg.get("min_autonomy_for_auto", 4))
+            logger.info("ProactivePlanner Settings aktualisiert")
+        _try_reload("proactive_planner", _reload_proactive_planner)
+
+    # SeasonalInsightEngine: enabled + check_interval + min_history (cached in __init__)
+    if "seasonal_insights" in changed_settings and hasattr(brain, "seasonal_insight"):
+        def _reload_seasonal():
+            si_cfg = yaml_cfg.get("seasonal_insights", {})
+            si = brain.seasonal_insight
+            si.enabled = bool(si_cfg.get("enabled", True))
+            si.check_interval = si_cfg.get("check_interval_hours", 24) * 3600
+            si.min_history_months = int(si_cfg.get("min_history_months", 2))
+            logger.info("SeasonalInsight Settings aktualisiert")
+        _try_reload("seasonal_insights", _reload_seasonal)
+
+    # Phase 18 Personality/Intelligence: lesen yaml_config live — nur Logging
+    for key in ("memorable_interactions", "running_gag_evolution", "escalating_concern",
+                "curiosity", "next_step_hints", "consequence_checks", "observation_loop",
+                "insight_checks", "anticipation"):
+        if key in changed_settings:
+            logger.info("%s Settings aktualisiert (live aus yaml_config)", key)
+
     if failed_modules:
         logger.warning("Settings-Reload: %d Module fehlgeschlagen: %s",
                         len(failed_modules), ", ".join(failed_modules))

@@ -9260,6 +9260,56 @@ function renderIntelligence() {
     fInfo('Raeume in der gleichen Gruppe werden als aehnlich betrachtet. Aenderungen hier ueberschreiben die Standard-Gruppen.') +
     fTextarea('learning_transfer.room_groups', 'Raum-Gruppen (JSON)', 'Format: {"wohnbereich": ["wohnzimmer", "esszimmer"], "schlafbereich": ["schlafzimmer", "gaestezimmer"]}')
   ) +
+  // --- Persoenlichkeit & Gedaechtnis ---
+  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#127917; Persoenlichkeit &amp; Gedaechtnis</div>' +
+  sectionWrap('&#128218;', 'Remember When — Erinnerungen',
+    fInfo('Jarvis merkt sich besondere Momente und Korrekturen. Bei passenden Gelegenheiten referenziert er fruehere Interaktionen ("Letzte Woche mochten Sie es waermer, Sir"). Gibt ihm ein echtes Langzeitgedaechtnis.') +
+    fToggle('memorable_interactions.enabled', 'Erinnerungen aktiv') +
+    fNum('memorable_interactions.max_entries', 'Max. gespeicherte Erinnerungen', 5, 100, 5) +
+    fNum('memorable_interactions.ttl_days', 'Speicherdauer (Tage)', 7, 365, 7)
+  ) +
+  sectionWrap('&#128514;', 'Running Gag Evolution',
+    fInfo('Statt Witze zu wiederholen, entwickelt Jarvis sie weiter. Referenziert fruehere Scherze und baut darauf auf — wie ein echter Humor zwischen Vertrauten.') +
+    fToggle('running_gag_evolution.enabled', 'Gag-Evolution aktiv')
+  ) +
+  sectionWrap('&#128680;', 'Eskalierende Besorgnis',
+    fInfo('Wenn Warnungen ignoriert werden, wird Jarvis ernster. Level 1: Beilaeufer Hinweis. Level 2: Direkter Hinweis. Level 3: Ausdruckstarke Sorge. Wie ein Butler der wirklich aufpasst.') +
+    fToggle('escalating_concern.enabled', 'Eskalierende Besorgnis aktiv')
+  ) +
+  sectionWrap('&#128270;', 'Neugier-Fragen',
+    fInfo('Jarvis fragt bei ungewoehnlichem Verhalten vorsichtig nach ("Frueh unterwegs heute, Sir — alles in Ordnung?"). Maximal 2x pro Tag, nie aufdringlich.') +
+    fToggle('curiosity.enabled', 'Neugier-Fragen aktiv') +
+    fNum('curiosity.max_daily', 'Max. Fragen pro Tag', 1, 5)
+  ) +
+  sectionWrap('&#128161;', 'Think-Ahead Hinweise',
+    fInfo('Nach einer Aktion schlaegt Jarvis einen logischen naechsten Schritt vor. Z.B. nach "Licht im Flur an" → "Soll ich auch die Heizung im Flur hochdrehen?" Statisch, kein LLM-Overhead.') +
+    fToggle('next_step_hints.enabled', 'Think-Ahead aktiv')
+  ) +
+  // --- Antizipation & Erkennung ---
+  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#128268; Antizipation &amp; Erkennung</div>' +
+  sectionWrap('&#128279;', 'Kausalketten-Erkennung',
+    fInfo('Jarvis erkennt wiederkehrende Handlungsketten: Wenn du 3x hintereinander "Licht an, Heizung hoch, Musik an" machst, schlaegt er beim naechsten Mal die gesamte Kette vor.') +
+    fNum('anticipation.causal_chain_window_min', 'Erkennungsfenster (Minuten)', 5, 30) +
+    fNum('anticipation.causal_chain_min_occurrences', 'Min. Wiederholungen', 2, 10)
+  ) +
+  sectionWrap('&#128200;', '3D+ Insight Checks',
+    fInfo('Mehrdimensionale Kreuzreferenz-Pruefungen: Kalender x Sicherheit x Hausstatus. Erkennt z.B. "Gaeste kommen in 2h aber Haus nicht vorbereitet" oder "Alle weg aber Alarm nicht scharf".') +
+    fToggle('insight_checks.guest_preparation', 'Gaeste-Vorbereitung (Kalender x Haus)') +
+    fToggle('insight_checks.away_security_full', 'Abwesenheits-Sicherheit (Praesenz x Alarm)') +
+    fToggle('insight_checks.health_work_pattern', 'Arbeits-Muster (Aktivitaet x Dauer)') +
+    fToggle('insight_checks.humidity_contradiction', 'Feuchtigkeits-Widerspruch (Geraete x Wetter)')
+  ) +
+  sectionWrap('&#128736;', 'Proaktiver Sequenz-Planner',
+    fInfo('Bei Kontext-Aenderungen (Ankunft, Wetterwechsel, Kalender-Event) plant Jarvis automatisch mehrstufige Aktionsketten. Z.B. Ankunft → Licht + Heizung + Musik. Sicherheitsaktionen NIE automatisch.') +
+    fToggle('proactive_planner.enabled', 'Sequenz-Planner aktiv') +
+    fRange('proactive_planner.min_autonomy_for_auto', 'Min. Autonomie fuer Auto-Ausfuehrung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+  ) +
+  sectionWrap('&#127808;', 'Saisonale Intelligenz',
+    fInfo('Jarvis lernt jahreszeitlich wiederkehrende Muster: "Letztes Jahr um diese Zeit hast du die Heizung frueher eingeschaltet." Vergleicht Verhalten ueber Jahre und gibt saisonale Tipps.') +
+    fToggle('seasonal_insights.enabled', 'Saisonale Intelligenz aktiv') +
+    fNum('seasonal_insights.check_interval_hours', 'Pruef-Intervall (Stunden)', 6, 48, 6) +
+    fNum('seasonal_insights.min_history_months', 'Min. Historie (Monate)', 1, 12)
+  ) +
   // --- Medium Effort Features ---
   '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#9889; Medium Effort Features</div>' +
   sectionWrap('&#128172;', 'Dialogfuehrung',

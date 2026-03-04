@@ -251,6 +251,45 @@ predictive_maintenance:
   failure_probability_threshold: 0.7
   battery_drain_alert_pct_per_week: 5
 
+# AP 1: Persoenlichkeit & Gedaechtnis
+memorable_interactions:
+  enabled: true
+  max_entries: 20                            # Max gespeicherte Erinnerungen
+  ttl_days: 30                               # Speicherdauer in Tagen
+
+running_gag_evolution:
+  enabled: true                              # Witze entwickeln sich weiter statt wiederholt
+
+escalating_concern:
+  enabled: true                              # Warnungen eskalieren wenn ignoriert
+
+curiosity:
+  enabled: true
+  max_daily: 2                               # Max Neugier-Fragen pro Tag
+
+next_step_hints:
+  enabled: true                              # Think-Ahead nach Aktionen
+
+# AP 2: Antizipation & Erkennung
+anticipation:
+  causal_chain_window_min: 10                # Zeitfenster fuer Ketten-Erkennung
+  causal_chain_min_occurrences: 3            # Min Wiederholungen
+
+insight_checks:
+  guest_preparation: true                    # Kalender x Sicherheit x Hausstatus
+  away_security_full: true                   # Praesenz x Fenster x Alarm x Licht
+  health_work_pattern: true                  # Aktivitaet x Zeit x Dauer
+  humidity_contradiction: true               # Geraete x Fenster x Wetter
+
+proactive_planner:
+  enabled: true
+  min_autonomy_for_auto: 4                   # Min Level fuer Auto-Ausfuehrung
+
+seasonal_insights:
+  enabled: true
+  check_interval_hours: 24                   # Pruef-Intervall
+  min_history_months: 2                      # Min Historie fuer Vergleiche
+
 # AP 4: Konsequenz-Bewusstsein — Vor Ausfuehrung pruefen ob Aktion sinnvoll
 consequence_checks:
   enabled: true                              # Statische Regeln, kein LLM-Overhead
