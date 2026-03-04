@@ -7117,7 +7117,8 @@ class AssistantBrain(BrainCallbacksMixin):
         # --- Ausschluss: Fragen, Multi-Target, Szenen ---
         if t.endswith("?") or any(t.startswith(q) for q in [
             "was ", "wie ", "warum ", "wer ", "welch", "kannst ",
-            "ist ", "hast ", "gibt ", "soll ", "koennt", "könnt",
+            "ist ", "sind ", "hast ", "gibt ", "soll ", "koennt", "könnt",
+            "wo ", "wieviel", "wie viel",
         ]):
             return None
         if " alle " in f" {t} " or " und " in t:
