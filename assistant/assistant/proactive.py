@@ -308,6 +308,15 @@ class ProactiveManager:
                 await self._observation_task
             except asyncio.CancelledError:
                 pass
+        # Phase 11: Vacuum-Tasks sauber beenden
+        for _vt_attr in ("_vacuum_task", "_vacuum_power_task", "_vacuum_scene_task", "_vacuum_presence_task"):
+            _vt = getattr(self, _vt_attr, None)
+            if _vt:
+                _vt.cancel()
+                try:
+                    await _vt
+                except asyncio.CancelledError:
+                    pass
         logger.info("Proactive Manager gestoppt")
 
     async def _listen_ha_events(self):
@@ -328,13 +337,13 @@ class ProactiveManager:
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(ws_url) as ws:
                 # Auth
-                auth_msg = await ws.receive_json()
+                auth_msg = await asyncio.wait_for(ws.receive_json(), timeout=30)
                 if auth_msg.get("type") == "auth_required":
                     await ws.send_json({
                         "type": "auth",
                         "access_token": settings.ha_token,
                     })
-                auth_result = await ws.receive_json()
+                auth_result = await asyncio.wait_for(ws.receive_json(), timeout=30)
                 if auth_result.get("type") != "auth_ok":
                     logger.error("HA WebSocket Auth fehlgeschlagen")
                     return
@@ -551,7 +560,7 @@ class ProactiveManager:
             await self._check_lux_sensor_event(entity_id, new_val)
 
         # Waschmaschine/Trockner (Power-Sensor faellt unter Schwellwert)
-        elif "washer" in entity_id or "waschmaschine" in entity_id:
+        if "washer" in entity_id or "waschmaschine" in entity_id:
             if entity_id.startswith("sensor.") and new_val.replace(".", "").isdigit():
                 try:
                     old_num = float(old_val) if old_val and old_val.replace(".", "").isdigit() else 0.0

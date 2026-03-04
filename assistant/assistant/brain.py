@@ -1701,9 +1701,15 @@ class AssistantBrain(BrainCallbacksMixin):
             # Nur fuer Geraete-Aktionen (set_light, set_cover, set_climate)
             if _la.startswith("set_"):
                 if _target_state in ("aus", "zu", "runter"):
-                    _la_args["state"] = "off" if _la != "set_cover" else "closed"
+                    if _la == "set_cover":
+                        _la_args["action"] = "close"
+                    else:
+                        _la_args["state"] = "off"
                 elif _target_state in ("an", "ein", "auf", "hoch"):
-                    _la_args["state"] = "on" if _la != "set_cover" else "open"
+                    if _la == "set_cover":
+                        _la_args["action"] = "open"
+                    else:
+                        _la_args["state"] = "on"
                 logger.info(
                     "Pronomen-Shortcut: '%s' -> %s(%s) (basierend auf letzter Aktion)",
                     text, _la, _la_args,
@@ -5552,7 +5558,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if text != original:
             logger.debug("Response-Filter: '%s' -> '%s'", original[:80], text[:80])
 
-        return text if text else original
+        return text if text else ""
 
     @staticmethod
     def _calculate_llm_voice_score(text: str) -> int:
@@ -7191,7 +7197,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "wo ", "wieviel", "wie viel",
         ]):
             return None
-        if " alle " in f" {t} " or " und " in t:
+        if " alle " in f" {t} " or " und " in f" {t} ":
             return None
         if "szene" in t:
             return None
@@ -7860,7 +7866,7 @@ class AssistantBrain(BrainCallbacksMixin):
             else:
                 _responses = [
                     f"Bestens, {title}. Alles operativ.",
-                    f"Systeme laufen einwandfrei, {title}. Danke der Nachfrage.",
+                    f"Systeme laufen einwandfrei, {title}.",
                     f"Voll funktionsfaehig, {title}.",
                     f"Mir geht es ausgezeichnet, {title}. Und dir?",
                     f"Alles im gruenen Bereich, {title}. Ungewoehnlich ruhig heute.",
@@ -7878,7 +7884,7 @@ class AssistantBrain(BrainCallbacksMixin):
             _responses = [
                 f"Wie geht es dir, {title}?",
                 f"Verzeihung — wie geht es dir, {title}?",
-                f"Selbstverstaendlich. Wie geht es dir, {title}?",
+                f"Wie geht es dir, {title}?",
             ]
             return random.choice(_responses)
 
@@ -7889,9 +7895,8 @@ class AssistantBrain(BrainCallbacksMixin):
         ]
         if any(kw in t for kw in _thanks):
             _responses = [
-                f"Gern geschehen, {title}.",
                 f"Stets zu Diensten, {title}.",
-                f"Selbstverstaendlich, {title}.",
+                f"Wie gewohnt, {title}.",
                 "Jederzeit.",
                 "Dafuer bin ich da.",
             ]
