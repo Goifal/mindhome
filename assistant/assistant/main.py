@@ -2015,7 +2015,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     try:
                                         result = _brain_task.result()
                                     except (asyncio.CancelledError, Exception) as e:
-                                        logger.info("Brain-Task abgebrochen: %s", type(e).__name__)
+                                        logger.info("Brain-Task abgebrochen: %s: %s", type(e).__name__, e)
 
                             # Ergebnis verarbeiten (nur wenn nicht unterbrochen)
                             if result and not _ws_interrupt_flag:
