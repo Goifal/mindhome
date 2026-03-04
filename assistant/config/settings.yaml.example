@@ -181,6 +181,128 @@ autonomy:
     2: { min_days: 30, min_interactions: 200, min_acceptance: 0.7 }
     3: { min_days: 90, min_interactions: 500, min_acceptance: 0.8 }
     4: { min_days: 180, min_interactions: 1000, min_acceptance: 0.85 }
+  # Domain-spezifische Autonomie: Unterschiedliche Level pro Bereich
+  domain_levels_enabled: false
+  domain_levels:
+    climate: 3       # Klima & Heizung
+    light: 3         # Licht & Beleuchtung
+    media: 2         # Medien & Musik
+    cover: 2         # Rolllaeden
+    security: 1      # Sicherheit (niedrig empfohlen)
+    automation: 2    # Automationen & Routinen
+    notification: 2  # Benachrichtigungen
+
+# Kalender-Intelligenz: Gewohnheiten, Konflikte, Pausen
+calendar_intelligence:
+  enabled: true
+  commute_minutes: 30
+  habit_min_occurrences: 3
+  conflict_lookahead_hours: 24
+  habit_detection: true
+  conflict_detection: true
+  break_detection: true
+
+# Erklaerbarkeit: "Warum hast du das gemacht?"
+explainability:
+  enabled: true
+  detail_level: normal     # minimal, normal, verbose
+  auto_explain: false
+  max_history: 50
+
+# Lern-Transfer: Praeferenzen zwischen Raeumen uebertragen
+learning_transfer:
+  enabled: true
+  auto_suggest: true
+  min_observations: 3
+  transfer_confidence: 0.7
+  domains:
+    - light
+    - climate
+    - media
+  room_groups:
+    wohnbereich: [wohnzimmer, esszimmer, kueche]
+    schlafbereich: [schlafzimmer, gaestezimmer, kinderzimmer]
+    nassbereich: [bad, badezimmer, gaeste_wc]
+    arbeitsbereich: [buero, arbeitszimmer]
+
+# Dialogfuehrung: Referenz-Aufloesung und Klaerungsfragen
+dialogue:
+  enabled: true
+  auto_resolve_references: true
+  clarification_enabled: true
+  timeout_seconds: 300
+  max_clarification_options: 5
+
+# Klima-Modell (Digitaler Zwilling): Was-waere-wenn-Simulation
+climate_model:
+  enabled: true
+  simulation_step_minutes: 1
+  max_simulation_minutes: 240
+  default_params:
+    heat_loss_coefficient: 0.015
+    heating_power_per_min: 0.08
+    window_open_factor: 5.0
+    thermal_mass_factor: 1.0
+
+# Praediktive Wartung: Geraeteausfall-Vorhersage
+predictive_maintenance:
+  enabled: true
+  lookback_days: 90
+  failure_probability_threshold: 0.7
+  battery_drain_alert_pct_per_week: 5
+
+# AP 1: Persoenlichkeit & Gedaechtnis
+memorable_interactions:
+  enabled: true
+  max_entries: 20                            # Max gespeicherte Erinnerungen
+  ttl_days: 30                               # Speicherdauer in Tagen
+
+running_gag_evolution:
+  enabled: true                              # Witze entwickeln sich weiter statt wiederholt
+
+escalating_concern:
+  enabled: true                              # Warnungen eskalieren wenn ignoriert
+
+curiosity:
+  enabled: true
+  max_daily: 2                               # Max Neugier-Fragen pro Tag
+
+next_step_hints:
+  enabled: true                              # Think-Ahead nach Aktionen
+
+# AP 2: Antizipation & Erkennung
+anticipation:
+  causal_chain_window_min: 10                # Zeitfenster fuer Ketten-Erkennung
+  causal_chain_min_occurrences: 3            # Min Wiederholungen
+
+insight_checks:
+  guest_preparation: true                    # Kalender x Sicherheit x Hausstatus
+  away_security_full: true                   # Praesenz x Fenster x Alarm x Licht
+  health_work_pattern: true                  # Aktivitaet x Zeit x Dauer
+  humidity_contradiction: true               # Geraete x Fenster x Wetter
+  night_security: true                       # Uhrzeit x Fenster x Tueren x Anwesenheit
+  heating_vs_sun: true                       # Klima x Wetter x Aussentemperatur x Rollladen
+  forgotten_devices: true                    # Media Player x Abwesenheit x Uhrzeit
+
+proactive_planner:
+  enabled: true
+  min_autonomy_for_auto: 4                   # Min Level fuer Auto-Ausfuehrung
+
+seasonal_insights:
+  enabled: true
+  check_interval_hours: 24                   # Pruef-Intervall
+  min_history_months: 2                      # Min Historie fuer Vergleiche
+
+# AP 4: Konsequenz-Bewusstsein — Vor Ausfuehrung pruefen ob Aktion sinnvoll
+consequence_checks:
+  enabled: true                              # Statische Regeln, kein LLM-Overhead
+
+# AP 3.2: Unaufgeforderte Beobachtungen — Jarvis bemerkt Muster
+observation_loop:
+  enabled: true
+  interval_hours: 4                          # Pruef-Intervall
+  max_daily: 1                               # Max Beobachtungen pro Tag
+
 ollama:
   num_ctx_fast: 2048                       # Kontextfenster Fast-Modell (spart VRAM)
   num_ctx_smart: 4096                      # Kontextfenster Smart-Modell
@@ -513,6 +635,7 @@ mood:
   frustration_threshold: 3
   tired_hour_start: 23
   tired_hour_end: 5
+  voice_mood_integration: true   # Voice-Emotion direkt in Stimmungserkennung einbeziehen
   rapid_command_stress_boost: 0.15
   positive_stress_reduction: 0.1
   negative_stress_boost: 0.1

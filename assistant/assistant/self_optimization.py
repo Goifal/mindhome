@@ -390,7 +390,7 @@ Wenn keine Aenderung noetig: []"""
 
         except Exception as e:
             logger.error("Parameter-Aenderung fehlgeschlagen: %s", e)
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": "Parameter-Aenderung fehlgeschlagen."}
 
     async def _get_recent_corrections(self) -> list:
         """Holt User-Korrekturen aus Redis (letzte 7 Tage)."""
@@ -654,7 +654,7 @@ Wenn keine Aenderung noetig: []"""
 
         except Exception as e:
             logger.error("Banned Phrase Fehler: %s", e)
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": "Sperrlisten-Aenderung fehlgeschlagen."}
 
     def format_phrase_suggestions(self, suggestions: list[dict]) -> str:
         """Formatiert Phrase-Vorschlaege fuer Chat-Ausgabe."""

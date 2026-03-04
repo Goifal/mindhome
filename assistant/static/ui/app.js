@@ -385,7 +385,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
       'tab-proactive':'Proaktiv & Vorausdenken',
       'tab-notifications':'Benachrichtigungen',
       'tab-cooking':'Koch-Assistent','tab-followme':'Follow-Me',
-      'tab-jarvis':'Jarvis-Features','tab-declarative-tools':'Analyse-Tools',
+      'tab-jarvis':'Jarvis-Features','tab-intelligence':'Intelligenz — Quick Wins','tab-declarative-tools':'Analyse-Tools',
       'tab-eastereggs':'Easter Eggs',
       'tab-autonomie':'Autonomie & Selbstoptimierung',
       'tab-voice':'Stimme & TTS','tab-security':'Sicherheit & Notfall',
@@ -640,6 +640,7 @@ function renderCurrentTab() {
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
       case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); break;
+      case 'tab-intelligence': c.innerHTML = renderIntelligence(); break;
       case 'tab-declarative-tools': c.innerHTML = renderDeclarativeTools(); loadDeclarativeTools(); _renderDeclSuggestions(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
       case 'tab-system': c.innerHTML = renderSystem(); loadSystemStatus(); break;
@@ -771,6 +772,47 @@ const HELP_TEXTS = {
   'das_uebliche.patterns': {title:'Das-Uebliche Trigger', text:'Phrasen die die "Das Uebliche"-Routine ausloesen.'},
   'autonomy.action_permissions': {title:'Aktions-Berechtigungen', text:'Mindest-Autonomie-Level pro Aktionstyp (1-5).'},
   'autonomy.evolution_criteria': {title:'Evolution-Kriterien', text:'Kriterien fuer automatischen Autonomie-Aufstieg.'},
+  'autonomy.domain_levels_enabled': {title:'Domain-Autonomie', text:'Aktiviert unterschiedliche Autonomie-Level pro Bereich (Klima, Licht, Sicherheit etc.). Wenn deaktiviert, gilt das globale Level.'},
+  'autonomy.domain_levels.climate': {title:'Klima-Autonomie', text:'Autonomie-Level fuer Klima & Heizung. Z.B. Level 3 = darf Temperatur +/-1 Grad selbst anpassen.'},
+  'autonomy.domain_levels.light': {title:'Licht-Autonomie', text:'Autonomie-Level fuer Licht & Beleuchtung.'},
+  'autonomy.domain_levels.media': {title:'Medien-Autonomie', text:'Autonomie-Level fuer Medien & Musik.'},
+  'autonomy.domain_levels.cover': {title:'Rolladen-Autonomie', text:'Autonomie-Level fuer Rolllaeden & Abdeckungen.'},
+  'autonomy.domain_levels.security': {title:'Sicherheits-Autonomie', text:'Autonomie-Level fuer Sicherheits-Aktionen. Empfehlung: Niedrig halten (1-2).'},
+  'autonomy.domain_levels.automation': {title:'Automations-Autonomie', text:'Autonomie-Level fuer Automationen & Routinen.'},
+  'autonomy.domain_levels.notification': {title:'Benachrichtigungs-Autonomie', text:'Autonomie-Level fuer Benachrichtigungen & Briefings.'},
+  'calendar_intelligence.enabled': {title:'Kalender-Intelligenz', text:'Analysiert deine Kalender-Termine und erkennt Gewohnheiten, Konflikte und freie Zeitfenster.'},
+  'calendar_intelligence.commute_minutes': {title:'Pendelzeit', text:'Durchschnittliche Fahrzeit zum Arbeitsplatz. Wird fuer Pendelzeit-Warnungen verwendet.'},
+  'calendar_intelligence.habit_min_occurrences': {title:'Min. Wiederholungen', text:'Wie oft muss ein Termin wiederkehren damit er als Gewohnheit erkannt wird.'},
+  'calendar_intelligence.conflict_lookahead_hours': {title:'Konflikt-Vorschau', text:'Wie viele Stunden im Voraus werden Konflikte erkannt.'},
+  'calendar_intelligence.habit_detection': {title:'Gewohnheits-Erkennung', text:'Erkennt wiederkehrende Termine als Muster.'},
+  'calendar_intelligence.conflict_detection': {title:'Konflikt-Erkennung', text:'Warnt bei Zeitkonflikten und knapper Pendelzeit.'},
+  'calendar_intelligence.break_detection': {title:'Pausen-Erkennung', text:'Erkennt freie Zeitfenster zwischen Terminen.'},
+  'explainability.enabled': {title:'Erklaerbarkeit', text:'Loggt alle automatischen Entscheidungen mit Begruendung. Frage "Warum hast du das gemacht?" fuer eine Erklaerung.'},
+  'explainability.detail_level': {title:'Detail-Stufe', text:'Wie ausfuehrlich Erklaerungen sind. Minimal = nur Aktion + Grund. Verbose = inklusive Sensordaten und Konfidenz.'},
+  'explainability.auto_explain': {title:'Automatisch erwaehnen', text:'Jarvis erwaehnt kurz warum er etwas getan hat, ohne dass du fragen musst.'},
+  'explainability.max_history': {title:'Max. Entscheidungen', text:'Wie viele Entscheidungen im Speicher gehalten werden.'},
+  'mood.voice_mood_integration': {title:'Voice-Mood Integration', text:'Verknuepft erkannte Stimm-Emotionen (froehlich, traurig, aergerlich) direkt mit der Stimmungserkennung.'},
+  'learning_transfer.enabled': {title:'Lern-Transfer', text:'Uebertraegt gelernte Praeferenzen auf aehnliche Raeume. Z.B. warmes Licht in Kueche -> auch fuer Esszimmer vorschlagen.'},
+  'learning_transfer.auto_suggest': {title:'Auto-Vorschlaege', text:'Schlaegt automatisch vor wenn eine Praeferenz uebertragen werden koennte.'},
+  'learning_transfer.min_observations': {title:'Min. Beobachtungen', text:'Wie oft muss eine Praeferenz beobachtet werden bevor sie uebertragen wird.'},
+  'learning_transfer.transfer_confidence': {title:'Transfer-Konfidenz', text:'Mindest-Konfidenz fuer einen Transfer-Vorschlag.'},
+  'learning_transfer.domains': {title:'Transfer-Domaenen', text:'Fuer welche Bereiche Praeferenzen uebertragen werden.'},
+  'learning_transfer.room_groups': {title:'Raum-Gruppen', text:'Raeume in der gleichen Gruppe werden als aehnlich betrachtet fuer den Praeferenz-Transfer.'},
+  'dialogue.enabled': {title:'Dialogfuehrung', text:'Echte Gespraechsfuehrung mit Referenz-Aufloesung und Klaerungsfragen.'},
+  'dialogue.auto_resolve_references': {title:'Referenzen aufloesen', text:'Loest "es", "das", "dort" automatisch auf das zuletzt besprochene Geraet/Raum auf.'},
+  'dialogue.clarification_enabled': {title:'Klaerungsfragen', text:'Jarvis fragt "Welches Licht?" wenn mehrere Geraete passen.'},
+  'dialogue.timeout_seconds': {title:'Dialog-Timeout', text:'Nach dieser Zeit vergisst Jarvis den Gespraechskontext.'},
+  'dialogue.max_clarification_options': {title:'Max. Optionen', text:'Maximale Anzahl Optionen bei einer Klaerungsfrage.'},
+  'climate_model.enabled': {title:'Klima-Modell', text:'Thermische Simulation fuer Was-waere-wenn-Fragen.'},
+  'climate_model.max_simulation_minutes': {title:'Max. Simulation', text:'Maximale Dauer fuer eine Simulation.'},
+  'climate_model.default_params.heat_loss_coefficient': {title:'Waermeverlust', text:'Wie schnell ein Raum Waerme verliert. Niedrig = gut isoliert.'},
+  'climate_model.default_params.heating_power_per_min': {title:'Heizleistung', text:'Wie schnell die Heizung den Raum erwaermt. Abhaengig von Heizkoerper-Groesse.'},
+  'climate_model.default_params.window_open_factor': {title:'Fenster-Faktor', text:'Wie stark offene Fenster den Waermeverlust verstaerken.'},
+  'climate_model.default_params.thermal_mass_factor': {title:'Thermische Masse', text:'Traegheit des Gebaeudes. Schwerer Beton speichert mehr Waerme.'},
+  'predictive_maintenance.enabled': {title:'Praediktive Wartung', text:'Vorhersage von Geraeteausfaellen und Wartungsbedarf.'},
+  'predictive_maintenance.lookback_days': {title:'Analyse-Zeitraum', text:'Wie viele Tage Historie fuer die Vorhersage genutzt werden.'},
+  'predictive_maintenance.failure_probability_threshold': {title:'Warnschwelle', text:'Ab welcher Ausfallwahrscheinlichkeit gewarnt wird.'},
+  'predictive_maintenance.battery_drain_alert_pct_per_week': {title:'Batterie-Drain', text:'Ab welchem woechentlichen Batterie-Verlust gewarnt wird.'},
   'activity.silence_keywords.watching': {title:'Stille: Film/TV', text:'Keywords die den "Film schauen"-Modus ausloesen.'},
   'activity.silence_keywords.focused': {title:'Stille: Konzentration', text:'Keywords die den "Nicht stoeren"-Modus ausloesen.'},
   'activity.silence_keywords.sleeping': {title:'Stille: Schlafen', text:'Keywords die den Schlaf-Modus ausloesen.'},
@@ -901,6 +943,13 @@ const HELP_TEXTS = {
   'lighting.lux_adaptive.target_lux': {title:'Ziel-Beleuchtungsstaerke', text:'Gewuenschte Gesamthelligkeit im Raum (natuerlich + kuenstlich). 300-500 Lux ist typisch fuer Wohnraeume.'},
   'lighting.lux_adaptive.min_brightness_pct': {title:'Min. Kunstlicht', text:'Minimale kuenstliche Helligkeit — auch bei viel Tageslicht bleibt mindestens dieser Wert.'},
   'lighting.lux_adaptive.max_brightness_pct': {title:'Max. Kunstlicht', text:'Maximale kuenstliche Helligkeit bei komplett dunklem Raum.'},
+  // === LICHT WETTER-INTEGRATION ===
+  'lighting.weather_boost.enabled': {title:'Wetter-Integration', text:'Nutzt die aktuelle Wetterbedingung fuer intelligentere Lichtsteuerung. Bei Bewoelkung/Regen werden Lichter automatisch heller, bei Daemmerung wird frueher eingeschaltet.'},
+  'lighting.weather_boost.weather_entity': {title:'Wetter-Entity (Licht)', text:'Welche weather-Entity fuer die Licht-Wetter-Integration genutzt wird. Leer = automatisch (weather.forecast_home bevorzugt, gleiche Logik wie Cover-Automatik).'},
+  'lighting.weather_boost.cloud_boost_pct': {title:'Boost bei Bewoelkung', text:'Um wieviel Prozent eingeschaltete Lichter bei bewoelktem Himmel heller werden. Hilft wenn Tageslicht nicht reicht, die Daemmerung aber noch nicht erreicht ist.'},
+  'lighting.weather_boost.rain_boost_pct': {title:'Boost bei Regen', text:'Um wieviel Prozent eingeschaltete Lichter bei Regen/Gewitter heller werden. Regen verdunkelt stärker als Wolken.'},
+  'lighting.weather_boost.dusk_earlier_on_cloudy': {title:'Fruehere Daemmerung', text:'An trueben Tagen wird die Daemmerungs-Schwelle angehoben, sodass das Auto-An frueher greift. Die Sonne steht zwar noch ueber dem Horizont, aber es ist trotzdem dunkel genug fuer Kunstlicht.'},
+  'lighting.weather_boost.dusk_cloud_elevation_offset': {title:'Daemmerung-Offset', text:'Um wieviel Grad die Daemmerungs-Schwelle bei Bewoelkung angehoben wird. Z.B. normal -2°, bei Wolken +3° = Trigger bei +1° (Sonne noch ueber Horizont, aber trueb).'},
   // === COVER-AUTOMATIK ===
   'seasonal_actions.enabled': {title:'Saisonale Aktionen', text:'Automatische Aktionen basierend auf Jahreszeit, Wetter und Sonnenstand.'},
   'seasonal_actions.cover_automation.sun_tracking': {title:'Sonnenstand-Tracking', text:'Rolllaeden folgen automatisch dem Sonnenstand. Benoetigt konfigurierte Cover-Profile.'},
@@ -927,8 +976,15 @@ const HELP_TEXTS = {
   'seasonal_actions.cover_automation.heating_integration': {title:'Heizungs-Integration', text:'Wenn die Heizung laeuft + Aussentemp kalt: Nicht-sonnenbeschienene Fenster zu (Isolierung). Wenn Sonne + Heizung aus: Sonnenfenster auf (passive Solarwaerme).'},
   'seasonal_actions.cover_automation.co2_ventilation': {title:'CO2-Lueftung', text:'Bei hohem CO2 (>1000 ppm) und gutem Wetter (10-25°C, kein Regen) wird eine Lueftungsempfehlung gegeben.'},
   'seasonal_actions.cover_automation.privacy_mode': {title:'Privacy-Modus', text:'Abends nach Sonnenuntergang: Wenn im Raum Licht an ist, werden Rolllaeden mit privacy_mode=true im Cover-Profil geschlossen (Sichtschutz).'},
+  'seasonal_actions.cover_automation.privacy_close_hour': {title:'Privacy ab Uhrzeit', text:'Ab welcher Uhrzeit der Privacy-Modus aktiviert wird (z.B. 17 = ab 17 Uhr). Muss gleichzeitig dunkel sein (Sonnenuntergang). Ohne Angabe: sobald es dunkel ist.'},
   'seasonal_actions.cover_automation.presence_aware': {title:'Praesenz-basiert', text:'Wenn alle Personen das Haus verlassen haben, werden alle Rolllaeden geschlossen (Einbruchschutz + Energiesparen).'},
   'seasonal_actions.cover_automation.manual_override_hours': {title:'Manueller Override', text:'Wenn ein Rollladen manuell (Taster/App) bedient wird, pausiert die Automatik fuer diese Anzahl Stunden. Verhindert dass die Automatik manuelle Einstellungen ueberschreibt.'},
+  'seasonal_actions.cover_automation.wakeup_sun_check': {title:'Aufwach-Sonnenpruefung', text:'Prueft beim Aufwachen den Sonnenstand (sun.sun). Wenn es noch zu dunkel ist, werden die Rolllaeden erst bei Daemmerung geoeffnet statt sofort. Verhindert dass Rolllaeden mitten in der Nacht hochfahren.'},
+  'seasonal_actions.cover_automation.wakeup_min_sun_elevation': {title:'Min. Sonnenhoehe beim Aufwachen', text:'Mindest-Sonnenhoehe (in Grad) damit Rolllaeden beim Aufwachen geoeffnet werden. -6° = Buergerliche Daemmerung (Himmel wird hell). -12° = Nautische Daemmerung. 0° = Sonnenaufgang. Bei niedrigerem Sonnenstand wird das Oeffnen verschoben.'},
+  'seasonal_actions.cover_automation.wakeup_fallback_max_minutes': {title:'Fallback-Oeffnung', text:'Maximale Wartezeit nach dem geplanten Oeffnungszeitpunkt. Wenn die Sonne innerhalb dieses Zeitraums nicht hoch genug steigt (z.B. trueber Wintertag), werden die Rolllaeden trotzdem geoeffnet. Verhindert dass man den ganzen Tag im Dunkeln sitzt.'},
+  'seasonal_actions.cover_automation.weather_entity': {title:'Wetter-Entity', text:'Welche weather-Entity aus Home Assistant fuer die Cover-Automatik genutzt wird. Leer = automatisch (bevorzugt weather.forecast_home, Fallback: erste weather.* Entity). Aenderbar per UI oder per Sprache ("Jarvis, wechsle Wetter-Integration auf weather.home").'},
+  'seasonal_actions.cover_automation.forecast_weather_protection': {title:'Vorhersage-Wetterschutz', text:'Nutzt die Wettervorhersage aus der konfigurierten Wetter-Entity fuer vorausschauenden Schutz. Faehrt Markisen ein BEVOR ein Sturm kommt und schliesst Dachfenster BEVOR es regnet — statt erst zu reagieren wenn es schon zu spaet ist.'},
+  'seasonal_actions.cover_automation.forecast_lookahead_hours': {title:'Vorhersage-Zeitraum', text:'Wie viele Stunden in die Zukunft die Wettervorhersage fuer Schutzentscheidungen genutzt wird. Mehr Stunden = frueheres Reagieren, aber auch mehr Fehlalarme.'},
   // === SAUGROBOTER ===
   'remote.enabled': {title:'Fernbedienung', text:'Aktiviert die Fernbedienungs-Steuerung (Logitech Harmony) ueber Jarvis. Erlaubt Sprachsteuerung fuer TV, Receiver, etc.'},
   'vacuum.enabled': {title:'Saugroboter', text:'Aktiviert die Saugroboter-Steuerung ueber Jarvis.'},
@@ -1076,6 +1132,13 @@ const HELP_TEXTS = {
   'insights.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft alle Datenquellen abgeglichen werden.'},
   'insights.cooldown_hours': {title:'Cooldown', text:'Wie lange nach einem Hinweis der gleiche Typ nicht nochmal kommt.'},
   'insights.checks.weather_windows': {title:'Wetter + Fenster', text:'Warnt wenn Regen/Sturm kommt und Fenster offen sind.'},
+  'heating.weather_adjust.enabled': {title:'Heizung Wetter-Anpassung', text:'Passt Heizung automatisch an Wetter an: Vorheizen bei Kaelteeinbruch, Reduzierung bei Sonne, Erhoehung bei Wind. Nutzt sun.sun + weather.* Daten.'},
+  'heating.weather_adjust.forecast_lookahead_hours': {title:'Vorhersage-Zeitraum', text:'Wie viele Stunden voraus wird die Wettervorhersage fuer die Heizungsanpassung betrachtet.'},
+  'heating.weather_adjust.preheat_drop_threshold': {title:'Vorheiz-Schwelle', text:'Ab welchem vorhergesagten Temperaturabfall (in °C) wird vorgeheizt. Z.B. 5 = wenn in den naechsten Stunden 5°C kaelter wird.'},
+  'heating.weather_adjust.preheat_offset': {title:'Vorheiz-Offset', text:'Um wie viel Grad die Heizung beim Vorheizen hochgefahren wird.'},
+  'heating.weather_adjust.solar_gain_reduction': {title:'Solar-Reduktion', text:'Um wie viel Grad die Heizung reduziert wird wenn die Sonne stark scheint (passive Solarwaerme durch Fenster).'},
+  'heating.weather_adjust.wind_compensation_threshold': {title:'Wind-Schwelle', text:'Ab welcher Windgeschwindigkeit die Heizung kompensiert wird (Wind = mehr Waermeverlust).'},
+  'heating.weather_adjust.wind_offset': {title:'Wind-Offset', text:'Um wie viel Grad die Heizung bei starkem Wind erhoeht wird.'},
   'insights.checks.frost_heating': {title:'Frost + Heizung', text:'Warnt wenn Frost erwartet wird und Heizung aus/abwesend ist.'},
   'insights.checks.calendar_travel': {title:'Reise + Haus', text:'Erkennt Reise-Termine und prueft Alarm, Fenster, Heizung.'},
   'insights.checks.energy_anomaly': {title:'Energie-Anomalie', text:'Meldet wenn der Verbrauch deutlich ueber dem Durchschnitt liegt.'},
@@ -1360,6 +1423,7 @@ function fKeyValue(path, label, keyLabel='Schluessel', valLabel='Wert', hint='')
 }
 function kvAdd(btn, path, keyLabel, valLabel) {
   const editor = btn.closest('.kv-editor');
+  if (!editor) return;
   const row = document.createElement('div');
   row.className = 'kv-row';
   row.innerHTML = `<input type="text" class="kv-key" placeholder="${keyLabel}">
@@ -1371,8 +1435,9 @@ function kvAdd(btn, path, keyLabel, valLabel) {
 }
 function kvRemove(btn, path) {
   const editor = btn.closest('.kv-editor');
-  btn.closest('.kv-row').remove();
-  kvSync(editor, path);
+  const row = btn.closest('.kv-row');
+  if (row) row.remove();
+  if (editor) kvSync(editor, path);
 }
 function kvSync(editor, path) {
   const obj = {};
@@ -2533,6 +2598,16 @@ function renderRooms() {
     :
       fInfo('Jeder Raum hat seinen eigenen Thermostat. Temperatur-Grenzen findest du unter Sicherheit.')
     )
+  ) +
+  sectionWrap('&#127782;', 'Heizung: Wetter-Anpassung (sun.sun + weather)',
+    fInfo('Passt die Heizung automatisch an Wetterbedingungen an:<br><br>&#10052; <strong>Vorhersage-Vorheizen:</strong> Kaelteeinbruch vorhergesagt → Heizung vorab hochfahren<br>&#9728; <strong>Solar-Gain:</strong> Sonne scheint stark → Heizung reduzieren (passive Solarwaerme)<br>&#128168; <strong>Wind-Kompensation:</strong> Starker Wind → mehr Waermeverlust → leicht erhoehen') +
+    fToggle('heating.weather_adjust.enabled', 'Wetter-Anpassung aktiv') +
+    fRange('heating.weather_adjust.forecast_lookahead_hours', 'Vorhersage-Zeitraum (Std)', 1, 8, 1, {1:'1h',2:'2h',3:'3h',4:'4h',6:'6h',8:'8h'}) +
+    fRange('heating.weather_adjust.preheat_drop_threshold', 'Vorheizen ab Temperaturabfall (°C)', 3, 10, 1, {3:'3°',5:'5°',7:'7°',10:'10°'}) +
+    fRange('heating.weather_adjust.preheat_offset', 'Vorheiz-Offset (°C)', 0.5, 3, 0.5, {0.5:'0.5°',1:'1°',1.5:'1.5°',2:'2°',3:'3°'}) +
+    fRange('heating.weather_adjust.solar_gain_reduction', 'Solar-Reduktion (°C)', 0, 2, 0.5, {0:'Aus',0.5:'0.5°',1:'1°',1.5:'1.5°',2:'2°'}) +
+    fRange('heating.weather_adjust.wind_compensation_threshold', 'Wind-Kompensation ab (km/h)', 15, 60, 5, {15:'15',25:'25',30:'30',40:'40',50:'50',60:'60'}) +
+    fRange('heating.weather_adjust.wind_offset', 'Wind-Offset (°C)', 0, 2, 0.5, {0:'Aus',0.5:'0.5°',1:'1°',1.5:'1.5°',2:'2°'})
   ) +
   sectionWrap('&#127777;', 'Raumtemperatur-Sensoren',
     fInfo('Welche Temperatursensoren sollen fuer die Raumtemperatur verwendet werden? Jarvis berechnet den Mittelwert aller Sensoren. Ohne Sensoren wird die Temperatur der Klimaanlage/Heizung genutzt.') +
@@ -6033,8 +6108,23 @@ function renderCovers() {
     fToggle('seasonal_actions.cover_automation.heating_integration', 'Heizungs-Integration (Isolierung + passive Solarwaerme)') +
     fToggle('seasonal_actions.cover_automation.co2_ventilation', 'CO2-Lueftungs-Unterstuetzung') +
     fToggle('seasonal_actions.cover_automation.privacy_mode', 'Privacy-Modus (Sichtschutz abends bei Licht)') +
+    fRange('seasonal_actions.cover_automation.privacy_close_hour', 'Privacy ab Uhrzeit (Stunde)', 15, 22, 1, {15:'15h',16:'16h',17:'17h',18:'18h',19:'19h',20:'20h',21:'21h',22:'22h'}) +
     fToggle('seasonal_actions.cover_automation.presence_aware', 'Praesenz-basiert (niemand zuhause = alles zu)') +
     fRange('seasonal_actions.cover_automation.manual_override_hours', 'Manueller Override-Schutz (Stunden)', 0, 6, 1, {0:'Aus',1:'1h',2:'2h',3:'3h',4:'4h',5:'5h',6:'6h'})
+  ) +
+  // ── Aufwach-Sonnenprüfung (sun.sun) ─────────────────
+  sectionWrap('&#127765;', 'Aufwach-Sonnenpruefung (sun.sun)',
+    fInfo('Verhindert dass Rolllaeden beim Aufwachen hochfahren wenn es noch dunkel ist. Nutzt die <strong>sun.sun</strong> Integration aus Home Assistant um den Sonnenstand zu pruefen.<br><br>Wenn die Sonnenhoehe unter dem Schwellwert liegt, werden die Rolllaeden automatisch erst bei Daemmerung geoeffnet (deferred wake-open).<br><br><strong>Referenz:</strong> -6° = Buergerliche Daemmerung (Himmel wird hell), 0° = Sonnenaufgang, -12° = Nautische Daemmerung (noch sehr dunkel)') +
+    fToggle('seasonal_actions.cover_automation.wakeup_sun_check', 'Sonnenstand beim Aufwachen pruefen') +
+    fRange('seasonal_actions.cover_automation.wakeup_min_sun_elevation', 'Min. Sonnenhoehe (Grad)', -12, 5, 1, {'-12':'-12° (nautisch)','-6':'-6° (buergerl.)','-3':'-3°','0':'0° (Aufgang)','5':'5° (hell)'}) +
+    fRange('seasonal_actions.cover_automation.wakeup_fallback_max_minutes', 'Fallback: Spaetestens oeffnen nach (Min)', 30, 180, 15, {30:'30 Min',60:'1 Std',90:'1.5 Std',120:'2 Std',150:'2.5 Std',180:'3 Std'})
+  ) +
+  // ── Vorhersage-Wetterschutz (weather.forecast_home) ──
+  sectionWrap('&#127782;', 'Vorhersage-Wetterschutz (weather.forecast_home)',
+    fInfo('Nutzt die <strong>Wettervorhersage</strong> aus weather.forecast_home fuer vorausschauenden Schutz:<br><br>&#128168; <strong>Sturmschutz:</strong> Markisen einfahren BEVOR der Sturm ankommt<br>&#127783; <strong>Regenschutz:</strong> Dachfenster schliessen BEVOR es regnet<br><br>Ohne diese Option wird nur auf das <em>aktuelle</em> Wetter reagiert — dann kann es schon zu spaet sein.') +
+    fEntityPickerSingle('seasonal_actions.cover_automation.weather_entity', 'Wetter-Entity', ['weather'], 'Leer = automatisch (weather.forecast_home bevorzugt). Kann auch per Sprache gewechselt werden: "Jarvis, wechsle die Wetter-Integration auf weather.home"') +
+    fToggle('seasonal_actions.cover_automation.forecast_weather_protection', 'Vorhersage-basierten Wetterschutz aktivieren') +
+    fRange('seasonal_actions.cover_automation.forecast_lookahead_hours', 'Vorhersage-Zeitraum (Stunden)', 1, 8, 1, {1:'1h',2:'2h',3:'3h',4:'4h',5:'5h',6:'6h',7:'7h',8:'8h'})
   ) +
   // ── Urlaubs-Simulation ─────────────────────────
   sectionWrap('&#127796;', 'Urlaubs-Simulation',
@@ -7038,7 +7128,7 @@ function renderLights() {
     fToggle('lighting.presence_control.night_path_light', 'Nacht-Pfadlicht (sanftes Orientierungslicht)') +
     fRange('lighting.presence_control.night_path_brightness', 'Pfadlicht-Helligkeit (%)', 3, 20, 1, {3:'3%',5:'5%',8:'8%',10:'10%',15:'15%',20:'20%'}) +
     fRange('lighting.presence_control.night_path_timeout_minutes', 'Pfadlicht Auto-Aus (Min)', 2, 15, 1, {2:'2 Min',3:'3 Min',5:'5 Min',7:'7 Min',10:'10 Min',15:'15 Min'}) +
-    fRange('lighting.presence_control.manual_override_minutes', 'Override-Schutz nach manueller Bedienung (Min)', 5, 60, 5, {5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',45:'45 Min',60:'1 Std'}) +
+    fRange('lighting.presence_control.manual_override_minutes', 'Override-Schutz nach manueller Bedienung (Min)', 5, 180, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std',180:'3 Std'}) +
     fRange('lighting.presence_control.night_start_hour', 'Nacht beginnt (Uhrzeit)', 20, 24, 1, {20:'20 Uhr',21:'21 Uhr',22:'22 Uhr',23:'23 Uhr',24:'0 Uhr'}) +
     fRange('lighting.presence_control.night_end_hour', 'Nacht endet (Uhrzeit)', 4, 8, 1, {4:'4 Uhr',5:'5 Uhr',6:'6 Uhr',7:'7 Uhr',8:'8 Uhr'})
   ) +
@@ -7060,6 +7150,15 @@ function renderLights() {
     fRange('lighting.lux_adaptive.target_lux', 'Ziel-Beleuchtungsstaerke (Lux)', 100, 800, 50, {100:'100',200:'200',300:'300',400:'400',500:'500',600:'600',800:'800'}) +
     fRange('lighting.lux_adaptive.min_brightness_pct', 'Minimale Kunstlicht-Helligkeit (%)', 5, 30, 5, {5:'5%',10:'10%',15:'15%',20:'20%',25:'25%',30:'30%'}) +
     fRange('lighting.lux_adaptive.max_brightness_pct', 'Maximale Kunstlicht-Helligkeit (%)', 50, 100, 10, {50:'50%',60:'60%',70:'70%',80:'80%',90:'90%',100:'100%'})
+  ) +
+  sectionWrap('&#127782;', 'Wetter-Integration (sun.sun + weather)',
+    fInfo('Nutzt die Wetterbedingung aus Home Assistant fuer intelligentere Lichtsteuerung:<br><br>&#9729; <strong>Wetter-Boost:</strong> Bei Bewoelkung oder Regen werden eingeschaltete Lichter automatisch heller (+X%).<br>&#127769; <strong>Fruehere Daemmerung:</strong> An trueben Tagen wird die Daemmerungs-Schwelle angehoben — Licht geht frueher an.<br><br>Nutzt <strong>sun.sun</strong> fuer den Sonnenstand und die konfigurierte <strong>weather.*</strong> Entity fuer die Wetterlage.') +
+    fToggle('lighting.weather_boost.enabled', 'Wetter-Integration aktiv') +
+    fEntityPickerSingle('lighting.weather_boost.weather_entity', 'Wetter-Entity', ['weather'], 'Leer = automatisch (gleiche Entity wie Cover-Automatik)') +
+    fRange('lighting.weather_boost.cloud_boost_pct', 'Helligkeits-Boost bei Bewoelkung (%)', 0, 40, 5, {0:'Aus',5:'5%',10:'10%',15:'15%',20:'20%',25:'25%',30:'30%',40:'40%'}) +
+    fRange('lighting.weather_boost.rain_boost_pct', 'Helligkeits-Boost bei Regen (%)', 0, 50, 5, {0:'Aus',5:'5%',10:'10%',15:'15%',20:'20%',25:'25%',30:'30%',40:'40%',50:'50%'}) +
+    fToggle('lighting.weather_boost.dusk_earlier_on_cloudy', 'Daemmerung frueher bei Bewoelkung') +
+    fRange('lighting.weather_boost.dusk_cloud_elevation_offset', 'Daemmerung-Offset bei Wolken (Grad)', 1, 8, 1, {1:'1°',2:'2°',3:'3°',4:'4°',5:'5°',6:'6°',7:'7°',8:'8°'})
   ) +
   sectionWrap('&#127749;', 'Zirkadiane Beleuchtung',
     fInfo('Passt Helligkeit (und bei tunable_white auch Farbtemperatur) automatisch an den Tagesverlauf an. dim2warm-Lampen regeln die Farbtemperatur ueber die Helligkeit in der Hardware — hier wird nur die Helligkeitskurve gesteuert.<br><br><strong>Modi:</strong><br>&bull; <strong>MindHome:</strong> Jarvis steuert die Helligkeitskurve komplett<br>&bull; <strong>Hybrid HCL:</strong> MDT AKD HCL laeuft als Basis, Jarvis ueberschreibt bei Events') +
@@ -7543,7 +7642,7 @@ function renderVacuum() {
         '<input type="text" class="entity-pick-alarm form-input entity-pick-input" value="' + esc(getPath(S,'vacuum.presence_guard.alarm_entity')||'') + '"' +
           ' placeholder="alarm_control_panel.alarmo" data-domains="alarm_control_panel"' +
           ' oninput="entityPickFilter(this,\'alarm_control_panel\')" onfocus="entityPickFilter(this,\'alarm_control_panel\')"' +
-          ' onblur="setTimeout(function(){setPath(S,\'vacuum.presence_guard.alarm_entity\',document.querySelector(\'.entity-pick-alarm\').value.trim());scheduleAutoSave();},500)"' +
+          ' onblur="setTimeout(function(){var el=document.querySelector(\'.entity-pick-alarm\');if(el)setPath(S,\'vacuum.presence_guard.alarm_entity\',el.value.trim());scheduleAutoSave();},500)"' +
           ' style="font-size:12px;font-family:var(--mono);">' +
         '<div class="entity-pick-dropdown" style="display:none;"></div>' +
       '</div>' +
@@ -9102,6 +9201,157 @@ function rejectAllDeclSuggestions() {
   _declSuggestions = [];
   _renderDeclSuggestions();
   toast('Alle Vorschlaege abgelehnt', 'success');
+}
+
+// ---- Tab: Intelligenz — Quick Wins ----
+function renderIntelligence() {
+  return sectionWrap('&#127919;', 'Domain-spezifische Autonomie',
+    fInfo('Unterschiedliche Autonomie-Level pro Bereich. Z.B. Level 4 bei Klima (darf Temperatur selbst anpassen), aber Level 2 bei Sicherheit (nur informieren). Wenn deaktiviert gilt das globale Level fuer alle Bereiche.') +
+    fToggle('autonomy.domain_levels_enabled', 'Domain-Autonomie aktivieren') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Level pro Domaene</div>' +
+    fRange('autonomy.domain_levels.climate', 'Klima & Heizung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.light', 'Licht & Beleuchtung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.media', 'Medien & Musik', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.cover', 'Rolllaeden', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.security', 'Sicherheit', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.automation', 'Automationen & Routinen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.notification', 'Benachrichtigungen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+  ) +
+  sectionWrap('&#128197;', 'Kalender-Intelligenz',
+    fInfo('Erkennt Gewohnheiten aus wiederkehrenden Terminen, warnt bei Zeitkonflikten (Pendelzeit vs. Meeting) und zeigt freie Zeitfenster an.') +
+    fToggle('calendar_intelligence.enabled', 'Kalender-Intelligenz aktiv') +
+    fNum('calendar_intelligence.commute_minutes', 'Pendelzeit (Minuten)', 5, 120, 5) +
+    fNum('calendar_intelligence.habit_min_occurrences', 'Min. Wiederholungen fuer Gewohnheit', 2, 10) +
+    fNum('calendar_intelligence.conflict_lookahead_hours', 'Konflikt-Vorschau (Stunden)', 6, 72, 6) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Erkennungs-Module</div>' +
+    fToggle('calendar_intelligence.habit_detection', 'Gewohnheits-Erkennung') +
+    fToggle('calendar_intelligence.conflict_detection', 'Konflikt-Erkennung') +
+    fToggle('calendar_intelligence.break_detection', 'Pausen-Erkennung')
+  ) +
+  sectionWrap('&#128161;', 'Erklaerbarkeit',
+    fInfo('Jarvis erklaert auf Nachfrage warum er etwas getan hat. Jede automatische Aktion wird mit Begruendung geloggt. Frage z.B. "Warum hast du das Licht eingeschaltet?"') +
+    fToggle('explainability.enabled', 'Erklaerbarkeit aktiv') +
+    fSelect('explainability.detail_level', 'Detail-Stufe', [
+      {v:'minimal', l:'Minimal (nur Aktion + Grund)'},
+      {v:'normal', l:'Normal (+ Kontext)'},
+      {v:'verbose', l:'Ausfuehrlich (+ Konfidenz, Sensordaten)'}
+    ]) +
+    fToggle('explainability.auto_explain', 'Automatisch erwaehnen') +
+    fNum('explainability.max_history', 'Max. gespeicherte Entscheidungen', 10, 200, 10)
+  ) +
+  sectionWrap('&#127908;', 'Voice-Mood Integration',
+    fInfo('Verknuepft die erkannte Stimm-Emotion (froehlich, traurig, aergerlich, nervoes, muede) direkt mit der Stimmungserkennung. So reagiert Jarvis nicht nur auf Worte, sondern auch auf den Tonfall.') +
+    fToggle('mood.voice_mood_integration', 'Voice-Emotion in Stimmung einbeziehen') +
+    fRange('voice_analysis.voice_weight', 'Gewicht der Stimm-Analyse', 0, 1, 0.05, {0:'Ignorieren',0.25:'Schwach',0.5:'Mittel',0.75:'Stark',1:'Voll'})
+  ) +
+  sectionWrap('&#129504;', 'Lern-Transfer',
+    fInfo('Uebertraegt Praeferenzen zwischen aehnlichen Raeumen. Wenn du warmes Licht in der Kueche bevorzugst, schlaegt Jarvis das auch fuer das Esszimmer vor.') +
+    fToggle('learning_transfer.enabled', 'Lern-Transfer aktiv') +
+    fToggle('learning_transfer.auto_suggest', 'Automatische Vorschlaege') +
+    fNum('learning_transfer.min_observations', 'Min. Beobachtungen vor Transfer', 2, 10) +
+    fRange('learning_transfer.transfer_confidence', 'Transfer-Konfidenz', 0.3, 1.0, 0.05, {0.3:'0.3',0.5:'0.5',0.7:'0.7',0.8:'0.8',0.9:'0.9',1.0:'1.0'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aktive Domaenen</div>' +
+    fChipSelect('learning_transfer.domains', 'Transfer-Domaenen', [
+      {v:'light', l:'Licht'},
+      {v:'climate', l:'Klima'},
+      {v:'media', l:'Medien'}
+    ], 'Fuer welche Bereiche sollen Praeferenzen uebertragen werden?') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Raum-Gruppen</div>' +
+    fInfo('Raeume in der gleichen Gruppe werden als aehnlich betrachtet. Aenderungen hier ueberschreiben die Standard-Gruppen.') +
+    fTextarea('learning_transfer.room_groups', 'Raum-Gruppen (JSON)', 'Format: {"wohnbereich": ["wohnzimmer", "esszimmer"], "schlafbereich": ["schlafzimmer", "gaestezimmer"]}')
+  ) +
+  // --- Persoenlichkeit & Gedaechtnis ---
+  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#127917; Persoenlichkeit &amp; Gedaechtnis</div>' +
+  sectionWrap('&#128218;', 'Remember When — Erinnerungen',
+    fInfo('Jarvis merkt sich besondere Momente und Korrekturen. Bei passenden Gelegenheiten referenziert er fruehere Interaktionen ("Letzte Woche mochten Sie es waermer, Sir"). Gibt ihm ein echtes Langzeitgedaechtnis.') +
+    fToggle('memorable_interactions.enabled', 'Erinnerungen aktiv') +
+    fNum('memorable_interactions.max_entries', 'Max. gespeicherte Erinnerungen', 5, 100, 5) +
+    fNum('memorable_interactions.ttl_days', 'Speicherdauer (Tage)', 7, 365, 7)
+  ) +
+  sectionWrap('&#128514;', 'Running Gag Evolution',
+    fInfo('Statt Witze zu wiederholen, entwickelt Jarvis sie weiter. Referenziert fruehere Scherze und baut darauf auf — wie ein echter Humor zwischen Vertrauten.') +
+    fToggle('running_gag_evolution.enabled', 'Gag-Evolution aktiv')
+  ) +
+  sectionWrap('&#128680;', 'Eskalierende Besorgnis',
+    fInfo('Wenn Warnungen ignoriert werden, wird Jarvis ernster. Level 1: Beilaeufer Hinweis. Level 2: Direkter Hinweis. Level 3: Ausdruckstarke Sorge. Wie ein Butler der wirklich aufpasst.') +
+    fToggle('escalating_concern.enabled', 'Eskalierende Besorgnis aktiv')
+  ) +
+  sectionWrap('&#128270;', 'Neugier-Fragen',
+    fInfo('Jarvis fragt bei ungewoehnlichem Verhalten vorsichtig nach ("Frueh unterwegs heute, Sir — alles in Ordnung?"). Maximal 2x pro Tag, nie aufdringlich.') +
+    fToggle('curiosity.enabled', 'Neugier-Fragen aktiv') +
+    fNum('curiosity.max_daily', 'Max. Fragen pro Tag', 1, 5)
+  ) +
+  sectionWrap('&#128161;', 'Think-Ahead Hinweise',
+    fInfo('Nach einer Aktion schlaegt Jarvis einen logischen naechsten Schritt vor. Z.B. nach "Licht im Flur an" → "Soll ich auch die Heizung im Flur hochdrehen?" Statisch, kein LLM-Overhead.') +
+    fToggle('next_step_hints.enabled', 'Think-Ahead aktiv')
+  ) +
+  // --- Antizipation & Erkennung ---
+  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#128268; Antizipation &amp; Erkennung</div>' +
+  sectionWrap('&#128279;', 'Kausalketten-Erkennung',
+    fInfo('Jarvis erkennt wiederkehrende Handlungsketten: Wenn du 3x hintereinander "Licht an, Heizung hoch, Musik an" machst, schlaegt er beim naechsten Mal die gesamte Kette vor.') +
+    fNum('anticipation.causal_chain_window_min', 'Erkennungsfenster (Minuten)', 5, 30) +
+    fNum('anticipation.causal_chain_min_occurrences', 'Min. Wiederholungen', 2, 10)
+  ) +
+  sectionWrap('&#128200;', '3D+ Insight Checks',
+    fInfo('Mehrdimensionale Kreuzreferenz-Pruefungen: Kalender x Sicherheit x Hausstatus. Erkennt z.B. "Gaeste kommen in 2h aber Haus nicht vorbereitet" oder "Alle weg aber Alarm nicht scharf".') +
+    fToggle('insight_checks.guest_preparation', 'Gaeste-Vorbereitung (Kalender x Haus)') +
+    fToggle('insight_checks.away_security_full', 'Abwesenheits-Sicherheit (Praesenz x Alarm)') +
+    fToggle('insight_checks.health_work_pattern', 'Arbeits-Muster (Aktivitaet x Dauer)') +
+    fToggle('insight_checks.humidity_contradiction', 'Feuchtigkeits-Widerspruch (Geraete x Wetter)') +
+    fToggle('insight_checks.night_security', 'Nacht-Sicherheit (Uhrzeit x Fenster x Tueren)') +
+    fToggle('insight_checks.heating_vs_sun', 'Heizung vs Sonne (Klima x Wetter x Rollladen)') +
+    fToggle('insight_checks.forgotten_devices', 'Vergessene Geraete (Media x Abwesenheit)')
+  ) +
+  sectionWrap('&#128736;', 'Proaktiver Sequenz-Planner',
+    fInfo('Bei Kontext-Aenderungen (Ankunft, Wetterwechsel, Kalender-Event) plant Jarvis automatisch mehrstufige Aktionsketten. Z.B. Ankunft → Licht + Heizung + Musik. Sicherheitsaktionen NIE automatisch.') +
+    fToggle('proactive_planner.enabled', 'Sequenz-Planner aktiv') +
+    fRange('proactive_planner.min_autonomy_for_auto', 'Min. Autonomie fuer Auto-Ausfuehrung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+  ) +
+  sectionWrap('&#127808;', 'Saisonale Intelligenz',
+    fInfo('Jarvis lernt jahreszeitlich wiederkehrende Muster: "Letztes Jahr um diese Zeit hast du die Heizung frueher eingeschaltet." Vergleicht Verhalten ueber Jahre und gibt saisonale Tipps.') +
+    fToggle('seasonal_insights.enabled', 'Saisonale Intelligenz aktiv') +
+    fNum('seasonal_insights.check_interval_hours', 'Pruef-Intervall (Stunden)', 6, 48, 6) +
+    fNum('seasonal_insights.min_history_months', 'Min. Historie (Monate)', 1, 12)
+  ) +
+  // --- Medium Effort Features ---
+  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#9889; Medium Effort Features</div>' +
+  sectionWrap('&#128172;', 'Dialogfuehrung',
+    fInfo('Echte Gespraechsfuehrung: Jarvis merkt sich besprochene Geraete und Raeume und loest Referenzen auf ("Mach es aus" → letztes besprochenes Licht). Klaerungsfragen bei Mehrdeutigkeit ("Welches Licht?").') +
+    fToggle('dialogue.enabled', 'Dialogfuehrung aktiv') +
+    fToggle('dialogue.auto_resolve_references', 'Referenzen automatisch aufloesen') +
+    fToggle('dialogue.clarification_enabled', 'Klaerungsfragen stellen') +
+    fNum('dialogue.timeout_seconds', 'Dialog-Timeout (Sek.)', 60, 600, 30) +
+    fNum('dialogue.max_clarification_options', 'Max. Optionen bei Klaerung', 2, 10)
+  ) +
+  sectionWrap('&#127777;', 'Klima-Modell (Digitaler Zwilling)',
+    fInfo('Einfaches thermisches Modell fuer Was-waere-wenn-Fragen: "Wenn ich das Fenster schliesse, wie warm wird es in 30 Min?" Basiert auf Waermeverlust, Heizleistung und Fensterzustand.') +
+    fToggle('climate_model.enabled', 'Klima-Modell aktiv') +
+    fNum('climate_model.max_simulation_minutes', 'Max. Simulationsdauer (Min.)', 30, 480, 30) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Thermische Parameter (Global)</div>' +
+    fRange('climate_model.default_params.heat_loss_coefficient', 'Waermeverlust-Koeffizient', 0.005, 0.05, 0.005, {0.005:'Gut isoliert',0.01:'Normal',0.015:'Standard',0.025:'Maessig',0.05:'Schlecht isoliert'}) +
+    fRange('climate_model.default_params.heating_power_per_min', 'Heizleistung (Grad/Min)', 0.02, 0.2, 0.01, {0.02:'Schwach',0.05:'Normal',0.08:'Standard',0.12:'Stark',0.2:'Sehr stark'}) +
+    fRange('climate_model.default_params.window_open_factor', 'Fenster-Faktor', 1, 10, 1, {1:'Gekippt',3:'Halb offen',5:'Standard',7:'Weit offen',10:'Durchzug'}) +
+    fRange('climate_model.default_params.thermal_mass_factor', 'Thermische Masse', 0.5, 2.0, 0.1, {0.5:'Leichtbau',1.0:'Standard',1.5:'Massiv',2.0:'Schwerer Beton'})
+  ) +
+  sectionWrap('&#128295;', 'Praediktive Wartung',
+    fInfo('Vorhersage von Geraeteausfaellen: Batterie-Drain-Rate, Lebensdauer-Tracking, Health-Score pro Geraet. Warnt z.B. "Batterie von Bewegungsmelder Flur in 14 Tagen leer".') +
+    fToggle('predictive_maintenance.enabled', 'Praediktive Wartung aktiv') +
+    fNum('predictive_maintenance.lookback_days', 'Analyse-Zeitraum (Tage)', 30, 365, 30) +
+    fRange('predictive_maintenance.failure_probability_threshold', 'Warnschwelle', 0.3, 1.0, 0.05, {0.3:'Empfindlich',0.5:'Mittel',0.7:'Standard',0.9:'Nur kritisch'}) +
+    fNum('predictive_maintenance.battery_drain_alert_pct_per_week', 'Batterie-Drain Warnung (%/Woche)', 1, 20, 1)
+  ) +
+  // --- Proaktive Intelligenz ---
+  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#129504; Proaktive Intelligenz</div>' +
+  sectionWrap('&#9888;', 'Konsequenz-Bewusstsein',
+    fInfo('Vor jeder Aktion prueft Jarvis ob sie im aktuellen Kontext sinnvoll ist. Z.B. "Heizung hoch bei offenem Fenster", "Rollladen runter bei Sturm", "Alle Lichter aus obwohl jemand aktiv ist". Blockiert nie — gibt nur Hinweise.') +
+    fToggle('consequence_checks.enabled', 'Konsequenz-Checks aktiv')
+  ) +
+  sectionWrap('&#128065;', 'Unaufgeforderte Beobachtungen',
+    fInfo('Jarvis prueft periodisch den Haus-Zustand und teilt relevante Beobachtungen mit: Licht brennt in leerem Raum, Fenster offen bei Heizung, Alarm seit Tagen nicht aktiviert, Batterie-Warnungen.') +
+    fToggle('observation_loop.enabled', 'Beobachtungen aktiv') +
+    fNum('observation_loop.interval_hours', 'Pruef-Intervall (Stunden)', 1, 12) +
+    fNum('observation_loop.max_daily', 'Max. Beobachtungen pro Tag', 1, 5)
+  );
 }
 
 // ── Haupt-Render ─────────────────────────────────────────────

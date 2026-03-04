@@ -71,6 +71,7 @@ class CoverControlManager:
         "simulation_variance_min": 20,
         # Komfort
         "wakeup_integration_enabled": True,
+        "wakeup_min_sun_elevation_deg": -6.0,  # Minimum sun elevation for wake-open (civil twilight)
         "wakeup_open_speed_sec": 300,
         "sleep_close_enabled": True,
         "ventilation_position_pct": 50,
@@ -91,6 +92,7 @@ class CoverControlManager:
         self._last_simulation = {}  # entity_id -> last_sim_time
         self._pending_actions = {}  # entity_id -> {priority, position, source}
         self._executed_schedules = {}  # schedule_id -> last_exec_date (to prevent double-fire)
+        self._wake_pending_open = False  # Deferred wake-open (too dark at wake time)
 
     def start(self):
         self._is_running = True
@@ -566,6 +568,18 @@ class CoverControlManager:
         except Exception:
             local = now
 
+        # Deferred wake-open: Rolladen oeffnen sobald Sonne hoch genug
+        if self._wake_pending_open:
+            min_elevation = config.get("wakeup_min_sun_elevation_deg", -6.0)
+            if sun_data.get("elevation", 0) >= min_elevation:
+                if not self._is_bed_occupied():
+                    self._wake_pending_open = False
+                    for cover in covers:
+                        if not self._is_overridden(cover["entity_id"]):
+                            self.set_position(cover["entity_id"], 100, source="wakeup_deferred")
+                    logger.info("Deferred wake-open: sun reached %.1f° — opening covers now",
+                                sun_data.get("elevation", 0))
+
         for cover in covers:
             eid = cover["entity_id"]
             if self._is_overridden(eid, now):
@@ -720,7 +734,7 @@ class CoverControlManager:
         return None
 
     def _eval_weather(self, cover, config, weather_data, sun_data):
-        """Weather rules: wind, rain, frost."""
+        """Weather rules: wind, rain, frost — including forecast-based proactive protection."""
         if not config.get("weather_protection_enabled"):
             return None
 
@@ -733,6 +747,20 @@ class CoverControlManager:
         wind_threshold = config.get("wind_threshold_kmh", 50)
         if wind > wind_threshold and cover_type == "awning":
             return {"position": 100, "source": "weather_wind"}
+
+        # Forecast: proaktiver Wetterschutz (Sturm/Regen in den naechsten Stunden)
+        forecast = weather_data.get("forecast", [])
+        if forecast and cover_type == "awning":
+            for fc in forecast[:4]:  # Naechste ~4 Stunden
+                fc_wind = fc.get("wind_speed", 0) or 0
+                if fc_wind > wind_threshold:
+                    return {"position": 100, "source": "weather_forecast_wind"}
+        if forecast and cover_type == "roof_window" and config.get("rain_close_roof_windows"):
+            for fc in forecast[:4]:
+                fc_condition = (fc.get("condition") or "").lower()
+                fc_precip = fc.get("precipitation", 0) or 0
+                if fc_condition in ("rainy", "pouring", "lightning-rainy", "hail") or fc_precip > 2:
+                    return {"position": 0, "source": "weather_forecast_rain"}
 
         # Rain: close roof windows
         if is_raining and cover_type == "roof_window" and config.get("rain_close_roof_windows"):
@@ -829,6 +857,7 @@ class CoverControlManager:
         config = self.get_config()
         if not config.get("sleep_close_enabled"):
             return
+        self._wake_pending_open = False  # Reset deferred wake-open
         covers = self.get_covers()
         for cover in covers:
             if not self._is_overridden(cover["entity_id"]):
@@ -836,7 +865,7 @@ class CoverControlManager:
         logger.info("Sleep detected: closing all covers")
 
     def _on_wake_detected(self, event):
-        """Gradually open covers on wake-up (only if bed is actually empty)."""
+        """Gradually open covers on wake-up (only if bed is actually empty AND bright enough)."""
         config = self.get_config()
         if not config.get("wakeup_integration_enabled"):
             return
@@ -847,6 +876,19 @@ class CoverControlManager:
             logger.info("Wake detected but bed still occupied — NOT opening covers")
             return
 
+        # Sonnenstand pruefen: Nicht oeffnen wenn es noch dunkel ist
+        sun_data = self._get_sun_data()
+        min_elevation = config.get("wakeup_min_sun_elevation_deg", -6.0)
+        if sun_data.get("elevation", 0) < min_elevation:
+            self._wake_pending_open = True
+            logger.info(
+                "Wake detected but too dark (sun elevation %.1f° < %.1f°) "
+                "— deferring cover open until sunrise",
+                sun_data.get("elevation", 0), min_elevation,
+            )
+            return
+
+        self._wake_pending_open = False
         covers = self.get_covers()
         for cover in covers:
             if not self._is_overridden(cover["entity_id"]):
@@ -957,9 +999,17 @@ class CoverControlManager:
         return {"elevation": 0, "azimuth": 180, "rising": True}
 
     def _get_weather_data(self, config):
-        """Collect weather sensor readings."""
+        """Collect weather sensor readings.
+
+        Uses dedicated sensors (FeatureEntityAssignment) when available,
+        falls back to weather.forecast_home for missing values.
+        """
         from models import FeatureEntityAssignment
-        data = {"wind_speed_kmh": 0, "is_raining": False, "outdoor_temp_c": None}
+        data = {"wind_speed_kmh": 0, "is_raining": False, "outdoor_temp_c": None,
+                "forecast": []}
+        has_wind = False
+        has_rain = False
+        has_temp = False
         try:
             with self.get_session() as session:
                 # Wind sensor
@@ -971,6 +1021,7 @@ class CoverControlManager:
                     if state:
                         try:
                             data["wind_speed_kmh"] = float(state.get("state", 0))
+                            has_wind = True
                         except (ValueError, TypeError):
                             pass
 
@@ -982,6 +1033,7 @@ class CoverControlManager:
                     state = self.ha.get_state(rain.entity_id)
                     if state:
                         data["is_raining"] = state.get("state") == "on"
+                        has_rain = True
 
                 # Outdoor temperature
                 temp = session.query(FeatureEntityAssignment).filter_by(
@@ -992,11 +1044,54 @@ class CoverControlManager:
                     if state:
                         try:
                             data["outdoor_temp_c"] = float(state.get("state", 0))
+                            has_temp = True
                         except (ValueError, TypeError):
                             pass
         except Exception as e:
             logger.error(f"Weather data error: {e}")
+
+        # Fallback: weather.forecast_home fuer fehlende Werte
+        if not (has_wind and has_rain and has_temp) and self.ha:
+            try:
+                weather = self._get_weather_entity()
+                if weather:
+                    attrs = weather.get("attributes", {})
+                    condition = (weather.get("state") or "").lower()
+                    if not has_temp and attrs.get("temperature") is not None:
+                        try:
+                            data["outdoor_temp_c"] = float(attrs["temperature"])
+                        except (ValueError, TypeError):
+                            pass
+                    if not has_wind and attrs.get("wind_speed") is not None:
+                        try:
+                            data["wind_speed_kmh"] = float(attrs["wind_speed"])
+                        except (ValueError, TypeError):
+                            pass
+                    if not has_rain:
+                        rain_conditions = ("rainy", "pouring", "lightning-rainy",
+                                           "hail", "snowy-rainy")
+                        data["is_raining"] = condition in rain_conditions
+                    # Forecast fuer vorausschauenden Wetterschutz
+                    data["forecast"] = attrs.get("forecast", [])[:8]
+            except Exception as e:
+                logger.error(f"Weather entity fallback error: {e}")
+
         return data
+
+    def _get_weather_entity(self):
+        """Get HA weather entity state (weather.forecast_home or first weather.*)."""
+        if not self.ha:
+            return None
+        # Prefer weather.forecast_home
+        state = self.ha.get_state("weather.forecast_home")
+        if state:
+            return state
+        # Fallback: first weather entity
+        states = self.ha.get_states() or []
+        for s in states:
+            if s.get("entity_id", "").startswith("weather."):
+                return s
+        return None
 
     def _get_presence_mode(self):
         """Get current presence mode."""

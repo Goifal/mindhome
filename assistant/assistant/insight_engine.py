@@ -85,12 +85,27 @@ class InsightEngine:
         self.check_calendar_weather_cross = checks_cfg.get("calendar_weather_cross", True)
         self.check_comfort_contradiction = checks_cfg.get("comfort_contradiction", True)
 
+        # Phase 18: Neue 3D+ Cross-Reference Checks
+        insight_checks_cfg = yaml_config.get("insight_checks", {})
+        self.check_guest_preparation = insight_checks_cfg.get("guest_preparation", True)
+        self.check_away_security_full = insight_checks_cfg.get("away_security_full", True)
+        self.check_health_work_pattern = insight_checks_cfg.get("health_work_pattern", True)
+        self.check_humidity_contradiction = insight_checks_cfg.get("humidity_contradiction", True)
+        self.check_night_security = insight_checks_cfg.get("night_security", True)
+        self.check_heating_vs_sun = insight_checks_cfg.get("heating_vs_sun", True)
+        self.check_forgotten_devices = insight_checks_cfg.get("forgotten_devices", True)
+
         # Schwellwerte
         thresholds = cfg.get("thresholds", {})
         self.frost_temp = thresholds.get("frost_temp_c", 2)
         self.energy_anomaly_pct = thresholds.get("energy_anomaly_percent", 30)
         self.away_minutes = thresholds.get("away_device_minutes", 120)
         self.temp_drop_degrees = thresholds.get("temp_drop_degrees_per_2h", 3)
+
+        # H4+H5: Konfigurierbare Limits
+        self.startup_delay = cfg.get("startup_delay_seconds", 120)
+        self.max_calendars = cfg.get("max_calendars", 3)
+        self.max_temp_snapshots = cfg.get("max_temp_snapshots", 6)
 
     async def initialize(
         self,
@@ -169,11 +184,26 @@ class InsightEngine:
         self.check_calendar_weather_cross = checks_cfg.get("calendar_weather_cross", True)
         self.check_comfort_contradiction = checks_cfg.get("comfort_contradiction", True)
 
+        # Phase 18: 3D+ Cross-Reference Checks
+        insight_checks_cfg = yaml_config.get("insight_checks", {})
+        self.check_guest_preparation = insight_checks_cfg.get("guest_preparation", True)
+        self.check_away_security_full = insight_checks_cfg.get("away_security_full", True)
+        self.check_health_work_pattern = insight_checks_cfg.get("health_work_pattern", True)
+        self.check_humidity_contradiction = insight_checks_cfg.get("humidity_contradiction", True)
+        self.check_night_security = insight_checks_cfg.get("night_security", True)
+        self.check_heating_vs_sun = insight_checks_cfg.get("heating_vs_sun", True)
+        self.check_forgotten_devices = insight_checks_cfg.get("forgotten_devices", True)
+
         thresholds = cfg.get("thresholds", {})
         self.frost_temp = thresholds.get("frost_temp_c", 2)
         self.energy_anomaly_pct = thresholds.get("energy_anomaly_percent", 30)
         self.away_minutes = thresholds.get("away_device_minutes", 120)
         self.temp_drop_degrees = thresholds.get("temp_drop_degrees_per_2h", 3)
+
+        # H4+H5: Konfigurierbare Limits
+        self.startup_delay = cfg.get("startup_delay_seconds", 120)
+        self.max_calendars = cfg.get("max_calendars", 3)
+        self.max_temp_snapshots = cfg.get("max_temp_snapshots", 6)
 
         # Loop starten wenn gerade aktiviert wurde
         if self.enabled and not was_enabled and not self._running:
@@ -187,8 +217,8 @@ class InsightEngine:
 
     async def _insight_loop(self):
         """Prueft periodisch auf Insights."""
-        # Erster Check nach kurzem Delay (System stabilisieren lassen)
-        await asyncio.sleep(120)
+        # H4: Konfigurierbarer Startup-Delay (System stabilisieren lassen)
+        await asyncio.sleep(self.startup_delay)
 
         while self._running:
             try:
@@ -349,7 +379,7 @@ class InsightEngine:
         end = now + timedelta(hours=24)
         all_events = []
 
-        for cal_entity in calendar_entities[:3]:  # Max 3 Kalender
+        for cal_entity in calendar_entities[:self.max_calendars]:  # H5: Konfigurierbar
             try:
                 result = await self.ha.call_service_with_response(
                     "calendar", "get_events",
@@ -392,6 +422,14 @@ class InsightEngine:
             (self.check_window_temp, self._check_window_temp_drop),
             (self.check_calendar_weather_cross, self._check_calendar_weather_cross),
             (self.check_comfort_contradiction, self._check_comfort_contradiction),
+            # Phase 18: 3D+ Cross-Reference Checks
+            (self.check_guest_preparation, self._check_guest_preparation),
+            (self.check_away_security_full, self._check_away_security_full),
+            (self.check_health_work_pattern, self._check_health_work_pattern),
+            (self.check_humidity_contradiction, self._check_humidity_contradiction),
+            (self.check_night_security, self._check_night_security),
+            (self.check_heating_vs_sun, self._check_heating_vs_sun),
+            (self.check_forgotten_devices, self._check_forgotten_devices),
         ]
 
         for enabled, method in check_methods:
@@ -607,8 +645,8 @@ class InsightEngine:
             # Hochrechnung auf Tagesende
             now = datetime.now()
             hours_passed = now.hour + now.minute / 60.0
-            if hours_passed < 6:
-                return None  # Zu frueh fuer sinnvolle Hochrechnung
+            if hours_passed < 1:
+                return None  # Zu frueh fuer sinnvolle Hochrechnung (Division-by-zero-Schutz)
 
             projected = today_val / hours_passed * 24
             increase_pct = ((projected - avg) / avg) * 100
@@ -677,7 +715,8 @@ class InsightEngine:
 
         if not issues:
             # Abwesenheits-Tracker aufraeumen
-            await self.redis.delete(away_key)
+            if self.redis:
+                await self.redis.delete(away_key)
             return None
 
         hours_away = minutes_away / 60
@@ -845,6 +884,9 @@ class InsightEngine:
                 (self.check_temp_drop, self._check_temp_drop),
                 (self.check_window_temp, self._check_window_temp_drop),
                 (True, self._check_trend_prediction),  # Trend-Prediction immer aktiv
+                (self.check_night_security, self._check_night_security),
+                (self.check_heating_vs_sun, self._check_heating_vs_sun),
+                (self.check_forgotten_devices, self._check_forgotten_devices),
             ]
 
             for enabled, method in check_methods:
@@ -903,7 +945,7 @@ class InsightEngine:
         await self._store_temp_snapshot(data)
 
         try:
-            snapshots_raw = await self.redis.lrange("mha:insight:temp_history", 0, 5)
+            snapshots_raw = await self.redis.lrange("mha:insight:temp_history", 0, self.max_temp_snapshots - 1)  # H5
         except Exception:
             return None
 
@@ -918,8 +960,8 @@ class InsightEngine:
         newest = snapshots[0].get("temps", {})
         oldest = snapshots[-1].get("temps", {})
         try:
-            newest_ts = datetime.fromisoformat(snapshots[0]["ts"])
-            oldest_ts = datetime.fromisoformat(snapshots[-1]["ts"])
+            newest_ts = datetime.fromisoformat(snapshots[0].get("ts", ""))
+            oldest_ts = datetime.fromisoformat(snapshots[-1].get("ts", ""))
             hours_diff = (newest_ts - oldest_ts).total_seconds() / 3600
         except (KeyError, ValueError):
             return None
@@ -1056,6 +1098,527 @@ class InsightEngine:
 
         return None
 
+    # ------------------------------------------------------------------
+    # Phase 18: 3D+ Cross-Reference Checks
+    # ------------------------------------------------------------------
+
+    _GUEST_KEYWORDS = [
+        "gast", "gaeste", "besuch", "party", "feier", "einladung",
+        "dinner", "abendessen", "geburtstag", "grillen", "brunch",
+    ]
+
+    async def _check_guest_preparation(self, data: dict) -> Optional[dict]:
+        """Kalender[Gaeste-Keywords] + Haus nicht bereit → Hinweis.
+
+        3D+ Cross-Reference: Kalender × Sicherheit × Klima × Beleuchtung × Tueren.
+        Prueft: Alarm scharf, Lichter aus, Temperatur unbequem, Tueren offen.
+        """
+        events = data.get("calendar_events", [])
+        if not events:
+            return None
+
+        # Gaeste-Event in den naechsten 4 Stunden?
+        guest_event = None
+        now = datetime.now()
+        for ev in events:
+            title_lower = ev.get("summary", "").lower()
+            start_raw = ev.get("start", "")
+            if not any(kw in title_lower for kw in self._GUEST_KEYWORDS):
+                continue
+            # FIX-C3: Handle dict and date-only start formats
+            if isinstance(start_raw, dict):
+                start_str = start_raw.get("dateTime", start_raw.get("date", ""))
+            else:
+                start_str = str(start_raw)
+            if not start_str or "T" not in start_str:
+                continue  # Skip all-day events
+            try:
+                start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                start_local = start_dt.astimezone().replace(tzinfo=None)
+                hours_until = (start_local - now).total_seconds() / 3600
+                if 0 < hours_until <= 4:
+                    guest_event = ev
+                    break
+            except (ValueError, TypeError, AttributeError):
+                continue
+
+        if not guest_event:
+            return None
+
+        # Haus-Zustand pruefen: offene Probleme sammeln
+        issues = []
+
+        # Alarm noch scharf?
+        states = data.get("states", [])
+        for s in states:
+            eid = s.get("entity_id", "")
+            if "alarm_control_panel" in eid and s.get("state") in ("armed_away", "armed_home"):
+                issues.append("Alarm ist noch scharf")
+                break
+
+        # Alle Lichter aus?
+        lights_on = 0
+        for s in states:
+            if s.get("entity_id", "").startswith("light.") and s.get("state") == "on":
+                lights_on += 1
+        if lights_on == 0:
+            issues.append("Alle Lichter sind aus")
+
+        # Temperatur: Zu kalt (<19°C) oder zu warm (>26°C) fuer Gaeste?
+        climate_data = data.get("climate", [])
+        uncomfortable_rooms = []
+        for cl in climate_data:
+            current_temp = cl.get("current_temp")
+            if current_temp is not None:
+                if current_temp < 19:
+                    uncomfortable_rooms.append(f"{cl['name']} nur {current_temp:.0f}°C")
+                elif current_temp > 26:
+                    uncomfortable_rooms.append(f"{cl['name']} {current_temp:.0f}°C")
+        if uncomfortable_rooms:
+            issues.append(f"Temperatur: {', '.join(uncomfortable_rooms[:2])}")
+
+        # Offene Tueren pruefen (Haustuer etc.)
+        open_doors = data.get("open_doors", [])
+        if open_doors:
+            issues.append(f"Tueren offen: {', '.join(open_doors[:2])}")
+
+        if not issues:
+            return None
+
+        title = await self._get_title_for_home()
+        event_title = guest_event.get("summary", "Gaeste")
+        issues_str = " und ".join(issues)
+
+        return {
+            "check": "guest_preparation",
+            "urgency": "medium",
+            "message": (
+                f"{title}, '{event_title}' steht in Kuerze an. "
+                f"Allerdings: {issues_str}. Soll ich das Haus vorbereiten?"
+            ),
+            "data": {"event": event_title, "issues": issues},
+        }
+
+    async def _check_away_security_full(self, data: dict) -> Optional[dict]:
+        """Abwesend + offene Fenster/Tueren + Alarm aus → priorisierte Sicherheits-Checkliste.
+
+        3D+ Cross-Reference: Anwesenheit × Fenster × Tueren × Alarm × Licht.
+        Offene Tueren werden als kritischer gewichtet als Fenster.
+        """
+        states = data.get("states", [])
+        if not states:
+            return None
+
+        # Alle Personen away?
+        person_entities = [
+            s for s in states if s.get("entity_id", "").startswith("person.")
+        ]
+        if not person_entities:
+            return None  # Keine Person-Entities — kann Anwesenheit nicht bestimmen
+
+        persons_home = [
+            s.get("attributes", {}).get("friendly_name", "")
+            for s in person_entities if s.get("state") == "home"
+        ]
+        if persons_home:
+            return None  # Jemand ist zuhause
+
+        # Probleme sammeln (nach Prioritaet sortiert)
+        issues = []
+
+        # Offene Tueren (hoechste Prioritaet — Sicherheitsrisiko)
+        open_doors = data.get("open_doors", [])
+        if open_doors:
+            doors = open_doors[:3]
+            issues.append(f"Tueren offen: {', '.join(doors)}")
+
+        # Offene Fenster
+        if data.get("open_windows"):
+            windows = data["open_windows"][:3]
+            issues.append(f"Fenster offen: {', '.join(windows)}")
+
+        # Alarm aus
+        alarm_armed = False
+        for s in states:
+            if "alarm_control_panel" in s.get("entity_id", ""):
+                if s.get("state") in ("armed_away", "armed_home", "armed_night"):
+                    alarm_armed = True
+        if not alarm_armed:
+            issues.append("Alarm nicht aktiviert")
+
+        # Lichter an
+        lights_on = []
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("light.") and s.get("state") == "on":
+                name = s.get("attributes", {}).get("friendly_name", eid)
+                lights_on.append(name)
+        if lights_on:
+            issues.append(f"Lichter an: {', '.join(lights_on[:3])}")
+
+        # Offene Tuer allein reicht fuer Hinweis (kritischer als Fenster)
+        min_issues = 1 if open_doors else 2
+        if len(issues) < min_issues:
+            return None
+
+        title = await self._get_title_for_home()
+        issues_str = "; ".join(issues)
+
+        return {
+            "check": "away_security_full",
+            "urgency": "high",
+            "message": (
+                f"{title}, niemand ist zuhause, aber: {issues_str}. "
+                f"Soll ich Massnahmen ergreifen?"
+            ),
+            "data": {"issues": issues},
+        }
+
+    async def _check_health_work_pattern(self, data: dict) -> Optional[dict]:
+        """Arbeitszeit >8h + spaete Uhrzeit + optional schlechtes Raumklima.
+
+        3D+ Cross-Reference: Aktivitaet × Zeit × Raumklima (Temperatur + Luftfeuchtigkeit).
+        Raumklima-Probleme verstaerken die Dringlichkeit.
+        """
+        if not self.activity:
+            return None
+
+        hour = datetime.now().hour
+        if hour < 18:  # Erst abends relevant
+            return None
+
+        try:
+            activity = self.activity.current_activity
+            if activity not in ("focused", "working"):
+                return None
+
+            # Wie lange aktiv?
+            duration_h = getattr(self.activity, "current_duration_hours", 0) or 0
+            if duration_h < 8:
+                return None
+
+            # Raumklima pruefen: Temperatur oder Luftfeuchtigkeit problematisch?
+            climate_hints = []
+            climate_data = data.get("climate", [])
+            for cl in climate_data:
+                current_temp = cl.get("current_temp")
+                if current_temp is not None and current_temp > 25:
+                    climate_hints.append(f"{cl['name']} bei {current_temp:.0f}°C")
+
+            # Aussen-Luftfeuchtigkeit als Indikator (>65% = schwuel)
+            weather = data.get("weather") or {}
+            humidity = weather.get("humidity")
+            if humidity is not None and humidity > 65:
+                climate_hints.append(f"Luftfeuchtigkeit {humidity}%")
+
+            title = await self._get_title_for_home()
+
+            urgency = "low"
+            climate_suffix = ""
+            if climate_hints:
+                urgency = "medium"
+                climate_suffix = f" Dazu: {', '.join(climate_hints[:2])}."
+
+            return {
+                "check": "health_work_pattern",
+                "urgency": urgency,
+                "message": (
+                    f"{title}, du arbeitest seit ueber {int(duration_h)} Stunden. "
+                    f"Eine Pause waere jetzt keine schlechte Idee.{climate_suffix}"
+                ),
+                "data": {
+                    "hours": duration_h,
+                    "climate_issues": climate_hints,
+                },
+            }
+        except Exception:
+            return None
+
+    async def _check_humidity_contradiction(self, data: dict) -> Optional[dict]:
+        """Entfeuchter aktiv + Fenster offen bei Regen/hoher Luftfeuchtigkeit = Widerspruch.
+
+        3D Cross-Reference: Geraete × Fenster × Wetter × Sensoren.
+        Nutzt neben Forecast auch Indoor-Luftfeuchtigkeits-Sensoren.
+        """
+        # Fenster offen?
+        if not data.get("open_windows"):
+            return None
+
+        # Regnet es oder ist Aussen-Luftfeuchtigkeit hoch?
+        is_humid_outside = False
+        humidity_detail = ""
+        forecast = data.get("forecast", [])
+        for fc in forecast[:1]:
+            cond = str(fc.get("condition", "")).lower()
+            precip = fc.get("precipitation", 0) or 0
+            if cond in _RAIN_CONDITIONS or precip > 2:
+                is_humid_outside = True
+                humidity_detail = "bei Regen"
+                break
+
+        # Alternativ: Aussen-Luftfeuchtigkeit > 80%
+        if not is_humid_outside:
+            weather = data.get("weather") or {}
+            outdoor_humidity = weather.get("humidity")
+            if outdoor_humidity is not None and outdoor_humidity > 80:
+                is_humid_outside = True
+                humidity_detail = f"bei {outdoor_humidity}% Luftfeuchtigkeit draussen"
+
+        if not is_humid_outside:
+            return None
+
+        # Entfeuchter / Klimaanlage im Entfeuchter-Modus?
+        states = data.get("states", [])
+        dehumidifier_on = False
+        for s in states:
+            eid = s.get("entity_id", "")
+            if ("dehumid" in eid or "entfeuchter" in eid) and s.get("state") == "on":
+                dehumidifier_on = True
+                break
+            # Klima im Dry-Modus
+            if "climate" in eid and s.get("attributes", {}).get("hvac_mode") == "dry":
+                dehumidifier_on = True
+                break
+
+        if not dehumidifier_on:
+            return None
+
+        # Indoor-Sensor pruefen fuer konkretere Meldung
+        indoor_humidity = None
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("sensor.") and "humidity" in eid:
+                try:
+                    val = float(s.get("state", ""))
+                    if 10 < val < 100:  # Plausibilitaetscheck
+                        indoor_humidity = val
+                        break
+                except (ValueError, TypeError):
+                    pass
+
+        title = await self._get_title_for_home()
+        windows = ", ".join(data["open_windows"][:2])
+
+        indoor_hint = ""
+        if indoor_humidity is not None and indoor_humidity > 60:
+            indoor_hint = f" Innen bereits {indoor_humidity:.0f}%."
+
+        return {
+            "check": "humidity_contradiction",
+            "urgency": "low",
+            "message": (
+                f"{title}, der Entfeuchter laeuft waehrend {windows} "
+                f"{humidity_detail} offen steht. Das arbeitet gegeneinander.{indoor_hint}"
+            ),
+            "data": {
+                "windows": data["open_windows"],
+                "indoor_humidity": indoor_humidity,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Night Security Check
+    # ------------------------------------------------------------------
+
+    async def _check_night_security(self, data: dict) -> Optional[dict]:
+        """Nach 23 Uhr: Fenster/Tueren offen + Person zuhause → Erinnerung.
+
+        Kreuz-referenziert: Uhrzeit × offene Fenster/Tueren × Anwesenheit × Aktivitaet.
+        """
+        now = datetime.now()
+        if now.hour < 23 and now.hour >= 6:
+            return None
+
+        # Nur wenn jemand zuhause ist
+        persons_home = data.get("persons_home", [])
+        if not persons_home:
+            return None
+
+        open_windows = data.get("open_windows", [])
+        open_doors = data.get("open_doors", [])
+        if not open_windows and not open_doors:
+            return None
+
+        # Alarm-Status pruefen — wenn scharf, ist alles ok
+        alarm_state = data.get("alarm_state")
+        if alarm_state and alarm_state.startswith("armed"):
+            return None
+
+        # Aktivitaets-Check: Wenn jemand aktiv arbeitet, nicht stoeren
+        if self.activity:
+            try:
+                if self.activity.current_activity == "working" and \
+                   self.activity.current_duration_hours < 2:
+                    return None
+            except (AttributeError, TypeError):
+                pass
+
+        issues = []
+        if open_windows:
+            windows = ", ".join(open_windows[:3])
+            extra = f" (+{len(open_windows) - 3})" if len(open_windows) > 3 else ""
+            issues.append(f"Fenster offen: {windows}{extra}")
+        if open_doors:
+            doors = ", ".join(open_doors[:2])
+            issues.append(f"Tueren offen: {doors}")
+
+        urgency = "medium"
+        if open_doors:
+            urgency = "high"
+
+        # Temperatur-Hinweis: Wenn es draussen kalt ist
+        temp_hint = ""
+        weather = data.get("weather") or {}
+        outdoor_temp = weather.get("temperature")
+        if outdoor_temp is not None and outdoor_temp < 10:
+            temp_hint = f" Draussen sind es {outdoor_temp:.0f}°C."
+
+        title = await self._get_title_for_home()
+        issue_text = ". ".join(issues)
+
+        return {
+            "check": "night_security",
+            "urgency": urgency,
+            "message": (
+                f"{title}, es ist nach 23 Uhr. {issue_text}.{temp_hint} "
+                f"Alles zu fuer die Nacht?"
+            ),
+            "data": {
+                "open_windows": open_windows,
+                "open_doors": open_doors,
+                "hour": now.hour,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Heating vs Sun Check
+    # ------------------------------------------------------------------
+
+    async def _check_heating_vs_sun(self, data: dict) -> Optional[dict]:
+        """Heizung laeuft + sonnig + warm draussen → Sonne nutzen statt heizen.
+
+        Kreuz-referenziert: Klima-Geraete × Wetter × Aussentemperatur × Rollladen.
+        """
+        weather = data.get("weather") or {}
+        condition = str(weather.get("condition", "")).lower()
+        outdoor_temp = weather.get("temperature")
+
+        # Sonnig/klar und warm genug?
+        sunny_conditions = ["sunny", "clear-night", "partlycloudy"]
+        if condition not in sunny_conditions:
+            return None
+        if outdoor_temp is None or outdoor_temp < 18:
+            return None
+
+        # Aktiv heizende Klimageraete finden
+        climate_data = data.get("climate", [])
+        heating_rooms = []
+        for cl in climate_data:
+            hvac_action = cl.get("hvac_action", "")
+            state = cl.get("state", "")
+            if hvac_action == "heating" or (state == "heat" and hvac_action != "idle"):
+                heating_rooms.append(cl.get("name", "Unbekannt"))
+
+        if not heating_rooms:
+            return None
+
+        # Rollladen-Status pruefen: Sind Rollladen geschlossen?
+        covers_closed = []
+        for s in data.get("states", []):
+            eid = s.get("entity_id", "")
+            if eid.startswith("cover."):
+                state = s.get("state", "")
+                pos = s.get("attributes", {}).get("current_position")
+                name = s.get("attributes", {}).get("friendly_name", eid)
+                if state == "closed" or (pos is not None and pos < 20):
+                    covers_closed.append(name)
+
+        rooms_text = ", ".join(heating_rooms[:3])
+        title = await self._get_title_for_home()
+
+        cover_hint = ""
+        if covers_closed:
+            cover_names = ", ".join(covers_closed[:2])
+            extra = f" (+{len(covers_closed) - 2})" if len(covers_closed) > 2 else ""
+            cover_hint = f" Die Rollladen ({cover_names}{extra}) sind noch geschlossen."
+
+        return {
+            "check": "heating_vs_sun",
+            "urgency": "low",
+            "message": (
+                f"{title}, die Heizung laeuft in {rooms_text}, "
+                f"aber draussen sind es {outdoor_temp:.0f}°C bei Sonnenschein.{cover_hint} "
+                f"Sonne rein lassen statt heizen?"
+            ),
+            "data": {
+                "heating_rooms": heating_rooms,
+                "outdoor_temp": outdoor_temp,
+                "covers_closed": covers_closed,
+                "condition": condition,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Forgotten Devices Check
+    # ------------------------------------------------------------------
+
+    async def _check_forgotten_devices(self, data: dict) -> Optional[dict]:
+        """Media Player / TV an + alle weg oder Schlafenszeit → Erinnerung.
+
+        Kreuz-referenziert: Media-Player-Status × Anwesenheit × Uhrzeit.
+        """
+        # Alle weg ODER nach Mitternacht + keine Aktivitaet
+        persons_home = data.get("persons_home", [])
+        persons_away = data.get("persons_away", [])
+        now = datetime.now()
+        is_late_night = 0 <= now.hour < 5
+
+        all_away = len(persons_home) == 0 and len(persons_away) > 0
+        if not all_away and not is_late_night:
+            return None
+
+        # Media Player / TV finden die laufen
+        active_media = []
+        for s in data.get("states", []):
+            eid = s.get("entity_id", "")
+            if eid.startswith("media_player."):
+                state = s.get("state", "")
+                if state in ("playing", "paused", "on"):
+                    name = s.get("attributes", {}).get("friendly_name", eid)
+                    media_title = s.get("attributes", {}).get("media_title", "")
+                    if media_title:
+                        active_media.append(f"{name} ({media_title})")
+                    else:
+                        active_media.append(name)
+
+        if not active_media:
+            return None
+
+        title = await self._get_title_for_home()
+        devices = ", ".join(active_media[:3])
+        extra = f" (+{len(active_media) - 3})" if len(active_media) > 3 else ""
+
+        if all_away:
+            reason = "niemand zuhause ist"
+            urgency = "medium"
+        else:
+            reason = f"es {now.hour} Uhr nachts ist"
+            urgency = "low"
+
+        return {
+            "check": "forgotten_devices",
+            "urgency": urgency,
+            "message": (
+                f"{title}, {devices}{extra} laeuft noch, "
+                f"obwohl {reason}. Ausschalten?"
+            ),
+            "data": {
+                "active_media": active_media,
+                "all_away": all_away,
+                "hour": now.hour,
+            },
+        }
+
     async def get_status(self) -> dict:
         """Gibt den aktuellen Status der Engine zurueck."""
         status = {
@@ -1073,6 +1636,13 @@ class InsightEngine:
                 "window_temp_drop": self.check_window_temp,
                 "calendar_weather_cross": self.check_calendar_weather_cross,
                 "comfort_contradiction": self.check_comfort_contradiction,
+                "guest_preparation": self.check_guest_preparation,
+                "away_security_full": self.check_away_security_full,
+                "health_work_pattern": self.check_health_work_pattern,
+                "humidity_contradiction": self.check_humidity_contradiction,
+                "night_security": self.check_night_security,
+                "heating_vs_sun": self.check_heating_vs_sun,
+                "forgotten_devices": self.check_forgotten_devices,
             },
         }
 

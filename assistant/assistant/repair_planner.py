@@ -1119,7 +1119,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "button", "press",
                 {"entity_id": f"button.{prefix}_resume_job"})
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            logger.error("3D-Druck Start fehlgeschlagen: %s", e)
+            return {"status": "error", "message": "Druck konnte nicht gestartet werden"}
         return {"status": "ok", "message": "Druck gestartet"}
 
     async def pause_print(self) -> dict:
@@ -1134,7 +1135,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "button", "press",
                 {"entity_id": f"button.{prefix}_pause_job"})
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            logger.error("3D-Druck Pause fehlgeschlagen: %s", e)
+            return {"status": "error", "message": "Druck konnte nicht pausiert werden"}
         return {"status": "ok", "message": "Druck pausiert"}
 
     async def cancel_print(self) -> dict:
@@ -1149,13 +1151,18 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "button", "press",
                 {"entity_id": f"button.{prefix}_cancel_job"})
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            logger.error("3D-Druck Abbruch fehlgeschlagen: %s", e)
+            return {"status": "error", "message": "Druck konnte nicht abgebrochen werden"}
         return {"status": "ok", "message": "Druck abgebrochen"}
 
     # ── Roboterarm-Steuerung (Stub) ──────────────────────────
 
     async def _arm_command(self, cmd: dict) -> dict:
-        """Sendet JSON-Kommando an den Arm via HTTP."""
+        """Sendet JSON-Kommando an den Arm via HTTP.
+
+        F-081: SSRF-Schutz — URL wird validiert (Scheme, Hostname, DNS-Check).
+        F-085: Echte DNS-Resolution + Cloud-Metadata-Schutz + Response-Size-Limit.
+        """
         arm_cfg = yaml_config.get("workshop", {}).get("robot_arm", {})
         if not arm_cfg.get("enabled"):
             return {"status": "disabled",
@@ -1164,23 +1171,150 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         if not url:
             return {"status": "error",
                     "message": "Arm-URL nicht konfiguriert"}
+        # F-081: URL-Scheme + Struktur validieren
+        try:
+            from urllib.parse import urlparse
+            import ipaddress
+            import socket
+            parsed = urlparse(url)
+            if parsed.scheme not in ("http", "https"):
+                logger.warning("Arm-URL: Ungueltiges Scheme '%s'", parsed.scheme)
+                return {"status": "error",
+                        "message": "Arm-URL ungueltig"}
+            # F-082: Userinfo blockieren
+            if parsed.username or parsed.password or "@" in (parsed.netloc or ""):
+                return {"status": "error",
+                        "message": "Arm-URL ungueltig (Userinfo)"}
+            # F-085: Query-String/Fragment in Basis-URL blockieren (Path-Injection)
+            if parsed.query or parsed.fragment:
+                return {"status": "error",
+                        "message": "Arm-URL ungueltig (Query/Fragment)"}
+            hostname = parsed.hostname or ""
+            if not hostname:
+                return {"status": "error",
+                        "message": "Arm-URL ohne Hostname"}
+            # F-085: Bekannte interne Services + Cloud-Metadata blockieren
+            _ARM_BLOCKED_HOSTNAMES = frozenset(
+                {"redis", "chromadb", "ollama", "homeassistant", "ha",
+                 "localhost", "metadata.google.internal", "metadata.azure.internal"}
+            )
+            if hostname in _ARM_BLOCKED_HOSTNAMES:
+                logger.warning("Arm-URL zeigt auf blockierten Service: '%s'", hostname)
+                return {"status": "error",
+                        "message": "Arm-URL zeigt auf internen Service"}
+            # F-085: Echte DNS-Resolution — Cloud-Metadata IPs blockieren
+            # (Arm darf auf LAN-IPs, aber NICHT auf Loopback/Link-Local/Metadata)
+            _ARM_BLOCKED_NETS = [
+                ipaddress.ip_network("127.0.0.0/8"),      # Loopback
+                ipaddress.ip_network("0.0.0.0/8"),         # "This host"
+                ipaddress.ip_network("169.254.0.0/16"),    # Link-Local / Cloud Metadata
+                ipaddress.ip_network("100.64.0.0/10"),     # CGNAT
+                ipaddress.ip_network("::1/128"),
+                ipaddress.ip_network("fe80::/10"),
+            ]
+            try:
+                addr = ipaddress.ip_address(hostname)
+                # IPv4-mapped IPv6 entpacken
+                if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+                    addr = addr.ipv4_mapped
+                for net in _ARM_BLOCKED_NETS:
+                    if addr in net:
+                        logger.warning("Arm-URL: IP %s blockiert", addr)
+                        return {"status": "error",
+                                "message": "Arm-URL zeigt auf blockierte IP"}
+            except ValueError:
+                # Hostname, nicht IP-Literal — DNS aufloesen
+                try:
+                    loop = asyncio.get_running_loop()
+                    infos = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,
+                            lambda: socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM),
+                        ),
+                        timeout=5.0,
+                    )
+                    for _fam, _type, _proto, _cname, sockaddr in (infos or []):
+                        try:
+                            resolved = ipaddress.ip_address(sockaddr[0])
+                            if isinstance(resolved, ipaddress.IPv6Address) and resolved.ipv4_mapped:
+                                resolved = resolved.ipv4_mapped
+                            for net in _ARM_BLOCKED_NETS:
+                                if resolved in net:
+                                    logger.warning("Arm-URL: DNS '%s' → blockierte IP %s", hostname, resolved)
+                                    return {"status": "error",
+                                            "message": "Arm-URL loest auf blockierte IP auf"}
+                        except ValueError:
+                            pass
+                except (asyncio.TimeoutError, socket.gaierror) as e:
+                    logger.warning("Arm-URL: DNS-Aufloesung fehlgeschlagen fuer '%s': %s", hostname, e)
+                    return {"status": "error",
+                            "message": "Arm-URL nicht erreichbar"}
+        except Exception as e:
+            logger.error("Arm-URL Validierung fehlgeschlagen: %s", e)
+            return {"status": "error",
+                    "message": "Arm-URL Validierung fehlgeschlagen"}
         try:
             import aiohttp
+            # F-085: URL sicher zusammenbauen (Scheme + Host + Port + /js)
+            port_str = f":{parsed.port}" if parsed.port else ""
+            target_url = f"{parsed.scheme}://{parsed.hostname}{port_str}/js"
+            _MAX_ARM_RESPONSE = 64 * 1024  # 64 KB max
             async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=5)
+                timeout=aiohttp.ClientTimeout(total=5, sock_read=3)
             ) as session:
                 async with session.post(
-                    f"{url}/js?json={json.dumps(cmd)}"
+                    target_url,
+                    json=cmd,
+                    allow_redirects=False,  # F-081: Redirect-Blocking
                 ) as resp:
-                    return await resp.json()
+                    # F-081: Content-Type pruefen
+                    ct = resp.headers.get("Content-Type", "")
+                    if "json" not in ct.lower():
+                        logger.warning("Arm-Response: unerwarteter Content-Type '%s'", ct[:80])
+                        return {"status": "error",
+                                "message": "Arm-Antwort hat falsches Format"}
+                    # F-085: Response-Size-Limit
+                    raw = await resp.content.read(_MAX_ARM_RESPONSE + 1)
+                    if len(raw) > _MAX_ARM_RESPONSE:
+                        return {"status": "error",
+                                "message": "Arm-Antwort zu gross"}
+                    import json as _json
+                    data = _json.loads(raw)
+                    # F-085: Nur erwartete Keys zurueckgeben (kein Spread von Fremd-Daten)
+                    return {
+                        "status": data.get("status", "ok"),
+                        "x": data.get("x"),
+                        "y": data.get("y"),
+                        "z": data.get("z"),
+                    }
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            # F-078: Exception-Details NICHT leaken
+            logger.error("Arm-Kommando fehlgeschlagen: %s", e)
+            return {"status": "error",
+                    "message": "Roboterarm-Kommunikation fehlgeschlagen"}
 
     async def arm_move(self, x, y, z, speed=50) -> dict:
-        """Bewegt den Arm zu einer Position."""
+        """Bewegt den Arm zu einer Position.
+
+        F-085: Input-Validierung — Typ, Range, Division-by-Zero-Schutz.
+        """
         arm_cfg = yaml_config.get("workshop", {}).get("robot_arm", {})
         max_speed = arm_cfg.get("max_speed", 80)
-        speed = min(speed, max_speed)
+        min_speed = arm_cfg.get("min_speed", 5)
+        # F-085: Typvalidierung
+        try:
+            x, y, z = float(x), float(y), float(z)
+            speed = float(speed)
+        except (ValueError, TypeError):
+            return {"status": "error", "message": "Ungueltige Koordinaten oder Geschwindigkeit"}
+        # F-085: Range-Validierung
+        coord_max = arm_cfg.get("coord_max", 500)
+        for val, name in [(x, "x"), (y, "y"), (z, "z")]:
+            if abs(val) > coord_max:
+                return {"status": "error",
+                        "message": f"Koordinate {name}={val} ausserhalb Limit ({coord_max})"}
+        # F-085: Speed-Clamping (min/max) — verhindert Division by Zero
+        speed = max(min_speed, min(speed, max_speed))
         return await self._arm_command({
             "T": 104, "x": x, "y": y, "z": z,
             "t": int(2000 / (speed / 100)),
@@ -1196,15 +1330,28 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         return await self._arm_command({"T": 100})
 
     async def arm_save_position(self, name, position=None) -> dict:
-        """Speichert eine Arm-Position."""
+        """Speichert eine Arm-Position.
+
+        F-085: Redis Key Injection Schutz + Position-Validierung.
+        """
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfuegbar"}
+        # F-085: Name validieren (nur alphanumerisch + Unterstrich/Bindestrich)
+        import re as _re
+        if not name or not _re.match(r'^[a-zA-Z0-9_-]+$', str(name)):
+            return {"status": "error",
+                    "message": "Ungueltiger Positionsname (nur a-z, 0-9, _, -)"}
         if position is None:
             result = await self._arm_command({"T": 100})
             position = result
+        # F-085: Nur erwartete Keys speichern
+        _ALLOWED_KEYS = {"x", "y", "z", "status", "T", "t"}
+        safe_mapping = {}
+        for k, v in position.items():
+            if k in _ALLOWED_KEYS:
+                safe_mapping[k] = str(v)
         key = f"mha:repair:arm:positions:{name.lower()}"
-        await self.redis.hset(
-            key, mapping={k: str(v) for k, v in position.items()})
+        await self.redis.hset(key, mapping=safe_mapping)
         return {"status": "ok",
                 "message": f"Position '{name}' gespeichert"}
 

@@ -144,11 +144,22 @@ class EnergyOptimizer:
         # 1. Guenstiger Strom — deaktiviert (Owner-Feedback: uninteressant)
         price = self._find_sensor_value(states, self.price_sensor, ["price", "strom", "electricity"])
 
-        # 2. Solar-Ueberschuss
+        # 2. Solar-Ueberschuss + Cloud-Forecast
         solar = self._find_sensor_value(states, self.solar_sensor, ["solar", "pv"])
         export = self._find_sensor_value(states, self.grid_export_sensor, ["export", "einspeisung"])
         if solar is not None and solar > self.solar_high_watts and export and export > 500:
-            if not await self._was_recently_alerted("solar_high"):
+            # Cloud-Forecast: Bewoelkung in den naechsten Stunden pruefen
+            clouds_coming = self._check_cloud_forecast(states)
+            if clouds_coming and not await self._was_recently_alerted("solar_cloud_shift"):
+                await self._mark_alerted("solar_cloud_shift", cooldown_minutes=120)
+                alerts.append({
+                    "type": "solar_cloud_shift",
+                    "message": f"Solar-Ertrag aktuell hoch ({solar:.0f} W), aber Bewoelkung "
+                               f"vorhergesagt. Energieintensive Geraete JETZT starten "
+                               f"(Waschmaschine, Trockner, Spuelmaschine).",
+                    "urgency": "low",
+                })
+            elif not await self._was_recently_alerted("solar_high"):
                 await self._mark_alerted("solar_high", cooldown_minutes=180)
                 alerts.append({
                     "type": "solar_surplus",
@@ -349,6 +360,27 @@ class EnergyOptimizer:
             logger.debug("Wochen-Vergleich Fehler: %s", e)
 
         return None
+
+    @staticmethod
+    def _check_cloud_forecast(states: list[dict]) -> bool:
+        """Prueft ob in den naechsten 3 Stunden Bewoelkung/Regen kommt.
+
+        Nutzt weather.* forecast Daten. True = Solar wird bald sinken.
+        """
+        cloudy_conditions = {"cloudy", "rainy", "pouring", "fog", "lightning-rainy"}
+        for s in states:
+            if not s.get("entity_id", "").startswith("weather."):
+                continue
+            forecast = s.get("attributes", {}).get("forecast", [])
+            if not forecast:
+                continue
+            # Naechste 3 Forecast-Eintraege pruefen
+            for fc in forecast[:3]:
+                condition = fc.get("condition", "").lower()
+                if condition in cloudy_conditions:
+                    return True
+            return False
+        return False
 
     def _find_sensor_value(self, states: list[dict], configured_entity: str,
                            search_keywords: list[str]) -> Optional[float]:

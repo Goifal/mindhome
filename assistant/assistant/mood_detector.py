@@ -125,6 +125,10 @@ class MoodDetector:
         self.wpm_normal = voice_cfg.get("wpm_normal", 130)
         self.voice_weight = voice_cfg.get("voice_weight", 0.3)
         self._last_voice_signals: list[str] = []
+        self._last_voice_emotion: dict = {}
+
+        # Voice-Mood Integration (Quick Win 4)
+        self.voice_mood_integration = mood_cfg.get("voice_mood_integration", True)
 
     # ------------------------------------------------------------------
     # Per-Person State Management
@@ -706,6 +710,17 @@ class MoodDetector:
             voice_desc = ", ".join(voice_signals[:3])
             hints.append(f"Stimm-Analyse: {voice_desc}.")
 
+        # Voice-Emotion als zusaetzlicher Kontext (wenn vorhanden)
+        if self._last_voice_emotion and self._last_voice_emotion.get("confidence", 0) >= 0.4:
+            emo = self._last_voice_emotion["emotion"]
+            conf = self._last_voice_emotion["confidence"]
+            emotion_labels = {
+                "happy": "froehlich", "sad": "traurig", "angry": "aergerlich",
+                "anxious": "aengstlich/nervoes", "tired": "muede",
+            }
+            if emo != "neutral":
+                hints.append(f"Stimm-Emotion: {emotion_labels.get(emo, emo)} ({conf:.0%} Konfidenz).")
+
         return " ".join(hints)
 
     # ------------------------------------------------------------------
@@ -888,12 +903,16 @@ class MoodDetector:
             self._tiredness_level = min(1.0, max(0.0,
                 self._tiredness_level + tired_d * self.voice_weight))
 
-        return {
+        result = {
             "emotion": best_emotion,
             "confidence": round(confidence, 2),
             "signals": signals,
             "scores": {k: round(v, 2) for k, v in scores.items() if v > 0},
         }
+        # Voice-Emotion fuer Prompt-Hint speichern
+        if self.voice_mood_integration:
+            self._last_voice_emotion = result
+        return result
 
     def get_voice_signals(self) -> list[str]:
         """Gibt die letzten Voice-Signale zurueck."""

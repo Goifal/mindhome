@@ -154,15 +154,19 @@ class RoutineEngine:
         if not self.briefing_enabled:
             return {"text": "", "actions": []}
 
-        # Check: Heute schon gebrieft? (nur bei Auto-Trigger, nicht bei manuellem Request)
+        # Check: Heute schon gebrieft? Atomarer SET NX verhindert doppelte Ausfuehrung
         if not force and self.redis:
             today = datetime.now().strftime("%Y-%m-%d")
-            done = await self.redis.get(KEY_MORNING_DONE)
-            if done is not None:
-                done = done.decode() if isinstance(done, bytes) else done
-            if done == today:
-                logger.info("Morning Briefing bereits heute ausgefuehrt")
-                return {"text": "", "actions": []}
+            lock_key = f"{KEY_MORNING_DONE}:lock"
+            acquired = await self.redis.set(lock_key, today, ex=86400, nx=True)
+            if not acquired:
+                # Lock existiert bereits — pruefen ob heutiges Datum
+                done = await self.redis.get(KEY_MORNING_DONE)
+                if done is not None:
+                    done = done.decode() if isinstance(done, bytes) else done
+                if done == today:
+                    logger.info("Morning Briefing bereits heute ausgefuehrt")
+                    return {"text": "", "actions": []}
 
         # Bausteine sammeln
         parts = []
@@ -354,7 +358,57 @@ class RoutineEngine:
                     parts.append(f"{precipitation}mm Niederschlag")
             except (ValueError, TypeError):
                 pass
+            # F2: Regenwahrscheinlichkeit
+            precip_prob = today_fc.get("precipitation_probability")
+            if precip_prob is not None:
+                try:
+                    if int(precip_prob) > 50:
+                        parts.append(f"Regenwahrscheinlichkeit {precip_prob}%")
+                except (ValueError, TypeError):
+                    pass
             result += ". " + ", ".join(parts)
+
+        # F1: Sonnenstand-Kontext
+        sun_state = None
+        for state in states:
+            if state.get("entity_id") == "sun.sun":
+                sun_state = state
+                break
+        if sun_state:
+            sun_attrs = sun_state.get("attributes", {})
+            elevation = sun_attrs.get("elevation", 0)
+            if elevation < -6:
+                result += ". Es ist noch dunkel draussen"
+            elif elevation < 0:
+                result += ". Es daemmert gerade"
+
+        # F2: Unwetter-Warnung + Kleidungsempfehlung
+        try:
+            wind_gust = attrs.get("wind_gust_speed") or attrs.get("wind_gust")
+            if wind_gust:
+                gust_val = float(wind_gust)
+                if gust_val > 60:
+                    result += f". ACHTUNG: Sturmboeen bis {gust_val:.0f} km/h erwartet"
+                elif gust_val > 40:
+                    result += f". Starke Windboeen ({gust_val:.0f} km/h) moeglich"
+        except (ValueError, TypeError):
+            pass
+
+        # Kleidungsempfehlung
+        try:
+            temp_val = float(temp)
+            rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy"}
+            is_rainy = condition in rain_conditions
+            if temp_val < 5 and is_rainy:
+                result += ". Warme Kleidung und Regenschirm empfohlen"
+            elif temp_val < 5:
+                result += ". Warme Kleidung empfohlen"
+            elif is_rainy:
+                result += ". Regenschirm mitnehmen"
+            elif temp_val > 30:
+                result += ". Leichte Kleidung, viel Wasser trinken"
+        except (ValueError, TypeError):
+            pass
 
         return result
 
@@ -659,6 +713,8 @@ class RoutineEngine:
                 try:
                     today = datetime.now().strftime("%Y-%m-%d")
                     done = await self.redis.get("mha:routine:wakeup_done_today")
+                    if isinstance(done, bytes):
+                        done = done.decode("utf-8", errors="ignore")
                     wakeup_done = bool(done and done.startswith(today))
                 except Exception:
                     pass
@@ -678,8 +734,10 @@ class RoutineEngine:
                     actions.append({"function": "set_cover", "result": result})
 
         if self.morning_actions.get("lights_soft", False):
+            lights_room = self.morning_actions.get("lights_soft_room", "wohnzimmer")
+            lights_brightness = self.morning_actions.get("lights_soft_brightness", 30)
             result = await self._executor.execute("set_light", {
-                "room": "wohnzimmer", "state": "on", "brightness": 30,
+                "room": lights_room, "state": "on", "brightness": lights_brightness,
             })
             actions.append({"function": "set_light", "result": result})
 
@@ -719,6 +777,8 @@ class RoutineEngine:
             flag_key = "mha:routine:wakeup_done_today"
             try:
                 done = await self.redis.get(flag_key)
+                if isinstance(done, bytes):
+                    done = done.decode("utf-8", errors="ignore")
                 if done and done.startswith(today):
                     return False
             except Exception:
@@ -983,12 +1043,44 @@ class RoutineEngine:
                         tomorrow = forecast[1]
                         temp_high = tomorrow.get("temperature", "?")
                         temp_low = tomorrow.get("templow", "?")
-                        cond = self._translate_weather(tomorrow.get("condition", "?"))
+                        raw_cond = tomorrow.get("condition", "?")
+                        cond = self._translate_weather(raw_cond)
                         precipitation = tomorrow.get("precipitation")
                         text = f"Morgen: {temp_low}-{temp_high}°C, {cond}"
                         try:
                             if precipitation and float(precipitation) > 0:
                                 text += f", {precipitation}mm Niederschlag"
+                        except (ValueError, TypeError):
+                            pass
+                        # F3: Regenwahrscheinlichkeit
+                        precip_prob = tomorrow.get("precipitation_probability")
+                        if precip_prob is not None:
+                            try:
+                                if int(precip_prob) > 40:
+                                    text += f", Regenwahrscheinlichkeit {precip_prob}%"
+                            except (ValueError, TypeError):
+                                pass
+                        # F3: Wind morgen
+                        wind_tomorrow = tomorrow.get("wind_speed")
+                        if wind_tomorrow:
+                            try:
+                                w_val = float(wind_tomorrow)
+                                if w_val > 40:
+                                    text += f", starker Wind ({w_val:.0f} km/h)"
+                            except (ValueError, TypeError):
+                                pass
+                        # F3: Kleidungsempfehlung fuer morgen
+                        try:
+                            t_low = float(temp_low) if temp_low != "?" else None
+                            rain_conds = {"rainy", "pouring", "hail", "lightning-rainy"}
+                            is_rainy = raw_cond in rain_conds
+                            if t_low is not None:
+                                if t_low < 5 and is_rainy:
+                                    text += ". Warme Kleidung und Regenschirm einplanen"
+                                elif t_low < 5:
+                                    text += ". Warme Kleidung einplanen"
+                                elif is_rainy:
+                                    text += ". Regenschirm nicht vergessen"
                         except (ValueError, TypeError):
                             pass
                         parts.append(text)
@@ -1036,8 +1128,10 @@ class RoutineEngine:
                         "offset": night_offset,
                     })
                 else:
+                    night_room = gn_actions.get("heating_night_room", "schlafzimmer")
+                    night_temp = gn_actions.get("heating_night_temp", 18)
                     result = await self._executor.execute("set_climate", {
-                        "room": "schlafzimmer", "temperature": 18,
+                        "room": night_room, "temperature": night_temp,
                     })
                 actions.append({"function": "set_climate:night", "result": result})
             except Exception as e:
@@ -1283,6 +1377,8 @@ class RoutineEngine:
         # Events parsen und filtern
         events = []
         for entry in entries:
+            if isinstance(entry, bytes):
+                entry = entry.decode("utf-8", errors="ignore")
             parts = entry.split("|", 2)
             if len(parts) == 3:
                 events.append({

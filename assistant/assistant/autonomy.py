@@ -9,6 +9,9 @@ Phase 10: Person-basierte Vertrauensstufen.
 
 Autonomy Evolution: Dynamische Level-Anpassung basierend auf
 Interaktions-Statistiken und Akzeptanzrate.
+
+Domain-spezifische Autonomie: Unterschiedliche Autonomie-Level pro Bereich.
+Z.B. Level 4 bei Klima, Level 2 bei Sicherheit.
 """
 
 import logging
@@ -18,6 +21,33 @@ from .config import settings, yaml_config
 
 logger = logging.getLogger(__name__)
 
+
+# Domaenen fuer domain-spezifische Autonomie
+AUTONOMY_DOMAINS = {
+    "climate": "Klima & Heizung",
+    "light": "Licht & Beleuchtung",
+    "media": "Medien & Musik",
+    "cover": "Rolllaeden & Abdeckungen",
+    "security": "Sicherheit & Schliessung",
+    "automation": "Automationen & Routinen",
+    "notification": "Benachrichtigungen & Briefings",
+}
+
+# Mapping: Aktion -> Domaene
+ACTION_DOMAIN_MAP = {
+    "adjust_temperature_small": "climate",
+    "adjust_light_auto": "light",
+    "suggest_scene": "light",
+    "modify_routine": "automation",
+    "create_automation": "automation",
+    "modify_schedule": "automation",
+    "proactive_info": "notification",
+    "morning_briefing": "notification",
+    "arrival_greeting": "notification",
+    "security_alert": "security",
+    "pause_reminder": "notification",
+    "learn_preferences": "automation",
+}
 
 # Welches Level fuer welche Aktion noetig ist
 ACTION_PERMISSIONS = {
@@ -84,24 +114,55 @@ class AutonomyManager:
         else:
             self._evolution_criteria = dict(self._EVOLUTION_CRITERIA)
 
-    def can_act(self, action_type: str) -> bool:
+        # Domain-spezifische Autonomie-Level
+        self._domain_levels_enabled = auto_cfg.get("domain_levels_enabled", False)
+        raw_domain = auto_cfg.get("domain_levels", {})
+        self._domain_levels: dict[str, int] = {
+            d: int(l) for d, l in raw_domain.items() if d in AUTONOMY_DOMAINS
+        }
+
+    def can_act(self, action_type: str, domain: str = "") -> bool:
         """
         Prueft ob der Assistent diese Aktion ausfuehren darf.
 
+        Nutzt domain-spezifische Level falls aktiviert und konfiguriert.
+
         Args:
             action_type: Art der Aktion (z.B. "proactive_info")
+            domain: Optionale Domaene (z.B. "climate", "light")
 
         Returns:
             True wenn erlaubt
         """
         required_level = self._action_permissions.get(action_type, 5)
-        allowed = self.level >= required_level
+        effective_level = self._get_effective_level(action_type, domain)
+        allowed = effective_level >= required_level
         if not allowed:
             logger.debug(
-                "Aktion '%s' braucht Level %d, aktuell: %d",
-                action_type, required_level, self.level,
+                "Aktion '%s' braucht Level %d, effektiv: %d (Domaene: %s)",
+                action_type, required_level, effective_level, domain or "global",
             )
         return allowed
+
+    def _get_effective_level(self, action_type: str = "", domain: str = "") -> int:
+        """Bestimmt das effektive Autonomie-Level unter Beruecksichtigung von Domaenen.
+
+        Args:
+            action_type: Aktion (fuer automatische Domaenen-Erkennung)
+            domain: Explizite Domaene (hat Vorrang)
+
+        Returns:
+            Effektives Level (1-5)
+        """
+        if not self._domain_levels_enabled or not self._domain_levels:
+            return self.level
+
+        # Domaene bestimmen: explizit oder aus Action-Mapping
+        resolved_domain = domain or ACTION_DOMAIN_MAP.get(action_type, "")
+        if resolved_domain and resolved_domain in self._domain_levels:
+            return self._domain_levels[resolved_domain]
+
+        return self.level
 
     def set_level(self, level: int) -> bool:
         """Setzt ein neues Autonomie-Level (1-5)."""
@@ -112,15 +173,17 @@ class AutonomyManager:
             return True
         return False
 
+    # Level-Namen (auch von aussen nutzbar)
+    LEVEL_NAMES = {
+        1: "Assistent",
+        2: "Butler",
+        3: "Mitbewohner",
+        4: "Vertrauter",
+        5: "Autopilot",
+    }
+
     def get_level_info(self) -> dict:
         """Gibt Info ueber das aktuelle Level zurueck."""
-        names = {
-            1: "Assistent",
-            2: "Butler",
-            3: "Mitbewohner",
-            4: "Vertrauter",
-            5: "Autopilot",
-        }
         descriptions = {
             1: "Reagiert nur auf direkte Befehle",
             2: "Proaktive Infos (Briefing, Warnungen)",
@@ -128,15 +191,26 @@ class AutonomyManager:
             4: "Darf Routinen anpassen, Szenen vorschlagen",
             5: "Darf neue Automationen erstellen (mit Bestaetigung)",
         }
-        return {
+        info = {
             "level": self.level,
-            "name": names.get(self.level, "Unbekannt"),
+            "name": self.LEVEL_NAMES.get(self.level, "Unbekannt"),
             "description": descriptions.get(self.level, ""),
             "allowed_actions": [
                 action for action, req in ACTION_PERMISSIONS.items()
                 if self.level >= req
             ],
+            "domain_levels_enabled": self._domain_levels_enabled,
         }
+        if self._domain_levels_enabled and self._domain_levels:
+            info["domain_levels"] = {
+                d: {
+                    "level": l,
+                    "name": self.LEVEL_NAMES.get(l, "?"),
+                    "domain_name": AUTONOMY_DOMAINS.get(d, d),
+                }
+                for d, l in self._domain_levels.items()
+            }
+        return info
 
     # ------------------------------------------------------------------
     # Phase 10: Person-basierte Vertrauensstufen

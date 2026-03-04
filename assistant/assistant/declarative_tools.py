@@ -235,7 +235,7 @@ class DeclarativeToolExecutor:
             return await handler(config, tool.get("description", ""))
         except Exception as e:
             logger.error("Declarative Tool '%s' Fehler: %s", tool_name, e)
-            return {"success": False, "message": f"Fehler bei Ausfuehrung: {e}"}
+            return {"success": False, "message": "Fehler bei Ausfuehrung des Tools."}
 
     def _parse_time_range(self, config: dict) -> int:
         """Parst time_range zu Stunden."""
@@ -430,7 +430,7 @@ class DeclarativeToolExecutor:
         try:
             history = await self.ha.get_history(entity_id, hours=hours)
         except Exception as e:
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": "Fehler beim Abrufen der Daten."}
 
         if not history:
             return {"success": False, "message": f"Keine Historie fuer {entity_id}"}
@@ -593,7 +593,7 @@ class DeclarativeToolExecutor:
         try:
             history = await self.ha.get_history(entity_id, hours=hours)
         except Exception as e:
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": "Fehler beim Abrufen der Daten."}
 
         if not history:
             return {"success": False, "message": f"Keine Historie fuer {entity_id}"}

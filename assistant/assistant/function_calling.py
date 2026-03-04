@@ -1403,6 +1403,136 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "configure_cover_automation",
+            "description": "Cover-Automatik konfigurieren: Wetter-Integration wechseln, Sonnenpruefung beim Aufwachen, Vorhersage-Schutz, Schwellwerte aendern. Nutze dies wenn der User sagt: 'Wechsle die Wetter-Integration', 'Nimm weather.home statt forecast', 'Aendere Hitzeschutz auf 28 Grad', 'Schalte Vorhersage-Schutz aus', 'Zeig die Cover-Automatik Einstellungen'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["get", "set"],
+                        "description": "get=aktuelle Einstellungen anzeigen, set=Einstellungen aendern",
+                    },
+                    "weather_entity": {
+                        "type": "string",
+                        "description": "Wetter-Entity fuer Cover-Automatik (z.B. 'weather.forecast_home', 'weather.home'). Leer = automatische Erkennung.",
+                    },
+                    "forecast_weather_protection": {
+                        "type": "boolean",
+                        "description": "Vorhersage-basierten Wetterschutz aktivieren/deaktivieren",
+                    },
+                    "forecast_lookahead_hours": {
+                        "type": "integer",
+                        "description": "Vorhersage-Zeitraum in Stunden (1-8)",
+                    },
+                    "wakeup_sun_check": {
+                        "type": "boolean",
+                        "description": "Sonnenstand beim Aufwachen pruefen (verhindert Oeffnung bei Dunkelheit)",
+                    },
+                    "wakeup_min_sun_elevation": {
+                        "type": "number",
+                        "description": "Min. Sonnenhoehe in Grad (-12 bis 5). -6=buergerl. Daemmerung, 0=Sonnenaufgang",
+                    },
+                    "heat_protection_temp": {
+                        "type": "number",
+                        "description": "Hitzeschutz ab Aussentemperatur (Grad Celsius)",
+                    },
+                    "frost_protection_temp": {
+                        "type": "number",
+                        "description": "Frostschutz ab Temperatur (Grad Celsius)",
+                    },
+                    "storm_wind_speed": {
+                        "type": "number",
+                        "description": "Sturmschutz ab Windgeschwindigkeit (km/h)",
+                    },
+                    "weather_protection": {
+                        "type": "boolean",
+                        "description": "Wetter/Sturmschutz aktivieren/deaktivieren",
+                    },
+                    "sun_tracking": {
+                        "type": "boolean",
+                        "description": "Sonnenstand-Tracking aktivieren/deaktivieren",
+                    },
+                    "temperature_based": {
+                        "type": "boolean",
+                        "description": "Temperatur-basierte Steuerung aktivieren/deaktivieren",
+                    },
+                    "wakeup_fallback_max_minutes": {
+                        "type": "integer",
+                        "description": "Max. Minuten nach Aufwachzeit bis Oeffnung erzwungen wird (30-240)",
+                    },
+                    "night_insulation": {
+                        "type": "boolean",
+                        "description": "Nacht-Isolation (Rolladen nachts als Daemmung) an/aus",
+                    },
+                    "night_start_hour": {
+                        "type": "integer",
+                        "description": "Nacht-Start Stunde (0-23)",
+                    },
+                    "night_end_hour": {
+                        "type": "integer",
+                        "description": "Nacht-Ende Stunde (0-23)",
+                    },
+                    "presence_simulation": {
+                        "type": "boolean",
+                        "description": "Anwesenheitssimulation bei Abwesenheit an/aus",
+                    },
+                    "inverted_position": {
+                        "type": "boolean",
+                        "description": "Invertierte Position (0=offen statt 100=offen)",
+                    },
+                    "hysteresis_temp": {
+                        "type": "number",
+                        "description": "Temperatur-Hysterese in Grad (vermeidet staendiges Auf/Zu)",
+                    },
+                    "hysteresis_wind": {
+                        "type": "number",
+                        "description": "Wind-Hysterese in km/h",
+                    },
+                    "glare_protection": {
+                        "type": "boolean",
+                        "description": "Blendschutz (teilweises Schliessen bei direkter Sonne) an/aus",
+                    },
+                    "gradual_morning": {
+                        "type": "boolean",
+                        "description": "Schrittweises Oeffnen am Morgen an/aus",
+                    },
+                    "wave_open": {
+                        "type": "boolean",
+                        "description": "Wellen-Oeffnung (Raum fuer Raum zeitversetzt) an/aus",
+                    },
+                    "heating_integration": {
+                        "type": "boolean",
+                        "description": "Heizungs-Integration (Rolladen als Daemmung bei aktiver Heizung) an/aus",
+                    },
+                    "co2_ventilation": {
+                        "type": "boolean",
+                        "description": "CO2-basierte Lueftung (oeffnet bei hohem CO2) an/aus",
+                    },
+                    "privacy_mode": {
+                        "type": "boolean",
+                        "description": "Sichtschutz-Modus (abends Rolladen schliessen) an/aus",
+                    },
+                    "privacy_close_hour": {
+                        "type": "integer",
+                        "description": "Privacy ab Uhrzeit (15-22). Null = sobald es dunkel ist.",
+                    },
+                    "presence_aware": {
+                        "type": "boolean",
+                        "description": "Anwesenheits-basierte Steuerung an/aus",
+                    },
+                    "manual_override_hours": {
+                        "type": "number",
+                        "description": "Stunden die manuelle Uebersteuerung aktiv bleibt (0.5-12)",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "play_media",
             "description": "Musik oder Medien steuern: abspielen, pausieren, stoppen, Lautstaerke aendern. Fuer 'leiser' verwende action='volume_down', fuer 'lauter' verwende action='volume_up'. Fuer eine bestimmte Lautstaerke verwende action='volume' mit volume-Parameter.",
             "parameters": {
@@ -2856,7 +2986,7 @@ class FunctionExecutor:
         "get_device_health", "get_learned_patterns", "describe_doorbell",
         "manage_protocol", "recommend_music", "manage_visitor",
         "set_vacuum", "get_vacuum",
-        "manage_repair",
+        "manage_repair", "configure_cover_automation",
         "remote_control", "get_remotes",
         "create_declarative_tool", "list_declarative_tools",
         "delete_declarative_tool", "run_declarative_tool",
@@ -3018,10 +3148,138 @@ class FunctionExecutor:
             return {"success": False, "message": f"Unbekannte Funktion: {function_name}"}
 
         try:
-            return await handler(arguments)
+            # Phase 18: Pre-Execution Consequence Check
+            consequence_hint = await self._check_consequences(function_name, arguments)
+
+            result = await handler(arguments)
+
+            # Phase 18: Consequence-Hint an Ergebnis anfuegen
+            if consequence_hint and isinstance(result, dict) and result.get("success"):
+                existing_msg = result.get("message", "")
+                result["message"] = f"{existing_msg} (Hinweis: {consequence_hint})"
+                result["consequence_hint"] = consequence_hint
+
+            return result
         except Exception as e:
-            logger.error("Fehler bei %s: %s", function_name, e)
-            return {"success": False, "message": f"Da lief etwas schief: {e}"}
+            # F-088: Exception-Details NICHT an LLM/User leaken
+            logger.error("Fehler bei %s: %s", function_name, e, exc_info=True)
+            return {"success": False, "message": "Da lief etwas schief. Bitte versuche es erneut."}
+
+    # ── Phase 18: Pre-Execution Consequence Check ──────────────
+
+    async def _check_consequences(self, func_name: str, args: dict) -> Optional[str]:
+        """Prueft vor Ausfuehrung ob die Aktion im Kontext sinnvoll ist.
+
+        Statische Regeln — kein LLM-Overhead. Blockiert NICHT,
+        gibt nur einen Hinweis-String zurueck.
+
+        Returns:
+            Hinweis-String oder None
+        """
+        from .config import yaml_config
+        if not yaml_config.get("consequence_checks", {}).get("enabled", True):
+            return None
+
+        try:
+            hour = datetime.now().hour
+
+            # Regel: Heizung hoch + Fenster offen
+            if func_name == "set_climate":
+                states = await self.ha.get_states()
+                open_windows = [
+                    s.get("attributes", {}).get("friendly_name", s["entity_id"])
+                    for s in (states or [])
+                    if s.get("entity_id", "").startswith(("binary_sensor.fenster", "binary_sensor.window"))
+                    and s.get("state") == "on"
+                ]
+                if open_windows:
+                    room = args.get("room", "")
+                    windows_str = ", ".join(open_windows[:2])
+                    return f"Fenster {windows_str} offen — Heizung wird ineffizient."
+
+            # Regel: Medien laut + spaet nachts
+            if func_name == "play_media" and (hour >= 22 or hour < 6):
+                return f"Es ist {hour} Uhr — Lautstaerke beachten."
+
+            # Regel: Alarm scharf + Fenster offen
+            if func_name == "arm_security_system":
+                states = await self.ha.get_states()
+                open_windows = [
+                    s.get("attributes", {}).get("friendly_name", s["entity_id"])
+                    for s in (states or [])
+                    if s.get("entity_id", "").startswith(("binary_sensor.fenster", "binary_sensor.window"))
+                    and s.get("state") == "on"
+                ]
+                if open_windows:
+                    windows_str = ", ".join(open_windows[:3])
+                    return f"Fenster {windows_str} noch offen."
+
+            # Regel: Alle Lichter aus + jemand noch aktiv
+            if func_name == "set_light_all":
+                state = str(args.get("state", "")).lower()
+                if state == "off" and 8 <= hour <= 23:
+                    # Pruefen ob Aktivitaet erkannt
+                    import assistant.main as main_module
+                    if hasattr(main_module, "brain") and hasattr(main_module.brain, "activity"):
+                        activity = main_module.brain.activity.current_activity
+                        if activity in ("focused", "working", "watching"):
+                            return "Jemand scheint noch aktiv zu sein."
+
+            # Regel: Heizung hoch bei extremer Kaelte draussen → Warnung
+            if func_name in ("set_climate", "set_climate_room"):
+                temp_arg = args.get("temperature")
+                if temp_arg is not None:
+                    try:
+                        target = float(temp_arg)
+                        if target >= 24:
+                            states = await self.ha.get_states()
+                            for s in (states or []):
+                                eid = s.get("entity_id", "")
+                                if "outdoor" in eid and "temperature" in eid:
+                                    try:
+                                        outside = float(s.get("state", 0))
+                                        if outside <= -5:
+                                            return (
+                                                f"Bei {outside}°C Aussentemperatur wird die "
+                                                f"Heizung auf {target}°C Muehe haben."
+                                            )
+                                    except (ValueError, TypeError):
+                                        pass
+                    except (ValueError, TypeError):
+                        pass
+
+            # Regel: Rollladen runter bei Sturm → Warnung
+            if func_name in ("set_cover", "set_cover_all"):
+                position = args.get("position")
+                action = str(args.get("action", "")).lower()
+                if position is not None or action in ("open", "down"):
+                    states = await self.ha.get_states()
+                    for s in (states or []):
+                        eid = s.get("entity_id", "")
+                        if "wind" in eid and "speed" in eid:
+                            try:
+                                wind = float(s.get("state", 0))
+                                if wind >= 60:  # km/h
+                                    return f"Windgeschwindigkeit {wind} km/h — Rolllaeden besser oben lassen."
+                            except (ValueError, TypeError):
+                                pass
+
+            # Regel: Licht aus im spezifischen Raum + Bewegung erkannt
+            if func_name == "set_light":
+                state = str(args.get("state", "")).lower()
+                room = args.get("room", "").lower()
+                if state == "off" and room:
+                    states = await self.ha.get_states()
+                    for s in (states or []):
+                        eid = s.get("entity_id", "")
+                        if (eid.startswith("binary_sensor.motion") or eid.startswith("binary_sensor.bewegung")):
+                            if room in eid.lower() and s.get("state") == "on":
+                                return f"Im {room.capitalize()} wurde gerade Bewegung erkannt."
+
+            return None
+        except Exception as e:
+            logger.debug("Consequence-Check Fehler: %s", e)
+            return None
 
     # ── Phase 11: Adaptive Helligkeit (dim2warm) ──────────────
     # Default-Kurve als Fallback (wird von settings.yaml ueberschrieben)
@@ -3750,7 +4008,10 @@ class FunctionExecutor:
             security = yaml_config.get("security", {}).get("climate_limits", {})
             temp = max(security.get("min", 5), min(security.get("max", 30), temp))
         elif "temperature" in args:
-            temp = float(args["temperature"])
+            try:
+                temp = float(args["temperature"])
+            except (ValueError, TypeError):
+                return {"success": False, "message": f"Ungueltige Temperatur: {args['temperature']}"}
         else:
             return {"success": False, "message": "Keine Temperatur angegeben"}
 
@@ -4134,6 +4395,166 @@ class FunctionExecutor:
             await self.ha.call_service("cover", service, {"entity_id": eid})
             count += 1
         return {"success": True, "message": f"{count} Rolllaeden: {service}"}
+
+    # ── Cover-Automatik Konfiguration ──────────────────────
+
+    async def _exec_configure_cover_automation(self, args: dict) -> dict:
+        """Cover-Automatik Settings lesen/schreiben (inkl. Wetter-Integration)."""
+        action = args.get("action", "get")
+
+        cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
+
+        if action == "get":
+            # Welche weather-Entity wird aktuell genutzt?
+            configured = cover_cfg.get("weather_entity", "")
+            if not configured:
+                # Auto-Detection: schauen welche weather-Entity existiert
+                states = await self.ha.get_states()
+                for s in (states or []):
+                    eid = s.get("entity_id", "")
+                    if eid == "weather.forecast_home":
+                        configured = eid
+                        break
+                    if eid.startswith("weather.") and not configured:
+                        configured = eid
+                configured = configured or "(keine weather-Entity gefunden)"
+
+            return {
+                "success": True,
+                "settings": {
+                    "weather_entity": cover_cfg.get("weather_entity", "") or f"auto ({configured})",
+                    "weather_protection": cover_cfg.get("weather_protection", True),
+                    "forecast_weather_protection": cover_cfg.get("forecast_weather_protection", True),
+                    "forecast_lookahead_hours": cover_cfg.get("forecast_lookahead_hours", 4),
+                    "sun_tracking": cover_cfg.get("sun_tracking", True),
+                    "temperature_based": cover_cfg.get("temperature_based", True),
+                    "heat_protection_temp": cover_cfg.get("heat_protection_temp", 26),
+                    "frost_protection_temp": cover_cfg.get("frost_protection_temp", 3),
+                    "storm_wind_speed": cover_cfg.get("storm_wind_speed", 50),
+                    "wakeup_sun_check": cover_cfg.get("wakeup_sun_check", True),
+                    "wakeup_min_sun_elevation": cover_cfg.get("wakeup_min_sun_elevation", -6),
+                    "wakeup_fallback_max_minutes": cover_cfg.get("wakeup_fallback_max_minutes", 120),
+                    "night_insulation": cover_cfg.get("night_insulation", True),
+                    "night_start_hour": cover_cfg.get("night_start_hour", 22),
+                    "night_end_hour": cover_cfg.get("night_end_hour", 6),
+                    "presence_simulation": cover_cfg.get("presence_simulation", True),
+                    "inverted_position": cover_cfg.get("inverted_position", False),
+                    "hysteresis_temp": cover_cfg.get("hysteresis_temp", 2),
+                    "hysteresis_wind": cover_cfg.get("hysteresis_wind", 10),
+                    "glare_protection": cover_cfg.get("glare_protection", False),
+                    "gradual_morning": cover_cfg.get("gradual_morning", False),
+                    "wave_open": cover_cfg.get("wave_open", False),
+                    "heating_integration": cover_cfg.get("heating_integration", False),
+                    "co2_ventilation": cover_cfg.get("co2_ventilation", False),
+                    "privacy_mode": cover_cfg.get("privacy_mode", False),
+                    "privacy_close_hour": cover_cfg.get("privacy_close_hour", None),
+                    "presence_aware": cover_cfg.get("presence_aware", False),
+                    "manual_override_hours": cover_cfg.get("manual_override_hours", 2),
+                },
+            }
+
+        # action == "set"
+        import yaml as _yaml
+        SETTINGS_PATH = Path("/app/config/settings.yaml")
+
+        ALLOWED_KEYS = {
+            "weather_entity", "weather_protection", "forecast_weather_protection",
+            "forecast_lookahead_hours", "sun_tracking", "temperature_based",
+            "heat_protection_temp", "frost_protection_temp", "storm_wind_speed",
+            "wakeup_sun_check", "wakeup_min_sun_elevation", "wakeup_fallback_max_minutes",
+            "night_insulation", "night_start_hour", "night_end_hour",
+            "presence_simulation", "inverted_position",
+            "hysteresis_temp", "hysteresis_wind",
+            "glare_protection", "gradual_morning", "wave_open",
+            "heating_integration", "co2_ventilation",
+            "privacy_mode", "privacy_close_hour", "presence_aware", "manual_override_hours",
+        }
+
+        changes = {}
+        for key in ALLOWED_KEYS:
+            if key in args:
+                changes[key] = args[key]
+
+        if not changes:
+            return {"success": False, "message": "Keine aenderbaren Einstellungen angegeben."}
+
+        # Validierung weather_entity
+        if "weather_entity" in changes:
+            we = changes["weather_entity"]
+            if we and not we.startswith("weather."):
+                return {
+                    "success": False,
+                    "message": f"Ungueltige Weather-Entity: '{we}'. Muss mit 'weather.' beginnen.",
+                }
+
+        try:
+            config = _yaml.safe_load(SETTINGS_PATH.read_text()) or {}
+            if "seasonal_actions" not in config:
+                config["seasonal_actions"] = {}
+            if "cover_automation" not in config["seasonal_actions"]:
+                config["seasonal_actions"]["cover_automation"] = {}
+
+            for k, v in changes.items():
+                config["seasonal_actions"]["cover_automation"][k] = v
+
+            SETTINGS_PATH.write_text(
+                _yaml.safe_dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            )
+
+            # In-Memory Config aktualisieren
+            import assistant.config as _cfg
+            _ca = _cfg.yaml_config.get("seasonal_actions", {})
+            if "cover_automation" not in _ca:
+                _ca["cover_automation"] = {}
+            _ca["cover_automation"].update(changes)
+
+            # Beschreibung fuer Antwort
+            desc_parts = []
+            _labels = {
+                "weather_entity": "Wetter-Entity",
+                "weather_protection": "Wetterschutz",
+                "forecast_weather_protection": "Vorhersage-Schutz",
+                "forecast_lookahead_hours": "Vorhersage-Zeitraum",
+                "sun_tracking": "Sonnenstand-Tracking",
+                "temperature_based": "Temperatur-Steuerung",
+                "heat_protection_temp": "Hitzeschutz-Temp",
+                "frost_protection_temp": "Frostschutz-Temp",
+                "storm_wind_speed": "Sturmschutz-Wind",
+                "wakeup_sun_check": "Aufwach-Sonnenpruefung",
+                "wakeup_min_sun_elevation": "Min. Sonnenhoehe",
+                "wakeup_fallback_max_minutes": "Aufwach-Fallback (Min.)",
+                "night_insulation": "Nacht-Isolation",
+                "night_start_hour": "Nacht-Start (Stunde)",
+                "night_end_hour": "Nacht-Ende (Stunde)",
+                "presence_simulation": "Anwesenheitssimulation",
+                "inverted_position": "Invertierte Position",
+                "hysteresis_temp": "Hysterese Temperatur",
+                "hysteresis_wind": "Hysterese Wind",
+                "glare_protection": "Blendschutz",
+                "gradual_morning": "Schrittweises Oeffnen",
+                "wave_open": "Wellen-Oeffnung",
+                "heating_integration": "Heizungs-Integration",
+                "co2_ventilation": "CO2-Lueftung",
+                "privacy_mode": "Sichtschutz-Modus",
+                "privacy_close_hour": "Privacy ab Uhrzeit",
+                "presence_aware": "Anwesenheits-Erkennung",
+                "manual_override_hours": "Manueller Override (Std.)",
+            }
+            for k, v in changes.items():
+                label = _labels.get(k, k)
+                if isinstance(v, bool):
+                    desc_parts.append(f"{label}: {'an' if v else 'aus'}")
+                else:
+                    desc_parts.append(f"{label}: {v}")
+
+            return {
+                "success": True,
+                "message": f"Cover-Automatik aktualisiert: {', '.join(desc_parts)}",
+                "changes": changes,
+            }
+        except Exception as e:
+            logger.error("Fehler beim Speichern: %s", e)
+            return {"success": False, "message": "Fehler beim Speichern der Einstellungen."}
 
     # ── Phase 11: Saugroboter (Dreame, 2 Etagen) ──────────
 
@@ -4732,8 +5153,10 @@ class FunctionExecutor:
         return {"success": success, "message": f"Alarm: {mode}"}
 
     async def _exec_lock_door(self, args: dict) -> dict:
-        door = args["door"]
-        action = args["action"]
+        door = args.get("door", "")
+        action = args.get("action", "")
+        if not door or not action:
+            return {"success": False, "message": "door und action erforderlich"}
         entity_id = await self._find_entity("lock", door)
         if not entity_id:
             return {"success": False, "message": f"Kein Schloss '{door}' gefunden"}
@@ -4744,7 +5167,9 @@ class FunctionExecutor:
         return {"success": success, "message": f"Tuer {door}: {action}"}
 
     async def _exec_send_notification(self, args: dict) -> dict:
-        message = args["message"]
+        message = args.get("message", "")
+        if not message:
+            return {"success": False, "message": "message erforderlich"}
         target = args.get("target", "phone")
         volume = args.get("volume")  # Phase 9: Optional volume (0.0-1.0)
         room = self._clean_room(args.get("room"))  # Phase 10: Optional room for TTS routing
@@ -4815,8 +5240,10 @@ class FunctionExecutor:
         1. Person zu Hause → TTS im Raum der Person
         2. Person weg → Push-Notification auf Handy
         """
-        person = args["person"]
-        message = args["message"]
+        person = args.get("person", "")
+        message = args.get("message", "")
+        if not person or not message:
+            return {"success": False, "message": "person und message erforderlich"}
         person_lower = person.lower()
 
         # Person-Profil laden
@@ -4891,7 +5318,9 @@ class FunctionExecutor:
 
     async def _exec_play_sound(self, args: dict) -> dict:
         """Phase 9: Spielt einen Sound-Effekt ab."""
-        sound = args["sound"]
+        sound = args.get("sound", "")
+        if not sound:
+            return {"success": False, "message": "sound erforderlich"}
         room = self._clean_room(args.get("room"))
 
         speaker_entity = None
@@ -4937,7 +5366,9 @@ class FunctionExecutor:
         return {"success": success, "message": f"Sound '{sound}' gespielt"}
 
     async def _exec_get_entity_state(self, args: dict) -> dict:
-        entity_id = args["entity_id"]
+        entity_id = args.get("entity_id", "")
+        if not entity_id:
+            return {"success": False, "message": "entity_id erforderlich"}
         state = await self.ha.get_state(entity_id)
 
         # Fallback: Fuzzy-Match wenn exakter ID nicht gefunden
@@ -4992,7 +5423,7 @@ class FunctionExecutor:
             history = await self.ha.get_history(entity_id, hours=hours)
         except Exception as e:
             logger.error("get_entity_history Fehler: %s", e)
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": "Fehler beim Abrufen der Historie."}
 
         if not history:
             return {"success": True, "message": f"Keine Historie fuer '{entity_id}' in den letzten {hours}h"}
@@ -5063,7 +5494,11 @@ class FunctionExecutor:
         from datetime import datetime, timedelta
         from zoneinfo import ZoneInfo
 
-        _tz = ZoneInfo("Europe/Berlin")
+        _tz_name = yaml_config.get("timezone", "Europe/Berlin")
+        try:
+            _tz = ZoneInfo(_tz_name)
+        except Exception:
+            _tz = ZoneInfo("Europe/Berlin")
         timeframe = args.get("timeframe", "today")
         now = datetime.now(_tz)
 
@@ -5246,8 +5681,10 @@ class FunctionExecutor:
         """Phase 11.3: Neuen Kalender-Termin erstellen via HA."""
         from datetime import datetime, timedelta
 
-        title = args["title"]
-        date_str = args["date"]
+        title = args.get("title", "")
+        date_str = args.get("date", "")
+        if not title or not date_str:
+            return {"success": False, "message": "title und date erforderlich"}
         start_time = args.get("start_time", "")
         end_time = args.get("end_time", "")
         description = args.get("description", "")
@@ -5313,8 +5750,10 @@ class FunctionExecutor:
         """
         from datetime import datetime, timedelta
 
-        title = args["title"]
-        date_str = args["date"]
+        title = args.get("title", "")
+        date_str = args.get("date", "")
+        if not title or not date_str:
+            return {"success": False, "message": "title und date erforderlich"}
 
         # Kalender-Entity: Config oder erster aus HA
         calendar_entity = self._get_write_calendar()
@@ -5390,16 +5829,18 @@ class FunctionExecutor:
             }
         except Exception as e:
             logger.error("Kalender-Delete Fehler: %s", e)
-            return {"success": False, "message": f"Der Kalender macht Schwierigkeiten: {e}"}
+            return {"success": False, "message": "Der Kalender macht Schwierigkeiten."}
 
     async def _exec_reschedule_calendar_event(self, args: dict) -> dict:
         """Phase 11.3: Kalender-Termin verschieben (Delete + Re-Create).
 
         Atomisch: Wenn Create fehlschlaegt, wird der alte Termin wiederhergestellt.
         """
-        title = args["title"]
-        old_date = args["old_date"]
-        new_date = args["new_date"]
+        title = args.get("title", "")
+        old_date = args.get("old_date", "")
+        new_date = args.get("new_date", "")
+        if not title or not old_date or not new_date:
+            return {"success": False, "message": "title, old_date und new_date erforderlich"}
         new_start = args.get("new_start_time", "")
         new_end = args.get("new_end_time", "")
 
@@ -6643,7 +7084,8 @@ class FunctionExecutor:
                 return result
             return {"success": True, "message": str(result)}
         except Exception as e:
-            return {"success": False, "message": f"Energie-Report fehlgeschlagen: {e}"}
+            logger.error("Energie-Report fehlgeschlagen: %s", e)
+            return {"success": False, "message": "Energie-Report konnte nicht erstellt werden."}
 
     async def _exec_web_search(self, args: dict) -> dict:
         """Fuehrt eine Web-Suche durch."""
@@ -6652,7 +7094,8 @@ class FunctionExecutor:
         try:
             return await brain.web_search.search(query=args.get("query", ""))
         except Exception as e:
-            return {"success": False, "message": f"Web-Suche fehlgeschlagen: {e}"}
+            logger.error("Web-Suche fehlgeschlagen: %s", e)
+            return {"success": False, "message": "Web-Suche konnte nicht durchgefuehrt werden."}
 
     async def _exec_get_security_score(self, args: dict) -> dict:
         """Gibt den aktuellen Sicherheits-Score zurueck."""

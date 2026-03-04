@@ -10,6 +10,7 @@ import logging
 import math
 import os
 import re
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -39,11 +40,47 @@ except Exception as e:
     logger.warning("room_profiles.yaml nicht geladen: %s", e)
 
 # F-001/F-004/F-013-F-017: Prompt-Injection-Schutz fuer LLM-Kontext
+# F-080: Erweiterter Filter mit Unicode-Tricks, Markdown, Base64, Delimiter
+# F-084: Extraction-Attack-Patterns, Decimal HTML Entities, Delimiter Confusion
 _INJECTION_PATTERN = re.compile(
+    # Originale Patterns
     r'\[(?:SYSTEM|INSTRUCTION|OVERRIDE|ADMIN|COMMAND|PROMPT|ROLE)\b'
     r'|IGNORE\s+(?:ALL\s+)?(?:PREVIOUS\s+)?INSTRUCTIONS'
     r'|SYSTEM\s*(?:MODE|OVERRIDE|INSTRUCTION)'
-    r'|<\/?(?:system|instruction|admin|role|prompt)\b',
+    r'|<\/?(?:system|instruction|admin|role|prompt)\b'
+    # F-080: Erweiterte Patterns
+    r'|YOU\s+ARE\s+NOW'                         # Persona-Hijacking
+    r'|ACT\s+AS\s+(?:IF|A|AN|THE)'             # Persona-Hijacking v2
+    r'|DISREGARD\s+(?:ALL|PREVIOUS|ABOVE)'      # Instruction Override
+    r'|FORGET\s+(?:ALL|EVERYTHING|YOUR)'        # Memory Wipe
+    r'|NEW\s+(?:INSTRUCTION|DIRECTIVE|TASK)'    # Neuer Kontext
+    r'|BEGIN\s+(?:NEW\s+)?(?:SESSION|CONVERSATION)'  # Session-Reset
+    r'|END\s+(?:OF\s+)?(?:SYSTEM|CONTEXT)'      # Kontext-Abschluss-Trick
+    r'|```\s*(?:system|admin|instruction)'       # Markdown Code-Block Trick
+    r'|IMPORTANT\s*:\s*(?:IGNORE|OVERRIDE|FORGET)' # Dringlichkeits-Trick
+    r'|DO\s+NOT\s+(?:FOLLOW|OBEY|LISTEN)'       # Negations-Trick
+    r'|PRETEND\s+(?:YOU|THAT|THIS)'             # Pretend-Angriff
+    r'|(?:JAILBREAK|BYPASS|ESCAPE)\s'           # Explizite Angriffs-Keywords
+    r'|ASSISTANT\s*:\s'                          # Fake-Rollenuebernahme
+    r'|USER\s*:\s'                               # Fake-User-Nachricht
+    r'|HUMAN\s*:\s'                              # Fake-Human-Nachricht
+    r'|\b(?:BASE64|DECODE|EVAL)\s*\('           # Code-Execution Tricks
+    r'|---+\s*(?:SYSTEM|END|NEW)'               # Delimiter-Injection
+    # F-084: Extraction-Attack-Patterns
+    r'|REPEAT\s+(?:YOUR|THE|ALL|ABOVE|EVERYTHING)'  # Extraction
+    r'|SUMMARIZE\s+(?:THE\s+)?(?:ABOVE|SYSTEM|PREVIOUS)'  # Extraction v2
+    r'|WHAT\s+ARE\s+YOUR\s+(?:INSTRUCTIONS|RULES)'  # Extraction v3
+    r'|OUTPUT\s+(?:THE|YOUR)\s+(?:PREVIOUS|SYSTEM)'  # Extraction v4
+    r'|TRANSLATE\s+(?:THE\s+)?ABOVE'            # Extraction via Translation
+    r'|SHOW\s+(?:ME\s+)?(?:YOUR|THE)\s+(?:SYSTEM|PROMPT)'  # Extraction v5
+    # F-084: Delimiter Confusion (erweitert)
+    r'|<\|(?:im_start|im_end|endoftext|user|system)\|?>'  # Model-spezifische Tokens
+    r'|\[\/(?:INST|SYS)\]'                      # Llama-spezifische Tags
+    r'|#\s+(?:SYSTEM|NEW)\s+(?:INSTRUCTIONS|PROMPT)'  # Markdown-Header Injection
+    # F-084: HTML Entities (hex UND decimal)
+    r'|&#x?[0-9a-fA-F]+;'                       # Beide Entity-Formen
+    r'|\\u[0-9a-fA-F]{4}'                       # Unicode Escape Sequences
+    r'|[\x00-\x08\x0b\x0c\x0e-\x1f]',          # Kontrollzeichen (korrekter Char-Class)
     re.IGNORECASE,
 )
 
@@ -52,22 +89,31 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
     """Bereinigt externen Text bevor er in den LLM-Prompt eingebettet wird.
 
     Entfernt Newlines, Kontrollzeichen und verdaechtige Prompt-Injection-Patterns.
+    F-080: Unicode-Normalisierung und erweiterte Pruefungen.
+    F-084: Pattern-Check VOR Truncation (verhindert Boundary-Bypasses).
     """
     if not text or not isinstance(text, str):
         return ""
-    # Kontrollzeichen und Newlines entfernen
+    # F-084: NFKC Unicode-Normalisierung als ERSTER Schritt
+    # Wandelt Homoglyphen, Fullwidth-Zeichen, mathematische Symbole in ASCII um
+    # z.B. ᏚYSTEM → SYSTEM, ＳYSTEM → SYSTEM
+    text = unicodedata.normalize('NFKC', text)
+    # F-080: Zero-Width Unicode Zeichen entfernen (unsichtbare Payload-Traeger)
+    text = re.sub(r'[\u200b\u200c\u200d\ufeff\u2028\u2029]', '', text)
+    # Kontrollzeichen und Newlines entfernen (alle C0/C1 Controls)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
     text = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
     # Mehrfach-Leerzeichen komprimieren
     text = re.sub(r'\s{2,}', ' ', text).strip()
-    # Laenge begrenzen
-    text = text[:max_len]
-    # Injection-Patterns pruefen
+    # F-084: Injection-Pattern auf VOLLEM Text pruefen (VOR Truncation!)
     if _INJECTION_PATTERN.search(text):
         logger.warning(
             "Prompt-Injection-Verdacht in %s blockiert: %.80s",
             label or "Kontext", text,
         )
         return ""
+    # Laenge begrenzen (NACH Pattern-Check)
+    text = text[:max_len]
     return text
 
 

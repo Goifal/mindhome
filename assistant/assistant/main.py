@@ -547,7 +547,9 @@ async def api_key_middleware(request: Request, call_next):
 
     # Nur pruefen wenn Enforcement aktiviert ist
     if _api_key_required:
-        if path.startswith("/api/assistant/") or path == "/api/assistant":
+        # F-086: Workshop-API ebenfalls schuetzen (physische Aktoren!)
+        if (path.startswith("/api/assistant/") or path == "/api/assistant"
+                or path.startswith("/api/workshop/")):
             if path not in _API_KEY_EXEMPT_PATHS:
                 if not _check_api_key(request):
                     from fastapi.responses import JSONResponse
@@ -571,7 +573,8 @@ async def rate_limit_middleware(request: Request, call_next):
     client_ip = request.client.host if request.client else "unknown"
 
     async with _rate_lock:
-        now = _time.time()
+        # F-092: monotonic() statt time() — NTP-Sprung-sicher
+        now = _time.monotonic()
 
         # F-011: Periodischer Cleanup aller abgelaufenen IPs (alle 5 Min)
         if now - _rate_limit_last_cleanup > _RATE_CLEANUP_INTERVAL:
@@ -2490,6 +2493,9 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
     # frisch aus yaml_config gelesen — kein expliziter Reload noetig, aber Logging.
     if "seasonal_actions" in changed_settings:
         logger.info("Seasonal Actions Settings aktualisiert (live aus yaml_config im naechsten Zyklus)")
+        # Addon-Sync: Cover-Einstellungen an CoverControlManager weitergeben
+        cover_auto = yaml_cfg.get("seasonal_actions", {}).get("cover_automation", {})
+        _sync_cover_settings_to_addon(cover_auto)
 
     # Autonomy: Trust-Levels
     if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
@@ -2930,6 +2936,112 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             logger.info("SpeakerRecognition Settings aktualisiert (enabled=%s)", sr.enabled)
         _try_reload("speaker_recognition", _reload_speaker_recognition)
 
+    # Intelligenz-Features: Quick Wins + Medium Effort
+    if "calendar_intelligence" in changed_settings and hasattr(brain, "calendar_intelligence"):
+        def _reload_calendar_intelligence():
+            ci_cfg = yaml_cfg.get("calendar_intelligence", {})
+            ci = brain.calendar_intelligence
+            ci.enabled = ci_cfg.get("enabled", True)
+            ci.conflict_lookahead_hours = ci_cfg.get("conflict_lookahead_hours", 24)
+            ci.habit_min_occurrences = ci_cfg.get("habit_min_occurrences", 3)
+            ci.commute_minutes = ci_cfg.get("commute_minutes", 30)
+            logger.info("CalendarIntelligence Settings aktualisiert")
+        _try_reload("calendar_intelligence", _reload_calendar_intelligence)
+
+    if "explainability" in changed_settings and hasattr(brain, "explainability"):
+        def _reload_explainability():
+            ex_cfg = yaml_cfg.get("explainability", {})
+            ex = brain.explainability
+            ex.enabled = ex_cfg.get("enabled", True)
+            ex.detail_level = ex_cfg.get("detail_level", "normal")
+            ex.auto_explain = ex_cfg.get("auto_explain", False)
+            logger.info("Explainability Settings aktualisiert")
+        _try_reload("explainability", _reload_explainability)
+
+    if "learning_transfer" in changed_settings and hasattr(brain, "learning_transfer"):
+        def _reload_learning_transfer():
+            lt_cfg = yaml_cfg.get("learning_transfer", {})
+            lt = brain.learning_transfer
+            lt.enabled = lt_cfg.get("enabled", True)
+            lt.auto_suggest = lt_cfg.get("auto_suggest", True)
+            lt.min_observations = lt_cfg.get("min_observations", 3)
+            lt.transfer_confidence = lt_cfg.get("transfer_confidence", 0.7)
+            lt.domains_enabled = lt_cfg.get("domains", ["light", "climate", "media"])
+            logger.info("LearningTransfer Settings aktualisiert")
+        _try_reload("learning_transfer", _reload_learning_transfer)
+
+    if "dialogue" in changed_settings and hasattr(brain, "dialogue_state"):
+        def _reload_dialogue():
+            dlg_cfg = yaml_cfg.get("dialogue", {})
+            dlg = brain.dialogue_state
+            dlg.enabled = dlg_cfg.get("enabled", True)
+            dlg.timeout_seconds = dlg_cfg.get("timeout_seconds", 300)
+            dlg.auto_resolve_references = dlg_cfg.get("auto_resolve_references", True)
+            dlg.clarification_enabled = dlg_cfg.get("clarification_enabled", True)
+            logger.info("DialogueState Settings aktualisiert")
+        _try_reload("dialogue", _reload_dialogue)
+
+    if "climate_model" in changed_settings and hasattr(brain, "climate_model"):
+        def _reload_climate_model():
+            from .climate_model import DEFAULT_ROOM_THERMAL
+            cm_cfg = yaml_cfg.get("climate_model", {})
+            cm = brain.climate_model
+            cm.enabled = cm_cfg.get("enabled", True)
+            cm.max_simulation_minutes = cm_cfg.get("max_simulation_minutes", 240)
+            cm._default_params = {**DEFAULT_ROOM_THERMAL, **cm_cfg.get("default_params", {})}
+            cm._room_params = cm_cfg.get("room_params", {})
+            logger.info("ClimateModel Settings aktualisiert")
+        _try_reload("climate_model", _reload_climate_model)
+
+    if "predictive_maintenance" in changed_settings and hasattr(brain, "predictive_maintenance"):
+        def _reload_predictive_maintenance():
+            from .predictive_maintenance import DEFAULT_LIFESPANS
+            pm_cfg = yaml_cfg.get("predictive_maintenance", {})
+            pm = brain.predictive_maintenance
+            pm.enabled = pm_cfg.get("enabled", True)
+            pm._lifespans = {**DEFAULT_LIFESPANS, **pm_cfg.get("typical_lifespans", {})}
+            pm.battery_drain_alert_pct = pm_cfg.get("battery_drain_alert_pct_per_week", 5.0)
+            logger.info("PredictiveMaintenance Settings aktualisiert")
+        _try_reload("predictive_maintenance", _reload_predictive_maintenance)
+
+    if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
+        # Domain-spezifische Autonomie-Level nachladen
+        def _reload_autonomy_domains():
+            auto_cfg = yaml_cfg.get("autonomy", {})
+            brain.autonomy._domain_levels_enabled = auto_cfg.get("domain_levels_enabled", False)
+            raw_domains = auto_cfg.get("domain_levels", {})
+            if raw_domains:
+                brain.autonomy._domain_levels = {k: int(v) for k, v in raw_domains.items()}
+            logger.info("Autonomy Domain-Levels aktualisiert")
+        _try_reload("autonomy_domains", _reload_autonomy_domains)
+
+    # ProactiveSequencePlanner: enabled + min_autonomy (cached in __init__)
+    if "proactive_planner" in changed_settings and hasattr(brain, "proactive_planner"):
+        def _reload_proactive_planner():
+            pp_cfg = yaml_cfg.get("proactive_planner", {})
+            brain.proactive_planner.enabled = bool(pp_cfg.get("enabled", True))
+            brain.proactive_planner.min_autonomy_for_auto = int(pp_cfg.get("min_autonomy_for_auto", 4))
+            logger.info("ProactivePlanner Settings aktualisiert")
+        _try_reload("proactive_planner", _reload_proactive_planner)
+
+    # SeasonalInsightEngine: enabled + check_interval + min_history (cached in __init__)
+    if "seasonal_insights" in changed_settings and hasattr(brain, "seasonal_insight"):
+        def _reload_seasonal():
+            si_cfg = yaml_cfg.get("seasonal_insights", {})
+            si = brain.seasonal_insight
+            si.enabled = bool(si_cfg.get("enabled", True))
+            si.check_interval = si_cfg.get("check_interval_hours", 24) * 3600
+            si.min_history_months = int(si_cfg.get("min_history_months", 2))
+            logger.info("SeasonalInsight Settings aktualisiert")
+        _try_reload("seasonal_insights", _reload_seasonal)
+
+    # Phase 18 Personality/Intelligence: lesen yaml_config live — nur Logging
+    for key in ("memorable_interactions", "running_gag_evolution", "escalating_concern",
+                "curiosity", "next_step_hints", "consequence_checks", "observation_loop",
+                "insight_checks", "anticipation"):
+        if key in changed_settings:
+            logger.info("%s Settings aktualisiert (live aus yaml_config)", key)
+
     if failed_modules:
         logger.warning("Settings-Reload: %d Module fehlgeschlagen: %s",
                         len(failed_modules), ", ".join(failed_modules))
@@ -2971,6 +3083,59 @@ async def _restart_speech_containers(old_speech: dict, new_speech: dict):
     if restarted:
         logger.info("Speech-Container neu gestartet: %s", ", ".join(restarted))
     return restarted
+
+
+def _sync_cover_settings_to_addon(cover_auto: dict):
+    """Synchronisiert Cover-Settings an das Addon (CoverControlManager).
+
+    Mappt settings.yaml Keys auf CoverControlManager DEFAULT_CONFIG Keys
+    und sendet sie an /api/covers/settings (PUT).
+    """
+    if not cover_auto:
+        return
+    addon_cfg = {}
+    # Aufwach-Sonnenpruefung
+    if "wakeup_min_sun_elevation" in cover_auto:
+        addon_cfg["wakeup_min_sun_elevation_deg"] = float(
+            cover_auto["wakeup_min_sun_elevation"]
+        )
+    # Wakeup integration: abgeleitet aus wakeup_sun_check
+    # (Addon hat wakeup_integration_enabled, aber Sun-Check ist separat)
+
+    # Wetterschutz
+    if "storm_wind_speed" in cover_auto:
+        addon_cfg["wind_threshold_kmh"] = float(cover_auto["storm_wind_speed"])
+    if "frost_protection_temp" in cover_auto:
+        addon_cfg["frost_threshold_c"] = float(cover_auto["frost_protection_temp"])
+    if "heat_protection_temp" in cover_auto:
+        addon_cfg["sun_protection_outdoor_temp_c"] = float(
+            cover_auto["heat_protection_temp"]
+        )
+    if "weather_protection" in cover_auto:
+        addon_cfg["weather_protection_enabled"] = bool(cover_auto["weather_protection"])
+    if "privacy_mode" in cover_auto:
+        addon_cfg["privacy_mode_enabled"] = bool(cover_auto["privacy_mode"])
+    if "manual_override_hours" in cover_auto:
+        addon_cfg["manual_override_duration_min"] = int(
+            cover_auto["manual_override_hours"]
+        ) * 60
+
+    if not addon_cfg:
+        return
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(
+                brain.ha.mindhome_put("/api/covers/settings", addon_cfg)
+            )
+        else:
+            loop.run_until_complete(
+                brain.ha.mindhome_put("/api/covers/settings", addon_cfg)
+            )
+        logger.info("Cover-Settings an Addon synchronisiert: %s", list(addon_cfg.keys()))
+    except Exception as e:
+        logger.warning("Cover-Settings Addon-Sync fehlgeschlagen: %s", e)
 
 
 def _sync_speech_to_env(speech_cfg: dict):
@@ -5162,7 +5327,15 @@ async def workshop_library_documents():
 @app.post("/api/workshop/library/ingest")
 async def workshop_library_ingest(file: UploadFile = File(...)):
     """Importiert ein Dokument in die Workshop-Library."""
-    target = Path("/app/data/workshop/library") / file.filename
+    # F-087: Path-Traversal-Schutz — nur Dateiname ohne Verzeichnis-Komponenten
+    safe_name = Path(file.filename).name if file.filename else "upload"
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(400, "Ungueltiger Dateiname")
+    target = Path("/app/data/workshop/library") / safe_name
+    # F-087: Sicherheitscheck — aufgeloester Pfad muss innerhalb des Zielverzeichnisses bleiben
+    base_dir = Path("/app/data/workshop/library").resolve()
+    if not target.resolve().is_relative_to(base_dir):
+        raise HTTPException(400, "Ungueltiger Dateipfad")
     target.parent.mkdir(parents=True, exist_ok=True)
     content = await file.read()
     if len(content) > 200 * 1024 * 1024:  # 200MB Limit
@@ -6360,23 +6533,39 @@ def _run_cmd(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tupl
 
 
 async def _ollama_api(path: str, method: str = "GET", json_data: dict | None = None) -> tuple[bool, dict | str]:
-    """Ruft die Ollama HTTP API auf (laeuft auf dem Host, nicht im Container)."""
+    """Ruft die Ollama HTTP API auf (laeuft auf dem Host, nicht im Container).
+
+    F-091: Path-Validierung + Redirect-Blocking + Response-Size-Limit.
+    """
+    # F-091: Nur erlaubte API-Pfade (kein Path-Traversal)
+    if not path.startswith("/api/"):
+        logger.warning("Ollama API: Ungueltiger Pfad '%s'", path[:100])
+        return False, "Ungueltiger API-Pfad"
     try:
         timeout = _aiohttp.ClientTimeout(total=600)
+        _MAX_OLLAMA_RESP = 50 * 1024 * 1024  # 50 MB (Modell-Downloads sind gross)
         async with _aiohttp.ClientSession(timeout=timeout) as session:
             url = f"{_OLLAMA_URL}{path}"
             if method == "GET":
-                async with session.get(url) as resp:
+                async with session.get(url, allow_redirects=False) as resp:
                     if resp.status == 200:
-                        return True, await resp.json()
+                        raw = await resp.content.read(_MAX_OLLAMA_RESP + 1)
+                        if len(raw) > _MAX_OLLAMA_RESP:
+                            return False, "Antwort zu gross"
+                        import json as _json
+                        return True, _json.loads(raw)
                     return False, f"HTTP {resp.status}"
             elif method == "POST":
-                async with session.post(url, json=json_data) as resp:
-                    # Ollama pull streamt — wir lesen die letzte Zeile
-                    text = await resp.text()
+                async with session.post(url, json=json_data, allow_redirects=False) as resp:
+                    raw = await resp.content.read(_MAX_OLLAMA_RESP + 1)
+                    if len(raw) > _MAX_OLLAMA_RESP:
+                        return False, "Antwort zu gross"
+                    text = raw.decode("utf-8", errors="replace")
                     return resp.status == 200, text
     except Exception as e:
-        return False, str(e)
+        # F-088: Exception-Details nicht leaken
+        logger.error("Ollama API Fehler: %s", e)
+        return False, "Ollama nicht erreichbar"
 
 
 @app.get("/api/ui/models/available")
@@ -6616,6 +6805,11 @@ async def ui_system_status(token: str = ""):
 
 async def _docker_restart(container: str = "mindhome-assistant", timeout: int = 5):
     """Restart via Docker Engine API (Unix-Socket). Atomar — Daemon fuehrt komplett aus."""
+    # F-090: Container-Name validieren gegen Injection
+    import re as _re
+    if not _re.match(r'^[a-zA-Z0-9_.-]+$', container):
+        logger.warning("Docker-Restart: Ungueltiger Container-Name '%s'", container[:50])
+        return False
     sock = "/var/run/docker.sock"
     try:
         conn = _aiohttp.UnixConnector(path=sock)

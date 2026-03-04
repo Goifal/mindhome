@@ -1016,6 +1016,13 @@ lighting:
   night_dimming_transition: 300
   dusk_sun_elevation: -2
   dusk_only_occupied_rooms: true
+  weather_boost:
+    enabled: false
+    weather_entity: ''
+    cloud_boost_pct: 15
+    rain_boost_pct: 25
+    dusk_earlier_on_cloudy: true
+    dusk_cloud_elevation_offset: 3
 heating:
   mode: room_thermostat
   curve_entity: ''
@@ -1023,6 +1030,14 @@ heating:
   curve_offset_max: 5
   night_offset: -2
   away_offset: -3
+  weather_adjust:
+    enabled: false
+    forecast_lookahead_hours: 4
+    preheat_drop_threshold: 5
+    preheat_offset: 1.0
+    solar_gain_reduction: 0.5
+    wind_compensation_threshold: 30
+    wind_offset: 0.5
 security:
   api_key_required: false
   require_confirmation:
@@ -1180,8 +1195,15 @@ seasonal_actions:
     heating_integration: false
     co2_ventilation: false
     privacy_mode: false
+    privacy_close_hour: null
     presence_aware: false
     manual_override_hours: 2
+    wakeup_sun_check: true
+    wakeup_min_sun_elevation: -6
+    wakeup_fallback_max_minutes: 120
+    forecast_weather_protection: true
+    forecast_lookahead_hours: 4
+    weather_entity: ''
 tts:
   entity: tts.piper
   ssml_enabled: false

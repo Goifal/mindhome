@@ -94,6 +94,14 @@ from .spontaneous_observer import SpontaneousObserver
 from .repair_planner import RepairPlanner
 from .workshop_generator import WorkshopGenerator
 from .workshop_library import WorkshopLibrary
+from .proactive_planner import ProactiveSequencePlanner
+from .seasonal_insight import SeasonalInsightEngine
+from .calendar_intelligence import CalendarIntelligence
+from .explainability import ExplainabilityEngine
+from .learning_transfer import LearningTransfer
+from .dialogue_state import DialogueStateManager
+from .climate_model import ClimateModel
+from .predictive_maintenance import PredictiveMaintenance
 from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive, emit_progress, emit_workshop
 
 logger = logging.getLogger(__name__)
@@ -181,6 +189,11 @@ class AssistantBrain(BrainCallbacksMixin):
     def __init__(self):
         # Task Registry: Zentrales Tracking aller Background-Tasks
         self._task_registry = TaskRegistry()
+
+        # P1: States-Cache (vermeidet 8x get_states() pro Request)
+        self._states_cache = None
+        self._states_cache_ts = 0.0
+        self._STATES_CACHE_TTL = 2.0  # 2 Sekunden
 
         # Clients
         self.ha = HomeAssistantClient()
@@ -270,6 +283,18 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Wellness Advisor (Caring Loops)
         self.wellness_advisor = WellnessAdvisor(self.ha, self.activity, self.mood)
+
+        # Phase 18: MCU-Upgrade — Proactive Planner + Seasonal Insight
+        self.proactive_planner = ProactiveSequencePlanner(self.ha, self.anticipation)
+        self.seasonal_insight = SeasonalInsightEngine()
+
+        # Intelligenz-Features: Quick Wins + Medium Effort
+        self.calendar_intelligence = CalendarIntelligence()
+        self.explainability = ExplainabilityEngine()
+        self.learning_transfer = LearningTransfer()
+        self.dialogue_state = DialogueStateManager()
+        self.climate_model = ClimateModel()
+        self.predictive_maintenance = PredictiveMaintenance()
 
         # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
         self.situation_model = SituationModel()
@@ -388,6 +413,17 @@ class AssistantBrain(BrainCallbacksMixin):
         """Hot-Reload aller konfigurierbaren Brain-Daten (nach UI-Aenderung)."""
         self._load_configurable_data()
         logger.info("Brain: Konfigurierbare Daten neu geladen")
+
+    async def get_states_cached(self) -> list:
+        """Cached get_states() — vermeidet 8x API-Call pro Request (P1)."""
+        import time
+        now = time.monotonic()
+        if self._states_cache and (now - self._states_cache_ts) < self._STATES_CACHE_TTL:
+            return self._states_cache
+        states = await self.ha.get_states()
+        self._states_cache = states
+        self._states_cache_ts = now
+        return states
 
     async def initialize(self):
         """Initialisiert alle Komponenten."""
@@ -619,6 +655,23 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
         await _safe_init("SituationModel", self.situation_model.initialize(redis_client=self.memory.redis))
 
+        # Phase 18: ProactiveSequencePlanner
+        await _safe_init("ProactivePlanner", self.proactive_planner.initialize(
+            redis_client=self.memory.redis,
+        ))
+
+        # Phase 18: SeasonalInsightEngine
+        await _safe_init("SeasonalInsight", self.seasonal_insight.initialize(
+            redis_client=self.memory.redis,
+            notify_callback=self._handle_insight,
+        ))
+
+        # Intelligenz-Features: Quick Wins + Medium Effort
+        await _safe_init("CalendarIntelligence", self.calendar_intelligence.initialize(redis_client=self.memory.redis))
+        await _safe_init("Explainability", self.explainability.initialize(redis_client=self.memory.redis))
+        await _safe_init("LearningTransfer", self.learning_transfer.initialize(redis_client=self.memory.redis))
+        await _safe_init("PredictiveMaintenance", self.predictive_maintenance.initialize(redis_client=self.memory.redis))
+
         # Self-Improvement: Geschlossene Feedback-Loops
         await _safe_init("OutcomeTracker", self.outcome_tracker.initialize(
             redis_client=self.memory.redis, ha_client=self.ha, task_registry=self._task_registry,
@@ -674,7 +727,7 @@ class AssistantBrain(BrainCallbacksMixin):
         dann Fallback auf allgemeine Motion-Sensor-Heuristik.
         """
         try:
-            states = await self.ha.get_states()
+            states = await self.get_states_cached()
             if not states:
                 return None
 
@@ -1096,6 +1149,24 @@ class AssistantBrain(BrainCallbacksMixin):
             primary = cfg.yaml_config.get("household", {}).get("primary_user", "")
             if primary:
                 person = primary
+
+        # Dialogue State: Klaerungsfrage aufloesen + Referenzen aufloesen
+        try:
+            _clarification = self.dialogue_state.check_clarification_answer(text, person or "")
+            if _clarification:
+                # Antwort auf offene Klaerungsfrage — Kontext anreichern
+                _clar_text = _clarification.get("original_text", "")
+                _clar_opt = _clarification.get("selected_option", "")
+                if _clar_text and _clar_opt:
+                    text = f"{_clar_text} ({_clar_opt})"
+                    logger.info("Klaerung aufgeloest: '%s' -> '%s'", _clarification.get("clarification_question"), _clar_opt)
+            else:
+                _ref_result = self.dialogue_state.resolve_references(text, person or "", room or "")
+                if _ref_result.get("had_references"):
+                    # Referenz-Hinweis wird im Kontext-Prompt eingebaut (siehe context assembly)
+                    logger.info("Referenzen aufgeloest: %s", _ref_result.get("context_hint", ""))
+        except Exception as _dlg_err:
+            logger.debug("DialogueState Fehler: %s", _dlg_err)
 
         # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
         if self.routines.is_goodnight_intent(text):
@@ -1624,8 +1695,8 @@ class AssistantBrain(BrainCallbacksMixin):
                     occupied = await self._get_occupied_room()
                     if occupied and occupied.lower() != "unbekannt":
                         func_args["room"] = occupied
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Raumerkennung fuer Shortcut fehlgeschlagen: %s", e)
             logger.info("Geraete-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
             try:
                 # Security: Validation + Trust-Check
@@ -2368,10 +2439,23 @@ class AssistantBrain(BrainCallbacksMixin):
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
         # Formality-Score cachen fuer Refinement-Prompts (Tool-Feedback)
         self._last_formality_score = formality_score if formality_score is not None else self.personality.formality_start
+
+        # Phase 18: Memory-Callback-Section bauen (echte Erinnerungen aus Redis)
+        memory_callback_section = ""
+        try:
+            memory_callback_section = await self.personality.build_memory_callback_section(
+                person or "",
+            )
+        except Exception as _mem_err:
+            logger.debug("Memory-Callback fehlgeschlagen: %s", _mem_err)
+
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
             irony_count_today=irony_count,
             user_text=text,
+            last_action=self._last_executed_action,
+            last_args=self._last_executed_action_args if self._last_executed_action else None,
+            memory_callback_section=memory_callback_section,
         )
 
         # ----------------------------------------------------------------
@@ -2428,6 +2512,19 @@ class AssistantBrain(BrainCallbacksMixin):
                 f"fuehre die korrigierte Aktion aus."
             )
             sections.append(("last_action", _action_text, 1))
+
+        # Phase 18: Implizite Voraussetzungen (z.B. "Entspannen" → Rollladen, Licht, Musik)
+        try:
+            implicit_actions = self.anticipation.detect_implicit_prerequisites(text)
+            if implicit_actions:
+                _impl_text = (
+                    f"\n\nIMPLIZITE FOLGE-AKTIONEN fuer '{text}':\n"
+                    f"Der User meint wahrscheinlich auch: {', '.join(implicit_actions)}.\n"
+                    f"Frage beilaeufig ob du das auch erledigen sollst."
+                )
+                sections.append(("implicit_prerequisites", _impl_text, 2))
+        except Exception as _ip_err:
+            logger.debug("Implicit Prerequisites fehlgeschlagen: %s", _ip_err)
 
         mood_hint = self.mood.get_mood_prompt_hint(person or "") if profile.need_mood else ""
         if mood_hint:
@@ -2522,6 +2619,42 @@ class AssistantBrain(BrainCallbacksMixin):
         )
         if jarvis_thinks:
             sections.append(("jarvis_thinks", jarvis_thinks, 2))
+
+        # Intelligenz-Features: Kontext-Hints
+        try:
+            _cal_hint = self.calendar_intelligence.get_context_hint()
+            if _cal_hint:
+                sections.append(("calendar_intelligence", f"\n\nKALENDER-INTELLIGENZ: {_cal_hint}", 3))
+        except Exception:
+            pass
+
+        try:
+            _explain_hint = self.explainability.get_explanation_prompt_hint()
+            if _explain_hint:
+                sections.append(("explainability", f"\n\n{_explain_hint}", 3))
+        except Exception:
+            pass
+
+        try:
+            _transfer_hint = self.learning_transfer.get_context_hint(room or "")
+            if _transfer_hint:
+                sections.append(("learning_transfer", f"\n\nPRAEFERENZ-TRANSFER: {_transfer_hint}", 3))
+        except Exception:
+            pass
+
+        try:
+            _maintenance_hint = self.predictive_maintenance.get_context_hint()
+            if _maintenance_hint:
+                sections.append(("predictive_maintenance", f"\n\n{_maintenance_hint}", 2))
+        except Exception:
+            pass
+
+        try:
+            _dialogue_hint = self.dialogue_state.get_context_prompt(person or "", room or "")
+            if _dialogue_hint:
+                sections.append(("dialogue_state", f"\n\nDIALOG-KONTEXT: {_dialogue_hint}", 2))
+        except Exception:
+            pass
 
         # MCU-JARVIS: Anomalie-Kontext — ungewoehnliche Zustaende beilaeufig erwaehnen
         anomalies = context.get("anomalies", [])
@@ -3203,6 +3336,16 @@ class AssistantBrain(BrainCallbacksMixin):
                         elif pushback["level"] == 1:
                             # Level 1: Warnung voranstellen, aber trotzdem ausfuehren
                             pushback_msg = pushback["message"]
+                            # Phase 18: Escalating Concern — wird bei ignorierter Warnung schaerfer
+                            try:
+                                _warn_type = pushback.get("rule_id", func_name)
+                                _escalation = await self.personality.check_escalating_concern(
+                                    person or "", _warn_type,
+                                )
+                                if _escalation:
+                                    pushback_msg = _escalation  # Eskalierte Warnung ersetzt Standard
+                            except Exception as _esc_err:
+                                logger.debug("Escalating concern fehlgeschlagen: %s", _esc_err)
 
                     # Feature 10+11: Situationsbewusstsein — JARVIS erklaert + Alternative
                     if not pushback_msg:
@@ -3359,8 +3502,8 @@ class AssistantBrain(BrainCallbacksMixin):
                                 response_text = f"{response_text} {escalation}"
                             else:
                                 response_text = escalation
-                    except Exception:
-                        pass  # Eskalation ist optional
+                    except Exception as e:
+                        logger.debug("Eskalation fehlgeschlagen (optional): %s", e)
 
                     # Feature B: Kontextueller Humor nach Aktion
                     if not pushback_msg and not opinion:
@@ -3377,8 +3520,22 @@ class AssistantBrain(BrainCallbacksMixin):
                                 else:
                                     response_text = humor
                                 self._last_humor_category = self.personality._humor_func_to_category(func_name)
-                        except Exception:
-                            pass  # Humor ist optional
+                        except Exception as e:
+                            logger.debug("Humor fehlgeschlagen (optional): %s", e)
+
+                    # Phase 18: Curiosity Check — sanfte Neugier bei untypischem Verhalten
+                    if isinstance(result, dict) and result.get("success"):
+                        try:
+                            curiosity = await self.personality.check_curiosity(
+                                func_name, final_args, person or "", datetime.now().hour,
+                            )
+                            if curiosity:
+                                if response_text:
+                                    response_text = f"{response_text} {curiosity}"
+                                else:
+                                    response_text = curiosity
+                        except Exception as _cur_err:
+                            logger.debug("Curiosity-Check fehlgeschlagen: %s", _cur_err)
 
             # 8b. Query-Tool Antwort aufbereiten:
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
@@ -3749,12 +3906,105 @@ class AssistantBrain(BrainCallbacksMixin):
             name="save_situation_snapshot",
         )
 
+        # Intelligenz-Features: Post-Execution Tracking
+        # Dialogue State: Turn tracken (Entities, Raeume, Aktionen)
+        try:
+            _executed_entities = []
+            _executed_domain = ""
+            for _act in executed_actions:
+                if isinstance(_act.get("result"), dict) and _act["result"].get("success"):
+                    _act_args = _act.get("args", {})
+                    if _act_args.get("entity_id"):
+                        _executed_entities.append(_act_args["entity_id"])
+                    if not _executed_domain:
+                        _fn = _act.get("function", "")
+                        if "light" in _fn:
+                            _executed_domain = "light"
+                        elif "climate" in _fn or "thermostat" in _fn:
+                            _executed_domain = "climate"
+                        elif "media" in _fn or "play" in _fn:
+                            _executed_domain = "media"
+                        elif "cover" in _fn:
+                            _executed_domain = "cover"
+            self.dialogue_state.track_turn(
+                text=text, person=person or "", room=room or "",
+                entities=_executed_entities if _executed_entities else None,
+                actions=[{"function": a["function"], "description": a.get("function", "")}
+                         for a in executed_actions if isinstance(a.get("result"), dict)
+                         and a["result"].get("success")] or None,
+                domain=_executed_domain,
+            )
+        except Exception:
+            pass
+
+        # Explainability: Entscheidungen loggen
+        for _act in executed_actions:
+            if isinstance(_act.get("result"), dict) and _act["result"].get("success"):
+                _act_args = _act.get("args", {})
+                _act_desc = f"{_act['function']}({', '.join(f'{k}={v}' for k, v in _act_args.items())})"
+                self._task_registry.create_task(
+                    self.explainability.log_decision(
+                        action=_act_desc,
+                        reason=f"User-Befehl: {text[:100]}",
+                        trigger="user_command",
+                        person=person or "",
+                        domain=_executed_domain,
+                    ),
+                    name="log_explainability",
+                )
+
+        # Learning Transfer: Aktionen beobachten (Praeferenzen lernen)
+        for _act in executed_actions:
+            if isinstance(_act.get("result"), dict) and _act["result"].get("success"):
+                _act_args = _act.get("args", {})
+                _fn = _act.get("function", "")
+                _lt_domain = ""
+                _lt_attrs = {}
+                if "light" in _fn:
+                    _lt_domain = "light"
+                    _lt_attrs = {k: v for k, v in _act_args.items()
+                                 if k in ("brightness", "color_temp", "color_mode") and v is not None}
+                elif "climate" in _fn or "thermostat" in _fn:
+                    _lt_domain = "climate"
+                    _lt_attrs = {k: v for k, v in _act_args.items()
+                                 if k in ("temperature", "hvac_mode") and v is not None}
+                elif "media" in _fn or "play" in _fn:
+                    _lt_domain = "media"
+                    _lt_attrs = {k: v for k, v in _act_args.items()
+                                 if k in ("volume_level", "source") and v is not None}
+                if _lt_domain and _lt_attrs and room:
+                    self._task_registry.create_task(
+                        self.learning_transfer.observe_action(
+                            room=room, domain=_lt_domain,
+                            attributes=_lt_attrs, person=person or "",
+                        ),
+                        name="learning_transfer_observe",
+                    )
+
         # Phase 11.4: Korrektur-Lernen — erkennt Korrekturen und speichert sie
         if self._is_correction(text):
             self._task_registry.create_task(
                 self._handle_correction(text, response_text, person or "unknown"),
                 name="handle_correction",
             )
+            # Phase 18: Korrektur als bemerkenswerte Interaktion speichern
+            self._task_registry.create_task(
+                self.personality.record_memorable_interaction(
+                    person or "unknown", "correction",
+                    f"Korrektur: {text[:100]}",
+                ),
+                name="record_correction_memorable",
+            )
+
+        # Phase 18: Seasonal Action Logging (fuer Vorjahres-Vergleich)
+        for action in executed_actions:
+            if isinstance(action.get("result"), dict) and action["result"].get("success"):
+                self._task_registry.create_task(
+                    self.seasonal_insight.log_seasonal_action(
+                        action["function"], action.get("args", {}), person or "",
+                    ),
+                    name="log_seasonal",
+                )
 
         # Phase 8: Action-Logging fuer Anticipation Engine + Experiential Memory
         for action in executed_actions:
@@ -3814,6 +4064,13 @@ class AssistantBrain(BrainCallbacksMixin):
                     "positive", action_type=self._last_executed_action, person=person or "",
                 ),
                 name="outcome_thanks",
+            )
+            # Phase 18: Concern-Counter zuruecksetzen bei positiver Reaktion
+            self._task_registry.create_task(
+                self.personality.reset_concern_counter(
+                    person or "", self._last_executed_action,
+                ),
+                name="reset_concern",
             )
 
         # Markiere ob diese Antwort sarkastisch war (fuer Feedback bei naechster Nachricht)
@@ -5371,6 +5628,30 @@ class AssistantBrain(BrainCallbacksMixin):
                 parts.append(f"- {content}{source_hint}")
 
             parts.append("Nutze dieses Wissen falls relevant fuer die Antwort.")
+
+            # F4: Live-Wetter-Kontext anhängen wenn Query wetterbezogen ist
+            _weather_kw = {"wetter", "regen", "sonne", "wind", "temperatur", "kalt",
+                           "warm", "schnee", "sturm", "gewitter", "frost", "heiss",
+                           "weather", "rain", "sun", "cold", "hot", "storm"}
+            text_lower = text.lower()
+            if any(kw in text_lower for kw in _weather_kw):
+                try:
+                    states = await self.get_states_cached()
+                    for s in states:
+                        if s.get("entity_id", "").startswith("weather."):
+                            attrs = s.get("attributes", {})
+                            w_temp = attrs.get("temperature", "?")
+                            w_cond = attrs.get("condition", "?")
+                            w_hum = attrs.get("humidity", "?")
+                            w_wind = attrs.get("wind_speed", "?")
+                            parts.append(
+                                f"\nAKTUELLES WETTER: {w_temp}°C, {w_cond}, "
+                                f"Luftfeuchtigkeit {w_hum}%, Wind {w_wind} km/h"
+                            )
+                            break
+                except Exception:
+                    pass
+
             return "\n".join(parts)
         except Exception as e:
             logger.debug("RAG-Suche fehlgeschlagen: %s", e)
@@ -7874,17 +8155,22 @@ class AssistantBrain(BrainCallbacksMixin):
         if not any(t in text_lower for t in whatif_triggers):
             return ""
 
-        # Echte HA-Daten sammeln fuer fundierte Simulation
+        # Echte HA-Daten sammeln fuer fundierte Simulation (P2: Single-Pass)
         data_lines = []
         try:
-            states = await self.ha.get_states()
+            states = await self.get_states_cached()
             if states:
-                # Temperaturen
-                temps = {}
+                from .function_calling import is_window_or_door, get_opening_type
+                temps, energy, open_wd, open_gt = {}, {}, [], []
+                alarm_state = None
+                weather_s = None
+
+                # Single-Pass: Alle Daten in einer Iteration sammeln
                 for s in states:
                     eid = s.get("entity_id", "")
                     val = s.get("state", "")
                     attrs = s.get("attributes", {})
+
                     if eid.startswith("climate.") and val != "unavailable":
                         name = attrs.get("friendly_name", eid)
                         current = attrs.get("current_temperature")
@@ -7894,51 +8180,40 @@ class AssistantBrain(BrainCallbacksMixin):
                     elif eid.startswith("sensor.") and "temperature" in eid and val.replace(".", "").replace("-", "").isdigit():
                         name = attrs.get("friendly_name", eid)
                         temps[name] = f"{val}°C"
-                if temps:
-                    data_lines.append("TEMPERATUREN:")
-                    for name, val in list(temps.items())[:8]:
-                        data_lines.append(f"  - {name}: {val}")
-
-                # Energie-Verbrauch
-                energy = {}
-                for s in states:
-                    eid = s.get("entity_id", "")
-                    val = s.get("state", "")
-                    attrs = s.get("attributes", {})
-                    unit = attrs.get("unit_of_measurement", "")
-                    if ("energy" in eid or "power" in eid or "verbrauch" in eid) and val.replace(".", "").isdigit():
+                    elif ("energy" in eid or "power" in eid or "verbrauch" in eid) and eid.startswith("sensor."):
+                        unit = attrs.get("unit_of_measurement", "")
+                        if val.replace(".", "").isdigit():
+                            name = attrs.get("friendly_name", eid)
+                            energy[name] = f"{val} {unit}"
+                    elif is_window_or_door(eid, s) and val == "on":
                         name = attrs.get("friendly_name", eid)
-                        energy[name] = f"{val} {unit}"
-                if energy:
-                    data_lines.append("ENERGIE:")
-                    for name, val in list(energy.items())[:6]:
-                        data_lines.append(f"  - {name}: {val}")
-
-                # Offene Fenster/Tueren/Tore — kategorisiert
-                from .function_calling import is_window_or_door, get_opening_type
-                open_wd = []
-                open_gt = []
-                for s in states:
-                    eid = s.get("entity_id", "")
-                    if is_window_or_door(eid, s) and s.get("state") == "on":
-                        name = s.get("attributes", {}).get("friendly_name", eid)
                         if get_opening_type(eid, s) == "gate":
                             open_gt.append(name)
                         else:
                             open_wd.append(name)
+                    elif eid.startswith("alarm_control_panel."):
+                        alarm_state = val
+                    elif eid.startswith("weather.") and not weather_s:
+                        weather_s = s
+
+                if temps:
+                    data_lines.append("TEMPERATUREN:")
+                    for name, val in list(temps.items())[:8]:
+                        data_lines.append(f"  - {name}: {val}")
+                if energy:
+                    data_lines.append("ENERGIE:")
+                    for name, val in list(energy.items())[:6]:
+                        data_lines.append(f"  - {name}: {val}")
                 if open_wd:
                     data_lines.append(f"OFFENE FENSTER/TUEREN: {', '.join(open_wd)}")
                 if open_gt:
                     data_lines.append(f"OFFENE TORE: {', '.join(open_gt)}")
-
-                # Alarmsystem
-                for s in states:
-                    eid = s.get("entity_id", "")
-                    if eid.startswith("alarm_control_panel."):
-                        data_lines.append(f"ALARM: {s.get('state', 'unbekannt')}")
+                if alarm_state:
+                    data_lines.append(f"ALARM: {alarm_state}")
 
                 # Wetter
-                for s in states:
+                s = weather_s
+                if s:
                     eid = s.get("entity_id", "")
                     if eid.startswith("weather."):
                         attrs = s.get("attributes", {})
@@ -7987,7 +8262,7 @@ Regeln:
     async def _get_situation_delta(self) -> Optional[str]:
         """Holt den Situations-Delta-Text (was hat sich seit letztem Gespraech geaendert?)."""
         try:
-            states = await self.ha.get_states()
+            states = await self.get_states_cached()
             if not states:
                 return None
             return await self.situation_model.get_situation_delta(states)
@@ -7998,7 +8273,7 @@ Regeln:
     async def _save_situation_snapshot(self):
         """Speichert einen Hausstatus-Snapshot nach dem Gespraech."""
         try:
-            states = await self.ha.get_states()
+            states = await self.get_states_cached()
             if states:
                 await self.situation_model.take_snapshot(states)
         except Exception as e:

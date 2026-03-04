@@ -492,11 +492,11 @@ class DiagnosticsEngine:
         try:
             ha_ok = await self.ha.is_available()
             results["home_assistant"] = {
-                "url": settings.ha_url,
                 "status": "connected" if ha_ok else "disconnected",
             }
         except Exception as e:
-            results["home_assistant"] = {"url": settings.ha_url, "status": f"error: {e}"}
+            logger.error("HA Health-Check fehlgeschlagen: %s", e)
+            results["home_assistant"] = {"status": "error"}
 
         # Ollama
         try:
@@ -504,11 +504,11 @@ class DiagnosticsEngine:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(f"{settings.ollama_url}/api/tags") as resp:
                     results["ollama"] = {
-                        "url": settings.ollama_url,
-                        "status": "connected" if resp.status == 200 else f"HTTP {resp.status}",
+                        "status": "connected" if resp.status == 200 else "disconnected",
                     }
         except Exception as e:
-            results["ollama"] = {"url": settings.ollama_url, "status": f"disconnected: {e}"}
+            logger.error("Ollama Health-Check fehlgeschlagen: %s", e)
+            results["ollama"] = {"status": "disconnected"}
 
         # Redis
         try:
@@ -516,9 +516,10 @@ class DiagnosticsEngine:
             r = aioredis.from_url(settings.redis_url, socket_timeout=3)
             await r.ping()
             await r.aclose()
-            results["redis"] = {"url": settings.redis_url, "status": "connected"}
+            results["redis"] = {"status": "connected"}
         except Exception as e:
-            results["redis"] = {"url": settings.redis_url, "status": f"disconnected: {e}"}
+            logger.error("Redis Health-Check fehlgeschlagen: %s", e)
+            results["redis"] = {"status": "disconnected"}
 
         # ChromaDB
         try:
@@ -526,11 +527,11 @@ class DiagnosticsEngine:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(f"{settings.chroma_url}/api/v1/heartbeat") as resp:
                     results["chromadb"] = {
-                        "url": settings.chroma_url,
-                        "status": "connected" if resp.status == 200 else f"HTTP {resp.status}",
+                        "status": "connected" if resp.status == 200 else "disconnected",
                     }
         except Exception as e:
-            results["chromadb"] = {"url": settings.chroma_url, "status": f"disconnected: {e}"}
+            logger.error("ChromaDB Health-Check fehlgeschlagen: %s", e)
+            results["chromadb"] = {"status": "disconnected"}
 
         # MindHome Addon
         try:

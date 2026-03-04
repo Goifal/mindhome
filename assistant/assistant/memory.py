@@ -153,11 +153,27 @@ class MemoryManager:
 
         Teilt lange Konversationen in kleinere Chunks auf fuer bessere
         semantische Suche. Jeder Chunk erhaelt den vollen Metadaten-Kontext.
+        Deduplizierung: Prüft ob aehnliche Episode bereits existiert.
         """
         if not self.chroma_collection:
             return
 
         try:
+            # S4: Deduplizierung — pruefen ob sehr aehnliche Episode existiert
+            try:
+                preview = conversation[:500]
+                results = self.chroma_collection.query(
+                    query_texts=[preview],
+                    n_results=1,
+                )
+                if (results and results.get("distances")
+                        and results["distances"][0]
+                        and results["distances"][0][0] < 0.1):
+                    logger.debug("Episode-Duplikat erkannt, uebersprungen")
+                    return
+            except Exception:
+                pass  # Dedup ist best-effort
+
             meta = metadata or {}
             meta["timestamp"] = datetime.now().isoformat()
             meta["type"] = "conversation"
@@ -171,11 +187,21 @@ class MemoryManager:
                 chunk_meta["total_chunks"] = str(len(chunks))
                 doc_id = f"{base_id}_{i}" if len(chunks) > 1 else base_id
 
-                self.chroma_collection.add(
-                    documents=[chunk],
-                    metadatas=[chunk_meta],
-                    ids=[doc_id],
-                )
+                # P3: Timeout auf ChromaDB-Operationen
+                import asyncio
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(
+                            self.chroma_collection.add,
+                            documents=[chunk],
+                            metadatas=[chunk_meta],
+                            ids=[doc_id],
+                        ),
+                        timeout=5.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("ChromaDB Timeout beim Speichern von Chunk %s", doc_id)
+                    continue
 
             logger.debug(
                 "Episode gespeichert: %s (%d Chunk(s))", base_id, len(chunks)

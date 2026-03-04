@@ -223,6 +223,12 @@ class ProactiveManager:
         if seasonal_cfg.get("enabled", True):
             self._seasonal_task = asyncio.create_task(self._run_seasonal_loop())
 
+        # Phase 18: Unaufgeforderte Beobachtungen
+        obs_cfg = yaml_config.get("observation_loop", {})
+        self._observation_task: Optional[asyncio.Task] = None
+        if obs_cfg.get("enabled", True):
+            self._observation_task = asyncio.create_task(self._run_observation_loop())
+
         # Phase 11: Saugroboter-Automatik
         vacuum_cfg = yaml_config.get("vacuum", {})
         self._vacuum_task: Optional[asyncio.Task] = None
@@ -293,6 +299,13 @@ class ProactiveManager:
             self._ambient_task.cancel()
             try:
                 await self._ambient_task
+            except asyncio.CancelledError:
+                pass
+        # Phase 18: Observation-Task sauber beenden
+        if hasattr(self, "_observation_task") and self._observation_task:
+            self._observation_task.cancel()
+            try:
+                await self._observation_task
             except asyncio.CancelledError:
                 pass
         logger.info("Proactive Manager gestoppt")
@@ -458,6 +471,26 @@ class ProactiveManager:
                     "status_report": status,
                 })
 
+                # Phase 18: Proactive Planner — Multi-Step-Plan bei Ankunft
+                if hasattr(self.brain, "proactive_planner") and self.brain.proactive_planner.enabled:
+                    try:
+                        _plan_ctx = {
+                            "person": {"name": name},
+                            "house": status,
+                        }
+                        _auto_lvl = self.brain.autonomy.level if hasattr(self.brain, "autonomy") else 2
+                        _plan = await self.brain.proactive_planner.plan_from_context_change(
+                            "person_arrived", _plan_ctx, _auto_lvl,
+                        )
+                        if _plan:
+                            _plan_msg = _plan.get("message") if _plan.get("needs_confirmation") else _plan.get("auto_message", "")
+                            if _plan_msg:
+                                await self._notify("person_arrived", LOW, {
+                                    "message": _plan_msg,
+                                })
+                    except Exception as _pp_err:
+                        logger.debug("Proactive Planner (person_arrived): %s", _pp_err)
+
             elif old_val == "home" and new_val != "home":
                 # Phase 7.4: Abschied mit Sicherheits-Hinweis
                 await self._notify("person_left", MEDIUM, {
@@ -467,6 +500,37 @@ class ProactiveManager:
                 # MCU-JARVIS: Abwesenheits-Akkumulator starten
                 if yaml_config.get("return_briefing", {}).get("enabled", True):
                     await self._start_absence_accumulator(name)
+
+        # Phase 18: Wetter-Aenderung → Proactive Planner
+        elif entity_id.startswith("weather."):
+            _rain_conditions = {"rainy", "pouring", "lightning-rainy", "lightning", "hail"}
+            _old_cond = old_val.lower() if old_val else ""
+            _new_cond = new_val.lower() if new_val else ""
+            # Nur bei signifikanten Aenderungen (Richtung schlecht)
+            if _new_cond in _rain_conditions and _old_cond not in _rain_conditions:
+                if hasattr(self.brain, "proactive_planner") and self.brain.proactive_planner.enabled:
+                    try:
+                        _w_ctx = {"weather": {"condition": _new_cond}, "house": {"open_windows": []}}
+                        # Offene Fenster ermitteln
+                        _states = await self.brain.ha.get_states()
+                        for _s in (_states or []):
+                            _eid = _s.get("entity_id", "")
+                            if _eid.startswith("binary_sensor.") and "window" in _eid and _s.get("state") == "on":
+                                _w_ctx["house"]["open_windows"].append(
+                                    _eid.replace("binary_sensor.", "").replace("_", " ")
+                                )
+                        _auto_lvl = self.brain.autonomy.level if hasattr(self.brain, "autonomy") else 2
+                        _plan = await self.brain.proactive_planner.plan_from_context_change(
+                            "weather_changed", _w_ctx, _auto_lvl,
+                        )
+                        if _plan:
+                            _plan_msg = _plan.get("message") if _plan.get("needs_confirmation") else _plan.get("auto_message", "")
+                            if _plan_msg:
+                                await self._notify("weather_warning", LOW, {
+                                    "message": _plan_msg,
+                                })
+                    except Exception as _wp_err:
+                        logger.debug("Proactive Planner (weather_changed): %s", _wp_err)
 
         # Phase 7.4: Geo-Fence Proximity (proximity.home Entity)
         elif entity_id.startswith("proximity.") or entity_id.startswith("sensor.") and "distance" in entity_id:
@@ -2195,6 +2259,174 @@ class ProactiveManager:
     #   15 (Presence), 16 (Privacy), 17 (Action log/Dashboard)
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Phase 18: Unaufgeforderte Beobachtungen
+    # ------------------------------------------------------------------
+
+    async def _run_observation_loop(self):
+        """Jarvis bemerkt Muster und teilt Beobachtungen mit.
+
+        Prueft alle 4 Stunden:
+        - Wiederholte Widersprueche (Heizung hoch → Fenster auf)
+        - Vergessene Routinen (Alarm nicht aktiviert seit 3 Tagen)
+        - Effizienz-Tipps (Heizung nachts auf 22 wenn erst um 23 Uhr schlafen)
+
+        Max 1 Beobachtung pro Tag. Delivery via _notify_callback mit LOW Priority.
+        """
+        obs_cfg = yaml_config.get("observation_loop", {})
+        interval_h = obs_cfg.get("interval_hours", 4)
+        max_daily = obs_cfg.get("max_daily", 1)
+
+        # Startup-Delay: 10 Minuten warten
+        await asyncio.sleep(600)
+
+        while self._running:
+            try:
+                # FIX-C1: Redis via brain.memory.redis (nicht self._redis)
+                _redis = getattr(getattr(self.brain, "memory", None), "redis", None)
+
+                # Cooldown pruefen: max 1 pro Tag
+                if _redis:
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    cooldown_key = f"mha:proactive:observation:{today}"
+                    count = await _redis.get(cooldown_key)
+                    if count and int(count) >= max_daily:
+                        await asyncio.sleep(interval_h * 3600)
+                        continue
+
+                observation = await self._generate_observation()
+
+                # FIX-C2: Nutze self._notify() statt self._notify_callback
+                if observation:
+                    await self._notify(
+                        "observation", "low",
+                        {"message": observation},
+                    )
+                    # Cooldown setzen
+                    if _redis:
+                        today = datetime.now().strftime("%Y-%m-%d")
+                        cooldown_key = f"mha:proactive:observation:{today}"
+                        await _redis.incr(cooldown_key)
+                        await _redis.expire(cooldown_key, 86400)
+
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.debug("Observation-Loop Fehler: %s", e)
+
+            await asyncio.sleep(interval_h * 3600)
+
+    async def _generate_observation(self) -> Optional[str]:
+        """Generiert eine Beobachtung basierend auf Haus-Zustand.
+
+        Returns:
+            Beobachtungs-Text oder None
+        """
+        try:
+            states = await self.brain.ha.get_states()
+            if not states:
+                return None
+
+            title = get_person_title()
+
+            # FIX-C1: Redis via brain.memory.redis
+            _redis = getattr(getattr(self.brain, "memory", None), "redis", None)
+
+            # Check 1: Alarm seit 3+ Tagen nicht aktiviert
+            if _redis:
+                last_alarm = await _redis.get("mha:proactive:last_alarm_armed")
+                if last_alarm:
+                    try:
+                        last_ts = float(last_alarm)
+                        days_since = (time.time() - last_ts) / 86400
+                        if days_since >= 3:
+                            return (
+                                f"Mir ist aufgefallen, {title} — der Alarm wurde seit "
+                                f"{int(days_since)} Tagen nicht aktiviert. Alles in Ordnung?"
+                            )
+                    except (ValueError, TypeError):
+                        pass
+
+            # Check 2: Heizung laeuft nachts auf hoher Temperatur
+            hour = datetime.now().hour
+            if 23 <= hour or hour < 5:
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    if "climate" in eid:
+                        temp = s.get("attributes", {}).get("temperature")
+                        hvac = s.get("attributes", {}).get("hvac_action", "")
+                        if temp and hvac == "heating":
+                            try:
+                                if float(temp) >= 22:
+                                    name = s.get("attributes", {}).get("friendly_name", eid)
+                                    return (
+                                        f"Nebenbei bemerkt, {title} — die Heizung in {name} "
+                                        f"laeuft auf {temp}°C. Um diese Uhrzeit vielleicht etwas hoch?"
+                                    )
+                            except (ValueError, TypeError):
+                                pass
+
+            # Check 3: Licht brennt in leerem Raum (kein Motion seit 30+ Min)
+            lights_on = {}
+            motion_recent = set()
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("light.") and s.get("state") == "on":
+                    # Raumnamen extrahieren
+                    name = s.get("attributes", {}).get("friendly_name", eid)
+                    lights_on[eid] = name
+                if (eid.startswith("binary_sensor.motion") or eid.startswith("binary_sensor.bewegung")):
+                    if s.get("state") == "on":
+                        motion_recent.add(eid.lower())
+
+            if lights_on and not motion_recent:
+                # Alle Lichter an, nirgends Bewegung
+                light_names = list(lights_on.values())[:3]
+                if len(light_names) >= 2:
+                    return (
+                        f"Kleine Beobachtung, {title} — Licht brennt noch in "
+                        f"{', '.join(light_names)}, aber es bewegt sich niemand."
+                    )
+
+            # Check 4: Fenster offen + Heizung an (Energie-Verschwendung)
+            open_windows = []
+            heating_active = False
+            for s in states:
+                eid = s.get("entity_id", "")
+                if (eid.startswith("binary_sensor.fenster") or eid.startswith("binary_sensor.window")):
+                    if s.get("state") == "on":
+                        open_windows.append(
+                            s.get("attributes", {}).get("friendly_name", eid)
+                        )
+                if "climate" in eid:
+                    hvac = s.get("attributes", {}).get("hvac_action", "")
+                    if hvac == "heating":
+                        heating_active = True
+
+            if open_windows and heating_active:
+                windows_str = ", ".join(open_windows[:2])
+                return (
+                    f"Mir ist aufgefallen, {title} — {windows_str} "
+                    f"{'ist' if len(open_windows) == 1 else 'sind'} offen "
+                    f"waehrend die Heizung laeuft. Das kostet Energie."
+                )
+
+            # Check 5: PredictiveMaintenance — Batterie-Warnungen
+            if hasattr(self.brain, "predictive_maintenance"):
+                try:
+                    suggestions = self.brain.predictive_maintenance.get_maintenance_suggestions()
+                    high_urgency = [s for s in suggestions if s.get("urgency") == "high"]
+                    if high_urgency:
+                        first = high_urgency[0]
+                        return f"Wartungshinweis, {title} — {first['description']}"
+                except Exception:
+                    pass
+
+            return None
+        except Exception as e:
+            logger.debug("Observation-Generierung fehlgeschlagen: %s", e)
+            return None
+
     async def _run_seasonal_loop(self):
         """Zentrale Cover-Automatik.
 
@@ -2255,6 +2487,12 @@ class ProactiveManager:
 
                 sun = self._get_sun_data(states)
                 weather = self._get_weather_data(states, cover_cfg)
+                # Wetter-Condition in Redis cachen (fuer Anticipation-Engine)
+                if _redis and weather.get("condition"):
+                    try:
+                        await _redis.set("mha:weather:current_condition", weather["condition"], ex=300)
+                    except Exception:
+                        pass
                 cover_profiles = self._load_cover_profiles()
 
                 # 1. WETTER-SCHUTZ (hoechste Prioritaet)
@@ -2304,6 +2542,9 @@ class ProactiveManager:
                         states, sun, weather, cover_profiles, cover_cfg, auto_level, _redis,
                     )
 
+                # 7b. HEIZUNGS-WETTER-ANPASSUNG
+                await self._heating_weather_adjustment(states, sun, weather)
+
                 # 8. CO2-LUEFTUNG (Feature 12)
                 if cover_cfg.get("co2_ventilation", False):
                     await self._cover_co2_ventilation(states, weather, auto_level, _redis)
@@ -2341,21 +2582,34 @@ class ProactiveManager:
         """Extrahiert Wetter-Daten — nutzt konfigurierte Sensoren wenn vorhanden (Bug 2)."""
         from .cover_config import get_sensor_by_role
 
-        # Defaults aus weather.* Entity
+        # Defaults aus weather.* Entity (konfigurierbar, Fallback: weather.forecast_home)
         temp, wind, condition, lux, rain = 10.0, 0.0, "", 0.0, False
+        forecast = []
+        weather_entity = None
+        # Konfigurierte Entity bevorzugen
+        configured_we = (cover_cfg or {}).get("weather_entity", "") if cover_cfg else ""
         for s in (states or []):
-            if s.get("entity_id", "").startswith("weather."):
-                attrs = s.get("attributes", {})
-                try:
-                    temp = float(attrs.get("temperature", 10))
-                except (ValueError, TypeError):
-                    pass
-                try:
-                    wind = float(attrs.get("wind_speed", 0))
-                except (ValueError, TypeError):
-                    pass
-                condition = s.get("state", "")
+            eid = s.get("entity_id", "")
+            if configured_we and eid == configured_we:
+                weather_entity = s
                 break
+            if not configured_we and eid == "weather.forecast_home":
+                weather_entity = s
+                break
+            if eid.startswith("weather.") and not weather_entity:
+                weather_entity = s
+        if weather_entity:
+            attrs = weather_entity.get("attributes", {})
+            try:
+                temp = float(attrs.get("temperature", 10))
+            except (ValueError, TypeError):
+                pass
+            try:
+                wind = float(attrs.get("wind_speed", 0))
+            except (ValueError, TypeError):
+                pass
+            condition = weather_entity.get("state", "")
+            forecast = attrs.get("forecast", []) or []
 
         # Bug 2: Konfigurierte Sensoren ueberschreiben weather.*
         state_map = {s.get("entity_id"): s for s in (states or [])}
@@ -2392,6 +2646,7 @@ class ProactiveManager:
             "condition": condition,
             "lux": lux,
             "rain": rain,
+            "forecast": forecast,
         }
 
     @staticmethod
@@ -2489,6 +2744,15 @@ class ProactiveManager:
                 except Exception:
                     pass
 
+                # Cover-Licht Koordination: LightEngine informieren
+                try:
+                    if hasattr(self.brain, "light_engine") and self.brain.light_engine:
+                        await self.brain.light_engine.on_cover_position_change(
+                            entity_id, position, reason,
+                        )
+                except Exception as le_err:
+                    logger.debug("Cover→Licht Callback Fehler: %s", le_err)
+
                 return True
             except Exception as e:
                 logger.error("Cover-Auto Fehler fuer %s: %s", entity_id, e)
@@ -2582,6 +2846,58 @@ class ProactiveManager:
                         f"Markise eingefahren ({condition}, Wind {wind} km/h)",
                         auto_level, redis_client,
                     )
+
+        # Vorhersage-basierter Wetterschutz (weather.forecast_home)
+        if cover_cfg.get("forecast_weather_protection", True):
+            forecast = weather.get("forecast", [])
+            lookahead = cover_cfg.get("forecast_lookahead_hours", 4)
+            # Nur die naechsten N Eintraege pruefen
+            fc_slice = forecast[:lookahead] if forecast else []
+            fc_storm = False
+            fc_rain = False
+            fc_wind_max = 0
+            for fc in fc_slice:
+                fc_wind = fc.get("wind_speed", 0) or 0
+                fc_condition = (fc.get("condition") or "").lower()
+                fc_precip = fc.get("precipitation", 0) or 0
+                if fc_wind > fc_wind_max:
+                    fc_wind_max = fc_wind
+                if fc_wind >= storm_speed:
+                    fc_storm = True
+                if (fc_condition in rain_conditions or fc_precip > 2):
+                    fc_rain = True
+
+            # Vorhersage: Sturm → Markisen praeventiv einfahren
+            if fc_storm and not (wind >= storm_speed):
+                notified_fc = False
+                for s in (states or []):
+                    eid = s.get("entity_id", "")
+                    if not eid.startswith("cover."):
+                        continue
+                    if self.brain.executor._is_markise(eid, s):
+                        acted = await self._auto_cover_action(
+                            eid, 0,
+                            f"Vorhersage: Markise eingefahren (Sturm erwartet, bis {fc_wind_max:.0f} km/h)",
+                            auto_level, redis_client,
+                        )
+                        if acted and not notified_fc:
+                            await self._notify("weather_cover_protection", MEDIUM, {
+                                "message": f"Vorhersage: Sturm erwartet ({fc_wind_max:.0f} km/h) — Markisen praeventiv eingefahren",
+                            })
+                            notified_fc = True
+
+            # Vorhersage: Regen → Markisen praeventiv einfahren
+            if fc_rain and not is_raining and rain_retract:
+                for s in (states or []):
+                    eid = s.get("entity_id", "")
+                    if not eid.startswith("cover."):
+                        continue
+                    if self.brain.executor._is_markise(eid, s):
+                        await self._auto_cover_action(
+                            eid, 0,
+                            "Vorhersage: Markise eingefahren (Regen erwartet)",
+                            auto_level, redis_client,
+                        )
 
     async def _cover_sun_tracking(
         self, states, sun, weather, profiles, cover_cfg, auto_level, redis_client,
@@ -2843,11 +3159,32 @@ class ProactiveManager:
         gradual = cover_cfg.get("gradual_morning", False)
         wave_open = cover_cfg.get("wave_open", False)
 
-        # Morgens: oeffnen (nur wenn Bett frei)
-        if (last_schedule_action != "open"
-                and abs(current_minutes - open_min) <= tolerance):
+        # Morgens: oeffnen (nur wenn Bett frei + hell genug)
+        # Feature 5: Erweitertes Zeitfenster — wenn Sonnencheck blockiert,
+        # bleibt das Fenster 2h offen (statt nur 15 Min Toleranz)
+        fallback_max_min = cover_cfg.get("wakeup_fallback_max_minutes", 120)
+        in_open_window = (
+            last_schedule_action != "open"
+            and current_minutes >= (open_min - tolerance)
+            and current_minutes <= (open_min + fallback_max_min)
+        )
+        if in_open_window:
+            # Bedingungen pruefen: Bett + Sonnenstand
+            _skip_reason = None
+            _is_fallback = current_minutes > (open_min + tolerance)
             if await self._is_bed_occupied(states):
-                logger.info("Cover-Zeitplan: Oeffnung uebersprungen — Bett belegt")
+                _skip_reason = "Bett belegt"
+            elif cover_cfg.get("wakeup_sun_check", True) and not _is_fallback:
+                _sun = self._get_sun_data(states)
+                _min_elev = cover_cfg.get("wakeup_min_sun_elevation", -6)
+                _cur_elev = _sun.get("elevation", 0)
+                if _cur_elev < _min_elev:
+                    _skip_reason = (
+                        f"zu dunkel (Sonnenhoehe {_cur_elev:.1f}° < {_min_elev}°, "
+                        f"Fallback in {open_min + fallback_max_min - current_minutes} Min)"
+                    )
+            if _skip_reason:
+                logger.info("Cover-Zeitplan: Oeffnung uebersprungen — %s", _skip_reason)
             else:
                 # Feature 7: Wellenfoermiges Oeffnen nach Himmelsrichtung
                 covers_to_open = []
@@ -3123,6 +3460,105 @@ class ProactiveManager:
                             auto_level, redis_client,
                         )
 
+    # ── Heizungs-Wetter-Integration ──────────────────────────────
+    async def _heating_weather_adjustment(self, states, sun, weather):
+        """Passt Heizung an Wetter an: Vorhersage-Vorheizen, Solar-Gain, Wind-Kompensation.
+
+        Nutzt climate.* Entities mit temperature-Attribut. Aendert nur wenn
+        heating_weather_adjust in settings aktiviert ist.
+        """
+        heating_cfg = yaml_config.get("heating", {})
+        hw_cfg = heating_cfg.get("weather_adjust", {})
+        if not hw_cfg.get("enabled", False):
+            return
+
+        redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
+        if not redis_client:
+            return
+
+        dedup_key = "mha:heating:weather_adjust"
+        last = await redis_client.get(dedup_key)
+        if last:
+            return  # Nur alle 30 Min
+        await redis_client.set(dedup_key, "1", ex=1800)
+
+        temp = weather.get("temperature", 10)
+        wind = weather.get("wind_speed", 0)
+        condition = weather.get("condition", "")
+        elevation = sun.get("elevation", 0) if sun else 0
+        forecast = weather.get("forecast", [])
+
+        offset = 0.0  # Temperatur-Offset, der empfohlen wird
+        reasons = []
+
+        # 1. Vorhersage-Vorheizen: Kaelteeinbruch in den naechsten Stunden
+        lookahead = hw_cfg.get("forecast_lookahead_hours", 4)
+        if forecast:
+            future_temps = []
+            for fc in forecast[:lookahead]:
+                try:
+                    future_temps.append(float(fc.get("temperature", temp)))
+                except (ValueError, TypeError):
+                    pass
+            if future_temps:
+                min_future = min(future_temps)
+                drop = temp - min_future
+                if drop >= hw_cfg.get("preheat_drop_threshold", 5):
+                    # Starker Temperaturabfall vorhergesagt → vorheizen
+                    offset += hw_cfg.get("preheat_offset", 1.0)
+                    reasons.append(f"Kaelteeinbruch vorhergesagt ({temp:.0f}→{min_future:.0f}°C)")
+
+        # 2. Solar-Gain: Sonne scheint stark → Heizung reduzieren
+        sunny_conditions = {"sunny", "partlycloudy"}
+        if condition in sunny_conditions and elevation > 15:
+            solar_reduction = hw_cfg.get("solar_gain_reduction", 0.5)
+            offset -= solar_reduction
+            reasons.append(f"Passive Solarwaerme (Sonne {elevation:.0f}°)")
+
+        # 3. Wind-Kompensation: Starker Wind → mehr Waermeverlust
+        wind_threshold = hw_cfg.get("wind_compensation_threshold", 30)
+        wind_offset = hw_cfg.get("wind_offset", 0.5)
+        if wind > wind_threshold:
+            offset += wind_offset
+            reasons.append(f"Wind-Kompensation ({wind:.0f} km/h)")
+
+        if abs(offset) < 0.3:
+            return  # Zu kleiner Effekt
+
+        # Offset anwenden: Heating-Curve-Modus oder Notification
+        mode = heating_cfg.get("mode", "room_thermostat")
+        if mode == "heating_curve":
+            curve_entity = heating_cfg.get("curve_entity", "")
+            if curve_entity:
+                try:
+                    current_offset = 0
+                    for s in (states or []):
+                        if s.get("entity_id") == curve_entity:
+                            current_offset = float(s.get("attributes", {}).get("temperature", 0))
+                            break
+                    new_offset = round(current_offset + offset, 1)
+                    min_off = heating_cfg.get("curve_offset_min", -5)
+                    max_off = heating_cfg.get("curve_offset_max", 5)
+                    new_offset = max(min_off, min(max_off, new_offset))
+                    if abs(new_offset - current_offset) >= 0.3:
+                        await self.brain.ha.call_service(
+                            "climate", "set_temperature",
+                            {"entity_id": curve_entity, "temperature": new_offset},
+                        )
+                        logger.info(
+                            "Heizung Wetter-Anpassung: Offset %+.1f → %+.1f (%s)",
+                            current_offset, new_offset, ", ".join(reasons),
+                        )
+                except Exception as e:
+                    logger.warning("Heizungs-Wetter-Anpassung fehlgeschlagen: %s", e)
+        else:
+            # Room thermostat: Nur informieren, nicht direkt aendern
+            reason_text = ", ".join(reasons)
+            logger.info("Heizung Wetter-Hinweis: Offset %+.1f empfohlen (%s)", offset, reason_text)
+            await self._notify("heating_weather_adjust", LOW, {
+                "message": f"Heizungs-Empfehlung ({reason_text}): Temperatur {'+' if offset > 0 else ''}{offset:.1f}°C anpassen.",
+            })
+
     # Feature 12: CO2-Lueftungsunterstuetzung
     async def _cover_co2_ventilation(self, states, weather, auto_level, redis_client):
         """Hoher CO2 + gutes Wetter → Rolllaeden auf + Benachrichtigung."""
@@ -3174,10 +3610,19 @@ class ProactiveManager:
 
     # Feature 16: Privacy-Modus (Abendlicher Sichtschutz)
     async def _cover_privacy_mode(self, states, sun, cover_profiles, auto_level, redis_client):
-        """Abends + Licht an → strassenseitige Rolllaeden schliessen."""
+        """Abends + Licht an → strassenseitige Rolllaeden schliessen.
+
+        Beruecksichtigt per-Cover privacy_close_hour (ab wann aktiviert wird)
+        und globalen privacy_close_hour als Fallback.
+        """
+        from datetime import datetime as _dt
         elevation = sun.get("elevation", 0) if sun else 0
         if elevation > 0:
             return  # Nur nach Sonnenuntergang
+
+        current_hour = _dt.now().hour
+        cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
+        global_close_hour = cover_cfg.get("privacy_close_hour", None)
 
         for cover in (cover_profiles or []):
             if not cover.get("privacy_mode"):
@@ -3185,6 +3630,16 @@ class ProactiveManager:
             entity_id = cover.get("entity_id")
             if not entity_id:
                 continue
+
+            # Per-Cover privacy_close_hour > globaler Wert
+            close_hour = cover.get("privacy_close_hour") or global_close_hour
+            if close_hour is not None:
+                try:
+                    close_hour = int(close_hour)
+                    if current_hour < close_hour:
+                        continue  # Noch nicht Zeit fuer Privacy
+                except (ValueError, TypeError):
+                    pass
 
             # Pruefen ob im Raum Licht an ist
             cover_room = entity_id.replace("cover.", "").split("_")[0]
