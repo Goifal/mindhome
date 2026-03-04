@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
+    ffmpeg \
     tesseract-ocr \
     tesseract-ocr-deu \
     tesseract-ocr-eng \
