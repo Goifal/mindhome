@@ -280,6 +280,9 @@ insight_checks:
   away_security_full: true                   # Praesenz x Fenster x Alarm x Licht
   health_work_pattern: true                  # Aktivitaet x Zeit x Dauer
   humidity_contradiction: true               # Geraete x Fenster x Wetter
+  night_security: true                       # Uhrzeit x Fenster x Tueren x Anwesenheit
+  heating_vs_sun: true                       # Klima x Wetter x Aussentemperatur x Rollladen
+  forgotten_devices: true                    # Media Player x Abwesenheit x Uhrzeit
 
 proactive_planner:
   enabled: true

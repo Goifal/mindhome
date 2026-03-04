@@ -9297,7 +9297,10 @@ function renderIntelligence() {
     fToggle('insight_checks.guest_preparation', 'Gaeste-Vorbereitung (Kalender x Haus)') +
     fToggle('insight_checks.away_security_full', 'Abwesenheits-Sicherheit (Praesenz x Alarm)') +
     fToggle('insight_checks.health_work_pattern', 'Arbeits-Muster (Aktivitaet x Dauer)') +
-    fToggle('insight_checks.humidity_contradiction', 'Feuchtigkeits-Widerspruch (Geraete x Wetter)')
+    fToggle('insight_checks.humidity_contradiction', 'Feuchtigkeits-Widerspruch (Geraete x Wetter)') +
+    fToggle('insight_checks.night_security', 'Nacht-Sicherheit (Uhrzeit x Fenster x Tueren)') +
+    fToggle('insight_checks.heating_vs_sun', 'Heizung vs Sonne (Klima x Wetter x Rollladen)') +
+    fToggle('insight_checks.forgotten_devices', 'Vergessene Geraete (Media x Abwesenheit)')
   ) +
   sectionWrap('&#128736;', 'Proaktiver Sequenz-Planner',
     fInfo('Bei Kontext-Aenderungen (Ankunft, Wetterwechsel, Kalender-Event) plant Jarvis automatisch mehrstufige Aktionsketten. Z.B. Ankunft → Licht + Heizung + Musik. Sicherheitsaktionen NIE automatisch.') +
