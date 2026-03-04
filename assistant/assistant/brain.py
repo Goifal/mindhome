@@ -3584,20 +3584,18 @@ class AssistantBrain(BrainCallbacksMixin):
                         feedback_messages = [{
                             "role": "system",
                             "content": (
-                                "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
+                                "Du bist JARVIS. Formuliere die Daten als 1-2 Saetze auf Deutsch. "
                                 f"{_form_hint} {_sarc_hint}{_mood_hint} "
                                 f"'{get_person_title(self._current_person)}' sparsam einsetzen. "
-                                "Keine Aufzaehlungen. Zahlen und Uhrzeiten EXAKT uebernehmen. "
-                                "NUR Fakten aus dem Antwort-Entwurf verwenden. "
-                                "NICHTS hinzufuegen, was nicht im Entwurf steht. "
-                                "Keine Aktionen oder Geraetezustaende erfinden. "
+                                "Zahlen und Uhrzeiten EXAKT uebernehmen. "
+                                "Erfinde NICHTS dazu. Nur was in den Daten steht. "
                                 f"Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, {get_person_title(self._current_person)}.' | "
                                 "'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
                                 "'Im Buero 22.3 Grad, Luftfeuchtigkeit 51%. Passt.'"
                             ),
                         }, {
                             "role": "user",
-                            "content": f"Frage: {text}\nAntwort-Entwurf: {humanized_text}",
+                            "content": f"Frage: {text}\nDaten: {humanized_text}",
                         }]
 
                         logger.info("Tool-Feedback: LLM verfeinert '%s'", humanized_text[:80])
@@ -3615,7 +3613,23 @@ class AssistantBrain(BrainCallbacksMixin):
                             feedback_text = feedback_response.get("message", {}).get("content", "")
                             if feedback_text:
                                 refined = self._filter_response(feedback_text)
-                                if refined and len(refined) > 5:
+                                # Halluzinations-Check: Refinement verwerfen wenn
+                                # es Meta-Sprache leakt oder viel laenger als Input ist
+                                _halluc_markers = [
+                                    "antwort-entwurf", "entwurf", "daten:",
+                                    "ich habe keine", "nicht in den daten",
+                                    "nicht erwaehnt", "keine daten",
+                                    "nicht im entwurf",
+                                ]
+                                _refined_lower = refined.lower() if refined else ""
+                                _has_halluc = any(m in _refined_lower for m in _halluc_markers)
+                                _too_long = len(refined) > len(humanized_text) * 3 if refined else False
+                                if _has_halluc or _too_long:
+                                    logger.warning(
+                                        "Tool-Feedback verworfen (halluc=%s, too_long=%s): '%s'",
+                                        _has_halluc, _too_long, refined[:80],
+                                    )
+                                elif refined and len(refined) > 5:
                                     response_text = refined
                                     logger.info("Tool-Feedback verfeinert: '%s'", response_text[:120])
                                 else:
