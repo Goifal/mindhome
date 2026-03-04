@@ -2936,6 +2936,85 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             logger.info("SpeakerRecognition Settings aktualisiert (enabled=%s)", sr.enabled)
         _try_reload("speaker_recognition", _reload_speaker_recognition)
 
+    # Intelligenz-Features: Quick Wins + Medium Effort
+    if "calendar_intelligence" in changed_settings and hasattr(brain, "calendar_intelligence"):
+        def _reload_calendar_intelligence():
+            ci_cfg = yaml_cfg.get("calendar_intelligence", {})
+            ci = brain.calendar_intelligence
+            ci.enabled = ci_cfg.get("enabled", True)
+            ci.conflict_lookahead_hours = ci_cfg.get("conflict_lookahead_hours", 24)
+            ci.habit_min_occurrences = ci_cfg.get("habit_min_occurrences", 3)
+            ci.commute_minutes = ci_cfg.get("commute_minutes", 30)
+            logger.info("CalendarIntelligence Settings aktualisiert")
+        _try_reload("calendar_intelligence", _reload_calendar_intelligence)
+
+    if "explainability" in changed_settings and hasattr(brain, "explainability"):
+        def _reload_explainability():
+            ex_cfg = yaml_cfg.get("explainability", {})
+            ex = brain.explainability
+            ex.enabled = ex_cfg.get("enabled", True)
+            ex.detail_level = ex_cfg.get("detail_level", "normal")
+            ex.auto_explain = ex_cfg.get("auto_explain", False)
+            logger.info("Explainability Settings aktualisiert")
+        _try_reload("explainability", _reload_explainability)
+
+    if "learning_transfer" in changed_settings and hasattr(brain, "learning_transfer"):
+        def _reload_learning_transfer():
+            lt_cfg = yaml_cfg.get("learning_transfer", {})
+            lt = brain.learning_transfer
+            lt.enabled = lt_cfg.get("enabled", True)
+            lt.auto_suggest = lt_cfg.get("auto_suggest", True)
+            lt.min_observations = lt_cfg.get("min_observations", 3)
+            lt.transfer_confidence = lt_cfg.get("transfer_confidence", 0.7)
+            lt.domains_enabled = lt_cfg.get("domains", ["light", "climate", "media"])
+            logger.info("LearningTransfer Settings aktualisiert")
+        _try_reload("learning_transfer", _reload_learning_transfer)
+
+    if "dialogue" in changed_settings and hasattr(brain, "dialogue_state"):
+        def _reload_dialogue():
+            dlg_cfg = yaml_cfg.get("dialogue", {})
+            dlg = brain.dialogue_state
+            dlg.enabled = dlg_cfg.get("enabled", True)
+            dlg.timeout_seconds = dlg_cfg.get("timeout_seconds", 300)
+            dlg.auto_resolve_references = dlg_cfg.get("auto_resolve_references", True)
+            dlg.clarification_enabled = dlg_cfg.get("clarification_enabled", True)
+            logger.info("DialogueState Settings aktualisiert")
+        _try_reload("dialogue", _reload_dialogue)
+
+    if "climate_model" in changed_settings and hasattr(brain, "climate_model"):
+        def _reload_climate_model():
+            from .climate_model import DEFAULT_ROOM_THERMAL
+            cm_cfg = yaml_cfg.get("climate_model", {})
+            cm = brain.climate_model
+            cm.enabled = cm_cfg.get("enabled", True)
+            cm.max_simulation_minutes = cm_cfg.get("max_simulation_minutes", 240)
+            cm._default_params = {**DEFAULT_ROOM_THERMAL, **cm_cfg.get("default_params", {})}
+            cm._room_params = cm_cfg.get("room_params", {})
+            logger.info("ClimateModel Settings aktualisiert")
+        _try_reload("climate_model", _reload_climate_model)
+
+    if "predictive_maintenance" in changed_settings and hasattr(brain, "predictive_maintenance"):
+        def _reload_predictive_maintenance():
+            from .predictive_maintenance import DEFAULT_LIFESPANS
+            pm_cfg = yaml_cfg.get("predictive_maintenance", {})
+            pm = brain.predictive_maintenance
+            pm.enabled = pm_cfg.get("enabled", True)
+            pm._lifespans = {**DEFAULT_LIFESPANS, **pm_cfg.get("typical_lifespans", {})}
+            pm.battery_drain_alert_pct = pm_cfg.get("battery_drain_alert_pct_per_week", 5.0)
+            logger.info("PredictiveMaintenance Settings aktualisiert")
+        _try_reload("predictive_maintenance", _reload_predictive_maintenance)
+
+    if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
+        # Domain-spezifische Autonomie-Level nachladen
+        def _reload_autonomy_domains():
+            auto_cfg = yaml_cfg.get("autonomy", {})
+            brain.autonomy._domain_levels_enabled = auto_cfg.get("domain_levels_enabled", False)
+            raw_domains = auto_cfg.get("domain_levels", {})
+            if raw_domains:
+                brain.autonomy._domain_levels = {k: int(v) for k, v in raw_domains.items()}
+            logger.info("Autonomy Domain-Levels aktualisiert")
+        _try_reload("autonomy_domains", _reload_autonomy_domains)
+
     if failed_modules:
         logger.warning("Settings-Reload: %d Module fehlgeschlagen: %s",
                         len(failed_modules), ", ".join(failed_modules))

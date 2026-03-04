@@ -96,6 +96,12 @@ from .workshop_generator import WorkshopGenerator
 from .workshop_library import WorkshopLibrary
 from .proactive_planner import ProactiveSequencePlanner
 from .seasonal_insight import SeasonalInsightEngine
+from .calendar_intelligence import CalendarIntelligence
+from .explainability import ExplainabilityEngine
+from .learning_transfer import LearningTransfer
+from .dialogue_state import DialogueStateManager
+from .climate_model import ClimateModel
+from .predictive_maintenance import PredictiveMaintenance
 from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive, emit_progress, emit_workshop
 
 logger = logging.getLogger(__name__)
@@ -281,6 +287,14 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 18: MCU-Upgrade — Proactive Planner + Seasonal Insight
         self.proactive_planner = ProactiveSequencePlanner(self.ha, self.anticipation)
         self.seasonal_insight = SeasonalInsightEngine()
+
+        # Intelligenz-Features: Quick Wins + Medium Effort
+        self.calendar_intelligence = CalendarIntelligence()
+        self.explainability = ExplainabilityEngine()
+        self.learning_transfer = LearningTransfer()
+        self.dialogue_state = DialogueStateManager()
+        self.climate_model = ClimateModel()
+        self.predictive_maintenance = PredictiveMaintenance()
 
         # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
         self.situation_model = SituationModel()
@@ -651,6 +665,12 @@ class AssistantBrain(BrainCallbacksMixin):
             redis_client=self.memory.redis,
             notify_callback=self._handle_insight,
         ))
+
+        # Intelligenz-Features: Quick Wins + Medium Effort
+        await _safe_init("CalendarIntelligence", self.calendar_intelligence.initialize(redis_client=self.memory.redis))
+        await _safe_init("Explainability", self.explainability.initialize(redis_client=self.memory.redis))
+        await _safe_init("LearningTransfer", self.learning_transfer.initialize(redis_client=self.memory.redis))
+        await _safe_init("PredictiveMaintenance", self.predictive_maintenance.initialize(redis_client=self.memory.redis))
 
         # Self-Improvement: Geschlossene Feedback-Loops
         await _safe_init("OutcomeTracker", self.outcome_tracker.initialize(
@@ -1129,6 +1149,24 @@ class AssistantBrain(BrainCallbacksMixin):
             primary = cfg.yaml_config.get("household", {}).get("primary_user", "")
             if primary:
                 person = primary
+
+        # Dialogue State: Klaerungsfrage aufloesen + Referenzen aufloesen
+        try:
+            _clarification = self.dialogue_state.check_clarification_answer(text, person or "")
+            if _clarification:
+                # Antwort auf offene Klaerungsfrage — Kontext anreichern
+                _clar_text = _clarification.get("original_text", "")
+                _clar_opt = _clarification.get("selected_option", "")
+                if _clar_text and _clar_opt:
+                    text = f"{_clar_text} ({_clar_opt})"
+                    logger.info("Klaerung aufgeloest: '%s' -> '%s'", _clarification.get("clarification_question"), _clar_opt)
+            else:
+                _ref_result = self.dialogue_state.resolve_references(text, person or "", room or "")
+                if _ref_result.get("had_references"):
+                    # Referenz-Hinweis wird im Kontext-Prompt eingebaut (siehe context assembly)
+                    logger.info("Referenzen aufgeloest: %s", _ref_result.get("context_hint", ""))
+        except Exception as _dlg_err:
+            logger.debug("DialogueState Fehler: %s", _dlg_err)
 
         # Phase 7: Gute-Nacht-Intent (VOR allem anderen)
         if self.routines.is_goodnight_intent(text):
@@ -2582,6 +2620,42 @@ class AssistantBrain(BrainCallbacksMixin):
         if jarvis_thinks:
             sections.append(("jarvis_thinks", jarvis_thinks, 2))
 
+        # Intelligenz-Features: Kontext-Hints
+        try:
+            _cal_hint = self.calendar_intelligence.get_context_hint()
+            if _cal_hint:
+                sections.append(("calendar_intelligence", f"\n\nKALENDER-INTELLIGENZ: {_cal_hint}", 3))
+        except Exception:
+            pass
+
+        try:
+            _explain_hint = self.explainability.get_explanation_prompt_hint()
+            if _explain_hint:
+                sections.append(("explainability", f"\n\n{_explain_hint}", 3))
+        except Exception:
+            pass
+
+        try:
+            _transfer_hint = self.learning_transfer.get_context_hint(room or "")
+            if _transfer_hint:
+                sections.append(("learning_transfer", f"\n\nPRAEFERENZ-TRANSFER: {_transfer_hint}", 3))
+        except Exception:
+            pass
+
+        try:
+            _maintenance_hint = self.predictive_maintenance.get_context_hint()
+            if _maintenance_hint:
+                sections.append(("predictive_maintenance", f"\n\n{_maintenance_hint}", 2))
+        except Exception:
+            pass
+
+        try:
+            _dialogue_hint = self.dialogue_state.get_context_prompt(person or "", room or "")
+            if _dialogue_hint:
+                sections.append(("dialogue_state", f"\n\nDIALOG-KONTEXT: {_dialogue_hint}", 2))
+        except Exception:
+            pass
+
         # MCU-JARVIS: Anomalie-Kontext — ungewoehnliche Zustaende beilaeufig erwaehnen
         anomalies = context.get("anomalies", [])
         if anomalies:
@@ -3831,6 +3905,81 @@ class AssistantBrain(BrainCallbacksMixin):
             self._save_situation_snapshot(),
             name="save_situation_snapshot",
         )
+
+        # Intelligenz-Features: Post-Execution Tracking
+        # Dialogue State: Turn tracken (Entities, Raeume, Aktionen)
+        try:
+            _executed_entities = []
+            _executed_domain = ""
+            for _act in executed_actions:
+                if isinstance(_act.get("result"), dict) and _act["result"].get("success"):
+                    _act_args = _act.get("args", {})
+                    if _act_args.get("entity_id"):
+                        _executed_entities.append(_act_args["entity_id"])
+                    if not _executed_domain:
+                        _fn = _act.get("function", "")
+                        if "light" in _fn:
+                            _executed_domain = "light"
+                        elif "climate" in _fn or "thermostat" in _fn:
+                            _executed_domain = "climate"
+                        elif "media" in _fn or "play" in _fn:
+                            _executed_domain = "media"
+                        elif "cover" in _fn:
+                            _executed_domain = "cover"
+            self.dialogue_state.track_turn(
+                text=text, person=person or "", room=room or "",
+                entities=_executed_entities if _executed_entities else None,
+                actions=[{"function": a["function"], "description": a.get("function", "")}
+                         for a in executed_actions if isinstance(a.get("result"), dict)
+                         and a["result"].get("success")] or None,
+                domain=_executed_domain,
+            )
+        except Exception:
+            pass
+
+        # Explainability: Entscheidungen loggen
+        for _act in executed_actions:
+            if isinstance(_act.get("result"), dict) and _act["result"].get("success"):
+                _act_args = _act.get("args", {})
+                _act_desc = f"{_act['function']}({', '.join(f'{k}={v}' for k, v in _act_args.items())})"
+                self._task_registry.create_task(
+                    self.explainability.log_decision(
+                        action=_act_desc,
+                        reason=f"User-Befehl: {text[:100]}",
+                        trigger="user_command",
+                        person=person or "",
+                        domain=_executed_domain,
+                    ),
+                    name="log_explainability",
+                )
+
+        # Learning Transfer: Aktionen beobachten (Praeferenzen lernen)
+        for _act in executed_actions:
+            if isinstance(_act.get("result"), dict) and _act["result"].get("success"):
+                _act_args = _act.get("args", {})
+                _fn = _act.get("function", "")
+                _lt_domain = ""
+                _lt_attrs = {}
+                if "light" in _fn:
+                    _lt_domain = "light"
+                    _lt_attrs = {k: v for k, v in _act_args.items()
+                                 if k in ("brightness", "color_temp", "color_mode") and v is not None}
+                elif "climate" in _fn or "thermostat" in _fn:
+                    _lt_domain = "climate"
+                    _lt_attrs = {k: v for k, v in _act_args.items()
+                                 if k in ("temperature", "hvac_mode") and v is not None}
+                elif "media" in _fn or "play" in _fn:
+                    _lt_domain = "media"
+                    _lt_attrs = {k: v for k, v in _act_args.items()
+                                 if k in ("volume_level", "source") and v is not None}
+                if _lt_domain and _lt_attrs and room:
+                    self._task_registry.create_task(
+                        self.learning_transfer.observe_action(
+                            room=room, domain=_lt_domain,
+                            attributes=_lt_attrs, person=person or "",
+                        ),
+                        name="learning_transfer_observe",
+                    )
 
         # Phase 11.4: Korrektur-Lernen — erkennt Korrekturen und speichert sie
         if self._is_correction(text):
