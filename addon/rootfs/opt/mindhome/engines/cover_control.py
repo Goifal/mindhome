@@ -71,6 +71,7 @@ class CoverControlManager:
         "simulation_variance_min": 20,
         # Komfort
         "wakeup_integration_enabled": True,
+        "wakeup_min_sun_elevation_deg": -6.0,  # Minimum sun elevation for wake-open (civil twilight)
         "wakeup_open_speed_sec": 300,
         "sleep_close_enabled": True,
         "ventilation_position_pct": 50,
@@ -91,6 +92,7 @@ class CoverControlManager:
         self._last_simulation = {}  # entity_id -> last_sim_time
         self._pending_actions = {}  # entity_id -> {priority, position, source}
         self._executed_schedules = {}  # schedule_id -> last_exec_date (to prevent double-fire)
+        self._wake_pending_open = False  # Deferred wake-open (too dark at wake time)
 
     def start(self):
         self._is_running = True
@@ -566,6 +568,18 @@ class CoverControlManager:
         except Exception:
             local = now
 
+        # Deferred wake-open: Rolladen oeffnen sobald Sonne hoch genug
+        if self._wake_pending_open:
+            min_elevation = config.get("wakeup_min_sun_elevation_deg", -6.0)
+            if sun_data.get("elevation", 0) >= min_elevation:
+                if not self._is_bed_occupied():
+                    self._wake_pending_open = False
+                    for cover in covers:
+                        if not self._is_overridden(cover["entity_id"]):
+                            self.set_position(cover["entity_id"], 100, source="wakeup_deferred")
+                    logger.info("Deferred wake-open: sun reached %.1f° — opening covers now",
+                                sun_data.get("elevation", 0))
+
         for cover in covers:
             eid = cover["entity_id"]
             if self._is_overridden(eid, now):
@@ -829,6 +843,7 @@ class CoverControlManager:
         config = self.get_config()
         if not config.get("sleep_close_enabled"):
             return
+        self._wake_pending_open = False  # Reset deferred wake-open
         covers = self.get_covers()
         for cover in covers:
             if not self._is_overridden(cover["entity_id"]):
@@ -836,7 +851,7 @@ class CoverControlManager:
         logger.info("Sleep detected: closing all covers")
 
     def _on_wake_detected(self, event):
-        """Gradually open covers on wake-up (only if bed is actually empty)."""
+        """Gradually open covers on wake-up (only if bed is actually empty AND bright enough)."""
         config = self.get_config()
         if not config.get("wakeup_integration_enabled"):
             return
@@ -847,6 +862,19 @@ class CoverControlManager:
             logger.info("Wake detected but bed still occupied — NOT opening covers")
             return
 
+        # Sonnenstand pruefen: Nicht oeffnen wenn es noch dunkel ist
+        sun_data = self._get_sun_data()
+        min_elevation = config.get("wakeup_min_sun_elevation_deg", -6.0)
+        if sun_data.get("elevation", 0) < min_elevation:
+            self._wake_pending_open = True
+            logger.info(
+                "Wake detected but too dark (sun elevation %.1f° < %.1f°) "
+                "— deferring cover open until sunrise",
+                sun_data.get("elevation", 0), min_elevation,
+            )
+            return
+
+        self._wake_pending_open = False
         covers = self.get_covers()
         for cover in covers:
             if not self._is_overridden(cover["entity_id"]):
