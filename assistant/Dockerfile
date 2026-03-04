@@ -38,7 +38,7 @@ EXPOSE 8200
 
 # Health Check
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD curl -f http://localhost:8200/api/assistant/health || exit 1
+    CMD curl -fk https://localhost:8200/api/assistant/health || exit 1
 
 # Start
 CMD ["python", "-m", "assistant.main"]
