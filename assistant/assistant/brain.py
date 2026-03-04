@@ -1586,7 +1586,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 # Wenn Vorhersage angefragt aber nicht verfuegbar: ehrlich antworten
                 if include_forecast and "VORHERSAGE" not in weather_msg:
                     response_text = (
-                        f"Vorhersage ist leider nicht verfuegbar, {get_person_title(self._current_person)}. "
+                        f"Vorhersage ist aktuell nicht verfuegbar, {get_person_title(self._current_person)}. "
                         f"{self._filter_response(self._humanize_weather(weather_msg))}"
                     )
                 else:
@@ -3918,8 +3918,10 @@ class AssistantBrain(BrainCallbacksMixin):
                 )
                 _char_retry_msgs = [
                     {"role": "system", "content": (
-                        "Du bist JARVIS. Trocken, kurz, praezise. Butler-Ton.\n"
-                        "VERBOTEN: Listen, Aufzaehlungen, Erklaerungen, Begeisterung, Floskeln.\n"
+                        f"Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. "
+                        "Trocken, kurz, praezise. Britischer Butler-Ton.\n"
+                        "VERBOTEN: Listen, Aufzaehlungen, Erklaerungen, Begeisterung, Floskeln, "
+                        "Natuerlich!, Gerne!, Klar!, Selbstverstaendlich!\n"
                         "Maximal 2 Saetze. Fakt + Loesung. Sonst nichts.\n"
                         "Formuliere die folgende Antwort als JARVIS um — "
                         "kuerzer, trockener, ohne LLM-Floskeln:\n\n"
@@ -4088,7 +4090,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 domain=_executed_domain,
             )
         except Exception:
-            pass
+            logger.debug("dialogue_state.track_interaction fehlgeschlagen", exc_info=True)
 
         # Explainability: Entscheidungen loggen
         for _act in executed_actions:
@@ -5295,6 +5297,13 @@ class AssistantBrain(BrainCallbacksMixin):
             "Ach,", "Hmm,", "Ähm,", "Oh,", "Oh ",
             "Okay,", "Okay ", "Ok,", "Ok ",
             "Nun ja,",
+            "Tja,", "Tja ",
+            "Hey,", "Hey ", "Hallo,", "Hallo ", "Hi,", "Hi ",
+            "Gut,", "Gut ", "Klar,", "Klar ",
+            "Sicher,", "Sicher ", "Genau,", "Genau ", "Richtig,",
+            "Gute Frage", "Interessante Frage", "Interessant,",
+            "Zunächst", "Zunaechst", "Erstens,",
+            "Ja,", "Ja ", "Schön,", "Schoen,",
         ])
         for starter in banned_starters:
             if text.lstrip().lower().startswith(starter.lower()):
@@ -5375,9 +5384,9 @@ class AssistantBrain(BrainCallbacksMixin):
             _formal_map = [
                 (r"\bIhnen\b", "dir"), (r"\bIhre\b", "deine"),
                 (r"\bIhren\b", "deinen"), (r"\bIhrem\b", "deinem"),
-                (r"\bIhrer\b", "deiner"),
+                (r"\bIhrer\b", "deiner"), (r"\bIhres\b", "deines"),
                 # "Sie" in eindeutigen Kontexten ersetzen
-                (r"(?<=[,;:!?]\s)Sie\b", "du"),
+                (r"(?<=[,;:!?.]\s)Sie\b", "du"),
                 (r"(?<=\bfuer\s)Sie\b", "dich"), (r"(?<=\bfür\s)Sie\b", "dich"),
                 (r"(?<=\bdass\s)Sie\b", "du"), (r"(?<=\bwenn\s)Sie\b", "du"),
                 (r"(?<=\bob\s)Sie\b", "du"),
@@ -5574,6 +5583,10 @@ class AssistantBrain(BrainCallbacksMixin):
         # Strukturelle Signale
         if re.search(r"^\d+\.", text, re.MULTILINE):
             score += 2  # Nummerierte Liste
+        if re.search(r"^[\-\*•]\s", text, re.MULTILINE):
+            score += 2  # Bullet-Liste
+        if re.search(r"\*\*.+?\*\*|^#{1,6}\s", text, re.MULTILINE):
+            score += 1  # Markdown-Formatierung
         if text.count("!") > 2:
             score += 1  # Ueberschwenglichkeit
         if len(re.split(r"[.!?]+", text)) > 6:
@@ -5595,6 +5608,16 @@ class AssistantBrain(BrainCallbacksMixin):
             "in diesem zusammenhang", "grundsätzlich", "grundsaetzlich",
             "prinzipiell", "im wesentlichen", "diesbezüglich",
             "diesbezueglich", "hinsichtlich", "bezüglich", "bezueglich",
+            # Transitions & Enumerations
+            "ausserdem", "außerdem", "des weiteren", "ferner", "zudem",
+            "zusätzlich", "zusaetzlich",
+            "erstens", "zweitens", "drittens",
+            "einerseits", "andererseits",
+            # Meta-Kommentare & LLM-Enthusiasm
+            "um deine frage zu beantworten", "kurz gesagt",
+            "ich helfe dir gerne", "gerne erklaere ich",
+            "ich verstehe deine", "ich kann nachvollziehen",
+            "ich bin mir nicht sicher", "soweit ich weiss",
         ]
         for phrase in _llm_phrases:
             if phrase in t:
@@ -7949,14 +7972,13 @@ class AssistantBrain(BrainCallbacksMixin):
             person = self._current_person
             if person:
                 _responses = [
-                    f"Natuerlich, {person}.",
                     f"Selbstverstaendlich. Du bist {person}.",
                     f"{person}. Dein Haus erkennt dich, {title}.",
                 ]
             else:
                 _responses = [
                     f"Ich konnte dich noch nicht zuordnen, {title}.",
-                    f"Aktuell leider nicht, {title}. Sprich mich nochmal mit Namen an.",
+                    f"Aktuell nicht, {title}. Sprich mich nochmal mit Namen an.",
                 ]
             return random.choice(_responses)
 
@@ -9611,7 +9633,7 @@ Regeln:
                     # Warnung merken (konfigurierbarer TTL)
                     await self.memory.redis.setex(_warn_key, _resignation_ttl, "1")
             except Exception:
-                pass
+                logger.debug("Resignation-Tracking fehlgeschlagen", exc_info=True)
 
         # Prefix basierend auf Severity
         prefix = random.choice(self._escalation_prefixes.get(severity, self._escalation_prefixes.get(1, ["Uebrigens —"])))

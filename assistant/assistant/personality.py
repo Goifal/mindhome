@@ -1743,7 +1743,7 @@ class PersonalityEngine:
             2: None,  # Zweites Mal: noch nichts sagen
             3: "Darf ich das als Gewohnheit vermerken, {title}?".format(title=get_person_title()),
             5: f"Fuenftes Mal diese Woche. Soll ich eine Automatisierung einrichten, {get_person_title()}?",
-            7: f"Siebtes Mal. Ich richte das gerne als Routine ein, {get_person_title()}.",
+            7: f"Siebtes Mal. Soll ich das als Routine einrichten, {get_person_title()}?",
             10: f"Zehntes Mal. Eine Automatisierung waere naheliegend, {get_person_title()}.",
         }
         return escalation_map.get(int(count))
@@ -3181,7 +3181,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             "limit": [
                 "Das uebersteigt meine aktuelle Konfiguration.",
                 "Ausserhalb der erlaubten Parameter. Sicherheit geht vor.",
-                "Das wuerde ich gerne tun, aber die Grenzen sind gesetzt.",
+                "Das wuerde ich tun, aber die Grenzen sind gesetzt.",
             ],
             "unknown_device": [
                 "Dieses Geraet kenne ich nicht. Ist es in Home Assistant eingerichtet?",
