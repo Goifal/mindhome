@@ -965,10 +965,11 @@ class PatternDetector:
         try:
             now = datetime.now(timezone.utc)
             today = now.date()
-            patterns = session.query(LearnedPattern).filter(
-                LearnedPattern.is_active == True,
-                LearnedPattern.confidence > 0.1
-            ).all()
+            with session.no_autoflush:
+                patterns = session.query(LearnedPattern).filter(
+                    LearnedPattern.is_active == True,
+                    LearnedPattern.confidence > 0.1
+                ).all()
 
             decayed_count = 0
             dirty_count = 0

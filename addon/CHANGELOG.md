@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.10 – Jarvis Voice (Build 101)
+
+- Fix PhaseManager._commit_with_retry missing attribute
+- Fix SQLite database locked in confidence decay (no_autoflush)
+- Fix WebSocket broken pipe flood (early break + disconnect flag)
+- Fix media_player.this_device 404 spam (downgrade to DEBUG)
+
+---
+
 ## 1.5.9 – Jarvis Voice (Build 100)
 
 ---
