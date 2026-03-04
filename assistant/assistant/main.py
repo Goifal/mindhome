@@ -4,7 +4,6 @@ Startet den MindHome Assistant REST API Server.
 """
 
 import asyncio
-import ipaddress
 import json
 import logging
 import os
@@ -402,8 +401,6 @@ _cors_origin_list = (
         "http://localhost:8123",
         "http://homeassistant.local:8123",
         f"http://localhost:{settings.assistant_port}",
-        "https://localhost",
-        f"https://localhost:{settings.assistant_port}",
     ]
 )
 _cors_has_wildcard = "*" in _cors_origin_list
@@ -7509,60 +7506,9 @@ async def metrics():
     )
 
 
-def _ensure_ssl_cert(cert_dir: str = "/app/certs") -> tuple[str, str]:
-    """Erstellt ein selbstsigniertes SSL-Zertifikat falls keines existiert."""
-    import os
-    import pathlib
-    cert_path = os.path.join(cert_dir, "cert.pem")
-    key_path = os.path.join(cert_dir, "key.pem")
-    if os.path.exists(cert_path) and os.path.exists(key_path):
-        return cert_path, key_path
-    pathlib.Path(cert_dir).mkdir(parents=True, exist_ok=True)
-    from cryptography import x509
-    from cryptography.x509.oid import NameOID
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    import datetime
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, "MindHome Jarvis"),
-    ])
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(issuer)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.datetime.utcnow())
-        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=3650))
-        .add_extension(
-            x509.SubjectAlternativeName([
-                x509.DNSName("localhost"),
-                x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-                x509.IPAddress(ipaddress.IPv4Address("192.168.178.82")),
-            ]),
-            critical=False,
-        )
-        .sign(key, hashes.SHA256())
-    )
-    with open(key_path, "wb") as f:
-        f.write(key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.TraditionalOpenSSL,
-            serialization.NoEncryption(),
-        ))
-    with open(cert_path, "wb") as f:
-        f.write(cert.public_bytes(serialization.Encoding.PEM))
-    logger.info("SSL-Zertifikat erstellt: %s", cert_path)
-    return cert_path, key_path
-
-
 def start():
     """Einstiegspunkt fuer den Server."""
     import uvicorn
-
-    ssl_cert, ssl_key = _ensure_ssl_cert()
-    logger.info("HTTPS aktiv auf Port %d", settings.assistant_port)
 
     uvicorn.run(
         "assistant.main:app",
@@ -7570,8 +7516,6 @@ def start():
         port=settings.assistant_port,
         reload=False,
         log_level="info",
-        ssl_certfile=ssl_cert,
-        ssl_keyfile=ssl_key,
     )
 
 
