@@ -150,6 +150,9 @@ _SMART_HOME_KEYWORDS = [
     "musik", "tv", "fernseher", "kamera", "sensor",
     "steckdose", "schalter", "thermostat",
     "status", "hausstatus", "haus-status", "ueberblick",
+    "watt", "strom", "verbrauch", "energie", "kwh",
+    "eingeschalten", "eingeschaltet", "ausgeschaltet",
+    "smart plug", "smartplug",
 ]
 
 
