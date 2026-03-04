@@ -4,12 +4,14 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.5.6"
-BUILD = 97
-BUILD_DATE = "2026-02-24"
+VERSION = "1.5.7"
+BUILD = 98
+BUILD_DATE = "2026-03-04"
 CODENAME = "Jarvis Voice"
 
 # Changelog
+# Build 98: v1.5.7 Jarvis Voice — Error Logging & Bugfixes
+#   - FIX: MindHome POST Error-Logging zeigt jetzt Exception-Typ (war leer bei leerer Message)
 # Build 97: v1.5.6 Jarvis Voice — Speech Service Fixes
 #   - FIX: Whisper crash — AsrModel/AsrProgram fehlender 'version' Parameter (wyoming 1.8.0)
 #   - FIX: Piper crash — --port durch --uri tcp://0.0.0.0:10200 ersetzt (wyoming-piper CLI)
