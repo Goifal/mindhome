@@ -858,11 +858,21 @@ class LightEngine:
     # ── Manual Override ────────────────────────────────────────────────
 
     async def record_manual_override(self, entity_id: str):
-        """Markiert entity als manuell gesteuert (TTL-basiert)."""
+        """Markiert entity als manuell gesteuert (TTL-basiert).
+
+        Liest manual_override_minutes aus lighting.presence_control.
+        Fallback: cover_automation.manual_override_hours * 60 (fuer einheitliche Steuerung).
+        """
         if not self.redis:
             return
         cfg = yaml_config.get("lighting", {}).get("presence_control", {})
-        ttl_min = cfg.get("manual_override_minutes", 30)
+        ttl_min = cfg.get("manual_override_minutes", None)
+        if ttl_min is None:
+            # Fallback: Cover-Setting (in Stunden) umrechnen
+            cover_hours = yaml_config.get("seasonal_actions", {}).get(
+                "cover_automation", {}
+            ).get("manual_override_hours", 2)
+            ttl_min = int(cover_hours * 60)
         await _safe_redis(self.redis, "set", f"{_R_OVERRIDE}{entity_id}", "1", ex=ttl_min * 60)
         logger.debug("Manual Override: %s fuer %d Min", entity_id, ttl_min)
 

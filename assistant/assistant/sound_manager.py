@@ -209,7 +209,8 @@ class SoundManager:
 
         # Volume bestimmen
         if volume is None:
-            volume = self._get_auto_volume(event)
+            weather_cond = await self._get_current_weather_condition()
+            volume = self._get_auto_volume(event, weather_condition=weather_cond)
 
         # Speaker finden (erst Config-Mapping, dann Raum-Match, dann Default)
         speaker_entity = await self._resolve_speaker(room)
@@ -314,10 +315,11 @@ class SoundManager:
 
         return False
 
-    def _get_auto_volume(self, event: str, activity: str = "") -> float:
-        """Bestimmt die automatische Lautstaerke basierend auf Tageszeit, Event und Aktivitaet.
+    def _get_auto_volume(self, event: str, activity: str = "", weather_condition: str = "") -> float:
+        """Bestimmt die automatische Lautstaerke basierend auf Tageszeit, Event, Aktivitaet und Wetter.
 
-        F-060: Beruecksichtigt jetzt auch den Activity-State (sleeping, in_call, focused).
+        F-060: Beruecksichtigt Activity-State (sleeping, in_call, focused).
+        Wetter-Adaptiv: Bei Regen/Sturm Lautstaerke erhoehen (Umgebungsgeraeusch).
         """
         hour = datetime.now().hour
         is_night = hour >= self.evening_start or hour < self.morning_start
@@ -348,6 +350,13 @@ class SoundManager:
             elif activity == "focused":
                 base *= 0.6  # Gedaempft bei Konzentration
 
+        # Wetter-adaptiv: Bei Regen/Sturm lauter (Umgebungsgeraeusche)
+        if weather_condition and event not in ("alarm", "goodnight"):
+            loud_weather = {"rainy", "pouring", "hail", "lightning-rainy", "windy"}
+            if weather_condition.lower() in loud_weather:
+                weather_boost = yaml_config.get("sound", {}).get("weather_volume_boost", 0.15)
+                base += weather_boost
+
         return round(min(1.0, base), 2)
 
     async def _get_states_cached(self) -> Optional[list]:
@@ -365,6 +374,17 @@ class SoundManager:
             self._states_cache = states
             self._states_cache_time = now
         return states
+
+    async def _get_current_weather_condition(self) -> str:
+        """Holt aktuelle Wetter-Condition aus gecachten States."""
+        try:
+            states = await self._get_states_cached()
+            for s in (states or []):
+                if s.get("entity_id", "").startswith("weather."):
+                    return s.get("state", "")
+        except Exception:
+            pass
+        return ""
 
     async def _resolve_speaker(self, room: Optional[str] = None) -> Optional[str]:
         """Findet den besten Speaker: Config-Mapping > Raum-Match > Default."""
@@ -502,6 +522,13 @@ class SoundManager:
 
         # T-1: Volume aus gecachten States lesen (kein extra HTTP-Call)
         volume = tts_data.get("volume", 0.8)
+        # Wetter-adaptiv: Bei Regen/Sturm lauter
+        weather_cond = await self._get_current_weather_condition()
+        if weather_cond:
+            loud_weather = {"rainy", "pouring", "hail", "lightning-rainy", "windy"}
+            if weather_cond.lower() in loud_weather:
+                weather_boost = yaml_config.get("sound", {}).get("weather_volume_boost", 0.15)
+                volume = min(1.0, volume + weather_boost)
         old_volume = None
         try:
             states = await self._get_states_cached()

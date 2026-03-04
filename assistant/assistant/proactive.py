@@ -2255,6 +2255,12 @@ class ProactiveManager:
 
                 sun = self._get_sun_data(states)
                 weather = self._get_weather_data(states, cover_cfg)
+                # Wetter-Condition in Redis cachen (fuer Anticipation-Engine)
+                if _redis and weather.get("condition"):
+                    try:
+                        await _redis.set("mha:weather:current_condition", weather["condition"], ex=300)
+                    except Exception:
+                        pass
                 cover_profiles = self._load_cover_profiles()
 
                 # 1. WETTER-SCHUTZ (hoechste Prioritaet)
@@ -2303,6 +2309,9 @@ class ProactiveManager:
                     await self._cover_heating_integration(
                         states, sun, weather, cover_profiles, cover_cfg, auto_level, _redis,
                     )
+
+                # 7b. HEIZUNGS-WETTER-ANPASSUNG
+                await self._heating_weather_adjustment(states, sun, weather)
 
                 # 8. CO2-LUEFTUNG (Feature 12)
                 if cover_cfg.get("co2_ventilation", False):
@@ -3219,6 +3228,105 @@ class ProactiveManager:
                             auto_level, redis_client,
                         )
 
+    # ── Heizungs-Wetter-Integration ──────────────────────────────
+    async def _heating_weather_adjustment(self, states, sun, weather):
+        """Passt Heizung an Wetter an: Vorhersage-Vorheizen, Solar-Gain, Wind-Kompensation.
+
+        Nutzt climate.* Entities mit temperature-Attribut. Aendert nur wenn
+        heating_weather_adjust in settings aktiviert ist.
+        """
+        heating_cfg = yaml_config.get("heating", {})
+        hw_cfg = heating_cfg.get("weather_adjust", {})
+        if not hw_cfg.get("enabled", False):
+            return
+
+        redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
+        if not redis_client:
+            return
+
+        dedup_key = "mha:heating:weather_adjust"
+        last = await redis_client.get(dedup_key)
+        if last:
+            return  # Nur alle 30 Min
+        await redis_client.set(dedup_key, "1", ex=1800)
+
+        temp = weather.get("temperature", 10)
+        wind = weather.get("wind_speed", 0)
+        condition = weather.get("condition", "")
+        elevation = sun.get("elevation", 0) if sun else 0
+        forecast = weather.get("forecast", [])
+
+        offset = 0.0  # Temperatur-Offset, der empfohlen wird
+        reasons = []
+
+        # 1. Vorhersage-Vorheizen: Kaelteeinbruch in den naechsten Stunden
+        lookahead = hw_cfg.get("forecast_lookahead_hours", 4)
+        if forecast:
+            future_temps = []
+            for fc in forecast[:lookahead]:
+                try:
+                    future_temps.append(float(fc.get("temperature", temp)))
+                except (ValueError, TypeError):
+                    pass
+            if future_temps:
+                min_future = min(future_temps)
+                drop = temp - min_future
+                if drop >= hw_cfg.get("preheat_drop_threshold", 5):
+                    # Starker Temperaturabfall vorhergesagt → vorheizen
+                    offset += hw_cfg.get("preheat_offset", 1.0)
+                    reasons.append(f"Kaelteeinbruch vorhergesagt ({temp:.0f}→{min_future:.0f}°C)")
+
+        # 2. Solar-Gain: Sonne scheint stark → Heizung reduzieren
+        sunny_conditions = {"sunny", "partlycloudy"}
+        if condition in sunny_conditions and elevation > 15:
+            solar_reduction = hw_cfg.get("solar_gain_reduction", 0.5)
+            offset -= solar_reduction
+            reasons.append(f"Passive Solarwaerme (Sonne {elevation:.0f}°)")
+
+        # 3. Wind-Kompensation: Starker Wind → mehr Waermeverlust
+        wind_threshold = hw_cfg.get("wind_compensation_threshold", 30)
+        wind_offset = hw_cfg.get("wind_offset", 0.5)
+        if wind > wind_threshold:
+            offset += wind_offset
+            reasons.append(f"Wind-Kompensation ({wind:.0f} km/h)")
+
+        if abs(offset) < 0.3:
+            return  # Zu kleiner Effekt
+
+        # Offset anwenden: Heating-Curve-Modus oder Notification
+        mode = heating_cfg.get("mode", "room_thermostat")
+        if mode == "heating_curve":
+            curve_entity = heating_cfg.get("curve_entity", "")
+            if curve_entity:
+                try:
+                    current_offset = 0
+                    for s in (states or []):
+                        if s.get("entity_id") == curve_entity:
+                            current_offset = float(s.get("attributes", {}).get("temperature", 0))
+                            break
+                    new_offset = round(current_offset + offset, 1)
+                    min_off = heating_cfg.get("curve_offset_min", -5)
+                    max_off = heating_cfg.get("curve_offset_max", 5)
+                    new_offset = max(min_off, min(max_off, new_offset))
+                    if abs(new_offset - current_offset) >= 0.3:
+                        await self.brain.ha.call_service(
+                            "climate", "set_temperature",
+                            {"entity_id": curve_entity, "temperature": new_offset},
+                        )
+                        logger.info(
+                            "Heizung Wetter-Anpassung: Offset %+.1f → %+.1f (%s)",
+                            current_offset, new_offset, ", ".join(reasons),
+                        )
+                except Exception as e:
+                    logger.warning("Heizungs-Wetter-Anpassung fehlgeschlagen: %s", e)
+        else:
+            # Room thermostat: Nur informieren, nicht direkt aendern
+            reason_text = ", ".join(reasons)
+            logger.info("Heizung Wetter-Hinweis: Offset %+.1f empfohlen (%s)", offset, reason_text)
+            await self._notify("heating_weather_adjust", LOW, {
+                "message": f"Heizungs-Empfehlung ({reason_text}): Temperatur {'+' if offset > 0 else ''}{offset:.1f}°C anpassen.",
+            })
+
     # Feature 12: CO2-Lueftungsunterstuetzung
     async def _cover_co2_ventilation(self, states, weather, auto_level, redis_client):
         """Hoher CO2 + gutes Wetter → Rolllaeden auf + Benachrichtigung."""
@@ -3270,10 +3378,19 @@ class ProactiveManager:
 
     # Feature 16: Privacy-Modus (Abendlicher Sichtschutz)
     async def _cover_privacy_mode(self, states, sun, cover_profiles, auto_level, redis_client):
-        """Abends + Licht an → strassenseitige Rolllaeden schliessen."""
+        """Abends + Licht an → strassenseitige Rolllaeden schliessen.
+
+        Beruecksichtigt per-Cover privacy_close_hour (ab wann aktiviert wird)
+        und globalen privacy_close_hour als Fallback.
+        """
+        from datetime import datetime as _dt
         elevation = sun.get("elevation", 0) if sun else 0
         if elevation > 0:
             return  # Nur nach Sonnenuntergang
+
+        current_hour = _dt.now().hour
+        cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
+        global_close_hour = cover_cfg.get("privacy_close_hour", None)
 
         for cover in (cover_profiles or []):
             if not cover.get("privacy_mode"):
@@ -3281,6 +3398,16 @@ class ProactiveManager:
             entity_id = cover.get("entity_id")
             if not entity_id:
                 continue
+
+            # Per-Cover privacy_close_hour > globaler Wert
+            close_hour = cover.get("privacy_close_hour") or global_close_hour
+            if close_hour is not None:
+                try:
+                    close_hour = int(close_hour)
+                    if current_hour < close_hour:
+                        continue  # Noch nicht Zeit fuer Privacy
+                except (ValueError, TypeError):
+                    pass
 
             # Pruefen ob im Raum Licht an ist
             cover_room = entity_id.replace("cover.", "").split("_")[0]

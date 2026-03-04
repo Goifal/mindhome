@@ -934,6 +934,7 @@ const HELP_TEXTS = {
   'seasonal_actions.cover_automation.heating_integration': {title:'Heizungs-Integration', text:'Wenn die Heizung laeuft + Aussentemp kalt: Nicht-sonnenbeschienene Fenster zu (Isolierung). Wenn Sonne + Heizung aus: Sonnenfenster auf (passive Solarwaerme).'},
   'seasonal_actions.cover_automation.co2_ventilation': {title:'CO2-Lueftung', text:'Bei hohem CO2 (>1000 ppm) und gutem Wetter (10-25°C, kein Regen) wird eine Lueftungsempfehlung gegeben.'},
   'seasonal_actions.cover_automation.privacy_mode': {title:'Privacy-Modus', text:'Abends nach Sonnenuntergang: Wenn im Raum Licht an ist, werden Rolllaeden mit privacy_mode=true im Cover-Profil geschlossen (Sichtschutz).'},
+  'seasonal_actions.cover_automation.privacy_close_hour': {title:'Privacy ab Uhrzeit', text:'Ab welcher Uhrzeit der Privacy-Modus aktiviert wird (z.B. 17 = ab 17 Uhr). Muss gleichzeitig dunkel sein (Sonnenuntergang). Ohne Angabe: sobald es dunkel ist.'},
   'seasonal_actions.cover_automation.presence_aware': {title:'Praesenz-basiert', text:'Wenn alle Personen das Haus verlassen haben, werden alle Rolllaeden geschlossen (Einbruchschutz + Energiesparen).'},
   'seasonal_actions.cover_automation.manual_override_hours': {title:'Manueller Override', text:'Wenn ein Rollladen manuell (Taster/App) bedient wird, pausiert die Automatik fuer diese Anzahl Stunden. Verhindert dass die Automatik manuelle Einstellungen ueberschreibt.'},
   'seasonal_actions.cover_automation.wakeup_sun_check': {title:'Aufwach-Sonnenpruefung', text:'Prueft beim Aufwachen den Sonnenstand (sun.sun). Wenn es noch zu dunkel ist, werden die Rolllaeden erst bei Daemmerung geoeffnet statt sofort. Verhindert dass Rolllaeden mitten in der Nacht hochfahren.'},
@@ -1089,6 +1090,13 @@ const HELP_TEXTS = {
   'insights.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft alle Datenquellen abgeglichen werden.'},
   'insights.cooldown_hours': {title:'Cooldown', text:'Wie lange nach einem Hinweis der gleiche Typ nicht nochmal kommt.'},
   'insights.checks.weather_windows': {title:'Wetter + Fenster', text:'Warnt wenn Regen/Sturm kommt und Fenster offen sind.'},
+  'heating.weather_adjust.enabled': {title:'Heizung Wetter-Anpassung', text:'Passt Heizung automatisch an Wetter an: Vorheizen bei Kaelteeinbruch, Reduzierung bei Sonne, Erhoehung bei Wind. Nutzt sun.sun + weather.* Daten.'},
+  'heating.weather_adjust.forecast_lookahead_hours': {title:'Vorhersage-Zeitraum', text:'Wie viele Stunden voraus wird die Wettervorhersage fuer die Heizungsanpassung betrachtet.'},
+  'heating.weather_adjust.preheat_drop_threshold': {title:'Vorheiz-Schwelle', text:'Ab welchem vorhergesagten Temperaturabfall (in °C) wird vorgeheizt. Z.B. 5 = wenn in den naechsten Stunden 5°C kaelter wird.'},
+  'heating.weather_adjust.preheat_offset': {title:'Vorheiz-Offset', text:'Um wie viel Grad die Heizung beim Vorheizen hochgefahren wird.'},
+  'heating.weather_adjust.solar_gain_reduction': {title:'Solar-Reduktion', text:'Um wie viel Grad die Heizung reduziert wird wenn die Sonne stark scheint (passive Solarwaerme durch Fenster).'},
+  'heating.weather_adjust.wind_compensation_threshold': {title:'Wind-Schwelle', text:'Ab welcher Windgeschwindigkeit die Heizung kompensiert wird (Wind = mehr Waermeverlust).'},
+  'heating.weather_adjust.wind_offset': {title:'Wind-Offset', text:'Um wie viel Grad die Heizung bei starkem Wind erhoeht wird.'},
   'insights.checks.frost_heating': {title:'Frost + Heizung', text:'Warnt wenn Frost erwartet wird und Heizung aus/abwesend ist.'},
   'insights.checks.calendar_travel': {title:'Reise + Haus', text:'Erkennt Reise-Termine und prueft Alarm, Fenster, Heizung.'},
   'insights.checks.energy_anomaly': {title:'Energie-Anomalie', text:'Meldet wenn der Verbrauch deutlich ueber dem Durchschnitt liegt.'},
@@ -2546,6 +2554,16 @@ function renderRooms() {
     :
       fInfo('Jeder Raum hat seinen eigenen Thermostat. Temperatur-Grenzen findest du unter Sicherheit.')
     )
+  ) +
+  sectionWrap('&#127782;', 'Heizung: Wetter-Anpassung (sun.sun + weather)',
+    fInfo('Passt die Heizung automatisch an Wetterbedingungen an:<br><br>&#10052; <strong>Vorhersage-Vorheizen:</strong> Kaelteeinbruch vorhergesagt → Heizung vorab hochfahren<br>&#9728; <strong>Solar-Gain:</strong> Sonne scheint stark → Heizung reduzieren (passive Solarwaerme)<br>&#128168; <strong>Wind-Kompensation:</strong> Starker Wind → mehr Waermeverlust → leicht erhoehen') +
+    fToggle('heating.weather_adjust.enabled', 'Wetter-Anpassung aktiv') +
+    fRange('heating.weather_adjust.forecast_lookahead_hours', 'Vorhersage-Zeitraum (Std)', 1, 8, 1, {1:'1h',2:'2h',3:'3h',4:'4h',6:'6h',8:'8h'}) +
+    fRange('heating.weather_adjust.preheat_drop_threshold', 'Vorheizen ab Temperaturabfall (°C)', 3, 10, 1, {3:'3°',5:'5°',7:'7°',10:'10°'}) +
+    fRange('heating.weather_adjust.preheat_offset', 'Vorheiz-Offset (°C)', 0.5, 3, 0.5, {0.5:'0.5°',1:'1°',1.5:'1.5°',2:'2°',3:'3°'}) +
+    fRange('heating.weather_adjust.solar_gain_reduction', 'Solar-Reduktion (°C)', 0, 2, 0.5, {0:'Aus',0.5:'0.5°',1:'1°',1.5:'1.5°',2:'2°'}) +
+    fRange('heating.weather_adjust.wind_compensation_threshold', 'Wind-Kompensation ab (km/h)', 15, 60, 5, {15:'15',25:'25',30:'30',40:'40',50:'50',60:'60'}) +
+    fRange('heating.weather_adjust.wind_offset', 'Wind-Offset (°C)', 0, 2, 0.5, {0:'Aus',0.5:'0.5°',1:'1°',1.5:'1.5°',2:'2°'})
   ) +
   sectionWrap('&#127777;', 'Raumtemperatur-Sensoren',
     fInfo('Welche Temperatursensoren sollen fuer die Raumtemperatur verwendet werden? Jarvis berechnet den Mittelwert aller Sensoren. Ohne Sensoren wird die Temperatur der Klimaanlage/Heizung genutzt.') +
@@ -6046,6 +6064,7 @@ function renderCovers() {
     fToggle('seasonal_actions.cover_automation.heating_integration', 'Heizungs-Integration (Isolierung + passive Solarwaerme)') +
     fToggle('seasonal_actions.cover_automation.co2_ventilation', 'CO2-Lueftungs-Unterstuetzung') +
     fToggle('seasonal_actions.cover_automation.privacy_mode', 'Privacy-Modus (Sichtschutz abends bei Licht)') +
+    fRange('seasonal_actions.cover_automation.privacy_close_hour', 'Privacy ab Uhrzeit (Stunde)', 15, 22, 1, {15:'15h',16:'16h',17:'17h',18:'18h',19:'19h',20:'20h',21:'21h',22:'22h'}) +
     fToggle('seasonal_actions.cover_automation.presence_aware', 'Praesenz-basiert (niemand zuhause = alles zu)') +
     fRange('seasonal_actions.cover_automation.manual_override_hours', 'Manueller Override-Schutz (Stunden)', 0, 6, 1, {0:'Aus',1:'1h',2:'2h',3:'3h',4:'4h',5:'5h',6:'6h'})
   ) +
@@ -7065,7 +7084,7 @@ function renderLights() {
     fToggle('lighting.presence_control.night_path_light', 'Nacht-Pfadlicht (sanftes Orientierungslicht)') +
     fRange('lighting.presence_control.night_path_brightness', 'Pfadlicht-Helligkeit (%)', 3, 20, 1, {3:'3%',5:'5%',8:'8%',10:'10%',15:'15%',20:'20%'}) +
     fRange('lighting.presence_control.night_path_timeout_minutes', 'Pfadlicht Auto-Aus (Min)', 2, 15, 1, {2:'2 Min',3:'3 Min',5:'5 Min',7:'7 Min',10:'10 Min',15:'15 Min'}) +
-    fRange('lighting.presence_control.manual_override_minutes', 'Override-Schutz nach manueller Bedienung (Min)', 5, 60, 5, {5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',45:'45 Min',60:'1 Std'}) +
+    fRange('lighting.presence_control.manual_override_minutes', 'Override-Schutz nach manueller Bedienung (Min)', 5, 180, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std',180:'3 Std'}) +
     fRange('lighting.presence_control.night_start_hour', 'Nacht beginnt (Uhrzeit)', 20, 24, 1, {20:'20 Uhr',21:'21 Uhr',22:'22 Uhr',23:'23 Uhr',24:'0 Uhr'}) +
     fRange('lighting.presence_control.night_end_hour', 'Nacht endet (Uhrzeit)', 4, 8, 1, {4:'4 Uhr',5:'5 Uhr',6:'6 Uhr',7:'7 Uhr',8:'8 Uhr'})
   ) +

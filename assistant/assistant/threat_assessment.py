@@ -49,6 +49,26 @@ class ThreatAssessment:
         self.redis = redis_client
         logger.info("ThreatAssessment initialisiert (enabled: %s)", self.enabled)
 
+    @staticmethod
+    def _get_weather_context(states: list[dict]) -> dict:
+        """Extrahiert Wetter-Kontext fuer Fehlalarm-Filterung."""
+        for s in states:
+            if s.get("entity_id", "").startswith("weather."):
+                attrs = s.get("attributes", {})
+                condition = s.get("state", "")
+                try:
+                    wind = float(attrs.get("wind_speed", 0))
+                except (ValueError, TypeError):
+                    wind = 0.0
+                rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy"}
+                return {
+                    "condition": condition,
+                    "wind_speed": wind,
+                    "is_stormy": wind > 50 or condition in rain_conditions,
+                    "is_rainy": condition in rain_conditions,
+                }
+        return {"condition": "", "wind_speed": 0, "is_stormy": False, "is_rainy": False}
+
     async def assess_threats(self) -> list[dict]:
         """Fuehrt eine Sicherheitsbewertung durch.
 
@@ -62,13 +82,14 @@ class ThreatAssessment:
         if not states:
             return []
 
+        weather_ctx = self._get_weather_context(states)
         threats = []
         now = datetime.now()
         is_night = now.hour >= self.night_start or now.hour < self.night_end
 
         # 1. Naechtliche Bewegung wenn alle schlafen
         if is_night:
-            night_threats = await self._check_night_motion(states)
+            night_threats = await self._check_night_motion(states, weather_ctx)
             threats.extend(night_threats)
 
         # 2. Offene Fenster/Tueren bei Sturm
@@ -93,9 +114,14 @@ class ThreatAssessment:
 
         return threats
 
-    async def _check_night_motion(self, states: list[dict]) -> list[dict]:
-        """Prueft ob nachts Bewegung erkannt wird obwohl alle schlafen."""
+    async def _check_night_motion(self, states: list[dict], weather_ctx: dict = None) -> list[dict]:
+        """Prueft ob nachts Bewegung erkannt wird obwohl alle schlafen.
+
+        Wetter-Filter: Outdoor-Sensoren (garten, terrasse, einfahrt) werden bei
+        starkem Wind/Regen unterdrueckt (Fehlalarme durch Aeste, Regen etc.).
+        """
         threats = []
+        weather_ctx = weather_ctx or {}
 
         # Sind alle zuhause und es ist Nacht?
         all_home = True
@@ -108,6 +134,8 @@ class ThreatAssessment:
         if not all_home:
             return []
 
+        # Outdoor-Bereiche die bei schlechtem Wetter Fehlalarme ausloesen
+        outdoor_areas = {"garten", "terrasse", "einfahrt", "carport", "balkon", "hof"}
         # Bewegung in "oeffentlichen" Bereichen
         suspicious_areas = ["flur", "eingang", "garage", "keller", "garten"]
         for s in states:
@@ -119,6 +147,15 @@ class ThreatAssessment:
 
             area = eid.split(".", 1)[1].lower()
             if any(sa in area for sa in suspicious_areas):
+                # Wetter-Filter: Outdoor-Sensoren bei Sturm/Regen unterdruecken
+                is_outdoor = any(oa in area for oa in outdoor_areas)
+                if is_outdoor and weather_ctx.get("is_stormy"):
+                    logger.debug(
+                        "Nacht-Bewegung unterdrueckt (Wetter-Filter): %s (Wind: %.0f, %s)",
+                        eid, weather_ctx.get("wind_speed", 0), weather_ctx.get("condition", ""),
+                    )
+                    continue
+
                 key = f"night_motion_{eid}"
                 if not await self._was_notified(key, cooldown_minutes=30):
                     await self._mark_notified(key, cooldown_minutes=30)

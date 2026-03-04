@@ -1457,6 +1457,74 @@ _ASSISTANT_TOOLS_STATIC = [
                         "type": "boolean",
                         "description": "Temperatur-basierte Steuerung aktivieren/deaktivieren",
                     },
+                    "wakeup_fallback_max_minutes": {
+                        "type": "integer",
+                        "description": "Max. Minuten nach Aufwachzeit bis Oeffnung erzwungen wird (30-240)",
+                    },
+                    "night_insulation": {
+                        "type": "boolean",
+                        "description": "Nacht-Isolation (Rolladen nachts als Daemmung) an/aus",
+                    },
+                    "night_start_hour": {
+                        "type": "integer",
+                        "description": "Nacht-Start Stunde (0-23)",
+                    },
+                    "night_end_hour": {
+                        "type": "integer",
+                        "description": "Nacht-Ende Stunde (0-23)",
+                    },
+                    "presence_simulation": {
+                        "type": "boolean",
+                        "description": "Anwesenheitssimulation bei Abwesenheit an/aus",
+                    },
+                    "inverted_position": {
+                        "type": "boolean",
+                        "description": "Invertierte Position (0=offen statt 100=offen)",
+                    },
+                    "hysteresis_temp": {
+                        "type": "number",
+                        "description": "Temperatur-Hysterese in Grad (vermeidet staendiges Auf/Zu)",
+                    },
+                    "hysteresis_wind": {
+                        "type": "number",
+                        "description": "Wind-Hysterese in km/h",
+                    },
+                    "glare_protection": {
+                        "type": "boolean",
+                        "description": "Blendschutz (teilweises Schliessen bei direkter Sonne) an/aus",
+                    },
+                    "gradual_morning": {
+                        "type": "boolean",
+                        "description": "Schrittweises Oeffnen am Morgen an/aus",
+                    },
+                    "wave_open": {
+                        "type": "boolean",
+                        "description": "Wellen-Oeffnung (Raum fuer Raum zeitversetzt) an/aus",
+                    },
+                    "heating_integration": {
+                        "type": "boolean",
+                        "description": "Heizungs-Integration (Rolladen als Daemmung bei aktiver Heizung) an/aus",
+                    },
+                    "co2_ventilation": {
+                        "type": "boolean",
+                        "description": "CO2-basierte Lueftung (oeffnet bei hohem CO2) an/aus",
+                    },
+                    "privacy_mode": {
+                        "type": "boolean",
+                        "description": "Sichtschutz-Modus (abends Rolladen schliessen) an/aus",
+                    },
+                    "privacy_close_hour": {
+                        "type": "integer",
+                        "description": "Privacy ab Uhrzeit (15-22). Null = sobald es dunkel ist.",
+                    },
+                    "presence_aware": {
+                        "type": "boolean",
+                        "description": "Anwesenheits-basierte Steuerung an/aus",
+                    },
+                    "manual_override_hours": {
+                        "type": "number",
+                        "description": "Stunden die manuelle Uebersteuerung aktiv bleibt (0.5-12)",
+                    },
                 },
                 "required": ["action"],
             },
@@ -4234,6 +4302,23 @@ class FunctionExecutor:
                     "storm_wind_speed": cover_cfg.get("storm_wind_speed", 50),
                     "wakeup_sun_check": cover_cfg.get("wakeup_sun_check", True),
                     "wakeup_min_sun_elevation": cover_cfg.get("wakeup_min_sun_elevation", -6),
+                    "wakeup_fallback_max_minutes": cover_cfg.get("wakeup_fallback_max_minutes", 120),
+                    "night_insulation": cover_cfg.get("night_insulation", True),
+                    "night_start_hour": cover_cfg.get("night_start_hour", 22),
+                    "night_end_hour": cover_cfg.get("night_end_hour", 6),
+                    "presence_simulation": cover_cfg.get("presence_simulation", True),
+                    "inverted_position": cover_cfg.get("inverted_position", False),
+                    "hysteresis_temp": cover_cfg.get("hysteresis_temp", 2),
+                    "hysteresis_wind": cover_cfg.get("hysteresis_wind", 10),
+                    "glare_protection": cover_cfg.get("glare_protection", False),
+                    "gradual_morning": cover_cfg.get("gradual_morning", False),
+                    "wave_open": cover_cfg.get("wave_open", False),
+                    "heating_integration": cover_cfg.get("heating_integration", False),
+                    "co2_ventilation": cover_cfg.get("co2_ventilation", False),
+                    "privacy_mode": cover_cfg.get("privacy_mode", False),
+                    "privacy_close_hour": cover_cfg.get("privacy_close_hour", None),
+                    "presence_aware": cover_cfg.get("presence_aware", False),
+                    "manual_override_hours": cover_cfg.get("manual_override_hours", 2),
                 },
             }
 
@@ -4245,7 +4330,13 @@ class FunctionExecutor:
             "weather_entity", "weather_protection", "forecast_weather_protection",
             "forecast_lookahead_hours", "sun_tracking", "temperature_based",
             "heat_protection_temp", "frost_protection_temp", "storm_wind_speed",
-            "wakeup_sun_check", "wakeup_min_sun_elevation",
+            "wakeup_sun_check", "wakeup_min_sun_elevation", "wakeup_fallback_max_minutes",
+            "night_insulation", "night_start_hour", "night_end_hour",
+            "presence_simulation", "inverted_position",
+            "hysteresis_temp", "hysteresis_wind",
+            "glare_protection", "gradual_morning", "wave_open",
+            "heating_integration", "co2_ventilation",
+            "privacy_mode", "privacy_close_hour", "presence_aware", "manual_override_hours",
         }
 
         changes = {}
@@ -4300,6 +4391,23 @@ class FunctionExecutor:
                 "storm_wind_speed": "Sturmschutz-Wind",
                 "wakeup_sun_check": "Aufwach-Sonnenpruefung",
                 "wakeup_min_sun_elevation": "Min. Sonnenhoehe",
+                "wakeup_fallback_max_minutes": "Aufwach-Fallback (Min.)",
+                "night_insulation": "Nacht-Isolation",
+                "night_start_hour": "Nacht-Start (Stunde)",
+                "night_end_hour": "Nacht-Ende (Stunde)",
+                "presence_simulation": "Anwesenheitssimulation",
+                "inverted_position": "Invertierte Position",
+                "hysteresis_temp": "Hysterese Temperatur",
+                "hysteresis_wind": "Hysterese Wind",
+                "glare_protection": "Blendschutz",
+                "gradual_morning": "Schrittweises Oeffnen",
+                "wave_open": "Wellen-Oeffnung",
+                "heating_integration": "Heizungs-Integration",
+                "co2_ventilation": "CO2-Lueftung",
+                "privacy_mode": "Sichtschutz-Modus",
+                "privacy_close_hour": "Privacy ab Uhrzeit",
+                "presence_aware": "Anwesenheits-Erkennung",
+                "manual_override_hours": "Manueller Override (Std.)",
             }
             for k, v in changes.items():
                 label = _labels.get(k, k)

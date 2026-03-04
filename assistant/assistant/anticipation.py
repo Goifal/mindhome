@@ -76,8 +76,13 @@ class AnticipationEngine:
     # Action-Logging
     # ------------------------------------------------------------------
 
-    async def log_action(self, action: str, args: dict, person: str = ""):
-        """Loggt eine ausgefuehrte Aktion fuer Pattern-Detection."""
+    async def log_action(self, action: str, args: dict, person: str = "",
+                         weather_condition: str = ""):
+        """Loggt eine ausgefuehrte Aktion fuer Pattern-Detection.
+
+        weather_condition wird automatisch mitgeloggt (z.B. 'rainy', 'sunny')
+        fuer wetterbasierte Muster-Erkennung.
+        """
         if not self.redis:
             return
 
@@ -90,6 +95,7 @@ class AnticipationEngine:
                 "hour": now.hour,
                 "weekday": now.weekday(),
                 "timestamp": now.isoformat(),
+                "weather": weather_condition,
             }
             entry_json = json.dumps(entry)
 
@@ -326,6 +332,48 @@ class AnticipationEngine:
                         "description": f"{action} wird zu {ratio*100:.0f}% {cluster_labels[cluster_name]} ausgefuehrt",
                     })
 
+        # Wetter-basierte Muster: Aktionen die bei bestimmtem Wetter gehaeuft auftreten
+        weather_groups = defaultdict(list)
+        for entry in entries:
+            weather = entry.get("weather", "")
+            if weather:
+                weather_groups[weather].append(entry)
+
+        weather_labels = {
+            "sunny": "bei Sonne",
+            "partlycloudy": "bei teilw. bewoelkt",
+            "cloudy": "bei Bewoelkung",
+            "rainy": "bei Regen",
+            "pouring": "bei starkem Regen",
+            "lightning-rainy": "bei Gewitter",
+            "fog": "bei Nebel",
+            "snowy": "bei Schnee",
+        }
+        for weather_cond, w_entries in weather_groups.items():
+            if len(w_entries) < 5:
+                continue
+            w_actions = Counter(e.get("action", "") for e in w_entries)
+            for action, w_count in w_actions.items():
+                total = action_total.get(action, 0)
+                if total < 5:
+                    continue
+                ratio = w_count / total
+                if ratio >= 0.6:  # 60%+ bei diesem Wetter
+                    w_args_counter = Counter(
+                        e.get("args", "{}") for e in w_entries if e.get("action") == action
+                    )
+                    typical_args = w_args_counter.most_common(1)[0][0] if w_args_counter else "{}"
+                    label = weather_labels.get(weather_cond, weather_cond)
+                    patterns.append({
+                        "type": "context",
+                        "context": f"weather:{weather_cond}",
+                        "action": action,
+                        "args": json.loads(typical_args),
+                        "confidence": round(min(1.0, ratio * (w_count / 10)), 2),
+                        "occurrences": w_count,
+                        "description": f"{action} wird zu {ratio*100:.0f}% {label} ausgefuehrt",
+                    })
+
         return patterns
 
     # ------------------------------------------------------------------
@@ -390,9 +438,11 @@ class AnticipationEngine:
                         continue
 
             elif pattern["type"] == "context":
-                # Kontext-Muster: Passt der aktuelle Tageszeit-Cluster?
                 ctx = pattern.get("context", "")
+                match = False
+
                 if ctx.startswith("time_cluster:"):
+                    # Tageszeit-Cluster
                     cluster = ctx.split(":")[1]
                     hour = now.hour
                     current_cluster = (
@@ -401,14 +451,22 @@ class AnticipationEngine:
                         else "evening" if 17 <= hour < 22
                         else "night"
                     )
-                    if cluster == current_cluster:
-                        suggestion = {
-                            "pattern": pattern,
-                            "action": pattern["action"],
-                            "args": pattern["args"],
-                            "confidence": pattern["confidence"],
-                            "description": pattern["description"],
-                        }
+                    match = (cluster == current_cluster)
+
+                elif ctx.startswith("weather:"):
+                    # Wetter-Kontext: Aktuelles Wetter pruefen
+                    pattern_weather = ctx.split(":")[1]
+                    current_weather = await self._get_current_weather()
+                    match = (current_weather == pattern_weather)
+
+                if match:
+                    suggestion = {
+                        "pattern": pattern,
+                        "action": pattern["action"],
+                        "args": pattern["args"],
+                        "confidence": pattern["confidence"],
+                        "description": pattern["description"],
+                    }
 
             if suggestion:
                 # Bestimme Delivery-Modus
@@ -426,6 +484,17 @@ class AnticipationEngine:
                 await self.redis.setex(pattern_key, 3600, "1")
 
         return suggestions
+
+    async def _get_current_weather(self) -> str:
+        """Holt aktuelle Wetter-Condition fuer Pattern-Matching."""
+        try:
+            if self.redis:
+                cached = await self.redis.get("mha:weather:current_condition")
+                if cached:
+                    return cached.decode("utf-8", errors="ignore") if isinstance(cached, bytes) else str(cached)
+        except Exception:
+            pass
+        return ""
 
     async def record_feedback(self, pattern_description: str, accepted: bool):
         """Passt Confidence basierend auf User-Feedback an.
