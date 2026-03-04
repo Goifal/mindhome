@@ -7117,7 +7117,8 @@ class AssistantBrain(BrainCallbacksMixin):
         # --- Ausschluss: Fragen, Multi-Target, Szenen ---
         if t.endswith("?") or any(t.startswith(q) for q in [
             "was ", "wie ", "warum ", "wer ", "welch", "kannst ",
-            "ist ", "hast ", "gibt ", "soll ", "koennt", "könnt",
+            "ist ", "sind ", "hast ", "gibt ", "soll ", "koennt", "könnt",
+            "wo ", "wieviel", "wie viel",
         ]):
             return None
         if " alle " in f" {t} " or " und " in t:
@@ -8226,6 +8227,8 @@ class AssistantBrain(BrainCallbacksMixin):
             "musik", "tv", "fernseher", "kamera", "sensor",
             "steckdose", "schalter", "thermostat",
             "status", "hausstatus", "haus-status", "ueberblick",
+            "watt", "verbrauch", "strom", "energie", "kilowatt", "kwh",
+            "maschine", "geraet", "geraete",
         ]
 
         is_knowledge = any(text_lower.startswith(kw) or f" {kw}" in text_lower

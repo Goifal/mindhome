@@ -1364,6 +1364,7 @@ response_filter:
   - Ich bin nur ein Programm
   - Lass mich mal schauen
   - Lass mich kurz schauen
+  - Verstehe!
   - Das klingt frustrierend
   - Ich verstehe, wie du dich fühlst
   - Ich verstehe, wie du dich fuehlst
@@ -1425,6 +1426,12 @@ response_filter:
   - Ich bin hier, um dir zu helfen
   - Lass es mich wissen
   - Lasse es mich wissen
+  - Wie kann ich dir helfen
+  - Wie kann ich Ihnen helfen
+  - Was kann ich für dich tun
+  - Was kann ich fuer dich tun
+  - Möchtest du vielleicht
+  - Moechtest du vielleicht
 correction:
   confidence: 0.95
   model: qwen3:4b

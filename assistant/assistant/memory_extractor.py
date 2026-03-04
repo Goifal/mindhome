@@ -133,9 +133,9 @@ class MemoryExtractor:
         # Fakten parsen und speichern
         stored_facts = []
         for raw in raw_facts:
-            content = raw.get("content", "").strip()
-            category = raw.get("category", "general").strip()
-            fact_person = raw.get("person", person).strip()
+            content = (raw.get("content") or "").strip()
+            category = (raw.get("category") or "general").strip()
+            fact_person = (raw.get("person") or person or "unknown").strip()
 
             if not content:
                 continue
