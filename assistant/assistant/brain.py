@@ -7916,7 +7916,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "danke jarvis", "danke dir", "danke schoen", "danke sehr",
             "vielen dank", "dankeschoen", "dankeschön", "danke schön",
         ]
-        if any(kw in t for kw in _thanks):
+        if any(kw in t for kw in _thanks) or t.strip().rstrip("!.") == "danke":
             _responses = [
                 f"Stets zu Diensten, {title}.",
                 f"Wie gewohnt, {title}.",
