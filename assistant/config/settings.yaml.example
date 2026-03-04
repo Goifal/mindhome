@@ -181,6 +181,49 @@ autonomy:
     2: { min_days: 30, min_interactions: 200, min_acceptance: 0.7 }
     3: { min_days: 90, min_interactions: 500, min_acceptance: 0.8 }
     4: { min_days: 180, min_interactions: 1000, min_acceptance: 0.85 }
+  # Domain-spezifische Autonomie: Unterschiedliche Level pro Bereich
+  domain_levels_enabled: false
+  domain_levels:
+    climate: 3       # Klima & Heizung
+    light: 3         # Licht & Beleuchtung
+    media: 2         # Medien & Musik
+    cover: 2         # Rolllaeden
+    security: 1      # Sicherheit (niedrig empfohlen)
+    automation: 2    # Automationen & Routinen
+    notification: 2  # Benachrichtigungen
+
+# Kalender-Intelligenz: Gewohnheiten, Konflikte, Pausen
+calendar_intelligence:
+  enabled: true
+  commute_minutes: 30
+  habit_min_occurrences: 3
+  conflict_lookahead_hours: 24
+  habit_detection: true
+  conflict_detection: true
+  break_detection: true
+
+# Erklaerbarkeit: "Warum hast du das gemacht?"
+explainability:
+  enabled: true
+  detail_level: normal     # minimal, normal, verbose
+  auto_explain: false
+  max_history: 50
+
+# Lern-Transfer: Praeferenzen zwischen Raeumen uebertragen
+learning_transfer:
+  enabled: true
+  auto_suggest: true
+  min_observations: 3
+  transfer_confidence: 0.7
+  domains:
+    - light
+    - climate
+    - media
+  room_groups:
+    wohnbereich: [wohnzimmer, esszimmer, kueche]
+    schlafbereich: [schlafzimmer, gaestezimmer, kinderzimmer]
+    nassbereich: [bad, badezimmer, gaeste_wc]
+    arbeitsbereich: [buero, arbeitszimmer]
 ollama:
   num_ctx_fast: 2048                       # Kontextfenster Fast-Modell (spart VRAM)
   num_ctx_smart: 4096                      # Kontextfenster Smart-Modell
@@ -513,6 +556,7 @@ mood:
   frustration_threshold: 3
   tired_hour_start: 23
   tired_hour_end: 5
+  voice_mood_integration: true   # Voice-Emotion direkt in Stimmungserkennung einbeziehen
   rapid_command_stress_boost: 0.15
   positive_stress_reduction: 0.1
   negative_stress_boost: 0.1

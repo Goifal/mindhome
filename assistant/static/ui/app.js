@@ -385,7 +385,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
       'tab-proactive':'Proaktiv & Vorausdenken',
       'tab-notifications':'Benachrichtigungen',
       'tab-cooking':'Koch-Assistent','tab-followme':'Follow-Me',
-      'tab-jarvis':'Jarvis-Features','tab-declarative-tools':'Analyse-Tools',
+      'tab-jarvis':'Jarvis-Features','tab-intelligence':'Intelligenz — Quick Wins','tab-declarative-tools':'Analyse-Tools',
       'tab-eastereggs':'Easter Eggs',
       'tab-autonomie':'Autonomie & Selbstoptimierung',
       'tab-voice':'Stimme & TTS','tab-security':'Sicherheit & Notfall',
@@ -640,6 +640,7 @@ function renderCurrentTab() {
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
       case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); break;
+      case 'tab-intelligence': c.innerHTML = renderIntelligence(); break;
       case 'tab-declarative-tools': c.innerHTML = renderDeclarativeTools(); loadDeclarativeTools(); _renderDeclSuggestions(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
       case 'tab-system': c.innerHTML = renderSystem(); loadSystemStatus(); break;
@@ -771,6 +772,32 @@ const HELP_TEXTS = {
   'das_uebliche.patterns': {title:'Das-Uebliche Trigger', text:'Phrasen die die "Das Uebliche"-Routine ausloesen.'},
   'autonomy.action_permissions': {title:'Aktions-Berechtigungen', text:'Mindest-Autonomie-Level pro Aktionstyp (1-5).'},
   'autonomy.evolution_criteria': {title:'Evolution-Kriterien', text:'Kriterien fuer automatischen Autonomie-Aufstieg.'},
+  'autonomy.domain_levels_enabled': {title:'Domain-Autonomie', text:'Aktiviert unterschiedliche Autonomie-Level pro Bereich (Klima, Licht, Sicherheit etc.). Wenn deaktiviert, gilt das globale Level.'},
+  'autonomy.domain_levels.climate': {title:'Klima-Autonomie', text:'Autonomie-Level fuer Klima & Heizung. Z.B. Level 3 = darf Temperatur +/-1 Grad selbst anpassen.'},
+  'autonomy.domain_levels.light': {title:'Licht-Autonomie', text:'Autonomie-Level fuer Licht & Beleuchtung.'},
+  'autonomy.domain_levels.media': {title:'Medien-Autonomie', text:'Autonomie-Level fuer Medien & Musik.'},
+  'autonomy.domain_levels.cover': {title:'Rolladen-Autonomie', text:'Autonomie-Level fuer Rolllaeden & Abdeckungen.'},
+  'autonomy.domain_levels.security': {title:'Sicherheits-Autonomie', text:'Autonomie-Level fuer Sicherheits-Aktionen. Empfehlung: Niedrig halten (1-2).'},
+  'autonomy.domain_levels.automation': {title:'Automations-Autonomie', text:'Autonomie-Level fuer Automationen & Routinen.'},
+  'autonomy.domain_levels.notification': {title:'Benachrichtigungs-Autonomie', text:'Autonomie-Level fuer Benachrichtigungen & Briefings.'},
+  'calendar_intelligence.enabled': {title:'Kalender-Intelligenz', text:'Analysiert deine Kalender-Termine und erkennt Gewohnheiten, Konflikte und freie Zeitfenster.'},
+  'calendar_intelligence.commute_minutes': {title:'Pendelzeit', text:'Durchschnittliche Fahrzeit zum Arbeitsplatz. Wird fuer Pendelzeit-Warnungen verwendet.'},
+  'calendar_intelligence.habit_min_occurrences': {title:'Min. Wiederholungen', text:'Wie oft muss ein Termin wiederkehren damit er als Gewohnheit erkannt wird.'},
+  'calendar_intelligence.conflict_lookahead_hours': {title:'Konflikt-Vorschau', text:'Wie viele Stunden im Voraus werden Konflikte erkannt.'},
+  'calendar_intelligence.habit_detection': {title:'Gewohnheits-Erkennung', text:'Erkennt wiederkehrende Termine als Muster.'},
+  'calendar_intelligence.conflict_detection': {title:'Konflikt-Erkennung', text:'Warnt bei Zeitkonflikten und knapper Pendelzeit.'},
+  'calendar_intelligence.break_detection': {title:'Pausen-Erkennung', text:'Erkennt freie Zeitfenster zwischen Terminen.'},
+  'explainability.enabled': {title:'Erklaerbarkeit', text:'Loggt alle automatischen Entscheidungen mit Begruendung. Frage "Warum hast du das gemacht?" fuer eine Erklaerung.'},
+  'explainability.detail_level': {title:'Detail-Stufe', text:'Wie ausfuehrlich Erklaerungen sind. Minimal = nur Aktion + Grund. Verbose = inklusive Sensordaten und Konfidenz.'},
+  'explainability.auto_explain': {title:'Automatisch erwaehnen', text:'Jarvis erwaehnt kurz warum er etwas getan hat, ohne dass du fragen musst.'},
+  'explainability.max_history': {title:'Max. Entscheidungen', text:'Wie viele Entscheidungen im Speicher gehalten werden.'},
+  'mood.voice_mood_integration': {title:'Voice-Mood Integration', text:'Verknuepft erkannte Stimm-Emotionen (froehlich, traurig, aergerlich) direkt mit der Stimmungserkennung.'},
+  'learning_transfer.enabled': {title:'Lern-Transfer', text:'Uebertraegt gelernte Praeferenzen auf aehnliche Raeume. Z.B. warmes Licht in Kueche -> auch fuer Esszimmer vorschlagen.'},
+  'learning_transfer.auto_suggest': {title:'Auto-Vorschlaege', text:'Schlaegt automatisch vor wenn eine Praeferenz uebertragen werden koennte.'},
+  'learning_transfer.min_observations': {title:'Min. Beobachtungen', text:'Wie oft muss eine Praeferenz beobachtet werden bevor sie uebertragen wird.'},
+  'learning_transfer.transfer_confidence': {title:'Transfer-Konfidenz', text:'Mindest-Konfidenz fuer einen Transfer-Vorschlag.'},
+  'learning_transfer.domains': {title:'Transfer-Domaenen', text:'Fuer welche Bereiche Praeferenzen uebertragen werden.'},
+  'learning_transfer.room_groups': {title:'Raum-Gruppen', text:'Raeume in der gleichen Gruppe werden als aehnlich betrachtet fuer den Praeferenz-Transfer.'},
   'activity.silence_keywords.watching': {title:'Stille: Film/TV', text:'Keywords die den "Film schauen"-Modus ausloesen.'},
   'activity.silence_keywords.focused': {title:'Stille: Konzentration', text:'Keywords die den "Nicht stoeren"-Modus ausloesen.'},
   'activity.silence_keywords.sleeping': {title:'Stille: Schlafen', text:'Keywords die den Schlaf-Modus ausloesen.'},
@@ -9159,6 +9186,65 @@ function rejectAllDeclSuggestions() {
   _declSuggestions = [];
   _renderDeclSuggestions();
   toast('Alle Vorschlaege abgelehnt', 'success');
+}
+
+// ---- Tab: Intelligenz — Quick Wins ----
+function renderIntelligence() {
+  return sectionWrap('&#127919;', 'Domain-spezifische Autonomie',
+    fInfo('Unterschiedliche Autonomie-Level pro Bereich. Z.B. Level 4 bei Klima (darf Temperatur selbst anpassen), aber Level 2 bei Sicherheit (nur informieren). Wenn deaktiviert gilt das globale Level fuer alle Bereiche.') +
+    fToggle('autonomy.domain_levels_enabled', 'Domain-Autonomie aktivieren') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Level pro Domaene</div>' +
+    fRange('autonomy.domain_levels.climate', 'Klima & Heizung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.light', 'Licht & Beleuchtung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.media', 'Medien & Musik', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.cover', 'Rolllaeden', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.security', 'Sicherheit', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.automation', 'Automationen & Routinen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.notification', 'Benachrichtigungen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+  ) +
+  sectionWrap('&#128197;', 'Kalender-Intelligenz',
+    fInfo('Erkennt Gewohnheiten aus wiederkehrenden Terminen, warnt bei Zeitkonflikten (Pendelzeit vs. Meeting) und zeigt freie Zeitfenster an.') +
+    fToggle('calendar_intelligence.enabled', 'Kalender-Intelligenz aktiv') +
+    fNum('calendar_intelligence.commute_minutes', 'Pendelzeit (Minuten)', 5, 120, 5) +
+    fNum('calendar_intelligence.habit_min_occurrences', 'Min. Wiederholungen fuer Gewohnheit', 2, 10) +
+    fNum('calendar_intelligence.conflict_lookahead_hours', 'Konflikt-Vorschau (Stunden)', 6, 72, 6) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Erkennungs-Module</div>' +
+    fToggle('calendar_intelligence.habit_detection', 'Gewohnheits-Erkennung') +
+    fToggle('calendar_intelligence.conflict_detection', 'Konflikt-Erkennung') +
+    fToggle('calendar_intelligence.break_detection', 'Pausen-Erkennung')
+  ) +
+  sectionWrap('&#128161;', 'Erklaerbarkeit',
+    fInfo('Jarvis erklaert auf Nachfrage warum er etwas getan hat. Jede automatische Aktion wird mit Begruendung geloggt. Frage z.B. "Warum hast du das Licht eingeschaltet?"') +
+    fToggle('explainability.enabled', 'Erklaerbarkeit aktiv') +
+    fSelect('explainability.detail_level', 'Detail-Stufe', [
+      {v:'minimal', l:'Minimal (nur Aktion + Grund)'},
+      {v:'normal', l:'Normal (+ Kontext)'},
+      {v:'verbose', l:'Ausfuehrlich (+ Konfidenz, Sensordaten)'}
+    ]) +
+    fToggle('explainability.auto_explain', 'Automatisch erwaehnen') +
+    fNum('explainability.max_history', 'Max. gespeicherte Entscheidungen', 10, 200, 10)
+  ) +
+  sectionWrap('&#127908;', 'Voice-Mood Integration',
+    fInfo('Verknuepft die erkannte Stimm-Emotion (froehlich, traurig, aergerlich, nervoes, muede) direkt mit der Stimmungserkennung. So reagiert Jarvis nicht nur auf Worte, sondern auch auf den Tonfall.') +
+    fToggle('mood.voice_mood_integration', 'Voice-Emotion in Stimmung einbeziehen') +
+    fRange('voice_analysis.voice_weight', 'Gewicht der Stimm-Analyse', 0, 1, 0.05, {0:'Ignorieren',0.25:'Schwach',0.5:'Mittel',0.75:'Stark',1:'Voll'})
+  ) +
+  sectionWrap('&#129504;', 'Lern-Transfer',
+    fInfo('Uebertraegt Praeferenzen zwischen aehnlichen Raeumen. Wenn du warmes Licht in der Kueche bevorzugst, schlaegt Jarvis das auch fuer das Esszimmer vor.') +
+    fToggle('learning_transfer.enabled', 'Lern-Transfer aktiv') +
+    fToggle('learning_transfer.auto_suggest', 'Automatische Vorschlaege') +
+    fNum('learning_transfer.min_observations', 'Min. Beobachtungen vor Transfer', 2, 10) +
+    fRange('learning_transfer.transfer_confidence', 'Transfer-Konfidenz', 0.3, 1.0, 0.05, {0.3:'0.3',0.5:'0.5',0.7:'0.7',0.8:'0.8',0.9:'0.9',1.0:'1.0'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aktive Domaenen</div>' +
+    fChipSelect('learning_transfer.domains', 'Transfer-Domaenen', [
+      {v:'light', l:'Licht'},
+      {v:'climate', l:'Klima'},
+      {v:'media', l:'Medien'}
+    ], 'Fuer welche Bereiche sollen Praeferenzen uebertragen werden?') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Raum-Gruppen</div>' +
+    fInfo('Raeume in der gleichen Gruppe werden als aehnlich betrachtet. Aenderungen hier ueberschreiben die Standard-Gruppen.') +
+    fTextarea('learning_transfer.room_groups', 'Raum-Gruppen (JSON)', 'Format: {"wohnbereich": ["wohnzimmer", "esszimmer"], "schlafbereich": ["schlafzimmer", "gaestezimmer"]}')
+  );
 }
 
 // ── Haupt-Render ─────────────────────────────────────────────
