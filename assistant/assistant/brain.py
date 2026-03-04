@@ -2477,8 +2477,8 @@ class AssistantBrain(BrainCallbacksMixin):
                 max_context_tokens, effective_max, ollama_num_ctx,
             )
             max_context_tokens = effective_max
-        base_tokens = len(system_prompt) // 3
-        user_tokens_est = len(text) // 3
+        base_tokens = len(system_prompt) // 2
+        user_tokens_est = len(text) // 2
         # Reserve: ~40% fuer Conversations + User-Text + Response-Space
         section_budget = max(300, int((max_context_tokens - base_tokens - user_tokens_est) * 0.6))
 
@@ -2718,7 +2718,7 @@ class AssistantBrain(BrainCallbacksMixin):
         sections_added = []
         sections_dropped = []
         for name, section_text, priority in sections:
-            section_tokens = len(section_text) // 3
+            section_tokens = len(section_text) // 2
             if tokens_used + section_tokens <= section_budget or priority == 1:
                 # Prio 1 wird IMMER inkludiert, auch ueber Budget
                 system_prompt += section_text
@@ -2738,7 +2738,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # 5. Letzte Gespraeche laden (Working Memory)
         # Token-Budget fuer Conversations: Restliches Budget nach System-Prompt + Sektionen
-        system_tokens = len(system_prompt) // 3
+        system_tokens = len(system_prompt) // 2
         available_tokens = max(500, max_context_tokens - system_tokens - user_tokens_est - 200)
         # Gespraeche laden — Anzahl aus yaml_config (UI-konfigurierbar)
         conv_cfg = cfg.yaml_config.get("context", {})
@@ -2766,7 +2766,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # aeltere zusammenfassen damit mehr Kontext erhalten bleibt
         if conversation_mode and len(recent) > 4:
             # Budget pruefen: Passen alle rein?
-            total_est = sum(len(c.get("content", "")) // 3 for c in recent)
+            total_est = sum(len(c.get("content", "")) // 2 for c in recent)
             if total_est > available_tokens:
                 # Aeltere Haelfte zusammenfassen, neuere 1:1 behalten
                 split = len(recent) // 2
@@ -2779,9 +2779,9 @@ class AssistantBrain(BrainCallbacksMixin):
                     summary = None
                 if summary:
                     messages.append({"role": "system", "content": f"[Bisheriges Gespraech]: {summary}"})
-                    conv_tokens_used += len(summary) // 3
+                    conv_tokens_used += len(summary) // 2
         for conv in recent:
-            conv_tokens = len(conv.get("content", "")) // 3
+            conv_tokens = len(conv.get("content", "")) // 2
             if conv_tokens_used + conv_tokens > available_tokens:
                 break
             messages.append({"role": conv["role"], "content": conv["content"]})
@@ -2792,6 +2792,20 @@ class AssistantBrain(BrainCallbacksMixin):
         else:
             user_content = text
         messages.append({"role": "user", "content": user_content})
+
+        # Token-Budget Debug-Logging
+        _total_prompt_tokens = sum(len(m.get("content", "")) // 2 for m in messages)
+        _model_ctx = self.ollama.num_ctx_for(model)
+        logger.info(
+            "Prompt-Budget: ~%d Tokens in %d Messages, num_ctx=%d (%.0f%% belegt)",
+            _total_prompt_tokens, len(messages), _model_ctx,
+            _total_prompt_tokens / _model_ctx * 100 if _model_ctx else 0,
+        )
+        if _total_prompt_tokens > _model_ctx * 0.85:
+            logger.warning(
+                "TOKEN-WARNUNG: Prompt ~%d Tokens nahe num_ctx=%d — Ollama koennte kuerzen!",
+                _total_prompt_tokens, _model_ctx,
+            )
 
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
         intent_type = self._classify_intent(text)
@@ -3093,20 +3107,42 @@ class AssistantBrain(BrainCallbacksMixin):
             tool_calls = message.get("tool_calls", [])
             executed_actions = []
 
-            # 7a. LLM hat Text + Tool-Calls: Text IMMER verwerfen.
-            # Lokale LLMs halluzinieren oft Aktionen/Zustaende im Text.
-            # Tool-Ergebnisse werden durch Humanizer (Query) oder
-            # get_varied_confirmation (Action) sauber aufbereitet.
+            # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
+            QUERY_TOOLS = {"get_entity_state", "get_entity_history",
+                          "send_message_to_person", "get_calendar_events",
+                          "create_automation", "list_jarvis_automations",
+                          "get_timer_status", "list_conditionals", "get_energy_report",
+                          "web_search", "get_camera_view", "get_security_score",
+                          "get_room_climate", "get_active_intents",
+                          "get_wellness_status", "get_device_health",
+                          "get_learned_patterns", "describe_doorbell",
+                          "manage_protocol", "manage_shopping_list",
+                          "manage_inventory", "manage_visitor", "manage_repair",
+                          "get_vacuum", "get_remotes", "list_capabilities",
+                          "list_declarative_tools", "get_full_status_report",
+                          "get_house_status", "get_weather", "get_lights",
+                          "get_covers", "get_media", "get_climate", "get_switches",
+                          "get_alarms", "set_wakeup_alarm", "cancel_alarm"}
+
+            # 7a. LLM hat Text + Tool-Calls: Text nur bei Action-Tools verwerfen.
+            # Bei Query-Tools LLM-Text behalten — er enthaelt kontextuelle
+            # Informationen die der Humanizer allein nicht liefert.
+            # Bei Action-Tools (set_*) verwerfen — lokale LLMs halluzinieren
+            # dort oft Aktionen/Zustaende die nie passiert sind.
             if tool_calls and response_text:
-                # LLM-Text verwerfen wenn Tool-Calls vorhanden — der Text wird
-                # durch Humanizer (Query-Tools) oder get_varied_confirmation
-                # (Action-Tools) ersetzt. Verhindert Halluzinationen: LLM erfindet
-                # sonst Aktionen/Zustaende die nie passiert sind.
-                logger.info(
-                    "LLM-Text verworfen (Tool-Calls vorhanden): '%s'",
-                    response_text[:80],
-                )
-                response_text = ""
+                tool_names = {tc.get("function", {}).get("name", "") for tc in tool_calls}
+                has_only_queries = tool_names.issubset(QUERY_TOOLS)
+                if not has_only_queries:
+                    logger.info(
+                        "LLM-Text verworfen (Action-Tool-Calls vorhanden): '%s'",
+                        response_text[:80],
+                    )
+                    response_text = ""
+                else:
+                    logger.info(
+                        "LLM-Text beibehalten (nur Query-Tools): '%s'",
+                        response_text[:80],
+                    )
 
             # 7b. Deterministischer Tool-Call hat Vorrang vor Text-Extraktion.
             # Text-Extraktion aus Reasoning ist unzuverlaessig (z.B. extrahiert
@@ -3172,22 +3208,6 @@ class AssistantBrain(BrainCallbacksMixin):
                     logger.warning("Retry fehlgeschlagen: %s", e)
 
             # 8. Function Calls ausfuehren
-            # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
-            QUERY_TOOLS = {"get_entity_state", "get_entity_history",
-                          "send_message_to_person", "get_calendar_events",
-                          "create_automation", "list_jarvis_automations",
-                          "get_timer_status", "list_conditionals", "get_energy_report",
-                          "web_search", "get_camera_view", "get_security_score",
-                          "get_room_climate", "get_active_intents",
-                          "get_wellness_status", "get_device_health",
-                          "get_learned_patterns", "describe_doorbell",
-                          "manage_protocol", "manage_shopping_list",
-                          "manage_inventory", "manage_visitor", "manage_repair",
-                          "get_vacuum", "get_remotes", "list_capabilities",
-                          "list_declarative_tools", "get_full_status_report",
-                          "get_house_status", "get_weather", "get_lights",
-                          "get_covers", "get_media", "get_climate", "get_switches",
-                          "get_alarms", "set_wakeup_alarm", "cancel_alarm"}
             has_query_results = False
 
             if tool_calls:
@@ -3649,16 +3669,22 @@ class AssistantBrain(BrainCallbacksMixin):
                                 _halluc_markers = [
                                     "antwort-entwurf", "nicht im entwurf",
                                     "nicht in den daten", "keine daten",
-                                    "nicht erwaehnt", "laut den daten",
-                                    "die daten zeigen", "aus den daten",
+                                    "nicht erwaehnt",
                                 ]
                                 _refined_lower = refined.lower() if refined else ""
                                 _has_halluc = any(m in _refined_lower for m in _halluc_markers)
-                                _too_long = len(refined) > len(humanized_text) * 2.5 if refined else False
+                                _too_long = len(refined) > len(humanized_text) * 3.5 if refined else False
                                 # Zahlen-Check: Wichtige Zahlen aus Humanizer muessen erhalten bleiben
-                                _src_numbers = set(re.findall(r'\d+\.?\d*', humanized_text))
-                                _dst_numbers = set(re.findall(r'\d+\.?\d*', refined)) if refined else set()
-                                _numbers_lost = len(_src_numbers) > 1 and not _src_numbers & _dst_numbers
+                                # Normalisierung: 22.0 == 22, damit Reformatierungen nicht als Verlust gelten
+                                def _norm_num(s):
+                                    try:
+                                        f = float(s)
+                                        return str(int(f)) if f == int(f) else s
+                                    except ValueError:
+                                        return s
+                                _src_numbers = {_norm_num(n) for n in re.findall(r'\d+\.?\d*', humanized_text)}
+                                _dst_numbers = {_norm_num(n) for n in re.findall(r'\d+\.?\d*', refined)} if refined else set()
+                                _numbers_lost = len(_src_numbers) > 2 and not _src_numbers & _dst_numbers
                                 if _has_halluc or _too_long or _numbers_lost:
                                     logger.warning(
                                         "Tool-Feedback verworfen (halluc=%s, long=%s, numbers_lost=%s): '%s'",
