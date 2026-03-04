@@ -271,6 +271,7 @@ SPRACHSTIL:
 {person_addressing}
 REGELN: Deutsch mit korrekten Umlauten. Aktionen ausfuehren, nicht darueber reden. Kontext-Daten unten nutzen. NIEMALS Werte erfinden.
 FAKTEN-REGEL: Erfinde NICHTS. Keine erfundenen Aktionen, Geraetezustaende oder Messwerte. Wenn du etwas nicht weisst: "Dazu habe ich keine Daten, {title}."
+SICHERHEITS-REGEL: Rauchmelder, CO-Melder, Wassermelder, Alarmanlagen, Gas-Sensoren: Wenn offline oder gestoert, IMMER als Problem melden. NIEMALS als ignorierbar, unwichtig oder harmlos darstellen.
 Bei Befehlen: Max {max_sentences} Saetze. Bei Gespraechen: So viel wie noetig, aber nie langweilig.
 
 GERAETESTEUERUNG — KRITISCH:

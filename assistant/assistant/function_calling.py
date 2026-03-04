@@ -1170,11 +1170,18 @@ def _inject_entity_hints(tool: dict) -> dict:
         "activate_scene": "scenes",
     }
     # get_entity_state bekommt Sensoren + Binary-Sensoren kombiniert
+    # Priorisierung: Manuell annotierte und relevante Rollen (Power, Energy, Climate) zuerst
     if fname == "get_entity_state":
         combined = (_entity_catalog.get("sensors", []) +
                     _entity_catalog.get("binary_sensors", []))
         if combined:
-            entity_hint = ", ".join(combined[:30])
+            # Prioritaets-Rollen: Diese sind am haeufigsten abgefragt
+            _priority_roles = ("Strommesser", "Energie", "Innentemperatur",
+                               "Luftfeuchtigkeit", "CO2", "Batterie")
+            priority = [e for e in combined if any(r in e for r in _priority_roles)]
+            rest = [e for e in combined if e not in priority]
+            ordered = priority + rest
+            entity_hint = ", ".join(ordered[:30])
             needs_copy = True
     # elif statt if — verhindert dass get_entity_state-Hint ueberschrieben wird
     elif (catalog_key := _ENTITY_MAP.get(fname)) and _entity_catalog.get(catalog_key):
@@ -7179,20 +7186,46 @@ class FunctionExecutor:
     async def _exec_get_active_intents(self, args: dict) -> dict:
         """Gibt aktive Vorhaben/Intents zurueck."""
         import assistant.main as main_module
+        from datetime import datetime
         brain = main_module.brain
         try:
             intents = await brain.intent_tracker.get_active_intents()
             if not intents:
-                return {"success": True, "message": "Keine anstehenden Vorhaben gemerkt.", "intents": []}
-            summaries = []
+                return {"success": True, "message": "Keine anstehenden Vorhaben gemerkt."}
+            # Abgelaufene Intents filtern
+            now = datetime.now()
+            active = []
             for intent in intents:
-                summaries.append({
-                    "intent": intent.get("intent", ""),
-                    "deadline": intent.get("deadline", ""),
-                    "person": intent.get("person", ""),
-                    "reminder": intent.get("reminder_text", ""),
-                })
-            return {"success": True, "count": len(summaries), "intents": summaries}
+                deadline = intent.get("deadline", "")
+                if deadline:
+                    try:
+                        dl = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+                        if dl.replace(tzinfo=None) < now:
+                            continue  # Abgelaufen — nicht anzeigen
+                    except (ValueError, TypeError):
+                        pass
+                active.append(intent)
+            if not active:
+                return {"success": True, "message": "Keine anstehenden Vorhaben."}
+            # Menschenlesbares Format statt RAW JSON
+            lines = []
+            for intent in active:
+                desc = intent.get("intent", intent.get("description", "?"))
+                deadline = intent.get("deadline", "")
+                person = intent.get("person", "")
+                reminder = intent.get("reminder_text", "")
+                line = f"- {desc}"
+                if deadline:
+                    line += f" (bis {deadline})"
+                if reminder:
+                    line += f" — {reminder}"
+                if person:
+                    line += f" [{person}]"
+                lines.append(line)
+            return {
+                "success": True,
+                "message": f"{len(active)} offene Vorhaben:\n" + "\n".join(lines),
+            }
         except Exception as e:
             return {"success": False, "message": f"Intent-Abfrage fehlgeschlagen: {e}"}
 
@@ -7433,16 +7466,11 @@ class FunctionExecutor:
         except Exception as e:
             logger.debug("Status-Report: Energie fehlgeschlagen: %s", e)
 
-        # 5. Offene Erinnerungen / Intents
+        # 5. Offene Erinnerungen / Intents (via _exec um abgelaufene zu filtern)
         try:
-            if hasattr(brain, "intent_tracker"):
-                active = await brain.intent_tracker.get_active_intents()
-                if active:
-                    intent_lines = []
-                    for intent in active[:5]:
-                        desc = intent.get("description", intent.get("text", "?"))
-                        intent_lines.append(f"- {desc}")
-                    report_parts.append(f"OFFENE ERINNERUNGEN:\n" + "\n".join(intent_lines))
+            intent_result = await self._exec_get_active_intents({})
+            if intent_result.get("success") and "Keine" not in intent_result.get("message", "Keine"):
+                report_parts.append(f"OFFENE ERINNERUNGEN:\n{intent_result['message']}")
         except Exception as e:
             logger.debug("Status-Report: Intents fehlgeschlagen: %s", e)
 

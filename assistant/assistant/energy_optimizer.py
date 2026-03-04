@@ -80,9 +80,25 @@ class EnergyOptimizer:
 
         parts = ["Energie-Bericht:"]
 
-        # Aktueller Strompreis
-        price = self._find_sensor_value(states, self.price_sensor, ["price", "strom", "electricity"])
-        if price is not None:
+        # Aktueller Strompreis (mit Einheiten-Erkennung)
+        price_raw = self._find_sensor_value(states, self.price_sensor, ["price", "strom", "electricity"])
+        price = None
+        if price_raw is not None:
+            # Einheit des Sensors pruefen und nach ct/kWh normalisieren
+            price_unit = self._find_sensor_unit(states, self.price_sensor, ["price", "strom", "electricity"])
+            price_unit_lower = (price_unit or "").lower().replace(" ", "")
+            if "eur/mwh" in price_unit_lower or "€/mwh" in price_unit_lower:
+                price = price_raw / 10.0  # EUR/MWh -> ct/kWh
+            elif "eur/kwh" in price_unit_lower or "€/kwh" in price_unit_lower:
+                price = price_raw * 100.0  # EUR/kWh -> ct/kWh
+            elif price_raw > 100:
+                # Heuristik: Wert > 100 ist wahrscheinlich EUR/MWh
+                price = price_raw / 10.0
+            elif price_raw < 1:
+                # Heuristik: Wert < 1 ist wahrscheinlich EUR/kWh
+                price = price_raw * 100.0
+            else:
+                price = price_raw  # Bereits ct/kWh
             price_status = "guenstig" if price < self.price_low else "teuer" if price > self.price_high else "normal"
             parts.append(f"  Strompreis: {price:.1f} ct/kWh ({price_status})")
 
@@ -381,6 +397,21 @@ class EnergyOptimizer:
                     return True
             return False
         return False
+
+    def _find_sensor_unit(self, states: list[dict], configured_entity: str,
+                          search_keywords: list[str]) -> str:
+        """Findet die unit_of_measurement eines Sensors."""
+        if configured_entity:
+            for s in states:
+                if s.get("entity_id") == configured_entity:
+                    return s.get("attributes", {}).get("unit_of_measurement", "")
+        for s in states:
+            eid = s.get("entity_id", "")
+            if not eid.startswith("sensor."):
+                continue
+            if any(kw in eid.lower() for kw in search_keywords):
+                return s.get("attributes", {}).get("unit_of_measurement", "")
+        return ""
 
     def _find_sensor_value(self, states: list[dict], configured_entity: str,
                            search_keywords: list[str]) -> Optional[float]:
