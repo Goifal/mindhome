@@ -280,12 +280,30 @@ class LightEngine:
     # ── Dusk Auto-On ───────────────────────────────────────────────────
 
     async def _check_dusk_auto_on(self, cfg: dict, states: list[dict]):
-        """Sonnenuntergang + jemand zuhause → Lichter an."""
-        # Einmal pro Tag
+        """Sonnenuntergang + jemand zuhause → Lichter an.
+
+        Bug 3 Fix: Wenn Daemmerung bereits ausgeloest wurde, aber alle
+        Lichter aus sind und jemand zuhause ist, wird erneut ausgeloest.
+        Das deckt den Fall ab, dass jemand NACH der Daemmerung heimkommt.
+        """
+        # Einmal pro Tag (ausser: alle Lichter aus + jemand da)
         if self.redis:
             already = await self.redis.get(_R_DUSK)
             if already:
-                return
+                # Re-Check: Sind trotz Daemmerung alle Lichter aus + jemand zuhause?
+                if self._anyone_home(states):
+                    any_on = any(
+                        s.get("entity_id", "").startswith("light.")
+                        and s.get("state") == "on"
+                        for s in states
+                    )
+                    if not any_on:
+                        logger.info("Daemmerung: Alle Lichter aus trotz Praesenz → Re-Trigger")
+                        # Weiter zur normalen Logik (Flag nicht pruefen)
+                    else:
+                        return
+                else:
+                    return
 
         # sun.sun Elevation pruefen
         threshold = cfg.get("dusk_sun_elevation", -2)
@@ -550,10 +568,25 @@ class LightEngine:
 
     # ── Lux Adaptive ───────────────────────────────────────────────────
 
+    async def _is_weather_boost_active(self) -> bool:
+        """Prueft ob Weather-Boost gerade aktiv ist."""
+        if not self.redis:
+            return False
+        val = await _safe_redis(self.redis, "get", _R_WEATHER_BOOST)
+        return bool(val)
+
     async def _check_lux_adaptive(self, cfg: dict, states: list[dict]):
-        """Helligkeit an Tageslicht anpassen."""
+        """Helligkeit an Tageslicht anpassen.
+
+        WICHTIG: Wird uebersprungen wenn Weather-Boost aktiv ist,
+        da sonst die beiden sich gegenseitig bekaempfen.
+        """
         lux_cfg = cfg.get("lux_adaptive", {})
         if not lux_cfg.get("enabled"):
+            return
+
+        # Bug 2: Nicht mit Weather-Boost kaempfen
+        if await self._is_weather_boost_active():
             return
 
         target_lux = lux_cfg.get("target_lux", 400)
@@ -643,6 +676,19 @@ class LightEngine:
         if not wb_cfg.get("enabled"):
             return
 
+        # Feature 7: Nur tagsueber aktiv — nach Night-Dimming-Start kein Boost
+        now = datetime.now()
+        night_start = cfg.get("night_dimming_start_hour", 21)
+        night_end = cfg.get("presence_control", {}).get("night_end_hour", 6)
+        if now.hour >= night_start or now.hour < night_end:
+            # Nachts: Falls Boost noch aktiv war, sauber aufloesen
+            if self.redis:
+                prev = await _safe_redis(self.redis, "get", _R_WEATHER_BOOST)
+                if prev:
+                    await _safe_redis(self.redis, "delete", _R_WEATHER_BOOST)
+                    logger.info("Wetter-Boost deaktiviert (Nachtmodus ab %d Uhr)", night_start)
+            return
+
         condition = self._get_weather_condition(states, wb_cfg)
         if not condition:
             return
@@ -663,10 +709,11 @@ class LightEngine:
             was_boosting = bool(prev)
 
         if boost_pct == 0:
-            # Kein Boost noetig — wenn vorher aktiv war, zuruecksetzen
+            # Kein Boost noetig — wenn vorher aktiv war, Helligkeit zuruecksetzen
             if was_boosting and self.redis:
                 await _safe_redis(self.redis, "delete", _R_WEATHER_BOOST)
-                logger.info("Wetter-Boost aufgehoben (Wetter: %s)", condition)
+                await self._restore_adaptive_brightness(cfg)
+                logger.info("Wetter-Boost aufgehoben + Helligkeit zurueckgesetzt (Wetter: %s)", condition)
             return
 
         if was_boosting:
@@ -709,6 +756,104 @@ class LightEngine:
         if boosted > 0:
             logger.info("Wetter-Boost: %d Lichter +%d%% (Wetter: %s)",
                         boosted, boost_pct, condition)
+
+    # ── Cover-Licht Koordination ─────────────────────────────────────
+
+    async def on_cover_position_change(self, entity_id: str, position: int, reason: str = ""):
+        """Reagiert auf Cover-Positionsaenderung → Licht anpassen.
+
+        Wenn ein Cover schliesst (Sonnenschutz, Wetter), wird es im Raum
+        dunkler → Licht heller. Wenn es oeffnet, wird Tageslicht mehr
+        → Licht kann gedimmt werden.
+
+        Trigger kommt von proactive._auto_cover_action().
+        """
+        cfg = yaml_config.get("lighting", {})
+        if not cfg.get("enabled", True):
+            return
+
+        # Nur reagieren wenn Lux-Adaptiv NICHT aktiv ist (sonst uebernimmt der Lux-Sensor)
+        lux_cfg = cfg.get("lux_adaptive", {})
+        if lux_cfg.get("enabled"):
+            return  # Lux-Sensor reagiert schneller und genauer
+
+        # Raum fuer das Cover finden
+        profiles = get_room_profiles()
+        rooms = profiles.get("rooms", {})
+        cover_room = None
+        for room_name, room_cfg in rooms.items():
+            covers = room_cfg.get("cover_entities", [])
+            if entity_id in covers:
+                cover_room = room_name
+                break
+
+        if not cover_room:
+            # Fallback: Raumnamen aus Entity extrahieren
+            parts = entity_id.replace("cover.", "").split("_")
+            for room_name in rooms:
+                if room_name.lower() in entity_id.lower():
+                    cover_room = room_name
+                    break
+
+        if not cover_room:
+            return
+
+        room_cfg = rooms.get(cover_room, {})
+        lights = self._get_room_lights(cover_room, room_cfg)
+        if not lights:
+            return
+
+        # Cover schliesst (Position < 50%) → Raum wird dunkler → Licht anpassen
+        for light_id in lights:
+            ha_state = await self.ha.get_state(light_id)
+            if not ha_state or ha_state.get("state") != "on":
+                continue
+            if await self.is_manual_override_active(light_id):
+                continue
+
+            attrs = ha_state.get("attributes", {})
+            current_pct = round(attrs.get("brightness", 128) / 255 * 100)
+            target = FunctionExecutor._get_adaptive_brightness(cover_room, light_id)
+
+            # Cover schliesst → Licht muss heller (Tageslicht blockiert)
+            if position < 30 and current_pct < target:
+                await self.ha.call_service("light", "turn_on", {
+                    "entity_id": light_id,
+                    "brightness_pct": target,
+                    "transition": 10,
+                })
+                logger.info("Cover-Licht: %s → %d%% (Cover %s auf %d%%)",
+                            light_id, target, entity_id, position)
+
+    async def _restore_adaptive_brightness(self, cfg: dict):
+        """Setzt alle eingeschalteten Lichter auf ihre adaptive Helligkeit zurueck.
+
+        Wird aufgerufen wenn Weather-Boost endet (Wetter klart auf).
+        """
+        profiles = get_room_profiles()
+        rooms = profiles.get("rooms", {})
+        restored = 0
+        for room_name, room_cfg in rooms.items():
+            lights = self._get_room_lights(room_name, room_cfg)
+            for light_id in lights:
+                ha_state = await self.ha.get_state(light_id)
+                if not ha_state or ha_state.get("state") != "on":
+                    continue
+                if await self.is_manual_override_active(light_id):
+                    continue
+                target = FunctionExecutor._get_adaptive_brightness(room_name, light_id)
+                attrs = ha_state.get("attributes", {})
+                current_pct = round(attrs.get("brightness", 128) / 255 * 100)
+                if abs(current_pct - target) < 5:
+                    continue
+                await self.ha.call_service("light", "turn_on", {
+                    "entity_id": light_id,
+                    "brightness_pct": target,
+                    "transition": 10,
+                })
+                restored += 1
+        if restored > 0:
+            logger.info("Brightness Restore: %d Lichter auf adaptive Helligkeit", restored)
 
     # ── Manual Override ────────────────────────────────────────────────
 

@@ -2503,6 +2503,15 @@ class ProactiveManager:
                 except Exception:
                     pass
 
+                # Cover-Licht Koordination: LightEngine informieren
+                try:
+                    if hasattr(self.brain, "light_engine") and self.brain.light_engine:
+                        await self.brain.light_engine.on_cover_position_change(
+                            entity_id, position, reason,
+                        )
+                except Exception as le_err:
+                    logger.debug("Cover→Licht Callback Fehler: %s", le_err)
+
                 return True
             except Exception as e:
                 logger.error("Cover-Auto Fehler fuer %s: %s", entity_id, e)
@@ -2910,19 +2919,28 @@ class ProactiveManager:
         wave_open = cover_cfg.get("wave_open", False)
 
         # Morgens: oeffnen (nur wenn Bett frei + hell genug)
-        if (last_schedule_action != "open"
-                and abs(current_minutes - open_min) <= tolerance):
+        # Feature 5: Erweitertes Zeitfenster — wenn Sonnencheck blockiert,
+        # bleibt das Fenster 2h offen (statt nur 15 Min Toleranz)
+        fallback_max_min = cover_cfg.get("wakeup_fallback_max_minutes", 120)
+        in_open_window = (
+            last_schedule_action != "open"
+            and current_minutes >= (open_min - tolerance)
+            and current_minutes <= (open_min + fallback_max_min)
+        )
+        if in_open_window:
             # Bedingungen pruefen: Bett + Sonnenstand
             _skip_reason = None
+            _is_fallback = current_minutes > (open_min + tolerance)
             if await self._is_bed_occupied(states):
                 _skip_reason = "Bett belegt"
-            elif cover_cfg.get("wakeup_sun_check", True):
+            elif cover_cfg.get("wakeup_sun_check", True) and not _is_fallback:
                 _sun = self._get_sun_data(states)
                 _min_elev = cover_cfg.get("wakeup_min_sun_elevation", -6)
                 _cur_elev = _sun.get("elevation", 0)
                 if _cur_elev < _min_elev:
                     _skip_reason = (
-                        f"zu dunkel (Sonnenhoehe {_cur_elev:.1f}° < {_min_elev}°)"
+                        f"zu dunkel (Sonnenhoehe {_cur_elev:.1f}° < {_min_elev}°, "
+                        f"Fallback in {open_min + fallback_max_min - current_minutes} Min)"
                     )
             if _skip_reason:
                 logger.info("Cover-Zeitplan: Oeffnung uebersprungen — %s", _skip_reason)
