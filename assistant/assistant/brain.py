@@ -1684,9 +1684,36 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 logger.warning("Wecker-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
-        # Geraete-Shortcut: Einfache Befehle (Licht/Rollladen/Heizung)
-        # direkt ausfuehren — kein Context Build, kein LLM noetig.
-        device_cmd = self._detect_device_command(text, room=room or "")
+        # Pronomen-Aufloesung: "Mach es/das wieder aus/an" → letzte Aktion invertieren
+        # Muss VOR _detect_device_command kommen, da sonst kein Raum/Geraet erkannt wird.
+        device_cmd = None
+        _pronoun_match = re.match(
+            r"^(?:bitte\s+)?(?:mach|schalt|dreh|fahr)\w*\s+"
+            r"(?:es|das|die|den|ihn|sie)\s+"
+            r"(?:(?:wieder|jetzt|nochmal|mal|bitte)\s+)*"
+            r"(aus|an|ein|auf|zu|hoch|runter)\b",
+            text.lower().strip(),
+        )
+        if _pronoun_match and self._last_executed_action:
+            _target_state = _pronoun_match.group(1)
+            _la = self._last_executed_action
+            _la_args = dict(self._last_executed_action_args or {})
+            # Nur fuer Geraete-Aktionen (set_light, set_cover, set_climate)
+            if _la.startswith("set_"):
+                if _target_state in ("aus", "zu", "runter"):
+                    _la_args["state"] = "off" if _la != "set_cover" else "closed"
+                elif _target_state in ("an", "ein", "auf", "hoch"):
+                    _la_args["state"] = "on" if _la != "set_cover" else "open"
+                logger.info(
+                    "Pronomen-Shortcut: '%s' -> %s(%s) (basierend auf letzter Aktion)",
+                    text, _la, _la_args,
+                )
+                device_cmd = {"function": _la, "args": _la_args}
+
+        if not device_cmd:
+            # Geraete-Shortcut: Einfache Befehle (Licht/Rollladen/Heizung)
+            # direkt ausfuehren — kein Context Build, kein LLM noetig.
+            device_cmd = self._detect_device_command(text, room=room or "")
         if device_cmd:
             func_name = device_cmd["function"]
             func_args = device_cmd["args"]
@@ -1729,8 +1756,12 @@ class AssistantBrain(BrainCallbacksMixin):
                         logger.info("Geraete-Shortcut: '%s' — Fallback auf LLM", error_msg)
                     else:
                         if success:
+                            # set_light mit state=off → turn_off_light fuer passende Bestaetigung
+                            _confirm_action = func_name
+                            if func_name == "set_light" and func_args.get("state") == "off":
+                                _confirm_action = "turn_off_light"
                             response_text = self.personality.get_varied_confirmation(
-                                success=True, action=func_name,
+                                success=True, action=_confirm_action,
                                 room=func_args.get("room", ""),
                             )
                         else:
@@ -2510,8 +2541,9 @@ class AssistantBrain(BrainCallbacksMixin):
             _args_str = ", ".join(f"{k}={v}" for k, v in self._last_executed_action_args.items()) if self._last_executed_action_args else ""
             _action_text = (
                 f"\n\nLETZTE AKTION: {self._last_executed_action}({_args_str})\n"
-                f"Wenn der User korrigiert ('Nein, ich meinte...'), "
-                f"fuehre die korrigierte Aktion aus."
+                f"Wenn der User 'es/das wieder aus/an' sagt oder korrigiert "
+                f"('Nein, ich meinte...'), bezieht sich das auf DIESE Aktion. "
+                f"Fuehre die passende Aktion aus (gleiche Funktion, gleicher Raum, anderer State)."
             )
             sections.append(("last_action", _action_text, 1))
 
@@ -3755,8 +3787,13 @@ class AssistantBrain(BrainCallbacksMixin):
                         last_action = executed_actions[-1]
                         action_name = last_action.get("function", "")
                         action_room = ""
+                        action_state = ""
                         if isinstance(last_action.get("args"), dict):
                             action_room = last_action["args"].get("room", "")
+                            action_state = last_action["args"].get("state", "")
+                        # set_light mit state=off → turn_off_light fuer passende Bestaetigung
+                        if action_name == "set_light" and action_state == "off":
+                            action_name = "turn_off_light"
                         response_text = self.personality.get_varied_confirmation(
                             success=True, action=action_name, room=action_room,
                         )
