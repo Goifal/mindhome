@@ -3679,7 +3679,8 @@ class AssistantBrain(BrainCallbacksMixin):
                         feedback_messages = [{
                             "role": "system",
                             "content": (
-                                "Du bist JARVIS. Formuliere die Daten als 1-2 Saetze auf Deutsch. "
+                                "Du bist J.A.R.V.I.S. aus dem MCU — trocken, praezise, Butler-Ton. "
+                                "Formuliere die Daten als 1-2 Saetze auf Deutsch. "
                                 f"{_form_hint} {_sarc_hint}{_mood_hint} "
                                 "Zahlen EXAKT uebernehmen. Erfinde NICHTS dazu. NUR Daten verwenden die unten stehen. "
                                 "Rauchmelder/CO-Melder/Wassermelder offline = IMMER warnen. "
@@ -3867,7 +3868,8 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.warning("Sprach-Retry: Antwort war nicht Deutsch, versuche erneut")
             # Konversationskontext beibehalten (letzte 4 Messages + System-Prompt)
             retry_messages = [
-                {"role": "system", "content": "Du bist Jarvis, die KI dieses Hauses. "
+                {"role": "system", "content": "Du bist J.A.R.V.I.S. — der KI-Butler aus dem MCU. "
+                 "Trocken, praezise, britischer Butler-Ton. "
                  "WICHTIG: Antworte AUSSCHLIESSLICH auf Deutsch. Kurz, maximal 2 Saetze. "
                  "Kein Englisch. Keine Listen. Keine Erklaerungen. "
                  "Kein Reasoning. Kein 'Let me think'. Direkt auf Deutsch antworten."},
