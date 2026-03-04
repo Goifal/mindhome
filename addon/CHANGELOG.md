@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.9 – Jarvis Voice (Build 100)
+
+---
+
 ## 1.5.8 – Jarvis Voice (SQLite Database Lock Fix)
 
 ### Bugfixes
