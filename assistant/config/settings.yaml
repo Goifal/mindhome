@@ -1056,6 +1056,7 @@ security:
   - amazon
   - re500
   - h100
+  - harmony
 routines:
   morning_briefing:
     enabled: true

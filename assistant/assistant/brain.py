@@ -3775,10 +3775,13 @@ class AssistantBrain(BrainCallbacksMixin):
 
             # Fehlerbehandlung auch wenn LLM optimistischen Text generiert hat
             # (LLM sagt "Erledigt" aber Aktion ist fehlgeschlagen)
+            # NICHT fuer Query-Tools: Die haben bereits humanizer+refinement Fehlerhandling.
+            # Error-Recovery nur fuer Action-Tools (set_light, set_cover etc.)
             if executed_actions and response_text:
                 failed_actions = [
                     a for a in executed_actions
                     if isinstance(a["result"], dict) and not a["result"].get("success", False)
+                    and a.get("function", "") not in QUERY_TOOLS
                 ]
                 if failed_actions:
                     # Phase 17: Natuerliche Fehlerbehandlung statt hartem "Problem: ..."
@@ -5232,7 +5235,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "Quasi", "Eigentlich", "Im Grunde genommen",
             "Tatsächlich,", "Tatsaechlich,",
             "Naja,", "Na ja,",
-            "Ach,", "Hmm,", "Ähm,",
+            "Ach,", "Hmm,", "Ähm,", "Oh,", "Oh ",
             "Okay,", "Okay ", "Ok,", "Ok ",
             "Nun ja,",
         ])
