@@ -1089,9 +1089,10 @@ class InsightEngine:
     ]
 
     async def _check_guest_preparation(self, data: dict) -> Optional[dict]:
-        """Kalender[Gaeste-Keywords] + Tuer[locked] + Alarm[on] → Haus nicht bereit.
+        """Kalender[Gaeste-Keywords] + Haus nicht bereit → Hinweis.
 
-        3D Cross-Reference: Kalender × Sicherheit × Haus-Zustand.
+        3D+ Cross-Reference: Kalender × Sicherheit × Klima × Beleuchtung × Tueren.
+        Prueft: Alarm scharf, Lichter aus, Temperatur unbequem, Tueren offen.
         """
         events = data.get("calendar_events", [])
         if not events:
@@ -1144,6 +1145,24 @@ class InsightEngine:
         if lights_on == 0:
             issues.append("Alle Lichter sind aus")
 
+        # Temperatur: Zu kalt (<19°C) oder zu warm (>26°C) fuer Gaeste?
+        climate_data = data.get("climate", [])
+        uncomfortable_rooms = []
+        for cl in climate_data:
+            current_temp = cl.get("current_temp")
+            if current_temp is not None:
+                if current_temp < 19:
+                    uncomfortable_rooms.append(f"{cl['name']} nur {current_temp:.0f}°C")
+                elif current_temp > 26:
+                    uncomfortable_rooms.append(f"{cl['name']} {current_temp:.0f}°C")
+        if uncomfortable_rooms:
+            issues.append(f"Temperatur: {', '.join(uncomfortable_rooms[:2])}")
+
+        # Offene Tueren pruefen (Haustuer etc.)
+        open_doors = data.get("open_doors", [])
+        if open_doors:
+            issues.append(f"Tueren offen: {', '.join(open_doors[:2])}")
+
         if not issues:
             return None
 
@@ -1162,9 +1181,10 @@ class InsightEngine:
         }
 
     async def _check_away_security_full(self, data: dict) -> Optional[dict]:
-        """Abwesend + offene Fenster + Alarm aus → priorisierte Sicherheits-Checkliste.
+        """Abwesend + offene Fenster/Tueren + Alarm aus → priorisierte Sicherheits-Checkliste.
 
-        3D Cross-Reference: Anwesenheit × Fenster × Alarm × Licht.
+        3D+ Cross-Reference: Anwesenheit × Fenster × Tueren × Alarm × Licht.
+        Offene Tueren werden als kritischer gewichtet als Fenster.
         """
         states = data.get("states", [])
         if not states:
@@ -1184,8 +1204,14 @@ class InsightEngine:
         if persons_home:
             return None  # Jemand ist zuhause
 
-        # Probleme sammeln
+        # Probleme sammeln (nach Prioritaet sortiert)
         issues = []
+
+        # Offene Tueren (hoechste Prioritaet — Sicherheitsrisiko)
+        open_doors = data.get("open_doors", [])
+        if open_doors:
+            doors = open_doors[:3]
+            issues.append(f"Tueren offen: {', '.join(doors)}")
 
         # Offene Fenster
         if data.get("open_windows"):
@@ -1211,8 +1237,9 @@ class InsightEngine:
         if lights_on:
             issues.append(f"Lichter an: {', '.join(lights_on[:3])}")
 
-        # Mindestens 2 Probleme fuer einen echten Hinweis
-        if len(issues) < 2:
+        # Offene Tuer allein reicht fuer Hinweis (kritischer als Fenster)
+        min_issues = 1 if open_doors else 2
+        if len(issues) < min_issues:
             return None
 
         title = await self._get_title_for_home()
@@ -1229,9 +1256,10 @@ class InsightEngine:
         }
 
     async def _check_health_work_pattern(self, data: dict) -> Optional[dict]:
-        """Arbeitszeit >8h + keine Bewegung + spaete Uhrzeit → Gesundheitshinweis.
+        """Arbeitszeit >8h + spaete Uhrzeit + optional schlechtes Raumklima.
 
-        3D Cross-Reference: Aktivitaet × Zeit × Bewegung.
+        3D+ Cross-Reference: Aktivitaet × Zeit × Raumklima (Temperatur + Luftfeuchtigkeit).
+        Raumklima-Probleme verstaerken die Dringlichkeit.
         """
         if not self.activity:
             return None
@@ -1250,39 +1278,74 @@ class InsightEngine:
             if duration_h < 8:
                 return None
 
+            # Raumklima pruefen: Temperatur oder Luftfeuchtigkeit problematisch?
+            climate_hints = []
+            climate_data = data.get("climate", [])
+            for cl in climate_data:
+                current_temp = cl.get("current_temp")
+                if current_temp is not None and current_temp > 25:
+                    climate_hints.append(f"{cl['name']} bei {current_temp:.0f}°C")
+
+            # Aussen-Luftfeuchtigkeit als Indikator (>65% = schwuel)
+            weather = data.get("weather") or {}
+            humidity = weather.get("humidity")
+            if humidity is not None and humidity > 65:
+                climate_hints.append(f"Luftfeuchtigkeit {humidity}%")
+
             title = await self._get_title_for_home()
+
+            urgency = "low"
+            climate_suffix = ""
+            if climate_hints:
+                urgency = "medium"
+                climate_suffix = f" Dazu: {', '.join(climate_hints[:2])}."
+
             return {
                 "check": "health_work_pattern",
-                "urgency": "low",
+                "urgency": urgency,
                 "message": (
                     f"{title}, du arbeitest seit ueber {int(duration_h)} Stunden. "
-                    f"Eine Pause waere jetzt keine schlechte Idee."
+                    f"Eine Pause waere jetzt keine schlechte Idee.{climate_suffix}"
                 ),
-                "data": {"hours": duration_h},
+                "data": {
+                    "hours": duration_h,
+                    "climate_issues": climate_hints,
+                },
             }
         except Exception:
             return None
 
     async def _check_humidity_contradiction(self, data: dict) -> Optional[dict]:
-        """Entfeuchter aktiv + Fenster offen bei Regen = Widerspruch.
+        """Entfeuchter aktiv + Fenster offen bei Regen/hoher Luftfeuchtigkeit = Widerspruch.
 
-        2.5D Cross-Reference: Geraete × Fenster × Wetter.
+        3D Cross-Reference: Geraete × Fenster × Wetter × Sensoren.
+        Nutzt neben Forecast auch Indoor-Luftfeuchtigkeits-Sensoren.
         """
         # Fenster offen?
         if not data.get("open_windows"):
             return None
 
-        # Regnet es?
-        is_raining = False
+        # Regnet es oder ist Aussen-Luftfeuchtigkeit hoch?
+        is_humid_outside = False
+        humidity_detail = ""
         forecast = data.get("forecast", [])
         for fc in forecast[:1]:
             cond = str(fc.get("condition", "")).lower()
             precip = fc.get("precipitation", 0) or 0
             if cond in _RAIN_CONDITIONS or precip > 2:
-                is_raining = True
+                is_humid_outside = True
+                humidity_detail = "bei Regen"
                 break
 
-        if not is_raining:
+        # Alternativ: Aussen-Luftfeuchtigkeit > 80%
+        if not is_humid_outside:
+            weather = data.get("weather") or {}
+            outdoor_humidity = weather.get("humidity")
+            if outdoor_humidity is not None and outdoor_humidity > 80:
+                is_humid_outside = True
+                humidity_detail = f"bei {outdoor_humidity}% Luftfeuchtigkeit draussen"
+
+        if not is_humid_outside:
             return None
 
         # Entfeuchter / Klimaanlage im Entfeuchter-Modus?
@@ -1301,17 +1364,37 @@ class InsightEngine:
         if not dehumidifier_on:
             return None
 
+        # Indoor-Sensor pruefen fuer konkretere Meldung
+        indoor_humidity = None
+        for s in states:
+            eid = s.get("entity_id", "")
+            if eid.startswith("sensor.") and "humidity" in eid:
+                try:
+                    val = float(s.get("state", ""))
+                    if 10 < val < 100:  # Plausibilitaetscheck
+                        indoor_humidity = val
+                        break
+                except (ValueError, TypeError):
+                    pass
+
         title = await self._get_title_for_home()
         windows = ", ".join(data["open_windows"][:2])
+
+        indoor_hint = ""
+        if indoor_humidity is not None and indoor_humidity > 60:
+            indoor_hint = f" Innen bereits {indoor_humidity:.0f}%."
 
         return {
             "check": "humidity_contradiction",
             "urgency": "low",
             "message": (
                 f"{title}, der Entfeuchter laeuft waehrend {windows} "
-                f"bei Regen offen steht. Das arbeitet gegeneinander."
+                f"{humidity_detail} offen steht. Das arbeitet gegeneinander.{indoor_hint}"
             ),
-            "data": {"windows": data["open_windows"]},
+            "data": {
+                "windows": data["open_windows"],
+                "indoor_humidity": indoor_humidity,
+            },
         }
 
     async def get_status(self) -> dict:

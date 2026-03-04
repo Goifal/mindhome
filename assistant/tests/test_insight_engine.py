@@ -580,6 +580,8 @@ class TestGuestPreparation:
         event_time = now + timedelta(hours=2)
         data = {
             "calendar_events": [{"summary": "Party", "start": event_time.isoformat()}],
+            "climate": [{"name": "WZ", "current_temp": 21}],
+            "open_doors": [],
             "states": [
                 {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
                 {"entity_id": "light.wohnzimmer", "state": "on", "attributes": {"friendly_name": "WZ"}},
@@ -587,6 +589,44 @@ class TestGuestPreparation:
         }
         result = await insight_engine._check_guest_preparation(data)
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_guest_event_too_cold(self, insight_engine):
+        """Gaeste kommen, aber Raum ist zu kalt."""
+        now = datetime.now()
+        event_time = now + timedelta(hours=2)
+        data = {
+            "calendar_events": [{"summary": "Besuch kommt", "start": event_time.isoformat()}],
+            "climate": [{"name": "Wohnzimmer", "current_temp": 16}],
+            "open_doors": [],
+            "states": [
+                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
+                {"entity_id": "light.wz", "state": "on", "attributes": {"friendly_name": "WZ"}},
+            ],
+        }
+        with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            result = await insight_engine._check_guest_preparation(data)
+        assert result is not None
+        assert "Temperatur" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_guest_event_open_doors(self, insight_engine):
+        """Gaeste kommen, aber Tueren stehen offen."""
+        now = datetime.now()
+        event_time = now + timedelta(hours=1)
+        data = {
+            "calendar_events": [{"summary": "Einladung Abendessen", "start": event_time.isoformat()}],
+            "climate": [],
+            "open_doors": ["Haustuer"],
+            "states": [
+                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
+                {"entity_id": "light.wz", "state": "on", "attributes": {"friendly_name": "WZ"}},
+            ],
+        }
+        with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            result = await insight_engine._check_guest_preparation(data)
+        assert result is not None
+        assert "Tueren" in result["message"]
 
 
 # ============================================================
@@ -642,9 +682,10 @@ class TestAwaySecurityFull:
 
     @pytest.mark.asyncio
     async def test_only_one_issue_not_enough(self, insight_engine):
-        """Braucht mindestens 2 Probleme."""
+        """Braucht mindestens 2 Probleme (ohne offene Tueren)."""
         data = {
             "open_windows": [],
+            "open_doors": [],
             "states": [
                 {"entity_id": "person.max", "state": "not_home", "attributes": {"friendly_name": "Max"}},
                 {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
@@ -652,6 +693,38 @@ class TestAwaySecurityFull:
         }
         result = await insight_engine._check_away_security_full(data)
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_open_door_alone_triggers(self, insight_engine):
+        """Offene Tuer allein reicht fuer einen Hinweis (kritischer als Fenster)."""
+        data = {
+            "open_windows": [],
+            "open_doors": ["Haustuer"],
+            "states": [
+                {"entity_id": "person.max", "state": "not_home", "attributes": {"friendly_name": "Max"}},
+                {"entity_id": "alarm_control_panel.home", "state": "armed_away", "attributes": {}},
+            ],
+        }
+        with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            result = await insight_engine._check_away_security_full(data)
+        assert result is not None
+        assert "Tueren" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_open_door_plus_alarm_off(self, insight_engine):
+        data = {
+            "open_windows": [],
+            "open_doors": ["Haustuer"],
+            "states": [
+                {"entity_id": "person.max", "state": "not_home", "attributes": {"friendly_name": "Max"}},
+                {"entity_id": "alarm_control_panel.home", "state": "disarmed", "attributes": {}},
+            ],
+        }
+        with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            result = await insight_engine._check_away_security_full(data)
+        assert result is not None
+        assert "Tueren" in result["message"]
+        assert "Alarm" in result["message"]
 
     @pytest.mark.asyncio
     async def test_no_person_entities(self, insight_engine):
@@ -695,6 +768,52 @@ class TestHealthWorkPattern:
         assert result["check"] == "health_work_pattern"
         assert "Pause" in result["message"]
         assert "10" in result["message"]
+        assert result["urgency"] == "low"
+
+    @pytest.mark.asyncio
+    async def test_working_with_bad_climate_medium_urgency(self, insight_engine):
+        """Arbeitszeit + warmer Raum → urgency steigt auf medium."""
+        activity_mock = MagicMock()
+        activity_mock.current_activity = "working"
+        activity_mock.current_duration_hours = 9
+        insight_engine.activity = activity_mock
+
+        data = {
+            "climate": [{"name": "Buero", "current_temp": 27}],
+            "weather": {"humidity": 70},
+        }
+
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 21, 0)
+            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+                result = await insight_engine._check_health_work_pattern(data)
+
+        assert result is not None
+        assert result["urgency"] == "medium"
+        assert "27" in result["message"]
+        assert "70%" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_working_normal_climate_low_urgency(self, insight_engine):
+        """Arbeitszeit + angenehmes Klima → bleibt low."""
+        activity_mock = MagicMock()
+        activity_mock.current_activity = "working"
+        activity_mock.current_duration_hours = 9
+        insight_engine.activity = activity_mock
+
+        data = {
+            "climate": [{"name": "Buero", "current_temp": 22}],
+            "weather": {"humidity": 45},
+        }
+
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 21, 0)
+            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+                result = await insight_engine._check_health_work_pattern(data)
+
+        assert result is not None
+        assert result["urgency"] == "low"
+        assert "Dazu" not in result["message"]
 
     @pytest.mark.asyncio
     async def test_working_but_before_18(self, insight_engine):
@@ -778,10 +897,44 @@ class TestHumidityContradiction:
         assert result is not None
 
     @pytest.mark.asyncio
+    async def test_high_outdoor_humidity_triggers(self, insight_engine):
+        """Kein Regen, aber >80% Luftfeuchtigkeit draussen → trotzdem Widerspruch."""
+        data = {
+            "open_windows": ["Fenster"],
+            "forecast": [{"condition": "cloudy"}],
+            "weather": {"humidity": 85},
+            "states": [
+                {"entity_id": "switch.entfeuchter", "state": "on", "attributes": {}},
+            ],
+        }
+        with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            result = await insight_engine._check_humidity_contradiction(data)
+        assert result is not None
+        assert "85%" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_indoor_humidity_shown(self, insight_engine):
+        """Indoor-Sensor >60% → wird in Meldung erwaehnt."""
+        data = {
+            "open_windows": ["Fenster"],
+            "forecast": [{"condition": "rainy"}],
+            "states": [
+                {"entity_id": "switch.entfeuchter", "state": "on", "attributes": {}},
+                {"entity_id": "sensor.bad_humidity", "state": "72", "attributes": {}},
+            ],
+        }
+        with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            result = await insight_engine._check_humidity_contradiction(data)
+        assert result is not None
+        assert "72%" in result["message"]
+        assert result["data"]["indoor_humidity"] == 72.0
+
+    @pytest.mark.asyncio
     async def test_no_rain_no_alert(self, insight_engine):
         data = {
             "open_windows": ["Fenster"],
             "forecast": [{"condition": "sunny"}],
+            "weather": {"humidity": 50},
             "states": [
                 {"entity_id": "switch.entfeuchter", "state": "on", "attributes": {}},
             ],
