@@ -3225,6 +3225,57 @@ class FunctionExecutor:
                         if activity in ("focused", "working", "watching"):
                             return "Jemand scheint noch aktiv zu sein."
 
+            # Regel: Heizung hoch bei extremer Kaelte draussen → Warnung
+            if func_name in ("set_climate", "set_climate_room"):
+                temp_arg = args.get("temperature")
+                if temp_arg is not None:
+                    try:
+                        target = float(temp_arg)
+                        if target >= 24:
+                            states = await self.ha.get_states()
+                            for s in (states or []):
+                                eid = s.get("entity_id", "")
+                                if "outdoor" in eid and "temperature" in eid:
+                                    try:
+                                        outside = float(s.get("state", 0))
+                                        if outside <= -5:
+                                            return (
+                                                f"Bei {outside}°C Aussentemperatur wird die "
+                                                f"Heizung auf {target}°C Muehe haben."
+                                            )
+                                    except (ValueError, TypeError):
+                                        pass
+                    except (ValueError, TypeError):
+                        pass
+
+            # Regel: Rollladen runter bei Sturm → Warnung
+            if func_name in ("set_cover", "set_cover_all"):
+                position = args.get("position")
+                action = str(args.get("action", "")).lower()
+                if position is not None or action in ("open", "down"):
+                    states = await self.ha.get_states()
+                    for s in (states or []):
+                        eid = s.get("entity_id", "")
+                        if "wind" in eid and "speed" in eid:
+                            try:
+                                wind = float(s.get("state", 0))
+                                if wind >= 60:  # km/h
+                                    return f"Windgeschwindigkeit {wind} km/h — Rolllaeden besser oben lassen."
+                            except (ValueError, TypeError):
+                                pass
+
+            # Regel: Licht aus im spezifischen Raum + Bewegung erkannt
+            if func_name == "set_light":
+                state = str(args.get("state", "")).lower()
+                room = args.get("room", "").lower()
+                if state == "off" and room:
+                    states = await self.ha.get_states()
+                    for s in (states or []):
+                        eid = s.get("entity_id", "")
+                        if (eid.startswith("binary_sensor.motion") or eid.startswith("binary_sensor.bewegung")):
+                            if room in eid.lower() and s.get("state") == "on":
+                                return f"Im {room.capitalize()} wurde gerade Bewegung erkannt."
+
             return None
         except Exception as e:
             logger.debug("Consequence-Check Fehler: %s", e)

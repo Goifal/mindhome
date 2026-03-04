@@ -251,6 +251,16 @@ predictive_maintenance:
   failure_probability_threshold: 0.7
   battery_drain_alert_pct_per_week: 5
 
+# AP 4: Konsequenz-Bewusstsein — Vor Ausfuehrung pruefen ob Aktion sinnvoll
+consequence_checks:
+  enabled: true                              # Statische Regeln, kein LLM-Overhead
+
+# AP 3.2: Unaufgeforderte Beobachtungen — Jarvis bemerkt Muster
+observation_loop:
+  enabled: true
+  interval_hours: 4                          # Pruef-Intervall
+  max_daily: 1                               # Max Beobachtungen pro Tag
+
 ollama:
   num_ctx_fast: 2048                       # Kontextfenster Fast-Modell (spart VRAM)
   num_ctx_smart: 4096                      # Kontextfenster Smart-Modell

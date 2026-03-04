@@ -2366,6 +2366,62 @@ class ProactiveManager:
                             except (ValueError, TypeError):
                                 pass
 
+            # Check 3: Licht brennt in leerem Raum (kein Motion seit 30+ Min)
+            lights_on = {}
+            motion_recent = set()
+            for s in states:
+                eid = s.get("entity_id", "")
+                if eid.startswith("light.") and s.get("state") == "on":
+                    # Raumnamen extrahieren
+                    name = s.get("attributes", {}).get("friendly_name", eid)
+                    lights_on[eid] = name
+                if (eid.startswith("binary_sensor.motion") or eid.startswith("binary_sensor.bewegung")):
+                    if s.get("state") == "on":
+                        motion_recent.add(eid.lower())
+
+            if lights_on and not motion_recent:
+                # Alle Lichter an, nirgends Bewegung
+                light_names = list(lights_on.values())[:3]
+                if len(light_names) >= 2:
+                    return (
+                        f"Kleine Beobachtung, {title} — Licht brennt noch in "
+                        f"{', '.join(light_names)}, aber es bewegt sich niemand."
+                    )
+
+            # Check 4: Fenster offen + Heizung an (Energie-Verschwendung)
+            open_windows = []
+            heating_active = False
+            for s in states:
+                eid = s.get("entity_id", "")
+                if (eid.startswith("binary_sensor.fenster") or eid.startswith("binary_sensor.window")):
+                    if s.get("state") == "on":
+                        open_windows.append(
+                            s.get("attributes", {}).get("friendly_name", eid)
+                        )
+                if "climate" in eid:
+                    hvac = s.get("attributes", {}).get("hvac_action", "")
+                    if hvac == "heating":
+                        heating_active = True
+
+            if open_windows and heating_active:
+                windows_str = ", ".join(open_windows[:2])
+                return (
+                    f"Mir ist aufgefallen, {title} — {windows_str} "
+                    f"{'ist' if len(open_windows) == 1 else 'sind'} offen "
+                    f"waehrend die Heizung laeuft. Das kostet Energie."
+                )
+
+            # Check 5: PredictiveMaintenance — Batterie-Warnungen
+            if hasattr(self.brain, "predictive_maintenance"):
+                try:
+                    suggestions = self.brain.predictive_maintenance.get_maintenance_suggestions()
+                    high_urgency = [s for s in suggestions if s.get("urgency") == "high"]
+                    if high_urgency:
+                        first = high_urgency[0]
+                        return f"Wartungshinweis, {title} — {first['description']}"
+                except Exception:
+                    pass
+
             return None
         except Exception as e:
             logger.debug("Observation-Generierung fehlgeschlagen: %s", e)

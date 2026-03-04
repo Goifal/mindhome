@@ -9286,6 +9286,18 @@ function renderIntelligence() {
     fNum('predictive_maintenance.lookback_days', 'Analyse-Zeitraum (Tage)', 30, 365, 30) +
     fRange('predictive_maintenance.failure_probability_threshold', 'Warnschwelle', 0.3, 1.0, 0.05, {0.3:'Empfindlich',0.5:'Mittel',0.7:'Standard',0.9:'Nur kritisch'}) +
     fNum('predictive_maintenance.battery_drain_alert_pct_per_week', 'Batterie-Drain Warnung (%/Woche)', 1, 20, 1)
+  ) +
+  // --- Proaktive Intelligenz ---
+  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#129504; Proaktive Intelligenz</div>' +
+  sectionWrap('&#9888;', 'Konsequenz-Bewusstsein',
+    fInfo('Vor jeder Aktion prueft Jarvis ob sie im aktuellen Kontext sinnvoll ist. Z.B. "Heizung hoch bei offenem Fenster", "Rollladen runter bei Sturm", "Alle Lichter aus obwohl jemand aktiv ist". Blockiert nie — gibt nur Hinweise.') +
+    fToggle('consequence_checks.enabled', 'Konsequenz-Checks aktiv')
+  ) +
+  sectionWrap('&#128065;', 'Unaufgeforderte Beobachtungen',
+    fInfo('Jarvis prueft periodisch den Haus-Zustand und teilt relevante Beobachtungen mit: Licht brennt in leerem Raum, Fenster offen bei Heizung, Alarm seit Tagen nicht aktiviert, Batterie-Warnungen.') +
+    fToggle('observation_loop.enabled', 'Beobachtungen aktiv') +
+    fNum('observation_loop.interval_hours', 'Pruef-Intervall (Stunden)', 1, 12) +
+    fNum('observation_loop.max_daily', 'Max. Beobachtungen pro Tag', 1, 5)
   );
 }
 
