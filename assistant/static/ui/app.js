@@ -929,6 +929,10 @@ const HELP_TEXTS = {
   'seasonal_actions.cover_automation.privacy_mode': {title:'Privacy-Modus', text:'Abends nach Sonnenuntergang: Wenn im Raum Licht an ist, werden Rolllaeden mit privacy_mode=true im Cover-Profil geschlossen (Sichtschutz).'},
   'seasonal_actions.cover_automation.presence_aware': {title:'Praesenz-basiert', text:'Wenn alle Personen das Haus verlassen haben, werden alle Rolllaeden geschlossen (Einbruchschutz + Energiesparen).'},
   'seasonal_actions.cover_automation.manual_override_hours': {title:'Manueller Override', text:'Wenn ein Rollladen manuell (Taster/App) bedient wird, pausiert die Automatik fuer diese Anzahl Stunden. Verhindert dass die Automatik manuelle Einstellungen ueberschreibt.'},
+  'seasonal_actions.cover_automation.wakeup_sun_check': {title:'Aufwach-Sonnenpruefung', text:'Prueft beim Aufwachen den Sonnenstand (sun.sun). Wenn es noch zu dunkel ist, werden die Rolllaeden erst bei Daemmerung geoeffnet statt sofort. Verhindert dass Rolllaeden mitten in der Nacht hochfahren.'},
+  'seasonal_actions.cover_automation.wakeup_min_sun_elevation': {title:'Min. Sonnenhoehe beim Aufwachen', text:'Mindest-Sonnenhoehe (in Grad) damit Rolllaeden beim Aufwachen geoeffnet werden. -6° = Buergerliche Daemmerung (Himmel wird hell). -12° = Nautische Daemmerung. 0° = Sonnenaufgang. Bei niedrigerem Sonnenstand wird das Oeffnen verschoben.'},
+  'seasonal_actions.cover_automation.forecast_weather_protection': {title:'Vorhersage-Wetterschutz', text:'Nutzt die Wettervorhersage aus weather.forecast_home fuer vorausschauenden Schutz. Faehrt Markisen ein BEVOR ein Sturm kommt und schliesst Dachfenster BEVOR es regnet — statt erst zu reagieren wenn es schon zu spaet ist.'},
+  'seasonal_actions.cover_automation.forecast_lookahead_hours': {title:'Vorhersage-Zeitraum', text:'Wie viele Stunden in die Zukunft die Wettervorhersage fuer Schutzentscheidungen genutzt wird. Mehr Stunden = frueheres Reagieren, aber auch mehr Fehlalarme.'},
   // === SAUGROBOTER ===
   'remote.enabled': {title:'Fernbedienung', text:'Aktiviert die Fernbedienungs-Steuerung (Logitech Harmony) ueber Jarvis. Erlaubt Sprachsteuerung fuer TV, Receiver, etc.'},
   'vacuum.enabled': {title:'Saugroboter', text:'Aktiviert die Saugroboter-Steuerung ueber Jarvis.'},
@@ -6035,6 +6039,18 @@ function renderCovers() {
     fToggle('seasonal_actions.cover_automation.privacy_mode', 'Privacy-Modus (Sichtschutz abends bei Licht)') +
     fToggle('seasonal_actions.cover_automation.presence_aware', 'Praesenz-basiert (niemand zuhause = alles zu)') +
     fRange('seasonal_actions.cover_automation.manual_override_hours', 'Manueller Override-Schutz (Stunden)', 0, 6, 1, {0:'Aus',1:'1h',2:'2h',3:'3h',4:'4h',5:'5h',6:'6h'})
+  ) +
+  // ── Aufwach-Sonnenprüfung (sun.sun) ─────────────────
+  sectionWrap('&#127765;', 'Aufwach-Sonnenpruefung (sun.sun)',
+    fInfo('Verhindert dass Rolllaeden beim Aufwachen hochfahren wenn es noch dunkel ist. Nutzt die <strong>sun.sun</strong> Integration aus Home Assistant um den Sonnenstand zu pruefen.<br><br>Wenn die Sonnenhoehe unter dem Schwellwert liegt, werden die Rolllaeden automatisch erst bei Daemmerung geoeffnet (deferred wake-open).<br><br><strong>Referenz:</strong> -6° = Buergerliche Daemmerung (Himmel wird hell), 0° = Sonnenaufgang, -12° = Nautische Daemmerung (noch sehr dunkel)') +
+    fToggle('seasonal_actions.cover_automation.wakeup_sun_check', 'Sonnenstand beim Aufwachen pruefen') +
+    fRange('seasonal_actions.cover_automation.wakeup_min_sun_elevation', 'Min. Sonnenhoehe (Grad)', -12, 5, 1, {'-12':'-12° (nautisch)','-6':'-6° (buergerl.)','-3':'-3°','0':'0° (Aufgang)','5':'5° (hell)'})
+  ) +
+  // ── Vorhersage-Wetterschutz (weather.forecast_home) ──
+  sectionWrap('&#127782;', 'Vorhersage-Wetterschutz (weather.forecast_home)',
+    fInfo('Nutzt die <strong>Wettervorhersage</strong> aus weather.forecast_home fuer vorausschauenden Schutz:<br><br>&#128168; <strong>Sturmschutz:</strong> Markisen einfahren BEVOR der Sturm ankommt<br>&#127783; <strong>Regenschutz:</strong> Dachfenster schliessen BEVOR es regnet<br><br>Ohne diese Option wird nur auf das <em>aktuelle</em> Wetter reagiert — dann kann es schon zu spaet sein.') +
+    fToggle('seasonal_actions.cover_automation.forecast_weather_protection', 'Vorhersage-basierten Wetterschutz aktivieren') +
+    fRange('seasonal_actions.cover_automation.forecast_lookahead_hours', 'Vorhersage-Zeitraum (Stunden)', 1, 8, 1, {1:'1h',2:'2h',3:'3h',4:'4h',5:'5h',6:'6h',7:'7h',8:'8h'})
   ) +
   // ── Urlaubs-Simulation ─────────────────────────
   sectionWrap('&#127796;', 'Urlaubs-Simulation',

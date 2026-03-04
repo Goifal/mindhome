@@ -2341,21 +2341,29 @@ class ProactiveManager:
         """Extrahiert Wetter-Daten — nutzt konfigurierte Sensoren wenn vorhanden (Bug 2)."""
         from .cover_config import get_sensor_by_role
 
-        # Defaults aus weather.* Entity
+        # Defaults aus weather.* Entity (bevorzugt weather.forecast_home)
         temp, wind, condition, lux, rain = 10.0, 0.0, "", 0.0, False
+        forecast = []
+        weather_entity = None
         for s in (states or []):
-            if s.get("entity_id", "").startswith("weather."):
-                attrs = s.get("attributes", {})
-                try:
-                    temp = float(attrs.get("temperature", 10))
-                except (ValueError, TypeError):
-                    pass
-                try:
-                    wind = float(attrs.get("wind_speed", 0))
-                except (ValueError, TypeError):
-                    pass
-                condition = s.get("state", "")
+            eid = s.get("entity_id", "")
+            if eid == "weather.forecast_home":
+                weather_entity = s
                 break
+            if eid.startswith("weather.") and not weather_entity:
+                weather_entity = s
+        if weather_entity:
+            attrs = weather_entity.get("attributes", {})
+            try:
+                temp = float(attrs.get("temperature", 10))
+            except (ValueError, TypeError):
+                pass
+            try:
+                wind = float(attrs.get("wind_speed", 0))
+            except (ValueError, TypeError):
+                pass
+            condition = weather_entity.get("state", "")
+            forecast = attrs.get("forecast", []) or []
 
         # Bug 2: Konfigurierte Sensoren ueberschreiben weather.*
         state_map = {s.get("entity_id"): s for s in (states or [])}
@@ -2392,6 +2400,7 @@ class ProactiveManager:
             "condition": condition,
             "lux": lux,
             "rain": rain,
+            "forecast": forecast,
         }
 
     @staticmethod
@@ -2582,6 +2591,58 @@ class ProactiveManager:
                         f"Markise eingefahren ({condition}, Wind {wind} km/h)",
                         auto_level, redis_client,
                     )
+
+        # Vorhersage-basierter Wetterschutz (weather.forecast_home)
+        if cover_cfg.get("forecast_weather_protection", True):
+            forecast = weather.get("forecast", [])
+            lookahead = cover_cfg.get("forecast_lookahead_hours", 4)
+            # Nur die naechsten N Eintraege pruefen
+            fc_slice = forecast[:lookahead] if forecast else []
+            fc_storm = False
+            fc_rain = False
+            fc_wind_max = 0
+            for fc in fc_slice:
+                fc_wind = fc.get("wind_speed", 0) or 0
+                fc_condition = (fc.get("condition") or "").lower()
+                fc_precip = fc.get("precipitation", 0) or 0
+                if fc_wind > fc_wind_max:
+                    fc_wind_max = fc_wind
+                if fc_wind >= storm_speed:
+                    fc_storm = True
+                if (fc_condition in rain_conditions or fc_precip > 2):
+                    fc_rain = True
+
+            # Vorhersage: Sturm → Markisen praeventiv einfahren
+            if fc_storm and not (wind >= storm_speed):
+                notified_fc = False
+                for s in (states or []):
+                    eid = s.get("entity_id", "")
+                    if not eid.startswith("cover."):
+                        continue
+                    if self.brain.executor._is_markise(eid, s):
+                        acted = await self._auto_cover_action(
+                            eid, 0,
+                            f"Vorhersage: Markise eingefahren (Sturm erwartet, bis {fc_wind_max:.0f} km/h)",
+                            auto_level, redis_client,
+                        )
+                        if acted and not notified_fc:
+                            await self._notify("weather_cover_protection", MEDIUM, {
+                                "message": f"Vorhersage: Sturm erwartet ({fc_wind_max:.0f} km/h) — Markisen praeventiv eingefahren",
+                            })
+                            notified_fc = True
+
+            # Vorhersage: Regen → Markisen praeventiv einfahren
+            if fc_rain and not is_raining and rain_retract:
+                for s in (states or []):
+                    eid = s.get("entity_id", "")
+                    if not eid.startswith("cover."):
+                        continue
+                    if self.brain.executor._is_markise(eid, s):
+                        await self._auto_cover_action(
+                            eid, 0,
+                            "Vorhersage: Markise eingefahren (Regen erwartet)",
+                            auto_level, redis_client,
+                        )
 
     async def _cover_sun_tracking(
         self, states, sun, weather, profiles, cover_cfg, auto_level, redis_client,
@@ -2843,11 +2904,23 @@ class ProactiveManager:
         gradual = cover_cfg.get("gradual_morning", False)
         wave_open = cover_cfg.get("wave_open", False)
 
-        # Morgens: oeffnen (nur wenn Bett frei)
+        # Morgens: oeffnen (nur wenn Bett frei + hell genug)
         if (last_schedule_action != "open"
                 and abs(current_minutes - open_min) <= tolerance):
+            # Bedingungen pruefen: Bett + Sonnenstand
+            _skip_reason = None
             if await self._is_bed_occupied(states):
-                logger.info("Cover-Zeitplan: Oeffnung uebersprungen — Bett belegt")
+                _skip_reason = "Bett belegt"
+            elif cover_cfg.get("wakeup_sun_check", True):
+                _sun = self._get_sun_data(states)
+                _min_elev = cover_cfg.get("wakeup_min_sun_elevation", -6)
+                _cur_elev = _sun.get("elevation", 0)
+                if _cur_elev < _min_elev:
+                    _skip_reason = (
+                        f"zu dunkel (Sonnenhoehe {_cur_elev:.1f}° < {_min_elev}°)"
+                    )
+            if _skip_reason:
+                logger.info("Cover-Zeitplan: Oeffnung uebersprungen — %s", _skip_reason)
             else:
                 # Feature 7: Wellenfoermiges Oeffnen nach Himmelsrichtung
                 covers_to_open = []

@@ -1182,6 +1182,10 @@ seasonal_actions:
     privacy_mode: false
     presence_aware: false
     manual_override_hours: 2
+    wakeup_sun_check: true
+    wakeup_min_sun_elevation: -6
+    forecast_weather_protection: true
+    forecast_lookahead_hours: 4
 tts:
   entity: tts.piper
   ssml_enabled: false

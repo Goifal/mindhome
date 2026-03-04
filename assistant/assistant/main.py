@@ -2490,6 +2490,9 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
     # frisch aus yaml_config gelesen — kein expliziter Reload noetig, aber Logging.
     if "seasonal_actions" in changed_settings:
         logger.info("Seasonal Actions Settings aktualisiert (live aus yaml_config im naechsten Zyklus)")
+        # Addon-Sync: Cover-Einstellungen an CoverControlManager weitergeben
+        cover_auto = yaml_cfg.get("seasonal_actions", {}).get("cover_automation", {})
+        _sync_cover_settings_to_addon(cover_auto)
 
     # Autonomy: Trust-Levels
     if "autonomy" in changed_settings and hasattr(brain, "autonomy"):
@@ -2971,6 +2974,59 @@ async def _restart_speech_containers(old_speech: dict, new_speech: dict):
     if restarted:
         logger.info("Speech-Container neu gestartet: %s", ", ".join(restarted))
     return restarted
+
+
+def _sync_cover_settings_to_addon(cover_auto: dict):
+    """Synchronisiert Cover-Settings an das Addon (CoverControlManager).
+
+    Mappt settings.yaml Keys auf CoverControlManager DEFAULT_CONFIG Keys
+    und sendet sie an /api/covers/settings (PUT).
+    """
+    if not cover_auto:
+        return
+    addon_cfg = {}
+    # Aufwach-Sonnenpruefung
+    if "wakeup_min_sun_elevation" in cover_auto:
+        addon_cfg["wakeup_min_sun_elevation_deg"] = float(
+            cover_auto["wakeup_min_sun_elevation"]
+        )
+    # Wakeup integration: abgeleitet aus wakeup_sun_check
+    # (Addon hat wakeup_integration_enabled, aber Sun-Check ist separat)
+
+    # Wetterschutz
+    if "storm_wind_speed" in cover_auto:
+        addon_cfg["wind_threshold_kmh"] = float(cover_auto["storm_wind_speed"])
+    if "frost_protection_temp" in cover_auto:
+        addon_cfg["frost_threshold_c"] = float(cover_auto["frost_protection_temp"])
+    if "heat_protection_temp" in cover_auto:
+        addon_cfg["sun_protection_outdoor_temp_c"] = float(
+            cover_auto["heat_protection_temp"]
+        )
+    if "weather_protection" in cover_auto:
+        addon_cfg["weather_protection_enabled"] = bool(cover_auto["weather_protection"])
+    if "privacy_mode" in cover_auto:
+        addon_cfg["privacy_mode_enabled"] = bool(cover_auto["privacy_mode"])
+    if "manual_override_hours" in cover_auto:
+        addon_cfg["manual_override_duration_min"] = int(
+            cover_auto["manual_override_hours"]
+        ) * 60
+
+    if not addon_cfg:
+        return
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(
+                brain.ha.mindhome_put("/api/covers/settings", addon_cfg)
+            )
+        else:
+            loop.run_until_complete(
+                brain.ha.mindhome_put("/api/covers/settings", addon_cfg)
+            )
+        logger.info("Cover-Settings an Addon synchronisiert: %s", list(addon_cfg.keys()))
+    except Exception as e:
+        logger.warning("Cover-Settings Addon-Sync fehlgeschlagen: %s", e)
 
 
 def _sync_speech_to_env(speech_cfg: dict):
