@@ -80,6 +80,8 @@ class TestMorningBriefing:
     @pytest.mark.asyncio
     async def test_skip_when_already_done_today(self, engine, redis_mock):
         today = datetime.now().strftime("%Y-%m-%d")
+        # Lock existiert bereits (set NX gibt None zurueck) + done-Datum ist heute
+        redis_mock.set = AsyncMock(return_value=None)
         redis_mock.get = AsyncMock(return_value=today)
         result = await engine.generate_morning_briefing()
         assert result["text"] == ""
