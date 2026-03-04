@@ -2227,10 +2227,11 @@ class ProactiveManager:
         _batch_title = get_person_title(_batch_person) if _batch_person else get_person_title()
         prompt = (
             f"Fasse diese {len(items)} Meldung(en) in 1-2 Saetzen zusammen. "
-            "NUR Fakten, keine Metaphern oder Vergleiche. Wichtiges zuerst.\n\n"
+            "NUR die gegebenen Fakten nennen. Erfinde KEINE Ursachen oder Gruende. "
+            "Keine Metaphern, keine Vergleiche, keine Vermutungen. Wichtiges zuerst.\n\n"
             + "\n".join(summary_parts)
-            + f"\n\nBeispiel: '{_batch_title}, der iMac ist offline und der Energie-Sensor "
-            "meldet seit 7 Stunden keine neuen Werte.'"
+            + f"\n\nBeispiel: '{_batch_title}, der iMac ist seit zwei Stunden offline. "
+            f"Der Energie-Sensor meldet seit sieben Stunden keine neuen Werte.'"
         )
 
         try:

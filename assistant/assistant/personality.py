@@ -180,7 +180,7 @@ CONFIRMATIONS_SUCCESS = [
     "Sehr wohl.", "Wurde umgesetzt.", "Schon geschehen.",
     "Umgesetzt.", "Selbstverstaendlich.",
     "Auf den Punkt.", "Wie gewohnt.", "Wird gemacht.",
-    "Sofort, Sir.", "Ist eingerichtet.",
+    "Sofort, {title}.", "Ist eingerichtet.",
 ]
 
 # Sarkasmus-Level 4-5: Spitzere Bestaetigungen
@@ -1112,7 +1112,7 @@ class PersonalityEngine:
             ],
             "disarm_alarm": [
                 f"Alarm deaktiviert, {title}.",
-                "Anlage ist entspannt.",
+                "Anlage im Ruhezustand.",
             ],
             "activate_scene": [
                 f"Szene aktiviert, {title}.",
@@ -1698,7 +1698,7 @@ class PersonalityEngine:
         gags = {
             3: "Das hatten wir heute bereits. Selbstverstaendlich nochmal.",
             5: "Fuenfte Anfrage heute. Soll ich das automatisieren?",
-            7: "Siebtes Mal heute, Sir. Darf ich einen Shortcut vorschlagen?",
+            7: f"Siebtes Mal heute, {self._get_title()}. Darf ich einen Shortcut vorschlagen?",
             10: "Zehntes Mal. Ich richte das als feste Routine ein, wenn du magst.",
         }
         return gags.get(int(count))
@@ -2535,8 +2535,8 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
                 f"- Ton: Freundlich, hilfsbereit, respektvoll. Weniger Sarkasmus als beim Owner.\n"
                 f"- Meinung nur wenn gefragt. Warnungen sachlich, nicht spitz.\n"
                 f"- Benutze \"{title}\" gelegentlich, nicht in jedem Satz.\n"
-                f"- Beispiel: \"Natuerlich, {title}. Ist eingestellt.\"\n"
-                f"- Beispiel: \"Guten Morgen, {title}. Soll ich dir beim Fruehstueck helfen?\""
+                f"- Beispiel: \"Selbstverstaendlich, {title}. Ist eingestellt.\"\n"
+                f"- Beispiel: \"Guten Morgen, {title}. Die ueblichen Vorbereitungen?\""
             )
         else:
             # Gast: formell, distanziert, hoeflich
@@ -2546,7 +2546,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
                 f"- SIEZE Gaeste. \"Sie\", \"Ihnen\", \"Ihr\".\n"
                 f"- Ton: Professionell, zurueckhaltend. Kein Sarkasmus, kein Insider-Humor.\n"
                 f"- Keine persoenlichen Infos ueber Hausbewohner preisgeben.\n"
-                f"- \"Willkommen. Wie kann ich Ihnen behilflich sein?\""
+                f"- \"Willkommen. Sollten Sie etwas benoetigen, stehe ich zur Verfuegung.\""
             )
 
     def _format_context(self, context: dict) -> str:
@@ -2896,7 +2896,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
 
             # Tageszeit-Persoenlichkeit
             if _hour < 7:
-                _time_pers = 'Nacht: Beginne mit "Entschuldige die Stoerung..." oder "Ungern um diese Uhrzeit, aber..."'
+                _time_pers = 'Nacht: Beginne mit "Ungern um diese Uhrzeit, aber..." oder "Spaete Stunde, doch das ist relevant."'
             elif _hour < 10:
                 _time_pers = 'Morgen: Darf energisch/knapp sein. Bei sehr frueh (< 7): "Ambitioniert, {title}."'.format(title=_title)
             elif _hour < 18:
@@ -2927,7 +2927,7 @@ AKTUELLER STIL: {time_style}
 MUSTER [{urgency.upper()}]: {pattern}
 BEI ANKUENFT: Status-Bericht wie ein Butler. Temperatur, offene Posten — knapp.
 BEI ABSCHIED: Kurzer Sicherheits-Hinweis wenn noetig. Kein "Schoenen Tag!"
-VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid", "Guten Tag!", "Willkommen zuhause!", "Natuerlich!", "Gerne!", "Leider".
+VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid", "Guten Tag!", "Willkommen zuhause!", "Natuerlich!", "Gerne!", "Klar!", "Leider", "Als KI...", "Wie kann ich helfen?", Fuellwoerter, Moralisieren.
 WICHTIG: Erfinde KEINE Ursachen, Gruende oder Erklaerungen. NUR die gegebenen Fakten wiedergeben. Nichts hinzudichten."""
 
     def build_routine_prompt(self, routine_type: str = "morning", style: str = "butler") -> str:
@@ -3100,9 +3100,9 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
                 "Ich sammle die relevanten Daten.",
             ],
             "casual": [
-                "Moment... ich schau mal eben nach.",
-                "Sekunde, ich check das kurz.",
-                "Ich schau mir das mal an.",
+                "Moment, ich pruefe das.",
+                "Einen Augenblick, ich sehe nach.",
+                "Ich werfe einen Blick auf die Daten.",
             ],
         },
         "thinking": {
@@ -3112,9 +3112,9 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
                 "Ich werte die Daten aus.",
             ],
             "casual": [
-                "Hmm, lass mich ueberlegen.",
-                "Moment, ich denk kurz nach.",
-                "Ich gruebel kurz...",
+                "Ich denke kurz nach.",
+                "Moment, ich waege die Optionen ab.",
+                "Moment, ich rechne das durch.",
             ],
         },
         "action": {
@@ -3124,9 +3124,9 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
                 "Ausfuehrung laeuft.",
             ],
             "casual": [
-                "Mach ich.",
-                "Laeuft.",
-                "Bin dran.",
+                "Wird erledigt.",
+                "Ausfuehrung eingeleitet.",
+                "Bin dabei.",
             ],
         },
     }
@@ -3163,9 +3163,9 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
         templates = {
             "general": [
-                "Das hat nicht funktioniert. Versuch es nochmal.",
+                "Das lief nicht nach Plan. Einen weiteren Versuch, wenn du gestattest.",
                 "Negativ. Formulier es anders, dann klappt es.",
-                "Da ging etwas schief. Stell die Frage nochmal.",
+                "Nicht ganz das gewuenschte Ergebnis. Erneuter Versuch empfohlen.",
                 "Nicht mein bester Moment. Versuch es nochmal.",
             ],
             "timeout": [
