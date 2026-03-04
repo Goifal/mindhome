@@ -5695,7 +5695,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     temperature=0.1,
                     max_tokens=80,
                 )
-                topic_text = topic_summary.strip()
+                topic_text = topic_summary.strip() if topic_summary else ""
                 if topic_text and len(topic_text) > 10:
                     fact = SemanticFact(
                         content=topic_text,

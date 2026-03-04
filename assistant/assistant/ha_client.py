@@ -255,12 +255,13 @@ class HomeAssistantClient:
         """Oeffentlicher GET auf die MindHome Add-on API (z.B. /api/covers/configs)."""
         return await self._get_mindhome(path)
 
-    async def mindhome_post(self, path: str, data: dict, retries: int = 0) -> Any:
+    async def mindhome_post(self, path: str, data: dict, retries: int = 0, timeout: float | None = None) -> Any:
         """POST auf die MindHome Add-on API mit Circuit Breaker."""
         if not mindhome_breaker.is_available:
             logger.debug("MindHome Circuit Breaker OPEN — POST %s uebersprungen", path)
             return None
 
+        req_timeout = aiohttp.ClientTimeout(total=timeout) if timeout else None
         last_err = None
         for attempt in range(1 + retries):
             session = await self._get_session()
@@ -268,6 +269,7 @@ class HomeAssistantClient:
                 async with session.post(
                     f"{self.mindhome_url}{path}",
                     json=data,
+                    timeout=req_timeout,
                 ) as resp:
                     if resp.status == 200:
                         mindhome_breaker.record_success()
@@ -317,7 +319,7 @@ class HomeAssistantClient:
         logger.info("log_actions: %d Aktionen melden (%s)",
                      len(safe_actions),
                      [a["function"] for a in safe_actions])
-        result = await self.mindhome_post("/api/action-log", payload, retries=1)
+        result = await self.mindhome_post("/api/action-log", payload, retries=1, timeout=45)
         if result is None:
             logger.warning("log_actions: POST /api/action-log fehlgeschlagen (result=None)")
         else:

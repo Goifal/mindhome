@@ -7483,6 +7483,9 @@ class FunctionExecutor:
                     "weather", "get_forecasts",
                     {"entity_id": entity_id, "type": "daily"},
                 )
+                # HA gibt ggf. {"service_response": {entity: {forecast: [...]}}} zurueck
+                if isinstance(result, dict) and "service_response" in result:
+                    result = result["service_response"]
                 if isinstance(result, list):
                     # Format 1: [{entity_id: {forecast: [...]}}]
                     for item in result:
