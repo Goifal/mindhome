@@ -972,3 +972,401 @@ class TestHumidityContradiction:
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
             result = await insight_engine._check_humidity_contradiction(data)
         assert result is not None
+
+
+# ============================================================
+# Night Security Check
+# ============================================================
+
+class TestNightSecurity:
+
+    @pytest.mark.asyncio
+    async def test_late_night_windows_open(self, insight_engine):
+        """Nach 23 Uhr + Fenster offen + Person zuhause → Hinweis."""
+        data = {
+            "open_windows": ["Kueche Fenster"],
+            "open_doors": [],
+            "persons_home": ["Max"],
+            "persons_away": [],
+            "alarm_state": "disarmed",
+            "weather": {"temperature": 5},
+            "states": [],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30)
+            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+                result = await insight_engine._check_night_security(data)
+        assert result is not None
+        assert result["check"] == "night_security"
+        assert "Fenster" in result["message"]
+        assert "23 Uhr" in result["message"]
+        assert "5°C" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_late_night_doors_open_high_urgency(self, insight_engine):
+        """Offene Tueren nachts → high urgency."""
+        data = {
+            "open_windows": [],
+            "open_doors": ["Haustuer"],
+            "persons_home": ["Max"],
+            "persons_away": [],
+            "alarm_state": "disarmed",
+            "weather": {},
+            "states": [],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 0, 15)
+            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+                result = await insight_engine._check_night_security(data)
+        assert result is not None
+        assert result["urgency"] == "high"
+        assert "Tueren" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_before_23_no_alert(self, insight_engine):
+        """Vor 23 Uhr → kein Hinweis."""
+        data = {
+            "open_windows": ["Fenster"],
+            "open_doors": [],
+            "persons_home": ["Max"],
+            "persons_away": [],
+            "alarm_state": "disarmed",
+            "states": [],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 22, 0)
+            result = await insight_engine._check_night_security(data)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_nobody_home_no_alert(self, insight_engine):
+        """Niemand zuhause → kein Hinweis."""
+        data = {
+            "open_windows": ["Fenster"],
+            "open_doors": [],
+            "persons_home": [],
+            "persons_away": ["Max"],
+            "alarm_state": "disarmed",
+            "states": [],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30)
+            result = await insight_engine._check_night_security(data)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_alarm_armed_no_alert(self, insight_engine):
+        """Alarm scharf → alles ok, kein Hinweis."""
+        data = {
+            "open_windows": ["Fenster"],
+            "open_doors": [],
+            "persons_home": ["Max"],
+            "persons_away": [],
+            "alarm_state": "armed_home",
+            "states": [],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30)
+            result = await insight_engine._check_night_security(data)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_nothing_open_no_alert(self, insight_engine):
+        """Alles zu → kein Hinweis."""
+        data = {
+            "open_windows": [],
+            "open_doors": [],
+            "persons_home": ["Max"],
+            "persons_away": [],
+            "alarm_state": "disarmed",
+            "states": [],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 30)
+            result = await insight_engine._check_night_security(data)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_early_morning_triggers(self, insight_engine):
+        """Frueh morgens (0-5 Uhr) zaehlt auch als Nacht."""
+        data = {
+            "open_windows": ["Fenster"],
+            "open_doors": [],
+            "persons_home": ["Max"],
+            "persons_away": [],
+            "alarm_state": "disarmed",
+            "weather": {},
+            "states": [],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 3, 0)
+            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+                result = await insight_engine._check_night_security(data)
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_windows_and_doors_combined(self, insight_engine):
+        """Fenster + Tueren offen → beides in Meldung."""
+        data = {
+            "open_windows": ["Kueche"],
+            "open_doors": ["Haustuer"],
+            "persons_home": ["Max"],
+            "persons_away": [],
+            "alarm_state": "disarmed",
+            "weather": {},
+            "states": [],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 45)
+            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+                result = await insight_engine._check_night_security(data)
+        assert result is not None
+        assert "Fenster" in result["message"]
+        assert "Tueren" in result["message"]
+        assert result["urgency"] == "high"
+
+
+# ============================================================
+# Heating vs Sun Check
+# ============================================================
+
+class TestHeatingVsSun:
+
+    @pytest.mark.asyncio
+    async def test_heating_plus_sunny_warm(self, insight_engine):
+        """Heizung laeuft + sonnig + warm → Hinweis."""
+        data = {
+            "weather": {"condition": "sunny", "temperature": 22},
+            "climate": [{"name": "Wohnzimmer", "hvac_action": "heating", "state": "heat"}],
+            "states": [],
+        }
+        with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            result = await insight_engine._check_heating_vs_sun(data)
+        assert result is not None
+        assert result["check"] == "heating_vs_sun"
+        assert "Wohnzimmer" in result["message"]
+        assert "22°C" in result["message"]
+        assert "Sonnenschein" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_heating_with_covers_closed(self, insight_engine):
+        """Heizung + Sonne + Rollladen zu → erwaehnt Rollladen."""
+        data = {
+            "weather": {"condition": "sunny", "temperature": 20},
+            "climate": [{"name": "WZ", "hvac_action": "heating", "state": "heat"}],
+            "states": [
+                {"entity_id": "cover.wohnzimmer", "state": "closed",
+                 "attributes": {"friendly_name": "WZ Rollladen", "current_position": 0}},
+            ],
+        }
+        with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            result = await insight_engine._check_heating_vs_sun(data)
+        assert result is not None
+        assert "Rollladen" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_no_heating_no_alert(self, insight_engine):
+        """Keine Heizung aktiv → kein Hinweis."""
+        data = {
+            "weather": {"condition": "sunny", "temperature": 22},
+            "climate": [{"name": "WZ", "hvac_action": "idle", "state": "heat"}],
+            "states": [],
+        }
+        result = await insight_engine._check_heating_vs_sun(data)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_rainy_no_alert(self, insight_engine):
+        """Regen → kein Hinweis."""
+        data = {
+            "weather": {"condition": "rainy", "temperature": 22},
+            "climate": [{"name": "WZ", "hvac_action": "heating", "state": "heat"}],
+            "states": [],
+        }
+        result = await insight_engine._check_heating_vs_sun(data)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_too_cold_outside_no_alert(self, insight_engine):
+        """Sonnig aber zu kalt (<18°C) → kein Hinweis."""
+        data = {
+            "weather": {"condition": "sunny", "temperature": 12},
+            "climate": [{"name": "WZ", "hvac_action": "heating", "state": "heat"}],
+            "states": [],
+        }
+        result = await insight_engine._check_heating_vs_sun(data)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_partlycloudy_triggers(self, insight_engine):
+        """Teilweise bewoelkt + warm → zaehlt auch."""
+        data = {
+            "weather": {"condition": "partlycloudy", "temperature": 20},
+            "climate": [{"name": "Buero", "hvac_action": "heating", "state": "heat"}],
+            "states": [],
+        }
+        with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            result = await insight_engine._check_heating_vs_sun(data)
+        assert result is not None
+        assert "Buero" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_multiple_heating_rooms(self, insight_engine):
+        """Mehrere Raeume heizen → alle erwaehnt."""
+        data = {
+            "weather": {"condition": "sunny", "temperature": 21},
+            "climate": [
+                {"name": "WZ", "hvac_action": "heating", "state": "heat"},
+                {"name": "Schlafzimmer", "hvac_action": "heating", "state": "heat"},
+            ],
+            "states": [],
+        }
+        with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+            result = await insight_engine._check_heating_vs_sun(data)
+        assert result is not None
+        assert "WZ" in result["message"]
+        assert "Schlafzimmer" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_no_weather_data(self, insight_engine):
+        """Keine Wetterdaten → kein Hinweis."""
+        data = {
+            "weather": None,
+            "climate": [{"name": "WZ", "hvac_action": "heating", "state": "heat"}],
+            "states": [],
+        }
+        result = await insight_engine._check_heating_vs_sun(data)
+        assert result is None
+
+
+# ============================================================
+# Forgotten Devices Check
+# ============================================================
+
+class TestForgottenDevices:
+
+    @pytest.mark.asyncio
+    async def test_media_playing_all_away(self, insight_engine):
+        """Media Player laeuft + alle weg → Hinweis."""
+        data = {
+            "persons_home": [],
+            "persons_away": ["Max"],
+            "states": [
+                {"entity_id": "media_player.tv_wz", "state": "playing",
+                 "attributes": {"friendly_name": "Fernseher WZ", "media_title": "Netflix"}},
+            ],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)
+            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+                result = await insight_engine._check_forgotten_devices(data)
+        assert result is not None
+        assert result["check"] == "forgotten_devices"
+        assert "Fernseher WZ" in result["message"]
+        assert "Netflix" in result["message"]
+        assert "niemand zuhause" in result["message"]
+        assert result["urgency"] == "medium"
+
+    @pytest.mark.asyncio
+    async def test_media_paused_all_away(self, insight_engine):
+        """Paused zaehlt auch als aktiv."""
+        data = {
+            "persons_home": [],
+            "persons_away": ["Max"],
+            "states": [
+                {"entity_id": "media_player.tv", "state": "paused",
+                 "attributes": {"friendly_name": "TV"}},
+            ],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)
+            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+                result = await insight_engine._check_forgotten_devices(data)
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_late_night_media_on(self, insight_engine):
+        """Nach Mitternacht + Media Player an → Hinweis (auch wenn jemand da)."""
+        data = {
+            "persons_home": ["Max"],
+            "persons_away": [],
+            "states": [
+                {"entity_id": "media_player.tv", "state": "playing",
+                 "attributes": {"friendly_name": "Fernseher"}},
+            ],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 2, 30)
+            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+                result = await insight_engine._check_forgotten_devices(data)
+        assert result is not None
+        assert result["urgency"] == "low"
+        assert "2 Uhr" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_someone_home_daytime_no_alert(self, insight_engine):
+        """Jemand zuhause + Tageszeit → kein Hinweis."""
+        data = {
+            "persons_home": ["Max"],
+            "persons_away": [],
+            "states": [
+                {"entity_id": "media_player.tv", "state": "playing",
+                 "attributes": {"friendly_name": "TV"}},
+            ],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 20, 0)
+            result = await insight_engine._check_forgotten_devices(data)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_no_media_playing(self, insight_engine):
+        """Kein Media Player aktiv → kein Hinweis."""
+        data = {
+            "persons_home": [],
+            "persons_away": ["Max"],
+            "states": [
+                {"entity_id": "media_player.tv", "state": "off", "attributes": {}},
+            ],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)
+            result = await insight_engine._check_forgotten_devices(data)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_nobody_away_nobody_home(self, insight_engine):
+        """Keine Personen-Daten → kein Hinweis."""
+        data = {
+            "persons_home": [],
+            "persons_away": [],
+            "states": [
+                {"entity_id": "media_player.tv", "state": "playing",
+                 "attributes": {"friendly_name": "TV"}},
+            ],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)
+            result = await insight_engine._check_forgotten_devices(data)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_multiple_media_players(self, insight_engine):
+        """Mehrere aktive Media Player → alle erwaehnt."""
+        data = {
+            "persons_home": [],
+            "persons_away": ["Max"],
+            "states": [
+                {"entity_id": "media_player.tv_wz", "state": "playing",
+                 "attributes": {"friendly_name": "Fernseher WZ"}},
+                {"entity_id": "media_player.sonos", "state": "playing",
+                 "attributes": {"friendly_name": "Sonos", "media_title": "Spotify"}},
+            ],
+        }
+        with patch("assistant.insight_engine.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)
+            with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
+                result = await insight_engine._check_forgotten_devices(data)
+        assert result is not None
+        assert "Fernseher WZ" in result["message"]
+        assert "Sonos" in result["message"]
