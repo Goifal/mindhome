@@ -565,7 +565,9 @@ def api_create_action_log():
     response_text = str(data.get("response", "") or "")
 
     try:
-        with get_db_session() as session:
+        from db import db_write_with_retry
+
+        def _insert_actions(session):
             count = 0
             for action in actions:
                 func = str(action.get("function") or action.get("action") or "unknown")
@@ -594,6 +596,9 @@ def api_create_action_log():
                 )
                 session.add(entry)
                 count += 1
+            return count
+
+        count = db_write_with_retry(_insert_actions, retries=3)
         return jsonify({"success": True, "logged": count})
     except Exception as e:
         logger.error("Action log POST failed: %s", e, exc_info=True)

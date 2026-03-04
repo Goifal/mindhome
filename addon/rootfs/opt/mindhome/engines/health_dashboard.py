@@ -338,10 +338,13 @@ class HealthAggregator:
                 ))
 
             if metrics_to_store:
-                with self.get_session() as session:
+                from db import db_write_with_retry
+
+                def _insert(session):
                     for m in metrics_to_store:
                         session.add(m)
-                    session.flush()
+
+                db_write_with_retry(_insert, retries=3)
 
         except Exception as e:
             logger.error(f"HealthAggregator store_metrics error: {e}")

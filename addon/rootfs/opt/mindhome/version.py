@@ -4,12 +4,17 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.5.7"
-BUILD = 98
+VERSION = "1.5.8"
+BUILD = 99
 BUILD_DATE = "2026-03-04"
 CODENAME = "Jarvis Voice"
 
 # Changelog
+# Build 99: v1.5.8 Jarvis Voice — SQLite Database Lock Fix
+#   - FIX: "database is locked" Fehler durch Batch-Commits in pattern_engine/automation_engine
+#   - FIX: db_write_with_retry() fuer action-log, set_setting, health_metrics
+#   - FIX: automation_engine no_autoflush fuer Phase-Transitions (autoflush crash)
+#   - FIX: PersonSchedule "not bound to Session" — Daten vor Session-Close extrahieren
 # Build 98: v1.5.7 Jarvis Voice — Error Logging & Bugfixes
 #   - FIX: MindHome POST Error-Logging zeigt jetzt Exception-Typ (war leer bei leerer Message)
 # Build 97: v1.5.6 Jarvis Voice — Speech Service Fixes

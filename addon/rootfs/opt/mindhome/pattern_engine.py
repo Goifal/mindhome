@@ -958,7 +958,10 @@ class PatternDetector:
         Algorithm: Grace period 2 days, then 1%/week for 14 days,
         then max 10%/day after 16 days. Deactivate at < 0.1.
         Called by scheduler every 12h but applies decay only once per calendar day.
+
+        Uses batch commits (every 50 patterns) to avoid holding long DB locks.
         """
+        BATCH_SIZE = 50
         try:
             now = datetime.now(timezone.utc)
             today = now.date()
@@ -968,6 +971,7 @@ class PatternDetector:
             ).all()
 
             decayed_count = 0
+            dirty_count = 0
             for p in patterns:
                 # Only apply decay once per calendar day (stored in pattern_data)
                 pdata = p.pattern_data if isinstance(p.pattern_data, dict) else {}
@@ -1010,22 +1014,36 @@ class PatternDetector:
 
                 if decay > 0:
                     decayed_count += 1
+                    dirty_count += 1
                     logger.debug(f"Pattern {p.id} decay: {old_conf:.2f} → {p.confidence:.2f} ({days_inactive}d inactive)")
 
-            for _attempt in range(3):
-                try:
-                    session.commit()
-                    break
-                except OperationalError as oe:
-                    if "database is locked" in str(oe) and _attempt < 2:
-                        session.rollback()
-                        time.sleep(1.0 * (_attempt + 1))
-                    else:
-                        raise
+                # Batch commit to avoid holding long DB write locks
+                if dirty_count >= BATCH_SIZE:
+                    self._commit_with_retry(session)
+                    dirty_count = 0
+
+            # Final commit for remaining dirty patterns
+            if dirty_count > 0:
+                self._commit_with_retry(session)
             if decayed_count:
                 logger.info(f"Confidence decay applied to {decayed_count} patterns")
         except Exception as e:
+            session.rollback()
             logger.warning(f"Confidence decay error: {e}")
+
+    @staticmethod
+    def _commit_with_retry(session, retries=3):
+        """Commit with retry on database locked errors."""
+        for attempt in range(retries):
+            try:
+                session.commit()
+                return
+            except OperationalError as oe:
+                if "database is locked" in str(oe) and attempt < retries - 1:
+                    session.rollback()
+                    time.sleep(1.0 * (attempt + 1))
+                else:
+                    raise
 
     @staticmethod
     def explain_confidence(pattern):
