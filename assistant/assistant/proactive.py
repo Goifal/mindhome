@@ -471,6 +471,26 @@ class ProactiveManager:
                     "status_report": status,
                 })
 
+                # Phase 18: Proactive Planner — Multi-Step-Plan bei Ankunft
+                if hasattr(self.brain, "proactive_planner") and self.brain.proactive_planner.enabled:
+                    try:
+                        _plan_ctx = {
+                            "person": {"name": name},
+                            "house": status,
+                        }
+                        _auto_lvl = self.brain.autonomy.level if hasattr(self.brain, "autonomy") else 2
+                        _plan = await self.brain.proactive_planner.plan_from_context_change(
+                            "person_arrived", _plan_ctx, _auto_lvl,
+                        )
+                        if _plan:
+                            _plan_msg = _plan.get("message") if _plan.get("needs_confirmation") else _plan.get("auto_message", "")
+                            if _plan_msg:
+                                await self._notify("person_arrived", LOW, {
+                                    "message": _plan_msg,
+                                })
+                    except Exception as _pp_err:
+                        logger.debug("Proactive Planner (person_arrived): %s", _pp_err)
+
             elif old_val == "home" and new_val != "home":
                 # Phase 7.4: Abschied mit Sicherheits-Hinweis
                 await self._notify("person_left", MEDIUM, {
@@ -480,6 +500,37 @@ class ProactiveManager:
                 # MCU-JARVIS: Abwesenheits-Akkumulator starten
                 if yaml_config.get("return_briefing", {}).get("enabled", True):
                     await self._start_absence_accumulator(name)
+
+        # Phase 18: Wetter-Aenderung → Proactive Planner
+        elif entity_id.startswith("weather."):
+            _rain_conditions = {"rainy", "pouring", "lightning-rainy", "lightning", "hail"}
+            _old_cond = old_val.lower() if old_val else ""
+            _new_cond = new_val.lower() if new_val else ""
+            # Nur bei signifikanten Aenderungen (Richtung schlecht)
+            if _new_cond in _rain_conditions and _old_cond not in _rain_conditions:
+                if hasattr(self.brain, "proactive_planner") and self.brain.proactive_planner.enabled:
+                    try:
+                        _w_ctx = {"weather": {"condition": _new_cond}, "house": {"open_windows": []}}
+                        # Offene Fenster ermitteln
+                        _states = await self.brain.ha.get_states()
+                        for _s in (_states or []):
+                            _eid = _s.get("entity_id", "")
+                            if _eid.startswith("binary_sensor.") and "window" in _eid and _s.get("state") == "on":
+                                _w_ctx["house"]["open_windows"].append(
+                                    _eid.replace("binary_sensor.", "").replace("_", " ")
+                                )
+                        _auto_lvl = self.brain.autonomy.level if hasattr(self.brain, "autonomy") else 2
+                        _plan = await self.brain.proactive_planner.plan_from_context_change(
+                            "weather_changed", _w_ctx, _auto_lvl,
+                        )
+                        if _plan:
+                            _plan_msg = _plan.get("message") if _plan.get("needs_confirmation") else _plan.get("auto_message", "")
+                            if _plan_msg:
+                                await self._notify("weather_warning", LOW, {
+                                    "message": _plan_msg,
+                                })
+                    except Exception as _wp_err:
+                        logger.debug("Proactive Planner (weather_changed): %s", _wp_err)
 
         # Phase 7.4: Geo-Fence Proximity (proximity.home Entity)
         elif entity_id.startswith("proximity.") or entity_id.startswith("sensor.") and "distance" in entity_id:

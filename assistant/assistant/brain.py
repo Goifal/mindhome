@@ -2401,10 +2401,23 @@ class AssistantBrain(BrainCallbacksMixin):
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
         # Formality-Score cachen fuer Refinement-Prompts (Tool-Feedback)
         self._last_formality_score = formality_score if formality_score is not None else self.personality.formality_start
+
+        # Phase 18: Memory-Callback-Section bauen (echte Erinnerungen aus Redis)
+        memory_callback_section = ""
+        try:
+            memory_callback_section = await self.personality.build_memory_callback_section(
+                person or "",
+            )
+        except Exception as _mem_err:
+            logger.debug("Memory-Callback fehlgeschlagen: %s", _mem_err)
+
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
             irony_count_today=irony_count,
             user_text=text,
+            last_action=self._last_executed_action,
+            last_args=self._last_executed_action_args if self._last_executed_action else None,
+            memory_callback_section=memory_callback_section,
         )
 
         # ----------------------------------------------------------------
@@ -2461,6 +2474,19 @@ class AssistantBrain(BrainCallbacksMixin):
                 f"fuehre die korrigierte Aktion aus."
             )
             sections.append(("last_action", _action_text, 1))
+
+        # Phase 18: Implizite Voraussetzungen (z.B. "Entspannen" → Rollladen, Licht, Musik)
+        try:
+            implicit_actions = self.anticipation.detect_implicit_prerequisites(text)
+            if implicit_actions:
+                _impl_text = (
+                    f"\n\nIMPLIZITE FOLGE-AKTIONEN fuer '{text}':\n"
+                    f"Der User meint wahrscheinlich auch: {', '.join(implicit_actions)}.\n"
+                    f"Frage beilaeufig ob du das auch erledigen sollst."
+                )
+                sections.append(("implicit_prerequisites", _impl_text, 2))
+        except Exception as _ip_err:
+            logger.debug("Implicit Prerequisites fehlgeschlagen: %s", _ip_err)
 
         mood_hint = self.mood.get_mood_prompt_hint(person or "") if profile.need_mood else ""
         if mood_hint:
@@ -3236,6 +3262,16 @@ class AssistantBrain(BrainCallbacksMixin):
                         elif pushback["level"] == 1:
                             # Level 1: Warnung voranstellen, aber trotzdem ausfuehren
                             pushback_msg = pushback["message"]
+                            # Phase 18: Escalating Concern — wird bei ignorierter Warnung schaerfer
+                            try:
+                                _warn_type = pushback.get("rule_id", func_name)
+                                _escalation = await self.personality.check_escalating_concern(
+                                    person or "", _warn_type,
+                                )
+                                if _escalation:
+                                    pushback_msg = _escalation  # Eskalierte Warnung ersetzt Standard
+                            except Exception as _esc_err:
+                                logger.debug("Escalating concern fehlgeschlagen: %s", _esc_err)
 
                     # Feature 10+11: Situationsbewusstsein — JARVIS erklaert + Alternative
                     if not pushback_msg:
@@ -3412,6 +3448,20 @@ class AssistantBrain(BrainCallbacksMixin):
                                 self._last_humor_category = self.personality._humor_func_to_category(func_name)
                         except Exception as e:
                             logger.debug("Humor fehlgeschlagen (optional): %s", e)
+
+                    # Phase 18: Curiosity Check — sanfte Neugier bei untypischem Verhalten
+                    if isinstance(result, dict) and result.get("success"):
+                        try:
+                            curiosity = await self.personality.check_curiosity(
+                                func_name, final_args, person or "", datetime.now().hour,
+                            )
+                            if curiosity:
+                                if response_text:
+                                    response_text = f"{response_text} {curiosity}"
+                                else:
+                                    response_text = curiosity
+                        except Exception as _cur_err:
+                            logger.debug("Curiosity-Check fehlgeschlagen: %s", _cur_err)
 
             # 8b. Query-Tool Antwort aufbereiten:
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
@@ -3788,6 +3838,24 @@ class AssistantBrain(BrainCallbacksMixin):
                 self._handle_correction(text, response_text, person or "unknown"),
                 name="handle_correction",
             )
+            # Phase 18: Korrektur als bemerkenswerte Interaktion speichern
+            self._task_registry.create_task(
+                self.personality.record_memorable_interaction(
+                    person or "unknown", "correction",
+                    f"Korrektur: {text[:100]}",
+                ),
+                name="record_correction_memorable",
+            )
+
+        # Phase 18: Seasonal Action Logging (fuer Vorjahres-Vergleich)
+        for action in executed_actions:
+            if isinstance(action.get("result"), dict) and action["result"].get("success"):
+                self._task_registry.create_task(
+                    self.seasonal_insight.log_seasonal_action(
+                        action["function"], action.get("args", {}), person or "",
+                    ),
+                    name="log_seasonal",
+                )
 
         # Phase 8: Action-Logging fuer Anticipation Engine + Experiential Memory
         for action in executed_actions:
@@ -3847,6 +3915,13 @@ class AssistantBrain(BrainCallbacksMixin):
                     "positive", action_type=self._last_executed_action, person=person or "",
                 ),
                 name="outcome_thanks",
+            )
+            # Phase 18: Concern-Counter zuruecksetzen bei positiver Reaktion
+            self._task_registry.create_task(
+                self.personality.reset_concern_counter(
+                    person or "", self._last_executed_action,
+                ),
+                name="reset_concern",
             )
 
         # Markiere ob diese Antwort sarkastisch war (fuer Feedback bei naechster Nachricht)

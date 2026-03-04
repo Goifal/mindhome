@@ -18,7 +18,7 @@ from typing import Optional
 
 import yaml
 
-from .config import settings, yaml_config, get_person_title
+from .config import settings, yaml_config, get_person_title, get_active_person
 
 logger = logging.getLogger(__name__)
 
@@ -1687,23 +1687,36 @@ class PersonalityEngine:
             return None
 
         text_lower = text.lower().strip()
+        _gag_type = ""
 
         # Gag 1: User fragt zum x-ten Mal die gleiche Sache
         gag = await self._check_repeated_question_gag(text_lower)
         if gag:
-            return gag
+            _gag_type = "repeated_question"
 
         # Gag 2: User stellt Temperatur immer wieder um
-        gag = await self._check_thermostat_war_gag(text_lower)
-        if gag:
-            return gag
+        if not gag:
+            gag = await self._check_thermostat_war_gag(text_lower)
+            if gag:
+                _gag_type = "thermostat_war"
 
         # Gag 3: "Vergesslichkeits-Gag" — User fragt etwas das er gerade gefragt hat
-        gag = await self._check_short_memory_gag(text_lower)
-        if gag:
-            return gag
+        if not gag:
+            gag = await self._check_short_memory_gag(text_lower)
+            if gag:
+                _gag_type = "short_memory"
 
-        return None
+        # Phase 18: Gag-Evolution — referenziert fruehere Witze statt Wiederholung
+        if gag and _gag_type:
+            try:
+                person = get_active_person() if get_active_person else ""
+                evolved = await self.build_evolved_gag(_gag_type, person)
+                if evolved:
+                    gag = evolved  # Evolvierten Gag bevorzugen
+            except Exception:
+                pass  # Fallback auf Standard-Gag
+
+        return gag
 
     async def _check_repeated_question_gag(self, text: str) -> Optional[str]:
         """Erkennt wenn User die gleiche Frage oft stellt."""
