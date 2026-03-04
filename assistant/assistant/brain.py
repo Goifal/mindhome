@@ -3621,6 +3621,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                 "Du bist JARVIS. Formuliere die Daten als 1-2 Saetze auf Deutsch. "
                                 f"{_form_hint} {_sarc_hint}{_mood_hint} "
                                 "Zahlen EXAKT uebernehmen. Erfinde NICHTS dazu. "
+                                "Rauchmelder/CO-Melder/Wassermelder offline = IMMER warnen, nie verharmlosen. "
                                 f"Beispiel: 'Im Buero 22.3 Grad, Luftfeuchtigkeit 51%. Passt, {get_person_title(self._current_person)}.'"
                             ),
                         }, {
@@ -5342,6 +5343,29 @@ class AssistantBrain(BrainCallbacksMixin):
 
             # Mehrfach-Ausrufezeichen (!! / !!!) → einzelner Punkt
             text = re.sub(r"!{2,}", ".", text)
+
+        # 3b. Safety-Filter: Sicherheitsgeraete nie als ignorierbar darstellen
+        # Letzte Verteidigungslinie — falls LLM trotz Prompt "ignorieren" empfiehlt
+        _safety_devices = r"(?:rauchmelder|co[2-]?[\s-]?melder|kohlenmonoxid|gasmelder|wassermelder|alarmsystem|alarmanlage|brandmelder)"
+        _dismiss_patterns = [
+            re.compile(rf"{_safety_devices}\s+(?:ignorier|vernachlaessig|uebergeh|weglass|ausblend)", re.IGNORECASE),
+            re.compile(rf"(?:ignorier|vernachlaessig|uebergeh|vergiss)\w*\s+(?:den|die|das)\s+{_safety_devices}", re.IGNORECASE),
+            re.compile(rf"{_safety_devices}\s+(?:ist\s+)?(?:unwichtig|harmlos|egal|kein\s+problem|nicht\s+(?:schlimm|wichtig|relevant))", re.IGNORECASE),
+            re.compile(rf"kannst\s+(?:du\s+)?(?:den|die|das)\s+{_safety_devices}.*?ignorier", re.IGNORECASE),
+        ]
+        for _sp in _dismiss_patterns:
+            if _sp.search(text):
+                logger.warning("Safety-Filter: Sicherheitsgeraet als ignorierbar dargestellt: '%s'", text[:120])
+                # Ganzen Satz mit dem Dismissal ersetzen
+                sentences = re.split(r'(?<=[.!?])\s+', text)
+                safe_sentences = []
+                for s in sentences:
+                    if _sp.search(s):
+                        safe_sentences.append("Ein Sicherheitssensor ist offline — bitte pruefen.")
+                    else:
+                        safe_sentences.append(s)
+                text = " ".join(safe_sentences)
+                break
 
         # 4. Mehrere Leerzeichen / fuehrende Leerzeichen bereinigen
         text = re.sub(r"  +", " ", text).strip()
