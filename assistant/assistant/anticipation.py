@@ -41,9 +41,9 @@ class AnticipationEngine:
         # Konfiguration
         cfg = yaml_config.get("anticipation", {})
         self.enabled = cfg.get("enabled", True)
-        self.history_days = cfg.get("history_days", 30)
-        self.min_confidence = cfg.get("min_confidence", 0.6)
-        self.check_interval = cfg.get("check_interval_minutes", 15) * 60
+        self.history_days = cfg.get("history_days") or 30
+        self.min_confidence = cfg.get("min_confidence") or 0.6
+        self.check_interval = (cfg.get("check_interval_minutes") or 15) * 60
 
         thresholds = cfg.get("thresholds", {})
         self.threshold_ask = thresholds.get("ask", 0.6)
@@ -394,8 +394,8 @@ class AnticipationEngine:
         Min. 3 Wiederholungen der gleichen Kette.
         """
         causal_cfg = yaml_config.get("anticipation", {})
-        window_min = causal_cfg.get("causal_chain_window_min", 10)
-        min_occurrences = causal_cfg.get("causal_chain_min_occurrences", 3)
+        window_min = causal_cfg.get("causal_chain_window_min") or 10
+        min_occurrences = causal_cfg.get("causal_chain_min_occurrences") or 3
         window_sec = window_min * 60
 
         patterns = []
