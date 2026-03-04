@@ -3880,7 +3880,10 @@ class FunctionExecutor:
             security = yaml_config.get("security", {}).get("climate_limits", {})
             temp = max(security.get("min", 5), min(security.get("max", 30), temp))
         elif "temperature" in args:
-            temp = float(args["temperature"])
+            try:
+                temp = float(args["temperature"])
+            except (ValueError, TypeError):
+                return {"success": False, "message": f"Ungueltige Temperatur: {args['temperature']}"}
         else:
             return {"success": False, "message": "Keine Temperatur angegeben"}
 
@@ -5021,8 +5024,10 @@ class FunctionExecutor:
         return {"success": success, "message": f"Alarm: {mode}"}
 
     async def _exec_lock_door(self, args: dict) -> dict:
-        door = args["door"]
-        action = args["action"]
+        door = args.get("door", "")
+        action = args.get("action", "")
+        if not door or not action:
+            return {"success": False, "message": "door und action erforderlich"}
         entity_id = await self._find_entity("lock", door)
         if not entity_id:
             return {"success": False, "message": f"Kein Schloss '{door}' gefunden"}
@@ -5033,7 +5038,9 @@ class FunctionExecutor:
         return {"success": success, "message": f"Tuer {door}: {action}"}
 
     async def _exec_send_notification(self, args: dict) -> dict:
-        message = args["message"]
+        message = args.get("message", "")
+        if not message:
+            return {"success": False, "message": "message erforderlich"}
         target = args.get("target", "phone")
         volume = args.get("volume")  # Phase 9: Optional volume (0.0-1.0)
         room = self._clean_room(args.get("room"))  # Phase 10: Optional room for TTS routing
@@ -5104,8 +5111,10 @@ class FunctionExecutor:
         1. Person zu Hause → TTS im Raum der Person
         2. Person weg → Push-Notification auf Handy
         """
-        person = args["person"]
-        message = args["message"]
+        person = args.get("person", "")
+        message = args.get("message", "")
+        if not person or not message:
+            return {"success": False, "message": "person und message erforderlich"}
         person_lower = person.lower()
 
         # Person-Profil laden
@@ -5180,7 +5189,9 @@ class FunctionExecutor:
 
     async def _exec_play_sound(self, args: dict) -> dict:
         """Phase 9: Spielt einen Sound-Effekt ab."""
-        sound = args["sound"]
+        sound = args.get("sound", "")
+        if not sound:
+            return {"success": False, "message": "sound erforderlich"}
         room = self._clean_room(args.get("room"))
 
         speaker_entity = None
@@ -5226,7 +5237,9 @@ class FunctionExecutor:
         return {"success": success, "message": f"Sound '{sound}' gespielt"}
 
     async def _exec_get_entity_state(self, args: dict) -> dict:
-        entity_id = args["entity_id"]
+        entity_id = args.get("entity_id", "")
+        if not entity_id:
+            return {"success": False, "message": "entity_id erforderlich"}
         state = await self.ha.get_state(entity_id)
 
         # Fallback: Fuzzy-Match wenn exakter ID nicht gefunden
@@ -5352,7 +5365,11 @@ class FunctionExecutor:
         from datetime import datetime, timedelta
         from zoneinfo import ZoneInfo
 
-        _tz = ZoneInfo("Europe/Berlin")
+        _tz_name = yaml_config.get("timezone", "Europe/Berlin")
+        try:
+            _tz = ZoneInfo(_tz_name)
+        except Exception:
+            _tz = ZoneInfo("Europe/Berlin")
         timeframe = args.get("timeframe", "today")
         now = datetime.now(_tz)
 
@@ -5535,8 +5552,10 @@ class FunctionExecutor:
         """Phase 11.3: Neuen Kalender-Termin erstellen via HA."""
         from datetime import datetime, timedelta
 
-        title = args["title"]
-        date_str = args["date"]
+        title = args.get("title", "")
+        date_str = args.get("date", "")
+        if not title or not date_str:
+            return {"success": False, "message": "title und date erforderlich"}
         start_time = args.get("start_time", "")
         end_time = args.get("end_time", "")
         description = args.get("description", "")
@@ -5602,8 +5621,10 @@ class FunctionExecutor:
         """
         from datetime import datetime, timedelta
 
-        title = args["title"]
-        date_str = args["date"]
+        title = args.get("title", "")
+        date_str = args.get("date", "")
+        if not title or not date_str:
+            return {"success": False, "message": "title und date erforderlich"}
 
         # Kalender-Entity: Config oder erster aus HA
         calendar_entity = self._get_write_calendar()
@@ -5686,9 +5707,11 @@ class FunctionExecutor:
 
         Atomisch: Wenn Create fehlschlaegt, wird der alte Termin wiederhergestellt.
         """
-        title = args["title"]
-        old_date = args["old_date"]
-        new_date = args["new_date"]
+        title = args.get("title", "")
+        old_date = args.get("old_date", "")
+        new_date = args.get("new_date", "")
+        if not title or not old_date or not new_date:
+            return {"success": False, "message": "title, old_date und new_date erforderlich"}
         new_start = args.get("new_start_time", "")
         new_end = args.get("new_end_time", "")
 

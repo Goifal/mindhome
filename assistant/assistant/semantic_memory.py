@@ -4,6 +4,7 @@ Speichert extrahierte Fakten aus Gespraechen (Praeferenzen, Personen, Gewohnheit
 Nutzt ChromaDB fuer Vektor-Suche und Redis fuer schnellen Zugriff.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -147,19 +148,24 @@ class SemanticMemory:
     async def store_fact(self, fact: SemanticFact) -> bool:
         # F-007: Lock um den gesamten Read-Write-Zyklus gegen TOCTOU
         lock_key = f"mha:fact_lock:{hash(fact.content) % 100000}"
+        lock_acquired = False
         if self.redis:
             try:
-                acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
-                if not acquired:
-                    logger.debug("Fakt-Lock nicht erhalten, paralleler Zugriff: %s", fact.content[:50])
-                    return False
-            except Exception:
-                pass  # Ohne Lock weiter (Redis evtl. nicht verfuegbar)
+                lock_acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
+                if not lock_acquired:
+                    # Retry einmal nach kurzem Warten statt sofort aufgeben
+                    await asyncio.sleep(0.2)
+                    lock_acquired = await self.redis.set(lock_key, "1", ex=10, nx=True)
+                    if not lock_acquired:
+                        logger.debug("Fakt-Lock nicht erhalten nach Retry: %s", fact.content[:50])
+                        return False
+            except Exception as e:
+                logger.debug("Redis Lock nicht verfuegbar, fahre ohne Lock fort: %s", e)
 
         try:
             return await self._store_fact_inner(fact)
         finally:
-            if self.redis:
+            if lock_acquired and self.redis:
                 try:
                     await self.redis.delete(lock_key)
                 except Exception:

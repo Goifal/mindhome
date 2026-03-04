@@ -182,6 +182,11 @@ class AssistantBrain(BrainCallbacksMixin):
         # Task Registry: Zentrales Tracking aller Background-Tasks
         self._task_registry = TaskRegistry()
 
+        # P1: States-Cache (vermeidet 8x get_states() pro Request)
+        self._states_cache = None
+        self._states_cache_ts = 0.0
+        self._STATES_CACHE_TTL = 2.0  # 2 Sekunden
+
         # Clients
         self.ha = HomeAssistantClient()
         self.ollama = OllamaClient()
@@ -388,6 +393,17 @@ class AssistantBrain(BrainCallbacksMixin):
         """Hot-Reload aller konfigurierbaren Brain-Daten (nach UI-Aenderung)."""
         self._load_configurable_data()
         logger.info("Brain: Konfigurierbare Daten neu geladen")
+
+    async def get_states_cached(self) -> list:
+        """Cached get_states() — vermeidet 8x API-Call pro Request (P1)."""
+        import time
+        now = time.monotonic()
+        if self._states_cache and (now - self._states_cache_ts) < self._STATES_CACHE_TTL:
+            return self._states_cache
+        states = await self.ha.get_states()
+        self._states_cache = states
+        self._states_cache_ts = now
+        return states
 
     async def initialize(self):
         """Initialisiert alle Komponenten."""
@@ -674,7 +690,7 @@ class AssistantBrain(BrainCallbacksMixin):
         dann Fallback auf allgemeine Motion-Sensor-Heuristik.
         """
         try:
-            states = await self.ha.get_states()
+            states = await self.get_states_cached()
             if not states:
                 return None
 
@@ -1624,8 +1640,8 @@ class AssistantBrain(BrainCallbacksMixin):
                     occupied = await self._get_occupied_room()
                     if occupied and occupied.lower() != "unbekannt":
                         func_args["room"] = occupied
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Raumerkennung fuer Shortcut fehlgeschlagen: %s", e)
             logger.info("Geraete-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
             try:
                 # Security: Validation + Trust-Check
@@ -3359,8 +3375,8 @@ class AssistantBrain(BrainCallbacksMixin):
                                 response_text = f"{response_text} {escalation}"
                             else:
                                 response_text = escalation
-                    except Exception:
-                        pass  # Eskalation ist optional
+                    except Exception as e:
+                        logger.debug("Eskalation fehlgeschlagen (optional): %s", e)
 
                     # Feature B: Kontextueller Humor nach Aktion
                     if not pushback_msg and not opinion:
@@ -3377,8 +3393,8 @@ class AssistantBrain(BrainCallbacksMixin):
                                 else:
                                     response_text = humor
                                 self._last_humor_category = self.personality._humor_func_to_category(func_name)
-                        except Exception:
-                            pass  # Humor ist optional
+                        except Exception as e:
+                            logger.debug("Humor fehlgeschlagen (optional): %s", e)
 
             # 8b. Query-Tool Antwort aufbereiten:
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
@@ -5371,6 +5387,30 @@ class AssistantBrain(BrainCallbacksMixin):
                 parts.append(f"- {content}{source_hint}")
 
             parts.append("Nutze dieses Wissen falls relevant fuer die Antwort.")
+
+            # F4: Live-Wetter-Kontext anhängen wenn Query wetterbezogen ist
+            _weather_kw = {"wetter", "regen", "sonne", "wind", "temperatur", "kalt",
+                           "warm", "schnee", "sturm", "gewitter", "frost", "heiss",
+                           "weather", "rain", "sun", "cold", "hot", "storm"}
+            text_lower = text.lower()
+            if any(kw in text_lower for kw in _weather_kw):
+                try:
+                    states = await self.get_states_cached()
+                    for s in states:
+                        if s.get("entity_id", "").startswith("weather."):
+                            attrs = s.get("attributes", {})
+                            w_temp = attrs.get("temperature", "?")
+                            w_cond = attrs.get("condition", "?")
+                            w_hum = attrs.get("humidity", "?")
+                            w_wind = attrs.get("wind_speed", "?")
+                            parts.append(
+                                f"\nAKTUELLES WETTER: {w_temp}°C, {w_cond}, "
+                                f"Luftfeuchtigkeit {w_hum}%, Wind {w_wind} km/h"
+                            )
+                            break
+                except Exception:
+                    pass
+
             return "\n".join(parts)
         except Exception as e:
             logger.debug("RAG-Suche fehlgeschlagen: %s", e)
@@ -7874,17 +7914,22 @@ class AssistantBrain(BrainCallbacksMixin):
         if not any(t in text_lower for t in whatif_triggers):
             return ""
 
-        # Echte HA-Daten sammeln fuer fundierte Simulation
+        # Echte HA-Daten sammeln fuer fundierte Simulation (P2: Single-Pass)
         data_lines = []
         try:
-            states = await self.ha.get_states()
+            states = await self.get_states_cached()
             if states:
-                # Temperaturen
-                temps = {}
+                from .function_calling import is_window_or_door, get_opening_type
+                temps, energy, open_wd, open_gt = {}, {}, [], []
+                alarm_state = None
+                weather_s = None
+
+                # Single-Pass: Alle Daten in einer Iteration sammeln
                 for s in states:
                     eid = s.get("entity_id", "")
                     val = s.get("state", "")
                     attrs = s.get("attributes", {})
+
                     if eid.startswith("climate.") and val != "unavailable":
                         name = attrs.get("friendly_name", eid)
                         current = attrs.get("current_temperature")
@@ -7894,51 +7939,40 @@ class AssistantBrain(BrainCallbacksMixin):
                     elif eid.startswith("sensor.") and "temperature" in eid and val.replace(".", "").replace("-", "").isdigit():
                         name = attrs.get("friendly_name", eid)
                         temps[name] = f"{val}°C"
-                if temps:
-                    data_lines.append("TEMPERATUREN:")
-                    for name, val in list(temps.items())[:8]:
-                        data_lines.append(f"  - {name}: {val}")
-
-                # Energie-Verbrauch
-                energy = {}
-                for s in states:
-                    eid = s.get("entity_id", "")
-                    val = s.get("state", "")
-                    attrs = s.get("attributes", {})
-                    unit = attrs.get("unit_of_measurement", "")
-                    if ("energy" in eid or "power" in eid or "verbrauch" in eid) and val.replace(".", "").isdigit():
+                    elif ("energy" in eid or "power" in eid or "verbrauch" in eid) and eid.startswith("sensor."):
+                        unit = attrs.get("unit_of_measurement", "")
+                        if val.replace(".", "").isdigit():
+                            name = attrs.get("friendly_name", eid)
+                            energy[name] = f"{val} {unit}"
+                    elif is_window_or_door(eid, s) and val == "on":
                         name = attrs.get("friendly_name", eid)
-                        energy[name] = f"{val} {unit}"
-                if energy:
-                    data_lines.append("ENERGIE:")
-                    for name, val in list(energy.items())[:6]:
-                        data_lines.append(f"  - {name}: {val}")
-
-                # Offene Fenster/Tueren/Tore — kategorisiert
-                from .function_calling import is_window_or_door, get_opening_type
-                open_wd = []
-                open_gt = []
-                for s in states:
-                    eid = s.get("entity_id", "")
-                    if is_window_or_door(eid, s) and s.get("state") == "on":
-                        name = s.get("attributes", {}).get("friendly_name", eid)
                         if get_opening_type(eid, s) == "gate":
                             open_gt.append(name)
                         else:
                             open_wd.append(name)
+                    elif eid.startswith("alarm_control_panel."):
+                        alarm_state = val
+                    elif eid.startswith("weather.") and not weather_s:
+                        weather_s = s
+
+                if temps:
+                    data_lines.append("TEMPERATUREN:")
+                    for name, val in list(temps.items())[:8]:
+                        data_lines.append(f"  - {name}: {val}")
+                if energy:
+                    data_lines.append("ENERGIE:")
+                    for name, val in list(energy.items())[:6]:
+                        data_lines.append(f"  - {name}: {val}")
                 if open_wd:
                     data_lines.append(f"OFFENE FENSTER/TUEREN: {', '.join(open_wd)}")
                 if open_gt:
                     data_lines.append(f"OFFENE TORE: {', '.join(open_gt)}")
-
-                # Alarmsystem
-                for s in states:
-                    eid = s.get("entity_id", "")
-                    if eid.startswith("alarm_control_panel."):
-                        data_lines.append(f"ALARM: {s.get('state', 'unbekannt')}")
+                if alarm_state:
+                    data_lines.append(f"ALARM: {alarm_state}")
 
                 # Wetter
-                for s in states:
+                s = weather_s
+                if s:
                     eid = s.get("entity_id", "")
                     if eid.startswith("weather."):
                         attrs = s.get("attributes", {})
@@ -7987,7 +8021,7 @@ Regeln:
     async def _get_situation_delta(self) -> Optional[str]:
         """Holt den Situations-Delta-Text (was hat sich seit letztem Gespraech geaendert?)."""
         try:
-            states = await self.ha.get_states()
+            states = await self.get_states_cached()
             if not states:
                 return None
             return await self.situation_model.get_situation_delta(states)
@@ -7998,7 +8032,7 @@ Regeln:
     async def _save_situation_snapshot(self):
         """Speichert einen Hausstatus-Snapshot nach dem Gespraech."""
         try:
-            states = await self.ha.get_states()
+            states = await self.get_states_cached()
             if states:
                 await self.situation_model.take_snapshot(states)
         except Exception as e:

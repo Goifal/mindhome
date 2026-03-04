@@ -92,6 +92,11 @@ class InsightEngine:
         self.away_minutes = thresholds.get("away_device_minutes", 120)
         self.temp_drop_degrees = thresholds.get("temp_drop_degrees_per_2h", 3)
 
+        # H4+H5: Konfigurierbare Limits
+        self.startup_delay = cfg.get("startup_delay_seconds", 120)
+        self.max_calendars = cfg.get("max_calendars", 3)
+        self.max_temp_snapshots = cfg.get("max_temp_snapshots", 6)
+
     async def initialize(
         self,
         redis_client: Optional[aioredis.Redis] = None,
@@ -175,6 +180,11 @@ class InsightEngine:
         self.away_minutes = thresholds.get("away_device_minutes", 120)
         self.temp_drop_degrees = thresholds.get("temp_drop_degrees_per_2h", 3)
 
+        # H4+H5: Konfigurierbare Limits
+        self.startup_delay = cfg.get("startup_delay_seconds", 120)
+        self.max_calendars = cfg.get("max_calendars", 3)
+        self.max_temp_snapshots = cfg.get("max_temp_snapshots", 6)
+
         # Loop starten wenn gerade aktiviert wurde
         if self.enabled and not was_enabled and not self._running:
             self._running = True
@@ -187,8 +197,8 @@ class InsightEngine:
 
     async def _insight_loop(self):
         """Prueft periodisch auf Insights."""
-        # Erster Check nach kurzem Delay (System stabilisieren lassen)
-        await asyncio.sleep(120)
+        # H4: Konfigurierbarer Startup-Delay (System stabilisieren lassen)
+        await asyncio.sleep(self.startup_delay)
 
         while self._running:
             try:
@@ -349,7 +359,7 @@ class InsightEngine:
         end = now + timedelta(hours=24)
         all_events = []
 
-        for cal_entity in calendar_entities[:3]:  # Max 3 Kalender
+        for cal_entity in calendar_entities[:self.max_calendars]:  # H5: Konfigurierbar
             try:
                 result = await self.ha.call_service_with_response(
                     "calendar", "get_events",
@@ -607,8 +617,8 @@ class InsightEngine:
             # Hochrechnung auf Tagesende
             now = datetime.now()
             hours_passed = now.hour + now.minute / 60.0
-            if hours_passed < 6:
-                return None  # Zu frueh fuer sinnvolle Hochrechnung
+            if hours_passed < 1:
+                return None  # Zu frueh fuer sinnvolle Hochrechnung (Division-by-zero-Schutz)
 
             projected = today_val / hours_passed * 24
             increase_pct = ((projected - avg) / avg) * 100
@@ -677,7 +687,8 @@ class InsightEngine:
 
         if not issues:
             # Abwesenheits-Tracker aufraeumen
-            await self.redis.delete(away_key)
+            if self.redis:
+                await self.redis.delete(away_key)
             return None
 
         hours_away = minutes_away / 60
@@ -903,7 +914,7 @@ class InsightEngine:
         await self._store_temp_snapshot(data)
 
         try:
-            snapshots_raw = await self.redis.lrange("mha:insight:temp_history", 0, 5)
+            snapshots_raw = await self.redis.lrange("mha:insight:temp_history", 0, self.max_temp_snapshots - 1)  # H5
         except Exception:
             return None
 
@@ -918,8 +929,8 @@ class InsightEngine:
         newest = snapshots[0].get("temps", {})
         oldest = snapshots[-1].get("temps", {})
         try:
-            newest_ts = datetime.fromisoformat(snapshots[0]["ts"])
-            oldest_ts = datetime.fromisoformat(snapshots[-1]["ts"])
+            newest_ts = datetime.fromisoformat(snapshots[0].get("ts", ""))
+            oldest_ts = datetime.fromisoformat(snapshots[-1].get("ts", ""))
             hours_diff = (newest_ts - oldest_ts).total_seconds() / 3600
         except (KeyError, ValueError):
             return None

@@ -1381,6 +1381,7 @@ function fKeyValue(path, label, keyLabel='Schluessel', valLabel='Wert', hint='')
 }
 function kvAdd(btn, path, keyLabel, valLabel) {
   const editor = btn.closest('.kv-editor');
+  if (!editor) return;
   const row = document.createElement('div');
   row.className = 'kv-row';
   row.innerHTML = `<input type="text" class="kv-key" placeholder="${keyLabel}">
@@ -1392,8 +1393,9 @@ function kvAdd(btn, path, keyLabel, valLabel) {
 }
 function kvRemove(btn, path) {
   const editor = btn.closest('.kv-editor');
-  btn.closest('.kv-row').remove();
-  kvSync(editor, path);
+  const row = btn.closest('.kv-row');
+  if (row) row.remove();
+  if (editor) kvSync(editor, path);
 }
 function kvSync(editor, path) {
   const obj = {};
@@ -7598,7 +7600,7 @@ function renderVacuum() {
         '<input type="text" class="entity-pick-alarm form-input entity-pick-input" value="' + esc(getPath(S,'vacuum.presence_guard.alarm_entity')||'') + '"' +
           ' placeholder="alarm_control_panel.alarmo" data-domains="alarm_control_panel"' +
           ' oninput="entityPickFilter(this,\'alarm_control_panel\')" onfocus="entityPickFilter(this,\'alarm_control_panel\')"' +
-          ' onblur="setTimeout(function(){setPath(S,\'vacuum.presence_guard.alarm_entity\',document.querySelector(\'.entity-pick-alarm\').value.trim());scheduleAutoSave();},500)"' +
+          ' onblur="setTimeout(function(){var el=document.querySelector(\'.entity-pick-alarm\');if(el)setPath(S,\'vacuum.presence_guard.alarm_entity\',el.value.trim());scheduleAutoSave();},500)"' +
           ' style="font-size:12px;font-family:var(--mono);">' +
         '<div class="entity-pick-dropdown" style="display:none;"></div>' +
       '</div>' +
