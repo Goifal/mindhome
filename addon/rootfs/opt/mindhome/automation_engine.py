@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from sqlalchemy import func, text, and_
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from models import (
@@ -1103,6 +1104,20 @@ class PhaseManager:
         except Exception:
             pass
         return t
+
+    @staticmethod
+    def _commit_with_retry(session, retries=3):
+        """Commit with retry on database locked errors."""
+        for attempt in range(retries):
+            try:
+                session.commit()
+                return
+            except OperationalError as oe:
+                if "database is locked" in str(oe) and attempt < retries - 1:
+                    session.rollback()
+                    time.sleep(1.0 * (attempt + 1))
+                else:
+                    raise
 
     def __init__(self, engine):
         self.engine = engine

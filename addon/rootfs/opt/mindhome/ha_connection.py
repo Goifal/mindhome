@@ -86,7 +86,11 @@ class HAConnection:
                         body = e.response.text[:500] if e.response is not None else ""
                     except Exception:
                         pass
-                    logger.error(f"HA API client error for {endpoint}: {e} | payload={data} | response={body}")
+                    # 404 on state lookups is normal (entity may not exist) — log as debug
+                    if status_code == 404 and endpoint.startswith("states/"):
+                        logger.debug(f"HA API entity not found: {endpoint}")
+                    else:
+                        logger.error(f"HA API client error for {endpoint}: {e} | payload={data} | response={body}")
                     # 401/403 = Auth-Problem, nicht als "online" werten
                     if status_code not in (401, 403):
                         self._is_online = True
@@ -231,6 +235,9 @@ class HAConnection:
             fetched = 0
             failed = 0
             for cfg in configs:
+                if not self._ws_connected:
+                    failed += len(configs) - fetched - failed
+                    break
                 eid = cfg["entity_id"]
                 try:
                     raw = self._ws_command("automation/config", entity_id=eid)
@@ -551,6 +558,10 @@ class HAConnection:
             self._ws.send(json.dumps(msg))
             result_event.wait(timeout=10)
             return result_data[0]
+        except BrokenPipeError as e:
+            self._ws_connected = False
+            logger.error(f"WebSocket command failed (pipe broken, marking disconnected): {e}")
+            return None
         except Exception as e:
             logger.error(f"WebSocket command failed: {e}")
             return None
