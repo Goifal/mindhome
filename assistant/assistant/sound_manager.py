@@ -354,7 +354,7 @@ class SoundManager:
         if weather_condition and event not in ("alarm", "goodnight"):
             loud_weather = {"rainy", "pouring", "hail", "lightning-rainy", "windy"}
             if weather_condition.lower() in loud_weather:
-                weather_boost = yaml_config.get("sound", {}).get("weather_volume_boost", 0.15)
+                weather_boost = yaml_config.get("sounds", {}).get("weather_volume_boost", 0.15)
                 base += weather_boost
 
         return round(min(1.0, base), 2)
@@ -527,7 +527,7 @@ class SoundManager:
         if weather_cond:
             loud_weather = {"rainy", "pouring", "hail", "lightning-rainy", "windy"}
             if weather_cond.lower() in loud_weather:
-                weather_boost = yaml_config.get("sound", {}).get("weather_volume_boost", 0.15)
+                weather_boost = yaml_config.get("sounds", {}).get("weather_volume_boost", 0.15)
                 volume = min(1.0, volume + weather_boost)
         old_volume = None
         try:

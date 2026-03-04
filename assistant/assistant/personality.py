@@ -167,7 +167,7 @@ CONTEXTUAL_HUMOR_TRIGGERS = {
     ],
     ("any", "weekend_morning"): [
         "Wochenende und schon wach, {title}?",
-        "Samstagsmorgens? Ambitioniert, {title}.",
+        "Wochenendmorgens? Ambitioniert, {title}.",
     ],
 }
 
@@ -197,7 +197,7 @@ CONFIRMATIONS_PARTIAL = [
 ]
 
 CONFIRMATIONS_FAILED = [
-    "Das ging leider daneben. Einen Moment, {title}.",
+    "Das ging daneben. Einen Moment, {title}.",
     "Negativ. Ich pruefe eine Alternative.",
     "Nicht ganz nach Plan. Ich bleibe dran.",
     "Das System wehrt sich gerade, {title}. Ich versuche es anders.",
@@ -1698,7 +1698,7 @@ class PersonalityEngine:
         gags = {
             3: "Das hatten wir heute bereits. Selbstverstaendlich nochmal.",
             5: "Fuenfte Anfrage heute. Soll ich das automatisieren?",
-            7: f"Siebtes Mal heute, {self._get_title()}. Darf ich einen Shortcut vorschlagen?",
+            7: f"Siebtes Mal heute, {get_person_title()}. Darf ich einen Shortcut vorschlagen?",
             10: "Zehntes Mal. Ich richte das als feste Routine ein, wenn du magst.",
         }
         return gags.get(int(count))
@@ -1716,7 +1716,7 @@ class PersonalityEngine:
         gags = {
             4: "Vierte Anpassung in einer Stunde. Darf ich einen Vorschlag machen?",
             6: "Sechste Aenderung. Soll ich einen Mittelwert berechnen?",
-            8: "Achte Aenderung. Darf ich einen Kompromiss vorschlagen, {title}?",
+            8: f"Achte Aenderung. Darf ich einen Kompromiss vorschlagen, {get_person_title()}?",
         }
         return gags.get(int(count))
 
@@ -1743,7 +1743,7 @@ class PersonalityEngine:
             2: None,  # Zweites Mal: noch nichts sagen
             3: "Darf ich das als Gewohnheit vermerken, {title}?".format(title=get_person_title()),
             5: f"Fuenftes Mal diese Woche. Soll ich eine Automatisierung einrichten, {get_person_title()}?",
-            7: f"Siebtes Mal. Ich richte das gerne als Routine ein, {get_person_title()}.",
+            7: f"Siebtes Mal. Soll ich das als Routine einrichten, {get_person_title()}?",
             10: f"Zehntes Mal. Eine Automatisierung waere naheliegend, {get_person_title()}.",
         }
         return escalation_map.get(int(count))
@@ -2983,7 +2983,7 @@ Stil: {style}. {time_style}
 {formality_section}
 {irony_note}
 Sprich die anwesende Person mit "{get_person_title()}" an. DUZE sie.
-VERBOTEN: "leider", "Entschuldigung", "Es tut mir leid", "Wie kann ich helfen?", "Gerne!", "Natuerlich!".
+VERBOTEN: "leider", "Entschuldigung", "Es tut mir leid", "Wie kann ich helfen?", "Gerne!", "Natuerlich!", "Klar!", "Als KI...", Fuellwoerter, Moralisieren.
 Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
     # ------------------------------------------------------------------
@@ -3181,7 +3181,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             "limit": [
                 "Das uebersteigt meine aktuelle Konfiguration.",
                 "Ausserhalb der erlaubten Parameter. Sicherheit geht vor.",
-                "Das wuerde ich gerne tun, aber die Grenzen sind gesetzt.",
+                "Das wuerde ich tun, aber die Grenzen sind gesetzt.",
             ],
             "unknown_device": [
                 "Dieses Geraet kenne ich nicht. Ist es in Home Assistant eingerichtet?",

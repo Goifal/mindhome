@@ -848,6 +848,155 @@ body::after {
   fill: var(--text-muted);
 }
 
+/* ========== Voice Mode Button ========== */
+.btn-voice {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid rgba(0,212,255,0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.btn-voice:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(0,212,255,0.05);
+  box-shadow: 0 0 12px rgba(0,212,255,0.1);
+}
+
+.btn-voice svg {
+  width: 18px; height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ========== Voice Overlay ========== */
+.voice-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(4,8,16,0.97);
+  z-index: 1000;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  backdrop-filter: blur(30px);
+}
+
+.voice-overlay.active { display: flex; }
+
+.voice-orb-wrap {
+  position: relative;
+  width: 200px; height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-orb {
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,212,255,0.25) 0%, rgba(0,212,255,0.05) 70%, transparent 100%);
+  border: 2px solid rgba(0,212,255,0.3);
+  transition: all 0.3s ease;
+  box-shadow: 0 0 40px rgba(0,212,255,0.15);
+}
+
+.voice-orb.listening {
+  animation: orbPulse 1.5s ease-in-out infinite;
+  border-color: var(--accent);
+  box-shadow: 0 0 60px rgba(0,212,255,0.4);
+}
+
+.voice-orb.thinking {
+  animation: orbSpin 2s linear infinite;
+  border-color: rgba(0,212,255,0.5);
+}
+
+.voice-orb.speaking {
+  animation: orbSpeak 0.6s ease-in-out infinite;
+  border-color: var(--success);
+  box-shadow: 0 0 60px rgba(0,230,118,0.3);
+}
+
+@keyframes orbPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(0,212,255,0.2); }
+  50% { transform: scale(1.08); box-shadow: 0 0 80px rgba(0,212,255,0.5); }
+}
+
+@keyframes orbSpin {
+  0% { border-color: rgba(0,212,255,0.5); box-shadow: 0 0 40px rgba(0,212,255,0.2); }
+  50% { border-color: rgba(0,212,255,0.8); box-shadow: 0 0 70px rgba(0,212,255,0.4); }
+  100% { border-color: rgba(0,212,255,0.5); box-shadow: 0 0 40px rgba(0,212,255,0.2); }
+}
+
+@keyframes orbSpeak {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+.voice-status {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+}
+
+.voice-transcript {
+  max-width: 500px;
+  text-align: center;
+  font-size: 16px;
+  color: var(--text-primary);
+  min-height: 48px;
+  line-height: 1.5;
+  padding: 0 20px;
+}
+
+.voice-transcript .user-text {
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-bottom: 8px;
+}
+
+.voice-transcript .jarvis-text {
+  color: var(--text-primary);
+}
+
+.voice-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-secondary);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.voice-close:hover {
+  background: rgba(255,61,61,0.1);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 /* ========== Welcome Screen ========== */
 .welcome {
   display: flex;
@@ -1131,12 +1280,25 @@ body::after {
       <div class="input-wrap">
         <textarea id="input" rows="1" placeholder="Nachricht an Jarvis..." autocomplete="off"></textarea>
       </div>
+      <button class="btn-voice" id="btnVoice" onclick="startVoiceMode()" title="Sprachmodus">
+        <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      </button>
       <button class="btn-send" id="btnSend" onclick="sendMessage()" disabled>
         <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
       </button>
     </div>
     <input type="file" id="fileInput" style="display:none" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.txt,.md,.csv,.json,.xml,.yaml,.yml,.log,.py,.js,.ts,.html,.css,.sh,.doc,.docx,.xls,.xlsx,.pptx,.odt,.ods,.rtf,.zip,.tar,.gz"/>
   </div>
+</div>
+
+<!-- Voice Mode Overlay -->
+<div class="voice-overlay" id="voiceOverlay">
+  <button class="voice-close" id="voiceClose" onclick="stopVoiceMode()">&times;</button>
+  <div class="voice-orb-wrap">
+    <div class="voice-orb" id="voiceOrb"></div>
+  </div>
+  <div class="voice-status" id="voiceStatus">BEREIT</div>
+  <div class="voice-transcript" id="voiceTranscript"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1816,6 +1978,254 @@ async function fetchMood() {
     }
   } catch (e) {
     $moodBadge.style.display = 'none';
+  }
+}
+
+// ========== Voice Mode ==========
+
+const $voiceOverlay = document.getElementById('voiceOverlay');
+const $voiceOrb = document.getElementById('voiceOrb');
+const $voiceStatus = document.getElementById('voiceStatus');
+const $voiceTranscript = document.getElementById('voiceTranscript');
+
+let voiceActive = false;
+let voiceMediaRecorder = null;
+let voiceAudioCtx = null;
+let voiceAnalyser = null;
+let voiceStream = null;
+
+function startVoiceMode() {
+  voiceActive = true;
+  $voiceOverlay.classList.add('active');
+  $voiceTranscript.innerHTML = '';
+  voiceListen();
+}
+
+function stopVoiceMode() {
+  voiceActive = false;
+  $voiceOverlay.classList.remove('active');
+  if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
+    voiceMediaRecorder.stop();
+  }
+  if (voiceStream) {
+    voiceStream.getTracks().forEach(t => t.stop());
+    voiceStream = null;
+  }
+  if (voiceAudioCtx) {
+    voiceAudioCtx.close().catch(() => {});
+    voiceAudioCtx = null;
+  }
+}
+
+// Escape-Taste schliesst Voice-Mode
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && voiceActive) stopVoiceMode();
+});
+
+async function voiceListen() {
+  if (!voiceActive) return;
+
+  setVoiceState('listening');
+  $voiceTranscript.innerHTML = '';
+
+  try {
+    voiceStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      }
+    });
+  } catch (e) {
+    toast('Mikrofon-Zugriff verweigert', 'error');
+    stopVoiceMode();
+    return;
+  }
+
+  // Audio-Level Visualisierung
+  voiceAudioCtx = new AudioContext();
+  const source = voiceAudioCtx.createMediaStreamSource(voiceStream);
+  voiceAnalyser = voiceAudioCtx.createAnalyser();
+  voiceAnalyser.fftSize = 256;
+  source.connect(voiceAnalyser);
+
+  // Silence Detection: Automatisch stoppen nach 2s Stille
+  const dataArray = new Uint8Array(voiceAnalyser.frequencyBinCount);
+  let silenceStart = null;
+  let hasSpoken = false;
+  const SILENCE_THRESHOLD = 15;
+  const SILENCE_DURATION = 2000; // ms
+  const MAX_RECORD_TIME = 30000; // 30s max
+
+  // MediaRecorder starten (WebM/Opus)
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus'
+    : 'audio/webm';
+  voiceMediaRecorder = new MediaRecorder(voiceStream, { mimeType });
+  const chunks = [];
+
+  voiceMediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) chunks.push(e.data);
+  };
+
+  voiceMediaRecorder.onstop = async () => {
+    // Stream stoppen
+    voiceStream.getTracks().forEach(t => t.stop());
+    voiceStream = null;
+    if (voiceAudioCtx) {
+      voiceAudioCtx.close().catch(() => {});
+      voiceAudioCtx = null;
+    }
+
+    if (!voiceActive) return;
+    if (chunks.length === 0 || !hasSpoken) {
+      // Nichts gesagt — nochmal hoeren
+      voiceListen();
+      return;
+    }
+
+    const audioBlob = new Blob(chunks, { type: mimeType });
+    await voiceProcess(audioBlob);
+  };
+
+  voiceMediaRecorder.start(250); // Chunks alle 250ms
+  const recordStart = Date.now();
+
+  // Silence-Detection Loop
+  const silenceCheck = setInterval(() => {
+    if (!voiceActive || !voiceMediaRecorder || voiceMediaRecorder.state === 'inactive') {
+      clearInterval(silenceCheck);
+      return;
+    }
+
+    voiceAnalyser.getByteFrequencyData(dataArray);
+    const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+
+    // Orb-Groesse basierend auf Lautstaerke
+    const scale = 1 + Math.min(avg / 100, 0.3);
+    $voiceOrb.style.transform = `scale(${scale})`;
+
+    if (avg > SILENCE_THRESHOLD) {
+      hasSpoken = true;
+      silenceStart = null;
+    } else if (hasSpoken) {
+      if (!silenceStart) silenceStart = Date.now();
+      else if (Date.now() - silenceStart > SILENCE_DURATION) {
+        // Stille erkannt — aufhoeren
+        clearInterval(silenceCheck);
+        voiceMediaRecorder.stop();
+        return;
+      }
+    }
+
+    // Max-Zeit erreicht
+    if (Date.now() - recordStart > MAX_RECORD_TIME) {
+      clearInterval(silenceCheck);
+      voiceMediaRecorder.stop();
+    }
+  }, 100);
+}
+
+async function voiceProcess(audioBlob) {
+  if (!voiceActive) return;
+
+  setVoiceState('thinking');
+
+  try {
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'recording.webm');
+    if (currentPerson) formData.append('person', currentPerson);
+
+    const resp = await fetch(`${API}/api/assistant/voice/chat`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+
+    const userText = decodeURIComponent(resp.headers.get('X-User-Text') || '');
+    const jarvisText = decodeURIComponent(resp.headers.get('X-Jarvis-Text') || '');
+
+    // Transcript anzeigen
+    $voiceTranscript.innerHTML = '';
+    if (userText) {
+      const u = document.createElement('div');
+      u.className = 'user-text';
+      u.textContent = userText;
+      $voiceTranscript.appendChild(u);
+    }
+    if (jarvisText) {
+      const j = document.createElement('div');
+      j.className = 'jarvis-text';
+      j.textContent = jarvisText;
+      $voiceTranscript.appendChild(j);
+    }
+
+    // Chat-History aktualisieren
+    if (userText) addMessage('user', userText);
+    if (jarvisText) addMessage('assistant', jarvisText);
+
+    // Audio abspielen
+    const audioData = await resp.arrayBuffer();
+    if (audioData.byteLength > 44) {
+      setVoiceState('speaking');
+      await voicePlayAudio(audioData);
+    }
+
+    // Automatisch wieder zuhoeren
+    if (voiceActive) {
+      setTimeout(() => voiceListen(), 500);
+    }
+
+  } catch (e) {
+    console.error('Voice-Chat Fehler:', e);
+    toast(e.message || 'Voice-Chat Fehler', 'error');
+    if (voiceActive) {
+      setTimeout(() => voiceListen(), 1000);
+    }
+  }
+}
+
+function voicePlayAudio(arrayBuffer) {
+  return new Promise((resolve) => {
+    const blob = new Blob([arrayBuffer], { type: 'audio/wav' });
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    audio.play().catch(() => resolve());
+  });
+}
+
+function setVoiceState(state) {
+  $voiceOrb.className = 'voice-orb';
+  $voiceOrb.style.transform = '';
+  switch (state) {
+    case 'listening':
+      $voiceOrb.classList.add('listening');
+      $voiceStatus.textContent = 'HOERT ZU...';
+      break;
+    case 'thinking':
+      $voiceOrb.classList.add('thinking');
+      $voiceStatus.textContent = 'VERARBEITET...';
+      break;
+    case 'speaking':
+      $voiceOrb.classList.add('speaking');
+      $voiceStatus.textContent = 'SPRICHT...';
+      break;
+    default:
+      $voiceStatus.textContent = 'BEREIT';
   }
 }
 

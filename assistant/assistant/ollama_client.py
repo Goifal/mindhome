@@ -128,7 +128,7 @@ def validate_notification(text: str) -> str:
 def _looks_german(text: str) -> bool:
     """Prueft ob ein Text deutsch aussieht."""
     text_lower = text.lower()
-    hits = sum(1 for w in _GERMAN_MARKERS if w in text_lower)
+    hits = sum(1 for w in _GERMAN_MARKERS if f" {w} " in f" {text_lower} ")
     # Mindestens 2 deutsche Marker oder Umlaute vorhanden
     return hits >= 2 or any(c in text for c in "äöüÄÖÜß")
 
@@ -593,8 +593,11 @@ class OllamaClient:
         """Listet alle verfuegbaren Modelle."""
         try:
             session = await self._get_session()
-            async with session.get(f"{self.base_url}/api/tags") as resp:
+            async with session.get(
+                f"{self.base_url}/api/tags",
+                timeout=aiohttp.ClientTimeout(total=LLM_TIMEOUT_AVAILABILITY),
+            ) as resp:
                 data = await resp.json()
                 return [m["name"] for m in data.get("models", [])]
-        except aiohttp.ClientError:
+        except (aiohttp.ClientError, asyncio.TimeoutError):
             return []

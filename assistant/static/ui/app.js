@@ -8034,17 +8034,19 @@ async function checkForUpdates() {
   }
 }
 
+let _restartPoll = null;
 function _waitForRestart() {
   // Pollt alle 3s bis der Server wieder antwortet, dann Reload
+  if (_restartPoll) clearInterval(_restartPoll);
   toast('Container startet neu... bitte kurz warten.');
   let attempts = 0;
-  const poll = setInterval(async () => {
+  _restartPoll = setInterval(async () => {
     attempts++;
     try {
       const r = await fetch('/api/assistant/health');
-      if (r.ok) { clearInterval(poll); location.reload(); }
+      if (r.ok) { clearInterval(_restartPoll); _restartPoll = null; location.reload(); }
     } catch(e) { /* noch nicht bereit */ }
-    if (attempts > 40) { clearInterval(poll); location.reload(); }
+    if (attempts > 40) { clearInterval(_restartPoll); _restartPoll = null; location.reload(); }
   }, 3000);
 }
 

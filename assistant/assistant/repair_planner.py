@@ -1416,7 +1416,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
 
         async def _timer_callback():
             await asyncio.sleep(minutes * 60)
-            msg = f"Sir, {minutes} Minuten sind um"
+            _title = yaml_config.get("person", {}).get("title", "Sir")
+            msg = f"{_title}, {minutes} Minuten sind um"
             if reason:
                 msg += f" — {reason}"
             if self._notify_callback:
@@ -1600,11 +1601,13 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 await self.redis.setex(
                     "mha:repair:manual_active",
                     self.REDIS_SESSION_TTL, "1")
-            return "Werkstatt-Modus aktiviert, Sir. Wie kann ich helfen?"
+            _title = yaml_config.get("person", {}).get("title", "Sir")
+            return f"Werkstatt-Modus aktiviert, {_title}."
         else:
             if self.redis:
                 await self.redis.delete("mha:repair:manual_active")
-            return "Werkstatt-Modus deaktiviert. Bis zum naechsten Mal, Sir."
+            _title = yaml_config.get("person", {}).get("title", "Sir")
+            return f"Werkstatt-Modus deaktiviert. Bis zum naechsten Mal, {_title}."
 
     def has_active_session(self) -> bool:
         """Prueft ob eine aktive Session existiert."""

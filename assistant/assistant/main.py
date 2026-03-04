@@ -19,7 +19,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
@@ -1134,6 +1134,308 @@ async def voice_output(request: VoiceRequest):
         "tts": tts_data,
         "room": request.room,
     }
+
+
+# ----- Voice Chat: TTS Generate + STT Endpoints -----
+
+# Wyoming-Protokoll Host/Port (innerhalb Docker-Netzwerk)
+_PIPER_HOST = os.getenv("PIPER_HOST", "piper")
+_PIPER_PORT = int(os.getenv("PIPER_PORT", "10200"))
+_WHISPER_HOST = os.getenv("WHISPER_HOST", "whisper")
+_WHISPER_PORT = int(os.getenv("WHISPER_PORT", "10300"))
+
+
+async def _wyoming_tts(text: str) -> bytes:
+    """Generiert Audio via Wyoming TTS (Piper). Gibt rohe PCM-Daten zurueck."""
+    import struct
+    reader, writer = await asyncio.wait_for(
+        asyncio.open_connection(_PIPER_HOST, _PIPER_PORT), timeout=5.0,
+    )
+    try:
+        # Wyoming Protocol: JSON-Header + Newline
+        # 1. Synthesize request senden
+        synth_event = json.dumps({
+            "type": "synthesize",
+            "data": {"text": text},
+        }) + "\n"
+        writer.write(synth_event.encode("utf-8"))
+        await writer.drain()
+
+        # 2. Events lesen bis audio-stop
+        audio_chunks: list[bytes] = []
+        sample_rate = 22050
+        sample_width = 2
+        channels = 1
+
+        while True:
+            line = await asyncio.wait_for(reader.readline(), timeout=15.0)
+            if not line:
+                break
+            event = json.loads(line.decode("utf-8").strip())
+            etype = event.get("type", "")
+
+            if etype == "audio-start":
+                d = event.get("data", {})
+                sample_rate = d.get("rate", sample_rate)
+                sample_width = d.get("width", sample_width)
+                channels = d.get("channels", channels)
+                # Payload lesen (0 bytes bei audio-start)
+                payload_len = event.get("data_length", 0) or event.get("payload_length", 0)
+                if payload_len:
+                    await reader.readexactly(payload_len)
+
+            elif etype == "audio-chunk":
+                payload_len = event.get("data_length", 0) or event.get("payload_length", 0)
+                if payload_len and payload_len > 0:
+                    chunk = await asyncio.wait_for(
+                        reader.readexactly(payload_len), timeout=10.0,
+                    )
+                    audio_chunks.append(chunk)
+
+            elif etype == "audio-stop":
+                break
+
+        if not audio_chunks:
+            raise RuntimeError("Keine Audio-Daten von Piper erhalten")
+
+        # PCM zu WAV konvertieren
+        pcm = b"".join(audio_chunks)
+        import io
+        import wave
+        wav_buf = io.BytesIO()
+        with wave.open(wav_buf, "wb") as wf:
+            wf.setnchannels(channels)
+            wf.setsampwidth(sample_width)
+            wf.setframerate(sample_rate)
+            wf.writeframes(pcm)
+        return wav_buf.getvalue()
+
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+
+async def _wyoming_stt(audio_data: bytes, sample_rate: int = 16000) -> str:
+    """Transkribiert Audio via Wyoming STT (Whisper). Erwartet 16-bit PCM mono."""
+    reader, writer = await asyncio.wait_for(
+        asyncio.open_connection(_WHISPER_HOST, _WHISPER_PORT), timeout=5.0,
+    )
+    try:
+        # 1. Transcribe-Event senden
+        transcribe_event = json.dumps({
+            "type": "transcribe",
+            "data": {"language": "de"},
+        }) + "\n"
+        writer.write(transcribe_event.encode("utf-8"))
+
+        # 2. Audio-Start senden
+        audio_start = json.dumps({
+            "type": "audio-start",
+            "data": {"rate": sample_rate, "width": 2, "channels": 1},
+        }) + "\n"
+        writer.write(audio_start.encode("utf-8"))
+
+        # 3. Audio in Chunks senden (je 4096 bytes)
+        chunk_size = 4096
+        for i in range(0, len(audio_data), chunk_size):
+            chunk = audio_data[i:i + chunk_size]
+            chunk_event = json.dumps({
+                "type": "audio-chunk",
+                "data": {"rate": sample_rate, "width": 2, "channels": 1},
+                "data_length": len(chunk),
+                "payload_length": len(chunk),
+            }) + "\n"
+            writer.write(chunk_event.encode("utf-8"))
+            writer.write(chunk)
+
+        # 4. Audio-Stop senden
+        audio_stop = json.dumps({"type": "audio-stop"}) + "\n"
+        writer.write(audio_stop.encode("utf-8"))
+        await writer.drain()
+
+        # 5. Transcript-Event lesen
+        while True:
+            line = await asyncio.wait_for(reader.readline(), timeout=30.0)
+            if not line:
+                break
+            event = json.loads(line.decode("utf-8").strip())
+            if event.get("type") == "transcript":
+                return event.get("data", {}).get("text", "")
+
+        return ""
+
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+
+class TTSGenerateRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/assistant/tts/generate")
+async def tts_generate(request: TTSGenerateRequest):
+    """Generiert TTS-Audio (WAV) via Piper und gibt es als Download zurueck."""
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="Kein Text angegeben")
+    try:
+        wav_data = await _wyoming_tts(request.text.strip())
+        return Response(
+            content=wav_data,
+            media_type="audio/wav",
+            headers={"Content-Disposition": "inline"},
+        )
+    except Exception as e:
+        logger.error("TTS-Generierung fehlgeschlagen: %s", e)
+        raise HTTPException(status_code=503, detail=f"TTS nicht verfuegbar: {e}")
+
+
+@app.post("/api/assistant/stt")
+async def stt_transcribe(audio: UploadFile = File(...)):
+    """Transkribiert hochgeladenes Audio via Whisper.
+
+    Akzeptiert WAV (16-bit PCM) oder WebM/OGG (wird intern konvertiert).
+    """
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Keine Audio-Daten")
+
+    content_type = audio.content_type or ""
+    sample_rate = 16000
+
+    try:
+        # WAV oder WebM/OGG — in PCM konvertieren wenn noetig
+        if "wav" in content_type or audio_bytes[:4] == b"RIFF":
+            # WAV: PCM-Daten extrahieren
+            import io, wave
+            with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
+                sample_rate = wf.getframerate()
+                pcm_data = wf.readframes(wf.getnframes())
+                # Resample zu 16kHz mono wenn noetig
+                if wf.getnchannels() > 1 or sample_rate != 16000 or wf.getsampwidth() != 2:
+                    pcm_data = _convert_audio_to_16k_mono(audio_bytes)
+                    sample_rate = 16000
+        else:
+            # WebM/OGG/MP3: ffmpeg konvertieren
+            pcm_data = _convert_audio_to_16k_mono(audio_bytes)
+            sample_rate = 16000
+
+        text = await _wyoming_stt(pcm_data, sample_rate)
+        return {"text": text.strip(), "language": "de"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("STT-Transkription fehlgeschlagen: %s", e, exc_info=True)
+        raise HTTPException(status_code=503, detail=f"STT nicht verfuegbar: {e}")
+
+
+def _convert_audio_to_16k_mono(audio_bytes: bytes) -> bytes:
+    """Konvertiert beliebiges Audio zu 16kHz 16-bit mono PCM via ffmpeg."""
+    import subprocess
+    result = subprocess.run(
+        [
+            "ffmpeg", "-i", "pipe:0",
+            "-ar", "16000", "-ac", "1", "-f", "s16le",
+            "-acodec", "pcm_s16le", "pipe:1",
+        ],
+        input=audio_bytes,
+        capture_output=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg Fehler: {result.stderr.decode()[:200]}")
+    return result.stdout
+
+
+# ----- Voice Chat: Full Voice Conversation Endpoint -----
+
+class VoiceChatRequest(BaseModel):
+    person: Optional[str] = None
+    room: Optional[str] = None
+    device_id: Optional[str] = None
+
+
+@app.post("/api/assistant/voice/chat")
+async def voice_chat(
+    audio: UploadFile = File(...),
+    person: Optional[str] = Form(None),
+    room: Optional[str] = Form(None),
+    device_id: Optional[str] = Form(None),
+):
+    """Voice-Chat: Audio rein → STT → Brain → TTS → Audio raus.
+
+    Kombiniert STT + Chat + TTS in einem einzigen Request.
+    Gibt die Jarvis-Antwort als WAV-Audio zurueck.
+    Response-Header enthalten den Text als X-Jarvis-Text.
+    """
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Keine Audio-Daten")
+
+    content_type = audio.content_type or ""
+
+    try:
+        # 1. Audio zu PCM konvertieren
+        if "wav" in content_type or audio_bytes[:4] == b"RIFF":
+            import io, wave
+            with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
+                pcm_data = wf.readframes(wf.getnframes())
+                sr = wf.getframerate()
+                if wf.getnchannels() > 1 or sr != 16000 or wf.getsampwidth() != 2:
+                    pcm_data = _convert_audio_to_16k_mono(audio_bytes)
+        else:
+            pcm_data = _convert_audio_to_16k_mono(audio_bytes)
+
+        # 2. STT
+        user_text = await _wyoming_stt(pcm_data, 16000)
+        if not user_text.strip():
+            # Leere Transkription — stille Antwort
+            return Response(
+                content=b"",
+                media_type="audio/wav",
+                headers={
+                    "X-Jarvis-Text": "",
+                    "X-User-Text": "",
+                },
+            )
+
+        # 3. Brain verarbeiten
+        result = await asyncio.wait_for(
+            brain.process(user_text.strip(), person, room, device_id=device_id),
+            timeout=60.0,
+        )
+        jarvis_text = result.get("response", "")
+
+        # 4. TTS generieren
+        wav_data = b""
+        if jarvis_text:
+            try:
+                wav_data = await _wyoming_tts(jarvis_text)
+            except Exception as e:
+                logger.warning("Voice-Chat TTS fehlgeschlagen: %s", e)
+
+        return Response(
+            content=wav_data,
+            media_type="audio/wav",
+            headers={
+                "X-Jarvis-Text": jarvis_text.replace("\n", " ")[:500],
+                "X-User-Text": user_text.strip().replace("\n", " ")[:200],
+                "X-Model-Used": result.get("model_used", "unknown"),
+            },
+        )
+
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Verarbeitung Timeout")
+    except Exception as e:
+        logger.error("Voice-Chat fehlgeschlagen: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
 
 
 # ----- Phase 9: Speaker Recognition Endpoints -----

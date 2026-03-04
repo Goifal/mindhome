@@ -53,7 +53,7 @@ MESSAGE_TYPE_PATTERNS = {
     ],
     "confirmation": [
         "erledigt", "gemacht", "ist passiert", "wie gewuenscht",
-        "aber natuerlich", "selbstverstaendlich", "kein problem",
+        "selbstverstaendlich", "kein problem",
         "geht klar", "sofort",
     ],
     "question": [

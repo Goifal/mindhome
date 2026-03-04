@@ -414,7 +414,7 @@ _DEVICE_CLASS_TO_ROLE = {
     "illuminance": "light_level",
     # Sicherheit
     "smoke": "smoke",
-    "gas": "gas",
+    "gas": "gas",  # binary_sensor: Gasdetektor
     "moisture": "water_leak",
     "tamper": "tamper",
     "safety": "alarm",
@@ -443,8 +443,7 @@ _DEVICE_CLASS_TO_ROLE = {
     "frequency": "frequency",
     "apparent_power": "power_meter",
     "reactive_power": "power_meter",
-    # Verbrauch
-    "gas": "gas_consumption",
+    # Verbrauch (gas bereits oben als Detektor — sensor.gas wird in auto_detect_role behandelt)
     "water": "water_consumption",
     # Geraete
     "connectivity": "connectivity",
@@ -901,8 +900,8 @@ def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) 
             return "outlet"
         if any(kw in lower_eid for kw in ("ventilat", "lueft", "fan", "exhaust")):
             return "fan"
-        if any(kw in lower_eid for kw in ("bewaesser", "irrigat", "sprinkl", "water"
-                                           "ing", "rasen", "lawn")):
+        if any(kw in lower_eid for kw in ("bewaesser", "irrigat", "sprinkl", "water",
+                                           "watering", "rasen", "lawn")):
             return "irrigation"
         if any(kw in lower_eid for kw in ("ventil", "valve")):
             return "valve"
