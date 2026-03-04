@@ -8226,6 +8226,8 @@ class AssistantBrain(BrainCallbacksMixin):
             "musik", "tv", "fernseher", "kamera", "sensor",
             "steckdose", "schalter", "thermostat",
             "status", "hausstatus", "haus-status", "ueberblick",
+            "watt", "verbrauch", "strom", "energie", "kilowatt", "kwh",
+            "maschine", "geraet", "geraete",
         ]
 
         is_knowledge = any(text_lower.startswith(kw) or f" {kw}" in text_lower
