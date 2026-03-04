@@ -3739,7 +3739,19 @@ class AssistantBrain(BrainCallbacksMixin):
                                         return s
                                 _src_numbers = {_norm_num(n) for n in re.findall(r'\d+\.?\d*', humanized_text)}
                                 _dst_numbers = {_norm_num(n) for n in re.findall(r'\d+\.?\d*', refined)} if refined else set()
-                                _numbers_lost = len(_src_numbers) > 2 and not _src_numbers & _dst_numbers
+                                # Zahlen-Verlust nur relevant wenn:
+                                # 1. Quelle hat >2 Zahlen UND Refinement hat null davon
+                                # 2. ABER: Bei Ja/Nein-Zusammenfassungen ("nicht alle", "ja, alle")
+                                #    ist Zahlen-Weglassen korrekt — kein Verlust.
+                                _is_summary = bool(re.search(
+                                    r'\b(?:ja|nein|nicht alle|alle|kein|niemand|nichts)\b',
+                                    _refined_lower,
+                                )) if _refined_lower else False
+                                _numbers_lost = (
+                                    len(_src_numbers) > 2
+                                    and not _src_numbers & _dst_numbers
+                                    and not _is_summary
+                                )
                                 if _has_halluc or _has_profanity or _too_long or _numbers_lost:
                                     logger.warning(
                                         "Tool-Feedback verworfen (halluc=%s, profanity=%s, long=%s, numbers_lost=%s): '%s'",
