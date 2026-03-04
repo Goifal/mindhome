@@ -34,12 +34,12 @@ logger = logging.getLogger(__name__)
 # TTS-Chime-Texte als Fallback wenn keine Soundfiles vorhanden
 # Kurze, praegnante Texte die als akustisches Signal dienen
 TTS_CHIME_TEXTS = {
-    "listening": "Hmm?",
+    "listening": "Ja?",
     "confirmed": "Erledigt.",
-    "warning": "Achtung.",
+    "warning": "Hinweis.",
     "alarm": "Alarm! Alarm!",
     "doorbell": "Es klingelt.",
-    "greeting": "Guten Tag.",
+    "greeting": "Willkommen.",
     "error": "Da stimmt etwas nicht.",
     "goodnight": "Gute Nacht.",
 }

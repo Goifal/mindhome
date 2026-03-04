@@ -2896,7 +2896,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
 
             # Tageszeit-Persoenlichkeit
             if _hour < 7:
-                _time_pers = 'Nacht: Beginne mit "Entschuldige die Stoerung..." oder "Ungern um diese Uhrzeit, aber..."'
+                _time_pers = 'Nacht: Beginne mit "Ungern um diese Uhrzeit, aber..." oder "Spaete Stunde, doch das ist relevant."'
             elif _hour < 10:
                 _time_pers = 'Morgen: Darf energisch/knapp sein. Bei sehr frueh (< 7): "Ambitioniert, {title}."'.format(title=_title)
             elif _hour < 18:
@@ -3114,7 +3114,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             "casual": [
                 "Ich denke kurz nach.",
                 "Moment, ich waege die Optionen ab.",
-                "Lassen Sie mich das durchrechnen.",
+                "Moment, ich rechne das durch.",
             ],
         },
         "action": {

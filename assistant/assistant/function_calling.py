@@ -5387,7 +5387,7 @@ class FunctionExecutor:
         sound_texts = {
             "listening": ".",
             "confirmed": ".",
-            "warning": "Achtung.",
+            "warning": "Hinweis.",
             "alarm": "Alarm!",
             "doorbell": "Es klingelt.",
             "greeting": ".",
