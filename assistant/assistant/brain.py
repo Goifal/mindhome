@@ -402,6 +402,7 @@ class AssistantBrain(BrainCallbacksMixin):
         self._status_nouns = cmd_cfg.get("status_nouns") or [
             "rollladen", "rolladen", "rollo", "jalousie",
             "rolllaeden", "rollaeden",
+            "rollläden", "rolläden",
             "licht", "lichter", "lampe", "lampen", "leuchte", "beleuchtung",
             "heizung", "thermostat", "klima", "temperatur",
             "steckdose", "steckdosen", "schalter",
@@ -3679,8 +3680,22 @@ class AssistantBrain(BrainCallbacksMixin):
                                     "nicht in den daten", "keine daten",
                                     "nicht erwaehnt",
                                 ]
+                                # Profanitaet / Out-of-character: JARVIS wuerde NIE so reden
+                                _profanity = [
+                                    "scheißegal", "scheissegal", "scheiße", "scheisse",
+                                    "scheiß", "scheiss", "fick", "fuck", "shit",
+                                    "arsch", "kacke", "kack", "verdammt",
+                                    "keine ahnung", "ich hab keine ahnung",
+                                    "werde auch nichts erfinden",
+                                    "ist mir egal", "mir doch egal",
+                                    "was weiß ich", "was weiss ich",
+                                    "kein bock", "null bock",
+                                ]
                                 _refined_lower = refined.lower() if refined else ""
                                 _has_halluc = any(m in _refined_lower for m in _halluc_markers)
+                                _has_profanity = any(p in _refined_lower for p in _profanity)
+                                if _has_profanity:
+                                    logger.warning("Refinement verworfen (Profanitaet/OOC): '%s'", refined[:80])
                                 _too_long = len(refined) > len(humanized_text) * 3.5 if refined else False
                                 # Zahlen-Check: Wichtige Zahlen aus Humanizer muessen erhalten bleiben
                                 # Normalisierung: 22.0 == 22, damit Reformatierungen nicht als Verlust gelten
@@ -3693,10 +3708,10 @@ class AssistantBrain(BrainCallbacksMixin):
                                 _src_numbers = {_norm_num(n) for n in re.findall(r'\d+\.?\d*', humanized_text)}
                                 _dst_numbers = {_norm_num(n) for n in re.findall(r'\d+\.?\d*', refined)} if refined else set()
                                 _numbers_lost = len(_src_numbers) > 2 and not _src_numbers & _dst_numbers
-                                if _has_halluc or _too_long or _numbers_lost:
+                                if _has_halluc or _has_profanity or _too_long or _numbers_lost:
                                     logger.warning(
-                                        "Tool-Feedback verworfen (halluc=%s, long=%s, numbers_lost=%s): '%s'",
-                                        _has_halluc, _too_long, _numbers_lost, refined[:80],
+                                        "Tool-Feedback verworfen (halluc=%s, profanity=%s, long=%s, numbers_lost=%s): '%s'",
+                                        _has_halluc, _has_profanity, _too_long, _numbers_lost, refined[:80],
                                     )
                                 elif refined and len(refined) > 5:
                                     response_text = refined
@@ -6893,7 +6908,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not is_query and t.rstrip().endswith("?"):
             _q_nouns = [
                 "rollladen", "rolladen", "rolllaeden", "rollaeden",
-                "rollo", "jalousie",
+                "rollläden", "rolläden", "rollo", "jalousie",
                 "licht", "lichter", "lampe", "lampen", "leuchte", "beleuchtung",
                 "heizung", "thermostat", "klima", "temperatur",
                 "steckdose", "steckdosen", "schalter",
@@ -6911,7 +6926,8 @@ class AssistantBrain(BrainCallbacksMixin):
                 return {"function": {"name": "get_lights", "arguments": {}}}
             # Rollläden
             if any(n in t for n in ["rollladen", "rolladen", "rolllaeden",
-                                    "rollaeden", "rollo", "jalousie"]):
+                                    "rollaeden", "rollläden", "rolläden",
+                                    "rollo", "jalousie"]):
                 return {"function": {"name": "get_covers", "arguments": {}}}
             # Klima/Heizung
             if any(n in t for n in ["heizung", "thermostat", "klima", "temperatur"]):
@@ -8222,8 +8238,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Smart-Home-Keywords — wenn vorhanden, brauchen wir Tools
         smart_home_keywords = [
-            "licht", "lampe", "heizung", "temperatur", "rollladen",
-            "jalousie", "szene", "alarm", "tuer", "fenster",
+            "licht", "lampe", "heizung", "temperatur", "rollladen", "rollläden",
+            "jalousie", "szene", "alarm", "tuer", "tür", "fenster",
             "musik", "tv", "fernseher", "kamera", "sensor",
             "steckdose", "schalter", "thermostat",
             "status", "hausstatus", "haus-status", "ueberblick",
