@@ -4,8 +4,8 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.5.9"
-BUILD = 100
+VERSION = "1.5.10"
+BUILD = 101
 BUILD_DATE = "2026-03-04"
 CODENAME = "Jarvis Voice"
 
