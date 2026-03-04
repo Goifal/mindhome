@@ -901,6 +901,13 @@ const HELP_TEXTS = {
   'lighting.lux_adaptive.target_lux': {title:'Ziel-Beleuchtungsstaerke', text:'Gewuenschte Gesamthelligkeit im Raum (natuerlich + kuenstlich). 300-500 Lux ist typisch fuer Wohnraeume.'},
   'lighting.lux_adaptive.min_brightness_pct': {title:'Min. Kunstlicht', text:'Minimale kuenstliche Helligkeit — auch bei viel Tageslicht bleibt mindestens dieser Wert.'},
   'lighting.lux_adaptive.max_brightness_pct': {title:'Max. Kunstlicht', text:'Maximale kuenstliche Helligkeit bei komplett dunklem Raum.'},
+  // === LICHT WETTER-INTEGRATION ===
+  'lighting.weather_boost.enabled': {title:'Wetter-Integration', text:'Nutzt die aktuelle Wetterbedingung fuer intelligentere Lichtsteuerung. Bei Bewoelkung/Regen werden Lichter automatisch heller, bei Daemmerung wird frueher eingeschaltet.'},
+  'lighting.weather_boost.weather_entity': {title:'Wetter-Entity (Licht)', text:'Welche weather-Entity fuer die Licht-Wetter-Integration genutzt wird. Leer = automatisch (weather.forecast_home bevorzugt, gleiche Logik wie Cover-Automatik).'},
+  'lighting.weather_boost.cloud_boost_pct': {title:'Boost bei Bewoelkung', text:'Um wieviel Prozent eingeschaltete Lichter bei bewoelktem Himmel heller werden. Hilft wenn Tageslicht nicht reicht, die Daemmerung aber noch nicht erreicht ist.'},
+  'lighting.weather_boost.rain_boost_pct': {title:'Boost bei Regen', text:'Um wieviel Prozent eingeschaltete Lichter bei Regen/Gewitter heller werden. Regen verdunkelt stärker als Wolken.'},
+  'lighting.weather_boost.dusk_earlier_on_cloudy': {title:'Fruehere Daemmerung', text:'An trueben Tagen wird die Daemmerungs-Schwelle angehoben, sodass das Auto-An frueher greift. Die Sonne steht zwar noch ueber dem Horizont, aber es ist trotzdem dunkel genug fuer Kunstlicht.'},
+  'lighting.weather_boost.dusk_cloud_elevation_offset': {title:'Daemmerung-Offset', text:'Um wieviel Grad die Daemmerungs-Schwelle bei Bewoelkung angehoben wird. Z.B. normal -2°, bei Wolken +3° = Trigger bei +1° (Sonne noch ueber Horizont, aber trueb).'},
   // === COVER-AUTOMATIK ===
   'seasonal_actions.enabled': {title:'Saisonale Aktionen', text:'Automatische Aktionen basierend auf Jahreszeit, Wetter und Sonnenstand.'},
   'seasonal_actions.cover_automation.sun_tracking': {title:'Sonnenstand-Tracking', text:'Rolllaeden folgen automatisch dem Sonnenstand. Benoetigt konfigurierte Cover-Profile.'},
@@ -7078,6 +7085,15 @@ function renderLights() {
     fRange('lighting.lux_adaptive.target_lux', 'Ziel-Beleuchtungsstaerke (Lux)', 100, 800, 50, {100:'100',200:'200',300:'300',400:'400',500:'500',600:'600',800:'800'}) +
     fRange('lighting.lux_adaptive.min_brightness_pct', 'Minimale Kunstlicht-Helligkeit (%)', 5, 30, 5, {5:'5%',10:'10%',15:'15%',20:'20%',25:'25%',30:'30%'}) +
     fRange('lighting.lux_adaptive.max_brightness_pct', 'Maximale Kunstlicht-Helligkeit (%)', 50, 100, 10, {50:'50%',60:'60%',70:'70%',80:'80%',90:'90%',100:'100%'})
+  ) +
+  sectionWrap('&#127782;', 'Wetter-Integration (sun.sun + weather)',
+    fInfo('Nutzt die Wetterbedingung aus Home Assistant fuer intelligentere Lichtsteuerung:<br><br>&#9729; <strong>Wetter-Boost:</strong> Bei Bewoelkung oder Regen werden eingeschaltete Lichter automatisch heller (+X%).<br>&#127769; <strong>Fruehere Daemmerung:</strong> An trueben Tagen wird die Daemmerungs-Schwelle angehoben — Licht geht frueher an.<br><br>Nutzt <strong>sun.sun</strong> fuer den Sonnenstand und die konfigurierte <strong>weather.*</strong> Entity fuer die Wetterlage.') +
+    fToggle('lighting.weather_boost.enabled', 'Wetter-Integration aktiv') +
+    fEntityPickerSingle('lighting.weather_boost.weather_entity', 'Wetter-Entity', ['weather'], 'Leer = automatisch (gleiche Entity wie Cover-Automatik)') +
+    fRange('lighting.weather_boost.cloud_boost_pct', 'Helligkeits-Boost bei Bewoelkung (%)', 0, 40, 5, {0:'Aus',5:'5%',10:'10%',15:'15%',20:'20%',25:'25%',30:'30%',40:'40%'}) +
+    fRange('lighting.weather_boost.rain_boost_pct', 'Helligkeits-Boost bei Regen (%)', 0, 50, 5, {0:'Aus',5:'5%',10:'10%',15:'15%',20:'20%',25:'25%',30:'30%',40:'40%',50:'50%'}) +
+    fToggle('lighting.weather_boost.dusk_earlier_on_cloudy', 'Daemmerung frueher bei Bewoelkung') +
+    fRange('lighting.weather_boost.dusk_cloud_elevation_offset', 'Daemmerung-Offset bei Wolken (Grad)', 1, 8, 1, {1:'1°',2:'2°',3:'3°',4:'4°',5:'5°',6:'6°',7:'7°',8:'8°'})
   ) +
   sectionWrap('&#127749;', 'Zirkadiane Beleuchtung',
     fInfo('Passt Helligkeit (und bei tunable_white auch Farbtemperatur) automatisch an den Tagesverlauf an. dim2warm-Lampen regeln die Farbtemperatur ueber die Helligkeit in der Hardware — hier wird nur die Helligkeitskurve gesteuert.<br><br><strong>Modi:</strong><br>&bull; <strong>MindHome:</strong> Jarvis steuert die Helligkeitskurve komplett<br>&bull; <strong>Hybrid HCL:</strong> MDT AKD HCL laeuft als Basis, Jarvis ueberschreibt bei Events') +

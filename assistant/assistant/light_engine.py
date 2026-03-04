@@ -47,6 +47,7 @@ async def _safe_redis(redis_client, method: str, *args, **kwargs):
 # Redis-Key Prefixe
 _R_OVERRIDE = "mha:light:override:"      # {entity_id} → TTL
 _R_DUSK = "mha:light:dusk_triggered"      # Tages-Flag
+_R_WEATHER_BOOST = "mha:light:weather_boost"  # Aktiver Wetter-Boost
 _R_AWAY_OFF = "mha:light:away_off"        # Schon-abgeschaltet Flag
 _R_NIGHT_DIM = "mha:light:night_dim:"     # {entity_id} → gesetzt wenn gedimmt
 _R_SLEEP = "mha:light:sleep_active"       # Schlafmodus aktiv
@@ -124,6 +125,11 @@ class LightEngine:
                 lux_cfg = cfg.get("lux_adaptive", {})
                 if lux_cfg.get("enabled"):
                     await self._check_lux_adaptive(cfg, states)
+
+                # Wetter-Boost (Bewoelkung/Regen → heller)
+                wb_cfg = cfg.get("weather_boost", {})
+                if wb_cfg.get("enabled"):
+                    await self._check_weather_boost(cfg, states)
 
             except asyncio.CancelledError:
                 break
@@ -289,6 +295,17 @@ class LightEngine:
                 attrs = s.get("attributes", {})
                 sun_elevation = attrs.get("elevation")
                 break
+
+        # Wetter-Boost: Bei Bewoelkung frueher einschalten (hoehere Schwelle)
+        wb_cfg = cfg.get("weather_boost", {})
+        if wb_cfg.get("enabled") and wb_cfg.get("dusk_earlier_on_cloudy", True):
+            weather_condition = self._get_weather_condition(states, wb_cfg)
+            cloud_conditions = {"cloudy", "partlycloudy", "rainy", "pouring",
+                                "fog", "hail", "lightning-rainy"}
+            if weather_condition in cloud_conditions:
+                offset = wb_cfg.get("dusk_cloud_elevation_offset", 3)
+                threshold += offset
+                logger.debug("Dusk-Schwelle wegen %s angehoben: %.1f°", weather_condition, threshold)
 
         if sun_elevation is None or sun_elevation > threshold:
             return
@@ -594,6 +611,104 @@ class LightEngine:
                 await self.ha.call_service("light", "turn_on", data)
                 logger.info("Lux-Adaptiv: %s %d%% → %d%% (Lux: %.0f/%d)",
                             light_id, current_pct, target_bri, current_lux, target_lux)
+
+    # ── Weather Boost ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _get_weather_condition(states: list[dict], wb_cfg: dict) -> str:
+        """Liest die aktuelle Wetterbedingung aus der konfigurierten weather-Entity."""
+        configured = wb_cfg.get("weather_entity", "")
+        # Gleiche Logik wie Cover-Automatik: konfiguriert > forecast_home > erste
+        entity = None
+        for s in states:
+            eid = s.get("entity_id", "")
+            if configured and eid == configured:
+                entity = s
+                break
+            if not configured and eid == "weather.forecast_home":
+                entity = s
+                break
+            if eid.startswith("weather.") and not entity:
+                entity = s
+        return (entity.get("state") or "").lower() if entity else ""
+
+    async def _check_weather_boost(self, cfg: dict, states: list[dict]):
+        """Bei Bewoelkung/Regen: Helligkeit der eingeschalteten Lichter erhoehen.
+
+        Idee: An einem trueben Tag reicht das Tageslicht oft nicht,
+        aber die Daemmerung ist noch nicht erreicht. Dann werden
+        eingeschaltete Lichter um X% heller geschaltet.
+        """
+        wb_cfg = cfg.get("weather_boost", {})
+        if not wb_cfg.get("enabled"):
+            return
+
+        condition = self._get_weather_condition(states, wb_cfg)
+        if not condition:
+            return
+
+        # Welcher Boost gilt?
+        rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy"}
+        cloud_conditions = {"cloudy", "fog"}
+        boost_pct = 0
+        if condition in rain_conditions:
+            boost_pct = wb_cfg.get("rain_boost_pct", 25)
+        elif condition in cloud_conditions:
+            boost_pct = wb_cfg.get("cloud_boost_pct", 15)
+
+        # Boost-Status tracken (Redis): Nur aendern wenn Status wechselt
+        was_boosting = False
+        if self.redis:
+            prev = await _safe_redis(self.redis, "get", _R_WEATHER_BOOST)
+            was_boosting = bool(prev)
+
+        if boost_pct == 0:
+            # Kein Boost noetig — wenn vorher aktiv war, zuruecksetzen
+            if was_boosting and self.redis:
+                await _safe_redis(self.redis, "delete", _R_WEATHER_BOOST)
+                logger.info("Wetter-Boost aufgehoben (Wetter: %s)", condition)
+            return
+
+        if was_boosting:
+            # Boost laeuft schon — TTL erneuern, aber Lichter nicht nochmal anpassen
+            if self.redis:
+                await _safe_redis(self.redis, "set", _R_WEATHER_BOOST, condition, ex=900)
+            return
+
+        # Neuen Boost aktivieren
+        if self.redis:
+            await _safe_redis(self.redis, "set", _R_WEATHER_BOOST, condition, ex=900)
+
+        profiles = get_room_profiles()
+        rooms = profiles.get("rooms", {})
+        boosted = 0
+
+        for room_name, room_cfg in rooms.items():
+            lights = self._get_room_lights(room_name, room_cfg)
+            for light_id in lights:
+                ha_state = await self.ha.get_state(light_id)
+                if not ha_state or ha_state.get("state") != "on":
+                    continue
+                if await self.is_manual_override_active(light_id):
+                    continue
+
+                attrs = ha_state.get("attributes", {})
+                current_bri_raw = attrs.get("brightness", 0)
+                current_pct = round(current_bri_raw / 255 * 100)
+                new_pct = min(100, current_pct + boost_pct)
+                if new_pct <= current_pct:
+                    continue
+
+                await self.ha.call_service("light", "turn_on", {
+                    "entity_id": light_id,
+                    "brightness_pct": new_pct,
+                    "transition": 5,
+                })
+                boosted += 1
+
+        if boosted > 0:
+            logger.info("Wetter-Boost: %d Lichter +%d%% (Wetter: %s)",
+                        boosted, boost_pct, condition)
 
     # ── Manual Override ────────────────────────────────────────────────
 

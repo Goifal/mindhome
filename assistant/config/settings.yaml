@@ -1016,6 +1016,13 @@ lighting:
   night_dimming_transition: 300
   dusk_sun_elevation: -2
   dusk_only_occupied_rooms: true
+  weather_boost:
+    enabled: false
+    weather_entity: ''
+    cloud_boost_pct: 15
+    rain_boost_pct: 25
+    dusk_earlier_on_cloudy: true
+    dusk_cloud_elevation_offset: 3
 heating:
   mode: room_thermostat
   curve_entity: ''
