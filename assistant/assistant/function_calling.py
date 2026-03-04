@@ -1673,7 +1673,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_switches",
-            "description": "NUR zum Abfragen: Zeigt alle Steckdosen/Schalter (switch.*) mit Name, Raum und Status (an/aus). NICHT zum Steuern.",
+            "description": "Zeigt alle Steckdosen/Schalter (switch.*) mit Status (an/aus) und Leistungsdaten (Watt) falls verfuegbar. Nutze dies auch fuer Fragen nach Stromverbrauch, Watt, Energie einzelner Geraete.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1764,7 +1764,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_entity_state",
-            "description": "Status einer Home Assistant Entity abfragen. Funktioniert mit allen Entity-Typen: sensor.*, switch.*, light.*, climate.*, weather.* (z.B. weather.forecast_home fuer Wetterdaten), lock.*, media_player.*, binary_sensor.*, person.* etc.",
+            "description": "Status einer Home Assistant Entity abfragen (Temperatur, Watt, Strom, Feuchte, etc.). Funktioniert mit sensor.*, switch.*, light.*, climate.*, weather.* (z.B. weather.forecast_home), lock.*, media_player.*, binary_sensor.*, person.*. Fuer Stromverbrauch/Watt eines Geraets: nutze get_switches.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -3851,7 +3851,7 @@ class FunctionExecutor:
         return {"success": True, "message": header + "\n".join(thermostats)}
 
     async def _exec_get_switches(self, args: dict) -> dict:
-        """Alle Steckdosen/Schalter mit Status auflisten."""
+        """Alle Steckdosen/Schalter mit Status und Leistungsdaten auflisten."""
         room_filter = self._clean_room(args.get("room", ""))
 
         try:
@@ -3865,10 +3865,41 @@ class FunctionExecutor:
             return {"success": False, "message": "Kann gerade nicht auf die Geraete zugreifen."}
 
         state_map = {}
+        # Sensor-Map fuer zugehoerige Power-Sensoren (sensor.*_power, sensor.*_current etc.)
+        sensor_map: dict[str, dict] = {}
         for s in states:
             eid = s.get("entity_id", "")
             if eid.startswith("switch."):
                 state_map[eid] = s
+            elif eid.startswith("sensor."):
+                sensor_map[eid] = s
+
+        def _get_power_info(switch_eid: str, ha_state: dict) -> str:
+            """Extrahiert Leistungsdaten aus Switch-Attributen oder zugehoerenden Sensoren."""
+            parts = []
+            attrs = ha_state.get("attributes", {})
+            # Direkte Power-Attribute (viele Smart Plugs)
+            for key in ("current_power_w", "current_power", "load_power",
+                        "power", "wattage"):
+                val = attrs.get(key)
+                if val is not None:
+                    try:
+                        parts.append(f"{float(val):.1f} W")
+                    except (ValueError, TypeError):
+                        pass
+                    break
+            # Zugehoerige Sensor-Entities: switch.xyz → sensor.xyz_power / sensor.xyz_energy
+            base = switch_eid.split(".", 1)[1] if "." in switch_eid else ""
+            if base and not parts:
+                for suffix in ("_power", "_current_consumption", "_electric_consumption",
+                               "_watt", "_current_power"):
+                    sensor_eid = f"sensor.{base}{suffix}"
+                    s_state = sensor_map.get(sensor_eid)
+                    if s_state and s_state.get("state") not in (None, "unknown", "unavailable"):
+                        unit = s_state.get("attributes", {}).get("unit_of_measurement", "W")
+                        parts.append(f"{s_state['state']} {unit}")
+                        break
+            return ", ".join(parts)
 
         switches = []
         if devices:
@@ -3878,7 +3909,11 @@ class FunctionExecutor:
                 room = dev.get("room", "—")
                 ha = state_map.get(eid, {})
                 status = ha.get("state", "unknown")
-                switches.append(f"- {name} [{room}]: {status}")
+                power = _get_power_info(eid, ha)
+                entry = f"- {name} [{room}]: {status}"
+                if power:
+                    entry += f" ({power})"
+                switches.append(entry)
         else:
             search_norm = self._normalize_name(room_filter) if room_filter else ""
             for eid, ha in state_map.items():
@@ -3891,7 +3926,11 @@ class FunctionExecutor:
                 attrs = ha.get("attributes", {})
                 friendly = attrs.get("friendly_name", eid)
                 status = ha.get("state", "unknown")
-                switches.append(f"- {friendly}: {status}")
+                power = _get_power_info(eid, ha)
+                entry = f"- {friendly}: {status}"
+                if power:
+                    entry += f" ({power})"
+                switches.append(entry)
 
         if not switches:
             msg = f"Keine Schalter in '{room_filter}' gefunden." if room_filter else "Keine Schalter gefunden."
