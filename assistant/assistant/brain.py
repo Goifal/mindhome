@@ -3098,23 +3098,15 @@ class AssistantBrain(BrainCallbacksMixin):
             # PLUS den Tool-Call. Der Text wuerde die saubere Bestaetigung
             # (get_varied_confirmation) verhindern und Rohdaten per TTS sprechen.
             if tool_calls and response_text:
-                _action_tool_names = {
-                    "set_light", "set_light_all", "set_climate", "set_climate_curve",
-                    "set_climate_room", "activate_scene", "set_cover", "set_cover_all",
-                    "set_switch", "call_service", "play_media", "transfer_playback",
-                    "arm_security_system", "lock_door", "send_notification",
-                    "play_sound",
-                }
-                _tc_names = {
-                    tc.get("function", {}).get("name", "")
-                    for tc in tool_calls
-                }
-                if _tc_names and _tc_names <= _action_tool_names:
-                    logger.info(
-                        "LLM-Text verworfen (Action-Tool-Calls vorhanden): '%s'",
-                        response_text[:80],
-                    )
-                    response_text = ""
+                # LLM-Text verwerfen wenn Tool-Calls vorhanden — der Text wird
+                # durch Humanizer (Query-Tools) oder get_varied_confirmation
+                # (Action-Tools) ersetzt. Verhindert Halluzinationen: LLM erfindet
+                # sonst Aktionen/Zustaende die nie passiert sind.
+                logger.info(
+                    "LLM-Text verworfen (Tool-Calls vorhanden): '%s'",
+                    response_text[:80],
+                )
+                response_text = ""
 
             # 7b. Deterministischer Tool-Call hat Vorrang vor Text-Extraktion.
             # Text-Extraktion aus Reasoning ist unzuverlaessig (z.B. extrahiert
@@ -3596,6 +3588,9 @@ class AssistantBrain(BrainCallbacksMixin):
                                 f"{_form_hint} {_sarc_hint}{_mood_hint} "
                                 f"'{get_person_title(self._current_person)}' sparsam einsetzen. "
                                 "Keine Aufzaehlungen. Zahlen und Uhrzeiten EXAKT uebernehmen. "
+                                "NUR Fakten aus dem Antwort-Entwurf verwenden. "
+                                "NICHTS hinzufuegen, was nicht im Entwurf steht. "
+                                "Keine Aktionen oder Geraetezustaende erfinden. "
                                 f"Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, {get_person_title(self._current_person)}.' | "
                                 "'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
                                 "'Im Buero 22.3 Grad, Luftfeuchtigkeit 51%. Passt.'"
