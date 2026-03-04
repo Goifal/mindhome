@@ -42,11 +42,18 @@ function _initAutoSave() {
   const container = document.getElementById('settingsContent');
   if (!container) return;
   _autoSaveInitialized = true;
+  // Auto-Save bei Aenderungen an data-path UND speziellen Elementen
+  // (data-person-profile, data-person-title, data-member-idx)
+  const _isAutoSaveTarget = (e) =>
+    e.target.closest('[data-path]') ||
+    e.target.closest('[data-person-profile]') ||
+    e.target.closest('[data-person-title]') ||
+    e.target.closest('[data-member-idx]');
   container.addEventListener('input', (e) => {
-    if (e.target.closest('[data-path]')) scheduleAutoSave();
+    if (_isAutoSaveTarget(e)) scheduleAutoSave();
   });
   container.addEventListener('change', (e) => {
-    if (e.target.closest('[data-path]')) scheduleAutoSave();
+    if (_isAutoSaveTarget(e)) scheduleAutoSave();
   });
 }
 
@@ -4347,6 +4354,7 @@ function addFollowMeProfile() {
   profiles[key] = { light_brightness: 80, light_color_temp: 3500, comfort_temp: 22 };
   setPath(S, 'follow_me.profiles', profiles);
   renderCurrentTab();
+  scheduleAutoSave();
 }
 
 // ---- Tab 9: Easter Eggs ----
@@ -7785,6 +7793,7 @@ function ptSync(editor) {
     if (entity && room) triggers.push({ entity, threshold, room });
   });
   setPath(S, 'vacuum.power_trigger.triggers', triggers);
+  scheduleAutoSave();
 }
 
 function _renderSceneTriggerList() {
@@ -7828,6 +7837,7 @@ function stSync(editor) {
     if (entity && room) triggers.push({ entity, room });
   });
   setPath(S, 'vacuum.scene_trigger.triggers', triggers);
+  scheduleAutoSave();
 }
 
 function renderVacuumRobot(floor, floorLabel) {
