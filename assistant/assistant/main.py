@@ -1683,7 +1683,16 @@ async def websocket_endpoint(websocket: WebSocket):
                                             pass  # Keep-alive ignorieren
                                     except json.JSONDecodeError:
                                         pass
+                                    except WebSocketDisconnect:
+                                        logger.info("WebSocket disconnected waehrend Brain-Processing")
+                                        _ws_interrupt_flag = True
+                                        break
                                     except Exception as _interim_err:
+                                        _err_msg = str(_interim_err)
+                                        if "disconnect" in _err_msg.lower():
+                                            logger.info("WebSocket disconnected waehrend Brain-Processing")
+                                            _ws_interrupt_flag = True
+                                            break
                                         logger.warning(
                                             "Interim-Nachricht Fehler: %s", _interim_err,
                                         )
