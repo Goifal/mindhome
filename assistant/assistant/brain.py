@@ -3605,8 +3605,8 @@ class AssistantBrain(BrainCallbacksMixin):
                             self.ollama.chat(
                                 messages=feedback_messages,
                                 model=model,
-                                temperature=0.4,
-                                max_tokens=300,
+                                temperature=0.3,
+                                max_tokens=150,
                                 think=False,
                             ),
                             timeout=15.0,
