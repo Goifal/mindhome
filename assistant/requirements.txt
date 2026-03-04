@@ -15,4 +15,3 @@ pytesseract==0.3.13
 Pillow==11.1.0
 speechbrain>=1.0.0
 torchaudio>=2.0.0
-cryptography>=42.0.0
