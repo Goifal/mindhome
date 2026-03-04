@@ -2469,7 +2469,8 @@ class AssistantBrain(BrainCallbacksMixin):
         # Auto-Align: Prompt darf nicht groesser als num_ctx sein,
         # sonst schneidet Ollama den Prompt stillschweigend ab.
         # Reserve ~800 Tokens fuer die LLM-Antwort.
-        ollama_num_ctx = self.ollama.num_ctx
+        # Nutze model-spezifischen num_ctx (nicht den globalen Default).
+        ollama_num_ctx = self.ollama.num_ctx_for(model)
         effective_max = ollama_num_ctx - 800
         if max_context_tokens > effective_max:
             logger.info(
@@ -3635,18 +3636,25 @@ class AssistantBrain(BrainCallbacksMixin):
                             "good": "",
                         }.get(_mood, "")
 
+                        # Daten kuerzen: Zu lange Texte verwirren das Refinement-LLM
+                        # und fuehren zu Halluzinationen. Max 500 Zeichen.
+                        _refinement_data = humanized_text
+                        if len(_refinement_data) > 500:
+                            _refinement_data = _refinement_data[:500] + "..."
+                            logger.info("Refinement-Daten gekuerzt: %d -> 500 Zeichen", len(humanized_text))
+
                         feedback_messages = [{
                             "role": "system",
                             "content": (
                                 "Du bist JARVIS. Formuliere die Daten als 1-2 Saetze auf Deutsch. "
                                 f"{_form_hint} {_sarc_hint}{_mood_hint} "
-                                "Zahlen EXAKT uebernehmen. Erfinde NICHTS dazu. "
-                                "Rauchmelder/CO-Melder/Wassermelder offline = IMMER warnen, nie verharmlosen. "
-                                f"Beispiel: 'Im Buero 22.3 Grad, Luftfeuchtigkeit 51%. Passt, {get_person_title(self._current_person)}.'"
+                                "Zahlen EXAKT uebernehmen. Erfinde NICHTS dazu. NUR Daten verwenden die unten stehen. "
+                                "Rauchmelder/CO-Melder/Wassermelder offline = IMMER warnen. "
+                                "WICHTIG: Beantworte NUR die Frage des Users. Ignoriere irrelevante Daten."
                             ),
                         }, {
                             "role": "user",
-                            "content": f"Frage: {text}\nDaten: {humanized_text}",
+                            "content": f"Frage: {text}\nDaten: {_refinement_data}",
                         }]
 
                         logger.info("Tool-Feedback: LLM verfeinert '%s'", humanized_text[:80])
