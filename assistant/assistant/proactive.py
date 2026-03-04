@@ -2208,13 +2208,11 @@ class ProactiveManager:
         _batch_person = _batch_persons[0] if len(_batch_persons) == 1 else ""
         _batch_title = get_person_title(_batch_person) if _batch_person else get_person_title()
         prompt = (
-            f"Du hast {len(items)} Meldung(en) gesammelt "
-            f"({len(medium_parts)} wichtig, {len(low_parts)} nebensaechlich). "
-            f"Fasse sie in 1-3 kurzen Saetzen zusammen. Butler-Stil. "
-            f"Wichtige Meldungen zuerst erwaehnen.\n\n"
+            f"Fasse diese {len(items)} Meldung(en) in 1-2 Saetzen zusammen. "
+            "NUR Fakten, keine Metaphern oder Vergleiche. Wichtiges zuerst.\n\n"
             + "\n".join(summary_parts)
-            + f"\n\nBeispiel: '{_batch_title}, die Waschmaschine ist fertig und die Batterie "
-            "vom Fenstersensor ist niedrig.'"
+            + f"\n\nBeispiel: '{_batch_title}, der iMac ist offline und der Energie-Sensor "
+            "meldet seit 7 Stunden keine neuen Werte.'"
         )
 
         try:

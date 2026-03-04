@@ -1170,11 +1170,18 @@ def _inject_entity_hints(tool: dict) -> dict:
         "activate_scene": "scenes",
     }
     # get_entity_state bekommt Sensoren + Binary-Sensoren kombiniert
+    # Priorisierung: Manuell annotierte und relevante Rollen (Power, Energy, Climate) zuerst
     if fname == "get_entity_state":
         combined = (_entity_catalog.get("sensors", []) +
                     _entity_catalog.get("binary_sensors", []))
         if combined:
-            entity_hint = ", ".join(combined[:30])
+            # Prioritaets-Rollen: Diese sind am haeufigsten abgefragt
+            _priority_roles = ("Strommesser", "Energie", "Innentemperatur",
+                               "Luftfeuchtigkeit", "CO2", "Batterie")
+            priority = [e for e in combined if any(r in e for r in _priority_roles)]
+            rest = [e for e in combined if e not in priority]
+            ordered = priority + rest
+            entity_hint = ", ".join(ordered[:30])
             needs_copy = True
     # elif statt if — verhindert dass get_entity_state-Hint ueberschrieben wird
     elif (catalog_key := _ENTITY_MAP.get(fname)) and _entity_catalog.get(catalog_key):

@@ -3405,6 +3405,33 @@ class AssistantBrain(BrainCallbacksMixin):
 
                     # Ausfuehren
                     result = await self.executor.execute(func_name, final_args)
+
+                    # Retry: LLM hat Tool-Namen erfunden (z.B. get_power statt get_switches)
+                    if (isinstance(result, dict)
+                            and not result.get("success")
+                            and "unbekannte funktion" in result.get("message", "").lower()):
+                        logger.warning(
+                            "LLM hat Tool '%s' erfunden — versuche Mapping",
+                            func_name,
+                        )
+                        # Bekannte Fehl-Mappings auf echte Tools
+                        _tool_remap = {
+                            "get_power": ("get_switches", {}),
+                            "get_energy": ("get_energy_report", {}),
+                            "get_status": ("get_house_status", {}),
+                            "get_temperature": ("get_climate", {}),
+                            "get_devices": ("get_device_health", {}),
+                            "set_temperature": ("set_climate", final_args),
+                            "set_brightness": ("set_light", final_args),
+                        }
+                        remap = _tool_remap.get(func_name)
+                        if remap:
+                            real_name, remap_args = remap
+                            merged_args = {**final_args, **remap_args} if remap_args else final_args
+                            logger.info("Tool-Remap: %s -> %s(%s)", func_name, real_name, merged_args)
+                            result = await self.executor.execute(real_name, merged_args)
+                            func_name = real_name
+
                     executed_actions.append({
                         "function": func_name,
                         "args": final_args,
@@ -9534,7 +9561,9 @@ Regeln:
 
         # Bei Standard-Fehlern: Kein LLM noetig
         known_patterns = ["unavailable", "offline", "timeout", "timed out",
-                          "not found", "not_found", "unauthorized", "403", "401"]
+                          "not found", "not_found", "unauthorized", "403", "401",
+                          "unbekannte funktion", "unbekannte aktion",
+                          "nicht gefunden", "nicht erreichbar"]
         if any(p in error_lower for p in known_patterns):
             return fast_response
 
