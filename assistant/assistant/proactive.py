@@ -2057,13 +2057,15 @@ class ProactiveManager:
             )
 
         # Phase 17: Sicherheitswarnung (Threat Assessment)
+        # WICHTIG: Sachlich melden, NICHT dramatisieren
         if event_type == "threat_detected":
             threat_type = data.get("type", "unbekannt")
             message = data.get("message", "Sicherheitswarnung")
             return (
-                f"Sicherheitswarnung ({threat_type}): {message}\n"
-                "Formuliere als dringende, sachliche Warnung. Max 2 Saetze. Butler-Stil.\n"
-                f"Beispiel: '{_title}, naechtliche Bewegung im Eingangsbereich. Alle Bewohner sollten schlafen.'"
+                f"Sicherheitsmeldung ({threat_type}): {message}\n"
+                "Formuliere sachlich, NICHT dramatisch. Max 1-2 Saetze. Butler-Stil.\n"
+                "VERBOTEN: 'eingenistet', 'eingeschlichen', 'Eindringling', 'Bedrohung'.\n"
+                f"Beispiel: '{_title}, ein unbekanntes Geraet ist im Netzwerk aufgetaucht: [Name].'"
             )
 
         # Phase 17: Bedingte Aktion ausgefuehrt
@@ -2076,10 +2078,26 @@ class ProactiveManager:
                 "Beispiel: 'Die Rolladen wurden automatisch geschlossen — Regen erkannt.'"
             )
 
+        # Phase 10: Diagnostik-Meldungen — NUR Fakten, KEINE erfundenen Ursachen
+        if event_type in ("entity_offline", "low_battery", "stale_sensor"):
+            entity = data.get("entity", "")
+            message = data.get("message", description)
+            return (
+                f"Diagnostik: {message}\n"
+                f"Entity: {entity}\n"
+                "Formuliere EXAKT die Meldung oben um, NICHTS hinzufuegen.\n"
+                "Erfinde KEINE Ursachen, Gruende oder Erklaerungen.\n"
+                "VERBOTEN: 'aufgrund von', 'wegen', 'vermutlich', 'wahrscheinlich', 'moeglicherweise'.\n"
+                f"Beispiel Batterie: '{_title}, Batterie von [Geraet] bei [X]%.'\n"
+                f"Beispiel Offline: '{_title}, [Geraet] ist seit [X] Minuten offline.'\n"
+                f"Beispiel Stale: '{_title}, [Sensor] hat sich seit [X] Minuten nicht gemeldet.'"
+            )
+
         parts.append(f"Dringlichkeit: {urgency}")
 
         # Wer ist gerade zuhause?
         parts.append("Formuliere eine kurze Meldung. Sprich die Bewohner mit Namen an wenn passend.")
+        parts.append("Erfinde KEINE Ursachen oder Erklaerungen. NUR die gegebenen Fakten.")
 
         return "\n".join(parts)
 

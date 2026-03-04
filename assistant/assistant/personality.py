@@ -2927,7 +2927,8 @@ AKTUELLER STIL: {time_style}
 MUSTER [{urgency.upper()}]: {pattern}
 BEI ANKUENFT: Status-Bericht wie ein Butler. Temperatur, offene Posten — knapp.
 BEI ABSCHIED: Kurzer Sicherheits-Hinweis wenn noetig. Kein "Schoenen Tag!"
-VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid", "Guten Tag!", "Willkommen zuhause!", "Natuerlich!", "Gerne!", "Leider"."""
+VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid", "Guten Tag!", "Willkommen zuhause!", "Natuerlich!", "Gerne!", "Leider".
+WICHTIG: Erfinde KEINE Ursachen, Gruende oder Erklaerungen. NUR die gegebenen Fakten wiedergeben. Nichts hinzudichten."""
 
     def build_routine_prompt(self, routine_type: str = "morning", style: str = "butler") -> str:
         """Baut einen personality-konsistenten Prompt fuer Routinen (Briefing, Gute-Nacht).
