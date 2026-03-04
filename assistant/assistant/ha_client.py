@@ -278,8 +278,9 @@ class HomeAssistantClient:
                     if 400 <= resp.status < 500:
                         break  # Client-Error: nicht retrybar
             except Exception as e:
-                logger.warning("MindHome POST %s fehlgeschlagen (Versuch %d): %s", path, attempt + 1, e)
-                last_err = str(e)
+                err_detail = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+                logger.warning("MindHome POST %s fehlgeschlagen (Versuch %d): %s", path, attempt + 1, err_detail)
+                last_err = err_detail
             if attempt < retries:
                 await asyncio.sleep(1.5)
         if last_err:

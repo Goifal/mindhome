@@ -60,7 +60,8 @@ _INJECTION_PATTERN = re.compile(
     r'|IMPORTANT\s*:\s*(?:IGNORE|OVERRIDE|FORGET)' # Dringlichkeits-Trick
     r'|DO\s+NOT\s+(?:FOLLOW|OBEY|LISTEN)'       # Negations-Trick
     r'|PRETEND\s+(?:YOU|THAT|THIS)'             # Pretend-Angriff
-    r'|(?:JAILBREAK|BYPASS|ESCAPE)\s'           # Explizite Angriffs-Keywords
+    r'|(?:JAILBREAK|ESCAPE)\s'                   # Explizite Angriffs-Keywords
+    r'|BYPASS\s+(?:FILTER|SAFETY|SECURITY|RULE|RESTRICTION|LIMIT)'  # Bypass nur mit Kontext
     r'|ASSISTANT\s*:\s'                          # Fake-Rollenuebernahme
     r'|USER\s*:\s'                               # Fake-User-Nachricht
     r'|HUMAN\s*:\s'                              # Fake-Human-Nachricht
