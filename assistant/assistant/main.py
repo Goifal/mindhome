@@ -1500,6 +1500,7 @@ async def websocket_endpoint(websocket: WebSocket):
     _ws_msg_times: list[float] = []
     _WS_RATE_LIMIT = 30
     _WS_RATE_WINDOW = 10.0
+    _ws_rate_warned: float = 0.0  # Letzter Zeitpunkt der Rate-Limit-Warnung
     # Interrupt-Flag: wird vom Interrupt-Handler gesetzt, vom Stream-Callback geprueft
     _ws_interrupt_flag = False
     try:
@@ -1510,13 +1511,17 @@ async def websocket_endpoint(websocket: WebSocket):
             import time as _t
             now = _t.time()
             _ws_msg_times = [t for t in _ws_msg_times if now - t < _WS_RATE_WINDOW]
-            _ws_msg_times.append(now)
-            if len(_ws_msg_times) > _WS_RATE_LIMIT:
-                logger.warning("F-063: WebSocket Rate-Limit ueberschritten")
+            if len(_ws_msg_times) >= _WS_RATE_LIMIT:
+                # Nur alle 10 Sekunden loggen um Log-Spam zu vermeiden
+                if now - _ws_rate_warned > _WS_RATE_WINDOW:
+                    logger.warning("F-063: WebSocket Rate-Limit ueberschritten (%d msgs in %.0fs)",
+                                   len(_ws_msg_times), _WS_RATE_WINDOW)
+                    _ws_rate_warned = now
                 await ws_manager.send_personal(
                     websocket, "error", {"message": "Rate limit exceeded"}
                 )
                 continue
+            _ws_msg_times.append(now)
 
             try:
                 message = json.loads(data)
