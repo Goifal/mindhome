@@ -547,7 +547,9 @@ async def api_key_middleware(request: Request, call_next):
 
     # Nur pruefen wenn Enforcement aktiviert ist
     if _api_key_required:
-        if path.startswith("/api/assistant/") or path == "/api/assistant":
+        # F-086: Workshop-API ebenfalls schuetzen (physische Aktoren!)
+        if (path.startswith("/api/assistant/") or path == "/api/assistant"
+                or path.startswith("/api/workshop/")):
             if path not in _API_KEY_EXEMPT_PATHS:
                 if not _check_api_key(request):
                     from fastapi.responses import JSONResponse
