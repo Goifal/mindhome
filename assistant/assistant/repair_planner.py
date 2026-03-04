@@ -1119,7 +1119,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "button", "press",
                 {"entity_id": f"button.{prefix}_resume_job"})
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            logger.error("3D-Druck Start fehlgeschlagen: %s", e)
+            return {"status": "error", "message": "Druck konnte nicht gestartet werden"}
         return {"status": "ok", "message": "Druck gestartet"}
 
     async def pause_print(self) -> dict:
@@ -1134,7 +1135,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "button", "press",
                 {"entity_id": f"button.{prefix}_pause_job"})
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            logger.error("3D-Druck Pause fehlgeschlagen: %s", e)
+            return {"status": "error", "message": "Druck konnte nicht pausiert werden"}
         return {"status": "ok", "message": "Druck pausiert"}
 
     async def cancel_print(self) -> dict:
@@ -1149,7 +1151,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "button", "press",
                 {"entity_id": f"button.{prefix}_cancel_job"})
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            logger.error("3D-Druck Abbruch fehlgeschlagen: %s", e)
+            return {"status": "error", "message": "Druck konnte nicht abgebrochen werden"}
         return {"status": "ok", "message": "Druck abgebrochen"}
 
     # ── Roboterarm-Steuerung (Stub) ──────────────────────────

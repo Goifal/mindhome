@@ -3150,8 +3150,9 @@ class FunctionExecutor:
         try:
             return await handler(arguments)
         except Exception as e:
-            logger.error("Fehler bei %s: %s", function_name, e)
-            return {"success": False, "message": f"Da lief etwas schief: {e}"}
+            # F-088: Exception-Details NICHT an LLM/User leaken
+            logger.error("Fehler bei %s: %s", function_name, e, exc_info=True)
+            return {"success": False, "message": "Da lief etwas schief. Bitte versuche es erneut."}
 
     # ── Phase 11: Adaptive Helligkeit (dim2warm) ──────────────
     # Default-Kurve als Fallback (wird von settings.yaml ueberschrieben)
@@ -4425,7 +4426,8 @@ class FunctionExecutor:
                 "changes": changes,
             }
         except Exception as e:
-            return {"success": False, "message": f"Fehler beim Speichern: {e}"}
+            logger.error("Fehler beim Speichern: %s", e)
+            return {"success": False, "message": "Fehler beim Speichern der Einstellungen."}
 
     # ── Phase 11: Saugroboter (Dreame, 2 Etagen) ──────────
 
@@ -5294,7 +5296,7 @@ class FunctionExecutor:
             history = await self.ha.get_history(entity_id, hours=hours)
         except Exception as e:
             logger.error("get_entity_history Fehler: %s", e)
-            return {"success": False, "message": f"Fehler: {e}"}
+            return {"success": False, "message": "Fehler beim Abrufen der Historie."}
 
         if not history:
             return {"success": True, "message": f"Keine Historie fuer '{entity_id}' in den letzten {hours}h"}
@@ -5700,7 +5702,7 @@ class FunctionExecutor:
             }
         except Exception as e:
             logger.error("Kalender-Delete Fehler: %s", e)
-            return {"success": False, "message": f"Der Kalender macht Schwierigkeiten: {e}"}
+            return {"success": False, "message": "Der Kalender macht Schwierigkeiten."}
 
     async def _exec_reschedule_calendar_event(self, args: dict) -> dict:
         """Phase 11.3: Kalender-Termin verschieben (Delete + Re-Create).
@@ -6955,7 +6957,8 @@ class FunctionExecutor:
                 return result
             return {"success": True, "message": str(result)}
         except Exception as e:
-            return {"success": False, "message": f"Energie-Report fehlgeschlagen: {e}"}
+            logger.error("Energie-Report fehlgeschlagen: %s", e)
+            return {"success": False, "message": "Energie-Report konnte nicht erstellt werden."}
 
     async def _exec_web_search(self, args: dict) -> dict:
         """Fuehrt eine Web-Suche durch."""
@@ -6964,7 +6967,8 @@ class FunctionExecutor:
         try:
             return await brain.web_search.search(query=args.get("query", ""))
         except Exception as e:
-            return {"success": False, "message": f"Web-Suche fehlgeschlagen: {e}"}
+            logger.error("Web-Suche fehlgeschlagen: %s", e)
+            return {"success": False, "message": "Web-Suche konnte nicht durchgefuehrt werden."}
 
     async def _exec_get_security_score(self, args: dict) -> dict:
         """Gibt den aktuellen Sicherheits-Score zurueck."""

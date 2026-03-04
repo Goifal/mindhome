@@ -217,6 +217,9 @@ class WebSearch:
         re.IGNORECASE,
     )
 
+    # F-089: SearXNG Bang-Operatoren die Privacy-Schutz umgehen koennen
+    _BANG_PATTERN = re.compile(r'![a-zA-Z]{1,20}\b')
+
     def __init__(self):
         # Konfiguration
         ws_cfg = yaml_config.get("web_search", {})
@@ -241,7 +244,10 @@ class WebSearch:
         # gueltige Syntax + Scheme geprueft.
         if self.enabled and self.engine == "searxng" and self.searxng_url:
             parsed = urlparse(self.searxng_url)
-            if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            if (parsed.scheme not in ("http", "https")
+                    or not parsed.hostname
+                    or (parsed.path and parsed.path not in ("/", ""))
+                    or parsed.query or parsed.fragment):
                 logger.warning(
                     "SearXNG-URL ungueltig ('%s') — Web-Suche deaktiviert",
                     self.searxng_url[:100],
@@ -293,6 +299,11 @@ class WebSearch:
         # Blacklist-Patterns pruefen
         if self._QUERY_BLACKLIST_PATTERN.search(query):
             logger.warning("Query-Blacklist blockiert: %.80s", query)
+            return None
+        # F-089: SearXNG Bang-Operatoren entfernen (!g, !bing, etc.)
+        # Diese leiten Suchen an externe Engines weiter und umgehen Privacy-Schutz
+        query = self._BANG_PATTERN.sub('', query).strip()
+        if len(query) < 3:
             return None
         return query
 

@@ -573,7 +573,8 @@ async def rate_limit_middleware(request: Request, call_next):
     client_ip = request.client.host if request.client else "unknown"
 
     async with _rate_lock:
-        now = _time.time()
+        # F-092: monotonic() statt time() — NTP-Sprung-sicher
+        now = _time.monotonic()
 
         # F-011: Periodischer Cleanup aller abgelaufenen IPs (alle 5 Min)
         if now - _rate_limit_last_cleanup > _RATE_CLEANUP_INTERVAL:
@@ -5220,7 +5221,15 @@ async def workshop_library_documents():
 @app.post("/api/workshop/library/ingest")
 async def workshop_library_ingest(file: UploadFile = File(...)):
     """Importiert ein Dokument in die Workshop-Library."""
-    target = Path("/app/data/workshop/library") / file.filename
+    # F-087: Path-Traversal-Schutz — nur Dateiname ohne Verzeichnis-Komponenten
+    safe_name = Path(file.filename).name if file.filename else "upload"
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(400, "Ungueltiger Dateiname")
+    target = Path("/app/data/workshop/library") / safe_name
+    # F-087: Sicherheitscheck — aufgeloester Pfad muss innerhalb des Zielverzeichnisses bleiben
+    base_dir = Path("/app/data/workshop/library").resolve()
+    if not target.resolve().is_relative_to(base_dir):
+        raise HTTPException(400, "Ungueltiger Dateipfad")
     target.parent.mkdir(parents=True, exist_ok=True)
     content = await file.read()
     if len(content) > 200 * 1024 * 1024:  # 200MB Limit
@@ -6418,23 +6427,39 @@ def _run_cmd(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tupl
 
 
 async def _ollama_api(path: str, method: str = "GET", json_data: dict | None = None) -> tuple[bool, dict | str]:
-    """Ruft die Ollama HTTP API auf (laeuft auf dem Host, nicht im Container)."""
+    """Ruft die Ollama HTTP API auf (laeuft auf dem Host, nicht im Container).
+
+    F-091: Path-Validierung + Redirect-Blocking + Response-Size-Limit.
+    """
+    # F-091: Nur erlaubte API-Pfade (kein Path-Traversal)
+    if not path.startswith("/api/"):
+        logger.warning("Ollama API: Ungueltiger Pfad '%s'", path[:100])
+        return False, "Ungueltiger API-Pfad"
     try:
         timeout = _aiohttp.ClientTimeout(total=600)
+        _MAX_OLLAMA_RESP = 50 * 1024 * 1024  # 50 MB (Modell-Downloads sind gross)
         async with _aiohttp.ClientSession(timeout=timeout) as session:
             url = f"{_OLLAMA_URL}{path}"
             if method == "GET":
-                async with session.get(url) as resp:
+                async with session.get(url, allow_redirects=False) as resp:
                     if resp.status == 200:
-                        return True, await resp.json()
+                        raw = await resp.content.read(_MAX_OLLAMA_RESP + 1)
+                        if len(raw) > _MAX_OLLAMA_RESP:
+                            return False, "Antwort zu gross"
+                        import json as _json
+                        return True, _json.loads(raw)
                     return False, f"HTTP {resp.status}"
             elif method == "POST":
-                async with session.post(url, json=json_data) as resp:
-                    # Ollama pull streamt — wir lesen die letzte Zeile
-                    text = await resp.text()
+                async with session.post(url, json=json_data, allow_redirects=False) as resp:
+                    raw = await resp.content.read(_MAX_OLLAMA_RESP + 1)
+                    if len(raw) > _MAX_OLLAMA_RESP:
+                        return False, "Antwort zu gross"
+                    text = raw.decode("utf-8", errors="replace")
                     return resp.status == 200, text
     except Exception as e:
-        return False, str(e)
+        # F-088: Exception-Details nicht leaken
+        logger.error("Ollama API Fehler: %s", e)
+        return False, "Ollama nicht erreichbar"
 
 
 @app.get("/api/ui/models/available")
@@ -6674,6 +6699,11 @@ async def ui_system_status(token: str = ""):
 
 async def _docker_restart(container: str = "mindhome-assistant", timeout: int = 5):
     """Restart via Docker Engine API (Unix-Socket). Atomar — Daemon fuehrt komplett aus."""
+    # F-090: Container-Name validieren gegen Injection
+    import re as _re
+    if not _re.match(r'^[a-zA-Z0-9_.-]+$', container):
+        logger.warning("Docker-Restart: Ungueltiger Container-Name '%s'", container[:50])
+        return False
     sock = "/var/run/docker.sock"
     try:
         conn = _aiohttp.UnixConnector(path=sock)
