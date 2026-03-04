@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.7 – Jarvis Voice (Error Logging & Bugfixes)
+
+### Bugfixes
+- **POST Error-Logging verbessert**: Exception-Typ wird jetzt angezeigt wenn `str(e)` leer ist (z.B. `ConnectionError` statt leere Meldung)
+
+---
+
 ## 1.5.6 – Jarvis Voice (Speech Service Fixes)
 
 ### Whisper Fix
