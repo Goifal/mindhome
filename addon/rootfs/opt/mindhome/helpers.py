@@ -159,15 +159,19 @@ def get_setting(key, default=None):
 
 
 def set_setting(key, value):
-    """Set a system setting value."""
+    """Set a system setting value (with retry on DB lock)."""
     from models import SystemSetting
-    with get_db_session() as session:
+    from db import db_write_with_retry
+
+    def _do_set(session):
         setting = session.query(SystemSetting).filter_by(key=key).first()
         if setting:
             setting.value = str(value)
         else:
             setting = SystemSetting(key=key, value=str(value))
             session.add(setting)
+
+    db_write_with_retry(_do_set, retries=3)
 
 
 def get_language():

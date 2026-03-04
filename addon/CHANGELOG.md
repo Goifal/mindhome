@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.9 – Jarvis Voice (Build 100)
+
+---
+
+## 1.5.8 – Jarvis Voice (SQLite Database Lock Fix)
+
+### Bugfixes
+- **"database is locked" behoben**: Batch-Commits (50er Batches) in pattern_engine und automation_engine — lange Transaktionen blockieren nicht mehr die gesamte DB
+- **Retry-Logik fuer DB-Writes**: `db_write_with_retry()` in db.py — action-log, set_setting, health_metrics versuchen bis zu 3x bei DB-Lock
+- **Phase-Transition Crash behoben**: `no_autoflush` verhindert vorzeitige Flushes waehrend Queries in PhaseManager
+- **PersonSchedule Session-Fehler behoben**: ORM-Daten werden vor Session-Close extrahiert (kein "not bound to Session" mehr)
+
+---
+
 ## 1.5.7 – Jarvis Voice (Error Logging & Bugfixes)
 
 ### Bugfixes

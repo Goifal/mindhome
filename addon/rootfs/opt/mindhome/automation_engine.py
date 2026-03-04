@@ -182,7 +182,10 @@ class SuggestionGenerator:
         Patterns lose confidence over time if they are not being triggered.
         Uses exponential decay with a configurable half-life (default 90 days).
         Patterns matched within the grace period (default 14 days) are not affected.
+
+        Uses batch commits (every 50 patterns) to avoid holding long DB locks.
         """
+        BATCH_SIZE = 50
         session = self.Session()
         try:
             now = datetime.now(timezone.utc)
@@ -196,6 +199,7 @@ class SuggestionGenerator:
             ).all()
 
             decayed_count = 0
+            dirty_count = 0
             for pattern in stale_patterns:
                 # Use last_matched_at if available, fall back to updated_at, then created_at
                 last_activity = pattern.last_matched_at or pattern.updated_at or pattern.created_at
@@ -223,6 +227,7 @@ class SuggestionGenerator:
                     pattern.confidence = round(new_confidence, 4)
                     pattern.updated_at = now
                     decayed_count += 1
+                    dirty_count += 1
 
                     logger.debug(
                         f"Confidence decay: pattern {pattern.id} "
@@ -238,7 +243,14 @@ class SuggestionGenerator:
                             f"(confidence decayed to {pattern.confidence:.3f})"
                         )
 
-            session.commit()
+                # Batch commit to avoid holding long DB write locks
+                if dirty_count >= BATCH_SIZE:
+                    self._commit_with_retry(session)
+                    dirty_count = 0
+
+            # Final commit for remaining dirty patterns
+            if dirty_count > 0:
+                self._commit_with_retry(session)
             if decayed_count > 0:
                 logger.info(f"Confidence decay applied to {decayed_count} patterns")
             return decayed_count
@@ -249,6 +261,20 @@ class SuggestionGenerator:
             return 0
         finally:
             session.close()
+
+    @staticmethod
+    def _commit_with_retry(session, retries=3):
+        """Commit with retry on database locked errors."""
+        for attempt in range(retries):
+            try:
+                session.commit()
+                return
+            except Exception as e:
+                if "database is locked" in str(e) and attempt < retries - 1:
+                    session.rollback()
+                    time.sleep(1.0 * (attempt + 1))
+                else:
+                    raise
 
     def _get_current_context(self, session):
         """Gather current context for threshold adjustments.
@@ -1083,30 +1109,35 @@ class PhaseManager:
         self.Session = sessionmaker(bind=engine)
 
     def check_transitions(self):
-        """E1: Check all room/domain states for phase transitions."""
+        """E1: Check all room/domain states for phase transitions.
+
+        Uses no_autoflush to prevent premature flushes during queries,
+        and batch commits with retry to avoid holding long DB locks.
+        """
         session = self.Session()
         try:
-            states = session.query(RoomDomainState).filter_by(is_paused=False).all()
-            transitions = 0
+            with session.no_autoflush:
+                states = session.query(RoomDomainState).filter_by(is_paused=False).all()
+                transitions = 0
 
-            for rds in states:
-                current = rds.learning_phase
-                new_phase = self._evaluate_phase(session, rds)
+                for rds in states:
+                    current = rds.learning_phase
+                    new_phase = self._evaluate_phase(session, rds)
 
-                if new_phase and new_phase != current:
-                    old_name = current.value if current else "none"
-                    rds.learning_phase = new_phase
-                    rds.phase_started_at = datetime.now(timezone.utc)
-                    transitions += 1
+                    if new_phase and new_phase != current:
+                        old_name = current.value if current else "none"
+                        rds.learning_phase = new_phase
+                        rds.phase_started_at = datetime.now(timezone.utc)
+                        transitions += 1
 
-                    room = session.get(Room, rds.room_id)
-                    domain = session.get(Domain, rds.domain_id)
-                    room_name = room.name if room else f"Room {rds.room_id}"
-                    domain_name = domain.name if domain else f"Domain {rds.domain_id}"
+                        room = session.get(Room, rds.room_id)
+                        domain = session.get(Domain, rds.domain_id)
+                        room_name = room.name if room else f"Room {rds.room_id}"
+                        domain_name = domain.name if domain else f"Domain {rds.domain_id}"
 
-                    logger.info(f"Phase transition: {room_name}/{domain_name} {old_name} → {new_phase.value}")
+                        logger.info(f"Phase transition: {room_name}/{domain_name} {old_name} → {new_phase.value}")
 
-            session.commit()
+            self._commit_with_retry(session)
             if transitions:
                 logger.info(f"{transitions} phase transitions completed")
             return transitions
@@ -2505,11 +2536,26 @@ class AutomationScheduler:
             now = datetime.now(local_tz)
 
             # --- Step 1: Build expected events from current shift schedules ---
+            # Detach data from session before closing to avoid
+            # "Instance not bound to a Session" errors.
             with get_db_session() as session:
-                schedules = session.query(PersonSchedule).filter_by(
+                schedules_raw = session.query(PersonSchedule).filter_by(
                     is_active=True, schedule_type="shift").all()
-                templates = {t.short_code: t for t in
-                             session.query(ShiftTemplate).filter_by(is_active=True).all()}
+                # Extract data while session is still open
+                schedules = [
+                    {"user_id": s.user_id,
+                     "shift_data": s.shift_data if isinstance(s.shift_data, dict) else {}}
+                    for s in schedules_raw
+                ]
+                templates_raw = session.query(ShiftTemplate).filter_by(is_active=True).all()
+                templates = {
+                    t.short_code: {
+                        "name": t.name,
+                        "blocks": t.blocks if isinstance(t.blocks, list) else [],
+                        "short_code": t.short_code,
+                    }
+                    for t in templates_raw
+                }
                 users = {u.id: u.name for u in
                          session.query(User).filter_by(is_active=True).all()}
 
@@ -2517,7 +2563,7 @@ class AutomationScheduler:
             expected_events = {}
 
             for sched in schedules:
-                sd = sched.shift_data if isinstance(sched.shift_data, dict) else {}
+                sd = sched["shift_data"]
                 pattern = sd.get("rotation_pattern", [])
                 rotation_start = sd.get("rotation_start")
                 if not pattern or not rotation_start:
@@ -2527,7 +2573,7 @@ class AutomationScheduler:
                 except (ValueError, TypeError):
                     continue
 
-                user_name = users.get(sched.user_id, "")
+                user_name = users.get(sched["user_id"], "")
 
                 for day_offset in range(sync_days):
                     day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=day_offset)
@@ -2543,8 +2589,8 @@ class AutomationScheduler:
                         continue
 
                     day_str = day.strftime("%Y-%m-%d")
-                    base_summary = f"{tmpl.name}" + (f" ({user_name})" if user_name else "")
-                    blocks = tmpl.blocks if isinstance(tmpl.blocks, list) and tmpl.blocks else []
+                    base_summary = f"{tmpl['name']}" + (f" ({user_name})" if user_name else "")
+                    blocks = tmpl["blocks"] if tmpl["blocks"] else []
                     start_time = ""
                     end_time = ""
                     if blocks:
