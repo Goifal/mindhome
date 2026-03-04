@@ -425,6 +425,9 @@ class RoutineEngine:
             )
             if not result:
                 return []
+            # HA gibt ggf. {"service_response": {entity: {forecast: [...]}}} zurueck
+            if isinstance(result, dict) and "service_response" in result:
+                result = result["service_response"]
             # HA gibt verschiedene Formate zurueck je nach Version
             # Format 1: [{entity_id: {forecast: [...]}}]
             if isinstance(result, list):
