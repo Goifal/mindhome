@@ -1186,6 +1186,7 @@ seasonal_actions:
     wakeup_min_sun_elevation: -6
     forecast_weather_protection: true
     forecast_lookahead_hours: 4
+    weather_entity: ''
 tts:
   entity: tts.piper
   ssml_enabled: false

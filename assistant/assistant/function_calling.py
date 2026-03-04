@@ -1403,6 +1403,68 @@ _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
+            "name": "configure_cover_automation",
+            "description": "Cover-Automatik konfigurieren: Wetter-Integration wechseln, Sonnenpruefung beim Aufwachen, Vorhersage-Schutz, Schwellwerte aendern. Nutze dies wenn der User sagt: 'Wechsle die Wetter-Integration', 'Nimm weather.home statt forecast', 'Aendere Hitzeschutz auf 28 Grad', 'Schalte Vorhersage-Schutz aus', 'Zeig die Cover-Automatik Einstellungen'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["get", "set"],
+                        "description": "get=aktuelle Einstellungen anzeigen, set=Einstellungen aendern",
+                    },
+                    "weather_entity": {
+                        "type": "string",
+                        "description": "Wetter-Entity fuer Cover-Automatik (z.B. 'weather.forecast_home', 'weather.home'). Leer = automatische Erkennung.",
+                    },
+                    "forecast_weather_protection": {
+                        "type": "boolean",
+                        "description": "Vorhersage-basierten Wetterschutz aktivieren/deaktivieren",
+                    },
+                    "forecast_lookahead_hours": {
+                        "type": "integer",
+                        "description": "Vorhersage-Zeitraum in Stunden (1-8)",
+                    },
+                    "wakeup_sun_check": {
+                        "type": "boolean",
+                        "description": "Sonnenstand beim Aufwachen pruefen (verhindert Oeffnung bei Dunkelheit)",
+                    },
+                    "wakeup_min_sun_elevation": {
+                        "type": "number",
+                        "description": "Min. Sonnenhoehe in Grad (-12 bis 5). -6=buergerl. Daemmerung, 0=Sonnenaufgang",
+                    },
+                    "heat_protection_temp": {
+                        "type": "number",
+                        "description": "Hitzeschutz ab Aussentemperatur (Grad Celsius)",
+                    },
+                    "frost_protection_temp": {
+                        "type": "number",
+                        "description": "Frostschutz ab Temperatur (Grad Celsius)",
+                    },
+                    "storm_wind_speed": {
+                        "type": "number",
+                        "description": "Sturmschutz ab Windgeschwindigkeit (km/h)",
+                    },
+                    "weather_protection": {
+                        "type": "boolean",
+                        "description": "Wetter/Sturmschutz aktivieren/deaktivieren",
+                    },
+                    "sun_tracking": {
+                        "type": "boolean",
+                        "description": "Sonnenstand-Tracking aktivieren/deaktivieren",
+                    },
+                    "temperature_based": {
+                        "type": "boolean",
+                        "description": "Temperatur-basierte Steuerung aktivieren/deaktivieren",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "play_media",
             "description": "Musik oder Medien steuern: abspielen, pausieren, stoppen, Lautstaerke aendern. Fuer 'leiser' verwende action='volume_down', fuer 'lauter' verwende action='volume_up'. Fuer eine bestimmte Lautstaerke verwende action='volume' mit volume-Parameter.",
             "parameters": {
@@ -2856,7 +2918,7 @@ class FunctionExecutor:
         "get_device_health", "get_learned_patterns", "describe_doorbell",
         "manage_protocol", "recommend_music", "manage_visitor",
         "set_vacuum", "get_vacuum",
-        "manage_repair",
+        "manage_repair", "configure_cover_automation",
         "remote_control", "get_remotes",
         "create_declarative_tool", "list_declarative_tools",
         "delete_declarative_tool", "run_declarative_tool",
@@ -4134,6 +4196,125 @@ class FunctionExecutor:
             await self.ha.call_service("cover", service, {"entity_id": eid})
             count += 1
         return {"success": True, "message": f"{count} Rolllaeden: {service}"}
+
+    # ── Cover-Automatik Konfiguration ──────────────────────
+
+    async def _exec_configure_cover_automation(self, args: dict) -> dict:
+        """Cover-Automatik Settings lesen/schreiben (inkl. Wetter-Integration)."""
+        action = args.get("action", "get")
+
+        cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
+
+        if action == "get":
+            # Welche weather-Entity wird aktuell genutzt?
+            configured = cover_cfg.get("weather_entity", "")
+            if not configured:
+                # Auto-Detection: schauen welche weather-Entity existiert
+                states = await self.ha.get_states()
+                for s in (states or []):
+                    eid = s.get("entity_id", "")
+                    if eid == "weather.forecast_home":
+                        configured = eid
+                        break
+                    if eid.startswith("weather.") and not configured:
+                        configured = eid
+                configured = configured or "(keine weather-Entity gefunden)"
+
+            return {
+                "success": True,
+                "settings": {
+                    "weather_entity": cover_cfg.get("weather_entity", "") or f"auto ({configured})",
+                    "weather_protection": cover_cfg.get("weather_protection", True),
+                    "forecast_weather_protection": cover_cfg.get("forecast_weather_protection", True),
+                    "forecast_lookahead_hours": cover_cfg.get("forecast_lookahead_hours", 4),
+                    "sun_tracking": cover_cfg.get("sun_tracking", True),
+                    "temperature_based": cover_cfg.get("temperature_based", True),
+                    "heat_protection_temp": cover_cfg.get("heat_protection_temp", 26),
+                    "frost_protection_temp": cover_cfg.get("frost_protection_temp", 3),
+                    "storm_wind_speed": cover_cfg.get("storm_wind_speed", 50),
+                    "wakeup_sun_check": cover_cfg.get("wakeup_sun_check", True),
+                    "wakeup_min_sun_elevation": cover_cfg.get("wakeup_min_sun_elevation", -6),
+                },
+            }
+
+        # action == "set"
+        import yaml as _yaml
+        SETTINGS_PATH = Path("/app/config/settings.yaml")
+
+        ALLOWED_KEYS = {
+            "weather_entity", "weather_protection", "forecast_weather_protection",
+            "forecast_lookahead_hours", "sun_tracking", "temperature_based",
+            "heat_protection_temp", "frost_protection_temp", "storm_wind_speed",
+            "wakeup_sun_check", "wakeup_min_sun_elevation",
+        }
+
+        changes = {}
+        for key in ALLOWED_KEYS:
+            if key in args:
+                changes[key] = args[key]
+
+        if not changes:
+            return {"success": False, "message": "Keine aenderbaren Einstellungen angegeben."}
+
+        # Validierung weather_entity
+        if "weather_entity" in changes:
+            we = changes["weather_entity"]
+            if we and not we.startswith("weather."):
+                return {
+                    "success": False,
+                    "message": f"Ungueltige Weather-Entity: '{we}'. Muss mit 'weather.' beginnen.",
+                }
+
+        try:
+            config = _yaml.safe_load(SETTINGS_PATH.read_text()) or {}
+            if "seasonal_actions" not in config:
+                config["seasonal_actions"] = {}
+            if "cover_automation" not in config["seasonal_actions"]:
+                config["seasonal_actions"]["cover_automation"] = {}
+
+            for k, v in changes.items():
+                config["seasonal_actions"]["cover_automation"][k] = v
+
+            SETTINGS_PATH.write_text(
+                _yaml.safe_dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            )
+
+            # In-Memory Config aktualisieren
+            import assistant.config as _cfg
+            _ca = _cfg.yaml_config.get("seasonal_actions", {})
+            if "cover_automation" not in _ca:
+                _ca["cover_automation"] = {}
+            _ca["cover_automation"].update(changes)
+
+            # Beschreibung fuer Antwort
+            desc_parts = []
+            _labels = {
+                "weather_entity": "Wetter-Entity",
+                "weather_protection": "Wetterschutz",
+                "forecast_weather_protection": "Vorhersage-Schutz",
+                "forecast_lookahead_hours": "Vorhersage-Zeitraum",
+                "sun_tracking": "Sonnenstand-Tracking",
+                "temperature_based": "Temperatur-Steuerung",
+                "heat_protection_temp": "Hitzeschutz-Temp",
+                "frost_protection_temp": "Frostschutz-Temp",
+                "storm_wind_speed": "Sturmschutz-Wind",
+                "wakeup_sun_check": "Aufwach-Sonnenpruefung",
+                "wakeup_min_sun_elevation": "Min. Sonnenhoehe",
+            }
+            for k, v in changes.items():
+                label = _labels.get(k, k)
+                if isinstance(v, bool):
+                    desc_parts.append(f"{label}: {'an' if v else 'aus'}")
+                else:
+                    desc_parts.append(f"{label}: {v}")
+
+            return {
+                "success": True,
+                "message": f"Cover-Automatik aktualisiert: {', '.join(desc_parts)}",
+                "changes": changes,
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Fehler beim Speichern: {e}"}
 
     # ── Phase 11: Saugroboter (Dreame, 2 Etagen) ──────────
 

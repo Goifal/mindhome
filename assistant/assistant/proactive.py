@@ -2341,13 +2341,18 @@ class ProactiveManager:
         """Extrahiert Wetter-Daten — nutzt konfigurierte Sensoren wenn vorhanden (Bug 2)."""
         from .cover_config import get_sensor_by_role
 
-        # Defaults aus weather.* Entity (bevorzugt weather.forecast_home)
+        # Defaults aus weather.* Entity (konfigurierbar, Fallback: weather.forecast_home)
         temp, wind, condition, lux, rain = 10.0, 0.0, "", 0.0, False
         forecast = []
         weather_entity = None
+        # Konfigurierte Entity bevorzugen
+        configured_we = (cover_cfg or {}).get("weather_entity", "") if cover_cfg else ""
         for s in (states or []):
             eid = s.get("entity_id", "")
-            if eid == "weather.forecast_home":
+            if configured_we and eid == configured_we:
+                weather_entity = s
+                break
+            if not configured_we and eid == "weather.forecast_home":
                 weather_entity = s
                 break
             if eid.startswith("weather.") and not weather_entity:
