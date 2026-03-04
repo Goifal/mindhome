@@ -798,6 +798,21 @@ const HELP_TEXTS = {
   'learning_transfer.transfer_confidence': {title:'Transfer-Konfidenz', text:'Mindest-Konfidenz fuer einen Transfer-Vorschlag.'},
   'learning_transfer.domains': {title:'Transfer-Domaenen', text:'Fuer welche Bereiche Praeferenzen uebertragen werden.'},
   'learning_transfer.room_groups': {title:'Raum-Gruppen', text:'Raeume in der gleichen Gruppe werden als aehnlich betrachtet fuer den Praeferenz-Transfer.'},
+  'dialogue.enabled': {title:'Dialogfuehrung', text:'Echte Gespraechsfuehrung mit Referenz-Aufloesung und Klaerungsfragen.'},
+  'dialogue.auto_resolve_references': {title:'Referenzen aufloesen', text:'Loest "es", "das", "dort" automatisch auf das zuletzt besprochene Geraet/Raum auf.'},
+  'dialogue.clarification_enabled': {title:'Klaerungsfragen', text:'Jarvis fragt "Welches Licht?" wenn mehrere Geraete passen.'},
+  'dialogue.timeout_seconds': {title:'Dialog-Timeout', text:'Nach dieser Zeit vergisst Jarvis den Gespraechskontext.'},
+  'dialogue.max_clarification_options': {title:'Max. Optionen', text:'Maximale Anzahl Optionen bei einer Klaerungsfrage.'},
+  'climate_model.enabled': {title:'Klima-Modell', text:'Thermische Simulation fuer Was-waere-wenn-Fragen.'},
+  'climate_model.max_simulation_minutes': {title:'Max. Simulation', text:'Maximale Dauer fuer eine Simulation.'},
+  'climate_model.default_params.heat_loss_coefficient': {title:'Waermeverlust', text:'Wie schnell ein Raum Waerme verliert. Niedrig = gut isoliert.'},
+  'climate_model.default_params.heating_power_per_min': {title:'Heizleistung', text:'Wie schnell die Heizung den Raum erwaermt. Abhaengig von Heizkoerper-Groesse.'},
+  'climate_model.default_params.window_open_factor': {title:'Fenster-Faktor', text:'Wie stark offene Fenster den Waermeverlust verstaerken.'},
+  'climate_model.default_params.thermal_mass_factor': {title:'Thermische Masse', text:'Traegheit des Gebaeudes. Schwerer Beton speichert mehr Waerme.'},
+  'predictive_maintenance.enabled': {title:'Praediktive Wartung', text:'Vorhersage von Geraeteausfaellen und Wartungsbedarf.'},
+  'predictive_maintenance.lookback_days': {title:'Analyse-Zeitraum', text:'Wie viele Tage Historie fuer die Vorhersage genutzt werden.'},
+  'predictive_maintenance.failure_probability_threshold': {title:'Warnschwelle', text:'Ab welcher Ausfallwahrscheinlichkeit gewarnt wird.'},
+  'predictive_maintenance.battery_drain_alert_pct_per_week': {title:'Batterie-Drain', text:'Ab welchem woechentlichen Batterie-Verlust gewarnt wird.'},
   'activity.silence_keywords.watching': {title:'Stille: Film/TV', text:'Keywords die den "Film schauen"-Modus ausloesen.'},
   'activity.silence_keywords.focused': {title:'Stille: Konzentration', text:'Keywords die den "Nicht stoeren"-Modus ausloesen.'},
   'activity.silence_keywords.sleeping': {title:'Stille: Schlafen', text:'Keywords die den Schlaf-Modus ausloesen.'},
@@ -9244,6 +9259,33 @@ function renderIntelligence() {
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Raum-Gruppen</div>' +
     fInfo('Raeume in der gleichen Gruppe werden als aehnlich betrachtet. Aenderungen hier ueberschreiben die Standard-Gruppen.') +
     fTextarea('learning_transfer.room_groups', 'Raum-Gruppen (JSON)', 'Format: {"wohnbereich": ["wohnzimmer", "esszimmer"], "schlafbereich": ["schlafzimmer", "gaestezimmer"]}')
+  ) +
+  // --- Medium Effort Features ---
+  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#9889; Medium Effort Features</div>' +
+  sectionWrap('&#128172;', 'Dialogfuehrung',
+    fInfo('Echte Gespraechsfuehrung: Jarvis merkt sich besprochene Geraete und Raeume und loest Referenzen auf ("Mach es aus" → letztes besprochenes Licht). Klaerungsfragen bei Mehrdeutigkeit ("Welches Licht?").') +
+    fToggle('dialogue.enabled', 'Dialogfuehrung aktiv') +
+    fToggle('dialogue.auto_resolve_references', 'Referenzen automatisch aufloesen') +
+    fToggle('dialogue.clarification_enabled', 'Klaerungsfragen stellen') +
+    fNum('dialogue.timeout_seconds', 'Dialog-Timeout (Sek.)', 60, 600, 30) +
+    fNum('dialogue.max_clarification_options', 'Max. Optionen bei Klaerung', 2, 10)
+  ) +
+  sectionWrap('&#127777;', 'Klima-Modell (Digitaler Zwilling)',
+    fInfo('Einfaches thermisches Modell fuer Was-waere-wenn-Fragen: "Wenn ich das Fenster schliesse, wie warm wird es in 30 Min?" Basiert auf Waermeverlust, Heizleistung und Fensterzustand.') +
+    fToggle('climate_model.enabled', 'Klima-Modell aktiv') +
+    fNum('climate_model.max_simulation_minutes', 'Max. Simulationsdauer (Min.)', 30, 480, 30) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Thermische Parameter (Global)</div>' +
+    fRange('climate_model.default_params.heat_loss_coefficient', 'Waermeverlust-Koeffizient', 0.005, 0.05, 0.005, {0.005:'Gut isoliert',0.01:'Normal',0.015:'Standard',0.025:'Maessig',0.05:'Schlecht isoliert'}) +
+    fRange('climate_model.default_params.heating_power_per_min', 'Heizleistung (Grad/Min)', 0.02, 0.2, 0.01, {0.02:'Schwach',0.05:'Normal',0.08:'Standard',0.12:'Stark',0.2:'Sehr stark'}) +
+    fRange('climate_model.default_params.window_open_factor', 'Fenster-Faktor', 1, 10, 1, {1:'Gekippt',3:'Halb offen',5:'Standard',7:'Weit offen',10:'Durchzug'}) +
+    fRange('climate_model.default_params.thermal_mass_factor', 'Thermische Masse', 0.5, 2.0, 0.1, {0.5:'Leichtbau',1.0:'Standard',1.5:'Massiv',2.0:'Schwerer Beton'})
+  ) +
+  sectionWrap('&#128295;', 'Praediktive Wartung',
+    fInfo('Vorhersage von Geraeteausfaellen: Batterie-Drain-Rate, Lebensdauer-Tracking, Health-Score pro Geraet. Warnt z.B. "Batterie von Bewegungsmelder Flur in 14 Tagen leer".') +
+    fToggle('predictive_maintenance.enabled', 'Praediktive Wartung aktiv') +
+    fNum('predictive_maintenance.lookback_days', 'Analyse-Zeitraum (Tage)', 30, 365, 30) +
+    fRange('predictive_maintenance.failure_probability_threshold', 'Warnschwelle', 0.3, 1.0, 0.05, {0.3:'Empfindlich',0.5:'Mittel',0.7:'Standard',0.9:'Nur kritisch'}) +
+    fNum('predictive_maintenance.battery_drain_alert_pct_per_week', 'Batterie-Drain Warnung (%/Woche)', 1, 20, 1)
   );
 }
 
