@@ -3093,10 +3093,10 @@ class AssistantBrain(BrainCallbacksMixin):
             tool_calls = message.get("tool_calls", [])
             executed_actions = []
 
-            # 7a. LLM hat Text + Tool-Calls: Text verwerfen bei Action-Tools.
-            # Lokale LLMs erzeugen oft "Ich stelle das Licht auf 80 Prozent"
-            # PLUS den Tool-Call. Der Text wuerde die saubere Bestaetigung
-            # (get_varied_confirmation) verhindern und Rohdaten per TTS sprechen.
+            # 7a. LLM hat Text + Tool-Calls: Text IMMER verwerfen.
+            # Lokale LLMs halluzinieren oft Aktionen/Zustaende im Text.
+            # Tool-Ergebnisse werden durch Humanizer (Query) oder
+            # get_varied_confirmation (Action) sauber aufbereitet.
             if tool_calls and response_text:
                 # LLM-Text verwerfen wenn Tool-Calls vorhanden — der Text wird
                 # durch Humanizer (Query-Tools) oder get_varied_confirmation
@@ -3556,7 +3556,14 @@ class AssistantBrain(BrainCallbacksMixin):
                     # NICHT verwerfen — voranstellen damit beides ankommt
                     _prefix = response_text.strip() if response_text else ""
                     response_text = f"{_prefix} {humanized_text}".strip() if _prefix else humanized_text
-                    try:
+
+                    # Refinement nur bei laengeren Texten — kurze Antworten sind
+                    # bereits auf den Punkt und das LLM fuegt nur Risiko hinzu.
+                    # "Alle Geraete normal" braucht kein Refinement.
+                    if len(humanized_text) < 80:
+                        logger.info("Tool-Feedback uebersprungen (kurz genug): '%s'", humanized_text[:80])
+                    else:
+                      try:
                         # Persoenlichkeits-Kontext fuer Refinement
                         _sarc = self.personality.sarcasm_level
                         _form = getattr(self, '_last_formality_score', 50)
@@ -3564,40 +3571,34 @@ class AssistantBrain(BrainCallbacksMixin):
                         _sarc_hint = {
                             1: "Sachlich, kein Humor.",
                             2: "Gelegentlich trocken.",
-                            3: "Trocken-britisch. Butler der innerlich schmunzelt.",
-                            4: "Sarkastisch. Spitze Bemerkungen erlaubt.",
-                            5: "Voll sarkastisch. Kommentiere alles.",
+                            3: "Trocken-britisch.",
+                            4: "Trocken-sarkastisch.",
+                            5: "Sarkastisch.",
                         }.get(_sarc, "")
                         _form_hint = (
-                            "Formell, respektvoll." if _form >= 70
-                            else "Butler-Ton, souveraen." if _form >= 50
-                            else "Locker, vertraut." if _form >= 35
-                            else "Persoenlich, wie ein Freund."
+                            "Formell." if _form >= 70
+                            else "Butler-Ton." if _form >= 50
+                            else "Locker." if _form >= 35
+                            else "Freundschaftlich."
                         )
                         _mood_hint = {
-                            "stressed": " User gestresst — knapp antworten.",
-                            "frustrated": " User frustriert — sofort handeln, nicht erklaeren.",
-                            "tired": " User muede — minimal, kein Humor.",
-                            "good": " User gut drauf — Humor erlaubt.",
+                            "stressed": " Knapp antworten.",
+                            "frustrated": " Sofort handeln.",
+                            "tired": " Minimal, kein Humor.",
+                            "good": "",
                         }.get(_mood, "")
 
                         feedback_messages = [{
                             "role": "system",
                             "content": (
-                                "Du bist JARVIS. Antworte auf Deutsch, 1-2 Saetze. "
+                                "Du bist JARVIS. Formuliere die Daten als 1-2 Saetze auf Deutsch. "
                                 f"{_form_hint} {_sarc_hint}{_mood_hint} "
-                                f"'{get_person_title(self._current_person)}' sparsam einsetzen. "
-                                "Keine Aufzaehlungen. Zahlen und Uhrzeiten EXAKT uebernehmen. "
-                                "NUR Fakten aus dem Antwort-Entwurf verwenden. "
-                                "NICHTS hinzufuegen, was nicht im Entwurf steht. "
-                                "Keine Aktionen oder Geraetezustaende erfinden. "
-                                f"Beispiele: 'Fuenf Grad, bewoelkt. Jacke empfohlen, {get_person_title(self._current_person)}.' | "
-                                "'Morgen um Viertel vor acht steht eine Blutabnahme an.' | "
-                                "'Im Buero 22.3 Grad, Luftfeuchtigkeit 51%. Passt.'"
+                                "Zahlen EXAKT uebernehmen. Erfinde NICHTS dazu. "
+                                f"Beispiel: 'Im Buero 22.3 Grad, Luftfeuchtigkeit 51%. Passt, {get_person_title(self._current_person)}.'"
                             ),
                         }, {
                             "role": "user",
-                            "content": f"Frage: {text}\nAntwort-Entwurf: {humanized_text}",
+                            "content": f"Frage: {text}\nDaten: {humanized_text}",
                         }]
 
                         logger.info("Tool-Feedback: LLM verfeinert '%s'", humanized_text[:80])
@@ -3605,8 +3606,8 @@ class AssistantBrain(BrainCallbacksMixin):
                             self.ollama.chat(
                                 messages=feedback_messages,
                                 model=model,
-                                temperature=0.3,
-                                max_tokens=150,
+                                temperature=0.2,
+                                max_tokens=120,
                                 think=False,
                             ),
                             timeout=15.0,
@@ -3615,14 +3616,34 @@ class AssistantBrain(BrainCallbacksMixin):
                             feedback_text = feedback_response.get("message", {}).get("content", "")
                             if feedback_text:
                                 refined = self._filter_response(feedback_text)
-                                if refined and len(refined) > 5:
+                                # Halluzinations-Check: Refinement verwerfen wenn
+                                # Meta-Sprache leakt, zu lang, oder Zahlen verloren
+                                _halluc_markers = [
+                                    "antwort-entwurf", "nicht im entwurf",
+                                    "nicht in den daten", "keine daten",
+                                    "nicht erwaehnt", "laut den daten",
+                                    "die daten zeigen", "aus den daten",
+                                ]
+                                _refined_lower = refined.lower() if refined else ""
+                                _has_halluc = any(m in _refined_lower for m in _halluc_markers)
+                                _too_long = len(refined) > len(humanized_text) * 2.5 if refined else False
+                                # Zahlen-Check: Wichtige Zahlen aus Humanizer muessen erhalten bleiben
+                                _src_numbers = set(re.findall(r'\d+\.?\d*', humanized_text))
+                                _dst_numbers = set(re.findall(r'\d+\.?\d*', refined)) if refined else set()
+                                _numbers_lost = len(_src_numbers) > 1 and not _src_numbers & _dst_numbers
+                                if _has_halluc or _too_long or _numbers_lost:
+                                    logger.warning(
+                                        "Tool-Feedback verworfen (halluc=%s, long=%s, numbers_lost=%s): '%s'",
+                                        _has_halluc, _too_long, _numbers_lost, refined[:80],
+                                    )
+                                elif refined and len(refined) > 5:
                                     response_text = refined
                                     logger.info("Tool-Feedback verfeinert: '%s'", response_text[:120])
                                 else:
                                     logger.info("Tool-Feedback verworfen (zu kurz/leer), nutze Humanizer")
                         else:
                             logger.warning("Tool-Feedback LLM Error: %s", feedback_response.get("error"))
-                    except Exception as e:
+                      except Exception as e:
                         logger.warning("Tool-Feedback fehlgeschlagen, nutze Humanizer: %s", e)
 
             # Phase 6: Variierte Bestaetigung statt immer "Erledigt."
