@@ -30,7 +30,7 @@ from .action_planner import ActionPlanner
 from .activity import ActivityEngine
 from .autonomy import AutonomyManager
 from . import config as cfg
-from .config import settings, get_person_title, set_active_person
+from .config import settings, get_person_title, set_active_person, get_model_profile
 from .context_builder import ContextBuilder
 from .cooking_assistant import CookingAssistant
 from .device_health import DeviceHealthMonitor
@@ -2552,6 +2552,12 @@ class AssistantBrain(BrainCallbacksMixin):
                 "Erfinde KEINE Temperaturwerte, Geraetezustaende oder Messwerte. "
                 "NIEMALS raten oder schaetzen."
             ), 1))
+
+        # Modell-spezifischer Character-Hint (z.B. qwen3.5 Chatbot-Tendenz)
+        _model_profile = get_model_profile(model)
+        if _model_profile.character_hint:
+            sections.append(("model_character_hint",
+                             f"\n\n{_model_profile.character_hint}", 1))
 
         # STT-6: Hinweis fuer das LLM bei Spracheingabe — das LLM soll
         # moegliche STT-Fehler eigenstaendig erkennen und korrigieren.
@@ -9492,23 +9498,50 @@ Regeln:
                                 len(proposals),
                             )
 
-                        # Phase 13.4b: Banned-Phrases Vorschlaege
+                        # Phase 13.4b: Banned-Phrases — Auto-Ban bei 10+ Hits
                         phrase_suggestions = await self.self_optimization.detect_new_banned_phrases()
                         if phrase_suggestions:
-                            from .websocket import emit_proactive
-                            phrase_msg = self.self_optimization.format_phrase_suggestions(
-                                phrase_suggestions,
-                            )
-                            title = get_person_title()
-                            await emit_proactive(
-                                f"{title}, {phrase_msg}",
-                                event_type="self_optimization_phrases",
-                                urgency="low",
-                                notification_id="self_opt_phrases_weekly",
-                            )
+                            _auto_ban_threshold = cfg.yaml_config.get(
+                                "response_filter", {}).get("auto_ban_threshold", 10)
+                            _auto_banned = []
+                            _manual_suggestions = []
+                            for s in phrase_suggestions:
+                                if s["count"] >= _auto_ban_threshold:
+                                    result = await self.self_optimization.add_banned_phrase(s["phrase"])
+                                    if result.get("success"):
+                                        _auto_banned.append(s["phrase"])
+                                        logger.info(
+                                            "Auto-Ban: '%s' (%dx gefiltert, Schwelle=%d)",
+                                            s["phrase"], s["count"], _auto_ban_threshold,
+                                        )
+                                else:
+                                    _manual_suggestions.append(s)
+
+                            # Nur manuelle Vorschlaege an User senden
+                            if _manual_suggestions:
+                                from .websocket import emit_proactive
+                                phrase_msg = self.self_optimization.format_phrase_suggestions(
+                                    _manual_suggestions,
+                                )
+                                title = get_person_title()
+                                await emit_proactive(
+                                    f"{title}, {phrase_msg}",
+                                    event_type="self_optimization_phrases",
+                                    urgency="low",
+                                    notification_id="self_opt_phrases_weekly",
+                                )
+                            if _auto_banned:
+                                from .websocket import emit_proactive
+                                await emit_proactive(
+                                    f"Ich habe {len(_auto_banned)} Phrasen automatisch gesperrt: "
+                                    f"{', '.join(repr(p) for p in _auto_banned)}",
+                                    event_type="self_optimization_auto_ban",
+                                    urgency="low",
+                                    notification_id="self_opt_auto_ban",
+                                )
                             logger.info(
-                                "Self-Optimization: %d Phrase-Vorschlaege gesendet",
-                                len(phrase_suggestions),
+                                "Self-Optimization: %d Phrase-Vorschlaege (%d auto-banned, %d manuell)",
+                                len(phrase_suggestions), len(_auto_banned), len(_manual_suggestions),
                             )
                 except Exception as _so_err:
                     logger.debug("Self-Optimization Analyse Fehler: %s", _so_err)

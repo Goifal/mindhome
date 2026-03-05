@@ -94,6 +94,7 @@ class ModelProfile:
     repeat_penalty: float = 1.0
     think_temperature: float = 0.6
     think_top_p: float = 0.95
+    character_hint: str = ""
 
 
 _MODEL_PROFILE_FIELDS = {f.name for f in fields(ModelProfile)}

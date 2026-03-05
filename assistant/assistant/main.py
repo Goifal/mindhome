@@ -661,6 +661,38 @@ async def health():
     return await brain.health_check()
 
 
+@app.get("/api/assistant/character-break-stats")
+async def character_break_stats():
+    """Character-Break Statistiken der letzten 7 Tage.
+
+    Zeigt wie oft JARVIS aus der Rolle gefallen ist (nach Typ und Tag).
+    Typen: llm_voice, hallucination, identity, formal_sie, banned_starter
+    """
+    days = 7
+    stats = await brain.self_optimization.get_character_break_stats(days=days)
+    # Totals pro Typ berechnen
+    totals = {}
+    for day_data in stats.values():
+        for break_type, count in day_data.items():
+            totals[break_type] = totals.get(break_type, 0) + count
+    # Letzte Detail-Eintraege
+    log_entries = []
+    if brain.memory and brain.memory.redis:
+        try:
+            raw = await brain.memory.redis.lrange("mha:self_opt:character_break_log", 0, 19)
+            import json as _json
+            log_entries = [_json.loads(e) for e in (raw or []) if e]
+        except Exception:
+            pass
+    return {
+        "days": days,
+        "by_day": stats,
+        "totals": totals,
+        "total_breaks": sum(totals.values()),
+        "recent_log": log_entries,
+    }
+
+
 @app.post("/api/assistant/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """

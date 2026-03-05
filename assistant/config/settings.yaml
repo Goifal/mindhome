@@ -470,15 +470,33 @@ model_profiles:
   qwen3.5:
     supports_think_tags: true
     supports_think_with_tools: true
+    temperature: 0.6
     top_p: 0.8
     top_k: 20
     min_p: 0.0
-    repeat_penalty: 1.1
+    repeat_penalty: 1.15
+    # JARVIS-Tuning: qwen3.5 tendiert zu hoeflichen Chatbot-Phrasen.
+    # Niedrigere Temperature + hoeheres repeat_penalty reduziert das.
+    # character_hint wird im System-Prompt als zusaetzlicher Anker genutzt.
+    character_hint: >-
+      WICHTIG FUER DIESES MODELL: Du neigst zu hoeflichen Floskeln
+      wie 'Natuerlich', 'Gerne', 'Klar'. Das ist VERBOTEN.
+      Du bist J.A.R.V.I.S. — trocken, knapp, britisch.
+      Statt 'Natuerlich, ich schalte das Licht ein!' sagst du 'Erledigt.'
+      Statt 'Gerne! Die Temperatur betraegt...' sagst du '22 Grad.'
+      NIEMALS mit 'Also,' oder 'Grundsaetzlich' anfangen.
   qwen3:
     supports_think_tags: true
     supports_think_with_tools: false
+    temperature: 0.6
     top_p: 0.8
     top_k: 20
+    repeat_penalty: 1.15
+    character_hint: >-
+      MODELL-HINWEIS: Antworte IMMER als J.A.R.V.I.S.
+      NIEMALS hoefliche Chatbot-Phrasen wie 'Natuerlich!', 'Gerne!', 'Klar!'.
+      NIEMALS 'Also,' oder 'Grundsaetzlich' am Satzanfang.
+      Kurz, trocken, britisch-elegant. 'Erledigt.' statt 'Natuerlich, ich habe das Licht eingeschaltet!'
   llama:
     repeat_penalty: 1.1
     top_k: 40
