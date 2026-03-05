@@ -223,33 +223,8 @@ class ActivityEngine:
         else:
             self._silence_keywords = dict(self.SILENCE_KEYWORDS)
 
-        # Entity-IDs (konfigurierbar pro Installation)
-        entities = activity_cfg.get("entities", {})
-        self.media_players = entities.get("media_players", [
-            "media_player.wohnzimmer",
-            "media_player.fernseher",
-            "media_player.tv",
-        ])
-        self.mic_sensors = entities.get("mic_sensors", [
-            "binary_sensor.mic_active",
-            "binary_sensor.microphone",
-        ])
-        self.bed_sensors = entities.get("bed_sensors", [
-            "binary_sensor.bed_occupancy",
-            "binary_sensor.bett",
-        ])
-        self.pc_sensors = entities.get("pc_sensors", [
-            "binary_sensor.pc_active",
-            "binary_sensor.computer",
-            "switch.pc",
-        ])
-
-        # Schwellwerte
-        thresholds = activity_cfg.get("thresholds", {})
-        self.night_start = int(thresholds.get("night_start", 22))
-        self.night_end = int(thresholds.get("night_end", 7))
-        self.guest_person_count = int(thresholds.get("guest_person_count", 2))
-        self.focus_min_minutes = int(thresholds.get("focus_min_minutes", 30))
+        # Entity-IDs und Schwellwerte laden
+        self._load_entities_and_thresholds(activity_cfg)
 
         # Konfigurierbare Silence- und Volume-Matrix (Override aus settings.yaml)
         self._silence_matrix = _build_matrix_from_config(
@@ -279,33 +254,43 @@ class ActivityEngine:
         self._cache_ts: float = 0.0  # monotonic timestamp
         self._cache_ttl: float = 5.0  # Sekunden — verhindert Burst-Abfragen
 
-    def reload_config(self, activity_cfg: dict):
-        """Config aus YAML neu laden (wird von _reload_all_modules aufgerufen)."""
+    # Standard-Entity-Defaults (fuer Installationen ohne explizite Config)
+    _DEFAULT_MEDIA_PLAYERS = [
+        "media_player.wohnzimmer",
+        "media_player.fernseher",
+        "media_player.tv",
+    ]
+    _DEFAULT_MIC_SENSORS = [
+        "binary_sensor.mic_active",
+        "binary_sensor.microphone",
+    ]
+    _DEFAULT_BED_SENSORS = [
+        "binary_sensor.bed_occupancy",
+        "binary_sensor.bett",
+    ]
+    _DEFAULT_PC_SENSORS = [
+        "binary_sensor.pc_active",
+        "binary_sensor.computer",
+        "switch.pc",
+    ]
+
+    def _load_entities_and_thresholds(self, activity_cfg: dict):
+        """Laedt Entity-IDs und Schwellwerte aus Config (shared zwischen init/reload)."""
         entities = activity_cfg.get("entities", {})
-        self.media_players = entities.get("media_players", [
-            "media_player.wohnzimmer",
-            "media_player.fernseher",
-            "media_player.tv",
-        ])
-        self.mic_sensors = entities.get("mic_sensors", [
-            "binary_sensor.mic_active",
-            "binary_sensor.microphone",
-        ])
-        self.bed_sensors = entities.get("bed_sensors", [
-            "binary_sensor.bed_occupancy",
-            "binary_sensor.bett",
-        ])
-        self.pc_sensors = entities.get("pc_sensors", [
-            "binary_sensor.pc_active",
-            "binary_sensor.computer",
-            "switch.pc",
-        ])
+        self.media_players = entities.get("media_players", self._DEFAULT_MEDIA_PLAYERS)
+        self.mic_sensors = entities.get("mic_sensors", self._DEFAULT_MIC_SENSORS)
+        self.bed_sensors = entities.get("bed_sensors", self._DEFAULT_BED_SENSORS)
+        self.pc_sensors = entities.get("pc_sensors", self._DEFAULT_PC_SENSORS)
 
         thresholds = activity_cfg.get("thresholds", {})
         self.night_start = int(thresholds.get("night_start", 22))
         self.night_end = int(thresholds.get("night_end", 7))
         self.guest_person_count = int(thresholds.get("guest_person_count", 2))
         self.focus_min_minutes = int(thresholds.get("focus_min_minutes", 30))
+
+    def reload_config(self, activity_cfg: dict):
+        """Config aus YAML neu laden (wird von _reload_all_modules aufgerufen)."""
+        self._load_entities_and_thresholds(activity_cfg)
 
         # Silence-Keywords neu laden
         sk_cfg = activity_cfg.get("silence_keywords")
