@@ -104,6 +104,25 @@ PROFILE_MEMORY = RequestProfile(
     need_rag=False,
 )
 
+PROFILE_DEVICE_QUERY = RequestProfile(
+    category="device_query",
+    need_house_status=True,       # Sensordaten/Zustaende abfragen
+    need_mindhome_data=False,
+    need_activity=True,           # Aktivitaet kann Antwort beeinflussen
+    need_room_profile=True,       # Raum-Kontext fuer Zuordnung
+    need_memories=False,          # Keine persoenlichen Erinnerungen noetig
+    need_mood=False,              # Einfache Status-Antwort
+    need_formality=False,
+    need_irony=False,
+    need_time_hints=True,         # Zeitkontext relevant (z.B. Nacht-Temperatur)
+    need_security=False,
+    need_cross_room=False,
+    need_guest_mode=True,         # Guest-Mode beeinflusst sichtbare Daten
+    need_tutorial=False,
+    need_summary=False,
+    need_rag=False,
+)
+
 PROFILE_GENERAL = RequestProfile(
     category="general",
     # Alles aktiv — identisch zum bisherigen Verhalten
@@ -155,6 +174,30 @@ _SMART_HOME_KEYWORDS = [
     "smart plug", "smartplug",
 ]
 
+# Status-Abfragen: Fragen nach aktuellem Zustand von Smart-Home-Geraeten
+_STATUS_QUERY_PATTERNS = re.compile(
+    r"(?:wie (?:warm|kalt|hell|dunkel|laut)|wie ist|was ist|ist (?:das|die|der) "
+    r"|was zeigt|welche temperatur|wieviel grad|wie viel grad|wie hoch ist"
+    r"|sind (?:die |das |der |alle )?|ist (?:das |die |der )?"
+    r"|laeuft |status|hausstatus|haus-status|ueberblick"
+    r"|was laeuft|was spielt"
+    r")",
+)
+
+_STATUS_NOUNS = [
+    "temperatur", "grad", "warm", "kalt", "heizung", "klima",
+    "licht", "lampe", "hell", "dunkel", "helligkeit",
+    "rollladen", "rolladen", "rolllaeden", "jalousie", "rollo",
+    "fenster", "tuer",
+    "wetter", "aussen", "draussen",
+    "strom", "verbrauch", "watt", "energie",
+    "status", "hausstatus", "ueberblick",
+    "musik", "spielt", "laeuft",
+    "offen", "geschlossen", "verriegelt",
+    "an", "aus", "eingeschaltet", "ausgeschaltet",
+    "alarm",
+]
+
 
 class PreClassifier:
     """Klassifiziert Anfragen fuer selektive Subsystem-Aktivierung."""
@@ -173,7 +216,9 @@ class PreClassifier:
         word_count = len(text_lower.split())
 
         # 1. Geraete-Befehle: Verb-Start oder Nomen+Aktion, max 8 Woerter
-        if word_count <= 8:
+        #    ABER: Fragen ("ist ... an?", "sind ... offen?") sind Status-Queries, keine Commands
+        _is_question = text_lower.rstrip().endswith("?") or text_lower.startswith(("ist ", "sind ", "wie ", "was "))
+        if word_count <= 8 and not _is_question:
             if _DEVICE_VERBS.search(text_lower):
                 logger.debug("PreClassifier: DEVICE_FAST (verb: %s)", text)
                 return PROFILE_DEVICE_FAST
@@ -187,12 +232,20 @@ class PreClassifier:
                 logger.debug("PreClassifier: DEVICE_FAST (noun+action: %s)", text)
                 return PROFILE_DEVICE_FAST
 
-        # 2. Memory-Fragen
+        # 2. Status-Abfragen: "Wie warm ist es?", "Sind die Rolllaeden offen?"
+        if word_count <= 10:
+            has_status_pattern = _STATUS_QUERY_PATTERNS.search(text_lower)
+            has_status_noun = any(n in text_lower for n in _STATUS_NOUNS)
+            if has_status_pattern and has_status_noun:
+                logger.debug("PreClassifier: DEVICE_QUERY (%s)", text)
+                return PROFILE_DEVICE_QUERY
+
+        # 3. Memory-Fragen
         if any(kw in text_lower for kw in _MEMORY_KEYWORDS):
             logger.debug("PreClassifier: MEMORY (%s)", text)
             return PROFILE_MEMORY
 
-        # 3. Wissensfragen ohne Smart-Home-Bezug
+        # 5. Wissensfragen ohne Smart-Home-Bezug
         is_knowledge = any(
             text_lower.startswith(kw) or f" {kw}" in text_lower
             for kw in _KNOWLEDGE_PATTERNS
@@ -203,6 +256,6 @@ class PreClassifier:
             logger.debug("PreClassifier: KNOWLEDGE (%s)", text)
             return PROFILE_KNOWLEDGE
 
-        # 4. Default: Alles aktiv
+        # 6. Default: Alles aktiv
         logger.debug("PreClassifier: GENERAL (%s)", text)
         return PROFILE_GENERAL

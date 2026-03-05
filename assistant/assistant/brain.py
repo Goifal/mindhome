@@ -2216,9 +2216,9 @@ class AssistantBrain(BrainCallbacksMixin):
             _mega_tasks.append(("rag", self._get_rag_context(text)))
 
         # Feature A, Intelligence Fusion, Self-Improvement:
-        # Bei einfachen Device-Commands (Licht an, Rollladen auf) ueberspringen
+        # Bei einfachen Device-Commands und Status-Queries ueberspringen
         # um CPU/Redis I/O zu sparen — diese Daten sind dort nicht relevant.
-        if profile.category != "device_command":
+        if profile.category not in ("device_command", "device_query"):
             _mega_tasks.append(("problem_solving", self._build_problem_solving_context(text)))
             _mega_tasks.append(("anticipation", self.anticipation.get_suggestions(person=person or "")))
             _mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns(person=person or "")))
@@ -2669,6 +2669,27 @@ class AssistantBrain(BrainCallbacksMixin):
                 "Token-Budget: %d/%d Tokens, %d Sektionen, dropped: %s",
                 tokens_used, section_budget, len(sections_added),
                 ", ".join(sections_dropped),
+            )
+            # LLM ueber fehlenden Kontext informieren, damit es nicht halluziniert
+            _dropped_labels = {
+                "rag": "Wissensbasis",
+                "mood": "Stimmungsanalyse",
+                "memory": "Erinnerungen",
+                "anticipation": "Vorausschauende Vorschlaege",
+                "learned_patterns": "Gelernte Muster",
+                "anomalies": "Anomalien",
+                "cross_room": "Raumuebergreifender Kontext",
+                "summary": "Zusammenfassungen",
+                "continuity": "Gespraechskontinuitaet",
+                "experiential": "Erfahrungskontext",
+                "tutorial": "Tutorial-Hinweise",
+            }
+            readable = [_dropped_labels.get(n, n) for n in dropped_names]
+            system_prompt += (
+                f"\n\n[SYSTEM-HINWEIS: Wegen Token-Limit fehlen dir folgende Daten: "
+                f"{', '.join(readable)}. "
+                f"Antworte nur mit dem, was du sicher weisst. "
+                f"Spekuliere NICHT ueber fehlende Informationen.]"
             )
 
         # 5. Letzte Gespraeche laden (Working Memory)
