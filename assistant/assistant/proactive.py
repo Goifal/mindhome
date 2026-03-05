@@ -608,8 +608,10 @@ class ProactiveManager:
         # Learning Observer: Manuelle Aktionen beobachten
         if hasattr(self.brain, "learning_observer"):
             try:
+                # Person aus letzter Interaktion ableiten (wer hat zuletzt mit Jarvis gesprochen?)
+                observer_person = getattr(self.brain, "_current_person", "") or ""
                 await self.brain.learning_observer.observe_state_change(
-                    entity_id, new_val, old_val,
+                    entity_id, new_val, old_val, person=observer_person,
                 )
             except Exception as e:
                 logger.debug("Learning Observer Fehler: %s", e)

@@ -2220,8 +2220,8 @@ class AssistantBrain(BrainCallbacksMixin):
         # um CPU/Redis I/O zu sparen — diese Daten sind dort nicht relevant.
         if profile.category != "device_command":
             _mega_tasks.append(("problem_solving", self._build_problem_solving_context(text)))
-            _mega_tasks.append(("anticipation", self.anticipation.get_suggestions()))
-            _mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns()))
+            _mega_tasks.append(("anticipation", self.anticipation.get_suggestions(person=person or "")))
+            _mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns(person=person or "")))
             _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
             _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
             _mega_tasks.append(("correction_ctx", self.correction_memory.get_relevant_corrections(

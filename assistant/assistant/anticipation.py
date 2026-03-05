@@ -116,8 +116,13 @@ class AnticipationEngine:
     # Pattern Detection
     # ------------------------------------------------------------------
 
-    async def detect_patterns(self) -> list[dict]:
-        """Erkennt Muster in der Action-History."""
+    async def detect_patterns(self, person: str = "") -> list[dict]:
+        """Erkennt Muster in der Action-History.
+
+        Args:
+            person: Wenn gesetzt, nur Muster dieser Person erkennen.
+                    Leerer String = alle Aktionen (Haushalt-global).
+        """
         if not self.redis:
             return []
 
@@ -132,19 +137,19 @@ class AnticipationEngine:
             patterns = []
 
             # 1. Zeit-Muster erkennen
-            time_patterns = self._detect_time_patterns(entries)
+            time_patterns = self._detect_time_patterns(entries, person=person)
             patterns.extend(time_patterns)
 
             # 2. Sequenz-Muster erkennen
-            seq_patterns = self._detect_sequence_patterns(entries)
+            seq_patterns = self._detect_sequence_patterns(entries, person=person)
             patterns.extend(seq_patterns)
 
             # 3. Kontext-Muster erkennen (Wetter, Tageszeit, Anwesenheit)
-            ctx_patterns = self._detect_context_patterns(entries)
+            ctx_patterns = self._detect_context_patterns(entries, person=person)
             patterns.extend(ctx_patterns)
 
             # 4. Phase 18: Kausale Ketten erkennen (3+ Aktionen als Zusammenhang)
-            causal_patterns = self._detect_causal_chains(entries)
+            causal_patterns = self._detect_causal_chains(entries, person=person)
             patterns.extend(causal_patterns)
 
             return patterns
@@ -153,13 +158,24 @@ class AnticipationEngine:
             logger.error("Fehler bei Pattern-Detection: %s", e)
             return []
 
-    def _detect_time_patterns(self, entries: list[dict]) -> list[dict]:
+    def _detect_time_patterns(self, entries: list[dict],
+                              person: str = "") -> list[dict]:
         """Erkennt zeitbasierte Muster (gleiche Aktion zur gleichen Zeit).
 
         Neuere Aktionen werden staerker gewichtet als aeltere (Recency-Weighting).
         Eine Aktion von heute zaehlt 2x soviel wie eine von vor 30 Tagen.
+
+        Args:
+            entries: Action-Log Eintraege
+            person: Wenn gesetzt, nur Muster dieser Person erkennen
         """
         patterns = []
+
+        # Person-Filter: Nur Eintraege dieser Person (oder alle bei leerem person)
+        if person:
+            entries = [e for e in entries if (e.get("person", "") or "") == person]
+            if len(entries) < 3:
+                return []
 
         # Gruppiere nach Aktion + Wochentag + Stunde
         time_groups = defaultdict(list)
@@ -208,7 +224,7 @@ class AnticipationEngine:
                 wd_idx = int(weekday) if weekday.isdigit() else -1
                 wd_name = weekday_names[wd_idx] if 0 <= wd_idx < len(weekday_names) else weekday
 
-                patterns.append({
+                pattern_entry = {
                     "type": "time",
                     "action": action,
                     "args": json.loads(typical_args),
@@ -217,13 +233,26 @@ class AnticipationEngine:
                     "confidence": round(confidence, 2),
                     "occurrences": occurrences,
                     "description": f"Jeden {wd_name} um {hour}:00 → {action}",
-                })
+                }
+                if person:
+                    pattern_entry["person"] = person
+                patterns.append(pattern_entry)
 
         return patterns
 
-    def _detect_sequence_patterns(self, entries: list[dict]) -> list[dict]:
-        """Erkennt Sequenz-Muster (A -> B innerhalb von 5 Minuten)."""
+    def _detect_sequence_patterns(self, entries: list[dict],
+                                  person: str = "") -> list[dict]:
+        """Erkennt Sequenz-Muster (A -> B innerhalb von 5 Minuten).
+
+        Args:
+            entries: Action-Log Eintraege
+            person: Wenn gesetzt, nur Sequenzen dieser Person erkennen
+        """
         patterns = []
+
+        # Person-Filter
+        if person:
+            entries = [e for e in entries if (e.get("person", "") or "") == person]
 
         # Sortiere nach Timestamp (neueste zuerst in der Liste)
         sorted_entries = sorted(entries, key=lambda e: e.get("timestamp", ""))
@@ -264,7 +293,7 @@ class AnticipationEngine:
                 args_counter = Counter(pair_args[pair])
                 typical_args = args_counter.most_common(1)[0][0] if args_counter else "{}"
 
-                patterns.append({
+                pattern_entry = {
                     "type": "sequence",
                     "trigger_action": a,
                     "follow_action": b,
@@ -272,17 +301,29 @@ class AnticipationEngine:
                     "confidence": round(confidence, 2),
                     "occurrences": count,
                     "description": f"Nach {a} folgt meist {b}",
-                })
+                }
+                if person:
+                    pattern_entry["person"] = person
+                patterns.append(pattern_entry)
 
         return patterns
 
-    def _detect_context_patterns(self, entries: list[dict]) -> list[dict]:
+    def _detect_context_patterns(self, entries: list[dict],
+                                 person: str = "") -> list[dict]:
         """Erkennt kontextbasierte Muster (Wetter, Tageszeit-Kombination).
 
         Sucht nach Aktionen die immer unter bestimmten Kontextbedingungen
         stattfinden, z.B. "Rolladen runter wenn Abend + Sommer".
+
+        Args:
+            entries: Action-Log Eintraege
+            person: Wenn gesetzt, nur Muster dieser Person erkennen
         """
         patterns = []
+
+        # Person-Filter
+        if person:
+            entries = [e for e in entries if (e.get("person", "") or "") == person]
 
         # Gruppiere Aktionen nach Tageszeit-Cluster (morgen/mittag/abend/nacht)
         time_clusters = {"morning": [], "afternoon": [], "evening": [], "night": []}
@@ -326,7 +367,7 @@ class AnticipationEngine:
                     )
                     typical_args = args_counter.most_common(1)[0][0] if args_counter else "{}"
 
-                    patterns.append({
+                    ctx_entry = {
                         "type": "context",
                         "context": f"time_cluster:{cluster_name}",
                         "action": action,
@@ -334,7 +375,10 @@ class AnticipationEngine:
                         "confidence": round(min(1.0, ratio * (cluster_count / 10)), 2),
                         "occurrences": cluster_count,
                         "description": f"{action} wird zu {ratio*100:.0f}% {cluster_labels[cluster_name]} ausgefuehrt",
-                    })
+                    }
+                    if person:
+                        ctx_entry["person"] = person
+                    patterns.append(ctx_entry)
 
         # Wetter-basierte Muster: Aktionen die bei bestimmtem Wetter gehaeuft auftreten
         weather_groups = defaultdict(list)
@@ -368,7 +412,7 @@ class AnticipationEngine:
                     )
                     typical_args = w_args_counter.most_common(1)[0][0] if w_args_counter else "{}"
                     label = weather_labels.get(weather_cond, weather_cond)
-                    patterns.append({
+                    w_entry = {
                         "type": "context",
                         "context": f"weather:{weather_cond}",
                         "action": action,
@@ -376,7 +420,10 @@ class AnticipationEngine:
                         "confidence": round(min(1.0, ratio * (w_count / 10)), 2),
                         "occurrences": w_count,
                         "description": f"{action} wird zu {ratio*100:.0f}% {label} ausgefuehrt",
-                    })
+                    }
+                    if person:
+                        w_entry["person"] = person
+                    patterns.append(w_entry)
 
         return patterns
 
@@ -384,7 +431,8 @@ class AnticipationEngine:
     # Phase 18: Kausale Ketten-Erkennung
     # ------------------------------------------------------------------
 
-    def _detect_causal_chains(self, entries: list[dict]) -> list[dict]:
+    def _detect_causal_chains(self, entries: list[dict],
+                              person: str = "") -> list[dict]:
         """Erkennt kausale Ketten: Kontext-Trigger → Multi-Step-Folge.
 
         Erweitert die Sequenz-Erkennung: Statt nur A→B werden Ketten aus
@@ -392,11 +440,19 @@ class AnticipationEngine:
 
         Zeitfenster: 10 Min (statt 5 bei Sequenzen) fuer laengere Ketten.
         Min. 3 Wiederholungen der gleichen Kette.
+
+        Args:
+            entries: Action-Log Eintraege
+            person: Wenn gesetzt, nur Ketten dieser Person erkennen
         """
         causal_cfg = yaml_config.get("anticipation", {})
         window_min = causal_cfg.get("causal_chain_window_min") or 10
         min_occurrences = causal_cfg.get("causal_chain_min_occurrences") or 3
         window_sec = window_min * 60
+
+        # Person-Filter
+        if person:
+            entries = [e for e in entries if (e.get("person", "") or "") == person]
 
         patterns = []
         sorted_entries = sorted(entries, key=lambda e: e.get("timestamp", ""))
@@ -456,14 +512,17 @@ class AnticipationEngine:
                 continue
 
             desc_actions = " → ".join(actions)
-            patterns.append({
+            chain_entry = {
                 "type": "causal_chain",
                 "trigger": dominant_ctx,
                 "actions": actions,
                 "confidence": round(confidence, 2),
                 "occurrences": count,
                 "description": f"Kette ({dominant_ctx}): {desc_actions}",
-            })
+            }
+            if person:
+                chain_entry["person"] = person
+            patterns.append(chain_entry)
 
         return patterns
 
@@ -514,12 +573,16 @@ class AnticipationEngine:
     # Proaktive Vorschlaege
     # ------------------------------------------------------------------
 
-    async def get_suggestions(self) -> list[dict]:
-        """Prueft ob gerade ein Muster zutrifft und gibt Vorschlaege zurueck."""
+    async def get_suggestions(self, person: str = "") -> list[dict]:
+        """Prueft ob gerade ein Muster zutrifft und gibt Vorschlaege zurueck.
+
+        Args:
+            person: Wenn gesetzt, nur Vorschlaege fuer diese Person.
+        """
         if not self.redis:
             return []
 
-        patterns = await self.detect_patterns()
+        patterns = await self.detect_patterns(person=person)
         if not patterns:
             return []
 
