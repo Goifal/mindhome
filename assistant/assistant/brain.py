@@ -6412,10 +6412,13 @@ class AssistantBrain(BrainCallbacksMixin):
             idx = int(approve_match.group(1)) - 1  # 1-basiert -> 0-basiert
             result = await self.self_optimization.approve_proposal(idx)
             if result["success"]:
-                # yaml_config im Speicher aktualisieren
+                # yaml_config im Speicher aktualisieren (in-place, damit alle
+                # Referenzen — auch from-imports — die neuen Werte sehen)
                 from .config import load_yaml_config
                 import assistant.config as cfg
-                cfg.yaml_config = load_yaml_config()
+                _new = load_yaml_config()
+                cfg.yaml_config.clear()
+                cfg.yaml_config.update(_new)
                 _audit_log("self_opt_approve_chat", {"proposal_index": idx, "result": result.get("message", "")})
             return result.get("message", "")
 

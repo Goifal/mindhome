@@ -4011,9 +4011,14 @@ class ProactiveManager:
         while self._running:
             try:
                 # Config bei jedem Durchlauf frisch lesen (Hot-Reload aus UI)
-                vacuum_cfg = yaml_config.get("vacuum", {})
+                import assistant.config as cfg
+                vacuum_cfg = cfg.yaml_config.get("vacuum", {})
                 auto_cfg = vacuum_cfg.get("auto_clean", {})
                 robots = vacuum_cfg.get("robots", {})
+
+                if not vacuum_cfg.get("enabled") or not auto_cfg.get("enabled"):
+                    await asyncio.sleep(900)
+                    continue
 
                 mode = auto_cfg.get("mode", "smart")
                 now = datetime.now()
