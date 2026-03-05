@@ -318,7 +318,7 @@ class OllamaClient:
             "keep_alive": self.keep_alive,
             "options": _model_options(
                 model, temperature, max_tokens, self.num_ctx_for(model),
-                think_enabled=bool(think_enabled),
+                think_enabled=think_enabled or False,
             ),
         }
 
@@ -412,7 +412,7 @@ class OllamaClient:
             "keep_alive": self.keep_alive,
             "options": _model_options(
                 model, temperature, max_tokens, self.num_ctx_for(model),
-                think_enabled=bool(think_enabled) if think_enabled is not None else False,
+                think_enabled=think_enabled or False,
             ),
         }
 
@@ -542,11 +542,9 @@ class OllamaClient:
             "prompt": prompt,
             "stream": False,
             "keep_alive": self.keep_alive,
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-                "num_ctx": self.num_ctx_for(model),
-            },
+            "options": _model_options(
+                model, temperature, max_tokens, self.num_ctx_for(model),
+            ),
         }
 
         try:
@@ -559,6 +557,7 @@ class OllamaClient:
                 if resp.status != 200:
                     error = await resp.text()
                     logger.error("Ollama Generate Fehler %d: %s", resp.status, error)
+                    ollama_breaker.record_failure()
                     return ""
                 result = await resp.json()
                 ollama_breaker.record_success()

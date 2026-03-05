@@ -116,8 +116,14 @@ SECURITY_CONFIRM_TTL = REDIS_SECURITY_CONFIRM_TTL
 
 
 def _estimate_tokens(text: str) -> int:
-    """Schaetzt BPE-Tokens fuer deutschen Text (~2 chars/token)."""
-    return len(text) // 2
+    """Schaetzt BPE-Tokens fuer deutschen Text.
+
+    Konservative Schaetzung: ~1.4 chars/token fuer deutsche BPE-Tokenizer
+    (Umlaute, Komposita, Sonderzeichen brauchen mehr Tokens als Englisch).
+    Vorher: // 2, was ~25-50% zu optimistisch war und zu stillem
+    Kontext-Truncation durch Ollama fuehrte.
+    """
+    return int(len(text) / 1.4)
 
 
 def _audit_log(action: str, details: dict = None):
@@ -869,6 +875,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     stream_error = False
                     async for token in self.ollama.stream_chat(
                         messages=messages, model=current,
+                        max_tokens=max_tokens, think=think,
                     ):
                         if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
                             stream_error = True
@@ -974,7 +981,7 @@ class AssistantBrain(BrainCallbacksMixin):
             )
             summary = await self.ollama.generate(
                 prompt=prompt,
-                model=settings.model_fast,
+                model=self.model_router.model_fast,
                 max_tokens=200,
             )
             return summary.strip() if summary else None
@@ -4313,8 +4320,20 @@ class AssistantBrain(BrainCallbacksMixin):
                             break
 
                 # Letzter Fallback: wenn "state" vorhanden + "room" oder "entity_id"
+                # Versuche den Geraete-Typ aus den Args zu ermitteln statt
+                # blind set_light anzunehmen (koennte Rollladen/Heizung sein)
                 if not func_name and "state" in args and ("room" in args or "entity_id" in args):
-                    func_name = "set_light"
+                    eid = args.get("entity_id", "")
+                    if eid.startswith("cover."):
+                        func_name = "set_cover"
+                    elif eid.startswith("climate."):
+                        func_name = "set_climate"
+                    elif eid.startswith("switch."):
+                        func_name = "set_switch"
+                    elif eid.startswith("media_player."):
+                        func_name = "set_media_player"
+                    else:
+                        func_name = "set_light"  # Default nur wenn nichts anderes passt
 
                 if func_name and func_name in FunctionExecutor._ALLOWED_FUNCTIONS:
                     logger.info("Bare-JSON erkannt -> %s(%s)", func_name, args)
@@ -9640,7 +9659,7 @@ Regeln:
                     )},
                     {"role": "user", "content": f"{func_name}({func_args}) → {error}"},
                 ],
-                model=settings.model_fast,
+                model=self.model_router.model_fast,
                 temperature=0.5,
                 max_tokens=80,
             )

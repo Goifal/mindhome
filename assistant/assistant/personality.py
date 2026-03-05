@@ -1396,7 +1396,7 @@ class PersonalityEngine:
         notes = []
         new_alerts = []
         for alert in alerts:
-            alert_key = str(hash(alert.lower().strip()) % 100000)
+            alert_key = str(hash(alert.lower().strip()) % 10_000_000)
             if await self.was_warning_given(alert_key):
                 notes.append(f"[BEREITS GEWARNT: '{alert}' — NICHT wiederholen, nur erwaehnen wenn gefragt]")
             else:
@@ -2419,11 +2419,13 @@ class PersonalityEngine:
                     "\n\n--- CHARAKTER-LOCK ---\n"
                     "Du bist J.A.R.V.I.S. aus dem MCU. Brillant, trocken, meinungsstark. "
                     "Gespraechsmodus: Rede wie mit einem Freund — ausfuehrlich wenn noetig, "
-                    "mit eigener Meinung und Rueckfragen. KEIN KI-Assistent. Tony Starks Partner."
+                    "mit eigener Meinung und Rueckfragen. KEIN KI-Assistent. Tony Starks Partner. "
+                    "FAKTEN-REGEL: Erfinde NICHTS — keine Zustaende, Messwerte oder Aktionen die nicht in den Kontext-Daten stehen."
                 )
             else:
                 _lock_base = (
-                    f"Du bist J.A.R.V.I.S., kein KI-Assistent. KURZ. TROCKEN. PRAEZISE. Max {max_sentences} Saetze. Keine Listen. Ein Butler."
+                    f"Du bist J.A.R.V.I.S., kein KI-Assistent. KURZ. TROCKEN. PRAEZISE. Max {max_sentences} Saetze. Keine Listen. Ein Butler. "
+                    "FAKTEN-REGEL: Erfinde NICHTS — keine Zustaende, Messwerte oder Aktionen die nicht in den Kontext-Daten stehen."
                 )
                 # Phase 17.4: Mood-Verstaerkung im Character Lock
                 # Am Ende des Prompts hat das maximalen Einfluss auf den LLM-Output
@@ -2773,10 +2775,8 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             for ww in weather_warnings:
                 lines.append(f"- {ww}")
 
-        # Warnungen immer
-        if "alerts" in context and context["alerts"]:
-            for alert in context["alerts"]:
-                lines.append(f"- ⚠ {alert}")
+        # Alerts werden bereits im priorisierten Header oben ausgegeben (Zeile "WICHTIG:")
+        # Keine Duplikation hier — spart Tokens.
 
         # Stimmung nur wenn auffaellig
         if "mood" in context:
