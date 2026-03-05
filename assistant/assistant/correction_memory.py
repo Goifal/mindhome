@@ -175,8 +175,14 @@ class CorrectionMemory:
 
             rule["confidence"] = round(decayed_conf, 3)
 
-            # Filter: Aktionstyp und Person
+            # Filter: Aktionstyp
             if action_type and rule.get("trigger") and rule["trigger"] != action_type:
+                continue
+
+            # Filter: Person — globale Regeln (kein person-Feld) immer einschliessen,
+            # person-spezifische Regeln nur wenn sie zur aktuellen Person gehoeren
+            rule_person = rule.get("person", "")
+            if person and rule_person and rule_person != person:
                 continue
 
             rules.append(rule)
