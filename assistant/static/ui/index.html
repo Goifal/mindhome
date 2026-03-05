@@ -112,6 +112,26 @@ body { font-family:var(--font); background:var(--bg-primary); color:var(--text-p
 @keyframes logoGlow { 0%,100% { box-shadow:0 0 15px rgba(0,212,255,0.3), inset 0 0 10px rgba(0,212,255,0.15); } 50% { box-shadow:0 0 25px rgba(0,212,255,0.5), inset 0 0 15px rgba(0,212,255,0.2); } }
 .sidebar-logo h2 { font-size:17px; font-weight:600; letter-spacing:4px; color:var(--accent); text-shadow: 0 0 20px rgba(0,212,255,0.4); }
 .sidebar-logo span { font-size:9px; color:var(--text-muted); display:block; text-transform:uppercase; letter-spacing:2px; }
+/* Sidebar Search */
+.sidebar-search { padding:10px 10px 0; position:relative; z-index:3; }
+.sidebar-search-wrap { display:flex; align-items:center; gap:6px; background:rgba(0,212,255,0.04); border:1px solid rgba(0,212,255,0.12); border-radius:var(--radius-sm); padding:0 10px; transition:border-color var(--fast); }
+.sidebar-search-wrap:focus-within { border-color:rgba(0,212,255,0.4); background:rgba(0,212,255,0.06); }
+.sidebar-search-icon { font-size:13px; opacity:0.5; flex-shrink:0; }
+.sidebar-search-wrap input { background:none; border:none; outline:none; color:var(--text-primary); font-size:12px; padding:8px 0; width:100%; font-family:inherit; }
+.sidebar-search-wrap input::placeholder { color:var(--text-muted); font-size:11px; }
+.sidebar-search-clear { cursor:pointer; font-size:11px; color:var(--text-muted); padding:2px 4px; flex-shrink:0; }
+.sidebar-search-clear:hover { color:var(--text-primary); }
+.sidebar-search-results { position:absolute; left:10px; right:10px; top:100%; background:var(--bg-card); border:1px solid rgba(0,212,255,0.2); border-radius:var(--radius-sm); max-height:320px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.5); z-index:100; }
+.sidebar-search-results:empty { display:none !important; }
+.search-result-item { display:flex; align-items:center; gap:10px; padding:9px 12px; cursor:pointer; font-size:12px; color:var(--text-secondary); border-bottom:1px solid rgba(255,255,255,0.04); transition:background var(--fast); }
+.search-result-item:last-child { border-bottom:none; }
+.search-result-item:hover, .search-result-item.active { background:rgba(0,212,255,0.08); color:var(--text-primary); }
+.search-result-item .sr-icon { font-size:14px; flex-shrink:0; width:20px; text-align:center; }
+.search-result-item .sr-text { flex:1; min-width:0; }
+.search-result-item .sr-title { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.search-result-item .sr-tab { font-size:10px; color:var(--text-muted); margin-top:1px; text-transform:uppercase; letter-spacing:0.5px; }
+.search-result-item mark { background:rgba(0,212,255,0.25); color:var(--text-primary); border-radius:2px; padding:0 1px; }
+.search-no-results { padding:16px; text-align:center; color:var(--text-muted); font-size:12px; }
 .sidebar-nav { padding:12px 8px; flex:1; overflow-y:auto; position:relative; z-index:2; }
 .nav-item { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:var(--radius-sm); color:var(--text-secondary); cursor:pointer; font-size:13px; font-weight:500; margin-bottom:2px; transition:all var(--fast); border:1px solid transparent; text-transform:uppercase; letter-spacing:0.5px; font-size:12px; }
 .nav-item:hover { background:rgba(0,212,255,0.04); color:var(--text-primary); border-color:rgba(0,212,255,0.1); }
@@ -899,6 +919,14 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
     <div class="sidebar-logo">
       <div class="logo-icon">J</div>
       <div><h2>JARVIS</h2><span>MindHome Assistant</span></div>
+    </div>
+    <div class="sidebar-search">
+      <div class="sidebar-search-wrap">
+        <span class="sidebar-search-icon">&#128269;</span>
+        <input type="text" id="sidebarSearchInput" placeholder="Einstellung suchen..." autocomplete="off" spellcheck="false">
+        <span class="sidebar-search-clear" id="sidebarSearchClear" style="display:none;" onclick="clearSidebarSearch()">&#10005;</span>
+      </div>
+      <div id="sidebarSearchResults" class="sidebar-search-results" style="display:none;"></div>
     </div>
     <nav class="sidebar-nav" id="sidebarNav">
       <div class="nav-item active" data-page="dashboard"><span class="nav-icon">&#9632;</span>Dashboard</div>

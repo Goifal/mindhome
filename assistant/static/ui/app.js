@@ -20,6 +20,254 @@ const API = '';
 let _autoSaveTimer = null;
 const _AUTO_SAVE_DELAY = 2000;  // 2 Sekunden Debounce
 
+// ---- Sidebar-Suche: Suchindex ueber alle Settings-Sektionen ----
+const _searchIndex = [
+  // Allgemein (tab-general)
+  {tab:'tab-general', title:'Assistent', keywords:'name sprache version grundeinstellungen', icon:'&#9881;'},
+  {tab:'tab-general', title:'Web-Suche', keywords:'searxng duckduckgo recherche web search', icon:'&#128269;'},
+  {tab:'tab-general', title:'Hauptbenutzer', keywords:'name benutzer primary user', icon:'&#128100;'},
+  {tab:'tab-general', title:'Haushaltsmitglieder', keywords:'personen household member gast besitzer', icon:'&#128106;'},
+  {tab:'tab-general', title:'Geraete-Erkennung', keywords:'command detection nouns verben befehle nlp', icon:'&#127899;'},
+  // KI-Modelle & Stil (tab-personality)
+  {tab:'tab-personality', title:'KI-Modelle & Stil', keywords:'modell llm ollama fast smart deep openai', icon:'&#127917;'},
+  // Jarvis-Features (tab-jarvis)
+  {tab:'tab-jarvis', title:'Progressive Antworten', keywords:'denkt laut zwischen-meldungen verarbeitung', icon:'&#128172;'},
+  {tab:'tab-jarvis', title:'MCU-Intelligenz', keywords:'proaktiv mitdenken ingenieur diagnose anomalie kreuz-referenz implizit', icon:'&#129504;'},
+  {tab:'tab-jarvis', title:'MCU-Persoenlichkeit', keywords:'rueckbezuege callbacks lern-bestaetigung vorhersage wetter selbst-bewusstsein humor', icon:'&#127917;'},
+  {tab:'tab-jarvis', title:'Echte Empathie', keywords:'empathie emotion verstaendnis stimmung mitfuehlen', icon:'&#129505;'},
+  {tab:'tab-jarvis', title:'Charakter-Schutz', keywords:'character lock filter retry llm rolle floskeln', icon:'&#128274;'},
+  {tab:'tab-jarvis', title:'Geraete-Persoenlichkeit', keywords:'spitznamen device narration waschmaschine saugroboter', icon:'&#128374;'},
+  {tab:'tab-jarvis', title:'Daten-basierter Widerspruch', keywords:'pushback warnung fenster offen heizung eskalation', icon:'&#9888;'},
+  {tab:'tab-jarvis', title:'Smart DJ', keywords:'musik genre stimmung kontextbewusst playlist', icon:'&#127925;'},
+  {tab:'tab-jarvis', title:'Remember When — Erinnerungen', keywords:'erinnerungen memorable interactions langzeitgedaechtnis', icon:'&#128218;'},
+  {tab:'tab-jarvis', title:'Running Gag Evolution', keywords:'witze humor gag scherze', icon:'&#128514;'},
+  {tab:'tab-jarvis', title:'Eskalierende Besorgnis', keywords:'warnungen ignoriert ernster butler sorge', icon:'&#128680;'},
+  {tab:'tab-jarvis', title:'Neugier-Fragen', keywords:'ungewoehnlich verhalten nachfragen frueh unterwegs', icon:'&#128270;'},
+  {tab:'tab-jarvis', title:'Situations-Modell', keywords:'hausstatus gespraech delta veraenderung', icon:'&#128269;'},
+  // Stimmung (tab-mood)
+  {tab:'tab-mood', title:'Stimmungserkennung', keywords:'mood stress frustration muede worte', icon:'&#128578;'},
+  {tab:'tab-mood', title:'Stress-Einfluss', keywords:'stress boost reduktion ungeduld negative', icon:'&#9889;'},
+  {tab:'tab-mood', title:'Stimmungs-Woerter', keywords:'positive negative ungeduld muedigkeit keywords', icon:'&#128172;'},
+  {tab:'tab-mood', title:'Stimmung x Komplexitaet', keywords:'antwortlaenge saetze mood complexity matrix', icon:'&#127919;'},
+  {tab:'tab-mood', title:'Stimm-Analyse', keywords:'voice analysis wpm sprechgeschwindigkeit whisper', icon:'&#127908;'},
+  {tab:'tab-mood', title:'Voice-Mood Integration', keywords:'stimm-emotion tonfall froehlich traurig aergerlich', icon:'&#127908;'},
+  // Stimme & TTS (tab-voice)
+  {tab:'tab-voice', title:'Spracherkennung (STT)', keywords:'whisper stt speech recognition modell sprache beam', icon:'&#127908;'},
+  {tab:'tab-voice', title:'Sprachausgabe (TTS)', keywords:'tts piper stimme voice rate geschwindigkeit', icon:'&#128266;'},
+  // Gedaechtnis (tab-memory)
+  {tab:'tab-memory', title:'Gedaechtnis-Einstellungen', keywords:'memory kontext max eintraege persoenliche daten geburtstag', icon:'&#128218;'},
+  // Raeume & Speaker (tab-rooms)
+  {tab:'tab-rooms', title:'Heizung', keywords:'thermostat heizkurve waermepumpe temperatur', icon:'&#128293;'},
+  {tab:'tab-rooms', title:'Raeume', keywords:'raum speaker lautsprecher zuordnung', icon:'&#127968;'},
+  // Licht (tab-lights)
+  {tab:'tab-lights', title:'Licht', keywords:'lampe helligkeit farbe szene beleuchtung', icon:'&#128161;'},
+  // Geraete (tab-devices)
+  {tab:'tab-devices', title:'Geraete', keywords:'device steckdose sensor schalter', icon:'&#128268;'},
+  // Rolllaeden (tab-covers)
+  {tab:'tab-covers', title:'Rolllaeden', keywords:'cover rollladen jalousie position', icon:'&#129695;'},
+  // Saugroboter (tab-vacuum)
+  {tab:'tab-vacuum', title:'Saugroboter', keywords:'vacuum staubsauger reinigung raeume', icon:'&#129529;'},
+  // Fernbedienung (tab-remote)
+  {tab:'tab-remote', title:'Fernbedienung', keywords:'remote tv infrarot befehle', icon:'&#128261;'},
+  // Szenen (tab-scenes)
+  {tab:'tab-scenes', title:'Szenen', keywords:'szene scene aktivitaet nicht stoeren', icon:'&#127916;'},
+  // Routinen (tab-routines)
+  {tab:'tab-routines', title:'Morgen-Briefing', keywords:'morgen briefing wetter termine nachrichten aufwachen', icon:'&#127748;'},
+  {tab:'tab-routines', title:'Aufwach-Sequenz', keywords:'aufwachen rolladen licht kaffee morgens', icon:'&#9728;'},
+  {tab:'tab-routines', title:'Abend-Briefing', keywords:'abend status sicherheit fenster', icon:'&#127769;'},
+  {tab:'tab-routines', title:'Kalender', keywords:'calendar termine home assistant', icon:'&#128197;'},
+  {tab:'tab-routines', title:'Gute-Nacht-Routine', keywords:'gute nacht schlafen lichter heizung alarm', icon:'&#128164;'},
+  {tab:'tab-routines', title:'Gaeste-Modus', keywords:'gast besuch formell privat wifi', icon:'&#128101;'},
+  {tab:'tab-routines', title:'Benannte Protokolle', keywords:'protokoll multi-step sequenz filmabend sprache', icon:'&#128221;'},
+  {tab:'tab-routines', title:'"Das Uebliche"', keywords:'uebliche wie immer muster gewohnheit tageszeit', icon:'&#128260;'},
+  // Proaktiv (tab-proactive)
+  {tab:'tab-proactive', title:'Proaktive Meldungen', keywords:'proaktiv meldungen cooldown autonomie', icon:'&#128276;'},
+  {tab:'tab-proactive', title:'Zeitgefuehl', keywords:'ofen vergessen buegeleisen licht fenster pc pause', icon:'&#9200;'},
+  {tab:'tab-proactive', title:'Vorausdenken', keywords:'anticipation gewohnheiten lernen vorhersage konfidenz', icon:'&#128300;'},
+  {tab:'tab-proactive', title:'Rueckkehr-Briefing', keywords:'abwesenheit rueckkehr briefing klingel waschmaschine', icon:'&#128218;'},
+  {tab:'tab-proactive', title:'Jarvis denkt voraus', keywords:'insights wetter kalender energie fenster frost', icon:'&#129504;'},
+  {tab:'tab-proactive', title:'Event-Handler', keywords:'event prioritaet critical high medium low', icon:'&#128226;'},
+  {tab:'tab-proactive', title:'Spontane Beobachtungen', keywords:'beobachtungen energie streak rekorde meilensteine', icon:'&#128065;'},
+  // Benachrichtigungen (tab-notifications)
+  {tab:'tab-notifications', title:'Stille-Matrix', keywords:'zustellung aktivitaet schlafen telefonat tv dringlichkeit tts led', icon:'&#128263;'},
+  {tab:'tab-notifications', title:'Lautstaerke-Matrix', keywords:'volume lautstaerke tts nachts', icon:'&#128266;'},
+  {tab:'tab-notifications', title:'Benachrichtigungskanaele', keywords:'kanaele channels benachrichtigung', icon:'&#128276;'},
+  {tab:'tab-notifications', title:'Stille-Keywords', keywords:'nicht stoeren filmabend netflix meditation schlafen', icon:'&#128164;'},
+  // Follow-Me (tab-followme)
+  {tab:'tab-followme', title:'Follow-Me', keywords:'raum folgen musik licht temperatur person profil', icon:'&#128694;'},
+  // Intelligenz (tab-intelligence)
+  {tab:'tab-intelligence', title:'Domain-spezifische Autonomie', keywords:'domain autonomie klima licht medien sicherheit', icon:'&#127919;'},
+  {tab:'tab-intelligence', title:'Kalender-Intelligenz', keywords:'kalender gewohnheit konflikt pendelzeit termin', icon:'&#128197;'},
+  {tab:'tab-intelligence', title:'Erklaerbarkeit', keywords:'erklaerbarkeit warum aktion begruendung entscheidung', icon:'&#128161;'},
+  {tab:'tab-intelligence', title:'Lern-Transfer', keywords:'transfer praeferenz raum aehnlich vorschlag', icon:'&#129504;'},
+  {tab:'tab-intelligence', title:'Think-Ahead Hinweise', keywords:'think ahead naechster schritt vorschlag', icon:'&#128161;'},
+  {tab:'tab-intelligence', title:'Kausalketten-Erkennung', keywords:'kausal kette handlung wiederholend muster', icon:'&#128279;'},
+  {tab:'tab-intelligence', title:'3D+ Insight Checks', keywords:'gaeste vorbereitung alarm abwesenheit sicherheit feuchtigkeit nacht', icon:'&#128200;'},
+  {tab:'tab-intelligence', title:'Proaktiver Sequenz-Planner', keywords:'sequenz planner ankunft wetter aktion kette', icon:'&#128736;'},
+  {tab:'tab-intelligence', title:'Saisonale Intelligenz', keywords:'saison jahreszeit heizung vergleich muster', icon:'&#127808;'},
+  {tab:'tab-intelligence', title:'Dialogfuehrung', keywords:'dialog referenz aufloesen klaerung mehrdeutigkeit', icon:'&#128172;'},
+  {tab:'tab-intelligence', title:'Klima-Modell', keywords:'klima digitaler zwilling simulation waermeverlust fenster', icon:'&#127777;'},
+  {tab:'tab-intelligence', title:'Praediktive Wartung', keywords:'wartung batterie lebensdauer health score vorhersage', icon:'&#128295;'},
+  {tab:'tab-intelligence', title:'Konsequenz-Bewusstsein', keywords:'konsequenz kontext sinnvoll warnung hinweis', icon:'&#9888;'},
+  {tab:'tab-intelligence', title:'Unaufgeforderte Beobachtungen', keywords:'beobachtung periodisch licht fenster batterie alarm', icon:'&#128065;'},
+  // Autonomie (tab-autonomie)
+  {tab:'tab-autonomie', title:'Autonomie', keywords:'autonomie level assistent butler mitbewohner vertrauter autopilot', icon:'&#9889;'},
+  {tab:'tab-autonomie', title:'Aktions-Berechtigungen', keywords:'berechtigung aktion permission level', icon:'&#128272;'},
+  {tab:'tab-autonomie', title:'Evolution-Kriterien', keywords:'evolution aufstieg kriterien tage interaktionen', icon:'&#128200;'},
+  {tab:'tab-autonomie', title:'Selbstoptimierung', keywords:'selbstoptimierung analyse vorschlaege genehmigung approval', icon:'&#129302;'},
+  {tab:'tab-autonomie', title:'Lern-System', keywords:'lernen outcome tracker korrektur response quality error', icon:'&#129504;'},
+  {tab:'tab-autonomie', title:'Feedback-System', keywords:'feedback score cooldown boost unterdruecken', icon:'&#128200;'},
+  {tab:'tab-autonomie', title:'Self-Automation', keywords:'self automation ha automatisierung sprache erstellen', icon:'&#127919;'},
+  // Analyse-Tools (tab-declarative-tools)
+  {tab:'tab-declarative-tools', title:'Analyse-Tools', keywords:'deklarativ analyse read-only berechnung home assistant', icon:'&#128736;'},
+  // Haus-Status (tab-house-status)
+  {tab:'tab-house-status', title:'Haus-Status Bereiche', keywords:'status detail kompakt ausfuehrlich anwesenheit temperatur wetter', icon:'&#127968;'},
+  {tab:'tab-house-status', title:'Health Monitor', keywords:'health sensor temperatur feuchtigkeit co2 batterie', icon:'&#128296;'},
+  {tab:'tab-house-status', title:'Humidor', keywords:'humidor feuchtigkeit zigarren sensor', icon:'&#127793;'},
+  // Koch-Assistent (tab-cooking)
+  {tab:'tab-cooking', title:'Koch-Assistent', keywords:'kochen rezept timer portionen schritte', icon:'&#127859;'},
+  // Werkstatt (tab-workshop)
+  {tab:'tab-workshop', title:'Werkstatt-Modus', keywords:'werkstatt reparatur elektronik 3d drucker roboter mqtt', icon:'&#128295;'},
+  // Easter Eggs (tab-eastereggs)
+  {tab:'tab-eastereggs', title:'Easter Eggs', keywords:'easter egg versteckt spass trigger antwort', icon:'&#127881;'},
+  // Sicherheit (tab-security)
+  {tab:'tab-security', title:'Dashboard & PIN', keywords:'pin schutz recovery key zugang login', icon:'&#128187;'},
+  {tab:'tab-security', title:'Sicherheit', keywords:'bestaetigung alarm schloss garage heizung temperatur limit', icon:'&#128274;'},
+  {tab:'tab-security', title:'API Key', keywords:'api key netzwerk schutz addon integration', icon:'&#128273;'},
+  {tab:'tab-security', title:'Vertrauensstufen', keywords:'trust gast mitbewohner besitzer rechte erlaubt', icon:'&#128272;'},
+  {tab:'tab-security', title:'Besucher-Management', keywords:'besucher klingel kamera tuer gast entriegelung', icon:'&#128682;'},
+  {tab:'tab-security', title:'Notfall-Protokolle', keywords:'notfall feuer rauch einbruch wasser sirene', icon:'&#127752;'},
+  {tab:'tab-security', title:'Interrupt-Queue', keywords:'interrupt critical notfall unterbrechung tts', icon:'&#9889;'},
+  // System (tab-system)
+  {tab:'tab-system', title:'System & Updates', keywords:'system update version neustart backup', icon:'&#128296;'},
+];
+
+const _tabLabels = {
+  'tab-general':'Allgemein','tab-personality':'KI-Modelle & Stil',
+  'tab-memory':'Gedaechtnis','tab-mood':'Stimmung',
+  'tab-rooms':'Raeume & Speaker','tab-lights':'Licht','tab-devices':'Geraete',
+  'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter','tab-remote':'Fernbedienung',
+  'tab-scenes':'Szenen','tab-routines':'Routinen',
+  'tab-proactive':'Proaktiv','tab-notifications':'Benachrichtigungen',
+  'tab-cooking':'Koch-Assistent','tab-followme':'Follow-Me',
+  'tab-jarvis':'Jarvis-Features','tab-intelligence':'Intelligenz',
+  'tab-declarative-tools':'Analyse-Tools','tab-eastereggs':'Easter Eggs',
+  'tab-autonomie':'Autonomie','tab-voice':'Stimme & TTS',
+  'tab-security':'Sicherheit','tab-house-status':'Haus-Status',
+  'tab-system':'System','tab-workshop':'Werkstatt'
+};
+
+let _searchActive = false;
+function initSidebarSearch() {
+  const input = document.getElementById('sidebarSearchInput');
+  const results = document.getElementById('sidebarSearchResults');
+  const clear = document.getElementById('sidebarSearchClear');
+  if (!input) return;
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    clear.style.display = q ? '' : 'none';
+    if (q.length < 2) { results.style.display = 'none'; _searchActive = false; return; }
+    _searchActive = true;
+    const matches = _searchIndex.filter(item => {
+      const haystack = (item.title + ' ' + item.keywords).toLowerCase();
+      return q.split(/\s+/).every(word => haystack.includes(word));
+    });
+    if (matches.length === 0) {
+      results.innerHTML = '<div class="search-no-results">Keine Treffer</div>';
+    } else {
+      results.innerHTML = matches.slice(0, 12).map((m, i) => {
+        const highlighted = m.title.replace(new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi'), '<mark>$1</mark>');
+        return `<div class="search-result-item${i===0?' active':''}" data-tab="${m.tab}" data-title="${m.title.replace(/"/g,'&quot;')}">
+          <span class="sr-icon">${m.icon}</span>
+          <div class="sr-text"><div class="sr-title">${highlighted}</div><div class="sr-tab">${_tabLabels[m.tab] || m.tab}</div></div>
+        </div>`;
+      }).join('');
+    }
+    results.style.display = '';
+  });
+
+  input.addEventListener('keydown', e => {
+    if (!_searchActive) return;
+    const items = results.querySelectorAll('.search-result-item');
+    const active = results.querySelector('.search-result-item.active');
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const arr = [...items];
+      const idx = arr.indexOf(active);
+      const next = e.key === 'ArrowDown' ? Math.min(idx + 1, arr.length - 1) : Math.max(idx - 1, 0);
+      arr.forEach(el => el.classList.remove('active'));
+      arr[next].classList.add('active');
+      arr[next].scrollIntoView({block:'nearest'});
+    } else if (e.key === 'Enter' && active) {
+      e.preventDefault();
+      _navigateToSearchResult(active.dataset.tab, active.dataset.title);
+    } else if (e.key === 'Escape') {
+      clearSidebarSearch();
+      input.blur();
+    }
+  });
+
+  results.addEventListener('click', e => {
+    const item = e.target.closest('.search-result-item');
+    if (!item) return;
+    _navigateToSearchResult(item.dataset.tab, item.dataset.title);
+  });
+
+  // Close on outside click
+  document.addEventListener('click', e => {
+    if (_searchActive && !e.target.closest('.sidebar-search')) {
+      results.style.display = 'none';
+      _searchActive = false;
+    }
+  });
+}
+
+function _navigateToSearchResult(tab, sectionTitle) {
+  // Navigate to the tab
+  const navItem = document.querySelector(`.nav-item[data-tab="${tab}"]`);
+  if (navItem) navItem.click();
+
+  // Close search
+  clearSidebarSearch();
+
+  // After render, scroll to section and highlight it
+  setTimeout(() => {
+    const sections = document.querySelectorAll('#settingsContent .s-section-hdr h3');
+    for (const h3 of sections) {
+      // Strip HTML entities from h3 text for comparison
+      const text = h3.textContent.trim();
+      // Remove leading icon character(s) and whitespace
+      const cleanText = text.replace(/^[^\w\u00C0-\u024F"(].?\s*/, '').trim();
+      const cleanTitle = sectionTitle.replace(/^[^\w\u00C0-\u024F"(].?\s*/, '').trim();
+      if (cleanText === cleanTitle || text.includes(sectionTitle)) {
+        const section = h3.closest('.s-section');
+        // Expand section if collapsed
+        const body = section.querySelector('.s-section-body');
+        if (body && body.style.display === 'none') {
+          h3.closest('.s-section-hdr').click();
+        }
+        // Scroll and flash
+        section.scrollIntoView({behavior:'smooth', block:'start'});
+        section.style.transition = 'box-shadow 0.3s';
+        section.style.boxShadow = '0 0 0 2px rgba(0,212,255,0.5), 0 0 20px rgba(0,212,255,0.15)';
+        setTimeout(() => { section.style.boxShadow = ''; }, 2000);
+        break;
+      }
+    }
+  }, 150);
+}
+
+function clearSidebarSearch() {
+  const input = document.getElementById('sidebarSearchInput');
+  const results = document.getElementById('sidebarSearchResults');
+  const clear = document.getElementById('sidebarSearchClear');
+  if (input) input.value = '';
+  if (results) results.style.display = 'none';
+  if (clear) clear.style.display = 'none';
+  _searchActive = false;
+}
+
 // ---- Auto-Save: Aenderungen automatisch speichern ----
 function scheduleAutoSave() {
   if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
@@ -287,6 +535,7 @@ async function showApp() {
   startLiveRefresh();
   loadHealthTrends(_trendHours);
   refreshErrBadge();
+  initSidebarSearch();
 }
 
 // ---- PIN Reset ----
