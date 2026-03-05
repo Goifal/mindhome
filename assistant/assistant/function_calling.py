@@ -3343,9 +3343,14 @@ class FunctionExecutor:
         prev_entry = curve[-1]
         for entry in curve:
             parts = entry["time"].split(":")
+            if len(parts) < 2:
+                prev_entry = entry
+                continue
             entry_min = int(parts[0]) * 60 + int(parts[1])
             if entry_min > now_min:
                 prev_parts = prev_entry["time"].split(":")
+                if len(prev_parts) < 2:
+                    return entry[key]
                 prev_min = int(prev_parts[0]) * 60 + int(prev_parts[1])
                 if prev_min > entry_min:
                     prev_min -= 1440
