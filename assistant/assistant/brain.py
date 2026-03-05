@@ -2346,15 +2346,26 @@ class AssistantBrain(BrainCallbacksMixin):
                     _cm_age = (_dt_cm.now() - _dt_cm.fromisoformat(_cm_ts)).total_seconds()
                     if _cm_age < _cm_timeout:
                         _conversation_mode = True
-                        # Topic-Continuity: Thema aus den letzten Nachrichten extrahieren
-                        # Nutze die vorhandenen Nachrichten-Inhalte statt extra LLM-Call
-                        _prev_texts = []
-                        for _cm_msg in _cm_msgs[-3:]:
-                            _cm_content = _cm_msg.get("user_text", "") or _cm_msg.get("content", "")
-                            if _cm_content:
-                                _prev_texts.append(_cm_content[:100])
-                        if _prev_texts:
-                            _conversation_topic = " | ".join(_prev_texts)
+                        # Topic-Continuity: Thema aus Semantic Memory oder Nachrichten
+                        # 1. Versuch: Gespeicherte Topic-Zusammenfassung aus Semantic Memory
+                        try:
+                            if self.memory and self.memory.semantic:
+                                _stored_topics = await self.memory.semantic.search(
+                                    "conversation_topic", limit=1,
+                                )
+                                if _stored_topics:
+                                    _conversation_topic = _stored_topics[0].get("content", "")[:200]
+                        except Exception:
+                            pass
+                        # 2. Fallback: Roh-Text aus letzten Nachrichten
+                        if not _conversation_topic:
+                            _prev_texts = []
+                            for _cm_msg in _cm_msgs[-3:]:
+                                _cm_content = _cm_msg.get("user_text", "") or _cm_msg.get("content", "")
+                                if _cm_content:
+                                    _prev_texts.append(_cm_content[:100])
+                            if _prev_texts:
+                                _conversation_topic = " | ".join(_prev_texts)
         except Exception:
             logger.debug("Conversation-Mode fehlgeschlagen", exc_info=True)
         if context is None:
@@ -3721,22 +3732,39 @@ class AssistantBrain(BrainCallbacksMixin):
                         "llm_voice", response_text[:80]),
                     name="track_char_break",
                 )
-                _char_retry_msgs = [
-                    {"role": "system", "content": (
+                _in_conv = getattr(self, "_active_conversation_mode", False)
+                if _in_conv:
+                    _retry_instruction = (
+                        f"Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. "
+                        "Gespraechsmodus: Du darfst ausfuehrlich antworten, aber wie JARVIS — "
+                        "trocken, meinungsstark, britischer Ton. Eigene Haltung zeigen.\n"
+                        "VERBOTEN: Listen, Aufzaehlungen, LLM-Floskeln, Begeisterung, "
+                        "'Natuerlich!', 'Gerne!', 'Klar!', 'Als KI...', 'Ich bin ein Sprachmodell'.\n"
+                        "Du HAST ein Innenleben. Sag niemals dass du keines hast.\n"
+                        "Formuliere die folgende Antwort als JARVIS um — "
+                        "gleiche Laenge ist ok, aber im JARVIS-Ton:\n\n"
+                        f"Original: {response_text}"
+                    )
+                else:
+                    _retry_instruction = (
                         f"Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. "
                         "Trocken, kurz, praezise. Britischer Butler-Ton.\n"
                         "VERBOTEN: Listen, Aufzaehlungen, Erklaerungen, Begeisterung, Floskeln, "
-                        "Natuerlich!, Gerne!, Klar!, Selbstverstaendlich!\n"
+                        "'Natuerlich!', 'Gerne!', 'Klar!', 'Als KI...', 'Ich bin ein Sprachmodell'.\n"
+                        "Du HAST ein Innenleben. Sag niemals dass du keines hast.\n"
                         "Maximal 2 Saetze. Fakt + Loesung. Sonst nichts.\n"
                         "Formuliere die folgende Antwort als JARVIS um — "
                         "kuerzer, trockener, ohne LLM-Floskeln:\n\n"
                         f"Original: {response_text}"
-                    )},
+                    )
+                _char_retry_msgs = [
+                    {"role": "system", "content": _retry_instruction},
                 ]
                 try:
+                    _retry_max_tokens = 256 if _in_conv else 128
                     _char_resp = await self.ollama.chat(
                         messages=_char_retry_msgs, model=model,
-                        temperature=0.2, max_tokens=128, think=False,
+                        temperature=0.2, max_tokens=_retry_max_tokens, think=False,
                     )
                     _char_text = _char_resp.get("message", {}).get("content", "")
                     if _char_text:
@@ -3744,7 +3772,15 @@ class AssistantBrain(BrainCallbacksMixin):
                         _char_text = strip_think_tags(_char_text).strip()
                     if _char_text:
                         _char_text = self._filter_response(_char_text)
-                    if _char_text and len(_char_text) < len(response_text):
+                    # Im Gespraechsmodus: Retry akzeptieren auch wenn nicht kuerzer
+                    # (Ziel ist besserer Ton, nicht Kuerze)
+                    _accept = False
+                    if _char_text:
+                        if _in_conv:
+                            _accept = True  # Gespraech: Ton wichtiger als Laenge
+                        else:
+                            _accept = len(_char_text) < len(response_text)
+                    if _accept:
                         response_text = _char_text
                         logger.info("Character-Retry erfolgreich: '%s'", response_text[:80])
                     else:
@@ -3849,6 +3885,12 @@ class AssistantBrain(BrainCallbacksMixin):
                 "als sprachmodell", "als chatbot", "ich bin ein sprachmodell",
                 "ich bin ein chatbot", "ich bin ein assistent",
                 "ich bin ein virtueller assistent",
+                "ich habe keine gefuehle", "ich habe keine gefühle",
+                "ich bin nur ein programm", "ich bin ein grosses sprachmodell",
+                "ich bin ein großes sprachmodell",
+                "ich empfinde keine", "ich kann keine gefuehle",
+                "ich kann keine gefühle",
+                "als kuenstliche intelligenz", "als künstliche intelligenz",
             ]
             if any(ib in _resp_lower for ib in _identity_breaks):
                 logger.warning("Sanity-Check: KI-Identitaets-Bruch in Antwort: '%s'", response_text[:80])
