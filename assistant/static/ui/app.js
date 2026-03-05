@@ -3549,6 +3549,7 @@ function _saveScenes(scenes) {
   for (const sc of scenes) {
     if (sc.device_triggers && sc.device_triggers.length > 0) {
       for (const entity of sc.device_triggers) {
+        if (!entity) continue;  // Leere Eintraege ignorieren
         if (!deviceTriggerMap[entity]) deviceTriggerMap[entity] = [];
         deviceTriggerMap[entity].push(sc.id);
       }

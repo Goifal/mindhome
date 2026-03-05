@@ -621,7 +621,7 @@ class ProactiveManager:
                 logger.debug("Learning Observer Fehler: %s", e)
 
     # States die als "aktiv/an" gelten fuer Device-Trigger
-    _ACTIVE_STATES = {"on", "playing", "paused", "home", "active", "open", "detected"}
+    _ACTIVE_STATES = {"on", "playing", "home", "active", "open", "detected"}
 
     async def _check_scene_device_trigger(self, entity_id: str, new_val: str, old_val: str):
         """Prueft ob ein Geraete-Statuswechsel eine Szene aktivieren soll."""
