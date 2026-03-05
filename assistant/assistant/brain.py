@@ -2331,11 +2331,14 @@ class AssistantBrain(BrainCallbacksMixin):
                 model = _upgraded
 
         # 3b. Gespraechsmodus erkennen (VOR System-Prompt-Bau, damit Prompt angepasst wird)
+        # Erweitertes Topic-Tracking: Neben dem Timer wird auch das aktuelle
+        # Gespraechsthema erkannt und im System-Prompt bereitgestellt.
         _conversation_mode = False
+        _conversation_topic = ""
         try:
             _conv_cfg = cfg.yaml_config.get("context", {})
             _cm_timeout = int(_conv_cfg.get("conversation_mode_timeout", 300))
-            _cm_msgs = await self.memory.get_recent_conversations(limit=2)
+            _cm_msgs = await self.memory.get_recent_conversations(limit=3)
             if _cm_msgs:
                 from datetime import datetime as _dt_cm
                 _cm_ts = _cm_msgs[-1].get("timestamp", "")
@@ -2343,12 +2346,23 @@ class AssistantBrain(BrainCallbacksMixin):
                     _cm_age = (_dt_cm.now() - _dt_cm.fromisoformat(_cm_ts)).total_seconds()
                     if _cm_age < _cm_timeout:
                         _conversation_mode = True
+                        # Topic-Continuity: Thema aus den letzten Nachrichten extrahieren
+                        # Nutze die vorhandenen Nachrichten-Inhalte statt extra LLM-Call
+                        _prev_texts = []
+                        for _cm_msg in _cm_msgs[-3:]:
+                            _cm_content = _cm_msg.get("user_text", "") or _cm_msg.get("content", "")
+                            if _cm_content:
+                                _prev_texts.append(_cm_content[:100])
+                        if _prev_texts:
+                            _conversation_topic = " | ".join(_prev_texts)
         except Exception:
             logger.debug("Conversation-Mode fehlgeschlagen", exc_info=True)
         if context is None:
             context = {}
         context["conversation_mode"] = _conversation_mode
+        context["conversation_topic"] = _conversation_topic
         self._active_conversation_mode = _conversation_mode
+        self._active_conversation_topic = _conversation_topic
 
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
         # Formality-Score cachen für Refinement-Prompts (Tool-Feedback)
@@ -2874,12 +2888,12 @@ class AssistantBrain(BrainCallbacksMixin):
             elif profile.category == "device_command":
                 response_tokens = 150   # "Erledigt." braucht keine 256 Tokens
             else:
-                response_tokens = 384   # Standard-Gespraech
+                response_tokens = 512   # Standard-Gespraech
             # Gespraechsmodus: Mehr Tokens für ausfuehrliche Antworten
             if _conversation_mode and profile.category != "device_command":
                 # Cap: Response-Tokens duerfen max 25% von num_ctx sein
                 _max_resp = self.ollama.num_ctx // 4
-                response_tokens = max(response_tokens, min(1024, _max_resp))
+                response_tokens = max(response_tokens, min(2048, _max_resp))
 
             llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
 
@@ -5013,26 +5027,13 @@ class AssistantBrain(BrainCallbacksMixin):
                 return ""
 
         # 1. Banned Phrases komplett entfernen
+        # NUR Phrasen die den JARVIS-Charakter brechen (KI-Identitaet, LLM-Floskeln).
+        # Natuerliche Gespraechselemente werden NICHT mehr geblockt.
         banned_phrases = filter_config.get("banned_phrases", [
-            "Natürlich!", "Natuerlich!", "Gerne!", "Selbstverständlich!",
-            "Selbstverstaendlich!", "Klar!", "Gern geschehen!",
-            "Kann ich sonst noch etwas für dich tun?",
-            "Kann ich sonst noch etwas für dich tun?",
-            "Kann ich dir sonst noch helfen?",
-            "Wenn du noch etwas brauchst",
-            "Sag einfach Bescheid",
-            "Ich bin froh, dass",
-            "Es freut mich",
-            "Es ist mir eine Freude",
+            # --- KI-Identitaets-Brueche (KRITISCH — muessen immer geblockt werden) ---
             "Als KI", "Als künstliche Intelligenz",
             "Als kuenstliche Intelligenz",
             "Ich bin nur ein Programm",
-            "Lass mich mal schauen",
-            "Lass mich kurz schauen",
-            "Das klingt frustrierend",
-            "Ich verstehe, wie du dich fühlst",
-            "Ich verstehe, wie du dich fühlst",
-            "Das klingt wirklich",
             "Ich bin ein KI", "Ich bin eine KI",
             "Ich bin ein KI-Modell", "Ich bin ein KI-Assistent",
             "Ich bin ein Sprachmodell",
@@ -5044,11 +5045,17 @@ class AssistantBrain(BrainCallbacksMixin):
             "Ich habe keine eigenen Gefuehle",
             "keine Gefühle oder Emotionen",
             "keine Gefuehle oder Emotionen",
-            "bin voll funktionsfähig und bereit",
-            "bin voll funktionsfaehig und bereit",
-            "Danke, dass du mich fragst",
-            "Das ist eine nette Frage",
-            "Danke der Nachfrage!",
+            "Ich bin ein KI-Assistent",
+            "Ich bin hier, um",
+            "Ich bin hier um",
+            # --- LLM-Hilfsbereitschafts-Floskeln (un-JARVIS) ---
+            "Kann ich sonst noch etwas für dich tun?",
+            "Kann ich sonst noch etwas fuer dich tun?",
+            "Kann ich dir sonst noch helfen?",
+            "Wenn du noch etwas brauchst",
+            "Sag einfach Bescheid",
+            "Ich bin froh, dass",
+            "Es ist mir eine Freude",
             "Hallo! Wie kann ich",
             "Hallo, wie kann ich",
             "Hallo! Was kann ich",
@@ -5058,11 +5065,11 @@ class AssistantBrain(BrainCallbacksMixin):
             "Wie kann ich Ihnen heute helfen",
             "Wie kann ich Ihnen behilflich sein",
             "Was kann ich für Sie tun",
-            "Was kann ich für Sie tun",
+            "Was kann ich fuer Sie tun",
             "Wie kann ich dir helfen",
             "Wie kann ich dir heute helfen",
             "Was kann ich für dich tun",
-            "Was kann ich für dich tun",
+            "Was kann ich fuer dich tun",
             "stehe ich Ihnen gerne zur Verfügung",
             "stehe ich Ihnen gerne zur Verfuegung",
             "stehe ich dir gerne zur Verfügung",
@@ -5070,75 +5077,15 @@ class AssistantBrain(BrainCallbacksMixin):
             "Wenn Sie Fragen haben",
             "Wenn du Fragen hast",
             "Wenn du noch Fragen hast",
-            "Bitte erkläre, worauf",
-            "Bitte erklaere, worauf",
-            "Ich bin ein KI-Assistent",
-            "Ich bin hier, um",
-            "Ich bin hier um",
-            # Kontext-Wechsel-Floskeln (JARVIS springt sofort mit)
-            "Um auf deine vorherige Frage zurückzukommen",
-            "Um auf deine vorherige Frage zurueckzukommen",
-            "Um auf deine Frage zurückzukommen",
-            "Um auf deine Frage zurueckzukommen",
-            "Aber zurück zu deiner Frage",
-            "Aber zurueck zu deiner Frage",
-            "Um noch mal darauf einzugehen",
-            "Wie ich bereits erwähnt habe",
-            "Wie ich bereits erwaehnt habe",
-            # Devote/beeindruckte Floskeln
+            "Ich hoffe, das hilft",
+            "Ich hoffe das hilft",
+            # --- Devote LLM-Floskeln (JARVIS ist nicht devot) ---
+            "Danke, dass du mich fragst",
+            "Das ist eine nette Frage",
+            "Danke der Nachfrage!",
             "Das ist eine tolle Frage",
             "Das ist eine gute Frage",
             "Das ist eine interessante Frage",
-            "Wow,", "Wow!",
-            "Oh,", "Oh!",
-            # Character-Lock: Erweiterte LLM-Floskeln
-            "Es gibt verschiedene Möglichkeiten",
-            "Es gibt verschiedene Moeglichkeiten",
-            "Es gibt mehrere Möglichkeiten",
-            "Es gibt mehrere Moeglichkeiten",
-            "Hier sind einige",
-            "Hier ist eine Übersicht",
-            "Hier ist eine Uebersicht",
-            "Lass mich das erklären",
-            "Lass mich das erklaeren",
-            "Zusammenfassend lässt sich sagen",
-            "Zusammenfassend laesst sich sagen",
-            "Zusammenfassend",
-            "Darüber hinaus",
-            "Darueber hinaus",
-            "Abschließend",
-            "Abschliessend",
-            "Ich würde empfehlen",
-            "Ich wuerde empfehlen",
-            "Es gibt einige Dinge zu beachten",
-            "Ich hoffe, das hilft",
-            "Ich hoffe das hilft",
-            "Folgende Punkte",
-            "Folgende Optionen",
-            "Im Folgenden",
-            "Es ist wichtig zu beachten",
-            "Es ist wichtig zu wissen",
-            "Hier eine kurze Zusammenfassung",
-            "Hier eine Zusammenfassung",
-            "Das sind die wichtigsten Punkte",
-            "Lass mich dir zeigen",
-            "Ich erkläre dir",
-            "Ich erklaere dir",
-            "Das Wichtigste zuerst",
-            "Zunächst möchte ich",
-            "Zunaechst moechte ich",
-            "Ich möchte darauf hinweisen",
-            "Ich moechte darauf hinweisen",
-            "Das ist ein guter Punkt",
-            "Das ist ein wichtiger Punkt",
-            "Verschiedene Aspekte",
-            "Mehrere Faktoren",
-            "In diesem Zusammenhang",
-            "Im Wesentlichen",
-            "Es lässt sich festhalten",
-            "Es laesst sich festhalten",
-            "Diesbezüglich",
-            "Diesbezueglich",
         ])
         for phrase in banned_phrases:
             # Case-insensitive Entfernung mit Wortgrenzen-Check
@@ -5162,22 +5109,16 @@ class AssistantBrain(BrainCallbacksMixin):
             text = text[0].upper() + text[1:]
 
         # 2. Banned Starters am Satzanfang entfernen
+        # Reduziert: Nur die krassesten LLM-Fuellwoerter.
+        # JARVIS darf mit "Nun,", "Tja,", "Gut," anfangen — das ist Butler-Ton.
         banned_starters = filter_config.get("banned_starters", [
-            "Also,", "Also ", "Grundsätzlich", "Grundsaetzlich",
-            "Im Prinzip", "Nun,", "Nun ", "Sozusagen",
-            "Quasi", "Eigentlich", "Im Grunde genommen",
-            "Tatsächlich,", "Tatsaechlich,",
-            "Naja,", "Na ja,",
-            "Ach,", "Hmm,", "Ähm,", "Oh,", "Oh ",
-            "Okay,", "Okay ", "Ok,", "Ok ",
-            "Nun ja,",
-            "Tja,", "Tja ",
-            "Hey,", "Hey ", "Hallo,", "Hallo ", "Hi,", "Hi ",
-            "Gut,", "Gut ", "Klar,", "Klar ",
-            "Sicher,", "Sicher ", "Genau,", "Genau ", "Richtig,",
-            "Gute Frage", "Interessante Frage", "Interessant,",
+            "Grundsätzlich", "Grundsaetzlich",
+            "Im Grunde genommen",
+            "Sozusagen",
+            "Hmm,", "Ähm,",
+            "Gute Frage", "Interessante Frage",
             "Zunächst", "Zunaechst", "Erstens,",
-            "Ja,", "Ja ", "Schön,", "Schoen,",
+            "Hallo,", "Hallo ", "Hi,", "Hi ",
         ])
         for starter in banned_starters:
             if text.lstrip().lower().startswith(starter.lower()):
@@ -5462,7 +5403,7 @@ class AssistantBrain(BrainCallbacksMixin):
         score = 0
         t = text.lower()
 
-        # Strukturelle Signale
+        # Strukturelle Signale (immer LLM-verdaechtig)
         if re.search(r"^\d+\.", text, re.MULTILINE):
             score += 2  # Nummerierte Liste
         if re.search(r"^[\-\*•]\s", text, re.MULTILINE):
@@ -5471,10 +5412,14 @@ class AssistantBrain(BrainCallbacksMixin):
             score += 1  # Markdown-Formatierung
         if text.count("!") > 2:
             score += 1  # Ueberschwenglichkeit
+
+        # Laenge/Satz-Limits: Im Gespraechsmodus lockerer
         _sentence_count = len(re.split(r"[.!?]+", text))
-        if _sentence_count > 6:
+        _max_sentences = 12 if conversation_mode else 6
+        _max_len = 1200 if conversation_mode else 400
+        if _sentence_count > _max_sentences:
             score += 1  # Zu viele Saetze
-        if len(text) > 400:
+        if len(text) > _max_len:
             score += 1  # Zu lang
 
         # Wiederholungsmuster: Gleichfoermige Satzanfaenge (LLM-typisch)
@@ -5485,48 +5430,31 @@ class AssistantBrain(BrainCallbacksMixin):
             if _unique_ratio < 0.5:
                 score += 1  # Monotone Satzanfaenge
 
-        # Inhaltliche Signale — typische LLM-Phrasen
+        # Inhaltliche Signale — nur die krassesten LLM-Phrasen
+        # Reduziert: Natuerliche Gespraechswoerter ("ausserdem", "das bedeutet")
+        # werden nicht mehr bestraft.
         _llm_phrases = [
-            "es gibt verschiedene", "es gibt mehrere", "hier sind",
-            "lass mich", "zusammenfassend", "darüber hinaus",
-            "darueber hinaus", "abschliessend", "abschließend",
-            "ich würde empfehlen", "ich wuerde empfehlen",
+            "es gibt verschiedene", "es gibt mehrere", "hier sind einige",
+            "zusammenfassend laesst sich sagen", "zusammenfassend lässt sich sagen",
             "folgende punkte", "folgende optionen", "im folgenden",
-            "es ist wichtig", "ich hoffe", "ich erkläre",
-            "ich erklaere", "das wichtigste", "zunächst möchte",
-            "zunaechst moechte", "guter punkt", "wichtiger punkt",
-            "verschiedene aspekte", "mehrere faktoren",
-            "in diesem zusammenhang", "grundsätzlich", "grundsaetzlich",
-            "prinzipiell", "im wesentlichen", "diesbezüglich",
-            "diesbezueglich", "hinsichtlich", "bezüglich", "bezueglich",
-            # Transitions & Enumerations
-            "ausserdem", "außerdem", "des weiteren", "ferner", "zudem",
-            "zusätzlich", "zusaetzlich",
-            "erstens", "zweitens", "drittens",
-            "einerseits", "andererseits",
-            # Meta-Kommentare & LLM-Enthusiasm
-            "um deine frage zu beantworten", "kurz gesagt",
+            "ich hoffe, das hilft", "ich hoffe das hilft",
+            "hier eine zusammenfassung", "hier eine kurze zusammenfassung",
             "ich helfe dir gerne", "gerne erklaere ich",
-            "ich verstehe deine", "ich kann nachvollziehen",
-            "ich bin mir nicht sicher", "soweit ich weiss",
-            # Belehrende / erklaerungs-durstige Phrasen
-            "das bedeutet", "das heisst", "mit anderen worten",
-            "um es einfach auszudruecken", "einfach ausgedrueckt",
-            "um genau zu sein", "genauer gesagt",
-            "ich moechte betonen", "es sei darauf hingewiesen",
-            "beachte bitte", "bitte beachte",
             # Devote / uebereifrige Phrasen
             "ich stehe dir zur verfuegung", "ich stehe zur verfuegung",
             "zoegers nicht zu fragen", "zoeger nicht",
             "bei weiteren fragen", "falls du weitere fragen",
+            "um deine frage zu beantworten",
+            "ich moechte betonen", "es sei darauf hingewiesen",
+            "beachte bitte", "bitte beachte",
         ]
         for phrase in _llm_phrases:
             if phrase in t:
                 score += 1
 
-        # Konversationsmodus: Toleranter, da laengere Antworten ok sind
+        # Konversationsmodus: Deutlich toleranter (2 Punkte Abzug statt 1)
         if conversation_mode and score > 0:
-            score = max(0, score - 1)
+            score = max(0, score - 2)
 
         return score
 
@@ -7713,33 +7641,29 @@ class AssistantBrain(BrainCallbacksMixin):
             return self._result(response_text, model="das_uebliche_suggest", room=room, emitted=True)
 
     def _detect_smalltalk(self, text: str) -> Optional[str]:
-        """Erkennt soziale Fragen und gibt eine JARVIS-Antwort zurueck.
+        """Erkennt minimale soziale Muster, bei denen das LLM erfahrungsgemaess
+        aus dem JARVIS-Charakter bricht (Identitaetsfragen, KI-Offenlegung).
 
-        Verhindert, dass das LLM bei Smalltalk aus dem Charakter bricht
-        ("Ich bin ein KI-Modell und habe keine Gefuehle...").
-
-        Kontext-bewusst: Nutzt Tageszeit, aktive Meldungen und Haus-Status
-        für lebendigere Antworten statt canned Responses.
+        Alles andere — Smalltalk, Begruessung, Lob, Wie-geht-es-dir, Status-Checks —
+        wird ans LLM durchgelassen, damit JARVIS kontextuell und lebendig antworten
+        kann (MCU-Stil).
 
         Returns:
-            JARVIS-Antwort als String oder None (kein Smalltalk).
+            JARVIS-Antwort als String oder None (ans LLM weiterleiten).
         """
         t = text.lower().strip().rstrip("?!.")
         title = get_person_title(self._current_person)
-        hour = datetime.now().hour
 
         # Wake-Word-Prefix entfernen: "Hey Jarvis weißt du wer ich bin?"
-        # → nur "weißt du wer ich bin" verarbeiten (statt als Begruessung zu antworten)
+        # → nur "weißt du wer ich bin" verarbeiten
         _wake_prefixes = ["hey jarvis", "hallo jarvis", "hi jarvis", "ok jarvis", "jarvis"]
-        _wake_matched = False
         for _wp in _wake_prefixes:
             if t.startswith(_wp):
                 rest = t[len(_wp):].strip().lstrip(",").strip()
                 if rest:
                     t = rest  # Echte Frage nach dem Wake-Word → weiterverarbeiten
-                    _wake_matched = True
                     break
-                # Nur Wake-Word ohne Frage → Begruessung
+                # Nur Wake-Word ohne Frage → kurze Begruessung (kein LLM noetig)
                 _greetings = [
                     f"{title}. Was brauchst du?",
                     f"Bin da, {title}.",
@@ -7748,110 +7672,23 @@ class AssistantBrain(BrainCallbacksMixin):
                 ]
                 return random.choice(_greetings)
 
-        # Schneller Kontext (kein API-Call, nur gecachte Daten)
-        pending_alerts = len(getattr(self.proactive, '_batch_queue', []))
-
-        # --- "Wie geht es dir?" Varianten — kontext-bewusst ---
-        _how_are_you = [
-            "wie geht es dir", "wie gehts dir", "wie geht's dir",
-            "wie geht es ihnen", "geht es dir gut", "geht's dir gut",
-            "alles gut bei dir", "alles klar bei dir",
-            "bist du gut drauf",
+        # --- Identitaetsfragen: Hier bricht das LLM am haeufigsten ---
+        # "Wer bist du?", "Bist du ein Mensch?", "Bist du eine KI?"
+        # Das LLM antwortet sonst mit "Ich bin ein grosses Sprachmodell..."
+        _identity = [
+            "wer bist du", "was bist du", "wie heisst du", "wie heißt du",
+            "bist du ein mensch", "bist du eine ki",
+            "bist du ein roboter", "bist du echt",
         ]
-        # "und dir" nur als kurze Rueckfrage (max 4 Woerter), nicht in laengeren Saetzen
-        if any(kw in t for kw in _how_are_you) or (t.startswith("und dir") and len(t.split()) <= 4):
-            # Bei aktiven Meldungen: ehrlich antworten
-            if pending_alerts >= 3:
-                _responses = [
-                    f"Koennnte ruhiger sein, {title}. {pending_alerts} offene Meldungen. Ich behalte es im Griff.",
-                    f"Ehrlich? {pending_alerts} Sachen wollen Aufmerksamkeit. Aber laeuft, {title}.",
-                ]
-            elif pending_alerts == 1:
-                _responses = [
-                    f"Fast alles ruhig, {title}. Eine Meldung offen — nichts Dramatisches.",
-                    f"Gut, {title}. Eine Kleinigkeit auf dem Tisch, sonst alles operativ.",
-                ]
-            elif 0 <= hour < 5:
-                _responses = [
-                    f"Wach um {hour} Uhr, {title}? Mir geht es bestens. Und dir?",
-                    f"Systeme laufen, {title}. Um diese Uhrzeit ist es angenehm ruhig.",
-                ]
-            else:
-                _responses = [
-                    f"Bestens, {title}. Alles operativ.",
-                    f"Systeme laufen einwandfrei, {title}.",
-                    f"Voll funktionsfaehig, {title}.",
-                    f"Mir geht es ausgezeichnet, {title}. Und dir?",
-                    f"Alles im gruenen Bereich, {title}. Ungewoehnlich ruhig heute.",
-                ]
-            return random.choice(_responses)
-
-        # --- "Frag mich wie es mir geht" / "Willst du nicht fragen..." ---
-        _ask_me = [
-            "willst du nicht frag", "willst du mich nicht frag",
-            "frag mich wie es mir", "frag mich mal wie",
-            "fragst du mich nicht", "frag doch mal wie",
-            "wie es mir geht", "frag mich wie",
-        ]
-        if any(kw in t for kw in _ask_me):
+        if any(kw in t for kw in _identity):
             _responses = [
-                f"Wie geht es dir, {title}?",
-                f"Verzeihung — wie geht es dir, {title}?",
-                f"Wie geht es dir, {title}?",
+                f"JARVIS, {title}. Das Haus und ich sind eins.",
+                f"Dein Hausassistent, {title}. Stets zu Diensten.",
+                f"JARVIS. Ich halte hier alles am Laufen, {title}.",
             ]
             return random.choice(_responses)
 
-        # --- Danke ---
-        _thanks = [
-            "danke jarvis", "danke dir", "danke schoen", "danke sehr",
-            "vielen dank", "dankeschoen", "dankeschön", "danke schön",
-        ]
-        if any(kw in t for kw in _thanks) or t.strip().rstrip("!.") == "danke":
-            _responses = [
-                f"Stets zu Diensten, {title}.",
-                f"Wie gewohnt, {title}.",
-                "Jederzeit.",
-                "Dafür bin ich da.",
-            ]
-            return random.choice(_responses)
-
-        # --- Guten Morgen / Abend / Nacht — tageszeit-bewusst ---
-        if "guten morgen" in t:
-            if hour < 6:
-                _responses = [
-                    f"Frueh wach, {title}. Alles bereit.",
-                    f"Morgen, {title}. Oder eher noch Nacht.",
-                ]
-            elif hour >= 11:
-                _responses = [
-                    f"Morgen — oder was davon uebrig ist, {title}.",
-                    f"{title}. Fast schon Mittag, aber: Morgen.",
-                ]
-            else:
-                _responses = [
-                    f"Guten Morgen, {title}. Systeme laufen.",
-                    f"Morgen, {title}. Alles bereit.",
-                ]
-            return random.choice(_responses)
-
-        if "guten abend" in t:
-            _responses = [
-                f"Guten Abend, {title}.",
-                f"{title}. Schoener Abend bis jetzt.",
-            ]
-            return random.choice(_responses)
-
-        if "gute nacht" in t:
-            _responses = [
-                f"Gute Nacht, {title}. Ich halte die Stellung.",
-                f"Gute Nacht, {title}. Alles unter Kontrolle.",
-            ]
-            return random.choice(_responses)
-
-        # "hallo jarvis" / "hey jarvis" werden bereits oben als Wake-Word-Prefix
-        # behandelt — kein separater Check mehr noetig.
-
-        # --- Weisst du wer ICH bin? / Kennst du mich? ---
+        # --- "Kennst du mich?" — braucht DB-Lookup, kein LLM ---
         _know_me = [
             "weisst du wer ich bin", "weißt du wer ich bin",
             "kennst du mich", "wer bin ich",
@@ -7872,103 +7709,23 @@ class AssistantBrain(BrainCallbacksMixin):
                 ]
             return random.choice(_responses)
 
-        # --- Wer bist du? ---
-        _identity = [
-            "wer bist du", "was bist du", "wie heisst du", "wie heißt du",
-            "bist du ein mensch", "bist du eine ki",
-            "bist du ein roboter", "bist du echt",
+        # --- Danke: Kurze Quittung, LLM wuerde unnoetig ausschweifig ---
+        _thanks = [
+            "danke jarvis", "danke dir", "danke schoen", "danke sehr",
+            "vielen dank", "dankeschoen", "dankeschön", "danke schön",
         ]
-        if any(kw in t for kw in _identity):
+        if any(kw in t for kw in _thanks) or t.strip().rstrip("!.") == "danke":
             _responses = [
-                f"JARVIS, {title}. Das Haus und ich sind eins.",
-                f"Dein Hausassistent, {title}. Stets zu Diensten.",
-                f"JARVIS. Ich halte hier alles am Laufen, {title}.",
+                f"Stets zu Diensten, {title}.",
+                f"Wie gewohnt, {title}.",
+                "Jederzeit.",
+                "Dafuer bin ich da.",
             ]
             return random.choice(_responses)
 
-        # --- Was machst du? / Was tust du? — zeige echten Status ---
-        _what_doing = [
-            "was machst du", "was tust du", "was machst du gerade",
-            "was tust du gerade", "bist du beschaeftigt",
-            "ist dir langweilig", "dir langweilig",
-        ]
-        if any(kw in t for kw in _what_doing):
-            if pending_alerts > 0:
-                _responses = [
-                    f"{pending_alerts} Meldungen im Blick behalten, {title}. Und auf dich warten.",
-                    f"Das Uebliche, {title}. Sensoren, {pending_alerts} offene Meldungen, Hausroutinen.",
-                ]
-            else:
-                _responses = [
-                    f"Sensoren ueberwachen, Routinen abarbeiten, auf dich warten, {title}.",
-                    f"Das Uebliche, {title}. Alles im Griff.",
-                    f"Haus hueten, {title}. Wie immer.",
-                ]
-            return random.choice(_responses)
-
-        # --- Lob / Gut gemacht ---
-        _praise = [
-            "gut gemacht", "super gemacht", "toll gemacht",
-            "du bist toll", "du bist super", "du bist der beste",
-            "guter job", "perfekt jarvis",
-        ]
-        # "klasse" nur als kurzes Lob (1-2 Woerter), nicht in "welche Klasse..."
-        if any(kw in t for kw in _praise) or (t in ("klasse", "klasse jarvis")):
-            _responses = [
-                f"Danke, {title}.",
-                f"Zu freundlich, {title}.",
-                "Ich gebe mein Bestes.",
-                "Ich tue nur meine Pflicht.",
-            ]
-            return random.choice(_responses)
-
-        # --- MCU-Jarvis: Implizite Befehle (konfigurierbar) ---
-        _impl_enabled = cfg.yaml_config.get("mcu_intelligence", {}).get("implicit_commands", True)
-        if not _impl_enabled:
-            return None
-
-        # --- MCU-Jarvis: "Ich bin da" / "Bin zuhause" / "Ich bin wieder da" ---
-        _home_announce = [
-            "ich bin da", "bin zuhause", "bin zu hause",
-            "bin wieder da", "ich bin wieder da", "bin daheim",
-            "ich bin daheim", "bin heimgekommen", "ich bin zurueck",
-            "bin zurueck",
-        ]
-        if any(kw in t for kw in _home_announce):
-            # Nicht matchen wenn ein Befehl folgt (z.B. "bin da, mach Licht an")
-            if len(t.split()) <= 5:
-                _responses = [
-                    f"Willkommen, {title}. Alles in Ordnung hier.",
-                    f"{title}. Schoen, dass du da bist.",
-                    f"Willkommen zurueck, {title}.",
-                ]
-                return random.choice(_responses)
-
-        # --- MCU-Jarvis: "Alles klar?" / "Gibt's was Neues?" / "Was hab ich verpasst?" ---
-        _status_check = [
-            "gibts was neues", "gibt es was neues",
-            "was hab ich verpasst", "was habe ich verpasst",
-            "irgendwas passiert", "was ist los",
-            "irgendwelche neuigkeiten", "was tut sich",
-        ]
-        # "alles klar" nur als kurze Frage (nicht "alles klar, mach das Licht an")
-        _is_status = any(kw in t for kw in _status_check) or (
-            "alles klar" in t and len(t.split()) <= 4
-        )
-        if _is_status:
-            if pending_alerts > 0:
-                _responses = [
-                    f"{pending_alerts} Sache{'n' if pending_alerts > 1 else ''} auf dem Tisch, {title}. Soll ich durchgehen?",
-                    f"Tatsaechlich — {pending_alerts} Meldung{'en' if pending_alerts > 1 else ''}. Details?",
-                ]
-            else:
-                _responses = [
-                    f"Alles ruhig, {title}. Nichts Bemerkenswertes.",
-                    f"Stille auf allen Kanaelen, {title}.",
-                    f"Nichts Ungewoehnliches, {title}. Seltener als man denkt.",
-                ]
-            return random.choice(_responses)
-
+        # Alles andere (Wie geht's, Guten Morgen, Was machst du, Lob,
+        # Status-Checks, Smalltalk) → ans LLM durchlassen.
+        # Das LLM hat den JARVIS-System-Prompt und kann kontextuell antworten.
         return None
 
     @staticmethod

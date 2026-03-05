@@ -2377,11 +2377,20 @@ class PersonalityEngine:
         # Gesprächsmodus-Sektion: Wird von brain.py gesetzt wenn aktives Gespräch erkannt
         conversation_mode_section = ""
         if context and context.get("conversation_mode"):
+            _topic_hint = ""
+            _conv_topic = context.get("conversation_topic", "")
+            if _conv_topic:
+                _topic_hint = (
+                    f"Aktuelles Gespraechsthema: {_conv_topic}\n"
+                    "Beziehe dich auf dieses Thema wenn relevant — "
+                    "Themenwechsel durch den User sind aber voellig ok.\n"
+                )
             conversation_mode_section = (
-                "GESPRAECHSMODUS AKTIV — Der User führt gerade ein längeres Gespräch mit dir.\n"
-                "Antworte ausführlicher, stelle Rückfragen, teile deine Meinung und dein Wissen.\n"
-                "Du darfst mehrere Absätze nutzen wenn das Thema es erfordert.\n"
-                "Beziehe dich auf das bisherige Gespräch — du erinnerst dich an alles.\n"
+                "GESPRAECHSMODUS AKTIV — Der User fuehrt gerade ein laengeres Gespraech mit dir.\n"
+                f"{_topic_hint}"
+                "Antworte ausfuehrlicher, stelle Rueckfragen, teile deine Meinung und dein Wissen.\n"
+                "Du darfst mehrere Absaetze nutzen wenn das Thema es erfordert.\n"
+                "Beziehe dich auf das bisherige Gespraech — du erinnerst dich an alles.\n"
                 "Sei wie der J.A.R.V.I.S. mit dem Tony Stark stundenlang im Labor diskutiert.\n\n"
             )
 
