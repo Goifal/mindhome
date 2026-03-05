@@ -6896,6 +6896,54 @@ async def ui_self_opt_run_analysis(token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+@app.get("/api/ui/automations")
+async def ui_list_automations(token: str = ""):
+    """Liste aller HA-Automationen + Jarvis-Automationen fuer die UI."""
+    _check_token(token)
+    try:
+        fc = brain.function_calling
+        ha_result = await fc._exec_list_ha_automations({})
+        jarvis_result = await fc._exec_list_jarvis_automations({})
+        return {
+            "ha_automations": ha_result.get("automations", []),
+            "ha_count": ha_result.get("count", 0),
+            "jarvis_automations": jarvis_result.get("automations", []),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.delete("/api/ui/automations/jarvis/{config_id}")
+async def ui_delete_jarvis_automation(config_id: str, token: str = ""):
+    """Loescht eine Jarvis-Automation."""
+    _check_token(token)
+    try:
+        result = await brain.self_automation.delete_jarvis_automation(config_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/automations/jarvis/{entity_id:path}/toggle")
+async def ui_toggle_jarvis_automation(entity_id: str, token: str = ""):
+    """Aktiviert/Deaktiviert eine Jarvis-Automation."""
+    _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        current_state = None
+        for s in (states or []):
+            if s.get("entity_id") == entity_id:
+                current_state = s.get("state")
+                break
+        if current_state is None:
+            return {"success": False, "message": "Automation nicht gefunden"}
+        service = "turn_off" if current_state == "on" else "turn_on"
+        await brain.ha.call_service("automation", service, {"entity_id": entity_id})
+        return {"success": True, "new_state": "off" if current_state == "on" else "on"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 def _deep_merge(base: dict, override: dict, _depth: int = 0):
     """Tiefer Merge von override in base (in-place).
 
