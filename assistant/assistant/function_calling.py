@@ -2967,13 +2967,31 @@ def get_assistant_tools() -> list:
                 },
             }
             tools.append(_inject_entity_hints(t))
+        elif fname == "activate_scene":
+            tools.append(_inject_entity_hints(_build_activate_scene_tool(tool)))
         else:
             tools.append(_inject_entity_hints(tool))
     return tools
 
 
-# ASSISTANT_TOOLS: Immer die dynamische Version verwenden
-ASSISTANT_TOOLS = get_assistant_tools()
+def _build_activate_scene_tool(base_tool: dict) -> dict:
+    """Baut activate_scene Tool mit Trigger-Map aus Settings."""
+    tool = copy.deepcopy(base_tool)
+    trigger_map = yaml_config.get("scenes", {}).get("trigger_map", {})
+    if trigger_map:
+        lines = []
+        for scene_id, triggers in trigger_map.items():
+            if triggers:
+                lines.append(f"  '{scene_id}': {', '.join(triggers)}")
+        if lines:
+            mapping = "\n".join(lines)
+            tool["function"]["description"] = (
+                "Eine Szene aktivieren. WICHTIG: Verwende EXAKT die scene-ID aus dieser Zuordnung. "
+                "Wenn der User einen der Ausloeser-Begriffe sagt, aktiviere die zugehoerige Szene:\n"
+                + mapping
+            )
+    return tool
+
 
 
 class FunctionExecutor:

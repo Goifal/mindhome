@@ -6901,13 +6901,39 @@ async def ui_list_automations(token: str = ""):
     """Liste aller HA-Automationen + Jarvis-Automationen fuer die UI."""
     _check_token(token)
     try:
-        fc = brain.function_calling
-        ha_result = await fc._exec_list_ha_automations({})
-        jarvis_result = await fc._exec_list_jarvis_automations({})
+        # HA-Automationen direkt laden
+        ha_automations = []
+        try:
+            raw = await brain.ha.get_automations()
+            for auto in raw:
+                alias = auto.get("alias") or auto.get("attributes", {}).get("friendly_name") or auto.get("id", "?")
+                entry = {"id": auto.get("id", auto.get("entity_id", "?")), "alias": alias}
+                for key in ("trigger", "condition", "action", "mode", "description"):
+                    if key in auto:
+                        entry[key] = auto[key]
+                attrs = auto.get("attributes", {})
+                if "last_triggered" in attrs:
+                    entry["last_triggered"] = attrs["last_triggered"]
+                state = auto.get("state")
+                if state:
+                    entry["enabled"] = state == "on"
+                ha_automations.append(entry)
+        except Exception:
+            pass
+
+        # Jarvis-Automationen
+        jarvis_automations = []
+        if hasattr(brain, "self_automation") and brain.self_automation:
+            try:
+                jarvis_result = await brain.self_automation.list_jarvis_automations()
+                jarvis_automations = jarvis_result.get("automations", [])
+            except Exception:
+                pass
+
         return {
-            "ha_automations": ha_result.get("automations", []),
-            "ha_count": ha_result.get("count", 0),
-            "jarvis_automations": jarvis_result.get("automations", []),
+            "ha_automations": ha_automations,
+            "ha_count": len(ha_automations),
+            "jarvis_automations": jarvis_automations,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
@@ -6917,6 +6943,8 @@ async def ui_list_automations(token: str = ""):
 async def ui_delete_jarvis_automation(config_id: str, token: str = ""):
     """Loescht eine Jarvis-Automation."""
     _check_token(token)
+    if not hasattr(brain, "self_automation") or not brain.self_automation:
+        raise HTTPException(status_code=503, detail="Self-Automation nicht verfuegbar")
     try:
         result = await brain.self_automation.delete_jarvis_automation(config_id)
         return result

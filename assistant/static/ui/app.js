@@ -3431,22 +3431,22 @@ function renderRoutines() {
 // ---- Szenen-Konfigurator (zentrales Management) ----
 // Vordefinierte Szenen — der User kann eigene hinzufuegen
 const _DEFAULT_SCENES = [
-  {id:'filmabend',     icon:'&#127916;', label:'Filmabend',    activity:'watching',  silence:true,  transition:5},
-  {id:'kino',          icon:'&#127871;', label:'Kino',         activity:'watching',  silence:true,  transition:5},
-  {id:'schlafen',      icon:'&#128164;', label:'Schlafen',     activity:'sleeping',  silence:true,  transition:7},
-  {id:'gute_nacht',    icon:'&#127769;', label:'Gute Nacht',   activity:'sleeping',  silence:true,  transition:7},
-  {id:'aufwachen',     icon:'&#127780;', label:'Aufwachen',    activity:'relaxing',  silence:false, transition:10},
-  {id:'gemuetlich',    icon:'&#128293;', label:'Gemuetlich',   activity:'relaxing',  silence:false, transition:4},
-  {id:'meditation',    icon:'&#129495;', label:'Meditation',   activity:'focused',   silence:true,  transition:3},
-  {id:'konzentration', icon:'&#128187;', label:'Konzentration',activity:'focused',   silence:true,  transition:2},
-  {id:'telefonat',     icon:'&#128222;', label:'Telefonat',    activity:'in_call',   silence:true,  transition:1},
-  {id:'meeting',       icon:'&#128188;', label:'Meeting',      activity:'in_call',   silence:true,  transition:1},
-  {id:'gaeste',        icon:'&#128101;', label:'Gaeste',       activity:'guests',    silence:false, transition:3},
-  {id:'nicht_stoeren', icon:'&#128683;', label:'Nicht stoeren',activity:'focused',   silence:true,  transition:1},
-  {id:'musik',         icon:'&#127925;', label:'Musik',        activity:'relaxing',  silence:false, transition:2},
-  {id:'arbeit',        icon:'&#128188;', label:'Arbeit',       activity:'focused',   silence:true,  transition:1},
-  {id:'kochen',        icon:'&#127859;', label:'Kochen',       activity:'relaxing',  silence:false, transition:1},
-  {id:'party',         icon:'&#127881;', label:'Party',        activity:'guests',    silence:false, transition:2},
+  {id:'filmabend',     icon:'&#127916;', label:'Filmabend',    activity:'watching',  silence:true,  transition:5,  triggers:['filmabend','film schauen','film an']},
+  {id:'kino',          icon:'&#127871;', label:'Kino',         activity:'watching',  silence:true,  transition:5,  triggers:['kino','kinoabend','kino modus']},
+  {id:'schlafen',      icon:'&#128164;', label:'Schlafen',     activity:'sleeping',  silence:true,  transition:7,  triggers:['schlafen','schlafmodus','ich geh schlafen']},
+  {id:'gute_nacht',    icon:'&#127769;', label:'Gute Nacht',   activity:'sleeping',  silence:true,  transition:7,  triggers:['gute nacht','nacht']},
+  {id:'aufwachen',     icon:'&#127780;', label:'Aufwachen',    activity:'relaxing',  silence:false, transition:10, triggers:['aufwachen','guten morgen','wach auf']},
+  {id:'gemuetlich',    icon:'&#128293;', label:'Gemuetlich',   activity:'relaxing',  silence:false, transition:4,  triggers:['gemuetlich','cozy','kuscheln']},
+  {id:'meditation',    icon:'&#129495;', label:'Meditation',   activity:'focused',   silence:true,  transition:3,  triggers:['meditation','meditieren']},
+  {id:'konzentration', icon:'&#128187;', label:'Konzentration',activity:'focused',   silence:true,  transition:2,  triggers:['konzentration','fokus','konzentrieren']},
+  {id:'telefonat',     icon:'&#128222;', label:'Telefonat',    activity:'in_call',   silence:true,  transition:1,  triggers:['telefonat','telefonieren','anruf']},
+  {id:'meeting',       icon:'&#128188;', label:'Meeting',      activity:'in_call',   silence:true,  transition:1,  triggers:['meeting','besprechung','videokonferenz']},
+  {id:'gaeste',        icon:'&#128101;', label:'Gaeste',       activity:'guests',    silence:false, transition:3,  triggers:['gaeste','besuch','gäste da']},
+  {id:'nicht_stoeren', icon:'&#128683;', label:'Nicht stoeren',activity:'focused',   silence:true,  transition:1,  triggers:['nicht stoeren','ruhe','bitte nicht stoeren']},
+  {id:'musik',         icon:'&#127925;', label:'Musik',        activity:'relaxing',  silence:false, transition:2,  triggers:['musik','musik an','musik hoeren']},
+  {id:'arbeit',        icon:'&#128188;', label:'Arbeit',       activity:'focused',   silence:true,  transition:1,  triggers:['arbeit','arbeiten','arbeitsmodus']},
+  {id:'kochen',        icon:'&#127859;', label:'Kochen',       activity:'relaxing',  silence:false, transition:1,  triggers:['kochen','kochmodus']},
+  {id:'party',         icon:'&#127881;', label:'Party',        activity:'guests',    silence:false, transition:2,  triggers:['party','feiern','partymodus']},
 ];
 
 const _ACTIVITY_OPTIONS = [
@@ -3473,6 +3473,7 @@ function _getScenes() {
       activity: override.activity ?? def.activity,
       silence: override.silence ?? def.silence,
       transition: override.transition ?? def.transition,
+      triggers: override.triggers ?? def.triggers ?? [],
       custom: false,
     });
   }
@@ -3483,7 +3484,8 @@ function _getScenes() {
       scenes.push({
         id, icon: cfg.icon || '&#127912;', label: cfg.label || id,
         activity: cfg.activity || 'relaxing', silence: cfg.silence ?? false,
-        transition: cfg.transition ?? 3, custom: true,
+        transition: cfg.transition ?? 3, triggers: cfg.triggers ?? [],
+        custom: true,
       });
     }
   }
@@ -3499,7 +3501,7 @@ function _saveScenes(scenes) {
     const def = defaultMap[sc.id];
     if (sc.custom) {
       // Custom Szene: immer komplett speichern
-      data[sc.id] = {icon: sc.icon, label: sc.label, activity: sc.activity, silence: sc.silence, transition: sc.transition, _custom: true};
+      data[sc.id] = {icon: sc.icon, label: sc.label, activity: sc.activity, silence: sc.silence, transition: sc.transition, triggers: sc.triggers || [], _custom: true};
     } else if (def) {
       // Default Szene: nur Abweichungen
       const diff = {};
@@ -3508,6 +3510,7 @@ function _saveScenes(scenes) {
       if (sc.silence !== def.silence) diff.silence = sc.silence;
       if (sc.transition !== def.transition) diff.transition = sc.transition;
       if (sc.icon !== def.icon) diff.icon = sc.icon;
+      if (JSON.stringify(sc.triggers || []) !== JSON.stringify(def.triggers || [])) diff.triggers = sc.triggers;
       if (Object.keys(diff).length > 0) data[sc.id] = diff;
     }
   }
@@ -3523,6 +3526,14 @@ function _saveScenes(scenes) {
     transitions[sc.id] = sc.transition;
   }
   setPath(S, 'narration.scene_transitions', transitions);
+  // 3. scenes.trigger_map — Mapping Trigger-Phrase → Scene-ID fuer LLM
+  const triggerMap = {};
+  for (const sc of scenes) {
+    if (sc.triggers && sc.triggers.length > 0) {
+      triggerMap[sc.id] = sc.triggers;
+    }
+  }
+  setPath(S, 'scenes.trigger_map', triggerMap);
 
   scheduleAutoSave();
 }
@@ -3569,6 +3580,13 @@ function renderScenes() {
             <span>Nicht stoeren</span>
           </label>
         </div>
+        <div class="scene-field">
+          <span class="scene-field-label">Ausloeser</span>
+          <input type="text" class="scene-triggers-input" value="${esc((sc.triggers||[]).join(', '))}"
+            placeholder="z.B. filmabend, film schauen, film an"
+            title="Komma-getrennte Begriffe die diese Szene ausloesen"
+            onchange="sceneTriggersChanged('${esc(sc.id)}',this.value)">
+        </div>
       </div>
     </div>`;
   }
@@ -3584,6 +3602,7 @@ function renderScenes() {
       <div><strong>1. Aktivitaet</strong> — Jede Szene ist einer Aktivitaet zugeordnet (z.B. Filmabend → "TV/Film"). Die Aktivitaet bestimmt ueber die <em>Stille-Matrix</em> (Tab "Benachrichtigungen") wie Meldungen zugestellt werden.</div>
       <div style="margin-top:6px;"><strong>2. Nicht stoeren</strong> — Markierte Szenen unterdruecken proaktive Meldungen komplett (ausser Sicherheit/Notfall).</div>
       <div style="margin-top:6px;"><strong>3. Uebergangszeit</strong> — Wie lange Licht-Uebergaenge dauern wenn Jarvis die Szene aktiviert.</div>
+      <div style="margin-top:6px;"><strong>4. Ausloeser</strong> — Komma-getrennte Begriffe die Jarvis als Trigger fuer diese Szene erkennt. So vermeidest du Verwechslungen zwischen aehnlichen Szenen.</div>
     </div>`
   );
 }
@@ -3601,10 +3620,19 @@ function sceneFieldChanged(sceneId, field, value) {
   }
 }
 
+function sceneTriggersChanged(sceneId, value) {
+  const triggers = value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc) return;
+  sc.triggers = triggers;
+  _saveScenes(scenes);
+}
+
 function addCustomScene() {
   const id = 'szene_' + Date.now();
   const scenes = _getScenes();
-  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, custom: true});
+  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, triggers: [], custom: true});
   _saveScenes(scenes);
   renderCurrentTab();
 }
