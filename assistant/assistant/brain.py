@@ -2531,6 +2531,28 @@ class AssistantBrain(BrainCallbacksMixin):
         # --- Prio 1: Core ---
         sections.append(("scene_intelligence", SCENE_INTELLIGENCE_PROMPT, 1))
 
+        # Confidence Gate: Wenn wenig Haus-Daten vorhanden, FAKTEN-REGEL verstaerken.
+        # Verhindert dass das LLM bei duenner Datenlage kreativ wird.
+        _house_data = context.get("house", {})
+        _has_house_data = bool(_house_data and (
+            _house_data.get("temperatures") or _house_data.get("devices")
+            or _house_data.get("climate") or _house_data.get("sensors")
+        ))
+        _is_house_query = any(kw in text.lower() for kw in (
+            "temperatur", "grad", "heiz", "licht", "lampe", "fenster", "tuer",
+            "tür", "rollladen", "rolladen", "jalousie", "klima", "luft",
+            "feucht", "sensor", "batterie", "strom", "energie", "wasser",
+            "rauch", "status", "zustand", "geraet", "gerät", "haus",
+        ))
+        if _is_house_query and not _has_house_data:
+            sections.append(("confidence_gate", (
+                "\n\nWICHTIG — DATEN-WARNUNG: Zu dieser Anfrage liegen KEINE "
+                "aktuellen Haus-Daten vor. Antworte EHRLICH: "
+                "'Dazu habe ich gerade keine aktuellen Daten.' "
+                "Erfinde KEINE Temperaturwerte, Geraetezustaende oder Messwerte. "
+                "NIEMALS raten oder schaetzen."
+            ), 1))
+
         # STT-6: Hinweis fuer das LLM bei Spracheingabe — das LLM soll
         # moegliche STT-Fehler eigenstaendig erkennen und korrigieren.
         if getattr(self, "_request_from_pipeline", False):
@@ -2802,9 +2824,9 @@ class AssistantBrain(BrainCallbacksMixin):
         recent = await self.memory.get_recent_conversations(limit=effective_limit)
         messages = [{"role": "system", "content": system_prompt}]
         conv_tokens_used = 0
-        # Im Gespraechsmodus: Wenn nicht alle Nachrichten reinpassen,
-        # aeltere zusammenfassen damit mehr Kontext erhalten bleibt
-        if conversation_mode and len(recent) > 4:
+        # Wenn nicht alle Nachrichten reinpassen, aeltere zusammenfassen
+        # damit mehr Kontext erhalten bleibt (auch im Befehls-Modus).
+        if len(recent) > 4:
             # Budget pruefen: Passen alle rein?
             total_est = sum(len(c.get("content", "")) // 2 for c in recent)
             if total_est > available_tokens:
@@ -3929,6 +3951,11 @@ class AssistantBrain(BrainCallbacksMixin):
                     "Character-Retry: LLM-Score %d >= Schwelle %d, versuche erneut. Original: '%s'",
                     _llm_score, _retry_threshold, response_text[:80],
                 )
+                self._task_registry.create_task(
+                    self.self_optimization.track_character_break(
+                        "llm_voice", response_text[:80]),
+                    name="track_char_break",
+                )
                 _char_retry_msgs = [
                     {"role": "system", "content": (
                         f"Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. "
@@ -3977,6 +4004,11 @@ class AssistantBrain(BrainCallbacksMixin):
                         logger.warning(
                             "Halluzinations-Guard: Erfundene Messwerte in Antwort: %s (nicht in Context)",
                             _halluc_numbers,
+                        )
+                        self._task_registry.create_task(
+                            self.self_optimization.track_character_break(
+                                "hallucination", f"Erfundene Werte: {_halluc_numbers}"),
+                            name="track_halluc_break",
                         )
                         # Saetze mit erfundenen Werten entfernen
                         _sentences = re.split(r"(?<=[.!?])\s+", response_text)
@@ -4041,6 +4073,45 @@ class AssistantBrain(BrainCallbacksMixin):
                 self.sound_manager.play_event_sound("warning", room=room),
                 name="sound_warning",
             )
+
+        # Finale Sanity-Check: Letzte Validierung vor TTS und Speicherung.
+        # Faengt Charakter-Brueche ab, die durch alle Filter geschluepft sind.
+        if response_text:
+            _resp_lower = response_text.lower()
+            # 1. Selbstidentifikation als KI/Chatbot/Sprachmodell
+            _identity_breaks = [
+                "ich bin ein ki", "ich bin eine ki", "als ki ",
+                "als sprachmodell", "als chatbot", "ich bin ein sprachmodell",
+                "ich bin ein chatbot", "ich bin ein assistent",
+                "ich bin ein virtueller assistent",
+            ]
+            if any(ib in _resp_lower for ib in _identity_breaks):
+                logger.warning("Sanity-Check: KI-Identitaets-Bruch in Antwort: '%s'", response_text[:80])
+                self._task_registry.create_task(
+                    self.self_optimization.track_character_break(
+                        "identity", response_text[:80]),
+                    name="track_identity_break",
+                )
+                # Satz mit dem Bruch entfernen
+                _sentences = re.split(r"(?<=[.!?])\s+", response_text)
+                _clean = [s for s in _sentences
+                          if not any(ib in s.lower() for ib in _identity_breaks)]
+                response_text = " ".join(_clean) if _clean else response_text
+
+            # 2. Laengenlimit: Antworten > 600 Zeichen im Befehls-Modus kuerzen
+            if (not _conversation_mode and len(response_text) > 600
+                    and profile and profile.category == "device_command"):
+                _sentences = re.split(r"(?<=[.!?])\s+", response_text)
+                _trimmed = []
+                _len = 0
+                for s in _sentences:
+                    if _len + len(s) > 400:
+                        break
+                    _trimmed.append(s)
+                    _len += len(s) + 1
+                if _trimmed:
+                    response_text = " ".join(_trimmed)
+                    logger.info("Sanity-Check: Befehls-Antwort gekuerzt auf %d Zeichen", len(response_text))
 
         # 9. Im Gedaechtnis speichern (nur nicht-leere Antworten, fire-and-forget)
         if response_text and response_text.strip():
@@ -5390,6 +5461,10 @@ class AssistantBrain(BrainCallbacksMixin):
             text
         ))
         if _has_formal:
+            self._task_registry.create_task(
+                self.self_optimization.track_character_break("formal_sie", text[:80]),
+                name="track_sie_break",
+            )
             # Verb+Sie Paare zuerst (vor generischer Sie-Ersetzung)
             _verb_pairs = [
                 (r"\bHaben Sie\b", "Hast du"), (r"\bhaben Sie\b", "hast du"),

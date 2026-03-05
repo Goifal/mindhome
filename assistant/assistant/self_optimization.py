@@ -547,6 +547,49 @@ Wenn keine Aenderung noetig: []"""
         except Exception:
             pass
 
+    async def track_character_break(self, break_type: str, detail: str = ""):
+        """Trackt einen erkannten Charakter-Bruch pro Session.
+
+        break_type: Art des Bruchs (z.B. "llm_voice", "identity", "hallucination",
+                    "formal_sie", "banned_starter", "sanity_check")
+        detail: Optionales Detail (z.B. die erkannte Phrase, max 100 Zeichen)
+        """
+        if not self._redis:
+            return
+        try:
+            from datetime import date
+            day_key = f"mha:self_opt:character_breaks:{date.today().isoformat()}"
+            await self._redis.hincrby(day_key, break_type, 1)
+            await self._redis.expire(day_key, 30 * 86400)
+            # Detail-Log fuer Analyse (letzte 50 Brueche)
+            if detail:
+                import json
+                log_key = "mha:self_opt:character_break_log"
+                entry = json.dumps({"type": break_type, "detail": detail[:100],
+                                    "ts": datetime.now().isoformat()})
+                await self._redis.lpush(log_key, entry)
+                await self._redis.ltrim(log_key, 0, 49)
+                await self._redis.expire(log_key, 30 * 86400)
+        except Exception:
+            pass
+
+    async def get_character_break_stats(self, days: int = 7) -> dict:
+        """Gibt Character-Break-Statistiken der letzten N Tage zurueck."""
+        if not self._redis:
+            return {}
+        try:
+            from datetime import date, timedelta
+            stats = {}
+            for d in range(days):
+                day = (date.today() - timedelta(days=d)).isoformat()
+                key = f"mha:self_opt:character_breaks:{day}"
+                day_data = await self._redis.hgetall(key)
+                if day_data:
+                    stats[day] = {k: int(v) for k, v in day_data.items()}
+            return stats
+        except Exception:
+            return {}
+
     async def track_user_phrase_correction(self, original_phrase: str):
         """Trackt wenn User eine Phrase explizit korrigiert ('sag das nicht').
 
