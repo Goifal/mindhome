@@ -514,6 +514,13 @@ class ActivityEngine:
                     return False
         return True
 
+    # Muster fuer Auto-Discovery von TV/Media-Entities
+    _TV_PATTERNS = (
+        "tv", "fernseher", "television", "fire_tv", "firetv", "apple_tv",
+        "appletv", "chromecast", "roku", "shield", "samsung_tv", "lg_tv",
+        "sony_tv", "philips_tv", "bravia",
+    )
+
     def _check_media_playing(self, states: list[dict]) -> str:
         """Prueft ob ein konfigurierter Media Player aktiv ist (TV, Film).
 
@@ -521,16 +528,43 @@ class ActivityEngine:
         also jeden Zustand der bedeutet, dass der TV an ist und jemand zuschaut.
         Nur "off", "standby", "unavailable", "unknown", "idle" gelten als inaktiv.
 
+        Fallback: Wenn kein konfigurierter Player aktiv ist, werden alle
+        media_player.* Entities mit TV-typischen Mustern im Namen geprueft.
+
         Returns:
             entity_id des aktiven Players (truthy) oder "" (falsy).
         """
         inactive_states = {"off", "standby", "unavailable", "unknown", "idle"}
+
+        # 1. Konfigurierte Media Player pruefen
         for state in states:
             entity_id = state.get("entity_id", "")
             if entity_id in self.media_players:
                 s = state.get("state", "off").lower()
                 if s not in inactive_states:
                     return entity_id
+
+        # 2. Fallback: Auto-Discovery aller media_player.* mit TV-Mustern
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if not entity_id.startswith("media_player."):
+                continue
+            if entity_id in self.media_players:
+                continue  # Bereits oben geprueft
+            s = state.get("state", "off").lower()
+            if s in inactive_states:
+                continue
+            # Entity-ID oder Friendly-Name auf TV-Muster pruefen
+            eid_lower = entity_id.lower()
+            friendly = (state.get("attributes", {}).get("friendly_name") or "").lower()
+            for pattern in self._TV_PATTERNS:
+                if pattern in eid_lower or pattern in friendly:
+                    logger.info(
+                        "TV auto-discovered: %s (state=%s, friendly=%s)",
+                        entity_id, s, friendly,
+                    )
+                    return entity_id
+
         return ""
 
     def _check_in_call(self, states: list[dict]) -> bool:
