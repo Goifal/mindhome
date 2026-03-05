@@ -832,6 +832,7 @@ const HELP_TEXTS = {
   'model_profiles.default.repeat_penalty': {title:'Repeat Penalty (Default)', text:'Bestraft Wiederholungen. 1.0 = aus, 1.1 = leicht, 1.5 = stark.'},
   'model_profiles.default.think_temperature': {title:'Think-Temperatur (Default)', text:'Temperatur im Thinking-Modus. Empfohlen: 0.6 (fokussierter als normal).'},
   'model_profiles.default.think_top_p': {title:'Think Top-P (Default)', text:'Top-P im Thinking-Modus. Empfohlen: 0.95 (breiter als normal).'},
+  'model_profiles.default.character_hint': {title:'JARVIS Character-Hint', text:'Modell-spezifische Prompt-Verstaerkung gegen typische LLM-Schwaechen.', detail:'Wird als Prio-1-Sektion in den System-Prompt injiziert. Hier kannst du modellspezifische Anweisungen hinterlegen, z.B. "Niemals mit Natuerlich! anfangen" fuer Modelle die dazu neigen. Leer = kein Extra-Hint.'},
   'planner.max_iterations': {title:'Max. Planungsschritte', text:'Wie viele Planungsrunden der Action Planner maximal durchlaeuft.', detail:'8 = Standard. Komplexe Aufgaben wie "Mach alles fertig fuer morgen" brauchen mehr Schritte. Bei Timeout-Problemen reduzieren.'},
   'planner.max_tokens': {title:'Planner Antwortlaenge', text:'Maximale Tokens pro Planungsschritt.', detail:'512 = Standard. Erhoehen wenn der Planner Plaene abschneidet.'},
   'models.fast_keywords': {title:'Fast-Keywords', text:'Woerter die das schnelle Modell aktivieren.'},
@@ -865,6 +866,7 @@ const HELP_TEXTS = {
   'personality.casual_warnings': {title:'Beilaeufige Warnungen', text:'Understatement-Einleitungen fuer Warnungen — der typische Butler-Stil.'},
   'response_filter.enabled': {title:'Antwort-Filter', text:'Filtert unerwuenschte Phrasen und begrenzt Antwortlaenge.'},
   'response_filter.max_response_sentences': {title:'Max. Saetze', text:'Max. Saetze pro Antwort. 0 = unbegrenzt.'},
+  'response_filter.auto_ban_threshold': {title:'Auto-Ban Schwelle', text:'Phrasen die so oft vom Filter entfernt werden, werden automatisch zur Sperrliste hinzugefuegt.', detail:'0 = aus (nur manuelle Sperrung). 10 = Standard. Niedrigere Werte = aggressiveres Selbstlernen. Gesperrte Phrasen werden via Notification gemeldet.'},
   'response_filter.banned_phrases': {title:'Verbotene Phrasen', text:'Phrasen die der Assistent nie verwenden soll.'},
   'response_filter.banned_starters': {title:'Verbotene Satzanfaenge', text:'Satzanfaenge die vermieden werden sollen.'},
   'response_filter.sorry_patterns': {title:'Entschuldigungs-Filter', text:'Entschuldigungs-Phrasen die aus LLM-Antworten entfernt werden.'},
@@ -1985,6 +1987,7 @@ function _renderModelProfiles() {
   const PROFILE_FIELDS = [
     {key:'supports_think_tags', label:'Think-Tags', type:'toggle', hint:'LLM nutzt <think>-Tags fuer Chain-of-Thought'},
     {key:'supports_think_with_tools', label:'Think + Tools', type:'toggle', hint:'Think-Tags bleiben bei Tool-Calls aktiv'},
+    {key:'character_hint', label:'JARVIS Character-Hint', type:'textarea', hint:'Modell-spezifische Prompt-Verstaerkung gegen Chatbot-Phrasen. Wird als Prio-1-Sektion in den System-Prompt injiziert.'},
     {key:'temperature', label:'Temperatur', type:'range', min:0, max:2, step:0.1},
     {key:'top_p', label:'Top-P', type:'range', min:0, max:1, step:0.05},
     {key:'top_k', label:'Top-K', type:'range', min:1, max:100, step:1},
@@ -2015,6 +2018,11 @@ function _renderModelProfiles() {
         html += '<div class="form-group" style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">' +
           '<label style="font-size:12px;margin:0;">' + f.label + '</label>' +
           '<label class="switch" style="margin:0;"><input type="checkbox" data-path="' + path + '" ' + checked + '><span class="slider"></span></label></div>';
+      } else if (f.type === 'textarea') {
+        html += '<div class="form-group" style="margin-bottom:6px;">' +
+          '<label style="font-size:12px;">' + f.label + (f.hint ? ' <span style="color:var(--text-muted);font-weight:normal;">— ' + f.hint + '</span>' : '') + '</label>' +
+          '<textarea data-path="' + path + '" rows="3" style="width:100%;font-size:12px;font-family:var(--mono);resize:vertical;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:6px;">' + esc(val) + '</textarea>' +
+          '</div>';
       } else {
         html += '<div class="form-group" style="margin-bottom:6px;">' +
           '<label style="font-size:12px;">' + f.label + '</label>' +
@@ -2063,6 +2071,57 @@ function removeModelProfile(name) {
   }
   renderCurrentTab();
   scheduleAutoSave();
+}
+
+// ---- Character-Break Stats Loader ----
+async function loadCharBreakStats() {
+  const el = document.getElementById('charBreakStatsContent');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--accent);">Lade...</span>';
+  try {
+    const resp = await fetch('/api/assistant/character-break-stats');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (data.total_breaks === 0) {
+      el.innerHTML = '<span style="color:var(--success);">Keine Charakter-Brueche in den letzten 7 Tagen.</span>';
+      return;
+    }
+    let html = '<div style="margin-bottom:6px;">Gesamt: <strong>' + data.total_breaks + '</strong> Brueche</div>';
+    // Typ-Aufschluesselung
+    const TYPE_LABELS = {
+      llm_voice: 'LLM-Stimme (zu generisch)',
+      hallucination: 'Halluzination (erfundene Werte)',
+      identity: 'Identitaets-Bruch ("Ich bin ein KI")',
+      formal_sie: 'Formelles Sie statt Du',
+      banned_starter: 'Verbotener Satzanfang'
+    };
+    if (data.totals && Object.keys(data.totals).length) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">';
+      for (const [type, count] of Object.entries(data.totals).sort((a,b) => b[1]-a[1])) {
+        const label = TYPE_LABELS[type] || type;
+        const color = count > 10 ? 'var(--danger)' : count > 3 ? 'var(--warning)' : 'var(--text-muted)';
+        html += '<span style="padding:2px 8px;border-radius:10px;background:var(--bg-secondary);border:1px solid ' + color + ';font-size:11px;">' +
+          '<span style="color:' + color + ';font-weight:600;">' + count + '</span> ' + label + '</span>';
+      }
+      html += '</div>';
+    }
+    // Letzte Eintraege
+    if (data.recent_log && data.recent_log.length) {
+      html += '<details><summary style="cursor:pointer;color:var(--accent);font-size:11px;">Letzte Brueche anzeigen</summary>';
+      html += '<div style="margin-top:4px;max-height:150px;overflow-y:auto;">';
+      for (const entry of data.recent_log.slice(0, 10)) {
+        const typeLabel = TYPE_LABELS[entry.type] || entry.type;
+        const ts = entry.ts ? entry.ts.substring(5, 16).replace('T', ' ') : '';
+        html += '<div style="padding:2px 0;border-bottom:1px solid var(--border-color);font-size:11px;">' +
+          '<span style="color:var(--text-muted);">' + ts + '</span> ' +
+          '<strong>' + typeLabel + '</strong>: ' + esc(entry.detail || '') + '</div>';
+      }
+      html += '</div></details>';
+    }
+    el.innerHTML = html;
+  } catch (err) {
+    el.innerHTML = '<span style="color:var(--danger);">Fehler: ' + esc(err.message) + '</span>';
+  }
 }
 
 // ---- Tab 1: Allgemein ----
@@ -2398,6 +2457,7 @@ function renderPersonality() {
     fInfo('Unerwuenschte Phrasen aus den Antworten filtern und maximale Antwortlaenge begrenzen.') +
     fToggle('response_filter.enabled', 'Antwort-Filter aktiv') +
     fRange('response_filter.max_response_sentences', 'Max. Saetze pro Antwort', 0, 20, 1, {0:'Kein Limit',1:'1',2:'2',3:'3',5:'5',10:'10',20:'20'}) +
+    fRange('response_filter.auto_ban_threshold', 'Auto-Ban Schwelle', 0, 30, 1, {0:'Aus (nur manuell)',5:'5x',10:'10x (Standard)',15:'15x',20:'20x',30:'30x'}) +
     fChipSelect('response_filter.banned_phrases', 'Verbotene Phrasen', [
       'als KI','als Sprachmodell','ich bin ein KI','ich habe keine Gefuehle',
       'ich bin nur eine Maschine','als AI','language model','ich kann nicht fuehlen',
@@ -3558,7 +3618,14 @@ function renderJarvisFeatures() {
     fToggle('character_lock.closing_anchor', 'Prompt-Anker (Erinnerung am Prompt-Ende)') +
     fToggle('character_lock.structural_filter', 'Struktureller Filter (Listen/Aufzaehlungen entfernen)') +
     fToggle('character_lock.character_retry', 'Automatischer Retry bei LLM-Durchbruch') +
-    fRange('character_lock.retry_threshold', 'Retry-Empfindlichkeit', 1, 5, 1, ['Sehr empfindlich','','Normal','','Nur bei starkem Bruch'])
+    fRange('character_lock.retry_threshold', 'Retry-Empfindlichkeit', 1, 5, 1, ['Sehr empfindlich','','Normal','','Nur bei starkem Bruch']) +
+    '<div id="charBreakStats" style="margin-top:12px;padding:10px;background:var(--bg-primary);border-radius:var(--radius-sm);border:1px solid var(--border-color);font-size:12px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+        '<span style="font-weight:600;">Charakter-Brueche (7 Tage)</span>' +
+        '<button class="btn btn-secondary btn-sm" onclick="loadCharBreakStats()" style="padding:2px 8px;min-width:auto;font-size:11px;">Laden</button>' +
+      '</div>' +
+      '<div id="charBreakStatsContent" style="color:var(--text-muted);">Klicke "Laden" fuer aktuelle Statistiken.</div>' +
+    '</div>'
   ) +
   sectionWrap('&#128221;', 'Benannte Protokolle',
     fInfo('Multi-Step-Sequenzen per Sprache erstellen und ausfuehren. Z.B. "Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu, TV an" — dann reicht "Filmabend" zum Ausfuehren.') +
