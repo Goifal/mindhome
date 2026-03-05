@@ -462,6 +462,24 @@ class ContextBuilder:
                 if name:
                     house["media"].append(f"{name}: {title}" if title else name)
 
+            # Szenen (kuerzlich aktiviert = innerhalb der letzten 2 Stunden)
+            elif domain == "scene":
+                last_changed = state.get("last_changed", "")
+                if last_changed:
+                    try:
+                        changed_dt = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
+                        now_dt = datetime.now().astimezone() if changed_dt.tzinfo else datetime.now()
+                        diff_s = (now_dt - changed_dt).total_seconds()
+                        if 0 <= diff_s < 7200:  # letzte 2 Stunden
+                            name = _sanitize_for_prompt(
+                                attrs.get("friendly_name", entity_id.replace("scene.", "").replace("_", " ").title()),
+                                50, "scene_name",
+                            )
+                            if name:
+                                house["active_scenes"].append(name)
+                    except (ValueError, TypeError):
+                        pass
+
             # Cover-Status (Rolllaeden/Jalousien/Garagentore)
             elif domain == "cover" and s not in ("unavailable", "unknown"):
                 mh_room = get_mindhome_room(entity_id)

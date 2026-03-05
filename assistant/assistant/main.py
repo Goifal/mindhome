@@ -4136,6 +4136,68 @@ async def ui_activate_cover_scene(scene_id: int, token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+# ── Scene Status (HA Szenen Live-Status) ─────────────────────────────
+
+@app.get("/api/ui/scenes/status")
+async def ui_scenes_status(token: str = ""):
+    """Jarvis Szenen-Status: Aktive Aktivitaet + HA-Szenen."""
+    _check_token(token)
+    try:
+        # 1. Interne Jarvis-Aktivitaet (ActivityEngine)
+        activity_info = await brain.activity.detect_activity()
+        override = brain.activity._manual_override
+        override_until = None
+        if override and brain.activity._override_until:
+            override_until = brain.activity._override_until.isoformat()
+
+        # 2. Silence-Szenen aus Config
+        silence_scenes = list(brain.proactive.silence_scenes) if hasattr(brain, "proactive") else []
+
+        # 3. HA-Szenen mit letztem Aktivierungszeitpunkt
+        states = await brain.ha.get_states()
+        ha_scenes = []
+        now = datetime.now()
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if not eid.startswith("scene."):
+                continue
+            attrs = s.get("attributes", {})
+            friendly_name = attrs.get("friendly_name", eid.replace("scene.", "").replace("_", " ").title())
+            last_changed = s.get("last_changed", "")
+            activated_ago = None
+            activated_ts = None
+            if last_changed:
+                try:
+                    changed_dt = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
+                    activated_ts = changed_dt.isoformat()
+                    diff = now.astimezone() - changed_dt if changed_dt.tzinfo else now - changed_dt.replace(tzinfo=None)
+                    activated_ago = max(0, int(diff.total_seconds()))
+                except (ValueError, TypeError):
+                    pass
+            ha_scenes.append({
+                "entity_id": eid,
+                "name": friendly_name,
+                "last_activated": activated_ts,
+                "activated_ago_seconds": activated_ago,
+            })
+        ha_scenes.sort(key=lambda x: x.get("last_activated") or "", reverse=True)
+
+        return {
+            "activity": {
+                "current": activity_info.get("activity", "unknown"),
+                "confidence": activity_info.get("confidence", 0),
+                "signals": activity_info.get("signals", {}),
+                "trigger": activity_info.get("trigger", ""),
+                "manual_override": override,
+                "override_until": override_until,
+            },
+            "silence_scenes": silence_scenes,
+            "ha_scenes": ha_scenes,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 # ── Cover Schedules (lokal gespeichert) ──────────────────────────────
 
 @app.get("/api/ui/covers/schedules")

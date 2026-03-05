@@ -475,6 +475,8 @@ async function loadDashboard() {
       <div style="padding:8px 0;display:flex;justify-content:space-between;">
         <span style="font-size:12px;">Redis</span><span style="font-size:11px;color:${mem.redis_connected?'var(--success)':'var(--danger)'};">${mem.redis_connected?'Verbunden':'Getrennt'}</span></div>`;
   } catch(e) { console.error('Dashboard fail:', e); }
+  // Szenen-Widget parallel laden
+  loadSceneStatus();
 }
 
 // ---- Live-Status Auto-Refresh ----
@@ -501,6 +503,8 @@ async function refreshLiveStatus() {
     if (wb) wb.style.display = d.whisper_mode ? '' : 'none';
     const sb = document.getElementById('statusBadge');
     if (sb) { sb.textContent = d.components_ok ? 'Online' : 'Offline'; sb.className = 'badge ' + (d.components_ok ? 'badge-ok' : 'badge-err'); }
+    // Szenen-Widget aktualisieren
+    loadSceneStatus();
     // Mood und Stress im Status-Bereich aktualisieren
     const mi = document.getElementById('moodInfo');
     if (mi && d.mood) {
@@ -518,6 +522,115 @@ async function refreshLiveStatus() {
     if (dot) dot.classList.add('offline');
     const sb = document.getElementById('statusBadge');
     if (sb) { sb.textContent = 'Offline'; sb.className = 'badge badge-err'; }
+  }
+}
+
+// ---- Scene Status Widget ----
+
+const _ACTIVITY_LABELS = {
+  sleeping:'Schlafen', in_call:'Im Telefonat', watching:'TV/Film',
+  focused:'Konzentriert', guests:'Gaeste da', relaxing:'Entspannt',
+  away:'Abwesend', unknown:'Unbekannt',
+};
+const _ACTIVITY_ICONS = {
+  sleeping:'&#128164;', in_call:'&#128222;', watching:'&#127916;',
+  focused:'&#128187;', guests:'&#128101;', relaxing:'&#127810;',
+  away:'&#128682;', unknown:'&#10067;',
+};
+
+async function loadSceneStatus() {
+  const c = document.getElementById('sceneStatusContainer');
+  if (!c) return;
+  try {
+    const d = await api('/api/ui/scenes/status');
+    const act = d.activity || {};
+    const haScenes = d.ha_scenes || [];
+
+    function fmtAgo(seconds) {
+      if (seconds == null) return '—';
+      if (seconds < 60) return 'gerade eben';
+      if (seconds < 3600) return Math.floor(seconds / 60) + ' Min';
+      if (seconds < 86400) return Math.floor(seconds / 3600) + ' Std';
+      if (seconds < 172800) return 'gestern';
+      return Math.floor(seconds / 86400) + ' Tage';
+    }
+
+    let html = '';
+
+    // 1. Aktuelle Jarvis-Aktivitaet
+    const actName = act.current || 'unknown';
+    const actLabel = _ACTIVITY_LABELS[actName] || actName;
+    const actIcon = _ACTIVITY_ICONS[actName] || '&#10067;';
+    const isOverride = !!act.manual_override;
+    const confidence = act.confidence != null ? Math.round(act.confidence * 100) : 0;
+    const trigger = act.trigger || '';
+
+    // Grund ermitteln
+    let reason = '';
+    if (isOverride) {
+      reason = 'Manuell gesetzt';
+      if (act.override_until) {
+        try {
+          const until = new Date(act.override_until);
+          reason += ' bis ' + until.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+        } catch(_) {}
+      }
+    } else {
+      const sigs = act.signals || {};
+      const active = Object.entries(sigs).filter(([k,v]) => v && v !== false && k !== 'ha_unavailable');
+      if (active.length) {
+        const sigLabels = {
+          media_playing:'Media aktiv', in_call:'Telefonat', bed_occupied:'Bett belegt',
+          sleeping:'Schlafenszeit', pc_active:'PC aktiv', guests:'Gaeste erkannt',
+          lights_off:'Lichter aus', away:'Abwesend',
+        };
+        reason = active.map(([k,v]) => {
+          let label = sigLabels[k] || k;
+          if (typeof v === 'string' && v.length > 0 && v !== 'true') label += ': ' + v.split('.').pop().replace(/_/g,' ');
+          return label;
+        }).join(', ');
+      } else {
+        reason = 'Sensor-Erkennung';
+      }
+    }
+
+    html += `<div style="padding:10px 12px;margin-bottom:10px;background:rgba(0,212,255,0.04);border:1px solid rgba(0,212,255,0.15);border-radius:8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">${actIcon}</span>
+          <span style="font-size:14px;font-weight:600;color:var(--text-primary);">${esc(actLabel)}</span>
+          ${isOverride ? '<span style="font-size:9px;background:var(--accent);color:var(--bg-primary);padding:1px 6px;border-radius:3px;font-weight:600;letter-spacing:0.5px;">OVERRIDE</span>' : ''}
+        </div>
+        <span style="font-size:11px;color:var(--text-muted);font-family:var(--mono);">${confidence}%</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-secondary);">${esc(reason)}</div>
+    </div>`;
+
+    // 2. HA-Szenen (letzte Aktivierungen)
+    if (haScenes.length) {
+      html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">HA-Szenen</div>';
+      for (const sc of haScenes) {
+        const ago = sc.activated_ago_seconds;
+        const isRecent = ago != null && ago < 7200;
+        const agoText = fmtAgo(ago);
+        const dotColor = isRecent ? 'var(--success)' : 'var(--text-muted)';
+        const nameColor = isRecent ? 'var(--text-primary)' : 'var(--text-secondary)';
+        html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="width:6px;height:6px;border-radius:50%;background:${dotColor};display:inline-block;flex-shrink:0;${isRecent?'box-shadow:0 0 6px '+dotColor:''}"></span>
+            <span style="font-size:12px;color:${nameColor};${isRecent?'font-weight:600':''};">${esc(sc.name)}</span>
+          </div>
+          <span style="font-size:10px;color:var(--text-muted);font-family:var(--mono);white-space:nowrap;">${agoText}</span>
+        </div>`;
+      }
+    }
+
+    c.innerHTML = html;
+    const ts = document.getElementById('sceneRefreshTs');
+    if (ts) ts.textContent = new Date().toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+  } catch (e) {
+    c.innerHTML = '<span style="color:var(--danger);font-size:12px;">Szenen konnten nicht geladen werden</span>';
+    console.error('Scene status fail:', e);
   }
 }
 

@@ -1007,6 +1007,13 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
         </div>
         <div class="card mt-md">
           <div class="card-header flex-between">
+            <h3>Szenen</h3>
+            <span class="text-muted-sm" id="sceneRefreshTs"></span>
+          </div>
+          <div id="sceneStatusContainer" style="color:var(--text-secondary);font-size:13px;">Lade Szenen...</div>
+        </div>
+        <div class="card mt-md">
+          <div class="card-header flex-between">
             <h3>Raumklima</h3>
             <div class="trend-period-bar" id="trendPeriodBar">
               <button class="active" onclick="loadHealthTrends(24)">24h</button>
