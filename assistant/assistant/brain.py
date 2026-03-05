@@ -107,18 +107,18 @@ from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive
 logger = logging.getLogger(__name__)
 
 
-# Audit-Log (gleicher Pfad wie main.py, fuer Chat-basierte Sicherheitsevents)
+# Audit-Log (gleicher Pfad wie main.py, für Chat-basierte Sicherheitsevents)
 _AUDIT_LOG_PATH = Path(__file__).parent.parent / "logs" / "audit.jsonl"
 
-# Legacy-Aliase (fuer bestehende Referenzen)
+# Legacy-Aliase (für bestehende Referenzen)
 SECURITY_CONFIRM_KEY = REDIS_SECURITY_CONFIRM_KEY
 SECURITY_CONFIRM_TTL = REDIS_SECURITY_CONFIRM_TTL
 
 
 def _estimate_tokens(text: str) -> int:
-    """Schaetzt BPE-Tokens fuer deutschen Text.
+    """Schaetzt BPE-Tokens für deutschen Text.
 
-    Konservative Schaetzung: ~1.4 chars/token fuer deutsche BPE-Tokenizer
+    Konservative Schaetzung: ~1.4 chars/token für deutsche BPE-Tokenizer
     (Umlaute, Komposita, Sonderzeichen brauchen mehr Tokens als Englisch).
     Vorher: // 2, was ~25-50% zu optimistisch war und zu stillem
     Kontext-Truncation durch Ollama fuehrte.
@@ -187,7 +187,7 @@ SITUATIONSBEISPIELE (als Orientierung, nicht als starre Regeln):
 - "Party" → Musik an, Lichter bunt/hell, Gaeste-WLAN
 
 WICHTIG: Diese Liste ist nicht abschliessend. Leite die richtige Reaktion
-aus dem Kontext ab, auch fuer Situationen die hier nicht stehen.
+aus dem Kontext ab, auch für Situationen die hier nicht stehen.
 Frage nur bei Mehrdeutigkeit nach (z.B. "Welchen Raum?")."""
 
 
@@ -280,7 +280,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 11.1: Knowledge Base (RAG)
         self.knowledge_base = KnowledgeBase()
 
-        # Recipe Store (dedizierte Rezeptdatenbank fuer den Koch-Assistenten)
+        # Recipe Store (dedizierte Rezeptdatenbank für den Koch-Assistenten)
         self.recipe_store = RecipeStore()
 
         # Phase 17: Neue Jarvis-Features
@@ -328,16 +328,16 @@ class AssistantBrain(BrainCallbacksMixin):
         self.self_report = SelfReport()
         self.adaptive_thresholds = AdaptiveThresholds()
 
-        # Letzte fehlgeschlagene Anfrage fuer Retry bei "Ja"
+        # Letzte fehlgeschlagene Anfrage für Retry bei "Ja"
         self._last_failed_query: Optional[str] = None
 
-        # Aktuelle Person (gesetzt in process(), nutzbar fuer Executor-Methoden)
+        # Aktuelle Person (gesetzt in process(), nutzbar für Executor-Methoden)
         self._current_person: str = ""
 
-        # MCU-JARVIS: Letzter Kontext fuer Cross-Referenzierung
+        # MCU-JARVIS: Letzter Kontext für Cross-Referenzierung
         self._last_context: dict = {}
 
-        # Feature 5: Letzte ausgefuehrte Aktion (fuer emotionale Reaktionserkennung im naechsten Turn)
+        # Feature 5: Letzte ausgefuehrte Aktion (für emotionale Reaktionserkennung im naechsten Turn)
         self._last_executed_action: str = ""
         self._last_executed_action_args: dict = {}
 
@@ -345,7 +345,7 @@ class AssistantBrain(BrainCallbacksMixin):
         self._load_configurable_data()
 
     def _load_configurable_data(self):
-        """Laedt alle konfigurierbaren Daten aus YAML mit Hardcoded-Fallback."""
+        """Lädt alle konfigurierbaren Daten aus YAML mit Hardcoded-Fallback."""
         # STT-Korrekturen
         stt_cfg = cfg.yaml_config.get("stt_corrections", {})
         self._stt_word_corrections = stt_cfg.get("word_corrections") or dict(self._STT_WORD_CORRECTIONS)
@@ -459,17 +459,17 @@ class AssistantBrain(BrainCallbacksMixin):
         # Health Monitor mit Context Builder verbinden (Trend-Indikatoren)
         self.context_builder.set_health_monitor(self.health_monitor)
 
-        # Redis fuer Context Builder (Guest-Mode-Check)
+        # Redis für Context Builder (Guest-Mode-Check)
         self.context_builder.set_redis(self.memory.redis)
 
-        # Autonomy Evolution: Redis fuer Interaktions-Tracking
+        # Autonomy Evolution: Redis für Interaktions-Tracking
         self.autonomy.set_redis(self.memory.redis)
 
         # Mood Detector initialisieren
         await self.mood.initialize(redis_client=self.memory.redis)
         self.personality.set_mood_detector(self.mood)
 
-        # Phase 6: Redis fuer Personality Engine (Formality Score, Counter)
+        # Phase 6: Redis für Personality Engine (Formality Score, Counter)
         self.personality.set_redis(self.memory.redis)
 
         # Gelernten Sarkasmus-Level laden
@@ -502,7 +502,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # LightEngine: Praesenz, Bettsensor, Lux-Adaptiv, Daemmerung, Override
         await self.light_engine.initialize(redis_client=self.memory.redis)
-        self.light_engine.mood = self.mood  # Mood-Awareness fuer adaptives Licht
+        self.light_engine.mood = self.mood  # Mood-Awareness für adaptives Licht
         await self.light_engine.start()
         self.executor._light_engine = self.light_engine
         self.time_awareness._light_engine = self.light_engine
@@ -548,7 +548,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 14.2: OCR Engine initialisieren
         await self.ocr.initialize(redis_client=self.memory.redis)
 
-        # F-069: Nicht-kritische Module in try/except wrappen fuer Degraded Startup.
+        # F-069: Nicht-kritische Module in try/except wrappen für Degraded Startup.
         # Wenn ein Modul fehlschlaegt, laeuft der Assistent trotzdem —
         # nur die betroffene Funktionalitaet fehlt.
         _degraded_modules: list[str] = []
@@ -648,7 +648,7 @@ class AssistantBrain(BrainCallbacksMixin):
         self.visitor_manager.set_notify_callback(self._handle_visitor_event)
         self.visitor_manager.set_executor(self.executor)
 
-        # Jarvis-Feature 10: Daten-basierter Widerspruch — HA-Client fuer Live-Daten
+        # Jarvis-Feature 10: Daten-basierter Widerspruch — HA-Client für Live-Daten
         self.validator.set_ha_client(self.ha)
 
         # Wellness Advisor initialisieren und starten
@@ -710,7 +710,7 @@ class AssistantBrain(BrainCallbacksMixin):
         await self.proactive.start()
 
         # Entity-Katalog: Echte Raum-/Entity-Namen aus HA laden
-        # fuer dynamische Tool-Beschreibungen (hilft dem LLM beim Matching)
+        # für dynamische Tool-Beschreibungen (hilft dem LLM beim Matching)
         try:
             from .function_calling import refresh_entity_catalog
             await refresh_entity_catalog(self.ha)
@@ -804,7 +804,7 @@ class AssistantBrain(BrainCallbacksMixin):
         C-2 Fix: Bei Requests von der HA Assist Pipeline wird speak_response()
         NICHT aufgerufen, da die Pipeline selbst TTS via Wyoming Piper macht.
         """
-        # Zentraler Filter: Sie→du, Floskeln, Reasoning — auch fuer Callbacks
+        # Zentraler Filter: Sie→du, Floskeln, Reasoning — auch für Callbacks
         text = self._filter_response(text)
         if not room:
             room = await self._get_occupied_room()
@@ -907,7 +907,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         }
                     logger.error("LLM Fehler (%s): %s", current, response["error"])
             except asyncio.TimeoutError:
-                logger.error("LLM Timeout (%.0fs) fuer %s", timeout, current)
+                logger.error("LLM Timeout (%.0fs) für %s", timeout, current)
                 self._task_registry.create_task(
                     self.error_patterns.record_error(
                         "timeout", action_type="llm_chat", model=current,
@@ -917,12 +917,14 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 logger.error("LLM Exception (%s): %s", current, e)
 
-            # Naechstes Modell in der Kaskade
+            # Nächstes Modell in der Kaskade
             fallback = self.model_router.get_fallback_model(current)
             if fallback and fallback != current:
                 logger.info("LLM Fallback: %s -> %s", current, fallback)
                 current = fallback
-                timeout = timeout * 0.66
+                # Keep the original timeout for each fallback model —
+                # the previous *0.66 reduction starved later models
+                # (e.g. 60→40→26→17s instead of the full 60s each).
             else:
                 break
 
@@ -990,7 +992,7 @@ class AssistantBrain(BrainCallbacksMixin):
             return None
 
     def _update_stt_context(self, user_text: str) -> None:
-        """STT-3: Speichert die letzten User-Saetze in Redis fuer dynamischen Whisper-Kontext.
+        """STT-3: Speichert die letzten User-Saetze in Redis für dynamischen Whisper-Kontext.
 
         Der Whisper-Handler liest 'mha:stt:recent_context' und nutzt die letzten
         Saetze als initial_prompt-Erweiterung. Das gibt Whisper Gespraechskontext
@@ -1024,7 +1026,7 @@ class AssistantBrain(BrainCallbacksMixin):
             person: Name der Person (optional)
             room: Raum aus dem die Anfrage kommt (optional)
             files: Liste von Datei-Metadaten aus file_handler.save_upload() (optional)
-            stream_callback: Optionaler async callback(token: str) fuer Streaming
+            stream_callback: Optionaler async callback(token: str) für Streaming
 
         Returns:
             Dict mit response, actions, model_used
@@ -1039,10 +1041,10 @@ class AssistantBrain(BrainCallbacksMixin):
         text = self._normalize_stt_text(text)
         logger.info("Input: '%s' (Person: %s, Raum: %s)", text, person or "unbekannt", room or "unbekannt")
 
-        # STT-3: User-Text als Kontext fuer die naechste Whisper-Transkription speichern
+        # STT-3: User-Text als Kontext für die naechste Whisper-Transkription speichern
         self._update_stt_context(text)
 
-        # Aktuelle Person merken (fuer Executor-Methoden wie manage_protocol)
+        # Aktuelle Person merken (für Executor-Methoden wie manage_protocol)
         self._current_person = person or ""
         if person:
             set_active_person(person)
@@ -1178,7 +1180,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     ),
                     name="update_voice_stats",
                 )
-                # Voice-Embedding speichern (Lerneffekt fuer Stimmabdruck)
+                # Voice-Embedding speichern (Lerneffekt für Stimmabdruck)
                 self._task_registry.create_task(
                     self.speaker_recognition.learn_embedding_from_audio(
                         person.lower(), audio_meta
@@ -1381,7 +1383,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # ----- MCU-JARVIS: "Das Uebliche" / "Wie immer" Shortcut -----
         # Erkennt implizite Routine-Befehle und verbindet sie mit der
-        # Anticipation Engine (gelernte Muster fuer die aktuelle Tageszeit).
+        # Anticipation Engine (gelernte Muster für die aktuelle Tageszeit).
         _routine_result = await self._handle_das_uebliche(text, person, room, stream_callback)
         if _routine_result is not None:
             return _routine_result
@@ -1453,7 +1455,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 self._remember_exchange(text, response_text)
                 tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
 
-                # WebSocket emit fuer nicht-streaming Modus
+                # WebSocket emit für nicht-streaming Modus
                 if not stream_callback:
                     await emit_speaking(response_text, tts_data=tts_data)
 
@@ -1647,7 +1649,7 @@ class AssistantBrain(BrainCallbacksMixin):
             _target_state = _pronoun_match.group(1)
             _la = self._last_executed_action
             _la_args = dict(self._last_executed_action_args or {})
-            # Nur fuer Geraete-Aktionen (set_light, set_cover, set_climate)
+            # Nur für Geraete-Aktionen (set_light, set_cover, set_climate)
             if _la.startswith("set_"):
                 if _target_state in ("aus", "zu", "runter"):
                     if _la == "set_cover":
@@ -1679,7 +1681,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     if occupied and occupied.lower() != "unbekannt":
                         func_args["room"] = occupied
                 except Exception as e:
-                    logger.debug("Raumerkennung fuer Shortcut fehlgeschlagen: %s", e)
+                    logger.debug("Raumerkennung für Shortcut fehlgeschlagen: %s", e)
             logger.info("Geraete-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
             try:
                 # Security: Validation + Trust-Check
@@ -1711,7 +1713,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         logger.info("Geraete-Shortcut: '%s' — Fallback auf LLM", error_msg)
                     else:
                         if success:
-                            # set_light mit state=off → turn_off_light fuer passende Bestaetigung
+                            # set_light mit state=off → turn_off_light für passende Bestaetigung
                             _confirm_action = func_name
                             if func_name == "set_light" and func_args.get("state") == "off":
                                 _confirm_action = "turn_off_light"
@@ -1872,7 +1874,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.warning("Intercom-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
         # Morning-Briefing-Shortcut: "Morgenbriefing" / "Morgen Briefing"
-        # Nutzt die RoutineEngine fuer ein echtes Jarvis-Morgenbriefing (force=True umgeht Redis-Sperre).
+        # Nutzt die RoutineEngine für ein echtes Jarvis-Morgenbriefing (force=True umgeht Redis-Sperre).
         if self._is_morning_briefing_request(text):
             logger.info("Morning-Briefing-Shortcut: '%s'", text)
             try:
@@ -2150,7 +2152,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Feature 1: Progressive Antworten — "Denken laut"
         # Auch im Streaming-Modus senden: emit_progress ist WebSocket-basiert
-        # und unabhaengig vom Token-Streaming.
+        # und unabhängig vom Token-Streaming.
         _prog_cfg = cfg.yaml_config.get("progressive_responses", {})
         if _prog_cfg.get("enabled", True):
             if _prog_cfg.get("show_context_step", True):
@@ -2254,7 +2256,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if person:
             context.setdefault("person", {})["name"] = person
 
-        # Cross-Referenz: Kontext fuer _detect_cross_references() speichern
+        # Cross-Referenz: Kontext für _detect_cross_references() speichern
         self._last_context = context
 
         # --- Running Gag Ergebnis ---
@@ -2342,14 +2344,14 @@ class AssistantBrain(BrainCallbacksMixin):
                     if _cm_age < _cm_timeout:
                         _conversation_mode = True
         except Exception:
-            pass
+            logger.debug("Conversation-Mode fehlgeschlagen", exc_info=True)
         if context is None:
             context = {}
         context["conversation_mode"] = _conversation_mode
         self._active_conversation_mode = _conversation_mode
 
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
-        # Formality-Score cachen fuer Refinement-Prompts (Tool-Feedback)
+        # Formality-Score cachen für Refinement-Prompts (Tool-Feedback)
         self._last_formality_score = formality_score if formality_score is not None else self.personality.formality_start
 
         # Phase 18: Memory-Callback-Section bauen (echte Erinnerungen aus Redis)
@@ -2374,13 +2376,13 @@ class AssistantBrain(BrainCallbacksMixin):
         # DYNAMISCHE SEKTIONEN MIT TOKEN-BUDGET
         # Prioritaet 1 = immer, 2 = wichtig, 3 = optional, 4 = wenn Platz
         # Sektionen werden nach Prioritaet sortiert und solange hinzugefuegt
-        # bis das Token-Budget fuer Sektionen erschoepft ist.
+        # bis das Token-Budget für Sektionen erschoepft ist.
         # ----------------------------------------------------------------
         context_cfg = cfg.yaml_config.get("context", {})
         max_context_tokens = context_cfg.get("max_context_tokens", 8000)
         # Auto-Align: Prompt darf nicht groesser als num_ctx sein,
         # sonst schneidet Ollama den Prompt stillschweigend ab.
-        # Reserve ~800 Tokens fuer die LLM-Antwort.
+        # Reserve ~800 Tokens für die LLM-Antwort.
         # Nutze model-spezifischen num_ctx (nicht den globalen Default).
         ollama_num_ctx = self.ollama.num_ctx_for(model)
         effective_max = ollama_num_ctx - 800
@@ -2392,7 +2394,7 @@ class AssistantBrain(BrainCallbacksMixin):
             max_context_tokens = effective_max
         base_tokens = _estimate_tokens(system_prompt)
         user_tokens_est = _estimate_tokens(text)
-        # Reserve: ~40% fuer Conversations + User-Text + Response-Space
+        # Reserve: ~40% für Conversations + User-Text + Response-Space
         section_budget = max(300, int((max_context_tokens - base_tokens - user_tokens_est) * 0.6))
 
         # Sektionen vorbereiten: (Name, Text, Prioritaet)
@@ -2433,7 +2435,7 @@ class AssistantBrain(BrainCallbacksMixin):
             sections.append(("model_character_hint",
                              f"\n\n{_model_profile.character_hint}", 1))
 
-        # STT-6: Hinweis fuer das LLM bei Spracheingabe — das LLM soll
+        # STT-6: Hinweis für das LLM bei Spracheingabe — das LLM soll
         # moegliche STT-Fehler eigenstaendig erkennen und korrigieren.
         if getattr(self, "_request_from_pipeline", False):
             sections.append(("stt_hint", (
@@ -2443,7 +2445,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "sinnvolle Wort annehmen."
             ), 2))
 
-        # Letzte ausgefuehrte Aktion im Kontext — wichtig fuer Korrekturen
+        # Letzte ausgefuehrte Aktion im Kontext — wichtig für Korrekturen
         # ("Nein, ich meinte das Schlafzimmer" → LLM weiss was zu korrigieren)
         if self._last_executed_action:
             _args_str = ", ".join(f"{k}={v}" for k, v in self._last_executed_action_args.items()) if self._last_executed_action_args else ""
@@ -2460,7 +2462,7 @@ class AssistantBrain(BrainCallbacksMixin):
             implicit_actions = self.anticipation.detect_implicit_prerequisites(text)
             if implicit_actions:
                 _impl_text = (
-                    f"\n\nIMPLIZITE FOLGE-AKTIONEN fuer '{text}':\n"
+                    f"\n\nIMPLIZITE FOLGE-AKTIONEN für '{text}':\n"
                     f"Der User meint wahrscheinlich auch: {', '.join(implicit_actions)}.\n"
                     f"Frage beilaeufig ob du das auch erledigen sollst."
                 )
@@ -2491,7 +2493,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             if description:
                                 f["vision_description"] = description
                         except Exception as e:
-                            logger.warning("Vision-LLM fuer %s fehlgeschlagen: %s",
+                            logger.warning("Vision-LLM für %s fehlgeschlagen: %s",
                                            f.get("name", "?"), e)
             from .file_handler import build_file_context
             file_context = build_file_context(files)
@@ -2529,7 +2531,7 @@ class AssistantBrain(BrainCallbacksMixin):
         conv_memory = _safe_get("conv_memory")
         if conv_memory:
             conv_text = (
-                "\n\nRELEVANTE VERGANGENE GESPRAECHE:\n"
+                "\n\nRELEVANTE VERGANGENE GESPRÄCHE:\n"
                 f"{conv_memory}\n"
                 "Referenziere beilaeufig wenn passend: 'Wie am Dienstag besprochen.' / "
                 "'Du hattest das erwaehnt.' Mit trockenem Humor wenn es sich anbietet. "
@@ -2541,7 +2543,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # sondern als Prefix der User-Message (wird dort prominenter beachtet).
         # Siehe unten: messages.append({"role": "user", ...})
 
-        # Feature A: Kreative Problemloesung — Haus-Daten fuer Loesungsvorschlaege
+        # Feature A: Kreative Problemloesung — Haus-Daten für Loesungsvorschlaege
         if problem_solving_ctx:
             sections.append(("problem_solving", problem_solving_ctx, 2))
 
@@ -2568,35 +2570,35 @@ class AssistantBrain(BrainCallbacksMixin):
             if _cal_hint:
                 sections.append(("calendar_intelligence", f"\n\nKALENDER-INTELLIGENZ: {_cal_hint}", 3))
         except Exception:
-            pass
+            logger.debug("Kalender-Intelligenz fehlgeschlagen", exc_info=True)
 
         try:
             _explain_hint = self.explainability.get_explanation_prompt_hint()
             if _explain_hint:
                 sections.append(("explainability", f"\n\n{_explain_hint}", 3))
         except Exception:
-            pass
+            logger.debug("Explainability fehlgeschlagen", exc_info=True)
 
         try:
             _transfer_hint = self.learning_transfer.get_context_hint(room or "")
             if _transfer_hint:
                 sections.append(("learning_transfer", f"\n\nPRAEFERENZ-TRANSFER: {_transfer_hint}", 3))
         except Exception:
-            pass
+            logger.debug("Learning-Transfer fehlgeschlagen", exc_info=True)
 
         try:
             _maintenance_hint = self.predictive_maintenance.get_context_hint()
             if _maintenance_hint:
                 sections.append(("predictive_maintenance", f"\n\n{_maintenance_hint}", 2))
         except Exception:
-            pass
+            logger.debug("Predictive-Maintenance fehlgeschlagen", exc_info=True)
 
         try:
             _dialogue_hint = self.dialogue_state.get_context_prompt(person or "", room or "")
             if _dialogue_hint:
                 sections.append(("dialogue_state", f"\n\nDIALOG-KONTEXT: {_dialogue_hint}", 2))
         except Exception:
-            pass
+            logger.debug("Dialog-State fehlgeschlagen", exc_info=True)
 
         # MCU-JARVIS: Anomalie-Kontext — ungewoehnliche Zustaende beilaeufig erwaehnen
         anomalies = context.get("anomalies", [])
@@ -2700,7 +2702,7 @@ class AssistantBrain(BrainCallbacksMixin):
             )
 
         # 5. Letzte Gespraeche laden (Working Memory)
-        # Token-Budget fuer Conversations: Restliches Budget nach System-Prompt + Sektionen
+        # Token-Budget für Conversations: Restliches Budget nach System-Prompt + Sektionen
         system_tokens = _estimate_tokens(system_prompt)
         available_tokens = max(500, max_context_tokens - system_tokens - user_tokens_est - 200)
         # Gespraeche laden — Anzahl aus yaml_config (UI-konfigurierbar)
@@ -2710,7 +2712,7 @@ class AssistantBrain(BrainCallbacksMixin):
         conversation_mode = _conversation_mode
         effective_limit = conv_limit * 2 if conversation_mode else conv_limit
         # Budget-Guard: Limit kappen wenn num_ctx zu klein
-        # ~100 Tokens pro Nachricht geschaetzt, max 60% des available_tokens fuer Conversations
+        # ~100 Tokens pro Nachricht geschaetzt, max 60% des available_tokens für Conversations
         max_by_budget = max(4, int(available_tokens * 0.6) // 100)
         if effective_limit > max_by_budget:
             _orig_limit = effective_limit
@@ -2812,7 +2814,7 @@ class AssistantBrain(BrainCallbacksMixin):
             executed_actions = planner_result.get("actions", [])
             model = _deep_model
         elif intent_type == "knowledge":
-            # Phase 8: Wissensfragen -> Deep-Model fuer bessere Qualitaet
+            # Phase 8: Wissensfragen -> Deep-Model für bessere Qualitaet
             _deep_model = self.model_router._cap_model(self.model_router.model_deep)
             logger.info("Wissensfrage erkannt -> LLM direkt (Deep: %s, keine Tools)",
                          _deep_model)
@@ -2873,7 +2875,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 response_tokens = 150   # "Erledigt." braucht keine 256 Tokens
             else:
                 response_tokens = 384   # Standard-Gespraech
-            # Gespraechsmodus: Mehr Tokens fuer ausfuehrliche Antworten
+            # Gespraechsmodus: Mehr Tokens für ausfuehrliche Antworten
             if _conversation_mode and profile.category != "device_command":
                 # Cap: Response-Tokens duerfen max 25% von num_ctx sein
                 _max_resp = self.ollama.num_ctx // 4
@@ -2906,7 +2908,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     logger.info("Error-Mitigation: %s -> %s (%s)", model, _fb, _error_mitigation.get("reason", ""))
                     model = _fb
 
-            # Think-Mode fuer komplexe Anfragen (What-If, Problemloesung)
+            # Think-Mode für komplexe Anfragen (What-If, Problemloesung)
             # aktivieren — auch wenn Tools angeboten werden.
             # Die Think-Tags werden von ollama_client automatisch entfernt.
             _force_think = bool(problem_solving_ctx or whatif_prompt)
@@ -2997,8 +2999,8 @@ class AssistantBrain(BrainCallbacksMixin):
                     f"Du MUSST jetzt einen Function-Call ausfuehren! "
                     f"Der User hat gesagt: \"{text}\". "
                     f"Nutze den passenden Tool-Call: "
-                    f"Fuer Status-Abfragen: get_lights, get_covers, get_climate, get_entity_state, get_house_status. "
-                    f"Fuer Steuerung: set_light, set_cover, set_climate. "
+                    f"Für Status-Abfragen: get_lights, get_covers, get_climate, get_entity_state, get_house_status. "
+                    f"Für Steuerung: set_light, set_cover, set_climate. "
                     f"KEIN Text. NUR der Function-Call."
                 )
                 retry_messages = messages + [
@@ -3072,7 +3074,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     validation = self.validator.validate(func_name, func_args)
                     if not validation.ok:
                         if validation.needs_confirmation:
-                            # Pending-Aktion in Redis speichern fuer Follow-Up
+                            # Pending-Aktion in Redis speichern für Follow-Up
                             if self.memory.redis:
                                 pending = {
                                     "function": func_name,
@@ -3313,7 +3315,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             name="outcome_track",
                         )
 
-                    # Befehl fuer Konflikt-Tracking aufzeichnen
+                    # Befehl für Konflikt-Tracking aufzeichnen
                     if person:
                         self.conflict_resolver.record_command(
                             person=person,
@@ -3403,7 +3405,7 @@ class AssistantBrain(BrainCallbacksMixin):
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
             # 2. LLM verfeinert den humanisierten Text (JARVIS-Persoenlichkeit)
             # 3. Wenn LLM fehlschlaegt → humanisierter Text als Fallback
-            humanized_text = ""  # Fuer Sprach-Retry Fallback
+            humanized_text = ""  # Für Sprach-Retry Fallback
             if tool_calls and has_query_results:
                 # Schritt 1: Rohdaten humanisieren
                 humanized_results = []
@@ -3420,7 +3422,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
                 humanized_text = " ".join(humanized_results) if humanized_results else ""
 
-                # Schritt 2: LLM fuer JARVIS-Feinschliff (optional, verbessert Stil)
+                # Schritt 2: LLM für JARVIS-Feinschliff (optional, verbessert Stil)
                 if humanized_text:
                     # Bestehenden response_text (Conflict/Pushback/Opinion/Humor)
                     # NICHT verwerfen — voranstellen damit beides ankommt
@@ -3434,7 +3436,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         logger.info("Tool-Feedback uebersprungen (kurz genug): '%s'", humanized_text[:80])
                     else:
                       try:
-                        # Persoenlichkeits-Kontext fuer Refinement
+                        # Persoenlichkeits-Kontext für Refinement
                         _sarc = self.personality.sarcasm_level
                         _form = getattr(self, '_last_formality_score', 50)
                         _mood = getattr(self.personality, '_current_mood', 'neutral')
@@ -3558,7 +3560,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         logger.warning("Tool-Feedback fehlgeschlagen, nutze Humanizer: %s", e)
 
             # Phase 6: Variierte Bestaetigung statt immer "Erledigt."
-            # Nur fuer reine Action-Tools (set_light etc.), nicht fuer Query-Tools
+            # Nur für reine Action-Tools (set_light etc.), nicht für Query-Tools
             # Bei Multi-Actions: Narrative statt einzelne Bestaetigungen
             if executed_actions and not response_text:
                 successful = [
@@ -3593,7 +3595,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         if isinstance(last_action.get("args"), dict):
                             action_room = last_action["args"].get("room", "")
                             action_state = last_action["args"].get("state", "")
-                        # set_light mit state=off → turn_off_light fuer passende Bestaetigung
+                        # set_light mit state=off → turn_off_light für passende Bestaetigung
                         if action_name == "set_light" and action_state == "off":
                             action_name = "turn_off_light"
                         response_text = self.personality.get_varied_confirmation(
@@ -3614,8 +3616,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
             # Fehlerbehandlung auch wenn LLM optimistischen Text generiert hat
             # (LLM sagt "Erledigt" aber Aktion ist fehlgeschlagen)
-            # NICHT fuer Query-Tools: Die haben bereits humanizer+refinement Fehlerhandling.
-            # Error-Recovery nur fuer Action-Tools (set_light, set_cover etc.)
+            # NICHT für Query-Tools: Die haben bereits humanizer+refinement Fehlerhandling.
+            # Error-Recovery nur für Action-Tools (set_light, set_cover etc.)
             if executed_actions and response_text:
                 failed_actions = [
                     a for a in executed_actions
@@ -3636,7 +3638,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         response_text = self.personality.get_error_response("general")
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
-        # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur fuer
+        # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur für
         # den General-Pfad (Tool-Calls) filtern, um doppelte Filterung zu vermeiden.
         # Nachtmodus-Limit wird aber IMMER angewandt (harter Override).
         night_limit = 0
@@ -3685,7 +3687,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.warning("Sprach-Retry fehlgeschlagen: %s", e)
             if not response_text:
                 response_text = self.personality.get_error_response("general")
-                # Fehlgeschlagene Anfrage merken fuer Retry bei "Ja"
+                # Fehlgeschlagene Anfrage merken für Retry bei "Ja"
                 self._last_failed_query = text
 
         # Character-Lock: Retry wenn Antwort trotz Filter noch zu LLM-artig klingt
@@ -3866,7 +3868,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if response_text and response_text.strip():
             self._remember_exchange(text, response_text)
 
-        # Phase 17: Kontext-Persistenz fuer Raumwechsel speichern
+        # Phase 17: Kontext-Persistenz für Raumwechsel speichern
         self._task_registry.create_task(
             self._save_cross_room_context(person or "", text, response_text, room or ""),
             name="save_cross_room_ctx",
@@ -3913,7 +3915,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     name="extract_negative_reaction",
                 )
 
-        # Letzte ausgefuehrte Aktion merken (fuer naechsten Turn)
+        # Letzte ausgefuehrte Aktion merken (für naechsten Turn)
         if executed_actions:
             self._last_executed_action = executed_actions[-1].get("function", "")
             self._last_executed_action_args = executed_actions[-1].get("args", {})
@@ -3921,7 +3923,7 @@ class AssistantBrain(BrainCallbacksMixin):
             self._last_executed_action = ""
             self._last_executed_action_args = {}
 
-        # Phase 17: Situation Snapshot speichern (fuer Delta beim naechsten Gespraech)
+        # Phase 17: Situation Snapshot speichern (für Delta beim naechsten Gespraech)
         self._task_registry.create_task(
             self._save_situation_snapshot(),
             name="save_situation_snapshot",
@@ -4017,7 +4019,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 name="record_correction_memorable",
             )
 
-        # Phase 18: Seasonal Action Logging (fuer Vorjahres-Vergleich)
+        # Phase 18: Seasonal Action Logging (für Vorjahres-Vergleich)
         for action in executed_actions:
             if isinstance(action.get("result"), dict) and action["result"].get("success"):
                 self._task_registry.create_task(
@@ -4027,7 +4029,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     name="log_seasonal",
                 )
 
-        # Phase 8: Action-Logging fuer Anticipation Engine + Experiential Memory
+        # Phase 8: Action-Logging für Anticipation Engine + Experiential Memory
         for action in executed_actions:
             if isinstance(action.get("result"), dict) and action["result"].get("success"):
                 self._task_registry.create_task(
@@ -4036,7 +4038,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     ),
                     name="log_anticipation",
                 )
-                # Experiential Memory: Aktion + Kontext speichern fuer "Letztes Mal..."
+                # Experiential Memory: Aktion + Kontext speichern für "Letztes Mal..."
                 if self.memory.redis:
                     outcome_entry = json.dumps({
                         "action": action["function"],
@@ -4094,7 +4096,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 name="reset_concern",
             )
 
-        # Markiere ob diese Antwort sarkastisch war (fuer Feedback bei naechster Nachricht)
+        # Markiere ob diese Antwort sarkastisch war (für Feedback bei naechster Nachricht)
         self._last_response_was_snarky = self.personality.sarcasm_level >= 3
         # Sarkasmus-Fatigue: Streak tracken (in-memory, 0ms, per User)
         self.personality.track_sarcasm_streak(self._last_response_was_snarky, self._current_person)
@@ -4122,7 +4124,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # User hat aktiv gefragt — bei "sleeping" ist er offensichtlich wach
         # (sonst wuerde er keine Fragen stellen). Volume und Activity korrigieren,
-        # damit die Antwort hoerbar ist. VOLUME_MATRIX ist fuer proaktive Meldungen.
+        # damit die Antwort hoerbar ist. VOLUME_MATRIX ist für proaktive Meldungen.
         if current_activity == "sleeping":
             current_activity = "relaxing"
             activity_volume = 0.7
@@ -4135,7 +4137,7 @@ class AssistantBrain(BrainCallbacksMixin):
         )
 
         # Phase 17.4: Mood-Aware TTS — Geschwindigkeit an Stimmung anpassen
-        # Muede/gestresst = langsamer und leiser sprechen (Fuersorge)
+        # Muede/gestresst = langsamer und leiser sprechen (Fürsorge)
         _mood_tts_speed = _mood_config.get("tts_speed", 100)
         if _mood_tts_speed != 100 and "speed" in tts_data:
             tts_data["speed"] = tts_data.get("speed", 1.0) * (_mood_tts_speed / 100)
@@ -4143,11 +4145,11 @@ class AssistantBrain(BrainCallbacksMixin):
             tts_data["speed"] = _mood_tts_speed / 100
 
         # Activity-Volume ueberschreibt TTS-Volume (ausser Whisper-Modus)
-        # Mindest-Lautstaerke fuer direkte User-Antworten sicherstellen
+        # Mindest-Lautstaerke für direkte User-Antworten sicherstellen
         if not self.tts_enhancer.is_whisper_mode and urgency != "critical":
             tts_data["volume"] = max(activity_volume, 0.5)
 
-        # Phase 17.4: Bei Muedigkeit leiser sprechen (Fuersorge)
+        # Phase 17.4: Bei Muedigkeit leiser sprechen (Fürsorge)
         if _current_mood == "tired" and not self.tts_enhancer.is_whisper_mode:
             tts_data["volume"] = min(tts_data.get("volume", 0.8), 0.6)
 
@@ -4225,7 +4227,7 @@ class AssistantBrain(BrainCallbacksMixin):
     # Phase 7b: Robuste Tool-Call-Extraktion aus LLM-Text
     # ------------------------------------------------------------------
 
-    # Bekannte Argument-Keys pro Funktion (fuer Bare-JSON-Erkennung)
+    # Bekannte Argument-Keys pro Funktion (für Bare-JSON-Erkennung)
     _ARG_KEY_TO_FUNC: dict[str, str] = {
         # set_light hat "room"+"state", aber LLM schickt manchmal "entity_id"+"state"
         "brightness": "set_light",
@@ -4377,7 +4379,7 @@ class AssistantBrain(BrainCallbacksMixin):
             elif func_name == "get_climate":
                 return self._humanize_climate_list(raw)
         except Exception as e:
-            logger.warning("Humanize fehlgeschlagen fuer %s: %s", func_name, e, exc_info=True)
+            logger.warning("Humanize fehlgeschlagen für %s: %s", func_name, e, exc_info=True)
         # Kein Template vorhanden — Rohdaten zurueckgeben
         return raw
 
@@ -4862,7 +4864,7 @@ class AssistantBrain(BrainCallbacksMixin):
         Wird nach jedem LLM-Response aufgerufen, vor Speicherung und TTS.
 
         Args:
-            max_sentences_override: Harter Sentence-Limit (z.B. fuer Nachtmodus).
+            max_sentences_override: Harter Sentence-Limit (z.B. für Nachtmodus).
                                     Ueberschreibt den Config-Wert wenn > 0.
         """
         if not text:
@@ -4962,7 +4964,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # 0d. Meta-Narration entfernen: Zeilen die mit Reasoning-Markern beginnen
         _de_meta_markers = [
             "Was ist passiert:", "Was du stattdessen tust:", "Was ich stattdessen tue:",
-            "Hintergrund:", "Analyse:", "Kontext:", "Situation:", "Hinweis fuer mich:",
+            "Hintergrund:", "Analyse:", "Kontext:", "Situation:", "Hinweis für mich:",
             "Mein Plan:", "Gedankengang:", "Ueberlegung:", "Schritt 1:", "Schritt 2:",
         ]
         if any(text.lstrip().startswith(m) for m in _de_meta_markers):
@@ -5015,7 +5017,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "Natürlich!", "Natuerlich!", "Gerne!", "Selbstverständlich!",
             "Selbstverstaendlich!", "Klar!", "Gern geschehen!",
             "Kann ich sonst noch etwas für dich tun?",
-            "Kann ich sonst noch etwas fuer dich tun?",
+            "Kann ich sonst noch etwas für dich tun?",
             "Kann ich dir sonst noch helfen?",
             "Wenn du noch etwas brauchst",
             "Sag einfach Bescheid",
@@ -5028,7 +5030,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "Lass mich mal schauen",
             "Lass mich kurz schauen",
             "Das klingt frustrierend",
-            "Ich verstehe, wie du dich fuehlst",
+            "Ich verstehe, wie du dich fühlst",
             "Ich verstehe, wie du dich fühlst",
             "Das klingt wirklich",
             "Ich bin ein KI", "Ich bin eine KI",
@@ -5055,11 +5057,11 @@ class AssistantBrain(BrainCallbacksMixin):
             "Wie kann ich Ihnen helfen",
             "Wie kann ich Ihnen heute helfen",
             "Wie kann ich Ihnen behilflich sein",
-            "Was kann ich fuer Sie tun",
+            "Was kann ich für Sie tun",
             "Was kann ich für Sie tun",
             "Wie kann ich dir helfen",
             "Wie kann ich dir heute helfen",
-            "Was kann ich fuer dich tun",
+            "Was kann ich für dich tun",
             "Was kann ich für dich tun",
             "stehe ich Ihnen gerne zur Verfügung",
             "stehe ich Ihnen gerne zur Verfuegung",
@@ -5147,7 +5149,7 @@ class AssistantBrain(BrainCallbacksMixin):
             boundary = r"\b" if phrase[-1:].isalpha() else ""
             new_text = re.sub(escaped + boundary, "", text, flags=re.IGNORECASE)
             if new_text != text:
-                # Phase 13.4: Phrase-Tracking fuer Self-Optimization
+                # Phase 13.4: Phrase-Tracking für Self-Optimization
                 self._task_registry.create_task(
                     self.self_optimization.track_filtered_phrase(phrase),
                     name="track_phrase",
@@ -5202,7 +5204,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     text = text[0].upper() + text[1:]
 
         # 3b. Formelles "Sie" → informelles "du" (LLM ignoriert manchmal Du-Anweisung)
-        # "Ihnen/Ihre/Ihrem" sind eindeutig formell (kein Lowercase-Pendant fuer "sie"=she)
+        # "Ihnen/Ihre/Ihrem" sind eindeutig formell (kein Lowercase-Pendant für "sie"=she)
         _has_formal = bool(re.search(
             r"\b(?:Ihnen|Ihre[mnrs]?)\b"
             r"|(?:(?:H|h)aben|(?:K|k)(?:oe|ö)nnen|(?:M|m)(?:oe|ö)chten"
@@ -5263,7 +5265,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 (r"\bIhrer\b", "deiner"), (r"\bIhres\b", "deines"),
                 # "Sie" in eindeutigen Kontexten ersetzen
                 (r"(?<=[,;:!?.]\s)Sie\b", "du"),
-                (r"(?<=\bfuer\s)Sie\b", "dich"), (r"(?<=\bfür\s)Sie\b", "dich"),
+                (r"(?<=\bfür\s)Sie\b", "dich"), (r"(?<=\bfür\s)Sie\b", "dich"),
                 (r"(?<=\bdass\s)Sie\b", "du"), (r"(?<=\bwenn\s)Sie\b", "du"),
                 (r"(?<=\bob\s)Sie\b", "du"),
             ]
@@ -5426,7 +5428,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 " der ", " die ", " das ", " ist ", " und ",
                 " nicht ", " ich ", " hab ", " dir ", " ein ",
                 " dein ", " sehr ", " wohl ", " kann ", " wird ",
-                " auf ", " mit ", " fuer ", " für ", " noch ",
+                " auf ", " mit ", " für ", " für ", " noch ",
                 " auch ", " aber ", " oder ", " wenn ", " schon ",
                 " sir ", " erledigt ", " grad ", " gerade ",
             ]
@@ -5592,7 +5594,7 @@ class AssistantBrain(BrainCallbacksMixin):
         }
 
     def _build_memory_context(self, memories: dict) -> str:
-        """Baut den Gedaechtnis-Abschnitt fuer den System Prompt."""
+        """Baut den Gedaechtnis-Abschnitt für den System Prompt."""
         parts = []
 
         relevant = memories.get("relevant_facts", [])
@@ -5729,7 +5731,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 source_hint = f" [Quelle: {source}]" if source else ""
                 parts.append(f"- {content}{source_hint}")
 
-            parts.append("Nutze dieses Wissen falls relevant fuer die Antwort.")
+            parts.append("Nutze dieses Wissen falls relevant für die Antwort.")
 
             # F4: Live-Wetter-Kontext anhängen wenn Query wetterbezogen ist
             _weather_kw = {"wetter", "regen", "sonne", "wind", "temperatur", "kalt",
@@ -5752,7 +5754,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             )
                             break
                 except Exception:
-                    pass
+                    logger.debug("Wetter-Daten fehlgeschlagen", exc_info=True)
 
             return "\n".join(parts)
         except Exception as e:
@@ -5889,7 +5891,7 @@ class AssistantBrain(BrainCallbacksMixin):
         return await self._safe_format(message, urgency)
 
     async def _handle_timer_notification(self, alert: dict):
-        """Callback fuer allgemeine Timer/Wecker — meldet wenn Timer abgelaufen ist."""
+        """Callback für allgemeine Timer/Wecker — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
         room = alert.get("room") or None
         alert_type = alert.get("type", "")
@@ -5910,7 +5912,7 @@ class AssistantBrain(BrainCallbacksMixin):
         logger.info("Timer -> Meldung: %s (Raum: %s)", formatted, room or "auto")
 
     async def _handle_learning_suggestion(self, alert: dict):
-        """Callback fuer Learning Observer — schlaegt Automatisierungen vor."""
+        """Callback für Learning Observer — schlaegt Automatisierungen vor."""
         message = alert.get("message", "")
         if not message:
             return
@@ -5921,7 +5923,7 @@ class AssistantBrain(BrainCallbacksMixin):
         logger.info("Learning -> Vorschlag: %s", formatted)
 
     async def _handle_cooking_timer(self, alert: dict):
-        """Callback fuer Koch-Timer — meldet wenn Timer abgelaufen ist."""
+        """Callback für Koch-Timer — meldet wenn Timer abgelaufen ist."""
         message = alert.get("message", "")
         room = alert.get("room") or None
         if not message:
@@ -5932,7 +5934,7 @@ class AssistantBrain(BrainCallbacksMixin):
         logger.info("Koch-Timer -> Meldung: %s", formatted)
 
     async def _handle_workshop_timer(self, message: str):
-        """Callback fuer Workshop-Timer-Benachrichtigungen."""
+        """Callback für Workshop-Timer-Benachrichtigungen."""
         if not message:
             return
         if not await self._callback_should_speak("medium", source="WorkshopTimer"):
@@ -5943,7 +5945,7 @@ class AssistantBrain(BrainCallbacksMixin):
         logger.info("Workshop-Timer: %s", formatted)
 
     async def _handle_time_alert(self, alert: dict):
-        """Callback fuer TimeAwareness-Alerts — leitet an proaktive Meldung weiter."""
+        """Callback für TimeAwareness-Alerts — leitet an proaktive Meldung weiter."""
         message = alert.get("message", "")
         urgency = alert.get("urgency", "low")
         if not message:
@@ -5956,12 +5958,12 @@ class AssistantBrain(BrainCallbacksMixin):
             message, urgency, f"time_{device_type}",
         )
         await self._speak_and_emit(formatted)
-        # Proaktive Meldung in Working Memory speichern fuer Konversations-Kontext
+        # Proaktive Meldung in Working Memory speichern für Konversations-Kontext
         self._remember_exchange("[proaktiv: Zeiterkennung]", formatted)
         logger.info("TimeAwareness [%s] -> Meldung: %s", urgency, formatted)
 
     async def _handle_health_alert(self, alert_type: str, urgency: str, message: str):
-        """Callback fuer Health Monitor — leitet an proaktive Meldung weiter."""
+        """Callback für Health Monitor — leitet an proaktive Meldung weiter."""
         if not message:
             return
         if urgency != "critical" and not await self._callback_should_speak(urgency, source=f"HealthMonitor/{alert_type}"):
@@ -5974,7 +5976,7 @@ class AssistantBrain(BrainCallbacksMixin):
         logger.info("Health Monitor [%s/%s]: %s", alert_type, urgency, formatted)
 
     async def _handle_device_health_alert(self, alert: dict):
-        """Callback fuer DeviceHealthMonitor — meldet Geraete-Anomalien."""
+        """Callback für DeviceHealthMonitor — meldet Geraete-Anomalien."""
         message = alert.get("message", "")
         if not message:
             return
@@ -5993,9 +5995,9 @@ class AssistantBrain(BrainCallbacksMixin):
         )
 
     async def _handle_wellness_nudge(self, nudge_type: str, message: str, urgency: str = "low"):
-        """Callback fuer Wellness Advisor — kuemmert sich um den User.
+        """Callback für Wellness Advisor — kuemmert sich um den User.
 
-        Phase 17.4: Urgency ist jetzt mood-abhaengig (Wellness Advisor setzt
+        Phase 17.4: Urgency ist jetzt mood-abhängig (Wellness Advisor setzt
         hoehere Prioritaet bei Stress/Muedigkeit).
         """
         if not message:
@@ -6014,7 +6016,7 @@ class AssistantBrain(BrainCallbacksMixin):
     # ------------------------------------------------------------------
 
     async def _handle_music_suggestion(self, alert: dict) -> None:
-        """Callback fuer Smart DJ — proaktive Musikvorschlaege."""
+        """Callback für Smart DJ — proaktive Musikvorschlaege."""
         message = alert.get("message", "")
         room = alert.get("room") or None
         if not message:
@@ -6027,7 +6029,7 @@ class AssistantBrain(BrainCallbacksMixin):
         logger.info("MusicDJ: %s (Raum: %s)", formatted, room or "auto")
 
     async def _handle_visitor_event(self, alert: dict) -> None:
-        """Callback fuer Besucher-Management — Klingel-Events mit Kontext."""
+        """Callback für Besucher-Management — Klingel-Events mit Kontext."""
         message = alert.get("message", "")
         room = alert.get("room") or None
         if not message:
@@ -6054,7 +6056,7 @@ class AssistantBrain(BrainCallbacksMixin):
         room: Optional[str] = None,
         actions: Optional[list] = None,
     ):
-        """Callback fuer Ambient Audio Events — reagiert auf Umgebungsgeraeusche."""
+        """Callback für Ambient Audio Events — reagiert auf Umgebungsgeraeusche."""
         if not message:
             return
 
@@ -6110,7 +6112,7 @@ class AssistantBrain(BrainCallbacksMixin):
     # ------------------------------------------------------------------
 
     async def _get_tutorial_hint(self, person: str) -> Optional[str]:
-        """Gibt Tutorial-Hinweise fuer neue User zurueck (erste 10 Interaktionen)."""
+        """Gibt Tutorial-Hinweise für neue User zurueck (erste 10 Interaktionen)."""
         tutorial_cfg = cfg.yaml_config.get("tutorial", {})
         if not tutorial_cfg.get("enabled", True):
             return None
@@ -6132,15 +6134,15 @@ class AssistantBrain(BrainCallbacksMixin):
 
             # Verschiedene Tipps je nach Interaktions-Nummer
             tips = [
-                "Tipp: Du kannst mich fragen 'Was kannst du?' fuer eine Uebersicht aller Funktionen.",
-                "Tipp: Sag 'Merk dir [etwas]' und ich speichere es fuer dich. 'Was weisst du?' zeigt alles an.",
+                "Tipp: Du kannst mich fragen 'Was kannst du?' für eine Uebersicht aller Funktionen.",
+                "Tipp: Sag 'Merk dir [etwas]' und ich speichere es für dich. 'Was weisst du?' zeigt alles an.",
                 "Tipp: Ich kann Licht, Heizung und Rolllaeden steuern. Sag einfach was du brauchst.",
                 "Tipp: Ich habe Easter Eggs. Probier mal 'Wer bist du?' oder '42'.",
-                "Tipp: Sag 'Gute Nacht' fuer einen Sicherheits-Check und die Nacht-Routine.",
+                "Tipp: Sag 'Gute Nacht' für einen Sicherheits-Check und die Nacht-Routine.",
                 "Tipp: 'Setz Milch auf die Einkaufsliste' funktioniert auch per Sprache.",
                 "Tipp: Ich lerne aus Korrekturen. Sag einfach 'Nein, ich meinte...'",
                 "Tipp: Im Dashboard (Web-UI) kannst du alles konfigurieren — Sarkasmus, Stimme, Easter Eggs.",
-                "Tipp: Ich kann kochen! Sag 'Rezept fuer Spaghetti Carbonara'.",
+                "Tipp: Ich kann kochen! Sag 'Rezept für Spaghetti Carbonara'.",
                 "Tipp: Frag 'Was hast du von mir gelernt?' um deine Korrekturen zu sehen.",
             ]
 
@@ -6753,7 +6755,7 @@ class AssistantBrain(BrainCallbacksMixin):
         "rolle": "Rollo", "rollos": "Rollos",
         # --- Zahlen/Prozent-Korrekturen ---
         "prozent": "%", "grad": "°",
-        # --- Gaengige Fehlerkennungen ---
+        # --- Gängige Fehlerkennungen ---
         "home assistant": "Home Assistant", "homeassistant": "Home Assistant",
     }
 
@@ -6783,7 +6785,7 @@ class AssistantBrain(BrainCallbacksMixin):
     ]
 
     def _normalize_stt_text(self, text: str) -> str:
-        """Normalisiert STT-Output fuer bessere Verarbeitung.
+        """Normalisiert STT-Output für bessere Verarbeitung.
 
         Korrigiert typische Whisper-Fehler:
         - Doppelte Leerzeichen
@@ -6838,7 +6840,7 @@ class AssistantBrain(BrainCallbacksMixin):
         """Erkennt ob der Text ein Geraete-Steuerungsbefehl ist.
 
         Prueft auf Kombination von Geraete-Nomen + Aktion/Prozent.
-        Wird fuer Tool-Call-Retry genutzt: Wenn das LLM keinen Tool-Call macht
+        Wird für Tool-Call-Retry genutzt: Wenn das LLM keinen Tool-Call macht
         aber der Text offensichtlich ein Geraetebefehl ist.
         """
         t = text.lower()
@@ -6948,7 +6950,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     return {"function": {"name": "get_entity_state",
                                          "arguments": {"entity_id": query}}}
 
-        # --- Raum-Extraktion (fuer Steuerungsbefehle) ---
+        # --- Raum-Extraktion (für Steuerungsbefehle) ---
         _room = ""
         _rm = re.search(
             r'(?:im|in\s+der|in\s+dem|ins|vom|am)\s+'
@@ -7020,7 +7022,7 @@ class AssistantBrain(BrainCallbacksMixin):
         time_match = _re.search(
             r"(?:wecker|weck(?:e|st)?\s+(?:mich|uns))\s+"
             r"(?:\w+\s+){0,3}"
-            r"(?:auf|um|fuer|für|gegen|ab)\s*"
+            r"(?:auf|um|für|für|gegen|ab)\s*"
             r"(\d{1,2})(?::(\d{2}))?\s*(?:uhr)?",
             t,
         )
@@ -7031,10 +7033,10 @@ class AssistantBrain(BrainCallbacksMixin):
                 t,
             )
         if not time_match:
-            # Pattern 3: "Stell einen Wecker auf 7 Uhr", "Stell mir nen Wecker fuer 6:30"
+            # Pattern 3: "Stell einen Wecker auf 7 Uhr", "Stell mir nen Wecker für 6:30"
             time_match = _re.search(
                 r"(?:stell|setz|erstell|mach)\w*\s+(?:\w+\s+){0,3}wecker\s*"
-                r"(?:auf|um|fuer|für|gegen)?\s*"
+                r"(?:auf|um|für|für|gegen)?\s*"
                 r"(\d{1,2})(?::(\d{2}))?\s*(?:uhr)?",
                 t,
             )
@@ -7054,10 +7056,10 @@ class AssistantBrain(BrainCallbacksMixin):
                 elif any(kw in t for kw in ["wochenend", "sa-so", "samstag und sonntag"]):
                     repeat = "weekends"
 
-                # Label erkennen: "fuer Training", "fuer Arbeit"
+                # Label erkennen: "für Training", "für Arbeit"
                 label = "Wecker"
                 label_match = _re.search(
-                    r"(?:fuer|für)\s+(?:den\s+|die\s+|das\s+)?(\w[\w\s-]{1,20}?)(?:\s*$|\s+(?:um|auf|ab))",
+                    r"(?:für|für)\s+(?:den\s+|die\s+|das\s+)?(\w[\w\s-]{1,20}?)(?:\s*$|\s+(?:um|auf|ab))",
                     t,
                 )
                 if label_match:
@@ -7104,7 +7106,7 @@ class AssistantBrain(BrainCallbacksMixin):
             {"function": "set_light"|"set_cover"|"set_climate",
              "args": {...}} oder None.
 
-        Wird VOR dem LLM aufgerufen fuer sofortige Ausfuehrung (~200ms statt 2-10s).
+        Wird VOR dem LLM aufgerufen für sofortige Ausfuehrung (~200ms statt 2-10s).
         Matcht NUR eindeutige, einfache Befehle — alles andere faellt durch zum LLM.
         """
         import re as _re
@@ -7151,7 +7153,7 @@ class AssistantBrain(BrainCallbacksMixin):
         rm = _re.search(
             r'(?:im|in\s+der|in\s+dem|ins|vom|am)\s+'
             r'([A-ZÄÖÜa-zäöüß][A-ZÄÖÜa-zäöüß\-]+)',
-            text,  # Original-Case fuer Raumnamen
+            text,  # Original-Case für Raumnamen
             _re.IGNORECASE,
         )
         if rm:
@@ -7369,7 +7371,7 @@ class AssistantBrain(BrainCallbacksMixin):
         Returns:
             {"function": "play_media", "args": {...}} oder None.
 
-        Wird VOR dem LLM aufgerufen fuer sofortige Ausfuehrung.
+        Wird VOR dem LLM aufgerufen für sofortige Ausfuehrung.
         """
         import re as _re
         t = text.lower().strip()
@@ -7660,7 +7662,7 @@ class AssistantBrain(BrainCallbacksMixin):
         _suggest_conf = _du_cfg.get("suggest_confidence", 0.6)
         title = get_person_title(person or self._current_person)
 
-        # Anticipation Engine nach Mustern fuer JETZT fragen
+        # Anticipation Engine nach Mustern für JETZT fragen
         try:
             suggestions = await self.anticipation.get_suggestions()
         except Exception as e:
@@ -7670,7 +7672,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not suggestions:
             # Kein gelerntes Muster — Jarvis gesteht das elegant ein
             response_text = (
-                f"Fuer diese Uhrzeit fehlt mir noch ein belastbares Muster, {title}. "
+                f"Für diese Uhrzeit fehlt mir noch ein belastbares Muster, {title}. "
                 f"Was darf es sein?"
             )
             self._remember_exchange(text, response_text)
@@ -7717,7 +7719,7 @@ class AssistantBrain(BrainCallbacksMixin):
         ("Ich bin ein KI-Modell und habe keine Gefuehle...").
 
         Kontext-bewusst: Nutzt Tageszeit, aktive Meldungen und Haus-Status
-        fuer lebendigere Antworten statt canned Responses.
+        für lebendigere Antworten statt canned Responses.
 
         Returns:
             JARVIS-Antwort als String oder None (kein Smalltalk).
@@ -7809,7 +7811,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 f"Stets zu Diensten, {title}.",
                 f"Wie gewohnt, {title}.",
                 "Jederzeit.",
-                "Dafuer bin ich da.",
+                "Dafür bin ich da.",
             ]
             return random.choice(_responses)
 
@@ -8020,7 +8022,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if any(kw in t for kw in _current_kw):
             return "current"
 
-        # Regex fuer "Soll ich mir ... anziehen/mitnehmen"
+        # Regex für "Soll ich mir ... anziehen/mitnehmen"
         if re.search(
             r'soll ich.*(?:jacke|mantel|schirm|regenschirm|muetze|mütze|handschuh)',
             t,
@@ -8202,7 +8204,7 @@ class AssistantBrain(BrainCallbacksMixin):
             "was sind", "was bedeutet", "erklaer mir", "erklaere",
             "warum ist", "wer ist", "wer war", "was passiert wenn",
             "wie funktioniert", "wie macht man", "wie kocht man",
-            "rezept fuer", "rezept für", "definition von", "unterschied zwischen",
+            "rezept für", "rezept für", "definition von", "unterschied zwischen",
         ]
 
         # Smart-Home-Keywords — wenn vorhanden, brauchen wir Tools
@@ -8244,7 +8246,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if not any(t in text_lower for t in whatif_triggers):
             return ""
 
-        # Echte HA-Daten sammeln fuer fundierte Simulation (P2: Single-Pass)
+        # Echte HA-Daten sammeln für fundierte Simulation (P2: Single-Pass)
         data_lines = []
         try:
             states = await self.get_states_cached()
@@ -8332,7 +8334,7 @@ class AssistantBrain(BrainCallbacksMixin):
         return f"""
 
 WAS-WAERE-WENN SIMULATION:
-Der User stellt eine hypothetische Frage. Nutze die ECHTEN Hausdaten fuer deine Antwort:
+Der User stellt eine hypothetische Frage. Nutze die ECHTEN Hausdaten für deine Antwort:
 
 {data_block}
 
@@ -8381,13 +8383,13 @@ Regeln:
         return any(p in text_lower for p in self._PROBLEM_PATTERNS)
 
     async def _build_problem_solving_context(self, text: str) -> Optional[str]:
-        """Sammelt Haus-Daten fuer kreative Problemloesungs-Vorschlaege.
+        """Sammelt Haus-Daten für kreative Problemloesungs-Vorschlaege.
 
         Wenn der User ein Problem beschreibt, werden relevante Live-Daten
         gesammelt damit JARVIS konkrete Loesungen vorschlagen kann.
 
         Returns:
-            Prompt-Abschnitt mit Haus-Daten fuer Problemloesung oder None
+            Prompt-Abschnitt mit Haus-Daten für Problemloesung oder None
         """
         if not self._detect_problem_solving_intent(text):
             return None
@@ -8395,6 +8397,7 @@ Regeln:
         try:
             states = await self.ha.get_states()
         except Exception:
+            logger.debug("HA States abrufen fehlgeschlagen", exc_info=True)
             return None
         if not states:
             return None
@@ -8535,6 +8538,7 @@ Regeln:
         try:
             recent_outcomes = await self.memory.redis.lrange("mha:action_outcomes", 0, 99)
         except Exception:
+            logger.debug("Redis lrange fehlgeschlagen", exc_info=True)
             return None
 
         relevant = []
@@ -8605,7 +8609,7 @@ Regeln:
     # ------------------------------------------------------------------
     # Intelligence Fusion: JARVIS DENKT MIT
     # Fusioniert Signale aus AnticipationEngine, LearningObserver und
-    # InsightEngine in eine kompakte Kontext-Sektion fuer das LLM.
+    # InsightEngine in eine kompakte Kontext-Sektion für das LLM.
     # ------------------------------------------------------------------
 
     def _build_jarvis_thinks_context(
@@ -8614,7 +8618,7 @@ Regeln:
         learned_patterns: list[dict],
         live_insights: list[dict],
     ) -> Optional[str]:
-        """Erzeugt eine 'JARVIS DENKT MIT'-Sektion fuer den System-Prompt.
+        """Erzeugt eine 'JARVIS DENKT MIT'-Sektion für den System-Prompt.
 
         Fusioniert die drei Intelligenz-Subsysteme in maximal 5 kompakte
         Hinweise, sortiert nach Relevanz. Das LLM kann diese beilaeufig
@@ -8910,7 +8914,7 @@ Regeln:
         if person:
             trust_check = self.autonomy.can_person_act(person, "send_message_to_person")
             if not trust_check["allowed"]:
-                return f"Nachrichten-Versand fuer dein Profil nicht freigegeben. {trust_check.get('reason', '')}"
+                return f"Nachrichten-Versand für dein Profil nicht freigegeben. {trust_check.get('reason', '')}"
 
         # Nachricht senden ueber FunctionExecutor
         result = await self.executor.execute("send_message_to_person", {
@@ -8965,7 +8969,7 @@ Regeln:
     async def _handle_correction(self, text: str, response: str, person: str):
         """Verarbeitet eine Korrektur und speichert sie als hochkonfidenten Fakt."""
         try:
-            # Config-Werte fuer Korrektur-Lernen
+            # Config-Werte für Korrektur-Lernen
             corr_cfg = cfg.yaml_config.get("correction", {})
             corr_confidence = float(corr_cfg.get("confidence", 0.95))
             corr_model = corr_cfg.get("model", "")
@@ -9035,7 +9039,7 @@ Regeln:
     # ------------------------------------------------------------------
 
     async def _handle_anticipation_suggestion(self, suggestion: dict):
-        """Callback fuer Anticipation-Vorschlaege.
+        """Callback für Anticipation-Vorschlaege.
 
         F-027: Trust-Level der erkannten Person wird bei Auto-Execute geprueft.
         Nur Owner darf sicherheitsrelevante Aktionen automatisch ausfuehren.
@@ -9059,7 +9063,7 @@ Regeln:
         if mode == "auto" and self.autonomy.level >= 4:
             # F-027: Trust-Check vor Auto-Execute
             trust_level = self.autonomy.get_trust_level(person) if person else 0
-            # Sicherheitsrelevante Aktionen nur fuer Owner
+            # Sicherheitsrelevante Aktionen nur für Owner
             from .conditional_commands import OWNER_ONLY_ACTIONS
             if action in OWNER_ONLY_ACTIONS and trust_level < 2:
                 logger.warning(
@@ -9096,7 +9100,7 @@ Regeln:
             logger.info("Anticipation suggestion: %s (%s, %d%%)", desc, mode, pct)
 
     async def _handle_insight(self, insight: dict):
-        """Callback fuer InsightEngine — Jarvis denkt voraus."""
+        """Callback für InsightEngine — Jarvis denkt voraus."""
         message = insight.get("message", "")
         if not message:
             return
@@ -9111,7 +9115,7 @@ Regeln:
         logger.info("Insight zugestellt [%s/%s]: %s", check, urgency, message[:80])
 
     async def _handle_intent_reminder(self, reminder: dict):
-        """Callback fuer Intent-Erinnerungen."""
+        """Callback für Intent-Erinnerungen."""
         text = reminder.get("text", "")
         if not text:
             return
@@ -9122,7 +9126,7 @@ Regeln:
         logger.info("Intent-Erinnerung: %s", text)
 
     async def _handle_spontaneous_observation(self, observation: dict):
-        """Feature 4: Callback fuer spontane Beobachtungen."""
+        """Feature 4: Callback für spontane Beobachtungen."""
         message = observation.get("message", "")
         if not message:
             return
@@ -9297,7 +9301,7 @@ Regeln:
                 logger.info("Fact Decay gestartet (taeglich 04:00)")
                 await self.memory.semantic.apply_decay()
 
-                # Tagesverbrauch speichern (fuer Anomalie-Erkennung & Wochen-Vergleich)
+                # Tagesverbrauch speichern (für Anomalie-Erkennung & Wochen-Vergleich)
                 try:
                     await self.energy_optimizer.track_daily_cost()
                 except Exception as e:
@@ -9361,7 +9365,7 @@ Regeln:
                 await asyncio.sleep(3600)
 
     async def _entity_catalog_refresh_loop(self):
-        """Proaktiver Background-Refresh fuer den Entity-Katalog (alle 270s).
+        """Proaktiver Background-Refresh für den Entity-Katalog (alle 270s).
 
         Entfernt den lazy-load aus dem Hot-Path (brain.py process()),
         sodass der LLM-Call nicht auf ha.get_states() warten muss.
@@ -9378,22 +9382,22 @@ Regeln:
                 await asyncio.sleep(60)
 
     async def _handle_daily_summary(self, data: dict):
-        """Callback fuer Tages-Zusammenfassungen — wird morgens beim naechsten Kontakt gesprochen."""
+        """Callback für Tages-Zusammenfassungen — wird morgens beim naechsten Kontakt gesprochen."""
         summary_text = data.get("text", "")
         date = data.get("date", "")
         if summary_text and self.memory.redis:
-            # Zusammenfassung fuer naechsten Morning-Kontakt speichern
+            # Zusammenfassung für naechsten Morning-Kontakt speichern
             await self.memory.redis.set(
                 "mha:pending_summary", summary_text, ex=86400
             )
-            logger.info("Tages-Zusammenfassung fuer %s zum Abruf bereitgestellt", date)
+            logger.info("Tages-Zusammenfassung für %s zum Abruf bereitgestellt", date)
 
     # ------------------------------------------------------------------
     # Phase 17: Kontext-Persistenz ueber Raumwechsel
     # ------------------------------------------------------------------
 
     async def _save_cross_room_context(self, person: str, text: str, response: str, room: str):
-        """Speichert Konversationskontext fuer Raumwechsel."""
+        """Speichert Konversationskontext für Raumwechsel."""
         if not self.memory.redis or not person:
             return
         try:
@@ -9447,7 +9451,7 @@ Regeln:
             "{device} — nie gehoert. Und ich kenne hier alles.",
         ],
         "unauthorized": [
-            "Keine Berechtigung fuer {device}. Token pruefen.",
+            "Keine Berechtigung für {device}. Token pruefen.",
             "Zugriff verweigert. {device} ist eigensinnig.",
         ],
         "generic": [
@@ -9625,10 +9629,10 @@ Regeln:
     async def _generate_error_recovery(self, func_name: str, func_args: dict, error: str) -> str:
         """Generiert eine JARVIS-Fehlermeldung mit Loesungsvorschlag.
 
-        Nutzt schnelle Pattern-basierte Antwort statt LLM-Call fuer
+        Nutzt schnelle Pattern-basierte Antwort statt LLM-Call für
         bekannte Fehler. Nur bei unbekannten Fehlern wird das LLM gefragt.
         """
-        # Schnelle Antwort fuer bekannte Fehlertypen
+        # Schnelle Antwort für bekannte Fehlertypen
         fast_response = self._get_error_recovery_fast(func_name, func_args, error)
         error_lower = error.lower()
 
@@ -9642,7 +9646,7 @@ Regeln:
 
         # Unbekannte Fehler: LLM fragen — Personality-konsistenter Prompt
         try:
-            # Kompakter Personality-Prompt fuer Fehler
+            # Kompakter Personality-Prompt für Fehler
             humor_hint = ""
             if self.personality.sarcasm_level >= 3:
                 humor_hint = " Trockener Kommentar erlaubt."
@@ -9666,6 +9670,7 @@ Regeln:
             text = response.get("message", {}).get("content", "")
             return text.strip() if text.strip() else fast_response
         except Exception:
+            logger.debug("Humor-Counter fehlgeschlagen", exc_info=True)
             return fast_response
 
     # ------------------------------------------------------------------
@@ -9745,7 +9750,7 @@ Regeln:
             if not states:
                 return []
 
-            # Redis fuer Cooldown-Checks
+            # Redis für Cooldown-Checks
             redis = self.memory.redis
 
             # ----------------------------------------------------------
@@ -9794,7 +9799,7 @@ Regeln:
                         try:
                             if "T" in str(ev_start):
                                 start_dt = datetime.fromisoformat(str(ev_start).replace("Z", "+00:00"))
-                                # In lokale naive Zeit konvertieren fuer Vergleich mit now
+                                # In lokale naive Zeit konvertieren für Vergleich mit now
                                 if start_dt.tzinfo:
                                     start_dt = start_dt.astimezone().replace(tzinfo=None)
                             else:
@@ -9904,7 +9909,7 @@ Regeln:
                                 if "T" in str(fc_dt):
                                     try:
                                         fdt = datetime.fromisoformat(str(fc_dt).replace("Z", "+00:00"))
-                                        # In lokale Zeit konvertieren fuer korrekten Stunden-Check
+                                        # In lokale Zeit konvertieren für korrekten Stunden-Check
                                         if fdt.tzinfo:
                                             fdt = fdt.astimezone()
                                         if fdt.hour >= 20 or fdt.hour <= 6:

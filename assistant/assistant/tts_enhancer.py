@@ -1,18 +1,18 @@
 """
-TTS Enhancer - Phase 9: Natuerlichere Sprachausgabe mit SSML.
+TTS Enhancer - Phase 9: Natürlichere Sprachausgabe mit SSML.
 
 Generiert SSML-Tags basierend auf Nachrichtentyp und Kontext:
 - Pausen vor wichtigen Informationen
 - Sprechgeschwindigkeit variiert mit Inhalt
 - Betonung bei Warnungen und Fragen
-- Fluestermodus bei Nacht oder auf Befehl
+- Flüstermodus bei Nacht oder auf Befehl
 
 Nachrichtentypen:
-  confirmation - Kurze Bestaetigung ("Erledigt.")
+  confirmation - Kurze Bestätigung ("Erledigt.")
   warning      - Warnung oder Alarm
   briefing     - Morgen-Briefing, Status-Report
-  greeting     - Begruessung
-  question     - Rueckfrage an den User
+  greeting     - Begrüßung
+  question     - Rückfrage an den User
   casual       - Normale Antwort
 """
 
@@ -26,7 +26,7 @@ from .config import yaml_config
 
 logger = logging.getLogger(__name__)
 
-# P-3: Vorcompilierte Regex-Patterns fuer Warn-Woerter (statt re.compile pro Aufruf)
+# P-3: Vorcompilierte Regex-Patterns für Warn-Wörter (statt re.compile pro Aufruf)
 _EMPHASIS_WORDS = [
     "warnung", "achtung", "vorsicht", "offen", "alarm",
     "notfall", "gefahr", "sofort",
@@ -36,12 +36,21 @@ _EMPHASIS_PATTERNS = {
     for word in _EMPHASIS_WORDS
 }
 
+# Englische Titel/Anreden die vom deutschen TTS falsch ausgesprochen werden.
+# Diese werden im SSML mit <lang xml:lang="en-US"> gewrappt damit die
+# TTS-Engine auf englische Phonetik wechselt.
+_ENGLISH_TITLES = ["Sir", "Ma'am", "Ma'am", "Madam"]
+_ENGLISH_TITLE_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(t) for t in _ENGLISH_TITLES) + r")\b",
+    re.IGNORECASE,
+)
+
 
 # Nachrichtentyp-Erkennung via Keywords
 MESSAGE_TYPE_PATTERNS = {
     "warning": [
         "warnung", "achtung", "vorsicht", "alarm", "notfall", "gefahr",
-        "offen", "laeuft seit", "vergessen", "offline", "fehler",
+        "offen", "läuft seit", "vergessen", "offline", "fehler",
     ],
     "greeting": [
         "guten morgen", "guten abend", "guten tag", "willkommen",
@@ -49,22 +58,22 @@ MESSAGE_TYPE_PATTERNS = {
     ],
     "briefing": [
         "briefing", "zusammenfassung", "status", "bericht",
-        "heute steht an", "wetter", "termine", "ueberblick",
+        "heute steht an", "wetter", "termine", "überblick",
     ],
     "confirmation": [
-        "erledigt", "gemacht", "ist passiert", "wie gewuenscht",
-        "selbstverstaendlich", "kein problem",
+        "erledigt", "gemacht", "ist passiert", "wie gewünscht",
+        "selbstverständlich", "kein problem",
         "geht klar", "sofort",
     ],
     "question": [
-        "soll ich", "moechtest du", "welchen raum", "noch relevant",
+        "soll ich", "möchtest du", "welchen raum", "noch relevant",
         "darf ich", "meinst du",
     ],
 }
 
 
 class TTSEnhancer:
-    """Verbessert TTS-Ausgabe mit SSML und adaptiver Lautstaerke."""
+    """Verbessert TTS-Ausgabe mit SSML und adaptiver Lautstärke."""
 
     def __init__(self):
         # TTS Konfiguration
@@ -100,12 +109,12 @@ class TTSEnhancer:
         self.pause_sentence = pause_cfg.get("between_sentences", 200)
         self.pause_greeting = pause_cfg.get("after_greeting", 400)
 
-        # Fluestermodus-Trigger
+        # Flüstermodus-Trigger
         self.whisper_triggers = tts_cfg.get("whisper_triggers", [
-            "psst", "leise", "fluester", "whisper"
+            "psst", "leise", "flüster", "whisper"
         ])
         self.whisper_cancel = tts_cfg.get("whisper_cancel_triggers", [
-            "normal", "laut", "normale lautstaerke"
+            "normal", "laut", "normale lautstärke"
         ])
 
         # Volume Konfiguration
@@ -133,7 +142,7 @@ class TTSEnhancer:
         self.night_start = _safe_int(vol_cfg.get("night_start", 0), 0)
         self.morning_start = _safe_int(vol_cfg.get("morning_start", 7), 7)
 
-        # Auto-Nacht-Whisper: Automatisch Fluestern zwischen bestimmten Uhrzeiten
+        # Auto-Nacht-Whisper: Automatisch Flüstern zwischen bestimmten Uhrzeiten
         self.auto_night_whisper = tts_cfg.get("auto_night_whisper", True)
         self.auto_whisper_start = _safe_int(vol_cfg.get("auto_whisper_start", 23), 23)
         self.auto_whisper_end = _safe_int(vol_cfg.get("auto_whisper_end", 6), 6)
@@ -168,13 +177,13 @@ class TTSEnhancer:
     def enhance(self, text: str, message_type: Optional[str] = None,
                 urgency: str = "medium", activity: str = "") -> dict:
         """
-        Verbessert einen Text fuer TTS-Ausgabe.
+        Verbessert einen Text für TTS-Ausgabe.
 
         Args:
             text: Originaltext
             message_type: Optional manueller Typ (sonst auto-detect)
             urgency: Dringlichkeit (critical, high, medium, low)
-            activity: Aktuelle Aktivitaet des Users (sleeping, focused, etc.)
+            activity: Aktuelle Aktivität des Users (sleeping, focused, etc.)
 
         Returns:
             Dict mit:
@@ -182,7 +191,7 @@ class TTSEnhancer:
                 ssml: SSML-erweiterter Text (oder Original wenn SSML aus)
                 message_type: Erkannter Nachrichtentyp
                 speed: Sprechgeschwindigkeit (%)
-                volume: Empfohlene Lautstaerke (0.0-1.0)
+                volume: Empfohlene Lautstärke (0.0-1.0)
         """
         if not message_type:
             message_type = self.classify_message(text)
@@ -212,19 +221,19 @@ class TTSEnhancer:
     def get_volume(self, activity: str = "", message_type: str = "casual",
                    urgency: str = "medium") -> float:
         """
-        Bestimmt die optimale Lautstaerke.
+        Bestimmt die optimale Lautstärke.
 
-        Prioritaet: Notfall > Fluestermodus > Aktivitaet > Tageszeit
+        Priorität: Notfall > Flüstermodus > Aktivität > Tageszeit
         """
         # Notfall immer laut
         if urgency == "critical":
             return self.vol_emergency
 
-        # Fluestermodus (manuell oder Auto-Nacht)
+        # Flüstermodus (manuell oder Auto-Nacht)
         if self._whisper_mode or self._is_auto_night_whisper():
             return self.vol_whisper
 
-        # Aktivitaetsbasiert
+        # Aktivitätsbasiert
         if activity == "sleeping":
             return self.vol_sleeping
 
@@ -239,13 +248,13 @@ class TTSEnhancer:
 
     def check_whisper_command(self, text: str) -> Optional[str]:
         """
-        Prueft ob der Text einen Fluestermodus-Befehl enthaelt.
+        Prüft ob der Text einen Flüstermodus-Befehl enthaelt.
 
         Nutzt Wortgrenzen-Matching um Fehlerkennungen zu vermeiden
-        (z.B. Substring-Treffer in Geraetebefehlen).
+        (z.B. Substring-Treffer in Gerätebefehlen).
 
         Returns:
-            "activate" wenn Fluestern aktiviert werden soll
+            "activate" wenn Flüstern aktiviert werden soll
             "deactivate" wenn deaktiviert
             None wenn kein Befehl
         """
@@ -254,28 +263,28 @@ class TTSEnhancer:
         if any(re.search(rf"\b{re.escape(t)}\b", text_lower) for t in self.whisper_cancel):
             if self._whisper_mode:
                 self._whisper_mode = False
-                logger.info("Fluestermodus deaktiviert")
+                logger.info("Flüstermodus deaktiviert")
                 return "deactivate"
 
         if any(re.search(rf"\b{re.escape(t)}\b", text_lower) for t in self.whisper_triggers):
             self._whisper_mode = True
-            logger.info("Fluestermodus aktiviert")
+            logger.info("Flüstermodus aktiviert")
             return "activate"
 
         return None
 
     @property
     def is_whisper_mode(self) -> bool:
-        """Gibt zurueck ob Fluestermodus aktiv ist (manuell oder Auto-Nacht)."""
+        """Gibt zurück ob Flüstermodus aktiv ist (manuell oder Auto-Nacht)."""
         return self._whisper_mode or self._is_auto_night_whisper()
 
     def _is_auto_night_whisper(self) -> bool:
-        """Prueft ob Auto-Nacht-Whisper aktiv sein sollte."""
+        """Prüft ob Auto-Nacht-Whisper aktiv sein sollte."""
         if not self.auto_night_whisper:
             return False
         hour = datetime.now().hour
         if self.auto_whisper_start > self.auto_whisper_end:
-            # Ueber Mitternacht: z.B. 23-6
+            # Über Mitternacht: z.B. 23-6
             return hour >= self.auto_whisper_start or hour < self.auto_whisper_end
         return self.auto_whisper_start <= hour < self.auto_whisper_end
 
@@ -284,10 +293,10 @@ class TTSEnhancer:
         """
         Generiert SSML aus Text und Nachrichtentyp.
 
-        Piper TTS unterstuetzt einen Teil von SSML:
-        - <break> fuer Pausen
-        - <prosody rate="..." pitch="..."> fuer Geschwindigkeit + Tonhoehe
-        - <emphasis> fuer Betonung
+        Piper TTS unterstützt einen Teil von SSML:
+        - <break> für Pausen
+        - <prosody rate="..." pitch="..."> für Geschwindigkeit + Tonhöhe
+        - <emphasis> für Betonung
         """
         parts = []
 
@@ -307,7 +316,13 @@ class TTSEnhancer:
         # P-2: xml_escape jetzt auf Modul-Ebene importiert
         text = xml_escape(text)
 
-        # Text in Saetze aufteilen
+        # Englische Titel (Sir, Ma'am) mit <lang> wrappen damit TTS
+        # sie nicht mit deutscher Phonetik ausspricht.
+        text = _ENGLISH_TITLE_PATTERN.sub(
+            r'<lang xml:lang="en-US">\1</lang>', text
+        )
+
+        # Text in Sätze aufteilen
         sentences = self._split_sentences(text)
 
         for i, sentence in enumerate(sentences):
@@ -315,13 +330,13 @@ class TTSEnhancer:
             if not sentence:
                 continue
 
-            # Erster Satz bei Begruessung: Pause danach
+            # Erster Satz bei Begrüßung: Pause danach
             if i == 0 and message_type == "greeting":
                 parts.append(sentence)
                 parts.append(f'<break time="{self.pause_greeting}ms"/>')
                 continue
 
-            # Warnungen: Pause vor wichtigen Woertern + Emphasis
+            # Warnungen: Pause vor wichtigen Wörtern + Emphasis
             if message_type == "warning":
                 sentence = self._add_warning_emphasis(sentence)
                 if i == 0:
@@ -333,7 +348,7 @@ class TTSEnhancer:
 
             parts.append(sentence)
 
-            # Pause zwischen Saetzen
+            # Pause zwischen Sätzen
             if i < len(sentences) - 1:
                 parts.append(f'<break time="{self.pause_sentence}ms"/>')
 
@@ -345,7 +360,7 @@ class TTSEnhancer:
         return "".join(parts)
 
     def _add_warning_emphasis(self, sentence: str) -> str:
-        """Fuegt Betonung bei Warn-Woertern hinzu."""
+        """Fuegt Betonung bei Warn-Wörtern hinzu."""
         # P-3: Vorcompilierte Patterns aus Modul-Ebene verwenden
         for word, pattern in _EMPHASIS_PATTERNS.items():
             if pattern.search(sentence):
@@ -359,7 +374,7 @@ class TTSEnhancer:
 
     @staticmethod
     def _split_sentences(text: str) -> list[str]:
-        """Teilt Text in Saetze auf."""
+        """Teilt Text in Sätze auf."""
         # Einfaches Splitting an Satzzeichen
         sentences = re.split(r'(?<=[.!?])\s+', text)
         return [s for s in sentences if s.strip()]
@@ -377,8 +392,8 @@ class TTSEnhancer:
                 pause_before_ms: int - Pause vor dem Segment (optional)
                 pause_after_ms: int - Pause nach dem Segment (optional)
                 speed: int - Geschwindigkeit % (optional)
-                pitch: str - Tonhoehe (optional)
-                volume: str - Lautstaerke soft/medium/loud/x-loud (optional)
+                pitch: str - Tonhöhe (optional)
+                volume: str - Lautstärke soft/medium/loud/x-loud (optional)
                 emphasis: str - Betonungslevel moderate/strong (optional)
 
         Returns:
@@ -421,7 +436,7 @@ class TTSEnhancer:
             else:
                 parts.append(inner_text)
 
-            # Geschaetzte Sprechdauer: ~150 WPM = 2.5 Woerter/Sek
+            # Geschaetzte Sprechdauer: ~150 WPM = 2.5 Wörter/Sek
             word_count = len(text.split())
             effective_speed = (seg_speed or 100) / 100.0
             speak_ms = int(word_count / (2.5 * effective_speed) * 1000)

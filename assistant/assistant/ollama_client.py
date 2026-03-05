@@ -3,7 +3,7 @@ Ollama API Client - Kommunikation mit dem lokalen LLM
 
 LLM Model Profile Kompatibilitaet:
 - Stripped automatisch <think>...</think> Bloecke aus Antworten
-- Thinking Mode wird fuer Fast-Tier deaktiviert (spart Latenz)
+- Thinking Mode wird für Fast-Tier deaktiviert (spart Latenz)
 - Modell-optimierte Parameter (top_k, top_p, min_p) via Model Profiles
 - Think+Tools Kombination konfigurierbar pro Modell-Familie
 """
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # Regex zum Entfernen von LLM Think-Bloecken (<think>...</think>)
 _THINK_PATTERN = re.compile(r"<think>[\s\S]*?</think>\s*", re.DOTALL)
 
-# Woerter die auf Meta-Kommentar / Reasoning hindeuten (nicht in echter Meldung)
+# Wörter die auf Meta-Kommentar / Reasoning hindeuten (nicht in echter Meldung)
 _META_MARKERS = [
     # Englisches Reasoning
     "let me", "i need to", "the user", "i should", "i'll ", "i can ",
@@ -47,13 +47,13 @@ _META_MARKERS = [
     "formuliere diese", "meldung im jarvis", "dringlichkeit:",
 ]
 
-# Haeufige deutsche Woerter (muessen in einer echten deutschen Meldung vorkommen)
+# Häufige deutsche Wörter (muessen in einer echten deutschen Meldung vorkommen)
 _GERMAN_MARKERS = [
     "sir", "ma'am", "der", "die", "das", "ist", "ein", "und", "nicht",
     "ich", "hab", "mal", "aus", "auf", "mit", "bei", "zur",
     "noch", "nur", "etwas", "gerade", "bitte", "danke",
     "grad", "uhr", "haus", "licht", "heiz",
-    # Verben (haeufig in Notifications)
+    # Verben (häufig in Notifications)
     "wurde", "wird", "hat", "sind", "kann", "soll",
     "sollte", "darf", "liegt", "steht", "scheint",
     # Smart-Home Begriffe
@@ -77,11 +77,11 @@ def validate_notification(text: str) -> str:
 
     Eine gueltige Jarvis-Meldung ist:
     - Kurz (< 250 Zeichen)
-    - Auf Deutsch (enthaelt deutsche Woerter)
-    - Kein Meta-Kommentar ueber die Aufgabe selbst
+    - Auf Deutsch (enthaelt deutsche Wörter)
+    - Kein Meta-Kommentar über die Aufgabe selbst
     - Kein englisches Reasoning
 
-    Gibt den bereinigten Text oder leeren String zurueck (Caller nutzt Fallback).
+    Gibt den bereinigten Text oder leeren String zurück (Caller nutzt Fallback).
     """
     if not text:
         return text
@@ -107,9 +107,9 @@ def validate_notification(text: str) -> str:
             return extracted
         return ""
 
-    # --- Check 2: Zu lang fuer eine Notification ---
+    # --- Check 2: Zu lang für eine Notification ---
     if len(text) > 300:
-        # Vielleicht ist die eigentliche Meldung in den ersten 1-2 Saetzen?
+        # Vielleicht ist die eigentliche Meldung in den ersten 1-2 Sätzen?
         first_part = text.split("\n")[0].strip()
         if 10 < len(first_part) < 250 and _looks_german(first_part):
             logger.info("Notification gekuerzt auf erste Zeile: '%s'", first_part)
@@ -126,7 +126,7 @@ def validate_notification(text: str) -> str:
 
 
 def _looks_german(text: str) -> bool:
-    """Prueft ob ein Text deutsch aussieht."""
+    """Prüft ob ein Text deutsch aussieht."""
     text_lower = text.lower()
     hits = sum(1 for w in _GERMAN_MARKERS if f" {w} " in f" {text_lower} ")
     # Mindestens 2 deutsche Marker oder Umlaute vorhanden
@@ -136,7 +136,7 @@ def _looks_german(text: str) -> bool:
 def _extract_final_answer(text: str) -> str:
     """Versucht die eigentliche Antwort aus einem Reasoning-Block zu fischen.
 
-    Manche Modelle schreiben die Antwort als letzte Zeile, oft in Anfuehrungszeichen.
+    Manche Modelle schreiben die Antwort als letzte Zeile, oft in Anführungszeichen.
     """
     lines = text.strip().split("\n")
     for line in reversed(lines):
@@ -151,7 +151,7 @@ def _extract_final_answer(text: str) -> str:
     return ""
 
 
-# Legacy-Alias fuer bestehende Aufrufe
+# Legacy-Alias für bestehende Aufrufe
 strip_reasoning_leak = validate_notification
 
 
@@ -161,7 +161,7 @@ def _model_options(model: str, temperature: float, max_tokens: int, num_ctx: int
 
     Parameter (top_k, top_p, min_p, repeat_penalty, temperature) werden
     aus dem passenden Model Profile in settings.yaml geladen.
-    Siehe config.get_model_profile() fuer die Match-Logik.
+    Siehe config.get_model_profile() für die Match-Logik.
     """
     from .config import get_model_profile
     profile = get_model_profile(model)
@@ -185,12 +185,12 @@ def _model_options(model: str, temperature: float, max_tokens: int, num_ctx: int
 
 
 class OllamaClient:
-    """Asynchroner Client fuer die Ollama REST API mit per-Model Timeouts und Connection Pooling."""
+    """Asynchroner Client für die Ollama REST API mit per-Model Timeouts und Connection Pooling."""
 
     # Kontextfenster-Groesse (num_ctx) begrenzen.
-    # Ollama allokiert KV-Cache fuer das volle Kontextfenster im VRAM,
-    # auch wenn der Prompt kurz ist. Bei 8GB GPUs fuehrt der
-    # Default (32768+) zu VRAM-Ueberlauf.
+    # Ollama allokiert KV-Cache für das volle Kontextfenster im VRAM,
+    # auch wenn der Prompt kurz ist. Bei 8GB GPUs führt der
+    # Default (32768+) zu VRAM-Überlauf.
     # MoE-Modelle sind effizienter, Dense-Modelle brauchen kleinere Fenster.
     _DEFAULT_NUM_CTX = 4096
     _DEFAULT_NUM_CTX_FAST = 2048
@@ -229,7 +229,7 @@ class OllamaClient:
 
     @property
     def num_ctx(self) -> int:
-        """Liest num_ctx (Smart-Tier) aus yaml_config — Rueckwaertskompatibel."""
+        """Liest num_ctx (Smart-Tier) aus yaml_config — Rückwaertskompatibel."""
         from .config import yaml_config
         ollama_cfg = yaml_config.get("ollama") or {}
         return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
@@ -247,7 +247,7 @@ class OllamaClient:
         return str(ollama_cfg.get("keep_alive", self._DEFAULT_KEEP_ALIVE))
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Gibt die shared aiohttp Session zurueck (thread-safe lazy init)."""
+        """Gibt die shared aiohttp Session zurück (thread-safe lazy init)."""
         async with self._session_lock:
             if self._session is None or self._session.closed:
                 self._session = aiohttp.ClientSession()
@@ -330,8 +330,8 @@ class OllamaClient:
 
         # Circuit Breaker Check
         if not ollama_breaker.is_available:
-            logger.warning("Ollama Circuit OPEN — ueberspringe Call")
-            return {"error": "Ollama nicht verfuegbar (Circuit Breaker offen)"}
+            logger.warning("Ollama Circuit OPEN — überspringe Call")
+            return {"error": "Ollama nicht verfügbar (Circuit Breaker offen)"}
 
         timeout = self._get_timeout(model)
 
@@ -361,7 +361,7 @@ class OllamaClient:
 
                 return result
         except asyncio.TimeoutError:
-            logger.error("Ollama Timeout nach %ds fuer Modell %s", timeout, model)
+            logger.error("Ollama Timeout nach %ds für Modell %s", timeout, model)
             ollama_breaker.record_failure()
             return {"error": f"Timeout nach {timeout}s"}
         except aiohttp.ClientError as e:
@@ -378,7 +378,7 @@ class OllamaClient:
         think: Optional[bool] = None,
     ):
         """
-        Streaming Chat — gibt Token-fuer-Token zurueck (async generator).
+        Streaming Chat — gibt Token-für-Token zurück (async generator).
 
         Yields:
             str: Einzelne Text-Chunks sobald sie vom LLM kommen.
@@ -467,7 +467,7 @@ class OllamaClient:
                                 break
                             continue
 
-                    # Pruefe ob ein neuer Think-Block beginnt
+                    # Prüfe ob ein neuer Think-Block beginnt
                     if "<think>" in _think_buffer:
                         before, _, after = _think_buffer.partition("<think>")
                         # Content VOR <think> ausgeben
@@ -476,7 +476,7 @@ class OllamaClient:
                         # Alles nach <think> buffern
                         _think_buffer = after
                         in_think_block = True
-                        # Sofort pruefen ob </think> auch schon im Buffer
+                        # Sofort prüfen ob </think> auch schon im Buffer
                         if "</think>" in _think_buffer:
                             _, _, after = _think_buffer.partition("</think>")
                             _think_buffer = after.lstrip()
@@ -531,7 +531,7 @@ class OllamaClient:
             Generierter Text als String
         """
         if not ollama_breaker.is_available:
-            logger.warning("Ollama Circuit OPEN — generate() uebersprungen")
+            logger.warning("Ollama Circuit OPEN — generate() übersprungen")
             return ""
 
         model = model or settings.model_smart
@@ -564,7 +564,7 @@ class OllamaClient:
                 text = result.get("response", "")
                 return strip_think_tags(text)
         except asyncio.TimeoutError:
-            logger.error("Ollama Generate Timeout nach %ds fuer Modell %s", timeout, model)
+            logger.error("Ollama Generate Timeout nach %ds für Modell %s", timeout, model)
             ollama_breaker.record_failure()
             return ""
         except aiohttp.ClientError as e:
@@ -573,7 +573,7 @@ class OllamaClient:
             return ""
 
     async def is_available(self) -> bool:
-        """Prueft ob Ollama erreichbar ist (mit Circuit Breaker Feedback)."""
+        """Prüft ob Ollama erreichbar ist (mit Circuit Breaker Feedback)."""
         try:
             session = await self._get_session()
             async with session.get(
@@ -589,7 +589,7 @@ class OllamaClient:
             return False
 
     async def list_models(self) -> list[str]:
-        """Listet alle verfuegbaren Modelle."""
+        """Listet alle verfügbaren Modelle."""
         try:
             session = await self._get_session()
             async with session.get(
