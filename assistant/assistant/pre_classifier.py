@@ -194,9 +194,13 @@ _STATUS_NOUNS = [
     "status", "hausstatus", "ueberblick",
     "musik", "spielt", "laeuft",
     "offen", "geschlossen", "verriegelt",
-    "an", "aus", "eingeschaltet", "ausgeschaltet",
+    "eingeschaltet", "ausgeschaltet",
     "alarm",
 ]
+
+# Kurze Woerter die als eigenes Wort matchen muessen (nicht als Substring)
+# "an" wuerde sonst "Anfang", "Antwort" etc. matchen
+_STATUS_SHORT_WORDS = re.compile(r'\b(?:an|aus)\b')
 
 
 class PreClassifier:
@@ -235,7 +239,10 @@ class PreClassifier:
         # 2. Status-Abfragen: "Wie warm ist es?", "Sind die Rolllaeden offen?"
         if word_count <= 10:
             has_status_pattern = _STATUS_QUERY_PATTERNS.search(text_lower)
-            has_status_noun = any(n in text_lower for n in _STATUS_NOUNS)
+            has_status_noun = (
+                any(n in text_lower for n in _STATUS_NOUNS)
+                or _STATUS_SHORT_WORDS.search(text_lower)
+            )
             if has_status_pattern and has_status_noun:
                 logger.debug("PreClassifier: DEVICE_QUERY (%s)", text)
                 return PROFILE_DEVICE_QUERY
