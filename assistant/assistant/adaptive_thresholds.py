@@ -3,10 +3,10 @@ Adaptive Thresholds - Lernende Schwellwerte.
 
 Analysiert Outcome-Daten + Feedback-Scores und passt Schwellwerte an.
 Zwei Stufen: Auto-Adjust (enge Grenzen, ohne Genehmigung) und
-Proposal-Based (weiter, mit Genehmigung ueber Self-Optimization).
+Proposal-Based (weiter, mit Genehmigung über Self-Optimization).
 
 Sicherheit:
-- Auto-Adjust aendert NUR Laufzeit yaml_config dict, NICHT die Datei.
+- Auto-Adjust ändert NUR Laufzeit yaml_config dict, NICHT die Datei.
 - Reset bei Restart. Bounds hardcoded (nicht aus Config lesbar).
 - Alle Anpassungen geloggt mit Audit-Trail.
 """
@@ -78,7 +78,7 @@ class AdaptiveThresholds:
         if self._adjustments_this_week >= MAX_ADJUSTMENTS_PER_WEEK:
             return {"adjusted": [], "skipped": ["rate_limit_reached"]}
 
-        # Daten-Menge pruefen
+        # Daten-Menge prüfen
         if not await self._has_sufficient_data(outcome_tracker):
             return {"adjusted": [], "skipped": ["insufficient_data"]}
 
@@ -110,7 +110,7 @@ class AdaptiveThresholds:
         return {"adjusted": adjusted, "skipped": skipped}
 
     async def get_adjustment_history(self) -> list[dict]:
-        """Gibt Anpassungs-Historie zurueck."""
+        """Gibt Anpassungs-Historie zurück."""
         if not self.redis:
             return []
 
@@ -126,7 +126,7 @@ class AdaptiveThresholds:
     # --- Private Methoden ---
 
     async def _has_sufficient_data(self, outcome_tracker) -> bool:
-        """Prueft ob genuegend Daten fuer Analyse vorhanden sind."""
+        """Prueft ob genuegend Daten für Analyse vorhanden sind."""
         if not outcome_tracker or not self.redis:
             return False
 
@@ -146,7 +146,7 @@ class AdaptiveThresholds:
         if current is None:
             current = bounds["default"]
 
-        # Pruefen ob Self-Optimization einen Vorschlag fuer diesen Parameter hat
+        # Prüfen ob Self-Optimization einen Vorschlag für diesen Parameter hat
         if self.redis:
             pending = await self.redis.get(f"mha:self_opt:pending_param:{param_name}")
             if pending:
@@ -156,12 +156,12 @@ class AdaptiveThresholds:
         direction = await self._determine_direction(param_name, outcome_tracker, feedback_tracker)
 
         if direction == 0:
-            return None  # Keine Aenderung noetig
+            return None  # Keine Änderung noetig
 
         step = bounds["step"]
         new_value = current + (step * direction)
 
-        # Bounds pruefen
+        # Bounds prüfen
         new_value = max(bounds["min"], min(bounds["max"], new_value))
 
         if new_value == current:
@@ -181,7 +181,7 @@ class AdaptiveThresholds:
         # Auto-Apply (nur Laufzeit, nicht persistent!)
         self._set_runtime_value(bounds["path"], new_value)
 
-        reason = f"Score-basiert: {'erhoehen' if direction > 0 else 'senken'}"
+        reason = f"Score-basiert: {'erhöhen' if direction > 0 else 'senken'}"
         logger.info("Auto-Adjust: %s %.2f -> %.2f (%s)", param_name, current, new_value, reason)
 
         return {
@@ -195,26 +195,26 @@ class AdaptiveThresholds:
 
     async def _determine_direction(self, param_name: str,
                                    outcome_tracker, feedback_tracker) -> int:
-        """Bestimmt Anpassungs-Richtung: +1 (erhoehen), -1 (senken), 0 (keine Aenderung)."""
-        # Insights Cooldown: Score niedrig = Cooldown erhoehen (weniger Insights)
+        """Bestimmt Anpassungs-Richtung: +1 (erhöhen), -1 (senken), 0 (keine Änderung)."""
+        # Insights Cooldown: Score niedrig = Cooldown erhöhen (weniger Insights)
         if param_name == "insights.cooldown_hours":
             if feedback_tracker:
                 insight_score = await feedback_tracker.get_score("insight")
                 if insight_score < 0.3:
-                    return 1  # Cooldown erhoehen (weniger Insights)
+                    return 1  # Cooldown erhöhen (weniger Insights)
                 elif insight_score > 0.7:
                     return -1  # Cooldown senken (mehr Insights)
 
-        # Anticipation Confidence: Viele falsche Vorhersagen = Confidence erhoehen
+        # Anticipation Confidence: Viele falsche Vorhersagen = Confidence erhöhen
         elif param_name == "anticipation.min_confidence":
             if outcome_tracker:
                 score = await outcome_tracker.get_success_score("anticipation")
                 if score < 0.3:
-                    return 1  # Confidence erhoehen (weniger, aber bessere Vorhersagen)
+                    return 1  # Confidence erhöhen (weniger, aber bessere Vorhersagen)
                 elif score > 0.7:
                     return -1  # Confidence senken (mehr Vorhersagen)
 
-        # Feedback Cooldown: Viele ignored = Cooldown erhoehen
+        # Feedback Cooldown: Viele ignored = Cooldown erhöhen
         elif param_name == "feedback.base_cooldown_seconds":
             if feedback_tracker:
                 scores = await feedback_tracker.get_all_scores()
@@ -222,7 +222,7 @@ class AdaptiveThresholds:
                     v for v in scores.values() if isinstance(v, (int, float))
                 ) / max(1, len(scores)) if scores else 0.5
                 if avg_score < 0.3:
-                    return 1  # Cooldown erhoehen (weniger Meldungen)
+                    return 1  # Cooldown erhöhen (weniger Meldungen)
                 elif avg_score > 0.7:
                     return -1  # Cooldown senken (mehr Meldungen ok)
 

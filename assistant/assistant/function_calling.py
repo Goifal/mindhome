@@ -1,6 +1,6 @@
 """
 Function Calling - Definiert und fuehrt Funktionen aus die der Assistent nutzen kann.
-MindHome Assistant ruft ueber diese Funktionen Home Assistant Aktionen aus.
+MindHome Assistant ruft über diese Funktionen Home Assistant Aktionen aus.
 
 Phase 10: Room-aware TTS, Person Messaging, Trust-Level Pre-Check.
 """
@@ -22,7 +22,7 @@ from .declarative_tools import DeclarativeToolExecutor, get_registry as get_decl
 from .ha_client import HomeAssistantClient
 
 # ============================================================
-# KERN-SCHUTZ: JARVIS darf seinen eigenen Kern NICHT aendern.
+# KERN-SCHUTZ: JARVIS darf seinen eigenen Kern NICHT ändern.
 # - settings.yaml ist NICHT in _EDITABLE_CONFIGS
 # - Kein exec/eval/subprocess/os.system in Tool-Pfaden
 # - _EDITABLE_CONFIGS ist eine geschlossene Whitelist
@@ -31,7 +31,7 @@ from .ha_client import HomeAssistantClient
 #   sind in self_optimization.py per hardcoded frozenset geschuetzt
 # ============================================================
 
-# Config-Pfade fuer Phase 13.1 (Whitelist — nur diese darf Jarvis aendern)
+# Config-Pfade für Phase 13.1 (Whitelist — nur diese darf Jarvis ändern)
 _CONFIG_DIR = Path(__file__).parent.parent / "config"
 _EDITABLE_CONFIGS = {
     "easter_eggs": _CONFIG_DIR / "easter_eggs.yaml",
@@ -45,9 +45,9 @@ logger = logging.getLogger(__name__)
 _get_room_profiles = get_room_profiles
 
 
-# ── Entity-Katalog: Echte Raum- und Entity-Namen fuer Tool-Beschreibungen ──
+# ── Entity-Katalog: Echte Raum- und Entity-Namen für Tool-Beschreibungen ──
 # Wird asynchron aus HA geladen und gecached (TTL 5 Min).
-# Raumnamen kommen zusaetzlich aus room_profiles.yaml (immer verfuegbar).
+# Raumnamen kommen zusaetzlich aus room_profiles.yaml (immer verfügbar).
 _entity_catalog: dict[str, list[str]] = {}
 _entity_catalog_ts: float = 0.0
 _CATALOG_TTL = 300  # 5 Minuten
@@ -68,7 +68,7 @@ def _get_config_rooms() -> list[str]:
 
 
 async def _load_mindhome_domains(ha: HomeAssistantClient) -> None:
-    """Laedt Geraete-Domains und Raeume von der MindHome Add-on API.
+    """Laedt Geräte-Domains und Räume von der MindHome Add-on API.
 
     Endpunkte:
       GET /api/domains → [{id, name, display_name_de, ...}]
@@ -77,7 +77,7 @@ async def _load_mindhome_domains(ha: HomeAssistantClient) -> None:
 
     Ergebnis wird in _mindhome_device_domains und _mindhome_rooms gecached.
     Damit weiss der Assistant z.B. dass "switch.steckdose_fenster" zur Domain
-    "switch" gehoert und KEIN Fenster-Kontakt (door_window) ist.
+    "switch" gehört und KEIN Fenster-Kontakt (door_window) ist.
     """
     global _mindhome_device_domains, _mindhome_device_rooms, _mindhome_rooms
     try:
@@ -126,23 +126,23 @@ async def _load_mindhome_domains(ha: HomeAssistantClient) -> None:
         _mindhome_device_domains = device_domains
         _mindhome_device_rooms = device_rooms
         logger.info(
-            "MindHome Domain-Mapping geladen: %d Geraete, %d Raeume, %d Domains",
+            "MindHome Domain-Mapping geladen: %d Geräte, %d Räume, %d Domains",
             len(device_domains), len(_mindhome_rooms), len(domain_map),
         )
     except Exception as e:
-        logger.debug("MindHome Domain-Mapping nicht verfuegbar: %s", e)
+        logger.debug("MindHome Domain-Mapping nicht verfügbar: %s", e)
 
 
 def get_mindhome_domain(entity_id: str) -> str:
-    """Gibt die MindHome-Domain fuer eine Entity-ID zurueck (z.B. 'door_window', 'switch').
+    """Gibt die MindHome-Domain für eine Entity-ID zurück (z.B. 'door_window', 'switch').
 
-    Wenn keine MindHome-Zuordnung existiert, wird '' zurueckgegeben.
+    Wenn keine MindHome-Zuordnung existiert, wird '' zurückgegeben.
     """
     return _mindhome_device_domains.get(entity_id, "")
 
 
 def get_mindhome_room(entity_id: str) -> str:
-    """Gibt den MindHome-Raum fuer eine Entity-ID zurueck."""
+    """Gibt den MindHome-Raum für eine Entity-ID zurück."""
     return _mindhome_device_rooms.get(entity_id, "")
 
 
@@ -173,9 +173,9 @@ def _has_tor_keyword(entity_id_lower: str) -> bool:
 
 
 def is_window_or_door(entity_id: str, state: dict) -> bool:
-    """Prueft zuverlaessig ob eine Entity ein Fenster/Tuer/Tor-Kontakt ist.
+    """Prueft zuverlaessig ob eine Entity ein Fenster/Tür/Tor-Kontakt ist.
 
-    Prueft in dieser Reihenfolge (erste Uebereinstimmung gewinnt):
+    Prueft in dieser Reihenfolge (erste Übereinstimmung gewinnt):
     1. opening_sensors Config (explizit vom User konfiguriert)
     2. Negative-Filter: Non-Physical binary_sensors (System Monitor etc.)
     3. MindHome Domain-Zuordnung (vom User konfiguriert)
@@ -192,7 +192,7 @@ def is_window_or_door(entity_id: str, state: dict) -> bool:
 
     # 2. Negative-Filter: Entities die definitiv KEINE physischen Oeffnungssensoren sind.
     #    Verhindert False-Positives durch System Monitor Prozess-Sensoren,
-    #    die ueber MindHome-Domain oder Keyword-Fallback faelschlich erkannt werden.
+    #    die über MindHome-Domain oder Keyword-Fallback faelschlich erkannt werden.
     attrs = state.get("attributes", {}) if isinstance(state, dict) else {}
     device_class = attrs.get("device_class", "")
     if device_class in ("running", "connectivity", "plug", "power", "update"):
@@ -223,17 +223,17 @@ def is_window_or_door(entity_id: str, state: dict) -> bool:
 
 
 def get_opening_sensor_config(entity_id: str) -> dict:
-    """Liefert die Konfiguration eines Oeffnungs-Sensors (Fenster/Tuer/Tor).
+    """Liefert die Konfiguration eines Oeffnungs-Sensors (Fenster/Tür/Tor).
 
     Liest aus settings.yaml → opening_sensors.entities.
-    Gibt Defaults zurueck wenn kein Eintrag existiert.
+    Gibt Defaults zurück wenn kein Eintrag existiert.
     """
     from .config import yaml_config
     entities = yaml_config.get("opening_sensors", {}).get("entities", {}) or {}
     return entities.get(entity_id, {})
 
 
-# --- Entity-Annotations: Beschreibungen + Rollen fuer Sensoren/Aktoren ---
+# --- Entity-Annotations: Beschreibungen + Rollen für Sensoren/Aktoren ---
 
 # Standard-Rollen (vordefiniert, User kann eigene in entity_roles hinzufuegen)
 _DEFAULT_ROLES_DICT = {
@@ -272,13 +272,13 @@ _DEFAULT_ROLES_DICT = {
     "tamper":         {"label": "Manipulationserkennung", "icon": "\U0001f6a8"},
     "alarm":          {"label": "Alarmanlage", "icon": "\U0001f6a8"},
     "siren":          {"label": "Sirene", "icon": "\U0001f4e2"},
-    # --- Tueren, Fenster, Oeffnungen ---
+    # --- Türen, Fenster, Oeffnungen ---
     "window_contact": {"label": "Fensterkontakt", "icon": "\U0001fa9f"},
-    "door_contact":   {"label": "Tuerkontakt", "icon": "\U0001f6aa"},
+    "door_contact":   {"label": "Türkontakt", "icon": "\U0001f6aa"},
     "garage_door":    {"label": "Garagentor", "icon": "\U0001f3e0"},
     "gate":           {"label": "Tor/Einfahrt", "icon": "\U0001f3e0"},
     "lock":           {"label": "Schloss", "icon": "\U0001f510"},
-    "doorbell":       {"label": "Tuerklingel", "icon": "\U0001f514"},
+    "doorbell":       {"label": "Türklingel", "icon": "\U0001f514"},
     # --- Bewegung & Anwesenheit ---
     "motion":         {"label": "Bewegungsmelder", "icon": "\U0001f3c3"},
     "presence":       {"label": "Anwesenheit", "icon": "\U0001f464"},
@@ -305,7 +305,7 @@ _DEFAULT_ROLES_DICT = {
     "thermostat":     {"label": "Thermostat", "icon": "\U0001f321\ufe0f"},
     "heating":        {"label": "Heizung", "icon": "\U0001f525"},
     "cooling":        {"label": "Kuehlung", "icon": "\u2744\ufe0f"},
-    "heat_pump":      {"label": "Waermepumpe", "icon": "\U0001f504"},
+    "heat_pump":      {"label": "Wärmepumpe", "icon": "\U0001f504"},
     "boiler":         {"label": "Warmwasserboiler", "icon": "\U0001f6bf"},
     "radiator":       {"label": "Heizkoerper", "icon": "\U0001f321\ufe0f"},
     "floor_heating":  {"label": "Fussbodenheizung", "icon": "\U0001f321\ufe0f"},
@@ -365,7 +365,7 @@ _DEFAULT_ROLES_DICT = {
     "car":            {"label": "Auto/Fahrzeug", "icon": "\U0001f697"},
     "car_battery":    {"label": "Auto-Batterie/SoC", "icon": "\U0001f50b"},
     "car_location":   {"label": "Fahrzeug-Standort", "icon": "\U0001f4cd"},
-    # --- Ueberwachung ---
+    # --- Überwachung ---
     "camera":         {"label": "Kamera", "icon": "\U0001f4f7"},
     "intercom":       {"label": "Gegensprechanlage", "icon": "\U0001f4de"},
     # --- Sonstiges ---
@@ -379,15 +379,15 @@ _DEFAULT_ROLES_DICT = {
     "weight":         {"label": "Gewicht/Waage", "icon": "\u2696\ufe0f"},
     "noise":          {"label": "Laermsensor", "icon": "\U0001f50a"},
     "problem":        {"label": "Problem/Stoerung", "icon": "\u26a0\ufe0f"},
-    "update":         {"label": "Update verfuegbar", "icon": "\U0001f504"},
-    "running":        {"label": "Geraet laeuft", "icon": "\u25b6\ufe0f"},
+    "update":         {"label": "Update verfügbar", "icon": "\U0001f504"},
+    "running":        {"label": "Gerät laeuft", "icon": "\u25b6\ufe0f"},
     "generic_sensor": {"label": "Sensor (allgemein)", "icon": "\U0001f4cb"},
     "generic_switch": {"label": "Schalter (allgemein)", "icon": "\U0001f4a1"},
 }
 
 _DEFAULT_ROLES = set(_DEFAULT_ROLES_DICT.keys())
 
-# Auto-Erkennung: device_class → role (fuer Discovery-Endpoint)
+# Auto-Erkennung: device_class → role (für Discovery-Endpoint)
 _DEVICE_CLASS_TO_ROLE = {
     # Temperatur & Klima
     "temperature": "indoor_temp",
@@ -445,7 +445,7 @@ _DEVICE_CLASS_TO_ROLE = {
     "reactive_power": "power_meter",
     # Verbrauch (gas bereits oben als Detektor — sensor.gas wird in auto_detect_role behandelt)
     "water": "water_consumption",
-    # Geraete
+    # Geräte
     "connectivity": "connectivity",
     "plug": "outlet",
     "running": "running",
@@ -459,7 +459,7 @@ _DEVICE_CLASS_TO_ROLE = {
 }
 
 _OUTDOOR_KEYWORDS = (
-    "aussen", "outdoor", "balkon", "garten", "terrasse", "draussen", "exterior",
+    "aussen", "outdoor", "balkon", "garten", "terrasse", "draußen", "exterior",
     "outside", "patio", "roof", "dach", "carport", "garage", "weather", "wetter",
     "yard", "hof", "pergola", "veranda", "loggia", "wintergarten",
 )
@@ -473,10 +473,10 @@ _SOIL_TEMP_KEYWORDS = (
     "hochbeet", "raised_bed", "kompost", "compost",
 )
 
-# Role-Keywords fuer natuerliche Sprache → Role-Matching in _find_entity()
+# Role-Keywords für natürliche Sprache → Role-Matching in _find_entity()
 _ROLE_KEYWORDS = {
     # Temperatur
-    "outdoor_temp": ["aussen", "draussen", "outdoor", "balkon", "aussentemperatur",
+    "outdoor_temp": ["aussen", "draußen", "outdoor", "balkon", "aussentemperatur",
                      "gartentemperatur", "outside temperature", "exterior",
                      "patio", "garden temperature", "weather temperature"],
     "indoor_temp": ["innen", "raum", "drinnen", "raumtemperatur", "zimmertemperatur",
@@ -508,7 +508,7 @@ _ROLE_KEYWORDS = {
     # Sicherheit
     "smoke": ["rauch", "rauchmelder", "smoke", "smoke detector"],
     "gas": ["gas", "gasmelder", "erdgas", "gas detector", "natural gas"],
-    "water_leak": ["wasserleck", "leck", "wassermelder", "ueberschwemmung",
+    "water_leak": ["wasserleck", "leck", "wassermelder", "überschwemmung",
                    "water leak", "flood", "leak detector"],
     "alarm": ["alarm", "alarmanlage", "einbruch",
               "security", "burglar", "intrusion", "sicherheit"],
@@ -552,7 +552,7 @@ _ROLE_KEYWORDS = {
     # Heizung & Klima
     "thermostat": ["thermostat", "temperature setpoint", "solltemperatur"],
     "heating": ["heizung", "heizen", "heating", "heat"],
-    "cooling": ["kuehlung", "kuehlen", "klimaanlage",
+    "cooling": ["kuehlung", "kühlen", "klimaanlage",
                 "cooling", "air conditioning", "ac", "hvac"],
     "heat_pump": ["waermepumpe", "heat pump"],
     "boiler": ["boiler", "warmwasserspeicher", "hot water tank"],
@@ -615,15 +615,15 @@ _ROLE_KEYWORDS = {
     "car": ["auto", "fahrzeug", "pkw", "car", "vehicle"],
     "car_battery": ["autobatterie", "soc", "ladestand",
                     "car battery", "state of charge", "ev battery"],
-    # Ueberwachung
-    "camera": ["kamera", "ueberwachung", "cam",
+    # Überwachung
+    "camera": ["kamera", "überwachung", "cam",
                "camera", "surveillance", "cctv", "webcam"],
     "intercom": ["gegensprech", "sprechanlage", "tuersprechanlage", "klingelanlage",
                  "intercom", "door station", "video doorbell"],
     # Zonen
     "zone": ["zone", "zonen", "bereich", "gebiet", "standort", "geofence",
              "area", "location"],
-    # --- Fehlende Rollen (fuer vollstaendiges LLM-Matching) ---
+    # --- Fehlende Rollen (für vollstaendiges LLM-Matching) ---
     # Temperatur & Klima
     "dew_point": ["taupunkt", "dew point"],
     # Luftqualitaet
@@ -709,7 +709,7 @@ _ROLE_KEYWORDS = {
 def _load_entity_roles_from_yaml():
     """Laedt Entity-Roles aus entity_roles_defaults.yaml (wenn vorhanden).
 
-    Merged YAML-Daten ueber die Python-Defaults. Struktur:
+    Merged YAML-Daten über die Python-Defaults. Struktur:
       roles:
         indoor_temp:
           label: "Raumtemperatur"
@@ -747,7 +747,7 @@ def _load_entity_roles_from_yaml():
 
 
 def reload_entity_roles():
-    """Laedt Entity-Roles aus YAML neu (fuer Hot-Reload)."""
+    """Laedt Entity-Roles aus YAML neu (für Hot-Reload)."""
     _load_entity_roles_from_yaml()
     # User-Overrides aus settings.yaml erneut anwenden
     custom = yaml_config.get("entity_roles", {}) or {}
@@ -768,7 +768,7 @@ _load_entity_roles_from_yaml()
 
 
 def get_entity_annotation(entity_id: str) -> dict:
-    """Liefert die Annotation fuer eine Entity aus settings.yaml.
+    """Liefert die Annotation für eine Entity aus settings.yaml.
 
     Returns dict mit keys: description, role, room, hidden.
     Returns leeres dict wenn keine Annotation existiert.
@@ -789,7 +789,7 @@ def is_entity_hidden(entity_id: str) -> bool:
 
 
 def get_all_roles() -> dict:
-    """Liefert Standard-Rollen + eigene Rollen. Eigene ueberschreiben Standard."""
+    """Liefert Standard-Rollen + eigene Rollen. Eigene überschreiben Standard."""
     roles = dict(_DEFAULT_ROLES_DICT)
     custom = yaml_config.get("entity_roles", {}) or {}
     roles.update(custom)
@@ -797,13 +797,13 @@ def get_all_roles() -> dict:
 
 
 def get_valid_roles() -> set:
-    """Liefert alle gueltigen Rollen-IDs (Standard + eigene)."""
+    """Liefert alle gültigen Rollen-IDs (Standard + eigene)."""
     custom_roles = set((yaml_config.get("entity_roles", {}) or {}).keys())
     return _DEFAULT_ROLES | custom_roles
 
 
 def auto_detect_role(domain: str, device_class: str, unit: str, entity_id: str) -> str:
-    """Erkennt die Rolle einer Entity aus HA-Attributen (fuer Discovery-Vorschlaege)."""
+    """Erkennt die Rolle einer Entity aus HA-Attributen (für Discovery-Vorschlaege)."""
     lower_eid = entity_id.lower()
 
     if domain == "binary_sensor":
@@ -999,7 +999,7 @@ def is_heating_relevant_opening(entity_id: str, state: dict) -> bool:
     """Prueft ob ein Oeffnungs-Sensor heizungsrelevant ist.
 
     Ein Sensor ist heizungsrelevant wenn:
-    - Er ein Fenster oder eine Tuer ist (NICHT ein Tor/Gate)
+    - Er ein Fenster oder eine Tür ist (NICHT ein Tor/Gate)
     - Er in einem beheizten Bereich liegt (heated != false)
 
     Tore (Garagentore, Gartentore) sind NIE heizungsrelevant,
@@ -1019,18 +1019,18 @@ def is_heating_relevant_opening(entity_id: str, state: dict) -> bool:
     if opening_type == "gate":
         return False
 
-    # Fenster und Tueren sind standardmaessig heizungsrelevant
+    # Fenster und Türen sind standardmaessig heizungsrelevant
     return True
 
 
 async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
-    """Laedt verfuegbare Entities aus HA und cached Raum-/Geraete-Namen.
+    """Laedt verfügbare Entities aus HA und cached Raum-/Geräte-Namen.
 
     Wird periodisch aufgerufen (z.B. alle 5 Min) um Tool-Beschreibungen
     mit echten Entity-Namen anzureichern.
 
     Laedt zusaetzlich Domain-Zuordnungen von der MindHome API,
-    damit der Assistant weiss welche Geraete Fenster, Steckdosen, etc. sind.
+    damit der Assistant weiss welche Geräte Fenster, Steckdosen, etc. sind.
     """
     global _entity_catalog, _entity_catalog_ts
 
@@ -1064,7 +1064,7 @@ async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
             continue
         domain, name = eid.split(".", 1)
 
-        # Hidden-Entities ueberspringen
+        # Hidden-Entities überspringen
         if is_entity_hidden(eid):
             continue
 
@@ -1105,10 +1105,10 @@ async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
                 else:
                     binary_sensors.append(entry)
 
-    # Config-Raeume immer hinzufuegen
+    # Config-Räume immer hinzufuegen
     for r in _get_config_rooms():
         rooms.add(r)
-    # MindHome-Raeume (User-konfiguriert) immer hinzufuegen
+    # MindHome-Räume (User-konfiguriert) immer hinzufuegen
     for r in _mindhome_rooms:
         rooms.add(r.lower())
 
@@ -1138,12 +1138,12 @@ def _get_room_names() -> list[str]:
 
 
 def _inject_entity_hints(tool: dict) -> dict:
-    """Fuegt verfuegbare Raum- und Entity-Namen in Tool-Beschreibungen ein.
+    """Fuegt verfügbare Raum- und Entity-Namen in Tool-Beschreibungen ein.
 
     - Alle Tools mit 'room'-Parameter: Raumnamen-Liste anfuegen
-    - set_switch/get_switches: Verfuegbare Switches anfuegen
-    - set_cover/get_covers: Verfuegbare Covers anfuegen
-    - set_light/get_lights: Verfuegbare Lights anfuegen
+    - set_switch/get_switches: Verfügbare Switches anfuegen
+    - set_cover/get_covers: Verfügbare Covers anfuegen
+    - set_light/get_lights: Verfügbare Lights anfuegen
     """
     func = tool.get("function", {})
     fname = func.get("name", "")
@@ -1174,7 +1174,7 @@ def _inject_entity_hints(tool: dict) -> dict:
         combined = (_entity_catalog.get("sensors", []) +
                     _entity_catalog.get("binary_sensors", []))
         if combined:
-            # Prioritaets-Rollen: Diese sind am haeufigsten abgefragt
+            # Prioritaets-Rollen: Diese sind am häufigsten abgefragt
             _priority_roles = ("Strommesser", "Energie", "Innentemperatur",
                                "Luftfeuchtigkeit", "CO2", "Batterie")
             priority = [e for e in combined if any(r in e for r in _priority_roles)]
@@ -1182,7 +1182,7 @@ def _inject_entity_hints(tool: dict) -> dict:
             ordered = priority + rest
             entity_hint = ", ".join(ordered[:30])
             needs_copy = True
-    # elif statt if — verhindert dass get_entity_state-Hint ueberschrieben wird
+    # elif statt if — verhindert dass get_entity_state-Hint überschrieben wird
     elif (catalog_key := _ENTITY_MAP.get(fname)) and _entity_catalog.get(catalog_key):
         entities = _entity_catalog[catalog_key]
         if entities:
@@ -1199,18 +1199,18 @@ def _inject_entity_hints(tool: dict) -> dict:
         rp = tool["function"]["parameters"]["properties"]["room"]
         room_list = ", ".join(rooms)
         desc = rp.get("description", "Raumname")
-        if "Verfuegbare Raeume:" in desc:
-            desc = desc.split("Verfuegbare Raeume:")[0].rstrip()
-        if "Verfuegbare Geraete:" in desc:
-            desc = desc.split("Verfuegbare Geraete:")[0].rstrip()
-        rp["description"] = f"{desc} — Verfuegbare Raeume: {room_list}"
+        if "Verfügbare Räume:" in desc:
+            desc = desc.split("Verfügbare Räume:")[0].rstrip()
+        if "Verfügbare Geräte:" in desc:
+            desc = desc.split("Verfügbare Geräte:")[0].rstrip()
+        rp["description"] = f"{desc} — Verfügbare Räume: {room_list}"
 
     # Entity-Liste in die Tool-Beschreibung injizieren
     if entity_hint:
         tool_desc = tool["function"].get("description", "")
-        if "Verfuegbare Geraete:" in tool_desc:
-            tool_desc = tool_desc.split("Verfuegbare Geraete:")[0].rstrip()
-        tool["function"]["description"] = f"{tool_desc} — Verfuegbare Geraete: {entity_hint}"
+        if "Verfügbare Geräte:" in tool_desc:
+            tool_desc = tool_desc.split("Verfügbare Geräte:")[0].rstrip()
+        tool["function"]["description"] = f"{tool_desc} — Verfügbare Geräte: {entity_hint}"
 
     return tool
 
@@ -1227,7 +1227,7 @@ def _get_climate_tool_description() -> str:
             "Heizung steuern: Vorlauftemperatur-Offset zur Heizkurve anpassen. "
             "Positiver Offset = waermer, negativer Offset = kaelter."
         )
-    return "Temperatur in einem Raum aendern. Fuer 'waermer' verwende adjust='warmer', fuer 'kaelter' verwende adjust='cooler' (aendert um 1°C)."
+    return "Temperatur in einem Raum ändern. Für 'waermer' verwende adjust='warmer', für 'kaelter' verwende adjust='cooler' (ändert um 1°C)."
 
 
 def _get_climate_tool_parameters() -> dict:
@@ -1285,17 +1285,17 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_light",
-            "description": "Licht in einem Raum ein-/ausschalten oder dimmen. Alle Lampen sind dim2warm — Farbtemperatur wird automatisch ueber die Helligkeit geregelt (Hardware). Fuer 'heller' verwende state='brighter', fuer 'dunkler' verwende state='dimmer'. Fuer Etagen: room='eg' oder room='og'. Wenn der User ein bestimmtes Licht meint (z.B. 'Stehlampe', 'Deckenlampe'), setze den device-Parameter.",
+            "description": "Licht in einem Raum ein-/ausschalten oder dimmen. Alle Lampen sind dim2warm — Farbtemperatur wird automatisch über die Helligkeit geregelt (Hardware). Für 'heller' verwende state='brighter', für 'dunkler' verwende state='dimmer'. Für Etagen: room='eg' oder room='og'. Wenn der User ein bestimmtes Licht meint (z.B. 'Stehlampe', 'Deckenlampe'), setze den device-Parameter.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname VOLLSTAENDIG angeben inkl. Personen-Praefix falls genannt (z.B. 'buero_manuel', 'buero_julia', 'wohnzimmer', 'schlafzimmer'). NICHT den Personennamen weglassen! Fuer ganze Etage: 'eg' oder 'og'. Fuer alle: 'all'.",
+                        "description": "Raumname VOLLSTAENDIG angeben inkl. Personen-Praefix falls genannt (z.B. 'buero_manuel', 'buero_julia', 'wohnzimmer', 'schlafzimmer'). NICHT den Personennamen weglassen! Für ganze Etage: 'eg' oder 'og'. Für alle: 'all'.",
                     },
                     "device": {
                         "type": "string",
-                        "description": "Optionaler Geraetename wenn ein bestimmtes Licht gemeint ist (z.B. 'stehlampe', 'deckenlampe', 'nachttisch'). Ohne device wird das Hauptlicht im Raum geschaltet.",
+                        "description": "Optionaler Gerätename wenn ein bestimmtes Licht gemeint ist (z.B. 'stehlampe', 'deckenlampe', 'nachttisch'). Ohne device wird das Hauptlicht im Raum geschaltet.",
                     },
                     "state": {
                         "type": "string",
@@ -1304,11 +1304,11 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "brightness": {
                         "type": "integer",
-                        "description": "Helligkeit 0-100 Prozent (optional, nur bei state='on'). WICHTIG: Wenn der User einen konkreten Wert nennt (z.B. 'auf 10%'), diesen EXAKT uebernehmen — NICHT den aktuellen Kontextwert verwenden. Ohne Angabe wird adaptive Helligkeit nach Tageszeit berechnet.",
+                        "description": "Helligkeit 0-100 Prozent (optional, nur bei state='on'). WICHTIG: Wenn der User einen konkreten Wert nennt (z.B. 'auf 10%'), diesen EXAKT übernehmen — NICHT den aktuellen Kontextwert verwenden. Ohne Angabe wird adaptive Helligkeit nach Tageszeit berechnet.",
                     },
                     "transition": {
                         "type": "integer",
-                        "description": "Uebergangsdauer in Sekunden (optional, fuer sanftes Dimmen)",
+                        "description": "Übergangsdauer in Sekunden (optional, für sanftes Dimmen)",
                     },
                 },
                 "required": ["room", "state"],
@@ -1361,22 +1361,22 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_cover",
-            "description": "Rollladen oder Markise steuern. NIEMALS fuer Garagentore! action: open/close/stop/half. position: 0-100%. Fuer Etagen: room='eg' oder room='og'. Fuer Markisen: type='markise'.",
+            "description": "Rollladen oder Markise steuern. NIEMALS für Garagentore! action: open/close/stop/half. position: 0-100%. Für Etagen: room='eg' oder room='og'. Für Markisen: type='markise'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname VOLLSTAENDIG (z.B. 'buero_manuel', 'wohnzimmer'). Fuer ganze Etage: 'eg' oder 'og'. Fuer alle: 'all'. Fuer alle Markisen: 'markisen'.",
+                        "description": "Raumname VOLLSTAENDIG (z.B. 'buero_manuel', 'wohnzimmer'). Für ganze Etage: 'eg' oder 'og'. Für alle: 'all'. Für alle Markisen: 'markisen'.",
                     },
                     "action": {
                         "type": "string",
                         "enum": ["open", "close", "stop", "half"],
-                        "description": "open=ganz oeffnen/hoch, close=ganz schliessen/runter, stop=anhalten, half=halb offen.",
+                        "description": "open=ganz oeffnen/hoch, close=ganz schließen/runter, stop=anhalten, half=halb offen.",
                     },
                     "position": {
                         "type": "integer",
-                        "description": "Exakte Position 0 (zu) bis 100 (offen). Nur fuer Prozent-Angaben.",
+                        "description": "Exakte Position 0 (zu) bis 100 (offen). Nur für Prozent-Angaben.",
                     },
                     "adjust": {
                         "type": "string",
@@ -1397,7 +1397,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_covers",
-            "description": "NUR zum Abfragen: Zeigt alle Rolllaeden/Jalousien mit Name, Raum und Position (0=zu, 100=offen). NICHT zum Steuern — dafuer set_cover nutzen.",
+            "description": "NUR zum Abfragen: Zeigt alle Rollläden/Jalousien mit Name, Raum und Position (0=zu, 100=offen). NICHT zum Steuern — dafuer set_cover nutzen.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1414,18 +1414,18 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "configure_cover_automation",
-            "description": "Cover-Automatik konfigurieren: Wetter-Integration wechseln, Sonnenpruefung beim Aufwachen, Vorhersage-Schutz, Schwellwerte aendern. Nutze dies wenn der User sagt: 'Wechsle die Wetter-Integration', 'Nimm weather.home statt forecast', 'Aendere Hitzeschutz auf 28 Grad', 'Schalte Vorhersage-Schutz aus', 'Zeig die Cover-Automatik Einstellungen'.",
+            "description": "Cover-Automatik konfigurieren: Wetter-Integration wechseln, Sonnenpruefung beim Aufwachen, Vorhersage-Schutz, Schwellwerte ändern. Nutze dies wenn der User sagt: 'Wechsle die Wetter-Integration', 'Nimm weather.home statt forecast', 'Aendere Hitzeschutz auf 28 Grad', 'Schalte Vorhersage-Schutz aus', 'Zeig die Cover-Automatik Einstellungen'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["get", "set"],
-                        "description": "get=aktuelle Einstellungen anzeigen, set=Einstellungen aendern",
+                        "description": "get=aktuelle Einstellungen anzeigen, set=Einstellungen ändern",
                     },
                     "weather_entity": {
                         "type": "string",
-                        "description": "Wetter-Entity fuer Cover-Automatik (z.B. 'weather.forecast_home', 'weather.home'). Leer = automatische Erkennung.",
+                        "description": "Wetter-Entity für Cover-Automatik (z.B. 'weather.forecast_home', 'weather.home'). Leer = automatische Erkennung.",
                     },
                     "forecast_weather_protection": {
                         "type": "boolean",
@@ -1437,7 +1437,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "wakeup_sun_check": {
                         "type": "boolean",
-                        "description": "Sonnenstand beim Aufwachen pruefen (verhindert Oeffnung bei Dunkelheit)",
+                        "description": "Sonnenstand beim Aufwachen prüfen (verhindert Oeffnung bei Dunkelheit)",
                     },
                     "wakeup_min_sun_elevation": {
                         "type": "number",
@@ -1501,7 +1501,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "glare_protection": {
                         "type": "boolean",
-                        "description": "Blendschutz (teilweises Schliessen bei direkter Sonne) an/aus",
+                        "description": "Blendschutz (teilweises Schließen bei direkter Sonne) an/aus",
                     },
                     "gradual_morning": {
                         "type": "boolean",
@@ -1509,7 +1509,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "wave_open": {
                         "type": "boolean",
-                        "description": "Wellen-Oeffnung (Raum fuer Raum zeitversetzt) an/aus",
+                        "description": "Wellen-Oeffnung (Raum für Raum zeitversetzt) an/aus",
                     },
                     "heating_integration": {
                         "type": "boolean",
@@ -1521,7 +1521,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "privacy_mode": {
                         "type": "boolean",
-                        "description": "Sichtschutz-Modus (abends Rolladen schliessen) an/aus",
+                        "description": "Sichtschutz-Modus (abends Rolladen schließen) an/aus",
                     },
                     "privacy_close_hour": {
                         "type": "integer",
@@ -1533,7 +1533,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "manual_override_hours": {
                         "type": "number",
-                        "description": "Stunden die manuelle Uebersteuerung aktiv bleibt (0.5-12)",
+                        "description": "Stunden die manuelle Übersteuerung aktiv bleibt (0.5-12)",
                     },
                 },
                 "required": ["action"],
@@ -1544,7 +1544,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "play_media",
-            "description": "Musik oder Medien steuern: abspielen, pausieren, stoppen, Lautstaerke aendern. Fuer 'leiser' verwende action='volume_down', fuer 'lauter' verwende action='volume_up'. Fuer eine bestimmte Lautstaerke verwende action='volume' mit volume-Parameter.",
+            "description": "Musik oder Medien steuern: abspielen, pausieren, stoppen, Lautstärke ändern. Für 'leiser' verwende action='volume_down', für 'lauter' verwende action='volume_up'. Für eine bestimmte Lautstärke verwende action='volume' mit volume-Parameter.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1555,11 +1555,11 @@ _ASSISTANT_TOOLS_STATIC = [
                     "action": {
                         "type": "string",
                         "enum": ["play", "pause", "stop", "next", "previous", "volume", "volume_up", "volume_down"],
-                        "description": "Medien-Aktion. 'volume' = Lautstaerke auf Wert setzen, 'volume_up' = lauter (+10%), 'volume_down' = leiser (-10%)",
+                        "description": "Medien-Aktion. 'volume' = Lautstärke auf Wert setzen, 'volume_up' = lauter (+10%), 'volume_down' = leiser (-10%)",
                     },
                     "query": {
                         "type": "string",
-                        "description": "Suchanfrage fuer Musik (z.B. 'Jazz', 'Beethoven', 'Chill Playlist')",
+                        "description": "Suchanfrage für Musik (z.B. 'Jazz', 'Beethoven', 'Chill Playlist')",
                     },
                     "media_type": {
                         "type": "string",
@@ -1568,7 +1568,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "volume": {
                         "type": "number",
-                        "description": "Lautstaerke 0-100 (Prozent). Nur bei action='volume'. Z.B. 20 fuer 20%, 50 fuer 50%",
+                        "description": "Lautstärke 0-100 (Prozent). Nur bei action='volume'. Z.B. 20 für 20%, 50 für 50%",
                     },
                 },
                 "required": ["action"],
@@ -1594,7 +1594,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "room": {
                         "type": "string",
-                        "description": "Zielraum fuer Wiedergabe (optional)",
+                        "description": "Zielraum für Wiedergabe (optional)",
                     },
                     "genre": {
                         "type": "string",
@@ -1609,7 +1609,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_media",
-            "description": "NUR zum Abfragen: Zeigt alle Media Player mit Wiedergabestatus, Titel und Lautstaerke. NICHT zum Steuern — dafuer play_media nutzen.",
+            "description": "NUR zum Abfragen: Zeigt alle Media Player mit Wiedergabestatus, Titel und Lautstärke. NICHT zum Steuern — dafuer play_media nutzen.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1644,13 +1644,13 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "lock_door",
-            "description": "Tuer ver- oder entriegeln",
+            "description": "Tür ver- oder entriegeln",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "door": {
                         "type": "string",
-                        "description": "Name der Tuer",
+                        "description": "Name der Tür",
                     },
                     "action": {
                         "type": "string",
@@ -1683,7 +1683,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_switches",
-            "description": "Zeigt alle Steckdosen/Schalter (switch.*) mit Status (an/aus) und Leistungsdaten (Watt) falls verfuegbar. Nutze dies auch fuer Fragen nach Stromverbrauch, Watt, Energie einzelner Geraete.",
+            "description": "Zeigt alle Steckdosen/Schalter (switch.*) mit Status (an/aus) und Leistungsdaten (Watt) falls verfügbar. Nutze dies auch für Fragen nach Stromverbrauch, Watt, Energie einzelner Geräte.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1737,7 +1737,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "room": {
                         "type": "string",
-                        "description": "Raum fuer TTS-Ausgabe (optional, nur bei target=speaker)",
+                        "description": "Raum für TTS-Ausgabe (optional, nur bei target=speaker)",
                     },
                 },
                 "required": ["message"],
@@ -1774,7 +1774,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_entity_state",
-            "description": "Status einer Home Assistant Entity abfragen (Temperatur, Watt, Strom, Feuchte, etc.). Funktioniert mit sensor.*, switch.*, light.*, climate.*, weather.* (z.B. weather.forecast_home), lock.*, media_player.*, binary_sensor.*, person.*. Fuer Stromverbrauch/Watt eines Geraets: nutze get_switches.",
+            "description": "Status einer Home Assistant Entity abfragen (Temperatur, Watt, Strom, Feuchte, etc.). Funktioniert mit sensor.*, switch.*, light.*, climate.*, weather.* (z.B. weather.forecast_home), lock.*, media_player.*, binary_sensor.*, person.*. Für Stromverbrauch/Watt eines Geräts: nutze get_switches.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1801,7 +1801,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "hours": {
                         "type": "integer",
-                        "description": "Anzahl zurueckliegender Stunden (Standard: 24, Max: 720 = 30 Tage)",
+                        "description": "Anzahl zurückliegender Stunden (Standard: 24, Max: 720 = 30 Tage)",
                     },
                 },
                 "required": ["entity_id"],
@@ -1838,7 +1838,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "transfer_playback",
-            "description": "Musik-Wiedergabe von einem Raum in einen anderen uebertragen",
+            "description": "Musik-Wiedergabe von einem Raum in einen anderen übertragen",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1859,7 +1859,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_calendar_events",
-            "description": "Kalender-Termine abrufen. Nutze dies wenn der User nach Terminen fragt, z.B. 'Was steht morgen an?', 'Was steht heute an?', 'Habe ich morgen Termine?', 'Was steht diese Woche an?'. Immer bevorzugt fuer zeitbezogene Fragen zu Plaenen und Terminen.",
+            "description": "Kalender-Termine abrufen. Nutze dies wenn der User nach Terminen fragt, z.B. 'Was steht morgen an?', 'Was steht heute an?', 'Habe ich morgen Termine?', 'Was steht diese Woche an?'. Immer bevorzugt für zeitbezogene Fragen zu Plaenen und Terminen.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1910,7 +1910,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "delete_calendar_event",
-            "description": "Einen Kalender-Termin loeschen",
+            "description": "Einen Kalender-Termin löschen",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1990,7 +1990,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     "config_file": {
                         "type": "string",
                         "enum": ["easter_eggs", "opinion_rules", "room_profiles"],
-                        "description": "Welche Konfiguration aendern (easter_eggs, opinion_rules, room_profiles)",
+                        "description": "Welche Konfiguration ändern (easter_eggs, opinion_rules, room_profiles)",
                     },
                     "action": {
                         "type": "string",
@@ -1999,7 +1999,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "key": {
                         "type": "string",
-                        "description": "Schluessel/Name des Eintrags (z.B. 'star_wars' fuer Easter Egg, 'high_temp' fuer Opinion)",
+                        "description": "Schluessel/Name des Eintrags (z.B. 'star_wars' für Easter Egg, 'high_temp' für Opinion)",
                     },
                     "data": {
                         "type": "object",
@@ -2026,7 +2026,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "item": {
                         "type": "string",
-                        "description": "Artikelname (fuer add/complete)",
+                        "description": "Artikelname (für add/complete)",
                     },
                 },
                 "required": ["action"],
@@ -2038,14 +2038,14 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "manage_inventory",
-            "description": "Vorratsmanagement: Artikel mit Ablaufdatum hinzufuegen, entfernen, auflisten, Menge aendern. Warnt bei bald ablaufenden Artikeln.",
+            "description": "Vorratsmanagement: Artikel mit Ablaufdatum hinzufuegen, entfernen, auflisten, Menge ändern. Warnt bei bald ablaufenden Artikeln.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["add", "remove", "list", "update_quantity", "check_expiring"],
-                        "description": "Aktion: hinzufuegen, entfernen, auflisten, Menge aendern, Ablauf pruefen",
+                        "description": "Aktion: hinzufuegen, entfernen, auflisten, Menge ändern, Ablauf prüfen",
                     },
                     "item": {
                         "type": "string",
@@ -2104,13 +2104,13 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "create_automation",
-            "description": "Erstellt eine neue Home Assistant Automation aus natuerlicher Sprache. Der User beschreibt was passieren soll, Jarvis generiert die Automation und fragt nach Bestaetigung.",
+            "description": "Erstellt eine neue Home Assistant Automation aus natürlicher Sprache. Der User beschreibt was passieren soll, Jarvis generiert die Automation und fragt nach Bestaetigung.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "description": {
                         "type": "string",
-                        "description": "Natuerlichsprachliche Beschreibung der Automation (z.B. 'Wenn ich nach Hause komme, mach das Licht an')",
+                        "description": "Natürlichsprachliche Beschreibung der Automation (z.B. 'Wenn ich nach Hause komme, mach das Licht an')",
                     },
                 },
                 "required": ["description"],
@@ -2127,7 +2127,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "pending_id": {
                         "type": "string",
-                        "description": "ID der ausstehenden Automation (wird bei create_automation zurueckgegeben)",
+                        "description": "ID der ausstehenden Automation (wird bei create_automation zurückgegeben)",
                     },
                 },
                 "required": ["pending_id"],
@@ -2226,7 +2226,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_reminder",
-            "description": "Setzt eine Erinnerung fuer eine bestimmte Uhrzeit. Z.B. 'Erinnere mich um 15 Uhr an den Anruf' oder 'Um 18:30 Abendessen kochen'.",
+            "description": "Setzt eine Erinnerung für eine bestimmte Uhrzeit. Z.B. 'Erinnere mich um 15 Uhr an den Anruf' oder 'Um 18:30 Abendessen kochen'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2240,11 +2240,11 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "date": {
                         "type": "string",
-                        "description": "Datum im Format YYYY-MM-DD. Wenn leer, wird heute oder morgen automatisch gewaehlt.",
+                        "description": "Datum im Format YYYY-MM-DD. Wenn leer, wird heute oder morgen automatisch gewählt.",
                     },
                     "room": {
                         "type": "string",
-                        "description": "Raum fuer die TTS-Benachrichtigung",
+                        "description": "Raum für die TTS-Benachrichtigung",
                     },
                 },
                 "required": ["time", "label"],
@@ -2255,7 +2255,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_wakeup_alarm",
-            "description": "Stellt einen Wecker fuer eine bestimmte Uhrzeit. Z.B. 'Weck mich um 6:30' oder 'Stell einen Wecker fuer 7 Uhr'.",
+            "description": "Stellt einen Wecker für eine bestimmte Uhrzeit. Z.B. 'Weck mich um 6:30' oder 'Stell einen Wecker für 7 Uhr'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2269,7 +2269,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "room": {
                         "type": "string",
-                        "description": "Raum in dem geweckt werden soll (fuer Licht + TTS)",
+                        "description": "Raum in dem geweckt werden soll (für Licht + TTS)",
                     },
                     "repeat": {
                         "type": "string",
@@ -2291,7 +2291,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "label": {
                         "type": "string",
-                        "description": "Bezeichnung des Weckers zum Loeschen",
+                        "description": "Bezeichnung des Weckers zum Löschen",
                     },
                 },
                 "required": [],
@@ -2314,7 +2314,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "broadcast",
-            "description": "Sendet eine Durchsage an ALLE Lautsprecher im Haus. Fuer Ankuendigungen wie 'Essen ist fertig!' oder 'Bitte alle runterkommen.'",
+            "description": "Sendet eine Durchsage an ALLE Lautsprecher im Haus. Für Ankuendigungen wie 'Essen ist fertig!' oder 'Bitte alle runterkommen.'",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2331,7 +2331,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "send_intercom",
-            "description": "Gezielte Durchsage an eine bestimmte Person oder einen bestimmten Raum. Fuer 'Sag Julia dass das Essen fertig ist' oder 'Durchsage im Wohnzimmer: Komm mal bitte'. Fuer Durchsagen an ALLE verwende stattdessen 'broadcast'.",
+            "description": "Gezielte Durchsage an eine bestimmte Person oder einen bestimmten Raum. Für 'Sag Julia dass das Essen fertig ist' oder 'Durchsage im Wohnzimmer: Komm mal bitte'. Für Durchsagen an ALLE verwende stattdessen 'broadcast'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2356,7 +2356,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_camera_view",
-            "description": "Holt und beschreibt ein Kamera-Bild. Z.B. 'Wer ist an der Tuer?' oder 'Zeig mir die Garage'.",
+            "description": "Holt und beschreibt ein Kamera-Bild. Z.B. 'Wer ist an der Tür?' oder 'Zeig mir die Garage'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2392,7 +2392,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "action_args": {
                         "type": "object",
-                        "description": "Argumente fuer die Aktion",
+                        "description": "Argumente für die Aktion",
                     },
                     "label": {
                         "type": "string",
@@ -2400,11 +2400,11 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "ttl_hours": {
                         "type": "integer",
-                        "description": "Gueltigkeitsdauer in Stunden (default 24, max 168)",
+                        "description": "Gültigkeitsdauer in Stunden (default 24, max 168)",
                     },
                     "one_shot": {
                         "type": "boolean",
-                        "description": "Nur einmal ausfuehren (default true)",
+                        "description": "Nur einmal ausführen (default true)",
                     },
                 },
                 "required": ["trigger_type", "trigger_value", "action_function", "action_args"],
@@ -2439,7 +2439,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Sucht im Internet nach Informationen. Nur fuer Wissensfragen die nicht aus dem Gedaechtnis beantwortet werden koennen. Z.B. 'Was ist die Hauptstadt von Australien?' oder 'Aktuelle Nachrichten'.",
+            "description": "Sucht im Internet nach Informationen. Nur für Wissensfragen die nicht aus dem Gedaechtnis beantwortet werden koennen. Z.B. 'Was ist die Hauptstadt von Australien?' oder 'Aktuelle Nachrichten'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2456,7 +2456,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_security_score",
-            "description": "Zeigt den aktuellen Sicherheits-Score des Hauses (0-100). Prueft offene Tueren, Fenster, Schloesser, Rauchmelder und Wassersensoren. Nutze dies wenn der User nach Sicherheit, Haus-Status oder offenen Tueren/Fenstern fragt.",
+            "description": "Zeigt den aktuellen Sicherheits-Score des Hauses (0-100). Prueft offene Türen, Fenster, Schlösser, Rauchmelder und Wassersensoren. Nutze dies wenn der User nach Sicherheit, Haus-Status oder offenen Türen/Fenstern fragt.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -2480,7 +2480,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_active_intents",
-            "description": "Zeigt gemerkte Vorhaben die aus frueheren Gespraechen erkannt wurden, z.B. 'Eltern kommen am Wochenende'. Nutze dies NUR wenn der User explizit nach gemerkten Vorhaben fragt, z.B. 'Was habe ich mir vorgenommen?', 'Was hast du dir gemerkt?'. NICHT fuer Kalender-Termine oder 'Was steht morgen an?' verwenden.",
+            "description": "Zeigt gemerkte Vorhaben die aus früheren Gespraechen erkannt wurden, z.B. 'Eltern kommen am Wochenende'. Nutze dies NUR wenn der User explizit nach gemerkten Vorhaben fragt, z.B. 'Was habe ich mir vorgenommen?', 'Was hast du dir gemerkt?'. NICHT für Kalender-Termine oder 'Was steht morgen an?' verwenden.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -2504,7 +2504,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_device_health",
-            "description": "Zeigt den Geraete-Gesundheitsstatus: Anomalien, inaktive Sensoren, HVAC-Effizienz. Nutze dies wenn der User nach Hardware-Problemen, Geraete-Status oder Sensor-Zustand fragt.",
+            "description": "Zeigt den Geräte-Gesundheitsstatus: Anomalien, inaktive Sensoren, HVAC-Effizienz. Nutze dies wenn der User nach Hardware-Problemen, Geräte-Status oder Sensor-Zustand fragt.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -2516,7 +2516,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_house_status",
-            "description": "Gibt den kompletten Haus-Status zurueck: Temperaturen, Lichter, Anwesenheit, Wetter, Sicherheit, offene Fenster/Tueren, Medien, offline Geraete. IMMER nutzen wenn der User nach Hausstatus, Status, Ueberblick oder Zusammenfassung fragt.",
+            "description": "Gibt den kompletten Haus-Status zurück: Temperaturen, Lichter, Anwesenheit, Wetter, Sicherheit, offene Fenster/Türen, Medien, offline Geräte. IMMER nutzen wenn der User nach Hausstatus, Status, Überblick oder Zusammenfassung fragt.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -2528,7 +2528,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_full_status_report",
-            "description": "Narrativer JARVIS-Statusbericht: Hausstatus, Termine, Wetter, Energie, offene Erinnerungen — alles in einem kurzen Briefing. Fuer 'Statusbericht', 'Briefing', 'Was gibts Neues', 'Lagebericht'.",
+            "description": "Narrativer JARVIS-Statusbericht: Hausstatus, Termine, Wetter, Energie, offene Erinnerungen — alles in einem kurzen Briefing. Für 'Statusbericht', 'Briefing', 'Was gibts Neues', 'Lagebericht'.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -2540,13 +2540,13 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_weather",
-            "description": "Aktuelles Wetter von Home Assistant abrufen. Nutze dies wenn der User nach Wetter, Temperatur draussen, Regen oder Wind fragt. Standardmaessig nur aktuelles Wetter, Vorhersage nur wenn explizit gewuenscht.",
+            "description": "Aktuelles Wetter von Home Assistant abrufen. Nutze dies wenn der User nach Wetter, Temperatur draußen, Regen oder Wind fragt. Standardmaessig nur aktuelles Wetter, Vorhersage nur wenn explizit gewuenscht.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "include_forecast": {
                         "type": "boolean",
-                        "description": "Nur auf true setzen wenn der User EXPLIZIT nach Vorhersage, morgen, spaeter oder den kommenden Tagen fragt (default: false)",
+                        "description": "Nur auf true setzen wenn der User EXPLIZIT nach Vorhersage, morgen, später oder den kommenden Tagen fragt (default: false)",
                     },
                 },
                 "required": [],
@@ -2569,7 +2569,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "describe_doorbell",
-            "description": "Beschreibt wer oder was gerade vor der Haustuer steht (via Tuerkamera). Nutze dies wenn der User fragt 'Wer ist an der Tuer?', 'Wer hat geklingelt?' oder 'Was ist vor der Tuer?'.",
+            "description": "Beschreibt wer oder was gerade vor der Haustuer steht (via Türkamera). Nutze dies wenn der User fragt 'Wer ist an der Tür?', 'Wer hat geklingelt?' oder 'Was ist vor der Tür?'.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -2581,14 +2581,14 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "manage_visitor",
-            "description": "Besucher-Management: Bekannte Besucher verwalten, erwartete Besucher anlegen, Besucher-History ansehen, Tuer oeffnen ('Lass ihn rein'). Nutze dies bei: 'Mama kommt heute', 'Lass ihn rein', 'Wer hat uns besucht?', 'Besucher hinzufuegen', 'Oeffne die Tuer fuer den Besuch'.",
+            "description": "Besucher-Management: Bekannte Besucher verwalten, erwartete Besucher anlegen, Besucher-History ansehen, Tür oeffnen ('Lass ihn rein'). Nutze dies bei: 'Mama kommt heute', 'Lass ihn rein', 'Wer hat uns besucht?', 'Besucher hinzufuegen', 'Oeffne die Tür für den Besuch'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["add_known", "remove_known", "list_known", "expect", "cancel_expected", "grant_entry", "history", "status"],
-                        "description": "Aktion: add_known=Besucher speichern, remove_known=entfernen, list_known=alle zeigen, expect=Besucher erwarten, cancel_expected=Erwartung aufheben, grant_entry=Tuer oeffnen, history=Besuchs-History, status=Uebersicht",
+                        "description": "Aktion: add_known=Besucher speichern, remove_known=entfernen, list_known=alle zeigen, expect=Besucher erwarten, cancel_expected=Erwartung aufheben, grant_entry=Tür oeffnen, history=Besuchs-History, status=Übersicht",
                     },
                     "person_id": {
                         "type": "string",
@@ -2612,11 +2612,11 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "auto_unlock": {
                         "type": "boolean",
-                        "description": "Tuer automatisch oeffnen wenn Besucher klingelt (nur bei expect)",
+                        "description": "Tür automatisch oeffnen wenn Besucher klingelt (nur bei expect)",
                     },
                     "door": {
                         "type": "string",
-                        "description": "Tuer-Name fuer grant_entry (default: haustuer)",
+                        "description": "Tür-Name für grant_entry (default: haustuer)",
                     },
                     "limit": {
                         "type": "integer",
@@ -2631,14 +2631,14 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "manage_protocol",
-            "description": "Verwaltet benannte Protokolle (Multi-Step-Sequenzen). Protokolle sind gespeicherte Ablaeufe wie 'Filmabend' oder 'Gute Nacht'. Nutze dies wenn der User ein Protokoll erstellen, ausfuehren, auflisten, loeschen oder rueckgaengig machen will. Beispiel: 'Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu' oder 'Fuehre Filmabend aus' oder 'Zeig meine Protokolle'.",
+            "description": "Verwaltet benannte Protokolle (Multi-Step-Sequenzen). Protokolle sind gespeicherte Ablaeufe wie 'Filmabend' oder 'Gute Nacht'. Nutze dies wenn der User ein Protokoll erstellen, ausführen, auflisten, löschen oder rueckgaengig machen will. Beispiel: 'Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu' oder 'Fuehre Filmabend aus' oder 'Zeig meine Protokolle'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["create", "execute", "undo", "list", "delete"],
-                        "description": "Aktion: create (erstellen), execute (ausfuehren), undo (rueckgaengig), list (auflisten), delete (loeschen)",
+                        "description": "Aktion: create (erstellen), execute (ausführen), undo (rueckgaengig), list (auflisten), delete (löschen)",
                     },
                     "name": {
                         "type": "string",
@@ -2646,7 +2646,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "description": {
                         "type": "string",
-                        "description": "Nur bei action=create: Natuerliche Beschreibung der Schritte (z.B. 'Licht auf 20%, Rolladen zu, TV an')",
+                        "description": "Nur bei action=create: Natürliche Beschreibung der Schritte (z.B. 'Licht auf 20%, Rolladen zu, TV an')",
                     },
                 },
                 "required": ["action"],
@@ -2658,7 +2658,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_vacuum",
-            "description": "Saugroboter steuern. Raum angeben → richtiger Roboter (EG/OG) wird automatisch gewaehlt. Ohne Raum → ganzes Stockwerk oder alle. Saugstaerke und Modus einstellbar.",
+            "description": "Saugroboter steuern. Raum angeben → richtiger Roboter (EG/OG) wird automatisch gewählt. Ohne Raum → ganzes Stockwerk oder alle. Saugstaerke und Modus einstellbar.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2669,7 +2669,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "room": {
                         "type": "string",
-                        "description": "Raumname fuer gezieltes Saugen (z.B. 'wohnzimmer', 'kueche'). Oder 'eg'/'og' fuer ganzes Stockwerk. Ohne → beide Roboter.",
+                        "description": "Raumname für gezieltes Saugen (z.B. 'wohnzimmer', 'kueche'). Oder 'eg'/'og' für ganzes Stockwerk. Ohne → beide Roboter.",
                     },
                     "fan_speed": {
                         "type": "string",
@@ -2744,9 +2744,9 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "project_id": {
                         "type": "string",
-                        "description": "Projekt-ID (8-stellig, z.B. 'a1b2c3d4'). Wird bei den meisten Aktionen benoetigt.",
+                        "description": "Projekt-ID (8-stellig, z.B. 'a1b2c3d4'). Wird bei den meisten Aktionen benötigt.",
                     },
-                    "title": {"type": "string", "description": "Projekt-Titel (fuer create_project)"},
+                    "title": {"type": "string", "description": "Projekt-Titel (für create_project)"},
                     "description": {"type": "string", "description": "Beschreibung/Anforderung/Symptom"},
                     "category": {
                         "type": "string",
@@ -2761,12 +2761,12 @@ _ASSISTANT_TOOLS_STATIC = [
                     "status": {
                         "type": "string",
                         "enum": ["erstellt", "diagnose", "teile_bestellt", "in_arbeit", "pausiert", "fertig"],
-                        "description": "Neuer Projekt-Status (fuer update_project)",
+                        "description": "Neuer Projekt-Status (für update_project)",
                     },
                     "language": {
                         "type": "string",
                         "enum": ["arduino", "python", "cpp", "html", "javascript", "yaml", "micropython"],
-                        "description": "Programmiersprache fuer Code-Generation",
+                        "description": "Programmiersprache für Code-Generation",
                     },
                     "calc_type": {
                         "type": "string",
@@ -2776,14 +2776,14 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "calc_params": {
                         "type": "object",
-                        "description": "Parameter fuer die Berechnung (z.B. {\"v_in\": 12, \"v_out\": 3.3})",
+                        "description": "Parameter für die Berechnung (z.B. {\"v_in\": 12, \"v_out\": 3.3})",
                     },
                     "item": {"type": "string", "description": "Artikelname / Werkzeugname"},
                     "quantity": {"type": "integer", "description": "Menge"},
                     "cost": {"type": "number", "description": "Kosten in Euro"},
-                    "person": {"type": "string", "description": "Personenname (fuer Verleih, Skills)"},
+                    "person": {"type": "string", "description": "Personenname (für Verleih, Skills)"},
                     "text": {"type": "string", "description": "Freitext (Messwert, Log, Notiz, etc.)"},
-                    "filename": {"type": "string", "description": "Dateiname fuer File-Operationen"},
+                    "filename": {"type": "string", "description": "Dateiname für File-Operationen"},
                     "minutes": {"type": "integer", "description": "Timer-Dauer in Minuten"},
                     "template": {"type": "string", "description": "Template-Name"},
                     "entity_id": {"type": "string", "description": "HA Entity-ID"},
@@ -2819,7 +2819,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "activity": {
                         "type": "string",
-                        "description": "Name der Harmony-Aktivitaet (z.B. 'Fernsehen', 'Watch TV', 'Musik hoeren', 'Netflix'). Nur bei action='on' oder 'activity'.",
+                        "description": "Name der Harmony-Aktivitaet (z.B. 'Fernsehen', 'Watch TV', 'Musik hören', 'Netflix'). Nur bei action='on' oder 'activity'.",
                     },
                     "command": {
                         "type": "string",
@@ -2827,7 +2827,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "device": {
                         "type": "string",
-                        "description": "Zielgeraet fuer den IR-Befehl (z.B. 'Samsung TV', 'Yamaha Receiver'). Optional — ohne device wird der Befehl an die aktive Aktivitaet gesendet.",
+                        "description": "Zielgeraet für den IR-Befehl (z.B. 'Samsung TV', 'Yamaha Receiver'). Optional — ohne device wird der Befehl an die aktive Aktivitaet gesendet.",
                     },
                     "num_repeats": {
                         "type": "integer",
@@ -2842,7 +2842,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_remotes",
-            "description": "Zeigt alle Fernbedienungen mit aktuellem Status, aktiver Aktivitaet und verfuegbaren Aktivitaeten/Geraeten. Nutze dies wenn der User fragt was die Fernbedienung kann, welche Aktivitaeten es gibt oder was gerade laeuft.",
+            "description": "Zeigt alle Fernbedienungen mit aktuellem Status, aktiver Aktivitaet und verfügbaren Aktivitaeten/Geräten. Nutze dies wenn der User fragt was die Fernbedienung kann, welche Aktivitaeten es gibt oder was gerade laeuft.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2860,13 +2860,13 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "create_declarative_tool",
-            "description": "Erstellt ein neues deklaratives Analyse-Tool. Deklarative Tools fuehren vordefinierte Berechnungen auf HA-Entities aus (NUR Lese-Zugriff). Verfuegbare Typen: entity_comparison (Vergleich zweier Entities), multi_entity_formula (Kombination mehrerer Entities mit average/weighted_average/sum/min/max/difference), event_counter (zaehlt State-Aenderungen), threshold_monitor (prueft ob Wert in Bereich), trend_analyzer (Trend ueber Zeitraum), entity_aggregator (Aggregation ueber mehrere Entities), schedule_checker (zeitbasierte Checks), state_duration (wie lange war ein Zustand aktiv, z.B. Heizung lief X Stunden), time_comparison (Vergleich einer Entity mit sich selbst ueber verschiedene Zeitraeume: yesterday/last_week/last_month).",
+            "description": "Erstellt ein neues deklaratives Analyse-Tool. Deklarative Tools fuehren vordefinierte Berechnungen auf HA-Entities aus (NUR Lese-Zugriff). Verfügbare Typen: entity_comparison (Vergleich zweier Entities), multi_entity_formula (Kombination mehrerer Entities mit average/weighted_average/sum/min/max/difference), event_counter (zählt State-Änderungen), threshold_monitor (prueft ob Wert in Bereich), trend_analyzer (Trend über Zeitraum), entity_aggregator (Aggregation über mehrere Entities), schedule_checker (zeitbasierte Checks), state_duration (wie lange war ein Zustand aktiv, z.B. Heizung lief X Stunden), time_comparison (Vergleich einer Entity mit sich selbst über verschiedene Zeitraeume: yesterday/last_week/last_month).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "Eindeutiger Name fuer das Tool (z.B. 'stromvergleich', 'raumtemperaturen'). Nur Buchstaben, Zahlen, _ und -.",
+                        "description": "Eindeutiger Name für das Tool (z.B. 'stromvergleich', 'raumtemperaturen'). Nur Buchstaben, Zahlen, _ und -.",
                     },
                     "description": {
                         "type": "string",
@@ -2919,7 +2919,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "run_declarative_tool",
-            "description": "Fuehrt ein deklaratives Analyse-Tool aus und gibt das Ergebnis zurueck. Nutze list_declarative_tools um verfuegbare Tools zu sehen.",
+            "description": "Fuehrt ein deklaratives Analyse-Tool aus und gibt das Ergebnis zurück. Nutze list_declarative_tools um verfügbare Tools zu sehen.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2936,7 +2936,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "suggest_declarative_tools",
-            "description": "Analysiert alle Home-Assistant-Entities und schlaegt passende Analyse-Tools vor die dem User helfen koennten. Gibt Vorschlaege zurueck mit Name, Beschreibung, Typ, Config und Begruendung. Der User muss jeden Vorschlag bestaetigen bevor er erstellt wird. Nutze diese Funktion wenn der User fragt welche Tools sinnvoll waeren oder wenn du proaktiv Vorschlaege machen willst.",
+            "description": "Analysiert alle Home-Assistant-Entities und schlaegt passende Analyse-Tools vor die dem User helfen koennten. Gibt Vorschlaege zurück mit Name, Beschreibung, Typ, Config und Begruendung. Der User muss jeden Vorschlag bestätigen bevor er erstellt wird. Nutze diese Funktion wenn der User fragt welche Tools sinnvoll wären oder wenn du proaktiv Vorschlaege machen willst.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -2986,7 +2986,7 @@ class FunctionExecutor:
         self._last_broadcast_time: float = 0.0
 
     def set_config_versioning(self, versioning: ConfigVersioning):
-        """Setzt ConfigVersioning fuer Backup-vor-Schreiben."""
+        """Setzt ConfigVersioning für Backup-vor-Schreiben."""
         self._config_versioning = versioning
 
     # Whitelist erlaubter Tool-Funktionsnamen (verhindert Zugriff auf interne Methoden)
@@ -3020,7 +3020,7 @@ class FunctionExecutor:
         "suggest_declarative_tools",
     })
 
-    # LLMs uebersetzen deutsche Raumnamen manchmal ins Englische
+    # LLMs übersetzen deutsche Raumnamen manchmal ins Englische
     _EN_TO_DE_ROOMS: dict[str, str] = {
         "living_room": "wohnzimmer",
         "livingroom": "wohnzimmer",
@@ -3050,7 +3050,7 @@ class FunctionExecutor:
         "dining room": "esszimmer",
     }
 
-    # Geraetetyp-Woerter die LLMs manchmal in den Raumnamen packen
+    # Gerätetyp-Woerter die LLMs manchmal in den Raumnamen packen
     _DEVICE_TYPE_WORDS = {
         # Deutsch
         "licht", "lampe", "leuchte", "beleuchtung",
@@ -3069,12 +3069,12 @@ class FunctionExecutor:
 
     @classmethod
     def _clean_room(cls, room: str) -> str:
-        """Bereinigt room-Parameter: Prefixe, Geraetetypen, EN->DE.
+        """Bereinigt room-Parameter: Prefixe, Gerätetypen, EN->DE.
 
         LLMs schicken manchmal:
         - 'licht.buero' statt 'buero' (Domain-Prefix)
-        - 'living_room' statt 'wohnzimmer' (englische Uebersetzung)
-        - 'schlafzimmer rollladen' statt 'schlafzimmer' (Geraetetyp im Raum)
+        - 'living_room' statt 'wohnzimmer' (englische Übersetzung)
+        - 'schlafzimmer rollladen' statt 'schlafzimmer' (Gerätetyp im Raum)
         """
         if not room:
             return room
@@ -3088,7 +3088,7 @@ class FunctionExecutor:
                 room = room[len(prefix):]
                 break
 
-        # 2. Geraetetyp-Woerter entfernen (z.B. "schlafzimmer rollladen" -> "schlafzimmer")
+        # 2. Gerätetyp-Woerter entfernen (z.B. "schlafzimmer rollladen" -> "schlafzimmer")
         parts = room.replace("_", " ").split()
         if len(parts) > 1:
             cleaned = [p for p in parts if p.lower() not in cls._DEVICE_TYPE_WORDS]
@@ -3098,7 +3098,7 @@ class FunctionExecutor:
                 if room != original:
                     logger.info("Room device-word cleanup: '%s' -> '%s'", original, room)
 
-        # 3. Englisch -> Deutsch Uebersetzung
+        # 3. Englisch -> Deutsch Übersetzung
         room_lower = room.lower().strip()
         if room_lower in cls._EN_TO_DE_ROOMS:
             translated = cls._EN_TO_DE_ROOMS[room_lower]
@@ -3130,7 +3130,7 @@ class FunctionExecutor:
                     best_dist = dist
                     best_match = known_room
 
-            # Threshold: Max 2 Edits bei kurzen Raeumen, max 3 bei langen
+            # Threshold: Max 2 Edits bei kurzen Räumen, max 3 bei langen
             max_dist = 2 if len(room_collapsed_noum) <= 8 else 3
             if best_match and best_dist <= max_dist:
                 logger.info("Fuzzy Room-Match: '%s' -> '%s' (dist=%d)", room, best_match, best_dist)
@@ -3149,7 +3149,7 @@ class FunctionExecutor:
         for i, c1 in enumerate(s1):
             curr_row = [i + 1]
             for j, c2 in enumerate(s2):
-                # Einfuegen, Loeschen, Ersetzen
+                # Einfuegen, Löschen, Ersetzen
                 insertions = prev_row[j + 1] + 1
                 deletions = curr_row[j] + 1
                 substitutions = prev_row[j] + (c1 != c2)
@@ -3198,7 +3198,7 @@ class FunctionExecutor:
         """Prueft vor Ausfuehrung ob die Aktion im Kontext sinnvoll ist.
 
         Statische Regeln — kein LLM-Overhead. Blockiert NICHT,
-        gibt nur einen Hinweis-String zurueck.
+        gibt nur einen Hinweis-String zurück.
 
         Returns:
             Hinweis-String oder None
@@ -3224,9 +3224,9 @@ class FunctionExecutor:
                     windows_str = ", ".join(open_windows[:2])
                     return f"Fenster {windows_str} offen — Heizung wird ineffizient."
 
-            # Regel: Medien laut + spaet nachts
+            # Regel: Medien laut + spät nachts
             if func_name == "play_media" and (hour >= 22 or hour < 6):
-                return f"Es ist {hour} Uhr — Lautstaerke beachten."
+                return f"Es ist {hour} Uhr — Lautstärke beachten."
 
             # Regel: Alarm scharf + Fenster offen
             if func_name == "arm_security_system":
@@ -3245,14 +3245,14 @@ class FunctionExecutor:
             if func_name == "set_light_all":
                 state = str(args.get("state", "")).lower()
                 if state == "off" and 8 <= hour <= 23:
-                    # Pruefen ob Aktivitaet erkannt
+                    # Prüfen ob Aktivitaet erkannt
                     import assistant.main as main_module
                     if hasattr(main_module, "brain") and hasattr(main_module.brain, "activity"):
                         activity = main_module.brain.activity.current_activity
                         if activity in ("focused", "working", "watching"):
                             return "Jemand scheint noch aktiv zu sein."
 
-            # Regel: Heizung hoch bei extremer Kaelte draussen → Warnung
+            # Regel: Heizung hoch bei extremer Kälte draußen → Warnung
             if func_name in ("set_climate", "set_climate_room"):
                 temp_arg = args.get("temperature")
                 if temp_arg is not None:
@@ -3268,7 +3268,7 @@ class FunctionExecutor:
                                         if outside <= -5:
                                             return (
                                                 f"Bei {outside}°C Aussentemperatur wird die "
-                                                f"Heizung auf {target}°C Muehe haben."
+                                                f"Heizung auf {target}°C Mühe haben."
                                             )
                                     except (ValueError, TypeError):
                                         pass
@@ -3287,7 +3287,7 @@ class FunctionExecutor:
                             try:
                                 wind = float(s.get("state", 0))
                                 if wind >= 60:  # km/h
-                                    return f"Windgeschwindigkeit {wind} km/h — Rolllaeden besser oben lassen."
+                                    return f"Windgeschwindigkeit {wind} km/h — Rollläden besser oben lassen."
                             except (ValueError, TypeError):
                                 pass
 
@@ -3309,7 +3309,7 @@ class FunctionExecutor:
             return None
 
     # ── Phase 11: Adaptive Helligkeit (dim2warm) ──────────────
-    # Default-Kurve als Fallback (wird von settings.yaml ueberschrieben)
+    # Default-Kurve als Fallback (wird von settings.yaml überschrieben)
     _CIRCADIAN_BRIGHTNESS_CURVE_DEFAULT = [
         {"time": "05:00", "pct": 10},
         {"time": "06:00", "pct": 40},
@@ -3372,10 +3372,10 @@ class FunctionExecutor:
         Wenn lighting.circadian.enabled: nutzt interpolierte Helligkeitskurve.
         Sonst: Minuten-basierte lineare Interpolation (default/night).
 
-        Per-Lampe Helligkeit: Wenn in room_profiles.yaml fuer diese entity_id
+        Per-Lampe Helligkeit: Wenn in room_profiles.yaml für diese entity_id
         individuelle Tag/Nacht-Werte definiert sind, werden diese verwendet.
 
-        dim2warm-Lampen regeln Farbtemperatur ueber die Helligkeit
+        dim2warm-Lampen regeln Farbtemperatur über die Helligkeit
         in Hardware — je dunkler, desto waermer.
         """
         now = datetime.now()
@@ -3405,7 +3405,7 @@ class FunctionExecutor:
             scaled = night_bright + (default_bright - night_bright) * (curve_pct / 100)
             return max(1, int(scaled))
 
-        # Fallback: Minuten-basierte Interpolation (sanfte Uebergaenge)
+        # Fallback: Minuten-basierte Interpolation (sanfte Übergaenge)
         # 06:00-09:00 (360-540): aufsteigend (night → default)
         # 09:00-17:00 (540-1020): volle Helligkeit (default)
         # 17:00-21:00 (1020-1260): absteigend (default → night)
@@ -3429,7 +3429,7 @@ class FunctionExecutor:
             if cfg.get("floor") == floor
         ]
         if not floor_rooms:
-            return {"success": False, "message": f"Keine Raeume fuer Etage '{floor.upper()}' konfiguriert"}
+            return {"success": False, "message": f"Keine Räume für Etage '{floor.upper()}' konfiguriert"}
 
         # brighter/dimmer: pro Lampe aktuelle Helligkeit lesen und anpassen
         if state in ("brighter", "dimmer"):
@@ -3529,7 +3529,7 @@ class FunctionExecutor:
             ha_state = await self.ha.get_state(entity_id)
             if ha_state and ha_state.get("state") == "on":
                 attrs = ha_state.get("attributes", {})
-                # HA gibt brightness als 0-255 zurueck
+                # HA gibt brightness als 0-255 zurück
                 raw = attrs.get("brightness", 128)
                 current_brightness = round(raw / 255 * 100)
             step = 15
@@ -3576,7 +3576,7 @@ class FunctionExecutor:
                         service_data["transition"] = int(_lt)
                 except (ValueError, TypeError):
                     pass
-        # dim2warm: Farbtemperatur wird in Hardware ueber Helligkeit geregelt.
+        # dim2warm: Farbtemperatur wird in Hardware über Helligkeit geregelt.
         # Kein color_temp_kelvin an HA senden — Lampen machen das selbst.
 
         logger.info("set_light: %s -> %s (service_data=%s)", room, entity_id, service_data)
@@ -3603,7 +3603,7 @@ class FunctionExecutor:
         """Alle Lichter ein- oder ausschalten."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Die Geraete sind momentan nicht ansprechbar. Ich versuche es gleich erneut."}
+            return {"success": False, "message": "Die Geräte sind momentan nicht ansprechbar. Ich versuche es gleich erneut."}
 
         service = "turn_on" if state == "on" else "turn_off"
         count = 0
@@ -3631,17 +3631,17 @@ class FunctionExecutor:
         """Alle Lichter mit Name, Raum-Zuordnung und Status auflisten."""
         room_filter = self._clean_room(args.get("room", ""))
 
-        # Geraete aus MindHome DB laden (enthaelt Raum-Zuordnung)
+        # Geräte aus MindHome DB laden (enthält Raum-Zuordnung)
         try:
             devices = await self.ha.search_devices(domain="light", room=room_filter)
         except Exception as e:
             logger.debug("MindHome light-devices nicht ladbar: %s", e)
             devices = None
 
-        # HA-States fuer aktuellen Status laden
+        # HA-States für aktuellen Status laden
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Kann gerade nicht auf die Geraete zugreifen."}
+            return {"success": False, "message": "Kann gerade nicht auf die Geräte zugreifen."}
 
         # State-Lookup: entity_id -> state-dict
         state_map = {}
@@ -3698,7 +3698,7 @@ class FunctionExecutor:
         return {"success": True, "message": header + "\n".join(lights)}
 
     async def _exec_get_covers(self, args: dict) -> dict:
-        """Alle Rolllaeden/Jalousien mit Status auflisten."""
+        """Alle Rollläden/Jalousien mit Status auflisten."""
         room_filter = self._clean_room(args.get("room", ""))
 
         try:
@@ -3709,7 +3709,7 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Kann gerade nicht auf die Geraete zugreifen."}
+            return {"success": False, "message": "Kann gerade nicht auf die Geräte zugreifen."}
 
         state_map = {}
         for s in states:
@@ -3756,11 +3756,11 @@ class FunctionExecutor:
                 covers.append(f"- {friendly}: {status}{pos_str}")
 
         if not covers:
-            msg = f"Keine Rolllaeden in '{room_filter}' gefunden." if room_filter else "Keine Rolllaeden gefunden."
+            msg = f"Keine Rollläden in '{room_filter}' gefunden." if room_filter else "Keine Rollläden gefunden."
             return {"success": False, "message": msg}
 
         open_count = sum(1 for c in covers if ": open" in c)
-        header = f"{len(covers)} Rolllaeden"
+        header = f"{len(covers)} Rollläden"
         if room_filter:
             header += f" in '{room_filter}'"
         header += f" ({open_count} offen, {len(covers) - open_count} zu):\n"
@@ -3772,7 +3772,7 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Kann gerade nicht auf die Geraete zugreifen."}
+            return {"success": False, "message": "Kann gerade nicht auf die Geräte zugreifen."}
 
         search_norm = self._normalize_name(room_filter) if room_filter else ""
         players = []
@@ -3825,7 +3825,7 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Kann gerade nicht auf die Geraete zugreifen."}
+            return {"success": False, "message": "Kann gerade nicht auf die Geräte zugreifen."}
 
         state_map = {}
         for s in states:
@@ -3894,10 +3894,10 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Kann gerade nicht auf die Geraete zugreifen."}
+            return {"success": False, "message": "Kann gerade nicht auf die Geräte zugreifen."}
 
         state_map = {}
-        # Sensor-Map fuer zugehoerige Power-Sensoren (sensor.*_power, sensor.*_current etc.)
+        # Sensor-Map für zugehoerige Power-Sensoren (sensor.*_power, sensor.*_current etc.)
         sensor_map: dict[str, dict] = {}
         for s in states:
             eid = s.get("entity_id", "")
@@ -4013,7 +4013,7 @@ class FunctionExecutor:
         try:
             offset = float(args.get("offset", 0))
         except (ValueError, TypeError):
-            return {"success": False, "message": f"Ungueltiger Offset: {args.get('offset')}"}
+            return {"success": False, "message": f"Ungültiger Offset: {args.get('offset')}"}
         entity_id = heating.get("curve_entity", "")
         if not entity_id:
             return {"success": False, "message": "Kein Heizungs-Entity konfiguriert (heating.curve_entity)"}
@@ -4082,7 +4082,7 @@ class FunctionExecutor:
             try:
                 temp = float(args["temperature"])
             except (ValueError, TypeError):
-                return {"success": False, "message": f"Ungueltige Temperatur: {args['temperature']}"}
+                return {"success": False, "message": f"Ungültige Temperatur: {args['temperature']}"}
         else:
             return {"success": False, "message": "Keine Temperatur angegeben"}
 
@@ -4139,7 +4139,7 @@ class FunctionExecutor:
         except Exception as e:
             # Bei JSON-Ladefehler: Nur warnen, aber Cover nicht pauschal blockieren.
             # device_class und entity_id-Pattern-Checks oben reichen als Sicherheitsnetz.
-            logger.warning("CoverConfig laden fehlgeschlagen fuer %s: %s — erlaube basierend auf device_class/entity_id", entity_id, e)
+            logger.warning("CoverConfig laden fehlgeschlagen für %s: %s — erlaube basierend auf device_class/entity_id", entity_id, e)
         return True
 
     def _is_markise(self, entity_id: str, state: dict) -> bool:
@@ -4186,7 +4186,7 @@ class FunctionExecutor:
         return bool(cover_cfg.get("inverted_position", False))
 
     def _translate_cover_position(self, entity_id: str, position: int) -> int:
-        """Uebersetzt Jarvis-Position (0=zu, 100=offen) in HA-Position.
+        """Übersetzt Jarvis-Position (0=zu, 100=offen) in HA-Position.
 
         Bei invertierten Covers wird 0↔100 getauscht.
         """
@@ -4195,7 +4195,7 @@ class FunctionExecutor:
         return position
 
     def _translate_cover_position_from_ha(self, entity_id: str, position: int) -> int:
-        """Uebersetzt HA-Position zurueck in Jarvis-Position (0=zu, 100=offen)."""
+        """Übersetzt HA-Position zurück in Jarvis-Position (0=zu, 100=offen)."""
         if self._is_cover_inverted(entity_id):
             return 100 - position
         return position
@@ -4255,13 +4255,13 @@ class FunctionExecutor:
         if room.lower() == "markisen" or cover_type == "markise":
             return await self._exec_set_cover_markisen(args)
 
-        # "all" → alle Rolllaeden (keine Markisen, keine Garagentore)
+        # "all" → alle Rollläden (keine Markisen, keine Garagentore)
         position, adjust, is_stop = self._resolve_cover_position(args)
         if room.lower() == "all":
             if is_stop:
                 return await self._exec_set_cover_all_action("stop_cover")
             final_pos = position if position is not None else 0
-            # Ohne expliziten Typ: nur Rolllaeden (Markisen haben eigene Sicherheits-Checks)
+            # Ohne expliziten Typ: nur Rollläden (Markisen haben eigene Sicherheits-Checks)
             effective_type = cover_type or "rollladen"
             return await self._exec_set_cover_all(final_pos, effective_type)
 
@@ -4287,7 +4287,7 @@ class FunctionExecutor:
             if ha_state:
                 try:
                     ha_pos = int(ha_state.get("attributes", {}).get("current_position", 50))
-                    # HA-Position in Jarvis-Position uebersetzen (0=zu, 100=offen)
+                    # HA-Position in Jarvis-Position übersetzen (0=zu, 100=offen)
                     current_position = self._translate_cover_position_from_ha(entity_id, ha_pos)
                 except (ValueError, TypeError):
                     current_position = 50
@@ -4304,7 +4304,7 @@ class FunctionExecutor:
                 available = [s.get("entity_id") for s in (all_states or []) if s.get("entity_id", "").startswith("cover.")]
             except Exception:
                 available = []
-            return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden. Verfuegbar: {', '.join(available) if available else 'keine'}"}
+            return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden. Verfügbar: {', '.join(available) if available else 'keine'}"}
 
         # Sicherheitscheck
         states = await self.ha.get_states()
@@ -4326,14 +4326,14 @@ class FunctionExecutor:
         return {"success": success, "message": f"{label} {room} {direction}{position}%"}
 
     async def _exec_set_cover_floor(self, floor: str, args: dict, cover_type: str = None) -> dict:
-        """Alle Rolllaeden/Markisen einer Etage steuern."""
+        """Alle Rollläden/Markisen einer Etage steuern."""
         profiles = _get_room_profiles()
         floor_rooms = [
             r for r, cfg in profiles.get("rooms", {}).items()
             if cfg.get("floor") == floor
         ]
         if not floor_rooms:
-            return {"success": False, "message": f"Keine Raeume fuer Etage '{floor.upper()}' konfiguriert"}
+            return {"success": False, "message": f"Keine Räume für Etage '{floor.upper()}' konfiguriert"}
 
         position, adjust, is_stop = self._resolve_cover_position(args)
         if position is None and not is_stop and adjust is None:
@@ -4341,7 +4341,7 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
+            return {"success": False, "message": "Die Geräte reagieren gerade nicht. Einen Moment."}
 
         count = 0
         for room_name in floor_rooms:
@@ -4355,7 +4355,7 @@ class FunctionExecutor:
                     continue
                 if not await self._is_safe_cover(eid, s):
                     continue
-                # Typ-Filter: nur Rolllaeden oder nur Markisen
+                # Typ-Filter: nur Rollläden oder nur Markisen
                 if cover_type == "markise" and not self._is_markise(eid, s):
                     continue
                 if cover_type == "rollladen" and self._is_markise(eid, s):
@@ -4370,13 +4370,13 @@ class FunctionExecutor:
                 count += 1
 
         action_str = "gestoppt" if is_stop else f"auf {position}%"
-        return {"success": count > 0, "message": f"{count} Rolllaeden im {floor.upper()} {action_str}"}
+        return {"success": count > 0, "message": f"{count} Rollläden im {floor.upper()} {action_str}"}
 
     async def _exec_set_cover_markisen(self, args: dict) -> dict:
         """Alle Markisen steuern — mit eigenen Wind/Regen-Sicherheits-Checks."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
+            return {"success": False, "message": "Die Geräte reagieren gerade nicht. Einen Moment."}
 
         position, adjust, is_stop = self._resolve_cover_position(args)
 
@@ -4423,10 +4423,10 @@ class FunctionExecutor:
         return {"success": True, "message": f"{count} Markise(n) {action_str}"}
 
     async def _exec_set_cover_all(self, position: int, cover_type: str = None) -> dict:
-        """Alle Rolllaeden auf eine Position setzen (Garagentore ausgeschlossen)."""
+        """Alle Rollläden auf eine Position setzen (Garagentore ausgeschlossen)."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
+            return {"success": False, "message": "Die Geräte reagieren gerade nicht. Einen Moment."}
 
         count = 0
         skipped = []
@@ -4446,16 +4446,16 @@ class FunctionExecutor:
             await self.ha.call_service("cover", "set_cover_position", {"entity_id": eid, "position": ha_pos})
             count += 1
 
-        msg = f"Alle Rolllaeden auf {position}% ({count} geschaltet)"
+        msg = f"Alle Rollläden auf {position}% ({count} geschaltet)"
         if skipped:
-            msg += f". Uebersprungen: {', '.join(skipped)}"
+            msg += f". Übersprungen: {', '.join(skipped)}"
         return {"success": True, "message": msg}
 
     async def _exec_set_cover_all_action(self, service: str) -> dict:
-        """Alle Rolllaeden: stop_cover etc."""
+        """Alle Rollläden: stop_cover etc."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Die Geraete reagieren gerade nicht. Einen Moment."}
+            return {"success": False, "message": "Die Geräte reagieren gerade nicht. Einen Moment."}
         count = 0
         for s in states:
             eid = s.get("entity_id", "")
@@ -4465,7 +4465,7 @@ class FunctionExecutor:
                 continue
             await self.ha.call_service("cover", service, {"entity_id": eid})
             count += 1
-        return {"success": True, "message": f"{count} Rolllaeden: {service}"}
+        return {"success": True, "message": f"{count} Rollläden: {service}"}
 
     # ── Cover-Automatik Konfiguration ──────────────────────
 
@@ -4555,7 +4555,7 @@ class FunctionExecutor:
             if we and not we.startswith("weather."):
                 return {
                     "success": False,
-                    "message": f"Ungueltige Weather-Entity: '{we}'. Muss mit 'weather.' beginnen.",
+                    "message": f"Ungültige Weather-Entity: '{we}'. Muss mit 'weather.' beginnen.",
                 }
 
         try:
@@ -4579,7 +4579,7 @@ class FunctionExecutor:
                 _ca["cover_automation"] = {}
             _ca["cover_automation"].update(changes)
 
-            # Beschreibung fuer Antwort
+            # Beschreibung für Antwort
             desc_parts = []
             _labels = {
                 "weather_entity": "Wetter-Entity",
@@ -4631,14 +4631,14 @@ class FunctionExecutor:
 
     @staticmethod
     def _normalize_room_key(room: str) -> str:
-        """Normalisiert Raumnamen fuer Config-Lookup (Umlaute, Leerzeichen, Case)."""
+        """Normalisiert Raumnamen für Config-Lookup (Umlaute, Leerzeichen, Case)."""
         r = room.lower().strip()
         r = r.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
         r = r.replace(" ", "_")
         return r
 
     def _resolve_vacuum_room(self, room: str, robots: dict) -> tuple:
-        """Findet den richtigen Roboter + Segment-ID fuer einen Raum.
+        """Findet den richtigen Roboter + Segment-ID für einen Raum.
 
         Returns:
             (robot_config: dict | None, segment_id: int | None)
@@ -4719,7 +4719,7 @@ class FunctionExecutor:
         return success
 
     async def _track_vacuum_clean(self, floor: str, room: str = "") -> None:
-        """Speichert den Reinigungszeitpunkt in Redis fuer den Verlauf."""
+        """Speichert den Reinigungszeitpunkt in Redis für den Verlauf."""
         try:
             redis = getattr(self, "_redis", None)
             if not redis:
@@ -4782,10 +4782,10 @@ class FunctionExecutor:
         if action in ("clean_room", "start") and room and room.lower() not in ("eg", "og"):
             robot, segment_id = self._resolve_vacuum_room(room, robots)
             if not robot:
-                return {"success": False, "message": f"Kein Saugroboter fuer '{room}' konfiguriert"}
+                return {"success": False, "message": f"Kein Saugroboter für '{room}' konfiguriert"}
             entity_id = robot.get("entity_id")
             if not entity_id:
-                return {"success": False, "message": "Keine entity_id fuer Saugroboter konfiguriert"}
+                return {"success": False, "message": "Keine entity_id für Saugroboter konfiguriert"}
             nickname = robot.get("nickname", "der Kleine")
 
             if segment_id is not None:
@@ -4824,10 +4824,10 @@ class FunctionExecutor:
                 return {
                     "success": False,
                     "message": (
-                        f"Raum '{room}' hat keine Segment-ID. Ohne Segment-ID wuerde der "
+                        f"Raum '{room}' hat keine Segment-ID. Ohne Segment-ID würde der "
                         f"komplette Roboter starten und das ganze Stockwerk saugen. "
                         f"In settings.yaml unter vacuum.robots.{_floor}.rooms die Segment-ID "
-                        f"fuer '{room}' eintragen."
+                        f"für '{room}' eintragen."
                     ),
                 }
 
@@ -4835,7 +4835,7 @@ class FunctionExecutor:
         if action == "start" and room and room.lower() in ("eg", "og"):
             robot = robots.get(room.lower())
             if not robot or not robot.get("entity_id"):
-                return {"success": False, "message": f"Kein Roboter fuer {room.upper()} konfiguriert"}
+                return {"success": False, "message": f"Kein Roboter für {room.upper()} konfiguriert"}
             eid = robot["entity_id"]
             await _prepare_robot(eid)
             success = await self.ha.call_service("vacuum", "start", {"entity_id": eid})
@@ -4864,7 +4864,7 @@ class FunctionExecutor:
         if not robots:
             return {"success": False, "message": "Keine Saugroboter konfiguriert"}
 
-        # Redis fuer Reinigungsverlauf
+        # Redis für Reinigungsverlauf
         redis = None
         try:
             _mem = getattr(self, "memory", None) or getattr(getattr(self, "brain", None), "memory", None)
@@ -4910,10 +4910,10 @@ class FunctionExecutor:
                 status_raw = attrs.get("status")
                 if status_raw and "error" in str(status_raw).lower():
                     entry["fehler"] = status_raw
-                # Verfuegbare Saugstaerken
+                # Verfügbare Saugstaerken
                 fan_speeds = attrs.get("fan_speed_list")
                 if fan_speeds:
-                    entry["verfuegbare_stufen"] = fan_speeds
+                    entry["verfügbare_stufen"] = fan_speeds
                 # Wartungszustand
                 maint = {}
                 for key, label in [
@@ -4971,7 +4971,7 @@ class FunctionExecutor:
 
         return {"success": True, "robots": status_list}
 
-    # Erlaubte Service-Data Keys fuer _exec_call_service (Whitelist)
+    # Erlaubte Service-Data Keys für _exec_call_service (Whitelist)
     _CALL_SERVICE_ALLOWED_KEYS = frozenset({
         "brightness", "brightness_pct", "color_temp", "rgb_color", "hs_color",
         "effect", "color_name", "transition",
@@ -4993,7 +4993,7 @@ class FunctionExecutor:
     })
 
     async def _exec_call_service(self, args: dict) -> dict:
-        """Generischer HA Service-Aufruf (fuer Routinen wie Guest WiFi)."""
+        """Generischer HA Service-Aufruf (für Routinen wie Guest WiFi)."""
         domain = args.get("domain", "")
         service = args.get("service", "")
         entity_id = args.get("entity_id", "")
@@ -5004,7 +5004,7 @@ class FunctionExecutor:
             logger.warning("call_service: Blockierte Domain '%s.%s'", domain, service)
             return {"success": False, "message": f"Domain '{domain}' ist nicht erlaubt."}
 
-        # Sicherheitscheck: Cover-Services fuer Garagentore blockieren
+        # Sicherheitscheck: Cover-Services für Garagentore blockieren
         # Bypass-sicher: Prueft ALLE Domains wenn entity_id ein Cover ist
         is_cover_entity = entity_id.startswith("cover.")
         is_cover_domain = domain == "cover"
@@ -5020,12 +5020,12 @@ class FunctionExecutor:
                 return {"success": False, "message": f"Sicherheitssperre: '{entity_id}' ist ein Garagentor/Tor und darf nicht automatisch gesteuert werden."}
 
         service_data = {"entity_id": entity_id} if entity_id else {}
-        # Nur erlaubte Service-Data Keys uebernehmen (Whitelist)
+        # Nur erlaubte Service-Data Keys übernehmen (Whitelist)
         for k, v in args.items():
             if k in self._CALL_SERVICE_ALLOWED_KEYS:
                 service_data[k] = v
         success = await self.ha.call_service(domain, service, service_data)
-        return {"success": success, "message": f"{domain}.{service} ausgefuehrt"}
+        return {"success": success, "message": f"{domain}.{service} ausgeführt"}
 
     async def _exec_play_media(self, args: dict) -> dict:
         action = args.get("action", "play")
@@ -5066,9 +5066,9 @@ class FunctionExecutor:
             if action == "volume":
                 volume_pct = args.get("volume")
                 if volume_pct is None:
-                    return {"success": False, "message": "Keine Lautstaerke angegeben"}
+                    return {"success": False, "message": "Keine Lautstärke angegeben"}
             else:
-                # Relative Steuerung: aktuelle Lautstaerke holen und anpassen
+                # Relative Steuerung: aktuelle Lautstärke holen und anpassen
                 state = await self.ha.get_state(entity_id)
                 current = 0.5
                 if state and "attributes" in state:
@@ -5083,7 +5083,7 @@ class FunctionExecutor:
                 {"entity_id": entity_id, "volume_level": volume_level},
             )
             direction = "lauter" if action == "volume_up" else "leiser" if action == "volume_down" else ""
-            msg = f"Lautstaerke {direction} auf {int(volume_pct)}%" if direction else f"Lautstaerke auf {int(volume_pct)}%"
+            msg = f"Lautstärke {direction} auf {int(volume_pct)}%" if direction else f"Lautstärke auf {int(volume_pct)}%"
             return {"success": success, "message": msg}
 
         service_map = {
@@ -5100,7 +5100,7 @@ class FunctionExecutor:
         return {"success": success, "message": f"Medien: {action}"}
 
     async def _exec_transfer_playback(self, args: dict) -> dict:
-        """Phase 10.1: Uebertraegt Musik-Wiedergabe von einem Raum zum anderen."""
+        """Phase 10.1: Übertraegt Musik-Wiedergabe von einem Raum zum anderen."""
         from_room = self._clean_room(args.get("from_room"))
         to_room = self._clean_room(args.get("to_room", ""))
 
@@ -5179,7 +5179,7 @@ class FunctionExecutor:
             else:
                 return {
                     "success": False,
-                    "message": f"Kein uebertragbarer Inhalt in '{from_room}' gefunden (weder Content-ID noch Titel)",
+                    "message": f"Kein übertragbarer Inhalt in '{from_room}' gefunden (weder Content-ID noch Titel)",
                 }
 
         # 3. Quell-Player stoppen
@@ -5217,7 +5217,7 @@ class FunctionExecutor:
         service = service_map.get(mode)
         if not service:
             valid = ", ".join(service_map.keys())
-            return {"success": False, "message": f"Unbekannter Alarm-Modus '{mode}'. Gueltig: {valid}"}
+            return {"success": False, "message": f"Unbekannter Alarm-Modus '{mode}'. Gültig: {valid}"}
         success = await self.ha.call_service(
             "alarm_control_panel", service, {"entity_id": entity_id}
         )
@@ -5235,7 +5235,7 @@ class FunctionExecutor:
         success = await self.ha.call_service(
             "lock", action, {"entity_id": entity_id}
         )
-        return {"success": success, "message": f"Tuer {door}: {action}"}
+        return {"success": success, "message": f"Tür {door}: {action}"}
 
     async def _exec_send_notification(self, args: dict) -> dict:
         message = args.get("message", "")
@@ -5250,7 +5250,7 @@ class FunctionExecutor:
                 "notify", "notify", {"message": message}
             )
         elif target == "speaker":
-            # TTS ueber Piper (Wyoming): tts.speak mit TTS-Entity + Media-Player
+            # TTS über Piper (Wyoming): tts.speak mit TTS-Entity + Media-Player
             tts_entity = await self._find_tts_entity()
 
             # Phase 10: Room-aware Speaker-Auswahl
@@ -5321,7 +5321,7 @@ class FunctionExecutor:
         person_profiles = yaml_config.get("person_profiles", {}).get("profiles", {})
         profile = person_profiles.get(person_lower, {})
 
-        # Pruefen ob Person zuhause ist
+        # Prüfen ob Person zuhause ist
         states = await self.ha.get_states()
         person_home = False
         for state in (states or []):
@@ -5404,7 +5404,7 @@ class FunctionExecutor:
             return {"success": False, "message": "Kein Speaker gefunden"}
 
         # Sound als TTS-Chime abspielen (oder Media-File wenn vorhanden)
-        # Kurze TTS-Nachricht als Ersatz fuer Sound-Files
+        # Kurze TTS-Nachricht als Ersatz für Sound-Files
         sound_texts = {
             "listening": ".",
             "confirmed": ".",
@@ -5497,7 +5497,7 @@ class FunctionExecutor:
             return {"success": False, "message": "Fehler beim Abrufen der Historie."}
 
         if not history:
-            return {"success": True, "message": f"Keine Historie fuer '{entity_id}' in den letzten {hours}h"}
+            return {"success": True, "message": f"Keine Historie für '{entity_id}' in den letzten {hours}h"}
 
         # Numerische Werte: Min/Max/Avg berechnen
         numeric_vals = []
@@ -5533,7 +5533,7 @@ class FunctionExecutor:
                     trend = "steigend" if diff > 0 else "fallend"
                     lines.append(f"Trend: {trend} ({diff:+.1f}{unit})")
 
-        # Letzte Aenderungen (max 10)
+        # Letzte Änderungen (max 10)
         changes = []
         prev_state = None
         for entry in history:
@@ -5545,14 +5545,14 @@ class FunctionExecutor:
                     changes.append(f"{ts_short}: {s}{unit}")
                 prev_state = s
         if changes:
-            # Letzte 10 Aenderungen
+            # Letzte 10 Änderungen
             shown = changes[-10:]
-            lines.append("Letzte Aenderungen: " + " → ".join(shown))
+            lines.append("Letzte Änderungen: " + " → ".join(shown))
 
         return {"success": True, "message": "\n".join(lines)}
 
     def _get_write_calendar(self) -> Optional[str]:
-        """Ersten konfigurierten Kalender fuer Schreib-Operationen zurueckgeben."""
+        """Ersten konfigurierten Kalender für Schreib-Operationen zurückgeben."""
         configured = yaml_config.get("calendar", {}).get("entities", [])
         if isinstance(configured, str):
             return configured
@@ -5675,7 +5675,7 @@ class FunctionExecutor:
             label = {"today": "heute", "tomorrow": "morgen", "week": "diese Woche"}.get(timeframe, timeframe)
             return {"success": True, "message": f"Keine Termine {label}."}
 
-        # Startzeit aus Event extrahieren (HA gibt dict oder string zurueck)
+        # Startzeit aus Event extrahieren (HA gibt dict oder string zurück)
         def _parse_event_start(ev):
             raw = ev.get("start", "")
             if isinstance(raw, dict):
@@ -5683,7 +5683,7 @@ class FunctionExecutor:
             return str(raw) if raw else ""
 
         # Datum-Validierung: Nur Events im angefragten Zeitraum behalten
-        # (HA gibt manchmal Events ausserhalb des Bereichs zurueck)
+        # (HA gibt manchmal Events ausserhalb des Bereichs zurück)
         validated_events = []
         for ev in all_events:
             raw_start = _parse_event_start(ev)
@@ -5700,7 +5700,7 @@ class FunctionExecutor:
                 if start <= ev_local <= end:
                     validated_events.append(ev)
                 else:
-                    logger.warning("Kalender: Event '%s' am %s liegt ausserhalb %s-%s, uebersprungen",
+                    logger.warning("Kalender: Event '%s' am %s liegt ausserhalb %s-%s, übersprungen",
                                    ev.get("summary", "?"), ev_local.isoformat(),
                                    start_str, end_str)
             except (ValueError, TypeError) as e:
@@ -5779,7 +5779,7 @@ class FunctionExecutor:
         }
 
         if start_time:
-            # Termin mit Uhrzeit — ISO8601-Format fuer HA
+            # Termin mit Uhrzeit — ISO8601-Format für HA
             service_data["start_date_time"] = f"{date_str}T{start_time}:00"
             if end_time:
                 service_data["end_date_time"] = f"{date_str}T{end_time}:00"
@@ -5815,7 +5815,7 @@ class FunctionExecutor:
         }
 
     async def _exec_delete_calendar_event(self, args: dict) -> dict:
-        """Phase 11.3: Kalender-Termin loeschen.
+        """Phase 11.3: Kalender-Termin löschen.
 
         Sucht den Termin per Titel+Datum und loescht ihn via calendar.delete_event.
         """
@@ -5838,7 +5838,7 @@ class FunctionExecutor:
         if not calendar_entity:
             return {"success": False, "message": "Kein Kalender in Home Assistant gefunden"}
 
-        # Events fuer den Tag abrufen um das richtige Event zu finden
+        # Events für den Tag abrufen um das richtige Event zu finden
         try:
             start = f"{date_str}T00:00:00"
             end_date = datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)
@@ -5867,7 +5867,7 @@ class FunctionExecutor:
             if not target_event:
                 return {"success": False, "message": f"Termin '{title}' am {date_str} nicht gefunden"}
 
-            # Event loeschen
+            # Event löschen
             uid = target_event.get("uid", "")
             if uid:
                 success = await self.ha.call_service(
@@ -5875,8 +5875,8 @@ class FunctionExecutor:
                     {"entity_id": calendar_entity, "uid": uid},
                 )
             else:
-                # Fallback: Ohne UID loeschen (Startzeit nutzen)
-                # HA gibt start/end als ISO-String oder als Dict mit date/dateTime zurueck
+                # Fallback: Ohne UID löschen (Startzeit nutzen)
+                # HA gibt start/end als ISO-String oder als Dict mit date/dateTime zurück
                 evt_start = target_event.get("start", start)
                 evt_end = target_event.get("end", end)
                 if isinstance(evt_start, dict):
@@ -5915,11 +5915,11 @@ class FunctionExecutor:
         new_start = args.get("new_start_time", "")
         new_end = args.get("new_end_time", "")
 
-        # Alten Termin finden um Start/End fuer Rollback zu merken
+        # Alten Termin finden um Start/End für Rollback zu merken
         old_start_time = args.get("old_start_time", "")
         old_end_time = args.get("old_end_time", "")
 
-        # 1. Alten Termin loeschen
+        # 1. Alten Termin löschen
         delete_result = await self._exec_delete_calendar_event({
             "title": title,
             "date": old_date,
@@ -5966,7 +5966,7 @@ class FunctionExecutor:
     async def _exec_set_presence_mode(self, args: dict) -> dict:
         mode = args["mode"]
 
-        # Versuche input_select fuer Anwesenheitsmodus zu finden
+        # Versuche input_select für Anwesenheitsmodus zu finden
         states = await self.ha.get_states()
         entity_id = None
         for s in (states or []):
@@ -5984,7 +5984,7 @@ class FunctionExecutor:
             )
             return {"success": success, "message": f"Anwesenheit: {mode}"}
 
-        # Fallback: HA Event ueber REST API feuern
+        # Fallback: HA Event über REST API feuern
         success = await self.ha.fire_event(
             "mindhome_presence_mode", {"mode": mode}
         )
@@ -6001,7 +6001,7 @@ class FunctionExecutor:
             if not presence_entity:
                 return {
                     "success": False,
-                    "message": "Kein Anwesenheits-Entity gefunden. Erstelle input_select oder input_boolean fuer Anwesenheit in Home Assistant.",
+                    "message": "Kein Anwesenheits-Entity gefunden. Erstelle input_select oder input_boolean für Anwesenheit in Home Assistant.",
                 }
             success = await self.ha.call_service(
                 "input_boolean", "turn_on" if mode == "home" else "turn_off",
@@ -6015,7 +6015,7 @@ class FunctionExecutor:
         Sucht zuerst in der Konfiguration (room_speakers),
         dann per Entity-Name-Matching (nur echte Speaker, keine TVs).
         """
-        # 1. Konfiguriertes Mapping pruefen
+        # 1. Konfiguriertes Mapping prüfen
         room_speakers = yaml_config.get("multi_room", {}).get("room_speakers", {})
         room_lower = room.lower().replace(" ", "_")
         for cfg_room, entity_id in (room_speakers or {}).items():
@@ -6050,7 +6050,7 @@ class FunctionExecutor:
         return None
 
     # Entities die KEINE TTS-Speaker sind (TVs, Receiver, Streaming-Boxen)
-    # Hinweis: Alexa/Echo nicht mehr ausgeschlossen — wird ueber
+    # Hinweis: Alexa/Echo nicht mehr ausgeschlossen — wird über
     # sounds.alexa_speakers Config behandelt (notify statt Audio)
     _EXCLUDED_SPEAKER_PATTERNS = (
         "tv", "fernseher", "television", "fire_tv", "firetv", "apple_tv",
@@ -6096,7 +6096,7 @@ class FunctionExecutor:
         SICHERHEIT:
         - NUR easter_eggs.yaml, opinion_rules.yaml, room_profiles.yaml (Whitelist)
         - settings.yaml ist NICHT editierbar (nicht in _EDITABLE_CONFIGS)
-        - Snapshot vor jeder Aenderung (Rollback jederzeit moeglich)
+        - Snapshot vor jeder Änderung (Rollback jederzeit möglich)
         - yaml.safe_dump() verhindert Code-Injection
         """
         config_file = args["config_file"]
@@ -6109,7 +6109,7 @@ class FunctionExecutor:
             return {"success": False, "message": f"Config '{config_file}' ist nicht editierbar"}
 
         try:
-            # Snapshot vor Aenderung (Rollback-Sicherheitsnetz)
+            # Snapshot vor Änderung (Rollback-Sicherheitsnetz)
             if self._config_versioning and self._config_versioning.is_enabled():
                 await self._config_versioning.create_snapshot(
                     config_file, yaml_path,
@@ -6124,7 +6124,7 @@ class FunctionExecutor:
             else:
                 config = {}
 
-            # Aktion ausfuehren
+            # Aktion ausführen
             if action == "add":
                 if not data:
                     return {"success": False, "message": "Keine Daten zum Hinzufuegen angegeben"}
@@ -6148,11 +6148,11 @@ class FunctionExecutor:
             else:
                 return {"success": False, "message": f"Unbekannte Aktion: {action}"}
 
-            # Zurueckschreiben
+            # Zurückschreiben
             with open(yaml_path, "w") as f:
                 yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
-            # Cache invalidieren damit Aenderungen sofort wirken
+            # Cache invalidieren damit Änderungen sofort wirken
             if config_file == "room_profiles":
                 cfg_module._room_profiles_cache.clear()
                 cfg_module._room_profiles_ts = 0.0
@@ -6163,14 +6163,14 @@ class FunctionExecutor:
 
         except Exception as e:
             logger.error("Config-Edit fehlgeschlagen: %s", e)
-            return {"success": False, "message": f"Die Konfiguration laesst sich gerade nicht aendern: {e}"}
+            return {"success": False, "message": f"Die Konfiguration laesst sich gerade nicht ändern: {e}"}
 
     # ------------------------------------------------------------------
     # Phase 15.2: Einkaufsliste (via HA Shopping List oder lokal)
     # ------------------------------------------------------------------
 
     async def _exec_manage_shopping_list(self, args: dict) -> dict:
-        """Phase 15.2: Einkaufsliste verwalten ueber Home Assistant."""
+        """Phase 15.2: Einkaufsliste verwalten über Home Assistant."""
         action = args["action"]
         item = args.get("item", "")
 
@@ -6181,10 +6181,10 @@ class FunctionExecutor:
                 "shopping_list", "add_item", {"name": item}
             )
             return {"success": success, "message": f"'{item}' auf die Einkaufsliste gesetzt" if success
-                    else "Einkaufsliste nicht verfuegbar"}
+                    else "Einkaufsliste nicht verfügbar"}
 
         elif action == "list":
-            # Shopping List ueber HA API abrufen
+            # Shopping List über HA API abrufen
             try:
                 items = await self.ha.api_get("/api/shopping_list")
                 if not items:
@@ -6201,7 +6201,7 @@ class FunctionExecutor:
                 return {"success": True, "message": "\n".join(parts)}
             except Exception as e:
                 logger.debug("Einkaufsliste Fehler: %s", e)
-                return {"success": False, "message": "Einkaufsliste nicht verfuegbar"}
+                return {"success": False, "message": "Einkaufsliste nicht verfügbar"}
 
         elif action == "complete":
             if not item:
@@ -6231,36 +6231,36 @@ class FunctionExecutor:
             "smart_home": [
                 "Licht steuern (an/aus/dimmen, pro Raum)",
                 "Heizung/Klima regeln (Temperatur, Modus)",
-                "Rolllaeden steuern",
+                "Rollläden steuern",
                 "Szenen aktivieren (Filmabend, Gute Nacht, etc.)",
                 "Alarmanlage steuern",
-                "Tueren ver-/entriegeln",
+                "Türen ver-/entriegeln",
                 "Anwesenheitsmodus setzen (Home/Away/Sleep/Vacation)",
             ],
             "medien": [
                 "Musik abspielen/pausieren/stoppen",
                 "Naechster/vorheriger Titel",
-                "Musik zwischen Raeumen uebertragen",
+                "Musik zwischen Räumen übertragen",
                 "Sound-Effekte abspielen",
             ],
             "kommunikation": [
                 "Nachrichten an Personen senden (TTS oder Push)",
                 "Benachrichtigungen (Handy, Speaker, Dashboard)",
-                "Proaktive Meldungen (Alarm, Tuerklingel, Waschmaschine, etc.)",
+                "Proaktive Meldungen (Alarm, Türklingel, Waschmaschine, etc.)",
             ],
             "gedaechtnis": [
                 "'Merk dir X' — Fakten speichern",
-                "'Was weisst du ueber X?' — Wissen abrufen",
-                "'Vergiss X' — Fakten loeschen",
+                "'Was weisst du über X?' — Wissen abrufen",
+                "'Vergiss X' — Fakten löschen",
                 "Automatische Fakten-Extraktion aus Gespraechen",
                 "Langzeit-Erinnerungen und Tages-Zusammenfassungen",
             ],
             "wissen": [
                 "Allgemeine Wissensfragen beantworten",
                 "Kalender-Termine anzeigen und erstellen",
-                "'Was waere wenn'-Simulationen",
+                "'Was wäre wenn'-Simulationen",
                 "Wissensdatenbank (Dokumente, RAG)",
-                "Kochen mit Schritt-fuer-Schritt-Anleitung + Timer",
+                "Kochen mit Schritt-für-Schritt-Anleitung + Timer",
             ],
             "haushalt": [
                 "Einkaufsliste verwalten (hinzufuegen, anzeigen, abhaken)",
@@ -6286,18 +6286,18 @@ class FunctionExecutor:
             ],
             "selbstverbesserung": [
                 "Korrektur-Lernen ('Nein, ich meinte...')",
-                "Eigene Config anpassen (Easter Eggs, Meinungen, Raeume)",
+                "Eigene Config anpassen (Easter Eggs, Meinungen, Räume)",
                 "Feedback-basierte Optimierung proaktiver Meldungen",
             ],
             "automationen": [
                 "Alle HA-Automationen anzeigen mit Triggern, Bedingungen und Aktionen",
-                "Automationen aus natuerlicher Sprache erstellen ('Wenn ich nach Hause komme, Licht an')",
+                "Automationen aus natürlicher Sprache erstellen ('Wenn ich nach Hause komme, Licht an')",
                 "Vorschau + Bestaetigung vor Aktivierung",
-                "Jarvis-Automationen auflisten und loeschen",
+                "Jarvis-Automationen auflisten und löschen",
             ],
         }
 
-        lines = ["Das kann ich fuer dich tun:\n"]
+        lines = ["Das kann ich für dich tun:\n"]
         for category, items in capabilities.items():
             label = category.replace("_", " ").title()
             lines.append(f"{label}:")
@@ -6352,13 +6352,13 @@ class FunctionExecutor:
         }
 
     async def _exec_create_automation(self, args: dict) -> dict:
-        """Erstellt eine Automation aus natuerlicher Sprache."""
+        """Erstellt eine Automation aus natürlicher Sprache."""
         import assistant.main as main_module
         brain = main_module.brain
         try:
             self_auto = brain.self_automation
         except AttributeError:
-            return {"success": False, "message": "Self-Automation Modul nicht verfuegbar."}
+            return {"success": False, "message": "Self-Automation Modul nicht verfügbar."}
 
         description = args.get("description", "")
         if not description:
@@ -6376,7 +6376,7 @@ class FunctionExecutor:
         try:
             self_auto = brain.self_automation
         except AttributeError:
-            return {"success": False, "message": "Self-Automation Modul nicht verfuegbar."}
+            return {"success": False, "message": "Self-Automation Modul nicht verfügbar."}
 
         pending_id = args.get("pending_id", "")
         if not pending_id:
@@ -6409,7 +6409,7 @@ class FunctionExecutor:
 
     @staticmethod
     def _normalize_name(text: str) -> str:
-        """Normalisiert Umlaute und Sonderzeichen fuer Entity-Matching."""
+        """Normalisiert Umlaute und Sonderzeichen für Entity-Matching."""
         n = text.lower()
         # Unicode-Umlaute zuerst
         n = n.replace("ü", "u").replace("ä", "a").replace("ö", "o").replace("ß", "ss")
@@ -6427,10 +6427,10 @@ class FunctionExecutor:
         2. Fallback: Alle HA-States durchsuchen — bester Match
         Exakter Match > kuerzester Partial-Match (spezifischstes Ergebnis)
 
-        device_hint: Optionaler Geraetename (z.B. 'stehlampe', 'deckenlampe')
-                     zur Disambiguierung bei mehreren Geraeten im selben Raum.
+        device_hint: Optionaler Gerätename (z.B. 'stehlampe', 'deckenlampe')
+                     zur Disambiguierung bei mehreren Geräten im selben Raum.
         person: Optionaler Personenname (z.B. 'Manuel', 'Julia')
-                zur Disambiguierung wenn mehrere Raeume gleich heissen
+                zur Disambiguierung wenn mehrere Räume gleich heissen
                 (z.B. 'Manuel Buero' vs 'Julia Buero').
         """
         if not search:
@@ -6440,7 +6440,7 @@ class FunctionExecutor:
         hint_norm = self._normalize_name(device_hint) if device_hint else ""
         person_norm = self._normalize_name(person) if person else ""
 
-        # Spezifische Geraete-Begriffe: werden bei der Auswahl deprioritisiert,
+        # Spezifische Geräte-Begriffe: werden bei der Auswahl deprioritisiert,
         # wenn kein device_hint angegeben ist, damit das Hauptgeraet im Raum
         # bevorzugt wird (z.B. Deckenlampe statt Stehlampe).
         _SPECIFIC_DEVICE_TERMS = {
@@ -6453,11 +6453,11 @@ class FunctionExecutor:
         try:
             devices = await self.ha.search_devices(domain=domain, room=search)
             if devices:
-                logger.info("_find_entity: DB lieferte %d Treffer fuer '%s' (domain=%s, hint='%s'): %s",
+                logger.info("_find_entity: DB lieferte %d Treffer für '%s' (domain=%s, hint='%s'): %s",
                             len(devices), search, domain, device_hint or "",
                             [(d.get("name"), d.get("room"), d.get("ha_entity_id")) for d in devices])
 
-                # Wenn device_hint angegeben: zuerst nach Geraetename filtern
+                # Wenn device_hint angegeben: zuerst nach Gerätename filtern
                 if hint_norm:
                     for dev in devices:
                         dev_name = self._normalize_name(dev.get("name", ""))
@@ -6465,7 +6465,7 @@ class FunctionExecutor:
                         if hint_norm in dev_name or hint_norm in eid_name:
                             logger.info("_find_entity: Device-Hint '%s' matched -> %s", device_hint, dev["ha_entity_id"])
                             return dev["ha_entity_id"]
-                    # Hint passt auf kein Geraet -> weiter ohne Hint
+                    # Hint passt auf kein Gerät -> weiter ohne Hint
                     logger.info("_find_entity: Device-Hint '%s' matched kein DB-Ergebnis, ignoriere Hint", device_hint)
 
                 # Best-Match: Exakt > kuerzester Partial (mit Match-Pruefung!)
@@ -6473,17 +6473,17 @@ class FunctionExecutor:
                 best_score = float("inf")
                 for dev in devices:
                     eid = dev.get("ha_entity_id", "")
-                    # Domain-Check: Entities aus falscher Domain ueberspringen
+                    # Domain-Check: Entities aus falscher Domain überspringen
                     # (DB kann z.B. sensor.* liefern obwohl domain=light)
                     if domain and eid and not eid.startswith(f"{domain}."):
-                        logger.debug("_find_entity: Ueberspringe %s (domain=%s erwartet)", eid, domain)
+                        logger.debug("_find_entity: Überspringe %s (domain=%s erwartet)", eid, domain)
                         continue
                     dev_name = self._normalize_name(dev.get("name", ""))
                     dev_room = self._normalize_name(dev.get("room", "") or "")
                     eid_name = self._normalize_name(eid.split(".", 1)[-1])
 
                     matched = False
-                    # Exakter Raum-Match hat hoechste Prioritaet
+                    # Exakter Raum-Match hat höchste Prioritaet
                     if dev_room == search_norm:
                         matched = True
                     # Exakter Name-Match
@@ -6523,8 +6523,8 @@ class FunctionExecutor:
 
                     if matched:
                         name_len = len(dev_name) + len(dev_room)
-                        # Ohne device_hint: Spezifische Geraete mit Malus versehen,
-                        # damit "Wohnzimmer Licht" vor "Stehlampe Wohnzimmer" gewaehlt wird
+                        # Ohne device_hint: Spezifische Geräte mit Malus versehen,
+                        # damit "Wohnzimmer Licht" vor "Stehlampe Wohnzimmer" gewählt wird
                         penalty = 0
                         if not hint_norm:
                             combined = f"{dev_name} {eid_name}"
@@ -6535,7 +6535,7 @@ class FunctionExecutor:
                         name_bonus = 0
                         if search_norm in dev_name or search_norm in eid_name:
                             name_bonus = -10
-                        # Person-Kontext: Wenn der Personenname im Raum/Geraet vorkommt,
+                        # Person-Kontext: Wenn der Personenname im Raum/Gerät vorkommt,
                         # Bonus geben (z.B. Manuel sagt "Buero" -> "Manuel Buero" bevorzugen)
                         person_bonus = 0
                         if person_norm:
@@ -6552,7 +6552,7 @@ class FunctionExecutor:
                 # Kein Match in DB-Ergebnissen — weiter zu HA-Fallback
                 logger.info("_find_entity: Kein Name/Raum-Match in %d DB-Ergebnissen, HA-Fallback", len(devices))
             else:
-                logger.info("_find_entity: DB lieferte 0 Treffer fuer '%s', HA-Fallback", search)
+                logger.info("_find_entity: DB lieferte 0 Treffer für '%s', HA-Fallback", search)
         except Exception as e:
             logger.debug("MindHome device search failed, using HA fallback: %s", e)
 
@@ -6569,7 +6569,7 @@ class FunctionExecutor:
             if not entity_id.startswith(f"{domain}."):
                 continue
 
-            # Hidden-Entities ueberspringen
+            # Hidden-Entities überspringen
             if is_entity_hidden(entity_id):
                 continue
 
@@ -6578,15 +6578,15 @@ class FunctionExecutor:
             friendly = state.get("attributes", {}).get("friendly_name", "")
             friendly_norm = self._normalize_name(friendly) if friendly else ""
 
-            # Device-Hint: Geraetename muss im entity oder friendly_name vorkommen
+            # Device-Hint: Gerätename muss im entity oder friendly_name vorkommen
             if hint_norm:
                 if hint_norm in name_norm or (friendly_norm and hint_norm in friendly_norm):
-                    # Zusaetzlich pruefen ob auch der Raum passt
+                    # Zusaetzlich prüfen ob auch der Raum passt
                     if search_norm in name_norm or (friendly_norm and search_norm in friendly_norm):
                         logger.info("_find_entity: HA-Fallback Hint-Match -> %s", entity_id)
                         return entity_id
 
-            # Exakter Match → sofort zurueck
+            # Exakter Match → sofort zurück
             if search_norm == name_norm or search_norm == friendly_norm:
                 return entity_id
 
@@ -6624,15 +6624,15 @@ class FunctionExecutor:
                     best_len = score
 
         if not best_match:
-            # Diagnose: Alle verfuegbaren Entities dieser Domain loggen
+            # Diagnose: Alle verfügbaren Entities dieser Domain loggen
             available = [
                 f"{s.get('entity_id')} ('{s.get('attributes', {}).get('friendly_name', '')}')"
                 for s in (states or [])
                 if s.get("entity_id", "").startswith(f"{domain}.")
             ]
             logger.warning(
-                "_find_entity: KEIN Match fuer '%s' (norm='%s') in domain '%s'. "
-                "Verfuegbare Entities: %s",
+                "_find_entity: KEIN Match für '%s' (norm='%s') in domain '%s'. "
+                "Verfügbare Entities: %s",
                 search, search_norm, domain, available[:20]
             )
 
@@ -6649,7 +6649,7 @@ class FunctionExecutor:
         try:
             inventory = brain.inventory
         except AttributeError:
-            return {"success": False, "message": "Vorrats-Tracking nicht verfuegbar."}
+            return {"success": False, "message": "Vorrats-Tracking nicht verfügbar."}
 
         action = args["action"]
         item = args.get("item", "")
@@ -6678,7 +6678,7 @@ class FunctionExecutor:
         elif action == "check_expiring":
             expiring = await inventory.check_expiring(days_ahead=3)
             if not expiring:
-                return {"success": True, "message": "Keine Artikel laufen in den naechsten 3 Tagen ab."}
+                return {"success": True, "message": "Keine Artikel laufen in den nächsten 3 Tagen ab."}
             lines = [f"{len(expiring)} Artikel laufen bald ab:"]
             for item_data in expiring:
                 days = item_data["days_left"]
@@ -6697,7 +6697,7 @@ class FunctionExecutor:
     # ------------------------------------------------------------------
 
     async def _exec_manage_repair(self, args: dict) -> dict:
-        """Dispatch fuer alle Workshop-Aktionen."""
+        """Dispatch für alle Workshop-Aktionen."""
         import assistant.main as main_module
         brain = main_module.brain
         planner = brain.repair_planner
@@ -6777,42 +6777,42 @@ class FunctionExecutor:
         elif action == "generate_code":
             if not generator:
                 return {"success": False,
-                        "message": "Workshop-Generator nicht verfuegbar"}
+                        "message": "Workshop-Generator nicht verfügbar"}
             return await generator.generate_code(
                 pid, args.get("description", ""),
                 language=args.get("language", "arduino"))
         elif action == "generate_3d":
             if not generator:
                 return {"success": False,
-                        "message": "Workshop-Generator nicht verfuegbar"}
+                        "message": "Workshop-Generator nicht verfügbar"}
             return await generator.generate_3d_model(
                 pid, args.get("description", ""))
         elif action == "generate_schematic":
             if not generator:
                 return {"success": False,
-                        "message": "Workshop-Generator nicht verfuegbar"}
+                        "message": "Workshop-Generator nicht verfügbar"}
             return await generator.generate_schematic(
                 pid, args.get("description", ""))
         elif action == "generate_website":
             if not generator:
                 return {"success": False,
-                        "message": "Workshop-Generator nicht verfuegbar"}
+                        "message": "Workshop-Generator nicht verfügbar"}
             return await generator.generate_website(
                 pid, args.get("description", ""))
         elif action == "generate_bom":
             if not generator:
                 return {"success": False,
-                        "message": "Workshop-Generator nicht verfuegbar"}
+                        "message": "Workshop-Generator nicht verfügbar"}
             return await generator.generate_bom(pid)
         elif action == "generate_docs":
             if not generator:
                 return {"success": False,
-                        "message": "Workshop-Generator nicht verfuegbar"}
+                        "message": "Workshop-Generator nicht verfügbar"}
             return await generator.generate_documentation(pid)
         elif action == "generate_tests":
             if not generator:
                 return {"success": False,
-                        "message": "Workshop-Generator nicht verfuegbar"}
+                        "message": "Workshop-Generator nicht verfügbar"}
             return await generator.generate_tests(
                 pid, args.get("filename", ""))
 
@@ -6820,7 +6820,7 @@ class FunctionExecutor:
         elif action == "calculate":
             if not generator:
                 return {"success": False,
-                        "message": "Workshop-Generator nicht verfuegbar"}
+                        "message": "Workshop-Generator nicht verfügbar"}
             return generator.calculate(
                 args.get("calc_type", ""), **args.get("calc_params", {}))
 
@@ -6836,7 +6836,7 @@ class FunctionExecutor:
                     args.get("query", ""))
                 return {"success": True, "results": results}
             return {"success": False,
-                    "message": "Workshop-Library nicht verfuegbar"}
+                    "message": "Workshop-Library nicht verfügbar"}
 
         # --- Werkstatt-Inventar ---
         elif action == "add_workshop_item":
@@ -6924,7 +6924,7 @@ class FunctionExecutor:
         elif action == "export_project":
             if not generator:
                 return {"success": False,
-                        "message": "Workshop-Generator nicht verfuegbar"}
+                        "message": "Workshop-Generator nicht verfügbar"}
             path = await generator.export_project(pid)
             return ({"success": True, "zip_path": path} if path
                     else {"success": False, "message": "Keine Dateien"})
@@ -6971,7 +6971,7 @@ class FunctionExecutor:
         return brain.timer_manager.get_status()
 
     async def _exec_set_reminder(self, args: dict) -> dict:
-        """Setzt eine Erinnerung fuer eine bestimmte Uhrzeit."""
+        """Setzt eine Erinnerung für eine bestimmte Uhrzeit."""
         import assistant.main as main_module
         brain = main_module.brain
         return await brain.timer_manager.create_reminder(
@@ -7122,7 +7122,7 @@ class FunctionExecutor:
         if not target_room:
             return {
                 "success": False,
-                "message": f"Raum fuer {'Person ' + target_person if target_person else 'Durchsage'} nicht ermittelt. Bitte Raum angeben.",
+                "message": f"Raum für {'Person ' + target_person if target_person else 'Durchsage'} nicht ermittelt. Bitte Raum angeben.",
             }
 
         # Speaker im Zielraum finden
@@ -7138,7 +7138,7 @@ class FunctionExecutor:
         if target_person:
             tts_message = f"{target_person}, {message}"
 
-        # Speaker-Verfuegbarkeit pruefen
+        # Speaker-Verfügbarkeit prüfen
         speaker_state = await self.ha.get_state(speaker)
         if speaker_state and speaker_state.get("state") == "unavailable":
             return {"success": False, "message": f"Der Lautsprecher '{speaker}' schweigt sich aus. Nicht erreichbar."}
@@ -7205,10 +7205,10 @@ class FunctionExecutor:
             return await brain.web_search.search(query=args.get("query", ""))
         except Exception as e:
             logger.error("Web-Suche fehlgeschlagen: %s", e)
-            return {"success": False, "message": "Web-Suche konnte nicht durchgefuehrt werden."}
+            return {"success": False, "message": "Web-Suche konnte nicht durchgeführt werden."}
 
     async def _exec_get_security_score(self, args: dict) -> dict:
-        """Gibt den aktuellen Sicherheits-Score zurueck."""
+        """Gibt den aktuellen Sicherheits-Score zurück."""
         import assistant.main as main_module
         brain = main_module.brain
         try:
@@ -7224,7 +7224,7 @@ class FunctionExecutor:
             return {"success": False, "message": f"Sicherheits-Check fehlgeschlagen: {e}"}
 
     async def _exec_get_room_climate(self, args: dict) -> dict:
-        """Gibt Raumklima-Daten zurueck."""
+        """Gibt Raumklima-Daten zurück."""
         import assistant.main as main_module
         brain = main_module.brain
         try:
@@ -7244,7 +7244,7 @@ class FunctionExecutor:
             return {"success": False, "message": f"Raumklima-Check fehlgeschlagen: {e}"}
 
     async def _exec_get_active_intents(self, args: dict) -> dict:
-        """Gibt aktive Vorhaben/Intents zurueck."""
+        """Gibt aktive Vorhaben/Intents zurück."""
         import assistant.main as main_module
         from datetime import datetime
         brain = main_module.brain
@@ -7290,7 +7290,7 @@ class FunctionExecutor:
             return {"success": False, "message": f"Intent-Abfrage fehlgeschlagen: {e}"}
 
     async def _exec_get_wellness_status(self, args: dict) -> dict:
-        """Gibt den Wellness-Status des Users zurueck."""
+        """Gibt den Wellness-Status des Users zurück."""
         import assistant.main as main_module
         brain = main_module.brain
         try:
@@ -7329,7 +7329,7 @@ class FunctionExecutor:
             return {"success": False, "message": f"Wellness-Check fehlgeschlagen: {e}"}
 
     async def _exec_get_house_status(self, args: dict) -> dict:
-        """Gibt den Haus-Status zurueck — konfigurierbar via settings.yaml.
+        """Gibt den Haus-Status zurück — konfigurierbar via settings.yaml.
 
         In settings.yaml unter house_status.sections kann der User festlegen
         welche Bereiche angezeigt werden:
@@ -7341,8 +7341,8 @@ class FunctionExecutor:
               - lights        # Welche Lichter sind an
               - security      # Sicherheitsstatus
               - media         # Aktive Mediengeraete
-              - open_items    # Offene Fenster/Tueren
-              - offline       # Offline-Geraete
+              - open_items    # Offene Fenster/Türen
+              - offline       # Offline-Geräte
         """
         import assistant.main as main_module
         from .config import yaml_config as _cfg
@@ -7452,7 +7452,7 @@ class FunctionExecutor:
                 if media:
                     parts.append(f"Medien aktiv: {', '.join(str(m) for m in media)}")
 
-            # Offene Fenster/Tueren — kategorisiert nach Typ (Fenster/Tuer vs Tor)
+            # Offene Fenster/Türen — kategorisiert nach Typ (Fenster/Tür vs Tor)
             if "open_items" in enabled_sections:
                 open_windows_doors = []
                 open_gates = []
@@ -7469,7 +7469,7 @@ class FunctionExecutor:
                 if open_gates:
                     parts.append(f"Tore offen: {', '.join(open_gates)}")
 
-            # Offline Geraete
+            # Offline Geräte
             if "offline" in enabled_sections:
                 unavailable = []
                 for s in states:
@@ -7488,7 +7488,7 @@ class FunctionExecutor:
             return {"success": False, "message": f"Haus-Status fehlgeschlagen: {e}"}
 
     async def _exec_get_full_status_report(self, args: dict) -> dict:
-        """Aggregiert alle Datenquellen fuer einen narrativen JARVIS-Statusbericht."""
+        """Aggregiert alle Datenquellen für einen narrativen JARVIS-Statusbericht."""
         import assistant.main as main_module
         brain = main_module.brain
         report_parts = []
@@ -7535,7 +7535,7 @@ class FunctionExecutor:
             logger.debug("Status-Report: Intents fehlgeschlagen: %s", e)
 
         if not report_parts:
-            return {"success": False, "message": "Keine Daten fuer Statusbericht verfuegbar."}
+            return {"success": False, "message": "Keine Daten für Statusbericht verfügbar."}
 
         raw_report = "\n\n".join(report_parts)
         return {"success": True, "message": raw_report}
@@ -7566,7 +7566,7 @@ class FunctionExecutor:
         wind_bearing = attrs.get("wind_bearing")
         pressure = attrs.get("pressure")
 
-        # Wetter-Zustand uebersetzen
+        # Wetter-Zustand übersetzen
         condition_map = {
             "sunny": "Sonnig", "clear-night": "Klare Nacht",
             "partlycloudy": "Teilweise bewoelkt", "cloudy": "Bewoelkt",
@@ -7614,7 +7614,7 @@ class FunctionExecutor:
                     "weather", "get_forecasts",
                     {"entity_id": entity_id, "type": "daily"},
                 )
-                # HA gibt ggf. {"service_response": {entity: {forecast: [...]}}} zurueck
+                # HA gibt ggf. {"service_response": {entity: {forecast: [...]}}} zurück
                 if isinstance(result, dict) and "service_response" in result:
                     result = result["service_response"]
                 if isinstance(result, list):
@@ -7661,32 +7661,32 @@ class FunctionExecutor:
                         line += f", Luftfeuchtigkeit {fc_humidity}%"
                     parts.append(line)
             else:
-                # Keine Vorhersage verfuegbar — still weglassen statt Fehlermeldung
+                # Keine Vorhersage verfügbar — still weglassen statt Fehlermeldung
                 # Das LLM/Humanizer antwortet dann nur mit den aktuellen Daten
-                logger.info("Wetter-Vorhersage nicht verfuegbar (HA-Integration liefert keine Prognosedaten)")
+                logger.info("Wetter-Vorhersage nicht verfügbar (HA-Integration liefert keine Prognosedaten)")
 
         return {"success": True, "message": "\n".join(parts)}
 
     async def _exec_get_device_health(self, args: dict) -> dict:
-        """Gibt den Geraete-Gesundheitsstatus zurueck."""
+        """Gibt den Geräte-Gesundheitsstatus zurück."""
         import assistant.main as main_module
         brain = main_module.brain
         try:
             status = await brain.device_health.get_status()
-            # Aktuelle Anomalien pruefen
+            # Aktuelle Anomalien prüfen
             alerts = await brain.device_health.check_all()
             alert_msgs = [a.get("message", "") for a in alerts[:5]] if alerts else []
             return {
                 "success": True,
-                "message": f"{len(alerts)} Anomalie(n)" if alerts else "Alle Geraete normal",
+                "message": f"{len(alerts)} Anomalie(n)" if alerts else "Alle Geräte normal",
                 "alerts": alert_msgs,
                 **status,
             }
         except Exception as e:
-            return {"success": False, "message": f"Geraete-Check fehlgeschlagen: {e}"}
+            return {"success": False, "message": f"Geräte-Check fehlgeschlagen: {e}"}
 
     async def _exec_get_learned_patterns(self, args: dict) -> dict:
-        """Gibt erkannte Verhaltensmuster zurueck."""
+        """Gibt erkannte Verhaltensmuster zurück."""
         import assistant.main as main_module
         brain = main_module.brain
         try:
@@ -7711,7 +7711,7 @@ class FunctionExecutor:
             return {"success": False, "message": f"Muster-Abfrage fehlgeschlagen: {e}"}
 
     async def _exec_describe_doorbell(self, args: dict) -> dict:
-        """Beschreibt was die Tuerkamera zeigt."""
+        """Beschreibt was die Türkamera zeigt."""
         import assistant.main as main_module
         brain = main_module.brain
         try:
@@ -7720,10 +7720,10 @@ class FunctionExecutor:
                 return {"success": True, "message": description}
             return {
                 "success": False,
-                "message": "Tuerkamera nicht verfuegbar oder kein Bild erhalten.",
+                "message": "Türkamera nicht verfügbar oder kein Bild erhalten.",
             }
         except Exception as e:
-            return {"success": False, "message": f"Tuerkamera-Abfrage fehlgeschlagen: {e}"}
+            return {"success": False, "message": f"Türkamera-Abfrage fehlgeschlagen: {e}"}
 
     async def _exec_manage_protocol(self, args: dict) -> dict:
         """Verwaltet benannte Protokolle (create, execute, undo, list, delete)."""
@@ -7739,15 +7739,15 @@ class FunctionExecutor:
         try:
             if action == "create":
                 if not name or not description:
-                    return {"success": False, "message": "Name und Beschreibung werden fuer 'create' benoetigt."}
+                    return {"success": False, "message": "Name und Beschreibung werden für 'create' benötigt."}
                 return await engine.create_protocol(name, description, person=person)
             elif action == "execute":
                 if not name:
-                    return {"success": False, "message": "Name wird fuer 'execute' benoetigt."}
+                    return {"success": False, "message": "Name wird für 'execute' benötigt."}
                 return await engine.execute_protocol(name, person=person)
             elif action == "undo":
                 if not name:
-                    return {"success": False, "message": "Name wird fuer 'undo' benoetigt."}
+                    return {"success": False, "message": "Name wird für 'undo' benötigt."}
                 return await engine.undo_protocol(name)
             elif action == "list":
                 protocols = await engine.list_protocols()
@@ -7759,7 +7759,7 @@ class FunctionExecutor:
                 return {"success": True, "message": "\n".join(lines), "protocols": protocols}
             elif action == "delete":
                 if not name:
-                    return {"success": False, "message": "Name wird fuer 'delete' benoetigt."}
+                    return {"success": False, "message": "Name wird für 'delete' benötigt."}
                 return await engine.delete_protocol(name)
             else:
                 return {"success": False, "message": f"Unbekannte Aktion: {action}"}
@@ -7794,7 +7794,7 @@ class FunctionExecutor:
             return {"success": False, "message": f"Music-DJ Fehler: {e}"}
 
     async def _exec_manage_visitor(self, args: dict) -> dict:
-        """Feature 12: Besucher-Management — Besucher verwalten und Tuer-Workflows."""
+        """Feature 12: Besucher-Management — Besucher verwalten und Tür-Workflows."""
         import assistant.main as main_module
         brain = main_module.brain
         vm = brain.visitor_manager
@@ -7829,7 +7829,7 @@ class FunctionExecutor:
                     person = getattr(brain, "_current_person", "") or ""
                     trust_check = brain.autonomy.can_person_act(person, "lock_door")
                     if not trust_check["allowed"]:
-                        return {"success": False, "message": trust_check.get("reason", "Keine Berechtigung fuer Auto-Unlock.")}
+                        return {"success": False, "message": trust_check.get("reason", "Keine Berechtigung für Auto-Unlock.")}
                 return await vm.expect_visitor(
                     person_id=pid,
                     name=args.get("name", ""),
@@ -7843,7 +7843,7 @@ class FunctionExecutor:
                     return {"success": False, "message": "person_id ist erforderlich."}
                 return await vm.cancel_expected(pid)
             elif action == "grant_entry":
-                # grant_entry entriegelt die Tuer — erfordert Owner-Trust (wie lock_door)
+                # grant_entry entriegelt die Tür — erfordert Owner-Trust (wie lock_door)
                 person = getattr(brain, "_current_person", "") or ""
                 trust_check = brain.autonomy.can_person_act(person, "lock_door")
                 if not trust_check["allowed"]:
@@ -7924,7 +7924,7 @@ class FunctionExecutor:
             success = await self.ha.call_service(
                 "remote", "turn_off", {"entity_id": entity_id}
             )
-            return {"success": success, "message": "Fernbedienung ausgeschaltet — alle Geraete aus."}
+            return {"success": success, "message": "Fernbedienung ausgeschaltet — alle Geräte aus."}
 
         elif action in ("on", "activity"):
             service_data = {"entity_id": entity_id}
@@ -7957,7 +7957,7 @@ class FunctionExecutor:
         return {"success": False, "message": f"Unbekannte Aktion: {action}"}
 
     async def _exec_get_remotes(self, args: dict) -> dict:
-        """Listet alle Fernbedienungen mit Status und verfuegbaren Aktivitaeten."""
+        """Listet alle Fernbedienungen mit Status und verfügbaren Aktivitaeten."""
         remote_hint = args.get("remote")
         states = await self.ha.get_states()
         if not states:
@@ -8011,7 +8011,7 @@ class FunctionExecutor:
     async def _exec_create_declarative_tool(self, args: dict) -> dict:
         """Erstellt ein deklaratives Analyse-Tool."""
         if not self._decl_tools_enabled():
-            return {"success": False, "message": "Analyse-Tools sind deaktiviert. Aktivierung ueber Einstellungen."}
+            return {"success": False, "message": "Analyse-Tools sind deaktiviert. Aktivierung über Einstellungen."}
         import json as _json
         name = args.get("name", "").strip()
         description = args.get("description", "").strip()
@@ -8024,7 +8024,7 @@ class FunctionExecutor:
         try:
             config = _json.loads(config_json) if isinstance(config_json, str) else config_json
         except _json.JSONDecodeError as e:
-            return {"success": False, "message": f"Ungueltiges JSON in config_json: {e}"}
+            return {"success": False, "message": f"Ungültiges JSON in config_json: {e}"}
 
         registry = get_decl_registry()
         return registry.create_tool(name, {
@@ -8085,13 +8085,13 @@ class FunctionExecutor:
         if not suggestions:
             return {"success": True, "message": "Keine neuen Vorschlaege — alle sinnvollen Tools existieren bereits oder es fehlen passende Entities.", "suggestions": []}
 
-        lines = [f"{len(suggestions)} Vorschlag/Vorschlaege fuer neue Analyse-Tools:\n"]
+        lines = [f"{len(suggestions)} Vorschlag/Vorschlaege für neue Analyse-Tools:\n"]
         for i, s in enumerate(suggestions, 1):
             lines.append(f"{i}. **{s['name']}** ({s['type']})")
             lines.append(f"   {s['description']}")
             lines.append(f"   Grund: {s['reason']}\n")
 
-        lines.append("Frage den User welche Vorschlaege er annehmen moechte. "
+        lines.append("Frage den User welche Vorschlaege er annehmen möchte. "
                       "Erstelle die gewuenschten Tools dann mit create_declarative_tool.")
 
         return {

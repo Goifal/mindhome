@@ -2,7 +2,7 @@
 Conflict Resolver - Phase 16.1: Multi-User Konfliktloesung.
 
 Erkennt und loest Konflikte wenn mehrere Personen widersprüchliche
-Befehle geben. Nutzt Trust-Levels fuer Prioritaet und bietet
+Befehle geben. Nutzt Trust-Levels für Prioritaet und bietet
 LLM-basierte Mediations-Vorschlaege.
 
 Beispiel-Konflikte:
@@ -11,7 +11,7 @@ Beispiel-Konflikte:
   - Person A: "Musik leiser" vs Person B: "Musik lauter"
 
 Loesungsstrategien:
-  1. trust_priority: Hoehere Trust-Stufe gewinnt
+  1. trust_priority: Höhere Trust-Stufe gewinnt
   2. average: Kompromiss (Durchschnitt bei numerischen Werten)
   3. mediate: LLM schlaegt Kompromiss vor und erklaert
 """
@@ -150,10 +150,10 @@ class ConflictResolver:
         self._conflict_history: list[dict] = []
         self._max_history = 50
 
-        # Validator fuer Kompromiss-Werte (kann spaeter gesetzt werden)
+        # Validator für Kompromiss-Werte (kann später gesetzt werden)
         self._validator = None
 
-        # Redis fuer Persistenz
+        # Redis für Persistenz
         self._redis = None
 
         logger.info(
@@ -188,7 +188,7 @@ class ConflictResolver:
         room: Optional[str] = None,
     ):
         """
-        Zeichnet einen ausgefuehrten Befehl einer Person auf.
+        Zeichnet einen ausgeführten Befehl einer Person auf.
 
         Args:
             person: Name der Person
@@ -227,7 +227,7 @@ class ConflictResolver:
         room: Optional[str] = None,
     ) -> Optional[dict]:
         """
-        Prueft ob ein neuer Befehl mit einem kuerzlichen Befehl einer
+        Prueft ob ein neuer Befehl mit einem kürzlichen Befehl einer
         anderen Person konfligiert.
 
         Args:
@@ -245,7 +245,7 @@ class ConflictResolver:
         # Domain des neuen Befehls bestimmen
         domain = FUNCTION_DOMAIN_MAP.get(function_name)
         if not domain:
-            return None  # Nur ueberwachte Domains pruefen
+            return None  # Nur überwachte Domains prüfen
 
         # Domain-Konfiguration
         domain_cfg = self._domain_configs.get(domain, {})
@@ -253,7 +253,7 @@ class ConflictResolver:
         person_lower = person.lower()
         now = time.time()
 
-        # Alle kuerzlichen Befehle anderer Personen in derselben Domain pruefen
+        # Alle kürzlichen Befehle anderer Personen in derselben Domain prüfen
         for other_person, commands in self._recent_commands.items():
             if other_person == person_lower:
                 continue
@@ -281,7 +281,7 @@ class ConflictResolver:
                 if not conflict:
                     continue
 
-                # Resolution-Cooldown pruefen
+                # Resolution-Cooldown prüfen
                 cooldown_key = f"{domain}:{new_room or 'global'}"
                 last_resolution = self._last_resolutions.get(cooldown_key, 0)
                 if now - last_resolution < self._resolution_cooldown:
@@ -353,7 +353,7 @@ class ConflictResolver:
             val_existing = args_existing.get(key)
 
             if val_new is None or val_existing is None:
-                # Kein numerischer Vergleich moeglich, pruefe state
+                # Kein numerischer Vergleich möglich, pruefe state
                 also_check = params.get("also_check", [])
                 for check_key in also_check:
                     v1 = args_new.get(check_key)
@@ -469,7 +469,7 @@ class ConflictResolver:
                     )
                     resolution["message"] = (
                         f"Gleiches Vertrauenslevel, aber {winner.title()} ist gerade "
-                        f"{'im ' + room if room else 'naeher dran'}. "
+                        f"{'im ' + room if room else 'näher dran'}. "
                         f"Entscheidung: {self._describe_action(domain, resolution['modified_args'])}."
                     )
                     resolution["strategy"] = "room_presence"
@@ -501,10 +501,10 @@ class ConflictResolver:
                 validation = self._validator.validate(f"set_{domain}", test_args)
                 if not validation.ok:
                     logger.warning(
-                        "F-054: Kompromiss %s%s Validierung fehlgeschlagen: %s — verwende hoeher-Trust-Wert",
+                        "F-054: Kompromiss %s%s Validierung fehlgeschlagen: %s — verwende höher-Trust-Wert",
                         compromise, unit, validation.reason,
                     )
-                    # F-054: Bei ungueltigem Kompromiss den Wert des hoeher vertrauenswuerdigen Users nehmen
+                    # F-054: Bei ungültigem Kompromiss den Wert des höher vertrauenswuerdigen Users nehmen
                     compromise = val_a if trust_a >= trust_b else val_b
 
             resolution["action"] = "use_compromise"
@@ -513,7 +513,7 @@ class ConflictResolver:
             resolution["message"] = (
                 f"{person_a.title()} will {val_a}{unit}, "
                 f"{person_b.title()} will {val_b}{unit}. "
-                f"Ich nehme {compromise}{unit}. Diplomatie ist eine meiner Staerken."
+                f"Ich nehme {compromise}{unit}. Diplomatie ist eine meiner Stärken."
             )
 
         # Strategie 3: LLM-Mediation
@@ -529,7 +529,7 @@ class ConflictResolver:
             )
             resolution["action"] = "mediated"
             resolution["message"] = mediation_msg
-            # Bei Mediation: Befehle des hoeheren Trust-Levels bevorzugen
+            # Bei Mediation: Befehle des höheren Trust-Levels bevorzugen
             if trust_a >= trust_b:
                 resolution["modified_args"] = command_a["args"]
             else:
@@ -560,16 +560,16 @@ class ConflictResolver:
         # Konflikt-Beschreibung erstellen
         if conflict_detail["type"] == "numeric":
             desc = (
-                f"{person_a.title()} moechte {conflict_detail['key']} auf "
+                f"{person_a.title()} möchte {conflict_detail['key']} auf "
                 f"{conflict_detail['value_existing']}{conflict_detail.get('unit', '')} setzen. "
-                f"{person_b.title()} moechte {conflict_detail['key']} auf "
+                f"{person_b.title()} möchte {conflict_detail['key']} auf "
                 f"{conflict_detail['value_new']}{conflict_detail.get('unit', '')} setzen."
             )
         else:
             desc = (
-                f"{person_a.title()} moechte {conflict_detail['key']}: "
+                f"{person_a.title()} möchte {conflict_detail['key']}: "
                 f"{conflict_detail['value_existing']}. "
-                f"{person_b.title()} moechte {conflict_detail['key']}: "
+                f"{person_b.title()} möchte {conflict_detail['key']}: "
                 f"{conflict_detail['value_new']}."
             )
 
@@ -584,7 +584,7 @@ class ConflictResolver:
         else:
             time_of_day = "Nacht"
 
-        # Wer hat hoehere Trust?
+        # Wer hat höhere Trust?
         trust_order = self.autonomy.get_trust_level
         a_trust_num = trust_order(person_a)
         b_trust_num = trust_order(person_b)
@@ -643,7 +643,7 @@ class ConflictResolver:
                 del self._recent_commands[person]
 
     def _domain_label(self, domain: str) -> str:
-        """Gibt ein deutsches Label fuer eine Domain zurueck."""
+        """Gibt ein deutsches Label für eine Domain zurück."""
         if domain == "climate":
             mode = yaml_config.get("heating", {}).get("mode", "room_thermostat")
             if mode == "heating_curve":
@@ -691,13 +691,13 @@ class ConflictResolver:
         person_b: str,
         room: Optional[str],
     ) -> Optional[str]:
-        """Versucht bei gleicher Trust-Stufe ueber Raum-Naehe zu entscheiden.
+        """Versucht bei gleicher Trust-Stufe über Raum-Naehe zu entscheiden.
 
         Prueft wer zuletzt im betroffenen Raum einen Befehl gegeben hat —
         wer im Raum ist, hat Vorrang.
 
         Returns:
-            Name des Gewinners oder None (kein Entscheid moeglich)
+            Name des Gewinners oder None (kein Entscheid möglich)
         """
         if not room:
             return None
@@ -733,7 +733,7 @@ class ConflictResolver:
             elif last_in_room_b > last_in_room_a:
                 return person_b
 
-        return None  # Kein Entscheid moeglich
+        return None  # Kein Entscheid möglich
 
     async def _save_history(self):
         """Speichert Konflikt-History in Redis."""
@@ -753,11 +753,11 @@ class ConflictResolver:
     # ------------------------------------------------------------------
 
     def get_recent_conflicts(self, limit: int = 10) -> list[dict]:
-        """Gibt die letzten Konflikte zurueck."""
+        """Gibt die letzten Konflikte zurück."""
         return self._conflict_history[-limit:]
 
     def get_active_commands(self) -> dict:
-        """Gibt die aktuell getrackte Befehle pro Person zurueck."""
+        """Gibt die aktuell getrackte Befehle pro Person zurück."""
         self._cleanup_old_commands()
         return {
             person: len(cmds)
@@ -765,7 +765,7 @@ class ConflictResolver:
         }
 
     def health_status(self) -> str:
-        """Gibt den Health-Status zurueck."""
+        """Gibt den Health-Status zurück."""
         if not self.enabled:
             return "disabled"
         active_persons = len(self._recent_commands)
@@ -773,7 +773,7 @@ class ConflictResolver:
         return f"active ({active_persons} personen, {total_conflicts} konflikte gesamt)"
 
     def get_info(self) -> dict:
-        """Gibt detaillierte Infos zurueck."""
+        """Gibt detaillierte Infos zurück."""
         return {
             "enabled": self.enabled,
             "conflict_window_seconds": self._conflict_window,
