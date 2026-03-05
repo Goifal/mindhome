@@ -3334,7 +3334,7 @@ class FunctionExecutor:
         ).get("brightness_curve")
         if curve and isinstance(curve, list) and len(curve) >= 2:
             return curve
-        return FunctionCalling._CIRCADIAN_BRIGHTNESS_CURVE_DEFAULT
+        return FunctionExecutor._CIRCADIAN_BRIGHTNESS_CURVE_DEFAULT
 
     @staticmethod
     def _interpolate_circadian(curve, key, now_h, now_m):
@@ -3392,8 +3392,8 @@ class FunctionExecutor:
         circadian = lighting_cfg.get("circadian", {})
         if circadian.get("enabled"):
             # Interpolierte Kurve liefert 0-100%, skaliert auf Raum-Profil
-            curve_pct = FunctionCalling._interpolate_circadian(
-                FunctionCalling._get_circadian_curve(), "pct",
+            curve_pct = FunctionExecutor._interpolate_circadian(
+                FunctionExecutor._get_circadian_curve(), "pct",
                 now.hour, now.minute
             )
             # Skaliere Kurve auf Raum-spezifischen Bereich (night..default)
