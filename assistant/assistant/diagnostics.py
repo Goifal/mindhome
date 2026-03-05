@@ -110,16 +110,17 @@ class DiagnosticsEngine:
         """Prueft ob Entity ueberwacht werden soll.
 
         Nutzt Entity-Annotations: Annotierte (nicht-hidden) Entities werden
-        automatisch ueberwacht. Ohne Annotation: Domain-Filter + Exclude-Patterns.
+        automatisch ueberwacht, sofern diagnostics nicht explizit deaktiviert.
+        Ohne Annotation: Domain-Filter + Exclude-Patterns.
         """
         # Hidden-Entities nie ueberwachen
         if is_entity_hidden(entity_id):
             return False
 
-        # Annotierte Entities immer ueberwachen
+        # Annotierte Entities: diagnostics-Feld pruefen (default=True)
         ann = get_entity_annotation(entity_id)
         if ann and ann.get("role"):
-            return True
+            return ann.get("diagnostics", True)
 
         # Legacy-Whitelist (falls noch in Config)
         if self.monitored_entities:

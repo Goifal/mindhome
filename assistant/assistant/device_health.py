@@ -556,10 +556,10 @@ class DeviceHealthMonitor:
         if is_entity_hidden(entity_id):
             return True
 
-        # Annotierte Entities nie ausschliessen
+        # Annotierte Entities: diagnostics-Feld pruefen (default=True)
         ann = get_entity_annotation(entity_id)
         if ann and ann.get("role"):
-            return False
+            return not ann.get("diagnostics", True)
 
         # Legacy-Whitelist (falls noch in Config)
         if self.monitored_entities:

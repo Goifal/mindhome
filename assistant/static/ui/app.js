@@ -5688,6 +5688,7 @@ function _renderEntityRow(e) {
   const roleBadge = ann.role ? `<span class="role-badge">${esc(_roleLabel(ann.role))}</span>` : '';
   const roomBadge = ann.room ? `<span class="role-badge" style="background:rgba(100,200,100,0.12);color:#6a6;">${esc(ann.room)}</span>` : '';
   const hiddenBadge = ann.hidden ? `<span class="hidden-badge">versteckt</span>` : '';
+  const diagOffBadge = ann.diagnostics === false ? `<span class="hidden-badge" style="background:rgba(200,160,50,0.15);color:#b90;">keine Diagnostik</span>` : '';
   const isChecked = _annBatchSelected.has(e.entity_id);
   const cssId = e.entity_id.replace(/[^a-zA-Z0-9]/g, '_');
 
@@ -5699,7 +5700,7 @@ function _renderEntityRow(e) {
       <div style="flex:1;min-width:0;cursor:pointer;" onclick="toggleEntityDetail('${cssId}')">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <span class="ename">${esc(e.name)}</span>
-          ${roleBadge}${roomBadge}${hiddenBadge}
+          ${roleBadge}${roomBadge}${hiddenBadge}${diagOffBadge}
           <span class="eid">${esc(e.entity_id)}</span>
           <span style="color:var(--text-muted);font-size:10px;">${esc(e.state)}</span>
         </div>
@@ -5729,10 +5730,18 @@ function _renderEntityRow(e) {
                  onchange="onAnnotationChange('${esc(e.entity_id)}')">
           <datalist id="${roomDlId}"></datalist>
         </div>
-        <div class="form-group" style="display:flex;align-items:center;gap:8px;">
-          <label style="margin:0;">Verstecken</label>
-          <input type="checkbox" data-ann-eid="${esc(e.entity_id)}" data-ann-field="hidden"
-                 ${ann.hidden ? 'checked' : ''} onchange="onAnnotationChange('${esc(e.entity_id)}')">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;">
+          <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+            <label style="margin:0;">Diagnostik</label>
+            <input type="checkbox" data-ann-eid="${esc(e.entity_id)}" data-ann-field="diagnostics"
+                   ${ann.diagnostics !== false ? 'checked' : ''} onchange="onAnnotationChange('${esc(e.entity_id)}')"
+                   title="Benachrichtigungen bei Offline, Batterie niedrig, Sensor veraltet">
+          </div>
+          <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+            <label style="margin:0;">Verstecken</label>
+            <input type="checkbox" data-ann-eid="${esc(e.entity_id)}" data-ann-field="hidden"
+                   ${ann.hidden ? 'checked' : ''} onchange="onAnnotationChange('${esc(e.entity_id)}')">
+          </div>
         </div>
         ${hasAnn || ann.hidden ? `<div style="margin-top:6px;"><button class="btn btn-danger btn-sm" style="font-size:11px;padding:2px 8px;" onclick="event.stopPropagation();clearAnnotation('${esc(e.entity_id)}')">Annotation entfernen</button></div>` : ''}
       </div>
@@ -5758,7 +5767,7 @@ function onAnnotationChange(entityId) {
   const ann = {};
   document.querySelectorAll(`[data-ann-eid="${entityId}"]`).forEach(el => {
     const field = el.dataset.annField;
-    if (field === 'hidden') ann[field] = el.checked;
+    if (field === 'hidden' || field === 'diagnostics') ann[field] = el.checked;
     else if (el.dataset.isRole) {
       // Rolle: Label -> ID
       ann[field] = _roleLabelToId(el.value || '');
@@ -5771,6 +5780,7 @@ function onAnnotationChange(entityId) {
   if (ann.role) clean.role = ann.role;
   if (ann.room) clean.room = ann.room;
   if (ann.hidden) clean.hidden = true;
+  if (ann.diagnostics === false) clean.diagnostics = false;
   if (Object.keys(clean).length > 0) ENTITY_ANNOTATIONS[entityId] = clean;
   else delete ENTITY_ANNOTATIONS[entityId];
 
