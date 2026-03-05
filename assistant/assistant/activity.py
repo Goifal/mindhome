@@ -567,21 +567,77 @@ class ActivityEngine:
 
         return ""
 
+    # Muster fuer Auto-Discovery von Mikrofon/Call-Entities
+    _MIC_PATTERNS = (
+        "mic", "mikrofon", "microphone", "zoom", "teams", "call",
+        "telefonat", "anruf", "voip", "sip", "webex",
+    )
+
     def _check_in_call(self, states: list[dict]) -> bool:
-        """Prueft ob ein Mikrofon aktiv ist (Call/Zoom)."""
+        """Prueft ob ein Mikrofon aktiv ist (Call/Zoom).
+
+        Fallback: Wenn kein konfigurierter Sensor aktiv ist, werden alle
+        binary_sensor.* mit Mikrofon/Call-Mustern im Namen geprueft.
+        """
+        # 1. Konfigurierte Sensoren pruefen
         for state in states:
             entity_id = state.get("entity_id", "")
             if entity_id in self.mic_sensors:
                 if state.get("state") == "on":
                     return True
+
+        # 2. Fallback: Auto-Discovery
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if not entity_id.startswith("binary_sensor."):
+                continue
+            if entity_id in self.mic_sensors:
+                continue
+            if state.get("state") != "on":
+                continue
+            eid_lower = entity_id.lower()
+            friendly = (state.get("attributes", {}).get("friendly_name") or "").lower()
+            for pattern in self._MIC_PATTERNS:
+                if pattern in eid_lower or pattern in friendly:
+                    logger.info("Mic auto-discovered: %s (friendly=%s)", entity_id, friendly)
+                    return True
+
         return False
 
+    # Muster fuer Auto-Discovery von Bett/Schlaf-Sensoren
+    _BED_PATTERNS = (
+        "bed", "bett", "sleep", "schlaf", "matratze", "mattress",
+        "occupancy_bed", "bett_belegt", "bed_occupancy",
+    )
+
     def _check_bed_occupied(self, states: list[dict]) -> bool:
-        """Prueft ob der Bettsensor belegt ist (reines Sensor-Signal)."""
+        """Prueft ob der Bettsensor belegt ist (reines Sensor-Signal).
+
+        Fallback: Wenn kein konfigurierter Sensor aktiv ist, werden alle
+        binary_sensor.* mit Bett/Schlaf-Mustern im Namen geprueft.
+        """
+        # 1. Konfigurierte Sensoren pruefen
         for state in states:
             if state.get("entity_id", "") in self.bed_sensors:
                 if state.get("state") == "on":
                     return True
+
+        # 2. Fallback: Auto-Discovery
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if not entity_id.startswith("binary_sensor."):
+                continue
+            if entity_id in self.bed_sensors:
+                continue
+            if state.get("state") != "on":
+                continue
+            eid_lower = entity_id.lower()
+            friendly = (state.get("attributes", {}).get("friendly_name") or "").lower()
+            for pattern in self._BED_PATTERNS:
+                if pattern in eid_lower or pattern in friendly:
+                    logger.info("Bed sensor auto-discovered: %s (friendly=%s)", entity_id, friendly)
+                    return True
+
         return False
 
     def _check_sleeping(self, states: list[dict]) -> bool:
@@ -607,13 +663,43 @@ class ActivityEngine:
 
         return False
 
+    # Muster fuer Auto-Discovery von PC/Computer-Entities
+    _PC_PATTERNS = (
+        "pc", "computer", "rechner", "desktop", "workstation",
+        "laptop", "notebook", "mac_mini", "imac",
+    )
+
     def _check_pc_active(self, states: list[dict]) -> bool:
-        """Prueft ob der PC aktiv ist (Arbeit/Fokus)."""
+        """Prueft ob der PC aktiv ist (Arbeit/Fokus).
+
+        Fallback: Wenn kein konfigurierter Sensor aktiv ist, werden alle
+        binary_sensor.* und switch.* mit PC/Computer-Mustern im Namen geprueft.
+        """
+        active_states = {"on", "active"}
+
+        # 1. Konfigurierte Sensoren pruefen
         for state in states:
             entity_id = state.get("entity_id", "")
             if entity_id in self.pc_sensors:
-                if state.get("state") in ("on", "active"):
+                if state.get("state") in active_states:
                     return True
+
+        # 2. Fallback: Auto-Discovery
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if not (entity_id.startswith("binary_sensor.") or entity_id.startswith("switch.")):
+                continue
+            if entity_id in self.pc_sensors:
+                continue
+            if state.get("state") not in active_states:
+                continue
+            eid_lower = entity_id.lower()
+            friendly = (state.get("attributes", {}).get("friendly_name") or "").lower()
+            for pattern in self._PC_PATTERNS:
+                if pattern in eid_lower or pattern in friendly:
+                    logger.info("PC auto-discovered: %s (friendly=%s)", entity_id, friendly)
+                    return True
+
         return False
 
     def _check_guests(self, states: list[dict]) -> bool:
