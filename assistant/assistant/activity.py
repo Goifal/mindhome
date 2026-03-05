@@ -22,6 +22,7 @@ Zustellmethoden:
 """
 
 import logging
+import re
 import time
 from datetime import datetime
 from typing import Optional
@@ -514,12 +515,73 @@ class ActivityEngine:
                     return False
         return True
 
-    # Muster fuer Auto-Discovery von TV/Media-Entities
-    _TV_PATTERNS = (
-        "tv", "fernseher", "television", "fire_tv", "firetv", "apple_tv",
-        "appletv", "chromecast", "roku", "shield", "samsung_tv", "lg_tv",
-        "sony_tv", "philips_tv", "bravia",
+    # --- Auto-Discovery: Muster-Tabellen (Word-Boundary-sicher) ---
+    # Regex-Patterns: \b sorgt dafuer, dass z.B. "pc" nicht in "space" matcht.
+
+    _TV_RE = re.compile(
+        r"\b(?:tv|fernseher|television|fire_tv|firetv|apple_tv|appletv"
+        r"|chromecast|roku|shield|samsung_tv|lg_tv|sony_tv|philips_tv|bravia)\b",
+        re.IGNORECASE,
     )
+    _MIC_RE = re.compile(
+        r"\b(?:mic|mikrofon|microphone|zoom|teams|call|telefonat"
+        r"|anruf|voip|sip|webex)\b",
+        re.IGNORECASE,
+    )
+    _BED_RE = re.compile(
+        r"\b(?:bed|bett|sleep|schlaf|matratze|mattress"
+        r"|occupancy_bed|bett_belegt|bed_occupancy)\b",
+        re.IGNORECASE,
+    )
+    _PC_RE = re.compile(
+        r"\b(?:pc|computer|rechner|desktop|workstation"
+        r"|laptop|notebook|mac_mini|imac)\b",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _auto_discover(states: list[dict], prefixes: tuple[str, ...],
+                       configured: list[str], pattern: re.Pattern,
+                       label: str, *,
+                       active_states: set[str] | None = None,
+                       inactive_states: set[str] | None = None) -> str:
+        """Generische Auto-Discovery fuer HA-Entities.
+
+        Durchsucht alle States mit passenden Entity-Prefixes nach aktiven
+        Entities, deren Name oder Friendly-Name zum Regex-Pattern passt.
+
+        Args:
+            states: HA-States Liste
+            prefixes: Entity-ID Prefixes (z.B. ("binary_sensor.",))
+            configured: Bereits konfigurierte Entity-IDs (werden uebersprungen)
+            pattern: Kompiliertes Regex-Pattern fuer Namensmatching
+            label: Log-Label (z.B. "TV", "Mic", "Bed", "PC")
+            active_states: States die als "aktiv" gelten (Whitelist)
+            inactive_states: States die als "inaktiv" gelten (Blacklist)
+                Genau eines von active_states/inactive_states muss gesetzt sein.
+
+        Returns:
+            entity_id des ersten Treffers oder "" wenn keiner gefunden.
+        """
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if not any(entity_id.startswith(p) for p in prefixes):
+                continue
+            if entity_id in configured:
+                continue
+            s = state.get("state", "off").lower()
+            if active_states is not None and s not in active_states:
+                continue
+            if inactive_states is not None and s in inactive_states:
+                continue
+            friendly = (state.get("attributes", {}).get("friendly_name") or "")
+            if pattern.search(entity_id) or pattern.search(friendly):
+                logger.info(
+                    "%s auto-discovered: %s (state=%s, friendly=%s)",
+                    label, entity_id, s, friendly,
+                )
+                return entity_id
+        return ""
 
     def _check_media_playing(self, states: list[dict]) -> str:
         """Prueft ob ein konfigurierter Media Player aktiv ist (TV, Film).
@@ -544,34 +606,12 @@ class ActivityEngine:
                 if s not in inactive_states:
                     return entity_id
 
-        # 2. Fallback: Auto-Discovery aller media_player.* mit TV-Mustern
-        for state in states:
-            entity_id = state.get("entity_id", "")
-            if not entity_id.startswith("media_player."):
-                continue
-            if entity_id in self.media_players:
-                continue  # Bereits oben geprueft
-            s = state.get("state", "off").lower()
-            if s in inactive_states:
-                continue
-            # Entity-ID oder Friendly-Name auf TV-Muster pruefen
-            eid_lower = entity_id.lower()
-            friendly = (state.get("attributes", {}).get("friendly_name") or "").lower()
-            for pattern in self._TV_PATTERNS:
-                if pattern in eid_lower or pattern in friendly:
-                    logger.info(
-                        "TV auto-discovered: %s (state=%s, friendly=%s)",
-                        entity_id, s, friendly,
-                    )
-                    return entity_id
-
-        return ""
-
-    # Muster fuer Auto-Discovery von Mikrofon/Call-Entities
-    _MIC_PATTERNS = (
-        "mic", "mikrofon", "microphone", "zoom", "teams", "call",
-        "telefonat", "anruf", "voip", "sip", "webex",
-    )
+        # 2. Fallback: Auto-Discovery
+        return self._auto_discover(
+            states, ("media_player.",), self.media_players,
+            pattern=self._TV_RE, label="TV",
+            inactive_states=inactive_states,
+        )
 
     def _check_in_call(self, states: list[dict]) -> bool:
         """Prueft ob ein Mikrofon aktiv ist (Call/Zoom).
@@ -579,36 +619,14 @@ class ActivityEngine:
         Fallback: Wenn kein konfigurierter Sensor aktiv ist, werden alle
         binary_sensor.* mit Mikrofon/Call-Mustern im Namen geprueft.
         """
-        # 1. Konfigurierte Sensoren pruefen
         for state in states:
-            entity_id = state.get("entity_id", "")
-            if entity_id in self.mic_sensors:
+            if state.get("entity_id", "") in self.mic_sensors:
                 if state.get("state") == "on":
                     return True
-
-        # 2. Fallback: Auto-Discovery
-        for state in states:
-            entity_id = state.get("entity_id", "")
-            if not entity_id.startswith("binary_sensor."):
-                continue
-            if entity_id in self.mic_sensors:
-                continue
-            if state.get("state") != "on":
-                continue
-            eid_lower = entity_id.lower()
-            friendly = (state.get("attributes", {}).get("friendly_name") or "").lower()
-            for pattern in self._MIC_PATTERNS:
-                if pattern in eid_lower or pattern in friendly:
-                    logger.info("Mic auto-discovered: %s (friendly=%s)", entity_id, friendly)
-                    return True
-
-        return False
-
-    # Muster fuer Auto-Discovery von Bett/Schlaf-Sensoren
-    _BED_PATTERNS = (
-        "bed", "bett", "sleep", "schlaf", "matratze", "mattress",
-        "occupancy_bed", "bett_belegt", "bed_occupancy",
-    )
+        return bool(self._auto_discover(
+            states, ("binary_sensor.",), self.mic_sensors,
+            pattern=self._MIC_RE, label="Mic", active_states={"on"},
+        ))
 
     def _check_bed_occupied(self, states: list[dict]) -> bool:
         """Prueft ob der Bettsensor belegt ist (reines Sensor-Signal).
@@ -616,29 +634,14 @@ class ActivityEngine:
         Fallback: Wenn kein konfigurierter Sensor aktiv ist, werden alle
         binary_sensor.* mit Bett/Schlaf-Mustern im Namen geprueft.
         """
-        # 1. Konfigurierte Sensoren pruefen
         for state in states:
             if state.get("entity_id", "") in self.bed_sensors:
                 if state.get("state") == "on":
                     return True
-
-        # 2. Fallback: Auto-Discovery
-        for state in states:
-            entity_id = state.get("entity_id", "")
-            if not entity_id.startswith("binary_sensor."):
-                continue
-            if entity_id in self.bed_sensors:
-                continue
-            if state.get("state") != "on":
-                continue
-            eid_lower = entity_id.lower()
-            friendly = (state.get("attributes", {}).get("friendly_name") or "").lower()
-            for pattern in self._BED_PATTERNS:
-                if pattern in eid_lower or pattern in friendly:
-                    logger.info("Bed sensor auto-discovered: %s (friendly=%s)", entity_id, friendly)
-                    return True
-
-        return False
+        return bool(self._auto_discover(
+            states, ("binary_sensor.",), self.bed_sensors,
+            pattern=self._BED_RE, label="Bed", active_states={"on"},
+        ))
 
     def _check_sleeping(self, states: list[dict]) -> bool:
         """Prueft ob der Benutzer schlaeft.
@@ -647,27 +650,15 @@ class ActivityEngine:
         Bett belegt + TV an = NICHT sleeping (fernsehen im Bett) → wird WATCHING.
         Nacht + alle Lichter aus = wahrscheinlich schlaeft (Fallback ohne Bettsensor).
         """
-        # PC aktiv oder Media spielt → User ist wach, auch im Bett
         if self._check_pc_active(states) or self._check_media_playing(states):
             return False
-
-        # Bett belegt + kein TV/PC → schlaeft
         if self._check_bed_occupied(states):
             return True
-
-        # Fallback: Nacht + alle Lichter aus (fuer Installationen ohne Bettsensor)
         now = datetime.now()
         is_night = now.hour >= self.night_start or now.hour < self.night_end
         if is_night:
             return self._check_lights_off(states)
-
         return False
-
-    # Muster fuer Auto-Discovery von PC/Computer-Entities
-    _PC_PATTERNS = (
-        "pc", "computer", "rechner", "desktop", "workstation",
-        "laptop", "notebook", "mac_mini", "imac",
-    )
 
     def _check_pc_active(self, states: list[dict]) -> bool:
         """Prueft ob der PC aktiv ist (Arbeit/Fokus).
@@ -675,32 +666,14 @@ class ActivityEngine:
         Fallback: Wenn kein konfigurierter Sensor aktiv ist, werden alle
         binary_sensor.* und switch.* mit PC/Computer-Mustern im Namen geprueft.
         """
-        active_states = {"on", "active"}
-
-        # 1. Konfigurierte Sensoren pruefen
         for state in states:
-            entity_id = state.get("entity_id", "")
-            if entity_id in self.pc_sensors:
-                if state.get("state") in active_states:
+            if state.get("entity_id", "") in self.pc_sensors:
+                if state.get("state") in ("on", "active"):
                     return True
-
-        # 2. Fallback: Auto-Discovery
-        for state in states:
-            entity_id = state.get("entity_id", "")
-            if not (entity_id.startswith("binary_sensor.") or entity_id.startswith("switch.")):
-                continue
-            if entity_id in self.pc_sensors:
-                continue
-            if state.get("state") not in active_states:
-                continue
-            eid_lower = entity_id.lower()
-            friendly = (state.get("attributes", {}).get("friendly_name") or "").lower()
-            for pattern in self._PC_PATTERNS:
-                if pattern in eid_lower or pattern in friendly:
-                    logger.info("PC auto-discovered: %s (friendly=%s)", entity_id, friendly)
-                    return True
-
-        return False
+        return bool(self._auto_discover(
+            states, ("binary_sensor.", "switch."), self.pc_sensors,
+            pattern=self._PC_RE, label="PC", active_states={"on", "active"},
+        ))
 
     def _check_guests(self, states: list[dict]) -> bool:
         """Prueft ob echte Gaeste anwesend sind (nicht nur Haushaltsmitglieder)."""
