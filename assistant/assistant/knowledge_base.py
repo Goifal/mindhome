@@ -9,6 +9,7 @@ Phase 11.1: Wissensdatenbank
 - Alles lokal, kein Internet noetig
 """
 
+import asyncio
 import hashlib
 import logging
 from datetime import datetime
@@ -40,6 +41,9 @@ class KnowledgeBase:
         self._chroma_client = None
         self._knowledge_dir: Optional[Path] = None
         self._ingested_hashes: set[str] = set()
+        self._file_mtimes: dict[str, float] = {}  # filepath -> last mtime
+        self._watch_task: Optional[asyncio.Task] = None
+        self._watch_running = False
 
     async def initialize(self):
         """Initialisiert die ChromaDB Collection und laedt Dokumente."""
@@ -87,6 +91,89 @@ class KnowledgeBase:
         # Auto-Ingestion beim Start
         if kb_config.get("auto_ingest", True):
             await self.ingest_all()
+
+        # Aktuelle Datei-Zeitstempel merken fuer Watch
+        self._snapshot_file_mtimes()
+
+        # Auto-Watch starten: Prueeft regelmaessig auf neue/geaenderte Dateien
+        watch_interval = kb_config.get("watch_interval_seconds", 120)
+        if watch_interval > 0:
+            self._watch_running = True
+            self._watch_task = asyncio.create_task(
+                self._watch_loop(watch_interval)
+            )
+            logger.info(
+                "Knowledge Base Auto-Watch aktiv (alle %ds)", watch_interval
+            )
+
+    async def stop(self):
+        """Stoppt den Auto-Watch Task."""
+        self._watch_running = False
+        if self._watch_task:
+            self._watch_task.cancel()
+            try:
+                await self._watch_task
+            except asyncio.CancelledError:
+                pass
+
+    def _snapshot_file_mtimes(self):
+        """Speichert aktuelle mtime aller Dateien im Wissens-Verzeichnis."""
+        if not self._knowledge_dir:
+            return
+        self._file_mtimes.clear()
+        for ext in SUPPORTED_EXTENSIONS:
+            for filepath in self._knowledge_dir.rglob(f"*{ext}"):
+                try:
+                    self._file_mtimes[str(filepath)] = filepath.stat().st_mtime
+                except OSError:
+                    pass
+
+    async def _watch_loop(self, interval: int):
+        """Prueft regelmaessig auf neue oder geaenderte Dateien und ingestiert sie."""
+        while self._watch_running:
+            try:
+                await asyncio.sleep(interval)
+                if not self._knowledge_dir or not self.chroma_collection:
+                    continue
+
+                new_or_changed = []
+                current_files: dict[str, float] = {}
+
+                for ext in SUPPORTED_EXTENSIONS:
+                    for filepath in self._knowledge_dir.rglob(f"*{ext}"):
+                        try:
+                            mtime = filepath.stat().st_mtime
+                        except OSError:
+                            continue
+                        fpath = str(filepath)
+                        current_files[fpath] = mtime
+
+                        old_mtime = self._file_mtimes.get(fpath)
+                        if old_mtime is None or mtime > old_mtime:
+                            new_or_changed.append(filepath)
+
+                if new_or_changed:
+                    total = 0
+                    for filepath in new_or_changed:
+                        # Bei geaenderten Dateien: alte Chunks loeschen, neu einlesen
+                        if str(filepath) in self._file_mtimes:
+                            await self.delete_source_chunks(filepath.name)
+                        chunks = await self.ingest_file(filepath)
+                        total += chunks
+
+                    if total > 0:
+                        logger.info(
+                            "Knowledge Base Auto-Watch: %d Datei(en) -> %d neue Chunks",
+                            len(new_or_changed), total,
+                        )
+
+                self._file_mtimes = current_files
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("Fehler im Knowledge-Watch-Loop: %s", e)
+                await asyncio.sleep(30)
 
     def _load_ingested_hashes(self):
         """Laedt die Hashes bereits ingestierter Chunks."""
@@ -220,7 +307,12 @@ class KnowledgeBase:
         return new_chunks
 
     async def search(self, query: str, limit: int = 3) -> list[dict]:
-        """Durchsucht die Wissensdatenbank semantisch."""
+        """Durchsucht die Wissensdatenbank semantisch mit Multi-Query und Reranking.
+
+        1. Erzeugt zusaetzliche Query-Varianten (Keyword-Extraktion + Umformulierung)
+        2. Fuehrt parallele Suchen durch
+        3. Merged und rerankt die Ergebnisse (dedupliziert, bestes Score gewinnt)
+        """
         if not self.chroma_collection:
             return []
 
@@ -228,20 +320,28 @@ class KnowledgeBase:
         max_distance = kb_config.get("max_distance", 1.2)
 
         try:
-            results = self.chroma_collection.query(
-                query_texts=[query],
-                n_results=limit,
-            )
+            # Multi-Query: Original + Keyword-Variante fuer breitere Abdeckung
+            queries = self._expand_query(query)
+            # Mehr Kandidaten holen, spaeter auf limit kuerzen
+            fetch_per_query = max(limit * 2, 6)
 
-            hits = []
-            if results and results.get("documents") and results["documents"][0]:
+            all_hits: dict[str, dict] = {}  # content_hash -> best hit
+
+            for q in queries:
+                results = self.chroma_collection.query(
+                    query_texts=[q],
+                    n_results=fetch_per_query,
+                )
+
+                if not results or not results.get("documents") or not results["documents"][0]:
+                    continue
+
                 for i, doc in enumerate(results["documents"][0]):
                     distance = (
                         results["distances"][0][i]
                         if results.get("distances") and results["distances"][0]
                         else 2.0
                     )
-                    # Nur relevante Treffer
                     if distance > max_distance:
                         continue
 
@@ -250,17 +350,76 @@ class KnowledgeBase:
                         if results.get("metadatas") and results["metadatas"][0]
                         else {}
                     )
-                    hits.append({
-                        "content": doc,
-                        "source": meta.get("source_file", "unbekannt"),
-                        "relevance": round(1.0 - min(distance, 1.0), 2),
-                        "distance": round(distance, 3),
-                    })
+                    content_hash = meta.get("content_hash", doc[:50])
 
-            return hits
+                    # Keyword-Boost: Wenn Query-Woerter im Dokument vorkommen
+                    keyword_bonus = self._keyword_overlap_bonus(query, doc)
+                    adjusted_distance = distance * (1.0 - keyword_bonus * 0.3)
+
+                    relevance = round(1.0 - min(adjusted_distance, 1.0), 2)
+
+                    # Bestes Ergebnis pro Chunk behalten
+                    if content_hash not in all_hits or all_hits[content_hash]["relevance"] < relevance:
+                        all_hits[content_hash] = {
+                            "content": doc,
+                            "source": meta.get("source_file", "unbekannt"),
+                            "relevance": relevance,
+                            "distance": round(adjusted_distance, 3),
+                        }
+
+            # Nach Relevanz sortieren, Top-N zurueckgeben
+            ranked = sorted(all_hits.values(), key=lambda h: h["relevance"], reverse=True)
+            return ranked[:limit]
         except Exception as e:
             logger.error("Fehler bei Knowledge-Suche: %s", e)
             return []
+
+    @staticmethod
+    def _expand_query(query: str) -> list[str]:
+        """Erzeugt Query-Varianten fuer breitere Suche.
+
+        - Original-Query
+        - Nur Schluesselwoerter (Stoppwoerter entfernt)
+        """
+        queries = [query]
+
+        # Stoppwoerter entfernen fuer Keyword-Query
+        stopwords = {
+            "ich", "du", "er", "sie", "es", "wir", "ihr", "mein", "dein",
+            "das", "die", "der", "den", "dem", "des", "ein", "eine", "einen",
+            "ist", "sind", "war", "hat", "haben", "wird", "kann", "soll",
+            "und", "oder", "aber", "doch", "wenn", "weil", "dass", "ob",
+            "nicht", "kein", "keine", "mir", "mich", "dir", "dich",
+            "was", "wie", "wo", "wer", "wann", "warum",
+            "bitte", "mal", "noch", "auch", "schon", "ja", "nein",
+            "in", "im", "am", "an", "auf", "fuer", "von", "zu", "mit",
+            "ueber", "unter", "nach", "vor", "bei", "aus", "um",
+        }
+        words = query.lower().split()
+        keywords = [w for w in words if w not in stopwords and len(w) > 2]
+
+        if keywords and len(keywords) < len(words):
+            keyword_query = " ".join(keywords)
+            if keyword_query != query.lower():
+                queries.append(keyword_query)
+
+        return queries
+
+    @staticmethod
+    def _keyword_overlap_bonus(query: str, document: str) -> float:
+        """Berechnet Bonus basierend auf exaktem Keyword-Match im Dokument.
+
+        Returns 0.0-1.0 (Anteil der Query-Woerter die im Dokument vorkommen).
+        """
+        query_words = set(query.lower().split())
+        # Nur substantielle Woerter
+        query_words = {w for w in query_words if len(w) > 2}
+        if not query_words:
+            return 0.0
+
+        doc_lower = document.lower()
+        matches = sum(1 for w in query_words if w in doc_lower)
+        return matches / len(query_words)
 
     async def get_stats(self) -> dict:
         """Gibt Statistiken ueber die Wissensdatenbank zurueck."""
