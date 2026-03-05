@@ -804,7 +804,7 @@ class PersonalityEngine:
 
         person_key = (person or "default").lower().strip()
         redis_key = f"mha:personality:gag_history:{person_key}"
-        title = get_person_title()
+        title = get_person_title(person)
 
         try:
             # Letzte 10 Gags laden

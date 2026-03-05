@@ -306,8 +306,6 @@ class OllamaClient:
         elif tools and not profile.supports_think_with_tools:
             # Modell kann Think+Tools nicht gleichzeitig
             think_enabled = False
-        elif model == settings.model_deep and settings.model_deep == settings.model_smart:
-            think_enabled = False
         else:
             think_enabled = None  # Ollama/Modell entscheidet
 
@@ -399,8 +397,6 @@ class OllamaClient:
         if think is not None:
             think_enabled = think
         elif model == settings.model_fast:
-            think_enabled = False
-        elif model == settings.model_deep and settings.model_deep == settings.model_smart:
             think_enabled = False
         else:
             think_enabled = None
