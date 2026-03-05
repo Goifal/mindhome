@@ -3200,14 +3200,15 @@ class ProactiveManager:
             _is_fallback = current_minutes > (open_min + tolerance)
             if await self._is_bed_occupied(states):
                 _skip_reason = "Bett belegt"
-            elif cover_cfg.get("wakeup_sun_check", True) and not _is_fallback:
+            elif cover_cfg.get("wakeup_sun_check", True):
                 _sun = self._get_sun_data(states)
                 _min_elev = cover_cfg.get("wakeup_min_sun_elevation", -6)
                 _cur_elev = _sun.get("elevation", 0)
                 if _cur_elev < _min_elev:
+                    _remaining = open_min + fallback_max_min - current_minutes
                     _skip_reason = (
-                        f"zu dunkel (Sonnenhoehe {_cur_elev:.1f}° < {_min_elev}°, "
-                        f"Fallback in {open_min + fallback_max_min - current_minutes} Min)"
+                        f"zu dunkel (Sonnenhoehe {_cur_elev:.1f}° < {_min_elev}°"
+                        f"{f', Fallback in {_remaining} Min' if _remaining > 0 else ', Fallback abgelaufen'})"
                     )
             if _skip_reason:
                 logger.info("Cover-Zeitplan: Oeffnung uebersprungen — %s", _skip_reason)
