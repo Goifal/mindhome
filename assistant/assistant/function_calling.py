@@ -2082,67 +2082,21 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
-    # --- Phase 13.2: Self Automation ---
+    # --- Automationen (read-only) ---
     {
         "type": "function",
         "function": {
-            "name": "create_automation",
-            "description": "Erstellt eine neue Home Assistant Automation aus natuerlicher Sprache. Der User beschreibt was passieren soll, Jarvis generiert die Automation und fragt nach Bestaetigung.",
+            "name": "list_ha_automations",
+            "description": "Zeigt alle Home Assistant Automationen mit Triggern, Bedingungen und Aktionen an. Nur Lesen — Jarvis kann keine Automationen erstellen, bearbeiten oder loeschen. Nutze dies wenn der User fragt: 'Welche Automationen habe ich?', 'Was macht die Automation XY?', 'Zeig mir meine Automationen'.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "description": {
+                    "filter": {
                         "type": "string",
-                        "description": "Natuerlichsprachliche Beschreibung der Automation (z.B. 'Wenn ich nach Hause komme, mach das Licht an')",
+                        "description": "Optionaler Suchbegriff zum Filtern nach Name/Alias (z.B. 'licht', 'heizung')",
                     },
                 },
-                "required": ["description"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "confirm_automation",
-            "description": "Bestaetigt eine vorgeschlagene Automation und aktiviert sie in Home Assistant.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "pending_id": {
-                        "type": "string",
-                        "description": "ID der ausstehenden Automation (wird bei create_automation zurueckgegeben)",
-                    },
-                },
-                "required": ["pending_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_jarvis_automations",
-            "description": "Zeigt alle von Jarvis erstellten Automationen an.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
                 "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_jarvis_automation",
-            "description": "Loescht eine von Jarvis erstellte Automation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "automation_id": {
-                        "type": "string",
-                        "description": "ID der Automation (z.B. jarvis_abc12345_20260218)",
-                    },
-                },
-                "required": ["automation_id"],
             },
         },
     },
@@ -2983,9 +2937,8 @@ class FunctionExecutor:
         "get_calendar_events",
         "create_calendar_event", "delete_calendar_event",
         "reschedule_calendar_event", "set_presence_mode", "edit_config",
-        "manage_shopping_list", "list_capabilities", "create_automation",
-        "confirm_automation", "list_jarvis_automations",
-        "delete_jarvis_automation", "manage_inventory",
+        "manage_shopping_list", "list_capabilities", "list_ha_automations",
+        "manage_inventory",
         "set_timer", "cancel_timer", "get_timer_status",
         "set_reminder", "set_wakeup_alarm", "cancel_alarm", "get_alarms",
         "broadcast", "send_intercom",
@@ -6268,11 +6221,9 @@ class FunctionExecutor:
                 "Feedback-basierte Optimierung proaktiver Meldungen",
             ],
             "automationen": [
-                "Automationen aus natuerlicher Sprache erstellen ('Wenn ich nach Hause komme, Licht an')",
-                "Sicherheits-Whitelist (nur erlaubte Services)",
-                "Vorschau + Bestaetigung vor Aktivierung",
-                "Jarvis-Automationen auflisten und loeschen",
-                "Kill-Switch: Alle Jarvis-Automationen deaktivieren",
+                "Alle HA-Automationen anzeigen mit Triggern, Bedingungen und Aktionen (read-only)",
+                "Nach Name/Alias filtern",
+                "Hinweis: Automationen koennen nur in Home Assistant bearbeitet werden",
             ],
         }
 
@@ -6287,64 +6238,49 @@ class FunctionExecutor:
         return {"success": True, "message": "\n".join(lines)}
 
     # ------------------------------------------------------------------
-    # Phase 13.2: Self Automation
+    # Automationen (read-only)
     # ------------------------------------------------------------------
 
-    async def _exec_create_automation(self, args: dict) -> dict:
-        """Phase 13.2: Erstellt eine Automation aus natuerlicher Sprache."""
-        import assistant.main as main_module
-        brain = main_module.brain
-        try:
-            self_auto = brain.self_automation
-        except AttributeError:
-            return {"success": False, "message": "Self-Automation Modul nicht verfuegbar."}
-
-        description = args.get("description", "")
-        if not description:
-            return {"success": False, "message": "Keine Beschreibung angegeben."}
+    async def _exec_list_ha_automations(self, args: dict) -> dict:
+        """Listet alle HA-Automationen mit Triggern, Bedingungen und Aktionen (read-only)."""
+        search = (args.get("filter") or "").lower()
 
         try:
-            return await self_auto.generate_automation(description)
-        except Exception as e:
-            return {"success": False, "message": f"Automation-Erstellung fehlgeschlagen: {e}"}
-
-    async def _exec_confirm_automation(self, args: dict) -> dict:
-        """Phase 13.2: Bestaetigt eine ausstehende Automation."""
-        import assistant.main as main_module
-        brain = main_module.brain
-        try:
-            self_auto = brain.self_automation
-        except AttributeError:
-            return {"success": False, "message": "Self-Automation Modul nicht verfuegbar."}
-
-        pending_id = args.get("pending_id", "")
-        if not pending_id:
-            return {"success": False, "message": "Keine Pending-ID angegeben."}
-
-        try:
-            return await self_auto.confirm_automation(pending_id)
-        except Exception as e:
-            return {"success": False, "message": f"Automation-Bestaetigung fehlgeschlagen: {e}"}
-
-    async def _exec_list_jarvis_automations(self, args: dict) -> dict:
-        """Phase 13.2: Listet alle Jarvis-Automationen auf."""
-        import assistant.main as main_module
-        brain = main_module.brain
-        try:
-            return await brain.self_automation.list_jarvis_automations()
+            automations = await self.ha.get_automations()
         except Exception as e:
             return {"success": False, "message": f"Automationen laden fehlgeschlagen: {e}"}
 
-    async def _exec_delete_jarvis_automation(self, args: dict) -> dict:
-        """Phase 13.2: Loescht eine Jarvis-Automation."""
-        import assistant.main as main_module
-        brain = main_module.brain
+        results = []
+        for auto in automations:
+            alias = auto.get("alias") or auto.get("attributes", {}).get("friendly_name") or auto.get("id", "?")
+            if search and search not in str(alias).lower():
+                continue
 
-        automation_id = args.get("automation_id", "")
-        if not automation_id:
-            return {"success": False, "message": "Keine Automation-ID angegeben."}
+            entry = {
+                "id": auto.get("id", auto.get("entity_id", "?")),
+                "alias": alias,
+            }
+            # Config-Felder (wenn von /api/config/automation/config)
+            for key in ("trigger", "condition", "action", "mode", "description"):
+                if key in auto:
+                    entry[key] = auto[key]
 
-        return await brain.self_automation.delete_jarvis_automation(automation_id)
+            # State-Felder (wenn aus get_states)
+            attrs = auto.get("attributes", {})
+            if "last_triggered" in attrs:
+                entry["last_triggered"] = attrs["last_triggered"]
+            state = auto.get("state")
+            if state:
+                entry["enabled"] = state == "on"
+
+            results.append(entry)
+
+        return {
+            "success": True,
+            "count": len(results),
+            "automations": results,
+            "hinweis": "Nur Lesen — Automationen koennen nicht ueber Jarvis erstellt, bearbeitet oder geloescht werden.",
+        }
 
     @staticmethod
     def _normalize_name(text: str) -> str:
