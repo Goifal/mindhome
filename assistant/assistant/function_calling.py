@@ -2976,7 +2976,6 @@ def get_assistant_tools() -> list:
 
 def _build_activate_scene_tool(base_tool: dict) -> dict:
     """Baut activate_scene Tool mit Trigger-Map aus Settings."""
-    import copy
     tool = copy.deepcopy(base_tool)
     trigger_map = yaml_config.get("scenes", {}).get("trigger_map", {})
     if trigger_map:
@@ -2993,9 +2992,6 @@ def _build_activate_scene_tool(base_tool: dict) -> dict:
             )
     return tool
 
-
-# ASSISTANT_TOOLS: Immer die dynamische Version verwenden
-ASSISTANT_TOOLS = get_assistant_tools()
 
 
 class FunctionExecutor:
