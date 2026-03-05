@@ -3632,7 +3632,7 @@ function sceneTriggersChanged(sceneId, value) {
 function addCustomScene() {
   const id = 'szene_' + Date.now();
   const scenes = _getScenes();
-  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, custom: true});
+  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, triggers: [], custom: true});
   _saveScenes(scenes);
   renderCurrentTab();
 }

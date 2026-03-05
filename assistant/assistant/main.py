@@ -6922,12 +6922,18 @@ async def ui_list_automations(token: str = ""):
             pass
 
         # Jarvis-Automationen
-        jarvis_result = await brain.self_automation.list_jarvis_automations()
+        jarvis_automations = []
+        if hasattr(brain, "self_automation") and brain.self_automation:
+            try:
+                jarvis_result = await brain.self_automation.list_jarvis_automations()
+                jarvis_automations = jarvis_result.get("automations", [])
+            except Exception:
+                pass
 
         return {
             "ha_automations": ha_automations,
             "ha_count": len(ha_automations),
-            "jarvis_automations": jarvis_result.get("automations", []),
+            "jarvis_automations": jarvis_automations,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
@@ -6937,6 +6943,8 @@ async def ui_list_automations(token: str = ""):
 async def ui_delete_jarvis_automation(config_id: str, token: str = ""):
     """Loescht eine Jarvis-Automation."""
     _check_token(token)
+    if not hasattr(brain, "self_automation") or not brain.self_automation:
+        raise HTTPException(status_code=503, detail="Self-Automation nicht verfuegbar")
     try:
         result = await brain.self_automation.delete_jarvis_automation(config_id)
         return result
