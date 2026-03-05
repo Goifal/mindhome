@@ -596,7 +596,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 
 /* Scene Configurator */
 .scene-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; }
-.scene-card { border:1px solid rgba(0,212,255,0.1); border-radius:var(--radius-sm); background:var(--bg-card); overflow:hidden; transition:all var(--fast); }
+.scene-card { border:1px solid rgba(0,212,255,0.1); border-radius:var(--radius-sm); background:var(--bg-card); overflow:visible; transition:all var(--fast); }
 .scene-card:hover { border-color:rgba(0,212,255,0.25); }
 .scene-card.scene-silence { border-left:3px solid var(--warning, #f59e0b); }
 .scene-card-hdr { display:flex; align-items:center; gap:8px; padding:10px 12px 6px; }
@@ -621,6 +621,8 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 @media (max-width:640px) {
   .scene-grid { grid-template-columns:1fr; }
   .scene-card-body { gap:4px; }
+  .scene-field { flex-wrap:wrap; }
+  .scene-field-label { min-width:auto; width:100%; margin-bottom:2px; }
 }
 
 /* Notification Matrix Table */

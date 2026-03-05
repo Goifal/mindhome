@@ -45,9 +45,9 @@ class DiagnosticsEngine:
         self.enabled = diag_cfg.get("enabled", True)
         self.check_interval = int(diag_cfg.get("check_interval_minutes", 30))
         self.battery_threshold = int(diag_cfg.get("battery_warning_threshold", 20))
-        self.stale_minutes = int(diag_cfg.get("stale_sensor_minutes", 120))
+        self.stale_minutes = int(diag_cfg.get("stale_sensor_minutes", 360))
         self.offline_minutes = int(diag_cfg.get("offline_threshold_minutes", 30))
-        self.alert_cooldown = int(diag_cfg.get("alert_cooldown_minutes", 60))
+        self.alert_cooldown = int(diag_cfg.get("alert_cooldown_minutes", 240))
 
         # Entity-Filter: Nur bestimmte Domains ueberwachen
         self.monitor_domains = diag_cfg.get("monitor_domains", [
@@ -173,7 +173,7 @@ class DiagnosticsEngine:
                             issue = {
                                 "entity_id": entity_id,
                                 "issue_type": "offline",
-                                "message": f"{friendly_name} offline seit {int(offline_mins)} Minuten",
+                                "message": f"{friendly_name} offline seit {self._format_duration(offline_mins)}",
                                 "severity": "warning",
                                 "minutes": int(offline_mins),
                             }
@@ -211,14 +211,16 @@ class DiagnosticsEngine:
                         if stale_mins >= self.stale_minutes:
                             # Nur bei Sensoren die sich normalerweise aendern
                             device_class = attrs.get("device_class", "")
+                            # Nur bei Sensoren die sich _regelmaessig_ aendern sollten
+                            # Energy/Power: Stabile Werte sind normal (z.B. Nacht)
                             if device_class in (
                                 "motion", "temperature", "humidity",
-                                "power", "energy", "battery",
+                                "battery",
                             ):
                                 issue = {
                                     "entity_id": entity_id,
                                     "issue_type": "stale",
-                                    "message": f"{friendly_name} seit {int(stale_mins)} Minuten unveraendert",
+                                    "message": f"{friendly_name} seit {self._format_duration(stale_mins)} unveraendert",
                                     "severity": "info",
                                     "minutes": int(stale_mins),
                                 }
@@ -272,6 +274,24 @@ class DiagnosticsEngine:
             "low_batteries": low_batteries,
             "domains": domains,
         }
+
+    @staticmethod
+    def _format_duration(minutes: float) -> str:
+        """Formatiert Minuten in lesbaren Text (z.B. '2 Stunden', '1 Tag')."""
+        mins = int(minutes)
+        if mins < 60:
+            return f"{mins} Minuten"
+        hours = mins // 60
+        if hours < 24:
+            remaining = mins % 60
+            if remaining > 0:
+                return f"{hours} Std {remaining} Min"
+            return f"{hours} Stunden" if hours != 1 else "1 Stunde"
+        days = hours // 24
+        remaining_hours = hours % 24
+        if remaining_hours > 0:
+            return f"{days} {'Tag' if days == 1 else 'Tagen'} und {remaining_hours} Std"
+        return f"{days} {'Tag' if days == 1 else 'Tagen'}"
 
     def _check_cooldown(self, alert_key: str) -> bool:
         """Prueft ob ein Alert gesendet werden darf (Cooldown)."""
