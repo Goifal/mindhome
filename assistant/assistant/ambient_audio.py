@@ -152,6 +152,7 @@ class AmbientAudioClassifier:
         self._notify_callback: Optional[Callable] = None
         self._running = False
         self._poll_task: Optional[asyncio.Task] = None
+        self._background_tasks: set[asyncio.Task] = set()
 
         # Redis fuer Persistenz
         self._redis = None
@@ -302,12 +303,16 @@ class AmbientAudioClassifier:
         if len(self._event_history) > self._max_history:
             self._event_history = self._event_history[-self._max_history:]
 
-        # Redis persistieren (async)
-        _t = asyncio.create_task(self._save_history())
-        _t.add_done_callback(
-            lambda t: logger.warning("_save_history fehlgeschlagen: %s", t.exception())
-            if t.exception() else None
-        )
+        # Redis persistieren (async) – Task in Set halten, damit GC ihn nicht einsammelt
+        task = asyncio.create_task(self._save_history())
+        self._background_tasks.add(task)
+
+        def _on_done(t: asyncio.Task) -> None:
+            self._background_tasks.discard(t)
+            if t.exception():
+                logger.warning("_save_history fehlgeschlagen: %s", t.exception())
+
+        task.add_done_callback(_on_done)
 
         # Callback ausfuehren (ProactiveManager benachrichtigen)
         if self._notify_callback:

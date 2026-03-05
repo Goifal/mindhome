@@ -14,12 +14,12 @@ from .semantic_memory import SemanticFact, SemanticMemory
 
 logger = logging.getLogger(__name__)
 
-# Prompt fuer Fakten-Extraktion (deutsch, knapp, strukturiert)
+# Prompt für Fakten-Extraktion (deutsch, knapp, strukturiert)
 EXTRACTION_PROMPT = """Du bist ein Fakten-Extraktor. Analysiere das folgende Gespraech und extrahiere ALLE relevanten Fakten.
 
 Kategorien:
 - preference: Vorlieben und Abneigungen (Temperatur, Licht, Musik, Essen, etc.)
-- person: Informationen ueber Personen (Namen, Beziehungen, Berufe)
+- person: Informationen über Personen (Namen, Beziehungen, Berufe)
 - habit: Gewohnheiten und Routinen (Aufstehzeit, Joggen, Arbeitszeiten)
 - health: Gesundheitsinformationen (Allergien, Unvertraeglichkeiten, Medikamente)
 - work: Arbeit und Projekte (Job, Meetings, Deadlines)
@@ -29,7 +29,7 @@ Regeln:
 - Nur KONKRETE Fakten extrahieren, keine Vermutungen.
 - Jeder Fakt als eigenstaendiger Satz.
 - Person identifizieren (wer sagt/meint das?).
-- Keine Fakten ueber das Smart Home System selbst.
+- Keine Fakten über das Smart Home System selbst.
 - Keine trivialen Befehle ("Licht an") als Fakten speichern.
 - NUR Fakten die langfristig relevant sind.
 - UNTERSCHEIDE momentane Zustaende von dauerhaften Praeferenzen:
@@ -37,7 +37,7 @@ Regeln:
   - "Ich mag es kuehl" = Praeferenz, speichern.
   - "Ich bin muede" = momentan, NICHT speichern.
   - "Ich stehe immer um 6 auf" = Gewohnheit, speichern.
-- Keine Gruesse, Danksagungen oder Smalltalk als Fakten.
+- Keine Grüße, Danksagungen oder Smalltalk als Fakten.
 
 Antworte NUR mit einem JSON-Array. Wenn keine Fakten vorhanden, antworte mit [].
 
@@ -56,23 +56,23 @@ Fakten (JSON-Array):"""
 INTENT_EXTRACTION_HINT = """
 Zusaetzlich zu Fakten: Suche nach ABSICHTEN und PLAENEN mit Zeitangaben.
 Wenn der User etwas plant (Besuch, Reise, Termin, Vorhaben), extrahiere das als:
-{"content": "Eltern kommen naechstes Wochenende zu Besuch", "category": "intent", "person": "Max"}
+{"content": "Eltern kommen nächstes Wochenende zu Besuch", "category": "intent", "person": "Max"}
 
 Nur echte Plaene mit erkennbarer Zeitangabe. Keine Vermutungen."""
 
-# Defaults — werden von yaml_config ueberschrieben
+# Defaults — werden von yaml_config überschrieben
 _DEFAULT_MIN_WORDS = 5
 _DEFAULT_MAX_LENGTH = 2000
 
 
-# Confidence pro Kategorie: Gesundheit/Sicherheit hoeher, Smalltalk niedriger
+# Confidence pro Kategorie: Gesundheit/Sicherheit höher, Smalltalk niedriger
 CATEGORY_CONFIDENCE = {
     "health": 0.9,      # Allergien, Medikamente -> sehr wichtig
     "person": 0.85,     # Beziehungen, Namen -> wichtig
     "preference": 0.75, # Vorlieben -> mittel-hoch
     "habit": 0.7,       # Gewohnheiten -> mittel
     "work": 0.7,        # Arbeit/Projekte -> mittel
-    "intent": 0.6,      # Absichten/Plaene -> kann sich aendern
+    "intent": 0.6,      # Absichten/Plaene -> kann sich ändern
     "general": 0.5,     # Sonstiges -> niedrig
 }
 
@@ -116,7 +116,7 @@ class MemoryExtractor:
         Returns:
             Liste der extrahierten und gespeicherten Fakten
         """
-        # Pruefen ob Extraktion sinnvoll / aktiviert ist
+        # Prüfen ob Extraktion sinnvoll / aktiviert ist
         if not self.enabled or not self._should_extract(user_text, assistant_response):
             return []
 
@@ -166,16 +166,16 @@ class MemoryExtractor:
     def _should_extract(self, user_text: str, assistant_response: str) -> bool:
         """Prueeft ob eine Extraktion sinnvoll ist.
 
-        Filtert Gruesse, Bestaetigungen, Einzelwort-Antworten und reine
+        Filtert Grüße, Bestaetigungen, Einzelwort-Antworten und reine
         Befehle heraus — diese enthalten keine speichernswerten Fakten.
         """
         text_lower = user_text.lower().strip().rstrip("!?.")
 
-        # Zu kurze Texte ueberspringen (erhoehtes Minimum)
+        # Zu kurze Texte überspringen (erhöhtes Minimum)
         if len(user_text.split()) < max(self._min_words, 5):
             return False
 
-        # Reine Befehle ueberspringen (kein Fakten-Potenzial)
+        # Reine Befehle überspringen (kein Fakten-Potenzial)
         command_only = {
             "licht an", "licht aus", "stopp", "stop", "pause",
             "weiter", "lauter", "leiser", "gute nacht", "guten morgen",
@@ -185,7 +185,7 @@ class MemoryExtractor:
         if text_lower in command_only:
             return False
 
-        # Gruesse und Smalltalk ueberspringen
+        # Grüße und Smalltalk überspringen
         greetings = {
             "hallo", "hi", "hey", "moin", "morgen", "abend", "tag",
             "guten tag", "guten abend", "guten morgen", "servus",
@@ -204,7 +204,7 @@ class MemoryExtractor:
         if text_lower in confirmations:
             return False
 
-        # Proaktive Meldungs-Marker ueberspringen
+        # Proaktive Meldungs-Marker überspringen
         if user_text.startswith("[proaktiv"):
             return False
 
@@ -217,7 +217,7 @@ class MemoryExtractor:
         person: str,
         context: Optional[dict] = None,
     ) -> str:
-        """Formatiert die Konversation fuer den Extraction-Prompt."""
+        """Formatiert die Konversation für den Extraction-Prompt."""
         parts = []
 
         if person and person != "unknown":
@@ -296,9 +296,9 @@ class MemoryExtractor:
     # ------------------------------------------------------------------
 
     _NEGATIVE_REACTION_PATTERNS = frozenset([
-        "nein", "lass das", "hoer auf", "nicht", "stop", "stopp",
+        "nein", "lass das", "hör auf", "nicht", "stop", "stopp",
         "will ich nicht", "nervt", "falsch", "schlecht", "weg damit",
-        "mach das rueckgaengig", "zurueck", "undo", "abbrechen",
+        "mach das rueckgaengig", "zurück", "undo", "abbrechen",
     ])
 
     async def extract_reaction(
@@ -313,7 +313,7 @@ class MemoryExtractor:
 
         Args:
             user_text: Was der User gesagt hat
-            action_performed: Welche Aktion ausgefuehrt wurde (z.B. "set_climate")
+            action_performed: Welche Aktion ausgeführt wurde (z.B. "set_climate")
             accepted: Ob die Reaktion positiv war
             person: Betroffene Person
             redis_client: Redis-Client (optional, wird intern gesetzt)
@@ -356,7 +356,7 @@ class MemoryExtractor:
     async def get_emotional_context(
         action_type: str, person: str, redis_client=None,
     ) -> Optional[str]:
-        """Gibt emotionalen Kontext fuer eine Aktion zurueck.
+        """Gibt emotionalen Kontext für eine Aktion zurück.
 
         Args:
             action_type: Typ der geplanten Aktion (z.B. "set_climate")
@@ -394,7 +394,7 @@ class MemoryExtractor:
                     f"EMOTIONALES GEDAECHTNIS: Der Benutzer hat bereits {negative_count}x "
                     f"negativ auf '{action_type}' reagiert "
                     f"(zuletzt: \"{last_negative_text}\"). "
-                    f"Frage lieber nach bevor du diese Aktion ausfuehrst."
+                    f"Frage lieber nach bevor du diese Aktion ausführst."
                 )
             return None
         except Exception as e:

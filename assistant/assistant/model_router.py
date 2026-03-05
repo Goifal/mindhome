@@ -58,10 +58,13 @@ class ModelRouter:
         # Keywords
         self.fast_keywords = models_config.get("fast_keywords", [
             "licht", "lampe", "temperatur", "heizung", "rollladen",
-            "jalousie", "szene", "alarm", "tuer", "gute nacht",
-            "guten morgen", "musik", "pause", "stopp", "stop",
+            "jalousie", "szene", "alarm", "tuer",
+            "musik", "pause", "stopp", "stop",
             "leiser", "lauter", "an", "aus", "schalte", "mach",
         ])
+        # Greetings/Smalltalk gehoeren NICHT ins Fast-Routing — sie brauchen
+        # das Smart-Modell fuer JARVIS-Persoenlichkeit.
+        # "guten morgen", "gute nacht" entfernt (jetzt ans LLM statt Shortcut).
 
         self.deep_keywords = models_config.get("deep_keywords", [
             "erklaer", "erklaere", "warum genau", "im detail",

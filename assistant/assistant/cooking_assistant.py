@@ -1,10 +1,10 @@
 """
-MindHome Koch-Assistent — Schritt-fuer-Schritt Kochunterstuetzung.
+MindHome Koch-Assistent — Schritt-für-Schritt Kochunterstuetzung.
 
 Features:
 - Rezept-Generierung via LLM (Deep-Model)
-- Schritt-fuer-Schritt Navigation per Sprache
-- Software-Timer (kein HA-Timer noetig)
+- Schritt-für-Schritt Navigation per Sprache
+- Software-Timer (kein HA-Timer nötig)
 - Portionen anpassen
 - Praeferenzen/Allergien aus Semantic Memory
 - Rezepte im Gedaechtnis speichern
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CookingTimer:
-    """Ein Software-Timer fuer Koch-Schritte."""
+    """Ein Software-Timer für Koch-Schritte."""
     label: str
     duration_seconds: int
     started_at: float = 0.0
@@ -99,27 +99,27 @@ class CookingSession:
 
 # Koch-Intent Erkennung
 COOKING_START_TRIGGERS = [
-    "ich will", "ich moechte", "ich möchte", "lass uns", "wir kochen",
+    "ich will", "ich möchte", "ich möchte", "lass uns", "wir kochen",
     "wir backen", "hilf mir", "ich koche", "ich backe",
 ]
 
 COOKING_KEYWORDS = [
     "kochen", "backen", "zubereiten", "braten", "grillen",
-    "rezept fuer", "rezept für",
+    "rezept für", "rezept für",
     "wie mache ich", "wie macht man", "wie bereite ich",
     "wie koche ich", "wie backe ich", "wie brate ich",
 ]
 
 # Navigation per Sprache
-NAV_NEXT = ["weiter", "naechster schritt", "nächster schritt", "next", "und dann",
+NAV_NEXT = ["weiter", "nächster schritt", "nächster schritt", "next", "und dann",
             "was kommt jetzt", "wie gehts weiter"]
-NAV_PREV = ["zurueck", "zurück", "vorheriger schritt", "nochmal den letzten"]
+NAV_PREV = ["zurück", "zurück", "vorheriger schritt", "nochmal den letzten"]
 NAV_REPEAT = ["nochmal", "wiederhole", "wie war das", "sag das nochmal",
               "repeat", "bitte nochmal"]
-NAV_STATUS = ["wo bin ich", "welcher schritt", "status", "uebersicht", "übersicht"]
+NAV_STATUS = ["wo bin ich", "welcher schritt", "status", "übersicht", "übersicht"]
 NAV_TIMER = ["timer", "stell timer", "stell einen timer", "weck mich",
              "erinner mich"]
-NAV_TIMER_CHECK = ["wie lange noch", "timer status", "laeuft der timer",
+NAV_TIMER_CHECK = ["wie lange noch", "timer status", "läuft der timer",
                    "läuft der timer"]
 NAV_STOP = ["stop kochen", "stopp kochen", "abbrechen", "koch session beenden",
             "fertig kochen", "ich bin fertig", "koch modus beenden",
@@ -128,7 +128,7 @@ NAV_STOP = ["stop kochen", "stopp kochen", "abbrechen", "koch session beenden",
             "kochen beende", "beenden"]
 NAV_INGREDIENTS = ["zutaten", "was brauche ich", "einkaufsliste",
                    "welche zutaten"]
-NAV_PORTIONS = ["fuer", "für", "portionen", "personen"]
+NAV_PORTIONS = ["für", "für", "portionen", "personen"]
 NAV_SAVE = ["merk dir das rezept", "rezept speichern", "speichere das rezept",
             "merk dir dieses rezept"]
 
@@ -152,14 +152,14 @@ WICHTIG: Antworte NUR im folgenden JSON-Format, KEIN anderer Text:
 }}
 
 Regeln:
-- Klare, kurze Schritte (1-2 Saetze pro Schritt)
+- Klare, kurze Schritte (1-2 Sätze pro Schritt)
 - timer_minutes nur wenn der Schritt eine Wartezeit hat (sonst null)
 - Mengenangaben in metrischen Einheiten (Gramm, Liter, Essloeffel)
 - Maximal {max_steps} Schritte
 - Portionen: {portions}
 {preferences}
 
-Erstelle das Rezept fuer: {dish}"""
+Erstelle das Rezept für: {dish}"""
 
 
 STORED_RECIPE_PARSE_PROMPT = """Du bist ein Koch-Assistent. Du hast ein bestehendes Rezept erhalten.
@@ -182,10 +182,10 @@ Bestehendes Rezept:
 
 
 class CookingAssistant:
-    """Koch-Assistent mit Schritt-fuer-Schritt Fuehrung."""
+    """Koch-Assistent mit Schritt-für-Schritt Fuehrung."""
 
     REDIS_SESSION_KEY = "mha:cooking:session"
-    REDIS_SESSION_TTL = 6 * 3600  # 6h — Session ueberlebt Neustart
+    REDIS_SESSION_TTL = 6 * 3600  # 6h — Session überlebt Neustart
 
     def __init__(self, ollama_client, semantic_memory=None):
         self.ollama = ollama_client
@@ -205,13 +205,13 @@ class CookingAssistant:
         self.timer_notify_tts = cook_cfg.get("timer_notify_tts", True)
 
     async def initialize(self, redis_client=None):
-        """Initialisiert mit Redis und laedt ggf. eine gespeicherte Session."""
+        """Initialisiert mit Redis und lädt ggf. eine gespeicherte Session."""
         self.redis = redis_client
         if self.redis:
             await self._restore_session()
 
     def set_notify_callback(self, callback):
-        """Setzt den Callback fuer Timer-Benachrichtigungen."""
+        """Setzt den Callback für Timer-Benachrichtigungen."""
         self._notify_callback = callback
 
     @property
@@ -253,7 +253,7 @@ class CookingAssistant:
     async def _search_recipe_store(self, dish: str) -> Optional[str]:
         """Durchsucht den Recipe Store nach einem passenden Rezept.
 
-        Gibt den Rezept-Text zurueck falls ein guter Treffer gefunden wird,
+        Gibt den Rezept-Text zurück falls ein guter Treffer gefunden wird,
         sonst None.
         """
         if not self.recipe_store:
@@ -293,7 +293,7 @@ class CookingAssistant:
         )
         messages = [
             {"role": "system", "content": prompt},
-            {"role": "user", "content": f"Wandle das Rezept fuer {dish} um ({portions} Portionen)"},
+            {"role": "user", "content": f"Wandle das Rezept für {dish} um ({portions} Portionen)"},
         ]
         response = await self.ollama.chat(
             messages=messages,
@@ -319,7 +319,7 @@ class CookingAssistant:
         # Gericht aus Text extrahieren
         dish = self._extract_dish(text)
         if not dish:
-            return "Was moechtest du kochen? Sag mir einfach das Gericht."
+            return "Was möchtest du kochen? Sag mir einfach das Gericht."
 
         # Portionen extrahieren (Default: 2)
         portions = self._extract_portions(text)
@@ -327,7 +327,7 @@ class CookingAssistant:
         # Praeferenzen/Allergien aus Semantic Memory laden
         preferences = await self._load_preferences(person)
 
-        logger.info("Koch-Session starten: '%s' fuer %d Portionen (Person: %s)",
+        logger.info("Koch-Session starten: '%s' für %d Portionen (Person: %s)",
                      dish, portions, person)
 
         # Zuerst im Recipe Store suchen
@@ -341,15 +341,15 @@ class CookingAssistant:
                 self.session.started_at = time.time()
                 await self._persist_session()
 
-                parts = [f"Ein Rezept fuer {dish} liegt vor — {portions} Portionen."]
+                parts = [f"Ein Rezept für {dish} liegt vor — {portions} Portionen."]
                 if preferences:
-                    parts.append("Deine Praeferenzen sind beruecksichtigt.")
+                    parts.append("Deine Praeferenzen sind berücksichtigt.")
                 parts.append(f"\nDu brauchst {len(session.ingredients)} Zutaten:")
                 for ing in session.ingredients:
                     parts.append(f"  - {ing}")
                 parts.append(f"\nDas Rezept hat {session.total_steps} Schritte.")
-                parts.append("Sag 'weiter' wenn du bereit bist fuer den ersten Schritt.")
-                parts.append("Du kannst jederzeit 'zutaten', 'nochmal', 'zurueck' oder 'stop kochen' sagen.")
+                parts.append("Sag 'weiter' wenn du bereit bist für den ersten Schritt.")
+                parts.append("Du kannst jederzeit 'zutaten', 'nochmal', 'zurück' oder 'stop kochen' sagen.")
                 return "\n".join(parts)
             logger.info("Gespeichertes Rezept nicht parsbar, Fallback auf LLM-Generierung")
 
@@ -363,7 +363,7 @@ class CookingAssistant:
 
         messages = [
             {"role": "system", "content": prompt},
-            {"role": "user", "content": f"Rezept fuer {dish}, {portions} Portionen"},
+            {"role": "user", "content": f"Rezept für {dish}, {portions} Portionen"},
         ]
 
         response = await self.ollama.chat(
@@ -392,7 +392,7 @@ class CookingAssistant:
                 )
                 if "error" not in response:
                     break
-                model = fallback_model  # fuer naechste Iteration im Log
+                model = fallback_model  # für nächste Iteration im Log
 
         if "error" in response:
             error_detail = response["error"]
@@ -400,40 +400,40 @@ class CookingAssistant:
             if "Circuit Breaker" in str(error_detail):
                 return "Ollama ist gerade nicht erreichbar. Bitte einen Moment warten und nochmal versuchen."
             if "Timeout" in str(error_detail):
-                return f"Rezept-Generierung fuer {dish} hat zu lange gedauert. Bitte nochmal versuchen."
-            return f"Rezept-Generierung fuer {dish} fehlgeschlagen. Bitte nochmal versuchen."
+                return f"Rezept-Generierung für {dish} hat zu lange gedauert. Bitte nochmal versuchen."
+            return f"Rezept-Generierung für {dish} fehlgeschlagen. Bitte nochmal versuchen."
 
         content = response.get("message", {}).get("content", "")
         session = self._parse_recipe(content, dish, portions, person)
 
         if not session or not session.steps:
-            logger.warning("Rezept-Parsing fehlgeschlagen fuer: %s", dish)
-            return f"Rezept fuer {dish} nicht strukturierbar. Anderes Gericht empfohlen."
+            logger.warning("Rezept-Parsing fehlgeschlagen für: %s", dish)
+            return f"Rezept für {dish} nicht strukturierbar. Anderes Gericht empfohlen."
 
         self.session = session
         self.session.started_at = time.time()
         await self._persist_session()
 
         # Antwort zusammenbauen
-        parts = [f"Sehr wohl — {dish} fuer {portions} Portionen."]
+        parts = [f"Sehr wohl — {dish} für {portions} Portionen."]
 
         if preferences:
-            parts.append("Deine Praeferenzen sind beruecksichtigt.")
+            parts.append("Deine Praeferenzen sind berücksichtigt.")
 
         parts.append(f"\nDu brauchst {len(session.ingredients)} Zutaten:")
         for ing in session.ingredients:
             parts.append(f"  - {ing}")
 
         parts.append(f"\nDas Rezept hat {session.total_steps} Schritte.")
-        parts.append("Sag 'weiter' wenn du bereit bist fuer den ersten Schritt.")
-        parts.append("Du kannst jederzeit 'zutaten', 'nochmal', 'zurueck' oder 'stop kochen' sagen.")
+        parts.append("Sag 'weiter' wenn du bereit bist für den ersten Schritt.")
+        parts.append("Du kannst jederzeit 'zutaten', 'nochmal', 'zurück' oder 'stop kochen' sagen.")
 
         return "\n".join(parts)
 
     async def handle_navigation(self, text: str) -> str:
         """Verarbeitet Navigation durch das aktive Rezept."""
         if not self.has_active_session:
-            return "Es laeuft gerade keine Koch-Session. Sag mir was du kochen willst!"
+            return "Es läuft gerade keine Koch-Session. Sag mir was du kochen willst!"
 
         text_lower = text.lower().strip()
 
@@ -449,7 +449,7 @@ class CookingAssistant:
         if any(kw in text_lower for kw in NAV_INGREDIENTS):
             return self._show_ingredients()
 
-        # Portionen aendern — nur wenn explizit eine Zahl mit Portionen/Personen genannt wird
+        # Portionen ändern — nur wenn explizit eine Zahl mit Portionen/Personen genannt wird
         if any(kw in text_lower for kw in NAV_PORTIONS):
             new_portions = self._extract_explicit_portions(text)
             if new_portions > 0:
@@ -459,7 +459,7 @@ class CookingAssistant:
         if any(kw in text_lower for kw in NAV_TIMER):
             return await self._set_timer_from_text(text)
 
-        # Timer pruefen
+        # Timer prüfen
         if any(kw in text_lower for kw in NAV_TIMER_CHECK):
             return self._check_timers()
 
@@ -467,7 +467,7 @@ class CookingAssistant:
         if any(kw in text_lower for kw in NAV_STATUS):
             return self._show_status()
 
-        # Naechster Schritt
+        # Nächster Schritt
         if any(kw in text_lower for kw in NAV_NEXT):
             return await self._next_step()
 
@@ -479,10 +479,10 @@ class CookingAssistant:
         if any(kw in text_lower for kw in NAV_REPEAT):
             return self._repeat_step()
 
-        return "Das habe ich nicht verstanden. Sag 'weiter', 'zurueck', 'nochmal' oder 'status'."
+        return "Das habe ich nicht verstanden. Sag 'weiter', 'zurück', 'nochmal' oder 'status'."
 
     async def _next_step(self) -> str:
-        """Geht zum naechsten Schritt."""
+        """Geht zum nächsten Schritt."""
         session = self.session
 
         session.current_step += 1
@@ -511,13 +511,13 @@ class CookingAssistant:
         self.session.current_step -= 1
         await self._persist_session()
         step = self.session.get_current_step()
-        return f"Zurueck zu Schritt {step.number} von {self.session.total_steps}:\n{step.instruction}"
+        return f"Zurück zu Schritt {step.number} von {self.session.total_steps}:\n{step.instruction}"
 
     def _repeat_step(self) -> str:
         """Wiederholt den aktuellen Schritt."""
         step = self.session.get_current_step()
         if step is None:
-            return "Es gibt keinen aktuellen Schritt. Sag 'weiter' fuer den naechsten."
+            return "Es gibt keinen aktuellen Schritt. Sag 'weiter' für den nächsten."
         return f"Nochmal Schritt {step.number}:\n{step.instruction}"
 
     def _show_status(self) -> str:
@@ -534,7 +534,7 @@ class CookingAssistant:
             parts.append(f"Aktueller Schritt: {step.number} von {session.total_steps}")
             parts.append(f"  {step.instruction}")
         else:
-            parts.append("Noch nicht gestartet. Sag 'weiter' fuer Schritt 1.")
+            parts.append("Noch nicht gestartet. Sag 'weiter' für Schritt 1.")
 
         # Aktive Timer
         active_timers = [t for t in session.timers if not t.is_done]
@@ -550,7 +550,7 @@ class CookingAssistant:
         if not self.session.ingredients:
             return "Keine Zutaten gespeichert."
 
-        parts = [f"Zutaten fuer {self.session.dish} ({self.session.portions} Portionen):"]
+        parts = [f"Zutaten für {self.session.dish} ({self.session.portions} Portionen):"]
         for ing in self.session.ingredients:
             parts.append(f"  - {ing}")
         return "\n".join(parts)
@@ -567,7 +567,7 @@ class CookingAssistant:
         factor = new_portions / old
         self.session.portions = new_portions
 
-        # Zutaten skalieren (einfache Regex fuer Zahlen am Anfang)
+        # Zutaten skalieren (einfache Regex für Zahlen am Anfang)
         new_ingredients = []
         for ing in self.session.ingredients:
             match = re.match(r"^(\d+(?:[.,]\d+)?)\s*(.*)", ing)
@@ -586,7 +586,7 @@ class CookingAssistant:
         self.session.ingredients = new_ingredients
         await self._persist_session()
         ingredient_list = "\n".join(f"- {ing}" for ing in new_ingredients)
-        return f"Portionen angepasst: {old} → {new_portions}.\n\nZutaten fuer {new_portions} Portionen:\n{ingredient_list}"
+        return f"Portionen angepasst: {old} → {new_portions}.\n\nZutaten für {new_portions} Portionen:\n{ingredient_list}"
 
     async def _set_timer_from_text(self, text: str) -> str:
         """Setzt einen Timer basierend auf Text-Eingabe."""
@@ -597,31 +597,31 @@ class CookingAssistant:
             step = self.session.get_current_step() if self.session else None
             if step and step.timer_minutes:
                 return await self._start_step_timer_with_response(step)
-            return "Wie viele Minuten? Sag z.B. 'Timer 8 Minuten fuer die Pasta'."
+            return "Wie viele Minuten? Sag z.B. 'Timer 8 Minuten für die Pasta'."
 
         minutes = int(match.group(1))
         if minutes < 1 or minutes > 180:
             return "Timer muss zwischen 1 und 180 Minuten liegen."
 
         # Label extrahieren
-        label_match = re.search(r"(?:fuer|für)\s+(.+?)(?:\s*$)", text.lower())
+        label_match = re.search(r"(?:für|für)\s+(.+?)(?:\s*$)", text.lower())
         label = label_match.group(1) if label_match else f"Timer ({minutes} Min)"
 
         timer = CookingTimer(label=label, duration_seconds=minutes * 60)
         timer.start()
         self.session.timers.append(timer)
 
-        # Hintergrund-Task fuer Benachrichtigung
+        # Hintergrund-Task für Benachrichtigung
         task = asyncio.create_task(self._timer_watcher(timer))
         self._timer_tasks.append(task)
 
-        # Timer in Redis persistieren (fuer Neustart-Recovery)
+        # Timer in Redis persistieren (für Neustart-Recovery)
         await self._persist_session()
 
         return f"Timer gesetzt: {label} — {minutes} Minuten. Ich sage Bescheid wenn er abgelaufen ist."
 
     async def _start_step_timer_with_response(self, step: CookingStep) -> str:
-        """Startet einen Timer fuer einen Koch-Schritt und gibt Bestaetigung zurueck."""
+        """Startet einen Timer für einen Koch-Schritt und gibt Bestätigung zurück."""
         if not step.timer_minutes:
             return "Dieser Schritt hat keine Zeitangabe."
 
@@ -633,13 +633,13 @@ class CookingAssistant:
         task = asyncio.create_task(self._timer_watcher(timer))
         self._timer_tasks.append(task)
 
-        # Timer in Redis persistieren (fuer Neustart-Recovery)
+        # Timer in Redis persistieren (für Neustart-Recovery)
         await self._persist_session()
 
         return f"Timer gesetzt: {label} — {step.timer_minutes} Minuten. Ich sage Bescheid wenn er abgelaufen ist."
 
     async def _timer_watcher(self, timer: CookingTimer):
-        """Ueberwacht einen Timer und benachrichtigt bei Ablauf."""
+        """Überwacht einen Timer und benachrichtigt bei Ablauf."""
         try:
             remaining = timer.remaining_seconds
             if remaining <= 0 and timer.started_at == 0:
@@ -649,7 +649,7 @@ class CookingAssistant:
             if remaining > 0:
                 await asyncio.sleep(remaining)
             timer.finished = True
-            message = f"{get_person_title()}, der Timer fuer '{timer.label}' ist abgelaufen!"
+            message = f"{get_person_title()}, der Timer für '{timer.label}' ist abgelaufen!"
             logger.info("Koch-Timer abgelaufen: %s", timer.label)
             if self._notify_callback and self.timer_notify_tts:
                 await self._notify_callback({"message": message, "type": "cooking_timer"})
@@ -692,7 +692,7 @@ class CookingAssistant:
         self._timer_tasks.clear()
         self.session = None
         await self._clear_persisted_session()
-        return f"Koch-Session fuer '{dish}' beendet. Guten Appetit!"
+        return f"Koch-Session für '{dish}' beendet. Guten Appetit!"
 
     async def _save_recipe(self) -> str:
         """Speichert das aktuelle Rezept im Semantic Memory."""
@@ -700,7 +700,7 @@ class CookingAssistant:
             return "Keine aktive Koch-Session zum Speichern."
 
         if not self.semantic_memory:
-            return "Gedaechtnis nicht verfuegbar, kann Rezept nicht speichern."
+            return "Gedaechtnis nicht verfügbar, kann Rezept nicht speichern."
 
         recipe_text = (
             f"Rezept: {self.session.dish} ({self.session.portions} Portionen). "
@@ -714,7 +714,7 @@ class CookingAssistant:
                 person=self.session.person,
             )
             if success:
-                return f"Rezept fuer '{self.session.dish}' gespeichert! Ich erinnere mich beim naechsten Mal daran."
+                return f"Rezept für '{self.session.dish}' gespeichert! Ich erinnere mich beim nächsten Mal daran."
             return "Rezept-Speicherung fehlgeschlagen."
         except Exception as e:
             logger.error("Fehler beim Speichern des Rezepts: %s", e)
@@ -724,8 +724,8 @@ class CookingAssistant:
         """Extrahiert den Gerichtnamen aus dem Text."""
         text_lower = text.lower().strip()
 
-        # "Rezept fuer X" / "Rezept für X"
-        match = re.search(r"rezept\s+(?:fuer|für)\s+(.+?)(?:\s+fuer\s+\d|\s+für\s+\d|$)", text_lower)
+        # "Rezept für X" / "Rezept für X"
+        match = re.search(r"rezept\s+(?:für|für)\s+(.+?)(?:\s+für\s+\d|\s+für\s+\d|$)", text_lower)
         if match:
             return match.group(1).strip().rstrip(".?!")
 
@@ -745,9 +745,9 @@ class CookingAssistant:
         if match:
             return match.group(1).strip().rstrip(".?!")
 
-        # "Ich will/moechte X kochen/backen"
+        # "Ich will/möchte X kochen/backen"
         match = re.search(
-            r"(?:ich\s+(?:will|moechte|möchte)|lass\s+uns|wir)\s+(.+?)\s+"
+            r"(?:ich\s+(?:will|möchte|möchte)|lass\s+uns|wir)\s+(.+?)\s+"
             r"(?:kochen|backen|zubereiten|braten|grillen|machen)",
             text_lower,
         )
@@ -755,7 +755,7 @@ class CookingAssistant:
             return match.group(1).strip()
 
         # "Koche/Backe mir X"
-        match = re.search(r"(?:koch|back|brat|grill)\w*\s+(?:mir\s+)?(.+?)(?:\s+fuer\s+\d|\s+für\s+\d|$)", text_lower)
+        match = re.search(r"(?:koch|back|brat|grill)\w*\s+(?:mir\s+)?(.+?)(?:\s+für\s+\d|\s+für\s+\d|$)", text_lower)
         if match:
             dish = match.group(1).strip().rstrip(".?!")
             # Keine Navigation-Keywords als Gericht
@@ -777,8 +777,8 @@ class CookingAssistant:
         return ""
 
     def _extract_explicit_portions(self, text: str) -> int:
-        """Extrahiert Portionen NUR wenn explizit Zahl+Keyword genannt wird. Gibt 0 zurueck wenn nicht."""
-        match = re.search(r"(?:fuer|für)\s+(\d+)\s*(?:portionen?|personen?|leute)", text.lower())
+        """Extrahiert Portionen NUR wenn explizit Zahl+Keyword genannt wird. Gibt 0 zurück wenn nicht."""
+        match = re.search(r"(?:für|für)\s+(\d+)\s*(?:portionen?|personen?|leute)", text.lower())
         if match:
             return min(int(match.group(1)), 20)
 
@@ -789,13 +789,13 @@ class CookingAssistant:
         return 0
 
     def _extract_portions(self, text: str) -> int:
-        """Extrahiert die Portionenanzahl aus dem Text (mit Default-Fallback fuer start_cooking)."""
+        """Extrahiert die Portionenanzahl aus dem Text (mit Default-Fallback für start_cooking)."""
         explicit = self._extract_explicit_portions(text)
         if explicit > 0:
             return explicit
 
-        # Lockerer Match: "fuer 4" ohne Keyword reicht beim Session-Start
-        match = re.search(r"(?:fuer|für)\s+(\d+)", text.lower())
+        # Lockerer Match: "für 4" ohne Keyword reicht beim Session-Start
+        match = re.search(r"(?:für|für)\s+(\d+)", text.lower())
         if match:
             return min(int(match.group(1)), 20)
 
@@ -844,7 +844,7 @@ class CookingAssistant:
     # ------------------------------------------------------------------
 
     async def _persist_session(self):
-        """Speichert die aktive Koch-Session in Redis (ueberlebt Neustart)."""
+        """Speichert die aktive Koch-Session in Redis (überlebt Neustart)."""
         if not self.redis or not self.session:
             return
         try:
@@ -881,7 +881,7 @@ class CookingAssistant:
             logger.debug("Koch-Session nicht persistiert: %s", e)
 
     async def _restore_session(self):
-        """Laedt eine gespeicherte Koch-Session aus Redis (inkl. aktive Timer)."""
+        """Lädt eine gespeicherte Koch-Session aus Redis (inkl. aktive Timer)."""
         if not self.redis:
             return
         try:
@@ -936,7 +936,7 @@ class CookingAssistant:
             await self.redis.delete(self.REDIS_SESSION_KEY)
 
     async def _load_preferences(self, person: str) -> str:
-        """Laedt Koch-Praeferenzen und Allergien aus dem Semantic Memory."""
+        """Lädt Koch-Praeferenzen und Allergien aus dem Semantic Memory."""
         if not self.semantic_memory or not person:
             return ""
 

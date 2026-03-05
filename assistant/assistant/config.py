@@ -4,6 +4,7 @@ Zentrale Konfiguration - liest .env und settings.yaml
 
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -94,6 +95,7 @@ class ModelProfile:
     repeat_penalty: float = 1.0
     think_temperature: float = 0.6
     think_top_p: float = 0.95
+    character_hint: str = ""
 
 
 _MODEL_PROFILE_FIELDS = {f.name for f in fields(ModelProfile)}
@@ -308,6 +310,7 @@ _room_profiles_cache: dict = {}
 _room_profiles_ts: float = 0.0
 _ROOM_PROFILES_TTL = 120  # 2 Min (Kompromiss zwischen Aktualitaet und I/O)
 _ROOM_PROFILES_PATH = Path(__file__).parent.parent / "config" / "room_profiles.yaml"
+_room_profiles_lock = threading.Lock()
 
 
 def get_room_profiles() -> dict:
@@ -316,15 +319,19 @@ def get_room_profiles() -> dict:
     now = time.time()
     if _room_profiles_cache and (now - _room_profiles_ts) < _ROOM_PROFILES_TTL:
         return _room_profiles_cache
-    try:
-        if _ROOM_PROFILES_PATH.exists():
-            with open(_ROOM_PROFILES_PATH) as f:
-                _room_profiles_cache = yaml.safe_load(f) or {}
-        else:
-            _room_profiles_cache = {}
-    except Exception as e:
-        logger.debug("Room-Profiles nicht ladbar: %s", e)
-        if not _room_profiles_cache:
-            _room_profiles_cache = {}
-    _room_profiles_ts = now
+    with _room_profiles_lock:
+        # Double-check nach Lock-Erwerb (anderer Thread koennte Cache schon erneuert haben)
+        if _room_profiles_cache and (time.time() - _room_profiles_ts) < _ROOM_PROFILES_TTL:
+            return _room_profiles_cache
+        try:
+            if _ROOM_PROFILES_PATH.exists():
+                with open(_ROOM_PROFILES_PATH) as f:
+                    _room_profiles_cache = yaml.safe_load(f) or {}
+            else:
+                _room_profiles_cache = {}
+        except Exception as e:
+            logger.debug("Room-Profiles nicht ladbar: %s", e)
+            if not _room_profiles_cache:
+                _room_profiles_cache = {}
+        _room_profiles_ts = time.time()
     return _room_profiles_cache

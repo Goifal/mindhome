@@ -1,14 +1,14 @@
 """
-Device Health Monitor - Geraete-Beziehung & Anomalie-Erkennung.
+Device Health Monitor - Geräte-Beziehung & Anomalie-Erkennung.
 
-Phase 15.3: Erkennt ungewoehnliches Geraeteverhalten anhand historischer Baselines.
+Phase 15.3: Erkennt ungewöhnliches Geräteverhalten anhand historischer Baselines.
 - Rolling-Average Baseline (30 Tage, konfigurierbar)
 - Anomalie-Erkennung: Alert bei Abweichung > 2 Standardabweichungen
-- Stale-Device-Erkennung: Sensoren ohne Aenderung (Batterie-Warnung)
+- Stale-Device-Erkennung: Sensoren ohne Änderung (Batterie-Warnung)
 - HVAC-Effizienz: Heizung/Klima erreicht Zieltemperatur nicht
-- Energie-Anomalien: Verbrauch deutlich ueber Durchschnitt
+- Energie-Anomalien: Verbrauch deutlich über Durchschnitt
 
-Alerts haben Urgency "low" und werden ueber Phase 15.4 gebatcht.
+Alerts haben Urgency "low" und werden über Phase 15.4 gebatcht.
 """
 
 import asyncio
@@ -42,7 +42,7 @@ DEFAULTS = {
 
 
 class DeviceHealthMonitor:
-    """Ueberwacht Geraeteverhalten und erkennt Anomalien."""
+    """Überwacht Geräteverhalten und erkennt Anomalien."""
 
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
@@ -97,7 +97,7 @@ class DeviceHealthMonitor:
         )
 
     def set_notify_callback(self, callback):
-        """Setzt die Callback-Funktion fuer Anomalie-Warnungen."""
+        """Setzt die Callback-Funktion für Anomalie-Warnungen."""
         self._notify_callback = callback
 
     async def start(self):
@@ -139,7 +139,7 @@ class DeviceHealthMonitor:
             await asyncio.sleep(self.check_interval * 60)
 
     async def check_all(self) -> list[dict]:
-        """Fuehrt alle Checks durch und gibt Alert-Liste zurueck."""
+        """Fuehrt alle Checks durch und gibt Alert-Liste zurück."""
         states = await self.ha.get_states()
         if not states:
             return []
@@ -160,7 +160,7 @@ class DeviceHealthMonitor:
                     alerts.append(alert)
                 continue
 
-            # 2) Stale-Sensor-Check (binary_sensor ohne Aenderung)
+            # 2) Stale-Sensor-Check (binary_sensor ohne Änderung)
             if domain == "binary_sensor":
                 alert = await self._check_stale_sensor(entity_id, state)
                 if alert:
@@ -196,7 +196,7 @@ class DeviceHealthMonitor:
 
         baseline = await self._get_baseline(entity_id)
 
-        # Sample immer hinzufuegen (fuer zukuenftige Baseline)
+        # Sample immer hinzufuegen (für zukuenftige Baseline)
         await self._add_sample(entity_id, current_value)
 
         if not baseline or baseline["samples"] < self.min_samples:
@@ -222,12 +222,12 @@ class DeviceHealthMonitor:
             pct = ((current_value - mean) / mean * 100) if mean else 0
             message = (
                 f"{name}: Verbrauch {current_value:.1f}{unit} — "
-                f"{pct:.0f}% ueber Durchschnitt ({mean:.1f}{unit})."
+                f"{pct:.0f}% über Durchschnitt ({mean:.1f}{unit})."
             )
         else:
-            direction = "ueber" if current_value > mean else "unter"
+            direction = "über" if current_value > mean else "unter"
             message = (
-                f"{name}: Ungewoehnlicher Wert {current_value:.1f}{unit} "
+                f"{name}: Ungewöhnlicher Wert {current_value:.1f}{unit} "
                 f"({direction} Normal {mean:.1f}±{stddev:.1f}{unit})."
             )
 
@@ -249,13 +249,13 @@ class DeviceHealthMonitor:
         }
 
     # ------------------------------------------------------------------
-    # Check 2: Stale Sensor (Bewegungsmelder, Tuerkontakte)
+    # Check 2: Stale Sensor (Bewegungsmelder, Türkontakte)
     # ------------------------------------------------------------------
 
     async def _check_stale_sensor(
         self, entity_id: str, state: dict
     ) -> Optional[dict]:
-        """Prueft ob ein Binary-Sensor seit Tagen unveraendert ist."""
+        """Prueft ob ein Binary-Sensor seit Tagen unverändert ist."""
         last_changed = state.get("last_changed", "")
         if not last_changed:
             return None
@@ -281,14 +281,14 @@ class DeviceHealthMonitor:
         device_class = state.get("attributes", {}).get("device_class", "")
 
         if device_class == "motion":
-            hint = "Batterie pruefen oder Sensor defekt?"
+            hint = "Batterie prüfen oder Sensor defekt?"
         elif device_class in ("door", "window"):
             hint = "Sensor blockiert oder Batterie leer?"
         else:
-            hint = "Batterie oder Verbindung pruefen."
+            hint = "Batterie oder Verbindung prüfen."
 
         message = (
-            f"{name}: Seit {int(age_days)} Tagen unveraendert. {hint}"
+            f"{name}: Seit {int(age_days)} Tagen unverändert. {hint}"
         )
 
         await self._mark_notified(entity_id)
@@ -313,7 +313,7 @@ class DeviceHealthMonitor:
     async def _check_hvac_efficiency(
         self, entity_id: str, state: dict
     ) -> Optional[dict]:
-        """Prueft ob Klima-Geraet die Zieltemperatur nicht erreicht."""
+        """Prueft ob Klima-Gerät die Zieltemperatur nicht erreicht."""
         attrs = state.get("attributes", {})
         current_temp = attrs.get("current_temperature")
         target_temp = attrs.get("temperature")
@@ -329,14 +329,14 @@ class DeviceHealthMonitor:
             return None
 
         if hvac_action in ("off", "unavailable", "idle"):
-            # Nicht aktiv → Timer zuruecksetzen
+            # Nicht aktiv → Timer zurücksetzen
             if self.redis:
                 await self.redis.delete(f"mha:device:hvac_start:{entity_id}")
             return None
 
         temp_diff = abs(current_temp - target_temp)
         if temp_diff <= self.hvac_tolerance:
-            # Ziel erreicht → Timer zuruecksetzen
+            # Ziel erreicht → Timer zurücksetzen
             if self.redis:
                 await self.redis.delete(f"mha:device:hvac_start:{entity_id}")
             return None
@@ -403,7 +403,7 @@ class DeviceHealthMonitor:
     # ------------------------------------------------------------------
 
     async def _get_baseline(self, entity_id: str) -> Optional[dict]:
-        """Holt die Baseline (Mean + Stddev) fuer ein Entity."""
+        """Holt die Baseline (Mean + Stddev) für ein Entity."""
         if not self.redis:
             return None
         try:
@@ -490,7 +490,7 @@ class DeviceHealthMonitor:
     # ------------------------------------------------------------------
 
     async def _check_cooldown(self, entity_id: str) -> bool:
-        """Prueft ob fuer dieses Entity ein Alert gesendet werden darf."""
+        """Prueft ob für dieses Entity ein Alert gesendet werden darf."""
         if not self.redis:
             return True
         try:
@@ -502,7 +502,7 @@ class DeviceHealthMonitor:
     async def _mark_notified(self, entity_id: str):
         """Markiert Entity als benachrichtigt (Cooldown starten).
 
-        F-057: Cooldown eskaliert mit der Anzahl der Alerts fuer dieselbe Entity.
+        F-057: Cooldown eskaliert mit der Anzahl der Alerts für dieselbe Entity.
         1. Alert: normaler Cooldown (24h Standard)
         2. Alert: 2x Cooldown (48h)
         3. Alert: 4x Cooldown (4 Tage)
@@ -526,14 +526,14 @@ class DeviceHealthMonitor:
             await self.redis.set(key, str(count), ex=int(cooldown_seconds))
             if count > 1:
                 logger.info(
-                    "F-057: Alert-Cooldown eskaliert fuer %s: %dx (Alert #%d)",
+                    "F-057: Alert-Cooldown eskaliert für %s: %dx (Alert #%d)",
                     entity_id, multiplier, count,
                 )
         except Exception as e:
             logger.debug("Notified mark error [%s]: %s", entity_id, e)
 
     async def _send_alert(self, alert: dict):
-        """Sendet Alert ueber den registrierten Callback."""
+        """Sendet Alert über den registrierten Callback."""
         if self._notify_callback:
             try:
                 await self._notify_callback(alert)
@@ -550,7 +550,7 @@ class DeviceHealthMonitor:
         """Prueft ob Entity ausgeschlossen werden soll.
 
         Nutzt Entity-Annotations: Annotierte (nicht-hidden) Entities werden
-        automatisch ueberwacht. Ohne Annotation: Domain-Filter + Exclude-Patterns.
+        automatisch überwacht. Ohne Annotation: Domain-Filter + Exclude-Patterns.
         """
         # Hidden-Entities immer ausschliessen
         if is_entity_hidden(entity_id):
@@ -575,11 +575,11 @@ class DeviceHealthMonitor:
         return False
 
     # ------------------------------------------------------------------
-    # API fuer Kontext / Diagnostik
+    # API für Kontext / Diagnostik
     # ------------------------------------------------------------------
 
     async def get_status(self) -> dict:
-        """Gibt den aktuellen Status des DeviceHealthMonitors zurueck."""
+        """Gibt den aktuellen Status des DeviceHealthMonitors zurück."""
         if not self.redis:
             return {"enabled": self.enabled, "baselines": 0, "alerts_today": 0}
 
@@ -607,5 +607,5 @@ class DeviceHealthMonitor:
             return {"enabled": self.enabled, "baselines": 0}
 
     async def get_baseline_info(self, entity_id: str) -> Optional[dict]:
-        """Gibt Baseline-Daten fuer ein bestimmtes Entity zurueck."""
+        """Gibt Baseline-Daten für ein bestimmtes Entity zurück."""
         return await self._get_baseline(entity_id)

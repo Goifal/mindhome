@@ -7,10 +7,10 @@ Orchestriert wiederkehrende Routinen:
 - Abschied/Willkommen: Kontext-sensitives Verhalten bei Gehen/Kommen
 
 Nutzt bestehende Module:
-- context_builder.py fuer Haus-Status
-- proactive.py fuer Event-Delivery
-- function_calling.py fuer Aktionen
-- personality.py fuer Stil und Begruessungen
+- context_builder.py für Haus-Status
+- proactive.py für Event-Delivery
+- function_calling.py für Aktionen
+- personality.py für Stil und Begruessungen
 """
 
 import asyncio
@@ -127,11 +127,11 @@ class RoutineEngine:
         self.redis = redis_client
 
     def set_executor(self, executor):
-        """Setzt den FunctionExecutor fuer Aktionen."""
+        """Setzt den FunctionExecutor für Aktionen."""
         self._executor = executor
 
     def set_personality(self, personality):
-        """Setzt die PersonalityEngine fuer personality-konsistente Prompts."""
+        """Setzt die PersonalityEngine für personality-konsistente Prompts."""
         self._personality = personality
 
     # ------------------------------------------------------------------
@@ -160,12 +160,12 @@ class RoutineEngine:
             lock_key = f"{KEY_MORNING_DONE}:lock"
             acquired = await self.redis.set(lock_key, today, ex=86400, nx=True)
             if not acquired:
-                # Lock existiert bereits — pruefen ob heutiges Datum
+                # Lock existiert bereits — prüfen ob heutiges Datum
                 done = await self.redis.get(KEY_MORNING_DONE)
                 if done is not None:
                     done = done.decode() if isinstance(done, bytes) else done
                 if done == today:
-                    logger.info("Morning Briefing bereits heute ausgefuehrt")
+                    logger.info("Morning Briefing bereits heute ausgeführt")
                     return {"text": "", "actions": []}
 
         # Bausteine sammeln
@@ -174,7 +174,7 @@ class RoutineEngine:
         is_weekend = now.weekday() >= 5
         style = self.weekend_style if is_weekend else self.weekday_style
 
-        # Phase 17.4: Sleep-Awareness — nach spaeter Nacht kuerzeres Briefing
+        # Phase 17.4: Sleep-Awareness — nach später Nacht kuerzeres Briefing
         sleep_hint = await self._get_sleep_awareness()
         if sleep_hint:
             # Spaete Nacht → kuerzerer Stil, egal ob Wochentag
@@ -190,7 +190,7 @@ class RoutineEngine:
         if not parts:
             return {"text": "", "actions": []}
 
-        # LLM formuliert das Briefing natuerlich
+        # LLM formuliert das Briefing natürlich
         briefing_prompt = self._build_briefing_prompt(parts, style, person, now)
         try:
             response = await self.ollama.chat(
@@ -205,7 +205,7 @@ class RoutineEngine:
             logger.error("Morning Briefing LLM Fehler: %s", e)
             text = "\n".join(parts)
 
-        # Begleit-Aktionen ausfuehren
+        # Begleit-Aktionen ausführen
         actions = await self._execute_morning_actions()
 
         # Als erledigt markieren
@@ -215,13 +215,13 @@ class RoutineEngine:
                 await self.redis.setex(KEY_MORNING_DONE, 86400, today)
                 await self.redis.setex(KEY_LAST_BRIEFING, 86400, now.isoformat())
             except Exception as e:
-                logger.warning("Redis setex fuer Morning Briefing fehlgeschlagen: %s", e)
+                logger.warning("Redis setex für Morning Briefing fehlgeschlagen: %s", e)
 
         logger.info("Morning Briefing generiert (%d Bausteine, %d Aktionen)", len(parts), len(actions))
         return {"text": text, "actions": actions}
 
     async def _get_briefing_module(self, module: str, person: str, style: str) -> str:
-        """Holt Daten fuer einen Briefing-Baustein."""
+        """Holt Daten für einen Briefing-Baustein."""
         try:
             if module == "greeting":
                 return await self._get_greeting_context(person)
@@ -240,7 +240,7 @@ class RoutineEngine:
         return ""
 
     async def _get_greeting_context(self, person: str) -> str:
-        """Kontextdaten fuer die Begruessung, inkl. Geburtstags-Check."""
+        """Kontextdaten für die Begruessung, inkl. Geburtstags-Check."""
         now = datetime.now()
         weekday = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][now.weekday()]
         context = f"Tag: {weekday}, {now.strftime('%d.%m.%Y')}, {now.strftime('%H:%M')} Uhr"
@@ -310,7 +310,7 @@ class RoutineEngine:
         """Holt Wetter-Daten.
 
         Nutzt weather.get_forecasts Service (HA 2024.3+) mit Fallback
-        auf State-Attribute fuer aeltere HA-Versionen.
+        auf State-Attribute für aeltere HA-Versionen.
         """
         states = await self.ha.get_states()
         if not states:
@@ -333,7 +333,7 @@ class RoutineEngine:
         humidity = attrs.get("humidity", "?")
         wind_speed = attrs.get("wind_speed")
 
-        # Wetter-Zustand uebersetzen
+        # Wetter-Zustand übersetzen
         condition_de = self._translate_weather(condition)
         result = f"Wetter: {temp}°C, {condition_de}, Luftfeuchtigkeit {humidity}%"
         if wind_speed:
@@ -378,7 +378,7 @@ class RoutineEngine:
             sun_attrs = sun_state.get("attributes", {})
             elevation = sun_attrs.get("elevation", 0)
             if elevation < -6:
-                result += ". Es ist noch dunkel draussen"
+                result += ". Es ist noch dunkel draußen"
             elif elevation < 0:
                 result += ". Es daemmert gerade"
 
@@ -388,9 +388,9 @@ class RoutineEngine:
             if wind_gust:
                 gust_val = float(wind_gust)
                 if gust_val > 60:
-                    result += f". ACHTUNG: Sturmboeen bis {gust_val:.0f} km/h erwartet"
+                    result += f". ACHTUNG: Sturmböen bis {gust_val:.0f} km/h erwartet"
                 elif gust_val > 40:
-                    result += f". Starke Windboeen ({gust_val:.0f} km/h) moeglich"
+                    result += f". Starke Windboeen ({gust_val:.0f} km/h) möglich"
         except (ValueError, TypeError):
             pass
 
@@ -413,7 +413,7 @@ class RoutineEngine:
         return result
 
     async def _get_forecast_via_service(self, entity_id: str) -> list:
-        """Holt Forecast ueber weather.get_forecasts Service (HA 2024.3+).
+        """Holt Forecast über weather.get_forecasts Service (HA 2024.3+).
 
         Returns:
             Forecast-Liste oder leere Liste bei Fehler/alter HA-Version
@@ -425,10 +425,10 @@ class RoutineEngine:
             )
             if not result:
                 return []
-            # HA gibt ggf. {"service_response": {entity: {forecast: [...]}}} zurueck
+            # HA gibt ggf. {"service_response": {entity: {forecast: [...]}}} zurück
             if isinstance(result, dict) and "service_response" in result:
                 result = result["service_response"]
-            # HA gibt verschiedene Formate zurueck je nach Version
+            # HA gibt verschiedene Formate zurück je nach Version
             # Format 1: [{entity_id: {forecast: [...]}}]
             if isinstance(result, list):
                 for item in result:
@@ -442,12 +442,12 @@ class RoutineEngine:
                     if isinstance(value, dict) and "forecast" in value:
                         return value["forecast"]
         except Exception as e:
-            logger.debug("weather.get_forecasts nicht verfuegbar (aeltere HA?): %s", e)
+            logger.debug("weather.get_forecasts nicht verfügbar (aeltere HA?): %s", e)
         return []
 
     @staticmethod
     def _translate_weather(condition: str) -> str:
-        """Uebersetzt HA Weather-Zustaende ins Deutsche."""
+        """Übersetzt HA Weather-Zustaende ins Deutsche."""
         translations = {
             "sunny": "sonnig",
             "clear-night": "klare Nacht",
@@ -578,7 +578,7 @@ class RoutineEngine:
                     room = attrs.get("friendly_name", "?")
                     parts.append(f"{room}: {temp}°C")
 
-        # Offene Fenster/Tueren — kategorisiert nach Typ
+        # Offene Fenster/Türen — kategorisiert nach Typ
         from .function_calling import is_window_or_door, get_opening_type
         open_windows_doors = []
         open_gates = []
@@ -608,9 +608,9 @@ class RoutineEngine:
     def _build_briefing_prompt(
         self, parts: list[str], style: str, person: str, now: datetime
     ) -> str:
-        """Baut den Prompt fuer das LLM um das Briefing zu formulieren."""
+        """Baut den Prompt für das LLM um das Briefing zu formulieren."""
         title = get_person_title(person) if not person or person.lower() == settings.user_name.lower() else person
-        prompt = f"Erstelle ein Morning Briefing fuer {title}.\n\n"
+        prompt = f"Erstelle ein Morning Briefing für {title}.\n\n"
         prompt += "DATEN:\n"
         for part in parts:
             prompt += f"- {part}\n"
@@ -622,9 +622,9 @@ class RoutineEngine:
         return prompt
 
     def _get_briefing_system_prompt(self, style: str) -> str:
-        """System Prompt fuer das Morning Briefing.
+        """System Prompt für das Morning Briefing.
 
-        Nutzt die PersonalityEngine fuer personality-konsistente Prompts
+        Nutzt die PersonalityEngine für personality-konsistente Prompts
         (Sarkasmus, Formality, Tageszeit-Stil) statt eines statischen Prompts.
         """
         if self._personality:
@@ -640,11 +640,11 @@ class RoutineEngine:
             f"Erstelle ein Morning Briefing. Stil: {style}.\n"
             "Beginne mit kontextueller Begruessung. Dann Wetter, Termine, Haus-Status.\n"
             f'Sprich den Hauptbenutzer mit "{get_person_title()}" an. Deutsch. Butler-Stil.\n'
-            "VERBOTEN: leider, Entschuldigung, Es tut mir leid, Wie kann ich helfen?, Gerne!, Natuerlich!"
+            "VERBOTEN: leider, Entschuldigung, Es tut mir leid, Wie kann ich helfen?, Gerne!, Natürlich!"
         )
 
     async def _get_sleep_awareness(self) -> dict:
-        """Prueft ob der User letzte Nacht spaet ins Bett ging.
+        """Prueft ob der User letzte Nacht spät ins Bett ging.
 
         Phase 17.4: Liest das Late-Night-Pattern aus Redis
         (geschrieben vom WellnessAdvisor) und passt das Briefing an.
@@ -662,7 +662,7 @@ class RoutineEngine:
             today = datetime.now().date().isoformat()
             yesterday = (datetime.now().date() - timedelta(days=1)).isoformat()
 
-            # Pruefen ob heute (nach Mitternacht) oder gestern als Late-Night vermerkt
+            # Prüfen ob heute (nach Mitternacht) oder gestern als Late-Night vermerkt
             key = "mha:wellness:latenight_dates"
             was_late_today = await self.redis.sismember(key, today)
             was_late_yesterday = await self.redis.sismember(key, yesterday)
@@ -670,7 +670,7 @@ class RoutineEngine:
             if not was_late_today and not was_late_yesterday:
                 return {}
 
-            # Konsekutive Naechte zaehlen
+            # Konsekutive Nächte zaehlen
             consecutive = 0
             check_date = datetime.now().date()
             for _ in range(7):
@@ -683,7 +683,7 @@ class RoutineEngine:
 
             if consecutive >= 3:
                 note = (
-                    f"SCHLAF-HINWEIS: User war {consecutive} Naechte in Folge nach Mitternacht wach. "
+                    f"SCHLAF-HINWEIS: User war {consecutive} Nächte in Folge nach Mitternacht wach. "
                     "Briefing kurz halten. Sanft auf Schlafmangel hinweisen. "
                     "'Kurze Nacht, Sir.' reicht — nicht belehren."
                 )
@@ -691,7 +691,7 @@ class RoutineEngine:
                 note = (
                     "SCHLAF-HINWEIS: User war letzte Nacht nach Mitternacht noch wach. "
                     "Briefing kuerzer halten. Beilaeufig erwaehnen: 'Nach der kurzen Nacht...' "
-                    "Kein Vortrag ueber Schlafhygiene."
+                    "Kein Vortrag über Schlafhygiene."
                 )
             else:
                 return {}
@@ -710,7 +710,7 @@ class RoutineEngine:
             return actions
 
         if self.morning_actions.get("covers_up", False):
-            # Wakeup-Sequenz hat Rolllaeden schon hochgefahren?
+            # Wakeup-Sequenz hat Rollläden schon hochgefahren?
             wakeup_done = False
             if self.redis:
                 try:
@@ -723,13 +723,13 @@ class RoutineEngine:
                     pass
 
             if wakeup_done:
-                logger.info("Morning covers_up uebersprungen: Wakeup-Sequenz hat Rolllaeden schon gefahren")
+                logger.info("Morning covers_up übersprungen: Wakeup-Sequenz hat Rollläden schon gefahren")
             else:
-                # Bettsensor pruefen: Wenn noch jemand im Bett liegt,
-                # Rolllaeden NICHT hochfahren (Schlafzimmer-Schutz)
+                # Bettsensor prüfen: Wenn noch jemand im Bett liegt,
+                # Rollläden NICHT hochfahren (Schlafzimmer-Schutz)
                 bed_occupied = await self._is_bed_occupied()
                 if bed_occupied:
-                    logger.info("Morning covers_up uebersprungen: Bettsensor belegt")
+                    logger.info("Morning covers_up übersprungen: Bettsensor belegt")
                 else:
                     result = await self._executor.execute("set_cover", {
                         "room": "all", "position": 100,
@@ -753,11 +753,11 @@ class RoutineEngine:
     async def execute_wakeup_sequence(self, autonomy_level: int = 3) -> bool:
         """Fuehrt die stufenweise Aufwach-Sequenz aus.
 
-        Rolllaeden stufenweise, sanftes Licht, Kaffee — dann Briefing.
+        Rollläden stufenweise, sanftes Licht, Kaffee — dann Briefing.
         Nur einmal pro Tag, nur im Zeitfenster, nur bei ausreichendem Autonomie-Level.
 
         Returns:
-            True wenn Sequenz ausgefuehrt wurde.
+            True wenn Sequenz ausgeführt wurde.
         """
         ws_cfg = yaml_config.get("routines", {}).get("morning_briefing", {}).get("wakeup_sequence", {})
         if not ws_cfg.get("enabled", False):
@@ -767,7 +767,7 @@ class RoutineEngine:
         if autonomy_level < min_level:
             return False
 
-        # Zeitfenster pruefen
+        # Zeitfenster prüfen
         now = datetime.now()
         start_h = ws_cfg.get("window_start_hour", 5)
         end_h = ws_cfg.get("window_end_hour", 9)
@@ -787,16 +787,16 @@ class RoutineEngine:
             except Exception:
                 pass
 
-        # Bettsensor pruefen
+        # Bettsensor prüfen
         bed_occupied = await self._is_bed_occupied()
         if bed_occupied:
-            logger.info("Aufwach-Sequenz uebersprungen: Bettsensor belegt")
+            logger.info("Aufwach-Sequenz übersprungen: Bettsensor belegt")
             return False
 
         logger.info("Aufwach-Sequenz gestartet")
         steps = ws_cfg.get("steps", {})
 
-        # 1. Rolllaeden stufenweise oeffnen
+        # 1. Rollläden stufenweise oeffnen
         if steps.get("covers_gradual", {}).get("enabled", False):
             await self._wakeup_covers_gradual(steps["covers_gradual"])
 
@@ -820,7 +820,7 @@ class RoutineEngine:
         return True
 
     async def _wakeup_covers_gradual(self, cfg: dict):
-        """Rolllaeden stufenweise ueber X Minuten oeffnen."""
+        """Rollläden stufenweise über X Minuten oeffnen."""
         if not self._executor:
             return
 
@@ -878,7 +878,7 @@ class RoutineEngine:
             logger.debug("Wakeup coffee fehlgeschlagen: %s", e)
 
     async def _is_bed_occupied(self) -> bool:
-        """Prueft ob ein Bettsensor belegt ist (fuer Cover-Schutz)."""
+        """Prueft ob ein Bettsensor belegt ist (für Cover-Schutz)."""
         activity_cfg = yaml_config.get("activity", {})
         bed_sensors = activity_cfg.get("entities", {}).get("bed_sensors", [
             "binary_sensor.bed_occupancy",
@@ -918,7 +918,7 @@ class RoutineEngine:
             Dict mit:
                 text: str - Gute-Nacht-Text mit Vorschau + Status
                 actions: list - Ausgefuehrte Aktionen
-                issues: list - Offene Probleme (Fenster, Tueren)
+                issues: list - Offene Probleme (Fenster, Türen)
         """
         if not self.goodnight_enabled:
             return {"text": f"Gute Nacht, {get_person_title(person)}. Alles unter Kontrolle.", "actions": [], "issues": []}
@@ -929,7 +929,7 @@ class RoutineEngine:
         # 2. Morgen-Vorschau
         tomorrow_info = await self._get_tomorrow_preview()
 
-        # 3. Aktionen ausfuehren (wenn keine kritischen Issues)
+        # 3. Aktionen ausführen (wenn keine kritischen Issues)
         actions = []
         if not any(i.get("critical", False) for i in issues):
             actions = await self._execute_goodnight_actions()
@@ -948,7 +948,7 @@ class RoutineEngine:
         return {"text": text, "actions": actions, "issues": issues}
 
     async def _run_safety_checks(self) -> list[dict]:
-        """Prueft Fenster, Tueren, Alarm, Lichter vor dem Schlafen."""
+        """Prueft Fenster, Türen, Alarm, Lichter vor dem Schlafen."""
         issues = []
         states = await self.ha.get_states()
         if not states:
@@ -962,7 +962,7 @@ class RoutineEngine:
                     if is_window_or_door(eid, state) and state.get("state") == "on":
                         name = state.get("attributes", {}).get("friendly_name", eid)
                         opening_type = get_opening_type(eid, state)
-                        type_label = "Tor" if opening_type == "gate" else "Fenster/Tuer"
+                        type_label = "Tor" if opening_type == "gate" else "Fenster/Tür"
                         issues.append({
                             "type": "window_open" if opening_type != "gate" else "gate_open",
                             "entity": eid,
@@ -1072,7 +1072,7 @@ class RoutineEngine:
                                     text += f", starker Wind ({w_val:.0f} km/h)"
                             except (ValueError, TypeError):
                                 pass
-                        # F3: Kleidungsempfehlung fuer morgen
+                        # F3: Kleidungsempfehlung für morgen
                         try:
                             t_low = float(temp_low) if temp_low != "?" else None
                             rain_conds = {"rainy", "pouring", "hail", "lightning-rainy"}
@@ -1148,7 +1148,7 @@ class RoutineEngine:
                 })
                 actions.append({"function": "set_cover:down", "result": result})
             except Exception as e:
-                logger.warning("Gute-Nacht Rolllaeden-runter fehlgeschlagen: %s", e)
+                logger.warning("Gute-Nacht Rollläden-runter fehlgeschlagen: %s", e)
                 actions.append({"function": "set_cover:down", "result": {"error": str(e)}})
 
         if gn_actions.get("alarm_arm_home", False):
@@ -1184,11 +1184,11 @@ class RoutineEngine:
             action_names = [a["function"] for a in actions]
             parts.append(f"Ausgefuehrt: {', '.join(action_names)}")
 
-        prompt = f"Gute-Nacht fuer {title}.\n\nDATEN:\n"
+        prompt = f"Gute-Nacht für {title}.\n\nDATEN:\n"
         for p in parts:
             prompt += f"- {p}\n"
         prompt += "\nFormuliere eine kurze Gute-Nacht-Zusammenfassung. Max 3 Saetze."
-        prompt += "\nBei offenen Fenster/Tueren: Erwaehne und frage ob so lassen."
+        prompt += "\nBei offenen Fenster/Türen: Erwaehne und frage ob so lassen."
         prompt += "\nBei kritischen Issues: Deutlich warnen."
 
         # Personality-konsistenter Prompt (Sarkasmus, Formality, Tageszeit)
@@ -1282,7 +1282,7 @@ class RoutineEngine:
         wifi_entity = wifi_cfg.get("switch_entity", "switch.guest_wifi")
 
         if not self._executor:
-            return "Kein Executor verfuegbar."
+            return "Kein Executor verfügbar."
 
         try:
             await self._executor.execute("call_service", {
@@ -1306,7 +1306,7 @@ class RoutineEngine:
         wifi_entity = wifi_cfg.get("switch_entity", "switch.guest_wifi")
 
         if not self._executor:
-            return "Kein Executor verfuegbar."
+            return "Kein Executor verfügbar."
 
         try:
             await self._executor.execute("call_service", {
@@ -1327,7 +1327,7 @@ class RoutineEngine:
             except Exception as e:
                 logger.warning("Guest-Mode Redis-Fehler: %s", e)
         logger.info("Gaeste-Modus deaktiviert")
-        return "Gaeste-Modus beendet. Zurueck zum Normalbetrieb."
+        return "Gaeste-Modus beendet. Zurück zum Normalbetrieb."
 
     async def is_guest_mode_active(self) -> bool:
         """Prueft ob der Gaeste-Modus aktiv ist."""
@@ -1343,7 +1343,7 @@ class RoutineEngine:
             return False
 
     def get_guest_mode_prompt(self) -> str:
-        """Gibt den Prompt-Zusatz fuer den Gaeste-Modus zurueck."""
+        """Gibt den Prompt-Zusatz für den Gaeste-Modus zurück."""
         restrictions = self.guest_restrictions
         parts = ["GAESTE-MODUS AKTIV:"]
         if restrictions.get("hide_personal_info"):
@@ -1351,7 +1351,7 @@ class RoutineEngine:
         if restrictions.get("formal_tone"):
             parts.append("- Formeller Ton. Kein Insider-Humor.")
         if restrictions.get("restrict_security"):
-            parts.append("- Kein Zugriff auf Alarm, Tuerschloesser, Sicherheitskameras.")
+            parts.append("- Kein Zugriff auf Alarm, Türschloesser, Sicherheitskameras.")
         parts.append("- Bei persoenlichen Fragen: Hoeflich ablehnen.")
         return "\n".join(parts)
 
@@ -1360,7 +1360,7 @@ class RoutineEngine:
     # ------------------------------------------------------------------
 
     async def log_absence_event(self, event_type: str, description: str):
-        """Loggt ein Event waehrend der Abwesenheit."""
+        """Loggt ein Event während der Abwesenheit."""
         if not self.redis:
             return
         now = datetime.now().isoformat()
@@ -1369,7 +1369,7 @@ class RoutineEngine:
         await self.redis.expire(KEY_ABSENCE_LOG, 30 * 86400)
 
     async def get_absence_summary(self) -> str:
-        """Gibt eine Zusammenfassung der Events waehrend der Abwesenheit zurueck."""
+        """Gibt eine Zusammenfassung der Events während der Abwesenheit zurück."""
         if not self.redis:
             return ""
 
@@ -1428,18 +1428,18 @@ class RoutineEngine:
             response = await self.ollama.chat(
                 messages=[
                     {"role": "system", "content": f"Du bist {settings.assistant_name}. "
-                     "Fasse Events waehrend der Abwesenheit zusammen. "
+                     "Fasse Events während der Abwesenheit zusammen. "
                      "Kurz, nur Relevantes. Max 2 Saetze. Deutsch. Butler-Stil."},
-                    {"role": "user", "content": f"Events waehrend der Abwesenheit:\n{event_text}"},
+                    {"role": "user", "content": f"Events während der Abwesenheit:\n{event_text}"},
                 ],
                 model=settings.model_fast,
             )
             summary = response.get("message", {}).get("content", "")
         except Exception as e:
             logger.error("Abwesenheits-Summary Fehler: %s", e)
-            summary = f"{len(events)} Events waehrend der Abwesenheit."
+            summary = f"{len(events)} Events während der Abwesenheit."
 
-        # Log loeschen nach Zusammenfassung
+        # Log löschen nach Zusammenfassung
         await self.redis.delete(KEY_ABSENCE_LOG)
 
         return summary
@@ -1455,12 +1455,12 @@ class RoutineEngine:
         basierend auf typischen Tagesablaeufen.
         """
         if not self.redis:
-            return "Redis nicht verfuegbar fuer Abwesenheits-Simulation."
+            return "Redis nicht verfügbar für Abwesenheits-Simulation."
 
         await self.redis.setex(KEY_VACATION_SIM, 30 * 86400, "active")
         self._vacation_task = asyncio.create_task(self._run_vacation_simulation())
         logger.info("Abwesenheits-Simulation gestartet")
-        return f"Das Haus wird bewohnt wirken, {get_person_title()}. Alles Weitere uebernehme ich."
+        return f"Das Haus wird bewohnt wirken, {get_person_title()}. Alles Weitere übernehme ich."
 
     async def stop_vacation_simulation(self) -> str:
         """Stoppt die Abwesenheits-Simulation."""
@@ -1473,13 +1473,13 @@ class RoutineEngine:
             except asyncio.CancelledError:
                 pass
         logger.info("Abwesenheits-Simulation gestoppt")
-        return f"Abwesenheits-Simulation beendet. Willkommen zurueck, {get_person_title()}."
+        return f"Abwesenheits-Simulation beendet. Willkommen zurück, {get_person_title()}."
 
     async def _run_vacation_simulation(self):
         """Hauptloop der Abwesenheits-Simulation (nur Licht).
 
         Bug 7: Cover-Aktionen (covers_up/covers_down) werden NICHT mehr hier gesteuert
-        — das macht proactive._cover_schedule_logic() ueber vacation_simulation.* Config.
+        — das macht proactive._cover_schedule_logic() über vacation_simulation.* Config.
         Bug 9: Config wird bei jedem Zyklus frisch gelesen (Hot-Reload).
         """
         while True:
@@ -1537,7 +1537,7 @@ class RoutineEngine:
         """Fuehrt eine Simulations-Aktion aus (nur Licht, keine Covers)."""
         # Bug 7: Cover-Aktionen entfernt — proactive.py steuert Covers
         if action_type in ("covers_up", "covers_down"):
-            logger.debug("Vacation-Sim: Cover-Aktion '%s' uebersprungen (proactive.py)", action_type)
+            logger.debug("Vacation-Sim: Cover-Aktion '%s' übersprungen (proactive.py)", action_type)
             return
 
         try:
@@ -1582,7 +1582,7 @@ class RoutineEngine:
     # ------------------------------------------------------------------
 
     async def get_travel_briefing(self) -> str:
-        """Holt Verkehrs-Infos fuer das Morning Briefing.
+        """Holt Verkehrs-Infos für das Morning Briefing.
 
         Nutzt HA travel_time Sensoren (Google/Waze/HERE Integration).
         """

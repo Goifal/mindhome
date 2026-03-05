@@ -2,10 +2,10 @@
 Threat Assessment - Proaktive Sicherheits-Analyse.
 
 Features:
-- Ungewoehnliche Bewegung nachts (wenn alle schlafen)
+- Ungewöhnliche Bewegung nachts (wenn alle schlafen)
 - Offene Fenster bei Sturmwarnung
-- Unbekannte Geraete im Netzwerk (via HA device_tracker)
-- Tuer offen + niemand zuhause
+- Unbekannte Geräte im Netzwerk (via HA device_tracker)
+- Tür offen + niemand zuhause
 - Zusammenfassende Sicherheitsbewertung
 
 Wird periodisch von proactive.py aufgerufen.
@@ -27,7 +27,7 @@ KEY_THREAT_NOTIFIED = "mha:security:notified:"
 
 
 class ThreatAssessment:
-    """Proaktive Sicherheitsanalyse fuer das Smart Home."""
+    """Proaktive Sicherheitsanalyse für das Smart Home."""
 
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
@@ -38,7 +38,7 @@ class ThreatAssessment:
         self.night_start = security_cfg.get("night_start_hour", 23)
         self.night_end = security_cfg.get("night_end_hour", 6)
 
-        # Bekannte Geraete-Patterns: Entity-IDs die diese Substrings enthalten
+        # Bekannte Geräte-Patterns: Entity-IDs die diese Substrings enthalten
         # werden nie als "unbekannt" gemeldet (z.B. "ps5", "amazon", "watch")
         self._known_device_patterns = [
             p.lower() for p in security_cfg.get("known_device_patterns", [])
@@ -51,7 +51,7 @@ class ThreatAssessment:
 
     @staticmethod
     def _get_weather_context(states: list[dict]) -> dict:
-        """Extrahiert Wetter-Kontext fuer Fehlalarm-Filterung."""
+        """Extrahiert Wetter-Kontext für Fehlalarm-Filterung."""
         for s in states:
             if s.get("entity_id", "").startswith("weather."):
                 attrs = s.get("attributes", {})
@@ -87,20 +87,20 @@ class ThreatAssessment:
         now = datetime.now()
         is_night = now.hour >= self.night_start or now.hour < self.night_end
 
-        # 1. Naechtliche Bewegung wenn alle schlafen
+        # 1. Nächtliche Bewegung wenn alle schlafen
         if is_night:
             night_threats = await self._check_night_motion(states, weather_ctx)
             threats.extend(night_threats)
 
-        # 2. Offene Fenster/Tueren bei Sturm
+        # 2. Offene Fenster/Türen bei Sturm
         storm_threats = self._check_storm_windows(states)
         threats.extend(storm_threats)
 
-        # 3. Tuer offen + niemand zuhause
+        # 3. Tür offen + niemand zuhause
         empty_threats = self._check_doors_nobody_home(states)
         threats.extend(empty_threats)
 
-        # 4. Unbekannte Geraete im Netzwerk
+        # 4. Unbekannte Geräte im Netzwerk
         device_threats = await self._check_unknown_devices(states)
         threats.extend(device_threats)
 
@@ -162,7 +162,7 @@ class ThreatAssessment:
                     friendly = s.get("attributes", {}).get("friendly_name", eid)
                     threats.append({
                         "type": "night_motion",
-                        "message": f"Naechtliche Bewegung erkannt: {friendly}. Alle Bewohner sollten schlafen.",
+                        "message": f"Nächtliche Bewegung erkannt: {friendly}. Alle Bewohner sollten schlafen.",
                         "urgency": "high",
                         "entity": eid,
                     })
@@ -173,7 +173,7 @@ class ThreatAssessment:
         """Prueft ob Fenster bei Sturmwarnung offen sind."""
         threats = []
 
-        # Windgeschwindigkeit pruefen
+        # Windgeschwindigkeit prüfen
         wind_speed = None
         for s in states:
             if s.get("entity_id", "").startswith("weather."):
@@ -190,7 +190,7 @@ class ThreatAssessment:
         if wind_speed_val < wind_threshold:  # kein Sturm
             return []
 
-        # Offene Fenster/Tueren bei Sturm — kategorisiert (Tore separat)
+        # Offene Fenster/Türen bei Sturm — kategorisiert (Tore separat)
         from .function_calling import is_window_or_door, get_opening_type
         open_windows = []
         open_gates = []
@@ -209,7 +209,7 @@ class ThreatAssessment:
         if open_windows:
             threats.append({
                 "type": "storm_windows",
-                "message": f"Sturmwarnung ({wind_speed_val:.0f} km/h)! {len(open_windows)} Fenster/Tueren noch offen: {', '.join(open_windows)}.",
+                "message": f"Sturmwarnung ({wind_speed_val:.0f} km/h)! {len(open_windows)} Fenster/Türen noch offen: {', '.join(open_windows)}.",
                 "urgency": "high",
             })
         if open_gates:
@@ -222,7 +222,7 @@ class ThreatAssessment:
         return threats
 
     def _check_doors_nobody_home(self, states: list[dict]) -> list[dict]:
-        """Prueft ob Tueren offen sind wenn niemand zuhause ist."""
+        """Prueft ob Türen offen sind wenn niemand zuhause ist."""
         threats = []
 
         # Ist jemand zuhause?
@@ -236,7 +236,7 @@ class ThreatAssessment:
         if anyone_home:
             return []
 
-        # Offene Tueren/Fenster/Tore — konsistent mit is_window_or_door()
+        # Offene Türen/Fenster/Tore — konsistent mit is_window_or_door()
         from .function_calling import is_window_or_door, get_opening_type
         for s in states:
             eid = s.get("entity_id", "")
@@ -246,14 +246,14 @@ class ThreatAssessment:
                 continue
             friendly = s.get("attributes", {}).get("friendly_name", eid)
             opening_type = get_opening_type(eid, s)
-            type_label = {"door": "Tuer", "gate": "Tor", "window": "Fenster"}.get(opening_type, "Fenster")
+            type_label = {"door": "Tür", "gate": "Tor", "window": "Fenster"}.get(opening_type, "Fenster")
             threats.append({
                 "type": f"{opening_type}_open_empty",
                 "message": f"{friendly} ({type_label}) ist offen und niemand ist zuhause!",
                 "urgency": "critical",
             })
 
-        # Entriegelte Schloesser
+        # Entriegelte Schlösser
         for s in states:
             eid = s.get("entity_id", "")
             if eid.startswith("lock.") and s.get("state") == "unlocked":
@@ -267,7 +267,7 @@ class ThreatAssessment:
         return threats
 
     async def _check_unknown_devices(self, states: list[dict]) -> list[dict]:
-        """Prueft ob unbekannte Geraete im Netzwerk sind."""
+        """Prueft ob unbekannte Geräte im Netzwerk sind."""
         threats = []
         if not self.redis:
             return []
@@ -282,25 +282,25 @@ class ThreatAssessment:
         if not tracked_devices:
             return []
 
-        # Bekannte Geraete aus Redis holen
+        # Bekannte Geräte aus Redis holen
         known_raw = await self.redis.smembers(KEY_KNOWN_DEVICES)
         known = {d.decode() if isinstance(d, bytes) else d for d in known_raw} if known_raw else set()
 
-        # Beim ersten Mal: Alle aktuellen Geraete als "bekannt" speichern
+        # Beim ersten Mal: Alle aktuellen Geräte als "bekannt" speichern
         if not known:
             for device in tracked_devices:
                 await self.redis.sadd(KEY_KNOWN_DEVICES, device)
             return []
 
-        # Unbekannte Geraete
+        # Unbekannte Geräte
         for device in tracked_devices:
             if device not in known:
-                # Config-Allowlist: Patterns wie "ps5", "amazon", "watch" ueberspringen
+                # Config-Allowlist: Patterns wie "ps5", "amazon", "watch" überspringen
                 device_lower = device.lower()
                 if any(pat in device_lower for pat in self._known_device_patterns):
                     # Auto-learn: Als bekannt speichern damit kein erneuter Check
                     await self.redis.sadd(KEY_KNOWN_DEVICES, device)
-                    logger.debug("Geraet per Allowlist akzeptiert: %s", device)
+                    logger.debug("Gerät per Allowlist akzeptiert: %s", device)
                     continue
 
                 key = f"unknown_device_{device}"
@@ -314,7 +314,7 @@ class ThreatAssessment:
                     name = friendly or device
                     threats.append({
                         "type": "unknown_device",
-                        "message": f"Unbekanntes Geraet im Netzwerk: {name}.",
+                        "message": f"Unbekanntes Gerät im Netzwerk: {name}.",
                         "urgency": "medium",
                         "entity": device,
                     })
@@ -324,12 +324,12 @@ class ThreatAssessment:
     def _check_smoke_fire(self, states: list[dict]) -> list[dict]:
         """Prueft Rauchmelder und Feuer-Sensoren.
 
-        Nutzt primaer device_class (smoke, carbon_monoxide) fuer zuverlaessige
-        Erkennung. Keyword-Fallback nur fuer echte Alarm-Sensoren, NICHT fuer
+        Nutzt primaer device_class (smoke, carbon_monoxide) für zuverlaessige
+        Erkennung. Keyword-Fallback nur für echte Alarm-Sensoren, NICHT für
         CO2-Luftqualitaetssensoren (die sind kein Notfall).
         """
         threats = []
-        # device_class Werte die HA fuer echte Alarm-Sensoren verwendet
+        # device_class Werte die HA für echte Alarm-Sensoren verwendet
         alarm_device_classes = {"smoke", "carbon_monoxide", "gas"}
         # Keywords nur als Fallback wenn kein device_class gesetzt
         smoke_keywords = ["smoke", "rauch", "fire", "feuer", "kohlenmonoxid", "carbon_monoxide"]
@@ -363,7 +363,7 @@ class ThreatAssessment:
                                friendly, eid, device_class or "none")
                 threats.append({
                     "type": "smoke_fire",
-                    "message": f"ALARM: {friendly} hat ausgeloest! Sofortige Pruefung erforderlich!",
+                    "message": f"ALARM: {friendly} hat ausgelöst! Sofortige Pruefung erforderlich!",
                     "urgency": "critical",
                     "entity": eid,
                 })
@@ -387,7 +387,7 @@ class ThreatAssessment:
                 friendly = s.get("attributes", {}).get("friendly_name", eid)
                 threats.append({
                     "type": "water_leak",
-                    "message": f"Wasserleck erkannt: {friendly}! Bitte umgehend pruefen.",
+                    "message": f"Wasserleck erkannt: {friendly}! Bitte umgehend prüfen.",
                     "urgency": "critical",
                     "entity": eid,
                 })
@@ -405,12 +405,12 @@ class ThreatAssessment:
 
         states = await self.ha.get_states()
         if not states:
-            return {"score": -1, "level": "unknown", "details": ["Keine HA-Daten verfuegbar"]}
+            return {"score": -1, "level": "unknown", "details": ["Keine HA-Daten verfügbar"]}
 
         score = 100
         details = []
 
-        # Tueren/Fenster/Tore pruefen — konsistent mit is_window_or_door()
+        # Türen/Fenster/Tore prüfen — konsistent mit is_window_or_door()
         from .function_calling import is_window_or_door, get_opening_type
         open_doors = 0
         open_windows = 0
@@ -431,7 +431,7 @@ class ThreatAssessment:
 
         if open_doors > 0:
             score -= open_doors * 15
-            details.append(f"{open_doors} Tuer(en) offen")
+            details.append(f"{open_doors} Tür(en) offen")
         if open_windows > 0:
             score -= open_windows * 5
         if open_gates > 0:
@@ -439,16 +439,16 @@ class ThreatAssessment:
             details.append(f"{open_gates} Tor(e) offen")
             details.append(f"{open_windows} Fenster offen")
 
-        # Schloesser pruefen
+        # Schlösser prüfen
         unlocked = 0
         for s in states:
             if s.get("entity_id", "").startswith("lock.") and s.get("state") == "unlocked":
                 unlocked += 1
         if unlocked > 0:
             score -= unlocked * 20
-            details.append(f"{unlocked} Schloss/Schloesser entriegelt")
+            details.append(f"{unlocked} Schloss/Schlösser entriegelt")
 
-        # Rauchmelder pruefen
+        # Rauchmelder prüfen
         smoke_active = any(
             s.get("state") == "on"
             and s.get("entity_id", "").startswith("binary_sensor.")
@@ -459,7 +459,7 @@ class ThreatAssessment:
             score -= 50
             details.append("Rauchmelder aktiv!")
 
-        # Wasserleck pruefen
+        # Wasserleck prüfen
         water_active = any(
             s.get("state") == "on"
             and s.get("entity_id", "").startswith("binary_sensor.")
@@ -498,17 +498,17 @@ class ThreatAssessment:
         return {"score": score, "level": level, "details": details}
 
     async def escalate_threat(self, threat: dict) -> list[str]:
-        """Fuehrt Eskalations-Aktionen fuer kritische Bedrohungen aus.
+        """Fuehrt Eskalations-Aktionen für kritische Bedrohungen aus.
 
-        F-009: Nur Benachrichtigungs-Aktionen (Lichter) werden automatisch ausgefuehrt.
-        Physische Sicherheits-Aktionen (Schloesser) erfordern Owner-Bestaetigung
-        die ueber den Notification-Callback angefordert wird.
+        F-009: Nur Benachrichtigungs-Aktionen (Lichter) werden automatisch ausgeführt.
+        Physische Sicherheits-Aktionen (Schlösser) erfordern Owner-Bestaetigung
+        die über den Notification-Callback angefordert wird.
 
         Args:
             threat: Bedrohungs-Dict aus assess_threats()
 
         Returns:
-            Liste der ausgefuehrten Aktionen
+            Liste der ausgeführten Aktionen
         """
         actions_taken = []
         threat_type = threat.get("type", "")
@@ -529,7 +529,7 @@ class ThreatAssessment:
             except Exception as e:
                 logger.warning("Eskalation Lichter fehlgeschlagen: %s", e)
 
-        # F-009: Bei offenen Tueren + niemand da: NUR WARNUNG, keine Auto-Verriegelung
+        # F-009: Bei offenen Türen + niemand da: NUR WARNUNG, keine Auto-Verriegelung
         # Automatisches Verriegeln kann Bewohner aussperren bei Fehlalarmen
         if threat_type in ("door_open_empty", "lock_open_empty"):
             entity = threat.get("entity", "")
@@ -541,7 +541,7 @@ class ThreatAssessment:
                 )
                 actions_taken.append(
                     f"WARNUNG: {entity} ist offen bei leerem Haus — "
-                    f"bitte manuell verriegeln oder per Sprache bestaetigen"
+                    f"bitte manuell verriegeln oder per Sprache bestätigen"
                 )
 
         return actions_taken

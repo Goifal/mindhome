@@ -1,5 +1,5 @@
 """
-Context Builder - Sammelt alle relevanten Daten fuer den LLM-Prompt.
+Context Builder - Sammelt alle relevanten Daten für den LLM-Prompt.
 Holt Daten von Home Assistant, MindHome und Semantic Memory via REST API.
 
 Phase 7: Raum-Profile und saisonale Anpassungen.
@@ -35,11 +35,11 @@ try:
             _rp = yaml.safe_load(f)
             _ROOM_PROFILES = _rp.get("rooms", {})
             _SEASONAL_CONFIG = _rp.get("seasonal", {})
-        logger.info("Raum-Profile geladen: %d Raeume", len(_ROOM_PROFILES))
+        logger.info("Raum-Profile geladen: %d Räume", len(_ROOM_PROFILES))
 except Exception as e:
     logger.warning("room_profiles.yaml nicht geladen: %s", e)
 
-# F-001/F-004/F-013-F-017: Prompt-Injection-Schutz fuer LLM-Kontext
+# F-001/F-004/F-013-F-017: Prompt-Injection-Schutz für LLM-Kontext
 # F-080: Erweiterter Filter mit Unicode-Tricks, Markdown, Base64, Delimiter
 # F-084: Extraction-Attack-Patterns, Decimal HTML Entities, Delimiter Confusion
 _INJECTION_PATTERN = re.compile(
@@ -106,7 +106,7 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
     text = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
     # Mehrfach-Leerzeichen komprimieren
     text = re.sub(r'\s{2,}', ' ', text).strip()
-    # F-084: Injection-Pattern auf VOLLEM Text pruefen (VOR Truncation!)
+    # F-084: Injection-Pattern auf VOLLEM Text prüfen (VOR Truncation!)
     if _INJECTION_PATTERN.search(text):
         logger.warning(
             "Prompt-Injection-Verdacht in %s blockiert: %.80s",
@@ -118,7 +118,7 @@ def _sanitize_for_prompt(text: str, max_len: int = 200, label: str = "") -> str:
     return text
 
 
-# Relevante Entity-Typen fuer den Kontext
+# Relevante Entity-Typen für den Kontext
 RELEVANT_DOMAINS = [
     "light", "climate", "cover", "scene", "person",
     "weather", "sensor", "binary_sensor", "media_player",
@@ -127,7 +127,7 @@ RELEVANT_DOMAINS = [
 
 
 class ContextBuilder:
-    """Baut den vollstaendigen Kontext fuer das LLM zusammen."""
+    """Baut den vollstaendigen Kontext für das LLM zusammen."""
 
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
@@ -135,7 +135,7 @@ class ContextBuilder:
         self._activity_engine = None
         self._health_monitor = None
         self._redis = None
-        # Weather-Warning-Cache (aendert sich selten, spart Iteration pro Request)
+        # Weather-Warning-Cache (ändert sich selten, spart Iteration pro Request)
         self._weather_cache: list[str] = []
         self._weather_cache_ts: float = 0.0
         self._WEATHER_CACHE_TTL = 300.0  # 5 Minuten
@@ -145,7 +145,7 @@ class ContextBuilder:
         self.semantic = semantic
 
     def set_redis(self, redis_client):
-        """Setzt Redis-Client fuer Guest-Mode-Check."""
+        """Setzt Redis-Client für Guest-Mode-Check."""
         self._redis = redis_client
 
     def set_activity_engine(self, activity_engine):
@@ -153,7 +153,7 @@ class ContextBuilder:
         self._activity_engine = activity_engine
 
     def set_health_monitor(self, health_monitor):
-        """Setzt die Referenz zum Health Monitor (fuer Trend-Indikatoren)."""
+        """Setzt die Referenz zum Health Monitor (für Trend-Indikatoren)."""
         self._health_monitor = health_monitor
 
     async def build(
@@ -165,9 +165,9 @@ class ContextBuilder:
 
         Args:
             trigger: Was den Kontext ausloest ("voice", "proactive", "api")
-            user_text: User-Eingabe fuer semantische Suche
+            user_text: User-Eingabe für semantische Suche
             person: Name der Person
-            profile: Optionales RequestProfile fuer selektive Subsystem-Aktivierung.
+            profile: Optionales RequestProfile für selektive Subsystem-Aktivierung.
                      Wenn None, werden alle Subsysteme aktiviert (Rueckwaertskompatibel).
 
         Returns:
@@ -231,7 +231,7 @@ class ContextBuilder:
         # MindHome-Daten
         mindhome_data = _result_map.get("mindhome")
         if isinstance(mindhome_data, BaseException):
-            logger.debug("MindHome nicht verfuegbar: %s", mindhome_data)
+            logger.debug("MindHome nicht verfügbar: %s", mindhome_data)
             mindhome_data = None
         if mindhome_data:
             context["mindhome"] = mindhome_data
@@ -268,7 +268,7 @@ class ContextBuilder:
             # Warnungen
             context["alerts"] = self._extract_alerts(states)
 
-            # MCU-JARVIS: Anomalie-Kontext — ungewoehnliche Zustaende erkennen
+            # MCU-JARVIS: Anomalie-Kontext — ungewöhnliche Zustaende erkennen
             if yaml_config.get("mcu_intelligence", {}).get("anomaly_detection", True):
                 anomalies = self._detect_anomalies(states)
                 if anomalies:
@@ -323,7 +323,7 @@ class ContextBuilder:
                 and (sanitized := _sanitize_for_prompt(f["content"], 500, "semantic_fact"))
             ]
 
-            # Allgemeine Fakten ueber die Person (Praeferenzen)
+            # Allgemeine Fakten über die Person (Praeferenzen)
             if person:
                 person_facts = await self.semantic.get_facts_by_person(person)
                 memories["person_facts"] = [
@@ -355,11 +355,11 @@ class ContextBuilder:
             attrs = state.get("attributes", {})
             domain = entity_id.split(".")[0] if "." in entity_id else ""
 
-            # Hidden-Entities komplett ueberspringen
+            # Hidden-Entities komplett überspringen
             if is_entity_hidden(entity_id):
                 continue
 
-            # Temperaturen (nur echte Raumthermostate, keine Waermepumpen/Fehler)
+            # Temperaturen (nur echte Raumthermostate, keine Wärmepumpen/Fehler)
             if domain == "climate":
                 current_temp = attrs.get("current_temperature")
                 if current_temp is None:
@@ -368,7 +368,7 @@ class ContextBuilder:
                     temp_val = float(current_temp)
                 except (ValueError, TypeError):
                     continue
-                # Sensor-Fehler (-128°C) und Nicht-Raum-Geraete (Waermepumpe >50°C) filtern
+                # Sensor-Fehler (-128°C) und Nicht-Raum-Geräte (Wärmepumpe >50°C) filtern
                 if temp_val < -20 or temp_val > 50:
                     continue
                 # MindHome-Raumnamen bevorzugen (konsistent mit function_calling)
@@ -426,7 +426,7 @@ class ContextBuilder:
                     "wind_bearing": attrs.get("wind_bearing"),
                     "pressure": attrs.get("pressure"),
                 }
-                # Forecast (naechste Stunden falls vorhanden)
+                # Forecast (nächste Stunden falls vorhanden)
                 forecast = attrs.get("forecast", [])
                 if forecast:
                     upcoming = []
@@ -462,7 +462,25 @@ class ContextBuilder:
                 if name:
                     house["media"].append(f"{name}: {title}" if title else name)
 
-            # Cover-Status (Rolllaeden/Jalousien/Garagentore)
+            # Szenen (kürzlich aktiviert = innerhalb der letzten 2 Stunden)
+            elif domain == "scene":
+                last_changed = state.get("last_changed", "")
+                if last_changed:
+                    try:
+                        changed_dt = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
+                        now_dt = datetime.now().astimezone() if changed_dt.tzinfo else datetime.now()
+                        diff_s = (now_dt - changed_dt).total_seconds()
+                        if 0 <= diff_s < 7200:  # letzte 2 Stunden
+                            name = _sanitize_for_prompt(
+                                attrs.get("friendly_name", entity_id.replace("scene.", "").replace("_", " ").title()),
+                                50, "scene_name",
+                            )
+                            if name:
+                                house["active_scenes"].append(name)
+                    except (ValueError, TypeError):
+                        pass
+
+            # Cover-Status (Rollläden/Jalousien/Garagentore)
             elif domain == "cover" and s not in ("unavailable", "unknown"):
                 mh_room = get_mindhome_room(entity_id)
                 if mh_room:
@@ -557,7 +575,7 @@ class ContextBuilder:
                             "tamper": "MANIPULATION ERKANNT", "alarm": "ALARM AKTIV",
                             "connectivity": "verbunden",
                             "running": "laeuft", "problem": "PROBLEM",
-                            "update": "Update verfuegbar", "doorbell": "klingelt",
+                            "update": "Update verfügbar", "doorbell": "klingelt",
                             "rain_sensor": "Regen erkannt",
                         }
                         _BINARY_STATE_MAP_OFF = {
@@ -576,7 +594,7 @@ class ContextBuilder:
                             "_state": s,
                         })
 
-            # Schloesser (Lock-Status) — alle lock.* Entities
+            # Schlösser (Lock-Status) — alle lock.* Entities
             elif domain == "lock" and s in ("locked", "unlocked"):
                 ann = get_entity_annotation(entity_id)
                 desc = ann.get("description", "")
@@ -598,7 +616,7 @@ class ContextBuilder:
                 if name:
                     _vac_de = {
                         "cleaning": "saugt", "docked": "Ladestation",
-                        "returning": "faehrt zurueck", "paused": "pausiert",
+                        "returning": "faehrt zurück", "paused": "pausiert",
                         "idle": "bereit", "error": "FEHLER",
                     }
                     status = _vac_de.get(s, s)
@@ -611,9 +629,9 @@ class ContextBuilder:
                         parts.append(f"Stufe: {fan_speed}")
                     house.setdefault("vacuum", []).append(", ".join(parts))
 
-            # Kalender (naechster Termin aus HA State-Attribut)
+            # Kalender (nächster Termin aus HA State-Attribut)
             # state="on" = Termin findet GERADE statt
-            # state="off" = kein aktueller Termin, aber start_time zeigt den naechsten
+            # state="off" = kein aktueller Termin, aber start_time zeigt den nächsten
             elif domain == "calendar":
                 summary = attrs.get("message", "")
                 start = attrs.get("start_time", "")
@@ -630,16 +648,16 @@ class ContextBuilder:
                     )
                     if summary:
                         house.setdefault("calendar", []).append(
-                            f"[naechster] {summary} um {start}"
+                            f"[nächster] {summary} um {start}"
                         )
 
         # Annotierte Sensoren: Priorisiert sortieren + auf Text reduzieren
-        # Niedrige Zahl = hoehere Prioritaet (wird zuerst angezeigt)
+        # Niedrige Zahl = höhere Prioritaet (wird zuerst angezeigt)
         _ROLE_PRIORITY = {
             # Alarme & Sicherheit (immer zuerst!)
             "water_leak": 0, "smoke": 0, "gas": 0, "co": 0,
             "tamper": 0, "alarm": 0,
-            # Oeffnungen (offene Fenster/Tueren wichtig)
+            # Oeffnungen (offene Fenster/Türen wichtig)
             "window_contact": 1, "door_contact": 1,
             "garage_door": 1, "gate": 1, "lock": 1, "doorbell": 1,
             # Aktivitaet
@@ -653,7 +671,7 @@ class ContextBuilder:
             "wind_speed": 6, "rain": 6, "rain_sensor": 6, "uv_index": 6,
             # Energie
             "solar": 7, "power_meter": 7, "energy": 7, "ev_charger": 7,
-            # Geraete-Status
+            # Geräte-Status
             "running": 8, "problem": 8, "connectivity": 8, "update": 8,
             # Sonstiges
             "light_level": 9, "vibration": 9, "battery": 9, "noise": 9,
@@ -761,7 +779,7 @@ class ContextBuilder:
                     if t >= temp_warn_high:
                         warnings.append(f"Hitzewarnung: {t}°C Aussentemperatur")
                     elif t <= temp_warn_low:
-                        warnings.append(f"Kaeltewarnung: {t}°C Aussentemperatur")
+                        warnings.append(f"Kältewarnung: {t}°C Aussentemperatur")
                 except (ValueError, TypeError):
                     pass
 
@@ -797,7 +815,7 @@ class ContextBuilder:
 
     @staticmethod
     def _translate_weather_warning(condition: str) -> str:
-        """Uebersetzt gefaehrliche Wetterbedingungen."""
+        """Übersetzt gefaehrliche Wetterbedingungen."""
         translations = {
             "lightning": "Gewitter",
             "lightning-rainy": "Gewitter mit Regen",
@@ -822,7 +840,7 @@ class ContextBuilder:
                     )
                     alerts.append(f"ALARM: {name}")
 
-            # Fenster/Tueren offen — kategorisiert (Fenster/Tuer vs Tor)
+            # Fenster/Türen offen — kategorisiert (Fenster/Tür vs Tor)
             if is_window_or_door(entity_id, state):
                 if s == "on":
                     name = state.get("attributes", {}).get(
@@ -836,9 +854,9 @@ class ContextBuilder:
 
     @staticmethod
     def _detect_anomalies(states: list[dict]) -> list[str]:
-        """Erkennt ungewoehnliche Zustaende im Haus.
+        """Erkennt ungewöhnliche Zustaende im Haus.
 
-        MCU-JARVIS-Feature: Liefert beilaeufige Beobachtungen fuer den
+        MCU-JARVIS-Feature: Liefert beilaeufige Beobachtungen für den
         System-Prompt, die der LLM in seine Antwort einfliessen lassen kann.
 
         Beispiel: 'Waschmaschine seit 3 Stunden im Pause-Modus.'
@@ -852,7 +870,7 @@ class ContextBuilder:
             attrs = state.get("attributes", {})
             name = attrs.get("friendly_name", eid)
 
-            # Geraet seit langer Zeit in ungewoehnlichem Zustand
+            # Gerät seit langer Zeit in ungewöhnlichem Zustand
             last_changed = attrs.get("last_changed") or state.get("last_changed", "")
             if last_changed:
                 try:
@@ -893,7 +911,7 @@ class ContextBuilder:
         return anomalies[:3]  # Max 3 Anomalien im Kontext
 
     async def _get_mindhome_data(self) -> Optional[dict]:
-        """Holt optionale MindHome-Daten (parallel fuer Geschwindigkeit)."""
+        """Holt optionale MindHome-Daten (parallel für Geschwindigkeit)."""
         import asyncio
 
         try:
@@ -909,7 +927,7 @@ class ContextBuilder:
                 data["energy"] = energy
             return data if data else None
         except Exception as e:
-            logger.debug("MindHome nicht verfuegbar: %s", e)
+            logger.debug("MindHome nicht verfügbar: %s", e)
             return None
 
     @staticmethod
@@ -938,7 +956,7 @@ class ContextBuilder:
 
     @staticmethod
     def _get_room_profile(room_name: str) -> Optional[dict]:
-        """Holt das Raum-Profil fuer den aktuellen Raum."""
+        """Holt das Raum-Profil für den aktuellen Raum."""
         if not room_name or not _ROOM_PROFILES:
             return None
 
@@ -962,7 +980,7 @@ class ContextBuilder:
 
     @staticmethod
     def get_room_override(room_name: str, override_type: str) -> Optional[dict]:
-        """Prueft ob ein gelerntes Override fuer den Raum existiert.
+        """Prueft ob ein gelerntes Override für den Raum existiert.
 
         Override-Typen: temperature, light, cover, scene.
         Overrides werden in room_profiles.yaml unter rooms.{room}.overrides gespeichert
@@ -985,7 +1003,7 @@ class ContextBuilder:
         overrides = profile.get("overrides", {})
         if override_type in overrides:
             override = overrides[override_type]
-            # Zeitbasiert: Pruefen ob Override gerade aktiv
+            # Zeitbasiert: Prüfen ob Override gerade aktiv
             now = datetime.now()
             if "active_hours" in override:
                 start_h, end_h = override["active_hours"]
@@ -1001,10 +1019,10 @@ class ContextBuilder:
 
     @staticmethod
     def learn_room_override(room_name: str, override_type: str, value: dict):
-        """Speichert ein gelerntes Override fuer einen Raum in die YAML-Datei.
+        """Speichert ein gelerntes Override für einen Raum in die YAML-Datei.
 
         Wird aufgerufen wenn der User eine Einstellung korrigiert und Jarvis
-        sich die Aenderung fuer diesen Raum merken soll.
+        sich die Änderung für diesen Raum merken soll.
         """
         room_lower = room_name.lower().replace(" ", "_")
         if room_lower not in _ROOM_PROFILES:
@@ -1059,7 +1077,7 @@ class ContextBuilder:
         season = seasonal.get("season", "summer")
         outside_temp = seasonal.get("outside_temp")
 
-        # Rolladen-Oeffnung: 30 Min nach Sonnenaufgang (im Sommer frueher)
+        # Rolladen-Oeffnung: 30 Min nach Sonnenaufgang (im Sommer früher)
         try:
             sr_parts = sunrise.split(":")
             sr_hour, sr_min = int(sr_parts[0]), int(sr_parts[1])
@@ -1070,22 +1088,22 @@ class ContextBuilder:
         open_min = max(0, min(1439, sr_hour * 60 + sr_min + offset_open))
         open_time = f"{open_min // 60:02d}:{open_min % 60:02d}"
 
-        # Rolladen-Schliessung: Bei Sonnenuntergang (im Sommer spaeter wegen Hitze)
+        # Rolladen-Schliessung: Bei Sonnenuntergang (im Sommer später wegen Hitze)
         try:
             ss_parts = sunset.split(":")
             ss_hour, ss_min = int(ss_parts[0]), int(ss_parts[1])
         except (ValueError, IndexError):
             ss_hour, ss_min = 19, 0
 
-        # Hitze-Schutz: Im Sommer bei hohen Temperaturen frueher schliessen
+        # Hitze-Schutz: Im Sommer bei hohen Temperaturen früher schließen
         offset_close = 0
         reason = "Standard-Timing nach Sonnenstand"
         if season == "summer" and outside_temp and outside_temp > 28:
-            offset_close = -60  # 1h frueher bei Hitze
+            offset_close = -60  # 1h früher bei Hitze
             reason = f"Hitzeschutz (Aussen: {outside_temp}°C)"
         elif season == "winter":
-            offset_close = -15  # Im Winter etwas frueher
-            reason = "Winter: Frueher schliessen fuer Isolierung"
+            offset_close = -15  # Im Winter etwas früher
+            reason = "Winter: Früher schließen für Isolierung"
 
         close_min = max(0, min(1439, ss_hour * 60 + ss_min + offset_close))
         close_time = f"{close_min // 60:02d}:{close_min % 60:02d}"
@@ -1104,7 +1122,7 @@ class ContextBuilder:
     # ------------------------------------------------------------------
 
     def _build_room_presence(self, states: list[dict]) -> dict:
-        """Baut ein Bild welche Personen in welchen Raeumen sind.
+        """Baut ein Bild welche Personen in welchen Räumen sind.
 
         Nutzt Bewegungsmelder + Person-Entities + konfigurierte Mappings.
 
@@ -1123,7 +1141,7 @@ class ContextBuilder:
         room_speakers = multi_room_cfg.get("room_speakers", {})
         now = datetime.now()
 
-        # Aktive Raeume basierend auf Motion-Sensoren
+        # Aktive Räume basierend auf Motion-Sensoren
         active_rooms = []
         for room_name, sensor_id in (room_sensors or {}).items():
             for state in states:
@@ -1178,9 +1196,9 @@ class ContextBuilder:
     def get_person_room(self, person_name: str, states: list[dict] = None) -> Optional[str]:
         """Ermittelt in welchem Raum eine Person wahrscheinlich ist.
 
-        Fuer Phase 10.2: Delegations-Routing.
+        Für Phase 10.2: Delegations-Routing.
         """
-        # Erst konfigurierte preferred_room pruefen
+        # Erst konfigurierte preferred_room prüfen
         person_profiles = yaml_config.get("person_profiles", {}).get("profiles", {})
         person_key = person_name.lower()
         if person_key in (person_profiles or {}):
@@ -1206,7 +1224,7 @@ class ContextBuilder:
         else:
             season = "winter"
 
-        # Tageslaenge (vereinfacht fuer Mitteleuropa)
+        # Tageslaenge (vereinfacht für Mitteleuropa)
         day_of_year = now.timetuple().tm_yday
         sunrise_hour = 7 - 2 * math.cos(2 * math.pi * (day_of_year - 172) / 365)
         sunset_hour = 17 + 2 * math.cos(2 * math.pi * (day_of_year - 172) / 365)
@@ -1227,7 +1245,7 @@ class ContextBuilder:
             seasonal_data["ventilation_hint"] = sc.get("ventilation", "")
             seasonal_data["cover_hint"] = sc.get("cover_hint", "")
 
-        # Daten aus HA-Entities uebernehmen (echte Werte statt Berechnungen)
+        # Daten aus HA-Entities übernehmen (echte Werte statt Berechnungen)
         if states:
             for state in states:
                 eid = state.get("entity_id", "")

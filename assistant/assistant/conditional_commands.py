@@ -49,7 +49,7 @@ class ConditionalCommands:
             logger.info("ConditionalCommands initialisiert (%s aktive Conditionals)", count or 0)
 
     def set_action_callback(self, callback):
-        """Setzt den Callback fuer Aktions-Ausfuehrung."""
+        """Setzt den Callback für Aktions-Ausfuehrung."""
         self._action_callback = callback
 
     async def create_conditional(
@@ -74,17 +74,17 @@ class ConditionalCommands:
                 - "person_leaves": Person verlaesst das Haus
             trigger_value: Wert des Triggers (z.B. "sensor.regen:on", "person.papa:home")
             action_function: Auszufuehrende Funktion (z.B. "set_cover")
-            action_args: Argumente fuer die Funktion
+            action_args: Argumente für die Funktion
             label: Beschreibung des Conditionals
-            ttl_hours: Gueltigkeitsdauer in Stunden (1-168, default 24)
-            one_shot: Nur einmal ausfuehren, dann loeschen
+            ttl_hours: Gültigkeitsdauer in Stunden (1-168, default 24)
+            one_shot: Nur einmal ausführen, dann löschen
             person: Person die den Befehl erstellt hat
 
         Returns:
             Ergebnis-Dict
         """
         if not self.redis:
-            return {"success": False, "message": "Redis nicht verfuegbar."}
+            return {"success": False, "message": "Redis nicht verfügbar."}
 
         # F-002: Trust-Check bei Erstellung — Gaeste duerfen keine Sicherheitsaktionen anlegen
         if action_function in OWNER_ONLY_ACTIONS and trust_level.lower() not in ("owner",):
@@ -132,7 +132,7 @@ class ConditionalCommands:
 
         return {
             "success": True,
-            "message": f"Bedingung '{label}' erstellt ({shot_str}, gueltig fuer {time_str}).",
+            "message": f"Bedingung '{label}' erstellt ({shot_str}, gültig für {time_str}).",
             "conditional_id": cond_id,
         }
 
@@ -143,7 +143,7 @@ class ConditionalCommands:
         Wird von proactive.py bei jedem state_changed aufgerufen.
 
         Returns:
-            Liste der ausgefuehrten Aktionen.
+            Liste der ausgeführten Aktionen.
         """
         if not self.redis:
             return []
@@ -188,7 +188,7 @@ class ConditionalCommands:
                     )
                     continue
 
-                # Aktion ausfuehren
+                # Aktion ausführen
                 if self._action_callback:
                     try:
                         result = await self._action_callback(
@@ -203,10 +203,10 @@ class ConditionalCommands:
                     except Exception as e:
                         logger.error("Conditional Action fehlgeschlagen: %s", e)
 
-                # Zaehler erhoehen
+                # Zaehler erhöhen
                 cond["executed_count"] = cond.get("executed_count", 0) + 1
 
-                # one_shot: nach Ausfuehrung loeschen
+                # one_shot: nach Ausfuehrung löschen
                 if cond.get("one_shot", True):
                     await self.redis.delete(key)
                     await self.redis.srem(KEY_INDEX, cond_id)
@@ -313,14 +313,14 @@ class ConditionalCommands:
             ttl = await self.redis.ttl(key)
             ttl_hours = max(0, ttl // 3600) if ttl > 0 else 0
             shot = "einmalig" if cond.get("one_shot") else "dauerhaft"
-            lines.append(f"  - {cond['label']} ({shot}, noch {ttl_hours}h gueltig)")
+            lines.append(f"  - {cond['label']} ({shot}, noch {ttl_hours}h gültig)")
 
         return {"success": True, "message": "\n".join(lines)}
 
     async def delete_conditional(self, cond_id: str) -> dict:
         """Loescht einen bedingten Befehl."""
         if not self.redis:
-            return {"success": False, "message": "Redis nicht verfuegbar."}
+            return {"success": False, "message": "Redis nicht verfügbar."}
 
         key = f"{KEY_PREFIX}{cond_id}"
         existed = await self.redis.delete(key)

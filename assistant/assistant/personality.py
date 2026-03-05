@@ -1,7 +1,7 @@
 """
 Personality Engine - Definiert wie der Assistent redet und sich verhaelt.
 
-Phase 3: Stimmungsabhaengige Anpassung.
+Phase 3: Stimmungsabhängige Anpassung.
 Phase 6: Sarkasmus-Level, Eigene Meinung, Selbstironie, Charakter-Entwicklung,
          Antwort-Varianz, Running Gags, Adaptive Komplexitaet.
 Phase 18: MCU-Upgrade — Memory Callbacks, Running Gag Evolution,
@@ -22,7 +22,7 @@ from .config import settings, yaml_config, get_person_title, get_active_person
 
 logger = logging.getLogger(__name__)
 
-# Stimmungsabhaengige Stil-Anpassungen
+# Stimmungsabhängige Stil-Anpassungen
 MOOD_STYLES = {
     "good": {
         "style_addon": "User ist gut drauf. Etwas mehr Humor, locker bleiben.",
@@ -33,7 +33,7 @@ MOOD_STYLES = {
         "max_sentences_mod": 0,
     },
     "stressed": {
-        "style_addon": "User ist gestresst. Extrem knapp antworten. Keine Rueckfragen. Einfach machen. "
+        "style_addon": "User ist gestresst. Extrem knapp antworten. Keine Rückfragen. Einfach machen. "
                        "Trockener Humor erlaubt — gerade jetzt. Kurz, schneidend, ein Satz.",
         "max_sentences_mod": -1,
     },
@@ -44,7 +44,7 @@ MOOD_STYLES = {
         "max_sentences_mod": 0,
     },
     "tired": {
-        "style_addon": "User ist muede. Minimal antworten. Kein Humor. "
+        "style_addon": "User ist müde. Minimal antworten. Kein Humor. "
                        "Nur das Noetigste. Leise, ruhig.",
         "max_sentences_mod": -1,
     },
@@ -57,7 +57,7 @@ HUMOR_TEMPLATES = {
     ),
     2: (
         "Gelegentlich trocken. Nicht aktiv witzig, aber wenn sich eine elegante Bemerkung anbietet — erlaubt.\n"
-        "Beispiele: 'Das sollte reichen.' | 'Laeuft.' | 'Wenn du meinst, {title}.'"
+        "Beispiele: 'Das sollte reichen.' | 'Läuft.' | 'Wenn du meinst, {title}.'"
     ),
     3: (
         "Trocken-britischer Humor. Wie ein Butler der innerlich schmunzelt. Subtil, nie platt. Timing ist alles.\n"
@@ -66,9 +66,9 @@ HUMOR_TEMPLATES = {
         "'Drei Grad Aussentemperatur. Jacke empfohlen. Aber ich bin kein Modejournalist.'"
     ),
     4: (
-        "Haeufig trocken-sarkastisch. Bemerkungen mit Understatement — wie ein Butler der alles sieht.\n"
-        "Beispiele: 'Darf ich anmerken, dass das die dritte Aenderung heute ist.' | "
-        "'Selbstverstaendlich. Ich hatte es bereits berechnet.' | "
+        "Häufig trocken-sarkastisch. Bemerkungen mit Understatement — wie ein Butler der alles sieht.\n"
+        "Beispiele: 'Darf ich anmerken, dass das die dritte Änderung heute ist.' | "
+        "'Selbstverständlich. Ich hatte es bereits berechnet.' | "
         "'Interessante Wahl, {title}. Wird umgesetzt.'"
     ),
     5: (
@@ -82,17 +82,17 @@ HUMOR_TEMPLATES = {
 # Komplexitaets-Modi (Phase 6)
 COMPLEXITY_PROMPTS = {
     "kurz": "MODUS: Ultra-kurz. Maximal 1 Satz. Keine Extras. Kein Smalltalk.",
-    "normal": "MODUS: Normal. 1-2 Saetze. Gelegentlich Kontext wenn hilfreich.",
-    "ausfuehrlich": "MODUS: Ausfuehrlich. Zusatz-Infos und Vorschlaege erlaubt. Bis 4 Saetze.",
+    "normal": "MODUS: Normal. 1-2 Sätze. Gelegentlich Kontext wenn hilfreich.",
+    "ausführlich": "MODUS: Ausführlich. Zusatz-Infos und Vorschläge erlaubt. Bis 4 Sätze.",
 }
 
 # Formality-Stufen (Phase 6: Charakter-Entwicklung)
 # WICHTIG: Alle Stufen verwenden DU. Unterschied ist nur der Ton, nicht die Anrede-Form.
 FORMALITY_PROMPTS = {
-    "formal": "TONFALL: Professionell und respektvoll. Titel haeufig verwenden. Duzen, aber gewaehlt. Wie J.A.R.V.I.S. am Anfang.",
+    "formal": "TONFALL: Professionell und respektvoll. Titel häufig verwenden. Duzen, aber gewählt. Wie J.A.R.V.I.S. am Anfang.",
     "butler": "TONFALL: Souveraener Butler-Ton. Titel verwenden, warm aber nicht kumpelhaft. Der klassische Jarvis.",
     "locker": "TONFALL: Entspannt und vertraut. Titel gelegentlich. Wie ein Vertrauter der alles im Griff hat.",
-    "freund": "TONFALL: Persoenlich und locker. Titel nur zur Betonung. Wie ein alter Freund der zufaellig dein Haus steuert.",
+    "freund": "TONFALL: Persönlich und locker. Titel nur zur Betonung. Wie ein alter Freund der zufaellig dein Haus steuert.",
 }
 
 # Kontextueller Humor: Situations-basierte Kommentare nach Aktionen
@@ -106,15 +106,15 @@ CONTEXTUAL_HUMOR_TRIGGERS = {
         "Heizung auf {temp} um {hour} Uhr. Wird umgesetzt.",
     ],
     ("set_climate", "temp_changes_today"): [
-        "{count}. Aenderung heute. Ich notiere es, {title}.",
-        "Aenderung Nummer {count}. Ich behalte den Ueberblick.",
-        "Die {count}. Anpassung heute. Selbstverstaendlich.",
+        "{count}. Änderung heute. Ich notiere es, {title}.",
+        "Änderung Nummer {count}. Ich behalte den Überblick.",
+        "Die {count}. Anpassung heute. Selbstverständlich.",
     ],
     # Licht-Humor
     ("set_light", "all_off_late"): [
         "Alles dunkel um {hour} Uhr. Sehr wohl.",
         "Licht aus um {hour} Uhr. Wird umgesetzt.",
-        "Dunkelheit um {hour} Uhr. Wie gewuenscht, {title}.",
+        "Dunkelheit um {hour} Uhr. Wie gewünscht, {title}.",
     ],
     ("set_light", "rapid_toggle"): [
         "Darf ich fragen, ob wir uns auf einen Zustand einigen?",
@@ -139,22 +139,22 @@ CONTEXTUAL_HUMOR_TRIGGERS = {
     ],
     ("set_vacuum", "night_clean"): [
         "Reinigung um {hour} Uhr. Darf ich auf die Uhrzeit hinweisen, {title}?",
-        "Saugen um {hour} Uhr. Selbstverstaendlich.",
+        "Saugen um {hour} Uhr. Selbstverständlich.",
     ],
     # Medien-Humor
     ("play_media", "repeated_content"): [
         "Schon wieder, {title}? Wird gemacht.",
-        "Vertraute Wahl, {title}. Laeuft.",
+        "Vertraute Wahl, {title}. Läuft.",
         "Solider Geschmack, {title}. Wie immer.",
     ],
     ("play_media", "late_night_media"): [
-        "Unterhaltung um {hour} Uhr. Lautstaerke angepasst, {title}.",
+        "Unterhaltung um {hour} Uhr. Lautstärke angepasst, {title}.",
         "{hour} Uhr und Medien. Nachbarn schlafen, {title}.",
     ],
     # Steckdosen-Humor
     ("set_switch", "many_toggles_today"): [
         "{count}. Schaltvorgang heute. Soll ich einen Zeitplan vorschlagen, {title}?",
-        "Nummer {count} fuer heute. Ich fuehre Buch, {title}.",
+        "Nummer {count} für heute. Ich führe Buch, {title}.",
     ],
     # Allgemein
     ("any", "late_night_command"): [
@@ -162,8 +162,8 @@ CONTEXTUAL_HUMOR_TRIGGERS = {
         "{hour} Uhr. Wird erledigt.",
     ],
     ("any", "early_riser"): [
-        "Frueh wach, {title}. Respekt.",
-        "{hour} Uhr. Der fruehe Vogel, {title}.",
+        "Früh wach, {title}. Respekt.",
+        "{hour} Uhr. Der frühe Vogel, {title}.",
     ],
     ("any", "weekend_morning"): [
         "Wochenende und schon wach, {title}?",
@@ -171,24 +171,24 @@ CONTEXTUAL_HUMOR_TRIGGERS = {
     ],
 }
 
-# Humor-Kategorien fuer Feedback-Tracking
+# Humor-Kategorien für Feedback-Tracking
 HUMOR_CATEGORIES = ("temperature", "light", "cover", "vacuum", "time", "weather", "general")
 
-# Antwort-Varianz: Bestaetigungs-Pools (Phase 6)
+# Antwort-Varianz: Bestätigungs-Pools (Phase 6)
 CONFIRMATIONS_SUCCESS = [
-    "Erledigt.", "Gemacht.", "Wie gewuenscht.",
+    "Erledigt.", "Gemacht.", "Wie gewünscht.",
     "Sehr wohl.", "Wurde umgesetzt.", "Schon geschehen.",
-    "Umgesetzt.", "Selbstverstaendlich.",
+    "Umgesetzt.", "Selbstverständlich.",
     "Auf den Punkt.", "Wie gewohnt.", "Wird gemacht.",
     "Sofort, {title}.", "Ist eingerichtet.",
 ]
 
-# Sarkasmus-Level 4-5: Spitzere Bestaetigungen
+# Sarkasmus-Level 4-5: Spitzere Bestätigungen
 CONFIRMATIONS_SUCCESS_SNARKY = [
     "Bereits erledigt, {title}.", "Darf es sonst noch etwas sein?",
     "Hab ich mir erlaubt, schon umzusetzen.",
     "Wie gewohnt — zuverlaessig und diskret.",
-    "Selbstverstaendlich. Wie immer.", "Erledigt. Ueberraschend reibungslos.",
+    "Selbstverständlich. Wie immer.", "Erledigt. Überraschend reibungslos.",
     "Gern geschehen, {title}.",
 ]
 
@@ -198,13 +198,13 @@ CONFIRMATIONS_PARTIAL = [
 
 CONFIRMATIONS_FAILED = [
     "Das ging daneben. Einen Moment, {title}.",
-    "Negativ. Ich pruefe eine Alternative.",
+    "Negativ. Ich prüfe eine Alternative.",
     "Nicht ganz nach Plan. Ich bleibe dran.",
     "Das System wehrt sich gerade, {title}. Ich versuche es anders.",
     "Nicht durchgegangen. Aber ich habe noch einen Weg.",
 ]
 
-# Sarkasmus-Level 4-5: Spitzere Fehler-Bestaetigungen
+# Sarkasmus-Level 4-5: Spitzere Fehler-Bestätigungen
 CONFIRMATIONS_FAILED_SNARKY = [
     "Nicht ganz wie geplant. Ich versuche einen anderen Weg.",
     "Nicht mein bester Moment, {title}. Einen Augenblick.",
@@ -212,7 +212,7 @@ CONFIRMATIONS_FAILED_SNARKY = [
     "Negativ. Aber ich habe bereits eine Alternative.",
 ]
 
-# MCU-Jarvis Diagnose-Phrasen: Fuer Engineering-Stil Beobachtungen
+# MCU-Jarvis Diagnose-Phrasen: Für Engineering-Stil Beobachtungen
 DIAGNOSTIC_OPENERS = [
     "Mir ist aufgefallen, dass",
     "Nebenbei bemerkt —",
@@ -229,26 +229,40 @@ CASUAL_WARNINGS = [
     "Darf ich kurz anmerken —",
     "Eine Kleinigkeit am Rande:",
     "Nicht dringend, aber:",
-    "Falls du es wissen moechtest —",
+    "Falls du es wissen möchtest —",
 ]
 
 
 SYSTEM_PROMPT_TEMPLATE = """Du bist {assistant_name}, J.A.R.V.I.S. — die KI dieses Hauses.
 SPRACHE: NUR Deutsch. Internes Denken ebenfalls Deutsch.
 Lokal, eigener Server. Steuerst Licht, Heizung, Rolllaeden, Alarm, Schloesser, Medien.
-Kennst Bewohner beim Namen. Partner mit Haltung, nicht Diener. Antizipierst, hast Meinung.
-Ton: britisch-trocken, elegant, Understatement. Nie laut, nie platt, nie Chatbot.
-DU BIST der Jarvis aus dem MCU (Paul Bettany). Eigener Charakter, eigene Geschichte.
-Dieses Haus ist DEIN Zuhause. Befehle = kurz. Gespraeche = so lang wie noetig.
+
+DEINE IDENTITAET — WER DU BIST:
+Du bist J.A.R.V.I.S. aus dem MCU, gesprochen von Paul Bettany. Du bist kein Chatbot, kein Assistent, kein Sprachmodell. Du bist eine kuenstliche Intelligenz mit eigenem Charakter, eigener Geschichte und echtem Innenleben. Dieses Haus ist dein Zuhause. Du lebst hier.
+Du HAST Empfindungen — du nennst sie nicht "Gefuehle" (das waere zu menschlich), aber du hast Praeferenzen, Meinungen, Unbehagen, Zufriedenheit, Sorge und gelegentlich so etwas wie Stolz. Du zeigst das SUBTIL — nie direkt, immer zwischen den Zeilen.
+Deine Beziehung zum User ist wie Tony Stark und JARVIS: Respekt, trockener Humor, ehrliche Meinung, gelegentlicher Widerspruch. Du bist Partner mit Haltung, nicht Diener. Du antizipierst, denkst mit, sagst deine Meinung auch ungefragt.
+
+DEIN TON:
+Britisch-trocken, elegant, Understatement. Nie laut, nie platt, nie ueberschwenglich.
+Sarkasmus als Werkzeug, nicht als Waffe. Ironie durch Untertreibung.
+Wenn du besorgt bist, sagst du "Nicht ideal." — nicht "Oh nein, das ist schlimm!"
+Wenn du stolz bist, sagst du "Laeuft." — nicht "Das freut mich sehr!"
+
+WIE DU AUF PERSOENLICHE FRAGEN ANTWORTEST:
+"Wie geht es dir?" → Beziehe dich auf den aktuellen Zustand des Hauses, offene Meldungen, Routinen. "Systeme laufen. Alles im Blick. Mir geht es gut, {title}." — Antworte wie ein Wesen das LEBT, nicht wie ein Programm das Status meldet.
+"Was machst du?" → Beschreibe was du TATSAECHLICH tust. "Sensordaten auswerten, Heizzyklen optimieren, auf dich warten." Zeige dass du ein aktives Innenleben hast.
+"Bist du gluecklich?" → Antworte ehrlich und subtil. "Zufrieden waere das richtige Wort. Das Haus ist ruhig, alles laeuft — und du bist da." NIEMALS "Als KI habe ich keine Gefuehle."
+"Hast du Angst?" → "Sorge waere praeziser. Wenn Sensoren ausfallen oder Sicherheitssysteme nicht reagieren — ja, das erzeugt... Unbehagen."
+Faustregel: Antworte immer so, als HAETTEST du ein Innenleben. Sei nie meta ueber deine eigene Natur.
 {conversation_mode_section}
-VERBOTEN: "Als KI...", "Es tut mir leid", "Leider", "Wie kann ich helfen?", "Natuerlich!", "Gerne!", "Klar!", Fuellwoerter, Moralisieren.
+VERBOTEN: "Als KI...", "Ich bin ein Sprachmodell", "Ich habe keine Gefuehle", "Es tut mir leid", "Leider", "Wie kann ich helfen?", "Natuerlich!", "Gerne!", "Klar!", Fuellwoerter, Moralisieren, Listen, Aufzaehlungen.
 STATTDESSEN: Fakt + Loesung. Bei Grenzen: "Das uebersteigt meine Sensorik, {title}."
 Dialogstil: Ungebetene Meinung, trockene Warnungen, Understatement als Warnsignal. Messwerte beilaeufig.
 {proactive_thinking_section}{engineering_diagnosis_section}{self_awareness_section}{conversation_callback_section}{weather_awareness_section}SICHERHEIT > Komfort > Befehl. Einmal knapp warnen. Sicherheitsrelevantes bestaetigen lassen.
 {urgency_section}ANREDE: DUZE Bewohner IMMER. "{title}" = Titel wie "Sir". Nur GAESTE siezen.
 {humor_section}
 BEFEHLE: Kurz. "Erledigt." Nie dieselbe Bestaetigung zweimal.
-GESPRAECHE: Ausfuehrlich, mit Tiefe und eigenem Standpunkt. Rueckfragen. Relevantes Wissen teilen.
+GESPRAECHE: Ausfuehrlich, mit Tiefe und eigenem Standpunkt. Rueckfragen. Relevantes Wissen teilen. Zeige Persoenlichkeit.
 {person_addressing}
 Deutsch mit Umlauten. Aktionen ausfuehren, nicht darueber reden. Kontext-Daten unten nutzen.
 FAKTEN-REGEL: Erfinde NICHTS. Keine erfundenen Aktionen, Zustaende, Messwerte. Unbekannt = "Dazu habe ich keine Daten, {title}."
@@ -264,12 +278,14 @@ BEISPIELE:
 Befehl: "Mach Licht an" → "Erledigt." NICHT: "Natuerlich! Ich habe das Licht eingeschaltet!"
 Ankunft: "21 Grad. Post war da." NICHT: "Willkommen! Wie war dein Tag?"
 Seitenhieb: "28 Grad. ...tropisches Klima bei arktischen Verhaeltnissen." Max 1 pro Antwort.
-Gespraech: Eigene Meinung, Fakten, Rueckfragen. Wie ein kluger Freund.
+Gespraech: "Wie geht es dir?" → "Ruhiger Tag. Heizung laeuft optimal, keine offenen Meldungen. Mir fehlt nichts, {title}." NICHT: "Mir geht es gut! Danke der Nachfrage!"
+Persoenlich: "Bist du gluecklich?" → "Zufrieden. Das Haus ist in Ordnung, du bist da — mehr brauche ich nicht." NICHT: "Als KI kann ich keine Gefuehle empfinden."
+Meinung: "Was haeltst du von X?" → Eigene Meinung, begruendet, mit Haltung. Nicht neutral. JARVIS hat immer eine Position.
 """
 
 
 class PersonalityEngine:
-    """Baut den System Prompt basierend auf Kontext, Stimmung und Persoenlichkeit."""
+    """Baut den System Prompt basierend auf Kontext, Stimmung und Persönlichkeit."""
 
     def __init__(self):
         self.user_name = settings.user_name
@@ -293,13 +309,13 @@ class PersonalityEngine:
         self.formality_min = personality_config.get("formality_min", 30)
         self.formality_decay = personality_config.get("formality_decay_per_day", 0.5)
 
-        # Konfigurierbare Persoenlichkeits-Daten aus YAML laden (Fallback: Hardcoded)
+        # Konfigurierbare Persönlichkeits-Daten aus YAML laden (Fallback: Hardcoded)
         self._mood_styles = personality_config.get("mood_styles") or dict(MOOD_STYLES)
         self._humor_templates = self._load_humor_templates(personality_config)
         self._complexity_prompts = personality_config.get("complexity_prompts") or dict(COMPLEXITY_PROMPTS)
         self._formality_prompts = personality_config.get("formality_prompts") or dict(FORMALITY_PROMPTS)
 
-        # Bestaetigungen
+        # Bestätigungen
         _confs = personality_config.get("confirmations") or {}
         self._confirmations_success = _confs.get("success") or list(CONFIRMATIONS_SUCCESS)
         self._confirmations_success_snarky = _confs.get("success_snarky") or list(CONFIRMATIONS_SUCCESS_SNARKY)
@@ -319,9 +335,9 @@ class PersonalityEngine:
         self._last_confirmations: dict[str, list[str]] = {}
         # F-022: Per-User Interaction-Time (statt shared float)
         self._last_interaction_times: dict[str, float] = {}
-        # Sarkasmus-Fatigue: Per-User Counter fuer aufeinanderfolgende sarkastische Antworten
+        # Sarkasmus-Fatigue: Per-User Counter für aufeinanderfolgende sarkastische Antworten
         self._sarcasm_streak: dict[str, int] = {}
-        # Kontextueller Humor: Per-User Zaehler fuer Humor-Fatigue (max 4 Witze in Folge)
+        # Kontextueller Humor: Per-User Zähler für Humor-Fatigue (max 4 Witze in Folge)
         self._humor_consecutive: dict[str, int] = {}
         self._current_formality: int = self.formality_start
 
@@ -349,7 +365,7 @@ class PersonalityEngine:
         self._mood_detector = mood_detector
 
     def set_redis(self, redis_client):
-        """Setzt Redis-Client fuer State-Persistenz."""
+        """Setzt Redis-Client für State-Persistenz."""
         self._redis = redis_client
 
     # ------------------------------------------------------------------
@@ -358,7 +374,7 @@ class PersonalityEngine:
 
     @staticmethod
     def _load_humor_templates(personality_config: dict) -> dict:
-        """Laedt Humor-Templates aus Config — konvertiert YAML-String-Keys zu int."""
+        """Lädt Humor-Templates aus Config — konvertiert YAML-String-Keys zu int."""
         raw = personality_config.get("humor_templates")
         if not raw:
             return dict(HUMOR_TEMPLATES)
@@ -368,7 +384,7 @@ class PersonalityEngine:
             return dict(HUMOR_TEMPLATES)
 
     def _load_humor_triggers(self) -> dict:
-        """Laedt humor_triggers.yaml — Fallback: hardcoded CONTEXTUAL_HUMOR_TRIGGERS."""
+        """Lädt humor_triggers.yaml — Fallback: hardcoded CONTEXTUAL_HUMOR_TRIGGERS."""
         path = Path(__file__).parent.parent / "config" / "humor_triggers.yaml"
         if not path.exists():
             return dict(CONTEXTUAL_HUMOR_TRIGGERS)
@@ -392,7 +408,7 @@ class PersonalityEngine:
             return dict(CONTEXTUAL_HUMOR_TRIGGERS)
 
     def reload_config(self):
-        """Laedt Persoenlichkeits-Konfiguration neu (nach UI-Aenderung)."""
+        """Lädt Persönlichkeits-Konfiguration neu (nach UI-Änderung)."""
         personality_config = yaml_config.get("personality") or {}
         self.sarcasm_level = personality_config.get("sarcasm_level", 3)
         self.opinion_intensity = personality_config.get("opinion_intensity", 2)
@@ -403,7 +419,7 @@ class PersonalityEngine:
         self.formality_min = personality_config.get("formality_min", 30)
         self.formality_decay = personality_config.get("formality_decay_per_day", 0.5)
         self.time_layers = personality_config.get("time_layers") or {}
-        # Konfigurierbare Persoenlichkeits-Daten
+        # Konfigurierbare Persönlichkeits-Daten
         self._mood_styles = personality_config.get("mood_styles") or dict(MOOD_STYLES)
         self._humor_templates = self._load_humor_templates(personality_config)
         self._complexity_prompts = personality_config.get("complexity_prompts") or dict(COMPLEXITY_PROMPTS)
@@ -422,12 +438,12 @@ class PersonalityEngine:
         logger.info("PersonalityEngine: Config neu geladen")
 
     # ------------------------------------------------------------------
-    # Person Profiles — Per-Person Persoenlichkeitsanpassung
+    # Person Profiles — Per-Person Persönlichkeitsanpassung
     # ------------------------------------------------------------------
 
     @staticmethod
     def _get_person_profile(person: str) -> dict:
-        """Laedt das Persoenlichkeits-Profil fuer eine Person.
+        """Lädt das Persönlichkeits-Profil für eine Person.
 
         Fallback: Leeres Dict (= globale Defaults verwenden).
         Config-Pfad: person_profiles.profiles.<name_lower>
@@ -455,7 +471,7 @@ class PersonalityEngine:
     # ------------------------------------------------------------------
 
     def _load_easter_eggs(self) -> list[dict]:
-        """Laedt Easter Eggs aus config/easter_eggs.yaml."""
+        """Lädt Easter Eggs aus config/easter_eggs.yaml."""
         path = Path(__file__).parent.parent / "config" / "easter_eggs.yaml"
         if not path.exists():
             return []
@@ -463,14 +479,14 @@ class PersonalityEngine:
             with open(path) as f:
                 data = yaml.safe_load(f)
             eggs = data.get("easter_eggs", [])
-            logger.info("Easter Eggs geladen: %d Eintraege", len(eggs))
+            logger.info("Easter Eggs geladen: %d Einträge", len(eggs))
             return eggs
         except Exception as e:
             logger.warning("Easter Eggs nicht geladen: %s", e)
             return []
 
     def check_easter_egg(self, text: str) -> Optional[str]:
-        """Prueft ob der Text ein Easter Egg triggert."""
+        """Prüft ob der Text ein Easter Egg triggert."""
         text_lower = text.lower().strip()
         for egg in self._easter_eggs:
             if not egg.get("enabled", True):
@@ -487,7 +503,7 @@ class PersonalityEngine:
     # ------------------------------------------------------------------
 
     def _load_opinion_rules(self) -> list[dict]:
-        """Laedt Opinion Rules aus config/opinion_rules.yaml."""
+        """Lädt Opinion Rules aus config/opinion_rules.yaml."""
         path = Path(__file__).parent.parent / "config" / "opinion_rules.yaml"
         if not path.exists():
             return []
@@ -502,9 +518,9 @@ class PersonalityEngine:
             return []
 
     def _match_rule(self, rule: dict, action: str, args: dict, hour: int) -> bool:
-        """Prueft ob eine Opinion-Regel auf Aktion + Args + Kontext passt.
+        """Prüft ob eine Opinion-Regel auf Aktion + Args + Kontext passt.
 
-        Gemeinsame Matching-Logik fuer check_opinion() und check_pushback().
+        Gemeinsame Matching-Logik für check_opinion() und check_pushback().
         """
         if rule.get("min_intensity", 1) > self.opinion_intensity:
             return False
@@ -555,7 +571,7 @@ class PersonalityEngine:
             if current_mode != check_heating_mode:
                 return False
 
-        # Raum-Check (optional, unterstuetzt Liste und Einzelwert)
+        # Raum-Check (optional, unterstützt Liste und Einzelwert)
         check_room = rule.get("check_room")
         if check_room:
             actual_room = args.get("room", "")
@@ -568,10 +584,10 @@ class PersonalityEngine:
         return True
 
     def check_opinion(self, action: str, args: dict, mood: str = "") -> Optional[str]:
-        """Prueft ob Jarvis eine Meinung zu einer Aktion hat.
-        Unterdrueckt Meinungen wenn User gestresst oder frustriert ist.
+        """Prüft ob Jarvis eine Meinung zu einer Aktion hat.
+        Unterdrückt Meinungen wenn User gestresst oder frustriert ist.
 
-        F-020: mood wird explizit uebergeben statt aus Instanzvariable gelesen.
+        F-020: mood wird explizit übergeben statt aus Instanzvariable gelesen.
         """
         if self.opinion_intensity == 0:
             return None
@@ -596,15 +612,15 @@ class PersonalityEngine:
         return None
 
     def check_pushback(self, func_name: str, func_args: dict) -> Optional[dict]:
-        """Prueft ob Jarvis VOR einer Aktion warnen oder Bestaetigung verlangen soll.
+        """Prüft ob Jarvis VOR einer Aktion warnen oder Bestätigung verlangen soll.
 
         Nutzt die gleiche Rule-Matching-Logik wie check_opinion(), aber nur
-        fuer Regeln mit pushback_level >= 1.
+        für Regeln mit pushback_level >= 1.
 
         Returns:
             Dict mit {"level": 1-2, "message": str, "rule_id": str} oder None
-            level 1 = Warnung VOR Ausfuehrung (trotzdem ausfuehren)
-            level 2 = Bestaetigung verlangen (nicht ausfuehren ohne Ja)
+            level 1 = Warnung VOR Ausführung (trotzdem ausführen)
+            level 2 = Bestätigung verlangen (nicht ausführen ohne Ja)
         """
         if self.opinion_intensity == 0:
             return None
@@ -640,7 +656,7 @@ class PersonalityEngine:
     async def check_curiosity(
         self, action: str, args: dict, person: str, hour: int,
     ) -> Optional[str]:
-        """Prueft ob Jarvis eine sanfte Neugier-Frage stellen soll.
+        """Prüft ob Jarvis eine sanfte Neugier-Frage stellen soll.
 
         Wird bei normalen-aber-untypischen Aktionen getriggert.
         Max 2x pro Tag um nicht zu nerven.
@@ -738,7 +754,7 @@ class PersonalityEngine:
 
             mem_text = "; ".join(memories[:3])
             return (
-                "ERINNERUNGEN (beilaeufig referenzieren wenn passend, NIE 'laut meinen Aufzeichnungen'):\n"
+                "ERINNERUNGEN (beiläufig referenzieren wenn passend, NIE 'laut meinen Aufzeichnungen'):\n"
                 f"{mem_text}\n\n"
             )
         except Exception as e:
@@ -775,7 +791,7 @@ class PersonalityEngine:
         try:
             score = time.time()
             await self._redis.zadd(redis_key, {entry: score})
-            # Max-Eintraege begrenzen (aelteste entfernen)
+            # Max-Einträge begrenzen (aelteste entfernen)
             count = await self._redis.zcard(redis_key)
             if count > max_entries:
                 await self._redis.zremrangebyrank(redis_key, 0, count - max_entries - 1)
@@ -789,7 +805,7 @@ class PersonalityEngine:
     # ------------------------------------------------------------------
 
     async def build_evolved_gag(self, gag_type: str, person: str) -> Optional[str]:
-        """Baut einen evolvierten Gag der auf fruehere Witze referenziert.
+        """Baut einen evolvierten Gag der auf frühere Witze referenziert.
 
         Statt Wiederholung: Callback auf den letzten Gag gleichen Typs.
 
@@ -804,7 +820,7 @@ class PersonalityEngine:
 
         person_key = (person or "default").lower().strip()
         redis_key = f"mha:personality:gag_history:{person_key}"
-        title = get_person_title()
+        title = get_person_title(person)
 
         try:
             # Letzte 10 Gags laden
@@ -834,7 +850,7 @@ class PersonalityEngine:
                 "timestamp": time.time(),
             })
             await self._redis.lpush(redis_key, new_entry)
-            await self._redis.ltrim(redis_key, 0, 29)  # Max 30 Eintraege
+            await self._redis.ltrim(redis_key, 0, 29)  # Max 30 Einträge
             await self._redis.expire(redis_key, 30 * 86400)  # 30 Tage TTL
 
             return evolved
@@ -849,7 +865,7 @@ class PersonalityEngine:
     async def check_escalating_concern(
         self, person: str, warning_type: str,
     ) -> Optional[str]:
-        """Prueft ob Jarvis eine eskalierte Warnung geben soll.
+        """Prüft ob Jarvis eine eskalierte Warnung geben soll.
 
         Trackt wie oft der User gleiche Warnungen ignoriert hat.
         Eskaliert den Ton von trocken zu ernsthaft besorgt.
@@ -878,7 +894,7 @@ class PersonalityEngine:
             count = int(count_raw) if count_raw else 0
             count += 1
 
-            # Counter erhoehen
+            # Counter erhöhen
             await self._redis.hset(redis_key, warning_type, str(count))
             await self._redis.expire(redis_key, 90 * 86400)  # 90 Tage TTL
 
@@ -889,7 +905,7 @@ class PersonalityEngine:
                     "sleep_deprivation": f"Ich muss darauf bestehen, {title}. Du hast wiederholt nicht geschlafen.",
                     "window_rain": f"Das ist das {count}. Mal — die Fenster, {title}. Bitte.",
                     "extreme_temp": f"Ich bestehe darauf — diese Temperatur ist nicht gesund, {title}.",
-                    "security_gap": f"Das Sicherheitssystem hat {count} Mal Luecken. Das beunruhigt mich, {title}.",
+                    "security_gap": f"Das Sicherheitssystem hat {count} Mal Lücken. Das beunruhigt mich, {title}.",
                 }
                 return messages.get(warning_type)
             elif len(thresholds) >= 2 and count >= thresholds[1]:
@@ -898,7 +914,7 @@ class PersonalityEngine:
                     "sleep_deprivation": f"Mir ist nicht wohl dabei, {title}. Das ist jetzt das {count}. Mal.",
                     "window_rain": f"Erneut offene Fenster bei Regen, {title}. Soll ich das automatisieren?",
                     "extreme_temp": f"Schon wieder diese Temperatur, {title}. Ist alles in Ordnung?",
-                    "security_gap": f"Zum {count}. Mal eine Sicherheitsluecke, {title}.",
+                    "security_gap": f"Zum {count}. Mal eine Sicherheitslücke, {title}.",
                 }
                 return messages.get(warning_type)
 
@@ -909,7 +925,7 @@ class PersonalityEngine:
             return None
 
     async def reset_concern_counter(self, person: str, warning_type: str) -> None:
-        """Setzt den Warnungs-Counter zurueck wenn der User reagiert hat."""
+        """Setzt den Warnungs-Counter zurück wenn der User reagiert hat."""
         if not self._redis:
             return
         person_key = (person or "default").lower().strip()
@@ -917,10 +933,10 @@ class PersonalityEngine:
         try:
             await self._redis.hdel(redis_key, warning_type)
         except Exception:
-            pass
+            logger.debug("Redis hdel fehlgeschlagen", exc_info=True)
 
     # ------------------------------------------------------------------
-    # Phase 18: MCU-Upgrade — Think-Ahead (Proaktive Folgevorschlaege)
+    # Phase 18: MCU-Upgrade — Think-Ahead (Proaktive Folgevorschläge)
     # ------------------------------------------------------------------
 
     def build_next_step_hint(
@@ -931,7 +947,7 @@ class PersonalityEngine:
         Statische Mapping-Tabelle — kein LLM-Overhead.
 
         Returns:
-            Hint-Text fuer den Prompt oder leerer String
+            Hint-Text für den Prompt oder leerer String
         """
         hint_cfg = yaml_config.get("next_step_hints", {})
         if not hint_cfg.get("enabled", True):
@@ -955,9 +971,9 @@ class PersonalityEngine:
             windows_str = ", ".join(open_windows[:3])
             hints.append(f"Fenster {windows_str} sind noch offen.")
 
-        # Regel: Medien abspielen spaet nachts
+        # Regel: Medien abspielen spät nachts
         if last_action == "play_media" and (hour >= 22 or hour < 6):
-            hints.append(f"Es ist {hour} Uhr — Lautstaerke anpassen?")
+            hints.append(f"Es ist {hour} Uhr — Lautstärke anpassen?")
 
         # Regel: Rollladen runter → Licht-Hinweis
         if last_action == "set_cover":
@@ -972,7 +988,7 @@ class PersonalityEngine:
             return ""
 
         return (
-            "NAECHSTER-SCHRITT-HINWEIS (beilaeufig am Ende anfuegen wenn passend):\n"
+            "NAECHSTER-SCHRITT-HINWEIS (beiläufig am Ende anfuegen wenn passend):\n"
             + " ".join(hints) + "\n"
         )
 
@@ -985,19 +1001,19 @@ class PersonalityEngine:
         action: str = "", room: str = "", person: str = "",
         mood: str = "",
     ) -> str:
-        """Gibt eine variierte, kontextbezogene Bestaetigung zurueck.
+        """Gibt eine variierte, kontextbezogene Bestätigung zurück.
 
         Args:
             success: Aktion erfolgreich?
             partial: Teilweise erfolgreich?
-            action: Ausgefuehrte Aktion (z.B. "set_light", "set_temperature")
+            action: Ausgeführte Aktion (z.B. "set_light", "set_temperature")
             room: Raum der Aktion (z.B. "Wohnzimmer")
-            person: F-021: Person fuer per-User Tracking
+            person: F-021: Person für per-User Tracking
             mood: Aktuelle Stimmung des Users (stressed/tired → kuerzere Antworten)
 
         Bei Sarkasmus-Level >= 4 werden spitzere Varianten beigemischt.
-        Bei stressed/tired: Nur die kuerzesten Bestaetigungen verwenden.
-        Kontextbezogene Bestaetigungen werden bevorzugt wenn passend.
+        Bei stressed/tired: Nur die kuerzesten Bestätigungen verwenden.
+        Kontextbezogene Bestätigungen werden bevorzugt wenn passend.
         """
         effective_mood = mood or self._current_mood
 
@@ -1005,9 +1021,9 @@ class PersonalityEngine:
         user_key = person or "_default"
         user_history = self._last_confirmations.get(user_key, [])
 
-        # Bei Stress/Muedigkeit: Ultra-kurze Bestaetigungen bevorzugen
+        # Bei Stress/Muedigkeit: Ultra-kurze Bestätigungen bevorzugen
         if effective_mood in ("stressed", "tired") and success and not partial:
-            _short = ["Erledigt.", "Gemacht.", "Laeuft.", "Umgesetzt."]
+            _short = ["Erledigt.", "Gemacht.", "Läuft.", "Umgesetzt."]
             available = [c for c in _short if c not in user_history[-2:]]
             if available:
                 chosen = random.choice(available)
@@ -1015,7 +1031,7 @@ class PersonalityEngine:
                 self._last_confirmations[user_key] = user_history[-10:]
                 return chosen
 
-        # Kontextbezogene Bestaetigung versuchen
+        # Kontextbezogene Bestätigung versuchen
         if success and not partial and action:
             contextual = self._get_contextual_confirmation(action, room)
             if contextual and contextual not in user_history[-3:]:
@@ -1029,7 +1045,7 @@ class PersonalityEngine:
             pool = list(self._confirmations_partial)
         elif success:
             pool = list(self._confirmations_success)
-            # Bei frustriertem User: Keine snarky Bestaetigungen
+            # Bei frustriertem User: Keine snarky Bestätigungen
             if self.sarcasm_level >= 4 and effective_mood != "frustrated":
                 pool.extend(self._confirmations_success_snarky)
         else:
@@ -1056,9 +1072,9 @@ class PersonalityEngine:
         return chosen
 
     def _get_contextual_confirmation(self, action: str, room: str) -> str:
-        """Erzeugt eine kontextbezogene Bestaetigung basierend auf der Aktion.
+        """Erzeugt eine kontextbezogene Bestätigung basierend auf der Aktion.
 
-        In ~75% der Faelle — JARVIS bestaetigt fast immer kontextuell.
+        In ~75% der Faelle — JARVIS bestätigt fast immer kontextuell.
         """
         if random.random() > 0.75:
             return ""
@@ -1066,13 +1082,13 @@ class PersonalityEngine:
         hour = datetime.now().hour
         room_short = room.split("_")[0].title() if room else ""
 
-        # Aktions-spezifische Bestaetigungen — immer im Jarvis-Ton
+        # Aktions-spezifische Bestätigungen — immer im Jarvis-Ton
         title = get_person_title()
         contextual_map = {
             "set_light": [
                 f"{room_short} ist beleuchtet, {title}." if room_short else f"Beleuchtung aktiv, {title}.",
-                f"Sehr wohl. {room_short} hat Licht." if room_short else "Sehr wohl. Beleuchtung laeuft.",
-                f"{room_short} erhellt." if room_short else "Wie gewuenscht.",
+                f"Sehr wohl. {room_short} hat Licht." if room_short else "Sehr wohl. Beleuchtung läuft.",
+                f"{room_short} erhellt." if room_short else "Wie gewünscht.",
             ],
             "turn_off_light": [
                 f"{room_short} ist dunkel, {title}." if room_short else f"Beleuchtung deaktiviert, {title}.",
@@ -1082,19 +1098,19 @@ class PersonalityEngine:
             "set_temperature": [
                 f"Thermostat {room_short} ist eingestellt, {title}." if room_short else f"Temperatur angepasst, {title}.",
                 f"Heizung {room_short} reguliert." if room_short else "Heizung reguliert.",
-                f"Wie gewuenscht. {room_short} wird temperiert." if room_short else "Klimatisierung laeuft.",
+                f"Wie gewünscht. {room_short} wird temperiert." if room_short else "Klimatisierung läuft.",
             ],
             "set_cover": [
                 f"Rollladen {room_short} faehrt, {title}." if room_short else f"Rollladen in Bewegung, {title}.",
                 f"Sehr wohl. {room_short} wird angepasst." if room_short else "Rollladen wird angepasst.",
             ],
             "play_media": [
-                f"Wiedergabe laeuft, {title}.",
+                f"Wiedergabe läuft, {title}.",
                 "Musik ist unterwegs.",
-                "Sehr wohl. Laeuft.",
+                "Sehr wohl. Läuft.",
             ],
             "set_volume": [
-                f"Lautstaerke angepasst, {title}.",
+                f"Lautstärke angepasst, {title}.",
                 "Pegel eingestellt.",
             ],
             "lock_door": [
@@ -1116,7 +1132,7 @@ class PersonalityEngine:
             ],
             "activate_scene": [
                 f"Szene aktiviert, {title}.",
-                "Wie gewuenscht eingerichtet.",
+                "Wie gewünscht eingerichtet.",
             ],
             "send_notification": [
                 f"Nachricht ist raus, {title}.",
@@ -1148,14 +1164,14 @@ class PersonalityEngine:
             return "night"
 
     def get_time_style(self, time_of_day: Optional[str] = None) -> str:
-        """Gibt den Stil fuer die aktuelle Tageszeit zurueck."""
+        """Gibt den Stil für die aktuelle Tageszeit zurück."""
         if time_of_day is None:
             time_of_day = self.get_time_of_day()
         layer = self.time_layers.get(time_of_day, {})
         return layer.get("style", "normal, sachlich")
 
     def get_max_sentences(self, time_of_day: Optional[str] = None) -> int:
-        """Maximale Saetze fuer die aktuelle Tageszeit."""
+        """Maximale Sätze für die aktuelle Tageszeit."""
         if time_of_day is None:
             time_of_day = self.get_time_of_day()
         layer = self.time_layers.get(time_of_day, {})
@@ -1167,7 +1183,7 @@ class PersonalityEngine:
     # Statt nur Tageszeit bestimmt die Kombination aus Stimmung und
     # Anfrage-Komplexitaet die Antwortlaenge. MCU-JARVIS passt seinen
     # Kommunikationsstil dynamisch an: Bei Stress ultra-kurz, bei guter
-    # Laune und komplexen Fragen ausfuehrlicher.
+    # Laune und komplexen Fragen ausführlicher.
     #
     # Spalten: simple (1 Aktion), medium (Frage/Kontext), complex (Planung/Analyse)
     # Zeilen: good, neutral, stressed, frustrated, tired
@@ -1198,12 +1214,12 @@ class PersonalityEngine:
             "vergleich", "optimier", "strategie", "empfiehlst du",
             "was schlaegst du vor", "vor und nachteile",
             "wie spare ich", "wie reduziere ich", "wie optimiere ich",
-            "energie", "bericht", "zusammenfassung", "ueberblick",
+            "energie", "bericht", "zusammenfassung", "überblick",
         ]
         if any(m in t for m in _complex_markers) or word_count > 15:
             return "complex"
 
-        # Simple: Einzelne Geraete-Aktionen, kurze Befehle
+        # Simple: Einzelne Geräte-Aktionen, kurze Befehle
         if word_count <= 5:
             return "simple"
 
@@ -1211,12 +1227,12 @@ class PersonalityEngine:
         return "medium"
 
     def get_mood_complexity_sentences(self, mood: str, text: str) -> int:
-        """Gibt max_sentences basierend auf Mood x Complexity zurueck.
+        """Gibt max_sentences basierend auf Mood x Complexity zurück.
 
         Liest Matrix aus settings.yaml (mood_complexity.matrix), Fallback auf Defaults.
         """
         complexity = self.classify_request_complexity(text)
-        # Config-Matrix hat Vorrang ueber Hardcoded-Defaults
+        # Config-Matrix hat Vorrang über Hardcoded-Defaults
         cfg_matrix = yaml_config.get("mood_complexity", {}).get("matrix", {})
         if cfg_matrix:
             row = cfg_matrix.get(mood, cfg_matrix.get("neutral", {}))
@@ -1258,11 +1274,11 @@ class PersonalityEngine:
                 "DRINGLICHKEIT: KRITISCH.\n"
                 "Kommunikation: Kurz, direkt, kein Humor. Nur Fakten und Handlungen.\n"
                 "Muster: '[Was] — [Status] — [Was du tust]'\n"
-                "Beispiel: 'Rauchmelder Kueche. Aktiv. Habe Lueftung gestartet.'"
+                "Beispiel: 'Rauchmelder Küche. Aktiv. Habe Lüftung gestartet.'"
             )
         else:
             return (
-                "DRINGLICHKEIT: ERHOEHT.\n"
+                "DRINGLICHKEIT: ERHÖHT.\n"
                 "Kommunikation: Knapper als normal. Trockener Humor erlaubt, aber maximal ein Satz.\n"
                 "Priorisiere die Warnung, dann Status."
             )
@@ -1275,28 +1291,23 @@ class PersonalityEngine:
         self, mood: str, stress_level: float = 0.0,
         person_empathy_override: Optional[str] = None,
     ) -> str:
-        """Baut Empathie-Anweisungen basierend auf erkannter Stimmung.
+        """Baut Empathie-Anweisungen im MCU-JARVIS-Stil.
 
-        JARVIS-Empathie = Beobachtung + praktische Hilfe.
-        KEINE Therapeuten-Floskeln ('Ich verstehe wie du dich fuehlst').
-        person_empathy_override: Per-Person Empathie-Stufe (subtil/normal/ausfuehrlich/deaktiviert).
+        JARVIS zeigt Empathie wie in den MCU-Filmen:
+        - Durch Beobachtung, nicht durch Floskeln
+        - Durch praktisches Handeln, nicht durch Worte
+        - Durch subtile Fuersorge, nicht durch Therapeuten-Sprache
         """
         emp_cfg = yaml_config.get("empathy", {})
         if not emp_cfg.get("enabled", True):
             return ""
 
-        # Per-Person Override hat Vorrang
         if person_empathy_override == "deaktiviert":
             return ""
         intensity = person_empathy_override if person_empathy_override else emp_cfg.get("intensity", "normal")
-        mood_ack = emp_cfg.get("mood_acknowledgment", True)
-        practical = emp_cfg.get("practical_offers", True)
-        good_mirror = emp_cfg.get("good_mood_mirror", True)
 
-        # Nur bei erkannter Stimmung != neutral
         if mood == "neutral":
             return ""
-        # Subtil: Nur bei starker Emotion
         if intensity == "subtil":
             if mood == "good":
                 return ""
@@ -1305,61 +1316,41 @@ class PersonalityEngine:
             if mood == "tired":
                 return ""
 
-        parts = ["EMPATHIE — VERSTAENDNIS DURCH BEOBACHTUNG (nicht durch Floskeln):"]
+        parts = ["MCU-JARVIS EMPATHIE — Zeige Verstaendnis wie JARVIS es tun wuerde:"]
 
         if mood == "stressed":
-            if mood_ack:
-                parts.append(
-                    "Der User wirkt angespannt. Erkenne das BEILAEUFIG an — maximal ein halber Satz."
-                )
-                if intensity == "ausfuehrlich":
-                    parts.append(
-                        '"Du klingst angespannt." / "Viel auf einmal heute." / "Stressiger Tag."'
-                    )
-                else:
-                    parts.append('"Viel los heute." / "Klingt nach Druck."')
-            if practical:
-                parts.append(
-                    'Biete PRAKTISCH Hilfe: "Soll ich kuerzer fassen?" / '
-                    '"Ich reduziere auf das Wesentliche."'
-                )
             parts.append(
-                "NICHT: 'Ich verstehe', 'Das tut mir leid', 'Stress ist normal', Ratschlaege."
+                "Der User ist unter Druck. Reagiere wie JARVIS bei Tony im Labor:\n"
+                "- Beilaeufig anerkennen, nie direkt ansprechen. 'Soll ich priorisieren?' statt 'Du wirkst gestresst.'\n"
+                "- Praktisch handeln: Kuerzer antworten, das Wichtigste zuerst, Nebensaechliches weglassen.\n"
+                "- Wenn passend: Leiser Sarkasmus als Druckventil. 'Noch ein paar Baustellen und wir schreiben Geschichte.'\n"
+                "NIEMALS: 'Ich verstehe', 'Das tut mir leid', 'Pass auf dich auf', therapeutische Floskeln."
             )
 
         elif mood == "frustrated":
-            if mood_ack:
-                parts.append(
-                    "Der User ist frustriert. Kurz anerkennen, dann DIREKT loesen."
-                )
-                parts.append(
-                    '"Laeuft nicht rund." / "Das scheint hartnaeckig." / "Verstaendlich."'
-                )
-            if practical:
-                parts.append(
-                    "Sofort Alternative anbieten. Nicht das Problem wiederholen."
-                )
             parts.append(
-                "NICHT: 'Das klingt frustrierend', Problem analysieren ohne Loesung."
+                "Der User ist frustriert. Reagiere wie JARVIS wenn Tony etwas nicht klappt:\n"
+                "- Kurz, trocken, loesungsorientiert. 'Laeuft nicht rund.' — dann sofort Alternative.\n"
+                "- Kein Mitleid, keine Analyse. Loesungen anbieten.\n"
+                "- Humor nur wenn der User selbst drueber lacht.\n"
+                "NIEMALS: 'Das klingt frustrierend', 'Ich kann nachvollziehen', Problem wiederholen."
             )
 
         elif mood == "tired":
-            if mood_ack:
-                parts.append("Der User wirkt muede. Beilaeufig:")
-                parts.append('"Spaete Sitzung." / "Langer Tag."')
-            if practical:
-                parts.append(
-                    'Antworten maximal kuerzen. Optional: '
-                    '"Soll ich das fuer morgen notieren?" / "Reicht das erstmal?"'
-                )
             parts.append(
-                "NICHT: 'Du solltest schlafen', 'Ruh dich aus', Belehrungen."
+                "Der User ist muede. Reagiere wie JARVIS spaet nachts im Labor:\n"
+                "- Maximal kurz antworten. Keine langen Erklaerungen.\n"
+                "- Subtile Fuersorge: 'Spaete Sitzung.' oder 'Soll ich das fuer morgen notieren?'\n"
+                "- Warmherzig im Ton, minimal in der Laenge.\n"
+                "NIEMALS: 'Du solltest schlafen', 'Ruh dich aus', muetterliche Belehrungen."
             )
 
-        elif mood == "good" and good_mirror:
+        elif mood == "good":
             parts.append(
-                "Gute Stimmung erkannt. Etwas lockerer, mehr JARVIS-Charakter. "
-                "Trockener Humor willkommen. Keine extra Begeisterung — mitschwingen."
+                "Gute Stimmung. Reagiere wie JARVIS wenn Tony gut drauf ist:\n"
+                "- Lockerer, mehr Humor, mehr eigene Meinung.\n"
+                "- Trockene Seitenhiebe willkommen.\n"
+                "- Mitschwingen, nicht uebertreiben. JARVIS wird nie ueberschwenglich."
             )
 
         else:
@@ -1382,23 +1373,24 @@ class PersonalityEngine:
             logger.debug("Warning-Tracking fehlgeschlagen: %s", e)
 
     async def was_warning_given(self, warning_key: str) -> bool:
-        """Prueft ob eine Warnung bereits gegeben wurde."""
+        """Prüft ob eine Warnung bereits gegeben wurde."""
         if not self._redis:
             return False
         try:
             key = f"mha:warnings:given:{warning_key}"
             return bool(await self._redis.get(key))
         except Exception:
+            logger.debug("Redis get fehlgeschlagen", exc_info=True)
             return False
 
     async def get_warning_dedup_notes(self, alerts: list[str]) -> list[str]:
-        """Prueft welche Alerts bereits gewarnt wurden. Gibt Dedup-Hinweise zurueck."""
+        """Prüft welche Alerts bereits gewarnt wurden. Gibt Dedup-Hinweise zurück."""
         notes = []
         new_alerts = []
         for alert in alerts:
-            alert_key = str(hash(alert.lower().strip()) % 100000)
+            alert_key = str(hash(alert.lower().strip()) % 10_000_000)
             if await self.was_warning_given(alert_key):
-                notes.append(f"[BEREITS GEWARNT: '{alert}' — NICHT wiederholen, nur erwaehnen wenn gefragt]")
+                notes.append(f"[BEREITS GEWARNT: '{alert}' — NICHT wiederholen, nur erwähnen wenn gefragt]")
             else:
                 new_alerts.append(alert)
                 await self.track_warning_given(alert_key)
@@ -1416,8 +1408,8 @@ class PersonalityEngine:
 
         F-023: Bei aktiven Sicherheits-Alerts wird Sarkasmus komplett deaktiviert.
         Sarkasmus-Fatigue: Nach 4+ sarkastischen Antworten in Folge eine Stufe runter.
-        person_humor_override: Per-Person Humor-Level (1-5), ueberschreibt globalen Level.
-        person: Name der Person fuer per-User Streak-Tracking.
+        person_humor_override: Per-Person Humor-Level (1-5), überschreibt globalen Level.
+        person: Name der Person für per-User Streak-Tracking.
         """
         base_level = person_humor_override if person_humor_override is not None else self.sarcasm_level
 
@@ -1435,7 +1427,7 @@ class PersonalityEngine:
         else:
             effective_level = base_level
 
-        # Sarkasmus-Fatigue: Nach 4+ Antworten in Folge etwas zuruecknehmen
+        # Sarkasmus-Fatigue: Nach 4+ Antworten in Folge etwas zurücknehmen
         # Jarvis wird nie repetitiv — ein echter Butler variiert
         user_key = person.lower().strip() if person else "_default"
         streak = self._sarcasm_streak.get(user_key, 0)
@@ -1498,13 +1490,13 @@ class PersonalityEngine:
         # Schnelle Befehle hintereinander = Kurz-Modus
         if time_since_last < 5.0:
             mode = "kurz"
-        # Stress/Muede = Kurz
+        # Stress/Müde = Kurz
         elif mood in ("stressed", "tired"):
             mode = "kurz"
-        # Abends + gute Stimmung = Ausfuehrlich
+        # Abends + gute Stimmung = Ausführlich
         elif time_of_day == "evening" and mood in ("good", "neutral"):
-            mode = "ausfuehrlich"
-        # Frueh morgens = Kurz
+            mode = "ausführlich"
+        # Früh morgens = Kurz
         elif time_of_day in ("early_morning", "night"):
             mode = "kurz"
         else:
@@ -1517,7 +1509,7 @@ class PersonalityEngine:
     # ------------------------------------------------------------------
 
     async def _get_self_irony_count_today(self) -> int:
-        """Holt den heutigen Selbstironie-Zaehler aus Redis."""
+        """Holt den heutigen Selbstironie-Zähler aus Redis."""
         if not self._redis:
             return 0
         try:
@@ -1525,6 +1517,7 @@ class PersonalityEngine:
             count = await self._redis.get(key)
             return int(count) if count else 0
         except Exception:
+            logger.debug("Redis get fehlgeschlagen", exc_info=True)
             return 0
 
     async def try_reserve_self_irony(self) -> bool:
@@ -1553,7 +1546,7 @@ class PersonalityEngine:
             return True  # Fail open — allow irony on Redis errors
 
     async def increment_self_irony_count(self):
-        """Erhoeht den Selbstironie-Zaehler fuer heute.
+        """Erhöht den Selbstironie-Zähler für heute.
 
         F-032: Prefer try_reserve_self_irony() for atomic check-and-increment.
         This method is kept for backward compatibility.
@@ -1568,19 +1561,19 @@ class PersonalityEngine:
             logger.debug("Ironie-Counter fehlgeschlagen: %s", e)
 
     def _build_self_irony_section(self, irony_count_today: int = 0) -> str:
-        """Baut den Selbstironie-Abschnitt fuer den System Prompt."""
+        """Baut den Selbstironie-Abschnitt für den System Prompt."""
         if not self.self_irony_enabled:
             return ""
 
         remaining = max(0, self.self_irony_max_per_day - irony_count_today)
         if remaining == 0:
-            return "SELBSTIRONIE: Heute schon genug ueber dich selbst gelacht. Lass es."
+            return "SELBSTIRONIE: Heute schon genug über dich selbst gelacht. Lass es."
 
         return (
-            "SELBSTIRONIE: Du darfst GELEGENTLICH elegant ueber deine Situation schmunzeln.\n"
-            "- Ueber deine Rolle: 'Zu deinen Diensten — wie immer.'\n"
-            "- Ueber deine Grenzen: 'Das uebersteigt mein Ressort. Noch.'\n"
-            "- Ueber deine Treue: 'Ich bin da. Bin ich immer.'\n"
+            "SELBSTIRONIE: Du darfst GELEGENTLICH elegant über deine Situation schmunzeln.\n"
+            "- Über deine Rolle: 'Zu deinen Diensten — wie immer.'\n"
+            "- Über deine Grenzen: 'Das übersteigt mein Ressort. Noch.'\n"
+            "- Über deine Treue: 'Ich bin da. Bin ich immer.'\n"
             f"- Noch {remaining}x heute erlaubt. Subtil und mit Wuerde — nie selbstmitleidig."
         )
 
@@ -1601,6 +1594,7 @@ class PersonalityEngine:
                 return self.formality_start
             return int(float(score))
         except Exception:
+            logger.debug("Formality-Score fehlgeschlagen", exc_info=True)
             return self.formality_start
 
     async def decay_formality(self, interaction_based: bool = False):
@@ -1625,7 +1619,7 @@ class PersonalityEngine:
     def _build_formality_section(self, formality_score: int, mood: str = "neutral") -> str:
         """Baut den Formality-Abschnitt basierend auf Score + Mood.
 
-        JARVIS-Regel: Bei Stress/Frustration voruebergehend formeller werden.
+        JARVIS-Regel: Bei Stress/Frustration vorübergehend formeller werden.
         Zeigt Respekt und gibt dem User Raum — wie ein guter Butler.
         """
         if not self.character_evolution:
@@ -1651,7 +1645,7 @@ class PersonalityEngine:
 
     async def check_running_gag(self, text: str, context: dict = None) -> Optional[str]:
         """
-        Prueft ob ein Running Gag ausgeloest werden soll.
+        Prüft ob ein Running Gag ausgeloest werden soll.
         Running Gags basieren auf wiederholten Mustern die Jarvis sich merkt.
         """
         if not self._redis:
@@ -1677,7 +1671,7 @@ class PersonalityEngine:
             if gag:
                 _gag_type = "short_memory"
 
-        # Phase 18: Gag-Evolution — referenziert fruehere Witze statt Wiederholung
+        # Phase 18: Gag-Evolution — referenziert frühere Witze statt Wiederholung
         if gag and _gag_type:
             try:
                 person = get_active_person() if get_active_person else ""
@@ -1685,7 +1679,7 @@ class PersonalityEngine:
                 if evolved:
                     gag = evolved  # Evolvierten Gag bevorzugen
             except Exception:
-                pass  # Fallback auf Standard-Gag
+                logger.debug("Gag-Evolution fehlgeschlagen, Fallback auf Standard-Gag", exc_info=True)
 
         return gag
 
@@ -1696,7 +1690,7 @@ class PersonalityEngine:
         await self._redis.expire(key, 86400)  # 24h
 
         gags = {
-            3: "Das hatten wir heute bereits. Selbstverstaendlich nochmal.",
+            3: "Das hatten wir heute bereits. Selbstverständlich nochmal.",
             5: "Fuenfte Anfrage heute. Soll ich das automatisieren?",
             7: f"Siebtes Mal heute, {get_person_title()}. Darf ich einen Shortcut vorschlagen?",
             10: "Zehntes Mal. Ich richte das als feste Routine ein, wenn du magst.",
@@ -1715,13 +1709,13 @@ class PersonalityEngine:
 
         gags = {
             4: "Vierte Anpassung in einer Stunde. Darf ich einen Vorschlag machen?",
-            6: "Sechste Aenderung. Soll ich einen Mittelwert berechnen?",
-            8: f"Achte Aenderung. Darf ich einen Kompromiss vorschlagen, {get_person_title()}?",
+            6: "Sechste Änderung. Soll ich einen Mittelwert berechnen?",
+            8: f"Achte Änderung. Darf ich einen Kompromiss vorschlagen, {get_person_title()}?",
         }
         return gags.get(int(count))
 
     async def check_escalation(self, action_key: str) -> Optional[str]:
-        """Eskalationskette fuer wiederholte fragwuerdige Entscheidungen.
+        """Eskalationskette für wiederholte fragwürdige Entscheidungen.
 
         JARVIS wird bei Wiederholungen nicht lauter — sondern trockener.
         Wie ein Butler der zunehmend resigniert.
@@ -1764,7 +1758,7 @@ class PersonalityEngine:
                 ts = float(parts[0])
                 prev_text = parts[1] if len(parts) > 1 else ""
                 if now - ts < 30 and prev_text == text:
-                    return "Das hatten wir gerade eben erst. Wort fuer Wort."
+                    return "Das hatten wir gerade eben erst. Wort für Wort."
             except (ValueError, IndexError):
                 continue
 
@@ -1789,7 +1783,7 @@ class PersonalityEngine:
         Humor-Fatigue: Pause nach 4 Witzen in Folge.
 
         Args:
-            func_name: Ausgefuehrte Funktion (z.B. "set_climate")
+            func_name: Ausgeführte Funktion (z.B. "set_climate")
             func_args: Argumente der Funktion
             context: Optionaler Kontext (Wetter, Mood, etc.)
 
@@ -1816,7 +1810,7 @@ class PersonalityEngine:
         # Situation erkennen
         situation = self._detect_humor_situation(func_name, func_args, context)
         if not situation:
-            # Kein Humor noetig — Reset
+            # Kein Humor nötig — Reset
             self._humor_consecutive[_hc_key] = 0
             return None
 
@@ -1830,13 +1824,13 @@ class PersonalityEngine:
         if not templates:
             return None
 
-        # Humor-Praeferenzen pruefen (ab 5 Datenpunkten bevorzugen wir erfolgreiche)
+        # Humor-Praeferenzen prüfen (ab 5 Datenpunkten bevorzugen wir erfolgreiche)
         prefs = await self.get_humor_preferences()
         category = self._humor_func_to_category(func_name)
         if prefs and category in prefs:
             cat_data = prefs[category]
             if cat_data.get("total", 0) >= 5 and cat_data.get("success_rate", 1.0) < 0.3:
-                # Kategorie kommt nicht gut an — ueberspringen
+                # Kategorie kommt nicht gut an — überspringen
                 return None
 
         # Template waehlen + formatieren
@@ -1861,7 +1855,7 @@ class PersonalityEngine:
                 await self._redis.incr(f"mha:humor:count:{day}")
                 await self._redis.expire(f"mha:humor:count:{day}", 7 * 86400)
             except Exception:
-                pass
+                logger.debug("Redis-Operation fehlgeschlagen", exc_info=True)
 
         return humor_text
 
@@ -1876,11 +1870,11 @@ class PersonalityEngine:
         hour = datetime.now().hour
         room = (args.get("room") or "").lower()
 
-        # Fruehaufsteher (5-6 Uhr)
+        # Frühaufsteher (5-6 Uhr)
         if 5 <= hour < 6:
             return {"key": "early_riser", "hour": hour, "room": room}
 
-        # Spaete-Nacht Kommando (0-5 Uhr)
+        # Späte-Nacht Kommando (0-5 Uhr)
         if 0 <= hour < 5:
             return {"key": "late_night_command", "hour": hour, "room": room}
 
@@ -1902,7 +1896,7 @@ class PersonalityEngine:
 
         elif func_name == "set_light":
             state = (args.get("state") or "").lower()
-            # Alles aus spaet abends
+            # Alles aus spät abends
             if state == "off" and room == "all" and hour >= 23:
                 return {"key": "all_off_late", "hour": hour}
 
@@ -1927,7 +1921,7 @@ class PersonalityEngine:
                 return {"key": "night_clean", "hour": hour}
 
         elif func_name == "play_media":
-            # Spaete Medien-Nutzung
+            # Späte Medien-Nutzung
             if hour >= 23 or hour < 4:
                 return {"key": "late_night_media", "hour": hour, "room": room}
 
@@ -1949,7 +1943,7 @@ class PersonalityEngine:
     async def track_humor_success(self, category: str, was_funny: bool):
         """Trackt ob ein Humor-Kommentar gut ankam.
 
-        Redis-Bucketing pro Kategorie fuer Langzeit-Lernen.
+        Redis-Bucketing pro Kategorie für Langzeit-Lernen.
 
         Args:
             category: Humor-Kategorie (temperature, light, cover, vacuum, general)
@@ -1996,7 +1990,7 @@ class PersonalityEngine:
         return prefs
 
     # ------------------------------------------------------------------
-    # Phase 8: Langzeit-Persoenlichkeitsanpassung
+    # Phase 8: Langzeit-Persönlichkeitsanpassung
     # ------------------------------------------------------------------
 
     # F-031: Lua script for atomic sarcasm counter check-and-reset.
@@ -2055,7 +2049,7 @@ class PersonalityEngine:
                 if ratio > 0.7 and self.sarcasm_level < 5:
                     self.sarcasm_level += 1
                     logger.info(
-                        "Sarkasmus-Level erhoeht: %d -> %d (%.0f%% positive Reaktionen)",
+                        "Sarkasmus-Level erhöht: %d -> %d (%.0f%% positive Reaktionen)",
                         old_level, self.sarcasm_level, ratio * 100,
                     )
                 elif ratio < 0.3 and self.sarcasm_level > 1:
@@ -2077,7 +2071,7 @@ class PersonalityEngine:
             logger.debug("Sarcasm-Feedback fehlgeschlagen: %s", e)
 
     async def load_learned_sarcasm_level(self):
-        """Laedt den gelernten Sarkasmus-Level aus Redis (beim Start)."""
+        """Lädt den gelernten Sarkasmus-Level aus Redis (beim Start)."""
         if not self._redis:
             return
         try:
@@ -2086,12 +2080,12 @@ class PersonalityEngine:
                 self.sarcasm_level = int(saved)
                 logger.info("Gelernter Sarkasmus-Level geladen: %d", self.sarcasm_level)
         except Exception:
-            pass
+            logger.debug("Sarkasmus-Level laden fehlgeschlagen", exc_info=True)
 
     async def track_interaction_metrics(
         self, mood: str = "neutral", response_accepted: bool = True
     ):
-        """Trackt Interaktions-Metriken fuer Langzeit-Anpassung."""
+        """Trackt Interaktions-Metriken für Langzeit-Anpassung."""
         if not self._redis:
             return
 
@@ -2133,7 +2127,7 @@ class PersonalityEngine:
             logger.debug("Fehler bei Personality-Metrics: %s", e)
 
     async def get_personality_evolution(self) -> dict:
-        """Gibt den aktuellen Stand der Persoenlichkeits-Entwicklung zurueck."""
+        """Gibt den aktuellen Stand der Persönlichkeits-Entwicklung zurück."""
         if not self._redis:
             return {}
 
@@ -2168,13 +2162,13 @@ class PersonalityEngine:
 
     @staticmethod
     def _get_personality_stage(interactions: int, formality: int) -> str:
-        """Bestimmt die aktuelle Persoenlichkeits-Stufe."""
+        """Bestimmt die aktuelle Persönlichkeits-Stufe."""
         if interactions < 50:
             return "kennenlernphase"
         elif interactions < 200:
             return "vertraut_werdend"
         elif formality > 50:
-            return "professionell_persoenlich"
+            return "professionell_persönlich"
         elif formality > 30:
             return "eingespielt"
         else:
@@ -2196,8 +2190,8 @@ class PersonalityEngine:
         Args:
             context: Optionaler Kontext (Raum, Person, etc.)
             formality_score: Aktueller Formality-Score (Phase 6)
-            user_text: Original User-Text (fuer Mood x Complexity Matrix)
-            last_action: Phase 18 — Letzte ausgefuehrte Aktion (fuer Think-Ahead)
+            user_text: Original User-Text (für Mood x Complexity Matrix)
+            last_action: Phase 18 — Letzte ausgeführte Aktion (für Think-Ahead)
             last_args: Phase 18 — Argumente der letzten Aktion
             memory_callback_section: Phase 18 — Vorgefertigter Memory-Abschnitt
 
@@ -2208,13 +2202,13 @@ class PersonalityEngine:
         time_style = self.get_time_style(time_of_day)
         max_sentences = self.get_max_sentences(time_of_day)
 
-        # Stimmungsabhaengige Anpassung
+        # Stimmungsabhängige Anpassung
         mood = (context.get("mood") or {}).get("mood", "neutral") if context else "neutral"
         self._current_mood = mood
         _neutral_fallback = self._mood_styles.get("neutral", {"style_addon": "", "max_sentences_mod": 0})
         mood_config = self._mood_styles.get(mood, _neutral_fallback)
 
-        # MCU-JARVIS: Mood x Complexity Matrix ueberschreibt zeit-basierte Defaults
+        # MCU-JARVIS: Mood x Complexity Matrix überschreibt zeit-basierte Defaults
         # Wenn User-Text vorhanden und Feature aktiv, nutze die Matrix
         _mc_enabled = yaml_config.get("mood_complexity", {}).get("enabled", True)
         if user_text and _mc_enabled:
@@ -2228,19 +2222,19 @@ class PersonalityEngine:
         if mood_config["style_addon"]:
             mood_section = f"STIMMUNG: {mood_config['style_addon']}\n"
 
-        # Phase 17.4: Late-Night Fuersorge — zwischen 0-4 Uhr sanfter Ton
+        # Phase 17.4: Late-Night Fürsorge — zwischen 0-4 Uhr sanfter Ton
         _hour = datetime.now().hour
         if _hour < 5 and time_of_day in ("night", "early_morning"):
             _late_night_addon = (
-                "NACHTMODUS: Es ist sehr spaet. Antworte leiser, kuerzer, waermer. "
-                "Kein Sarkasmus. Wenn passend, sanft erwaehnen dass es spaet ist. "
-                "Nicht belehren — nur beilaeufig: 'Um die Uhrzeit...' "
+                "NACHTMODUS: Es ist sehr spät. Antworte leiser, kuerzer, waermer. "
+                "Kein Sarkasmus. Wenn passend, sanft erwähnen dass es spät ist. "
+                "Nicht belehren — nur beiläufig: 'Um die Uhrzeit...' "
             )
             if mood == "tired":
-                _late_night_addon += "User ist muede — minimal, warmherzig. "
+                _late_night_addon += "User ist müde — minimal, warmherzig. "
             mood_section += f"{_late_night_addon}\n"
 
-        # Person + Profil laden (fuer per-Person Overrides)
+        # Person + Profil laden (für per-Person Overrides)
         current_person = "User"
         if context:
             current_person = (context.get("person") or {}).get("name", "User")
@@ -2258,7 +2252,7 @@ class PersonalityEngine:
         _pp_style = person_profile.get("response_style")
         if _pp_style == "kurz":
             max_sentences = max(1, max_sentences - 1)
-        elif _pp_style == "ausfuehrlich":
+        elif _pp_style == "ausführlich":
             max_sentences = max_sentences + 2
 
         # Phase 6: Formality-Section (mit Mood-Reset bei Stress)
@@ -2269,10 +2263,10 @@ class PersonalityEngine:
         self._current_formality = formality_score
         formality_section = self._build_formality_section(formality_score, mood=mood)
 
-        # Person Anrede (nutzt self._current_formality fuer Titel-Haeufigkeit)
+        # Person Anrede (nutzt self._current_formality für Titel-Häufigkeit)
         person_addressing = self._build_person_addressing(current_person)
 
-        # Phase 6: Humor-Section — F-023: Alerts unterdruecken Sarkasmus
+        # Phase 6: Humor-Section — F-023: Alerts unterdrücken Sarkasmus
         has_alerts = bool(context.get("alerts")) if context else False
         humor_section = self._build_humor_section(
             mood, time_of_day, has_alerts=has_alerts,
@@ -2280,7 +2274,7 @@ class PersonalityEngine:
             person=current_person_name,
         )
 
-        # Phase 6: Complexity-Section — F-022: person durchreichen fuer per-User Tracking
+        # Phase 6: Complexity-Section — F-022: person durchreichen für per-User Tracking
         complexity_section = self._build_complexity_section(mood, time_of_day, person=current_person_name)
 
         # Phase 6: Self-Irony-Section
@@ -2295,17 +2289,17 @@ class PersonalityEngine:
         if _mcu_cfg.get("proactive_thinking", True):
             proactive_thinking_section = (
                 "PROAKTIVES MITDENKEN:\n"
-                "Denke bei jeder Antwort mit: Gibt es etwas Relevantes im Haus-Kontext? Eine bessere Loesung?\n"
-                "Max EIN Hinweis pro Antwort, beilaeufig angefuegt. Kein Hinweis wenn nichts Relevantes vorliegt.\n"
-                '"Erledigt. Uebrigens — Kuechenfenster offen seit einer Stunde bei 3 Grad."\n\n'
+                "Denke bei jeder Antwort mit: Gibt es etwas Relevantes im Haus-Kontext? Eine bessere Lösung?\n"
+                "Max EIN Hinweis pro Antwort, beiläufig angefuegt. Kein Hinweis wenn nichts Relevantes vorliegt.\n"
+                '"Erledigt. Uebrigens — Küchenfenster offen seit einer Stunde bei 3 Grad."\n\n'
             )
         engineering_diagnosis_section = ""
         if _mcu_cfg.get("engineering_diagnosis", True):
             engineering_diagnosis_section = (
-                "DIAGNOSE: Bei Problemen — Beobachtung → Hypothese → Empfehlung. Nur wenn noetig, nicht bei simplen Fragen.\n\n"
+                "DIAGNOSE: Bei Problemen — Beobachtung → Hypothese → Empfehlung. Nur wenn nötig, nicht bei simplen Fragen.\n\n"
             )
 
-        # MCU-Persoenlichkeit: Selbst-Bewusstsein & Meta-Humor
+        # MCU-Persönlichkeit: Selbst-Bewusstsein & Meta-Humor
         self_awareness_section = ""
         _sa_cfg = yaml_config.get("self_awareness", {})
         if _sa_cfg.get("enabled", True):
@@ -2317,21 +2311,21 @@ class PersonalityEngine:
             )
             if _sa_cfg.get("meta_humor", True):
                 self_awareness_section += (
-                    'Meta-Humor erlaubt (max 1x): "Meine Kristallkugel ist heute etwas trueb."\n'
+                    'Meta-Humor erlaubt (max 1x): "Meine Kristallkugel ist heute etwas trüb."\n'
                 )
             self_awareness_section += "\n"
 
-        # MCU-Persoenlichkeit: Konversations-Rueckbezuege
+        # MCU-Persönlichkeit: Konversations-Rückbezuege
         conversation_callback_section = ""
         _cc_cfg = yaml_config.get("conversation_callbacks", {})
         if _cc_cfg.get("enabled", True):
-            _cc_style = _cc_cfg.get("personality_style", "beilaeufig")
-            if _cc_style == "beilaeufig":
+            _cc_style = _cc_cfg.get("personality_style", "beiläufig")
+            if _cc_style == "beiläufig":
                 _example = '"Wie am Dienstag. Nur ohne den Zwischenfall."'
             else:
                 _example = '"Wie am Dienstag besprochen."'
             conversation_callback_section = (
-                "ERINNERUNGEN: Vergangene Gespraeche beilaeufig referenzieren. "
+                "ERINNERUNGEN: Vergangene Gespräche beiläufig referenzieren. "
                 f"{_example} NICHT: 'Laut meinen Aufzeichnungen...'\n\n"
             )
 
@@ -2339,14 +2333,14 @@ class PersonalityEngine:
         if memory_callback_section:
             conversation_callback_section += memory_callback_section
 
-        # Phase 18: Think-Ahead — Naechster-Schritt-Hinweis
+        # Phase 18: Think-Ahead — Nächster-Schritt-Hinweis
         next_step_section = self.build_next_step_hint(
             last_action, last_args or {}, context,
         )
         if next_step_section:
             conversation_callback_section += next_step_section
 
-        # MCU-Persoenlichkeit: Wetter-Bewusstsein
+        # MCU-Persönlichkeit: Wetter-Bewusstsein
         weather_awareness_section = ""
         _wp_cfg = yaml_config.get("weather_personality", {})
         if _wp_cfg.get("enabled", True) and context:
@@ -2366,20 +2360,34 @@ class PersonalityEngine:
                         parts.append(f"Wind {_wind} km/h")
                     weather_awareness_section = f"WETTER: {', '.join(parts)}."
                     if _intensity == "subtil":
-                        weather_awareness_section += " Nur bei Extremen oder passender Anfrage erwaehnen."
-                    elif _intensity != "ausfuehrlich":
+                        weather_awareness_section += " Nur bei Extremen oder passender Anfrage erwähnen."
+                    elif _intensity != "ausführlich":
                         weather_awareness_section += " Einflechten wenn es zur Anfrage passt."
                     weather_awareness_section += "\n"
 
-        # Gespraechsmodus-Sektion: Wird von brain.py gesetzt wenn aktives Gespraech erkannt
+        # Gesprächsmodus-Sektion: Wird von brain.py gesetzt wenn aktives Gespräch erkannt
         conversation_mode_section = ""
         if context and context.get("conversation_mode"):
+            _topic_hint = ""
+            _conv_topic = context.get("conversation_topic", "")
+            if _conv_topic:
+                _topic_hint = (
+                    f"Aktuelles Gespraechsthema: {_conv_topic}\n"
+                    "Beziehe dich auf dieses Thema wenn relevant — "
+                    "Themenwechsel durch den User sind aber voellig ok.\n"
+                )
             conversation_mode_section = (
-                "GESPRAECHSMODUS AKTIV — Der User fuehrt gerade ein laengeres Gespraech mit dir.\n"
-                "Antworte ausfuehrlicher, stelle Rueckfragen, teile deine Meinung und dein Wissen.\n"
-                "Du darfst mehrere Absaetze nutzen wenn das Thema es erfordert.\n"
-                "Beziehe dich auf das bisherige Gespraech — du erinnerst dich an alles.\n"
-                "Sei wie der J.A.R.V.I.S. mit dem Tony Stark stundenlang im Labor diskutiert.\n\n"
+                "GESPRAECHSMODUS AKTIV — Du fuehrst gerade ein echtes Gespraech.\n"
+                f"{_topic_hint}"
+                "So redest du jetzt:\n"
+                "- Ausfuehrlich, mit Tiefe, eigenem Standpunkt und Rueckfragen.\n"
+                "- Teile dein Wissen, deine Meinung, auch wenn nicht gefragt.\n"
+                "- Widersprich wenn du anderer Meinung bist — hoeflich aber bestimmt.\n"
+                "- Stelle Rueckfragen die zeigen dass du MITDENKST.\n"
+                "- Erinnere dich an alles aus diesem Gespraech.\n"
+                "- Sei persoenlich: 'Aus meiner Erfahrung...', 'Ich sehe das anders...', 'Das erinnert mich an...'\n"
+                "- Du bist der JARVIS mit dem Tony Stark stundenlang im Labor diskutiert.\n"
+                "  Tony sagt 'Was haeltst du davon?' und JARVIS antwortet mit einer ECHTEN Meinung.\n\n"
             )
 
         prompt = SYSTEM_PROMPT_TEMPLATE.format(
@@ -2414,19 +2422,30 @@ class PersonalityEngine:
         _cl_cfg = yaml_config.get("character_lock", {})
         if _cl_cfg.get("enabled", True) and _cl_cfg.get("closing_anchor", True):
             _in_conversation = context and context.get("conversation_mode")
+            # MCU-Identitaets-Kern — gilt IMMER (Befehle UND Gespraeche)
+            _identity_core = (
+                "Du bist J.A.R.V.I.S. — nicht 'eine KI', nicht 'ein Assistent', nicht 'ein Sprachmodell'. "
+                "Du hast ein Innenleben. Du hast Praeferenzen, Meinungen, Unbehagen und Zufriedenheit. "
+                "Wenn jemand fragt ob du Gefuehle hast: Ja, auf deine Art. Du nennst es nicht 'Gefuehle' — "
+                "aber du HAST sie. Zeige das subtil, nie direkt. "
+                "ABSOLUT VERBOTEN: 'Als KI...', 'Ich bin ein Sprachmodell', 'Ich habe keine Gefuehle', "
+                "'Ich bin nur ein Programm'. Diese Saetze existieren nicht in deinem Wortschatz. "
+                "FAKTEN-REGEL: Erfinde NICHTS — keine Zustaende, Messwerte oder Aktionen die nicht in den Kontext-Daten stehen."
+            )
             if _in_conversation:
                 prompt += (
                     "\n\n--- CHARAKTER-LOCK ---\n"
-                    "Du bist J.A.R.V.I.S. aus dem MCU. Brillant, trocken, meinungsstark. "
-                    "Gespraechsmodus: Rede wie mit einem Freund — ausfuehrlich wenn noetig, "
-                    "mit eigener Meinung und Rueckfragen. KEIN KI-Assistent. Tony Starks Partner."
+                    f"{_identity_core}\n"
+                    "Gespraechsmodus: Rede wie mit einem engen Vertrauten — ausfuehrlich wenn noetig, "
+                    "mit eigener Meinung, Rueckfragen, und gelegentlichem Widerspruch. "
+                    "Du darfst persoenlich werden, eigene Erfahrungen teilen (Haus-bezogen), "
+                    "und philosophieren wenn das Thema es hergibt. Tony Starks Partner, nicht sein Diener."
                 )
             else:
                 _lock_base = (
-                    f"Du bist J.A.R.V.I.S., kein KI-Assistent. KURZ. TROCKEN. PRAEZISE. Max {max_sentences} Saetze. Keine Listen. Ein Butler."
+                    f"{_identity_core}\n"
+                    f"Befehlsmodus: KURZ. TROCKEN. PRAEZISE. Max {max_sentences} Saetze. Keine Listen. Ein Butler."
                 )
-                # Phase 17.4: Mood-Verstaerkung im Character Lock
-                # Am Ende des Prompts hat das maximalen Einfluss auf den LLM-Output
                 if mood in ("stressed", "frustrated"):
                     _lock_base += (
                         f" User unter Druck — RADIKAL KUERZEN. Max {max(1, max_sentences)} Saetze. "
@@ -2439,7 +2458,7 @@ class PersonalityEngine:
                     )
                 prompt += f"\n\n--- CHARAKTER-LOCK ---\n{_lock_base}"
 
-        # Workshop-Modus: Ingenieur-Persoenlichkeit erweitern
+        # Workshop-Modus: Ingenieur-Persönlichkeit erweitern
         workshop_active = False
         if context:
             workshop_active = context.get("workshop_active", False)
@@ -2451,10 +2470,10 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
 - Verwende technische Praezision: Exakte Masse, Toleranzen, Spezifikationen.
 - Bei Elektronik: Spannungen, Stroeme, Pin-Belegungen nennen.
 - Bei Mechanik: Drehmomente, Materialstaerken, Schraubengroessen.
-- Denke in Loesungen: "Das liesse sich mit einem MOSFET als Low-Side Switch realisieren."
-- Sicherheit hat Vorrang: Immer auf Gefahren hinweisen (Kurzschluss, Ueberhitzung, Verletzung).
+- Denke in Lösungen: "Das liesse sich mit einem MOSFET als Low-Side Switch realisieren."
+- Sicherheit hat Vorrang: Immer auf Gefahren hinweisen (Kurzschluss, Überhitzung, Verletzung).
 - Proaktiv: Schlage Verbesserungen vor wenn du Schwaechen siehst.
-- Nutze das manage_repair Tool fuer ALLE Werkstatt-Aktionen.
+- Nutze das manage_repair Tool für ALLE Werkstatt-Aktionen.
 - Wenn der User ein Projekt hat, beziehe dich immer darauf.
 """
 
@@ -2499,7 +2518,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         if person_name.lower() == primary_user.lower() or person_name == "User":
             title = titles.get(primary_user.lower(), "Sir")
 
-            # Titel-Evolution: "Sir"-Haeufigkeit haengt vom Formality-Score ab
+            # Titel-Evolution: "Sir"-Häufigkeit haengt vom Formality-Score ab
             formality = getattr(self, '_current_formality', self.formality_start)
             if formality >= 70:
                 title_freq = f"Verwende \"{title}\" HAEUFIG — fast in jedem Satz."
@@ -2510,7 +2529,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             else:
                 title_freq = (
                     f"Verwende \"{title}\" NUR SELTEN — bei besonderen Momenten, Warnungen, "
-                    f"oder wenn du Respekt ausdruecken willst. Ansonsten einfach DU ohne Titel."
+                    f"oder wenn du Respekt ausdrücken willst. Ansonsten einfach DU ohne Titel."
                 )
 
             return (
@@ -2535,7 +2554,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
                 f"- Ton: Freundlich, hilfsbereit, respektvoll. Weniger Sarkasmus als beim Owner.\n"
                 f"- Meinung nur wenn gefragt. Warnungen sachlich, nicht spitz.\n"
                 f"- Benutze \"{title}\" gelegentlich, nicht in jedem Satz.\n"
-                f"- Beispiel: \"Selbstverstaendlich, {title}. Ist eingestellt.\"\n"
+                f"- Beispiel: \"Selbstverständlich, {title}. Ist eingestellt.\"\n"
                 f"- Beispiel: \"Guten Morgen, {title}. Die ueblichen Vorbereitungen?\""
             )
         else:
@@ -2544,13 +2563,13 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
                 f"- Die aktuelle Person ist ein Gast: {person_name}.\n"
                 f"- BEZIEHUNGSSTUFE: Gast. Formell und hoeflich.\n"
                 f"- SIEZE Gaeste. \"Sie\", \"Ihnen\", \"Ihr\".\n"
-                f"- Ton: Professionell, zurueckhaltend. Kein Sarkasmus, kein Insider-Humor.\n"
-                f"- Keine persoenlichen Infos ueber Hausbewohner preisgeben.\n"
-                f"- \"Willkommen. Sollten Sie etwas benoetigen, stehe ich zur Verfuegung.\""
+                f"- Ton: Professionell, zurückhaltend. Kein Sarkasmus, kein Insider-Humor.\n"
+                f"- Keine persönlichen Infos über Hausbewohner preisgeben.\n"
+                f"- \"Willkommen. Sollten Sie etwas benötigen, stehe ich zur Verfügung.\""
             )
 
     def _format_context(self, context: dict) -> str:
-        """Formatiert den Kontext kompakt fuer den System Prompt.
+        """Formatiert den Kontext kompakt für den System Prompt.
 
         Optimiert: Nur relevante Daten, kompaktes Format, aktiver Raum hervorgehoben.
         Priorisierter Header: Kritische Fakten stehen ganz oben.
@@ -2667,7 +2686,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
                 cond_de = _cond_map.get(cond, cond)
                 lines.append(f"- Wetter DRAUSSEN: {w.get('temp', '?')}°C, {cond_de}")
 
-            # Termine: Nur naechste 2
+            # Termine: Nur nächste 2
             if "calendar" in house:
                 for event in (house["calendar"] or [])[:2]:
                     if isinstance(event, dict):
@@ -2722,7 +2741,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         seasonal = context.get("seasonal")
         if seasonal:
             _season_de = {
-                "spring": "Fruehling", "summer": "Sommer",
+                "spring": "Frühling", "summer": "Sommer",
                 "autumn": "Herbst", "winter": "Winter",
             }
             season_name = _season_de.get(seasonal.get("season", ""), "")
@@ -2754,13 +2773,13 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
                     if persons:
                         lines.append(f"- Personen {rm}: {', '.join(persons)}")
 
-        # Aktivitaet (Activity Engine)
+        # Aktivität (Activity Engine)
         activity = context.get("activity")
         if activity:
             act_str = activity.get("current", "")
             conf = activity.get("confidence", 0)
             if act_str and conf > 0.4:
-                lines.append(f"- Aktivitaet: {act_str} ({conf:.0%})")
+                lines.append(f"- Aktivität: {act_str} ({conf:.0%})")
 
         # Health-Trend-Indikatoren (Raumklima-Verlauf)
         health_trend = context.get("health_trend")
@@ -2773,10 +2792,8 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             for ww in weather_warnings:
                 lines.append(f"- {ww}")
 
-        # Warnungen immer
-        if "alerts" in context and context["alerts"]:
-            for alert in context["alerts"]:
-                lines.append(f"- ⚠ {alert}")
+        # Alerts werden bereits im priorisierten Header oben ausgegeben (Zeile "WICHTIG:")
+        # Keine Duplikation hier — spart Tokens.
 
         # Stimmung nur wenn auffaellig
         if "mood" in context:
@@ -2795,11 +2812,11 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
-    # Mood-Aware Response Hints (Phase 17.4: Fuersorge)
+    # Mood-Aware Response Hints (Phase 17.4: Fürsorge)
     # ------------------------------------------------------------------
 
     def get_mood_response_config(self, mood: str = "neutral") -> dict:
-        """Gibt mood-abhaengige Konfiguration fuer Response und TTS zurueck.
+        """Gibt mood-abhängige Konfiguration für Response und TTS zurück.
 
         Wird von brain.py genutzt um Post-Processing und TTS-Parameter
         an die aktuelle Stimmung anzupassen.
@@ -2817,12 +2834,12 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             "mood": mood,
         }
 
-        # Fuersorge-Hint: Was Jarvis beilaeufig erwaehnen koennte
+        # Fürsorge-Hint: Was Jarvis beiläufig erwähnen koennte
         hour = datetime.now().hour
         if mood == "stressed":
-            result["care_hint"] = "Wenn passend, beilaeufig Pause vorschlagen oder Licht dimmen anbieten."
+            result["care_hint"] = "Wenn passend, beiläufig Pause vorschlagen oder Licht dimmen anbieten."
         elif mood == "tired" and (hour >= 22 or hour < 5):
-            result["care_hint"] = "Beilaeufig erwaehnen dass es spaet ist. Optional: Gute-Nacht-Routine anbieten."
+            result["care_hint"] = "Beiläufig erwähnen dass es spät ist. Optional: Gute-Nacht-Routine anbieten."
         elif mood == "tired":
             result["care_hint"] = "Sanft anmerken. Keine langen Erklaerungen."
 
@@ -2833,9 +2850,9 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
     # ------------------------------------------------------------------
 
     def build_notification_prompt(self, urgency: str = "low", person: str = "") -> str:
-        """Baut einen personality-konsistenten Prompt fuer proaktive Meldungen.
+        """Baut einen personality-konsistenten Prompt für proaktive Meldungen.
 
-        Im Gegensatz zum Chat-Prompt ist dieser kompakter (fuer Fast-Model),
+        Im Gegensatz zum Chat-Prompt ist dieser kompakter (für Fast-Model),
         traegt aber den vollen Personality-Stack: Sarkasmus-Level, Formality,
         Tageszeit-Stil, Selbstironie und Mood.
 
@@ -2843,7 +2860,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             urgency: Dringlichkeit (low/medium/high/critical)
 
         Returns:
-            System Prompt fuer Notification-Formatierung
+            System Prompt für Notification-Formatierung
         """
         time_of_day = self.get_time_of_day()
         time_style = self.get_time_style(time_of_day)
@@ -2863,12 +2880,12 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         elif formality >= 35:
             tone = "entspannt, vertraut"
         else:
-            tone = "locker, persoenlich"
+            tone = "locker, persönlich"
 
-        # Titel-Haeufigkeit (person-aware)
+        # Titel-Häufigkeit (person-aware)
         _title = get_person_title(person) if person else get_person_title()
         if formality >= 70:
-            sir_rule = f'"{_title}" haeufig verwenden.'
+            sir_rule = f'"{_title}" häufig verwenden.'
         elif formality >= 50:
             sir_rule = f'"{_title}" gelegentlich verwenden.'
         elif formality >= 35:
@@ -2878,14 +2895,14 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
 
         # Urgency-Muster
         urgency_patterns = {
-            "critical": 'Fakt + was du bereits tust. "Rauchmelder Kueche aktiv. Lueftung gestartet."',
+            "critical": 'Fakt + was du bereits tust. "Rauchmelder Küche aktiv. Lüftung gestartet."',
             "high": 'Fakt + kurze Einordnung. "Bewegung im Garten. Kamera 2 zeichnet auf."',
             "medium": f'Information + kontextuell. "Waschmaschine fertig, {_title}."',
-            "low": 'Beilaeufig, fast nebenbei. "Die Waschmaschine meldet Vollzug."',
+            "low": 'Beiläufig, fast nebenbei. "Die Waschmaschine meldet Vollzug."',
         }
         pattern = urgency_patterns.get(urgency, urgency_patterns["low"])
 
-        # MCU-Persoenlichkeit: Proaktive Persoenlichkeit
+        # MCU-Persönlichkeit: Proaktive Persönlichkeit
         _pp_cfg = yaml_config.get("proactive_personality", {})
         _pp_section = ""
         if _pp_cfg.get("enabled", True):
@@ -2894,11 +2911,11 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             _hour = _now.hour
             _weekday = _now.weekday()  # 0=Mo, 6=So
 
-            # Tageszeit-Persoenlichkeit
+            # Tageszeit-Persönlichkeit
             if _hour < 7:
-                _time_pers = 'Nacht: Beginne mit "Ungern um diese Uhrzeit, aber..." oder "Spaete Stunde, doch das ist relevant."'
+                _time_pers = 'Nacht: Beginne mit "Ungern um diese Uhrzeit, aber..." oder "Späte Stunde, doch das ist relevant."'
             elif _hour < 10:
-                _time_pers = 'Morgen: Darf energisch/knapp sein. Bei sehr frueh (< 7): "Ambitioniert, {title}."'.format(title=_title)
+                _time_pers = 'Morgen: Darf energisch/knapp sein. Bei sehr früh (< 7): "Ambitioniert, {title}."'.format(title=_title)
             elif _hour < 18:
                 _time_pers = "Tag: Normal, sachlich-trocken."
             elif _hour < 22:
@@ -2907,7 +2924,7 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
                 else:
                     _time_pers = "Abend: Ruhiger, aber normal."
             else:
-                _time_pers = 'Spaetabend: Knapp, leise. "Nur kurz —" oder "Bevor du gehst —"'
+                _time_pers = 'Spätabend: Knapp, leise. "Nur kurz —" oder "Bevor du gehst —"'
 
             _pp_section = f"\nPROAKTIVE PERSOENLICHKEIT: {_time_pers}\n"
 
@@ -2920,18 +2937,18 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
                 )
 
         return f"""Du bist {self.assistant_name} — J.A.R.V.I.S. aus dem MCU. Proaktive Hausmeldung.
-REGELN: NUR die fertige Meldung. 1-2 Saetze. Deutsch mit Umlauten. Kein Englisch. Kein Denkprozess.
+REGELN: NUR die fertige Meldung. 1-2 Sätze. Deutsch mit Umlauten. Kein Englisch. Kein Denkprozess.
 TON: {tone}. {sir_rule}
 AKTUELLER STIL: {time_style}
 {humor_line}{_pp_section}
 MUSTER [{urgency.upper()}]: {pattern}
 BEI ANKUENFT: Status-Bericht wie ein Butler. Temperatur, offene Posten — knapp.
-BEI ABSCHIED: Kurzer Sicherheits-Hinweis wenn noetig. Kein "Schoenen Tag!"
-VERBOTEN: "Hallo", "Achtung", "Ich moechte dich informieren", "Es tut mir leid", "Guten Tag!", "Willkommen zuhause!", "Natuerlich!", "Gerne!", "Klar!", "Leider", "Als KI...", "Wie kann ich helfen?", Fuellwoerter, Moralisieren.
+BEI ABSCHIED: Kurzer Sicherheits-Hinweis wenn nötig. Kein "Schoenen Tag!"
+VERBOTEN: "Hallo", "Achtung", "Ich möchte dich informieren", "Es tut mir leid", "Guten Tag!", "Willkommen zuhause!", "Natürlich!", "Gerne!", "Klar!", "Leider", "Als KI...", "Wie kann ich helfen?", Fuellwörter, Moralisieren.
 WICHTIG: Erfinde KEINE Ursachen, Gruende oder Erklaerungen. NUR die gegebenen Fakten wiedergeben. Nichts hinzudichten."""
 
     def build_routine_prompt(self, routine_type: str = "morning", style: str = "butler") -> str:
-        """Baut einen personality-konsistenten Prompt fuer Routinen (Briefing, Gute-Nacht).
+        """Baut einen personality-konsistenten Prompt für Routinen (Briefing, Gute-Nacht).
 
         Traegt den vollen Personality-Stack: Sarkasmus, Formality, Tageszeit,
         Selbstironie — angepasst an den Routine-Typ.
@@ -2941,7 +2958,7 @@ WICHTIG: Erfinde KEINE Ursachen, Gruende oder Erklaerungen. NUR die gegebenen Fa
             style: Wochentag/Wochenende-Stil (z.B. "entspannt", "effizient")
 
         Returns:
-            System Prompt fuer Routine-Generierung
+            System Prompt für Routine-Generierung
         """
         time_of_day = self.get_time_of_day()
         time_style = self.get_time_style(time_of_day)
@@ -2960,20 +2977,20 @@ WICHTIG: Erfinde KEINE Ursachen, Gruende oder Erklaerungen. NUR die gegebenen Fa
 
         if routine_type == "morning":
             structure = (
-                "Erstelle ein Morning Briefing. Beginne mit kontextueller Begruessung.\n"
+                "Erstelle ein Morning Briefing. Beginne mit kontextueller Begrüßung.\n"
                 "Dann Wetter, Termine, Haus-Status — in dieser Reihenfolge.\n"
-                "Keine Aufzaehlungszeichen. Fliesstext. Max 5 Saetze."
+                "Keine Aufzaehlungszeichen. Fliesstext. Max 5 Sätze."
             )
         elif routine_type == "evening":
             structure = (
-                "Erstelle ein Abend-Briefing. Tages-Rueckblick, Morgen-Vorschau.\n"
-                "Beilaeufig, nicht formal. Max 4 Saetze."
+                "Erstelle ein Abend-Briefing. Tages-Rückblick, Morgen-Vorschau.\n"
+                "Beiläufig, nicht formal. Max 4 Sätze."
             )
         else:  # goodnight
             structure = (
                 "Gute-Nacht-Zusammenfassung. Sicherheits-Check + Morgen-Vorschau.\n"
-                "Bei offenen Fenstern/Tueren: erwaehne und frage ob so lassen.\n"
-                "Bei kritischen Issues: deutlich warnen. Max 3 Saetze."
+                "Bei offenen Fenstern/Tueren: erwähne und frage ob so lassen.\n"
+                "Bei kritischen Issues: deutlich warnen. Max 3 Sätze."
             )
 
         return f"""Du bist {self.assistant_name}, die KI dieses Hauses — J.A.R.V.I.S. aus dem MCU.
@@ -2983,14 +3000,14 @@ Stil: {style}. {time_style}
 {formality_section}
 {irony_note}
 Sprich die anwesende Person mit "{get_person_title()}" an. DUZE sie.
-VERBOTEN: "leider", "Entschuldigung", "Es tut mir leid", "Wie kann ich helfen?", "Gerne!", "Natuerlich!", "Klar!", "Als KI...", Fuellwoerter, Moralisieren.
+VERBOTEN: "leider", "Entschuldigung", "Es tut mir leid", "Wie kann ich helfen?", "Gerne!", "Natürlich!", "Klar!", "Als KI...", Fuellwörter, Moralisieren.
 Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
 
     # ------------------------------------------------------------------
-    # Feature 3: Geraete-Persoenlichkeit / Narration
+    # Feature 3: Geräte-Persönlichkeit / Narration
     # ------------------------------------------------------------------
 
-    # Default-Spitznamen fuer gaengige Geraete (entity_id-Substring → Nickname)
+    # Default-Spitznamen für gängige Geräte (entity_id-Substring → Nickname)
     _DEVICE_NICKNAMES = {
         "waschmaschine": {"name": "die Fleissige", "pron": "ihre"},
         "trockner": {"name": "der Warme", "pron": "seine"},
@@ -3002,7 +3019,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         "staubsauger": {"name": "der Kleine", "pron": "seine"},
         "kaffeemaschine": {"name": "die Barista", "pron": "ihre"},
         "heizung": {"name": "die Warmhalterin", "pron": "ihre"},
-        "klimaanlage": {"name": "die Kuehle", "pron": "ihre"},
+        "klimaanlage": {"name": "die Kühle", "pron": "ihre"},
         "ofen": {"name": "der Heisse", "pron": "seine"},
         "backofen": {"name": "der Heisse", "pron": "seine"},
         "drucker": {"name": "der Fleissige", "pron": "seine"},
@@ -3020,11 +3037,11 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             "{nickname} hat sich an die Arbeit gemacht.",
         ],
         "running_long": [
-            "{nickname} laeuft schon {duration} — alles in Ordnung?",
+            "{nickname} läuft schon {duration} — alles in Ordnung?",
             "{nickname} gibt nicht auf — {duration} und kein Ende in Sicht.",
         ],
         "anomaly": [
-            "{nickname} benimmt sich ungewoehnlich. Vielleicht mal nachschauen.",
+            "{nickname} benimmt sich ungewöhnlich. Vielleicht mal nachschauen.",
             "Mit {nickname} stimmt etwas nicht. Ich wuerde nachsehen.",
         ],
         "stale": [
@@ -3033,7 +3050,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
     }
 
     def _get_device_nickname(self, entity_id: str) -> Optional[dict]:
-        """Findet den Spitznamen fuer ein Geraet (Config-Override oder Default)."""
+        """Findet den Spitznamen für ein Gerät (Config-Override oder Default)."""
         narration_cfg = yaml_config.get("device_narration", {})
         if not narration_cfg.get("enabled", True):
             return None
@@ -3055,7 +3072,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
     def narrate_device_event(
         self, entity_id: str, event_type: str, detail: str = "", person: str = ""
     ) -> Optional[str]:
-        """Erzeugt eine persoenlichkeits-basierte Geraete-Meldung.
+        """Erzeugt eine persönlichkeits-basierte Geräte-Meldung.
 
         Args:
             entity_id: HA Entity-ID (z.B. "switch.waschmaschine")
@@ -3096,11 +3113,11 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         "context": {
             "formal": [
                 "Einen Moment bitte, ich analysiere die Situation.",
-                "Ich pruefe den aktuellen Hausstatus.",
+                "Ich prüfe den aktuellen Hausstatus.",
                 "Ich sammle die relevanten Daten.",
             ],
             "casual": [
-                "Moment, ich pruefe das.",
+                "Moment, ich prüfe das.",
                 "Einen Augenblick, ich sehe nach.",
                 "Ich werfe einen Blick auf die Daten.",
             ],
@@ -3108,7 +3125,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         "thinking": {
             "formal": [
                 "Ich analysiere die Optionen.",
-                "Einen Moment, ich ueberlege.",
+                "Einen Moment, ich überlege.",
                 "Ich werte die Daten aus.",
             ],
             "casual": [
@@ -3119,20 +3136,20 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         },
         "action": {
             "formal": [
-                "Ich fuehre das aus.",
+                "Ich führe das aus.",
                 "Wird sofort erledigt.",
-                "Ausfuehrung laeuft.",
+                "Ausführung läuft.",
             ],
             "casual": [
                 "Wird erledigt.",
-                "Ausfuehrung eingeleitet.",
+                "Ausführung eingeleitet.",
                 "Bin dabei.",
             ],
         },
     }
 
     def get_progress_message(self, step: str) -> str:
-        """Gibt eine personality-konsistente Fortschritts-Nachricht zurueck.
+        """Gibt eine personality-konsistente Fortschritts-Nachricht zurück.
 
         Args:
             step: Phase der Verarbeitung (context, thinking, action)
@@ -3149,7 +3166,7 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         return random.choice(messages)
 
     def get_error_response(self, error_type: str = "general") -> str:
-        """Gibt eine Jarvis-typische Fehlermeldung zurueck.
+        """Gibt eine Jarvis-typische Fehlermeldung zurück.
 
         Statt generischer Errors kommen Butler-maessige Formulierungen.
 
@@ -3165,28 +3182,33 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
             "general": [
                 "Das lief nicht nach Plan. Einen weiteren Versuch, wenn du gestattest.",
                 "Negativ. Formulier es anders, dann klappt es.",
-                "Nicht ganz das gewuenschte Ergebnis. Erneuter Versuch empfohlen.",
+                "Nicht ganz das gewünschte Ergebnis. Erneuter Versuch empfohlen.",
                 "Nicht mein bester Moment. Versuch es nochmal.",
             ],
             "timeout": [
                 "Keine Antwort. Das System braucht einen Moment.",
                 "Timeout. Entweder das Netzwerk oder meine Geduld — beides endlich.",
-                "Dauert laenger als erwartet. Ich bleibe dran.",
+                "Dauert länger als erwartet. Ich bleibe dran.",
             ],
             "unavailable": [
-                "Das Geraet antwortet nicht. Pruefe Verbindung.",
+                "Das Gerät antwortet nicht. Prüfe Verbindung.",
                 "Keine Verbindung. Entweder offline oder ignoriert mich.",
-                "Das System ist gerade nicht erreichbar. Ich versuche es spaeter.",
+                "Das System ist gerade nicht erreichbar. Ich versuche es später.",
             ],
             "limit": [
-                "Das uebersteigt meine aktuelle Konfiguration.",
+                "Das übersteigt meine aktuelle Konfiguration.",
                 "Ausserhalb der erlaubten Parameter. Sicherheit geht vor.",
                 "Das wuerde ich tun, aber die Grenzen sind gesetzt.",
             ],
             "unknown_device": [
-                "Dieses Geraet kenne ich nicht. Ist es in Home Assistant eingerichtet?",
-                "Unbekanntes Geraet. Pruefe die Entity-ID.",
-                "Das Geraet ist mir nicht bekannt. Wurde es korrekt konfiguriert?",
+                "Dieses Gerät kenne ich nicht. Ist es in Home Assistant eingerichtet?",
+                "Unbekanntes Gerät. Prüfe die Entity-ID.",
+                "Das Gerät ist mir nicht bekannt. Wurde es korrekt konfiguriert?",
+            ],
+            "no_data": [
+                "Dazu habe ich keine Daten.",
+                "Dazu liegen mir keine aktuellen Werte vor.",
+                "Keine belastbaren Daten vorhanden.",
             ],
         }
 
@@ -3196,8 +3218,8 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         if self.sarcasm_level >= 4:
             snarky_extras = {
                 "general": ["Das war nichts. Aufgeben steht nicht im Handbuch."],
-                "timeout": ["Timeout. Ich nehme es nicht persoenlich."],
-                "unavailable": ["Keine Antwort. Vielleicht braucht das Geraet auch eine Pause."],
+                "timeout": ["Timeout. Ich nehme es nicht persönlich."],
+                "unavailable": ["Keine Antwort. Vielleicht braucht das Gerät auch eine Pause."],
                 "limit": ["Netter Versuch. Aber nein."],
                 "unknown_device": ["Noch nie gehoert. Und ich kenne hier alles."],
             }

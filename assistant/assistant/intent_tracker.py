@@ -65,6 +65,9 @@ def parse_relative_date(text: str, reference: datetime = None) -> Optional[str]:
         reference = datetime.now()
 
     text_lower = text.lower().strip()
+    # Umlaute normalisieren, damit sowohl "nächste" als auch "naechste" matchen
+    _umlaut_map = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+    text_lower = text_lower.translate(_umlaut_map)
 
     import re
 

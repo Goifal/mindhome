@@ -89,6 +89,22 @@ class HomeAssistantClient:
         """State einer einzelnen Entity."""
         return await self._get_ha(f"/api/states/{entity_id}")
 
+    async def get_automations(self) -> list[dict]:
+        """Holt alle HA-Automationen (Trigger, Conditions, Actions) – read-only.
+
+        Returns:
+            Liste von Automation-Dicts mit id, alias, trigger, condition, action etc.
+        """
+        result = await self._get_ha("/api/config/automation/config")
+        if isinstance(result, list):
+            return result
+        # Fallback: Aus States die automation.* Entities lesen
+        states = await self.get_states()
+        return [
+            s for s in (states or [])
+            if s.get("entity_id", "").startswith("automation.")
+        ]
+
     async def get_history(
         self, entity_id: str, hours: int = 24,
     ) -> Optional[list]:

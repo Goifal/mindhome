@@ -1,5 +1,5 @@
 """
-Timer Manager - Allgemeine Timer & Erinnerungen fuer den Jarvis-Assistenten.
+Timer Manager - Allgemeine Timer & Erinnerungen für den Jarvis-Assistenten.
 
 Features:
 - Software-Timer mit Label und optionaler Aktion bei Ablauf
@@ -9,7 +9,7 @@ Features:
 - Optionale Aktion bei Ablauf (z.B. Licht ausschalten)
 
 Basiert auf dem bewaehrten CookingTimer-Pattern aus cooking_assistant.py,
-aber generalisiert fuer beliebige Anwendungsfaelle.
+aber generalisiert für beliebige Anwendungsfaelle.
 """
 
 import asyncio
@@ -26,17 +26,17 @@ from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 
-# F-051: Timezone-aware datetimes fuer korrekte Wecker/Erinnerungen bei DST-Wechsel
+# F-051: Timezone-aware datetimes für korrekte Wecker/Erinnerungen bei DST-Wechsel
 _TZ = ZoneInfo("Europe/Berlin")
 
 
 def _now() -> datetime:
-    """Timezone-aware datetime.now() fuer Europe/Berlin."""
+    """Timezone-aware datetime.now() für Europe/Berlin."""
     return datetime.now(_TZ)
 
 logger = logging.getLogger(__name__)
 
-# F-003: Whitelist fuer erlaubte Timer-Aktionen bei Ablauf
+# F-003: Whitelist für erlaubte Timer-Aktionen bei Ablauf
 # Sicherheitsrelevante Aktionen (lock_door, arm_security_system, etc.) sind NICHT erlaubt
 TIMER_ACTION_WHITELIST = frozenset({
     "set_light", "set_climate", "set_cover",
@@ -69,7 +69,7 @@ class GeneralTimer:
 
     @property
     def remaining_seconds(self) -> float:
-        """Verbleibende Sekunden als Float (Praezision fuer Sleep)."""
+        """Verbleibende Sekunden als Float (Praezision für Sleep)."""
         if self.finished or self.started_at == 0:
             return 0.0
         elapsed = time.time() - self.started_at
@@ -78,7 +78,7 @@ class GeneralTimer:
 
     @property
     def remaining_seconds_display(self) -> int:
-        """Gerundete verbleibende Sekunden fuer Anzeige."""
+        """Gerundete verbleibende Sekunden für Anzeige."""
         return int(self.remaining_seconds + 0.5)
 
     @property
@@ -136,7 +136,7 @@ class TimerManager:
         self.timers: dict[str, GeneralTimer] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._notify_callback = None
-        self._action_callback = None  # Fuer Aktionen bei Ablauf (FunctionExecutor)
+        self._action_callback = None  # Für Aktionen bei Ablauf (FunctionExecutor)
         self.redis: Optional[aioredis.Redis] = None
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
@@ -150,11 +150,11 @@ class TimerManager:
         logger.info("TimerManager initialisiert (%d aktive Timer/Erinnerungen/Wecker)", len(self.timers))
 
     def set_notify_callback(self, callback):
-        """Setzt den Callback fuer Timer-Benachrichtigungen."""
+        """Setzt den Callback für Timer-Benachrichtigungen."""
         self._notify_callback = callback
 
     def set_action_callback(self, callback):
-        """Setzt den Callback fuer Aktionen bei Timer-Ablauf."""
+        """Setzt den Callback für Aktionen bei Timer-Ablauf."""
         self._action_callback = callback
 
     async def create_timer(
@@ -170,7 +170,7 @@ class TimerManager:
         Args:
             duration_minutes: Dauer in Minuten (1-1440)
             label: Bezeichnung (z.B. "Waesche", "Pizza")
-            room: Raum fuer TTS-Benachrichtigung
+            room: Raum für TTS-Benachrichtigung
             person: Person die den Timer erstellt hat
             action_on_expire: Optionale Aktion bei Ablauf
 
@@ -197,7 +197,7 @@ class TimerManager:
         self.timers[timer_id] = timer
         await self._persist_timer(timer)
 
-        # Hintergrund-Task fuer Benachrichtigung
+        # Hintergrund-Task für Benachrichtigung
         task = asyncio.create_task(self._timer_watcher(timer))
         self._tasks[timer_id] = task
 
@@ -256,7 +256,7 @@ class TimerManager:
         return {"success": True, "message": f"Timer '{target.label}' abgebrochen."}
 
     def get_status(self) -> dict:
-        """Gibt den Status aller Timer zurueck."""
+        """Gibt den Status aller Timer zurück."""
         active = []
         done = []
 
@@ -282,7 +282,7 @@ class TimerManager:
         return {"success": True, "message": "\n".join(parts), "active_count": len(active)}
 
     def get_context_hints(self) -> list[str]:
-        """Liefert Timer-Hinweise fuer den System-Prompt Kontext."""
+        """Liefert Timer-Hinweise für den System-Prompt Kontext."""
         hints = []
         for timer in self.timers.values():
             if not timer.is_done:
@@ -290,7 +290,7 @@ class TimerManager:
         return hints
 
     async def _timer_watcher(self, timer: GeneralTimer):
-        """Ueberwacht einen Timer und benachrichtigt bei Ablauf."""
+        """Überwacht einen Timer und benachrichtigt bei Ablauf."""
         try:
             remaining = timer.remaining_seconds
             if remaining > 0:
@@ -300,7 +300,7 @@ class TimerManager:
             logger.info("Timer abgelaufen: %s (ID: %s)", timer.label, timer.id)
 
             # Benachrichtigung senden
-            message = f"{get_person_title()}, der Timer fuer '{timer.label}' ist abgelaufen!"
+            message = f"{get_person_title()}, der Timer für '{timer.label}' ist abgelaufen!"
             if self._notify_callback:
                 await self._notify_callback({
                     "message": message,
@@ -309,7 +309,7 @@ class TimerManager:
                     "timer_id": timer.id,
                 })
 
-            # Optionale Aktion ausfuehren
+            # Optionale Aktion ausführen
             if timer.action_on_expire and self._action_callback:
                 action = timer.action_on_expire
                 func_name = action.get("function", "")
@@ -327,13 +327,13 @@ class TimerManager:
                             "room": timer.room,
                         })
                 elif func_name:
-                    logger.info("Timer-Aktion ausfuehren: %s(%s)", func_name, func_args)
+                    logger.info("Timer-Aktion ausführen: %s(%s)", func_name, func_args)
                     try:
                         result = await self._action_callback(func_name, func_args)
                     except Exception as action_err:
                         logger.error("Timer-Aktion fehlgeschlagen: %s", action_err)
                         result = None
-                    action_msg = f"Timer-Aktion '{func_name}' ausgefuehrt."
+                    action_msg = f"Timer-Aktion '{func_name}' ausgeführt."
                     if self._notify_callback:
                         await self._notify_callback({
                             "message": action_msg,
@@ -344,7 +344,7 @@ class TimerManager:
             # Aufraumen
             self._tasks.pop(timer.id, None)
             await self._remove_timer(timer.id)
-            # Timer im Dict behalten fuer Status-Abfrage, aber nach 5 Min entfernen
+            # Timer im Dict behalten für Status-Abfrage, aber nach 5 Min entfernen
             asyncio.get_running_loop().call_later(
                 300, lambda tid=timer.id: self.timers.pop(tid, None)
             )
@@ -352,10 +352,10 @@ class TimerManager:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.error("Timer-Watcher Fehler fuer '%s': %s", timer.label, e)
+            logger.error("Timer-Watcher Fehler für '%s': %s", timer.label, e)
 
     async def _persist_timer(self, timer: GeneralTimer):
-        """Speichert Timer in Redis fuer Persistenz."""
+        """Speichert Timer in Redis für Persistenz."""
         if not self.redis:
             return
         try:
@@ -389,7 +389,7 @@ class TimerManager:
 
                 timer = GeneralTimer.from_dict(json.loads(data))
 
-                # Pruefen ob Timer noch laeuft (remaining_seconds ist jetzt float)
+                # Prüfen ob Timer noch laeuft (remaining_seconds ist jetzt float)
                 if timer.remaining_seconds > 0.0 and not timer.finished:
                     self.timers[timer.id] = timer
                     task = asyncio.create_task(self._timer_watcher(timer))
@@ -414,13 +414,13 @@ class TimerManager:
         room: str = "",
         person: str = "",
     ) -> dict:
-        """Erstellt eine Erinnerung fuer einen absoluten Zeitpunkt.
+        """Erstellt eine Erinnerung für einen absoluten Zeitpunkt.
 
         Args:
             time_str: Uhrzeit im Format "HH:MM" (z.B. "15:00")
             label: Woran erinnert werden soll
             date_str: Datum im Format "YYYY-MM-DD" (leer = heute/morgen automatisch)
-            room: Raum fuer TTS-Benachrichtigung
+            room: Raum für TTS-Benachrichtigung
             person: Person die die Erinnerung erstellt hat
 
         Returns:
@@ -454,7 +454,7 @@ class TimerManager:
                 return {"success": False, "message": "Erinnerungen koennen maximal 7 Tage in der Zukunft liegen."}
 
         except ValueError:
-            return {"success": False, "message": f"Ungueltige Uhrzeit: {time_str}. Format: HH:MM"}
+            return {"success": False, "message": f"Ungültige Uhrzeit: {time_str}. Format: HH:MM"}
 
         reminder_id = str(uuid.uuid4())[:8]
         timer = GeneralTimer(
@@ -496,7 +496,7 @@ class TimerManager:
                 await asyncio.sleep(seconds_until)
 
             timer.finished = True
-            logger.info("Erinnerung ausgeloest: %s (ID: %s)", timer.label, timer.id)
+            logger.info("Erinnerung ausgelöst: %s (ID: %s)", timer.label, timer.id)
 
             if self._notify_callback:
                 await self._notify_callback({
@@ -515,7 +515,7 @@ class TimerManager:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.error("Reminder-Watcher Fehler fuer '%s': %s", timer.label, e)
+            logger.error("Reminder-Watcher Fehler für '%s': %s", timer.label, e)
 
     async def _persist_reminder(self, reminder_id: str, timer: GeneralTimer, target: datetime):
         """Speichert Erinnerung in Redis."""
@@ -569,7 +569,7 @@ class TimerManager:
             logger.warning("Reminder-Wiederherstellung fehlgeschlagen: %s", e)
 
     def get_reminders_status(self) -> dict:
-        """Gibt den Status aller Erinnerungen zurueck (nur aktive Reminder)."""
+        """Gibt den Status aller Erinnerungen zurück (nur aktive Reminder)."""
         # Erinnerungen sind auch in self.timers, aber wir filtern per Redis-Key
         active = [t for t in self.timers.values() if not t.is_done]
         if not active:
@@ -590,12 +590,12 @@ class TimerManager:
         room: str = "",
         repeat: str = "",
     ) -> dict:
-        """Setzt einen Wecker fuer eine bestimmte Uhrzeit.
+        """Setzt einen Wecker für eine bestimmte Uhrzeit.
 
         Args:
             time_str: Uhrzeit im Format "HH:MM" (z.B. "06:30")
             label: Bezeichnung (Standard: "Wecker")
-            room: Raum fuer TTS/Licht-Wecken
+            room: Raum für TTS/Licht-Wecken
             repeat: Wiederholungs-Modus: "" (einmalig), "daily", "weekdays", "weekends"
 
         Returns:
@@ -628,7 +628,7 @@ class TimerManager:
                 return {"success": False, "message": "Zeitpunkt liegt in der Vergangenheit."}
 
         except ValueError:
-            return {"success": False, "message": f"Ungueltige Uhrzeit: {time_str}. Format: HH:MM"}
+            return {"success": False, "message": f"Ungültige Uhrzeit: {time_str}. Format: HH:MM"}
 
         alarm_id = str(uuid.uuid4())[:8]
         alarm_data = {
@@ -649,7 +649,7 @@ class TimerManager:
             except Exception as e:
                 logger.debug("Wecker-Persistenz fehlgeschlagen: %s", e)
 
-        # Timer erstellen fuer naechstes Klingeln
+        # Timer erstellen für nächstes Klingeln
         timer = GeneralTimer(
             id=alarm_id,
             label=label,
@@ -707,7 +707,7 @@ class TimerManager:
                         target_id = tid
                         break
 
-        # Kein Label/ID angegeben: Wenn nur ein aktiver Wecker existiert, diesen loeschen
+        # Kein Label/ID angegeben: Wenn nur ein aktiver Wecker existiert, diesen löschen
         if not target_id and not label:
             active_alarms = []
             if self.redis:
@@ -752,7 +752,7 @@ class TimerManager:
         return {"success": True, "message": "Wecker geloescht."}
 
     async def get_alarms(self) -> dict:
-        """Gibt alle aktiven Wecker zurueck."""
+        """Gibt alle aktiven Wecker zurück."""
         if not self.redis:
             return {"success": True, "message": "Keine Wecker gesetzt."}
 
@@ -821,7 +821,7 @@ class TimerManager:
             logger.error("Wecker-Watcher Fehler: %s", e)
 
     async def _schedule_next_alarm(self, alarm_id: str, alarm_data: dict):
-        """Plant den naechsten Wecker-Termin fuer wiederkehrende Wecker."""
+        """Plant den nächsten Wecker-Termin für wiederkehrende Wecker."""
         try:
             now = _now()
             target_time = datetime.strptime(alarm_data["time"], "%H:%M")
@@ -902,7 +902,7 @@ class TimerManager:
                     logger.info("Wecker wiederhergestellt: '%s' um %s",
                                 alarm_data["label"], alarm_data["time"])
                 elif alarm_data.get("repeat"):
-                    # Vergangener wiederkehrender Wecker → naechsten planen
+                    # Vergangener wiederkehrender Wecker → nächsten planen
                     await self._schedule_next_alarm(aid, alarm_data)
                 else:
                     # Vergangener einmaliger Wecker → entfernen

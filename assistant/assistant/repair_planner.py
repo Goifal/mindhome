@@ -9,7 +9,7 @@ Features:
 - 3D-Drucker Steuerung (via HA)
 - Roboterarm Steuerung (Stub)
 - Werkzeug-Verleih, Wartungs-Tracking
-- Geraete-Management via Home Assistant
+- Geräte-Management via Home Assistant
 """
 
 import asyncio
@@ -75,12 +75,12 @@ class RepairSession:
 # Navigation-Keywords (Pattern: cooking_assistant.py)
 # ============================================================
 
-NAV_NEXT = {"weiter", "naechster schritt", "nächster schritt", "next",
+NAV_NEXT = {"weiter", "nächster schritt", "nächster schritt", "next",
             "und dann", "weiter gehts"}
-NAV_PREV = {"zurueck", "zurück", "vorheriger schritt", "back",
-            "einen zurueck", "einen zurück"}
+NAV_PREV = {"zurück", "zurück", "vorheriger schritt", "back",
+            "einen zurück", "einen zurück"}
 NAV_REPEAT = {"nochmal", "wiederhole", "repeat", "wie war das"}
-NAV_STATUS = {"status", "wo bin ich", "uebersicht", "übersicht",
+NAV_STATUS = {"status", "wo bin ich", "übersicht", "übersicht",
               "wo stehe ich"}
 NAV_PARTS = {"was brauche ich", "teile", "teileliste", "material"}
 NAV_TOOLS = {"welches werkzeug", "werkzeugliste",
@@ -99,7 +99,7 @@ NAV_ARM = {"gib mir", "halt das", "greif", "arm", "robot"}
 NAV_TIMER = {"erinnere mich", "timer", "wecker"}
 NAV_JOURNAL = {"was hab ich heute", "journal", "tagebuch"}
 NAV_STOP = {"pause", "fertig", "stop", "beenden"}
-EMERGENCY_STOP = {"stopp"}  # Hoechste Prioritaet fuer Arm
+EMERGENCY_STOP = {"stopp"}  # Hoechste Priorität für Arm
 
 # Intent-Erkennung
 REPAIR_KEYWORDS = {
@@ -185,7 +185,7 @@ class RepairPlanner:
         self.proactive_suggestions = ws_cfg.get("proactive_suggestions", True)
 
     async def initialize(self, redis_client):
-        """Initialisiert mit Redis und laedt ggf. eine gespeicherte Session."""
+        """Initialisiert mit Redis und lädt ggf. eine gespeicherte Session."""
         self.redis = redis_client
         if self.redis:
             await self._restore_session()
@@ -196,11 +196,11 @@ class RepairPlanner:
         self.generator = generator
 
     def set_model_router(self, router):
-        """Setzt den ModelRouter fuer LLM-Tier-Auswahl."""
+        """Setzt den ModelRouter für LLM-Tier-Auswahl."""
         self.model_router = router
 
     def set_notify_callback(self, callback):
-        """Setzt den Callback fuer Timer-Benachrichtigungen."""
+        """Setzt den Callback für Timer-Benachrichtigungen."""
         self._notify_callback = callback
 
     # ── Session Persistence ──────────────────────────────────
@@ -226,7 +226,7 @@ class RepairPlanner:
         )
 
     async def _restore_session(self):
-        """Laedt eine gespeicherte Session aus Redis."""
+        """Lädt eine gespeicherte Session aus Redis."""
         if not self.redis:
             return
         raw = await self.redis.get(self.REDIS_SESSION_KEY)
@@ -264,7 +264,7 @@ class RepairPlanner:
                              priority="normal") -> dict:
         """Erstellt ein neues Werkstatt-Projekt."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         project_id = str(uuid_mod.uuid4())[:8]
         slug = (title.lower().replace(" ", "-")
                 .replace("ä", "ae").replace("ö", "oe").replace("ü", "ue"))
@@ -389,7 +389,7 @@ class RepairPlanner:
         return {"status": "ok", "part": name}
 
     async def add_missing_to_shopping(self, project_id) -> dict:
-        """Gibt fehlende Teile zurueck — User muss bestaetigen."""
+        """Gibt fehlende Teile zurück — User muss bestätigen."""
         project = await self.get_project(project_id)
         if not project:
             return {"status": "error", "message": "Projekt nicht gefunden"}
@@ -411,7 +411,7 @@ class RepairPlanner:
         model = model or (self.model_router.model_deep
                           if self.model_router else None)
         if not model:
-            return "Kein LLM-Modell verfuegbar fuer Diagnose."
+            return "Kein LLM-Modell verfügbar für Diagnose."
 
         # Semantic Memory durchsuchen
         context = ""
@@ -484,7 +484,7 @@ class RepairPlanner:
             return response  # LLM hat kein JSON generiert
 
     def _format_diagnosis(self, data: dict) -> str:
-        """Formatiert eine Diagnose fuer die Sprachausgabe."""
+        """Formatiert eine Diagnose für die Sprachausgabe."""
         parts = [f"Diagnose: {data.get('diagnosis', 'Unbekannt')}"]
         if data.get("difficulty"):
             parts.append(f"Schwierigkeit: {data['difficulty']}/5")
@@ -508,7 +508,7 @@ class RepairPlanner:
         model = model or (self.model_router.model_deep
                           if self.model_router else None)
         if not model:
-            return "Kein LLM-Modell verfuegbar."
+            return "Kein LLM-Modell verfügbar."
         project = await self.get_project(project_id)
         if not project:
             return "Projekt nicht gefunden."
@@ -530,7 +530,7 @@ Dateien: {json.dumps(file_contents)}
 Frage: {question}
 
 Analysiere: Machbarkeit, Schwachstellen, Belastungsgrenzen, Batterie-Laufzeit,
-thermische Aspekte, Verbesserungsvorschlaege. Gib Konfidenz-Level an."""
+thermische Aspekte, Verbesserungsvorschläge. Gib Konfidenz-Level an."""
         messages = [{"role": "system", "content": prompt}]
         return await self.ollama.chat(
             model=model, messages=messages,
@@ -544,12 +544,12 @@ thermische Aspekte, Verbesserungsvorschlaege. Gib Konfidenz-Level an."""
         model = model or (self.model_router.model_deep
                           if self.model_router else None)
         if not model:
-            return "Kein LLM-Modell verfuegbar."
+            return "Kein LLM-Modell verfügbar."
         project = await self.get_project(project_id)
         if not project:
             return "Projekt nicht gefunden."
 
-        prompt = f"""Systematischer Debug-Workflow fuer: {symptom}
+        prompt = f"""Systematischer Debug-Workflow für: {symptom}
 Projekt: {project['title']}
 Teile: {json.dumps(project.get('parts', []))}
 1. Symptom analysieren
@@ -569,11 +569,11 @@ Antworte strukturiert als Diagnosebaum."""
 
     async def suggest_improvements(self, project_id,
                                    model=None) -> str:
-        """Schlaegt Verbesserungen fuer ein Projekt vor."""
+        """Schlaegt Verbesserungen für ein Projekt vor."""
         model = model or (self.model_router.model_smart
                           if self.model_router else None)
         if not model:
-            return "Kein LLM-Modell verfuegbar."
+            return "Kein LLM-Modell verfügbar."
         project = await self.get_project(project_id)
         if not project:
             return "Projekt nicht gefunden."
@@ -595,10 +595,10 @@ Schlage konkrete Optimierungen vor (Effizienz, Kosten, Sicherheit, Zuverlaessigk
         model = model or (self.model_router.model_deep
                           if self.model_router else None)
         if not model:
-            return "Kein LLM-Modell verfuegbar."
+            return "Kein LLM-Modell verfügbar."
 
-        prompt = f"""Vergleiche {comp_a} vs {comp_b} fuer: {use_case or 'allgemein'}
-Vergleiche: Features, Preis, Stromverbrauch, Pins, Verfuegbarkeit.
+        prompt = f"""Vergleiche {comp_a} vs {comp_b} für: {use_case or 'allgemein'}
+Vergleiche: Features, Preis, Stromverbrauch, Pins, Verfügbarkeit.
 Gib eine klare Empfehlung mit Begruendung."""
         messages = [{"role": "system", "content": prompt}]
         return await self.ollama.chat(
@@ -613,7 +613,7 @@ Gib eine klare Empfehlung mit Begruendung."""
         model = model or (self.model_router.model_deep
                           if self.model_router else None)
         if not model:
-            return "Kein LLM-Modell verfuegbar."
+            return "Kein LLM-Modell verfügbar."
         project = await self.get_project(project_id)
         if not project:
             return "Projekt nicht gefunden."
@@ -641,7 +641,7 @@ Erklaere den Fehler und schlage einen konkreten Fix vor."""
         model = model or (self.model_router.model_deep
                           if self.model_router else None)
         if not model:
-            return "Kein LLM-Modell verfuegbar."
+            return "Kein LLM-Modell verfügbar."
         project = await self.get_project(project_id)
         if not project:
             return "Projekt nicht gefunden."
@@ -654,7 +654,7 @@ Erklaere den Fehler und schlage einen konkreten Fix vor."""
 Projekt: {project['title']}
 Schritt: {current_step}
 Messwert: {measurement_text}
-Bewerte: Ist der Wert im erwarteten Bereich? Was bedeutet er? Naechster Schritt?"""
+Bewerte: Ist der Wert im erwarteten Bereich? Was bedeutet er? Nächster Schritt?"""
         messages = [{"role": "system", "content": prompt}]
         return await self.ollama.chat(
             model=model, messages=messages,
@@ -667,9 +667,9 @@ Bewerte: Ist der Wert im erwarteten Bereich? Was bedeutet er? Naechster Schritt?
         model = model or (self.model_router.model_smart
                           if self.model_router else None)
         if not model:
-            return "Kein LLM-Modell verfuegbar."
+            return "Kein LLM-Modell verfügbar."
 
-        prompt = f"""Erstelle eine Schritt-fuer-Schritt Kalibrierungsanleitung fuer: {device_type}
+        prompt = f"""Erstelle eine Schritt-für-Schritt Kalibrierungsanleitung für: {device_type}
 Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         messages = [{"role": "system", "content": prompt}]
         return await self.ollama.chat(
@@ -712,8 +712,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         checklist = ["Arbeitsflaeche frei und sauber"]
         if any(t in str(tools) for t in ["loetkolben", "loeten", "loet"]):
             checklist.extend([
-                "Lueftung einschalten",
-                "Loetkolben-Ablage pruefen",
+                "Lüftung einschalten",
+                "Loetkolben-Ablage prüfen",
                 "Loetzinn bereit",
             ])
         if any(t in str(tools) for t in ["bohr", "saeg", "flex", "schlei"]):
@@ -722,7 +722,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "Gehoerschutz bei Bedarf",
             ])
         if category == "reparatur":
-            checklist.append("Strom/Wasser abstellen wenn noetig")
+            checklist.append("Strom/Wasser abstellen wenn nötig")
         checklist.append("Erste-Hilfe-Kasten in Reichweite")
 
         return ("Sicherheits-Checkliste:\n"
@@ -763,10 +763,10 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         if any(kw in text_lower for kw in NAV_STOP):
             return await self._stop_session()
 
-        return "Ich habe das nicht verstanden. Sage 'status' fuer eine Uebersicht."
+        return "Ich habe das nicht verstanden. Sage 'status' für eine Übersicht."
 
     async def _next_step(self) -> str:
-        """Geht zum naechsten Schritt."""
+        """Geht zum nächsten Schritt."""
         if not self._session:
             return "Keine aktive Session."
         if self._session.current_step >= self._session.total_steps - 1:
@@ -809,7 +809,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         return self._format_step(step)
 
     def _get_status(self) -> str:
-        """Gibt den aktuellen Status zurueck."""
+        """Gibt den aktuellen Status zurück."""
         if not self._session:
             return "Keine aktive Session."
         s = self._session
@@ -817,26 +817,26 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         return (f"Projekt: {s.title}\n"
                 f"Schritt {s.current_step + 1} von {s.total_steps}: "
                 f"{step.title if step else 'Fertig'}\n"
-                f"Sage 'weiter' oder 'zurueck' zum Navigieren.")
+                f"Sage 'weiter' oder 'zurück' zum Navigieren.")
 
     def _get_parts(self) -> str:
-        """Listet die benoetigten Teile."""
+        """Listet die benötigten Teile."""
         if not self._session:
             return "Keine aktive Session."
         step = self._session.get_current_step()
         if not step or not step.parts:
-            return "Fuer diesen Schritt werden keine speziellen Teile benoetigt."
-        return "Benoetigte Teile:\n" + "\n".join(
+            return "Für diesen Schritt werden keine speziellen Teile benötigt."
+        return "Benötigte Teile:\n" + "\n".join(
             f"- {p}" for p in step.parts)
 
     def _get_tools(self) -> str:
-        """Listet das benoetigte Werkzeug."""
+        """Listet das benötigte Werkzeug."""
         if not self._session:
             return "Keine aktive Session."
         step = self._session.get_current_step()
         if not step or not step.tools:
-            return "Fuer diesen Schritt wird kein spezielles Werkzeug benoetigt."
-        return "Benoetigtes Werkzeug:\n" + "\n".join(
+            return "Für diesen Schritt wird kein spezielles Werkzeug benötigt."
+        return "Benötigtes Werkzeug:\n" + "\n".join(
             f"- {t}" for t in step.tools)
 
     async def _stop_session(self) -> str:
@@ -846,10 +846,10 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         project_id = self._session.project_id
         title = self._session.title
         await self._clear_session()
-        return f"Session fuer '{title}' beendet. Projekt bleibt gespeichert."
+        return f"Session für '{title}' beendet. Projekt bleibt gespeichert."
 
     def _format_step(self, step: RepairStep) -> str:
-        """Formatiert einen Schritt fuer die Sprachausgabe."""
+        """Formatiert einen Schritt für die Sprachausgabe."""
         parts = [
             f"Schritt {step.number} von {self._session.total_steps}: "
             f"{step.title}",
@@ -871,7 +871,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
             from .ocr import analyze_image
         except ImportError:
             return {"status": "error",
-                    "message": "Kamera/OCR Module nicht verfuegbar"}
+                    "message": "Kamera/OCR Module nicht verfügbar"}
 
         if image_data:
             img = image_data
@@ -882,11 +882,11 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                     "message": "Kein Bild oder Kamera angegeben"}
 
         prompt = """Analysiere dieses Bild aus einer Werkstatt-Perspektive:
-1. Was ist das fuer ein Objekt/Bauteil?
+1. Was ist das für ein Objekt/Bauteil?
 2. Erkennbare Beschaedigungen oder Verschleiss?
 3. Geschaetzte Abmessungen?
 4. Teilenummern/Beschriftungen?
-5. Reparierbar oder Ersatz noetig?"""
+5. Reparierbar oder Ersatz nötig?"""
         result = await analyze_image(img, prompt)
         return {"status": "ok", "analysis": result}
 
@@ -897,7 +897,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                                 location="") -> dict:
         """Fuegt ein Werkstatt-Item hinzu."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         item_id = name.lower().replace(" ", "_")
         item = {
             "name": name, "quantity": str(quantity),
@@ -933,7 +933,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                                        last_done="") -> dict:
         """Fuegt einen Wartungsplan hinzu."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         key = f"mha:repair:maintenance:{tool_name.lower().replace(' ', '_')}"
         await self.redis.hset(key, mapping={
             "tool": tool_name,
@@ -943,7 +943,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         return {"status": "ok"}
 
     async def check_maintenance_due(self) -> list:
-        """Prueft welche Werkzeuge gewartet werden muessen."""
+        """Prüft welche Werkzeuge gewartet werden muessen."""
         if not self.redis:
             return []
         keys = [k async for k in self.redis.scan_iter(
@@ -966,7 +966,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
     async def set_project_budget(self, project_id, budget) -> dict:
         """Setzt das Budget eines Projekts."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         await self.redis.hset(
             f"mha:repair:project:{project_id}", "budget", str(budget))
         return {"status": "ok"}
@@ -993,7 +993,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                            level="beginner") -> dict:
         """Speichert ein Skill-Level."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         key = f"mha:repair:skills:{person.lower()}"
         await self.redis.hset(key, skill, level)
         return {"status": "ok"}
@@ -1025,7 +1025,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         if not tmpl:
             return {"status": "error",
                     "message": f"Template '{template_name}' nicht gefunden. "
-                    f"Verfuegbar: {', '.join(TEMPLATES.keys())}"}
+                    f"Verfügbar: {', '.join(TEMPLATES.keys())}"}
         project = await self.create_project(
             title=title or tmpl["title"],
             description=f"Aus Template: {template_name}",
@@ -1040,7 +1040,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
     async def lend_tool(self, tool_name, person) -> dict:
         """Vermerkt ein verliehenes Werkzeug."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         key = f"mha:repair:lent:{tool_name.lower().replace(' ', '_')}"
         await self.redis.hset(key, mapping={
             "tool": tool_name, "person": person,
@@ -1050,13 +1050,13 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "message": f"{tool_name} an {person} verliehen"}
 
     async def return_tool(self, tool_name) -> dict:
-        """Vermerkt ein zurueckgegebenes Werkzeug."""
+        """Vermerkt ein zurückgegebenes Werkzeug."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         key = f"mha:repair:lent:{tool_name.lower().replace(' ', '_')}"
         await self.redis.delete(key)
         return {"status": "ok",
-                "message": f"{tool_name} zurueckgegeben"}
+                "message": f"{tool_name} zurückgegeben"}
 
     async def list_lent_tools(self) -> list:
         """Listet alle verliehenen Werkzeuge."""
@@ -1246,7 +1246,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                         except ValueError:
                             pass
                 except (asyncio.TimeoutError, socket.gaierror) as e:
-                    logger.warning("Arm-URL: DNS-Aufloesung fehlgeschlagen fuer '%s': %s", hostname, e)
+                    logger.warning("Arm-URL: DNS-Auflösung fehlgeschlagen für '%s': %s", hostname, e)
                     return {"status": "error",
                             "message": "Arm-URL nicht erreichbar"}
         except Exception as e:
@@ -1267,7 +1267,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                     json=cmd,
                     allow_redirects=False,  # F-081: Redirect-Blocking
                 ) as resp:
-                    # F-081: Content-Type pruefen
+                    # F-081: Content-Type prüfen
                     ct = resp.headers.get("Content-Type", "")
                     if "json" not in ct.lower():
                         logger.warning("Arm-Response: unerwarteter Content-Type '%s'", ct[:80])
@@ -1280,7 +1280,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                                 "message": "Arm-Antwort zu gross"}
                     import json as _json
                     data = _json.loads(raw)
-                    # F-085: Nur erwartete Keys zurueckgeben (kein Spread von Fremd-Daten)
+                    # F-085: Nur erwartete Keys zurückgeben (kein Spread von Fremd-Daten)
                     return {
                         "status": data.get("status", "ok"),
                         "x": data.get("x"),
@@ -1335,7 +1335,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         F-085: Redis Key Injection Schutz + Position-Validierung.
         """
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         # F-085: Name validieren (nur alphanumerisch + Unterstrich/Bindestrich)
         import re as _re
         if not name or not _re.match(r'^[a-zA-Z0-9_-]+$', str(name)):
@@ -1358,7 +1358,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
     async def arm_pick_tool(self, tool_name) -> dict:
         """Greift ein Werkzeug an einer gespeicherten Position."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         key = f"mha:repair:arm:positions:{tool_name.lower()}"
         pos = await self.redis.hgetall(key)
         if not pos:
@@ -1374,7 +1374,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         return {"status": "ok", "message": f"Greife {tool_name}"}
 
     async def _emergency_stop(self) -> str:
-        """NOTFALL-STOPP fuer den Arm."""
+        """NOTFALL-STOPP für den Arm."""
         await self._arm_command({"T": 0})
         return "NOTFALL-STOPP! Arm angehalten."
 
@@ -1383,16 +1383,16 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
     async def start_timer(self, project_id) -> dict:
         """Startet den Projekt-Timer."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         await self.redis.hset(
             f"mha:repair:project:{project_id}",
             "timer_start", str(time.time()))
         return {"status": "ok", "message": "Timer gestartet"}
 
     async def pause_timer(self, project_id) -> dict:
-        """Pausiert den Projekt-Timer und gibt Gesamtzeit zurueck."""
+        """Pausiert den Projekt-Timer und gibt Gesamtzeit zurück."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         start = float(await self.redis.hget(
             f"mha:repair:project:{project_id}", "timer_start") or 0)
         total = float(await self.redis.hget(
@@ -1430,7 +1430,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
     # ── Journal ──────────────────────────────────────────────
 
     async def get_journal(self, period="today") -> dict:
-        """Holt Journal-Eintraege."""
+        """Holt Journal-Einträge."""
         if not self.redis:
             return {"date": "", "entries": []}
         key = f"mha:repair:journal:{datetime.now().strftime('%Y-%m-%d')}"
@@ -1443,7 +1443,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
     async def add_journal_entry(self, note) -> dict:
         """Fuegt einen Journal-Eintrag hinzu."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         key = f"mha:repair:journal:{datetime.now().strftime('%Y-%m-%d')}"
         entry = {"text": note, "time": datetime.now().strftime('%H:%M')}
         await self.redis.rpush(key, json.dumps(entry))
@@ -1456,7 +1456,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                            tags=None) -> dict:
         """Speichert ein Code-Snippet."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         key = f"mha:repair:snippet:{name.lower().replace(' ', '_')}"
         await self.redis.hset(key, mapping={
             "name": name, "code": code, "language": language,
@@ -1494,7 +1494,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "message": f"Gewechselt zu: {project['title']}"}
 
     async def get_active_project(self) -> Optional[dict]:
-        """Gibt das aktive Projekt zurueck."""
+        """Gibt das aktive Projekt zurück."""
         if not self._session:
             return None
         return await self.get_project(self._session.project_id)
@@ -1510,10 +1510,10 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                    if query.lower() in json.dumps(p).lower()]
         return results
 
-    # ── Geraete-Management ───────────────────────────────────
+    # ── Geräte-Management ───────────────────────────────────
 
     async def check_device_online(self, entity_id) -> dict:
-        """Prueft ob ein HA-Geraet online ist."""
+        """Prüft ob ein HA-Gerät online ist."""
         try:
             states = await self.ha.get_states()
         except Exception:
@@ -1528,7 +1528,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         return {"entity": entity_id, "state": "not_found"}
 
     async def get_power_consumption(self, entity_id) -> dict:
-        """Liest den Stromverbrauch eines Geraets."""
+        """Liest den Stromverbrauch eines Geräts."""
         try:
             states = await self.ha.get_states()
         except Exception:
@@ -1546,16 +1546,16 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
 
     async def link_device_to_project(self, project_id,
                                      entity_id) -> dict:
-        """Verknuepft ein HA-Geraet mit einem Projekt."""
+        """Verknuepft ein HA-Gerät mit einem Projekt."""
         if not self.redis:
-            return {"status": "error", "message": "Redis nicht verfuegbar"}
+            return {"status": "error", "message": "Redis nicht verfügbar"}
         await self.redis.hset(
             f"mha:repair:project:{project_id}",
             "device_entity", entity_id)
         return {"status": "ok"}
 
     async def check_all_devices(self) -> list:
-        """Prueft alle verknuepften Geraete."""
+        """Prüft alle verknuepften Geräte."""
         projects = await self.list_projects()
         devices = []
         for p in projects:
@@ -1607,14 +1607,14 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
             if self.redis:
                 await self.redis.delete("mha:repair:manual_active")
             _title = yaml_config.get("person", {}).get("title", "Sir")
-            return f"Werkstatt-Modus deaktiviert. Bis zum naechsten Mal, {_title}."
+            return f"Werkstatt-Modus deaktiviert. Bis zum nächsten Mal, {_title}."
 
     def has_active_session(self) -> bool:
-        """Prueft ob eine aktive Session existiert."""
+        """Prüft ob eine aktive Session existiert."""
         return self._session is not None
 
     async def is_manually_activated(self) -> bool:
-        """Prueft ob der Werkstatt-Modus manuell aktiviert ist."""
+        """Prüft ob der Werkstatt-Modus manuell aktiviert ist."""
         if not self.redis:
             return False
         return bool(await self.redis.exists("mha:repair:manual_active"))

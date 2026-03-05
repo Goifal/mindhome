@@ -475,6 +475,8 @@ async function loadDashboard() {
       <div style="padding:8px 0;display:flex;justify-content:space-between;">
         <span style="font-size:12px;">Redis</span><span style="font-size:11px;color:${mem.redis_connected?'var(--success)':'var(--danger)'};">${mem.redis_connected?'Verbunden':'Getrennt'}</span></div>`;
   } catch(e) { console.error('Dashboard fail:', e); }
+  // Szenen-Widget parallel laden
+  loadSceneStatus();
 }
 
 // ---- Live-Status Auto-Refresh ----
@@ -501,6 +503,8 @@ async function refreshLiveStatus() {
     if (wb) wb.style.display = d.whisper_mode ? '' : 'none';
     const sb = document.getElementById('statusBadge');
     if (sb) { sb.textContent = d.components_ok ? 'Online' : 'Offline'; sb.className = 'badge ' + (d.components_ok ? 'badge-ok' : 'badge-err'); }
+    // Szenen-Widget aktualisieren
+    loadSceneStatus();
     // Mood und Stress im Status-Bereich aktualisieren
     const mi = document.getElementById('moodInfo');
     if (mi && d.mood) {
@@ -518,6 +522,115 @@ async function refreshLiveStatus() {
     if (dot) dot.classList.add('offline');
     const sb = document.getElementById('statusBadge');
     if (sb) { sb.textContent = 'Offline'; sb.className = 'badge badge-err'; }
+  }
+}
+
+// ---- Scene Status Widget ----
+
+const _ACTIVITY_LABELS = {
+  sleeping:'Schlafen', in_call:'Im Telefonat', watching:'TV/Film',
+  focused:'Konzentriert', guests:'Gaeste da', relaxing:'Entspannt',
+  away:'Abwesend', unknown:'Unbekannt',
+};
+const _ACTIVITY_ICONS = {
+  sleeping:'&#128164;', in_call:'&#128222;', watching:'&#127916;',
+  focused:'&#128187;', guests:'&#128101;', relaxing:'&#127810;',
+  away:'&#128682;', unknown:'&#10067;',
+};
+
+async function loadSceneStatus() {
+  const c = document.getElementById('sceneStatusContainer');
+  if (!c) return;
+  try {
+    const d = await api('/api/ui/scenes/status');
+    const act = d.activity || {};
+    const haScenes = d.ha_scenes || [];
+
+    function fmtAgo(seconds) {
+      if (seconds == null) return '—';
+      if (seconds < 60) return 'gerade eben';
+      if (seconds < 3600) return Math.floor(seconds / 60) + ' Min';
+      if (seconds < 86400) return Math.floor(seconds / 3600) + ' Std';
+      if (seconds < 172800) return 'gestern';
+      return Math.floor(seconds / 86400) + ' Tage';
+    }
+
+    let html = '';
+
+    // 1. Aktuelle Jarvis-Aktivitaet
+    const actName = act.current || 'unknown';
+    const actLabel = _ACTIVITY_LABELS[actName] || actName;
+    const actIcon = _ACTIVITY_ICONS[actName] || '&#10067;';
+    const isOverride = !!act.manual_override;
+    const confidence = act.confidence != null ? Math.round(act.confidence * 100) : 0;
+    const trigger = act.trigger || '';
+
+    // Grund ermitteln
+    let reason = '';
+    if (isOverride) {
+      reason = 'Manuell gesetzt';
+      if (act.override_until) {
+        try {
+          const until = new Date(act.override_until);
+          reason += ' bis ' + until.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+        } catch(_) {}
+      }
+    } else {
+      const sigs = act.signals || {};
+      const active = Object.entries(sigs).filter(([k,v]) => v && v !== false && k !== 'ha_unavailable');
+      if (active.length) {
+        const sigLabels = {
+          media_playing:'Media aktiv', in_call:'Telefonat', bed_occupied:'Bett belegt',
+          sleeping:'Schlafenszeit', pc_active:'PC aktiv', guests:'Gaeste erkannt',
+          lights_off:'Lichter aus', away:'Abwesend',
+        };
+        reason = active.map(([k,v]) => {
+          let label = sigLabels[k] || k;
+          if (typeof v === 'string' && v.length > 0 && v !== 'true') label += ': ' + v.split('.').pop().replace(/_/g,' ');
+          return label;
+        }).join(', ');
+      } else {
+        reason = 'Sensor-Erkennung';
+      }
+    }
+
+    html += `<div style="padding:10px 12px;margin-bottom:10px;background:rgba(0,212,255,0.04);border:1px solid rgba(0,212,255,0.15);border-radius:8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">${actIcon}</span>
+          <span style="font-size:14px;font-weight:600;color:var(--text-primary);">${esc(actLabel)}</span>
+          ${isOverride ? '<span style="font-size:9px;background:var(--accent);color:var(--bg-primary);padding:1px 6px;border-radius:3px;font-weight:600;letter-spacing:0.5px;">OVERRIDE</span>' : ''}
+        </div>
+        <span style="font-size:11px;color:var(--text-muted);font-family:var(--mono);">${confidence}%</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-secondary);">${esc(reason)}</div>
+    </div>`;
+
+    // 2. HA-Szenen (letzte Aktivierungen)
+    if (haScenes.length) {
+      html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">HA-Szenen</div>';
+      for (const sc of haScenes) {
+        const ago = sc.activated_ago_seconds;
+        const isRecent = ago != null && ago < 7200;
+        const agoText = fmtAgo(ago);
+        const dotColor = isRecent ? 'var(--success)' : 'var(--text-muted)';
+        const nameColor = isRecent ? 'var(--text-primary)' : 'var(--text-secondary)';
+        html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="width:6px;height:6px;border-radius:50%;background:${dotColor};display:inline-block;flex-shrink:0;${isRecent?'box-shadow:0 0 6px '+dotColor:''}"></span>
+            <span style="font-size:12px;color:${nameColor};${isRecent?'font-weight:600':''};">${esc(sc.name)}</span>
+          </div>
+          <span style="font-size:10px;color:var(--text-muted);font-family:var(--mono);white-space:nowrap;">${agoText}</span>
+        </div>`;
+      }
+    }
+
+    c.innerHTML = html;
+    const ts = document.getElementById('sceneRefreshTs');
+    if (ts) ts.textContent = new Date().toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+  } catch (e) {
+    c.innerHTML = '<span style="color:var(--danger);font-size:12px;">Szenen konnten nicht geladen werden</span>';
+    console.error('Scene status fail:', e);
   }
 }
 
@@ -634,7 +747,7 @@ function renderCurrentTab() {
       case 'tab-scenes': c.innerHTML = renderScenes(); break;
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
       case 'tab-proactive': c.innerHTML = renderProactive(); break;
-      case 'tab-notifications': c.innerHTML = renderNotifications(); break;
+      case 'tab-notifications': c.innerHTML = renderNotifications(); loadNotifyChannels(); break;
       case 'tab-cooking': c.innerHTML = renderCooking(); break;
       case 'tab-workshop': c.innerHTML = renderWorkshop(); break;
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
@@ -643,7 +756,7 @@ function renderCurrentTab() {
       case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); loadCoverActionLog(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-remote': c.innerHTML = renderRemote(); break;
-      case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadNotifyChannels(); loadEmergencyProtocols(); break;
+      case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadEmergencyProtocols(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
       case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); break;
@@ -719,6 +832,7 @@ const HELP_TEXTS = {
   'model_profiles.default.repeat_penalty': {title:'Repeat Penalty (Default)', text:'Bestraft Wiederholungen. 1.0 = aus, 1.1 = leicht, 1.5 = stark.'},
   'model_profiles.default.think_temperature': {title:'Think-Temperatur (Default)', text:'Temperatur im Thinking-Modus. Empfohlen: 0.6 (fokussierter als normal).'},
   'model_profiles.default.think_top_p': {title:'Think Top-P (Default)', text:'Top-P im Thinking-Modus. Empfohlen: 0.95 (breiter als normal).'},
+  'model_profiles.default.character_hint': {title:'JARVIS Character-Hint', text:'Modell-spezifische Prompt-Verstaerkung gegen typische LLM-Schwaechen.', detail:'Wird als Prio-1-Sektion in den System-Prompt injiziert. Hier kannst du modellspezifische Anweisungen hinterlegen, z.B. "Niemals mit Natuerlich! anfangen" fuer Modelle die dazu neigen. Leer = kein Extra-Hint.'},
   'planner.max_iterations': {title:'Max. Planungsschritte', text:'Wie viele Planungsrunden der Action Planner maximal durchlaeuft.', detail:'8 = Standard. Komplexe Aufgaben wie "Mach alles fertig fuer morgen" brauchen mehr Schritte. Bei Timeout-Problemen reduzieren.'},
   'planner.max_tokens': {title:'Planner Antwortlaenge', text:'Maximale Tokens pro Planungsschritt.', detail:'512 = Standard. Erhoehen wenn der Planner Plaene abschneidet.'},
   'models.fast_keywords': {title:'Fast-Keywords', text:'Woerter die das schnelle Modell aktivieren.'},
@@ -752,6 +866,7 @@ const HELP_TEXTS = {
   'personality.casual_warnings': {title:'Beilaeufige Warnungen', text:'Understatement-Einleitungen fuer Warnungen — der typische Butler-Stil.'},
   'response_filter.enabled': {title:'Antwort-Filter', text:'Filtert unerwuenschte Phrasen und begrenzt Antwortlaenge.'},
   'response_filter.max_response_sentences': {title:'Max. Saetze', text:'Max. Saetze pro Antwort. 0 = unbegrenzt.'},
+  'response_filter.auto_ban_threshold': {title:'Auto-Ban Schwelle', text:'Phrasen die so oft vom Filter entfernt werden, werden automatisch zur Sperrliste hinzugefuegt.', detail:'0 = aus (nur manuelle Sperrung). 10 = Standard. Niedrigere Werte = aggressiveres Selbstlernen. Gesperrte Phrasen werden via Notification gemeldet.'},
   'response_filter.banned_phrases': {title:'Verbotene Phrasen', text:'Phrasen die der Assistent nie verwenden soll.'},
   'response_filter.banned_starters': {title:'Verbotene Satzanfaenge', text:'Satzanfaenge die vermieden werden sollen.'},
   'response_filter.sorry_patterns': {title:'Entschuldigungs-Filter', text:'Entschuldigungs-Phrasen die aus LLM-Antworten entfernt werden.'},
@@ -1872,6 +1987,7 @@ function _renderModelProfiles() {
   const PROFILE_FIELDS = [
     {key:'supports_think_tags', label:'Think-Tags', type:'toggle', hint:'LLM nutzt <think>-Tags fuer Chain-of-Thought'},
     {key:'supports_think_with_tools', label:'Think + Tools', type:'toggle', hint:'Think-Tags bleiben bei Tool-Calls aktiv'},
+    {key:'character_hint', label:'JARVIS Character-Hint', type:'textarea', hint:'Modell-spezifische Prompt-Verstaerkung gegen Chatbot-Phrasen. Wird als Prio-1-Sektion in den System-Prompt injiziert.'},
     {key:'temperature', label:'Temperatur', type:'range', min:0, max:2, step:0.1},
     {key:'top_p', label:'Top-P', type:'range', min:0, max:1, step:0.05},
     {key:'top_k', label:'Top-K', type:'range', min:1, max:100, step:1},
@@ -1902,6 +2018,11 @@ function _renderModelProfiles() {
         html += '<div class="form-group" style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">' +
           '<label style="font-size:12px;margin:0;">' + f.label + '</label>' +
           '<label class="switch" style="margin:0;"><input type="checkbox" data-path="' + path + '" ' + checked + '><span class="slider"></span></label></div>';
+      } else if (f.type === 'textarea') {
+        html += '<div class="form-group" style="margin-bottom:6px;">' +
+          '<label style="font-size:12px;">' + f.label + (f.hint ? ' <span style="color:var(--text-muted);font-weight:normal;">— ' + f.hint + '</span>' : '') + '</label>' +
+          '<textarea data-path="' + path + '" rows="3" style="width:100%;font-size:12px;font-family:var(--mono);resize:vertical;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:6px;">' + esc(val) + '</textarea>' +
+          '</div>';
       } else {
         html += '<div class="form-group" style="margin-bottom:6px;">' +
           '<label style="font-size:12px;">' + f.label + '</label>' +
@@ -1952,6 +2073,57 @@ function removeModelProfile(name) {
   scheduleAutoSave();
 }
 
+// ---- Character-Break Stats Loader ----
+async function loadCharBreakStats() {
+  const el = document.getElementById('charBreakStatsContent');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--accent);">Lade...</span>';
+  try {
+    const resp = await fetch('/api/assistant/character-break-stats');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (data.total_breaks === 0) {
+      el.innerHTML = '<span style="color:var(--success);">Keine Charakter-Brueche in den letzten 7 Tagen.</span>';
+      return;
+    }
+    let html = '<div style="margin-bottom:6px;">Gesamt: <strong>' + data.total_breaks + '</strong> Brueche</div>';
+    // Typ-Aufschluesselung
+    const TYPE_LABELS = {
+      llm_voice: 'LLM-Stimme (zu generisch)',
+      hallucination: 'Halluzination (erfundene Werte)',
+      identity: 'Identitaets-Bruch ("Ich bin ein KI")',
+      formal_sie: 'Formelles Sie statt Du',
+      banned_starter: 'Verbotener Satzanfang'
+    };
+    if (data.totals && Object.keys(data.totals).length) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">';
+      for (const [type, count] of Object.entries(data.totals).sort((a,b) => b[1]-a[1])) {
+        const label = TYPE_LABELS[type] || type;
+        const color = count > 10 ? 'var(--danger)' : count > 3 ? 'var(--warning)' : 'var(--text-muted)';
+        html += '<span style="padding:2px 8px;border-radius:10px;background:var(--bg-secondary);border:1px solid ' + color + ';font-size:11px;">' +
+          '<span style="color:' + color + ';font-weight:600;">' + count + '</span> ' + label + '</span>';
+      }
+      html += '</div>';
+    }
+    // Letzte Eintraege
+    if (data.recent_log && data.recent_log.length) {
+      html += '<details><summary style="cursor:pointer;color:var(--accent);font-size:11px;">Letzte Brueche anzeigen</summary>';
+      html += '<div style="margin-top:4px;max-height:150px;overflow-y:auto;">';
+      for (const entry of data.recent_log.slice(0, 10)) {
+        const typeLabel = TYPE_LABELS[entry.type] || entry.type;
+        const ts = entry.ts ? entry.ts.substring(5, 16).replace('T', ' ') : '';
+        html += '<div style="padding:2px 0;border-bottom:1px solid var(--border-color);font-size:11px;">' +
+          '<span style="color:var(--text-muted);">' + ts + '</span> ' +
+          '<strong>' + typeLabel + '</strong>: ' + esc(entry.detail || '') + '</div>';
+      }
+      html += '</div></details>';
+    }
+    el.innerHTML = html;
+  } catch (err) {
+    el.innerHTML = '<span style="color:var(--danger);">Fehler: ' + esc(err.message) + '</span>';
+  }
+}
+
 // ---- Tab 1: Allgemein ----
 function renderGeneral() {
   return sectionWrap('&#9881;', 'Assistent',
@@ -1968,7 +2140,17 @@ function renderGeneral() {
     fNum('web_search.max_results', 'Max. Ergebnisse', 1, 20, 1) +
     fNum('web_search.timeout_seconds', 'Timeout (Sekunden)', 3, 30, 1)
   ) +
-  _renderPersonsSections();
+  _renderPersonsSections() +
+  // --- Geraete-Erkennung (verschoben aus Jarvis-Features) ---
+  sectionWrap('&#127899;', 'Geraete-Erkennung',
+    fInfo('Woerter die der Assistent zur Erkennung von Geraete-Befehlen und Status-Abfragen nutzt. Ein Wort pro Zeile.') +
+    fTextarea('command_detection.device_nouns', 'Geraete-Substantive', 'z.B. "rollladen", "licht", "lampe"') +
+    fTextarea('command_detection.action_words', 'Aktions-Woerter', 'z.B. "auf", "zu", "an", "aus"') +
+    fTextarea('command_detection.command_verbs', 'Befehls-Verben', 'z.B. "mach ", "schalte ", "stell "') +
+    fTextarea('command_detection.query_markers', 'Abfrage-Marker', 'z.B. "welche", "status", "zeig"') +
+    fTextarea('command_detection.action_exclusions', 'Aktions-Ausnahmen', 'z.B. "einstellen", "dimmen"') +
+    fTextarea('command_detection.status_nouns', 'Status-Substantive', 'z.B. "rollladen", "rollo" (inkl. Plurale)')
+  );
 }
 
 // Personen-Sektionen (eingebettet in Allgemein-Tab)
@@ -2285,6 +2467,7 @@ function renderPersonality() {
     fInfo('Unerwuenschte Phrasen aus den Antworten filtern und maximale Antwortlaenge begrenzen.') +
     fToggle('response_filter.enabled', 'Antwort-Filter aktiv') +
     fRange('response_filter.max_response_sentences', 'Max. Saetze pro Antwort', 0, 20, 1, {0:'Kein Limit',1:'1',2:'2',3:'3',5:'5',10:'10',20:'20'}) +
+    fRange('response_filter.auto_ban_threshold', 'Auto-Ban Schwelle', 0, 30, 1, {0:'Aus (nur manuell)',5:'5x',10:'10x (Standard)',15:'15x',20:'20x',30:'30x'}) +
     fChipSelect('response_filter.banned_phrases', 'Verbotene Phrasen', [
       'als KI','als Sprachmodell','ich bin ein KI','ich habe keine Gefuehle',
       'ich bin nur eine Maschine','als AI','language model','ich kann nicht fuehlen',
@@ -2581,6 +2764,12 @@ function renderMood() {
     fRange('voice_analysis.wpm_normal', 'Normales Sprechtempo (WPM)', 50, 200, 10, {50:'50',80:'80',100:'100',120:'120',150:'150',200:'200'}) +
     fToggle('voice_analysis.use_whisper_metadata', 'Whisper-Metadaten nutzen') +
     fRange('voice_analysis.voice_weight', 'Stimm-Gewichtung', 0, 1, 0.05, {0:'Ignorieren',0.25:'Schwach',0.5:'Mittel',0.75:'Stark',1:'Voll'})
+  ) +
+  // --- Voice-Mood Integration (verschoben aus Intelligenz-Tab) ---
+  sectionWrap('&#127908;', 'Voice-Mood Integration',
+    fInfo('Verknuepft die erkannte Stimm-Emotion (froehlich, traurig, aergerlich, nervoes, muede) direkt mit der Stimmungserkennung. So reagiert Jarvis nicht nur auf Worte, sondern auch auf den Tonfall.') +
+    fToggle('mood.voice_mood_integration', 'Voice-Emotion in Stimmung einbeziehen') +
+    fRange('voice_analysis.voice_weight', 'Gewicht der Stimm-Analyse', 0, 1, 0.05, {0:'Ignorieren',0.25:'Schwach',0.5:'Mittel',0.75:'Stark',1:'Voll'})
   );
 }
 
@@ -2871,12 +3060,7 @@ function renderHouseStatus() {
     fNum('humidor.warn_below', 'Warnung unter (%)', 40, 80, 1) +
     fNum('humidor.warn_above', 'Warnung ueber (%)', 55, 90, 1)
   ) +
-  sectionWrap('&#128164;', 'Stille-Keywords',
-    fInfo('Woerter die eine Aktivitaet erkennen und den "Nicht stoeren"-Modus ausloesen. Ein Wort pro Zeile.') +
-    fTextarea('activity.silence_keywords.watching', 'Film/TV schauen', 'z.B. "filmabend", "netflix", "serie schauen"') +
-    fTextarea('activity.silence_keywords.focused', 'Konzentriert/Meditieren', 'z.B. "meditation", "fokus", "nicht stoeren"') +
-    fTextarea('activity.silence_keywords.sleeping', 'Schlafen', 'z.B. "gute nacht", "ich geh schlafen"')
-  );
+  '';
 }
 
 function renderRoutines() {
@@ -2977,6 +3161,21 @@ function renderRoutines() {
     fToggle('routines.guest_mode.restrictions.formal_tone', 'Formeller Ton aktivieren') +
     fToggle('routines.guest_mode.restrictions.restrict_security', 'Sicherheitsfunktionen einschraenken') +
     fToggle('routines.guest_mode.restrictions.suggest_guest_wifi', 'Gaeste-WLAN vorschlagen')
+  ) +
+  // --- Benannte Protokolle (verschoben aus Jarvis-Features) ---
+  sectionWrap('&#128221;', 'Benannte Protokolle',
+    fInfo('Multi-Step-Sequenzen per Sprache erstellen und ausfuehren. Z.B. "Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu, TV an" — dann reicht "Filmabend" zum Ausfuehren.') +
+    fToggle('protocols.enabled', 'Protokolle aktiv') +
+    fNum('protocols.max_protocols', 'Maximale Anzahl Protokolle', 1, 50, 1) +
+    fNum('protocols.max_steps', 'Maximale Schritte pro Protokoll', 1, 20, 1)
+  ) +
+  // --- "Das Uebliche" (verschoben aus Jarvis-Features) ---
+  sectionWrap('&#128260;', '"Das Uebliche" — Implizite Routinen',
+    fInfo('Sage "das Uebliche", "wie immer" oder "mach fertig" — Jarvis erkennt gelernte Muster fuer die aktuelle Tageszeit und fuehrt sie aus. Basiert auf dem Vorausdenken-Modul (Anticipation Engine).') +
+    fToggle('das_uebliche.enabled', '"Das Uebliche" aktiv') +
+    fRange('das_uebliche.auto_execute_confidence', 'Auto-Ausfuehren ab Sicherheit', 0.5, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%',1:'100%'}) +
+    fRange('das_uebliche.suggest_confidence', 'Nachfragen ab Sicherheit', 0.3, 1, 0.05, {0.3:'30%',0.4:'40%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'}) +
+    fTextarea('das_uebliche.patterns', 'Trigger-Phrasen', 'Phrasen die "Das Uebliche" ausloesen. Eine pro Zeile.')
   );
 }
 
@@ -3244,6 +3443,21 @@ function renderProactive() {
   sectionWrap('&#128226;', 'Event-Handler',
     fInfo('Prioritaeten fuer verschiedene Event-Typen. Event-Typen mit hoeherer Prioritaet durchbrechen "Nicht stoeren". In settings.yaml unter proactive.event_handlers anpassbar.') +
     fTextarea('proactive.event_handlers', 'Event-Handler (JSON)', 'Format: {"event_name": {"priority": "critical|high|medium|low", "description": "..."}}')
+  ) +
+  // --- Spontane Beobachtungen (verschoben aus Jarvis-Features) ---
+  sectionWrap('&#128065;', 'Spontane Beobachtungen',
+    fInfo('Jarvis macht 1-2x taeglich unaufgeforderte, interessante Bemerkungen — z.B. "Heute verbrauchen wir 20% weniger Energie als letzte Woche" oder "Die Waschmaschine lief 7 Mal diese Woche — Rekord!"') +
+    fToggle('spontaneous.enabled', 'Spontane Beobachtungen aktiv') +
+    fRange('spontaneous.max_per_day', 'Maximal pro Tag', 0, 5, 1, {0:'Aus',1:'1x',2:'2x',3:'3x',5:'5x'}) +
+    fRange('spontaneous.min_interval_hours', 'Mindestabstand', 1, 8, 1, {1:'1 Std',2:'2 Std',3:'3 Std',4:'4 Std',6:'6 Std',8:'8 Std'}) +
+    fNum('spontaneous.active_hours.start', 'Aktiv ab (Uhr)', 0, 23, 1) +
+    fNum('spontaneous.active_hours.end', 'Aktiv bis (Uhr)', 0, 23, 1) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aktive Checks</div>' +
+    fToggle('spontaneous.checks.energy_comparison', 'Energie-Vergleich mit Vorwoche') +
+    fToggle('spontaneous.checks.streak', 'Wetter-Streaks & Fun Facts') +
+    fToggle('spontaneous.checks.usage_record', 'Nutzungs-Rekorde') +
+    fToggle('spontaneous.checks.device_milestone', 'Geraete-Meilensteine') +
+    fToggle('spontaneous.checks.house_efficiency', 'Haus-Effizienz Beobachtungen')
   );
 }
 
@@ -3331,6 +3545,19 @@ function renderNotifications() {
   sectionWrap('&#128266;', 'Lautstaerke-Matrix',
     fInfo('Bestimmt die Lautstaerke von TTS-Durchsagen — abhaengig von Aktivitaet und Dringlichkeit. Nachts wird automatisch zusaetzlich reduziert.') +
     volumeTable
+  ) +
+  // --- Benachrichtigungskanaele (verschoben aus Sicherheit-Tab) ---
+  sectionWrap('&#128276;', 'Benachrichtigungskanaele',
+    fInfo('Welche Kanaele soll der Assistent fuer Benachrichtigungen nutzen? Kanaele koennen einzeln konfiguriert werden.') +
+    '<div id="notifyChannelsContainer" style="color:var(--text-muted);font-size:12px;">Wird geladen...</div>' +
+    '<div style="margin-top:10px;"><button class="btn btn-primary" style="font-size:12px;" onclick="saveNotifyChannels()">Kanaele speichern</button></div>'
+  ) +
+  // --- Stille-Keywords (verschoben aus Haus-Status-Tab) ---
+  sectionWrap('&#128164;', 'Stille-Keywords',
+    fInfo('Woerter die eine Aktivitaet erkennen und den "Nicht stoeren"-Modus ausloesen. Ein Wort pro Zeile.') +
+    fTextarea('activity.silence_keywords.watching', 'Film/TV schauen', 'z.B. "filmabend", "netflix", "serie schauen"') +
+    fTextarea('activity.silence_keywords.focused', 'Konzentriert/Meditieren', 'z.B. "meditation", "fokus", "nicht stoeren"') +
+    fTextarea('activity.silence_keywords.sleeping', 'Schlafen', 'z.B. "gute nacht", "ich geh schlafen"')
   );
 }
 
@@ -3445,32 +3672,19 @@ function renderJarvisFeatures() {
     fToggle('character_lock.closing_anchor', 'Prompt-Anker (Erinnerung am Prompt-Ende)') +
     fToggle('character_lock.structural_filter', 'Struktureller Filter (Listen/Aufzaehlungen entfernen)') +
     fToggle('character_lock.character_retry', 'Automatischer Retry bei LLM-Durchbruch') +
-    fRange('character_lock.retry_threshold', 'Retry-Empfindlichkeit', 1, 5, 1, ['Sehr empfindlich','','Normal','','Nur bei starkem Bruch'])
-  ) +
-  sectionWrap('&#128221;', 'Benannte Protokolle',
-    fInfo('Multi-Step-Sequenzen per Sprache erstellen und ausfuehren. Z.B. "Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu, TV an" — dann reicht "Filmabend" zum Ausfuehren.') +
-    fToggle('protocols.enabled', 'Protokolle aktiv') +
-    fNum('protocols.max_protocols', 'Maximale Anzahl Protokolle', 1, 50, 1) +
-    fNum('protocols.max_steps', 'Maximale Schritte pro Protokoll', 1, 20, 1)
+    fRange('character_lock.retry_threshold', 'Retry-Empfindlichkeit', 1, 5, 1, ['Sehr empfindlich','','Normal','','Nur bei starkem Bruch']) +
+    '<div id="charBreakStats" style="margin-top:12px;padding:10px;background:var(--bg-primary);border-radius:var(--radius-sm);border:1px solid var(--border-color);font-size:12px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+        '<span style="font-weight:600;">Charakter-Brueche (7 Tage)</span>' +
+        '<button class="btn btn-secondary btn-sm" onclick="loadCharBreakStats()" style="padding:2px 8px;min-width:auto;font-size:11px;">Laden</button>' +
+      '</div>' +
+      '<div id="charBreakStatsContent" style="color:var(--text-muted);">Klicke "Laden" fuer aktuelle Statistiken.</div>' +
+    '</div>'
   ) +
   sectionWrap('&#128374;', 'Geraete-Persoenlichkeit',
     fInfo('Geraete bekommen Spitznamen in proaktiven Meldungen — z.B. "Die Fleissige im Keller hat ihren Job erledigt" statt "Waschmaschine ausgeschaltet".') +
     fToggle('device_narration.enabled', 'Geraete-Persoenlichkeit aktiv') +
     fTextarea('device_narration.custom_nicknames', 'Eigene Spitznamen', 'JSON: {"waschmaschine": "Frau Waschkraft", "saugroboter": "Robbie"}')
-  ) +
-  sectionWrap('&#128065;', 'Spontane Beobachtungen',
-    fInfo('Jarvis macht 1-2x taeglich unaufgeforderte, interessante Bemerkungen — z.B. "Heute verbrauchen wir 20% weniger Energie als letzte Woche" oder "Die Waschmaschine lief 7 Mal diese Woche — Rekord!"') +
-    fToggle('spontaneous.enabled', 'Spontane Beobachtungen aktiv') +
-    fRange('spontaneous.max_per_day', 'Maximal pro Tag', 0, 5, 1, {0:'Aus',1:'1x',2:'2x',3:'3x',5:'5x'}) +
-    fRange('spontaneous.min_interval_hours', 'Mindestabstand', 1, 8, 1, {1:'1 Std',2:'2 Std',3:'3 Std',4:'4 Std',6:'6 Std',8:'8 Std'}) +
-    fNum('spontaneous.active_hours.start', 'Aktiv ab (Uhr)', 0, 23, 1) +
-    fNum('spontaneous.active_hours.end', 'Aktiv bis (Uhr)', 0, 23, 1) +
-    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aktive Checks</div>' +
-    fToggle('spontaneous.checks.energy_comparison', 'Energie-Vergleich mit Vorwoche') +
-    fToggle('spontaneous.checks.streak', 'Wetter-Streaks & Fun Facts') +
-    fToggle('spontaneous.checks.usage_record', 'Nutzungs-Rekorde') +
-    fToggle('spontaneous.checks.device_milestone', 'Geraete-Meilensteine') +
-    fToggle('spontaneous.checks.house_efficiency', 'Haus-Effizienz Beobachtungen')
   ) +
   sectionWrap('&#9888;', 'Daten-basierter Widerspruch',
     fInfo('Vor einer Aktion prueft Jarvis Live-Daten und warnt konkret — z.B. "Heizung auf 25? Das Bad-Fenster ist offen." Aktion wird trotzdem ausgefuehrt, aber die Warnung erwaehnt.') +
@@ -3494,28 +3708,33 @@ function renderJarvisFeatures() {
     fRange('music_dj.cooldown_minutes', 'Mindestabstand Vorschlaege', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fTextarea('music_dj.custom_queries', 'Eigene Genre-Queries', 'JSON: {"party_hits": "meine party playlist", "focus_lofi": "deep focus music"}')
   ) +
-  sectionWrap('&#128682;', 'Besucher-Management',
-    fInfo('Jarvis verwaltet Besucher: Bekannte Personen speichern, erwartete Besucher anlegen, "Lass ihn rein"-Workflow mit Kamera-Erkennung und automatischer Tuer-Entriegelung.') +
-    fToggle('visitor_management.enabled', 'Besucher-Management aktiv') +
-    fToggle('visitor_management.auto_guest_mode', 'Gaeste-Modus automatisch aktivieren') +
-    fRange('visitor_management.ring_cooldown_seconds', 'Klingel-Cooldown', 10, 120, 10, {10:'10s',30:'30s',60:'1 Min',120:'2 Min'}) +
-    fRange('visitor_management.history_max', 'Max. Besucher-History', 20, 500, 20, {20:'20',50:'50',100:'100',200:'200',500:'500'})
+  // --- Persoenlichkeit & Gedaechtnis (verschoben aus Intelligenz-Tab) ---
+  sectionWrap('&#128218;', 'Remember When — Erinnerungen',
+    fInfo('Jarvis merkt sich besondere Momente und Korrekturen. Bei passenden Gelegenheiten referenziert er fruehere Interaktionen ("Letzte Woche mochten Sie es waermer, Sir"). Gibt ihm ein echtes Langzeitgedaechtnis.') +
+    fToggle('memorable_interactions.enabled', 'Erinnerungen aktiv') +
+    fNum('memorable_interactions.max_entries', 'Max. gespeicherte Erinnerungen', 5, 100, 5) +
+    fNum('memorable_interactions.ttl_days', 'Speicherdauer (Tage)', 7, 365, 7)
   ) +
-  sectionWrap('&#128260;', '"Das Uebliche" — Implizite Routinen',
-    fInfo('Sage "das Uebliche", "wie immer" oder "mach fertig" — Jarvis erkennt gelernte Muster fuer die aktuelle Tageszeit und fuehrt sie aus. Basiert auf dem Vorausdenken-Modul (Anticipation Engine).') +
-    fToggle('das_uebliche.enabled', '"Das Uebliche" aktiv') +
-    fRange('das_uebliche.auto_execute_confidence', 'Auto-Ausfuehren ab Sicherheit', 0.5, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%',1:'100%'}) +
-    fRange('das_uebliche.suggest_confidence', 'Nachfragen ab Sicherheit', 0.3, 1, 0.05, {0.3:'30%',0.4:'40%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'}) +
-    fTextarea('das_uebliche.patterns', 'Trigger-Phrasen', 'Phrasen die "Das Uebliche" ausloesen. Eine pro Zeile.')
+  sectionWrap('&#128514;', 'Running Gag Evolution',
+    fInfo('Statt Witze zu wiederholen, entwickelt Jarvis sie weiter. Referenziert fruehere Scherze und baut darauf auf — wie ein echter Humor zwischen Vertrauten.') +
+    fToggle('running_gag_evolution.enabled', 'Gag-Evolution aktiv')
   ) +
-  sectionWrap('&#127899;', 'Geraete-Erkennung',
-    fInfo('Woerter die der Assistent zur Erkennung von Geraete-Befehlen und Status-Abfragen nutzt. Ein Wort pro Zeile.') +
-    fTextarea('command_detection.device_nouns', 'Geraete-Substantive', 'z.B. "rollladen", "licht", "lampe"') +
-    fTextarea('command_detection.action_words', 'Aktions-Woerter', 'z.B. "auf", "zu", "an", "aus"') +
-    fTextarea('command_detection.command_verbs', 'Befehls-Verben', 'z.B. "mach ", "schalte ", "stell "') +
-    fTextarea('command_detection.query_markers', 'Abfrage-Marker', 'z.B. "welche", "status", "zeig"') +
-    fTextarea('command_detection.action_exclusions', 'Aktions-Ausnahmen', 'z.B. "einstellen", "dimmen"') +
-    fTextarea('command_detection.status_nouns', 'Status-Substantive', 'z.B. "rollladen", "rollo" (inkl. Plurale)')
+  sectionWrap('&#128680;', 'Eskalierende Besorgnis',
+    fInfo('Wenn Warnungen ignoriert werden, wird Jarvis ernster. Level 1: Beilaeufer Hinweis. Level 2: Direkter Hinweis. Level 3: Ausdruckstarke Sorge. Wie ein Butler der wirklich aufpasst.') +
+    fToggle('escalating_concern.enabled', 'Eskalierende Besorgnis aktiv')
+  ) +
+  sectionWrap('&#128270;', 'Neugier-Fragen',
+    fInfo('Jarvis fragt bei ungewoehnlichem Verhalten vorsichtig nach ("Frueh unterwegs heute, Sir — alles in Ordnung?"). Maximal 2x pro Tag, nie aufdringlich.') +
+    fToggle('curiosity.enabled', 'Neugier-Fragen aktiv') +
+    fNum('curiosity.max_daily', 'Max. Fragen pro Tag', 1, 5)
+  ) +
+  // --- Situations-Modell (verschoben aus Sicherheit-Tab) ---
+  sectionWrap('&#128269;', 'Situations-Modell',
+    fInfo('JARVIS merkt sich den Hausstatus bei jedem Gespraech und erwaehnt beim naechsten Gespraech beilaeufig was sich veraendert hat.') +
+    fToggle('situation_model.enabled', 'Situations-Modell aktiviert') +
+    fRange('situation_model.min_pause_minutes', 'Mindest-Pause zwischen Deltas (Min)', 5, 120, 5) +
+    fRange('situation_model.max_changes', 'Max. gemeldete Aenderungen', 1, 10, 1) +
+    fRange('situation_model.temp_threshold', 'Temperatur-Schwelle (°C)', 1, 5, 0.5)
   );
 }
 
@@ -3646,10 +3865,13 @@ function renderSecurity() {
       {v:'system_restart',l:'System neustarten'}
     ])
   ) +
-  sectionWrap('&#128276;', 'Benachrichtigungskanaele',
-    fInfo('Welche Kanaele soll der Assistent fuer Benachrichtigungen nutzen? Kanaele koennen einzeln konfiguriert werden.') +
-    '<div id="notifyChannelsContainer" style="color:var(--text-muted);font-size:12px;">Wird geladen...</div>' +
-    '<div style="margin-top:10px;"><button class="btn btn-primary" style="font-size:12px;" onclick="saveNotifyChannels()">Kanaele speichern</button></div>'
+  // --- Besucher-Management (verschoben aus Jarvis-Features) ---
+  sectionWrap('&#128682;', 'Besucher-Management',
+    fInfo('Jarvis verwaltet Besucher: Bekannte Personen speichern, erwartete Besucher anlegen, "Lass ihn rein"-Workflow mit Kamera-Erkennung und automatischer Tuer-Entriegelung.') +
+    fToggle('visitor_management.enabled', 'Besucher-Management aktiv') +
+    fToggle('visitor_management.auto_guest_mode', 'Gaeste-Modus automatisch aktivieren') +
+    fRange('visitor_management.ring_cooldown_seconds', 'Klingel-Cooldown', 10, 120, 10, {10:'10s',30:'30s',60:'1 Min',120:'2 Min'}) +
+    fRange('visitor_management.history_max', 'Max. Besucher-History', 20, 500, 20, {20:'20',50:'50',100:'100',200:'200',500:'500'})
   ) +
   // --- Phase 17: Notfall-Protokolle ---
   sectionWrap('&#127752;', 'Notfall-Protokolle',
@@ -3662,14 +3884,6 @@ function renderSecurity() {
     fToggle('interrupt_queue.enabled', 'Interrupt-Queue aktiviert') +
     fRange('interrupt_queue.pause_ms', 'Pause vor Notfall-Meldung (ms)', 100, 1000, 100,
       {100:'0.1s',200:'0.2s',300:'0.3s',500:'0.5s',1000:'1s'})
-  ) +
-  // --- Phase 17: Situations-Modell ---
-  sectionWrap('&#128269;', 'Situations-Modell',
-    fInfo('JARVIS merkt sich den Hausstatus bei jedem Gespraech und erwaehnt beim naechsten Gespraech beilaeufig was sich veraendert hat.') +
-    fToggle('situation_model.enabled', 'Situations-Modell aktiviert') +
-    fRange('situation_model.min_pause_minutes', 'Mindest-Pause zwischen Deltas (Min)', 5, 120, 5) +
-    fRange('situation_model.max_changes', 'Max. gemeldete Aenderungen', 1, 10, 1) +
-    fRange('situation_model.temp_threshold', 'Temperatur-Schwelle (°C)', 1, 5, 0.5)
   ) +
   sectionWrap('&#9878;', 'Konflikt-Sicherheitsgrenzen',
     fInfo('Sicherheitsgrenzen fuer Kompromiss-Werte bei Konflikten (z.B. wenn zwei Personen verschiedene Temperaturen wollen).') +
@@ -6091,7 +6305,7 @@ function renderCovers() {
     fToggle('seasonal_actions.cover_automation.weather_protection', 'Wetter/Sturmschutz') +
     fToggle('seasonal_actions.cover_automation.night_insulation', 'Nachts schliessen (Isolierung)') +
     fRange('seasonal_actions.cover_automation.heat_protection_temp', 'Hitzeschutz ab Aussentemp (°C)', 20, 40, 1, {20:'20°C',25:'25°C',26:'26°C',28:'28°C',30:'30°C',35:'35°C',40:'40°C'}) +
-    fRange('seasonal_actions.cover_automation.frost_protection_temp', 'Frostschutz ab (°C)', -10, 10, 1, {'-5':'-5°C',0:'0°C',3:'3°C',5:'5°C',10:'10°C'}) +
+    fRange('seasonal_actions.cover_automation.frost_protection_temp', 'Frostschutz ab (°C)', -10, 15, 1, {'-5':'-5°C',0:'0°C',5:'5°C',10:'10°C',15:'15°C'}) +
     fRange('seasonal_actions.cover_automation.storm_wind_speed', 'Sturm-Windgeschwindigkeit (km/h)', 20, 100, 5, {20:'20',30:'30',40:'40',50:'50',60:'60',80:'80',100:'100'}) +
     fToggle('seasonal_actions.cover_automation.inverted_position', 'Positionen invertiert (0=offen, 100=zu, z.B. Shelly/MQTT)')
   ) +
@@ -9251,11 +9465,6 @@ function renderIntelligence() {
     fToggle('explainability.auto_explain', 'Automatisch erwaehnen') +
     fNum('explainability.max_history', 'Max. gespeicherte Entscheidungen', 10, 200, 10)
   ) +
-  sectionWrap('&#127908;', 'Voice-Mood Integration',
-    fInfo('Verknuepft die erkannte Stimm-Emotion (froehlich, traurig, aergerlich, nervoes, muede) direkt mit der Stimmungserkennung. So reagiert Jarvis nicht nur auf Worte, sondern auch auf den Tonfall.') +
-    fToggle('mood.voice_mood_integration', 'Voice-Emotion in Stimmung einbeziehen') +
-    fRange('voice_analysis.voice_weight', 'Gewicht der Stimm-Analyse', 0, 1, 0.05, {0:'Ignorieren',0.25:'Schwach',0.5:'Mittel',0.75:'Stark',1:'Voll'})
-  ) +
   sectionWrap('&#129504;', 'Lern-Transfer',
     fInfo('Uebertraegt Praeferenzen zwischen aehnlichen Raeumen. Wenn du warmes Licht in der Kueche bevorzugst, schlaegt Jarvis das auch fuer das Esszimmer vor.') +
     fToggle('learning_transfer.enabled', 'Lern-Transfer aktiv') +
@@ -9271,27 +9480,6 @@ function renderIntelligence() {
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Raum-Gruppen</div>' +
     fInfo('Raeume in der gleichen Gruppe werden als aehnlich betrachtet. Aenderungen hier ueberschreiben die Standard-Gruppen.') +
     fTextarea('learning_transfer.room_groups', 'Raum-Gruppen (JSON)', 'Format: {"wohnbereich": ["wohnzimmer", "esszimmer"], "schlafbereich": ["schlafzimmer", "gaestezimmer"]}')
-  ) +
-  // --- Persoenlichkeit & Gedaechtnis ---
-  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#127917; Persoenlichkeit &amp; Gedaechtnis</div>' +
-  sectionWrap('&#128218;', 'Remember When — Erinnerungen',
-    fInfo('Jarvis merkt sich besondere Momente und Korrekturen. Bei passenden Gelegenheiten referenziert er fruehere Interaktionen ("Letzte Woche mochten Sie es waermer, Sir"). Gibt ihm ein echtes Langzeitgedaechtnis.') +
-    fToggle('memorable_interactions.enabled', 'Erinnerungen aktiv') +
-    fNum('memorable_interactions.max_entries', 'Max. gespeicherte Erinnerungen', 5, 100, 5) +
-    fNum('memorable_interactions.ttl_days', 'Speicherdauer (Tage)', 7, 365, 7)
-  ) +
-  sectionWrap('&#128514;', 'Running Gag Evolution',
-    fInfo('Statt Witze zu wiederholen, entwickelt Jarvis sie weiter. Referenziert fruehere Scherze und baut darauf auf — wie ein echter Humor zwischen Vertrauten.') +
-    fToggle('running_gag_evolution.enabled', 'Gag-Evolution aktiv')
-  ) +
-  sectionWrap('&#128680;', 'Eskalierende Besorgnis',
-    fInfo('Wenn Warnungen ignoriert werden, wird Jarvis ernster. Level 1: Beilaeufer Hinweis. Level 2: Direkter Hinweis. Level 3: Ausdruckstarke Sorge. Wie ein Butler der wirklich aufpasst.') +
-    fToggle('escalating_concern.enabled', 'Eskalierende Besorgnis aktiv')
-  ) +
-  sectionWrap('&#128270;', 'Neugier-Fragen',
-    fInfo('Jarvis fragt bei ungewoehnlichem Verhalten vorsichtig nach ("Frueh unterwegs heute, Sir — alles in Ordnung?"). Maximal 2x pro Tag, nie aufdringlich.') +
-    fToggle('curiosity.enabled', 'Neugier-Fragen aktiv') +
-    fNum('curiosity.max_daily', 'Max. Fragen pro Tag', 1, 5)
   ) +
   sectionWrap('&#128161;', 'Think-Ahead Hinweise',
     fInfo('Nach einer Aktion schlaegt Jarvis einen logischen naechsten Schritt vor. Z.B. nach "Licht im Flur an" → "Soll ich auch die Heizung im Flur hochdrehen?" Statisch, kein LLM-Overhead.') +

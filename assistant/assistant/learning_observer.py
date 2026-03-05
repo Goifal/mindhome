@@ -35,6 +35,20 @@ KEY_AUTOMATED = "mha:learning:automated"  # F-053: Tracks automated entity+times
 WEEKDAY_NAMES_DE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
 
+def _parse_person_prefix(action: str) -> tuple[str, str]:
+    """Extrahiert Person-Prefix aus einem Redis-Action-Key.
+
+    Format mit Person: "julia:light.wohnzimmer:on" → ("julia", "light.wohnzimmer:on")
+    Format ohne:       "light.wohnzimmer:on"       → ("", "light.wohnzimmer:on")
+
+    Erkennung: Erster Teil vor ':' hat keinen Punkt → ist Person-Name (Entity-IDs haben immer Punkte).
+    """
+    parts = action.split(":", 1)
+    if len(parts) == 2 and "." not in parts[0]:
+        return parts[0], parts[1]
+    return "", action
+
+
 class LearningObserver:
     """Beobachtet manuelle Aktionen und schlaegt Automatisierungen vor."""
 
@@ -63,11 +77,18 @@ class LearningObserver:
         # Kurzzeitiger Marker (30 Sek) um state_changed Events zu ignorieren
         await self.redis.setex(f"{JARVIS_ACTION_KEY}:{entity_id}", 30, "1")
 
-    async def observe_state_change(self, entity_id: str, new_state: str, old_state: str):
+    async def observe_state_change(self, entity_id: str, new_state: str, old_state: str,
+                                   person: str = ""):
         """Beobachtet State-Changes und erkennt manuelle Aktionen.
 
         Wird von proactive.py bei jedem state_changed aufgerufen.
         Ignoriert Jarvis-gesteuerte Aenderungen.
+
+        Args:
+            entity_id: HA Entity-ID
+            new_state: Neuer Zustand
+            old_state: Alter Zustand
+            person: Person die die Aktion ausgeloest hat (wenn bekannt)
         """
         if not self.enabled or not self.redis:
             return
@@ -91,15 +112,16 @@ class LearningObserver:
             minute = now.minute
             weekday = now.weekday()
 
-            # Aktion aufzeichnen
+            # Aktion aufzeichnen — mit Person-Prefix wenn bekannt
             action_key = f"{entity_id}:{new_state}"
+            person_prefix = f"{person}:" if person else ""
             time_slot = f"{hour:02d}:{(minute // 15) * 15:02d}"  # 15-Min-Slots
 
             # F-053: Cycle detection — skip entities+timeslots that have already been
             # automated via a previous suggestion. Without this, the automation fires
             # a state change, which the observer counts again, leading to duplicate
             # suggestions or infinite observe->suggest->automate->observe loops.
-            automated_key = f"{KEY_AUTOMATED}:{action_key}:{time_slot}"
+            automated_key = f"{KEY_AUTOMATED}:{person_prefix}{action_key}:{time_slot}"
             if await self.redis.get(automated_key):
                 return
 
@@ -109,6 +131,7 @@ class LearningObserver:
                 "time_slot": time_slot,
                 "weekday": weekday,
                 "timestamp": now.isoformat(),
+                "person": person,
             }
 
             # In Redis-Liste speichern (max 500 letzte Aktionen)
@@ -117,17 +140,18 @@ class LearningObserver:
             await self.redis.expire(KEY_MANUAL_ACTIONS, 30 * 86400)
 
             # Pattern-Check: Wurde diese Aktion schon oefter zur gleichen Zeit gemacht?
-            await self._check_pattern(action_key, time_slot, entity_id, new_state)
+            await self._check_pattern(action_key, time_slot, entity_id, new_state, person=person)
 
             # Wochentag-spezifischer Pattern-Check
-            await self._check_weekday_pattern(action_key, time_slot, weekday, entity_id, new_state)
+            await self._check_weekday_pattern(action_key, time_slot, weekday, entity_id, new_state, person=person)
         except Exception as e:
             logger.debug("Learning Observer state_change Fehler: %s", e)
 
     async def _check_pattern(self, action_key: str, time_slot: str,
-                             entity_id: str, new_state: str):
+                             entity_id: str, new_state: str, person: str = ""):
         """Prueft ob ein Muster erkannt wurde."""
-        pattern_key = f"{KEY_PATTERNS}:{action_key}:{time_slot}"
+        person_prefix = f"{person}:" if person else ""
+        pattern_key = f"{KEY_PATTERNS}:{person_prefix}{action_key}:{time_slot}"
 
         # Zaehler erhoehen
         count = await self.redis.incr(pattern_key)
@@ -138,7 +162,7 @@ class LearningObserver:
         # Genug Wiederholungen fuer einen Vorschlag?
         if count >= self.min_repetitions:
             # Schon vorgeschlagen?
-            suggested_key = f"{KEY_SUGGESTED}:{action_key}:{time_slot}"
+            suggested_key = f"{KEY_SUGGESTED}:{person_prefix}{action_key}:{time_slot}"
             already_suggested = await self.redis.get(suggested_key)
             if already_suggested:
                 return
@@ -151,14 +175,15 @@ class LearningObserver:
             action_de = "eingeschaltet" if new_state == "on" else "ausgeschaltet" if new_state == "off" else new_state
 
             title = get_person_title()
+            person_hint = f" ({person})" if person else ""
             message = (
-                f"{title}, mir ist aufgefallen, dass du {friendly} jeden Tag "
+                f"{title}, mir ist aufgefallen, dass du{person_hint} {friendly} jeden Tag "
                 f"um {time_slot} Uhr {action_de}. "
                 f"Soll ich das automatisieren?"
             )
 
-            logger.info("Learning: Muster erkannt - %s um %s (%dx)",
-                        action_key, time_slot, count)
+            logger.info("Learning: Muster erkannt - %s um %s (%dx, Person: %s)",
+                        action_key, time_slot, count, person or "global")
 
             if self._notify_callback:
                 await self._notify_callback({
@@ -168,17 +193,20 @@ class LearningObserver:
                     "new_state": new_state,
                     "time_slot": time_slot,
                     "count": count,
+                    "person": person,
                 })
 
     async def _check_weekday_pattern(self, action_key: str, time_slot: str,
-                                     weekday: int, entity_id: str, new_state: str):
+                                     weekday: int, entity_id: str, new_state: str,
+                                     person: str = ""):
         """Prueft Wochentag-spezifische Muster (z.B. nur Werktags)."""
+        person_prefix = f"{person}:" if person else ""
         # F-053: Cycle detection for weekday-specific patterns
-        automated_key = f"{KEY_AUTOMATED}:{action_key}:{time_slot}:{weekday}"
+        automated_key = f"{KEY_AUTOMATED}:{person_prefix}{action_key}:{time_slot}:{weekday}"
         if await self.redis.get(automated_key):
             return
 
-        pattern_key = f"{KEY_WEEKDAY_PATTERNS}:{action_key}:{time_slot}:{weekday}"
+        pattern_key = f"{KEY_WEEKDAY_PATTERNS}:{person_prefix}{action_key}:{time_slot}:{weekday}"
 
         count = await self.redis.incr(pattern_key)
         if count == 1:
@@ -189,11 +217,11 @@ class LearningObserver:
             return
 
         # Taeglich schon vorgeschlagen? Dann Wochentag-Vorschlag ueberspringen
-        daily_suggested = await self.redis.get(f"{KEY_SUGGESTED}:{action_key}:{time_slot}")
+        daily_suggested = await self.redis.get(f"{KEY_SUGGESTED}:{person_prefix}{action_key}:{time_slot}")
         if daily_suggested:
             return
 
-        suggested_key = f"{KEY_SUGGESTED}:weekday:{action_key}:{time_slot}:{weekday}"
+        suggested_key = f"{KEY_SUGGESTED}:weekday:{person_prefix}{action_key}:{time_slot}:{weekday}"
         if await self.redis.get(suggested_key):
             return
 
@@ -204,14 +232,15 @@ class LearningObserver:
         day_name = WEEKDAY_NAMES_DE[weekday]
 
         title = get_person_title()
+        person_hint = f" ({person})" if person else ""
         message = (
-            f"{title}, du schaltest {friendly} jeden {day_name} "
+            f"{title}, du{person_hint} schaltest {friendly} jeden {day_name} "
             f"um {time_slot} Uhr {action_de}. "
             f"Soll ich das fuer {day_name}s automatisieren?"
         )
 
-        logger.info("Learning: Wochentag-Muster erkannt - %s am %s um %s (%dx)",
-                     action_key, day_name, time_slot, count)
+        logger.info("Learning: Wochentag-Muster erkannt - %s am %s um %s (%dx, Person: %s)",
+                     action_key, day_name, time_slot, count, person or "global")
 
         if self._notify_callback:
             await self._notify_callback({
@@ -223,10 +252,12 @@ class LearningObserver:
                 "weekday": weekday,
                 "weekday_name": day_name,
                 "count": count,
+                "person": person,
             })
 
     async def handle_response(self, entity_id: str, time_slot: str,
-                              accepted: bool, weekday: int = -1) -> str:
+                              accepted: bool, weekday: int = -1,
+                              person: str = "") -> str:
         """Verarbeitet die Benutzer-Antwort auf einen Automatisierungs-Vorschlag.
 
         Args:
@@ -234,6 +265,7 @@ class LearningObserver:
             time_slot: Der Zeitslot (z.B. "22:00")
             accepted: Ob der Vorschlag akzeptiert wurde
             weekday: Wochentag (-1 = taeglich)
+            person: Person fuer die der Vorschlag gilt
 
         Returns:
             Antwort-Text fuer den Benutzer
@@ -247,6 +279,7 @@ class LearningObserver:
             "weekday": weekday,
             "accepted": accepted,
             "timestamp": datetime.now().isoformat(),
+            "person": person,
         }
         await self.redis.lpush(KEY_RESPONSES, json.dumps(response))
         await self.redis.ltrim(KEY_RESPONSES, 0, 499)
@@ -263,13 +296,14 @@ class LearningObserver:
         # The observer will skip state changes matching automated patterns, breaking
         # the observe->suggest->automate->observe cycle.
         # Use long TTL (90 days) so the marker outlives the automation.
+        person_prefix = f"{person}:" if person else ""
         states_to_mark = ["on", "off"]  # Mark both directions to avoid partial loops
         for state in states_to_mark:
-            automated_key = f"{KEY_AUTOMATED}:{entity_id}:{state}:{time_slot}"
+            automated_key = f"{KEY_AUTOMATED}:{person_prefix}{entity_id}:{state}:{time_slot}"
             await self.redis.setex(automated_key, 90 * 86400, "1")
         if weekday >= 0:
             for state in states_to_mark:
-                automated_key = f"{KEY_AUTOMATED}:{entity_id}:{state}:{time_slot}:{weekday}"
+                automated_key = f"{KEY_AUTOMATED}:{person_prefix}{entity_id}:{state}:{time_slot}:{weekday}"
                 await self.redis.setex(automated_key, 90 * 86400, "1")
 
         return (
@@ -278,11 +312,15 @@ class LearningObserver:
             f"ab jetzt automatisch um {time_slot} Uhr schalten."
         )
 
-    async def get_learned_patterns(self) -> list[dict]:
-        """Gibt alle erkannten Muster zurueck (fuer Status/Debug).
+    async def get_learned_patterns(self, person: str = "") -> list[dict]:
+        """Gibt erkannte Muster zurueck, optional gefiltert nach Person.
+
+        Args:
+            person: Wenn gesetzt, nur Muster dieser Person zurueckgeben.
+                    Leerer String = alle Muster (global + personenspezifisch).
 
         Returns:
-            Liste von Muster-Dicts mit entity, time_slot, count, weekday
+            Liste von Muster-Dicts mit entity, time_slot, count, weekday, person
         """
         if not self.redis:
             return []
@@ -290,6 +328,8 @@ class LearningObserver:
         patterns = []
 
         # Tages-Muster lesen
+        # Key: mha:learning:patterns:[person:]entity:state:HH:MM
+        # Achtung: time_slot ist HH:MM (enthaelt Doppelpunkt) → rsplit(":", 2)
         cursor = 0
         while True:
             cursor, keys = await self.redis.scan(
@@ -301,18 +341,67 @@ class LearningObserver:
                 if count:
                     count_val = int(count)
                     if count_val >= 2:  # Ab 2 Wiederholungen anzeigen
-                        # Parse: mha:learning:patterns:entity:state:timeslot
-                        parts = key_str.replace(f"{KEY_PATTERNS}:", "").rsplit(":", 1)
-                        if len(parts) == 2:
-                            action, time_slot = parts
-                            entity_state = action.rsplit(":", 1)
-                            patterns.append({
-                                "action": action,
-                                "entity": entity_state[0] if len(entity_state) > 1 else action,
-                                "time_slot": time_slot,
-                                "count": count_val,
-                                "weekday": -1,
-                            })
+                        suffix = key_str.replace(f"{KEY_PATTERNS}:", "")
+                        # rsplit 2 → ["[person:]entity:state", "HH", "MM"]
+                        parts = suffix.rsplit(":", 2)
+                        if len(parts) != 3 or not parts[1].isdigit():
+                            continue
+                        action, ts_hour, ts_min = parts
+                        time_slot = f"{ts_hour}:{ts_min}"
+
+                        pattern_person, entity_action = _parse_person_prefix(action)
+
+                        if person and pattern_person != person:
+                            continue
+
+                        entity_state = entity_action.rsplit(":", 1)
+                        patterns.append({
+                            "action": entity_action,
+                            "entity": entity_state[0] if len(entity_state) > 1 else entity_action,
+                            "time_slot": time_slot,
+                            "count": count_val,
+                            "weekday": -1,
+                            "person": pattern_person,
+                        })
+            if cursor == 0:
+                break
+
+        # Wochentag-Muster lesen
+        # Key: mha:learning:weekday_patterns:[person:]entity:state:HH:MM:weekday
+        cursor = 0
+        while True:
+            cursor, keys = await self.redis.scan(
+                cursor, match=f"{KEY_WEEKDAY_PATTERNS}:*", count=50
+            )
+            for key in keys:
+                key_str = key.decode() if isinstance(key, bytes) else key
+                count = await self.redis.get(key)
+                if count:
+                    count_val = int(count)
+                    if count_val >= 2:
+                        suffix = key_str.replace(f"{KEY_WEEKDAY_PATTERNS}:", "")
+                        # rsplit 3 → ["[person:]entity:state", "HH", "MM", "weekday"]
+                        parts = suffix.rsplit(":", 3)
+                        if len(parts) != 4 or not parts[3].isdigit():
+                            continue
+                        action, ts_hour, ts_min, weekday_str = parts
+                        time_slot = f"{ts_hour}:{ts_min}"
+                        weekday_val = int(weekday_str)
+
+                        pattern_person, entity_action = _parse_person_prefix(action)
+
+                        if person and pattern_person != person:
+                            continue
+
+                        entity_state = entity_action.rsplit(":", 1)
+                        patterns.append({
+                            "action": entity_action,
+                            "entity": entity_state[0] if len(entity_state) > 1 else entity_action,
+                            "time_slot": time_slot,
+                            "count": count_val,
+                            "weekday": weekday_val,
+                            "person": pattern_person,
+                        })
             if cursor == 0:
                 break
 

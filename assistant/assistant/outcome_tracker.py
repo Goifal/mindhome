@@ -60,6 +60,7 @@ class OutcomeTracker:
         self._observation_delay = self._cfg.get("observation_delay_seconds", 180)
         self._max_results = self._cfg.get("max_results", 500)
         self._task_registry = None
+        self._background_tasks: set[asyncio.Task] = set()
 
     async def initialize(self, redis_client, ha_client, task_registry=None):
         """Initialisiert mit Redis und HA Client."""
@@ -132,7 +133,9 @@ class OutcomeTracker:
                 name=f"outcome_check_{obs_id}",
             )
         else:
-            asyncio.ensure_future(self._delayed_check(obs_id, pending))
+            task = asyncio.ensure_future(self._delayed_check(obs_id, pending))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
     async def record_verbal_feedback(self, feedback_type: str, action_type: str = "",
                                      person: str = ""):
