@@ -1839,7 +1839,7 @@ vacuum:
     - meeting
     - schlafen
     min_hours_between: 24
-    preferred_time_start: 10
+    preferred_time_start: 2
     preferred_time_end: 16
     auto_fan_speed: standard
     auto_mode: vacuum
