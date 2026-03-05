@@ -115,6 +115,11 @@ SECURITY_CONFIRM_KEY = REDIS_SECURITY_CONFIRM_KEY
 SECURITY_CONFIRM_TTL = REDIS_SECURITY_CONFIRM_TTL
 
 
+def _estimate_tokens(text: str) -> int:
+    """Schaetzt BPE-Tokens fuer deutschen Text (~2 chars/token)."""
+    return len(text) // 2
+
+
 def _audit_log(action: str, details: dict = None):
     """Schreibt einen Audit-Eintrag (append-only JSONL)."""
     try:
@@ -829,6 +834,93 @@ class AssistantBrain(BrainCallbacksMixin):
         "was empfiehlst du", "kannst du helfen",
     ])
 
+    def _result(self, response: str, *, actions=None, model: str = "",
+                room=None, tts=None, emitted: bool = False, **extra) -> dict:
+        """Baut ein Standard-Antwort-Dict (DRY-Helper)."""
+        d: dict = {
+            "response": response,
+            "actions": actions or [],
+            "model_used": model,
+            "context_room": room or "unbekannt",
+        }
+        if tts is not None:
+            d["tts"] = tts
+        if emitted:
+            d["_emitted"] = True
+        if extra:
+            d.update(extra)
+        return d
+
+    async def _llm_with_cascade(
+        self, messages: list, model: str, *,
+        tools=None, max_tokens: int = 384,
+        stream_callback=None, timeout: float = 60.0,
+        think: bool = None,
+    ) -> dict:
+        """LLM-Call mit automatischer Fallback-Kaskade (Deep -> Smart -> Fast).
+
+        Returns: {"text": str, "model": str, "message": dict, "error": bool}
+        """
+        current = model
+        while current:
+            try:
+                if stream_callback:
+                    collected: list[str] = []
+                    stream_error = False
+                    async for token in self.ollama.stream_chat(
+                        messages=messages, model=current,
+                    ):
+                        if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
+                            stream_error = True
+                            continue
+                        collected.append(token)
+                        await stream_callback(token)
+                    if not stream_error and collected:
+                        return {
+                            "text": "".join(collected),
+                            "model": current,
+                            "message": {},
+                            "error": False,
+                        }
+                else:
+                    response = await asyncio.wait_for(
+                        self.ollama.chat(
+                            messages=messages, model=current,
+                            tools=tools, max_tokens=max_tokens, think=think,
+                        ),
+                        timeout=timeout,
+                    )
+                    if "error" not in response:
+                        msg = response.get("message", {})
+                        return {
+                            "text": msg.get("content", ""),
+                            "model": current,
+                            "message": msg,
+                            "error": False,
+                        }
+                    logger.error("LLM Fehler (%s): %s", current, response["error"])
+            except asyncio.TimeoutError:
+                logger.error("LLM Timeout (%.0fs) fuer %s", timeout, current)
+                self._task_registry.create_task(
+                    self.error_patterns.record_error(
+                        "timeout", action_type="llm_chat", model=current,
+                    ),
+                    name="error_pattern_timeout",
+                )
+            except Exception as e:
+                logger.error("LLM Exception (%s): %s", current, e)
+
+            # Naechstes Modell in der Kaskade
+            fallback = self.model_router.get_fallback_model(current)
+            if fallback and fallback != current:
+                logger.info("LLM Fallback: %s -> %s", current, fallback)
+                current = fallback
+                timeout = timeout * 0.66
+            else:
+                break
+
+        return {"text": "", "model": model, "message": {}, "error": True}
+
     def _detect_sarcasm_feedback(self, text: str) -> bool | None:
         """Erkennt ob der User auf Sarkasmus positiv/negativ reagiert.
 
@@ -1009,12 +1101,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         # Nur Identifikation, kein Folgebefehl
                         response_text = f"Erkannt, {person.capitalize()}."
                         self._remember_exchange(text, response_text)
-                        return {
-                            "response": response_text,
-                            "actions": [],
-                            "model_used": "speaker_fallback",
-                            "context_room": room or "unbekannt",
-                        }
+                        return self._result(response_text, model="speaker_fallback", room=room)
 
         # Phase 9: Fluestermodus-Check
         # Whisper-Modus wird als Seiteneffekt gesetzt/entfernt.
@@ -1027,27 +1114,13 @@ class AssistantBrain(BrainCallbacksMixin):
             self._remember_exchange(text, response_text)
             tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
             await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
-            return {
-                "response": response_text,
-                "actions": [],
-                "model_used": "tts_enhancer",
-                "context_room": room or "unbekannt",
-                "tts": tts_data,
-                "_emitted": True,
-            }
+            return self._result(response_text, model="tts_enhancer", room=room, tts=tts_data, emitted=True)
         elif whisper_cmd == "deactivate" and _word_count <= 3:
             response_text = "Normale Lautstaerke wiederhergestellt."
             self._remember_exchange(text, response_text)
             tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
             await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
-            return {
-                "response": response_text,
-                "actions": [],
-                "model_used": "tts_enhancer",
-                "context_room": room or "unbekannt",
-                "tts": tts_data,
-                "_emitted": True,
-            }
+            return self._result(response_text, model="tts_enhancer", room=room, tts=tts_data, emitted=True)
         # whisper_cmd gesetzt aber >3 Woerter: Modus aktiv, Befehl weiterverarbeiten
 
         # Retry-Erkennung: Wenn letzte Anfrage fehlgeschlagen ist und User "Ja" sagt,
@@ -1136,13 +1209,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     self._remember_exchange(text, ask_text)
                     tts_data = self.tts_enhancer.enhance(ask_text, message_type="question")
                     await self._speak_and_emit(ask_text, room=room, tts_data=tts_data)
-                    return {
-                        "response": ask_text,
-                        "actions": [],
-                        "model_used": "speaker_fallback_ask",
-                        "context_room": room or "unbekannt",
-                        "tts": tts_data,
-                    }
+                    return self._result(ask_text, model="speaker_fallback_ask", room=room, tts=tts_data)
 
         # Fallback: Wenn kein Person ermittelt, Primary User aus Household annehmen
         # (nur wenn explizit konfiguriert, nicht den Pydantic-Default "Max" nutzen)
@@ -1180,26 +1247,13 @@ class AssistantBrain(BrainCallbacksMixin):
                     response_text, message_type="briefing",
                 )
                 await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
-                return {
-                    "response": response_text,
-                    "actions": result.get("actions", []),
-                    "model_used": "routine_engine",
-                    "context_room": room or "unbekannt",
-                    "tts": tts_data,
-                    "_emitted": True,
-                }
+                return self._result(response_text, actions=result.get("actions", []), model="routine_engine", room=room, tts=tts_data, emitted=True)
             except Exception as e:
                 logger.warning("Gute-Nacht-Routine fehlgeschlagen: %s — Fallback", e)
                 title = get_person_title(person or "")
                 fallback = f"Gute Nacht, {title}. Ich halte die Stellung."
                 await self._speak_and_emit(fallback, room=room)
-                return {
-                    "response": fallback,
-                    "actions": [],
-                    "model_used": "routine_engine_fallback",
-                    "context_room": room or "unbekannt",
-                    "_emitted": True,
-                }
+                return self._result(fallback, model="routine_engine_fallback", room=room, emitted=True)
 
         # Phase 7: Gaeste-Modus Trigger
         if self.routines.is_guest_trigger(text):
@@ -1207,13 +1261,7 @@ class AssistantBrain(BrainCallbacksMixin):
             response_text = self._filter_response(await self.routines.activate_guest_mode())
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
-            return {
-                "response": response_text,
-                "actions": [],
-                "model_used": "routine_engine",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            return self._result(response_text, model="routine_engine", room=room, emitted=True)
 
         # Phase 7: Gaeste-Modus Deaktivierung
         guest_off_triggers = ["gaeste sind weg", "besuch ist weg", "normalbetrieb", "gaeste modus aus"]
@@ -1222,13 +1270,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 response_text = self._filter_response(await self.routines.deactivate_guest_mode())
                 self._remember_exchange(text, response_text)
                 await self._speak_and_emit(response_text, room=room)
-                return {
-                    "response": response_text,
-                    "actions": [],
-                    "model_used": "routine_engine",
-                    "context_room": room or "unbekannt",
-                    "_emitted": True,
-                }
+                return self._result(response_text, model="routine_engine", room=room, emitted=True)
 
         # Phase 13.1: Sicherheits-Bestaetigung (lock_door:unlock, arm_security_system:disarm, etc.)
         security_result = await self._handle_security_confirmation(text, person or "")
@@ -1236,13 +1278,7 @@ class AssistantBrain(BrainCallbacksMixin):
             security_result = self._filter_response(security_result)
             self._remember_exchange(text, security_result)
             await self._speak_and_emit(security_result, room=room)
-            return {
-                "response": security_result,
-                "actions": [],
-                "model_used": "security_confirmation",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            return self._result(security_result, model="security_confirmation", room=room, emitted=True)
 
         # Phase 13.2: Automation-Bestaetigung (VOR allem anderen)
         automation_result = await self._handle_automation_confirmation(text)
@@ -1250,13 +1286,7 @@ class AssistantBrain(BrainCallbacksMixin):
             automation_result = self._filter_response(automation_result)
             self._remember_exchange(text, automation_result)
             await self._speak_and_emit(automation_result, room=room)
-            return {
-                "response": automation_result,
-                "actions": [],
-                "model_used": "self_automation",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            return self._result(automation_result, model="self_automation", room=room, emitted=True)
 
         # Phase 13.4: Optimierungs-Vorschlag Bestaetigung
         opt_result = await self._handle_optimization_confirmation(text)
@@ -1264,13 +1294,7 @@ class AssistantBrain(BrainCallbacksMixin):
             opt_result = self._filter_response(opt_result)
             self._remember_exchange(text, opt_result)
             await self._speak_and_emit(opt_result, room=room)
-            return {
-                "response": opt_result,
-                "actions": [],
-                "model_used": "self_optimization",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            return self._result(opt_result, model="self_optimization", room=room, emitted=True)
 
         # Phase 8: Explizites Notizbuch — Memory-Befehle (VOR allem anderen)
         memory_result = await self._handle_memory_command(text, person or "")
@@ -1278,13 +1302,7 @@ class AssistantBrain(BrainCallbacksMixin):
             memory_result = self._filter_response(memory_result)
             self._remember_exchange(text, memory_result)
             await self._speak_and_emit(memory_result, room=room)
-            return {
-                "response": memory_result,
-                "actions": [],
-                "model_used": "memory_direct",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            return self._result(memory_result, model="memory_direct", room=room, emitted=True)
 
         # Phase 11: Koch-Navigation — aktive Session hat Vorrang
         if self.cooking.is_cooking_navigation(text):
@@ -1293,14 +1311,7 @@ class AssistantBrain(BrainCallbacksMixin):
             self._remember_exchange(text, cooking_response)
             tts_data = self.tts_enhancer.enhance(cooking_response, message_type="casual")
             await self._speak_and_emit(cooking_response, room=room, tts_data=tts_data)
-            return {
-                "response": cooking_response,
-                "actions": [],
-                "model_used": "cooking_assistant",
-                "context_room": room or "unbekannt",
-                "tts": tts_data,
-                "_emitted": True,
-            }
+            return self._result(cooking_response, model="cooking_assistant", room=room, tts=tts_data, emitted=True)
 
         # Phase 11: Koch-Intent — neue Koch-Session starten
         if self.cooking.is_cooking_intent(text):
@@ -1312,14 +1323,7 @@ class AssistantBrain(BrainCallbacksMixin):
             self._remember_exchange(text, cooking_response)
             tts_data = self.tts_enhancer.enhance(cooking_response, message_type="casual")
             await self._speak_and_emit(cooking_response, room=room, tts_data=tts_data)
-            return {
-                "response": cooking_response,
-                "actions": [],
-                "model_used": f"cooking_assistant ({cooking_model})",
-                "context_room": room or "unbekannt",
-                "tts": tts_data,
-                "_emitted": True,
-            }
+            return self._result(cooking_response, model=f"cooking_assistant ({cooking_model})", room=room, tts=tts_data, emitted=True)
 
         # Workshop-Modus: Aktivierung/Deaktivierung
         if self.repair_planner.is_activation_command(text):
@@ -1328,12 +1332,7 @@ class AssistantBrain(BrainCallbacksMixin):
             self._remember_exchange(text, workshop_response)
             tts_data = self.tts_enhancer.enhance(workshop_response, message_type="casual")
             await self._speak_and_emit(workshop_response, room=room, tts_data=tts_data)
-            return {
-                "response": workshop_response, "actions": [],
-                "model_used": "workshop_activation",
-                "context_room": room or "unbekannt", "tts": tts_data,
-                "_emitted": True,
-            }
+            return self._result(workshop_response, model="workshop_activation", room=room, tts=tts_data, emitted=True)
 
         # Workshop-Modus: Navigation — aktive Session hat Vorrang
         if self.repair_planner.is_repair_navigation(text):
@@ -1342,12 +1341,7 @@ class AssistantBrain(BrainCallbacksMixin):
             self._remember_exchange(text, workshop_response)
             tts_data = self.tts_enhancer.enhance(workshop_response, message_type="casual")
             await self._speak_and_emit(workshop_response, room=room, tts_data=tts_data)
-            return {
-                "response": workshop_response, "actions": [],
-                "model_used": "workshop_assistant",
-                "context_room": room or "unbekannt", "tts": tts_data,
-                "_emitted": True,
-            }
+            return self._result(workshop_response, model="workshop_assistant", room=room, tts=tts_data, emitted=True)
 
         # Phase 17: Planungs-Dialog Check — laufender Dialog hat Vorrang
         pending_plan = self.action_planner.has_pending_plan()
@@ -1359,13 +1353,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 self.action_planner.clear_plan(pending_plan)
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
-            return {
-                "response": response_text,
-                "actions": [],
-                "model_used": "action_planner_dialog",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            return self._result(response_text, model="action_planner_dialog", room=room, emitted=True)
 
         # Phase 17: Neuen Planungs-Dialog starten
         if self.action_planner.is_planning_request(text):
@@ -1374,13 +1362,7 @@ class AssistantBrain(BrainCallbacksMixin):
             response_text = self._filter_response(plan_result.get("response", ""))
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
-            return {
-                "response": response_text,
-                "actions": [],
-                "model_used": "action_planner_dialog",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            return self._result(response_text, model="action_planner_dialog", room=room, emitted=True)
 
         # Phase 6: Easter-Egg-Check (VOR dem LLM — spart Latenz)
         egg_response = self.personality.check_easter_egg(text)
@@ -1388,13 +1370,7 @@ class AssistantBrain(BrainCallbacksMixin):
             logger.info("Easter Egg getriggert: '%s'", egg_response)
             self._remember_exchange(text, egg_response)
             await self._speak_and_emit(egg_response, room=room)
-            return {
-                "response": egg_response,
-                "actions": [],
-                "model_used": "easter_egg",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            return self._result(egg_response, model="easter_egg", room=room, emitted=True)
 
         # ----- MCU-JARVIS: "Das Uebliche" / "Wie immer" Shortcut -----
         # Erkennt implizite Routine-Befehle und verbindet sie mit der
@@ -1446,14 +1422,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     )
                 else:
                     await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
-                return {
-                    "response": response_text,
-                    "actions": [],
-                    "model_used": "calendar_diagnostic",
-                    "context_room": room or "unbekannt",
-                    "tts": tts_data,
-                    "_emitted": not stream_callback,
-                }
+                return self._result(response_text, model="calendar_diagnostic", room=room, tts=tts_data)
             except Exception as e:
                 logger.warning("Kalender-Diagnose fehlgeschlagen: %s", e)
 
@@ -1559,16 +1528,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 )
 
                 await emit_action("get_calendar_events", {"timeframe": timeframe}, cal_result)
-                return {
-                    "response": response_text,
-                    "actions": [{"function": "get_calendar_events",
-                                 "args": {"timeframe": timeframe},
-                                 "result": cal_result}],
-                    "model_used": "calendar_shortcut",
-                    "context_room": room or "unbekannt",
-                    "tts": tts_data,
-                    "_emitted": not stream_callback,
-                }
+                return self._result(response_text, actions=[{"function": "get_calendar_events", "args": {"timeframe": timeframe}, "result": cal_result}], model="calendar_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Kalender-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -1616,16 +1576,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         _weather_speak(), name="weather_speak"
                     )
 
-                return {
-                    "response": response_text,
-                    "actions": [{"function": "get_weather",
-                                 "args": weather_args,
-                                 "result": weather_result}],
-                    "model_used": "weather_shortcut",
-                    "context_room": room or "unbekannt",
-                    "tts": tts_data,
-                    "_emitted": not stream_callback,
-                }
+                return self._result(response_text, actions=[{"function": "get_weather", "args": weather_args, "result": weather_result}], model="weather_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Wetter-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -1671,16 +1622,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         f"{'set_wakeup_alarm' if action == 'set' else 'cancel_alarm' if action == 'cancel' else 'get_alarms'}",
                         alarm_shortcut, alarm_result,
                     )
-                    return {
-                        "response": response_text,
-                        "actions": [{"function": f"alarm_{action}",
-                                     "args": alarm_shortcut,
-                                     "result": alarm_result}],
-                        "model_used": "alarm_shortcut",
-                        "context_room": room or "unbekannt",
-                        "tts": tts_data,
-                        "_emitted": not stream_callback,
-                    }
+                    return self._result(response_text, actions=[{"function": f"alarm_{action}", "args": alarm_shortcut, "result": alarm_result}], model="alarm_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Wecker-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -1811,16 +1753,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                     name="mark_jarvis_action",
                                 )
 
-                        return {
-                            "response": response_text,
-                            "actions": [{"function": func_name,
-                                         "args": func_args,
-                                         "result": result}],
-                            "model_used": "device_shortcut",
-                            "context_room": room or "unbekannt",
-                            "tts": tts_data,
-                            "_emitted": not stream_callback,
-                        }
+                                return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -1873,16 +1806,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
                     await emit_action(func_name, func_args, result)
 
-                    return {
-                        "response": response_text,
-                        "actions": [{"function": func_name,
-                                     "args": func_args,
-                                     "result": result}],
-                        "model_used": "media_shortcut",
-                        "context_room": room or "unbekannt",
-                        "tts": tts_data,
-                        "_emitted": not stream_callback,
-                    }
+                    return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="media_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Media-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -1936,16 +1860,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
                     await emit_action(func_name, func_args, result)
 
-                    return {
-                        "response": response_text,
-                        "actions": [{"function": func_name,
-                                     "args": func_args,
-                                     "result": result}],
-                        "model_used": "intercom_shortcut",
-                        "context_room": room or "unbekannt",
-                        "tts": tts_data,
-                        "_emitted": not stream_callback,
-                    }
+                    return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="intercom_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Intercom-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -1977,14 +1892,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             await self._speak_and_emit(
                                 briefing_text, room=room, tts_data=tts_data,
                             )
-                        return {
-                            "response": briefing_text,
-                            "actions": result.get("actions", []),
-                            "model_used": "morning_briefing_shortcut",
-                            "context_room": room or "unbekannt",
-                            "tts": tts_data,
-                            "_emitted": not stream_callback,
-                        }
+                        return self._result(briefing_text, actions=result.get("actions", []), model="morning_briefing_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Morning-Briefing-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -2014,14 +1922,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             await self._speak_and_emit(
                                 briefing_text, room=room, tts_data=tts_data,
                             )
-                        return {
-                            "response": briefing_text,
-                            "actions": [],
-                            "model_used": "evening_briefing_shortcut",
-                            "context_room": room or "unbekannt",
-                            "tts": tts_data,
-                            "_emitted": not stream_callback,
-                        }
+                        return self._result(briefing_text, model="evening_briefing_shortcut", room=room, tts=tts_data)
             except Exception as e:
                 logger.warning("Evening-Briefing-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -2088,16 +1989,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             response_text, room=room, tts_data=tts_data,
                         )
 
-                    return {
-                        "response": response_text,
-                        "actions": [{"function": "get_house_status",
-                                     "args": {},
-                                     "result": raw_result}],
-                        "model_used": "house_status_shortcut",
-                        "context_room": room or "unbekannt",
-                        "tts": tts_data,
-                        "_emitted": not stream_callback,
-                    }
+                    return self._result(response_text, actions=[{"function": "get_house_status", "args": {}, "result": raw_result}], model="house_status_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Haus-Status-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -2162,16 +2054,7 @@ class AssistantBrain(BrainCallbacksMixin):
                             response_text, room=room, tts_data=tts_data,
                         )
 
-                    return {
-                        "response": response_text,
-                        "actions": [{"function": "get_full_status_report",
-                                     "args": {},
-                                     "result": raw_result}],
-                        "model_used": "status_report_shortcut",
-                        "context_room": room or "unbekannt",
-                        "tts": tts_data,
-                        "_emitted": not stream_callback,
-                    }
+                    return self._result(response_text, actions=[{"function": "get_full_status_report", "args": {}, "result": raw_result}], model="status_report_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Status-Report-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -2217,16 +2100,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
                         await emit_action(func_name, func_args, result)
 
-                        return {
-                            "response": response_text,
-                            "actions": [{"function": func_name,
-                                         "args": func_args,
-                                         "result": result}],
-                            "model_used": "status_query_shortcut",
-                            "context_room": room or "unbekannt",
-                            "tts": tts_data,
-                            "_emitted": not stream_callback,
-                        }
+                        return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="status_query_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
                     else:
                         logger.info(
                             "Status-Query-Shortcut: Tool fehlgeschlagen (%s) — Fallback auf LLM",
@@ -2254,14 +2128,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 await self._speak_and_emit(
                     smalltalk_response, room=room, tts_data=tts_data,
                 )
-            return {
-                "response": smalltalk_response,
-                "actions": [],
-                "model_used": "smalltalk_shortcut",
-                "context_room": room or "unbekannt",
-                "tts": tts_data,
-                "_emitted": not stream_callback,
-            }
+            return self._result(smalltalk_response, model="smalltalk_shortcut", room=room, tts=tts_data)
 
         # ----- Ende schnelle Shortcuts -----
 
@@ -2516,8 +2383,8 @@ class AssistantBrain(BrainCallbacksMixin):
                 max_context_tokens, effective_max, ollama_num_ctx,
             )
             max_context_tokens = effective_max
-        base_tokens = len(system_prompt) // 2
-        user_tokens_est = len(text) // 2
+        base_tokens = _estimate_tokens(system_prompt)
+        user_tokens_est = _estimate_tokens(text)
         # Reserve: ~40% fuer Conversations + User-Text + Response-Space
         section_budget = max(300, int((max_context_tokens - base_tokens - user_tokens_est) * 0.6))
 
@@ -2786,7 +2653,7 @@ class AssistantBrain(BrainCallbacksMixin):
         sections_added = []
         sections_dropped = []
         for name, section_text, priority in sections:
-            section_tokens = len(section_text) // 2
+            section_tokens = _estimate_tokens(section_text)
             if tokens_used + section_tokens <= section_budget or priority == 1:
                 # Prio 1 wird IMMER inkludiert, auch ueber Budget
                 system_prompt += section_text
@@ -2806,7 +2673,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # 5. Letzte Gespraeche laden (Working Memory)
         # Token-Budget fuer Conversations: Restliches Budget nach System-Prompt + Sektionen
-        system_tokens = len(system_prompt) // 2
+        system_tokens = _estimate_tokens(system_prompt)
         available_tokens = max(500, max_context_tokens - system_tokens - user_tokens_est - 200)
         # Gespraeche laden — Anzahl aus yaml_config (UI-konfigurierbar)
         conv_cfg = cfg.yaml_config.get("context", {})
@@ -2834,7 +2701,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # damit mehr Kontext erhalten bleibt (auch im Befehls-Modus).
         if len(recent) > 4:
             # Budget pruefen: Passen alle rein?
-            total_est = sum(len(c.get("content", "")) // 2 for c in recent)
+            total_est = sum(_estimate_tokens(c.get("content", "")) for c in recent)
             if total_est > available_tokens:
                 # Aeltere Haelfte zusammenfassen, neuere 1:1 behalten
                 split = len(recent) // 2
@@ -2847,9 +2714,9 @@ class AssistantBrain(BrainCallbacksMixin):
                     summary = None
                 if summary:
                     messages.append({"role": "system", "content": f"[Bisheriges Gespraech]: {summary}"})
-                    conv_tokens_used += len(summary) // 2
+                    conv_tokens_used += _estimate_tokens(summary)
         for conv in recent:
-            conv_tokens = len(conv.get("content", "")) // 2
+            conv_tokens = _estimate_tokens(conv.get("content", ""))
             if conv_tokens_used + conv_tokens > available_tokens:
                 break
             messages.append({"role": conv["role"], "content": conv["content"]})
@@ -2898,14 +2765,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 self._remember_exchange(text, delegation_result)
                 tts_data = self.tts_enhancer.enhance(delegation_result, message_type="confirmation")
                 await self._speak_and_emit(delegation_result, room=room, tts_data=tts_data)
-                return {
-                    "response": delegation_result,
-                    "actions": [],
-                    "model_used": "delegation",
-                    "context_room": room or "unbekannt",
-                    "tts": tts_data,
-                    "_emitted": True,
-                }
+                return self._result(delegation_result, model="delegation", room=room, tts=tts_data, emitted=True)
 
         # 6. Komplexe Anfragen ueber Action Planner routen
         if self.action_planner.is_complex_request(text):
@@ -2928,60 +2788,15 @@ class AssistantBrain(BrainCallbacksMixin):
             _deep_model = self.model_router._cap_model(self.model_router.model_deep)
             logger.info("Wissensfrage erkannt -> LLM direkt (Deep: %s, keine Tools)",
                          _deep_model)
-            # Modell-Kaskade: Deep -> Smart -> Fast (dynamisch, ueberspringt identische)
-            model = _deep_model
-            response_text = ""
-            if stream_callback:
-                # Streaming: Kaskade durch alle Modelle
-                current = model
-                while current:
-                    collected_tokens = []
-                    stream_error = False
-                    async for token in self.ollama.stream_chat(
-                        messages=messages,
-                        model=current,
-                    ):
-                        if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
-                            stream_error = True
-                            continue
-                        collected_tokens.append(token)
-                        await stream_callback(token)
-                    if not stream_error and collected_tokens:
-                        response_text = self._filter_response("".join(collected_tokens))
-                        model = current
-                        break
-                    # Naechstes Modell in der Kaskade
-                    fallback = self.model_router.get_fallback_model(current)
-                    if fallback and fallback != current:
-                        logger.info("Knowledge-Stream Fallback: %s -> %s", current, fallback)
-                        current = fallback
-                    else:
-                        break
-                if not response_text:
-                    response_text = "Mein Sprachmodell reagiert gerade nicht. Versuch es gleich nochmal."
+            _cascade = await self._llm_with_cascade(
+                messages, _deep_model, stream_callback=stream_callback,
+            )
+            response_text = self._filter_response(_cascade["text"])
+            model = _cascade["model"]
+            if _cascade["error"]:
+                response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
+                if stream_callback:
                     await stream_callback(response_text)
-            else:
-                # Non-Streaming: Kaskade durch alle Modelle
-                current = model
-                while current:
-                    response = await self.ollama.chat(
-                        messages=messages,
-                        model=current,
-                    )
-                    if "error" not in response:
-                        response_text = self._filter_response(
-                            response.get("message", {}).get("content", ""))
-                        model = current
-                        break
-                    logger.error("LLM Fehler (%s): %s", current, response["error"])
-                    fallback = self.model_router.get_fallback_model(current)
-                    if fallback and fallback != current:
-                        logger.info("Knowledge Fallback: %s -> %s", current, fallback)
-                        current = fallback
-                    else:
-                        break
-                if not response_text:
-                    response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
             executed_actions = []
         elif intent_type == "memory":
             # Phase 8: Erinnerungsfrage -> Memory-Suche + Deep-Model
@@ -2996,55 +2811,15 @@ class AssistantBrain(BrainCallbacksMixin):
                 memory_messages[0] = {"role": "system", "content": memory_prompt}
 
             model = self.model_router._cap_model(self.model_router.model_deep)
-            if stream_callback:
-                # Streaming: Kaskade durch alle Modelle
-                current = model
-                while current:
-                    collected_tokens = []
-                    stream_error = False
-                    async for token in self.ollama.stream_chat(
-                        messages=memory_messages,
-                        model=current,
-                    ):
-                        if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
-                            stream_error = True
-                            continue
-                        collected_tokens.append(token)
-                        await stream_callback(token)
-                    if not stream_error and collected_tokens:
-                        response_text = self._filter_response("".join(collected_tokens))
-                        model = current
-                        break
-                    fallback = self.model_router.get_fallback_model(current)
-                    if fallback and fallback != current:
-                        logger.info("Memory-Stream Fallback: %s -> %s", current, fallback)
-                        current = fallback
-                    else:
-                        break
-                if not response_text:
-                    response_text = "Mein Sprachmodell reagiert gerade nicht. Versuch es gleich nochmal."
+            _cascade = await self._llm_with_cascade(
+                memory_messages, model, stream_callback=stream_callback,
+            )
+            response_text = self._filter_response(_cascade["text"])
+            model = _cascade["model"]
+            if _cascade["error"]:
+                response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
+                if stream_callback:
                     await stream_callback(response_text)
-            else:
-                # Non-Streaming: Kaskade
-                current = model
-                while current:
-                    response = await self.ollama.chat(
-                        messages=memory_messages,
-                        model=current,
-                    )
-                    if "error" not in response:
-                        response_text = self._filter_response(
-                            response.get("message", {}).get("content", ""))
-                        model = current
-                        break
-                    fallback = self.model_router.get_fallback_model(current)
-                    if fallback and fallback != current:
-                        logger.info("Memory Fallback: %s -> %s", current, fallback)
-                        current = fallback
-                    else:
-                        break
-                if not response_text:
-                    response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
             executed_actions = []
         else:
             # Entity-Katalog wird per Background-Loop proaktiv refreshed
@@ -3108,82 +2883,22 @@ class AssistantBrain(BrainCallbacksMixin):
             # Die Think-Tags werden von ollama_client automatisch entfernt.
             _force_think = bool(problem_solving_ctx or whatif_prompt)
 
-            try:
-                response = await asyncio.wait_for(
-                    self.ollama.chat(
-                        messages=messages,
-                        model=model,
-                        tools=_llm_tools,
-                        max_tokens=response_tokens,
-                        think=True if _force_think else None,
-                    ),
-                    timeout=float(llm_timeout),
-                )
-            except asyncio.TimeoutError:
-                logger.error("LLM Timeout (%ss) fuer Modell %s", llm_timeout, model)
-                # Self-Improvement: Error Pattern Tracking
-                self._task_registry.create_task(
-                    self.error_patterns.record_error("timeout", action_type="llm_chat", model=model),
-                    name="error_pattern_timeout",
-                )
-                # Fallback: Schnelleres Modell versuchen
-                fallback_model = self.model_router.get_fallback_model(model)
-                if fallback_model and fallback_model != model:
-                    logger.info("LLM Fallback: %s -> %s", model, fallback_model)
-                    try:
-                        response = await asyncio.wait_for(
-                            self.ollama.chat(
-                                messages=messages,
-                                model=fallback_model,
-                                tools=_llm_tools,
-                                max_tokens=response_tokens,
-                            ),
-                            timeout=float(llm_timeout * 0.66),
-                        )
-                        model = fallback_model
-                    except (asyncio.TimeoutError, Exception):
-                        self._task_registry.create_task(
-                            self.error_patterns.record_error("timeout", action_type="llm_chat", model=fallback_model),
-                            name="error_pattern_double_timeout",
-                        )
-                        _err = "Beide Sprachmodelle reagieren nicht. Server moeglicherweise ueberlastet."
-                        await self._speak_and_emit(_err, room=room)
-                        return {
-                            "response": _err, "actions": [],
-                            "model_used": model, "error": "timeout_all_models",
-                            "_emitted": True,
-                        }
-                else:
-                    _err = "Mein Sprachmodell reagiert nicht. Server moeglicherweise ueberlastet."
-                    await self._speak_and_emit(_err, room=room)
-                    return {
-                        "response": _err, "actions": [],
-                        "model_used": model, "error": "timeout",
-                        "_emitted": True,
-                    }
-            except Exception as e:
-                logger.error("LLM Exception: %s", e)
-                _err = "Mein Sprachmodell hat ein Problem. Versuch es nochmal."
+            _cascade = await self._llm_with_cascade(
+                messages, model,
+                tools=_llm_tools,
+                max_tokens=response_tokens,
+                timeout=float(llm_timeout),
+                think=True if _force_think else None,
+            )
+            if _cascade["error"]:
+                _err = "Mein Sprachmodell reagiert nicht. Versuch es gleich nochmal."
                 await self._speak_and_emit(_err, room=room)
-                return {
-                    "response": _err, "actions": [],
-                    "model_used": model, "error": str(e),
-                    "_emitted": True,
-                }
-
-            if "error" in response:
-                logger.error("LLM Fehler: %s", response["error"])
-                _err = "Mein Sprachmodell reagiert nicht. Ich versuche es gleich nochmal."
-                await self._speak_and_emit(_err, room=room)
-                return {
-                    "response": _err, "actions": [],
-                    "model_used": model, "error": response["error"],
-                    "_emitted": True,
-                }
+                return self._result(_err, model=model, room=room, emitted=True, error="cascade_failed")
+            model = _cascade["model"]
 
             # 7. Antwort verarbeiten
-            message = response.get("message", {})
-            response_text = message.get("content", "")
+            message = _cascade["message"]
+            response_text = _cascade["text"]
             tool_calls = message.get("tool_calls", [])
             executed_actions = []
 
@@ -4460,13 +4175,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 logger.warning("Rohdaten-Leak (Service-Call) vor Senden erkannt: '%s'", response_text[:80])
                 response_text = self.personality.get_varied_confirmation(success=True)
 
-        result = {
-            "response": response_text,
-            "actions": executed_actions,
-            "model_used": model,
-            "context_room": context.get("room", "unbekannt"),
-            "tts": tts_data,
-        }
+        result = self._result(response_text, actions=executed_actions, model=model, room=context.get("room"), tts=tts_data)
         # WebSocket + Sprachausgabe ueber HA-Speaker
         # Bei Streaming sendet main.py via emit_stream_end — hier KEIN emit_speaking
         # (verhindert doppelte Chat-Nachrichten), aber TTS-Ausgabe trotzdem starten
@@ -7926,13 +7635,7 @@ class AssistantBrain(BrainCallbacksMixin):
             )
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
-            return {
-                "response": response_text,
-                "actions": [],
-                "model_used": "das_uebliche_empty",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            return self._result(response_text, model="das_uebliche_empty", room=room, emitted=True)
 
         # Beste Suggestion ausfuehren oder vorschlagen
         best = max(suggestions, key=lambda s: s.get("confidence", 0))
@@ -7956,13 +7659,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
-            return {
-                "response": response_text,
-                "actions": [{"function": action, "args": args}],
-                "model_used": "das_uebliche_auto",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            return self._result(response_text, actions=[{"function": action, "args": args}], model="das_uebliche_auto", room=room, emitted=True)
         else:
             # Mittlere Confidence → nachfragen
             response_text = (
@@ -7971,13 +7668,7 @@ class AssistantBrain(BrainCallbacksMixin):
             )
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
-            return {
-                "response": response_text,
-                "actions": [],
-                "model_used": "das_uebliche_suggest",
-                "context_room": room or "unbekannt",
-                "_emitted": True,
-            }
+            return self._result(response_text, model="das_uebliche_suggest", room=room, emitted=True)
 
     def _detect_smalltalk(self, text: str) -> Optional[str]:
         """Erkennt soziale Fragen und gibt eine JARVIS-Antwort zurueck.
