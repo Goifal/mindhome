@@ -1983,6 +1983,13 @@ function entityPickSelect(item, entityId) {
     return;
   }
 
+  // Scene Device-Trigger: Entity-ID setzen + onchange feuern
+  if (input?.classList?.contains('scene-dt-input')) {
+    input.value = entityId;
+    input.dispatchEvent(new Event('change'));
+    return;
+  }
+
   // Cover-Profil: Entity-ID setzen + updateCoverProfile aufrufen
   if (input?.dataset?.coverIdx !== undefined) {
     input.value = entityId;
@@ -3474,6 +3481,7 @@ function _getScenes() {
       silence: override.silence ?? def.silence,
       transition: override.transition ?? def.transition,
       triggers: override.triggers ?? def.triggers ?? [],
+      device_triggers: override.device_triggers ?? def.device_triggers ?? [],
       custom: false,
     });
   }
@@ -3485,6 +3493,7 @@ function _getScenes() {
         id, icon: cfg.icon || '&#127912;', label: cfg.label || id,
         activity: cfg.activity || 'relaxing', silence: cfg.silence ?? false,
         transition: cfg.transition ?? 3, triggers: cfg.triggers ?? [],
+        device_triggers: cfg.device_triggers ?? [],
         custom: true,
       });
     }
@@ -3501,7 +3510,7 @@ function _saveScenes(scenes) {
     const def = defaultMap[sc.id];
     if (sc.custom) {
       // Custom Szene: immer komplett speichern
-      data[sc.id] = {icon: sc.icon, label: sc.label, activity: sc.activity, silence: sc.silence, transition: sc.transition, triggers: sc.triggers || [], _custom: true};
+      data[sc.id] = {icon: sc.icon, label: sc.label, activity: sc.activity, silence: sc.silence, transition: sc.transition, triggers: sc.triggers || [], device_triggers: sc.device_triggers || [], _custom: true};
     } else if (def) {
       // Default Szene: nur Abweichungen
       const diff = {};
@@ -3511,6 +3520,7 @@ function _saveScenes(scenes) {
       if (sc.transition !== def.transition) diff.transition = sc.transition;
       if (sc.icon !== def.icon) diff.icon = sc.icon;
       if (JSON.stringify(sc.triggers || []) !== JSON.stringify(def.triggers || [])) diff.triggers = sc.triggers;
+      if (JSON.stringify(sc.device_triggers || []) !== JSON.stringify(def.device_triggers || [])) diff.device_triggers = sc.device_triggers;
       if (Object.keys(diff).length > 0) data[sc.id] = diff;
     }
   }
@@ -3534,6 +3544,17 @@ function _saveScenes(scenes) {
     }
   }
   setPath(S, 'scenes.trigger_map', triggerMap);
+  // 4. scenes.device_trigger_map — Mapping Entity-ID → Scene-ID fuer automatische Aktivierung
+  const deviceTriggerMap = {};
+  for (const sc of scenes) {
+    if (sc.device_triggers && sc.device_triggers.length > 0) {
+      for (const entity of sc.device_triggers) {
+        if (!deviceTriggerMap[entity]) deviceTriggerMap[entity] = [];
+        deviceTriggerMap[entity].push(sc.id);
+      }
+    }
+  }
+  setPath(S, 'scenes.device_trigger_map', deviceTriggerMap);
 
   scheduleAutoSave();
 }
@@ -3587,6 +3608,25 @@ function renderScenes() {
             title="Komma-getrennte Begriffe die diese Szene ausloesen"
             onchange="sceneTriggersChanged('${esc(sc.id)}',this.value)">
         </div>
+        <div class="scene-field">
+          <span class="scene-field-label">Geraete-Trigger</span>
+          <div class="scene-device-triggers" data-scene-id="${esc(sc.id)}">
+            ${(sc.device_triggers||[]).map((dt, i) => `<div class="scene-dt-row" style="display:flex;gap:4px;margin-bottom:4px;">
+              <div class="entity-pick-wrap" style="position:relative;flex:1;">
+                <input type="text" class="scene-dt-input form-input entity-pick-input" value="${esc(dt)}"
+                  placeholder="z.B. media_player.tv, binary_sensor.button"
+                  data-domains="media_player,binary_sensor,remote,switch,input_boolean,sensor"
+                  oninput="entityPickFilter(this,'media_player,binary_sensor,remote,switch,input_boolean,sensor')"
+                  onfocus="entityPickFilter(this,'media_player,binary_sensor,remote,switch,input_boolean,sensor')"
+                  onchange="sceneDeviceTriggerChanged('${esc(sc.id)}')"
+                  style="font-size:11px;font-family:var(--mono);">
+                <div class="entity-pick-dropdown" style="display:none;"></div>
+              </div>
+              <button class="btn btn-sm" style="padding:2px 6px;font-size:11px;" onclick="removeSceneDeviceTrigger('${esc(sc.id)}',${i})">&#10005;</button>
+            </div>`).join('')}
+            <button class="btn btn-sm" style="padding:2px 8px;font-size:11px;margin-top:2px;" onclick="addSceneDeviceTrigger('${esc(sc.id)}')">+ Geraet</button>
+          </div>
+        </div>
       </div>
     </div>`;
   }
@@ -3603,6 +3643,7 @@ function renderScenes() {
       <div style="margin-top:6px;"><strong>2. Nicht stoeren</strong> — Markierte Szenen unterdruecken proaktive Meldungen komplett (ausser Sicherheit/Notfall).</div>
       <div style="margin-top:6px;"><strong>3. Uebergangszeit</strong> — Wie lange Licht-Uebergaenge dauern wenn Jarvis die Szene aktiviert.</div>
       <div style="margin-top:6px;"><strong>4. Ausloeser</strong> — Komma-getrennte Begriffe die Jarvis als Trigger fuer diese Szene erkennt. So vermeidest du Verwechslungen zwischen aehnlichen Szenen.</div>
+      <div style="margin-top:6px;"><strong>5. Geraete-Trigger</strong> — HA-Entities die diese Szene automatisch aktivieren. Z.B. wenn der TV eingeschaltet wird (media_player) oder ein Button gedrueckt wird (binary_sensor). Szene wird aktiviert wenn das Geraet den Status wechselt (on/playing/etc.).</div>
     </div>`
   );
 }
@@ -3632,7 +3673,7 @@ function sceneTriggersChanged(sceneId, value) {
 function addCustomScene() {
   const id = 'szene_' + Date.now();
   const scenes = _getScenes();
-  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, triggers: [], custom: true});
+  scenes.push({id, icon: '&#127912;', label: 'Neue Szene', activity: 'relaxing', silence: false, transition: 3, triggers: [], device_triggers: [], custom: true});
   _saveScenes(scenes);
   renderCurrentTab();
 }
@@ -3643,6 +3684,41 @@ function removeScene(sceneId) {
   const saved = getPath(S, 'scenes') || {};
   delete saved[sceneId];
   setPath(S, 'scenes', saved);
+  _saveScenes(scenes);
+  renderCurrentTab();
+}
+
+function sceneDeviceTriggerChanged(sceneId) {
+  const container = document.querySelector(`.scene-device-triggers[data-scene-id="${sceneId}"]`);
+  if (!container) return;
+  const inputs = container.querySelectorAll('.scene-dt-input');
+  const deviceTriggers = [];
+  inputs.forEach(inp => {
+    const v = inp.value.trim();
+    if (v) deviceTriggers.push(v);
+  });
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc) return;
+  sc.device_triggers = deviceTriggers;
+  _saveScenes(scenes);
+}
+
+function addSceneDeviceTrigger(sceneId) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc) return;
+  sc.device_triggers = sc.device_triggers || [];
+  sc.device_triggers.push('');
+  _saveScenes(scenes);
+  renderCurrentTab();
+}
+
+function removeSceneDeviceTrigger(sceneId, index) {
+  const scenes = _getScenes();
+  const sc = scenes.find(s => s.id === sceneId);
+  if (!sc || !sc.device_triggers) return;
+  sc.device_triggers.splice(index, 1);
   _saveScenes(scenes);
   renderCurrentTab();
 }

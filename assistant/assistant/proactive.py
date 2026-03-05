@@ -139,6 +139,7 @@ class ProactiveManager:
             "threat_detected": (HIGH, "Sicherheitswarnung"),
             "energy_price_high": (LOW, "Teurer Strom"),
             "solar_surplus": (LOW, "Solar-Überschuss"),
+            "scene_device_triggered": (LOW, "Szene durch Geraet aktiviert"),
         }
         # YAML-Overrides anwenden (Event-Handler konfigurierbar)
         yaml_handlers = proactive_cfg.get("event_handlers", {})
@@ -605,6 +606,9 @@ class ProactiveManager:
             except Exception as e:
                 logger.debug("Conditional-Check Fehler: %s", e)
 
+        # Scene Device-Trigger: Geraet wechselt Status → Szene aktivieren
+        await self._check_scene_device_trigger(entity_id, new_val, old_val)
+
         # Learning Observer: Manuelle Aktionen beobachten
         if hasattr(self.brain, "learning_observer"):
             try:
@@ -615,6 +619,74 @@ class ProactiveManager:
                 )
             except Exception as e:
                 logger.debug("Learning Observer Fehler: %s", e)
+
+    # States die als "aktiv/an" gelten fuer Device-Trigger
+    _ACTIVE_STATES = {"on", "playing", "paused", "home", "active", "open", "detected"}
+
+    async def _check_scene_device_trigger(self, entity_id: str, new_val: str, old_val: str):
+        """Prueft ob ein Geraete-Statuswechsel eine Szene aktivieren soll."""
+        try:
+            device_trigger_map = yaml_config.get("scenes", {}).get("device_trigger_map", {})
+            if not device_trigger_map or entity_id not in device_trigger_map:
+                return
+
+            # Nur bei Wechsel zu "aktiv" triggern (nicht bei off/idle)
+            new_lower = new_val.lower() if new_val else ""
+            old_lower = old_val.lower() if old_val else ""
+            if new_lower not in self._ACTIVE_STATES:
+                return
+            if old_lower in self._ACTIVE_STATES:
+                return  # War schon aktiv, kein neuer Trigger
+
+            scene_ids = device_trigger_map[entity_id]
+            if not scene_ids:
+                return
+
+            # Szenen-Config laden um Aktivitaet + Transition zu ermitteln
+            scenes_cfg = yaml_config.get("scenes", {})
+
+            for scene_id in scene_ids:
+                # Szenen-Aktivitaet aus gespeicherter Config oder Defaults ableiten
+                scene_data = scenes_cfg.get(scene_id, {})
+                activity = scene_data.get("activity")
+
+                # Defaults durchsuchen falls nicht in saved
+                if not activity:
+                    _defaults = {
+                        "filmabend": "watching", "kino": "watching",
+                        "schlafen": "sleeping", "gute_nacht": "sleeping",
+                        "aufwachen": "relaxing", "gemuetlich": "relaxing",
+                        "meditation": "focused", "konzentration": "focused",
+                        "telefonat": "in_call", "meeting": "in_call",
+                        "gaeste": "guests", "nicht_stoeren": "focused",
+                        "musik": "relaxing", "arbeit": "focused",
+                        "kochen": "relaxing", "party": "guests",
+                    }
+                    activity = _defaults.get(scene_id, "relaxing")
+
+                transition = scene_data.get("transition", 3)
+                silence = scene_data.get("silence", False)
+
+                # Aktivitaets-Override setzen
+                duration = max(transition * 20, 60)  # Mindestens 60 Min
+                self.brain.activity.set_manual_override(activity, duration_minutes=duration)
+
+                logger.info(
+                    "Scene Device-Trigger: %s (%s→%s) → Szene '%s' (activity=%s, silence=%s)",
+                    entity_id, old_val, new_val, scene_id, activity, silence,
+                )
+
+                # Benachrichtigung an User
+                await self._notify("scene_device_triggered", LOW, {
+                    "scene_id": scene_id,
+                    "entity_id": entity_id,
+                    "activity": activity,
+                    "new_state": new_val,
+                })
+
+                break  # Nur erste passende Szene aktivieren
+        except Exception as e:
+            logger.debug("Scene Device-Trigger Fehler: %s", e)
 
     async def _check_morning_briefing(self, motion_entity: str = ""):
         """Phase 7.1: Prüft ob Morning Briefing bei erster Bewegung am Morgen geliefert werden soll."""
