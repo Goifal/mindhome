@@ -3893,6 +3893,8 @@ class ProactiveManager:
         _redis = getattr(self.brain, "memory", None)
         _redis = getattr(_redis, "redis", None) if _redis else None
 
+        _interrupted_local = None  # In-Memory Fallback wenn Redis nicht verfuegbar
+
         logger.info("Vacuum-PresenceMonitor: Task gestartet")
 
         while self._running:
@@ -3928,7 +3930,10 @@ class ProactiveManager:
 
                 # Fall 1: Jemand kommt heim + Vacuum saugt → Pausieren + Dock
                 # Guard: Nur wenn nicht schon pausiert (verhindert doppelte Befehle)
-                already_interrupted = _redis and await _redis.get("mha:vacuum:interrupted")
+                if _redis:
+                    already_interrupted = await _redis.get("mha:vacuum:interrupted")
+                else:
+                    already_interrupted = _interrupted_local
                 if anyone_home and cleaning_robots and guard_cfg.get("pause_on_arrival") and not already_interrupted:
                     logger.info("Vacuum-PresenceMonitor: Jemand ist zuhause — %d Roboter pausieren",
                                 len(cleaning_robots))
@@ -3941,20 +3946,22 @@ class ProactiveManager:
                         nickname = robot.get("nickname", f"Saugroboter {floor.upper()}")
                         logger.info("Vacuum-PresenceMonitor: %s pausiert + zur Ladestation", nickname)
 
-                    # Unterbrochene Robots in Redis merken
-                    if _redis and interrupted:
-                        await _redis.set(
-                            "mha:vacuum:interrupted",
-                            ",".join(interrupted),
-                            ex=14400,  # 4 Stunden TTL
-                        )
+                    # Unterbrochene Robots in Redis + lokal merken
+                    if interrupted:
+                        _interrupted_local = ",".join(interrupted)
+                        if _redis:
+                            await _redis.set(
+                                "mha:vacuum:interrupted",
+                                _interrupted_local,
+                                ex=14400,  # 4 Stunden TTL
+                            )
                     await self._notify("vacuum_paused_arrival", LOW, {
                         "message": "Saugroboter pausiert — jemand ist nachhause gekommen",
                     })
 
                 # Fall 2: Niemand zuhause + unterbrochene Reinigung → Fortsetzen
-                if not anyone_home and _redis and guard_cfg.get("resume_on_departure"):
-                    interrupted_str = await _redis.get("mha:vacuum:interrupted")
+                if not anyone_home and guard_cfg.get("resume_on_departure"):
+                    interrupted_str = (await _redis.get("mha:vacuum:interrupted")) if _redis else _interrupted_local
                     if interrupted_str:
                         delay = guard_cfg.get("resume_delay_minutes", 5)
                         logger.info("Vacuum-PresenceMonitor: Alle weg — warte %d Min bevor Reinigung fortgesetzt wird", delay)
@@ -3967,7 +3974,9 @@ class ProactiveManager:
                             continue
 
                         floors = interrupted_str.split(",")
-                        await _redis.delete("mha:vacuum:interrupted")
+                        _interrupted_local = None
+                        if _redis:
+                            await _redis.delete("mha:vacuum:interrupted")
 
                         # Alarm umschalten
                         await self._vacuum_alarm_switch("arm_home")
@@ -4063,7 +4072,7 @@ class ProactiveManager:
                         eid = s.get("entity_id", "")
                         if eid.startswith("calendar.") and s.get("state") == "on":
                             title = (s.get("attributes", {}).get("message") or "").lower()
-                            if any(kw in title for kw in not_during):
+                            if any(kw.lower() in title for kw in not_during):
                                 blocking = True
                                 break
                     if blocking:
@@ -4182,6 +4191,7 @@ class ProactiveManager:
             logger.info("Vacuum-Trigger: %s erfolgreich gestartet (%s)", nickname, reason)
         else:
             logger.error("Vacuum-Trigger: %s Start FEHLGESCHLAGEN (%s)", nickname, reason)
+            await self._vacuum_alarm_switch("arm_away")
 
         return success
 
@@ -4397,7 +4407,8 @@ class ProactiveManager:
 
     async def _check_vacuum_maintenance(self, robots: dict, redis_client=None):
         """Prueft Filter/Buerste/Mopp Verschleiss und erinnert."""
-        maint_cfg = yaml_config.get("vacuum", {}).get("maintenance", {})
+        import assistant.config as cfg
+        maint_cfg = cfg.yaml_config.get("vacuum", {}).get("maintenance", {})
         if not maint_cfg.get("enabled", True):
             return
         warn_pct = maint_cfg.get("warn_at_percent", 10)
