@@ -3188,6 +3188,11 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
                 "Unbekanntes Geraet. Pruefe die Entity-ID.",
                 "Das Geraet ist mir nicht bekannt. Wurde es korrekt konfiguriert?",
             ],
+            "no_data": [
+                "Dazu habe ich keine Daten.",
+                "Dazu liegen mir keine aktuellen Werte vor.",
+                "Keine belastbaren Daten vorhanden.",
+            ],
         }
 
         pool = templates.get(error_type, templates["general"])

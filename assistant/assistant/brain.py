@@ -2826,6 +2826,18 @@ class AssistantBrain(BrainCallbacksMixin):
                 break
             messages.append({"role": conv["role"], "content": conv["content"]})
             conv_tokens_used += conv_tokens
+        # Character-Lock Reminder: Bei langen Konversationen rutscht der
+        # System-Prompt im Context nach oben und verliert Wirkung.
+        # Kurzer Reminder direkt vor der User-Message haelt den Charakter stabil.
+        _cl_cfg = cfg.yaml_config.get("character_lock", {})
+        if (_cl_cfg.get("enabled", True) and _cl_cfg.get("mid_conversation_reminder", True)
+                and conv_tokens_used > 200):
+            _reminder = (
+                "[REMINDER] Du bist J.A.R.V.I.S. — trocken, praezise, Butler-Ton. "
+                "Kurz. Keine Listen. Erfinde NICHTS. NUR vorhandene Daten nutzen."
+            )
+            messages.append({"role": "system", "content": _reminder})
+
         # Situation Delta als User-Message-Prefix (prominenter als System-Prompt-Sektion)
         if situation_delta:
             user_content = f"[KONTEXT: {situation_delta.strip()}]\n{text}"
@@ -3909,7 +3921,8 @@ class AssistantBrain(BrainCallbacksMixin):
         _cl_cfg = cfg.yaml_config.get("character_lock", {})
         if (_cl_cfg.get("enabled", True) and _cl_cfg.get("character_retry", True)
                 and response_text and len(response_text) > 30):
-            _llm_score = self._calculate_llm_voice_score(response_text)
+            _llm_score = self._calculate_llm_voice_score(
+                response_text, conversation_mode=getattr(self, "_active_conversation_mode", False))
             _retry_threshold = _cl_cfg.get("retry_threshold", 3)
             if _llm_score >= _retry_threshold:
                 logger.warning(
@@ -3946,6 +3959,39 @@ class AssistantBrain(BrainCallbacksMixin):
                         logger.info("Character-Retry: Ergebnis nicht kuerzer, behalte Original")
                 except Exception as e:
                     logger.warning("Character-Retry fehlgeschlagen: %s", e)
+
+        # Halluzinations-Guard: Erkennt erfundene Messwerte in der Antwort.
+        # Wenn die Antwort spezifische Temperatur- oder Prozentwerte nennt,
+        # die NICHT in den Context-Daten (System-Prompt) standen, werden sie entfernt.
+        if response_text and messages:
+            # System-Prompt enthaelt alle Context-Daten (Temperatur, Batterie, etc.)
+            _ctx_data = messages[0].get("content", "") if messages else ""
+            if _ctx_data:
+                # Alle Zahlen aus der Antwort extrahieren (z.B. "22 Grad", "65%")
+                _resp_numbers = set(re.findall(r"(\d+(?:[.,]\d+)?)\s*(?:Grad|°|%|Prozent)", response_text))
+                if _resp_numbers:
+                    # Alle Zahlen aus dem Context extrahieren
+                    _ctx_numbers = set(re.findall(r"(\d+(?:[.,]\d+)?)", _ctx_data))
+                    _halluc_numbers = _resp_numbers - _ctx_numbers
+                    if _halluc_numbers:
+                        logger.warning(
+                            "Halluzinations-Guard: Erfundene Messwerte in Antwort: %s (nicht in Context)",
+                            _halluc_numbers,
+                        )
+                        # Saetze mit erfundenen Werten entfernen
+                        _sentences = re.split(r"(?<=[.!?])\s+", response_text)
+                        _clean = []
+                        for s in _sentences:
+                            _s_nums = set(re.findall(r"(\d+(?:[.,]\d+)?)\s*(?:Grad|°|%|Prozent)", s))
+                            if not (_s_nums & _halluc_numbers):
+                                _clean.append(s)
+                        if _clean:
+                            response_text = " ".join(_clean)
+                            logger.info("Halluzinations-Guard: Bereinigte Antwort: '%s'", response_text[:80])
+                        # Wenn alles entfernt wurde, Fallback
+                        elif not _clean:
+                            logger.warning("Halluzinations-Guard: Gesamte Antwort verworfen, nutze Fallback")
+                            response_text = self.personality.get_error_response("no_data")
 
         # Phase 6.9: Running Gag an Antwort anhaengen
         if gag_response and response_text:
@@ -5570,12 +5616,16 @@ class AssistantBrain(BrainCallbacksMixin):
         return text if text else ""
 
     @staticmethod
-    def _calculate_llm_voice_score(text: str) -> int:
+    def _calculate_llm_voice_score(text: str, conversation_mode: bool = False) -> int:
         """Berechnet einen LLM-Voice-Score. Hoeher = mehr LLM-artig.
 
         0-1: Klingt wie JARVIS
         2: Grenzwertig
         3+: LLM-Durchbruch, Retry empfohlen
+
+        Args:
+            text: Die zu bewertende Antwort.
+            conversation_mode: Im Gespraechsmodus toleranter bewerten.
         """
         score = 0
         t = text.lower()
@@ -5589,10 +5639,19 @@ class AssistantBrain(BrainCallbacksMixin):
             score += 1  # Markdown-Formatierung
         if text.count("!") > 2:
             score += 1  # Ueberschwenglichkeit
-        if len(re.split(r"[.!?]+", text)) > 6:
+        _sentence_count = len(re.split(r"[.!?]+", text))
+        if _sentence_count > 6:
             score += 1  # Zu viele Saetze
         if len(text) > 400:
             score += 1  # Zu lang
+
+        # Wiederholungsmuster: Gleichfoermige Satzanfaenge (LLM-typisch)
+        _sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
+        if len(_sentences) >= 3:
+            _starts = [s.split()[0].lower() if s.split() else "" for s in _sentences]
+            _unique_ratio = len(set(_starts)) / len(_starts)
+            if _unique_ratio < 0.5:
+                score += 1  # Monotone Satzanfaenge
 
         # Inhaltliche Signale — typische LLM-Phrasen
         _llm_phrases = [
@@ -5618,10 +5677,24 @@ class AssistantBrain(BrainCallbacksMixin):
             "ich helfe dir gerne", "gerne erklaere ich",
             "ich verstehe deine", "ich kann nachvollziehen",
             "ich bin mir nicht sicher", "soweit ich weiss",
+            # Belehrende / erklaerungs-durstige Phrasen
+            "das bedeutet", "das heisst", "mit anderen worten",
+            "um es einfach auszudruecken", "einfach ausgedrueckt",
+            "um genau zu sein", "genauer gesagt",
+            "ich moechte betonen", "es sei darauf hingewiesen",
+            "beachte bitte", "bitte beachte",
+            # Devote / uebereifrige Phrasen
+            "ich stehe dir zur verfuegung", "ich stehe zur verfuegung",
+            "zoegers nicht zu fragen", "zoeger nicht",
+            "bei weiteren fragen", "falls du weitere fragen",
         ]
         for phrase in _llm_phrases:
             if phrase in t:
                 score += 1
+
+        # Konversationsmodus: Toleranter, da laengere Antworten ok sind
+        if conversation_mode and score > 0:
+            score = max(0, score - 1)
 
         return score
 
