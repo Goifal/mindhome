@@ -3128,6 +3128,17 @@ class AssistantBrain(BrainCallbacksMixin):
                         except (json.JSONDecodeError, ValueError):
                             func_args = {}
 
+                    # Raum-Fallback: Wenn set_* ohne Raum → besetzten Raum nutzen
+                    if (func_name.startswith("set_")
+                            and isinstance(func_args, dict)
+                            and not func_args.get("room")):
+                        try:
+                            occupied = await self._get_occupied_room()
+                            if occupied and occupied.lower() != "unbekannt":
+                                func_args["room"] = occupied
+                        except Exception:
+                            pass
+
                     logger.info("Function Call: %s(%s)", func_name, func_args)
 
                     # Validierung
@@ -4045,7 +4056,8 @@ class AssistantBrain(BrainCallbacksMixin):
                 entities=_executed_entities if _executed_entities else None,
                 actions=[{"function": a["function"], "description": a.get("function", "")}
                          for a in executed_actions if isinstance(a.get("result"), dict)
-                         and a["result"].get("success")] or None,
+                         and a["result"].get("success")
+                         and a.get("function", "").startswith("set_")] or None,
                 domain=_executed_domain,
             )
         except Exception:
@@ -7197,7 +7209,8 @@ class AssistantBrain(BrainCallbacksMixin):
                     _before = text[:_idx].strip().split()
                     if _before:
                         _room_words = [w for w in _before
-                                       if w.lower() not in _CMD and len(w) > 2]
+                                       if w.lower() not in _CMD and len(w) > 2
+                                       and not _re.match(r'^\d+%?$', w)]
                         if _room_words:
                             extracted_room = " ".join(_room_words)
                 # Versuch 2: Raum NACH dem Nomen ("Rolladen Wohnzimmer runter")
@@ -7207,7 +7220,8 @@ class AssistantBrain(BrainCallbacksMixin):
                         _room_words = [w for w in _after
                                        if w.lower() not in _ACTIONS
                                        and w.lower() not in _CMD
-                                       and len(w) > 2]
+                                       and len(w) > 2
+                                       and not _re.match(r'^\d+%?$', w)]
                         if _room_words:
                             extracted_room = " ".join(_room_words)
                 break
