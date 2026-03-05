@@ -1260,13 +1260,17 @@ class ContextBuilder:
                     if rising:
                         try:
                             r = datetime.fromisoformat(rising.replace("Z", "+00:00"))
-                            seasonal_data["sunrise_approx"] = r.strftime("%H:%M")
+                            # UTC → Lokalzeit konvertieren
+                            r_local = r.astimezone()
+                            seasonal_data["sunrise_approx"] = r_local.strftime("%H:%M")
                         except (ValueError, TypeError):
                             pass
                     if setting:
                         try:
                             s_time = datetime.fromisoformat(setting.replace("Z", "+00:00"))
-                            seasonal_data["sunset_approx"] = s_time.strftime("%H:%M")
+                            # UTC → Lokalzeit konvertieren
+                            s_local = s_time.astimezone()
+                            seasonal_data["sunset_approx"] = s_local.strftime("%H:%M")
                         except (ValueError, TypeError):
                             pass
 

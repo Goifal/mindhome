@@ -22,6 +22,7 @@ Zustellmethoden:
 """
 
 import logging
+import re
 import time
 from datetime import datetime
 from typing import Optional
@@ -222,33 +223,8 @@ class ActivityEngine:
         else:
             self._silence_keywords = dict(self.SILENCE_KEYWORDS)
 
-        # Entity-IDs (konfigurierbar pro Installation)
-        entities = activity_cfg.get("entities", {})
-        self.media_players = entities.get("media_players", [
-            "media_player.wohnzimmer",
-            "media_player.fernseher",
-            "media_player.tv",
-        ])
-        self.mic_sensors = entities.get("mic_sensors", [
-            "binary_sensor.mic_active",
-            "binary_sensor.microphone",
-        ])
-        self.bed_sensors = entities.get("bed_sensors", [
-            "binary_sensor.bed_occupancy",
-            "binary_sensor.bett",
-        ])
-        self.pc_sensors = entities.get("pc_sensors", [
-            "binary_sensor.pc_active",
-            "binary_sensor.computer",
-            "switch.pc",
-        ])
-
-        # Schwellwerte
-        thresholds = activity_cfg.get("thresholds", {})
-        self.night_start = int(thresholds.get("night_start", 22))
-        self.night_end = int(thresholds.get("night_end", 7))
-        self.guest_person_count = int(thresholds.get("guest_person_count", 2))
-        self.focus_min_minutes = int(thresholds.get("focus_min_minutes", 30))
+        # Entity-IDs und Schwellwerte laden
+        self._load_entities_and_thresholds(activity_cfg)
 
         # Konfigurierbare Silence- und Volume-Matrix (Override aus settings.yaml)
         self._silence_matrix = _build_matrix_from_config(
@@ -278,33 +254,43 @@ class ActivityEngine:
         self._cache_ts: float = 0.0  # monotonic timestamp
         self._cache_ttl: float = 5.0  # Sekunden — verhindert Burst-Abfragen
 
-    def reload_config(self, activity_cfg: dict):
-        """Config aus YAML neu laden (wird von _reload_all_modules aufgerufen)."""
+    # Standard-Entity-Defaults (fuer Installationen ohne explizite Config)
+    _DEFAULT_MEDIA_PLAYERS = [
+        "media_player.wohnzimmer",
+        "media_player.fernseher",
+        "media_player.tv",
+    ]
+    _DEFAULT_MIC_SENSORS = [
+        "binary_sensor.mic_active",
+        "binary_sensor.microphone",
+    ]
+    _DEFAULT_BED_SENSORS = [
+        "binary_sensor.bed_occupancy",
+        "binary_sensor.bett",
+    ]
+    _DEFAULT_PC_SENSORS = [
+        "binary_sensor.pc_active",
+        "binary_sensor.computer",
+        "switch.pc",
+    ]
+
+    def _load_entities_and_thresholds(self, activity_cfg: dict):
+        """Laedt Entity-IDs und Schwellwerte aus Config (shared zwischen init/reload)."""
         entities = activity_cfg.get("entities", {})
-        self.media_players = entities.get("media_players", [
-            "media_player.wohnzimmer",
-            "media_player.fernseher",
-            "media_player.tv",
-        ])
-        self.mic_sensors = entities.get("mic_sensors", [
-            "binary_sensor.mic_active",
-            "binary_sensor.microphone",
-        ])
-        self.bed_sensors = entities.get("bed_sensors", [
-            "binary_sensor.bed_occupancy",
-            "binary_sensor.bett",
-        ])
-        self.pc_sensors = entities.get("pc_sensors", [
-            "binary_sensor.pc_active",
-            "binary_sensor.computer",
-            "switch.pc",
-        ])
+        self.media_players = entities.get("media_players", self._DEFAULT_MEDIA_PLAYERS)
+        self.mic_sensors = entities.get("mic_sensors", self._DEFAULT_MIC_SENSORS)
+        self.bed_sensors = entities.get("bed_sensors", self._DEFAULT_BED_SENSORS)
+        self.pc_sensors = entities.get("pc_sensors", self._DEFAULT_PC_SENSORS)
 
         thresholds = activity_cfg.get("thresholds", {})
         self.night_start = int(thresholds.get("night_start", 22))
         self.night_end = int(thresholds.get("night_end", 7))
         self.guest_person_count = int(thresholds.get("guest_person_count", 2))
         self.focus_min_minutes = int(thresholds.get("focus_min_minutes", 30))
+
+    def reload_config(self, activity_cfg: dict):
+        """Config aus YAML neu laden (wird von _reload_all_modules aufgerufen)."""
+        self._load_entities_and_thresholds(activity_cfg)
 
         # Silence-Keywords neu laden
         sk_cfg = activity_cfg.get("silence_keywords")
@@ -514,6 +500,74 @@ class ActivityEngine:
                     return False
         return True
 
+    # --- Auto-Discovery: Muster-Tabellen (Word-Boundary-sicher) ---
+    # Regex-Patterns: \b sorgt dafuer, dass z.B. "pc" nicht in "space" matcht.
+
+    _TV_RE = re.compile(
+        r"\b(?:tv|fernseher|television|fire_tv|firetv|apple_tv|appletv"
+        r"|chromecast|roku|shield|samsung_tv|lg_tv|sony_tv|philips_tv|bravia)\b",
+        re.IGNORECASE,
+    )
+    _MIC_RE = re.compile(
+        r"\b(?:mic|mikrofon|microphone|zoom|teams|call|telefonat"
+        r"|anruf|voip|sip|webex)\b",
+        re.IGNORECASE,
+    )
+    _BED_RE = re.compile(
+        r"\b(?:bed|bett|sleep|schlaf|matratze|mattress"
+        r"|occupancy_bed|bett_belegt|bed_occupancy)\b",
+        re.IGNORECASE,
+    )
+    _PC_RE = re.compile(
+        r"\b(?:pc|computer|rechner|desktop|workstation"
+        r"|laptop|notebook|mac_mini|imac)\b",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _auto_discover(states: list[dict], prefixes: tuple[str, ...],
+                       configured: list[str], pattern: re.Pattern,
+                       label: str, *,
+                       active_states: set[str] | None = None,
+                       inactive_states: set[str] | None = None) -> str:
+        """Generische Auto-Discovery fuer HA-Entities.
+
+        Durchsucht alle States mit passenden Entity-Prefixes nach aktiven
+        Entities, deren Name oder Friendly-Name zum Regex-Pattern passt.
+
+        Args:
+            states: HA-States Liste
+            prefixes: Entity-ID Prefixes (z.B. ("binary_sensor.",))
+            configured: Bereits konfigurierte Entity-IDs (werden uebersprungen)
+            pattern: Kompiliertes Regex-Pattern fuer Namensmatching
+            label: Log-Label (z.B. "TV", "Mic", "Bed", "PC")
+            active_states: States die als "aktiv" gelten (Whitelist)
+            inactive_states: States die als "inaktiv" gelten (Blacklist)
+                Genau eines von active_states/inactive_states muss gesetzt sein.
+
+        Returns:
+            entity_id des ersten Treffers oder "" wenn keiner gefunden.
+        """
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            if not any(entity_id.startswith(p) for p in prefixes):
+                continue
+            if entity_id in configured:
+                continue
+            s = state.get("state", "off").lower()
+            if active_states is not None and s not in active_states:
+                continue
+            if inactive_states is not None and s in inactive_states:
+                continue
+            friendly = (state.get("attributes", {}).get("friendly_name") or "")
+            if pattern.search(entity_id) or pattern.search(friendly):
+                logger.info(
+                    "%s auto-discovered: %s (state=%s, friendly=%s)",
+                    label, entity_id, s, friendly,
+                )
+                return entity_id
+        return ""
+
     def _check_media_playing(self, states: list[dict]) -> str:
         """Prueft ob ein konfigurierter Media Player aktiv ist (TV, Film).
 
@@ -521,34 +575,58 @@ class ActivityEngine:
         also jeden Zustand der bedeutet, dass der TV an ist und jemand zuschaut.
         Nur "off", "standby", "unavailable", "unknown", "idle" gelten als inaktiv.
 
+        Fallback: Wenn kein konfigurierter Player aktiv ist, werden alle
+        media_player.* Entities mit TV-typischen Mustern im Namen geprueft.
+
         Returns:
             entity_id des aktiven Players (truthy) oder "" (falsy).
         """
         inactive_states = {"off", "standby", "unavailable", "unknown", "idle"}
+
+        # 1. Konfigurierte Media Player pruefen
         for state in states:
             entity_id = state.get("entity_id", "")
             if entity_id in self.media_players:
                 s = state.get("state", "off").lower()
                 if s not in inactive_states:
                     return entity_id
-        return ""
+
+        # 2. Fallback: Auto-Discovery
+        return self._auto_discover(
+            states, ("media_player.",), self.media_players,
+            pattern=self._TV_RE, label="TV",
+            inactive_states=inactive_states,
+        )
 
     def _check_in_call(self, states: list[dict]) -> bool:
-        """Prueft ob ein Mikrofon aktiv ist (Call/Zoom)."""
+        """Prueft ob ein Mikrofon aktiv ist (Call/Zoom).
+
+        Fallback: Wenn kein konfigurierter Sensor aktiv ist, werden alle
+        binary_sensor.* mit Mikrofon/Call-Mustern im Namen geprueft.
+        """
         for state in states:
-            entity_id = state.get("entity_id", "")
-            if entity_id in self.mic_sensors:
+            if state.get("entity_id", "") in self.mic_sensors:
                 if state.get("state") == "on":
                     return True
-        return False
+        return bool(self._auto_discover(
+            states, ("binary_sensor.",), self.mic_sensors,
+            pattern=self._MIC_RE, label="Mic", active_states={"on"},
+        ))
 
     def _check_bed_occupied(self, states: list[dict]) -> bool:
-        """Prueft ob der Bettsensor belegt ist (reines Sensor-Signal)."""
+        """Prueft ob der Bettsensor belegt ist (reines Sensor-Signal).
+
+        Fallback: Wenn kein konfigurierter Sensor aktiv ist, werden alle
+        binary_sensor.* mit Bett/Schlaf-Mustern im Namen geprueft.
+        """
         for state in states:
             if state.get("entity_id", "") in self.bed_sensors:
                 if state.get("state") == "on":
                     return True
-        return False
+        return bool(self._auto_discover(
+            states, ("binary_sensor.",), self.bed_sensors,
+            pattern=self._BED_RE, label="Bed", active_states={"on"},
+        ))
 
     def _check_sleeping(self, states: list[dict]) -> bool:
         """Prueft ob der Benutzer schlaeft.
@@ -557,30 +635,30 @@ class ActivityEngine:
         Bett belegt + TV an = NICHT sleeping (fernsehen im Bett) → wird WATCHING.
         Nacht + alle Lichter aus = wahrscheinlich schlaeft (Fallback ohne Bettsensor).
         """
-        # PC aktiv oder Media spielt → User ist wach, auch im Bett
         if self._check_pc_active(states) or self._check_media_playing(states):
             return False
-
-        # Bett belegt + kein TV/PC → schlaeft
         if self._check_bed_occupied(states):
             return True
-
-        # Fallback: Nacht + alle Lichter aus (fuer Installationen ohne Bettsensor)
         now = datetime.now()
         is_night = now.hour >= self.night_start or now.hour < self.night_end
         if is_night:
             return self._check_lights_off(states)
-
         return False
 
     def _check_pc_active(self, states: list[dict]) -> bool:
-        """Prueft ob der PC aktiv ist (Arbeit/Fokus)."""
+        """Prueft ob der PC aktiv ist (Arbeit/Fokus).
+
+        Fallback: Wenn kein konfigurierter Sensor aktiv ist, werden alle
+        binary_sensor.* und switch.* mit PC/Computer-Mustern im Namen geprueft.
+        """
         for state in states:
-            entity_id = state.get("entity_id", "")
-            if entity_id in self.pc_sensors:
+            if state.get("entity_id", "") in self.pc_sensors:
                 if state.get("state") in ("on", "active"):
                     return True
-        return False
+        return bool(self._auto_discover(
+            states, ("binary_sensor.", "switch."), self.pc_sensors,
+            pattern=self._PC_RE, label="PC", active_states={"on", "active"},
+        ))
 
     def _check_guests(self, states: list[dict]) -> bool:
         """Prueft ob echte Gaeste anwesend sind (nicht nur Haushaltsmitglieder)."""

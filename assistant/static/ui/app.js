@@ -1006,7 +1006,7 @@ function renderCurrentTab() {
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-remote': c.innerHTML = renderRemote(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadEmergencyProtocols(); break;
-      case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); break;
+      case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); loadAutomations(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
       case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); break;
       case 'tab-intelligence': c.innerHTML = renderIntelligence(); break;
@@ -4570,6 +4570,10 @@ function renderAutonomie() {
     fNum('self_automation.max_per_day', 'Max. Automationen pro Tag', 1, 20) +
     fModelSelect('self_automation.model', 'Modell fuer Automations-Erstellung')
   ) +
+  sectionWrap('&#128270;', 'Automationen — Uebersicht',
+    fInfo('Alle Automationen aus Home Assistant und von Jarvis erstellte Automationen.') +
+    '<div id="automations-panel"><div class="muted" style="padding:8px">Lade Automationen...</div></div>'
+  ) +
   sectionWrap('&#129504;', 'Lern-System (Global)',
     fInfo('Globaler Schalter fuer ALLE Lern-Features. Deaktivieren stoppt sofort: Outcome Tracker, Korrektur-Gedaechtnis, Response Quality, Error Patterns, Adaptive Thresholds und Self-Report.') +
     fToggle('learning.enabled', 'Alle Lern-Features aktiv')
@@ -4712,6 +4716,89 @@ async function runAnalysis() {
     toast(result.message);
     loadOptStatus();
   } catch(e) { toast('Analyse-Fehler', 'error'); }
+}
+
+async function loadAutomations() {
+  const panel = document.getElementById('automations-panel');
+  if (!panel) return;
+  try {
+    const data = await api('/api/ui/automations');
+    const ha = data.ha_automations || [];
+    const jarvis = data.jarvis_automations || [];
+    let html = '';
+
+    // --- Jarvis-Automationen ---
+    html += '<div class="field-label" style="margin-top:8px">VON JARVIS ERSTELLT (' + jarvis.length + ')</div>';
+    if (jarvis.length === 0) {
+      html += '<div class="muted" style="padding:4px 8px">Noch keine Jarvis-Automationen erstellt.</div>';
+    } else {
+      jarvis.forEach(a => {
+        const active = a.state === 'on';
+        const statusCls = active ? 'color:var(--accent)' : 'color:var(--muted)';
+        const statusTxt = active ? 'aktiv' : 'deaktiviert';
+        const lt = a.last_triggered && a.last_triggered !== 'nie' ? new Date(a.last_triggered).toLocaleString('de-DE') : 'nie';
+        html += '<div class="card" style="margin:4px 0;padding:8px;display:flex;justify-content:space-between;align-items:center">';
+        html += '<div><strong>' + esc(a.alias) + '</strong><br><span class="muted" style="font-size:0.85em">' + esc(a.config_id) + ' &middot; <span style="' + statusCls + '">' + statusTxt + '</span> &middot; Zuletzt: ' + lt + '</span></div>';
+        html += '<div style="display:flex;gap:6px">';
+        html += '<button class="btn btn-small" onclick="toggleJarvisAutomation(\'' + esc(a.entity_id) + '\')">' + (active ? 'Deaktivieren' : 'Aktivieren') + '</button>';
+        html += '<button class="btn btn-small btn-danger" onclick="deleteJarvisAutomation(\'' + esc(a.config_id) + '\')">Loeschen</button>';
+        html += '</div></div>';
+      });
+    }
+
+    // --- HA-Automationen ---
+    html += '<div class="field-label" style="margin-top:16px">HOME ASSISTANT AUTOMATIONEN (' + ha.length + ')</div>';
+    if (ha.length === 0) {
+      html += '<div class="muted" style="padding:4px 8px">Keine Automationen gefunden.</div>';
+    } else {
+      ha.forEach(a => {
+        const enabled = a.enabled !== false;
+        const statusCls = enabled ? 'color:var(--accent)' : 'color:var(--muted)';
+        const statusTxt = enabled ? 'aktiv' : 'deaktiviert';
+        const lt = a.last_triggered ? new Date(a.last_triggered).toLocaleString('de-DE') : '—';
+        const triggers = a.trigger ? (Array.isArray(a.trigger) ? a.trigger : [a.trigger]) : [];
+        const actions = a.action ? (Array.isArray(a.action) ? a.action : [a.action]) : [];
+        const triggerTxt = triggers.map(t => t.platform || t.trigger || t.alias || JSON.stringify(t).substring(0,60)).join(', ');
+        const actionTxt = actions.map(ac => ac.service || ac.action || ac.alias || JSON.stringify(ac).substring(0,60)).join(', ');
+        html += '<div class="card" style="margin:4px 0;padding:8px">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+        html += '<strong>' + esc(a.alias || a.id) + '</strong>';
+        html += '<span style="font-size:0.85em;' + statusCls + '">' + statusTxt + '</span>';
+        html += '</div>';
+        if (a.description) html += '<div class="muted" style="font-size:0.85em;margin-top:2px">' + esc(a.description) + '</div>';
+        html += '<div style="font-size:0.8em;margin-top:4px;color:var(--muted)">';
+        if (triggerTxt) html += '<div>Trigger: ' + esc(triggerTxt) + '</div>';
+        if (actionTxt) html += '<div>Aktion: ' + esc(actionTxt) + '</div>';
+        if (lt !== '—') html += '<div>Zuletzt: ' + lt + '</div>';
+        html += '</div></div>';
+      });
+    }
+
+    panel.innerHTML = html;
+  } catch(e) {
+    panel.innerHTML = '<div class="muted" style="padding:8px">Fehler beim Laden: ' + esc(e.message) + '</div>';
+  }
+}
+
+async function toggleJarvisAutomation(entityId) {
+  try {
+    const result = await api('/api/ui/automations/jarvis/' + encodeURIComponent(entityId) + '/toggle', 'POST');
+    if (result.success) {
+      toast('Automation ' + (result.new_state === 'on' ? 'aktiviert' : 'deaktiviert'));
+      loadAutomations();
+    } else { toast(result.message, 'error'); }
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function deleteJarvisAutomation(configId) {
+  if (!confirm('Jarvis-Automation "' + configId + '" wirklich loeschen?')) return;
+  try {
+    const result = await api('/api/ui/automations/jarvis/' + encodeURIComponent(configId), 'DELETE');
+    if (result.success) {
+      toast('Automation geloescht');
+      loadAutomations();
+    } else { toast(result.message, 'error'); }
+  } catch(e) { toast('Fehler: ' + e.message, 'error'); }
 }
 
 async function loadSnapshots() {
@@ -8134,7 +8221,7 @@ function renderVacuum() {
       {v:'mon',l:'Mo'}, {v:'tue',l:'Di'}, {v:'wed',l:'Mi'},
       {v:'thu',l:'Do'}, {v:'fri',l:'Fr'}, {v:'sat',l:'Sa'}, {v:'sun',l:'So'}
     ], 'Gilt fuer Modus "Fester Wochenplan" und "Beides".') +
-    fRange('vacuum.auto_clean.schedule_time', 'Uhrzeit (Wochenplan)', 6, 20, 1, {6:'06:00',7:'07:00',8:'08:00',9:'09:00',10:'10:00',11:'11:00',12:'12:00',13:'13:00',14:'14:00',15:'15:00',16:'16:00',17:'17:00',18:'18:00',19:'19:00',20:'20:00'}) +
+    fRange('vacuum.auto_clean.schedule_time', 'Uhrzeit (Wochenplan)', 2, 20, 1, {2:'02:00',3:'03:00',4:'04:00',5:'05:00',6:'06:00',7:'07:00',8:'08:00',9:'09:00',10:'10:00',11:'11:00',12:'12:00',13:'13:00',14:'14:00',15:'15:00',16:'16:00',17:'17:00',18:'18:00',19:'19:00',20:'20:00'}) +
     fToggle('vacuum.auto_clean.when_nobody_home', 'Nur wenn niemand zuhause (Smart-Modus)') +
     fRange('vacuum.auto_clean.min_hours_between', 'Mindestabstand (Std)', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'}) +
     fRange('vacuum.auto_clean.preferred_time_start', 'Smart: Bevorzugt ab (Uhr)', 6, 18, 1) +
