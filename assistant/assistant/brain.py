@@ -2375,6 +2375,41 @@ class AssistantBrain(BrainCallbacksMixin):
         self._active_conversation_mode = _conversation_mode
         self._active_conversation_topic = _conversation_topic
 
+        # 3c. Gespraechsmodus Model-Upgrade: JARVIS-Persoenlichkeit braucht
+        # mindestens das Smart-Modell. Das Fast-Modell (4B) kann den Charakter
+        # nicht zuverlaessig halten.
+        _text_low = text.lower()
+        _personal_kw = [
+            "wie geht es", "wie gehts", "wie geht's",
+            "guten morgen", "guten abend", "gute nacht",
+            "wer bist du", "was machst du", "was tust du",
+            "bist du", "hast du", "kannst du", "magst du",
+            "was denkst du", "was meinst du", "was haeltst du",
+            "was hältst du", "findest du",
+            "erzaehl", "erzähl",
+        ]
+        _is_personal = any(kw in _text_low for kw in _personal_kw)
+
+        if model == self.model_router.model_fast:
+            _needs_smart = False
+            if _conversation_mode:
+                _needs_smart = True
+                logger.info("Conversation-Upgrade: Fast -> Smart (Gespraechsmodus)")
+            if _is_personal:
+                _needs_smart = True
+                logger.info("Conversation-Upgrade: Fast -> Smart (persoenliche Frage)")
+            if _needs_smart and self.model_router._smart_available:
+                model = self.model_router.model_smart
+
+        # Tiefe Gespraeche: Smart -> Deep (wenn verfuegbar)
+        # Gespraechsmodus + laengere Frage ODER persoenliche Frage mit >8 Woertern
+        if (model == self.model_router.model_smart
+                and self.model_router._deep_available
+                and _conversation_mode
+                and (len(text.split()) >= 8 or _is_personal)):
+            model = self.model_router.model_deep
+            logger.info("Conversation-Upgrade: Smart -> Deep (tiefes Gespraech)")
+
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
         # Formality-Score cachen für Refinement-Prompts (Tool-Feedback)
         self._last_formality_score = formality_score if formality_score is not None else self.personality.formality_start
