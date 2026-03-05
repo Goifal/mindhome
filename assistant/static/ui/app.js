@@ -6204,7 +6204,7 @@ function renderCovers() {
     fToggle('seasonal_actions.cover_automation.weather_protection', 'Wetter/Sturmschutz') +
     fToggle('seasonal_actions.cover_automation.night_insulation', 'Nachts schliessen (Isolierung)') +
     fRange('seasonal_actions.cover_automation.heat_protection_temp', 'Hitzeschutz ab Aussentemp (°C)', 20, 40, 1, {20:'20°C',25:'25°C',26:'26°C',28:'28°C',30:'30°C',35:'35°C',40:'40°C'}) +
-    fRange('seasonal_actions.cover_automation.frost_protection_temp', 'Frostschutz ab (°C)', -10, 10, 1, {'-5':'-5°C',0:'0°C',3:'3°C',5:'5°C',10:'10°C'}) +
+    fRange('seasonal_actions.cover_automation.frost_protection_temp', 'Frostschutz ab (°C)', -10, 15, 1, {'-5':'-5°C',0:'0°C',5:'5°C',10:'10°C',15:'15°C'}) +
     fRange('seasonal_actions.cover_automation.storm_wind_speed', 'Sturm-Windgeschwindigkeit (km/h)', 20, 100, 5, {20:'20',30:'30',40:'40',50:'50',60:'60',80:'80',100:'100'}) +
     fToggle('seasonal_actions.cover_automation.inverted_position', 'Positionen invertiert (0=offen, 100=zu, z.B. Shelly/MQTT)')
   ) +

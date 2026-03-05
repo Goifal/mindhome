@@ -2859,7 +2859,7 @@ class ProactiveManager:
         markise_wind = markise_cfg.get("wind_retract_speed", 40)
         rain_retract = markise_cfg.get("rain_retract", True)
 
-        rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy"}
+        rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy", "lightning"}
         is_raining = condition in rain_conditions or weather.get("rain", False)
         if (rain_retract and is_raining) or wind >= markise_wind:
             for s in (states or []):
@@ -2970,7 +2970,9 @@ class ProactiveManager:
             effective_temp = temp
             if indoor_sensor:
                 indoor_temp = self._get_indoor_temp(states, indoor_sensor)
-                if indoor_temp > 0:
+                if indoor_temp != 0.0 or any(
+                    s.get("entity_id") == indoor_sensor for s in (states or [])
+                ):
                     effective_temp = max(temp, indoor_temp)
 
             # Feature 14: Sitzsensor — Blendschutz unabhaengig von Temperatur
@@ -3175,9 +3177,9 @@ class ProactiveManager:
 
         try:
             ot = open_time.split(":")
-            open_min = int(ot[0]) * 60 + int(ot[1])
+            open_min = max(0, min(1439, int(ot[0]) * 60 + int(ot[1])))
             ct = close_time.split(":")
-            close_min = int(ct[0]) * 60 + int(ct[1])
+            close_min = max(0, min(1439, int(ct[0]) * 60 + int(ct[1])))
         except (ValueError, IndexError):
             open_min, close_min = 450, 1140
 
@@ -3350,7 +3352,7 @@ class ProactiveManager:
                         try:
                             stored = await redis_client.get("mha:cover:vac_var_offset")
                             if stored:
-                                var_offset = int(stored)
+                                var_offset = int(stored if isinstance(stored, (str, int)) else stored.decode())
                             else:
                                 var_offset = random.randint(-variation, variation)
                                 await redis_client.set("mha:cover:vac_var_offset", str(var_offset), ex=86400)
@@ -3358,20 +3360,30 @@ class ProactiveManager:
                             var_offset = random.randint(-variation, variation)
                     elif variation > 0:
                         var_offset = random.randint(-variation, variation)
-                    morning_min = morning_hour * 60 + var_offset
-                    evening_min = evening_hour * 60 + var_offset
-                    night_min = night_hour * 60 + var_offset
+                    morning_min = max(0, morning_hour * 60 + var_offset)
+                    evening_min = max(0, evening_hour * 60 + var_offset)
+                    night_min = max(0, night_hour * 60 + var_offset)
 
-                    # Morgens oeffnen (mit Variation)
+                    # Morgens oeffnen (mit Variation + Sonnencheck)
                     if abs(current_minutes - morning_min) <= tolerance:
-                        for cs in (states or []):
-                            eid = cs.get("entity_id", "")
-                            if eid.startswith("cover.") and await self.brain.executor._is_safe_cover(eid, cs):
-                                if not self.brain.executor._is_markise(eid, cs):
-                                    await self._auto_cover_action(
-                                        eid, 100, "Urlaubssimulation (morgens)",
-                                        auto_level, redis_client,
-                                    )
+                        _vac_skip = False
+                        if cover_cfg.get("wakeup_sun_check", True):
+                            _sun = self._get_sun_data(states)
+                            _min_elev = cover_cfg.get("wakeup_min_sun_elevation", -6)
+                            if _sun.get("elevation", 0) < _min_elev:
+                                _vac_skip = True
+                                logger.info("Urlaubssimulation: Morgens uebersprungen — Sonne zu tief (%.1f° < %s°)",
+                                            _sun.get("elevation", 0), _min_elev)
+                        if not _vac_skip:
+                            for cs in (states or []):
+                                eid = cs.get("entity_id", "")
+                                if eid.startswith("cover.") and await self.brain.executor._is_safe_cover(eid, cs):
+                                    if not self.brain.executor._is_markise(eid, cs):
+                                        await self._auto_cover_action(
+                                            eid, 100, "Urlaubssimulation (morgens)",
+                                            auto_level, redis_client,
+                                        )
+                            last_schedule_action = "open"
 
                     # Abends teilweise schliessen (mit Variation)
                     elif abs(current_minutes - evening_min) <= tolerance:
@@ -3383,8 +3395,9 @@ class ProactiveManager:
                                         eid, 30, "Urlaubssimulation (abends, Sichtschutz)",
                                         auto_level, redis_client,
                                     )
+                        last_schedule_action = "close"
 
-                    # Bug 1: night_hour — nachts komplett zu
+                    # Nachts komplett zu
                     elif abs(current_minutes - night_min) <= tolerance:
                         for cs in (states or []):
                             eid = cs.get("entity_id", "")
@@ -3394,6 +3407,7 @@ class ProactiveManager:
                                         eid, 0, "Urlaubssimulation (Nacht)",
                                         auto_level, redis_client,
                                     )
+                        last_schedule_action = "close"
 
         return last_schedule_action
 
@@ -3411,11 +3425,11 @@ class ProactiveManager:
         wind = weather.get("wind_speed", 0)
         condition = weather.get("condition", "")
         elevation = sun.get("elevation", 0) if sun else 0
-        rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy"}
+        rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy", "lightning"}
         is_raining = condition in rain_conditions or weather.get("rain", False)
 
         if temp >= sun_extend_temp and elevation > 10 and wind < markise_wind and not is_raining:
-            sunny_conditions = {"sunny", "partlycloudy", "clear-night", "windy"}
+            sunny_conditions = {"sunny", "partlycloudy", "windy"}
             if condition in sunny_conditions or condition == "":
                 for s in (states or []):
                     eid = s.get("entity_id", "")
@@ -3591,7 +3605,7 @@ class ProactiveManager:
         """Hoher CO2 + gutes Wetter → Rolllaeden auf + Benachrichtigung."""
         temp = weather.get("temperature", 10)
         condition = weather.get("condition", "")
-        rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy"}
+        rain_conditions = {"rainy", "pouring", "hail", "lightning-rainy", "lightning"}
         is_raining = condition in rain_conditions or weather.get("rain", False)
 
         if is_raining or temp < 10 or temp > 25:
