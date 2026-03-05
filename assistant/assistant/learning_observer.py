@@ -35,6 +35,20 @@ KEY_AUTOMATED = "mha:learning:automated"  # F-053: Tracks automated entity+times
 WEEKDAY_NAMES_DE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
 
+def _parse_person_prefix(action: str) -> tuple[str, str]:
+    """Extrahiert Person-Prefix aus einem Redis-Action-Key.
+
+    Format mit Person: "julia:light.wohnzimmer:on" → ("julia", "light.wohnzimmer:on")
+    Format ohne:       "light.wohnzimmer:on"       → ("", "light.wohnzimmer:on")
+
+    Erkennung: Erster Teil vor ':' hat keinen Punkt → ist Person-Name (Entity-IDs haben immer Punkte).
+    """
+    parts = action.split(":", 1)
+    if len(parts) == 2 and "." not in parts[0]:
+        return parts[0], parts[1]
+    return "", action
+
+
 class LearningObserver:
     """Beobachtet manuelle Aktionen und schlaegt Automatisierungen vor."""
 
@@ -314,6 +328,8 @@ class LearningObserver:
         patterns = []
 
         # Tages-Muster lesen
+        # Key: mha:learning:patterns:[person:]entity:state:HH:MM
+        # Achtung: time_slot ist HH:MM (enthaelt Doppelpunkt) → rsplit(":", 2)
         cursor = 0
         while True:
             cursor, keys = await self.redis.scan(
@@ -325,36 +341,67 @@ class LearningObserver:
                 if count:
                     count_val = int(count)
                     if count_val >= 2:  # Ab 2 Wiederholungen anzeigen
-                        # Parse: mha:learning:patterns:[person:]entity:state:timeslot
                         suffix = key_str.replace(f"{KEY_PATTERNS}:", "")
-                        parts = suffix.rsplit(":", 1)
-                        if len(parts) == 2:
-                            action, time_slot = parts
-                            # Person aus Key extrahieren (person:entity:state Format)
-                            pattern_person = ""
-                            entity_action = action
-                            # Pruefen ob ein Person-Prefix vorhanden ist
-                            # Format mit Person: "julia:light.wohnzimmer:on"
-                            # Format ohne:       "light.wohnzimmer:on"
-                            action_parts = action.split(":", 1)
-                            if len(action_parts) == 2 and "." not in action_parts[0]:
-                                # Erster Teil hat keinen Punkt → ist Person-Prefix
-                                pattern_person = action_parts[0]
-                                entity_action = action_parts[1]
+                        # rsplit 2 → ["[person:]entity:state", "HH", "MM"]
+                        parts = suffix.rsplit(":", 2)
+                        if len(parts) != 3 or not parts[1].isdigit():
+                            continue
+                        action, ts_hour, ts_min = parts
+                        time_slot = f"{ts_hour}:{ts_min}"
 
-                            # Person-Filter anwenden
-                            if person and pattern_person != person:
-                                continue
+                        pattern_person, entity_action = _parse_person_prefix(action)
 
-                            entity_state = entity_action.rsplit(":", 1)
-                            patterns.append({
-                                "action": entity_action,
-                                "entity": entity_state[0] if len(entity_state) > 1 else entity_action,
-                                "time_slot": time_slot,
-                                "count": count_val,
-                                "weekday": -1,
-                                "person": pattern_person,
-                            })
+                        if person and pattern_person != person:
+                            continue
+
+                        entity_state = entity_action.rsplit(":", 1)
+                        patterns.append({
+                            "action": entity_action,
+                            "entity": entity_state[0] if len(entity_state) > 1 else entity_action,
+                            "time_slot": time_slot,
+                            "count": count_val,
+                            "weekday": -1,
+                            "person": pattern_person,
+                        })
+            if cursor == 0:
+                break
+
+        # Wochentag-Muster lesen
+        # Key: mha:learning:weekday_patterns:[person:]entity:state:HH:MM:weekday
+        cursor = 0
+        while True:
+            cursor, keys = await self.redis.scan(
+                cursor, match=f"{KEY_WEEKDAY_PATTERNS}:*", count=50
+            )
+            for key in keys:
+                key_str = key.decode() if isinstance(key, bytes) else key
+                count = await self.redis.get(key)
+                if count:
+                    count_val = int(count)
+                    if count_val >= 2:
+                        suffix = key_str.replace(f"{KEY_WEEKDAY_PATTERNS}:", "")
+                        # rsplit 3 → ["[person:]entity:state", "HH", "MM", "weekday"]
+                        parts = suffix.rsplit(":", 3)
+                        if len(parts) != 4 or not parts[3].isdigit():
+                            continue
+                        action, ts_hour, ts_min, weekday_str = parts
+                        time_slot = f"{ts_hour}:{ts_min}"
+                        weekday_val = int(weekday_str)
+
+                        pattern_person, entity_action = _parse_person_prefix(action)
+
+                        if person and pattern_person != person:
+                            continue
+
+                        entity_state = entity_action.rsplit(":", 1)
+                        patterns.append({
+                            "action": entity_action,
+                            "entity": entity_state[0] if len(entity_state) > 1 else entity_action,
+                            "time_slot": time_slot,
+                            "count": count_val,
+                            "weekday": weekday_val,
+                            "person": pattern_person,
+                        })
             if cursor == 0:
                 break
 
