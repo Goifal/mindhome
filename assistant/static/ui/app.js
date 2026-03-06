@@ -88,6 +88,7 @@ const _searchIndex = [
   {tab:'tab-proactive', title:'Rueckkehr-Briefing', keywords:'abwesenheit rueckkehr briefing klingel waschmaschine', icon:'&#128218;'},
   {tab:'tab-proactive', title:'Einkaufslisten-Erinnerung', keywords:'einkaufsliste shopping abschied verlassen departure', icon:'&#128722;'},
   {tab:'tab-proactive', title:'Smart Shopping', keywords:'smart shopping einkauf verbrauch prognose rezept zutaten muster', icon:'&#128722;'},
+  {tab:'tab-proactive', title:'Energie-Dashboard', keywords:'energie solar strom verbrauch einspeisung preis dashboard live watt', icon:'&#9889;'},
   {tab:'tab-proactive', title:'Jarvis denkt voraus', keywords:'insights wetter kalender energie fenster frost', icon:'&#129504;'},
   {tab:'tab-proactive', title:'Event-Handler', keywords:'event prioritaet critical high medium low', icon:'&#128226;'},
   {tab:'tab-proactive', title:'Spontane Beobachtungen', keywords:'beobachtungen energie streak rekorde meilensteine', icon:'&#128065;'},
@@ -728,8 +729,75 @@ async function loadDashboard() {
       <div style="padding:8px 0;display:flex;justify-content:space-between;">
         <span style="font-size:12px;">Redis</span><span style="font-size:11px;color:${mem.redis_connected?'var(--success)':'var(--danger)'};">${mem.redis_connected?'Verbunden':'Getrennt'}</span></div>`;
   } catch(e) { console.error('Dashboard fail:', e); }
-  // Szenen-Widget parallel laden
+  // Szenen-Widget + Energie parallel laden
   loadSceneStatus();
+  refreshEnergyDashboard();
+}
+
+// ---- Energie-Dashboard Live Widget ----
+async function refreshEnergyDashboard() {
+  try {
+    const d = await api('/api/ui/energy/live');
+    const card = document.getElementById('energyDashCard');
+    const cont = document.getElementById('energyDashContent');
+    const ts = document.getElementById('energyRefreshTs');
+    if (!card || !cont) return;
+    if (!d.available) { card.style.display = 'none'; return; }
+
+    // Mindestens 1 Wert vorhanden?
+    const hasData = d.solar_watts != null || d.consumption_watts != null || d.price_cents != null || d.grid_export_watts != null;
+    if (!hasData) { card.style.display = 'none'; return; }
+
+    card.style.display = '';
+    if (ts) ts.textContent = new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+
+    let html = '';
+
+    // Solar
+    if (d.solar_watts != null) {
+      const pct = d.solar_watts > 0 ? Math.min(100, (d.solar_watts / (d.thresholds?.solar_high || 5000)) * 100) : 0;
+      const col = d.solar_watts > (d.thresholds?.solar_high || 5000) ? 'var(--success)' : d.solar_watts > 500 ? 'var(--accent)' : 'var(--text-secondary)';
+      html += `<div class="stat-card">
+        <div class="stat-label">&#9728;&#65039; Solar</div>
+        <div class="stat-value" style="color:${col}">${d.solar_watts >= 1000 ? (d.solar_watts/1000).toFixed(1)+' kW' : Math.round(d.solar_watts)+' W'}</div>
+        <div style="margin-top:6px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:${col};border-radius:2px;transition:width .5s;"></div>
+        </div></div>`;
+    }
+
+    // Verbrauch
+    if (d.consumption_watts != null) {
+      const col = d.consumption_watts > 3000 ? 'var(--danger)' : d.consumption_watts > 1500 ? 'var(--warning, orange)' : 'var(--text)';
+      html += `<div class="stat-card">
+        <div class="stat-label">&#128268; Verbrauch</div>
+        <div class="stat-value" style="color:${col}">${d.consumption_watts >= 1000 ? (d.consumption_watts/1000).toFixed(1)+' kW' : Math.round(d.consumption_watts)+' W'}</div>
+        <div class="stat-sub">${d.self_sufficiency_percent != null ? Math.round(d.self_sufficiency_percent)+'% Eigenversorgung' : ''}</div></div>`;
+    }
+
+    // Netz (Export/Import)
+    if (d.grid_export_watts != null) {
+      const isExport = d.grid_export_watts > 0;
+      const val = Math.abs(d.grid_export_watts);
+      const col = isExport ? 'var(--success)' : 'var(--danger)';
+      const label = isExport ? 'Einspeisung' : 'Netzbezug';
+      html += `<div class="stat-card">
+        <div class="stat-label">${isExport ? '&#9889;&#8593;' : '&#9889;&#8595;'} ${label}</div>
+        <div class="stat-value" style="color:${col}">${val >= 1000 ? (val/1000).toFixed(1)+' kW' : Math.round(val)+' W'}</div>
+        <div class="stat-sub">${isExport ? 'ins Netz' : 'vom Netz'}</div></div>`;
+    }
+
+    // Strompreis
+    if (d.price_cents != null) {
+      const col = d.price_status === 'low' ? 'var(--success)' : d.price_status === 'high' ? 'var(--danger)' : 'var(--text)';
+      const label = d.price_status === 'low' ? 'Guenstig' : d.price_status === 'high' ? 'Teuer' : 'Normal';
+      html += `<div class="stat-card">
+        <div class="stat-label">&#128176; Strompreis</div>
+        <div class="stat-value" style="color:${col}">${d.price_cents.toFixed(1)} ct</div>
+        <div class="stat-sub">${label} (pro kWh)</div></div>`;
+    }
+
+    cont.innerHTML = html;
+  } catch(e) { /* silent */ }
 }
 
 // ---- Live-Status Auto-Refresh ----
@@ -756,8 +824,9 @@ async function refreshLiveStatus() {
     if (wb) wb.style.display = d.whisper_mode ? '' : 'none';
     const sb = document.getElementById('statusBadge');
     if (sb) { sb.textContent = d.components_ok ? 'Online' : 'Offline'; sb.className = 'badge ' + (d.components_ok ? 'badge-ok' : 'badge-err'); }
-    // Szenen-Widget aktualisieren
+    // Szenen + Energie aktualisieren
     loadSceneStatus();
+    refreshEnergyDashboard();
     // Mood und Stress im Status-Bereich aktualisieren
     const mi = document.getElementById('moodInfo');
     if (mi && d.mood) {
@@ -1524,6 +1593,15 @@ const HELP_TEXTS = {
   'heating.weather_adjust.wind_offset': {title:'Wind-Offset', text:'Um wie viel Grad die Heizung bei starkem Wind erhoeht wird.'},
   'insights.checks.frost_heating': {title:'Frost + Heizung', text:'Warnt wenn Frost erwartet wird und Heizung aus/abwesend ist.'},
   'insights.checks.calendar_travel': {title:'Reise + Haus', text:'Erkennt Reise-Termine und prueft Alarm, Fenster, Heizung.'},
+  'energy.enabled': {title:'Energiemanagement', text:'Aktiviert Energie-Monitoring, Live-Dashboard und proaktive Strom-Tipps.'},
+  'energy.entities.electricity_price': {title:'Strompreis-Sensor', text:'HA-Entity fuer den aktuellen Strompreis. Unterstuetzt ct/kWh, EUR/kWh und EUR/MWh (wird automatisch umgerechnet).'},
+  'energy.entities.total_consumption': {title:'Verbrauchs-Sensor', text:'HA-Entity fuer den aktuellen Stromverbrauch in Watt.'},
+  'energy.entities.solar_production': {title:'Solar-Sensor', text:'HA-Entity fuer die aktuelle Solar-Produktion in Watt.'},
+  'energy.entities.grid_export': {title:'Einspeisung-Sensor', text:'HA-Entity fuer die Netz-Einspeisung in Watt (wie viel Strom ins Netz zurueckfliesst).'},
+  'energy.thresholds.price_low_cent': {title:'Guenstig-Schwelle', text:'Unter diesem Preis (ct/kWh) gilt Strom als guenstig — Jarvis empfiehlt dann energieintensive Geraete zu starten.'},
+  'energy.thresholds.price_high_cent': {title:'Teuer-Schwelle', text:'Ueber diesem Preis (ct/kWh) gilt Strom als teuer — Jarvis warnt vor hohen Kosten.'},
+  'energy.thresholds.solar_high_watts': {title:'Solar-Ueberschuss', text:'Ab dieser Leistung (Watt) erkennt Jarvis Solar-Ueberschuss und schlaegt vor, Geraete zu starten.'},
+  'energy.thresholds.anomaly_increase_percent': {title:'Anomalie-Schwelle', text:'Ab wie viel Prozent Abweichung vom Durchschnitt ein ungewoehnlicher Verbrauch gemeldet wird.'},
   'insights.checks.energy_anomaly': {title:'Energie-Anomalie', text:'Meldet wenn der Verbrauch deutlich ueber dem Durchschnitt liegt.'},
   'insights.checks.away_devices': {title:'Abwesend + Geraete', text:'Meldet wenn niemand da ist aber Licht/Fenster offen sind.'},
   'insights.checks.temp_drop': {title:'Temperatur-Abfall', text:'Erkennt wenn die Temperatur ungewoehnlich schnell faellt.'},
@@ -3828,6 +3906,20 @@ function renderProactive() {
     fRange('smart_shopping.min_purchases', 'Mindest-Kaeufe fuer Prognose', 2, 10, 1, {2:'2',3:'3',5:'5',10:'10'}) +
     fRange('smart_shopping.reminder_days_before', 'Erinnerung X Tage vorher', 0, 7, 1, {0:'Am Tag',1:'1 Tag',2:'2 Tage',3:'3 Tage',7:'1 Woche'}) +
     fRange('smart_shopping.reminder_cooldown_hours', 'Erinnerungs-Cooldown', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'})
+  ) +
+  sectionWrap('&#9889;', 'Energie-Dashboard',
+    fInfo('Live-Anzeige von Solar-Ertrag, Stromverbrauch, Netz-Einspeisung und Strompreis im Dashboard. Weise die passenden HA-Sensoren zu — ohne Sensoren nutzt Jarvis eine automatische Keyword-Suche.') +
+    fToggle('energy.enabled', 'Energiemanagement aktiv') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Sensor-Entities</div>' +
+    fEntityPickerSingle('energy.entities.electricity_price', 'Strompreis-Sensor', ['sensor'], 'z.B. sensor.electricity_price — liefert ct/kWh, EUR/kWh oder EUR/MWh') +
+    fEntityPickerSingle('energy.entities.total_consumption', 'Verbrauchs-Sensor', ['sensor'], 'z.B. sensor.power_consumption — aktueller Verbrauch in Watt') +
+    fEntityPickerSingle('energy.entities.solar_production', 'Solar-Sensor', ['sensor'], 'z.B. sensor.solar_power — aktuelle Solar-Produktion in Watt') +
+    fEntityPickerSingle('energy.entities.grid_export', 'Netz-Einspeisung Sensor', ['sensor'], 'z.B. sensor.grid_export_power — Einspeisung in Watt') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Schwellwerte</div>' +
+    fRange('energy.thresholds.price_low_cent', 'Guenstiger Strom unter', 5, 30, 1, {5:'5 ct',10:'10 ct',15:'15 ct',20:'20 ct',25:'25 ct',30:'30 ct'}) +
+    fRange('energy.thresholds.price_high_cent', 'Teurer Strom ueber', 20, 60, 1, {20:'20 ct',25:'25 ct',30:'30 ct',35:'35 ct',40:'40 ct',50:'50 ct',60:'60 ct'}) +
+    fRange('energy.thresholds.solar_high_watts', 'Solar-Ueberschuss ab', 500, 10000, 500, {500:'500 W',1000:'1 kW',2000:'2 kW',3000:'3 kW',5000:'5 kW',10000:'10 kW'}) +
+    fRange('energy.thresholds.anomaly_increase_percent', 'Anomalie-Schwelle', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'})
   ) +
   sectionWrap('&#128226;', 'Event-Handler',
     fInfo('Prioritaeten fuer verschiedene Event-Typen. Event-Typen mit hoeherer Prioritaet durchbrechen "Nicht stoeren". In settings.yaml unter proactive.event_handlers anpassbar.') +

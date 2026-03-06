@@ -2615,6 +2615,11 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("adaptive_thresholds", "analysis_interval_hours"): (24, 336),
         # Ollama GPU-Performance
         ("ollama", "num_gpu"): (0, 99),
+        # Energy Dashboard
+        ("energy", "thresholds", "price_low_cent"): (1, 50),
+        ("energy", "thresholds", "price_high_cent"): (10, 100),
+        ("energy", "thresholds", "solar_high_watts"): (100, 50000),
+        ("energy", "thresholds", "anomaly_increase_percent"): (10, 200),
         # Smart Shopping
         ("smart_shopping", "min_purchases"): (2, 10),
         ("smart_shopping", "reminder_days_before"): (0, 7),
@@ -3726,6 +3731,75 @@ async def ui_get_entities(token: str = "", domain: str = ""):
         return {"entities": entities, "total": len(entities)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ---------------------------------------------------------------
+# Energy Live Dashboard
+# ---------------------------------------------------------------
+
+@app.get("/api/ui/energy/live")
+async def ui_energy_live(token: str = ""):
+    """Aktuelle Energie-Werte (Solar, Verbrauch, Preis, Export) fuer Dashboard."""
+    _check_token(token)
+    try:
+        eo = brain.energy_optimizer
+        states = await brain.ha.get_states()
+        if not states:
+            return {"available": False}
+
+        # Sensor-Werte ueber EnergyOptimizer abrufen (nutzt config + keyword fallback)
+        price_raw = eo._find_sensor_value(states, eo.price_sensor, ["price", "strom", "electricity"])
+        price = None
+        if price_raw is not None:
+            price_unit = eo._find_sensor_unit(states, eo.price_sensor, ["price", "strom", "electricity"])
+            pu = (price_unit or "").lower().replace(" ", "")
+            if "eur/mwh" in pu or "€/mwh" in pu:
+                price = price_raw / 10.0
+            elif "eur/kwh" in pu or "€/kwh" in pu:
+                price = price_raw * 100.0
+            elif price_raw > 100:
+                price = price_raw / 10.0
+            elif price_raw < 1:
+                price = price_raw * 100.0
+            else:
+                price = price_raw
+
+        solar = eo._find_sensor_value(states, eo.solar_sensor, ["solar", "pv", "photovoltaik"])
+        consumption = eo._find_sensor_value(states, eo.consumption_sensor, ["consumption", "verbrauch", "power"])
+        export = eo._find_sensor_value(states, eo.grid_export_sensor, ["export", "einspeisung"])
+
+        # Selbstversorgungsgrad berechnen
+        self_sufficiency = None
+        if solar is not None and consumption is not None and consumption > 0:
+            self_sufficiency = min(100.0, (solar / consumption) * 100)
+
+        # Preis-Status
+        price_status = None
+        if price is not None:
+            if price < eo.price_low:
+                price_status = "low"
+            elif price > eo.price_high:
+                price_status = "high"
+            else:
+                price_status = "normal"
+
+        return {
+            "available": True,
+            "solar_watts": round(solar, 1) if solar is not None else None,
+            "consumption_watts": round(consumption, 1) if consumption is not None else None,
+            "grid_export_watts": round(export, 1) if export is not None else None,
+            "price_cents": round(price, 2) if price is not None else None,
+            "price_status": price_status,
+            "self_sufficiency_percent": round(self_sufficiency, 1) if self_sufficiency is not None else None,
+            "thresholds": {
+                "price_low": eo.price_low,
+                "price_high": eo.price_high,
+                "solar_high": eo.solar_high_watts,
+            },
+        }
+    except Exception as e:
+        logger.debug("Energy live endpoint: %s", e)
+        return {"available": False}
 
 
 # ---------------------------------------------------------------

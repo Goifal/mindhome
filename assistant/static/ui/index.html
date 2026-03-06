@@ -1046,6 +1046,13 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           <span id="whisperBadge" class="whisper-badge">Flüstermodus</span>
         </div>
         <div id="dashStats" class="grid grid-4"></div>
+        <div id="energyDashCard" class="card mt-md" style="display:none;">
+          <div class="card-header flex-between">
+            <h3>&#9889; Energie Live</h3>
+            <span class="text-muted-sm" id="energyRefreshTs"></span>
+          </div>
+          <div id="energyDashContent" class="grid grid-4"></div>
+        </div>
         <div class="grid grid-2 mt-md">
           <div class="card"><div class="card-header"><h3>Komponenten</h3></div><div id="compList"></div></div>
           <div class="card"><div class="card-header"><h3>Status</h3></div><div id="moodInfo"></div></div>
