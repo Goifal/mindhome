@@ -2464,8 +2464,11 @@ class AssistantBrain(BrainCallbacksMixin):
         _is_personal = any(kw in _text_low for kw in _personal_kw)
 
         if model == self.model_router.model_fast:
+            # Device-Commands bleiben auf Fast, auch im Gespraechsmodus.
+            # "Licht an" braucht keine JARVIS-Persoenlichkeit.
+            _is_device = profile.category in ("device_command", "device_query")
             _needs_smart = False
-            if _conversation_mode:
+            if _conversation_mode and not _is_device:
                 _needs_smart = True
                 logger.info("Conversation-Upgrade: Fast -> Smart (Gespraechsmodus)")
             if _is_personal:
@@ -2474,14 +2477,9 @@ class AssistantBrain(BrainCallbacksMixin):
             if _needs_smart and self.model_router._smart_available:
                 model = self.model_router.model_smart
 
-        # Tiefe Gespraeche: Smart -> Deep (wenn verfuegbar)
-        # Gespraechsmodus + laengere Frage ODER persoenliche Frage mit >8 Woertern
-        if (model == self.model_router.model_smart
-                and self.model_router._deep_available
-                and _conversation_mode
-                and (len(text.split()) >= 8 or _is_personal)):
-            model = self.model_router.model_deep
-            logger.info("Conversation-Upgrade: Smart -> Deep (tiefes Gespraech)")
+        # Smart -> Deep: Nur ueber _upgrade_signals (problem_solving, whatif, security).
+        # Keine automatische Eskalation bei Konversation — Smart reicht fuer
+        # normale Gespraeche und vermeidet 60s-Timeouts auf dem 27b.
 
         # 4. System Prompt bauen (mit Phase 6 Erweiterungen)
         # Formality-Score cachen für Refinement-Prompts (Tool-Feedback)
