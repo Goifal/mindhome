@@ -147,9 +147,13 @@ class CoverDomain(DomainPlugin):
         return True
 
     def _is_bed_occupied(self) -> bool:
-        """Prueft ob ein Bettbelegungssensor aktiv ist (jemand schlaeft)."""
+        """Prueft ob ein Bettbelegungssensor aktiv ist (jemand schlaeft).
+
+        Fail-safe: bei Fehler True zurueckgeben (lieber nicht oeffnen).
+        """
         try:
             states = self.ha.get_states() or []
             return _check_bed_occupied(states)
         except Exception:
-            return False
+            self.logger.warning("Bettbelegung konnte nicht geprueft werden — fail-safe: belegt")
+            return True

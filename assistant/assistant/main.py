@@ -335,7 +335,10 @@ async def lifespan(app: FastAPI):
     # Cover-Settings initial an Addon synchronisieren
     cover_auto = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
     if cover_auto:
-        _sync_cover_settings_to_addon(cover_auto)
+        try:
+            await _async_sync_cover_settings_to_addon(cover_auto)
+        except Exception as e:
+            logger.warning("Cover-Settings Startup-Sync fehlgeschlagen: %s", e)
 
     health = await brain.health_check()
     for component, status in health["components"].items():
@@ -3438,6 +3441,36 @@ async def _restart_speech_containers(old_speech: dict, new_speech: dict):
     return restarted
 
 
+def _build_addon_cover_config(cover_auto: dict) -> dict:
+    """Mappt settings.yaml cover_automation Keys auf CoverControlManager DEFAULT_CONFIG Keys."""
+    addon_cfg = {}
+    # Key-Mapping: settings.yaml → CoverControlManager DEFAULT_CONFIG
+    _MAPPINGS = {
+        # Aufwach-Sonnenpruefung
+        "wakeup_min_sun_elevation": ("wakeup_min_sun_elevation_deg", float),
+        # Wetterschutz
+        "storm_wind_speed": ("wind_threshold_kmh", float),
+        "frost_protection_temp": ("frost_threshold_c", float),
+        "heat_protection_temp": ("sun_protection_outdoor_temp_c", float),
+        "weather_protection": ("weather_protection_enabled", bool),
+        # Privacy
+        "privacy_mode": ("privacy_mode_enabled", bool),
+        # Night insulation
+        "night_insulation": ("frost_insulation_enabled", bool),
+        # Presence simulation
+        "presence_simulation": ("presence_simulation_enabled", bool),
+    }
+    for src_key, (dst_key, conv) in _MAPPINGS.items():
+        if src_key in cover_auto:
+            addon_cfg[dst_key] = conv(cover_auto[src_key])
+    # manual_override_hours → manual_override_duration_min (Einheit-Konvertierung)
+    if "manual_override_hours" in cover_auto:
+        addon_cfg["manual_override_duration_min"] = int(
+            cover_auto["manual_override_hours"]
+        ) * 60
+    return addon_cfg
+
+
 def _sync_cover_settings_to_addon(cover_auto: dict):
     """Synchronisiert Cover-Settings an das Addon (CoverControlManager).
 
@@ -3446,33 +3479,7 @@ def _sync_cover_settings_to_addon(cover_auto: dict):
     """
     if not cover_auto:
         return
-    addon_cfg = {}
-    # Aufwach-Sonnenpruefung
-    if "wakeup_min_sun_elevation" in cover_auto:
-        addon_cfg["wakeup_min_sun_elevation_deg"] = float(
-            cover_auto["wakeup_min_sun_elevation"]
-        )
-    # Wakeup integration: abgeleitet aus wakeup_sun_check
-    # (Addon hat wakeup_integration_enabled, aber Sun-Check ist separat)
-
-    # Wetterschutz
-    if "storm_wind_speed" in cover_auto:
-        addon_cfg["wind_threshold_kmh"] = float(cover_auto["storm_wind_speed"])
-    if "frost_protection_temp" in cover_auto:
-        addon_cfg["frost_threshold_c"] = float(cover_auto["frost_protection_temp"])
-    if "heat_protection_temp" in cover_auto:
-        addon_cfg["sun_protection_outdoor_temp_c"] = float(
-            cover_auto["heat_protection_temp"]
-        )
-    if "weather_protection" in cover_auto:
-        addon_cfg["weather_protection_enabled"] = bool(cover_auto["weather_protection"])
-    if "privacy_mode" in cover_auto:
-        addon_cfg["privacy_mode_enabled"] = bool(cover_auto["privacy_mode"])
-    if "manual_override_hours" in cover_auto:
-        addon_cfg["manual_override_duration_min"] = int(
-            cover_auto["manual_override_hours"]
-        ) * 60
-
+    addon_cfg = _build_addon_cover_config(cover_auto)
     if not addon_cfg:
         return
     try:
@@ -3489,6 +3496,17 @@ def _sync_cover_settings_to_addon(cover_auto: dict):
         logger.info("Cover-Settings an Addon synchronisiert: %s", list(addon_cfg.keys()))
     except Exception as e:
         logger.warning("Cover-Settings Addon-Sync fehlgeschlagen: %s", e)
+
+
+async def _async_sync_cover_settings_to_addon(cover_auto: dict):
+    """Async version of cover settings sync for use during startup."""
+    if not cover_auto:
+        return
+    addon_cfg = _build_addon_cover_config(cover_auto)
+    if not addon_cfg:
+        return
+    await brain.ha.mindhome_put("/api/covers/settings", addon_cfg)
+    logger.info("Cover-Settings an Addon synchronisiert (Startup): %s", list(addon_cfg.keys()))
 
 
 def _sync_speech_to_env(speech_cfg: dict):

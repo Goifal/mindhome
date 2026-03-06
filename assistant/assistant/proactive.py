@@ -3271,12 +3271,10 @@ class ProactiveManager:
             and current_minutes <= (open_min + fallback_max_min)
         )
         if in_open_window:
-            # Bedingungen prüfen: Bett + Sonnenstand
+            # Bedingungen prüfen: Sonnenstand (Bettbelegung wird per-Cover geprueft, Zeile 3302+)
             _skip_reason = None
             _is_fallback = current_minutes > (open_min + tolerance)
-            if await self._is_bed_occupied(states):
-                _skip_reason = "Bett belegt"
-            elif cover_cfg.get("wakeup_sun_check", True):
+            if cover_cfg.get("wakeup_sun_check", True):
                 _sun = self._get_sun_data(states)
                 _min_elev = cover_cfg.get("wakeup_min_sun_elevation", -6)
                 _cur_elev = _sun.get("elevation", 0)
