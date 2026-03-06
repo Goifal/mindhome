@@ -2280,14 +2280,22 @@ class AssistantBrain(BrainCallbacksMixin):
             _mega_tasks.append(("conv_memory", self.conversation_memory.get_memory_context()))
 
         _mega_keys, _mega_coros = zip(*_mega_tasks)
-        try:
-            _mega_results = await asyncio.wait_for(
-                asyncio.gather(*_mega_coros, return_exceptions=True),
-                timeout=45,  # T1: Mega-Gather Timeout
-            )
-        except asyncio.TimeoutError:
-            logger.warning("T1: Mega-gather timeout (45s) — einzelne Tasks haengen")
-            _mega_results = [asyncio.TimeoutError()] * len(_mega_keys)
+
+        # Individuelle Timeouts pro Task: Wenn ein einzelner Task haengt,
+        # gehen die anderen Ergebnisse nicht verloren (statt alles-oder-nichts).
+        async def _with_timeout(key: str, coro, timeout: float = 30):
+            try:
+                return await asyncio.wait_for(coro, timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.warning("T1: Task '%s' timeout (%.0fs)", key, timeout)
+                return asyncio.TimeoutError()
+            except Exception as e:
+                return e
+
+        _mega_results = await asyncio.gather(
+            *[_with_timeout(k, c) for k, c in zip(_mega_keys, _mega_coros)],
+            return_exceptions=True,
+        )
         _result_map = dict(zip(_mega_keys, _mega_results))
 
         # --- Context Build Ergebnis verarbeiten ---
@@ -3897,10 +3905,13 @@ class AssistantBrain(BrainCallbacksMixin):
             _ctx_data = messages[0].get("content", "") if messages else ""
             if _ctx_data:
                 # Alle Zahlen aus der Antwort extrahieren (z.B. "22 Grad", "65%")
-                _resp_numbers = set(re.findall(r"(\d+(?:[.,]\d+)?)\s*(?:Grad|°|%|Prozent)", response_text))
-                if _resp_numbers:
+                _resp_numbers_raw = set(re.findall(r"(\d+(?:[.,]\d+)?)\s*(?:Grad|°|%|Prozent)", response_text))
+                if _resp_numbers_raw:
+                    # Normalisiere Komma→Punkt (deutsches "21,0" == "21.0")
+                    _norm = lambda n: n.replace(",", ".")
+                    _resp_numbers = {_norm(n) for n in _resp_numbers_raw}
                     # Alle Zahlen aus dem Context extrahieren
-                    _ctx_numbers = set(re.findall(r"(\d+(?:[.,]\d+)?)", _ctx_data))
+                    _ctx_numbers = {_norm(n) for n in re.findall(r"(\d+(?:[.,]\d+)?)", _ctx_data)}
                     _halluc_numbers = _resp_numbers - _ctx_numbers
                     if _halluc_numbers:
                         logger.warning(
@@ -3916,7 +3927,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         _sentences = re.split(r"(?<=[.!?])\s+", response_text)
                         _clean = []
                         for s in _sentences:
-                            _s_nums = set(re.findall(r"(\d+(?:[.,]\d+)?)\s*(?:Grad|°|%|Prozent)", s))
+                            _s_nums = {_norm(n) for n in re.findall(r"(\d+(?:[.,]\d+)?)\s*(?:Grad|°|%|Prozent)", s)}
                             if not (_s_nums & _halluc_numbers):
                                 _clean.append(s)
                         if _clean:
