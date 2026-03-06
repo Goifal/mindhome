@@ -3696,6 +3696,18 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         # Household → persons/trust_levels synchronisieren
         cfg.apply_household_to_config()
 
+        # Modellnamen in settings synchronisieren (damit num_ctx_for/
+        # _get_timeout das richtige Tier erkennen — ohne das bleibt
+        # z.B. model_deep auf dem Startwert und num_ctx_for() gibt
+        # den falschen num_ctx zurueck).
+        _models_new = cfg.yaml_config.get("models", {})
+        if _models_new.get("fast"):
+            cfg.settings.model_fast = _models_new["fast"]
+        if _models_new.get("smart"):
+            cfg.settings.model_smart = _models_new["smart"]
+        if _models_new.get("deep"):
+            cfg.settings.model_deep = _models_new["deep"]
+
         # ModelRouter neu laden (Enabled-Status, Keywords)
         if hasattr(brain, "model_router") and brain.model_router:
             brain.model_router.reload_config()
