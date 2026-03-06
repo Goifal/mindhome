@@ -2794,6 +2794,8 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
         "memory": "memory_extractor",
         "entity_roles": "function_calling",
         "speaker_recognition": "speaker_recognition",
+        "conversation_memory": "conversation_memory",
+        "multi_room_audio": "multi_room_audio",
     }
 
     for config_key, attr_name in MODULE_CONFIG_MAP.items():

@@ -1814,6 +1814,18 @@ visitor_management:
   auto_guest_mode: false
   ring_cooldown_seconds: 30
   history_max: 100
+conversation_memory:
+  enabled: true
+  max_projects: 20
+  max_questions: 30
+  summary_retention_days: 30
+  question_ttl_days: 14
+multi_room_audio:
+  enabled: true
+  max_groups: 10
+  default_volume: 40
+  use_native_grouping: false
+  presets: {}
 music_dj:
   enabled: true
   proactive_enabled: false

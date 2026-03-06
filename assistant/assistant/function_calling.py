@@ -6509,8 +6509,8 @@ class FunctionExecutor:
             for p in projects:
                 ms = len(p.get("milestones", []))
                 notes = len(p.get("notes", []))
-                status_icon = {"active": "▶", "paused": "⏸", "done": "✓"}.get(p["status"], "?")
-                lines.append(f"  {status_icon} {p['name']} ({p['status']}) — {ms} Meilensteine, {notes} Notizen")
+                status_icon = {"active": "▶", "paused": "⏸", "done": "✓"}.get(p.get("status", ""), "?")
+                lines.append(f"  {status_icon} {p.get('name', '?')} ({p.get('status', '?')}) — {ms} Meilensteine, {notes} Notizen")
                 if p.get("description"):
                     lines.append(f"    {p['description']}")
                 for m in p.get("milestones", [])[-3:]:

@@ -65,6 +65,16 @@ class ConversationMemory:
         if not self.redis or not self.enabled:
             return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
 
+        if not name or not name.strip():
+            return {"success": False, "message": "Projektname darf nicht leer sein."}
+
+        name = name.strip()
+
+        # Duplikat-Check
+        existing = await self._find_project(name)
+        if existing and existing.get("name", "").lower() == name.lower():
+            return {"success": False, "message": f"Projekt '{name}' existiert bereits (Status: {existing.get('status', '?')}). Nutze update_project um es zu aendern."}
+
         project_id = f"proj_{datetime.now().strftime('%Y%m%d%H%M%S')}_{name.lower().replace(' ', '_')[:20]}"
         project = {
             "id": project_id,
@@ -216,6 +226,11 @@ class ConversationMemory:
         if not self.redis or not self.enabled:
             return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
 
+        if not question or not question.strip():
+            return {"success": False, "message": "Frage darf nicht leer sein."}
+
+        question = question.strip()
+
         q_id = f"q_{datetime.now().strftime('%Y%m%d%H%M%S%f')[:20]}"
         entry = {
             "id": q_id,
@@ -234,7 +249,8 @@ class ConversationMemory:
 
             await self.redis.hset(_KEY_OPEN_QUESTIONS, q_id, json.dumps(entry))
             logger.info("Offene Frage gespeichert: %s", question[:50])
-            return {"success": True, "message": f"Frage gemerkt: '{question[:60]}...'"}
+            q_display = question[:60] + "..." if len(question) > 60 else question
+            return {"success": True, "message": f"Frage gemerkt: '{q_display}'"}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -258,7 +274,8 @@ class ConversationMemory:
 
         try:
             await self.redis.hset(_KEY_OPEN_QUESTIONS, q["id"], json.dumps(q))
-            return {"success": True, "message": f"Frage beantwortet: '{q['question'][:50]}...'"}
+            q_display = q['question'][:50] + "..." if len(q['question']) > 50 else q['question']
+            return {"success": True, "message": f"Frage beantwortet: '{q_display}'"}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -312,7 +329,7 @@ class ConversationMemory:
                 key_str = key.decode() if isinstance(key, bytes) else key
                 val_str = val.decode() if isinstance(val, bytes) else val
                 q = json.loads(val_str)
-                # Beantwortete Fragen > 7 Tage alt entfernen
+                # Beantwortete Fragen ueber TTL entfernen
                 if q.get("status") == "answered":
                     answered = q.get("answered_at", "")
                     if answered and answered < cutoff:

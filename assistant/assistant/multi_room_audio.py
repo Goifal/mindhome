@@ -65,8 +65,18 @@ class MultiRoomAudio:
         if not self.redis or not self.enabled:
             return {"success": False, "message": "Multi-Room Audio nicht verfuegbar."}
 
+        if not name or not name.strip():
+            return {"success": False, "message": "Gruppenname darf nicht leer sein."}
+
+        name = name.strip()
+
         if not speakers:
             return {"success": False, "message": "Keine Speaker angegeben."}
+
+        # Duplikat-Check
+        existing = await self._get_group(name)
+        if existing:
+            return {"success": False, "message": f"Gruppe '{name}' existiert bereits mit {len(existing.get('speakers', []))} Speakern. Loesche sie zuerst oder nutze modify_group."}
 
         count = await self.redis.hlen(_KEY_GROUPS)
         if count >= self.max_groups:
@@ -95,6 +105,11 @@ class MultiRoomAudio:
         """Loescht eine Speaker-Gruppe."""
         if not self.redis or not self.enabled:
             return {"success": False, "message": "Multi-Room Audio nicht verfuegbar."}
+
+        if not name or not name.strip():
+            return {"success": False, "message": "Gruppenname darf nicht leer sein."}
+
+        name = name.strip()
 
         try:
             removed = await self.redis.hdel(_KEY_GROUPS, name.lower())
@@ -249,7 +264,7 @@ class MultiRoomAudio:
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            succeeded = sum(1 for r in results if not isinstance(r, Exception))
+            succeeded = sum(1 for r in results if not isinstance(r, BaseException))
             failed = len(results) - succeeded
 
             speaker_names = await self._get_speaker_names(speakers)
