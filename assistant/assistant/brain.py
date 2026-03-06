@@ -2530,8 +2530,6 @@ class AssistantBrain(BrainCallbacksMixin):
                 )
         base_tokens = _estimate_tokens(system_prompt)
         user_tokens_est = _estimate_tokens(text)
-        # Reserve: ~40% für Conversations + User-Text + Response-Space
-        section_budget = max(300, int((max_context_tokens - base_tokens - user_tokens_est) * 0.6))
 
         # Sektionen vorbereiten: (Name, Text, Prioritaet)
         # Prio 1: Sicherheit, Szenen, Mood — IMMER inkludieren
@@ -2799,15 +2797,33 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Sektionen nach Prioritaet sortieren und mit Budget einfuegen
         sections.sort(key=lambda s: s[2])
-        tokens_used = 0
         sections_added = []
         sections_dropped = []
+
+        # Phase 1: P1-Sektionen IMMER inkludieren (zaehlen nicht gegen Budget)
+        p1_tokens = 0
         for name, section_text, priority in sections:
-            section_tokens = _estimate_tokens(section_text)
-            if tokens_used + section_tokens <= section_budget or priority == 1:
-                # Prio 1 wird IMMER inkludiert, auch ueber Budget
+            if priority == 1:
                 system_prompt += section_text
-                tokens_used += section_tokens
+                p1_tokens += _estimate_tokens(section_text)
+                sections_added.append(name)
+
+        # Phase 2: Budget für P2+ aus TATSAECHLICH verbleibendem Platz berechnen
+        # (nach Base-Prompt + P1-Sektionen, nicht aus dem alten section_budget)
+        _prompt_after_p1 = _estimate_tokens(system_prompt)
+        _remaining_for_p2_and_conv = max(0, max_context_tokens - _prompt_after_p1 - user_tokens_est)
+        # 50/50 Split: Haelfte fuer P2+ Sektionen, Haelfte fuer Conversations
+        section_budget_p2 = max(200, int(_remaining_for_p2_and_conv * 0.5))
+
+        # Phase 3: P2+ Sektionen nach Budget einfuegen
+        tokens_used_p2 = 0
+        for name, section_text, priority in sections:
+            if priority == 1:
+                continue  # bereits in Phase 1 eingefuegt
+            section_tokens = _estimate_tokens(section_text)
+            if tokens_used_p2 + section_tokens <= section_budget_p2:
+                system_prompt += section_text
+                tokens_used_p2 += section_tokens
                 sections_added.append(name)
             else:
                 sections_dropped.append(f"{name}(P{priority},{section_tokens}t)")
@@ -2816,8 +2832,8 @@ class AssistantBrain(BrainCallbacksMixin):
             dropped_names = [d.split("(")[0] for d in sections_dropped]
             log_fn = logger.warning if "rag" in dropped_names else logger.info
             log_fn(
-                "Token-Budget: %d/%d Tokens, %d Sektionen, dropped: %s",
-                tokens_used, section_budget, len(sections_added),
+                "Token-Budget: P1=%dt (fix), P2+: %d/%d Tokens, %d Sektionen, dropped: %s",
+                p1_tokens, tokens_used_p2, section_budget_p2, len(sections_added),
                 ", ".join(sections_dropped),
             )
             # LLM ueber fehlenden Kontext informieren, damit es nicht halluziniert
@@ -2841,6 +2857,11 @@ class AssistantBrain(BrainCallbacksMixin):
                 f"{', '.join(readable)}. "
                 f"Antworte nur mit dem, was du sicher weisst. "
                 f"Spekuliere NICHT ueber fehlende Informationen.]"
+            )
+        else:
+            logger.info(
+                "Token-Budget: P1=%dt (fix), P2+: %d/%d Tokens, %d Sektionen, keine Drops",
+                p1_tokens, tokens_used_p2, section_budget_p2, len(sections_added),
             )
 
         # 5. Letzte Gespraeche laden (Working Memory)
