@@ -2613,6 +2613,8 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("error_patterns", "min_occurrences_for_mitigation"): (2, 10),
         ("error_patterns", "mitigation_ttl_hours"): (1, 24),
         ("adaptive_thresholds", "analysis_interval_hours"): (24, 336),
+        # Ollama GPU-Performance
+        ("ollama", "num_gpu"): (0, 99),
         # Model Profiles — Wertebereiche fuer LLM-Parameter
         # (Gilt fuer alle Profile: default, qwen3.5, llama, etc.)
     }

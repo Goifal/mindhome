@@ -30,6 +30,7 @@ const _searchIndex = [
   {tab:'tab-general', title:'Geraete-Erkennung', keywords:'command detection nouns verben befehle nlp', icon:'&#127899;'},
   // KI-Modelle & Stil (tab-personality)
   {tab:'tab-personality', title:'KI-Modelle & Stil', keywords:'modell llm ollama fast smart deep openai', icon:'&#127917;'},
+  {tab:'tab-personality', title:'GPU-Performance', keywords:'flash attention gpu vram keep alive performance speed latenz', icon:'&#9889;'},
   // Jarvis-Features (tab-jarvis)
   {tab:'tab-jarvis', title:'Progressive Antworten', keywords:'denkt laut zwischen-meldungen verarbeitung', icon:'&#128172;'},
   {tab:'tab-jarvis', title:'MCU-Intelligenz', keywords:'proaktiv mitdenken ingenieur diagnose anomalie kreuz-referenz implizit', icon:'&#129504;'},
@@ -85,6 +86,7 @@ const _searchIndex = [
   {tab:'tab-proactive', title:'Zeitgefuehl', keywords:'ofen vergessen buegeleisen licht fenster pc pause', icon:'&#9200;'},
   {tab:'tab-proactive', title:'Vorausdenken', keywords:'anticipation gewohnheiten lernen vorhersage konfidenz', icon:'&#128300;'},
   {tab:'tab-proactive', title:'Rueckkehr-Briefing', keywords:'abwesenheit rueckkehr briefing klingel waschmaschine', icon:'&#128218;'},
+  {tab:'tab-proactive', title:'Einkaufslisten-Erinnerung', keywords:'einkaufsliste shopping abschied verlassen departure', icon:'&#128722;'},
   {tab:'tab-proactive', title:'Jarvis denkt voraus', keywords:'insights wetter kalender energie fenster frost', icon:'&#129504;'},
   {tab:'tab-proactive', title:'Event-Handler', keywords:'event prioritaet critical high medium low', icon:'&#128226;'},
   {tab:'tab-proactive', title:'Spontane Beobachtungen', keywords:'beobachtungen energie streak rekorde meilensteine', icon:'&#128065;'},
@@ -1071,6 +1073,10 @@ const HELP_TEXTS = {
   'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster fuer das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. 2048 empfohlen fuer 4B Modelle.'},
   'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster fuer das Smart-Modell (Gespraeche).', detail:'4096 = Standard. Mehr Kontext = besseres Gespraechsgedaechtnis, aber mehr VRAM.'},
   'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster fuer das Deep-Modell (komplexe Aufgaben).', detail:'MoE-Modelle (z.B. Qwen3.5-27B) sind VRAM-effizient und vertragen 8192+.'},
+  'ollama.keep_alive': {title:'Keep-Alive', text:'Wie lange das Modell nach dem letzten Request im VRAM bleibt.', detail:'Laenger = schnellere Antworten (kein Nachladen), aber mehr Strom im Idle. "5m" = 5 Minuten, "-1" = nie entladen, "0" = sofort entladen. Bei aktiver Nutzung empfohlen: "5m" oder laenger.'},
+  'ollama.flash_attn': {title:'Flash Attention', text:'Beschleunigt die Inferenz bei neueren GPUs (RTX 30xx+).', detail:'Flash Attention reduziert VRAM-Verbrauch und beschleunigt die Token-Generierung. Erfordert CUDA-faehige GPU. Bei Problemen deaktivieren.'},
+  'ollama.num_gpu': {title:'GPU-Layer', text:'Wie viele Modell-Layer auf die GPU geladen werden.', detail:'99 = Maximum (alles auf GPU, schnellste Inferenz). Niedrigere Werte lagern Teile in RAM aus (langsamer, aber spart VRAM). 0 = nur CPU.'},
+  'proactive.departure_shopping_reminder': {title:'Einkaufslisten-Erinnerung', text:'Beim Verlassen des Hauses erwaehnt Jarvis offene Einkaufslisten-Eintraege.', detail:'Nutzt die Home Assistant Shopping List. Jarvis sagt z.B. "Uebrigens, Milch und Brot stehen noch auf der Liste."'},
   // === MODELL-PROFILE ===
   'model_profiles': {title:'Modell-Profile', text:'LLM-Parameter pro Modell-Familie. Neues Modell = nur Profil hier anlegen. Match: Laengster Key der im Modellnamen vorkommt gewinnt.', detail:'Beispiel: "qwen3.5:9b" matcht Profil "qwen3.5" (nicht "qwen3"). Unbekannte Modelle nutzen das "default" Profil. Spezifische Profile erben vom Default und ueberschreiben nur gesetzte Werte.'},
   'model_profiles.default.supports_think_tags': {title:'Think-Tags (Default)', text:'Ob das Modell &lt;think&gt;-Tags fuer Chain-of-Thought Reasoning nutzt.', detail:'Qwen3, DeepSeek und aehnliche Modelle geben ihren Denkprozess in &lt;think&gt;-Tags aus. Diese werden automatisch aus der Antwort entfernt.'},
@@ -2569,7 +2575,22 @@ function renderPersonality() {
     fRange('models.options.max_tokens', 'Antwortlaenge (Max Tokens)', 64, 4096, 64) +
     fRange('ollama.num_ctx_fast', 'Kontext Fast-Modell', 1024, 8192, 1024, {1024:'1K',2048:'2K',3072:'3K',4096:'4K',6144:'6K',8192:'8K'}) +
     fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 16384, 1024, {2048:'2K',4096:'4K',6144:'6K',8192:'8K',12288:'12K',16384:'16K'}) +
-    fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K',24576:'24K',32768:'32K'})
+    fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K',24576:'24K',32768:'32K'}) +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">GPU-Performance</div>' +
+    fSelect('ollama.keep_alive', 'Keep-Alive (Modell im VRAM halten)', [
+      {v:'0',l:'Sofort entladen (spart Strom)'},
+      {v:'120s',l:'2 Minuten'},
+      {v:'5m',l:'5 Minuten (empfohlen)'},
+      {v:'30m',l:'30 Minuten'},
+      {v:'-1',l:'Nie entladen (schnellste Antworten)'}
+    ]) +
+    fToggle('ollama.flash_attn', 'Flash Attention (RTX 30xx+)') +
+    fSelect('ollama.num_gpu', 'GPU-Layer', [
+      {v:'99',l:'Maximum — Alles auf GPU (empfohlen)'},
+      {v:'35',l:'35 Layer (spart etwas VRAM)'},
+      {v:'20',l:'20 Layer (GPU/CPU Mix)'},
+      {v:'0',l:'Nur CPU (kein GPU)'}
+    ])
   ) +
   _renderModelProfiles() +
   sectionWrap('&#129504;', 'Action Planner',
@@ -3733,6 +3754,7 @@ function renderProactive() {
     fRange('proactive.cooldown_seconds', 'Mindestabstand zwischen Meldungen', 60, 3600, 60, {60:'1 Min',120:'2 Min',300:'5 Min',600:'10 Min',1800:'30 Min',3600:'1 Std'}) +
     fRange('proactive.music_follow_cooldown_minutes', 'Musik-Nachfolge Pause', 1, 30, 1) +
     fRange('proactive.min_autonomy_level', 'Ab Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fToggle('proactive.departure_shopping_reminder', 'Einkaufsliste beim Verlassen erwaehnen') +
     `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
       <span class="info-icon">&#127916;</span>"Nicht stoeren"-Szenen und Aktivitaets-Zuordnung werden jetzt zentral im <strong>Szenen</strong>-Tab verwaltet. Klicke hier um dorthin zu wechseln.
     </div>`

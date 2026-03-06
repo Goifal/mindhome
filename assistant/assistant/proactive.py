@@ -507,7 +507,8 @@ class ProactiveManager:
             elif old_val == "home" and new_val != "home":
                 # Phase 7.4: Abschied mit Sicherheits-Hinweis
                 # Einkaufsliste pruefen und an departure_check anhaengen
-                _shopping_items = await self._get_open_shopping_items()
+                _shopping_enabled = yaml_config.get("proactive", {}).get("departure_shopping_reminder", True)
+                _shopping_items = await self._get_open_shopping_items() if _shopping_enabled else []
                 _departure_data = {
                     "person": name,
                     "departure_check": True,
