@@ -390,8 +390,8 @@ class ActivityEngine:
         signals["media_playing"] = self._check_media_playing(states)
         signals["in_call"] = self._check_in_call(states)
         signals["bed_occupied"] = self._check_bed_occupied(states)
-        signals["sleeping"] = self._check_sleeping(states)
         signals["pc_active"] = self._check_pc_active(states)
+        signals["sleeping"] = self._check_sleeping(states, _pc_active=signals["pc_active"])
         signals["guests"] = self._check_guests(states)
         signals["lights_off"] = self._check_lights_off(states)
 
@@ -631,14 +631,15 @@ class ActivityEngine:
             pattern=self._BED_RE, label="Bed", active_states={"on"},
         ))
 
-    def _check_sleeping(self, states: list[dict]) -> bool:
+    def _check_sleeping(self, states: list[dict], *, _pc_active: bool | None = None) -> bool:
         """Prueft ob der Benutzer schlaeft.
 
         Bett belegt + kein TV/PC = schlaeft (auch Mittagsschlaf).
         Bett belegt + TV an = NICHT sleeping (fernsehen im Bett) → wird WATCHING.
         Nacht + alle Lichter aus = wahrscheinlich schlaeft (Fallback ohne Bettsensor).
         """
-        if self._check_pc_active(states) or self._check_media_playing(states):
+        pc_active = _pc_active if _pc_active is not None else self._check_pc_active(states)
+        if pc_active or self._check_media_playing(states):
             return False
         if self._check_bed_occupied(states):
             return True
