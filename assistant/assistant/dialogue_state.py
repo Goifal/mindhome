@@ -223,7 +223,7 @@ class DialogueStateManager:
 
         # Aktions-Referenzen ("nochmal", "das gleiche", "auch im Buero")
         for ref in ACTION_REFERENCES_DE:
-            if ref in text_lower and state.last_actions:
+            if re.search(r'\b' + re.escape(ref) + r'\b', text_lower) and state.last_actions:
                 last_action = state.last_actions[0]
                 had_references = True
                 hints.append(f"'{ref}' bezieht sich auf letzte Aktion: {last_action.get('description', str(last_action))}")
