@@ -332,6 +332,11 @@ async def lifespan(app: FastAPI):
         if restored_act:
             logger.info("Aktivitaetsprotokoll wiederhergestellt: %d Eintraege", restored_act)
 
+    # Cover-Settings initial an Addon synchronisieren
+    cover_auto = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
+    if cover_auto:
+        _sync_cover_settings_to_addon(cover_auto)
+
     health = await brain.health_check()
     for component, status in health["components"].items():
         icon = "OK" if status == "connected" else "!!"

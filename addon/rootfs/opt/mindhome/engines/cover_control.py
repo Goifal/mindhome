@@ -49,9 +49,11 @@ class CoverControlManager:
         "sun_protection_indoor_temp_c": 24.0,
         "sun_protection_position_pct": 20,
         "sun_protection_tilt_deg": None,
+        "sun_protection_min_elevation_deg": 5.0,  # Min. sun elevation for sun protection
         # Winter-Logik: Sonne reinlassen für passive Wärme
         "winter_solar_gain_enabled": True,
         "winter_solar_gain_below_c": 18.0,
+        "winter_solar_gain_min_elevation_deg": 10.0,  # Min. sun elevation for solar gain
         # Wetterschutz
         "weather_protection_enabled": True,
         "wind_threshold_kmh": 50.0,
@@ -789,7 +791,7 @@ class CoverControlManager:
                 return {"position": 0, "source": "comfort_privacy"}
 
         # Sun protection
-        if config.get("sun_protection_enabled") and sun_elevation > 5:
+        if config.get("sun_protection_enabled") and sun_elevation > config.get("sun_protection_min_elevation_deg", 5):
             temp_threshold = config.get("sun_protection_outdoor_temp_c", 25)
             if outdoor_temp is not None and outdoor_temp >= temp_threshold:
                 if self._is_sun_on_facade(facade, sun_azimuth):
@@ -797,7 +799,7 @@ class CoverControlManager:
                     return {"position": pos, "source": "comfort_sun_protection"}
 
         # Winter solar gain: let sun in for passive heating
-        if (config.get("winter_solar_gain_enabled") and sun_elevation > 10
+        if (config.get("winter_solar_gain_enabled") and sun_elevation > config.get("winter_solar_gain_min_elevation_deg", 10)
                 and outdoor_temp is not None
                 and outdoor_temp < config.get("winter_solar_gain_below_c", 18)):
             if self._is_sun_on_facade(facade, sun_azimuth):
