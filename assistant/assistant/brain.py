@@ -2464,8 +2464,11 @@ class AssistantBrain(BrainCallbacksMixin):
         _is_personal = any(kw in _text_low for kw in _personal_kw)
 
         if model == self.model_router.model_fast:
+            # Device-Commands bleiben auf Fast, auch im Gespraechsmodus.
+            # "Licht an" braucht keine JARVIS-Persoenlichkeit.
+            _is_device = profile.category in ("device_command", "device_query")
             _needs_smart = False
-            if _conversation_mode:
+            if _conversation_mode and not _is_device:
                 _needs_smart = True
                 logger.info("Conversation-Upgrade: Fast -> Smart (Gespraechsmodus)")
             if _is_personal:
