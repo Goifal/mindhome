@@ -2498,19 +2498,22 @@ class AssistantBrain(BrainCallbacksMixin):
         # bis das Token-Budget für Sektionen erschoepft ist.
         # ----------------------------------------------------------------
         context_cfg = cfg.yaml_config.get("context", {})
-        max_context_tokens = context_cfg.get("max_context_tokens", 8000)
-        # Auto-Align: Prompt darf nicht groesser als num_ctx sein,
-        # sonst schneidet Ollama den Prompt stillschweigend ab.
-        # Reserve ~800 Tokens für die LLM-Antwort.
-        # Nutze model-spezifischen num_ctx (nicht den globalen Default).
+        # Token-Budget: Automatisch an num_ctx anpassen statt fixer Wert.
+        # Reserve 800 Tokens fuer LLM-Antwort, Rest steht fuer Prompt zur Verfuegung.
+        # max_context_tokens in settings.yaml dient nur noch als OBERGRENZE (Cap),
+        # nicht als fixer Wert — so skaliert das Budget mit dem Modell.
         ollama_num_ctx = self.ollama.num_ctx_for(model)
         effective_max = ollama_num_ctx - 800
-        if max_context_tokens > effective_max:
-            logger.info(
-                "Token-Budget auto-align: max_context_tokens %d -> %d (num_ctx=%d, reserve=800)",
-                max_context_tokens, effective_max, ollama_num_ctx,
-            )
+        _configured_max = context_cfg.get("max_context_tokens", 0)
+        if _configured_max and _configured_max < effective_max:
+            max_context_tokens = _configured_max
+        else:
             max_context_tokens = effective_max
+            if _configured_max and _configured_max > effective_max:
+                logger.info(
+                    "Token-Budget auto-align: max_context_tokens %d -> %d (num_ctx=%d, reserve=800)",
+                    _configured_max, effective_max, ollama_num_ctx,
+                )
         base_tokens = _estimate_tokens(system_prompt)
         user_tokens_est = _estimate_tokens(text)
         # Reserve: ~40% für Conversations + User-Text + Response-Space
