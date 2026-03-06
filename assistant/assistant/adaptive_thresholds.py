@@ -218,9 +218,10 @@ class AdaptiveThresholds:
         elif param_name == "feedback.base_cooldown_seconds":
             if feedback_tracker:
                 scores = await feedback_tracker.get_all_scores()
-                avg_score = sum(
-                    v for v in scores.values() if isinstance(v, (int, float))
-                ) / max(1, len(scores)) if scores else 0.5
+                numeric = [v for v in scores.values() if isinstance(v, (int, float))]
+                if not numeric:
+                    return 0
+                avg_score = sum(numeric) / len(numeric)
                 if avg_score < 0.3:
                     return 1  # Cooldown erhöhen (weniger Meldungen)
                 elif avg_score > 0.7:

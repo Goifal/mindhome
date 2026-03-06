@@ -5,6 +5,7 @@ MindHome Assistant ruft über diese Funktionen Home Assistant Aktionen aus.
 Phase 10: Room-aware TTS, Person Messaging, Trust-Level Pre-Check.
 """
 
+import asyncio
 import copy
 import logging
 import re
@@ -3608,7 +3609,8 @@ class FunctionExecutor:
             if le:
                 try:
                     await le.record_manual_override(entity_id)
-                except Exception:
+                except Exception as e:
+                    if isinstance(e, asyncio.CancelledError): raise
                     pass
         extras = []
         if brightness_pct is not None:
@@ -4190,7 +4192,8 @@ class FunctionExecutor:
                 conf = configs.get(entity_id, {})
                 if "inverted" in conf:
                     return bool(conf["inverted"])
-        except Exception:
+        except Exception as e:
+            if isinstance(e, asyncio.CancelledError): raise
             pass
 
         # 2. Per-Cover in room_profiles.yaml
@@ -4321,7 +4324,8 @@ class FunctionExecutor:
             try:
                 all_states = await self.ha.get_states()
                 available = [s.get("entity_id") for s in (all_states or []) if s.get("entity_id", "").startswith("cover.")]
-            except Exception:
+            except Exception as e:
+                if isinstance(e, asyncio.CancelledError): raise
                 available = []
             return {"success": False, "message": f"Kein Rollladen in '{room}' gefunden. Verfügbar: {', '.join(available) if available else 'keine'}"}
 
@@ -4681,7 +4685,8 @@ class FunctionExecutor:
         try:
             with open(_cfg_dir / "room_profiles.yaml") as f:
                 profiles = yaml.safe_load(f) or {}
-        except Exception:
+        except Exception as e:
+            if isinstance(e, asyncio.CancelledError): raise
             profiles = {}
         room_floor = profiles.get("rooms", {}).get(room, {}).get("floor")
         if not room_floor:
@@ -4751,7 +4756,8 @@ class FunctionExecutor:
             if room:
                 key = f"mha:vacuum:{floor}:room:{room}:last_clean"
             await redis.set(key, str(int(_time.time())), ex=86400 * 7)  # 7 Tage TTL
-        except Exception:
+        except Exception as e:
+            if isinstance(e, asyncio.CancelledError): raise
             pass
 
     async def _exec_set_vacuum(self, args: dict) -> dict:
@@ -4888,7 +4894,8 @@ class FunctionExecutor:
         try:
             _mem = getattr(self, "memory", None) or getattr(getattr(self, "brain", None), "memory", None)
             redis = getattr(_mem, "redis", None) if _mem else None
-        except Exception:
+        except Exception as e:
+            if isinstance(e, asyncio.CancelledError): raise
             pass
 
         status_list = []
@@ -4977,7 +4984,8 @@ class FunctionExecutor:
                                     room_history[rname] = f"vor {ago // 86400}d"
                         if room_history:
                             entry["raum_verlauf"] = room_history
-                    except Exception:
+                    except Exception as e:
+                        if isinstance(e, asyncio.CancelledError): raise
                         pass
 
                 status_list.append(entry)
@@ -5587,7 +5595,8 @@ class FunctionExecutor:
         _tz_name = yaml_config.get("timezone", "Europe/Berlin")
         try:
             _tz = ZoneInfo(_tz_name)
-        except Exception:
+        except Exception as e:
+            if isinstance(e, asyncio.CancelledError): raise
             _tz = ZoneInfo("Europe/Berlin")
         timeframe = args.get("timeframe", "today")
         now = datetime.now(_tz)

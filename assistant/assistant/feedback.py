@@ -111,8 +111,9 @@ class FeedbackTracker:
 
         # Event-Typ ermitteln
         event_type = None
-        if notification_id in self._pending:
-            event_type = self._pending.pop(notification_id)["event_type"]
+        pending_entry = self._pending.pop(notification_id, None)
+        if pending_entry is not None:
+            event_type = pending_entry.get("event_type")
         else:
             # Fallback: notification_id ist der event_type
             event_type = notification_id

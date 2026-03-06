@@ -451,6 +451,12 @@ class OllamaClient:
                     # F-024: Buffer-Ansatz — Chunks mit Tags im Buffer sammeln
                     _think_buffer += content
 
+                    # Guard against unbounded buffer growth
+                    if len(_think_buffer) > 100_000:
+                        logger.warning("_think_buffer exceeded 100k chars, flushing")
+                        _think_buffer = ""
+                        in_think_block = False
+
                     # Wenn wir im Think-Block sind, weiter buffern bis </think>
                     if in_think_block:
                         if "</think>" in _think_buffer:

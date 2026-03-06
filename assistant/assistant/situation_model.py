@@ -89,7 +89,7 @@ class SituationModel:
 
         last_time = ""
         if raw_time:
-            t = raw_time if isinstance(raw_time, str) else raw_time.decode()
+            t = raw_time if isinstance(raw_time, str) else raw_time.decode(errors="replace")
             try:
                 last_dt = datetime.fromisoformat(t)
                 diff = datetime.now() - last_dt
