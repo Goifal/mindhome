@@ -2532,14 +2532,17 @@ class AssistantBrain(BrainCallbacksMixin):
         user_tokens_est = _estimate_tokens(text)
 
         # Sektionen vorbereiten: (Name, Text, Prioritaet)
-        # Prio 1: Sicherheit, Szenen, Mood — IMMER inkludieren
-        # Prio 2: Zeit, Timer, Gaeste, Warnungen, Erinnerungen, What-If, JARVIS DENKT MIT
+        # Prio 1: Sicherheit, Mood — IMMER. Szenen nur bei Geraete-Anfragen.
+        # Prio 2: Zeit, Timer, Gaeste, Warnungen, JARVIS DENKT MIT
         # Prio 3: RAG, Summaries, Cross-Room, Kontinuitaet
         # Prio 4: Tutorial
         sections: list[tuple[str, str, int]] = []
 
-        # --- Prio 1: Core ---
-        sections.append(("scene_intelligence", SCENE_INTELLIGENCE_PROMPT, 1))
+        # --- Szenen-Intelligenz: P1 bei Geraete-/Szenen-Anfragen, P3 sonst ---
+        # Bei Konversation/Wissen braucht man keine Szenen-Regeln (~700t).
+        # Dadurch hat jarvis_thinks (P2, ~443t) Platz im Budget.
+        _scene_prio = 1 if profile.category in ("device_command", "device_query") else 3
+        sections.append(("scene_intelligence", SCENE_INTELLIGENCE_PROMPT, _scene_prio))
 
         # Confidence Gate: Wenn wenig Haus-Daten vorhanden, FAKTEN-REGEL verstaerken.
         # Verhindert dass das LLM bei duenner Datenlage kreativ wird.
@@ -4011,7 +4014,8 @@ class AssistantBrain(BrainCallbacksMixin):
             import re as _mood_re
             _suggestion_pattern = _mood_re.compile(
                 r'\s*(?:Uebrigens|Übrigens|Soll ich|Moechtest du|Möchtest du|'
-                r'Falls du|Wenn du magst|Tipp:|Hinweis:).*$',
+                r'Falls du|Wenn du magst|Tipp:|Hinweis:|Wenn du moechtest|'
+                r'Wenn du möchtest|Brauchst du|Kann ich dir).*$',
                 _mood_re.IGNORECASE | _mood_re.DOTALL,
             )
             _cleaned = _suggestion_pattern.sub('', response_text).rstrip()

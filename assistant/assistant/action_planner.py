@@ -54,20 +54,19 @@ MAX_ITERATIONS = int(_planner_cfg.get("max_iterations", _DEFAULT_MAX_ITERATIONS)
 COMPLEX_KEYWORDS = _planner_cfg.get("complex_keywords", _DEFAULT_COMPLEX_KEYWORDS)
 
 # Prompt fuer den Action Planner
-PLANNER_SYSTEM_PROMPT = """Du bist der MindHome Action Planner.
-Deine Aufgabe: Komplexe Anfragen in konkrete Aktionen umsetzen.
+PLANNER_SYSTEM_PROMPT = """ZUSAETZLICHE PLANUNGS-FAEHIGKEIT:
+Du kannst komplexe Anfragen in mehrere Schritte zerlegen und iterativ ausfuehren.
 
-REGELN:
+PLANUNGS-REGELN:
 - Nutze die verfuegbaren Tools um Aktionen auszufuehren.
 - Fuehre ALLE noetige Schritte aus, nicht nur den ersten.
 - Wenn du Informationen brauchst (z.B. Kalender), frage sie zuerst ab.
 - Ergebnisse vorheriger Schritte nutzen um naechste Schritte zu planen.
-- Am Ende: Kurze Zusammenfassung auf Deutsch (max 2-3 Saetze).
-- Antworte IMMER auf Deutsch.
-- Sei knapp. Butler-Stil. Kein Geschwafel.
+- Am Ende: Kurze Zusammenfassung (max 2-3 Saetze) in deinem normalen Ton.
 - Bei Szenen und Stimmungen: Nutze den 'transition' Parameter bei set_light
   fuer sanfte Uebergaenge (z.B. transition=5 fuer 5 Sekunden Dimmen).
-- Bei Filmabend/Romantik/etc: Langsame Transitions (5-10s) fuer Atmosphaere."""
+- Bei Filmabend/Romantik/etc: Langsame Transitions (5-10s) fuer Atmosphaere.
+WICHTIG: Du bist und bleibst J.A.R.V.I.S. — auch beim Planen. Dein Ton aendert sich NICHT."""
 
 
 @dataclass
@@ -140,6 +139,14 @@ class ActionPlanner:
         self.step_delay = float(narr_cfg.get("step_delay", 1.5))
         self.narrate_actions = narr_cfg.get("narrate_actions", True)
 
+    # Fragewoerter — wenn der Satz damit beginnt, ist es eine Frage, kein Befehl
+    _QUESTION_STARTS = (
+        "was ", "wer ", "wie ", "wo ", "warum ", "wieso ", "weshalb ",
+        "wann ", "welche", "wieviel", "wie viel", "woher ", "wohin ",
+        "kannst du", "koenntest du", "wuerdest du", "hast du", "bist du",
+        "machst du", "denkst du", "findest du", "magst du", "weisst du",
+    )
+
     def is_complex_request(self, text: str) -> bool:
         """
         Erkennt ob eine Anfrage komplex ist und den Planner braucht.
@@ -147,8 +154,14 @@ class ActionPlanner:
         Heuristik:
         - Enthaelt Keywords fuer komplexe Aktionen
         - Enthaelt mehrere Befehle (und/dann/ausserdem)
+        - NICHT bei reinen Fragen (was/wie/warum/wo/wer...)
         """
-        text_lower = text.lower()
+        text_lower = text.lower().strip()
+
+        # Fragen sind keine komplexen Aktionen
+        if text_lower.endswith("?") or text_lower.startswith(self._QUESTION_STARTS):
+            return False
+
         return any(kw in text_lower for kw in COMPLEX_KEYWORDS)
 
     async def plan_and_execute(

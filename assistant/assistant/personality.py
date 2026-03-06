@@ -43,7 +43,8 @@ MOOD_STYLES = {
         "style_addon": "User ist frustriert. Nicht rechtfertigen. Sofort handeln. "
                        "Wenn etwas nicht geklappt hat, kurz sagen was du stattdessen tust. "
                        "Trockener Kommentar erlaubt — aber nur einer, und er muss sitzen.",
-        "max_sentences_mod": 0,
+        "max_sentences_mod": -1,
+        "suppress_suggestions": True,
     },
     "tired": {
         "style_addon": "User ist müde. Minimal antworten. Kein Humor. "
@@ -2793,7 +2794,9 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
 
         # Fürsorge-Hint: Was Jarvis beiläufig erwähnen koennte
         hour = datetime.now().hour
-        if mood == "stressed":
+        if mood == "frustrated":
+            result["care_hint"] = "Kurz und direkt. Wenn wiederholte Frustration, beiläufig Hilfe anbieten."
+        elif mood == "stressed":
             result["care_hint"] = "Wenn passend, beiläufig Pause vorschlagen oder Licht dimmen anbieten."
         elif mood == "tired" and (hour >= 22 or hour < 5):
             result["care_hint"] = "Beiläufig erwähnen dass es spät ist. Optional: Gute-Nacht-Routine anbieten."
