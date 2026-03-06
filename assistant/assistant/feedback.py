@@ -398,7 +398,9 @@ class FeedbackTracker:
                 expired.append(nid)
 
         for nid in expired:
-            info = self._pending.pop(nid)
+            info = self._pending.pop(nid, None)
+            if info is None:
+                continue
             await self._update_score(info["event_type"], FEEDBACK_DELTAS["ignored"])
             await self._store_feedback_entry(
                 info["event_type"], "ignored", FEEDBACK_DELTAS["ignored"]

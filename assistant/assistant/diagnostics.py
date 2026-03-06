@@ -18,7 +18,7 @@ Feature 10.6: Self-Diagnostik
 import logging
 import os
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -151,7 +151,7 @@ class DiagnosticsEngine:
             return []
 
         issues = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         for state in states:
             entity_id = state.get("entity_id", "")
@@ -168,7 +168,7 @@ class DiagnosticsEngine:
                     try:
                         changed_dt = datetime.fromisoformat(
                             last_changed.replace("Z", "+00:00")
-                        ).replace(tzinfo=None)
+                        )
                         offline_mins = (now - changed_dt).total_seconds() / 60
                         if offline_mins >= self.offline_minutes:
                             issue = {
@@ -207,7 +207,7 @@ class DiagnosticsEngine:
                     try:
                         changed_dt = datetime.fromisoformat(
                             last_changed.replace("Z", "+00:00")
-                        ).replace(tzinfo=None)
+                        )
                         stale_mins = (now - changed_dt).total_seconds() / 60
                         if stale_mins >= self.stale_minutes:
                             # Nur bei Sensoren die sich normalerweise aendern

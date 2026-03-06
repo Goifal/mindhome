@@ -447,7 +447,8 @@ class RepairPlanner:
 
         # JSON parsen und Projekt erstellen
         try:
-            data = json.loads(response)
+            _content = response.get("message", {}).get("content", "")
+            data = json.loads(_content)
             project = await self.create_project(
                 title=data.get("diagnosis", text)[:60],
                 description=text, category="reparatur",
@@ -482,8 +483,8 @@ class RepairPlanner:
                 pass
 
             return self._format_diagnosis(data)
-        except json.JSONDecodeError:
-            return response  # LLM hat kein JSON generiert
+        except (json.JSONDecodeError, TypeError, KeyError):
+            return _content  # LLM hat kein JSON generiert
 
     def _format_diagnosis(self, data: dict) -> str:
         """Formatiert eine Diagnose für die Sprachausgabe."""
@@ -534,9 +535,10 @@ Frage: {question}
 Analysiere: Machbarkeit, Schwachstellen, Belastungsgrenzen, Batterie-Laufzeit,
 thermische Aspekte, Verbesserungsvorschläge. Gib Konfidenz-Level an."""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.4, max_tokens=2048)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Troubleshooting ──────────────────────────────────────
 
@@ -563,9 +565,10 @@ Antworte strukturiert als Diagnosebaum."""
             {"role": "system", "content": prompt},
             {"role": "user", "content": symptom},
         ]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.3, max_tokens=2048)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Proaktive Verbesserungen ─────────────────────────────
 
@@ -585,9 +588,10 @@ Projekt: {project['title']} ({project['category']})
 Teile: {json.dumps(project.get('parts', []))}
 Schlage konkrete Optimierungen vor (Effizienz, Kosten, Sicherheit, Zuverlaessigkeit)."""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.5, max_tokens=1024)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Komponenten-Vergleich ────────────────────────────────
 
@@ -603,9 +607,10 @@ Schlage konkrete Optimierungen vor (Effizienz, Kosten, Sicherheit, Zuverlaessigk
 Vergleiche: Features, Preis, Stromverbrauch, Pins, Verfügbarkeit.
 Gib eine klare Empfehlung mit Begruendung."""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.3, max_tokens=1024)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Error-Log Analyse ────────────────────────────────────
 
@@ -631,9 +636,10 @@ Error-Log:
 {log_text[:3000]}
 Erklaere den Fehler und schlage einen konkreten Fix vor."""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.2, max_tokens=1024)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Mess-Assistent ───────────────────────────────────────
 
@@ -658,9 +664,10 @@ Schritt: {current_step}
 Messwert: {measurement_text}
 Bewerte: Ist der Wert im erwarteten Bereich? Was bedeutet er? Nächster Schritt?"""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.3, max_tokens=512)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Kalibrierung ─────────────────────────────────────────
 
@@ -674,9 +681,10 @@ Bewerte: Ist der Wert im erwarteten Bereich? Was bedeutet er? Nächster Schritt?
         prompt = f"""Erstelle eine Schritt-für-Schritt Kalibrierungsanleitung für: {device_type}
 Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.3, max_tokens=1024)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Werkstatt-Umgebung ───────────────────────────────────
 
@@ -1005,7 +1013,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
             data = await self.redis.hgetall(key)
             try:
                 last = datetime.fromisoformat(
-                    data.get("last_done", datetime.now().isoformat()))
+                    data.get("last_done", "2000-01-01T00:00:00"))
                 interval = int(data.get("interval_days", 90))
                 if (datetime.now() - last).days >= interval:
                     due.append(data)

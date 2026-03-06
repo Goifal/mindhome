@@ -84,7 +84,7 @@ class ErrorPatternTracker:
 
         # Mitigation aktivieren wenn Schwelle erreicht
         if count >= self._min_occurrences or model_count >= self._min_occurrences:
-            await self._activate_mitigation(error_type, action_type, model, int(count))
+            await self._activate_mitigation(error_type, action_type, model, max(int(count), int(model_count)))
 
         logger.debug("Error recorded: %s/%s (count this hour: %s)", error_type, action_type, count)
 

@@ -572,6 +572,7 @@ class SoundManager:
                 )
                 needs_volume_change = old_volume is None or abs(old_volume - volume) > 0.01
                 if needs_volume_change:
+                    success = False
                     vol_coro = self.ha.call_service(
                         "media_player", "volume_set",
                         {"entity_id": speaker_entity, "volume_level": volume},

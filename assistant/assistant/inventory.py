@@ -77,6 +77,7 @@ class InventoryManager:
         try:
             item_ids = await self.redis.smembers("mha:inventory:all")
             for item_id in item_ids:
+                item_id = item_id.decode() if isinstance(item_id, bytes) else item_id
                 raw = await self.redis.hgetall(f"mha:inventory:{item_id}")
                 data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
                 if data and data.get("name", "").lower() == name.lower():
@@ -97,7 +98,9 @@ class InventoryManager:
         try:
             item_ids = await self.redis.smembers("mha:inventory:all")
             for item_id in item_ids:
-                data = await self.redis.hgetall(f"mha:inventory:{item_id}")
+                item_id = item_id.decode() if isinstance(item_id, bytes) else item_id
+                raw = await self.redis.hgetall(f"mha:inventory:{item_id}")
+                data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
                 if data and data.get("name", "").lower() == name.lower():
                     if quantity <= 0:
                         return await self.remove_item(name)
@@ -120,7 +123,9 @@ class InventoryManager:
 
             items = []
             for item_id in item_ids:
-                data = await self.redis.hgetall(f"mha:inventory:{item_id}")
+                item_id = item_id.decode() if isinstance(item_id, bytes) else item_id
+                raw = await self.redis.hgetall(f"mha:inventory:{item_id}")
+                data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
                 if data:
                     items.append(data)
 
@@ -166,7 +171,9 @@ class InventoryManager:
             expiring = []
 
             for item_id in item_ids:
-                data = await self.redis.hgetall(f"mha:inventory:{item_id}")
+                item_id = item_id.decode() if isinstance(item_id, bytes) else item_id
+                raw = await self.redis.hgetall(f"mha:inventory:{item_id}")
+                data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
                 if not data:
                     continue
 

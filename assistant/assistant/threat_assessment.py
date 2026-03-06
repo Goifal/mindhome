@@ -180,7 +180,7 @@ class ThreatAssessment:
                 wind_speed = s.get("attributes", {}).get("wind_speed")
                 break
 
-        if not wind_speed:
+        if wind_speed is None:
             return []
         try:
             wind_speed_val = float(wind_speed)

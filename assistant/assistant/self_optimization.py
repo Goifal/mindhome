@@ -363,6 +363,8 @@ Wenn keine Aenderung noetig: []"""
             return {"success": False, "message": f"Unbekannter Parameter: {param}"}
 
         try:
+            old_value = self._get_current_values().get(param)
+
             with open(_SETTINGS_PATH) as f:
                 config = yaml.safe_load(f) or {}
 
@@ -385,7 +387,7 @@ Wenn keine Aenderung noetig: []"""
             logger.info("Parameter angepasst: %s = %s", param, new_value)
             return {
                 "success": True,
-                "message": f"{param}: {self._get_current_values().get(param)} -> {new_value}",
+                "message": f"{param}: {old_value} -> {new_value}",
             }
 
         except Exception as e:

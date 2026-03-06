@@ -3299,7 +3299,7 @@ class FunctionExecutor:
             if func_name in ("set_cover", "set_cover_all"):
                 position = args.get("position")
                 action = str(args.get("action", "")).lower()
-                if position is not None or action in ("open", "down"):
+                if position is not None or action in ("open", "up"):
                     states = await self.ha.get_states()
                     for s in (states or []):
                         eid = s.get("entity_id", "")
@@ -3630,7 +3630,7 @@ class FunctionExecutor:
         count = 0
         for s in states:
             eid = s.get("entity_id", "")
-            if eid.startswith("light.") and s.get("state") != state:
+            if eid.startswith("light.") and (s.get("state") != state or (state == "on" and "brightness" in args)):
                 service_data = {"entity_id": eid}
                 if state == "on":
                     if "brightness" in args:
@@ -6440,12 +6440,10 @@ class FunctionExecutor:
     def _normalize_name(text: str) -> str:
         """Normalisiert Umlaute und Sonderzeichen für Entity-Matching."""
         n = text.lower()
-        # Unicode-Umlaute zuerst
-        n = n.replace("ü", "u").replace("ä", "a").replace("ö", "o").replace("ß", "ss")
-        # Dann ASCII-Digraphen
-        n = n.replace("ue", "u").replace("ae", "a").replace("oe", "o")
+        # Unicode-Umlaute und ASCII-Digraphen in einem Schritt normalisieren
+        n = n.replace("ü", "ue").replace("ä", "ae").replace("ö", "oe").replace("ß", "ss")
         # LLM-Varianten: "bureau" statt "buero"/"büro"
-        n = n.replace("bureau", "buro")
+        n = n.replace("bureau", "buero")
         return n.replace(" ", "_")
 
     async def _find_entity(self, domain: str, search: str, device_hint: str = "", person: str = "") -> Optional[str]:

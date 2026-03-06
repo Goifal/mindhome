@@ -177,7 +177,7 @@ class MemoryManager:
             meta = metadata or {}
             meta["timestamp"] = datetime.now().isoformat()
             meta["type"] = "conversation"
-            base_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            base_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
 
             chunks = self._split_conversation(conversation)
 

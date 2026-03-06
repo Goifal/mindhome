@@ -714,11 +714,13 @@ REGELN:
             if isinstance(target, dict):
                 entity_id = target.get("entity_id", "")
                 if entity_id and entity_id != "all":
-                    if not self._ENTITY_ID_PATTERN.match(entity_id):
-                        return {
-                            "valid": False,
-                            "reason": f"Ungueltiges entity_id-Format: '{entity_id}'",
-                        }
+                    entity_ids = [entity_id] if isinstance(entity_id, str) else (entity_id if isinstance(entity_id, list) else [])
+                    for eid in entity_ids:
+                        if eid and eid != "all" and not self._ENTITY_ID_PATTERN.match(str(eid)):
+                            return {
+                                "valid": False,
+                                "reason": f"Ungueltiges entity_id-Format: '{eid}'",
+                            }
 
         # 2. Trigger pruefen
         for trigger in automation.get("trigger", []):
@@ -739,11 +741,13 @@ REGELN:
             # entity_id in Trigger validieren
             trigger_entity = trigger.get("entity_id", "")
             if trigger_entity:
-                if not self._ENTITY_ID_PATTERN.match(trigger_entity):
-                    return {
-                        "valid": False,
-                        "reason": f"Ungueltiges entity_id im Trigger: '{trigger_entity}'",
-                    }
+                trigger_entities = [trigger_entity] if isinstance(trigger_entity, str) else (trigger_entity if isinstance(trigger_entity, list) else [])
+                for te in trigger_entities:
+                    if te and not self._ENTITY_ID_PATTERN.match(str(te)):
+                        return {
+                            "valid": False,
+                            "reason": f"Ungueltiges entity_id im Trigger: '{te}'",
+                        }
 
         # 3. Conditions pruefen (auch auf Templates)
         for condition in automation.get("condition", []):

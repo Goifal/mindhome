@@ -85,7 +85,7 @@ class ConfigVersioning:
             key = f"mha:config_snapshots:{config_file}"
             pipe = self._redis.pipeline()
             pipe.lpush(key, json.dumps(metadata))
-            pipe.ltrim(key, 0, 49)  # Max 50 Snapshots pro Config
+            pipe.ltrim(key, 0, self._max_snapshots - 1)
             pipe.expire(key, 90 * 86400)
             await pipe.execute()
 

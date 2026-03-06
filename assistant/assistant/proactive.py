@@ -3245,7 +3245,7 @@ class ProactiveManager:
         night_end = cover_cfg.get("night_end_hour", 6)
 
         # Nachts + kalt → alle Rolllaeden runter (Isolierung)
-        is_night = (night_start <= hour) or (hour < night_end) if night_start > night_end else (night_start <= hour < night_end)
+        is_night = ((night_start <= hour) or (hour < night_end)) if night_start > night_end else (night_start <= hour < night_end)
         if night_insulation and is_night and temp <= frost_temp:
             for s in (states or []):
                 eid = s.get("entity_id", "")
@@ -4139,6 +4139,8 @@ class ProactiveManager:
                 # Fall 2: Niemand zuhause + unterbrochene Reinigung → Fortsetzen
                 if not anyone_home and guard_cfg.get("resume_on_departure"):
                     interrupted_str = (await _redis.get("mha:vacuum:interrupted")) if _redis else _interrupted_local
+                    if isinstance(interrupted_str, bytes):
+                        interrupted_str = interrupted_str.decode()
                     if interrupted_str:
                         delay = guard_cfg.get("resume_delay_minutes", 5)
                         logger.info("Vacuum-PresenceMonitor: Alle weg — warte %d Min bevor Reinigung fortgesetzt wird", delay)
@@ -4834,7 +4836,7 @@ class ProactiveManager:
                 hour = datetime.now().hour
 
                 # Quiet Hours respektieren
-                if quiet_start <= hour or hour < quiet_end:
+                if self._is_quiet_hours():
                     await asyncio.sleep(interval)
                     continue
 

@@ -348,6 +348,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Sarkasmus/Humor-Feedback Tracking
         self._last_response_was_snarky = False
         self._last_humor_category = None
+        self._active_conversation_topic = ""
 
         # Formality-Score Cache
         self._last_formality_score = None
@@ -764,7 +765,7 @@ class AssistantBrain(BrainCallbacksMixin):
             if room_sensors:
                 # Konfigurierte Sensoren: Neuesten aktiven Raum finden
                 timeout_minutes = int(multi_room_cfg.get("presence_timeout_minutes", 15))
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 best_room = None
                 best_changed = ""
 
@@ -784,7 +785,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         try:
                             changed = datetime.fromisoformat(
                                 last_changed.replace("Z", "+00:00")
-                            ).replace(tzinfo=None)
+                            )
                             if (now - changed).total_seconds() / 60 < timeout_minutes:
                                 if last_changed > best_changed:
                                     best_changed = last_changed
@@ -1775,7 +1776,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                     name="mark_jarvis_action",
                                 )
 
-                                return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
+                        return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -3243,7 +3244,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "reason": f"pushback:{pushback['rule_id']}",
                                 }
-                                timeout = cfg.yaml_config.get("pushback", {}).get("confirmation_timeout", 120)
+                                timeout = (cfg.yaml_config.get("pushback") or {}).get("confirmation_timeout", 120)
                                 await self.memory.redis.setex(
                                     SECURITY_CONFIRM_KEY,
                                     timeout,
@@ -3444,7 +3445,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
                     # Eskalationskette: JARVIS wird trockener bei Wiederholungen
                     try:
-                        esc_key = f"{func_name}:{final_args.get('room', '')}"
+                        esc_key = f"{func_name}:{final_args.get('room', '') if isinstance(final_args, dict) else ''}"
                         escalation = await self.personality.check_escalation(esc_key)
                         if escalation:
                             logger.info("Jarvis Eskalation: '%s'", escalation)

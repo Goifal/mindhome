@@ -194,7 +194,7 @@ class VisitorManager:
             "auto_unlock": auto_unlock,
             "notes": notes,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "expires_at": (datetime.now(_LOCAL_TZ).replace(hour=23, minute=59, second=59)).isoformat(),
+            "expires_at": datetime.combine(datetime.now(_LOCAL_TZ).date(), datetime.min.time().replace(hour=23, minute=59, second=59), tzinfo=_LOCAL_TZ).isoformat(),
         }
         await self.redis.hset(_KEY_EXPECTED, person_id, json.dumps(info))
 
