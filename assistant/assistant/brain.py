@@ -3023,7 +3023,10 @@ class AssistantBrain(BrainCallbacksMixin):
                 _max_resp = self.ollama.num_ctx // 4
                 response_tokens = max(response_tokens, min(2048, _max_resp))
 
-            llm_timeout = (cfg.yaml_config.get("context") or {}).get("llm_timeout", 60)
+            # Model-spezifischer Timeout: Deep-Modelle (27B+) brauchen mehr Zeit
+            # fuer Prompt-Eval bei grossem Context. ollama_client._get_timeout()
+            # liefert tier-spezifische Werte (Fast=30, Smart=45, Deep=120).
+            llm_timeout = self.ollama._get_timeout(model)
 
             # Tool-Filter: set_vacuum/get_vacuum nur anbieten wenn
             # (a) vacuum.enabled in settings.yaml UND
