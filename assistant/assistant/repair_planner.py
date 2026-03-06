@@ -868,6 +868,11 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
     async def scan_object(self, image_data=None, camera_name="",
                           description="") -> dict:
         """Objekterkennung via CameraManager + Vision-LLM."""
+        # Fallback: Standard-Kamera aus Workshop-Config
+        if not camera_name and not image_data:
+            ws_cfg = yaml_config.get("workshop", {})
+            camera_name = ws_cfg.get("scan_camera", "")
+
         # Fall 1: Kamera-Name → CameraManager nutzen
         if camera_name and self.camera_manager:
             result = await self.camera_manager.get_camera_view(
@@ -877,7 +882,30 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                         "message": result.get("message", "Kamera nicht verfuegbar")}
             return {"status": "ok", "analysis": result.get("message", "")}
 
-        # Fall 2: Beschreibung → LLM-Analyse
+        # Fall 2: Bild-Daten direkt → Vision-LLM Analyse
+        if image_data and self.ollama:
+            import base64
+            image_b64 = base64.b64encode(image_data).decode("utf-8")
+            vision_model = yaml_config.get("cameras", {}).get(
+                "vision_model", "llava")
+            prompt = (
+                "Analysiere dieses Bild aus einer Werkstatt-Perspektive:\n"
+                "1. Was ist das fuer ein Objekt/Bauteil?\n"
+                "2. Erkennbare Beschaedigungen oder Verschleiss?\n"
+                "3. Geschaetzte Abmessungen?\n"
+                "4. Teilenummern/Beschriftungen?\n"
+                "5. Reparierbar oder Ersatz noetig?"
+            )
+            result = await self.ollama.chat(
+                messages=[{"role": "user", "content": prompt,
+                           "images": [image_b64]}],
+                model=vision_model, temperature=0.3, max_tokens=500)
+            if "error" not in result:
+                text = result.get("message", {}).get("content", "")
+                return {"status": "ok", "analysis": text}
+            return {"status": "error", "message": "Vision-LLM Analyse fehlgeschlagen"}
+
+        # Fall 3: Beschreibung → LLM-Textanalyse
         if description and self.ollama:
             prompt = (
                 "Du bist ein Werkstatt-Ingenieur. Der Benutzer beschreibt ein Objekt/Bauteil:\n"

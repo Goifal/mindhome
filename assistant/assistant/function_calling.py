@@ -6845,7 +6845,8 @@ class FunctionExecutor:
         # --- Scanner ---
         elif action == "scan_object":
             return await planner.scan_object(
-                description=args.get("description", ""))
+                description=args.get("description", ""),
+                camera_name=args.get("camera", args.get("camera_name", "")))
 
         # --- Library ---
         elif action == "search_library":
