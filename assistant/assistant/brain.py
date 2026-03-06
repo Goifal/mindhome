@@ -341,6 +341,10 @@ class AssistantBrain(BrainCallbacksMixin):
         self._last_executed_action: str = ""
         self._last_executed_action_args: dict = {}
 
+        # Pipeline-/Konversations-Flags (getattr-frei)
+        self._request_from_pipeline: bool = False
+        self._active_conversation_mode: bool = False
+
         # Sarkasmus/Humor-Feedback Tracking
         self._last_response_was_snarky = False
         self._last_humor_category = None

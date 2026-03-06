@@ -322,7 +322,7 @@ class SpontaneousObserver:
             today_count = 0
             for raw in actions_raw:
                 try:
-                    entry = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+                    entry = json.loads(raw.decode(errors="replace") if isinstance(raw, bytes) else raw)
                     if entry.get("timestamp", "").startswith(today):
                         today_count += 1
                 except (json.JSONDecodeError, AttributeError):
@@ -367,7 +367,7 @@ class SpontaneousObserver:
             entity_counts: dict[str, int] = {}
             for raw in actions_raw:
                 try:
-                    entry = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+                    entry = json.loads(raw.decode(errors="replace") if isinstance(raw, bytes) else raw)
                     ts = entry.get("timestamp", "")
                     if ts >= week_start_str:
                         eid = entry.get("entity_id", "")
