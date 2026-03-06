@@ -2625,6 +2625,9 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("conversation_memory", "max_questions"): (10, 100),
         ("conversation_memory", "summary_retention_days"): (7, 90),
         ("conversation_memory", "question_ttl_days"): (3, 60),
+        # Multi-Room Audio
+        ("multi_room_audio", "max_groups"): (1, 20),
+        ("multi_room_audio", "default_volume"): (5, 100),
         # Smart Shopping
         ("smart_shopping", "min_purchases"): (2, 10),
         ("smart_shopping", "reminder_days_before"): (0, 7),
@@ -3165,6 +3168,18 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             cm.question_ttl_days = cfg.get("question_ttl_days", 14)
             logger.info("ConversationMemory Settings aktualisiert")
         _try_reload("conversation_memory", _reload_conv_memory)
+
+    # MultiRoomAudio: Gruppen, Lautstaerke, Gruppierung
+    if "multi_room_audio" in changed_settings and hasattr(brain, "multi_room_audio"):
+        def _reload_multi_room_audio():
+            cfg = yaml_cfg.get("multi_room_audio", {})
+            mra = brain.multi_room_audio
+            mra.enabled = cfg.get("enabled", True)
+            mra.max_groups = cfg.get("max_groups", 10)
+            mra.default_volume = cfg.get("default_volume", 40)
+            mra.use_native_grouping = cfg.get("use_native_grouping", False)
+            logger.info("MultiRoomAudio Settings aktualisiert")
+        _try_reload("multi_room_audio", _reload_multi_room_audio)
 
     # LearningObserver: Repetitions, Zeitfenster
     if "learning" in changed_settings and hasattr(brain, "learning_observer"):

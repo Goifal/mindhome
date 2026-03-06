@@ -90,6 +90,7 @@ const _searchIndex = [
   {tab:'tab-proactive', title:'Smart Shopping', keywords:'smart shopping einkauf verbrauch prognose rezept zutaten muster', icon:'&#128722;'},
   {tab:'tab-proactive', title:'Energie-Dashboard', keywords:'energie solar strom verbrauch einspeisung preis dashboard live watt', icon:'&#9889;'},
   {tab:'tab-proactive', title:'Konversations-Gedaechtnis++', keywords:'projekte meilensteine fragen gedaechtnis zusammenfassung projekt tracker memory', icon:'&#129504;'},
+  {tab:'tab-proactive', title:'Multi-Room Audio', keywords:'multi room audio speaker gruppe gruppen sync synchron musik sonos cast lautsprecher zone', icon:'&#127925;'},
   {tab:'tab-proactive', title:'Jarvis denkt voraus', keywords:'insights wetter kalender energie fenster frost', icon:'&#129504;'},
   {tab:'tab-proactive', title:'Event-Handler', keywords:'event prioritaet critical high medium low', icon:'&#128226;'},
   {tab:'tab-proactive', title:'Spontane Beobachtungen', keywords:'beobachtungen energie streak rekorde meilensteine', icon:'&#128065;'},
@@ -1594,6 +1595,10 @@ const HELP_TEXTS = {
   'heating.weather_adjust.wind_offset': {title:'Wind-Offset', text:'Um wie viel Grad die Heizung bei starkem Wind erhoeht wird.'},
   'insights.checks.frost_heating': {title:'Frost + Heizung', text:'Warnt wenn Frost erwartet wird und Heizung aus/abwesend ist.'},
   'insights.checks.calendar_travel': {title:'Reise + Haus', text:'Erkennt Reise-Termine und prueft Alarm, Fenster, Heizung.'},
+  'multi_room_audio.enabled': {title:'Multi-Room Audio', text:'Aktiviert Speaker-Gruppen fuer synchrone Wiedergabe auf mehreren Lautsprechern gleichzeitig.'},
+  'multi_room_audio.use_native_grouping': {title:'Native Gruppierung', text:'Nutzt HA media_player.join/unjoin fuer echte Synchronisation (Sonos, Google Cast). Wenn deaktiviert: paralleles Abspielen auf jedem Speaker einzeln.'},
+  'multi_room_audio.max_groups': {title:'Max. Gruppen', text:'Maximale Anzahl gleichzeitig gespeicherter Speaker-Gruppen.'},
+  'multi_room_audio.default_volume': {title:'Standard-Lautstaerke', text:'Initiale Lautstaerke wenn eine neue Gruppe erstellt wird (in Prozent).'},
   'conversation_memory.enabled': {title:'Konversations-Gedaechtnis', text:'Aktiviert Projekt-Tracking, offene Fragen und Tages-Zusammenfassungen ueber Gespraeche hinweg.'},
   'conversation_memory.max_projects': {title:'Max. Projekte', text:'Maximale Anzahl gleichzeitig laufender Projekte. Aeltere muessen abgeschlossen werden.'},
   'conversation_memory.max_questions': {title:'Max. Fragen', text:'Maximale Anzahl offener Fragen. Beantwortete und abgelaufene werden automatisch aufgeraeumt.'},
@@ -3936,6 +3941,13 @@ function renderProactive() {
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aufbewahrung</div>' +
     fRange('conversation_memory.summary_retention_days', 'Zusammenfassungen behalten', 7, 90, 7, {7:'1 Woche',14:'2 Wochen',30:'1 Monat',60:'2 Monate',90:'3 Monate'}) +
     fRange('conversation_memory.question_ttl_days', 'Offene Fragen behalten', 3, 60, 1, {3:'3 Tage',7:'1 Woche',14:'2 Wochen',30:'1 Monat',60:'2 Monate'})
+  ) +
+  sectionWrap('&#127925;', 'Multi-Room Audio',
+    fInfo('Erstelle Speaker-Gruppen fuer synchrone Wiedergabe im ganzen Haus. Sage z.B. "Spiele Jazz auf der Gruppe Erdgeschoss" oder "Erstelle eine Gruppe Party mit Wohnzimmer und Kueche". Gruppen-Presets koennen in settings.yaml unter multi_room_audio.presets definiert werden.') +
+    fToggle('multi_room_audio.enabled', 'Multi-Room Audio aktiv') +
+    fToggle('multi_room_audio.use_native_grouping', 'Native Gruppierung (Sonos/Cast)') +
+    fRange('multi_room_audio.max_groups', 'Maximale Gruppen', 1, 20, 1, {1:'1',5:'5',10:'10',15:'15',20:'20'}) +
+    fRange('multi_room_audio.default_volume', 'Standard-Lautstaerke', 5, 100, 5, {5:'5%',20:'20%',40:'40%',60:'60%',80:'80%',100:'100%'})
   ) +
   sectionWrap('&#128226;', 'Event-Handler',
     fInfo('Prioritaeten fuer verschiedene Event-Typen. Event-Typen mit hoeherer Prioritaet durchbrechen "Nicht stoeren". In settings.yaml unter proactive.event_handlers anpassbar.') +

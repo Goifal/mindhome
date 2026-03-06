@@ -43,6 +43,7 @@ from .ha_client import HomeAssistantClient
 from .inventory import InventoryManager
 from .smart_shopping import SmartShopping
 from .conversation_memory import ConversationMemory
+from .multi_room_audio import MultiRoomAudio
 from .knowledge_base import KnowledgeBase
 from .recipe_store import RecipeStore
 from .memory import MemoryManager
@@ -263,6 +264,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
         self.conversation_memory = ConversationMemory()
+
+        # Multi-Room Audio: Speaker-Gruppen, synchrone Wiedergabe
+        self.multi_room_audio = MultiRoomAudio(self.ha)
 
         # Phase 15.3: Geraete-Beziehung (Anomalie-Erkennung)
         self.device_health = DeviceHealthMonitor(self.ha)
@@ -564,6 +568,11 @@ class AssistantBrain(BrainCallbacksMixin):
         # Konversations-Gedaechtnis++ initialisieren
         await self.conversation_memory.initialize(redis_client=self.memory.redis)
         self.executor._conversation_memory = self.conversation_memory
+
+        # Multi-Room Audio initialisieren
+        await self.multi_room_audio.initialize(redis_client=self.memory.redis)
+        await self.multi_room_audio.load_presets()
+        self.executor._multi_room_audio = self.multi_room_audio
 
         # Phase 13.2: Self Automation initialisieren
         await self.self_automation.initialize(redis_client=self.memory.redis)

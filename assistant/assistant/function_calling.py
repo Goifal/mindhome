@@ -2179,6 +2179,62 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    # --- Multi-Room Audio Sync ---
+    {
+        "type": "function",
+        "function": {
+            "name": "multi_room_audio",
+            "description": "Verwaltet Speaker-Gruppen fuer synchrone Multi-Room-Wiedergabe. Erstelle Gruppen wie 'Erdgeschoss' oder 'Party', spiele Musik synchron auf allen Speakern einer Gruppe.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["create_group", "delete_group", "modify_group", "list_groups",
+                                 "play", "stop", "pause", "volume",
+                                 "status", "discover_speakers"],
+                        "description": "create_group/delete_group/modify_group/list_groups: Gruppen verwalten. play/stop/pause: Wiedergabe steuern. volume: Lautstaerke. status: Gruppen-Status. discover_speakers: Verfuegbare Speaker erkennen.",
+                    },
+                    "group_name": {
+                        "type": "string",
+                        "description": "Name der Speaker-Gruppe",
+                    },
+                    "speakers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Liste von media_player Entity-IDs (fuer create_group/modify_group)",
+                    },
+                    "add_speakers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Speaker zur Gruppe hinzufuegen (fuer modify_group)",
+                    },
+                    "remove_speakers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Speaker aus Gruppe entfernen (fuer modify_group)",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Musik-Suchbegriff (fuer play)",
+                    },
+                    "volume": {
+                        "type": "integer",
+                        "description": "Lautstaerke 0-100 (fuer volume)",
+                    },
+                    "speaker": {
+                        "type": "string",
+                        "description": "Einzelner Speaker in der Gruppe (fuer volume)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Beschreibung der Gruppe",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
     # --- Phase 16.2: Was kann Jarvis? ---
     {
         "type": "function",
@@ -3131,7 +3187,7 @@ class FunctionExecutor:
         "reschedule_calendar_event", "set_presence_mode", "edit_config",
         "manage_shopping_list", "list_capabilities", "list_ha_automations",
         "create_automation", "confirm_automation", "list_jarvis_automations",
-        "delete_jarvis_automation", "manage_inventory", "smart_shopping", "conversation_memory",
+        "delete_jarvis_automation", "manage_inventory", "smart_shopping", "conversation_memory", "multi_room_audio",
         "set_timer", "cancel_timer", "get_timer_status",
         "set_reminder", "set_wakeup_alarm", "cancel_alarm", "get_alarms",
         "broadcast", "send_intercom",
@@ -6504,6 +6560,84 @@ class FunctionExecutor:
                 return {"success": True, "message": "Keine Zusammenfassung fuer diesen Tag."}
             topics = ", ".join(s.get("topics", []))
             return {"success": True, "message": f"Zusammenfassung ({s['date']}): {s['summary']}\nThemen: {topics}"}
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    # ------------------------------------------------------------------
+    # Multi-Room Audio Sync
+    # ------------------------------------------------------------------
+
+    async def _exec_multi_room_audio(self, args: dict) -> dict:
+        """Speaker-Gruppen und synchrone Multi-Room-Wiedergabe."""
+        action = args.get("action", "")
+        mra = getattr(self, "_multi_room_audio", None)
+
+        if not mra:
+            return {"success": False, "message": "Multi-Room Audio nicht verfuegbar"}
+
+        if action == "create_group":
+            return await mra.create_group(
+                name=args.get("group_name", ""),
+                speakers=args.get("speakers", []),
+                description=args.get("description", ""),
+            )
+
+        elif action == "delete_group":
+            return await mra.delete_group(name=args.get("group_name", ""))
+
+        elif action == "modify_group":
+            return await mra.modify_group(
+                name=args.get("group_name", ""),
+                add_speakers=args.get("add_speakers"),
+                remove_speakers=args.get("remove_speakers"),
+            )
+
+        elif action == "list_groups":
+            groups = await mra.list_groups()
+            if not groups:
+                return {"success": True, "message": "Keine Audio-Gruppen vorhanden. Erstelle eine mit 'create_group'."}
+            lines = [f"Audio-Gruppen ({len(groups)}):"]
+            for g in groups:
+                n_speakers = len(g.get("speakers", []))
+                lines.append(f"  🔊 {g['name']} ({n_speakers} Speaker, Vol: {g.get('volume', '?')}%)")
+                if g.get("description"):
+                    lines.append(f"    {g['description']}")
+                for s in g.get("speakers", []):
+                    vol = g.get("speaker_volumes", {}).get(s, "?")
+                    lines.append(f"    - {s} ({vol}%)")
+            return {"success": True, "message": "\n".join(lines)}
+
+        elif action == "play":
+            return await mra.play_to_group(
+                group_name=args.get("group_name", ""),
+                query=args.get("query", ""),
+            )
+
+        elif action == "stop":
+            return await mra.stop_group(group_name=args.get("group_name", ""))
+
+        elif action == "pause":
+            return await mra.pause_group(group_name=args.get("group_name", ""))
+
+        elif action == "volume":
+            vol = args.get("volume", 40)
+            return await mra.set_group_volume(
+                group_name=args.get("group_name", ""),
+                volume=vol,
+                speaker=args.get("speaker", ""),
+            )
+
+        elif action == "status":
+            return await mra.get_group_status(group_name=args.get("group_name", ""))
+
+        elif action == "discover_speakers":
+            speakers = await mra.discover_speakers()
+            if not speakers:
+                return {"success": True, "message": "Keine Speaker gefunden."}
+            lines = [f"Verfuegbare Speaker ({len(speakers)}):"]
+            for s in speakers:
+                lines.append(f"  🔊 {s['name']} ({s['entity_id']}) — {s['state']}")
+            return {"success": True, "message": "\n".join(lines)}
 
         return {"success": False, "message": f"Unbekannte Aktion: {action}"}
 
