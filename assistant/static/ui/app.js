@@ -136,6 +136,7 @@ const _searchIndex = [
   {tab:'tab-security', title:'API Key', keywords:'api key netzwerk schutz addon integration', icon:'&#128273;'},
   {tab:'tab-security', title:'Vertrauensstufen', keywords:'trust gast mitbewohner besitzer rechte erlaubt', icon:'&#128272;'},
   {tab:'tab-security', title:'Besucher-Management', keywords:'besucher klingel kamera tuer gast entriegelung', icon:'&#128682;'},
+  {tab:'tab-security', title:'Kameras & Vision', keywords:'kamera vision llava ocr bild snapshot tuerklingel sicherheit objekterkennung', icon:'&#128247;'},
   {tab:'tab-security', title:'Notfall-Protokolle', keywords:'notfall feuer rauch einbruch wasser sirene', icon:'&#127752;'},
   {tab:'tab-security', title:'Interrupt-Queue', keywords:'interrupt critical notfall unterbrechung tts', icon:'&#9889;'},
   // System (tab-system)
@@ -4133,6 +4134,11 @@ function renderWorkshop() {
     fNum('workshop.mqtt.port', 'Port', 1, 65535, 1) +
     fText('workshop.mqtt.topic_prefix', 'Topic-Prefix', 'z.B. workshop/')
   ) +
+  sectionWrap('&#128247;', 'Objekt-Scanner & Kamera',
+    fInfo('Nutze Kameras zur Objekterkennung in der Werkstatt. Bauteile scannen, Beschaedigungen erkennen, Teilenummern lesen. Kamera-Grundkonfig unter Sicherheit > Kameras & Vision.') +
+    fText('workshop.scan_camera', 'Standard-Kamera fuer Werkstatt', 'Name aus der Kamera-Zuordnung, z.B. werkstatt') +
+    fToggle('workshop.scan_auto_ocr', 'Automatisch OCR bei Scan ausfuehren')
+  ) +
   '<div style="margin-top:16px;"><a href="/workshop/" target="_blank" style="color:var(--accent);text-decoration:none;font-size:13px;">Workshop-HUD oeffnen &#8599;</a></div>';
 }
 
@@ -4226,6 +4232,29 @@ function renderSecurity() {
     fToggle('visitor_management.auto_guest_mode', 'Gaeste-Modus automatisch aktivieren') +
     fRange('visitor_management.ring_cooldown_seconds', 'Klingel-Cooldown', 10, 120, 10, {10:'10s',30:'30s',60:'1 Min',120:'2 Min'}) +
     fRange('visitor_management.history_max', 'Max. Besucher-History', 20, 500, 20, {20:'20',50:'50',100:'100',200:'200',500:'500'})
+  ) +
+  // --- Kameras & Vision ---
+  sectionWrap('&#128247;', 'Kameras & Vision',
+    fInfo('Kamera-Integration fuer Tuerklingel-Erkennung, Sicherheits-Snapshots und visuelle Analyse. Bilder werden lokal via Vision-LLM analysiert — nichts verlaesst das Netzwerk.') +
+    fToggle('cameras.enabled', 'Kamera-Integration aktiv') +
+    fSelect('cameras.vision_model', 'Vision-Modell', [
+      {v:'llava',l:'LLaVA (Standard)'},
+      {v:'llava:13b',l:'LLaVA 13B (genauer)'},
+      {v:'llava:34b',l:'LLaVA 34B (beste Qualitaet)'},
+      {v:'qwen2-vl',l:'Qwen2-VL'},
+      {v:'moondream',l:'Moondream (schnell, klein)'},
+      {v:'bakllava',l:'BakLLaVA'}
+    ]) +
+    fKeyValue('cameras.camera_map', 'Kamera-Zuordnung', 'Name (z.B. haustuer)', 'Entity-ID (z.B. camera.front_door)',
+      'Ordne Namen den Home-Assistant Kamera-Entities zu. Diese Namen kannst du dann per Sprache verwenden.') +
+    fToggle('ocr.enabled', 'OCR / Texterkennung aktiv') +
+    fSelect('ocr.vision_model', 'OCR Vision-Modell', [
+      {v:'',l:'Deaktiviert (nur Tesseract)'},
+      {v:'llava',l:'LLaVA'},
+      {v:'qwen2-vl',l:'Qwen2-VL'},
+      {v:'moondream',l:'Moondream'}
+    ]) +
+    fText('ocr.languages', 'OCR-Sprachen', 'Tesseract Sprachcodes, z.B. deu+eng')
   ) +
   // --- Phase 17: Notfall-Protokolle ---
   sectionWrap('&#127752;', 'Notfall-Protokolle',
