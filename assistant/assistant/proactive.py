@@ -367,7 +367,10 @@ class ProactiveManager:
 
                 async for msg in ws:
                     if msg.type == aiohttp.WSMsgType.TEXT:
-                        data = json.loads(msg.data)
+                        try:
+                            data = json.loads(msg.data)
+                        except (json.JSONDecodeError, TypeError):
+                            continue
                         if data.get("type") == "event":
                             await self._handle_event(data.get("event", {}))
                     elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSED):
@@ -1460,8 +1463,11 @@ class ProactiveManager:
             # Cooldown prüfen
             last_time = await self.brain.memory.get_last_notification_time(event_type)
             if last_time:
-                last_dt = datetime.fromisoformat(last_time)
-                if datetime.now() - last_dt < timedelta(seconds=effective_cooldown):
+                try:
+                    last_dt = datetime.fromisoformat(last_time)
+                except (ValueError, TypeError):
+                    last_dt = None
+                if last_dt and datetime.now() - last_dt < timedelta(seconds=effective_cooldown):
                     return
 
         # Phase 15.4+: LOW und MEDIUM-Meldungen batchen statt sofort senden
@@ -1813,7 +1819,11 @@ class ProactiveManager:
             if not raw:
                 return ""
 
-            briefing_data = json.loads(raw)
+            try:
+                briefing_data = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                logger.debug("Ungültiges JSON in Briefing-Key %s", key)
+                return ""
             events = briefing_data.get("events", [])
             departed = briefing_data.get("departed", "")
 
