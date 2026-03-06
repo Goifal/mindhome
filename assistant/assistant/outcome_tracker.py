@@ -190,25 +190,28 @@ class OutcomeTracker:
 
         stats = {}
         cursor = 0
-        while True:
-            cursor, keys = await self.redis.scan(
-                cursor, match="mha:outcome:stats:*", count=50
-            )
-            for key in keys:
-                # Nur globale Stats: mha:outcome:stats:{action_type} (4 Teile)
-                # Skip room-specific (5 Teile) und person-specific (6 Teile) Keys
-                parts = key.split(":")
-                if len(parts) != 4:
-                    continue
-                action_type = parts[3]
-                data = await self.redis.hgetall(f"mha:outcome:stats:{action_type}")
-                score = await self.redis.get(f"mha:outcome:score:{action_type}")
-                stats[action_type] = {
-                    k: int(v) for k, v in data.items()
-                }
-                stats[action_type]["score"] = float(score) if score else DEFAULT_SCORE
-            if cursor == 0:
-                break
+        try:
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor, match="mha:outcome:stats:*", count=50
+                )
+                for key in keys:
+                    # Nur globale Stats: mha:outcome:stats:{action_type} (4 Teile)
+                    # Skip room-specific (5 Teile) und person-specific (6 Teile) Keys
+                    parts = key.split(":")
+                    if len(parts) != 4:
+                        continue
+                    action_type = parts[3]
+                    data = await self.redis.hgetall(f"mha:outcome:stats:{action_type}")
+                    score = await self.redis.get(f"mha:outcome:score:{action_type}")
+                    stats[action_type] = {
+                        k: int(v) for k, v in data.items()
+                    }
+                    stats[action_type]["score"] = float(score) if score else DEFAULT_SCORE
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.warning("L6: Outcome stats SCAN failed: %s", e)
 
         return stats
 
@@ -432,5 +435,6 @@ def _extract_state_key(state) -> dict:
             "state": str(getattr(state, "state", "")),
             "attributes": dict(getattr(state, "attributes", {})),
         }
-    except Exception:
+    except Exception as e:
+        logger.debug("State object conversion failed: %s", e)
         return {}

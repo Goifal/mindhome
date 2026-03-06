@@ -340,10 +340,10 @@ class ProactiveManager:
                 # Auth
                 auth_msg = await asyncio.wait_for(ws.receive_json(), timeout=30)
                 if auth_msg.get("type") == "auth_required":
-                    await ws.send_json({
+                    await asyncio.wait_for(ws.send_json({
                         "type": "auth",
                         "access_token": settings.ha_token,
-                    })
+                    }), timeout=30)  # T6: WS send timeout
                 auth_result = await asyncio.wait_for(ws.receive_json(), timeout=30)
                 if auth_result.get("type") != "auth_ok":
                     logger.error("HA WebSocket Auth fehlgeschlagen")
@@ -352,18 +352,18 @@ class ProactiveManager:
                 logger.info("HA WebSocket verbunden")
 
                 # Events abonnieren
-                await ws.send_json({
+                await asyncio.wait_for(ws.send_json({
                     "id": 1,
                     "type": "subscribe_events",
                     "event_type": "state_changed",
-                })
+                }), timeout=30)  # T6
 
                 # MindHome Events abonnieren
-                await ws.send_json({
+                await asyncio.wait_for(ws.send_json({
                     "id": 2,
                     "type": "subscribe_events",
                     "event_type": "mindhome_event",
-                })
+                }), timeout=30)  # T6
 
                 async for msg in ws:
                     if msg.type == aiohttp.WSMsgType.TEXT:

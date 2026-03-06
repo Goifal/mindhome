@@ -141,13 +141,16 @@ class ErrorPatternTracker:
         # Aktive Mitigations zaehlen
         active_mitigations = 0
         cursor = 0
-        while True:
-            cursor, keys = await self.redis.scan(
-                cursor, match="mha:errors:mitigation:*", count=20
-            )
-            active_mitigations += len(keys)
-            if cursor == 0:
-                break
+        try:
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor, match="mha:errors:mitigation:*", count=20
+                )
+                active_mitigations += len(keys)
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.warning("L3: Error mitigation SCAN failed: %s", e)
 
         return {
             "total_recent": len(raw),

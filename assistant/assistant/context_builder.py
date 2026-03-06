@@ -211,7 +211,14 @@ class ContextBuilder:
 
         if parallel_tasks:
             _keys, _coros = zip(*parallel_tasks)
-            _results = await asyncio.gather(*_coros, return_exceptions=True)
+            try:
+                _results = await asyncio.wait_for(
+                    asyncio.gather(*_coros, return_exceptions=True),
+                    timeout=15,  # T4: Context-Gather Timeout
+                )
+            except asyncio.TimeoutError:
+                logger.warning("T4: Context builder gather timeout (15s)")
+                _results = [asyncio.TimeoutError()] * len(_keys)
             _result_map = dict(zip(_keys, _results))
         else:
             _result_map = {}

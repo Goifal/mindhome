@@ -191,8 +191,8 @@ class SpeakerRecognition:
                 if last:
                     self._last_speaker = last if isinstance(last, str) else last.decode()
                     logger.debug("Letzter Sprecher wiederhergestellt: %s", self._last_speaker)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Speaker cache restore failed: %s", e)
 
     async def identify(
         self,
@@ -592,8 +592,8 @@ class SpeakerRecognition:
         if self.redis:
             try:
                 await self.redis.set(SPEAKER_LAST_IDENTIFIED_KEY, person_id, ex=3600)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Speaker cache store failed: %s", e)
         await self.log_identification(person_id, "manual", 1.0)
 
     async def remove_profile(self, person_id: str) -> bool:
@@ -742,8 +742,8 @@ class SpeakerRecognition:
                     data = await self.redis.get(f"mha:speaker:embedding:{pid}")
                     if data:
                         stored = json.loads(data)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Embedding retrieval failed: %s", e)
 
             if not stored or len(stored) != len(embedding):
                 continue
@@ -794,8 +794,8 @@ class SpeakerRecognition:
                         alpha = 0.3
                         merged = [alpha * e + (1 - alpha) * s
                                   for e, s in zip(embedding, stored)]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Embedding merge failed: %s", e)
 
         # Speichern
         if self.redis:
@@ -822,8 +822,8 @@ class SpeakerRecognition:
             })
             await self.redis.lpush(SPEAKER_HISTORY_KEY, entry)
             await self.redis.ltrim(SPEAKER_HISTORY_KEY, 0, 99)  # Max 100 Eintraege
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Speaker history write failed: %s", e)
 
     async def get_identification_history(self, limit: int = 20) -> list[dict]:
         """Gibt die letzten Identifikationen zurueck."""
@@ -838,7 +838,8 @@ class SpeakerRecognition:
                 except (json.JSONDecodeError, TypeError):
                     continue  # Korrupte Eintraege ueberspringen
             return result
-        except Exception:
+        except Exception as e:
+            logger.debug("History deserialization failed: %s", e)
             return []
 
     async def start_fallback_ask(self, guessed_person: Optional[str] = None,

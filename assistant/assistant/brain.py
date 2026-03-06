@@ -87,7 +87,7 @@ from .tts_enhancer import TTSEnhancer
 from .brain_callbacks import BrainCallbacksMixin
 from .pre_classifier import PreClassifier
 from .circuit_breaker import registry as cb_registry, ollama_breaker, ha_breaker
-from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL
+from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL, ENTITY_CATALOG_REFRESH_INTERVAL, ERROR_BACKOFF_LONG, ERROR_BACKOFF_SHORT
 from .task_registry import TaskRegistry
 from .protocol_engine import ProtocolEngine
 from .spontaneous_observer import SpontaneousObserver
@@ -2254,7 +2254,14 @@ class AssistantBrain(BrainCallbacksMixin):
             _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
 
         _mega_keys, _mega_coros = zip(*_mega_tasks)
-        _mega_results = await asyncio.gather(*_mega_coros, return_exceptions=True)
+        try:
+            _mega_results = await asyncio.wait_for(
+                asyncio.gather(*_mega_coros, return_exceptions=True),
+                timeout=45,  # T1: Mega-Gather Timeout
+            )
+        except asyncio.TimeoutError:
+            logger.warning("T1: Mega-gather timeout (45s) — einzelne Tasks haengen")
+            _mega_results = [asyncio.TimeoutError()] * len(_mega_keys)
         _result_map = dict(zip(_mega_keys, _mega_results))
 
         # --- Context Build Ergebnis verarbeiten ---
@@ -9173,7 +9180,7 @@ Regeln:
                 break
             except Exception as e:
                 logger.debug("Weekly Learning Report Fehler: %s", e)
-                await asyncio.sleep(3600)
+                await asyncio.sleep(ERROR_BACKOFF_LONG)
 
     async def _run_daily_fact_decay(self):
         """Fuehrt einmal taeglich den Fact Decay aus (04:00 Uhr)."""
@@ -9200,7 +9207,7 @@ Regeln:
                 break
             except Exception as e:
                 logger.error("Fact Decay Fehler: %s", e)
-                await asyncio.sleep(3600)  # Bei Fehler 1h warten
+                await asyncio.sleep(ERROR_BACKOFF_LONG)  # Bei Fehler 1h warten
 
     async def _run_autonomy_evolution(self):
         """Prueft woechentlich ob ein Autonomy-Level-Aufstieg moeglich ist (Sonntag 05:00)."""
@@ -9251,7 +9258,7 @@ Regeln:
                 break
             except Exception as e:
                 logger.error("Autonomy Evolution Fehler: %s", e)
-                await asyncio.sleep(3600)
+                await asyncio.sleep(ERROR_BACKOFF_LONG)
 
     async def _entity_catalog_refresh_loop(self):
         """Proaktiver Background-Refresh für den Entity-Katalog (alle 270s).
@@ -9262,13 +9269,13 @@ Regeln:
         from .function_calling import refresh_entity_catalog
         while True:
             try:
-                await asyncio.sleep(270)  # 4.5 Minuten (TTL ist 5 Min)
+                await asyncio.sleep(ENTITY_CATALOG_REFRESH_INTERVAL)  # 4.5 Minuten (TTL ist 5 Min)
                 await refresh_entity_catalog(self.ha)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.debug("Entity-Katalog Background-Refresh Fehler: %s", e)
-                await asyncio.sleep(60)
+                await asyncio.sleep(ERROR_BACKOFF_SHORT)
 
     async def _handle_daily_summary(self, data: dict):
         """Callback für Tages-Zusammenfassungen — wird morgens beim naechsten Kontakt gesprochen."""

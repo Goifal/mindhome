@@ -423,8 +423,8 @@ class RepairPlanner:
                 if results:
                     context = "\n".join(
                         r.get("content", "") for r in results)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Semantic memory search fallback failed: %s", e)
 
         # Werkstatt-Umgebung holen
         environment = await self.get_workshop_environment()
@@ -479,8 +479,8 @@ class RepairPlanner:
                 await emit_workshop("diagnosis", {
                     "project": project, "diagnosis": data,
                 })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Diagnosis websocket emit failed: %s", e)
 
             return self._format_diagnosis(data)
         except (json.JSONDecodeError, TypeError, KeyError):
@@ -706,7 +706,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                     elif "illuminance" in eid:
                         env["licht"] = state.get("state")
             return env
-        except Exception:
+        except Exception as e:
+            logger.warning("Workshop environment query failed: %s", e)
             return {}
 
     # ── Sicherheits-Checkliste ───────────────────────────────
@@ -793,8 +794,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "total": self._session.total_steps,
                 "title": step.title,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Step websocket emit failed: %s", e)
 
         return self._format_step(step)
 

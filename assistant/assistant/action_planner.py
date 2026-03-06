@@ -319,10 +319,17 @@ class ActionPlanner:
                     s.status = "done" if res.get("success", False) else "failed"
                     return s, fn, fa, res
 
-                results = await asyncio.gather(
-                    *[_run_step(s, fn, fa) for s, fn, fa in valid_steps],
-                    return_exceptions=True,
-                )
+                try:
+                    results = await asyncio.wait_for(
+                        asyncio.gather(
+                            *[_run_step(s, fn, fa) for s, fn, fa in valid_steps],
+                            return_exceptions=True,
+                        ),
+                        timeout=120,  # T3: Action-Step Timeout
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("T3: Action planner parallel steps timeout (120s)")
+                    results = [asyncio.TimeoutError()] * len(valid_steps)
 
                 for idx, r in enumerate(results):
                     if isinstance(r, Exception):

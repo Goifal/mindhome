@@ -28,7 +28,7 @@ import yaml
 
 from .brain import AssistantBrain
 from .config import settings, yaml_config, load_yaml_config, get_person_title
-from .constants import ERROR_BUFFER_MAX_SIZE, ACTIVITY_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS
+from .constants import ERROR_BUFFER_MAX_SIZE, ACTIVITY_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS, TOKEN_CLEANUP_INTERVAL, WS_KEEPALIVE_INTERVAL
 from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
     allowed_file, ensure_upload_dir,
@@ -73,8 +73,10 @@ class _ErrorBufferHandler(logging.Handler):
                 "logger": record.name,
                 "message": msg,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            # E1: Nicht-stumm loggen — Activity-Log-Formatierungsfehler sichtbar machen
+            import sys
+            print(f"ErrorBufferHandler format error: {e}", file=sys.stderr)
 
 
 _err_handler = _ErrorBufferHandler(level=logging.WARNING)
@@ -136,8 +138,10 @@ class _ActivityBufferHandler(logging.Handler):
                 "logger": record.name,
                 "message": msg,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            # E2: Dashboard-Event-Serialisierung nicht stumm verschlucken
+            import sys
+            print(f"ActivityBufferHandler format error: {e}", file=sys.stderr)
 
 
 _activity_handler = _ActivityBufferHandler(level=logging.INFO)
@@ -301,14 +305,14 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
         logger.warning("Boot-Sequenz fehlgeschlagen: %s", e)
         try:
             await emit_speaking(f"Alle Systeme online, {get_person_title()}.")
-        except Exception:
-            pass
+        except Exception as e2:
+            logger.debug("Boot fallback message also failed: %s", e2)
 
 
 async def _periodic_token_cleanup():
     """Raumt abgelaufene UI-Tokens alle 15 Minuten auf."""
     while True:
-        await asyncio.sleep(900)  # 15 Minuten
+        await asyncio.sleep(TOKEN_CLEANUP_INTERVAL)  # 15 Minuten
         try:
             _cleanup_expired_tokens()
         except Exception as e:
@@ -1828,7 +1832,7 @@ async def websocket_endpoint(websocket: WebSocket):
     async def _ws_keepalive():
         try:
             while True:
-                await asyncio.sleep(25)
+                await asyncio.sleep(WS_KEEPALIVE_INTERVAL)
                 try:
                     await websocket.send_json({"event": "ping", "data": {}})
                 except Exception:
@@ -1847,7 +1851,14 @@ async def websocket_endpoint(websocket: WebSocket):
     _ws_interrupt_flag = False
     try:
         while True:
-            data = await websocket.receive_text()
+            try:
+                data = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=300,  # T5: WebSocket-Inaktivitaets-Timeout (5 Min)
+                )
+            except asyncio.TimeoutError:
+                logger.debug("T5: WebSocket client inactive for 300s, closing")
+                break
 
             # F-063: Rate-Limit pruefen
             import time as _t

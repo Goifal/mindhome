@@ -335,48 +335,52 @@ class LearningObserver:
         # Key: mha:learning:patterns:[person:]entity:state:HH:MM
         # Achtung: time_slot ist HH:MM (enthaelt Doppelpunkt) → rsplit(":", 2)
         cursor = 0
-        while True:
-            cursor, keys = await self.redis.scan(
-                cursor, match=f"{KEY_PATTERNS}:*", count=50
-            )
-            for key in keys:
-                key_str = key.decode() if isinstance(key, bytes) else key
-                count = await self.redis.get(key)
-                if count:
-                    count_val = int(count)
-                    if count_val >= 2:  # Ab 2 Wiederholungen anzeigen
-                        suffix = key_str.replace(f"{KEY_PATTERNS}:", "")
-                        # rsplit 2 → ["[person:]entity:state", "HH", "MM"]
-                        parts = suffix.rsplit(":", 2)
-                        if len(parts) != 3 or not parts[1].isdigit():
-                            continue
-                        action, ts_hour, ts_min = parts
-                        time_slot = f"{ts_hour}:{ts_min}"
+        try:
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor, match=f"{KEY_PATTERNS}:*", count=50
+                )
+                for key in keys:
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    count = await self.redis.get(key)
+                    if count:
+                        count_val = int(count)
+                        if count_val >= 2:  # Ab 2 Wiederholungen anzeigen
+                            suffix = key_str.replace(f"{KEY_PATTERNS}:", "")
+                            # rsplit 2 → ["[person:]entity:state", "HH", "MM"]
+                            parts = suffix.rsplit(":", 2)
+                            if len(parts) != 3 or not parts[1].isdigit():
+                                continue
+                            action, ts_hour, ts_min = parts
+                            time_slot = f"{ts_hour}:{ts_min}"
 
-                        pattern_person, entity_action = _parse_person_prefix(action)
+                            pattern_person, entity_action = _parse_person_prefix(action)
 
-                        if person and pattern_person != person:
-                            continue
+                            if person and pattern_person != person:
+                                continue
 
-                        entity_state = entity_action.rsplit(":", 1)
-                        patterns.append({
-                            "action": entity_action,
-                            "entity": entity_state[0] if len(entity_state) > 1 else entity_action,
-                            "time_slot": time_slot,
-                            "count": count_val,
-                            "weekday": -1,
-                            "person": pattern_person,
-                        })
-            if cursor == 0:
-                break
+                            entity_state = entity_action.rsplit(":", 1)
+                            patterns.append({
+                                "action": entity_action,
+                                "entity": entity_state[0] if len(entity_state) > 1 else entity_action,
+                                "time_slot": time_slot,
+                                "count": count_val,
+                                "weekday": -1,
+                                "person": pattern_person,
+                            })
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.warning("L4: Daily patterns SCAN failed: %s", e)
 
         # Wochentag-Muster lesen
         # Key: mha:learning:weekday_patterns:[person:]entity:state:HH:MM:weekday
         cursor = 0
-        while True:
-            cursor, keys = await self.redis.scan(
-                cursor, match=f"{KEY_WEEKDAY_PATTERNS}:*", count=50
-            )
+        try:
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor, match=f"{KEY_WEEKDAY_PATTERNS}:*", count=50
+                )
             for key in keys:
                 key_str = key.decode() if isinstance(key, bytes) else key
                 count = await self.redis.get(key)
@@ -406,8 +410,10 @@ class LearningObserver:
                             "weekday": weekday_val,
                             "person": pattern_person,
                         })
-            if cursor == 0:
-                break
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.warning("L5: Weekday patterns SCAN failed: %s", e)
 
         # Nach Count sortieren (haeufigste zuerst)
         patterns.sort(key=lambda p: p["count"], reverse=True)

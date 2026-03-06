@@ -52,6 +52,7 @@ _get_room_profiles = get_room_profiles
 _entity_catalog: dict[str, list[str]] = {}
 _entity_catalog_ts: float = 0.0
 _CATALOG_TTL = 300  # 5 Minuten
+_entity_catalog_lock = asyncio.Lock()  # R2: Schutz vor konkurrierenden Refresh-Aufrufen
 
 # ── MindHome Domain-Mapping: Entity-ID → Domain-Name ──
 # Wird aus /api/devices + /api/domains geladen.
@@ -1033,6 +1034,19 @@ async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
     Laedt zusaetzlich Domain-Zuordnungen von der MindHome API,
     damit der Assistant weiss welche Geräte Fenster, Steckdosen, etc. sind.
     """
+    global _entity_catalog, _entity_catalog_ts
+
+    # R2: Lock verhindert parallele Refreshes (z.B. bei gleichzeitigen Requests)
+    async with _entity_catalog_lock:
+        # Falls ein anderer Refresh gerade fertig wurde, TTL prüfen
+        if _entity_catalog and (time.time() - _entity_catalog_ts) < _CATALOG_TTL:
+            return
+
+        await _refresh_entity_catalog_inner(ha)
+
+
+async def _refresh_entity_catalog_inner(ha: HomeAssistantClient) -> None:
+    """Innerer Refresh ohne Lock (wird von refresh_entity_catalog aufgerufen)."""
     global _entity_catalog, _entity_catalog_ts
 
     # MindHome Domain-Mapping laden (parallel zum HA-States-Abruf)

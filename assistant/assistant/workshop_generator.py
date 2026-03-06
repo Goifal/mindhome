@@ -516,8 +516,8 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
             await emit_workshop("file_created", {
                 "project_id": project_id, "filename": filename,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Workshop file websocket emit failed: %s", e)
 
         return {"status": "ok", "path": str(filepath)}
 

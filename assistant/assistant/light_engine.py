@@ -195,8 +195,8 @@ class LightEngine:
                         brightness = min(brightness, 50)  # Max 50% bei Stress
                     elif mood == "tired":
                         brightness = min(brightness, 30)  # Max 30% bei Muedigkeit
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Mood data retrieval failed: %s", e)
 
             service_data = {"entity_id": light_id, "brightness_pct": brightness}
             transition = cfg.get("default_transition")
