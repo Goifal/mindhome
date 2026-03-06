@@ -2380,8 +2380,10 @@ class AssistantBrain(BrainCallbacksMixin):
             _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
         if live_insights:
             _upgrade_signals += 1  # Aktive Insights = mehr zu verarbeiten
-        if sec_score and sec_score.get("level") in ("warning", "critical"):
-            _upgrade_signals += 3  # Sicherheit = immer Deep
+        if sec_score and sec_score.get("level") == "critical":
+            _upgrade_signals += 3  # Kritische Sicherheit = Deep
+        elif sec_score and sec_score.get("level") == "warning":
+            _upgrade_signals += 1  # Warnung = nur Kontext, kein Upgrade allein
 
         if _upgrade_signals >= 3 and model != self.model_router.model_deep:
             # Error-Mitigation VOR dem Upgrade pruefen: Wenn das Deep-Modell
