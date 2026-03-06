@@ -2620,6 +2620,11 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("energy", "thresholds", "price_high_cent"): (10, 100),
         ("energy", "thresholds", "solar_high_watts"): (100, 50000),
         ("energy", "thresholds", "anomaly_increase_percent"): (10, 200),
+        # Conversation Memory
+        ("conversation_memory", "max_projects"): (5, 50),
+        ("conversation_memory", "max_questions"): (10, 100),
+        ("conversation_memory", "summary_retention_days"): (7, 90),
+        ("conversation_memory", "question_ttl_days"): (3, 60),
         # Smart Shopping
         ("smart_shopping", "min_purchases"): (2, 10),
         ("smart_shopping", "reminder_days_before"): (0, 7),
@@ -3147,6 +3152,19 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             eo.essential_entities = set(cfg.get("essential_entities", []))
             logger.info("EnergyOptimizer Settings aktualisiert")
         _try_reload("energy", _reload_energy)
+
+    # ConversationMemory: Limits, TTLs
+    if "conversation_memory" in changed_settings and hasattr(brain, "conversation_memory"):
+        def _reload_conv_memory():
+            cfg = yaml_cfg.get("conversation_memory", {})
+            cm = brain.conversation_memory
+            cm.enabled = cfg.get("enabled", True)
+            cm.max_projects = cfg.get("max_projects", 20)
+            cm.max_questions = cfg.get("max_questions", 30)
+            cm.summary_retention_days = cfg.get("summary_retention_days", 30)
+            cm.question_ttl_days = cfg.get("question_ttl_days", 14)
+            logger.info("ConversationMemory Settings aktualisiert")
+        _try_reload("conversation_memory", _reload_conv_memory)
 
     # LearningObserver: Repetitions, Zeitfenster
     if "learning" in changed_settings and hasattr(brain, "learning_observer"):

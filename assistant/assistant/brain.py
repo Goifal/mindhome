@@ -42,6 +42,7 @@ from .function_validator import FunctionValidator
 from .ha_client import HomeAssistantClient
 from .inventory import InventoryManager
 from .smart_shopping import SmartShopping
+from .conversation_memory import ConversationMemory
 from .knowledge_base import KnowledgeBase
 from .recipe_store import RecipeStore
 from .memory import MemoryManager
@@ -259,6 +260,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Smart Shopping: Verbrauchsprognose + Einkaufslistenmanagement
         self.smart_shopping = SmartShopping(self.ha)
+
+        # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
+        self.conversation_memory = ConversationMemory()
 
         # Phase 15.3: Geraete-Beziehung (Anomalie-Erkennung)
         self.device_health = DeviceHealthMonitor(self.ha)
@@ -556,6 +560,10 @@ class AssistantBrain(BrainCallbacksMixin):
         # Smart Shopping initialisieren
         await self.smart_shopping.initialize(redis_client=self.memory.redis)
         self.executor._smart_shopping = self.smart_shopping
+
+        # Konversations-Gedaechtnis++ initialisieren
+        await self.conversation_memory.initialize(redis_client=self.memory.redis)
+        self.executor._conversation_memory = self.conversation_memory
 
         # Phase 13.2: Self Automation initialisieren
         await self.self_automation.initialize(redis_client=self.memory.redis)
@@ -2260,6 +2268,7 @@ class AssistantBrain(BrainCallbacksMixin):
             )))
             _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
             _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
+            _mega_tasks.append(("conv_memory", self.conversation_memory.get_memory_context()))
 
         _mega_keys, _mega_coros = zip(*_mega_tasks)
         try:
@@ -2740,6 +2749,11 @@ class AssistantBrain(BrainCallbacksMixin):
                 cont_text = f"\n\nOFFENES THEMA: {continuity_hint}"
             sections.append(("continuity", cont_text, 3))
 
+        # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
+        conv_memory_ctx = _safe_get("conv_memory", "")
+        if conv_memory_ctx:
+            sections.append(("conv_memory", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 3))
+
         # --- Prio 4: Wenn Platz ---
         if tutorial_hint:
             sections.append(("tutorial", tutorial_hint, 4))
@@ -2783,6 +2797,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "continuity": "Gespraechskontinuitaet",
                 "experiential": "Erfahrungskontext",
                 "tutorial": "Tutorial-Hinweise",
+                "conv_memory": "Projekte & offene Fragen",
             }
             readable = [_dropped_labels.get(n, n) for n in dropped_names]
             system_prompt += (

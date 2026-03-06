@@ -2112,6 +2112,73 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    # --- Konversations-Gedaechtnis++ ---
+    {
+        "type": "function",
+        "function": {
+            "name": "conversation_memory",
+            "description": "Verwaltet Projekte, offene Fragen und Tages-Zusammenfassungen. Nutze dies wenn der User ueber laufende Projekte spricht, Fragen fuer spaeter merken will, oder nach frueheren Gespraechen fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["create_project", "update_project", "list_projects", "delete_project",
+                                 "add_question", "answer_question", "list_questions",
+                                 "save_summary", "get_summary"],
+                        "description": "create_project/update_project/list_projects/delete_project: Projekt-Verwaltung. add_question/answer_question/list_questions: Offene Fragen. save_summary/get_summary: Tages-Zusammenfassung.",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Projektname (fuer create/update/delete_project)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Beschreibung (fuer create_project)",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["active", "paused", "done"],
+                        "description": "Projektstatus (fuer update_project)",
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "Notiz zum Projekt (fuer update_project)",
+                    },
+                    "milestone": {
+                        "type": "string",
+                        "description": "Meilenstein (fuer update_project)",
+                    },
+                    "question": {
+                        "type": "string",
+                        "description": "Frage-Text (fuer add_question/answer_question)",
+                    },
+                    "answer": {
+                        "type": "string",
+                        "description": "Antwort (fuer answer_question)",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "Zusammenfassung (fuer save_summary)",
+                    },
+                    "topics": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Themen-Liste (fuer save_summary)",
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Datum YYYY-MM-DD (fuer get_summary, optional)",
+                    },
+                    "person": {
+                        "type": "string",
+                        "description": "Person (optional, fuer Zuordnung)",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
     # --- Phase 16.2: Was kann Jarvis? ---
     {
         "type": "function",
@@ -3064,7 +3131,7 @@ class FunctionExecutor:
         "reschedule_calendar_event", "set_presence_mode", "edit_config",
         "manage_shopping_list", "list_capabilities", "list_ha_automations",
         "create_automation", "confirm_automation", "list_jarvis_automations",
-        "delete_jarvis_automation", "manage_inventory", "smart_shopping",
+        "delete_jarvis_automation", "manage_inventory", "smart_shopping", "conversation_memory",
         "set_timer", "cancel_timer", "get_timer_status",
         "set_reminder", "set_wakeup_alarm", "cancel_alarm", "get_alarms",
         "broadcast", "send_intercom",
@@ -6345,6 +6412,98 @@ class FunctionExecutor:
                 sorted_days = sorted(counts.items(), key=lambda x: x[1], reverse=True)
                 msg += " Verteilung: " + ", ".join(f"{d}: {c}x" for d, c in sorted_days)
             return {"success": True, "message": msg}
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    # ------------------------------------------------------------------
+    # Konversations-Gedaechtnis++
+    # ------------------------------------------------------------------
+
+    async def _exec_conversation_memory(self, args: dict) -> dict:
+        """Projekte, offene Fragen, Tages-Zusammenfassungen."""
+        action = args.get("action", "")
+        cm = getattr(self, "_conversation_memory", None)
+
+        if not cm:
+            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar"}
+
+        if action == "create_project":
+            return await cm.create_project(
+                name=args.get("name", ""),
+                description=args.get("description", ""),
+                person=args.get("person", ""),
+            )
+
+        elif action == "update_project":
+            return await cm.update_project(
+                name=args.get("name", ""),
+                status=args.get("status", ""),
+                note=args.get("note", ""),
+                milestone=args.get("milestone", ""),
+            )
+
+        elif action == "list_projects":
+            projects = await cm.get_projects(
+                status=args.get("status", ""),
+                person=args.get("person", ""),
+            )
+            if not projects:
+                return {"success": True, "message": "Keine Projekte vorhanden."}
+            lines = [f"Projekte ({len(projects)}):"]
+            for p in projects:
+                ms = len(p.get("milestones", []))
+                notes = len(p.get("notes", []))
+                status_icon = {"active": "▶", "paused": "⏸", "done": "✓"}.get(p["status"], "?")
+                lines.append(f"  {status_icon} {p['name']} ({p['status']}) — {ms} Meilensteine, {notes} Notizen")
+                if p.get("description"):
+                    lines.append(f"    {p['description']}")
+                for m in p.get("milestones", [])[-3:]:
+                    lines.append(f"    ✓ {m['text']} ({m['date'][:10]})")
+                for n in p.get("notes", [])[-2:]:
+                    lines.append(f"    📝 {n['text'][:60]} ({n['date'][:10]})")
+            return {"success": True, "message": "\n".join(lines)}
+
+        elif action == "delete_project":
+            return await cm.delete_project(name=args.get("name", ""))
+
+        elif action == "add_question":
+            return await cm.add_question(
+                question=args.get("question", ""),
+                context=args.get("description", ""),
+                person=args.get("person", ""),
+            )
+
+        elif action == "answer_question":
+            return await cm.answer_question(
+                question_search=args.get("question", ""),
+                answer=args.get("answer", ""),
+            )
+
+        elif action == "list_questions":
+            questions = await cm.get_open_questions(person=args.get("person", ""))
+            if not questions:
+                return {"success": True, "message": "Keine offenen Fragen."}
+            lines = [f"Offene Fragen ({len(questions)}):"]
+            for q in questions:
+                age = q.get("created_at", "")[:10]
+                lines.append(f"  ❓ {q['question']} (seit {age})")
+                if q.get("context"):
+                    lines.append(f"     Kontext: {q['context'][:50]}")
+            return {"success": True, "message": "\n".join(lines)}
+
+        elif action == "save_summary":
+            return await cm.save_daily_summary(
+                summary=args.get("summary", ""),
+                topics=args.get("topics", []),
+                date=args.get("date", ""),
+            )
+
+        elif action == "get_summary":
+            s = await cm.get_daily_summary(date=args.get("date", ""))
+            if not s:
+                return {"success": True, "message": "Keine Zusammenfassung fuer diesen Tag."}
+            topics = ", ".join(s.get("topics", []))
+            return {"success": True, "message": f"Zusammenfassung ({s['date']}): {s['summary']}\nThemen: {topics}"}
 
         return {"success": False, "message": f"Unbekannte Aktion: {action}"}
 

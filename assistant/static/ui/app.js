@@ -89,6 +89,7 @@ const _searchIndex = [
   {tab:'tab-proactive', title:'Einkaufslisten-Erinnerung', keywords:'einkaufsliste shopping abschied verlassen departure', icon:'&#128722;'},
   {tab:'tab-proactive', title:'Smart Shopping', keywords:'smart shopping einkauf verbrauch prognose rezept zutaten muster', icon:'&#128722;'},
   {tab:'tab-proactive', title:'Energie-Dashboard', keywords:'energie solar strom verbrauch einspeisung preis dashboard live watt', icon:'&#9889;'},
+  {tab:'tab-proactive', title:'Konversations-Gedaechtnis++', keywords:'projekte meilensteine fragen gedaechtnis zusammenfassung projekt tracker memory', icon:'&#129504;'},
   {tab:'tab-proactive', title:'Jarvis denkt voraus', keywords:'insights wetter kalender energie fenster frost', icon:'&#129504;'},
   {tab:'tab-proactive', title:'Event-Handler', keywords:'event prioritaet critical high medium low', icon:'&#128226;'},
   {tab:'tab-proactive', title:'Spontane Beobachtungen', keywords:'beobachtungen energie streak rekorde meilensteine', icon:'&#128065;'},
@@ -1593,6 +1594,11 @@ const HELP_TEXTS = {
   'heating.weather_adjust.wind_offset': {title:'Wind-Offset', text:'Um wie viel Grad die Heizung bei starkem Wind erhoeht wird.'},
   'insights.checks.frost_heating': {title:'Frost + Heizung', text:'Warnt wenn Frost erwartet wird und Heizung aus/abwesend ist.'},
   'insights.checks.calendar_travel': {title:'Reise + Haus', text:'Erkennt Reise-Termine und prueft Alarm, Fenster, Heizung.'},
+  'conversation_memory.enabled': {title:'Konversations-Gedaechtnis', text:'Aktiviert Projekt-Tracking, offene Fragen und Tages-Zusammenfassungen ueber Gespraeche hinweg.'},
+  'conversation_memory.max_projects': {title:'Max. Projekte', text:'Maximale Anzahl gleichzeitig laufender Projekte. Aeltere muessen abgeschlossen werden.'},
+  'conversation_memory.max_questions': {title:'Max. Fragen', text:'Maximale Anzahl offener Fragen. Beantwortete und abgelaufene werden automatisch aufgeraeumt.'},
+  'conversation_memory.summary_retention_days': {title:'Zusammenfassungen behalten', text:'Wie lange Tages-Zusammenfassungen in Redis gespeichert werden.'},
+  'conversation_memory.question_ttl_days': {title:'Fragen-TTL', text:'Nach wie vielen Tagen unbeantwortete Fragen automatisch geloescht werden.'},
   'energy.enabled': {title:'Energiemanagement', text:'Aktiviert Energie-Monitoring, Live-Dashboard und proaktive Strom-Tipps.'},
   'energy.entities.electricity_price': {title:'Strompreis-Sensor', text:'HA-Entity fuer den aktuellen Strompreis. Unterstuetzt ct/kWh, EUR/kWh und EUR/MWh (wird automatisch umgerechnet).'},
   'energy.entities.total_consumption': {title:'Verbrauchs-Sensor', text:'HA-Entity fuer den aktuellen Stromverbrauch in Watt.'},
@@ -3920,6 +3926,16 @@ function renderProactive() {
     fRange('energy.thresholds.price_high_cent', 'Teurer Strom ueber', 20, 60, 1, {20:'20 ct',25:'25 ct',30:'30 ct',35:'35 ct',40:'40 ct',50:'50 ct',60:'60 ct'}) +
     fRange('energy.thresholds.solar_high_watts', 'Solar-Ueberschuss ab', 500, 10000, 500, {500:'500 W',1000:'1 kW',2000:'2 kW',3000:'3 kW',5000:'5 kW',10000:'10 kW'}) +
     fRange('energy.thresholds.anomaly_increase_percent', 'Anomalie-Schwelle', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'})
+  ) +
+  sectionWrap('&#129504;', 'Konversations-Gedaechtnis++',
+    fInfo('Jarvis merkt sich laufende Projekte, offene Fragen und erstellt Tages-Zusammenfassungen. Sage z.B. "Merke dir: Projekt Gartenhaus — Fundament ist fertig" oder "Merke dir die Frage: Wann muss die TUeV-Plakette erneuert werden?"') +
+    fToggle('conversation_memory.enabled', 'Konversations-Gedaechtnis aktiv') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Limits</div>' +
+    fRange('conversation_memory.max_projects', 'Maximale Projekte', 5, 50, 5, {5:'5',10:'10',15:'15',20:'20',30:'30',50:'50'}) +
+    fRange('conversation_memory.max_questions', 'Maximale offene Fragen', 10, 100, 10, {10:'10',20:'20',30:'30',50:'50',100:'100'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aufbewahrung</div>' +
+    fRange('conversation_memory.summary_retention_days', 'Zusammenfassungen behalten', 7, 90, 7, {7:'1 Woche',14:'2 Wochen',30:'1 Monat',60:'2 Monate',90:'3 Monate'}) +
+    fRange('conversation_memory.question_ttl_days', 'Offene Fragen behalten', 3, 60, 1, {3:'3 Tage',7:'1 Woche',14:'2 Wochen',30:'1 Monat',60:'2 Monate'})
   ) +
   sectionWrap('&#128226;', 'Event-Handler',
     fInfo('Prioritaeten fuer verschiedene Event-Typen. Event-Typen mit hoeherer Prioritaet durchbrechen "Nicht stoeren". In settings.yaml unter proactive.event_handlers anpassbar.') +
