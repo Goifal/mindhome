@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Bekannte Fehler-Typen
 ERROR_TYPES = ("timeout", "service_unavailable", "entity_not_found",
-               "bad_params", "model_overloaded")
+               "bad_params", "model_overloaded", "unknown")
 
 # Mitigation-Typen
 MITIGATION_USE_FALLBACK = "use_fallback"

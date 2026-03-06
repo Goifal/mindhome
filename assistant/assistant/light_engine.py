@@ -625,6 +625,8 @@ class LightEngine:
                     continue
 
                 # Berechnung: Je mehr Tageslicht, desto weniger Kunstlicht
+                if not target_lux:
+                    continue
                 ratio = min(1.0, current_lux / target_lux)
                 target_bri = int(max_bri * (1.0 - ratio))
                 target_bri = max(min_bri, min(max_bri, target_bri))

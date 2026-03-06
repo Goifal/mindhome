@@ -180,7 +180,7 @@ class ProtocolEngine:
             try:
                 result = await self.executor.execute(tool, args)
                 executed.append({"tool": tool, "args": args, "result": result})
-                if not isinstance(result, dict) or not result.get("success", True):
+                if isinstance(result, dict) and not result.get("success", True):
                     errors.append(f"{tool}: {result}")
             except Exception as e:
                 errors.append(f"{tool}: {e}")

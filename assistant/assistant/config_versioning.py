@@ -244,9 +244,15 @@ class ConfigVersioning:
                 if old_val != new_val:
                     changed.append(key)
 
-            # Globales yaml_config aktualisieren
-            yaml_config.clear()
-            yaml_config.update(new_config)
+            # Globales yaml_config aktualisieren (mit Rollback bei Fehler)
+            backup = dict(yaml_config)
+            try:
+                yaml_config.clear()
+                yaml_config.update(new_config)
+            except Exception:
+                yaml_config.clear()
+                yaml_config.update(backup)
+                raise
 
             logger.info("Config Hot-Reload: %d Keys geaendert: %s", len(changed), changed)
             return {"success": True, "changed_keys": changed}

@@ -193,7 +193,7 @@ def create_cover_schedule(data: dict) -> dict:
     new_schedule = {
         "id": _next_id(schedules),
         "time_str": data.get("time_str", "08:00"),
-        "position": data.get("position", 100),
+        "position": max(0, min(100, data.get("position", 100))),
         "entity_id": data.get("entity_id"),
         "group_id": data.get("group_id"),
         "days": data.get("days", [0, 1, 2, 3, 4, 5, 6]),

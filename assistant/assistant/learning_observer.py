@@ -153,10 +153,14 @@ class LearningObserver:
         person_prefix = f"{person}:" if person else ""
         pattern_key = f"{KEY_PATTERNS}:{person_prefix}{action_key}:{time_slot}"
 
-        # Zaehler erhoehen
-        count = await self.redis.incr(pattern_key)
-        # TTL auf 30 Tage setzen (nur beim ersten Mal)
-        if count == 1:
+        # Zaehler erhoehen (Pipeline fuer atomares incr+expire)
+        pipe = self.redis.pipeline()
+        pipe.incr(pattern_key)
+        pipe.ttl(pattern_key)
+        incr_result, current_ttl = await pipe.execute()
+        count = incr_result
+        # TTL auf 30 Tage setzen (nur wenn noch keine TTL gesetzt)
+        if current_ttl is None or current_ttl < 0:
             await self.redis.expire(pattern_key, 30 * 86400)
 
         # Genug Wiederholungen fuer einen Vorschlag?

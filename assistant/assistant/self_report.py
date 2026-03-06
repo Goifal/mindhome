@@ -75,7 +75,7 @@ class SelfReport:
             except Exception as e:
                 logger.debug("SelfReport: Feedback-Daten Fehler: %s", e)
 
-        if learning_observer:
+        if learning_observer and hasattr(learning_observer, 'get_learning_report'):
             try:
                 data["learning"] = await learning_observer.get_learning_report()
             except Exception as e:

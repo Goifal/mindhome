@@ -216,15 +216,18 @@ class SeasonalInsightEngine:
         last_year_key = f"{_PREFIX}:monthly:{now.year - 1}-{now.month:02d}"
 
         try:
-            current_data = await self.redis.hgetall(current_key)
-            last_year_data = await self.redis.hgetall(last_year_key)
+            raw_current = await self.redis.hgetall(current_key)
+            raw_last = await self.redis.hgetall(last_year_key)
 
-            if not last_year_data:
+            if not raw_last:
                 return None  # Keine Vorjahres-Daten
 
+            current_data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_current.items()} if raw_current else {}
+            last_year_data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_last.items()}
+
             # Vergleiche Heizungs-Aktionen
-            heat_current = int(current_data.get(b"set_climate", current_data.get("set_climate", 0)))
-            heat_last = int(last_year_data.get(b"set_climate", last_year_data.get("set_climate", 0)))
+            heat_current = int(current_data.get("set_climate", 0))
+            heat_last = int(last_year_data.get("set_climate", 0))
 
             if heat_last > 10 and heat_current < heat_last * 0.3:
                 return (

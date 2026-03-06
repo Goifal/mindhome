@@ -341,6 +341,17 @@ class AssistantBrain(BrainCallbacksMixin):
         self._last_executed_action: str = ""
         self._last_executed_action_args: dict = {}
 
+        # Pipeline-/Konversations-Flags (getattr-frei)
+        self._request_from_pipeline: bool = False
+        self._active_conversation_mode: bool = False
+
+        # Sarkasmus/Humor-Feedback Tracking
+        self._last_response_was_snarky = False
+        self._last_humor_category = None
+
+        # Formality-Score Cache
+        self._last_formality_score = None
+
         # --- Konfigurierbare Daten aus YAML laden (Fallback: Hardcoded) ---
         self._load_configurable_data()
 
@@ -2247,6 +2258,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # --- Context Build Ergebnis verarbeiten ---
         context = _result_map.get("context")
+        if context is None:
+            context = {"time": {"datetime": datetime.now().isoformat()}}
         if isinstance(context, asyncio.TimeoutError):
             logger.warning("Context Build Timeout (%.0fs) — Fallback auf Minimal-Kontext", ctx_timeout)
             context = {"time": {"datetime": datetime.now().isoformat()}}

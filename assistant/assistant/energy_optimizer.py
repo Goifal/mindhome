@@ -163,7 +163,7 @@ class EnergyOptimizer:
         # 2. Solar-Ueberschuss + Cloud-Forecast
         solar = self._find_sensor_value(states, self.solar_sensor, ["solar", "pv"])
         export = self._find_sensor_value(states, self.grid_export_sensor, ["export", "einspeisung"])
-        if solar is not None and solar > self.solar_high_watts and export and export > 500:
+        if solar is not None and solar > self.solar_high_watts and export is not None and export > 500:
             # Cloud-Forecast: Bewoelkung in den naechsten Stunden pruefen
             clouds_coming = self._check_cloud_forecast(states)
             if clouds_coming and not await self._was_recently_alerted("solar_cloud_shift"):

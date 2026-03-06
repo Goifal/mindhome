@@ -1080,7 +1080,7 @@ class PersonalityEngine:
             return ""
 
         hour = datetime.now().hour
-        room_short = room.split("_")[0].title() if room else ""
+        room_short = (room or "").split("_")[0].title() if room else ""
 
         # Aktions-spezifische Bestätigungen — immer im Jarvis-Ton
         title = get_person_title()
@@ -1459,13 +1459,16 @@ class PersonalityEngine:
             self._sarcasm_streak[key] = self._sarcasm_streak.get(key, 0) + 1
         else:
             self._sarcasm_streak[key] = 0
-        # Memory-Leak-Schutz: Max 50 User tracken
-        if len(self._sarcasm_streak) > 50:
+        # Memory-Leak-Schutz: Max 30 User tracken
+        if len(self._sarcasm_streak) > 30:
             oldest = next(iter(self._sarcasm_streak))
             del self._sarcasm_streak[oldest]
-        if len(self._humor_consecutive) > 50:
+        if len(self._humor_consecutive) > 30:
             oldest = next(iter(self._humor_consecutive))
             del self._humor_consecutive[oldest]
+        if len(self._last_interaction_times) > 30:
+            oldest_key = min(self._last_interaction_times, key=self._last_interaction_times.get)
+            del self._last_interaction_times[oldest_key]
 
     # ------------------------------------------------------------------
     # Adaptive Komplexitaet (Phase 6.8)
@@ -1483,7 +1486,7 @@ class PersonalityEngine:
         self._last_interaction_times[user_key] = now
 
         # F-022: Begrenze Anzahl getrackter User
-        if len(self._last_interaction_times) > 50:
+        if len(self._last_interaction_times) > 30:
             oldest_key = min(self._last_interaction_times, key=self._last_interaction_times.get)
             del self._last_interaction_times[oldest_key]
 
@@ -2390,7 +2393,8 @@ class PersonalityEngine:
                 "  Tony sagt 'Was haeltst du davon?' und JARVIS antwortet mit einer ECHTEN Meinung.\n\n"
             )
 
-        prompt = SYSTEM_PROMPT_TEMPLATE.format(
+        import collections
+        format_kwargs = dict(
             assistant_name=self.assistant_name,
             user_name=settings.user_name,
             title=get_person_title(current_person_name),
@@ -2410,6 +2414,9 @@ class PersonalityEngine:
             conversation_callback_section=conversation_callback_section,
             weather_awareness_section=weather_awareness_section,
             conversation_mode_section=conversation_mode_section,
+        )
+        prompt = SYSTEM_PROMPT_TEMPLATE.format_map(
+            collections.defaultdict(str, format_kwargs)
         )
 
         # Kontext anhaengen

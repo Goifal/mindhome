@@ -413,7 +413,7 @@ class AutonomyManager:
             first_start = await self._redis.get("mha:first_start")
             if first_start:
                 try:
-                    start_date = datetime.fromisoformat(first_start)
+                    start_date = datetime.fromisoformat(first_start.decode() if isinstance(first_start, bytes) else first_start)
                     days_active = (datetime.now(timezone.utc) - start_date).days
                 except (ValueError, TypeError):
                     days_active = 0

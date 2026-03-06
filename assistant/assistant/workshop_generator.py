@@ -158,8 +158,9 @@ class WorkshopGenerator:
 
         project_title = ""
         if project_id and self.redis:
-            proj = await self.redis.hgetall(
+            raw_proj = await self.redis.hgetall(
                 f"mha:repair:project:{project_id}")
+            proj = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_proj.items()} if raw_proj else {}
             project_title = proj.get("title", "")
 
         prompt = CODE_GEN_PROMPT.format(
@@ -198,8 +199,9 @@ class WorkshopGenerator:
 
         project_title = ""
         if project_id and self.redis:
-            proj = await self.redis.hgetall(
+            raw_proj = await self.redis.hgetall(
                 f"mha:repair:project:{project_id}")
+            proj = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_proj.items()} if raw_proj else {}
             project_title = proj.get("title", "")
 
         prompt = OPENSCAD_PROMPT.format(
@@ -275,10 +277,11 @@ class WorkshopGenerator:
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfuegbar"}
 
-        project = await self.redis.hgetall(
+        raw_project = await self.redis.hgetall(
             f"mha:repair:project:{project_id}")
-        if not project:
+        if not raw_project:
             return {"status": "error", "message": "Projekt nicht gefunden"}
+        project = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_project.items()}
 
         parts = json.loads(project.get("parts", "[]"))
         files = await self.list_files(project_id)
@@ -314,10 +317,15 @@ Ergaenze fehlende Teile die aus dem Code/Schaltplan ersichtlich sind."""
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfuegbar"}
 
-        project = await self.redis.hgetall(
+        raw_project = await self.redis.hgetall(
             f"mha:repair:project:{project_id}")
-        if not project:
+        if not raw_project:
             return {"status": "error", "message": "Projekt nicht gefunden"}
+        project = {
+            (k.decode() if isinstance(k, bytes) else k):
+            (v.decode() if isinstance(v, bytes) else v)
+            for k, v in raw_project.items()
+        }
 
         files = await self.list_files(project_id)
 
@@ -530,6 +538,7 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
             f"mha:repair:files:{project_id}", 0, -1)
         result = []
         for fn in filenames:
+            fn = Path(fn).name
             filepath = self.FILES_DIR / project_id / fn
             if filepath.exists():
                 result.append({
@@ -542,6 +551,7 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
 
     async def delete_file(self, project_id, filename) -> dict:
         """Loescht eine Projekt-Datei."""
+        filename = Path(filename).name
         filepath = self.FILES_DIR / project_id / filename
         if (filepath.exists()
                 and filepath.resolve().is_relative_to(

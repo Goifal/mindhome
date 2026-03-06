@@ -367,7 +367,10 @@ class ProactiveManager:
 
                 async for msg in ws:
                     if msg.type == aiohttp.WSMsgType.TEXT:
-                        data = json.loads(msg.data)
+                        try:
+                            data = json.loads(msg.data)
+                        except (json.JSONDecodeError, TypeError):
+                            continue
                         if data.get("type") == "event":
                             await self._handle_event(data.get("event", {}))
                     elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSED):
@@ -1460,8 +1463,11 @@ class ProactiveManager:
             # Cooldown prüfen
             last_time = await self.brain.memory.get_last_notification_time(event_type)
             if last_time:
-                last_dt = datetime.fromisoformat(last_time)
-                if datetime.now() - last_dt < timedelta(seconds=effective_cooldown):
+                try:
+                    last_dt = datetime.fromisoformat(last_time)
+                except (ValueError, TypeError):
+                    last_dt = None
+                if last_dt and datetime.now() - last_dt < timedelta(seconds=effective_cooldown):
                     return
 
         # Phase 15.4+: LOW und MEDIUM-Meldungen batchen statt sofort senden
@@ -1470,6 +1476,8 @@ class ProactiveManager:
             description = self.event_handlers.get(event_type, (MEDIUM, event_type))[1]
             # F-033: Lock für shared batch_queue
             async with self._state_lock:
+                if len(self._batch_queue) >= 1000:
+                    self._batch_queue = self._batch_queue[-500:]
                 self._batch_queue.append({
                     "event_type": event_type,
                     "urgency": urgency,
@@ -1776,9 +1784,13 @@ class ProactiveManager:
 
             for key in keys:
                 raw = await self.brain.memory.redis.get(key)
-                if not raw:
+                if raw is None:
                     continue
-                briefing_data = json.loads(raw)
+                try:
+                    briefing_data = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    logger.debug("Ungültiges JSON in Key %s, überspringe", key)
+                    continue
                 events = briefing_data.get("events", [])
                 # Max Events pro Abwesenheit (konfigurierbar)
                 if len(events) < max_events:
@@ -1807,7 +1819,11 @@ class ProactiveManager:
             if not raw:
                 return ""
 
-            briefing_data = json.loads(raw)
+            try:
+                briefing_data = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                logger.debug("Ungültiges JSON in Briefing-Key %s", key)
+                return ""
             events = briefing_data.get("events", [])
             departed = briefing_data.get("departed", "")
 
@@ -2282,10 +2298,12 @@ class ProactiveManager:
         await asyncio.sleep(PROACTIVE_BATCH_STARTUP_DELAY)
         logger.info("Batch-Loop gestartet (interval=%ds)", self.batch_interval)
         medium_check_interval = 10 * 60  # 10 Min für MEDIUM
-        timer = 0
+        last_flush = time.monotonic()
 
         while self._running:
+            loop_start = time.monotonic()
             try:
+                elapsed = loop_start - last_flush
                 # F-033: Lock für shared batch_queue Zugriff
                 async with self._state_lock:
                     has_items = bool(self._batch_queue)
@@ -2295,18 +2313,19 @@ class ProactiveManager:
 
                 if has_items:
                     # MEDIUM sofort flushen wenn Timer abgelaufen
-                    if has_medium and timer >= medium_check_interval:
+                    if has_medium and elapsed >= medium_check_interval:
                         await self._flush_batch()
-                        timer = 0
+                        last_flush = time.monotonic()
                     # LOW flushen nach Standard-Intervall
-                    elif timer >= self.batch_interval * 60:
+                    elif elapsed >= self.batch_interval * 60:
                         await self._flush_batch()
-                        timer = 0
+                        last_flush = time.monotonic()
             except Exception as e:
                 logger.error("Batch-Flush Fehler: %s", e)
 
-            await asyncio.sleep(60)
-            timer += 60
+            # Drift-kompensiertes Sleep: 60s abzüglich Verarbeitungszeit
+            sleep_time = max(0, 60 - (time.monotonic() - loop_start))
+            await asyncio.sleep(sleep_time)
 
     async def _flush_batch(self):
         """Sendet alle gesammelten LOW+MEDIUM-Meldungen als eine Zusammenfassung.

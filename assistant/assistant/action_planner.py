@@ -550,7 +550,7 @@ Sobald ich die Details habe, kuemmere ich mich um alles."
             self._cleanup_expired_plans()
             # Aelteste Plans entfernen wenn Limit erreicht
             while len(self._pending_plans) >= self._max_pending_plans:
-                oldest_id = min(self._pending_plans,
+                oldest_id = min(list(self._pending_plans.keys()),
                                 key=lambda k: self._pending_plans[k].get("created_at", 0))
                 self._pending_plans.pop(oldest_id, None)
                 logger.info("Planungs-Dialog %s entfernt (max %d erreicht)",

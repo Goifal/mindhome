@@ -147,7 +147,7 @@ class CalendarIntelligence:
             start = self._parse_dt(ev.get("start", ""))
             end = self._parse_dt(ev.get("end", ""))
             if start and end and not ev.get("all_day"):
-                for h in range(start.hour, min(end.hour + 1, 24)):
+                for h in range(start.hour, min(end.hour, 24)):
                     hour_activity[h] += 1
 
         return habits

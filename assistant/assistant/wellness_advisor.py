@@ -746,12 +746,5 @@ class WellnessAdvisor:
         try:
             await self._notify_callback(nudge_type, message, urgency)
             logger.info("Wellness [%s/%s]: %s", nudge_type, urgency, message)
-        except TypeError:
-            # Fallback: Alter Callback ohne urgency-Parameter
-            try:
-                await self._notify_callback(nudge_type, message)
-                logger.info("Wellness [%s]: %s", nudge_type, message)
-            except Exception as e:
-                logger.error("Wellness-Nudge Fehler: %s", e)
         except Exception as e:
             logger.error("Wellness-Nudge Fehler: %s", e)

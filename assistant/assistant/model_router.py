@@ -178,9 +178,9 @@ class ModelRouter:
 
         model_lower = model_name.lower()
         for available in self._available_models:
-            if available == model_lower or available.startswith(model_lower):
+            if available == model_lower or available.startswith(model_lower + ":"):
                 return True
-            if model_lower.startswith(available):
+            if model_lower.startswith(available + ":"):
                 return True
         return False
 

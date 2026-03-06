@@ -15,6 +15,9 @@ import logging
 import time
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+_LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 from .config import yaml_config
 
@@ -191,7 +194,7 @@ class VisitorManager:
             "auto_unlock": auto_unlock,
             "notes": notes,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "expires_at": (datetime.now(timezone.utc).replace(hour=23, minute=59, second=59)).isoformat(),
+            "expires_at": (datetime.now(_LOCAL_TZ).replace(hour=23, minute=59, second=59)).isoformat(),
         }
         await self.redis.hset(_KEY_EXPECTED, person_id, json.dumps(info))
 

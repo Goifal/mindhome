@@ -215,7 +215,10 @@ class AnticipationEngine:
             if confidence >= self.min_confidence:
                 # Typische Args ermitteln
                 args_counter = Counter(e.get("args", "{}") for e in group)
-                typical_args = args_counter.most_common(1)[0][0] if args_counter else "{}"
+                if args_counter:
+                    typical_args = args_counter.most_common(1)[0][0]
+                else:
+                    typical_args = "{}"
 
                 weekday_names = [
                     "Montag", "Dienstag", "Mittwoch", "Donnerstag",

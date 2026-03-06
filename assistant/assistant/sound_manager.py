@@ -585,7 +585,7 @@ class SoundManager:
                         logger.warning("TTS+Volume Timeout nach 15s fuer %s", speaker_entity)
                         success = False
                         results = None
-                    if results is not None:
+                    if results is not None and len(results) >= 2:
                         success = not isinstance(results[1], Exception) and results[1]
                         if isinstance(results[0], Exception):
                             logger.debug("Volume setzen fehlgeschlagen: %s", results[0])
