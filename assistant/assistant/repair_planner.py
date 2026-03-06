@@ -176,6 +176,8 @@ class RepairPlanner:
         self.model_router = None    # ModelRouter
         self._session: Optional[RepairSession] = None
         self._notify_callback = None
+        self.camera_manager = None   # CameraManager (set by brain)
+        self.ocr_engine = None       # OCREngine (set by brain)
 
         # Config
         ws_cfg = yaml_config.get("workshop", {})
@@ -865,30 +867,37 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
 
     async def scan_object(self, image_data=None, camera_name="",
                           description="") -> dict:
-        """Nutzt bestehende Camera/OCR-Infrastruktur."""
-        try:
-            from .camera_manager import get_camera_view
-            from .ocr import analyze_image
-        except ImportError:
-            return {"status": "error",
-                    "message": "Kamera/OCR Module nicht verfügbar"}
+        """Objekterkennung via CameraManager + Vision-LLM."""
+        # Fall 1: Kamera-Name → CameraManager nutzen
+        if camera_name and self.camera_manager:
+            result = await self.camera_manager.get_camera_view(
+                camera_name=camera_name)
+            if not result.get("success"):
+                return {"status": "error",
+                        "message": result.get("message", "Kamera nicht verfuegbar")}
+            return {"status": "ok", "analysis": result.get("message", "")}
 
-        if image_data:
-            img = image_data
-        elif camera_name:
-            img = await get_camera_view(camera_name)
-        else:
-            return {"status": "error",
-                    "message": "Kein Bild oder Kamera angegeben"}
+        # Fall 2: Beschreibung → LLM-Analyse
+        if description and self.ollama:
+            prompt = (
+                "Du bist ein Werkstatt-Ingenieur. Der Benutzer beschreibt ein Objekt/Bauteil:\n"
+                f'"{description}"\n\n'
+                "Analysiere:\n"
+                "1. Was koennte das fuer ein Objekt/Bauteil sein?\n"
+                "2. Moegliche Beschaedigungen oder Verschleiss?\n"
+                "3. Reparierbar oder Ersatz noetig?\n"
+                "4. Empfohlene naechste Schritte?"
+            )
+            result = await self.ollama.chat(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4, max_tokens=500)
+            if "error" not in result:
+                text = result.get("message", {}).get("content", "")
+                return {"status": "ok", "analysis": text}
+            return {"status": "error", "message": "LLM-Analyse fehlgeschlagen"}
 
-        prompt = """Analysiere dieses Bild aus einer Werkstatt-Perspektive:
-1. Was ist das für ein Objekt/Bauteil?
-2. Erkennbare Beschaedigungen oder Verschleiss?
-3. Geschaetzte Abmessungen?
-4. Teilenummern/Beschriftungen?
-5. Reparierbar oder Ersatz nötig?"""
-        result = await analyze_image(img, prompt)
-        return {"status": "ok", "analysis": result}
+        return {"status": "error",
+                "message": "Kein Bild, keine Kamera und keine Beschreibung angegeben"}
 
     # ── Werkstatt-Inventar (Redis) ───────────────────────────
 
