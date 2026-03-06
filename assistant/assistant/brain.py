@@ -41,6 +41,7 @@ from .function_calling import get_assistant_tools, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ha_client import HomeAssistantClient
 from .inventory import InventoryManager
+from .smart_shopping import SmartShopping
 from .knowledge_base import KnowledgeBase
 from .recipe_store import RecipeStore
 from .memory import MemoryManager
@@ -255,6 +256,9 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 15.2: Vorrats-Tracking
         self.inventory = InventoryManager(self.ha)
+
+        # Smart Shopping: Verbrauchsprognose + Einkaufslistenmanagement
+        self.smart_shopping = SmartShopping(self.ha)
 
         # Phase 15.3: Geraete-Beziehung (Anomalie-Erkennung)
         self.device_health = DeviceHealthMonitor(self.ha)
@@ -548,6 +552,10 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 15.2: Inventory Manager initialisieren
         await self.inventory.initialize(redis_client=self.memory.redis)
+
+        # Smart Shopping initialisieren
+        await self.smart_shopping.initialize(redis_client=self.memory.redis)
+        self.executor._smart_shopping = self.smart_shopping
 
         # Phase 13.2: Self Automation initialisieren
         await self.self_automation.initialize(redis_client=self.memory.redis)

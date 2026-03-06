@@ -140,6 +140,7 @@ class ProactiveManager:
             "energy_price_high": (LOW, "Teurer Strom"),
             "solar_surplus": (LOW, "Solar-Überschuss"),
             "scene_device_triggered": (LOW, "Szene durch Geraet aktiviert"),
+            "shopping_reminder": (LOW, "Einkaufs-Erinnerung"),
         }
         # YAML-Overrides anwenden (Event-Handler konfigurierbar)
         yaml_handlers = proactive_cfg.get("event_handlers", {})
@@ -2145,6 +2146,16 @@ class ProactiveManager:
                         "description": task.get("description", ""),
                     })
 
+                # Smart Shopping: Verbrauchsprognose-Check
+                if hasattr(self.brain, "smart_shopping") and self.brain.smart_shopping.enabled:
+                    try:
+                        self.brain.smart_shopping.set_notify_callback(self._notify)
+                        notified = await self.brain.smart_shopping.check_and_notify()
+                        if notified:
+                            logger.info("Smart Shopping Erinnerungen: %s", notified)
+                    except Exception as _ss_err:
+                        logger.debug("Smart Shopping Check: %s", _ss_err)
+
             except Exception as e:
                 logger.error("Diagnostik-Check Fehler: %s", e)
 
@@ -2209,6 +2220,17 @@ class ProactiveManager:
                 f"Kamera zeigt: {cam_desc}\n"
                 f"Formuliere eine knappe Sicherheitsmeldung im JARVIS-Stil.\n"
                 f"Max 2 Sätze. Deutsch. Sachlich. Keine Panik wenn harmlos (Tier, Wind)."
+            )
+
+        # Smart Shopping: Verbrauchsprognose-Erinnerung
+        if event_type == "shopping_reminder":
+            item_name = data.get("item", "")
+            msg = data.get("message", "")
+            return (
+                f"Einkaufs-Erinnerung: {msg}\n"
+                "Formuliere beilaeufig, wie eine nebensaechliche Bemerkung.\n"
+                f"Beispiel: 'Uebrigens, {_title} — {item_name} koennte bald alle sein.'\n"
+                "Max 1 Satz. Deutsch. Butler-Stil. Nicht dringend."
             )
 
         # Phase 10.1: Musik-Follow Vorschlag

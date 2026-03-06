@@ -87,6 +87,7 @@ const _searchIndex = [
   {tab:'tab-proactive', title:'Vorausdenken', keywords:'anticipation gewohnheiten lernen vorhersage konfidenz', icon:'&#128300;'},
   {tab:'tab-proactive', title:'Rueckkehr-Briefing', keywords:'abwesenheit rueckkehr briefing klingel waschmaschine', icon:'&#128218;'},
   {tab:'tab-proactive', title:'Einkaufslisten-Erinnerung', keywords:'einkaufsliste shopping abschied verlassen departure', icon:'&#128722;'},
+  {tab:'tab-proactive', title:'Smart Shopping', keywords:'smart shopping einkauf verbrauch prognose rezept zutaten muster', icon:'&#128722;'},
   {tab:'tab-proactive', title:'Jarvis denkt voraus', keywords:'insights wetter kalender energie fenster frost', icon:'&#129504;'},
   {tab:'tab-proactive', title:'Event-Handler', keywords:'event prioritaet critical high medium low', icon:'&#128226;'},
   {tab:'tab-proactive', title:'Spontane Beobachtungen', keywords:'beobachtungen energie streak rekorde meilensteine', icon:'&#128065;'},
@@ -1077,6 +1078,10 @@ const HELP_TEXTS = {
   'ollama.flash_attn': {title:'Flash Attention', text:'Beschleunigt die Inferenz bei neueren GPUs (RTX 30xx+).', detail:'Flash Attention reduziert VRAM-Verbrauch und beschleunigt die Token-Generierung. Erfordert CUDA-faehige GPU. Bei Problemen deaktivieren.'},
   'ollama.num_gpu': {title:'GPU-Layer', text:'Wie viele Modell-Layer auf die GPU geladen werden.', detail:'99 = Maximum (alles auf GPU, schnellste Inferenz). Niedrigere Werte lagern Teile in RAM aus (langsamer, aber spart VRAM). 0 = nur CPU.'},
   'proactive.departure_shopping_reminder': {title:'Einkaufslisten-Erinnerung', text:'Beim Verlassen des Hauses erwaehnt Jarvis offene Einkaufslisten-Eintraege.', detail:'Nutzt die Home Assistant Shopping List. Jarvis sagt z.B. "Uebrigens, Milch und Brot stehen noch auf der Liste."'},
+  'smart_shopping.enabled': {title:'Smart Shopping', text:'Intelligente Einkaufsliste mit Verbrauchsprognose.', detail:'Lernt aus abgehakten Einkaufslisteneintraegen wie oft du Artikel kaufst. Erinnert proaktiv wenn etwas bald aufgebraucht sein muesste. Kann auch Rezept-Zutaten automatisch auf die Liste setzen.'},
+  'smart_shopping.min_purchases': {title:'Mindest-Kaeufe', text:'Wie viele Kaeufe noetig sind bevor eine Prognose erstellt wird.', detail:'Bei 2 braucht es nur 2 Kaeufe fuer eine erste Schaetzung. Hoehere Werte machen die Prognose genauer, brauchen aber laenger.'},
+  'smart_shopping.reminder_days_before': {title:'Erinnerung vorher', text:'Wie viele Tage vor dem erwarteten Verbrauch erinnert werden soll.'},
+  'smart_shopping.reminder_cooldown_hours': {title:'Erinnerungs-Cooldown', text:'Mindestabstand zwischen Erinnerungen fuer denselben Artikel.'},
   // === MODELL-PROFILE ===
   'model_profiles': {title:'Modell-Profile', text:'LLM-Parameter pro Modell-Familie. Neues Modell = nur Profil hier anlegen. Match: Laengster Key der im Modellnamen vorkommt gewinnt.', detail:'Beispiel: "qwen3.5:9b" matcht Profil "qwen3.5" (nicht "qwen3"). Unbekannte Modelle nutzen das "default" Profil. Spezifische Profile erben vom Default und ueberschreiben nur gesetzte Werte.'},
   'model_profiles.default.supports_think_tags': {title:'Think-Tags (Default)', text:'Ob das Modell &lt;think&gt;-Tags fuer Chain-of-Thought Reasoning nutzt.', detail:'Qwen3, DeepSeek und aehnliche Modelle geben ihren Denkprozess in &lt;think&gt;-Tags aus. Diese werden automatisch aus der Antwort entfernt.'},
@@ -3816,6 +3821,13 @@ function renderProactive() {
     fRange('insights.thresholds.energy_anomaly_percent', 'Energie-Abweichung', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'}) +
     fRange('insights.thresholds.away_device_minutes', 'Abwesend-Hinweis nach', 30, 480, 30, {30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std',480:'8 Std'}) +
     fRange('insights.thresholds.temp_drop_degrees_per_2h', 'Temp-Abfall Schwelle', 1, 10, 1, {1:'1\u00B0C',2:'2\u00B0C',3:'3\u00B0C',5:'5\u00B0C',10:'10\u00B0C'})
+  ) +
+  sectionWrap('&#128722;', 'Smart Shopping',
+    fInfo('Jarvis lernt dein Einkaufsverhalten: wie oft du Artikel kaufst, an welchem Wochentag du einkaufst, und welche Zutaten fuer Rezepte fehlen. Erinnert proaktiv wenn etwas bald alle ist.') +
+    fToggle('smart_shopping.enabled', 'Smart Shopping aktiv') +
+    fRange('smart_shopping.min_purchases', 'Mindest-Kaeufe fuer Prognose', 2, 10, 1, {2:'2',3:'3',5:'5',10:'10'}) +
+    fRange('smart_shopping.reminder_days_before', 'Erinnerung X Tage vorher', 0, 7, 1, {0:'Am Tag',1:'1 Tag',2:'2 Tage',3:'3 Tage',7:'1 Woche'}) +
+    fRange('smart_shopping.reminder_cooldown_hours', 'Erinnerungs-Cooldown', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'})
   ) +
   sectionWrap('&#128226;', 'Event-Handler',
     fInfo('Prioritaeten fuer verschiedene Event-Typen. Event-Typen mit hoeherer Prioritaet durchbrechen "Nicht stoeren". In settings.yaml unter proactive.event_handlers anpassbar.') +

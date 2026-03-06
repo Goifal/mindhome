@@ -2615,6 +2615,10 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("adaptive_thresholds", "analysis_interval_hours"): (24, 336),
         # Ollama GPU-Performance
         ("ollama", "num_gpu"): (0, 99),
+        # Smart Shopping
+        ("smart_shopping", "min_purchases"): (2, 10),
+        ("smart_shopping", "reminder_days_before"): (0, 7),
+        ("smart_shopping", "reminder_cooldown_hours"): (6, 72),
         # Model Profiles — Wertebereiche fuer LLM-Parameter
         # (Gilt fuer alle Profile: default, qwen3.5, llama, etc.)
     }

@@ -2084,6 +2084,34 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    # --- Smart Shopping: Verbrauchsprognose + Rezept-Zutaten ---
+    {
+        "type": "function",
+        "function": {
+            "name": "smart_shopping",
+            "description": "Intelligente Einkaufslistenverwaltung: Verbrauchsprognose (wann wird etwas alle?), fehlende Rezept-Zutaten auf Liste setzen, Einkaufsmuster anzeigen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["predictions", "add_ingredients", "record_purchase", "shopping_pattern"],
+                        "description": "predictions: Verbrauchsprognose anzeigen. add_ingredients: Rezept-Zutaten auf Einkaufsliste. record_purchase: Einkauf protokollieren. shopping_pattern: Einkaufstag-Muster.",
+                    },
+                    "item": {
+                        "type": "string",
+                        "description": "Artikelname (fuer record_purchase)",
+                    },
+                    "ingredients": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Zutatenliste (fuer add_ingredients)",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
     # --- Phase 16.2: Was kann Jarvis? ---
     {
         "type": "function",
@@ -3036,7 +3064,7 @@ class FunctionExecutor:
         "reschedule_calendar_event", "set_presence_mode", "edit_config",
         "manage_shopping_list", "list_capabilities", "list_ha_automations",
         "create_automation", "confirm_automation", "list_jarvis_automations",
-        "delete_jarvis_automation", "manage_inventory",
+        "delete_jarvis_automation", "manage_inventory", "smart_shopping",
         "set_timer", "cancel_timer", "get_timer_status",
         "set_reminder", "set_wakeup_alarm", "cancel_alarm", "get_alarms",
         "broadcast", "send_intercom",
@@ -6252,6 +6280,12 @@ class FunctionExecutor:
             success = await self.ha.call_service(
                 "shopping_list", "complete_item", {"name": item}
             )
+            # Smart Shopping: Einkauf protokollieren (fuer Verbrauchsprognose)
+            if success and hasattr(self, "_smart_shopping") and self._smart_shopping:
+                try:
+                    await self._smart_shopping.record_purchase(item)
+                except Exception as _e:
+                    logger.debug("SmartShopping record_purchase: %s", _e)
             return {"success": success, "message": f"'{item}' abgehakt" if success
                     else "Artikel nicht gefunden"}
 
@@ -6261,6 +6295,56 @@ class FunctionExecutor:
             )
             return {"success": success, "message": "Abgehakte Artikel entfernt" if success
                     else "Fehler beim Aufraumen"}
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    # ------------------------------------------------------------------
+    # Smart Shopping: Verbrauchsprognose + Rezept-Zutaten
+    # ------------------------------------------------------------------
+
+    async def _exec_smart_shopping(self, args: dict) -> dict:
+        """Smart Shopping: Verbrauchsprognose, Rezept-Zutaten, Einkaufsmuster."""
+        action = args.get("action", "")
+        shopping = getattr(self, "_smart_shopping", None)
+
+        if not shopping:
+            return {"success": False, "message": "Smart Shopping nicht verfuegbar"}
+
+        if action == "predictions":
+            predictions = await shopping.get_predictions()
+            if not predictions:
+                return {"success": True, "message": "Noch keine Verbrauchsdaten vorhanden. Wenn du Artikel von der Einkaufsliste abhakst, lerne ich dein Verbrauchsmuster."}
+            lines = ["Verbrauchsprognose:"]
+            for p in predictions[:10]:
+                days = p.get("avg_days", 0)
+                conf = int(p.get("confidence", 0) * 100)
+                next_d = p.get("next_expected", "")[:10]
+                lines.append(f"- {p['item']}: alle ~{days} Tage (naechster Kauf: {next_d}, Sicherheit: {conf}%)")
+            return {"success": True, "message": "\n".join(lines)}
+
+        elif action == "add_ingredients":
+            ingredients = args.get("ingredients", [])
+            if not ingredients:
+                return {"success": False, "message": "Keine Zutaten angegeben"}
+            result = await shopping.add_missing_ingredients(ingredients)
+            return {"success": True, "message": result["message"]}
+
+        elif action == "record_purchase":
+            item_name = args.get("item", "")
+            if not item_name:
+                return {"success": False, "message": "Kein Artikel angegeben"}
+            return await shopping.record_purchase(item_name)
+
+        elif action == "shopping_pattern":
+            pattern = await shopping.get_shopping_day_pattern()
+            if not pattern:
+                return {"success": True, "message": "Noch keine Einkaufsmuster erkannt. Ich lerne aus abgehakten Einkaufslisteneintraegen."}
+            msg = f"Dein ueblicher Einkaufstag: {pattern['preferred_day']} ({pattern['total_trips']} Einkauefe insgesamt)."
+            counts = pattern.get("day_counts", {})
+            if counts:
+                sorted_days = sorted(counts.items(), key=lambda x: x[1], reverse=True)
+                msg += " Verteilung: " + ", ".join(f"{d}: {c}x" for d, c in sorted_days)
+            return {"success": True, "message": msg}
 
         return {"success": False, "message": f"Unbekannte Aktion: {action}"}
 
