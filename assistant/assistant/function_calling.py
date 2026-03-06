@@ -2794,6 +2794,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     "component_a": {"type": "string", "description": "Erste Komponente (Vergleich)"},
                     "component_b": {"type": "string", "description": "Zweite Komponente (Vergleich)"},
                     "query": {"type": "string", "description": "Suchbegriff (Library/Projekte)"},
+                    "camera": {"type": "string", "description": "Kamera-Name fuer scan_object (z.B. 'werkstatt', 'haustuer')"},
                 },
                 "required": ["action"],
             },

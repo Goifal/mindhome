@@ -66,6 +66,7 @@ class CameraManager:
                 "success": True,
                 "message": "Snapshot abgerufen, aber Bild-Analyse nicht verfuegbar.",
                 "image_available": True,
+                "snapshot": image_data,
             }
 
         return {
@@ -73,6 +74,7 @@ class CameraManager:
             "message": description,
             "image_available": True,
             "camera_entity": entity_id,
+            "snapshot": image_data,
         }
 
     async def describe_doorbell(self) -> Optional[str]:
@@ -81,6 +83,9 @@ class CameraManager:
         Returns:
             Beschreibung oder None wenn nicht moeglich.
         """
+        if not self.enabled:
+            return None
+
         # Tuerkamera finden
         door_cameras = ["haustuer", "eingang", "front_door", "doorbell", "tuerklingel"]
         for name in door_cameras:

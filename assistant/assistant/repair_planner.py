@@ -868,9 +868,9 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
     async def scan_object(self, image_data=None, camera_name="",
                           description="") -> dict:
         """Objekterkennung via CameraManager + Vision-LLM."""
+        ws_cfg = yaml_config.get("workshop", {})
         # Fallback: Standard-Kamera aus Workshop-Config
         if not camera_name and not image_data:
-            ws_cfg = yaml_config.get("workshop", {})
             camera_name = ws_cfg.get("scan_camera", "")
 
         # Fall 1: Kamera-Name → CameraManager nutzen
@@ -880,7 +880,22 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
             if not result.get("success"):
                 return {"status": "error",
                         "message": result.get("message", "Kamera nicht verfuegbar")}
-            return {"status": "ok", "analysis": result.get("message", "")}
+            scan_result = {"status": "ok", "analysis": result.get("message", "")}
+            # Auto-OCR: Wenn aktiviert, zusaetzlich Texterkennung auf Snapshot
+            if ws_cfg.get("scan_auto_ocr") and self.ocr_engine:
+                snapshot = result.get("snapshot")
+                if snapshot and isinstance(snapshot, bytes):
+                    import tempfile, pathlib
+                    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                        f.write(snapshot)
+                        tmp_path = pathlib.Path(f.name)
+                    try:
+                        ocr_text = self.ocr_engine.extract_text(tmp_path)
+                        if ocr_text:
+                            scan_result["ocr_text"] = ocr_text
+                    finally:
+                        tmp_path.unlink(missing_ok=True)
+            return scan_result
 
         # Fall 2: Bild-Daten direkt → Vision-LLM Analyse
         if image_data and self.ollama:

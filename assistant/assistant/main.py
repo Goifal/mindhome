@@ -3084,6 +3084,13 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             logger.info("CameraManager Settings aktualisiert")
         _try_reload("cameras", _reload_cameras)
 
+    # OCREngine: Sprachen, Vision-Model, Limits
+    if "ocr" in changed_settings and hasattr(brain, "ocr"):
+        def _reload_ocr():
+            brain.ocr.reload_config()
+            logger.info("OCREngine Settings aktualisiert")
+        _try_reload("ocr", _reload_ocr)
+
     # CookingAssistant: Portionen, Steps, Tokens
     if "cooking" in changed_settings and hasattr(brain, "cooking"):
         def _reload_cooking():
