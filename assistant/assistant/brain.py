@@ -2367,21 +2367,23 @@ class AssistantBrain(BrainCallbacksMixin):
         # 3. Modell waehlen (mit kontext-basiertem Upgrade)
         model = self.model_router.select_model(text)
 
-        # Kontext-basiertes Upgrade: Wenn viele Datenquellen relevant sind,
-        # braucht das LLM ein staerkeres Modell zum Reasoning
+        # Kontext-basiertes Upgrade: Nur bei echtem Reasoning-Bedarf upgraden.
+        # Schwellwert 3: Verhindert dass normale Kontext-Signale (learned_patterns,
+        # live_insights) allein das teure Deep-Modell triggern — das fuehrte zu
+        # 60s-Timeouts und Fallback-Kaskade bei knappem VRAM.
         _upgrade_signals = 0
         if problem_solving_ctx:
-            _upgrade_signals += 2  # Problemloesung braucht Deep
+            _upgrade_signals += 3  # Problemloesung braucht Deep
         if whatif_prompt:
-            _upgrade_signals += 2  # Hypothetisches Denken braucht Deep
+            _upgrade_signals += 3  # Hypothetisches Denken braucht Deep
         if anticipation_suggestions or learned_patterns:
             _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
         if live_insights:
             _upgrade_signals += 1  # Aktive Insights = mehr zu verarbeiten
         if sec_score and sec_score.get("level") in ("warning", "critical"):
-            _upgrade_signals += 2  # Sicherheit = immer Deep
+            _upgrade_signals += 3  # Sicherheit = immer Deep
 
-        if _upgrade_signals >= 2 and model != self.model_router.model_deep:
+        if _upgrade_signals >= 3 and model != self.model_router.model_deep:
             _upgraded = self.model_router._cap_model(self.model_router.model_deep)
             if _upgraded != model:
                 logger.info("Model Upgrade %s -> %s (signals: %d)", model, _upgraded, _upgrade_signals)
