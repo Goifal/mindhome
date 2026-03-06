@@ -112,7 +112,7 @@ class FeedbackTracker:
 
         # Event-Typ ermitteln
         event_type = None
-        pending_entry = self._pending.pop(notification_id, None)
+        pending_entry = self._pending.get(notification_id)
         if pending_entry is not None:
             event_type = pending_entry.get("event_type")
         else:
@@ -132,6 +132,9 @@ class FeedbackTracker:
 
         # Zaehler aktualisieren
         await self._increment_counter(event_type, feedback_type)
+
+        # Pending erst nach erfolgreichem Score-Update entfernen
+        self._pending.pop(notification_id, None)
 
         logger.info(
             "Feedback [%s] fuer '%s': %+.2f -> Score: %.2f",

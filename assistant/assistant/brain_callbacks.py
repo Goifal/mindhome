@@ -20,6 +20,10 @@ class BrainCallbacksMixin:
 
     Alle Methoden werden in brain.py mit erweiterter Logik ueberschrieben.
     Diese Klasse existiert nur fuer die Vererbungshierarchie.
+
+    NOTE: This class is intentionally empty. It serves as the base class
+    in the MRO for AssistantBrain and must not be removed. All concrete
+    callback implementations live in brain.py.
     """
 
     pass

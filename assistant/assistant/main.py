@@ -1394,7 +1394,9 @@ def _convert_audio_to_16k_mono(audio_bytes: bytes) -> bytes:
         timeout=30,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg Fehler: {result.stderr.decode()[:200]}")
+        # S5: Keine internen Details an Client — nur ins Log
+        logger.error("ffmpeg conversion failed: %s", result.stderr.decode()[:200])
+        raise RuntimeError("Audio conversion failed")
     return result.stdout
 
 

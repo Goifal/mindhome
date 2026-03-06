@@ -57,7 +57,9 @@ class ConnectionManager:
         for connection in connections:
             try:
                 await connection.send_text(message)
-            except Exception:
+            except Exception as e:
+                # S8: Broadcast-Fehler nicht stumm verschlucken
+                logger.debug("WS broadcast send failed: %s", e)
                 disconnected.append(connection)
 
         for conn in disconnected:

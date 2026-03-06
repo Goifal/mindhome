@@ -267,7 +267,7 @@ class RepairPlanner:
         """Erstellt ein neues Werkstatt-Projekt."""
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfügbar"}
-        project_id = str(uuid_mod.uuid4())[:8]
+        project_id = str(uuid_mod.uuid4())[:12]  # S3: Mehr Entropy (16^12 statt 16^8)
         slug = (title.lower().replace(" ", "-")
                 .replace("ä", "ae").replace("ö", "oe").replace("ü", "ue"))
         project = {
@@ -1009,17 +1009,25 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
             return []
         keys = [k async for k in self.redis.scan_iter(
             "mha:repair:maintenance:*")]
+        if not keys:
+            return []
+        # P1: Parallel statt sequentiell
+        all_data = await asyncio.gather(
+            *[self.redis.hgetall(key) for key in keys],
+            return_exceptions=True,
+        )
         due = []
-        for key in keys:
-            data = await self.redis.hgetall(key)
+        for data in all_data:
+            if isinstance(data, Exception):
+                continue
             try:
                 last = datetime.fromisoformat(
                     data.get("last_done", "2000-01-01T00:00:00"))
                 interval = int(data.get("interval_days", 90))
                 if (datetime.now() - last).days >= interval:
                     due.append(data)
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug("S6: Maintenance check skipped: %s", e)
         return due
 
     # ── Budget ───────────────────────────────────────────────

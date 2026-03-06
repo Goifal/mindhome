@@ -494,9 +494,17 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
 
     async def _save_file(self, project_id, filename, content) -> dict:
         """Speichert Datei auf Disk + Referenz in Redis."""
+        # S1: Path-Traversal-Schutz
+        if not re.match(r'^[a-zA-Z0-9_-]+$', str(project_id)):
+            return {"status": "error", "message": "Invalid project_id"}
+        if not re.match(r'^[a-zA-Z0-9._-]+$', str(filename)):
+            return {"status": "error", "message": "Invalid filename"}
         project_dir = self.FILES_DIR / project_id
         project_dir.mkdir(parents=True, exist_ok=True)
         filepath = project_dir / filename
+        # Zusätzlicher Resolve-Check
+        if not filepath.resolve().is_relative_to(self.FILES_DIR.resolve()):
+            return {"status": "error", "message": "Path traversal blocked"}
         filepath.write_text(content, encoding="utf-8")
 
         # Redis: Datei-Liste und Versionierung
@@ -523,6 +531,11 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
 
     async def read_file(self, project_id, filename) -> str:
         """Liest eine Projekt-Datei."""
+        # S2: Path-Traversal-Schutz
+        if not re.match(r'^[a-zA-Z0-9_-]+$', str(project_id)):
+            return ""
+        if not re.match(r'^[a-zA-Z0-9._-]+$', str(filename)):
+            return ""
         filepath = self.FILES_DIR / project_id / filename
         if (filepath.exists()
                 and filepath.resolve().is_relative_to(

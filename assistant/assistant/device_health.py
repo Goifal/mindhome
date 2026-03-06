@@ -584,17 +584,14 @@ class DeviceHealthMonitor:
             return {"enabled": self.enabled, "baselines": 0, "alerts_today": 0}
 
         try:
-            baseline_keys = []
-            async for key in self.redis.scan_iter(
-                match="mha:device:baseline:*", count=100
-            ):
-                baseline_keys.append(key)
-
-            notified_keys = []
-            async for key in self.redis.scan_iter(
-                match="mha:device:notified:*", count=100
-            ):
-                notified_keys.append(key)
+            baseline_keys = [
+                key async for key in self.redis.scan_iter(
+                    match="mha:device:baseline:*", count=100)
+            ]
+            notified_keys = [
+                key async for key in self.redis.scan_iter(
+                    match="mha:device:notified:*", count=100)
+            ]
 
             return {
                 "enabled": self.enabled,

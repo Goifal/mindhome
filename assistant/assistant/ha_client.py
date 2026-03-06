@@ -83,6 +83,10 @@ class HomeAssistantClient:
         if result:  # Nur nicht-leere Ergebnisse cachen
             self._states_cache = result
             self._states_cache_ts = now
+        else:
+            # Stale cache invalidieren wenn TTL abgelaufen
+            self._states_cache = None
+            self._states_cache_ts = 0
         return result
 
     async def get_state(self, entity_id: str) -> Optional[dict]:
@@ -260,10 +264,18 @@ class HomeAssistantClient:
 
     async def search_devices(self, domain: str = "", room: str = "") -> Optional[list]:
         """Geraete ueber MindHome Device-DB suchen (schneller als alle HA-States laden)."""
+        import re as _re
         params = {}
         if domain:
+            # S4: Input-Validation gegen Injection
+            if not _re.match(r'^[a-z0-9_]+$', domain):
+                logger.warning("search_devices: Invalid domain rejected: %s", domain[:50])
+                return []
             params["domain"] = domain
         if room:
+            if not _re.match(r'^[a-zA-Z0-9_\s\-äöüÄÖÜß]+$', room):
+                logger.warning("search_devices: Invalid room rejected: %s", room[:50])
+                return []
             params["room"] = room
         qs = urlencode(params) if params else ""
         return await self._get_mindhome(f"/api/devices/search?{qs}")
