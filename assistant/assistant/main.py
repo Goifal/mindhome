@@ -6111,6 +6111,18 @@ async def workshop_add_inventory(request: Request):
     return {"success": True, "name": name}
 
 
+@app.delete("/api/workshop/inventory/{name}")
+async def workshop_delete_inventory(name: str):
+    """Loescht einen Artikel aus dem Werkstatt-Inventar."""
+    if not brain.repair_planner.redis:
+        raise HTTPException(503, "Redis nicht verfuegbar")
+    key = f"mha:repair:inventory:{name.lower().replace(' ', '_')}"
+    deleted = await brain.repair_planner.redis.delete(key)
+    if not deleted:
+        raise HTTPException(404, "Artikel nicht gefunden")
+    return {"success": True, "name": name}
+
+
 # ── Workshop: Phase 3 – Fehlende Endpoints ──────────────────
 
 
