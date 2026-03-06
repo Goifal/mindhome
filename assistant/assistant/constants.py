@@ -175,3 +175,48 @@ WS_DEFAULT_SOUND_VOLUME: Final[float] = 0.5
 TRUST_OWNER: Final[int] = 2
 TRUST_MEMBER: Final[int] = 1
 TRUST_GUEST: Final[int] = 0
+
+# ============================================================
+# Websocket Keepalive & Rate Limits
+# ============================================================
+
+WS_KEEPALIVE_INTERVAL: Final[int] = 25  # Sekunden
+WS_RATE_LIMIT_MESSAGES: Final[int] = 30
+WS_RATE_LIMIT_WINDOW: Final[float] = 10.0
+WS_RECEIVE_TIMEOUT: Final[int] = 300  # 5 Min
+
+# ============================================================
+# Audio / TTS / STT Timeouts
+# ============================================================
+
+AUDIO_CHUNK_TIMEOUT: Final[float] = 15.0
+AUDIO_PAYLOAD_TIMEOUT: Final[float] = 10.0
+TRANSCRIPT_TIMEOUT: Final[float] = 30.0
+PIPER_CONNECT_TIMEOUT: Final[float] = 5.0
+WHISPER_CONNECT_TIMEOUT: Final[float] = 5.0
+TTS_PLAYBACK_TIMEOUT: Final[int] = 15
+
+# ============================================================
+# Background Task Intervals (Sekunden)
+# ============================================================
+
+ENTITY_CATALOG_REFRESH_INTERVAL: Final[int] = 270  # 4.5 Min
+ERROR_BACKOFF_SHORT: Final[int] = 60
+ERROR_BACKOFF_LONG: Final[int] = 3600  # 1h
+
+# ============================================================
+# Redis SCAN Batch Sizes
+# ============================================================
+
+REDIS_SCAN_BATCH_SMALL: Final[int] = 20
+REDIS_SCAN_BATCH_MEDIUM: Final[int] = 50
+REDIS_SCAN_BATCH_LARGE: Final[int] = 100
+
+# ============================================================
+# asyncio.gather Timeouts (Sekunden)
+# ============================================================
+
+GATHER_MEGA_TIMEOUT: Final[int] = 45   # brain.py mega-gather
+GATHER_CONTEXT_TIMEOUT: Final[int] = 15  # context_builder.py
+GATHER_ACTION_TIMEOUT: Final[int] = 120  # action_planner.py
+GATHER_SHUTDOWN_TIMEOUT: Final[int] = 30  # task_registry.py shutdown

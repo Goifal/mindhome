@@ -866,7 +866,7 @@ class RoutineEngine:
 
         try:
             await self.ha.call_service(
-                "homeassistant", "turn_on", entity_id=entity,
+                "homeassistant", "turn_on", {"entity_id": entity},
             )
             logger.info("Wakeup: Kaffeemaschine eingeschaltet (%s)", entity)
         except Exception as e:

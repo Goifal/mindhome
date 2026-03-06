@@ -369,7 +369,11 @@ ollama:
   num_ctx: 4096
   num_ctx_smart: 8192
   num_ctx_deep: 8192
-  keep_alive: 120s
+  keep_alive: 5m
+  # Performance-Tuning (RTX 3090 empfohlen)
+  # flash_attn: true         # Flash Attention — schnellere Inferenz, weniger VRAM
+  # num_gpu: 99              # Alle Layer auf GPU (99 = Maximum)
+  # num_parallel: 2          # Parallele Requests (braucht ~2x VRAM pro Modell)
 models:
   fast: qwen3.5:4b
   smart: qwen3.5:9b
@@ -1810,6 +1814,18 @@ visitor_management:
   auto_guest_mode: false
   ring_cooldown_seconds: 30
   history_max: 100
+conversation_memory:
+  enabled: true
+  max_projects: 20
+  max_questions: 30
+  summary_retention_days: 30
+  question_ttl_days: 14
+multi_room_audio:
+  enabled: true
+  max_groups: 10
+  default_volume: 40
+  use_native_grouping: false
+  presets: {}
 music_dj:
   enabled: true
   proactive_enabled: false

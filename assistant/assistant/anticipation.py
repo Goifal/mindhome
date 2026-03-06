@@ -692,8 +692,8 @@ class AnticipationEngine:
                 cached = await self.redis.get("mha:weather:current_condition")
                 if cached:
                     return cached.decode("utf-8", errors="ignore") if isinstance(cached, bytes) else str(cached)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Weather cache retrieval failed: %s", e)
         return ""
 
     async def record_feedback(self, pattern_description: str, accepted: bool):

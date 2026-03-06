@@ -78,8 +78,8 @@ class ProactiveSequencePlanner:
             try:
                 if await self.redis.exists(cooldown_key):
                     return None
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Cooldown check failed: %s", e)
 
         plan = None
 
@@ -98,8 +98,8 @@ class ProactiveSequencePlanner:
         if self.redis:
             try:
                 await self.redis.setex(cooldown_key, 1800, "1")  # 30 Min
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Cooldown set failed: %s", e)
 
         # Autonomie-Level bestimmt ob Auto-Ausfuehrung oder Frage
         auto_execute = autonomy_level >= self.min_autonomy_for_auto
@@ -245,7 +245,8 @@ class ProactiveSequencePlanner:
                     if cursor == 0:
                         break
                 status["active_cooldowns"] = active_cooldowns
-            except Exception:
+            except Exception as e:
+                logger.warning("Cooldown scan failed: %s", e)
                 status["active_cooldowns"] = -1
 
         return status

@@ -199,7 +199,7 @@ class DialogueStateManager:
 
         # Entity-Referenzen aufloesen ("mach es aus", "schalte das ein")
         for ref in ENTITY_REFERENCES_DE:
-            if ref in text_lower:
+            if re.search(r'\b' + re.escape(ref) + r'\b', text_lower):
                 if state.last_entities:
                     last_ent = state.last_entities[0]
                     resolved_entities.append(last_ent)
@@ -209,7 +209,7 @@ class DialogueStateManager:
 
         # Raum-Referenzen aufloesen ("mach dort das Licht an")
         for ref in ROOM_REFERENCES_DE:
-            if ref in text_lower:
+            if re.search(r'\b' + re.escape(ref) + r'\b', text_lower):
                 if ref == "hier" and current_room:
                     resolved_rooms.append(current_room)
                     had_references = True
@@ -223,7 +223,7 @@ class DialogueStateManager:
 
         # Aktions-Referenzen ("nochmal", "das gleiche", "auch im Buero")
         for ref in ACTION_REFERENCES_DE:
-            if ref in text_lower and state.last_actions:
+            if re.search(r'\b' + re.escape(ref) + r'\b', text_lower) and state.last_actions:
                 last_action = state.last_actions[0]
                 had_references = True
                 hints.append(f"'{ref}' bezieht sich auf letzte Aktion: {last_action.get('description', str(last_action))}")

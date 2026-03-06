@@ -216,8 +216,10 @@ class MoodDetector:
                 # Alle person-spezifischen Keys laden
                 keys = await self.redis.keys("mha:mood:state:*")
                 for rkey in (keys or []):
-                    saved = await self.redis.hgetall(rkey)
-                    if saved:
+                    rkey = rkey.decode() if isinstance(rkey, bytes) else rkey
+                    raw = await self.redis.hgetall(rkey)
+                    if raw:
+                        saved = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()}
                         # Key-Format: mha:mood:state:{person_key}
                         person_key = rkey.rsplit(":", 1)[-1] if ":" in rkey else "_default"
                         self._person_states[person_key] = {
@@ -232,10 +234,12 @@ class MoodDetector:
                             "last_texts": deque(maxlen=5),
                             "last_decay_time": time.time(),
                             "voice_signals": [],
+                            "created_time": time.time(),
                         }
                 # Legacy: alten globalen Key migrieren
-                legacy = await self.redis.hgetall("mha:mood:state")
-                if legacy and "_default" not in self._person_states:
+                raw_legacy = await self.redis.hgetall("mha:mood:state")
+                if raw_legacy and "_default" not in self._person_states:
+                    legacy = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_legacy.items()}
                     self._person_states["_default"] = {
                         "mood": legacy.get("mood", MOOD_NEUTRAL),
                         "stress": float(legacy.get("stress", 0.0)),
@@ -248,6 +252,7 @@ class MoodDetector:
                         "last_texts": deque(maxlen=5),
                         "last_decay_time": time.time(),
                         "voice_signals": [],
+                        "created_time": time.time(),
                     }
             except Exception as e:
                 logger.debug("Mood-States nicht geladen: %s", e)

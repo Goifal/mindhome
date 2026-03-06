@@ -239,7 +239,11 @@ class TTSEnhancer:
 
         # Tageszeit-basiert
         hour = datetime.now().hour
-        if self.night_start <= hour < self.morning_start:
+        if self.night_start > self.morning_start:
+            # Über Mitternacht: z.B. 22-6
+            if hour >= self.night_start or hour < self.morning_start:
+                return self.vol_night
+        elif self.night_start <= hour < self.morning_start:
             return self.vol_night
         elif hour >= self.evening_start:
             return self.vol_evening

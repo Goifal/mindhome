@@ -418,7 +418,8 @@ class ProtocolEngine:
 
         try:
             states = await self.executor.ha.get_states() or []
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to get available states for protocol: %s", e)
             return []
 
         state_map = {s.get("entity_id"): s for s in states if s.get("entity_id")}

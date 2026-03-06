@@ -41,6 +41,9 @@ from .function_calling import get_assistant_tools, FunctionExecutor
 from .function_validator import FunctionValidator
 from .ha_client import HomeAssistantClient
 from .inventory import InventoryManager
+from .smart_shopping import SmartShopping
+from .conversation_memory import ConversationMemory
+from .multi_room_audio import MultiRoomAudio
 from .knowledge_base import KnowledgeBase
 from .recipe_store import RecipeStore
 from .memory import MemoryManager
@@ -87,7 +90,7 @@ from .tts_enhancer import TTSEnhancer
 from .brain_callbacks import BrainCallbacksMixin
 from .pre_classifier import PreClassifier
 from .circuit_breaker import registry as cb_registry, ollama_breaker, ha_breaker
-from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL
+from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL, ENTITY_CATALOG_REFRESH_INTERVAL, ERROR_BACKOFF_LONG, ERROR_BACKOFF_SHORT
 from .task_registry import TaskRegistry
 from .protocol_engine import ProtocolEngine
 from .spontaneous_observer import SpontaneousObserver
@@ -256,6 +259,15 @@ class AssistantBrain(BrainCallbacksMixin):
         # Phase 15.2: Vorrats-Tracking
         self.inventory = InventoryManager(self.ha)
 
+        # Smart Shopping: Verbrauchsprognose + Einkaufslistenmanagement
+        self.smart_shopping = SmartShopping(self.ha)
+
+        # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
+        self.conversation_memory = ConversationMemory()
+
+        # Multi-Room Audio: Speaker-Gruppen, synchrone Wiedergabe
+        self.multi_room_audio = MultiRoomAudio(self.ha)
+
         # Phase 15.3: Geraete-Beziehung (Anomalie-Erkennung)
         self.device_health = DeviceHealthMonitor(self.ha)
 
@@ -348,6 +360,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Sarkasmus/Humor-Feedback Tracking
         self._last_response_was_snarky = False
         self._last_humor_category = None
+        self._active_conversation_topic = ""
 
         # Formality-Score Cache
         self._last_formality_score = None
@@ -547,6 +560,19 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 15.2: Inventory Manager initialisieren
         await self.inventory.initialize(redis_client=self.memory.redis)
+
+        # Smart Shopping initialisieren
+        await self.smart_shopping.initialize(redis_client=self.memory.redis)
+        self.executor._smart_shopping = self.smart_shopping
+
+        # Konversations-Gedaechtnis++ initialisieren
+        await self.conversation_memory.initialize(redis_client=self.memory.redis)
+        self.executor._conversation_memory = self.conversation_memory
+
+        # Multi-Room Audio initialisieren
+        await self.multi_room_audio.initialize(redis_client=self.memory.redis)
+        await self.multi_room_audio.load_presets()
+        self.executor._multi_room_audio = self.multi_room_audio
 
         # Phase 13.2: Self Automation initialisieren
         await self.self_automation.initialize(redis_client=self.memory.redis)
@@ -764,7 +790,7 @@ class AssistantBrain(BrainCallbacksMixin):
             if room_sensors:
                 # Konfigurierte Sensoren: Neuesten aktiven Raum finden
                 timeout_minutes = int(multi_room_cfg.get("presence_timeout_minutes", 15))
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 best_room = None
                 best_changed = ""
 
@@ -784,7 +810,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         try:
                             changed = datetime.fromisoformat(
                                 last_changed.replace("Z", "+00:00")
-                            ).replace(tzinfo=None)
+                            )
                             if (now - changed).total_seconds() / 60 < timeout_minutes:
                                 if last_changed > best_changed:
                                     best_changed = last_changed
@@ -1775,7 +1801,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                     name="mark_jarvis_action",
                                 )
 
-                                return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
+                        return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -2251,9 +2277,17 @@ class AssistantBrain(BrainCallbacksMixin):
             )))
             _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
             _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
+            _mega_tasks.append(("conv_memory", self.conversation_memory.get_memory_context()))
 
         _mega_keys, _mega_coros = zip(*_mega_tasks)
-        _mega_results = await asyncio.gather(*_mega_coros, return_exceptions=True)
+        try:
+            _mega_results = await asyncio.wait_for(
+                asyncio.gather(*_mega_coros, return_exceptions=True),
+                timeout=45,  # T1: Mega-Gather Timeout
+            )
+        except asyncio.TimeoutError:
+            logger.warning("T1: Mega-gather timeout (45s) — einzelne Tasks haengen")
+            _mega_results = [asyncio.TimeoutError()] * len(_mega_keys)
         _result_map = dict(zip(_mega_keys, _mega_results))
 
         # --- Context Build Ergebnis verarbeiten ---
@@ -2724,6 +2758,11 @@ class AssistantBrain(BrainCallbacksMixin):
                 cont_text = f"\n\nOFFENES THEMA: {continuity_hint}"
             sections.append(("continuity", cont_text, 3))
 
+        # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
+        conv_memory_ctx = _safe_get("conv_memory", "")
+        if conv_memory_ctx:
+            sections.append(("conv_memory", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 3))
+
         # --- Prio 4: Wenn Platz ---
         if tutorial_hint:
             sections.append(("tutorial", tutorial_hint, 4))
@@ -2767,6 +2806,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "continuity": "Gespraechskontinuitaet",
                 "experiential": "Erfahrungskontext",
                 "tutorial": "Tutorial-Hinweise",
+                "conv_memory": "Projekte & offene Fragen",
             }
             readable = [_dropped_labels.get(n, n) for n in dropped_names]
             system_prompt += (
@@ -3243,7 +3283,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "reason": f"pushback:{pushback['rule_id']}",
                                 }
-                                timeout = cfg.yaml_config.get("pushback", {}).get("confirmation_timeout", 120)
+                                timeout = (cfg.yaml_config.get("pushback") or {}).get("confirmation_timeout", 120)
                                 await self.memory.redis.setex(
                                     SECURITY_CONFIRM_KEY,
                                     timeout,
@@ -3444,7 +3484,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
                     # Eskalationskette: JARVIS wird trockener bei Wiederholungen
                     try:
-                        esc_key = f"{func_name}:{final_args.get('room', '')}"
+                        esc_key = f"{func_name}:{final_args.get('room', '') if isinstance(final_args, dict) else ''}"
                         escalation = await self.personality.check_escalation(esc_key)
                         if escalation:
                             logger.info("Jarvis Eskalation: '%s'", escalation)
@@ -9172,7 +9212,7 @@ Regeln:
                 break
             except Exception as e:
                 logger.debug("Weekly Learning Report Fehler: %s", e)
-                await asyncio.sleep(3600)
+                await asyncio.sleep(ERROR_BACKOFF_LONG)
 
     async def _run_daily_fact_decay(self):
         """Fuehrt einmal taeglich den Fact Decay aus (04:00 Uhr)."""
@@ -9199,7 +9239,7 @@ Regeln:
                 break
             except Exception as e:
                 logger.error("Fact Decay Fehler: %s", e)
-                await asyncio.sleep(3600)  # Bei Fehler 1h warten
+                await asyncio.sleep(ERROR_BACKOFF_LONG)  # Bei Fehler 1h warten
 
     async def _run_autonomy_evolution(self):
         """Prueft woechentlich ob ein Autonomy-Level-Aufstieg moeglich ist (Sonntag 05:00)."""
@@ -9250,7 +9290,7 @@ Regeln:
                 break
             except Exception as e:
                 logger.error("Autonomy Evolution Fehler: %s", e)
-                await asyncio.sleep(3600)
+                await asyncio.sleep(ERROR_BACKOFF_LONG)
 
     async def _entity_catalog_refresh_loop(self):
         """Proaktiver Background-Refresh für den Entity-Katalog (alle 270s).
@@ -9261,13 +9301,13 @@ Regeln:
         from .function_calling import refresh_entity_catalog
         while True:
             try:
-                await asyncio.sleep(270)  # 4.5 Minuten (TTL ist 5 Min)
+                await asyncio.sleep(ENTITY_CATALOG_REFRESH_INTERVAL)  # 4.5 Minuten (TTL ist 5 Min)
                 await refresh_entity_catalog(self.ha)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.debug("Entity-Katalog Background-Refresh Fehler: %s", e)
-                await asyncio.sleep(60)
+                await asyncio.sleep(ERROR_BACKOFF_SHORT)
 
     async def _handle_daily_summary(self, data: dict):
         """Callback für Tages-Zusammenfassungen — wird morgens beim naechsten Kontakt gesprochen."""

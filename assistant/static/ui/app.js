@@ -30,6 +30,7 @@ const _searchIndex = [
   {tab:'tab-general', title:'Geraete-Erkennung', keywords:'command detection nouns verben befehle nlp', icon:'&#127899;'},
   // KI-Modelle & Stil (tab-personality)
   {tab:'tab-personality', title:'KI-Modelle & Stil', keywords:'modell llm ollama fast smart deep openai', icon:'&#127917;'},
+  {tab:'tab-personality', title:'GPU-Performance', keywords:'flash attention gpu vram keep alive performance speed latenz', icon:'&#9889;'},
   // Jarvis-Features (tab-jarvis)
   {tab:'tab-jarvis', title:'Progressive Antworten', keywords:'denkt laut zwischen-meldungen verarbeitung', icon:'&#128172;'},
   {tab:'tab-jarvis', title:'MCU-Intelligenz', keywords:'proaktiv mitdenken ingenieur diagnose anomalie kreuz-referenz implizit', icon:'&#129504;'},
@@ -85,6 +86,11 @@ const _searchIndex = [
   {tab:'tab-proactive', title:'Zeitgefuehl', keywords:'ofen vergessen buegeleisen licht fenster pc pause', icon:'&#9200;'},
   {tab:'tab-proactive', title:'Vorausdenken', keywords:'anticipation gewohnheiten lernen vorhersage konfidenz', icon:'&#128300;'},
   {tab:'tab-proactive', title:'Rueckkehr-Briefing', keywords:'abwesenheit rueckkehr briefing klingel waschmaschine', icon:'&#128218;'},
+  {tab:'tab-proactive', title:'Einkaufslisten-Erinnerung', keywords:'einkaufsliste shopping abschied verlassen departure', icon:'&#128722;'},
+  {tab:'tab-proactive', title:'Smart Shopping', keywords:'smart shopping einkauf verbrauch prognose rezept zutaten muster', icon:'&#128722;'},
+  {tab:'tab-proactive', title:'Energie-Dashboard', keywords:'energie solar strom verbrauch einspeisung preis dashboard live watt', icon:'&#9889;'},
+  {tab:'tab-proactive', title:'Konversations-Gedaechtnis++', keywords:'projekte meilensteine fragen gedaechtnis zusammenfassung projekt tracker memory', icon:'&#129504;'},
+  {tab:'tab-proactive', title:'Multi-Room Audio', keywords:'multi room audio speaker gruppe gruppen sync synchron musik sonos cast lautsprecher zone', icon:'&#127925;'},
   {tab:'tab-proactive', title:'Jarvis denkt voraus', keywords:'insights wetter kalender energie fenster frost', icon:'&#129504;'},
   {tab:'tab-proactive', title:'Event-Handler', keywords:'event prioritaet critical high medium low', icon:'&#128226;'},
   {tab:'tab-proactive', title:'Spontane Beobachtungen', keywords:'beobachtungen energie streak rekorde meilensteine', icon:'&#128065;'},
@@ -725,8 +731,75 @@ async function loadDashboard() {
       <div style="padding:8px 0;display:flex;justify-content:space-between;">
         <span style="font-size:12px;">Redis</span><span style="font-size:11px;color:${mem.redis_connected?'var(--success)':'var(--danger)'};">${mem.redis_connected?'Verbunden':'Getrennt'}</span></div>`;
   } catch(e) { console.error('Dashboard fail:', e); }
-  // Szenen-Widget parallel laden
+  // Szenen-Widget + Energie parallel laden
   loadSceneStatus();
+  refreshEnergyDashboard();
+}
+
+// ---- Energie-Dashboard Live Widget ----
+async function refreshEnergyDashboard() {
+  try {
+    const d = await api('/api/ui/energy/live');
+    const card = document.getElementById('energyDashCard');
+    const cont = document.getElementById('energyDashContent');
+    const ts = document.getElementById('energyRefreshTs');
+    if (!card || !cont) return;
+    if (!d.available) { card.style.display = 'none'; return; }
+
+    // Mindestens 1 Wert vorhanden?
+    const hasData = d.solar_watts != null || d.consumption_watts != null || d.price_cents != null || d.grid_export_watts != null;
+    if (!hasData) { card.style.display = 'none'; return; }
+
+    card.style.display = '';
+    if (ts) ts.textContent = new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+
+    let html = '';
+
+    // Solar
+    if (d.solar_watts != null) {
+      const pct = d.solar_watts > 0 ? Math.min(100, (d.solar_watts / (d.thresholds?.solar_high || 5000)) * 100) : 0;
+      const col = d.solar_watts > (d.thresholds?.solar_high || 5000) ? 'var(--success)' : d.solar_watts > 500 ? 'var(--accent)' : 'var(--text-secondary)';
+      html += `<div class="stat-card">
+        <div class="stat-label">&#9728;&#65039; Solar</div>
+        <div class="stat-value" style="color:${col}">${d.solar_watts >= 1000 ? (d.solar_watts/1000).toFixed(1)+' kW' : Math.round(d.solar_watts)+' W'}</div>
+        <div style="margin-top:6px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:${col};border-radius:2px;transition:width .5s;"></div>
+        </div></div>`;
+    }
+
+    // Verbrauch
+    if (d.consumption_watts != null) {
+      const col = d.consumption_watts > 3000 ? 'var(--danger)' : d.consumption_watts > 1500 ? 'var(--warning, orange)' : 'var(--text)';
+      html += `<div class="stat-card">
+        <div class="stat-label">&#128268; Verbrauch</div>
+        <div class="stat-value" style="color:${col}">${d.consumption_watts >= 1000 ? (d.consumption_watts/1000).toFixed(1)+' kW' : Math.round(d.consumption_watts)+' W'}</div>
+        <div class="stat-sub">${d.self_sufficiency_percent != null ? Math.round(d.self_sufficiency_percent)+'% Eigenversorgung' : ''}</div></div>`;
+    }
+
+    // Netz (Export/Import)
+    if (d.grid_export_watts != null) {
+      const isExport = d.grid_export_watts > 0;
+      const val = Math.abs(d.grid_export_watts);
+      const col = isExport ? 'var(--success)' : 'var(--danger)';
+      const label = isExport ? 'Einspeisung' : 'Netzbezug';
+      html += `<div class="stat-card">
+        <div class="stat-label">${isExport ? '&#9889;&#8593;' : '&#9889;&#8595;'} ${label}</div>
+        <div class="stat-value" style="color:${col}">${val >= 1000 ? (val/1000).toFixed(1)+' kW' : Math.round(val)+' W'}</div>
+        <div class="stat-sub">${isExport ? 'ins Netz' : 'vom Netz'}</div></div>`;
+    }
+
+    // Strompreis
+    if (d.price_cents != null) {
+      const col = d.price_status === 'low' ? 'var(--success)' : d.price_status === 'high' ? 'var(--danger)' : 'var(--text)';
+      const label = d.price_status === 'low' ? 'Guenstig' : d.price_status === 'high' ? 'Teuer' : 'Normal';
+      html += `<div class="stat-card">
+        <div class="stat-label">&#128176; Strompreis</div>
+        <div class="stat-value" style="color:${col}">${d.price_cents.toFixed(1)} ct</div>
+        <div class="stat-sub">${label} (pro kWh)</div></div>`;
+    }
+
+    cont.innerHTML = html;
+  } catch(e) { /* silent */ }
 }
 
 // ---- Live-Status Auto-Refresh ----
@@ -753,8 +826,9 @@ async function refreshLiveStatus() {
     if (wb) wb.style.display = d.whisper_mode ? '' : 'none';
     const sb = document.getElementById('statusBadge');
     if (sb) { sb.textContent = d.components_ok ? 'Online' : 'Offline'; sb.className = 'badge ' + (d.components_ok ? 'badge-ok' : 'badge-err'); }
-    // Szenen-Widget aktualisieren
+    // Szenen + Energie aktualisieren
     loadSceneStatus();
+    refreshEnergyDashboard();
     // Mood und Stress im Status-Bereich aktualisieren
     const mi = document.getElementById('moodInfo');
     if (mi && d.mood) {
@@ -1071,6 +1145,14 @@ const HELP_TEXTS = {
   'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster fuer das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. 2048 empfohlen fuer 4B Modelle.'},
   'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster fuer das Smart-Modell (Gespraeche).', detail:'4096 = Standard. Mehr Kontext = besseres Gespraechsgedaechtnis, aber mehr VRAM.'},
   'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster fuer das Deep-Modell (komplexe Aufgaben).', detail:'MoE-Modelle (z.B. Qwen3.5-27B) sind VRAM-effizient und vertragen 8192+.'},
+  'ollama.keep_alive': {title:'Keep-Alive', text:'Wie lange das Modell nach dem letzten Request im VRAM bleibt.', detail:'Laenger = schnellere Antworten (kein Nachladen), aber mehr Strom im Idle. "5m" = 5 Minuten, "-1" = nie entladen, "0" = sofort entladen. Bei aktiver Nutzung empfohlen: "5m" oder laenger.'},
+  'ollama.flash_attn': {title:'Flash Attention', text:'Beschleunigt die Inferenz bei neueren GPUs (RTX 30xx+).', detail:'Flash Attention reduziert VRAM-Verbrauch und beschleunigt die Token-Generierung. Erfordert CUDA-faehige GPU. Bei Problemen deaktivieren.'},
+  'ollama.num_gpu': {title:'GPU-Layer', text:'Wie viele Modell-Layer auf die GPU geladen werden.', detail:'99 = Maximum (alles auf GPU, schnellste Inferenz). Niedrigere Werte lagern Teile in RAM aus (langsamer, aber spart VRAM). 0 = nur CPU.'},
+  'proactive.departure_shopping_reminder': {title:'Einkaufslisten-Erinnerung', text:'Beim Verlassen des Hauses erwaehnt Jarvis offene Einkaufslisten-Eintraege.', detail:'Nutzt die Home Assistant Shopping List. Jarvis sagt z.B. "Uebrigens, Milch und Brot stehen noch auf der Liste."'},
+  'smart_shopping.enabled': {title:'Smart Shopping', text:'Intelligente Einkaufsliste mit Verbrauchsprognose.', detail:'Lernt aus abgehakten Einkaufslisteneintraegen wie oft du Artikel kaufst. Erinnert proaktiv wenn etwas bald aufgebraucht sein muesste. Kann auch Rezept-Zutaten automatisch auf die Liste setzen.'},
+  'smart_shopping.min_purchases': {title:'Mindest-Kaeufe', text:'Wie viele Kaeufe noetig sind bevor eine Prognose erstellt wird.', detail:'Bei 2 braucht es nur 2 Kaeufe fuer eine erste Schaetzung. Hoehere Werte machen die Prognose genauer, brauchen aber laenger.'},
+  'smart_shopping.reminder_days_before': {title:'Erinnerung vorher', text:'Wie viele Tage vor dem erwarteten Verbrauch erinnert werden soll.'},
+  'smart_shopping.reminder_cooldown_hours': {title:'Erinnerungs-Cooldown', text:'Mindestabstand zwischen Erinnerungen fuer denselben Artikel.'},
   // === MODELL-PROFILE ===
   'model_profiles': {title:'Modell-Profile', text:'LLM-Parameter pro Modell-Familie. Neues Modell = nur Profil hier anlegen. Match: Laengster Key der im Modellnamen vorkommt gewinnt.', detail:'Beispiel: "qwen3.5:9b" matcht Profil "qwen3.5" (nicht "qwen3"). Unbekannte Modelle nutzen das "default" Profil. Spezifische Profile erben vom Default und ueberschreiben nur gesetzte Werte.'},
   'model_profiles.default.supports_think_tags': {title:'Think-Tags (Default)', text:'Ob das Modell &lt;think&gt;-Tags fuer Chain-of-Thought Reasoning nutzt.', detail:'Qwen3, DeepSeek und aehnliche Modelle geben ihren Denkprozess in &lt;think&gt;-Tags aus. Diese werden automatisch aus der Antwort entfernt.'},
@@ -1513,6 +1595,24 @@ const HELP_TEXTS = {
   'heating.weather_adjust.wind_offset': {title:'Wind-Offset', text:'Um wie viel Grad die Heizung bei starkem Wind erhoeht wird.'},
   'insights.checks.frost_heating': {title:'Frost + Heizung', text:'Warnt wenn Frost erwartet wird und Heizung aus/abwesend ist.'},
   'insights.checks.calendar_travel': {title:'Reise + Haus', text:'Erkennt Reise-Termine und prueft Alarm, Fenster, Heizung.'},
+  'multi_room_audio.enabled': {title:'Multi-Room Audio', text:'Aktiviert Speaker-Gruppen fuer synchrone Wiedergabe auf mehreren Lautsprechern gleichzeitig.'},
+  'multi_room_audio.use_native_grouping': {title:'Native Gruppierung', text:'Nutzt HA media_player.join/unjoin fuer echte Synchronisation (Sonos, Google Cast). Wenn deaktiviert: paralleles Abspielen auf jedem Speaker einzeln.'},
+  'multi_room_audio.max_groups': {title:'Max. Gruppen', text:'Maximale Anzahl gleichzeitig gespeicherter Speaker-Gruppen.'},
+  'multi_room_audio.default_volume': {title:'Standard-Lautstaerke', text:'Initiale Lautstaerke wenn eine neue Gruppe erstellt wird (in Prozent).'},
+  'conversation_memory.enabled': {title:'Konversations-Gedaechtnis', text:'Aktiviert Projekt-Tracking, offene Fragen und Tages-Zusammenfassungen ueber Gespraeche hinweg.'},
+  'conversation_memory.max_projects': {title:'Max. Projekte', text:'Maximale Anzahl gleichzeitig laufender Projekte. Aeltere muessen abgeschlossen werden.'},
+  'conversation_memory.max_questions': {title:'Max. Fragen', text:'Maximale Anzahl offener Fragen. Beantwortete und abgelaufene werden automatisch aufgeraeumt.'},
+  'conversation_memory.summary_retention_days': {title:'Zusammenfassungen behalten', text:'Wie lange Tages-Zusammenfassungen in Redis gespeichert werden.'},
+  'conversation_memory.question_ttl_days': {title:'Fragen-TTL', text:'Nach wie vielen Tagen unbeantwortete Fragen automatisch geloescht werden.'},
+  'energy.enabled': {title:'Energiemanagement', text:'Aktiviert Energie-Monitoring, Live-Dashboard und proaktive Strom-Tipps.'},
+  'energy.entities.electricity_price': {title:'Strompreis-Sensor', text:'HA-Entity fuer den aktuellen Strompreis. Unterstuetzt ct/kWh, EUR/kWh und EUR/MWh (wird automatisch umgerechnet).'},
+  'energy.entities.total_consumption': {title:'Verbrauchs-Sensor', text:'HA-Entity fuer den aktuellen Stromverbrauch in Watt.'},
+  'energy.entities.solar_production': {title:'Solar-Sensor', text:'HA-Entity fuer die aktuelle Solar-Produktion in Watt.'},
+  'energy.entities.grid_export': {title:'Einspeisung-Sensor', text:'HA-Entity fuer die Netz-Einspeisung in Watt (wie viel Strom ins Netz zurueckfliesst).'},
+  'energy.thresholds.price_low_cent': {title:'Guenstig-Schwelle', text:'Unter diesem Preis (ct/kWh) gilt Strom als guenstig — Jarvis empfiehlt dann energieintensive Geraete zu starten.'},
+  'energy.thresholds.price_high_cent': {title:'Teuer-Schwelle', text:'Ueber diesem Preis (ct/kWh) gilt Strom als teuer — Jarvis warnt vor hohen Kosten.'},
+  'energy.thresholds.solar_high_watts': {title:'Solar-Ueberschuss', text:'Ab dieser Leistung (Watt) erkennt Jarvis Solar-Ueberschuss und schlaegt vor, Geraete zu starten.'},
+  'energy.thresholds.anomaly_increase_percent': {title:'Anomalie-Schwelle', text:'Ab wie viel Prozent Abweichung vom Durchschnitt ein ungewoehnlicher Verbrauch gemeldet wird.'},
   'insights.checks.energy_anomaly': {title:'Energie-Anomalie', text:'Meldet wenn der Verbrauch deutlich ueber dem Durchschnitt liegt.'},
   'insights.checks.away_devices': {title:'Abwesend + Geraete', text:'Meldet wenn niemand da ist aber Licht/Fenster offen sind.'},
   'insights.checks.temp_drop': {title:'Temperatur-Abfall', text:'Erkennt wenn die Temperatur ungewoehnlich schnell faellt.'},
@@ -2569,7 +2669,22 @@ function renderPersonality() {
     fRange('models.options.max_tokens', 'Antwortlaenge (Max Tokens)', 64, 4096, 64) +
     fRange('ollama.num_ctx_fast', 'Kontext Fast-Modell', 1024, 8192, 1024, {1024:'1K',2048:'2K',3072:'3K',4096:'4K',6144:'6K',8192:'8K'}) +
     fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 16384, 1024, {2048:'2K',4096:'4K',6144:'6K',8192:'8K',12288:'12K',16384:'16K'}) +
-    fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K',24576:'24K',32768:'32K'})
+    fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K',24576:'24K',32768:'32K'}) +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">GPU-Performance</div>' +
+    fSelect('ollama.keep_alive', 'Keep-Alive (Modell im VRAM halten)', [
+      {v:'0',l:'Sofort entladen (spart Strom)'},
+      {v:'120s',l:'2 Minuten'},
+      {v:'5m',l:'5 Minuten (empfohlen)'},
+      {v:'30m',l:'30 Minuten'},
+      {v:'-1',l:'Nie entladen (schnellste Antworten)'}
+    ]) +
+    fToggle('ollama.flash_attn', 'Flash Attention (RTX 30xx+)') +
+    fSelect('ollama.num_gpu', 'GPU-Layer', [
+      {v:'99',l:'Maximum — Alles auf GPU (empfohlen)'},
+      {v:'35',l:'35 Layer (spart etwas VRAM)'},
+      {v:'20',l:'20 Layer (GPU/CPU Mix)'},
+      {v:'0',l:'Nur CPU (kein GPU)'}
+    ])
   ) +
   _renderModelProfiles() +
   sectionWrap('&#129504;', 'Action Planner',
@@ -3733,6 +3848,7 @@ function renderProactive() {
     fRange('proactive.cooldown_seconds', 'Mindestabstand zwischen Meldungen', 60, 3600, 60, {60:'1 Min',120:'2 Min',300:'5 Min',600:'10 Min',1800:'30 Min',3600:'1 Std'}) +
     fRange('proactive.music_follow_cooldown_minutes', 'Musik-Nachfolge Pause', 1, 30, 1) +
     fRange('proactive.min_autonomy_level', 'Ab Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fToggle('proactive.departure_shopping_reminder', 'Einkaufsliste beim Verlassen erwaehnen') +
     `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
       <span class="info-icon">&#127916;</span>"Nicht stoeren"-Szenen und Aktivitaets-Zuordnung werden jetzt zentral im <strong>Szenen</strong>-Tab verwaltet. Klicke hier um dorthin zu wechseln.
     </div>`
@@ -3794,6 +3910,44 @@ function renderProactive() {
     fRange('insights.thresholds.energy_anomaly_percent', 'Energie-Abweichung', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'}) +
     fRange('insights.thresholds.away_device_minutes', 'Abwesend-Hinweis nach', 30, 480, 30, {30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std',480:'8 Std'}) +
     fRange('insights.thresholds.temp_drop_degrees_per_2h', 'Temp-Abfall Schwelle', 1, 10, 1, {1:'1\u00B0C',2:'2\u00B0C',3:'3\u00B0C',5:'5\u00B0C',10:'10\u00B0C'})
+  ) +
+  sectionWrap('&#128722;', 'Smart Shopping',
+    fInfo('Jarvis lernt dein Einkaufsverhalten: wie oft du Artikel kaufst, an welchem Wochentag du einkaufst, und welche Zutaten fuer Rezepte fehlen. Erinnert proaktiv wenn etwas bald alle ist.') +
+    fToggle('smart_shopping.enabled', 'Smart Shopping aktiv') +
+    fRange('smart_shopping.min_purchases', 'Mindest-Kaeufe fuer Prognose', 2, 10, 1, {2:'2',3:'3',5:'5',10:'10'}) +
+    fRange('smart_shopping.reminder_days_before', 'Erinnerung X Tage vorher', 0, 7, 1, {0:'Am Tag',1:'1 Tag',2:'2 Tage',3:'3 Tage',7:'1 Woche'}) +
+    fRange('smart_shopping.reminder_cooldown_hours', 'Erinnerungs-Cooldown', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'})
+  ) +
+  sectionWrap('&#9889;', 'Energie-Dashboard',
+    fInfo('Live-Anzeige von Solar-Ertrag, Stromverbrauch, Netz-Einspeisung und Strompreis im Dashboard. Weise die passenden HA-Sensoren zu — ohne Sensoren nutzt Jarvis eine automatische Keyword-Suche.') +
+    fToggle('energy.enabled', 'Energiemanagement aktiv') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Sensor-Entities</div>' +
+    fEntityPickerSingle('energy.entities.electricity_price', 'Strompreis-Sensor', ['sensor'], 'z.B. sensor.electricity_price — liefert ct/kWh, EUR/kWh oder EUR/MWh') +
+    fEntityPickerSingle('energy.entities.total_consumption', 'Verbrauchs-Sensor', ['sensor'], 'z.B. sensor.power_consumption — aktueller Verbrauch in Watt') +
+    fEntityPickerSingle('energy.entities.solar_production', 'Solar-Sensor', ['sensor'], 'z.B. sensor.solar_power — aktuelle Solar-Produktion in Watt') +
+    fEntityPickerSingle('energy.entities.grid_export', 'Netz-Einspeisung Sensor', ['sensor'], 'z.B. sensor.grid_export_power — Einspeisung in Watt') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Schwellwerte</div>' +
+    fRange('energy.thresholds.price_low_cent', 'Guenstiger Strom unter', 5, 30, 1, {5:'5 ct',10:'10 ct',15:'15 ct',20:'20 ct',25:'25 ct',30:'30 ct'}) +
+    fRange('energy.thresholds.price_high_cent', 'Teurer Strom ueber', 20, 60, 1, {20:'20 ct',25:'25 ct',30:'30 ct',35:'35 ct',40:'40 ct',50:'50 ct',60:'60 ct'}) +
+    fRange('energy.thresholds.solar_high_watts', 'Solar-Ueberschuss ab', 500, 10000, 500, {500:'500 W',1000:'1 kW',2000:'2 kW',3000:'3 kW',5000:'5 kW',10000:'10 kW'}) +
+    fRange('energy.thresholds.anomaly_increase_percent', 'Anomalie-Schwelle', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'})
+  ) +
+  sectionWrap('&#129504;', 'Konversations-Gedaechtnis++',
+    fInfo('Jarvis merkt sich laufende Projekte, offene Fragen und erstellt Tages-Zusammenfassungen. Sage z.B. "Merke dir: Projekt Gartenhaus — Fundament ist fertig" oder "Merke dir die Frage: Wann muss die TUeV-Plakette erneuert werden?"') +
+    fToggle('conversation_memory.enabled', 'Konversations-Gedaechtnis aktiv') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Limits</div>' +
+    fRange('conversation_memory.max_projects', 'Maximale Projekte', 5, 50, 5, {5:'5',10:'10',15:'15',20:'20',30:'30',50:'50'}) +
+    fRange('conversation_memory.max_questions', 'Maximale offene Fragen', 10, 100, 10, {10:'10',20:'20',30:'30',50:'50',100:'100'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aufbewahrung</div>' +
+    fRange('conversation_memory.summary_retention_days', 'Zusammenfassungen behalten', 7, 90, 7, {7:'1 Woche',14:'2 Wochen',30:'1 Monat',60:'2 Monate',90:'3 Monate'}) +
+    fRange('conversation_memory.question_ttl_days', 'Offene Fragen behalten', 3, 60, 1, {3:'3 Tage',7:'1 Woche',14:'2 Wochen',30:'1 Monat',60:'2 Monate'})
+  ) +
+  sectionWrap('&#127925;', 'Multi-Room Audio',
+    fInfo('Erstelle Speaker-Gruppen fuer synchrone Wiedergabe im ganzen Haus. Sage z.B. "Spiele Jazz auf der Gruppe Erdgeschoss" oder "Erstelle eine Gruppe Party mit Wohnzimmer und Kueche". Gruppen-Presets koennen in settings.yaml unter multi_room_audio.presets definiert werden.') +
+    fToggle('multi_room_audio.enabled', 'Multi-Room Audio aktiv') +
+    fToggle('multi_room_audio.use_native_grouping', 'Native Gruppierung (Sonos/Cast)') +
+    fRange('multi_room_audio.max_groups', 'Maximale Gruppen', 1, 20, 1, {1:'1',5:'5',10:'10',15:'15',20:'20'}) +
+    fRange('multi_room_audio.default_volume', 'Standard-Lautstaerke', 5, 100, 5, {5:'5%',20:'20%',40:'40%',60:'60%',80:'80%',100:'100%'})
   ) +
   sectionWrap('&#128226;', 'Event-Handler',
     fInfo('Prioritaeten fuer verschiedene Event-Typen. Event-Typen mit hoeherer Prioritaet durchbrechen "Nicht stoeren". In settings.yaml unter proactive.event_handlers anpassbar.') +

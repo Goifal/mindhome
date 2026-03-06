@@ -75,7 +75,10 @@ class CircuitBreaker:
             if self._half_open_calls < self.half_open_max_calls:
                 self._half_open_calls += 1
                 return True
+            logger.debug("Circuit %s HALF_OPEN max calls reached", self.name)
             return False
+        # S7: OPEN-State nicht stumm
+        logger.debug("Circuit %s OPEN — rejecting call", self.name)
         return False
 
     def record_success(self) -> None:

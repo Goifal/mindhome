@@ -8,6 +8,8 @@ Phase 18: MCU-Upgrade — Memory Callbacks, Running Gag Evolution,
           Eskalierende Sorge, Neugier-Fragen, Think-Ahead.
 """
 
+import collections
+import hashlib
 import json
 import logging
 import random
@@ -1029,6 +1031,10 @@ class PersonalityEngine:
                 chosen = random.choice(available)
                 user_history.append(chosen)
                 self._last_confirmations[user_key] = user_history[-10:]
+                # F-021: Begrenze Anzahl getrackter User (Speicherleck vermeiden)
+                if len(self._last_confirmations) > 50:
+                    oldest_key = next(iter(self._last_confirmations))
+                    del self._last_confirmations[oldest_key]
                 return chosen
 
         # Kontextbezogene Bestätigung versuchen
@@ -1274,13 +1280,13 @@ class PersonalityEngine:
                 "DRINGLICHKEIT: KRITISCH.\n"
                 "Kommunikation: Kurz, direkt, kein Humor. Nur Fakten und Handlungen.\n"
                 "Muster: '[Was] — [Status] — [Was du tust]'\n"
-                "Beispiel: 'Rauchmelder Küche. Aktiv. Habe Lüftung gestartet.'"
+                "Beispiel: 'Rauchmelder Küche. Aktiv. Habe Lüftung gestartet.'\n"
             )
         else:
             return (
                 "DRINGLICHKEIT: ERHÖHT.\n"
                 "Kommunikation: Knapper als normal. Trockener Humor erlaubt, aber maximal ein Satz.\n"
-                "Priorisiere die Warnung, dann Status."
+                "Priorisiere die Warnung, dann Status.\n"
             )
 
     # ------------------------------------------------------------------
@@ -1388,7 +1394,7 @@ class PersonalityEngine:
         notes = []
         new_alerts = []
         for alert in alerts:
-            alert_key = str(hash(alert.lower().strip()) % 10_000_000)
+            alert_key = str(int(hashlib.md5(alert.lower().strip().encode()).hexdigest(), 16) % 10_000_000)
             if await self.was_warning_given(alert_key):
                 notes.append(f"[BEREITS GEWARNT: '{alert}' — NICHT wiederholen, nur erwähnen wenn gefragt]")
             else:
@@ -1677,7 +1683,7 @@ class PersonalityEngine:
         # Phase 18: Gag-Evolution — referenziert frühere Witze statt Wiederholung
         if gag and _gag_type:
             try:
-                person = get_active_person() if get_active_person else ""
+                person = get_active_person() or ""
                 evolved = await self.build_evolved_gag(_gag_type, person)
                 if evolved:
                     gag = evolved  # Evolvierten Gag bevorzugen
@@ -1688,7 +1694,7 @@ class PersonalityEngine:
 
     async def _check_repeated_question_gag(self, text: str) -> Optional[str]:
         """Erkennt wenn User die gleiche Frage oft stellt."""
-        key = f"mha:gag:repeat:{hash(text) % 10000}"
+        key = f"mha:gag:repeat:{int(hashlib.md5(text.encode()).hexdigest(), 16) % 10000}"
         count = await self._redis.incr(key)
         await self._redis.expire(key, 86400)  # 24h
 
@@ -2393,7 +2399,6 @@ class PersonalityEngine:
                 "  Tony sagt 'Was haeltst du davon?' und JARVIS antwortet mit einer ECHTEN Meinung.\n\n"
             )
 
-        import collections
         format_kwargs = dict(
             assistant_name=self.assistant_name,
             user_name=settings.user_name,

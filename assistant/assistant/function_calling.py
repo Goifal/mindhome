@@ -52,6 +52,7 @@ _get_room_profiles = get_room_profiles
 _entity_catalog: dict[str, list[str]] = {}
 _entity_catalog_ts: float = 0.0
 _CATALOG_TTL = 300  # 5 Minuten
+_entity_catalog_lock = asyncio.Lock()  # R2: Schutz vor konkurrierenden Refresh-Aufrufen
 
 # ── MindHome Domain-Mapping: Entity-ID → Domain-Name ──
 # Wird aus /api/devices + /api/domains geladen.
@@ -1033,6 +1034,19 @@ async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
     Laedt zusaetzlich Domain-Zuordnungen von der MindHome API,
     damit der Assistant weiss welche Geräte Fenster, Steckdosen, etc. sind.
     """
+    global _entity_catalog, _entity_catalog_ts
+
+    # R2: Lock verhindert parallele Refreshes (z.B. bei gleichzeitigen Requests)
+    async with _entity_catalog_lock:
+        # Falls ein anderer Refresh gerade fertig wurde, TTL prüfen
+        if _entity_catalog and (time.time() - _entity_catalog_ts) < _CATALOG_TTL:
+            return
+
+        await _refresh_entity_catalog_inner(ha)
+
+
+async def _refresh_entity_catalog_inner(ha: HomeAssistantClient) -> None:
+    """Innerer Refresh ohne Lock (wird von refresh_entity_catalog aufgerufen)."""
     global _entity_catalog, _entity_catalog_ts
 
     # MindHome Domain-Mapping laden (parallel zum HA-States-Abruf)
@@ -2070,6 +2084,157 @@ _ASSISTANT_TOOLS_STATIC = [
             },
         },
     },
+    # --- Smart Shopping: Verbrauchsprognose + Rezept-Zutaten ---
+    {
+        "type": "function",
+        "function": {
+            "name": "smart_shopping",
+            "description": "Intelligente Einkaufslistenverwaltung: Verbrauchsprognose (wann wird etwas alle?), fehlende Rezept-Zutaten auf Liste setzen, Einkaufsmuster anzeigen.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["predictions", "add_ingredients", "record_purchase", "shopping_pattern"],
+                        "description": "predictions: Verbrauchsprognose anzeigen. add_ingredients: Rezept-Zutaten auf Einkaufsliste. record_purchase: Einkauf protokollieren. shopping_pattern: Einkaufstag-Muster.",
+                    },
+                    "item": {
+                        "type": "string",
+                        "description": "Artikelname (fuer record_purchase)",
+                    },
+                    "ingredients": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Zutatenliste (fuer add_ingredients)",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    # --- Konversations-Gedaechtnis++ ---
+    {
+        "type": "function",
+        "function": {
+            "name": "conversation_memory",
+            "description": "Verwaltet Projekte, offene Fragen und Tages-Zusammenfassungen. Nutze dies wenn der User ueber laufende Projekte spricht, Fragen fuer spaeter merken will, oder nach frueheren Gespraechen fragt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["create_project", "update_project", "list_projects", "delete_project",
+                                 "add_question", "answer_question", "list_questions",
+                                 "save_summary", "get_summary"],
+                        "description": "create_project/update_project/list_projects/delete_project: Projekt-Verwaltung. add_question/answer_question/list_questions: Offene Fragen. save_summary/get_summary: Tages-Zusammenfassung.",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Projektname (fuer create/update/delete_project)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Beschreibung (fuer create_project)",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["active", "paused", "done"],
+                        "description": "Projektstatus (fuer update_project)",
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "Notiz zum Projekt (fuer update_project)",
+                    },
+                    "milestone": {
+                        "type": "string",
+                        "description": "Meilenstein (fuer update_project)",
+                    },
+                    "question": {
+                        "type": "string",
+                        "description": "Frage-Text (fuer add_question/answer_question)",
+                    },
+                    "answer": {
+                        "type": "string",
+                        "description": "Antwort (fuer answer_question)",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "Zusammenfassung (fuer save_summary)",
+                    },
+                    "topics": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Themen-Liste (fuer save_summary)",
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Datum YYYY-MM-DD (fuer get_summary, optional)",
+                    },
+                    "person": {
+                        "type": "string",
+                        "description": "Person (optional, fuer Zuordnung)",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    # --- Multi-Room Audio Sync ---
+    {
+        "type": "function",
+        "function": {
+            "name": "multi_room_audio",
+            "description": "Verwaltet Speaker-Gruppen fuer synchrone Multi-Room-Wiedergabe. Erstelle Gruppen wie 'Erdgeschoss' oder 'Party', spiele Musik synchron auf allen Speakern einer Gruppe.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["create_group", "delete_group", "modify_group", "list_groups",
+                                 "play", "stop", "pause", "volume",
+                                 "status", "discover_speakers"],
+                        "description": "create_group/delete_group/modify_group/list_groups: Gruppen verwalten. play/stop/pause: Wiedergabe steuern. volume: Lautstaerke. status: Gruppen-Status. discover_speakers: Verfuegbare Speaker erkennen.",
+                    },
+                    "group_name": {
+                        "type": "string",
+                        "description": "Name der Speaker-Gruppe",
+                    },
+                    "speakers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Liste von media_player Entity-IDs (fuer create_group/modify_group)",
+                    },
+                    "add_speakers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Speaker zur Gruppe hinzufuegen (fuer modify_group)",
+                    },
+                    "remove_speakers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Speaker aus Gruppe entfernen (fuer modify_group)",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Musik-Suchbegriff (fuer play)",
+                    },
+                    "volume": {
+                        "type": "integer",
+                        "description": "Lautstaerke 0-100 (fuer volume)",
+                    },
+                    "speaker": {
+                        "type": "string",
+                        "description": "Einzelner Speaker in der Gruppe (fuer volume)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Beschreibung der Gruppe",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
     # --- Phase 16.2: Was kann Jarvis? ---
     {
         "type": "function",
@@ -3022,7 +3187,7 @@ class FunctionExecutor:
         "reschedule_calendar_event", "set_presence_mode", "edit_config",
         "manage_shopping_list", "list_capabilities", "list_ha_automations",
         "create_automation", "confirm_automation", "list_jarvis_automations",
-        "delete_jarvis_automation", "manage_inventory",
+        "delete_jarvis_automation", "manage_inventory", "smart_shopping", "conversation_memory", "multi_room_audio",
         "set_timer", "cancel_timer", "get_timer_status",
         "set_reminder", "set_wakeup_alarm", "cancel_alarm", "get_alarms",
         "broadcast", "send_intercom",
@@ -3299,7 +3464,7 @@ class FunctionExecutor:
             if func_name in ("set_cover", "set_cover_all"):
                 position = args.get("position")
                 action = str(args.get("action", "")).lower()
-                if position is not None or action in ("open", "down"):
+                if position is not None or action in ("open", "up"):
                     states = await self.ha.get_states()
                     for s in (states or []):
                         eid = s.get("entity_id", "")
@@ -3630,7 +3795,7 @@ class FunctionExecutor:
         count = 0
         for s in states:
             eid = s.get("entity_id", "")
-            if eid.startswith("light.") and s.get("state") != state:
+            if eid.startswith("light.") and (s.get("state") != state or (state == "on" and "brightness" in args)):
                 service_data = {"entity_id": eid}
                 if state == "on":
                     if "brightness" in args:
@@ -6238,6 +6403,12 @@ class FunctionExecutor:
             success = await self.ha.call_service(
                 "shopping_list", "complete_item", {"name": item}
             )
+            # Smart Shopping: Einkauf protokollieren (fuer Verbrauchsprognose)
+            if success and hasattr(self, "_smart_shopping") and self._smart_shopping:
+                try:
+                    await self._smart_shopping.record_purchase(item)
+                except Exception as _e:
+                    logger.debug("SmartShopping record_purchase: %s", _e)
             return {"success": success, "message": f"'{item}' abgehakt" if success
                     else "Artikel nicht gefunden"}
 
@@ -6247,6 +6418,226 @@ class FunctionExecutor:
             )
             return {"success": success, "message": "Abgehakte Artikel entfernt" if success
                     else "Fehler beim Aufraumen"}
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    # ------------------------------------------------------------------
+    # Smart Shopping: Verbrauchsprognose + Rezept-Zutaten
+    # ------------------------------------------------------------------
+
+    async def _exec_smart_shopping(self, args: dict) -> dict:
+        """Smart Shopping: Verbrauchsprognose, Rezept-Zutaten, Einkaufsmuster."""
+        action = args.get("action", "")
+        shopping = getattr(self, "_smart_shopping", None)
+
+        if not shopping:
+            return {"success": False, "message": "Smart Shopping nicht verfuegbar"}
+
+        if action == "predictions":
+            predictions = await shopping.get_predictions()
+            if not predictions:
+                return {"success": True, "message": "Noch keine Verbrauchsdaten vorhanden. Wenn du Artikel von der Einkaufsliste abhakst, lerne ich dein Verbrauchsmuster."}
+            lines = ["Verbrauchsprognose:"]
+            for p in predictions[:10]:
+                days = p.get("avg_days", 0)
+                conf = int(p.get("confidence", 0) * 100)
+                next_d = p.get("next_expected", "")[:10]
+                lines.append(f"- {p['item']}: alle ~{days} Tage (naechster Kauf: {next_d}, Sicherheit: {conf}%)")
+            return {"success": True, "message": "\n".join(lines)}
+
+        elif action == "add_ingredients":
+            ingredients = args.get("ingredients", [])
+            if not ingredients:
+                return {"success": False, "message": "Keine Zutaten angegeben"}
+            result = await shopping.add_missing_ingredients(ingredients)
+            return {"success": True, "message": result["message"]}
+
+        elif action == "record_purchase":
+            item_name = args.get("item", "")
+            if not item_name:
+                return {"success": False, "message": "Kein Artikel angegeben"}
+            return await shopping.record_purchase(item_name)
+
+        elif action == "shopping_pattern":
+            pattern = await shopping.get_shopping_day_pattern()
+            if not pattern:
+                return {"success": True, "message": "Noch keine Einkaufsmuster erkannt. Ich lerne aus abgehakten Einkaufslisteneintraegen."}
+            msg = f"Dein ueblicher Einkaufstag: {pattern['preferred_day']} ({pattern['total_trips']} Einkauefe insgesamt)."
+            counts = pattern.get("day_counts", {})
+            if counts:
+                sorted_days = sorted(counts.items(), key=lambda x: x[1], reverse=True)
+                msg += " Verteilung: " + ", ".join(f"{d}: {c}x" for d, c in sorted_days)
+            return {"success": True, "message": msg}
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    # ------------------------------------------------------------------
+    # Konversations-Gedaechtnis++
+    # ------------------------------------------------------------------
+
+    async def _exec_conversation_memory(self, args: dict) -> dict:
+        """Projekte, offene Fragen, Tages-Zusammenfassungen."""
+        action = args.get("action", "")
+        cm = getattr(self, "_conversation_memory", None)
+
+        if not cm:
+            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar"}
+
+        if action == "create_project":
+            return await cm.create_project(
+                name=args.get("name", ""),
+                description=args.get("description", ""),
+                person=args.get("person", ""),
+            )
+
+        elif action == "update_project":
+            return await cm.update_project(
+                name=args.get("name", ""),
+                status=args.get("status", ""),
+                note=args.get("note", ""),
+                milestone=args.get("milestone", ""),
+            )
+
+        elif action == "list_projects":
+            projects = await cm.get_projects(
+                status=args.get("status", ""),
+                person=args.get("person", ""),
+            )
+            if not projects:
+                return {"success": True, "message": "Keine Projekte vorhanden."}
+            lines = [f"Projekte ({len(projects)}):"]
+            for p in projects:
+                ms = len(p.get("milestones", []))
+                notes = len(p.get("notes", []))
+                status_icon = {"active": "▶", "paused": "⏸", "done": "✓"}.get(p.get("status", ""), "?")
+                lines.append(f"  {status_icon} {p.get('name', '?')} ({p.get('status', '?')}) — {ms} Meilensteine, {notes} Notizen")
+                if p.get("description"):
+                    lines.append(f"    {p['description']}")
+                for m in p.get("milestones", [])[-3:]:
+                    lines.append(f"    ✓ {m['text']} ({m['date'][:10]})")
+                for n in p.get("notes", [])[-2:]:
+                    lines.append(f"    📝 {n['text'][:60]} ({n['date'][:10]})")
+            return {"success": True, "message": "\n".join(lines)}
+
+        elif action == "delete_project":
+            return await cm.delete_project(name=args.get("name", ""))
+
+        elif action == "add_question":
+            return await cm.add_question(
+                question=args.get("question", ""),
+                context=args.get("description", ""),
+                person=args.get("person", ""),
+            )
+
+        elif action == "answer_question":
+            return await cm.answer_question(
+                question_search=args.get("question", ""),
+                answer=args.get("answer", ""),
+            )
+
+        elif action == "list_questions":
+            questions = await cm.get_open_questions(person=args.get("person", ""))
+            if not questions:
+                return {"success": True, "message": "Keine offenen Fragen."}
+            lines = [f"Offene Fragen ({len(questions)}):"]
+            for q in questions:
+                age = q.get("created_at", "")[:10]
+                lines.append(f"  ❓ {q['question']} (seit {age})")
+                if q.get("context"):
+                    lines.append(f"     Kontext: {q['context'][:50]}")
+            return {"success": True, "message": "\n".join(lines)}
+
+        elif action == "save_summary":
+            return await cm.save_daily_summary(
+                summary=args.get("summary", ""),
+                topics=args.get("topics", []),
+                date=args.get("date", ""),
+            )
+
+        elif action == "get_summary":
+            s = await cm.get_daily_summary(date=args.get("date", ""))
+            if not s:
+                return {"success": True, "message": "Keine Zusammenfassung fuer diesen Tag."}
+            topics = ", ".join(s.get("topics", []))
+            return {"success": True, "message": f"Zusammenfassung ({s['date']}): {s['summary']}\nThemen: {topics}"}
+
+        return {"success": False, "message": f"Unbekannte Aktion: {action}"}
+
+    # ------------------------------------------------------------------
+    # Multi-Room Audio Sync
+    # ------------------------------------------------------------------
+
+    async def _exec_multi_room_audio(self, args: dict) -> dict:
+        """Speaker-Gruppen und synchrone Multi-Room-Wiedergabe."""
+        action = args.get("action", "")
+        mra = getattr(self, "_multi_room_audio", None)
+
+        if not mra:
+            return {"success": False, "message": "Multi-Room Audio nicht verfuegbar"}
+
+        if action == "create_group":
+            return await mra.create_group(
+                name=args.get("group_name", ""),
+                speakers=args.get("speakers", []),
+                description=args.get("description", ""),
+            )
+
+        elif action == "delete_group":
+            return await mra.delete_group(name=args.get("group_name", ""))
+
+        elif action == "modify_group":
+            return await mra.modify_group(
+                name=args.get("group_name", ""),
+                add_speakers=args.get("add_speakers"),
+                remove_speakers=args.get("remove_speakers"),
+            )
+
+        elif action == "list_groups":
+            groups = await mra.list_groups()
+            if not groups:
+                return {"success": True, "message": "Keine Audio-Gruppen vorhanden. Erstelle eine mit 'create_group'."}
+            lines = [f"Audio-Gruppen ({len(groups)}):"]
+            for g in groups:
+                n_speakers = len(g.get("speakers", []))
+                lines.append(f"  🔊 {g['name']} ({n_speakers} Speaker, Vol: {g.get('volume', '?')}%)")
+                if g.get("description"):
+                    lines.append(f"    {g['description']}")
+                for s in g.get("speakers", []):
+                    vol = g.get("speaker_volumes", {}).get(s, "?")
+                    lines.append(f"    - {s} ({vol}%)")
+            return {"success": True, "message": "\n".join(lines)}
+
+        elif action == "play":
+            return await mra.play_to_group(
+                group_name=args.get("group_name", ""),
+                query=args.get("query", ""),
+            )
+
+        elif action == "stop":
+            return await mra.stop_group(group_name=args.get("group_name", ""))
+
+        elif action == "pause":
+            return await mra.pause_group(group_name=args.get("group_name", ""))
+
+        elif action == "volume":
+            vol = args.get("volume", 40)
+            return await mra.set_group_volume(
+                group_name=args.get("group_name", ""),
+                volume=vol,
+                speaker=args.get("speaker", ""),
+            )
+
+        elif action == "status":
+            return await mra.get_group_status(group_name=args.get("group_name", ""))
+
+        elif action == "discover_speakers":
+            speakers = await mra.discover_speakers()
+            if not speakers:
+                return {"success": True, "message": "Keine Speaker gefunden."}
+            lines = [f"Verfuegbare Speaker ({len(speakers)}):"]
+            for s in speakers:
+                lines.append(f"  🔊 {s['name']} ({s['entity_id']}) — {s['state']}")
+            return {"success": True, "message": "\n".join(lines)}
 
         return {"success": False, "message": f"Unbekannte Aktion: {action}"}
 
@@ -6440,12 +6831,10 @@ class FunctionExecutor:
     def _normalize_name(text: str) -> str:
         """Normalisiert Umlaute und Sonderzeichen für Entity-Matching."""
         n = text.lower()
-        # Unicode-Umlaute zuerst
-        n = n.replace("ü", "u").replace("ä", "a").replace("ö", "o").replace("ß", "ss")
-        # Dann ASCII-Digraphen
-        n = n.replace("ue", "u").replace("ae", "a").replace("oe", "o")
+        # Unicode-Umlaute und ASCII-Digraphen in einem Schritt normalisieren
+        n = n.replace("ü", "ue").replace("ä", "ae").replace("ö", "oe").replace("ß", "ss")
         # LLM-Varianten: "bureau" statt "buero"/"büro"
-        n = n.replace("bureau", "buro")
+        n = n.replace("bureau", "buero")
         return n.replace(" ", "_")
 
     async def _find_entity(self, domain: str, search: str, device_hint: str = "", person: str = "") -> Optional[str]:

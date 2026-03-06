@@ -19,6 +19,7 @@ from typing import Optional
 import yaml
 
 from .config import yaml_config, load_yaml_config
+from .constants import REDIS_CONFIG_SNAPSHOT_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +86,8 @@ class ConfigVersioning:
             key = f"mha:config_snapshots:{config_file}"
             pipe = self._redis.pipeline()
             pipe.lpush(key, json.dumps(metadata))
-            pipe.ltrim(key, 0, 49)  # Max 50 Snapshots pro Config
-            pipe.expire(key, 90 * 86400)
+            pipe.ltrim(key, 0, self._max_snapshots - 1)
+            pipe.expire(key, REDIS_CONFIG_SNAPSHOT_TTL)
             await pipe.execute()
 
             await self._cleanup_old_snapshots(config_file)
@@ -249,7 +250,8 @@ class ConfigVersioning:
             try:
                 yaml_config.clear()
                 yaml_config.update(new_config)
-            except Exception:
+            except Exception as e:
+                logger.debug("Config hot-reload intermediate error: %s", e)
                 yaml_config.clear()
                 yaml_config.update(backup)
                 raise

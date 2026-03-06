@@ -212,7 +212,7 @@ class WellnessAdvisor:
         # 1. Primaer: Echten HA-Sensor pruefen (PC-Stromverbrauch > 30W = an)
         if self.pc_power_sensor and self.ha:
             try:
-                state = await self.ha.get_entity_state(self.pc_power_sensor)
+                state = await self.ha.get_state(self.pc_power_sensor)
                 if state and state.get("state") not in ("unavailable", "unknown"):
                     power = float(state.get("state", 0))
                     user_at_pc = power > 30  # PC laeuft wenn > 30W
@@ -397,7 +397,7 @@ class WellnessAdvisor:
             kitchen_was_active = False
             if self.kitchen_motion_sensor and self.ha:
                 try:
-                    state = await self.ha.get_entity_state(self.kitchen_motion_sensor)
+                    state = await self.ha.get_state(self.kitchen_motion_sensor)
                     if state and state.get("state") == "on":
                         kitchen_was_active = True
                 except Exception as e:

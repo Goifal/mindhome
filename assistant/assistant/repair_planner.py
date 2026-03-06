@@ -267,7 +267,7 @@ class RepairPlanner:
         """Erstellt ein neues Werkstatt-Projekt."""
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfügbar"}
-        project_id = str(uuid_mod.uuid4())[:8]
+        project_id = str(uuid_mod.uuid4())[:12]  # S3: Mehr Entropy (16^12 statt 16^8)
         slug = (title.lower().replace(" ", "-")
                 .replace("ä", "ae").replace("ö", "oe").replace("ü", "ue"))
         project = {
@@ -423,8 +423,8 @@ class RepairPlanner:
                 if results:
                     context = "\n".join(
                         r.get("content", "") for r in results)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Semantic memory search fallback failed: %s", e)
 
         # Werkstatt-Umgebung holen
         environment = await self.get_workshop_environment()
@@ -447,7 +447,8 @@ class RepairPlanner:
 
         # JSON parsen und Projekt erstellen
         try:
-            data = json.loads(response)
+            _content = response.get("message", {}).get("content", "")
+            data = json.loads(_content)
             project = await self.create_project(
                 title=data.get("diagnosis", text)[:60],
                 description=text, category="reparatur",
@@ -478,12 +479,12 @@ class RepairPlanner:
                 await emit_workshop("diagnosis", {
                     "project": project, "diagnosis": data,
                 })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Diagnosis websocket emit failed: %s", e)
 
             return self._format_diagnosis(data)
-        except json.JSONDecodeError:
-            return response  # LLM hat kein JSON generiert
+        except (json.JSONDecodeError, TypeError, KeyError):
+            return _content  # LLM hat kein JSON generiert
 
     def _format_diagnosis(self, data: dict) -> str:
         """Formatiert eine Diagnose für die Sprachausgabe."""
@@ -534,9 +535,10 @@ Frage: {question}
 Analysiere: Machbarkeit, Schwachstellen, Belastungsgrenzen, Batterie-Laufzeit,
 thermische Aspekte, Verbesserungsvorschläge. Gib Konfidenz-Level an."""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.4, max_tokens=2048)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Troubleshooting ──────────────────────────────────────
 
@@ -563,9 +565,10 @@ Antworte strukturiert als Diagnosebaum."""
             {"role": "system", "content": prompt},
             {"role": "user", "content": symptom},
         ]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.3, max_tokens=2048)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Proaktive Verbesserungen ─────────────────────────────
 
@@ -585,9 +588,10 @@ Projekt: {project['title']} ({project['category']})
 Teile: {json.dumps(project.get('parts', []))}
 Schlage konkrete Optimierungen vor (Effizienz, Kosten, Sicherheit, Zuverlaessigkeit)."""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.5, max_tokens=1024)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Komponenten-Vergleich ────────────────────────────────
 
@@ -603,9 +607,10 @@ Schlage konkrete Optimierungen vor (Effizienz, Kosten, Sicherheit, Zuverlaessigk
 Vergleiche: Features, Preis, Stromverbrauch, Pins, Verfügbarkeit.
 Gib eine klare Empfehlung mit Begruendung."""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.3, max_tokens=1024)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Error-Log Analyse ────────────────────────────────────
 
@@ -631,9 +636,10 @@ Error-Log:
 {log_text[:3000]}
 Erklaere den Fehler und schlage einen konkreten Fix vor."""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.2, max_tokens=1024)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Mess-Assistent ───────────────────────────────────────
 
@@ -658,9 +664,10 @@ Schritt: {current_step}
 Messwert: {measurement_text}
 Bewerte: Ist der Wert im erwarteten Bereich? Was bedeutet er? Nächster Schritt?"""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.3, max_tokens=512)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Kalibrierung ─────────────────────────────────────────
 
@@ -674,9 +681,10 @@ Bewerte: Ist der Wert im erwarteten Bereich? Was bedeutet er? Nächster Schritt?
         prompt = f"""Erstelle eine Schritt-für-Schritt Kalibrierungsanleitung für: {device_type}
 Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         messages = [{"role": "system", "content": prompt}]
-        return await self.ollama.chat(
+        _resp = await self.ollama.chat(
             model=model, messages=messages,
             temperature=0.3, max_tokens=1024)
+        return _resp.get("message", {}).get("content", "")
 
     # ── Werkstatt-Umgebung ───────────────────────────────────
 
@@ -698,7 +706,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                     elif "illuminance" in eid:
                         env["licht"] = state.get("state")
             return env
-        except Exception:
+        except Exception as e:
+            logger.warning("Workshop environment query failed: %s", e)
             return {}
 
     # ── Sicherheits-Checkliste ───────────────────────────────
@@ -785,8 +794,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
                 "total": self._session.total_steps,
                 "title": step.title,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Step websocket emit failed: %s", e)
 
         return self._format_step(step)
 
@@ -1000,17 +1009,25 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
             return []
         keys = [k async for k in self.redis.scan_iter(
             "mha:repair:maintenance:*")]
+        if not keys:
+            return []
+        # P1: Parallel statt sequentiell
+        all_data = await asyncio.gather(
+            *[self.redis.hgetall(key) for key in keys],
+            return_exceptions=True,
+        )
         due = []
-        for key in keys:
-            data = await self.redis.hgetall(key)
+        for data in all_data:
+            if isinstance(data, Exception):
+                continue
             try:
                 last = datetime.fromisoformat(
-                    data.get("last_done", datetime.now().isoformat()))
+                    data.get("last_done", "2000-01-01T00:00:00"))
                 interval = int(data.get("interval_days", 90))
                 if (datetime.now() - last).days >= interval:
                     due.append(data)
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug("S6: Maintenance check skipped: %s", e)
         return due
 
     # ── Budget ───────────────────────────────────────────────

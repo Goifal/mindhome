@@ -140,6 +140,7 @@ class ProactiveManager:
             "energy_price_high": (LOW, "Teurer Strom"),
             "solar_surplus": (LOW, "Solar-Überschuss"),
             "scene_device_triggered": (LOW, "Szene durch Geraet aktiviert"),
+            "shopping_reminder": (LOW, "Einkaufs-Erinnerung"),
         }
         # YAML-Overrides anwenden (Event-Handler konfigurierbar)
         yaml_handlers = proactive_cfg.get("event_handlers", {})
@@ -340,10 +341,10 @@ class ProactiveManager:
                 # Auth
                 auth_msg = await asyncio.wait_for(ws.receive_json(), timeout=30)
                 if auth_msg.get("type") == "auth_required":
-                    await ws.send_json({
+                    await asyncio.wait_for(ws.send_json({
                         "type": "auth",
                         "access_token": settings.ha_token,
-                    })
+                    }), timeout=30)  # T6: WS send timeout
                 auth_result = await asyncio.wait_for(ws.receive_json(), timeout=30)
                 if auth_result.get("type") != "auth_ok":
                     logger.error("HA WebSocket Auth fehlgeschlagen")
@@ -352,18 +353,18 @@ class ProactiveManager:
                 logger.info("HA WebSocket verbunden")
 
                 # Events abonnieren
-                await ws.send_json({
+                await asyncio.wait_for(ws.send_json({
                     "id": 1,
                     "type": "subscribe_events",
                     "event_type": "state_changed",
-                })
+                }), timeout=30)  # T6
 
                 # MindHome Events abonnieren
-                await ws.send_json({
+                await asyncio.wait_for(ws.send_json({
                     "id": 2,
                     "type": "subscribe_events",
                     "event_type": "mindhome_event",
-                })
+                }), timeout=30)  # T6
 
                 async for msg in ws:
                     if msg.type == aiohttp.WSMsgType.TEXT:
@@ -506,10 +507,17 @@ class ProactiveManager:
 
             elif old_val == "home" and new_val != "home":
                 # Phase 7.4: Abschied mit Sicherheits-Hinweis
-                await self._notify("person_left", MEDIUM, {
+                # Einkaufsliste pruefen und an departure_check anhaengen
+                _shopping_enabled = yaml_config.get("proactive", {}).get("departure_shopping_reminder", True)
+                _shopping_items = await self._get_open_shopping_items() if _shopping_enabled else []
+                _departure_data = {
                     "person": name,
                     "departure_check": True,
-                })
+                }
+                if _shopping_items:
+                    _departure_data["shopping_items"] = _shopping_items
+                    _departure_data["shopping_count"] = len(_shopping_items)
+                await self._notify("person_left", MEDIUM, _departure_data)
                 # MCU-JARVIS: Abwesenheits-Akkumulator starten
                 if yaml_config.get("return_briefing", {}).get("enabled", True):
                     await self._start_absence_accumulator(name)
@@ -1204,6 +1212,25 @@ class ProactiveManager:
                 )
         except Exception as e:
             logger.debug("Follow-Me Check fehlgeschlagen: %s", e)
+
+    async def _get_open_shopping_items(self) -> list[str]:
+        """Holt offene Eintraege von der HA-Einkaufsliste.
+
+        Returns:
+            Liste der nicht-erledigten Artikelnamen (leer wenn keine oder Fehler).
+        """
+        try:
+            items = await self.brain.ha.api_get("/api/shopping_list")
+            if not items or not isinstance(items, list):
+                return []
+            return [
+                item.get("name", "")
+                for item in items
+                if not item.get("complete", False) and item.get("name")
+            ]
+        except Exception as e:
+            logger.debug("Einkaufsliste nicht abrufbar: %s", e)
+            return []
 
     async def _check_presence_lighting(self, entity_id: str, new_val: str):
         """Praesenz-Licht: Motion → LightEngine für Auto-On."""
@@ -2119,6 +2146,16 @@ class ProactiveManager:
                         "description": task.get("description", ""),
                     })
 
+                # Smart Shopping: Verbrauchsprognose-Check
+                if hasattr(self.brain, "smart_shopping") and self.brain.smart_shopping.enabled:
+                    try:
+                        self.brain.smart_shopping.set_notify_callback(self._notify)
+                        notified = await self.brain.smart_shopping.check_and_notify()
+                        if notified:
+                            logger.info("Smart Shopping Erinnerungen: %s", notified)
+                    except Exception as _ss_err:
+                        logger.debug("Smart Shopping Check: %s", _ss_err)
+
             except Exception as e:
                 logger.error("Diagnostik-Check Fehler: %s", e)
 
@@ -2156,8 +2193,23 @@ class ProactiveManager:
                 "Nur relevante Fakten: offene Fenster, unverriegelte Tueren, Alarm-Status.",
                 f"Wenn alles gesichert ist: nur knapp bestätigen. 'Alles gesichert, {title}.'",
                 "Wenn etwas offen ist: sachlich erwähnen. 'Fenster Küche steht noch offen.'",
-                "Max 2 Sätze. Deutsch. Butler der dem Herrn den Mantel reicht, nicht winkt.",
             ]
+            # Einkaufsliste anhaengen wenn Eintraege vorhanden
+            shopping_items = data.get("shopping_items", [])
+            if shopping_items:
+                count = len(shopping_items)
+                if count <= 3:
+                    items_str = ", ".join(shopping_items)
+                    parts.append(
+                        f"Einkaufsliste hat {count} Eintraege: {items_str}. "
+                        "Erwaehne beilaeufig. 'Uebrigens, [Artikel] steht noch auf der Liste.'"
+                    )
+                else:
+                    parts.append(
+                        f"Einkaufsliste hat {count} Eintraege. "
+                        f"Erwaehne beilaeufig die Anzahl. 'Uebrigens, {count} Dinge auf der Einkaufsliste.'"
+                    )
+            parts.append("Max 2-3 Sätze. Deutsch. Butler der dem Herrn den Mantel reicht, nicht winkt.")
             return "\n".join(parts)
 
         # Nacht-Motion Kamera: Bewegung + Kamera-Beschreibung
@@ -2168,6 +2220,17 @@ class ProactiveManager:
                 f"Kamera zeigt: {cam_desc}\n"
                 f"Formuliere eine knappe Sicherheitsmeldung im JARVIS-Stil.\n"
                 f"Max 2 Sätze. Deutsch. Sachlich. Keine Panik wenn harmlos (Tier, Wind)."
+            )
+
+        # Smart Shopping: Verbrauchsprognose-Erinnerung
+        if event_type == "shopping_reminder":
+            item_name = data.get("item", "")
+            msg = data.get("message", "")
+            return (
+                f"Einkaufs-Erinnerung: {msg}\n"
+                "Formuliere beilaeufig, wie eine nebensaechliche Bemerkung.\n"
+                f"Beispiel: 'Uebrigens, {_title} — {item_name} koennte bald alle sein.'\n"
+                "Max 1 Satz. Deutsch. Butler-Stil. Nicht dringend."
             )
 
         # Phase 10.1: Musik-Follow Vorschlag
@@ -3245,7 +3308,7 @@ class ProactiveManager:
         night_end = cover_cfg.get("night_end_hour", 6)
 
         # Nachts + kalt → alle Rolllaeden runter (Isolierung)
-        is_night = (night_start <= hour) or (hour < night_end) if night_start > night_end else (night_start <= hour < night_end)
+        is_night = ((night_start <= hour) or (hour < night_end)) if night_start > night_end else (night_start <= hour < night_end)
         if night_insulation and is_night and temp <= frost_temp:
             for s in (states or []):
                 eid = s.get("entity_id", "")
@@ -4139,6 +4202,8 @@ class ProactiveManager:
                 # Fall 2: Niemand zuhause + unterbrochene Reinigung → Fortsetzen
                 if not anyone_home and guard_cfg.get("resume_on_departure"):
                     interrupted_str = (await _redis.get("mha:vacuum:interrupted")) if _redis else _interrupted_local
+                    if isinstance(interrupted_str, bytes):
+                        interrupted_str = interrupted_str.decode()
                     if interrupted_str:
                         delay = guard_cfg.get("resume_delay_minutes", 5)
                         logger.info("Vacuum-PresenceMonitor: Alle weg — warte %d Min bevor Reinigung fortgesetzt wird", delay)
@@ -4834,7 +4899,7 @@ class ProactiveManager:
                 hour = datetime.now().hour
 
                 # Quiet Hours respektieren
-                if quiet_start <= hour or hour < quiet_end:
+                if self._is_quiet_hours():
                     await asyncio.sleep(interval)
                     continue
 

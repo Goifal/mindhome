@@ -11,7 +11,7 @@ import math
 import os
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -32,7 +32,7 @@ try:
     _room_file = _config_dir / "room_profiles.yaml"
     if _room_file.exists():
         with open(_room_file) as f:
-            _rp = yaml.safe_load(f)
+            _rp = yaml.safe_load(f) or {}
             _ROOM_PROFILES = _rp.get("rooms", {})
             _SEASONAL_CONFIG = _rp.get("seasonal", {})
         logger.info("Raum-Profile geladen: %d Räume", len(_ROOM_PROFILES))
@@ -211,7 +211,14 @@ class ContextBuilder:
 
         if parallel_tasks:
             _keys, _coros = zip(*parallel_tasks)
-            _results = await asyncio.gather(*_coros, return_exceptions=True)
+            try:
+                _results = await asyncio.wait_for(
+                    asyncio.gather(*_coros, return_exceptions=True),
+                    timeout=15,  # T4: Context-Gather Timeout
+                )
+            except asyncio.TimeoutError:
+                logger.warning("T4: Context builder gather timeout (15s)")
+                _results = [asyncio.TimeoutError()] * len(_keys)
             _result_map = dict(zip(_keys, _results))
         else:
             _result_map = {}
@@ -862,7 +869,7 @@ class ContextBuilder:
         Beispiel: 'Waschmaschine seit 3 Stunden im Pause-Modus.'
         """
         anomalies = []
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         for state in states:
             eid = state.get("entity_id", "")
@@ -878,7 +885,6 @@ class ContextBuilder:
                         changed_dt = datetime.fromisoformat(
                             last_changed.replace("Z", "+00:00")
                         )
-                        changed_dt = changed_dt.replace(tzinfo=None)
                     else:
                         changed_dt = None
                 except (ValueError, TypeError):
@@ -1139,7 +1145,7 @@ class ContextBuilder:
         timeout_minutes = int(multi_room_cfg.get("presence_timeout_minutes", 15))
         room_sensors = multi_room_cfg.get("room_motion_sensors", {})
         room_speakers = multi_room_cfg.get("room_speakers", {})
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Aktive Räume basierend auf Motion-Sensoren
         active_rooms = []
@@ -1152,7 +1158,7 @@ class ContextBuilder:
                         try:
                             changed = datetime.fromisoformat(
                                 state["last_changed"].replace("Z", "+00:00")
-                            ).replace(tzinfo=None)
+                            )
                             if (now - changed).total_seconds() / 60 < timeout_minutes:
                                 active_rooms.append(room_name)
                         except (ValueError, TypeError):

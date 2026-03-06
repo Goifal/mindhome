@@ -54,7 +54,7 @@ def _make_session(dish="Spaghetti", steps=3, current_step=0):
 class TestCookingIntent:
     def test_recognizes_cooking_intent(self, assistant):
         assert assistant.is_cooking_intent("Ich will Spaghetti kochen") is True
-        assert assistant.is_cooking_intent("Rezept fuer Lasagne") is True
+        assert assistant.is_cooking_intent("Rezept für Lasagne") is True
         assert assistant.is_cooking_intent("Wie ist das Wetter?") is False
 
     def test_recognizes_wie_mache_ich(self, assistant):
@@ -72,7 +72,7 @@ class TestDishExtraction:
         assert assistant._extract_dish("Wie macht man Risotto?") == "risotto"
 
     def test_rezept_fuer(self, assistant):
-        assert assistant._extract_dish("Rezept fuer Lasagne") == "lasagne"
+        assert assistant._extract_dish("Rezept für Lasagne") == "lasagne"
 
     def test_ich_will_kochen(self, assistant):
         assert assistant._extract_dish("Ich will Spaghetti kochen") == "spaghetti"
@@ -103,7 +103,7 @@ class TestNavigation:
     async def test_prev_step(self, assistant):
         assistant.session = _make_session(current_step=1)
         result = await assistant._prev_step()
-        assert "Zurueck" in result
+        assert "Zurück" in result
         assert assistant.session.current_step == 0
 
     @pytest.mark.asyncio

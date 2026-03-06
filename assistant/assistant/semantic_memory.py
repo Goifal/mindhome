@@ -5,6 +5,7 @@ Nutzt ChromaDB fuer Vektor-Suche und Redis fuer schnellen Zugriff.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 from datetime import datetime
@@ -147,7 +148,7 @@ class SemanticMemory:
 
     async def store_fact(self, fact: SemanticFact) -> bool:
         # F-007: Lock um den gesamten Read-Write-Zyklus gegen TOCTOU
-        lock_key = f"mha:fact_lock:{hash(fact.content) % 100000}"
+        lock_key = f"mha:fact_lock:{int(hashlib.md5(fact.content.encode()).hexdigest(), 16) % 100000}"
         lock_acquired = False
         if self.redis:
             try:
@@ -247,6 +248,7 @@ class SemanticMemory:
         if self.chroma_collection:
             try:
                 updated_meta = existing.copy()
+                updated_meta.pop("content", None)
                 updated_meta["updated_at"] = now
                 updated_meta["times_confirmed"] = str(times_confirmed)
                 updated_meta["confidence"] = str(new_confidence)
@@ -574,6 +576,9 @@ class SemanticMemory:
             except Exception as e:
                 logger.error("Fehler beim Loeschen aus ChromaDB: %s", e)
 
+        if not self.redis:
+            return True
+
         if self.redis:
             try:
                 data = await self.redis.hgetall(f"mha:fact:{fact_id}")
@@ -743,7 +748,7 @@ class SemanticMemory:
                             "category": data.get("category", "general"),
                             "person": data.get("person", "unknown"),
                             "confidence": float(data.get("confidence", 0.5)),
-                            "source": source.replace("correction: ", "", 1),
+                            "source": source.replace("correction:", "", 1),
                             "created_at": data.get("created_at", ""),
                         })
             corrections.sort(key=lambda f: f.get("created_at", ""), reverse=True)

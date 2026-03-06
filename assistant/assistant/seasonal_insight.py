@@ -146,8 +146,8 @@ class SeasonalInsightEngine:
         if transition_insight:
             try:
                 await self.redis.setex(cooldown_key, 7 * 86400, "1")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis cooldown set failed: %s", e)
             return transition_insight
 
         # Vorjahres-Vergleich
@@ -155,8 +155,8 @@ class SeasonalInsightEngine:
         if yoy_insight:
             try:
                 await self.redis.setex(cooldown_key, 7 * 86400, "1")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis cooldown set failed: %s", e)
             return yoy_insight
 
         return None
@@ -201,8 +201,8 @@ class SeasonalInsightEngine:
             try:
                 # Flag setzen: 180 Tage (damit naechste Saison wieder triggert)
                 await self.redis.setex(flag_key, 180 * 86400, "1")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Redis seasonal flag set failed: %s", e)
 
         return tip
 
@@ -268,7 +268,8 @@ class SeasonalInsightEngine:
                     if cursor == 0:
                         break
                 status["months_with_data"] = months_with_data
-            except Exception:
+            except Exception as e:
+                logger.warning("Seasonal data scan failed: %s", e)
                 status["months_with_data"] = -1
 
         return status

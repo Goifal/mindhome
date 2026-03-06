@@ -18,6 +18,7 @@ from typing import Optional
 import redis.asyncio as redis
 
 from .config import yaml_config
+from .constants import REDIS_FEEDBACK_SCORE_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,7 @@ class FeedbackTracker:
 
         # Event-Typ ermitteln
         event_type = None
-        pending_entry = self._pending.pop(notification_id, None)
+        pending_entry = self._pending.get(notification_id)
         if pending_entry is not None:
             event_type = pending_entry.get("event_type")
         else:
@@ -131,6 +132,9 @@ class FeedbackTracker:
 
         # Zaehler aktualisieren
         await self._increment_counter(event_type, feedback_type)
+
+        # Pending erst nach erfolgreichem Score-Update entfernen
+        self._pending.pop(notification_id, None)
 
         logger.info(
             "Feedback [%s] fuer '%s': %+.2f -> Score: %.2f",
@@ -243,13 +247,16 @@ class FeedbackTracker:
         # Alle Event-Typen sammeln
         keys = []
         cursor = 0
-        while True:
-            cursor, batch = await self.redis.scan(
-                cursor, match="mha:feedback:score:*", count=100
-            )
-            keys.extend(batch)
-            if cursor == 0:
-                break
+        try:
+            while True:
+                cursor, batch = await self.redis.scan(
+                    cursor, match="mha:feedback:score:*", count=100
+                )
+                keys.extend(batch)
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.warning("L1: Feedback score SCAN failed: %s", e)
 
         stats = {}
         for key in keys:
@@ -283,16 +290,19 @@ class FeedbackTracker:
 
         scores = {}
         cursor = 0
-        while True:
-            cursor, keys = await self.redis.scan(
-                cursor, match="mha:feedback:score:*", count=100
-            )
-            for key in keys:
-                et = key.replace("mha:feedback:score:", "")
-                val = await self.redis.get(key)
-                scores[et] = float(val) if val else DEFAULT_SCORE
-            if cursor == 0:
-                break
+        try:
+            while True:
+                cursor, keys = await self.redis.scan(
+                    cursor, match="mha:feedback:score:*", count=100
+                )
+                for key in keys:
+                    et = key.replace("mha:feedback:score:", "")
+                    val = await self.redis.get(key)
+                    scores[et] = float(val) if val else DEFAULT_SCORE
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.warning("L2: Feedback all_scores SCAN failed: %s", e)
 
         return scores
 
@@ -306,7 +316,7 @@ class FeedbackTracker:
 
         current = await self.get_score(event_type)
         new_score = max(0.0, min(1.0, current + delta))
-        await self.redis.setex(f"mha:feedback:score:{event_type}", 90 * 86400, str(new_score))
+        await self.redis.setex(f"mha:feedback:score:{event_type}", REDIS_FEEDBACK_SCORE_TTL, str(new_score))
 
         # Per-Person Score (Feature 6: Per-Person Learning)
         if person:
@@ -314,7 +324,7 @@ class FeedbackTracker:
             person_current = await self.redis.get(person_key)
             person_score = float(person_current) if person_current else DEFAULT_SCORE
             person_new = max(0.0, min(1.0, person_score + delta))
-            await self.redis.setex(person_key, 90 * 86400, str(person_new))
+            await self.redis.setex(person_key, REDIS_FEEDBACK_SCORE_TTL, str(person_new))
 
         return new_score
 
@@ -357,7 +367,7 @@ class FeedbackTracker:
         await self.redis.lpush(key, entry)
         # Nur die letzten 50 Eintraege behalten
         await self.redis.ltrim(key, 0, 49)
-        await self.redis.expire(key, 90 * 86400)
+        await self.redis.expire(key, REDIS_FEEDBACK_SCORE_TTL)
 
     async def _get_recent_feedback(
         self, event_type: str, limit: int = 5
@@ -398,7 +408,9 @@ class FeedbackTracker:
                 expired.append(nid)
 
         for nid in expired:
-            info = self._pending.pop(nid)
+            info = self._pending.pop(nid, None)
+            if info is None:
+                continue
             await self._update_score(info["event_type"], FEEDBACK_DELTAS["ignored"])
             await self._store_feedback_entry(
                 info["event_type"], "ignored", FEEDBACK_DELTAS["ignored"]

@@ -111,7 +111,7 @@ class TestSecurityScore:
         ]
         result = await threat.get_security_score()
         assert result["score"] <= 70
-        assert "2 Tuer(en) offen" in result["details"]
+        assert "2 Tür(en) offen" in result["details"]
 
     @pytest.mark.asyncio
     async def test_unlocked_locks_reduce_score(self, threat):
@@ -121,7 +121,7 @@ class TestSecurityScore:
         ]
         result = await threat.get_security_score()
         assert result["score"] == 80
-        assert "1 Schloss/Schloesser entriegelt" in result["details"]
+        assert "1 Schloss/Schlösser entriegelt" in result["details"]
 
     @pytest.mark.asyncio
     async def test_smoke_critical_score(self, threat):

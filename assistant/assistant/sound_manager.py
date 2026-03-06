@@ -27,6 +27,7 @@ from datetime import datetime
 from typing import Optional
 
 from .config import yaml_config, settings
+from .constants import TTS_PLAYBACK_TIMEOUT
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -382,8 +383,8 @@ class SoundManager:
             for s in (states or []):
                 if s.get("entity_id", "").startswith("weather."):
                     return s.get("state", "")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Weather lookup for volume adaptation failed: %s", e)
         return ""
 
     async def _resolve_speaker(self, room: Optional[str] = None) -> Optional[str]:
@@ -536,8 +537,8 @@ class SoundManager:
                 if s.get("entity_id") == speaker_entity:
                     old_volume = s.get("attributes", {}).get("volume_level")
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Speaker volume state retrieval failed: %s", e)
 
         # SSML-Text bevorzugen, sonst Plaintext
         speak_text = tts_data.get("ssml", text) if tts_data.get("ssml") else text
@@ -572,6 +573,7 @@ class SoundManager:
                 )
                 needs_volume_change = old_volume is None or abs(old_volume - volume) > 0.01
                 if needs_volume_change:
+                    success = False
                     vol_coro = self.ha.call_service(
                         "media_player", "volume_set",
                         {"entity_id": speaker_entity, "volume_level": volume},
@@ -579,7 +581,7 @@ class SoundManager:
                     try:
                         results = await asyncio.wait_for(
                             asyncio.gather(vol_coro, tts_coro, return_exceptions=True),
-                            timeout=15,
+                            timeout=TTS_PLAYBACK_TIMEOUT,
                         )
                     except asyncio.TimeoutError:
                         logger.warning("TTS+Volume Timeout nach 15s fuer %s", speaker_entity)

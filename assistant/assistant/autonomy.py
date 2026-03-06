@@ -107,7 +107,7 @@ class AutonomyManager:
 
         # Konfigurierbare Action-Permissions und Evolution-Criteria
         auto_cfg = yaml_config.get("autonomy", {})
-        self._action_permissions = auto_cfg.get("action_permissions") or dict(ACTION_PERMISSIONS)
+        self._action_permissions = {k: int(v) for k, v in (auto_cfg.get("action_permissions") or ACTION_PERMISSIONS).items()}
         raw_evo = auto_cfg.get("evolution_criteria")
         if raw_evo:
             self._evolution_criteria = {int(k): v for k, v in raw_evo.items()}
@@ -196,7 +196,7 @@ class AutonomyManager:
             "name": self.LEVEL_NAMES.get(self.level, "Unbekannt"),
             "description": descriptions.get(self.level, ""),
             "allowed_actions": [
-                action for action, req in ACTION_PERMISSIONS.items()
+                action for action, req in self._action_permissions.items()
                 if self.level >= req
             ],
             "domain_levels_enabled": self._domain_levels_enabled,

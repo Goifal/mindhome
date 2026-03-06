@@ -373,7 +373,8 @@ class DeclarativeToolExecutor:
         for entity_id in entities:
             try:
                 history = await self.ha.get_history(entity_id, hours=hours)
-            except Exception:
+            except Exception as e:
+                logger.debug("Entity history retrieval failed: %s", e)
                 history = None
             if not history:
                 continue
@@ -681,13 +682,15 @@ class DeclarativeToolExecutor:
         # Aktuelle Periode
         try:
             current_history = await self.ha.get_history(entity_id, hours=current_hours)
-        except Exception:
+        except Exception as e:
+            logger.debug("Current period history failed: %s", e)
             current_history = None
 
         # Vorherige Periode (doppelter Zeitraum holen, erste Haelfte nehmen)
         try:
             full_history = await self.ha.get_history(entity_id, hours=current_hours + offset_hours)
-        except Exception:
+        except Exception as e:
+            logger.debug("Historical period retrieval failed: %s", e)
             full_history = None
 
         def _aggregate(entries):

@@ -147,8 +147,15 @@ class CalendarIntelligence:
             start = self._parse_dt(ev.get("start", ""))
             end = self._parse_dt(ev.get("end", ""))
             if start and end and not ev.get("all_day"):
-                for h in range(start.hour, min(end.hour, 24)):
-                    hour_activity[h] += 1
+                if end.hour >= start.hour:
+                    for h in range(start.hour, min(end.hour, 24)):
+                        hour_activity[h] += 1
+                else:
+                    # Midnight-crossing event
+                    for h in range(start.hour, 24):
+                        hour_activity[h] += 1
+                    for h in range(0, end.hour):
+                        hour_activity[h] += 1
 
         return habits
 

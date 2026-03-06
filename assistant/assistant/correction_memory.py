@@ -473,8 +473,8 @@ class CorrectionMemory:
             await self.redis.rpush("mha:learning_ack:pending", rule_text)
             # Max 10 pending, aelteste verwerfen
             await self.redis.ltrim("mha:learning_ack:pending", -10, -1)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Correction memory queue push failed: %s", e)
 
     def format_rules_for_prompt(self, rules: list[dict]) -> str:
         """Formatiert Regeln als Prompt-Abschnitt (Feature 7: Prompt Self-Refinement)."""

@@ -3,7 +3,7 @@ Tests fuer LearningObserver — Muster-Erkennung + Wochentag + Response-Handling
 """
 
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -62,7 +62,9 @@ class TestCheckPattern:
 
     @pytest.mark.asyncio
     async def test_no_suggestion_below_threshold(self, observer):
-        observer.redis.incr.return_value = 2  # Unter min_repetitions
+        pipe_mock = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[2, -2])  # count=2 (unter min_repetitions), ttl=-2
+        observer.redis.pipeline = MagicMock(return_value=pipe_mock)
         callback = AsyncMock()
         observer._notify_callback = callback
         await observer._check_pattern("light.wz:on", "22:00", "light.wz", "on")
@@ -70,8 +72,10 @@ class TestCheckPattern:
 
     @pytest.mark.asyncio
     async def test_suggestion_at_threshold(self, observer):
-        observer.redis.incr.return_value = 3
-        observer.redis.get.return_value = None  # Noch nicht vorgeschlagen
+        pipe_mock = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[3, 2592000])  # count=3 (at threshold), ttl set
+        observer.redis.pipeline = MagicMock(return_value=pipe_mock)
+        observer.redis.get = AsyncMock(return_value=None)  # Noch nicht vorgeschlagen
         callback = AsyncMock()
         observer._notify_callback = callback
         await observer._check_pattern("light.wz:on", "22:00", "light.wz", "on")
@@ -82,8 +86,10 @@ class TestCheckPattern:
 
     @pytest.mark.asyncio
     async def test_no_duplicate_suggestion(self, observer):
-        observer.redis.incr.return_value = 5
-        observer.redis.get.return_value = "1"  # Schon vorgeschlagen
+        pipe_mock = MagicMock()
+        pipe_mock.execute = AsyncMock(return_value=[5, 2592000])  # count=5, ttl set
+        observer.redis.pipeline = MagicMock(return_value=pipe_mock)
+        observer.redis.get = AsyncMock(return_value="1")  # Schon vorgeschlagen
         callback = AsyncMock()
         observer._notify_callback = callback
         await observer._check_pattern("light.wz:on", "22:00", "light.wz", "on")

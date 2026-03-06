@@ -162,6 +162,11 @@ if _household.get("primary_user"):
 
 _ROLE_TO_TRUST = {"owner": 2, "member": 1, "guest": 0}
 
+# Entity-to-Name Mapping: Wird von apply_household_to_config() befuellt.
+# Erlaubt proactive.py und context_builder.py Personen per entity_id statt
+# per friendly_name zu identifizieren (zuverlaessiger).
+_entity_to_name: dict[str, str] = {}
+
 
 def apply_household_to_config() -> None:
     """Generiert persons.titles, trust_levels.persons und entity_to_name aus household.members."""
@@ -219,12 +224,6 @@ def apply_household_to_config() -> None:
 
 
 apply_household_to_config()
-
-
-# Entity-to-Name Mapping: Wird von apply_household_to_config() befuellt.
-# Erlaubt proactive.py und context_builder.py Personen per entity_id statt
-# per friendly_name zu identifizieren (zuverlaessiger).
-_entity_to_name: dict[str, str] = {}
 
 
 def resolve_person_by_entity(entity_id: str) -> str:

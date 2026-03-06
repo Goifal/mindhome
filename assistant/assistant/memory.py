@@ -37,6 +37,8 @@ class MemoryManager:
             logger.info("Redis verbunden")
         except Exception as e:
             logger.warning("Redis nicht verfuegbar: %s", e)
+            if self.redis:
+                await self.redis.close()
             self.redis = None
 
         # ChromaDB (Episodic Memory)
@@ -94,7 +96,7 @@ class MemoryManager:
             pipe.expire(archive_key, 30 * 86400)
             await pipe.execute()
         except Exception as e:
-            logger.warning("add_conversation Pipeline fehlgeschlagen: %s", e)
+            logger.warning("add_conversation pipeline failed (lpush+ltrim+archive): %s", e)
 
     async def get_recent_conversations(self, limit: int = 5) -> list[dict]:
         """Holt die letzten Gespraeche aus dem Working Memory."""
@@ -177,7 +179,7 @@ class MemoryManager:
             meta = metadata or {}
             meta["timestamp"] = datetime.now().isoformat()
             meta["type"] = "conversation"
-            base_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            base_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
 
             chunks = self._split_conversation(conversation)
 

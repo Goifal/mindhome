@@ -111,7 +111,14 @@ class TaskRegistry:
             task.cancel()
 
         # Auf Beendigung warten (mit Timeout)
-        results = await asyncio.gather(*active, return_exceptions=True)
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*active, return_exceptions=True),
+                timeout=30,  # T2: Shutdown-Timeout
+            )
+        except asyncio.TimeoutError:
+            logger.warning("T2: TaskRegistry shutdown timeout (30s) — %d Tasks liefen noch", len(active))
+            results = [asyncio.TimeoutError()] * len(active)
 
         cancelled = sum(1 for r in results if isinstance(r, asyncio.CancelledError))
         errors = sum(1 for r in results if isinstance(r, Exception) and not isinstance(r, asyncio.CancelledError))

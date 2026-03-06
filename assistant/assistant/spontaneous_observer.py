@@ -79,8 +79,8 @@ class SpontaneousObserver:
                         if t not in titles:
                             titles.append(t)
                     return ", ".join(titles)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Person titles retrieval failed: %s", e)
         return get_person_title()
 
     async def stop(self):
@@ -302,8 +302,8 @@ class SpontaneousObserver:
                             "urgency": "low",
                         }
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Weather streak detection failed: %s", e)
         return None
 
     async def _check_usage_record(self) -> Optional[dict]:
@@ -344,8 +344,8 @@ class SpontaneousObserver:
                     "type": "usage_record",
                     "urgency": "low",
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Device usage record detection failed: %s", e)
         return None
 
     async def _check_device_milestone(self) -> Optional[dict]:
@@ -394,8 +394,8 @@ class SpontaneousObserver:
                     "type": "device_milestone",
                     "urgency": "low",
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Device milestone detection failed: %s", e)
         return None
 
     async def _check_house_efficiency(self) -> Optional[dict]:
@@ -455,8 +455,8 @@ class SpontaneousObserver:
                         "urgency": "low",
                     }
 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("House efficiency insight failed: %s", e)
         return None
 
     async def _check_declarative_tools(self) -> Optional[dict]:

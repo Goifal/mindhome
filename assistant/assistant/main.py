@@ -28,7 +28,7 @@ import yaml
 
 from .brain import AssistantBrain
 from .config import settings, yaml_config, load_yaml_config, get_person_title
-from .constants import ERROR_BUFFER_MAX_SIZE, ACTIVITY_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS
+from .constants import ERROR_BUFFER_MAX_SIZE, ACTIVITY_BUFFER_MAX_SIZE, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX_REQUESTS, TOKEN_CLEANUP_INTERVAL, WS_KEEPALIVE_INTERVAL
 from .cover_config import load_cover_configs, save_cover_configs
 from .file_handler import (
     allowed_file, ensure_upload_dir,
@@ -73,8 +73,10 @@ class _ErrorBufferHandler(logging.Handler):
                 "logger": record.name,
                 "message": msg,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            # E1: Nicht-stumm loggen — Activity-Log-Formatierungsfehler sichtbar machen
+            import sys
+            print(f"ErrorBufferHandler format error: {e}", file=sys.stderr)
 
 
 _err_handler = _ErrorBufferHandler(level=logging.WARNING)
@@ -136,8 +138,10 @@ class _ActivityBufferHandler(logging.Handler):
                 "logger": record.name,
                 "message": msg,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            # E2: Dashboard-Event-Serialisierung nicht stumm verschlucken
+            import sys
+            print(f"ActivityBufferHandler format error: {e}", file=sys.stderr)
 
 
 _activity_handler = _ActivityBufferHandler(level=logging.INFO)
@@ -301,14 +305,14 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
         logger.warning("Boot-Sequenz fehlgeschlagen: %s", e)
         try:
             await emit_speaking(f"Alle Systeme online, {get_person_title()}.")
-        except Exception:
-            pass
+        except Exception as e2:
+            logger.debug("Boot fallback message also failed: %s", e2)
 
 
 async def _periodic_token_cleanup():
     """Raumt abgelaufene UI-Tokens alle 15 Minuten auf."""
     while True:
-        await asyncio.sleep(900)  # 15 Minuten
+        await asyncio.sleep(TOKEN_CLEANUP_INTERVAL)  # 15 Minuten
         try:
             _cleanup_expired_tokens()
         except Exception as e:
@@ -1390,7 +1394,9 @@ def _convert_audio_to_16k_mono(audio_bytes: bytes) -> bytes:
         timeout=30,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg Fehler: {result.stderr.decode()[:200]}")
+        # S5: Keine internen Details an Client — nur ins Log
+        logger.error("ffmpeg conversion failed: %s", result.stderr.decode()[:200])
+        raise RuntimeError("Audio conversion failed")
     return result.stdout
 
 
@@ -1828,7 +1834,7 @@ async def websocket_endpoint(websocket: WebSocket):
     async def _ws_keepalive():
         try:
             while True:
-                await asyncio.sleep(25)
+                await asyncio.sleep(WS_KEEPALIVE_INTERVAL)
                 try:
                     await websocket.send_json({"event": "ping", "data": {}})
                 except Exception:
@@ -1847,7 +1853,14 @@ async def websocket_endpoint(websocket: WebSocket):
     _ws_interrupt_flag = False
     try:
         while True:
-            data = await websocket.receive_text()
+            try:
+                data = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=300,  # T5: WebSocket-Inaktivitaets-Timeout (5 Min)
+                )
+            except asyncio.TimeoutError:
+                logger.debug("T5: WebSocket client inactive for 300s, closing")
+                break
 
             # F-063: Rate-Limit pruefen
             import time as _t
@@ -2600,6 +2613,25 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("error_patterns", "min_occurrences_for_mitigation"): (2, 10),
         ("error_patterns", "mitigation_ttl_hours"): (1, 24),
         ("adaptive_thresholds", "analysis_interval_hours"): (24, 336),
+        # Ollama GPU-Performance
+        ("ollama", "num_gpu"): (0, 99),
+        # Energy Dashboard
+        ("energy", "thresholds", "price_low_cent"): (1, 50),
+        ("energy", "thresholds", "price_high_cent"): (10, 100),
+        ("energy", "thresholds", "solar_high_watts"): (100, 50000),
+        ("energy", "thresholds", "anomaly_increase_percent"): (10, 200),
+        # Conversation Memory
+        ("conversation_memory", "max_projects"): (5, 50),
+        ("conversation_memory", "max_questions"): (10, 100),
+        ("conversation_memory", "summary_retention_days"): (7, 90),
+        ("conversation_memory", "question_ttl_days"): (3, 60),
+        # Multi-Room Audio
+        ("multi_room_audio", "max_groups"): (1, 20),
+        ("multi_room_audio", "default_volume"): (5, 100),
+        # Smart Shopping
+        ("smart_shopping", "min_purchases"): (2, 10),
+        ("smart_shopping", "reminder_days_before"): (0, 7),
+        ("smart_shopping", "reminder_cooldown_hours"): (6, 72),
         # Model Profiles — Wertebereiche fuer LLM-Parameter
         # (Gilt fuer alle Profile: default, qwen3.5, llama, etc.)
     }
@@ -2762,6 +2794,8 @@ def _get_reloaded_modules(changed_settings: dict) -> list[str]:
         "memory": "memory_extractor",
         "entity_roles": "function_calling",
         "speaker_recognition": "speaker_recognition",
+        "conversation_memory": "conversation_memory",
+        "multi_room_audio": "multi_room_audio",
     }
 
     for config_key, attr_name in MODULE_CONFIG_MAP.items():
@@ -3123,6 +3157,31 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             eo.essential_entities = set(cfg.get("essential_entities", []))
             logger.info("EnergyOptimizer Settings aktualisiert")
         _try_reload("energy", _reload_energy)
+
+    # ConversationMemory: Limits, TTLs
+    if "conversation_memory" in changed_settings and hasattr(brain, "conversation_memory"):
+        def _reload_conv_memory():
+            cfg = yaml_cfg.get("conversation_memory", {})
+            cm = brain.conversation_memory
+            cm.enabled = cfg.get("enabled", True)
+            cm.max_projects = cfg.get("max_projects", 20)
+            cm.max_questions = cfg.get("max_questions", 30)
+            cm.summary_retention_days = cfg.get("summary_retention_days", 30)
+            cm.question_ttl_days = cfg.get("question_ttl_days", 14)
+            logger.info("ConversationMemory Settings aktualisiert")
+        _try_reload("conversation_memory", _reload_conv_memory)
+
+    # MultiRoomAudio: Gruppen, Lautstaerke, Gruppierung
+    if "multi_room_audio" in changed_settings and hasattr(brain, "multi_room_audio"):
+        def _reload_multi_room_audio():
+            cfg = yaml_cfg.get("multi_room_audio", {})
+            mra = brain.multi_room_audio
+            mra.enabled = cfg.get("enabled", True)
+            mra.max_groups = cfg.get("max_groups", 10)
+            mra.default_volume = cfg.get("default_volume", 40)
+            mra.use_native_grouping = cfg.get("use_native_grouping", False)
+            logger.info("MultiRoomAudio Settings aktualisiert")
+        _try_reload("multi_room_audio", _reload_multi_room_audio)
 
     # LearningObserver: Repetitions, Zeitfenster
     if "learning" in changed_settings and hasattr(brain, "learning_observer"):
@@ -3707,6 +3766,75 @@ async def ui_get_entities(token: str = "", domain: str = ""):
         return {"entities": entities, "total": len(entities)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ---------------------------------------------------------------
+# Energy Live Dashboard
+# ---------------------------------------------------------------
+
+@app.get("/api/ui/energy/live")
+async def ui_energy_live(token: str = ""):
+    """Aktuelle Energie-Werte (Solar, Verbrauch, Preis, Export) fuer Dashboard."""
+    _check_token(token)
+    try:
+        eo = brain.energy_optimizer
+        states = await brain.ha.get_states()
+        if not states:
+            return {"available": False}
+
+        # Sensor-Werte ueber EnergyOptimizer abrufen (nutzt config + keyword fallback)
+        price_raw = eo._find_sensor_value(states, eo.price_sensor, ["price", "strom", "electricity"])
+        price = None
+        if price_raw is not None:
+            price_unit = eo._find_sensor_unit(states, eo.price_sensor, ["price", "strom", "electricity"])
+            pu = (price_unit or "").lower().replace(" ", "")
+            if "eur/mwh" in pu or "€/mwh" in pu:
+                price = price_raw / 10.0
+            elif "eur/kwh" in pu or "€/kwh" in pu:
+                price = price_raw * 100.0
+            elif price_raw > 100:
+                price = price_raw / 10.0
+            elif price_raw < 1:
+                price = price_raw * 100.0
+            else:
+                price = price_raw
+
+        solar = eo._find_sensor_value(states, eo.solar_sensor, ["solar", "pv", "photovoltaik"])
+        consumption = eo._find_sensor_value(states, eo.consumption_sensor, ["consumption", "verbrauch", "power"])
+        export = eo._find_sensor_value(states, eo.grid_export_sensor, ["export", "einspeisung"])
+
+        # Selbstversorgungsgrad berechnen
+        self_sufficiency = None
+        if solar is not None and consumption is not None and consumption > 0:
+            self_sufficiency = min(100.0, (solar / consumption) * 100)
+
+        # Preis-Status
+        price_status = None
+        if price is not None:
+            if price < eo.price_low:
+                price_status = "low"
+            elif price > eo.price_high:
+                price_status = "high"
+            else:
+                price_status = "normal"
+
+        return {
+            "available": True,
+            "solar_watts": round(solar, 1) if solar is not None else None,
+            "consumption_watts": round(consumption, 1) if consumption is not None else None,
+            "grid_export_watts": round(export, 1) if export is not None else None,
+            "price_cents": round(price, 2) if price is not None else None,
+            "price_status": price_status,
+            "self_sufficiency_percent": round(self_sufficiency, 1) if self_sufficiency is not None else None,
+            "thresholds": {
+                "price_low": eo.price_low,
+                "price_high": eo.price_high,
+                "solar_high": eo.solar_high_watts,
+            },
+        }
+    except Exception as e:
+        logger.debug("Energy live endpoint: %s", e)
+        return {"available": False}
 
 
 # ---------------------------------------------------------------

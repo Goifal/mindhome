@@ -52,5 +52,5 @@ def get_embedding_function():
         )
         return None
     except Exception as e:
-        logger.warning("Embedding-Modell '%s' konnte nicht geladen werden: %s", model_name, e)
+        logger.error("Embedding-Modell '%s' konnte nicht geladen werden: %s", model_name, e)
         return None

@@ -151,8 +151,8 @@ class InsightEngine:
                             seen.add(t)
                             titles.append(t)
                     return ", ".join(titles)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Person titles retrieval failed: %s", e)
         return get_person_title()
 
     async def stop(self):

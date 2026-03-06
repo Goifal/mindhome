@@ -395,7 +395,7 @@ class EnergyOptimizer:
                 condition = fc.get("condition", "").lower()
                 if condition in cloudy_conditions:
                     return True
-            return False
+            break
         return False
 
     def _find_sensor_unit(self, states: list[dict], configured_entity: str,
