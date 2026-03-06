@@ -115,7 +115,7 @@ class TestComplexityPrompts:
     def test_all_modes_defined(self):
         assert "kurz" in COMPLEXITY_PROMPTS
         assert "normal" in COMPLEXITY_PROMPTS
-        assert "ausfuehrlich" in COMPLEXITY_PROMPTS
+        assert "ausführlich" in COMPLEXITY_PROMPTS
 
     def test_kurz_is_short(self):
         assert "1 Satz" in COMPLEXITY_PROMPTS["kurz"]

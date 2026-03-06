@@ -24,7 +24,7 @@ class TestDetectNegativeReaction:
         assert extractor.detect_negative_reaction("Lass das!") is True
 
     def test_hoer_auf_detected(self, extractor):
-        assert extractor.detect_negative_reaction("Hoer auf damit") is True
+        assert extractor.detect_negative_reaction("Hör auf damit") is True
 
     def test_stop_detected(self, extractor):
         assert extractor.detect_negative_reaction("Stop!") is True

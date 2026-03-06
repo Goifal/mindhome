@@ -338,7 +338,7 @@ class TestConfigVersioningLimits:
         pipe_mock.ltrim.assert_called_once()
         ltrim_args = pipe_mock.ltrim.call_args[0]
         assert ltrim_args[1] == 0
-        assert ltrim_args[2] == 49  # Max 50 Snapshots
+        assert ltrim_args[2] == 19  # Max 20 Snapshots (self._max_snapshots - 1)
         pipe_mock.expire.assert_called_once()
         pipe_mock.execute.assert_called_once()
 
