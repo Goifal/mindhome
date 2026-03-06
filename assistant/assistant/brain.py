@@ -5090,6 +5090,15 @@ class AssistantBrain(BrainCallbacksMixin):
 
         original = text
 
+        try:
+            return self._filter_response_inner(text, filter_config, max_sentences_override)
+        except re.error as e:
+            logger.error("Regex-Fehler in _filter_response: %s (text=%r)", e, text[:200], exc_info=True)
+            return original
+
+    def _filter_response_inner(self, text: str, filter_config: dict, max_sentences_override: int) -> str:
+        original = text
+
         # 0. LLM Thinking-Tags entfernen (<think>...</think>)
         # Manche LLMs geben Chain-of-Thought in <think> Tags aus
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
