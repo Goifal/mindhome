@@ -98,7 +98,8 @@ class HomeAssistantClient:
         result = await self._get_ha("/api/config/automation/config")
         if isinstance(result, list):
             return result
-        # Fallback: Aus States die automation.* Entities lesen
+        # Endpoint existiert nicht in allen HA-Versionen → States-Fallback
+        logger.debug("Automation-Config-Endpoint nicht verfuegbar, nutze States-Fallback")
         states = await self.get_states()
         return [
             s for s in (states or [])
@@ -408,7 +409,8 @@ class HomeAssistantClient:
                     # Client-Fehler: nicht retrien
                     if 400 <= resp.status < 500:
                         body = await resp.text()
-                        logger.warning(
+                        log_fn = logger.debug if resp.status == 404 else logger.warning
+                        log_fn(
                             "HA GET %s -> %d (Client-Fehler): %s",
                             path, resp.status, body[:200],
                         )

@@ -1686,7 +1686,7 @@ self_automation:
 cameras:
   enabled: true
   vision_model: llava
-  camera_map: null
+  camera_map: {}
 energy:
   enabled: true
   entities:
@@ -1922,6 +1922,8 @@ workshop:
     topic_prefix: workshop/
     username: ''
     password: ''
+  scan_camera: ''
+  scan_auto_ocr: false
   templates:
   - esp_sensor
   - led_strip

@@ -602,6 +602,8 @@ class AssistantBrain(BrainCallbacksMixin):
         self.repair_planner.set_model_router(self.model_router)
         self.repair_planner.semantic_memory = self.memory.semantic
         self.repair_planner.set_notify_callback(self._handle_workshop_timer)
+        self.repair_planner.camera_manager = self.camera_manager
+        self.repair_planner.ocr_engine = self.ocr
         self.workshop_generator.set_model_router(self.model_router)
         # Workshop Library (gleiche ChromaDB-Instanz, eigene Collection)
         try:

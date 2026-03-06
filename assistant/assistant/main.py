@@ -332,6 +332,14 @@ async def lifespan(app: FastAPI):
         if restored_act:
             logger.info("Aktivitaetsprotokoll wiederhergestellt: %d Eintraege", restored_act)
 
+    # Cover-Settings initial an Addon synchronisieren
+    cover_auto = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
+    if cover_auto:
+        try:
+            await _async_sync_cover_settings_to_addon(cover_auto)
+        except Exception as e:
+            logger.warning("Cover-Settings Startup-Sync fehlgeschlagen: %s", e)
+
     health = await brain.health_check()
     for component, status in health["components"].items():
         icon = "OK" if status == "connected" else "!!"
@@ -3076,6 +3084,13 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             logger.info("CameraManager Settings aktualisiert")
         _try_reload("cameras", _reload_cameras)
 
+    # OCREngine: Sprachen, Vision-Model, Limits
+    if "ocr" in changed_settings and hasattr(brain, "ocr"):
+        def _reload_ocr():
+            brain.ocr.reload_config()
+            logger.info("OCREngine Settings aktualisiert")
+        _try_reload("ocr", _reload_ocr)
+
     # CookingAssistant: Portionen, Steps, Tokens
     if "cooking" in changed_settings and hasattr(brain, "cooking"):
         def _reload_cooking():
@@ -3433,6 +3448,36 @@ async def _restart_speech_containers(old_speech: dict, new_speech: dict):
     return restarted
 
 
+def _build_addon_cover_config(cover_auto: dict) -> dict:
+    """Mappt settings.yaml cover_automation Keys auf CoverControlManager DEFAULT_CONFIG Keys."""
+    addon_cfg = {}
+    # Key-Mapping: settings.yaml → CoverControlManager DEFAULT_CONFIG
+    _MAPPINGS = {
+        # Aufwach-Sonnenpruefung
+        "wakeup_min_sun_elevation": ("wakeup_min_sun_elevation_deg", float),
+        # Wetterschutz
+        "storm_wind_speed": ("wind_threshold_kmh", float),
+        "frost_protection_temp": ("frost_threshold_c", float),
+        "heat_protection_temp": ("sun_protection_outdoor_temp_c", float),
+        "weather_protection": ("weather_protection_enabled", bool),
+        # Privacy
+        "privacy_mode": ("privacy_mode_enabled", bool),
+        # Night insulation
+        "night_insulation": ("frost_insulation_enabled", bool),
+        # Presence simulation
+        "presence_simulation": ("presence_simulation_enabled", bool),
+    }
+    for src_key, (dst_key, conv) in _MAPPINGS.items():
+        if src_key in cover_auto:
+            addon_cfg[dst_key] = conv(cover_auto[src_key])
+    # manual_override_hours → manual_override_duration_min (Einheit-Konvertierung)
+    if "manual_override_hours" in cover_auto:
+        addon_cfg["manual_override_duration_min"] = int(
+            cover_auto["manual_override_hours"]
+        ) * 60
+    return addon_cfg
+
+
 def _sync_cover_settings_to_addon(cover_auto: dict):
     """Synchronisiert Cover-Settings an das Addon (CoverControlManager).
 
@@ -3441,33 +3486,7 @@ def _sync_cover_settings_to_addon(cover_auto: dict):
     """
     if not cover_auto:
         return
-    addon_cfg = {}
-    # Aufwach-Sonnenpruefung
-    if "wakeup_min_sun_elevation" in cover_auto:
-        addon_cfg["wakeup_min_sun_elevation_deg"] = float(
-            cover_auto["wakeup_min_sun_elevation"]
-        )
-    # Wakeup integration: abgeleitet aus wakeup_sun_check
-    # (Addon hat wakeup_integration_enabled, aber Sun-Check ist separat)
-
-    # Wetterschutz
-    if "storm_wind_speed" in cover_auto:
-        addon_cfg["wind_threshold_kmh"] = float(cover_auto["storm_wind_speed"])
-    if "frost_protection_temp" in cover_auto:
-        addon_cfg["frost_threshold_c"] = float(cover_auto["frost_protection_temp"])
-    if "heat_protection_temp" in cover_auto:
-        addon_cfg["sun_protection_outdoor_temp_c"] = float(
-            cover_auto["heat_protection_temp"]
-        )
-    if "weather_protection" in cover_auto:
-        addon_cfg["weather_protection_enabled"] = bool(cover_auto["weather_protection"])
-    if "privacy_mode" in cover_auto:
-        addon_cfg["privacy_mode_enabled"] = bool(cover_auto["privacy_mode"])
-    if "manual_override_hours" in cover_auto:
-        addon_cfg["manual_override_duration_min"] = int(
-            cover_auto["manual_override_hours"]
-        ) * 60
-
+    addon_cfg = _build_addon_cover_config(cover_auto)
     if not addon_cfg:
         return
     try:
@@ -3484,6 +3503,17 @@ def _sync_cover_settings_to_addon(cover_auto: dict):
         logger.info("Cover-Settings an Addon synchronisiert: %s", list(addon_cfg.keys()))
     except Exception as e:
         logger.warning("Cover-Settings Addon-Sync fehlgeschlagen: %s", e)
+
+
+async def _async_sync_cover_settings_to_addon(cover_auto: dict):
+    """Async version of cover settings sync for use during startup."""
+    if not cover_auto:
+        return
+    addon_cfg = _build_addon_cover_config(cover_auto)
+    if not addon_cfg:
+        return
+    await brain.ha.mindhome_put("/api/covers/settings", addon_cfg)
+    logger.info("Cover-Settings an Addon synchronisiert (Startup): %s", list(addon_cfg.keys()))
 
 
 def _sync_speech_to_env(speech_cfg: dict):
@@ -4365,6 +4395,67 @@ async def ui_get_cover_action_log(token: str = "", limit: int = 10):
     try:
         from .cover_config import load_cover_action_log
         return load_cover_action_log(limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+# ── Power-Close Regeln (Steckdose → Rollladen) ──────────────────────
+
+@app.get("/api/ui/covers/power-close")
+async def ui_get_power_close_rules(token: str = ""):
+    """Power-Close-Regeln laden."""
+    _check_token(token)
+    try:
+        from .cover_config import load_power_close_rules
+        return load_power_close_rules()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/power-close")
+async def ui_create_power_close_rule(request: Request, token: str = ""):
+    """Neue Power-Close-Regel erstellen."""
+    _check_token(token)
+    data = await request.json()
+    if not data.get("power_sensor"):
+        raise HTTPException(status_code=400, detail="power_sensor ist erforderlich")
+    if not data.get("cover_ids"):
+        raise HTTPException(status_code=400, detail="cover_ids ist erforderlich")
+    try:
+        from .cover_config import create_power_close_rule
+        return create_power_close_rule(data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/covers/power-close/{rule_id}")
+async def ui_update_power_close_rule(rule_id: int, request: Request, token: str = ""):
+    """Power-Close-Regel aktualisieren."""
+    _check_token(token)
+    data = await request.json()
+    try:
+        from .cover_config import update_power_close_rule
+        result = update_power_close_rule(rule_id, data)
+        if not result:
+            raise HTTPException(status_code=404, detail="Regel nicht gefunden")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.delete("/api/ui/covers/power-close/{rule_id}")
+async def ui_delete_power_close_rule(rule_id: int, token: str = ""):
+    """Power-Close-Regel loeschen."""
+    _check_token(token)
+    try:
+        from .cover_config import delete_power_close_rule
+        if not delete_power_close_rule(rule_id):
+            raise HTTPException(status_code=404, detail="Regel nicht gefunden")
+        return {"ok": True}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
@@ -6024,6 +6115,18 @@ async def workshop_add_inventory(request: Request):
         "min_quantity": str(data.get("min_quantity", 0)),
         "added": datetime.now().isoformat(),
     })
+    return {"success": True, "name": name}
+
+
+@app.delete("/api/workshop/inventory/{name}")
+async def workshop_delete_inventory(name: str):
+    """Loescht einen Artikel aus dem Werkstatt-Inventar."""
+    if not brain.repair_planner.redis:
+        raise HTTPException(503, "Redis nicht verfuegbar")
+    key = f"mha:repair:inventory:{name.lower().replace(' ', '_')}"
+    deleted = await brain.repair_planner.redis.delete(key)
+    if not deleted:
+        raise HTTPException(404, "Artikel nicht gefunden")
     return {"success": True, "name": name}
 
 

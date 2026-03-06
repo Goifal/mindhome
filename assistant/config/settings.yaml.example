@@ -1221,7 +1221,7 @@ self_automation:
 cameras:
   enabled: true
   vision_model: llava
-  camera_map: null
+  camera_map: {}
     # haustuer: camera.haustuer
     # garage: camera.garage
 # --- Energie-Optimierung ---

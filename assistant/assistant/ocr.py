@@ -84,6 +84,16 @@ def extract_text_from_image(
     if not _validate_image_path(image_path):
         return None
 
+    # Groessencheck: Sehr grosse Bilder koennten Tesseract ueberlasten
+    try:
+        size_mb = image_path.stat().st_size / (1024 * 1024)
+        if size_mb > 50:
+            logger.warning("Bild zu gross fuer OCR: %.1f MB (max 50 MB) — %s",
+                           size_mb, image_path.name)
+            return None
+    except OSError:
+        pass
+
     try:
         import pytesseract
         from PIL import Image, ImageEnhance, ImageFilter
@@ -250,7 +260,8 @@ class OCREngine:
             try:
                 models = await self._ollama.list_models()
                 self._vision_available = any(
-                    self.vision_model in m for m in models
+                    m == self.vision_model or m.startswith(self.vision_model + ":")
+                    for m in models
                 )
                 if self._vision_available:
                     logger.info("Vision-LLM verfuegbar: %s", self.vision_model)
@@ -267,6 +278,22 @@ class OCREngine:
             "OK" if tesseract_ok else "nicht verfuegbar",
             self.vision_model if self._vision_available else "deaktiviert",
         )
+
+    def reload_config(self):
+        """Lädt OCR-Konfiguration aus yaml_config neu."""
+        cfg = yaml_config.get("ocr", {})
+        self.enabled = cfg.get("enabled", True)
+        self.languages = cfg.get("languages", "deu+eng")
+        old_model = self.vision_model
+        self.vision_model = cfg.get("vision_model", "").strip()
+        self.max_image_size_mb = cfg.get("max_image_size_mb", 20)
+        self.description_max_tokens = cfg.get("description_max_tokens", 512)
+        if self.vision_model != old_model:
+            self._vision_available = False
+            logger.info("Vision-Model geaendert: '%s' → '%s' (Neustart pruefen)",
+                        old_model, self.vision_model)
+        logger.debug("OCR config reloaded: enabled=%s, lang=%s, model=%s",
+                      self.enabled, self.languages, self.vision_model)
 
     def extract_text(self, image_path: Path) -> Optional[str]:
         """Extrahiert Text aus einem Bild via Tesseract."""

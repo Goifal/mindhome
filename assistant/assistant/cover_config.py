@@ -23,6 +23,7 @@ _COVER_SCENES_FILE = _DATA_DIR / "cover_scenes.json"
 _COVER_SCHEDULES_FILE = _DATA_DIR / "cover_schedules.json"
 _COVER_SENSORS_FILE = _DATA_DIR / "cover_sensors.json"
 _COVER_LOG_FILE = _DATA_DIR / "cover_action_log.json"
+_POWER_CLOSE_FILE = _DATA_DIR / "cover_power_close.json"
 
 
 def _ensure_dir():
@@ -295,3 +296,59 @@ def load_cover_action_log(limit: int = 10) -> list:
     """Laedt die letzten Cover-Aktionen fuer das Dashboard."""
     entries = _load_list(_COVER_LOG_FILE)
     return entries[:limit]
+
+
+# ── Power-Close Regeln (Steckdosen-gesteuertes Schliessen) ──────
+
+def load_power_close_rules() -> list:
+    """Laedt Power-Close-Regeln (Steckdose → Rollladen)."""
+    return _load_list(_POWER_CLOSE_FILE)
+
+
+def save_power_close_rules(rules: list) -> None:
+    _save_list(_POWER_CLOSE_FILE, rules)
+
+
+def create_power_close_rule(data: dict) -> dict:
+    """Erstellt eine neue Power-Close-Regel.
+
+    Felder:
+      power_sensor: sensor.steckdose_tv_power
+      threshold: 50  (Watt)
+      cover_ids: ["cover.rollladen_wz", ...]
+      close_position: 0
+      is_active: true
+    """
+    rules = load_power_close_rules()
+    new_rule = {
+        "id": _next_id(rules),
+        "power_sensor": data.get("power_sensor", ""),
+        "threshold": data.get("threshold", 50),
+        "cover_ids": data.get("cover_ids", []),
+        "close_position": data.get("close_position", 0),
+        "is_active": data.get("is_active", True),
+    }
+    rules.append(new_rule)
+    save_power_close_rules(rules)
+    return new_rule
+
+
+def update_power_close_rule(rule_id: int, data: dict) -> Optional[dict]:
+    rules = load_power_close_rules()
+    rule = _find_by_id(rules, rule_id)
+    if not rule:
+        return None
+    for key in ("power_sensor", "threshold", "cover_ids", "close_position", "is_active"):
+        if key in data:
+            rule[key] = data[key]
+    save_power_close_rules(rules)
+    return rule
+
+
+def delete_power_close_rule(rule_id: int) -> bool:
+    rules = load_power_close_rules()
+    new_rules = [r for r in rules if r.get("id") != rule_id]
+    if len(new_rules) == len(rules):
+        return False
+    save_power_close_rules(new_rules)
+    return True

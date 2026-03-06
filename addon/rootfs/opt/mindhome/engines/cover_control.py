@@ -49,12 +49,15 @@ class CoverControlManager:
         "sun_protection_indoor_temp_c": 24.0,
         "sun_protection_position_pct": 20,
         "sun_protection_tilt_deg": None,
+        "sun_protection_min_elevation_deg": 5.0,  # Min. sun elevation for sun protection
         # Winter-Logik: Sonne reinlassen für passive Wärme
         "winter_solar_gain_enabled": True,
         "winter_solar_gain_below_c": 18.0,
+        "winter_solar_gain_min_elevation_deg": 10.0,  # Min. sun elevation for solar gain
         # Wetterschutz
         "weather_protection_enabled": True,
-        "wind_threshold_kmh": 50.0,
+        "wind_threshold_kmh": 50.0,  # Normal wind protection for awnings
+        "storm_wind_threshold_kmh": 80.0,  # Emergency storm retraction (security priority)
         "storm_retract_awnings": True,
         "rain_close_roof_windows": True,
         "frost_insulation_enabled": True,
@@ -729,7 +732,8 @@ class CoverControlManager:
         """Security rules: storm protection, emergency retraction."""
         wind = weather_data.get("wind_speed_kmh", 0)
         cover_type = cover.get("cover_type", "shutter")
-        if wind > 80 and cover_type == "awning":
+        storm_threshold = config.get("storm_wind_threshold_kmh", 80)
+        if wind > storm_threshold and cover_type == "awning":
             return {"position": 100, "source": "security_storm"}
         return None
 
@@ -789,7 +793,7 @@ class CoverControlManager:
                 return {"position": 0, "source": "comfort_privacy"}
 
         # Sun protection
-        if config.get("sun_protection_enabled") and sun_elevation > 5:
+        if config.get("sun_protection_enabled") and sun_elevation > config.get("sun_protection_min_elevation_deg", 5):
             temp_threshold = config.get("sun_protection_outdoor_temp_c", 25)
             if outdoor_temp is not None and outdoor_temp >= temp_threshold:
                 if self._is_sun_on_facade(facade, sun_azimuth):
@@ -797,7 +801,7 @@ class CoverControlManager:
                     return {"position": pos, "source": "comfort_sun_protection"}
 
         # Winter solar gain: let sun in for passive heating
-        if (config.get("winter_solar_gain_enabled") and sun_elevation > 10
+        if (config.get("winter_solar_gain_enabled") and sun_elevation > config.get("winter_solar_gain_min_elevation_deg", 10)
                 and outdoor_temp is not None
                 and outdoor_temp < config.get("winter_solar_gain_below_c", 18)):
             if self._is_sun_on_facade(facade, sun_azimuth):
@@ -896,12 +900,16 @@ class CoverControlManager:
         logger.info("Wake detected: opening covers")
 
     def _is_bed_occupied(self) -> bool:
-        """Prueft ob ein Bettbelegungssensor aktiv ist."""
+        """Prueft ob ein Bettbelegungssensor aktiv ist.
+
+        Fail-safe: bei Fehler True zurueckgeben (lieber nicht oeffnen).
+        """
         try:
             states = self.ha.get_states() or []
             return _check_bed_occupied(states)
         except Exception:
-            return False
+            logger.warning("Bettbelegung konnte nicht geprueft werden — fail-safe: belegt")
+            return True
 
     def _on_weather_alert(self, event):
         """React to weather alerts (storm, hail)."""
@@ -994,9 +1002,11 @@ class CoverControlManager:
                     "azimuth": attrs.get("azimuth", 180),
                     "rising": attrs.get("rising", True),
                 }
-        except Exception:
-            pass
-        return {"elevation": 0, "azimuth": 180, "rising": True}
+            else:
+                logger.warning("sun.sun Entity nicht verfuegbar — Sonnenstand unbekannt, Cover-Automatik pausiert")
+        except Exception as e:
+            logger.warning("sun.sun Abfrage fehlgeschlagen: %s — Cover-Automatik pausiert", e)
+        return {"elevation": 0, "azimuth": 180, "rising": False}
 
     def _get_weather_data(self, config):
         """Collect weather sensor readings.

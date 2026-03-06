@@ -3282,7 +3282,7 @@ async function renderInventoryView(main) {
             });
             html += '</tbody></table>';
         } else {
-            html += emptyState('Kein Inventar', 'Fuege Artikel hinzu um dein Werkstatt-Inventar zu verwalten.');
+            html += emptyState('&#128230;', 'Kein Inventar', 'Fuege Artikel hinzu um dein Werkstatt-Inventar zu verwalten.');
         }
     } catch (e) {
         html += '<div style="color:var(--text-secondary);font-size:12px">Inventar konnte nicht geladen werden.</div>';
@@ -3942,7 +3942,7 @@ async function renderDevicesView(main) {
             html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:12px" id="device-cards">';
             devices.forEach(d => {
                 const eid = typeof d === 'string' ? d : (d.entity_id || '');
-                html += '<div class="stat-card" id="dev-' + escHtml(eid).replace(/\./g,'_') + '">';
+                html += '<div class="stat-card" id="dev-' + eid.replace(/\./g,'_') + '">';
                 html += '<div style="font-size:11px;color:var(--text-secondary);font-family:var(--mono)">' + escHtml(eid) + '</div>';
                 html += '<div class="stat-value" style="font-size:16px;margin-top:4px">---</div>';
                 html += '<div class="stat-label">Laden...</div>';
@@ -5196,7 +5196,7 @@ function renderGalleryView(main) {
         });
         html += '</div>';
     } else {
-        html += emptyState('Keine Projekte', 'Erstelle ein neues Projekt um die Galerie zu fuellen.');
+        html += emptyState('&#128247;', 'Keine Projekte', 'Erstelle ein neues Projekt um die Galerie zu fuellen.');
     }
     html += '</div>';
 
@@ -5310,7 +5310,7 @@ function renderWikiView(main) {
         });
         html += '</div>';
     } else {
-        html += emptyState('Keine Eintraege', 'Erstelle Eintraege oder generiere sie aus abgeschlossenen Projekten.');
+        html += emptyState('&#128214;', 'Keine Eintraege', 'Erstelle Eintraege oder generiere sie aus abgeschlossenen Projekten.');
     }
     html += '</div>';
     main.innerHTML = html;
@@ -5787,7 +5787,7 @@ function renderGamificationView(main) {
         { label: 'Projekte gesamt', val: projects.length },
         { label: 'Abgeschlossen', val: projects.filter(p => p.status === 'abgeschlossen').length },
         { label: 'Wiki-Eintraege', val: wikiEntries.length },
-        { label: 'Stunden erfasst', val: Math.floor(Object.values(timeTracking).flat().reduce((s,e) => s + (e.minutes||0), 0) / 60) },
+        { label: 'Stunden erfasst', val: Math.floor(Object.values(timeTracking).filter(Array.isArray).flat().reduce((s,e) => s + (e.minutes||0), 0) / 60) },
         { label: 'Schaltplan-Teile', val: schParts.length },
     ];
     stats.forEach(s => {

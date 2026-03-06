@@ -2794,6 +2794,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     "component_a": {"type": "string", "description": "Erste Komponente (Vergleich)"},
                     "component_b": {"type": "string", "description": "Zweite Komponente (Vergleich)"},
                     "query": {"type": "string", "description": "Suchbegriff (Library/Projekte)"},
+                    "camera": {"type": "string", "description": "Kamera-Name fuer scan_object (z.B. 'werkstatt', 'haustuer')"},
                 },
                 "required": ["action"],
             },
@@ -6845,7 +6846,8 @@ class FunctionExecutor:
         # --- Scanner ---
         elif action == "scan_object":
             return await planner.scan_object(
-                description=args.get("description", ""))
+                description=args.get("description", ""),
+                camera_name=args.get("camera", args.get("camera_name", "")))
 
         # --- Library ---
         elif action == "search_library":
