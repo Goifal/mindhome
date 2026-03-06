@@ -369,7 +369,11 @@ ollama:
   num_ctx: 4096
   num_ctx_smart: 8192
   num_ctx_deep: 8192
-  keep_alive: 120s
+  keep_alive: 5m
+  # Performance-Tuning (RTX 3090 empfohlen)
+  # flash_attn: true         # Flash Attention — schnellere Inferenz, weniger VRAM
+  # num_gpu: 99              # Alle Layer auf GPU (99 = Maximum)
+  # num_parallel: 2          # Parallele Requests (braucht ~2x VRAM pro Modell)
 models:
   fast: qwen3.5:4b
   smart: qwen3.5:9b

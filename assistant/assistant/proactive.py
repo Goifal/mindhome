@@ -506,10 +506,16 @@ class ProactiveManager:
 
             elif old_val == "home" and new_val != "home":
                 # Phase 7.4: Abschied mit Sicherheits-Hinweis
-                await self._notify("person_left", MEDIUM, {
+                # Einkaufsliste pruefen und an departure_check anhaengen
+                _shopping_items = await self._get_open_shopping_items()
+                _departure_data = {
                     "person": name,
                     "departure_check": True,
-                })
+                }
+                if _shopping_items:
+                    _departure_data["shopping_items"] = _shopping_items
+                    _departure_data["shopping_count"] = len(_shopping_items)
+                await self._notify("person_left", MEDIUM, _departure_data)
                 # MCU-JARVIS: Abwesenheits-Akkumulator starten
                 if yaml_config.get("return_briefing", {}).get("enabled", True):
                     await self._start_absence_accumulator(name)
@@ -1204,6 +1210,25 @@ class ProactiveManager:
                 )
         except Exception as e:
             logger.debug("Follow-Me Check fehlgeschlagen: %s", e)
+
+    async def _get_open_shopping_items(self) -> list[str]:
+        """Holt offene Eintraege von der HA-Einkaufsliste.
+
+        Returns:
+            Liste der nicht-erledigten Artikelnamen (leer wenn keine oder Fehler).
+        """
+        try:
+            items = await self.brain.ha.api_get("/api/shopping_list")
+            if not items or not isinstance(items, list):
+                return []
+            return [
+                item.get("name", "")
+                for item in items
+                if not item.get("complete", False) and item.get("name")
+            ]
+        except Exception as e:
+            logger.debug("Einkaufsliste nicht abrufbar: %s", e)
+            return []
 
     async def _check_presence_lighting(self, entity_id: str, new_val: str):
         """Praesenz-Licht: Motion → LightEngine für Auto-On."""
@@ -2156,8 +2181,23 @@ class ProactiveManager:
                 "Nur relevante Fakten: offene Fenster, unverriegelte Tueren, Alarm-Status.",
                 f"Wenn alles gesichert ist: nur knapp bestätigen. 'Alles gesichert, {title}.'",
                 "Wenn etwas offen ist: sachlich erwähnen. 'Fenster Küche steht noch offen.'",
-                "Max 2 Sätze. Deutsch. Butler der dem Herrn den Mantel reicht, nicht winkt.",
             ]
+            # Einkaufsliste anhaengen wenn Eintraege vorhanden
+            shopping_items = data.get("shopping_items", [])
+            if shopping_items:
+                count = len(shopping_items)
+                if count <= 3:
+                    items_str = ", ".join(shopping_items)
+                    parts.append(
+                        f"Einkaufsliste hat {count} Eintraege: {items_str}. "
+                        "Erwaehne beilaeufig. 'Uebrigens, [Artikel] steht noch auf der Liste.'"
+                    )
+                else:
+                    parts.append(
+                        f"Einkaufsliste hat {count} Eintraege. "
+                        f"Erwaehne beilaeufig die Anzahl. 'Uebrigens, {count} Dinge auf der Einkaufsliste.'"
+                    )
+            parts.append("Max 2-3 Sätze. Deutsch. Butler der dem Herrn den Mantel reicht, nicht winkt.")
             return "\n".join(parts)
 
         # Nacht-Motion Kamera: Bewegung + Kamera-Beschreibung

@@ -162,8 +162,11 @@ def _model_options(model: str, temperature: float, max_tokens: int, num_ctx: int
     Parameter (top_k, top_p, min_p, repeat_penalty, temperature) werden
     aus dem passenden Model Profile in settings.yaml geladen.
     Siehe config.get_model_profile() für die Match-Logik.
+
+    GPU-Performance-Optionen (flash_attn, num_gpu) werden aus der
+    ollama-Sektion in settings.yaml gelesen.
     """
-    from .config import get_model_profile
+    from .config import get_model_profile, yaml_config
     profile = get_model_profile(model)
 
     opts = {
@@ -181,6 +184,13 @@ def _model_options(model: str, temperature: float, max_tokens: int, num_ctx: int
     else:
         opts["top_p"] = profile.top_p
 
+    # GPU-Performance-Optionen aus settings.yaml (ollama Sektion)
+    ollama_cfg = yaml_config.get("ollama") or {}
+    if ollama_cfg.get("flash_attn"):
+        opts["flash_attn"] = True
+    if ollama_cfg.get("num_gpu") is not None:
+        opts["num_gpu"] = int(ollama_cfg["num_gpu"])
+
     return opts
 
 
@@ -196,8 +206,10 @@ class OllamaClient:
     _DEFAULT_NUM_CTX_FAST = 2048
     _DEFAULT_NUM_CTX_DEEP = 8192
 
-    # Standard keep_alive: Modell nach 120s Idle aus VRAM entladen (spart ~10W GPU)
-    _DEFAULT_KEEP_ALIVE = "120s"
+    # Standard keep_alive: Modell nach 5 Min Idle aus VRAM entladen.
+    # Bei aktiver Nutzung bleibt das Modell geladen (kein Cold-Start).
+    # Konfigurierbar: "5m", "30m", "-1" (nie entladen), "0" (sofort entladen)
+    _DEFAULT_KEEP_ALIVE = "5m"
 
     def __init__(self):
         self.base_url = settings.ollama_url
