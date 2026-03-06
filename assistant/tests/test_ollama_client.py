@@ -35,7 +35,7 @@ class TestChatPayload:
 
     @pytest.mark.asyncio
     async def test_think_false_with_tools(self):
-        """Think wird bei Tools deaktiviert."""
+        """Think wird bei Tools deaktiviert (wenn Modell Think+Tools nicht unterstuetzt)."""
         mock_resp = MagicMock(
             status=200,
             json=AsyncMock(return_value={"message": {"content": "ok"}}),
@@ -47,10 +47,15 @@ class TestChatPayload:
         instance.post = MagicMock(return_value=cm)
 
         client = _make_client_with_mock_session(instance)
-        result = await client.chat(
-            messages=[{"role": "user", "content": "test"}],
-            tools=[{"type": "function", "function": {"name": "test"}}],
-        )
+
+        # Modell-Profil mocken: supports_think_with_tools=False
+        from assistant.config import ModelProfile
+        no_think_tools_profile = ModelProfile(supports_think_with_tools=False)
+        with patch("assistant.config.get_model_profile", return_value=no_think_tools_profile):
+            result = await client.chat(
+                messages=[{"role": "user", "content": "test"}],
+                tools=[{"type": "function", "function": {"name": "test"}}],
+            )
         instance.post.assert_called_once()
         call_kwargs = instance.post.call_args
         payload = call_kwargs[1].get("json", {})
