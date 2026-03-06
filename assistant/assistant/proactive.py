@@ -2288,10 +2288,12 @@ class ProactiveManager:
         await asyncio.sleep(PROACTIVE_BATCH_STARTUP_DELAY)
         logger.info("Batch-Loop gestartet (interval=%ds)", self.batch_interval)
         medium_check_interval = 10 * 60  # 10 Min für MEDIUM
-        timer = 0
+        last_flush = time.monotonic()
 
         while self._running:
+            loop_start = time.monotonic()
             try:
+                elapsed = loop_start - last_flush
                 # F-033: Lock für shared batch_queue Zugriff
                 async with self._state_lock:
                     has_items = bool(self._batch_queue)
@@ -2301,18 +2303,19 @@ class ProactiveManager:
 
                 if has_items:
                     # MEDIUM sofort flushen wenn Timer abgelaufen
-                    if has_medium and timer >= medium_check_interval:
+                    if has_medium and elapsed >= medium_check_interval:
                         await self._flush_batch()
-                        timer = 0
+                        last_flush = time.monotonic()
                     # LOW flushen nach Standard-Intervall
-                    elif timer >= self.batch_interval * 60:
+                    elif elapsed >= self.batch_interval * 60:
                         await self._flush_batch()
-                        timer = 0
+                        last_flush = time.monotonic()
             except Exception as e:
                 logger.error("Batch-Flush Fehler: %s", e)
 
-            await asyncio.sleep(60)
-            timer += 60
+            # Drift-kompensiertes Sleep: 60s abzüglich Verarbeitungszeit
+            sleep_time = max(0, 60 - (time.monotonic() - loop_start))
+            await asyncio.sleep(sleep_time)
 
     async def _flush_batch(self):
         """Sendet alle gesammelten LOW+MEDIUM-Meldungen als eine Zusammenfassung.

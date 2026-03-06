@@ -316,7 +316,9 @@ class OutcomeTracker:
             if after_attrs.get(key) != now_attrs.get(key):
                 changed_attrs += 1
 
-        if total_attrs > 0 and changed_attrs > 0:
+        if total_attrs == 0:
+            return OUTCOME_NEUTRAL
+        if changed_attrs > 0:
             ratio = changed_attrs / total_attrs
             if ratio > 0.5:
                 return OUTCOME_NEGATIVE

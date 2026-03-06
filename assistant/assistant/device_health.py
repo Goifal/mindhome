@@ -464,8 +464,8 @@ class DeviceHealthMonitor:
                 return
 
             mean = sum(all_values) / len(all_values)
-            variance = sum((v - mean) ** 2 for v in all_values) / len(
-                all_values
+            variance = sum((v - mean) ** 2 for v in all_values) / max(
+                1, len(all_values) - 1
             )
             stddev = math.sqrt(variance)
 

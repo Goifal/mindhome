@@ -367,9 +367,7 @@ class TTSEnhancer:
                 sentence = pattern.sub(
                     f'<emphasis level="strong">{word.capitalize()}</emphasis>',
                     sentence,
-                    count=1,
                 )
-                break  # Nur ein Wort pro Satz betonen
         return sentence
 
     @staticmethod

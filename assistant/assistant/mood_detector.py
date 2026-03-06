@@ -160,6 +160,7 @@ class MoodDetector:
             self._last_texts = s["last_texts"]
             self._last_decay_time = s["last_decay_time"]
             self._last_voice_signals = s.get("voice_signals", [])
+            self._created_time = s.get("created_time", 0)
         else:
             # Neue Person — frischer State
             self._current_mood = MOOD_NEUTRAL
@@ -172,6 +173,7 @@ class MoodDetector:
             self._interaction_sentiments = deque(maxlen=10)
             self._last_texts = deque(maxlen=5)
             self._last_decay_time = time.time()
+            self._created_time = time.time()
             self._last_voice_signals = []
         self._active_person_key = key
         return key
@@ -191,12 +193,14 @@ class MoodDetector:
             "last_texts": self._last_texts,
             "last_decay_time": self._last_decay_time,
             "voice_signals": self._last_voice_signals,
+            "voice_emotion": self._last_voice_emotion,
+            "created_time": self._created_time,
         }
         # Begrenze auf 20 Personen
         if len(self._person_states) > 20:
             oldest = min(
                 (k for k in self._person_states if k != "_default"),
-                key=lambda k: self._person_states[k].get("last_decay_time", 0),
+                key=lambda k: self._person_states[k].get("created_time", 0),
                 default=None,
             )
             if oldest:
@@ -320,8 +324,8 @@ class MoodDetector:
         if len(self._last_texts) >= 2:
             _recent = list(self._last_texts)[-2:]
             _rep_count = sum(1 for lt in _recent if self._word_overlap(text_lower, lt) > 0.5)
-            if _rep_count >= 2:
-                # 3x aehnlich = Eskalation → doppelter Stress-Boost
+            if _rep_count >= 1:
+                # 2x aehnlich in letzten Nachrichten = Eskalation → doppelter Stress-Boost
                 self._stress_level = min(1.0, self._stress_level + self.repetition_stress_boost * 2)
                 self._frustration_count += 2
                 signals.append("escalation")
@@ -400,6 +404,7 @@ class MoodDetector:
                 "tiredness_level": 0.0,
                 "frustration_count": 0,
                 "positive_count": 0,
+                "voice_emotion": None,
             }
         return {
             "mood": s["mood"],
@@ -407,6 +412,7 @@ class MoodDetector:
             "tiredness_level": round(s["tiredness"], 2),
             "frustration_count": s["frustration"],
             "positive_count": s["positive"],
+            "voice_emotion": s.get("voice_emotion"),
         }
 
     def _determine_mood(self) -> str:

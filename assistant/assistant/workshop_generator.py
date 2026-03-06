@@ -158,8 +158,9 @@ class WorkshopGenerator:
 
         project_title = ""
         if project_id and self.redis:
-            proj = await self.redis.hgetall(
+            raw_proj = await self.redis.hgetall(
                 f"mha:repair:project:{project_id}")
+            proj = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_proj.items()} if raw_proj else {}
             project_title = proj.get("title", "")
 
         prompt = CODE_GEN_PROMPT.format(
@@ -198,8 +199,9 @@ class WorkshopGenerator:
 
         project_title = ""
         if project_id and self.redis:
-            proj = await self.redis.hgetall(
+            raw_proj = await self.redis.hgetall(
                 f"mha:repair:project:{project_id}")
+            proj = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_proj.items()} if raw_proj else {}
             project_title = proj.get("title", "")
 
         prompt = OPENSCAD_PROMPT.format(
@@ -275,10 +277,11 @@ class WorkshopGenerator:
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfuegbar"}
 
-        project = await self.redis.hgetall(
+        raw_project = await self.redis.hgetall(
             f"mha:repair:project:{project_id}")
-        if not project:
+        if not raw_project:
             return {"status": "error", "message": "Projekt nicht gefunden"}
+        project = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_project.items()}
 
         parts = json.loads(project.get("parts", "[]"))
         files = await self.list_files(project_id)

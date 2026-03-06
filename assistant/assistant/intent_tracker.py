@@ -380,7 +380,7 @@ class IntentTracker:
                 # Ist die Deadline abgelaufen?
                 elif time_until < timedelta(0):
                     # Auto-dismiss nach 2 Tagen
-                    if abs(time_until.days) > 2:
+                    if abs(time_until.total_seconds()) / 86400 > 2:
                         await self.dismiss_intent(intent.get("intent_id", ""))
 
             except Exception as e:

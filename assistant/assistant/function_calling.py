@@ -3480,7 +3480,7 @@ class FunctionExecutor:
             if state == "on":
                 if "brightness" in args:
                     try:
-                        bri = str(args["brightness"]).replace("%", "").strip()
+                        bri = str(args.get("brightness", "")).replace("%", "").strip()
                         service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
                     except (ValueError, TypeError):
                         pass
@@ -3499,7 +3499,7 @@ class FunctionExecutor:
 
         # LLM-Fallback: entity_id statt room akzeptieren
         if not room and args.get("entity_id"):
-            eid = args["entity_id"]
+            eid = args.get("entity_id", "")
             if eid.startswith("light."):
                 room = eid.split(".", 1)[1]
             else:
@@ -3570,7 +3570,7 @@ class FunctionExecutor:
         brightness_pct = None
         if "brightness" in args and state == "on":
             try:
-                bri = str(args["brightness"]).replace("%", "").strip()
+                bri = str(args.get("brightness", "")).replace("%", "").strip()
                 brightness_pct = max(1, min(100, int(float(bri))))
                 service_data["brightness_pct"] = brightness_pct
             except (ValueError, TypeError):
@@ -3582,7 +3582,7 @@ class FunctionExecutor:
         # Phase 9: Transition-Parameter (sanftes Dimmen) — muss int/float sein
         if "transition" in args:
             try:
-                service_data["transition"] = int(args["transition"])
+                service_data["transition"] = int(args.get("transition", 2))
             except (ValueError, TypeError):
                 # LLM schickt manchmal "smooth" statt Zahl — Default 2s
                 service_data["transition"] = 2
@@ -3633,7 +3633,7 @@ class FunctionExecutor:
                 if state == "on":
                     if "brightness" in args:
                         try:
-                            bri = str(args["brightness"]).replace("%", "").strip()
+                            bri = str(args.get("brightness", "")).replace("%", "").strip()
                             service_data["brightness_pct"] = max(1, min(100, int(float(bri))))
                         except (ValueError, TypeError):
                             pass
@@ -4001,7 +4001,7 @@ class FunctionExecutor:
 
         # LLM-Fallback: entity_id statt room
         if not room and args.get("entity_id"):
-            eid = args["entity_id"]
+            eid = args.get("entity_id", "")
             room = eid.split(".", 1)[1] if "." in eid else eid
         room = self._clean_room(room)
 
@@ -4064,7 +4064,7 @@ class FunctionExecutor:
 
         service_data = {"entity_id": entity_id, "temperature": new_temp}
         if "mode" in args:
-            service_data["hvac_mode"] = args["mode"]
+            service_data["hvac_mode"] = args.get("mode", "")
 
         success = await self.ha.call_service("climate", "set_temperature", service_data)
         sign = "+" if offset >= 0 else ""
@@ -4075,7 +4075,7 @@ class FunctionExecutor:
         room = args.get("room")
         # LLM-Fallback: entity_id statt room
         if not room and args.get("entity_id"):
-            eid = args["entity_id"]
+            eid = args.get("entity_id", "")
             room = eid.split(".", 1)[1] if "." in eid else eid
         room = self._clean_room(room)
         if not room:
@@ -4099,15 +4099,15 @@ class FunctionExecutor:
             temp = max(security.get("min", 5), min(security.get("max", 30), temp))
         elif "temperature" in args:
             try:
-                temp = float(args["temperature"])
+                temp = float(args.get("temperature", 0))
             except (ValueError, TypeError):
-                return {"success": False, "message": f"Ungültige Temperatur: {args['temperature']}"}
+                return {"success": False, "message": f"Ungültige Temperatur: {args.get('temperature', '')}"}
         else:
             return {"success": False, "message": "Keine Temperatur angegeben"}
 
         service_data = {"entity_id": entity_id, "temperature": temp}
         if "mode" in args:
-            service_data["hvac_mode"] = args["mode"]
+            service_data["hvac_mode"] = args.get("mode", "")
 
         success = await self.ha.call_service("climate", "set_temperature", service_data)
         direction = ""
@@ -4247,7 +4247,7 @@ class FunctionExecutor:
 
         if "position" in args:
             try:
-                return max(0, min(100, int(args["position"]))), None, False
+                return max(0, min(100, int(args.get("position", 0)))), None, False
             except (ValueError, TypeError):
                 return 0, None, False
 
@@ -4259,7 +4259,7 @@ class FunctionExecutor:
 
         # LLM-Fallback: entity_id statt room
         if not room and args.get("entity_id"):
-            eid = args["entity_id"]
+            eid = args.get("entity_id", "")
             room = eid.split(".", 1)[1] if "." in eid else eid
         room = self._clean_room(room)
 
@@ -5050,7 +5050,7 @@ class FunctionExecutor:
         action = args.get("action", "play")
         room = args.get("room")
         if not room and args.get("entity_id"):
-            eid = args["entity_id"]
+            eid = args.get("entity_id", "")
             room = eid.split(".", 1)[1] if "." in eid else eid
         room = self._clean_room(room)
         entity_id = await self._find_entity("media_player", room) if room else None
@@ -5983,7 +5983,7 @@ class FunctionExecutor:
         }
 
     async def _exec_set_presence_mode(self, args: dict) -> dict:
-        mode = args["mode"]
+        mode = args.get("mode", "")
 
         # Versuche input_select für Anwesenheitsmodus zu finden
         states = await self.ha.get_states()
@@ -6118,9 +6118,9 @@ class FunctionExecutor:
         - Snapshot vor jeder Änderung (Rollback jederzeit möglich)
         - yaml.safe_dump() verhindert Code-Injection
         """
-        config_file = args["config_file"]
-        action = args["action"]
-        key = args["key"]
+        config_file = args.get("config_file", "")
+        action = args.get("action", "")
+        key = args.get("key", "")
         data = args.get("data", {})
 
         yaml_path = _EDITABLE_CONFIGS.get(config_file)
@@ -6182,7 +6182,8 @@ class FunctionExecutor:
 
         except Exception as e:
             logger.error("Config-Edit fehlgeschlagen: %s", e)
-            return {"success": False, "message": f"Die Konfiguration laesst sich gerade nicht ändern: {e}"}
+            logger.warning("Config-Edit Exception Details: %s %s", type(e).__name__, e)
+            return {"success": False, "message": "Die Konfiguration laesst sich gerade nicht ändern. Bitte spaeter erneut versuchen."}
 
     # ------------------------------------------------------------------
     # Phase 15.2: Einkaufsliste (via HA Shopping List oder lokal)
@@ -6190,7 +6191,7 @@ class FunctionExecutor:
 
     async def _exec_manage_shopping_list(self, args: dict) -> dict:
         """Phase 15.2: Einkaufsliste verwalten über Home Assistant."""
-        action = args["action"]
+        action = args.get("action", "")
         item = args.get("item", "")
 
         if action == "add":

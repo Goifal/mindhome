@@ -258,7 +258,7 @@ class RecipeStore:
                         "source": meta.get("source_file", "unbekannt"),
                         "chunk_index": meta.get("chunk_index", 0),
                     })
-            chunks.sort(key=lambda c: (c["source"], c["chunk_index"]))
+            chunks.sort(key=lambda c: (c["source"], int(c.get("chunk_index", 0))))
             return chunks[offset:offset + limit]
         except Exception as e:
             logger.error("Fehler beim Laden der Rezept-Chunks: %s", e)
