@@ -91,12 +91,21 @@ class ModelRouter:
 
     def reload_config(self):
         """
-        Laedt Enabled-Status und Keywords neu aus yaml_config.
+        Laedt Enabled-Status, Keywords UND Modellnamen neu aus yaml_config.
         Aufgerufen nach Settings-Aenderung ueber die UI.
         """
         old_fast = self._fast_enabled
         old_smart = self._smart_enabled
         old_deep = self._deep_enabled
+        old_model_fast = self.model_fast
+        old_model_smart = self.model_smart
+        old_model_deep = self.model_deep
+
+        # Modellnamen aus settings neu laden (config.py aktualisiert settings)
+        from .config import settings as cfg
+        self.model_fast = cfg.model_fast
+        self.model_smart = cfg.model_smart
+        self.model_deep = cfg.model_deep
 
         self._load_config()
         self._update_availability()
@@ -109,6 +118,12 @@ class ModelRouter:
             changes.append(f"Smart: {'AN' if self._smart_enabled else 'AUS'}")
         if old_deep != self._deep_enabled:
             changes.append(f"Deep: {'AN' if self._deep_enabled else 'AUS'}")
+        if old_model_fast != self.model_fast:
+            changes.append(f"Fast-Modell: {old_model_fast} -> {self.model_fast}")
+        if old_model_smart != self.model_smart:
+            changes.append(f"Smart-Modell: {old_model_smart} -> {self.model_smart}")
+        if old_model_deep != self.model_deep:
+            changes.append(f"Deep-Modell: {old_model_deep} -> {self.model_deep}")
 
         if changes:
             logger.info("Modell-Konfiguration geaendert: %s", ", ".join(changes))
