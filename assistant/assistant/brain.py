@@ -2384,10 +2384,24 @@ class AssistantBrain(BrainCallbacksMixin):
             _upgrade_signals += 3  # Sicherheit = immer Deep
 
         if _upgrade_signals >= 3 and model != self.model_router.model_deep:
-            _upgraded = self.model_router._cap_model(self.model_router.model_deep)
-            if _upgraded != model:
-                logger.info("Model Upgrade %s -> %s (signals: %d)", model, _upgraded, _upgrade_signals)
-                model = _upgraded
+            # Error-Mitigation VOR dem Upgrade pruefen: Wenn das Deep-Modell
+            # wiederholt timeoutet (z.B. nicht im VRAM, keep_alive=0), NICHT
+            # upgraden. Verhindert dass der Prompt fuer 32K gebaut wird und
+            # dann doch auf 9b laeuft.
+            _deep_model = self.model_router._cap_model(self.model_router.model_deep)
+            _deep_mitigation = await self.error_patterns.get_mitigation(
+                action_type="llm_chat", model=_deep_model,
+            )
+            if _deep_mitigation and _deep_mitigation.get("type") == "use_fallback":
+                logger.info(
+                    "Model Upgrade %s -> %s BLOCKIERT (Error-Mitigation: %s)",
+                    model, _deep_model, _deep_mitigation.get("reason", ""),
+                )
+            else:
+                _upgraded = _deep_model
+                if _upgraded != model:
+                    logger.info("Model Upgrade %s -> %s (signals: %d)", model, _upgraded, _upgrade_signals)
+                    model = _upgraded
 
         # 3b. Gespraechsmodus erkennen (VOR System-Prompt-Bau, damit Prompt angepasst wird)
         # Erweitertes Topic-Tracking: Neben dem Timer wird auch das aktuelle

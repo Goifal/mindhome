@@ -2667,9 +2667,9 @@ function renderPersonality() {
     fRange('models.deep_min_words', 'Deep ab Woertern', 5, 50, 1, {5:'5',10:'10',15:'15',20:'20',25:'25',30:'30',35:'35',40:'40',45:'45',50:'50'}) +
     fRange('models.options.temperature', 'Kreativitaet (Temperatur)', 0, 2, 0.1, {0:'Exakt',0.5:'Konservativ',0.7:'Standard',1:'Kreativ',1.5:'Sehr kreativ',2:'Maximum'}) +
     fRange('models.options.max_tokens', 'Antwortlaenge (Max Tokens)', 64, 4096, 64) +
-    fRange('ollama.num_ctx_fast', 'Kontext Fast-Modell', 1024, 8192, 1024, {1024:'1K',2048:'2K',3072:'3K',4096:'4K',6144:'6K',8192:'8K'}) +
-    fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 16384, 1024, {2048:'2K',4096:'4K',6144:'6K',8192:'8K',12288:'12K',16384:'16K'}) +
-    fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K',24576:'24K',32768:'32K'}) +
+    fRange('ollama.num_ctx_fast', 'Kontext Fast-Modell', 1024, 16384, 1024, {1024:'1K',2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K'}) +
+    fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',24576:'24K',32768:'32K'}) +
+    fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 65536, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',32768:'32K',49152:'48K',65536:'64K'}) +
     '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">GPU-Performance</div>' +
     fSelect('ollama.keep_alive', 'Keep-Alive (Modell im VRAM halten)', [
       {v:'0',l:'Sofort entladen (spart Strom)'},
