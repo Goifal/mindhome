@@ -4011,7 +4011,8 @@ class AssistantBrain(BrainCallbacksMixin):
             import re as _mood_re
             _suggestion_pattern = _mood_re.compile(
                 r'\s*(?:Uebrigens|Übrigens|Soll ich|Moechtest du|Möchtest du|'
-                r'Falls du|Wenn du magst|Tipp:|Hinweis:).*$',
+                r'Falls du|Wenn du magst|Tipp:|Hinweis:|Wenn du moechtest|'
+                r'Wenn du möchtest|Brauchst du|Kann ich dir).*$',
                 _mood_re.IGNORECASE | _mood_re.DOTALL,
             )
             _cleaned = _suggestion_pattern.sub('', response_text).rstrip()
