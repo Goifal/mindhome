@@ -317,10 +317,15 @@ Ergaenze fehlende Teile die aus dem Code/Schaltplan ersichtlich sind."""
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfuegbar"}
 
-        project = await self.redis.hgetall(
+        raw_project = await self.redis.hgetall(
             f"mha:repair:project:{project_id}")
-        if not project:
+        if not raw_project:
             return {"status": "error", "message": "Projekt nicht gefunden"}
+        project = {
+            (k.decode() if isinstance(k, bytes) else k):
+            (v.decode() if isinstance(v, bytes) else v)
+            for k, v in raw_project.items()
+        }
 
         files = await self.list_files(project_id)
 
