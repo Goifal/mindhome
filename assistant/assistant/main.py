@@ -4392,6 +4392,67 @@ async def ui_get_cover_action_log(token: str = "", limit: int = 10):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+# ── Power-Close Regeln (Steckdose → Rollladen) ──────────────────────
+
+@app.get("/api/ui/covers/power-close")
+async def ui_get_power_close_rules(token: str = ""):
+    """Power-Close-Regeln laden."""
+    _check_token(token)
+    try:
+        from .cover_config import load_power_close_rules
+        return load_power_close_rules()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.post("/api/ui/covers/power-close")
+async def ui_create_power_close_rule(request: Request, token: str = ""):
+    """Neue Power-Close-Regel erstellen."""
+    _check_token(token)
+    data = await request.json()
+    if not data.get("power_sensor"):
+        raise HTTPException(status_code=400, detail="power_sensor ist erforderlich")
+    if not data.get("cover_ids"):
+        raise HTTPException(status_code=400, detail="cover_ids ist erforderlich")
+    try:
+        from .cover_config import create_power_close_rule
+        return create_power_close_rule(data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.put("/api/ui/covers/power-close/{rule_id}")
+async def ui_update_power_close_rule(rule_id: int, request: Request, token: str = ""):
+    """Power-Close-Regel aktualisieren."""
+    _check_token(token)
+    data = await request.json()
+    try:
+        from .cover_config import update_power_close_rule
+        result = update_power_close_rule(rule_id, data)
+        if not result:
+            raise HTTPException(status_code=404, detail="Regel nicht gefunden")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
+@app.delete("/api/ui/covers/power-close/{rule_id}")
+async def ui_delete_power_close_rule(rule_id: int, token: str = ""):
+    """Power-Close-Regel loeschen."""
+    _check_token(token)
+    try:
+        from .cover_config import delete_power_close_rule
+        if not delete_power_close_rule(rule_id):
+            raise HTTPException(status_code=404, detail="Regel nicht gefunden")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 # ── Opening Sensors (Fenster/Tueren/Tore Zuordnung) ───────────────
 
 @app.get("/api/ui/opening-sensors")

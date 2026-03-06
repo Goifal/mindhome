@@ -589,6 +589,10 @@ class ProactiveManager:
             except Exception as e:
                 logger.debug("Cover Manual Override Detection Fehler: %s", e)
 
+        # Power-Close: Echtzeit-Reaktion auf Stromverbrauch-Sensoren
+        if entity_id.startswith("sensor."):
+            await self._check_power_close(entity_id, new_val, old_val)
+
         # Conditional Commands prüfen (Wenn-Dann-Logik)
         if hasattr(self.brain, "conditional_commands"):
             try:
@@ -687,6 +691,87 @@ class ProactiveManager:
                 break  # Nur erste passende Szene aktivieren
         except Exception as e:
             logger.debug("Scene Device-Trigger Fehler: %s", e)
+
+    async def _check_power_close(self, entity_id: str, new_val: str, old_val: str):
+        """Echtzeit-Reaktion: Rollladen schliessen/oeffnen bei Stromverbrauch-Aenderung."""
+        try:
+            from assistant.cover_config import load_power_close_rules
+        except ImportError:
+            return
+
+        try:
+            new_num = float(new_val)
+        except (ValueError, TypeError):
+            return  # Kein numerischer Wert
+
+        try:
+            old_num = float(old_val) if old_val and old_val not in ("unknown", "unavailable") else 0.0
+        except (ValueError, TypeError):
+            old_num = 0.0
+
+        rules = load_power_close_rules()
+        if not rules:
+            return
+
+        for rule in rules:
+            if not rule.get("is_active", True):
+                continue
+            if rule.get("power_sensor") != entity_id:
+                continue
+
+            threshold = rule.get("threshold", 50)
+            close_pos = rule.get("close_position", 0)
+            cover_ids = rule.get("cover_ids", [])
+            if not cover_ids:
+                continue
+
+            redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
+            auto_level = yaml_config.get("seasonal_actions", {}).get("auto_execute_level", 2)
+
+            # Schwellwert ueberschritten → Covers schliessen
+            if new_num >= threshold and old_num < threshold:
+                for cid in cover_ids:
+                    redis_key = f"mha:cover:power_close:{cid}"
+                    acted = await self._auto_cover_action(
+                        cid, close_pos,
+                        f"Stromverbrauch {entity_id} ({new_num:.0f} W >= {threshold} W)",
+                        auto_level, redis_client,
+                    )
+                    if acted and redis_client:
+                        try:
+                            await redis_client.set(redis_key, "1", ex=86400)
+                        except Exception:
+                            pass
+                logger.info(
+                    "Power-Close: %s ueber Schwelle (%s W >= %s W) → %d Covers geschlossen",
+                    entity_id, new_num, threshold, len(cover_ids),
+                )
+
+            # Unter Schwellwert gefallen → Covers wieder oeffnen
+            elif new_num < threshold and old_num >= threshold:
+                for cid in cover_ids:
+                    redis_key = f"mha:cover:power_close:{cid}"
+                    power_active = False
+                    if redis_client:
+                        try:
+                            power_active = bool(await redis_client.get(redis_key))
+                        except Exception:
+                            pass
+                    if power_active:
+                        acted = await self._auto_cover_action(
+                            cid, 100,
+                            f"Stromverbrauch {entity_id} ({new_num:.0f} W < {threshold} W)",
+                            auto_level, redis_client,
+                        )
+                        if acted and redis_client:
+                            try:
+                                await redis_client.delete(redis_key)
+                            except Exception:
+                                pass
+                logger.info(
+                    "Power-Close: %s unter Schwelle (%s W < %s W) → Covers geoeffnet",
+                    entity_id, new_num, threshold,
+                )
 
     async def _check_morning_briefing(self, motion_entity: str = ""):
         """Phase 7.1: Prüft ob Morning Briefing bei erster Bewegung am Morgen geliefert werden soll."""
@@ -2657,11 +2742,6 @@ class ProactiveManager:
                 if cover_cfg.get("presence_aware", False):
                     await self._cover_presence_logic(states, cover_cfg, auto_level, _redis)
 
-                # 11. STROMVERBRAUCH-BASIERT (z.B. TV an → Rollladen zu)
-                if cover_cfg.get("power_close", False):
-                    await self._cover_power_close(
-                        states, cover_profiles, auto_level, _redis,
-                    )
 
             except Exception as e:
                 logger.error("Cover-Automation Fehler: %s", e)
@@ -3805,68 +3885,6 @@ class ProactiveManager:
                     eid, 0, "Niemand zuhause — Einbruchschutz",
                     auto_level, redis_client,
                 )
-
-    # ── Stromverbrauchs-gesteuertes Cover-Schliessen ────────
-
-    async def _cover_power_close(
-        self, states: list, cover_profiles: list,
-        auto_level: int, redis_client=None,
-    ) -> None:
-        """Schliesst Rollaeden wenn ein zugeordneter Stromverbrauchs-Sensor
-        einen Schwellwert ueberschreitet (z.B. TV an) und oeffnet sie wieder
-        wenn der Verbrauch darunter faellt."""
-        for cover in (cover_profiles or []):
-            entity_id = cover.get("entity_id")
-            power_sensor = cover.get("power_sensor")
-            if not entity_id or not power_sensor or not cover.get("allow_auto"):
-                continue
-
-            threshold = cover.get("power_threshold", 50)
-            close_pos = cover.get("power_close_position", 0)
-            redis_key = f"mha:cover:power_close:{entity_id}"
-
-            # Sensorwert lesen
-            power_value = 0.0
-            for s in (states or []):
-                if s.get("entity_id") == power_sensor:
-                    try:
-                        power_value = float(s.get("state", 0))
-                    except (ValueError, TypeError):
-                        power_value = 0.0
-                    break
-
-            power_active = False
-            if redis_client:
-                try:
-                    power_active = bool(await redis_client.get(redis_key))
-                except Exception:
-                    pass
-
-            if power_value >= threshold and not power_active:
-                # Schwellwert ueberschritten → schliessen
-                acted = await self._auto_cover_action(
-                    entity_id, close_pos,
-                    f"Stromverbrauch {power_sensor} ({power_value:.0f} W >= {threshold} W)",
-                    auto_level, redis_client,
-                )
-                if acted and redis_client:
-                    try:
-                        await redis_client.set(redis_key, "1", ex=86400)
-                    except Exception:
-                        pass
-
-            elif power_value < threshold and power_active:
-                # Verbrauch unter Schwelle → wieder oeffnen
-                acted = await self._auto_cover_action(
-                    entity_id, 100,
-                    f"Stromverbrauch {power_sensor} ({power_value:.0f} W < {threshold} W)",
-                    auto_level, redis_client,
-                )
-                if acted and redis_client:
-                    try:
-                        await redis_client.delete(redis_key)
-                    except Exception:
-                        pass
 
     async def _execute_seasonal_cover(
         self, action: str, position: int, season: str, reason: str, auto_level: int,

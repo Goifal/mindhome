@@ -1002,7 +1002,7 @@ function renderCurrentTab() {
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-lights': c.innerHTML = renderLights(); loadLightEntities(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
-      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); loadCoverActionLog(); break;
+      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); loadCoverActionLog(); loadPowerCloseRules(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-remote': c.innerHTML = renderRemote(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadEmergencyProtocols(); break;
@@ -6816,6 +6816,12 @@ function renderCovers() {
     rpToggle('markisen.rain_retract', 'Bei Regen automatisch einfahren') +
     rpRange('markisen.sun_extend_temp', 'Ausfahren bei Sonne ab (°C)', 18, 35, 1, {18:'18°C',20:'20°C',22:'22°C',25:'25°C',28:'28°C',30:'30°C',35:'35°C'})
   ) +
+  // ── Power-Close (Steckdose → Rollladen) ──────────────
+  sectionWrap('&#9889;', 'Strom-Automatik (z.B. TV an = Rollladen zu)',
+    fInfo('Wenn der Stromverbrauch einer Steckdose einen Schwellwert ueberschreitet, fahren ausgewaehlte Rolllaeden automatisch runter. Sobald der Verbrauch wieder sinkt, fahren sie wieder hoch.<br><br><strong>Beispiel:</strong> TV-Steckdose > 50 W → Wohnzimmer-Rollladen zu. TV aus → Rollladen wieder auf.<br><br>Die Reaktion erfolgt <strong>sofort</strong> (Echtzeit), nicht im 15-Minuten-Takt.') +
+    '<div id="powerCloseContainer" style="padding:8px;color:var(--text-secondary);">Lade Regeln...</div>' +
+    '<button class="btn btn-sm" onclick="addPowerCloseRule()" style="margin-top:8px;">+ Regel hinzufuegen</button>'
+  ) +
   // ── Cover-Profile (room_profiles.yaml) ─────────────
   sectionWrap('&#127760;', 'Cover-Profile (Fenster-Orientierung)',
     fInfo('Konfiguriere fuer jedes Fenster die Himmelsrichtung und den Sonneneinfalls-Winkel. Ohne diese Profile funktioniert das Sonnenstand-Tracking nicht!<br><br><strong>Azimut-Referenz:</strong> 0°=Nord, 90°=Ost, 180°=Sued, 270°=West<br><strong>Beispiel Suedfenster:</strong> Start=120°, Ende=240°<br><strong>Beispiel Ostfenster:</strong> Start=45°, Ende=135°') +
@@ -7592,6 +7598,80 @@ async function loadCoverActionLog() {
   } catch (e) {
     container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Aktions-Log nicht verfuegbar.</div>';
   }
+}
+
+// ── Power-Close Regeln (Steckdose → Rollladen) ────────────────────
+let _powerCloseRules = [];
+
+async function loadPowerCloseRules() {
+  const container = document.getElementById('powerCloseContainer');
+  if (!container) return;
+  try {
+    const result = await api('/api/ui/covers/power-close');
+    _powerCloseRules = Array.isArray(result) ? result : [];
+    renderPowerCloseRules(container);
+  } catch (e) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Power-Close nicht verfuegbar.</div>';
+  }
+}
+
+function renderPowerCloseRules(container) {
+  if (_powerCloseRules.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Regeln konfiguriert. Klicke "+ Regel hinzufuegen" um eine Steckdose mit Rolllaeden zu verknuepfen.</div>';
+    return;
+  }
+  let html = '';
+  for (const r of _powerCloseRules) {
+    const covers = (r.cover_ids || []).join(', ');
+    const activeColor = r.is_active !== false ? 'var(--accent)' : 'var(--text-muted)';
+    html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+    html += '<span style="font-size:13px;font-weight:600;color:' + activeColor + ';">&#9889; ' + esc(r.power_sensor || '???') + ' &ge; ' + (r.threshold || 50) + ' W</span>';
+    html += '<div style="display:flex;gap:4px;">';
+    html += '<label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;"><input type="checkbox"' + (r.is_active !== false ? ' checked' : '') + ' onchange="updatePowerCloseRule(' + r.id + ',{is_active:this.checked})" style="accent-color:var(--accent);"> Aktiv</label>';
+    html += '<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);font-size:11px;" onclick="deletePowerCloseRule(' + r.id + ')">Entfernen</button>';
+    html += '</div></div>';
+    // Sensor
+    html += '<div style="display:flex;gap:12px;flex-wrap:wrap;">';
+    html += '<div class="form-group" style="flex:1;min-width:200px;"><label>Leistungs-Sensor (Watt)</label>';
+    html += '<div class="entity-pick-wrap"><input class="form-input entity-pick-input" value="' + esc(r.power_sensor || '') + '" placeholder="&#128269; sensor.steckdose_tv_power" data-domains="sensor" oninput="entityPickFilter(this,\'sensor\')" onfocus="entityPickFilter(this,\'sensor\')" onchange="updatePowerCloseRule(' + r.id + ',{power_sensor:this.value})" style="font-size:12px;font-family:var(--mono);"><div class="entity-pick-dropdown" style="display:none;"></div></div></div>';
+    html += '<div class="form-group" style="width:120px;"><label>Schwelle (Watt)</label><input type="number" value="' + (r.threshold || 50) + '" min="1" max="5000" step="5" onchange="updatePowerCloseRule(' + r.id + ',{threshold:parseInt(this.value)})" style="font-size:12px;"></div>';
+    html += '<div class="form-group" style="width:120px;"><label>Position (%)</label><input type="number" value="' + (r.close_position ?? 0) + '" min="0" max="100" step="5" onchange="updatePowerCloseRule(' + r.id + ',{close_position:parseInt(this.value)})" style="font-size:12px;"></div>';
+    html += '</div>';
+    // Covers
+    html += '<div class="form-group"><label>Rolllaeden (Entity-IDs, kommagetrennt)</label>';
+    html += '<input type="text" value="' + esc(covers) + '" placeholder="cover.rollladen_wohnzimmer, cover.rollladen_kueche" onchange="updatePowerCloseRule(' + r.id + ',{cover_ids:this.value.split(\',\').map(s=>s.trim()).filter(Boolean)})" style="font-size:11px;font-family:var(--mono);">';
+    html += '</div>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+async function addPowerCloseRule() {
+  try {
+    await api('/api/ui/covers/power-close', 'POST', {
+      power_sensor: '', threshold: 50, cover_ids: [], close_position: 0
+    });
+    toast('Regel erstellt');
+    loadPowerCloseRules();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function updatePowerCloseRule(ruleId, data) {
+  try {
+    await api('/api/ui/covers/power-close/' + ruleId, 'PUT', data);
+    toast('Regel aktualisiert');
+    loadPowerCloseRules();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+async function deletePowerCloseRule(ruleId) {
+  if (!confirm('Regel wirklich loeschen?')) return;
+  try {
+    await api('/api/ui/covers/power-close/' + ruleId, 'DELETE');
+    toast('Regel geloescht');
+    loadPowerCloseRules();
+  } catch (e) { toast('Fehler: ' + e.message, 'error'); }
 }
 
 // ── Oeffnungs-Sensoren (Fenster/Tueren/Tore) ──────────────────────

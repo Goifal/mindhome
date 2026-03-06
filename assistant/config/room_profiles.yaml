@@ -275,19 +275,6 @@ cover_profiles:
   #   allow_auto: true
   #   heat_protection: true
   #
-  # ── Stromverbrauchs-gesteuertes Schliessen (z.B. TV an → Rollladen zu): ──
-  # - entity_id: cover.rollladen_wohnzimmer
-  #   room: wohnzimmer
-  #   type: rollladen
-  #   orientation: S
-  #   sun_exposure_start: 120
-  #   sun_exposure_end: 240
-  #   allow_auto: true
-  #   heat_protection: true
-  #   power_sensor: sensor.steckdose_tv_power    # Leistungssensor (Watt)
-  #   power_threshold: 50                        # Ab diesem Watt-Wert → Rollladen zu
-  #   power_close_position: 0                    # Zielposition wenn Schwelle erreicht (0=zu)
-  #
   # - entity_id: cover.markise_terrasse
   #   room: wohnzimmer
   #   type: markise

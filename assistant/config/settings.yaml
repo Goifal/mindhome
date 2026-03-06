@@ -1225,7 +1225,6 @@ seasonal_actions:
     forecast_weather_protection: true
     forecast_lookahead_hours: 4
     weather_entity: ''
-    power_close: false
 tts:
   entity: tts.piper
   ssml_enabled: false
