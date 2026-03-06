@@ -530,6 +530,7 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
             f"mha:repair:files:{project_id}", 0, -1)
         result = []
         for fn in filenames:
+            fn = Path(fn).name
             filepath = self.FILES_DIR / project_id / fn
             if filepath.exists():
                 result.append({
@@ -542,6 +543,7 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
 
     async def delete_file(self, project_id, filename) -> dict:
         """Loescht eine Projekt-Datei."""
+        filename = Path(filename).name
         filepath = self.FILES_DIR / project_id / filename
         if (filepath.exists()
                 and filepath.resolve().is_relative_to(

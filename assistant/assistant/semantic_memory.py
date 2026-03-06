@@ -230,6 +230,7 @@ class SemanticMemory:
                 "Fakt nur in ChromaDB gespeichert (Redis-Index fehlt): [%s] (Person: %s)",
                 fact.category, fact.person,
             )
+            return False
         return True
 
     async def _update_existing_fact(

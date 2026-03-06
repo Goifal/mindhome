@@ -18,14 +18,9 @@ import logging
 import random
 from datetime import datetime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
-# F-050: DST limitation — datetime.now() returns naive (timezone-unaware) datetimes.
-# During DST transitions (spring forward / fall back), routines scheduled by wall-clock
-# hour may fire twice, be skipped, or shift by one hour. To fix properly, use
-# timezone-aware datetimes throughout:
-#   from zoneinfo import ZoneInfo
-#   now = datetime.now(ZoneInfo("Europe/Berlin"))
-# This requires propagating tz-aware datetimes to all Redis timestamps and comparisons.
+_TZ = ZoneInfo("Europe/Berlin")
 
 import redis.asyncio as redis
 
@@ -156,7 +151,7 @@ class RoutineEngine:
 
         # Check: Heute schon gebrieft? Atomarer SET NX verhindert doppelte Ausfuehrung
         if not force and self.redis:
-            today = datetime.now().strftime("%Y-%m-%d")
+            today = datetime.now(tz=_TZ).strftime("%Y-%m-%d")
             lock_key = f"{KEY_MORNING_DONE}:lock"
             acquired = await self.redis.set(lock_key, today, ex=86400, nx=True)
             if not acquired:
@@ -170,7 +165,7 @@ class RoutineEngine:
 
         # Bausteine sammeln
         parts = []
-        now = datetime.now()
+        now = datetime.now(tz=_TZ)
         is_weekend = now.weekday() >= 5
         style = self.weekend_style if is_weekend else self.weekday_style
 
@@ -211,7 +206,7 @@ class RoutineEngine:
         # Als erledigt markieren
         if self.redis:
             try:
-                today = datetime.now().strftime("%Y-%m-%d")
+                today = datetime.now(tz=_TZ).strftime("%Y-%m-%d")
                 await self.redis.setex(KEY_MORNING_DONE, 86400, today)
                 await self.redis.setex(KEY_LAST_BRIEFING, 86400, now.isoformat())
             except Exception as e:
@@ -241,7 +236,7 @@ class RoutineEngine:
 
     async def _get_greeting_context(self, person: str) -> str:
         """Kontextdaten für die Begruessung, inkl. Geburtstags-Check."""
-        now = datetime.now()
+        now = datetime.now(tz=_TZ)
         weekday = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"][now.weekday()]
         context = f"Tag: {weekday}, {now.strftime('%d.%m.%Y')}, {now.strftime('%H:%M')} Uhr"
 
@@ -659,8 +654,8 @@ class RoutineEngine:
             # Gestern = die Nacht die gerade vorbei ist
             # Late-Night-Nudge schreibt das Datum des Tages in dem
             # der User nach Mitternacht noch wach war.
-            today = datetime.now().date().isoformat()
-            yesterday = (datetime.now().date() - timedelta(days=1)).isoformat()
+            today = datetime.now(tz=_TZ).date().isoformat()
+            yesterday = (datetime.now(tz=_TZ).date() - timedelta(days=1)).isoformat()
 
             # Prüfen ob heute (nach Mitternacht) oder gestern als Late-Night vermerkt
             key = "mha:wellness:latenight_dates"
@@ -672,7 +667,7 @@ class RoutineEngine:
 
             # Konsekutive Nächte zaehlen
             consecutive = 0
-            check_date = datetime.now().date()
+            check_date = datetime.now(tz=_TZ).date()
             for _ in range(7):
                 is_member = await self.redis.sismember(key, check_date.isoformat())
                 if is_member:
@@ -714,7 +709,7 @@ class RoutineEngine:
             wakeup_done = False
             if self.redis:
                 try:
-                    today = datetime.now().strftime("%Y-%m-%d")
+                    today = datetime.now(tz=_TZ).strftime("%Y-%m-%d")
                     done = await self.redis.get("mha:routine:wakeup_done_today")
                     if isinstance(done, bytes):
                         done = done.decode("utf-8", errors="ignore")
@@ -768,7 +763,7 @@ class RoutineEngine:
             return False
 
         # Zeitfenster prüfen
-        now = datetime.now()
+        now = datetime.now(tz=_TZ)
         start_h = ws_cfg.get("window_start_hour", 5)
         end_h = ws_cfg.get("window_end_hour", 9)
         if not (start_h <= now.hour < end_h):
@@ -811,7 +806,7 @@ class RoutineEngine:
         # Flag setzen
         if self.redis:
             try:
-                today = datetime.now().strftime("%Y-%m-%d")
+                today = datetime.now(tz=_TZ).strftime("%Y-%m-%d")
                 await self.redis.setex("mha:routine:wakeup_done_today", 86400, today)
             except Exception:
                 pass
@@ -939,7 +934,7 @@ class RoutineEngine:
 
         # Timestamp speichern
         if self.redis:
-            await self.redis.setex(KEY_LAST_GOODNIGHT, 86400, datetime.now().isoformat())
+            await self.redis.setex(KEY_LAST_GOODNIGHT, 86400, datetime.now(tz=_TZ).isoformat())
 
         logger.info(
             "Gute-Nacht: %d Aktionen, %d Issues",
@@ -1363,7 +1358,7 @@ class RoutineEngine:
         """Loggt ein Event während der Abwesenheit."""
         if not self.redis:
             return
-        now = datetime.now().isoformat()
+        now = datetime.now(tz=_TZ).isoformat()
         entry = f"{now}|{event_type}|{description}"
         await self.redis.rpush(KEY_ABSENCE_LOG, entry)
         await self.redis.expire(KEY_ABSENCE_LOG, 30 * 86400)
@@ -1500,7 +1495,7 @@ class RoutineEngine:
                 night_off = int(sim_cfg.get("night_hour", 23))
                 variation_minutes = int(sim_cfg.get("variation_minutes", 30))
 
-                now = datetime.now()
+                now = datetime.now(tz=_TZ)
                 hour = now.hour
 
                 # Morgens: NUR Licht an (Cover macht proactive.py)

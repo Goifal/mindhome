@@ -1470,6 +1470,8 @@ class ProactiveManager:
             description = self.event_handlers.get(event_type, (MEDIUM, event_type))[1]
             # F-033: Lock für shared batch_queue
             async with self._state_lock:
+                if len(self._batch_queue) >= 1000:
+                    self._batch_queue = self._batch_queue[-500:]
                 self._batch_queue.append({
                     "event_type": event_type,
                     "urgency": urgency,
@@ -1776,9 +1778,13 @@ class ProactiveManager:
 
             for key in keys:
                 raw = await self.brain.memory.redis.get(key)
-                if not raw:
+                if raw is None:
                     continue
-                briefing_data = json.loads(raw)
+                try:
+                    briefing_data = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    logger.debug("Ungültiges JSON in Key %s, überspringe", key)
+                    continue
                 events = briefing_data.get("events", [])
                 # Max Events pro Abwesenheit (konfigurierbar)
                 if len(events) < max_events:

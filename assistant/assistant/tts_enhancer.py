@@ -406,6 +406,7 @@ class TTSEnhancer:
             text = seg.get("text", "")
             if not text:
                 continue
+            text = xml_escape(text)
 
             # Pause vor dem Segment (Delay)
             pause_before = seg.get("pause_before_ms", 0)

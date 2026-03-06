@@ -2390,7 +2390,8 @@ class PersonalityEngine:
                 "  Tony sagt 'Was haeltst du davon?' und JARVIS antwortet mit einer ECHTEN Meinung.\n\n"
             )
 
-        prompt = SYSTEM_PROMPT_TEMPLATE.format(
+        import collections
+        format_kwargs = dict(
             assistant_name=self.assistant_name,
             user_name=settings.user_name,
             title=get_person_title(current_person_name),
@@ -2410,6 +2411,9 @@ class PersonalityEngine:
             conversation_callback_section=conversation_callback_section,
             weather_awareness_section=weather_awareness_section,
             conversation_mode_section=conversation_mode_section,
+        )
+        prompt = SYSTEM_PROMPT_TEMPLATE.format_map(
+            collections.defaultdict(str, format_kwargs)
         )
 
         # Kontext anhaengen

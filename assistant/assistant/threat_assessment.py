@@ -434,10 +434,10 @@ class ThreatAssessment:
             details.append(f"{open_doors} Tür(en) offen")
         if open_windows > 0:
             score -= open_windows * 5
+            details.append(f"{open_windows} Fenster offen")
         if open_gates > 0:
             score -= open_gates * 10
             details.append(f"{open_gates} Tor(e) offen")
-            details.append(f"{open_windows} Fenster offen")
 
         # Schlösser prüfen
         unlocked = 0
