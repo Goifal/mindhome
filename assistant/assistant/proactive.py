@@ -1370,11 +1370,12 @@ class ProactiveManager:
             le = getattr(self.brain, "light_engine", None)
             if not le:
                 return
+            from .config import get_room_bed_sensors
             profiles = get_room_profiles()
             rooms = profiles.get("rooms", {})
             room = None
             for room_name, room_cfg in rooms.items():
-                if room_cfg.get("bed_sensor") == entity_id:
+                if entity_id in get_room_bed_sensors(room_cfg):
                     room = room_name
                     break
             if not room:
@@ -3339,20 +3340,23 @@ class ProactiveManager:
                         break
 
             # Feature 13: Bettsensor — Schlafzimmer nicht oeffnen wenn Bett belegt
-            # Zuerst per-cover bed_sensor, dann Fallback auf Raum-bed_sensor
-            bed_sensor = cover.get("bed_sensor", "")
-            if not bed_sensor:
+            # Zuerst per-cover bed_sensor, dann Fallback auf Raum-bed_sensors
+            _bed_sensors = []
+            _cover_bs = cover.get("bed_sensor", "")
+            if _cover_bs:
+                _bed_sensors = [_cover_bs]
+            else:
                 cover_room = cover.get("room", "")
                 if cover_room:
                     _rp = _get_room_profiles_cached()
                     _room_cfg = (_rp.get("rooms") or {}).get(cover_room, {})
-                    bed_sensor = _room_cfg.get("bed_sensor", "")
+                    from .config import get_room_bed_sensors
+                    _bed_sensors = get_room_bed_sensors(_room_cfg)
             bed_occupied = False
-            if bed_sensor:
-                for s in (states or []):
-                    if s.get("entity_id") == bed_sensor and s.get("state") == "on":
-                        bed_occupied = True
-                        break
+            for s in (states or []):
+                if s.get("entity_id") in _bed_sensors and s.get("state") == "on":
+                    bed_occupied = True
+                    break
 
             if sun_hitting and not is_cloudy:
                 # Feature 11: Lux-basiert — hohe Helligkeit = extra Sonnenschutz-Anlass
@@ -3593,20 +3597,24 @@ class ProactiveManager:
                     if self.brain.executor._is_markise(eid, s):
                         continue
                     # Feature 13: Bettsensor — Schlafzimmer-Cover nicht oeffnen wenn besetzt
-                    # Zuerst per-cover bed_sensor, dann Fallback auf Raum-bed_sensor
+                    # Zuerst per-cover bed_sensor, dann Fallback auf Raum-bed_sensors
                     skip = False
                     if cover_profiles:
                         for cp in cover_profiles:
                             if cp.get("entity_id") == eid:
-                                _bs = cp.get("bed_sensor", "")
-                                if not _bs and cp.get("room"):
+                                _bs_list = []
+                                _cp_bs = cp.get("bed_sensor", "")
+                                if _cp_bs:
+                                    _bs_list = [_cp_bs]
+                                elif cp.get("room"):
                                     _rp2 = _get_room_profiles_cached()
-                                    _bs = (_rp2.get("rooms") or {}).get(cp["room"], {}).get("bed_sensor", "")
-                                if _bs:
-                                    for bs in (states or []):
-                                        if bs.get("entity_id") == _bs and bs.get("state") == "on":
-                                            skip = True
-                                            break
+                                    _rc = (_rp2.get("rooms") or {}).get(cp["room"], {})
+                                    from .config import get_room_bed_sensors
+                                    _bs_list = get_room_bed_sensors(_rc)
+                                for bs in (states or []):
+                                    if bs.get("entity_id") in _bs_list and bs.get("state") == "on":
+                                        skip = True
+                                        break
                     if skip:
                         continue
                     # Azimut für Sortierung
