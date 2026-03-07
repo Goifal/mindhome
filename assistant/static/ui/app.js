@@ -721,10 +721,11 @@ async function loadDashboard() {
     const comps=d.components||{};
     let ch='';
     for(const [n,s] of Object.entries(comps)) {
-      const ss=String(s);const ok=ss==='connected'||ss.includes('active')||ss.includes('running');
+      const ss=(typeof s==='object'&&s!==null)?((s.enabled?'active':'disabled')+' ('+Object.entries(s).filter(([k])=>k!=='enabled').map(([k,v])=>k+': '+v).join(', ')+')'):String(s);
+      const ok=ss==='connected'||ss.includes('active')||ss.includes('running');
       ch+=`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
         <span style="font-size:12px;">${esc(n)}</span>
-        <span style="font-size:11px;color:${ok?'var(--success)':'var(--danger)'};font-family:var(--mono);">${esc(s)}</span></div>`;
+        <span style="font-size:11px;color:${ok?'var(--success)':'var(--danger)'};font-family:var(--mono);">${esc(ss)}</span></div>`;
     }
     document.getElementById('compList').innerHTML=ch;
     const mood=d.mood||{};
