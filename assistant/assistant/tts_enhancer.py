@@ -249,42 +249,55 @@ class TTSEnhancer:
 
         Priorität: Notfall > Flüstermodus > Aktivität > Tageszeit
         """
-        # Live aus Config lesen (nicht self.* — die werden nur beim Start gesetzt)
-        vol_cfg = yaml_config.get("volume", {})
-        vol_day = float(vol_cfg.get("day", 0.8))
-        vol_evening = float(vol_cfg.get("evening", 0.5))
-        vol_night = float(vol_cfg.get("night", 0.3))
-        vol_sleeping = float(vol_cfg.get("sleeping", 0.2))
-        vol_emergency = float(vol_cfg.get("emergency", 1.0))
-        vol_whisper = float(vol_cfg.get("whisper", 0.15))
-        evening_start = int(vol_cfg.get("evening_start", 22))
-        night_start = int(vol_cfg.get("night_start", 0))
-        morning_start = int(vol_cfg.get("morning_start", 7))
+        try:
+            # Live aus Config lesen (nicht self.* — die werden nur beim Start gesetzt)
+            vol_cfg = yaml_config.get("volume", {})
 
-        # Notfall immer laut
-        if urgency == "critical":
-            return vol_emergency
+            def _f(key, default):
+                try: return float(vol_cfg.get(key, default))
+                except (ValueError, TypeError): return default
 
-        # Flüstermodus (manuell oder Auto-Nacht)
-        if self._whisper_mode or self._is_auto_night_whisper():
-            return vol_whisper
+            def _i(key, default):
+                try: return int(vol_cfg.get(key, default))
+                except (ValueError, TypeError): return default
 
-        # Aktivitätsbasiert
-        if activity == "sleeping":
-            return vol_sleeping
+            vol_day = _f("day", 0.8)
+            vol_evening = _f("evening", 0.5)
+            vol_night = _f("night", 0.3)
+            vol_sleeping = _f("sleeping", 0.2)
+            vol_emergency = _f("emergency", 1.0)
+            vol_whisper = _f("whisper", 0.15)
+            evening_start = _i("evening_start", 22)
+            night_start = _i("night_start", 0)
+            morning_start = _i("morning_start", 7)
 
-        # Tageszeit-basiert
-        hour = datetime.now().hour
-        if night_start > morning_start:
-            # Über Mitternacht: z.B. 22-6
-            if hour >= night_start or hour < morning_start:
+            # Notfall immer laut
+            if urgency == "critical":
+                return vol_emergency
+
+            # Flüstermodus (manuell oder Auto-Nacht)
+            if self._whisper_mode or self._is_auto_night_whisper():
+                return vol_whisper
+
+            # Aktivitätsbasiert
+            if activity == "sleeping":
+                return vol_sleeping
+
+            # Tageszeit-basiert
+            hour = datetime.now().hour
+            if night_start > morning_start:
+                # Über Mitternacht: z.B. 22-6
+                if hour >= night_start or hour < morning_start:
+                    return vol_night
+            elif night_start <= hour < morning_start:
                 return vol_night
-        elif night_start <= hour < morning_start:
-            return vol_night
-        elif hour >= evening_start:
-            return vol_evening
+            elif hour >= evening_start:
+                return vol_evening
 
-        return vol_day
+            return vol_day
+        except Exception as e:
+            logger.warning("get_volume Fehler, Fallback 0.8: %s", e)
+            return 0.8
 
     def check_whisper_command(self, text: str) -> Optional[str]:
         """
@@ -320,17 +333,19 @@ class TTSEnhancer:
 
     def _is_auto_night_whisper(self) -> bool:
         """Prüft ob Auto-Nacht-Whisper aktiv sein sollte."""
-        tts_cfg = yaml_config.get("tts", {})
-        vol_cfg = yaml_config.get("volume", {})
-        if not tts_cfg.get("auto_night_whisper", False):
+        try:
+            tts_cfg = yaml_config.get("tts", {})
+            vol_cfg = yaml_config.get("volume", {})
+            if not tts_cfg.get("auto_night_whisper", False):
+                return False
+            hour = datetime.now().hour
+            start = int(vol_cfg.get("auto_whisper_start", 23))
+            end = int(vol_cfg.get("auto_whisper_end", 6))
+            if start > end:
+                return hour >= start or hour < end
+            return start <= hour < end
+        except Exception:
             return False
-        hour = datetime.now().hour
-        start = int(vol_cfg.get("auto_whisper_start", 23))
-        end = int(vol_cfg.get("auto_whisper_end", 6))
-        if start > end:
-            # Über Mitternacht: z.B. 23-6
-            return hour >= start or hour < end
-        return start <= hour < end
 
     def _generate_ssml(self, text: str, message_type: str, speed: int,
                         pitch: str = "0%") -> str:

@@ -521,28 +521,8 @@ class SoundManager:
             logger.warning("Kein Speaker fuer Sprachausgabe gefunden (room=%s)", room)
             return False
 
-        # T-1: Volume aus tts_data oder Tageszeit-Fallback (nicht hartkodiert 0.8)
-        volume = tts_data.get("volume")
-        if volume is None:
-            # Fallback: Tageszeit-basierte Volume aus Config
-            vol_cfg = yaml_config.get("volume", {})
-            hour = __import__("datetime").datetime.now().hour
-            evening_start = int(vol_cfg.get("evening_start", 22))
-            night_start = int(vol_cfg.get("night_start", 0))
-            morning_start = int(vol_cfg.get("morning_start", 7))
-            if night_start > morning_start:
-                if hour >= night_start or hour < morning_start:
-                    volume = float(vol_cfg.get("night", 0.3))
-                elif hour >= evening_start:
-                    volume = float(vol_cfg.get("evening", 0.5))
-                else:
-                    volume = float(vol_cfg.get("day", 0.8))
-            elif night_start <= hour < morning_start:
-                volume = float(vol_cfg.get("night", 0.3))
-            elif hour >= evening_start:
-                volume = float(vol_cfg.get("evening", 0.5))
-            else:
-                volume = float(vol_cfg.get("day", 0.8))
+        # T-1: Volume aus tts_data, Default 0.8 als Fallback
+        volume = tts_data.get("volume") or 0.8
         # Wetter-adaptiv: Bei Regen/Sturm lauter
         weather_cond = await self._get_current_weather_condition()
         if weather_cond:
