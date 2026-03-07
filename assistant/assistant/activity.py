@@ -563,7 +563,11 @@ class ActivityEngine:
             if inactive_states is not None and s in inactive_states:
                 continue
             friendly = (state.get("attributes", {}).get("friendly_name") or "")
-            if pattern.search(entity_id) or pattern.search(friendly):
+            # Entity-Name normalisieren: _ durch Leerzeichen ersetzen,
+            # damit \b Word-Boundaries korrekt matchen (da _ ein Word-Char ist).
+            name_part = entity_id.split(".", 1)[1] if "." in entity_id else entity_id
+            normalized_name = name_part.replace("_", " ")
+            if pattern.search(normalized_name) or pattern.search(friendly):
                 logger.info(
                     "%s auto-discovered: %s (state=%s, friendly=%s)",
                     label, entity_id, s, friendly,
