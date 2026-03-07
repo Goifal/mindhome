@@ -336,6 +336,27 @@ def get_room_profiles() -> dict:
     return _room_profiles_cache
 
 
+def get_room_bed_sensors(room_cfg: dict) -> list[str]:
+    """Gibt alle Bettsensor-Entity-IDs fuer einen Raum zurueck.
+
+    Unterstuetzt beide Formate:
+      - Neu: bed_sensors = [{"sensor": "binary_sensor.x", "person": "Max"}, ...]
+      - Alt: bed_sensor = "binary_sensor.x"
+    """
+    result = []
+    # Neues Format: Liste von Objekten
+    for entry in (room_cfg.get("bed_sensors") or []):
+        s = entry.get("sensor", "") if isinstance(entry, dict) else str(entry)
+        if s and s not in result:
+            result.append(s)
+    # Alt-Fallback: einzelner String
+    if not result:
+        bs = room_cfg.get("bed_sensor", "")
+        if bs:
+            result.append(bs)
+    return result
+
+
 def get_all_bed_sensors() -> list[str]:
     """Sammelt alle Bettsensoren aus room_profiles.yaml (zentrale Quelle).
 
@@ -345,7 +366,7 @@ def get_all_bed_sensors() -> list[str]:
     rp = get_room_profiles()
     sensors = []
     for room_name, room_cfg in (rp.get("rooms") or {}).items():
-        bs = room_cfg.get("bed_sensor", "")
-        if bs and bs not in sensors:
-            sensors.append(bs)
+        for s in get_room_bed_sensors(room_cfg):
+            if s not in sensors:
+                sensors.append(s)
     return sensors
