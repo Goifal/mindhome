@@ -244,32 +244,47 @@ class TTSEnhancer:
         """
         Bestimmt die optimale Lautstärke.
 
+        Liest Volume-Werte LIVE aus yaml_config (nicht gecacht),
+        damit UI-Aenderungen sofort wirken.
+
         Priorität: Notfall > Flüstermodus > Aktivität > Tageszeit
         """
+        # Live aus Config lesen (nicht self.* — die werden nur beim Start gesetzt)
+        vol_cfg = yaml_config.get("volume", {})
+        vol_day = float(vol_cfg.get("day", 0.8))
+        vol_evening = float(vol_cfg.get("evening", 0.5))
+        vol_night = float(vol_cfg.get("night", 0.3))
+        vol_sleeping = float(vol_cfg.get("sleeping", 0.2))
+        vol_emergency = float(vol_cfg.get("emergency", 1.0))
+        vol_whisper = float(vol_cfg.get("whisper", 0.15))
+        evening_start = int(vol_cfg.get("evening_start", 22))
+        night_start = int(vol_cfg.get("night_start", 0))
+        morning_start = int(vol_cfg.get("morning_start", 7))
+
         # Notfall immer laut
         if urgency == "critical":
-            return self.vol_emergency
+            return vol_emergency
 
         # Flüstermodus (manuell oder Auto-Nacht)
         if self._whisper_mode or self._is_auto_night_whisper():
-            return self.vol_whisper
+            return vol_whisper
 
         # Aktivitätsbasiert
         if activity == "sleeping":
-            return self.vol_sleeping
+            return vol_sleeping
 
         # Tageszeit-basiert
         hour = datetime.now().hour
-        if self.night_start > self.morning_start:
+        if night_start > morning_start:
             # Über Mitternacht: z.B. 22-6
-            if hour >= self.night_start or hour < self.morning_start:
-                return self.vol_night
-        elif self.night_start <= hour < self.morning_start:
-            return self.vol_night
-        elif hour >= self.evening_start:
-            return self.vol_evening
+            if hour >= night_start or hour < morning_start:
+                return vol_night
+        elif night_start <= hour < morning_start:
+            return vol_night
+        elif hour >= evening_start:
+            return vol_evening
 
-        return self.vol_day
+        return vol_day
 
     def check_whisper_command(self, text: str) -> Optional[str]:
         """
@@ -305,13 +320,17 @@ class TTSEnhancer:
 
     def _is_auto_night_whisper(self) -> bool:
         """Prüft ob Auto-Nacht-Whisper aktiv sein sollte."""
-        if not self.auto_night_whisper:
+        tts_cfg = yaml_config.get("tts", {})
+        vol_cfg = yaml_config.get("volume", {})
+        if not tts_cfg.get("auto_night_whisper", True):
             return False
         hour = datetime.now().hour
-        if self.auto_whisper_start > self.auto_whisper_end:
+        start = int(vol_cfg.get("auto_whisper_start", 23))
+        end = int(vol_cfg.get("auto_whisper_end", 6))
+        if start > end:
             # Über Mitternacht: z.B. 23-6
-            return hour >= self.auto_whisper_start or hour < self.auto_whisper_end
-        return self.auto_whisper_start <= hour < self.auto_whisper_end
+            return hour >= start or hour < end
+        return start <= hour < end
 
     def _generate_ssml(self, text: str, message_type: str, speed: int,
                         pitch: str = "0%") -> str:
