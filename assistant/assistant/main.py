@@ -2790,7 +2790,7 @@ def _validate_settings_values(settings: dict) -> list[str]:
             continue
         val = obj.get(path_keys[-1])
         path_str = ".".join(path_keys)
-        if val is not None:
+        if val is not None and val != "":
             try:
                 num = float(val)
                 if num < min_val or num > max_val:

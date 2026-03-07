@@ -1150,7 +1150,7 @@ const HELP_TEXTS = {
   'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster fuer das Deep-Modell (komplexe Aufgaben).', detail:'MoE-Modelle (z.B. Qwen3.5-27B) sind VRAM-effizient und vertragen 8192+.'},
   'ollama.keep_alive': {title:'Keep-Alive', text:'Wie lange das Modell nach dem letzten Request im VRAM bleibt.', detail:'Laenger = schnellere Antworten (kein Nachladen), aber mehr Strom im Idle. "5m" = 5 Minuten, "-1" = nie entladen, "0" = sofort entladen. Bei aktiver Nutzung empfohlen: "5m" oder laenger.'},
   'ollama.flash_attn': {title:'Flash Attention', text:'Beschleunigt die Inferenz bei neueren GPUs (RTX 30xx+).', detail:'Flash Attention reduziert VRAM-Verbrauch und beschleunigt die Token-Generierung. Erfordert CUDA-faehige GPU. Bei Problemen deaktivieren.'},
-  'ollama.num_gpu': {title:'GPU-Layer', text:'Wie viele Modell-Layer auf die GPU geladen werden.', detail:'99 = Maximum (alles auf GPU, schnellste Inferenz). Niedrigere Werte lagern Teile in RAM aus (langsamer, aber spart VRAM). 0 = nur CPU.'},
+  'ollama.num_gpu': {title:'GPU-Layer', text:'Wie viele Modell-Layer auf die GPU geladen werden.', detail:'Automatisch = Ollama berechnet anhand des freien VRAMs wie viele Layer passen (beste Option fuer grosse Modelle). 99 = alles auf GPU erzwingen (kann bei grossen Modellen fehlschlagen). 0 = nur CPU.'},
   'proactive.departure_shopping_reminder': {title:'Einkaufslisten-Erinnerung', text:'Beim Verlassen des Hauses erwaehnt Jarvis offene Einkaufslisten-Eintraege.', detail:'Nutzt die Home Assistant Shopping List. Jarvis sagt z.B. "Uebrigens, Milch und Brot stehen noch auf der Liste."'},
   'smart_shopping.enabled': {title:'Smart Shopping', text:'Intelligente Einkaufsliste mit Verbrauchsprognose.', detail:'Lernt aus abgehakten Einkaufslisteneintraegen wie oft du Artikel kaufst. Erinnert proaktiv wenn etwas bald aufgebraucht sein muesste. Kann auch Rezept-Zutaten automatisch auf die Liste setzen.'},
   'smart_shopping.min_purchases': {title:'Mindest-Kaeufe', text:'Wie viele Kaeufe noetig sind bevor eine Prognose erstellt wird.', detail:'Bei 2 braucht es nur 2 Kaeufe fuer eine erste Schaetzung. Hoehere Werte machen die Prognose genauer, brauchen aber laenger.'},
@@ -2822,7 +2822,8 @@ function renderPersonality() {
     ]) +
     fToggle('ollama.flash_attn', 'Flash Attention (RTX 30xx+)') +
     fSelect('ollama.num_gpu', 'GPU-Layer', [
-      {v:'99',l:'Maximum — Alles auf GPU (empfohlen)'},
+      {v:'',l:'Automatisch — Ollama entscheidet (empfohlen)'},
+      {v:'99',l:'Maximum — Alles auf GPU'},
       {v:'35',l:'35 Layer (spart etwas VRAM)'},
       {v:'20',l:'20 Layer (GPU/CPU Mix)'},
       {v:'0',l:'Nur CPU (kein GPU)'}
