@@ -508,11 +508,7 @@ class SoundManager:
         Returns:
             True wenn erfolgreich.
         """
-        logger.info("speak_response aufgerufen: text='%s', room=%s, tts_data_keys=%s",
-                    text[:50] if text else '', room, list((tts_data or {}).keys()))
-        if not self.enabled:
-            logger.warning("speak_response: SoundManager DISABLED")
-            return False
+        # TTS ist IMMER aktiv — sounds.enabled betrifft nur Event-Sounds (Chimes)
 
         tts_data = tts_data or {}
 
