@@ -8913,12 +8913,12 @@ function renderLightRoomAssignment(haLights, container) {
       // ── NEU: Sensor-Zuordnung + Praesenz-Optionen ──
       html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">';
       html += '<div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;">Sensor-Zuordnung &amp; Praesenz</div>';
-      // Bettsensor (nur bei bedroom/schlafzimmer)
+      // Bettsensor: Verweis auf zentrale Konfiguration im Sensoren-Tab
       if (r.type === 'bedroom') {
-        const bedSensor = r.bed_sensor || '';
-        html += '<div class="form-group" style="margin-bottom:4px;"><label style="font-size:10px;">Bettsensor</label>';
-        html += '<input type="text" value="' + esc(bedSensor) + '" placeholder="binary_sensor.bed_occupancy" style="font-size:11px;" onchange="setRoomLightVal(\'' + esc(name) + '\',\'bed_sensor\',this.value)">';
-        html += '</div>';
+        const bedCount = _getBedSensorsForRoom(name).filter(b => b.sensor).length;
+        html += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">' +
+          (bedCount > 0 ? '&#9989; ' + bedCount + ' Bettsensor' + (bedCount > 1 ? 'en' : '') + ' konfiguriert' : '&#9675; Kein Bettsensor') +
+          ' <span style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="showTab(\'tab-sensors\')">(Sensoren-Tab)</span></div>';
       }
       // Lux-Sensor
       const luxSensor = r.lux_sensor || '';
