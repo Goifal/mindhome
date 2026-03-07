@@ -31,6 +31,7 @@ const _searchIndex = [
   // KI-Modelle & Stil (tab-personality)
   {tab:'tab-personality', title:'KI-Modelle & Stil', keywords:'modell llm ollama fast smart deep openai', icon:'&#127917;'},
   {tab:'tab-personality', title:'GPU-Performance', keywords:'flash attention gpu vram keep alive performance speed latenz', icon:'&#9889;'},
+  {tab:'tab-personality', title:'Latenz-Optimierung', keywords:'latenz optimierung think modus upgrade deep smart refinement cache fast path geschwindigkeit', icon:'&#9889;'},
   // Jarvis-Features (tab-jarvis)
   {tab:'tab-jarvis', title:'Progressive Antworten', keywords:'denkt laut zwischen-meldungen verarbeitung', icon:'&#128172;'},
   {tab:'tab-jarvis', title:'MCU-Intelligenz', keywords:'proaktiv mitdenken ingenieur diagnose anomalie kreuz-referenz implizit', icon:'&#129504;'},
@@ -38,6 +39,7 @@ const _searchIndex = [
   {tab:'tab-jarvis', title:'Echte Empathie', keywords:'empathie emotion verstaendnis stimmung mitfuehlen', icon:'&#129505;'},
   {tab:'tab-jarvis', title:'Charakter-Schutz', keywords:'character lock filter retry llm rolle floskeln', icon:'&#128274;'},
   {tab:'tab-jarvis', title:'Geraete-Persoenlichkeit', keywords:'spitznamen device narration waschmaschine saugroboter', icon:'&#128374;'},
+  {tab:'tab-jarvis', title:'Geraete-Fertig-Erkennung', keywords:'waschmaschine trockner geschirrspueler fertig watt power idle strom verbrauch', icon:'&#9889;'},
   {tab:'tab-jarvis', title:'Daten-basierter Widerspruch', keywords:'pushback warnung fenster offen heizung eskalation', icon:'&#9888;'},
   {tab:'tab-jarvis', title:'Smart DJ', keywords:'musik genre stimmung kontextbewusst playlist', icon:'&#127925;'},
   {tab:'tab-jarvis', title:'Remember When — Erinnerungen', keywords:'erinnerungen memorable interactions langzeitgedaechtnis', icon:'&#128218;'},
@@ -142,6 +144,7 @@ const _searchIndex = [
   {tab:'tab-security', title:'API Key', keywords:'api key netzwerk schutz addon integration', icon:'&#128273;'},
   {tab:'tab-security', title:'Vertrauensstufen', keywords:'trust gast mitbewohner besitzer rechte erlaubt', icon:'&#128272;'},
   {tab:'tab-security', title:'Besucher-Management', keywords:'besucher klingel kamera tuer gast entriegelung', icon:'&#128682;'},
+  {tab:'tab-security', title:'Netzwerk-Geraete', keywords:'netzwerk geraet device tracker bekannt unbekannt warnung wlan wifi', icon:'&#128225;'},
   {tab:'tab-security', title:'Kameras & Vision', keywords:'kamera vision llava ocr bild snapshot tuerklingel sicherheit objekterkennung', icon:'&#128247;'},
   {tab:'tab-security', title:'Notfall-Protokolle', keywords:'notfall feuer rauch einbruch wasser sirene', icon:'&#127752;'},
   {tab:'tab-security', title:'Interrupt-Queue', keywords:'interrupt critical notfall unterbrechung tts', icon:'&#9889;'},
@@ -1080,10 +1083,10 @@ function renderCurrentTab() {
       case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); loadCoverActionLog(); loadPowerCloseRules(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-remote': c.innerHTML = renderRemote(); break;
-      case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadEmergencyProtocols(); break;
+      case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadEmergencyProtocols(); loadKnownDevices(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); loadAutomations(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
-      case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); break;
+      case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); renderApplianceDevices(); break;
       case 'tab-intelligence': c.innerHTML = renderIntelligence(); break;
       case 'tab-declarative-tools': c.innerHTML = renderDeclarativeTools(); loadDeclarativeTools(); _renderDeclSuggestions(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
@@ -2430,6 +2433,145 @@ function removeModelProfile(name) {
   scheduleAutoSave();
 }
 
+// ---- Appliance Monitor: Dynamic device list ----
+function renderApplianceDevices() {
+  const c = document.getElementById('applianceDevicesContainer');
+  if (!c) return;
+  const devices = getPath(S, 'appliance_monitor.devices') || [];
+  if (!devices.length) {
+    c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Geraete konfiguriert. Klicke "+ Geraet hinzufuegen".</div>';
+    return;
+  }
+  c.innerHTML = devices.map((dev, i) => {
+    const patterns = (dev.patterns || []).map(p =>
+      `<span class="kw-tag">${esc(p)}<span class="kw-rm" onclick="rmAppliancePattern(${i},this)">&#10005;</span></span>`
+    ).join('');
+    return `<div class="appliance-card" style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-weight:600;font-size:13px;">${esc(dev.label || dev.key)}</span>
+        <button class="btn btn-sm" style="color:var(--danger);font-size:11px;padding:2px 8px;" onclick="removeApplianceDevice(${i})">Entfernen</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Key: ${esc(dev.key)} &middot; Event: ${esc(dev.key)}_done</div>
+      <div style="margin-bottom:6px;">
+        <label style="font-size:12px;font-weight:500;">Entity-Muster</label>
+        <div class="kw-editor" data-path="appliance_monitor.devices.${i}.patterns" onclick="this.querySelector('input').focus()">
+          ${patterns}<input class="kw-input" placeholder="+ Muster..." onkeydown="addKw(event,this,'appliance_monitor.devices.${i}.patterns')">
+        </div>
+      </div>
+      <div style="margin-top:6px;">
+        <label style="font-size:12px;font-weight:500;">Oder Entity direkt auswaehlen</label>
+        <button class="btn btn-sm btn-secondary" onclick="pickEntityForAppliance(${i})" style="font-size:11px;margin-top:4px;">Entity aus HA waehlen...</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function addApplianceDevice() {
+  const key = prompt('Geraete-Key (z.B. "oven", "robot_vacuum", "coffee_machine"):');
+  if (!key || !key.trim()) return;
+  const cleanKey = key.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  const label = prompt('Anzeigename (z.B. "Backofen", "Saugroboter", "Kaffeemaschine"):', cleanKey);
+  if (!label) return;
+  const devices = getPath(S, 'appliance_monitor.devices') || [];
+  if (devices.some(d => d.key === cleanKey)) { toast('Geraet "' + cleanKey + '" existiert bereits.', 'error'); return; }
+  devices.push({key: cleanKey, label: label.trim(), patterns: [cleanKey]});
+  setPath(S, 'appliance_monitor.devices', devices);
+  renderApplianceDevices();
+  markDirty();
+}
+
+function removeApplianceDevice(idx) {
+  const devices = getPath(S, 'appliance_monitor.devices') || [];
+  const dev = devices[idx];
+  if (!confirm('Geraet "' + (dev.label || dev.key) + '" entfernen?')) return;
+  devices.splice(idx, 1);
+  setPath(S, 'appliance_monitor.devices', devices);
+  renderApplianceDevices();
+  markDirty();
+}
+
+function rmAppliancePattern(devIdx, el) {
+  const devices = getPath(S, 'appliance_monitor.devices') || [];
+  const tag = el.closest('.kw-tag');
+  const pattern = tag.textContent.replace('✕', '').trim();
+  const patterns = devices[devIdx].patterns || [];
+  const pi = patterns.indexOf(pattern);
+  if (pi >= 0) patterns.splice(pi, 1);
+  devices[devIdx].patterns = patterns;
+  setPath(S, 'appliance_monitor.devices', devices);
+  renderApplianceDevices();
+  markDirty();
+}
+
+async function pickEntityForAppliance(devIdx) {
+  const entities = await _loadPickerEntities();
+  const sensors = entities.filter(e => e.entity_id.startsWith('sensor.') &&
+    (e.entity_id.includes('power') || e.entity_id.includes('energy') || e.entity_id.includes('watt') ||
+     e.entity_id.includes('leistung') || e.entity_id.includes('verbrauch') ||
+     (e.attributes && e.attributes.unit_of_measurement === 'W')));
+  if (!sensors.length) { toast('Keine Power-Sensoren gefunden.', 'error'); return; }
+
+  // Erstelle Popup-Dialog
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius-md);padding:16px;max-width:500px;width:90%;max-height:70vh;display:flex;flex-direction:column;';
+  dialog.innerHTML = `
+    <div style="font-weight:600;font-size:14px;margin-bottom:8px;">Power-Sensor auswaehlen</div>
+    <input type="text" id="applianceEntitySearch" placeholder="Suchen..." style="margin-bottom:8px;padding:6px 10px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);" oninput="filterApplianceEntities()">
+    <div id="applianceEntityList" style="overflow-y:auto;flex:1;max-height:50vh;"></div>
+    <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()" style="margin-top:8px;">Abbrechen</button>
+  `;
+  overlay.appendChild(dialog);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+
+  window._appliancePickSensors = sensors;
+  window._appliancePickDevIdx = devIdx;
+  window._appliancePickOverlay = overlay;
+  filterApplianceEntities();
+  dialog.querySelector('#applianceEntitySearch').focus();
+}
+
+function filterApplianceEntities() {
+  const q = (document.getElementById('applianceEntitySearch')?.value || '').toLowerCase();
+  const sensors = window._appliancePickSensors || [];
+  const filtered = sensors.filter(e => {
+    const name = (e.attributes?.friendly_name || e.entity_id).toLowerCase();
+    return !q || name.includes(q) || e.entity_id.toLowerCase().includes(q);
+  }).slice(0, 50);
+  const list = document.getElementById('applianceEntityList');
+  if (!list) return;
+  list.innerHTML = filtered.map(e => {
+    const name = e.attributes?.friendly_name || e.entity_id;
+    const val = e.state || '';
+    const unit = e.attributes?.unit_of_measurement || '';
+    return `<div onclick="selectApplianceEntity('${esc(e.entity_id)}')" style="padding:8px;cursor:pointer;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;" onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background=''">
+      <div><div style="font-size:13px;font-weight:500;">${esc(name)}</div><div style="font-size:11px;color:var(--text-muted);">${esc(e.entity_id)}</div></div>
+      <span style="font-size:12px;color:var(--text-secondary);">${esc(val)} ${esc(unit)}</span>
+    </div>`;
+  }).join('');
+  if (!filtered.length) list.innerHTML = '<div style="padding:12px;color:var(--text-muted);text-align:center;">Keine Treffer</div>';
+}
+
+function selectApplianceEntity(entityId) {
+  const devIdx = window._appliancePickDevIdx;
+  const devices = getPath(S, 'appliance_monitor.devices') || [];
+  if (!devices[devIdx]) return;
+  // Entity-ID-Teile als Pattern extrahieren (ohne "sensor." Prefix)
+  const shortId = entityId.replace(/^sensor\./, '');
+  const patterns = devices[devIdx].patterns || [];
+  if (!patterns.includes(shortId) && !patterns.includes(entityId)) {
+    patterns.push(shortId);
+    devices[devIdx].patterns = patterns;
+    setPath(S, 'appliance_monitor.devices', devices);
+    markDirty();
+  }
+  if (window._appliancePickOverlay) window._appliancePickOverlay.remove();
+  renderApplianceDevices();
+  toast('Entity "' + entityId + '" hinzugefuegt.', 'success');
+}
+
 // ---- Character-Break Stats Loader ----
 async function loadCharBreakStats() {
   const el = document.getElementById('charBreakStatsContent');
@@ -2687,6 +2829,28 @@ function renderPersonality() {
     ])
   ) +
   _renderModelProfiles() +
+  sectionWrap('&#9889;', 'Latenz-Optimierung',
+    fInfo('Steuert wie aggressiv die Antwortzeit optimiert wird. Diese Einstellungen beeinflussen direkt wie schnell Jarvis antwortet — auf Kosten der Antwortqualitaet bei niedrigeren Werten.') +
+    fToggle('latency_optimization.knowledge_fast_path', 'Wissensfragen Fast-Path') +
+    fInfo('Bei reinen Wissensfragen ("Was ist die Hauptstadt von Frankreich?") wird der komplette Subsystem-Gather (Mood, Security, Sensoren etc.) uebersprungen und direkt das LLM gefragt. Spart ~500-2000ms pro Wissensfrage. Deaktivieren wenn Wissensfragen auch Haus-Kontext beruecksichtigen sollen.') +
+    fSelect('latency_optimization.think_control', 'Think-Modus Steuerung', [
+      {v:'auto',l:'Auto — Thinking nur bei Gespraech + Reasoning (empfohlen)'},
+      {v:'always_off',l:'Immer aus — Schnellste Antworten, weniger Qualitaet'},
+      {v:'always_on',l:'Immer an — Beste Qualitaet, langsamere Antworten'}
+    ]) +
+    fInfo('Qwen3.5 hat einen internen "Denk-Modus" der 200-2000 extra Tokens generiert bevor die Antwort kommt (2-10s). "Auto" deaktiviert das fuer einfache Befehle (Licht an, Temperatur?) und aktiviert es nur bei Reasoning. "Immer aus" spart maximal Zeit, kann aber bei komplexen Fragen schlechtere Antworten geben.') +
+    fRange('latency_optimization.upgrade_signal_threshold', 'Deep-Upgrade Schwelle', 1, 10, 1, {1:'1 (oft Deep)',3:'3',5:'5 (Standard)',7:'7',10:'10 (selten Deep)'}) +
+    fInfo('Bestimmt ab wie vielen Kontext-Signalen (Problemloesung, What-If, kritische Sicherheit) vom Smart-Modell (9B, schnell) auf das Deep-Modell (27B, langsam) gewechselt wird. Niedrig = oft Deep (3-20s langsamer, bessere Analyse). Hoch = selten Deep (schneller, reicht fuer die meisten Anfragen).') +
+    fRange('latency_optimization.refinement_skip_max_chars', 'Refinement ueberspringen bis (Zeichen)', 0, 500, 10, {0:'Nie (immer Refinement)',80:'80',120:'120 (Standard)',200:'200',300:'300',500:'500 (fast immer skip)'}) +
+    fInfo('Nach einem Tool-Call (z.B. Temperatur abfragen) wird normalerweise ein zweiter LLM-Call gemacht um die Rohdaten in Jarvis-Stil umzuformulieren. Bei kurzen Antworten ist das unnoetig — der Humanizer-Text reicht. Hoehere Werte = mehr Antworten ohne Refinement = schneller, aber weniger Persoenlichkeit.') +
+    fRange('latency_optimization.tools_cache_ttl', 'Tool-Cache Dauer (Sekunden)', 0, 300, 10, {0:'Aus (kein Cache)',30:'30s',60:'60s (Standard)',120:'2 Min',300:'5 Min'}) +
+    fInfo('Die Tool-Definitionen (welche Geraete verfuegbar sind, Parameter etc.) werden bei jedem Request neu gebaut. Mit Cache werden sie wiederverwendet. 60s ist sicher weil der Entity-Katalog alle 5 Minuten aktualisiert wird. 0 = kein Cache (langsamer aber immer aktuell).') +
+    fSelect('latency_optimization.conv_summary_mode', 'Gespraeche kuerzen', [
+      {v:'truncate',l:'Text-Kuerzung — Schnell, kein LLM-Call (empfohlen)'},
+      {v:'llm',l:'LLM-Zusammenfassung — Besser, aber 500-2000ms langsamer'}
+    ]) +
+    fInfo('Wenn der Gespraechsverlauf zu lang wird, muessen aeltere Nachrichten gekuerzt werden. "Text-Kuerzung" schneidet aeltere Nachrichten auf 80 Zeichen ab — sofort und ohne extra LLM-Call. "LLM-Zusammenfassung" generiert eine intelligente Zusammenfassung, braucht aber einen zusaetzlichen LLM-Call (500-2000ms).')
+  ) +
   sectionWrap('&#129504;', 'Action Planner',
     fInfo('Der Action Planner fuehrt komplexe Multi-Step Anfragen aus (z.B. "Mach alles fertig fuer morgen"). Er plant iterativ mit dem Deep-Modell und fuehrt Tool-Calls parallel aus.') +
     fRange('planner.max_iterations', 'Max. Planungsschritte', 3, 15, 1, {3:'3',5:'5',8:'8',10:'10',15:'15'}) +
@@ -3884,7 +4048,9 @@ function renderProactive() {
     fToggle('return_briefing.event_types.doorbell', 'Tuerklingel') +
     fToggle('return_briefing.event_types.person_arrived', 'Person angekommen') +
     fToggle('return_briefing.event_types.person_left', 'Person gegangen') +
-    fToggle('return_briefing.event_types.washer_done', 'Waschmaschine/Trockner fertig') +
+    ((getPath(S,'appliance_monitor.devices')||[]).map(d =>
+      fToggle('return_briefing.event_types.'+d.key+'_done', (d.label||d.key)+' fertig')
+    ).join('') || fToggle('return_briefing.event_types.washer_done', 'Waschmaschine fertig')) +
     fToggle('return_briefing.event_types.weather_warning', 'Wetter-Warnungen') +
     fToggle('return_briefing.event_types.low_battery', 'Batterie niedrig') +
     fToggle('return_briefing.event_types.maintenance_due', 'Wartung faellig') +
@@ -4195,6 +4361,16 @@ function renderJarvisFeatures() {
     fToggle('device_narration.enabled', 'Geraete-Persoenlichkeit aktiv') +
     fTextarea('device_narration.custom_nicknames', 'Eigene Spitznamen', 'JSON: {"waschmaschine": "Frau Waschkraft", "saugroboter": "Robbie"}')
   ) +
+  sectionWrap('&#9889;', 'Geraete-Fertig-Erkennung',
+    fInfo('Jarvis erkennt anhand des Stromverbrauchs wann Geraete fertig sind. Das Geraet muss fuer die eingestellte Wartezeit unter dem Idle-Schwellwert bleiben bevor "fertig" gemeldet wird — das verhindert Fehlalarme bei Zwischenphasen (z.B. zwischen Waschen und Schleudern). Du kannst beliebige Geraete hinzufuegen.') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Schwellwerte</div>' +
+    fRange('appliance_monitor.power_running_threshold', 'Laufend ab (Watt)', 5, 50, 5, {5:'5W',10:'10W',15:'15W',20:'20W',50:'50W'}) +
+    fRange('appliance_monitor.power_idle_threshold', 'Idle unter (Watt)', 1, 20, 1, {1:'1W',2:'2W',3:'3W',5:'5W',10:'10W',20:'20W'}) +
+    fRange('appliance_monitor.idle_confirm_minutes', 'Wartezeit vor Meldung', 1, 15, 1, {1:'1 Min',2:'2',3:'3',5:'5 Min',10:'10',15:'15 Min'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Ueberwachte Geraete</div>' +
+    '<div id="applianceDevicesContainer"></div>' +
+    '<button class="btn btn-sm" onclick="addApplianceDevice()" style="margin-top:8px;">+ Geraet hinzufuegen</button>'
+  ) +
   sectionWrap('&#9888;', 'Daten-basierter Widerspruch',
     fInfo('Vor einer Aktion prueft Jarvis Live-Daten und warnt konkret — z.B. "Heizung auf 25? Das Bad-Fenster ist offen." Aktion wird trotzdem ausgefuehrt, aber die Warnung erwaehnt.') +
     fToggle('pushback.enabled', 'Widerspruch aktiv') +
@@ -4387,6 +4563,15 @@ function renderSecurity() {
     fRange('visitor_management.ring_cooldown_seconds', 'Klingel-Cooldown', 10, 120, 10, {10:'10s',30:'30s',60:'1 Min',120:'2 Min'}) +
     fRange('visitor_management.history_max', 'Max. Besucher-History', 20, 500, 20, {20:'20',50:'50',100:'100',200:'200',500:'500'})
   ) +
+  // --- Netzwerk-Geraete (Bekannte Geraete) ---
+  sectionWrap('&#128225;', 'Netzwerk-Geraete',
+    fInfo('Jarvis warnt bei unbekannten Geraeten im Netzwerk. Hier kannst du Muster definieren die als bekannt gelten (z.B. "ps5", "amazon", "iphone"). Geraete deren Name ein Muster enthaelt werden nie als unbekannt gemeldet.') +
+    fToggle('security.threat_assessment', 'Netzwerk-Ueberwachung aktiv') +
+    fKeywords('security.known_device_patterns', 'Bekannte Geraete-Muster') +
+    '<div class="form-group"><label>Aktuell bekannte Geraete</label>' +
+    '<div id="knownDevicesContainer" style="color:var(--text-muted);font-size:12px;padding:8px;">Lade...</div>' +
+    '<button class="btn btn-sm" onclick="loadKnownDevices()" style="margin-top:4px;">Aktualisieren</button></div>'
+  ) +
   // --- Kameras & Vision ---
   sectionWrap('&#128247;', 'Kameras & Vision',
     fInfo('Kamera-Integration fuer Tuerklingel-Erkennung, Sicherheits-Snapshots und visuelle Analyse. Bilder werden lokal via Vision-LLM analysiert — nichts verlaesst das Netzwerk.') +
@@ -4453,6 +4638,40 @@ const EP_PROTOCOLS = [
     roles: {valve:'Ventile schliessen', heating:'Heizung aus', tts_speaker:'Durchsage-Speaker', light:'Lichter einschalten'} },
 ];
 let _epData = {}; // { fire: {entities: [...], config: {...}}, ... }
+// ---- Netzwerk-Geraete: Bekannte Geraete laden + verwalten ----
+async function loadKnownDevices() {
+  const c = document.getElementById('knownDevicesContainer');
+  if (!c) return;
+  c.innerHTML = '<span style="color:var(--text-muted)">Lade Geraete...</span>';
+  try {
+    const r = await fetch(`/api/ui/known-devices?token=${encodeURIComponent(TOKEN)}`);
+    if (!r.ok) { c.innerHTML = '<span style="color:var(--danger)">Fehler beim Laden</span>'; return; }
+    const data = await r.json();
+    const devices = data.devices || [];
+    if (!devices.length) { c.innerHTML = '<span style="color:var(--text-muted)">Keine bekannten Geraete gespeichert.</span>'; return; }
+    c.innerHTML = devices.map(d => {
+      const name = d.friendly_name || d.entity_id;
+      const state = d.state === 'home' ? '<span style="color:var(--success)">&#9679;</span>' : '<span style="color:var(--text-muted)">&#9679;</span>';
+      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
+        ${state} <span style="flex:1;font-size:12px;">${esc(name)}</span>
+        <span style="font-size:10px;color:var(--text-muted);">${esc(d.entity_id)}</span>
+        <button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--danger);" onclick="removeKnownDevice('${esc(d.entity_id)}')">&#10005;</button>
+      </div>`;
+    }).join('');
+  } catch(e) { c.innerHTML = '<span style="color:var(--danger)">Verbindungsfehler</span>'; }
+}
+
+async function removeKnownDevice(entityId) {
+  if (!confirm('Geraet "' + entityId + '" aus der Liste entfernen? Beim naechsten Auftauchen wird es als unbekannt gemeldet.')) return;
+  try {
+    await fetch(`/api/ui/known-devices?token=${encodeURIComponent(TOKEN)}`, {
+      method: 'DELETE', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({entity_id: entityId})
+    });
+    loadKnownDevices();
+  } catch(e) { alert('Fehler: ' + e.message); }
+}
+
 let _epExpanded = {};
 
 async function loadEmergencyProtocols() {

@@ -324,14 +324,14 @@ class CookingAssistant:
         # Portionen extrahieren (Default: 2)
         portions = self._extract_portions(text)
 
-        # Praeferenzen/Allergien aus Semantic Memory laden
-        preferences = await self._load_preferences(person)
+        # Praeferenzen + Recipe-Store parallel laden (spart ~50-200ms)
+        preferences, stored_recipe = await asyncio.gather(
+            self._load_preferences(person),
+            self._search_recipe_store(dish),
+        )
 
         logger.info("Koch-Session starten: '%s' für %d Portionen (Person: %s)",
                      dish, portions, person)
-
-        # Zuerst im Recipe Store suchen
-        stored_recipe = await self._search_recipe_store(dish)
         if stored_recipe:
             session = await self._parse_stored_recipe(
                 stored_recipe, dish, portions, person, model, preferences,

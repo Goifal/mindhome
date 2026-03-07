@@ -445,6 +445,17 @@ class AssistantBrain(BrainCallbacksMixin):
             "haus", "hausstatus", "haus-status",
         ]
 
+        # Latenz-Optimierung Einstellungen
+        lat_cfg = cfg.yaml_config.get("latency_optimization", {})
+        self._opt_knowledge_fast_path = lat_cfg.get("knowledge_fast_path", True)
+        self._opt_think_control = lat_cfg.get("think_control", "auto")
+        self._opt_upgrade_signal_threshold = int(lat_cfg.get("upgrade_signal_threshold", 5))
+        self._opt_refinement_skip_max_chars = int(lat_cfg.get("refinement_skip_max_chars", 120))
+        self._opt_conv_summary_mode = lat_cfg.get("conv_summary_mode", "truncate")
+        # Tools-Cache TTL wird in function_calling.py gelesen
+        from . import function_calling as _fc
+        _fc._TOOLS_CACHE_TTL = int(lat_cfg.get("tools_cache_ttl", 60))
+
     def reload_configurable_data(self):
         """Hot-Reload aller konfigurierbaren Brain-Daten (nach UI-Aenderung)."""
         self._load_configurable_data()
@@ -1313,7 +1324,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Phase 7: Gaeste-Modus Deaktivierung
         guest_off_triggers = ["gaeste sind weg", "besuch ist weg", "normalbetrieb", "gaeste modus aus"]
-        if any(t in text.lower() for t in guest_off_triggers):
+        _umlaut = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+        if any(t in text.lower().translate(_umlaut) for t in guest_off_triggers):
             if await self.routines.is_guest_mode_active():
                 response_text = self._filter_response(await self.routines.deactivate_guest_mode())
                 self._remember_exchange(text, response_text)
@@ -2203,6 +2215,66 @@ class AssistantBrain(BrainCallbacksMixin):
         profile = self.pre_classifier.classify(text)
         logger.info("Pre-Classification: %s", profile.category)
 
+        # 0b. Intent vorab bestimmen (rein pattern-basiert, kein I/O)
+        intent_type = self._classify_intent(text)
+
+        # ----------------------------------------------------------------
+        # FAST-PATH: Wissensfragen ohne Smart-Home-Bezug brauchen keinen
+        # mega-gather (15+ Subsystem-Queries). Direkt ans LLM mit
+        # minimalem System-Prompt. Spart ~500-2000ms + Smart statt Deep.
+        # ----------------------------------------------------------------
+        if (self._opt_knowledge_fast_path
+                and profile.category == "knowledge"
+                and intent_type == "knowledge"
+                and not profile.need_rag):
+            logger.info("Knowledge Fast-Path: Ueberspringe mega-gather")
+            recent = await self.memory.get_recent_conversations(limit=3)
+            _kfp_system = self.personality.build_minimal_system_prompt()
+            _kfp_messages = [{"role": "system", "content": _kfp_system}]
+            for conv in recent[-3:]:
+                _kfp_messages.append({"role": conv["role"], "content": conv["content"]})
+            _kfp_messages.append({"role": "user", "content": text})
+
+            # Smart fuer einfache Fakten, Deep nur bei komplexen Erklaerungen
+            _knowledge_needs_deep = (
+                len(text.split()) > 15
+                or any(kw in text.lower() for kw in [
+                    "erklaer", "erklär", "warum", "unterschied",
+                    "vergleich", "zusammenhang", "wie funktioniert",
+                ])
+            )
+            _kfp_model = self.model_router._cap_model(
+                self.model_router.model_deep if _knowledge_needs_deep
+                else self.model_router.model_smart
+            )
+            if self._opt_think_control == "always_off":
+                _kfp_think = False
+            elif self._opt_think_control == "always_on":
+                _kfp_think = True
+            else:
+                _kfp_think = True if _knowledge_needs_deep else False
+            logger.info("Knowledge Fast-Path: %s (deep=%s, think=%s)",
+                         _kfp_model, _knowledge_needs_deep, _kfp_think)
+            _cascade = await self._llm_with_cascade(
+                _kfp_messages, _kfp_model,
+                stream_callback=stream_callback,
+                think=_kfp_think,
+            )
+            response_text = self._filter_response(_cascade["text"])
+            model = _cascade["model"]
+            if _cascade["error"]:
+                response_text = "Kann ich gerade nicht beantworten. Mein Modell streikt."
+                if stream_callback:
+                    await stream_callback(response_text)
+            if response_text:
+                self._remember_exchange(text, response_text)
+                tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
+                await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
+                return self._result(
+                    response_text, model=model, room=room,
+                    tts=tts_data, emitted=True,
+                )
+
         # ----------------------------------------------------------------
         # MEGA-PARALLEL GATHER: Context Build, alle Subsysteme, Running Gag,
         # Continuity und What-If laufen gleichzeitig statt nacheinander.
@@ -2278,6 +2350,11 @@ class AssistantBrain(BrainCallbacksMixin):
             _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
             _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
             _mega_tasks.append(("conv_memory", self.conversation_memory.get_memory_context()))
+
+        # Conversation-Mode Detection + Memory-Callback parallelisieren
+        # (bisher sequentiell NACH dem gather — spart ~50-200ms)
+        _mega_tasks.append(("conv_mode_msgs", self.memory.get_recent_conversations(limit=3)))
+        _mega_tasks.append(("memory_callback", self.personality.build_memory_callback_section(person or "")))
 
         _mega_keys, _mega_coros = zip(*_mega_tasks)
 
@@ -2368,9 +2445,11 @@ class AssistantBrain(BrainCallbacksMixin):
         model = self.model_router.select_model(text)
 
         # Kontext-basiertes Upgrade: Nur bei echtem Reasoning-Bedarf upgraden.
-        # Schwellwert 3: Verhindert dass normale Kontext-Signale (learned_patterns,
-        # live_insights) allein das teure Deep-Modell triggern — das fuehrte zu
-        # 60s-Timeouts und Fallback-Kaskade bei knappem VRAM.
+        # Schwellwert 5: Die drei Intelligence-Features (anticipation +1,
+        # learned_patterns +1, live_insights +1) kommen zusammen auf 3 —
+        # das triggerte bei normalen Gespraechen unnoetig das 27B-Modell
+        # (3-20s statt 1-5s). Mit Schwellwert 5 upgraden nur noch echte
+        # Reasoning-Aufgaben (whatif=3+, problem_solving=3+, critical=3+).
         _upgrade_signals = 0
         if problem_solving_ctx:
             _upgrade_signals += 3  # Problemloesung braucht Deep
@@ -2380,10 +2459,12 @@ class AssistantBrain(BrainCallbacksMixin):
             _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
         if live_insights:
             _upgrade_signals += 1  # Aktive Insights = mehr zu verarbeiten
-        if sec_score and sec_score.get("level") in ("warning", "critical"):
-            _upgrade_signals += 3  # Sicherheit = immer Deep
+        if sec_score and sec_score.get("level") == "critical":
+            _upgrade_signals += 3  # Kritische Sicherheit = Deep
+        elif sec_score and sec_score.get("level") == "warning":
+            _upgrade_signals += 1  # Warnung = nur Kontext, kein Upgrade allein
 
-        if _upgrade_signals >= 3 and model != self.model_router.model_deep:
+        if _upgrade_signals >= self._opt_upgrade_signal_threshold and model != self.model_router.model_deep:
             # Error-Mitigation VOR dem Upgrade pruefen: Wenn das Deep-Modell
             # wiederholt timeoutet (z.B. nicht im VRAM, keep_alive=0), NICHT
             # upgraden. Verhindert dass der Prompt fuer 32K gebaut wird und
@@ -2404,14 +2485,13 @@ class AssistantBrain(BrainCallbacksMixin):
                     model = _upgraded
 
         # 3b. Gespraechsmodus erkennen (VOR System-Prompt-Bau, damit Prompt angepasst wird)
-        # Erweitertes Topic-Tracking: Neben dem Timer wird auch das aktuelle
-        # Gespraechsthema erkannt und im System-Prompt bereitgestellt.
+        # Nutzt conv_mode_msgs aus dem mega-gather (statt sequentiellem Redis-Call).
         _conversation_mode = False
         _conversation_topic = ""
         try:
             _conv_cfg = cfg.yaml_config.get("context", {})
             _cm_timeout = int(_conv_cfg.get("conversation_mode_timeout", 300))
-            _cm_msgs = await self.memory.get_recent_conversations(limit=3)
+            _cm_msgs = _safe_get("conv_mode_msgs") or []
             if _cm_msgs:
                 from datetime import datetime as _dt_cm
                 _cm_ts = _cm_msgs[-1].get("timestamp", "")
@@ -2419,26 +2499,16 @@ class AssistantBrain(BrainCallbacksMixin):
                     _cm_age = (_dt_cm.now() - _dt_cm.fromisoformat(_cm_ts)).total_seconds()
                     if _cm_age < _cm_timeout:
                         _conversation_mode = True
-                        # Topic-Continuity: Thema aus Semantic Memory oder Nachrichten
-                        # 1. Versuch: Gespeicherte Topic-Zusammenfassung aus Semantic Memory
-                        try:
-                            if self.memory and self.memory.semantic:
-                                _stored_topics = await self.memory.semantic.search(
-                                    "conversation_topic", limit=1,
-                                )
-                                if _stored_topics:
-                                    _conversation_topic = _stored_topics[0].get("content", "")[:200]
-                        except Exception:
-                            pass
-                        # 2. Fallback: Roh-Text aus letzten Nachrichten
-                        if not _conversation_topic:
-                            _prev_texts = []
-                            for _cm_msg in _cm_msgs[-3:]:
-                                _cm_content = _cm_msg.get("user_text", "") or _cm_msg.get("content", "")
-                                if _cm_content:
-                                    _prev_texts.append(_cm_content[:100])
-                            if _prev_texts:
-                                _conversation_topic = " | ".join(_prev_texts)
+                        # Topic-Continuity: Roh-Text aus letzten Nachrichten
+                        # (Semantic-Memory-Suche entfernt — spart ~50-200ms
+                        # ChromaDB-Query, Roh-Text reicht als Topic-Hint)
+                        _prev_texts = []
+                        for _cm_msg in _cm_msgs[-3:]:
+                            _cm_content = _cm_msg.get("user_text", "") or _cm_msg.get("content", "")
+                            if _cm_content:
+                                _prev_texts.append(_cm_content[:100])
+                        if _prev_texts:
+                            _conversation_topic = " | ".join(_prev_texts)
         except Exception:
             logger.debug("Conversation-Mode fehlgeschlagen", exc_info=True)
         if context is None:
@@ -2485,14 +2555,8 @@ class AssistantBrain(BrainCallbacksMixin):
         # Formality-Score cachen für Refinement-Prompts (Tool-Feedback)
         self._last_formality_score = formality_score if formality_score is not None else self.personality.formality_start
 
-        # Phase 18: Memory-Callback-Section bauen (echte Erinnerungen aus Redis)
-        memory_callback_section = ""
-        try:
-            memory_callback_section = await self.personality.build_memory_callback_section(
-                person or "",
-            )
-        except Exception as _mem_err:
-            logger.debug("Memory-Callback fehlgeschlagen: %s", _mem_err)
+        # Phase 18: Memory-Callback-Section (aus mega-gather, nicht sequentiell)
+        memory_callback_section = _safe_get("memory_callback", "")
 
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
@@ -2897,15 +2961,21 @@ class AssistantBrain(BrainCallbacksMixin):
             # Budget pruefen: Passen alle rein?
             total_est = sum(_estimate_tokens(c.get("content", "")) for c in recent)
             if total_est > available_tokens:
-                # Aeltere Haelfte zusammenfassen, neuere 1:1 behalten
                 split = len(recent) // 2
                 older = recent[:split]
                 recent = recent[split:]
-                try:
+                if self._opt_conv_summary_mode == "llm":
+                    # LLM-basierte Zusammenfassung (genauer, aber +500-2000ms)
                     summary = await self._summarize_conversation_chunk(older)
-                except Exception as _sum_err:
-                    logger.warning("Gespraechs-Zusammenfassung fehlgeschlagen: %s", _sum_err)
-                    summary = None
+                else:
+                    # Text-Kuerzung ohne LLM-Call (Standard, spart 500-2000ms)
+                    summary_parts = []
+                    for m in older:
+                        role = "User" if m.get("role") == "user" else "Jarvis"
+                        content = (m.get("content") or "")[:80]
+                        if content:
+                            summary_parts.append(f"{role}: {content}")
+                    summary = "; ".join(summary_parts) if summary_parts else None
                 if summary:
                     messages.append({"role": "system", "content": f"[Bisheriges Gespraech]: {summary}"})
                     conv_tokens_used += _estimate_tokens(summary)
@@ -2949,7 +3019,7 @@ class AssistantBrain(BrainCallbacksMixin):
             )
 
         # Phase 8: Intent-Routing — Wissensfragen ohne Tools beantworten
-        intent_type = self._classify_intent(text)
+        # (intent_type wurde bereits vor dem mega-gather bestimmt, Zeile ~2208)
 
         # Phase 10: Delegations-Intent → Nachricht an Person weiterleiten
         if intent_type == "delegation":
@@ -2978,12 +3048,26 @@ class AssistantBrain(BrainCallbacksMixin):
             executed_actions = planner_result.get("actions", [])
             model = _deep_model
         elif intent_type == "knowledge":
-            # Phase 8: Wissensfragen -> Deep-Model für bessere Qualitaet
-            _deep_model = self.model_router._cap_model(self.model_router.model_deep)
-            logger.info("Wissensfrage erkannt -> LLM direkt (Deep: %s, keine Tools)",
-                         _deep_model)
+            # Phase 8: Wissensfragen — Smart reicht fuer einfache Fakten,
+            # Deep nur bei komplexen Erklaerungen (>15 Woerter oder Erklaer-Patterns).
+            # Spart 3-20s durch Vermeidung des 27B-Modells.
+            _knowledge_needs_deep = (
+                len(text.split()) > 15
+                or any(kw in text.lower() for kw in [
+                    "erklaer", "erklär", "warum", "unterschied",
+                    "vergleich", "zusammenhang", "wie funktioniert",
+                ])
+            )
+            _knowledge_model = self.model_router._cap_model(
+                self.model_router.model_deep if _knowledge_needs_deep
+                else self.model_router.model_smart
+            )
+            _knowledge_think = True if _knowledge_needs_deep else False
+            logger.info("Wissensfrage erkannt -> LLM direkt (%s, deep=%s, keine Tools)",
+                         _knowledge_model, _knowledge_needs_deep)
             _cascade = await self._llm_with_cascade(
-                messages, _deep_model, stream_callback=stream_callback,
+                messages, _knowledge_model, stream_callback=stream_callback,
+                think=_knowledge_think,
             )
             response_text = self._filter_response(_cascade["text"])
             model = _cascade["model"]
@@ -2993,8 +3077,9 @@ class AssistantBrain(BrainCallbacksMixin):
                     await stream_callback(response_text)
             executed_actions = []
         elif intent_type == "memory":
-            # Phase 8: Erinnerungsfrage -> Memory-Suche + Deep-Model
-            logger.info("Erinnerungsfrage erkannt -> Memory-Suche + Deep-Model")
+            # Phase 8: Erinnerungsfrage — Smart reicht (Fakten werden aus
+            # ChromaDB geholt und nur formatiert, kein Reasoning noetig).
+            logger.info("Erinnerungsfrage erkannt -> Memory-Suche + Smart-Model")
             memory_facts = await self.memory.semantic.search_by_topic(text, limit=5)
             # Kopie der Messages erstellen statt Original zu mutieren
             memory_messages = list(messages)
@@ -3004,9 +3089,10 @@ class AssistantBrain(BrainCallbacksMixin):
                 memory_prompt += "\nBeantworte basierend auf diesen gespeicherten Fakten."
                 memory_messages[0] = {"role": "system", "content": memory_prompt}
 
-            model = self.model_router._cap_model(self.model_router.model_deep)
+            model = self.model_router._cap_model(self.model_router.model_smart)
             _cascade = await self._llm_with_cascade(
                 memory_messages, model, stream_callback=stream_callback,
+                think=False,
             )
             response_text = self._filter_response(_cascade["text"])
             model = _cascade["model"]
@@ -3075,17 +3161,29 @@ class AssistantBrain(BrainCallbacksMixin):
                     logger.info("Error-Mitigation: %s -> %s (%s)", model, _fb, _error_mitigation.get("reason", ""))
                     model = _fb
 
-            # Think-Mode für komplexe Anfragen (What-If, Problemloesung)
-            # aktivieren — auch wenn Tools angeboten werden.
-            # Die Think-Tags werden von ollama_client automatisch entfernt.
-            _force_think = bool(problem_solving_ctx or whatif_prompt)
+            # Think-Mode explizit steuern statt dem Modell zu ueberlassen.
+            # Qwen3.5 hat Thinking standardmaessig AN — das kostet 2-10s
+            # durch 200-2000 extra Think-Tokens bei JEDEM Request.
+            # Device-Commands/Queries brauchen kein Reasoning.
+            if self._opt_think_control == "always_off":
+                _think_mode = False
+            elif self._opt_think_control == "always_on":
+                _think_mode = True
+            else:  # "auto"
+                _force_think = bool(problem_solving_ctx or whatif_prompt)
+                if _force_think:
+                    _think_mode = True
+                elif profile.category in ("device_command", "device_query"):
+                    _think_mode = False
+                else:
+                    _think_mode = None  # Konversation/General: Modell entscheidet
 
             _cascade = await self._llm_with_cascade(
                 messages, model,
                 tools=_llm_tools,
                 max_tokens=response_tokens,
                 timeout=float(llm_timeout),
-                think=True if _force_think else None,
+                think=_think_mode,
             )
             if _cascade["error"]:
                 _err = "Mein Sprachmodell reagiert nicht. Versuch es gleich nochmal."
@@ -3609,8 +3707,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
                     # Refinement nur bei laengeren Texten — kurze Antworten sind
                     # bereits auf den Punkt und das LLM fuegt nur Risiko hinzu.
-                    # "Alle Geraete normal" braucht kein Refinement.
-                    if len(humanized_text) < 80:
+                    # Das spart den Refinement-LLM-Call (~500-2000ms).
+                    if len(humanized_text) < self._opt_refinement_skip_max_chars:
                         logger.info("Tool-Feedback uebersprungen (kurz genug): '%s'", humanized_text[:80])
                     else:
                       try:
@@ -5090,6 +5188,15 @@ class AssistantBrain(BrainCallbacksMixin):
 
         original = text
 
+        try:
+            return self._filter_response_inner(text, filter_config, max_sentences_override)
+        except re.error as e:
+            logger.error("Regex-Fehler in _filter_response: %s (text=%r)", e, text[:200], exc_info=True)
+            return original
+
+    def _filter_response_inner(self, text: str, filter_config: dict, max_sentences_override: int) -> str:
+        original = text
+
         # 0. LLM Thinking-Tags entfernen (<think>...</think>)
         # Manche LLMs geben Chain-of-Thought in <think> Tags aus
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
@@ -5535,7 +5642,7 @@ class AssistantBrain(BrainCallbacksMixin):
             # Auslassungspunkte schuetzen
             _protected = _protected.replace("...", "\x01\x01\x01")
             # Dezimalzahlen schuetzen (z.B. "21.5")
-            _protected = re.sub(r"(\d)\.(\d)", r"\1\x02\2", _protected)
+            _protected = re.sub(r"(\d)\.(\d)", lambda m: m.group(1) + "\x02" + m.group(2), _protected)
 
             sentences = re.split(r"(?<=[.!?])\s+", _protected)
             if len(sentences) > max_sentences:

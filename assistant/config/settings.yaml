@@ -1148,6 +1148,27 @@ routines:
       formal_tone: true
       restrict_security: true
       suggest_guest_wifi: true
+appliance_monitor:
+  power_running_threshold: 10
+  power_idle_threshold: 5
+  idle_confirm_minutes: 5
+  devices:
+  - key: washer
+    label: Waschmaschine
+    patterns:
+    - washer
+    - waschmaschine
+  - key: dryer
+    label: Trockner
+    patterns:
+    - dryer
+    - trockner
+  - key: dishwasher
+    label: Geschirrspueler
+    patterns:
+    - dishwasher
+    - geschirrspueler
+    - spuelmaschine
 time_awareness:
   enabled: true
   check_interval_minutes: 5
@@ -1946,5 +1967,12 @@ workshop:
   - 3d_enclosure
   - furniture
   - repair_standard
+latency_optimization:
+  knowledge_fast_path: true
+  think_control: auto
+  upgrade_signal_threshold: 5
+  refinement_skip_max_chars: 120
+  tools_cache_ttl: 60
+  conv_summary_mode: truncate
 entity_annotations: {}
 entity_roles: {}

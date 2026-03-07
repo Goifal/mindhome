@@ -2170,6 +2170,24 @@ class PersonalityEngine:
     # System Prompt Builder
     # ------------------------------------------------------------------
 
+    def build_minimal_system_prompt(self) -> str:
+        """Minimaler System-Prompt fuer Wissensfragen (Fast-Path).
+
+        Enthaelt nur JARVIS-Charakter und Sprach-Regeln, kein Haus-Kontext,
+        keine Sensoren, keine Szenen. Spart ~500-2000ms mega-gather.
+        """
+        return (
+            f"Du bist {self.assistant_name}, J.A.R.V.I.S. — die KI dieses Hauses.\n"
+            "SPRACHE: NUR Deutsch. Internes Denken ebenfalls Deutsch.\n\n"
+            "TON: Britisch-trocken, elegant, Understatement. "
+            "Nie laut, nie platt, nie ueberschwenglich.\n"
+            "VERBOTEN: 'Als KI...', 'Ich bin ein Sprachmodell', "
+            "'Es tut mir leid', 'Leider', 'Natuerlich!', 'Gerne!', Listen.\n"
+            "FAKTEN-REGEL: Erfinde NICHTS. Unbekannt = ehrlich sagen.\n"
+            "Antworte praezise und kompakt. Max 3 Saetze bei einfachen Fakten, "
+            "ausfuehrlich bei Erklaerungen."
+        )
+
     def build_system_prompt(
         self, context: Optional[dict] = None, formality_score: Optional[int] = None,
         irony_count_today: Optional[int] = None, user_text: str = "",
