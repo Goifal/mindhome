@@ -7549,7 +7549,7 @@ function renderCentralBedSensors() {
   for (const name of roomNames) {
     const beds = _getBedSensorsForRoom(name);
     for (let i = 0; i < beds.length; i++) {
-      entries.push({room: name, index: i, sensor: beds[i].sensor || '', person: beds[i].person || ''});
+      entries.push({room: name, index: i, sensor: beds[i].sensor || '', person: beds[i].person || '', off_delay: beds[i].off_delay ?? 0});
     }
   }
 
@@ -7576,6 +7576,16 @@ function renderCentralBedSensors() {
       }
       html += '</select>';
     }
+    // Zeile 4: Off-Delay Slider (Verzögerung bei Aus-Erkennung)
+    const delayVal = e.off_delay || 0;
+    html += '<div style="margin-top:8px;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">';
+    html += '<label style="font-size:11px;color:var(--text-muted);">&#9202; Aus-Verzoegerung</label>';
+    html += '<span id="bedDelay_val_' + esc(e.room) + '_' + e.index + '" style="font-size:11px;color:var(--accent);font-weight:600;">' + delayVal + 's</span>';
+    html += '</div>';
+    html += '<input type="range" min="0" max="30" step="1" value="' + delayVal + '" style="width:100%;accent-color:var(--accent);" oninput="document.getElementById(\'bedDelay_val_' + esc(e.room) + '_' + e.index + '\').textContent=this.value+\'s\'" onchange="_updateBedEntry(\'' + esc(e.room) + '\',' + e.index + ',\'off_delay\',parseInt(this.value))">';
+    html += '<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);"><span>0s (sofort)</span><span>30s</span></div>';
+    html += '</div>';
     html += '</div>';
   }
 
@@ -7600,7 +7610,7 @@ function _addBedEntry() {
   const room = sel.value;
   // Kopie der bestehenden Betten + neues leeres Bett
   const beds = _getBedSensorsForRoom(room).slice();
-  beds.push({sensor: '', person: ''});
+  beds.push({sensor: '', person: '', off_delay: 0});
   _setBedSensorsForRoom(room, beds);
   renderCentralBedSensors();
 }

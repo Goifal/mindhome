@@ -357,6 +357,17 @@ def get_room_bed_sensors(room_cfg: dict) -> list[str]:
     return result
 
 
+def get_bed_sensor_off_delay(room_cfg: dict, entity_id: str) -> int:
+    """Gibt die off_delay (Sekunden) fuer einen bestimmten Bettsensor zurueck.
+
+    Default: 0 (sofort).
+    """
+    for entry in (room_cfg.get("bed_sensors") or []):
+        if isinstance(entry, dict) and entry.get("sensor") == entity_id:
+            return int(entry.get("off_delay", 0))
+    return 0
+
+
 def get_all_bed_sensors() -> list[str]:
     """Sammelt alle Bettsensoren aus room_profiles.yaml (zentrale Quelle).
 

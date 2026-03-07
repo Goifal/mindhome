@@ -1370,22 +1370,49 @@ class ProactiveManager:
             le = getattr(self.brain, "light_engine", None)
             if not le:
                 return
-            from .config import get_room_bed_sensors
+            from .config import get_room_bed_sensors, get_bed_sensor_off_delay
             profiles = get_room_profiles()
             rooms = profiles.get("rooms", {})
             room = None
-            for room_name, room_cfg in rooms.items():
-                if entity_id in get_room_bed_sensors(room_cfg):
+            room_cfg = None
+            for room_name, rcfg in rooms.items():
+                if entity_id in get_room_bed_sensors(rcfg):
                     room = room_name
+                    room_cfg = rcfg
                     break
             if not room:
                 return
             if new_val == "on" and old_val != "on":
+                # Bei on: sofort, evtl. laufenden off-Timer abbrechen
+                timer_key = f"_bed_off_timer_{entity_id}"
+                existing = getattr(self, timer_key, None)
+                if existing and not existing.done():
+                    existing.cancel()
+                    logger.debug("Bettsensor %s: off-delay abgebrochen (wieder belegt)", entity_id)
                 await le.on_bed_occupied(entity_id, room)
             elif new_val == "off" and old_val == "on":
-                await le.on_bed_clear(entity_id, room)
+                off_delay = get_bed_sensor_off_delay(room_cfg, entity_id)
+                if off_delay > 0:
+                    logger.debug("Bettsensor %s: off-delay %ds gestartet", entity_id, off_delay)
+                    timer_key = f"_bed_off_timer_{entity_id}"
+                    task = asyncio.create_task(self._delayed_bed_clear(le, entity_id, room, off_delay, timer_key))
+                    setattr(self, timer_key, task)
+                else:
+                    await le.on_bed_clear(entity_id, room)
         except Exception as e:
             logger.debug("Bettsensor-Licht Check fehlgeschlagen: %s", e)
+
+    async def _delayed_bed_clear(self, le, entity_id: str, room: str, delay: int, timer_key: str):
+        """Wartet delay Sekunden und fuehrt dann on_bed_clear aus, wenn nicht abgebrochen."""
+        try:
+            await asyncio.sleep(delay)
+            logger.debug("Bettsensor %s: off-delay abgelaufen → bed_clear", entity_id)
+            await le.on_bed_clear(entity_id, room)
+        except asyncio.CancelledError:
+            logger.debug("Bettsensor %s: off-delay wurde abgebrochen", entity_id)
+        finally:
+            if hasattr(self, timer_key):
+                delattr(self, timer_key)
 
     async def _check_lux_sensor_event(self, entity_id: str, new_val: str):
         """Lux-Sensor → LightEngine für adaptive Helligkeit."""
