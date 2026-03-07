@@ -4219,6 +4219,32 @@ async def ui_stop_cover(entity_id: str, token: str = ""):
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+@app.post("/api/ui/addon/cover-domain-toggle")
+async def ui_toggle_addon_cover_domain(token: str = ""):
+    """Addon Cover-Domain Plugin ein/ausschalten (Konsolidierung)."""
+    _check_token(token)
+    try:
+        # Hole alle Domains vom Addon
+        domains = await brain.ha.mindhome_get("/api/domains")
+        if not domains:
+            raise HTTPException(status_code=502, detail="Addon nicht erreichbar")
+        # Finde die Cover-Domain
+        cover_domain = None
+        for d in domains:
+            if d.get("name") == "cover":
+                cover_domain = d
+                break
+        if not cover_domain:
+            raise HTTPException(status_code=404, detail="Cover-Domain nicht gefunden im Addon")
+        # Toggle
+        result = await brain.ha.mindhome_post(f"/api/domains/{cover_domain['id']}/toggle", {})
+        return {"success": True, "is_enabled": result.get("is_enabled") if result else None}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+
+
 # ── Cover Groups (lokal gespeichert) ─────────────────────────────────
 
 @app.get("/api/ui/covers/groups")

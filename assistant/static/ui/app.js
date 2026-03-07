@@ -1080,7 +1080,7 @@ function renderCurrentTab() {
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-lights': c.innerHTML = renderLights(); loadLightEntities(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
-      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); loadCoverActionLog(); loadPowerCloseRules(); break;
+      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); loadCoverActionLog(); loadPowerCloseRules(); renderCentralBedSensors(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-remote': c.innerHTML = renderRemote(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadEmergencyProtocols(); loadKnownDevices(); break;
@@ -1436,12 +1436,14 @@ const HELP_TEXTS = {
   'seasonal_actions.cover_automation.privacy_close_hour': {title:'Privacy ab Uhrzeit', text:'Ab welcher Uhrzeit der Privacy-Modus aktiviert wird (z.B. 17 = ab 17 Uhr). Muss gleichzeitig dunkel sein (Sonnenuntergang). Ohne Angabe: sobald es dunkel ist.'},
   'seasonal_actions.cover_automation.presence_aware': {title:'Praesenz-basiert', text:'Wenn alle Personen das Haus verlassen haben, werden alle Rolllaeden geschlossen (Einbruchschutz + Energiesparen).'},
   'seasonal_actions.cover_automation.manual_override_hours': {title:'Manueller Override', text:'Wenn ein Rollladen manuell (Taster/App) bedient wird, pausiert die Automatik fuer diese Anzahl Stunden. Verhindert dass die Automatik manuelle Einstellungen ueberschreibt.'},
+  'seasonal_actions.cover_automation.sunset_close_elevation': {title:'Schliessen ab Elevation', text:'Ab welcher Sonnenhoehe (Elevation) die Rolllaeden abends geschlossen werden. -2° (Standard) = kurz nach Sonnenuntergang. 0° = genau bei Sonnenuntergang. Negative Werte = spaeter (dunkler). Positive Werte = frueher (noch hell).'},
   'seasonal_actions.cover_automation.wakeup_sun_check': {title:'Aufwach-Sonnenpruefung', text:'Prueft beim Aufwachen den Sonnenstand (sun.sun). Wenn es noch zu dunkel ist, werden die Rolllaeden erst bei Daemmerung geoeffnet statt sofort. Verhindert dass Rolllaeden mitten in der Nacht hochfahren.'},
   'seasonal_actions.cover_automation.wakeup_min_sun_elevation': {title:'Min. Sonnenhoehe beim Aufwachen', text:'Mindest-Sonnenhoehe (in Grad) damit Rolllaeden beim Aufwachen geoeffnet werden. -6° = Buergerliche Daemmerung (Himmel wird hell). -12° = Nautische Daemmerung. 0° = Sonnenaufgang. Bei niedrigerem Sonnenstand wird das Oeffnen verschoben.'},
   'seasonal_actions.cover_automation.wakeup_fallback_max_minutes': {title:'Fallback-Oeffnung', text:'Maximale Wartezeit nach dem geplanten Oeffnungszeitpunkt. Wenn die Sonne innerhalb dieses Zeitraums nicht hoch genug steigt (z.B. trueber Wintertag), werden die Rolllaeden trotzdem geoeffnet. Verhindert dass man den ganzen Tag im Dunkeln sitzt.'},
   'seasonal_actions.cover_automation.weather_entity': {title:'Wetter-Entity', text:'Welche weather-Entity aus Home Assistant fuer die Cover-Automatik genutzt wird. Leer = automatisch (bevorzugt weather.forecast_home, Fallback: erste weather.* Entity). Aenderbar per UI oder per Sprache ("Jarvis, wechsle Wetter-Integration auf weather.home").'},
   'seasonal_actions.cover_automation.forecast_weather_protection': {title:'Vorhersage-Wetterschutz', text:'Nutzt die Wettervorhersage aus der konfigurierten Wetter-Entity fuer vorausschauenden Schutz. Faehrt Markisen ein BEVOR ein Sturm kommt und schliesst Dachfenster BEVOR es regnet — statt erst zu reagieren wenn es schon zu spaet ist.'},
   'seasonal_actions.cover_automation.forecast_lookahead_hours': {title:'Vorhersage-Zeitraum', text:'Wie viele Stunden in die Zukunft die Wettervorhersage fuer Schutzentscheidungen genutzt wird. Mehr Stunden = frueheres Reagieren, aber auch mehr Fehlalarme.'},
+  'seasonal_actions.cover_automation.disable_addon_cover_domain': {title:'Addon-Plugin deaktivieren', text:'Deaktiviert das Cover-Domain Plugin im Addon. Empfohlen, da die ProactiveEngine (Assistant-seitig) intelligenter und umfangreicher ist. Verhindert Konflikte zwischen den zwei Systemen.'},
   // === SAUGROBOTER ===
   'remote.enabled': {title:'Fernbedienung', text:'Aktiviert die Fernbedienungs-Steuerung (Logitech Harmony) ueber Jarvis. Erlaubt Sprachsteuerung fuer TV, Receiver, etc.'},
   'vacuum.enabled': {title:'Saugroboter', text:'Aktiviert die Saugroboter-Steuerung ueber Jarvis.'},
@@ -2276,7 +2278,34 @@ function updRange(el) {
   }
   document.getElementById('rv_'+path.replace(/\./g,'_')).textContent = display;
 }
-function toggleSec(hdr) { hdr.classList.toggle('open'); hdr.nextElementSibling.classList.toggle('open'); }
+function toggleSec(hdr) {
+  const body = hdr.nextElementSibling;
+  const isOpen = hdr.classList.contains('open');
+  if (isOpen) {
+    // Collapse: animate height to 0
+    body.style.maxHeight = body.scrollHeight + 'px';
+    body.style.overflow = 'hidden';
+    body.style.transition = 'max-height 0.3s ease, padding 0.3s ease';
+    requestAnimationFrame(() => {
+      body.style.maxHeight = '0';
+      body.style.padding = '0 18px';
+    });
+    hdr.classList.remove('open');
+    body.classList.remove('open');
+  } else {
+    // Expand: animate from 0 to scrollHeight, then remove max-height
+    body.classList.add('open');
+    hdr.classList.add('open');
+    body.style.maxHeight = '0';
+    body.style.overflow = 'hidden';
+    body.style.transition = 'max-height 0.3s ease, padding 0.3s ease';
+    requestAnimationFrame(() => {
+      body.style.maxHeight = body.scrollHeight + 'px';
+      body.style.padding = '18px';
+      setTimeout(() => { body.style.maxHeight = 'none'; body.style.overflow = 'visible'; body.style.transition = ''; }, 310);
+    });
+  }
+}
 
 function addKw(e, input, path) {
   if (e.key !== 'Enter' || !input.value.trim()) return;
@@ -7207,6 +7236,18 @@ function renderCovers() {
     '<div id="coverActionLogContainer" style="color:var(--text-secondary);padding:8px;font-size:12px;">Lade Aktions-Log...</div>' +
     '<button class="btn btn-sm" onclick="loadCoverActionLog()" style="font-size:11px;margin-top:4px;">&#128260; Aktualisieren</button>'
   ) +
+  // ── Addon-Systeme Konsolidierung ──────────────────────────
+  sectionWrap('&#9888;', 'Automatik-Systeme (Konsolidierung)',
+    fInfo('<strong>Achtung:</strong> MindHome hat zwei Cover-Steuerungen: Die <em>ProactiveEngine</em> (Assistant, empfohlen) und das <em>Addon Cover-Domain Plugin</em>. Wenn beide aktiv sind, koennen sie sich gegenseitig ueberschreiben. Empfehlung: Addon-Plugin deaktivieren.') +
+    fToggle('seasonal_actions.cover_automation.disable_addon_cover_domain', 'Addon Cover-Domain Plugin deaktivieren (empfohlen)') +
+    '<button class="btn btn-sm" onclick="_syncAddonCoverDomain()" style="margin-top:6px;font-size:11px;">Jetzt am Addon anwenden</button>' +
+    '<div id="addonCoverDomainStatus" style="font-size:11px;margin-top:4px;color:var(--text-muted);"></div>'
+  ) +
+  // ── Bettsensoren (zentral) ─────────────────────────────────
+  sectionWrap('&#128716;', 'Bettsensoren (zentral)',
+    fInfo('Definiere Bettsensoren einmal pro Raum. Alle Systeme (Rolllaeden, Licht, Schlaf-Erkennung) nutzen automatisch den Sensor des jeweiligen Raumes. Du musst den Sensor nicht mehr einzeln in Cover-Profilen oder Licht-Einstellungen eintragen.') +
+    '<div id="centralBedSensorContainer" style="padding:8px;">Lade Raeume...</div>'
+  ) +
   // ── Cover-Automatik (settings.yaml) ─────────────────────
   sectionWrap('&#9728;', 'Cover-Automatik',
     fInfo('Automatische Steuerung der Rolllaeden basierend auf Sonnenstand, Wetter und Temperatur. Funktioniert nur wenn Cover-Profile (unten) konfiguriert sind.') +
@@ -7218,7 +7259,8 @@ function renderCovers() {
     fRange('seasonal_actions.cover_automation.heat_protection_temp', 'Hitzeschutz ab Aussentemp (°C)', 20, 40, 1, {20:'20°C',25:'25°C',26:'26°C',28:'28°C',30:'30°C',35:'35°C',40:'40°C'}) +
     fRange('seasonal_actions.cover_automation.frost_protection_temp', 'Frostschutz ab (°C)', -10, 15, 1, {'-5':'-5°C',0:'0°C',5:'5°C',10:'10°C',15:'15°C'}) +
     fRange('seasonal_actions.cover_automation.storm_wind_speed', 'Sturm-Windgeschwindigkeit (km/h)', 20, 100, 5, {20:'20',30:'30',40:'40',50:'50',60:'60',80:'80',100:'100'}) +
-    fToggle('seasonal_actions.cover_automation.inverted_position', 'Positionen invertiert (0=offen, 100=zu, z.B. Shelly/MQTT)')
+    fToggle('seasonal_actions.cover_automation.inverted_position', 'Positionen invertiert (0=offen, 100=zu, z.B. Shelly/MQTT)') +
+    fRange('seasonal_actions.cover_automation.sunset_close_elevation', 'Rolladen schliessen ab Elevation (Grad)', -6, 2, 1, {'-6':'-6°','-4':'-4°','-2':'-2° (Standard)','-1':'-1°','0':'0° (Untergang)','1':'1°','2':'2°'})
   ) +
   // ── Nacht-Isolierung (Bug 5) ──────────────────────────
   sectionWrap('&#127769;', 'Nacht-Isolierung',
@@ -7428,6 +7470,73 @@ function collectRoomProfiles() {
     else val = el.value;
     rpSetPath(path, val);
   });
+}
+
+// ── Addon Cover-Domain Konsolidierung ──────────────────────────────
+async function _syncAddonCoverDomain() {
+  const status = document.getElementById('addonCoverDomainStatus');
+  if (status) status.textContent = 'Wird angewendet...';
+  try {
+    const res = await api('/api/ui/addon/cover-domain-toggle', 'POST', {});
+    if (res && res.success) {
+      const enabled = res.is_enabled;
+      if (status) status.textContent = enabled ? 'Addon Cover-Domain ist jetzt AKTIV' : 'Addon Cover-Domain ist jetzt DEAKTIVIERT';
+      if (status) status.style.color = enabled ? 'var(--warning)' : 'var(--success, #4caf50)';
+    } else {
+      if (status) { status.textContent = 'Fehler: ' + (res?.detail || 'unbekannt'); status.style.color = 'var(--danger)'; }
+    }
+  } catch (e) {
+    if (status) { status.textContent = 'Fehler: ' + e.message; status.style.color = 'var(--danger)'; }
+  }
+}
+
+// ── Zentrale Bettsensoren (room_profiles.yaml → rooms[].bed_sensor) ──
+function renderCentralBedSensors() {
+  const container = document.getElementById('centralBedSensorContainer');
+  if (!container) return;
+  const rooms = RP.rooms || {};
+  const roomNames = Object.keys(rooms);
+  if (roomNames.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Keine Raeume konfiguriert. Erstelle zuerst Raeume im Raum-Tab.</div>';
+    return;
+  }
+  let html = '';
+  for (const name of roomNames) {
+    const r = rooms[name];
+    const bedSensor = r.bed_sensor || '';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+    html += '<span style="font-size:12px;font-weight:600;min-width:120px;color:var(--text-primary);">' + esc(name) + '</span>';
+    html += '<div style="flex:1;position:relative;">';
+    html += '<input type="text" value="' + esc(bedSensor) + '" placeholder="binary_sensor.bett_..." id="bedSensor_' + esc(name) + '" autocomplete="off" style="width:100%;font-size:11px;padding:4px 8px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;" onfocus="_bedSensorAutocomplete(this,\'' + esc(name) + '\')" oninput="_bedSensorAutocomplete(this,\'' + esc(name) + '\')" onchange="_setCentralBedSensor(\'' + esc(name) + '\',this.value)">';
+    html += '<div id="bedSensorDD_' + esc(name) + '" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:150px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;z-index:9999;"></div>';
+    html += '</div>';
+    if (bedSensor) html += '<button type="button" onclick="document.getElementById(\'bedSensor_' + esc(name) + '\').value=\'\';_setCentralBedSensor(\'' + esc(name) + '\',\'\')" style="font-size:10px;padding:2px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;">&times;</button>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+async function _bedSensorAutocomplete(input, roomName) {
+  const dd = document.getElementById('bedSensorDD_' + roomName);
+  if (!dd) return;
+  const val = input.value.toLowerCase();
+  await ensurePickerEntities();
+  const allEntities = _pickerEntities || [];
+  const matches = allEntities.filter(e => {
+    const eid = (e.entity_id || '').toLowerCase();
+    return eid.startsWith('binary_sensor.') && (eid.includes('bett') || eid.includes('bed') || eid.includes('matratze') || eid.includes('occupancy') || eid.includes('presence')) && (!val || eid.includes(val));
+  }).slice(0, 10);
+  if (matches.length === 0) { dd.style.display = 'none'; return; }
+  dd.innerHTML = matches.map(e => '<div style="padding:4px 8px;font-size:11px;cursor:pointer;color:var(--text-primary);" onmousedown="event.preventDefault();document.getElementById(\'bedSensor_' + roomName + '\').value=\'' + esc(e.entity_id) + '\';_setCentralBedSensor(\'' + roomName + '\',\'' + esc(e.entity_id) + '\');document.getElementById(\'bedSensorDD_' + roomName + '\').style.display=\'none\'">' + esc(e.entity_id) + (e.attributes && e.attributes.friendly_name ? ' <span style="color:var(--text-muted);">(' + esc(e.attributes.friendly_name) + ')</span>' : '') + '</div>').join('');
+  dd.style.display = 'block';
+  input.addEventListener('blur', () => { setTimeout(() => { dd.style.display = 'none'; }, 200); }, {once: true});
+}
+
+function _setCentralBedSensor(roomName, value) {
+  if (!RP.rooms) RP.rooms = {};
+  if (!RP.rooms[roomName]) RP.rooms[roomName] = {};
+  RP.rooms[roomName].bed_sensor = value;
+  scheduleRoomProfileSave();
 }
 
 // ── Cover-Profile Editor (room_profiles.yaml → cover_profiles.covers[]) ──
@@ -8389,7 +8498,9 @@ function renderLights() {
   );
 }
 
-// ── Zirkadiane Kurven Editor ──────────────────────────────────
+// ── Zirkadiane Kurven Editor (Interaktive SVG-Grafik) ─────────
+let _circDrag = null; // {curveType, index, svg, rect}
+
 function renderCircadianCurveEditor() {
   const container = document.getElementById('circadianCurveEditor');
   if (!container) return;
@@ -8399,40 +8510,189 @@ function renderCircadianCurveEditor() {
   let html = '<div style="margin-top:12px;">';
 
   // Brightness Curve
-  html += '<div style="margin-bottom:16px;">';
+  html += '<div style="margin-bottom:20px;">';
   html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Helligkeitskurve (% ueber den Tag)</div>';
-  html += '<div id="circBriCurve">';
-  html += _renderCurveRows(bCurve, 'pct', '%', 0, 100, 'bri');
-  html += '</div>';
-  html += '<button type="button" onclick="addCircadianPoint(\'bri\')" style="margin-top:4px;font-size:11px;padding:3px 10px;background:var(--bg-hover);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;">+ Zeitpunkt</button>';
+  html += '<div id="circBriChart"></div>';
+  html += '<button type="button" onclick="addCircadianPoint(\'bri\')" style="margin-top:6px;font-size:11px;padding:3px 10px;background:var(--bg-hover);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;">+ Zeitpunkt</button>';
   html += '</div>';
 
   // Color Temperature Curve
   html += '<div>';
   html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Farbtemperatur-Kurve (Kelvin, nur tunable_white)</div>';
-  html += '<div id="circCtCurve">';
-  html += _renderCurveRows(ctCurve, 'kelvin', 'K', 1800, 6500, 'ct');
-  html += '</div>';
-  html += '<button type="button" onclick="addCircadianPoint(\'ct\')" style="margin-top:4px;font-size:11px;padding:3px 10px;background:var(--bg-hover);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;">+ Zeitpunkt</button>';
+  html += '<div id="circCtChart"></div>';
+  html += '<button type="button" onclick="addCircadianPoint(\'ct\')" style="margin-top:6px;font-size:11px;padding:3px 10px;background:var(--bg-hover);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;">+ Zeitpunkt</button>';
   html += '</div>';
 
   html += '</div>';
   container.innerHTML = html;
+
+  _renderCircadianSVG('bri', bCurve, 'pct', '%', 0, 100, '#f4b400', 'circBriChart');
+  _renderCircadianSVG('ct', ctCurve, 'kelvin', 'K', 1800, 6500, '#4fc3f7', 'circCtChart');
 }
 
-function _renderCurveRows(curve, valueKey, unit, min, max, curveType) {
-  if (!curve || curve.length === 0) return '<div style="color:var(--text-muted);font-size:11px;padding:4px;">Keine Kurven-Punkte definiert.</div>';
-  let html = '';
-  for (let i = 0; i < curve.length; i++) {
-    const entry = curve[i];
-    html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">';
-    html += '<input type="time" value="' + esc(entry.time || '12:00') + '" onchange="updateCircadianPoint(\'' + curveType + '\',' + i + ',\'time\',this.value)" style="width:90px;font-size:11px;padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;">';
-    html += '<input type="number" value="' + (entry[valueKey] || 0) + '" min="' + min + '" max="' + max + '" step="' + (valueKey === 'kelvin' ? 100 : 5) + '" onchange="updateCircadianPoint(\'' + curveType + '\',' + i + ',\'' + valueKey + '\',parseInt(this.value))" style="width:70px;font-size:11px;padding:2px 4px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;">';
-    html += '<span style="font-size:10px;color:var(--text-muted);min-width:16px;">' + unit + '</span>';
-    html += '<button type="button" onclick="removeCircadianPoint(\'' + curveType + '\',' + i + ')" style="font-size:10px;padding:1px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
-    html += '</div>';
+function _renderCircadianSVG(curveType, curve, valueKey, unit, vMin, vMax, color, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  const W = 520, H = 180, PAD_L = 42, PAD_R = 12, PAD_T = 14, PAD_B = 28;
+  const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B;
+
+  // Sort curve by time
+  const sorted = (curve || []).slice().sort((a, b) => _timeToMin(a.time) - _timeToMin(b.time));
+
+  let svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:${W}px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;cursor:crosshair;user-select:none;" data-curvetype="${curveType}" onmousedown="_circChartClick(event,'${curveType}')" ontouchstart="_circChartClick(event,'${curveType}')">`;
+
+  // Grid lines & labels - hours
+  for (let h = 0; h <= 24; h += 3) {
+    const x = PAD_L + (h / 24) * cW;
+    svg += `<line x1="${x}" y1="${PAD_T}" x2="${x}" y2="${PAD_T + cH}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="${h % 6 === 0 ? 'none' : '2,2'}"/>`;
+    if (h % 6 === 0) svg += `<text x="${x}" y="${H - 6}" text-anchor="middle" fill="var(--text-muted)" font-size="9">${String(h).padStart(2,'0')}:00</text>`;
   }
-  return html;
+
+  // Grid lines & labels - values
+  const vSteps = curveType === 'ct' ? [1800, 2700, 3500, 4500, 5500, 6500] : [0, 20, 40, 60, 80, 100];
+  for (const v of vSteps) {
+    const y = PAD_T + cH - ((v - vMin) / (vMax - vMin)) * cH;
+    svg += `<line x1="${PAD_L}" y1="${y}" x2="${PAD_L + cW}" y2="${y}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="2,2"/>`;
+    svg += `<text x="${PAD_L - 4}" y="${y + 3}" text-anchor="end" fill="var(--text-muted)" font-size="8">${curveType === 'ct' ? (v/1000).toFixed(1) + 'k' : v + '%'}</text>`;
+  }
+
+  // Filled area + line
+  if (sorted.length > 1) {
+    let areaPath = `M ${PAD_L + (_timeToMin(sorted[0].time) / 1440) * cW} ${PAD_T + cH}`;
+    let linePath = '';
+    for (let i = 0; i < sorted.length; i++) {
+      const x = PAD_L + (_timeToMin(sorted[i].time) / 1440) * cW;
+      const y = PAD_T + cH - ((sorted[i][valueKey] - vMin) / (vMax - vMin)) * cH;
+      areaPath += ` L ${x} ${y}`;
+      linePath += (i === 0 ? 'M' : ' L') + ` ${x} ${y}`;
+    }
+    areaPath += ` L ${PAD_L + (_timeToMin(sorted[sorted.length-1].time) / 1440) * cW} ${PAD_T + cH} Z`;
+    svg += `<path d="${areaPath}" fill="${color}" fill-opacity="0.1"/>`;
+    svg += `<path d="${linePath}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>`;
+  }
+
+  // Points (draggable)
+  for (let i = 0; i < sorted.length; i++) {
+    const origIdx = curve.indexOf(sorted[i]);
+    const x = PAD_L + (_timeToMin(sorted[i].time) / 1440) * cW;
+    const y = PAD_T + cH - ((sorted[i][valueKey] - vMin) / (vMax - vMin)) * cH;
+    svg += `<circle cx="${x}" cy="${y}" r="6" fill="${color}" stroke="var(--bg-primary)" stroke-width="2" style="cursor:grab;" data-idx="${origIdx}" onmousedown="_circStartDrag(event,'${curveType}',${origIdx})" ontouchstart="_circStartDrag(event,'${curveType}',${origIdx})"/>`;
+    // Tooltip
+    svg += `<text x="${x}" y="${y - 10}" text-anchor="middle" fill="var(--text-primary)" font-size="9" font-weight="600" pointer-events="none">${sorted[i].time} / ${sorted[i][valueKey]}${unit}</text>`;
+  }
+
+  svg += '</svg>';
+
+  // Selected point info / delete
+  svg += `<div id="circInfo_${curveType}" style="min-height:24px;margin-top:4px;font-size:11px;color:var(--text-muted);"></div>`;
+
+  el.innerHTML = svg;
+}
+
+function _timeToMin(t) {
+  if (!t) return 720;
+  const [h, m] = t.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function _minToTime(m) {
+  m = Math.max(0, Math.min(1439, Math.round(m)));
+  return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+}
+
+function _circStartDrag(e, curveType, index) {
+  e.preventDefault();
+  e.stopPropagation();
+  const svg = e.target.closest('svg');
+  if (!svg) return;
+  _circDrag = {curveType, index, svg, rect: svg.getBoundingClientRect()};
+
+  const onMove = (ev) => {
+    if (!_circDrag) return;
+    const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+    const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
+    const rect = _circDrag.rect;
+    const svgW = rect.width;
+    const svgH = rect.height;
+    const W = 520, H = 180, PAD_L = 42, PAD_R = 12, PAD_T = 14, PAD_B = 28;
+    const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B;
+    const scaleX = svgW / W, scaleY = svgH / H;
+
+    const relX = (clientX - rect.left) / scaleX - PAD_L;
+    const relY = (clientY - rect.top) / scaleY - PAD_T;
+
+    const tMin = Math.max(0, Math.min(1440, (relX / cW) * 1440));
+    const path = _circDrag.curveType === 'bri' ? 'lighting.circadian.brightness_curve' : 'lighting.circadian.ct_curve';
+    const curve = getPath(S, path) || [];
+    const pt = curve[_circDrag.index];
+    if (!pt) return;
+
+    pt.time = _minToTime(tMin);
+
+    if (_circDrag.curveType === 'bri') {
+      const pct = Math.max(0, Math.min(100, Math.round((1 - relY / cH) * 100 / 5) * 5));
+      pt.pct = pct;
+    } else {
+      const kelvin = Math.max(1800, Math.min(6500, Math.round((1 - relY / cH) * (6500 - 1800) / 100) * 100 + 1800));
+      pt.kelvin = kelvin;
+    }
+
+    setPath(S, path, curve);
+    renderCircadianCurveEditor();
+  };
+
+  const onUp = () => {
+    if (_circDrag) {
+      _circDrag = null;
+      scheduleAutoSave();
+    }
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend', onUp);
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('touchmove', onMove, {passive: false});
+  document.addEventListener('touchend', onUp);
+}
+
+function _circChartClick(e, curveType) {
+  // Only add point on click directly on SVG background (not on existing point)
+  if (e.target.tagName === 'circle') return;
+  const svg = e.target.closest('svg');
+  if (!svg) return;
+  const rect = svg.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const W = 520, H = 180, PAD_L = 42, PAD_R = 12, PAD_T = 14, PAD_B = 28;
+  const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B;
+  const scaleX = rect.width / W, scaleY = rect.height / H;
+
+  const relX = (clientX - rect.left) / scaleX - PAD_L;
+  const relY = (clientY - rect.top) / scaleY - PAD_T;
+
+  if (relX < 0 || relX > cW || relY < 0 || relY > cH) return;
+
+  const tMin = (relX / cW) * 1440;
+  const time = _minToTime(tMin);
+
+  const path = curveType === 'bri' ? 'lighting.circadian.brightness_curve' : 'lighting.circadian.ct_curve';
+  const curve = getPath(S, path) || [];
+
+  if (curveType === 'bri') {
+    const pct = Math.max(0, Math.min(100, Math.round((1 - relY / cH) * 100 / 5) * 5));
+    curve.push({time, pct});
+  } else {
+    const kelvin = Math.max(1800, Math.min(6500, Math.round((1 - relY / cH) * (6500 - 1800) / 100) * 100 + 1800));
+    curve.push({time, kelvin});
+  }
+
+  setPath(S, path, curve);
+  scheduleAutoSave();
+  renderCircadianCurveEditor();
 }
 
 function updateCircadianPoint(curveType, index, field, value) {
@@ -8465,6 +8725,10 @@ function removeCircadianPoint(curveType, index) {
   setPath(S, path, curve);
   scheduleAutoSave();
   renderCircadianCurveEditor();
+}
+
+function _circDeletePoint(curveType, index) {
+  removeCircadianPoint(curveType, index);
 }
 
 async function loadLightEntities() {

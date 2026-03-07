@@ -66,8 +66,9 @@ class CoverDomain(DomainPlugin):
         elevation = sun.get("elevation", 0)
 
         # Sunset -> close covers
+        close_elev = float(self.get_setting("sunset_close_elevation", -2))
         if self.get_setting("sunset_close", True):
-            if elevation < -2 and ctx.get("anyone_home"):
+            if elevation < close_elev and ctx.get("anyone_home"):
                 for e in safe_entities:
                     if e.get("state") == "open":
                         name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
