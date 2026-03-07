@@ -721,7 +721,7 @@ async function loadDashboard() {
     const comps=d.components||{};
     let ch='';
     for(const [n,s] of Object.entries(comps)) {
-      const ok=s==='connected'||String(s).includes('active');
+      const ss=String(s);const ok=ss==='connected'||ss.includes('active')||ss.includes('running');
       ch+=`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
         <span style="font-size:12px;">${esc(n)}</span>
         <span style="font-size:11px;color:${ok?'var(--success)':'var(--danger)'};font-family:var(--mono);">${esc(s)}</span></div>`;
