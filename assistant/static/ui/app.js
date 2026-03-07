@@ -1085,7 +1085,7 @@ function renderCurrentTab() {
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadEmergencyProtocols(); loadKnownDevices(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); loadAutomations(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
-      case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); break;
+      case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); renderApplianceDevices(); break;
       case 'tab-intelligence': c.innerHTML = renderIntelligence(); break;
       case 'tab-declarative-tools': c.innerHTML = renderDeclarativeTools(); loadDeclarativeTools(); _renderDeclSuggestions(); break;
       case 'tab-eastereggs': c.innerHTML = renderEasterEggs(); loadEasterEggs(); break;
@@ -2430,6 +2430,145 @@ function removeModelProfile(name) {
   }
   renderCurrentTab();
   scheduleAutoSave();
+}
+
+// ---- Appliance Monitor: Dynamic device list ----
+function renderApplianceDevices() {
+  const c = document.getElementById('applianceDevicesContainer');
+  if (!c) return;
+  const devices = getPath(S, 'appliance_monitor.devices') || [];
+  if (!devices.length) {
+    c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Geraete konfiguriert. Klicke "+ Geraet hinzufuegen".</div>';
+    return;
+  }
+  c.innerHTML = devices.map((dev, i) => {
+    const patterns = (dev.patterns || []).map(p =>
+      `<span class="kw-tag">${esc(p)}<span class="kw-rm" onclick="rmAppliancePattern(${i},this)">&#10005;</span></span>`
+    ).join('');
+    return `<div class="appliance-card" style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-weight:600;font-size:13px;">${esc(dev.label || dev.key)}</span>
+        <button class="btn btn-sm" style="color:var(--danger);font-size:11px;padding:2px 8px;" onclick="removeApplianceDevice(${i})">Entfernen</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Key: ${esc(dev.key)} &middot; Event: ${esc(dev.key)}_done</div>
+      <div style="margin-bottom:6px;">
+        <label style="font-size:12px;font-weight:500;">Entity-Muster</label>
+        <div class="kw-editor" data-path="appliance_monitor.devices.${i}.patterns" onclick="this.querySelector('input').focus()">
+          ${patterns}<input class="kw-input" placeholder="+ Muster..." onkeydown="addKw(event,this,'appliance_monitor.devices.${i}.patterns')">
+        </div>
+      </div>
+      <div style="margin-top:6px;">
+        <label style="font-size:12px;font-weight:500;">Oder Entity direkt auswaehlen</label>
+        <button class="btn btn-sm btn-secondary" onclick="pickEntityForAppliance(${i})" style="font-size:11px;margin-top:4px;">Entity aus HA waehlen...</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function addApplianceDevice() {
+  const key = prompt('Geraete-Key (z.B. "oven", "robot_vacuum", "coffee_machine"):');
+  if (!key || !key.trim()) return;
+  const cleanKey = key.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  const label = prompt('Anzeigename (z.B. "Backofen", "Saugroboter", "Kaffeemaschine"):', cleanKey);
+  if (!label) return;
+  const devices = getPath(S, 'appliance_monitor.devices') || [];
+  if (devices.some(d => d.key === cleanKey)) { toast('Geraet "' + cleanKey + '" existiert bereits.', 'error'); return; }
+  devices.push({key: cleanKey, label: label.trim(), patterns: [cleanKey]});
+  setPath(S, 'appliance_monitor.devices', devices);
+  renderApplianceDevices();
+  markDirty();
+}
+
+function removeApplianceDevice(idx) {
+  const devices = getPath(S, 'appliance_monitor.devices') || [];
+  const dev = devices[idx];
+  if (!confirm('Geraet "' + (dev.label || dev.key) + '" entfernen?')) return;
+  devices.splice(idx, 1);
+  setPath(S, 'appliance_monitor.devices', devices);
+  renderApplianceDevices();
+  markDirty();
+}
+
+function rmAppliancePattern(devIdx, el) {
+  const devices = getPath(S, 'appliance_monitor.devices') || [];
+  const tag = el.closest('.kw-tag');
+  const pattern = tag.textContent.replace('✕', '').trim();
+  const patterns = devices[devIdx].patterns || [];
+  const pi = patterns.indexOf(pattern);
+  if (pi >= 0) patterns.splice(pi, 1);
+  devices[devIdx].patterns = patterns;
+  setPath(S, 'appliance_monitor.devices', devices);
+  renderApplianceDevices();
+  markDirty();
+}
+
+async function pickEntityForAppliance(devIdx) {
+  const entities = await _loadPickerEntities();
+  const sensors = entities.filter(e => e.entity_id.startsWith('sensor.') &&
+    (e.entity_id.includes('power') || e.entity_id.includes('energy') || e.entity_id.includes('watt') ||
+     e.entity_id.includes('leistung') || e.entity_id.includes('verbrauch') ||
+     (e.attributes && e.attributes.unit_of_measurement === 'W')));
+  if (!sensors.length) { toast('Keine Power-Sensoren gefunden.', 'error'); return; }
+
+  // Erstelle Popup-Dialog
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius-md);padding:16px;max-width:500px;width:90%;max-height:70vh;display:flex;flex-direction:column;';
+  dialog.innerHTML = `
+    <div style="font-weight:600;font-size:14px;margin-bottom:8px;">Power-Sensor auswaehlen</div>
+    <input type="text" id="applianceEntitySearch" placeholder="Suchen..." style="margin-bottom:8px;padding:6px 10px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);" oninput="filterApplianceEntities()">
+    <div id="applianceEntityList" style="overflow-y:auto;flex:1;max-height:50vh;"></div>
+    <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()" style="margin-top:8px;">Abbrechen</button>
+  `;
+  overlay.appendChild(dialog);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+
+  window._appliancePickSensors = sensors;
+  window._appliancePickDevIdx = devIdx;
+  window._appliancePickOverlay = overlay;
+  filterApplianceEntities();
+  dialog.querySelector('#applianceEntitySearch').focus();
+}
+
+function filterApplianceEntities() {
+  const q = (document.getElementById('applianceEntitySearch')?.value || '').toLowerCase();
+  const sensors = window._appliancePickSensors || [];
+  const filtered = sensors.filter(e => {
+    const name = (e.attributes?.friendly_name || e.entity_id).toLowerCase();
+    return !q || name.includes(q) || e.entity_id.toLowerCase().includes(q);
+  }).slice(0, 50);
+  const list = document.getElementById('applianceEntityList');
+  if (!list) return;
+  list.innerHTML = filtered.map(e => {
+    const name = e.attributes?.friendly_name || e.entity_id;
+    const val = e.state || '';
+    const unit = e.attributes?.unit_of_measurement || '';
+    return `<div onclick="selectApplianceEntity('${esc(e.entity_id)}')" style="padding:8px;cursor:pointer;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;" onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background=''">
+      <div><div style="font-size:13px;font-weight:500;">${esc(name)}</div><div style="font-size:11px;color:var(--text-muted);">${esc(e.entity_id)}</div></div>
+      <span style="font-size:12px;color:var(--text-secondary);">${esc(val)} ${esc(unit)}</span>
+    </div>`;
+  }).join('');
+  if (!filtered.length) list.innerHTML = '<div style="padding:12px;color:var(--text-muted);text-align:center;">Keine Treffer</div>';
+}
+
+function selectApplianceEntity(entityId) {
+  const devIdx = window._appliancePickDevIdx;
+  const devices = getPath(S, 'appliance_monitor.devices') || [];
+  if (!devices[devIdx]) return;
+  // Entity-ID-Teile als Pattern extrahieren (ohne "sensor." Prefix)
+  const shortId = entityId.replace(/^sensor\./, '');
+  const patterns = devices[devIdx].patterns || [];
+  if (!patterns.includes(shortId) && !patterns.includes(entityId)) {
+    patterns.push(shortId);
+    devices[devIdx].patterns = patterns;
+    setPath(S, 'appliance_monitor.devices', devices);
+    markDirty();
+  }
+  if (window._appliancePickOverlay) window._appliancePickOverlay.remove();
+  renderApplianceDevices();
+  toast('Entity "' + entityId + '" hinzugefuegt.', 'success');
 }
 
 // ---- Character-Break Stats Loader ----
@@ -3886,9 +4025,9 @@ function renderProactive() {
     fToggle('return_briefing.event_types.doorbell', 'Tuerklingel') +
     fToggle('return_briefing.event_types.person_arrived', 'Person angekommen') +
     fToggle('return_briefing.event_types.person_left', 'Person gegangen') +
-    fToggle('return_briefing.event_types.washer_done', 'Waschmaschine fertig') +
-    fToggle('return_briefing.event_types.dryer_done', 'Trockner fertig') +
-    fToggle('return_briefing.event_types.dishwasher_done', 'Geschirrspueler fertig') +
+    ((getPath(S,'appliance_monitor.devices')||[]).map(d =>
+      fToggle('return_briefing.event_types.'+d.key+'_done', (d.label||d.key)+' fertig')
+    ).join('') || fToggle('return_briefing.event_types.washer_done', 'Waschmaschine fertig')) +
     fToggle('return_briefing.event_types.weather_warning', 'Wetter-Warnungen') +
     fToggle('return_briefing.event_types.low_battery', 'Batterie niedrig') +
     fToggle('return_briefing.event_types.maintenance_due', 'Wartung faellig') +
@@ -4200,15 +4339,14 @@ function renderJarvisFeatures() {
     fTextarea('device_narration.custom_nicknames', 'Eigene Spitznamen', 'JSON: {"waschmaschine": "Frau Waschkraft", "saugroboter": "Robbie"}')
   ) +
   sectionWrap('&#9889;', 'Geraete-Fertig-Erkennung',
-    fInfo('Jarvis erkennt anhand des Stromverbrauchs wann Waschmaschine, Trockner oder Geschirrspueler fertig sind. Das Geraet muss fuer die eingestellte Wartezeit unter dem Idle-Schwellwert bleiben bevor "fertig" gemeldet wird — das verhindert Fehlalarme bei Zwischenphasen (z.B. zwischen Waschen und Schleudern).') +
+    fInfo('Jarvis erkennt anhand des Stromverbrauchs wann Geraete fertig sind. Das Geraet muss fuer die eingestellte Wartezeit unter dem Idle-Schwellwert bleiben bevor "fertig" gemeldet wird — das verhindert Fehlalarme bei Zwischenphasen (z.B. zwischen Waschen und Schleudern). Du kannst beliebige Geraete hinzufuegen.') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Schwellwerte</div>' +
     fRange('appliance_monitor.power_running_threshold', 'Laufend ab (Watt)', 5, 50, 5, {5:'5W',10:'10W',15:'15W',20:'20W',50:'50W'}) +
     fRange('appliance_monitor.power_idle_threshold', 'Idle unter (Watt)', 1, 20, 1, {1:'1W',2:'2W',3:'3W',5:'5W',10:'10W',20:'20W'}) +
     fRange('appliance_monitor.idle_confirm_minutes', 'Wartezeit vor Meldung', 1, 15, 1, {1:'1 Min',2:'2',3:'3',5:'5 Min',10:'10',15:'15 Min'}) +
-    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Entity-Muster (Sensor-IDs die das Geraet matchen)</div>' +
-    fKeywords('appliance_monitor.washer_patterns', 'Waschmaschine') +
-    fKeywords('appliance_monitor.dryer_patterns', 'Trockner') +
-    fKeywords('appliance_monitor.dishwasher_patterns', 'Geschirrspueler')
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Ueberwachte Geraete</div>' +
+    '<div id="applianceDevicesContainer"></div>' +
+    '<button class="btn btn-sm" onclick="addApplianceDevice()" style="margin-top:8px;">+ Geraet hinzufuegen</button>'
   ) +
   sectionWrap('&#9888;', 'Daten-basierter Widerspruch',
     fInfo('Vor einer Aktion prueft Jarvis Live-Daten und warnt konkret — z.B. "Heizung auf 25? Das Bad-Fenster ist offen." Aktion wird trotzdem ausgefuehrt, aber die Warnung erwaehnt.') +

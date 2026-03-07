@@ -92,11 +92,28 @@ class ProactiveManager:
         self._appliance_power_high = float(appliance_cfg.get("power_running_threshold", 10))
         self._appliance_power_low = float(appliance_cfg.get("power_idle_threshold", 5))
         self._appliance_confirm_minutes = int(appliance_cfg.get("idle_confirm_minutes", 5))
-        self._appliance_patterns = {
-            "washer": appliance_cfg.get("washer_patterns", ["washer", "waschmaschine"]),
-            "dryer": appliance_cfg.get("dryer_patterns", ["dryer", "trockner"]),
-            "dishwasher": appliance_cfg.get("dishwasher_patterns", ["dishwasher", "geschirrspueler", "spuelmaschine"]),
-        }
+
+        # Dynamische Geraete: devices ist eine Liste von {key, label, patterns}
+        self._appliance_patterns = {}
+        devices = appliance_cfg.get("devices", [])
+        if devices:
+            for dev in devices:
+                key = dev.get("key", "").strip()
+                patterns = dev.get("patterns", [])
+                if key and patterns:
+                    self._appliance_patterns[key] = patterns
+                    # Event-Handler dynamisch registrieren
+                    event_type = f"{key}_done"
+                    label = dev.get("label", key.replace("_", " ").title())
+                    if event_type not in self.event_handlers:
+                        self.event_handlers[event_type] = (MEDIUM, f"{label} fertig")
+        else:
+            # Fallback: Legacy-Format (washer_patterns, dryer_patterns, ...)
+            self._appliance_patterns = {
+                "washer": appliance_cfg.get("washer_patterns", ["washer", "waschmaschine"]),
+                "dryer": appliance_cfg.get("dryer_patterns", ["dryer", "trockner"]),
+                "dishwasher": appliance_cfg.get("dishwasher_patterns", ["dishwasher", "geschirrspueler", "spuelmaschine"]),
+            }
         self._appliance_confirm_task: Optional[asyncio.Task] = None
 
         # Phase 7.1: Morning Briefing Auto-Trigger

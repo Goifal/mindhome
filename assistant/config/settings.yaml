@@ -1152,16 +1152,23 @@ appliance_monitor:
   power_running_threshold: 10
   power_idle_threshold: 5
   idle_confirm_minutes: 5
-  washer_patterns:
-  - washer
-  - waschmaschine
-  dryer_patterns:
-  - dryer
-  - trockner
-  dishwasher_patterns:
-  - dishwasher
-  - geschirrspueler
-  - spuelmaschine
+  devices:
+  - key: washer
+    label: Waschmaschine
+    patterns:
+    - washer
+    - waschmaschine
+  - key: dryer
+    label: Trockner
+    patterns:
+    - dryer
+    - trockner
+  - key: dishwasher
+    label: Geschirrspueler
+    patterns:
+    - dishwasher
+    - geschirrspueler
+    - spuelmaschine
 time_awareness:
   enabled: true
   check_interval_minutes: 5
