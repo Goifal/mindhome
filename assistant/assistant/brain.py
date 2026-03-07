@@ -5546,7 +5546,7 @@ class AssistantBrain(BrainCallbacksMixin):
             # Auslassungspunkte schuetzen
             _protected = _protected.replace("...", "\x01\x01\x01")
             # Dezimalzahlen schuetzen (z.B. "21.5")
-            _protected = re.sub(r"(\d)\.(\d)", r"\1\x02\2", _protected)
+            _protected = re.sub(r"(\d)\.(\d)", lambda m: m.group(1) + "\x02" + m.group(2), _protected)
 
             sentences = re.split(r"(?<=[.!?])\s+", _protected)
             if len(sentences) > max_sentences:
