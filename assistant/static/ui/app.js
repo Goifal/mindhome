@@ -31,6 +31,7 @@ const _searchIndex = [
   // KI-Modelle & Stil (tab-personality)
   {tab:'tab-personality', title:'KI-Modelle & Stil', keywords:'modell llm ollama fast smart deep openai', icon:'&#127917;'},
   {tab:'tab-personality', title:'GPU-Performance', keywords:'flash attention gpu vram keep alive performance speed latenz', icon:'&#9889;'},
+  {tab:'tab-personality', title:'Latenz-Optimierung', keywords:'latenz optimierung think modus upgrade deep smart refinement cache fast path geschwindigkeit', icon:'&#9889;'},
   // Jarvis-Features (tab-jarvis)
   {tab:'tab-jarvis', title:'Progressive Antworten', keywords:'denkt laut zwischen-meldungen verarbeitung', icon:'&#128172;'},
   {tab:'tab-jarvis', title:'MCU-Intelligenz', keywords:'proaktiv mitdenken ingenieur diagnose anomalie kreuz-referenz implizit', icon:'&#129504;'},
@@ -2828,6 +2829,28 @@ function renderPersonality() {
     ])
   ) +
   _renderModelProfiles() +
+  sectionWrap('&#9889;', 'Latenz-Optimierung',
+    fInfo('Steuert wie aggressiv die Antwortzeit optimiert wird. Diese Einstellungen beeinflussen direkt wie schnell Jarvis antwortet — auf Kosten der Antwortqualitaet bei niedrigeren Werten.') +
+    fToggle('latency_optimization.knowledge_fast_path', 'Wissensfragen Fast-Path') +
+    fInfo('Bei reinen Wissensfragen ("Was ist die Hauptstadt von Frankreich?") wird der komplette Subsystem-Gather (Mood, Security, Sensoren etc.) uebersprungen und direkt das LLM gefragt. Spart ~500-2000ms pro Wissensfrage. Deaktivieren wenn Wissensfragen auch Haus-Kontext beruecksichtigen sollen.') +
+    fSelect('latency_optimization.think_control', 'Think-Modus Steuerung', [
+      {v:'auto',l:'Auto — Thinking nur bei Gespraech + Reasoning (empfohlen)'},
+      {v:'always_off',l:'Immer aus — Schnellste Antworten, weniger Qualitaet'},
+      {v:'always_on',l:'Immer an — Beste Qualitaet, langsamere Antworten'}
+    ]) +
+    fInfo('Qwen3.5 hat einen internen "Denk-Modus" der 200-2000 extra Tokens generiert bevor die Antwort kommt (2-10s). "Auto" deaktiviert das fuer einfache Befehle (Licht an, Temperatur?) und aktiviert es nur bei Reasoning. "Immer aus" spart maximal Zeit, kann aber bei komplexen Fragen schlechtere Antworten geben.') +
+    fRange('latency_optimization.upgrade_signal_threshold', 'Deep-Upgrade Schwelle', 1, 10, 1, {1:'1 (oft Deep)',3:'3',5:'5 (Standard)',7:'7',10:'10 (selten Deep)'}) +
+    fInfo('Bestimmt ab wie vielen Kontext-Signalen (Problemloesung, What-If, kritische Sicherheit) vom Smart-Modell (9B, schnell) auf das Deep-Modell (27B, langsam) gewechselt wird. Niedrig = oft Deep (3-20s langsamer, bessere Analyse). Hoch = selten Deep (schneller, reicht fuer die meisten Anfragen).') +
+    fRange('latency_optimization.refinement_skip_max_chars', 'Refinement ueberspringen bis (Zeichen)', 0, 500, 10, {0:'Nie (immer Refinement)',80:'80',120:'120 (Standard)',200:'200',300:'300',500:'500 (fast immer skip)'}) +
+    fInfo('Nach einem Tool-Call (z.B. Temperatur abfragen) wird normalerweise ein zweiter LLM-Call gemacht um die Rohdaten in Jarvis-Stil umzuformulieren. Bei kurzen Antworten ist das unnoetig — der Humanizer-Text reicht. Hoehere Werte = mehr Antworten ohne Refinement = schneller, aber weniger Persoenlichkeit.') +
+    fRange('latency_optimization.tools_cache_ttl', 'Tool-Cache Dauer (Sekunden)', 0, 300, 10, {0:'Aus (kein Cache)',30:'30s',60:'60s (Standard)',120:'2 Min',300:'5 Min'}) +
+    fInfo('Die Tool-Definitionen (welche Geraete verfuegbar sind, Parameter etc.) werden bei jedem Request neu gebaut. Mit Cache werden sie wiederverwendet. 60s ist sicher weil der Entity-Katalog alle 5 Minuten aktualisiert wird. 0 = kein Cache (langsamer aber immer aktuell).') +
+    fSelect('latency_optimization.conv_summary_mode', 'Gespraeche kuerzen', [
+      {v:'truncate',l:'Text-Kuerzung — Schnell, kein LLM-Call (empfohlen)'},
+      {v:'llm',l:'LLM-Zusammenfassung — Besser, aber 500-2000ms langsamer'}
+    ]) +
+    fInfo('Wenn der Gespraechsverlauf zu lang wird, muessen aeltere Nachrichten gekuerzt werden. "Text-Kuerzung" schneidet aeltere Nachrichten auf 80 Zeichen ab — sofort und ohne extra LLM-Call. "LLM-Zusammenfassung" generiert eine intelligente Zusammenfassung, braucht aber einen zusaetzlichen LLM-Call (500-2000ms).')
+  ) +
   sectionWrap('&#129504;', 'Action Planner',
     fInfo('Der Action Planner fuehrt komplexe Multi-Step Anfragen aus (z.B. "Mach alles fertig fuer morgen"). Er plant iterativ mit dem Deep-Modell und fuehrt Tool-Calls parallel aus.') +
     fRange('planner.max_iterations', 'Max. Planungsschritte', 3, 15, 1, {3:'3',5:'5',8:'8',10:'10',15:'15'}) +
