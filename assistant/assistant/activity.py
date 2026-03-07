@@ -283,6 +283,8 @@ class ActivityEngine:
         central_bed = get_all_bed_sensors()
         self.bed_sensors = central_bed if central_bed else entities.get("bed_sensors", self._DEFAULT_BED_SENSORS)
         self.pc_sensors = entities.get("pc_sensors", self._DEFAULT_PC_SENSORS)
+        # Merke ob PC-Sensoren explizit konfiguriert (auch leere Liste = bewusst deaktiviert)
+        self._pc_sensors_configured = "pc_sensors" in entities
 
         thresholds = activity_cfg.get("thresholds", {})
         self.night_start = int(thresholds.get("night_start", 22))
@@ -658,13 +660,20 @@ class ActivityEngine:
     def _check_pc_active(self, states: list[dict]) -> bool:
         """Prueft ob der PC aktiv ist (Arbeit/Fokus).
 
-        Fallback: Wenn kein konfigurierter Sensor aktiv ist, werden alle
-        binary_sensor.* und switch.* mit PC/Computer-Mustern im Namen geprueft.
+        Wenn PC-Sensoren explizit konfiguriert sind (auch leere Liste),
+        wird NUR auf diese geprueft — kein Auto-Discovery.
+        Auto-Discovery nur wenn gar keine Konfiguration vorhanden.
         """
+        # Explizit konfiguriert + leere Liste = bewusst deaktiviert
+        if self._pc_sensors_configured and not self.pc_sensors:
+            return False
         for state in states:
             if state.get("entity_id", "") in self.pc_sensors:
                 if state.get("state") in ("on", "active"):
                     return True
+        # Auto-Discovery nur wenn NICHT explizit konfiguriert
+        if self._pc_sensors_configured:
+            return False
         return bool(self._auto_discover(
             states, ("binary_sensor.", "switch."), self.pc_sensors,
             pattern=self._PC_RE, label="PC", active_states={"on", "active"},

@@ -5260,8 +5260,19 @@ async def ui_health_trends(token: str = "", hours: int = 24):
     _check_token(token)
     hours = min(hours, 168)  # Max 7 Tage
 
-    # Aktueller Status
-    current = await brain.health_monitor.get_status() if hasattr(brain, "health_monitor") else {}
+    # Aktueller Status — Durchschnittswerte pro Sensortyp berechnen
+    current = {}
+    if hasattr(brain, "health_monitor"):
+        raw = await brain.health_monitor.get_status()
+        type_values: dict[str, list[float]] = {}
+        for s in raw.get("sensors", []):
+            s_type = s.get("type")
+            val = s.get("value")
+            if s_type and val is not None:
+                type_values.setdefault(s_type, []).append(val)
+        for s_type, vals in type_values.items():
+            current[s_type] = round(sum(vals) / len(vals), 1)
+        current["score"] = raw.get("score", 0)
 
     # Trend-Daten aus Redis (stuendliche Snapshots)
     trends = {"co2": [], "temperature": [], "humidity": []}

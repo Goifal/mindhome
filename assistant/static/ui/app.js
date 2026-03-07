@@ -3477,7 +3477,7 @@ function renderRooms() {
   ) +
   // ── Raum-Profile (room_profiles.yaml) ─────────────────────
   sectionWrap('&#128161;', 'Raum-Profile (Temperatur & Licht)',
-    fInfo('Standard-Temperatur und Helligkeit pro Raum. Diese Werte werden fuer adaptive Helligkeit und Kontext-Empfehlungen genutzt.') +
+    fInfo('Raum-Typ und Etage pro Raum. Diese Werte werden fuer Kontext-Empfehlungen genutzt.') +
     renderRoomProfileEditor()
   ) +
   // ── Saisonale Einstellungen (room_profiles.yaml) ─────────────
@@ -7521,17 +7521,42 @@ function renderCentralBedSensors() {
     container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Keine Raeume konfiguriert. Erstelle zuerst Raeume im Raum-Tab.</div>';
     return;
   }
+  // Haushaltsmitglieder fuer Personen-Zuordnung
+  const members = (getPath(S, 'household.members') || []).map(m => m.name).filter(Boolean);
   let html = '';
   for (const name of roomNames) {
     const r = rooms[name];
     const bedSensor = r.bed_sensor || '';
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
-    html += '<span style="font-size:12px;font-weight:600;min-width:120px;color:var(--text-primary);">' + esc(name) + '</span>';
-    html += '<div style="flex:1;position:relative;">';
-    html += '<input type="text" value="' + esc(bedSensor) + '" placeholder="binary_sensor.bett_..." id="bedSensor_' + esc(name) + '" autocomplete="off" style="width:100%;font-size:11px;padding:4px 8px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;" onfocus="_bedSensorAutocomplete(this,\'' + esc(name) + '\')" oninput="_bedSensorAutocomplete(this,\'' + esc(name) + '\')" onchange="_setCentralBedSensor(\'' + esc(name) + '\',this.value)">';
+    const bedPerson = r.bed_sensor_person || '';
+    const hasValue = !!bedSensor;
+    html += '<div style="padding:10px 12px;background:var(--bg-secondary);border-radius:var(--radius-sm);margin-bottom:8px;border-left:3px solid ' + (hasValue ? 'var(--accent)' : 'var(--border)') + ';">';
+    // Zeile 1: Raumname + Status
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">';
+    html += '<span style="font-size:13px;font-weight:600;color:var(--text-primary);">&#128719; ' + esc(name) + '</span>';
+    if (hasValue) html += '<span style="font-size:10px;color:var(--success);">&#9679; aktiv</span>';
+    else html += '<span style="font-size:10px;color:var(--text-muted);">&#9675; kein Sensor</span>';
+    html += '</div>';
+    // Zeile 2: Entity-Picker
+    html += '<div style="position:relative;margin-bottom:6px;">';
+    html += '<input type="text" value="' + esc(bedSensor) + '" placeholder="Sensor suchen... (z.B. bett, bed, matratze)" id="bedSensor_' + esc(name) + '" autocomplete="off" style="width:100%;font-size:12px;padding:8px 10px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;box-sizing:border-box;" onfocus="_bedSensorAutocomplete(this,\'' + esc(name) + '\')" oninput="_bedSensorAutocomplete(this,\'' + esc(name) + '\')" onchange="_setCentralBedSensor(\'' + esc(name) + '\',this.value)">';
     html += '<div id="bedSensorDD_' + esc(name) + '" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:150px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;z-index:9999;"></div>';
     html += '</div>';
-    if (bedSensor) html += '<button type="button" onclick="document.getElementById(\'bedSensor_' + esc(name) + '\').value=\'\';_setCentralBedSensor(\'' + esc(name) + '\',\'\')" style="font-size:10px;padding:2px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;">&times;</button>';
+    // Zeile 3: Person-Zuordnung + Loeschen
+    if (members.length > 0) {
+      html += '<div style="display:flex;align-items:center;gap:8px;">';
+      html += '<select style="flex:1;font-size:12px;padding:6px 8px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;" onchange="_setCentralBedPerson(\'' + esc(name) + '\',this.value)">';
+      html += '<option value=""' + (!bedPerson ? ' selected' : '') + '>Person zuordnen...</option>';
+      for (const m of members) {
+        html += '<option value="' + esc(m) + '"' + (bedPerson === m ? ' selected' : '') + '>' + esc(m) + '</option>';
+      }
+      html += '</select>';
+      if (hasValue) html += '<button type="button" onclick="document.getElementById(\'bedSensor_' + esc(name) + '\').value=\'\';_setCentralBedSensor(\'' + esc(name) + '\',\'\');_setCentralBedPerson(\'' + esc(name) + '\',\'\');renderCentralBedSensors();" style="font-size:11px;padding:6px 10px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:4px;cursor:pointer;white-space:nowrap;">&#128465; Entfernen</button>';
+      html += '</div>';
+    } else if (hasValue) {
+      html += '<div style="display:flex;justify-content:flex-end;">';
+      html += '<button type="button" onclick="document.getElementById(\'bedSensor_' + esc(name) + '\').value=\'\';_setCentralBedSensor(\'' + esc(name) + '\',\'\');renderCentralBedSensors();" style="font-size:11px;padding:6px 10px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:4px;cursor:pointer;">&#128465; Entfernen</button>';
+      html += '</div>';
+    }
     html += '</div>';
   }
   container.innerHTML = html;
@@ -7557,6 +7582,13 @@ function _setCentralBedSensor(roomName, value) {
   if (!RP.rooms) RP.rooms = {};
   if (!RP.rooms[roomName]) RP.rooms[roomName] = {};
   RP.rooms[roomName].bed_sensor = value;
+  scheduleRoomProfileSave();
+}
+
+function _setCentralBedPerson(roomName, value) {
+  if (!RP.rooms) RP.rooms = {};
+  if (!RP.rooms[roomName]) RP.rooms[roomName] = {};
+  RP.rooms[roomName].bed_sensor_person = value;
   scheduleRoomProfileSave();
 }
 
@@ -8981,8 +9013,6 @@ function renderRoomProfileEditor() {
     html += '<option value="eg"' + (r.floor==='eg'?' selected':'') + '>Erdgeschoss (EG)</option>';
     html += '<option value="og"' + (r.floor==='og'?' selected':'') + '>Obergeschoss (OG)</option>';
     html += '</select></div>';
-    // Temp (Helligkeit ist jetzt im Licht-Tab)
-    html += '<div class="form-group"><label>Standard-Temp (°C)</label><input type="number" data-rp-path="rooms.' + name + '.default_temp" value="' + (r.default_temp||20) + '" min="10" max="30" step="0.5" onchange="rpSetPath(\'rooms.' + name + '.default_temp\',parseFloat(this.value))"></div>';
     html += '</div>';
   }
   return html;
