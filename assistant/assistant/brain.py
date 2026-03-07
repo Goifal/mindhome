@@ -1323,7 +1323,7 @@ class AssistantBrain(BrainCallbacksMixin):
             return self._result(response_text, model="routine_engine", room=room, emitted=True)
 
         # Phase 7: Gaeste-Modus Deaktivierung
-        guest_off_triggers = ["gaeste sind weg", "besuch ist weg", "normalbetrieb", "gaeste modus aus"]
+        guest_off_triggers = ["gaeste sind weg", "gaeste sind wieder weg", "besuch ist weg", "besuch ist wieder weg", "normalbetrieb", "gaeste modus aus", "gaeste modus deaktivieren", "gaeste modus beenden"]
         _umlaut = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
         if any(t in text.lower().translate(_umlaut) for t in guest_off_triggers):
             if await self.routines.is_guest_mode_active():
