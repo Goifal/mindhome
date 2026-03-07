@@ -3377,8 +3377,7 @@ function renderMood() {
   // --- Voice-Mood Integration (verschoben aus Intelligenz-Tab) ---
   sectionWrap('&#127908;', 'Voice-Mood Integration',
     fInfo('Verknuepft die erkannte Stimm-Emotion (froehlich, traurig, aergerlich, nervoes, muede) direkt mit der Stimmungserkennung. So reagiert Jarvis nicht nur auf Worte, sondern auch auf den Tonfall.') +
-    fToggle('mood.voice_mood_integration', 'Voice-Emotion in Stimmung einbeziehen') +
-    fRange('voice_analysis.voice_weight', 'Gewicht der Stimm-Analyse', 0, 1, 0.05, {0:'Ignorieren',0.25:'Schwach',0.5:'Mittel',0.75:'Stark',1:'Voll'})
+    fToggle('mood.voice_mood_integration', 'Voice-Emotion in Stimmung einbeziehen')
   );
 }
 
@@ -3397,10 +3396,10 @@ function renderSensors() {
     '<div id="centralBedSensorContainer" style="padding:8px;">Lade Raeume...</div>'
   ) +
   sectionWrap('&#128225;', 'Weitere Sensoren',
-    fInfo('Andere Sensor-Typen fuer die Aktivitaetserkennung. Bettsensoren werden oben zentral konfiguriert und muessen hier nicht nochmal eingetragen werden.') +
-    fEntityPicker('activity.entities.media_players', 'Media Player', ['media_player']) +
-    fEntityPicker('activity.entities.mic_sensors', 'Mikrofon-Sensoren', ['binary_sensor','sensor']) +
-    fEntityPicker('activity.entities.pc_sensors', 'PC-Sensoren (Arbeit-Erkennung)', ['binary_sensor','sensor'])
+    fInfo('Andere Sensor-Typen (Media Player, Mikrofone, PC) konfigurierst du pro Raum im <strong>Raeume</strong>-Tab unter "Aktivitaets-Sensoren". Bettsensoren werden oben zentral konfiguriert.') +
+    `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-rooms]').click()">
+      <span class="info-icon">&#127968;</span>Aktivitaets-Sensoren verwaltest du im <strong>Raeume</strong>-Tab. Klicke hier.
+    </div>`
   );
 }
 
@@ -3599,7 +3598,7 @@ function renderVoice() {
   sectionWrap('&#127916;', 'Szenen & Narration',
     fInfo('Szenen, Uebergangszeiten und "Nicht stoeren"-Einstellungen werden zentral im Szenen-Tab verwaltet. Hier nur die globalen Narrations-Einstellungen.') +
     fToggle('narration.enabled', 'Szenen-Narration aktiv') +
-    fRange('narration.default_transition', 'Standard-Uebergang (Sek.)', 1, 20, 1) +
+    fRange('narration.default_transition', 'Standard-Uebergang (Sek.)', 1, 20, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s',20:'20s'}) +
     fRange('narration.step_delay', 'Verzoegerung zwischen Schritten (Sek.)', 0, 10, 0.5) +
     fToggle('narration.narrate_actions', 'Aktionen ansagen ("Licht wird gedimmt...")') +
     `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
@@ -8543,8 +8542,10 @@ function renderLights() {
     '<div id="circadianCurveEditor"></div>'
   ) +
   sectionWrap('&#127916;', 'Szenen-Uebergaenge',
-    fInfo('Uebergangszeiten pro Szene konfigurierst du zentral im Szenen-Tab. Hier nur der globale Standard-Uebergang.') +
-    fRange('narration.default_transition', 'Standard-Uebergang (Sek)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
+    fInfo('Der globale Standard-Uebergang wird im <strong>Sprache</strong>-Tab unter "Szenen & Narration" konfiguriert. Pro-Szene-Uebergaenge findest du im Szenen-Tab.') +
+    `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-voice]').click()">
+      <span class="info-icon">&#127908;</span>Standard-Uebergang konfigurierst du im <strong>Sprache</strong>-Tab. Klicke hier.
+    </div>` +
     `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
       <span class="info-icon">&#127916;</span>Einzelne Szenen-Uebergaenge verwaltest du im <strong>Szenen</strong>-Tab. Klicke hier.
     </div>`
