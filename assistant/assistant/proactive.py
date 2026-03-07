@@ -87,6 +87,18 @@ class ProactiveManager:
         # F-033: Lock für shared state (batch_queue, mb_triggered etc.)
         self._state_lock = asyncio.Lock()
 
+        # Appliance completion detection: Power thresholds + idle confirmation
+        appliance_cfg = yaml_config.get("appliance_monitor", {})
+        self._appliance_power_high = float(appliance_cfg.get("power_running_threshold", 10))
+        self._appliance_power_low = float(appliance_cfg.get("power_idle_threshold", 5))
+        self._appliance_confirm_minutes = int(appliance_cfg.get("idle_confirm_minutes", 5))
+        self._appliance_patterns = {
+            "washer": appliance_cfg.get("washer_patterns", ["washer", "waschmaschine"]),
+            "dryer": appliance_cfg.get("dryer_patterns", ["dryer", "trockner"]),
+            "dishwasher": appliance_cfg.get("dishwasher_patterns", ["dishwasher", "geschirrspueler", "spuelmaschine"]),
+        }
+        self._appliance_confirm_task: Optional[asyncio.Task] = None
+
         # Phase 7.1: Morning Briefing Auto-Trigger
         mb_cfg = yaml_config.get("routines", {}).get("morning_briefing", {})
         self._mb_enabled = mb_cfg.get("enabled", True)
@@ -122,6 +134,7 @@ class ProactiveManager:
             "person_left": (MEDIUM, "Person gegangen"),
             "washer_done": (MEDIUM, "Waschmaschine fertig"),
             "dryer_done": (MEDIUM, "Trockner fertig"),
+            "dishwasher_done": (MEDIUM, "Geschirrspueler fertig"),
             "doorbell": (MEDIUM, "Jemand hat geklingelt"),
             "night_motion_camera": (MEDIUM, "Naechtliche Bewegung erkannt"),
             "weather_warning": (LOW, "Wetterwarnung"),
@@ -571,15 +584,10 @@ class ProactiveManager:
             await self._check_bed_sensor_event(entity_id, new_val, old_val)
             await self._check_lux_sensor_event(entity_id, new_val)
 
-        # Waschmaschine/Trockner (Power-Sensor faellt unter Schwellwert)
-        if "washer" in entity_id or "waschmaschine" in entity_id:
-            if entity_id.startswith("sensor.") and new_val.replace(".", "").isdigit():
-                try:
-                    old_num = float(old_val) if old_val and old_val.replace(".", "").isdigit() else 0.0
-                    if old_num > 10 and float(new_val) < 5:
-                        await self._notify("washer_done", MEDIUM, {})
-                except (ValueError, TypeError):
-                    pass
+        # Waschmaschine / Trockner / Geschirrspueler: Power-basierte Erkennung
+        # mit Idle-Bestaetigung (wartet X Minuten bevor "fertig" gemeldet wird)
+        if entity_id.startswith("sensor."):
+            await self._check_appliance_power(entity_id, new_val, old_val)
 
         # Feature 2: Manual Override Detection für Covers
         if entity_id.startswith("cover.") and new_val != old_val:
@@ -702,6 +710,92 @@ class ProactiveManager:
                 break  # Nur erste passende Szene aktivieren
         except Exception as e:
             logger.debug("Scene Device-Trigger Fehler: %s", e)
+
+    def _match_appliance(self, entity_id: str) -> Optional[str]:
+        """Prueft ob entity_id ein bekanntes Geraet matched. Gibt appliance-key zurueck oder None."""
+        eid = entity_id.lower()
+        for appliance, patterns in self._appliance_patterns.items():
+            if any(p.lower() in eid for p in patterns):
+                return appliance
+        return None
+
+    async def _check_appliance_power(self, entity_id: str, new_val: str, old_val: str):
+        """Appliance-Erkennung: Setzt idle-Marker bei Power-Drop, bestaetigt nach Wartezeit."""
+        appliance = self._match_appliance(entity_id)
+        if not appliance:
+            return
+        if not new_val.replace(".", "", 1).isdigit():
+            return
+
+        redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
+        if not redis_client:
+            return
+
+        try:
+            new_num = float(new_val)
+            old_num = float(old_val) if old_val and old_val.replace(".", "", 1).isdigit() else 0.0
+        except (ValueError, TypeError):
+            return
+
+        idle_key = f"mha:appliance:idle_since:{appliance}"
+        running_key = f"mha:appliance:was_running:{appliance}"
+
+        if new_num >= self._appliance_power_high:
+            # Geraet laeuft (wieder) — idle-Marker loeschen, running setzen
+            await redis_client.set(running_key, entity_id, ex=86400)
+            await redis_client.delete(idle_key)
+            return
+
+        if new_num < self._appliance_power_low and old_num >= self._appliance_power_high:
+            # Power-Drop erkannt — war das Geraet vorher aktiv?
+            was_running = await redis_client.get(running_key)
+            if not was_running:
+                return
+            # Idle-Marker setzen (Timestamp) mit TTL
+            await redis_client.set(idle_key, str(time.time()), ex=self._appliance_confirm_minutes * 60 + 120)
+            logger.debug("Appliance %s: Power-Drop erkannt, Idle-Timer gestartet (%d Min)", appliance, self._appliance_confirm_minutes)
+
+            # Bestaetigungs-Task starten falls nicht schon laufend
+            if not self._appliance_confirm_task or self._appliance_confirm_task.done():
+                self._appliance_confirm_task = asyncio.create_task(self._appliance_confirm_loop())
+
+    async def _appliance_confirm_loop(self):
+        """Prueft periodisch ob idle-Marker abgelaufen sind und meldet Geraete als fertig."""
+        await asyncio.sleep(self._appliance_confirm_minutes * 60)
+        redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
+        if not redis_client:
+            return
+
+        for appliance in self._appliance_patterns:
+            idle_key = f"mha:appliance:idle_since:{appliance}"
+            running_key = f"mha:appliance:was_running:{appliance}"
+            cooldown_key = f"mha:appliance:notified:{appliance}"
+
+            idle_since_raw = await redis_client.get(idle_key)
+            if not idle_since_raw:
+                continue
+
+            try:
+                idle_since = float(idle_since_raw)
+            except (ValueError, TypeError):
+                continue
+
+            elapsed = time.time() - idle_since
+            if elapsed < self._appliance_confirm_minutes * 60:
+                continue
+
+            # Cooldown pruefen (keine Doppel-Meldung innerhalb 1h)
+            if await redis_client.get(cooldown_key):
+                await redis_client.delete(idle_key)
+                continue
+
+            # Bestaetigt: Geraet ist fertig
+            event_type = f"{appliance}_done"
+            await self._notify(event_type, MEDIUM, {"appliance": appliance})
+            await redis_client.set(cooldown_key, "1", ex=3600)
+            await redis_client.delete(idle_key)
+            await redis_client.delete(running_key)
+            logger.info("Appliance %s: Fertig-Meldung gesendet (idle seit %.0fs)", appliance, elapsed)
 
     async def _check_power_close(self, entity_id: str, new_val: str, old_val: str):
         """Echtzeit-Reaktion: Rollladen schliessen/oeffnen bei Stromverbrauch-Aenderung."""

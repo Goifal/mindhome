@@ -38,6 +38,7 @@ const _searchIndex = [
   {tab:'tab-jarvis', title:'Echte Empathie', keywords:'empathie emotion verstaendnis stimmung mitfuehlen', icon:'&#129505;'},
   {tab:'tab-jarvis', title:'Charakter-Schutz', keywords:'character lock filter retry llm rolle floskeln', icon:'&#128274;'},
   {tab:'tab-jarvis', title:'Geraete-Persoenlichkeit', keywords:'spitznamen device narration waschmaschine saugroboter', icon:'&#128374;'},
+  {tab:'tab-jarvis', title:'Geraete-Fertig-Erkennung', keywords:'waschmaschine trockner geschirrspueler fertig watt power idle strom verbrauch', icon:'&#9889;'},
   {tab:'tab-jarvis', title:'Daten-basierter Widerspruch', keywords:'pushback warnung fenster offen heizung eskalation', icon:'&#9888;'},
   {tab:'tab-jarvis', title:'Smart DJ', keywords:'musik genre stimmung kontextbewusst playlist', icon:'&#127925;'},
   {tab:'tab-jarvis', title:'Remember When — Erinnerungen', keywords:'erinnerungen memorable interactions langzeitgedaechtnis', icon:'&#128218;'},
@@ -3885,7 +3886,9 @@ function renderProactive() {
     fToggle('return_briefing.event_types.doorbell', 'Tuerklingel') +
     fToggle('return_briefing.event_types.person_arrived', 'Person angekommen') +
     fToggle('return_briefing.event_types.person_left', 'Person gegangen') +
-    fToggle('return_briefing.event_types.washer_done', 'Waschmaschine/Trockner fertig') +
+    fToggle('return_briefing.event_types.washer_done', 'Waschmaschine fertig') +
+    fToggle('return_briefing.event_types.dryer_done', 'Trockner fertig') +
+    fToggle('return_briefing.event_types.dishwasher_done', 'Geschirrspueler fertig') +
     fToggle('return_briefing.event_types.weather_warning', 'Wetter-Warnungen') +
     fToggle('return_briefing.event_types.low_battery', 'Batterie niedrig') +
     fToggle('return_briefing.event_types.maintenance_due', 'Wartung faellig') +
@@ -4195,6 +4198,17 @@ function renderJarvisFeatures() {
     fInfo('Geraete bekommen Spitznamen in proaktiven Meldungen — z.B. "Die Fleissige im Keller hat ihren Job erledigt" statt "Waschmaschine ausgeschaltet".') +
     fToggle('device_narration.enabled', 'Geraete-Persoenlichkeit aktiv') +
     fTextarea('device_narration.custom_nicknames', 'Eigene Spitznamen', 'JSON: {"waschmaschine": "Frau Waschkraft", "saugroboter": "Robbie"}')
+  ) +
+  sectionWrap('&#9889;', 'Geraete-Fertig-Erkennung',
+    fInfo('Jarvis erkennt anhand des Stromverbrauchs wann Waschmaschine, Trockner oder Geschirrspueler fertig sind. Das Geraet muss fuer die eingestellte Wartezeit unter dem Idle-Schwellwert bleiben bevor "fertig" gemeldet wird — das verhindert Fehlalarme bei Zwischenphasen (z.B. zwischen Waschen und Schleudern).') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Schwellwerte</div>' +
+    fRange('appliance_monitor.power_running_threshold', 'Laufend ab (Watt)', 5, 50, 5, {5:'5W',10:'10W',15:'15W',20:'20W',50:'50W'}) +
+    fRange('appliance_monitor.power_idle_threshold', 'Idle unter (Watt)', 1, 20, 1, {1:'1W',2:'2W',3:'3W',5:'5W',10:'10W',20:'20W'}) +
+    fRange('appliance_monitor.idle_confirm_minutes', 'Wartezeit vor Meldung', 1, 15, 1, {1:'1 Min',2:'2',3:'3',5:'5 Min',10:'10',15:'15 Min'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Entity-Muster (Sensor-IDs die das Geraet matchen)</div>' +
+    fKeywords('appliance_monitor.washer_patterns', 'Waschmaschine') +
+    fKeywords('appliance_monitor.dryer_patterns', 'Trockner') +
+    fKeywords('appliance_monitor.dishwasher_patterns', 'Geschirrspueler')
   ) +
   sectionWrap('&#9888;', 'Daten-basierter Widerspruch',
     fInfo('Vor einer Aktion prueft Jarvis Live-Daten und warnt konkret — z.B. "Heizung auf 25? Das Bad-Fenster ist offen." Aktion wird trotzdem ausgefuehrt, aber die Warnung erwaehnt.') +

@@ -1148,6 +1148,20 @@ routines:
       formal_tone: true
       restrict_security: true
       suggest_guest_wifi: true
+appliance_monitor:
+  power_running_threshold: 10
+  power_idle_threshold: 5
+  idle_confirm_minutes: 5
+  washer_patterns:
+  - washer
+  - waschmaschine
+  dryer_patterns:
+  - dryer
+  - trockner
+  dishwasher_patterns:
+  - dishwasher
+  - geschirrspueler
+  - spuelmaschine
 time_awareness:
   enabled: true
   check_interval_minutes: 5
