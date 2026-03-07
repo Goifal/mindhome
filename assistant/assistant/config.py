@@ -334,3 +334,18 @@ def get_room_profiles() -> dict:
                 _room_profiles_cache = {}
         _room_profiles_ts = time.time()
     return _room_profiles_cache
+
+
+def get_all_bed_sensors() -> list[str]:
+    """Sammelt alle Bettsensoren aus room_profiles.yaml (zentrale Quelle).
+
+    Returns:
+        Liste aller konfigurierten bed_sensor Entity-IDs aus allen Raeumen.
+    """
+    rp = get_room_profiles()
+    sensors = []
+    for room_name, room_cfg in (rp.get("rooms") or {}).items():
+        bs = room_cfg.get("bed_sensor", "")
+        if bs and bs not in sensors:
+            sensors.append(bs)
+    return sensors

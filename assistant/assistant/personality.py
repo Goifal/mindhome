@@ -2487,9 +2487,16 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         titles = person_cfg.get("titles") or {}
 
         # Trust-Level bestimmen (0=Gast, 1=Mitbewohner, 2=Owner)
+        # Erkannte Personen (mit Namen aus HA person sensor) sind mindestens
+        # Mitbewohner (1), nicht Gast (0) — Gaeste haben typischerweise
+        # keinen konfigurierten person-Sensor in Home Assistant.
         trust_cfg = yaml_config.get("trust_levels") or {}
         trust_persons = trust_cfg.get("persons") or {}
-        trust_level = trust_persons.get(person_name.lower(), trust_cfg.get("default", 0))
+        _default_trust = trust_cfg.get("default", 0)
+        # Wenn Person namentlich bekannt (nicht "User"/leer), mindestens Mitbewohner
+        if person_name and person_name != "User" and _default_trust == 0:
+            _default_trust = 1
+        trust_level = trust_persons.get(person_name.lower(), _default_trust)
 
         if person_name.lower() == primary_user.lower() or person_name == "User":
             title = titles.get(primary_user.lower(), "Sir")

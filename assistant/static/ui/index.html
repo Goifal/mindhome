@@ -371,7 +371,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .s-section-hdr.open .arrow { transform:rotate(180deg); }
 .s-section-hdr.open { border-left-color:var(--accent); }
 .s-section-body { padding:0 18px; max-height:0; overflow:hidden; transition:max-height 0.3s ease,padding 0.3s ease,overflow 0s 0.3s; }
-.s-section-body.open { padding:18px; max-height:5000px; overflow:visible; transition:max-height 0.3s ease,padding 0.3s ease,overflow 0s 0s; }
+.s-section-body.open { padding:18px; max-height:none; overflow:visible; }
 
 /* Entity */
 .entity-picker { background:var(--bg-card); border:1px solid rgba(0,212,255,0.1); border-radius:var(--radius-md); padding:14px; margin-bottom:14px; }
@@ -581,7 +581,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .kv-add { background:var(--accent-dim); border:1px dashed var(--border-accent); border-radius:var(--radius-sm); color:var(--accent); cursor:pointer; padding:6px 12px; font-size:11px; font-family:var(--font); }
 .kv-add:hover { background:var(--accent); color:var(--bg); }
 .entity-pick-wrap { position:relative; }
-.entity-pick-dropdown { position:absolute; top:100%; left:0; right:0; max-height:200px; overflow-y:auto; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-sm); box-shadow:0 4px 12px rgba(0,0,0,0.3); z-index:100; }
+.entity-pick-dropdown { position:absolute; top:100%; left:0; right:0; max-height:200px; overflow-y:auto; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-sm); box-shadow:0 4px 12px rgba(0,0,0,0.3); z-index:9999; }
 .entity-pick-item { padding:6px 10px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:12px; border-bottom:1px solid var(--border); }
 .entity-pick-item:hover { background:var(--bg-card-hover); }
 .entity-pick-item .ename { color:var(--text-primary); font-weight:500; }
@@ -595,8 +595,8 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .chip-opt.selected::before { content:'✓ '; font-size:10px; }
 
 /* Scene Configurator */
-.scene-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; }
-.scene-card { border:1px solid rgba(0,212,255,0.1); border-radius:var(--radius-sm); background:var(--bg-card); overflow:visible; transition:all var(--fast); }
+.scene-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; overflow:visible; }
+.scene-card { border:1px solid rgba(0,212,255,0.1); border-radius:var(--radius-sm); background:var(--bg-card); overflow:visible; transition:all var(--fast); position:relative; }
 .scene-card:hover { border-color:rgba(0,212,255,0.25); }
 .scene-card.scene-silence { border-left:3px solid var(--warning, #f59e0b); }
 .scene-card-hdr { display:flex; align-items:center; gap:8px; padding:10px 12px 6px; }
@@ -610,7 +610,7 @@ textarea { resize:vertical; min-height:70px; font-family:var(--mono); font-size:
 .scene-triggers-input { width:100%; background:transparent; border:1px solid var(--border); color:var(--text-secondary); font-size:11px; padding:3px 6px; border-radius:3px; outline:none; font-family:var(--mono); }
 .scene-triggers-input:focus { border-color:var(--accent); }
 .scene-triggers-input::placeholder { color:var(--text-muted); opacity:0.6; }
-.scene-card-body { padding:4px 12px 10px; display:flex; flex-direction:column; gap:6px; }
+.scene-card-body { padding:4px 12px 10px; display:flex; flex-direction:column; gap:6px; overflow:visible; }
 .scene-field { display:flex; align-items:center; gap:6px; }
 .scene-field-label { font-size:10px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; min-width:70px; flex-shrink:0; }
 .scene-field select { flex:1; background:var(--bg-primary); color:var(--text-primary); border:1px solid rgba(0,212,255,0.12); border-radius:4px; padding:3px 4px; font-size:11px; }
@@ -942,6 +942,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
         <div class="nav-group-items">
           <div class="nav-item" data-page="presence"><span class="nav-icon">&#128205;</span>Anwesenheit</div>
           <div class="nav-item" data-page="settings" data-tab="tab-rooms"><span class="nav-icon">&#127968;</span>Raeume & Speaker</div>
+          <div class="nav-item" data-page="settings" data-tab="tab-sensors"><span class="nav-icon">&#128225;</span>Sensoren</div>
           <div class="nav-item" data-page="settings" data-tab="tab-lights"><span class="nav-icon">&#128161;</span>Licht</div>
           <div class="nav-item" data-page="settings" data-tab="tab-devices"><span class="nav-icon">&#128268;</span>Geraete</div>
           <div class="nav-item" data-page="settings" data-tab="tab-covers"><span class="nav-icon">&#129695;</span>Rolllaeden</div>
@@ -1154,6 +1155,8 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); box-shadow
           <button class="btn btn-secondary btn-sm" onclick="batchSetRoom()">Raum</button>
           <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(true)">Verstecken</button>
           <button class="btn btn-secondary btn-sm" onclick="batchSetHidden(false)">Einblenden</button>
+          <button class="btn btn-secondary btn-sm" onclick="batchSetDiagnostics(true)" title="Diagnostik fuer ausgewaehlte Entities aktivieren">Diagnostik an</button>
+          <button class="btn btn-secondary btn-sm" onclick="batchSetDiagnostics(false)" title="Diagnostik fuer ausgewaehlte Entities deaktivieren">Diagnostik aus</button>
           <button class="btn btn-danger btn-sm" onclick="batchClearAnnotations()">Annotation entfernen</button>
           <button class="btn btn-secondary btn-sm" onclick="clearBatchSelection()">Aufheben</button>
         </div>

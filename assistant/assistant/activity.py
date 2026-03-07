@@ -27,7 +27,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from .config import yaml_config
+from .config import yaml_config, get_all_bed_sensors
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -279,7 +279,9 @@ class ActivityEngine:
         entities = activity_cfg.get("entities", {})
         self.media_players = entities.get("media_players", self._DEFAULT_MEDIA_PLAYERS)
         self.mic_sensors = entities.get("mic_sensors", self._DEFAULT_MIC_SENSORS)
-        self.bed_sensors = entities.get("bed_sensors", self._DEFAULT_BED_SENSORS)
+        # Bettsensoren: Zentral aus room_profiles.yaml, Fallback auf settings.yaml
+        central_bed = get_all_bed_sensors()
+        self.bed_sensors = central_bed if central_bed else entities.get("bed_sensors", self._DEFAULT_BED_SENSORS)
         self.pc_sensors = entities.get("pc_sensors", self._DEFAULT_PC_SENSORS)
 
         thresholds = activity_cfg.get("thresholds", {})

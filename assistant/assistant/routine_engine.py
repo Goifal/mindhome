@@ -24,7 +24,7 @@ _TZ = ZoneInfo("Europe/Berlin")
 
 import redis.asyncio as redis
 
-from .config import settings, yaml_config, get_person_title
+from .config import settings, yaml_config, get_person_title, get_all_bed_sensors
 from .ha_client import HomeAssistantClient
 from .ollama_client import OllamaClient
 from .websocket import emit_speaking
@@ -874,11 +874,14 @@ class RoutineEngine:
 
     async def _is_bed_occupied(self) -> bool:
         """Prueft ob ein Bettsensor belegt ist (für Cover-Schutz)."""
-        activity_cfg = yaml_config.get("activity", {})
-        bed_sensors = activity_cfg.get("entities", {}).get("bed_sensors", [
-            "binary_sensor.bed_occupancy",
-            "binary_sensor.bett",
-        ])
+        # Zentral aus room_profiles.yaml, Fallback auf settings.yaml
+        bed_sensors = get_all_bed_sensors()
+        if not bed_sensors:
+            activity_cfg = yaml_config.get("activity", {})
+            bed_sensors = activity_cfg.get("entities", {}).get("bed_sensors", [
+                "binary_sensor.bed_occupancy",
+                "binary_sensor.bett",
+            ])
         try:
             states = await self.ha.get_states()
             if not states:

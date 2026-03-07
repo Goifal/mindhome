@@ -2945,7 +2945,7 @@ class ProactiveManager:
 
     @staticmethod
     def _get_sun_data(states: list) -> dict:
-        """Extrahiert Sonnen-Daten (elevation, azimuth) aus HA states."""
+        """Extrahiert Sonnen-Daten (elevation, azimuth, rising) aus HA states."""
         for s in (states or []):
             if s.get("entity_id") == "sun.sun":
                 attrs = s.get("attributes", {})
@@ -2953,6 +2953,7 @@ class ProactiveManager:
                     "state": s.get("state", ""),
                     "elevation": attrs.get("elevation", 0),
                     "azimuth": attrs.get("azimuth", 180),
+                    "rising": attrs.get("rising", True),
                 }
         return {}
 
@@ -3338,7 +3339,14 @@ class ProactiveManager:
                         break
 
             # Feature 13: Bettsensor — Schlafzimmer nicht oeffnen wenn Bett belegt
+            # Zuerst per-cover bed_sensor, dann Fallback auf Raum-bed_sensor
             bed_sensor = cover.get("bed_sensor", "")
+            if not bed_sensor:
+                cover_room = cover.get("room", "")
+                if cover_room:
+                    _rp = _get_room_profiles_cached()
+                    _room_cfg = (_rp.get("rooms") or {}).get(cover_room, {})
+                    bed_sensor = _room_cfg.get("bed_sensor", "")
             bed_occupied = False
             if bed_sensor:
                 for s in (states or []):
@@ -3543,6 +3551,15 @@ class ProactiveManager:
         # Morgens: oeffnen (nur wenn Bett frei + hell genug)
         # Feature 5: Erweitertes Zeitfenster — wenn Sonnencheck blockiert,
         # bleibt das Fenster 2h offen (statt nur 15 Min Toleranz)
+        # Globaler Bettsensor-Check: Wenn IRGENDEIN Bettbelegungssensor aktiv ist,
+        # Rolladen NICHT oeffnen — unabhaengig von Cover-Profil-Konfiguration.
+        # Verhindert dass Rolladen hochfahren waehrend jemand schlaeft.
+        from cover_helpers import is_bed_occupied as _check_bed_global
+        _any_bed_occupied = _check_bed_global(states)
+        if _any_bed_occupied:
+            logger.info("Cover-Zeitplan: Oeffnung uebersprungen — Bettsensor belegt (global)")
+            return last_schedule_action
+
         fallback_max_min = cover_cfg.get("wakeup_fallback_max_minutes", 120)
         in_open_window = (
             last_schedule_action != "open"
@@ -3577,14 +3594,20 @@ class ProactiveManager:
                     if self.brain.executor._is_markise(eid, s):
                         continue
                     # Feature 13: Bettsensor — Schlafzimmer-Cover nicht oeffnen wenn besetzt
+                    # Zuerst per-cover bed_sensor, dann Fallback auf Raum-bed_sensor
                     skip = False
                     if cover_profiles:
                         for cp in cover_profiles:
-                            if cp.get("entity_id") == eid and cp.get("bed_sensor"):
-                                for bs in (states or []):
-                                    if bs.get("entity_id") == cp["bed_sensor"] and bs.get("state") == "on":
-                                        skip = True
-                                        break
+                            if cp.get("entity_id") == eid:
+                                _bs = cp.get("bed_sensor", "")
+                                if not _bs and cp.get("room"):
+                                    _rp2 = _get_room_profiles_cached()
+                                    _bs = (_rp2.get("rooms") or {}).get(cp["room"], {}).get("bed_sensor", "")
+                                if _bs:
+                                    for bs in (states or []):
+                                        if bs.get("entity_id") == _bs and bs.get("state") == "on":
+                                            skip = True
+                                            break
                     if skip:
                         continue
                     # Azimut für Sortierung
@@ -3653,9 +3676,20 @@ class ProactiveManager:
                     })
                 return "open"
 
-        # Abends: schliessen
-        elif (last_schedule_action != "close"
-                and abs(current_minutes - close_min) <= tolerance):
+        # Abends: schliessen — entweder per Zeitplan ODER per Elevation
+        _close_elevation = cover_cfg.get("sunset_close_elevation", None)
+        _elevation_close_triggered = False
+        if _close_elevation is not None and last_schedule_action != "close":
+            _sun = self._get_sun_data(states)
+            _cur_elev = _sun.get("elevation", 10)
+            _rising = _sun.get("rising", True)
+            # Nur abends (Sonne sinkt) und Elevation unter Schwellwert
+            if not _rising and _cur_elev <= float(_close_elevation):
+                _elevation_close_triggered = True
+                reason = f"Elevation {_cur_elev:.1f}° <= {_close_elevation}°"
+
+        if (last_schedule_action != "close"
+                and (_elevation_close_triggered or abs(current_minutes - close_min) <= tolerance)):
             count = 0
             for s in (states or []):
                 eid = s.get("entity_id", "")
