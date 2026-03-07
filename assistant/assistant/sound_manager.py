@@ -508,7 +508,10 @@ class SoundManager:
         Returns:
             True wenn erfolgreich.
         """
+        logger.info("speak_response aufgerufen: text='%s', room=%s, tts_data_keys=%s",
+                    text[:50] if text else '', room, list((tts_data or {}).keys()))
         if not self.enabled:
+            logger.warning("speak_response: SoundManager DISABLED")
             return False
 
         tts_data = tts_data or {}
@@ -521,8 +524,8 @@ class SoundManager:
             logger.warning("Kein Speaker fuer Sprachausgabe gefunden (room=%s)", room)
             return False
 
-        # T-1: Volume aus tts_data, Default 0.8 als Fallback
-        volume = tts_data.get("volume") or 0.8
+        # T-1: Volume aus tts_data (vom TTS-Enhancer mit Tageszeit-Logik)
+        volume = tts_data.get("volume", 0.8)
         # Wetter-adaptiv: Bei Regen/Sturm lauter
         weather_cond = await self._get_current_weather_condition()
         if weather_cond:
