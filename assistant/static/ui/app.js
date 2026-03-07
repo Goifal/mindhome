@@ -2467,17 +2467,57 @@ function renderApplianceDevices() {
 }
 
 function addApplianceDevice() {
-  const key = prompt('Geraete-Key (z.B. "oven", "robot_vacuum", "coffee_machine"):');
-  if (!key || !key.trim()) return;
-  const cleanKey = key.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
-  const label = prompt('Anzeigename (z.B. "Backofen", "Saugroboter", "Kaffeemaschine"):', cleanKey);
-  if (!label) return;
+  // Inline-Formular statt prompt() — passt zum Jarvis-UI-Stil
+  const c = document.getElementById('applianceDevicesContainer');
+  if (!c) return;
+  // Pruefen ob bereits ein Formular offen ist
+  if (c.querySelector('.appliance-add-form')) return;
+  const form = document.createElement('div');
+  form.className = 'appliance-add-form';
+  form.style.cssText = 'background:var(--bg-primary);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px;';
+  form.innerHTML = `
+    <div style="font-weight:600;font-size:13px;margin-bottom:8px;">Neues Geraet hinzufuegen</div>
+    <div class="form-group" style="margin-bottom:8px;">
+      <label style="font-size:12px;">Geraete-Key</label>
+      <input id="applianceNewKey" class="form-input" placeholder="z.B. oven, robot_vacuum, coffee_machine" style="font-size:12px;font-family:var(--mono);">
+    </div>
+    <div class="form-group" style="margin-bottom:8px;">
+      <label style="font-size:12px;">Anzeigename</label>
+      <input id="applianceNewLabel" class="form-input" placeholder="z.B. Backofen, Saugroboter, Kaffeemaschine" style="font-size:12px;">
+    </div>
+    <div class="form-group" style="margin-bottom:8px;">
+      <label style="font-size:12px;">Power-Sensor (optional)</label>
+      <div class="entity-pick-wrap">
+        <input id="applianceNewSensor" class="form-input entity-pick-input" placeholder="&#128269; sensor.steckdose_power" data-domains="sensor"
+          oninput="entityPickFilter(this,'sensor')" onfocus="entityPickFilter(this,'sensor')" style="font-size:12px;font-family:var(--mono);">
+        <div class="entity-pick-dropdown" style="display:none;"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-sm btn-secondary" onclick="this.closest('.appliance-add-form').remove()">Abbrechen</button>
+      <button class="btn btn-sm" onclick="confirmAddApplianceDevice()">Hinzufuegen</button>
+    </div>`;
+  c.insertBefore(form, c.firstChild);
+  form.querySelector('#applianceNewKey').focus();
+}
+
+function confirmAddApplianceDevice() {
+  const keyInput = document.getElementById('applianceNewKey');
+  const labelInput = document.getElementById('applianceNewLabel');
+  const sensorInput = document.getElementById('applianceNewSensor');
+  if (!keyInput || !keyInput.value.trim()) { toast('Geraete-Key ist erforderlich.', 'error'); return; }
+  const cleanKey = keyInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  const label = (labelInput.value.trim() || cleanKey);
+  const sensor = sensorInput ? sensorInput.value.trim() : '';
   const devices = getPath(S, 'appliance_monitor.devices') || [];
   if (devices.some(d => d.key === cleanKey)) { toast('Geraet "' + cleanKey + '" existiert bereits.', 'error'); return; }
-  devices.push({key: cleanKey, label: label.trim(), patterns: [cleanKey]});
+  const patterns = [cleanKey];
+  if (sensor) patterns.push(sensor);
+  devices.push({key: cleanKey, label: label, patterns: patterns});
   setPath(S, 'appliance_monitor.devices', devices);
   renderApplianceDevices();
   markDirty();
+  toast('Geraet "' + label + '" hinzugefuegt.');
 }
 
 function removeApplianceDevice(idx) {
@@ -6350,6 +6390,23 @@ function batchSetHidden(hidden) {
   toast(`${_annBatchSelected.size} Entities ${hidden ? 'versteckt' : 'eingeblendet'}`);
 }
 
+function batchSetDiagnostics(enabled) {
+  for (const eid of _annBatchSelected) {
+    if (!ENTITY_ANNOTATIONS[eid]) ENTITY_ANNOTATIONS[eid] = {};
+    if (enabled) {
+      delete ENTITY_ANNOTATIONS[eid].diagnostics;  // true = default
+    } else {
+      ENTITY_ANNOTATIONS[eid].diagnostics = false;
+    }
+    // Cleanup leere Annotations
+    const ann = ENTITY_ANNOTATIONS[eid];
+    if (!ann.description && !ann.role && !ann.room && !ann.hidden && ann.diagnostics !== false) delete ENTITY_ANNOTATIONS[eid];
+  }
+  scheduleAnnotationSave();
+  filterEntities();
+  toast(`Diagnostik fuer ${_annBatchSelected.size} Entities ${enabled ? 'aktiviert' : 'deaktiviert'}`);
+}
+
 // Auto-Erkennung
 async function discoverAnnotations() {
   try {
@@ -8641,8 +8698,6 @@ function renderRoomProfileEditor() {
     html += '</select></div>';
     // Temp (Helligkeit ist jetzt im Licht-Tab)
     html += '<div class="form-group"><label>Standard-Temp (°C)</label><input type="number" data-rp-path="rooms.' + name + '.default_temp" value="' + (r.default_temp||20) + '" min="10" max="30" step="0.5" onchange="rpSetPath(\'rooms.' + name + '.default_temp\',parseFloat(this.value))"></div>';
-    // Zweck
-    html += '<div class="form-group"><label>Zweck (fuer LLM-Kontext)</label><input type="text" data-rp-path="rooms.' + name + '.purpose" value="' + esc(r.purpose||'') + '" onchange="rpSetPath(\'rooms.' + name + '.purpose\',this.value)"></div>';
     html += '</div>';
   }
   return html;

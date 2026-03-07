@@ -1488,7 +1488,13 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # Kalender-Shortcut: Kalender-Fragen direkt erkennen und abkuerzen.
         # Chat-Antwort kommt sofort (Humanizer), TTS spricht die LLM-verfeinerte Version.
+        # Multi-Fragen-Guard: Wenn sowohl Kalender ALS AUCH Wetter erkannt wird,
+        # Shortcuts ueberspringen und ans LLM weiterleiten (kann beides beantworten).
         calendar_shortcut = self._detect_calendar_query(text)
+        weather_shortcut_check = self._detect_weather_query(text)
+        if calendar_shortcut and weather_shortcut_check:
+            logger.info("Multi-Frage erkannt (Kalender + Wetter) — Shortcuts uebersprungen, LLM uebernimmt")
+            calendar_shortcut = None  # LLM soll beide Fragen beantworten
         if calendar_shortcut:
             timeframe = calendar_shortcut
             logger.info("Kalender-Shortcut: '%s' -> timeframe=%s", text, timeframe)
@@ -3633,9 +3639,19 @@ class AssistantBrain(BrainCallbacksMixin):
                                 response_text = opinion
 
                     # Eskalationskette: JARVIS wird trockener bei Wiederholungen
+                    # Read-only Abfragen (Status, Wetter, Kalender etc.) ueberspringen —
+                    # Eskalation nur bei wiederholten Aktionen (Licht, Heizung, Rolladen etc.)
+                    _READ_ONLY_FUNCTIONS = {
+                        "get_house_status", "get_full_status_report", "get_weather",
+                        "get_calendar_events", "get_energy_status", "get_security_status",
+                        "get_room_status", "get_sensor_data", "get_temperature",
+                    }
                     try:
-                        esc_key = f"{func_name}:{final_args.get('room', '') if isinstance(final_args, dict) else ''}"
-                        escalation = await self.personality.check_escalation(esc_key)
+                        if func_name in _READ_ONLY_FUNCTIONS:
+                            escalation = None
+                        else:
+                            esc_key = f"{func_name}:{final_args.get('room', '') if isinstance(final_args, dict) else ''}"
+                            escalation = await self.personality.check_escalation(esc_key)
                         if escalation:
                             logger.info("Jarvis Eskalation: '%s'", escalation)
                             if response_text:
@@ -5513,9 +5529,16 @@ class AssistantBrain(BrainCallbacksMixin):
                 (r"\bIhrer\b", "deiner"), (r"\bIhres\b", "deines"),
                 # "Sie" in eindeutigen Kontexten ersetzen
                 (r"(?<=[,;:!?.]\s)Sie\b", "du"),
-                (r"(?<=\bfür\s)Sie\b", "dich"), (r"(?<=\bfür\s)Sie\b", "dich"),
+                (r"(?<=\bfür\s)Sie\b", "dich"),
                 (r"(?<=\bdass\s)Sie\b", "du"), (r"(?<=\bwenn\s)Sie\b", "du"),
                 (r"(?<=\bob\s)Sie\b", "du"),
+                # Catch-all: "[verb]en Sie" → "[verb]en du" (deckt "nennen Sie", "rufen Sie" etc. ab)
+                (r"(?<=\w[eE][nN]\s)Sie\b", "du"),
+                # "Bitte ... Sie" Pattern
+                (r"(?<=\bbitte\s)Sie\b", "du"),
+                # Satzanfang: "Sie" am Satzanfang → "Du" (wenn kein Plural-Kontext)
+                (r"^Sie\b", "Du"),
+                (r"(?<=\.\s)Sie\b", "du"),
             ]
             for pattern, replacement in _formal_map:
                 text = re.sub(pattern, replacement, text)

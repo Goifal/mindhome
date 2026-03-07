@@ -87,6 +87,7 @@ class TTSEnhancer:
             "confirmation": speed_cfg.get("confirmation", 105),
             "warning": speed_cfg.get("warning", 85),
             "briefing": speed_cfg.get("briefing", 95),
+            "status": speed_cfg.get("status", 95),
             "greeting": speed_cfg.get("greeting", 100),
             "question": speed_cfg.get("question", 100),
             "casual": speed_cfg.get("casual", 100),
@@ -98,6 +99,7 @@ class TTSEnhancer:
             "confirmation": pitch_cfg.get("confirmation", "+5%"),
             "warning": pitch_cfg.get("warning", "-10%"),
             "briefing": pitch_cfg.get("briefing", "0%"),
+            "status": pitch_cfg.get("status", "0%"),
             "greeting": pitch_cfg.get("greeting", "+5%"),
             "question": pitch_cfg.get("question", "+10%"),
             "casual": pitch_cfg.get("casual", "0%"),
@@ -155,6 +157,13 @@ class TTSEnhancer:
             self.ssml_enabled, self.prosody_variation, len(self.whisper_triggers),
         )
 
+    # Negations-Muster: Wenn ein Warning-Keyword in negiertem Kontext steht,
+    # ist es keine echte Warnung (z.B. "keine Alarme", "kein Fehler").
+    _NEGATION_PREFIXES = re.compile(
+        r"\b(?:kein|keine|keinen|keinem|keiner|ohne|nichts|nie|niemals|nicht)\s+",
+        re.IGNORECASE,
+    )
+
     def classify_message(self, text: str) -> str:
         """
         Klassifiziert den Nachrichtentyp.
@@ -166,6 +175,18 @@ class TTSEnhancer:
 
         for msg_type, patterns in MESSAGE_TYPE_PATTERNS.items():
             if any(p in text_lower for p in patterns):
+                # Warning-Guard: Pruefen ob Keywords in negiertem Kontext stehen
+                # z.B. "keine Alarme" → kein Warning, "Alarm ausgeloest" → Warning
+                if msg_type == "warning":
+                    matched_patterns = [p for p in patterns if p in text_lower]
+                    all_negated = all(
+                        bool(self._NEGATION_PREFIXES.search(
+                            text_lower[:text_lower.index(p)][-30:] if text_lower.index(p) > 0 else ""
+                        ))
+                        for p in matched_patterns
+                    )
+                    if all_negated:
+                        continue  # Alle Warning-Keywords sind negiert → kein Warning
                 return msg_type
 
         # Frage erkennen

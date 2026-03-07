@@ -4609,10 +4609,6 @@ async def ui_create_power_close_rule(request: Request, token: str = ""):
     """Neue Power-Close-Regel erstellen."""
     _check_token(token)
     data = await request.json()
-    if not data.get("power_sensor"):
-        raise HTTPException(status_code=400, detail="power_sensor ist erforderlich")
-    if not data.get("cover_ids"):
-        raise HTTPException(status_code=400, detail="cover_ids ist erforderlich")
     try:
         from .cover_config import create_power_close_rule
         return create_power_close_rule(data)
