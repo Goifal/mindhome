@@ -508,7 +508,10 @@ class SoundManager:
         Returns:
             True wenn erfolgreich.
         """
+        logger.info("speak_response aufgerufen: text='%s', room=%s, tts_data_keys=%s",
+                    text[:50] if text else '', room, list((tts_data or {}).keys()))
         if not self.enabled:
+            logger.warning("speak_response: SoundManager DISABLED")
             return False
 
         tts_data = tts_data or {}
