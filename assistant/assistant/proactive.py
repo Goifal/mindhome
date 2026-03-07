@@ -3543,6 +3543,15 @@ class ProactiveManager:
         # Morgens: oeffnen (nur wenn Bett frei + hell genug)
         # Feature 5: Erweitertes Zeitfenster — wenn Sonnencheck blockiert,
         # bleibt das Fenster 2h offen (statt nur 15 Min Toleranz)
+        # Globaler Bettsensor-Check: Wenn IRGENDEIN Bettbelegungssensor aktiv ist,
+        # Rolladen NICHT oeffnen — unabhaengig von Cover-Profil-Konfiguration.
+        # Verhindert dass Rolladen hochfahren waehrend jemand schlaeft.
+        from cover_helpers import is_bed_occupied as _check_bed_global
+        _any_bed_occupied = _check_bed_global(states)
+        if _any_bed_occupied:
+            logger.info("Cover-Zeitplan: Oeffnung uebersprungen — Bettsensor belegt (global)")
+            return last_schedule_action
+
         fallback_max_min = cover_cfg.get("wakeup_fallback_max_minutes", 120)
         in_open_window = (
             last_schedule_action != "open"
