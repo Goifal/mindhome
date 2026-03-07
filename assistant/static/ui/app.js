@@ -7529,7 +7529,8 @@ function _setBedSensorsForRoom(roomName, list) {
   // Alt-Keys aufräumen
   delete RP.rooms[roomName].bed_sensor;
   delete RP.rooms[roomName].bed_sensor_person;
-  scheduleRoomProfileSave();
+  _rpDirty = true;
+  scheduleAutoSave();
 }
 
 function renderCentralBedSensors() {
@@ -7594,9 +7595,11 @@ function renderCentralBedSensors() {
 
 function _addBedEntry() {
   const sel = document.getElementById('bedAddRoomSelect');
-  if (!sel || !sel.value) return;
+  if (!sel) { console.error('bedAddRoomSelect not found'); return; }
+  if (!sel.value) { console.warn('Kein Raum gewaehlt'); return; }
   const room = sel.value;
-  const beds = _getBedSensorsForRoom(room);
+  // Kopie der bestehenden Betten + neues leeres Bett
+  const beds = _getBedSensorsForRoom(room).slice();
   beds.push({sensor: '', person: ''});
   _setBedSensorsForRoom(room, beds);
   renderCentralBedSensors();
