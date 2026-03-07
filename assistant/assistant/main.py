@@ -3863,9 +3863,11 @@ async def ui_energy_live(token: str = ""):
             else:
                 price = price_raw
 
-        solar = eo._find_sensor_value(states, eo.solar_sensor, ["solar", "pv", "photovoltaik"])
+        # Solar nur anzeigen wenn explizit konfiguriert (Keyword-Fallback disabled —
+        # findet sonst Wetter-Sensoren wie solar_radiation statt PV-Anlagen)
+        solar = eo._find_sensor_value(states, eo.solar_sensor, []) if eo.solar_sensor else None
         consumption = eo._find_sensor_value(states, eo.consumption_sensor, ["consumption", "verbrauch", "power"])
-        export = eo._find_sensor_value(states, eo.grid_export_sensor, ["export", "einspeisung"])
+        export = eo._find_sensor_value(states, eo.grid_export_sensor, []) if eo.grid_export_sensor else None
 
         # Selbstversorgungsgrad berechnen
         self_sufficiency = None
