@@ -142,6 +142,7 @@ const _searchIndex = [
   {tab:'tab-security', title:'API Key', keywords:'api key netzwerk schutz addon integration', icon:'&#128273;'},
   {tab:'tab-security', title:'Vertrauensstufen', keywords:'trust gast mitbewohner besitzer rechte erlaubt', icon:'&#128272;'},
   {tab:'tab-security', title:'Besucher-Management', keywords:'besucher klingel kamera tuer gast entriegelung', icon:'&#128682;'},
+  {tab:'tab-security', title:'Netzwerk-Geraete', keywords:'netzwerk geraet device tracker bekannt unbekannt warnung wlan wifi', icon:'&#128225;'},
   {tab:'tab-security', title:'Kameras & Vision', keywords:'kamera vision llava ocr bild snapshot tuerklingel sicherheit objekterkennung', icon:'&#128247;'},
   {tab:'tab-security', title:'Notfall-Protokolle', keywords:'notfall feuer rauch einbruch wasser sirene', icon:'&#127752;'},
   {tab:'tab-security', title:'Interrupt-Queue', keywords:'interrupt critical notfall unterbrechung tts', icon:'&#9889;'},
@@ -1080,7 +1081,7 @@ function renderCurrentTab() {
       case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); loadCoverActionLog(); loadPowerCloseRules(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-remote': c.innerHTML = renderRemote(); break;
-      case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadEmergencyProtocols(); break;
+      case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadEmergencyProtocols(); loadKnownDevices(); break;
       case 'tab-autonomie': c.innerHTML = renderAutonomie(); loadSnapshots(); loadOptStatus(); loadAutomations(); break;
       case 'tab-followme': c.innerHTML = renderFollowMe(); break;
       case 'tab-jarvis': c.innerHTML = renderJarvisFeatures(); break;
@@ -4387,6 +4388,15 @@ function renderSecurity() {
     fRange('visitor_management.ring_cooldown_seconds', 'Klingel-Cooldown', 10, 120, 10, {10:'10s',30:'30s',60:'1 Min',120:'2 Min'}) +
     fRange('visitor_management.history_max', 'Max. Besucher-History', 20, 500, 20, {20:'20',50:'50',100:'100',200:'200',500:'500'})
   ) +
+  // --- Netzwerk-Geraete (Bekannte Geraete) ---
+  sectionWrap('&#128225;', 'Netzwerk-Geraete',
+    fInfo('Jarvis warnt bei unbekannten Geraeten im Netzwerk. Hier kannst du Muster definieren die als bekannt gelten (z.B. "ps5", "amazon", "iphone"). Geraete deren Name ein Muster enthaelt werden nie als unbekannt gemeldet.') +
+    fToggle('security.threat_assessment', 'Netzwerk-Ueberwachung aktiv') +
+    fKeywords('security.known_device_patterns', 'Bekannte Geraete-Muster') +
+    '<div class="form-group"><label>Aktuell bekannte Geraete</label>' +
+    '<div id="knownDevicesContainer" style="color:var(--text-muted);font-size:12px;padding:8px;">Lade...</div>' +
+    '<button class="btn btn-sm" onclick="loadKnownDevices()" style="margin-top:4px;">Aktualisieren</button></div>'
+  ) +
   // --- Kameras & Vision ---
   sectionWrap('&#128247;', 'Kameras & Vision',
     fInfo('Kamera-Integration fuer Tuerklingel-Erkennung, Sicherheits-Snapshots und visuelle Analyse. Bilder werden lokal via Vision-LLM analysiert — nichts verlaesst das Netzwerk.') +
@@ -4453,6 +4463,40 @@ const EP_PROTOCOLS = [
     roles: {valve:'Ventile schliessen', heating:'Heizung aus', tts_speaker:'Durchsage-Speaker', light:'Lichter einschalten'} },
 ];
 let _epData = {}; // { fire: {entities: [...], config: {...}}, ... }
+// ---- Netzwerk-Geraete: Bekannte Geraete laden + verwalten ----
+async function loadKnownDevices() {
+  const c = document.getElementById('knownDevicesContainer');
+  if (!c) return;
+  c.innerHTML = '<span style="color:var(--text-muted)">Lade Geraete...</span>';
+  try {
+    const r = await fetch(`/api/ui/known-devices?token=${encodeURIComponent(TOKEN)}`);
+    if (!r.ok) { c.innerHTML = '<span style="color:var(--danger)">Fehler beim Laden</span>'; return; }
+    const data = await r.json();
+    const devices = data.devices || [];
+    if (!devices.length) { c.innerHTML = '<span style="color:var(--text-muted)">Keine bekannten Geraete gespeichert.</span>'; return; }
+    c.innerHTML = devices.map(d => {
+      const name = d.friendly_name || d.entity_id;
+      const state = d.state === 'home' ? '<span style="color:var(--success)">&#9679;</span>' : '<span style="color:var(--text-muted)">&#9679;</span>';
+      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
+        ${state} <span style="flex:1;font-size:12px;">${esc(name)}</span>
+        <span style="font-size:10px;color:var(--text-muted);">${esc(d.entity_id)}</span>
+        <button class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:var(--danger);" onclick="removeKnownDevice('${esc(d.entity_id)}')">&#10005;</button>
+      </div>`;
+    }).join('');
+  } catch(e) { c.innerHTML = '<span style="color:var(--danger)">Verbindungsfehler</span>'; }
+}
+
+async function removeKnownDevice(entityId) {
+  if (!confirm('Geraet "' + entityId + '" aus der Liste entfernen? Beim naechsten Auftauchen wird es als unbekannt gemeldet.')) return;
+  try {
+    await fetch(`/api/ui/known-devices?token=${encodeURIComponent(TOKEN)}`, {
+      method: 'DELETE', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({entity_id: entityId})
+    });
+    loadKnownDevices();
+  } catch(e) { alert('Fehler: ' + e.message); }
+}
+
 let _epExpanded = {};
 
 async function loadEmergencyProtocols() {

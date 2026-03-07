@@ -2538,6 +2538,56 @@ async def ui_set_api_key_enforcement(req: ApiKeyEnforcementRequest, token: str =
         raise HTTPException(status_code=500, detail=f"Fehler: {e}")
 
 
+@app.get("/api/ui/known-devices")
+async def ui_get_known_devices(token: str = ""):
+    """Bekannte Netzwerk-Geraete aus Redis + aktuelle device_tracker States."""
+    _check_token(token)
+    devices = []
+    try:
+        ta = brain.threat_assessment
+        if not ta or not ta.redis:
+            return {"devices": []}
+
+        # Bekannte Geraete aus Redis
+        known_raw = await ta.redis.smembers("mha:security:known_devices")
+        known = {d.decode() if isinstance(d, bytes) else d for d in known_raw} if known_raw else set()
+
+        # Aktuelle States fuer Friendly Names + Status
+        states = await brain.ha.get_states() if brain.ha else []
+        state_map = {s.get("entity_id", ""): s for s in states}
+
+        for entity_id in sorted(known):
+            s = state_map.get(entity_id, {})
+            devices.append({
+                "entity_id": entity_id,
+                "friendly_name": s.get("attributes", {}).get("friendly_name", ""),
+                "state": s.get("state", "not_home"),
+            })
+    except Exception as e:
+        logger.warning("Known-Devices abrufen fehlgeschlagen: %s", e)
+    return {"devices": devices}
+
+
+@app.delete("/api/ui/known-devices")
+async def ui_delete_known_device(req: dict, token: str = ""):
+    """Geraet aus der Liste bekannter Geraete entfernen."""
+    _check_token(token)
+    entity_id = req.get("entity_id", "")
+    if not entity_id:
+        raise HTTPException(status_code=400, detail="entity_id fehlt")
+    try:
+        ta = brain.threat_assessment
+        if ta and ta.redis:
+            await ta.redis.srem("mha:security:known_devices", entity_id)
+            logger.info("Bekanntes Geraet entfernt: %s", entity_id)
+            return {"success": True, "message": f"{entity_id} entfernt"}
+        raise HTTPException(status_code=503, detail="Redis nicht verfuegbar")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/ui/settings")
 async def ui_get_settings(token: str = ""):
     """Alle Settings aus settings.yaml als JSON."""
