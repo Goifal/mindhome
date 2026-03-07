@@ -145,7 +145,7 @@ class TTSEnhancer:
         self.morning_start = _safe_int(vol_cfg.get("morning_start", 7), 7)
 
         # Auto-Nacht-Whisper: Automatisch Flüstern zwischen bestimmten Uhrzeiten
-        self.auto_night_whisper = tts_cfg.get("auto_night_whisper", True)
+        self.auto_night_whisper = tts_cfg.get("auto_night_whisper", False)
         self.auto_whisper_start = _safe_int(vol_cfg.get("auto_whisper_start", 23), 23)
         self.auto_whisper_end = _safe_int(vol_cfg.get("auto_whisper_end", 6), 6)
 
@@ -322,7 +322,7 @@ class TTSEnhancer:
         """Prüft ob Auto-Nacht-Whisper aktiv sein sollte."""
         tts_cfg = yaml_config.get("tts", {})
         vol_cfg = yaml_config.get("volume", {})
-        if not tts_cfg.get("auto_night_whisper", True):
+        if not tts_cfg.get("auto_night_whisper", False):
             return False
         hour = datetime.now().hour
         start = int(vol_cfg.get("auto_whisper_start", 23))
