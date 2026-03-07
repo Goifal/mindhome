@@ -8554,11 +8554,26 @@ function renderLights() {
 // ── Zirkadiane Kurven Editor (Interaktive SVG-Grafik) ─────────
 let _circDrag = null; // {curveType, index, svg, rect}
 
+const CIRC_FIXED_TIMES = ['00:00','03:00','06:00','08:00','10:00','13:00','16:00','19:00','21:00','23:30'];
+const CIRC_DEFAULT_BRI = [5, 5, 10, 70, 100, 100, 100, 60, 30, 5];
+const CIRC_DEFAULT_CT  = [2200, 2200, 2700, 4000, 5500, 5500, 5000, 3500, 2700, 2200];
+
+function _ensureFixedCircadianCurve(path, curveType) {
+  const curve = getPath(S, path) || [];
+  if (curve.length === 10) return curve;
+  // Reset to 10 fixed points with defaults
+  const defaults = curveType === 'bri' ? CIRC_DEFAULT_BRI : CIRC_DEFAULT_CT;
+  const key = curveType === 'bri' ? 'pct' : 'kelvin';
+  const newCurve = CIRC_FIXED_TIMES.map((t, i) => ({time: t, [key]: defaults[i]}));
+  setPath(S, path, newCurve);
+  return newCurve;
+}
+
 function renderCircadianCurveEditor() {
   const container = document.getElementById('circadianCurveEditor');
   if (!container) return;
-  const bCurve = getPath(S, 'lighting.circadian.brightness_curve') || [];
-  const ctCurve = getPath(S, 'lighting.circadian.ct_curve') || [];
+  const bCurve = _ensureFixedCircadianCurve('lighting.circadian.brightness_curve', 'bri');
+  const ctCurve = _ensureFixedCircadianCurve('lighting.circadian.ct_curve', 'ct');
 
   let html = '<div style="margin-top:12px;">';
 
@@ -8566,14 +8581,12 @@ function renderCircadianCurveEditor() {
   html += '<div style="margin-bottom:20px;">';
   html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Helligkeitskurve (% ueber den Tag)</div>';
   html += '<div id="circBriChart"></div>';
-  html += '<button type="button" onclick="addCircadianPoint(\'bri\')" style="margin-top:6px;font-size:11px;padding:3px 10px;background:var(--bg-hover);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;">+ Zeitpunkt</button>';
   html += '</div>';
 
   // Color Temperature Curve
   html += '<div>';
   html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Farbtemperatur-Kurve (Kelvin, nur tunable_white)</div>';
   html += '<div id="circCtChart"></div>';
-  html += '<button type="button" onclick="addCircadianPoint(\'ct\')" style="margin-top:6px;font-size:11px;padding:3px 10px;background:var(--bg-hover);color:var(--accent);border:1px solid var(--border);border-radius:4px;cursor:pointer;">+ Zeitpunkt</button>';
   html += '</div>';
 
   html += '</div>';
@@ -8593,7 +8606,7 @@ function _renderCircadianSVG(curveType, curve, valueKey, unit, vMin, vMax, color
   // Sort curve by time
   const sorted = (curve || []).slice().sort((a, b) => _timeToMin(a.time) - _timeToMin(b.time));
 
-  let svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:${W}px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;cursor:crosshair;user-select:none;" data-curvetype="${curveType}" onmousedown="_circChartClick(event,'${curveType}')" ontouchstart="_circChartClick(event,'${curveType}')">`;
+  let svg = `<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:${W}px;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;user-select:none;" data-curvetype="${curveType}">`;
 
   // Grid lines & labels - hours
   for (let h = 0; h <= 24; h += 3) {
@@ -8630,7 +8643,7 @@ function _renderCircadianSVG(curveType, curve, valueKey, unit, vMin, vMax, color
     const origIdx = curve.indexOf(sorted[i]);
     const x = PAD_L + (_timeToMin(sorted[i].time) / 1440) * cW;
     const y = PAD_T + cH - ((sorted[i][valueKey] - vMin) / (vMax - vMin)) * cH;
-    svg += `<circle cx="${x}" cy="${y}" r="6" fill="${color}" stroke="var(--bg-primary)" stroke-width="2" style="cursor:grab;" data-idx="${origIdx}" onmousedown="_circStartDrag(event,'${curveType}',${origIdx})" ontouchstart="_circStartDrag(event,'${curveType}',${origIdx})"/>`;
+    svg += `<circle cx="${x}" cy="${y}" r="6" fill="${color}" stroke="var(--bg-primary)" stroke-width="2" style="cursor:ns-resize;" data-idx="${origIdx}" onmousedown="_circStartDrag(event,'${curveType}',${origIdx})" ontouchstart="_circStartDrag(event,'${curveType}',${origIdx})"/>`;
     // Tooltip
     svg += `<text x="${x}" y="${y - 10}" text-anchor="middle" fill="var(--text-primary)" font-size="9" font-weight="600" pointer-events="none">${sorted[i].time} / ${sorted[i][valueKey]}${unit}</text>`;
   }
@@ -8663,25 +8676,21 @@ function _circStartDrag(e, curveType, index) {
 
   const onMove = (ev) => {
     if (!_circDrag) return;
-    const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
     const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
     const rect = _circDrag.rect;
-    const svgW = rect.width;
     const svgH = rect.height;
-    const W = 520, H = 180, PAD_L = 42, PAD_R = 12, PAD_T = 14, PAD_B = 28;
-    const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B;
-    const scaleX = svgW / W, scaleY = svgH / H;
+    const W = 520, H = 180, PAD_T = 14, PAD_B = 28;
+    const cH = H - PAD_T - PAD_B;
+    const scaleY = svgH / H;
 
-    const relX = (clientX - rect.left) / scaleX - PAD_L;
     const relY = (clientY - rect.top) / scaleY - PAD_T;
 
-    const tMin = Math.max(0, Math.min(1440, (relX / cW) * 1440));
     const path = _circDrag.curveType === 'bri' ? 'lighting.circadian.brightness_curve' : 'lighting.circadian.ct_curve';
     const curve = getPath(S, path) || [];
     const pt = curve[_circDrag.index];
     if (!pt) return;
 
-    pt.time = _minToTime(tMin);
+    // Time is fixed – only vertical (value) dragging allowed
 
     if (_circDrag.curveType === 'bri') {
       const pct = Math.max(0, Math.min(100, Math.round((1 - relY / cH) * 100 / 5) * 5));
@@ -8712,41 +8721,7 @@ function _circStartDrag(e, curveType, index) {
   document.addEventListener('touchend', onUp);
 }
 
-function _circChartClick(e, curveType) {
-  // Only add point on click directly on SVG background (not on existing point)
-  if (e.target.tagName === 'circle') return;
-  const svg = e.target.closest('svg');
-  if (!svg) return;
-  const rect = svg.getBoundingClientRect();
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  const W = 520, H = 180, PAD_L = 42, PAD_R = 12, PAD_T = 14, PAD_B = 28;
-  const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B;
-  const scaleX = rect.width / W, scaleY = rect.height / H;
-
-  const relX = (clientX - rect.left) / scaleX - PAD_L;
-  const relY = (clientY - rect.top) / scaleY - PAD_T;
-
-  if (relX < 0 || relX > cW || relY < 0 || relY > cH) return;
-
-  const tMin = (relX / cW) * 1440;
-  const time = _minToTime(tMin);
-
-  const path = curveType === 'bri' ? 'lighting.circadian.brightness_curve' : 'lighting.circadian.ct_curve';
-  const curve = getPath(S, path) || [];
-
-  if (curveType === 'bri') {
-    const pct = Math.max(0, Math.min(100, Math.round((1 - relY / cH) * 100 / 5) * 5));
-    curve.push({time, pct});
-  } else {
-    const kelvin = Math.max(1800, Math.min(6500, Math.round((1 - relY / cH) * (6500 - 1800) / 100) * 100 + 1800));
-    curve.push({time, kelvin});
-  }
-
-  setPath(S, path, curve);
-  scheduleAutoSave();
-  renderCircadianCurveEditor();
-}
+// _circChartClick removed – fixed 10 points, no click-to-add
 
 function updateCircadianPoint(curveType, index, field, value) {
   const path = curveType === 'bri' ? 'lighting.circadian.brightness_curve' : 'lighting.circadian.ct_curve';
@@ -8758,18 +8733,7 @@ function updateCircadianPoint(curveType, index, field, value) {
   }
 }
 
-function addCircadianPoint(curveType) {
-  const path = curveType === 'bri' ? 'lighting.circadian.brightness_curve' : 'lighting.circadian.ct_curve';
-  const curve = getPath(S, path) || [];
-  if (curveType === 'bri') {
-    curve.push({time: '12:00', pct: 50});
-  } else {
-    curve.push({time: '12:00', kelvin: 4000});
-  }
-  setPath(S, path, curve);
-  scheduleAutoSave();
-  renderCircadianCurveEditor();
-}
+// addCircadianPoint removed – fixed 10 points
 
 function removeCircadianPoint(curveType, index) {
   const path = curveType === 'bri' ? 'lighting.circadian.brightness_curve' : 'lighting.circadian.ct_curve';
