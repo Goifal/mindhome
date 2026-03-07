@@ -8554,14 +8554,14 @@ function renderLights() {
 // ── Zirkadiane Kurven Editor (Interaktive SVG-Grafik) ─────────
 let _circDrag = null; // {curveType, index, svg, rect}
 
-const CIRC_FIXED_TIMES = ['00:00','03:00','06:00','08:00','10:00','13:00','16:00','19:00','21:00','23:30'];
-const CIRC_DEFAULT_BRI = [5, 5, 10, 70, 100, 100, 100, 60, 30, 5];
-const CIRC_DEFAULT_CT  = [2200, 2200, 2700, 4000, 5500, 5500, 5000, 3500, 2700, 2200];
+const CIRC_FIXED_TIMES = ['00:00','01:00','02:00','03:00','04:00','05:00','06:00','07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'];
+const CIRC_DEFAULT_BRI = [5, 5, 5, 5, 5, 5, 10, 40, 70, 90, 100, 100, 100, 100, 100, 100, 100, 90, 80, 60, 40, 25, 10, 5];
+const CIRC_DEFAULT_CT  = [2200, 2200, 2200, 2200, 2200, 2200, 2700, 3000, 3500, 4500, 5000, 5500, 5500, 5500, 5500, 5000, 5000, 4500, 3500, 3000, 2700, 2700, 2200, 2200];
 
 function _ensureFixedCircadianCurve(path, curveType) {
   const curve = getPath(S, path) || [];
-  if (curve.length === 10) return curve;
-  // Reset to 10 fixed points with defaults
+  if (curve.length === 24) return curve;
+  // Reset to 24 fixed points (one per hour) with defaults
   const defaults = curveType === 'bri' ? CIRC_DEFAULT_BRI : CIRC_DEFAULT_CT;
   const key = curveType === 'bri' ? 'pct' : 'kelvin';
   const newCurve = CIRC_FIXED_TIMES.map((t, i) => ({time: t, [key]: defaults[i]}));
@@ -8600,7 +8600,7 @@ function _renderCircadianSVG(curveType, curve, valueKey, unit, vMin, vMax, color
   const el = document.getElementById(containerId);
   if (!el) return;
 
-  const W = 520, H = 180, PAD_L = 42, PAD_R = 12, PAD_T = 14, PAD_B = 28;
+  const W = 600, H = 220, PAD_L = 42, PAD_R = 12, PAD_T = 20, PAD_B = 28;
   const cW = W - PAD_L - PAD_R, cH = H - PAD_T - PAD_B;
 
   // Sort curve by time
@@ -8643,9 +8643,9 @@ function _renderCircadianSVG(curveType, curve, valueKey, unit, vMin, vMax, color
     const origIdx = curve.indexOf(sorted[i]);
     const x = PAD_L + (_timeToMin(sorted[i].time) / 1440) * cW;
     const y = PAD_T + cH - ((sorted[i][valueKey] - vMin) / (vMax - vMin)) * cH;
-    svg += `<circle cx="${x}" cy="${y}" r="6" fill="${color}" stroke="var(--bg-primary)" stroke-width="2" style="cursor:ns-resize;" data-idx="${origIdx}" onmousedown="_circStartDrag(event,'${curveType}',${origIdx})" ontouchstart="_circStartDrag(event,'${curveType}',${origIdx})"/>`;
-    // Tooltip
-    svg += `<text x="${x}" y="${y - 10}" text-anchor="middle" fill="var(--text-primary)" font-size="9" font-weight="600" pointer-events="none">${sorted[i].time} / ${sorted[i][valueKey]}${unit}</text>`;
+    svg += `<circle cx="${x}" cy="${y}" r="5" fill="${color}" stroke="var(--bg-primary)" stroke-width="1.5" style="cursor:ns-resize;" data-idx="${origIdx}" onmousedown="_circStartDrag(event,'${curveType}',${origIdx})" ontouchstart="_circStartDrag(event,'${curveType}',${origIdx})"/>`;
+    // Value label above point
+    svg += `<text x="${x}" y="${y - 8}" text-anchor="middle" fill="var(--text-primary)" font-size="7" font-weight="600" pointer-events="none">${sorted[i][valueKey]}${unit}</text>`;
   }
 
   svg += '</svg>';
@@ -8679,7 +8679,7 @@ function _circStartDrag(e, curveType, index) {
     const clientY = ev.touches ? ev.touches[0].clientY : ev.clientY;
     const rect = _circDrag.rect;
     const svgH = rect.height;
-    const W = 520, H = 180, PAD_T = 14, PAD_B = 28;
+    const W = 600, H = 220, PAD_T = 20, PAD_B = 28;
     const cH = H - PAD_T - PAD_B;
     const scaleY = svgH / H;
 

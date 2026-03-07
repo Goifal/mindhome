@@ -3511,15 +3511,29 @@ class FunctionExecutor:
     # Default-Kurve als Fallback (wird von settings.yaml überschrieben)
     _CIRCADIAN_BRIGHTNESS_CURVE_DEFAULT = [
         {"time": "00:00", "pct": 5},
+        {"time": "01:00", "pct": 5},
+        {"time": "02:00", "pct": 5},
         {"time": "03:00", "pct": 5},
+        {"time": "04:00", "pct": 5},
+        {"time": "05:00", "pct": 5},
         {"time": "06:00", "pct": 10},
+        {"time": "07:00", "pct": 40},
         {"time": "08:00", "pct": 70},
+        {"time": "09:00", "pct": 90},
         {"time": "10:00", "pct": 100},
+        {"time": "11:00", "pct": 100},
+        {"time": "12:00", "pct": 100},
         {"time": "13:00", "pct": 100},
+        {"time": "14:00", "pct": 100},
+        {"time": "15:00", "pct": 100},
         {"time": "16:00", "pct": 100},
+        {"time": "17:00", "pct": 90},
+        {"time": "18:00", "pct": 80},
         {"time": "19:00", "pct": 60},
-        {"time": "21:00", "pct": 30},
-        {"time": "23:30", "pct": 5},
+        {"time": "20:00", "pct": 40},
+        {"time": "21:00", "pct": 25},
+        {"time": "22:00", "pct": 10},
+        {"time": "23:00", "pct": 5},
     ]
 
     @staticmethod
