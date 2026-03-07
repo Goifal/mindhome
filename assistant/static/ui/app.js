@@ -62,6 +62,8 @@ const _searchIndex = [
   // Raeume & Speaker (tab-rooms)
   {tab:'tab-rooms', title:'Heizung', keywords:'thermostat heizkurve waermepumpe temperatur', icon:'&#128293;'},
   {tab:'tab-rooms', title:'Raeume', keywords:'raum speaker lautsprecher zuordnung', icon:'&#127968;'},
+  // Sensoren (tab-sensors)
+  {tab:'tab-sensors', title:'Sensoren', keywords:'sensor bettsensor bett schlaf bed occupancy praesenz', icon:'&#128225;'},
   // Licht (tab-lights)
   {tab:'tab-lights', title:'Licht', keywords:'lampe helligkeit farbe szene beleuchtung', icon:'&#128161;'},
   // Geraete (tab-devices)
@@ -1070,6 +1072,7 @@ function renderCurrentTab() {
       case 'tab-memory': c.innerHTML = renderMemory(); loadPersonalDates(); break;
       case 'tab-mood': c.innerHTML = renderMood(); break;
       case 'tab-rooms': c.innerHTML = renderRooms(); loadMindHomeEntities(); loadRoomTempAverage(); break;
+      case 'tab-sensors': c.innerHTML = renderSensors(); renderCentralBedSensors(); break;
       case 'tab-voice': c.innerHTML = renderVoice(); break;
       case 'tab-scenes': c.innerHTML = renderScenes(); break;
       case 'tab-routines': c.innerHTML = renderRoutines(); break;
@@ -1080,7 +1083,7 @@ function renderCurrentTab() {
       case 'tab-house-status': c.innerHTML = renderHouseStatus(); break;
       case 'tab-lights': c.innerHTML = renderLights(); loadLightEntities(); break;
       case 'tab-devices': c.innerHTML = renderDevices(); loadMindHomeEntities(); break;
-      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); loadCoverActionLog(); loadPowerCloseRules(); renderCentralBedSensors(); break;
+      case 'tab-covers': c.innerHTML = renderCovers(); loadCoverEntities(); loadCoverProfiles(); loadCoverLive(); loadCoverGroups(); loadCoverScenes(); loadCoverSchedules(); loadCoverSensors(); loadOpeningSensors(); loadCoverActionLog(); loadPowerCloseRules(); break;
       case 'tab-vacuum': c.innerHTML = renderVacuum(); break;
       case 'tab-remote': c.innerHTML = renderRemote(); break;
       case 'tab-security': c.innerHTML = renderSecurity(); loadApiKey(); loadEmergencyProtocols(); loadKnownDevices(); break;
@@ -3380,6 +3383,27 @@ function renderMood() {
 }
 
 // ---- Tab 5: Raeume ----
+// ════════════════════════════════════════════════════════════
+// TAB: Sensoren (zentrale Sensor-Konfiguration)
+// ════════════════════════════════════════════════════════════
+function renderSensors() {
+  return sectionWrap('&#128716;', 'Bettsensoren',
+    fInfo('Konfiguriere Bettsensoren <strong>einmal pro Raum</strong>. Alle Systeme greifen automatisch darauf zu:<br><br>' +
+      '&#129695; <strong>Rolllaeden:</strong> Nicht oeffnen wenn Bett belegt<br>' +
+      '&#128161; <strong>Licht:</strong> Sleep-Mode und Wake-up Light<br>' +
+      '&#127916; <strong>Aktivitaet:</strong> Schlaf-Erkennung<br>' +
+      '&#127748; <strong>Routinen:</strong> Aufwach-Erkennung (z.B. Kaffee)<br><br>' +
+      'Du musst den Sensor nirgends sonst eintragen — diese Zuordnung wird ueberall automatisch verwendet.') +
+    '<div id="centralBedSensorContainer" style="padding:8px;">Lade Raeume...</div>'
+  ) +
+  sectionWrap('&#128225;', 'Weitere Sensoren',
+    fInfo('Andere Sensor-Typen fuer die Aktivitaetserkennung. Bettsensoren werden oben zentral konfiguriert und muessen hier nicht nochmal eingetragen werden.') +
+    fEntityPicker('activity.entities.media_players', 'Media Player', ['media_player']) +
+    fEntityPicker('activity.entities.mic_sensors', 'Mikrofon-Sensoren', ['binary_sensor','sensor']) +
+    fEntityPicker('activity.entities.pc_sensors', 'PC-Sensoren (Arbeit-Erkennung)', ['binary_sensor','sensor'])
+  );
+}
+
 function renderRooms() {
   const hMode = getPath(S, 'heating.mode') || 'room_thermostat';
   const isCurve = hMode === 'heating_curve';
@@ -3431,11 +3455,13 @@ function renderRooms() {
     fRoomEntityMap('multi_room.room_motion_sensors', 'Bewegungsmelder-Zuordnung', ['binary_sensor'])
   ) +
   sectionWrap('&#127916;', 'Aktivitaets-Sensoren',
-    fInfo('Welche Home Assistant Entities sollen fuer die Aktivitaetserkennung genutzt werden? Tippe um zu suchen.') +
+    fInfo('Weitere Sensoren fuer die Aktivitaetserkennung. <strong>Bettsensoren</strong> werden zentral im <strong>Sensoren</strong>-Tab konfiguriert.') +
     fEntityPicker('activity.entities.media_players', 'Media Player', ['media_player']) +
     fEntityPicker('activity.entities.mic_sensors', 'Mikrofon-Sensoren', ['binary_sensor','sensor']) +
-    fEntityPicker('activity.entities.bed_sensors', 'Bett-Sensoren (Schlaf-Erkennung)', ['binary_sensor','sensor']) +
-    fEntityPicker('activity.entities.pc_sensors', 'PC-Sensoren (Arbeit-Erkennung)', ['binary_sensor','sensor'])
+    fEntityPicker('activity.entities.pc_sensors', 'PC-Sensoren (Arbeit-Erkennung)', ['binary_sensor','sensor']) +
+    `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-sensors]').click()">
+      <span class="info-icon">&#128716;</span>Bettsensoren konfigurierst du zentral im <strong>Sensoren</strong>-Tab. Klicke hier.
+    </div>`
   ) +
   sectionWrap('&#9200;', 'Aktivitaets-Zeiten',
     fInfo('Wann ist Nacht? Ab wann zaehlt Besuch? Wie lange muss Fokus dauern?') +
@@ -7242,11 +7268,6 @@ function renderCovers() {
     fToggle('seasonal_actions.cover_automation.disable_addon_cover_domain', 'Addon Cover-Domain Plugin deaktivieren (empfohlen)') +
     '<button class="btn btn-sm" onclick="_syncAddonCoverDomain()" style="margin-top:6px;font-size:11px;">Jetzt am Addon anwenden</button>' +
     '<div id="addonCoverDomainStatus" style="font-size:11px;margin-top:4px;color:var(--text-muted);"></div>'
-  ) +
-  // ── Bettsensoren (zentral) ─────────────────────────────────
-  sectionWrap('&#128716;', 'Bettsensoren (zentral)',
-    fInfo('Definiere Bettsensoren einmal pro Raum. Alle Systeme (Rolllaeden, Licht, Schlaf-Erkennung) nutzen automatisch den Sensor des jeweiligen Raumes. Du musst den Sensor nicht mehr einzeln in Cover-Profilen oder Licht-Einstellungen eintragen.') +
-    '<div id="centralBedSensorContainer" style="padding:8px;">Lade Raeume...</div>'
   ) +
   // ── Cover-Automatik (settings.yaml) ─────────────────────
   sectionWrap('&#9728;', 'Cover-Automatik',
