@@ -267,10 +267,23 @@ class ThreatAssessment:
         return threats
 
     async def _check_unknown_devices(self, states: list[dict]) -> list[dict]:
-        """Prueft ob unbekannte Geräte im Netzwerk sind."""
+        """Prueft ob unbekannte Geräte im Netzwerk sind.
+
+        Im Gaeste-Modus werden keine unbekannten Geräte gemeldet,
+        da Gaeste-Handys im WLAN erwartet sind.
+        """
         threats = []
         if not self.redis:
             return []
+
+        # Gaeste-Modus: Keine Unknown-Device-Warnungen
+        try:
+            guest_val = await self.redis.get("mha:routine:guest_mode")
+            if guest_val is not None:
+                if (guest_val.decode() if isinstance(guest_val, bytes) else guest_val) == "active":
+                    return []
+        except Exception:
+            pass
 
         # Device Tracker Entities
         tracked_devices = []

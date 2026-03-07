@@ -1225,9 +1225,11 @@ class RoutineEngine:
     # Gaeste-Modus (Feature 7.6)
     # ------------------------------------------------------------------
 
+    _UMLAUT_MAP = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
     def is_guest_trigger(self, text: str) -> bool:
         """Prueft ob der Text den Gaeste-Modus aktiviert."""
-        text_lower = text.lower().strip()
+        text_lower = text.lower().strip().translate(self._UMLAUT_MAP)
         return any(trigger in text_lower for trigger in self.guest_triggers)
 
     async def activate_guest_mode(self) -> str:
