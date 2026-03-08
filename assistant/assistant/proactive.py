@@ -3900,7 +3900,11 @@ class ProactiveManager:
                     )
 
         elif not heating_active and elevation > 5 and temp < 20:
-            # Heizung aus + Sonne: Sonnenbeschienene Fenster oeffnen (passive Solarwaerme)
+            # Heizung aus + Sonne: Sonnenbeschienene Fenster öffnen (passive Solarwärme)
+            # ABER: Nicht öffnen wenn Bett belegt (jemand schläft)
+            if await self._is_bed_occupied(states):
+                logger.debug("Passive Solarwärme übersprungen — Bett belegt")
+                return
             sunny_conditions = {"sunny", "partlycloudy"}
             if condition in sunny_conditions:
                 for cover in (cover_profiles or []):
