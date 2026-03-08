@@ -2457,47 +2457,8 @@ class AssistantBrain(BrainCallbacksMixin):
         # 3. Modell waehlen (mit kontext-basiertem Upgrade)
         model = self.model_router.select_model(text)
 
-        # Kontext-basiertes Upgrade: Nur bei echtem Reasoning-Bedarf upgraden.
-        # Schwellwert 5: Die drei Intelligence-Features (anticipation +1,
-        # learned_patterns +1, live_insights +1) kommen zusammen auf 3 —
-        # das triggerte bei normalen Gespraechen unnoetig das 27B-Modell
-        # (3-20s statt 1-5s). Mit Schwellwert 5 upgraden nur noch echte
-        # Reasoning-Aufgaben (whatif=3+, problem_solving=3+, critical=3+).
-        _upgrade_signals = 0
-        if problem_solving_ctx:
-            _upgrade_signals += 3  # Problemloesung braucht Deep
-        if whatif_prompt:
-            _upgrade_signals += 3  # Hypothetisches Denken braucht Deep
-        if anticipation_suggestions or learned_patterns:
-            _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
-        if live_insights:
-            _upgrade_signals += 1  # Aktive Insights = mehr zu verarbeiten
-        if sec_score and sec_score.get("level") == "critical":
-            _upgrade_signals += 3  # Kritische Sicherheit = Deep
-        elif sec_score and sec_score.get("level") == "warning":
-            _upgrade_signals += 1  # Warnung = nur Kontext, kein Upgrade allein
-
-        if _upgrade_signals >= self._opt_upgrade_signal_threshold and model != self.model_router.model_deep:
-            # Error-Mitigation VOR dem Upgrade pruefen: Wenn das Deep-Modell
-            # wiederholt timeoutet (z.B. nicht im VRAM, keep_alive=0), NICHT
-            # upgraden. Verhindert dass der Prompt fuer 32K gebaut wird und
-            # dann doch auf 9b laeuft.
-            _deep_model = self.model_router._cap_model(self.model_router.model_deep)
-            _deep_mitigation = await self.error_patterns.get_mitigation(
-                action_type="llm_chat", model=_deep_model,
-            )
-            if _deep_mitigation and _deep_mitigation.get("type") == "use_fallback":
-                logger.info(
-                    "Model Upgrade %s -> %s BLOCKIERT (Error-Mitigation: %s)",
-                    model, _deep_model, _deep_mitigation.get("reason", ""),
-                )
-            else:
-                _upgraded = _deep_model
-                if _upgraded != model:
-                    logger.info("Model Upgrade %s -> %s (signals: %d)", model, _upgraded, _upgrade_signals)
-                    model = _upgraded
-
-        # 3b. Gesprächsmodus erkennen (VOR System-Prompt-Bau, damit Prompt angepasst wird)
+        # 3a. Gesprächsmodus erkennen (VOR Deep-Upgrade, damit Intelligence-
+        # Features im Gespraechsmodus nicht unnoetig auf Deep eskalieren).
         # Nutzt conv_mode_msgs aus dem mega-gather (statt sequentiellem Redis-Call).
         _conversation_mode = False
         _conversation_topic = ""
@@ -2524,6 +2485,46 @@ class AssistantBrain(BrainCallbacksMixin):
                             _conversation_topic = " | ".join(_prev_texts)
         except Exception:
             logger.debug("Conversation-Mode fehlgeschlagen", exc_info=True)
+
+        # 3b. Kontext-basiertes Upgrade: Nur bei echtem Reasoning-Bedarf.
+        # Im Gespraechsmodus zaehlen Intelligence-Features (anticipation,
+        # learned_patterns, live_insights) NICHT — die sind in Konversationen
+        # immer aktiv und wuerden sonst jede Antwort unnoetig auf Deep treiben.
+        _upgrade_signals = 0
+        if problem_solving_ctx:
+            _upgrade_signals += 3  # Problemloesung braucht Deep
+        if whatif_prompt:
+            _upgrade_signals += 3  # Hypothetisches Denken braucht Deep
+        if not _conversation_mode:
+            # Intelligence-Signals nur ausserhalb von Konversationen zaehlen
+            if anticipation_suggestions or learned_patterns:
+                _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
+            if live_insights:
+                _upgrade_signals += 1  # Aktive Insights = mehr zu verarbeiten
+        if sec_score and sec_score.get("level") == "critical":
+            _upgrade_signals += 3  # Kritische Sicherheit = Deep
+        elif sec_score and sec_score.get("level") == "warning":
+            _upgrade_signals += 1  # Warnung = nur Kontext, kein Upgrade allein
+
+        if _upgrade_signals >= self._opt_upgrade_signal_threshold and model != self.model_router.model_deep:
+            # Error-Mitigation VOR dem Upgrade pruefen: Wenn das Deep-Modell
+            # wiederholt timeoutet (z.B. nicht im VRAM, keep_alive=0), NICHT
+            # upgraden. Verhindert dass der Prompt fuer 32K gebaut wird und
+            # dann doch auf 9b laeuft.
+            _deep_model = self.model_router._cap_model(self.model_router.model_deep)
+            _deep_mitigation = await self.error_patterns.get_mitigation(
+                action_type="llm_chat", model=_deep_model,
+            )
+            if _deep_mitigation and _deep_mitigation.get("type") == "use_fallback":
+                logger.info(
+                    "Model Upgrade %s -> %s BLOCKIERT (Error-Mitigation: %s)",
+                    model, _deep_model, _deep_mitigation.get("reason", ""),
+                )
+            else:
+                _upgraded = _deep_model
+                if _upgraded != model:
+                    logger.info("Model Upgrade %s -> %s (signals: %d)", model, _upgraded, _upgrade_signals)
+                    model = _upgraded
         if context is None:
             context = {}
         context["conversation_mode"] = _conversation_mode
@@ -2531,7 +2532,7 @@ class AssistantBrain(BrainCallbacksMixin):
         self._active_conversation_mode = _conversation_mode
         self._active_conversation_topic = _conversation_topic
 
-        # 3c. Gesprächsmodus Model-Upgrade: JARVIS-Persoenlichkeit braucht
+        # 3c. Gesprächsmodus Model-Upgrade (Fast→Smart): JARVIS-Persoenlichkeit braucht
         # mindestens das Smart-Modell. Das Fast-Modell (4B) kann den Charakter
         # nicht zuverlaessig halten.
         _text_low = text.lower()
@@ -2890,8 +2891,10 @@ class AssistantBrain(BrainCallbacksMixin):
         # (nach Base-Prompt + P1-Sektionen, nicht aus dem alten section_budget)
         _prompt_after_p1 = _estimate_tokens(system_prompt)
         _remaining_for_p2_and_conv = max(0, max_context_tokens - _prompt_after_p1 - user_tokens_est)
-        # 50/50 Split: Haelfte fuer P2+ Sektionen, Haelfte fuer Conversations
-        section_budget_p2 = max(200, int(_remaining_for_p2_and_conv * 0.5))
+        # Im Gespraechsmodus: Conversations brauchen mehr Platz (65%) damit
+        # der Kontext nicht verloren geht. Ausserhalb: 50/50 Split.
+        _conv_share = 0.65 if _conversation_mode else 0.50
+        section_budget_p2 = max(200, int(_remaining_for_p2_and_conv * (1 - _conv_share)))
 
         # Phase 3: P2+ Sektionen nach Budget einfuegen
         tokens_used_p2 = 0
@@ -2949,12 +2952,16 @@ class AssistantBrain(BrainCallbacksMixin):
         # Gespraeche laden — Anzahl aus yaml_config (UI-konfigurierbar)
         conv_cfg = cfg.yaml_config.get("context", {})
         conv_limit = int(conv_cfg.get("recent_conversations", 5))
-        # Nutze den bereits erkannten Gesprächsmodus (aus Schritt 3b)
+        # Nutze den bereits erkannten Gesprächsmodus (aus Schritt 3a)
         conversation_mode = _conversation_mode
         effective_limit = conv_limit * 2 if conversation_mode else conv_limit
         # Budget-Guard: Limit kappen wenn num_ctx zu klein
-        # ~100 Tokens pro Nachricht geschaetzt, max 60% des available_tokens für Conversations
-        max_by_budget = max(4, int(available_tokens * 0.6) // 100)
+        # ~100 Tokens pro Nachricht geschaetzt. Im Gespraechsmodus 80% des
+        # available_tokens fuer Conversations nutzen (statt 60%), Minimum 6
+        # Nachrichten damit kurze Follow-ups ("ja", "genau") Kontext behalten.
+        _conv_budget_share = 0.80 if conversation_mode else 0.60
+        _min_conv_msgs = 6 if conversation_mode else 4
+        max_by_budget = max(_min_conv_msgs, int(available_tokens * _conv_budget_share) // 100)
         if effective_limit > max_by_budget:
             _orig_limit = effective_limit
             effective_limit = max_by_budget
