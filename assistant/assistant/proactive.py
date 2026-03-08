@@ -614,7 +614,10 @@ class ProactiveManager:
             await self._check_appliance_power(entity_id, new_val, old_val)
 
         # Feature 2: Manual Override Detection für Covers
-        if entity_id.startswith("cover.") and new_val != old_val:
+        # Ignoriere Transitions von/zu unavailable/unknown (Gerät geht offline/online)
+        _non_physical = {"unavailable", "unknown", ""}
+        if (entity_id.startswith("cover.") and new_val != old_val
+                and old_val not in _non_physical and new_val not in _non_physical):
             try:
                 redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
                 if redis_client:
@@ -3874,20 +3877,23 @@ class ProactiveManager:
                     })
                 return "open"
 
-        # Abends: schliessen — entweder per Zeitplan ODER per Elevation
+        # Abends: schliessen — per Elevation (wenn konfiguriert) ODER per Zeitplan
         _close_elevation = cover_cfg.get("sunset_close_elevation", None)
-        _elevation_close_triggered = False
+        _close_triggered = False
         if _close_elevation is not None and last_schedule_action != "close":
             _sun = self._get_sun_data(states)
             _cur_elev = _sun.get("elevation", 10)
             _rising = _sun.get("rising", True)
             # Nur abends (Sonne sinkt) und Elevation unter Schwellwert
             if not _rising and _cur_elev <= float(_close_elevation):
-                _elevation_close_triggered = True
+                _close_triggered = True
                 reason = f"Elevation {_cur_elev:.1f}° <= {_close_elevation}°"
+        elif _close_elevation is None and last_schedule_action != "close":
+            # Zeitplan-Fallback NUR wenn keine Elevation konfiguriert ist
+            if abs(current_minutes - close_min) <= tolerance:
+                _close_triggered = True
 
-        if (last_schedule_action != "close"
-                and (_elevation_close_triggered or abs(current_minutes - close_min) <= tolerance)):
+        if last_schedule_action != "close" and _close_triggered:
             count = 0
             for s in (states or []):
                 eid = s.get("entity_id", "")
