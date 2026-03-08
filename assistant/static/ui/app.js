@@ -686,8 +686,9 @@ function toast(msg, type='success') {
 // ---- Helpers ----
 function esc(s) { if (s == null) return ''; const d=document.createElement('div'); d.textContent=String(s); return d.innerHTML.replace(/'/g,'&#39;'); }
 function fmtBytes(b) { if(b==null||isNaN(b)) return '0 B'; if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
-function getPath(obj,path) { return path.split('.').reduce((o,k)=>o?.[k], obj); }
+function getPath(obj,path) { if(!path) return undefined; return path.split('.').reduce((o,k)=>o?.[k], obj); }
 function setPath(obj,path,val) {
+  if(!path) return;
   const parts=path.split('.'); let cur=obj;
   for(let i=0;i<parts.length-1;i++) { if(cur[parts[i]]==null||typeof cur[parts[i]]!=='object') cur[parts[i]]={}; cur=cur[parts[i]]; }
   cur[parts[parts.length-1]]=val;
@@ -3897,6 +3898,7 @@ function _saveScenes(scenes) {
   // Nur Abweichungen vom Default + Custom Szenen speichern
   const data = {};
   const defaultMap = {};
+  const oldSaved = getPath(S, 'scenes') || {};
   for (const d of _DEFAULT_SCENES) defaultMap[d.id] = d;
   for (const sc of scenes) {
     const def = defaultMap[sc.id];
@@ -3913,6 +3915,13 @@ function _saveScenes(scenes) {
       if (sc.icon !== def.icon) diff.icon = sc.icon;
       if (JSON.stringify(sc.triggers || []) !== JSON.stringify(def.triggers || [])) diff.triggers = sc.triggers;
       if (JSON.stringify(sc.device_triggers || []) !== JSON.stringify(def.device_triggers || [])) diff.device_triggers = sc.device_triggers;
+      // Szene hatte vorher Overrides in YAML? Dann Array-Felder immer
+      // mitsenden damit deep-merge alte Werte ueberschreibt (nicht addiert)
+      const hadOverrides = !!oldSaved[sc.id];
+      if (hadOverrides) {
+        diff.triggers = sc.triggers || [];
+        diff.device_triggers = sc.device_triggers || [];
+      }
       if (Object.keys(diff).length > 0) data[sc.id] = diff;
     }
   }
@@ -5713,8 +5722,9 @@ function collectSettings() {
     setPath(updates, path, map);
   });
   // Entity-Picker lists (activity.entities.*)  - maintained in S via entityPickSelect/rmEntityPick
-  document.querySelectorAll('#settingsContent [data-entity-picker="list"]').forEach(el => {
+  document.querySelectorAll('#settingsContent [data-entity-picker="list"][data-path]').forEach(el => {
     const path = el.dataset.path;
+    if (!path) return;
     const arr = getPath(S, path) || [];
     setPath(updates, path, arr);
   });
