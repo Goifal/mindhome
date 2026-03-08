@@ -872,8 +872,8 @@ class ProactiveManager:
             # Unter Schwellwert gefallen → Covers wieder oeffnen
             elif new_num < threshold and old_num >= threshold:
                 # Nicht öffnen wenn jemand schläft
-                if await self._is_bed_occupied():
-                    logger.debug("Power-Close Öffnung übersprungen — Bett belegt")
+                if await self._is_sleeping():
+                    logger.debug("Power-Close Öffnung übersprungen — Schlafmodus aktiv")
                     return
                 for cid in cover_ids:
                     redis_key = f"mha:cover:power_close:{cid}"
@@ -3513,8 +3513,8 @@ class ProactiveManager:
             target_group = sched.get("group_id")
 
             # Nicht öffnen wenn Bett belegt (Schlafmodus)
-            if position > 0 and await self._is_bed_occupied(states):
-                logger.info("User-Zeitplan '%s' übersprungen — Bett belegt", time_str)
+            if position > 0 and await self._is_sleeping(states):
+                logger.info("User-Zeitplan '%s' übersprungen — Schlafmodus aktiv", time_str)
                 continue
 
             # Dedup per Redis
@@ -3592,11 +3592,11 @@ class ProactiveManager:
         # Feature 5: Erweitertes Zeitfenster — wenn Sonnencheck blockiert,
         # bleibt das Fenster 2h offen (statt nur 15 Min Toleranz)
         # Globaler Bettsensor-Check: Wenn IRGENDEIN Bettbelegungssensor aktiv ist,
-        # Rolladen NICHT oeffnen — unabhaengig von Cover-Profil-Konfiguration.
-        # Verhindert dass Rolladen hochfahren waehrend jemand schlaeft.
-        _any_bed_occupied = await self._is_bed_occupied(states)
-        if _any_bed_occupied:
-            logger.info("Cover-Zeitplan: Öffnung übersprungen — Bettsensor belegt (global)")
+        # Rolladen NICHT öffnen — unabhängig von Cover-Profil-Konfiguration.
+        # Verhindert dass Rolladen hochfahren während jemand schläft.
+        _is_sleep = await self._is_sleeping(states)
+        if _is_sleep:
+            logger.info("Cover-Zeitplan: Öffnung übersprungen — Schlafmodus aktiv")
             return last_schedule_action
 
         fallback_max_min = cover_cfg.get("wakeup_fallback_max_minutes", 120)
@@ -3911,8 +3911,8 @@ class ProactiveManager:
         elif not heating_active and elevation > 5 and temp < 20:
             # Heizung aus + Sonne: Sonnenbeschienene Fenster öffnen (passive Solarwärme)
             # ABER: Nicht öffnen wenn Bett belegt (jemand schläft)
-            if await self._is_bed_occupied(states):
-                logger.debug("Passive Solarwärme übersprungen — Bett belegt")
+            if await self._is_sleeping(states):
+                logger.info("Passive Solarwärme übersprungen — Schlafmodus aktiv")
                 return
             sunny_conditions = {"sunny", "partlycloudy"}
             if condition in sunny_conditions:
@@ -4062,8 +4062,8 @@ class ProactiveManager:
 
         if high_co2_rooms:
             # Nicht öffnen wenn Bett belegt (Schlafmodus)
-            if await self._is_bed_occupied(states):
-                logger.info("CO2-Lüftung übersprungen — Bett belegt (%s)",
+            if await self._is_sleeping(states):
+                logger.info("CO2-Lüftung übersprungen — Schlafmodus aktiv (%s)",
                             ", ".join(f"{r}: {int(c)} ppm" for r, c in high_co2_rooms))
                 return
             # Covers in betroffenen Räumen öffnen
@@ -4923,6 +4923,33 @@ class ProactiveManager:
                 return any(s.get("state") == "on" for s in bed_sensors)
         except Exception:
             pass
+        return False
+
+    async def _is_sleeping(self, states=None) -> bool:
+        """Prüft ob geschlafen wird — Aktivitätserkennung ODER Bettsensor.
+
+        Kombiniert drei Quellen:
+        1. Activity-Modul (detect_activity → sleeping)
+        2. Manueller Override (z.B. 'Gute Nacht' gesagt → sleeping)
+        3. Bettsensor-Fallback (_is_bed_occupied)
+
+        Returns True wenn EINE der Quellen Schlaf erkennt.
+        """
+        try:
+            detection = await self.brain.activity.detect_activity()
+            activity = detection.get("activity", "")
+            if activity == "sleeping":
+                logger.debug("_is_sleeping: True (activity=%s, confidence=%.2f)",
+                             activity, detection.get("confidence", 0))
+                return True
+        except Exception as e:
+            logger.debug("_is_sleeping: Activity-Check fehlgeschlagen: %s", e)
+
+        # Fallback: Bettsensor direkt prüfen
+        if await self._is_bed_occupied(states):
+            logger.debug("_is_sleeping: True (bed_occupied Fallback)")
+            return True
+
         return False
 
     # ------------------------------------------------------------------
