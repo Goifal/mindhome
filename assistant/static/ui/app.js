@@ -4004,7 +4004,7 @@ function renderScenes() {
         <div class="scene-field">
           <span class="scene-field-label">Geräte-Trigger</span>
           <div class="scene-device-triggers" data-scene-id="${esc(sc.id)}">
-            ${(sc.device_triggers||[]).map((dt, i) => `<div class="scene-dt-row" style="display:flex;gap:4px;margin-bottom:4px;">
+            ${(sc.device_triggers||[]).map((dt, i) => `<div class="scene-dt-row" style="display:flex;gap:4px;margin-bottom:4px;align-items:center;">
               <div class="entity-pick-wrap" style="position:relative;flex:1;">
                 <input type="text" class="scene-dt-input form-input entity-pick-input" value="${esc(dt)}"
                   placeholder="z.B. media_player.tv, binary_sensor.button"
@@ -4015,7 +4015,7 @@ function renderScenes() {
                   style="font-size:11px;font-family:var(--mono);">
                 <div class="entity-pick-dropdown" style="display:none;"></div>
               </div>
-              <button class="btn btn-sm" style="padding:2px 6px;font-size:11px;" onclick="removeSceneDeviceTrigger('${esc(sc.id)}',${i})">&#10005;</button>
+              <button type="button" class="btn btn-sm scene-dt-rm" style="padding:6px 10px;font-size:14px;min-width:36px;min-height:36px;z-index:10000;position:relative;flex-shrink:0;color:var(--danger,#ef4444);" onclick="event.stopPropagation();removeSceneDeviceTrigger('${esc(sc.id)}',${i})" ontouchend="event.preventDefault();event.stopPropagation();removeSceneDeviceTrigger('${esc(sc.id)}',${i})">&#10005;</button>
             </div>`).join('')}
             <button class="btn btn-sm" style="padding:2px 8px;font-size:11px;margin-top:2px;" onclick="addSceneDeviceTrigger('${esc(sc.id)}')">+ Geraet</button>
           </div>
@@ -4107,7 +4107,13 @@ function addSceneDeviceTrigger(sceneId) {
   renderCurrentTab();
 }
 
+let _dtRemovePending = false;
 function removeSceneDeviceTrigger(sceneId, index) {
+  // Debounce: ontouchend + onclick können beide feuern
+  if (_dtRemovePending) return;
+  _dtRemovePending = true;
+  setTimeout(() => { _dtRemovePending = false; }, 300);
+
   const scenes = _getScenes();
   const sc = scenes.find(s => s.id === sceneId);
   if (!sc || !sc.device_triggers) return;
