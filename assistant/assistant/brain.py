@@ -1314,23 +1314,30 @@ class AssistantBrain(BrainCallbacksMixin):
                 await self._speak_and_emit(fallback, room=room)
                 return self._result(fallback, model="routine_engine_fallback", room=room, emitted=True)
 
-        # Phase 7: Gaeste-Modus Trigger
+        # Phase 7: Gaeste-Modus (Deaktivierung VOR Aktivierung pruefen!)
+        _umlaut = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+        _text_norm = text.lower().translate(_umlaut)
+        guest_off_triggers = [
+            "gaeste sind weg", "gaeste sind wieder weg", "gaeste sind gegangen",
+            "besuch ist weg", "besuch ist wieder weg", "besuch ist gegangen",
+            "normalbetrieb", "gaeste modus aus", "gaeste modus deaktivieren",
+            "gaeste modus beenden", "gaestemodus deaktivieren", "gaestemodus aus",
+            "gaestemodus beenden", "kein besuch mehr",
+        ]
+        if any(t in _text_norm for t in guest_off_triggers):
+            if await self.routines.is_guest_mode_active():
+                logger.info("Gaeste-Modus Deaktivierung erkannt")
+                response_text = self._filter_response(await self.routines.deactivate_guest_mode())
+                self._remember_exchange(text, response_text)
+                await self._speak_and_emit(response_text, room=room)
+                return self._result(response_text, model="routine_engine", room=room, emitted=True)
+
         if self.routines.is_guest_trigger(text):
             logger.info("Gaeste-Modus Trigger erkannt")
             response_text = self._filter_response(await self.routines.activate_guest_mode())
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
             return self._result(response_text, model="routine_engine", room=room, emitted=True)
-
-        # Phase 7: Gaeste-Modus Deaktivierung
-        guest_off_triggers = ["gaeste sind weg", "gaeste sind wieder weg", "besuch ist weg", "besuch ist wieder weg", "normalbetrieb", "gaeste modus aus", "gaeste modus deaktivieren", "gaeste modus beenden"]
-        _umlaut = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
-        if any(t in text.lower().translate(_umlaut) for t in guest_off_triggers):
-            if await self.routines.is_guest_mode_active():
-                response_text = self._filter_response(await self.routines.deactivate_guest_mode())
-                self._remember_exchange(text, response_text)
-                await self._speak_and_emit(response_text, room=room)
-                return self._result(response_text, model="routine_engine", room=room, emitted=True)
 
         # Phase 13.1: Sicherheits-Bestaetigung (lock_door:unlock, arm_security_system:disarm, etc.)
         security_result = await self._handle_security_confirmation(text, person or "")
