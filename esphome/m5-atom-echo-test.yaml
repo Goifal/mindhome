@@ -56,6 +56,10 @@ esp32:
 
 # --- Logging ---
 logger:
+  logs:
+    # Reduziere Spam von bekannten I2S-Bus-Sharing-Warnungen
+    i2s_audio.speaker: WARN
+    component: WARN
 
 # --- WiFi ---
 wifi:
@@ -100,6 +104,7 @@ micro_wake_word:
   models:
     - model: hey_jarvis
   on_wake_word_detected:
+    - micro_wake_word.stop:
     - voice_assistant.start:
         wake_word: !lambda return wake_word;
 
@@ -115,7 +120,9 @@ voice_assistant:
 
   # Nach Verbindung zu HA: Wake Word starten
   on_client_connected:
-    - delay: 2s
+    - delay: 5s
+    - micro_wake_word.stop:
+    - delay: 500ms
     - lambda: id(va).set_use_wake_word(false);
     - micro_wake_word.start:
 
@@ -152,6 +159,8 @@ voice_assistant:
     - wait_until:
         not:
           speaker.is_playing:
+    - micro_wake_word.stop:
+    - delay: 300ms
     - lambda: id(va).set_use_wake_word(false);
     - micro_wake_word.start:
     - light.turn_off:
@@ -165,6 +174,9 @@ voice_assistant:
         brightness: 75%
         effect: none
     - delay: 3s
+    - voice_assistant.stop:
+    - micro_wake_word.stop:
+    - delay: 300ms
     - lambda: id(va).set_use_wake_word(false);
     - micro_wake_word.start:
     - light.turn_off:
@@ -198,6 +210,8 @@ binary_sensor:
               then:
                 - voice_assistant.stop:
               else:
+                - micro_wake_word.stop:
+                - delay: 300ms
                 - lambda: id(va).set_use_wake_word(false);
                 - micro_wake_word.start:
       - timing:
