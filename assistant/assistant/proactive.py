@@ -4944,7 +4944,7 @@ class ProactiveManager:
         return False
 
     _SLEEP_LOCK_KEY = "mha:cover:sleep_lock"
-    _SLEEP_LOCK_TTL = 1800  # 30 Minuten — Schlaf-Lock hält mindestens so lange
+    _SLEEP_LOCK_TTL = 300  # 5 Minuten — überbrückt kurzes Sensor-Flackern
 
     async def _is_sleeping(self, states=None) -> bool:
         """Prüft ob geschlafen wird — robust gegen Sensor-Flackern.
