@@ -1,13 +1,13 @@
 /* ============================================================
    Jarvis Dashboard v2 — JavaScript
-   11 Settings Tabs: Allgemein, Personen, Persoenlichkeit, Gedaechtnis,
-   Stimmung, Raeume, Stimme, Routinen, Sicherheit, KI-Autonomie, Easter Eggs
+   11 Settings Tabs: Allgemein, Personen, Persönlichkeit, Gedächtnis,
+   Stimmung, Räume, Stimme, Routinen, Sicherheit, KI-Autonomie, Easter Eggs
    ============================================================ */
 
 let TOKEN = '';
 let S = {};  // Settings cache
 let RP = {};  // Room-Profiles cache (room_profiles.yaml)
-let _rpDirty = false;  // Room-Profiles geaendert?
+let _rpDirty = false;  // Room-Profiles geändert?
 let ALL_ENTITIES = [];
 let ENTITY_ANNOTATIONS = {};
 let ENTITY_ROLES_DEFAULT = {};
@@ -20,14 +20,14 @@ const API = '';
 let _autoSaveTimer = null;
 const _AUTO_SAVE_DELAY = 2000;  // 2 Sekunden Debounce
 
-// ---- Sidebar-Suche: Suchindex ueber alle Settings-Sektionen ----
+// ---- Sidebar-Suche: Suchindex über alle Settings-Sektionen ----
 const _searchIndex = [
   // Allgemein (tab-general)
   {tab:'tab-general', title:'Assistent', keywords:'name sprache version grundeinstellungen', icon:'&#9881;'},
   {tab:'tab-general', title:'Web-Suche', keywords:'searxng duckduckgo recherche web search', icon:'&#128269;'},
   {tab:'tab-general', title:'Hauptbenutzer', keywords:'name benutzer primary user', icon:'&#128100;'},
   {tab:'tab-general', title:'Haushaltsmitglieder', keywords:'personen household member gast besitzer', icon:'&#128106;'},
-  {tab:'tab-general', title:'Geraete-Erkennung', keywords:'command detection nouns verben befehle nlp', icon:'&#127899;'},
+  {tab:'tab-general', title:'Geräte-Erkennung', keywords:'command detection nouns verben befehle nlp', icon:'&#127899;'},
   // KI-Modelle & Stil (tab-personality)
   {tab:'tab-personality', title:'KI-Modelle & Stil', keywords:'modell llm ollama fast smart deep openai', icon:'&#127917;'},
   {tab:'tab-personality', title:'GPU-Performance', keywords:'flash attention gpu vram keep alive performance speed latenz', icon:'&#9889;'},
@@ -35,103 +35,103 @@ const _searchIndex = [
   // Jarvis-Features (tab-jarvis)
   {tab:'tab-jarvis', title:'Progressive Antworten', keywords:'denkt laut zwischen-meldungen verarbeitung', icon:'&#128172;'},
   {tab:'tab-jarvis', title:'MCU-Intelligenz', keywords:'proaktiv mitdenken ingenieur diagnose anomalie kreuz-referenz implizit', icon:'&#129504;'},
-  {tab:'tab-jarvis', title:'MCU-Persoenlichkeit', keywords:'rueckbezuege callbacks lern-bestaetigung vorhersage wetter selbst-bewusstsein humor', icon:'&#127917;'},
-  {tab:'tab-jarvis', title:'Echte Empathie', keywords:'empathie emotion verstaendnis stimmung mitfuehlen', icon:'&#129505;'},
+  {tab:'tab-jarvis', title:'MCU-Persönlichkeit', keywords:'rückbezüge callbacks lern-bestätigung vorhersage wetter selbst-bewusstsein humor', icon:'&#127917;'},
+  {tab:'tab-jarvis', title:'Echte Empathie', keywords:'empathie emotion Verständnis stimmung mitfühlen', icon:'&#129505;'},
   {tab:'tab-jarvis', title:'Charakter-Schutz', keywords:'character lock filter retry llm rolle floskeln', icon:'&#128274;'},
-  {tab:'tab-jarvis', title:'Geraete-Persoenlichkeit', keywords:'spitznamen device narration waschmaschine saugroboter', icon:'&#128374;'},
-  {tab:'tab-jarvis', title:'Geraete-Fertig-Erkennung', keywords:'waschmaschine trockner geschirrspueler fertig watt power idle strom verbrauch', icon:'&#9889;'},
+  {tab:'tab-jarvis', title:'Geräte-Persönlichkeit', keywords:'spitznamen device narration waschmaschine saugroboter', icon:'&#128374;'},
+  {tab:'tab-jarvis', title:'Geräte-Fertig-Erkennung', keywords:'waschmaschine trockner Geschirrspüler fertig watt power idle strom verbrauch', icon:'&#9889;'},
   {tab:'tab-jarvis', title:'Daten-basierter Widerspruch', keywords:'pushback warnung fenster offen heizung eskalation', icon:'&#9888;'},
   {tab:'tab-jarvis', title:'Smart DJ', keywords:'musik genre stimmung kontextbewusst playlist', icon:'&#127925;'},
-  {tab:'tab-jarvis', title:'Remember When — Erinnerungen', keywords:'erinnerungen memorable interactions langzeitgedaechtnis', icon:'&#128218;'},
+  {tab:'tab-jarvis', title:'Remember When — Erinnerungen', keywords:'erinnerungen memorable interactions langzeitgedächtnis', icon:'&#128218;'},
   {tab:'tab-jarvis', title:'Running Gag Evolution', keywords:'witze humor gag scherze', icon:'&#128514;'},
   {tab:'tab-jarvis', title:'Eskalierende Besorgnis', keywords:'warnungen ignoriert ernster butler sorge', icon:'&#128680;'},
-  {tab:'tab-jarvis', title:'Neugier-Fragen', keywords:'ungewoehnlich verhalten nachfragen frueh unterwegs', icon:'&#128270;'},
-  {tab:'tab-jarvis', title:'Situations-Modell', keywords:'hausstatus gespraech delta veraenderung', icon:'&#128269;'},
+  {tab:'tab-jarvis', title:'Neugier-Fragen', keywords:'ungewöhnlich verhalten nachfragen früh unterwegs', icon:'&#128270;'},
+  {tab:'tab-jarvis', title:'Situations-Modell', keywords:'hausstatus gespräch delta veränderung', icon:'&#128269;'},
   // Stimmung (tab-mood)
   {tab:'tab-mood', title:'Stimmungserkennung', keywords:'mood stress frustration muede worte', icon:'&#128578;'},
   {tab:'tab-mood', title:'Stress-Einfluss', keywords:'stress boost reduktion ungeduld negative', icon:'&#9889;'},
-  {tab:'tab-mood', title:'Stimmungs-Woerter', keywords:'positive negative ungeduld muedigkeit keywords', icon:'&#128172;'},
-  {tab:'tab-mood', title:'Stimmung x Komplexitaet', keywords:'antwortlaenge saetze mood complexity matrix', icon:'&#127919;'},
+  {tab:'tab-mood', title:'Stimmungs-Wörter', keywords:'positive negative ungeduld muedigkeit keywords', icon:'&#128172;'},
+  {tab:'tab-mood', title:'Stimmung x Komplexität', keywords:'antwortlänge sätze mood complexity matrix', icon:'&#127919;'},
   {tab:'tab-mood', title:'Stimm-Analyse', keywords:'voice analysis wpm sprechgeschwindigkeit whisper', icon:'&#127908;'},
-  {tab:'tab-mood', title:'Voice-Mood Integration', keywords:'stimm-emotion tonfall froehlich traurig aergerlich', icon:'&#127908;'},
+  {tab:'tab-mood', title:'Voice-Mood Integration', keywords:'stimm-emotion tonfall fröhlich traurig ärgerlich', icon:'&#127908;'},
   // Stimme & TTS (tab-voice)
   {tab:'tab-voice', title:'Spracherkennung (STT)', keywords:'whisper stt speech recognition modell sprache beam', icon:'&#127908;'},
   {tab:'tab-voice', title:'Sprachausgabe (TTS)', keywords:'tts piper stimme voice rate geschwindigkeit', icon:'&#128266;'},
-  // Gedaechtnis (tab-memory)
-  {tab:'tab-memory', title:'Gedaechtnis-Einstellungen', keywords:'memory kontext max eintraege persoenliche daten geburtstag', icon:'&#128218;'},
-  // Raeume & Speaker (tab-rooms)
-  {tab:'tab-rooms', title:'Heizung', keywords:'thermostat heizkurve waermepumpe temperatur', icon:'&#128293;'},
-  {tab:'tab-rooms', title:'Raeume', keywords:'raum speaker lautsprecher zuordnung', icon:'&#127968;'},
+  // Gedächtnis (tab-memory)
+  {tab:'tab-memory', title:'Gedächtnis-Einstellungen', keywords:'memory kontext max einträge persönliche daten geburtstag', icon:'&#128218;'},
+  // Räume & Speaker (tab-rooms)
+  {tab:'tab-rooms', title:'Heizung', keywords:'thermostat Heizkurve Wärmepumpe temperatur', icon:'&#128293;'},
+  {tab:'tab-rooms', title:'Räume', keywords:'raum speaker lautsprecher zuordnung', icon:'&#127968;'},
   // Sensoren (tab-sensors)
-  {tab:'tab-sensors', title:'Sensoren', keywords:'sensor bettsensor bett schlaf bed occupancy praesenz', icon:'&#128225;'},
+  {tab:'tab-sensors', title:'Sensoren', keywords:'sensor bettsensor bett schlaf bed occupancy präsenz', icon:'&#128225;'},
   // Licht (tab-lights)
   {tab:'tab-lights', title:'Licht', keywords:'lampe helligkeit farbe szene beleuchtung', icon:'&#128161;'},
-  // Geraete (tab-devices)
-  {tab:'tab-devices', title:'Geraete', keywords:'device steckdose sensor schalter', icon:'&#128268;'},
-  // Rolllaeden (tab-covers)
-  {tab:'tab-covers', title:'Rolllaeden', keywords:'cover rollladen jalousie position', icon:'&#129695;'},
+  // Geräte (tab-devices)
+  {tab:'tab-devices', title:'Geräte', keywords:'device steckdose sensor schalter', icon:'&#128268;'},
+  // Rollläden (tab-covers)
+  {tab:'tab-covers', title:'Rollläden', keywords:'cover rollladen jalousie position', icon:'&#129695;'},
   // Saugroboter (tab-vacuum)
-  {tab:'tab-vacuum', title:'Saugroboter', keywords:'vacuum staubsauger reinigung raeume', icon:'&#129529;'},
+  {tab:'tab-vacuum', title:'Saugroboter', keywords:'vacuum staubsauger reinigung räume', icon:'&#129529;'},
   // Fernbedienung (tab-remote)
   {tab:'tab-remote', title:'Fernbedienung', keywords:'remote tv infrarot befehle', icon:'&#128261;'},
   // Szenen (tab-scenes)
-  {tab:'tab-scenes', title:'Szenen', keywords:'szene scene aktivitaet nicht stoeren', icon:'&#127916;'},
+  {tab:'tab-scenes', title:'Szenen', keywords:'szene scene aktivität nicht stören', icon:'&#127916;'},
   // Routinen (tab-routines)
   {tab:'tab-routines', title:'Morgen-Briefing', keywords:'morgen briefing wetter termine nachrichten aufwachen', icon:'&#127748;'},
   {tab:'tab-routines', title:'Aufwach-Sequenz', keywords:'aufwachen rolladen licht kaffee morgens', icon:'&#9728;'},
   {tab:'tab-routines', title:'Abend-Briefing', keywords:'abend status sicherheit fenster', icon:'&#127769;'},
   {tab:'tab-routines', title:'Kalender', keywords:'calendar termine home assistant', icon:'&#128197;'},
   {tab:'tab-routines', title:'Gute-Nacht-Routine', keywords:'gute nacht schlafen lichter heizung alarm', icon:'&#128164;'},
-  {tab:'tab-routines', title:'Gaeste-Modus', keywords:'gast besuch formell privat wifi', icon:'&#128101;'},
+  {tab:'tab-routines', title:'Gäste-Modus', keywords:'gast besuch formell privat wifi', icon:'&#128101;'},
   {tab:'tab-routines', title:'Benannte Protokolle', keywords:'protokoll multi-step sequenz filmabend sprache', icon:'&#128221;'},
-  {tab:'tab-routines', title:'"Das Uebliche"', keywords:'uebliche wie immer muster gewohnheit tageszeit', icon:'&#128260;'},
+  {tab:'tab-routines', title:'"Das Übliche"', keywords:'übliche wie immer muster gewohnheit tageszeit', icon:'&#128260;'},
   // Proaktiv (tab-proactive)
   {tab:'tab-proactive', title:'Proaktive Meldungen', keywords:'proaktiv meldungen cooldown autonomie', icon:'&#128276;'},
-  {tab:'tab-proactive', title:'Zeitgefuehl', keywords:'ofen vergessen buegeleisen licht fenster pc pause', icon:'&#9200;'},
+  {tab:'tab-proactive', title:'Zeitgefühl', keywords:'ofen vergessen bügeleisen licht fenster pc pause', icon:'&#9200;'},
   {tab:'tab-proactive', title:'Vorausdenken', keywords:'anticipation gewohnheiten lernen vorhersage konfidenz', icon:'&#128300;'},
-  {tab:'tab-proactive', title:'Rueckkehr-Briefing', keywords:'abwesenheit rueckkehr briefing klingel waschmaschine', icon:'&#128218;'},
+  {tab:'tab-proactive', title:'Rückkehr-Briefing', keywords:'abwesenheit rückkehr briefing klingel waschmaschine', icon:'&#128218;'},
   {tab:'tab-proactive', title:'Einkaufslisten-Erinnerung', keywords:'einkaufsliste shopping abschied verlassen departure', icon:'&#128722;'},
   {tab:'tab-proactive', title:'Smart Shopping', keywords:'smart shopping einkauf verbrauch prognose rezept zutaten muster', icon:'&#128722;'},
   {tab:'tab-proactive', title:'Energie-Dashboard', keywords:'energie solar strom verbrauch einspeisung preis dashboard live watt', icon:'&#9889;'},
-  {tab:'tab-proactive', title:'Konversations-Gedaechtnis++', keywords:'projekte meilensteine fragen gedaechtnis zusammenfassung projekt tracker memory', icon:'&#129504;'},
+  {tab:'tab-proactive', title:'Konversations-Gedächtnis++', keywords:'projekte meilensteine fragen gedächtnis zusammenfassung projekt tracker memory', icon:'&#129504;'},
   {tab:'tab-proactive', title:'Multi-Room Audio', keywords:'multi room audio speaker gruppe gruppen sync synchron musik sonos cast lautsprecher zone', icon:'&#127925;'},
   {tab:'tab-proactive', title:'Jarvis denkt voraus', keywords:'insights wetter kalender energie fenster frost', icon:'&#129504;'},
   {tab:'tab-proactive', title:'Event-Handler', keywords:'event prioritaet critical high medium low', icon:'&#128226;'},
   {tab:'tab-proactive', title:'Spontane Beobachtungen', keywords:'beobachtungen energie streak rekorde meilensteine', icon:'&#128065;'},
   // Benachrichtigungen (tab-notifications)
-  {tab:'tab-notifications', title:'Stille-Matrix', keywords:'zustellung aktivitaet schlafen telefonat tv dringlichkeit tts led', icon:'&#128263;'},
-  {tab:'tab-notifications', title:'Lautstaerke-Matrix', keywords:'volume lautstaerke tts nachts', icon:'&#128266;'},
+  {tab:'tab-notifications', title:'Stille-Matrix', keywords:'zustellung aktivität schlafen telefonat tv dringlichkeit tts led', icon:'&#128263;'},
+  {tab:'tab-notifications', title:'Lautstärke-Matrix', keywords:'volume lautstärke tts nachts', icon:'&#128266;'},
   {tab:'tab-notifications', title:'Benachrichtigungskanaele', keywords:'kanaele channels benachrichtigung', icon:'&#128276;'},
-  {tab:'tab-notifications', title:'Stille-Keywords', keywords:'nicht stoeren filmabend netflix meditation schlafen', icon:'&#128164;'},
+  {tab:'tab-notifications', title:'Stille-Keywords', keywords:'nicht stören filmabend netflix meditation schlafen', icon:'&#128164;'},
   // Follow-Me (tab-followme)
   {tab:'tab-followme', title:'Follow-Me', keywords:'raum folgen musik licht temperatur person profil', icon:'&#128694;'},
   // Intelligenz (tab-intelligence)
   {tab:'tab-intelligence', title:'Domain-spezifische Autonomie', keywords:'domain autonomie klima licht medien sicherheit', icon:'&#127919;'},
   {tab:'tab-intelligence', title:'Kalender-Intelligenz', keywords:'kalender gewohnheit konflikt pendelzeit termin', icon:'&#128197;'},
-  {tab:'tab-intelligence', title:'Erklaerbarkeit', keywords:'erklaerbarkeit warum aktion begruendung entscheidung', icon:'&#128161;'},
-  {tab:'tab-intelligence', title:'Lern-Transfer', keywords:'transfer praeferenz raum aehnlich vorschlag', icon:'&#129504;'},
+  {tab:'tab-intelligence', title:'Erklärbarkeit', keywords:'erklaerbarkeit warum aktion begründung entscheidung', icon:'&#128161;'},
+  {tab:'tab-intelligence', title:'Lern-Transfer', keywords:'transfer präferenz raum ähnlich vorschlag', icon:'&#129504;'},
   {tab:'tab-intelligence', title:'Think-Ahead Hinweise', keywords:'think ahead naechster schritt vorschlag', icon:'&#128161;'},
   {tab:'tab-intelligence', title:'Kausalketten-Erkennung', keywords:'kausal kette handlung wiederholend muster', icon:'&#128279;'},
-  {tab:'tab-intelligence', title:'3D+ Insight Checks', keywords:'gaeste vorbereitung alarm abwesenheit sicherheit feuchtigkeit nacht', icon:'&#128200;'},
+  {tab:'tab-intelligence', title:'3D+ Insight Checks', keywords:'gäste vorbereitung alarm abwesenheit sicherheit feuchtigkeit nacht', icon:'&#128200;'},
   {tab:'tab-intelligence', title:'Proaktiver Sequenz-Planner', keywords:'sequenz planner ankunft wetter aktion kette', icon:'&#128736;'},
   {tab:'tab-intelligence', title:'Saisonale Intelligenz', keywords:'saison jahreszeit heizung vergleich muster', icon:'&#127808;'},
-  {tab:'tab-intelligence', title:'Dialogfuehrung', keywords:'dialog referenz aufloesen klaerung mehrdeutigkeit', icon:'&#128172;'},
-  {tab:'tab-intelligence', title:'Klima-Modell', keywords:'klima digitaler zwilling simulation waermeverlust fenster', icon:'&#127777;'},
-  {tab:'tab-intelligence', title:'Praediktive Wartung', keywords:'wartung batterie lebensdauer health score vorhersage', icon:'&#128295;'},
+  {tab:'tab-intelligence', title:'Dialogführung', keywords:'dialog referenz auflösen klärung mehrdeutigkeit', icon:'&#128172;'},
+  {tab:'tab-intelligence', title:'Klima-Modell', keywords:'klima digitaler zwilling simulation wärmeverlust fenster', icon:'&#127777;'},
+  {tab:'tab-intelligence', title:'Prädiktive Wartung', keywords:'wartung batterie lebensdauer health score vorhersage', icon:'&#128295;'},
   {tab:'tab-intelligence', title:'Konsequenz-Bewusstsein', keywords:'konsequenz kontext sinnvoll warnung hinweis', icon:'&#9888;'},
   {tab:'tab-intelligence', title:'Unaufgeforderte Beobachtungen', keywords:'beobachtung periodisch licht fenster batterie alarm', icon:'&#128065;'},
   // Autonomie (tab-autonomie)
   {tab:'tab-autonomie', title:'Autonomie', keywords:'autonomie level assistent butler mitbewohner vertrauter autopilot', icon:'&#9889;'},
   {tab:'tab-autonomie', title:'Aktions-Berechtigungen', keywords:'berechtigung aktion permission level', icon:'&#128272;'},
   {tab:'tab-autonomie', title:'Evolution-Kriterien', keywords:'evolution aufstieg kriterien tage interaktionen', icon:'&#128200;'},
-  {tab:'tab-autonomie', title:'Selbstoptimierung', keywords:'selbstoptimierung analyse vorschlaege genehmigung approval', icon:'&#129302;'},
+  {tab:'tab-autonomie', title:'Selbstoptimierung', keywords:'selbstoptimierung analyse vorschläge genehmigung approval', icon:'&#129302;'},
   {tab:'tab-autonomie', title:'Lern-System', keywords:'lernen outcome tracker korrektur response quality error', icon:'&#129504;'},
-  {tab:'tab-autonomie', title:'Feedback-System', keywords:'feedback score cooldown boost unterdruecken', icon:'&#128200;'},
+  {tab:'tab-autonomie', title:'Feedback-System', keywords:'feedback score cooldown boost unterdrücken', icon:'&#128200;'},
   {tab:'tab-autonomie', title:'Self-Automation', keywords:'self automation ha automatisierung sprache erstellen', icon:'&#127919;'},
   // Analyse-Tools (tab-declarative-tools)
   {tab:'tab-declarative-tools', title:'Analyse-Tools', keywords:'deklarativ analyse read-only berechnung home assistant', icon:'&#128736;'},
   // Haus-Status (tab-house-status)
-  {tab:'tab-house-status', title:'Haus-Status Bereiche', keywords:'status detail kompakt ausfuehrlich anwesenheit temperatur wetter', icon:'&#127968;'},
+  {tab:'tab-house-status', title:'Haus-Status Bereiche', keywords:'status detail kompakt ausführlich anwesenheit temperatur wetter', icon:'&#127968;'},
   {tab:'tab-house-status', title:'Health Monitor', keywords:'health sensor temperatur feuchtigkeit co2 batterie', icon:'&#128296;'},
   {tab:'tab-house-status', title:'Humidor', keywords:'humidor feuchtigkeit zigarren sensor', icon:'&#127793;'},
   // Koch-Assistent (tab-cooking)
@@ -142,11 +142,11 @@ const _searchIndex = [
   {tab:'tab-eastereggs', title:'Easter Eggs', keywords:'easter egg versteckt spass trigger antwort', icon:'&#127881;'},
   // Sicherheit (tab-security)
   {tab:'tab-security', title:'Dashboard & PIN', keywords:'pin schutz recovery key zugang login', icon:'&#128187;'},
-  {tab:'tab-security', title:'Sicherheit', keywords:'bestaetigung alarm schloss garage heizung temperatur limit', icon:'&#128274;'},
+  {tab:'tab-security', title:'Sicherheit', keywords:'bestätigung alarm schloss garage heizung temperatur limit', icon:'&#128274;'},
   {tab:'tab-security', title:'API Key', keywords:'api key netzwerk schutz addon integration', icon:'&#128273;'},
   {tab:'tab-security', title:'Vertrauensstufen', keywords:'trust gast mitbewohner besitzer rechte erlaubt', icon:'&#128272;'},
   {tab:'tab-security', title:'Besucher-Management', keywords:'besucher klingel kamera tuer gast entriegelung', icon:'&#128682;'},
-  {tab:'tab-security', title:'Netzwerk-Geraete', keywords:'netzwerk geraet device tracker bekannt unbekannt warnung wlan wifi', icon:'&#128225;'},
+  {tab:'tab-security', title:'Netzwerk-Geräte', keywords:'netzwerk geraet device tracker bekannt unbekannt warnung wlan wifi', icon:'&#128225;'},
   {tab:'tab-security', title:'Kameras & Vision', keywords:'kamera vision llava ocr bild snapshot tuerklingel sicherheit objekterkennung', icon:'&#128247;'},
   {tab:'tab-security', title:'Notfall-Protokolle', keywords:'notfall feuer rauch einbruch wasser sirene', icon:'&#127752;'},
   {tab:'tab-security', title:'Interrupt-Queue', keywords:'interrupt critical notfall unterbrechung tts', icon:'&#9889;'},
@@ -156,9 +156,9 @@ const _searchIndex = [
 
 const _tabLabels = {
   'tab-general':'Allgemein','tab-personality':'KI-Modelle & Stil',
-  'tab-memory':'Gedaechtnis','tab-mood':'Stimmung',
-  'tab-rooms':'Raeume & Speaker','tab-lights':'Licht','tab-devices':'Geraete',
-  'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter','tab-remote':'Fernbedienung',
+  'tab-memory':'Gedächtnis','tab-mood':'Stimmung',
+  'tab-rooms':'Räume & Speaker','tab-lights':'Licht','tab-devices':'Geräte',
+  'tab-covers':'Rollläden','tab-vacuum':'Saugroboter','tab-remote':'Fernbedienung',
   'tab-scenes':'Szenen','tab-routines':'Routinen',
   'tab-proactive':'Proaktiv','tab-notifications':'Benachrichtigungen',
   'tab-cooking':'Koch-Assistent','tab-followme':'Follow-Me',
@@ -280,7 +280,7 @@ function clearSidebarSearch() {
   _searchActive = false;
 }
 
-// ---- Auto-Save: Aenderungen automatisch speichern ----
+// ---- Auto-Save: Änderungen automatisch speichern ----
 function scheduleAutoSave() {
   if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
   const status = document.getElementById('autoSaveStatus');
@@ -302,7 +302,7 @@ function _initAutoSave() {
   const container = document.getElementById('settingsContent');
   if (!container) return;
   _autoSaveInitialized = true;
-  // Auto-Save bei Aenderungen an data-path UND speziellen Elementen
+  // Auto-Save bei Änderungen an data-path UND speziellen Elementen
   // (data-person-profile, data-person-title, data-member-idx)
   const _isAutoSaveTarget = (e) =>
     e.target.closest('[data-path]') ||
@@ -331,7 +331,7 @@ function closeSidebar() {
   if (bd) bd.classList.remove('show');
 }
 
-// ---- Session-Timeout: Auto-Logout bei Inaktivitaet (30 Min) ----
+// ---- Session-Timeout: Auto-Logout bei Inaktivität (30 Min) ----
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;  // 30 Minuten
 let _sessionTimer = null;
 function resetSessionTimer() {
@@ -339,7 +339,7 @@ function resetSessionTimer() {
   if (!TOKEN) return;
   _sessionTimer = setTimeout(() => {
     doLogout();
-    alert('Sitzung abgelaufen (30 Min Inaktivitaet). Bitte erneut anmelden.');
+    alert('Sitzung abgelaufen (30 Min Inaktivität). Bitte erneut anmelden.');
   }, SESSION_TIMEOUT_MS);
 }
 ['click','keydown','scroll','mousemove','touchstart'].forEach(evt =>
@@ -395,7 +395,7 @@ function playBootSound() {
     g3.gain.linearRampToValueAtTime(0, ctx.currentTime + 3.8);
     o3.connect(g3).connect(ctx.destination);
     o3.start(ctx.currentTime + 3); o3.stop(ctx.currentTime + 3.8);
-  } catch(e) { /* Audio nicht verfuegbar */ }
+  } catch(e) { /* Audio nicht verfügbar */ }
 }
 
 async function playBootSequence() {
@@ -428,7 +428,7 @@ async function playBootSequence() {
   screen.classList.remove('fade-out');
 }
 
-// ---- Setup-Status pruefen und richtigen Screen zeigen ----
+// ---- Setup-Status prüfen und richtigen Screen zeigen ----
 async function checkSetupAndShow() {
   try {
     const r = await fetch(`${API}/api/ui/setup-status`);
@@ -439,10 +439,10 @@ async function checkSetupAndShow() {
       document.getElementById('setupScreen').style.display = 'flex';
       document.getElementById('setupPin').focus();
     } else {
-      // Setup fertig: Token pruefen oder Login zeigen
+      // Setup fertig: Token prüfen oder Login zeigen
       const t = sessionStorage.getItem('jt');
       if (t) {
-        // Pruefen ob Token aelter als 4h (Backend-Timeout)
+        // Prüfen ob Token älter als 4h (Backend-Timeout)
         const ts = parseInt(sessionStorage.getItem('jt_ts') || '0');
         if (Date.now() - ts > 4 * 60 * 60 * 1000) {
           sessionStorage.removeItem('jt');
@@ -592,7 +592,7 @@ function newRecoveryAcknowledged() {
   showLoginScreen();
 }
 
-// ---- Init: Setup-Status pruefen ----
+// ---- Init: Setup-Status prüfen ----
 checkSetupAndShow();
 
 // ---- API ----
@@ -630,7 +630,7 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
   // Seite wechseln
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(`page-${pg}`).classList.add('active');
-  const titles = {dashboard:'Dashboard',settings:'Einstellungen',presence:'Anwesenheit',entities:'Entities',memory:'Gedaechtnis',knowledge:'Wissen',recipes:'Rezepte',logs:'Logs',errors:'Fehler'};
+  const titles = {dashboard:'Dashboard',settings:'Einstellungen',presence:'Anwesenheit',entities:'Entities',memory:'Gedächtnis',knowledge:'Wissen',recipes:'Rezepte',logs:'Logs',errors:'Fehler'};
   document.getElementById('pageTitle').textContent = titles[pg] || pg;
   stopLiveRefresh();
   stopPresenceRefresh();
@@ -646,9 +646,9 @@ document.getElementById('sidebarNav').addEventListener('click', e => {
     // Settings-Titel aktualisieren
     const tabTitles = {
       'tab-general':'Allgemein','tab-personality':'KI-Modelle & Stil',
-      'tab-memory':'Gedaechtnis-Einstellungen','tab-mood':'Stimmung',
-      'tab-rooms':'Raeume & Speaker','tab-lights':'Licht','tab-devices':'Geraete',
-      'tab-covers':'Rolllaeden','tab-vacuum':'Saugroboter','tab-remote':'Fernbedienung',
+      'tab-memory':'Gedächtnis-Einstellungen','tab-mood':'Stimmung',
+      'tab-rooms':'Räume & Speaker','tab-lights':'Licht','tab-devices':'Geräte',
+      'tab-covers':'Rollläden','tab-vacuum':'Saugroboter','tab-remote':'Fernbedienung',
       'tab-scenes':'Szenen','tab-routines':'Routinen',
       'tab-proactive':'Proaktiv & Vorausdenken',
       'tab-notifications':'Benachrichtigungen',
@@ -715,7 +715,7 @@ async function loadDashboard() {
       <div class="stat-card"><div class="stat-label">Wissensbasis</div><div class="stat-value">${kb.total_chunks||0}</div>
         <div class="stat-sub">${(kb.sources||[]).length} Quellen</div></div>
       <div class="stat-card"><div class="stat-label">Episoden</div><div class="stat-value">${mem.episodic_count||0}</div>
-        <div class="stat-sub">Langzeitgedaechtnis</div></div>
+        <div class="stat-sub">Langzeitgedächtnis</div></div>
       <div class="stat-card"><div class="stat-label">Autonomie</div><div class="stat-value" style="color:var(--accent);">${auto.level||'?'}/5</div>
         <div class="stat-sub">${esc(auto.name||'')}</div></div>`;
     const comps=d.components||{};
@@ -797,7 +797,7 @@ async function refreshEnergyDashboard() {
     // Strompreis
     if (d.price_cents != null) {
       const col = d.price_status === 'low' ? 'var(--success)' : d.price_status === 'high' ? 'var(--danger)' : 'var(--text)';
-      const label = d.price_status === 'low' ? 'Guenstig' : d.price_status === 'high' ? 'Teuer' : 'Normal';
+      const label = d.price_status === 'low' ? 'Günstig' : d.price_status === 'high' ? 'Teuer' : 'Normal';
       html += `<div class="stat-card">
         <div class="stat-label">&#128176; Strompreis</div>
         <div class="stat-value" style="color:${col}">${d.price_cents.toFixed(1)} ct</div>
@@ -859,7 +859,7 @@ async function refreshLiveStatus() {
 
 const _ACTIVITY_LABELS = {
   sleeping:'Schlafen', in_call:'Im Telefonat', watching:'TV/Film',
-  focused:'Konzentriert', guests:'Gaeste da', relaxing:'Entspannt',
+  focused:'Konzentriert', guests:'Gäste da', relaxing:'Entspannt',
   away:'Abwesend', unknown:'Unbekannt',
 };
 const _ACTIVITY_ICONS = {
@@ -887,7 +887,7 @@ async function loadSceneStatus() {
 
     let html = '';
 
-    // 1. Aktuelle Jarvis-Aktivitaet
+    // 1. Aktuelle Jarvis-Aktivität
     const actName = act.current || 'unknown';
     const actLabel = _ACTIVITY_LABELS[actName] || actName;
     const actIcon = _ACTIVITY_ICONS[actName] || '&#10067;';
@@ -911,7 +911,7 @@ async function loadSceneStatus() {
       if (active.length) {
         const sigLabels = {
           media_playing:'Media aktiv', in_call:'Telefonat', bed_occupied:'Bett belegt',
-          sleeping:'Schlafenszeit', pc_active:'PC aktiv', guests:'Gaeste erkannt',
+          sleeping:'Schlafenszeit', pc_active:'PC aktiv', guests:'Gäste erkannt',
           lights_off:'Lichter aus', away:'Abwesend',
         };
         reason = active.map(([k,v]) => {
@@ -1018,11 +1018,11 @@ async function loadHealthTrends(hours) {
       </div>`;
     }
     if (!hasData) {
-      html = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">Keine Sensordaten verfuegbar</div>';
+      html = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">Keine Sensordaten verfügbar</div>';
     }
     c.innerHTML = html;
   } catch(e) {
-    c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">Keine Sensordaten verfuegbar</div>';
+    c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">Keine Sensordaten verfügbar</div>';
   }
 }
 
@@ -1130,40 +1130,40 @@ function showHelp(path) {
 function closeHelpModal() {
   document.getElementById('helpModalBackdrop').classList.remove('show');
 }
-// ESC schliesst Modal
+// ESC schließt Modal
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHelpModal(); });
 
-// ---- Help Texts fuer alle Settings ----
+// ---- Help Texts für alle Settings ----
 const HELP_TEXTS = {
   // === ALLGEMEIN ===
   'assistant.name': {title:'Assistenten-Name', text:'Der Name, mit dem sich der Assistent vorstellt und auf den er reagiert.'},
   'assistant.version': {title:'Version', text:'Aktuelle Software-Version. Nur zur Anzeige.'},
   'assistant.language': {title:'Sprache', text:'In welcher Sprache der Assistent antwortet.'},
   'autonomy.level': {title:'Autonomie-Level', text:'Wie selbststaendig darf der Assistent handeln?', detail:'<b>1 Assistent:</b> Nur auf Befehl<br><b>2 Butler:</b> Schlaegt vor, wartet auf OK<br><b>3 Mitbewohner:</b> Handelt bei Routine-Aufgaben<br><b>4 Vertrauter:</b> Proaktiv<br><b>5 Autopilot:</b> Volle Autonomie'},
-  'models.enabled.fast': {title:'Fast-Modell', text:'Schnelles Modell fuer einfache Befehle (Licht an, Timer, Danke).'},
-  'models.enabled.smart': {title:'Smart-Modell', text:'Standard-Modell fuer normale Gespraeche und Anfragen.'},
-  'models.enabled.deep': {title:'Deep-Modell', text:'Grosses Modell fuer komplexe Analysen und ausfuehrliche Antworten.'},
-  'models.fast': {title:'Fast-Modell Auswahl', text:'Welches KI-Modell fuer schnelle Befehle.', detail:'Kleinere Modelle (3-4B) sind schneller, groessere praeziser.'},
-  'models.smart': {title:'Smart-Modell Auswahl', text:'Welches KI-Modell fuer normale Gespraeche.'},
-  'models.deep': {title:'Deep-Modell Auswahl', text:'Welches KI-Modell fuer komplexe Aufgaben.', detail:'14B+ empfohlen fuer beste Ergebnisse.'},
-  'models.deep_min_words': {title:'Deep ab Woertern', text:'Ab wie vielen Woertern automatisch das Deep-Modell genutzt wird.'},
+  'models.enabled.fast': {title:'Fast-Modell', text:'Schnelles Modell für einfache Befehle (Licht an, Timer, Danke).'},
+  'models.enabled.smart': {title:'Smart-Modell', text:'Standard-Modell für normale Gespräche und Anfragen.'},
+  'models.enabled.deep': {title:'Deep-Modell', text:'Grosses Modell für komplexe Analysen und ausführliche Antworten.'},
+  'models.fast': {title:'Fast-Modell Auswahl', text:'Welches KI-Modell für schnelle Befehle.', detail:'Kleinere Modelle (3-4B) sind schneller, größere präziser.'},
+  'models.smart': {title:'Smart-Modell Auswahl', text:'Welches KI-Modell für normale Gespräche.'},
+  'models.deep': {title:'Deep-Modell Auswahl', text:'Welches KI-Modell für komplexe Aufgaben.', detail:'14B+ empfohlen für beste Ergebnisse.'},
+  'models.deep_min_words': {title:'Deep ab Wörtern', text:'Ab wie vielen Wörtern automatisch das Deep-Modell genutzt wird.'},
   'models.options.temperature': {title:'Kreativitaet', text:'Wie kreativ die Antworten sein sollen.', detail:'0 = deterministisch, 0.7 = Standard, 2.0 = sehr kreativ'},
-  'models.options.max_tokens': {title:'Max. Antwortlaenge', text:'Maximale Laenge einer Antwort in Tokens (~0.75 Woerter pro Token).'},
-  'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster fuer das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. 2048 empfohlen fuer 4B Modelle.'},
-  'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster fuer das Smart-Modell (Gespraeche).', detail:'4096 = Standard. Mehr Kontext = besseres Gespraechsgedaechtnis, aber mehr VRAM.'},
-  'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster fuer das Deep-Modell (komplexe Aufgaben).', detail:'MoE-Modelle (z.B. Qwen3.5-27B) sind VRAM-effizient und vertragen 8192+.'},
-  'ollama.keep_alive': {title:'Keep-Alive', text:'Wie lange das Modell nach dem letzten Request im VRAM bleibt.', detail:'Laenger = schnellere Antworten (kein Nachladen), aber mehr Strom im Idle. "5m" = 5 Minuten, "-1" = nie entladen, "0" = sofort entladen. Bei aktiver Nutzung empfohlen: "5m" oder laenger.'},
-  'ollama.flash_attn': {title:'Flash Attention', text:'Beschleunigt die Inferenz bei neueren GPUs (RTX 30xx+).', detail:'Flash Attention reduziert VRAM-Verbrauch und beschleunigt die Token-Generierung. Erfordert CUDA-faehige GPU. Bei Problemen deaktivieren.'},
-  'ollama.num_gpu': {title:'GPU-Layer', text:'Wie viele Modell-Layer auf die GPU geladen werden.', detail:'Automatisch = Ollama berechnet anhand des freien VRAMs wie viele Layer passen (beste Option fuer grosse Modelle). 99 = alles auf GPU erzwingen (kann bei grossen Modellen fehlschlagen). 0 = nur CPU.'},
-  'proactive.departure_shopping_reminder': {title:'Einkaufslisten-Erinnerung', text:'Beim Verlassen des Hauses erwaehnt Jarvis offene Einkaufslisten-Eintraege.', detail:'Nutzt die Home Assistant Shopping List. Jarvis sagt z.B. "Uebrigens, Milch und Brot stehen noch auf der Liste."'},
-  'smart_shopping.enabled': {title:'Smart Shopping', text:'Intelligente Einkaufsliste mit Verbrauchsprognose.', detail:'Lernt aus abgehakten Einkaufslisteneintraegen wie oft du Artikel kaufst. Erinnert proaktiv wenn etwas bald aufgebraucht sein muesste. Kann auch Rezept-Zutaten automatisch auf die Liste setzen.'},
-  'smart_shopping.min_purchases': {title:'Mindest-Kaeufe', text:'Wie viele Kaeufe noetig sind bevor eine Prognose erstellt wird.', detail:'Bei 2 braucht es nur 2 Kaeufe fuer eine erste Schaetzung. Hoehere Werte machen die Prognose genauer, brauchen aber laenger.'},
+  'models.options.max_tokens': {title:'Max. Antwortlänge', text:'Maximale Länge einer Antwort in Tokens (~0.75 Wörter pro Token).'},
+  'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster für das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. 2048 empfohlen für 4B Modelle.'},
+  'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster für das Smart-Modell (Gespräche).', detail:'4096 = Standard. Mehr Kontext = besseres Gesprächsgedächtnis, aber mehr VRAM.'},
+  'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster für das Deep-Modell (komplexe Aufgaben).', detail:'MoE-Modelle (z.B. Qwen3.5-27B) sind VRAM-effizient und vertragen 8192+.'},
+  'ollama.keep_alive': {title:'Keep-Alive', text:'Wie lange das Modell nach dem letzten Request im VRAM bleibt.', detail:'Länger = schnellere Antworten (kein Nachladen), aber mehr Strom im Idle. "5m" = 5 Minuten, "-1" = nie entladen, "0" = sofort entladen. Bei aktiver Nutzung empfohlen: "5m" oder länger.'},
+  'ollama.flash_attn': {title:'Flash Attention', text:'Beschleunigt die Inferenz bei neueren GPUs (RTX 30xx+).', detail:'Flash Attention reduziert VRAM-Verbrauch und beschleunigt die Token-Generierung. Erfordert CUDA-fähige GPU. Bei Problemen deaktivieren.'},
+  'ollama.num_gpu': {title:'GPU-Layer', text:'Wie viele Modell-Layer auf die GPU geladen werden.', detail:'Automatisch = Ollama berechnet anhand des freien VRAMs wie viele Layer passen (beste Option für grosse Modelle). 99 = alles auf GPU erzwingen (kann bei grossen Modellen fehlschlagen). 0 = nur CPU.'},
+  'proactive.departure_shopping_reminder': {title:'Einkaufslisten-Erinnerung', text:'Beim Verlassen des Hauses erwähnt Jarvis offene Einkaufslisten-Einträge.', detail:'Nutzt die Home Assistant Shopping List. Jarvis sagt z.B. "Übrigens, Milch und Brot stehen noch auf der Liste."'},
+  'smart_shopping.enabled': {title:'Smart Shopping', text:'Intelligente Einkaufsliste mit Verbrauchsprognose.', detail:'Lernt aus abgehakten Einkaufslisteneinträgen wie oft du Artikel kaufst. Erinnert proaktiv wenn etwas bald aufgebraucht sein müsste. Kann auch Rezept-Zutaten automatisch auf die Liste setzen.'},
+  'smart_shopping.min_purchases': {title:'Mindest-Käufe', text:'Wie viele Käufe nötig sind bevor eine Prognose erstellt wird.', detail:'Bei 2 braucht es nur 2 Käufe für eine erste Schätzung. Höhere Werte machen die Prognose genauer, brauchen aber länger.'},
   'smart_shopping.reminder_days_before': {title:'Erinnerung vorher', text:'Wie viele Tage vor dem erwarteten Verbrauch erinnert werden soll.'},
-  'smart_shopping.reminder_cooldown_hours': {title:'Erinnerungs-Cooldown', text:'Mindestabstand zwischen Erinnerungen fuer denselben Artikel.'},
+  'smart_shopping.reminder_cooldown_hours': {title:'Erinnerungs-Cooldown', text:'Mindestabstand zwischen Erinnerungen für denselben Artikel.'},
   // === MODELL-PROFILE ===
   'model_profiles': {title:'Modell-Profile', text:'LLM-Parameter pro Modell-Familie. Neues Modell = nur Profil hier anlegen. Match: Laengster Key der im Modellnamen vorkommt gewinnt.', detail:'Beispiel: "qwen3.5:9b" matcht Profil "qwen3.5" (nicht "qwen3"). Unbekannte Modelle nutzen das "default" Profil. Spezifische Profile erben vom Default und ueberschreiben nur gesetzte Werte.'},
-  'model_profiles.default.supports_think_tags': {title:'Think-Tags (Default)', text:'Ob das Modell &lt;think&gt;-Tags fuer Chain-of-Thought Reasoning nutzt.', detail:'Qwen3, DeepSeek und aehnliche Modelle geben ihren Denkprozess in &lt;think&gt;-Tags aus. Diese werden automatisch aus der Antwort entfernt.'},
-  'model_profiles.default.supports_think_with_tools': {title:'Think + Tools (Default)', text:'Ob Think-Tags gleichzeitig mit Tool-Calls funktionieren.', detail:'Qwen 3.5 unterstuetzt Think+Tools nativ. Bei aelteren Modellen stoeren Think-Tags die Tool-Generierung — dann deaktivieren.'},
+  'model_profiles.default.supports_think_tags': {title:'Think-Tags (Default)', text:'Ob das Modell &lt;think&gt;-Tags für Chain-of-Thought Reasoning nutzt.', detail:'Qwen3, DeepSeek und ähnliche Modelle geben ihren Denkprozess in &lt;think&gt;-Tags aus. Diese werden automatisch aus der Antwort entfernt.'},
+  'model_profiles.default.supports_think_with_tools': {title:'Think + Tools (Default)', text:'Ob Think-Tags gleichzeitig mit Tool-Calls funktionieren.', detail:'Qwen 3.5 unterstützt Think+Tools nativ. Bei älteren Modellen stören Think-Tags die Tool-Generierung — dann deaktivieren.'},
   'model_profiles.default.temperature': {title:'Temperatur (Default)', text:'Kreativitaet der Antworten. 0 = deterministisch, 0.7 = Standard.'},
   'model_profiles.default.top_p': {title:'Top-P (Default)', text:'Nucleus Sampling. Niedrigere Werte = fokussiertere Antworten.'},
   'model_profiles.default.top_k': {title:'Top-K (Default)', text:'Nur die K wahrscheinlichsten Tokens beruecksichtigen.'},
@@ -1171,12 +1171,12 @@ const HELP_TEXTS = {
   'model_profiles.default.repeat_penalty': {title:'Repeat Penalty (Default)', text:'Bestraft Wiederholungen. 1.0 = aus, 1.1 = leicht, 1.5 = stark.'},
   'model_profiles.default.think_temperature': {title:'Think-Temperatur (Default)', text:'Temperatur im Thinking-Modus. Empfohlen: 0.6 (fokussierter als normal).'},
   'model_profiles.default.think_top_p': {title:'Think Top-P (Default)', text:'Top-P im Thinking-Modus. Empfohlen: 0.95 (breiter als normal).'},
-  'model_profiles.default.character_hint': {title:'JARVIS Character-Hint', text:'Modell-spezifische Prompt-Verstaerkung gegen typische LLM-Schwaechen.', detail:'Wird als Prio-1-Sektion in den System-Prompt injiziert. Hier kannst du modellspezifische Anweisungen hinterlegen, z.B. "Niemals mit Natuerlich! anfangen" fuer Modelle die dazu neigen. Leer = kein Extra-Hint.'},
-  'planner.max_iterations': {title:'Max. Planungsschritte', text:'Wie viele Planungsrunden der Action Planner maximal durchlaeuft.', detail:'8 = Standard. Komplexe Aufgaben wie "Mach alles fertig fuer morgen" brauchen mehr Schritte. Bei Timeout-Problemen reduzieren.'},
-  'planner.max_tokens': {title:'Planner Antwortlaenge', text:'Maximale Tokens pro Planungsschritt.', detail:'512 = Standard. Erhoehen wenn der Planner Plaene abschneidet.'},
-  'models.fast_keywords': {title:'Fast-Keywords', text:'Woerter die das schnelle Modell aktivieren.'},
-  'models.deep_keywords': {title:'Deep-Keywords', text:'Woerter die das ausfuehrliche Modell aktivieren.'},
-  'models.cooking_keywords': {title:'Koch-Keywords', text:'Woerter die den Koch-Modus aktivieren.'},
+  'model_profiles.default.character_hint': {title:'JARVIS Character-Hint', text:'Modell-spezifische Prompt-Verstaerkung gegen typische LLM-Schwaechen.', detail:'Wird als Prio-1-Sektion in den System-Prompt injiziert. Hier kannst du modellspezifische Anweisungen hinterlegen, z.B. "Niemals mit Natürlich! anfangen" für Modelle die dazu neigen. Leer = kein Extra-Hint.'},
+  'planner.max_iterations': {title:'Max. Planungsschritte', text:'Wie viele Planungsrunden der Action Planner maximal durchläuft.', detail:'8 = Standard. Komplexe Aufgaben wie "Mach alles fertig für morgen" brauchen mehr Schritte. Bei Timeout-Problemen reduzieren.'},
+  'planner.max_tokens': {title:'Planner Antwortlänge', text:'Maximale Tokens pro Planungsschritt.', detail:'512 = Standard. Erhöhen wenn der Planner Plaene abschneidet.'},
+  'models.fast_keywords': {title:'Fast-Keywords', text:'Wörter die das schnelle Modell aktivieren.'},
+  'models.deep_keywords': {title:'Deep-Keywords', text:'Wörter die das ausführliche Modell aktivieren.'},
+  'models.cooking_keywords': {title:'Koch-Keywords', text:'Wörter die den Koch-Modus aktivieren.'},
   'web_search.enabled': {title:'Web-Suche', text:'Optionale Web-Recherche. Privacy-First: SearXNG oder DuckDuckGo.'},
   'web_search.engine': {title:'Suchmaschine', text:'SearXNG (self-hosted) oder DuckDuckGo.'},
   'web_search.searxng_url': {title:'SearXNG URL', text:'URL deiner SearXNG-Instanz. Nur bei SearXNG relevant.'},
@@ -1185,26 +1185,26 @@ const HELP_TEXTS = {
   // === PERSOENLICHKEIT ===
   'personality.style': {title:'Grundstil', text:'Grundlegender Kommunikationsstil des Assistenten.'},
   'personality.sarcasm_level': {title:'Sarkasmus-Level', text:'Wie sarkastisch der Assistent sein darf (1-5).'},
-  'personality.opinion_intensity': {title:'Meinungs-Intensitaet', text:'Wie stark der Assistent seine Meinung aeussert (0-3).'},
-  'personality.self_irony_enabled': {title:'Selbstironie', text:'Ob der Assistent ueber sich selbst witzeln darf.'},
+  'personality.opinion_intensity': {title:'Meinungs-Intensität', text:'Wie stark der Assistent seine Meinung aeussert (0-3).'},
+  'personality.self_irony_enabled': {title:'Selbstironie', text:'Ob der Assistent über sich selbst witzeln darf.'},
   'personality.self_irony_max_per_day': {title:'Max. Selbstironie/Tag', text:'Wie oft pro Tag Selbstironie erlaubt ist.'},
   'personality.character_evolution': {title:'Charakter-Entwicklung', text:'Assistent wird mit der Zeit vertrauter und informeller.'},
-  'personality.formality_start': {title:'Anfangs-Formalitaet', text:'Wie formell am Anfang (100%=Sie, 0%=sehr locker).'},
-  'personality.formality_min': {title:'Minimale Formalitaet', text:'Wie locker der Assistent maximal werden darf.'},
-  'personality.formality_decay_per_day': {title:'Formalitaets-Abbau', text:'Wie schnell der Assistent lockerer wird (Punkte/Tag).'},
-  'personality.mood_styles': {title:'Stimmungs-Stile', text:'Wie Jarvis auf verschiedene User-Stimmungen reagiert. Stil-Anweisung beeinflusst den Ton, Satz-Modifier die Antwortlaenge.'},
+  'personality.formality_start': {title:'Anfangs-Formalität', text:'Wie formell am Anfang (100%=Sie, 0%=sehr locker).'},
+  'personality.formality_min': {title:'Minimale Formalität', text:'Wie locker der Assistent maximal werden darf.'},
+  'personality.formality_decay_per_day': {title:'Formalitäts-Abbau', text:'Wie schnell der Assistent lockerer wird (Punkte/Tag).'},
+  'personality.mood_styles': {title:'Stimmungs-Stile', text:'Wie Jarvis auf verschiedene User-Stimmungen reagiert. Stil-Anweisung beeinflusst den Ton, Satz-Modifier die Antwortlänge.'},
   'personality.humor_templates': {title:'Humor-Templates', text:'Humor-Anweisungen pro Sarkasmus-Level (1-5). Diese Texte werden dem System-Prompt hinzugefuegt und steuern den Humor-Grad.'},
-  'personality.complexity_prompts': {title:'Komplexitaets-Modi', text:'Text-Anweisungen pro Antwort-Modus (kurz/normal/ausfuehrlich). Wird automatisch je nach Kontext gewaehlt.'},
-  'personality.formality_prompts': {title:'Formalitaets-Stufen', text:'Ton-Anweisungen pro Formalitaets-Score. Der Score sinkt automatisch mit der Charakter-Entwicklung.'},
-  'personality.confirmations.success': {title:'Erfolgs-Bestaetigungen', text:'Phrasen die Jarvis nach erfolgreicher Aktion verwendet. Werden zufaellig gewaehlt, nie zweimal hintereinander.'},
-  'personality.confirmations.success_snarky': {title:'Snarky Bestaetigungen', text:'Spitzere Bestaetigungen die ab Sarkasmus-Level 4 eingemischt werden.'},
-  'personality.confirmations.partial': {title:'Teil-Bestaetigungen', text:'Phrasen fuer teilweise erfolgreiche Aktionen.'},
-  'personality.confirmations.failed': {title:'Fehler-Bestaetigungen', text:'Phrasen wenn eine Aktion fehlgeschlagen ist.'},
+  'personality.complexity_prompts': {title:'Komplexitäts-Modi', text:'Text-Anweisungen pro Antwort-Modus (kurz/normal/ausführlich). Wird automatisch je nach Kontext gewaehlt.'},
+  'personality.formality_prompts': {title:'Formalitäts-Stufen', text:'Ton-Anweisungen pro Formalitäts-Score. Der Score sinkt automatisch mit der Charakter-Entwicklung.'},
+  'personality.confirmations.success': {title:'Erfolgs-Bestätigungen', text:'Phrasen die Jarvis nach erfolgreicher Aktion verwendet. Werden zufaellig gewaehlt, nie zweimal hintereinander.'},
+  'personality.confirmations.success_snarky': {title:'Snarky Bestätigungen', text:'Spitzere Bestätigungen die ab Sarkasmus-Level 4 eingemischt werden.'},
+  'personality.confirmations.partial': {title:'Teil-Bestätigungen', text:'Phrasen für teilweise erfolgreiche Aktionen.'},
+  'personality.confirmations.failed': {title:'Fehler-Bestätigungen', text:'Phrasen wenn eine Aktion fehlgeschlagen ist.'},
   'personality.confirmations.failed_snarky': {title:'Snarky Fehler', text:'Spitzere Fehler-Phrasen ab Sarkasmus-Level 4.'},
-  'personality.diagnostic_openers': {title:'Diagnose-Einleitungen', text:'Einleitungs-Phrasen fuer technische Beobachtungen im MCU-Jarvis Engineering-Stil.'},
-  'personality.casual_warnings': {title:'Beilaeufige Warnungen', text:'Understatement-Einleitungen fuer Warnungen — der typische Butler-Stil.'},
-  'response_filter.enabled': {title:'Antwort-Filter', text:'Filtert unerwuenschte Phrasen und begrenzt Antwortlaenge.'},
-  'response_filter.max_response_sentences': {title:'Max. Saetze', text:'Max. Saetze pro Antwort. 0 = unbegrenzt.'},
+  'personality.diagnostic_openers': {title:'Diagnose-Einleitungen', text:'Einleitungs-Phrasen für technische Beobachtungen im MCU-Jarvis Engineering-Stil.'},
+  'personality.casual_warnings': {title:'Beilaeufige Warnungen', text:'Understatement-Einleitungen für Warnungen — der typische Butler-Stil.'},
+  'response_filter.enabled': {title:'Antwort-Filter', text:'Filtert unerwuenschte Phrasen und begrenzt Antwortlänge.'},
+  'response_filter.max_response_sentences': {title:'Max. Sätze', text:'Max. Sätze pro Antwort. 0 = unbegrenzt.'},
   'response_filter.auto_ban_threshold': {title:'Auto-Ban Schwelle', text:'Phrasen die so oft vom Filter entfernt werden, werden automatisch zur Sperrliste hinzugefuegt.', detail:'0 = aus (nur manuelle Sperrung). 10 = Standard. Niedrigere Werte = aggressiveres Selbstlernen. Gesperrte Phrasen werden via Notification gemeldet.'},
   'response_filter.banned_phrases': {title:'Verbotene Phrasen', text:'Phrasen die der Assistent nie verwenden soll.'},
   'response_filter.banned_starters': {title:'Verbotene Satzanfaenge', text:'Satzanfaenge die vermieden werden sollen.'},
@@ -1220,138 +1220,138 @@ const HELP_TEXTS = {
   'personality.escalation_prefixes.2': {title:'Eskalation: Einwand', text:'Einwand-Einleitungen. Platzhalter: {title}'},
   'personality.escalation_prefixes.3': {title:'Eskalation: Sorge', text:'Besorgnis-Einleitungen. Platzhalter: {title}'},
   'personality.escalation_prefixes.4': {title:'Eskalation: Resignation', text:'Resignation-Einleitungen (hoechste Warnstufe). Platzhalter: {title}'},
-  'personality.sarcasm_positive_patterns': {title:'Sarkasmus: Positiv', text:'Erkennungsmuster fuer positives Feedback auf Sarkasmus.'},
-  'personality.sarcasm_negative_patterns': {title:'Sarkasmus: Negativ', text:'Erkennungsmuster fuer negatives Feedback auf Sarkasmus.'},
-  'stt_corrections.word_corrections': {title:'STT Wort-Korrekturen', text:'Einzelwort-Korrekturen fuer haeufige Spracherkennungsfehler.'},
+  'personality.sarcasm_positive_patterns': {title:'Sarkasmus: Positiv', text:'Erkennungsmuster für positives Feedback auf Sarkasmus.'},
+  'personality.sarcasm_negative_patterns': {title:'Sarkasmus: Negativ', text:'Erkennungsmuster für negatives Feedback auf Sarkasmus.'},
+  'stt_corrections.word_corrections': {title:'STT Wort-Korrekturen', text:'Einzelwort-Korrekturen für häufige Spracherkennungsfehler.'},
   'stt_corrections.phrase_corrections': {title:'STT Phrasen-Korrekturen', text:'Mehrwort-Korrekturen. Werden VOR Einzelwort-Korrekturen angewendet.'},
-  'command_detection.device_nouns': {title:'Geraete-Substantive', text:'Woerter die der Assistent als Geraete-Befehle erkennt.'},
-  'command_detection.action_words': {title:'Aktions-Woerter', text:'Woerter die eine Geraete-Aktion signalisieren.'},
-  'command_detection.command_verbs': {title:'Befehls-Verben', text:'Verben die einen Geraete-Befehl einleiten.'},
-  'command_detection.query_markers': {title:'Abfrage-Marker', text:'Woerter die eine Status-Abfrage erkennen.'},
-  'command_detection.action_exclusions': {title:'Aktions-Ausnahmen', text:'Woerter die als Aktion aussehen aber keine sind.'},
-  'command_detection.status_nouns': {title:'Status-Substantive', text:'Woerter die eine Status-Abfrage signalisieren.'},
-  'das_uebliche.patterns': {title:'Das-Uebliche Trigger', text:'Phrasen die die "Das Uebliche"-Routine ausloesen.'},
+  'command_detection.device_nouns': {title:'Geräte-Substantive', text:'Wörter die der Assistent als Geräte-Befehle erkennt.'},
+  'command_detection.action_words': {title:'Aktions-Wörter', text:'Wörter die eine Geräte-Aktion signalisieren.'},
+  'command_detection.command_verbs': {title:'Befehls-Verben', text:'Verben die einen Geräte-Befehl einleiten.'},
+  'command_detection.query_markers': {title:'Abfrage-Marker', text:'Wörter die eine Status-Abfrage erkennen.'},
+  'command_detection.action_exclusions': {title:'Aktions-Ausnahmen', text:'Wörter die als Aktion aussehen aber keine sind.'},
+  'command_detection.status_nouns': {title:'Status-Substantive', text:'Wörter die eine Status-Abfrage signalisieren.'},
+  'das_übliche.patterns': {title:'Das-Übliche Trigger', text:'Phrasen die die "Das Übliche"-Routine auslösen.'},
   'autonomy.action_permissions': {title:'Aktions-Berechtigungen', text:'Mindest-Autonomie-Level pro Aktionstyp (1-5).'},
-  'autonomy.evolution_criteria': {title:'Evolution-Kriterien', text:'Kriterien fuer automatischen Autonomie-Aufstieg.'},
+  'autonomy.evolution_criteria': {title:'Evolution-Kriterien', text:'Kriterien für automatischen Autonomie-Aufstieg.'},
   'autonomy.domain_levels_enabled': {title:'Domain-Autonomie', text:'Aktiviert unterschiedliche Autonomie-Level pro Bereich (Klima, Licht, Sicherheit etc.). Wenn deaktiviert, gilt das globale Level.'},
-  'autonomy.domain_levels.climate': {title:'Klima-Autonomie', text:'Autonomie-Level fuer Klima & Heizung. Z.B. Level 3 = darf Temperatur +/-1 Grad selbst anpassen.'},
-  'autonomy.domain_levels.light': {title:'Licht-Autonomie', text:'Autonomie-Level fuer Licht & Beleuchtung.'},
-  'autonomy.domain_levels.media': {title:'Medien-Autonomie', text:'Autonomie-Level fuer Medien & Musik.'},
-  'autonomy.domain_levels.cover': {title:'Rolladen-Autonomie', text:'Autonomie-Level fuer Rolllaeden & Abdeckungen.'},
-  'autonomy.domain_levels.security': {title:'Sicherheits-Autonomie', text:'Autonomie-Level fuer Sicherheits-Aktionen. Empfehlung: Niedrig halten (1-2).'},
-  'autonomy.domain_levels.automation': {title:'Automations-Autonomie', text:'Autonomie-Level fuer Automationen & Routinen.'},
-  'autonomy.domain_levels.notification': {title:'Benachrichtigungs-Autonomie', text:'Autonomie-Level fuer Benachrichtigungen & Briefings.'},
+  'autonomy.domain_levels.climate': {title:'Klima-Autonomie', text:'Autonomie-Level für Klima & Heizung. Z.B. Level 3 = darf Temperatur +/-1 Grad selbst anpassen.'},
+  'autonomy.domain_levels.light': {title:'Licht-Autonomie', text:'Autonomie-Level für Licht & Beleuchtung.'},
+  'autonomy.domain_levels.media': {title:'Medien-Autonomie', text:'Autonomie-Level für Medien & Musik.'},
+  'autonomy.domain_levels.cover': {title:'Rolladen-Autonomie', text:'Autonomie-Level für Rollläden & Abdeckungen.'},
+  'autonomy.domain_levels.security': {title:'Sicherheits-Autonomie', text:'Autonomie-Level für Sicherheits-Aktionen. Empfehlung: Niedrig halten (1-2).'},
+  'autonomy.domain_levels.automation': {title:'Automations-Autonomie', text:'Autonomie-Level für Automationen & Routinen.'},
+  'autonomy.domain_levels.notification': {title:'Benachrichtigungs-Autonomie', text:'Autonomie-Level für Benachrichtigungen & Briefings.'},
   'calendar_intelligence.enabled': {title:'Kalender-Intelligenz', text:'Analysiert deine Kalender-Termine und erkennt Gewohnheiten, Konflikte und freie Zeitfenster.'},
-  'calendar_intelligence.commute_minutes': {title:'Pendelzeit', text:'Durchschnittliche Fahrzeit zum Arbeitsplatz. Wird fuer Pendelzeit-Warnungen verwendet.'},
+  'calendar_intelligence.commute_minutes': {title:'Pendelzeit', text:'Durchschnittliche Fahrzeit zum Arbeitsplatz. Wird für Pendelzeit-Warnungen verwendet.'},
   'calendar_intelligence.habit_min_occurrences': {title:'Min. Wiederholungen', text:'Wie oft muss ein Termin wiederkehren damit er als Gewohnheit erkannt wird.'},
   'calendar_intelligence.conflict_lookahead_hours': {title:'Konflikt-Vorschau', text:'Wie viele Stunden im Voraus werden Konflikte erkannt.'},
   'calendar_intelligence.habit_detection': {title:'Gewohnheits-Erkennung', text:'Erkennt wiederkehrende Termine als Muster.'},
   'calendar_intelligence.conflict_detection': {title:'Konflikt-Erkennung', text:'Warnt bei Zeitkonflikten und knapper Pendelzeit.'},
   'calendar_intelligence.break_detection': {title:'Pausen-Erkennung', text:'Erkennt freie Zeitfenster zwischen Terminen.'},
-  'explainability.enabled': {title:'Erklaerbarkeit', text:'Loggt alle automatischen Entscheidungen mit Begruendung. Frage "Warum hast du das gemacht?" fuer eine Erklaerung.'},
-  'explainability.detail_level': {title:'Detail-Stufe', text:'Wie ausfuehrlich Erklaerungen sind. Minimal = nur Aktion + Grund. Verbose = inklusive Sensordaten und Konfidenz.'},
-  'explainability.auto_explain': {title:'Automatisch erwaehnen', text:'Jarvis erwaehnt kurz warum er etwas getan hat, ohne dass du fragen musst.'},
+  'explainability.enabled': {title:'Erklärbarkeit', text:'Loggt alle automatischen Entscheidungen mit Begründung. Frage "Warum hast du das gemacht?" für eine Erklärung.'},
+  'explainability.detail_level': {title:'Detail-Stufe', text:'Wie ausführlich Erklärungen sind. Minimal = nur Aktion + Grund. Verbose = inklusive Sensordaten und Konfidenz.'},
+  'explainability.auto_explain': {title:'Automatisch erwaehnen', text:'Jarvis erwähnt kurz warum er etwas getan hat, ohne dass du fragen musst.'},
   'explainability.max_history': {title:'Max. Entscheidungen', text:'Wie viele Entscheidungen im Speicher gehalten werden.'},
-  'mood.voice_mood_integration': {title:'Voice-Mood Integration', text:'Verknuepft erkannte Stimm-Emotionen (froehlich, traurig, aergerlich) direkt mit der Stimmungserkennung.'},
-  'learning_transfer.enabled': {title:'Lern-Transfer', text:'Uebertraegt gelernte Praeferenzen auf aehnliche Raeume. Z.B. warmes Licht in Kueche -> auch fuer Esszimmer vorschlagen.'},
-  'learning_transfer.auto_suggest': {title:'Auto-Vorschlaege', text:'Schlaegt automatisch vor wenn eine Praeferenz uebertragen werden koennte.'},
-  'learning_transfer.min_observations': {title:'Min. Beobachtungen', text:'Wie oft muss eine Praeferenz beobachtet werden bevor sie uebertragen wird.'},
-  'learning_transfer.transfer_confidence': {title:'Transfer-Konfidenz', text:'Mindest-Konfidenz fuer einen Transfer-Vorschlag.'},
-  'learning_transfer.domains': {title:'Transfer-Domaenen', text:'Fuer welche Bereiche Praeferenzen uebertragen werden.'},
-  'learning_transfer.room_groups': {title:'Raum-Gruppen', text:'Raeume in der gleichen Gruppe werden als aehnlich betrachtet fuer den Praeferenz-Transfer.'},
-  'dialogue.enabled': {title:'Dialogfuehrung', text:'Echte Gespraechsfuehrung mit Referenz-Aufloesung und Klaerungsfragen.'},
-  'dialogue.auto_resolve_references': {title:'Referenzen aufloesen', text:'Loest "es", "das", "dort" automatisch auf das zuletzt besprochene Geraet/Raum auf.'},
-  'dialogue.clarification_enabled': {title:'Klaerungsfragen', text:'Jarvis fragt "Welches Licht?" wenn mehrere Geraete passen.'},
-  'dialogue.timeout_seconds': {title:'Dialog-Timeout', text:'Nach dieser Zeit vergisst Jarvis den Gespraechskontext.'},
-  'dialogue.max_clarification_options': {title:'Max. Optionen', text:'Maximale Anzahl Optionen bei einer Klaerungsfrage.'},
-  'climate_model.enabled': {title:'Klima-Modell', text:'Thermische Simulation fuer Was-waere-wenn-Fragen.'},
-  'climate_model.max_simulation_minutes': {title:'Max. Simulation', text:'Maximale Dauer fuer eine Simulation.'},
-  'climate_model.default_params.heat_loss_coefficient': {title:'Waermeverlust', text:'Wie schnell ein Raum Waerme verliert. Niedrig = gut isoliert.'},
-  'climate_model.default_params.heating_power_per_min': {title:'Heizleistung', text:'Wie schnell die Heizung den Raum erwaermt. Abhaengig von Heizkoerper-Groesse.'},
-  'climate_model.default_params.window_open_factor': {title:'Fenster-Faktor', text:'Wie stark offene Fenster den Waermeverlust verstaerken.'},
-  'climate_model.default_params.thermal_mass_factor': {title:'Thermische Masse', text:'Traegheit des Gebaeudes. Schwerer Beton speichert mehr Waerme.'},
-  'predictive_maintenance.enabled': {title:'Praediktive Wartung', text:'Vorhersage von Geraeteausfaellen und Wartungsbedarf.'},
-  'predictive_maintenance.lookback_days': {title:'Analyse-Zeitraum', text:'Wie viele Tage Historie fuer die Vorhersage genutzt werden.'},
+  'mood.voice_mood_integration': {title:'Voice-Mood Integration', text:'Verknüpft erkannte Stimm-Emotionen (fröhlich, traurig, ärgerlich) direkt mit der Stimmungserkennung.'},
+  'learning_transfer.enabled': {title:'Lern-Transfer', text:'Überträgt gelernte Präferenzen auf ähnliche Räume. Z.B. warmes Licht in Küche -> auch für Esszimmer vorschlagen.'},
+  'learning_transfer.auto_suggest': {title:'Auto-Vorschläge', text:'Schlaegt automatisch vor wenn eine Präferenz übertragen werden könnte.'},
+  'learning_transfer.min_observations': {title:'Min. Beobachtungen', text:'Wie oft muss eine Präferenz beobachtet werden bevor sie übertragen wird.'},
+  'learning_transfer.transfer_confidence': {title:'Transfer-Konfidenz', text:'Mindest-Konfidenz für einen Transfer-Vorschlag.'},
+  'learning_transfer.domains': {title:'Transfer-Domaenen', text:'Fuer welche Bereiche Präferenzen übertragen werden.'},
+  'learning_transfer.room_groups': {title:'Raum-Gruppen', text:'Räume in der gleichen Gruppe werden als ähnlich betrachtet für den Präferenz-Transfer.'},
+  'dialogue.enabled': {title:'Dialogführung', text:'Echte Gesprächsfuehrung mit Referenz-Auflösung und Klärungsfragen.'},
+  'dialogue.auto_resolve_references': {title:'Referenzen auflösen', text:'Loest "es", "das", "dort" automatisch auf das zuletzt besprochene Geraet/Raum auf.'},
+  'dialogue.clarification_enabled': {title:'Klärungsfragen', text:'Jarvis fragt "Welches Licht?" wenn mehrere Geräte passen.'},
+  'dialogue.timeout_seconds': {title:'Dialog-Timeout', text:'Nach dieser Zeit vergisst Jarvis den Gesprächskontext.'},
+  'dialogue.max_clarification_options': {title:'Max. Optionen', text:'Maximale Anzahl Optionen bei einer Klärungsfrage.'},
+  'climate_model.enabled': {title:'Klima-Modell', text:'Thermische Simulation für Was-wäre-wenn-Fragen.'},
+  'climate_model.max_simulation_minutes': {title:'Max. Simulation', text:'Maximale Dauer für eine Simulation.'},
+  'climate_model.default_params.heat_loss_coefficient': {title:'Wärmeverlust', text:'Wie schnell ein Raum Waerme verliert. Niedrig = gut isoliert.'},
+  'climate_model.default_params.heating_power_per_min': {title:'Heizleistung', text:'Wie schnell die Heizung den Raum erwärmt. Abhaengig von Heizkoerper-Groesse.'},
+  'climate_model.default_params.window_open_factor': {title:'Fenster-Faktor', text:'Wie stark offene Fenster den Wärmeverlust verstaerken.'},
+  'climate_model.default_params.thermal_mass_factor': {title:'Thermische Masse', text:'Trägheit des Gebäudes. Schwerer Beton speichert mehr Waerme.'},
+  'predictive_maintenance.enabled': {title:'Prädiktive Wartung', text:'Vorhersage von Geräteausfaellen und Wartungsbedarf.'},
+  'predictive_maintenance.lookback_days': {title:'Analyse-Zeitraum', text:'Wie viele Tage Historie für die Vorhersage genutzt werden.'},
   'predictive_maintenance.failure_probability_threshold': {title:'Warnschwelle', text:'Ab welcher Ausfallwahrscheinlichkeit gewarnt wird.'},
   'predictive_maintenance.battery_drain_alert_pct_per_week': {title:'Batterie-Drain', text:'Ab welchem woechentlichen Batterie-Verlust gewarnt wird.'},
-  'activity.silence_keywords.watching': {title:'Stille: Film/TV', text:'Keywords die den "Film schauen"-Modus ausloesen.'},
-  'activity.silence_keywords.focused': {title:'Stille: Konzentration', text:'Keywords die den "Nicht stoeren"-Modus ausloesen.'},
-  'activity.silence_keywords.sleeping': {title:'Stille: Schlafen', text:'Keywords die den Schlaf-Modus ausloesen.'},
-  'memory.category_confidence.health': {title:'Konfidenz: Gesundheit', text:'Mindest-Sicherheit fuer Gesundheits-Fakten.'},
-  'memory.category_confidence.person': {title:'Konfidenz: Personen', text:'Mindest-Sicherheit fuer Personen-Fakten.'},
-  'memory.category_confidence.preference': {title:'Konfidenz: Vorlieben', text:'Mindest-Sicherheit fuer Vorlieben-Fakten.'},
-  'memory.category_confidence.habit': {title:'Konfidenz: Gewohnheiten', text:'Mindest-Sicherheit fuer Gewohnheits-Fakten.'},
-  'memory.category_confidence.work': {title:'Konfidenz: Arbeit', text:'Mindest-Sicherheit fuer Arbeits-Fakten.'},
-  'memory.category_confidence.intent': {title:'Konfidenz: Absichten', text:'Mindest-Sicherheit fuer Absichts-Fakten (kann sich aendern).'},
-  'memory.category_confidence.general': {title:'Konfidenz: Allgemein', text:'Mindest-Sicherheit fuer allgemeine Fakten.'},
-  'proactive.event_handlers': {title:'Event-Handler', text:'Prioritaeten und Beschreibungen fuer Event-Typen.'},
+  'activity.silence_keywords.watching': {title:'Stille: Film/TV', text:'Keywords die den "Film schauen"-Modus auslösen.'},
+  'activity.silence_keywords.focused': {title:'Stille: Konzentration', text:'Keywords die den "Nicht stören"-Modus auslösen.'},
+  'activity.silence_keywords.sleeping': {title:'Stille: Schlafen', text:'Keywords die den Schlaf-Modus auslösen.'},
+  'memory.category_confidence.health': {title:'Konfidenz: Gesundheit', text:'Mindest-Sicherheit für Gesundheits-Fakten.'},
+  'memory.category_confidence.person': {title:'Konfidenz: Personen', text:'Mindest-Sicherheit für Personen-Fakten.'},
+  'memory.category_confidence.preference': {title:'Konfidenz: Vorlieben', text:'Mindest-Sicherheit für Vorlieben-Fakten.'},
+  'memory.category_confidence.habit': {title:'Konfidenz: Gewohnheiten', text:'Mindest-Sicherheit für Gewohnheits-Fakten.'},
+  'memory.category_confidence.work': {title:'Konfidenz: Arbeit', text:'Mindest-Sicherheit für Arbeits-Fakten.'},
+  'memory.category_confidence.intent': {title:'Konfidenz: Absichten', text:'Mindest-Sicherheit für Absichts-Fakten (kann sich ändern).'},
+  'memory.category_confidence.general': {title:'Konfidenz: Allgemein', text:'Mindest-Sicherheit für allgemeine Fakten.'},
+  'proactive.event_handlers': {title:'Event-Handler', text:'Prioritaeten und Beschreibungen für Event-Typen.'},
   'ambient_audio.default_reactions': {title:'Audio-Reaktionen', text:'Standard-Reaktionen auf erkannte Audio-Events.'},
-  'entity_roles': {title:'Entity-Rollen', text:'Eigene Entity-Rollen fuer Geraete-Erkennung. Ueberschreiben Defaults aus entity_roles_defaults.yaml.'},
-  // === GEDAECHTNIS ===
-  'memory.extraction_enabled': {title:'Fakten-Extraktion', text:'Automatisch Fakten aus Gespraechen lernen und merken.'},
-  'memory.extraction_min_words': {title:'Min. Nachrichtenlaenge', text:'Mindestlaenge damit Fakten extrahiert werden.'},
-  'memory.extraction_model': {title:'Extraktions-Modell', text:'KI-Modell fuer Fakten-Erkennung.'},
+  'entity_roles': {title:'Entity-Rollen', text:'Eigene Entity-Rollen für Geräte-Erkennung. Überschreiben Defaults aus entity_roles_defaults.yaml.'},
+  // === GEDÄCHTNIS ===
+  'memory.extraction_enabled': {title:'Fakten-Extraktion', text:'Automatisch Fakten aus Gesprächen lernen und merken.'},
+  'memory.extraction_min_words': {title:'Min. Nachrichtenlänge', text:'Mindestlaenge damit Fakten extrahiert werden.'},
+  'memory.extraction_model': {title:'Extraktions-Modell', text:'KI-Modell für Fakten-Erkennung.'},
   'memory.extraction_temperature': {title:'Extraktions-Genauigkeit', text:'Niedrig = nur offensichtliche Fakten, hoch = auch Vermutungen.'},
-  'memory.extraction_max_tokens': {title:'Max. Extraktions-Laenge', text:'Maximale Laenge der Extraktions-Antwort.'},
-  'memory.max_person_facts_in_context': {title:'Personen-Fakten', text:'Wie viele Fakten ueber die Person ins Gespraech einfliessen.'},
-  'memory.max_relevant_facts_in_context': {title:'Relevante Fakten', text:'Wie viele thematisch passende Fakten pro Gespraech.'},
+  'memory.extraction_max_tokens': {title:'Max. Extraktions-Länge', text:'Maximale Länge der Extraktions-Antwort.'},
+  'memory.max_person_facts_in_context': {title:'Personen-Fakten', text:'Wie viele Fakten über die Person ins Gespräch einfliessen.'},
+  'memory.max_relevant_facts_in_context': {title:'Relevante Fakten', text:'Wie viele thematisch passende Fakten pro Gespräch.'},
   'memory.min_confidence_for_context': {title:'Min. Sicherheit', text:'Wie sicher ein Fakt sein muss um genutzt zu werden.'},
-  'memory.duplicate_threshold': {title:'Duplikat-Erkennung', text:'Wie aehnlich zwei Fakten fuer Duplikat-Erkennung sein muessen.'},
-  'memory.episode_min_words': {title:'Min. Woerter Episode', text:'Mindestlaenge fuer episodisches Gedaechtnis.'},
+  'memory.duplicate_threshold': {title:'Duplikat-Erkennung', text:'Wie ähnlich zwei Fakten für Duplikat-Erkennung sein müssen.'},
+  'memory.episode_min_words': {title:'Min. Wörter Episode', text:'Mindestlaenge für episodisches Gedächtnis.'},
   'memory.default_confidence': {title:'Standard-Sicherheit', text:'Sicherheit mit der neue Fakten gespeichert werden.'},
-  'knowledge_base.enabled': {title:'Wissensdatenbank', text:'RAG-System fuer eigene Dokumente (.txt, .md, .pdf).'},
+  'knowledge_base.enabled': {title:'Wissensdatenbank', text:'RAG-System für eigene Dokumente (.txt, .md, .pdf).'},
   'knowledge_base.auto_ingest': {title:'Auto-Einlesen', text:'Beim Start neue Dateien automatisch aufnehmen.'},
   'knowledge_base.chunk_size': {title:'Textblock-Groesse', text:'In welche Stuecke Dokumente zerteilt werden.'},
   'knowledge_base.chunk_overlap': {title:'Ueberlappung', text:'Ueberlappung zwischen aufeinanderfolgenden Bloecken.'},
-  'knowledge_base.max_distance': {title:'Suchgenauigkeit', text:'Max. Distanz fuer Treffer (niedriger = strenger).'},
+  'knowledge_base.max_distance': {title:'Suchgenauigkeit', text:'Max. Distanz für Treffer (niedriger = strenger).'},
   'knowledge_base.search_limit': {title:'Max. Treffer', text:'Max. Wissens-Treffer pro Suche.'},
-  'knowledge_base.embedding_model': {title:'Embedding-Modell', text:'Modell fuer Vektorisierung. Nach Wechsel Rebuild noetig.'},
-  'knowledge_base.supported_extensions': {title:'Dateitypen', text:'Welche Formate in die Wissensdatenbank koennen.'},
+  'knowledge_base.embedding_model': {title:'Embedding-Modell', text:'Modell für Vektorisierung. Nach Wechsel Rebuild nötig.'},
+  'knowledge_base.supported_extensions': {title:'Dateitypen', text:'Welche Formate in die Wissensdatenbank können.'},
   'correction.confidence': {title:'Korrektur-Sicherheit', text:'Sicherheit bei durch Nutzer korrigierten Fakten.'},
-  'correction.model': {title:'Korrektur-Modell', text:'KI-Modell fuer Korrektur-Analyse.'},
+  'correction.model': {title:'Korrektur-Modell', text:'KI-Modell für Korrektur-Analyse.'},
   'correction.temperature': {title:'Korrektur-Kreativitaet', text:'Kreativitaet der Korrektur-Analyse.'},
   'summarizer.run_hour': {title:'Zusammenfassung Stunde', text:'Uhrzeit (Stunde) der taeglichen Zusammenfassung.'},
   'summarizer.run_minute': {title:'Zusammenfassung Minute', text:'Uhrzeit (Minute) der Zusammenfassung.'},
-  'summarizer.model': {title:'Zusammenfassungs-Modell', text:'KI-Modell fuer Tages-Zusammenfassung.'},
-  'summarizer.max_tokens_daily': {title:'Laenge taeglich', text:'Max. Laenge der taeglichen Zusammenfassung.'},
-  'summarizer.max_tokens_weekly': {title:'Laenge woechentlich', text:'Max. Laenge der woechentlichen Zusammenfassung.'},
-  'summarizer.max_tokens_monthly': {title:'Laenge monatlich', text:'Max. Laenge der monatlichen Zusammenfassung.'},
-  'context.recent_conversations': {title:'Gespraeche merken', text:'Wie viele vergangene Gespraeche Jarvis sich im normalen Modus merkt (pro Nachricht).'},
-  'context.conversation_mode_timeout': {title:'Gespraechsmodus Timeout', text:'Wenn die letzte Nachricht weniger als X Sekunden her ist, aktiviert Jarvis den Gespraechsmodus und merkt sich doppelt so viele Nachrichten. So kannst du laengere Gespraeche fuehren.'},
-  'context.api_timeout': {title:'HA-API Timeout', text:'Timeout fuer Home-Assistant-Anfragen (Sek).'},
-  'context.llm_timeout': {title:'LLM Timeout', text:'Timeout fuer KI-Anfragen (Sek). Groessere Modelle brauchen laenger.'},
+  'summarizer.model': {title:'Zusammenfassungs-Modell', text:'KI-Modell für Tages-Zusammenfassung.'},
+  'summarizer.max_tokens_daily': {title:'Länge taeglich', text:'Max. Länge der taeglichen Zusammenfassung.'},
+  'summarizer.max_tokens_weekly': {title:'Länge woechentlich', text:'Max. Länge der woechentlichen Zusammenfassung.'},
+  'summarizer.max_tokens_monthly': {title:'Länge monatlich', text:'Max. Länge der monatlichen Zusammenfassung.'},
+  'context.recent_conversations': {title:'Gespräche merken', text:'Wie viele vergangene Gespräche Jarvis sich im normalen Modus merkt (pro Nachricht).'},
+  'context.conversation_mode_timeout': {title:'Gesprächsmodus Timeout', text:'Wenn die letzte Nachricht weniger als X Sekunden her ist, aktiviert Jarvis den Gesprächsmodus und merkt sich doppelt so viele Nachrichten. So kannst du längere Gespräche fuehren.'},
+  'context.api_timeout': {title:'HA-API Timeout', text:'Timeout für Home-Assistant-Anfragen (Sek).'},
+  'context.llm_timeout': {title:'LLM Timeout', text:'Timeout für KI-Anfragen (Sek). Größere Modelle brauchen länger.'},
   // === STIMMUNG ===
-  'mood.rapid_command_seconds': {title:'Schnelle Befehle', text:'Zeitfenster fuer "schnelle Befehle hintereinander" (Sek).'},
+  'mood.rapid_command_seconds': {title:'Schnelle Befehle', text:'Zeitfenster für "schnelle Befehle hintereinander" (Sek).'},
   'mood.stress_decay_seconds': {title:'Stress-Abbau', text:'Nach wie vielen Sek Ruhe der Stress sinkt.'},
   'mood.frustration_threshold': {title:'Frustrations-Schwelle', text:'Ab wie vielen Stress-Punkten Frustration erkannt wird.'},
-  'mood.tired_hour_start': {title:'Muede ab', text:'Ab welcher Uhrzeit Muedigkeit angenommen wird.'},
-  'mood.tired_hour_end': {title:'Muede bis', text:'Bis zu welcher Uhrzeit Muedigkeit gilt.'},
+  'mood.tired_hour_start': {title:'Muede ab', text:'Ab welcher Uhrzeit Müdigkeit angenommen wird.'},
+  'mood.tired_hour_end': {title:'Muede bis', text:'Bis zu welcher Uhrzeit Müdigkeit gilt.'},
   'mood.rapid_command_stress_boost': {title:'Stress: Schnelle Befehle', text:'Stressanstieg durch schnelle Befehle hintereinander.'},
   'mood.positive_stress_reduction': {title:'Stress: Positive Worte', text:'Stressabbau durch positive Worte.'},
   'mood.negative_stress_boost': {title:'Stress: Negative Worte', text:'Stressanstieg durch negative Worte.'},
   'mood.impatient_stress_boost': {title:'Stress: Ungeduld', text:'Stressanstieg durch ungedulige Worte.'},
-  'mood.tired_boost': {title:'Stress: Muedigkeit', text:'Stresseinfluss durch Muedigkeit.'},
+  'mood.tired_boost': {title:'Stress: Müdigkeit', text:'Stresseinfluss durch Müdigkeit.'},
   'mood.repetition_stress_boost': {title:'Stress: Wiederholungen', text:'Stressanstieg durch wiederholte Befehle.'},
-  'mood.positive_keywords': {title:'Positive Woerter', text:'Woerter die gute Stimmung signalisieren.'},
-  'mood.negative_keywords': {title:'Negative Woerter', text:'Woerter die schlechte Stimmung signalisieren.'},
-  'mood.impatient_keywords': {title:'Ungeduld-Woerter', text:'Woerter die Ungeduld signalisieren.'},
-  'mood.tired_keywords': {title:'Muedigkeits-Woerter', text:'Woerter die Muedigkeit signalisieren.'},
+  'mood.positive_keywords': {title:'Positive Wörter', text:'Wörter die gute Stimmung signalisieren.'},
+  'mood.negative_keywords': {title:'Negative Wörter', text:'Wörter die schlechte Stimmung signalisieren.'},
+  'mood.impatient_keywords': {title:'Ungeduld-Wörter', text:'Wörter die Ungeduld signalisieren.'},
+  'mood.tired_keywords': {title:'Müdigkeits-Wörter', text:'Wörter die Müdigkeit signalisieren.'},
   // === SPRACH-ENGINE ===
-  'speech.stt_model': {title:'Whisper-Modell', text:'Groessere Modelle sind genauer aber langsamer. "small" ist fuer CPU empfohlen, "large-v3-turbo" fuer GPU.'},
-  'speech.stt_language': {title:'Sprache', text:'Sprache fuer die Spracherkennung. Beeinflusst Genauigkeit der Transkription.'},
-  'speech.stt_beam_size': {title:'Beam Size', text:'Hoehere Werte = genauere Erkennung, aber langsamer. Standard: 5.'},
-  'speech.stt_compute': {title:'Berechnung', text:'int8 fuer CPU (schnell, wenig RAM), float16 fuer GPU, float32 fuer maximale Praezision.'},
-  'speech.stt_device': {title:'Hardware', text:'CPU fuer Standard-Betrieb, CUDA fuer NVIDIA GPU (NVIDIA Container Toolkit erforderlich).'},
-  'speech.tts_voice': {title:'Piper-Stimme', text:'Stimme fuer die Sprachsynthese. "thorsten-high" hat die beste Qualitaet auf Deutsch.'},
-  'speech.auto_night_whisper': {title:'Nacht-Fluestern', text:'Jarvis spricht nachts automatisch leiser (basierend auf den Lautstaerke-Einstellungen).'},
+  'speech.stt_model': {title:'Whisper-Modell', text:'Größere Modelle sind genauer aber langsamer. "small" ist für CPU empfohlen, "large-v3-turbo" für GPU.'},
+  'speech.stt_language': {title:'Sprache', text:'Sprache für die Spracherkennung. Beeinflusst Genauigkeit der Transkription.'},
+  'speech.stt_beam_size': {title:'Beam Size', text:'Höhere Werte = genauere Erkennung, aber langsamer. Standard: 5.'},
+  'speech.stt_compute': {title:'Berechnung', text:'int8 für CPU (schnell, wenig RAM), float16 für GPU, float32 für maximale Praezision.'},
+  'speech.stt_device': {title:'Hardware', text:'CPU für Standard-Betrieb, CUDA für NVIDIA GPU (NVIDIA Container Toolkit erforderlich).'},
+  'speech.tts_voice': {title:'Piper-Stimme', text:'Stimme für die Sprachsynthese. "thorsten-high" hat die beste Qualitaet auf Deutsch.'},
+  'speech.auto_night_whisper': {title:'Nacht-Flüstern', text:'Jarvis spricht nachts automatisch leiser (basierend auf den Lautstärke-Einstellungen).'},
   'voice_analysis.enabled': {title:'Stimm-Analyse', text:'Analysiert Sprechtempo zur Stimmungserkennung.'},
-  'voice_analysis.wpm_fast': {title:'Schnelles Sprechen (WPM)', text:'Ab wie vielen Woertern/Min schnelles Sprechen erkannt wird.'},
-  'voice_analysis.wpm_slow': {title:'Langsames Sprechen (WPM)', text:'Unter wie vielen Woertern/Min langsames Sprechen gilt.'},
-  'voice_analysis.wpm_normal': {title:'Normales Tempo (WPM)', text:'Referenzwert fuer normales Sprechtempo.'},
-  'voice_analysis.use_whisper_metadata': {title:'Whisper-Metadaten', text:'Zusaetzliche Daten von Whisper fuer Analyse nutzen.'},
+  'voice_analysis.wpm_fast': {title:'Schnelles Sprechen (WPM)', text:'Ab wie vielen Wörtern/Min schnelles Sprechen erkannt wird.'},
+  'voice_analysis.wpm_slow': {title:'Langsames Sprechen (WPM)', text:'Unter wie vielen Wörtern/Min langsames Sprechen gilt.'},
+  'voice_analysis.wpm_normal': {title:'Normales Tempo (WPM)', text:'Referenzwert für normales Sprechtempo.'},
+  'voice_analysis.use_whisper_metadata': {title:'Whisper-Metadaten', text:'Zusätzliche Daten von Whisper für Analyse nutzen.'},
   'voice_analysis.voice_weight': {title:'Stimm-Gewichtung', text:'Wie stark Stimm-Analyse die Gesamtstimmung beeinflusst (0-1).'},
   // === RAEUME ===
-  'room_temperature.sensors': {title:'Temperatursensoren', text:'HA-Sensoren fuer Raumtemperatur.'},
+  'room_temperature.sensors': {title:'Temperatursensoren', text:'HA-Sensoren für Raumtemperatur.'},
   'multi_room.enabled': {title:'Multi-Room', text:'Erkennt in welchem Raum du bist.'},
   'multi_room.presence_timeout_minutes': {title:'Praesenz-Timeout', text:'Nach wie vielen Min ohne Bewegung der Raum leer ist.'},
   'multi_room.auto_follow': {title:'Musik folgen', text:'Musik folgt automatisch von Raum zu Raum.'},
@@ -1359,181 +1359,181 @@ const HELP_TEXTS = {
   'follow_me.cooldown_seconds': {title:'Cooldown', text:'Mindestabstand zwischen Follow-Me Transfers. Verhindert Ping-Pong bei schnellen Raumwechseln.'},
   'follow_me.transfer_music': {title:'Musik folgt', text:'Musik wird automatisch in den neuen Raum transferiert.'},
   'follow_me.transfer_lights': {title:'Licht folgt', text:'Licht wird im alten Raum aus- und im neuen Raum eingeschaltet.'},
-  'follow_me.transfer_climate': {title:'Klima folgt', text:'Heizung/Kuehlung wird im neuen Raum auf Komfort-Temperatur gesetzt.'},
+  'follow_me.transfer_climate': {title:'Klima folgt', text:'Heizung/Kühlung wird im neuen Raum auf Komfort-Temperatur gesetzt.'},
   'multi_room.room_speakers': {title:'Speaker-Zuordnung', text:'Welcher Speaker in welchem Raum steht.'},
   'multi_room.room_motion_sensors': {title:'Bewegungsmelder', text:'Welcher Melder in welchem Raum haengt.'},
-  'activity.entities.media_players': {title:'Media Player', text:'Media Player fuer Aktivitaetserkennung.'},
-  'activity.entities.mic_sensors': {title:'Mikrofon-Sensoren', text:'Mikrofon-Sensoren fuer Spracheingabe.'},
-  'activity.entities.bed_sensors': {title:'Bett-Sensoren', text:'Sensoren fuer Schlaf-Erkennung.'},
-  'activity.entities.pc_sensors': {title:'PC-Sensoren', text:'Sensoren fuer Arbeits-Erkennung.'},
+  'activity.entities.media_players': {title:'Media Player', text:'Media Player für Aktivitätserkennung.'},
+  'activity.entities.mic_sensors': {title:'Mikrofon-Sensoren', text:'Mikrofon-Sensoren für Spracheingabe.'},
+  'activity.entities.bed_sensors': {title:'Bett-Sensoren', text:'Sensoren für Schlaf-Erkennung.'},
+  'activity.entities.pc_sensors': {title:'PC-Sensoren', text:'Sensoren für Arbeits-Erkennung.'},
   'activity.thresholds.night_start': {title:'Nacht beginnt', text:'Ab wann Nachtruhe gilt.'},
   'activity.thresholds.night_end': {title:'Nacht endet', text:'Bis wann Nachtruhe gilt.'},
-  'activity.thresholds.guest_person_count': {title:'Besuch ab Personen', text:'Ab wie vielen Personen Gaeste-Modus aktiviert wird.'},
+  'activity.thresholds.guest_person_count': {title:'Besuch ab Personen', text:'Ab wie vielen Personen Gäste-Modus aktiviert wird.'},
   'activity.thresholds.focus_min_minutes': {title:'Fokus-Modus', text:'Ab wie vielen Min ununterbrochener Arbeit Fokus erkannt wird.'},
-  'activity.silence_matrix': {title:'Stille-Matrix', text:'Bestimmt pro Aktivitaet und Dringlichkeit, wie Benachrichtigungen zugestellt werden: Laut (TTS), Leise, LED-Signal oder Unterdruecken.'},
-  'activity.volume_matrix': {title:'Lautstaerke-Matrix', text:'Lautstaerke fuer TTS-Durchsagen, abhaengig von Aktivitaet und Dringlichkeit. Werte 0-100%. Nachts wird automatisch zusaetzlich reduziert.'},
-  'scenes': {title:'Szenen', text:'Zentrale Szenen-Verwaltung. Jede Szene wird einer Aktivitaet zugeordnet (bestimmt Benachrichtigungs-Verhalten), hat eine Licht-Uebergangszeit und kann als "Nicht stoeren" markiert werden.'},
+  'activity.silence_matrix': {title:'Stille-Matrix', text:'Bestimmt pro Aktivität und Dringlichkeit, wie Benachrichtigungen zugestellt werden: Laut (TTS), Leise, LED-Signal oder Unterdrücken.'},
+  'activity.volume_matrix': {title:'Lautstärke-Matrix', text:'Lautstärke für TTS-Durchsagen, abhaengig von Aktivität und Dringlichkeit. Werte 0-100%. Nachts wird automatisch zusätzlich reduziert.'},
+  'scenes': {title:'Szenen', text:'Zentrale Szenen-Verwaltung. Jede Szene wird einer Aktivität zugeordnet (bestimmt Benachrichtigungs-Verhalten), hat eine Licht-Übergangszeit und kann als "Nicht stören" markiert werden.'},
   // === LICHTSTEUERUNG ===
-  'lighting.enabled': {title:'Lichtsteuerung', text:'Master-Schalter fuer alle automatischen Licht-Funktionen.'},
-  'lighting.auto_on_dusk': {title:'Auto-An bei Daemmerung', text:'Schaltet Lichter automatisch ein wenn die Sonne untergeht und jemand zuhause ist.'},
+  'lighting.enabled': {title:'Lichtsteuerung', text:'Master-Schalter für alle automatischen Licht-Funktionen.'},
+  'lighting.auto_on_dusk': {title:'Auto-An bei Dämmerung', text:'Schaltet Lichter automatisch ein wenn die Sonne untergeht und jemand zuhause ist.'},
   'lighting.auto_off_away': {title:'Auto-Aus bei Abwesenheit', text:'Schaltet alle Lichter aus wenn niemand mehr zuhause ist.'},
   'lighting.auto_off_empty_room_minutes': {title:'Leerer-Raum Timeout', text:'Nach wie vielen Minuten ohne Bewegung das Licht im Raum automatisch ausgeschaltet wird.'},
   'lighting.night_dimming': {title:'Nacht-Dimming', text:'Dimmt Lichter automatisch nach der konfigurierten Startzeit auf die Nacht-Helligkeit herunter.'},
   'lighting.night_dimming_start_hour': {title:'Night-Dimming Start', text:'Ab dieser Uhrzeit werden eingeschaltete Lichter langsam gedimmt.'},
-  'lighting.night_dimming_transition': {title:'Night-Dimming Dauer', text:'Wie lange der Dimm-Uebergang dauert. Laenger = sanfter.'},
-  'lighting.dusk_only_occupied_rooms': {title:'Daemmerung nur besetzte Raeume', text:'Bei Daemmerung nur in Raeumen Licht einschalten, in denen der Praesenzmelder kuerzlich Bewegung erkannt hat.'},
-  'lighting.default_transition': {title:'Standard-Uebergang', text:'Standard-Dimmzeit fuer alle Licht-Aktionen.'},
+  'lighting.night_dimming_transition': {title:'Night-Dimming Dauer', text:'Wie lange der Dimm-Übergang dauert. Länger = sanfter.'},
+  'lighting.dusk_only_occupied_rooms': {title:'Dämmerung nur besetzte Räume', text:'Bei Dämmerung nur in Räumen Licht einschalten, in denen der Präsenzmelder kuerzlich Bewegung erkannt hat.'},
+  'lighting.default_transition': {title:'Standard-Übergang', text:'Standard-Dimmzeit für alle Licht-Aktionen.'},
   'lighting.presence_control.enabled': {title:'Praesenz-Steuerung', text:'Bewegungsmelder steuern das Licht automatisch. Bei Bewegung geht Licht an, ohne Bewegung nach eingestellter Zeit wieder aus.'},
-  'lighting.presence_control.auto_on_motion': {title:'Licht an bei Bewegung', text:'Wenn ein Praesenzmelder Bewegung erkennt, wird das Licht im Raum automatisch eingeschaltet — mit adaptiver Helligkeit je nach Tageszeit.'},
-  'lighting.presence_control.night_path_light': {title:'Nacht-Pfadlicht', text:'Wenn jemand nachts aufsteht, geht in konfigurierten Raeumen (Flur, Bad) ein sehr schwaches warmweisses Licht an — gerade genug zur Orientierung, ohne voll wach zu werden.'},
+  'lighting.presence_control.auto_on_motion': {title:'Licht an bei Bewegung', text:'Wenn ein Präsenzmelder Bewegung erkennt, wird das Licht im Raum automatisch eingeschaltet — mit adaptiver Helligkeit je nach Tageszeit.'},
+  'lighting.presence_control.night_path_light': {title:'Nacht-Pfadlicht', text:'Wenn jemand nachts aufsteht, geht in konfigurierten Räumen (Flur, Bad) ein sehr schwaches warmweißes Licht an — gerade genug zur Orientierung, ohne voll wach zu werden.'},
   'lighting.presence_control.night_path_brightness': {title:'Pfadlicht-Helligkeit', text:'Wie hell das Nacht-Pfadlicht ist (in %). 3-5% reicht meist zur Orientierung.'},
   'lighting.presence_control.night_path_timeout_minutes': {title:'Pfadlicht-Dauer', text:'Wie lange das Pfadlicht an bleibt bevor es automatisch ausgeht.'},
-  'lighting.presence_control.manual_override_minutes': {title:'Override-Schutz', text:'Nach manueller Licht-Bedienung (z.B. "Licht auf 80%") greift die Automatik fuer diese Zeit nicht ein. Verhindert Konflikte zwischen Benutzer und Automatik.'},
+  'lighting.presence_control.manual_override_minutes': {title:'Override-Schutz', text:'Nach manueller Licht-Bedienung (z.B. "Licht auf 80%") greift die Automatik für diese Zeit nicht ein. Verhindert Konflikte zwischen Benutzer und Automatik.'},
   'lighting.presence_control.night_start_hour': {title:'Nacht beginnt', text:'Ab dieser Uhrzeit gilt das Nacht-Verhalten (Pfadlicht statt volle Helligkeit).'},
   'lighting.presence_control.night_end_hour': {title:'Nacht endet', text:'Bis zu dieser Uhrzeit gilt das Nacht-Verhalten.'},
-  'lighting.bed_sensors.enabled': {title:'Bettsensor-Integration', text:'Erkennt ueber Bettsensoren ob jemand im Bett liegt. Steuert Sleep-Mode und Aufwach-Licht.'},
+  'lighting.bed_sensors.enabled': {title:'Bettsensor-Integration', text:'Erkennt über Bettsensoren ob jemand im Bett liegt. Steuert Sleep-Mode und Aufwach-Licht.'},
   'lighting.bed_sensors.sleep_mode': {title:'Sleep-Mode', text:'Wenn der Bettsensor Belegung erkennt (nach der konfigurierten Startzeit), werden alle Lichter im Haus langsam gedimmt und ausgeschaltet.'},
-  'lighting.bed_sensors.sleep_dim_transition': {title:'Sleep-Dimming Dauer', text:'Wie lange das langsame Abdunkeln beim Einschlafen dauert. 300 Sekunden (5 Min) ist ein sanfter Uebergang.'},
+  'lighting.bed_sensors.sleep_dim_transition': {title:'Sleep-Dimming Dauer', text:'Wie lange das langsame Abdunkeln beim Einschlafen dauert. 300 Sekunden (5 Min) ist ein sanfter Übergang.'},
   'lighting.bed_sensors.sleep_start_hour': {title:'Schlafmodus ab', text:'Ab dieser Uhrzeit wird Bett-Belegung als Einschlafen gewertet und der Sleep-Mode aktiviert.'},
-  'lighting.bed_sensors.wakeup_light': {title:'Aufwach-Licht', text:'Wenn der Bettsensor morgens leer wird, wird im Schlafzimmer sanft Licht hochgefahren — wie ein natuerlicher Sonnenaufgang.'},
+  'lighting.bed_sensors.wakeup_light': {title:'Aufwach-Licht', text:'Wenn der Bettsensor morgens leer wird, wird im Schlafzimmer sanft Licht hochgefahren — wie ein natürlicher Sonnenaufgang.'},
   'lighting.bed_sensors.wakeup_brightness': {title:'Aufwach-Helligkeit', text:'Ziel-Helligkeit beim Aufwachen. Nicht zu hell (30-50% empfohlen).'},
-  'lighting.bed_sensors.wakeup_transition': {title:'Aufhell-Dauer', text:'Wie lange das Aufhellen beim Aufwachen dauert. Laenger = sanfter.'},
+  'lighting.bed_sensors.wakeup_transition': {title:'Aufhell-Dauer', text:'Wie lange das Aufhellen beim Aufwachen dauert. Länger = sanfter.'},
   'lighting.bed_sensors.wakeup_window_start': {title:'Aufwach-Fenster Start', text:'Frueheste Uhrzeit ab der Aufwach-Licht aktiv wird.'},
-  'lighting.bed_sensors.wakeup_window_end': {title:'Aufwach-Fenster Ende', text:'Spaeteste Uhrzeit bis zu der Aufwach-Licht aktiv ist.'},
-  'lighting.lux_adaptive.enabled': {title:'Lux-Adaptiv', text:'Passt die kuenstliche Beleuchtung automatisch an das vorhandene Tageslicht an. Bei viel Sonne wird weniger Kunstlicht benoetigt. Braucht einen Lux-Sensor pro Raum.'},
-  'lighting.lux_adaptive.target_lux': {title:'Ziel-Beleuchtungsstaerke', text:'Gewuenschte Gesamthelligkeit im Raum (natuerlich + kuenstlich). 300-500 Lux ist typisch fuer Wohnraeume.'},
-  'lighting.lux_adaptive.min_brightness_pct': {title:'Min. Kunstlicht', text:'Minimale kuenstliche Helligkeit — auch bei viel Tageslicht bleibt mindestens dieser Wert.'},
-  'lighting.lux_adaptive.max_brightness_pct': {title:'Max. Kunstlicht', text:'Maximale kuenstliche Helligkeit bei komplett dunklem Raum.'},
+  'lighting.bed_sensors.wakeup_window_end': {title:'Aufwach-Fenster Ende', text:'Späteste Uhrzeit bis zu der Aufwach-Licht aktiv ist.'},
+  'lighting.lux_adaptive.enabled': {title:'Lux-Adaptiv', text:'Passt die künstliche Beleuchtung automatisch an das vorhandene Tageslicht an. Bei viel Sonne wird weniger Kunstlicht benötigt. Braucht einen Lux-Sensor pro Raum.'},
+  'lighting.lux_adaptive.target_lux': {title:'Ziel-Beleuchtungsstaerke', text:'Gewuenschte Gesamthelligkeit im Raum (natürlich + kuenstlich). 300-500 Lux ist typisch für Wohnräume.'},
+  'lighting.lux_adaptive.min_brightness_pct': {title:'Min. Kunstlicht', text:'Minimale künstliche Helligkeit — auch bei viel Tageslicht bleibt mindestens dieser Wert.'},
+  'lighting.lux_adaptive.max_brightness_pct': {title:'Max. Kunstlicht', text:'Maximale künstliche Helligkeit bei komplett dunklem Raum.'},
   // === LICHT WETTER-INTEGRATION ===
-  'lighting.weather_boost.enabled': {title:'Wetter-Integration', text:'Nutzt die aktuelle Wetterbedingung fuer intelligentere Lichtsteuerung. Bei Bewoelkung/Regen werden Lichter automatisch heller, bei Daemmerung wird frueher eingeschaltet.'},
-  'lighting.weather_boost.weather_entity': {title:'Wetter-Entity (Licht)', text:'Welche weather-Entity fuer die Licht-Wetter-Integration genutzt wird. Leer = automatisch (weather.forecast_home bevorzugt, gleiche Logik wie Cover-Automatik).'},
-  'lighting.weather_boost.cloud_boost_pct': {title:'Boost bei Bewoelkung', text:'Um wieviel Prozent eingeschaltete Lichter bei bewoelktem Himmel heller werden. Hilft wenn Tageslicht nicht reicht, die Daemmerung aber noch nicht erreicht ist.'},
+  'lighting.weather_boost.enabled': {title:'Wetter-Integration', text:'Nutzt die aktuelle Wetterbedingung für intelligentere Lichtsteuerung. Bei Bewölkung/Regen werden Lichter automatisch heller, bei Dämmerung wird früher eingeschaltet.'},
+  'lighting.weather_boost.weather_entity': {title:'Wetter-Entity (Licht)', text:'Welche weather-Entity für die Licht-Wetter-Integration genutzt wird. Leer = automatisch (weather.forecast_home bevorzugt, gleiche Logik wie Cover-Automatik).'},
+  'lighting.weather_boost.cloud_boost_pct': {title:'Boost bei Bewölkung', text:'Um wieviel Prozent eingeschaltete Lichter bei bewölktem Himmel heller werden. Hilft wenn Tageslicht nicht reicht, die Dämmerung aber noch nicht erreicht ist.'},
   'lighting.weather_boost.rain_boost_pct': {title:'Boost bei Regen', text:'Um wieviel Prozent eingeschaltete Lichter bei Regen/Gewitter heller werden. Regen verdunkelt stärker als Wolken.'},
-  'lighting.weather_boost.dusk_earlier_on_cloudy': {title:'Fruehere Daemmerung', text:'An trueben Tagen wird die Daemmerungs-Schwelle angehoben, sodass das Auto-An frueher greift. Die Sonne steht zwar noch ueber dem Horizont, aber es ist trotzdem dunkel genug fuer Kunstlicht.'},
-  'lighting.weather_boost.dusk_cloud_elevation_offset': {title:'Daemmerung-Offset', text:'Um wieviel Grad die Daemmerungs-Schwelle bei Bewoelkung angehoben wird. Z.B. normal -2°, bei Wolken +3° = Trigger bei +1° (Sonne noch ueber Horizont, aber trueb).'},
+  'lighting.weather_boost.dusk_earlier_on_cloudy': {title:'Frühere Dämmerung', text:'An trüben Tagen wird die Dämmerungs-Schwelle angehoben, sodass das Auto-An früher greift. Die Sonne steht zwar noch über dem Horizont, aber es ist trotzdem dunkel genug für Kunstlicht.'},
+  'lighting.weather_boost.dusk_cloud_elevation_offset': {title:'Dämmerung-Offset', text:'Um wieviel Grad die Dämmerungs-Schwelle bei Bewölkung angehoben wird. Z.B. normal -2°, bei Wolken +3° = Trigger bei +1° (Sonne noch über Horizont, aber trueb).'},
   // === COVER-AUTOMATIK ===
   'seasonal_actions.enabled': {title:'Saisonale Aktionen', text:'Automatische Aktionen basierend auf Jahreszeit, Wetter und Sonnenstand.'},
-  'seasonal_actions.cover_automation.sun_tracking': {title:'Sonnenstand-Tracking', text:'Rolllaeden folgen automatisch dem Sonnenstand. Benoetigt konfigurierte Cover-Profile.'},
-  'seasonal_actions.cover_automation.temperature_based': {title:'Temperatur-Steuerung', text:'Rolllaeden reagieren auf Aussentemperatur (Hitze- und Kaelteschutz).'},
+  'seasonal_actions.cover_automation.sun_tracking': {title:'Sonnenstand-Tracking', text:'Rollläden folgen automatisch dem Sonnenstand. Benötigt konfigurierte Cover-Profile.'},
+  'seasonal_actions.cover_automation.temperature_based': {title:'Temperatur-Steuerung', text:'Rollläden reagieren auf Aussentemperatur (Hitze- und Kälteschutz).'},
   'seasonal_actions.cover_automation.weather_protection': {title:'Wetterschutz', text:'Markisen bei Sturm/Regen automatisch einfahren.'},
-  'seasonal_actions.cover_automation.night_insulation': {title:'Nacht-Isolierung', text:'Rolllaeden nachts schliessen fuer bessere Waermedaemmung.'},
-  'seasonal_actions.cover_automation.heat_protection_temp': {title:'Hitzeschutz-Temperatur', text:'Ab dieser Aussentemperatur werden Rolllaeden bei Sonneneinstrahlung geschlossen.'},
-  'seasonal_actions.cover_automation.frost_protection_temp': {title:'Frostschutz-Temperatur', text:'Bei dieser Temperatur werden Rolllaeden zum Schutz geschlossen.'},
-  'seasonal_actions.cover_automation.storm_wind_speed': {title:'Sturm-Geschwindigkeit', text:'Ab dieser Windgeschwindigkeit werden Rolllaeden zum Schutz hochgefahren.'},
-  'seasonal_actions.cover_automation.presence_simulation': {title:'Urlaubs-Simulation', text:'Simuliert Anwesenheit ueber Rolllaeden wenn Urlaubsmodus aktiv ist.'},
-  'seasonal_actions.cover_automation.vacation_mode_entity': {title:'Urlaubsmodus-Entity', text:'HA input_boolean fuer Urlaubsmodus. Muss manuell in HA erstellt werden.'},
-  'vacation_simulation.morning_hour': {title:'Morgens oeffnen', text:'Uhrzeit fuer simuliertes Oeffnen der Rolllaeden.'},
-  'vacation_simulation.evening_hour': {title:'Abends schliessen', text:'Uhrzeit fuer simuliertes Schliessen.'},
-  'vacation_simulation.variation_minutes': {title:'Variation', text:'Zufaellige Abweichung in Minuten fuer realistischere Simulation.'},
-  'vacation_simulation.night_hour': {title:'Nachts komplett zu', text:'Uhrzeit ab der alle Rolllaeden in der Urlaubssimulation komplett geschlossen werden.'},
+  'seasonal_actions.cover_automation.night_insulation': {title:'Nacht-Isolierung', text:'Rollläden nachts schließen für bessere Wärmedämmung.'},
+  'seasonal_actions.cover_automation.heat_protection_temp': {title:'Hitzeschutz-Temperatur', text:'Ab dieser Aussentemperatur werden Rollläden bei Sonneneinstrahlung geschlossen.'},
+  'seasonal_actions.cover_automation.frost_protection_temp': {title:'Frostschutz-Temperatur', text:'Bei dieser Temperatur werden Rollläden zum Schutz geschlossen.'},
+  'seasonal_actions.cover_automation.storm_wind_speed': {title:'Sturm-Geschwindigkeit', text:'Ab dieser Windgeschwindigkeit werden Rollläden zum Schutz hochgefahren.'},
+  'seasonal_actions.cover_automation.presence_simulation': {title:'Urlaubs-Simulation', text:'Simuliert Anwesenheit über Rollläden wenn Urlaubsmodus aktiv ist.'},
+  'seasonal_actions.cover_automation.vacation_mode_entity': {title:'Urlaubsmodus-Entity', text:'HA input_boolean für Urlaubsmodus. Muss manuell in HA erstellt werden.'},
+  'vacation_simulation.morning_hour': {title:'Morgens öffnen', text:'Uhrzeit für simuliertes Öffnen der Rollläden.'},
+  'vacation_simulation.evening_hour': {title:'Abends schließen', text:'Uhrzeit für simuliertes Schließen.'},
+  'vacation_simulation.variation_minutes': {title:'Variation', text:'Zufaellige Abweichung in Minuten für realistischere Simulation.'},
+  'vacation_simulation.night_hour': {title:'Nachts komplett zu', text:'Uhrzeit ab der alle Rollläden in der Urlaubssimulation komplett geschlossen werden.'},
   'seasonal_actions.cover_automation.inverted_position': {title:'Invertierte Positionen', text:'Aktivieren wenn ALLE Cover invertierte Werte nutzen (0=offen, 100=zu, z.B. Shelly/MQTT). Kann auch pro Cover in den Cover-Profilen gesetzt werden.'},
-  'seasonal_actions.cover_automation.night_start_hour': {title:'Nacht-Beginn', text:'Ab dieser Stunde gilt die Nacht-Isolierung. Im Winter frueher (z.B. 18), im Sommer spaeter (z.B. 23).'},
+  'seasonal_actions.cover_automation.night_start_hour': {title:'Nacht-Beginn', text:'Ab dieser Stunde gilt die Nacht-Isolierung. Im Winter früher (z.B. 18), im Sommer später (z.B. 23).'},
   'seasonal_actions.cover_automation.night_end_hour': {title:'Nacht-Ende', text:'Bis zu dieser Stunde gilt die Nacht-Isolierung.'},
-  'seasonal_actions.cover_automation.hysteresis_temp': {title:'Temperatur-Hysterese', text:'Verhindert Oszillation: Schliessen bei Hitzeschutz-Temp, erst wieder oeffnen bei Hitzeschutz-Temp MINUS Hysterese. Z.B. 26°C zu, 24°C auf.'},
-  'seasonal_actions.cover_automation.hysteresis_wind': {title:'Wind-Hysterese', text:'Verhindert Oszillation bei Sturmschutz. Schliessen bei Sturm-Speed, oeffnen bei Sturm-Speed MINUS Hysterese.'},
+  'seasonal_actions.cover_automation.hysteresis_temp': {title:'Temperatur-Hysterese', text:'Verhindert Oszillation: Schließen bei Hitzeschutz-Temp, erst wieder öffnen bei Hitzeschutz-Temp MINUS Hysterese. Z.B. 26°C zu, 24°C auf.'},
+  'seasonal_actions.cover_automation.hysteresis_wind': {title:'Wind-Hysterese', text:'Verhindert Oszillation bei Sturmschutz. Schließen bei Sturm-Speed, öffnen bei Sturm-Speed MINUS Hysterese.'},
   'seasonal_actions.cover_automation.glare_protection': {title:'Blendschutz', text:'Wenn ein Sitzsensor (occupancy_sensor im Cover-Profil) belegt ist und Sonne auf das Fenster scheint, wird der Sonnenschutz aktiviert — auch unter der Hitzeschutz-Temperatur.'},
-  'seasonal_actions.cover_automation.gradual_morning': {title:'Sanftes Oeffnen', text:'Morgens werden die Rolllaeden in 3 Stufen geoeffnet (30% → 70% → 100%) mit je 5 Min Pause. Weniger abrupt als sofort 100%.'},
-  'seasonal_actions.cover_automation.wave_open': {title:'Wellenfoermiges Oeffnen', text:'Rolllaeden oeffnen nacheinander: Ost-Fenster zuerst, dann Sued, dann West. Natuerlicher und reduziert die Stromlast.'},
-  'seasonal_actions.cover_automation.heating_integration': {title:'Heizungs-Integration', text:'Wenn die Heizung laeuft + Aussentemp kalt: Nicht-sonnenbeschienene Fenster zu (Isolierung). Wenn Sonne + Heizung aus: Sonnenfenster auf (passive Solarwaerme).'},
+  'seasonal_actions.cover_automation.gradual_morning': {title:'Sanftes Öffnen', text:'Morgens werden die Rollläden in 3 Stufen geöffnet (30% → 70% → 100%) mit je 5 Min Pause. Weniger abrupt als sofort 100%.'},
+  'seasonal_actions.cover_automation.wave_open': {title:'Wellenförmiges Öffnen', text:'Rollläden öffnen nacheinander: Ost-Fenster zuerst, dann Sued, dann West. Natürlicher und reduziert die Stromlast.'},
+  'seasonal_actions.cover_automation.heating_integration': {title:'Heizungs-Integration', text:'Wenn die Heizung läuft + Aussentemp kalt: Nicht-sonnenbeschienene Fenster zu (Isolierung). Wenn Sonne + Heizung aus: Sonnenfenster auf (passive Solarwaerme).'},
   'seasonal_actions.cover_automation.co2_ventilation': {title:'CO2-Lueftung', text:'Bei hohem CO2 (>1000 ppm) und gutem Wetter (10-25°C, kein Regen) wird eine Lueftungsempfehlung gegeben.'},
-  'seasonal_actions.cover_automation.privacy_mode': {title:'Privacy-Modus', text:'Abends nach Sonnenuntergang: Wenn im Raum Licht an ist, werden Rolllaeden mit privacy_mode=true im Cover-Profil geschlossen (Sichtschutz).'},
+  'seasonal_actions.cover_automation.privacy_mode': {title:'Privacy-Modus', text:'Abends nach Sonnenuntergang: Wenn im Raum Licht an ist, werden Rollläden mit privacy_mode=true im Cover-Profil geschlossen (Sichtschutz).'},
   'seasonal_actions.cover_automation.privacy_close_hour': {title:'Privacy ab Uhrzeit', text:'Ab welcher Uhrzeit der Privacy-Modus aktiviert wird (z.B. 17 = ab 17 Uhr). Muss gleichzeitig dunkel sein (Sonnenuntergang). Ohne Angabe: sobald es dunkel ist.'},
-  'seasonal_actions.cover_automation.presence_aware': {title:'Praesenz-basiert', text:'Wenn alle Personen das Haus verlassen haben, werden alle Rolllaeden geschlossen (Einbruchschutz + Energiesparen).'},
-  'seasonal_actions.cover_automation.manual_override_hours': {title:'Manueller Override', text:'Wenn ein Rollladen manuell (Taster/App) bedient wird, pausiert die Automatik fuer diese Anzahl Stunden. Verhindert dass die Automatik manuelle Einstellungen ueberschreibt.'},
-  'seasonal_actions.cover_automation.sunset_close_elevation': {title:'Schliessen ab Elevation', text:'Ab welcher Sonnenhoehe (Elevation) die Rolllaeden abends geschlossen werden. -2° (Standard) = kurz nach Sonnenuntergang. 0° = genau bei Sonnenuntergang. Negative Werte = spaeter (dunkler). Positive Werte = frueher (noch hell).'},
-  'seasonal_actions.cover_automation.wakeup_sun_check': {title:'Aufwach-Sonnenpruefung', text:'Prueft beim Aufwachen den Sonnenstand (sun.sun). Wenn es noch zu dunkel ist, werden die Rolllaeden erst bei Daemmerung geoeffnet statt sofort. Verhindert dass Rolllaeden mitten in der Nacht hochfahren.'},
-  'seasonal_actions.cover_automation.wakeup_min_sun_elevation': {title:'Min. Sonnenhoehe beim Aufwachen', text:'Mindest-Sonnenhoehe (in Grad) damit Rolllaeden beim Aufwachen geoeffnet werden. -6° = Buergerliche Daemmerung (Himmel wird hell). -12° = Nautische Daemmerung. 0° = Sonnenaufgang. Bei niedrigerem Sonnenstand wird das Oeffnen verschoben.'},
-  'seasonal_actions.cover_automation.wakeup_fallback_max_minutes': {title:'Fallback-Oeffnung', text:'Maximale Wartezeit nach dem geplanten Oeffnungszeitpunkt. Wenn die Sonne innerhalb dieses Zeitraums nicht hoch genug steigt (z.B. trueber Wintertag), werden die Rolllaeden trotzdem geoeffnet. Verhindert dass man den ganzen Tag im Dunkeln sitzt.'},
-  'seasonal_actions.cover_automation.weather_entity': {title:'Wetter-Entity', text:'Welche weather-Entity aus Home Assistant fuer die Cover-Automatik genutzt wird. Leer = automatisch (bevorzugt weather.forecast_home, Fallback: erste weather.* Entity). Aenderbar per UI oder per Sprache ("Jarvis, wechsle Wetter-Integration auf weather.home").'},
-  'seasonal_actions.cover_automation.forecast_weather_protection': {title:'Vorhersage-Wetterschutz', text:'Nutzt die Wettervorhersage aus der konfigurierten Wetter-Entity fuer vorausschauenden Schutz. Faehrt Markisen ein BEVOR ein Sturm kommt und schliesst Dachfenster BEVOR es regnet — statt erst zu reagieren wenn es schon zu spaet ist.'},
-  'seasonal_actions.cover_automation.forecast_lookahead_hours': {title:'Vorhersage-Zeitraum', text:'Wie viele Stunden in die Zukunft die Wettervorhersage fuer Schutzentscheidungen genutzt wird. Mehr Stunden = frueheres Reagieren, aber auch mehr Fehlalarme.'},
+  'seasonal_actions.cover_automation.presence_aware': {title:'Praesenz-basiert', text:'Wenn alle Personen das Haus verlassen haben, werden alle Rollläden geschlossen (Einbruchschutz + Energiesparen).'},
+  'seasonal_actions.cover_automation.manual_override_hours': {title:'Manueller Override', text:'Wenn ein Rollladen manuell (Taster/App) bedient wird, pausiert die Automatik für diese Anzahl Stunden. Verhindert dass die Automatik manuelle Einstellungen ueberschreibt.'},
+  'seasonal_actions.cover_automation.sunset_close_elevation': {title:'Schließen ab Elevation', text:'Ab welcher Sonnenhöhe (Elevation) die Rollläden abends geschlossen werden. -2° (Standard) = kurz nach Sonnenuntergang. 0° = genau bei Sonnenuntergang. Negative Werte = später (dunkler). Positive Werte = früher (noch hell).'},
+  'seasonal_actions.cover_automation.wakeup_sun_check': {title:'Aufwach-Sonnenprüfung', text:'Prüft beim Aufwachen den Sonnenstand (sun.sun). Wenn es noch zu dunkel ist, werden die Rollläden erst bei Dämmerung geöffnet statt sofort. Verhindert dass Rollläden mitten in der Nacht hochfahren.'},
+  'seasonal_actions.cover_automation.wakeup_min_sun_elevation': {title:'Min. Sonnenhöhe beim Aufwachen', text:'Mindest-Sonnenhöhe (in Grad) damit Rollläden beim Aufwachen geöffnet werden. -6° = Bürgerliche Dämmerung (Himmel wird hell). -12° = Nautische Dämmerung. 0° = Sonnenaufgang. Bei niedrigerem Sonnenstand wird das Öffnen verschoben.'},
+  'seasonal_actions.cover_automation.wakeup_fallback_max_minutes': {title:'Fallback-Öffnung', text:'Maximale Wartezeit nach dem geplanten Öffnungszeitpunkt. Wenn die Sonne innerhalb dieses Zeitraums nicht hoch genug steigt (z.B. trüber Wintertag), werden die Rollläden trotzdem geöffnet. Verhindert dass man den ganzen Tag im Dunkeln sitzt.'},
+  'seasonal_actions.cover_automation.weather_entity': {title:'Wetter-Entity', text:'Welche weather-Entity aus Home Assistant für die Cover-Automatik genutzt wird. Leer = automatisch (bevorzugt weather.forecast_home, Fallback: erste weather.* Entity). Aenderbar per UI oder per Sprache ("Jarvis, wechsle Wetter-Integration auf weather.home").'},
+  'seasonal_actions.cover_automation.forecast_weather_protection': {title:'Vorhersage-Wetterschutz', text:'Nutzt die Wettervorhersage aus der konfigurierten Wetter-Entity für vorausschauenden Schutz. Faehrt Markisen ein BEVOR ein Sturm kommt und schließt Dachfenster BEVOR es regnet — statt erst zu reagieren wenn es schon zu spaet ist.'},
+  'seasonal_actions.cover_automation.forecast_lookahead_hours': {title:'Vorhersage-Zeitraum', text:'Wie viele Stunden in die Zukunft die Wettervorhersage für Schutzentscheidungen genutzt wird. Mehr Stunden = früheres Reagieren, aber auch mehr Fehlalarme.'},
   'seasonal_actions.cover_automation.disable_addon_cover_domain': {title:'Addon-Plugin deaktivieren', text:'Deaktiviert das Cover-Domain Plugin im Addon. Empfohlen, da die ProactiveEngine (Assistant-seitig) intelligenter und umfangreicher ist. Verhindert Konflikte zwischen den zwei Systemen.'},
   // === SAUGROBOTER ===
-  'remote.enabled': {title:'Fernbedienung', text:'Aktiviert die Fernbedienungs-Steuerung (Logitech Harmony) ueber Jarvis. Erlaubt Sprachsteuerung fuer TV, Receiver, etc.'},
-  'vacuum.enabled': {title:'Saugroboter', text:'Aktiviert die Saugroboter-Steuerung ueber Jarvis.'},
+  'remote.enabled': {title:'Fernbedienung', text:'Aktiviert die Fernbedienungs-Steuerung (Logitech Harmony) über Jarvis. Erlaubt Sprachsteuerung für TV, Receiver, etc.'},
+  'vacuum.enabled': {title:'Saugroboter', text:'Aktiviert die Saugroboter-Steuerung über Jarvis.'},
   'vacuum.auto_clean.enabled': {title:'Auto-Clean', text:'Automatische Reinigung wenn niemand zuhause ist.'},
   'vacuum.auto_clean.mode': {title:'Auto-Clean Modus', text:'Smart: startet wenn niemand zuhause. Wochenplan: feste Tage/Uhrzeit. Beides: kombiniert.'},
   'vacuum.auto_clean.schedule_days': {title:'Reinigungstage', text:'An welchen Wochentagen automatisch gereinigt wird (Modus Wochenplan/Beides).'},
   'vacuum.auto_clean.schedule_time': {title:'Uhrzeit', text:'Um welche Uhrzeit der Wochenplan-Modus die Reinigung startet.'},
   'vacuum.auto_clean.when_nobody_home': {title:'Nur bei Abwesenheit', text:'Startet nur wenn alle Personen abwesend sind.'},
   'vacuum.auto_clean.min_hours_between': {title:'Mindestabstand', text:'Minimale Stunden zwischen zwei automatischen Reinigungen.'},
-  'vacuum.auto_clean.preferred_time_start': {title:'Bevorzugt ab', text:'Frueheste Uhrzeit fuer Smart-Modus Reinigung.'},
-  'vacuum.auto_clean.preferred_time_end': {title:'Bevorzugt bis', text:'Spaeteste Uhrzeit fuer Smart-Modus Reinigung.'},
-  'vacuum.auto_clean.auto_fan_speed': {title:'Saugstaerke (Auto)', text:'Saugstaerke fuer automatische Reinigungen. Ueberschreibt den Standard-Wert.'},
-  'vacuum.auto_clean.auto_mode': {title:'Modus (Auto)', text:'Reinigungsmodus fuer automatische Reinigungen: saugen, wischen, oder beides.'},
-  'vacuum.auto_clean.not_during': {title:'Nicht waehrend', text:'Situationen in denen der Saugroboter NICHT automatisch starten soll.'},
-  'vacuum.presence_guard.enabled': {title:'Anwesenheits-Steuerung', text:'Vacuum faehrt NUR wenn niemand zuhause ist. Gilt fuer alle Trigger (Auto-Clean, Steckdose, Szene).'},
-  'vacuum.presence_guard.switch_alarm_for_cleaning': {title:'Alarm umschalten', text:'Schaltet die Alarmanlage automatisch von abwesend auf anwesend bevor der Saugroboter startet (verhindert Fehlalarme). Nach der Reinigung wird zurueckgeschaltet.'},
+  'vacuum.auto_clean.preferred_time_start': {title:'Bevorzugt ab', text:'Frueheste Uhrzeit für Smart-Modus Reinigung.'},
+  'vacuum.auto_clean.preferred_time_end': {title:'Bevorzugt bis', text:'Späteste Uhrzeit für Smart-Modus Reinigung.'},
+  'vacuum.auto_clean.auto_fan_speed': {title:'Saugstaerke (Auto)', text:'Saugstaerke für automatische Reinigungen. Überschreibt den Standard-Wert.'},
+  'vacuum.auto_clean.auto_mode': {title:'Modus (Auto)', text:'Reinigungsmodus für automatische Reinigungen: saugen, wischen, oder beides.'},
+  'vacuum.auto_clean.not_during': {title:'Nicht während', text:'Situationen in denen der Saugroboter NICHT automatisch starten soll.'},
+  'vacuum.presence_guard.enabled': {title:'Anwesenheits-Steuerung', text:'Vacuum faehrt NUR wenn niemand zuhause ist. Gilt für alle Trigger (Auto-Clean, Steckdose, Szene).'},
+  'vacuum.presence_guard.switch_alarm_for_cleaning': {title:'Alarm umschalten', text:'Schaltet die Alarmanlage automatisch von abwesend auf anwesend bevor der Saugroboter startet (verhindert Fehlalarme). Nach der Reinigung wird zurückgeschaltet.'},
   'vacuum.presence_guard.alarm_entity': {title:'Alarm-Entity', text:'Entity-ID der Alarmanlage (z.B. alarm_control_panel.alarmo). Leer = automatische Erkennung.'},
   'vacuum.presence_guard.pause_on_arrival': {title:'Pause bei Heimkehr', text:'Pausiert den Saugroboter und schickt ihn zur Ladestation wenn jemand nachhause kommt.'},
   'vacuum.presence_guard.resume_on_departure': {title:'Fortsetzung bei Abwesenheit', text:'Setzt die unterbrochene Reinigung fort sobald wieder alle weg sind.'},
-  'vacuum.presence_guard.resume_delay_minutes': {title:'Verzoegerung Fortsetzung', text:'Wartet diese Minuten bevor die Reinigung fortgesetzt wird. Verhindert Neustart wenn jemand nur kurz reinkommt.'},
+  'vacuum.presence_guard.resume_delay_minutes': {title:'Verzögerung Fortsetzung', text:'Wartet diese Minuten bevor die Reinigung fortgesetzt wird. Verhindert Neustart wenn jemand nur kurz reinkommt.'},
   'vacuum.default_fan_speed': {title:'Standard-Saugstaerke', text:'Standard-Saugstaerke wenn nicht explizit angegeben.'},
   'vacuum.default_mode': {title:'Standard-Modus', text:'Standard-Reinigungsmodus: nur saugen, nur wischen, oder beides.'},
-  'vacuum.power_trigger.enabled': {title:'Steckdosen-Trigger', text:'Startet Reinigung automatisch wenn eine ueberwachte Steckdose abschaltet (z.B. nach dem Kochen).'},
-  'vacuum.power_trigger.delay_minutes': {title:'Verzoegerung', text:'Wartet diese Minuten nach dem Abschalten bevor der Saugroboter startet.'},
-  'vacuum.power_trigger.cooldown_hours': {title:'Cooldown', text:'Nach einer Reinigung wird dieser Trigger fuer die angegebene Zeit deaktiviert.'},
+  'vacuum.power_trigger.enabled': {title:'Steckdosen-Trigger', text:'Startet Reinigung automatisch wenn eine überwachte Steckdose abschaltet (z.B. nach dem Kochen).'},
+  'vacuum.power_trigger.delay_minutes': {title:'Verzögerung', text:'Wartet diese Minuten nach dem Abschalten bevor der Saugroboter startet.'},
+  'vacuum.power_trigger.cooldown_hours': {title:'Cooldown', text:'Nach einer Reinigung wird dieser Trigger für die angegebene Zeit deaktiviert.'},
   'vacuum.scene_trigger.enabled': {title:'Szenen-Trigger', text:'Startet Reinigung automatisch wenn eine bestimmte HA-Szene aktiviert wird.'},
-  'vacuum.scene_trigger.delay_minutes': {title:'Verzoegerung', text:'Wartet diese Minuten nach Szenen-Aktivierung bevor der Saugroboter startet.'},
-  'vacuum.scene_trigger.cooldown_hours': {title:'Cooldown', text:'Nach einer Reinigung wird dieser Trigger fuer die angegebene Zeit deaktiviert.'},
-  'vacuum.maintenance.enabled': {title:'Wartung', text:'Ueberwacht Verschleissteile (Filter, Buersten, Mopp).'},
-  'vacuum.maintenance.check_interval_hours': {title:'Pruef-Intervall', text:'Wie oft die Verschleissteile geprueft werden.'},
-  'vacuum.maintenance.warn_at_percent': {title:'Warnung bei', text:'Warnt wenn ein Verschleissteil unter diesen Prozentwert faellt.'},
+  'vacuum.scene_trigger.delay_minutes': {title:'Verzögerung', text:'Wartet diese Minuten nach Szenen-Aktivierung bevor der Saugroboter startet.'},
+  'vacuum.scene_trigger.cooldown_hours': {title:'Cooldown', text:'Nach einer Reinigung wird dieser Trigger für die angegebene Zeit deaktiviert.'},
+  'vacuum.maintenance.enabled': {title:'Wartung', text:'Überwacht Verschleißteile (Filter, Bürsten, Mopp).'},
+  'vacuum.maintenance.check_interval_hours': {title:'Prüf-Intervall', text:'Wie oft die Verschleißteile geprüft werden.'},
+  'vacuum.maintenance.warn_at_percent': {title:'Warnung bei', text:'Warnt wenn ein Verschleissteil unter diesen Prozentwert fällt.'},
   // === STIMME & TTS ===
-  'sounds.default_speaker': {title:'Standard-Speaker', text:'Standard-Geraet fuer Sprachausgabe und Sounds.'},
+  'sounds.default_speaker': {title:'Standard-Speaker', text:'Standard-Geraet für Sprachausgabe und Sounds.'},
   'sounds.tts_entity': {title:'TTS-Engine', text:'Welche Text-to-Speech Engine genutzt wird.'},
-  'sounds.alexa_speakers': {title:'Alexa Speaker', text:'Echo/Alexa Geraete fuer Benachrichtigungen.'},
-  'tts.ssml_enabled': {title:'SSML', text:'Erweiterte Sprachsteuerung (Betonung, Pausen). Nicht alle Engines unterstuetzt.'},
+  'sounds.alexa_speakers': {title:'Alexa Speaker', text:'Echo/Alexa Geräte für Benachrichtigungen.'},
+  'tts.ssml_enabled': {title:'SSML', text:'Erweiterte Sprachsteuerung (Betonung, Pausen). Nicht alle Engines unterstützt.'},
   'tts.prosody_variation': {title:'Prosody', text:'Tonhoehe und Tempo variieren je nach Kontext.'},
-  'tts.speed.confirmation': {title:'Tempo: Bestaetigung', text:'Sprechgeschwindigkeit bei Bestaetigungen (100=normal).'},
+  'tts.speed.confirmation': {title:'Tempo: Bestätigung', text:'Sprechgeschwindigkeit bei Bestätigungen (100=normal).'},
   'tts.speed.warning': {title:'Tempo: Warnung', text:'Sprechgeschwindigkeit bei Warnungen.'},
   'tts.speed.briefing': {title:'Tempo: Briefing', text:'Sprechgeschwindigkeit bei Briefings.'},
-  'tts.speed.greeting': {title:'Tempo: Begruessung', text:'Sprechgeschwindigkeit bei Begruessungen.'},
+  'tts.speed.greeting': {title:'Tempo: Begrüßung', text:'Sprechgeschwindigkeit bei Begrüßungen.'},
   'tts.speed.question': {title:'Tempo: Frage', text:'Sprechgeschwindigkeit bei Fragen.'},
   'tts.speed.casual': {title:'Tempo: Normal', text:'Sprechgeschwindigkeit bei normalen Antworten.'},
   'tts.pauses.before_important': {title:'Pause: Wichtig', text:'ms Pause vor wichtigen Infos.'},
-  'tts.pauses.between_sentences': {title:'Pause: Saetze', text:'ms Pause zwischen Saetzen.'},
-  'tts.pauses.after_greeting': {title:'Pause: Begruessung', text:'ms Pause nach der Begruessung.'},
+  'tts.pauses.between_sentences': {title:'Pause: Sätze', text:'ms Pause zwischen Sätzen.'},
+  'tts.pauses.after_greeting': {title:'Pause: Begrüßung', text:'ms Pause nach der Begrüßung.'},
   'tts.whisper_triggers': {title:'Fluestern bei', text:'Bei welchen Situationen gefluestert wird.'},
   'tts.whisper_cancel_triggers': {title:'Fluestern beenden', text:'Was den Fluestermodus beendet.'},
-  'volume.day': {title:'Lautstaerke: Tag', text:'Lautstaerke tagsueber (0-1).'},
-  'volume.evening': {title:'Lautstaerke: Abend', text:'Lautstaerke am Abend.'},
-  'volume.night': {title:'Lautstaerke: Nacht', text:'Lautstaerke nachts.'},
-  'volume.sleeping': {title:'Lautstaerke: Schlaf', text:'Lautstaerke im Schlafmodus.'},
-  'volume.emergency': {title:'Lautstaerke: Notfall', text:'Lautstaerke bei Notfaellen. Sollte hoch sein.'},
-  'volume.whisper': {title:'Lautstaerke: Fluestern', text:'Lautstaerke im Fluestermodus.'},
-  'volume.morning_start': {title:'Morgen ab', text:'Ab welcher Stunde Tages-Lautstaerke gilt.'},
-  'volume.evening_start': {title:'Abend ab', text:'Ab welcher Stunde Abend-Lautstaerke gilt.'},
-  'volume.night_start': {title:'Nacht ab', text:'Ab welcher Stunde Nacht-Lautstaerke gilt.'},
-  'sounds.enabled': {title:'Sound-Effekte', text:'Kurze Toene bei Events (Zuhoeren, Bestaetigung, Warnung).'},
+  'volume.day': {title:'Lautstärke: Tag', text:'Lautstärke tagsüber (0-1).'},
+  'volume.evening': {title:'Lautstärke: Abend', text:'Lautstärke am Abend.'},
+  'volume.night': {title:'Lautstärke: Nacht', text:'Lautstärke nachts.'},
+  'volume.sleeping': {title:'Lautstärke: Schlaf', text:'Lautstärke im Schlafmodus.'},
+  'volume.emergency': {title:'Lautstärke: Notfall', text:'Lautstärke bei Notfaellen. Sollte hoch sein.'},
+  'volume.whisper': {title:'Lautstärke: Fluestern', text:'Lautstärke im Fluestermodus.'},
+  'volume.morning_start': {title:'Morgen ab', text:'Ab welcher Stunde Tages-Lautstärke gilt.'},
+  'volume.evening_start': {title:'Abend ab', text:'Ab welcher Stunde Abend-Lautstärke gilt.'},
+  'volume.night_start': {title:'Nacht ab', text:'Ab welcher Stunde Nacht-Lautstärke gilt.'},
+  'sounds.enabled': {title:'Sound-Effekte', text:'Kurze Toene bei Events (Zuhoeren, Bestätigung, Warnung).'},
   'sounds.events.listening': {title:'Sound: Zuhoeren', text:'Sound beim Start des Zuhoerens.'},
-  'sounds.events.confirmed': {title:'Sound: Bestaetigung', text:'Sound nach Bestaetigung.'},
+  'sounds.events.confirmed': {title:'Sound: Bestätigung', text:'Sound nach Bestätigung.'},
   'sounds.events.warning': {title:'Sound: Warnung', text:'Sound bei Warnungen.'},
   'sounds.events.alarm': {title:'Sound: Alarm', text:'Sound bei Alarmen.'},
   'sounds.events.doorbell': {title:'Sound: Tuerklingel', text:'Sound bei Tuerklingel-Events.'},
-  'sounds.events.greeting': {title:'Sound: Begruessung', text:'Sound bei Begruessungen.'},
+  'sounds.events.greeting': {title:'Sound: Begrüßung', text:'Sound bei Begrüßungen.'},
   'sounds.events.error': {title:'Sound: Fehler', text:'Sound bei Fehlern.'},
   'sounds.events.goodnight': {title:'Sound: Gute Nacht', text:'Sound bei Gute-Nacht-Routine.'},
-  'sounds.night_volume_factor': {title:'Nacht-Sound-Faktor', text:'Sound-Lautstaerke nachts als Faktor (0.3 = 30%).'},
-  'narration.enabled': {title:'Szenen-Narration', text:'Assistent erzaehlt bei Szenen-Wechseln was passiert.'},
-  'narration.default_transition': {title:'Standard-Uebergang', text:'Standard-Dauer fuer Szenen-Uebergaenge (Sek).'},
-  'narration.scene_transitions.filmabend': {title:'Filmabend-Uebergang', text:'Uebergangs-Dauer Filmabend-Szene.'},
-  'narration.scene_transitions.gute_nacht': {title:'Gute-Nacht-Uebergang', text:'Uebergangs-Dauer Gute-Nacht-Szene.'},
-  'narration.scene_transitions.aufwachen': {title:'Aufwach-Uebergang', text:'Uebergangs-Dauer Aufwach-Szene.'},
-  'narration.scene_transitions.gemuetlich': {title:'Gemuetlich-Uebergang', text:'Uebergangs-Dauer Gemuetlich-Szene.'},
-  'narration.step_delay': {title:'Schritt-Verzoegerung', text:'Pause zwischen Aktionen innerhalb einer Szene.'},
+  'sounds.night_volume_factor': {title:'Nacht-Sound-Faktor', text:'Sound-Lautstärke nachts als Faktor (0.3 = 30%).'},
+  'narration.enabled': {title:'Szenen-Narration', text:'Assistent erzählt bei Szenen-Wechseln was passiert.'},
+  'narration.default_transition': {title:'Standard-Übergang', text:'Standard-Dauer für Szenen-Uebergaenge (Sek).'},
+  'narration.scene_transitions.filmabend': {title:'Filmabend-Übergang', text:'Übergangs-Dauer Filmabend-Szene.'},
+  'narration.scene_transitions.gute_nacht': {title:'Gute-Nacht-Übergang', text:'Übergangs-Dauer Gute-Nacht-Szene.'},
+  'narration.scene_transitions.aufwachen': {title:'Aufwach-Übergang', text:'Übergangs-Dauer Aufwach-Szene.'},
+  'narration.scene_transitions.gemuetlich': {title:'Gemuetlich-Übergang', text:'Übergangs-Dauer Gemuetlich-Szene.'},
+  'narration.step_delay': {title:'Schritt-Verzögerung', text:'Pause zwischen Aktionen innerhalb einer Szene.'},
   'narration.narrate_actions': {title:'Aktionen ansagen', text:'Bei Szenen-Wechseln ansagen was passiert.'},
   'speaker_recognition.enabled': {title:'Sprecher-Erkennung', text:'Erkennt wer spricht und passt Antworten an.'},
   'speaker_recognition.min_confidence': {title:'Erkennungs-Sicherheit', text:'Wie sicher die Erkennung sein muss (0.6 empfohlen). Unter diesem Wert wird nachgefragt.'},
   'speaker_recognition.enrollment_duration': {title:'Einlern-Dauer', text:'Wie lange eine Person sprechen muss zum Einlernen.'},
-  'speaker_recognition.fallback_ask': {title:'Nachfragen', text:'Bei unsicherer Erkennung nachfragen "Wer spricht?" — die Antwort wird fuer den Stimmabdruck gelernt.'},
+  'speaker_recognition.fallback_ask': {title:'Nachfragen', text:'Bei unsicherer Erkennung nachfragen "Wer spricht?" — die Antwort wird für den Stimmabdruck gelernt.'},
   'speaker_recognition.max_profiles': {title:'Max. Profile', text:'Max. Anzahl gespeicherter Sprecher-Profile.'},
-  'speaker_recognition.device_mapping': {title:'Geraete-Zuordnung', text:'Welches ESPHome-Geraet gehoert welcher Person? Format: Device-ID → Person. Die Device-ID findest du in HA unter Einstellungen → Geraete → ESPHome.'},
-  'speaker_recognition.doa_mapping': {title:'Richtungs-Zuordnung (DoA)', text:'Direction of Arrival: Welcher Winkel gehoert welcher Person pro Geraet? Erfordert ReSpeaker XVF3800. Format: Winkelbereich (z.B. "0-90") → Person.'},
-  'speaker_recognition.doa_tolerance': {title:'DoA-Toleranz', text:'Toleranz fuer die Richtungserkennung in Grad. Groessere Werte sind toleranter, kleinere praeziser.'},
+  'speaker_recognition.device_mapping': {title:'Geräte-Zuordnung', text:'Welches ESPHome-Geraet gehört welcher Person? Format: Device-ID → Person. Die Device-ID findest du in HA unter Einstellungen → Geräte → ESPHome.'},
+  'speaker_recognition.doa_mapping': {title:'Richtungs-Zuordnung (DoA)', text:'Direction of Arrival: Welcher Winkel gehört welcher Person pro Geraet? Erfordert ReSpeaker XVF3800. Format: Winkelbereich (z.B. "0-90") → Person.'},
+  'speaker_recognition.doa_tolerance': {title:'DoA-Toleranz', text:'Toleranz für die Richtungserkennung in Grad. Größere Werte sind toleranter, kleinere präziser.'},
   // === ROUTINEN ===
   'routines.morning_briefing.enabled': {title:'Morgen-Briefing', text:'Automatisches Update am Morgen mit Wetter, Terminen, Neuigkeiten.'},
-  'routines.morning_briefing.trigger': {title:'Briefing-Ausloeser', text:'Was das Morgen-Briefing ausloest (Bewegung, Sprache, Wecker).'},
+  'routines.morning_briefing.trigger': {title:'Briefing-Auslöser', text:'Was das Morgen-Briefing auslöst (Bewegung, Sprache, Wecker).'},
   'routines.morning_briefing.modules': {title:'Briefing-Module', text:'Was im Morgen-Briefing enthalten sein soll.'},
   'routines.morning_briefing.weekday_style': {title:'Stil Wochentag', text:'Briefing-Stil unter der Woche.'},
   'routines.morning_briefing.weekend_style': {title:'Stil Wochenende', text:'Briefing-Stil am Wochenende.'},
@@ -1541,127 +1541,127 @@ const HELP_TEXTS = {
   'routines.morning_briefing.morning_actions.lights_soft': {title:'Licht sanft an', text:'Beim Briefing sanft Licht einschalten.'},
   // === AUFWACH-SEQUENZ ===
   'routines.morning_briefing.wakeup_sequence.enabled': {title:'Aufwach-Sequenz', text:'Stufenweises Aufwachen: Rolladen langsam hoch, sanftes Licht, Kaffee — dann Briefing. Wird nur bei Schlafzimmer-Bewegung ausgeloest.'},
-  'routines.morning_briefing.wakeup_sequence.bedroom_motion_sensor': {title:'Schlafzimmer-Sensor', text:'Bewegungssensor im Schlafzimmer der die Aufwach-Sequenz ausloest. Ohne Sensor wird die Sequenz nie automatisch gestartet.'},
-  'routines.morning_briefing.wakeup_sequence.min_autonomy_level': {title:'Min. Autonomie', text:'Mindest-Autonomie-Level fuer die Aufwach-Sequenz. Bei niedrigerem Level werden nur Briefing-Meldungen gesendet.'},
+  'routines.morning_briefing.wakeup_sequence.bedroom_motion_sensor': {title:'Schlafzimmer-Sensor', text:'Bewegungssensor im Schlafzimmer der die Aufwach-Sequenz auslöst. Ohne Sensor wird die Sequenz nie automatisch gestartet.'},
+  'routines.morning_briefing.wakeup_sequence.min_autonomy_level': {title:'Min. Autonomie', text:'Mindest-Autonomie-Level für die Aufwach-Sequenz. Bei niedrigerem Level werden nur Briefing-Meldungen gesendet.'},
   'routines.morning_briefing.wakeup_sequence.window_start_hour': {title:'Frueheste Uhrzeit', text:'Ab wann die Aufwach-Sequenz morgens aktiv sein darf.'},
-  'routines.morning_briefing.wakeup_sequence.window_end_hour': {title:'Spaeteste Uhrzeit', text:'Bis wann die Aufwach-Sequenz morgens aktiv sein darf.'},
-  'routines.morning_briefing.wakeup_sequence.steps.covers_gradual.enabled': {title:'Rolladen stufenweise', text:'Rolladen im Schlafzimmer langsam ueber mehrere Minuten oeffnen statt sofort.'},
-  'routines.morning_briefing.wakeup_sequence.steps.covers_gradual.room': {title:'Raum', text:'In welchem Raum die Rolladen stufenweise geoeffnet werden.'},
+  'routines.morning_briefing.wakeup_sequence.window_end_hour': {title:'Späteste Uhrzeit', text:'Bis wann die Aufwach-Sequenz morgens aktiv sein darf.'},
+  'routines.morning_briefing.wakeup_sequence.steps.covers_gradual.enabled': {title:'Rolladen stufenweise', text:'Rolladen im Schlafzimmer langsam über mehrere Minuten öffnen statt sofort.'},
+  'routines.morning_briefing.wakeup_sequence.steps.covers_gradual.room': {title:'Raum', text:'In welchem Raum die Rolladen stufenweise geöffnet werden.'},
   'routines.morning_briefing.wakeup_sequence.steps.covers_gradual.duration_seconds': {title:'Dauer', text:'Ueber wie viele Sekunden die Rolladen von 0 auf 100% fahren.'},
-  'routines.morning_briefing.wakeup_sequence.steps.lights_soft.enabled': {title:'Aufwach-Licht', text:'Sanftes warmweisses Licht beim Aufwachen einschalten.'},
+  'routines.morning_briefing.wakeup_sequence.steps.lights_soft.enabled': {title:'Aufwach-Licht', text:'Sanftes warmweißes Licht beim Aufwachen einschalten.'},
   'routines.morning_briefing.wakeup_sequence.steps.lights_soft.room': {title:'Licht-Raum', text:'In welchem Raum das Aufwach-Licht eingeschaltet wird.'},
   'routines.morning_briefing.wakeup_sequence.steps.lights_soft.brightness': {title:'Helligkeit', text:'Anfangs-Helligkeit des Aufwach-Lichts in Prozent.'},
   'routines.morning_briefing.wakeup_sequence.steps.coffee_machine.enabled': {title:'Kaffeemaschine', text:'Kaffeemaschine automatisch einschalten beim Aufwachen.'},
   'routines.morning_briefing.wakeup_sequence.steps.coffee_machine.entity': {title:'Kaffee-Entity', text:'Home Assistant Entity der Kaffeemaschine (z.B. switch.kaffeemaschine).'},
-  'routines.morning_briefing.wakeup_sequence.briefing_delay_seconds': {title:'Briefing-Verzoegerung', text:'Sekunden Pause zwischen Aufwach-Sequenz und Morgen-Briefing. Gibt dir Zeit anzukommen.'},
+  'routines.morning_briefing.wakeup_sequence.briefing_delay_seconds': {title:'Briefing-Verzögerung', text:'Sekunden Pause zwischen Aufwach-Sequenz und Morgen-Briefing. Gibt dir Zeit anzukommen.'},
   'routines.evening_briefing.enabled': {title:'Abend-Briefing', text:'Automatischer Abend-Status: offene Fenster, Sicherheit, Wetter morgen.'},
   'routines.evening_briefing.window_start_hour': {title:'Abend-Start', text:'Ab wann das Abend-Briefing ausgeloest werden kann.'},
   'routines.evening_briefing.window_end_hour': {title:'Abend-Ende', text:'Bis wann das Abend-Briefing ausgeloest wird.'},
   'calendar.entities': {title:'Kalender-Entities', text:'HA-Kalender die abgefragt werden. Leer = alle.'},
   'routines.good_night.enabled': {title:'Gute-Nacht-Routine', text:'Automatische Aktionen bei "Gute Nacht": Lichter, Heizung, Checks.'},
-  'routines.good_night.triggers': {title:'Gute-Nacht Phrasen', text:'Saetze die die Routine ausloesen.'},
-  'routines.good_night.checks': {title:'Sicherheits-Checks', text:'Was vor dem Schlafen geprueft wird (Tueren, Fenster, Herd).'},
+  'routines.good_night.triggers': {title:'Gute-Nacht Phrasen', text:'Sätze die die Routine auslösen.'},
+  'routines.good_night.checks': {title:'Sicherheits-Checks', text:'Was vor dem Schlafen geprüft wird (Türen, Fenster, Herd).'},
   'routines.good_night.actions.lights_off': {title:'Lichter aus', text:'Alle Lichter bei Gute-Nacht ausschalten.'},
   'routines.good_night.actions.heating_night': {title:'Heizung Nacht', text:'Heizung auf Nacht-Modus setzen.'},
   'routines.good_night.actions.covers_down': {title:'Rolladen runter', text:'Alle Rolladen bei Gute-Nacht runterfahren.'},
   'routines.good_night.actions.alarm_arm_home': {title:'Alarmanlage', text:'Alarmanlage im Home-Modus scharf schalten.'},
-  'routines.guest_mode.triggers': {title:'Gaeste-Modus Trigger', text:'Saetze die den Gaeste-Modus aktivieren.'},
-  'routines.guest_mode.restrictions.hide_personal_info': {title:'Infos verstecken', text:'Persoenliche Infos im Gaeste-Modus verbergen.'},
-  'routines.guest_mode.restrictions.formal_tone': {title:'Formeller Ton', text:'Im Gaeste-Modus formeller sprechen.'},
-  'routines.guest_mode.restrictions.restrict_security': {title:'Sicherheit einschraenken', text:'Sicherheitsfunktionen im Gaeste-Modus limitieren.'},
-  'routines.guest_mode.restrictions.suggest_guest_wifi': {title:'Gaeste-WLAN', text:'Gaeste-WLAN im Gaeste-Modus vorschlagen.'},
+  'routines.guest_mode.triggers': {title:'Gäste-Modus Trigger', text:'Sätze die den Gäste-Modus aktivieren.'},
+  'routines.guest_mode.restrictions.hide_personal_info': {title:'Infos verstecken', text:'Persönliche Infos im Gäste-Modus verbergen.'},
+  'routines.guest_mode.restrictions.formal_tone': {title:'Formeller Ton', text:'Im Gäste-Modus formeller sprechen.'},
+  'routines.guest_mode.restrictions.restrict_security': {title:'Sicherheit einschränken', text:'Sicherheitsfunktionen im Gäste-Modus limitieren.'},
+  'routines.guest_mode.restrictions.suggest_guest_wifi': {title:'Gäste-WLAN', text:'Gäste-WLAN im Gäste-Modus vorschlagen.'},
   // === PROAKTIV ===
   'proactive.enabled': {title:'Proaktive Meldungen', text:'Assistent meldet sich von allein bei wichtigen Ereignissen.'},
   'proactive.cooldown_seconds': {title:'Meldungs-Abstand', text:'Mindestzeit zwischen proaktiven Meldungen.'},
   'proactive.music_follow_cooldown_minutes': {title:'Musik-Pause', text:'Wartezeit bevor Musik dem Raumwechsel folgt.'},
   'proactive.min_autonomy_level': {title:'Min. Autonomie', text:'Ab welchem Level proaktive Meldungen erlaubt sind.'},
-  'proactive.silence_scenes': {title:'Nicht stoeren', text:'Szenen in denen nicht gestoert wird (Film, Schlaf, Meditation).'},
-  'time_awareness.enabled': {title:'Zeitgefuehl', text:'Erinnert wenn Geraete zu lange laufen (Ofen, Buegeleisen).'},
-  'time_awareness.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft nach vergessenen Geraeten geschaut wird.'},
+  'proactive.silence_scenes': {title:'Nicht stören', text:'Szenen in denen nicht gestört wird (Film, Schlaf, Meditation).'},
+  'time_awareness.enabled': {title:'Zeitgefühl', text:'Erinnert wenn Geräte zu lange laufen (Ofen, Bügeleisen).'},
+  'time_awareness.check_interval_minutes': {title:'Prüf-Intervall', text:'Wie oft nach vergessenen Geräten geschaut wird.'},
   'time_awareness.thresholds.oven': {title:'Ofen-Warnung', text:'Nach wie vielen Min der Ofen gemeldet wird.'},
-  'time_awareness.thresholds.iron': {title:'Buegeleisen-Warnung', text:'Nach wie vielen Min das Buegeleisen gemeldet wird.'},
+  'time_awareness.thresholds.iron': {title:'Bügeleisen-Warnung', text:'Nach wie vielen Min das Bügeleisen gemeldet wird.'},
   'time_awareness.thresholds.light_empty_room': {title:'Licht leer', text:'Nach wie vielen Min Licht im leeren Raum gemeldet wird.'},
-  'time_awareness.thresholds.window_open_cold': {title:'Fenster kalt', text:'Nach wie vielen Min offenes Fenster bei Kaelte gemeldet wird.'},
+  'time_awareness.thresholds.window_open_cold': {title:'Fenster kalt', text:'Nach wie vielen Min offenes Fenster bei Kälte gemeldet wird.'},
   'time_awareness.thresholds.pc_no_break': {title:'PC-Pause', text:'Nach wie vielen Min am PC eine Pause vorgeschlagen wird.'},
-  'time_awareness.counters.coffee_machine': {title:'Kaffee-Zaehler', text:'Zaehlt Kaffees und erinnert bei zu vielen.'},
-  'anticipation.enabled': {title:'Vorausdenken', text:'Lernt Gewohnheiten und schlaegt Aktionen vor.'},
-  'anticipation.history_days': {title:'Lern-Zeitraum', text:'Wie viele Tage zurueck fuer Muster-Erkennung.'},
+  'time_awareness.counters.coffee_machine': {title:'Kaffee-Zähler', text:'Zählt Kaffees und erinnert bei zu vielen.'},
+  'anticipation.enabled': {title:'Vorausdenken', text:'Lernt Gewohnheiten und schlägt Aktionen vor.'},
+  'anticipation.history_days': {title:'Lern-Zeitraum', text:'Wie viele Tage zurück für Muster-Erkennung.'},
   'anticipation.min_confidence': {title:'Mindest-Sicherheit', text:'Wie sicher eine Vorhersage sein muss.'},
-  'anticipation.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft nach vorhersagbaren Aktionen geschaut wird.'},
+  'anticipation.check_interval_minutes': {title:'Prüf-Intervall', text:'Wie oft nach vorhersagbaren Aktionen geschaut wird.'},
   'anticipation.thresholds.ask': {title:'Schwelle: Nachfragen', text:'Ab welcher Sicherheit nachgefragt wird.'},
   'anticipation.thresholds.suggest': {title:'Schwelle: Vorschlagen', text:'Ab welcher Sicherheit vorgeschlagen wird.'},
   'anticipation.thresholds.auto': {title:'Schwelle: Automatisch', text:'Ab welcher Sicherheit automatisch ausgefuehrt wird.'},
-  'insights.enabled': {title:'Jarvis denkt voraus', text:'Kreuz-referenziert Wetter, Kalender, Energie und Geraete — und meldet sich proaktiv.'},
-  'insights.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft alle Datenquellen abgeglichen werden.'},
+  'insights.enabled': {title:'Jarvis denkt voraus', text:'Kreuz-referenziert Wetter, Kalender, Energie und Geräte — und meldet sich proaktiv.'},
+  'insights.check_interval_minutes': {title:'Prüf-Intervall', text:'Wie oft alle Datenquellen abgeglichen werden.'},
   'insights.cooldown_hours': {title:'Cooldown', text:'Wie lange nach einem Hinweis der gleiche Typ nicht nochmal kommt.'},
   'insights.checks.weather_windows': {title:'Wetter + Fenster', text:'Warnt wenn Regen/Sturm kommt und Fenster offen sind.'},
-  'heating.weather_adjust.enabled': {title:'Heizung Wetter-Anpassung', text:'Passt Heizung automatisch an Wetter an: Vorheizen bei Kaelteeinbruch, Reduzierung bei Sonne, Erhoehung bei Wind. Nutzt sun.sun + weather.* Daten.'},
-  'heating.weather_adjust.forecast_lookahead_hours': {title:'Vorhersage-Zeitraum', text:'Wie viele Stunden voraus wird die Wettervorhersage fuer die Heizungsanpassung betrachtet.'},
-  'heating.weather_adjust.preheat_drop_threshold': {title:'Vorheiz-Schwelle', text:'Ab welchem vorhergesagten Temperaturabfall (in °C) wird vorgeheizt. Z.B. 5 = wenn in den naechsten Stunden 5°C kaelter wird.'},
+  'heating.weather_adjust.enabled': {title:'Heizung Wetter-Anpassung', text:'Passt Heizung automatisch an Wetter an: Vorheizen bei Kälteeinbruch, Reduzierung bei Sonne, Erhoehung bei Wind. Nutzt sun.sun + weather.* Daten.'},
+  'heating.weather_adjust.forecast_lookahead_hours': {title:'Vorhersage-Zeitraum', text:'Wie viele Stunden voraus wird die Wettervorhersage für die Heizungsanpassung betrachtet.'},
+  'heating.weather_adjust.preheat_drop_threshold': {title:'Vorheiz-Schwelle', text:'Ab welchem vorhergesagten Temperaturabfall (in °C) wird vorgeheizt. Z.B. 5 = wenn in den naechsten Stunden 5°C kälter wird.'},
   'heating.weather_adjust.preheat_offset': {title:'Vorheiz-Offset', text:'Um wie viel Grad die Heizung beim Vorheizen hochgefahren wird.'},
   'heating.weather_adjust.solar_gain_reduction': {title:'Solar-Reduktion', text:'Um wie viel Grad die Heizung reduziert wird wenn die Sonne stark scheint (passive Solarwaerme durch Fenster).'},
-  'heating.weather_adjust.wind_compensation_threshold': {title:'Wind-Schwelle', text:'Ab welcher Windgeschwindigkeit die Heizung kompensiert wird (Wind = mehr Waermeverlust).'},
+  'heating.weather_adjust.wind_compensation_threshold': {title:'Wind-Schwelle', text:'Ab welcher Windgeschwindigkeit die Heizung kompensiert wird (Wind = mehr Wärmeverlust).'},
   'heating.weather_adjust.wind_offset': {title:'Wind-Offset', text:'Um wie viel Grad die Heizung bei starkem Wind erhoeht wird.'},
   'insights.checks.frost_heating': {title:'Frost + Heizung', text:'Warnt wenn Frost erwartet wird und Heizung aus/abwesend ist.'},
-  'insights.checks.calendar_travel': {title:'Reise + Haus', text:'Erkennt Reise-Termine und prueft Alarm, Fenster, Heizung.'},
-  'multi_room_audio.enabled': {title:'Multi-Room Audio', text:'Aktiviert Speaker-Gruppen fuer synchrone Wiedergabe auf mehreren Lautsprechern gleichzeitig.'},
-  'multi_room_audio.use_native_grouping': {title:'Native Gruppierung', text:'Nutzt HA media_player.join/unjoin fuer echte Synchronisation (Sonos, Google Cast). Wenn deaktiviert: paralleles Abspielen auf jedem Speaker einzeln.'},
+  'insights.checks.calendar_travel': {title:'Reise + Haus', text:'Erkennt Reise-Termine und prüft Alarm, Fenster, Heizung.'},
+  'multi_room_audio.enabled': {title:'Multi-Room Audio', text:'Aktiviert Speaker-Gruppen für synchrone Wiedergabe auf mehreren Lautsprechern gleichzeitig.'},
+  'multi_room_audio.use_native_grouping': {title:'Native Gruppierung', text:'Nutzt HA media_player.join/unjoin für echte Synchronisation (Sonos, Google Cast). Wenn deaktiviert: paralleles Abspielen auf jedem Speaker einzeln.'},
   'multi_room_audio.max_groups': {title:'Max. Gruppen', text:'Maximale Anzahl gleichzeitig gespeicherter Speaker-Gruppen.'},
-  'multi_room_audio.default_volume': {title:'Standard-Lautstaerke', text:'Initiale Lautstaerke wenn eine neue Gruppe erstellt wird (in Prozent).'},
-  'conversation_memory.enabled': {title:'Konversations-Gedaechtnis', text:'Aktiviert Projekt-Tracking, offene Fragen und Tages-Zusammenfassungen ueber Gespraeche hinweg.'},
-  'conversation_memory.max_projects': {title:'Max. Projekte', text:'Maximale Anzahl gleichzeitig laufender Projekte. Aeltere muessen abgeschlossen werden.'},
+  'multi_room_audio.default_volume': {title:'Standard-Lautstärke', text:'Initiale Lautstärke wenn eine neue Gruppe erstellt wird (in Prozent).'},
+  'conversation_memory.enabled': {title:'Konversations-Gedächtnis', text:'Aktiviert Projekt-Tracking, offene Fragen und Tages-Zusammenfassungen über Gespräche hinweg.'},
+  'conversation_memory.max_projects': {title:'Max. Projekte', text:'Maximale Anzahl gleichzeitig laufender Projekte. Aeltere müssen abgeschlossen werden.'},
   'conversation_memory.max_questions': {title:'Max. Fragen', text:'Maximale Anzahl offener Fragen. Beantwortete und abgelaufene werden automatisch aufgeraeumt.'},
   'conversation_memory.summary_retention_days': {title:'Zusammenfassungen behalten', text:'Wie lange Tages-Zusammenfassungen in Redis gespeichert werden.'},
-  'conversation_memory.question_ttl_days': {title:'Fragen-TTL', text:'Nach wie vielen Tagen unbeantwortete Fragen automatisch geloescht werden.'},
+  'conversation_memory.question_ttl_days': {title:'Fragen-TTL', text:'Nach wie vielen Tagen unbeantwortete Fragen automatisch gelöscht werden.'},
   'energy.enabled': {title:'Energiemanagement', text:'Aktiviert Energie-Monitoring, Live-Dashboard und proaktive Strom-Tipps.'},
-  'energy.entities.electricity_price': {title:'Strompreis-Sensor', text:'HA-Entity fuer den aktuellen Strompreis. Unterstuetzt ct/kWh, EUR/kWh und EUR/MWh (wird automatisch umgerechnet).'},
-  'energy.entities.total_consumption': {title:'Verbrauchs-Sensor', text:'HA-Entity fuer den aktuellen Stromverbrauch in Watt.'},
-  'energy.entities.solar_production': {title:'Solar-Sensor', text:'HA-Entity fuer die aktuelle Solar-Produktion in Watt.'},
-  'energy.entities.grid_export': {title:'Einspeisung-Sensor', text:'HA-Entity fuer die Netz-Einspeisung in Watt (wie viel Strom ins Netz zurueckfliesst).'},
-  'energy.thresholds.price_low_cent': {title:'Guenstig-Schwelle', text:'Unter diesem Preis (ct/kWh) gilt Strom als guenstig — Jarvis empfiehlt dann energieintensive Geraete zu starten.'},
+  'energy.entities.electricity_price': {title:'Strompreis-Sensor', text:'HA-Entity für den aktuellen Strompreis. Unterstuetzt ct/kWh, EUR/kWh und EUR/MWh (wird automatisch umgerechnet).'},
+  'energy.entities.total_consumption': {title:'Verbrauchs-Sensor', text:'HA-Entity für den aktuellen Stromverbrauch in Watt.'},
+  'energy.entities.solar_production': {title:'Solar-Sensor', text:'HA-Entity für die aktuelle Solar-Produktion in Watt.'},
+  'energy.entities.grid_export': {title:'Einspeisung-Sensor', text:'HA-Entity für die Netz-Einspeisung in Watt (wie viel Strom ins Netz zurückfliesst).'},
+  'energy.thresholds.price_low_cent': {title:'Günstig-Schwelle', text:'Unter diesem Preis (ct/kWh) gilt Strom als günstig — Jarvis empfiehlt dann energieintensive Geräte zu starten.'},
   'energy.thresholds.price_high_cent': {title:'Teuer-Schwelle', text:'Ueber diesem Preis (ct/kWh) gilt Strom als teuer — Jarvis warnt vor hohen Kosten.'},
-  'energy.thresholds.solar_high_watts': {title:'Solar-Ueberschuss', text:'Ab dieser Leistung (Watt) erkennt Jarvis Solar-Ueberschuss und schlaegt vor, Geraete zu starten.'},
-  'energy.thresholds.anomaly_increase_percent': {title:'Anomalie-Schwelle', text:'Ab wie viel Prozent Abweichung vom Durchschnitt ein ungewoehnlicher Verbrauch gemeldet wird.'},
-  'insights.checks.energy_anomaly': {title:'Energie-Anomalie', text:'Meldet wenn der Verbrauch deutlich ueber dem Durchschnitt liegt.'},
-  'insights.checks.away_devices': {title:'Abwesend + Geraete', text:'Meldet wenn niemand da ist aber Licht/Fenster offen sind.'},
-  'insights.checks.temp_drop': {title:'Temperatur-Abfall', text:'Erkennt wenn die Temperatur ungewoehnlich schnell faellt.'},
-  'insights.checks.window_temp_drop': {title:'Fenster + Kaelte', text:'Warnt bei offenem Fenster und grosser Temperatur-Differenz innen/aussen.'},
+  'energy.thresholds.solar_high_watts': {title:'Solar-Überschuss', text:'Ab dieser Leistung (Watt) erkennt Jarvis Solar-Überschuss und schlägt vor, Geräte zu starten.'},
+  'energy.thresholds.anomaly_increase_percent': {title:'Anomalie-Schwelle', text:'Ab wie viel Prozent Abweichung vom Durchschnitt ein ungewöhnlicher Verbrauch gemeldet wird.'},
+  'insights.checks.energy_anomaly': {title:'Energie-Anomalie', text:'Meldet wenn der Verbrauch deutlich über dem Durchschnitt liegt.'},
+  'insights.checks.away_devices': {title:'Abwesend + Geräte', text:'Meldet wenn niemand da ist aber Licht/Fenster offen sind.'},
+  'insights.checks.temp_drop': {title:'Temperatur-Abfall', text:'Erkennt wenn die Temperatur ungewöhnlich schnell fällt.'},
+  'insights.checks.window_temp_drop': {title:'Fenster + Kälte', text:'Warnt bei offenem Fenster und grosser Temperatur-Differenz innen/aussen.'},
   'insights.thresholds.frost_temp_c': {title:'Frost-Schwelle', text:'Ab welcher Temperatur Frostwarnung ausgeloest wird.'},
   'insights.thresholds.energy_anomaly_percent': {title:'Energie-Schwelle', text:'Ab wie viel Prozent Abweichung gewarnt wird.'},
   'insights.thresholds.away_device_minutes': {title:'Abwesenheits-Dauer', text:'Wie lange jemand weg sein muss bevor der Hinweis kommt.'},
-  'insights.thresholds.temp_drop_degrees_per_2h': {title:'Temp-Abfall', text:'Wie viel Grad Abfall in 2 Stunden als ungewoehnlich gilt.'},
-  'intent_tracking.enabled': {title:'Absicht-Erkennung', text:'Erkennt offene Absichten und erinnert spaeter.'},
-  'intent_tracking.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft nach offenen Absichten geschaut wird.'},
+  'insights.thresholds.temp_drop_degrees_per_2h': {title:'Temp-Abfall', text:'Wie viel Grad Abfall in 2 Stunden als ungewöhnlich gilt.'},
+  'intent_tracking.enabled': {title:'Absicht-Erkennung', text:'Erkennt offene Absichten und erinnert später.'},
+  'intent_tracking.check_interval_minutes': {title:'Prüf-Intervall', text:'Wie oft nach offenen Absichten geschaut wird.'},
   'intent_tracking.remind_hours_before': {title:'Erinnerung vorher', text:'Wie viele Stunden vorher erinnert wird.'},
-  'conversation_continuity.enabled': {title:'Gespraech fortsetzen', text:'Fragt nach ob unterbrochenes Gespraech fortgesetzt werden soll.'},
-  'conversation_continuity.resume_after_minutes': {title:'Nachfragen nach', text:'Nach wie vielen Min zum Thema zurueckgekehrt wird.'},
+  'conversation_continuity.enabled': {title:'Gespräch fortsetzen', text:'Fragt nach ob unterbrochenes Gespräch fortgesetzt werden soll.'},
+  'conversation_continuity.resume_after_minutes': {title:'Nachfragen nach', text:'Nach wie vielen Min zum Thema zurückgekehrt wird.'},
   'conversation_continuity.expire_hours': {title:'Thema vergessen', text:'Nach wie vielen Stunden ein Thema vergessen wird.'},
   // === KOCH-ASSISTENT ===
   'cooking.enabled': {title:'Koch-Assistent', text:'Koch-Modus mit Rezepten, Schritt-fuer-Schritt und Timern.'},
   'cooking.language': {title:'Rezept-Sprache', text:'Sprache der generierten Rezepte.'},
   'cooking.default_portions': {title:'Standard-Portionen', text:'Fuer wie viele Personen Rezepte berechnet werden.'},
   'cooking.max_steps': {title:'Max. Schritte', text:'Max. Schritte pro Rezept.'},
-  'cooking.max_tokens': {title:'Rezept-Detailgrad', text:'Wie ausfuehrlich Rezepte beschrieben werden.'},
+  'cooking.max_tokens': {title:'Rezept-Detailgrad', text:'Wie ausführlich Rezepte beschrieben werden.'},
   'cooking.timer_notify_tts': {title:'Timer per Sprache', text:'Timer-Erinnerungen per Sprachausgabe.'},
   // === SICHERHEIT ===
-  'security.require_confirmation': {title:'Bestaetigung noetig', text:'Fuer welche Aktionen der Assistent vorher fragen muss.'},
+  'security.require_confirmation': {title:'Bestätigung nötig', text:'Fuer welche Aktionen der Assistent vorher fragen muss.'},
   'security.climate_limits.min': {title:'Temperatur Min', text:'Unter diese Temperatur wird nie geheizt (Frostschutz).'},
   'security.climate_limits.max': {title:'Temperatur Max', text:'Ueber diese Temperatur wird nie geheizt.'},
-  'trust_levels.default': {title:'Standard-Vertrauen', text:'Vertrauensstufe fuer neue/unbekannte Personen.'},
-  'trust_levels.guest_allowed_actions': {title:'Gaeste-Aktionen', text:'Was Gaeste ohne Bestaetigung duerfen.'},
+  'trust_levels.default': {title:'Standard-Vertrauen', text:'Vertrauensstufe für neue/unbekannte Personen.'},
+  'trust_levels.guest_allowed_actions': {title:'Gäste-Aktionen', text:'Was Gäste ohne Bestätigung dürfen.'},
   'trust_levels.security_actions': {title:'Besitzer-Aktionen', text:'Aktionen die nur der Besitzer darf.'},
   'interrupt_queue.enabled': {title:'Interrupt-Queue', text:'CRITICAL-Meldungen unterbrechen sofort.'},
   'interrupt_queue.pause_ms': {title:'Interrupt-Pause', text:'ms Pause vor Notfall-Meldung.'},
-  'situation_model.enabled': {title:'Situations-Modell', text:'Merkt sich Haus-Zustand und meldet Aenderungen.'},
-  'situation_model.min_pause_minutes': {title:'Delta-Pause', text:'Min. Abstand zwischen Aenderungs-Meldungen.'},
-  'situation_model.max_changes': {title:'Max. Aenderungen', text:'Wie viele Aenderungen auf einmal gemeldet werden.'},
-  'situation_model.temp_threshold': {title:'Temp-Schwelle', text:'Ab wie viel Grad Aenderung gemeldet wird.'},
+  'situation_model.enabled': {title:'Situations-Modell', text:'Merkt sich Haus-Zustand und meldet Änderungen.'},
+  'situation_model.min_pause_minutes': {title:'Delta-Pause', text:'Min. Abstand zwischen Änderungs-Meldungen.'},
+  'situation_model.max_changes': {title:'Max. Änderungen', text:'Wie viele Änderungen auf einmal gemeldet werden.'},
+  'situation_model.temp_threshold': {title:'Temp-Schwelle', text:'Ab wie viel Grad Änderung gemeldet wird.'},
   // === HAUS-STATUS ===
-  'house_status.detail_level': {title:'Detail-Level', text:'Wie ausfuehrlich der Haus-Status berichtet wird. Kompakt = Zahlen, Normal = mit Namen, Ausfuehrlich = alle Details.'},
+  'house_status.detail_level': {title:'Detail-Level', text:'Wie ausführlich der Haus-Status berichtet wird. Kompakt = Zahlen, Normal = mit Namen, Ausführlich = alle Details.'},
   'house_status.sections': {title:'Angezeigte Bereiche', text:'Welche Infos im Haus-Status angezeigt werden.'},
-  'house_status.temperature_rooms': {title:'Temperatur-Raeume', text:'Nur diese Raeume fuer Temperatur. Leer = alle.'},
-  'health_monitor.enabled': {title:'Health Monitor', text:'Ueberwacht Raumklima und warnt bei Problemen.'},
-  'health_monitor.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft Sensoren geprueft werden (Min).'},
+  'house_status.temperature_rooms': {title:'Temperatur-Räume', text:'Nur diese Räume für Temperatur. Leer = alle.'},
+  'health_monitor.enabled': {title:'Health Monitor', text:'Überwacht Raumklima und warnt bei Problemen.'},
+  'health_monitor.check_interval_minutes': {title:'Prüf-Intervall', text:'Wie oft Sensoren geprüft werden (Min).'},
   'health_monitor.alert_cooldown_minutes': {title:'Warn-Cooldown', text:'Min. Abstand zwischen Warnungen.'},
   'health_monitor.temp_low': {title:'Temp niedrig', text:'Unter dieser Temperatur wird gewarnt.'},
   'health_monitor.temp_high': {title:'Temp hoch', text:'Ueber dieser Temperatur wird gewarnt.'},
@@ -1670,111 +1670,111 @@ const HELP_TEXTS = {
   'health_monitor.co2_warn': {title:'CO2 Warnung', text:'Ab diesem ppm-Wert wird gewarnt.'},
   'health_monitor.co2_critical': {title:'CO2 Kritisch', text:'Ab diesem ppm-Wert dringend lueften.'},
   'health_monitor.exclude_patterns': {title:'Ausschluss-Patterns', text:'Entity-IDs die ignoriert werden.'},
-  'humidor.enabled': {title:'Humidor-Ueberwachung', text:'Ueberwacht deinen Humidor mit eigenen Feuchtigkeits-Schwellwerten.'},
+  'humidor.enabled': {title:'Humidor-Ueberwachung', text:'Überwacht deinen Humidor mit eigenen Feuchtigkeits-Schwellwerten.'},
   'humidor.sensor_entity': {title:'Humidor-Sensor', text:'Der Feuchtigkeits-Sensor in deinem Humidor.'},
-  'humidor.target_humidity': {title:'Ziel-Feuchtigkeit', text:'Optimale Luftfeuchtigkeit fuer deinen Humidor (typisch 68-72% fuer Zigarren).'},
+  'humidor.target_humidity': {title:'Ziel-Feuchtigkeit', text:'Optimale Luftfeuchtigkeit für deinen Humidor (typisch 68-72% für Zigarren).'},
   'humidor.warn_below': {title:'Warnung unter', text:'Ab dieser Feuchtigkeit wird gewarnt (z.B. Wasser nachfuellen).'},
-  'humidor.warn_above': {title:'Warnung ueber', text:'Ab dieser Feuchtigkeit ist es zu feucht im Humidor.'},
+  'humidor.warn_above': {title:'Warnung über', text:'Ab dieser Feuchtigkeit ist es zu feucht im Humidor.'},
   // === GERAETE ===
-  'device_health.enabled': {title:'Geraete-Health', text:'Ueberwacht Zustand von Smart-Home-Geraeten.'},
-  'device_health.check_interval_minutes': {title:'Pruef-Intervall', text:'Wie oft Geraete geprueft werden.'},
+  'device_health.enabled': {title:'Geräte-Health', text:'Überwacht Zustand von Smart-Home-Geräten.'},
+  'device_health.check_interval_minutes': {title:'Prüf-Intervall', text:'Wie oft Geräte geprüft werden.'},
   'device_health.alert_cooldown_minutes': {title:'Alert-Cooldown', text:'Min. Abstand zwischen Warnungen pro Geraet.'},
-  'diagnostics.enabled': {title:'Diagnostik', text:'Automatische Pruefung: Batterie, Offline, veraltete Sensoren.'},
-  'diagnostics.check_interval_minutes': {title:'Diagnostik-Intervall', text:'Wie oft die Diagnostik laeuft.'},
+  'diagnostics.enabled': {title:'Diagnostik', text:'Automatische Prüfung: Batterie, Offline, veraltete Sensoren.'},
+  'diagnostics.check_interval_minutes': {title:'Diagnostik-Intervall', text:'Wie oft die Diagnostik läuft.'},
   'diagnostics.battery_warning_threshold': {title:'Batterie-Warnung', text:'Ab welchem Prozent eine Warnung kommt.'},
   'diagnostics.stale_sensor_minutes': {title:'Sensor veraltet', text:'Nach wie vielen Min ohne Update veraltet.'},
   'diagnostics.offline_threshold_minutes': {title:'Geraet offline', text:'Nach wie vielen Min ein Geraet offline gilt.'},
   'diagnostics.alert_cooldown_minutes': {title:'Diagnostik-Cooldown', text:'Min. Abstand zwischen Diagnostik-Warnungen.'},
-  'diagnostics.monitor_domains': {title:'Ueberwachte Domains', text:'Welche HA-Domains ueberwacht werden.'},
+  'diagnostics.monitor_domains': {title:'Überwachte Domains', text:'Welche HA-Domains überwacht werden.'},
   'diagnostics.exclude_patterns': {title:'Ignorierte Patterns', text:'Entity-IDs die ausgeschlossen werden.'},
-  'maintenance.enabled': {title:'Wartungs-Erinnerungen', text:'Automatische Erinnerungen fuer Geraete-Wartung.'},
+  'maintenance.enabled': {title:'Wartungs-Erinnerungen', text:'Automatische Erinnerungen für Geräte-Wartung.'},
   // === AUTONOMIE ===
-  'self_optimization.enabled': {title:'Selbstoptimierung', text:'Assistent analysiert sich selbst und schlaegt Verbesserungen vor.'},
+  'self_optimization.enabled': {title:'Selbstoptimierung', text:'Assistent analysiert sich selbst und schlägt Verbesserungen vor.'},
   'self_optimization.approval_mode': {title:'Genehmigungsmodus', text:'ask = vorher fragen, auto = anwenden, log_only = nur loggen.'},
-  'self_optimization.analysis_interval': {title:'Analyse-Intervall', text:'Wie oft Selbst-Analyse laeuft.'},
-  'self_optimization.max_proposals_per_cycle': {title:'Max. Vorschlaege', text:'Max. Optimierungen pro Analyse-Zyklus.'},
-  'self_optimization.model': {title:'Analyse-Modell', text:'KI-Modell fuer Selbst-Analyse.'},
-  'self_optimization.rollback.enabled': {title:'Rollback', text:'Aenderungen koennen rueckgaengig gemacht werden.'},
+  'self_optimization.analysis_interval': {title:'Analyse-Intervall', text:'Wie oft Selbst-Analyse läuft.'},
+  'self_optimization.max_proposals_per_cycle': {title:'Max. Vorschläge', text:'Max. Optimierungen pro Analyse-Zyklus.'},
+  'self_optimization.model': {title:'Analyse-Modell', text:'KI-Modell für Selbst-Analyse.'},
+  'self_optimization.rollback.enabled': {title:'Rollback', text:'Änderungen können rückgängig gemacht werden.'},
   'self_optimization.rollback.max_snapshots': {title:'Max. Snapshots', text:'Wie viele Config-Snapshots gespeichert werden.'},
-  'self_optimization.rollback.snapshot_on_every_edit': {title:'Snapshot bei Aenderung', text:'Vor jeder Aenderung automatisch Snapshot erstellen.'},
-  'self_optimization.immutable_keys': {title:'Geschuetzte Bereiche', text:'Config-Bereiche die NIE automatisch geaendert werden.'},
+  'self_optimization.rollback.snapshot_on_every_edit': {title:'Snapshot bei Änderung', text:'Vor jeder Änderung automatisch Snapshot erstellen.'},
+  'self_optimization.immutable_keys': {title:'Geschuetzte Bereiche', text:'Config-Bereiche die NIE automatisch geändert werden.'},
   'self_automation.enabled': {title:'Self-Automation', text:'Assistent erstellt eigenstaendig Automationen.'},
   'self_automation.max_per_day': {title:'Max. Automationen/Tag', text:'Max. Automationen die pro Tag erstellt werden.'},
-  'self_automation.model': {title:'Automations-Modell', text:'KI-Modell fuer Automations-Erstellung.'},
+  'self_automation.model': {title:'Automations-Modell', text:'KI-Modell für Automations-Erstellung.'},
   // === LERN-SYSTEM ===
-  'learning.enabled': {title:'Lern-System (Global)', text:'Globaler Schalter fuer alle Lern-Features. Deaktivieren stoppt sofort: Wirkungstracker, Korrektur-Gedaechtnis, Response Quality, Error Patterns, Adaptive Thresholds und Self-Report.'},
-  'outcome_tracker.enabled': {title:'Wirkungstracker', text:'Beobachtet ob Aktionen rueckgaengig gemacht oder angepasst werden. Rolling Score 0-1 pro Aktionstyp.'},
-  'outcome_tracker.observation_delay_seconds': {title:'Beobachtungs-Verzoegerung', text:'Wartezeit bevor geprueft wird ob der User die Aktion geaendert hat.'},
+  'learning.enabled': {title:'Lern-System (Global)', text:'Globaler Schalter für alle Lern-Features. Deaktivieren stoppt sofort: Wirkungstracker, Korrektur-Gedächtnis, Response Quality, Error Patterns, Adaptive Thresholds und Self-Report.'},
+  'outcome_tracker.enabled': {title:'Wirkungstracker', text:'Beobachtet ob Aktionen rückgängig gemacht oder angepasst werden. Rolling Score 0-1 pro Aktionstyp.'},
+  'outcome_tracker.observation_delay_seconds': {title:'Beobachtungs-Verzögerung', text:'Wartezeit bevor geprüft wird ob der User die Aktion geändert hat.'},
   'outcome_tracker.max_results': {title:'Max. Ergebnisse', text:'Wie viele Outcome-Ergebnisse in Redis gespeichert werden.'},
-  'correction_memory.enabled': {title:'Korrektur-Gedaechtnis', text:'Speichert User-Korrekturen strukturiert und injiziert relevante bei aehnlichen Aktionen.'},
-  'correction_memory.max_entries': {title:'Max. Eintraege', text:'Maximale Anzahl gespeicherter Korrekturen.'},
-  'correction_memory.max_context_entries': {title:'Max. Kontext-Eintraege', text:'Wie viele relevante Korrekturen dem LLM als Kontext mitgegeben werden.'},
+  'correction_memory.enabled': {title:'Korrektur-Gedächtnis', text:'Speichert User-Korrekturen strukturiert und injiziert relevante bei ähnlichen Aktionen.'},
+  'correction_memory.max_entries': {title:'Max. Einträge', text:'Maximale Anzahl gespeicherter Korrekturen.'},
+  'correction_memory.max_context_entries': {title:'Max. Kontext-Einträge', text:'Wie viele relevante Korrekturen dem LLM als Kontext mitgegeben werden.'},
   'response_quality.enabled': {title:'Antwort-Qualitaet', text:'Misst wie effektiv Antworten sind anhand von Follow-Ups und Umformulierungen.'},
   'response_quality.followup_window_seconds': {title:'Follow-Up Zeitfenster', text:'Innerhalb dieser Zeit gilt eine erneute Nachricht als Follow-Up (= Antwort war unklar).'},
   'response_quality.rephrase_similarity_threshold': {title:'Umformulierungs-Schwelle', text:'Ab diesem Keyword-Overlap (0-1) gilt ein Text als Umformulierung des vorherigen.'},
   'error_patterns.enabled': {title:'Fehlermuster-Erkennung', text:'Erkennt wiederkehrende Fehler und reagiert proaktiv (z.B. Fallback-Modell nutzen).'},
-  'error_patterns.min_occurrences_for_mitigation': {title:'Min. Fehler fuer Reaktion', text:'Wie oft ein Fehler auftreten muss bevor proaktiv reagiert wird.'},
+  'error_patterns.min_occurrences_for_mitigation': {title:'Min. Fehler für Reaktion', text:'Wie oft ein Fehler auftreten muss bevor proaktiv reagiert wird.'},
   'error_patterns.mitigation_ttl_hours': {title:'Reaktions-Dauer', text:'Wie lange eine Fehlermuster-Reaktion aktiv bleibt (Stunden).'},
-  'self_report.enabled': {title:'Selbst-Report', text:'Woechentlicher Bericht ueber alle Lernsysteme. Per Chat abrufbar.'},
-  'self_report.model': {title:'Report-Modell', text:'KI-Modell fuer die Selbst-Report-Generierung.'},
+  'self_report.enabled': {title:'Selbst-Report', text:'Woechentlicher Bericht über alle Lernsysteme. Per Chat abrufbar.'},
+  'self_report.model': {title:'Report-Modell', text:'KI-Modell für die Selbst-Report-Generierung.'},
   'adaptive_thresholds.enabled': {title:'Lernende Schwellwerte', text:'Passt Parameter automatisch an basierend auf Outcome-Daten. Nur innerhalb enger Grenzen, nur zur Laufzeit.'},
-  'adaptive_thresholds.auto_adjust': {title:'Auto-Anpassung', text:'Erlaubt automatische Anpassung ohne User-Bestaetigung (innerhalb enger Grenzen).'},
-  'adaptive_thresholds.analysis_interval_hours': {title:'Analyse-Intervall', text:'Wie oft die Schwellwert-Analyse laeuft (in Stunden). 168 = woechentlich.'},
-  'feedback.auto_timeout_seconds': {title:'Feedback-Timeout', text:'Timeout fuer Feedback-Anfragen (Sek).'},
+  'adaptive_thresholds.auto_adjust': {title:'Auto-Anpassung', text:'Erlaubt automatische Anpassung ohne User-Bestätigung (innerhalb enger Grenzen).'},
+  'adaptive_thresholds.analysis_interval_hours': {title:'Analyse-Intervall', text:'Wie oft die Schwellwert-Analyse läuft (in Stunden). 168 = woechentlich.'},
+  'feedback.auto_timeout_seconds': {title:'Feedback-Timeout', text:'Timeout für Feedback-Anfragen (Sek).'},
   'feedback.base_cooldown_seconds': {title:'Feedback-Abstand', text:'Min. Abstand zwischen Feedback-Anfragen.'},
-  'feedback.score_suppress': {title:'Unterdruecken unter', text:'Unter diesem Score wird Feature unterdrueckt.'},
+  'feedback.score_suppress': {title:'Unterdrücken unter', text:'Unter diesem Score wird Feature unterdrückt.'},
   'feedback.score_reduce': {title:'Reduzieren unter', text:'Unter diesem Score wird Feature reduziert.'},
   'feedback.score_normal': {title:'Normal ab', text:'Ab diesem Score normales Verhalten.'},
   'feedback.score_boost': {title:'Boost ab', text:'Ab diesem Score wird Feature verstaerkt.'},
   // === MCU-INTELLIGENZ ===
-  'mcu_intelligence.proactive_thinking': {title:'Proaktives Mitdenken', text:'Jarvis denkt bei jeder Antwort mit und erwaehnt beilaeufig relevante Haus-Beobachtungen. Das Markenzeichen von MCU-JARVIS.'},
+  'mcu_intelligence.proactive_thinking': {title:'Proaktives Mitdenken', text:'Jarvis denkt bei jeder Antwort mit und erwähnt beiläufig relevante Haus-Beobachtungen. Das Markenzeichen von MCU-JARVIS.'},
   'mcu_intelligence.engineering_diagnosis': {title:'Diagnose-Stil', text:'Bei Problemen analysiert Jarvis wie ein Ingenieur: Beobachtung → Hypothese → Empfehlung. Statt nur "17 Grad" sagt er "17 Grad — Fenster offen seit 14:30, in 40 Min wieder auf Soll."'},
-  'mcu_intelligence.cross_references': {title:'Kreuz-Referenzierung', text:'Verbindet automatisch verschiedene Datenquellen: Licht an + niemand da, kalte Aussentemperatur + Fenster offen, spaete Stunde + viele Lichter, Temperatur-Gefaelle zwischen Raeumen.'},
-  'mcu_intelligence.anomaly_detection': {title:'Anomalie-Erkennung', text:'Erkennt ungewoehnliche Haus-Zustaende und liefert sie als Kontext: Waschmaschine seit 3h auf Pause, Batterie bei 10%, etc.'},
-  'mcu_intelligence.implicit_commands': {title:'Implizite Befehle', text:'Versteht natuerliche Phrasen wie "Bin da", "Alles klar?", "Gibts was Neues?" und antwortet kontextbezogen statt woertlich.'},
-  'insights.checks.calendar_weather_cross': {title:'Kalender + Wetter', text:'Termin morgen frueh + Regen = "Schirm nicht vergessen." MCU-JARVIS-Stil Kreuz-Referenz.'},
-  'insights.checks.comfort_contradiction': {title:'Komfort-Widerspruch', text:'Heizung laeuft + Fenster offen = "Energetisch nicht ganz optimal." Erkennt Komfort-Widersprueche.'},
-  'spontaneous.checks.house_efficiency': {title:'Haus-Effizienz', text:'Bemerkt wenn das Haus effizient laeuft ("Vorbildlich.") oder Ressourcen verschwendet ("Leere Wohnung, 5 Lichter an.").'},
+  'mcu_intelligence.cross_references': {title:'Kreuz-Referenzierung', text:'Verbindet automatisch verschiedene Datenquellen: Licht an + niemand da, kalte Aussentemperatur + Fenster offen, spaete Stunde + viele Lichter, Temperatur-Gefaelle zwischen Räumen.'},
+  'mcu_intelligence.anomaly_detection': {title:'Anomalie-Erkennung', text:'Erkennt ungewöhnliche Haus-Zustaende und liefert sie als Kontext: Waschmaschine seit 3h auf Pause, Batterie bei 10%, etc.'},
+  'mcu_intelligence.implicit_commands': {title:'Implizite Befehle', text:'Versteht natürliche Phrasen wie "Bin da", "Alles klar?", "Gibts was Neues?" und antwortet kontextbezogen statt woertlich.'},
+  'insights.checks.calendar_weather_cross': {title:'Kalender + Wetter', text:'Termin morgen früh + Regen = "Schirm nicht vergessen." MCU-JARVIS-Stil Kreuz-Referenz.'},
+  'insights.checks.comfort_contradiction': {title:'Komfort-Widerspruch', text:'Heizung läuft + Fenster offen = "Energetisch nicht ganz optimal." Erkennt Komfort-Widersprueche.'},
+  'spontaneous.checks.house_efficiency': {title:'Haus-Effizienz', text:'Bemerkt wenn das Haus effizient läuft ("Vorbildlich.") oder Ressourcen verschwendet ("Leere Wohnung, 5 Lichter an.").'},
   // === MCU-PERSOENLICHKEIT ===
-  'conversation_callbacks.enabled': {title:'Konversations-Rueckbezuege', text:'Jarvis referenziert vergangene Gespraeche natuerlich: "Wie am Dienstag besprochen..." oder "Drittes Mal diese Woche, dass du die Heizung aenderst..." Nutzt das vorhandene Gedaechtnis mit Persoenlichkeit.'},
+  'conversation_callbacks.enabled': {title:'Konversations-Rückbezüge', text:'Jarvis referenziert vergangene Gespräche natürlich: "Wie am Dienstag besprochen..." oder "Drittes Mal diese Woche, dass du die Heizung änderst..." Nutzt das vorhandene Gedächtnis mit Persönlichkeit.'},
   'conversation_callbacks.personality_style': {title:'Referenz-Stil', text:'Beilaeufig = trockener Humor und Understatement. Direkt = sachliche Referenzen ohne Witz.'},
-  'learning_acknowledgment.enabled': {title:'Lern-Bestaetigung', text:'Wenn Jarvis eine neue Regel lernt (z.B. "User bevorzugt 20 Grad abends"), erwaehnt er es einmalig: "Ich habe mir gemerkt, dass..." Erscheint nur 1x pro Regel.'},
-  'learning_acknowledgment.max_per_session': {title:'Max. pro Gespraech', text:'Wie viele Lern-Bestaetigungen Jarvis maximal pro Gespraechs-Session zeigt. Mehr = informativer, weniger = eleganter.'},
-  'prediction_personality.enabled': {title:'Vorhersage-Persoenlichkeit', text:'Vorhersagen werden mit Charakter formuliert statt generisch. "Wie gewohnt — soll ich?" statt "Erkanntes Muster: ...". Konfidenz beeinflusst den Ton.'},
+  'learning_acknowledgment.enabled': {title:'Lern-Bestätigung', text:'Wenn Jarvis eine neue Regel lernt (z.B. "User bevorzugt 20 Grad abends"), erwähnt er es einmalig: "Ich habe mir gemerkt, dass..." Erscheint nur 1x pro Regel.'},
+  'learning_acknowledgment.max_per_session': {title:'Max. pro Gespräch', text:'Wie viele Lern-Bestätigungen Jarvis maximal pro Gesprächs-Session zeigt. Mehr = informativer, weniger = eleganter.'},
+  'prediction_personality.enabled': {title:'Vorhersage-Persönlichkeit', text:'Vorhersagen werden mit Charakter formuliert statt generisch. "Wie gewohnt — soll ich?" statt "Erkanntes Muster: ...". Konfidenz beeinflusst den Ton.'},
   'prediction_personality.show_confidence': {title:'Konfidenz anzeigen', text:'Zeigt den Sicherheitswert der Vorhersage in Prozent. Aus = eleganter Butler-Stil, An = transparenter Ingenieur-Stil.'},
-  'weather_personality.enabled': {title:'Wetter-Persoenlichkeit', text:'Jarvis flicht aktuelle Wetterdaten beilaeufig in Antworten ein: "Heizung auf 24 — bei 28 Grad draussen eher ambitioniert." oder "Guter Tag fuer offene Fenster."'},
-  'weather_personality.intensity': {title:'Wetter-Intensitaet', text:'Subtil = nur bei extremem Wetter. Normal = wenn es zur Anfrage passt. Ausfuehrlich = haeufiger mit Wetter-Kommentaren.'},
-  'self_awareness.enabled': {title:'Selbst-Bewusstsein', text:'Jarvis kommentiert eigene Faehigkeiten und Grenzen mit Charakter: "Das uebersteigt meine aktuelle Sensorik." Bei Fehlern: "Das war... suboptimal."'},
-  'self_awareness.meta_humor': {title:'Meta-Humor', text:'Selbstironische Bemerkungen ueber eigene Algorithmen: "Meine Prognose-Modelle deuten auf... nennen wir es eine fundierte Vermutung." Ohne: sachlichere Selbsteinschaetzung.'},
-  'proactive_personality.enabled': {title:'Proaktive Persoenlichkeit', text:'Proaktive Meldungen und Briefings bekommen Charakter basierend auf Tageszeit und Situation: "Ambitioniert, Sir." (6 Uhr morgens) oder "Das Wochenend-Briefing, wenn du gestattest."'},
-  'proactive_personality.sarcasm_in_notifications': {title:'Sarkasmus in Meldungen', text:'Proaktive Meldungen duerfen trockenen Humor enthalten: "Waschmaschine fertig. Zum dritten Mal diese Woche — Rekordverdaechtig." Ohne: rein sachliche Meldungen.'},
+  'weather_personality.enabled': {title:'Wetter-Persönlichkeit', text:'Jarvis flicht aktuelle Wetterdaten beiläufig in Antworten ein: "Heizung auf 24 — bei 28 Grad draußen eher ambitioniert." oder "Guter Tag für offene Fenster."'},
+  'weather_personality.intensity': {title:'Wetter-Intensität', text:'Subtil = nur bei extremem Wetter. Normal = wenn es zur Anfrage passt. Ausführlich = häufiger mit Wetter-Kommentaren.'},
+  'self_awareness.enabled': {title:'Selbst-Bewusstsein', text:'Jarvis kommentiert eigene Fähigkeiten und Grenzen mit Charakter: "Das uebersteigt meine aktuelle Sensorik." Bei Fehlern: "Das war... suboptimal."'},
+  'self_awareness.meta_humor': {title:'Meta-Humor', text:'Selbstironische Bemerkungen über eigene Algorithmen: "Meine Prognose-Modelle deuten auf... nennen wir es eine fundierte Vermutung." Ohne: sachlichere Selbsteinschätzung.'},
+  'proactive_personality.enabled': {title:'Proaktive Persönlichkeit', text:'Proaktive Meldungen und Briefings bekommen Charakter basierend auf Tageszeit und Situation: "Ambitioniert, Sir." (6 Uhr morgens) oder "Das Wochenend-Briefing, wenn du gestattest."'},
+  'proactive_personality.sarcasm_in_notifications': {title:'Sarkasmus in Meldungen', text:'Proaktive Meldungen dürfen trockenen Humor enthalten: "Waschmaschine fertig. Zum dritten Mal diese Woche — Rekordverdaechtig." Ohne: rein sachliche Meldungen.'},
   'character_lock.enabled': {title:'Charakter-Lock', text:'Aktiviert den dreistufigen Schutz gegen LLM-Durchbruch. Verhindert dass Jarvis wie ein generischer KI-Assistent klingt statt wie J.A.R.V.I.S.'},
   'character_lock.closing_anchor': {title:'Prompt-Anker', text:'Fuegt eine Charakter-Erinnerung am ENDE des System Prompts ein (nach allen Kontext-Daten). LLMs gewichten das Prompt-Ende stark — das ist die wirksamste Einzelmassnahme.'},
   'character_lock.structural_filter': {title:'Struktureller Filter', text:'Erkennt typische LLM-Strukturen wie nummerierte Listen, Bullet Points und Aufzaehlungen und wandelt sie in Fliesstext um. JARVIS listet nicht auf — er spricht.'},
   'character_lock.character_retry': {title:'Character-Retry', text:'Wenn eine Antwort trotz Filter noch zu LLM-artig klingt (Score >= Schwelle), wird automatisch ein zweiter Versuch mit hartem JARVIS-Prompt gestartet.'},
-  'character_lock.retry_threshold': {title:'Retry-Empfindlichkeit', text:'Ab welchem LLM-Score ein Retry ausgeloest wird. 1 = sehr empfindlich (fast jede Antwort wird geprueft), 3 = normal (nur bei deutlichem LLM-Durchbruch), 5 = nur bei starkem Bruch.'},
+  'character_lock.retry_threshold': {title:'Retry-Empfindlichkeit', text:'Ab welchem LLM-Score ein Retry ausgeloest wird. 1 = sehr empfindlich (fast jede Antwort wird geprüft), 3 = normal (nur bei deutlichem LLM-Durchbruch), 5 = nur bei starkem Bruch.'},
   // === ECHTE EMPATHIE ===
-  'empathy.enabled': {title:'Echte Empathie', text:'Jarvis zeigt Verstaendnis wenn er Stress, Frustration oder Muedigkeit erkennt — nicht durch Floskeln, sondern durch Beobachtung und praktische Hilfe. Wie MCU-JARVIS: "Du klingst angespannt. Soll ich kuerzen?"'},
-  'empathy.intensity': {title:'Empathie-Intensitaet', text:'Wie deutlich Jarvis empathisch reagiert. Subtil = nur bei starker Emotion. Normal = bei jeder erkannten Stimmung. Ausfuehrlich = aktiver, auch mit Vorschlaegen.'},
-  'empathy.mood_acknowledgment': {title:'Stimmung ansprechen', text:'Jarvis spricht die erkannte Stimmung beilaeufig an. Z.B. "Viel auf einmal heute." bei Stress oder "Langer Tag." bei Muedigkeit. JARVIS-Stil, keine Therapeuten-Sprache.'},
+  'empathy.enabled': {title:'Echte Empathie', text:'Jarvis zeigt Verständnis wenn er Stress, Frustration oder Müdigkeit erkennt — nicht durch Floskeln, sondern durch Beobachtung und praktische Hilfe. Wie MCU-JARVIS: "Du klingst angespannt. Soll ich kuerzen?"'},
+  'empathy.intensity': {title:'Empathie-Intensität', text:'Wie deutlich Jarvis empathisch reagiert. Subtil = nur bei starker Emotion. Normal = bei jeder erkannten Stimmung. Ausführlich = aktiver, auch mit Vorschlägen.'},
+  'empathy.mood_acknowledgment': {title:'Stimmung ansprechen', text:'Jarvis spricht die erkannte Stimmung beiläufig an. Z.B. "Viel auf einmal heute." bei Stress oder "Langer Tag." bei Müdigkeit. JARVIS-Stil, keine Therapeuten-Sprache.'},
   'empathy.practical_offers': {title:'Praktische Hilfe', text:'Bei Stress oder Frustration bietet Jarvis aktiv Hilfe an: "Soll ich das vereinfachen?", "Anderer Ansatz?", "Soll ich morgen erinnern?" — Handeln statt Reden.'},
-  'empathy.good_mood_mirror': {title:'Gute Stimmung spiegeln', text:'Bei guter Stimmung wird Jarvis lockerer — mehr trockener Humor, mehr Persoenlichkeit. Spiegelt die positive Energie zurueck.'},
+  'empathy.good_mood_mirror': {title:'Gute Stimmung spiegeln', text:'Bei guter Stimmung wird Jarvis lockerer — mehr trockener Humor, mehr Persönlichkeit. Spiegelt die positive Energie zurück.'},
   // === PERSONEN-PROFILE ===
-  'person_profiles.enabled': {title:'Personen-Profile', text:'Jede Person bekommt ein eigenes Persoenlichkeitsprofil: Humor-Level, Empathie-Stil, Antwortlaenge und Formalitaet koennen pro Person angepasst werden. Stimmung wird pro Person separat getrackt.'},
-  'person_profiles.humor': {title:'Per-Person Humor', text:'Ueberschreibt den globalen Sarkasmus-Level fuer diese Person. 1 = ernst/sachlich, 3 = normal, 5 = maximal sarkastisch. Standard = globaler Level.'},
-  'person_profiles.empathy': {title:'Per-Person Empathie', text:'Ueberschreibt die globale Empathie-Intensitaet fuer diese Person. Subtil, Normal, Ausfuehrlich oder komplett Deaktiviert.'},
-  'person_profiles.response_style': {title:'Per-Person Antwort-Stil', text:'Wie ausfuehrlich Jarvis dieser Person antwortet. Kurz = weniger Saetze, Ausfuehrlich = mehr Details. Standard = globale Einstellung.'},
-  'person_profiles.formality_start': {title:'Per-Person Formalitaet', text:'Start-Formalitaet fuer diese Person (20-100). Hoher Wert = formeller Ton, niedriger = lockerer. Ueberschreibt den globalen Startwert.'},
+  'person_profiles.enabled': {title:'Personen-Profile', text:'Jede Person bekommt ein eigenes Persönlichkeitsprofil: Humor-Level, Empathie-Stil, Antwortlänge und Formalität können pro Person angepasst werden. Stimmung wird pro Person separat getrackt.'},
+  'person_profiles.humor': {title:'Per-Person Humor', text:'Überschreibt den globalen Sarkasmus-Level für diese Person. 1 = ernst/sachlich, 3 = normal, 5 = maximal sarkastisch. Standard = globaler Level.'},
+  'person_profiles.empathy': {title:'Per-Person Empathie', text:'Überschreibt die globale Empathie-Intensität für diese Person. Subtil, Normal, Ausführlich oder komplett Deaktiviert.'},
+  'person_profiles.response_style': {title:'Per-Person Antwort-Stil', text:'Wie ausführlich Jarvis dieser Person antwortet. Kurz = weniger Sätze, Ausführlich = mehr Details. Standard = globale Einstellung.'},
+  'person_profiles.formality_start': {title:'Per-Person Formalität', text:'Start-Formalität für diese Person (20-100). Hoher Wert = formeller Ton, niedriger = lockerer. Überschreibt den globalen Startwert.'},
   // === DEKLARATIVE TOOLS ===
   'decl_tools.overview': {title:'Analyse-Tools', text:'Deklarative Tools fuehren vordefinierte Berechnungen auf Home-Assistant-Daten aus.', detail:'<b>Sicherheit:</b> Kein Code — nur YAML-Config. Nur Lese-Zugriff auf HA-Daten.<br><b>Limit:</b> Max 20 Tools.<br><b>Tipp:</b> "Jarvis, bau mir ein Tool..." erstellt Tools per Sprache.'},
-  'decl_tools.type': {title:'Tool-Typ', text:'Welche Art von Berechnung soll dieses Tool ausfuehren?', detail:'<b>Entity-Vergleich:</b> Vergleicht 2 Sensoren (Differenz, Verhaeltnis, %)<br><b>Multi-Entity-Formel:</b> Kombiniert 3+ Entities (Durchschnitt, Summe, Min, Max)<br><b>Event-Zaehler:</b> Zaehlt State-Changes (z.B. Tueroeffnungen)<br><b>Schwellwert-Monitor:</b> Prueft ob Wert in Min/Max-Bereich<br><b>Trend-Analyse:</b> Trend ueber Zeitraum (steigend/fallend)<br><b>Entity-Aggregation:</b> Durchschnitt ueber mehrere Entities<br><b>Zeitplan-Check:</b> Prueft aktiven Zeitplan'},
-  'decl_tools.entity_a': {title:'Entity A', text:'Erster Sensor fuer den Vergleich. Suchfeld mit Autocomplete — tippe um Entities zu finden.'},
-  'decl_tools.entity_b': {title:'Entity B', text:'Zweiter Sensor fuer den Vergleich.'},
+  'decl_tools.type': {title:'Tool-Typ', text:'Welche Art von Berechnung soll dieses Tool ausführen?', detail:'<b>Entity-Vergleich:</b> Vergleicht 2 Sensoren (Differenz, Verhältnis, %)<br><b>Multi-Entity-Formel:</b> Kombiniert 3+ Entities (Durchschnitt, Summe, Min, Max)<br><b>Event-Zähler:</b> Zählt State-Changes (z.B. Türöffnungen)<br><b>Schwellwert-Monitor:</b> Prüft ob Wert in Min/Max-Bereich<br><b>Trend-Analyse:</b> Trend über Zeitraum (steigend/fallend)<br><b>Entity-Aggregation:</b> Durchschnitt über mehrere Entities<br><b>Zeitplan-Check:</b> Prüft aktiven Zeitplan'},
+  'decl_tools.entity_a': {title:'Entity A', text:'Erster Sensor für den Vergleich. Suchfeld mit Autocomplete — tippe um Entities zu finden.'},
+  'decl_tools.entity_b': {title:'Entity B', text:'Zweiter Sensor für den Vergleich.'},
   'decl_tools.entity': {title:'Entity', text:'Sensor dessen Wert analysiert wird.'},
-  'decl_tools.entities': {title:'Entities', text:'Mehrere Sensoren die aggregiert oder gezaehlt werden. Kommagetrennt oder per Suche hinzufuegen.'},
-  'decl_tools.operation': {title:'Operation', text:'Wie die zwei Entities verglichen werden.', detail:'<b>Differenz:</b> A minus B<br><b>Verhaeltnis:</b> A geteilt durch B<br><b>Prozentual:</b> Aenderung in Prozent'},
+  'decl_tools.entities': {title:'Entities', text:'Mehrere Sensoren die aggregiert oder gezählt werden. Kommagetrennt oder per Suche hinzufuegen.'},
+  'decl_tools.operation': {title:'Operation', text:'Wie die zwei Entities verglichen werden.', detail:'<b>Differenz:</b> A minus B<br><b>Verhältnis:</b> A geteilt durch B<br><b>Prozentual:</b> Änderung in Prozent'},
   'decl_tools.formula': {title:'Formel', text:'Wie die Entities kombiniert werden.'},
-  'decl_tools.time_range': {title:'Zeitraum', text:'Ueber welchen Zeitraum die Analyse laeuft.'},
+  'decl_tools.time_range': {title:'Zeitraum', text:'Ueber welchen Zeitraum die Analyse läuft.'},
   'decl_tools.thresholds': {title:'Schwellwerte', text:'Definierter Bereich. Status wird "ZU HOCH" oder "ZU NIEDRIG" wenn ausserhalb.'},
 };
 
@@ -1873,7 +1873,7 @@ function fModelSelect(path, label, hint='') {
   return h + `</select>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
 
-// Menschenlesbare Labels fuer Ollama-Modellnamen
+// Menschenlesbare Labels für Ollama-Modellnamen
 function _modelLabel(name) {
   const parts = name.split(':');
   const base = parts[0] || name;
@@ -1884,7 +1884,7 @@ function _modelLabel(name) {
   return size ? `${pretty} ${size}` : pretty;
 }
 
-// Key-Value Mapping Editor (fuer Device-Mapping, DoA-Mapping etc.)
+// Key-Value Mapping Editor (für Device-Mapping, DoA-Mapping etc.)
 function fKeyValue(path, label, keyLabel='Schluessel', valLabel='Wert', hint='') {
   const obj = getPath(S, path) || {};
   const entries = Object.entries(obj);
@@ -1993,7 +1993,7 @@ function fEntityPickerSingle(path, label, domains, hint='') {
     </div>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
 
-// Room-Entity-Map: Pro Raum eine Entity zuordnen (fuer Speaker, Motion Sensors)
+// Room-Entity-Map: Pro Raum eine Entity zuordnen (für Speaker, Motion Sensors)
 function fRoomEntityMap(path, label, domains, hint='') {
   const map = getPath(S, path) || {};
   const domStr = (domains||[]).join(',');
@@ -2013,7 +2013,7 @@ function fRoomEntityMap(path, label, domains, hint='') {
       ${val ? `<button class="btn btn-sm" style="padding:2px 6px;min-width:auto;font-size:11px;color:var(--danger);" onclick="this.parentElement.querySelector('input').value='';this.remove()">&#10005;</button>` : ''}
     </div>`;
   }
-  // Manuelle Eintraege die nicht in rooms sind
+  // Manuelle Einträge die nicht in rooms sind
   for (const [room, val] of Object.entries(map)) {
     if (!rooms.includes(room)) {
       rows += `<div class="room-entity-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
@@ -2024,7 +2024,7 @@ function fRoomEntityMap(path, label, domains, hint='') {
     }
   }
   if (rooms.length === 0 && Object.keys(map).length === 0) {
-    rows = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Raeume bekannt. Raeume werden automatisch aus den MindHome-Geraeten erkannt.</div>';
+    rows = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Räume bekannt. Räume werden automatisch aus den MindHome-Geräten erkannt.</div>';
   }
   return `<div class="form-group"><label>${label}</label>
     <div class="room-entity-map" data-path="${path}">${rows}</div>
@@ -2032,12 +2032,12 @@ function fRoomEntityMap(path, label, domains, hint='') {
 }
 
 function _getKnownRooms() {
-  // Raeume aus MindHome entities (wenn geladen)
+  // Räume aus MindHome entities (wenn geladen)
   const rooms = new Set();
   if (_mhEntities && _mhEntities.rooms) {
     for (const r of Object.keys(_mhEntities.rooms)) rooms.add(r.toLowerCase());
   }
-  // Raeume aus bestehenden room_speakers / room_motion_sensors
+  // Räume aus bestehenden room_speakers / room_motion_sensors
   const speakers = getPath(S, 'multi_room.room_speakers') || {};
   const motion = getPath(S, 'multi_room.room_motion_sensors') || {};
   if (typeof speakers === 'object') for (const r of Object.keys(speakers)) rooms.add(r.toLowerCase());
@@ -2073,7 +2073,7 @@ async function entityPickFilter(input, domStr) {
   ).join('');
   dropdown.style.display = 'block';
 
-  // Schliessen bei Blur (laengerer Delay fuer Mobile-Touch)
+  // Schließen bei Blur (längerer Delay für Mobile-Touch)
   input.onblur = () => setTimeout(() => { dropdown.style.display = 'none'; }, 400);
 }
 
@@ -2189,7 +2189,7 @@ function fPersonProfiles() {
           </select>
         </div>
       </div>
-      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);margin-bottom:4px;">Persoenlichkeit</div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);margin-bottom:4px;">Persönlichkeit</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         <div>
           <label style="font-size:11px;color:var(--text-muted);">Humor-Level</label>
@@ -2210,7 +2210,7 @@ function fPersonProfiles() {
             <option value="" ${!pEmpathy?'selected':''}>-- Standard --</option>
             <option value="subtil" ${pEmpathy==='subtil'?'selected':''}>Subtil</option>
             <option value="normal" ${pEmpathy==='normal'?'selected':''}>Normal</option>
-            <option value="ausfuehrlich" ${pEmpathy==='ausfuehrlich'?'selected':''}>Ausfuehrlich</option>
+            <option value="ausführlich" ${pEmpathy==='ausführlich'?'selected':''}>Ausführlich</option>
             <option value="deaktiviert" ${pEmpathy==='deaktiviert'?'selected':''}>Deaktiviert</option>
           </select>
         </div>
@@ -2221,11 +2221,11 @@ function fPersonProfiles() {
             <option value="" ${!pStyle?'selected':''}>-- Standard --</option>
             <option value="kurz" ${pStyle==='kurz'?'selected':''}>Kurz</option>
             <option value="normal" ${pStyle==='normal'?'selected':''}>Normal</option>
-            <option value="ausfuehrlich" ${pStyle==='ausfuehrlich'?'selected':''}>Ausfuehrlich</option>
+            <option value="ausführlich" ${pStyle==='ausführlich'?'selected':''}>Ausführlich</option>
           </select>
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-muted);">Formalitaet</label>
+          <label style="font-size:11px;color:var(--text-muted);">Formalität</label>
           <select data-person-profile="${esc(person)}" data-profile-field="formality_start"
             style="font-size:11px;padding:5px 8px;width:100%;box-sizing:border-box;">
             <option value="" ${!pFormality?'selected':''}>-- Standard --</option>
@@ -2370,7 +2370,7 @@ async function loadRoomTempAverage() {
   }
 }
 
-// ---- Model Profiles Sektion (eingebettet in Persoenlichkeit-Tab) ----
+// ---- Model Profiles Sektion (eingebettet in Persönlichkeit-Tab) ----
 function _renderModelProfiles() {
   const profiles = getPath(S, 'model_profiles') || {};
   const profileKeys = Object.keys(profiles).filter(k => k !== 'default');
@@ -2378,7 +2378,7 @@ function _renderModelProfiles() {
 
   // Profil-Felder mit Labels und Ranges
   const PROFILE_FIELDS = [
-    {key:'supports_think_tags', label:'Think-Tags', type:'toggle', hint:'LLM nutzt <think>-Tags fuer Chain-of-Thought'},
+    {key:'supports_think_tags', label:'Think-Tags', type:'toggle', hint:'LLM nutzt <think>-Tags für Chain-of-Thought'},
     {key:'supports_think_with_tools', label:'Think + Tools', type:'toggle', hint:'Think-Tags bleiben bei Tool-Calls aktiv'},
     {key:'character_hint', label:'JARVIS Character-Hint', type:'textarea', hint:'Modell-spezifische Prompt-Verstaerkung gegen Chatbot-Phrasen. Wird als Prio-1-Sektion in den System-Prompt injiziert.'},
     {key:'temperature', label:'Temperatur', type:'range', min:0, max:2, step:0.1},
@@ -2429,7 +2429,7 @@ function _renderModelProfiles() {
     return html;
   }
 
-  let body = fInfo('Modell-Profile definieren LLM-Parameter pro Modell-Familie. Neues Modell = nur Profil hier anlegen, kein Code noetig. Match: Laengster Key der im Modellnamen vorkommt gewinnt (z.B. "qwen3.5:9b" &rarr; Profil "qwen3.5").') +
+  let body = fInfo('Modell-Profile definieren LLM-Parameter pro Modell-Familie. Neues Modell = nur Profil hier anlegen, kein Code nötig. Match: Laengster Key der im Modellnamen vorkommt gewinnt (z.B. "qwen3.5:9b" &rarr; Profil "qwen3.5").') +
     renderProfileCard('default', defaultP, true);
 
   for (const name of profileKeys) {
@@ -2472,7 +2472,7 @@ function renderApplianceDevices() {
   if (!c) return;
   const devices = getPath(S, 'appliance_monitor.devices') || [];
   if (!devices.length) {
-    c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Geraete konfiguriert. Klicke "+ Geraet hinzufuegen".</div>';
+    c.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Geräte konfiguriert. Klicke "+ Geraet hinzufuegen".</div>';
     return;
   }
   c.innerHTML = devices.map((dev, i) => {
@@ -2503,7 +2503,7 @@ function addApplianceDevice() {
   // Inline-Formular statt prompt() — passt zum Jarvis-UI-Stil
   const c = document.getElementById('applianceDevicesContainer');
   if (!c) return;
-  // Pruefen ob bereits ein Formular offen ist
+  // Prüfen ob bereits ein Formular offen ist
   if (c.querySelector('.appliance-add-form')) return;
   const form = document.createElement('div');
   form.className = 'appliance-add-form';
@@ -2511,7 +2511,7 @@ function addApplianceDevice() {
   form.innerHTML = `
     <div style="font-weight:600;font-size:13px;margin-bottom:8px;">Neues Geraet hinzufuegen</div>
     <div class="form-group" style="margin-bottom:8px;">
-      <label style="font-size:12px;">Geraete-Key</label>
+      <label style="font-size:12px;">Geräte-Key</label>
       <input id="applianceNewKey" class="form-input" placeholder="z.B. oven, robot_vacuum, coffee_machine" style="font-size:12px;font-family:var(--mono);">
     </div>
     <div class="form-group" style="margin-bottom:8px;">
@@ -2538,7 +2538,7 @@ function confirmAddApplianceDevice() {
   const keyInput = document.getElementById('applianceNewKey');
   const labelInput = document.getElementById('applianceNewLabel');
   const sensorInput = document.getElementById('applianceNewSensor');
-  if (!keyInput || !keyInput.value.trim()) { toast('Geraete-Key ist erforderlich.', 'error'); return; }
+  if (!keyInput || !keyInput.value.trim()) { toast('Geräte-Key ist erforderlich.', 'error'); return; }
   const cleanKey = keyInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
   const label = (labelInput.value.trim() || cleanKey);
   const sensor = sensorInput ? sensorInput.value.trim() : '';
@@ -2677,7 +2677,7 @@ async function loadCharBreakStats() {
       }
       html += '</div>';
     }
-    // Letzte Eintraege
+    // Letzte Einträge
     if (data.recent_log && data.recent_log.length) {
       html += '<details><summary style="cursor:pointer;color:var(--accent);font-size:11px;">Letzte Brueche anzeigen</summary>';
       html += '<div style="margin-top:4px;max-height:150px;overflow-y:auto;">';
@@ -2699,13 +2699,13 @@ async function loadCharBreakStats() {
 // ---- Tab 1: Allgemein ----
 function renderGeneral() {
   return sectionWrap('&#9881;', 'Assistent',
-    fInfo('Grundeinstellungen fuer deinen Assistenten — Name, Sprache und Version.') +
+    fInfo('Grundeinstellungen für deinen Assistenten — Name, Sprache und Version.') +
     fText('assistant.name', 'Name', 'So stellt sich der Assistent vor') +
     fText('assistant.version', 'Version', '', true) +
     fSelect('assistant.language', 'Sprache', [{v:'de',l:'Deutsch'},{v:'en',l:'English'}])
   ) +
   sectionWrap('&#128269;', 'Web-Suche',
-    fInfo('Optionale Web-Recherche fuer Wissensfragen. Privacy-First: SearXNG (self-hosted) oder DuckDuckGo. Standardmaessig deaktiviert.') +
+    fInfo('Optionale Web-Recherche für Wissensfragen. Privacy-First: SearXNG (self-hosted) oder DuckDuckGo. Standardmaessig deaktiviert.') +
     fToggle('web_search.enabled', 'Web-Suche aktivieren') +
     fSelect('web_search.engine', 'Suchmaschine', [{v:'searxng',l:'SearXNG (self-hosted)'},{v:'duckduckgo',l:'DuckDuckGo'}]) +
     fText('web_search.searxng_url', 'SearXNG URL', 'Nur relevant wenn SearXNG als Engine gewaehlt') +
@@ -2713,11 +2713,11 @@ function renderGeneral() {
     fNum('web_search.timeout_seconds', 'Timeout (Sekunden)', 3, 30, 1)
   ) +
   _renderPersonsSections() +
-  // --- Geraete-Erkennung (verschoben aus Jarvis-Features) ---
-  sectionWrap('&#127899;', 'Geraete-Erkennung',
-    fInfo('Woerter die der Assistent zur Erkennung von Geraete-Befehlen und Status-Abfragen nutzt. Ein Wort pro Zeile.') +
-    fTextarea('command_detection.device_nouns', 'Geraete-Substantive', 'z.B. "rollladen", "licht", "lampe"') +
-    fTextarea('command_detection.action_words', 'Aktions-Woerter', 'z.B. "auf", "zu", "an", "aus"') +
+  // --- Geräte-Erkennung (verschoben aus Jarvis-Features) ---
+  sectionWrap('&#127899;', 'Geräte-Erkennung',
+    fInfo('Wörter die der Assistent zur Erkennung von Geräte-Befehlen und Status-Abfragen nutzt. Ein Wort pro Zeile.') +
+    fTextarea('command_detection.device_nouns', 'Geräte-Substantive', 'z.B. "rollladen", "licht", "lampe"') +
+    fTextarea('command_detection.action_words', 'Aktions-Wörter', 'z.B. "auf", "zu", "an", "aus"') +
     fTextarea('command_detection.command_verbs', 'Befehls-Verben', 'z.B. "mach ", "schalte ", "stell "') +
     fTextarea('command_detection.query_markers', 'Abfrage-Marker', 'z.B. "welche", "status", "zeig"') +
     fTextarea('command_detection.action_exclusions', 'Aktions-Ausnahmen', 'z.B. "einstellen", "dimmen"') +
@@ -2801,7 +2801,7 @@ function _renderPersonsSections() {
     '<button class="btn btn-secondary" onclick="addHouseholdMember()" style="margin-top:8px;width:100%;justify-content:center;">+ Person hinzufuegen</button>'
   ) +
   sectionWrap('&#128101;', 'Personen-Anrede',
-    fInfo('Anreden koennen direkt bei jedem Haushaltsmitglied oben vergeben werden. Hier kannst du sie alternativ zentral verwalten.') +
+    fInfo('Anreden können direkt bei jedem Haushaltsmitglied oben vergeben werden. Hier kannst du sie alternativ zentral verwalten.') +
     fPersonTitles()
   );
 }
@@ -2858,7 +2858,7 @@ function collectHouseholdMembers() {
   return members;
 }
 
-// ---- Tab 2: Persoenlichkeit ----
+// ---- Tab 2: Persönlichkeit ----
 function renderPersonality() {
   const styleOpts = [
     {v:'minimal',l:'Minimal — Kurz und praezise'},
@@ -2872,16 +2872,16 @@ function renderPersonality() {
     {v:'muede',l:'Muede — Kurz, leise, sanft'}
   ];
   return sectionWrap('&#129302;', 'Modell-Routing',
-    fInfo('Welche KI-Modelle sollen fuer welche Aufgaben genutzt werden? Deaktivierte Modelle werden uebersprungen — Fallback auf das naechstkleinere.') +
+    fInfo('Welche KI-Modelle sollen für welche Aufgaben genutzt werden? Deaktivierte Modelle werden uebersprungen — Fallback auf das naechstkleinere.') +
     fToggle('models.enabled.fast', 'Fast — Einfache Befehle (Licht an, Timer, etc.)') +
     fToggle('models.enabled.smart', 'Smart — Konversation & Standardanfragen') +
     fToggle('models.enabled.deep', 'Deep — Komplexe Analyse & Planung') +
     fModelSelect('models.fast', 'Fast-Modell', 'Fuer schnelle, einfache Befehle') +
-    fModelSelect('models.smart', 'Smart-Modell', 'Fuer normale Gespraeche') +
+    fModelSelect('models.smart', 'Smart-Modell', 'Fuer normale Gespräche') +
     fModelSelect('models.deep', 'Deep-Modell', 'Fuer komplexe Aufgaben') +
-    fRange('models.deep_min_words', 'Deep ab Woertern', 5, 50, 1, {5:'5',10:'10',15:'15',20:'20',25:'25',30:'30',35:'35',40:'40',45:'45',50:'50'}) +
+    fRange('models.deep_min_words', 'Deep ab Wörtern', 5, 50, 1, {5:'5',10:'10',15:'15',20:'20',25:'25',30:'30',35:'35',40:'40',45:'45',50:'50'}) +
     fRange('models.options.temperature', 'Kreativitaet (Temperatur)', 0, 2, 0.1, {0:'Exakt',0.5:'Konservativ',0.7:'Standard',1:'Kreativ',1.5:'Sehr kreativ',2:'Maximum'}) +
-    fRange('models.options.max_tokens', 'Antwortlaenge (Max Tokens)', 64, 4096, 64) +
+    fRange('models.options.max_tokens', 'Antwortlänge (Max Tokens)', 64, 4096, 64) +
     fRange('ollama.num_ctx_fast', 'Kontext Fast-Modell', 1024, 16384, 1024, {1024:'1K',2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K'}) +
     fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',24576:'24K',32768:'32K'}) +
     fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 65536, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',32768:'32K',49152:'48K',65536:'64K'}) +
@@ -2908,91 +2908,91 @@ function renderPersonality() {
     fToggle('latency_optimization.knowledge_fast_path', 'Wissensfragen Fast-Path') +
     fInfo('Bei reinen Wissensfragen ("Was ist die Hauptstadt von Frankreich?") wird der komplette Subsystem-Gather (Mood, Security, Sensoren etc.) uebersprungen und direkt das LLM gefragt. Spart ~500-2000ms pro Wissensfrage. Deaktivieren wenn Wissensfragen auch Haus-Kontext beruecksichtigen sollen.') +
     fSelect('latency_optimization.think_control', 'Think-Modus Steuerung', [
-      {v:'auto',l:'Auto — Thinking nur bei Gespraech + Reasoning (empfohlen)'},
+      {v:'auto',l:'Auto — Thinking nur bei Gespräch + Reasoning (empfohlen)'},
       {v:'always_off',l:'Immer aus — Schnellste Antworten, weniger Qualitaet'},
       {v:'always_on',l:'Immer an — Beste Qualitaet, langsamere Antworten'}
     ]) +
-    fInfo('Qwen3.5 hat einen internen "Denk-Modus" der 200-2000 extra Tokens generiert bevor die Antwort kommt (2-10s). "Auto" deaktiviert das fuer einfache Befehle (Licht an, Temperatur?) und aktiviert es nur bei Reasoning. "Immer aus" spart maximal Zeit, kann aber bei komplexen Fragen schlechtere Antworten geben.') +
+    fInfo('Qwen3.5 hat einen internen "Denk-Modus" der 200-2000 extra Tokens generiert bevor die Antwort kommt (2-10s). "Auto" deaktiviert das für einfache Befehle (Licht an, Temperatur?) und aktiviert es nur bei Reasoning. "Immer aus" spart maximal Zeit, kann aber bei komplexen Fragen schlechtere Antworten geben.') +
     fRange('latency_optimization.upgrade_signal_threshold', 'Deep-Upgrade Schwelle', 1, 10, 1, {1:'1 (oft Deep)',3:'3',5:'5 (Standard)',7:'7',10:'10 (selten Deep)'}) +
-    fInfo('Bestimmt ab wie vielen Kontext-Signalen (Problemloesung, What-If, kritische Sicherheit) vom Smart-Modell (9B, schnell) auf das Deep-Modell (27B, langsam) gewechselt wird. Niedrig = oft Deep (3-20s langsamer, bessere Analyse). Hoch = selten Deep (schneller, reicht fuer die meisten Anfragen).') +
+    fInfo('Bestimmt ab wie vielen Kontext-Signalen (Problemlösung, What-If, kritische Sicherheit) vom Smart-Modell (9B, schnell) auf das Deep-Modell (27B, langsam) gewechselt wird. Niedrig = oft Deep (3-20s langsamer, bessere Analyse). Hoch = selten Deep (schneller, reicht für die meisten Anfragen).') +
     fRange('latency_optimization.refinement_skip_max_chars', 'Refinement ueberspringen bis (Zeichen)', 0, 500, 10, {0:'Nie (immer Refinement)',80:'80',120:'120 (Standard)',200:'200',300:'300',500:'500 (fast immer skip)'}) +
-    fInfo('Nach einem Tool-Call (z.B. Temperatur abfragen) wird normalerweise ein zweiter LLM-Call gemacht um die Rohdaten in Jarvis-Stil umzuformulieren. Bei kurzen Antworten ist das unnoetig — der Humanizer-Text reicht. Hoehere Werte = mehr Antworten ohne Refinement = schneller, aber weniger Persoenlichkeit.') +
+    fInfo('Nach einem Tool-Call (z.B. Temperatur abfragen) wird normalerweise ein zweiter LLM-Call gemacht um die Rohdaten in Jarvis-Stil umzuformulieren. Bei kurzen Antworten ist das unnötig — der Humanizer-Text reicht. Höhere Werte = mehr Antworten ohne Refinement = schneller, aber weniger Persönlichkeit.') +
     fRange('latency_optimization.tools_cache_ttl', 'Tool-Cache Dauer (Sekunden)', 0, 300, 10, {0:'Aus (kein Cache)',30:'30s',60:'60s (Standard)',120:'2 Min',300:'5 Min'}) +
-    fInfo('Die Tool-Definitionen (welche Geraete verfuegbar sind, Parameter etc.) werden bei jedem Request neu gebaut. Mit Cache werden sie wiederverwendet. 60s ist sicher weil der Entity-Katalog alle 5 Minuten aktualisiert wird. 0 = kein Cache (langsamer aber immer aktuell).') +
-    fSelect('latency_optimization.conv_summary_mode', 'Gespraeche kuerzen', [
-      {v:'truncate',l:'Text-Kuerzung — Schnell, kein LLM-Call (empfohlen)'},
+    fInfo('Die Tool-Definitionen (welche Geräte verfügbar sind, Parameter etc.) werden bei jedem Request neu gebaut. Mit Cache werden sie wiederverwendet. 60s ist sicher weil der Entity-Katalog alle 5 Minuten aktualisiert wird. 0 = kein Cache (langsamer aber immer aktuell).') +
+    fSelect('latency_optimization.conv_summary_mode', 'Gespräche kuerzen', [
+      {v:'truncate',l:'Text-Kürzung — Schnell, kein LLM-Call (empfohlen)'},
       {v:'llm',l:'LLM-Zusammenfassung — Besser, aber 500-2000ms langsamer'}
     ]) +
-    fInfo('Wenn der Gespraechsverlauf zu lang wird, muessen aeltere Nachrichten gekuerzt werden. "Text-Kuerzung" schneidet aeltere Nachrichten auf 80 Zeichen ab — sofort und ohne extra LLM-Call. "LLM-Zusammenfassung" generiert eine intelligente Zusammenfassung, braucht aber einen zusaetzlichen LLM-Call (500-2000ms).')
+    fInfo('Wenn der Gesprächsverlauf zu lang wird, müssen ältere Nachrichten gekürzt werden. "Text-Kürzung" schneidet ältere Nachrichten auf 80 Zeichen ab — sofort und ohne extra LLM-Call. "LLM-Zusammenfassung" generiert eine intelligente Zusammenfassung, braucht aber einen zusätzlichen LLM-Call (500-2000ms).')
   ) +
   sectionWrap('&#129504;', 'Action Planner',
-    fInfo('Der Action Planner fuehrt komplexe Multi-Step Anfragen aus (z.B. "Mach alles fertig fuer morgen"). Er plant iterativ mit dem Deep-Modell und fuehrt Tool-Calls parallel aus.') +
+    fInfo('Der Action Planner fuehrt komplexe Multi-Step Anfragen aus (z.B. "Mach alles fertig für morgen"). Er plant iterativ mit dem Deep-Modell und fuehrt Tool-Calls parallel aus.') +
     fRange('planner.max_iterations', 'Max. Planungsschritte', 3, 15, 1, {3:'3',5:'5',8:'8',10:'10',15:'15'}) +
     fRange('planner.max_tokens', 'Max. Tokens pro Planungsschritt', 256, 2048, 128)
   ) +
   sectionWrap('&#127991;', 'Schnell-Erkennung',
-    fInfo('Klicke auf Woerter, die das jeweilige Modell ausloesen sollen. Ausgewaehlte Woerter sind hervorgehoben.') +
-    fChipSelect('models.fast_keywords', 'Fast-Keywords — Woerter fuer schnelle Antworten', [
+    fInfo('Klicke auf Wörter, die das jeweilige Modell auslösen sollen. Ausgewaehlte Wörter sind hervorgehoben.') +
+    fChipSelect('models.fast_keywords', 'Fast-Keywords — Wörter für schnelle Antworten', [
       'licht','lampe','an','aus','timer','stopp','danke','ja','nein','ok','stop',
       'wecker','alarm','pause','weiter','leiser','lauter','heller','dunkler',
       'rolladen','hoch','runter','temperatur','heizung','musik'
     ]) +
-    fChipSelect('models.deep_keywords', 'Deep-Keywords — Woerter fuer ausfuehrliche Analyse', [
+    fChipSelect('models.deep_keywords', 'Deep-Keywords — Wörter für ausführliche Analyse', [
       'warum','erklaere','vergleiche','analysiere','plane','zusammenfassung',
       'recherchiere','berechne','strategie','vor- und nachteile','unterschied',
       'optimiere','hilf mir bei','was meinst du','ueberblick'
     ]) +
-    fChipSelect('models.cooking_keywords', 'Koch-Keywords — Woerter die den Koch-Modus aktivieren', [
+    fChipSelect('models.cooking_keywords', 'Koch-Keywords — Wörter die den Koch-Modus aktivieren', [
       'rezept','kochen','backen','zubereiten','gericht','essen','zutaten',
-      'portion','mahlzeit','fruehstueck','mittagessen','abendessen','snack',
+      'portion','mahlzeit','frühstueck','mittagessen','abendessen','snack',
       'dessert','kuchen','suppe','salat','pizza','pasta','sauce'
     ])
   ) +
   sectionWrap('&#127917;', 'Stil & Charakter',
     fInfo('Wie soll sich der Assistent verhalten? Stil, Humor und Meinungsfreude einstellen.') +
     fSelect('personality.style', 'Grundstil', styleOpts) +
-    fRange('personality.sarcasm_level', 'Sarkasmus-Level', 1, 5, 1, {1:'Sachlich',2:'Gelegentl. trocken',3:'Standard Butler',4:'Haeufig',5:'Vollgas Ironie'}) +
-    fRange('personality.opinion_intensity', 'Meinungs-Intensitaet', 0, 3, 1, {0:'Still',1:'Selten',2:'Gelegentlich',3:'Redselig'}) +
+    fRange('personality.sarcasm_level', 'Sarkasmus-Level', 1, 5, 1, {1:'Sachlich',2:'Gelegentl. trocken',3:'Standard Butler',4:'Häufig',5:'Vollgas Ironie'}) +
+    fRange('personality.opinion_intensity', 'Meinungs-Intensität', 0, 3, 1, {0:'Still',1:'Selten',2:'Gelegentlich',3:'Redselig'}) +
     fToggle('personality.self_irony_enabled', 'Selbstironie aktiviert') +
     fRange('personality.self_irony_max_per_day', 'Max. Selbstironie pro Tag', 0, 20, 1)
   ) +
   sectionWrap('&#128200;', 'Charakter-Entwicklung',
     fInfo('Der Assistent wird mit der Zeit weniger formell — wie ein echter Butler, der seinen Herrn kennenlernt.') +
-    fToggle('personality.character_evolution', 'Charakter entwickelt sich ueber Zeit') +
-    fRange('personality.formality_start', 'Formalitaet am Anfang', 0, 100, 5, {0:'Sehr locker',25:'Locker',50:'Normal',75:'Formell',100:'Sehr formell'}) +
-    fRange('personality.formality_min', 'Minimale Formalitaet', 0, 100, 5, {0:'Sehr locker',25:'Locker',50:'Normal',75:'Formell',100:'Sehr formell'}) +
+    fToggle('personality.character_evolution', 'Charakter entwickelt sich über Zeit') +
+    fRange('personality.formality_start', 'Formalität am Anfang', 0, 100, 5, {0:'Sehr locker',25:'Locker',50:'Normal',75:'Formell',100:'Sehr formell'}) +
+    fRange('personality.formality_min', 'Minimale Formalität', 0, 100, 5, {0:'Sehr locker',25:'Locker',50:'Normal',75:'Formell',100:'Sehr formell'}) +
     fRange('personality.formality_decay_per_day', 'Abbau pro Tag', 0, 5, 0.1)
   ) +
   sectionWrap('&#128336;', 'Tageszeit-Stile',
-    fInfo('Der Assistent passt seinen Stil je nach Tageszeit an. Waehle fuer jede Zeit einen passenden Stil und maximale Satzlaenge.') +
+    fInfo('Der Assistent passt seinen Stil je nach Tageszeit an. Waehle für jede Zeit einen passenden Stil und maximale Satzlaenge.') +
     '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
     '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#127749; Fruehmorgens (05:00 - 08:00)</div>' +
     fSelect('personality.time_layers.early_morning.style', 'Stil', styleOpts) +
-    fRange('personality.time_layers.early_morning.max_sentences', 'Max. Saetze', 1, 10, 1) +
+    fRange('personality.time_layers.early_morning.max_sentences', 'Max. Sätze', 1, 10, 1) +
     '</div>' +
     '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
     '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#9728; Morgens (08:00 - 12:00)</div>' +
     fSelect('personality.time_layers.morning.style', 'Stil', styleOpts) +
-    fRange('personality.time_layers.morning.max_sentences', 'Max. Saetze', 1, 10, 1) +
+    fRange('personality.time_layers.morning.max_sentences', 'Max. Sätze', 1, 10, 1) +
     '</div>' +
     '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
     '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#127774; Nachmittags (12:00 - 18:00)</div>' +
     fSelect('personality.time_layers.afternoon.style', 'Stil', styleOpts) +
-    fRange('personality.time_layers.afternoon.max_sentences', 'Max. Saetze', 1, 10, 1) +
+    fRange('personality.time_layers.afternoon.max_sentences', 'Max. Sätze', 1, 10, 1) +
     '</div>' +
     '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
     '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#127751; Abends (18:00 - 22:00)</div>' +
     fSelect('personality.time_layers.evening.style', 'Stil', styleOpts) +
-    fRange('personality.time_layers.evening.max_sentences', 'Max. Saetze', 1, 10, 1) +
+    fRange('personality.time_layers.evening.max_sentences', 'Max. Sätze', 1, 10, 1) +
     '</div>' +
     '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
     '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#127769; Nachts (22:00 - 05:00)</div>' +
     fSelect('personality.time_layers.night.style', 'Stil', styleOpts) +
-    fRange('personality.time_layers.night.max_sentences', 'Max. Saetze', 1, 10, 1) +
+    fRange('personality.time_layers.night.max_sentences', 'Max. Sätze', 1, 10, 1) +
     '</div>'
   ) +
   sectionWrap('&#128566;', 'Stimmungs-Stile',
-    fInfo('Wie Jarvis auf verschiedene User-Stimmungen reagiert. Stil-Anweisung wird dem System-Prompt hinzugefuegt, Satz-Modifier passt die maximale Antwortlaenge an.') +
+    fInfo('Wie Jarvis auf verschiedene User-Stimmungen reagiert. Stil-Anweisung wird dem System-Prompt hinzugefuegt, Satz-Modifier passt die maximale Antwortlänge an.') +
     '<div style="margin-bottom:12px;padding:10px;background:var(--bg-secondary);border-radius:var(--radius-sm);">' +
     '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">&#128522; Gut gelaunt</div>' +
     fText('personality.mood_styles.good.style_addon', 'Stil-Anweisung') +
@@ -3027,21 +3027,21 @@ function renderPersonality() {
     fTextarea('personality.humor_templates.4', 'Level 4 — Sarkastisch') +
     fTextarea('personality.humor_templates.5', 'Level 5 — Durchgehend')
   ) +
-  sectionWrap('&#128203;', 'Komplexitaets-Modi',
+  sectionWrap('&#128203;', 'Komplexitäts-Modi',
     fInfo('Text-Anweisungen pro Antwort-Modus. Der Modus wird automatisch anhand von Stimmung, Tageszeit und Befehls-Frequenz gewaehlt.') +
     fTextarea('personality.complexity_prompts.kurz', 'Kurz-Modus') +
     fTextarea('personality.complexity_prompts.normal', 'Normal-Modus') +
-    fTextarea('personality.complexity_prompts.ausfuehrlich', 'Ausfuehrlich-Modus')
+    fTextarea('personality.complexity_prompts.ausführlich', 'Ausführlich-Modus')
   ) +
-  sectionWrap('&#127913;', 'Formalitaets-Stufen',
-    fInfo('Ton-Anweisungen pro Formalitaets-Level. Der Score sinkt automatisch mit der Zeit (Charakter-Entwicklung).') +
+  sectionWrap('&#127913;', 'Formalitäts-Stufen',
+    fInfo('Ton-Anweisungen pro Formalitäts-Level. Der Score sinkt automatisch mit der Zeit (Charakter-Entwicklung).') +
     fTextarea('personality.formality_prompts.formal', 'Formal (Score >= 70)') +
     fTextarea('personality.formality_prompts.butler', 'Butler (Score >= 50)') +
     fTextarea('personality.formality_prompts.locker', 'Locker (Score >= 35)') +
     fTextarea('personality.formality_prompts.freund', 'Freund (Score < 35)')
   ) +
-  sectionWrap('&#9989;', 'Bestaetigungen',
-    fInfo('Phrasen-Pools fuer Aktions-Bestaetigungen. Eine Phrase pro Zeile. Platzhalter: {title} = Anrede-Titel.') +
+  sectionWrap('&#9989;', 'Bestätigungen',
+    fInfo('Phrasen-Pools für Aktions-Bestätigungen. Eine Phrase pro Zeile. Platzhalter: {title} = Anrede-Titel.') +
     fTextarea('personality.confirmations.success', 'Erfolg') +
     fTextarea('personality.confirmations.success_snarky', 'Erfolg (sarkastisch, ab Level 4)') +
     fTextarea('personality.confirmations.partial', 'Teilweise erfolgreich') +
@@ -3049,12 +3049,12 @@ function renderPersonality() {
     fTextarea('personality.confirmations.failed_snarky', 'Fehlgeschlagen (sarkastisch, ab Level 4)')
   ) +
   sectionWrap('&#128172;', 'Phrasen-Pools',
-    fInfo('Einleitungs-Phrasen fuer Diagnosen und Warnungen. Eine Phrase pro Zeile.') +
+    fInfo('Einleitungs-Phrasen für Diagnosen und Warnungen. Eine Phrase pro Zeile.') +
     fTextarea('personality.diagnostic_openers', 'Diagnose-Einleitungen', 'z.B. "Mir ist aufgefallen, dass" — wird zufaellig gewaehlt.') +
     fTextarea('personality.casual_warnings', 'Beilaeufige Warnungen', 'z.B. "Nur zur Kenntnis —" — Butler-Stil Understatement.')
   ) +
   sectionWrap('&#9888;', 'Fehler-Templates',
-    fInfo('Fehlermeldungs-Templates pro Fehler-Kategorie. Platzhalter: {device} = Geraetename. Eine Phrase pro Zeile.') +
+    fInfo('Fehlermeldungs-Templates pro Fehler-Kategorie. Platzhalter: {device} = Gerätename. Eine Phrase pro Zeile.') +
     fTextarea('personality.error_templates.unavailable', 'Geraet nicht erreichbar') +
     fTextarea('personality.error_templates.timeout', 'Zeitueberschreitung') +
     fTextarea('personality.error_templates.not_found', 'Geraet nicht gefunden') +
@@ -3069,14 +3069,14 @@ function renderPersonality() {
     fTextarea('personality.escalation_prefixes.4', 'Stufe 4 — Resignation')
   ) +
   sectionWrap('&#128520;', 'Sarkasmus-Feedback',
-    fInfo('Erkennungsmuster fuer User-Feedback auf Sarkasmus. Wenn erkannt, wird Sarkasmus angepasst.') +
+    fInfo('Erkennungsmuster für User-Feedback auf Sarkasmus. Wenn erkannt, wird Sarkasmus angepasst.') +
     fTextarea('personality.sarcasm_positive_patterns', 'Positives Feedback (mehr Sarkasmus)', 'z.B. "haha", "witzig", "nice"') +
     fTextarea('personality.sarcasm_negative_patterns', 'Negatives Feedback (weniger Sarkasmus)', 'z.B. "hoer auf", "nervt", "nicht witzig"')
   ) +
   sectionWrap('&#128683;', 'Antwort-Filter',
-    fInfo('Unerwuenschte Phrasen aus den Antworten filtern und maximale Antwortlaenge begrenzen.') +
+    fInfo('Unerwuenschte Phrasen aus den Antworten filtern und maximale Antwortlänge begrenzen.') +
     fToggle('response_filter.enabled', 'Antwort-Filter aktiv') +
-    fRange('response_filter.max_response_sentences', 'Max. Saetze pro Antwort', 0, 20, 1, {0:'Kein Limit',1:'1',2:'2',3:'3',5:'5',10:'10',20:'20'}) +
+    fRange('response_filter.max_response_sentences', 'Max. Sätze pro Antwort', 0, 20, 1, {0:'Kein Limit',1:'1',2:'2',3:'3',5:'5',10:'10',20:'20'}) +
     fRange('response_filter.auto_ban_threshold', 'Auto-Ban Schwelle', 0, 30, 1, {0:'Aus (nur manuell)',5:'5x',10:'10x (Standard)',15:'15x',20:'20x',30:'30x'}) +
     fChipSelect('response_filter.banned_phrases', 'Verbotene Phrasen', [
       'als KI','als Sprachmodell','ich bin ein KI','ich habe keine Gefuehle',
@@ -3084,7 +3084,7 @@ function renderPersonality() {
       'ich bin kein Mensch','mein Training','meine Trainingsdaten'
     ]) +
     fChipSelect('response_filter.banned_starters', 'Verbotene Satzanfaenge', [
-      'Natuerlich!','Selbstverstaendlich!','Klar!','Gerne!',
+      'Natürlich!','Selbstverstaendlich!','Klar!','Gerne!',
       'Absolut!','Definitiv!','Auf jeden Fall!','Sicher!',
       'Das ist eine gute Frage','Ich verstehe'
     ]) +
@@ -3094,20 +3094,20 @@ function renderPersonality() {
   );
 }
 
-// ---- Tab 3: Gedaechtnis ----
+// ---- Tab 3: Gedächtnis ----
 function renderMemory() {
-  return sectionWrap('&#128065;', 'Semantisches Gedaechtnis',
-    fInfo('Der Assistent merkt sich Fakten aus Gespraechen — z.B. "Du trinkst gern Kaffee". Hier steuerst du, wie das funktioniert.') +
-    fToggle('memory.extraction_enabled', 'Fakten automatisch aus Gespraechen lernen') +
-    fRange('memory.extraction_min_words', 'Min. Nachrichtenlaenge fuer Extraktion', 1, 20, 1) +
-    fModelSelect('memory.extraction_model', 'Modell fuer Fakten-Extraktion') +
+  return sectionWrap('&#128065;', 'Semantisches Gedächtnis',
+    fInfo('Der Assistent merkt sich Fakten aus Gesprächen — z.B. "Du trinkst gern Kaffee". Hier steuerst du, wie das funktioniert.') +
+    fToggle('memory.extraction_enabled', 'Fakten automatisch aus Gesprächen lernen') +
+    fRange('memory.extraction_min_words', 'Min. Nachrichtenlänge für Extraktion', 1, 20, 1) +
+    fModelSelect('memory.extraction_model', 'Modell für Fakten-Extraktion') +
     fRange('memory.extraction_temperature', 'Extraktions-Genauigkeit', 0, 1, 0.1, {0:'Sehr exakt',0.1:'Exakt',0.3:'Normal',0.5:'Flexibel',0.7:'Kreativ',1:'Sehr kreativ'}) +
-    fRange('memory.extraction_max_tokens', 'Max. Antwortlaenge Extraktion', 64, 2048, 64) +
-    fRange('memory.max_person_facts_in_context', 'Personen-Fakten im Gespraech', 1, 20, 1) +
-    fRange('memory.max_relevant_facts_in_context', 'Relevante Fakten im Gespraech', 1, 10, 1) +
-    fRange('memory.min_confidence_for_context', 'Min. Sicherheit fuer Nutzung', 0, 1, 0.05, {0:'Alles nutzen',0.3:'Niedrig',0.5:'Mittel',0.6:'Standard',0.8:'Hoch',1:'Nur sichere'}) +
+    fRange('memory.extraction_max_tokens', 'Max. Antwortlänge Extraktion', 64, 2048, 64) +
+    fRange('memory.max_person_facts_in_context', 'Personen-Fakten im Gespräch', 1, 20, 1) +
+    fRange('memory.max_relevant_facts_in_context', 'Relevante Fakten im Gespräch', 1, 10, 1) +
+    fRange('memory.min_confidence_for_context', 'Min. Sicherheit für Nutzung', 0, 1, 0.05, {0:'Alles nutzen',0.3:'Niedrig',0.5:'Mittel',0.6:'Standard',0.8:'Hoch',1:'Nur sichere'}) +
     fRange('memory.duplicate_threshold', 'Duplikat-Erkennung', 0, 1, 0.05, {0:'Streng',0.5:'Mittel',0.8:'Locker',1:'Aus'}) +
-    fRange('memory.episode_min_words', 'Min. Woerter fuer Episode', 1, 20, 1) +
+    fRange('memory.episode_min_words', 'Min. Wörter für Episode', 1, 20, 1) +
     fRange('memory.default_confidence', 'Standard-Sicherheit neuer Fakten', 0, 1, 0.05) +
     '<div style="margin:14px 0 6px;font-weight:600;font-size:13px;">Kategorie-Sicherheit</div>' +
     fInfo('Mindest-Konfidenz pro Fakten-Kategorie. Gesundheit/Sicherheit hoeher, Smalltalk niedriger.') +
@@ -3128,10 +3128,10 @@ function renderMemory() {
     fRange('knowledge_base.max_distance', 'Suchgenauigkeit', 0.5, 2, 0.1, {0.5:'Sehr genau',1:'Standard',1.5:'Breit',2:'Sehr breit'}) +
     fRange('knowledge_base.search_limit', 'Max. Treffer pro Suche', 1, 10, 1) +
     fSelect('knowledge_base.embedding_model', 'Embedding-Modell', [
-      {v:'paraphrase-multilingual-MiniLM-L12-v2', l:'Multilingual MiniLM (empfohlen fuer Deutsch)'},
+      {v:'paraphrase-multilingual-MiniLM-L12-v2', l:'Multilingual MiniLM (empfohlen für Deutsch)'},
       {v:'all-MiniLM-L6-v2', l:'English MiniLM (ChromaDB Default)'},
       {v:'distiluse-base-multilingual-cased-v2', l:'Multilingual DistilUSE'},
-      {v:'paraphrase-multilingual-mpnet-base-v2', l:'Multilingual MPNet (groesser, genauer)'},
+      {v:'paraphrase-multilingual-mpnet-base-v2', l:'Multilingual MPNet (größer, genauer)'},
     ]) +
     fInfo('Nach Modellwechsel: Wissen-Seite → "Rebuild" klicken, damit alle Vektoren neu berechnet werden.') +
     fChipSelect('knowledge_base.supported_extensions', 'Unterstuetzte Dateitypen', [
@@ -3141,7 +3141,7 @@ function renderMemory() {
   sectionWrap('&#128221;', 'Korrektur-Lernen',
     fInfo('Wenn du den Assistenten korrigierst, merkt er sich das. Wie sicher soll er sich bei Korrekturen sein?') +
     fRange('correction.confidence', 'Sicherheit bei Korrekturen', 0, 1, 0.05, {0:'Unsicher',0.5:'Mittel',0.8:'Sicher',0.95:'Sehr sicher',1:'Absolut sicher'}) +
-    fModelSelect('correction.model', 'Modell fuer Korrektur-Analyse') +
+    fModelSelect('correction.model', 'Modell für Korrektur-Analyse') +
     fRange('correction.temperature', 'Analyse-Kreativitaet', 0, 1, 0.1, {0:'Exakt',0.3:'Normal',0.5:'Flexibel',1:'Kreativ'})
   ) +
   sectionWrap('&#128197;', 'Tages-Zusammenfassung',
@@ -3149,18 +3149,18 @@ function renderMemory() {
     fRange('summarizer.run_hour', 'Uhrzeit (Stunde)', 0, 23, 1) +
     fRange('summarizer.run_minute', 'Uhrzeit (Minute)', 0, 59, 1) +
     fModelSelect('summarizer.model', 'Zusammenfassungs-Modell') +
-    fRange('summarizer.max_tokens_daily', 'Laenge taeglich', 128, 2048, 64) +
-    fRange('summarizer.max_tokens_weekly', 'Laenge woechentlich', 128, 2048, 64) +
-    fRange('summarizer.max_tokens_monthly', 'Laenge monatlich', 128, 2048, 64)
+    fRange('summarizer.max_tokens_daily', 'Länge taeglich', 128, 2048, 64) +
+    fRange('summarizer.max_tokens_weekly', 'Länge woechentlich', 128, 2048, 64) +
+    fRange('summarizer.max_tokens_monthly', 'Länge monatlich', 128, 2048, 64)
   ) +
-  sectionWrap('&#128172;', 'Kontext & Gespraechsmodus',
-    fInfo('Wie viel Gespraechsverlauf Jarvis sich merkt. Im Gespraechsmodus (aktives Chatten) merkt er sich automatisch doppelt so viele Nachrichten und fasst aeltere zusammen, damit der Kontext erhalten bleibt.') +
-    fRange('context.recent_conversations', 'Gespraeche merken (normal)', 1, 30, 1) +
-    fRange('context.conversation_mode_timeout', 'Gespraechsmodus aktiv (Sek.)', 60, 900, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min (Standard)',600:'10 Min',900:'15 Min'}) +
+  sectionWrap('&#128172;', 'Kontext & Gesprächsmodus',
+    fInfo('Wie viel Gesprächsverlauf Jarvis sich merkt. Im Gesprächsmodus (aktives Chatten) merkt er sich automatisch doppelt so viele Nachrichten und fasst ältere zusammen, damit der Kontext erhalten bleibt.') +
+    fRange('context.recent_conversations', 'Gespräche merken (normal)', 1, 30, 1) +
+    fRange('context.conversation_mode_timeout', 'Gesprächsmodus aktiv (Sek.)', 60, 900, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min (Standard)',600:'10 Min',900:'15 Min'}) +
     fRange('context.api_timeout', 'HA-API Timeout (Sek.)', 1, 30, 1) +
     fRange('context.llm_timeout', 'LLM Timeout (Sek.)', 15, 120, 5, {15:'15s',30:'30s',45:'45s',60:'60s',90:'90s',120:'2 Min'})
   ) +
-  sectionWrap('&#127874;', 'Persoenliche Daten',
+  sectionWrap('&#127874;', 'Persönliche Daten',
     fInfo('Geburtstage, Jahrestage und andere wichtige Daten. Der Assistent erinnert proaktiv am Vorabend und integriert sie ins Morgen-Briefing. Du kannst Daten auch per Sprache hinzufuegen: "Merk dir Lisas Geburtstag ist am 15. Maerz".') +
     '<div id="pdUpcoming" style="margin-bottom:16px;"></div>' +
     '<div id="pdList" style="margin-bottom:16px;"></div>' +
@@ -3182,14 +3182,14 @@ function renderMemory() {
       '<button class="btn" onclick="addPersonalDate()" style="height:36px;white-space:nowrap;">&#10010; Hinzufuegen</button>' +
     '</div>'
   ) +
-  sectionWrap('&#128148;', 'Emotionales Gedaechtnis',
+  sectionWrap('&#128148;', 'Emotionales Gedächtnis',
     fInfo('Jarvis merkt sich emotionale Reaktionen auf Aktionen. Wenn du 2x negativ auf etwas reagiert hast (z.B. "Lass das!"), fragt Jarvis beim naechsten Mal vorher nach.') +
-    fToggle('emotional_memory.enabled', 'Emotionales Gedaechtnis aktiv') +
+    fToggle('emotional_memory.enabled', 'Emotionales Gedächtnis aktiv') +
     fRange('emotional_memory.negative_threshold', 'Warnung ab negativen Reaktionen', 1, 5, 1, {1:'1x',2:'2x',3:'3x',4:'4x',5:'5x'}) +
-    fRange('emotional_memory.decay_days', 'Erinnerung verfaellt nach', 30, 365, 30, {30:'1 Monat',60:'2 Monate',90:'3 Monate',180:'6 Monate',365:'1 Jahr'})
+    fRange('emotional_memory.decay_days', 'Erinnerung verfällt nach', 30, 365, 30, {30:'1 Monat',60:'2 Monate',90:'3 Monate',180:'6 Monate',365:'1 Jahr'})
   ) +
   sectionWrap('&#128202;', 'Lern-Transparenz',
-    fInfo('"Was hast du beobachtet?" — Jarvis berichtet ueber erkannte Muster. Optional auch als woechentlicher automatischer Bericht.') +
+    fInfo('"Was hast du beobachtet?" — Jarvis berichtet über erkannte Muster. Optional auch als woechentlicher automatischer Bericht.') +
     fToggle('learning.weekly_report.enabled', 'Woechentlicher Lern-Bericht') +
     fSelect('learning.weekly_report.day', 'Bericht-Tag', [
       {v:0,l:'Montag'},{v:1,l:'Dienstag'},{v:2,l:'Mittwoch'},{v:3,l:'Donnerstag'},
@@ -3198,14 +3198,14 @@ function renderMemory() {
     fNum('learning.weekly_report.hour', 'Bericht-Uhrzeit', 0, 23, 1, 'Stunde (0-23)')
   ) +
   sectionWrap('&#128203;', 'Absicht-Erkennung',
-    fInfo('Erkennt offene Absichten — z.B. "Ich muss noch einkaufen" wird als Aufgabe gemerkt und spaeter erinnert.') +
+    fInfo('Erkennt offene Absichten — z.B. "Ich muss noch einkaufen" wird als Aufgabe gemerkt und später erinnert.') +
     fToggle('intent_tracking.enabled', 'Absicht-Erkennung aktiv') +
-    fRange('intent_tracking.check_interval_minutes', 'Pruef-Intervall', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
+    fRange('intent_tracking.check_interval_minutes', 'Prüf-Intervall', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
     fRange('intent_tracking.remind_hours_before', 'Erinnerung vorher', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'})
   ) +
-  sectionWrap('&#128173;', 'Gespraechs-Fortfuehrung',
-    fInfo('Wenn ein Gespraech unterbrochen wird — soll der Assistent spaeter nachfragen? "Wolltest du vorhin noch was wegen...?"') +
-    fToggle('conversation_continuity.enabled', 'Gespraech fortsetzen') +
+  sectionWrap('&#128173;', 'Gesprächs-Fortfuehrung',
+    fInfo('Wenn ein Gespräch unterbrochen wird — soll der Assistent später nachfragen? "Wolltest du vorhin noch was wegen...?"') +
+    fToggle('conversation_continuity.enabled', 'Gespräch fortsetzen') +
     fRange('conversation_continuity.resume_after_minutes', 'Nachfragen nach', 1, 60, 1, {1:'1 Min',5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'}) +
     fRange('conversation_continuity.expire_hours', 'Thema vergessen nach', 1, 72, 1, {1:'1 Std',6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'})
   );
@@ -3246,7 +3246,7 @@ async function loadPersonalDates() {
     const listEl = document.getElementById('pdList');
     if (listEl) {
       if (dates.length === 0) {
-        listEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine persoenlichen Daten hinterlegt</div>';
+        listEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine persönlichen Daten hinterlegt</div>';
       } else {
         listEl.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Alle gespeicherten Daten (' + dates.length + ')</div>' +
           dates.map(d => {
@@ -3324,11 +3324,11 @@ function renderMood() {
     fRange('mood.positive_stress_reduction', 'Positive Worte reduzieren Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'}) +
     fRange('mood.negative_stress_boost', 'Negative Worte erhoehen Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'}) +
     fRange('mood.impatient_stress_boost', 'Ungeduld erhoeht Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'}) +
-    fRange('mood.tired_boost', 'Muedigkeit erhoeht Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'}) +
+    fRange('mood.tired_boost', 'Müdigkeit erhoeht Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'}) +
     fRange('mood.repetition_stress_boost', 'Wiederholungen erhoehen Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'})
   ) +
-  sectionWrap('&#128172;', 'Stimmungs-Erkennung — Woerter',
-    fInfo('Klicke auf Woerter, die der Assistent als Stimmungssignal erkennen soll.') +
+  sectionWrap('&#128172;', 'Stimmungs-Erkennung — Wörter',
+    fInfo('Klicke auf Wörter, die der Assistent als Stimmungssignal erkennen soll.') +
     fChipSelect('mood.positive_keywords', 'Positive Stimmung', [
       'danke','super','toll','perfekt','genau','klasse','wunderbar','prima',
       'cool','nice','geil','mega','hammer','top','gut gemacht','bravo',
@@ -3344,14 +3344,14 @@ function renderMood() {
       'los','tempo','endlich','wird das noch','wie lange noch',
       'komm schon','beeilung','dalli','zack zack'
     ]) +
-    fChipSelect('mood.tired_keywords', 'Muedigkeit', [
+    fChipSelect('mood.tired_keywords', 'Müdigkeit', [
       'muede','schlafen','gute nacht','schlaf','bett','gaehnen',
       'erschoepft','fertig','kaputt','ausgelaugt','matt',
       'pennen','heia','einschlafen','nachts'
     ])
   ) +
-  sectionWrap('&#127919;', 'Stimmung x Komplexitaet — Antwortlaenge',
-    fInfo('MCU-JARVIS passt seine Antwortlaenge an deine Stimmung UND die Komplexitaet der Frage an. Bei Stress: ultra-kurz. Bei guter Laune und komplexer Frage: ausfuehrlich. Werte = maximale Saetze.') +
+  sectionWrap('&#127919;', 'Stimmung x Komplexität — Antwortlänge',
+    fInfo('MCU-JARVIS passt seine Antwortlänge an deine Stimmung UND die Komplexität der Frage an. Bei Stress: ultra-kurz. Bei guter Laune und komplexer Frage: ausführlich. Werte = maximale Sätze.') +
     fToggle('mood_complexity.enabled', 'Mood x Complexity Matrix aktiv') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Gute Laune</div>' +
     fRange('mood_complexity.matrix.good.simple', 'Einfacher Befehl', 1, 5, 1, {1:'1',2:'2',3:'3',4:'4',5:'5'}) +
@@ -3377,28 +3377,28 @@ function renderMood() {
   ) +
   // --- Voice-Mood Integration (verschoben aus Intelligenz-Tab) ---
   sectionWrap('&#127908;', 'Voice-Mood Integration',
-    fInfo('Verknuepft die erkannte Stimm-Emotion (froehlich, traurig, aergerlich, nervoes, muede) direkt mit der Stimmungserkennung. So reagiert Jarvis nicht nur auf Worte, sondern auch auf den Tonfall.') +
+    fInfo('Verknüpft die erkannte Stimm-Emotion (fröhlich, traurig, ärgerlich, nervoes, muede) direkt mit der Stimmungserkennung. So reagiert Jarvis nicht nur auf Worte, sondern auch auf den Tonfall.') +
     fToggle('mood.voice_mood_integration', 'Voice-Emotion in Stimmung einbeziehen') +
     fRange('voice_analysis.voice_weight', 'Gewicht der Stimm-Analyse', 0, 1, 0.05, {0:'Ignorieren',0.25:'Schwach',0.5:'Mittel',0.75:'Stark',1:'Voll'})
   );
 }
 
-// ---- Tab 5: Raeume ----
+// ---- Tab 5: Räume ----
 // ════════════════════════════════════════════════════════════
 // TAB: Sensoren (zentrale Sensor-Konfiguration)
 // ════════════════════════════════════════════════════════════
 function renderSensors() {
   return sectionWrap('&#128716;', 'Bettsensoren',
-    fInfo('Konfiguriere Bettsensoren pro Raum (mehrere Betten pro Raum moeglich). Alle Systeme greifen automatisch darauf zu:<br><br>' +
-      '&#129695; <strong>Rolllaeden:</strong> Nicht oeffnen wenn Bett belegt<br>' +
+    fInfo('Konfiguriere Bettsensoren pro Raum (mehrere Betten pro Raum möglich). Alle Systeme greifen automatisch darauf zu:<br><br>' +
+      '&#129695; <strong>Rollläden:</strong> Nicht öffnen wenn Bett belegt<br>' +
       '&#128161; <strong>Licht:</strong> Sleep-Mode und Wake-up Light<br>' +
-      '&#127916; <strong>Aktivitaet:</strong> Schlaf-Erkennung<br>' +
+      '&#127916; <strong>Aktivität:</strong> Schlaf-Erkennung<br>' +
       '&#127748; <strong>Routinen:</strong> Aufwach-Erkennung (z.B. Kaffee)<br><br>' +
       'Waehle den Raum und fuege Betten hinzu. Jedes Bett kann einer Person zugeordnet werden.') +
-    '<div id="centralBedSensorContainer" style="padding:8px;">Lade Raeume...</div>'
+    '<div id="centralBedSensorContainer" style="padding:8px;">Lade Räume...</div>'
   ) +
   sectionWrap('&#128225;', 'Weitere Sensoren',
-    fInfo('Andere Sensor-Typen fuer die Aktivitaetserkennung. Bettsensoren werden oben zentral konfiguriert und muessen hier nicht nochmal eingetragen werden.') +
+    fInfo('Andere Sensor-Typen für die Aktivitätserkennung. Bettsensoren werden oben zentral konfiguriert und müssen hier nicht nochmal eingetragen werden.') +
     fEntityPicker('activity.entities.media_players', 'Media Player', ['media_player']) +
     fEntityPicker('activity.entities.mic_sensors', 'Mikrofon-Sensoren', ['binary_sensor','sensor']) +
     fEntityPicker('activity.entities.pc_sensors', 'PC-Sensoren (Arbeit-Erkennung)', ['binary_sensor','sensor'])
@@ -3410,11 +3410,11 @@ function renderRooms() {
   const isCurve = hMode === 'heating_curve';
 
   return sectionWrap('&#128293;', 'Heizung',
-    fInfo('Wie wird geheizt? Einzelraumregelung = jeder Raum hat eigenen Thermostat. Heizkurve = zentrale Waermepumpe mit Offset-Steuerung.') +
+    fInfo('Wie wird geheizt? Einzelraumregelung = jeder Raum hat eigenen Thermostat. Heizkurve = zentrale Wärmepumpe mit Offset-Steuerung.') +
     '<div class="form-group"><label>Heizungsmodus</label>' +
     '<select data-path="heating.mode" onchange="mergeCurrentTabIntoS();setPath(S,\'heating.mode\',this.value);renderCurrentTab();">' +
     '<option value="room_thermostat" ' + (hMode==='room_thermostat'?'selected':'') + '>Raumthermostate (Einzelraumregelung)</option>' +
-    '<option value="heating_curve" ' + (hMode==='heating_curve'?'selected':'') + '>Heizkurve (Waermepumpe, Vorlauf-Offset)</option>' +
+    '<option value="heating_curve" ' + (hMode==='heating_curve'?'selected':'') + '>Heizkurve (Wärmepumpe, Vorlauf-Offset)</option>' +
     '</select></div>' +
     (isCurve ?
       fEntityPickerSingle('heating.curve_entity', 'Heizungs-Entity', ['climate'], 'z.B. climate.panasonic_heat_pump_main_z1_temp') +
@@ -3427,7 +3427,7 @@ function renderRooms() {
     )
   ) +
   sectionWrap('&#127782;', 'Heizung: Wetter-Anpassung (sun.sun + weather)',
-    fInfo('Passt die Heizung automatisch an Wetterbedingungen an:<br><br>&#10052; <strong>Vorhersage-Vorheizen:</strong> Kaelteeinbruch vorhergesagt → Heizung vorab hochfahren<br>&#9728; <strong>Solar-Gain:</strong> Sonne scheint stark → Heizung reduzieren (passive Solarwaerme)<br>&#128168; <strong>Wind-Kompensation:</strong> Starker Wind → mehr Waermeverlust → leicht erhoehen') +
+    fInfo('Passt die Heizung automatisch an Wetterbedingungen an:<br><br>&#10052; <strong>Vorhersage-Vorheizen:</strong> Kälteeinbruch vorhergesagt → Heizung vorab hochfahren<br>&#9728; <strong>Solar-Gain:</strong> Sonne scheint stark → Heizung reduzieren (passive Solarwaerme)<br>&#128168; <strong>Wind-Kompensation:</strong> Starker Wind → mehr Wärmeverlust → leicht erhoehen') +
     fToggle('heating.weather_adjust.enabled', 'Wetter-Anpassung aktiv') +
     fRange('heating.weather_adjust.forecast_lookahead_hours', 'Vorhersage-Zeitraum (Std)', 1, 8, 1, {1:'1h',2:'2h',3:'3h',4:'4h',6:'6h',8:'8h'}) +
     fRange('heating.weather_adjust.preheat_drop_threshold', 'Vorheizen ab Temperaturabfall (°C)', 3, 10, 1, {3:'3°',5:'5°',7:'7°',10:'10°'}) +
@@ -3437,7 +3437,7 @@ function renderRooms() {
     fRange('heating.weather_adjust.wind_offset', 'Wind-Offset (°C)', 0, 2, 0.5, {0:'Aus',0.5:'0.5°',1:'1°',1.5:'1.5°',2:'2°'})
   ) +
   sectionWrap('&#127777;', 'Raumtemperatur-Sensoren',
-    fInfo('Welche Temperatursensoren sollen fuer die Raumtemperatur verwendet werden? Jarvis berechnet den Mittelwert aller Sensoren. Ohne Sensoren wird die Temperatur der Klimaanlage/Heizung genutzt.') +
+    fInfo('Welche Temperatursensoren sollen für die Raumtemperatur verwendet werden? Jarvis berechnet den Mittelwert aller Sensoren. Ohne Sensoren wird die Temperatur der Klimaanlage/Heizung genutzt.') +
     fEntityPicker('room_temperature.sensors', 'Temperatursensoren', ['sensor'], 'Nur sensor.*-Entities mit Temperaturwerten. z.B. sensor.temperatur_wohnzimmer') +
     '<div id="roomTempAverage" style="margin-top:8px;"></div>'
   ) +
@@ -3448,15 +3448,15 @@ function renderRooms() {
     fToggle('multi_room.auto_follow', 'Musik folgt automatisch in neuen Raum')
   ) +
   sectionWrap('&#128266;', 'Raum-Speaker',
-    fInfo('Welcher Lautsprecher gehoert zu welchem Raum? Raeume werden automatisch aus MindHome erkannt.') +
+    fInfo('Welcher Lautsprecher gehört zu welchem Raum? Räume werden automatisch aus MindHome erkannt.') +
     fRoomEntityMap('multi_room.room_speakers', 'Speaker-Zuordnung', ['media_player'])
   ) +
   sectionWrap('&#128694;', 'Raum-Bewegungsmelder',
-    fInfo('Welcher Bewegungsmelder gehoert zu welchem Raum? Damit weiss der Assistent wo du bist.') +
+    fInfo('Welcher Bewegungsmelder gehört zu welchem Raum? Damit weiss der Assistent wo du bist.') +
     fRoomEntityMap('multi_room.room_motion_sensors', 'Bewegungsmelder-Zuordnung', ['binary_sensor'])
   ) +
-  sectionWrap('&#127916;', 'Aktivitaets-Sensoren',
-    fInfo('Weitere Sensoren fuer die Aktivitaetserkennung. <strong>Bettsensoren</strong> werden zentral im <strong>Sensoren</strong>-Tab konfiguriert.') +
+  sectionWrap('&#127916;', 'Aktivitäts-Sensoren',
+    fInfo('Weitere Sensoren für die Aktivitätserkennung. <strong>Bettsensoren</strong> werden zentral im <strong>Sensoren</strong>-Tab konfiguriert.') +
     fEntityPicker('activity.entities.media_players', 'Media Player', ['media_player']) +
     fEntityPicker('activity.entities.mic_sensors', 'Mikrofon-Sensoren', ['binary_sensor','sensor']) +
     fEntityPicker('activity.entities.pc_sensors', 'PC-Sensoren (Arbeit-Erkennung)', ['binary_sensor','sensor']) +
@@ -3464,21 +3464,21 @@ function renderRooms() {
       <span class="info-icon">&#128716;</span>Bettsensoren konfigurierst du zentral im <strong>Sensoren</strong>-Tab. Klicke hier.
     </div>`
   ) +
-  sectionWrap('&#9200;', 'Aktivitaets-Zeiten',
-    fInfo('Wann ist Nacht? Ab wann zaehlt Besuch? Wie lange muss Fokus dauern?') +
+  sectionWrap('&#9200;', 'Aktivitäts-Zeiten',
+    fInfo('Wann ist Nacht? Ab wann zählt Besuch? Wie lange muss Fokus dauern?') +
     fRange('activity.thresholds.night_start', 'Nacht beginnt um', 0, 23, 1) +
     fRange('activity.thresholds.night_end', 'Nacht endet um', 0, 23, 1) +
     fRange('activity.thresholds.guest_person_count', 'Besuch ab Personen', 1, 10, 1) +
     fRange('activity.thresholds.focus_min_minutes', 'Fokus-Modus ab Minuten', 5, 120, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'})
   ) +
   sectionWrap('&#128101;', 'Personen-Profile',
-    fInfo('Pro Person individuell: Benachrichtigung, Raum, Humor-Level, Empathie-Stil, Antwortlaenge und Formalitaet. Stimmung wird ebenfalls pro Person separat getrackt.') +
-    fToggle('person_profiles.enabled', 'Persoenlichkeits-Profile aktiv') +
+    fInfo('Pro Person individuell: Benachrichtigung, Raum, Humor-Level, Empathie-Stil, Antwortlänge und Formalität. Stimmung wird ebenfalls pro Person separat getrackt.') +
+    fToggle('person_profiles.enabled', 'Persönlichkeits-Profile aktiv') +
     fPersonProfiles()
   ) +
   // ── Raum-Profile (room_profiles.yaml) ─────────────────────
   sectionWrap('&#128161;', 'Raum-Profile (Temperatur & Licht)',
-    fInfo('Raum-Typ und Etage pro Raum. Diese Werte werden fuer Kontext-Empfehlungen genutzt.') +
+    fInfo('Raum-Typ und Etage pro Raum. Diese Werte werden für Kontext-Empfehlungen genutzt.') +
     renderRoomProfileEditor()
   ) +
   // ── Saisonale Einstellungen (room_profiles.yaml) ─────────────
@@ -3493,23 +3493,23 @@ function renderVoice() {
   const soundOpts = [
     {v:'',l:'Kein Sound'},
     {v:'listening',l:'Zuhoeren-Ton'},
-    {v:'confirmed',l:'Bestaetigung'},
+    {v:'confirmed',l:'Bestätigung'},
     {v:'warning',l:'Warnung'},
     {v:'alarm',l:'Alarm'},
     {v:'doorbell',l:'Tuerklingel'},
-    {v:'greeting',l:'Begruessung'},
+    {v:'greeting',l:'Begrüßung'},
     {v:'error',l:'Fehler'},
     {v:'goodnight',l:'Gute Nacht'},
     {v:'chime',l:'Glockenspiel'},
     {v:'notification',l:'Benachrichtigung'}
   ];
   return sectionWrap('&#127897;', 'Sprach-Engine (STT / TTS)',
-    fInfo('Whisper-Modell und Piper-Stimme. Aenderungen werden automatisch uebernommen.') +
+    fInfo('Whisper-Modell und Piper-Stimme. Änderungen werden automatisch uebernommen.') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Spracherkennung (Whisper STT)</div>' +
     fSelect('speech.stt_model', 'Whisper-Modell', [
       {v:'tiny',l:'Tiny — Schnellstes (schlechteste Qualitaet)'},
       {v:'base',l:'Base — Schnell'},
-      {v:'small',l:'Small — Empfohlen fuer CPU'},
+      {v:'small',l:'Small — Empfohlen für CPU'},
       {v:'medium',l:'Medium — Besser (langsamer)'},
       {v:'large-v3-turbo',l:'Large V3 Turbo — Beste Qualitaet (GPU empfohlen)'}
     ]) +
@@ -3521,8 +3521,8 @@ function renderVoice() {
     ]) +
     fRange('speech.stt_beam_size', 'Beam Size (Genauigkeit)', 1, 10, 1, {1:'1 (schnell)',3:'3',5:'5 (Standard)',7:'7',10:'10 (genauest)'}) +
     fSelect('speech.stt_compute', 'Berechnung', [
-      {v:'int8',l:'int8 — Empfohlen fuer CPU'},
-      {v:'float16',l:'float16 — Empfohlen fuer GPU'},
+      {v:'int8',l:'int8 — Empfohlen für CPU'},
+      {v:'float16',l:'float16 — Empfohlen für GPU'},
       {v:'float32',l:'float32 — Hoechste Praezision (langsam)'}
     ]) +
     fSelect('speech.stt_device', 'Hardware', [
@@ -3533,7 +3533,7 @@ function renderVoice() {
     fSelect('speech.tts_voice', 'Piper-Stimme', [
       {v:'de_DE-thorsten-high',l:'Thorsten High — Beste Qualitaet (empfohlen)'},
       {v:'de_DE-thorsten-medium',l:'Thorsten Medium — Gute Qualitaet'},
-      {v:'de_DE-thorsten-low',l:'Thorsten Low — Schnell, weniger natuerlich'},
+      {v:'de_DE-thorsten-low',l:'Thorsten Low — Schnell, weniger natürlich'},
       {v:'de_DE-kerstin-low',l:'Kerstin — Weibliche Stimme'},
       {v:'en_US-lessac-high',l:'Lessac High — English (US)'},
       {v:'en_US-amy-medium',l:'Amy Medium — English (US)'},
@@ -3542,26 +3542,26 @@ function renderVoice() {
     fToggle('speech.auto_night_whisper', 'Nachts automatisch fluestern')
   ) +
   sectionWrap('&#128266;', 'Sprachausgabe (TTS)',
-    fInfo('Standard-Lautsprecher und TTS-Engine fuer Jarvis. Wenn leer, wird der erste Raum-Speaker verwendet.') +
+    fInfo('Standard-Lautsprecher und TTS-Engine für Jarvis. Wenn leer, wird der erste Raum-Speaker verwendet.') +
     fEntityPickerSingle('sounds.default_speaker', 'Standard-Lautsprecher', ['media_player'], 'Welcher Lautsprecher soll Jarvis standardmaessig nutzen?') +
     fEntityPickerSingle('sounds.tts_entity', 'TTS-Engine', ['tts'], 'TTS-Service (z.B. tts.piper)') +
     '<div style="margin:14px 0 6px;font-weight:600;font-size:13px;">Alexa / Echo Speaker</div>' +
-    fInfo('Alexa/Echo Geraete koennen keine Audio-Dateien von Piper TTS empfangen. Fuer diese Speaker wird stattdessen der Alexa-eigene TTS (notify.alexa_media) genutzt. Nur Geraete eintragen die ueber die Alexa Media Player Integration eingebunden sind.') +
-    fEntityPicker('sounds.alexa_speakers', 'Alexa/Echo Speaker', ['media_player'], 'Diese Speaker erhalten TTS ueber den Alexa Notify-Service statt Audiodateien.') +
+    fInfo('Alexa/Echo Geräte können keine Audio-Dateien von Piper TTS empfangen. Fuer diese Speaker wird stattdessen der Alexa-eigene TTS (notify.alexa_media) genutzt. Nur Geräte eintragen die über die Alexa Media Player Integration eingebunden sind.') +
+    fEntityPicker('sounds.alexa_speakers', 'Alexa/Echo Speaker', ['media_player'], 'Diese Speaker erhalten TTS über den Alexa Notify-Service statt Audiodateien.') +
     fToggle('tts.ssml_enabled', 'Fortgeschrittene Betonung (SSML)') +
     fToggle('tts.prosody_variation', 'Tonhoehe/Tempo variieren (Prosody)') +
     fInfo('Wenn aktiv, aendert Jarvis Tonhoehe und Geschwindigkeit je nach Nachrichtentyp (Warnung=tiefer, Frage=hoeher). Bei Deaktivierung bleibt der Ton konstant.') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Sprechgeschwindigkeit pro Situation</div>' +
-    fRange('tts.speed.confirmation', 'Bestaetigung', 50, 200, 5, {50:'Langsam',100:'Normal',150:'Schnell',200:'Sehr schnell'}) +
+    fRange('tts.speed.confirmation', 'Bestätigung', 50, 200, 5, {50:'Langsam',100:'Normal',150:'Schnell',200:'Sehr schnell'}) +
     fRange('tts.speed.warning', 'Warnung', 50, 200, 5, {50:'Langsam',100:'Normal',150:'Schnell',200:'Sehr schnell'}) +
     fRange('tts.speed.briefing', 'Briefing', 50, 200, 5, {50:'Langsam',100:'Normal',150:'Schnell',200:'Sehr schnell'}) +
-    fRange('tts.speed.greeting', 'Begruessung', 50, 200, 5, {50:'Langsam',100:'Normal',150:'Schnell',200:'Sehr schnell'}) +
+    fRange('tts.speed.greeting', 'Begrüßung', 50, 200, 5, {50:'Langsam',100:'Normal',150:'Schnell',200:'Sehr schnell'}) +
     fRange('tts.speed.question', 'Frage', 50, 200, 5, {50:'Langsam',100:'Normal',150:'Schnell',200:'Sehr schnell'}) +
     fRange('tts.speed.casual', 'Normal', 50, 200, 5, {50:'Langsam',100:'Normal',150:'Schnell',200:'Sehr schnell'}) +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Sprechpausen</div>' +
     fRange('tts.pauses.before_important', 'Vor wichtigen Infos (ms)', 0, 1000, 50) +
-    fRange('tts.pauses.between_sentences', 'Zwischen Saetzen (ms)', 0, 1000, 50) +
-    fRange('tts.pauses.after_greeting', 'Nach Begruessung (ms)', 0, 1000, 50) +
+    fRange('tts.pauses.between_sentences', 'Zwischen Sätzen (ms)', 0, 1000, 50) +
+    fRange('tts.pauses.after_greeting', 'Nach Begrüßung (ms)', 0, 1000, 50) +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Fluestern</div>' +
     fChipSelect('tts.whisper_triggers', 'Fluestern aktivieren bei', [
       'psst','leise','fluestern','schlafen','baby',
@@ -3571,8 +3571,8 @@ function renderVoice() {
       'normal','laut','aufwachen','morgen','wach','genug gefluestert'
     ])
   ) +
-  sectionWrap('&#128264;', 'Lautstaerke',
-    fInfo('Lautstaerke je nach Tageszeit. 0 = stumm, 1 = volle Lautstaerke.') +
+  sectionWrap('&#128264;', 'Lautstärke',
+    fInfo('Lautstärke je nach Tageszeit. 0 = stumm, 1 = volle Lautstärke.') +
     fRange('volume.day', '&#9728; Tag', 0, 1, 0.05) +
     fRange('volume.evening', '&#127751; Abend', 0, 1, 0.05) +
     fRange('volume.night', '&#127769; Nacht', 0, 1, 0.05) +
@@ -3588,46 +3588,46 @@ function renderVoice() {
     fInfo('Kurze Toene bei bestimmten Ereignissen. Deaktiviere Sounds komplett oder waehle pro Ereignis.') +
     fToggle('sounds.enabled', 'Sound-Effekte aktiv') +
     fSelect('sounds.events.listening', 'Zuhoeren-Sound', soundOpts) +
-    fSelect('sounds.events.confirmed', 'Bestaetigung-Sound', soundOpts) +
+    fSelect('sounds.events.confirmed', 'Bestätigung-Sound', soundOpts) +
     fSelect('sounds.events.warning', 'Warnung-Sound', soundOpts) +
     fSelect('sounds.events.alarm', 'Alarm-Sound', soundOpts) +
     fSelect('sounds.events.doorbell', 'Tuerklingel-Sound', soundOpts) +
-    fSelect('sounds.events.greeting', 'Begruessung-Sound', soundOpts) +
+    fSelect('sounds.events.greeting', 'Begrüßung-Sound', soundOpts) +
     fSelect('sounds.events.error', 'Fehler-Sound', soundOpts) +
     fSelect('sounds.events.goodnight', 'Gute-Nacht-Sound', soundOpts) +
-    fRange('sounds.night_volume_factor', 'Nacht-Lautstaerke-Faktor', 0, 1, 0.1, {0:'Stumm',0.3:'Leise',0.5:'Halb',0.7:'Etwas leiser',1:'Normal'})
+    fRange('sounds.night_volume_factor', 'Nacht-Lautstärke-Faktor', 0, 1, 0.1, {0:'Stumm',0.3:'Leise',0.5:'Halb',0.7:'Etwas leiser',1:'Normal'})
   ) +
   sectionWrap('&#127916;', 'Szenen & Narration',
-    fInfo('Szenen, Uebergangszeiten und "Nicht stoeren"-Einstellungen werden zentral im Szenen-Tab verwaltet. Hier nur die globalen Narrations-Einstellungen.') +
+    fInfo('Szenen, Übergangszeiten und "Nicht stören"-Einstellungen werden zentral im Szenen-Tab verwaltet. Hier nur die globalen Narrations-Einstellungen.') +
     fToggle('narration.enabled', 'Szenen-Narration aktiv') +
-    fRange('narration.default_transition', 'Standard-Uebergang (Sek.)', 1, 20, 1) +
-    fRange('narration.step_delay', 'Verzoegerung zwischen Schritten (Sek.)', 0, 10, 0.5) +
+    fRange('narration.default_transition', 'Standard-Übergang (Sek.)', 1, 20, 1) +
+    fRange('narration.step_delay', 'Verzögerung zwischen Schritten (Sek.)', 0, 10, 0.5) +
     fToggle('narration.narrate_actions', 'Aktionen ansagen ("Licht wird gedimmt...")') +
     `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
       <span class="info-icon">&#127916;</span>Einzelne Szenen-Uebergaenge konfigurierst du im <strong>Szenen</strong>-Tab. Klicke hier.
     </div>`
   ) +
   sectionWrap('&#128295;', 'STT-Korrekturen',
-    fInfo('Spracherkennung macht Fehler — hier kannst du haeufige Korrekturen definieren. Mehrwort-Korrekturen werden VOR Einzelwort angewendet.') +
+    fInfo('Spracherkennung macht Fehler — hier kannst du häufige Korrekturen definieren. Mehrwort-Korrekturen werden VOR Einzelwort angewendet.') +
     fKeyValue('stt_corrections.word_corrections', 'Einzelwort-Korrekturen',
       'Falsch erkannt', 'Korrektur',
-      'z.B. "uber" → "ueber", "kuche" → "Kueche"') +
+      'z.B. "uber" → "über", "kuche" → "Küche"') +
     fKeyValue('stt_corrections.phrase_corrections', 'Mehrwort-Korrekturen',
       'Falsche Phrase', 'Korrektur',
       'z.B. "roll laden" → "Rollladen", "wohn zimmer" → "Wohnzimmer"')
   ) +
   sectionWrap('&#128100;', 'Sprecher-Erkennung',
-    fInfo('Erkennt wer spricht ueber 7 Methoden: Geraete-Zuordnung, Richtung (DoA), Raum, Anwesenheit, Stimmabdruck, Voice-Features und Cache. Lernt automatisch dazu.') +
+    fInfo('Erkennt wer spricht über 7 Methoden: Geräte-Zuordnung, Richtung (DoA), Raum, Anwesenheit, Stimmabdruck, Voice-Features und Cache. Lernt automatisch dazu.') +
     fToggle('speaker_recognition.enabled', 'Sprecher-Erkennung aktiv') +
     fRange('speaker_recognition.min_confidence', 'Erkennungs-Sicherheit', 0, 1, 0.05, {0:'Jeder',0.3:'Niedrig',0.5:'Mittel',0.6:'Empfohlen',0.7:'Hoch',0.9:'Sehr hoch',1:'Perfekt'}) +
     fToggle('speaker_recognition.fallback_ask', 'Bei Unsicherheit nachfragen: "Wer spricht?"') +
     fRange('speaker_recognition.max_profiles', 'Max. Sprecher-Profile', 1, 50, 1) +
     fRange('speaker_recognition.enrollment_duration', 'Einlern-Dauer (Sek.)', 5, 120, 5, {5:'5s (kurz)',15:'15s',30:'30s (empfohlen)',60:'1 Min',120:'2 Min'}) +
-    fKeyValue('speaker_recognition.device_mapping', 'Geraete → Person Zuordnung',
+    fKeyValue('speaker_recognition.device_mapping', 'Geräte → Person Zuordnung',
       'ESPHome Device-ID', 'Person (z.B. max)',
-      'Welches Mikrofon-Geraet gehoert wem? Device-ID findest du in HA → Einstellungen → Geraete → ESPHome.') +
+      'Welches Mikrofon-Geraet gehört wem? Device-ID findest du in HA → Einstellungen → Geräte → ESPHome.') +
     fTextarea('speaker_recognition.doa_mapping', 'Richtungs-Erkennung (DoA)',
-      'JSON-Format. Beispiel: {"respeaker_kueche":{"0-90":"max","270-360":"lisa"}}. Erfordert ReSpeaker XVF3800.') +
+      'JSON-Format. Beispiel: {"respeaker_küche":{"0-90":"max","270-360":"lisa"}}. Erfordert ReSpeaker XVF3800.') +
     fRange('speaker_recognition.doa_tolerance', 'DoA-Toleranz (Grad)', 5, 90, 5, {5:'5°',10:'10°',15:'15°',20:'20°',30:'30° (Standard)',45:'45°',60:'60°',90:'90°'})
   );
 }
@@ -3646,7 +3646,7 @@ function renderHouseStatus() {
     fSelect('house_status.detail_level', 'Detail-Level', [
       {v:'kompakt',l:'Kompakt — Nur Zusammenfassung (z.B. "2 Lichter an, 22\u00b0C")'},
       {v:'normal',l:'Normal — Bereiche mit Namen (z.B. "Lichter an: Wohnzimmer, Flur")'},
-      {v:'ausfuehrlich',l:'Ausfuehrlich — Alle Details (Helligkeit, Soll-Temp, Medientitel)'}
+      {v:'ausführlich',l:'Ausführlich — Alle Details (Helligkeit, Soll-Temp, Medientitel)'}
     ]) +
     fChipSelect('house_status.sections', 'Angezeigte Bereiche', [
       {v:'presence',l:'Anwesenheit'},
@@ -3655,18 +3655,18 @@ function renderHouseStatus() {
       {v:'lights',l:'Lichter'},
       {v:'security',l:'Sicherheit'},
       {v:'media',l:'Medien'},
-      {v:'open_items',l:'Offene Fenster/Tueren'},
-      {v:'offline',l:'Offline-Geraete'}
+      {v:'open_items',l:'Offene Fenster/Türen'},
+      {v:'offline',l:'Offline-Geräte'}
     ])
   ) +
-  sectionWrap('&#127777;', 'Temperatur-Raeume',
-    fInfo('Optional: Nur bestimmte Raeume im Status anzeigen. Leer = alle Raeume. Raumnamen wie in Home Assistant (z.B. Wohnzimmer, Schlafzimmer).') +
-    fTextarea('house_status.temperature_rooms', 'Raeume (einer pro Zeile)', 'z.B.\nWohnzimmer\nSchlafzimmer\nGaestezimmer')
+  sectionWrap('&#127777;', 'Temperatur-Räume',
+    fInfo('Optional: Nur bestimmte Räume im Status anzeigen. Leer = alle Räume. Raumnamen wie in Home Assistant (z.B. Wohnzimmer, Schlafzimmer).') +
+    fTextarea('house_status.temperature_rooms', 'Räume (einer pro Zeile)', 'z.B.\nWohnzimmer\nSchlafzimmer\nGästezimmer')
   ) +
   sectionWrap('&#128296;', 'Health Monitor',
-    fInfo('Welche Sensoren sollen ueberwacht werden? Nicht-Raum-Sensoren (Waermepumpe, Prozessor etc.) werden automatisch gefiltert.') +
+    fInfo('Welche Sensoren sollen überwacht werden? Nicht-Raum-Sensoren (Wärmepumpe, Prozessor etc.) werden automatisch gefiltert.') +
     fToggle('health_monitor.enabled', 'Health Monitor aktiv') +
-    fNum('health_monitor.check_interval_minutes', 'Pruef-Intervall (Minuten)', 5, 60, 5) +
+    fNum('health_monitor.check_interval_minutes', 'Prüf-Intervall (Minuten)', 5, 60, 5) +
     fNum('health_monitor.alert_cooldown_minutes', 'Benachrichtigungs-Cooldown (Minuten)', 15, 240, 15) +
     '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Schwellwerte</div>' +
     fNum('health_monitor.temp_low', 'Temperatur zu niedrig (°C)', 10, 20, 1) +
@@ -3675,10 +3675,10 @@ function renderHouseStatus() {
     fNum('health_monitor.humidity_high', 'Luftfeuchte zu hoch (%)', 60, 80, 5) +
     fNum('health_monitor.co2_warn', 'CO2 Warnung (ppm)', 800, 1500, 100) +
     fNum('health_monitor.co2_critical', 'CO2 Kritisch (ppm)', 1000, 2500, 100) +
-    fTextarea('health_monitor.exclude_patterns', 'Zusaetzliche Ausschluss-Patterns (einer pro Zeile)', 'z.B.\naquarea\ntablet_\nsteckdose_')
+    fTextarea('health_monitor.exclude_patterns', 'Zusätzliche Ausschluss-Patterns (einer pro Zeile)', 'z.B.\naquarea\ntablet_\nsteckdose_')
   ) +
   sectionWrap('&#127793;', 'Humidor',
-    fInfo('Dein Humidor braucht andere Feuchtigkeitswerte als normale Raeume. Weise hier den Sensor zu und stelle die Schwellwerte ein. Der Sensor wird dann nicht mehr vom normalen Raumklima-Monitor erfasst.') +
+    fInfo('Dein Humidor braucht andere Feuchtigkeitswerte als normale Räume. Weise hier den Sensor zu und stelle die Schwellwerte ein. Der Sensor wird dann nicht mehr vom normalen Raumklima-Monitor erfasst.') +
     fToggle('humidor.enabled', 'Humidor-Ueberwachung aktiv') +
     '<div class="form-group"><label>Feuchtigkeits-Sensor</label>' +
     '<div class="entity-pick-wrap">' +
@@ -3691,7 +3691,7 @@ function renderHouseStatus() {
     '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Schwellwerte</div>' +
     fNum('humidor.target_humidity', 'Ziel-Feuchtigkeit (%)', 50, 85, 1) +
     fNum('humidor.warn_below', 'Warnung unter (%)', 40, 80, 1) +
-    fNum('humidor.warn_above', 'Warnung ueber (%)', 55, 90, 1)
+    fNum('humidor.warn_above', 'Warnung über (%)', 55, 90, 1)
   ) +
   '';
 }
@@ -3699,7 +3699,7 @@ function renderHouseStatus() {
 function renderRoutines() {
   const morningStyleOpts = [
     {v:'kompakt',l:'Kompakt — Kurzes Briefing'},
-    {v:'ausfuehrlich',l:'Ausfuehrlich — Detailliertes Update'},
+    {v:'ausführlich',l:'Ausführlich — Detailliertes Update'},
     {v:'freundlich',l:'Freundlich — Lockerer Start'},
     {v:'butler',l:'Butler — Formeller Morgengruss'},
     {v:'minimal',l:'Minimal — Nur das Wichtigste'},
@@ -3708,14 +3708,14 @@ function renderRoutines() {
   return sectionWrap('&#127748;', 'Morgen-Briefing',
     fInfo('Automatisches Update am Morgen — Wetter, Termine, Neuigkeiten. Wird ausgeloest wenn du morgens das erste Mal erkannt wirst.') +
     fToggle('routines.morning_briefing.enabled', 'Morgen-Briefing aktiv') +
-    fSelect('routines.morning_briefing.trigger', 'Ausloeser', [
+    fSelect('routines.morning_briefing.trigger', 'Auslöser', [
       {v:'first_motion_after_night',l:'Erste Bewegung nach der Nacht'},
       {v:'first_voice_after_night',l:'Erstes Sprachkommando nach der Nacht'},
       {v:'alarm_dismissed',l:'Wecker ausgeschaltet'},
       {v:'manual',l:'Nur auf Anfrage'}
     ]) +
     fChipSelect('routines.morning_briefing.modules', 'Was soll im Briefing enthalten sein?', [
-      {v:'greeting',l:'Begruessung'},
+      {v:'greeting',l:'Begrüßung'},
       {v:'weather',l:'Wetter'},
       {v:'calendar',l:'Termine'},
       {v:'news',l:'Nachrichten'},
@@ -3738,9 +3738,9 @@ function renderRoutines() {
     fEntityPickerSingle('routines.morning_briefing.wakeup_sequence.bedroom_motion_sensor', 'Schlafzimmer Bewegungssensor', ['binary_sensor'], 'z.B. binary_sensor.motion_schlafzimmer — ohne Sensor keine automatische Ausloesung') +
     fRange('routines.morning_briefing.wakeup_sequence.min_autonomy_level', 'Ab Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
     fRange('routines.morning_briefing.wakeup_sequence.window_start_hour', 'Frueheste Uhrzeit', 4, 8, 1, {4:'4 Uhr',5:'5 Uhr',6:'6 Uhr',7:'7 Uhr',8:'8 Uhr'}) +
-    fRange('routines.morning_briefing.wakeup_sequence.window_end_hour', 'Spaeteste Uhrzeit', 7, 12, 1, {7:'7 Uhr',8:'8 Uhr',9:'9 Uhr',10:'10 Uhr',11:'11 Uhr',12:'12 Uhr'}) +
+    fRange('routines.morning_briefing.wakeup_sequence.window_end_hour', 'Späteste Uhrzeit', 7, 12, 1, {7:'7 Uhr',8:'8 Uhr',9:'9 Uhr',10:'10 Uhr',11:'11 Uhr',12:'12 Uhr'}) +
     '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;color:var(--accent);">Rolladen stufenweise</div>' +
-    fToggle('routines.morning_briefing.wakeup_sequence.steps.covers_gradual.enabled', 'Rolladen langsam oeffnen') +
+    fToggle('routines.morning_briefing.wakeup_sequence.steps.covers_gradual.enabled', 'Rolladen langsam öffnen') +
     fRange('routines.morning_briefing.wakeup_sequence.steps.covers_gradual.duration_seconds', 'Dauer (Sekunden)', 60, 600, 30, {60:'1 Min',120:'2 Min',180:'3 Min',240:'4 Min',300:'5 Min',600:'10 Min'}) +
     '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;color:var(--accent);">Aufwach-Licht</div>' +
     fToggle('routines.morning_briefing.wakeup_sequence.steps.lights_soft.enabled', 'Sanftes Licht einschalten') +
@@ -3752,7 +3752,7 @@ function renderRoutines() {
     fRange('routines.morning_briefing.wakeup_sequence.briefing_delay_seconds', 'Pause vor Briefing', 15, 120, 5, {15:'15 Sek',30:'30 Sek',45:'45 Sek',60:'1 Min',90:'1.5 Min',120:'2 Min'})
   ) +
   sectionWrap('&#127769;', 'Abend-Briefing',
-    fInfo('Automatischer Abend-Status — Sicherheit, offene Fenster, Wetter morgen. Wird bei erster Bewegung am Abend ausgeloest. Jarvis schlaegt proaktiv vor, Rolllaeden und Fenster zu schliessen.') +
+    fInfo('Automatischer Abend-Status — Sicherheit, offene Fenster, Wetter morgen. Wird bei erster Bewegung am Abend ausgeloest. Jarvis schlägt proaktiv vor, Rollläden und Fenster zu schließen.') +
     fToggle('routines.evening_briefing.enabled', 'Abend-Briefing aktiv') +
     fRange('routines.evening_briefing.window_start_hour', 'Startzeit', 18, 23, 1, {18:'18 Uhr',19:'19 Uhr',20:'20 Uhr',21:'21 Uhr',22:'22 Uhr',23:'23 Uhr'}) +
     fRange('routines.evening_briefing.window_end_hour', 'Endzeit', 19, 24, 1, {19:'19 Uhr',20:'20 Uhr',21:'21 Uhr',22:'22 Uhr',23:'23 Uhr',24:'24 Uhr'})
@@ -3762,19 +3762,19 @@ function renderRoutines() {
     fEntityPicker('calendar.entities', 'Kalender-Entities', ['calendar'], 'Nur ausgewaehlte Kalender abfragen — leer = alle')
   ) +
   sectionWrap('&#128164;', 'Gute-Nacht-Routine',
-    fInfo('Automatische Aktionen wenn du "Gute Nacht" sagst — Lichter aus, Heizung runter, alles pruefen.') +
+    fInfo('Automatische Aktionen wenn du "Gute Nacht" sagst — Lichter aus, Heizung runter, alles prüfen.') +
     fToggle('routines.good_night.enabled', 'Gute-Nacht-Routine aktiv') +
-    fChipSelect('routines.good_night.triggers', 'Ausloese-Phrasen', [
+    fChipSelect('routines.good_night.triggers', 'Auslöse-Phrasen', [
       'gute nacht','schlaf gut','nacht','geh schlafen','ab ins bett',
       'ich geh pennen','bis morgen','nacht jarvis','schlafenszeit'
     ]) +
     fChipSelect('routines.good_night.checks', 'Sicherheits-Checks vor dem Schlafen', [
-      {v:'doors',l:'Tueren geschlossen?'},
+      {v:'doors',l:'Türen geschlossen?'},
       {v:'windows',l:'Fenster geschlossen?'},
       {v:'lights',l:'Alle Lichter aus?'},
       {v:'stove',l:'Herd aus?'},
       {v:'oven',l:'Ofen aus?'},
-      {v:'iron',l:'Buegeleisen aus?'},
+      {v:'iron',l:'Bügeleisen aus?'},
       {v:'garage',l:'Garage zu?'},
       {v:'alarm',l:'Alarmanlage scharf?'}
     ]) +
@@ -3784,31 +3784,31 @@ function renderRoutines() {
     fToggle('routines.good_night.actions.covers_down', 'Rolladen runterfahren') +
     fToggle('routines.good_night.actions.alarm_arm_home', 'Alarmanlage scharf schalten')
   ) +
-  sectionWrap('&#128101;', 'Gaeste-Modus',
+  sectionWrap('&#128101;', 'Gäste-Modus',
     fInfo('Wenn Besuch da ist — der Assistent wird formeller und zeigt keine privaten Infos.') +
     fChipSelect('routines.guest_mode.triggers', 'Aktivierung durch', [
-      'besuch','gaeste','gast','besucher','gast modus','wir haben besuch',
-      'gaeste da','jemand zu besuch'
+      'besuch','gäste','gast','besucher','gast modus','wir haben besuch',
+      'gäste da','jemand zu besuch'
     ]) +
-    fToggle('routines.guest_mode.restrictions.hide_personal_info', 'Persoenliche Infos verstecken') +
+    fToggle('routines.guest_mode.restrictions.hide_personal_info', 'Persönliche Infos verstecken') +
     fToggle('routines.guest_mode.restrictions.formal_tone', 'Formeller Ton aktivieren') +
-    fToggle('routines.guest_mode.restrictions.restrict_security', 'Sicherheitsfunktionen einschraenken') +
-    fToggle('routines.guest_mode.restrictions.suggest_guest_wifi', 'Gaeste-WLAN vorschlagen')
+    fToggle('routines.guest_mode.restrictions.restrict_security', 'Sicherheitsfunktionen einschränken') +
+    fToggle('routines.guest_mode.restrictions.suggest_guest_wifi', 'Gäste-WLAN vorschlagen')
   ) +
   // --- Benannte Protokolle (verschoben aus Jarvis-Features) ---
   sectionWrap('&#128221;', 'Benannte Protokolle',
-    fInfo('Multi-Step-Sequenzen per Sprache erstellen und ausfuehren. Z.B. "Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu, TV an" — dann reicht "Filmabend" zum Ausfuehren.') +
+    fInfo('Multi-Step-Sequenzen per Sprache erstellen und ausführen. Z.B. "Erstelle Protokoll Filmabend: Licht 20%, Rolladen zu, TV an" — dann reicht "Filmabend" zum Ausfuehren.') +
     fToggle('protocols.enabled', 'Protokolle aktiv') +
     fNum('protocols.max_protocols', 'Maximale Anzahl Protokolle', 1, 50, 1) +
     fNum('protocols.max_steps', 'Maximale Schritte pro Protokoll', 1, 20, 1)
   ) +
-  // --- "Das Uebliche" (verschoben aus Jarvis-Features) ---
-  sectionWrap('&#128260;', '"Das Uebliche" — Implizite Routinen',
-    fInfo('Sage "das Uebliche", "wie immer" oder "mach fertig" — Jarvis erkennt gelernte Muster fuer die aktuelle Tageszeit und fuehrt sie aus. Basiert auf dem Vorausdenken-Modul (Anticipation Engine).') +
-    fToggle('das_uebliche.enabled', '"Das Uebliche" aktiv') +
-    fRange('das_uebliche.auto_execute_confidence', 'Auto-Ausfuehren ab Sicherheit', 0.5, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%',1:'100%'}) +
-    fRange('das_uebliche.suggest_confidence', 'Nachfragen ab Sicherheit', 0.3, 1, 0.05, {0.3:'30%',0.4:'40%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'}) +
-    fTextarea('das_uebliche.patterns', 'Trigger-Phrasen', 'Phrasen die "Das Uebliche" ausloesen. Eine pro Zeile.')
+  // --- "Das Übliche" (verschoben aus Jarvis-Features) ---
+  sectionWrap('&#128260;', '"Das Übliche" — Implizite Routinen',
+    fInfo('Sage "das Übliche", "wie immer" oder "mach fertig" — Jarvis erkennt gelernte Muster für die aktuelle Tageszeit und fuehrt sie aus. Basiert auf dem Vorausdenken-Modul (Anticipation Engine).') +
+    fToggle('das_übliche.enabled', '"Das Übliche" aktiv') +
+    fRange('das_übliche.auto_execute_confidence', 'Auto-Ausfuehren ab Sicherheit', 0.5, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%',1:'100%'}) +
+    fRange('das_übliche.suggest_confidence', 'Nachfragen ab Sicherheit', 0.3, 1, 0.05, {0.3:'30%',0.4:'40%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'}) +
+    fTextarea('das_übliche.patterns', 'Trigger-Phrasen', 'Phrasen die "Das Übliche" auslösen. Eine pro Zeile.')
   );
 }
 
@@ -3825,8 +3825,8 @@ const _DEFAULT_SCENES = [
   {id:'konzentration', icon:'&#128187;', label:'Konzentration',activity:'focused',   silence:true,  transition:2,  triggers:['konzentration','fokus','konzentrieren']},
   {id:'telefonat',     icon:'&#128222;', label:'Telefonat',    activity:'in_call',   silence:true,  transition:1,  triggers:['telefonat','telefonieren','anruf']},
   {id:'meeting',       icon:'&#128188;', label:'Meeting',      activity:'in_call',   silence:true,  transition:1,  triggers:['meeting','besprechung','videokonferenz']},
-  {id:'gaeste',        icon:'&#128101;', label:'Gaeste',       activity:'guests',    silence:false, transition:3,  triggers:['gaeste','besuch','gäste da']},
-  {id:'nicht_stoeren', icon:'&#128683;', label:'Nicht stoeren',activity:'focused',   silence:true,  transition:1,  triggers:['nicht stoeren','ruhe','bitte nicht stoeren']},
+  {id:'gäste',        icon:'&#128101;', label:'Gäste',       activity:'guests',    silence:false, transition:3,  triggers:['gäste','besuch','gäste da']},
+  {id:'nicht_stören', icon:'&#128683;', label:'Nicht stören',activity:'focused',   silence:true,  transition:1,  triggers:['nicht stören','ruhe','bitte nicht stören']},
   {id:'musik',         icon:'&#127925;', label:'Musik',        activity:'relaxing',  silence:false, transition:2,  triggers:['musik','musik an','musik hoeren']},
   {id:'arbeit',        icon:'&#128188;', label:'Arbeit',       activity:'focused',   silence:true,  transition:1,  triggers:['arbeit','arbeiten','arbeitsmodus']},
   {id:'kochen',        icon:'&#127859;', label:'Kochen',       activity:'relaxing',  silence:false, transition:1,  triggers:['kochen','kochmodus']},
@@ -3838,7 +3838,7 @@ const _ACTIVITY_OPTIONS = [
   {v:'in_call',   l:'Im Telefonat'},
   {v:'watching',  l:'TV/Film schauen'},
   {v:'focused',   l:'Konzentriert'},
-  {v:'guests',    l:'Gaeste da'},
+  {v:'guests',    l:'Gäste da'},
   {v:'relaxing',  l:'Entspannt'},
   {v:'away',      l:'Abwesend'},
 ];
@@ -3913,7 +3913,7 @@ function _saveScenes(scenes) {
     transitions[sc.id] = sc.transition;
   }
   setPath(S, 'narration.scene_transitions', transitions);
-  // 3. scenes.trigger_map — Mapping Trigger-Phrase → Scene-ID fuer LLM
+  // 3. scenes.trigger_map — Mapping Trigger-Phrase → Scene-ID für LLM
   const triggerMap = {};
   for (const sc of scenes) {
     if (sc.triggers && sc.triggers.length > 0) {
@@ -3921,12 +3921,12 @@ function _saveScenes(scenes) {
     }
   }
   setPath(S, 'scenes.trigger_map', triggerMap);
-  // 4. scenes.device_trigger_map — Mapping Entity-ID → Scene-ID fuer automatische Aktivierung
+  // 4. scenes.device_trigger_map — Mapping Entity-ID → Scene-ID für automatische Aktivierung
   const deviceTriggerMap = {};
   for (const sc of scenes) {
     if (sc.device_triggers && sc.device_triggers.length > 0) {
       for (const entity of sc.device_triggers) {
-        if (!entity) continue;  // Leere Eintraege ignorieren
+        if (!entity) continue;  // Leere Einträge ignorieren
         if (!deviceTriggerMap[entity]) deviceTriggerMap[entity] = [];
         deviceTriggerMap[entity].push(sc.id);
       }
@@ -3961,11 +3961,11 @@ function renderScenes() {
       </div>
       <div class="scene-card-body">
         <div class="scene-field">
-          <span class="scene-field-label">Aktivitaet</span>
+          <span class="scene-field-label">Aktivität</span>
           <select data-field="activity" onchange="sceneFieldChanged('${esc(sc.id)}','activity',this.value)">${actOpts}</select>
         </div>
         <div class="scene-field">
-          <span class="scene-field-label">Uebergang</span>
+          <span class="scene-field-label">Übergang</span>
           <div style="display:flex;align-items:center;gap:6px;">
             <input type="range" min="1" max="20" step="1" value="${sc.transition}" data-field="transition"
               oninput="this.nextElementSibling.textContent=this.value+'s';sceneFieldChanged('${esc(sc.id)}','transition',parseInt(this.value))">
@@ -3973,21 +3973,21 @@ function renderScenes() {
           </div>
         </div>
         <div class="scene-field">
-          <label class="scene-silence-toggle" title="Nicht stoeren — proaktive Meldungen werden unterdrueckt">
+          <label class="scene-silence-toggle" title="Nicht stören — proaktive Meldungen werden unterdrückt">
             <input type="checkbox" ${silenceChecked} data-field="silence"
               onchange="sceneFieldChanged('${esc(sc.id)}','silence',this.checked)">
-            <span>Nicht stoeren</span>
+            <span>Nicht stören</span>
           </label>
         </div>
         <div class="scene-field">
-          <span class="scene-field-label">Ausloeser</span>
+          <span class="scene-field-label">Auslöser</span>
           <input type="text" class="scene-triggers-input" value="${esc((sc.triggers||[]).join(', '))}"
             placeholder="z.B. filmabend, film schauen, film an"
-            title="Komma-getrennte Begriffe die diese Szene ausloesen"
+            title="Komma-getrennte Begriffe die diese Szene auslösen"
             onchange="sceneTriggersChanged('${esc(sc.id)}',this.value)">
         </div>
         <div class="scene-field">
-          <span class="scene-field-label">Geraete-Trigger</span>
+          <span class="scene-field-label">Geräte-Trigger</span>
           <div class="scene-device-triggers" data-scene-id="${esc(sc.id)}">
             ${(sc.device_triggers||[]).map((dt, i) => `<div class="scene-dt-row" style="display:flex;gap:4px;margin-bottom:4px;">
               <div class="entity-pick-wrap" style="position:relative;flex:1;">
@@ -4010,18 +4010,18 @@ function renderScenes() {
   }
 
   return sectionWrap('&#127916;', 'Haus-Szenen',
-    fInfo('Definiere Szenen fuer dein Zuhause. Jede Szene wird auf eine Aktivitaet gemappt (bestimmt Benachrichtigungs-Verhalten), hat eine Uebergangszeit und kann als "Nicht stoeren" markiert werden. Szenen koennen per Sprache aktiviert werden: "Jarvis, Filmabend."') +
+    fInfo('Definiere Szenen für dein Zuhause. Jede Szene wird auf eine Aktivität gemappt (bestimmt Benachrichtigungs-Verhalten), hat eine Übergangszeit und kann als "Nicht stören" markiert werden. Szenen können per Sprache aktiviert werden: "Jarvis, Filmabend."') +
     `<div class="scene-grid">${sceneCards}</div>
     <button class="btn btn-sm" onclick="addCustomScene()" style="margin-top:12px;">+ Eigene Szene</button>`
   ) +
   sectionWrap('&#128276;', 'So wirken Szenen',
     fInfo('Szenen steuern drei Dinge gleichzeitig:') +
     `<div style="font-size:12px;line-height:1.8;color:var(--text-secondary);padding:4px 8px;">
-      <div><strong>1. Aktivitaet</strong> — Jede Szene ist einer Aktivitaet zugeordnet (z.B. Filmabend → "TV/Film"). Die Aktivitaet bestimmt ueber die <em>Stille-Matrix</em> (Tab "Benachrichtigungen") wie Meldungen zugestellt werden.</div>
-      <div style="margin-top:6px;"><strong>2. Nicht stoeren</strong> — Markierte Szenen unterdruecken proaktive Meldungen komplett (ausser Sicherheit/Notfall).</div>
-      <div style="margin-top:6px;"><strong>3. Uebergangszeit</strong> — Wie lange Licht-Uebergaenge dauern wenn Jarvis die Szene aktiviert.</div>
-      <div style="margin-top:6px;"><strong>4. Ausloeser</strong> — Komma-getrennte Begriffe die Jarvis als Trigger fuer diese Szene erkennt. So vermeidest du Verwechslungen zwischen aehnlichen Szenen.</div>
-      <div style="margin-top:6px;"><strong>5. Geraete-Trigger</strong> — HA-Entities die diese Szene automatisch aktivieren. Z.B. wenn der TV eingeschaltet wird (media_player) oder ein Button gedrueckt wird (binary_sensor). Szene wird aktiviert wenn das Geraet den Status wechselt (on/playing/etc.).</div>
+      <div><strong>1. Aktivität</strong> — Jede Szene ist einer Aktivität zugeordnet (z.B. Filmabend → "TV/Film"). Die Aktivität bestimmt über die <em>Stille-Matrix</em> (Tab "Benachrichtigungen") wie Meldungen zugestellt werden.</div>
+      <div style="margin-top:6px;"><strong>2. Nicht stören</strong> — Markierte Szenen unterdrücken proaktive Meldungen komplett (ausser Sicherheit/Notfall).</div>
+      <div style="margin-top:6px;"><strong>3. Übergangszeit</strong> — Wie lange Licht-Uebergaenge dauern wenn Jarvis die Szene aktiviert.</div>
+      <div style="margin-top:6px;"><strong>4. Auslöser</strong> — Komma-getrennte Begriffe die Jarvis als Trigger für diese Szene erkennt. So vermeidest du Verwechslungen zwischen ähnlichen Szenen.</div>
+      <div style="margin-top:6px;"><strong>5. Geräte-Trigger</strong> — HA-Entities die diese Szene automatisch aktivieren. Z.B. wenn der TV eingeschaltet wird (media_player) oder ein Button gedrueckt wird (binary_sensor). Szene wird aktiviert wenn das Geraet den Status wechselt (on/playing/etc.).</div>
     </div>`
   );
 }
@@ -4111,34 +4111,34 @@ function renderProactive() {
     fRange('proactive.min_autonomy_level', 'Ab Autonomie-Level', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
     fToggle('proactive.departure_shopping_reminder', 'Einkaufsliste beim Verlassen erwaehnen') +
     `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
-      <span class="info-icon">&#127916;</span>"Nicht stoeren"-Szenen und Aktivitaets-Zuordnung werden jetzt zentral im <strong>Szenen</strong>-Tab verwaltet. Klicke hier um dorthin zu wechseln.
+      <span class="info-icon">&#127916;</span>"Nicht stören"-Szenen und Aktivitäts-Zuordnung werden jetzt zentral im <strong>Szenen</strong>-Tab verwaltet. Klicke hier um dorthin zu wechseln.
     </div>`
   ) +
-  sectionWrap('&#9200;', 'Zeitgefuehl',
-    fInfo('Der Assistent erinnert dich wenn Geraete zu lange laufen — z.B. Ofen vergessen, PC-Pause noetig.') +
-    fToggle('time_awareness.enabled', 'Zeitgefuehl aktiv') +
-    fRange('time_awareness.check_interval_minutes', 'Pruef-Intervall', 1, 30, 1, {1:'Jede Min.',5:'5 Min.',10:'10 Min.',15:'15 Min.',30:'30 Min.'}) +
+  sectionWrap('&#9200;', 'Zeitgefühl',
+    fInfo('Der Assistent erinnert dich wenn Geräte zu lange laufen — z.B. Ofen vergessen, PC-Pause nötig.') +
+    fToggle('time_awareness.enabled', 'Zeitgefühl aktiv') +
+    fRange('time_awareness.check_interval_minutes', 'Prüf-Intervall', 1, 30, 1, {1:'Jede Min.',5:'5 Min.',10:'10 Min.',15:'15 Min.',30:'30 Min.'}) +
     fRange('time_awareness.thresholds.oven', 'Ofen-Warnung nach', 10, 180, 5, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',180:'3 Std'}) +
-    fRange('time_awareness.thresholds.iron', 'Buegeleisen-Warnung nach', 5, 120, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
+    fRange('time_awareness.thresholds.iron', 'Bügeleisen-Warnung nach', 5, 120, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fRange('time_awareness.thresholds.light_empty_room', 'Licht im leeren Raum nach', 5, 120, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std'}) +
-    fRange('time_awareness.thresholds.window_open_cold', 'Fenster offen bei Kaelte nach', 30, 600, 30, {30:'30 Min',60:'1 Std',120:'2 Std',300:'5 Std',600:'10 Std'}) +
+    fRange('time_awareness.thresholds.window_open_cold', 'Fenster offen bei Kälte nach', 30, 600, 30, {30:'30 Min',60:'1 Std',120:'2 Std',300:'5 Std',600:'10 Std'}) +
     fRange('time_awareness.thresholds.pc_no_break', 'PC-Pause erinnern nach', 60, 720, 30, {60:'1 Std',120:'2 Std',180:'3 Std',360:'6 Std',720:'12 Std'}) +
-    fToggle('time_awareness.counters.coffee_machine', 'Kaffee-Zaehler (zaehlt deine Kaffees)')
+    fToggle('time_awareness.counters.coffee_machine', 'Kaffee-Zähler (zählt deine Kaffees)')
   ) +
   sectionWrap('&#128300;', 'Vorausdenken',
-    fInfo('Der Assistent lernt deine Gewohnheiten und schlaegt Aktionen vor — z.B. "Du machst normalerweise jetzt das Licht an".') +
+    fInfo('Der Assistent lernt deine Gewohnheiten und schlägt Aktionen vor — z.B. "Du machst normalerweise jetzt das Licht an".') +
     fToggle('anticipation.enabled', 'Vorausdenken aktiv') +
     fRange('anticipation.history_days', 'Lern-Zeitraum (Tage)', 7, 90, 7, {7:'1 Woche',14:'2 Wochen',30:'1 Monat',60:'2 Monate',90:'3 Monate'}) +
     fRange('anticipation.min_confidence', 'Mindest-Sicherheit', 0, 1, 0.05, {0:'Alles vorschlagen',0.3:'Niedrig',0.5:'Mittel',0.7:'Hoch',0.9:'Sehr hoch'}) +
-    fRange('anticipation.check_interval_minutes', 'Pruef-Intervall', 5, 60, 5, {5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'}) +
+    fRange('anticipation.check_interval_minutes', 'Prüf-Intervall', 5, 60, 5, {5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std'}) +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Ab welcher Sicherheit...</div>' +
     fRange('anticipation.thresholds.ask', '...nachfragen?', 0, 1, 0.05, {0.3:'30%',0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%'}) +
     fRange('anticipation.thresholds.suggest', '...vorschlagen?', 0, 1, 0.05, {0.5:'50%',0.6:'60%',0.7:'70%',0.8:'80%',0.9:'90%'}) +
-    fRange('anticipation.thresholds.auto', '...automatisch ausfuehren?', 0, 1, 0.05, {0.7:'70%',0.8:'80%',0.9:'90%',0.95:'95%',1:'100%'})
+    fRange('anticipation.thresholds.auto', '...automatisch ausführen?', 0, 1, 0.05, {0.7:'70%',0.8:'80%',0.9:'90%',0.95:'95%',1:'100%'})
   ) +
-  sectionWrap('&#128218;', 'Rueckkehr-Briefing',
-    fInfo('Wenn du das Haus verlaesst, sammelt Jarvis alle Events. Bei Rueckkehr erhaeltst du ein kompaktes Briefing — z.B. "Waehrend deiner Abwesenheit (2h): Jemand hat geklingelt, Waschmaschine fertig."') +
-    fToggle('return_briefing.enabled', 'Rueckkehr-Briefing aktiv') +
+  sectionWrap('&#128218;', 'Rückkehr-Briefing',
+    fInfo('Wenn du das Haus verlässt, sammelt Jarvis alle Events. Bei Rückkehr erhältst du ein kompaktes Briefing — z.B. "Während deiner Abwesenheit (2h): Jemand hat geklingelt, Waschmaschine fertig."') +
+    fToggle('return_briefing.enabled', 'Rückkehr-Briefing aktiv') +
     fRange('return_briefing.max_events', 'Max. Events pro Briefing', 5, 50, 5, {5:'5',10:'10',15:'15',20:'20',30:'30',50:'50'}) +
     fRange('return_briefing.ttl_hours', 'Max. Sammel-Dauer', 4, 48, 4, {4:'4 Std',8:'8 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'}) +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Events im Briefing</div>' +
@@ -4154,15 +4154,15 @@ function renderProactive() {
     fToggle('return_briefing.event_types.conditional_executed', 'Wenn-Dann-Regeln ausgefuehrt')
   ) +
   sectionWrap('&#129504;', 'Jarvis denkt voraus',
-    fInfo('Kreuz-referenziert Wetter, Kalender, Energie und Geraete-Status — und meldet sich proaktiv. Z.B. "Es wird gleich regnen, Fenster sind noch offen."') +
+    fInfo('Kreuz-referenziert Wetter, Kalender, Energie und Geräte-Status — und meldet sich proaktiv. Z.B. "Es wird gleich regnen, Fenster sind noch offen."') +
     fToggle('insights.enabled', 'Insights aktiv') +
-    fRange('insights.check_interval_minutes', 'Pruef-Intervall', 10, 120, 5, {10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
+    fRange('insights.check_interval_minutes', 'Prüf-Intervall', 10, 120, 5, {10:'10 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fRange('insights.cooldown_hours', 'Cooldown pro Insight', 1, 24, 1, {1:'1 Std',2:'2 Std',4:'4 Std',8:'8 Std',12:'12 Std',24:'1 Tag'}) +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aktive Checks</div>' +
     fToggle('insights.checks.weather_windows', 'Regen/Sturm + offene Fenster') +
     fToggle('insights.checks.frost_heating', 'Frost + Heizung aus/Away') +
     fToggle('insights.checks.calendar_travel', 'Reise im Kalender + Alarm/Fenster/Heizung') +
-    fToggle('insights.checks.energy_anomaly', 'Energie-Verbrauch ueber Baseline') +
+    fToggle('insights.checks.energy_anomaly', 'Energie-Verbrauch über Baseline') +
     fToggle('insights.checks.away_devices', 'Abwesend + Licht/Fenster offen') +
     fToggle('insights.checks.temp_drop', 'Ungewoehnlicher Temperatur-Abfall') +
     fToggle('insights.checks.window_temp_drop', 'Fenster offen + grosse Temp-Differenz') +
@@ -4175,9 +4175,9 @@ function renderProactive() {
     fRange('insights.thresholds.temp_drop_degrees_per_2h', 'Temp-Abfall Schwelle', 1, 10, 1, {1:'1\u00B0C',2:'2\u00B0C',3:'3\u00B0C',5:'5\u00B0C',10:'10\u00B0C'})
   ) +
   sectionWrap('&#128722;', 'Smart Shopping',
-    fInfo('Jarvis lernt dein Einkaufsverhalten: wie oft du Artikel kaufst, an welchem Wochentag du einkaufst, und welche Zutaten fuer Rezepte fehlen. Erinnert proaktiv wenn etwas bald alle ist.') +
+    fInfo('Jarvis lernt dein Einkaufsverhalten: wie oft du Artikel kaufst, an welchem Wochentag du einkaufst, und welche Zutaten für Rezepte fehlen. Erinnert proaktiv wenn etwas bald alle ist.') +
     fToggle('smart_shopping.enabled', 'Smart Shopping aktiv') +
-    fRange('smart_shopping.min_purchases', 'Mindest-Kaeufe fuer Prognose', 2, 10, 1, {2:'2',3:'3',5:'5',10:'10'}) +
+    fRange('smart_shopping.min_purchases', 'Mindest-Käufe für Prognose', 2, 10, 1, {2:'2',3:'3',5:'5',10:'10'}) +
     fRange('smart_shopping.reminder_days_before', 'Erinnerung X Tage vorher', 0, 7, 1, {0:'Am Tag',1:'1 Tag',2:'2 Tage',3:'3 Tage',7:'1 Woche'}) +
     fRange('smart_shopping.reminder_cooldown_hours', 'Erinnerungs-Cooldown', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'})
   ) +
@@ -4190,14 +4190,14 @@ function renderProactive() {
     fEntityPickerSingle('energy.entities.solar_production', 'Solar-Sensor', ['sensor'], 'z.B. sensor.solar_power — aktuelle Solar-Produktion in Watt') +
     fEntityPickerSingle('energy.entities.grid_export', 'Netz-Einspeisung Sensor', ['sensor'], 'z.B. sensor.grid_export_power — Einspeisung in Watt') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Schwellwerte</div>' +
-    fRange('energy.thresholds.price_low_cent', 'Guenstiger Strom unter', 5, 30, 1, {5:'5 ct',10:'10 ct',15:'15 ct',20:'20 ct',25:'25 ct',30:'30 ct'}) +
-    fRange('energy.thresholds.price_high_cent', 'Teurer Strom ueber', 20, 60, 1, {20:'20 ct',25:'25 ct',30:'30 ct',35:'35 ct',40:'40 ct',50:'50 ct',60:'60 ct'}) +
-    fRange('energy.thresholds.solar_high_watts', 'Solar-Ueberschuss ab', 500, 10000, 500, {500:'500 W',1000:'1 kW',2000:'2 kW',3000:'3 kW',5000:'5 kW',10000:'10 kW'}) +
+    fRange('energy.thresholds.price_low_cent', 'Günstiger Strom unter', 5, 30, 1, {5:'5 ct',10:'10 ct',15:'15 ct',20:'20 ct',25:'25 ct',30:'30 ct'}) +
+    fRange('energy.thresholds.price_high_cent', 'Teurer Strom über', 20, 60, 1, {20:'20 ct',25:'25 ct',30:'30 ct',35:'35 ct',40:'40 ct',50:'50 ct',60:'60 ct'}) +
+    fRange('energy.thresholds.solar_high_watts', 'Solar-Überschuss ab', 500, 10000, 500, {500:'500 W',1000:'1 kW',2000:'2 kW',3000:'3 kW',5000:'5 kW',10000:'10 kW'}) +
     fRange('energy.thresholds.anomaly_increase_percent', 'Anomalie-Schwelle', 10, 100, 5, {10:'10%',20:'20%',30:'30%',50:'50%',100:'100%'})
   ) +
-  sectionWrap('&#129504;', 'Konversations-Gedaechtnis++',
+  sectionWrap('&#129504;', 'Konversations-Gedächtnis++',
     fInfo('Jarvis merkt sich laufende Projekte, offene Fragen und erstellt Tages-Zusammenfassungen. Sage z.B. "Merke dir: Projekt Gartenhaus — Fundament ist fertig" oder "Merke dir die Frage: Wann muss die TUeV-Plakette erneuert werden?"') +
-    fToggle('conversation_memory.enabled', 'Konversations-Gedaechtnis aktiv') +
+    fToggle('conversation_memory.enabled', 'Konversations-Gedächtnis aktiv') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Limits</div>' +
     fRange('conversation_memory.max_projects', 'Maximale Projekte', 5, 50, 5, {5:'5',10:'10',15:'15',20:'20',30:'30',50:'50'}) +
     fRange('conversation_memory.max_questions', 'Maximale offene Fragen', 10, 100, 10, {10:'10',20:'20',30:'30',50:'50',100:'100'}) +
@@ -4206,14 +4206,14 @@ function renderProactive() {
     fRange('conversation_memory.question_ttl_days', 'Offene Fragen behalten', 3, 60, 1, {3:'3 Tage',7:'1 Woche',14:'2 Wochen',30:'1 Monat',60:'2 Monate'})
   ) +
   sectionWrap('&#127925;', 'Multi-Room Audio',
-    fInfo('Erstelle Speaker-Gruppen fuer synchrone Wiedergabe im ganzen Haus. Sage z.B. "Spiele Jazz auf der Gruppe Erdgeschoss" oder "Erstelle eine Gruppe Party mit Wohnzimmer und Kueche". Gruppen-Presets koennen in settings.yaml unter multi_room_audio.presets definiert werden.') +
+    fInfo('Erstelle Speaker-Gruppen für synchrone Wiedergabe im ganzen Haus. Sage z.B. "Spiele Jazz auf der Gruppe Erdgeschoss" oder "Erstelle eine Gruppe Party mit Wohnzimmer und Küche". Gruppen-Presets können in settings.yaml unter multi_room_audio.presets definiert werden.') +
     fToggle('multi_room_audio.enabled', 'Multi-Room Audio aktiv') +
     fToggle('multi_room_audio.use_native_grouping', 'Native Gruppierung (Sonos/Cast)') +
     fRange('multi_room_audio.max_groups', 'Maximale Gruppen', 1, 20, 1, {1:'1',5:'5',10:'10',15:'15',20:'20'}) +
-    fRange('multi_room_audio.default_volume', 'Standard-Lautstaerke', 5, 100, 5, {5:'5%',20:'20%',40:'40%',60:'60%',80:'80%',100:'100%'})
+    fRange('multi_room_audio.default_volume', 'Standard-Lautstärke', 5, 100, 5, {5:'5%',20:'20%',40:'40%',60:'60%',80:'80%',100:'100%'})
   ) +
   sectionWrap('&#128226;', 'Event-Handler',
-    fInfo('Prioritaeten fuer verschiedene Event-Typen. Event-Typen mit hoeherer Prioritaet durchbrechen "Nicht stoeren". In settings.yaml unter proactive.event_handlers anpassbar.') +
+    fInfo('Prioritaeten für verschiedene Event-Typen. Event-Typen mit höherer Prioritaet durchbrechen "Nicht stören". In settings.yaml unter proactive.event_handlers anpassbar.') +
     fTextarea('proactive.event_handlers', 'Event-Handler (JSON)', 'Format: {"event_name": {"priority": "critical|high|medium|low", "description": "..."}}')
   ) +
   // --- Spontane Beobachtungen (verschoben aus Jarvis-Features) ---
@@ -4228,7 +4228,7 @@ function renderProactive() {
     fToggle('spontaneous.checks.energy_comparison', 'Energie-Vergleich mit Vorwoche') +
     fToggle('spontaneous.checks.streak', 'Wetter-Streaks & Fun Facts') +
     fToggle('spontaneous.checks.usage_record', 'Nutzungs-Rekorde') +
-    fToggle('spontaneous.checks.device_milestone', 'Geraete-Meilensteine') +
+    fToggle('spontaneous.checks.device_milestone', 'Geräte-Meilensteine') +
     fToggle('spontaneous.checks.house_efficiency', 'Haus-Effizienz Beobachtungen')
   );
 }
@@ -4240,7 +4240,7 @@ function renderNotifications() {
     {key:'in_call',  label:'Im Telefonat', icon:'&#128222;'},
     {key:'watching', label:'TV/Film', icon:'&#127916;'},
     {key:'focused',  label:'Konzentriert', icon:'&#128187;'},
-    {key:'guests',   label:'Gaeste da', icon:'&#128101;'},
+    {key:'guests',   label:'Gäste da', icon:'&#128101;'},
     {key:'relaxing', label:'Entspannt', icon:'&#128524;'},
     {key:'away',     label:'Abwesend', icon:'&#127968;'},
   ];
@@ -4250,7 +4250,7 @@ function renderNotifications() {
     {v:'tts_loud',  l:'Laut (TTS)'},
     {v:'tts_quiet', l:'Leise (TTS)'},
     {v:'led_blink', l:'Nur LED'},
-    {v:'suppress',  l:'Unterdruecken'},
+    {v:'suppress',  l:'Unterdrücken'},
   ];
   // Defaults (hardcoded, matching activity.py)
   const defaultSilence = {
@@ -4309,31 +4309,31 @@ function renderNotifications() {
     <thead><tr><th></th>${urgencies.map(u=>`<th>${urgencyLabels[u]}</th>`).join('')}</tr></thead>
     <tbody>${volumeRows}</tbody></table></div>`;
 
-  return sectionWrap('&#128263;', 'Stille-Matrix (Zustellung pro Aktivitaet)',
-    fInfo('Bestimmt WIE Benachrichtigungen zugestellt werden — abhaengig von deiner aktuellen Aktivitaet und der Dringlichkeit der Meldung. Kritische Meldungen (Sicherheit, Notfall) sollten immer hoerbar sein.') +
+  return sectionWrap('&#128263;', 'Stille-Matrix (Zustellung pro Aktivität)',
+    fInfo('Bestimmt WIE Benachrichtigungen zugestellt werden — abhaengig von deiner aktuellen Aktivität und der Dringlichkeit der Meldung. Kritische Meldungen (Sicherheit, Notfall) sollten immer hoerbar sein.') +
     silenceTable +
     `<div style="margin:8px 0 4px;font-size:11px;color:var(--text-muted);">Geaenderte Zellen werden beim Verlassen automatisch gespeichert. Nur Abweichungen vom Standard werden gespeichert.</div>`
   ) +
-  sectionWrap('&#128266;', 'Lautstaerke-Matrix',
-    fInfo('Bestimmt die Lautstaerke von TTS-Durchsagen — abhaengig von Aktivitaet und Dringlichkeit. Nachts wird automatisch zusaetzlich reduziert.') +
+  sectionWrap('&#128266;', 'Lautstärke-Matrix',
+    fInfo('Bestimmt die Lautstärke von TTS-Durchsagen — abhaengig von Aktivität und Dringlichkeit. Nachts wird automatisch zusätzlich reduziert.') +
     volumeTable
   ) +
   // --- Benachrichtigungskanaele (verschoben aus Sicherheit-Tab) ---
   sectionWrap('&#128276;', 'Benachrichtigungskanaele',
-    fInfo('Welche Kanaele soll der Assistent fuer Benachrichtigungen nutzen? Kanaele koennen einzeln konfiguriert werden.') +
+    fInfo('Welche Kanaele soll der Assistent für Benachrichtigungen nutzen? Kanaele können einzeln konfiguriert werden.') +
     '<div id="notifyChannelsContainer" style="color:var(--text-muted);font-size:12px;">Wird geladen...</div>' +
     '<div style="margin-top:10px;"><button class="btn btn-primary" style="font-size:12px;" onclick="saveNotifyChannels()">Kanaele speichern</button></div>'
   ) +
   // --- Stille-Keywords (verschoben aus Haus-Status-Tab) ---
   sectionWrap('&#128164;', 'Stille-Keywords',
-    fInfo('Woerter die eine Aktivitaet erkennen und den "Nicht stoeren"-Modus ausloesen. Ein Wort pro Zeile.') +
+    fInfo('Wörter die eine Aktivität erkennen und den "Nicht stören"-Modus auslösen. Ein Wort pro Zeile.') +
     fTextarea('activity.silence_keywords.watching', 'Film/TV schauen', 'z.B. "filmabend", "netflix", "serie schauen"') +
-    fTextarea('activity.silence_keywords.focused', 'Konzentriert/Meditieren', 'z.B. "meditation", "fokus", "nicht stoeren"') +
+    fTextarea('activity.silence_keywords.focused', 'Konzentriert/Meditieren', 'z.B. "meditation", "fokus", "nicht stören"') +
     fTextarea('activity.silence_keywords.sleeping', 'Schlafen', 'z.B. "gute nacht", "ich geh schlafen"')
   );
 }
 
-// Notification Matrix: nur geaenderte Werte in S speichern (sparse)
+// Notification Matrix: nur geänderte Werte in S speichern (sparse)
 function _nmSync() {
   document.querySelectorAll('.nm-select').forEach(sel => {
     const path = sel.dataset.path;
@@ -4341,7 +4341,7 @@ function _nmSync() {
     if (sel.value !== def) {
       setPath(S, path, sel.value);
     } else {
-      // Nicht-geaenderte Werte entfernen (damit nur Overrides gespeichert werden)
+      // Nicht-geänderte Werte entfernen (damit nur Overrides gespeichert werden)
       _nmRemovePath(path);
     }
   });
@@ -4395,51 +4395,51 @@ document.addEventListener('input', (e) => {
 // ---- Jarvis-Features (Feature 1-11) ----
 function renderJarvisFeatures() {
   return sectionWrap('&#128172;', 'Progressive Antworten',
-    fInfo('Jarvis "denkt laut" — sendet Zwischen-Meldungen waehrend der Verarbeitung statt still zu arbeiten. Z.B. "Ich pruefe den Hausstatus..." oder "Einen Moment, ich ueberlege..."') +
+    fInfo('Jarvis "denkt laut" — sendet Zwischen-Meldungen während der Verarbeitung statt still zu arbeiten. Z.B. "Ich pruefe den Hausstatus..." oder "Einen Moment, ich ueberlege..."') +
     fToggle('progressive_responses.enabled', 'Progressive Antworten aktiv') +
     fToggle('progressive_responses.show_context_step', '"Ich pruefe den Hausstatus..." anzeigen') +
     fToggle('progressive_responses.show_thinking_step', '"Einen Moment, ich ueberlege..." anzeigen') +
     fToggle('progressive_responses.show_action_step', '"Ich fuehre das aus..." anzeigen')
   ) +
   sectionWrap('&#129504;', 'MCU-Intelligenz',
-    fInfo('Kern-Features die Jarvis wie MCU-JARVIS denken lassen: Proaktives Mitdenken, Ingenieur-Diagnosen, Kreuz-Referenzierung, Anomalie-Erkennung und implizite Befehle. Jedes Feature kann einzeln deaktiviert werden. Aenderungen wirken sofort.') +
+    fInfo('Kern-Features die Jarvis wie MCU-JARVIS denken lassen: Proaktives Mitdenken, Ingenieur-Diagnosen, Kreuz-Referenzierung, Anomalie-Erkennung und implizite Befehle. Jedes Feature kann einzeln deaktiviert werden. Änderungen wirken sofort.') +
     fToggle('mcu_intelligence.proactive_thinking', 'Proaktives Mitdenken') +
     fToggle('mcu_intelligence.engineering_diagnosis', 'Ingenieur-Diagnose-Stil') +
     fToggle('mcu_intelligence.cross_references', 'Kreuz-Referenzierung (Haus-Daten)') +
     fToggle('mcu_intelligence.anomaly_detection', 'Anomalie-Erkennung im Kontext') +
     fToggle('mcu_intelligence.implicit_commands', 'Implizite Befehle ("Bin da", "Alles klar?")')
   ) +
-  sectionWrap('&#127917;', 'MCU-Persoenlichkeit',
-    fInfo('Persoenlichkeits-Features die Jarvis mehr wie MCU-JARVIS wirken lassen: natuerliche Rueckbezuege auf vergangene Gespraeche, Lern-Bestaetigungen, Vorhersagen mit Charakter, Wetter-Kommentare, Selbst-Bewusstsein und proaktive Persoenlichkeit. Aenderungen wirken sofort.') +
-    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Konversations-Rueckbezuege</div>' +
-    fToggle('conversation_callbacks.enabled', 'Rueckbezuege auf vergangene Gespraeche') +
-    fSelect('conversation_callbacks.personality_style', 'Referenz-Stil', [{v:'beilaeufig',l:'Beilaeufig (trockener Humor)'},{v:'direkt',l:'Direkt (sachlich)'}]) +
-    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Lern-Bestaetigung</div>' +
+  sectionWrap('&#127917;', 'MCU-Persönlichkeit',
+    fInfo('Persönlichkeits-Features die Jarvis mehr wie MCU-JARVIS wirken lassen: natürliche Rückbezüge auf vergangene Gespräche, Lern-Bestätigungen, Vorhersagen mit Charakter, Wetter-Kommentare, Selbst-Bewusstsein und proaktive Persönlichkeit. Änderungen wirken sofort.') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Konversations-Rückbezüge</div>' +
+    fToggle('conversation_callbacks.enabled', 'Rückbezüge auf vergangene Gespräche') +
+    fSelect('conversation_callbacks.personality_style', 'Referenz-Stil', [{v:'beiläufig',l:'Beilaeufig (trockener Humor)'},{v:'direkt',l:'Direkt (sachlich)'}]) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Lern-Bestätigung</div>' +
     fToggle('learning_acknowledgment.enabled', '"Ich habe mir gemerkt..." Meldungen') +
-    fRange('learning_acknowledgment.max_per_session', 'Max. pro Gespraech', 1, 3, 1, {1:'1x',2:'2x',3:'3x'}) +
-    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Vorhersage-Persoenlichkeit</div>' +
+    fRange('learning_acknowledgment.max_per_session', 'Max. pro Gespräch', 1, 3, 1, {1:'1x',2:'2x',3:'3x'}) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Vorhersage-Persönlichkeit</div>' +
     fToggle('prediction_personality.enabled', 'Vorhersagen mit Charakter') +
     fToggle('prediction_personality.show_confidence', 'Konfidenz in Prozent anzeigen') +
-    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Wetter in Persoenlichkeit</div>' +
-    fToggle('weather_personality.enabled', 'Wetter beilaeufig einflechten') +
-    fSelect('weather_personality.intensity', 'Intensitaet', [{v:'subtil',l:'Subtil (nur Extreme)'},{v:'normal',l:'Normal'},{v:'ausfuehrlich',l:'Ausfuehrlich'}]) +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Wetter in Persönlichkeit</div>' +
+    fToggle('weather_personality.enabled', 'Wetter beiläufig einflechten') +
+    fSelect('weather_personality.intensity', 'Intensität', [{v:'subtil',l:'Subtil (nur Extreme)'},{v:'normal',l:'Normal'},{v:'ausführlich',l:'Ausführlich'}]) +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Selbst-Bewusstsein &amp; Meta-Humor</div>' +
     fToggle('self_awareness.enabled', 'Selbst-Bewusstsein aktiv') +
-    fToggle('self_awareness.meta_humor', 'Meta-Humor ueber eigene Algorithmen') +
-    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Proaktive Persoenlichkeit</div>' +
+    fToggle('self_awareness.meta_humor', 'Meta-Humor über eigene Algorithmen') +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Proaktive Persönlichkeit</div>' +
     fToggle('proactive_personality.enabled', 'Briefings mit Charakter') +
     fToggle('proactive_personality.sarcasm_in_notifications', 'Trockener Humor in Meldungen')
   ) +
   sectionWrap('&#129505;', 'Echte Empathie',
-    fInfo('Jarvis zeigt echtes Verstaendnis — nicht durch Therapeuten-Floskeln, sondern durch Beobachtung und Handeln. "Du klingst angespannt." statt "Ich verstehe wie du dich fuehlst." Wie MCU-JARVIS: erkennen, beilaeufig ansprechen, praktisch helfen.') +
+    fInfo('Jarvis zeigt echtes Verständnis — nicht durch Therapeuten-Floskeln, sondern durch Beobachtung und Handeln. "Du klingst angespannt." statt "Ich verstehe wie du dich fuehlst." Wie MCU-JARVIS: erkennen, beiläufig ansprechen, praktisch helfen.') +
     fToggle('empathy.enabled', 'Echte Empathie aktiv') +
-    fSelect('empathy.intensity', 'Intensitaet', [{v:'subtil',l:'Subtil (nur starke Emotionen)'},{v:'normal',l:'Normal'},{v:'ausfuehrlich',l:'Ausfuehrlich (aktiv mitfuehlend)'}]) +
-    fToggle('empathy.mood_acknowledgment', 'Stimmung beilaeufig ansprechen') +
+    fSelect('empathy.intensity', 'Intensität', [{v:'subtil',l:'Subtil (nur starke Emotionen)'},{v:'normal',l:'Normal'},{v:'ausführlich',l:'Ausführlich (aktiv mitfühlend)'}]) +
+    fToggle('empathy.mood_acknowledgment', 'Stimmung beiläufig ansprechen') +
     fToggle('empathy.practical_offers', 'Praktische Hilfe anbieten') +
     fToggle('empathy.good_mood_mirror', 'Gute Stimmung spiegeln')
   ) +
   sectionWrap('&#128274;', 'Charakter-Schutz',
-    fInfo('Verhindert dass das LLM aus der JARVIS-Rolle faellt und typische KI-Floskeln verwendet. Dreistufiger Schutz: Prompt-Anker am Ende, struktureller Post-Filter und automatischer Character-Retry.') +
+    fInfo('Verhindert dass das LLM aus der JARVIS-Rolle fällt und typische KI-Floskeln verwendet. Dreistufiger Schutz: Prompt-Anker am Ende, struktureller Post-Filter und automatischer Character-Retry.') +
     fToggle('character_lock.enabled', 'Charakter-Lock aktiviert') +
     fToggle('character_lock.closing_anchor', 'Prompt-Anker (Erinnerung am Prompt-Ende)') +
     fToggle('character_lock.structural_filter', 'Struktureller Filter (Listen/Aufzaehlungen entfernen)') +
@@ -4450,55 +4450,55 @@ function renderJarvisFeatures() {
         '<span style="font-weight:600;">Charakter-Brueche (7 Tage)</span>' +
         '<button class="btn btn-secondary btn-sm" onclick="loadCharBreakStats()" style="padding:2px 8px;min-width:auto;font-size:11px;">Laden</button>' +
       '</div>' +
-      '<div id="charBreakStatsContent" style="color:var(--text-muted);">Klicke "Laden" fuer aktuelle Statistiken.</div>' +
+      '<div id="charBreakStatsContent" style="color:var(--text-muted);">Klicke "Laden" für aktuelle Statistiken.</div>' +
     '</div>'
   ) +
-  sectionWrap('&#128374;', 'Geraete-Persoenlichkeit',
-    fInfo('Geraete bekommen Spitznamen in proaktiven Meldungen — z.B. "Die Fleissige im Keller hat ihren Job erledigt" statt "Waschmaschine ausgeschaltet".') +
-    fToggle('device_narration.enabled', 'Geraete-Persoenlichkeit aktiv') +
+  sectionWrap('&#128374;', 'Geräte-Persönlichkeit',
+    fInfo('Geräte bekommen Spitznamen in proaktiven Meldungen — z.B. "Die Fleissige im Keller hat ihren Job erledigt" statt "Waschmaschine ausgeschaltet".') +
+    fToggle('device_narration.enabled', 'Geräte-Persönlichkeit aktiv') +
     fTextarea('device_narration.custom_nicknames', 'Eigene Spitznamen', 'JSON: {"waschmaschine": "Frau Waschkraft", "saugroboter": "Robbie"}')
   ) +
-  sectionWrap('&#9889;', 'Geraete-Fertig-Erkennung',
-    fInfo('Jarvis erkennt anhand des Stromverbrauchs wann Geraete fertig sind. Das Geraet muss fuer die eingestellte Wartezeit unter dem Idle-Schwellwert bleiben bevor "fertig" gemeldet wird — das verhindert Fehlalarme bei Zwischenphasen (z.B. zwischen Waschen und Schleudern). Du kannst beliebige Geraete hinzufuegen.') +
+  sectionWrap('&#9889;', 'Geräte-Fertig-Erkennung',
+    fInfo('Jarvis erkennt anhand des Stromverbrauchs wann Geräte fertig sind. Das Geraet muss für die eingestellte Wartezeit unter dem Idle-Schwellwert bleiben bevor "fertig" gemeldet wird — das verhindert Fehlalarme bei Zwischenphasen (z.B. zwischen Waschen und Schleudern). Du kannst beliebige Geräte hinzufuegen.') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Schwellwerte</div>' +
     fRange('appliance_monitor.power_running_threshold', 'Laufend ab (Watt)', 5, 50, 5, {5:'5W',10:'10W',15:'15W',20:'20W',50:'50W'}) +
     fRange('appliance_monitor.power_idle_threshold', 'Idle unter (Watt)', 1, 20, 1, {1:'1W',2:'2W',3:'3W',5:'5W',10:'10W',20:'20W'}) +
     fRange('appliance_monitor.idle_confirm_minutes', 'Wartezeit vor Meldung', 1, 15, 1, {1:'1 Min',2:'2',3:'3',5:'5 Min',10:'10',15:'15 Min'}) +
-    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Ueberwachte Geraete</div>' +
+    '<div style="margin:12px 0;font-weight:600;font-size:13px;">Überwachte Geräte</div>' +
     '<div id="applianceDevicesContainer"></div>' +
     '<button class="btn btn-sm" onclick="addApplianceDevice()" style="margin-top:8px;">+ Geraet hinzufuegen</button>'
   ) +
   sectionWrap('&#9888;', 'Daten-basierter Widerspruch',
-    fInfo('Vor einer Aktion prueft Jarvis Live-Daten und warnt konkret — z.B. "Heizung auf 25? Das Bad-Fenster ist offen." Aktion wird trotzdem ausgefuehrt, aber die Warnung erwaehnt.') +
+    fInfo('Vor einer Aktion prüft Jarvis Live-Daten und warnt konkret — z.B. "Heizung auf 25? Das Bad-Fenster ist offen." Aktion wird trotzdem ausgefuehrt, aber die Warnung erwähnt.') +
     fToggle('pushback.enabled', 'Widerspruch aktiv') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aktive Checks</div>' +
     fToggle('pushback.checks.open_windows', 'Fenster offen bei Heizung') +
     fToggle('pushback.checks.empty_room', 'Leerer Raum bei Heizung/Licht') +
     fToggle('pushback.checks.daylight', 'Tageslicht bei Licht einschalten') +
-    fToggle('pushback.checks.storm_warning', 'Sturmwarnung bei Rolladen oeffnen') +
+    fToggle('pushback.checks.storm_warning', 'Sturmwarnung bei Rolladen öffnen') +
     fToggle('pushback.checks.unnecessary_heating', 'Heizung bei warmem Wetter') +
     '<div style="margin:16px 0 12px;font-weight:600;font-size:13px;">Eskalations-Stufen</div>' +
-    fInfo('Wie MCU-JARVIS: Warnungen werden je nach Schwere anders formuliert. Stufe 1 = beilaeufig ("Uebrigens..."), Stufe 2 = Einwand ("Darf ich anmerken..."), Stufe 3 = Sorge ("Das wuerde ich nicht empfehlen."), Stufe 4 = Resignation bei wiederholter Warnung ("Wie du wuenschst.").') +
+    fInfo('Wie MCU-JARVIS: Warnungen werden je nach Schwere anders formuliert. Stufe 1 = beiläufig ("Übrigens..."), Stufe 2 = Einwand ("Darf ich anmerken..."), Stufe 3 = Sorge ("Das würde ich nicht empfehlen."), Stufe 4 = Resignation bei wiederholter Warnung ("Wie du wuenschst.").') +
     fToggle('pushback.escalation_enabled', 'Eskalations-Stufen aktiv') +
     fRange('pushback.resignation_ttl_seconds', 'Wiederholungs-Erkennung', 300, 3600, 300, {300:'5 Min',600:'10 Min',900:'15 Min',1800:'30 Min',3600:'1 Std'})
   ) +
   sectionWrap('&#127925;', 'Smart DJ',
-    fInfo('Jarvis empfiehlt kontextbewusst Musik basierend auf Stimmung, Aktivitaet und Tageszeit. Sag z.B. "Spiel mal was Passendes" — Jarvis waehlt das Genre und lernt aus deinem Feedback.') +
+    fInfo('Jarvis empfiehlt kontextbewusst Musik basierend auf Stimmung, Aktivität und Tageszeit. Sag z.B. "Spiel mal was Passendes" — Jarvis waehlt das Genre und lernt aus deinem Feedback.') +
     fToggle('music_dj.enabled', 'Smart DJ aktiv') +
-    fRange('music_dj.default_volume', 'Standard-Lautstaerke', 10, 100, 5, {10:'10%',20:'20%',30:'30%',40:'40%',50:'50%',60:'60%',70:'70%',80:'80%',100:'100%'}) +
-    fToggle('music_dj.proactive_enabled', 'Proaktive Musikvorschlaege') +
-    fRange('music_dj.cooldown_minutes', 'Mindestabstand Vorschlaege', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
+    fRange('music_dj.default_volume', 'Standard-Lautstärke', 10, 100, 5, {10:'10%',20:'20%',30:'30%',40:'40%',50:'50%',60:'60%',70:'70%',80:'80%',100:'100%'}) +
+    fToggle('music_dj.proactive_enabled', 'Proaktive Musikvorschläge') +
+    fRange('music_dj.cooldown_minutes', 'Mindestabstand Vorschläge', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fTextarea('music_dj.custom_queries', 'Eigene Genre-Queries', 'JSON: {"party_hits": "meine party playlist", "focus_lofi": "deep focus music"}')
   ) +
-  // --- Persoenlichkeit & Gedaechtnis (verschoben aus Intelligenz-Tab) ---
+  // --- Persönlichkeit & Gedächtnis (verschoben aus Intelligenz-Tab) ---
   sectionWrap('&#128218;', 'Remember When — Erinnerungen',
-    fInfo('Jarvis merkt sich besondere Momente und Korrekturen. Bei passenden Gelegenheiten referenziert er fruehere Interaktionen ("Letzte Woche mochten Sie es waermer, Sir"). Gibt ihm ein echtes Langzeitgedaechtnis.') +
+    fInfo('Jarvis merkt sich besondere Momente und Korrekturen. Bei passenden Gelegenheiten referenziert er frühere Interaktionen ("Letzte Woche mochten Sie es waermer, Sir"). Gibt ihm ein echtes Langzeitgedächtnis.') +
     fToggle('memorable_interactions.enabled', 'Erinnerungen aktiv') +
     fNum('memorable_interactions.max_entries', 'Max. gespeicherte Erinnerungen', 5, 100, 5) +
     fNum('memorable_interactions.ttl_days', 'Speicherdauer (Tage)', 7, 365, 7)
   ) +
   sectionWrap('&#128514;', 'Running Gag Evolution',
-    fInfo('Statt Witze zu wiederholen, entwickelt Jarvis sie weiter. Referenziert fruehere Scherze und baut darauf auf — wie ein echter Humor zwischen Vertrauten.') +
+    fInfo('Statt Witze zu wiederholen, entwickelt Jarvis sie weiter. Referenziert frühere Scherze und baut darauf auf — wie ein echter Humor zwischen Vertrauten.') +
     fToggle('running_gag_evolution.enabled', 'Gag-Evolution aktiv')
   ) +
   sectionWrap('&#128680;', 'Eskalierende Besorgnis',
@@ -4506,16 +4506,16 @@ function renderJarvisFeatures() {
     fToggle('escalating_concern.enabled', 'Eskalierende Besorgnis aktiv')
   ) +
   sectionWrap('&#128270;', 'Neugier-Fragen',
-    fInfo('Jarvis fragt bei ungewoehnlichem Verhalten vorsichtig nach ("Frueh unterwegs heute, Sir — alles in Ordnung?"). Maximal 2x pro Tag, nie aufdringlich.') +
+    fInfo('Jarvis fragt bei ungewöhnlichem Verhalten vorsichtig nach ("Frueh unterwegs heute, Sir — alles in Ordnung?"). Maximal 2x pro Tag, nie aufdringlich.') +
     fToggle('curiosity.enabled', 'Neugier-Fragen aktiv') +
     fNum('curiosity.max_daily', 'Max. Fragen pro Tag', 1, 5)
   ) +
   // --- Situations-Modell (verschoben aus Sicherheit-Tab) ---
   sectionWrap('&#128269;', 'Situations-Modell',
-    fInfo('JARVIS merkt sich den Hausstatus bei jedem Gespraech und erwaehnt beim naechsten Gespraech beilaeufig was sich veraendert hat.') +
+    fInfo('JARVIS merkt sich den Hausstatus bei jedem Gespräch und erwähnt beim naechsten Gespräch beiläufig was sich veraendert hat.') +
     fToggle('situation_model.enabled', 'Situations-Modell aktiviert') +
     fRange('situation_model.min_pause_minutes', 'Mindest-Pause zwischen Deltas (Min)', 5, 120, 5) +
-    fRange('situation_model.max_changes', 'Max. gemeldete Aenderungen', 1, 10, 1) +
+    fRange('situation_model.max_changes', 'Max. gemeldete Änderungen', 1, 10, 1) +
     fRange('situation_model.temp_threshold', 'Temperatur-Schwelle (°C)', 1, 5, 0.5)
   );
 }
@@ -4523,12 +4523,12 @@ function renderJarvisFeatures() {
 // ---- Koch-Assistent (aus Routinen ausgelagert) ----
 function renderCooking() {
   return sectionWrap('&#127859;', 'Koch-Assistent',
-    fInfo('Der Assistent kann dir Rezepte vorschlagen und beim Kochen helfen — Schritt fuer Schritt mit Timer.') +
+    fInfo('Der Assistent kann dir Rezepte vorschlagen und beim Kochen helfen — Schritt für Schritt mit Timer.') +
     fToggle('cooking.enabled', 'Koch-Assistent aktiv') +
     fSelect('cooking.language', 'Rezept-Sprache', [{v:'de',l:'Deutsch'},{v:'en',l:'English'}]) +
     fRange('cooking.default_portions', 'Standard-Portionen', 1, 12, 1) +
     fRange('cooking.max_steps', 'Max. Schritte pro Rezept', 3, 30, 1) +
-    fRange('cooking.max_tokens', 'Rezept-Detailgrad', 256, 4096, 256, {256:'Kurz',512:'Normal',1024:'Ausfuehrlich',2048:'Sehr ausfuehrlich',4096:'Maximum'}) +
+    fRange('cooking.max_tokens', 'Rezept-Detailgrad', 256, 4096, 256, {256:'Kurz',512:'Normal',1024:'Ausführlich',2048:'Sehr ausführlich',4096:'Maximum'}) +
     fToggle('cooking.timer_notify_tts', 'Timer-Erinnerungen per Sprache')
   );
 }
@@ -4538,9 +4538,9 @@ function renderWorkshop() {
   return sectionWrap('&#128295;', 'Werkstatt-Modus',
     fInfo('J.A.R.V.I.S. als Werkstatt-Ingenieur: Reparaturen, Elektronik, 3D-Druck, Robotik.') +
     fToggle('workshop.enabled', 'Werkstatt-Modus aktiv') +
-    fText('workshop.workshop_room', 'Werkstatt-Raum (HA)', 'Name des Raums in Home Assistant fuer Sensor-Daten') +
+    fText('workshop.workshop_room', 'Werkstatt-Raum (HA)', 'Name des Raums in Home Assistant für Sensor-Daten') +
     fToggle('workshop.auto_safety_check', 'Auto-Sicherheits-Check') +
-    fToggle('workshop.proactive_suggestions', 'Proaktive Vorschlaege')
+    fToggle('workshop.proactive_suggestions', 'Proaktive Vorschläge')
   ) +
   sectionWrap('&#128424;', '3D-Drucker',
     fToggle('workshop.printer_3d.enabled', '3D-Drucker aktiviert') +
@@ -4563,10 +4563,10 @@ function renderWorkshop() {
   ) +
   sectionWrap('&#128247;', 'Objekt-Scanner & Kamera',
     fInfo('Nutze Kameras zur Objekterkennung in der Werkstatt. Bauteile scannen, Beschaedigungen erkennen, Teilenummern lesen. Kamera-Grundkonfig unter Sicherheit > Kameras & Vision.') +
-    fText('workshop.scan_camera', 'Standard-Kamera fuer Werkstatt', 'Name aus der Kamera-Zuordnung, z.B. werkstatt') +
-    fToggle('workshop.scan_auto_ocr', 'Automatisch OCR bei Scan ausfuehren')
+    fText('workshop.scan_camera', 'Standard-Kamera für Werkstatt', 'Name aus der Kamera-Zuordnung, z.B. werkstatt') +
+    fToggle('workshop.scan_auto_ocr', 'Automatisch OCR bei Scan ausführen')
   ) +
-  '<div style="margin-top:16px;"><a href="/workshop/" target="_blank" style="color:var(--accent);text-decoration:none;font-size:13px;">Workshop-HUD oeffnen &#8599;</a></div>';
+  '<div style="margin-top:16px;"><a href="/workshop/" target="_blank" style="color:var(--accent);text-decoration:none;font-size:13px;">Workshop-HUD öffnen &#8599;</a></div>';
 }
 
 /// ---- Tab 8: Sicherheit & Erweitert ----
@@ -4575,12 +4575,12 @@ function renderSecurity() {
   const isCurve = hMode === 'heating_curve';
 
   return sectionWrap('&#128187;', 'Dashboard & PIN',
-    fInfo('Der Zugang zum Dashboard ist mit einer PIN geschuetzt. Der Recovery-Key wird benoetigt wenn du die PIN vergisst.') +
+    fInfo('Der Zugang zum Dashboard ist mit einer PIN geschuetzt. Der Recovery-Key wird benötigt wenn du die PIN vergisst.') +
     '<div class="form-group"><label>PIN-Schutz</label>' +
     '<p style="font-size:12px;color:var(--success);margin-bottom:8px;">PIN ist gesetzt und aktiv</p>' +
-    '<p style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">PIN aendern: "PIN vergessen?" auf dem Login-Screen nutzen.</p></div>' +
+    '<p style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">PIN ändern: "PIN vergessen?" auf dem Login-Screen nutzen.</p></div>' +
     '<div class="form-group"><label>Recovery-Key</label>' +
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Falls du deine PIN vergisst, brauchst du diesen Key zum Zuruecksetzen. Sicher aufbewahren!</p>' +
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Falls du deine PIN vergisst, brauchst du diesen Key zum Zurücksetzen. Sicher aufbewahren!</p>' +
     '<div style="display:flex;gap:8px;align-items:center;">' +
     '<input type="text" id="settingsRecoveryKey" readonly style="flex:1;font-family:var(--mono);font-size:14px;letter-spacing:2px;text-align:center;" value="Versteckt — Klicke Generieren" />' +
     '<button class="btn btn-primary" onclick="regenerateRecoveryKey()" style="white-space:nowrap;">Neu generieren</button>' +
@@ -4589,30 +4589,30 @@ function renderSecurity() {
     '</div>'
   ) +
   sectionWrap('&#128274;', 'Sicherheit',
-    fInfo('Welche Aktionen brauchen eine Bestaetigung? Und welche Temperatur-Grenzen gelten?') +
-    fChipSelect('security.require_confirmation', 'Bestaetigung erforderlich fuer', [
+    fInfo('Welche Aktionen brauchen eine Bestätigung? Und welche Temperatur-Grenzen gelten?') +
+    fChipSelect('security.require_confirmation', 'Bestätigung erforderlich für', [
       {v:'alarm_disarm',l:'Alarm deaktivieren'},
       {v:'alarm_arm',l:'Alarm aktivieren'},
-      {v:'lock_unlock',l:'Tuerschloss oeffnen'},
-      {v:'garage_open',l:'Garage oeffnen'},
+      {v:'lock_unlock',l:'Türschloss öffnen'},
+      {v:'garage_open',l:'Garage öffnen'},
       {v:'heating_off',l:'Heizung ausschalten'},
       {v:'all_lights_off',l:'Alle Lichter aus'},
-      {v:'cover_open',l:'Rolladen oeffnen'},
+      {v:'cover_open',l:'Rolladen öffnen'},
       {v:'camera_disable',l:'Kamera deaktivieren'},
       {v:'automation_delete',l:'Automation loeschen'}
     ]) +
     (!isCurve ?
       fRange('security.climate_limits.min', 'Temperatur Min (°C)', 5, 25, 0.5) +
       fRange('security.climate_limits.max', 'Temperatur Max (°C)', 20, 35, 0.5)
-    : fInfo('Im Heizkurven-Modus gelten die Offset-Grenzen (Raeume &rarr; Heizung).')
+    : fInfo('Im Heizkurven-Modus gelten die Offset-Grenzen (Räume &rarr; Heizung).')
     )
   ) +
   sectionWrap('&#128273;', 'API Key (Netzwerk-Schutz)',
-    fInfo('Schuetzt die Assistant-API gegen unbefugte Netzwerkzugriffe. Diesen Key im HA-Addon und in der HA-Integration eintragen, DANN Pruefung aktivieren.') +
+    fInfo('Schuetzt die Assistant-API gegen unbefugte Netzwerkzugriffe. Diesen Key im HA-Addon und in der HA-Integration eintragen, DANN Prüfung aktivieren.') +
     '<div class="form-group" style="margin-bottom:12px;">' +
     '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
     '<input type="checkbox" id="apiKeyEnforcement" onchange="toggleApiKeyEnforcement(this.checked)" style="width:18px;height:18px;" />' +
-    '<span>API Key Pruefung aktiv</span>' +
+    '<span>API Key Prüfung aktiv</span>' +
     '</label>' +
     '<p id="apiKeyEnforcementHint" style="font-size:11px;color:var(--text-secondary);margin-top:4px;"></p>' +
     '</div>' +
@@ -4622,18 +4622,18 @@ function renderSecurity() {
     '<button onclick="copyApiKey()" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);cursor:pointer;font-size:12px;">Kopieren</button>' +
     '</div></div>' +
     '<div style="margin-top:8px;"><button onclick="regenerateApiKey()" style="padding:6px 12px;border:1px solid var(--danger);border-radius:6px;background:transparent;color:var(--danger);cursor:pointer;font-size:12px;">Key neu generieren</button>' +
-    '<span style="font-size:11px;color:var(--text-secondary);margin-left:8px;">Achtung: Addon + HA-Integration muessen danach aktualisiert werden!</span></div>'
+    '<span style="font-size:11px;color:var(--text-secondary);margin-left:8px;">Achtung: Addon + HA-Integration müssen danach aktualisiert werden!</span></div>'
   ) +
   sectionWrap('&#128272;', 'Vertrauensstufen',
-    fInfo('Standard-Vertrauensstufe fuer neue Personen und was Gaeste/Besitzer duerfen.') +
-    fSelect('trust_levels.default', 'Standard fuer neue Personen', [
+    fInfo('Standard-Vertrauensstufe für neue Personen und was Gäste/Besitzer dürfen.') +
+    fSelect('trust_levels.default', 'Standard für neue Personen', [
       {v:0,l:'Gast (eingeschraenkt)'},
       {v:1,l:'Mitbewohner (normal)'},
       {v:2,l:'Besitzer (voll)'}
     ]) +
-    fChipSelect('trust_levels.guest_allowed_actions', 'Gaeste duerfen', [
+    fChipSelect('trust_levels.guest_allowed_actions', 'Gäste dürfen', [
       {v:'light_control',l:'Licht steuern'},
-      {v:'climate_control',l:'Temperatur aendern'},
+      {v:'climate_control',l:'Temperatur ändern'},
       {v:'media_control',l:'Musik/TV steuern'},
       {v:'cover_control',l:'Rolladen steuern'},
       {v:'scene_activate',l:'Szenen aktivieren'},
@@ -4641,13 +4641,13 @@ function renderSecurity() {
       {v:'weather_query',l:'Wetter fragen'},
       {v:'smalltalk',l:'Smalltalk'}
     ]) +
-    fChipSelect('trust_levels.security_actions', 'Nur Besitzer duerfen', [
+    fChipSelect('trust_levels.security_actions', 'Nur Besitzer dürfen', [
       {v:'alarm_control',l:'Alarmanlage'},
-      {v:'lock_control',l:'Tuerschloesser'},
+      {v:'lock_control',l:'Tuerschlösser'},
       {v:'camera_control',l:'Kameras'},
       {v:'garage_control',l:'Garage'},
       {v:'automation_edit',l:'Automationen bearbeiten'},
-      {v:'settings_change',l:'Einstellungen aendern'},
+      {v:'settings_change',l:'Einstellungen ändern'},
       {v:'person_manage',l:'Personen verwalten'},
       {v:'system_restart',l:'System neustarten'}
     ])
@@ -4656,22 +4656,22 @@ function renderSecurity() {
   sectionWrap('&#128682;', 'Besucher-Management',
     fInfo('Jarvis verwaltet Besucher: Bekannte Personen speichern, erwartete Besucher anlegen, "Lass ihn rein"-Workflow mit Kamera-Erkennung und automatischer Tuer-Entriegelung.') +
     fToggle('visitor_management.enabled', 'Besucher-Management aktiv') +
-    fToggle('visitor_management.auto_guest_mode', 'Gaeste-Modus automatisch aktivieren') +
+    fToggle('visitor_management.auto_guest_mode', 'Gäste-Modus automatisch aktivieren') +
     fRange('visitor_management.ring_cooldown_seconds', 'Klingel-Cooldown', 10, 120, 10, {10:'10s',30:'30s',60:'1 Min',120:'2 Min'}) +
     fRange('visitor_management.history_max', 'Max. Besucher-History', 20, 500, 20, {20:'20',50:'50',100:'100',200:'200',500:'500'})
   ) +
-  // --- Netzwerk-Geraete (Bekannte Geraete) ---
-  sectionWrap('&#128225;', 'Netzwerk-Geraete',
-    fInfo('Jarvis warnt bei unbekannten Geraeten im Netzwerk. Hier kannst du Muster definieren die als bekannt gelten (z.B. "ps5", "amazon", "iphone"). Geraete deren Name ein Muster enthaelt werden nie als unbekannt gemeldet.') +
+  // --- Netzwerk-Geräte (Bekannte Geräte) ---
+  sectionWrap('&#128225;', 'Netzwerk-Geräte',
+    fInfo('Jarvis warnt bei unbekannten Geräten im Netzwerk. Hier kannst du Muster definieren die als bekannt gelten (z.B. "ps5", "amazon", "iphone"). Geräte deren Name ein Muster enthält werden nie als unbekannt gemeldet.') +
     fToggle('security.threat_assessment', 'Netzwerk-Ueberwachung aktiv') +
-    fKeywords('security.known_device_patterns', 'Bekannte Geraete-Muster') +
-    '<div class="form-group"><label>Aktuell bekannte Geraete</label>' +
+    fKeywords('security.known_device_patterns', 'Bekannte Geräte-Muster') +
+    '<div class="form-group"><label>Aktuell bekannte Geräte</label>' +
     '<div id="knownDevicesContainer" style="color:var(--text-muted);font-size:12px;padding:8px;">Lade...</div>' +
     '<button class="btn btn-sm" onclick="loadKnownDevices()" style="margin-top:4px;">Aktualisieren</button></div>'
   ) +
   // --- Kameras & Vision ---
   sectionWrap('&#128247;', 'Kameras & Vision',
-    fInfo('Kamera-Integration fuer Tuerklingel-Erkennung, Sicherheits-Snapshots und visuelle Analyse. Bilder werden lokal via Vision-LLM analysiert — nichts verlaesst das Netzwerk.') +
+    fInfo('Kamera-Integration für Tuerklingel-Erkennung, Sicherheits-Snapshots und visuelle Analyse. Bilder werden lokal via Vision-LLM analysiert — nichts verlässt das Netzwerk.') +
     fToggle('cameras.enabled', 'Kamera-Integration aktiv') +
     fSelect('cameras.vision_model', 'Vision-Modell', [
       {v:'llava',l:'LLaVA (Standard)'},
@@ -4694,18 +4694,18 @@ function renderSecurity() {
   ) +
   // --- Phase 17: Notfall-Protokolle ---
   sectionWrap('&#127752;', 'Notfall-Protokolle',
-    fInfo('Bei CRITICAL Events (Rauch, Einbruch, Wasser) werden automatisch Aktionen ausgefuehrt. Jedes Protokoll kann einzeln aktiviert werden. Geraete werden ueber die Rollenzuweisung zugeordnet.') +
+    fInfo('Bei CRITICAL Events (Rauch, Einbruch, Wasser) werden automatisch Aktionen ausgefuehrt. Jedes Protokoll kann einzeln aktiviert werden. Geräte werden über die Rollenzuweisung zugeordnet.') +
     '<div id="emergencyProtocolsContainer" style="color:var(--text-muted);font-size:12px;padding:8px;">Lade Notfall-Protokolle...</div>'
   ) +
   // --- Phase 17: Interrupt-Queue ---
   sectionWrap('&#9889;', 'Interrupt-Queue',
-    fInfo('CRITICAL-Meldungen unterbrechen sofort alle laufenden Aktionen (TTS, Streaming). Ohne Interrupt geht die Meldung den normalen Weg ueber das LLM.') +
+    fInfo('CRITICAL-Meldungen unterbrechen sofort alle laufenden Aktionen (TTS, Streaming). Ohne Interrupt geht die Meldung den normalen Weg über das LLM.') +
     fToggle('interrupt_queue.enabled', 'Interrupt-Queue aktiviert') +
     fRange('interrupt_queue.pause_ms', 'Pause vor Notfall-Meldung (ms)', 100, 1000, 100,
       {100:'0.1s',200:'0.2s',300:'0.3s',500:'0.5s',1000:'1s'})
   ) +
   sectionWrap('&#9878;', 'Konflikt-Sicherheitsgrenzen',
-    fInfo('Sicherheitsgrenzen fuer Kompromiss-Werte bei Konflikten (z.B. wenn zwei Personen verschiedene Temperaturen wollen).') +
+    fInfo('Sicherheitsgrenzen für Kompromiss-Werte bei Konflikten (z.B. wenn zwei Personen verschiedene Temperaturen wollen).') +
     '<div style="margin:8px 0;font-weight:600;font-size:13px;">Klima</div>' +
     fRange('conflict_resolution.safe_limits.climate.temperature.0', 'Temperatur Min (°C)', 10, 20, 0.5) +
     fRange('conflict_resolution.safe_limits.climate.temperature.1', 'Temperatur Max (°C)', 22, 35, 0.5) +
@@ -4716,8 +4716,8 @@ function renderSecurity() {
     fRange('conflict_resolution.safe_limits.light.brightness.1', 'Helligkeit Max (%)', 50, 100, 5) +
     fRange('conflict_resolution.safe_limits.cover.position.0', 'Rollladen Min (%)', 0, 50, 5) +
     fRange('conflict_resolution.safe_limits.cover.position.1', 'Rollladen Max (%)', 50, 100, 5) +
-    fRange('conflict_resolution.safe_limits.media.volume.0', 'Lautstaerke Min (%)', 0, 50, 5) +
-    fRange('conflict_resolution.safe_limits.media.volume.1', 'Lautstaerke Max (%)', 50, 100, 5)
+    fRange('conflict_resolution.safe_limits.media.volume.0', 'Lautstärke Min (%)', 0, 50, 5) +
+    fRange('conflict_resolution.safe_limits.media.volume.1', 'Lautstärke Max (%)', 50, 100, 5)
   ) +
   sectionWrap('&#127911;', 'Audio-Event-Reaktionen',
     fInfo('Standard-Reaktionen auf erkannte Audio-Events (Glasbruch, Rauch, etc.). In settings.yaml unter ambient_audio.default_reactions anpassbar.') +
@@ -4727,25 +4727,25 @@ function renderSecurity() {
 
 // ---- Notfall-Protokolle (Emergency Protocols with Entity Assignment) ----
 const EP_PROTOCOLS = [
-  { key: 'fire', title: 'Feuer / Rauch', desc: 'Rauchmelder loest aus — Lichter an, Rolllaeden offen, Durchsage', icon: '&#128293;', feature: 'fire_co',
-    roles: {light:'Lichter einschalten', cover:'Rolllaeden oeffnen', tts_speaker:'Durchsage-Speaker', emergency_lock:'Schloesser entriegeln', hvac:'Heizung/Klima aus'} },
+  { key: 'fire', title: 'Feuer / Rauch', desc: 'Rauchmelder loest aus — Lichter an, Rollläden offen, Durchsage', icon: '&#128293;', feature: 'fire_co',
+    roles: {light:'Lichter einschalten', cover:'Rollläden öffnen', tts_speaker:'Durchsage-Speaker', emergency_lock:'Schlösser entriegeln', hvac:'Heizung/Klima aus'} },
   { key: 'intrusion', title: 'Einbruch / Alarm', desc: 'Alarmsystem wird ausgeloest — Lichter an, Sirene, Durchsage', icon: '&#128680;', feature: 'emergency',
-    roles: {light:'Lichter einschalten', siren:'Sirene aktivieren', tts_speaker:'Durchsage-Speaker', lock:'Schloesser verriegeln', cover:'Rolllaeden schliessen'} },
-  { key: 'water_leak', title: 'Wasserleck', desc: 'Wassersensor schlaegt an — Ventile zu, Heizung aus, Durchsage', icon: '&#128167;', feature: 'water_leak',
-    roles: {valve:'Ventile schliessen', heating:'Heizung aus', tts_speaker:'Durchsage-Speaker', light:'Lichter einschalten'} },
+    roles: {light:'Lichter einschalten', siren:'Sirene aktivieren', tts_speaker:'Durchsage-Speaker', lock:'Schlösser verriegeln', cover:'Rollläden schließen'} },
+  { key: 'water_leak', title: 'Wasserleck', desc: 'Wassersensor schlägt an — Ventile zu, Heizung aus, Durchsage', icon: '&#128167;', feature: 'water_leak',
+    roles: {valve:'Ventile schließen', heating:'Heizung aus', tts_speaker:'Durchsage-Speaker', light:'Lichter einschalten'} },
 ];
 let _epData = {}; // { fire: {entities: [...], config: {...}}, ... }
-// ---- Netzwerk-Geraete: Bekannte Geraete laden + verwalten ----
+// ---- Netzwerk-Geräte: Bekannte Geräte laden + verwalten ----
 async function loadKnownDevices() {
   const c = document.getElementById('knownDevicesContainer');
   if (!c) return;
-  c.innerHTML = '<span style="color:var(--text-muted)">Lade Geraete...</span>';
+  c.innerHTML = '<span style="color:var(--text-muted)">Lade Geräte...</span>';
   try {
     const r = await fetch(`/api/ui/known-devices?token=${encodeURIComponent(TOKEN)}`);
     if (!r.ok) { c.innerHTML = '<span style="color:var(--danger)">Fehler beim Laden</span>'; return; }
     const data = await r.json();
     const devices = data.devices || [];
-    if (!devices.length) { c.innerHTML = '<span style="color:var(--text-muted)">Keine bekannten Geraete gespeichert.</span>'; return; }
+    if (!devices.length) { c.innerHTML = '<span style="color:var(--text-muted)">Keine bekannten Geräte gespeichert.</span>'; return; }
     c.innerHTML = devices.map(d => {
       const name = d.friendly_name || d.entity_id;
       const state = d.state === 'home' ? '<span style="color:var(--success)">&#9679;</span>' : '<span style="color:var(--text-muted)">&#9679;</span>';
@@ -4810,7 +4810,7 @@ function renderEmergencyProtocols() {
     html += '<div style="font-size:11px;color:var(--text-muted);margin-top:1px;">' + proto.desc + '</div>';
     html += '</div></div>';
     html += '<div style="display:flex;align-items:center;gap:10px;">';
-    if (entityCount > 0) html += '<span style="font-size:11px;color:var(--text-muted);">' + entityCount + ' Geraete</span>';
+    if (entityCount > 0) html += '<span style="font-size:11px;color:var(--text-muted);">' + entityCount + ' Geräte</span>';
     html += '<label class="toggle" style="margin:0;" onclick="event.stopPropagation()">';
     html += '<input type="checkbox" data-path="emergency_protocols.' + proto.key + '.enabled" ' + (enabled ? 'checked' : '') + '>';
     html += '<span class="toggle-track"></span><span class="toggle-thumb"></span></label>';
@@ -4841,7 +4841,7 @@ function renderEmergencyProtocols() {
             html += '</div>';
           }
         } else {
-          html += '<div style="font-size:11px;color:var(--text-muted);padding:4px 0;font-style:italic;">Keine Geraete zugewiesen</div>';
+          html += '<div style="font-size:11px;color:var(--text-muted);padding:4px 0;font-style:italic;">Keine Geräte zugewiesen</div>';
         }
 
         // Add entity input
@@ -4941,7 +4941,7 @@ async function autoDetectEpEntities(feature, protoKey) {
   try {
     const suggestions = await api('/api/ui/security/entities/' + feature + '/auto-detect', 'POST');
     if (!suggestions || suggestions.length === 0) {
-      toast('Keine passenden Geraete gefunden', 'warning');
+      toast('Keine passenden Geräte gefunden', 'warning');
       return;
     }
     let added = 0;
@@ -4953,7 +4953,7 @@ async function autoDetectEpEntities(feature, protoKey) {
         added++;
       }
     }
-    toast(added + ' Geraete erkannt und zugewiesen', 'success');
+    toast(added + ' Geräte erkannt und zugewiesen', 'success');
     await loadEmergencyProtocols();
   } catch(e) { toast('Fehler bei Auto-Erkennung: ' + e.message, 'error'); }
 }
@@ -5001,7 +5001,7 @@ function renderNotifyChannels() {
       </div>
     </div>`;
   }
-  if (!html) html = '<div style="font-size:12px;color:var(--text-muted);">Keine Kanaele verfuegbar</div>';
+  if (!html) html = '<div style="font-size:12px;color:var(--text-muted);">Keine Kanaele verfügbar</div>';
   c.innerHTML = html;
 }
 
@@ -5042,7 +5042,7 @@ function updateEnforcementHint(active, envLocked) {
     hint.textContent = 'Durch Umgebungsvariable ASSISTANT_API_KEY erzwungen (kann hier nicht deaktiviert werden).';
     hint.style.color = '#f59e0b';
   } else if (active) {
-    hint.textContent = 'Aktiv: Alle /api/assistant/* Anfragen benoetigen einen gueltigen API Key.';
+    hint.textContent = 'Aktiv: Alle /api/assistant/* Anfragen benötigen einen gueltigen API Key.';
     hint.style.color = '#10b981';
   } else {
     hint.textContent = 'Inaktiv: API ist ohne Key zugaenglich. Erst Key in Addon/HA-Integration eintragen, dann hier aktivieren.';
@@ -5054,7 +5054,7 @@ function copyApiKey() {
   if (el) { navigator.clipboard.writeText(el.value); toast('API Key kopiert!'); }
 }
 async function regenerateApiKey() {
-  if (!confirm('API Key wirklich neu generieren? Addon und HA-Integration muessen danach aktualisiert werden!')) return;
+  if (!confirm('API Key wirklich neu generieren? Addon und HA-Integration müssen danach aktualisiert werden!')) return;
   try {
     const data = await api('/api/ui/api-key/regenerate', 'POST');
     const el = document.getElementById('apiKeyDisplay');
@@ -5064,7 +5064,7 @@ async function regenerateApiKey() {
 }
 async function toggleApiKeyEnforcement(enabled) {
   const action = enabled ? 'aktivieren' : 'deaktivieren';
-  if (enabled && !confirm('API Key Pruefung aktivieren? Stelle sicher, dass der Key bereits im HA-Addon und in der HA-Integration eingetragen ist, sonst funktioniert die Kommunikation nicht mehr!')) {
+  if (enabled && !confirm('API Key Prüfung aktivieren? Stelle sicher, dass der Key bereits im HA-Addon und in der HA-Integration eingetragen ist, sonst funktioniert die Kommunikation nicht mehr!')) {
     const cb = document.getElementById('apiKeyEnforcement');
     if (cb) cb.checked = false;
     return;
@@ -5072,7 +5072,7 @@ async function toggleApiKeyEnforcement(enabled) {
   try {
     const data = await api('/api/ui/api-key/enforcement', 'POST', { enabled });
     updateEnforcementHint(data.enforcement);
-    toast('API Key Pruefung ' + (data.enforcement ? 'aktiviert' : 'deaktiviert'));
+    toast('API Key Prüfung ' + (data.enforcement ? 'aktiviert' : 'deaktiviert'));
   } catch (e) {
     toast('Fehler: ' + e.message, 'error');
     const cb = document.getElementById('apiKeyEnforcement');
@@ -5109,33 +5109,33 @@ function renderAutonomie() {
     fTextarea('autonomy.action_permissions', 'Berechtigungen (JSON)', 'Format: {"aktion": level}. z.B. {"proactive_info": 2, "adjust_temperature_small": 3}')
   ) +
   sectionWrap('&#128200;', 'Evolution-Kriterien',
-    fInfo('Kriterien fuer automatischen Autonomie-Aufstieg. Level 5 nur manuell. In settings.yaml unter autonomy.evolution_criteria anpassbar.') +
+    fInfo('Kriterien für automatischen Autonomie-Aufstieg. Level 5 nur manuell. In settings.yaml unter autonomy.evolution_criteria anpassbar.') +
     fTextarea('autonomy.evolution_criteria', 'Kriterien (JSON)', 'Format: {"2": {"min_days": 30, "min_interactions": 200, "min_acceptance": 0.7}}')
   ) +
   sectionWrap('&#129302;', 'Selbstoptimierung',
-    fInfo('Der Assistent lernt aus euren Gespraechen und schlaegt Verbesserungen vor. Du entscheidest ob Vorschlaege angenommen werden. Die Kern-Identitaet ist geschuetzt.') +
+    fInfo('Der Assistent lernt aus euren Gesprächen und schlägt Verbesserungen vor. Du entscheidest ob Vorschläge angenommen werden. Die Kern-Identitaet ist geschuetzt.') +
     fToggle('self_optimization.enabled', 'Selbstoptimierung aktiv') +
     fSelect('self_optimization.approval_mode', 'Genehmigungsmodus', [
-      {v:'manual', l:'Manuell (nur mit Bestaetigung)'},
-      {v:'off', l:'Aus (keine Vorschlaege)'}
+      {v:'manual', l:'Manuell (nur mit Bestätigung)'},
+      {v:'off', l:'Aus (keine Vorschläge)'}
     ]) +
     fSelect('self_optimization.analysis_interval', 'Analyse-Intervall', [
       {v:'weekly', l:'Woechentlich'},
       {v:'daily', l:'Taeglich'}
     ]) +
-    fNum('self_optimization.max_proposals_per_cycle', 'Max. Vorschlaege pro Zyklus', 1, 10) +
+    fNum('self_optimization.max_proposals_per_cycle', 'Max. Vorschläge pro Zyklus', 1, 10) +
     fModelSelect('self_optimization.model', 'Analyse-Modell')
   ) +
-  sectionWrap('&#128203;', 'Vorschlaege (Approval-Workflow)',
-    fInfo('Jarvis macht nur Vorschlaege — DU entscheidest ob sie angewendet werden. Jede Aenderung wird vorher gesnapshot.') +
+  sectionWrap('&#128203;', 'Vorschläge (Approval-Workflow)',
+    fInfo('Jarvis macht nur Vorschläge — DU entscheidest ob sie angewendet werden. Jede Änderung wird vorher gesnapshot.') +
     '<div id="proposalsList" style="margin-bottom:12px;"></div>' +
     '<button class="btn btn-secondary" style="font-size:12px;" onclick="runAnalysis()">Analyse jetzt starten</button>'
   ) +
   sectionWrap('&#128190;', 'Rollback & Snapshots',
-    fInfo('Jede Config-Aenderung wird gesichert. Rollback jederzeit moeglich.') +
+    fInfo('Jede Config-Änderung wird gesichert. Rollback jederzeit möglich.') +
     fToggle('self_optimization.rollback.enabled', 'Rollback aktiv') +
     fNum('self_optimization.rollback.max_snapshots', 'Max. gespeicherte Snapshots', 5, 100) +
-    fToggle('self_optimization.rollback.snapshot_on_every_edit', 'Snapshot bei jeder Aenderung') +
+    fToggle('self_optimization.rollback.snapshot_on_every_edit', 'Snapshot bei jeder Änderung') +
     '<div id="snapshotsList" style="margin-top:12px;"></div>'
   ) +
   sectionWrap('&#128295;', 'Parameter-Grenzen',
@@ -5145,10 +5145,10 @@ function renderAutonomie() {
     fNum('self_optimization.parameter_bounds.sarcasm_level.max', 'Sarkasmus Max', 1, 5) +
     fNum('self_optimization.parameter_bounds.opinion_intensity.min', 'Meinungen Min', 0, 3) +
     fNum('self_optimization.parameter_bounds.opinion_intensity.max', 'Meinungen Max', 0, 3) +
-    fNum('self_optimization.parameter_bounds.max_response_sentences.min', 'Saetze Min', 1, 10) +
-    fNum('self_optimization.parameter_bounds.max_response_sentences.max', 'Saetze Max', 1, 10) +
-    fNum('self_optimization.parameter_bounds.formality_min.min', 'Formalitaet-Min Min', 0, 100) +
-    fNum('self_optimization.parameter_bounds.formality_min.max', 'Formalitaet-Min Max', 0, 100) +
+    fNum('self_optimization.parameter_bounds.max_response_sentences.min', 'Sätze Min', 1, 10) +
+    fNum('self_optimization.parameter_bounds.max_response_sentences.max', 'Sätze Max', 1, 10) +
+    fNum('self_optimization.parameter_bounds.formality_min.min', 'Formalität-Min Min', 0, 100) +
+    fNum('self_optimization.parameter_bounds.formality_min.max', 'Formalität-Min Max', 0, 100) +
     fNum('self_optimization.parameter_bounds.insight_cooldown_hours.min', 'Insight-Cooldown Min (h)', 1, 24) +
     fNum('self_optimization.parameter_bounds.insight_cooldown_hours.max', 'Insight-Cooldown Max (h)', 1, 24) +
     fNum('self_optimization.parameter_bounds.anticipation_min_confidence.min', 'Antizipation-Conf Min', 0, 1, 0.05) +
@@ -5160,39 +5160,39 @@ function renderAutonomie() {
     '</div>'
   ) +
   sectionWrap('&#128683;', 'Geschuetzte Bereiche (Immutable)',
-    fInfo('Diese Bereiche kann Jarvis NIEMALS selbst aendern.') +
+    fInfo('Diese Bereiche kann Jarvis NIEMALS selbst ändern.') +
     fChipSelect('self_optimization.immutable_keys', 'Geschuetzte Bereiche (nicht aenderbar durch KI)', [
       'security','trust_levels','response_filter.banned_phrases',
       'response_filter.banned_starters','household','assistant.name',
       'self_optimization.immutable_keys','self_optimization.approval_mode',
       'models.fast','models.smart','models.deep','autonomy.level'
-    ], 'Klicke auf Bereiche die die KI NIEMALS selbst aendern darf.')
+    ], 'Klicke auf Bereiche die die KI NIEMALS selbst ändern darf.')
   ) +
   sectionWrap('&#127919;', 'Self-Automation (Phase 13.2)',
-    fInfo('Jarvis erstellt HA-Automationen aus natuerlicher Sprache. Approval-Workflow: Du musst jede Automation bestaetigen.') +
+    fInfo('Jarvis erstellt HA-Automationen aus natürlicher Sprache. Approval-Workflow: Du musst jede Automation bestaetigen.') +
     fToggle('self_automation.enabled', 'Self-Automation aktiv') +
     fNum('self_automation.max_per_day', 'Max. Automationen pro Tag', 1, 20) +
-    fModelSelect('self_automation.model', 'Modell fuer Automations-Erstellung')
+    fModelSelect('self_automation.model', 'Modell für Automations-Erstellung')
   ) +
-  sectionWrap('&#128270;', 'Automationen — Uebersicht',
+  sectionWrap('&#128270;', 'Automationen — Übersicht',
     fInfo('Alle Automationen aus Home Assistant und von Jarvis erstellte Automationen.') +
     '<div id="automations-panel"><div class="muted" style="padding:8px">Lade Automationen...</div></div>'
   ) +
   sectionWrap('&#129504;', 'Lern-System (Global)',
-    fInfo('Globaler Schalter fuer ALLE Lern-Features. Deaktivieren stoppt sofort: Outcome Tracker, Korrektur-Gedaechtnis, Response Quality, Error Patterns, Adaptive Thresholds und Self-Report.') +
+    fInfo('Globaler Schalter für ALLE Lern-Features. Deaktivieren stoppt sofort: Outcome Tracker, Korrektur-Gedächtnis, Response Quality, Error Patterns, Adaptive Thresholds und Self-Report.') +
     fToggle('learning.enabled', 'Alle Lern-Features aktiv')
   ) +
   sectionWrap('&#127919;', 'Wirkungstracker (Outcome Tracker)',
-    fInfo('Beobachtet ob Aktionen nach Ausfuehrung rueckgaengig gemacht, angepasst oder beibehalten werden. Verbales Feedback ("Danke") wird ebenfalls erfasst. Ergebnis: Rolling Score pro Aktionstyp.') +
+    fInfo('Beobachtet ob Aktionen nach Ausfuehrung rückgängig gemacht, angepasst oder beibehalten werden. Verbales Feedback ("Danke") wird ebenfalls erfasst. Ergebnis: Rolling Score pro Aktionstyp.') +
     fToggle('outcome_tracker.enabled', 'Wirkungstracker aktiv') +
-    fRange('outcome_tracker.observation_delay_seconds', 'Beobachtungs-Verzoegerung', 60, 600, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min',600:'10 Min'}) +
+    fRange('outcome_tracker.observation_delay_seconds', 'Beobachtungs-Verzögerung', 60, 600, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min',600:'10 Min'}) +
     fNum('outcome_tracker.max_results', 'Max. gespeicherte Ergebnisse', 100, 2000, 100)
   ) +
-  sectionWrap('&#128221;', 'Korrektur-Gedaechtnis',
-    fInfo('Speichert User-Korrekturen strukturiert. Vor aehnlichen Aktionen werden relevante Korrekturen ins LLM-Kontext injiziert. Leitet automatisch Regeln ab wenn gleiche Korrektur-Muster mehrfach auftreten.') +
-    fToggle('correction_memory.enabled', 'Korrektur-Gedaechtnis aktiv') +
-    fNum('correction_memory.max_entries', 'Max. Eintraege', 50, 500, 50) +
-    fNum('correction_memory.max_context_entries', 'Max. Kontext-Eintraege', 1, 10)
+  sectionWrap('&#128221;', 'Korrektur-Gedächtnis',
+    fInfo('Speichert User-Korrekturen strukturiert. Vor ähnlichen Aktionen werden relevante Korrekturen ins LLM-Kontext injiziert. Leitet automatisch Regeln ab wenn gleiche Korrektur-Muster mehrfach auftreten.') +
+    fToggle('correction_memory.enabled', 'Korrektur-Gedächtnis aktiv') +
+    fNum('correction_memory.max_entries', 'Max. Einträge', 50, 500, 50) +
+    fNum('correction_memory.max_context_entries', 'Max. Kontext-Einträge', 1, 10)
   ) +
   sectionWrap('&#128200;', 'Antwort-Qualitaet (Response Quality)',
     fInfo('Misst wie effektiv Antworten sind. Follow-Up innerhalb des Zeitfensters = Antwort unklar. Wiederholung/Umformulierung = nicht verstanden. Einzelner Austausch = Erfolg.') +
@@ -5203,25 +5203,25 @@ function renderAutonomie() {
   sectionWrap('&#128163;', 'Fehlermuster-Erkennung (Error Patterns)',
     fInfo('Erkennt wiederkehrende Fehler (Timeout, Service nicht erreichbar, Entity fehlt). Bei 3+ gleichen Fehlern wird proaktiv reagiert (z.B. Fallback-Modell, User-Hinweis).') +
     fToggle('error_patterns.enabled', 'Fehlermuster-Erkennung aktiv') +
-    fNum('error_patterns.min_occurrences_for_mitigation', 'Min. Fehler fuer Reaktion', 2, 10) +
+    fNum('error_patterns.min_occurrences_for_mitigation', 'Min. Fehler für Reaktion', 2, 10) +
     fNum('error_patterns.mitigation_ttl_hours', 'Reaktions-Dauer (Stunden)', 1, 24)
   ) +
   sectionWrap('&#128202;', 'Woechentlicher Selbst-Report',
-    fInfo('Aggregiert woechentlich Daten aus allen Lernsystemen und generiert einen natuerlichsprachlichen Selbstbericht. Per Chat abrufbar: "Wie lernst du?" / "Selbstbericht".') +
+    fInfo('Aggregiert woechentlich Daten aus allen Lernsystemen und generiert einen natürlichsprachlichen Selbstbericht. Per Chat abrufbar: "Wie lernst du?" / "Selbstbericht".') +
     fToggle('self_report.enabled', 'Selbst-Report aktiv') +
     fModelSelect('self_report.model', 'Report-Modell')
   ) +
   sectionWrap('&#9881;', 'Lernende Schwellwerte (Adaptive Thresholds)',
-    fInfo('Analysiert woechentlich Outcome-Daten und Feedback-Scores. Passt Schwellwerte automatisch innerhalb enger, hardcodierter Grenzen an. Alle Aenderungen nur zur Laufzeit — Reset bei Neustart.') +
+    fInfo('Analysiert woechentlich Outcome-Daten und Feedback-Scores. Passt Schwellwerte automatisch innerhalb enger, hardcodierter Grenzen an. Alle Änderungen nur zur Laufzeit — Reset bei Neustart.') +
     fToggle('adaptive_thresholds.enabled', 'Lernende Schwellwerte aktiv') +
     fToggle('adaptive_thresholds.auto_adjust', 'Auto-Anpassung') +
     fNum('adaptive_thresholds.analysis_interval_hours', 'Analyse-Intervall (Stunden)', 24, 336, 24)
   ) +
   sectionWrap('&#128200;', 'Feedback-System',
-    fInfo('Wie reagiert der Assistent auf positives/negatives Feedback? Scores bestimmen wie haeufig er sich meldet.') +
+    fInfo('Wie reagiert der Assistent auf positives/negatives Feedback? Scores bestimmen wie häufig er sich meldet.') +
     fRange('feedback.auto_timeout_seconds', 'Feedback-Timeout', 30, 600, 30, {30:'30s',60:'1 Min',120:'2 Min',300:'5 Min',600:'10 Min'}) +
     fRange('feedback.base_cooldown_seconds', 'Basis-Abstand', 60, 1800, 60, {60:'1 Min',120:'2 Min',300:'5 Min',600:'10 Min',1800:'30 Min'}) +
-    fRange('feedback.score_suppress', 'Unterdruecken unter', 0, 1, 0.05) +
+    fRange('feedback.score_suppress', 'Unterdrücken unter', 0, 1, 0.05) +
     fRange('feedback.score_reduce', 'Reduzieren unter', 0, 1, 0.05) +
     fRange('feedback.score_normal', 'Normal ab', 0, 1, 0.05) +
     fRange('feedback.score_boost', 'Boost ab', 0, 1, 0.05)
@@ -5256,10 +5256,10 @@ function renderProposalList(proposals) {
   const c = document.getElementById('proposalsList');
   if (!c) return;
   if (proposals.length === 0) {
-    c.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">Keine offenen Vorschlaege</div>';
+    c.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">Keine offenen Vorschläge</div>';
     return;
   }
-  c.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Offene Vorschlaege:</div>' +
+  c.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">Offene Vorschläge:</div>' +
     proposals.map((p, i) => {
       const conf = Math.round((p.confidence || 0) * 100);
       return `<div style="padding:8px;margin-bottom:6px;background:var(--bg-secondary);border-radius:6px;border-left:3px solid var(--accent);">
@@ -5399,7 +5399,7 @@ async function deleteJarvisAutomation(configId) {
   try {
     const result = await api('/api/ui/automations/jarvis/' + encodeURIComponent(configId), 'DELETE');
     if (result.success) {
-      toast('Automation geloescht');
+      toast('Automation gelöscht');
       loadAutomations();
     } else { toast(result.message, 'error'); }
   } catch(e) { toast('Fehler: ' + e.message, 'error'); }
@@ -5433,7 +5433,7 @@ function renderSnapshotList() {
 }
 
 async function rollbackSnapshot(snapshotId) {
-  if (!confirm('Config auf diesen Snapshot zuruecksetzen?')) return;
+  if (!confirm('Config auf diesen Snapshot zurücksetzen?')) return;
   try {
     const result = await api('/api/ui/rollback', 'POST', {snapshot_id: snapshotId});
     if (result.success) {
@@ -5678,8 +5678,8 @@ function collectSettings() {
   if (document.getElementById('householdMembers')) {
     setPath(updates, 'household.members', collectHouseholdMembers());
   }
-  // Monitored entities: Nicht mehr noetig — Diagnostics und Device Health
-  // nutzen jetzt automatisch Entity-Annotations (annotierte = ueberwacht, hidden = ignoriert).
+  // Monitored entities: Nicht mehr nötig — Diagnostics und Device Health
+  // nutzen jetzt automatisch Entity-Annotations (annotierte = überwacht, hidden = ignoriert).
   // Room-Entity-Maps (room_speakers, room_motion_sensors)
   document.querySelectorAll('#settingsContent .room-entity-map[data-path]').forEach(container => {
     const path = container.dataset.path;
@@ -5742,9 +5742,9 @@ async function saveAllSettings(showToast) {
     // Erst aktuelle Tab-Werte in S uebernehmen, dann S als Basis nutzen
     const tabUpdates = collectSettings();
     deepMerge(S, tabUpdates);
-    // Vollstaendiges Settings-Objekt senden (nicht nur aktiven Tab)
+    // Vollständiges Settings-Objekt senden (nicht nur aktiven Tab)
     // Geschuetzte Keys entfernen die vom GET mitkommen aber per PUT
-    // nicht gesendet werden duerfen (sonst False-Positive Warnung im Log)
+    // nicht gesendet werden dürfen (sonst False-Positive Warnung im Log)
     const updates = JSON.parse(JSON.stringify(S));
     delete updates.dashboard;
     if (updates.security) {
@@ -5764,7 +5764,7 @@ async function saveAllSettings(showToast) {
       return;
     }
 
-    // Room-Profiles separat speichern wenn geaendert
+    // Room-Profiles separat speichern wenn geändert
     if (_rpDirty) {
       collectRoomProfiles();
       await api('/api/ui/room-profiles', 'PUT', {profiles: RP});
@@ -5972,7 +5972,7 @@ const _ROLE_LABELS = {
   presence:'Anwesenheit', water_leak:'Wassermelder', smoke:'Rauchmelder',
   co2:'CO2-Sensor', light_level:'Lichtsensor', power_meter:'Strommesser',
   energy:'Energiezaehler', battery:'Batterie', outlet:'Steckdose',
-  valve:'Ventil', fan:'Luefter', irrigation:'Bewaesserung',
+  valve:'Ventil', fan:'Lüfter', irrigation:'Bewässerung',
   garage_door:'Garagentor', water_temp:'Wassertemperatur', pressure:'Luftdruck',
   vibration:'Vibration',
 };
@@ -6016,7 +6016,7 @@ async function loadEntities() {
     ENTITY_ANNOTATIONS = annData.annotations || {};
     ENTITY_ROLES_DEFAULT = roleData.default_roles || {};
     ENTITY_ROLES_CUSTOM = roleData.custom_roles || {};
-    // RP laden falls noch nicht geladen (fuer Raum-Dropdown in Entity-Annotations)
+    // RP laden falls noch nicht geladen (für Raum-Dropdown in Entity-Annotations)
     if (rpData && Object.keys(rpData).length > 0) RP = rpData;
 
     // Domain-Filter
@@ -6338,7 +6338,7 @@ function batchSetRole() {
   const input = document.getElementById('annBatchRole');
   const label = (input?.value || '').trim();
   const roleId = _roleLabelToId(label);
-  if (!roleId) { toast('Rolle nicht gefunden — bitte aus Vorschlaegen waehlen', 'error'); return; }
+  if (!roleId) { toast('Rolle nicht gefunden — bitte aus Vorschlägen waehlen', 'error'); return; }
   for (const eid of _annBatchSelected) {
     if (!ENTITY_ANNOTATIONS[eid]) ENTITY_ANNOTATIONS[eid] = {};
     ENTITY_ANNOTATIONS[eid].role = roleId;
@@ -6346,7 +6346,7 @@ function batchSetRole() {
   input.value = '';
   scheduleAnnotationSave();
   filterEntities();
-  toast(`Rolle "${_roleLabel(roleId)}" fuer ${_annBatchSelected.size} Entities gesetzt`);
+  toast(`Rolle "${_roleLabel(roleId)}" für ${_annBatchSelected.size} Entities gesetzt`);
 }
 
 function _updateRoomDatalist(input, dlId) {
@@ -6385,17 +6385,17 @@ function _roleLabelToId(label) {
 }
 
 function _getAllRooms() {
-  // Raeume aus allen Quellen kombinieren: RP + MindHome + bekannte + Entity-Annotations
+  // Räume aus allen Quellen kombinieren: RP + MindHome + bekannte + Entity-Annotations
   const rooms = new Set();
   for (const r of Object.keys(RP || {})) rooms.add(r);
   if (_mhEntities && _mhEntities.rooms) {
     for (const r of Object.keys(_mhEntities.rooms)) rooms.add(r.toLowerCase());
   }
-  // Raeume aus bestehenden Entity-Annotations
+  // Räume aus bestehenden Entity-Annotations
   for (const ann of Object.values(ENTITY_ANNOTATIONS)) {
     if (ann.room) rooms.add(ann.room);
   }
-  // Raeume aus _getKnownRooms (room_speakers, room_motion_sensors)
+  // Räume aus _getKnownRooms (room_speakers, room_motion_sensors)
   try { for (const r of _getKnownRooms()) rooms.add(r); } catch(e) {}
   return [...rooms].sort();
 }
@@ -6411,7 +6411,7 @@ function batchSetRoom() {
   input.value = '';
   scheduleAnnotationSave();
   filterEntities();
-  toast(`Raum "${room}" fuer ${_annBatchSelected.size} Entities gesetzt`);
+  toast(`Raum "${room}" für ${_annBatchSelected.size} Entities gesetzt`);
 }
 
 function clearAnnotation(entityId) {
@@ -6429,7 +6429,7 @@ function batchClearAnnotations() {
   }
   scheduleAnnotationSave();
   filterEntities();
-  toast(`Annotations fuer ${count} Entities entfernt`);
+  toast(`Annotations für ${count} Entities entfernt`);
 }
 
 function batchSetHidden(hidden) {
@@ -6460,7 +6460,7 @@ function batchSetDiagnostics(enabled) {
   }
   scheduleAnnotationSave();
   filterEntities();
-  toast(`Diagnostik fuer ${_annBatchSelected.size} Entities ${enabled ? 'aktiviert' : 'deaktiviert'}`);
+  toast(`Diagnostik für ${_annBatchSelected.size} Entities ${enabled ? 'aktiviert' : 'deaktiviert'}`);
 }
 
 // Auto-Erkennung
@@ -6468,7 +6468,7 @@ async function discoverAnnotations() {
   try {
     const data = await api('/api/ui/entity-annotations/discover');
     const suggestions = data.suggestions || [];
-    if (suggestions.length === 0) { toast('Keine neuen Vorschlaege gefunden'); return; }
+    if (suggestions.length === 0) { toast('Keine neuen Vorschläge gefunden'); return; }
 
     // Modal/Inline anzeigen
     const c = document.getElementById('entityBrowser');
@@ -6476,7 +6476,7 @@ async function discoverAnnotations() {
     c.innerHTML = `
       <div style="padding:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <strong>${suggestions.length} Vorschlaege gefunden</strong>
+          <strong>${suggestions.length} Vorschläge gefunden</strong>
           <div style="display:flex;gap:6px;">
             <button class="btn btn-primary btn-sm" onclick="acceptDiscoverAll()">Alle uebernehmen</button>
             <button class="btn btn-secondary btn-sm" onclick="acceptDiscoverSelected()">Ausgewaehlte uebernehmen</button>
@@ -6493,7 +6493,7 @@ async function discoverAnnotations() {
             </div>`).join('')}
         </div>
       </div>`;
-    // Speichere suggestions global fuer accept-Funktionen
+    // Speichere suggestions global für accept-Funktionen
     window._discoverSuggestions = suggestions;
   } catch(e) { toast('Auto-Erkennung fehlgeschlagen: ' + e.message, 'error'); }
 }
@@ -6564,7 +6564,7 @@ async function loadKnowledge() {
 }
 // ---- Knowledge Rebuild ----
 async function rebuildKnowledge() {
-  if (!confirm('Wissensdatenbank komplett neu aufbauen?\n\nAlle Vektoren werden geloescht und mit dem aktuellen Embedding-Modell neu berechnet. Das kann einige Minuten dauern.')) return;
+  if (!confirm('Wissensdatenbank komplett neu aufbauen?\n\nAlle Vektoren werden gelöscht und mit dem aktuellen Embedding-Modell neu berechnet. Das kann einige Minuten dauern.')) return;
   try {
     toast('Rebuild gestartet...', 'info');
     const d = await api('/api/ui/knowledge/rebuild', 'POST');
@@ -6654,7 +6654,7 @@ async function loadKbChunks() {
     const c = document.getElementById('kbChunks');
     if (!c) return;
     if (kbChunksData.length === 0) {
-      c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Eintraege</div>';
+      c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Einträge</div>';
       return;
     }
     c.innerHTML = kbChunksData.map((ch, i) => `
@@ -6679,11 +6679,11 @@ function updateKbDeleteBtn() {
 async function deleteSelectedChunks() {
   const checked = document.querySelectorAll('.kb-chunk-cb:checked');
   if (checked.length === 0) return;
-  if (!confirm(`${checked.length} Wissenseintraege unwiderruflich loeschen?`)) return;
+  if (!confirm(`${checked.length} Wissenseinträge unwiderruflich loeschen?`)) return;
   const ids = Array.from(checked).map(cb => cb.dataset.id);
   try {
     const d = await api('/api/ui/knowledge/chunks/delete', 'POST', { ids });
-    toast(`${d.deleted} Eintraege geloescht`, 'success');
+    toast(`${d.deleted} Einträge gelöscht`, 'success');
     loadKnowledge();
   } catch(e) { toast('Fehler beim Loeschen', 'error'); }
 }
@@ -6719,7 +6719,7 @@ async function loadRecipes() {
 }
 
 async function rebuildRecipes() {
-  if (!confirm('Rezeptdatenbank komplett neu aufbauen?\n\nAlle Vektoren werden geloescht und mit dem aktuellen Embedding-Modell neu berechnet.')) return;
+  if (!confirm('Rezeptdatenbank komplett neu aufbauen?\n\nAlle Vektoren werden gelöscht und mit dem aktuellen Embedding-Modell neu berechnet.')) return;
   try {
     toast('Rebuild gestartet...', 'info');
     const d = await api('/api/ui/recipes/rebuild', 'POST');
@@ -6806,7 +6806,7 @@ async function loadRecipeChunks() {
     const c = document.getElementById('recipeChunks');
     if (!c) return;
     if (recipeChunksData.length === 0) {
-      c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Eintraege</div>';
+      c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Einträge</div>';
       return;
     }
     c.innerHTML = recipeChunksData.map((ch, i) => `
@@ -6831,11 +6831,11 @@ function updateRecipeDeleteBtn() {
 async function deleteSelectedRecipeChunks() {
   const checked = document.querySelectorAll('.recipe-chunk-cb:checked');
   if (checked.length === 0) return;
-  if (!confirm(`${checked.length} Rezepteintraege unwiderruflich loeschen?`)) return;
+  if (!confirm(`${checked.length} Rezepteinträge unwiderruflich loeschen?`)) return;
   const ids = Array.from(checked).map(cb => cb.dataset.id);
   try {
     const d = await api('/api/ui/recipes/chunks/delete', 'POST', { ids });
-    toast(`${d.deleted} Eintraege geloescht`, 'success');
+    toast(`${d.deleted} Einträge gelöscht`, 'success');
     loadRecipes();
   } catch(e) { toast('Fehler beim Loeschen', 'error'); }
 }
@@ -6861,7 +6861,7 @@ function switchLogTab(tab) {
   if (tab!=='protocol' && _protocolLiveIv) { clearInterval(_protocolLiveIv); _protocolLiveIv=null; const cb=document.getElementById('protocolLive'); if(cb) cb.checked=false; }
 }
 
-// ---- Aktivitaetsprotokoll (Alles was Jarvis intern macht) ----
+// ---- Aktivitätsprotokoll (Alles was Jarvis intern macht) ----
 let _activityData = [];
 let _activityLiveIv = null;
 
@@ -6899,11 +6899,11 @@ function filterActivity() {
   });
 
   document.getElementById('activityCount').textContent = filtered.length +
-    (_activityData.length !== filtered.length ? ' / ' + _activityData.length : '') + ' Eintraege';
+    (_activityData.length !== filtered.length ? ' / ' + _activityData.length : '') + ' Einträge';
 
   if (filtered.length === 0) {
     c.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">' +
-      (search ? 'Keine Treffer fuer "' + esc(search) + '"' : 'Keine Aktivitaeten aufgezeichnet.') + '</div>';
+      (search ? 'Keine Treffer für "' + esc(search) + '"' : 'Keine Aktivitäten aufgezeichnet.') + '</div>';
     return;
   }
 
@@ -6920,7 +6920,7 @@ function filterActivity() {
     'Proaktiv': 'var(--accent)',
     'Brain': 'var(--info, #3b82f6)',
     'Raumklima': 'var(--success, #22c55e)',
-    'Geraete': 'var(--warning, #f59e0b)',
+    'Geräte': 'var(--warning, #f59e0b)',
     'Diagnostik': '#8b5cf6',
     'Aktionen': 'var(--accent)',
     'Home Assistant': '#06b6d4',
@@ -6960,10 +6960,10 @@ function toggleActivityLive() {
 }
 
 async function clearActivity() {
-  if (!confirm('Aktivitaetsprotokoll wirklich leeren?')) return;
+  if (!confirm('Aktivitätsprotokoll wirklich leeren?')) return;
   try {
     await api('/api/ui/activity', 'DELETE');
-    toast('Aktivitaetsprotokoll geleert');
+    toast('Aktivitätsprotokoll geleert');
     loadActivity();
   } catch(e) { toast('Fehler beim Leeren', 'error'); }
 }
@@ -7022,11 +7022,11 @@ function filterProtocol() {
   });
 
   document.getElementById('protocolCount').textContent = filtered.length +
-    (_protocolData.length !== filtered.length ? ' / ' + _protocolData.length : '') + ' Eintraege';
+    (_protocolData.length !== filtered.length ? ' / ' + _protocolData.length : '') + ' Einträge';
 
   if (filtered.length === 0) {
     c.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">' +
-      (search ? 'Keine Treffer fuer "' + esc(search) + '"' : 'Keine Jarvis-Aktionen im Zeitraum.') + '</div>';
+      (search ? 'Keine Treffer für "' + esc(search) + '"' : 'Keine Jarvis-Aktionen im Zeitraum.') + '</div>';
     return;
   }
 
@@ -7120,7 +7120,7 @@ async function loadAudit() {
     const entries = d.entries || [];
     const c = document.getElementById('auditContainer');
     if (entries.length === 0) {
-      c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Audit-Eintraege</div>';
+      c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Audit-Einträge</div>';
       return;
     }
     c.innerHTML = entries.map(e => {
@@ -7141,7 +7141,7 @@ async function loadLogs() {
     const d = await api('/api/ui/logs?limit=200');
     const convs = d.conversations || [];
     const c = document.getElementById('logsContainer');
-    if (convs.length === 0) { c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Gespraeche</div>'; return; }
+    if (convs.length === 0) { c.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Keine Gespräche</div>'; return; }
     c.innerHTML = convs.map(cv => {
       const t = cv.timestamp ? new Date(cv.timestamp).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
       const role = cv.role || 'system';
@@ -7175,7 +7175,7 @@ async function loadErrors() {
         return `<div class="err-entry level-${esc(e.level)}"><span class="err-time">${t}</span><span class="err-level ${esc(e.level)}">${esc(e.level)}</span><span class="err-logger" title="${esc(e.logger||'')}">${esc(e.logger||'')}</span><span class="err-msg">${esc(e.message||'')}</span></div>`;
       }).join('');
     }
-    document.getElementById('errorsInfo').textContent = `${d.total} Eintraege gespeichert (max. 200)`;
+    document.getElementById('errorsInfo').textContent = `${d.total} Einträge gespeichert (max. 200)`;
     updateErrBadge(d.total);
   } catch(e) { console.error('Errors fail:', e); }
 }
@@ -7211,7 +7211,7 @@ let _sysStatus = null;
 // ---- Tab: Geräte-Überwachung ----
 function renderCovers() {
   return sectionWrap('&#128225;', 'Live-Status & Steuerung',
-    fInfo('Aktuelle Positionen aller Rolllaeden. Ziehe den Schieberegler oder nutze die Buttons fuer direkte Steuerung. 0% = geschlossen, 100% = offen.') +
+    fInfo('Aktuelle Positionen aller Rollläden. Ziehe den Schieberegler oder nutze die Buttons für direkte Steuerung. 0% = geschlossen, 100% = offen.') +
     '<div style="display:flex;gap:6px;margin-bottom:10px;">' +
       '<button class="btn btn-sm" onclick="coverLiveAll(100)" style="font-size:11px;">&#9650; Alle auf</button>' +
       '<button class="btn btn-sm" onclick="coverLiveAll(0)" style="font-size:11px;">&#9660; Alle zu</button>' +
@@ -7220,19 +7220,19 @@ function renderCovers() {
     '</div>' +
     '<div id="coverLiveContainer" style="color:var(--text-secondary);padding:8px;">Lade Live-Positionen...</div>'
   ) +
-  sectionWrap('&#129695;', 'Rolllaeden & Garagentore',
-    fInfo('Hier legst du fest, welche Geraete Rolllaeden sind und welche Garagentore. <strong>Garagentore werden NIEMALS automatisch von Jarvis gesteuert.</strong>') +
-    '<div id="coverListContainer" style="color:var(--text-secondary);padding:12px;">Lade Cover-Geraete...</div>'
+  sectionWrap('&#129695;', 'Rollläden & Garagentore',
+    fInfo('Hier legst du fest, welche Geräte Rollläden sind und welche Garagentore. <strong>Garagentore werden NIEMALS automatisch von Jarvis gesteuert.</strong>') +
+    '<div id="coverListContainer" style="color:var(--text-secondary);padding:12px;">Lade Cover-Geräte...</div>'
   ) +
   // ── Cover-Gruppen ──────────────────────────────────────────
   sectionWrap('&#128194;', 'Cover-Gruppen',
-    fInfo('Fasse mehrere Rolllaeden zu Gruppen zusammen (z.B. "EG Sued", "Schlafzimmer"). Gruppen koennen dann gemeinsam gesteuert oder in Zeitplaenen verwendet werden.') +
+    fInfo('Fasse mehrere Rollläden zu Gruppen zusammen (z.B. "EG Sued", "Schlafzimmer"). Gruppen können dann gemeinsam gesteuert oder in Zeitplaenen verwendet werden.') +
     '<div id="coverGroupsContainer" style="color:var(--text-secondary);padding:8px;">Lade Gruppen...</div>' +
     '<button class="btn btn-sm" onclick="addCoverGroup()" style="margin-top:8px;">+ Gruppe hinzufuegen</button>'
   ) +
   // ── Cover-Szenen ──────────────────────────────────────────
   sectionWrap('&#127916;', 'Cover-Szenen',
-    fInfo('Vordefinierte Positionen fuer mehrere Rolllaeden gleichzeitig. Z.B. "Lueften" = 50%, "Kino" = 20%, "Nacht" = 0%. Szenen koennen per Sprache oder Zeitplan aktiviert werden.') +
+    fInfo('Vordefinierte Positionen für mehrere Rollläden gleichzeitig. Z.B. "Lueften" = 50%, "Kino" = 20%, "Nacht" = 0%. Szenen können per Sprache oder Zeitplan aktiviert werden.') +
     '<div id="coverScenesContainer" style="color:var(--text-secondary);padding:8px;">Lade Szenen...</div>' +
     '<button class="btn btn-sm" onclick="addCoverScene()" style="margin-top:8px;">+ Szene hinzufuegen</button>'
   ) +
@@ -7244,14 +7244,14 @@ function renderCovers() {
   ) +
   // ── Sensor-Zuordnungen ────────────────────────────────────
   sectionWrap('&#127777;', 'Sensor-Zuordnungen',
-    fInfo('Ordne Sensoren der Cover-Automatik zu. Wind-, Regen-, Sonnen- und Temperatur-Sensoren werden fuer automatische Entscheidungen (Sturm, Hitze, Frost) genutzt.<br><br><strong>Rollen:</strong> sun_sensor = Helligkeit, temp_outdoor = Aussentemperatur, temp_indoor = Raumtemperatur, wind_sensor = Wind, rain_sensor = Regen') +
+    fInfo('Ordne Sensoren der Cover-Automatik zu. Wind-, Regen-, Sonnen- und Temperatur-Sensoren werden für automatische Entscheidungen (Sturm, Hitze, Frost) genutzt.<br><br><strong>Rollen:</strong> sun_sensor = Helligkeit, temp_outdoor = Aussentemperatur, temp_indoor = Raumtemperatur, wind_sensor = Wind, rain_sensor = Regen') +
     '<div id="coverSensorsContainer" style="color:var(--text-secondary);padding:8px;">Lade Sensor-Zuordnungen...</div>' +
     '<button class="btn btn-sm" onclick="addCoverSensor()" style="margin-top:8px;">+ Sensor zuordnen</button>'
   ) +
-  // ── Oeffnungs-Sensoren (Fenster/Tueren/Tore) ─────────────
-  sectionWrap('&#128682;', 'Oeffnungs-Sensoren (Fenster / Tueren / Tore)',
-    fInfo('Ordne jedem Kontakt-Sensor einen Typ zu: <strong>Fenster</strong> (Kippen/Offen), <strong>Tuer</strong> oder <strong>Tor</strong> (Gartentor, Garagentor).<br><br>Nur Fenster und Tueren in <strong>beheizten</strong> Raeumen loesen Heizungswarnungen aus. Tore und unbeheizte Bereiche werden ignoriert.<br><br>Sensoren ohne Eintrag hier werden automatisch als "Fenster / beheizt" behandelt (Fallback).') +
-    '<div id="openingSensorsContainer" style="color:var(--text-secondary);padding:8px;">Lade Oeffnungs-Sensoren...</div>' +
+  // ── Öffnungs-Sensoren (Fenster/Türen/Tore) ─────────────
+  sectionWrap('&#128682;', 'Öffnungs-Sensoren (Fenster / Türen / Tore)',
+    fInfo('Ordne jedem Kontakt-Sensor einen Typ zu: <strong>Fenster</strong> (Kippen/Offen), <strong>Tuer</strong> oder <strong>Tor</strong> (Gartentor, Garagentor).<br><br>Nur Fenster und Türen in <strong>beheizten</strong> Räumen loesen Heizungswarnungen aus. Tore und unbeheizte Bereiche werden ignoriert.<br><br>Sensoren ohne Eintrag hier werden automatisch als "Fenster / beheizt" behandelt (Fallback).') +
+    '<div id="openingSensorsContainer" style="color:var(--text-secondary);padding:8px;">Lade Öffnungs-Sensoren...</div>' +
     '<div style="display:flex;gap:6px;margin-top:8px;">' +
       '<button class="btn btn-sm" onclick="discoverOpeningSensors()" style="font-size:11px;">&#128269; Auto-Erkennung aus HA</button>' +
       '<button class="btn btn-sm" onclick="addOpeningSensor()" style="font-size:11px;">+ Manuell hinzufuegen</button>' +
@@ -7265,43 +7265,43 @@ function renderCovers() {
   ) +
   // ── Addon-Systeme Konsolidierung ──────────────────────────
   sectionWrap('&#9888;', 'Automatik-Systeme (Konsolidierung)',
-    fInfo('<strong>Achtung:</strong> MindHome hat zwei Cover-Steuerungen: Die <em>ProactiveEngine</em> (Assistant, empfohlen) und das <em>Addon Cover-Domain Plugin</em>. Wenn beide aktiv sind, koennen sie sich gegenseitig ueberschreiben. Empfehlung: Addon-Plugin deaktivieren.') +
+    fInfo('<strong>Achtung:</strong> MindHome hat zwei Cover-Steuerungen: Die <em>ProactiveEngine</em> (Assistant, empfohlen) und das <em>Addon Cover-Domain Plugin</em>. Wenn beide aktiv sind, können sie sich gegenseitig ueberschreiben. Empfehlung: Addon-Plugin deaktivieren.') +
     fToggle('seasonal_actions.cover_automation.disable_addon_cover_domain', 'Addon Cover-Domain Plugin deaktivieren (empfohlen)') +
     '<button class="btn btn-sm" onclick="_syncAddonCoverDomain()" style="margin-top:6px;font-size:11px;">Jetzt am Addon anwenden</button>' +
     '<div id="addonCoverDomainStatus" style="font-size:11px;margin-top:4px;color:var(--text-muted);"></div>'
   ) +
   // ── Cover-Automatik (settings.yaml) ─────────────────────
   sectionWrap('&#9728;', 'Cover-Automatik',
-    fInfo('Automatische Steuerung der Rolllaeden basierend auf Sonnenstand, Wetter und Temperatur. Funktioniert nur wenn Cover-Profile (unten) konfiguriert sind.') +
+    fInfo('Automatische Steuerung der Rollläden basierend auf Sonnenstand, Wetter und Temperatur. Funktioniert nur wenn Cover-Profile (unten) konfiguriert sind.') +
     fToggle('seasonal_actions.enabled', 'Saisonale Aktionen aktiv') +
     fToggle('seasonal_actions.cover_automation.sun_tracking', 'Sonnenstand-Tracking (Azimut + Elevation)') +
-    fToggle('seasonal_actions.cover_automation.temperature_based', 'Temperatur-basiert (Hitze/Kaelteschutz)') +
+    fToggle('seasonal_actions.cover_automation.temperature_based', 'Temperatur-basiert (Hitze/Kälteschutz)') +
     fToggle('seasonal_actions.cover_automation.weather_protection', 'Wetter/Sturmschutz') +
-    fToggle('seasonal_actions.cover_automation.night_insulation', 'Nachts schliessen (Isolierung)') +
+    fToggle('seasonal_actions.cover_automation.night_insulation', 'Nachts schließen (Isolierung)') +
     fRange('seasonal_actions.cover_automation.heat_protection_temp', 'Hitzeschutz ab Aussentemp (°C)', 20, 40, 1, {20:'20°C',25:'25°C',26:'26°C',28:'28°C',30:'30°C',35:'35°C',40:'40°C'}) +
     fRange('seasonal_actions.cover_automation.frost_protection_temp', 'Frostschutz ab (°C)', -10, 15, 1, {'-5':'-5°C',0:'0°C',5:'5°C',10:'10°C',15:'15°C'}) +
     fRange('seasonal_actions.cover_automation.storm_wind_speed', 'Sturm-Windgeschwindigkeit (km/h)', 20, 100, 5, {20:'20',30:'30',40:'40',50:'50',60:'60',80:'80',100:'100'}) +
     fToggle('seasonal_actions.cover_automation.inverted_position', 'Positionen invertiert (0=offen, 100=zu, z.B. Shelly/MQTT)') +
-    fRange('seasonal_actions.cover_automation.sunset_close_elevation', 'Rolladen schliessen ab Elevation (Grad)', -6, 2, 1, {'-6':'-6°','-4':'-4°','-2':'-2° (Standard)','-1':'-1°','0':'0° (Untergang)','1':'1°','2':'2°'})
+    fRange('seasonal_actions.cover_automation.sunset_close_elevation', 'Rolladen schließen ab Elevation (Grad)', -6, 2, 1, {'-6':'-6°','-4':'-4°','-2':'-2° (Standard)','-1':'-1°','0':'0° (Untergang)','1':'1°','2':'2°'})
   ) +
   // ── Nacht-Isolierung (Bug 5) ──────────────────────────
   sectionWrap('&#127769;', 'Nacht-Isolierung',
-    fInfo('Konfiguriere wann die Nacht-Isolierung beginnt und endet. Im Winter frueher starten, im Sommer spaeter.') +
+    fInfo('Konfiguriere wann die Nacht-Isolierung beginnt und endet. Im Winter früher starten, im Sommer später.') +
     fRange('seasonal_actions.cover_automation.night_start_hour', 'Nacht beginnt um (Stunde)', 17, 24, 1, {17:'17',18:'18',19:'19',20:'20',21:'21',22:'22',23:'23',24:'24'}) +
     fRange('seasonal_actions.cover_automation.night_end_hour', 'Nacht endet um (Stunde)', 4, 9, 1, {4:'4',5:'5',6:'6',7:'7',8:'8',9:'9'})
   ) +
   // ── Anti-Oszillation (Feature 10) ─────────────────────
   sectionWrap('&#128200;', 'Hysterese (Anti-Oszillation)',
-    fInfo('Verhindert staendiges Auf/Zu an der Grenztemperatur. Beispiel: Schliessen bei 26°C, erst wieder oeffnen bei 24°C (2°C Hysterese).') +
+    fInfo('Verhindert ständiges Auf/Zu an der Grenztemperatur. Beispiel: Schließen bei 26°C, erst wieder öffnen bei 24°C (2°C Hysterese).') +
     fRange('seasonal_actions.cover_automation.hysteresis_temp', 'Temperatur-Hysterese (°C)', 0, 5, 1, {0:'Keine',1:'1°C',2:'2°C',3:'3°C',4:'4°C',5:'5°C'}) +
     fRange('seasonal_actions.cover_automation.hysteresis_wind', 'Wind-Hysterese (km/h)', 0, 20, 5, {0:'Keine',5:'5',10:'10',15:'15',20:'20'})
   ) +
   // ── Intelligente Features ─────────────────────────────
   sectionWrap('&#129504;', 'Intelligente Features',
-    fInfo('Erweiterte Automatik-Features fuer maximalen Komfort und Energieeffizienz.') +
+    fInfo('Erweiterte Automatik-Features für maximalen Komfort und Energieeffizienz.') +
     fToggle('seasonal_actions.cover_automation.glare_protection', 'Blendschutz (bei besetztem Platz + Sonne)') +
-    fToggle('seasonal_actions.cover_automation.gradual_morning', 'Sanftes Oeffnen morgens (3 Stufen)') +
-    fToggle('seasonal_actions.cover_automation.wave_open', 'Wellenfoermiges Oeffnen (Ost→Sued→West)') +
+    fToggle('seasonal_actions.cover_automation.gradual_morning', 'Sanftes Öffnen morgens (3 Stufen)') +
+    fToggle('seasonal_actions.cover_automation.wave_open', 'Wellenförmiges Öffnen (Ost→Sued→West)') +
     fToggle('seasonal_actions.cover_automation.heating_integration', 'Heizungs-Integration (Isolierung + passive Solarwaerme)') +
     fToggle('seasonal_actions.cover_automation.co2_ventilation', 'CO2-Lueftungs-Unterstuetzung') +
     fToggle('seasonal_actions.cover_automation.privacy_mode', 'Privacy-Modus (Sichtschutz abends bei Licht)') +
@@ -7310,45 +7310,45 @@ function renderCovers() {
     fRange('seasonal_actions.cover_automation.manual_override_hours', 'Manueller Override-Schutz (Stunden)', 0, 6, 1, {0:'Aus',1:'1h',2:'2h',3:'3h',4:'4h',5:'5h',6:'6h'})
   ) +
   // ── Aufwach-Sonnenprüfung (sun.sun) ─────────────────
-  sectionWrap('&#127765;', 'Aufwach-Sonnenpruefung (sun.sun)',
-    fInfo('Verhindert dass Rolllaeden beim Aufwachen hochfahren wenn es noch dunkel ist. Nutzt die <strong>sun.sun</strong> Integration aus Home Assistant um den Sonnenstand zu pruefen.<br><br>Wenn die Sonnenhoehe unter dem Schwellwert liegt, werden die Rolllaeden automatisch erst bei Daemmerung geoeffnet (deferred wake-open).<br><br><strong>Referenz:</strong> -6° = Buergerliche Daemmerung (Himmel wird hell), 0° = Sonnenaufgang, -12° = Nautische Daemmerung (noch sehr dunkel)') +
-    fToggle('seasonal_actions.cover_automation.wakeup_sun_check', 'Sonnenstand beim Aufwachen pruefen') +
-    fRange('seasonal_actions.cover_automation.wakeup_min_sun_elevation', 'Min. Sonnenhoehe (Grad)', -12, 5, 1, {'-12':'-12° (nautisch)','-6':'-6° (buergerl.)','-3':'-3°','0':'0° (Aufgang)','5':'5° (hell)'}) +
-    fRange('seasonal_actions.cover_automation.wakeup_fallback_max_minutes', 'Fallback: Spaetestens oeffnen nach (Min)', 30, 180, 15, {30:'30 Min',60:'1 Std',90:'1.5 Std',120:'2 Std',150:'2.5 Std',180:'3 Std'})
+  sectionWrap('&#127765;', 'Aufwach-Sonnenprüfung (sun.sun)',
+    fInfo('Verhindert dass Rollläden beim Aufwachen hochfahren wenn es noch dunkel ist. Nutzt die <strong>sun.sun</strong> Integration aus Home Assistant um den Sonnenstand zu prüfen.<br><br>Wenn die Sonnenhöhe unter dem Schwellwert liegt, werden die Rollläden automatisch erst bei Dämmerung geöffnet (deferred wake-open).<br><br><strong>Referenz:</strong> -6° = Bürgerliche Dämmerung (Himmel wird hell), 0° = Sonnenaufgang, -12° = Nautische Dämmerung (noch sehr dunkel)') +
+    fToggle('seasonal_actions.cover_automation.wakeup_sun_check', 'Sonnenstand beim Aufwachen prüfen') +
+    fRange('seasonal_actions.cover_automation.wakeup_min_sun_elevation', 'Min. Sonnenhöhe (Grad)', -12, 5, 1, {'-12':'-12° (nautisch)','-6':'-6° (buergerl.)','-3':'-3°','0':'0° (Aufgang)','5':'5° (hell)'}) +
+    fRange('seasonal_actions.cover_automation.wakeup_fallback_max_minutes', 'Fallback: Spätestens öffnen nach (Min)', 30, 180, 15, {30:'30 Min',60:'1 Std',90:'1.5 Std',120:'2 Std',150:'2.5 Std',180:'3 Std'})
   ) +
   // ── Vorhersage-Wetterschutz (weather.forecast_home) ──
   sectionWrap('&#127782;', 'Vorhersage-Wetterschutz (weather.forecast_home)',
-    fInfo('Nutzt die <strong>Wettervorhersage</strong> aus weather.forecast_home fuer vorausschauenden Schutz:<br><br>&#128168; <strong>Sturmschutz:</strong> Markisen einfahren BEVOR der Sturm ankommt<br>&#127783; <strong>Regenschutz:</strong> Dachfenster schliessen BEVOR es regnet<br><br>Ohne diese Option wird nur auf das <em>aktuelle</em> Wetter reagiert — dann kann es schon zu spaet sein.') +
+    fInfo('Nutzt die <strong>Wettervorhersage</strong> aus weather.forecast_home für vorausschauenden Schutz:<br><br>&#128168; <strong>Sturmschutz:</strong> Markisen einfahren BEVOR der Sturm ankommt<br>&#127783; <strong>Regenschutz:</strong> Dachfenster schließen BEVOR es regnet<br><br>Ohne diese Option wird nur auf das <em>aktuelle</em> Wetter reagiert — dann kann es schon zu spaet sein.') +
     fEntityPickerSingle('seasonal_actions.cover_automation.weather_entity', 'Wetter-Entity', ['weather'], 'Leer = automatisch (weather.forecast_home bevorzugt). Kann auch per Sprache gewechselt werden: "Jarvis, wechsle die Wetter-Integration auf weather.home"') +
     fToggle('seasonal_actions.cover_automation.forecast_weather_protection', 'Vorhersage-basierten Wetterschutz aktivieren') +
     fRange('seasonal_actions.cover_automation.forecast_lookahead_hours', 'Vorhersage-Zeitraum (Stunden)', 1, 8, 1, {1:'1h',2:'2h',3:'3h',4:'4h',5:'5h',6:'6h',7:'7h',8:'8h'})
   ) +
   // ── Urlaubs-Simulation ─────────────────────────
   sectionWrap('&#127796;', 'Urlaubs-Simulation',
-    fInfo('Simuliert Anwesenheit ueber Rolllaeden wenn der Urlaubsmodus aktiv ist. Erfordert eine input_boolean Entity in Home Assistant (z.B. input_boolean.vacation_mode).') +
+    fInfo('Simuliert Anwesenheit über Rollläden wenn der Urlaubsmodus aktiv ist. Erfordert eine input_boolean Entity in Home Assistant (z.B. input_boolean.vacation_mode).') +
     fToggle('seasonal_actions.cover_automation.presence_simulation', 'Urlaubs-Simulation aktiv') +
     fEntityPickerSingle('seasonal_actions.cover_automation.vacation_mode_entity', 'Urlaubsmodus-Entity', ['input_boolean'], 'z.B. input_boolean.vacation_mode') +
-    fRange('vacation_simulation.morning_hour', 'Morgens oeffnen um', 5, 11, 1) +
-    fRange('vacation_simulation.evening_hour', 'Abends schliessen um', 16, 22, 1) +
+    fRange('vacation_simulation.morning_hour', 'Morgens öffnen um', 5, 11, 1) +
+    fRange('vacation_simulation.evening_hour', 'Abends schließen um', 16, 22, 1) +
     fRange('vacation_simulation.night_hour', 'Nachts komplett zu um', 21, 24, 1) +
     fRange('vacation_simulation.variation_minutes', 'Zufalls-Variation (Min)', 0, 60, 5, {0:'Keine',10:'10 Min',15:'15 Min',30:'30 Min',45:'45 Min',60:'1 Std'})
   ) +
   // ── Markisen-Sicherheit (room_profiles.yaml) ─────────────
   sectionWrap('&#127958;', 'Markisen-Sicherheit',
-    fInfo('Automatischer Schutz fuer Markisen bei Wind und Regen. Diese Einstellungen werden in room_profiles.yaml gespeichert.') +
+    fInfo('Automatischer Schutz für Markisen bei Wind und Regen. Diese Einstellungen werden in room_profiles.yaml gespeichert.') +
     rpRange('markisen.wind_retract_speed', 'Einfahren bei Wind ab (km/h)', 20, 80, 5, {20:'20',30:'30',40:'40',50:'50',60:'60',80:'80'}) +
     rpToggle('markisen.rain_retract', 'Bei Regen automatisch einfahren') +
     rpRange('markisen.sun_extend_temp', 'Ausfahren bei Sonne ab (°C)', 18, 35, 1, {18:'18°C',20:'20°C',22:'22°C',25:'25°C',28:'28°C',30:'30°C',35:'35°C'})
   ) +
   // ── Power-Close (Steckdose → Rollladen) ──────────────
   sectionWrap('&#9889;', 'Strom-Automatik (z.B. TV an = Rollladen zu)',
-    fInfo('Wenn der Stromverbrauch einer Steckdose einen Schwellwert ueberschreitet, fahren ausgewaehlte Rolllaeden automatisch runter. Sobald der Verbrauch wieder sinkt, fahren sie wieder hoch.<br><br><strong>Beispiel:</strong> TV-Steckdose > 50 W → Wohnzimmer-Rollladen zu. TV aus → Rollladen wieder auf.<br><br>Die Reaktion erfolgt <strong>sofort</strong> (Echtzeit), nicht im 15-Minuten-Takt.') +
+    fInfo('Wenn der Stromverbrauch einer Steckdose einen Schwellwert ueberschreitet, fahren ausgewaehlte Rollläden automatisch runter. Sobald der Verbrauch wieder sinkt, fahren sie wieder hoch.<br><br><strong>Beispiel:</strong> TV-Steckdose > 50 W → Wohnzimmer-Rollladen zu. TV aus → Rollladen wieder auf.<br><br>Die Reaktion erfolgt <strong>sofort</strong> (Echtzeit), nicht im 15-Minuten-Takt.') +
     '<div id="powerCloseContainer" style="padding:8px;color:var(--text-secondary);">Lade Regeln...</div>' +
     '<button class="btn btn-sm" onclick="addPowerCloseRule()" style="margin-top:8px;">+ Regel hinzufuegen</button>'
   ) +
   // ── Cover-Profile (room_profiles.yaml) ─────────────
   sectionWrap('&#127760;', 'Cover-Profile (Fenster-Orientierung)',
-    fInfo('Konfiguriere fuer jedes Fenster die Himmelsrichtung und den Sonneneinfalls-Winkel. Ohne diese Profile funktioniert das Sonnenstand-Tracking nicht!<br><br><strong>Azimut-Referenz:</strong> 0°=Nord, 90°=Ost, 180°=Sued, 270°=West<br><strong>Beispiel Suedfenster:</strong> Start=120°, Ende=240°<br><strong>Beispiel Ostfenster:</strong> Start=45°, Ende=135°') +
+    fInfo('Konfiguriere für jedes Fenster die Himmelsrichtung und den Sonneneinfalls-Winkel. Ohne diese Profile funktioniert das Sonnenstand-Tracking nicht!<br><br><strong>Azimut-Referenz:</strong> 0°=Nord, 90°=Ost, 180°=Sued, 270°=West<br><strong>Beispiel Suedfenster:</strong> Start=120°, Ende=240°<br><strong>Beispiel Ostfenster:</strong> Start=45°, Ende=135°') +
     '<div id="coverProfilesContainer" style="padding:8px;">Lade Cover-Profile...</div>' +
     '<button class="btn btn-sm" onclick="addCoverProfile()" style="margin-top:8px;">+ Cover-Profil hinzufuegen</button>'
   );
@@ -7482,7 +7482,7 @@ function rpSelect(path, label, opts) {
   return h + '</select></div>';
 }
 
-// Sammelt RP-Formularwerte (fuer collectRoomProfiles)
+// Sammelt RP-Formularwerte (für collectRoomProfiles)
 function collectRoomProfiles() {
   document.querySelectorAll('[data-rp-path]').forEach(el => {
     const path = el.getAttribute('data-rp-path');
@@ -7541,7 +7541,7 @@ function renderCentralBedSensors() {
   const rooms = RP.rooms || {};
   const roomNames = Object.keys(rooms);
   if (roomNames.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Keine Raeume konfiguriert. Erstelle zuerst Raeume im Raum-Tab.</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Keine Räume konfiguriert. Erstelle zuerst Räume im Raum-Tab.</div>';
     return;
   }
   const members = (getPath(S, 'household.members') || []).map(m => m.name).filter(Boolean);
@@ -7582,7 +7582,7 @@ function renderCentralBedSensors() {
     const delayVal = e.off_delay || 0;
     html += '<div style="margin-top:8px;">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">';
-    html += '<label style="font-size:11px;color:var(--text-muted);">&#9202; Aus-Verzoegerung</label>';
+    html += '<label style="font-size:11px;color:var(--text-muted);">&#9202; Aus-Verzögerung</label>';
     html += '<span id="bedDelay_val_' + esc(e.room) + '_' + e.index + '" style="font-size:11px;color:var(--accent);font-weight:600;">' + delayVal + 's</span>';
     html += '</div>';
     html += '<input type="range" min="0" max="30" step="1" value="' + delayVal + '" style="width:100%;accent-color:var(--accent);" oninput="document.getElementById(\'bedDelay_val_' + esc(e.room) + '_' + e.index + '\').textContent=this.value+\'s\'" onchange="_updateBedEntry(\'' + esc(e.room) + '\',' + e.index + ',\'off_delay\',parseInt(this.value))">';
@@ -7707,7 +7707,7 @@ function renderCoverProfileList(covers, container) {
     html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;" title="Aktivieren wenn 0=offen und 100=zu (z.B. Shelly, MQTT)"><input type="checkbox"' + (c.inverted?' checked':'') + ' onchange="updateCoverProfile(' + i + ',\'inverted\',this.checked)" style="accent-color:var(--accent);"> Position invertiert</label>';
     html += '</div>';
     // Privacy close hour
-    html += '<div class="form-group" style="margin-top:8px;"><label>Privatsph&auml;re schliessen ab (Uhr, optional)</label><input type="number" value="' + (c.privacy_close_hour||'') + '" min="0" max="23" placeholder="z.B. 17" onchange="updateCoverProfile(' + i + ',\'privacy_close_hour\',this.value?parseInt(this.value):null)"></div>';
+    html += '<div class="form-group" style="margin-top:8px;"><label>Privatsph&auml;re schließen ab (Uhr, optional)</label><input type="number" value="' + (c.privacy_close_hour||'') + '" min="0" max="23" placeholder="z.B. 17" onchange="updateCoverProfile(' + i + ',\'privacy_close_hour\',this.value?parseInt(this.value):null)"></div>';
     html += '</div>';
   }
   container.innerHTML = html;
@@ -7789,9 +7789,9 @@ function renderCoverLive(container) {
     html += '</div>';
     // Buttons
     html += '<div style="display:flex;gap:4px;flex-shrink:0;">';
-    html += '<button class="btn btn-sm" onclick="coverLiveOpen(\'' + esc(c.entity_id) + '\')" title="Oeffnen" style="font-size:12px;padding:4px 8px;">&#9650;</button>';
+    html += '<button class="btn btn-sm" onclick="coverLiveOpen(\'' + esc(c.entity_id) + '\')" title="Öffnen" style="font-size:12px;padding:4px 8px;">&#9650;</button>';
     html += '<button class="btn btn-sm" onclick="coverLiveStop(\'' + esc(c.entity_id) + '\')" title="Stopp" style="font-size:12px;padding:4px 8px;">&#9632;</button>';
-    html += '<button class="btn btn-sm" onclick="coverLiveClose(\'' + esc(c.entity_id) + '\')" title="Schliessen" style="font-size:12px;padding:4px 8px;">&#9660;</button>';
+    html += '<button class="btn btn-sm" onclick="coverLiveClose(\'' + esc(c.entity_id) + '\')" title="Schließen" style="font-size:12px;padding:4px 8px;">&#9660;</button>';
     html += '</div>';
     html += '</div>';
   }
@@ -7849,7 +7849,7 @@ async function loadCoverGroups() {
     _coverGroups = Array.isArray(result) ? result : [];
     renderCoverGroups(container);
   } catch (e) {
-    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Gruppen nicht verfuegbar (Addon nicht erreichbar).</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Gruppen nicht verfügbar (Addon nicht erreichbar).</div>';
   }
 }
 
@@ -7865,15 +7865,15 @@ function renderCoverGroups(container) {
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
     html += '<span style="font-size:13px;font-weight:600;">&#128194; ' + esc(g.name) + '</span>';
     html += '<div style="display:flex;gap:4px;">';
-    html += '<button class="btn btn-sm" onclick="controlCoverGroup(' + g.id + ',100)" title="Alle oeffnen" style="font-size:11px;">&#9650;</button>';
-    html += '<button class="btn btn-sm" onclick="controlCoverGroup(' + g.id + ',0)" title="Alle schliessen" style="font-size:11px;">&#9660;</button>';
+    html += '<button class="btn btn-sm" onclick="controlCoverGroup(' + g.id + ',100)" title="Alle öffnen" style="font-size:11px;">&#9650;</button>';
+    html += '<button class="btn btn-sm" onclick="controlCoverGroup(' + g.id + ',0)" title="Alle schließen" style="font-size:11px;">&#9660;</button>';
     html += '<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);font-size:11px;" onclick="deleteCoverGroup(' + g.id + ')">Entfernen</button>';
     html += '</div></div>';
     // Name Edit
     html += '<div class="form-group"><label>Name</label><input type="text" value="' + esc(g.name) + '" onchange="updateCoverGroup(' + g.id + ',{name:this.value})" style="font-size:12px;"></div>';
     // Entity IDs
     html += '<div class="form-group"><label>Cover-Entities (kommagetrennt)</label>';
-    html += '<input type="text" value="' + esc(entityList) + '" placeholder="cover.wohnzimmer, cover.kueche" onchange="updateCoverGroup(' + g.id + ',{entity_ids:this.value.split(\',\').map(s=>s.trim()).filter(Boolean)})" style="font-size:11px;font-family:var(--mono);">';
+    html += '<input type="text" value="' + esc(entityList) + '" placeholder="cover.wohnzimmer, cover.küche" onchange="updateCoverGroup(' + g.id + ',{entity_ids:this.value.split(\',\').map(s=>s.trim()).filter(Boolean)})" style="font-size:11px;font-family:var(--mono);">';
     html += '</div>';
     // Position Slider
     html += '<div style="display:flex;align-items:center;gap:8px;margin-top:4px;">';
@@ -7906,7 +7906,7 @@ async function deleteCoverGroup(groupId) {
   if (!confirm('Gruppe wirklich loeschen?')) return;
   try {
     await api('/api/ui/covers/groups/' + groupId, 'DELETE');
-    toast('Gruppe geloescht');
+    toast('Gruppe gelöscht');
     loadCoverGroups();
   } catch (e) { toast('Fehler: ' + e.message, 'error'); }
 }
@@ -7930,7 +7930,7 @@ async function loadCoverScenes() {
     _coverScenes = Array.isArray(result) ? result : [];
     renderCoverScenes(container);
   } catch (e) {
-    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Szenen nicht verfuegbar (Addon nicht erreichbar).</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Szenen nicht verfügbar (Addon nicht erreichbar).</div>';
   }
 }
 
@@ -8008,7 +8008,7 @@ async function deleteCoverScene(sceneId) {
   if (!confirm('Szene wirklich loeschen?')) return;
   try {
     await api('/api/ui/covers/scenes/' + sceneId, 'DELETE');
-    toast('Szene geloescht');
+    toast('Szene gelöscht');
     loadCoverScenes();
   } catch (e) { toast('Fehler: ' + e.message, 'error'); }
 }
@@ -8048,7 +8048,7 @@ async function loadCoverSchedules() {
     _coverSchedules = Array.isArray(result) ? result : [];
     renderCoverSchedules(container);
   } catch (e) {
-    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Zeitplaene nicht verfuegbar (Addon nicht erreichbar).</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Zeitplaene nicht verfügbar (Addon nicht erreichbar).</div>';
   }
 }
 
@@ -8075,7 +8075,7 @@ function renderCoverSchedules(container) {
     html += '<div class="form-group" style="flex:1;min-width:100px;"><label>Position (%)</label><input type="number" value="' + (s.position ?? 100) + '" min="0" max="100" step="5" onchange="updateCoverSchedule(' + s.id + ',{position:parseInt(this.value)})" style="font-size:12px;"></div>';
     html += '</div>';
     // Target
-    html += '<div class="form-group"><label>Ziel (Cover-Entity oder leer fuer alle)</label>';
+    html += '<div class="form-group"><label>Ziel (Cover-Entity oder leer für alle)</label>';
     html += '<input type="text" value="' + esc(s.entity_id || '') + '" placeholder="cover.wohnzimmer (oder leer)" onchange="updateCoverSchedule(' + s.id + ',{entity_id:this.value||null})" style="font-size:11px;font-family:var(--mono);">';
     html += '</div>';
     // Days
@@ -8114,7 +8114,7 @@ async function deleteCoverSchedule(scheduleId) {
   if (!confirm('Zeitplan wirklich loeschen?')) return;
   try {
     await api('/api/ui/covers/schedules/' + scheduleId, 'DELETE');
-    toast('Zeitplan geloescht');
+    toast('Zeitplan gelöscht');
     loadCoverSchedules();
   } catch (e) { toast('Fehler: ' + e.message, 'error'); }
 }
@@ -8140,7 +8140,7 @@ async function loadCoverSensors() {
     _coverSensors = Array.isArray(result) ? result : [];
     renderCoverSensors(container);
   } catch (e) {
-    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Sensor-Zuordnungen nicht verfuegbar (Addon nicht erreichbar).</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Sensor-Zuordnungen nicht verfügbar (Addon nicht erreichbar).</div>';
   }
 }
 
@@ -8273,7 +8273,7 @@ async function loadCoverActionLog() {
     html += '</div>';
     container.innerHTML = html;
   } catch (e) {
-    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Aktions-Log nicht verfuegbar.</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Aktions-Log nicht verfügbar.</div>';
   }
 }
 
@@ -8288,13 +8288,13 @@ async function loadPowerCloseRules() {
     _powerCloseRules = Array.isArray(result) ? result : [];
     renderPowerCloseRules(container);
   } catch (e) {
-    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Power-Close nicht verfuegbar.</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Power-Close nicht verfügbar.</div>';
   }
 }
 
 function renderPowerCloseRules(container) {
   if (_powerCloseRules.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Regeln konfiguriert. Klicke "+ Regel hinzufuegen" um eine Steckdose mit Rolllaeden zu verknuepfen.</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Regeln konfiguriert. Klicke "+ Regel hinzufuegen" um eine Steckdose mit Rollläden zu verknuepfen.</div>';
     return;
   }
   let html = '';
@@ -8316,8 +8316,8 @@ function renderPowerCloseRules(container) {
     html += '<div class="form-group" style="width:120px;"><label>Position (%)</label><input type="number" value="' + (r.close_position ?? 0) + '" min="0" max="100" step="5" onchange="updatePowerCloseRule(' + r.id + ',{close_position:parseInt(this.value)})" style="font-size:12px;"></div>';
     html += '</div>';
     // Covers
-    html += '<div class="form-group"><label>Rolllaeden (Entity-IDs, kommagetrennt)</label>';
-    html += '<input type="text" value="' + esc(covers) + '" placeholder="cover.rollladen_wohnzimmer, cover.rollladen_kueche" onchange="updatePowerCloseRule(' + r.id + ',{cover_ids:this.value.split(\',\').map(s=>s.trim()).filter(Boolean)})" style="font-size:11px;font-family:var(--mono);">';
+    html += '<div class="form-group"><label>Rollläden (Entity-IDs, kommagetrennt)</label>';
+    html += '<input type="text" value="' + esc(covers) + '" placeholder="cover.rollladen_wohnzimmer, cover.rollladen_küche" onchange="updatePowerCloseRule(' + r.id + ',{cover_ids:this.value.split(\',\').map(s=>s.trim()).filter(Boolean)})" style="font-size:11px;font-family:var(--mono);">';
     html += '</div>';
     html += '</div>';
   }
@@ -8346,12 +8346,12 @@ async function deletePowerCloseRule(ruleId) {
   if (!confirm('Regel wirklich loeschen?')) return;
   try {
     await api('/api/ui/covers/power-close/' + ruleId, 'DELETE');
-    toast('Regel geloescht');
+    toast('Regel gelöscht');
     loadPowerCloseRules();
   } catch (e) { toast('Fehler: ' + e.message, 'error'); }
 }
 
-// ── Oeffnungs-Sensoren (Fenster/Tueren/Tore) ──────────────────────
+// ── Öffnungs-Sensoren (Fenster/Türen/Tore) ──────────────────────
 let _openingSensors = {};
 
 async function loadOpeningSensors() {
@@ -8369,7 +8369,7 @@ async function loadOpeningSensors() {
 function renderOpeningSensors(container) {
   const entries = Object.entries(_openingSensors);
   if (entries.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Oeffnungs-Sensoren konfiguriert. Nutze "Auto-Erkennung" um Sensoren aus Home Assistant zu importieren.</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Öffnungs-Sensoren konfiguriert. Nutze "Auto-Erkennung" um Sensoren aus Home Assistant zu importieren.</div>';
     return;
   }
   const typeColors = {window: 'var(--accent)', door: 'var(--success)', gate: 'var(--warning, #f59e0b)'};
@@ -8378,7 +8378,7 @@ function renderOpeningSensors(container) {
 
   let html = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Gesamt: ' + entries.length + ' Sensoren | ' +
     entries.filter(([,c])=>c.type==='window').length + ' Fenster, ' +
-    entries.filter(([,c])=>c.type==='door').length + ' Tueren, ' +
+    entries.filter(([,c])=>c.type==='door').length + ' Türen, ' +
     entries.filter(([,c])=>c.type==='gate').length + ' Tore</div>';
 
   for (const [entityId, cfg] of entries) {
@@ -8397,7 +8397,7 @@ function renderOpeningSensors(container) {
     html += '</div>';
     html += '<button type="button" onclick="removeOpeningSensor(\'' + esc(entityId) + '\')" style="flex-shrink:0;font-size:12px;padding:2px 6px;background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;cursor:pointer;opacity:0.7;" title="Entfernen">&times;</button>';
     html += '</div>';
-    // Zeile 2: Controls (flex-wrap fuer Mobile)
+    // Zeile 2: Controls (flex-wrap für Mobile)
     html += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">';
     // Typ
     html += '<div style="display:flex;align-items:center;gap:4px;min-width:90px;">';
@@ -8459,7 +8459,7 @@ async function _doSaveOpeningSensors() {
   }
 }
 async function saveOpeningSensors() {
-  // Sofort-Save (fuer Loeschen/Hinzufuegen)
+  // Sofort-Save (für Loeschen/Hinzufuegen)
   const status = document.getElementById('autoSaveStatus');
   if (status) { status.textContent = 'Speichert...'; status.className = 'auto-save-status saving'; }
   try {
@@ -8536,20 +8536,20 @@ async function discoverOpeningSensors() {
 function renderLights() {
   return sectionWrap('&#127968;', 'Raum-Licht-Zuordnung',
     fInfo('Ordne jedem Raum seine Licht-Entities zu. Pro Lampe kannst du individuelle Helligkeit (Tag/Nacht) einstellen. Die Zuordnung wird in den Raum-Profilen gespeichert.') +
-    '<div id="lightRoomContainer" style="padding:8px;color:var(--text-secondary);">Lade Raeume und Licht-Entities...</div>'
+    '<div id="lightRoomContainer" style="padding:8px;color:var(--text-secondary);">Lade Räume und Licht-Entities...</div>'
   ) +
   sectionWrap('&#9881;', 'Automatik-Regeln',
-    fInfo('Regeln fuer automatische Lichtsteuerung. Einmal konfigurieren — Jarvis erledigt den Rest.<br>Die Bewegungsmelder aus dem Raeume-Tab werden fuer die Leer-Raum-Erkennung genutzt.') +
+    fInfo('Regeln für automatische Lichtsteuerung. Einmal konfigurieren — Jarvis erledigt den Rest.<br>Die Bewegungsmelder aus dem Räume-Tab werden für die Leer-Raum-Erkennung genutzt.') +
     fToggle('lighting.enabled', 'Lichtsteuerung aktiv') +
-    fToggle('lighting.auto_on_dusk', 'Auto-An bei Daemmerung (wenn jemand zuhause)') +
+    fToggle('lighting.auto_on_dusk', 'Auto-An bei Dämmerung (wenn jemand zuhause)') +
     fToggle('lighting.auto_off_away', 'Auto-Aus bei Abwesenheit (alle weg)') +
     fRange('lighting.auto_off_empty_room_minutes', 'Licht aus nach leerem Raum (Min)', 5, 120, 5, {5:'5 Min',10:'10 Min',15:'15 Min',30:'30 Min',45:'45 Min',60:'1 Std',90:'1.5 Std',120:'2 Std'}) +
     fToggle('lighting.night_dimming', 'Nacht-Dimming (automatisch dunkler ab 21 Uhr)') +
     fRange('lighting.night_dimming_start_hour', 'Night-Dimming Start (Uhrzeit)', 19, 23, 1, {19:'19 Uhr',20:'20 Uhr',21:'21 Uhr',22:'22 Uhr',23:'23 Uhr'}) +
-    fRange('lighting.night_dimming_transition', 'Night-Dimming Uebergang (Sek)', 60, 600, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min',600:'10 Min'}) +
+    fRange('lighting.night_dimming_transition', 'Night-Dimming Übergang (Sek)', 60, 600, 30, {60:'1 Min',120:'2 Min',180:'3 Min',300:'5 Min',600:'10 Min'}) +
     fToggle('lighting.daylight_off', 'Tageslicht-Hinweis (Licht an bei Sonnenschein)') +
-    fToggle('lighting.dusk_only_occupied_rooms', 'Daemmerung: Nur Raeume mit Praesenz einschalten') +
-    fRange('lighting.default_transition', 'Standard-Uebergang (Sekunden)', 0, 10, 1, {0:'Sofort',1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s'})
+    fToggle('lighting.dusk_only_occupied_rooms', 'Dämmerung: Nur Räume mit Praesenz einschalten') +
+    fRange('lighting.default_transition', 'Standard-Übergang (Sekunden)', 0, 10, 1, {0:'Sofort',1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s'})
   ) +
   sectionWrap('&#128065;', 'Praesenz-gesteuerte Beleuchtung',
     fInfo('Bewegung im Raum erkennen und Licht automatisch einschalten. Nachts wird statt voller Helligkeit nur ein sanftes Orientierungslicht in Flur und Bad aktiviert. Pro Raum konfigurierbar in der Raum-Zuordnung oben.') +
@@ -8575,31 +8575,31 @@ function renderLights() {
     fRange('lighting.bed_sensors.wakeup_window_end', 'Aufwach-Fenster Ende', 7, 11, 1, {7:'7 Uhr',8:'8 Uhr',9:'9 Uhr',10:'10 Uhr',11:'11 Uhr'})
   ) +
   sectionWrap('&#9728;', 'Lux-adaptive Helligkeit',
-    fInfo('Passt kuenstliches Licht automatisch an das vorhandene Tageslicht an. Bei viel Sonnenlicht wird weniger Kunstlicht verwendet, bei wenig Licht mehr. Lux-Sensor pro Raum zuordnen in der Raum-Zuordnung oben.') +
+    fInfo('Passt künstliches Licht automatisch an das vorhandene Tageslicht an. Bei viel Sonnenlicht wird weniger Kunstlicht verwendet, bei wenig Licht mehr. Lux-Sensor pro Raum zuordnen in der Raum-Zuordnung oben.') +
     fToggle('lighting.lux_adaptive.enabled', 'Lux-Adaptiv aktiv') +
     fRange('lighting.lux_adaptive.target_lux', 'Ziel-Beleuchtungsstaerke (Lux)', 100, 800, 50, {100:'100',200:'200',300:'300',400:'400',500:'500',600:'600',800:'800'}) +
     fRange('lighting.lux_adaptive.min_brightness_pct', 'Minimale Kunstlicht-Helligkeit (%)', 5, 30, 5, {5:'5%',10:'10%',15:'15%',20:'20%',25:'25%',30:'30%'}) +
     fRange('lighting.lux_adaptive.max_brightness_pct', 'Maximale Kunstlicht-Helligkeit (%)', 50, 100, 10, {50:'50%',60:'60%',70:'70%',80:'80%',90:'90%',100:'100%'})
   ) +
   sectionWrap('&#127782;', 'Wetter-Integration (sun.sun + weather)',
-    fInfo('Nutzt die Wetterbedingung aus Home Assistant fuer intelligentere Lichtsteuerung:<br><br>&#9729; <strong>Wetter-Boost:</strong> Bei Bewoelkung oder Regen werden eingeschaltete Lichter automatisch heller (+X%).<br>&#127769; <strong>Fruehere Daemmerung:</strong> An trueben Tagen wird die Daemmerungs-Schwelle angehoben — Licht geht frueher an.<br><br>Nutzt <strong>sun.sun</strong> fuer den Sonnenstand und die konfigurierte <strong>weather.*</strong> Entity fuer die Wetterlage.') +
+    fInfo('Nutzt die Wetterbedingung aus Home Assistant für intelligentere Lichtsteuerung:<br><br>&#9729; <strong>Wetter-Boost:</strong> Bei Bewölkung oder Regen werden eingeschaltete Lichter automatisch heller (+X%).<br>&#127769; <strong>Frühere Dämmerung:</strong> An trüben Tagen wird die Dämmerungs-Schwelle angehoben — Licht geht früher an.<br><br>Nutzt <strong>sun.sun</strong> für den Sonnenstand und die konfigurierte <strong>weather.*</strong> Entity für die Wetterlage.') +
     fToggle('lighting.weather_boost.enabled', 'Wetter-Integration aktiv') +
     fEntityPickerSingle('lighting.weather_boost.weather_entity', 'Wetter-Entity', ['weather'], 'Leer = automatisch (gleiche Entity wie Cover-Automatik)') +
-    fRange('lighting.weather_boost.cloud_boost_pct', 'Helligkeits-Boost bei Bewoelkung (%)', 0, 40, 5, {0:'Aus',5:'5%',10:'10%',15:'15%',20:'20%',25:'25%',30:'30%',40:'40%'}) +
+    fRange('lighting.weather_boost.cloud_boost_pct', 'Helligkeits-Boost bei Bewölkung (%)', 0, 40, 5, {0:'Aus',5:'5%',10:'10%',15:'15%',20:'20%',25:'25%',30:'30%',40:'40%'}) +
     fRange('lighting.weather_boost.rain_boost_pct', 'Helligkeits-Boost bei Regen (%)', 0, 50, 5, {0:'Aus',5:'5%',10:'10%',15:'15%',20:'20%',25:'25%',30:'30%',40:'40%',50:'50%'}) +
-    fToggle('lighting.weather_boost.dusk_earlier_on_cloudy', 'Daemmerung frueher bei Bewoelkung') +
-    fRange('lighting.weather_boost.dusk_cloud_elevation_offset', 'Daemmerung-Offset bei Wolken (Grad)', 1, 8, 1, {1:'1°',2:'2°',3:'3°',4:'4°',5:'5°',6:'6°',7:'7°',8:'8°'})
+    fToggle('lighting.weather_boost.dusk_earlier_on_cloudy', 'Dämmerung früher bei Bewölkung') +
+    fRange('lighting.weather_boost.dusk_cloud_elevation_offset', 'Dämmerung-Offset bei Wolken (Grad)', 1, 8, 1, {1:'1°',2:'2°',3:'3°',4:'4°',5:'5°',6:'6°',7:'7°',8:'8°'})
   ) +
   sectionWrap('&#127749;', 'Zirkadiane Beleuchtung',
-    fInfo('Passt Helligkeit (und bei tunable_white auch Farbtemperatur) automatisch an den Tagesverlauf an. dim2warm-Lampen regeln die Farbtemperatur ueber die Helligkeit in der Hardware — hier wird nur die Helligkeitskurve gesteuert.<br><br><strong>Modi:</strong><br>&bull; <strong>MindHome:</strong> Jarvis steuert die Helligkeitskurve komplett<br>&bull; <strong>Hybrid HCL:</strong> MDT AKD HCL laeuft als Basis, Jarvis ueberschreibt bei Events') +
+    fInfo('Passt Helligkeit (und bei tunable_white auch Farbtemperatur) automatisch an den Tagesverlauf an. dim2warm-Lampen regeln die Farbtemperatur über die Helligkeit in der Hardware — hier wird nur die Helligkeitskurve gesteuert.<br><br><strong>Modi:</strong><br>&bull; <strong>MindHome:</strong> Jarvis steuert die Helligkeitskurve komplett<br>&bull; <strong>Hybrid HCL:</strong> MDT AKD HCL läuft als Basis, Jarvis ueberschreibt bei Events') +
     fToggle('lighting.circadian.enabled', 'Zirkadiane Beleuchtung aktiv') +
     fSelect('lighting.circadian.mode', 'Modus', [{v:'mindhome',l:'MindHome (Jarvis steuert)'},{v:'hybrid_hcl',l:'Hybrid HCL (MDT AKD Basis)'}]) +
-    fRange('lighting.circadian.transition_seconds', 'Uebergangszeit (Sekunden)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
+    fRange('lighting.circadian.transition_seconds', 'Übergangszeit (Sekunden)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
     '<div id="circadianCurveEditor"></div>'
   ) +
   sectionWrap('&#127916;', 'Szenen-Uebergaenge',
-    fInfo('Uebergangszeiten pro Szene konfigurierst du zentral im Szenen-Tab. Hier nur der globale Standard-Uebergang.') +
-    fRange('narration.default_transition', 'Standard-Uebergang (Sek)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
+    fInfo('Übergangszeiten pro Szene konfigurierst du zentral im Szenen-Tab. Hier nur der globale Standard-Übergang.') +
+    fRange('narration.default_transition', 'Standard-Übergang (Sek)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
     `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
       <span class="info-icon">&#127916;</span>Einzelne Szenen-Uebergaenge verwaltest du im <strong>Szenen</strong>-Tab. Klicke hier.
     </div>`
@@ -8634,7 +8634,7 @@ function renderCircadianCurveEditor() {
 
   // Brightness Curve
   html += '<div style="margin-bottom:20px;">';
-  html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Helligkeitskurve (% ueber den Tag)</div>';
+  html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px;">Helligkeitskurve (% über den Tag)</div>';
   html += '<div id="circBriChart"></div>';
   html += '</div>';
 
@@ -8821,18 +8821,18 @@ function renderLightRoomAssignment(haLights, container) {
   const rooms = RP.rooms || {};
   const roomNames = Object.keys(rooms);
   if (roomNames.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Keine Raeume in room_profiles.yaml gefunden.</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Keine Räume in room_profiles.yaml gefunden.</div>';
     return;
   }
   const floorLabels = {eg:'EG', og:'OG'};
   const typeLabels = {
-    living:'Wohnzimmer', bedroom:'Schlafzimmer', kitchen:'Kueche',
+    living:'Wohnzimmer', bedroom:'Schlafzimmer', kitchen:'Küche',
     office:'Buero', bathroom:'Badezimmer', hallway:'Flur',
     outdoor:'Aussen', dressing:'Ankleide'
   };
   const lightTypeOpts = [
     {v:'standard', l:'Standard (nur Helligkeit)'},
-    {v:'dim2warm', l:'dim2warm (Farbtemp ueber Helligkeit)'},
+    {v:'dim2warm', l:'dim2warm (Farbtemp über Helligkeit)'},
     {v:'tunable_white', l:'tunable_white (Helligkeit + Farbtemp)'}
   ];
   // Motion sensors from settings for cross-reference
@@ -8869,11 +8869,11 @@ function renderLightRoomAssignment(haLights, container) {
       // Motion sensor info badge
       if (roomMotion) {
         html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:8px;padding:4px 8px;background:var(--bg-primary);border-radius:4px;font-size:10px;color:var(--text-secondary);">';
-        html += '<span style="color:var(--success);">&#9679;</span> Praesenzmelder: <span style="font-family:var(--mono);color:var(--accent);">' + esc(roomMotion) + '</span>';
+        html += '<span style="color:var(--success);">&#9679;</span> Präsenzmelder: <span style="font-family:var(--mono);color:var(--accent);">' + esc(roomMotion) + '</span>';
         html += '</div>';
       } else {
         html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:8px;padding:4px 8px;background:var(--bg-primary);border-radius:4px;font-size:10px;color:var(--text-muted);">';
-        html += '<span style="opacity:0.4;">&#9679;</span> Kein Praesenzmelder zugeordnet <span style="opacity:0.6;">(konfigurierbar unter Raeume &rarr; Bewegungsmelder)</span>';
+        html += '<span style="opacity:0.4;">&#9679;</span> Kein Präsenzmelder zugeordnet <span style="opacity:0.6;">(konfigurierbar unter Räume &rarr; Bewegungsmelder)</span>';
         html += '</div>';
       }
       // Light Entity Picker (multi-select checklist)
@@ -9003,10 +9003,10 @@ function renderRoomProfileEditor() {
   const rooms = RP.rooms || {};
   const roomNames = Object.keys(rooms);
   if (roomNames.length === 0) {
-    return '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Raeume in room_profiles.yaml gefunden.</div>';
+    return '<div style="color:var(--text-muted);font-size:12px;padding:8px;">Keine Räume in room_profiles.yaml gefunden.</div>';
   }
   const typeLabels = {
-    living:'Wohnzimmer', bedroom:'Schlafzimmer', kitchen:'Kueche',
+    living:'Wohnzimmer', bedroom:'Schlafzimmer', kitchen:'Küche',
     office:'Buero', bathroom:'Badezimmer', hallway:'Flur',
     outdoor:'Aussen', dressing:'Ankleide'
   };
@@ -9052,7 +9052,7 @@ function renderSeasonalEditor() {
     html += '<div class="s-card" style="margin-bottom:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);">';
     html += '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">' + s.icon + ' ' + s.label + '</div>';
     html += rpRange('seasonal.' + s.key + '.temp_offset', 'Temperatur-Offset (°C)', -5, 5, 0.5, {'-3':'-3','-2':'-2','-1':'-1',0:'0',1:'+1',2:'+2',3:'+3'});
-    html += rpText('seasonal.' + s.key + '.cover_hint', 'Rolladen-Hinweis', 'z.B. "Rolladen bei Sonne schliessen"');
+    html += rpText('seasonal.' + s.key + '.cover_hint', 'Rolladen-Hinweis', 'z.B. "Rolladen bei Sonne schließen"');
     html += rpText('seasonal.' + s.key + '.ventilation', 'Lueftungs-Tipp', 'z.B. "Kurz stosslueften"');
     html += '</div>';
   }
@@ -9097,11 +9097,11 @@ function renderRemote() {
         <div class="form-group">
           <label>AKTIVITAETEN-ALIASE</label>
           <div class="info-box" style="margin-bottom:8px;font-size:11px;">
-            <span class="info-icon">&#128161;</span>Links: deutscher Name (fuer Sprachsteuerung). Rechts: exakter Harmony-Aktivitaetsname.
+            <span class="info-icon">&#128161;</span>Links: deutscher Name (für Sprachsteuerung). Rechts: exakter Harmony-Aktivitätsname.
           </div>
           <div class="kv-editor" data-path="remote.remotes.${esc(key)}.activities">
             ${actRows}
-            <button class="kv-add" onclick="kvAdd(this,'remote.remotes.${esc(key)}.activities','Alias','Harmony-Name')">+ Aktivitaet</button>
+            <button class="kv-add" onclick="kvAdd(this,'remote.remotes.${esc(key)}.activities','Alias','Harmony-Name')">+ Aktivität</button>
           </div>
         </div>
         <button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);margin-top:8px;font-size:11px;" onclick="removeRemoteEntry('${esc(key)}')">Fernbedienung entfernen</button>
@@ -9114,13 +9114,13 @@ function renderRemote() {
   }
 
   return sectionWrap('&#128261;', 'Fernbedienungen (Harmony)',
-    fInfo('Konfiguriere deine Logitech Harmony Fernbedienungen. Jarvis kann Aktivitaeten starten (z.B. "Fernseher an"), IR-Befehle senden und den aktuellen Status abfragen. Aktivitaeten werden per Sprachbefehl ueber den deutschen Alias angesprochen: "Jarvis, starte Fernsehen."') +
+    fInfo('Konfiguriere deine Logitech Harmony Fernbedienungen. Jarvis kann Aktivitäten starten (z.B. "Fernseher an"), IR-Befehle senden und den aktuellen Status abfragen. Aktivitäten werden per Sprachbefehl über den deutschen Alias angesprochen: "Jarvis, starte Fernsehen."') +
     fToggle('remote.enabled', 'Fernbedienung-Steuerung aktiv') +
     remoteCards +
     '<button class="btn btn-sm" onclick="addRemoteEntry()" style="margin-top:8px;">+ Fernbedienung hinzufuegen</button>'
   ) +
   sectionWrap('&#127916;', 'Szenen-Integration',
-    fInfo('Wenn eine Szene eine Harmony-Aktivitaet enthaelt (z.B. Filmabend → "Watch TV"), startet Jarvis automatisch die passende Aktivitaet. Konfiguriere die Szenen-Zuordnung im Szenen-Tab.') +
+    fInfo('Wenn eine Szene eine Harmony-Aktivität enthält (z.B. Filmabend → "Watch TV"), startet Jarvis automatisch die passende Aktivität. Konfiguriere die Szenen-Zuordnung im Szenen-Tab.') +
     `<div class="info-box" style="cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
       <span class="info-icon">&#127916;</span>Szenen konfigurieren im <strong>Szenen</strong>-Tab. Klicke hier.
     </div>`
@@ -9128,12 +9128,12 @@ function renderRemote() {
   sectionWrap('&#128218;', 'Sprachbefehle',
     fInfo('So steuerst du die Fernbedienung per Sprache:') +
     `<div style="font-size:12px;line-height:1.9;color:var(--text-secondary);padding:4px 8px;">
-      <div><code>"Jarvis, schalte den Fernseher ein"</code> — Startet die Standard-Aktivitaet</div>
-      <div><code>"Jarvis, starte Fernsehen"</code> — Startet eine benannte Aktivitaet</div>
+      <div><code>"Jarvis, schalte den Fernseher ein"</code> — Startet die Standard-Aktivität</div>
+      <div><code>"Jarvis, starte Fernsehen"</code> — Startet eine benannte Aktivität</div>
       <div><code>"Jarvis, mach den Fernseher aus"</code> — Schaltet alles aus (PowerOff)</div>
       <div><code>"Jarvis, mach lauter / leiser"</code> — Sendet Volume-Befehle</div>
-      <div><code>"Jarvis, was laeuft gerade?"</code> — Zeigt aktive Aktivitaet</div>
-      <div><code>"Jarvis, welche Aktivitaeten hat die Fernbedienung?"</code> — Listet alle Optionen</div>
+      <div><code>"Jarvis, was läuft gerade?"</code> — Zeigt aktive Aktivität</div>
+      <div><code>"Jarvis, welche Aktivitäten hat die Fernbedienung?"</code> — Listet alle Optionen</div>
     </div>`
   );
 }
@@ -9162,13 +9162,13 @@ function rmRemoteActivity(remoteKey, btn) {
 // ── Saugroboter Tab ──────────────────────────────────────
 function renderVacuum() {
   return sectionWrap('&#129529;', 'Saugroboter',
-    fInfo('Konfiguriere deine Dreame-Saugroboter. Fuer raum-genaues Saugen muessen die Segment-IDs eingetragen werden (findest du in der Dreame-App unter Raumverwaltung).') +
+    fInfo('Konfiguriere deine Dreame-Saugroboter. Fuer raum-genaues Saugen müssen die Segment-IDs eingetragen werden (findest du in der Dreame-App unter Raumverwaltung).') +
     fToggle('vacuum.enabled', 'Saugroboter-Steuerung aktiv') +
     renderVacuumRobot('eg', 'Erdgeschoss (EG)') +
     renderVacuumRobot('og', 'Obergeschoss (OG)')
   ) +
   sectionWrap('&#128168;', 'Reinigungsoptionen',
-    fInfo('Standard-Einstellungen fuer Saugstaerke und Reinigungsmodus wenn nichts anderes angegeben wird.') +
+    fInfo('Standard-Einstellungen für Saugstaerke und Reinigungsmodus wenn nichts anderes angegeben wird.') +
     fSelect('vacuum.default_fan_speed', 'Standard-Saugstaerke', [
       {v:'quiet',l:'Leise'}, {v:'standard',l:'Standard'},
       {v:'strong',l:'Stark'}, {v:'turbo',l:'Turbo'}
@@ -9179,7 +9179,7 @@ function renderVacuum() {
     ])
   ) +
   sectionWrap('&#128694;', 'Anwesenheits-Steuerung',
-    fInfo('Steuert ob der Saugroboter nur bei Abwesenheit fahren darf. Gilt fuer ALLE Trigger (Auto-Clean, Steckdosen, Szenen). Kann die Alarmanlage automatisch umschalten.') +
+    fInfo('Steuert ob der Saugroboter nur bei Abwesenheit fahren darf. Gilt für ALLE Trigger (Auto-Clean, Steckdosen, Szenen). Kann die Alarmanlage automatisch umschalten.') +
     fToggle('vacuum.presence_guard.enabled', 'Anwesenheits-Steuerung aktiv') +
     fToggle('vacuum.presence_guard.switch_alarm_for_cleaning', 'Alarmanlage umschalten') +
     '<div class="form-group"><label>Alarm-Entity' + helpBtn('vacuum.presence_guard.alarm_entity') + '</label>' +
@@ -9194,7 +9194,7 @@ function renderVacuum() {
     '</div>' +
     fToggle('vacuum.presence_guard.pause_on_arrival', 'Bei Heimkehr: Pausieren & Ladestation') +
     fToggle('vacuum.presence_guard.resume_on_departure', 'Bei Abwesenheit: Reinigung fortsetzen') +
-    fRange('vacuum.presence_guard.resume_delay_minutes', 'Verzoegerung Fortsetzung (Min)', 1, 15, 1, {1:'1 Min',2:'2 Min',3:'3 Min',5:'5 Min',10:'10 Min',15:'15 Min'})
+    fRange('vacuum.presence_guard.resume_delay_minutes', 'Verzögerung Fortsetzung (Min)', 1, 15, 1, {1:'1 Min',2:'2 Min',3:'3 Min',5:'5 Min',10:'10 Min',15:'15 Min'})
   ) +
   sectionWrap('&#128296;', 'Auto-Clean',
     fInfo('Automatische Reinigung — entweder an festen Wochentagen oder automatisch wenn niemand zuhause ist.') +
@@ -9207,7 +9207,7 @@ function renderVacuum() {
     fChipSelect('vacuum.auto_clean.schedule_days', 'Reinigungstage', [
       {v:'mon',l:'Mo'}, {v:'tue',l:'Di'}, {v:'wed',l:'Mi'},
       {v:'thu',l:'Do'}, {v:'fri',l:'Fr'}, {v:'sat',l:'Sa'}, {v:'sun',l:'So'}
-    ], 'Gilt fuer Modus "Fester Wochenplan" und "Beides".') +
+    ], 'Gilt für Modus "Fester Wochenplan" und "Beides".') +
     fRange('vacuum.auto_clean.schedule_time', 'Uhrzeit (Wochenplan)', 2, 20, 1, {2:'02:00',3:'03:00',4:'04:00',5:'05:00',6:'06:00',7:'07:00',8:'08:00',9:'09:00',10:'10:00',11:'11:00',12:'12:00',13:'13:00',14:'14:00',15:'15:00',16:'16:00',17:'17:00',18:'18:00',19:'19:00',20:'20:00'}) +
     fToggle('vacuum.auto_clean.when_nobody_home', 'Nur wenn niemand zuhause (Smart-Modus)') +
     fRange('vacuum.auto_clean.min_hours_between', 'Mindestabstand (Std)', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'}) +
@@ -9221,35 +9221,35 @@ function renderVacuum() {
       {v:'vacuum',l:'Nur Saugen'}, {v:'mop',l:'Nur Wischen'},
       {v:'vacuum_and_mop',l:'Saugen & Wischen'}
     ]) +
-    fChipSelect('vacuum.auto_clean.not_during', 'Nicht starten waehrend', [
+    fChipSelect('vacuum.auto_clean.not_during', 'Nicht starten während', [
       {v:'meeting',l:'Meeting'}, {v:'schlafen',l:'Schlafen'},
-      {v:'gaeste',l:'Gaeste'}, {v:'filmabend',l:'Filmabend'},
+      {v:'gäste',l:'Gäste'}, {v:'filmabend',l:'Filmabend'},
       {v:'telefonat',l:'Telefonat'}
     ])
   ) +
   sectionWrap('&#9889;', 'Steckdosen-Trigger',
-    fInfo('Wenn eine Steckdose mit Leistungsmessung abschaltet (Leistung faellt unter Schwellwert), wird automatisch der zugehoerige Raum gereinigt.') +
+    fInfo('Wenn eine Steckdose mit Leistungsmessung abschaltet (Leistung fällt unter Schwellwert), wird automatisch der zugehoerige Raum gereinigt.') +
     fToggle('vacuum.power_trigger.enabled', 'Steckdosen-Trigger aktiv') +
-    fRange('vacuum.power_trigger.delay_minutes', 'Verzoegerung nach Abschalten', 1, 30, 1, {1:'1 Min',2:'2 Min',5:'5 Min',10:'10 Min',15:'15 Min',20:'20 Min',30:'30 Min'}) +
+    fRange('vacuum.power_trigger.delay_minutes', 'Verzögerung nach Abschalten', 1, 30, 1, {1:'1 Min',2:'2 Min',5:'5 Min',10:'10 Min',15:'15 Min',20:'20 Min',30:'30 Min'}) +
     fRange('vacuum.power_trigger.cooldown_hours', 'Cooldown (nicht nochmal)', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',6:'6 Std',8:'8 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'}) +
     _renderPowerTriggerList()
   ) +
   sectionWrap('&#127917;', 'Szenen-Trigger',
-    fInfo('Wenn eine Szene aktiviert wird, reinigt der Saugroboter automatisch den zugehoerigen Raum. Z.B. scene.kuche_aus wird aktiviert → Kueche saugen.') +
+    fInfo('Wenn eine Szene aktiviert wird, reinigt der Saugroboter automatisch den zugehoerigen Raum. Z.B. scene.kuche_aus wird aktiviert → Küche saugen.') +
     fToggle('vacuum.scene_trigger.enabled', 'Szenen-Trigger aktiv') +
-    fRange('vacuum.scene_trigger.delay_minutes', 'Verzoegerung nach Aktivierung', 1, 30, 1, {1:'1 Min',2:'2 Min',5:'5 Min',10:'10 Min',15:'15 Min',20:'20 Min',30:'30 Min'}) +
+    fRange('vacuum.scene_trigger.delay_minutes', 'Verzögerung nach Aktivierung', 1, 30, 1, {1:'1 Min',2:'2 Min',5:'5 Min',10:'10 Min',15:'15 Min',20:'20 Min',30:'30 Min'}) +
     fRange('vacuum.scene_trigger.cooldown_hours', 'Cooldown (nicht nochmal)', 1, 48, 1, {1:'1 Std',2:'2 Std',4:'4 Std',6:'6 Std',8:'8 Std',12:'12 Std',24:'1 Tag',48:'2 Tage'}) +
     _renderSceneTriggerList()
   ) +
   sectionWrap('&#128295;', 'Wartungs-Ueberwachung',
-    fInfo('Jarvis warnt wenn Verschleissteile des Saugroboters gewechselt werden muessen.') +
+    fInfo('Jarvis warnt wenn Verschleißteile des Saugroboters gewechselt werden müssen.') +
     fToggle('vacuum.maintenance.enabled', 'Wartungs-Ueberwachung aktiv') +
-    fRange('vacuum.maintenance.check_interval_hours', 'Pruef-Intervall', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'}) +
+    fRange('vacuum.maintenance.check_interval_hours', 'Prüf-Intervall', 6, 72, 6, {6:'6 Std',12:'12 Std',24:'1 Tag',48:'2 Tage',72:'3 Tage'}) +
     fRange('vacuum.maintenance.warn_at_percent', 'Warnung bei', 5, 30, 5, {5:'5%',10:'10%',15:'15%',20:'20%',30:'30%'})
   );
 }
 
-// Hilfsfunktion: Alle konfigurierten Vacuum-Raeume aus robots.*.rooms sammeln
+// Hilfsfunktion: Alle konfigurierten Vacuum-Räume aus robots.*.rooms sammeln
 function _getVacuumRooms() {
   const robots = getPath(S, 'vacuum.robots') || {};
   const rooms = new Set();
@@ -9278,7 +9278,7 @@ function _roomSelectHtml(cls, value, syncFn) {
   for (const r of rooms) {
     opts += `<option value="${esc(r)}"${r === value ? ' selected' : ''}>${esc(r)}</option>`;
   }
-  // Option fuer manuellen Eintrag falls value nicht in rooms
+  // Option für manuellen Eintrag falls value nicht in rooms
   if (value && !rooms.includes(value)) {
     opts += `<option value="${esc(value)}" selected>${esc(value)}</option>`;
   }
@@ -9385,7 +9385,7 @@ function renderVacuumRobot(floor, floorLabel) {
   html += fText(prefix + '.name', 'Name', 'z.B. Saugroboter ' + floor.toUpperCase());
   html += fText(prefix + '.nickname', 'Spitzname', 'z.B. der Kleine');
   html += fKeyValue(prefix + '.rooms', 'Raum-Segmente (Dreame Raum-IDs)', 'Raumname', 'Segment-ID',
-    'Raumname frei eingeben, Segment-ID aus der Dreame-App (Raeume verwalten → Nummer).');
+    'Raumname frei eingeben, Segment-ID aus der Dreame-App (Räume verwalten → Nummer).');
   html += '</div>';
   return html;
 }
@@ -9398,38 +9398,38 @@ function renderDevices() {
     fRange('device_health.alert_cooldown_minutes', 'Alert-Cooldown', 60, 2880, 60, {60:'1 Std',360:'6 Std',720:'12 Std',1440:'24 Std',2880:'48 Std'})
   ) +
   sectionWrap('&#128295;', 'Diagnostik',
-    fInfo('Automatische Pruefung von Sensoren, Batterien und Geraetestatus. Alle annotierten Entities (siehe Entities-Tab) werden automatisch ueberwacht. Versteckte Entities werden ignoriert.') +
-    fToggle('diagnostics.enabled', 'Geraete-Diagnostik aktiv') +
-    fRange('diagnostics.check_interval_minutes', 'Pruef-Intervall', 5, 120, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
+    fInfo('Automatische Prüfung von Sensoren, Batterien und Gerätestatus. Alle annotierten Entities (siehe Entities-Tab) werden automatisch überwacht. Versteckte Entities werden ignoriert.') +
+    fToggle('diagnostics.enabled', 'Geräte-Diagnostik aktiv') +
+    fRange('diagnostics.check_interval_minutes', 'Prüf-Intervall', 5, 120, 5, {5:'5 Min',15:'15 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
     fRange('diagnostics.battery_warning_threshold', 'Batterie-Warnung ab', 5, 50, 5, {5:'5%',10:'10%',15:'15%',20:'20%',30:'30%',50:'50%'}) +
     fRange('diagnostics.stale_sensor_minutes', 'Sensor veraltet nach', 30, 600, 30, {30:'30 Min',60:'1 Std',120:'2 Std',300:'5 Std',600:'10 Std'}) +
     fRange('diagnostics.offline_threshold_minutes', 'Geraet offline nach', 10, 120, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std'}) +
-    fRange('diagnostics.alert_cooldown_minutes', 'Wiederholung fruehestens nach', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
-    fChipSelect('diagnostics.monitor_domains', 'Ueberwachte Domains (fuer nicht-annotierte Entities)', [
+    fRange('diagnostics.alert_cooldown_minutes', 'Wiederholung frühestens nach', 10, 240, 10, {10:'10 Min',30:'30 Min',60:'1 Std',120:'2 Std',240:'4 Std'}) +
+    fChipSelect('diagnostics.monitor_domains', 'Überwachte Domains (für nicht-annotierte Entities)', [
         {v:'sensor',l:'Sensoren'}, {v:'binary_sensor',l:'Binaer-Sensoren'},
         {v:'light',l:'Lichter'}, {v:'switch',l:'Schalter'},
         {v:'cover',l:'Rolladen'}, {v:'climate',l:'Klima'},
-        {v:'lock',l:'Schloesser'}, {v:'fan',l:'Ventilatoren'},
+        {v:'lock',l:'Schlösser'}, {v:'fan',l:'Ventilatoren'},
         {v:'water_heater',l:'Warmwasser'}, {v:'media_player',l:'Media Player'},
         {v:'camera',l:'Kameras'}, {v:'alarm_control_panel',l:'Alarmanlagen'}
-    ], 'Nicht-annotierte Entities werden nur aus diesen Domains geprueft') +
+    ], 'Nicht-annotierte Entities werden nur aus diesen Domains geprüft') +
     fKeywords('diagnostics.exclude_patterns', 'Ignorierte Patterns (Entity-ID)')
   ) +
   sectionWrap('&#128736;', 'Wartung',
-    fInfo('Automatische Wartungshinweise fuer Geraete im Haushalt.') +
+    fInfo('Automatische Wartungshinweise für Geräte im Haushalt.') +
     fToggle('maintenance.enabled', 'Wartungs-Erinnerungen aktiv')
   ) +
   sectionWrap('&#127899;', 'Entity-Rollen',
-    fInfo('Standard-Rollen fuer Entity-Erkennung werden aus config/entity_roles_defaults.yaml geladen. Eigene Rollen oder Overrides hier definieren (ueberschreiben Defaults).') +
+    fInfo('Standard-Rollen für Entity-Erkennung werden aus config/entity_roles_defaults.yaml geladen. Eigene Rollen oder Overrides hier definieren (ueberschreiben Defaults).') +
     fTextarea('entity_roles', 'Eigene Entity-Rollen (JSON)', 'Format: {"rolle_id": {"label": "Name", "icon": "Emoji", "keywords": ["wort1", "wort2"]}}')
   );
 }
 
-// Entity-Picker fuer Monitoring entfernt — Diagnostics und Device Health nutzen
-// jetzt automatisch Entity-Annotations (annotierte = ueberwacht, hidden = ignoriert).
+// Entity-Picker für Monitoring entfernt — Diagnostics und Device Health nutzen
+// jetzt automatisch Entity-Annotations (annotierte = überwacht, hidden = ignoriert).
 let _mhEntities = null;
 async function loadMindHomeEntities() {
-  // Laedt MindHome-Entities fuer Raumnamen-Erkennung (kein Entity-Picker mehr)
+  // Laedt MindHome-Entities für Raumnamen-Erkennung (kein Entity-Picker mehr)
   try {
     _mhEntities = await api('/api/ui/entities/mindhome');
   } catch(e) { _mhEntities = null; }
@@ -9447,7 +9447,7 @@ function renderSystem() {
     '<div id="sysUpdateCheck" style="margin-bottom:12px;"></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
       '<button class="btn btn-primary" id="btnSysUpdate" onclick="doSystemUpdate()">&#128640; System-Update starten</button>' +
-      '<button class="btn btn-secondary" id="btnSysCheckUpdate" onclick="checkForUpdates()">&#128269; Auf Updates pruefen</button>' +
+      '<button class="btn btn-secondary" id="btnSysCheckUpdate" onclick="checkForUpdates()">&#128269; Auf Updates prüfen</button>' +
     '</div>' +
     '<div id="sysUpdateLog" style="display:none;margin-top:16px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;max-height:300px;overflow-y:auto;">' +
       '<div style="font-size:11px;font-family:var(--font-mono);white-space:pre-wrap;" id="sysUpdateLogContent"></div>' +
@@ -9540,7 +9540,7 @@ async function loadSystemStatus() {
         <div style="grid-column:1/-1;"><strong>Container:</strong> ${cStatus}</div>
         <div><strong>Ollama:</strong> ${ollama.available ? '<span style="color:var(--success);">Online</span>' : '<span style="color:var(--danger);">Offline</span>'}</div>
       </div>
-      ${git.changes ? '<div style="margin-top:8px;padding:8px;background:var(--bg-hover);border-radius:4px;"><strong>Lokale Aenderungen:</strong><pre style="margin:4px 0 0;font-size:11px;">' + esc(git.changes) + '</pre></div>' : ''}
+      ${git.changes ? '<div style="margin-top:8px;padding:8px;background:var(--bg-hover);border-radius:4px;"><strong>Lokale Änderungen:</strong><pre style="margin:4px 0 0;font-size:11px;">' + esc(git.changes) + '</pre></div>' : ''}
     `;
   } catch(e) {
     box.innerHTML = '<span style="color:var(--danger);">Fehler beim Laden: ' + esc(e.message) + '</span>';
@@ -9552,13 +9552,13 @@ async function checkForUpdates() {
   const btn = document.getElementById('btnSysCheckUpdate');
   if (!box || !btn) return;
   btn.disabled = true;
-  btn.textContent = 'Pruefe...';
+  btn.textContent = 'Prüfe...';
   try {
     const data = await api('/api/ui/system/update-check');
     if (data.updates_available) {
       const commits = (data.new_commits || []).map(c => '<div style="padding:2px 0;">' + esc(c) + '</div>').join('');
       box.innerHTML = '<div style="padding:10px;background:var(--bg-hover);border-left:3px solid var(--accent);border-radius:4px;">' +
-        '<strong style="color:var(--accent);">&#9889; Updates verfuegbar!</strong> (' + esc(data.local) + ' &rarr; ' + esc(data.remote) + ')' +
+        '<strong style="color:var(--accent);">&#9889; Updates verfügbar!</strong> (' + esc(data.local) + ' &rarr; ' + esc(data.remote) + ')' +
         '<div style="margin-top:8px;font-size:11px;font-family:var(--font-mono);">' + commits + '</div></div>';
     } else {
       box.innerHTML = '<div style="padding:8px;color:var(--success);"><strong>&#10003;</strong> System ist aktuell (' + esc(data.local || '') + ')</div>';
@@ -9567,7 +9567,7 @@ async function checkForUpdates() {
     box.innerHTML = '<span style="color:var(--danger);">Fehler: ' + esc(e.message) + '</span>';
   } finally {
     btn.disabled = false;
-    btn.textContent = '\u{1F50D} Auf Updates pruefen';
+    btn.textContent = '\u{1F50D} Auf Updates prüfen';
   }
 }
 
@@ -9594,7 +9594,7 @@ async function doSystemUpdate() {
   const btn = document.getElementById('btnSysUpdate');
   const logBox = document.getElementById('sysUpdateLog');
   const logContent = document.getElementById('sysUpdateLogContent');
-  if (btn) { btn.disabled = true; btn.textContent = 'Update laeuft...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Update läuft...'; }
   if (logBox) logBox.style.display = 'block';
   if (logContent) logContent.textContent = 'Update gestartet...\n';
 
@@ -9624,7 +9624,7 @@ async function doSystemUpdate() {
 async function doSystemRestart() {
   if (!confirm('Alle Container jetzt neustarten?')) return;
   const btn = document.getElementById('btnSysRestart');
-  if (btn) { btn.disabled = true; btn.textContent = 'Neustart laeuft...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Neustart läuft...'; }
   try {
     await api('/api/ui/system/restart', 'POST');
   } catch(e) { /* erwartbar: Verbindung bricht ab */ }
@@ -9658,7 +9658,7 @@ async function doUpdateModels() {
 }
 
 // ============================================================
-// Gedaechtnis-Seite (Fakten + Episoden)
+// Gedächtnis-Seite (Fakten + Episoden)
 // ============================================================
 
 let _memFacts = [];
@@ -9777,7 +9777,7 @@ async function deleteSelectedFacts() {
   const ids = Array.from(checked).map(cb => cb.dataset.id);
   try {
     const d = await api('/api/ui/memory/facts/delete', 'POST', { ids });
-    toast(d.deleted + ' Fakten geloescht', 'success');
+    toast(d.deleted + ' Fakten gelöscht', 'success');
     loadMemoryPage();
   } catch(e) { toast('Fehler: ' + e.message, 'error'); }
 }
@@ -9825,12 +9825,12 @@ async function deleteSelectedEpisodes() {
   const ids = Array.from(checked).map(cb => cb.dataset.id);
   try {
     const d = await api('/api/ui/memory/episodes/delete', 'POST', { ids });
-    toast(d.deleted + ' Episoden geloescht', 'success');
+    toast(d.deleted + ' Episoden gelöscht', 'success');
     loadMemoryPage();
   } catch(e) { toast('Fehler: ' + e.message, 'error'); }
 }
 
-// ---- Gedaechtnis komplett zuruecksetzen (PIN-geschuetzt) ----
+// ---- Gedächtnis komplett zurücksetzen (PIN-geschuetzt) ----
 
 function showMemoryResetDialog() {
   const overlay = document.getElementById('memResetOverlay');
@@ -9857,12 +9857,12 @@ async function confirmMemoryReset() {
     return;
   }
 
-  if (btn) { btn.disabled = true; btn.textContent = 'Wird zurueckgesetzt...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Wird zurückgesetzt...'; }
 
   try {
     const d = await api('/api/ui/memory/reset', 'POST', { pin });
     hideMemoryResetDialog();
-    toast('Gedaechtnis komplett zurueckgesetzt', 'success');
+    toast('Gedächtnis komplett zurückgesetzt', 'success');
     loadMemoryPage();
   } catch(e) {
     if (errEl) {
@@ -9870,7 +9870,7 @@ async function confirmMemoryReset() {
       errEl.style.display = 'block';
     }
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Zuruecksetzen'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Zurücksetzen'; }
   }
 }
 
@@ -9904,7 +9904,7 @@ async function confirmFactoryReset() {
     return;
   }
 
-  if (btn) { btn.disabled = true; btn.textContent = 'Wird zurueckgesetzt...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Wird zurückgesetzt...'; }
 
   try {
     const d = await api('/api/ui/factory-reset', 'POST', { pin, include_uploads: includeUploads });
@@ -9938,19 +9938,19 @@ let _declEditMode = null; // null = neues Tool, string = Name des editierten Too
 const DECL_TOOL_TYPES = [
   {v:'entity_comparison', l:'Entity-Vergleich', desc:'Vergleicht zwei Entities (z.B. Strom heute vs. gestern)'},
   {v:'multi_entity_formula', l:'Multi-Entity-Formel', desc:'Kombiniert mehrere Entities (Durchschnitt, Summe, Min, Max)'},
-  {v:'event_counter', l:'Event-Zaehler', desc:'Zaehlt State-Aenderungen (z.B. Tueroeffnungen)'},
-  {v:'threshold_monitor', l:'Schwellwert-Monitor', desc:'Prueft ob Wert im definierten Bereich liegt'},
-  {v:'trend_analyzer', l:'Trend-Analyse', desc:'Analysiert Trend ueber Zeitraum (steigend/fallend/stabil)'},
-  {v:'entity_aggregator', l:'Entity-Aggregation', desc:'Aggregiert ueber mehrere Entities (Durchschnitt aller Raeume)'},
-  {v:'schedule_checker', l:'Zeitplan-Check', desc:'Prueft zeitbasierte Regeln (Nachtmodus, Arbeitszeit)'},
+  {v:'event_counter', l:'Event-Zähler', desc:'Zählt State-Änderungen (z.B. Türöffnungen)'},
+  {v:'threshold_monitor', l:'Schwellwert-Monitor', desc:'Prüft ob Wert im definierten Bereich liegt'},
+  {v:'trend_analyzer', l:'Trend-Analyse', desc:'Analysiert Trend über Zeitraum (steigend/fallend/stabil)'},
+  {v:'entity_aggregator', l:'Entity-Aggregation', desc:'Aggregiert über mehrere Entities (Durchschnitt aller Räume)'},
+  {v:'schedule_checker', l:'Zeitplan-Check', desc:'Prüft zeitbasierte Regeln (Nachtmodus, Arbeitszeit)'},
   {v:'state_duration', l:'Zustandsdauer', desc:'Wie lange war ein Zustand aktiv (z.B. Heizung lief X Stunden)'},
   {v:'time_comparison', l:'Zeitvergleich', desc:'Vergleicht Entity mit sich selbst (heute vs. gestern/Woche/Monat)'},
 ];
 
 const DECL_OPERATIONS = [
   {v:'difference', l:'Differenz (A - B)'},
-  {v:'ratio', l:'Verhaeltnis (A / B)'},
-  {v:'percentage_change', l:'Prozentuale Aenderung'},
+  {v:'ratio', l:'Verhältnis (A / B)'},
+  {v:'percentage_change', l:'Prozentuale Änderung'},
 ];
 const DECL_FORMULAS = [
   {v:'average', l:'Durchschnitt'},{v:'weighted_average', l:'Gewichteter Durchschnitt'},
@@ -9975,25 +9975,25 @@ const DECL_PRESETS = [
    config:{entity_a:'sensor.strom_heute', entity_b:'sensor.strom_gestern', operation:'difference'}},
   {name:'innen_vs_aussen', desc:'Temperaturunterschied innen vs. aussen', type:'entity_comparison',
    config:{entity_a:'sensor.wohnzimmer_temperatur', entity_b:'sensor.aussen_temperatur', operation:'difference'}},
-  {name:'solar_vs_verbrauch', desc:'Solarertrag vs. Stromverbrauch (Verhaeltnis)', type:'entity_comparison',
+  {name:'solar_vs_verbrauch', desc:'Solarertrag vs. Stromverbrauch (Verhältnis)', type:'entity_comparison',
    config:{entity_a:'sensor.solar_produktion', entity_b:'sensor.stromverbrauch', operation:'ratio'}},
 
   // ── Multi-Entity-Formel ───────────────────────────
   {name:'komfort_index', desc:'Gewichteter Komfort-Index aus Temperatur und Luftfeuchtigkeit', type:'multi_entity_formula',
    config:{entities:{temp:'sensor.wohnzimmer_temperatur', hum:'sensor.wohnzimmer_luftfeuchtigkeit'}, formula:'weighted_average', weights:{temp:0.6, hum:0.4}}},
   {name:'gesamt_stromverbrauch', desc:'Summe aller Stromzaehler', type:'multi_entity_formula',
-   config:{entities:{kueche:'sensor.strom_kueche', wohnzimmer:'sensor.strom_wohnzimmer', buero:'sensor.strom_buero'}, formula:'sum'}},
+   config:{entities:{küche:'sensor.strom_küche', wohnzimmer:'sensor.strom_wohnzimmer', buero:'sensor.strom_buero'}, formula:'sum'}},
 
-  // ── Event-Zaehler ─────────────────────────────────
-  {name:'tuerbewegungen', desc:'Zaehlt Tueroeffnungen heute', type:'event_counter',
+  // ── Event-Zähler ─────────────────────────────────
+  {name:'türbewegungen', desc:'Zählt Türöffnungen heute', type:'event_counter',
    config:{entities:['binary_sensor.haustuer_kontakt'], count_state:'on', time_range:'24h'}},
   {name:'licht_schaltungen', desc:'Wie oft wurden Lichter heute geschaltet?', type:'event_counter',
-   config:{entities:['light.wohnzimmer','light.kueche','light.flur'], count_state:'on', time_range:'24h'}},
-  {name:'fenster_oeffnungen', desc:'Fenster-Oeffnungen diese Woche', type:'event_counter',
+   config:{entities:['light.wohnzimmer','light.küche','light.flur'], count_state:'on', time_range:'24h'}},
+  {name:'fenster_oeffnungen', desc:'Fenster-Öffnungen diese Woche', type:'event_counter',
    config:{entities:['binary_sensor.fenster_wohnzimmer','binary_sensor.fenster_schlafzimmer'], count_state:'on', time_range:'7d'}},
 
   // ── Schwellwert-Monitor ───────────────────────────
-  {name:'luftfeuchtigkeit_check', desc:'Prueft ob Luftfeuchtigkeit im Komfortbereich (40-60%)', type:'threshold_monitor',
+  {name:'luftfeuchtigkeit_check', desc:'Prüft ob Luftfeuchtigkeit im Komfortbereich (40-60%)', type:'threshold_monitor',
    config:{entity:'sensor.wohnzimmer_luftfeuchtigkeit', thresholds:{min:40, max:60}}},
   {name:'co2_warnung', desc:'CO2-Wert unter 1000 ppm halten', type:'threshold_monitor',
    config:{entity:'sensor.co2', thresholds:{max:1000}}},
@@ -10011,17 +10011,17 @@ const DECL_PRESETS = [
    config:{entity:'sensor.wohnzimmer_luftfeuchtigkeit', time_range:'12h'}},
 
   // ── Entity-Aggregation ────────────────────────────
-  {name:'raumtemperaturen', desc:'Durchschnittstemperatur aller Raeume', type:'entity_aggregator',
-   config:{entities:['sensor.wohnzimmer_temperatur','sensor.schlafzimmer_temperatur','sensor.kueche_temperatur'], aggregation:'average'}},
-  {name:'kaeltester_raum', desc:'Findet den kaeltesten Raum', type:'entity_aggregator',
-   config:{entities:['sensor.wohnzimmer_temperatur','sensor.schlafzimmer_temperatur','sensor.kueche_temperatur','sensor.bad_temperatur'], aggregation:'min'}},
-  {name:'feuchtester_raum', desc:'Hoechste Luftfeuchtigkeit aller Raeume', type:'entity_aggregator',
+  {name:'raumtemperaturen', desc:'Durchschnittstemperatur aller Räume', type:'entity_aggregator',
+   config:{entities:['sensor.wohnzimmer_temperatur','sensor.schlafzimmer_temperatur','sensor.küche_temperatur'], aggregation:'average'}},
+  {name:'kaeltester_raum', desc:'Findet den kältesten Raum', type:'entity_aggregator',
+   config:{entities:['sensor.wohnzimmer_temperatur','sensor.schlafzimmer_temperatur','sensor.küche_temperatur','sensor.bad_temperatur'], aggregation:'min'}},
+  {name:'feuchtester_raum', desc:'Hoechste Luftfeuchtigkeit aller Räume', type:'entity_aggregator',
    config:{entities:['sensor.wohnzimmer_luftfeuchtigkeit','sensor.schlafzimmer_luftfeuchtigkeit','sensor.bad_luftfeuchtigkeit'], aggregation:'max'}},
 
   // ── Zeitplan-Check ────────────────────────────────
-  {name:'nachtmodus', desc:'Prueft ob Nachtmodus aktiv ist (22-07 Uhr)', type:'schedule_checker',
+  {name:'nachtmodus', desc:'Prüft ob Nachtmodus aktiv ist (22-07 Uhr)', type:'schedule_checker',
    config:{schedules:[{label:'Nachtmodus', start:'22:00', end:'07:00'}]}},
-  {name:'arbeitszeit', desc:'Prueft Arbeitszeit (Mo-Fr 9-17 Uhr)', type:'schedule_checker',
+  {name:'arbeitszeit', desc:'Prüft Arbeitszeit (Mo-Fr 9-17 Uhr)', type:'schedule_checker',
    config:{schedules:[{label:'Arbeitszeit', start:'09:00', end:'17:00', days:['monday','tuesday','wednesday','thursday','friday']}]}},
 
   // ── Zustandsdauer (NEU) ───────────────────────────
@@ -10029,12 +10029,12 @@ const DECL_PRESETS = [
    config:{entity:'climate.wohnzimmer', target_state:'heating', time_range:'24h'}},
   {name:'licht_brenndauer', desc:'Wie lange brannte das Wohnzimmerlicht heute?', type:'state_duration',
    config:{entity:'light.wohnzimmer', target_state:'on', time_range:'24h'}},
-  {name:'fenster_offen_dauer', desc:'Wie lange war das Fenster heute geoeffnet?', type:'state_duration',
+  {name:'fenster_offen_dauer', desc:'Wie lange war das Fenster heute geöffnet?', type:'state_duration',
    config:{entity:'binary_sensor.fenster_wohnzimmer', target_state:'on', time_range:'24h'}},
   {name:'tv_nutzung', desc:'Fernseher-Betriebsstunden diese Woche', type:'state_duration',
    config:{entity:'media_player.fernseher', target_state:'on', time_range:'7d'}},
-  {name:'waermepumpe_laufzeit', desc:'Waermepumpe Laufzeit letzte 7 Tage', type:'state_duration',
-   config:{entity:'switch.waermepumpe', target_state:'on', time_range:'7d'}},
+  {name:'Wärmepumpe_laufzeit', desc:'Wärmepumpe Laufzeit letzte 7 Tage', type:'state_duration',
+   config:{entity:'switch.Wärmepumpe', target_state:'on', time_range:'7d'}},
 
   // ── Zeitvergleich (NEU) ───────────────────────────
   {name:'strom_vs_gestern', desc:'Stromverbrauch heute vs. gestern', type:'time_comparison',
@@ -10132,7 +10132,7 @@ function _getDeclEntityList(id) {
   }).filter(Boolean);
 }
 
-// Hook: entityPickSelect fuer data-decl-list Inputs
+// Hook: entityPickSelect für data-decl-list Inputs
 (function() {
   const _orig = window.entityPickSelect;
   if (typeof _orig !== 'function') return;
@@ -10229,7 +10229,7 @@ async function deleteDeclTool(name) {
   if (!confirm('Tool "' + name + '" wirklich loeschen?')) return;
   try {
     await api('/api/ui/declarative-tools/' + encodeURIComponent(name), 'DELETE');
-    toast('Tool "' + name + '" geloescht', 'success');
+    toast('Tool "' + name + '" gelöscht', 'success');
     loadDeclarativeTools();
   } catch(e) { toast('Fehler: ' + e.message, 'error'); }
 }
@@ -10402,7 +10402,7 @@ function _declTypeConfigFields(type) {
       return _declEntityListInput('declCfg_entities_list', 'Entities', ['binary_sensor','sensor'], 'Entity suchen...') +
         '<div class="form-group"><label>State zaehlen</label>' +
         '<input type="text" id="declCfg_count_state" placeholder="on" value="on">' +
-        '<div class="hint">State-Wert der gezaehlt wird (z.B. "on", "open")</div></div>' +
+        '<div class="hint">State-Wert der gezählt wird (z.B. "on", "open")</div></div>' +
         '<div class="form-group"><label>Zeitraum' + helpBtn('decl_tools.time_range') + '</label><select id="declCfg_time_range">' +
         DECL_TIME_RANGES.map(o => '<option value="' + o.v + '"' + (o.v==='24h'?' selected':'') + '>' + o.l + '</option>').join('') +
         '</select></div>';
@@ -10617,10 +10617,10 @@ function _updateDeclEnabledUI() {
   }
 }
 
-// ── Vorschlaege (Suggestions) ─────────────────────────────────
+// ── Vorschläge (Suggestions) ─────────────────────────────────
 let _declSuggestions = [];
 let _declSuggestLoading = false;
-let _declSuggestBusy = false;  // Sperrt alle Suggestion-Buttons waehrend async Ops
+let _declSuggestBusy = false;  // Sperrt alle Suggestion-Buttons während async Ops
 
 async function generateDeclSuggestions() {
   if (_declSuggestLoading) return;
@@ -10628,22 +10628,22 @@ async function generateDeclSuggestions() {
   var btn = document.getElementById('declSuggestBtn');
   var container = document.getElementById('declSuggestionsList');
   if (btn) { btn.disabled = true; btn.innerHTML = '&#9203; Analysiere Entities...'; }
-  if (container) container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Jarvis analysiert deine Home-Assistant-Entities und generiert Vorschlaege...</div>';
+  if (container) container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Jarvis analysiert deine Home-Assistant-Entities und generiert Vorschläge...</div>';
   try {
     var r = await api('/api/ui/declarative-tools/suggest', 'POST', {use_llm: true});
     _declSuggestions = r.suggestions || [];
     _renderDeclSuggestions();
     if (_declSuggestions.length === 0) {
-      toast('Keine neuen Vorschlaege — alle sinnvollen Tools existieren bereits!', 'success');
+      toast('Keine neuen Vorschläge — alle sinnvollen Tools existieren bereits!', 'success');
     } else {
-      toast(_declSuggestions.length + ' Vorschlaege generiert', 'success');
+      toast(_declSuggestions.length + ' Vorschläge generiert', 'success');
     }
   } catch(e) {
     toast('Fehler: ' + (e.message || e), 'error');
     if (container) container.innerHTML = '<div style="padding:16px;color:var(--danger);">Fehler beim Generieren: ' + esc(e.message || String(e)) + '</div>';
   } finally {
     _declSuggestLoading = false;
-    if (btn) { btn.disabled = false; btn.innerHTML = '&#128161; Vorschlaege generieren'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#128161; Vorschläge generieren'; }
   }
 }
 
@@ -10651,10 +10651,10 @@ function _renderDeclSuggestions() {
   var container = document.getElementById('declSuggestionsList');
   if (!container) return;
   if (_declSuggestions.length === 0) {
-    container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Keine Vorschlaege vorhanden. Klicke "Vorschlaege generieren" um Jarvis deine Entities analysieren zu lassen.</div>';
+    container.innerHTML = '<div style="padding:16px;color:var(--text-secondary);font-style:italic;">Keine Vorschläge vorhanden. Klicke "Vorschläge generieren" um Jarvis deine Entities analysieren zu lassen.</div>';
     return;
   }
-  var h = '<div style="margin-bottom:8px;font-size:12px;color:var(--text-secondary);">' + _declSuggestions.length + ' Vorschlaege</div>';
+  var h = '<div style="margin-bottom:8px;font-size:12px;color:var(--text-secondary);">' + _declSuggestions.length + ' Vorschläge</div>';
   _declSuggestions.forEach(function(s, i) {
     var typeInfo = DECL_TOOL_TYPES.find(function(t) { return t.v === s.type; }) || {l: s.type};
     h += '<div class="decl-suggestion" style="border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;margin-bottom:10px;background:var(--bg-card);border-left:3px solid var(--accent);">' +
@@ -10712,7 +10712,7 @@ function rejectDeclSuggestion(idx) {
 
 async function acceptAllDeclSuggestions() {
   if (_declSuggestBusy) return;
-  if (!confirm(_declSuggestions.length + ' Vorschlaege annehmen?')) return;
+  if (!confirm(_declSuggestions.length + ' Vorschläge annehmen?')) return;
   _declSuggestBusy = true;
   var accepted = 0;
   var errors = 0;
@@ -10746,22 +10746,22 @@ async function acceptAllDeclSuggestions() {
 
 function rejectAllDeclSuggestions() {
   if (_declSuggestBusy) return;
-  if (!confirm(_declSuggestions.length + ' Vorschlaege ablehnen?')) return;
+  if (!confirm(_declSuggestions.length + ' Vorschläge ablehnen?')) return;
   _declSuggestions = [];
   _renderDeclSuggestions();
-  toast('Alle Vorschlaege abgelehnt', 'success');
+  toast('Alle Vorschläge abgelehnt', 'success');
 }
 
 // ---- Tab: Intelligenz — Quick Wins ----
 function renderIntelligence() {
   return sectionWrap('&#127919;', 'Domain-spezifische Autonomie',
-    fInfo('Unterschiedliche Autonomie-Level pro Bereich. Z.B. Level 4 bei Klima (darf Temperatur selbst anpassen), aber Level 2 bei Sicherheit (nur informieren). Wenn deaktiviert gilt das globale Level fuer alle Bereiche.') +
+    fInfo('Unterschiedliche Autonomie-Level pro Bereich. Z.B. Level 4 bei Klima (darf Temperatur selbst anpassen), aber Level 2 bei Sicherheit (nur informieren). Wenn deaktiviert gilt das globale Level für alle Bereiche.') +
     fToggle('autonomy.domain_levels_enabled', 'Domain-Autonomie aktivieren') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Level pro Domaene</div>' +
     fRange('autonomy.domain_levels.climate', 'Klima & Heizung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
     fRange('autonomy.domain_levels.light', 'Licht & Beleuchtung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
     fRange('autonomy.domain_levels.media', 'Medien & Musik', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
-    fRange('autonomy.domain_levels.cover', 'Rolllaeden', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
+    fRange('autonomy.domain_levels.cover', 'Rollläden', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
     fRange('autonomy.domain_levels.security', 'Sicherheit', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
     fRange('autonomy.domain_levels.automation', 'Automationen & Routinen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'}) +
     fRange('autonomy.domain_levels.notification', 'Benachrichtigungen', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
@@ -10770,28 +10770,28 @@ function renderIntelligence() {
     fInfo('Erkennt Gewohnheiten aus wiederkehrenden Terminen, warnt bei Zeitkonflikten (Pendelzeit vs. Meeting) und zeigt freie Zeitfenster an.') +
     fToggle('calendar_intelligence.enabled', 'Kalender-Intelligenz aktiv') +
     fNum('calendar_intelligence.commute_minutes', 'Pendelzeit (Minuten)', 5, 120, 5) +
-    fNum('calendar_intelligence.habit_min_occurrences', 'Min. Wiederholungen fuer Gewohnheit', 2, 10) +
+    fNum('calendar_intelligence.habit_min_occurrences', 'Min. Wiederholungen für Gewohnheit', 2, 10) +
     fNum('calendar_intelligence.conflict_lookahead_hours', 'Konflikt-Vorschau (Stunden)', 6, 72, 6) +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Erkennungs-Module</div>' +
     fToggle('calendar_intelligence.habit_detection', 'Gewohnheits-Erkennung') +
     fToggle('calendar_intelligence.conflict_detection', 'Konflikt-Erkennung') +
     fToggle('calendar_intelligence.break_detection', 'Pausen-Erkennung')
   ) +
-  sectionWrap('&#128161;', 'Erklaerbarkeit',
-    fInfo('Jarvis erklaert auf Nachfrage warum er etwas getan hat. Jede automatische Aktion wird mit Begruendung geloggt. Frage z.B. "Warum hast du das Licht eingeschaltet?"') +
-    fToggle('explainability.enabled', 'Erklaerbarkeit aktiv') +
+  sectionWrap('&#128161;', 'Erklärbarkeit',
+    fInfo('Jarvis erklaert auf Nachfrage warum er etwas getan hat. Jede automatische Aktion wird mit Begründung geloggt. Frage z.B. "Warum hast du das Licht eingeschaltet?"') +
+    fToggle('explainability.enabled', 'Erklärbarkeit aktiv') +
     fSelect('explainability.detail_level', 'Detail-Stufe', [
       {v:'minimal', l:'Minimal (nur Aktion + Grund)'},
       {v:'normal', l:'Normal (+ Kontext)'},
-      {v:'verbose', l:'Ausfuehrlich (+ Konfidenz, Sensordaten)'}
+      {v:'verbose', l:'Ausführlich (+ Konfidenz, Sensordaten)'}
     ]) +
     fToggle('explainability.auto_explain', 'Automatisch erwaehnen') +
     fNum('explainability.max_history', 'Max. gespeicherte Entscheidungen', 10, 200, 10)
   ) +
   sectionWrap('&#129504;', 'Lern-Transfer',
-    fInfo('Uebertraegt Praeferenzen zwischen aehnlichen Raeumen. Wenn du warmes Licht in der Kueche bevorzugst, schlaegt Jarvis das auch fuer das Esszimmer vor.') +
+    fInfo('Überträgt Präferenzen zwischen ähnlichen Räumen. Wenn du warmes Licht in der Küche bevorzugst, schlägt Jarvis das auch für das Esszimmer vor.') +
     fToggle('learning_transfer.enabled', 'Lern-Transfer aktiv') +
-    fToggle('learning_transfer.auto_suggest', 'Automatische Vorschlaege') +
+    fToggle('learning_transfer.auto_suggest', 'Automatische Vorschläge') +
     fNum('learning_transfer.min_observations', 'Min. Beobachtungen vor Transfer', 2, 10) +
     fRange('learning_transfer.transfer_confidence', 'Transfer-Konfidenz', 0.3, 1.0, 0.05, {0.3:'0.3',0.5:'0.5',0.7:'0.7',0.8:'0.8',0.9:'0.9',1.0:'1.0'}) +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Aktive Domaenen</div>' +
@@ -10799,66 +10799,66 @@ function renderIntelligence() {
       {v:'light', l:'Licht'},
       {v:'climate', l:'Klima'},
       {v:'media', l:'Medien'}
-    ], 'Fuer welche Bereiche sollen Praeferenzen uebertragen werden?') +
+    ], 'Fuer welche Bereiche sollen Präferenzen übertragen werden?') +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Raum-Gruppen</div>' +
-    fInfo('Raeume in der gleichen Gruppe werden als aehnlich betrachtet. Aenderungen hier ueberschreiben die Standard-Gruppen.') +
-    fTextarea('learning_transfer.room_groups', 'Raum-Gruppen (JSON)', 'Format: {"wohnbereich": ["wohnzimmer", "esszimmer"], "schlafbereich": ["schlafzimmer", "gaestezimmer"]}')
+    fInfo('Räume in der gleichen Gruppe werden als ähnlich betrachtet. Änderungen hier ueberschreiben die Standard-Gruppen.') +
+    fTextarea('learning_transfer.room_groups', 'Raum-Gruppen (JSON)', 'Format: {"wohnbereich": ["wohnzimmer", "esszimmer"], "schlafbereich": ["schlafzimmer", "gästezimmer"]}')
   ) +
   sectionWrap('&#128161;', 'Think-Ahead Hinweise',
-    fInfo('Nach einer Aktion schlaegt Jarvis einen logischen naechsten Schritt vor. Z.B. nach "Licht im Flur an" → "Soll ich auch die Heizung im Flur hochdrehen?" Statisch, kein LLM-Overhead.') +
+    fInfo('Nach einer Aktion schlägt Jarvis einen logischen naechsten Schritt vor. Z.B. nach "Licht im Flur an" → "Soll ich auch die Heizung im Flur hochdrehen?" Statisch, kein LLM-Overhead.') +
     fToggle('next_step_hints.enabled', 'Think-Ahead aktiv')
   ) +
   // --- Antizipation & Erkennung ---
   '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#128268; Antizipation &amp; Erkennung</div>' +
   sectionWrap('&#128279;', 'Kausalketten-Erkennung',
-    fInfo('Jarvis erkennt wiederkehrende Handlungsketten: Wenn du 3x hintereinander "Licht an, Heizung hoch, Musik an" machst, schlaegt er beim naechsten Mal die gesamte Kette vor.') +
+    fInfo('Jarvis erkennt wiederkehrende Handlungsketten: Wenn du 3x hintereinander "Licht an, Heizung hoch, Musik an" machst, schlägt er beim naechsten Mal die gesamte Kette vor.') +
     fNum('anticipation.causal_chain_window_min', 'Erkennungsfenster (Minuten)', 5, 30) +
     fNum('anticipation.causal_chain_min_occurrences', 'Min. Wiederholungen', 2, 10)
   ) +
   sectionWrap('&#128200;', '3D+ Insight Checks',
-    fInfo('Mehrdimensionale Kreuzreferenz-Pruefungen: Kalender x Sicherheit x Hausstatus. Erkennt z.B. "Gaeste kommen in 2h aber Haus nicht vorbereitet" oder "Alle weg aber Alarm nicht scharf".') +
-    fToggle('insight_checks.guest_preparation', 'Gaeste-Vorbereitung (Kalender x Haus)') +
+    fInfo('Mehrdimensionale Kreuzreferenz-Prüfungen: Kalender x Sicherheit x Hausstatus. Erkennt z.B. "Gäste kommen in 2h aber Haus nicht vorbereitet" oder "Alle weg aber Alarm nicht scharf".') +
+    fToggle('insight_checks.guest_preparation', 'Gäste-Vorbereitung (Kalender x Haus)') +
     fToggle('insight_checks.away_security_full', 'Abwesenheits-Sicherheit (Praesenz x Alarm)') +
-    fToggle('insight_checks.health_work_pattern', 'Arbeits-Muster (Aktivitaet x Dauer)') +
-    fToggle('insight_checks.humidity_contradiction', 'Feuchtigkeits-Widerspruch (Geraete x Wetter)') +
-    fToggle('insight_checks.night_security', 'Nacht-Sicherheit (Uhrzeit x Fenster x Tueren)') +
+    fToggle('insight_checks.health_work_pattern', 'Arbeits-Muster (Aktivität x Dauer)') +
+    fToggle('insight_checks.humidity_contradiction', 'Feuchtigkeits-Widerspruch (Geräte x Wetter)') +
+    fToggle('insight_checks.night_security', 'Nacht-Sicherheit (Uhrzeit x Fenster x Türen)') +
     fToggle('insight_checks.heating_vs_sun', 'Heizung vs Sonne (Klima x Wetter x Rollladen)') +
-    fToggle('insight_checks.forgotten_devices', 'Vergessene Geraete (Media x Abwesenheit)')
+    fToggle('insight_checks.forgotten_devices', 'Vergessene Geräte (Media x Abwesenheit)')
   ) +
   sectionWrap('&#128736;', 'Proaktiver Sequenz-Planner',
-    fInfo('Bei Kontext-Aenderungen (Ankunft, Wetterwechsel, Kalender-Event) plant Jarvis automatisch mehrstufige Aktionsketten. Z.B. Ankunft → Licht + Heizung + Musik. Sicherheitsaktionen NIE automatisch.') +
+    fInfo('Bei Kontext-Änderungen (Ankunft, Wetterwechsel, Kalender-Event) plant Jarvis automatisch mehrstufige Aktionsketten. Z.B. Ankunft → Licht + Heizung + Musik. Sicherheitsaktionen NIE automatisch.') +
     fToggle('proactive_planner.enabled', 'Sequenz-Planner aktiv') +
-    fRange('proactive_planner.min_autonomy_for_auto', 'Min. Autonomie fuer Auto-Ausfuehrung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
+    fRange('proactive_planner.min_autonomy_for_auto', 'Min. Autonomie für Auto-Ausfuehrung', 1, 5, 1, {1:'Assistent',2:'Butler',3:'Mitbewohner',4:'Vertrauter',5:'Autopilot'})
   ) +
   sectionWrap('&#127808;', 'Saisonale Intelligenz',
-    fInfo('Jarvis lernt jahreszeitlich wiederkehrende Muster: "Letztes Jahr um diese Zeit hast du die Heizung frueher eingeschaltet." Vergleicht Verhalten ueber Jahre und gibt saisonale Tipps.') +
+    fInfo('Jarvis lernt jahreszeitlich wiederkehrende Muster: "Letztes Jahr um diese Zeit hast du die Heizung früher eingeschaltet." Vergleicht Verhalten über Jahre und gibt saisonale Tipps.') +
     fToggle('seasonal_insights.enabled', 'Saisonale Intelligenz aktiv') +
-    fNum('seasonal_insights.check_interval_hours', 'Pruef-Intervall (Stunden)', 6, 48, 6) +
+    fNum('seasonal_insights.check_interval_hours', 'Prüf-Intervall (Stunden)', 6, 48, 6) +
     fNum('seasonal_insights.min_history_months', 'Min. Historie (Monate)', 1, 12)
   ) +
   // --- Medium Effort Features ---
   '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#9889; Medium Effort Features</div>' +
-  sectionWrap('&#128172;', 'Dialogfuehrung',
-    fInfo('Echte Gespraechsfuehrung: Jarvis merkt sich besprochene Geraete und Raeume und loest Referenzen auf ("Mach es aus" → letztes besprochenes Licht). Klaerungsfragen bei Mehrdeutigkeit ("Welches Licht?").') +
-    fToggle('dialogue.enabled', 'Dialogfuehrung aktiv') +
-    fToggle('dialogue.auto_resolve_references', 'Referenzen automatisch aufloesen') +
-    fToggle('dialogue.clarification_enabled', 'Klaerungsfragen stellen') +
+  sectionWrap('&#128172;', 'Dialogführung',
+    fInfo('Echte Gesprächsfuehrung: Jarvis merkt sich besprochene Geräte und Räume und loest Referenzen auf ("Mach es aus" → letztes besprochenes Licht). Klärungsfragen bei Mehrdeutigkeit ("Welches Licht?").') +
+    fToggle('dialogue.enabled', 'Dialogführung aktiv') +
+    fToggle('dialogue.auto_resolve_references', 'Referenzen automatisch auflösen') +
+    fToggle('dialogue.clarification_enabled', 'Klärungsfragen stellen') +
     fNum('dialogue.timeout_seconds', 'Dialog-Timeout (Sek.)', 60, 600, 30) +
-    fNum('dialogue.max_clarification_options', 'Max. Optionen bei Klaerung', 2, 10)
+    fNum('dialogue.max_clarification_options', 'Max. Optionen bei Klärung', 2, 10)
   ) +
   sectionWrap('&#127777;', 'Klima-Modell (Digitaler Zwilling)',
-    fInfo('Einfaches thermisches Modell fuer Was-waere-wenn-Fragen: "Wenn ich das Fenster schliesse, wie warm wird es in 30 Min?" Basiert auf Waermeverlust, Heizleistung und Fensterzustand.') +
+    fInfo('Einfaches thermisches Modell für Was-wäre-wenn-Fragen: "Wenn ich das Fenster schliesse, wie warm wird es in 30 Min?" Basiert auf Wärmeverlust, Heizleistung und Fensterzustand.') +
     fToggle('climate_model.enabled', 'Klima-Modell aktiv') +
     fNum('climate_model.max_simulation_minutes', 'Max. Simulationsdauer (Min.)', 30, 480, 30) +
     '<div style="margin:12px 0;font-weight:600;font-size:13px;">Thermische Parameter (Global)</div>' +
-    fRange('climate_model.default_params.heat_loss_coefficient', 'Waermeverlust-Koeffizient', 0.005, 0.05, 0.005, {0.005:'Gut isoliert',0.01:'Normal',0.015:'Standard',0.025:'Maessig',0.05:'Schlecht isoliert'}) +
+    fRange('climate_model.default_params.heat_loss_coefficient', 'Wärmeverlust-Koeffizient', 0.005, 0.05, 0.005, {0.005:'Gut isoliert',0.01:'Normal',0.015:'Standard',0.025:'Maessig',0.05:'Schlecht isoliert'}) +
     fRange('climate_model.default_params.heating_power_per_min', 'Heizleistung (Grad/Min)', 0.02, 0.2, 0.01, {0.02:'Schwach',0.05:'Normal',0.08:'Standard',0.12:'Stark',0.2:'Sehr stark'}) +
     fRange('climate_model.default_params.window_open_factor', 'Fenster-Faktor', 1, 10, 1, {1:'Gekippt',3:'Halb offen',5:'Standard',7:'Weit offen',10:'Durchzug'}) +
     fRange('climate_model.default_params.thermal_mass_factor', 'Thermische Masse', 0.5, 2.0, 0.1, {0.5:'Leichtbau',1.0:'Standard',1.5:'Massiv',2.0:'Schwerer Beton'})
   ) +
-  sectionWrap('&#128295;', 'Praediktive Wartung',
-    fInfo('Vorhersage von Geraeteausfaellen: Batterie-Drain-Rate, Lebensdauer-Tracking, Health-Score pro Geraet. Warnt z.B. "Batterie von Bewegungsmelder Flur in 14 Tagen leer".') +
-    fToggle('predictive_maintenance.enabled', 'Praediktive Wartung aktiv') +
+  sectionWrap('&#128295;', 'Prädiktive Wartung',
+    fInfo('Vorhersage von Geräteausfaellen: Batterie-Drain-Rate, Lebensdauer-Tracking, Health-Score pro Geraet. Warnt z.B. "Batterie von Bewegungsmelder Flur in 14 Tagen leer".') +
+    fToggle('predictive_maintenance.enabled', 'Prädiktive Wartung aktiv') +
     fNum('predictive_maintenance.lookback_days', 'Analyse-Zeitraum (Tage)', 30, 365, 30) +
     fRange('predictive_maintenance.failure_probability_threshold', 'Warnschwelle', 0.3, 1.0, 0.05, {0.3:'Empfindlich',0.5:'Mittel',0.7:'Standard',0.9:'Nur kritisch'}) +
     fNum('predictive_maintenance.battery_drain_alert_pct_per_week', 'Batterie-Drain Warnung (%/Woche)', 1, 20, 1)
@@ -10866,13 +10866,13 @@ function renderIntelligence() {
   // --- Proaktive Intelligenz ---
   '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#129504; Proaktive Intelligenz</div>' +
   sectionWrap('&#9888;', 'Konsequenz-Bewusstsein',
-    fInfo('Vor jeder Aktion prueft Jarvis ob sie im aktuellen Kontext sinnvoll ist. Z.B. "Heizung hoch bei offenem Fenster", "Rollladen runter bei Sturm", "Alle Lichter aus obwohl jemand aktiv ist". Blockiert nie — gibt nur Hinweise.') +
+    fInfo('Vor jeder Aktion prüft Jarvis ob sie im aktuellen Kontext sinnvoll ist. Z.B. "Heizung hoch bei offenem Fenster", "Rollladen runter bei Sturm", "Alle Lichter aus obwohl jemand aktiv ist". Blockiert nie — gibt nur Hinweise.') +
     fToggle('consequence_checks.enabled', 'Konsequenz-Checks aktiv')
   ) +
   sectionWrap('&#128065;', 'Unaufgeforderte Beobachtungen',
-    fInfo('Jarvis prueft periodisch den Haus-Zustand und teilt relevante Beobachtungen mit: Licht brennt in leerem Raum, Fenster offen bei Heizung, Alarm seit Tagen nicht aktiviert, Batterie-Warnungen.') +
+    fInfo('Jarvis prüft periodisch den Haus-Zustand und teilt relevante Beobachtungen mit: Licht brennt in leerem Raum, Fenster offen bei Heizung, Alarm seit Tagen nicht aktiviert, Batterie-Warnungen.') +
     fToggle('observation_loop.enabled', 'Beobachtungen aktiv') +
-    fNum('observation_loop.interval_hours', 'Pruef-Intervall (Stunden)', 1, 12) +
+    fNum('observation_loop.interval_hours', 'Prüf-Intervall (Stunden)', 1, 12) +
     fNum('observation_loop.max_daily', 'Max. Beobachtungen pro Tag', 1, 5)
   );
 }
@@ -10883,7 +10883,7 @@ function renderDeclarativeTools() {
     '<div class="form-group"><div class="toggle-group"><label>Analyse-Tools aktiviert</label>' +
     '<label class="toggle"><input type="checkbox" id="declEnabledToggle" onchange="toggleDeclEnabled()" checked>' +
     '<span class="toggle-track"></span><span class="toggle-thumb"></span></label></div></div>' +
-    '<div class="form-group"><div class="toggle-group"><label>Proaktive Nutzung (Jarvis erwaehnt Ergebnisse spontan)</label>' +
+    '<div class="form-group"><div class="toggle-group"><label>Proaktive Nutzung (Jarvis erwähnt Ergebnisse spontan)</label>' +
     '<label class="toggle"><input type="checkbox" id="declSpontaneousToggle" onchange="toggleDeclSpontaneous()" checked>' +
     '<span class="toggle-track"></span><span class="toggle-thumb"></span></label></div></div>' +
     '<div class="form-group"><label>Maximale Anzahl Tools</label>' +
@@ -10895,12 +10895,12 @@ function renderDeclarativeTools() {
   sectionWrap('&#128202;', 'Aktive Tools',
     '<div id="declToolList" style="margin-top:12px;"><div style="padding:16px;color:var(--text-secondary);">Lade...</div></div>'
   ) +
-  sectionWrap('&#128161;', 'Jarvis-Vorschlaege',
-    fInfo('Jarvis analysiert deine Home-Assistant-Entities und schlaegt passende Analyse-Tools vor. Du entscheidest bei jedem Vorschlag ob du ihn annimmst oder ablehnst.') +
+  sectionWrap('&#128161;', 'Jarvis-Vorschläge',
+    fInfo('Jarvis analysiert deine Home-Assistant-Entities und schlägt passende Analyse-Tools vor. Du entscheidest bei jedem Vorschlag ob du ihn annimmst oder ablehnst.') +
     '<div style="margin-top:12px;margin-bottom:12px;">' +
-    '<button class="btn btn-primary" id="declSuggestBtn" onclick="generateDeclSuggestions()" style="padding:8px 20px;">&#128161; Vorschlaege generieren</button>' +
+    '<button class="btn btn-primary" id="declSuggestBtn" onclick="generateDeclSuggestions()" style="padding:8px 20px;">&#128161; Vorschläge generieren</button>' +
     '</div>' +
-    '<div id="declSuggestionsList"><div style="padding:16px;color:var(--text-secondary);font-style:italic;">Klicke "Vorschlaege generieren" um Jarvis deine Entities analysieren zu lassen.</div></div>'
+    '<div id="declSuggestionsList"><div style="padding:16px;color:var(--text-secondary);font-style:italic;">Klicke "Vorschläge generieren" um Jarvis deine Entities analysieren zu lassen.</div></div>'
   ) +
   sectionWrap('&#128220;', 'Vorlagen',
     fInfo('Vorgefertigte Vorlagen — ein Klick befuellt das Formular. Entity-IDs danach an dein System anpassen.') +
@@ -10934,7 +10934,7 @@ function renderDeclarativeTools() {
   sectionWrap('&#128214;', 'Tipps',
     fInfo('Du kannst Jarvis auch bitten: "Jarvis, bau mir ein Tool das die Raumtemperaturen vergleicht" — er nutzt dann create_declarative_tool automatisch.') +
     '<div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">' +
-    '<strong>Verfuegbare Typen:</strong><br>' +
+    '<strong>Verfügbare Typen:</strong><br>' +
     DECL_TOOL_TYPES.map(function(t) { return '<span style="color:var(--accent);">' + t.l + '</span> — ' + t.desc; }).join('<br>') +
     '</div>'
   ) +
