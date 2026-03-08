@@ -4944,7 +4944,17 @@ class ProactiveManager:
         return False
 
     _SLEEP_LOCK_KEY = "mha:cover:sleep_lock"
-    _SLEEP_LOCK_TTL = 300  # 5 Minuten — überbrückt kurzes Sensor-Flackern
+    _SLEEP_LOCK_TTL_DEFAULT = 300  # 5 Minuten Fallback
+
+    @property
+    def _sleep_lock_ttl(self) -> int:
+        """Sleep-Lock TTL aus Config (Minuten → Sekunden), Fallback 5 Min."""
+        try:
+            cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
+            minutes = cover_cfg.get("sleep_lock_minutes", 5)
+            return max(60, int(minutes) * 60)  # Minimum 1 Minute
+        except Exception:
+            return self._SLEEP_LOCK_TTL_DEFAULT
 
     async def _is_sleeping(self, states=None) -> bool:
         """Prüft ob geschlafen wird — robust gegen Sensor-Flackern.
@@ -4983,8 +4993,8 @@ class ProactiveManager:
                 return is_sleeping_now
 
             if is_sleeping_now:
-                # Lock setzen/erneuern (30 Min TTL)
-                await _redis.setex(self._SLEEP_LOCK_KEY, self._SLEEP_LOCK_TTL, "1")
+                # Lock setzen/erneuern (konfigurierbare Dauer)
+                await _redis.setex(self._SLEEP_LOCK_KEY, self._sleep_lock_ttl, "1")
                 return True
 
             # Nicht sleeping laut Sensoren — aber Lock noch aktiv?
