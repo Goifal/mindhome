@@ -2043,11 +2043,20 @@ class AssistantBrain(BrainCallbacksMixin):
                         temperature=0.5,
                         max_tokens=_max_tok,
                     )
-                    response_text = self._filter_response(narrative.strip()) if narrative.strip() else ""
+                    _raw_narrative = (narrative or "").strip()
+                    if _raw_narrative:
+                        response_text = self._filter_response(_raw_narrative)
+                        if not response_text:
+                            logger.warning(
+                                "Haus-Status: _filter_response hat LLM-Antwort komplett entfernt. "
+                                "Roh-Antwort (100z): '%s'", _raw_narrative[:100],
+                            )
+                    else:
+                        response_text = ""
+                        logger.warning("Haus-Status: Ollama hat leere Antwort geliefert")
                     if not response_text:
-                        # LLM hat verweigert oder leere Antwort — Fallback auf humanisierte Daten
                         response_text = self._humanize_house_status(raw_data)
-                        logger.info("Haus-Status: LLM-Antwort leer/verweigert, Fallback auf humanisierte Daten")
+                        logger.info("Haus-Status: Fallback auf humanisierte Daten")
 
                     self._remember_exchange(text, response_text)
                     tts_data = self.tts_enhancer.enhance(
@@ -2109,10 +2118,20 @@ class AssistantBrain(BrainCallbacksMixin):
                         temperature=0.5,
                         max_tokens=_max_tok,
                     )
-                    response_text = self._filter_response(narrative.strip()) if narrative.strip() else ""
+                    _raw_narrative = (narrative or "").strip()
+                    if _raw_narrative:
+                        response_text = self._filter_response(_raw_narrative)
+                        if not response_text:
+                            logger.warning(
+                                "Status-Report: _filter_response hat LLM-Antwort komplett entfernt. "
+                                "Roh-Antwort (100z): '%s'", _raw_narrative[:100],
+                            )
+                    else:
+                        response_text = ""
+                        logger.warning("Status-Report: Ollama hat leere Antwort geliefert")
                     if not response_text:
                         response_text = self._humanize_house_status(raw_data)
-                        logger.info("Status-Report: LLM-Antwort leer/verweigert, Fallback auf humanisierte Daten")
+                        logger.info("Status-Report: Fallback auf humanisierte Daten")
 
                     self._remember_exchange(text, response_text)
                     tts_data = self.tts_enhancer.enhance(
@@ -2494,13 +2513,22 @@ class AssistantBrain(BrainCallbacksMixin):
         # Im Gespraechsmodus zaehlen Intelligence-Features (anticipation,
         # learned_patterns, live_insights) NICHT — die sind in Konversationen
         # immer aktiv und wuerden sonst jede Antwort unnoetig auf Deep treiben.
+        # Einfache Greetings (1-2 Woerter) brauchen generell kein Deep.
+        _greeting_words = {
+            "hallo", "hi", "hey", "moin", "servus", "grüezi", "tach",
+            "morgen", "abend", "nacht", "mahlzeit", "ciao", "yo",
+        }
+        _is_simple_greeting = len(text.split()) <= 3 and any(
+            w in _greeting_words for w in text.lower().split()
+        )
         _upgrade_signals = 0
         if problem_solving_ctx:
             _upgrade_signals += 3  # Problemloesung braucht Deep
         if whatif_prompt:
             _upgrade_signals += 3  # Hypothetisches Denken braucht Deep
-        if not _conversation_mode:
+        if not _conversation_mode and not _is_simple_greeting:
             # Intelligence-Signals nur ausserhalb von Konversationen zaehlen
+            # und NICHT bei einfachen Greetings (die brauchen kein Deep)
             if anticipation_suggestions or learned_patterns:
                 _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
             if live_insights:

@@ -5254,8 +5254,27 @@ class FunctionExecutor:
         entity_id = await self._find_entity("media_player", room) if room else None
 
         if not entity_id:
-            # Ersten aktiven Player nehmen
             states = await self.ha.get_states()
+            # Bei stop/pause ohne Room: ALLE aktiven Player stoppen
+            if action in ("stop", "pause") and not room:
+                _active_states = {"playing", "paused", "buffering", "on"}
+                active_players = [
+                    s["entity_id"] for s in (states or [])
+                    if s.get("entity_id", "").startswith("media_player.")
+                    and s.get("state") in _active_states
+                ]
+                if active_players:
+                    service = "media_stop" if action == "stop" else "media_pause"
+                    all_ok = True
+                    for pid in active_players:
+                        ok = await self.ha.call_service(
+                            "media_player", service, {"entity_id": pid}
+                        )
+                        if not ok:
+                            all_ok = False
+                    logger.info("play_media %s: %d aktive Player gestoppt: %s", action, len(active_players), active_players)
+                    return {"success": all_ok, "message": f"Medien: {action} ({len(active_players)} Player)"}
+            # Sonst: ersten verfuegbaren Player nehmen (fuer play etc.)
             for s in (states or []):
                 if s.get("entity_id", "").startswith("media_player."):
                     entity_id = s["entity_id"]
