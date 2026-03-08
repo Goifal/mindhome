@@ -5600,13 +5600,18 @@ class AssistantBrain(BrainCallbacksMixin):
                 (r"(?<=\bbitte\s)Sie\b", "du"),
                 # Satzanfang: "Sie" am Satzanfang → "Du" (wenn kein Plural-Kontext)
                 (r"^Sie\b", "Du"),
-                (r"(?<=\.\s)Sie\b", "du"),
+                (r"(?<=\.\s)Sie\b", "Du"),  # Nach Punkt = neuer Satz → Großschreibung
             ]
             for pattern, replacement in _formal_map:
                 text = re.sub(pattern, replacement, text)
-            # Finaler Catch-all: Verbliebene "Sie" ersetzen.
-            # _has_formal war True → verbleibendes grosses "Sie" im
-            # Satzinneren ist mit hoher Wahrscheinlichkeit formelles "Sie".
+            # Verbliebenes "Sie" nach konjugiertem Verb = Akkusativ → "dich"
+            # z.B. "informiere Sie", "bitte Sie", "lasse Sie wissen"
+            text = re.sub(r"(?<=\b\w{3,}e\s)Sie\b", "dich", text)  # "informiere Sie" → "dich"
+            text = re.sub(r"(?<=\bmuss\s)Sie\b", "dich", text)  # "muss Sie warnen" → "dich"
+            text = re.sub(r"(?<=\bkann\s)Sie\b", "dich", text)  # "kann Sie informieren" → "dich"
+            text = re.sub(r"(?<=\bwill\s)Sie\b", "dich", text)  # "will Sie bitten" → "dich"
+            text = re.sub(r"(?<=\bdarf\s)Sie\b", "dich", text)  # "darf Sie stoeren" → "dich"
+            # Finaler Catch-all: Restliches "Sie" → "du" (Subjekt-Annahme)
             text = re.sub(r"\bSie\b", "du", text)
             logger.info("Sie->du Korrektur angewendet: '%s'", text[:80])
 
