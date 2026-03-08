@@ -2905,12 +2905,24 @@ class ProactiveManager:
                         pass
                 cover_profiles = self._load_cover_profiles()
 
-                # 1. WETTER-SCHUTZ (hoechste Priorität)
+                # ── GLOBALER SCHLAF-GUARD ──────────────────────────────
+                # Wenn Aktivität = sleeping → NUR Wetterschutz (Sturm)
+                # ausführen, ALLES andere überspringen.
+                # Prüft: 1) Activity-Modul 2) Bettsensor-Fallback
+                _sleep_block = await self._is_sleeping(states)
+                if _sleep_block:
+                    logger.debug("Cover-Loop: Schlafmodus aktiv — nur Wetterschutz")
+
+                # 1. WETTER-SCHUTZ (hoechste Priorität — auch bei Schlaf!)
                 if cover_cfg.get("weather_protection", True):
                     await self._cover_weather_protection(
                         states, weather, cover_profiles, cover_cfg, auto_level,
                         _redis,
                     )
+
+                if _sleep_block:
+                    await asyncio.sleep(check_interval * 60)
+                    continue
 
                 # 2. SONNENSTAND-TRACKING (inkl. Bewoelkung, Proportional, Blendschutz)
                 if cover_cfg.get("sun_tracking", True) and sun:
@@ -3712,9 +3724,15 @@ class ProactiveManager:
                             await asyncio.sleep(120)
 
                 if count > 0:
+                    # Sleep-Lock löschen — Rollläden offen = Person ist wach
+                    try:
+                        if redis_client:
+                            await redis_client.delete(self._SLEEP_LOCK_KEY)
+                    except Exception:
+                        pass
                     await self._notify("seasonal_cover", LOW, {
                         "action": "open",
-                        "message": f"Rolllaeden geoeffnet ({reason})",
+                        "message": f"Rollläden geöffnet ({reason})",
                         "count": count,
                     })
                 return "open"
@@ -4925,32 +4943,60 @@ class ProactiveManager:
             pass
         return False
 
-    async def _is_sleeping(self, states=None) -> bool:
-        """Prüft ob geschlafen wird — Aktivitätserkennung ODER Bettsensor.
+    _SLEEP_LOCK_KEY = "mha:cover:sleep_lock"
+    _SLEEP_LOCK_TTL = 1800  # 30 Minuten — Schlaf-Lock hält mindestens so lange
 
-        Kombiniert drei Quellen:
+    async def _is_sleeping(self, states=None) -> bool:
+        """Prüft ob geschlafen wird — robust gegen Sensor-Flackern.
+
+        Kombiniert vier Quellen:
         1. Activity-Modul (detect_activity → sleeping)
         2. Manueller Override (z.B. 'Gute Nacht' gesagt → sleeping)
         3. Bettsensor-Fallback (_is_bed_occupied)
+        4. Redis Sleep-Lock (sticky: wenn sleeping erkannt, bleibt Lock
+           für 30 Min aktiv — auch wenn Sensor kurz flackert)
 
         Returns True wenn EINE der Quellen Schlaf erkennt.
         """
+        is_sleeping_now = False
+
+        # 1. Activity-Modul (enthält manuellen Override + Sensor-Erkennung)
         try:
             detection = await self.brain.activity.detect_activity()
             activity = detection.get("activity", "")
             if activity == "sleeping":
+                is_sleeping_now = True
                 logger.debug("_is_sleeping: True (activity=%s, confidence=%.2f)",
                              activity, detection.get("confidence", 0))
-                return True
         except Exception as e:
             logger.debug("_is_sleeping: Activity-Check fehlgeschlagen: %s", e)
 
-        # Fallback: Bettsensor direkt prüfen
-        if await self._is_bed_occupied(states):
+        # 2. Bettsensor-Fallback
+        if not is_sleeping_now and await self._is_bed_occupied(states):
+            is_sleeping_now = True
             logger.debug("_is_sleeping: True (bed_occupied Fallback)")
-            return True
 
-        return False
+        # 3. Sleep-Lock setzen/prüfen (sticky — gegen Sensor-Flackern)
+        try:
+            _redis = self.brain.redis if hasattr(self.brain, 'redis') else None
+            if not _redis:
+                return is_sleeping_now
+
+            if is_sleeping_now:
+                # Lock setzen/erneuern (30 Min TTL)
+                await _redis.setex(self._SLEEP_LOCK_KEY, self._SLEEP_LOCK_TTL, "1")
+                return True
+
+            # Nicht sleeping laut Sensoren — aber Lock noch aktiv?
+            lock = await _redis.get(self._SLEEP_LOCK_KEY)
+            if lock:
+                ttl = await _redis.ttl(self._SLEEP_LOCK_KEY)
+                logger.debug("_is_sleeping: True (Sleep-Lock aktiv, TTL=%ds)", ttl)
+                return True
+        except Exception as e:
+            logger.debug("_is_sleeping: Redis Sleep-Lock Fehler: %s", e)
+
+        return is_sleeping_now
 
     # ------------------------------------------------------------------
     # Notfall-Protokolle
