@@ -49,68 +49,9 @@ class CoverDomain(DomainPlugin):
         ]
 
     def evaluate(self, context):
-        if not self.is_enabled():
-            return []
-        ctx = context or self.get_context()
-        actions = []
-        entities = self.get_entities()
-        sun = self.get_sun_state()
-        threshold = float(self.get_setting("sun_elevation_threshold", 5))
-
-        if not sun:
-            return []
-
-        # Unsichere Covers (Garagentore, deaktivierte) herausfiltern
-        safe_entities = [e for e in entities if self._is_safe_for_automation(e)]
-
-        elevation = sun.get("elevation", 0)
-
-        # Sunset -> close covers
-        close_elev = float(self.get_setting("sunset_close_elevation", -2))
-        if self.get_setting("sunset_close", True):
-            if elevation < close_elev and ctx.get("anyone_home"):
-                for e in safe_entities:
-                    if e.get("state") == "open":
-                        name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
-                        actions.append({
-                            "entity_id": e["entity_id"], "service": "close_cover",
-                            "reason_de": f"Sonnenuntergang: {name} schliessen",
-                            "reason_en": f"Sunset: close {name}",
-                        })
-
-        # Sunrise -> open covers (only if no one is in bed)
-        if self.get_setting("sunrise_open", True):
-            if elevation > threshold and sun.get("rising"):
-                # Bettbelegung pruefen: Nicht oeffnen wenn jemand schlaeft
-                bed_occupied = self._is_bed_occupied()
-                if bed_occupied:
-                    self.logger.info("Sunrise: Rolladen NICHT geoeffnet — Bett belegt")
-                else:
-                    for e in safe_entities:
-                        if e.get("state") == "closed":
-                            name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
-                            actions.append({
-                                "entity_id": e["entity_id"], "service": "open_cover",
-                                "reason_de": f"Sonnenaufgang: {name} oeffnen",
-                                "reason_en": f"Sunrise: open {name}",
-                            })
-
-        # High sun + warm -> partial shading
-        if self.get_setting("sun_shading", True):
-            if elevation > 40:
-                weather = self.get_weather()
-                if weather and weather.get("temperature", 0) > 25:
-                    for e in safe_entities:
-                        if e.get("state") == "open":
-                            name = e.get("attributes", {}).get("friendly_name", e["entity_id"])
-                            actions.append({
-                                "entity_id": e["entity_id"], "service": "set_cover_position",
-                                "data": {"position": 50},
-                                "reason_de": f"Beschattung: {name} halb schliessen (Sonne hoch + warm)",
-                                "reason_en": f"Shading: half-close {name} (sun high + warm)",
-                            })
-
-        return self.execute_or_suggest(actions)
+        """Cover automation is handled by Assistant proactive engine.
+        Domain plugin only reports status."""
+        return []
 
     def _is_safe_for_automation(self, entity) -> bool:
         """Prueft ob ein Cover sicher automatisch gesteuert werden darf.
