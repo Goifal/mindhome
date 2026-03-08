@@ -2538,8 +2538,14 @@ class AssistantBrain(BrainCallbacksMixin):
                 _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
             if live_insights:
                 _upgrade_signals += 1  # Aktive Insights = mehr zu verarbeiten
-        if sec_score and sec_score.get("level") == "critical":
-            _upgrade_signals = max(_upgrade_signals, self._opt_upgrade_signal_threshold)  # Kritische Sicherheit = sofort Deep
+        # Security-Upgrade nur wenn NICHT im Gespraechsmodus und NICHT bei
+        # einfachen Greetings/Device-Commands. Kritische Sicherheit (Tueren offen,
+        # Rauchmelder, etc.) ist Haus-Zustand — erzwingt kein Deep-Upgrade bei
+        # trivialen Antworten wie "Danke nichts davon". Security-Kontext bleibt
+        # trotzdem im Prompt.
+        _security_critical = (sec_score and sec_score.get("level") == "critical")
+        if _security_critical and not _conversation_mode and not _is_simple_greeting:
+            _upgrade_signals = max(_upgrade_signals, self._opt_upgrade_signal_threshold)
         elif sec_score and sec_score.get("level") == "warning":
             _upgrade_signals += 1  # Warnung = nur Kontext, kein Upgrade allein
 
@@ -2549,7 +2555,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # NICHT — die sind fast immer aktiv und wuerden sonst bei Threshold=1
         # jeden Request auf Deep treiben.
         if (_upgrade_signals >= self._opt_upgrade_signal_threshold
-                and (_has_reasoning_need or (sec_score and sec_score.get("level") == "critical"))
+                and (_has_reasoning_need or (_security_critical and not _conversation_mode))
                 and model != self.model_router.model_deep):
             # Error-Mitigation VOR dem Upgrade pruefen: Wenn das Deep-Modell
             # wiederholt timeoutet (z.B. nicht im VRAM, keep_alive=0), NICHT
@@ -5646,7 +5652,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 text = re.sub(pattern, replacement, text)
             # Verbliebenes "Sie" nach konjugiertem Verb = Akkusativ → "dich"
             # z.B. "informiere Sie", "bitte Sie", "lasse Sie wissen"
-            text = re.sub(r"(?<=\b\w{3,}e\s)Sie\b", "dich", text)  # "informiere Sie" → "dich"
+            text = re.sub(r"(\b\w{3,}e\s)Sie\b", r"\1dich", text)  # "informiere Sie" → "informiere dich"
             text = re.sub(r"(?<=\bmuss\s)Sie\b", "dich", text)  # "muss Sie warnen" → "dich"
             text = re.sub(r"(?<=\bkann\s)Sie\b", "dich", text)  # "kann Sie informieren" → "dich"
             text = re.sub(r"(?<=\bwill\s)Sie\b", "dich", text)  # "will Sie bitten" → "dich"
