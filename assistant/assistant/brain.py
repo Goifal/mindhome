@@ -2521,14 +2521,19 @@ class AssistantBrain(BrainCallbacksMixin):
         _is_simple_greeting = len(text.split()) <= 3 and any(
             w in _greeting_words for w in text.lower().split()
         )
+        # Device-Commands brauchen nie Deep — deterministische Shortcuts
+        _is_device_cmd = profile.category in ("device_command", "device_query")
         _upgrade_signals = 0
+        _has_reasoning_need = False  # Echte Reasoning-Signale (nicht nur Kontext)
         if problem_solving_ctx:
             _upgrade_signals += 3  # Problemloesung braucht Deep
+            _has_reasoning_need = True
         if whatif_prompt:
             _upgrade_signals += 3  # Hypothetisches Denken braucht Deep
-        if not _conversation_mode and not _is_simple_greeting:
+            _has_reasoning_need = True
+        if not _conversation_mode and not _is_simple_greeting and not _is_device_cmd:
             # Intelligence-Signals nur ausserhalb von Konversationen zaehlen
-            # und NICHT bei einfachen Greetings (die brauchen kein Deep)
+            # und NICHT bei einfachen Greetings oder Device-Commands
             if anticipation_suggestions or learned_patterns:
                 _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
             if live_insights:
@@ -2538,7 +2543,14 @@ class AssistantBrain(BrainCallbacksMixin):
         elif sec_score and sec_score.get("level") == "warning":
             _upgrade_signals += 1  # Warnung = nur Kontext, kein Upgrade allein
 
-        if _upgrade_signals >= self._opt_upgrade_signal_threshold and model != self.model_router.model_deep:
+        # Deep-Upgrade nur wenn: (a) Signals >= Threshold UND (b) echte Reasoning-
+        # Begruendung vorliegt (problem_solving, whatif, critical security).
+        # Intelligence-Signals allein (anticipation, patterns, insights) reichen
+        # NICHT — die sind fast immer aktiv und wuerden sonst bei Threshold=1
+        # jeden Request auf Deep treiben.
+        if (_upgrade_signals >= self._opt_upgrade_signal_threshold
+                and (_has_reasoning_need or (sec_score and sec_score.get("level") == "critical"))
+                and model != self.model_router.model_deep):
             # Error-Mitigation VOR dem Upgrade pruefen: Wenn das Deep-Modell
             # wiederholt timeoutet (z.B. nicht im VRAM, keep_alive=0), NICHT
             # upgraden. Verhindert dass der Prompt fuer 32K gebaut wird und
@@ -2555,7 +2567,7 @@ class AssistantBrain(BrainCallbacksMixin):
             else:
                 _upgraded = _deep_model
                 if _upgraded != model:
-                    logger.info("Model Upgrade %s -> %s (signals: %d)", model, _upgraded, _upgrade_signals)
+                    logger.info("Model Upgrade %s -> %s (signals: %d, threshold: %d)", model, _upgraded, _upgrade_signals, self._opt_upgrade_signal_threshold)
                     model = _upgraded
         if context is None:
             context = {}
