@@ -9,6 +9,7 @@ import logging
 import json
 import math
 import random
+import threading
 from datetime import datetime, timezone, timedelta, time as dtime
 
 from cover_helpers import (
@@ -43,6 +44,8 @@ class CoverControlManager:
     """
 
     DEFAULT_CONFIG = {
+        # Engine-Modus: "passive" = nur CRUD/Status, "active" = volle Automatik
+        "engine_mode": "passive",
         # Sonnenschutz
         "sun_protection_enabled": True,
         "sun_protection_outdoor_temp_c": 25.0,
@@ -91,6 +94,7 @@ class CoverControlManager:
         self.get_session = db_session_factory
         self.event_bus = event_bus
         self._is_running = False
+        self._lock = threading.RLock()
         self._manual_overrides = {}  # entity_id -> override_until (datetime)
         self._last_simulation = {}  # entity_id -> last_sim_time
         self._pending_actions = {}  # entity_id -> {priority, position, source}
@@ -136,17 +140,32 @@ class CoverControlManager:
 
     def get_covers(self):
         """Get all configured cover entities with current status + config."""
-        from models import FeatureEntityAssignment
+        from models import FeatureEntityAssignment, CoverConfig
         covers = []
         try:
             with self.get_session() as session:
                 assignments = session.query(FeatureEntityAssignment).filter_by(
                     feature_key="cover_control", role="cover", is_active=True
                 ).order_by(FeatureEntityAssignment.sort_order).all()
+                # Batch-load all CoverConfigs to avoid N+1 queries
+                entity_ids = [a.entity_id for a in assignments]
+                all_configs = {}
+                if entity_ids:
+                    configs = session.query(CoverConfig).filter(
+                        CoverConfig.entity_id.in_(entity_ids)
+                    ).all()
+                    for c in configs:
+                        all_configs[c.entity_id] = {
+                            "facade": c.facade,
+                            "floor": c.floor,
+                            "cover_type": c.cover_type,
+                            "enabled": c.enabled if c.enabled is not None else True,
+                            "group_ids": c.group_ids or [],
+                        }
                 for a in assignments:
                     state = self.ha.get_state(a.entity_id) if self.ha else None
                     attrs = state.get("attributes", {}) if state else {}
-                    cover_conf = self._get_cover_config(session, a.entity_id)
+                    cover_conf = all_configs.get(a.entity_id, {})
                     override = self._manual_overrides.get(a.entity_id)
                     covers.append({
                         "entity_id": a.entity_id,
@@ -551,8 +570,10 @@ class CoverControlManager:
         from routes.covers import is_cover_control_enabled
         if not is_cover_control_enabled():
             return
-
         config = self.get_config()
+        if config.get("engine_mode", "passive") == "passive":
+            self._cleanup_overrides(datetime.now(timezone.utc))
+            return
         now = datetime.now(timezone.utc)
 
         # Clean expired overrides
@@ -601,6 +622,8 @@ class CoverControlManager:
             return
         from routes.covers import is_cover_control_enabled
         if not is_cover_control_enabled():
+            return
+        if self.get_config().get("engine_mode", "passive") == "passive":
             return
 
         try:
@@ -656,6 +679,8 @@ class CoverControlManager:
             return
         from routes.covers import is_cover_control_enabled
         if not is_cover_control_enabled():
+            return
+        if self.get_config().get("engine_mode", "passive") == "passive":
             return
         config = self.get_config()
         if not config.get("presence_simulation_enabled"):
@@ -716,11 +741,6 @@ class CoverControlManager:
         if comfort is not None:
             candidates.append({"priority": PRIORITY_COMFORT, **comfort})
 
-        # Energy: Solar gain, PV optimization
-        energy = self._eval_energy(cover, config, sun_data, weather_data)
-        if energy is not None:
-            candidates.append({"priority": PRIORITY_ENERGY, **energy})
-
         if not candidates:
             return None
 
@@ -734,7 +754,7 @@ class CoverControlManager:
         cover_type = cover.get("cover_type", "shutter")
         storm_threshold = config.get("storm_wind_threshold_kmh", 80)
         if wind > storm_threshold and cover_type == "awning":
-            return {"position": 100, "source": "security_storm"}
+            return {"position": 0, "source": "security_storm"}
         return None
 
     def _eval_weather(self, cover, config, weather_data, sun_data):
@@ -750,7 +770,7 @@ class CoverControlManager:
         # Wind: retract awnings
         wind_threshold = config.get("wind_threshold_kmh", 50)
         if wind > wind_threshold and cover_type == "awning":
-            return {"position": 100, "source": "weather_wind"}
+            return {"position": 0, "source": "weather_wind"}
 
         # Forecast: proaktiver Wetterschutz (Sturm/Regen in den naechsten Stunden)
         forecast = weather_data.get("forecast", [])
@@ -859,6 +879,8 @@ class CoverControlManager:
     def _on_sleep_detected(self, event):
         """Close covers when sleep is detected."""
         config = self.get_config()
+        if config.get("engine_mode", "passive") == "passive":
+            return
         if not config.get("sleep_close_enabled"):
             return
         self._wake_pending_open = False  # Reset deferred wake-open
@@ -871,6 +893,8 @@ class CoverControlManager:
     def _on_wake_detected(self, event):
         """Gradually open covers on wake-up (only if bed is actually empty AND bright enough)."""
         config = self.get_config()
+        if config.get("engine_mode", "passive") == "passive":
+            return
         if not config.get("wakeup_integration_enabled"):
             return
 
@@ -913,17 +937,21 @@ class CoverControlManager:
 
     def _on_weather_alert(self, event):
         """React to weather alerts (storm, hail)."""
+        if self.get_config().get("engine_mode", "passive") == "passive":
+            return
         data = event.data if hasattr(event, 'data') else (event if isinstance(event, dict) else {})
         alert_type = data.get("alert_type", "")
         if alert_type in ("storm", "hail", "strong_wind"):
             covers = self.get_covers()
             for cover in covers:
                 if cover.get("cover_type") == "awning":
-                    self.set_position(cover["entity_id"], 100, source="weather_alert")
+                    self.set_position(cover["entity_id"], 0, source="weather_alert")
             logger.warning(f"Weather alert ({alert_type}): retracting awnings")
 
     def _on_presence_changed(self, event):
         """React to presence mode changes."""
+        if self.get_config().get("engine_mode", "passive") == "passive":
+            return
         data = event.data if hasattr(event, 'data') else (event if isinstance(event, dict) else {})
         new_mode = data.get("mode", "")
         if new_mode in ("away", "vacation", "extended_away"):
@@ -965,31 +993,34 @@ class CoverControlManager:
     def _set_manual_override(self, entity_id):
         config = self.get_config()
         duration = config.get("manual_override_duration_min", 120)
-        self._manual_overrides[entity_id] = (
-            datetime.now(timezone.utc) + timedelta(minutes=duration)
-        )
+        with self._lock:
+            self._manual_overrides[entity_id] = (
+                datetime.now(timezone.utc) + timedelta(minutes=duration)
+            )
 
     def _is_overridden(self, entity_id, now=None):
-        if entity_id not in self._manual_overrides:
-            return False
-        if now is None:
-            now = datetime.now(timezone.utc)
-        return now < self._manual_overrides[entity_id]
+        with self._lock:
+            if entity_id not in self._manual_overrides:
+                return False
+            if now is None:
+                now = datetime.now(timezone.utc)
+            return now < self._manual_overrides[entity_id]
 
     def _cleanup_overrides(self, now):
-        expired = [eid for eid, until in self._manual_overrides.items() if now >= until]
-        for eid in expired:
-            del self._manual_overrides[eid]
-        # Alte Schedule-Dedup-Eintraege aufräumen (aelter als heute)
-        try:
-            from helpers import local_now
-            today = local_now().date()
-        except Exception:
-            today = now.date() if hasattr(now, 'date') else None
-        if today:
-            stale = [sid for sid, d in self._executed_schedules.items() if d < today]
-            for sid in stale:
-                del self._executed_schedules[sid]
+        with self._lock:
+            expired = [eid for eid, until in self._manual_overrides.items() if now >= until]
+            for eid in expired:
+                del self._manual_overrides[eid]
+            # Alte Schedule-Dedup-Eintraege aufräumen (aelter als heute)
+            try:
+                from helpers import local_now
+                today = local_now().date()
+            except Exception:
+                today = now.date() if hasattr(now, 'date') else None
+            if today:
+                stale = [sid for sid, d in self._executed_schedules.items() if d < today]
+                for sid in stale:
+                    del self._executed_schedules[sid]
 
     def _get_sun_data(self):
         """Get sun position from HA sun.sun entity."""
@@ -1117,14 +1148,14 @@ class CoverControlManager:
         if not facade:
             return False
         facade_ranges = {
-            "N":  (315, 45),
-            "NE": (0, 90),
-            "E":  (45, 135),
-            "SE": (90, 180),
-            "S":  (135, 225),
-            "SW": (180, 270),
-            "W":  (225, 315),
-            "NW": (270, 360),
+            "N":  (337.5, 22.5),
+            "NE": (22.5, 67.5),
+            "E":  (67.5, 112.5),
+            "SE": (112.5, 157.5),
+            "S":  (157.5, 202.5),
+            "SW": (202.5, 247.5),
+            "W":  (247.5, 292.5),
+            "NW": (292.5, 337.5),
         }
         r = facade_ranges.get(facade.upper())
         if not r:
