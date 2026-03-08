@@ -5515,6 +5515,15 @@ class AssistantBrain(BrainCallbacksMixin):
                 (r"\bSollten Sie\b", "Solltest du"), (r"\bsollten Sie\b", "solltest du"),
                 (r"\bSind Sie\b", "Bist du"), (r"\bsind Sie\b", "bist du"),
                 (r"\bWerden Sie\b", "Wirst du"), (r"\bwerden Sie\b", "wirst du"),
+                # Haeufige Vollverben (wuerden sonst vom Imperativ-Catch-all
+                # falsch als Imperativ behandelt: "wissen Sie" → "wisse" statt "weißt du")
+                (r"\bWissen Sie\b", "Weißt du"), (r"\bwissen Sie\b", "weißt du"),
+                (r"\bKennen Sie\b", "Kennst du"), (r"\bkennen Sie\b", "kennst du"),
+                (r"\bFinden Sie\b", "Findest du"), (r"\bfinden Sie\b", "findest du"),
+                (r"\bMeinen Sie\b", "Meinst du"), (r"\bmeinen Sie\b", "meinst du"),
+                (r"\bGlauben Sie\b", "Glaubst du"), (r"\bglauben Sie\b", "glaubst du"),
+                (r"\bBrauchen Sie\b", "Brauchst du"), (r"\bbrauchen Sie\b", "brauchst du"),
+                (r"\bSuchen Sie\b", "Suchst du"), (r"\bsuchen Sie\b", "suchst du"),
                 # Imperativ-Formen
                 (r"\bGeben Sie\b", "Gib"), (r"\bgeben Sie\b", "gib"),
                 (r"\bSagen Sie\b", "Sag"), (r"\bsagen Sie\b", "sag"),
@@ -5556,10 +5565,10 @@ class AssistantBrain(BrainCallbacksMixin):
                 (r"(?<=\bfür\s)Sie\b", "dich"),
                 (r"(?<=\bdass\s)Sie\b", "du"), (r"(?<=\bwenn\s)Sie\b", "du"),
                 (r"(?<=\bob\s)Sie\b", "du"),
-                # Praeposition+Sie (wofür/wozu/worüber/... Sie)
-                (r"(?<=\bwof[uü]r\s)Sie\b", "dich"),
-                (r"(?<=\bwozu\s)Sie\b", "dir"),
-                (r"(?<=\bwor[uü]ber\s)Sie\b", "dich"),
+                # W-Wort+Sie: "Sie" ist hier Subjekt → "du"
+                (r"(?<=\bwof[uü]r\s)Sie\b", "du"),
+                (r"(?<=\bwozu\s)Sie\b", "du"),
+                (r"(?<=\bwor[uü]ber\s)Sie\b", "du"),
                 (r"(?<=\bwarum\s)Sie\b", "du"),
                 (r"(?<=\bwie\s)Sie\b", "du"),
                 (r"(?<=\bwas\s)Sie\b", "du"),
