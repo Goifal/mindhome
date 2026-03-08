@@ -1434,7 +1434,7 @@ const HELP_TEXTS = {
   'seasonal_actions.cover_automation.glare_protection': {title:'Blendschutz', text:'Wenn ein Sitzsensor (occupancy_sensor im Cover-Profil) belegt ist und Sonne auf das Fenster scheint, wird der Sonnenschutz aktiviert — auch unter der Hitzeschutz-Temperatur.'},
   'seasonal_actions.cover_automation.gradual_morning': {title:'Sanftes Öffnen', text:'Morgens werden die Rollläden in 3 Stufen geöffnet (30% → 70% → 100%) mit je 5 Min Pause. Weniger abrupt als sofort 100%.'},
   'seasonal_actions.cover_automation.wave_open': {title:'Wellenförmiges Öffnen', text:'Rollläden öffnen nacheinander: Ost-Fenster zuerst, dann Sued, dann West. Natürlicher und reduziert die Stromlast.'},
-  'seasonal_actions.cover_automation.heating_integration': {title:'Heizungs-Integration', text:'Wenn die Heizung läuft + Aussentemp kalt: Nicht-sonnenbeschienene Fenster zu (Isolierung). Wenn Sonne + Heizung aus: Sonnenfenster auf (passive Solarwaerme).'},
+  'seasonal_actions.cover_automation.heating_integration': {title:'Heizungs-Integration', text:'Wenn die Heizung läuft + Aussentemp kalt: Nicht-sonnenbeschienene Fenster zu (Isolierung). Wenn Sonne + Heizung aus: Sonnenfenster auf (passive Solarwärme).'},
   'seasonal_actions.cover_automation.co2_ventilation': {title:'CO2-Lueftung', text:'Bei hohem CO2 (>1000 ppm) und gutem Wetter (10-25°C, kein Regen) wird eine Lueftungsempfehlung gegeben.'},
   'seasonal_actions.cover_automation.privacy_mode': {title:'Privacy-Modus', text:'Abends nach Sonnenuntergang: Wenn im Raum Licht an ist, werden Rollläden mit privacy_mode=true im Cover-Profil geschlossen (Sichtschutz).'},
   'seasonal_actions.cover_automation.privacy_close_hour': {title:'Privacy ab Uhrzeit', text:'Ab welcher Uhrzeit der Privacy-Modus aktiviert wird (z.B. 17 = ab 17 Uhr). Muss gleichzeitig dunkel sein (Sonnenuntergang). Ohne Angabe: sobald es dunkel ist.'},
@@ -1516,7 +1516,7 @@ const HELP_TEXTS = {
   'sounds.events.goodnight': {title:'Sound: Gute Nacht', text:'Sound bei Gute-Nacht-Routine.'},
   'sounds.night_volume_factor': {title:'Nacht-Sound-Faktor', text:'Sound-Lautstärke nachts als Faktor (0.3 = 30%).'},
   'narration.enabled': {title:'Szenen-Narration', text:'Assistent erzählt bei Szenen-Wechseln was passiert.'},
-  'narration.default_transition': {title:'Standard-Übergang', text:'Standard-Dauer für Szenen-Uebergaenge (Sek).'},
+  'narration.default_transition': {title:'Standard-Übergang', text:'Standard-Dauer für Szenen-Übergänge (Sek).'},
   'narration.scene_transitions.filmabend': {title:'Filmabend-Übergang', text:'Übergangs-Dauer Filmabend-Szene.'},
   'narration.scene_transitions.gute_nacht': {title:'Gute-Nacht-Übergang', text:'Übergangs-Dauer Gute-Nacht-Szene.'},
   'narration.scene_transitions.aufwachen': {title:'Aufwach-Übergang', text:'Übergangs-Dauer Aufwach-Szene.'},
@@ -1599,7 +1599,7 @@ const HELP_TEXTS = {
   'heating.weather_adjust.forecast_lookahead_hours': {title:'Vorhersage-Zeitraum', text:'Wie viele Stunden voraus wird die Wettervorhersage für die Heizungsanpassung betrachtet.'},
   'heating.weather_adjust.preheat_drop_threshold': {title:'Vorheiz-Schwelle', text:'Ab welchem vorhergesagten Temperaturabfall (in °C) wird vorgeheizt. Z.B. 5 = wenn in den naechsten Stunden 5°C kälter wird.'},
   'heating.weather_adjust.preheat_offset': {title:'Vorheiz-Offset', text:'Um wie viel Grad die Heizung beim Vorheizen hochgefahren wird.'},
-  'heating.weather_adjust.solar_gain_reduction': {title:'Solar-Reduktion', text:'Um wie viel Grad die Heizung reduziert wird wenn die Sonne stark scheint (passive Solarwaerme durch Fenster).'},
+  'heating.weather_adjust.solar_gain_reduction': {title:'Solar-Reduktion', text:'Um wie viel Grad die Heizung reduziert wird wenn die Sonne stark scheint (passive Solarwärme durch Fenster).'},
   'heating.weather_adjust.wind_compensation_threshold': {title:'Wind-Schwelle', text:'Ab welcher Windgeschwindigkeit die Heizung kompensiert wird (Wind = mehr Wärmeverlust).'},
   'heating.weather_adjust.wind_offset': {title:'Wind-Offset', text:'Um wie viel Grad die Heizung bei starkem Wind erhoeht wird.'},
   'insights.checks.frost_heating': {title:'Frost + Heizung', text:'Warnt wenn Frost erwartet wird und Heizung aus/abwesend ist.'},
@@ -3322,10 +3322,10 @@ function renderMood() {
     fInfo('Wie stark beeinflussen verschiedene Signale den erkannten Stresslevel?') +
     fRange('mood.rapid_command_stress_boost', 'Schnelle Befehle hintereinander', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'}) +
     fRange('mood.positive_stress_reduction', 'Positive Worte reduzieren Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'}) +
-    fRange('mood.negative_stress_boost', 'Negative Worte erhoehen Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'}) +
+    fRange('mood.negative_stress_boost', 'Negative Worte erhöhen Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'}) +
     fRange('mood.impatient_stress_boost', 'Ungeduld erhoeht Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'}) +
     fRange('mood.tired_boost', 'Müdigkeit erhoeht Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'}) +
-    fRange('mood.repetition_stress_boost', 'Wiederholungen erhoehen Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'})
+    fRange('mood.repetition_stress_boost', 'Wiederholungen erhöhen Stress', 0, 0.5, 0.05, {0:'Kein Einfluss',0.1:'Schwach',0.25:'Mittel',0.5:'Stark'})
   ) +
   sectionWrap('&#128172;', 'Stimmungs-Erkennung — Wörter',
     fInfo('Klicke auf Wörter, die der Assistent als Stimmungssignal erkennen soll.') +
@@ -3377,9 +3377,8 @@ function renderMood() {
   ) +
   // --- Voice-Mood Integration (verschoben aus Intelligenz-Tab) ---
   sectionWrap('&#127908;', 'Voice-Mood Integration',
-    fInfo('Verknüpft die erkannte Stimm-Emotion (fröhlich, traurig, ärgerlich, nervoes, muede) direkt mit der Stimmungserkennung. So reagiert Jarvis nicht nur auf Worte, sondern auch auf den Tonfall.') +
-    fToggle('mood.voice_mood_integration', 'Voice-Emotion in Stimmung einbeziehen') +
-    fRange('voice_analysis.voice_weight', 'Gewicht der Stimm-Analyse', 0, 1, 0.05, {0:'Ignorieren',0.25:'Schwach',0.5:'Mittel',0.75:'Stark',1:'Voll'})
+    fInfo('Verknüpft die erkannte Stimm-Emotion (fröhlich, traurig, ärgerlich, nervös, müde) direkt mit der Stimmungserkennung. So reagiert Jarvis nicht nur auf Worte, sondern auch auf den Tonfall.') +
+    fToggle('mood.voice_mood_integration', 'Voice-Emotion in Stimmung einbeziehen')
   );
 }
 
@@ -3394,14 +3393,14 @@ function renderSensors() {
       '&#128161; <strong>Licht:</strong> Sleep-Mode und Wake-up Light<br>' +
       '&#127916; <strong>Aktivität:</strong> Schlaf-Erkennung<br>' +
       '&#127748; <strong>Routinen:</strong> Aufwach-Erkennung (z.B. Kaffee)<br><br>' +
-      'Waehle den Raum und fuege Betten hinzu. Jedes Bett kann einer Person zugeordnet werden.') +
+      'Wähle den Raum und füge Betten hinzu. Jedes Bett kann einer Person zugeordnet werden.') +
     '<div id="centralBedSensorContainer" style="padding:8px;">Lade Räume...</div>'
   ) +
   sectionWrap('&#128225;', 'Weitere Sensoren',
-    fInfo('Andere Sensor-Typen für die Aktivitätserkennung. Bettsensoren werden oben zentral konfiguriert und müssen hier nicht nochmal eingetragen werden.') +
-    fEntityPicker('activity.entities.media_players', 'Media Player', ['media_player']) +
-    fEntityPicker('activity.entities.mic_sensors', 'Mikrofon-Sensoren', ['binary_sensor','sensor']) +
-    fEntityPicker('activity.entities.pc_sensors', 'PC-Sensoren (Arbeit-Erkennung)', ['binary_sensor','sensor'])
+    fInfo('Andere Sensor-Typen (Media Player, Mikrofone, PC) konfigurierst du pro Raum im <strong>Räume</strong>-Tab unter "Aktivitäts-Sensoren". Bettsensoren werden oben zentral konfiguriert.') +
+    `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-rooms]').click()">
+      <span class="info-icon">&#127968;</span>Aktivitäts-Sensoren verwaltest du im <strong>Räume</strong>-Tab. Klicke hier.
+    </div>`
   );
 }
 
@@ -3427,7 +3426,7 @@ function renderRooms() {
     )
   ) +
   sectionWrap('&#127782;', 'Heizung: Wetter-Anpassung (sun.sun + weather)',
-    fInfo('Passt die Heizung automatisch an Wetterbedingungen an:<br><br>&#10052; <strong>Vorhersage-Vorheizen:</strong> Kälteeinbruch vorhergesagt → Heizung vorab hochfahren<br>&#9728; <strong>Solar-Gain:</strong> Sonne scheint stark → Heizung reduzieren (passive Solarwaerme)<br>&#128168; <strong>Wind-Kompensation:</strong> Starker Wind → mehr Wärmeverlust → leicht erhoehen') +
+    fInfo('Passt die Heizung automatisch an Wetterbedingungen an:<br><br>&#10052; <strong>Vorhersage-Vorheizen:</strong> Kälteeinbruch vorhergesagt → Heizung vorab hochfahren<br>&#9728; <strong>Solar-Gain:</strong> Sonne scheint stark → Heizung reduzieren (passive Solarwärme)<br>&#128168; <strong>Wind-Kompensation:</strong> Starker Wind → mehr Wärmeverlust → leicht erhöhen') +
     fToggle('heating.weather_adjust.enabled', 'Wetter-Anpassung aktiv') +
     fRange('heating.weather_adjust.forecast_lookahead_hours', 'Vorhersage-Zeitraum (Std)', 1, 8, 1, {1:'1h',2:'2h',3:'3h',4:'4h',6:'6h',8:'8h'}) +
     fRange('heating.weather_adjust.preheat_drop_threshold', 'Vorheizen ab Temperaturabfall (°C)', 3, 10, 1, {3:'3°',5:'5°',7:'7°',10:'10°'}) +
@@ -3600,11 +3599,11 @@ function renderVoice() {
   sectionWrap('&#127916;', 'Szenen & Narration',
     fInfo('Szenen, Übergangszeiten und "Nicht stören"-Einstellungen werden zentral im Szenen-Tab verwaltet. Hier nur die globalen Narrations-Einstellungen.') +
     fToggle('narration.enabled', 'Szenen-Narration aktiv') +
-    fRange('narration.default_transition', 'Standard-Übergang (Sek.)', 1, 20, 1) +
+    fRange('narration.default_transition', 'Standard-Übergang (Sek.)', 1, 20, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s',20:'20s'}) +
     fRange('narration.step_delay', 'Verzögerung zwischen Schritten (Sek.)', 0, 10, 0.5) +
     fToggle('narration.narrate_actions', 'Aktionen ansagen ("Licht wird gedimmt...")') +
     `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
-      <span class="info-icon">&#127916;</span>Einzelne Szenen-Uebergaenge konfigurierst du im <strong>Szenen</strong>-Tab. Klicke hier.
+      <span class="info-icon">&#127916;</span>Einzelne Szenen-Übergänge konfigurierst du im <strong>Szenen</strong>-Tab. Klicke hier.
     </div>`
   ) +
   sectionWrap('&#128295;', 'STT-Korrekturen',
@@ -3625,7 +3624,7 @@ function renderVoice() {
     fRange('speaker_recognition.enrollment_duration', 'Einlern-Dauer (Sek.)', 5, 120, 5, {5:'5s (kurz)',15:'15s',30:'30s (empfohlen)',60:'1 Min',120:'2 Min'}) +
     fKeyValue('speaker_recognition.device_mapping', 'Geräte → Person Zuordnung',
       'ESPHome Device-ID', 'Person (z.B. max)',
-      'Welches Mikrofon-Geraet gehört wem? Device-ID findest du in HA → Einstellungen → Geräte → ESPHome.') +
+      'Welches Mikrofon-Gerät gehört wem? Device-ID findest du in HA → Einstellungen → Geräte → ESPHome.') +
     fTextarea('speaker_recognition.doa_mapping', 'Richtungs-Erkennung (DoA)',
       'JSON-Format. Beispiel: {"respeaker_küche":{"0-90":"max","270-360":"lisa"}}. Erfordert ReSpeaker XVF3800.') +
     fRange('speaker_recognition.doa_tolerance', 'DoA-Toleranz (Grad)', 5, 90, 5, {5:'5°',10:'10°',15:'15°',20:'20°',30:'30° (Standard)',45:'45°',60:'60°',90:'90°'})
@@ -7302,7 +7301,7 @@ function renderCovers() {
     fToggle('seasonal_actions.cover_automation.glare_protection', 'Blendschutz (bei besetztem Platz + Sonne)') +
     fToggle('seasonal_actions.cover_automation.gradual_morning', 'Sanftes Öffnen morgens (3 Stufen)') +
     fToggle('seasonal_actions.cover_automation.wave_open', 'Wellenförmiges Öffnen (Ost→Sued→West)') +
-    fToggle('seasonal_actions.cover_automation.heating_integration', 'Heizungs-Integration (Isolierung + passive Solarwaerme)') +
+    fToggle('seasonal_actions.cover_automation.heating_integration', 'Heizungs-Integration (Isolierung + passive Solarwärme)') +
     fToggle('seasonal_actions.cover_automation.co2_ventilation', 'CO2-Lueftungs-Unterstuetzung') +
     fToggle('seasonal_actions.cover_automation.privacy_mode', 'Privacy-Modus (Sichtschutz abends bei Licht)') +
     fRange('seasonal_actions.cover_automation.privacy_close_hour', 'Privacy ab Uhrzeit (Stunde)', 15, 22, 1, {15:'15h',16:'16h',17:'17h',18:'18h',19:'19h',20:'20h',21:'21h',22:'22h'}) +
@@ -8597,11 +8596,13 @@ function renderLights() {
     fRange('lighting.circadian.transition_seconds', 'Übergangszeit (Sekunden)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
     '<div id="circadianCurveEditor"></div>'
   ) +
-  sectionWrap('&#127916;', 'Szenen-Uebergaenge',
-    fInfo('Übergangszeiten pro Szene konfigurierst du zentral im Szenen-Tab. Hier nur der globale Standard-Übergang.') +
-    fRange('narration.default_transition', 'Standard-Übergang (Sek)', 1, 15, 1, {1:'1s',2:'2s',3:'3s',5:'5s',7:'7s',10:'10s',15:'15s'}) +
+  sectionWrap('&#127916;', 'Szenen-Übergänge',
+    fInfo('Der globale Standard-Übergang wird im <strong>Sprache</strong>-Tab unter "Szenen & Narration" konfiguriert. Pro-Szene-Übergänge findest du im Szenen-Tab.') +
+    `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-voice]').click()">
+      <span class="info-icon">&#127908;</span>Standard-Übergang konfigurierst du im <strong>Sprache</strong>-Tab. Klicke hier.
+    </div>` +
     `<div class="info-box" style="margin-top:8px;cursor:pointer;" onclick="document.querySelector('[data-tab=tab-scenes]').click()">
-      <span class="info-icon">&#127916;</span>Einzelne Szenen-Uebergaenge verwaltest du im <strong>Szenen</strong>-Tab. Klicke hier.
+      <span class="info-icon">&#127916;</span>Einzelne Szenen-Übergänge verwaltest du im <strong>Szenen</strong>-Tab. Klicke hier.
     </div>`
   );
 }
