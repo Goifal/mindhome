@@ -852,29 +852,32 @@ class ProactiveManager:
 
             # Schwellwert ueberschritten → Covers schliessen
             if new_num >= threshold and old_num < threshold:
+                closed_count = 0
                 for cid in cover_ids:
                     redis_key = f"mha:cover:power_close:{cid}"
                     acted = await self._auto_cover_action(
                         cid, close_pos,
                         f"Stromverbrauch {entity_id} ({new_num:.0f} W >= {threshold} W)",
-                        auto_level, redis_client,
+                        auto_level, redis_client, skip_power_lock=True,
                     )
-                    if acted and redis_client:
-                        try:
-                            await redis_client.set(redis_key, "1", ex=86400)
-                        except Exception:
-                            pass
+                    if acted:
+                        closed_count += 1
+                        if redis_client:
+                            try:
+                                await redis_client.set(redis_key, "1", ex=86400)
+                            except Exception:
+                                pass
                 logger.info(
-                    "Power-Close: %s über Schwelle (%s W >= %s W) → %d Covers geschlossen",
-                    entity_id, new_num, threshold, len(cover_ids),
+                    "Power-Close: %s über Schwelle (%s W >= %s W) → %d/%d Covers geschlossen",
+                    entity_id, new_num, threshold, closed_count, len(cover_ids),
                 )
 
             # Unter Schwellwert gefallen → Covers wieder oeffnen
             elif new_num < threshold and old_num >= threshold:
-                # Nicht öffnen wenn jemand schläft
-                if await self._is_sleeping():
-                    logger.debug("Power-Close Öffnung übersprungen — Schlafmodus aktiv")
-                    return
+                # Nicht öffnen wenn jemand schläft — aber Lock trotzdem aufräumen
+                states = await self.brain.ha.get_states()
+                sleeping = await self._is_sleeping(states)
+                opened_count = 0
                 for cid in cover_ids:
                     redis_key = f"mha:cover:power_close:{cid}"
                     power_active = False
@@ -883,21 +886,34 @@ class ProactiveManager:
                             power_active = bool(await redis_client.get(redis_key))
                         except Exception:
                             pass
-                    if power_active:
-                        acted = await self._auto_cover_action(
-                            cid, 100,
-                            f"Stromverbrauch {entity_id} ({new_num:.0f} W < {threshold} W)",
-                            auto_level, redis_client,
-                        )
-                        if acted and redis_client:
-                            try:
-                                await redis_client.delete(redis_key)
-                            except Exception:
-                                pass
-                logger.info(
-                    "Power-Close: %s unter Schwelle (%s W < %s W) → Covers geöffnet",
-                    entity_id, new_num, threshold,
-                )
+                    if not power_active:
+                        continue
+                    # Lock immer aufräumen — Strom ist unter Schwelle,
+                    # andere Automatiken sollen wieder greifen
+                    if redis_client:
+                        try:
+                            await redis_client.delete(redis_key)
+                        except Exception:
+                            pass
+                    if sleeping:
+                        continue  # Cover nicht öffnen, aber Lock ist weg
+                    acted = await self._auto_cover_action(
+                        cid, 100,
+                        f"Stromverbrauch {entity_id} ({new_num:.0f} W < {threshold} W)",
+                        auto_level, redis_client, skip_power_lock=True,
+                    )
+                    if acted:
+                        opened_count += 1
+                if sleeping:
+                    logger.debug(
+                        "Power-Close: %s unter Schwelle — Locks aufgeräumt, Öffnung übersprungen (Schlafmodus)",
+                        entity_id,
+                    )
+                else:
+                    logger.info(
+                        "Power-Close: %s unter Schwelle (%s W < %s W) → %d/%d Covers geöffnet",
+                        entity_id, new_num, threshold, opened_count, len(cover_ids),
+                    )
 
     async def _check_morning_briefing(self, motion_entity: str = ""):
         """Phase 7.1: Prüft ob Morning Briefing bei erster Bewegung am Morgen geliefert werden soll."""
@@ -3114,13 +3130,24 @@ class ProactiveManager:
 
     async def _auto_cover_action(
         self, entity_id: str, position: int, reason: str,
-        auto_level: int, redis_client=None,
+        auto_level: int, redis_client=None, *, skip_power_lock: bool = False,
     ) -> bool:
         """Fuehrt eine automatische Cover-Aktion aus (oder schlaegt vor).
 
-        Checks: Dedup, Manual Override, Fenster-offen-Schutz.
+        Checks: Dedup, Manual Override, Power-Close-Lock, Fenster-offen-Schutz.
         """
         level = self.brain.autonomy.level
+
+        # Power-Close Lock: Wenn Strom-Automatik aktiv, andere Automatiken blockieren
+        if not skip_power_lock and redis_client:
+            power_lock_key = f"mha:cover:power_close:{entity_id}"
+            try:
+                power_locked = await redis_client.get(power_lock_key)
+                if power_locked:
+                    logger.debug("Cover-Auto: %s übersprungen — Power-Close Lock aktiv", entity_id)
+                    return False
+            except Exception:
+                pass
 
         # Feature 2: Manual Override Schutz — wenn manuell bedient, nicht antasten
         if redis_client:
@@ -3130,8 +3157,8 @@ class ProactiveManager:
                 logger.debug("Cover-Auto: %s übersprungen — manueller Override aktiv", entity_id)
                 return False
 
-        # Dedup per Redis (30 Min Cooldown)
-        if redis_client:
+        # Dedup per Redis (30 Min Cooldown) — Power-Close überspringt Dedup
+        if redis_client and not skip_power_lock:
             dedup_key = f"mha:cover:auto:{entity_id}:{position}"
             already = await redis_client.get(dedup_key)
             if already:

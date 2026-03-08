@@ -2124,6 +2124,21 @@ function entityPickSelect(item, entityId) {
     return;
   }
 
+  // Power-Close Cover-Picker: Entity zur Liste hinzufuegen
+  if (input?.dataset?.powercloseId) {
+    const ruleId = parseInt(input.dataset.powercloseId);
+    input.value = '';
+    addPowerCloseCover(ruleId, entityId);
+    return;
+  }
+
+  // Generischer Fallback: Input-Wert setzen + onchange feuern (z.B. Power-Close Sensor)
+  if (input && !input.dataset?.path && !input.dataset?.roomMap && input.classList.contains('entity-pick-input')) {
+    input.value = entityId;
+    input.dispatchEvent(new Event('change'));
+    return;
+  }
+
   // List Modus: Entity zu Array hinzufuegen
   const path = input?.dataset?.path;
   if (!path) return;
@@ -8320,10 +8335,17 @@ function renderPowerCloseRules(container) {
     html += '<div class="form-group" style="width:120px;"><label>Schwelle (Watt)</label><input type="number" value="' + (r.threshold || 50) + '" min="1" max="5000" step="5" onchange="updatePowerCloseRule(' + r.id + ',{threshold:parseInt(this.value)})" style="font-size:12px;"></div>';
     html += '<div class="form-group" style="width:120px;"><label>Position (%)</label><input type="number" value="' + (r.close_position ?? 0) + '" min="0" max="100" step="5" onchange="updatePowerCloseRule(' + r.id + ',{close_position:parseInt(this.value)})" style="font-size:12px;"></div>';
     html += '</div>';
-    // Covers
-    html += '<div class="form-group"><label>Rollläden (Entity-IDs, kommagetrennt)</label>';
-    html += '<input type="text" value="' + esc(covers) + '" placeholder="cover.rollladen_wohnzimmer, cover.rollladen_küche" onchange="updatePowerCloseRule(' + r.id + ',{cover_ids:this.value.split(\',\').map(s=>s.trim()).filter(Boolean)})" style="font-size:11px;font-family:var(--mono);">';
+    // Covers – Entity-Picker mit Tags
+    html += '<div class="form-group"><label>Rollläden</label>';
+    html += '<div class="entity-pick-wrap">';
+    html += '<div class="kw-editor" data-entity-picker="list" data-domains="cover" data-powerclose-id="' + r.id + '" onclick="this.querySelector(\'input\')?.focus()" style="min-height:36px;">';
+    for (const cid of (r.cover_ids || [])) {
+      html += '<span class="kw-tag">' + esc(cid) + '<span class="kw-rm" onclick="removePowerCloseCover(' + r.id + ',\'' + esc(cid) + '\')">&#10005;</span></span>';
+    }
+    html += '<input class="kw-input entity-pick-input" placeholder="&#128269; cover suchen..." data-powerclose-id="' + r.id + '" oninput="entityPickFilter(this,\'cover\')" onfocus="entityPickFilter(this,\'cover\')" style="font-size:11px;font-family:var(--mono);">';
     html += '</div>';
+    html += '<div class="entity-pick-dropdown" style="display:none;"></div>';
+    html += '</div></div>';
     html += '</div>';
   }
   container.innerHTML = html;
@@ -8354,6 +8376,23 @@ async function deletePowerCloseRule(ruleId) {
     toast('Regel gelöscht');
     loadPowerCloseRules();
   } catch (e) { toast('Fehler: ' + e.message, 'error'); }
+}
+
+function removePowerCloseCover(ruleId, coverId) {
+  const rule = _powerCloseRules.find(r => r.id === ruleId);
+  if (!rule) return;
+  const newCovers = (rule.cover_ids || []).filter(c => c !== coverId);
+  updatePowerCloseRule(ruleId, {cover_ids: newCovers});
+}
+
+function addPowerCloseCover(ruleId, coverId) {
+  const rule = _powerCloseRules.find(r => r.id === ruleId);
+  if (!rule) return;
+  const covers = rule.cover_ids || [];
+  if (!covers.includes(coverId)) {
+    covers.push(coverId);
+    updatePowerCloseRule(ruleId, {cover_ids: covers});
+  }
 }
 
 // ── Öffnungs-Sensoren (Fenster/Türen/Tore) ──────────────────────
