@@ -522,6 +522,6 @@ class LearningObserver:
                     lines.append(f"- {friendly} um {time_slot} Uhr (taeglich, {count}x)")
 
         if suggestions > 0:
-            lines.append(f"\n{suggestions} Vorschlaege gemacht: {accepted} akzeptiert, {declined} abgelehnt.")
+            lines.append(f"\n{suggestions} Vorschläge gemacht: {accepted} akzeptiert, {declined} abgelehnt.")
 
         return "\n".join(lines)

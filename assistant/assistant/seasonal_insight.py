@@ -184,7 +184,7 @@ class SeasonalInsightEngine:
             ),
             "sommer": (
                 f"{title}, es wird {season_label}. "
-                f"Soll ich die Nacht-Kuehlung aktivieren und die Rollladen-Automatik auf Sonnenschutz umstellen?"
+                f"Soll ich die Nacht-Kühlung aktivieren und die Rollladen-Automatik auf Sonnenschutz umstellen?"
             ),
             "herbst": (
                 f"{title}, der {season_label} kommt. "

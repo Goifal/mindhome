@@ -2,18 +2,18 @@
 Conflict Resolver - Phase 16.1: Multi-User Konfliktloesung.
 
 Erkennt und loest Konflikte wenn mehrere Personen widersprüchliche
-Befehle geben. Nutzt Trust-Levels für Prioritaet und bietet
-LLM-basierte Mediations-Vorschlaege.
+Befehle geben. Nutzt Trust-Levels für Priorität und bietet
+LLM-basierte Mediations-Vorschläge.
 
 Beispiel-Konflikte:
-  - Person A: "Mach es waermer" vs Person B: "Mach es kaelter"
+  - Person A: "Mach es wärmer" vs Person B: "Mach es kälter"
   - Person A: "Licht aus" vs Person B: "Licht an"
   - Person A: "Musik leiser" vs Person B: "Musik lauter"
 
-Loesungsstrategien:
+Lösungsstrategien:
   1. trust_priority: Höhere Trust-Stufe gewinnt
   2. average: Kompromiss (Durchschnitt bei numerischen Werten)
-  3. mediate: LLM schlaegt Kompromiss vor und erklaert
+  3. mediate: LLM schlägt Kompromiss vor und erklärt
 """
 
 import asyncio

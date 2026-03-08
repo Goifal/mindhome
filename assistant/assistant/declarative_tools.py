@@ -235,7 +235,7 @@ class DeclarativeToolExecutor:
             return await handler(config, tool.get("description", ""))
         except Exception as e:
             logger.error("Declarative Tool '%s' Fehler: %s", tool_name, e)
-            return {"success": False, "message": "Fehler bei Ausfuehrung des Tools."}
+            return {"success": False, "message": "Fehler bei Ausführung des Tools."}
 
     def _parse_time_range(self, config: dict) -> int:
         """Parst time_range zu Stunden."""
@@ -881,15 +881,15 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
     # Durchschnittstemperatur aller Raeume
     if len(indoor) >= 2:
         _add("raumtemperaturen",
-             f"Durchschnittstemperatur aller {len(indoor)} Raeume",
+             f"Durchschnittstemperatur aller {len(indoor)} Räume",
              "entity_aggregator",
              {"entities": [t["eid"] for t in indoor[:8]], "aggregation": "average"},
-             f"{len(indoor)} Temperatursensoren gefunden — so sehe ich den Durchschnitt und den kaeltesten Raum.")
+             f"{len(indoor)} Temperatursensoren gefunden — so sehe ich den Durchschnitt und den kältesten Raum.")
 
     # Kaeltester Raum
     if len(indoor) >= 3:
         _add("kaeltester_raum",
-             "Findet den kaeltesten Raum",
+             "Findet den kältesten Raum",
              "entity_aggregator",
              {"entities": [t["eid"] for t in indoor[:8]], "aggregation": "min"},
              "Bei mehreren Raeumen kann ich erkennen wo es zu kalt ist.")
@@ -1012,7 +1012,7 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
     # ── Bewegung ──────────────────────────────────────────────
     if binary_motion:
         _add("bewegung_aktivitaet",
-             f"Bewegungsmelder-Aktivitaet ({len(binary_motion)} Sensoren)",
+             f"Bewegungsmelder-Aktivität ({len(binary_motion)} Sensoren)",
              "event_counter",
              {"entities": [m["eid"] for m in binary_motion[:6]], "count_state": "on", "time_range": "24h"},
              f"{len(binary_motion)} Bewegungsmelder — zeigt Aktivitaetsmuster im Haus.")

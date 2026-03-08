@@ -561,7 +561,7 @@ class MoodDetector:
             if self._stress_level >= 0.5:
                 suggestions.append({
                     "action": "media_player.volume_down",
-                    "reason": "Stress erkannt - Musik-Lautstaerke reduzieren",
+                    "reason": "Stress erkannt - Musik-Lautstärke reduzieren",
                     "priority": "medium",
                     "params": {"volume_pct": 30},
                 })

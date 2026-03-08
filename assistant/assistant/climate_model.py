@@ -384,7 +384,7 @@ class ClimateModel:
         if changes.get("close_windows"):
             change_parts.append("Fenster geschlossen")
         if changes.get("open_windows"):
-            change_parts.append("Fenster geoeffnet")
+            change_parts.append("Fenster geöffnet")
         if changes.get("heating_on"):
             change_parts.append("Heizung eingeschaltet")
         if changes.get("heating_off"):

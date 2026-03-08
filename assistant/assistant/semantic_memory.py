@@ -19,12 +19,12 @@ logger = logging.getLogger(__name__)
 
 # Monats-Namen und Lookup fuer Datums-Parsing
 _MONTH_NAMES = {
-    1: "Januar", 2: "Februar", 3: "Maerz", 4: "April",
+    1: "Januar", 2: "Februar", 3: "März", 4: "April",
     5: "Mai", 6: "Juni", 7: "Juli", 8: "August",
     9: "September", 10: "Oktober", 11: "November", 12: "Dezember",
 }
 _MONTH_LOOKUP = {
-    "januar": 1, "februar": 2, "maerz": 3, "marz": 3, "april": 4,
+    "januar": 1, "februar": 2, "maerz": 3, "marz": 3, "märz": 3, "april": 4,
     "mai": 5, "juni": 6, "juli": 7, "august": 8,
     "september": 9, "oktober": 10, "november": 11, "dezember": 12,
 }

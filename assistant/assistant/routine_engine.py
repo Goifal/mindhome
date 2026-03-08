@@ -446,8 +446,8 @@ class RoutineEngine:
         translations = {
             "sunny": "sonnig",
             "clear-night": "klare Nacht",
-            "partlycloudy": "teilweise bewoelkt",
-            "cloudy": "bewoelkt",
+            "partlycloudy": "teilweise bewölkt",
+            "cloudy": "bewölkt",
             "rainy": "Regen",
             "pouring": "starker Regen",
             "snowy": "Schnee",
@@ -457,7 +457,7 @@ class RoutineEngine:
             "lightning": "Gewitter",
             "lightning-rainy": "Gewitter mit Regen",
             "windy": "windig",
-            "windy-variant": "windig und bewoelkt",
+            "windy-variant": "windig und bewölkt",
             "exceptional": "Ausnahmezustand",
         }
         return translations.get(condition, condition)
@@ -905,8 +905,14 @@ class RoutineEngine:
         _weather_excludes = ["wie kalt", "wie warm", "temperatur", "wetter",
                              "grad", "regnet", "schneit"]
         if any(ex in text_lower for ex in _weather_excludes):
+            logger.debug("Goodnight-Check: Wetter-Ausschluss fuer '%s'", text_lower)
             return False
-        return any(trigger in text_lower for trigger in self.goodnight_triggers)
+        matched = any(trigger in text_lower for trigger in self.goodnight_triggers)
+        logger.debug(
+            "Goodnight-Check: text='%s', triggers=%s, enabled=%s, matched=%s",
+            text_lower, self.goodnight_triggers, self.goodnight_enabled, matched,
+        )
+        return matched
 
     async def execute_goodnight(self, person: str = "") -> dict:
         """
@@ -921,26 +927,70 @@ class RoutineEngine:
         if not self.goodnight_enabled:
             return {"text": f"Gute Nacht, {get_person_title(person)}. Alles unter Kontrolle.", "actions": [], "issues": []}
 
-        # 1. Sicherheits-Check
-        issues = await self._run_safety_checks()
+        logger.info("Gute-Nacht-Routine gestartet fuer '%s'", person or "unbekannt")
 
-        # 2. Morgen-Vorschau
-        tomorrow_info = await self._get_tomorrow_preview()
+        # 1. Sicherheits-Check (max 15s)
+        try:
+            issues = await asyncio.wait_for(self._run_safety_checks(), timeout=15.0)
+            logger.info("Gute-Nacht: Sicherheits-Check fertig (%d Issues)", len(issues))
+        except asyncio.TimeoutError:
+            logger.warning("Gute-Nacht: Sicherheits-Check Timeout (15s)")
+            issues = []
+        except Exception as e:
+            logger.warning("Gute-Nacht: Sicherheits-Check Fehler: %s", e)
+            issues = []
 
-        # 3. Aktionen ausführen (wenn keine kritischen Issues)
+        # 2. Morgen-Vorschau (max 10s)
+        try:
+            tomorrow_info = await asyncio.wait_for(self._get_tomorrow_preview(), timeout=10.0)
+            logger.info("Gute-Nacht: Morgen-Vorschau fertig")
+        except asyncio.TimeoutError:
+            logger.warning("Gute-Nacht: Morgen-Vorschau Timeout (10s)")
+            tomorrow_info = ""
+        except Exception as e:
+            logger.warning("Gute-Nacht: Morgen-Vorschau Fehler: %s", e)
+            tomorrow_info = ""
+
+        # 3. Aktionen ausfuehren (max 15s, wenn keine kritischen Issues)
         actions = []
         if not any(i.get("critical", False) for i in issues):
-            actions = await self._execute_goodnight_actions()
+            try:
+                actions = await asyncio.wait_for(self._execute_goodnight_actions(), timeout=15.0)
+                logger.info("Gute-Nacht: %d Aktionen ausgefuehrt", len(actions))
+            except asyncio.TimeoutError:
+                logger.warning("Gute-Nacht: Aktionen Timeout (15s)")
+            except Exception as e:
+                logger.warning("Gute-Nacht: Aktionen Fehler: %s", e)
+        else:
+            logger.info("Gute-Nacht: Kritische Issues — Aktionen uebersprungen")
 
-        # 4. LLM formuliert den Text
-        text = await self._generate_goodnight_text(person, issues, tomorrow_info, actions)
+        # 4. LLM formuliert den Text (max 15s)
+        try:
+            text = await asyncio.wait_for(
+                self._generate_goodnight_text(person, issues, tomorrow_info, actions),
+                timeout=15.0,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Gute-Nacht: LLM-Text Timeout (15s) — Fallback")
+            title = get_person_title(person)
+            text = f"Gute Nacht, {title}. Alles erledigt."
+            if issues:
+                issue_msgs = [i["message"] for i in issues[:3]]
+                text = f"Gute Nacht, {title}. Hinweis: {'; '.join(issue_msgs)}."
+        except Exception as e:
+            logger.warning("Gute-Nacht: LLM-Text Fehler: %s — Fallback", e)
+            title = get_person_title(person)
+            text = f"Gute Nacht, {title}. Alles unter Kontrolle."
 
         # Timestamp speichern
         if self.redis:
-            await self.redis.setex(KEY_LAST_GOODNIGHT, 86400, datetime.now(tz=_TZ).isoformat())
+            try:
+                await self.redis.setex(KEY_LAST_GOODNIGHT, 86400, datetime.now(tz=_TZ).isoformat())
+            except Exception as e:
+                logger.debug("Gute-Nacht: Timestamp nicht gespeichert: %s", e)
 
         logger.info(
-            "Gute-Nacht: %d Aktionen, %d Issues",
+            "Gute-Nacht: %d Aktionen, %d Issues — Routine abgeschlossen",
             len(actions), len(issues),
         )
         return {"text": text, "actions": actions, "issues": issues}
@@ -1620,7 +1670,7 @@ class RoutineEngine:
                     normal_val = float(duration_normal)
                     if duration_val > normal_val * 1.2:  # 20% laenger als normal
                         delay = int(duration_val - normal_val)
-                        info += f" — {delay} Min Verzoegerung"
+                        info += f" — {delay} Min Verzögerung"
                 except (ValueError, TypeError):
                     pass
 

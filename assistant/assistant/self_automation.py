@@ -906,7 +906,7 @@ REGELN:
             "switch.turn_on": f"{entity_name} einschalten",
             "switch.turn_off": f"{entity_name} ausschalten",
             "climate.set_temperature": f"{entity_name}-Thermostat",
-            "climate.set_hvac_mode": f"{entity_name}-Heizmodus aendern",
+            "climate.set_hvac_mode": f"{entity_name}-Heizmodus ändern",
             "cover.open_cover": f"{entity_name}-Rolladen hochfahren",
             "cover.close_cover": f"{entity_name}-Rolladen runterfahren",
             "cover.set_cover_position": f"{entity_name}-Rolladen positionieren",

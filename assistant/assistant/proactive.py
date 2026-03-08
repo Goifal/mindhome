@@ -865,12 +865,16 @@ class ProactiveManager:
                         except Exception:
                             pass
                 logger.info(
-                    "Power-Close: %s ueber Schwelle (%s W >= %s W) → %d Covers geschlossen",
+                    "Power-Close: %s über Schwelle (%s W >= %s W) → %d Covers geschlossen",
                     entity_id, new_num, threshold, len(cover_ids),
                 )
 
             # Unter Schwellwert gefallen → Covers wieder oeffnen
             elif new_num < threshold and old_num >= threshold:
+                # Nicht öffnen wenn jemand schläft
+                if await self._is_bed_occupied():
+                    logger.debug("Power-Close Öffnung übersprungen — Bett belegt")
+                    return
                 for cid in cover_ids:
                     redis_key = f"mha:cover:power_close:{cid}"
                     power_active = False
@@ -891,7 +895,7 @@ class ProactiveManager:
                             except Exception:
                                 pass
                 logger.info(
-                    "Power-Close: %s unter Schwelle (%s W < %s W) → Covers geoeffnet",
+                    "Power-Close: %s unter Schwelle (%s W < %s W) → Covers geöffnet",
                     entity_id, new_num, threshold,
                 )
 
@@ -1059,12 +1063,12 @@ class ProactiveManager:
             # Wetter morgen (falls verfügbar)
             _cond_map = {
                 "sunny": "sonnig", "clear-night": "klare Nacht",
-                "partlycloudy": "teilweise bewoelkt", "cloudy": "bewoelkt",
+                "partlycloudy": "teilweise bewölkt", "cloudy": "bewölkt",
                 "rainy": "Regen", "pouring": "Starkregen",
                 "snowy": "Schnee", "snowy-rainy": "Schneeregen",
                 "fog": "Nebel", "hail": "Hagel",
                 "lightning": "Gewitter", "lightning-rainy": "Gewitter mit Regen",
-                "windy": "windig", "windy-variant": "windig & bewoelkt",
+                "windy": "windig", "windy-variant": "windig & bewölkt",
                 "exceptional": "Ausnahmewetter",
             }
             weather_tomorrow = ""
@@ -3508,6 +3512,11 @@ class ProactiveManager:
             target_entity = sched.get("entity_id")
             target_group = sched.get("group_id")
 
+            # Nicht öffnen wenn Bett belegt (Schlafmodus)
+            if position > 0 and await self._is_bed_occupied(states):
+                logger.info("User-Zeitplan '%s' übersprungen — Bett belegt", time_str)
+                continue
+
             # Dedup per Redis
             dedup_key = f"mha:cover:usched:{sched.get('id', 0)}:{now.strftime('%Y-%m-%d')}"
             if redis_client:
@@ -3587,7 +3596,7 @@ class ProactiveManager:
         # Verhindert dass Rolladen hochfahren waehrend jemand schlaeft.
         _any_bed_occupied = await self._is_bed_occupied(states)
         if _any_bed_occupied:
-            logger.info("Cover-Zeitplan: Oeffnung uebersprungen — Bettsensor belegt (global)")
+            logger.info("Cover-Zeitplan: Öffnung übersprungen — Bettsensor belegt (global)")
             return last_schedule_action
 
         fallback_max_min = cover_cfg.get("wakeup_fallback_max_minutes", 120)
@@ -3607,11 +3616,11 @@ class ProactiveManager:
                 if _cur_elev < _min_elev:
                     _remaining = open_min + fallback_max_min - current_minutes
                     _skip_reason = (
-                        f"zu dunkel (Sonnenhoehe {_cur_elev:.1f}° < {_min_elev}°"
+                        f"zu dunkel (Sonnenhöhe {_cur_elev:.1f}° < {_min_elev}°"
                         f"{f', Fallback in {_remaining} Min' if _remaining > 0 else ', Fallback abgelaufen'})"
                     )
             if _skip_reason:
-                logger.info("Cover-Zeitplan: Oeffnung übersprungen — %s", _skip_reason)
+                logger.info("Cover-Zeitplan: Öffnung übersprungen — %s", _skip_reason)
             else:
                 # Feature 7: Wellenfoermiges Oeffnen nach Himmelsrichtung
                 covers_to_open = []
@@ -3900,7 +3909,11 @@ class ProactiveManager:
                     )
 
         elif not heating_active and elevation > 5 and temp < 20:
-            # Heizung aus + Sonne: Sonnenbeschienene Fenster oeffnen (passive Solarwaerme)
+            # Heizung aus + Sonne: Sonnenbeschienene Fenster öffnen (passive Solarwärme)
+            # ABER: Nicht öffnen wenn Bett belegt (jemand schläft)
+            if await self._is_bed_occupied(states):
+                logger.debug("Passive Solarwärme übersprungen — Bett belegt")
+                return
             sunny_conditions = {"sunny", "partlycloudy"}
             if condition in sunny_conditions:
                 for cover in (cover_profiles or []):
@@ -3916,7 +3929,7 @@ class ProactiveManager:
                     if sun_on_window:
                         await self._auto_cover_action(
                             entity_id, 100,
-                            f"Passive Solarwaerme ({temp}°C, Sonne auf Fenster)",
+                            f"Passive Solarwärme ({temp}°C, Sonne auf Fenster)",
                             auto_level, redis_client,
                         )
 
@@ -3973,7 +3986,7 @@ class ProactiveManager:
         if condition in sunny_conditions and elevation > 15:
             solar_reduction = hw_cfg.get("solar_gain_reduction", 0.5)
             offset -= solar_reduction
-            reasons.append(f"Passive Solarwaerme (Sonne {elevation:.0f}°)")
+            reasons.append(f"Passive Solarwärme (Sonne {elevation:.0f}°)")
 
         # 3. Wind-Kompensation: Starker Wind → mehr Waermeverlust
         wind_threshold = hw_cfg.get("wind_compensation_threshold", 30)
@@ -4048,7 +4061,12 @@ class ProactiveManager:
                 high_co2_rooms.append((room, co2))
 
         if high_co2_rooms:
-            # Covers in betroffenen Raeumen oeffnen
+            # Nicht öffnen wenn Bett belegt (Schlafmodus)
+            if await self._is_bed_occupied(states):
+                logger.info("CO2-Lüftung übersprungen — Bett belegt (%s)",
+                            ", ".join(f"{r}: {int(c)} ppm" for r, c in high_co2_rooms))
+                return
+            # Covers in betroffenen Räumen öffnen
             for s in (states or []):
                 eid = s.get("entity_id", "")
                 if not eid.startswith("cover."):

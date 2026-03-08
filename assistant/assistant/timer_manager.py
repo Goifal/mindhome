@@ -726,7 +726,7 @@ class TimerManager:
             if len(active_alarms) == 1:
                 target_id = active_alarms[0]
             elif len(active_alarms) > 1:
-                return {"success": False, "message": "Mehrere Wecker aktiv. Bitte angeben welcher geloescht werden soll."}
+                return {"success": False, "message": "Mehrere Wecker aktiv. Bitte angeben welcher gelöscht werden soll."}
 
         if not target_id:
             return {"success": False, "message": "Wecker nicht gefunden."}
@@ -749,7 +749,7 @@ class TimerManager:
             except Exception:
                 pass
 
-        return {"success": True, "message": "Wecker geloescht."}
+        return {"success": True, "message": "Wecker gelöscht."}
 
     async def get_alarms(self) -> dict:
         """Gibt alle aktiven Wecker zurück."""

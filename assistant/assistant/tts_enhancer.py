@@ -39,10 +39,26 @@ _EMPHASIS_PATTERNS = {
 # Englische Titel/Anreden die vom deutschen TTS falsch ausgesprochen werden.
 # Diese werden im SSML mit <lang xml:lang="en-US"> gewrappt damit die
 # TTS-Engine auf englische Phonetik wechselt.
-_ENGLISH_TITLES = ["Sir", "Ma'am", "Ma'am", "Madam"]
+_ENGLISH_TITLES = ["Sir", "Ma'am", "Madam"]
 _ENGLISH_TITLE_PATTERN = re.compile(
     r"\b(" + "|".join(re.escape(t) for t in _ENGLISH_TITLES) + r")\b",
     re.IGNORECASE,
+)
+
+# Phonetische Ersetzungen für englische Titel bei deutschem TTS OHNE SSML.
+# Damit Piper die Wörter nicht mit deutscher Phonetik ausspricht.
+_ENGLISH_TITLE_PHONETIC = {
+    "sir": "Sör",
+    "Sir": "Sör",
+    "SIR": "SÖR",
+    "Ma'am": "Mähm",
+    "ma'am": "mähm",
+    "MA'AM": "MÄHM",
+    "Madam": "Mäddem",
+    "madam": "mäddem",
+}
+_ENGLISH_TITLE_PHONETIC_PATTERN = re.compile(
+    r"\b(Sir|Ma'am|Madam)\b", re.IGNORECASE,
 )
 
 
@@ -228,7 +244,12 @@ class TTSEnhancer:
         if self.ssml_enabled:
             ssml = self._generate_ssml(text, message_type, speed, pitch)
         else:
-            ssml = text
+            # Ohne SSML: Englische Titel phonetisch ersetzen damit
+            # deutscher TTS sie nicht mit deutscher Phonetik ausspricht.
+            ssml = _ENGLISH_TITLE_PHONETIC_PATTERN.sub(
+                lambda m: _ENGLISH_TITLE_PHONETIC.get(m.group(0), m.group(0)),
+                text,
+            )
 
         return {
             "text": text,

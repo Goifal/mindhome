@@ -104,16 +104,16 @@ _ACTIVITY_MODULE_LABELS = {
     "assistant.proactive": "Proaktiv",
     "assistant.brain": "Brain",
     "assistant.health_monitor": "Raumklima",
-    "assistant.device_health": "Geraete",
+    "assistant.device_health": "Geräte",
     "assistant.diagnostics": "Diagnostik",
-    "assistant.activity": "Aktivitaet",
+    "assistant.activity": "Aktivität",
     "assistant.anticipation": "Antizipation",
     "assistant.ha_client": "Home Assistant",
     "assistant.function_calling": "Aktionen",
     "assistant.insight_engine": "Insights",
     "assistant.learning_observer": "Lernen",
     "assistant.situation_model": "Situation",
-    "assistant.personality": "Persoenlichkeit",
+    "assistant.personality": "Persönlichkeit",
     "mindhome-assistant": "System",
 }
 
@@ -279,7 +279,7 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
             if isinstance(s, str) and not s.startswith(_OK_PREFIXES)
         ]
         if failed:
-            msg += f" {len(failed)} {'System' if len(failed) == 1 else 'Systeme'} eingeschraenkt."
+            msg += f" {len(failed)} {'System' if len(failed) == 1 else 'Systeme'} eingeschränkt."
         elif not open_items:
             msg += " Keine Auffaelligkeiten."
 
@@ -731,7 +731,7 @@ async def chat(request: ChatRequest):
     except asyncio.TimeoutError:
         logger.error("brain.process() Timeout nach 60s fuer: %s", request.text[:100])
         result = {
-            "response": "Systeme ueberlastet. Nochmal, bitte.",
+            "response": "Systeme überlastet. Nochmal, bitte.",
             "actions": [],
             "model_used": "timeout",
             "context_room": request.room or "unbekannt",
@@ -1337,7 +1337,7 @@ async def tts_generate(request: TTSGenerateRequest):
         )
     except Exception as e:
         logger.error("TTS-Generierung fehlgeschlagen: %s", e)
-        raise HTTPException(status_code=503, detail=f"TTS nicht verfuegbar: {e}")
+        raise HTTPException(status_code=503, detail=f"TTS nicht verfügbar: {e}")
 
 
 @app.post("/api/assistant/stt")
@@ -1377,7 +1377,7 @@ async def stt_transcribe(audio: UploadFile = File(...)):
         raise
     except Exception as e:
         logger.error("STT-Transkription fehlgeschlagen: %s", e, exc_info=True)
-        raise HTTPException(status_code=503, detail=f"STT nicht verfuegbar: {e}")
+        raise HTTPException(status_code=503, detail=f"STT nicht verfügbar: {e}")
 
 
 def _convert_audio_to_16k_mono(audio_bytes: bytes) -> bytes:
@@ -2581,7 +2581,7 @@ async def ui_delete_known_device(req: dict, token: str = ""):
             await ta.redis.srem("mha:security:known_devices", entity_id)
             logger.info("Bekanntes Geraet entfernt: %s", entity_id)
             return {"success": True, "message": f"{entity_id} entfernt"}
-        raise HTTPException(status_code=503, detail="Redis nicht verfuegbar")
+        raise HTTPException(status_code=503, detail="Redis nicht verfügbar")
     except HTTPException:
         raise
     except Exception as e:
@@ -6105,7 +6105,7 @@ async def workshop_chat(request: Request):
             timeout=60.0,
         )
     except asyncio.TimeoutError:
-        return {"response": "Systeme ueberlastet. Bitte nochmal versuchen.", "actions": []}
+        return {"response": "Systeme überlastet. Bitte nochmal versuchen.", "actions": []}
     except Exception as e:
         logger.error("workshop_chat Fehler: %s", e, exc_info=True)
         return {"response": "Fehler bei der Verarbeitung.", "actions": []}
@@ -6210,7 +6210,7 @@ async def workshop_coding_agent(request: Request):
     elif action == "explain":
         model = gen.model_router.model_smart if gen.model_router else None
         if not model:
-            return {"status": "error", "message": "Kein LLM verfuegbar"}
+            return {"status": "error", "message": "Kein LLM verfügbar"}
         prompt = f"Erklaere diesen Code detailliert auf Deutsch:\n\n{existing_code[:6000]}"
         messages = [{"role": "system", "content": prompt}]
         explanation = await gen.ollama.chat(
@@ -6331,7 +6331,7 @@ async def workshop_add_inventory(request: Request):
     if not name:
         raise HTTPException(400, "Artikelname erforderlich")
     if not brain.repair_planner.redis:
-        raise HTTPException(503, "Redis nicht verfuegbar")
+        raise HTTPException(503, "Redis nicht verfügbar")
     key = f"mha:repair:inventory:{name.lower().replace(' ', '_')}"
     await brain.repair_planner.redis.hset(key, mapping={
         "name": name,
@@ -6349,7 +6349,7 @@ async def workshop_add_inventory(request: Request):
 async def workshop_delete_inventory(name: str):
     """Loescht einen Artikel aus dem Werkstatt-Inventar."""
     if not brain.repair_planner.redis:
-        raise HTTPException(503, "Redis nicht verfuegbar")
+        raise HTTPException(503, "Redis nicht verfügbar")
     key = f"mha:repair:inventory:{name.lower().replace(' ', '_')}"
     deleted = await brain.repair_planner.redis.delete(key)
     if not deleted:
@@ -6365,7 +6365,7 @@ async def workshop_delete_file(project_id: str, filename: str):
     """Projektdatei loeschen."""
     try:
         await brain.workshop_gen.delete_file(project_id, filename)
-        return {"success": True, "message": f"{filename} geloescht"}
+        return {"success": True, "message": f"{filename} gelöscht"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -7274,7 +7274,7 @@ async def ui_delete_jarvis_automation(config_id: str, token: str = ""):
     """Loescht eine Jarvis-Automation."""
     _check_token(token)
     if not hasattr(brain, "self_automation") or not brain.self_automation:
-        raise HTTPException(status_code=503, detail="Self-Automation nicht verfuegbar")
+        raise HTTPException(status_code=503, detail="Self-Automation nicht verfügbar")
     try:
         result = await brain.self_automation.delete_jarvis_automation(config_id)
         return result

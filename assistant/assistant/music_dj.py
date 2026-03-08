@@ -203,7 +203,7 @@ class MusicDJ:
 
         genre = self._context_to_genre(context, activity)
         if genre is None:
-            reason = f"Keine Musik empfohlen (Aktivitaet: {activity})"
+            reason = f"Keine Musik empfohlen (Aktivität: {activity})"
             return {
                 "success": True,
                 "genre": None,

@@ -152,7 +152,7 @@ class ProtocolEngine:
             Dict mit success, message, steps_executed
         """
         if not self.enabled or not self.redis or not self.executor:
-            return {"success": False, "message": "Protokoll-Ausfuehrung nicht moeglich."}
+            return {"success": False, "message": "Protokoll-Ausführung nicht möglich."}
 
         name_normalized = self._normalize_name(name)
         protocol_raw = await self.redis.get(f"{_PREFIX}:{name_normalized}")
@@ -318,7 +318,7 @@ class ProtocolEngine:
         await self.redis.delete(f"{_PREFIX}:{name_normalized}")
         await self.redis.srem(_LIST_KEY, name_normalized)
 
-        return {"success": True, "message": f"Protokoll '{name}' geloescht."}
+        return {"success": True, "message": f"Protokoll '{name}' gelöscht."}
 
     async def detect_protocol_intent(self, text: str) -> Optional[str]:
         """Prueft ob der Text ein bekanntes Protokoll triggert.

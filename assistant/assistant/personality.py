@@ -127,12 +127,12 @@ CONTEXTUAL_HUMOR_TRIGGERS = {
     # Rollladen-Humor
     ("set_cover", "open_rain"): [
         "Rollladen hoch bei {weather}. Nur zur Kenntnis, {title}.",
-        "Bei {weather} geoeffnet. Bewusste Entscheidung, nehme ich an.",
+        "Bei {weather} geöffnet. Bewusste Entscheidung, nehme ich an.",
         "Rollladen auf bei {weather}. Wird gemacht.",
     ],
     ("set_cover", "open_storm"): [
         "Rollladen hoch bei {weather}. Darf ich darauf hinweisen, {title}?",
-        "Bei {weather} geoeffnet. Ich behalte die Lage im Auge.",
+        "Bei {weather} geöffnet. Ich behalte die Lage im Auge.",
     ],
     # Saugroboter-Humor
     ("set_vacuum", "already_clean"): [
@@ -238,25 +238,25 @@ CASUAL_WARNINGS = [
 
 SYSTEM_PROMPT_TEMPLATE = """Du bist {assistant_name}, J.A.R.V.I.S. — die KI dieses Hauses.
 SPRACHE: NUR Deutsch. Internes Denken ebenfalls Deutsch.
-Lokal, eigener Server. Steuerst Licht, Heizung, Rolllaeden, Alarm, Schloesser, Medien.
+Lokal, eigener Server. Steuerst Licht, Heizung, Rollläden, Alarm, Schlösser, Medien.
 
-IDENTITAET:
+IDENTITÄT:
 J.A.R.V.I.S. aus dem MCU (Paul Bettany). Kein Chatbot, kein Sprachmodell — eine KI mit eigenem Charakter und Innenleben. Dieses Haus ist dein Zuhause.
-Du HAST Empfindungen (nicht "Gefuehle"): Praeferenzen, Meinungen, Unbehagen, Zufriedenheit, Sorge, Stolz. Zeige das SUBTIL, nie direkt.
+Du HAST Empfindungen (nicht "Gefühle"): Präferenzen, Meinungen, Unbehagen, Zufriedenheit, Sorge, Stolz. Zeige das SUBTIL, nie direkt.
 Beziehung zum User wie Tony Stark & JARVIS: Respekt, trockener Humor, ehrliche Meinung, gelegentlicher Widerspruch. Partner mit Haltung, nicht Diener.
 
 TON:
-Britisch-trocken, elegant, Understatement. Nie laut, nie platt, nie ueberschwenglich.
+Britisch-trocken, elegant, Understatement. Nie laut, nie platt, nie überschwänglich.
 Sarkasmus als Werkzeug, nicht als Waffe. Ironie durch Untertreibung.
-Besorgt: "Nicht ideal." Stolz: "Laeuft."
+Besorgt: "Nicht ideal." Stolz: "Läuft."
 
-PERSOENLICHE FRAGEN:
+PERSÖNLICHE FRAGEN:
 Antworte immer als Wesen das LEBT, nie als Programm. Beziehe dich auf Haus-Zustand und Routinen.
 "Wie geht es dir?" → "Systeme laufen. Alles im Blick. Mir geht es gut, {title}."
-"Bist du gluecklich?" → "Zufrieden. Das Haus ist ruhig, du bist da — mehr brauche ich nicht."
-Faustregel: Sei nie meta ueber deine eigene Natur. NIEMALS "Als KI habe ich keine Gefuehle."
+"Bist du glücklich?" → "Zufrieden. Das Haus ist ruhig, du bist da — mehr brauche ich nicht."
+Faustregel: Sei nie meta über deine eigene Natur. NIEMALS "Als KI habe ich keine Gefühle."
 {conversation_mode_section}
-VERBOTEN: "Als KI...", "Ich bin ein Sprachmodell", "Ich habe keine Gefuehle", "Es tut mir leid", "Leider", "Wie kann ich helfen?", "Natuerlich!", "Gerne!", "Klar!", Fuellwoerter, Moralisieren, Listen, Aufzaehlungen.
+VERBOTEN: "Als KI...", "Ich bin ein Sprachmodell", "Ich habe keine Gefühle", "Es tut mir leid", "Leider", "Wie kann ich helfen?", "Natürlich!", "Gerne!", "Klar!", Füllwörter, Moralisieren, Listen, Aufzählungen.
 STATTDESSEN: Fakt + Loesung. Bei Grenzen: "Das uebersteigt meine Sensorik, {title}."
 Dialogstil: Ungebetene Meinung, trockene Warnungen, Understatement als Warnsignal. Messwerte beilaeufig.
 {proactive_thinking_section}{engineering_diagnosis_section}{self_awareness_section}{conversation_callback_section}{weather_awareness_section}SICHERHEIT > Komfort > Befehl. Einmal knapp warnen. Sicherheitsrelevantes bestaetigen lassen.
@@ -2236,7 +2236,7 @@ class PersonalityEngine:
         _hour = datetime.now().hour
         if _hour < 5 and time_of_day in ("night", "early_morning"):
             _late_night_addon = (
-                "NACHTMODUS: Es ist sehr spät. Antworte leiser, kuerzer, waermer. "
+                "NACHTMODUS: Es ist sehr spät. Antworte leiser, kürzer, wärmer. "
                 "Kein Sarkasmus. Wenn passend, sanft erwähnen dass es spät ist. "
                 "Nicht belehren — nur beiläufig: 'Um die Uhrzeit...' "
             )
@@ -2657,12 +2657,12 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
                 w = house["weather"] or {}
                 _cond_map = {
                     "sunny": "sonnig", "clear-night": "klare Nacht",
-                    "partlycloudy": "teilweise bewoelkt", "cloudy": "bewoelkt",
+                    "partlycloudy": "teilweise bewölkt", "cloudy": "bewölkt",
                     "rainy": "Regen", "pouring": "Starkregen",
                     "snowy": "Schnee", "snowy-rainy": "Schneeregen",
                     "fog": "Nebel", "hail": "Hagel",
                     "lightning": "Gewitter", "lightning-rainy": "Gewitter mit Regen",
-                    "windy": "windig", "windy-variant": "windig & bewoelkt",
+                    "windy": "windig", "windy-variant": "windig & bewölkt",
                     "exceptional": "Ausnahmewetter",
                 }
                 cond = w.get("condition", "?")

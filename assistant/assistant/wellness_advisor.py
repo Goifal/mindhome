@@ -358,7 +358,7 @@ class WellnessAdvisor:
             urgency = "medium"
         elif mood == "frustrated":
             msg = random.choice([
-                f"Laeuft nicht rund, {addressing}. {trend_hint}Sag mir was du brauchst — ich kuemmer mich.",
+                f"Läuft nicht rund, {addressing}. {trend_hint}Sag mir was du brauchst — ich kümmer mich.",
                 f"{addressing}, ich merk das. {trend_hint}Kurz durchatmen — ich halte die Stellung.",
             ])
             urgency = "low"

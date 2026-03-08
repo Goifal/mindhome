@@ -329,7 +329,7 @@ class ActivityEngine:
         from datetime import timedelta
         self._manual_override = activity
         self._override_until = datetime.now() + timedelta(minutes=duration_minutes)
-        logger.info("Manueller Override: %s fuer %d Minuten", activity, duration_minutes)
+        logger.info("Manueller Override: %s für %d Minuten", activity, duration_minutes)
 
     def clear_manual_override(self):
         """Entfernt den manuellen Override."""
