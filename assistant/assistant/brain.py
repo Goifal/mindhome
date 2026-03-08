@@ -987,14 +987,20 @@ class AssistantBrain(BrainCallbacksMixin):
         Returns True (positiv), False (negativ), None (neutral/unklar).
         """
         text_lower = text.lower().strip()
-        # Kurze positive Reaktionen (1-3 Woerter)
         words = text_lower.split()
-        if len(words) <= 3:
-            if any(p in text_lower for p in self._sarcasm_positive):
-                return True
-        # Explizite Ablehnung (beliebige Laenge)
+        # Explizite Ablehnung ZUERST (beliebige Laenge) — "nicht witzig"
+        # muss als negativ erkannt werden, bevor "witzig" als positiv matcht.
         if any(p in text_lower for p in self._sarcasm_negative):
             return False
+        # Kurze positive Reaktionen (1-3 Woerter)
+        # Word-Boundary fuer kurze Patterns: "gut" darf nicht "guten" matchen
+        if len(words) <= 3:
+            for p in self._sarcasm_positive:
+                if len(p) <= 3 and p.isascii() and p.isalpha():
+                    if re.search(r'\b' + re.escape(p) + r'\b', text_lower):
+                        return True
+                elif p in text_lower:
+                    return True
         # Unklar — kein Feedback tracken
         return None
 

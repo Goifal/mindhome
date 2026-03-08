@@ -30,14 +30,26 @@ _SARCASM_NEGATIVE = frozenset([
 
 
 def detect_sarcasm_feedback(text: str) -> bool | None:
-    """Kopie aus brain.py fuer isoliertes Testen."""
+    """Kopie aus brain.py fuer isoliertes Testen.
+
+    FIX: Negative Patterns werden ZUERST geprueft, damit "nicht witzig"
+    nicht faelschlich als positiv erkannt wird (weil "witzig" in positives).
+    FIX: Word-Boundaries fuer kurze positive Patterns (<=3 Zeichen),
+    damit "gut" nicht "guten morgen" matcht.
+    """
     text_lower = text.lower().strip()
     words = text_lower.split()
-    if len(words) <= 3:
-        if any(p in text_lower for p in _SARCASM_POSITIVE):
-            return True
+    # Negative ZUERST — "nicht witzig" muss negativ sein, nicht positiv
     if any(p in text_lower for p in _SARCASM_NEGATIVE):
         return False
+    # Kurze positive Reaktionen (1-3 Woerter)
+    if len(words) <= 3:
+        for p in _SARCASM_POSITIVE:
+            if len(p) <= 3 and p.isascii() and p.isalpha():
+                if re.search(r'\b' + re.escape(p) + r'\b', text_lower):
+                    return True
+            elif p in text_lower:
+                return True
     return None
 
 
@@ -55,6 +67,7 @@ class TestSarcasmFeedback:
         "hoer auf damit", "lass das bitte", "sei ernst",
         "nervt mich", "bitte sachlich",
         "ohne sarkasmus bitte", "reicht jetzt",
+        "nicht witzig",  # Regression: war vorher positiv wegen "witzig"
     ])
     def test_negative_feedback(self, text):
         assert detect_sarcasm_feedback(text) is False
@@ -62,6 +75,7 @@ class TestSarcasmFeedback:
     @pytest.mark.parametrize("text", [
         "wie ist das wetter", "mach das licht an",
         "ich bin muede",
+        "guten morgen",  # Regression: "gut" matchte "guten" als Substring
     ])
     def test_neutral_no_feedback(self, text):
         assert detect_sarcasm_feedback(text) is None
@@ -77,6 +91,27 @@ class TestSarcasmFeedback:
         """Negative Patterns greifen bei beliebiger Laenge."""
         result = detect_sarcasm_feedback("Also bitte sei jetzt mal ernst und hoer auf damit")
         assert result is False
+
+    # Regression: Bug wo negative Prüfung NACH positiver lief
+    def test_regression_nicht_witzig_is_negative(self):
+        """'nicht witzig' muss negativ sein, nicht positiv (wegen 'witzig')."""
+        assert detect_sarcasm_feedback("nicht witzig") is False
+
+    def test_regression_guten_morgen_is_neutral(self):
+        """'guten morgen' darf nicht positiv sein (wegen 'gut' Substring)."""
+        assert detect_sarcasm_feedback("guten morgen") is None
+
+    def test_gut_alone_is_positive(self):
+        """'gut' allein (als ganzes Wort) ist positiv."""
+        assert detect_sarcasm_feedback("gut") is True
+
+    def test_ja_alone_is_positive(self):
+        """'ja' allein ist positiv (Word-Boundary Match)."""
+        assert detect_sarcasm_feedback("ja") is True
+
+    def test_ok_alone_is_positive(self):
+        """'ok' allein ist positiv (Word-Boundary Match)."""
+        assert detect_sarcasm_feedback("ok") is True
 
 
 # ============================================================
