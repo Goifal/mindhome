@@ -857,7 +857,7 @@ class ProactiveManager:
                     acted = await self._auto_cover_action(
                         cid, close_pos,
                         f"Stromverbrauch {entity_id} ({new_num:.0f} W >= {threshold} W)",
-                        auto_level, redis_client,
+                        auto_level, redis_client, skip_power_lock=True,
                     )
                     if acted and redis_client:
                         try:
@@ -887,7 +887,7 @@ class ProactiveManager:
                         acted = await self._auto_cover_action(
                             cid, 100,
                             f"Stromverbrauch {entity_id} ({new_num:.0f} W < {threshold} W)",
-                            auto_level, redis_client,
+                            auto_level, redis_client, skip_power_lock=True,
                         )
                         if acted and redis_client:
                             try:
@@ -3114,13 +3114,24 @@ class ProactiveManager:
 
     async def _auto_cover_action(
         self, entity_id: str, position: int, reason: str,
-        auto_level: int, redis_client=None,
+        auto_level: int, redis_client=None, *, skip_power_lock: bool = False,
     ) -> bool:
         """Fuehrt eine automatische Cover-Aktion aus (oder schlaegt vor).
 
-        Checks: Dedup, Manual Override, Fenster-offen-Schutz.
+        Checks: Dedup, Manual Override, Power-Close-Lock, Fenster-offen-Schutz.
         """
         level = self.brain.autonomy.level
+
+        # Power-Close Lock: Wenn Strom-Automatik aktiv, andere Automatiken blockieren
+        if not skip_power_lock and redis_client:
+            power_lock_key = f"mha:cover:power_close:{entity_id}"
+            try:
+                power_locked = await redis_client.get(power_lock_key)
+                if power_locked:
+                    logger.debug("Cover-Auto: %s übersprungen — Power-Close Lock aktiv", entity_id)
+                    return False
+            except Exception:
+                pass
 
         # Feature 2: Manual Override Schutz — wenn manuell bedient, nicht antasten
         if redis_client:
