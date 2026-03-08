@@ -235,7 +235,7 @@ class DeclarativeToolExecutor:
             return await handler(config, tool.get("description", ""))
         except Exception as e:
             logger.error("Declarative Tool '%s' Fehler: %s", tool_name, e)
-            return {"success": False, "message": "Fehler bei Ausfuehrung des Tools."}
+            return {"success": False, "message": "Fehler bei Ausführung des Tools."}
 
     def _parse_time_range(self, config: dict) -> int:
         """Parst time_range zu Stunden."""

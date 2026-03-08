@@ -1308,7 +1308,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
                 return self._result(response_text, actions=result.get("actions", []), model="routine_engine", room=room, tts=tts_data, emitted=True)
             except Exception as e:
-                logger.warning("Gute-Nacht-Routine fehlgeschlagen: %s — Fallback", e)
+                logger.warning("Gute-Nacht-Routine fehlgeschlagen: %s — Fallback", e, exc_info=True)
                 title = get_person_title(person or "")
                 fallback = f"Gute Nacht, {title}. Ich halte die Stellung."
                 await self._speak_and_emit(fallback, room=room)

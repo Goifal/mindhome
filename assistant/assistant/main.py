@@ -731,7 +731,7 @@ async def chat(request: ChatRequest):
     except asyncio.TimeoutError:
         logger.error("brain.process() Timeout nach 60s fuer: %s", request.text[:100])
         result = {
-            "response": "Systeme ueberlastet. Nochmal, bitte.",
+            "response": "Systeme überlastet. Nochmal, bitte.",
             "actions": [],
             "model_used": "timeout",
             "context_room": request.room or "unbekannt",
@@ -6105,7 +6105,7 @@ async def workshop_chat(request: Request):
             timeout=60.0,
         )
     except asyncio.TimeoutError:
-        return {"response": "Systeme ueberlastet. Bitte nochmal versuchen.", "actions": []}
+        return {"response": "Systeme überlastet. Bitte nochmal versuchen.", "actions": []}
     except Exception as e:
         logger.error("workshop_chat Fehler: %s", e, exc_info=True)
         return {"response": "Fehler bei der Verarbeitung.", "actions": []}
