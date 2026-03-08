@@ -3587,7 +3587,7 @@ class ProactiveManager:
         # Verhindert dass Rolladen hochfahren waehrend jemand schlaeft.
         _any_bed_occupied = await self._is_bed_occupied(states)
         if _any_bed_occupied:
-            logger.info("Cover-Zeitplan: Oeffnung uebersprungen — Bettsensor belegt (global)")
+            logger.info("Cover-Zeitplan: Öffnung übersprungen — Bettsensor belegt (global)")
             return last_schedule_action
 
         fallback_max_min = cover_cfg.get("wakeup_fallback_max_minutes", 120)
@@ -3607,11 +3607,11 @@ class ProactiveManager:
                 if _cur_elev < _min_elev:
                     _remaining = open_min + fallback_max_min - current_minutes
                     _skip_reason = (
-                        f"zu dunkel (Sonnenhoehe {_cur_elev:.1f}° < {_min_elev}°"
+                        f"zu dunkel (Sonnenhöhe {_cur_elev:.1f}° < {_min_elev}°"
                         f"{f', Fallback in {_remaining} Min' if _remaining > 0 else ', Fallback abgelaufen'})"
                     )
             if _skip_reason:
-                logger.info("Cover-Zeitplan: Oeffnung übersprungen — %s", _skip_reason)
+                logger.info("Cover-Zeitplan: Öffnung übersprungen — %s", _skip_reason)
             else:
                 # Feature 7: Wellenfoermiges Oeffnen nach Himmelsrichtung
                 covers_to_open = []
@@ -3916,7 +3916,7 @@ class ProactiveManager:
                     if sun_on_window:
                         await self._auto_cover_action(
                             entity_id, 100,
-                            f"Passive Solarwaerme ({temp}°C, Sonne auf Fenster)",
+                            f"Passive Solarwärme ({temp}°C, Sonne auf Fenster)",
                             auto_level, redis_client,
                         )
 
@@ -3973,7 +3973,7 @@ class ProactiveManager:
         if condition in sunny_conditions and elevation > 15:
             solar_reduction = hw_cfg.get("solar_gain_reduction", 0.5)
             offset -= solar_reduction
-            reasons.append(f"Passive Solarwaerme (Sonne {elevation:.0f}°)")
+            reasons.append(f"Passive Solarwärme (Sonne {elevation:.0f}°)")
 
         # 3. Wind-Kompensation: Starker Wind → mehr Waermeverlust
         wind_threshold = hw_cfg.get("wind_compensation_threshold", 30)

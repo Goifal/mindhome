@@ -14,7 +14,7 @@ Checks:
   - Regen/Sturm in Forecast + Fenster offen
   - Frost morgen + Heizung auf Abwesend/aus
   - Kalender-Event morgen frueh (Reise-Keywords → Alarm-Hinweis)
-  - Energie-Verbrauch ueber Baseline
+  - Energie-Verbrauch überBaseline
   - Abwesenheit + Geraete/Licht an
   - Temperatur-Trend: Raum kuehlt ungewoehnlich ab
   - Fenster offen + Temperatur faellt
@@ -292,7 +292,7 @@ class InsightEngine:
                     name = attrs.get("friendly_name", eid)
                     data["open_windows"].append(name)
 
-                # Offene Tueren
+                # Offene Türen
                 elif (eid.startswith("binary_sensor.") and
                       state == "on" and
                       any(kw in eid for kw in ("door", "tuer", "eingang"))):
@@ -466,7 +466,7 @@ class InsightEngine:
                         if hours_until <= 0:
                             time_hint = "jetzt"
                         elif hours_until < 1:
-                            time_hint = "in Kuerze"
+                            time_hint = "in Kürze"
                         elif hours_until < 2:
                             time_hint = "in etwa einer Stunde"
                         elif hours_until < 3:
@@ -539,7 +539,7 @@ class InsightEngine:
             "message": (
                 f"{await self._get_title_for_home()}, es werden {frost_temp}°C erwartet — "
                 f"{', '.join(heating_issues)}. "
-                f"Frostschaeden waeren vermeidbar."
+                f"Frostschäden wären vermeidbar."
             ),
             "data": {
                 "frost_temp": frost_temp,
@@ -587,7 +587,7 @@ class InsightEngine:
             and cl.get("preset_mode", "").lower() not in ("away", "eco", "abwesend")
         ]
         if normal_heating:
-            hints.append("Heizung laeuft im Normalmodus")
+            hints.append("Heizung läuft im Normalmodus")
 
         if not hints:
             return None
@@ -608,7 +608,7 @@ class InsightEngine:
         }
 
     async def _check_energy_anomaly(self, data: dict) -> Optional[dict]:
-        """Energie-Verbrauch deutlich ueber Baseline."""
+        """Energie-Verbrauch deutlich überBaseline."""
         if not self.redis:
             return None
 
@@ -736,7 +736,7 @@ class InsightEngine:
         }
 
     async def _check_temp_drop(self, data: dict) -> Optional[dict]:
-        """Temperatur in einem Raum faellt ungewoehnlich schnell."""
+        """Temperatur in einem Raum fällt ungewöhnlich schnell."""
         if not self.redis or not data["temperatures"]:
             return None
 
@@ -775,7 +775,7 @@ class InsightEngine:
                 "check": "temp_drop",
                 "urgency": "low",
                 "message": (
-                    f"{await self._get_title_for_home()}, die Raumtemperatur faellt ungewoehnlich — "
+                    f"{await self._get_title_for_home()}, die Raumtemperatur fällt ungewöhnlich — "
                     f"{drop:.1f} Grad in 2 Stunden, jetzt bei {current_avg:.1f}°C.{cause_hint}"
                 ),
                 "data": {
@@ -1034,7 +1034,7 @@ class InsightEngine:
 
                 summary = event.get("summary", "Termin")
                 if hours_until < 3:
-                    time_hint = "in Kuerze"
+                    time_hint = "in Kürze"
                 elif hours_until < 6:
                     time_hint = f"in {int(hours_until)} Stunden"
                 else:
@@ -1063,10 +1063,10 @@ class InsightEngine:
     async def _check_comfort_contradiction(self, data: dict) -> Optional[dict]:
         """Erkennt Komfort-Widersprueche im Haus.
 
-        MCU-JARVIS-Feature: Heizung laeuft + Fenster offen = Energieverschwendung.
+        MCU-JARVIS-Feature: Heizung läuft + Fenster offen = Energieverschwendung.
         Licht an + niemand im Raum = unnoetig.
         """
-        # Heizung laeuft + Fenster offen im gleichen Bereich
+        # Heizung läuft + Fenster offen im gleichen Bereich
         if data.get("open_windows") and data.get("climate"):
             heating_rooms = []
             for c in data["climate"]:
@@ -1077,7 +1077,7 @@ class InsightEngine:
 
             if heating_rooms and data["open_windows"]:
                 # Vereinfachter Match: Gibt es ein offenes Fenster
-                # waehrend eine Heizung laeuft?
+                # während eine Heizung läuft?
                 title = await self._get_title_for_home()
                 heating_str = heating_rooms[0]
                 window_str = data["open_windows"][0]
@@ -1086,8 +1086,8 @@ class InsightEngine:
                     "check": "comfort_contradiction",
                     "urgency": "low",
                     "message": (
-                        f"{title}, die Heizung in {heating_str} laeuft, "
-                        f"waehrend {window_str} offen steht. "
+                        f"{title}, die Heizung in {heating_str} läuft, "
+                        f"während {window_str} offen steht. "
                         f"Energetisch... nicht ganz optimal."
                     ),
                     "data": {
@@ -1110,8 +1110,8 @@ class InsightEngine:
     async def _check_guest_preparation(self, data: dict) -> Optional[dict]:
         """Kalender[Gaeste-Keywords] + Haus nicht bereit → Hinweis.
 
-        3D+ Cross-Reference: Kalender × Sicherheit × Klima × Beleuchtung × Tueren.
-        Prueft: Alarm scharf, Lichter aus, Temperatur unbequem, Tueren offen.
+        3D+ Cross-Reference: Kalender × Sicherheit × Klima × Beleuchtung × Türen.
+        Prueft: Alarm scharf, Lichter aus, Temperatur unbequem, Türen offen.
         """
         events = data.get("calendar_events", [])
         if not events:
@@ -1177,10 +1177,10 @@ class InsightEngine:
         if uncomfortable_rooms:
             issues.append(f"Temperatur: {', '.join(uncomfortable_rooms[:2])}")
 
-        # Offene Tueren pruefen (Haustuer etc.)
+        # Offene Türen pruefen (Haustuer etc.)
         open_doors = data.get("open_doors", [])
         if open_doors:
-            issues.append(f"Tueren offen: {', '.join(open_doors[:2])}")
+            issues.append(f"Türen offen: {', '.join(open_doors[:2])}")
 
         if not issues:
             return None
@@ -1193,17 +1193,17 @@ class InsightEngine:
             "check": "guest_preparation",
             "urgency": "medium",
             "message": (
-                f"{title}, '{event_title}' steht in Kuerze an. "
+                f"{title}, '{event_title}' steht in Kürze an. "
                 f"Allerdings: {issues_str}. Soll ich das Haus vorbereiten?"
             ),
             "data": {"event": event_title, "issues": issues},
         }
 
     async def _check_away_security_full(self, data: dict) -> Optional[dict]:
-        """Abwesend + offene Fenster/Tueren + Alarm aus → priorisierte Sicherheits-Checkliste.
+        """Abwesend + offene Fenster/Türen + Alarm aus → priorisierte Sicherheits-Checkliste.
 
-        3D+ Cross-Reference: Anwesenheit × Fenster × Tueren × Alarm × Licht.
-        Offene Tueren werden als kritischer gewichtet als Fenster.
+        3D+ Cross-Reference: Anwesenheit × Fenster × Türen × Alarm × Licht.
+        Offene Türen werden als kritischer gewichtet als Fenster.
         """
         states = data.get("states", [])
         if not states:
@@ -1226,11 +1226,11 @@ class InsightEngine:
         # Probleme sammeln (nach Prioritaet sortiert)
         issues = []
 
-        # Offene Tueren (hoechste Prioritaet — Sicherheitsrisiko)
+        # Offene Türen (hoechste Prioritaet — Sicherheitsrisiko)
         open_doors = data.get("open_doors", [])
         if open_doors:
             doors = open_doors[:3]
-            issues.append(f"Tueren offen: {', '.join(doors)}")
+            issues.append(f"Türen offen: {', '.join(doors)}")
 
         # Offene Fenster
         if data.get("open_windows"):
@@ -1269,7 +1269,7 @@ class InsightEngine:
             "urgency": "high",
             "message": (
                 f"{title}, niemand ist zuhause, aber: {issues_str}. "
-                f"Soll ich Massnahmen ergreifen?"
+                f"Soll ich Maßnahmen ergreifen?"
             ),
             "data": {"issues": issues},
         }
@@ -1323,8 +1323,8 @@ class InsightEngine:
                 "check": "health_work_pattern",
                 "urgency": urgency,
                 "message": (
-                    f"{title}, du arbeitest seit ueber {int(duration_h)} Stunden. "
-                    f"Eine Pause waere jetzt keine schlechte Idee.{climate_suffix}"
+                    f"{title}, du arbeitest seit über{int(duration_h)} Stunden. "
+                    f"Eine Pause wäre jetzt keine schlechte Idee.{climate_suffix}"
                 ),
                 "data": {
                     "hours": duration_h,
@@ -1407,7 +1407,7 @@ class InsightEngine:
             "check": "humidity_contradiction",
             "urgency": "low",
             "message": (
-                f"{title}, der Entfeuchter laeuft waehrend {windows} "
+                f"{title}, der Entfeuchter läuft während {windows} "
                 f"{humidity_detail} offen steht. Das arbeitet gegeneinander.{indoor_hint}"
             ),
             "data": {
@@ -1421,9 +1421,9 @@ class InsightEngine:
     # ------------------------------------------------------------------
 
     async def _check_night_security(self, data: dict) -> Optional[dict]:
-        """Nach 23 Uhr: Fenster/Tueren offen + Person zuhause → Erinnerung.
+        """Nach 23 Uhr: Fenster/Türen offen + Person zuhause → Erinnerung.
 
-        Kreuz-referenziert: Uhrzeit × offene Fenster/Tueren × Anwesenheit × Aktivitaet.
+        Kreuz-referenziert: Uhrzeit × offene Fenster/Türen × Anwesenheit × Aktivitaet.
         """
         now = datetime.now()
         if now.hour < 23 and now.hour >= 6:
@@ -1460,7 +1460,7 @@ class InsightEngine:
             issues.append(f"Fenster offen: {windows}{extra}")
         if open_doors:
             doors = ", ".join(open_doors[:2])
-            issues.append(f"Tueren offen: {doors}")
+            issues.append(f"Türen offen: {doors}")
 
         urgency = "medium"
         if open_doors:
@@ -1495,7 +1495,7 @@ class InsightEngine:
     # ------------------------------------------------------------------
 
     async def _check_heating_vs_sun(self, data: dict) -> Optional[dict]:
-        """Heizung laeuft + sonnig + warm draussen → Sonne nutzen statt heizen.
+        """Heizung läuft + sonnig + warm draussen → Sonne nutzen statt heizen.
 
         Kreuz-referenziert: Klima-Geraete × Wetter × Aussentemperatur × Rollladen.
         """
@@ -1546,7 +1546,7 @@ class InsightEngine:
             "check": "heating_vs_sun",
             "urgency": "low",
             "message": (
-                f"{title}, die Heizung laeuft in {rooms_text}, "
+                f"{title}, die Heizung läuft in {rooms_text}, "
                 f"aber draussen sind es {outdoor_temp:.0f}°C bei Sonnenschein.{cover_hint} "
                 f"Sonne rein lassen statt heizen?"
             ),
@@ -1609,7 +1609,7 @@ class InsightEngine:
             "check": "forgotten_devices",
             "urgency": urgency,
             "message": (
-                f"{title}, {devices}{extra} laeuft noch, "
+                f"{title}, {devices}{extra} läuft noch, "
                 f"obwohl {reason}. Ausschalten?"
             ),
             "data": {

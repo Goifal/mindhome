@@ -1013,7 +1013,7 @@ class AssistantBrain(BrainCallbacksMixin):
     async def _summarize_conversation_chunk(self, messages: list[dict]) -> Optional[str]:
         """Fasst aeltere Gespraechs-Nachrichten zu einer kompakten Zusammenfassung zusammen.
 
-        Wird im Gespraechsmodus genutzt, wenn die volle History nicht ins
+        Wird im Gesprächsmodus genutzt, wenn die volle History nicht ins
         Token-Budget passt. So bleibt der Kontext erhalten, auch bei langen Gespraechen.
         """
         if not messages:
@@ -1286,12 +1286,12 @@ class AssistantBrain(BrainCallbacksMixin):
                 _clar_opt = _clarification.get("selected_option", "")
                 if _clar_text and _clar_opt:
                     text = f"{_clar_text} ({_clar_opt})"
-                    logger.info("Klaerung aufgeloest: '%s' -> '%s'", _clarification.get("clarification_question"), _clar_opt)
+                    logger.info("Klärung aufgelöst: '%s' -> '%s'", _clarification.get("clarification_question"), _clar_opt)
             else:
                 _ref_result = self.dialogue_state.resolve_references(text, person or "", room or "")
                 if _ref_result.get("had_references"):
                     # Referenz-Hinweis wird im Kontext-Prompt eingebaut (siehe context assembly)
-                    logger.info("Referenzen aufgeloest: %s", _ref_result.get("context_hint", ""))
+                    logger.info("Referenzen aufgelöst: %s", _ref_result.get("context_hint", ""))
         except Exception as _dlg_err:
             logger.debug("DialogueState Fehler: %s", _dlg_err)
 
@@ -1326,14 +1326,14 @@ class AssistantBrain(BrainCallbacksMixin):
         ]
         if any(t in _text_norm for t in guest_off_triggers):
             if await self.routines.is_guest_mode_active():
-                logger.info("Gaeste-Modus Deaktivierung erkannt")
+                logger.info("Gäste-Modus Deaktivierung erkannt")
                 response_text = self._filter_response(await self.routines.deactivate_guest_mode())
                 self._remember_exchange(text, response_text)
                 await self._speak_and_emit(response_text, room=room)
                 return self._result(response_text, model="routine_engine", room=room, emitted=True)
 
         if self.routines.is_guest_trigger(text):
-            logger.info("Gaeste-Modus Trigger erkannt")
+            logger.info("Gäste-Modus Trigger erkannt")
             response_text = self._filter_response(await self.routines.activate_guest_mode())
             self._remember_exchange(text, response_text)
             await self._speak_and_emit(response_text, room=room)
@@ -1500,7 +1500,7 @@ class AssistantBrain(BrainCallbacksMixin):
         calendar_shortcut = self._detect_calendar_query(text)
         weather_shortcut_check = self._detect_weather_query(text)
         if calendar_shortcut and weather_shortcut_check:
-            logger.info("Multi-Frage erkannt (Kalender + Wetter) — Shortcuts uebersprungen, LLM uebernimmt")
+            logger.info("Multi-Frage erkannt (Kalender + Wetter) — Shortcuts übersprungen, LLM übernimmt")
             calendar_shortcut = None  # LLM soll beide Fragen beantworten
         if calendar_shortcut:
             timeframe = calendar_shortcut
@@ -1567,7 +1567,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                 if refined and len(refined) > 5:
                                     import re as _re
                                     if _re.search(r'\d{1,2}:\d{2}\s*\|', refined):
-                                        logger.info("Kalender LLM-Antwort enthaelt Rohdaten, nutze Humanizer")
+                                        logger.info("Kalender LLM-Antwort enthält Rohdaten, nutze Humanizer")
                                     else:
                                         _orig_pattern = r"(\d{1,2}:\d{2})\s*\|\s*(.+?)(?:\n|$)"
                                         _orig_events = _re.findall(_orig_pattern, _cal_msg)
@@ -1746,7 +1746,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         func_args["room"] = occupied
                 except Exception as e:
                     logger.debug("Raumerkennung für Shortcut fehlgeschlagen: %s", e)
-            logger.info("Geraete-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
+            logger.info("Geräte-Shortcut: '%s' -> %s(%s)", text, func_name, func_args)
             try:
                 # Security: Validation + Trust-Check
                 validation = self.validator.validate(func_name, func_args)
@@ -1756,10 +1756,10 @@ class AssistantBrain(BrainCallbacksMixin):
                     room=func_args.get("room", ""),
                 )
                 if not validation.ok:
-                    logger.info("Geraete-Shortcut blockiert (Validation: %s) — Fallback",
+                    logger.info("Geräte-Shortcut blockiert (Validation: %s) — Fallback",
                                 validation.reason)
                 elif not trust["allowed"]:
-                    logger.info("Geraete-Shortcut blockiert (Trust: %s) — Fallback",
+                    logger.info("Geräte-Shortcut blockiert (Trust: %s) — Fallback",
                                 trust.get("reason", ""))
                 else:
                     if person:
@@ -1774,7 +1774,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         or "no " in error_msg.lower()
                     ):
                         # Entity nicht aufloesbar → LLM hat mehr Kontext
-                        logger.info("Geraete-Shortcut: '%s' — Fallback auf LLM", error_msg)
+                        logger.info("Geräte-Shortcut: '%s' — Fallback auf LLM", error_msg)
                     else:
                         if success:
                             # set_light mit state=off → turn_off_light für passende Bestaetigung
@@ -2497,7 +2497,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     logger.info("Model Upgrade %s -> %s (signals: %d)", model, _upgraded, _upgrade_signals)
                     model = _upgraded
 
-        # 3b. Gespraechsmodus erkennen (VOR System-Prompt-Bau, damit Prompt angepasst wird)
+        # 3b. Gesprächsmodus erkennen (VOR System-Prompt-Bau, damit Prompt angepasst wird)
         # Nutzt conv_mode_msgs aus dem mega-gather (statt sequentiellem Redis-Call).
         _conversation_mode = False
         _conversation_topic = ""
@@ -2531,7 +2531,7 @@ class AssistantBrain(BrainCallbacksMixin):
         self._active_conversation_mode = _conversation_mode
         self._active_conversation_topic = _conversation_topic
 
-        # 3c. Gespraechsmodus Model-Upgrade: JARVIS-Persoenlichkeit braucht
+        # 3c. Gesprächsmodus Model-Upgrade: JARVIS-Persoenlichkeit braucht
         # mindestens das Smart-Modell. Das Fast-Modell (4B) kann den Charakter
         # nicht zuverlaessig halten.
         _text_low = text.lower()
@@ -2547,16 +2547,16 @@ class AssistantBrain(BrainCallbacksMixin):
         _is_personal = any(kw in _text_low for kw in _personal_kw)
 
         if model == self.model_router.model_fast:
-            # Device-Commands bleiben auf Fast, auch im Gespraechsmodus.
+            # Device-Commands bleiben auf Fast, auch im Gesprächsmodus.
             # "Licht an" braucht keine JARVIS-Persoenlichkeit.
             _is_device = profile.category in ("device_command", "device_query")
             _needs_smart = False
             if _conversation_mode and not _is_device:
                 _needs_smart = True
-                logger.info("Conversation-Upgrade: Fast -> Smart (Gespraechsmodus)")
+                logger.info("Conversation-Upgrade: Fast -> Smart (Gesprächsmodus)")
             if _is_personal:
                 _needs_smart = True
-                logger.info("Conversation-Upgrade: Fast -> Smart (persoenliche Frage)")
+                logger.info("Conversation-Upgrade: Fast -> Smart (persönliche Frage)")
             if _needs_smart and self.model_router._smart_available:
                 model = self.model_router.model_smart
 
@@ -2949,7 +2949,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Gespraeche laden — Anzahl aus yaml_config (UI-konfigurierbar)
         conv_cfg = cfg.yaml_config.get("context", {})
         conv_limit = int(conv_cfg.get("recent_conversations", 5))
-        # Nutze den bereits erkannten Gespraechsmodus (aus Schritt 3b)
+        # Nutze den bereits erkannten Gesprächsmodus (aus Schritt 3b)
         conversation_mode = _conversation_mode
         effective_limit = conv_limit * 2 if conversation_mode else conv_limit
         # Budget-Guard: Limit kappen wenn num_ctx zu klein
@@ -2963,7 +2963,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 _orig_limit, effective_limit, available_tokens,
             )
         if conversation_mode:
-            logger.info("Gespraechsmodus aktiv: Lade %d statt %d Nachrichten", effective_limit, conv_limit)
+            logger.info("Gesprächsmodus aktiv: Lade %d statt %d Nachrichten", effective_limit, conv_limit)
         # Dynamisch: Conversations laden bis Token-Budget aufgebraucht
         recent = await self.memory.get_recent_conversations(limit=effective_limit)
         messages = [{"role": "system", "content": system_prompt}]
@@ -3138,7 +3138,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 response_tokens = 150   # "Erledigt." braucht keine 256 Tokens
             else:
                 response_tokens = 512   # Standard-Gespraech
-            # Gespraechsmodus: Mehr Tokens für ausfuehrliche Antworten
+            # Gesprächsmodus: Mehr Tokens für ausfuehrliche Antworten
             if _conversation_mode and profile.category != "device_command":
                 # Cap: Response-Tokens duerfen max 25% von num_ctx sein
                 _max_resp = self.ollama.num_ctx // 4
@@ -3492,7 +3492,7 @@ class AssistantBrain(BrainCallbacksMixin):
                                 func_name, person, redis_client=self.memory.redis,
                             )
                             if emo_ctx:
-                                logger.info("Emotionales Gedaechtnis blockiert %s: %s", func_name, emo_ctx)
+                                logger.info("Emotionales Gedächtnis blockiert %s: %s", func_name, emo_ctx)
                                 action_label = func_name.replace("set_", "").replace("_", " ")
                                 response_text = (
                                     f"Beim letzten Mal war das nicht gewuenscht. "
@@ -3732,7 +3732,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     # bereits auf den Punkt und das LLM fuegt nur Risiko hinzu.
                     # Das spart den Refinement-LLM-Call (~500-2000ms).
                     if len(humanized_text) < self._opt_refinement_skip_max_chars:
-                        logger.info("Tool-Feedback uebersprungen (kurz genug): '%s'", humanized_text[:80])
+                        logger.info("Tool-Feedback übersprungen (kurz genug): '%s'", humanized_text[:80])
                     else:
                       try:
                         # Persoenlichkeits-Kontext für Refinement
@@ -3764,7 +3764,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         _refinement_data = humanized_text
                         if len(_refinement_data) > 500:
                             _refinement_data = _refinement_data[:500] + "..."
-                            logger.info("Refinement-Daten gekuerzt: %d -> 500 Zeichen", len(humanized_text))
+                            logger.info("Refinement-Daten gekürzt: %d -> 500 Zeichen", len(humanized_text))
 
                         feedback_messages = [{
                             "role": "system",
@@ -4010,7 +4010,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 if _in_conv:
                     _retry_instruction = (
                         f"Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. "
-                        "Gespraechsmodus: Du darfst ausfuehrlich antworten, aber wie JARVIS — "
+                        "Gesprächsmodus: Du darfst ausfuehrlich antworten, aber wie JARVIS — "
                         "trocken, meinungsstark, britischer Ton. Eigene Haltung zeigen.\n"
                         "VERBOTEN: Listen, Aufzaehlungen, LLM-Floskeln, Begeisterung, "
                         "'Natuerlich!', 'Gerne!', 'Klar!', 'Als KI...', 'Ich bin ein Sprachmodell'.\n"
@@ -4046,7 +4046,7 @@ class AssistantBrain(BrainCallbacksMixin):
                         _char_text = strip_think_tags(_char_text).strip()
                     if _char_text:
                         _char_text = self._filter_response(_char_text)
-                    # Im Gespraechsmodus: Retry akzeptieren auch wenn nicht kuerzer
+                    # Im Gesprächsmodus: Retry akzeptieren auch wenn nicht kuerzer
                     # (Ziel ist besserer Ton, nicht Kuerze)
                     _accept = False
                     if _char_text:
@@ -4140,7 +4140,7 @@ class AssistantBrain(BrainCallbacksMixin):
             _cleaned = _suggestion_pattern.sub('', response_text).rstrip()
             if _cleaned and len(_cleaned) >= 5:
                 if len(_cleaned) < len(response_text):
-                    logger.debug("Mood [%s]: Vorschlag-Anhang gekuerzt (%d -> %d Zeichen)",
+                    logger.debug("Mood [%s]: Vorschlag-Anhang gekürzt (%d -> %d Zeichen)",
                                  _current_mood, len(response_text), len(_cleaned))
                 response_text = _cleaned
 
@@ -4196,7 +4196,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     _len += len(s) + 1
                 if _trimmed:
                     response_text = " ".join(_trimmed)
-                    logger.info("Sanity-Check: Befehls-Antwort gekuerzt auf %d Zeichen", len(response_text))
+                    logger.info("Sanity-Check: Befehls-Antwort gekürzt auf %d Zeichen", len(response_text))
 
         # 9. Im Gedaechtnis speichern (nur nicht-leere Antworten, fire-and-forget)
         if response_text and response_text.strip():
@@ -5350,7 +5350,7 @@ class AssistantBrain(BrainCallbacksMixin):
                     _last_sentences = _sentences[-2:] if len(_sentences) > 1 else _sentences
                     text = " ".join(_last_sentences).strip()
                     if text:
-                        logger.info("Multi-Pass Fallback: Letzte Saetze behalten: '%s'", text[:100])
+                        logger.info("Multi-Pass Fallback: Letzte Sätze behalten: '%s'", text[:100])
                     else:
                         return ""
             else:
@@ -5649,11 +5649,11 @@ class AssistantBrain(BrainCallbacksMixin):
         text = re.sub(r"!\s*!", "!", text)
 
         # 6. Max Sentences begrenzen (Override hat Vorrang, z.B. Nachtmodus)
-        # Im Gespraechsmodus: Keine Satz-Begrenzung (Jarvis darf ausfuehrlich antworten)
+        # Im Gesprächsmodus: Keine Satz-Begrenzung (Jarvis darf ausfuehrlich antworten)
         # Verbessertes Satz-Splitting: Schutzt Abkuerzungen, Dezimalzahlen und Auslassungspunkte
         max_sentences = max_sentences_override or filter_config.get("max_response_sentences", 0)
         if max_sentences > 0 and not max_sentences_override and getattr(self, "_active_conversation_mode", False):
-            max_sentences = 0  # Unbegrenzt im Gespraechsmodus
+            max_sentences = 0  # Unbegrenzt im Gesprächsmodus
         if max_sentences > 0:
             # Schutz-Tokens: Bekannte Abkuerzungen und Muster VOR dem Split ersetzen
             _protected = text
@@ -5735,7 +5735,7 @@ class AssistantBrain(BrainCallbacksMixin):
 
         Args:
             text: Die zu bewertende Antwort.
-            conversation_mode: Im Gespraechsmodus toleranter bewerten.
+            conversation_mode: Im Gesprächsmodus toleranter bewerten.
         """
         score = 0
         t = text.lower()
@@ -5750,7 +5750,7 @@ class AssistantBrain(BrainCallbacksMixin):
         if text.count("!") > 2:
             score += 1  # Ueberschwenglichkeit
 
-        # Laenge/Satz-Limits: Im Gespraechsmodus lockerer
+        # Laenge/Satz-Limits: Im Gesprächsmodus lockerer
         _sentence_count = len(re.split(r"[.!?]+", text))
         _max_sentences = 12 if conversation_mode else 6
         _max_len = 1200 if conversation_mode else 400
@@ -9170,7 +9170,7 @@ Regeln:
         """
         # Quiet Hours: Anticipation-Vorschlaege sind nicht kritisch
         if hasattr(self, 'proactive') and self.proactive._is_quiet_hours():
-            logger.info("Anticipation unterdrueckt (Quiet Hours): %s", suggestion.get("description", ""))
+            logger.info("Anticipation unterdrückt (Quiet Hours): %s", suggestion.get("description", ""))
             return
 
         mode = suggestion.get("mode", "ask")
@@ -9228,7 +9228,7 @@ Regeln:
         urgency = insight.get("urgency", "low")
         check = insight.get("check", "unknown")
         if not await self._callback_should_speak(urgency, source=f"Insight/{check}"):
-            logger.info("Insight unterdrueckt (Silence Matrix): [%s] %s", check, message[:60])
+            logger.info("Insight unterdrückt (Silence Matrix): [%s] %s", check, message[:60])
             return
         formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
@@ -9253,7 +9253,7 @@ Regeln:
             return
         urgency = observation.get("urgency", "low")
         if not await self._callback_should_speak(urgency, source="SpontaneousObserver"):
-            logger.info("Spontane Beobachtung unterdrueckt: %s", message[:60])
+            logger.info("Spontane Beobachtung unterdrückt: %s", message[:60])
             return
         formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
@@ -9301,7 +9301,7 @@ Regeln:
                     if await self._callback_should_speak("low", source="WeeklyReport"):
                         formatted = await self._safe_format(message, "low")
                         await self._speak_and_emit(formatted)
-                        logger.info("Woechentlicher Self-Report gesendet")
+                        logger.info("Wöchentlicher Self-Report gesendet")
                 else:
                     # Fallback: Alter Bericht via Learning Observer
                     lo_report = await self.learning_observer.get_learning_report()
@@ -9419,7 +9419,7 @@ Regeln:
                 wait_seconds = (target - now).total_seconds()
 
                 await asyncio.sleep(wait_seconds)
-                logger.info("Fact Decay gestartet (taeglich 04:00)")
+                logger.info("Fact Decay gestartet (täglich 04:00)")
                 await self.memory.semantic.apply_decay()
 
                 # Tagesverbrauch speichern (für Anomalie-Erkennung & Wochen-Vergleich)
