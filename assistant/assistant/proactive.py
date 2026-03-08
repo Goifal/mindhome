@@ -874,11 +874,9 @@ class ProactiveManager:
 
             # Unter Schwellwert gefallen → Covers wieder oeffnen
             elif new_num < threshold and old_num >= threshold:
-                # Nicht öffnen wenn jemand schläft
+                # Nicht öffnen wenn jemand schläft — aber Lock trotzdem aufräumen
                 states = await self.brain.ha.get_states()
-                if await self._is_sleeping(states):
-                    logger.debug("Power-Close Öffnung übersprungen — Schlafmodus aktiv")
-                    continue
+                sleeping = await self._is_sleeping(states)
                 opened_count = 0
                 for cid in cover_ids:
                     redis_key = f"mha:cover:power_close:{cid}"
@@ -888,23 +886,34 @@ class ProactiveManager:
                             power_active = bool(await redis_client.get(redis_key))
                         except Exception:
                             pass
-                    if power_active:
-                        acted = await self._auto_cover_action(
-                            cid, 100,
-                            f"Stromverbrauch {entity_id} ({new_num:.0f} W < {threshold} W)",
-                            auto_level, redis_client, skip_power_lock=True,
-                        )
-                        if acted:
-                            opened_count += 1
-                            if redis_client:
-                                try:
-                                    await redis_client.delete(redis_key)
-                                except Exception:
-                                    pass
-                logger.info(
-                    "Power-Close: %s unter Schwelle (%s W < %s W) → %d/%d Covers geöffnet",
-                    entity_id, new_num, threshold, opened_count, len(cover_ids),
-                )
+                    if not power_active:
+                        continue
+                    # Lock immer aufräumen — Strom ist unter Schwelle,
+                    # andere Automatiken sollen wieder greifen
+                    if redis_client:
+                        try:
+                            await redis_client.delete(redis_key)
+                        except Exception:
+                            pass
+                    if sleeping:
+                        continue  # Cover nicht öffnen, aber Lock ist weg
+                    acted = await self._auto_cover_action(
+                        cid, 100,
+                        f"Stromverbrauch {entity_id} ({new_num:.0f} W < {threshold} W)",
+                        auto_level, redis_client, skip_power_lock=True,
+                    )
+                    if acted:
+                        opened_count += 1
+                if sleeping:
+                    logger.debug(
+                        "Power-Close: %s unter Schwelle — Locks aufgeräumt, Öffnung übersprungen (Schlafmodus)",
+                        entity_id,
+                    )
+                else:
+                    logger.info(
+                        "Power-Close: %s unter Schwelle (%s W < %s W) → %d/%d Covers geöffnet",
+                        entity_id, new_num, threshold, opened_count, len(cover_ids),
+                    )
 
     async def _check_morning_briefing(self, motion_entity: str = ""):
         """Phase 7.1: Prüft ob Morning Briefing bei erster Bewegung am Morgen geliefert werden soll."""
