@@ -1059,12 +1059,12 @@ class ProactiveManager:
             # Wetter morgen (falls verfügbar)
             _cond_map = {
                 "sunny": "sonnig", "clear-night": "klare Nacht",
-                "partlycloudy": "teilweise bewoelkt", "cloudy": "bewoelkt",
+                "partlycloudy": "teilweise bewölkt", "cloudy": "bewölkt",
                 "rainy": "Regen", "pouring": "Starkregen",
                 "snowy": "Schnee", "snowy-rainy": "Schneeregen",
                 "fog": "Nebel", "hail": "Hagel",
                 "lightning": "Gewitter", "lightning-rainy": "Gewitter mit Regen",
-                "windy": "windig", "windy-variant": "windig & bewoelkt",
+                "windy": "windig", "windy-variant": "windig & bewölkt",
                 "exceptional": "Ausnahmewetter",
             }
             weather_tomorrow = ""

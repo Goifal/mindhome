@@ -881,15 +881,15 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
     # Durchschnittstemperatur aller Raeume
     if len(indoor) >= 2:
         _add("raumtemperaturen",
-             f"Durchschnittstemperatur aller {len(indoor)} Raeume",
+             f"Durchschnittstemperatur aller {len(indoor)} Räume",
              "entity_aggregator",
              {"entities": [t["eid"] for t in indoor[:8]], "aggregation": "average"},
-             f"{len(indoor)} Temperatursensoren gefunden — so sehe ich den Durchschnitt und den kaeltesten Raum.")
+             f"{len(indoor)} Temperatursensoren gefunden — so sehe ich den Durchschnitt und den kältesten Raum.")
 
     # Kaeltester Raum
     if len(indoor) >= 3:
         _add("kaeltester_raum",
-             "Findet den kaeltesten Raum",
+             "Findet den kältesten Raum",
              "entity_aggregator",
              {"entities": [t["eid"] for t in indoor[:8]], "aggregation": "min"},
              "Bei mehreren Raeumen kann ich erkennen wo es zu kalt ist.")

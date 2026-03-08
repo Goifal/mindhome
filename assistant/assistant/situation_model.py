@@ -4,7 +4,7 @@ Situation Model - Trackt Veraenderungen im Haus zwischen Gespraechen.
 JARVIS merkt sich den Hausstatus bei jedem Gespraech und vergleicht
 beim naechsten Gespraech was sich veraendert hat. So kann er sagen:
 "Seit wir zuletzt gesprochen haben: Temperatur ist um 3 Grad gesunken,
-das Kuechen-Fenster wurde geoeffnet, und die Waschmaschine ist fertig."
+das Kuechen-Fenster wurde geöffnet, und die Waschmaschine ist fertig."
 
 Gespeichert wird ein kompakter Snapshot in Redis (TTL: 24h).
 """
@@ -248,7 +248,7 @@ class SituationModel:
                     2,
                     f"{name}: Temperatur um {abs(diff):.1f} Grad gesunken "
                     f"({old_temps[name]:.0f} → {new_temps[name]:.0f}°C) "
-                    f"— vermutlich weil {window_names} geoeffnet wurde"
+                    f"— vermutlich weil {window_names} geöffnet wurde"
                 ))
 
         # Verbleibende Temperatur-Aenderungen (nicht kausal verknuepft)
@@ -290,7 +290,7 @@ class SituationModel:
                 pass
 
         for w in opened:
-            changes.append((2, f"{w} wurde geoeffnet"))
+            changes.append((2, f"{w} wurde geöffnet"))
         for w in closed:
             changes.append((4, f"{w} wurde geschlossen"))
 
@@ -298,7 +298,7 @@ class SituationModel:
         old_doors = set(old.get("open_doors", []))
         new_doors = set(new.get("open_doors", []))
         for d in (new_doors - old_doors):
-            changes.append((2, f"{d} wurde geoeffnet"))
+            changes.append((2, f"{d} wurde geöffnet"))
         for d in (old_doors - new_doors):
             changes.append((4, f"{d} wurde geschlossen"))
 
@@ -360,7 +360,7 @@ class SituationModel:
             new_s = new_vac.get(name, "")
             if old_s != new_s and new_s:
                 _vac_states_de = {
-                    "cleaning": "saugt", "returning": "faehrt zurueck",
+                    "cleaning": "saugt", "returning": "fährt zurück",
                     "docked": "in Station", "paused": "pausiert",
                     "idle": "bereit", "error": "FEHLER",
                 }

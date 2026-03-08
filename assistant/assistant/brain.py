@@ -1175,7 +1175,7 @@ class AssistantBrain(BrainCallbacksMixin):
             await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
             return self._result(response_text, model="tts_enhancer", room=room, tts=tts_data, emitted=True)
         elif whisper_cmd == "deactivate" and _word_count <= 3:
-            response_text = "Normale Lautstaerke wiederhergestellt."
+            response_text = "Normale Lautstärke wiederhergestellt."
             self._remember_exchange(text, response_text)
             tts_data = self.tts_enhancer.enhance(response_text, message_type="confirmation")
             await self._speak_and_emit(response_text, room=room, tts_data=tts_data)
@@ -2919,12 +2919,12 @@ class AssistantBrain(BrainCallbacksMixin):
                 "rag": "Wissensbasis",
                 "mood": "Stimmungsanalyse",
                 "memory": "Erinnerungen",
-                "anticipation": "Vorausschauende Vorschlaege",
+                "anticipation": "Vorausschauende Vorschläge",
                 "learned_patterns": "Gelernte Muster",
                 "anomalies": "Anomalien",
-                "cross_room": "Raumuebergreifender Kontext",
+                "cross_room": "Raumübergreifender Kontext",
                 "summary": "Zusammenfassungen",
-                "continuity": "Gespraechskontinuitaet",
+                "continuity": "Gesprächskontinuität",
                 "experiential": "Erfahrungskontext",
                 "tutorial": "Tutorial-Hinweise",
                 "conv_memory": "Projekte & offene Fragen",
@@ -3327,7 +3327,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 if len(tool_calls) >= 2:
                     _ack_phrases = [
                         "Sehr wohl.", "Verstanden.", "Wird gemacht.",
-                        "Einen Moment.", "Laeuft.",
+                        "Einen Moment.", "Läuft.",
                     ]
                     _ack = random.choice(_ack_phrases)
                     self._task_registry.create_task(
@@ -4727,11 +4727,11 @@ class AssistantBrain(BrainCallbacksMixin):
         from datetime import datetime as _dt
 
         _conditions_map = {
-            "bewoelkt": "bewoelkt", "bewölkt": "bewoelkt",
+            "bewoelkt": "bewölkt", "bewölkt": "bewölkt",
             "sonnig": "sonnig", "wolkenlos": "wolkenlos",
             "klare nacht": "klare Nacht", "regen": "regnerisch",
-            "teilweise bewoelkt": "teilweise bewoelkt",
-            "teilweise bewölkt": "teilweise bewoelkt",
+            "teilweise bewoelkt": "teilweise bewölkt",
+            "teilweise bewölkt": "teilweise bewölkt",
             "nebel": "neblig", "schnee": "verschneit",
             "gewitter": "gewittrig", "windig": "windig",
             "starkregen": "Starkregen",

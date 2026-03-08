@@ -446,8 +446,8 @@ class RoutineEngine:
         translations = {
             "sunny": "sonnig",
             "clear-night": "klare Nacht",
-            "partlycloudy": "teilweise bewoelkt",
-            "cloudy": "bewoelkt",
+            "partlycloudy": "teilweise bewölkt",
+            "cloudy": "bewölkt",
             "rainy": "Regen",
             "pouring": "starker Regen",
             "snowy": "Schnee",
@@ -457,7 +457,7 @@ class RoutineEngine:
             "lightning": "Gewitter",
             "lightning-rainy": "Gewitter mit Regen",
             "windy": "windig",
-            "windy-variant": "windig und bewoelkt",
+            "windy-variant": "windig und bewölkt",
             "exceptional": "Ausnahmezustand",
         }
         return translations.get(condition, condition)
@@ -1620,7 +1620,7 @@ class RoutineEngine:
                     normal_val = float(duration_normal)
                     if duration_val > normal_val * 1.2:  # 20% laenger als normal
                         delay = int(duration_val - normal_val)
-                        info += f" — {delay} Min Verzoegerung"
+                        info += f" — {delay} Min Verzögerung"
                 except (ValueError, TypeError):
                     pass
 

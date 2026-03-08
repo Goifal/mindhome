@@ -318,7 +318,7 @@ class ProtocolEngine:
         await self.redis.delete(f"{_PREFIX}:{name_normalized}")
         await self.redis.srem(_LIST_KEY, name_normalized)
 
-        return {"success": True, "message": f"Protokoll '{name}' geloescht."}
+        return {"success": True, "message": f"Protokoll '{name}' gelöscht."}
 
     async def detect_protocol_intent(self, text: str) -> Optional[str]:
         """Prueft ob der Text ein bekanntes Protokoll triggert.

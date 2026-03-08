@@ -658,9 +658,9 @@ class InsightEngine:
                 "check": "energy_anomaly",
                 "urgency": "low",
                 "message": (
-                    f"{await self._get_title_for_home()}, der Stromverbrauch heute liegt {increase_pct:.0f}% ueber "
+                    f"{await self._get_title_for_home()}, der Stromverbrauch heute liegt {increase_pct:.0f}% über "
                     f"dem Durchschnitt. "
-                    f"Laeuft etwas, das nicht laufen sollte?"
+                    f"Läuft etwas, das nicht laufen sollte?"
                 ),
                 "data": {
                     "projected_wh": round(projected),

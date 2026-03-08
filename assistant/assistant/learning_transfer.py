@@ -47,7 +47,7 @@ TRANSFERABLE_DOMAINS = {
     },
     "media": {
         "attributes": ["volume_level", "source"],
-        "description": "Medien-Praeferenzen (Lautstaerke)",
+        "description": "Medien-Präferenzen (Lautstärke)",
     },
 }
 

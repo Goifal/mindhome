@@ -250,10 +250,10 @@ _DEFAULT_ROLES_DICT = {
     # --- Luftqualitaet ---
     "co2":            {"label": "CO2-Sensor", "icon": "\U0001f32c\ufe0f"},
     "co":             {"label": "CO-Melder", "icon": "\u26a0\ufe0f"},
-    "voc":            {"label": "VOC-Sensor (fluechtige Stoffe)", "icon": "\U0001f4a8"},
+    "voc":            {"label": "VOC-Sensor (flüchtige Stoffe)", "icon": "\U0001f4a8"},
     "pm25":           {"label": "Feinstaub PM2.5", "icon": "\U0001f32b\ufe0f"},
     "pm10":           {"label": "Feinstaub PM10", "icon": "\U0001f32b\ufe0f"},
-    "air_quality":    {"label": "Luftqualitaet", "icon": "\U0001f343"},
+    "air_quality":    {"label": "Luftqualität", "icon": "\U0001f343"},
     "radon":          {"label": "Radon", "icon": "\u2622\ufe0f"},
     # --- Wetter ---
     "wind_speed":     {"label": "Windgeschwindigkeit", "icon": "\U0001f4a8"},
@@ -290,9 +290,9 @@ _DEFAULT_ROLES_DICT = {
     "vibration":      {"label": "Vibration", "icon": "\U0001f4f3"},
     # --- Energie & Strom ---
     "power_meter":    {"label": "Strommesser", "icon": "\u26a1"},
-    "energy":         {"label": "Energiezaehler", "icon": "\U0001f4ca"},
+    "energy":         {"label": "Energiezähler", "icon": "\U0001f4ca"},
     "voltage":        {"label": "Spannung", "icon": "\u26a1"},
-    "current":        {"label": "Stromstaerke", "icon": "\u26a1"},
+    "current":        {"label": "Stromstärke", "icon": "\u26a1"},
     "power_factor":   {"label": "Leistungsfaktor", "icon": "\U0001f4ca"},
     "frequency":      {"label": "Frequenz", "icon": "\U0001f4ca"},
     "battery":        {"label": "Batterie", "icon": "\U0001f50b"},
@@ -306,14 +306,14 @@ _DEFAULT_ROLES_DICT = {
     # --- Heizung, Kuehlung, Klima ---
     "thermostat":     {"label": "Thermostat", "icon": "\U0001f321\ufe0f"},
     "heating":        {"label": "Heizung", "icon": "\U0001f525"},
-    "cooling":        {"label": "Kuehlung", "icon": "\u2744\ufe0f"},
+    "cooling":        {"label": "Kühlung", "icon": "\u2744\ufe0f"},
     "heat_pump":      {"label": "Wärmepumpe", "icon": "\U0001f504"},
     "boiler":         {"label": "Warmwasserboiler", "icon": "\U0001f6bf"},
-    "radiator":       {"label": "Heizkoerper", "icon": "\U0001f321\ufe0f"},
-    "floor_heating":  {"label": "Fussbodenheizung", "icon": "\U0001f321\ufe0f"},
+    "radiator":       {"label": "Heizkörper", "icon": "\U0001f321\ufe0f"},
+    "floor_heating":  {"label": "Fußbodenheizung", "icon": "\U0001f321\ufe0f"},
     # --- Lueftung ---
-    "fan":            {"label": "Luefter", "icon": "\U0001f300"},
-    "ventilation":    {"label": "Lueftungsanlage", "icon": "\U0001f32c\ufe0f"},
+    "fan":            {"label": "Lüfter", "icon": "\U0001f300"},
+    "ventilation":    {"label": "Lüftungsanlage", "icon": "\U0001f32c\ufe0f"},
     "air_purifier":   {"label": "Luftreiniger", "icon": "\U0001f343"},
     "dehumidifier":   {"label": "Entfeuchter", "icon": "\U0001f4a7"},
     "humidifier":     {"label": "Befeuchter", "icon": "\U0001f4a7"},
@@ -329,7 +329,7 @@ _DEFAULT_ROLES_DICT = {
     "motor":          {"label": "Motor", "icon": "\u2699\ufe0f"},
     "relay":          {"label": "Relais", "icon": "\U0001f50c"},
     # --- Garten & Aussen ---
-    "irrigation":     {"label": "Bewaesserung", "icon": "\U0001f331"},
+    "irrigation":     {"label": "Bewässerung", "icon": "\U0001f331"},
     "pool":           {"label": "Pool/Schwimmbad", "icon": "\U0001f3ca"},
     "soil_moisture":  {"label": "Bodenfeuchtigkeit", "icon": "\U0001f331"},
     "garden_light":   {"label": "Gartenbeleuchtung", "icon": "\U0001f33b"},
@@ -350,18 +350,18 @@ _DEFAULT_ROLES_DICT = {
     "pc":             {"label": "PC/Computer", "icon": "\U0001f4bb"},
     "adblocker":      {"label": "Adblocker", "icon": "\U0001f6e1\ufe0f"},
     "speedtest":      {"label": "Internet-Geschwindigkeit", "icon": "\U0001f4f6"},
-    "signal_strength": {"label": "Signalstaerke", "icon": "\U0001f4f6"},
+    "signal_strength": {"label": "Signalstärke", "icon": "\U0001f4f6"},
     "connectivity":   {"label": "Verbindungsstatus", "icon": "\U0001f4f6"},
     # --- Haushaltsgeraete ---
     "washing_machine": {"label": "Waschmaschine", "icon": "\U0001f9f9"},
     "dryer":          {"label": "Trockner", "icon": "\U0001f32c\ufe0f"},
-    "dishwasher":     {"label": "Spuelmaschine", "icon": "\U0001f37d\ufe0f"},
+    "dishwasher":     {"label": "Spülmaschine", "icon": "\U0001f37d\ufe0f"},
     "oven":           {"label": "Backofen", "icon": "\U0001f373"},
-    "fridge":         {"label": "Kuehlschrank", "icon": "\u2744\ufe0f"},
+    "fridge":         {"label": "Kühlschrank", "icon": "\u2744\ufe0f"},
     "freezer":        {"label": "Gefrierschrank", "icon": "\u2744\ufe0f"},
     "vacuum":         {"label": "Staubsauger-Roboter", "icon": "\U0001f9f9"},
     "coffee_machine": {"label": "Kaffeemaschine", "icon": "\u2615"},
-    "charger":        {"label": "Ladegeraet", "icon": "\U0001f50b"},
+    "charger":        {"label": "Ladegerät", "icon": "\U0001f50b"},
     # --- Fahrzeuge ---
     "ev_charger":     {"label": "Wallbox/E-Auto-Lader", "icon": "\U0001f50c"},
     "car":            {"label": "Auto/Fahrzeug", "icon": "\U0001f697"},
@@ -374,15 +374,15 @@ _DEFAULT_ROLES_DICT = {
     "scene":          {"label": "Szene", "icon": "\U0001f3ac"},
     "automation":     {"label": "Automatisierung", "icon": "\u2699\ufe0f"},
     "zone":           {"label": "Zone", "icon": "\U0001f4cd"},
-    "timer":          {"label": "Timer/Zaehler", "icon": "\u23f0"},
-    "counter":        {"label": "Zaehler", "icon": "\U0001f522"},
+    "timer":          {"label": "Timer/Zähler", "icon": "\u23f0"},
+    "counter":        {"label": "Zähler", "icon": "\U0001f522"},
     "distance":       {"label": "Entfernung", "icon": "\U0001f4cf"},
     "speed":          {"label": "Geschwindigkeit", "icon": "\U0001f4a8"},
     "weight":         {"label": "Gewicht/Waage", "icon": "\u2696\ufe0f"},
-    "noise":          {"label": "Laermsensor", "icon": "\U0001f50a"},
-    "problem":        {"label": "Problem/Stoerung", "icon": "\u26a0\ufe0f"},
+    "noise":          {"label": "Lärmsensor", "icon": "\U0001f50a"},
+    "problem":        {"label": "Problem/Störung", "icon": "\u26a0\ufe0f"},
     "update":         {"label": "Update verfügbar", "icon": "\U0001f504"},
-    "running":        {"label": "Gerät laeuft", "icon": "\u25b6\ufe0f"},
+    "running":        {"label": "Gerät läuft", "icon": "\u25b6\ufe0f"},
     "generic_sensor": {"label": "Sensor (allgemein)", "icon": "\U0001f4cb"},
     "generic_switch": {"label": "Schalter (allgemein)", "icon": "\U0001f4a1"},
 }
@@ -1242,9 +1242,9 @@ def _get_climate_tool_description() -> str:
     if _get_heating_mode() == "heating_curve":
         return (
             "Heizung steuern: Vorlauftemperatur-Offset zur Heizkurve anpassen. "
-            "Positiver Offset = waermer, negativer Offset = kaelter."
+            "Positiver Offset = wärmer, negativer Offset = kälter."
         )
-    return "Temperatur in einem Raum ändern. Für 'waermer' verwende adjust='warmer', für 'kaelter' verwende adjust='cooler' (ändert um 1°C)."
+    return "Temperatur in einem Raum ändern. Für 'wärmer' verwende adjust='warmer', für 'kälter' verwende adjust='cooler' (ändert um 1°C)."
 
 
 def _get_climate_tool_parameters() -> dict:
@@ -2336,7 +2336,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "set_timer",
-            "description": "Setzt einen allgemeinen Timer/Erinnerung. Z.B. 'Erinnere mich in 30 Minuten an die Waesche' oder 'In 20 Minuten Licht aus'. WICHTIG: duration_minutes ist IMMER in Minuten, NIEMALS in Sekunden. '30 Sekunden' = 1 Minute (aufrunden), '5 Minuten' = 5.",
+            "description": "Setzt einen allgemeinen Timer/Erinnerung. Z.B. 'Erinnere mich in 30 Minuten an die Wäsche' oder 'In 20 Minuten Licht aus'. WICHTIG: duration_minutes ist IMMER in Minuten, NIEMALS in Sekunden. '30 Sekunden' = 1 Minute (aufrunden), '5 Minuten' = 5.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2346,7 +2346,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "label": {
                         "type": "string",
-                        "description": "Bezeichnung des Timers (z.B. 'Waesche', 'Pizza', 'Anruf')",
+                        "description": "Bezeichnung des Timers (z.B. 'Wäsche', 'Pizza', 'Anruf')",
                     },
                     "room": {
                         "type": "string",
@@ -2371,7 +2371,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "label": {
                         "type": "string",
-                        "description": "Bezeichnung des Timers zum Abbrechen (z.B. 'Waesche')",
+                        "description": "Bezeichnung des Timers zum Abbrechen (z.B. 'Wäsche')",
                     },
                 },
                 "required": ["label"],
@@ -3077,7 +3077,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "Name des Tools das geloescht werden soll.",
+                        "description": "Name des Tools das gelöscht werden soll.",
                     },
                 },
                 "required": ["name"],
@@ -6113,8 +6113,8 @@ class FunctionExecutor:
 
             return {
                 "success": success,
-                "message": f"Termin '{title}' am {date_str} geloescht" if success
-                           else "Termin konnte nicht geloescht werden",
+                "message": f"Termin '{title}' am {date_str} gelöscht" if success
+                           else "Termin konnte nicht gelöscht werden",
             }
         except Exception as e:
             logger.error("Kalender-Delete Fehler: %s", e)
@@ -7861,12 +7861,12 @@ class FunctionExecutor:
                 if weather:
                     _cond_map = {
                         "sunny": "Sonnig", "clear-night": "Klare Nacht",
-                        "partlycloudy": "Teilweise bewoelkt", "cloudy": "Bewoelkt",
+                        "partlycloudy": "Teilweise bewölkt", "cloudy": "Bewölkt",
                         "rainy": "Regen", "pouring": "Starkregen",
                         "snowy": "Schnee", "snowy-rainy": "Schneeregen",
                         "fog": "Nebel", "hail": "Hagel",
                         "lightning": "Gewitter", "lightning-rainy": "Gewitter mit Regen",
-                        "windy": "Windig", "windy-variant": "Windig & bewoelkt",
+                        "windy": "Windig", "windy-variant": "Windig & bewölkt",
                         "exceptional": "Ausnahmewetter",
                     }
                     cond = weather.get("condition", "?")
@@ -8013,12 +8013,12 @@ class FunctionExecutor:
         # Wetter-Zustand übersetzen
         condition_map = {
             "sunny": "Sonnig", "clear-night": "Klare Nacht",
-            "partlycloudy": "Teilweise bewoelkt", "cloudy": "Bewoelkt",
+            "partlycloudy": "Teilweise bewölkt", "cloudy": "Bewölkt",
             "rainy": "Regen", "pouring": "Starkregen",
             "snowy": "Schnee", "snowy-rainy": "Schneeregen",
             "fog": "Nebel", "hail": "Hagel",
             "lightning": "Gewitter", "lightning-rainy": "Gewitter mit Regen",
-            "windy": "Windig", "windy-variant": "Windig & bewoelkt",
+            "windy": "Windig", "windy-variant": "Windig & bewölkt",
             "exceptional": "Ausnahmewetter",
         }
         condition_de = condition_map.get(condition, condition)
