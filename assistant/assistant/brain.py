@@ -5549,6 +5549,15 @@ class AssistantBrain(BrainCallbacksMixin):
                 (r"(?<=\bfür\s)Sie\b", "dich"),
                 (r"(?<=\bdass\s)Sie\b", "du"), (r"(?<=\bwenn\s)Sie\b", "du"),
                 (r"(?<=\bob\s)Sie\b", "du"),
+                # Praeposition+Sie (wofür/wozu/worüber/... Sie)
+                (r"(?<=\bwof[uü]r\s)Sie\b", "dich"),
+                (r"(?<=\bwozu\s)Sie\b", "dir"),
+                (r"(?<=\bwor[uü]ber\s)Sie\b", "dich"),
+                (r"(?<=\bwarum\s)Sie\b", "du"),
+                (r"(?<=\bwie\s)Sie\b", "du"),
+                (r"(?<=\bwas\s)Sie\b", "du"),
+                (r"(?<=\bwo\s)Sie\b", "du"),
+                (r"(?<=\bwann\s)Sie\b", "du"),
                 # "Bitte ... Sie" Pattern
                 (r"(?<=\bbitte\s)Sie\b", "du"),
                 # Satzanfang: "Sie" am Satzanfang → "Du" (wenn kein Plural-Kontext)
@@ -5557,6 +5566,10 @@ class AssistantBrain(BrainCallbacksMixin):
             ]
             for pattern, replacement in _formal_map:
                 text = re.sub(pattern, replacement, text)
+            # Finaler Catch-all: Verbliebene "Sie" ersetzen.
+            # _has_formal war True → verbleibendes grosses "Sie" im
+            # Satzinneren ist mit hoher Wahrscheinlichkeit formelles "Sie".
+            text = re.sub(r"\bSie\b", "du", text)
             logger.info("Sie->du Korrektur angewendet: '%s'", text[:80])
 
         # 3c. LLM-Refusals entfernen (LLM verweigert manchmal trotz gueltiger Daten)
