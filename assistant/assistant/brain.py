@@ -1432,7 +1432,11 @@ class AssistantBrain(BrainCallbacksMixin):
             return self._result(response_text, model="action_planner_dialog", room=room, emitted=True)
 
         # Phase 6: Easter-Egg-Check (VOR dem LLM — spart Latenz)
-        egg_response = self.personality.check_easter_egg(text)
+        # Nur bei kurzen Inputs (max 8 Woerter) triggern, damit komplexe
+        # Fragen wie "wie geht es dir und was kannst du alles" nicht
+        # vom Easter Egg kurzgeschlossen werden.
+        _word_count = len(text.split())
+        egg_response = self.personality.check_easter_egg(text) if _word_count <= 8 else None
         if egg_response:
             logger.info("Easter Egg getriggert: '%s'", egg_response)
             self._remember_exchange(text, egg_response)
@@ -2502,7 +2506,7 @@ class AssistantBrain(BrainCallbacksMixin):
             if live_insights:
                 _upgrade_signals += 1  # Aktive Insights = mehr zu verarbeiten
         if sec_score and sec_score.get("level") == "critical":
-            _upgrade_signals += 3  # Kritische Sicherheit = Deep
+            _upgrade_signals = max(_upgrade_signals, self._opt_upgrade_signal_threshold)  # Kritische Sicherheit = sofort Deep
         elif sec_score and sec_score.get("level") == "warning":
             _upgrade_signals += 1  # Warnung = nur Kontext, kein Upgrade allein
 
@@ -3025,7 +3029,7 @@ class AssistantBrain(BrainCallbacksMixin):
         messages.append({"role": "user", "content": user_content})
 
         # Token-Budget Debug-Logging
-        _total_prompt_tokens = sum(len(m.get("content", "")) // 2 for m in messages)
+        _total_prompt_tokens = sum(_estimate_tokens(m.get("content", "")) for m in messages)
         _model_ctx = self.ollama.num_ctx_for(model)
         logger.info(
             "Prompt-Budget: ~%d Tokens in %d Messages, num_ctx=%d (%.0f%% belegt)",
@@ -3957,7 +3961,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # Humanizer-Fallback: Wenn Query-Tools liefen aber LLM-Feinschliff
         # verworfen wurde, humanisierten Text wiederherstellen
         if not response_text and has_query_results and humanized_text:
-            response_text = humanized_text
+            response_text = self._filter_response(humanized_text, max_sentences_override=night_limit)
             logger.info("Query-Humanizer Fallback: '%s'", response_text[:80])
 
         # Sprach-Retry: Wenn Antwort verworfen wurde (nicht Deutsch), nochmal mit explizitem Sprach-Prompt
@@ -5492,7 +5496,15 @@ class AssistantBrain(BrainCallbacksMixin):
             r"|(?:L|l)assen|(?:B|b)eachten|(?:S|s)ehen"
             r"|(?:V|v)ersuchen|(?:P|p)robieren|(?:W|w)arten|(?:S|s)tellen"
             r"|[UÜuü]berpr[uü]fen|[OÖoö]ffnen"
-            r"|(?:S|s)chlie[sß]en|(?:D|d)enken|(?:A|a)chten|(?:R|r)ufen)\s+Sie\b",
+            r"|(?:S|s)chlie[sß]en|(?:D|d)enken|(?:A|a)chten|(?:R|r)ufen"
+            r"|(?:W|w)issen|(?:K|k)ennen|(?:F|f)inden|(?:M|m)einen"
+            r"|(?:G|g)lauben|(?:B|b)rauchen|(?:S|s)uchen)\s+Sie\b"
+            # Pronomen + Sie: "ich Sie", "wir Sie" (eindeutig formell)
+            r"|\b(?:ich|wir|man)\s+Sie\b"
+            # Praeposition + Sie: "an Sie", "für Sie", "über Sie" etc.
+            r"|\b(?:an|f[uü]r|[uü]ber|auf|gegen|ohne|um)\s+Sie\b"
+            # 3. Person Singular + Sie: "betrifft Sie", "interessiert Sie" etc.
+            r"|\b\w+t\s+Sie\b",
             text
         ))
         if _has_formal:
@@ -5563,6 +5575,16 @@ class AssistantBrain(BrainCallbacksMixin):
                 # "Sie" in eindeutigen Kontexten ersetzen
                 (r"(?<=[,;:!?.]\s)Sie\b", "du"),
                 (r"(?<=\bfür\s)Sie\b", "dich"),
+                (r"(?<=\ban\s)Sie\b", "dich"),
+                (r"(?<=\büber\s)Sie\b", "dich"), (r"(?<=\bueber\s)Sie\b", "dich"),
+                (r"(?<=\bauf\s)Sie\b", "dich"),
+                (r"(?<=\bgegen\s)Sie\b", "dich"),
+                (r"(?<=\bohne\s)Sie\b", "dich"),
+                (r"(?<=\bum\s)Sie\b", "dich"),
+                # Pronomen + Sie: "ich Sie" → "ich dich", "wir Sie" → "wir dich"
+                (r"(?<=\bich\s)Sie\b", "dich"),
+                (r"(?<=\bwir\s)Sie\b", "dich"),
+                (r"(?<=\bman\s)Sie\b", "dich"),
                 (r"(?<=\bdass\s)Sie\b", "du"), (r"(?<=\bwenn\s)Sie\b", "du"),
                 (r"(?<=\bob\s)Sie\b", "du"),
                 # W-Wort+Sie: "Sie" ist hier Subjekt → "du"
@@ -6164,7 +6186,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
             # Quiet Hours: Gleiche Regeln wie ProactiveManager._notify() —
             # Callbacks sollen nachts genauso still sein wie proaktive Meldungen.
-            if hasattr(self, "proactive") and self.proactive._is_quiet_hours():
+            # CRITICAL darf IMMER durch (wie in proactive._notify()).
+            if hasattr(self, "proactive") and self.proactive._is_quiet_hours() and urgency != "critical":
                 logger.info(
                     "Callback unterdrückt (Quiet Hours): Quelle=%s, Urgency=%s",
                     source, urgency,
@@ -7719,6 +7742,23 @@ class AssistantBrain(BrainCallbacksMixin):
         _has_play_verb = any(kw in t for kw in [
             "spiel", "spiele", "abspielen",
         ])
+        # Gaming-Kontext erkennen: "spielen" im Gaming-Kontext ist kein Media-Play
+        _GAMING_KEYWORDS = {
+            "zocken", "zock", "game", "gamen", "controller", "konsole",
+            "ps5", "ps4", "playstation", "xbox", "switch", "nintendo",
+            "steam", "pc spiel", "videospiel", "computerspiel",
+            # Bekannte Spieletitel
+            "witcher", "zelda", "minecraft", "fortnite", "valorant",
+            "diablo", "cyberpunk", "skyrim", "elden ring", "baldur",
+            "god of war", "hogwarts", "gta", "fifa", "call of duty",
+            "overwatch", "league of legends", "apex", "destiny",
+            "resident evil", "dark souls", "bloodborne", "sekiro",
+            "horizon", "spider-man", "spiderman", "halo", "starfield",
+            "palworld", "helldivers", "animal crossing", "mario",
+            "pokemon", "tetris", "stardew", "hollow knight",
+        }
+        if _has_play_verb and not _has_media_kw and any(g in t for g in _GAMING_KEYWORDS):
+            return None  # Gaming-Kontext: kein Media-Shortcut
         _has_control_kw = any(kw in t for kw in [
             "pausier", "pause", "stopp ", "stop ",
             "naechster song", "nächster song",
@@ -7793,7 +7833,10 @@ class AssistantBrain(BrainCallbacksMixin):
 
         # "Musik" allein → play
         if action is None and "musik" in t:
-            if "aus" in t.split():
+            # "musik aus" / "musik stop" → stop, aber NICHT "musik aus den 80ern"
+            _words = t.split()
+            _aus_idx = _words.index("aus") if "aus" in _words else -1
+            if _aus_idx >= 0 and (_aus_idx == len(_words) - 1 or _words[_aus_idx - 1] == "musik"):
                 action = "stop"
             else:
                 action = "play"
