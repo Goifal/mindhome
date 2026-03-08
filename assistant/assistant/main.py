@@ -279,7 +279,7 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
             if isinstance(s, str) and not s.startswith(_OK_PREFIXES)
         ]
         if failed:
-            msg += f" {len(failed)} {'System' if len(failed) == 1 else 'Systeme'} eingeschraenkt."
+            msg += f" {len(failed)} {'System' if len(failed) == 1 else 'Systeme'} eingeschränkt."
         elif not open_items:
             msg += " Keine Auffaelligkeiten."
 

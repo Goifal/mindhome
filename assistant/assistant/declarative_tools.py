@@ -1012,7 +1012,7 @@ def generate_suggestions(states: list[dict], existing_tools: dict) -> list[dict]
     # ── Bewegung ──────────────────────────────────────────────
     if binary_motion:
         _add("bewegung_aktivitaet",
-             f"Bewegungsmelder-Aktivitaet ({len(binary_motion)} Sensoren)",
+             f"Bewegungsmelder-Aktivität ({len(binary_motion)} Sensoren)",
              "event_counter",
              {"entities": [m["eid"] for m in binary_motion[:6]], "count_state": "on", "time_range": "24h"},
              f"{len(binary_motion)} Bewegungsmelder — zeigt Aktivitaetsmuster im Haus.")

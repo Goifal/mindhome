@@ -6129,7 +6129,7 @@ class AssistantBrain(BrainCallbacksMixin):
             # Callbacks sollen nachts genauso still sein wie proaktive Meldungen.
             if hasattr(self, "proactive") and self.proactive._is_quiet_hours():
                 logger.info(
-                    "Callback unterdrueckt (Quiet Hours): Quelle=%s, Urgency=%s",
+                    "Callback unterdrückt (Quiet Hours): Quelle=%s, Urgency=%s",
                     source, urgency,
                 )
                 return False
@@ -6139,8 +6139,8 @@ class AssistantBrain(BrainCallbacksMixin):
             if result.get("suppress") or delivery == "led_blink":
                 trigger_info = result.get("trigger", "")
                 logger.info(
-                    "Callback unterdrueckt: Quelle=%s, Urgency=%s, "
-                    "Aktivitaet=%s, Delivery=%s%s",
+                    "Callback unterdrückt: Quelle=%s, Urgency=%s, "
+                    "Aktivität=%s, Delivery=%s%s",
                     source, urgency,
                     result.get("activity"), delivery,
                     f", Trigger={trigger_info}" if trigger_info else "",

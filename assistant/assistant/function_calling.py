@@ -1596,7 +1596,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "recommend_music",
-            "description": "Smart DJ: Empfiehlt und spielt kontextbewusste Musik basierend auf Stimmung, Aktivitaet und Tageszeit. 'recommend' zeigt Vorschlag, 'play' spielt direkt ab, 'feedback' speichert Bewertung, 'status' zeigt aktuellen Kontext.",
+            "description": "Smart DJ: Empfiehlt und spielt kontextbewusste Musik basierend auf Stimmung, Aktivität und Tageszeit. 'recommend' zeigt Vorschlag, 'play' spielt direkt ab, 'feedback' speichert Bewertung, 'status' zeigt aktuellen Kontext.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1861,7 +1861,7 @@ _ASSISTANT_TOOLS_STATIC = [
                 "properties": {
                     "from_room": {
                         "type": "string",
-                        "description": "Quell-Raum (wo die Musik gerade laeuft)",
+                        "description": "Quell-Raum (wo die Musik gerade läuft)",
                     },
                     "to_room": {
                         "type": "string",
@@ -2973,7 +2973,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "remote_control",
-            "description": "Fernbedienung steuern (Logitech Harmony etc.). Kann Aktivitaeten starten/stoppen und IR-Befehle senden. Beispiele: 'Schalte den Fernseher ein' → activity='Fernsehen', 'Stell auf ARD um' → command='InputHdmi1' oder device+command, 'Mach alles aus' → action='off'.",
+            "description": "Fernbedienung steuern (Logitech Harmony etc.). Kann Aktivitäten starten/stoppen und IR-Befehle senden. Beispiele: 'Schalte den Fernseher ein' → activity='Fernsehen', 'Stell auf ARD um' → command='InputHdmi1' oder device+command, 'Mach alles aus' → action='off'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2984,11 +2984,11 @@ _ASSISTANT_TOOLS_STATIC = [
                     "action": {
                         "type": "string",
                         "enum": ["on", "off", "activity", "command"],
-                        "description": "on=einschalten (optional mit activity), off=alles ausschalten, activity=Aktivitaet wechseln, command=IR-Befehl senden.",
+                        "description": "on=einschalten (optional mit activity), off=alles ausschalten, activity=Aktivität wechseln, command=IR-Befehl senden.",
                     },
                     "activity": {
                         "type": "string",
-                        "description": "Name der Harmony-Aktivitaet (z.B. 'Fernsehen', 'Watch TV', 'Musik hören', 'Netflix'). Nur bei action='on' oder 'activity'.",
+                        "description": "Name der Harmony-Aktivität (z.B. 'Fernsehen', 'Watch TV', 'Musik hören', 'Netflix'). Nur bei action='on' oder 'activity'.",
                     },
                     "command": {
                         "type": "string",
@@ -2996,7 +2996,7 @@ _ASSISTANT_TOOLS_STATIC = [
                     },
                     "device": {
                         "type": "string",
-                        "description": "Zielgeraet für den IR-Befehl (z.B. 'Samsung TV', 'Yamaha Receiver'). Optional — ohne device wird der Befehl an die aktive Aktivitaet gesendet.",
+                        "description": "Zielgerät für den IR-Befehl (z.B. 'Samsung TV', 'Yamaha Receiver'). Optional — ohne device wird der Befehl an die aktive Aktivität gesendet.",
                     },
                     "num_repeats": {
                         "type": "integer",
@@ -3011,7 +3011,7 @@ _ASSISTANT_TOOLS_STATIC = [
         "type": "function",
         "function": {
             "name": "get_remotes",
-            "description": "Zeigt alle Fernbedienungen mit aktuellem Status, aktiver Aktivitaet und verfügbaren Aktivitaeten/Geräten. Nutze dies wenn der User fragt was die Fernbedienung kann, welche Aktivitaeten es gibt oder was gerade laeuft.",
+            "description": "Zeigt alle Fernbedienungen mit aktuellem Status, aktiver Aktivität und verfügbaren Aktivitäten/Geräten. Nutze dies wenn der User fragt was die Fernbedienung kann, welche Aktivitäten es gibt oder was gerade läuft.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -3444,7 +3444,7 @@ class FunctionExecutor:
             if func_name == "set_light_all":
                 state = str(args.get("state", "")).lower()
                 if state == "off" and 8 <= hour <= 23:
-                    # Prüfen ob Aktivitaet erkannt
+                    # Prüfen ob Aktivität erkannt
                     import assistant.main as main_module
                     if hasattr(main_module, "brain") and hasattr(main_module.brain, "activity"):
                         activity = main_module.brain.activity.current_activity
@@ -5346,7 +5346,7 @@ class FunctionExecutor:
             return {"success": False, "message": "Keine aktive Wiedergabe gefunden"}
 
         if from_entity == to_entity:
-            return {"success": True, "message": "Musik laeuft bereits in diesem Raum"}
+            return {"success": True, "message": "Musik läuft bereits in diesem Raum"}
 
         # Aktuellen Zustand vom Quell-Player holen
         states = await self.ha.get_states()
@@ -5357,7 +5357,7 @@ class FunctionExecutor:
                 break
 
         if not source_state or source_state.get("state") != "playing":
-            return {"success": False, "message": f"In '{from_room}' laeuft nichts"}
+            return {"success": False, "message": f"In '{from_room}' läuft nichts"}
 
         attrs = source_state.get("attributes", {})
         media_content_id = attrs.get("media_content_id", "")
@@ -5408,7 +5408,7 @@ class FunctionExecutor:
 
         return {
             "success": success,
-            "message": f"Musik laeuft jetzt im {to_room}." if success
+            "message": f"Musik läuft jetzt im {to_room}." if success
                        else f"Der Transfer nach {to_room} kam nicht zustande.",
         }
 
@@ -7128,7 +7128,7 @@ class FunctionExecutor:
                 if days < 0:
                     lines.append(f"- {item_data['name']}: ABGELAUFEN seit {abs(days)} Tag(en)!")
                 elif days == 0:
-                    lines.append(f"- {item_data['name']}: laeuft HEUTE ab!")
+                    lines.append(f"- {item_data['name']}: läuft HEUTE ab!")
                 else:
                     lines.append(f"- {item_data['name']}: noch {days} Tag(e)")
             return {"success": True, "message": "\n".join(lines)}
@@ -7761,7 +7761,7 @@ class FunctionExecutor:
                 if last_hydration:
                     status["last_hydration"] = last_hydration
 
-            # Aktivitaet
+            # Aktivität
             try:
                 detection = await brain.activity.detect_activity()
                 status["activity"] = detection.get("activity", "unknown")
@@ -8335,7 +8335,7 @@ class FunctionExecutor:
         return None
 
     async def _exec_remote_control(self, args: dict) -> dict:
-        """Fernbedienung steuern: Aktivitaet starten/stoppen, IR-Befehle senden."""
+        """Fernbedienung steuern: Aktivität starten/stoppen, IR-Befehle senden."""
         cfg = yaml_config.get("remote", {})
         if not cfg.get("enabled", True):
             return {"success": False, "message": "Fernbedienung-Steuerung ist deaktiviert. Aktiviere sie im Fernbedienung-Tab."}
@@ -8352,7 +8352,7 @@ class FunctionExecutor:
         device = args.get("device")
         num_repeats = max(1, min(args.get("num_repeats", 1), 20))
 
-        # Aktivitaeten-Aliase aus Config auflösen
+        # Aktivitäten-Aliase aus Config auflösen
         cfg = yaml_config.get("remote", {})
         for _key, rcfg in cfg.get("remotes", {}).items():
             if rcfg.get("entity_id") == entity_id and activity:
@@ -8377,7 +8377,7 @@ class FunctionExecutor:
             success = await self.ha.call_service(
                 "remote", "turn_on", service_data
             )
-            msg = f"Aktivitaet '{activity}' gestartet." if activity else "Fernbedienung eingeschaltet."
+            msg = f"Aktivität '{activity}' gestartet." if activity else "Fernbedienung eingeschaltet."
             return {"success": success, "message": msg}
 
         elif action == "command":
@@ -8401,7 +8401,7 @@ class FunctionExecutor:
         return {"success": False, "message": f"Unbekannte Aktion: {action}"}
 
     async def _exec_get_remotes(self, args: dict) -> dict:
-        """Listet alle Fernbedienungen mit Status und verfügbaren Aktivitaeten."""
+        """Listet alle Fernbedienungen mit Status und verfügbaren Aktivitäten."""
         remote_hint = args.get("remote")
         states = await self.ha.get_states()
         if not states:
