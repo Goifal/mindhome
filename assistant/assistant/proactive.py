@@ -880,7 +880,24 @@ class ProactiveManager:
                 )
 
             # Unter Schwellwert gefallen → Covers wieder oeffnen
-            elif new_num < threshold and old_num >= threshold:
+            # Robuster Check: Auch wenn old_val unavailable/unknown war (z.B.
+            # Smart-Plug schaltet ab: 42W → unavailable → 1W), prüfen wir
+            # ob ein power_close-Lock existiert und der aktuelle Wert unter
+            # dem Schwellwert liegt.
+            elif new_num < threshold:
+                # Nur reagieren wenn tatsächlich ein Übergang stattfand ODER
+                # ein power_close-Lock existiert (= Covers wurden vorher geschlossen)
+                has_any_lock = False
+                if redis_client:
+                    for cid in cover_ids:
+                        try:
+                            if await redis_client.get(f"mha:cover:power_close:{cid}"):
+                                has_any_lock = True
+                                break
+                        except Exception:
+                            pass
+                if not (old_num >= threshold or has_any_lock):
+                    continue  # Kein Schwellen-Übergang und kein Lock → nichts tun
                 # Nicht öffnen wenn jemand schläft — aber Lock trotzdem aufräumen
                 states = await self.brain.ha.get_states()
                 sleeping = await self._is_sleeping(states)
