@@ -865,12 +865,16 @@ class ProactiveManager:
                         except Exception:
                             pass
                 logger.info(
-                    "Power-Close: %s ueber Schwelle (%s W >= %s W) → %d Covers geschlossen",
+                    "Power-Close: %s über Schwelle (%s W >= %s W) → %d Covers geschlossen",
                     entity_id, new_num, threshold, len(cover_ids),
                 )
 
             # Unter Schwellwert gefallen → Covers wieder oeffnen
             elif new_num < threshold and old_num >= threshold:
+                # Nicht öffnen wenn jemand schläft
+                if await self._is_bed_occupied():
+                    logger.debug("Power-Close Öffnung übersprungen — Bett belegt")
+                    return
                 for cid in cover_ids:
                     redis_key = f"mha:cover:power_close:{cid}"
                     power_active = False
@@ -891,7 +895,7 @@ class ProactiveManager:
                             except Exception:
                                 pass
                 logger.info(
-                    "Power-Close: %s unter Schwelle (%s W < %s W) → Covers geoeffnet",
+                    "Power-Close: %s unter Schwelle (%s W < %s W) → Covers geöffnet",
                     entity_id, new_num, threshold,
                 )
 
@@ -3508,6 +3512,11 @@ class ProactiveManager:
             target_entity = sched.get("entity_id")
             target_group = sched.get("group_id")
 
+            # Nicht öffnen wenn Bett belegt (Schlafmodus)
+            if position > 0 and await self._is_bed_occupied(states):
+                logger.info("User-Zeitplan '%s' übersprungen — Bett belegt", time_str)
+                continue
+
             # Dedup per Redis
             dedup_key = f"mha:cover:usched:{sched.get('id', 0)}:{now.strftime('%Y-%m-%d')}"
             if redis_client:
@@ -4052,7 +4061,12 @@ class ProactiveManager:
                 high_co2_rooms.append((room, co2))
 
         if high_co2_rooms:
-            # Covers in betroffenen Raeumen oeffnen
+            # Nicht öffnen wenn Bett belegt (Schlafmodus)
+            if await self._is_bed_occupied(states):
+                logger.info("CO2-Lüftung übersprungen — Bett belegt (%s)",
+                            ", ".join(f"{r}: {int(c)} ppm" for r, c in high_co2_rooms))
+                return
+            # Covers in betroffenen Räumen öffnen
             for s in (states or []):
                 eid = s.get("entity_id", "")
                 if not eid.startswith("cover."):
