@@ -7891,9 +7891,10 @@ class AssistantBrain(BrainCallbacksMixin):
         # "Musik" allein → play
         if action is None and "musik" in t:
             # "musik aus" / "musik stop" → stop, aber NICHT "musik aus den 80ern"
+            # "aus" muss am Satzende stehen um Stop zu triggern
             _words = t.split()
             _aus_idx = _words.index("aus") if "aus" in _words else -1
-            if _aus_idx >= 0 and (_aus_idx == len(_words) - 1 or _words[_aus_idx - 1] == "musik"):
+            if _aus_idx >= 0 and _aus_idx == len(_words) - 1:
                 action = "stop"
             else:
                 action = "play"
