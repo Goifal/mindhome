@@ -5530,6 +5530,16 @@ class AssistantBrain(BrainCallbacksMixin):
             ]
             for pattern, replacement in _verb_pairs:
                 text = re.sub(pattern, replacement, text)
+            # Imperativ-Catch-all: "VERBen Sie" → "VERBe" (informeller Imperativ)
+            # z.B. "präzisieren Sie" → "präzisiere", "nennen Sie" → "nenne"
+            # Min 4 Zeichen Stamm, um Artikel/Praepositionen auszuschliessen
+            # ("den Sie", "gegen Sie" etc.)
+            # Muss VOR den einfachen Sie→du Ersetzungen laufen
+            def _imperativ_replace(m):
+                verb_stem = m.group(1)  # z.B. "präzisier", "nenn"
+                return verb_stem + "e"
+            text = re.sub(r"\b(\w{4,})en Sie\b", _imperativ_replace, text)
+
             _formal_map = [
                 (r"\bIhnen\b", "dir"), (r"\bIhre\b", "deine"),
                 (r"\bIhren\b", "deinen"), (r"\bIhrem\b", "deinem"),
@@ -5539,8 +5549,6 @@ class AssistantBrain(BrainCallbacksMixin):
                 (r"(?<=\bfür\s)Sie\b", "dich"),
                 (r"(?<=\bdass\s)Sie\b", "du"), (r"(?<=\bwenn\s)Sie\b", "du"),
                 (r"(?<=\bob\s)Sie\b", "du"),
-                # Catch-all: "[verb]en Sie" → "[verb]en du" (deckt "nennen Sie", "rufen Sie" etc. ab)
-                (r"(?<=\w[eE][nN]\s)Sie\b", "du"),
                 # "Bitte ... Sie" Pattern
                 (r"(?<=\bbitte\s)Sie\b", "du"),
                 # Satzanfang: "Sie" am Satzanfang → "Du" (wenn kein Plural-Kontext)

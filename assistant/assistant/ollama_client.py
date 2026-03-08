@@ -359,6 +359,12 @@ class OllamaClient:
                     ollama_breaker.record_failure()
                     return {"error": error}
                 result = await resp.json()
+
+                # Ollama kann 200 mit {"error": ...} zurueckgeben
+                if "error" in result:
+                    ollama_breaker.record_failure()
+                    return result
+
                 ollama_breaker.record_success()
 
                 # Think-Tags aus der Antwort strippen (Sicherheitsnetz)

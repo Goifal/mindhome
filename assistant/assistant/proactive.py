@@ -614,7 +614,10 @@ class ProactiveManager:
             await self._check_appliance_power(entity_id, new_val, old_val)
 
         # Feature 2: Manual Override Detection für Covers
-        if entity_id.startswith("cover.") and new_val != old_val:
+        # Ignoriere Transitions von/zu unavailable/unknown (Gerät geht offline/online)
+        _non_physical = {"unavailable", "unknown", ""}
+        if (entity_id.startswith("cover.") and new_val != old_val
+                and old_val not in _non_physical and new_val not in _non_physical):
             try:
                 redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
                 if redis_client:
