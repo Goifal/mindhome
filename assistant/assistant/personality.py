@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import random
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -491,7 +492,7 @@ class PersonalityEngine:
             if not egg.get("enabled", True):
                 continue
             for trigger in egg.get("triggers", []):
-                if trigger and trigger.lower() in text_lower:
+                if trigger and re.search(r'\b' + re.escape(trigger.lower()) + r'\b', text_lower):
                     responses = egg.get("responses", [])
                     if responses:
                         return random.choice(responses).replace("Sir", get_person_title())

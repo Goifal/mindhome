@@ -4877,8 +4877,13 @@ class ProactiveManager:
                         continue
 
                     above = power >= threshold
-                    prev_above = was_above.get(entity, True)
+                    prev_above = was_above.get(entity)  # None beim 1. Durchlauf
                     was_above[entity] = above
+
+                    if prev_above is None:
+                        # Erster Durchlauf nach Start: nur Zustand merken, kein Edge
+                        logger.debug("Vacuum-PowerTrigger: %s initialisiert (%.1fW, above=%s)", entity, power, above)
+                        continue
 
                     logger.debug("Vacuum-PowerTrigger: %s = %.1fW (Schwelle: %sW, vorher_drüber: %s, jetzt_drüber: %s)",
                                  entity, power, threshold, prev_above, above)
