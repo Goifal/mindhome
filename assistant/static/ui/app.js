@@ -1444,6 +1444,7 @@ const HELP_TEXTS = {
   'seasonal_actions.cover_automation.wakeup_sun_check': {title:'Aufwach-Sonnenprüfung', text:'Prüft beim Aufwachen den Sonnenstand (sun.sun). Wenn es noch zu dunkel ist, werden die Rollläden erst bei Dämmerung geöffnet statt sofort. Verhindert dass Rollläden mitten in der Nacht hochfahren.'},
   'seasonal_actions.cover_automation.wakeup_min_sun_elevation': {title:'Min. Sonnenhöhe beim Aufwachen', text:'Mindest-Sonnenhöhe (in Grad) damit Rollläden beim Aufwachen geöffnet werden. -6° = Bürgerliche Dämmerung (Himmel wird hell). -12° = Nautische Dämmerung. 0° = Sonnenaufgang. Bei niedrigerem Sonnenstand wird das Öffnen verschoben.'},
   'seasonal_actions.cover_automation.wakeup_fallback_max_minutes': {title:'Fallback-Öffnung', text:'Maximale Wartezeit nach dem geplanten Öffnungszeitpunkt. Wenn die Sonne innerhalb dieses Zeitraums nicht hoch genug steigt (z.B. trüber Wintertag), werden die Rollläden trotzdem geöffnet. Verhindert dass man den ganzen Tag im Dunkeln sitzt.'},
+  'seasonal_actions.cover_automation.sleep_lock_minutes': {title:'Sleep-Lock Dauer', text:'Wenn Schlaf erkannt wird, bleibt der Rollladenschutz für diese Dauer aktiv — auch wenn ein Bettsensor kurz ausfällt (Person dreht sich um, Sensor-Verzögerung). Kürzere Werte = schnelleres Öffnen nach dem Aufstehen. Längere Werte = mehr Schutz gegen Sensor-Flackern.'},
   'seasonal_actions.cover_automation.weather_entity': {title:'Wetter-Entity', text:'Welche weather-Entity aus Home Assistant für die Cover-Automatik genutzt wird. Leer = automatisch (bevorzugt weather.forecast_home, Fallback: erste weather.* Entity). Aenderbar per UI oder per Sprache ("Jarvis, wechsle Wetter-Integration auf weather.home").'},
   'seasonal_actions.cover_automation.forecast_weather_protection': {title:'Vorhersage-Wetterschutz', text:'Nutzt die Wettervorhersage aus der konfigurierten Wetter-Entity für vorausschauenden Schutz. Faehrt Markisen ein BEVOR ein Sturm kommt und schließt Dachfenster BEVOR es regnet — statt erst zu reagieren wenn es schon zu spaet ist.'},
   'seasonal_actions.cover_automation.forecast_lookahead_hours': {title:'Vorhersage-Zeitraum', text:'Wie viele Stunden in die Zukunft die Wettervorhersage für Schutzentscheidungen genutzt wird. Mehr Stunden = früheres Reagieren, aber auch mehr Fehlalarme.'},
@@ -7314,6 +7315,11 @@ function renderCovers() {
     fToggle('seasonal_actions.cover_automation.wakeup_sun_check', 'Sonnenstand beim Aufwachen prüfen') +
     fRange('seasonal_actions.cover_automation.wakeup_min_sun_elevation', 'Min. Sonnenhöhe (Grad)', -12, 5, 1, {'-12':'-12° (nautisch)','-6':'-6° (buergerl.)','-3':'-3°','0':'0° (Aufgang)','5':'5° (hell)'}) +
     fRange('seasonal_actions.cover_automation.wakeup_fallback_max_minutes', 'Fallback: Spätestens öffnen nach (Min)', 30, 180, 15, {30:'30 Min',60:'1 Std',90:'1.5 Std',120:'2 Std',150:'2.5 Std',180:'3 Std'})
+  ) +
+  // ── Schlafschutz ──────────────────────────────────────
+  sectionWrap('&#128564;', 'Schlafschutz',
+    fInfo('Verhindert dass Rollläden hochfahren während jemand schläft. Erkennung über Aktivitäts-Modul (Bettsensoren, Lichter, Uhrzeit) und manuellen Schlafmodus ("Gute Nacht").<br><br><strong>Sleep-Lock:</strong> Wenn Schlaf erkannt wird, bleibt der Schutz für die eingestellte Dauer aktiv — auch wenn ein Sensor kurz flackert (z.B. Person dreht sich um). Nur Sturmschutz wird weiterhin ausgeführt.') +
+    fRange('seasonal_actions.cover_automation.sleep_lock_minutes', 'Sleep-Lock Dauer (Minuten)', 1, 30, 1, {1:'1 Min',3:'3 Min',5:'5 Min (Standard)',10:'10 Min',15:'15 Min',30:'30 Min'})
   ) +
   // ── Vorhersage-Wetterschutz (weather.forecast_home) ──
   sectionWrap('&#127782;', 'Vorhersage-Wetterschutz (weather.forecast_home)',
