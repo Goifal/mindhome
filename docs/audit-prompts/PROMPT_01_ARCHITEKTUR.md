@@ -129,6 +129,21 @@ Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
 - Gibt es eine zentrale **Koordination** oder ist brain.py nur eine dumme Weiterleitung?
 - Wo werden Entscheidungen getroffen — in brain.py oder in den Modulen selbst?
 
+**2a-2)** Lies `main.py` komplett (**⚠️ 7000+ Zeilen, 200+ API-Endpoints — das ist KEIN einfacher Server!**). Verstehe:
+- **API-Endpunkte**: Welche Endpoints gibt es? (`/api/assistant/*`, `/api/ui/*`, `/api/workshop/*`)
+- **Boot-Sequenz**: `_boot_announcement()` — Wie kündigt sich Jarvis nach dem Start an?
+- **Authentifizierung**: API-Key Middleware, PIN-Auth, Rate Limiting
+- **Sicherheits-Endpoints**: Factory Reset, System Update/Restart, API-Key-Regeneration, Recovery Key
+- **Error/Activity Buffer**: Ring-Buffer mit Redis-Persistenz, Sensitive-Data-Redaction
+- **Workshop-System**: 80+ Endpoints für ein vollständiges Maker/Repair-Tool
+- **Dashboard-API**: Alle `/api/ui/*` Endpoints für Entity-, Cover-, Szenen-, Zeitplan-Management
+- **WebSocket Streaming**: `emit_stream_start/token/end` für Echtzeit-Antworten
+- **File-Upload**: Verarbeitung mit OCR und Text-Extraktion
+- **Prometheus Metrics**: `/metrics` Endpoint
+- **Health/Readiness Probes**: `/healthz`, `/readyz`
+
+> ⚠️ **main.py ist möglicherweise ein zweites God-Object** neben brain.py. Es enthält nicht nur Routing sondern signifikante Business-Logik.
+
 **2b)** Lies `addon/rootfs/opt/mindhome/app.py` und `event_bus.py`. Verstehe:
 - Wie kommuniziert der Addon mit Home Assistant?
 - Hat der Addon seinen **eigenen** Event-Bus?
@@ -273,6 +288,7 @@ Prüfe den **Eingangs-Flow** vor brain.py:
 Bewerte mit konkreten Code-Referenzen:
 
 1. **Ist brain.py ein God-Object?** Wenn ja — wäre Event-Bus, Pipeline oder Mediator-Pattern besser?
+1b. **Ist main.py ein zweites God-Object?** 7000+ Zeilen, 200+ Endpoints, Boot-Logik, Auth, Workshop, Dashboard — gehört Logik hier oder in Module?
 2. **Gibt es zirkuläre Abhängigkeiten** zwischen Modulen?
 3. **Fehlt ein zentraler State-Manager?** Wer hält den "aktuellen Zustand" von Jarvis?
 4. **Ist die Modul-Granularität richtig?** Sollten manche Module zusammengelegt werden?

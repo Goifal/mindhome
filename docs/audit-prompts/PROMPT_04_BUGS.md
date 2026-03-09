@@ -189,12 +189,20 @@ Prüfe **besonders**:
 | # | Security-Check | Modul | Was prüfen |
 |---|---|---|---|
 | 1 | Prompt Injection | `context_builder.py` | Wird User-Input sanitized bevor er im System-Prompt landet? |
-| 2 | Input Validation | `main.py`, `websocket.py` | Werden API-Inputs validiert? |
+| 2 | Input Validation | `main.py`, `websocket.py` | Werden API-Inputs validiert? (**200+ Endpoints in main.py!**) |
 | 3 | HA-Auth | `ha_client.py` | Werden Credentials sicher gehandhabt? |
 | 4 | Function Call Safety | `function_calling.py`, `function_validator.py` | Können bösartige Tool-Calls ausgeführt werden? |
 | 5 | Self-Automation Safety | `self_automation.py` | Kann Jarvis gefährliche HA-Automationen generieren? |
 | 6 | Autonomy Limits | `autonomy.py` | Gibt es harte Grenzen für autonome Aktionen? |
 | 7 | Threat Assessment | `threat_assessment.py` | Funktioniert es? Wird es genutzt? |
+| 8 | **Factory Reset** | `main.py` | Ist `/api/ui/factory-reset` ausreichend geschützt? Wer kann es aufrufen? |
+| 9 | **System Update/Restart** | `main.py` | Sind `/api/ui/system/update` und `/restart` geschützt? Kann ein Angreifer das System übernehmen? |
+| 10 | **API-Key Management** | `main.py` | Ist `/api/ui/api-key/regenerate` geschützt? Recovery-Key-Logik sicher? |
+| 11 | **PIN-Auth** | `main.py` | Ist die PIN-Authentifizierung (`/api/ui/auth`) sicher? Brute-Force-Schutz? |
+| 12 | **File Upload** | `main.py`, `file_handler.py`, `ocr.py` | Path Traversal, Injection über Dateinamen, Dateigröße, MIME-Type? |
+| 13 | **Workshop Hardware-Steuerung** | `main.py` | Sind `/api/workshop/arm/*` (Roboter-Arm) und `/api/workshop/printer/*` (3D-Drucker) Trust-Level-geschützt? |
+| 14 | **Sensitive Data in Logs** | `main.py` | Werden API-Keys/Tokens in Error/Activity Buffer redacted? |
+| 15 | **WebSearch SSRF** | `web_search.py` | IP-Blocklist, DNS-Rebinding-Check, URL-Validierung |
 
 ## Resilience-Checks (NEU)
 

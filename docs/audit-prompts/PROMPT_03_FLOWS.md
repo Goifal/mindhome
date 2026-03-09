@@ -56,7 +56,7 @@ Dokumentiere die **exakte Init-Reihenfolge** mit Datei:Zeile.
 
 ---
 
-Verfolge die **9 kritischen Pfade** Zeile für Zeile durch den Code. Für jeden Pfad:
+Verfolge die **13 kritischen Pfade** Zeile für Zeile durch den Code. Für jeden Pfad:
 
 1. Dokumentiere **exakt** welche Funktionen in welcher Reihenfolge aufgerufen werden
 2. Finde **Bruchstellen** wo der Flow unterbrochen wird oder fehlschlägt
@@ -264,13 +264,91 @@ Analog für:
 - `smart_shopping.py` → Einkaufsliste
 - `calendar_intelligence.py` → Termine
 - `web_search.py` → Internet-Suche
-- `workshop_library.py` / `workshop_generator.py` → DIY-Projekte
 
 **Prüfe besonders**:
 - Werden Domain-Assistenten **korrekt geroutet**? Wer entscheidet welcher Assistent?
 - Gehen sie durch die **gleiche** Persönlichkeits-Pipeline?
 - Haben sie Zugriff auf **Memory** und **Kontext**?
 - Oder sind es isolierte Module die den Jarvis-Charakter verlieren?
+
+---
+
+### Flow 10: Workshop-System (NEU — Großes Sub-System!)
+
+> ⚠️ **Der Workshop ist ein eigenständiges Sub-System mit 80+ API-Endpoints in main.py!**
+
+```
+User: "Hilf mir beim Reparieren meiner Lampe" / Workshop-UI
+  → main.py: /api/workshop/* Endpoints (80+ Stück!)
+    → repair_planner.py: Projekt-Management, Schritt-Navigation, Diagnose
+    → workshop_generator.py: Code-Generierung (Arduino, Python, C++), 3D-Modelle (OpenSCAD), SVGs, BOMs
+    → workshop_library.py: Technische Referenz-Dokumentation (ChromaDB RAG)
+    → Kalkulationen: Widerstandsteiler, LED-Vorwiderstände, Ohm'sches Gesetz, 3D-Druck-Gewicht
+    → 3D-Drucker-Steuerung: Start/Pause/Cancel über HA
+    → Roboter-Arm-Steuerung: Move/Gripper/Home/Save-Position/Pick-Tool
+    → Tool-Lending: Werkzeug-Verleih-Tracking
+    → Inventar: Workshop-Bestandsverwaltung
+```
+
+**Prüfe besonders**:
+- Ist der Workshop **in brain.py integriert** oder ein **separates System in main.py**?
+- Geht der Workshop-Chat durch die **Persönlichkeits-Pipeline**? Oder ist es ein eigener LLM-Call?
+- 3D-Drucker- und Roboter-Arm-Steuerung: Über `ha_client.py` oder direkte API-Calls?
+- Sicherheit: Kann jeder User Roboter-Arme steuern? Trust-Level-Check?
+
+---
+
+### Flow 11: Boot-Sequenz & Startup-Announcement (NEU)
+
+```
+Docker-Start → main.py: lifespan()
+  → brain.py: initialize() — Alle Module starten
+    → Redis, ChromaDB, Ollama Connections
+    → Health-Check aller Dependencies
+  → main.py: _boot_announcement()
+    → HA-States abfragen (Temperatur, offene Fenster/Türen)
+    → Zufällige Boot-Nachricht auswählen
+    → Fehlende Komponenten melden
+    → TTS-Ausgabe: "Alle Systeme online, Sir."
+```
+
+**Prüfe besonders**:
+- Was passiert wenn Dependencies beim Start fehlen? Startet Jarvis degraded oder crasht er?
+- Wird die Boot-Announcement durch die Persönlichkeits-Pipeline geleitet?
+- Wann ist Jarvis "bereit"? Gibt es einen Ready-Status?
+
+---
+
+### Flow 12: File-Upload & OCR (NEU)
+
+```
+User lädt Datei hoch (Bild, PDF, Dokument)
+  → main.py: /api/assistant/chat/upload
+    → file_handler.py: Validierung (50MB Limit, Typ-Check, Path-Traversal-Schutz)
+      → ocr.py: Text-Extraktion (Tesseract) + optionale Vision-LLM-Beschreibung
+        → brain.py: Chat mit Datei-Kontext
+```
+
+**Prüfe besonders**:
+- Sicherheit: Path Traversal, Injection über Dateinamen?
+- Wird der extrahierte Text ins LLM-Context-Window passen (4000 char Limit)?
+
+---
+
+### Flow 13: WebSocket-Streaming (NEU)
+
+```
+Client verbindet sich → main.py: /api/assistant/ws
+  → WebSocket-Manager: Client registrieren
+    → Events empfangen: thinking, speaking, action, proactive, sound, audio
+    → Streaming: emit_stream_start → emit_stream_token (Token für Token) → emit_stream_end
+    → Bidirektionale Kommunikation
+```
+
+**Prüfe besonders**:
+- Reconnection-Handling wenn WebSocket abbricht?
+- Werden alle Antwort-Pfade (normal, proaktiv, routine) über WebSocket gestreamt?
+- Backpressure: Was wenn der Client nicht schnell genug konsumiert?
 
 ---
 
@@ -296,7 +374,7 @@ Prüfe diese **Gleichzeitigkeits-Szenarien**:
 
 ### 1. Flow-Dokumentation
 
-Für jeden der 9 Flows:
+Für jeden der 13 Flows:
 ```
 ### Flow X: Name
 **Status**: ✅ Funktioniert / ⚠️ Teilweise / ❌ Kaputt / 🔍 Nicht verbunden
@@ -337,7 +415,7 @@ Top-5 Probleme, sortiert nach Impact, mit konkretem Fix-Vorschlag.
 
 ### Gründlichkeits-Pflicht
 
-> **Für JEDEN der 9 Flows: Öffne JEDE beteiligte Datei. Lies JEDE Funktion die aufgerufen wird. Folge JEDEM Funktionsaufruf bis zum Ende.**
+> **Für JEDEN der 13 Flows: Öffne JEDE beteiligte Datei. Lies JEDE Funktion die aufgerufen wird. Folge JEDEM Funktionsaufruf bis zum Ende.**
 >
 > "Zeile für Zeile" ist WÖRTLICH gemeint. Wenn du eine Funktion siehst (`await self.memory.load(...)`) — öffne `memory.py`, finde `load()`, lies was es tut, prüfe was es zurückgibt, prüfe ob der Aufrufer das Ergebnis korrekt verwendet.
 >
@@ -345,7 +423,7 @@ Top-5 Probleme, sortiert nach Impact, mit konkretem Fix-Vorschlag.
 
 - Folge dem Code **Zeile für Zeile** — keine Annahmen
 - Jede Aussage mit **Datei:Zeile** belegen
-- **Alle 9 Flows** prüfen — die neuen (7, 8, 9) sind genauso wichtig
+- **Alle 13 Flows** prüfen — die neuen (7–13) sind genauso wichtig
 - Fokus auf **Bruchstellen und Kollisionen** — nicht auf Code-Stil
 - Wenn ein Flow komplett fehlt (z.B. keine Queue): Dokumentiere es als Feature-Gap
 - **Addon-Kollisionen** besonders beachten — das ist der blinde Fleck des Projekts
