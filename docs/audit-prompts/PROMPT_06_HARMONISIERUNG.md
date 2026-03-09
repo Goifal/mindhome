@@ -192,6 +192,10 @@ Was konnte in diesem Durchlauf **nicht** gelöst werden und braucht einen weiter
 
 ## Regeln
 
+### Gründlichkeits-Pflicht
+
+> **Jeder Fix muss VERIFIZIERT sein.** Öffne die Datei, mache die Änderung, lies den umgebenden Code, stelle sicher dass der Fix keine neuen Probleme einführt. Prüfe alle Aufrufer der geänderten Funktion.
+
 - **Einfach > Komplex** — Wenn ein simpler Fix reicht, kein Refactoring nötig
 - **Nicht alles auf einmal** — Lieber 10 solide Fixes als 30 hastige
 - **Reihenfolge einhalten** — Stabilität vor Features vor Feinschliff

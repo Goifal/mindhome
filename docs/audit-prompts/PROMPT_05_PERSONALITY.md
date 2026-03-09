@@ -164,6 +164,10 @@ Konkreter Vorschlag für einen verbesserten `SYSTEM_PROMPT_TEMPLATE` (oder Teile
 
 ## Regeln
 
+### Gründlichkeits-Pflicht
+
+> **Lies `personality.py` KOMPLETT — jede Funktion, jede Konstante, jedes Template.** Lies `context_builder.py` KOMPLETT. Lies JEDE YAML-Config-Datei Zeile für Zeile. Prüfe ob JEDER Config-Wert im Code genutzt wird.
+
 - **MCU-Jarvis ist der Maßstab** — nicht "was klingt nett", sondern "was würde Jarvis sagen"
 - Jede Kritik mit **konkretem Verbesserungsvorschlag**
 - System-Prompt-Änderungen: **Token-Budget beachten** — kürzer ist oft besser

@@ -24,6 +24,12 @@ Du kennst **J.A.R.V.I.S. aus dem MCU** als Goldstandard:
 
 ---
 
+## ⚠️ Arbeitsumgebung: GitHub-Repository
+
+Du arbeitest mit dem **GitHub-Quellcode**, nicht mit einem laufenden System. Redis, ChromaDB und Ollama sind nicht verfügbar. Du musst ALLES aus dem Code herauslesen — jede Zeile, jeden Funktionsaufruf, jeden Key-Namen, jeden TTL-Wert.
+
+---
+
 ## Das Problem
 
 Jarvis merkt sich **keine Gespräche**. Trotz eines 3-Tier Memory Systems (Redis Working Memory, ChromaDB Episodic, Semantic Facts) funktioniert die Erinnerung nicht.
@@ -81,6 +87,26 @@ Bevor du den Datenfluss verfolgst: Lies **jedes** der 12 Module und erstelle ein
 | `context_builder.py` | ? | ? | ? |
 
 **Ziel**: Verstehen ob es einen kohärenten Memory-Stack gibt oder 12 isolierte Systeme.
+
+### Schritt 2b — Datenbank-Schemas aus dem Code extrahieren
+
+**Redis**: Durchsuche ALLE Module nach Redis-Aufrufen und dokumentiere:
+
+| Key-Pattern | Modul | Operation (SET/GET/DEL) | TTL | Datenformat |
+|---|---|---|---|---|
+| ? | memory.py | ? | ? | ? |
+| ? | ... | ? | ? | ? |
+
+**ChromaDB**: Durchsuche ALLE Module nach ChromaDB-Aufrufen und dokumentiere:
+
+| Collection-Name | Modul | Operation (add/query/delete) | Embedding-Modell | Metadaten-Schema |
+|---|---|---|---|---|
+| ? | semantic_memory.py | ? | ? | ? |
+| ? | ... | ? | ? | ? |
+
+**SQLite** (falls vorhanden): Welche Tabellen? Welches Schema?
+
+> **Wichtig**: Nur was im Code steht. Suche nach `redis`, `chroma`, `sqlite`, `db.` in allen Modulen.
 
 ### Schritt 3 — Kompletten Memory-Datenfluss verfolgen
 
@@ -225,6 +251,12 @@ Für jeden Memory-Bug:
 ---
 
 ## Regeln
+
+### Gründlichkeits-Pflicht
+
+> **Öffne JEDE der 12 Memory-Dateien. Lies JEDE Funktion. Folge JEDEM Aufruf.**
+>
+> Wenn du schreibst "wird aufgerufen" — zeige die Zeile. Wenn du schreibst "wird nicht aufgerufen" — beweise es (grep/Suche). Keine Vermutungen.
 
 - **Nur Memory** in diesem Prompt — keine anderen Bugs jagen
 - Folge dem Code, nicht der Dokumentation

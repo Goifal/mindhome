@@ -17,6 +17,18 @@ Du kennst **J.A.R.V.I.S. aus dem MCU** in- und auswendig und nutzt ihn als Golds
 
 ---
 
+## ⚠️ Arbeitsumgebung: GitHub-Repository
+
+Du arbeitest mit dem **GitHub-Quellcode**, NICHT mit einem laufenden System. Das bedeutet:
+- **Keine `.env`-Datei vorhanden** — nur `.env.example`. Prüfe welche Variablen erwartet werden und ob der Code mit fehlenden Werten umgeht.
+- **Keine HA-Tokens, keine Secrets** — prüfe ob der Code graceful damit umgeht wenn Credentials fehlen.
+- **Kein laufendes Redis/ChromaDB/Ollama** — du kannst nur den Code lesen, nicht testen. Umso wichtiger: **Lies jede Zeile**.
+- **Prüfe `.env.example`** — Sind alle nötigen Variablen dokumentiert? Fehlen welche?
+
+**Konsequenz**: Du musst ALLES aus dem Code herauslesen. Keine Annahmen. Keine "das wird schon laufen". Folge jedem Funktionsaufruf bis zum Ende.
+
+---
+
 ## Kontext
 
 Jarvis ist ein lokaler KI-Butler für Home Assistant. Das Projekt besteht aus **drei Services** die zusammenarbeiten:
@@ -205,14 +217,41 @@ Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
 | Können Addon-Automationen die Assistant-Logik unterlaufen? | ? | ? |
 | Nutzen beide denselben Redis? | ? | ? |
 
-### Schritt 4 — Vorverarbeitung verstehen
+### Schritt 4 — Vollständiger Verdrahtungs-Graph
+
+**KRITISCH**: Erstelle eine **vollständige Import-Karte** aller Module. Nicht nur Memory — ALLE.
+
+Für **jedes** der 89 Assistant-Module:
+1. Öffne die Datei
+2. Lies **alle Imports** aus dem Projekt (ignoriere Standardlib/Drittanbieter)
+3. Dokumentiere: Wer importiert wen?
+
+Erstelle eine **Verdrahtungs-Tabelle**:
+
+| Modul | Importiert diese Projekt-Module | Wird importiert von |
+|---|---|---|
+| `brain.py` | ? (Liste ALLE) | ? |
+| `main.py` | ? | ? |
+| `personality.py` | ? | ? |
+| ... für JEDES Modul ... | ... | ... |
+
+**Finde damit**:
+- **Verwaiste Module** — Dateien die von NIEMANDEM importiert werden (Dead Code?)
+- **Zirkuläre Abhängigkeiten** — A importiert B, B importiert A
+- **God-Object-Indikatoren** — Module die von >10 anderen importiert werden
+- **Isolierte Inseln** — Gruppen von Modulen die keine Verbindung zu anderen haben
+- **Fehlende Verbindungen** — Module die EIGENTLICH zusammenarbeiten sollten aber sich nicht kennen
+
+> **Wichtig**: Nicht raten. Öffne JEDE Datei und lies die Import-Zeilen. Nur so findest du die echte Verdrahtung.
+
+### Schritt 5 — Vorverarbeitung verstehen
 
 Prüfe den **Eingangs-Flow** vor brain.py:
 - `pre_classifier.py` — Wie wird der Intent **vor** dem LLM klassifiziert?
 - `request_context.py` — Welcher Kontext wird pro Request aufgebaut?
 - Werden diese Ergebnisse in brain.py korrekt genutzt?
 
-### Schritt 5 — Architektur bewerten
+### Schritt 6 — Architektur bewerten
 
 Bewerte mit konkreten Code-Referenzen:
 
@@ -261,9 +300,24 @@ Wie kommunizieren die Services? Dokumentiere jeden Kanal.
 
 Die Tabellen aus Schritt 3, vollständig mit Code-Referenzen.
 
+### 5. Verdrahtungs-Graph (ausgefüllt)
+
+Die vollständige Import-Tabelle aus Schritt 4 mit verwaisten Modulen, Zyklen und fehlenden Verbindungen.
+
 ---
 
 ## Regeln
+
+### Gründlichkeits-Pflicht
+
+> **KEINE Abkürzungen. KEINE Annahmen. KEIN "das wird schon funktionieren".**
+>
+> Für jede Aussage die du machst:
+> - Hast du die Datei **tatsächlich geöffnet und gelesen**?
+> - Hast du die Funktion **bis zur letzten Zeile** verfolgt?
+> - Hast du geprüft **wer diese Funktion aufruft** und **mit welchen Parametern**?
+>
+> Wenn du bei einer Frage unsicher bist — öffne die Datei und lies nach. Lieber zu gründlich als ein Problem übersehen.
 
 - Lies den Code **selbst** — vertraue der Dokumentation nicht blind
 - **Addon-Layer NICHT vergessen** — er ist genauso wichtig wie der Assistant
@@ -271,6 +325,7 @@ Die Tabellen aus Schritt 3, vollständig mit Code-Referenzen.
 - Wenn du einen Konflikt findest: Datei + Zeile + was genau passiert
 - Bewerte: **Ist die Architektur selbst das Problem**, oder nur die Implementierung?
 - Denke als MCU-Jarvis-Fan: Würde der echte Jarvis so funktionieren?
+- **Verdrahtungs-Graph ist Pflicht** — nicht optional. Jedes Modul, jeder Import.
 
 ---
 

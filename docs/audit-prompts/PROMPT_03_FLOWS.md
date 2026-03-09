@@ -16,7 +16,45 @@ Du bist ein Elite-Software-Architekt mit tiefem Wissen in AsyncIO, FastAPI, Flas
 
 ---
 
+## ⚠️ Arbeitsumgebung: GitHub-Repository
+
+Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Folge jedem Funktionsaufruf bis zur letzten Zeile. Keine Annahmen. Wenn du nicht sicher bist was eine Funktion tut — **öffne die Datei und lies sie**.
+
+---
+
 ## Aufgabe
+
+### Vorab: Init-Sequenz und System-Prompt
+
+**BEVOR du die Flows verfolgst**, kläre diese zwei fundamentalen Fragen:
+
+#### A) Init-Sequenz: Wie startet Jarvis?
+
+Verfolge den **kompletten Startup** von `main.py`:
+```
+main.py startet
+  → Welche Module werden in welcher Reihenfolge initialisiert?
+  → Welche brauchen Verbindungen (Redis, ChromaDB, Ollama, HA)?
+  → Was passiert wenn eine Verbindung beim Start fehlt?
+  → Gibt es eine Health-Check-Phase?
+  → Wann ist Jarvis "bereit"?
+```
+
+Dokumentiere die **exakte Init-Reihenfolge** mit Datei:Zeile.
+
+#### B) Der exakte LLM-Prompt: Was geht an Ollama?
+
+**DAS ist das Wichtigste im ganzen System.** Verfolge in `context_builder.py` und `brain.py`:
+1. Wie wird der **System-Prompt** zusammengebaut? (Zeige den Template-String!)
+2. Welche **dynamischen Teile** werden eingefügt? (Memory, Personality, Situation, Tools...)
+3. In welcher **Reihenfolge** werden die Teile zusammengesetzt?
+4. Wie sieht das **Messages-Array** aus das an Ollama geht? (System + User + Assistant + Tool?)
+5. Wie viele **Token** verbraucht der Kontext typischerweise?
+6. Was passiert wenn der Kontext das **Context-Window übersteigt**? Wird gekürzt? Was wird zuerst entfernt?
+
+**Zeige den rekonstruierten System-Prompt** — den Text den Ollama tatsächlich sieht.
+
+---
 
 Verfolge die **9 kritischen Pfade** Zeile für Zeile durch den Code. Für jeden Pfad:
 
@@ -272,19 +310,35 @@ Für jeden der 9 Flows:
 - Flow X kollidiert mit Flow Y bei [Beschreibung]
 ```
 
-### 2. Kollisions-Tabelle (ausgefüllt)
+### 2. Init-Sequenz (komplett)
 
-### 3. Service-Interaktions-Analyse
+Alle Module in exakter Startup-Reihenfolge mit Datei:Zeile.
+
+### 3. Der rekonstruierte System-Prompt
+
+Der **vollständige Text** den Ollama als System-Prompt erhält, mit Markierungen welcher Teil aus welchem Modul kommt.
+
+### 4. Kollisions-Tabelle (ausgefüllt)
+
+### 5. Service-Interaktions-Analyse
 
 Wie kommunizieren die drei Services (Assistant, Addon, Speech) in jedem Flow?
 
-### 4. Kritische Findings
+### 6. Kritische Findings
 
 Top-5 Probleme, sortiert nach Impact, mit konkretem Fix-Vorschlag.
 
 ---
 
 ## Regeln
+
+### Gründlichkeits-Pflicht
+
+> **Für JEDEN der 9 Flows: Öffne JEDE beteiligte Datei. Lies JEDE Funktion die aufgerufen wird. Folge JEDEM Funktionsaufruf bis zum Ende.**
+>
+> "Zeile für Zeile" ist WÖRTLICH gemeint. Wenn du eine Funktion siehst (`await self.memory.load(...)`) — öffne `memory.py`, finde `load()`, lies was es tut, prüfe was es zurückgibt, prüfe ob der Aufrufer das Ergebnis korrekt verwendet.
+>
+> Der Init-Sequenz und der System-Prompt sind **Pflicht-Output**, nicht optional.
 
 - Folge dem Code **Zeile für Zeile** — keine Annahmen
 - Jede Aussage mit **Datei:Zeile** belegen
@@ -302,6 +356,12 @@ Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 
 
 ```
 ## KONTEXT AUS PROMPT 3: Flow-Analyse
+
+### Init-Sequenz
+[Exakte Startup-Reihenfolge mit Datei:Zeile]
+
+### System-Prompt (rekonstruiert)
+[Der vollständige Text den Ollama als System-Prompt bekommt — oder zumindest die Struktur]
 
 ### Flow-Status-Übersicht
 | Flow | Status | Kritischste Bruchstelle |

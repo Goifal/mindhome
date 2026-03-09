@@ -62,6 +62,18 @@ Dazu: 105 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen.
 | Tests (105 Dateien) | - | - | - | - | - | - | ✅ |
 | Docker / Deployment | - | - | - | - | - | - | ✅ |
 
+## Wichtige Rahmenbedingungen
+
+### GitHub-Repository, kein laufendes System
+Der Code liegt auf GitHub. Es gibt kein laufendes Redis, ChromaDB, Ollama oder Home Assistant. `.env` fehlt (nur `.env.example`). Das LLM muss **alles aus dem Code herauslesen** — keine Annahmen, keine "das wird schon funktionieren".
+
+### Gründlichkeits-Pflicht
+Jeder Prompt enthält eine **Gründlichkeits-Pflicht**:
+- **Jede Datei öffnen und lesen** — nicht raten was drin steht
+- **Jeden Funktionsaufruf bis zum Ende verfolgen** — nicht bei der ersten Ebene aufhören
+- **Jede Aussage mit Code-Referenz belegen** — Datei:Zeile oder es zählt nicht
+- **Kein Modul überspringen** — auch wenn es "unwichtig" aussieht
+
 ## Gemeinsame Rolle
 
 Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Die Rolle wird in jedem Prompt wiederholt, damit sie auch einzeln funktionieren.

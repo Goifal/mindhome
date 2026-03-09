@@ -239,7 +239,17 @@ Top-5 Verbesserungen für Stabilität und Zuverlässigkeit im Produktionsbetrieb
 
 ---
 
+## ⚠️ Arbeitsumgebung: GitHub-Repository
+
+Du arbeitest mit dem Quellcode. Docker-Builds und pytest können ggf. nicht ausgeführt werden wenn Dependencies fehlen. Analysiere dann den Code statisch — lies Dockerfiles Zeile für Zeile, lies Tests Zeile für Zeile, simuliere gedanklich was passiert.
+
+---
+
 ## Regeln
+
+### Gründlichkeits-Pflicht
+
+> **Lies JEDEN Dockerfile Zeile für Zeile. Lies JEDEN fehlgeschlagenen Test und verstehe WARUM er fehlschlägt. Lies JEDES install/update Script.**
 
 - **Tests MÜSSEN laufen** — nicht nur lesen, sondern ausführen
 - **Fehlgeschlagene Tests analysieren** — ist der Test falsch oder der Code?

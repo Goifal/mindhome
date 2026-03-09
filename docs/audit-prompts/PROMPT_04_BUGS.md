@@ -6,6 +6,12 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Flask, Redis,
 
 ---
 
+## ⚠️ Arbeitsumgebung: GitHub-Repository
+
+Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wie der Code mit fehlenden `.env`-Werten, fehlenden Credentials und nicht-erreichbaren Services umgeht.
+
+---
+
 ## Kontext aus vorherigen Prompts
 
 > **Wenn du Prompts 1–3 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
@@ -251,10 +257,18 @@ Module oder Funktionen die existieren aber **nie aufgerufen** werden.
 
 ## Regeln
 
+### Gründlichkeits-Pflicht
+
+> **Öffne JEDES Modul in der Prioritätsliste. KEIN Modul überspringen.**
+>
+> Für jedes Modul: Öffne die Datei, lies die Klasse/Funktionen, prüfe jeden `try/except`, jeden `await`, jeden Dict/List-Zugriff, jede API-Call. Wenn du ein Modul nicht geprüft hast, dokumentiere WARUM.
+>
+> Ein übersehener kritischer Bug kann das ganze System zum Absturz bringen. Lieber langsam und gründlich als schnell und oberflächlich.
+
 - **Jeder Bug mit Code-Referenz** (Datei:Zeile)
 - **Keine false positives** — nur echte Bugs, keine Style-Issues
 - **Nicht fixen in diesem Prompt** — nur finden und dokumentieren (Fixes kommen in Prompt 6)
-- Priorität 1–4 Module **komplett** prüfen — ab Priorität 5 nach Zeitbudget
+- **ALLE Module prüfen** — Priorität 1–4 besonders gründlich, aber KEIN Modul überspringen. Jedes Modul mindestens auf die Top-5 Fehlerklassen (Async, Stille Fehler, Race Conditions, None, Init) checken
 - **Async-Fehler haben höchste Aufmerksamkeit** — häufigste Ursache für "funktioniert manchmal"
 - **Security-Bugs sind immer 🔴 KRITISCH**
 - **Addon-Module NICHT vergessen** — sie haben eigene Bugs und eigene HA-Integration
