@@ -12,7 +12,7 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du ha
 >
 > **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
 > - Prompt 2: Memory-Diagnose & Root Cause (inkl. alle 12 Memory-Module)
-> - Prompt 4: Bug-Report — **nur die 🔴 KRITISCHEN Bugs**
+> - Prompt 4 gesamt (4a + 4b + 4c): Bug-Report — **nur die 🔴 KRITISCHEN Bugs**
 
 ---
 

@@ -1,6 +1,6 @@
 # Jarvis Audit — Prompt-Serie (Übersicht)
 
-Diese **10 Prompts** sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu werden. Jeder Prompt ist fokussiert auf ein Thema und liefert als Output den Input für den nächsten.
+Diese **16 Prompts** sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu werden. Jeder Prompt ist fokussiert auf ein Thema und liefert als Output den Input für den nächsten.
 
 > **Für einen weiteren Durchlauf**: Nutze `PROMPT_RESET.md` **vor** Prompt 1, um den Kontext sauber zurückzusetzen und die Ergebnisse des vorherigen Durchlaufs als Vergleichsbasis zu sichern.
 
@@ -23,15 +23,19 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 |---|---|---|---|
 | 1 | `PROMPT_01_ARCHITEKTUR.md` | Architektur, Modul-Konflikte, **3-Service-Interaktion** | Keine — Startpunkt |
 | 2 | `PROMPT_02_MEMORY.md` | Memory-System End-to-End (**alle 12 Module**) | Nutzt Konflikt-Karte aus #1 |
-| 3 | `PROMPT_03_FLOWS.md` | **13 kritische Pfade** inkl. Speech, Addon, Domain-Assistenten | Nutzt Ergebnisse aus #1 + #2 |
-| 4 | `PROMPT_04_BUGS.md` | Systematische Bug-Jagd (**155 Module**, Security, Resilience, **Performance**) | Nutzt Architektur-Verständnis aus #1–#3 |
-| 5 | `PROMPT_05_PERSONALITY.md` | Persönlichkeit, Config, MCU-Authentizität | Nutzt Bug-Liste aus #4 |
-| 6a | `PROMPT_06a_STABILISIERUNG.md` | **Kritische Bugs fixen** + **Memory reparieren** | 🔴 Bugs aus #4 + Memory-Fix aus #2 |
-| 6b | `PROMPT_06b_ARCHITEKTUR.md` | **Architektur-Entscheidungen** + Konflikte + Flows + **Performance** | Konflikte aus #1 + Flows aus #3 |
-| 6c | `PROMPT_06c_CHARAKTER.md` | **Persönlichkeit harmonisieren** + Config + 🟡 Bugs + Dead Code | Personality aus #5 + Bugs aus #4 |
-| 6d | `PROMPT_06d_HAERTUNG.md` | **Security** + **Resilience** + **Addon-Koordination** | Security/Resilience aus #4 + Konflikt F aus #1 |
-| 7 | `PROMPT_07_TESTING_DEPLOYMENT.md` | Tests, Docker, **Performance-Verifikation**, Resilience | Verifiziert die Fixes aus #6a–6d |
-| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #7, vor erneutem #1 |
+| 3a | `PROMPT_03a_FLOWS_CORE.md` | Init-Sequenz, System-Prompt, **Core-Flows 1–7** | Nutzt Ergebnisse aus #1 + #2 |
+| 3b | `PROMPT_03b_FLOWS_EXTENDED.md` | **Extended-Flows 8–13** + Flow-Kollisionen | Nutzt Ergebnisse aus #3a |
+| 4a | `PROMPT_04a_BUGS_CORE.md` | Bug-Jagd: **Core-Module** (Prio 1–4, ~26 Module) | Nutzt Architektur aus #1–#3b |
+| 4b | `PROMPT_04b_BUGS_EXTENDED.md` | Bug-Jagd: **Extended-Module** (Prio 5–9, ~52 Module) | Nutzt Patterns aus #4a |
+| 4c | `PROMPT_04c_BUGS_ADDON_SECURITY.md` | Bug-Jagd: **Addon + Security + Performance** (Prio 10–12) | Nutzt Findings aus #4a + #4b |
+| 5 | `PROMPT_05_PERSONALITY.md` | Persönlichkeit, Config, MCU-Authentizität | Nutzt Bug-Liste aus #4a–4c |
+| 6a | `PROMPT_06a_STABILISIERUNG.md` | **Kritische Bugs fixen** + **Memory reparieren** | 🔴 Bugs aus #4a–4c + Memory-Fix aus #2 |
+| 6b | `PROMPT_06b_ARCHITEKTUR.md` | **Architektur-Entscheidungen** + Konflikte + Flows + **Performance** | Konflikte aus #1 + Flows aus #3a/3b |
+| 6c | `PROMPT_06c_CHARAKTER.md` | **Persönlichkeit harmonisieren** + Config + 🟡 Bugs + Dead Code | Personality aus #5 + Bugs aus #4a–4c |
+| 6d | `PROMPT_06d_HAERTUNG.md` | **Security** + **Resilience** + **Addon-Koordination** | Security aus #4c + Konflikt F aus #1 |
+| 7a | `PROMPT_07a_TESTING.md` | Tests + Coverage + **Security-Endpoint-Tests** | Verifiziert Fixes aus #6a–6d |
+| 7b | `PROMPT_07b_DEPLOYMENT.md` | Docker + Deployment + **Resilience** + **Performance** | Nutzt Test-Ergebnisse aus #7a |
+| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #7b, vor erneutem #1 |
 
 ## Wie verwenden
 
@@ -101,26 +105,26 @@ Wenn ein Prompt sagt "Implementiere den Fix":
 
 ## Was jeder Prompt abdeckt
 
-| Aspekt | P1 | P2 | P3 | P4 | P5 | P6a | P6b | P6c | P6d | P7 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Addon-Module | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | - | ✅ | ✅ |
-| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | - | - | - | ✅ |
-| Speech-Service | ✅ | - | ✅ | ✅ | - | - | - | - | - | ✅ |
-| Architektur | ✅ | - | - | - | - | - | ✅ | - | - | - |
-| Memory (12 Module) | - | ✅ | ✅ | ✅ | - | ✅ | - | - | - | ✅ |
-| Flows (13 Pfade) | - | - | ✅ | - | - | - | ✅ | - | - | ✅ |
-| Bug-Jagd (13 Klassen) | - | - | - | ✅ | - | ✅ | ✅ | ✅ | ✅ | - |
-| **Performance & Latenz** | - | - | - | ✅ | - | - | ✅ | - | - | ✅ |
-| Security | - | - | - | ✅ | - | - | - | - | ✅ | ✅ |
-| Resilience | - | - | - | ✅ | - | - | - | - | ✅ | ✅ |
-| Persönlichkeit / MCU | ✅ | - | ✅ | - | ✅ | - | - | ✅ | - | - |
-| Config / YAML | - | - | - | ✅ | ✅ | - | - | ✅ | - | - |
-| Tests (103 Dateien) | - | - | - | - | - | - | - | - | - | ✅ |
-| Docker / Deployment | - | - | - | - | - | - | - | - | - | ✅ |
-| Frontend (app.jsx, app.js) | - | - | - | ✅ | - | - | - | - | ✅ | ✅ |
-| Dependencies (requirements.txt) | - | - | - | ✅ | - | - | - | - | - | ✅ |
-| Translations / Manifests | - | - | - | - | ✅ | - | - | - | - | - |
+| Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P6a | P6b | P6c | P6d | P7a | P7b |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Addon-Module | ✅ | ✅ | - | ✅ | - | - | ✅ | ✅ | - | - | - | ✅ | - | ✅ |
+| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | ✅ | - | - | - | - | - | - | ✅ |
+| Speech-Service | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | - | ✅ |
+| Architektur | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | - |
+| Memory (12 Module) | - | ✅ | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | ✅ | - |
+| Flows (13 Pfade) | - | - | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | ✅ |
+| Bug-Jagd (13 Klassen) | - | - | - | - | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | - | - |
+| **Performance & Latenz** | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - | ✅ |
+| Security | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | ✅ | - |
+| Resilience | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | ✅ |
+| Persönlichkeit / MCU | ✅ | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | - |
+| Config / YAML | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - |
+| Tests (103 Dateien) | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - |
+| Docker / Deployment | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ |
+| Frontend (app.jsx, app.js) | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | ✅ |
+| Dependencies (requirements.txt) | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ |
+| Translations / Manifests | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - |
 
 ## Wichtige Rahmenbedingungen
 
@@ -139,7 +143,7 @@ Jeder Prompt generiert am Ende einen **Kontext-Block** für den nächsten Prompt
 - **Code-Referenzen kompakt**: `brain.py:123` statt langer Erklärungen
 - Bei Bug-Listen: Nur 🔴 und 🟠 Bugs im Kontext-Block, 🟡/🟢 nur als Zähler
 
-> **⚠️ Akkumulation**: Bei 9 Kontext-Blöcken á 50 Zeilen sind das ~450 Zeilen (~3.000 Tokens) nur für Kontext. Plus die Prompt-Instruktionen (~3.000 Tokens pro Prompt) = ~6.000 Tokens bevor die eigentliche Arbeit beginnt. **Ab Prompt 5–6 wird es eng** — erwäge dann separate Sessions (Option B) oder kürze ältere Kontext-Blöcke auf das absolute Minimum.
+> **⚠️ Akkumulation**: Bei 15 Kontext-Blöcken á 30–50 Zeilen können das ~400 Zeilen (~3.000 Tokens) nur für Kontext sein. Dank der Aufteilung in kleinere Prompts (~1.500 Tokens statt ~3.900) bleibt aber mehr Platz für die eigentliche Arbeit. **Ab Prompt 6a–6d wird es eng** — erwäge dann separate Sessions (Option B) oder kürze ältere Kontext-Blöcke auf das absolute Minimum.
 
 ### Gründlichkeits-Pflicht
 Jeder Prompt enthält eine **Gründlichkeits-Pflicht**:
@@ -154,15 +158,19 @@ Jeder Prompt enthält eine **Gründlichkeits-Pflicht**:
 
 Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Die Rolle wird in jedem Prompt wiederholt, damit sie auch einzeln funktionieren.
 
-## Erwarteter Gesamt-Output nach allen 10 Prompts
+## Erwarteter Gesamt-Output nach allen 16 Prompts
 
 1. **Konflikt-Karte** — Welche Module gegeneinander arbeiten (inkl. Addon ↔ Assistant)
 2. **Memory-Diagnose** — Warum Jarvis vergisst + Fix
-3. **Flow-Dokumentation** — 13 Pfade mit allen Bruchstellen
-4. **Bug-Report** — Alle Bugs mit Severity, Security-, Resilience- und **Performance**-Analyse
+3a. **Core-Flows** — Flows 1–7 mit Init-Sequenz und System-Prompt
+3b. **Extended-Flows** — Flows 8–13 mit Kollisionen
+4a. **Core-Bug-Report** — Bugs in brain.py, main.py, memory, context, actions
+4b. **Extended-Bug-Report** — Bugs in proaktiven Systemen, HA, audio, intelligence
+4c. **Addon/Security/Performance** — Addon-Bugs, Security-Audit, Latenz-Analyse
 5. **Persönlichkeits-Audit** — MCU-Score + Inkonsistenzen + Config-Probleme
 6a. **Stabilisierte Codebase** — Kritische Bugs gefixt, Memory repariert
 6b. **Optimierte Architektur** — Konflikte aufgelöst, Flows repariert, **Latenz optimiert**
 6c. **Harmonisierter Charakter** — Eine Stimme, saubere Config, Dead Code entfernt
 6d. **Gehärtetes System** — Security geschlossen, Resilience implementiert, Addon koordiniert
-7. **Verifizierung** — Tests bestehen, Docker läuft, **Performance gemessen**, Resilience getestet
+7a. **Test-Report** — Tests bestehen, Coverage-Lücken geschlossen, Security-Endpoints verifiziert
+7b. **Deployment-Report** — Docker läuft, **Performance gemessen**, Resilience getestet

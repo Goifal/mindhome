@@ -12,7 +12,7 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte mit Fo
 >
 > **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
 > - Prompt 1: Konflikt-Karte — **Konflikt F** (Assistant ↔ Addon Interaktion)
-> - Prompt 4: Bug-Report — **Security-Report** und **Resilience-Report**
+> - Prompt 4c: Bug-Report — **Security-Report** und **Resilience-Report**
 > - Prompt 6a–6c: Stabilisierungs-/Architektur-/Charakter-Ergebnisse
 
 ---

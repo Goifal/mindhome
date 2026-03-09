@@ -1,4 +1,4 @@
-# Prompt 3: End-to-End Flow-Analyse
+# Prompt 3a: End-to-End Flow-Analyse — Core-Flows (1–7)
 
 ## Rolle
 
@@ -25,6 +25,10 @@ Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Folge jedem Fu
 ---
 
 ## Aufgabe
+
+> **Dieser Prompt ist Teil 1 von 2** der Flow-Analyse:
+> - **P03a** (dieser): Vorab-Analyse (Init + System-Prompt) + Core-Flows 1–7
+> - **P03b**: Extended-Flows 8–13 + Flow-Kollisionen
 
 ### Vorab: Init-Sequenz und System-Prompt
 
@@ -55,14 +59,6 @@ Dokumentiere die **exakte Init-Reihenfolge** mit Datei:Zeile.
 6. Was passiert wenn der Kontext das **Context-Window übersteigt**? Wird gekürzt? Was wird zuerst entfernt?
 
 **Zeige den rekonstruierten System-Prompt** — den Text den Ollama tatsächlich sieht.
-
----
-
-Verfolge die **13 kritischen Pfade** Zeile für Zeile durch den Code. Für jeden Pfad:
-
-1. Dokumentiere **exakt** welche Funktionen in welcher Reihenfolge aufgerufen werden
-2. Finde **Bruchstellen** wo der Flow unterbrochen wird oder fehlschlägt
-3. Finde **Kollisionen** wo sich Pfade gegenseitig stören
 
 ---
 
@@ -230,153 +226,19 @@ Audio-Input (Mikrofon / ESPHome Satellite)
 
 ---
 
-### Flow 8: Addon-Automation (NEU — KRITISCH)
-
-```
-Addon erkennt ein Event / Pattern / Zeitplan
-  → addon/automation_engine.py oder addon/pattern_engine.py
-    → addon/event_bus.py: Event verteilen
-      → addon/domains/*.py: Aktion ausführen (z.B. Licht, Cover)
-        → addon/ha_connection.py: HA-API-Call
-```
-
-**Prüfe besonders**:
-- Nutzt der Addon die **Shared Schemas** (`shared/schemas/`) oder hat er eigene Request/Response-Definitionen?
-- Nutzt der Addon die **Shared Constants** (`shared/constants.py`) für Ports und Event-Namen?
-- Läuft dieser Flow **komplett unabhängig** vom Assistant?
-- Weiß der Assistant dass der Addon gerade eine Aktion ausführt?
-- Kann der Addon eine Entity steuern die der Assistant gerade AUCH steuert?
-- Nutzt der Addon dieselbe HA-Instanz? Gleiche Credentials?
-- Gibt es Addon-Engines (z.B. `circadian.py`, `cover_control.py`) die **dasselbe** tun wie Assistant-Module (`light_engine.py`, `cover_config.py`)?
-
----
-
-### Flow 9: Domain-Assistenten (NEU)
-
-```
-User: "Was kann ich heute kochen?"
-  → brain.py: Erkennt als Domain-spezifisch
-    → cooking_assistant.py / recipe_store.py
-      → Rezept-Suche / Inventar-Check (inventory.py)
-        → LLM: Antwort generieren
-```
-
-Analog für:
-- `music_dj.py` → Musik-Steuerung
-- `smart_shopping.py` → Einkaufsliste
-- `calendar_intelligence.py` → Termine
-- `web_search.py` → Internet-Suche
-
-**Prüfe besonders**:
-- Werden Domain-Assistenten **korrekt geroutet**? Wer entscheidet welcher Assistent?
-- Gehen sie durch die **gleiche** Persönlichkeits-Pipeline?
-- Haben sie Zugriff auf **Memory** und **Kontext**?
-- Oder sind es isolierte Module die den Jarvis-Charakter verlieren?
-
----
-
-### Flow 10: Workshop-System (NEU — Großes Sub-System!)
-
-> ⚠️ **Der Workshop ist ein eigenständiges Sub-System mit 80+ API-Endpoints in main.py!**
-
-```
-User: "Hilf mir beim Reparieren meiner Lampe" / Workshop-UI
-  → main.py: /api/workshop/* Endpoints (80+ Stück!)
-    → repair_planner.py: Projekt-Management, Schritt-Navigation, Diagnose
-    → workshop_generator.py: Code-Generierung (Arduino, Python, C++), 3D-Modelle (OpenSCAD), SVGs, BOMs
-    → workshop_library.py: Technische Referenz-Dokumentation (ChromaDB RAG)
-    → Kalkulationen: Widerstandsteiler, LED-Vorwiderstände, Ohm'sches Gesetz, 3D-Druck-Gewicht
-    → 3D-Drucker-Steuerung: Start/Pause/Cancel über HA
-    → Roboter-Arm-Steuerung: Move/Gripper/Home/Save-Position/Pick-Tool
-    → Tool-Lending: Werkzeug-Verleih-Tracking
-    → Inventar: Workshop-Bestandsverwaltung
-```
-
-**Prüfe besonders**:
-- Ist der Workshop **in brain.py integriert** oder ein **separates System in main.py**?
-- Geht der Workshop-Chat durch die **Persönlichkeits-Pipeline**? Oder ist es ein eigener LLM-Call?
-- 3D-Drucker- und Roboter-Arm-Steuerung: Über `ha_client.py` oder direkte API-Calls?
-- Sicherheit: Kann jeder User Roboter-Arme steuern? Trust-Level-Check?
-
----
-
-### Flow 11: Boot-Sequenz & Startup-Announcement (NEU)
-
-```
-Docker-Start → main.py: lifespan()
-  → brain.py: initialize() — Alle Module starten
-    → Redis, ChromaDB, Ollama Connections
-    → Health-Check aller Dependencies
-  → main.py: _boot_announcement()
-    → HA-States abfragen (Temperatur, offene Fenster/Türen)
-    → Zufällige Boot-Nachricht auswählen
-    → Fehlende Komponenten melden
-    → TTS-Ausgabe: "Alle Systeme online, Sir."
-```
-
-**Prüfe besonders**:
-- Was passiert wenn Dependencies beim Start fehlen? Startet Jarvis degraded oder crasht er?
-- Wird die Boot-Announcement durch die Persönlichkeits-Pipeline geleitet?
-- Wann ist Jarvis "bereit"? Gibt es einen Ready-Status?
-
----
-
-### Flow 12: File-Upload & OCR (NEU)
-
-```
-User lädt Datei hoch (Bild, PDF, Dokument)
-  → main.py: /api/assistant/chat/upload
-    → file_handler.py: Validierung (50MB Limit, Typ-Check, Path-Traversal-Schutz)
-      → ocr.py: Text-Extraktion (Tesseract) + optionale Vision-LLM-Beschreibung
-        → brain.py: Chat mit Datei-Kontext
-```
-
-**Prüfe besonders**:
-- Sicherheit: Path Traversal, Injection über Dateinamen?
-- Wird der extrahierte Text ins LLM-Context-Window passen (4000 char Limit)?
-
----
-
-### Flow 13: WebSocket-Streaming (NEU)
-
-```
-Client verbindet sich → main.py: /api/assistant/ws
-  → WebSocket-Manager: Client registrieren
-    → Events empfangen: thinking, speaking, action, proactive, sound, audio
-    → Streaming: emit_stream_start → emit_stream_token (Token für Token) → emit_stream_end
-    → Bidirektionale Kommunikation
-```
-
-**Prüfe besonders**:
-- Reconnection-Handling wenn WebSocket abbricht?
-- Werden alle Antwort-Pfade (normal, proaktiv, routine) über WebSocket gestreamt?
-- Backpressure: Was wenn der Client nicht schnell genug konsumiert?
-
----
-
-## Flow-Kollisionen
-
-Prüfe diese **Gleichzeitigkeits-Szenarien**:
-
-| Szenario | Was sollte passieren | Was passiert tatsächlich? | Code-Referenz |
-|---|---|---|---|
-| Proaktive Warnung während User spricht | Queue, nach Antwort ausspielen | ? | ? |
-| Morgen-Briefing während Konversation | Briefing verzögern oder ankündigen | ? | ? |
-| Zwei autonome Aktionen gleichzeitig | Priorisieren, eine zuerst | ? | ? |
-| Function Call + autonome Aktion | User-Aktion hat Vorrang | ? | ? |
-| Memory-Speicherung während nächster Request | Nicht blockieren, async | ? | ? |
-| **Addon-Automation + Assistant-Aktion** | Wer gewinnt? | ? | ? |
-| **Addon-Cover-Control + Assistant-Cover-Config** | Gleiche Rollläden? | ? | ? |
-| **Addon-Circadian + Assistant-Light-Engine** | Gleiche Lampen? | ? | ? |
-| **Speech in Raum A + Speech in Raum B** | Parallel oder sequentiell? | ? | ? |
-
----
-
 ## Output-Format
 
-### 1. Flow-Dokumentation
+### 1. Init-Sequenz (komplett)
 
-Für jeden der 13 Flows:
+Alle Module in exakter Startup-Reihenfolge mit Datei:Zeile.
+
+### 2. Der rekonstruierte System-Prompt
+
+Der **vollständige Text** den Ollama als System-Prompt erhält, mit Markierungen welcher Teil aus welchem Modul kommt.
+
+### 3. Flow-Dokumentation (Flows 1–7)
+
+Für jeden Flow:
 ```
 ### Flow X: Name
 **Status**: ✅ Funktioniert / ⚠️ Teilweise / ❌ Kaputt / 🔍 Nicht verbunden
@@ -393,23 +255,9 @@ Für jeden der 13 Flows:
 - Flow X kollidiert mit Flow Y bei [Beschreibung]
 ```
 
-### 2. Init-Sequenz (komplett)
+### 4. Kritische Findings
 
-Alle Module in exakter Startup-Reihenfolge mit Datei:Zeile.
-
-### 3. Der rekonstruierte System-Prompt
-
-Der **vollständige Text** den Ollama als System-Prompt erhält, mit Markierungen welcher Teil aus welchem Modul kommt.
-
-### 4. Kollisions-Tabelle (ausgefüllt)
-
-### 5. Service-Interaktions-Analyse
-
-Wie kommunizieren die drei Services (Assistant, Addon, Speech) in jedem Flow?
-
-### 6. Kritische Findings
-
-Top-5 Probleme, sortiert nach Impact, mit konkretem Fix-Vorschlag.
+Top-5 Probleme aus Flows 1–7, sortiert nach Impact.
 
 ---
 
@@ -417,13 +265,13 @@ Top-5 Probleme, sortiert nach Impact, mit konkretem Fix-Vorschlag.
 
 ### Gründlichkeits-Pflicht
 
-> **Für JEDEN der 13 Flows: Lies JEDE beteiligte Datei mit Read. Lies JEDE Funktion die aufgerufen wird. Folge JEDEM Funktionsaufruf bis zum Ende.**
+> **Für JEDEN der 7 Flows: Lies JEDE beteiligte Datei mit Read. Lies JEDE Funktion die aufgerufen wird. Folge JEDEM Funktionsaufruf bis zum Ende.**
 >
 > "Zeile für Zeile" ist WÖRTLICH gemeint. Wenn du eine Funktion siehst (`await self.memory.load(...)`) — lies `memory.py` mit Read, finde `load()`, lies was es tut, prüfe was es zurückgibt, prüfe ob der Aufrufer das Ergebnis korrekt verwendet.
 >
 > Der Init-Sequenz und der System-Prompt sind **Pflicht-Output**, nicht optional.
 
-### Claude Code Tool-Einsatz in diesem Prompt
+### Claude Code Tool-Einsatz
 
 | Aufgabe | Tool | Beispiel |
 |---|---|---|
@@ -431,33 +279,26 @@ Top-5 Probleme, sortiert nach Impact, mit konkretem Fix-Vorschlag.
 | Funktionsaufruf-Kette verfolgen | **Grep** → **Read** | Grep findet Aufrufer, Read zeigt Implementierung |
 | Init-Sequenz finden | **Read** `main.py` + **Grep** `pattern="async def.*(init|startup|lifespan)"` |
 | System-Prompt rekonstruieren | **Read** `context_builder.py` + `personality.py` |
-| Addon-Endpoints finden | **Grep** | `pattern="@.*route|@app\." path="addon/"` |
-| WebSocket-Events finden | **Grep** | `pattern="emit_stream|ws_send|websocket" path="assistant/"` |
 | Shared-Schema-Nutzung prüfen | **Grep** | `pattern="ChatRequest|ChatResponse|MindHomeEvent" path="."` |
-| Flow-Kollisionen aufdecken | **Grep** | `pattern="asyncio\.Lock|async with.*lock|Queue" path="assistant/"` |
 
-**Parallelisierung**: Die 13 Flows können teilweise **parallel analysiert** werden:
+**Parallelisierung**: Die 7 Core-Flows können teilweise **parallel analysiert** werden:
 - **Gruppe A** (parallel): Flow 1, 2, 3 (verschiedene Einstiegspunkte)
-- **Gruppe B** (parallel): Flow 7, 8, 9 (Speech, Addon, Domain — unabhängig)
-- **Gruppe C** (parallel): Flow 11, 12, 13 (Boot, Upload, WebSocket)
-- **Gruppe D** (sequentiell nach A): Flow 4, 5, 6, 10 (bauen auf Flow 1 auf)
+- **Gruppe B** (sequentiell nach A): Flow 4, 5, 6 (bauen auf Flow 1 auf)
+- **Flow 7** (parallel zu Gruppe B): Speech-Pipeline ist unabhängig
 
 - Folge dem Code **Zeile für Zeile** — keine Annahmen
 - Jede Aussage mit **Datei:Zeile** belegen
-- **Alle 13 Flows** prüfen — die neuen (7–13) sind genauso wichtig
-- Fokus auf **Bruchstellen und Kollisionen** — nicht auf Code-Stil
-- Wenn ein Flow komplett fehlt (z.B. keine Queue): Dokumentiere es als Feature-Gap
-- **Addon-Kollisionen** besonders beachten — das ist der blinde Fleck des Projekts
+- Fokus auf **Bruchstellen** — nicht auf Code-Stil
 - MCU-Jarvis-Test: Würde sich der echte Jarvis so verhalten?
 
 ---
 
-## ⚡ Übergabe an Prompt 4
+## ⚡ Übergabe an Prompt 3b
 
-Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 4:
+Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 3b:
 
 ```
-## KONTEXT AUS PROMPT 3: Flow-Analyse
+## KONTEXT AUS PROMPT 3a: Flow-Analyse (Core-Flows)
 
 ### Init-Sequenz
 [Exakte Startup-Reihenfolge mit Datei:Zeile]
@@ -465,20 +306,19 @@ Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 
 ### System-Prompt (rekonstruiert)
 [Der vollständige Text den Ollama als System-Prompt bekommt — oder zumindest die Struktur]
 
-### Flow-Status-Übersicht
+### Flow-Status-Übersicht (Core-Flows 1–7)
 | Flow | Status | Kritischste Bruchstelle |
 |---|---|---|
 | 1: Sprach-Input → Antwort | ✅/⚠️/❌ | ... |
-| ... | ... | ... |
+| 2: Proaktive Benachrichtigung | ✅/⚠️/❌ | ... |
+| 3: Morgen-Briefing | ✅/⚠️/❌ | ... |
+| 4: Autonome Aktion | ✅/⚠️/❌ | ... |
+| 5: Persönlichkeits-Pipeline | ✅/⚠️/❌ | ... |
+| 6: Memory-Abruf | ✅/⚠️/❌ | ... |
+| 7: Speech-Pipeline | ✅/⚠️/❌ | ... |
 
-### Top-Bruchstellen
+### Top-Bruchstellen (Core-Flows)
 [Die 5 kritischsten Bruchstellen mit Datei:Zeile]
-
-### Kollisionen
-[Die kritischsten Kollisionen zwischen Flows]
-
-### Feature-Gaps
-[Flows/Features die komplett fehlen]
 ```
 
-**Wenn du Prompt 4 in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1 + 2 + 3) automatisch ein.
+**Wenn du Prompt 3b in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke automatisch ein.

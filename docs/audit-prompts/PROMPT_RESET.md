@@ -2,7 +2,7 @@
 
 ## Zweck
 
-Dieser Prompt wird **vor** einem neuen Durchlauf der Prompt-Serie (P1–P7 inkl. P6a–6d) verwendet. Er sorgt dafür, dass:
+Dieser Prompt wird **vor** einem neuen Durchlauf der Prompt-Serie (P1–P7b inkl. P3a/3b, P4a–4c, P6a–6d, P7a/7b) verwendet. Er sorgt dafür, dass:
 
 1. **Alle vorherigen Kontext-Blöcke verworfen** werden
 2. Die **Ergebnisse des letzten Durchlaufs** kompakt zusammengefasst werden (als Vergleichsbasis)
@@ -35,7 +35,7 @@ Bei Claude Code wird der Reset typischerweise als **neue Session** gestartet:
 >
 > ### Was das bedeutet:
 >
-> 1. **VERGISS alle bisherigen Kontext-Blöcke** (KONTEXT AUS PROMPT 1–7 inkl. 6a–6d). Sie sind veraltet.
+> 1. **VERGISS alle bisherigen Kontext-Blöcke** (KONTEXT AUS PROMPT 1–7b inkl. 3a/3b, 4a–4c, 6a–6d, 7a/7b). Sie sind veraltet.
 > 2. **VERGISS alle bisherigen Bewertungen** — Module die vorher "okay" waren, können jetzt Bugs haben (und umgekehrt).
 > 3. **VERGISS alle bisherigen Bug-Listen** — du findest die Bugs NEU im aktuellen Code.
 > 4. **Lies JEDE Datei NEU** — auch wenn du sie im letzten Durchlauf gelesen hast. Der Code hat sich geändert.

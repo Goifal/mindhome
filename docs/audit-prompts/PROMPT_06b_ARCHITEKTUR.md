@@ -12,7 +12,7 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. In Pr
 >
 > **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
 > - Prompt 1: Konflikt-Karte & Architektur-Bewertung (Konflikte A–F)
-> - Prompt 3: Flow-Analyse mit Bruchstellen & Kollisionen (13 Flows)
+> - Prompt 3a + 3b: Flow-Analyse mit Bruchstellen & Kollisionen (13 Flows)
 > - Prompt 6a: Stabilisierungs-Ergebnisse (gefixte Bugs, Memory-Status)
 
 ---
