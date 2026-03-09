@@ -195,7 +195,22 @@ Prüfe jeden einzelnen Punkt und dokumentiere das Ergebnis mit Code-Referenz:
 | 21 | **Addon-Pattern-Engine**: Was lernt `addon/pattern_engine.py`? Werden diese Muster dem Assistant zugänglich gemacht? | ? | ? |
 | 22 | **Addon-Event-Bus**: Werden Memory-relevante Events über `addon/event_bus.py` an den Assistant weitergeleitet? | ? | ? |
 
-> **Claude Code**: Für Checks 19–22 nutze `Grep: pattern="pattern_engine\|db\.\|models\.\|event_bus" path="addon/"` und dann Read für Details.
+> **Claude Code**: Für Checks 19–22 nutze `Grep: pattern="pattern_engine|db\.|models\.|event_bus" path="addon/"` und dann Read für Details.
+
+### Schritt 4b — Performance-Check: Memory-Latenz
+
+> Memory-Operationen liegen auf dem **kritischen Pfad** jedes Requests. Langsames Memory = langsamer Jarvis.
+
+| # | Check | Ergebnis | Code-Referenz |
+|---|---|---|---|
+| 1 | Werden Memory-Abfragen (Redis, ChromaDB) **parallel** gemacht oder **sequentiell**? | ? | ? |
+| 2 | Wie viele Redis-Roundtrips pro Request? (Ziel: ≤3) | ? | ? |
+| 3 | Wie lange dauert eine ChromaDB-Query? (Embedding-Berechnung + Suche) | ? | ? |
+| 4 | Werden Embedding-Berechnungen **gecacht** oder bei jedem Request neu berechnet? | ? | ? |
+| 5 | Blockiert Memory-Speicherung (nach dem Response) den nächsten Request? | ? | ? |
+| 6 | Wie groß ist der Memory-Kontext im Prompt? (Token-Budget vs. Nutzen) | ? | ? |
+
+> Diese Ergebnisse fließen in den Performance-Report von Prompt 4 (Fehlerklasse 13) ein.
 
 ### Schritt 5 — Root Cause finden
 
@@ -331,6 +346,9 @@ Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 
 
 ### Dead-Code-Module
 [Module die existieren aber nie aufgerufen werden]
+
+### Memory-Performance
+[Redis-Roundtrips pro Request, ChromaDB-Query-Latenz, Embedding-Caching, Token-Budget]
 ```
 
 **Wenn du Prompt 3 in derselben Konversation erhältst**: Setze diesen Kontext-Block + den aus Prompt 1 automatisch ein.

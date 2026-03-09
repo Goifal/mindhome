@@ -367,3 +367,13 @@ Das System läuft auf folgender Hardware:
 - **Keine neuen Tests für Code-Stil** — nur für funktionale Lücken
 - **Addon-Tests nicht vergessen** — falls vorhanden
 - **Nach jedem Fix: Tests erneut laufen lassen**
+
+---
+
+## ⚡ Nächster Schritt: Neuer Durchlauf?
+
+Wenn du nach Prompt 7 einen **neuen Audit-Durchlauf** starten willst (z.B. um Fixes zu verifizieren):
+
+1. Nutze `PROMPT_RESET.md` **vor** Prompt 1
+2. Der Reset sichert die Ergebnisse dieses Durchlaufs als Vergleichsbasis
+3. Starte dann frisch mit Prompt 1 — alle Dateien neu lesen, alle Bugs neu suchen

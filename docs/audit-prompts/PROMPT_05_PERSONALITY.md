@@ -191,7 +191,7 @@ Konkreter Vorschlag für einen verbesserten `SYSTEM_PROMPT_TEMPLATE` (oder Teile
 
 ---
 
-## ⚡ Übergabe an Prompt 6
+## ⚡ Übergabe an Prompt 6a
 
 Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 6:
 
@@ -214,4 +214,4 @@ Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 
 [Integriert oder Dead Code?]
 ```
 
-**Wenn du Prompt 6 in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–5) automatisch ein.
+**Wenn du Prompt 6a in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–5) automatisch ein.

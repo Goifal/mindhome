@@ -314,6 +314,25 @@ Am stärksten betroffenes Modul: [Name] (X Bugs)
 
 ### Resilience-Report (ausgefüllt)
 
+### Performance-Report
+
+| # | Check | Ergebnis | Modul:Zeile | Empfehlung |
+|---|---|---|---|---|
+| 1 | Sequentielle vs. parallele Calls | ? | ? | ? |
+| 2 | LLM-Calls pro Request | ? | ? | ? |
+| 3 | Model-Routing | ? | ? | ? |
+| ... | ... | ... | ... | ... |
+
+**Geschätzte Latenz (Haupt-Flow):**
+| Phase | Geschätzt | Ziel | Status |
+|---|---|---|---|
+| Pre-Classification | ?ms | <50ms | ✅/⚠️/❌ |
+| Context Building | ?ms | <200ms | ✅/⚠️/❌ |
+| LLM-Inference | ?ms | <2000ms | ✅/⚠️/❌ |
+| Function Execution | ?ms | <500ms | ✅/⚠️/❌ |
+| Response Processing | ?ms | <200ms | ✅/⚠️/❌ |
+| **Gesamt** | **?ms** | **<3000ms** | ✅/⚠️/❌ |
+
 ### Dokumentations-Verifikation
 
 | Behauptung | Status | Beweis |
@@ -381,7 +400,7 @@ cd assistant && python -m bandit -r assistant/ -ll 2>/dev/null | head -50
 
 - **Jeder Bug mit Code-Referenz** (Datei:Zeile)
 - **Keine false positives** — nur echte Bugs, keine Style-Issues
-- **Nicht fixen in diesem Prompt** — nur finden und dokumentieren (Fixes kommen in Prompt 6)
+- **Nicht fixen in diesem Prompt** — nur finden und dokumentieren (Fixes kommen in Prompt 6a–6d)
 - **ALLE Module prüfen** — Priorität 1–4 besonders gründlich, aber KEIN Modul überspringen (Priorität 1–12). Jedes Modul mindestens auf die Top-6 Fehlerklassen (Async, Stille Fehler, Race Conditions, None, Init, Performance) checken
 - **Async-Fehler haben höchste Aufmerksamkeit** — häufigste Ursache für "funktioniert manchmal"
 - **Security-Bugs sind immer KRITISCH**
