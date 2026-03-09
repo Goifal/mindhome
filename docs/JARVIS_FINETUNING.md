@@ -142,3 +142,136 @@ Der Aufrufer kann dann entscheiden ob er es nochmal versucht oder den User warnt
 **Aufwand**: 5-10 Zeilen.
 
 ---
+
+## Phase 1: Memory Gateway
+
+**Ziel**: Ein einziges Interface das alle Memory-Systeme parallel abfragt und einen kompakten, priorisierten Block liefert. Statt 6 verstreute Sektionen im System-Prompt → ein Block, immer dabei.
+
+---
+
+### 1.1 Neue Datei: `assistant/assistant/memory_gateway.py`
+
+Fassade über alle bestehenden Memory-Systeme. Ersetzt NICHT die einzelnen Systeme — orchestriert sie nur.
+
+```python
+class MemoryGateway:
+    """Einheitliches Gedächtnis-Interface für den LLM-Kontext.
+
+    Fragt alle Memory-Systeme parallel ab und liefert einen einzigen,
+    kompakten, priorisierten Memory-Block zurück.
+    Dynamisch: 200-800 Tokens je nach verfügbarem Inhalt.
+    """
+
+    def __init__(
+        self,
+        memory: MemoryManager,           # Working + Episodic
+        semantic: SemanticMemory,         # Fakten
+        conversation: ConversationMemory, # Projekte + Fragen
+        correction: CorrectionMemory,     # Korrekturen
+    ):
+        self.memory = memory
+        self.semantic = semantic
+        self.conversation = conversation
+        self.correction = correction
+
+    async def get_relevant_context(
+        self,
+        user_text: str,
+        person: str,
+        max_tokens: int = 800,
+    ) -> str:
+        """Liefert einen einzigen, kompakten Memory-Block.
+
+        Priorisierung:
+        1. Semantische Fakten über die Person (immer)
+        2. Relevante vergangene Gespräche (per Vektor-Suche)
+        3. Aktive Projekte und offene Fragen
+        4. Relevante Korrekturen
+        5. Emotionaler Kontext
+
+        Alles in einem Block mit klaren Markern, nicht als separate Sektionen.
+        """
+        # Alles parallel abfragen
+        facts, episodes, projects, questions, corrections, emotional = (
+            await asyncio.gather(
+                self.semantic.search_facts(user_text, limit=5, person=person),
+                self.memory.search_memories(user_text, limit=3),
+                self.conversation.get_projects(status="active"),
+                self.conversation.get_open_questions(person=person),
+                self.correction.get_relevant_corrections(person=person),
+                self._get_emotional_context(person),
+                return_exceptions=True,
+            )
+        )
+
+        return self._compile_memory_block(
+            facts, episodes, projects, questions, corrections, emotional,
+            max_tokens=max_tokens,
+        )
+```
+
+### 1.2 Format des Memory-Blocks
+
+Ein Block, aber intern strukturiert mit klaren Markern — so kann das LLM die Kategorien unterscheiden:
+
+```
+ERINNERUNGEN:
+[Person] Max bevorzugt 21° im Büro, Lisa mag es wärmer (23°)
+[Projekt] Gartenhaus — 3/5 Meilensteine, aktiv
+[Offen] Welcher Estrich für die Werkstatt?
+[Gespräch] Vor 2 Tagen: Holzauswahl fürs Gartenhaus besprochen
+[Korrektur] "Schlafzimmer" = oberes Schlafzimmer
+```
+
+**Warum Marker statt Fließtext**: Das LLM kann gezielt auf `[Projekt]` oder `[Offen]` referenzieren. Trotzdem ein Block, nicht 6 Sektionen.
+
+**Dynamische Größe**: Wenn wenig Memory da ist (neuer User, wenig Projekte) werden es 200 Tokens. Wenn viel da ist, maximal 800. Der Gateway komprimiert und priorisiert — nicht alles reinpacken, sondern das Relevanteste.
+
+### 1.3 Integration in brain.py
+
+```python
+# In __init__:
+self.memory_gateway = MemoryGateway(
+    self.memory, self.memory.semantic,
+    self.conversation_memory, self.correction_memory,
+)
+
+# In process() — STATT der separaten Memory-Sektionen:
+memory_block = await self.memory_gateway.get_relevant_context(
+    user_text=text, person=person or "", max_tokens=800,
+)
+if memory_block:
+    sections.append(("memory_gateway", memory_block, 0))  # Prio 0 = IMMER dabei
+```
+
+**Prio 0** — Memory darf nie gedroppt werden. Wenn Jarvis sich nicht erinnert, ist alles andere egal. Prio 0 zählt nicht gegen das Token-Budget. Das ist gerechtfertigt weil wir gleichzeitig in Phase 2 den System-Prompt halbieren — der frei werdende Platz geht an Memory.
+
+### 1.4 Was wegfällt in brain.py
+
+Diese separaten Sektionen werden durch den Gateway-Block ersetzt:
+
+| Sektion | Zeile (ca.) | Prio bisher | Ersetzt durch |
+|---------|-------------|-------------|---------------|
+| `memory` | 2792-2797 | Prio 1 | Memory Gateway `[Person]` |
+| `conv_memory_semantic` | 2800-2809 | Prio 2 | Memory Gateway `[Gespräch]` |
+| `conv_memory_projects` | 2921-2924 | Prio 2 | Memory Gateway `[Projekt]` + `[Offen]` |
+| `continuity` | 2910-2919 | Prio 3 | Memory Gateway `[Gespräch]` |
+| `experiential` | 2884-2886 | Prio 3 | Memory Gateway `[Gespräch]` |
+| `correction_ctx` | 2819-2821 | Prio 2 | Memory Gateway `[Korrektur]` |
+
+6 Sektionen → 1 Block. Weniger Komplexität, weniger Token-Verschwendung, keine vergessenen Memory-Quellen.
+
+### 1.5 Was sich NICHT ändert
+
+| Datei | Status |
+|-------|--------|
+| `memory_gateway.py` | **NEU** — Fassade über alle Memory-Systeme |
+| `brain.py` | Gateway statt 6 separate Memory-Sektionen |
+| `memory.py` | **Unverändert** — bleibt als Backend |
+| `semantic_memory.py` | **Unverändert** — bleibt als Backend |
+| `conversation_memory.py` | **Unverändert** — bleibt als Backend |
+| `correction_memory.py` | **Unverändert** — bleibt als Backend |
+
+**Kein bestehendes System wird gelöscht oder umgebaut.** Der Gateway ist eine neue Schicht DARÜBER.
+
+---
