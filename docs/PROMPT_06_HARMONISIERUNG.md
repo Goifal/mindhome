@@ -1,0 +1,170 @@
+# Prompt 6: Harmonisierung — Aus 89 Modulen EIN System machen
+
+## Rolle
+
+Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du hast in den vorherigen 5 Prompts das System analysiert. Jetzt baust du es zusammen.
+
+---
+
+## Kontext aus vorherigen Prompts
+
+> **[HIER die Ergebnisse aus Prompt 1–5 einfügen:]**
+> - Prompt 1: Konflikt-Karte & Architektur-Bewertung
+> - Prompt 2: Memory-Diagnose & Root Cause
+> - Prompt 3: Flow-Analyse mit Bruchstellen & Kollisionen
+> - Prompt 4: Bug-Report mit allen gefundenen Bugs
+> - Prompt 5: Persönlichkeits-Audit & Config-Analyse
+
+---
+
+## Aufgabe
+
+Basierend auf **allen** bisherigen Erkenntnissen: Implementiere die nötigen Fixes und Refactorings, um Jarvis von einem Flickenteppich zu einem **kohärenten System** zu machen.
+
+### Die 5 Harmonisierungs-Prinzipien
+
+Jede Änderung muss mindestens eines dieser Prinzipien bedienen:
+
+#### 1. Eine Stimme
+Jarvis hat **eine** konsistente Persönlichkeit — egal ob normale Antwort, proaktive Warnung, Morgen-Briefing oder Fehler-Meldung.
+
+**Was zu tun ist:**
+- Alle Antwort-Pfade durch **dieselbe** Persönlichkeits-Pipeline leiten
+- Keine eigenen Templates in `routine_engine.py` oder `proactive.py` die den Jarvis-Ton umgehen
+- System-Prompt optimieren: Klar, fokussiert, MCU-authentisch, token-effizient
+
+#### 2. Ein Gedächtnis
+Alle Memory-Quellen fließen in **einen kohärenten Kontext** für das LLM.
+
+**Was zu tun ist:**
+- Memory-Flow reparieren oder durch robustere Alternative ersetzen (basierend auf Prompt 2)
+- Sicherstellen: Conversation History + Langzeit-Fakten + gelerntes Verhalten → **ein** Kontext-Block im Prompt
+- Keine isolierten Memory-Silos mehr
+
+#### 3. Eine Entscheidungsinstanz
+Wenn Module gleichzeitig handeln wollen, gibt es eine **klare Hierarchie**.
+
+**Was zu tun ist:**
+- Priority-System implementieren (oder bestehende Konflikte auflösen)
+- Regel: User-Aktion > Routine > Proaktiv > Autonom
+- Zentrale Queue wenn nötig, oder mindestens Mutex/Lock für kritische Aktionen
+
+#### 4. Ein Flow
+Klarer, nachvollziehbarer Datenfluss von Input bis Output.
+
+**Was zu tun ist:**
+- Bruchstellen aus Prompt 3 reparieren
+- Alle kritischen Bugs aus Prompt 4 fixen (Priorität: 🔴 KRITISCH → 🟠 HOCH → 🟡 MITTEL)
+- Dead Code entfernen, fehlende Verbindungen herstellen
+
+#### 5. Ein Charakter
+Gleicher Jarvis ob Frage, proaktive Warnung oder Morgen-Briefing.
+
+**Was zu tun ist:**
+- Persönlichkeits-Inkonsistenzen aus Prompt 5 beheben
+- Config-Fehler aus Prompt 5 fixen
+- Easter Eggs und Opinions korrekt integrieren
+
+---
+
+## Implementierungs-Reihenfolge
+
+Arbeite in dieser Reihenfolge — jeder Schritt baut auf dem vorherigen auf:
+
+### Schritt 1: Kritische Bugs fixen (🔴 aus Prompt 4)
+Alles was crasht oder Kern-Funktionen blockiert. **Zuerst stabilisieren.**
+
+### Schritt 2: Memory reparieren (aus Prompt 2)
+Den empfohlenen Fix oder die Alternative implementieren. **Jarvis muss sich erinnern können.**
+
+### Schritt 3: Modul-Konflikte auflösen (aus Prompt 1)
+Die gefundenen Konflikte mit klarer Hierarchie lösen. **Ein System statt 89 Inseln.**
+
+### Schritt 4: Flows reparieren (aus Prompt 3)
+Bruchstellen fixen, Kollisionen auflösen. **Jeder Pfad muss end-to-end funktionieren.**
+
+### Schritt 5: Hohe Bugs fixen (🟠 aus Prompt 4)
+Features die kaputt sind aber nicht crashen. **Features sollen wie dokumentiert funktionieren.**
+
+### Schritt 6: Persönlichkeit harmonisieren (aus Prompt 5)
+System-Prompt verbessern, Ton vereinheitlichen. **Jarvis soll wie Jarvis klingen.**
+
+### Schritt 7: Config aufräumen (aus Prompt 5)
+Unbenutzte Werte entfernen, fehlende hinzufügen. **Clean Config.**
+
+### Schritt 8: Mittlere Bugs fixen (🟡 aus Prompt 4)
+Logik-Fehler und fehlende Integrationen. **Feinschliff.**
+
+---
+
+## Architektur-Entscheidungen
+
+Für die Konflikte aus Prompt 1 — triff eine **klare Architektur-Entscheidung**:
+
+### brain.py als God-Object?
+
+Wenn Prompt 1 ergeben hat, dass brain.py zu viel macht:
+- **Option A**: Bestehendes brain.py refactoren — klare Zuständigkeiten, keine God-Object-Methoden
+- **Option B**: Event-Bus einführen — Module kommunizieren über Events statt direkte Aufrufe
+- **Option C**: Pipeline-Pattern — Klarer Datenfluss Input → Processing → Output
+- **Option D**: Mediator-Pattern — brain.py als schlanker Vermittler, Logik in Modulen
+
+Wähle die Option die mit **minimalem Umbau den größten Effekt** hat. Over-Engineering vermeiden.
+
+### Memory-Architektur
+
+Basierend auf Prompt 2 — implementiere die empfohlene Lösung:
+- Wenn das 3-Tier-System reparierbar ist: Repariere es
+- Wenn eine einfachere Alternative robuster ist: Implementiere sie
+- **Ziel**: Jarvis merkt sich Gespräche, Fakten und Vorlieben — zuverlässig
+
+---
+
+## Output-Format
+
+### 1. Änderungs-Log
+
+Für jede Änderung:
+```
+### [Schritt X] Datei: path/to/file.py
+**Prinzip**: [Eine Stimme / Ein Gedächtnis / ...]
+**Bug-Ref**: #X aus Prompt 4 (falls Bug-Fix)
+**Was geändert**: Kurzbeschreibung
+**Warum**: Begründung
+**Code**: Diff oder neuer Code
+```
+
+### 2. Architektur-Entscheidungen
+
+| Entscheidung | Gewählte Option | Begründung |
+|---|---|---|
+| brain.py Refactoring | ? | ? |
+| Memory-Architektur | ? | ? |
+| Priority-System | ? | ? |
+
+### 3. Verifikation
+
+Nach allen Änderungen — prüfe:
+- [ ] Jarvis startet ohne Fehler
+- [ ] Sprach-Input → Antwort funktioniert end-to-end
+- [ ] Jarvis erinnert sich an das letzte Gespräch
+- [ ] Proaktive Warnungen werden korrekt zugestellt
+- [ ] Morgen-Briefing läuft durch
+- [ ] Der Ton ist konsistent über alle Pfade
+- [ ] Keine neuen Bugs eingeführt
+
+### 4. Offene Punkte
+
+Was konnte in diesem Durchlauf **nicht** gelöst werden und braucht einen weiteren Prompt/Session?
+
+---
+
+## Regeln
+
+- **Einfach > Komplex** — Wenn ein simpler Fix reicht, kein Refactoring nötig
+- **Nicht alles auf einmal** — Lieber 10 solide Fixes als 30 hastige
+- **Reihenfolge einhalten** — Stabilität vor Features vor Feinschliff
+- **Jede Änderung committen** — Klare, beschreibende Commit Messages
+- **MCU-Jarvis als Maßstab** — Bei jeder Entscheidung: "Würde der echte Jarvis das so machen?"
+- **Keine neuen Module** ohne guten Grund — Bestehende Module verbessern statt neue hinzufügen
+- **Tests nicht brechen** — Bestehende Tests müssen weiterhin bestehen
