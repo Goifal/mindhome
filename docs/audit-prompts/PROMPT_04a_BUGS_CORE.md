@@ -54,6 +54,17 @@ Prüfe die **Core-Module** (Priorität 1–4, ca. 26 Module) systematisch auf di
 | 12 | **Resilience** | Fehlende Fehlertoleranz bei Service-Ausfall | Was wenn Ollama/Redis/ChromaDB/HA down ist? |
 | 13 | **Performance & Latenz** | Unnötige Wartezeiten, sequentielle statt parallele Calls, fehlende Caches | `await a(); await b()` statt `await asyncio.gather(a(), b())` |
 
+### Zusätzlich: Cross-Modul-Prüfung (bei JEDEM Modul!)
+
+Wenn du ein Modul prüfst, prüfe auch die **Schnittstellen zu anderen Modulen**:
+
+1. **Return-Werte**: Wenn Modul A `Modul_B.get_data()` aufruft — was gibt B zurück? Behandelt A den Fall `None` / leere Liste / Exception?
+2. **Fehler-Weitergabe**: Wenn B eine Exception wirft — fängt A sie ab? Wird der User informiert oder stirbt der Request still?
+3. **Parameter-Kompatibilität**: Übergibt A die richtigen Typen und Keys? (z.B. `brain.py` ruft `memory.load(user_id=...)` auf — akzeptiert `memory.py` diesen Parameter?)
+4. **Async-Konsistenz**: Ist die aufgerufene Funktion `async`? Wird sie mit `await` aufgerufen?
+
+> **Regel**: Wenn du schreibst "Modul A ruft B auf" — **öffne B und verifiziere** dass die Signatur passt und der Return-Wert korrekt behandelt wird.
+
 ---
 
 ## Modul-Priorität (nur dieses Prompt!)

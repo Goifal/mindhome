@@ -145,6 +145,23 @@ Für **jedes fehlende kritische Szenario**: **Schreibe einen Test mit dem Write/
 cd assistant && python -m pytest tests/test_neuer_test.py -v 2>&1
 ```
 
+#### Praxis-Szenarien: Funktioniert Jarvis wirklich?
+
+> ⚠️ **Diese Szenarien prüfen ob die Module im Zusammenspiel funktionieren** — nicht nur ob einzelne Units korrekt sind.
+
+Verfolge diese Szenarien **im Code** (mit Read + Grep) und prüfe ob der gesamte Pfad funktioniert:
+
+| # | User-Szenario | Erwartetes Ergebnis | Was prüfen |
+|---|---|---|---|
+| 1 | User sagt: "Mach das Licht im Wohnzimmer an" | Licht geht an, Jarvis bestätigt | `brain.py` → `function_calling.py` → `ha_client.py`: Wird die richtige Entity gefunden? Wird das Ergebnis an den User zurückgemeldet? |
+| 2 | User sagt: "Was habe ich gestern über den Urlaub gesagt?" | Jarvis erinnert sich | `brain.py` → `memory.py` → `semantic_memory.py` → `embeddings.py`: Wird die Erinnerung gefunden und korrekt im Prompt eingebaut? |
+| 3 | User sagt: "Guten Morgen" (Routine) | Morgen-Briefing mit Wetter, Terminen, Status | `routine_engine.py` → `brain.py` → `context_builder.py` → `ha_client.py`: Werden alle Daten parallel geladen? |
+| 4 | Waschmaschine fertig (HA-Event) | Jarvis informiert proaktiv | `proactive.py` → `brain.py` → `personality.py` → TTS: Kommt die Nachricht beim User an? |
+| 5 | Ollama antwortet nicht (Timeout) | User bekommt Fehlermeldung, kein Crash | `ollama_client.py` → `brain.py` → Response: Gibt es Timeout? Was sagt Jarvis? |
+| 6 | User lädt ein Foto hoch | OCR/Vision-Beschreibung, Antwort im Kontext | `file_handler.py` → `ocr.py` → `brain.py`: Kommt der extrahierte Text im LLM-Prompt an? |
+
+Für jedes Szenario: Dokumentiere den **tatsächlichen Code-Pfad** und ob er **lückenlos** funktioniert oder wo er bricht.
+
 ---
 
 ## Output-Format

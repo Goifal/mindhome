@@ -251,6 +251,10 @@ Für jeden Flow:
 **Bruchstellen**:
 - [datei.py:zeile]: Beschreibung des Problems
 
+**Fehler-Pfade** (Was passiert wenn ein Schritt fehlschlägt?):
+- Schritt X schlägt fehl → [Was passiert? Crash / Stille / User wird informiert?]
+- Erreicht der Fehler den User? [Ja: wie / Nein: warum nicht]
+
 **Kollisionen mit anderen Flows**:
 - Flow X kollidiert mit Flow Y bei [Beschreibung]
 ```
