@@ -7,13 +7,15 @@ Diese 7 Prompts sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu
 ## Das System
 
 Jarvis besteht aus **drei Services + HA-Integration + Shared-Module**:
-1. **Assistant** (`/assistant/assistant/`, 89 Module, FastAPI) — KI-Kern
-2. **Addon** (`/addon/rootfs/opt/mindhome/`, ~71 Module, Flask) — Smart-Home-Logik
+1. **Assistant** (`/assistant/assistant/`, 88 Module, FastAPI) — KI-Kern (inkl. `brain.py` 10.231 Zeilen, `main.py` 8.000+ Zeilen)
+2. **Addon** (`/addon/rootfs/opt/mindhome/`, 67 Module, Flask) — Smart-Home-Logik (14 Kern + 16 Engines + 23 Domains + 17 Routes)
 3. **Speech** (`/speech/`, 2 Module, Whisper STT) — Spracheingabe
-4. **HA-Integration** (`/ha_integration/`, 3 Dateien: `__init__.py`, `config_flow.py`, `conversation.py`) — Bridge zwischen HA Voice Pipeline und Assistant
+4. **HA-Integration** (`/ha_integration/`, 3 Python-Dateien + `manifest.json` + `strings.json`) — Bridge zwischen HA Voice Pipeline und Assistant
 5. **Shared** (`/shared/`, 6 Dateien) — **API-Verträge** zwischen Services: `ChatRequest`, `ChatResponse`, `MindHomeEvent`, Ports, Event-Namen, Konstanten
 
-Dazu: 105 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen.
+Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Frontend-Dateien (`app.jsx`, `app.js`), 2 Übersetzungsdateien (`de.json`, `en.json`), 3 `requirements.txt`, 5 Shell-Scripts.
+
+> **Modul-Definition**: Ein Modul = eine `.py`-Datei (ohne `__init__.py` und Test-Dateien).
 
 ## Reihenfolge
 
@@ -22,7 +24,7 @@ Dazu: 105 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen.
 | 1 | `PROMPT_01_ARCHITEKTUR.md` | Architektur, Modul-Konflikte, **3-Service-Interaktion** | Keine — Startpunkt |
 | 2 | `PROMPT_02_MEMORY.md` | Memory-System End-to-End (**alle 12 Module**) | Nutzt Konflikt-Karte aus #1 |
 | 3 | `PROMPT_03_FLOWS.md` | **13 kritische Pfade** inkl. Speech, Addon, Domain-Assistenten | Nutzt Ergebnisse aus #1 + #2 |
-| 4 | `PROMPT_04_BUGS.md` | Systematische Bug-Jagd (**87+ Module**, Security, Resilience) | Nutzt Architektur-Verständnis aus #1–#3 |
+| 4 | `PROMPT_04_BUGS.md` | Systematische Bug-Jagd (**155 Module**, Security, Resilience) | Nutzt Architektur-Verständnis aus #1–#3 |
 | 5 | `PROMPT_05_PERSONALITY.md` | Persönlichkeit, Config, MCU-Authentizität | Nutzt Bug-Liste aus #4 |
 | 6 | `PROMPT_06_HARMONISIERUNG.md` | Integration, Kohärenz, **Addon-Koordination** | Baut auf allem auf |
 | 7 | `PROMPT_07_TESTING_DEPLOYMENT.md` | Tests, Docker, Resilience, **Verifikation** | Verifiziert die Fixes aus #6 |
@@ -110,8 +112,11 @@ Wenn ein Prompt sagt "Implementiere den Fix":
 | Resilience | - | - | - | ✅ | - | ✅ | ✅ |
 | Persönlichkeit / MCU | ✅ | - | ✅ | - | ✅ | ✅ | - |
 | Config / YAML | - | - | - | ✅ | ✅ | ✅ | - |
-| Tests (105 Dateien) | - | - | - | - | - | - | ✅ |
+| Tests (103 Dateien) | - | - | - | - | - | - | ✅ |
 | Docker / Deployment | - | - | - | - | - | - | ✅ |
+| Frontend (app.jsx, app.js) | - | - | - | ✅ | - | - | ✅ |
+| Dependencies (requirements.txt) | - | - | - | ✅ | - | - | ✅ |
+| Translations / Manifests | - | - | - | - | ✅ | - | - |
 
 ## Wichtige Rahmenbedingungen
 

@@ -93,7 +93,10 @@ Lies `settings.yaml` komplett. Lies auch `config.py` und `constants.py`.
 6. `automation_templates.yaml`, `entity_roles_defaults.yaml`, `maintenance.yaml` — korrekt geladen?
 7. `config.py` — Wie werden Configs geladen? Robust gegen fehlende Dateien?
 8. `config_versioning.py` — Werden Config-Änderungen getrackt? Funktioniert es?
-9. **Addon-Config**: `addon/config.yaml` — Überlappen Addon- und Assistant-Configs?
+9. **Addon-Config**: `addon/config.yaml`, `addon/build.yaml` — Überlappen Addon- und Assistant-Configs?
+10. **Übersetzungen**: `addon/.../translations/de.json`, `en.json` — Sind alle UI-Strings übersetzt? Konsistent mit Jarvis-Ton?
+11. **HA-Manifest**: `ha_integration/.../manifest.json`, `strings.json` — Version korrekt? Dependencies vollständig?
+12. **`.env.example`** — Sind ALLE nötigen Umgebungsvariablen dokumentiert? Fehlen welche?
 
 ### Teil F: Persönlichkeits-Konsistenz über Code-Pfade
 

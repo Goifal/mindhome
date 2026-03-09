@@ -191,6 +191,11 @@ Prüfe jeden einzelnen Punkt und dokumentiere das Ergebnis mit Code-Referenz:
 | 17 | `knowledge_base.py`: Was enthält es? Wird es im Prompt genutzt? | ? | ? |
 | 18 | `embeddings.py` vs `embedding_extractor.py`: Redundanz? Verschiedene Modelle? | ? | ? |
 | 19 | **Addon-Daten**: Weiß der Assistant was der Addon über Muster/Verhalten weiß? | ? | ? |
+| 20 | **Addon-DB**: Was speichert `addon/db.py` / `addon/models.py`? Welche Tabellen? Welche Daten? | ? | ? |
+| 21 | **Addon-Pattern-Engine**: Was lernt `addon/pattern_engine.py`? Werden diese Muster dem Assistant zugänglich gemacht? | ? | ? |
+| 22 | **Addon-Event-Bus**: Werden Memory-relevante Events über `addon/event_bus.py` an den Assistant weitergeleitet? | ? | ? |
+
+> **Claude Code**: Für Checks 19–22 nutze `Grep: pattern="pattern_engine\|db\.\|models\.\|event_bus" path="addon/"` und dann Read für Details.
 
 ### Schritt 5 — Root Cause finden
 

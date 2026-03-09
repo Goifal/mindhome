@@ -37,11 +37,11 @@ Jarvis ist ein lokaler KI-Butler für Home Assistant. Das Projekt besteht aus **
 
 Das System ist NICHT nur der Assistant. Es besteht aus:
 
-1. **Assistant-Server** (`/assistant/assistant/`, ~89 Python-Module, FastAPI)
+1. **Assistant-Server** (`/assistant/assistant/`, 88 Python-Module, FastAPI)
    - KI-Kern: LLM, Memory, Persönlichkeit, Function Calling
    - Kommuniziert mit HA über REST/WebSocket API
 
-2. **Addon-Server** (`/addon/rootfs/opt/mindhome/`, ~71 Python-Module, Flask)
+2. **Addon-Server** (`/addon/rootfs/opt/mindhome/`, 67 Python-Module, Flask)
    - Smart-Home-Logik: Domain-Controller, Automation-Engine, Pattern-Engine
    - Eigener Event-Bus (`event_bus.py`), eigene HA-Connection (`ha_connection.py`)
    - 25+ Domain-Module (light, climate, cover, presence, motion, camera, energy, solar, etc.)
@@ -129,7 +129,7 @@ Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
 - Gibt es eine zentrale **Koordination** oder ist brain.py nur eine dumme Weiterleitung?
 - Wo werden Entscheidungen getroffen — in brain.py oder in den Modulen selbst?
 
-**2a-2)** Lies `main.py` komplett (**⚠️ 7000+ Zeilen, 200+ API-Endpoints — das ist KEIN einfacher Server!**). Verstehe:
+**2a-2)** Lies `main.py` komplett (**⚠️ 8000+ Zeilen, 200+ API-Endpoints — das ist KEIN einfacher Server!**). Verstehe:
 - **API-Endpunkte**: Welche Endpoints gibt es? (`/api/assistant/*`, `/api/ui/*`, `/api/workshop/*`)
 - **Boot-Sequenz**: `_boot_announcement()` — Wie kündigt sich Jarvis nach dem Start an?
 - **Authentifizierung**: API-Key Middleware, PIN-Auth, Rate Limiting
@@ -303,7 +303,7 @@ Prüfe den **Eingangs-Flow** vor brain.py:
 Bewerte mit konkreten Code-Referenzen:
 
 1. **Ist brain.py ein God-Object?** Wenn ja — wäre Event-Bus, Pipeline oder Mediator-Pattern besser?
-1b. **Ist main.py ein zweites God-Object?** 7000+ Zeilen, 200+ Endpoints, Boot-Logik, Auth, Workshop, Dashboard — gehört Logik hier oder in Module?
+1b. **Ist main.py ein zweites God-Object?** 8000+ Zeilen, 200+ Endpoints, Boot-Logik, Auth, Workshop, Dashboard — gehört Logik hier oder in Module?
 2. **Gibt es zirkuläre Abhängigkeiten** zwischen Modulen?
 3. **Fehlt ein zentraler State-Manager?** Wer hält den "aktuellen Zustand" von Jarvis?
 4. **Ist die Modul-Granularität richtig?** Sollten manche Module zusammengelegt werden?

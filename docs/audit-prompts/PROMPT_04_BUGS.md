@@ -203,6 +203,9 @@ Prüfe **besonders**:
 | 13 | **Workshop Hardware-Steuerung** | `main.py` | Sind `/api/workshop/arm/*` (Roboter-Arm) und `/api/workshop/printer/*` (3D-Drucker) Trust-Level-geschützt? |
 | 14 | **Sensitive Data in Logs** | `main.py` | Werden API-Keys/Tokens in Error/Activity Buffer redacted? |
 | 15 | **WebSearch SSRF** | `web_search.py` | IP-Blocklist, DNS-Rebinding-Check, URL-Validierung |
+| 16 | **Frontend XSS** | `addon/.../static/frontend/app.jsx`, `assistant/static/ui/app.js` | Werden API-Responses im Frontend escaped? User-Input in DOM injiziert? |
+| 17 | **CORS** | `main.py`, `addon/app.py` | CORS-Headers korrekt? Zu permissiv (allow-origin: *)? |
+| 18 | **Dependency-CVEs** | `requirements.txt` (alle 3) | Bekannte Schwachstellen? (`pip audit` mit Bash ausführen) |
 
 ## Resilience-Checks (NEU)
 

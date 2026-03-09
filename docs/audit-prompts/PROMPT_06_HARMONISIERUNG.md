@@ -1,4 +1,4 @@
-# Prompt 6: Harmonisierung — Aus 89 Modulen EIN System machen
+# Prompt 6: Harmonisierung — Aus 155 Modulen EIN System machen
 
 ## Rolle
 

@@ -191,12 +191,48 @@ Lies und prüfe:
 - `assistant/update.sh` — Update-Logik robust?
 - `assistant/nvidia-watchdog.sh` — GPU-Monitoring
 - `install-nvidia-toolkit.sh` — GPU-Setup
+- `addon/rootfs/opt/mindhome/run.sh` — Addon-Startscript korrekt?
+- `repository.yaml` — HA-Repository-Config vollständig?
 
 | Script | Funktioniert? | Edge Cases abgedeckt? | Idempotent? |
 |---|---|---|---|
 | install.sh | ? | ? | ? |
 | update.sh | ? | ? | ? |
 | nvidia-watchdog.sh | ? | ? | ? |
+| addon/run.sh | ? | ? | ? |
+
+### Teil G: Dependency-Audit (NEU)
+
+**Claude Code: Mit Bash ausführen!**
+
+```bash
+# Dependency-Security-Check für alle 3 Services
+cd assistant && pip install pip-audit 2>/dev/null && pip-audit -r requirements.txt 2>&1 | head -30
+cd ../addon/rootfs/opt/mindhome && pip-audit -r requirements.txt 2>&1 | head -30
+cd ../../../../speech && pip-audit -r requirements.txt 2>&1 | head -30
+```
+
+| Check | Status | Details |
+|---|---|---|
+| Assistant requirements.txt — bekannte CVEs? | ? | ? |
+| Addon requirements.txt — bekannte CVEs? | ? | ? |
+| Speech requirements.txt — bekannte CVEs? | ? | ? |
+| Version-Pinning (alle Deps gepinnt?) | ? | ? |
+| Konflikte zwischen Services (gleiche Lib, verschiedene Versionen?) | ? | ? |
+| Veraltete Dependencies (>1 Jahr ohne Update?) | ? | ? |
+
+### Teil H: Frontend-Dateien prüfen (NEU)
+
+Lies und prüfe:
+- `addon/rootfs/opt/mindhome/static/frontend/app.jsx` — React-Frontend
+- `assistant/static/ui/app.js` — Assistant-UI
+
+| Check | Status | Details |
+|---|---|---|
+| XSS-Schutz (User-Input escaped?) | ? | ? |
+| API-Endpoints korrekt (passen zu main.py/app.py?) | ? | ? |
+| Error-Handling (was wenn API nicht erreichbar?) | ? | ? |
+| Auth-Token-Handling (sicher gespeichert?) | ? | ? |
 
 ---
 
