@@ -141,6 +141,15 @@ Was muss in Prompt 6b (Architektur) beachtet werden?
 - **Einfach > Komplex** — Wenn ein simpler Fix reicht, kein Refactoring
 - **Tests nicht brechen** — Nach jedem Fix `pytest` ausführen
 - **Jede Änderung committen** — `git commit -m "Fix: Beschreibung"`
+- **Wenn ein Fix Tests bricht**: (a) Fix rückgängig machen (`git checkout -- datei.py`), (b) Ursache analysieren — ist der Test falsch oder der Fix?, (c) Fix anpassen und erneut versuchen
+- **Abhängigkeitsreihenfolge beachten**: Wenn Bug A in `memory.py` liegt und Bug B in `brain.py` `memory.py` aufruft → fixe zuerst A, dann B
+
+### ⚠️ Phase Gate: Checkpoint am Ende von 6a
+
+Bevor du zu 6b übergehst:
+1. **Alle Tests laufen lassen**: `cd assistant && python -m pytest --tb=short -q` — dokumentiere das Ergebnis
+2. **Git-Tag setzen**: `git tag checkpoint-6a` — Sicherungspunkt falls 6b etwas kaputt macht
+3. Nur wenn Tests grün sind → weiter zu 6b
 
 ---
 

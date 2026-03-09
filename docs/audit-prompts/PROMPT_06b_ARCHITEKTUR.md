@@ -31,6 +31,13 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. In Pr
 
 ## Aufgabe
 
+### ⚠️ Phase Gate: Regression-Check vor Start
+
+Bevor du irgendetwas änderst:
+1. **Tests ausführen**: `cd assistant && python -m pytest --tb=short -q` — Ergebnis dokumentieren
+2. **Dieses Ergebnis ist die Baseline** — nach jeder Änderung in 6b müssen diese Tests weiterhin grün sein
+3. Falls Tests schon fehlschlagen → zurück zu 6a, dort zuerst fixen
+
 ### Schritt 1: Architektur-Entscheidung — brain.py
 
 Lies die Kontext-Blöcke aus Prompt 1. Entscheide:
@@ -44,11 +51,29 @@ Lies die Kontext-Blöcke aus Prompt 1. Entscheide:
 
 > **Wähle die Option mit minimalem Umbau und maximalem Effekt.** Over-Engineering vermeiden.
 
+#### Konkrete Analyse vor dem Refactoring
+
+> ⚠️ **brain.py hat 10.000+ Zeilen.** Bevor du refactorst, verstehe die Struktur:
+
+1. **Read** — brain.py in Abschnitten lesen (offset 1/2001/4001/6001/8001/10001)
+2. **Grep** — Welche Methoden hat brain.py? `pattern="async def |def " path="assistant/assistant/brain.py" output_mode="count"`
+3. **Grep** — Wer importiert brain.py? `pattern="from.*brain import|import brain" path="assistant/"`
+4. Identifiziere die **logischen Blöcke** in brain.py:
+   - Request-Verarbeitung (Chat-Handling)
+   - LLM-Kommunikation (Ollama-Calls)
+   - Function-Calling-Loop
+   - Memory-Management
+   - Proaktive-Logik
+   - Routinen-Handling
+5. **Entscheide pro Block**: Kann er in ein eigenes Modul extrahiert werden OHNE die Tests zu brechen?
+
+**Wichtig**: Refactore **schrittweise** — ein Block nach dem anderen, Tests nach jedem Schritt. NICHT alles auf einmal umbauen.
+
 **Implementiere die gewählte Option:**
-1. **Read** — brain.py komplett lesen (oder relevante Abschnitte)
-2. **Grep** — Alle Module die brain.py importieren/aufrufen
-3. **Edit** — Refactoring durchführen
-4. **Bash** — Tests nach Refactoring: `cd assistant && python -m pytest -x`
+1. **Edit** — Einen Block extrahieren
+2. **Bash** — Tests: `cd assistant && python -m pytest -x`
+3. **Git** — Committen wenn Tests grün: `git commit -m "Refactor: [Block] aus brain.py extrahiert"`
+4. Nächsten Block extrahieren, wiederholen
 
 ### Schritt 2: Modul-Konflikte auflösen (Konflikte A–F aus Prompt 1)
 
@@ -187,6 +212,14 @@ Für jeden gefixten Bug:
 - **Tests nach jedem Fix** — `python -m pytest -x`
 - **Keine Persönlichkeits-Änderungen hier** — das kommt in 6c
 - **⚠️ Rollback-Regel**: Wenn eine Architektur-Änderung Tests bricht die in P6a grün waren, hast du drei Optionen: **(a)** den Architektur-Fix so anpassen dass P6a-Fixes erhalten bleiben, **(b)** die P6a-Fixes an die neue Architektur anpassen (bevorzugt), **(c)** die Architektur-Änderung verwerfen. Dokumentiere im Output welche P6a-Fixes angepasst werden mussten und warum.
+
+### ⚠️ Phase Gate: Checkpoint am Ende von 6b
+
+Bevor du zu 6c übergehst:
+1. **Alle Tests laufen lassen**: `cd assistant && python -m pytest --tb=short -q`
+2. **Vergleiche mit 6a-Baseline**: Sind alle Tests die nach 6a grün waren immer noch grün?
+3. **Git-Tag setzen**: `git tag checkpoint-6b`
+4. Falls Tests schlechter als nach 6a → Problem identifizieren und fixen bevor du weitergehst
 
 ---
 

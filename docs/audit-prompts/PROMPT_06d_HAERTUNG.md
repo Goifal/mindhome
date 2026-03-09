@@ -30,6 +30,12 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte mit Fo
 
 ## Aufgabe
 
+### ⚠️ Phase Gate: Regression-Check vor Start
+
+1. **Tests ausführen**: `cd assistant && python -m pytest --tb=short -q`
+2. **Vergleiche mit 6c-Checkpoint**: Alle Tests noch grün?
+3. Falls Tests fehlschlagen → zurück zu 6c, dort fixen
+
 ### Schritt 1: Security-Bugs fixen (aus Prompt 4c Security-Report)
 
 Arbeite **jeden** Security-Bug aus dem Prompt-4c-Report ab:
@@ -181,6 +187,16 @@ Für jeden Fix:
 - **Resilience ist Pflicht** — MCU-Jarvis crasht nicht
 - **Addon-Koordination konkret lösen** — nicht nur "sollte koordiniert werden"
 - **Tests nach jedem Fix**
+- **Security-Reihenfolge beachten**: Input-Validierung VOR Prompt-Injection-Schutz. Auth VOR API-Key-Management.
+
+### ⚠️ Phase Gate: Finaler Checkpoint am Ende von 6d
+
+> **Dieser Checkpoint ist besonders wichtig** — nach 6d gehen wir in die Test-Phase (P07a). Alle Fixes aus 6a–6d müssen stabil sein.
+
+1. **Alle Tests laufen lassen**: `cd assistant && python -m pytest --tb=short -q`
+2. **Git-Tag setzen**: `git tag checkpoint-6d-pre-testing`
+3. **Vergleiche mit 6a-Baseline**: Mindestens gleich viele Tests grün wie nach 6a, idealerweise mehr
+4. Falls Tests schlechter → Problem identifizieren und fixen bevor P07a beginnt
 
 ---
 

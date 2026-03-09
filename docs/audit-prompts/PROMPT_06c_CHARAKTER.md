@@ -31,6 +31,12 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. In 6a
 
 ## Aufgabe
 
+### ⚠️ Phase Gate: Regression-Check vor Start
+
+1. **Tests ausführen**: `cd assistant && python -m pytest --tb=short -q`
+2. **Vergleiche mit 6b-Checkpoint**: Alle Tests noch grün?
+3. Falls Tests fehlschlagen → zurück zu 6b, dort fixen
+
 ### Schritt 1: System-Prompt optimieren (aus Prompt 5)
 
 Lies `personality.py` — besonders `SYSTEM_PROMPT_TEMPLATE` und `build_system_prompt()`.
@@ -150,6 +156,12 @@ Module oder Funktionen die laut Prompt 4 (Dead-Code-Liste) nie aufgerufen werden
 - **Dead Code nur entfernen wenn Grep 0 Treffer zeigt**
 - **Tests nach jedem Fix**
 - **Keine Security/Resilience hier** — das kommt in 6d
+- **⚠️ System-Prompt-Änderungen**: Bevor du Anweisungen im System-Prompt kürzst, prüfe ob ein P6a/6b-Fix davon abhängt. Keine Anweisungen entfernen die ein Bug-Fix eingeführt hat!
+
+### ⚠️ Phase Gate: Checkpoint am Ende von 6c
+
+1. **Alle Tests laufen lassen**: `cd assistant && python -m pytest --tb=short -q`
+2. **Git-Tag setzen**: `git tag checkpoint-6c`
 
 ---
 
