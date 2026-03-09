@@ -18,7 +18,7 @@ Du kennst **J.A.R.V.I.S. aus dem MCU** als Goldstandard:
 
 ## Kontext aus Prompt 1
 
-> **[HIER die Konflikt-Karte aus Prompt 1 einfügen, besonders Konflikt C: "Wer bestimmt was Jarvis WEISS?"]**
+> **[HIER die Konflikt-Karte aus Prompt 1 einfügen, besonders Konflikt C: "Wer bestimmt was Jarvis WEISS?" und Konflikt F: "Assistant ↔ Addon Interaktion"]**
 
 ---
 
@@ -26,16 +26,27 @@ Du kennst **J.A.R.V.I.S. aus dem MCU** als Goldstandard:
 
 Jarvis merkt sich **keine Gespräche**. Trotz eines 3-Tier Memory Systems (Redis Working Memory, ChromaDB Episodic, Semantic Facts) funktioniert die Erinnerung nicht.
 
-### Memory-Module im Projekt
+### ALLE Memory-bezogenen Module
+
+Es gibt **nicht 4, sondern mindestens 10** Module die mit Memory/Wissen zu tun haben:
 
 | Modul | Aufgabe | Technologie |
 |---|---|---|
 | `memory.py` | Working Memory | Redis |
-| `semantic_memory.py` | Langzeit-Fakten | ChromaDB |
+| `semantic_memory.py` | Langzeit-Fakten & Vektor-Suche | ChromaDB |
 | `conversation.py` | Gesprächsverlauf | ? |
 | `conversation_memory.py` | Konversations-Gedächtnis | ? |
-| `context_builder.py` | Was tatsächlich im LLM-Prompt landet | Prompt-String |
+| `memory_extractor.py` | Extrahiert Fakten aus Gesprächen | ? |
+| `correction_memory.py` | Lernt aus User-Korrekturen | ? |
+| `dialogue_state.py` | Konversations-Zustandsmaschine | ? |
 | `learning_observer.py` | Muster aus Verhalten | ? |
+| `learning_transfer.py` | Wissenstransfer zwischen Domains | ? |
+| `knowledge_base.py` | Lokales Wissens-Repository | ? |
+| `context_builder.py` | Was tatsächlich im LLM-Prompt landet | Prompt-String |
+| `embeddings.py` | Embedding-Modell-Verwaltung | ? |
+| `embedding_extractor.py` | Text → Embedding-Vektor | ? |
+
+**Kritische Frage**: Wie hängen diese 13 Module zusammen? Oder sind es 13 isolierte Inseln?
 
 ---
 
@@ -47,7 +58,29 @@ Lies und **verifiziere im Code**:
 - `docs/JARVIS_SELF_IMPROVEMENT.md` — 9 Self-Learning Features: Wie viele sind wirklich implementiert?
 - `docs/JARVIS_FEATURES_IMPLEMENTATION.md` — Memory-bezogene Bugfixes: Wirklich gefixt?
 
-### Schritt 2 — Kompletten Memory-Datenfluss verfolgen
+### Schritt 2 — Memory-Modul-Abhängigkeiten kartieren
+
+Bevor du den Datenfluss verfolgst: Lies **jedes** der 13 Module und erstelle eine **Abhängigkeitskarte**:
+
+| Modul | Importiert von | Wird importiert von | Shared State? |
+|---|---|---|---|
+| `memory.py` | ? | ? | ? |
+| `semantic_memory.py` | ? | ? | ? |
+| `conversation.py` | ? | ? | ? |
+| `conversation_memory.py` | ? | ? | ? |
+| `memory_extractor.py` | ? | ? | ? |
+| `correction_memory.py` | ? | ? | ? |
+| `dialogue_state.py` | ? | ? | ? |
+| `learning_observer.py` | ? | ? | ? |
+| `learning_transfer.py` | ? | ? | ? |
+| `knowledge_base.py` | ? | ? | ? |
+| `embeddings.py` | ? | ? | ? |
+| `embedding_extractor.py` | ? | ? | ? |
+| `context_builder.py` | ? | ? | ? |
+
+**Ziel**: Verstehen ob es einen kohärenten Memory-Stack gibt oder 13 isolierte Systeme.
+
+### Schritt 3 — Kompletten Memory-Datenfluss verfolgen
 
 Verfolge den **exakten Code-Pfad** einer Erinnerung. Lies jeden beteiligten File und jede Funktion:
 
@@ -55,28 +88,35 @@ Verfolge den **exakten Code-Pfad** einer Erinnerung. Lies jeden beteiligten File
 1. User sagt etwas (main.py / brain.py Eingang)
    → Wo genau wird die Nachricht gespeichert?
    → Welche Funktion? Welche Zeile?
+   → Wird dialogue_state.py aktualisiert?
 
 2. Vor der LLM-Antwort
    → Wird memory.py aufgerufen um relevante Erinnerungen zu laden?
    → Wird semantic_memory.py abgefragt?
    → Wird conversation.py / conversation_memory.py abgefragt?
+   → Wird correction_memory.py geprüft (frühere Korrekturen)?
+   → Wird knowledge_base.py einbezogen?
    → Werden die Ergebnisse an context_builder.py übergeben?
    → Landen sie im LLM-Prompt?
+   → Wie viele Token verbraucht der Memory-Kontext?
 
 3. Nach der LLM-Antwort
    → Wird die Konversation gespeichert?
-   → Werden Fakten automatisch extrahiert?
-   → Werden sie in ChromaDB geschrieben?
-   → Werden sie in Redis geschrieben?
+   → Wird memory_extractor.py aufgerufen um Fakten zu extrahieren?
+   → Werden Fakten in ChromaDB geschrieben? (semantic_memory.py)
+   → Werden sie in Redis geschrieben? (memory.py)
+   → Wird learning_observer.py informiert?
+   → Wird learning_transfer.py aktualisiert?
 
 4. Bei einem späteren Abruf
    → User fragt "Was habe ich gestern gesagt?"
    → Welcher Code-Pfad wird durchlaufen?
+   → Welches Embedding-Modell wird für die Query verwendet? (embeddings.py)
    → Wird ChromaDB korrekt abgefragt?
    → Kommt das Ergebnis im LLM-Prompt an?
 ```
 
-### Schritt 3 — Spezifische Checks
+### Schritt 4 — Spezifische Checks
 
 Prüfe jeden einzelnen Punkt und dokumentiere das Ergebnis mit Code-Referenz:
 
@@ -88,16 +128,21 @@ Prüfe jeden einzelnen Punkt und dokumentiere das Ergebnis mit Code-Referenz:
 | 4 | Redis TTL: Laufen Erinnerungen stillschweigend ab? Welche TTL-Werte? | ? | ? |
 | 5 | Async: Werden Memory-Operationen korrekt **awaited**? | ? | ? |
 | 6 | Race Condition: Wird die Antwort generiert **bevor** Memory-Abfrage fertig? | ? | ? |
-| 7 | ChromaDB: Stimmen die Embeddings? Wird das richtige Modell verwendet? | ? | ? |
+| 7 | ChromaDB: Wird das richtige Embedding-Modell verwendet? | ? | ? |
 | 8 | ChromaDB: Wird überhaupt geschrieben? Oder nur gelesen? | ? | ? |
 | 9 | Conversation History: Wird sie als Messages-Array ans LLM übergeben? | ? | ? |
 | 10 | Conversation History: Wird sie zwischen Sessions persistiert? | ? | ? |
-| 11 | Fakten-Extraktion: Gibt es Code der aus Gesprächen Fakten extrahiert? | ? | ? |
-| 12 | Fakten-Extraktion: Wird er aufgerufen? Funktioniert er? | ? | ? |
-| 13 | `conversation.py` vs `conversation_memory.py`: Was macht jedes? Überlappen sie? | ? | ? |
-| 14 | `learning_observer.py`: Werden gelernte Muster im Prompt verwendet? | ? | ? |
+| 11 | `memory_extractor.py`: Wird er aufgerufen? Extrahiert er korrekt Fakten? | ? | ? |
+| 12 | `correction_memory.py`: Werden Korrekturen gespeichert und bei nächster Antwort genutzt? | ? | ? |
+| 13 | `dialogue_state.py`: Wird der State korrekt verwaltet? Multi-Turn? | ? | ? |
+| 14 | `conversation.py` vs `conversation_memory.py`: Was macht jedes? Überlappen sie? | ? | ? |
+| 15 | `learning_observer.py`: Werden gelernte Muster im Prompt verwendet? | ? | ? |
+| 16 | `learning_transfer.py`: Funktioniert Wissenstransfer? Oder Dead Code? | ? | ? |
+| 17 | `knowledge_base.py`: Was enthält es? Wird es im Prompt genutzt? | ? | ? |
+| 18 | `embeddings.py` vs `embedding_extractor.py`: Redundanz? Verschiedene Modelle? | ? | ? |
+| 19 | **Addon-Daten**: Weiß der Assistant was der Addon über Muster/Verhalten weiß? | ? | ? |
 
-### Schritt 4 — Root Cause finden
+### Schritt 5 — Root Cause finden
 
 Basierend auf den Checks: **Warum genau** funktioniert die Erinnerung nicht?
 
@@ -107,13 +152,17 @@ Mögliche Root Causes (prüfe jede):
 - [ ] Memory wird in den Prompt injiziert aber nach dem Context-Limit abgeschnitten
 - [ ] Redis TTL löscht Erinnerungen zu schnell
 - [ ] ChromaDB wird nicht korrekt initialisiert
-- [ ] Embeddings passen nicht zum Query-Embedding
+- [ ] Embeddings passen nicht zum Query-Embedding (falsches Modell?)
 - [ ] Async-Fehler: Memory-Abfrage wird nicht awaited
 - [ ] Race Condition: Antwort kommt vor Memory-Abruf
 - [ ] conversation.py und conversation_memory.py arbeiten gegeneinander
+- [ ] memory_extractor.py wird nie aufgerufen (Dead Code)
+- [ ] correction_memory.py wird nie abgefragt
+- [ ] dialogue_state.py wird nicht korrekt aktualisiert
+- [ ] 13 isolierte Memory-Silos ohne Verbindung
 - [ ] Der Code existiert aber wird nie aufgerufen (Dead Code)
 
-### Schritt 5 — Fix implementieren ODER Alternative vorschlagen
+### Schritt 6 — Fix implementieren ODER Alternative vorschlagen
 
 **Option A**: Das aktuelle System reparieren, wenn die Bugs behebbar sind.
 
@@ -127,31 +176,40 @@ Mögliche Root Causes (prüfe jede):
 | **MemGPT-Pattern** | Bewährt, skalierbar | Komplex zu implementieren | ? |
 | **Hybrid**: Sliding Window + SQLite | Kurzzeitgedächtnis + Archiv | Mittlere Komplexität | ? |
 | **Aktuelles System fixen** | Kein Umbau nötig | Evtl. Design-Fehler | ? |
+| **Konsolidierung**: 13 Module → 3 | Weniger Silos, klarer | Umbau nötig | ? |
 
 ---
 
 ## Output-Format
 
-### 1. Memory-Flow-Diagramm (textuell)
+### 1. Memory-Abhängigkeitskarte (ausgefüllt)
+
+Die Tabelle aus Schritt 2 — wer importiert wen, wer teilt State.
+
+### 2. Memory-Flow-Diagramm (textuell)
 
 ```
 User Input → [wo gespeichert?] → [wie abgerufen?] → [wo im Prompt?] → LLM → [was persistiert?]
 ```
 Mit konkreten Funktionsnamen und Datei:Zeile.
 
-### 2. Check-Tabelle (ausgefüllt)
+### 3. Check-Tabelle (ausgefüllt)
 
-Die 14 Checks aus Schritt 3, alle beantwortet mit Code-Referenzen.
+Die 19 Checks aus Schritt 4, alle beantwortet mit Code-Referenzen.
 
-### 3. Root Cause Analyse
+### 4. Root Cause Analyse
 
 Die wahrscheinlichste(n) Ursache(n) mit Beweis aus dem Code.
 
-### 4. Fix oder Alternative
+### 5. Dead-Code-Liste
+
+Module die existieren aber **nie aufgerufen** werden.
+
+### 6. Fix oder Alternative
 
 Konkreter Code für den Fix, oder Vorschlag für eine alternative Implementierung mit Code-Skizze.
 
-### 5. Bug-Report
+### 7. Bug-Report
 
 Für jeden Memory-Bug:
 ```
@@ -168,6 +226,8 @@ Für jeden Memory-Bug:
 
 - **Nur Memory** in diesem Prompt — keine anderen Bugs jagen
 - Folge dem Code, nicht der Dokumentation
+- **ALLE 13 Module** prüfen — nicht nur die offensichtlichen 4
 - Wenn du einen `await` vermisst oder eine Race Condition findest: Datei + Zeile + Beweis
-- Prüfe ob die 4 Memory-Module **überhaupt voneinander wissen** oder isolierte Silos sind
-- Einfach > Komplex: Wenn SQLite + Sliding Window robuster ist als 3-Tier mit Redis+ChromaDB, sag es
+- Prüfe ob die Module **voneinander wissen** oder isolierte Silos sind
+- Einfach > Komplex: Wenn weniger Module robuster sind, sag es
+- Prüfe auch ob der **Addon** eigene Memory/Pattern-Daten hat die dem Assistant fehlen

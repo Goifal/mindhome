@@ -2,7 +2,7 @@
 
 ## Rolle
 
-Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Redis, ChromaDB und Home Assistant. Du findest Bugs die andere übersehen — fehlende awaits, stille Exceptions, Race Conditions, Type-Fehler.
+Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Flask, Redis, ChromaDB und Home Assistant. Du findest Bugs die andere übersehen — fehlende awaits, stille Exceptions, Race Conditions, Type-Fehler, Security-Lücken.
 
 ---
 
@@ -12,88 +12,189 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Redis, Chroma
 
 > **[HIER die Memory-Analyse aus Prompt 2 einfügen]**
 
-> **[HIER die Flow-Analyse aus Prompt 3 einfügen]**
+> **[HIER die Flow-Analyse aus Prompt 3 einfügen — besonders Bruchstellen und Kollisionen]**
 
 ---
 
 ## Aufgabe
 
-Prüfe **jedes Modul** in `/assistant/assistant/` systematisch auf die folgenden 10 Fehlerklassen. Arbeite die Module in der angegebenen Prioritätsreihenfolge ab.
+Prüfe **jedes Modul** systematisch auf die folgenden **12 Fehlerklassen**. Arbeite die Module in der angegebenen Prioritätsreihenfolge ab.
 
 ---
 
-## Die 10 Fehlerklassen
+## Die 12 Fehlerklassen
 
 | # | Klasse | Was suchen | Beispiel |
 |---|---|---|---|
 | 1 | **Async-Fehler** | Fehlende `await`, Fire-and-Forget, nicht-awaited Coroutines | `memory.store(data)` statt `await memory.store(data)` |
-| 2 | **Stille Fehler** | `except: pass`, `except Exception: pass`, leere Catch-Blöcke, verschluckte Errors | `try: ... except: logger.debug(...)` ohne Re-raise |
-| 3 | **Race Conditions** | Shared State ohne Locks, gleichzeitige Zugriffe auf Dicts/Listen | Zwei Coroutines die gleichzeitig ein Dict modifizieren |
+| 2 | **Stille Fehler** | `except: pass`, `except Exception: pass`, leere Catch-Blöcke | `try: ... except: logger.debug(...)` ohne Re-raise |
+| 3 | **Race Conditions** | Shared State ohne Locks, gleichzeitige Dict/List-Zugriffe | Zwei Coroutines modifizieren gleichzeitig ein Dict |
 | 4 | **None-Fehler** | Zugriff auf Attribute/Keys von None, fehlende None-Checks | `result["key"]` wenn result None sein kann |
-| 5 | **Init-Fehler** | Race Conditions beim Start, fehlende Dependencies, falsche Reihenfolge | Modul A braucht Modul B, aber B ist noch nicht initialisiert |
-| 6 | **API-Fehler** | Falsche HA-Endpunkte, fehlende Timeouts, Auth-Probleme | `POST /api/services/light/turn_on` ohne Timeout |
-| 7 | **Daten-Fehler** | Falsche JSON-Serialisierung, Redis-Encoding, falsches Schema | `json.dumps(obj)` wenn obj nicht serialisierbar ist |
-| 8 | **Config-Fehler** | settings.yaml-Werte die nicht geladen oder falsch interpretiert werden | `settings["timeout"]` existiert nicht in YAML |
-| 9 | **Memory Leaks** | Listen/Dicts die unbegrenzt wachsen, fehlende Cleanup-Mechanismen | `self.history.append(...)` ohne Limit |
-| 10 | **Logik-Fehler** | Falsche if-Bedingungen, Off-by-One, invertierte Booleans, Dead Code | `if not enabled:` wenn `enabled` den inversen Sinn hat |
+| 5 | **Init-Fehler** | Race Conditions beim Start, fehlende Dependencies | Modul A braucht B, aber B ist noch nicht initialisiert |
+| 6 | **API-Fehler** | Falsche HA-Endpunkte, fehlende Timeouts, Auth-Probleme | API-Call ohne Timeout |
+| 7 | **Daten-Fehler** | Falsche JSON-Serialisierung, Redis-Encoding | `json.dumps(obj)` wenn obj nicht serialisierbar |
+| 8 | **Config-Fehler** | settings.yaml-Werte die nicht geladen/genutzt werden | Key existiert nicht in YAML |
+| 9 | **Memory Leaks** | Listen/Dicts die unbegrenzt wachsen, fehlende Cleanup | `self.history.append(...)` ohne Limit |
+| 10 | **Logik-Fehler** | Falsche if-Bedingungen, Off-by-One, invertierte Booleans | Dead Code, unerreichbare Branches |
+| 11 | **Security** | Prompt Injection, unvalidierte Inputs, fehlende Auth | User-Input direkt im System-Prompt ohne Sanitization |
+| 12 | **Resilience** | Fehlende Fehlertoleranz bei Service-Ausfall | Was wenn Ollama/Redis/ChromaDB/HA down ist? |
 
 ---
 
 ## Modul-Priorität
 
-Prüfe in dieser Reihenfolge (höchster Impact zuerst):
+### Priorität 1 — Kern (MUSS komplett geprüft werden)
+1. `brain.py` — Orchestrator, höchster Impact
+2. `brain_callbacks.py` — Event Hooks
+3. `main.py` — FastAPI-Server, Endpoints
+4. `websocket.py` — WebSocket-Server
 
-### Priorität 1 — Kern (MUSS geprüft werden)
-1. `brain.py` — Orchestrator
-2. `memory.py` — Working Memory
-3. `semantic_memory.py` — Langzeit-Fakten
-4. `conversation.py` — Gesprächsverlauf
-5. `conversation_memory.py` — Konversations-Gedächtnis
-6. `context_builder.py` — Prompt-Bau
-7. `personality.py` — Persönlichkeits-Engine
+### Priorität 2 — Memory-Kette
+5. `memory.py` — Working Memory
+6. `semantic_memory.py` — Langzeit-Fakten
+7. `conversation.py` — Gesprächsverlauf
+8. `conversation_memory.py` — Konversations-Gedächtnis
+9. `memory_extractor.py` — Fakten-Extraktion
+10. `correction_memory.py` — Korrektur-Lernen
+11. `dialogue_state.py` — Konversations-State
+12. `embeddings.py` — Embedding-Modelle
+13. `embedding_extractor.py` — Text → Embedding
 
-### Priorität 2 — Aktionen & Inference
-8. `function_calling.py` — Tool-Ausführung
-9. `action_planner.py` — Multi-Step-Planung
-10. `ollama_client.py` — LLM-Inference
-11. `model_router.py` — Model-Routing
-12. `main.py` — FastAPI-Server
+### Priorität 3 — Prompt & Persönlichkeit
+14. `context_builder.py` — Prompt-Bau (Security! Prompt Injection!)
+15. `personality.py` — Persönlichkeits-Engine
+16. `mood_detector.py` — Stimmungserkennung
+17. `situation_model.py` — Situations-Kontext
+18. `time_awareness.py` — Tageszeit
 
-### Priorität 3 — Proaktive Systeme
-13. `proactive.py` — Proaktive Events
-14. `routine_engine.py` — Routinen
-15. `anticipation.py` — Prädiktive Patterns
-16. `autonomy.py` — Autonomie-Level
-17. `self_automation.py` — Auto-Automationen
+### Priorität 4 — Aktionen & Inference
+19. `function_calling.py` — Tool-Ausführung
+20. `function_validator.py` — Validierung
+21. `declarative_tools.py` — Tool-Definitionen
+22. `action_planner.py` — Multi-Step-Planung
+23. `ollama_client.py` — LLM-Inference
+24. `model_router.py` — Model-Routing
+25. `pre_classifier.py` — Intent-Vorklassifikation
+26. `request_context.py` — Request State
 
-### Priorität 4 — Intelligence & Monitoring
-18. `insight_engine.py` — Cross-Referencing
-19. `learning_observer.py` — Lern-Patterns
-20. `mood_detector.py` — Stimmungserkennung
-21. `health_monitor.py` — Health-Alerts
-22. `device_health.py` — Anomalie-Erkennung
-23. `light_engine.py` — Circadian Rhythm
-24. `speaker_recognition.py` — Stimm-Identifikation
+### Priorität 5 — Proaktive Systeme
+27. `proactive.py` — Proaktive Events
+28. `proactive_planner.py` — Proaktive Planung
+29. `routine_engine.py` — Routinen
+30. `anticipation.py` — Prädiktive Patterns
+31. `spontaneous_observer.py` — Ungefragte Beobachtungen
+32. `autonomy.py` — Autonomie-Level
+33. `self_automation.py` — Auto-Automationen
+34. `conditional_commands.py` — If/Then
+35. `protocol_engine.py` — Protokolle
 
-### Priorität 5 — Alle übrigen Module
-25+ — Alle weiteren `.py` Dateien in `/assistant/assistant/`
+### Priorität 6 — HA-Integration & Audio
+36. `ha_client.py` — HA-API Client (Timeouts! Auth! Resilience!)
+37. `light_engine.py` — Circadian Rhythm
+38. `climate_model.py` — Klima-Steuerung
+39. `cover_config.py` — Rollladen
+40. `camera_manager.py` — Kameras
+41. `tts_enhancer.py` — TTS-Aufbereitung
+42. `sound_manager.py` — Audio-Wiedergabe
+43. `ambient_audio.py` — Hintergrund-Audio
+44. `multi_room_audio.py` — Multi-Room
+45. `speaker_recognition.py` — Stimm-ID
+
+### Priorität 7 — Intelligence & Self-Improvement
+46. `insight_engine.py` — Cross-Referencing
+47. `learning_observer.py` — Lern-Patterns
+48. `learning_transfer.py` — Wissenstransfer
+49. `self_optimization.py` — Self-Improvement
+50. `self_report.py` — Diagnostik
+51. `feedback.py` — User-Feedback
+52. `response_quality.py` — Antwort-Qualität
+53. `intent_tracker.py` — Intent-Tracking
+54. `outcome_tracker.py` — Outcome-Tracking
+
+### Priorität 8 — Resilience & Sicherheit
+55. `error_patterns.py` — Error-Klassifikation
+56. `circuit_breaker.py` — Fehlertoleranz
+57. `conflict_resolver.py` — Konflikt-Lösung
+58. `adaptive_thresholds.py` — Dynamische Schwellwerte
+59. `threat_assessment.py` — Bedrohungserkennung
+60. `config.py` — Config-Laden
+61. `constants.py` — Konstanten
+62. `config_versioning.py` — Config-Versionierung
+
+### Priorität 9 — Domain-Assistenten & Monitoring
+63. `cooking_assistant.py`, `recipe_store.py`
+64. `music_dj.py`
+65. `smart_shopping.py`
+66. `calendar_intelligence.py`
+67. `inventory.py`
+68. `web_search.py`, `knowledge_base.py`, `summarizer.py`
+69. `ocr.py`, `file_handler.py`
+70. `workshop_library.py`, `workshop_generator.py`
+71. `health_monitor.py`, `device_health.py`
+72. `energy_optimizer.py`, `predictive_maintenance.py`, `repair_planner.py`
+73. `visitor_manager.py`, `follow_me.py`
+74. `wellness_advisor.py`, `activity.py`
+75. `seasonal_insight.py`
+76. `explainability.py`
+77. `diagnostics.py`
+78. `task_registry.py`
+
+### Priorität 10 — Addon-Module (NICHT vergessen!)
+79. `addon/rootfs/opt/mindhome/app.py` — Flask-App
+80. `addon/rootfs/opt/mindhome/ha_connection.py` — HA-Anbindung
+81. `addon/rootfs/opt/mindhome/event_bus.py` — Event-Bus
+82. `addon/rootfs/opt/mindhome/automation_engine.py` — Automationen
+83. `addon/rootfs/opt/mindhome/pattern_engine.py` — Pattern-Matching
+84. `addon/rootfs/opt/mindhome/domains/*.py` — Alle Domain-Module
+85. `addon/rootfs/opt/mindhome/engines/*.py` — Alle Engine-Module
+
+### Priorität 11 — Speech-Server
+86. `speech/server.py`
+87. `speech/handler.py`
 
 ---
 
 ## Spezifische Problemzonen (aus Dokumentation bekannt)
 
-Prüfe diese **dokumentierten aber möglicherweise nicht gefixten** Issues:
-
 | Quelle | Behauptung | Verifiziere im Code |
 |---|---|---|
-| `JARVIS_STATUS.md` | Bugs B1–B6 sind gefixt | Wirklich gefixt? Oder nur dokumentiert? |
-| `JARVIS_FEATURES_IMPLEMENTATION.md` | 5 Bugfixes implementiert | Code prüfen — sind die Fixes korrekt? |
-| `JARVIS_SELF_IMPROVEMENT.md` | 9 Self-Learning Features | Wie viele sind echte Implementierungen vs. nur Stubs? |
-| `docs/JARVIS_AUDIT.md` | Audit-Findings | Wurden die Findings behoben? |
-| Protocol Engine | 5 Bugs dokumentiert | Wirklich alle gefixt? |
-| Insight Engine | "70% fertig" | Was fehlt konkret? |
-| Token Streaming | "Komplett fehlend" | Stimmt das noch? |
-| Interrupt Queueing | "Komplett fehlend" | Stimmt das noch? |
+| `JARVIS_STATUS.md` | Bugs B1–B6 sind gefixt | Wirklich gefixt? |
+| `JARVIS_FEATURES_IMPLEMENTATION.md` | 5 Bugfixes implementiert | Fixes korrekt? |
+| `JARVIS_SELF_IMPROVEMENT.md` | 9 Self-Learning Features | Implementiert oder nur Stubs? |
+| `docs/JARVIS_AUDIT.md` | Audit-Findings | Findings behoben? |
+| Protocol Engine | 5 Bugs dokumentiert | Alle gefixt? |
+| Insight Engine | "70% fertig" | Was fehlt? |
+| Token Streaming | "Komplett fehlend" | Stimmt noch? |
+| Interrupt Queueing | "Komplett fehlend" | Stimmt noch? |
+
+## Security-Checks (NEU)
+
+Prüfe **besonders**:
+
+| # | Security-Check | Modul | Was prüfen |
+|---|---|---|---|
+| 1 | Prompt Injection | `context_builder.py` | Wird User-Input sanitized bevor er im System-Prompt landet? |
+| 2 | Input Validation | `main.py`, `websocket.py` | Werden API-Inputs validiert? |
+| 3 | HA-Auth | `ha_client.py` | Werden Credentials sicher gehandhabt? |
+| 4 | Function Call Safety | `function_calling.py`, `function_validator.py` | Können bösartige Tool-Calls ausgeführt werden? |
+| 5 | Self-Automation Safety | `self_automation.py` | Kann Jarvis gefährliche HA-Automationen generieren? |
+| 6 | Autonomy Limits | `autonomy.py` | Gibt es harte Grenzen für autonome Aktionen? |
+| 7 | Threat Assessment | `threat_assessment.py` | Funktioniert es? Wird es genutzt? |
+
+## Resilience-Checks (NEU)
+
+| # | Szenario | Was sollte passieren | Was passiert? | Code-Referenz |
+|---|---|---|---|---|
+| 1 | Ollama nicht erreichbar | Graceful Error, User informieren | ? | ? |
+| 2 | Redis nicht erreichbar | Degraded Mode ohne Memory | ? | ? |
+| 3 | ChromaDB nicht erreichbar | Fallback auf Redis-only | ? | ? |
+| 4 | Home Assistant nicht erreichbar | Fehlermeldung, kein Crash | ? | ? |
+| 5 | Speech-Server nicht erreichbar | Text-only Mode | ? | ? |
+| 6 | Addon nicht erreichbar | Assistant funktioniert standalone | ? | ? |
+| 7 | Netzwerk-Timeout bei LLM-Call | Retry mit Backoff? Timeout-Wert? | ? | ? |
+| 8 | Ungültiges LLM-Response-Format | Parsing-Fehler abfangen | ? | ? |
+| 9 | `circuit_breaker.py` | Wird es überhaupt genutzt? Von welchen Modulen? | ? | ? |
+| 10 | `error_patterns.py` | Werden Fehler klassifiziert? Führt das zu Verbesserungen? | ? | ? |
 
 ---
 
@@ -108,7 +209,7 @@ Prüfe diese **dokumentierten aber möglicherweise nicht gefixten** Issues:
 
 ### Severity-Definition
 
-- 🔴 **KRITISCH** — Absturz, Datenverlust, Kern-Funktion komplett kaputt
+- 🔴 **KRITISCH** — Absturz, Datenverlust, Security-Lücke, Kern-Funktion komplett kaputt
 - 🟠 **HOCH** — Feature funktioniert nicht, aber kein Crash
 - 🟡 **MITTEL** — Logik-Fehler, Inkonsistenz, fehlende Integration
 - 🟢 **NIEDRIG** — Code-Qualität, Performance, nicht-funktionale Probleme
@@ -126,12 +227,24 @@ Häufigste Fehlerklasse: [Name] (X Vorkommen)
 Am stärksten betroffenes Modul: [Name] (X Bugs)
 ```
 
+### Security-Report
+
+| # | Risiko | Modul | Beschreibung | Empfehlung |
+|---|---|---|---|---|
+| 1 | ? | ? | ? | ? |
+
+### Resilience-Report (ausgefüllt)
+
 ### Dokumentations-Verifikation
 
 | Behauptung | Status | Beweis |
 |---|---|---|
 | Bug B1 gefixt | ✅/❌ | Code-Referenz |
 | ... | ... | ... |
+
+### Dead-Code-Liste
+
+Module oder Funktionen die existieren aber **nie aufgerufen** werden.
 
 ---
 
@@ -140,6 +253,8 @@ Am stärksten betroffenes Modul: [Name] (X Bugs)
 - **Jeder Bug mit Code-Referenz** (Datei:Zeile)
 - **Keine false positives** — nur echte Bugs, keine Style-Issues
 - **Nicht fixen in diesem Prompt** — nur finden und dokumentieren (Fixes kommen in Prompt 6)
-- Priorität 1 Module **komplett** prüfen — bei niedrigeren Prioritäten nach Zeitbudget
-- Wenn ein `except: pass` wirklich intentional ist (z.B. optional Feature): Notiere es trotzdem, aber als 🟢
-- **Async-Fehler haben höchste Aufmerksamkeit** — sie sind die häufigste Ursache für "funktioniert manchmal"
+- Priorität 1–4 Module **komplett** prüfen — ab Priorität 5 nach Zeitbudget
+- **Async-Fehler haben höchste Aufmerksamkeit** — häufigste Ursache für "funktioniert manchmal"
+- **Security-Bugs sind immer 🔴 KRITISCH**
+- **Addon-Module NICHT vergessen** — sie haben eigene Bugs und eigene HA-Integration
+- Wenn ein `except: pass` intentional ist: Trotzdem notieren als 🟢

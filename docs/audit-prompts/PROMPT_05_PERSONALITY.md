@@ -80,7 +80,7 @@ Lies `easter_eggs.yaml` und `opinion_rules.yaml`.
 
 ### Teil E: Konfigurations-Audit
 
-Lies `settings.yaml` komplett.
+Lies `settings.yaml` komplett. Lies auch `config.py` und `constants.py`.
 
 **Prüfe:**
 1. Wird **jeder** Wert in `settings.yaml` tatsächlich im Code verwendet?
@@ -88,6 +88,10 @@ Lies `settings.yaml` komplett.
 3. Werden Default-Werte korrekt gesetzt wenn ein Config-Wert fehlt?
 4. `easter_eggs.yaml`, `opinion_rules.yaml`, `room_profiles.yaml` — korrekt geladen?
 5. `humor_triggers.yaml` — korrekt geladen und verwendet?
+6. `automation_templates.yaml`, `entity_roles_defaults.yaml`, `maintenance.yaml` — korrekt geladen?
+7. `config.py` — Wie werden Configs geladen? Robust gegen fehlende Dateien?
+8. `config_versioning.py` — Werden Config-Änderungen getrackt? Funktioniert es?
+9. **Addon-Config**: `addon/config.yaml` — Überlappen Addon- und Assistant-Configs?
 
 ### Teil F: Persönlichkeits-Konsistenz über Code-Pfade
 
@@ -102,6 +106,15 @@ Prüfe ob der Ton **identisch** ist bei:
 - Autonomer Aktion ("Ich habe die Heizung angepasst")
 
 Wenn der Ton **variiert**: Wo genau und warum?
+
+### Teil G: Explainability & Transparenz (NEU)
+
+Lies `explainability.py`.
+
+**Prüfe:**
+1. Kann Jarvis erklären **warum** er etwas getan hat?
+2. Wird Explainability bei autonomen Aktionen genutzt?
+3. Ist es in den Flow integriert oder Dead Code?
 
 ---
 
@@ -140,6 +153,10 @@ Konkreter Vorschlag für einen verbesserten `SYSTEM_PROMPT_TEMPLATE` (oder Teile
 | opinion_rules.yaml | ? | ? | ? |
 | humor_triggers.yaml | ? | ? | ? |
 | room_profiles.yaml | ? | ? | ? |
+| automation_templates.yaml | ? | ? | ? |
+| entity_roles_defaults.yaml | ? | ? | ? |
+| maintenance.yaml | ? | ? | ? |
+| **Addon**: config.yaml | ? | ? | ? |
 
 ---
 

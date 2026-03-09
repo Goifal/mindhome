@@ -9,11 +9,11 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du ha
 ## Kontext aus vorherigen Prompts
 
 > **[HIER die Ergebnisse aus Prompt 1–5 einfügen:]**
-> - Prompt 1: Konflikt-Karte & Architektur-Bewertung
-> - Prompt 2: Memory-Diagnose & Root Cause
-> - Prompt 3: Flow-Analyse mit Bruchstellen & Kollisionen
-> - Prompt 4: Bug-Report mit allen gefundenen Bugs
-> - Prompt 5: Persönlichkeits-Audit & Config-Analyse
+> - Prompt 1: Konflikt-Karte & Architektur-Bewertung (inkl. 3-Service-Architektur & Addon-Konflikte!)
+> - Prompt 2: Memory-Diagnose & Root Cause (inkl. alle 13 Memory-Module)
+> - Prompt 3: Flow-Analyse mit Bruchstellen & Kollisionen (inkl. Speech, Addon, Domain-Assistenten)
+> - Prompt 4: Bug-Report mit allen Bugs (inkl. Security, Resilience, Addon)
+> - Prompt 5: Persönlichkeits-Audit & Config-Analyse (inkl. Addon-Config)
 
 ---
 
@@ -65,6 +65,24 @@ Gleicher Jarvis ob Frage, proaktive Warnung oder Morgen-Briefing.
 - Config-Fehler aus Prompt 5 fixen
 - Easter Eggs und Opinions korrekt integrieren
 
+#### 6. Ein robustes System (NEU)
+Jarvis darf **nie einfach crashen**. MCU-Jarvis funktioniert auch unter Stress.
+
+**Was zu tun ist:**
+- Security-Bugs aus Prompt 4 fixen (Prompt Injection, unvalidierte Inputs)
+- Resilience-Lücken aus Prompt 4 schließen (Service-Ausfälle abfangen)
+- Circuit Breaker korrekt integrieren
+- Graceful Degradation wenn ein Service ausfällt
+
+#### 7. Addon-Koordination (NEU — KRITISCH)
+Assistant und Addon müssen als **ein System** agieren, nicht als zwei.
+
+**Was zu tun ist:**
+- Addon-Konflikte aus Prompt 1 (Konflikt F) auflösen
+- Klare Zuständigkeiten: Wer steuert was?
+- Doppelte Funktionalität eliminieren oder koordinieren
+- Gemeinsamer State wenn nötig
+
 ---
 
 ## Implementierungs-Reihenfolge
@@ -92,7 +110,16 @@ System-Prompt verbessern, Ton vereinheitlichen. **Jarvis soll wie Jarvis klingen
 ### Schritt 7: Config aufräumen (aus Prompt 5)
 Unbenutzte Werte entfernen, fehlende hinzufügen. **Clean Config.**
 
-### Schritt 8: Mittlere Bugs fixen (🟡 aus Prompt 4)
+### Schritt 8: Addon-Koordination fixen (aus Prompt 1, Konflikt F)
+Assistant und Addon müssen koordiniert arbeiten. **Keine Doppelsteuerung.**
+
+### Schritt 9: Security-Bugs fixen (aus Prompt 4)
+Prompt Injection, unvalidierte Inputs, fehlende Auth. **Sicherheit.**
+
+### Schritt 10: Resilience implementieren (aus Prompt 4)
+Graceful Degradation bei Service-Ausfällen. **Jarvis darf nie einfach sterben.**
+
+### Schritt 11: Mittlere Bugs fixen (🟡 aus Prompt 4)
 Logik-Fehler und fehlende Integrationen. **Feinschliff.**
 
 ---
@@ -156,6 +183,8 @@ Nach allen Änderungen — prüfe:
 ### 4. Offene Punkte
 
 Was konnte in diesem Durchlauf **nicht** gelöst werden und braucht einen weiteren Prompt/Session?
+
+> **WICHTIG**: Nach Prompt 6 kommt **Prompt 7: Testing & Deployment**. Dort werden alle Fixes verifiziert, Tests ausgeführt und das Deployment geprüft.
 
 ---
 
