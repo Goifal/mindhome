@@ -195,7 +195,22 @@ Prüfe jeden einzelnen Punkt und dokumentiere das Ergebnis mit Code-Referenz:
 | 21 | **Addon-Pattern-Engine**: Was lernt `addon/pattern_engine.py`? Werden diese Muster dem Assistant zugänglich gemacht? | ? | ? |
 | 22 | **Addon-Event-Bus**: Werden Memory-relevante Events über `addon/event_bus.py` an den Assistant weitergeleitet? | ? | ? |
 
-> **Claude Code**: Für Checks 19–22 nutze `Grep: pattern="pattern_engine\|db\.\|models\.\|event_bus" path="addon/"` und dann Read für Details.
+> **Claude Code**: Für Checks 19–22 nutze `Grep: pattern="pattern_engine|db\.|models\.|event_bus" path="addon/"` und dann Read für Details.
+
+### Schritt 4b — Performance-Check: Memory-Latenz
+
+> Memory-Operationen liegen auf dem **kritischen Pfad** jedes Requests. Langsames Memory = langsamer Jarvis.
+
+| # | Check | Ergebnis | Code-Referenz |
+|---|---|---|---|
+| 1 | Werden Memory-Abfragen (Redis, ChromaDB) **parallel** gemacht oder **sequentiell**? | ? | ? |
+| 2 | Wie viele Redis-Roundtrips pro Request? (Ziel: ≤3) | ? | ? |
+| 3 | Wie lange dauert eine ChromaDB-Query? (Embedding-Berechnung + Suche) | ? | ? |
+| 4 | Werden Embedding-Berechnungen **gecacht** oder bei jedem Request neu berechnet? | ? | ? |
+| 5 | Blockiert Memory-Speicherung (nach dem Response) den nächsten Request? | ? | ? |
+| 6 | Wie groß ist der Memory-Kontext im Prompt? (Token-Budget vs. Nutzen) | ? | ? |
+
+> Diese Ergebnisse fließen in den Performance-Report von Prompt 4c (Fehlerklasse 13) ein.
 
 ### Schritt 5 — Root Cause finden
 
@@ -290,12 +305,12 @@ Für jeden Memory-Bug:
 | Aufgabe | Tool | Beispiel |
 |---|---|---|
 | 12 Memory-Module lesen | **Read** (parallel, 3 Batches) | Siehe Strategie oben |
-| Redis-Aufrufe finden | **Grep** | `pattern="redis\.\|\.set\(\|\.get\("` |
-| ChromaDB-Aufrufe finden | **Grep** | `pattern="chroma\|collection\."` |
-| Wer ruft memory.store() auf? | **Grep** | `pattern="memory\.store\|memory\.save"` |
-| Wird Modul X importiert? | **Grep** | `pattern="from.*memory_extractor import"` |
-| Fehlende awaits finden | **Grep** | `pattern="[^await ]self\.memory\."` |
-| Addon-Memory prüfen | **Grep** + **Read** | `pattern="pattern_engine\|db\." path="addon/"` |
+| Redis-Aufrufe finden | **Grep** | `pattern="redis\.|\.set\(|\.get\(" path="assistant/assistant/"` |
+| ChromaDB-Aufrufe finden | **Grep** | `pattern="chroma|collection\." path="assistant/assistant/"` |
+| Wer ruft memory.store() auf? | **Grep** | `pattern="memory\.store|memory\.save" path="assistant/assistant/"` |
+| Wird Modul X importiert? | **Grep** | `pattern="from.*memory_extractor import" path="assistant/"` |
+| Fehlende awaits finden | **Grep** | `pattern="[^await ]self\.memory\." path="assistant/assistant/"` |
+| Addon-Memory prüfen | **Grep** + **Read** | `pattern="pattern_engine|db\." path="addon/"` |
 
 - **Nur Memory** in diesem Prompt — keine anderen Bugs jagen
 - Folge dem Code, nicht der Dokumentation
@@ -307,9 +322,9 @@ Für jeden Memory-Bug:
 
 ---
 
-## ⚡ Übergabe an Prompt 3
+## ⚡ Übergabe an Prompt 3a
 
-Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 3:
+Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 3a:
 
 ```
 ## KONTEXT AUS PROMPT 2: Memory-Analyse
@@ -331,6 +346,9 @@ Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 
 
 ### Dead-Code-Module
 [Module die existieren aber nie aufgerufen werden]
+
+### Memory-Performance
+[Redis-Roundtrips pro Request, ChromaDB-Query-Latenz, Embedding-Caching, Token-Budget]
 ```
 
-**Wenn du Prompt 3 in derselben Konversation erhältst**: Setze diesen Kontext-Block + den aus Prompt 1 automatisch ein.
+**Wenn du Prompt 3a in derselben Konversation erhältst**: Setze diesen Kontext-Block + den aus Prompt 1 automatisch ein.

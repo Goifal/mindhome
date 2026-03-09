@@ -28,10 +28,10 @@ Du bist ein KI-Ingenieur spezialisiert auf Prompt Engineering, Conversational AI
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–4 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+> **Wenn du Prompts 1–4c bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
 >
 > **Wenn dies eine neue Konversation ist**: Füge hier ein:
-> - Kontext-Block aus Prompt 4 (Bug-Report, besonders Persönlichkeits-bezogene Bugs)
+> - Kontext-Block aus Prompt 4 gesamt (4a + 4b + 4c) (Bug-Report, besonders Persönlichkeits-bezogene Bugs)
 > - Kontext-Block aus Prompt 1 (Konflikt-Karte, Abschnitt "Wie Jarvis klingt" / Konflikt D)
 
 ---
@@ -88,15 +88,17 @@ Lies `settings.yaml` komplett. Lies auch `config.py` und `constants.py`.
 1. Wird **jeder** Wert in `settings.yaml` tatsächlich im Code verwendet?
 2. Gibt es Code der auf Config-Werte zugreift die **nicht existieren**?
 3. Werden Default-Werte korrekt gesetzt wenn ein Config-Wert fehlt?
-4. `easter_eggs.yaml`, `opinion_rules.yaml`, `room_profiles.yaml` — korrekt geladen?
-5. `humor_triggers.yaml` — korrekt geladen und verwendet?
-6. `automation_templates.yaml`, `entity_roles_defaults.yaml`, `maintenance.yaml` — korrekt geladen?
+4. `easter_eggs.yaml`, `opinion_rules.yaml`, `room_profiles.yaml` — korrekt geladen? **(falls vorhanden — mit Glob prüfen!)**
+5. `humor_triggers.yaml` — korrekt geladen und verwendet? **(falls vorhanden)**
+6. `automation_templates.yaml`, `entity_roles_defaults.yaml`, `maintenance.yaml` — korrekt geladen? **(falls vorhanden)**
 7. `config.py` — Wie werden Configs geladen? Robust gegen fehlende Dateien?
 8. `config_versioning.py` — Werden Config-Änderungen getrackt? Funktioniert es?
-9. **Addon-Config**: `addon/config.yaml`, `addon/build.yaml` — Überlappen Addon- und Assistant-Configs?
-10. **Übersetzungen**: `addon/.../translations/de.json`, `en.json` — Sind alle UI-Strings übersetzt? Konsistent mit Jarvis-Ton?
-11. **HA-Manifest**: `ha_integration/.../manifest.json`, `strings.json` — Version korrekt? Dependencies vollständig?
+9. **Addon-Config**: `addon/config.yaml`, `addon/build.yaml` — Überlappen Addon- und Assistant-Configs? **(falls vorhanden)**
+10. **Übersetzungen**: `addon/.../translations/de.json`, `en.json` — Sind alle UI-Strings übersetzt? **(falls vorhanden)**
+11. **HA-Manifest**: `ha_integration/.../manifest.json`, `strings.json` — Version korrekt? **(falls vorhanden)**
 12. **`.env.example`** — Sind ALLE nötigen Umgebungsvariablen dokumentiert? Fehlen welche?
+
+> **Wichtig**: Nicht alle YAML/JSON-Configs müssen existieren. Prüfe mit `Glob: pattern="**/*.yaml" path="assistant/assistant/"` und `Glob: pattern="**/*.yaml" path="addon/"` welche tatsächlich vorhanden sind. Überspringe nicht-existierende Dateien und dokumentiere sie als "nicht vorhanden".
 
 ### Teil F: Persönlichkeits-Konsistenz über Code-Pfade
 
@@ -176,12 +178,12 @@ Konkreter Vorschlag für einen verbesserten `SYSTEM_PROMPT_TEMPLATE` (oder Teile
 | Aufgabe | Tool | Beispiel |
 |---|---|---|
 | personality.py + context_builder.py lesen | **Read** (parallel) | Beide gleichzeitig lesen |
-| Alle 9 YAML-Configs lesen | **Read** (parallel, 2 Batches) | `settings.yaml`, `easter_eggs.yaml`, ... |
-| Config-Wert im Code finden | **Grep** | `Grep: pattern="sarcasm_level\|humor_level" path="assistant/"` |
+| Alle YAML-Configs lesen (falls vorhanden) | **Read** (parallel, 2 Batches) | **Batch 1**: `settings.yaml`, `easter_eggs.yaml`, `opinion_rules.yaml`, `humor_triggers.yaml`, `room_profiles.yaml` — **Batch 2**: `automation_templates.yaml`, `entity_roles_defaults.yaml`, `maintenance.yaml`, `addon/config.yaml` |
+| Config-Wert im Code finden | **Grep** | `Grep: pattern="sarcasm_level|humor_level" path="assistant/"` |
 | Unbenutzte Config-Werte finden | **Grep** pro YAML-Key | `Grep: pattern="KEY_NAME" path="assistant/"` → 0 Treffer = unbenutzt |
-| Persönlichkeits-Pfade finden | **Grep** | `Grep: pattern="personality\|system_prompt\|SYSTEM_PROMPT" path="assistant/"` |
+| Persönlichkeits-Pfade finden | **Grep** | `Grep: pattern="personality|system_prompt|SYSTEM_PROMPT" path="assistant/"` |
 | Addon-Config prüfen | **Read** `addon/config.yaml` + **Grep** nach Keys in Addon-Code |
-| Wo wird mood_detector genutzt? | **Grep** | `Grep: pattern="mood_detector\|detect_mood\|user_mood" path="assistant/"` |
+| Wo wird mood_detector genutzt? | **Grep** | `Grep: pattern="mood_detector|detect_mood|user_mood" path="assistant/"` |
 
 - **MCU-Jarvis ist der Maßstab** — nicht "was klingt nett", sondern "was würde Jarvis sagen"
 - Jede Kritik mit **konkretem Verbesserungsvorschlag**
@@ -191,7 +193,7 @@ Konkreter Vorschlag für einen verbesserten `SYSTEM_PROMPT_TEMPLATE` (oder Teile
 
 ---
 
-## ⚡ Übergabe an Prompt 6
+## ⚡ Übergabe an Prompt 6a
 
 Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 6:
 
@@ -214,4 +216,4 @@ Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 
 [Integriert oder Dead Code?]
 ```
 
-**Wenn du Prompt 6 in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–5) automatisch ein.
+**Wenn du Prompt 6a in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–5) automatisch ein.

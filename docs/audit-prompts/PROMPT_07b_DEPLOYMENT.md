@@ -1,106 +1,35 @@
-# Prompt 7: Testing, Resilience & Deployment-Verifikation
+# Prompt 7b: Docker, Deployment, Resilience & Performance-Verifikation
 
 ## Rolle
 
-Du bist ein Elite-DevOps-Engineer und QA-Experte mit tiefem Wissen in:
+Du bist ein Elite-DevOps-Engineer mit tiefem Wissen in:
 
-- **Python Testing**: pytest, pytest-asyncio, Mocking, Fixtures, Coverage, Integration Tests
 - **Docker**: Multi-Container-Setups, docker-compose, Health Checks, Networking, Volume-Mounts
 - **Resilience Engineering**: Circuit Breaker, Graceful Degradation, Retry-Strategien, Health Monitoring
-- **CI/CD**: Test-Automation, Build-Pipelines, Deployment-Strategien
+- **Performance**: Latenz-Analyse, Bottleneck-Identifikation, GPU-Setup
+- **CI/CD**: Build-Pipelines, Deployment-Strategien
 
 ---
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+> **Wenn du Prompts 1–7a bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch.
 >
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke aus allen 6 vorherigen Prompts ein:
-> - Prompt 1: Konflikt-Karte & Architektur-Bewertung (3-Service-Architektur!)
-> - Prompt 2: Memory-Diagnose & Root Cause
-> - Prompt 3: Flow-Analyse mit Bruchstellen (13 Flows)
-> - Prompt 4: Bug-Report mit allen Bugs + Security + Resilience
-> - Prompt 5: Persönlichkeits-Audit & Config
-> - Prompt 6: Harmonisierungs-Änderungen (was wurde gefixt?)
+> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke ein:
+> - Prompt 4c: Performance-Report + Resilience-Report
+> - Prompt 6b: Architektur-Entscheidungen + Performance-Optimierungen
+> - Prompt 6d: Security-Fixes + Resilience-Implementierung + Addon-Koordination
+> - Prompt 7a: Test-Report + Security-Endpoint-Status
 
 ---
 
 ## Aufgabe
 
-Nach den Fixes aus Prompt 6: **Verifiziere** dass alles funktioniert, **teste** systematisch, und stelle sicher dass das Deployment **robust** ist.
-
-### Zusätzliche Dokumentation (lies diese zuerst!):
-- `docs/ASSISTANT_TEST_CHECKLIST.md` — Bestehende Test-Checkliste (falls vorhanden, als Basis nutzen)
-- `docs/AUDIT_OPERATIONAL_RELIABILITY.md` — Vorherige Reliability-Analyse (was wurde schon geprüft?)
-- `docs/AUDIT_TTS_STT.md` — Speech-System-Audit (relevant für Speech-Tests)
+> **Dieser Prompt ist Teil 2 von 2** der Verifikation:
+> - **P07a**: Tests + Coverage + Security-Endpoints — ✅ erledigt
+> - **P07b** (dieser): Docker + Deployment + Resilience + Performance
 
 ---
-
-### Teil A: Bestehende Tests ausführen und bewerten
-
-**Schritt 1** — Tests laufen lassen (**Claude Code: Mit Bash-Tool ausführen!**):
-```bash
-# AUSFÜHREN mit Bash-Tool — nicht nur lesen!
-cd assistant && python -m pytest --tb=short -q 2>&1 | tail -50
-```
-
-> Falls pytest nicht installiert ist: `cd assistant && pip install -r requirements.txt && pip install pytest pytest-asyncio`
-
-**Schritt 2** — Ergebnisse analysieren:
-
-| Metrik | Wert |
-|---|---|
-| Tests gesamt | ? |
-| Bestanden | ? |
-| Fehlgeschlagen | ? |
-| Übersprungen | ? |
-| Errors | ? |
-| Laufzeit | ? |
-
-**Schritt 3** — Fehlgeschlagene Tests kategorisieren:
-
-| Test | Fehler-Typ | Ursache | Fix nötig in Test oder Code? |
-|---|---|---|---|
-| ? | ? | ? | ? |
-
-**Schritt 4** — Test-Coverage bewerten:
-
-| Modul-Bereich | Tests vorhanden? | Abdeckung |
-|---|---|---|
-| brain.py (Orchestrator) | ? | ? |
-| Memory-Kette (7 Module) | ? | ? |
-| Function Calling | ? | ? |
-| Persönlichkeit | ? | ? |
-| Proaktive Systeme | ? | ? |
-| Speech Pipeline | ? | ? |
-| **Addon-Module** | ? | ? |
-| **Integration zwischen Services** | ? | ? |
-
-### Teil B: Kritische Test-Lücken schließen
-
-Basierend auf Prompt 3 (Flows) und Prompt 4 (Bugs) — prüfe ob es Tests gibt für:
-
-| Szenario | Test existiert? | Datei | Status |
-|---|---|---|---|
-| Sprach-Input → Antwort (E2E) | ? | ? | ? |
-| Memory speichern → Memory abrufen | ? | ? | ? |
-| Function Calling → HA-Aktion | ? | ? | ? |
-| Proaktive Benachrichtigung | ? | ? | ? |
-| Morgen-Briefing E2E | ? | ? | ? |
-| Autonome Aktion mit Level-Check | ? | ? | ? |
-| Concurrent Requests (Race Condition) | ? | ? | ? |
-| Ollama Timeout / Nicht erreichbar | ? | ? | ? |
-| Redis nicht erreichbar | ? | ? | ? |
-| ChromaDB nicht erreichbar | ? | ? | ? |
-| HA nicht erreichbar | ? | ? | ? |
-| Prompt Injection Schutz | ? | ? | ? |
-| Speaker Recognition → korrekter User | ? | ? | ? |
-| Addon + Assistant gleichzeitige Aktion | ? | ? | ? |
-
-Für **jedes fehlende kritische Szenario**: **Schreibe einen Test mit dem Write/Edit-Tool** und führe ihn sofort mit Bash aus:
-```bash
-cd assistant && python -m pytest tests/test_neuer_test.py -v 2>&1
-```
 
 ### Teil C: Docker & Deployment Verifikation
 
@@ -148,6 +77,8 @@ Lies und prüfe:
 | Addon | ? | ? | ? |
 | Speech | ? | ? | ? |
 
+---
+
 ### Teil D: Resilience-Verifikation
 
 Simuliere (gedanklich oder per Code) diese Ausfallszenarien:
@@ -171,7 +102,48 @@ Simuliere (gedanklich oder per Code) diese Ausfallszenarien:
 - Gibt es Fallback-Verhalten?
 - Wird der User informiert oder stirbt Jarvis still?
 
-### Teil E: Monitoring & Observability
+---
+
+### Teil E: Performance & Latenz-Verifikation
+
+> **Jarvis muss schnell antworten.** Ziel: < 3 Sekunden für einfache Befehle ("Licht an").
+
+**Schritt 1** — Latenz-relevante Code-Pfade prüfen:
+
+| Phase | Ziel-Latenz | Was prüfen | Tool |
+|---|---|---|---|
+| Context Building | < 200ms | Werden Memory + HA-State parallel geladen? | **Grep**: `pattern="asyncio\.gather" path="assistant/assistant/context_builder.py"` |
+| LLM-Inference | < 2000ms | Model-Routing: Einfache Befehle → schnelles Modell? | **Read**: `model_router.py` |
+| Function Execution | < 500ms | HA-API-Timeouts korrekt? Parallele Calls? | **Read**: `ha_client.py` |
+| Response Streaming | Sofort | Token-Streaming aktiv oder Batch? | **Grep**: `pattern="stream|emit_stream" path="assistant/assistant/"` |
+
+**Schritt 2** — Performance-Antipatterns verifizieren (aus Prompt 4c):
+
+| Antipattern | Behoben in 6b? | Verifizieren |
+|---|---|---|
+| Sequentielle awaits statt asyncio.gather | ? | Grep für gather in brain.py, context_builder.py |
+| Mehrere LLM-Calls pro Request | ? | Grep für ollama_client-Aufrufe in brain.py |
+| Großes Modell für einfache Befehle | ? | Read model_router.py — Routing-Logik |
+| Embeddings ohne Cache | ? | Grep für cache in embeddings.py |
+| Übergroßer System-Prompt | ? | Token-Count des Prompts |
+
+**Schritt 3** — Falls pytest verfügbar, Performance-Test schreiben:
+
+```python
+# Einfacher Latenz-Test (Smoke Test)
+import time
+async def test_simple_command_latency():
+    """Ein einfacher Befehl sollte < 3 Sekunden dauern."""
+    start = time.monotonic()
+    # Simuliere: "Mach das Licht im Wohnzimmer an"
+    # ... (mock Ollama, HA, Redis)
+    elapsed = time.monotonic() - start
+    assert elapsed < 3.0, f"Einfacher Befehl dauerte {elapsed:.1f}s (Ziel: <3s)"
+```
+
+---
+
+### Teil F: Monitoring & Observability
 
 | Check | Status | Details |
 |---|---|---|
@@ -184,15 +156,27 @@ Simuliere (gedanklich oder per Code) diese Ausfallszenarien:
 | Alerts bei kritischen Fehlern? | ? | ? |
 | Log-Rotation konfiguriert (Container-Logs wachsen!)? | ? | ? |
 
-### Teil F: Installationsscripts prüfen
+---
 
-Lies und prüfe:
+### Teil G: Installationsscripts prüfen
+
+**Zuerst prüfen welche Scripts existieren** (nicht alle müssen vorhanden sein):
+```
+Glob: pattern="**/*.sh" path="assistant/"
+Glob: pattern="**/*.sh" path="addon/"
+Glob: pattern="*.sh"
+Glob: pattern="repository.yaml"
+```
+
+Lies und prüfe **(nur falls vorhanden!)**:
 - `assistant/install.sh` — Installiert es korrekt?
 - `assistant/update.sh` — Update-Logik robust?
 - `assistant/nvidia-watchdog.sh` — GPU-Monitoring
 - `install-nvidia-toolkit.sh` — GPU-Setup
 - `addon/rootfs/opt/mindhome/run.sh` — Addon-Startscript korrekt?
 - `repository.yaml` — HA-Repository-Config vollständig?
+
+> **Nicht-existierende Scripts dokumentieren als "nicht vorhanden"** — das ist selbst ein Finding (fehlende Install-Automation).
 
 | Script | Funktioniert? | Edge Cases abgedeckt? | Idempotent? |
 |---|---|---|---|
@@ -201,7 +185,9 @@ Lies und prüfe:
 | nvidia-watchdog.sh | ? | ? | ? |
 | addon/run.sh | ? | ? | ? |
 
-### Teil G: Dependency-Audit (NEU)
+---
+
+### Teil H: Dependency-Audit
 
 **Claude Code: Mit Bash ausführen!**
 
@@ -221,7 +207,9 @@ cd ../../../../speech && pip-audit -r requirements.txt 2>&1 | head -30
 | Konflikte zwischen Services (gleiche Lib, verschiedene Versionen?) | ? | ? |
 | Veraltete Dependencies (>1 Jahr ohne Update?) | ? | ? |
 
-### Teil H: Frontend-Dateien prüfen (NEU)
+---
+
+### Teil I: Frontend-Dateien prüfen
 
 Lies und prüfe:
 - `addon/rootfs/opt/mindhome/static/frontend/app.jsx` — React-Frontend
@@ -238,19 +226,7 @@ Lies und prüfe:
 
 ## Output-Format
 
-### 1. Test-Report
-
-```
-Tests gesamt: X
-  ✅ Bestanden: X
-  ❌ Fehlgeschlagen: X (Liste mit Ursachen)
-  ⏭️ Übersprungen: X
-
-Test-Coverage-Lücken: [Liste]
-Neue Tests geschrieben: [Liste]
-```
-
-### 2. Deployment-Report
+### 1. Deployment-Report
 
 ```
 Docker-Build: ✅/❌
@@ -260,16 +236,25 @@ Startup-Order: ✅/❌
 Health-Checks: ✅/❌
 ```
 
-### 3. Resilience-Report (ausgefüllt)
+### 2. Resilience-Report (ausgefüllt)
 
 Alle 10 Szenarien mit tatsächlichem Verhalten.
 
+### 3. Performance-Report
+
+| Phase | Geschätzt | Ziel | Status |
+|---|---|---|---|
+| Context Building | ?ms | <200ms | ✅/⚠️/❌ |
+| LLM-Inference | ?ms | <2000ms | ✅/⚠️/❌ |
+| Function Execution | ?ms | <500ms | ✅/⚠️/❌ |
+| Response Processing | ?ms | <200ms | ✅/⚠️/❌ |
+| **Gesamt** | **?ms** | **<3000ms** | ✅/⚠️/❌ |
+
 ### 4. Fix-Liste
 
-Für jeden gefundenen Problem:
 ```
 ### [SEVERITY] Kurzbeschreibung
-- **Bereich**: Test / Docker / Resilience / Monitoring
+- **Bereich**: Docker / Resilience / Monitoring / Dependency
 - **Datei**: path/to/file
 - **Problem**: Was ist falsch
 - **Fix**: Konkreter Fix
@@ -283,7 +268,7 @@ Top-5 Verbesserungen für Stabilität und Zuverlässigkeit im Produktionsbetrieb
 
 ## ⚠️ Arbeitsumgebung: GitHub-Repository
 
-Du arbeitest mit dem Quellcode. Docker-Builds und pytest können ggf. nicht ausgeführt werden wenn Dependencies fehlen. Analysiere dann den Code statisch — lies Dockerfiles Zeile für Zeile, lies Tests Zeile für Zeile, simuliere gedanklich was passiert.
+Du arbeitest mit dem Quellcode. Docker-Builds und pytest können ggf. nicht ausgeführt werden wenn Dependencies fehlen. Analysiere dann den Code statisch — lies Dockerfiles Zeile für Zeile, simuliere gedanklich was passiert.
 
 ### Ziel-Hardware
 
@@ -301,29 +286,29 @@ Das System läuft auf folgender Hardware:
 
 ### Gründlichkeits-Pflicht
 
-> **Lies JEDEN Dockerfile mit Read. FÜHRE Tests mit Bash AUS. Lies JEDES install/update Script mit Read.**
+> **Lies JEDEN Dockerfile mit Read. Lies JEDES install/update Script mit Read.**
 
-### Claude Code Tool-Einsatz in diesem Prompt
+### Claude Code Tool-Einsatz
 
 | Aufgabe | Tool | Befehl |
 |---|---|---|
-| Tests ausführen | **Bash** | `cd assistant && python -m pytest --tb=short -q` |
-| Einzelnen Test debuggen | **Bash** | `cd assistant && python -m pytest tests/test_X.py -v --tb=long` |
-| Test-Coverage messen | **Bash** | `cd assistant && python -m pytest --cov=assistant --cov-report=term-missing` |
 | Dockerfiles lesen | **Read** (parallel: alle 3) | `assistant/Dockerfile`, `addon/Dockerfile`, `speech/Dockerfile.whisper` |
 | Docker-Compose prüfen | **Read** (parallel) | `docker-compose.yml` + `docker-compose.gpu.yml` |
 | Docker build testen | **Bash** | `cd assistant && docker build -t jarvis-test . 2>&1 \| tail -20` |
-| Install-Scripts lesen | **Read** (parallel) | `install.sh`, `update.sh`, `nvidia-watchdog.sh` |
+| Install-Scripts finden | **Glob** | `**/*.sh` in `assistant/`, `addon/`, Root |
+| Install-Scripts lesen | **Read** (parallel, falls vorhanden) | `install.sh`, `update.sh`, `nvidia-watchdog.sh` |
 | Requirements prüfen | **Read** (parallel: alle 3) | `assistant/requirements.txt`, `addon/.../requirements.txt`, `speech/requirements.txt` |
-| Neue Tests schreiben | **Write/Edit** | Test-Datei erstellen, dann mit Bash ausführen |
 | Static Analysis | **Bash** | `cd assistant && python -m py_compile assistant/brain.py 2>&1` |
 
-**Wichtig bei Addon-Tests**: Der Addon braucht ein laufendes Home Assistant. Addon-Module können nur **statisch analysiert** werden (Read + Grep), nicht mit pytest getestet.
-
-- **Tests MÜSSEN mit Bash ausgeführt werden** — nicht nur lesen, sondern tatsächlich `pytest` starten
-- **Fehlgeschlagene Tests analysieren** — ist der Test falsch oder der Code?
 - **Docker-Builds wenn möglich ausführen** — `docker build` mit Bash, falls Docker verfügbar
 - **Resilience ist nicht optional** — ein Smart-Home-Butler MUSS robust sein (MCU-Jarvis crasht nicht)
-- **Keine neuen Tests für Code-Stil** — nur für funktionale Lücken
-- **Addon-Tests nicht vergessen** — falls vorhanden
-- **Nach jedem Fix: Tests erneut laufen lassen**
+
+---
+
+## ⚡ Nächster Schritt: Neuer Durchlauf?
+
+Wenn du nach Prompt 7b einen **neuen Audit-Durchlauf** starten willst (z.B. um Fixes zu verifizieren):
+
+1. Nutze `PROMPT_RESET.md` **vor** Prompt 1
+2. Der Reset sichert die Ergebnisse dieses Durchlaufs als Vergleichsbasis
+3. Starte dann frisch mit Prompt 1 — alle Dateien neu lesen, alle Bugs neu suchen

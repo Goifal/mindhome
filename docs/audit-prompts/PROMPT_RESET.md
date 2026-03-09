@@ -2,7 +2,7 @@
 
 ## Zweck
 
-Dieser Prompt wird **vor** einem neuen Durchlauf der Prompt-Serie (P1–P7) verwendet. Er sorgt dafür, dass:
+Dieser Prompt wird **vor** einem neuen Durchlauf der Prompt-Serie (P1–P7b inkl. P3a/3b, P4a–4c, P6a–6d, P7a/7b) verwendet. Er sorgt dafür, dass:
 
 1. **Alle vorherigen Kontext-Blöcke verworfen** werden
 2. Die **Ergebnisse des letzten Durchlaufs** kompakt zusammengefasst werden (als Vergleichsbasis)
@@ -12,7 +12,7 @@ Dieser Prompt wird **vor** einem neuen Durchlauf der Prompt-Serie (P1–P7) verw
 
 ## Wann verwenden?
 
-- **Nach Prompt 7** eines Durchlaufs, wenn Fixes implementiert wurden und du prüfen willst ob sie wirken
+- **Nach Prompt 7b** eines Durchlaufs, wenn Fixes implementiert wurden und du prüfen willst ob sie wirken
 - **Nach größeren Code-Änderungen** zwischen zwei Audit-Runden
 - **Wenn der Context Window voll ist** und du eine neue Claude-Code-Session starten musst
 
@@ -35,7 +35,7 @@ Bei Claude Code wird der Reset typischerweise als **neue Session** gestartet:
 >
 > ### Was das bedeutet:
 >
-> 1. **VERGISS alle bisherigen Kontext-Blöcke** (KONTEXT AUS PROMPT 1–7). Sie sind veraltet.
+> 1. **VERGISS alle bisherigen Kontext-Blöcke** (KONTEXT AUS PROMPT 1–7b: P1, P2, P3a, P3b, P4a, P4b, P4c, P5, P6a, P6b, P6c, P6d, P7a, P7b). Sie sind veraltet.
 > 2. **VERGISS alle bisherigen Bewertungen** — Module die vorher "okay" waren, können jetzt Bugs haben (und umgekehrt).
 > 3. **VERGISS alle bisherigen Bug-Listen** — du findest die Bugs NEU im aktuellen Code.
 > 4. **Lies JEDE Datei NEU** — auch wenn du sie im letzten Durchlauf gelesen hast. Der Code hat sich geändert.
@@ -103,10 +103,25 @@ Erstelle eine kompakte **Zusammenfassung des letzten Durchlaufs**. Wenn du keine
 - Kritischste Inkonsistenz: [Beschreibung]
 - Config-Probleme: [Anzahl]
 
-### Harmonisierung (P6)
-- Änderungen durchgeführt: X
-- Architektur-Entscheidungen: [brain.py → ?, Memory → ?, Priority → ?]
-- Offene Punkte: [Liste]
+### Stabilisierung (P6a)
+- 🔴 Bugs gefixt: X von Y
+- Memory-Fix: [Was implementiert? Status?]
+
+### Architektur (P6b)
+- Architektur-Entscheidungen: [brain.py → ?, Priority-System → ?]
+- Konflikte aufgelöst: [A, B, E — Status]
+- Performance-Optimierungen: [Was verbessert?]
+
+### Charakter (P6c)
+- System-Prompt: [Token vorher/nachher, MCU-Score]
+- Persönlichkeits-Pfade vereinheitlicht: [Ja/Nein]
+- Config bereinigt: [Ja/Nein]
+- Dead Code entfernt: [Anzahl Module/Funktionen]
+
+### Härtung (P6d)
+- Security-Fixes: X
+- Resilience: [Welche Szenarien abgedeckt?]
+- Addon-Koordination: [Status]
 
 ### Test & Deployment (P7)
 - Tests: X bestanden / X fehlgeschlagen
@@ -129,7 +144,7 @@ Erstelle eine Liste von **Punkten die im neuen Durchlauf besonders beachtet** we
 - [ ] [Datei/Modul] — [Was wurde geändert?]
 - [ ] ...
 
-### Neue Risiken durch die Änderungen aus P6
+### Neue Risiken durch die Änderungen aus P6a–6d
 - [ ] [Beschreibung] — [Könnte neue Bugs eingeführt haben]
 - [ ] ...
 ```
