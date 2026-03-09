@@ -4,11 +4,12 @@ Diese 7 Prompts sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu
 
 ## Das System
 
-Jarvis besteht aus **drei Services + HA-Integration**:
+Jarvis besteht aus **drei Services + HA-Integration + Shared-Module**:
 1. **Assistant** (`/assistant/assistant/`, 89 Module, FastAPI) — KI-Kern
 2. **Addon** (`/addon/rootfs/opt/mindhome/`, ~71 Module, Flask) — Smart-Home-Logik
 3. **Speech** (`/speech/`, 2 Module, Whisper STT) — Spracheingabe
-4. **HA-Integration** (`/ha_integration/`, `conversation.py`) — Bridge zwischen HA Voice Pipeline und Assistant
+4. **HA-Integration** (`/ha_integration/`, 3 Dateien: `__init__.py`, `config_flow.py`, `conversation.py`) — Bridge zwischen HA Voice Pipeline und Assistant
+5. **Shared** (`/shared/`, 6 Dateien) — **API-Verträge** zwischen Services: `ChatRequest`, `ChatResponse`, `MindHomeEvent`, Ports, Event-Namen, Konstanten
 
 Dazu: 105 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen.
 
@@ -50,6 +51,7 @@ Dazu: 105 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen.
 |---|---|---|---|---|---|---|---|
 | Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Addon-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | ✅ | ✅ |
 | Speech-Service | ✅ | - | ✅ | ✅ | - | - | ✅ |
 | Architektur | ✅ | - | - | - | - | ✅ | - |
 | Memory (12 Module) | - | ✅ | ✅ | ✅ | - | ✅ | ✅ |

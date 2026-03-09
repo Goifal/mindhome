@@ -52,6 +52,19 @@ Das System ist NICHT nur der Assistant. Es besteht aus:
    - Separate Speech-to-Text Service
    - Eigener Docker-Container
 
+4. **Shared-Module** (`/shared/`, 6 Dateien) — **API-Verträge zwischen Services**
+   - `constants.py` — Gemeinsame Konstanten: Ports (ASSISTANT_PORT=8200, ADDON_INGRESS_PORT=5000, CHROMADB_PORT=8000, REDIS_PORT=6379, OLLAMA_PORT=11434), Event-Namen, Mood-Levels, Autonomy-Levels
+   - `schemas/chat_request.py` — `ChatRequest` Pydantic-Model (text, person, room, speaker_confidence, voice_metadata) — **DER Vertrag zwischen Addon → Assistant**
+   - `schemas/chat_response.py` — `ChatResponse` + `TTSInfo` Models — **Was der Assistant zurückgibt**
+   - `schemas/events.py` — `MindHomeEvent` Model + Event-Typ-Konstanten — **WebSocket-Kommunikation**
+
+   > ⚠️ **KRITISCH**: Dieses Modul definiert die **Schnittstelle** zwischen allen Services. Prüfe ob Assistant UND Addon diese Schemas tatsächlich importieren und nutzen, oder ob sie ihre eigenen (abweichenden) Definitionen haben.
+
+5. **HA-Integration** (`/ha_integration/custom_components/mindhome_assistant/`, 3 Dateien)
+   - `__init__.py` — HA-Integration Setup/Teardown, DOMAIN-Definition
+   - `config_flow.py` — Konfigurations-UI für HA (URL + API-Key Eingabe, Verbindungstest)
+   - `conversation.py` — HA Voice Pipeline → Assistant Bridge
+
 ### Das Kernproblem
 
 Die Module — sowohl innerhalb des Assistants als auch **zwischen Assistant und Addon** — sind nicht als **ein System** designt worden. Das führt zu Konflikten, Überschreibungen und inkonsistentem Verhalten.
@@ -79,6 +92,7 @@ Die Module — sowohl innerhalb des Assistants als auch **zwischen Assistant und
 | **Monitoring** | `health_monitor.py`, `device_health.py`, `energy_optimizer.py`, `predictive_maintenance.py`, `repair_planner.py` |
 | **Resilience** | `error_patterns.py`, `circuit_breaker.py`, `conflict_resolver.py`, `adaptive_thresholds.py` |
 | **Sicherheit** | `threat_assessment.py` |
+| **Timer** | `timer_manager.py` |
 | **Sonstiges** | `web_search.py`, `knowledge_base.py`, `summarizer.py`, `ocr.py`, `file_handler.py`, `visitor_manager.py`, `follow_me.py`, `wellness_advisor.py`, `activity.py`, `seasonal_insight.py`, `explainability.py`, `diagnostics.py`, `task_registry.py`, `config.py`, `constants.py`, `config_versioning.py` |
 
 ### Addon — Kern-Module
@@ -90,7 +104,8 @@ Die Module — sowohl innerhalb des Assistants als auch **zwischen Assistant und
 | **Domains** | `light.py`, `climate.py`, `cover.py`, `switch.py`, `door_window.py`, `motion.py`, `motion_control.py`, `camera.py`, `media.py`, `lock.py`, `presence.py`, `weather.py`, `vacuum.py`, `ventilation.py`, `humidifier.py`, `air_quality.py`, `energy.py`, `solar.py`, `bed_occupancy.py`, `seat_occupancy.py`, `system.py` |
 | **Engines** | `circadian.py`, `sleep.py`, `comfort.py`, `cover_control.py`, `energy.py`, `fire_water.py`, `weather_alerts.py`, `health_dashboard.py`, `routines.py`, `special_modes.py`, `visit.py`, `adaptive.py`, `access_control.py`, `camera_security.py`, `data_retention.py` |
 | **Automation** | `automation_engine.py`, `pattern_engine.py`, `task_scheduler.py` |
-| **Routes** | 17+ API-Endpoints (frontend, chat, devices, rooms, energy, health, etc.) |
+| **Hilfsdateien** | `helpers.py`, `cover_helpers.py`, `init_db.py`, `version.py` |
+| **Routes** | 17+ API-Endpoints: `automation.py`, `chat.py`, `covers.py`, `devices.py`, `domains.py`, `energy.py`, `frontend.py`, `health.py`, `notifications.py`, `patterns.py`, `presence.py`, `rooms.py`, `scenes.py`, `schedules.py`, `security.py`, `system.py`, `users.py` |
 
 ---
 
@@ -220,6 +235,8 @@ Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
 ### Schritt 4 — Vollständiger Verdrahtungs-Graph
 
 **KRITISCH**: Erstelle eine **vollständige Import-Karte** aller Module. Nicht nur Memory — ALLE.
+
+**Shared-Module Prüfung**: Prüfe zusätzlich ob und wie die Dateien aus `/shared/` (constants.py, schemas/) von Assistant, Addon und HA-Integration importiert werden. Nutzen alle Services dieselben Schemas oder definieren sie eigene?
 
 Für **jedes** der 89 Assistant-Module:
 1. Öffne die Datei

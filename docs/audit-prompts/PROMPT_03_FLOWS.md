@@ -91,6 +91,7 @@ HTTP Request / WebSocket Nachricht
 ```
 
 **Prüfe besonders**:
+- Werden die **Shared Schemas** (`shared/schemas/chat_request.py`, `chat_response.py`) tatsächlich verwendet? Oder definieren Services eigene Request/Response-Formate?
 - Wird die Conversation History als Messages-Array übergeben? Oder nur der letzte Turn?
 - Wird Function Calling korrekt als Tool-Use-Loop implementiert (Call → Execute → Result → LLM)?
 - Werden Fehler bei HA-API-Calls abgefangen und dem User kommuniziert?
@@ -238,6 +239,8 @@ Addon erkennt ein Event / Pattern / Zeitplan
 ```
 
 **Prüfe besonders**:
+- Nutzt der Addon die **Shared Schemas** (`shared/schemas/`) oder hat er eigene Request/Response-Definitionen?
+- Nutzt der Addon die **Shared Constants** (`shared/constants.py`) für Ports und Event-Namen?
 - Läuft dieser Flow **komplett unabhängig** vom Assistant?
 - Weiß der Assistant dass der Addon gerade eine Aktion ausführt?
 - Kann der Addon eine Entity steuern die der Assistant gerade AUCH steuert?

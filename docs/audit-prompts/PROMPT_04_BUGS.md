@@ -159,6 +159,14 @@ Prüfe **jedes Modul** systematisch auf die folgenden **12 Fehlerklassen**. Arbe
 86. `speech/server.py`
 87. `speech/handler.py`
 
+### Priorität 12 — Shared-Module & HA-Integration
+88. `shared/constants.py` — Stimmen die Port-Definitionen mit den tatsächlich genutzten Ports überein?
+89. `shared/schemas/chat_request.py` — Wird `ChatRequest` überall verwendet wo Requests gesendet werden?
+90. `shared/schemas/chat_response.py` — Wird `ChatResponse` überall verwendet wo Responses erzeugt werden?
+91. `shared/schemas/events.py` — Werden die Event-Typen konsistent genutzt?
+92. `ha_integration/.../config_flow.py` — Validierung, Error Handling
+93. `ha_integration/.../__init__.py` — Setup/Teardown korrekt?
+
 ---
 
 ## Spezifische Problemzonen (aus Dokumentation bekannt)
@@ -268,7 +276,7 @@ Module oder Funktionen die existieren aber **nie aufgerufen** werden.
 - **Jeder Bug mit Code-Referenz** (Datei:Zeile)
 - **Keine false positives** — nur echte Bugs, keine Style-Issues
 - **Nicht fixen in diesem Prompt** — nur finden und dokumentieren (Fixes kommen in Prompt 6)
-- **ALLE Module prüfen** — Priorität 1–4 besonders gründlich, aber KEIN Modul überspringen. Jedes Modul mindestens auf die Top-5 Fehlerklassen (Async, Stille Fehler, Race Conditions, None, Init) checken
+- **ALLE Module prüfen** — Priorität 1–4 besonders gründlich, aber KEIN Modul überspringen (Priorität 1–12). Jedes Modul mindestens auf die Top-5 Fehlerklassen (Async, Stille Fehler, Race Conditions, None, Init) checken
 - **Async-Fehler haben höchste Aufmerksamkeit** — häufigste Ursache für "funktioniert manchmal"
 - **Security-Bugs sind immer 🔴 KRITISCH**
 - **Addon-Module NICHT vergessen** — sie haben eigene Bugs und eigene HA-Integration
