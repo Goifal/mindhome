@@ -614,38 +614,29 @@ class ProactiveManager:
             await self._check_appliance_power(entity_id, new_val, old_val)
 
         # Feature 2: Manual Override Detection für Covers
-        # Ignoriere: unavailable/unknown (offline/online), opening/closing (Bewegungs-Transitions)
+        # Ignoriere: unavailable/unknown (offline/online), opening/closing (Bewegungs-Abschlüsse)
         _non_physical = {"unavailable", "unknown", ""}
-        _transitional = {"opening", "closing"}  # Abschluss-Transitions (opening->open) sind keine neuen Aktionen
+        _transitional = {"opening", "closing"}  # opening->open / closing->closed sind keine neuen Aktionen
         if (entity_id.startswith("cover.") and new_val != old_val
                 and old_val not in _non_physical and new_val not in _non_physical
                 and old_val not in _transitional):
             try:
-                # Primaer: HA-Context prüfen — user_id ist nur bei manueller Bedienung gesetzt
-                # (Dashboard, Schalter, etc.). API-Calls (Jarvis Addon + Assistant) haben kein user_id.
-                context = new_state.get("context", {}) if isinstance(new_state, dict) else {}
-                is_user_action = bool(context.get("user_id"))
-
-                # Fallback: jarvis_acting Redis-Key (wird von _execute_cover_action gesetzt)
                 redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
-                jarvis_triggered = False
-                if redis_client and not is_user_action:
+                if redis_client:
                     acting_key = f"mha:cover:jarvis_acting:{entity_id}"
-                    jarvis_triggered = bool(await redis_client.get(acting_key))
-
-                if is_user_action and not jarvis_triggered:
-                    override_hours = yaml_config.get("seasonal_actions", {}).get("cover_automation", {}).get("manual_override_hours", 2)
-                    override_ttl = int(override_hours * 3600)
-                    if redis_client:
+                    jarvis_triggered = await redis_client.get(acting_key)
+                    if not jarvis_triggered:
+                        override_hours = yaml_config.get("seasonal_actions", {}).get("cover_automation", {}).get("manual_override_hours", 2)
+                        override_ttl = int(override_hours * 3600)
                         override_key = f"mha:cover:manual_override:{entity_id}"
                         await redis_client.set(override_key, "1", ex=override_ttl)
-                    logger.info(
-                        "Cover Manual Override: %s manuell bedient (%s -> %s), Automatik pausiert für %dh",
-                        entity_id, old_val, new_val, override_hours,
-                    )
-                elif not is_user_action and not jarvis_triggered:
-                    logger.debug("Cover state change %s (%s -> %s) — kein user_id, kein jarvis_acting — ignoriert",
-                                 entity_id, old_val, new_val)
+                        logger.info(
+                            "Cover Manual Override: %s manuell bedient (%s -> %s), Automatik pausiert für %dh",
+                            entity_id, old_val, new_val, override_hours,
+                        )
+                    else:
+                        logger.debug("Cover state change %s (%s -> %s) — jarvis_acting gesetzt, kein Override",
+                                     entity_id, old_val, new_val)
             except Exception as e:
                 logger.debug("Cover Manual Override Detection Fehler: %s", e)
 
@@ -1638,6 +1629,22 @@ class ProactiveManager:
 
     async def _handle_mindhome_event(self, data: dict):
         """Verarbeitet MindHome-spezifische Events."""
+        # Addon-Cover-Automatik: jarvis_acting Key setzen, damit die
+        # Override-Erkennung den State-Change nicht als manuell interpretiert
+        if data.get("type") == "cover_auto_action":
+            entity_id = data.get("entity_id", "")
+            if entity_id:
+                try:
+                    redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
+                    if redis_client:
+                        acting_key = f"mha:cover:jarvis_acting:{entity_id}"
+                        await redis_client.set(acting_key, "1", ex=120)
+                        logger.debug("Cover jarvis_acting gesetzt via Addon-Event: %s (source=%s)",
+                                     entity_id, data.get("source", "?"))
+                except Exception as e:
+                    logger.debug("Cover jarvis_acting via Event Fehler: %s", e)
+            return  # Kein Notify nötig
+
         event_name = data.get("event", "")
         urgency = data.get("urgency", MEDIUM)
         await self._notify(event_name, urgency, data)
@@ -4383,13 +4390,14 @@ class ProactiveManager:
         self, action: str, position: int, season: str, reason: str, auto_level: int,
     ):
         """Kompatibilitaets-Wrapper für alte Aufrufe (z.B. aus routine_engine)."""
+        _redis = getattr(getattr(self.brain, "memory", None), "redis", None)
         states = await self.brain.ha.get_states()
         for s in (states or []):
             eid = s.get("entity_id", "")
             if eid.startswith("cover."):
                 if not await self.brain.executor._is_safe_cover(eid, s):
                     continue
-                await self._auto_cover_action(eid, position, reason, auto_level)
+                await self._auto_cover_action(eid, position, reason, auto_level, _redis)
 
     # ── Phase 11: Saugroboter-Automatik ────────────────────
 
