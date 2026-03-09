@@ -1,4 +1,14 @@
-# JARVIS ENDABNAHME — Vollstaendiger Audit-Prompt
+# ⚠️ VERALTET — Bitte `docs/audit-prompts/PROMPT_00_OVERVIEW.md` verwenden!
+
+> **Dieses Dokument ist VERALTET.** Es beschreibt eine ältere Version des Projekts (56 Module, brain.py 3.299 Zeilen).
+> Das aktuelle Projekt hat **155 Module** (88 Assistant + 67 Addon), `brain.py` hat **10.231 Zeilen**, `main.py` hat **8.000+ Zeilen**.
+>
+> **Nutze stattdessen**: `docs/audit-prompts/PROMPT_00_OVERVIEW.md` → `PROMPT_01` bis `PROMPT_07`
+> Diese Prompt-Serie ist für **Claude Code** optimiert und deckt das gesamte Projekt ab.
+
+---
+
+# [ARCHIV] JARVIS ENDABNAHME — Vollstaendiger Audit-Prompt
 
 Du bist ein Senior Software Architect und Security Auditor. Dein Auftrag:
 Analysiere den GESAMTEN MindHome Assistant (/home/user/mindhome/assistant/) —
