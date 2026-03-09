@@ -13,7 +13,9 @@ Du bist ein Elite-DevOps-Engineer und QA-Experte mit tiefem Wissen in:
 
 ## Kontext aus vorherigen Prompts
 
-> **[HIER die Ergebnisse aus Prompt 1–6 einfügen:]**
+> **Wenn du Prompts 1–6 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+>
+> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke aus allen 6 vorherigen Prompts ein:
 > - Prompt 1: Konflikt-Karte & Architektur-Bewertung (3-Service-Architektur!)
 > - Prompt 2: Memory-Diagnose & Root Cause
 > - Prompt 3: Flow-Analyse mit Bruchstellen (9 Flows)

@@ -28,9 +28,11 @@ Du bist ein KI-Ingenieur spezialisiert auf Prompt Engineering, Conversational AI
 
 ## Kontext aus vorherigen Prompts
 
-> **[HIER Bug-Report aus Prompt 4 einfügen]**
-
-> **[HIER Konflikt-Karte (Abschnitt "Wie Jarvis klingt") aus Prompt 1 einfügen]**
+> **Wenn du Prompts 1–4 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+>
+> **Wenn dies eine neue Konversation ist**: Füge hier ein:
+> - Kontext-Block aus Prompt 4 (Bug-Report, besonders Persönlichkeits-bezogene Bugs)
+> - Kontext-Block aus Prompt 1 (Konflikt-Karte, Abschnitt "Wie Jarvis klingt" / Konflikt D)
 
 ---
 
@@ -167,3 +169,30 @@ Konkreter Vorschlag für einen verbesserten `SYSTEM_PROMPT_TEMPLATE` (oder Teile
 - System-Prompt-Änderungen: **Token-Budget beachten** — kürzer ist oft besser
 - Config-Audit: Jeden Wert **im Code nachverfolgen**, nicht nur die YAML lesen
 - Persönlichkeit muss **über alle Pfade identisch** sein — das ist das MCU-Prinzip
+
+---
+
+## ⚡ Übergabe an Prompt 6
+
+Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 6:
+
+```
+## KONTEXT AUS PROMPT 5: Persönlichkeit & Config
+
+### MCU-Authentizitäts-Score
+[Aspekt → Score → 1 Satz Begründung]
+
+### Persönlichkeits-Inkonsistenzen
+[Code-Pfad → Problem → Datei:Zeile → Fix-Vorschlag]
+
+### System-Prompt-Verbesserungen
+[Konkreter Vorschlag — der wichtigste Abschnitt]
+
+### Config-Probleme
+[Unbenutzte Werte, fehlende Werte, Fehler pro YAML-Datei]
+
+### Explainability-Status
+[Integriert oder Dead Code?]
+```
+
+**Wenn du Prompt 6 in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–5) automatisch ein.

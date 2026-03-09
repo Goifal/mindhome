@@ -8,9 +8,11 @@ Du bist ein Elite-Software-Architekt mit tiefem Wissen in AsyncIO, FastAPI, Flas
 
 ## Kontext aus vorherigen Prompts
 
-> **[HIER die Konflikt-Karte aus Prompt 1 einfügen — inkl. Konflikt F: Assistant ↔ Addon]**
-
-> **[HIER die Memory-Analyse aus Prompt 2 einfügen]**
+> **Wenn du Prompts 1–2 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+>
+> **Wenn dies eine neue Konversation ist**: Füge hier ein:
+> - Kontext-Block aus Prompt 1 (Konflikt-Karte, besonders Konflikt F: Assistant ↔ Addon)
+> - Kontext-Block aus Prompt 2 (Memory-Analyse, Root Cause, Memory-Flow)
 
 ---
 
@@ -288,3 +290,30 @@ Top-5 Probleme, sortiert nach Impact, mit konkretem Fix-Vorschlag.
 - Wenn ein Flow komplett fehlt (z.B. keine Queue): Dokumentiere es als Feature-Gap
 - **Addon-Kollisionen** besonders beachten — das ist der blinde Fleck des Projekts
 - MCU-Jarvis-Test: Würde sich der echte Jarvis so verhalten?
+
+---
+
+## ⚡ Übergabe an Prompt 4
+
+Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 4:
+
+```
+## KONTEXT AUS PROMPT 3: Flow-Analyse
+
+### Flow-Status-Übersicht
+| Flow | Status | Kritischste Bruchstelle |
+|---|---|---|
+| 1: Sprach-Input → Antwort | ✅/⚠️/❌ | ... |
+| ... | ... | ... |
+
+### Top-Bruchstellen
+[Die 5 kritischsten Bruchstellen mit Datei:Zeile]
+
+### Kollisionen
+[Die kritischsten Kollisionen zwischen Flows]
+
+### Feature-Gaps
+[Flows/Features die komplett fehlen]
+```
+
+**Wenn du Prompt 4 in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1 + 2 + 3) automatisch ein.

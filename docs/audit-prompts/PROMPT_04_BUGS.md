@@ -8,11 +8,12 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Flask, Redis,
 
 ## Kontext aus vorherigen Prompts
 
-> **[HIER die Konflikt-Karte aus Prompt 1 einfügen]**
-
-> **[HIER die Memory-Analyse aus Prompt 2 einfügen]**
-
-> **[HIER die Flow-Analyse aus Prompt 3 einfügen — besonders Bruchstellen und Kollisionen]**
+> **Wenn du Prompts 1–3 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+>
+> **Wenn dies eine neue Konversation ist**: Füge hier ein:
+> - Kontext-Block aus Prompt 1 (Konflikt-Karte)
+> - Kontext-Block aus Prompt 2 (Memory-Analyse)
+> - Kontext-Block aus Prompt 3 (Flow-Analyse, besonders Bruchstellen und Kollisionen)
 
 ---
 
@@ -258,3 +259,36 @@ Module oder Funktionen die existieren aber **nie aufgerufen** werden.
 - **Security-Bugs sind immer 🔴 KRITISCH**
 - **Addon-Module NICHT vergessen** — sie haben eigene Bugs und eigene HA-Integration
 - Wenn ein `except: pass` intentional ist: Trotzdem notieren als 🟢
+
+---
+
+## ⚡ Übergabe an Prompt 5
+
+Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 5:
+
+```
+## KONTEXT AUS PROMPT 4: Bug-Report
+
+### Statistik
+Gesamt: X Bugs (🔴 X, 🟠 X, 🟡 X, 🟢 X)
+
+### Kritische Bugs (🔴)
+[Liste: Modul + Zeile + Kurzbeschreibung + Fix]
+
+### Hohe Bugs (🟠)
+[Liste: Modul + Zeile + Kurzbeschreibung + Fix]
+
+### Security-Report
+[Findings mit Severity]
+
+### Resilience-Report
+[Welche Ausfälle abgefangen werden, welche nicht]
+
+### Dokumentations-Verifikation
+[Welche behaupteten Fixes stimmen, welche nicht]
+
+### Dead-Code-Liste
+[Module/Funktionen die nie aufgerufen werden]
+```
+
+**Wenn du Prompt 5 in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–4) automatisch ein.

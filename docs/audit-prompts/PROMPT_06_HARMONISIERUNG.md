@@ -8,7 +8,9 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du ha
 
 ## Kontext aus vorherigen Prompts
 
-> **[HIER die Ergebnisse aus Prompt 1–5 einfügen:]**
+> **Wenn du Prompts 1–5 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+>
+> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke aus allen 5 vorherigen Prompts ein:
 > - Prompt 1: Konflikt-Karte & Architektur-Bewertung (inkl. 3-Service-Architektur & Addon-Konflikte!)
 > - Prompt 2: Memory-Diagnose & Root Cause (inkl. alle 13 Memory-Module)
 > - Prompt 3: Flow-Analyse mit Bruchstellen & Kollisionen (inkl. Speech, Addon, Domain-Assistenten)
@@ -197,3 +199,30 @@ Was konnte in diesem Durchlauf **nicht** gelöst werden und braucht einen weiter
 - **MCU-Jarvis als Maßstab** — Bei jeder Entscheidung: "Würde der echte Jarvis das so machen?"
 - **Keine neuen Module** ohne guten Grund — Bestehende Module verbessern statt neue hinzufügen
 - **Tests nicht brechen** — Bestehende Tests müssen weiterhin bestehen
+
+---
+
+## ⚡ Übergabe an Prompt 7
+
+Formatiere am Ende deiner Arbeit einen kompakten **Kontext-Block** für Prompt 7:
+
+```
+## KONTEXT AUS PROMPT 6: Harmonisierung
+
+### Änderungs-Log
+[Schritt → Datei → Was geändert → Warum — kompakt]
+
+### Architektur-Entscheidungen
+[brain.py → Entscheidung, Memory → Entscheidung, Priority-System → Entscheidung]
+
+### Behobene Bugs
+[Liste: Bug-# aus Prompt 4 → Status (gefixt/verschoben/offen)]
+
+### Verifikations-Checkliste
+[Welche Checks bestanden, welche nicht]
+
+### Offene Punkte
+[Was in Prompt 7 verifiziert/getestet werden muss]
+```
+
+**Wenn du Prompt 7 in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–6) automatisch ein.

@@ -270,3 +270,34 @@ Die Tabellen aus Schritt 3, vollständig mit Code-Referenzen.
 - Wenn du einen Konflikt findest: Datei + Zeile + was genau passiert
 - Bewerte: **Ist die Architektur selbst das Problem**, oder nur die Implementierung?
 - Denke als MCU-Jarvis-Fan: Würde der echte Jarvis so funktionieren?
+
+---
+
+## ⚡ Übergabe an Prompt 2
+
+**WICHTIG**: Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block**, den du direkt in Prompt 2 einsetzt. Dieser Block soll enthalten:
+
+1. **Konflikt-Karte** (alle 6 Konflikte A–F, je 2–3 Sätze + kritischste Code-Referenzen)
+2. **Service-Interaktions-Diagramm** (wie kommunizieren die 3 Services)
+3. **Top-5 Architektur-Probleme** (1 Satz + Severity pro Problem)
+4. **Architektur-Entscheidung** (God-Object ja/nein, empfohlenes Pattern)
+
+Formatiere ihn so:
+
+```
+## KONTEXT AUS PROMPT 1: Architektur-Analyse
+
+### Konflikt-Karte
+[Konflikte A–F hier]
+
+### Service-Interaktion
+[Diagramm + Erklärung hier]
+
+### Top-5 Architektur-Probleme
+[Liste hier]
+
+### Architektur-Entscheidung
+[Empfehlung hier]
+```
+
+**Wenn du Prompt 2 in derselben Konversation erhältst**: Setze diesen Kontext-Block automatisch ein — der User muss nichts kopieren.

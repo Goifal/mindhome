@@ -25,12 +25,23 @@ Dazu: 105 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen.
 
 ## Wie verwenden
 
-1. Starte mit Prompt 1 in einer **neuen Konversation**
+### Option A: Alles in einer Konversation (empfohlen)
+
+1. Starte mit Prompt 1
 2. Lass das LLM die Analyse durchführen
-3. Kopiere das **Output** (Konflikt-Karte, Bug-Report etc.) als Kontext in den nächsten Prompt
+3. Gib dann einfach Prompt 2 ein — **das LLM nutzt seine eigenen Ergebnisse automatisch als Kontext**
 4. Wiederhole bis Prompt 7
 
-> **Tipp**: Jeder Prompt enthält einen `## Kontext aus vorherigen Prompts`-Abschnitt. Füge dort die Ergebnisse der vorherigen Runde ein.
+> **Vorteil**: Kein manuelles Kopieren nötig. Jeder Prompt enthält die Anweisung: *"Wenn du die vorherigen Prompts in dieser Konversation bearbeitet hast, nutze deine Ergebnisse automatisch."*
+
+### Option B: Separate Konversationen
+
+1. Starte mit Prompt 1 in einer **neuen Konversation**
+2. Am Ende jeder Analyse erstellt das LLM einen kompakten **Kontext-Block** (markiert mit `## KONTEXT AUS PROMPT X`)
+3. Kopiere diesen Block in den `## Kontext aus vorherigen Prompts`-Abschnitt des nächsten Prompts
+4. Wiederhole bis Prompt 7
+
+> **Vorteil**: Frischer Context Window für jeden Prompt. Nötig wenn das LLM an Context-Limits stößt.
 
 ## Was jeder Prompt abdeckt
 

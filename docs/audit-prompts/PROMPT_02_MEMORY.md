@@ -18,7 +18,9 @@ Du kennst **J.A.R.V.I.S. aus dem MCU** als Goldstandard:
 
 ## Kontext aus Prompt 1
 
-> **[HIER die Konflikt-Karte aus Prompt 1 einfügen, besonders Konflikt C: "Wer bestimmt was Jarvis WEISS?" und Konflikt F: "Assistant ↔ Addon Interaktion"]**
+> **Wenn du Prompt 1 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Block) automatisch als Kontext. Du musst nichts einfügen.
+>
+> **Wenn dies eine neue Konversation ist**: Füge hier den Kontext-Block aus Prompt 1 ein, besonders Konflikt C ("Wer bestimmt was Jarvis WEISS?") und Konflikt F ("Assistant ↔ Addon Interaktion").
 
 ---
 
@@ -231,3 +233,33 @@ Für jeden Memory-Bug:
 - Prüfe ob die Module **voneinander wissen** oder isolierte Silos sind
 - Einfach > Komplex: Wenn weniger Module robuster sind, sag es
 - Prüfe auch ob der **Addon** eigene Memory/Pattern-Daten hat die dem Assistant fehlen
+
+---
+
+## ⚡ Übergabe an Prompt 3
+
+Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 3:
+
+```
+## KONTEXT AUS PROMPT 2: Memory-Analyse
+
+### Memory-Abhängigkeitskarte
+[Welches Modul importiert/nutzt welches — kompakt]
+
+### Memory-Flow (Ist-Zustand)
+[User Input → Speicherung → Abruf → Prompt — mit Datei:Zeile]
+
+### Root Cause
+[Warum funktioniert Memory nicht — 2-3 Sätze]
+
+### Empfohlener Fix
+[Welcher Ansatz, warum — 2-3 Sätze]
+
+### Memory-Bugs
+[Liste: Severity + Modul + Kurzbeschreibung]
+
+### Dead-Code-Module
+[Module die existieren aber nie aufgerufen werden]
+```
+
+**Wenn du Prompt 3 in derselben Konversation erhältst**: Setze diesen Kontext-Block + den aus Prompt 1 automatisch ein.
