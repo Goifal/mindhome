@@ -807,3 +807,692 @@ Init & Utilities (bleiben in `brain.py`):
 **Hinweis**: Die 5 "Shared" Helper (`_result`, `_speak_and_emit`, `_remember_exchange`, `_filter_response`, `_get_occupied_room`) bleiben beim File-Split in `brain.py` als gemeinsame Utilities, oder wandern in eine eigene `pipeline_utils.py`.
 
 ---
+
+## Phase 4: Gesamt-Audit — Bugs, Performance, Security
+
+Vollständige Analyse aller Module (außer brain.py — bereits in Phase 3 erfasst).
+Jeder Eintrag enthält: Problem, betroffene Datei:Zeile, aktuellen Code, und konkreten Fix.
+
+---
+
+### KRITISCH — Sofort fixen (vor jedem Feature-Bau)
+
+---
+
+#### K1: N+1 Redis-Queries in semantic_memory.py
+
+**Problem**: Jeder Fact wird einzeln per `hgetall()` geladen. Bei 1000 Facts = 1001 Redis-Roundtrips statt 1–2 mit Pipeline. Das ist vermutlich der größte Performance-Killer im System.
+
+**Betrifft**: `assistant/semantic_memory.py` — **9 Stellen**:
+- Zeile 350 (`apply_decay`)
+- Zeile 484 (`get_facts_by_person`)
+- Zeile 507 (`get_facts_by_category`)
+- Zeile 528 (`get_all_facts`)
+- Zeile 741 (`get_correction_history`)
+- Zeile 770 (`get_todays_learnings`)
+- Zeile 873 (`get_upcoming_personal_dates`)
+- Zeile 1007 (`clear_all`)
+
+**Aktueller Code** (gleiches Pattern an allen 9 Stellen):
+```python
+for fact_id in fact_ids:
+    data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+    if not data:
+        continue
+```
+
+**Fix** — Redis-Pipeline verwenden:
+```python
+# Helper-Methode in SemanticMemory hinzufügen:
+async def _bulk_get_facts(self, fact_ids: list[str]) -> list[tuple[str, dict]]:
+    """Lädt mehrere Facts in einem Redis-Pipeline-Call."""
+    if not fact_ids:
+        return []
+    pipe = self.redis.pipeline()
+    for fid in fact_ids:
+        pipe.hgetall(f"mha:fact:{fid}")
+    results = await pipe.execute()
+    return [(fid, data) for fid, data in zip(fact_ids, results) if data]
+
+# Dann an allen 9 Stellen ersetzen:
+# ALT:
+for fact_id in fact_ids:
+    data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+    if not data:
+        continue
+    # ... verarbeite data ...
+
+# NEU:
+for fact_id, data in await self._bulk_get_facts(fact_ids):
+    # ... verarbeite data ...
+```
+
+**Aufwand**: ~2h | **Impact**: Massiver Performance-Gewinn bei >50 Facts
+
+---
+
+#### K2: Entity-ID Path Traversal in ha_client.py
+
+**Problem**: Entity-IDs kommen vom User (z.B. via Sprachbefehl) und werden direkt in URLs interpoliert. Ein manipulierter Entity-Name könnte URL-Pfade verändern.
+
+**Betrifft**: `assistant/ha_client.py` Zeile 94
+
+**Aktueller Code**:
+```python
+async def get_state(self, entity_id: str) -> Optional[dict]:
+    """State einer einzelnen Entity."""
+    return await self._get_ha(f"/api/states/{entity_id}")
+```
+
+**Fix** — URL-Encoding hinzufügen:
+```python
+from urllib.parse import quote
+
+async def get_state(self, entity_id: str) -> Optional[dict]:
+    """State einer einzelnen Entity."""
+    return await self._get_ha(f"/api/states/{quote(entity_id, safe='')}")
+```
+
+Dasselbe Pattern überall anwenden, wo `entity_id` in f-Strings für URLs genutzt wird. Prüfe auch `call_service()` und `fire_event()`.
+
+**Aufwand**: 30 Min | **Impact**: Security-Fix
+
+---
+
+#### K3: Blocking subprocess.run() in async Endpoint
+
+**Problem**: `subprocess.run()` mit `timeout=30` blockiert den gesamten asyncio Event-Loop. Während ffmpeg läuft, kann Jarvis keine anderen Requests beantworten.
+
+**Betrifft**: `assistant/main.py` Zeile 1386
+
+**Aktueller Code**:
+```python
+result = subprocess.run(
+    [
+        "ffmpeg", "-i", "pipe:0",
+        "-ar", "16000", "-ac", "1", "-f", "s16le",
+        "-acodec", "pcm_s16le", "pipe:1",
+    ],
+    input=audio_bytes,
+    capture_output=True,
+    timeout=30,
+)
+```
+
+**Fix** — In Executor auslagern:
+```python
+import asyncio
+import functools
+
+def _run_ffmpeg_sync(audio_bytes: bytes) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [
+            "ffmpeg", "-i", "pipe:0",
+            "-ar", "16000", "-ac", "1", "-f", "s16le",
+            "-acodec", "pcm_s16le", "pipe:1",
+        ],
+        input=audio_bytes,
+        capture_output=True,
+        timeout=30,
+    )
+
+# Im async Endpoint:
+loop = asyncio.get_running_loop()
+result = await loop.run_in_executor(None, _run_ffmpeg_sync, audio_bytes)
+```
+
+**Aufwand**: 30 Min | **Impact**: Event-Loop bleibt frei während Audio-Konvertierung
+
+---
+
+#### K4: Race Condition — Globale State-Mutation ohne Lock
+
+**Problem**: `_entity_to_name` und `_active_person` werden von mehreren async Tasks gelesen/geschrieben ohne jegliche Synchronisation. `_room_profiles_cache` hat einen `threading.Lock()` — die anderen beiden nicht.
+
+**Betrifft**: `assistant/config.py`
+
+**Aktueller Code**:
+```python
+# Zeile 168 — KEIN Lock:
+_entity_to_name: dict[str, str] = {}
+
+# Zeile 241 — KEIN Lock:
+_active_person: str = ""
+
+# Zeile 308-312 — MIT Lock (zum Vergleich):
+_room_profiles_cache: dict = {}
+_room_profiles_ts: float = 0.0
+_room_profiles_lock = threading.Lock()
+```
+
+**Fix** — Locks hinzufügen:
+```python
+# Zeile 168:
+_entity_to_name: dict[str, str] = {}
+_entity_to_name_lock = threading.Lock()
+
+# Alle Zugriffe auf _entity_to_name wrappen:
+def get_entity_name(entity_id: str) -> Optional[str]:
+    with _entity_to_name_lock:
+        return _entity_to_name.get(entity_id)
+
+def set_entity_names(mapping: dict[str, str]) -> None:
+    with _entity_to_name_lock:
+        _entity_to_name.clear()
+        _entity_to_name.update(mapping)
+
+# Zeile 241:
+_active_person: str = ""
+_active_person_lock = threading.Lock()
+
+def get_active_person() -> str:
+    with _active_person_lock:
+        return _active_person
+
+def set_active_person(person: str) -> None:
+    global _active_person
+    with _active_person_lock:
+        _active_person = person
+```
+
+**Aufwand**: 1h | **Impact**: Verhindert inkonsistenten State bei parallelen Requests
+
+---
+
+#### K5: Unbounded Decay-Loop in semantic_memory.py
+
+**Problem**: `apply_decay()` lädt ALLE Facts ohne Pagination, macht N+1 Queries (K1), und hat keinen Batch-Mechanismus. Bei 10.000+ Facts blockiert das den Event-Loop für Minuten.
+
+**Betrifft**: `assistant/semantic_memory.py` Zeile 334–411
+
+**Fix** — Batched Processing mit Pipeline:
+```python
+async def apply_decay(self):
+    """Decay mit Batching und Pipeline."""
+    BATCH_SIZE = 500
+    all_fact_ids = list(await self.redis.smembers("mha:fact_ids"))
+
+    for i in range(0, len(all_fact_ids), BATCH_SIZE):
+        batch = all_fact_ids[i:i + BATCH_SIZE]
+        facts = await self._bulk_get_facts(batch)  # Pipeline aus K1
+
+        pipe = self.redis.pipeline()
+        for fact_id, data in facts:
+            new_score = self._calculate_decay(data)
+            if new_score <= self.forget_threshold:
+                pipe.delete(f"mha:fact:{fact_id}")
+                pipe.srem("mha:fact_ids", fact_id)
+            else:
+                pipe.hset(f"mha:fact:{fact_id}", "score", str(new_score))
+        await pipe.execute()
+
+        # Kurz yielden damit andere Tasks drankommen
+        await asyncio.sleep(0)
+```
+
+**Aufwand**: 2h | **Impact**: Decay wird von Minuten auf Sekunden reduziert
+
+---
+
+### HOCH — Zeitnah fixen (diese Woche)
+
+---
+
+#### H1: ChromaDB Silent Data Loss
+
+**Problem**: Bei Timeout wird ein Chunk stillschweigend übersprungen. Die Episode ist danach inkonsistent (teilweise gespeichert, Chunks fehlen).
+
+**Betrifft**: `assistant/memory.py` Zeile 192–206
+
+**Aktueller Code**:
+```python
+try:
+    await asyncio.wait_for(
+        asyncio.to_thread(
+            self.chroma_collection.add,
+            documents=[chunk],
+            metadatas=[chunk_meta],
+            ids=[doc_id],
+        ),
+        timeout=5.0,
+    )
+except asyncio.TimeoutError:
+    logger.error("ChromaDB Timeout beim Speichern von Chunk %s", doc_id)
+    continue  # ← Chunk ist weg!
+```
+
+**Fix** — Retry mit Backoff + Incomplete-Markierung:
+```python
+MAX_RETRIES = 3
+for attempt in range(MAX_RETRIES):
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                self.chroma_collection.add,
+                documents=[chunk],
+                metadatas=[chunk_meta],
+                ids=[doc_id],
+            ),
+            timeout=5.0 * (attempt + 1),  # Steigender Timeout
+        )
+        break
+    except asyncio.TimeoutError:
+        if attempt == MAX_RETRIES - 1:
+            logger.error("ChromaDB: Chunk %s nach %d Versuchen verloren", doc_id, MAX_RETRIES)
+            # Episode als incomplete markieren
+            await self.redis.hset(f"mha:episode:{episode_id}", "status", "incomplete")
+```
+
+---
+
+#### H2: Token-Cleanup Race Condition
+
+**Problem**: `_cleanup_expired_tokens()` iteriert über `_active_tokens` und entfernt Einträge, während `_check_token()` gleichzeitig darauf zugreift. Kann zu `RuntimeError: dictionary changed size during iteration` führen.
+
+**Betrifft**: `assistant/main.py` Zeile 2432–2452
+
+**Aktueller Code**:
+```python
+def _cleanup_expired_tokens():
+    now = datetime.now(timezone.utc).timestamp()
+    expired = [t for t, ts in _active_tokens.items() if now - ts > _TOKEN_EXPIRY_SECONDS]
+    for t in expired:
+        _active_tokens.pop(t, None)
+
+def _check_token(token: str):
+    if token not in _active_tokens:
+        raise HTTPException(status_code=401, detail="Nicht autorisiert")
+    created = _active_tokens[token]
+    # ...
+```
+
+**Fix** — Lock hinzufügen:
+```python
+_token_lock = asyncio.Lock()
+
+async def _cleanup_expired_tokens():
+    async with _token_lock:
+        now = datetime.now(timezone.utc).timestamp()
+        expired = [t for t, ts in _active_tokens.items() if now - ts > _TOKEN_EXPIRY_SECONDS]
+        for t in expired:
+            _active_tokens.pop(t, None)
+
+async def _check_token(token: str):
+    if _assistant_api_key and token and secrets.compare_digest(token, _assistant_api_key):
+        return
+    async with _token_lock:
+        if token not in _active_tokens:
+            raise HTTPException(status_code=401, detail="Nicht autorisiert")
+        created = _active_tokens[token]
+        now = datetime.now(timezone.utc).timestamp()
+        if now - created > _TOKEN_EXPIRY_SECONDS:
+            _active_tokens.pop(token, None)
+            raise HTTPException(status_code=401, detail="Sitzung abgelaufen.")
+```
+
+---
+
+#### H3: Light Service Calls ohne Error-Handling
+
+**Problem**: `ha.call_service()` wird aufgerufen, Return-Wert ignoriert, kein try/except. Wenn HA offline → stille Fehler, Licht reagiert nicht, User bekommt keine Rückmeldung.
+
+**Betrifft**: `assistant/light_engine.py` Zeile 208, 375, 405, 513, 566, 751
+
+**Aktueller Code**:
+```python
+await self.ha.call_service("light", "turn_on", service_data)
+# Kein try/except, Return-Wert ignoriert
+```
+
+**Fix** — Error-Handling mit User-Feedback:
+```python
+try:
+    await self.ha.call_service("light", "turn_on", service_data)
+except Exception as e:
+    logger.warning("Licht %s konnte nicht geschaltet werden: %s", entity_id, e)
+    return {"success": False, "error": f"Licht nicht erreichbar: {e}"}
+```
+
+---
+
+#### H4: Brain-Init bei Module-Load, Async-Init erst in Lifespan
+
+**Problem**: `brain = AssistantBrain()` wird bei Import ausgeführt (Zeile 210). `await brain.initialize()` erst im Lifespan-Kontextmanager (Zeile 322–387). Wenn ein Request vor dem Lifespan ankommt, greift er auf uninitialisierte Komponenten zu.
+
+**Betrifft**: `assistant/main.py` Zeile 210 vs. 322
+
+**Fix** — Guard hinzufügen:
+```python
+# In main.py bei brain-Instanzierung:
+brain: Optional[AssistantBrain] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global brain
+    brain = AssistantBrain()
+    await brain.initialize()
+    yield
+    await brain.shutdown()
+
+# Oder einfacher — Middleware die vor Init 503 zurückgibt:
+@app.middleware("http")
+async def check_ready(request: Request, call_next):
+    if not brain or not brain.initialized:
+        return JSONResponse(status_code=503, content={"detail": "Jarvis startet noch..."})
+    return await call_next(request)
+```
+
+---
+
+#### H5: mindhome_put/delete ohne Timeout
+
+**Problem**: Anders als `mindhome_post()` haben PUT und DELETE keinen `timeout`-Parameter. Wenn MindHome hängt → Request hängt endlos.
+
+**Betrifft**: `assistant/ha_client.py` Zeile 357–368 (PUT), 379–389 (DELETE)
+
+**Aktueller Code** (PUT, DELETE identisch):
+```python
+async def mindhome_put(self, path: str, data: dict) -> Any:
+    session = await self._get_session()
+    try:
+        async with session.put(
+            f"{self.mindhome_url}{path}",
+            json=data,
+        ) as resp:
+```
+
+**Fix** — Timeout wie bei POST hinzufügen:
+```python
+async def mindhome_put(self, path: str, data: dict, timeout: float = 10.0) -> Any:
+    session = await self._get_session()
+    try:
+        async with session.put(
+            f"{self.mindhome_url}{path}",
+            json=data,
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as resp:
+
+async def mindhome_delete(self, path: str, timeout: float = 10.0) -> Any:
+    session = await self._get_session()
+    try:
+        async with session.delete(
+            f"{self.mindhome_url}{path}",
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as resp:
+```
+
+---
+
+#### H6: Sequential Startup — 60+ Komponenten nacheinander
+
+**Problem**: Alle Komponenten in `brain.initialize()` werden sequentiell initialisiert. Viele haben keine Abhängigkeiten und könnten parallel starten.
+
+**Betrifft**: `assistant/brain.py` Zeile 475–783
+
+**Fix** — Unabhängige Komponenten parallel initialisieren:
+```python
+# Statt:
+await self._init_redis()
+await self._init_chromadb()
+await self._init_ollama()
+await self._init_personality()
+# ...
+
+# Besser — Phasen bilden:
+# Phase 1: Infrastruktur (muss zuerst)
+await asyncio.gather(
+    self._init_redis(),
+    self._init_chromadb(),
+)
+
+# Phase 2: Services die Redis/Chroma brauchen
+await asyncio.gather(
+    self._init_memory(),
+    self._init_semantic_memory(),
+)
+
+# Phase 3: Alles andere (parallel)
+await asyncio.gather(
+    self._init_ollama(),
+    self._init_personality(),
+    self._init_light_engine(),
+    self._init_sound_manager(),
+    # ...
+)
+```
+
+---
+
+### MITTEL — Nächster Sprint
+
+---
+
+#### M1: Per-User Dictionaries wachsen unbegrenzt
+
+**Betrifft**: `assistant/personality.py` Zeile 334–341
+
+```python
+self._last_confirmations: dict[str, list[str]] = {}
+self._last_interaction_times: dict[str, float] = {}
+self._sarcasm_streak: dict[str, int] = {}
+self._humor_consecutive: dict[str, int] = {}
+```
+
+50-User-Eviction nur beim Schreiben. Kein periodischer Cleanup, kein TTL.
+
+**Fix**: `cachetools.TTLCache(maxsize=100, ttl=3600)` oder periodischer Cleanup-Task.
+
+---
+
+#### M2: Redis-Ausfall = Stille Feature-Degradation
+
+**Betrifft**: `assistant/light_engine.py` Zeile 38–44
+
+```python
+async def _safe_redis(redis_client, method: str, *args, **kwargs):
+    try:
+        return await getattr(redis_client, method)(*args, **kwargs)
+    except Exception as e:
+        logger.debug("Redis %s fehlgeschlagen: %s", method, e)
+        return None  # ← Caller prüfen None nicht!
+```
+
+**Fix**: Caller müssen `None`-Returns behandeln. Mindestens `logger.warning` statt `logger.debug`.
+
+---
+
+#### M3: scan_iter ohne Batching in clear_all_memory
+
+**Betrifft**: `assistant/memory.py` Zeile 497–507
+
+```python
+async for key in self.redis.scan_iter(match="mha:archive:*"):
+    keys.append(key)
+# ... weitere scan_iter Aufrufe ...
+if keys:
+    await self.redis.delete(*keys)  # ← Potenziell 100.000+ Argumente!
+```
+
+**Fix**: In 1000er-Batches löschen:
+```python
+batch = []
+async for key in self.redis.scan_iter(match="mha:archive:*", count=1000):
+    batch.append(key)
+    if len(batch) >= 1000:
+        await self.redis.delete(*batch)
+        batch.clear()
+if batch:
+    await self.redis.delete(*batch)
+```
+
+---
+
+#### M4: Volume-Restore mit hartem 8s Sleep
+
+**Betrifft**: `assistant/sound_manager.py` Zeile 607–614
+
+```python
+async def _restore_volume(eid=speaker_entity, vol=old_volume):
+    await asyncio.sleep(8)  # ← TTS dauert 1-30s, 8s ist meistens falsch
+    await self.ha.call_service("media_player", "volume_set", ...)
+```
+
+**Fix**: TTS-Dauer tracken und dynamisch warten, oder Event-basiert (HA meldet "idle" wenn TTS fertig).
+
+---
+
+#### M5: Doppeltes State-Caching
+
+**Betrifft**: `assistant/sound_manager.py` Zeile 363–377
+
+`ha_client` cached States für 5s, `sound_manager` cached nochmal für 60s. Der 60s-Cache macht den 5s-Cache von `ha_client` nutzlos.
+
+**Fix**: Einen Cache entfernen. Entweder sound_manager nutzt `ha_client.get_states()` direkt (mit dessen 5s-Cache), oder sound_manager's 60s-Cache ist gewollt und ha_client's Cache wird überflüssig.
+
+---
+
+#### M6: Token-Counting ist Schätzung
+
+**Betrifft**: `assistant/brain.py` Zeile 121–129
+
+```python
+def _estimate_tokens(text: str) -> int:
+    return int(len(text) / 1.4)  # ~25% Fehlerrate bei deutschem Text
+```
+
+**Fix**: `tiktoken` Library verwenden wenn verfügbar, oder konservativeren Faktor (1.2 statt 1.4) für deutsches BPE.
+
+---
+
+#### M7: Lose Dependency-Pins
+
+**Betrifft**: `assistant/requirements.txt`
+
+```
+sentence-transformers>=2.2.0   # Kein Upper Bound!
+speechbrain>=1.0.0             # Kein Upper Bound!
+torchaudio>=2.0.0              # Kein Upper Bound!
+```
+
+**Fix**: Upper Bounds setzen:
+```
+sentence-transformers>=2.2.0,<4.0.0
+speechbrain>=1.0.0,<2.0.0
+torchaudio>=2.0.0,<3.0.0
+```
+
+---
+
+#### M8: Volume-Restore Task Leak
+
+**Betrifft**: `assistant/sound_manager.py` Zeile 606–619
+
+```python
+task = asyncio.create_task(_restore_volume())
+self._restore_tasks = [t for t in self._restore_tasks if not t.done()]
+self._restore_tasks.append(task)
+```
+
+Completed Tasks werden nur beim Hinzufügen neuer Tasks aufgeräumt. Ohne neue Tasks wächst die Liste nicht, aber GC'd Tasks bleiben referenziert.
+
+**Fix**: Callback der Task entfernt sich selbst:
+```python
+task = asyncio.create_task(_restore_volume())
+task.add_done_callback(lambda t: self._restore_tasks.discard(t))
+self._restore_tasks.add(task)  # set statt list
+```
+
+---
+
+### NIEDRIG — Irgendwann
+
+---
+
+#### N1: print() statt logger in Error-Handlern
+**Betrifft**: `assistant/main.py` Zeile 79, 144
+`print(f"ErrorBufferHandler format error: {e}", file=sys.stderr)` → `logger.exception("ErrorBufferHandler format error")`
+
+#### N2: Circuit-Breaker-Open als DEBUG geloggt
+**Betrifft**: `assistant/ha_client.py` Zeile 360, 382
+`logger.debug("MindHome Circuit Breaker OPEN")` → Sollte `logger.warning` sein.
+
+#### N3: Inkonsistente Log-Levels
+**Betrifft**: `assistant/memory.py` Zeile 163
+"Fehlerspeicher-Restore fehlgeschlagen" als `debug` geloggt → Sollte `warning` sein.
+
+#### N4: Docker-Socket gemountet ohne Restrictions
+**Betrifft**: `docker-compose.yml` Zeile 37
+`/var/run/docker.sock:/var/run/docker.sock` — Erlaubt Container-Escape. Besser: Capabilities einschränken oder Socket-Proxy verwenden.
+
+#### N5: Keine pytest-Konfiguration
+Kein `pyproject.toml`, `pytest.ini`, oder `setup.cfg` gefunden. Tests können laufen, aber Coverage-Reporting und Marker sind nicht konfiguriert.
+
+#### N6: ChromaDB Version
+`chromadb==0.5.23` — Aktuell wäre 0.6+. Upgrade wenn Breaking Changes geprüft.
+
+#### N7: Hardcoded Speaker-Patterns
+**Betrifft**: `assistant/sound_manager.py`
+Speaker-Entity-Patterns hardcoded statt in `settings.yaml`. Bei neuen Speakern muss Code geändert werden.
+
+#### N8: Kein CI/CD-Pipeline
+Keine `.github/workflows/`, `.gitlab-ci.yml` oder ähnliches sichtbar.
+
+#### N9: Room-Light Lookup ist O(n²)
+**Betrifft**: `assistant/light_engine.py` Zeile 928–934
+```python
+def _find_room_for_light(self, entity_id: str, rooms: dict) -> Optional[str]:
+    for room_name, room_cfg in rooms.items():
+        lights = room_cfg.get("light_entities", [])
+        if isinstance(lights, list) and entity_id in lights:
+            return room_name
+    return None
+```
+**Fix**: Einmalig ein Reverse-Mapping `{entity_id: room_name}` bauen.
+
+#### N10: Redis maxmemory hardcoded
+**Betrifft**: `docker-compose.yml` Zeile 84
+`--maxmemory 2gb --maxmemory-policy allkeys-lru` hardcoded. Sollte via `.env` konfigurierbar sein.
+
+---
+
+### Was GUT ist (kein Handlungsbedarf)
+
+- **Prompt-Injection-Schutz**: Stark — Regex + NFKC-Normalisierung + Sanitization in `context_builder.py`
+- **Tool-Calling Security**: Whitelist als `frozenset`, keine `exec`/`eval`/`subprocess` in Tool-Pfaden
+- **Circuit Breaker**: Sauber implementiert für Ollama, HA, Redis
+- **3-Tier Model Cascade**: Deep → Smart → Fast mit Auto-Fallback
+- **Streaming**: Token-by-token mit Think-Tag-Filtering
+- **Sensitive-Data-Masking**: Regex reduziert Tokens/Passwörter/Keys in allen Logs
+- **Graceful Degradation**: Komponenten degradieren einzeln statt Gesamtausfall
+- **Config-Architektur**: Pydantic Settings + YAML Overrides + .env — sauber getrennt
+- **Health-Checks**: Docker und `/health`-Endpoint mit Komponenten-Status
+- **Request-Tracing**: RequestContextMiddleware für Request-IDs
+
+---
+
+### Empfohlene Reihenfolge
+
+```
+Sofort (vor jedem Feature-Bau):
+  K1 N+1 Redis-Pipeline     → 2h, massiver Performance-Gewinn
+  K2 Path Traversal          → 30 Min, Security-Fix
+  K3 Blocking subprocess     → 30 Min, async-Fix
+  K4 Config Race Condition   → 1h, Locks hinzufügen
+
+Diese Woche:
+  K5 Decay-Loop batchen      → 2h
+  H1 ChromaDB Retry          → 1h
+  H2 Token-Lock              → 30 Min
+  H3 Light Error-Handling    → 1h
+  H5 PUT/DELETE Timeout      → 30 Min
+
+Nächster Sprint:
+  H4 Init-Reihenfolge        → 2h
+  H6 Paralleler Startup      → 3h
+  M1–M8 Medium-Issues        → je 30 Min–2h
+
+Später:
+  N1–N10 Low-Prio Cleanup    → je 15–30 Min
+```
+
+---
