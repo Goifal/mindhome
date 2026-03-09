@@ -169,6 +169,7 @@ Für jeden gefixten Bug:
 - **Flows nach Priorität** — wenn die Zeit knapp wird: Flow 1 und 2 sind Pflicht
 - **Tests nach jedem Fix** — `python -m pytest -x`
 - **Keine Persönlichkeits-Änderungen hier** — das kommt in 6c
+- **⚠️ Rollback-Regel**: Wenn eine Architektur-Änderung Tests bricht die in P6a grün waren, hast du drei Optionen: **(a)** den Architektur-Fix so anpassen dass P6a-Fixes erhalten bleiben, **(b)** die P6a-Fixes an die neue Architektur anpassen (bevorzugt), **(c)** die Architektur-Änderung verwerfen. Dokumentiere im Output welche P6a-Fixes angepasst werden mussten und warum.
 
 ---
 

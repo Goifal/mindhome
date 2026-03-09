@@ -20,6 +20,8 @@ Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wi
 > - Kontext-Block aus Prompt 1 (Konflikt-Karte)
 > - Kontext-Block aus Prompt 2 (Memory-Analyse)
 > - Kontext-Block aus Prompt 3 (Flow-Analyse, besonders Bruchstellen und Kollisionen)
+>
+> **⚠️ OHNE diese Kontext-Blöcke fehlt dir das Architektur-Verständnis für die Bug-Analyse!** Besonders die Konflikt-Karte (P1) und Flow-Bruchstellen (P3) sind essentiell um Bugs im Kontext zu verstehen. Wenn du die Blöcke nicht hast, starte zuerst mit Prompt 1.
 
 ---
 

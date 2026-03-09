@@ -13,6 +13,8 @@ Du bist ein Elite-Software-Architekt mit tiefem Wissen in AsyncIO, FastAPI, Flas
 > **Wenn dies eine neue Konversation ist**: Füge hier ein:
 > - Kontext-Block aus Prompt 1 (Konflikt-Karte, besonders Konflikt F: Assistant ↔ Addon)
 > - Kontext-Block aus Prompt 2 (Memory-Analyse, Root Cause, Memory-Flow)
+>
+> **⚠️ OHNE diese Kontext-Blöcke kann dieser Prompt nicht sinnvoll arbeiten!** Die Flows bauen auf dem Architektur-Verständnis aus P1 und der Memory-Analyse aus P2 auf. Wenn du die Blöcke nicht hast, starte zuerst mit Prompt 1.
 
 ---
 

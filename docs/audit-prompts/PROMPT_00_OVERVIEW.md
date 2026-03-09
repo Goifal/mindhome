@@ -130,7 +130,7 @@ Der Code liegt auf GitHub. Es gibt kein laufendes Redis, ChromaDB, Ollama oder H
 ### Ziel-Hardware
 Das System läuft auf: **AMD Ryzen 7 3700X**, **64GB DDR4**, **RTX 3090 (24GB VRAM)**, 500GB NVMe + 1TB SATA SSD. Die GPU wird für Ollama LLM-Inference genutzt. Relevant für Prompt 7 (Docker/GPU-Setup, OOM-Szenarien, Modell-Empfehlungen).
 
-### Kontext-Block-Größe
+### Kontext-Block-Größe & Akkumulation
 
 Jeder Prompt generiert am Ende einen **Kontext-Block** für den nächsten Prompt. Damit die Blöcke bei Prompt 7 (der alle 9 vorherigen Blöcke braucht) nicht den Kontext sprengen:
 
@@ -138,6 +138,8 @@ Jeder Prompt generiert am Ende einen **Kontext-Block** für den nächsten Prompt
 - **Nur kritische Findings** in den Block — Details bleiben im ausführlichen Output
 - **Code-Referenzen kompakt**: `brain.py:123` statt langer Erklärungen
 - Bei Bug-Listen: Nur 🔴 und 🟠 Bugs im Kontext-Block, 🟡/🟢 nur als Zähler
+
+> **⚠️ Akkumulation**: Bei 9 Kontext-Blöcken á 50 Zeilen sind das ~450 Zeilen (~3.000 Tokens) nur für Kontext. Plus die Prompt-Instruktionen (~3.000 Tokens pro Prompt) = ~6.000 Tokens bevor die eigentliche Arbeit beginnt. **Ab Prompt 5–6 wird es eng** — erwäge dann separate Sessions (Option B) oder kürze ältere Kontext-Blöcke auf das absolute Minimum.
 
 ### Gründlichkeits-Pflicht
 Jeder Prompt enthält eine **Gründlichkeits-Pflicht**:
