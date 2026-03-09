@@ -13,21 +13,24 @@ Du bist ein Elite-DevOps-Engineer und QA-Experte mit tiefem Wissen in:
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–6 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+> **Wenn du Prompts 1–6d bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
 >
-> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke aus allen 6 vorherigen Prompts ein:
+> **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke aus allen vorherigen Prompts ein:
 > - Prompt 1: Konflikt-Karte & Architektur-Bewertung (3-Service-Architektur!)
 > - Prompt 2: Memory-Diagnose & Root Cause
 > - Prompt 3: Flow-Analyse mit Bruchstellen (13 Flows)
-> - Prompt 4: Bug-Report mit allen Bugs + Security + Resilience
+> - Prompt 4: Bug-Report mit allen Bugs + Security + Resilience + **Performance**
 > - Prompt 5: Persönlichkeits-Audit & Config
-> - Prompt 6: Harmonisierungs-Änderungen (was wurde gefixt?)
+> - Prompt 6a: Stabilisierung (Kritische Bugs + Memory)
+> - Prompt 6b: Architektur (Konflikte + Flows + Performance)
+> - Prompt 6c: Charakter (Persönlichkeit + Config + Dead Code)
+> - Prompt 6d: Härtung (Security + Resilience + Addon-Koordination)
 
 ---
 
 ## Aufgabe
 
-Nach den Fixes aus Prompt 6: **Verifiziere** dass alles funktioniert, **teste** systematisch, und stelle sicher dass das Deployment **robust** ist.
+Nach den Fixes aus Prompt 6a–6d: **Verifiziere** dass alles funktioniert, **teste** systematisch, **miss die Latenz**, und stelle sicher dass das Deployment **robust** ist.
 
 ### Zusätzliche Dokumentation (lies diese zuerst!):
 - `docs/ASSISTANT_TEST_CHECKLIST.md` — Bestehende Test-Checkliste (falls vorhanden, als Basis nutzen)
@@ -171,7 +174,44 @@ Simuliere (gedanklich oder per Code) diese Ausfallszenarien:
 - Gibt es Fallback-Verhalten?
 - Wird der User informiert oder stirbt Jarvis still?
 
-### Teil E: Monitoring & Observability
+### Teil E: Performance & Latenz-Verifikation (NEU)
+
+> **Jarvis muss schnell antworten.** Ziel: < 3 Sekunden für einfache Befehle ("Licht an").
+
+**Schritt 1** — Latenz-relevante Code-Pfade prüfen:
+
+| Phase | Ziel-Latenz | Was prüfen | Tool |
+|---|---|---|---|
+| Context Building | < 200ms | Werden Memory + HA-State parallel geladen? | **Grep**: `pattern="asyncio\.gather" path="assistant/assistant/context_builder.py"` |
+| LLM-Inference | < 2000ms | Model-Routing: Einfache Befehle → schnelles Modell? | **Read**: `model_router.py` |
+| Function Execution | < 500ms | HA-API-Timeouts korrekt? Parallele Calls? | **Read**: `ha_client.py` |
+| Response Streaming | Sofort | Token-Streaming aktiv oder Batch? | **Grep**: `pattern="stream|emit_stream" path="assistant/assistant/"` |
+
+**Schritt 2** — Performance-Antipatterns verifizieren (aus Prompt 4):
+
+| Antipattern | Behoben in 6b? | Verifizieren |
+|---|---|---|
+| Sequentielle awaits statt asyncio.gather | ? | Grep für gather in brain.py, context_builder.py |
+| Mehrere LLM-Calls pro Request | ? | Grep für ollama_client-Aufrufe in brain.py |
+| Großes Modell für einfache Befehle | ? | Read model_router.py — Routing-Logik |
+| Embeddings ohne Cache | ? | Grep für cache in embeddings.py |
+| Übergroßer System-Prompt | ? | Token-Count des Prompts |
+
+**Schritt 3** — Falls pytest verfügbar, Performance-Test schreiben:
+
+```python
+# Einfacher Latenz-Test (Smoke Test)
+import time
+async def test_simple_command_latency():
+    """Ein einfacher Befehl sollte < 3 Sekunden dauern."""
+    start = time.monotonic()
+    # Simuliere: "Mach das Licht im Wohnzimmer an"
+    # ... (mock Ollama, HA, Redis)
+    elapsed = time.monotonic() - start
+    assert elapsed < 3.0, f"Einfacher Befehl dauerte {elapsed:.1f}s (Ziel: <3s)"
+```
+
+### Teil F: Monitoring & Observability
 
 | Check | Status | Details |
 |---|---|---|

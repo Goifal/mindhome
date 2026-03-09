@@ -1,6 +1,6 @@
 # Jarvis Audit — Prompt-Serie (Übersicht)
 
-Diese 7 Prompts sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu werden. Jeder Prompt ist fokussiert auf ein Thema und liefert als Output den Input für den nächsten.
+Diese **10 Prompts** sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu werden. Jeder Prompt ist fokussiert auf ein Thema und liefert als Output den Input für den nächsten.
 
 > **Für einen weiteren Durchlauf**: Nutze `PROMPT_RESET.md` **vor** Prompt 1, um den Kontext sauber zurückzusetzen und die Ergebnisse des vorherigen Durchlaufs als Vergleichsbasis zu sichern.
 
@@ -24,10 +24,13 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 | 1 | `PROMPT_01_ARCHITEKTUR.md` | Architektur, Modul-Konflikte, **3-Service-Interaktion** | Keine — Startpunkt |
 | 2 | `PROMPT_02_MEMORY.md` | Memory-System End-to-End (**alle 12 Module**) | Nutzt Konflikt-Karte aus #1 |
 | 3 | `PROMPT_03_FLOWS.md` | **13 kritische Pfade** inkl. Speech, Addon, Domain-Assistenten | Nutzt Ergebnisse aus #1 + #2 |
-| 4 | `PROMPT_04_BUGS.md` | Systematische Bug-Jagd (**155 Module**, Security, Resilience) | Nutzt Architektur-Verständnis aus #1–#3 |
+| 4 | `PROMPT_04_BUGS.md` | Systematische Bug-Jagd (**155 Module**, Security, Resilience, **Performance**) | Nutzt Architektur-Verständnis aus #1–#3 |
 | 5 | `PROMPT_05_PERSONALITY.md` | Persönlichkeit, Config, MCU-Authentizität | Nutzt Bug-Liste aus #4 |
-| 6 | `PROMPT_06_HARMONISIERUNG.md` | Integration, Kohärenz, **Addon-Koordination** | Baut auf allem auf |
-| 7 | `PROMPT_07_TESTING_DEPLOYMENT.md` | Tests, Docker, Resilience, **Verifikation** | Verifiziert die Fixes aus #6 |
+| 6a | `PROMPT_06a_STABILISIERUNG.md` | **Kritische Bugs fixen** + **Memory reparieren** | 🔴 Bugs aus #4 + Memory-Fix aus #2 |
+| 6b | `PROMPT_06b_ARCHITEKTUR.md` | **Architektur-Entscheidungen** + Konflikte + Flows + **Performance** | Konflikte aus #1 + Flows aus #3 |
+| 6c | `PROMPT_06c_CHARAKTER.md` | **Persönlichkeit harmonisieren** + Config + 🟡 Bugs + Dead Code | Personality aus #5 + Bugs aus #4 |
+| 6d | `PROMPT_06d_HAERTUNG.md` | **Security** + **Resilience** + **Addon-Koordination** | Security/Resilience aus #4 + Konflikt F aus #1 |
+| 7 | `PROMPT_07_TESTING_DEPLOYMENT.md` | Tests, Docker, **Performance-Verifikation**, Resilience | Verifiziert die Fixes aus #6a–6d |
 | ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #7, vor erneutem #1 |
 
 ## Wie verwenden
@@ -98,25 +101,26 @@ Wenn ein Prompt sagt "Implementiere den Fix":
 
 ## Was jeder Prompt abdeckt
 
-| Aspekt | P1 | P2 | P3 | P4 | P5 | P6 | P7 |
-|---|---|---|---|---|---|---|---|
-| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Addon-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | ✅ | ✅ |
-| Speech-Service | ✅ | - | ✅ | ✅ | - | - | ✅ |
-| Architektur | ✅ | - | - | - | - | ✅ | - |
-| Memory (12 Module) | - | ✅ | ✅ | ✅ | - | ✅ | ✅ |
-| Flows (13 Pfade) | - | - | ✅ | - | - | ✅ | ✅ |
-| Bug-Jagd (12 Klassen) | - | - | - | ✅ | - | ✅ | - |
-| Security | - | - | - | ✅ | - | ✅ | ✅ |
-| Resilience | - | - | - | ✅ | - | ✅ | ✅ |
-| Persönlichkeit / MCU | ✅ | - | ✅ | - | ✅ | ✅ | - |
-| Config / YAML | - | - | - | ✅ | ✅ | ✅ | - |
-| Tests (103 Dateien) | - | - | - | - | - | - | ✅ |
-| Docker / Deployment | - | - | - | - | - | - | ✅ |
-| Frontend (app.jsx, app.js) | - | - | - | ✅ | - | - | ✅ |
-| Dependencies (requirements.txt) | - | - | - | ✅ | - | - | ✅ |
-| Translations / Manifests | - | - | - | - | ✅ | - | - |
+| Aspekt | P1 | P2 | P3 | P4 | P5 | P6a | P6b | P6c | P6d | P7 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Addon-Module | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | - | ✅ | ✅ |
+| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | - | - | - | ✅ |
+| Speech-Service | ✅ | - | ✅ | ✅ | - | - | - | - | - | ✅ |
+| Architektur | ✅ | - | - | - | - | - | ✅ | - | - | - |
+| Memory (12 Module) | - | ✅ | ✅ | ✅ | - | ✅ | - | - | - | ✅ |
+| Flows (13 Pfade) | - | - | ✅ | - | - | - | ✅ | - | - | ✅ |
+| Bug-Jagd (13 Klassen) | - | - | - | ✅ | - | ✅ | ✅ | ✅ | ✅ | - |
+| **Performance & Latenz** | - | - | - | ✅ | - | - | ✅ | - | - | ✅ |
+| Security | - | - | - | ✅ | - | - | - | - | ✅ | ✅ |
+| Resilience | - | - | - | ✅ | - | - | - | - | ✅ | ✅ |
+| Persönlichkeit / MCU | ✅ | - | ✅ | - | ✅ | - | - | ✅ | - | - |
+| Config / YAML | - | - | - | ✅ | ✅ | - | - | ✅ | - | - |
+| Tests (103 Dateien) | - | - | - | - | - | - | - | - | - | ✅ |
+| Docker / Deployment | - | - | - | - | - | - | - | - | - | ✅ |
+| Frontend (app.jsx, app.js) | - | - | - | ✅ | - | - | - | - | ✅ | ✅ |
+| Dependencies (requirements.txt) | - | - | - | ✅ | - | - | - | - | - | ✅ |
+| Translations / Manifests | - | - | - | - | ✅ | - | - | - | - | - |
 
 ## Wichtige Rahmenbedingungen
 
@@ -139,12 +143,15 @@ Jeder Prompt enthält eine **Gründlichkeits-Pflicht**:
 
 Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Die Rolle wird in jedem Prompt wiederholt, damit sie auch einzeln funktionieren.
 
-## Erwarteter Gesamt-Output nach allen 7 Prompts
+## Erwarteter Gesamt-Output nach allen 10 Prompts
 
 1. **Konflikt-Karte** — Welche Module gegeneinander arbeiten (inkl. Addon ↔ Assistant)
 2. **Memory-Diagnose** — Warum Jarvis vergisst + Fix
 3. **Flow-Dokumentation** — 13 Pfade mit allen Bruchstellen
-4. **Bug-Report** — Alle Bugs mit Severity, Security- und Resilience-Analyse
+4. **Bug-Report** — Alle Bugs mit Severity, Security-, Resilience- und **Performance**-Analyse
 5. **Persönlichkeits-Audit** — MCU-Score + Inkonsistenzen + Config-Probleme
-6. **Harmonisierte Codebase** — Implementierte Fixes
-7. **Verifizierung** — Tests bestehen, Docker läuft, Resilience getestet
+6a. **Stabilisierte Codebase** — Kritische Bugs gefixt, Memory repariert
+6b. **Optimierte Architektur** — Konflikte aufgelöst, Flows repariert, **Latenz optimiert**
+6c. **Harmonisierter Charakter** — Eine Stimme, saubere Config, Dead Code entfernt
+6d. **Gehärtetes System** — Security geschlossen, Resilience implementiert, Addon koordiniert
+7. **Verifizierung** — Tests bestehen, Docker läuft, **Performance gemessen**, Resilience getestet

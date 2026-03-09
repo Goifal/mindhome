@@ -25,11 +25,11 @@ Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wi
 
 ## Aufgabe
 
-Prüfe **jedes Modul** systematisch auf die folgenden **12 Fehlerklassen**. Arbeite die Module in der angegebenen Prioritätsreihenfolge ab.
+Prüfe **jedes Modul** systematisch auf die folgenden **13 Fehlerklassen**. Arbeite die Module in der angegebenen Prioritätsreihenfolge ab.
 
 ---
 
-## Die 12 Fehlerklassen
+## Die 13 Fehlerklassen
 
 | # | Klasse | Was suchen | Beispiel |
 |---|---|---|---|
@@ -45,6 +45,7 @@ Prüfe **jedes Modul** systematisch auf die folgenden **12 Fehlerklassen**. Arbe
 | 10 | **Logik-Fehler** | Falsche if-Bedingungen, Off-by-One, invertierte Booleans | Dead Code, unerreichbare Branches |
 | 11 | **Security** | Prompt Injection, unvalidierte Inputs, fehlende Auth | User-Input direkt im System-Prompt ohne Sanitization |
 | 12 | **Resilience** | Fehlende Fehlertoleranz bei Service-Ausfall | Was wenn Ollama/Redis/ChromaDB/HA down ist? |
+| 13 | **Performance & Latenz** | Unnötige Wartezeiten, sequentielle statt parallele Calls, fehlende Caches, überflüssige LLM-Calls | `await a(); await b()` statt `await asyncio.gather(a(), b())` |
 
 ---
 
@@ -222,6 +223,58 @@ Prüfe **besonders**:
 | 9 | `circuit_breaker.py` | Wird es überhaupt genutzt? Von welchen Modulen? | ? | ? |
 | 10 | `error_patterns.py` | Werden Fehler klassifiziert? Führt das zu Verbesserungen? | ? | ? |
 
+## Performance & Latenz-Checks (NEU — KRITISCH)
+
+> **Jarvis muss schnell antworten.** Ein Smart-Home-Butler der 10 Sekunden braucht um "Licht an" zu sagen ist unbrauchbar. Jede Millisekunde zählt im Haupt-Flow.
+
+### Latenz-Budget (Ziel: < 3 Sekunden für einfache Befehle)
+
+| Phase | Ziel | Was prüfen |
+|---|---|---|
+| Request Parsing + Pre-Classification | < 50ms | Wird `pre_classifier.py` synchron oder async? Overhead? |
+| Context Building (Memory + State) | < 200ms | Werden Memory-Abfragen **parallel** gemacht oder sequentiell? |
+| LLM-Inference (Ollama) | < 2000ms | Wird das richtige Modell gewählt? (Fast vs. Smart vs. Deep) |
+| Function Calling + HA-API | < 500ms | Timeouts? Retries? Parallele Calls? |
+| Response Processing + TTS | < 200ms | Wird die Antwort sofort gestreamt oder erst komplett generiert? |
+| **Gesamt** | **< 3000ms** | End-to-End vom Request bis zur ersten hörbaren Antwort |
+
+### Spezifische Performance-Checks
+
+| # | Check | Modul | Was prüfen |
+|---|---|---|---|
+| 1 | **Sequentielle statt parallele Async-Calls** | `brain.py`, `context_builder.py` | Werden unabhängige `await`s nacheinander statt mit `asyncio.gather()` aufgerufen? |
+| 2 | **Überflüssige LLM-Calls** | `brain.py`, `pre_classifier.py`, `mood_detector.py` | Wird das LLM mehrfach für einen einzigen User-Request aufgerufen? Kann der Pre-Classifier ohne LLM-Call arbeiten? |
+| 3 | **Model-Routing-Effizienz** | `model_router.py` | Werden einfache Befehle ("Licht an") zum schnellsten Modell geroutet? Oder immer zum größten? |
+| 4 | **Memory-Abfrage-Latenz** | `memory.py`, `semantic_memory.py` | Redis-Roundtrips? ChromaDB-Query-Zeit? Werden Ergebnisse gecacht? |
+| 5 | **Context Builder Overhead** | `context_builder.py` | Wie viele HA-API-Calls werden pro Request gemacht um den Kontext zu bauen? Werden sie parallelisiert? |
+| 6 | **Startup-Latenz** | `main.py`, `brain.py` | Wie lange dauert der Boot? Werden Module lazy oder eager geladen? |
+| 7 | **Embedding-Berechnung** | `embeddings.py`, `embedding_extractor.py` | Werden Embeddings bei jedem Request neu berechnet oder gecacht? Welches Modell (groß = langsam)? |
+| 8 | **Token-Verschwendung** | `context_builder.py`, `personality.py` | Wie groß ist der System-Prompt? Wird der Kontext effizient genutzt oder mit irrelevanten Daten aufgebläht? |
+| 9 | **Proaktive Systeme als Hintergrund-Last** | `proactive.py`, `learning_observer.py`, `spontaneous_observer.py` | Laufen Hintergrund-Tasks die CPU/Memory verbrauchen und den Haupt-Flow verlangsamen? |
+| 10 | **Addon-Roundtrip** | `ha_client.py`, Addon API-Calls | Latenz der HTTP-Calls zwischen Assistant und Addon? Caching? |
+| 11 | **Streaming vs. Batch** | `websocket.py`, `ollama_client.py` | Wird die LLM-Antwort Token für Token gestreamt (gut) oder erst komplett generiert dann gesendet (schlecht)? |
+| 12 | **Unnötige Serialisierung** | Überall | JSON-Encoding/Decoding bei internen Aufrufen? Pydantic-Validierung als Overhead? |
+
+### Grep-Suche für Performance-Probleme
+
+```
+# Sequentielle awaits die parallel sein könnten
+Grep: pattern="await self\." path="assistant/assistant/brain.py" output_mode="content"
+Grep: pattern="await self\." path="assistant/assistant/context_builder.py" output_mode="content"
+
+# asyncio.gather Nutzung (gut!)
+Grep: pattern="asyncio\.gather" path="assistant/assistant/" output_mode="content"
+
+# LLM-Aufrufe pro Request zählen
+Grep: pattern="ollama_client|generate|chat_completion" path="assistant/assistant/brain.py" output_mode="content"
+
+# Cache-Nutzung
+Grep: pattern="cache|_cache|lru_cache|ttl_cache" path="assistant/assistant/" output_mode="content"
+
+# Timeouts
+Grep: pattern="timeout" path="assistant/assistant/" output_mode="content"
+```
+
 ---
 
 ## Output-Format
@@ -303,7 +356,7 @@ Grep: pattern="self\.\w+\[|self\.\w+\.append" path="assistant/assistant/" output
 Grep: pattern="asyncio\.Lock|async with.*lock" path="assistant/assistant/" output_mode="content"
 
 # Fehlerklasse 6: API-Calls ohne Timeout
-Grep: pattern="aiohttp|requests\.\(get\|post\)|fetch" path="." output_mode="content"
+Grep: pattern="aiohttp|requests\.(get|post)|fetch" path="." output_mode="content"
 Grep: pattern="timeout" path="assistant/assistant/ha_client.py" output_mode="content"
 
 # Fehlerklasse 9: Memory Leaks — Listen ohne Limit
@@ -329,7 +382,7 @@ cd assistant && python -m bandit -r assistant/ -ll 2>/dev/null | head -50
 - **Jeder Bug mit Code-Referenz** (Datei:Zeile)
 - **Keine false positives** — nur echte Bugs, keine Style-Issues
 - **Nicht fixen in diesem Prompt** — nur finden und dokumentieren (Fixes kommen in Prompt 6)
-- **ALLE Module prüfen** — Priorität 1–4 besonders gründlich, aber KEIN Modul überspringen (Priorität 1–12). Jedes Modul mindestens auf die Top-5 Fehlerklassen (Async, Stille Fehler, Race Conditions, None, Init) checken
+- **ALLE Module prüfen** — Priorität 1–4 besonders gründlich, aber KEIN Modul überspringen (Priorität 1–12). Jedes Modul mindestens auf die Top-6 Fehlerklassen (Async, Stille Fehler, Race Conditions, None, Init, Performance) checken
 - **Async-Fehler haben höchste Aufmerksamkeit** — häufigste Ursache für "funktioniert manchmal"
 - **Security-Bugs sind immer KRITISCH**
 - **Addon-Module NICHT vergessen** — sie haben eigene Bugs und eigene HA-Integration

@@ -425,14 +425,14 @@ Top-5 Probleme, sortiert nach Impact, mit konkretem Fix-Vorschlag.
 
 | Aufgabe | Tool | Beispiel |
 |---|---|---|
-| Flow-Einstiegspunkte finden | **Grep** | `pattern="@app\.\(post\|get\|websocket\)" path="assistant/assistant/main.py"` |
+| Flow-Einstiegspunkte finden | **Grep** | `pattern="@app\.(post|get|websocket)" path="assistant/assistant/main.py"` |
 | Funktionsaufruf-Kette verfolgen | **Grep** → **Read** | Grep findet Aufrufer, Read zeigt Implementierung |
-| Init-Sequenz finden | **Read** `main.py` + **Grep** `pattern="async def.*init\|startup\|lifespan"` |
+| Init-Sequenz finden | **Read** `main.py` + **Grep** `pattern="async def.*(init|startup|lifespan)"` |
 | System-Prompt rekonstruieren | **Read** `context_builder.py` + `personality.py` |
-| Addon-Endpoints finden | **Grep** | `pattern="@.*route\|@app\." path="addon/"` |
-| WebSocket-Events finden | **Grep** | `pattern="emit_stream\|ws_send\|websocket" path="assistant/"` |
-| Shared-Schema-Nutzung prüfen | **Grep** | `pattern="ChatRequest\|ChatResponse\|MindHomeEvent" path="."` |
-| Flow-Kollisionen aufdecken | **Grep** | `pattern="asyncio\.Lock\|async with.*lock\|Queue" path="assistant/"` |
+| Addon-Endpoints finden | **Grep** | `pattern="@.*route|@app\." path="addon/"` |
+| WebSocket-Events finden | **Grep** | `pattern="emit_stream|ws_send|websocket" path="assistant/"` |
+| Shared-Schema-Nutzung prüfen | **Grep** | `pattern="ChatRequest|ChatResponse|MindHomeEvent" path="."` |
+| Flow-Kollisionen aufdecken | **Grep** | `pattern="asyncio\.Lock|async with.*lock|Queue" path="assistant/"` |
 
 **Parallelisierung**: Die 13 Flows können teilweise **parallel analysiert** werden:
 - **Gruppe A** (parallel): Flow 1, 2, 3 (verschiedene Einstiegspunkte)

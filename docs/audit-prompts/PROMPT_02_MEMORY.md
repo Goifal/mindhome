@@ -290,12 +290,12 @@ Für jeden Memory-Bug:
 | Aufgabe | Tool | Beispiel |
 |---|---|---|
 | 12 Memory-Module lesen | **Read** (parallel, 3 Batches) | Siehe Strategie oben |
-| Redis-Aufrufe finden | **Grep** | `pattern="redis\.\|\.set\(\|\.get\("` |
-| ChromaDB-Aufrufe finden | **Grep** | `pattern="chroma\|collection\."` |
-| Wer ruft memory.store() auf? | **Grep** | `pattern="memory\.store\|memory\.save"` |
-| Wird Modul X importiert? | **Grep** | `pattern="from.*memory_extractor import"` |
-| Fehlende awaits finden | **Grep** | `pattern="[^await ]self\.memory\."` |
-| Addon-Memory prüfen | **Grep** + **Read** | `pattern="pattern_engine\|db\." path="addon/"` |
+| Redis-Aufrufe finden | **Grep** | `pattern="redis\.|\.set\(|\.get\(" path="assistant/assistant/"` |
+| ChromaDB-Aufrufe finden | **Grep** | `pattern="chroma|collection\." path="assistant/assistant/"` |
+| Wer ruft memory.store() auf? | **Grep** | `pattern="memory\.store|memory\.save" path="assistant/assistant/"` |
+| Wird Modul X importiert? | **Grep** | `pattern="from.*memory_extractor import" path="assistant/"` |
+| Fehlende awaits finden | **Grep** | `pattern="[^await ]self\.memory\." path="assistant/assistant/"` |
+| Addon-Memory prüfen | **Grep** + **Read** | `pattern="pattern_engine|db\." path="addon/"` |
 
 - **Nur Memory** in diesem Prompt — keine anderen Bugs jagen
 - Folge dem Code, nicht der Dokumentation

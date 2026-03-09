@@ -177,11 +177,11 @@ Konkreter Vorschlag für einen verbesserten `SYSTEM_PROMPT_TEMPLATE` (oder Teile
 |---|---|---|
 | personality.py + context_builder.py lesen | **Read** (parallel) | Beide gleichzeitig lesen |
 | Alle 9 YAML-Configs lesen | **Read** (parallel, 2 Batches) | `settings.yaml`, `easter_eggs.yaml`, ... |
-| Config-Wert im Code finden | **Grep** | `Grep: pattern="sarcasm_level\|humor_level" path="assistant/"` |
+| Config-Wert im Code finden | **Grep** | `Grep: pattern="sarcasm_level|humor_level" path="assistant/"` |
 | Unbenutzte Config-Werte finden | **Grep** pro YAML-Key | `Grep: pattern="KEY_NAME" path="assistant/"` → 0 Treffer = unbenutzt |
-| Persönlichkeits-Pfade finden | **Grep** | `Grep: pattern="personality\|system_prompt\|SYSTEM_PROMPT" path="assistant/"` |
+| Persönlichkeits-Pfade finden | **Grep** | `Grep: pattern="personality|system_prompt|SYSTEM_PROMPT" path="assistant/"` |
 | Addon-Config prüfen | **Read** `addon/config.yaml` + **Grep** nach Keys in Addon-Code |
-| Wo wird mood_detector genutzt? | **Grep** | `Grep: pattern="mood_detector\|detect_mood\|user_mood" path="assistant/"` |
+| Wo wird mood_detector genutzt? | **Grep** | `Grep: pattern="mood_detector|detect_mood|user_mood" path="assistant/"` |
 
 - **MCU-Jarvis ist der Maßstab** — nicht "was klingt nett", sondern "was würde Jarvis sagen"
 - Jede Kritik mit **konkretem Verbesserungsvorschlag**
