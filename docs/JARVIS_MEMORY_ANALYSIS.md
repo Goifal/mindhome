@@ -270,7 +270,92 @@ if conv_memory_ctx:
 
 ---
 
-## 8. Ehrliche Einschätzung
+## 8. Weitere kritische Bugs (Agent-Analyse)
+
+### Bug A: `clear_all_memory()` löscht Projekte und offene Fragen NICHT
+
+**Datei:** `memory.py` Zeile 493-507
+
+Die Lösch-Schleife scannt nach diesen Patterns:
+```python
+async for key in self.redis.scan_iter(match="mha:archive:*"):     # ✅
+async for key in self.redis.scan_iter(match="mha:context:*"):     # ✅
+async for key in self.redis.scan_iter(match="mha:emotional_memory:*"):  # ✅
+async for key in self.redis.scan_iter(match="mha:pending_topics"):  # ✅
+keys.append("mha:conversations")  # ✅
+```
+
+**Aber `mha:memory:projects`, `mha:memory:open_questions` und `mha:memory:summary:*` werden NICHT erfasst!**
+
+Das heißt: Nach einem Memory-Reset hat Jarvis keine Gespräche mehr, aber noch alte Projekte und offene Fragen im Kopf. Inkonsistenter Zustand.
+
+(`factory_reset()` löscht alles via `mha:*` Wildcard, aber `clear_all_memory()` nicht.)
+
+### Bug B: `_last_executed_action` überlebt keinen Restart
+
+**Datei:** `brain.py` Zeile 352-354
+
+```python
+self._last_executed_action: str = ""
+self._last_executed_action_args: dict = {}
+```
+
+Nur Python-Memory, nicht Redis-backed. Nach einem Assistant-Neustart:
+- User: "Mach das wieder aus"
+- Jarvis: "Welchen Raum meinst du?" (hat keine Ahnung was "das" war)
+
+Wird im System-Prompt eingefügt (Zeile 2717-2727) als Prio 1, aber der Wert ist nach Restart leer.
+
+### Bug C: Doppelte `conv_memory`-Sektion
+
+**Datei:** `brain.py` Zeile 2800 und 2922
+
+```python
+# Zeile 2800-2809: Als Prio 2
+conv_memory = _safe_get("conv_memory")
+if conv_memory:
+    sections.append(("conv_memory", conv_text, 2))
+
+# Zeile 2921-2924: NOCHMAL als Prio 3
+conv_memory_ctx = _safe_get("conv_memory", "")
+if conv_memory_ctx:
+    sections.append(("conv_memory", f"\n\nGEDÄCHTNIS: {conv_memory_ctx}", 3))
+```
+
+Gleicher Inhalt wird zweimal als Sektion hinzugefügt. Entweder doppelte Token-Verschwendung oder ein Copy-Paste-Bug.
+
+### Bug D: Addon-Gesprächshistorie synchronisiert nie mit Assistant
+
+**Datei:** `addon/rootfs/opt/mindhome/routes/chat.py` Zeile 22
+
+```python
+_conversation_history = []  # Python-Liste, max 200, verloren bei Restart
+```
+
+- Der `/api/chat/history` Endpoint auf dem Addon gibt NUR diese In-Memory-Liste zurück
+- Wird NIE mit der Redis-History des Assistants abgeglichen
+- Nach einem Addon-Restart: leere History im UI, obwohl Redis noch 7 Tage Daten hat
+- Das ist effektiv ein **7. Memory-System** das mit keinem der anderen spricht
+
+### Bug E: Fact Decay löscht still ohne Benachrichtigung
+
+**Datei:** `semantic_memory.py` Zeile 404-408
+
+```python
+if decayed or deleted:
+    logger.info("Fact Decay: %d Fakten reduziert, %d geloescht", decayed, deleted)
+```
+
+Nur Logger-Output. Der User erfährt nie:
+- Welche Fakten schwächer werden
+- Welche Fakten gelöscht wurden
+- Dass er Fakten bestätigen sollte um sie zu behalten
+
+Ein persönlicher Assistent der still vergisst was du ihm gesagt hast — das ist das Gegenteil von Jarvis.
+
+---
+
+## 9. Ehrliche Einschätzung
 
 ### Was richtig gemacht wurde:
 - Die Idee der Memory-Schichten (Working → Episodic → Semantic) ist architektonisch korrekt
@@ -292,9 +377,31 @@ if conv_memory_ctx:
 **Ja — aber nur durch Konsolidierung, nicht durch mehr Features.**
 
 Der nächste Schritt darf NICHT "Phase 19" sein. Der nächste Schritt muss sein:
-1. Memory Gateway bauen (alle 6 Systeme hinter einem Interface)
+1. Memory Gateway bauen (alle 6+ Systeme hinter einem Interface)
 2. System-Prompt auf die Hälfte kürzen
 3. Erinnerungen auf Prio 1 setzen
 4. brain.py in eine saubere Pipeline aufbrechen
+5. Bugs B-E fixen (Restart-Persistenz, doppelte Sektionen, Addon-Sync, Decay-Benachrichtigung)
 
 Das Projekt ist nicht tot. Es ist eines der ambitioniertesten Home-Assistant-Projekte überhaupt. Aber es ist an dem Punkt wo jedes neue Feature das Problem verschlimmert. **Konsolidieren vor Expandieren.**
+
+---
+
+## Appendix: Alle Memory-Redis-Keys auf einen Blick
+
+| Key-Pattern | TTL | Typ | System | Wird bei Reset gelöscht? |
+|---|---|---|---|---|
+| `mha:conversations` | 7d | List (50) | Working Memory | ✅ clear_all |
+| `mha:archive:{YYYY-MM-DD}` | 30d | List | Working Memory | ✅ clear_all |
+| `mha:context:{key}` | 1h | String | Working Memory | ✅ clear_all |
+| `mha:pending_topics` | 24h | Hash | Working Memory | ✅ clear_all |
+| `mha:fact:{id}` | ∞ | Hash | Semantic Memory | ✅ clear_all |
+| `mha:facts:person:{name}` | ∞ | Set | Semantic Memory | ✅ clear_all |
+| `mha:facts:category:{cat}` | ∞ | Set | Semantic Memory | ✅ clear_all |
+| `mha:facts:all` | ∞ | Set | Semantic Memory | ✅ clear_all |
+| `mha:memory:projects` | ∞ | Hash (20) | Conversation Memory | ❌ **NICHT gelöscht!** |
+| `mha:memory:open_questions` | ∞ | Hash (30) | Conversation Memory | ❌ **NICHT gelöscht!** |
+| `mha:memory:summary:{date}` | 30d | String | Conversation Memory | ❌ **NICHT gelöscht!** |
+| `mha:emotional_memory:{action}:{person}` | 90d | List (20) | Emotional Memory | ✅ clear_all |
+| `mha:feedback:score:{event}` | 90d | String | Feedback | ❌ nur factory_reset |
+| `mha:notify:{event}` | 1h | String | Proaktiv | ❌ nur factory_reset |
