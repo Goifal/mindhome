@@ -275,20 +275,62 @@ Module oder Funktionen die existieren aber **nie aufgerufen** werden.
 
 ### Gründlichkeits-Pflicht
 
-> **Öffne JEDES Modul in der Prioritätsliste. KEIN Modul überspringen.**
+> **Lies JEDES Modul in der Prioritätsliste mit Read. KEIN Modul überspringen.**
 >
-> Für jedes Modul: Öffne die Datei, lies die Klasse/Funktionen, prüfe jeden `try/except`, jeden `await`, jeden Dict/List-Zugriff, jede API-Call. Wenn du ein Modul nicht geprüft hast, dokumentiere WARUM.
+> Für jedes Modul: Lies die Datei mit Read, prüfe jeden `try/except`, jeden `await`, jeden Dict/List-Zugriff, jede API-Call. Wenn du ein Modul nicht geprüft hast, dokumentiere WARUM.
 >
 > Ein übersehener kritischer Bug kann das ganze System zum Absturz bringen. Lieber langsam und gründlich als schnell und oberflächlich.
+
+### Claude Code Tool-Einsatz in diesem Prompt
+
+**Grep für systematische Bug-Suche** — bevor du Module einzeln liest:
+
+```
+# Fehlerklasse 1: Fehlende awaits finden
+Grep: pattern="[^await ](self\.\w+\.\w+\()" path="assistant/assistant/" output_mode="content"
+# Besser: Coroutines die ohne await aufgerufen werden
+Grep: pattern="(?<!await )self\.(memory|semantic_memory|ha_client)\." path="assistant/assistant/" output_mode="content"
+
+# Fehlerklasse 2: Stille Fehler
+Grep: pattern="except.*:[\s]*pass|except.*:[\s]*$|except Exception" path="." output_mode="content"
+
+# Fehlerklasse 3: Race Conditions — Shared State ohne Lock
+Grep: pattern="self\.\w+\[|self\.\w+\.append" path="assistant/assistant/" output_mode="content"
+# Dann prüfen ob asyncio.Lock verwendet wird:
+Grep: pattern="asyncio\.Lock|async with.*lock" path="assistant/assistant/" output_mode="content"
+
+# Fehlerklasse 6: API-Calls ohne Timeout
+Grep: pattern="aiohttp|requests\.\(get\|post\)|fetch" path="." output_mode="content"
+Grep: pattern="timeout" path="assistant/assistant/ha_client.py" output_mode="content"
+
+# Fehlerklasse 9: Memory Leaks — Listen ohne Limit
+Grep: pattern="\.append\(|\.extend\(" path="assistant/assistant/" output_mode="content"
+
+# Fehlerklasse 11: Security — User-Input im Prompt
+Grep: pattern="f\"|f'" path="assistant/assistant/context_builder.py" output_mode="content"
+
+# Dead Code: Module die nie importiert werden
+Grep: pattern="from.*module_name import" path="assistant/" output_mode="files_with_matches"
+```
+
+**Bash für statische Analyse** (falls verfügbar):
+```bash
+cd assistant && pip list 2>/dev/null | grep -E "pylint|mypy|bandit" || echo "Nicht installiert"
+# Falls installiert:
+cd assistant && python -m pylint assistant/ --errors-only 2>/dev/null | head -50
+cd assistant && python -m bandit -r assistant/ -ll 2>/dev/null | head -50
+```
+
+**Strategie**: Grep-Bulk-Suche zuerst → verdächtige Stellen mit Read vertiefen → Bug dokumentieren.
 
 - **Jeder Bug mit Code-Referenz** (Datei:Zeile)
 - **Keine false positives** — nur echte Bugs, keine Style-Issues
 - **Nicht fixen in diesem Prompt** — nur finden und dokumentieren (Fixes kommen in Prompt 6)
 - **ALLE Module prüfen** — Priorität 1–4 besonders gründlich, aber KEIN Modul überspringen (Priorität 1–12). Jedes Modul mindestens auf die Top-5 Fehlerklassen (Async, Stille Fehler, Race Conditions, None, Init) checken
 - **Async-Fehler haben höchste Aufmerksamkeit** — häufigste Ursache für "funktioniert manchmal"
-- **Security-Bugs sind immer 🔴 KRITISCH**
+- **Security-Bugs sind immer KRITISCH**
 - **Addon-Module NICHT vergessen** — sie haben eigene Bugs und eigene HA-Integration
-- Wenn ein `except: pass` intentional ist: Trotzdem notieren als 🟢
+- Wenn ein `except: pass` intentional ist: Trotzdem notieren als niedrig
 
 ---
 

@@ -153,6 +153,8 @@ Basierend auf Prompt 2 — implementiere die empfohlene Lösung:
 
 ### 1. Änderungs-Log
 
+**Claude Code: Nutze das Edit-Tool um Änderungen DIREKT in den Dateien zu machen.** Zeige nicht nur Diffs — schreibe die Fixes direkt in den Code.
+
 Für jede Änderung:
 ```
 ### [Schritt X] Datei: path/to/file.py
@@ -160,7 +162,7 @@ Für jede Änderung:
 **Bug-Ref**: #X aus Prompt 4 (falls Bug-Fix)
 **Was geändert**: Kurzbeschreibung
 **Warum**: Begründung
-**Code**: Diff oder neuer Code
+→ Edit-Tool: Änderung direkt in der Datei durchgeführt
 ```
 
 ### 2. Architektur-Entscheidungen
@@ -194,15 +196,33 @@ Was konnte in diesem Durchlauf **nicht** gelöst werden und braucht einen weiter
 
 ### Gründlichkeits-Pflicht
 
-> **Jeder Fix muss VERIFIZIERT sein.** Öffne die Datei, mache die Änderung, lies den umgebenden Code, stelle sicher dass der Fix keine neuen Probleme einführt. Prüfe alle Aufrufer der geänderten Funktion.
+> **Jeder Fix muss VERIFIZIERT sein.** Lies die Datei mit Read, mache die Änderung mit Edit, lies den umgebenden Code, stelle sicher dass der Fix keine neuen Probleme einführt. Prüfe mit Grep alle Aufrufer der geänderten Funktion.
+
+### Claude Code Tool-Einsatz in diesem Prompt
+
+| Aufgabe | Tool | Wichtig |
+|---|---|---|
+| Datei lesen vor dem Fix | **Read** | IMMER erst lesen, dann editieren |
+| Fix implementieren | **Edit** | Direkt in der Datei ändern — KEIN "hier ist der Diff" |
+| Aufrufer prüfen nach Fix | **Grep** | `pattern="geänderte_funktion" path="assistant/"` |
+| Tests nach Fix laufen lassen | **Bash** | `cd assistant && python -m pytest tests/test_betroffenes_modul.py -x` |
+| Commit nach Fix-Gruppe | **Bash** | `git add -p && git commit -m "Fix: Beschreibung"` |
+
+**Workflow pro Fix:**
+1. **Read** — Datei lesen, Problem verifizieren
+2. **Grep** — Alle Aufrufer/Abhängigkeiten finden
+3. **Edit** — Fix direkt schreiben
+4. **Grep** — Prüfen ob der Fix konsistent ist mit allen Aufrufern
+5. **Bash** — Betroffene Tests laufen lassen
+6. Nächster Fix
 
 - **Einfach > Komplex** — Wenn ein simpler Fix reicht, kein Refactoring nötig
 - **Nicht alles auf einmal** — Lieber 10 solide Fixes als 30 hastige
 - **Reihenfolge einhalten** — Stabilität vor Features vor Feinschliff
-- **Jede Änderung committen** — Klare, beschreibende Commit Messages
+- **Jede Änderung committen** — Klare, beschreibende Commit Messages mit `git commit`
 - **MCU-Jarvis als Maßstab** — Bei jeder Entscheidung: "Würde der echte Jarvis das so machen?"
 - **Keine neuen Module** ohne guten Grund — Bestehende Module verbessern statt neue hinzufügen
-- **Tests nicht brechen** — Bestehende Tests müssen weiterhin bestehen
+- **Tests nicht brechen** — Nach jedem Fix mit Bash `pytest` ausführen
 
 ---
 

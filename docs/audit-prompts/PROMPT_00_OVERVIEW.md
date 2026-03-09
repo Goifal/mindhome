@@ -30,23 +30,69 @@ Dazu: 105 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen.
 
 ## Wie verwenden
 
-### Option A: Alles in einer Konversation (empfohlen)
+### Option A: Claude Code (empfohlen)
 
-1. Starte mit Prompt 1
-2. Lass das LLM die Analyse durchführen
-3. Gib dann einfach Prompt 2 ein — **das LLM nutzt seine eigenen Ergebnisse automatisch als Kontext**
-4. Wiederhole bis Prompt 7
+Die Prompts sind für **Claude Code** (Anthropics CLI-Tool) optimiert. Übergib jeden Prompt als User-Message:
 
-> **Vorteil**: Kein manuelles Kopieren nötig. Jeder Prompt enthält die Anweisung: *"Wenn du die vorherigen Prompts in dieser Konversation bearbeitet hast, nutze deine Ergebnisse automatisch."*
+1. Starte eine Claude-Code-Session im Projekt-Root (`/home/user/mindhome`)
+2. Kopiere den Inhalt von Prompt 1 als Nachricht
+3. Claude Code führt die Analyse durch — liest Dateien, sucht mit Grep, führt Befehle aus
+4. Kopiere dann Prompt 2 als Nachricht — Claude Code nutzt seine Ergebnisse automatisch
+5. Wiederhole bis Prompt 7
 
-### Option B: Separate Konversationen
+> **Context-Window-Strategie**: Claude Code komprimiert die Konversation automatisch. Bei einem Projekt dieser Größe (276 Python-Dateien) wird der Kontext ab ca. Prompt 3–4 komprimiert. Die Kontext-Blöcke am Ende jedes Prompts (`## KONTEXT AUS PROMPT X`) sichern die wichtigsten Ergebnisse gegen Kompression.
 
-1. Starte mit Prompt 1 in einer **neuen Konversation**
-2. Am Ende jeder Analyse erstellt das LLM einen kompakten **Kontext-Block** (markiert mit `## KONTEXT AUS PROMPT X`)
+**Wenn der Kontext zu knapp wird**: Starte eine neue Session und füge die Kontext-Blöcke aus den vorherigen Prompts manuell ein (siehe Abschnitt in jedem Prompt).
+
+### Option B: Separate Sessions (bei Context-Limits)
+
+1. Starte mit Prompt 1 in einer **neuen Claude-Code-Session**
+2. Am Ende jeder Analyse erstellt Claude Code einen kompakten **Kontext-Block** (markiert mit `## KONTEXT AUS PROMPT X`)
 3. Kopiere diesen Block in den `## Kontext aus vorherigen Prompts`-Abschnitt des nächsten Prompts
-4. Wiederhole bis Prompt 7
+4. Starte eine neue Session und übergib den nächsten Prompt mit dem eingefügten Kontext
+5. Wiederhole bis Prompt 7
 
-> **Vorteil**: Frischer Context Window für jeden Prompt. Nötig wenn das LLM an Context-Limits stößt.
+> **Vorteil**: Frischer Context Window für jeden Prompt. Maximale Gründlichkeit pro Prompt.
+
+---
+
+## Claude Code — Tool-Strategie
+
+Claude Code hat spezialisierte Tools. Jeder Prompt nutzt sie gezielt:
+
+### Verfügbare Tools und wann sie eingesetzt werden
+
+| Tool | Wofür | Statt |
+|---|---|---|
+| **Read** | Einzelne Dateien lesen (`brain.py`, `main.py`, YAML-Configs) | ~~cat, head, tail~~ |
+| **Grep** | Muster im Code suchen (Imports, Funktionsaufrufe, Redis-Keys, `await`) | ~~grep, rg~~ |
+| **Glob** | Dateien finden (`**/*.py`, `**/test_*.py`) | ~~find, ls~~ |
+| **Bash** | Befehle ausführen (`pytest`, `docker build`, `pylint`, `pip list`) | — |
+| **Edit** | Code-Änderungen direkt in Dateien schreiben | ~~Diff zeigen~~ |
+
+### Parallelisierung
+
+Claude Code kann **mehrere Dateien gleichzeitig lesen**. Wenn ein Prompt sagt "Lies alle 12 Memory-Module", bedeutet das:
+- Starte mehrere **parallele Read-Aufrufe** (5–7 Dateien gleichzeitig)
+- Nicht sequentiell eine nach der anderen
+
+### Grep statt "jede Datei öffnen"
+
+Wenn ein Prompt sagt "Prüfe ob Modul X importiert wird":
+- **Nutze Grep**: `pattern: "from.*memory import|import memory"` über das gesamte Projekt
+- **Nicht**: Jede der 276 Dateien einzeln öffnen und die Import-Zeilen lesen
+
+### Bash für Verifikation
+
+Wenn ein Prompt sagt "Prüfe ob Tests bestehen":
+- **Führe aus**: `cd assistant && python -m pytest --tb=short -q`
+- **Nicht**: Tests nur lesen und gedanklich simulieren
+
+### Edit für Fixes
+
+Wenn ein Prompt sagt "Implementiere den Fix":
+- **Nutze Edit**: Ändere die Datei direkt mit dem Edit-Tool
+- **Nicht**: Zeige nur einen Diff oder Code-Vorschlag
 
 ## Was jeder Prompt abdeckt
 
@@ -77,10 +123,12 @@ Das System läuft auf: **AMD Ryzen 7 3700X**, **64GB DDR4**, **RTX 3090 (24GB VR
 
 ### Gründlichkeits-Pflicht
 Jeder Prompt enthält eine **Gründlichkeits-Pflicht**:
-- **Jede Datei öffnen und lesen** — nicht raten was drin steht
+- **Jede Datei mit Read-Tool lesen** — nicht raten was drin steht
+- **Grep nutzen** um Funktionsaufrufe, Imports und Patterns projektübergreifend zu finden
 - **Jeden Funktionsaufruf bis zum Ende verfolgen** — nicht bei der ersten Ebene aufhören
 - **Jede Aussage mit Code-Referenz belegen** — Datei:Zeile oder es zählt nicht
 - **Kein Modul überspringen** — auch wenn es "unwichtig" aussieht
+- **Parallele Reads nutzen** — mehrere Dateien gleichzeitig lesen wenn möglich
 
 ## Gemeinsame Rolle
 

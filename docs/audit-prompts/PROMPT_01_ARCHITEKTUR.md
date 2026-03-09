@@ -253,10 +253,25 @@ Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
 
 **Shared-Module Prüfung**: Prüfe zusätzlich ob und wie die Dateien aus `/shared/` (constants.py, schemas/) von Assistant, Addon und HA-Integration importiert werden. Nutzen alle Services dieselben Schemas oder definieren sie eigene?
 
-Für **jedes** der 89 Assistant-Module:
-1. Öffne die Datei
-2. Lies **alle Imports** aus dem Projekt (ignoriere Standardlib/Drittanbieter)
-3. Dokumentiere: Wer importiert wen?
+#### Claude Code Strategie — Import-Karte effizient erstellen
+
+**Nutze Grep** statt jede Datei einzeln zu öffnen:
+
+```
+# Schritt 1: Alle Projekt-Imports im Assistant finden
+Grep: pattern="^from \.|^import \." path="assistant/assistant/" output_mode="content"
+
+# Schritt 2: Alle Shared-Schema-Imports finden
+Grep: pattern="from shared|import shared" path="." output_mode="content"
+
+# Schritt 3: Wer importiert brain/memory/personality?
+Grep: pattern="from.*brain import|import.*brain" path="assistant/assistant/" output_mode="content"
+
+# Schritt 4: Addon-Imports
+Grep: pattern="^from \.|^import \." path="addon/rootfs/opt/mindhome/" output_mode="content"
+```
+
+**Dann** für die Top-10 meistimportierten Module: **Read** um die Klasse/Funktionen zu verstehen.
 
 Erstelle eine **Verdrahtungs-Tabelle**:
 
@@ -274,7 +289,7 @@ Erstelle eine **Verdrahtungs-Tabelle**:
 - **Isolierte Inseln** — Gruppen von Modulen die keine Verbindung zu anderen haben
 - **Fehlende Verbindungen** — Module die EIGENTLICH zusammenarbeiten sollten aber sich nicht kennen
 
-> **Wichtig**: Nicht raten. Öffne JEDE Datei und lies die Import-Zeilen. Nur so findest du die echte Verdrahtung.
+> **Wichtig**: Nutze Grep für die Bulk-Suche, dann Read für Details. Nicht 89 Dateien einzeln öffnen wenn ein Grep-Pattern alle Imports auf einmal findet.
 
 ### Schritt 5 — Vorverarbeitung verstehen
 
@@ -346,11 +361,22 @@ Die vollständige Import-Tabelle aus Schritt 4 mit verwaisten Modulen, Zyklen un
 > **KEINE Abkürzungen. KEINE Annahmen. KEIN "das wird schon funktionieren".**
 >
 > Für jede Aussage die du machst:
-> - Hast du die Datei **tatsächlich geöffnet und gelesen**?
+> - Hast du die Datei **tatsächlich mit Read gelesen**?
 > - Hast du die Funktion **bis zur letzten Zeile** verfolgt?
-> - Hast du geprüft **wer diese Funktion aufruft** und **mit welchen Parametern**?
+> - Hast du **mit Grep geprüft** wer diese Funktion aufruft und mit welchen Parametern?
 >
-> Wenn du bei einer Frage unsicher bist — öffne die Datei und lies nach. Lieber zu gründlich als ein Problem übersehen.
+> Wenn du bei einer Frage unsicher bist — lies die Datei mit Read nach. Lieber zu gründlich als ein Problem übersehen.
+
+### Claude Code Tool-Einsatz in diesem Prompt
+
+| Aufgabe | Tool | Beispiel |
+|---|---|---|
+| Dokumentation lesen (Schritt 1) | **Read** (parallel: alle 5 Docs gleichzeitig) | `Read: docs/PROJECT_MINDHOME_ASSISTANT.md` |
+| brain.py + main.py verstehen (Schritt 2) | **Read** (nacheinander, sind groß) | `Read: assistant/assistant/brain.py` |
+| Addon + Speech verstehen (Schritt 2b/c) | **Read** (parallel: app.py + event_bus.py + server.py) | — |
+| Import-Karte (Schritt 4) | **Grep** (Bulk-Suche über alle Module) | `Grep: pattern="^from \." path="assistant/"` |
+| Shared-Schema-Nutzung prüfen | **Grep** | `Grep: pattern="from shared" path="."` |
+| Wer ruft Funktion X auf? | **Grep** | `Grep: pattern="brain\.process" path="."` |
 
 - Lies den Code **selbst** — vertraue der Dokumentation nicht blind
 - **Addon-Layer NICHT vergessen** — er ist genauso wichtig wie der Assistant
@@ -359,6 +385,7 @@ Die vollständige Import-Tabelle aus Schritt 4 mit verwaisten Modulen, Zyklen un
 - Bewerte: **Ist die Architektur selbst das Problem**, oder nur die Implementierung?
 - Denke als MCU-Jarvis-Fan: Würde der echte Jarvis so funktionieren?
 - **Verdrahtungs-Graph ist Pflicht** — nicht optional. Jedes Modul, jeder Import.
+- **Parallele Reads nutzen** — Mehrere unabhängige Dateien gleichzeitig lesen
 
 ---
 

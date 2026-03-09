@@ -38,10 +38,13 @@ Nach den Fixes aus Prompt 6: **Verifiziere** dass alles funktioniert, **teste** 
 
 ### Teil A: Bestehende Tests ausführen und bewerten
 
-**Schritt 1** — Tests laufen lassen:
+**Schritt 1** — Tests laufen lassen (**Claude Code: Mit Bash-Tool ausführen!**):
 ```bash
-cd /assistant && pytest --tb=short -q
+# AUSFÜHREN mit Bash-Tool — nicht nur lesen!
+cd assistant && python -m pytest --tb=short -q 2>&1 | tail -50
 ```
+
+> Falls pytest nicht installiert ist: `cd assistant && pip install -r requirements.txt && pip install pytest pytest-asyncio`
 
 **Schritt 2** — Ergebnisse analysieren:
 
@@ -94,7 +97,10 @@ Basierend auf Prompt 3 (Flows) und Prompt 4 (Bugs) — prüfe ob es Tests gibt f
 | Speaker Recognition → korrekter User | ? | ? | ? |
 | Addon + Assistant gleichzeitige Aktion | ? | ? | ? |
 
-Für **jedes fehlende kritische Szenario**: Schreibe einen Test.
+Für **jedes fehlende kritische Szenario**: **Schreibe einen Test mit dem Write/Edit-Tool** und führe ihn sofort mit Bash aus:
+```bash
+cd assistant && python -m pytest tests/test_neuer_test.py -v 2>&1
+```
 
 ### Teil C: Docker & Deployment Verifikation
 
@@ -259,11 +265,28 @@ Das System läuft auf folgender Hardware:
 
 ### Gründlichkeits-Pflicht
 
-> **Lies JEDEN Dockerfile Zeile für Zeile. Lies JEDEN fehlgeschlagenen Test und verstehe WARUM er fehlschlägt. Lies JEDES install/update Script.**
+> **Lies JEDEN Dockerfile mit Read. FÜHRE Tests mit Bash AUS. Lies JEDES install/update Script mit Read.**
 
-- **Tests MÜSSEN laufen** — nicht nur lesen, sondern ausführen
+### Claude Code Tool-Einsatz in diesem Prompt
+
+| Aufgabe | Tool | Befehl |
+|---|---|---|
+| Tests ausführen | **Bash** | `cd assistant && python -m pytest --tb=short -q` |
+| Einzelnen Test debuggen | **Bash** | `cd assistant && python -m pytest tests/test_X.py -v --tb=long` |
+| Test-Coverage messen | **Bash** | `cd assistant && python -m pytest --cov=assistant --cov-report=term-missing` |
+| Dockerfiles lesen | **Read** (parallel: alle 3) | `assistant/Dockerfile`, `addon/Dockerfile`, `speech/Dockerfile.whisper` |
+| Docker-Compose prüfen | **Read** (parallel) | `docker-compose.yml` + `docker-compose.gpu.yml` |
+| Docker build testen | **Bash** | `cd assistant && docker build -t jarvis-test . 2>&1 \| tail -20` |
+| Install-Scripts lesen | **Read** (parallel) | `install.sh`, `update.sh`, `nvidia-watchdog.sh` |
+| Requirements prüfen | **Read** (parallel: alle 3) | `assistant/requirements.txt`, `addon/.../requirements.txt`, `speech/requirements.txt` |
+| Neue Tests schreiben | **Write/Edit** | Test-Datei erstellen, dann mit Bash ausführen |
+| Static Analysis | **Bash** | `cd assistant && python -m py_compile assistant/brain.py 2>&1` |
+
+**Wichtig bei Addon-Tests**: Der Addon braucht ein laufendes Home Assistant. Addon-Module können nur **statisch analysiert** werden (Read + Grep), nicht mit pytest getestet.
+
+- **Tests MÜSSEN mit Bash ausgeführt werden** — nicht nur lesen, sondern tatsächlich `pytest` starten
 - **Fehlgeschlagene Tests analysieren** — ist der Test falsch oder der Code?
-- **Docker-Builds prüfen** — nicht nur das Dockerfile lesen
+- **Docker-Builds wenn möglich ausführen** — `docker build` mit Bash, falls Docker verfügbar
 - **Resilience ist nicht optional** — ein Smart-Home-Butler MUSS robust sein (MCU-Jarvis crasht nicht)
 - **Keine neuen Tests für Code-Stil** — nur für funktionale Lücken
 - **Addon-Tests nicht vergessen** — falls vorhanden

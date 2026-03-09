@@ -88,25 +88,47 @@ Bevor du den Datenfluss verfolgst: Lies **jedes** der 12 Module und erstelle ein
 
 **Ziel**: Verstehen ob es einen kohärenten Memory-Stack gibt oder 12 isolierte Systeme.
 
+#### Claude Code Strategie — Memory-Module parallel lesen
+
+Lies alle 12 Memory-Module **parallel** mit Read (5-7 gleichzeitig):
+- **Batch 1**: `memory.py`, `semantic_memory.py`, `conversation_memory.py`, `memory_extractor.py`, `correction_memory.py`
+- **Batch 2**: `dialogue_state.py`, `learning_observer.py`, `learning_transfer.py`, `knowledge_base.py`
+- **Batch 3**: `embeddings.py`, `embedding_extractor.py`, `context_builder.py`
+
 ### Schritt 2b — Datenbank-Schemas aus dem Code extrahieren
 
-**Redis**: Durchsuche ALLE Module nach Redis-Aufrufen und dokumentiere:
+#### Claude Code Strategie — Grep für Bulk-Suche
+
+**Redis**: Nutze Grep um ALLE Redis-Aufrufe projektübergreifend zu finden:
+```
+Grep: pattern="redis\.|\.set\(|\.get\(|\.delete\(|\.expire\(|\.ttl\(" path="assistant/assistant/" output_mode="content"
+```
+
+Dokumentiere:
 
 | Key-Pattern | Modul | Operation (SET/GET/DEL) | TTL | Datenformat |
 |---|---|---|---|---|
 | ? | memory.py | ? | ? | ? |
 | ? | ... | ? | ? | ? |
 
-**ChromaDB**: Durchsuche ALLE Module nach ChromaDB-Aufrufen und dokumentiere:
+**ChromaDB**: Nutze Grep um ALLE ChromaDB-Aufrufe zu finden:
+```
+Grep: pattern="chroma|collection\.|\.add\(|\.query\(|\.delete\(" path="assistant/assistant/" output_mode="content"
+```
+
+Dokumentiere:
 
 | Collection-Name | Modul | Operation (add/query/delete) | Embedding-Modell | Metadaten-Schema |
 |---|---|---|---|---|
 | ? | semantic_memory.py | ? | ? | ? |
 | ? | ... | ? | ? | ? |
 
-**SQLite** (falls vorhanden): Welche Tabellen? Welches Schema?
+**SQLite**: Nutze Grep:
+```
+Grep: pattern="sqlite|\.execute\(|CREATE TABLE|INSERT INTO" path="." output_mode="content"
+```
 
-> **Wichtig**: Nur was im Code steht. Suche nach `redis`, `chroma`, `sqlite`, `db.` in allen Modulen.
+> **Wichtig**: Nur was im Code steht. Grep findet alle Stellen — dann mit Read die Details prüfen.
 
 ### Schritt 3 — Kompletten Memory-Datenfluss verfolgen
 
@@ -254,9 +276,21 @@ Für jeden Memory-Bug:
 
 ### Gründlichkeits-Pflicht
 
-> **Öffne JEDE der 12 Memory-Dateien. Lies JEDE Funktion. Folge JEDEM Aufruf.**
+> **Lies JEDE der 12 Memory-Dateien mit Read. Lies JEDE Funktion. Folge JEDEM Aufruf.**
 >
-> Wenn du schreibst "wird aufgerufen" — zeige die Zeile. Wenn du schreibst "wird nicht aufgerufen" — beweise es (grep/Suche). Keine Vermutungen.
+> Wenn du schreibst "wird aufgerufen" — zeige die Zeile. Wenn du schreibst "wird nicht aufgerufen" — **beweise es mit Grep** (z.B. `Grep: pattern="memory_extractor" path="assistant/"` zeigt 0 Treffer). Keine Vermutungen.
+
+### Claude Code Tool-Einsatz in diesem Prompt
+
+| Aufgabe | Tool | Beispiel |
+|---|---|---|
+| 12 Memory-Module lesen | **Read** (parallel, 3 Batches) | Siehe Strategie oben |
+| Redis-Aufrufe finden | **Grep** | `pattern="redis\.\|\.set\(\|\.get\("` |
+| ChromaDB-Aufrufe finden | **Grep** | `pattern="chroma\|collection\."` |
+| Wer ruft memory.store() auf? | **Grep** | `pattern="memory\.store\|memory\.save"` |
+| Wird Modul X importiert? | **Grep** | `pattern="from.*memory_extractor import"` |
+| Fehlende awaits finden | **Grep** | `pattern="[^await ]self\.memory\."` |
+| Addon-Memory prüfen | **Grep** + **Read** | `pattern="pattern_engine\|db\." path="addon/"` |
 
 - **Nur Memory** in diesem Prompt — keine anderen Bugs jagen
 - Folge dem Code, nicht der Dokumentation

@@ -415,11 +415,30 @@ Top-5 Probleme, sortiert nach Impact, mit konkretem Fix-Vorschlag.
 
 ### Gründlichkeits-Pflicht
 
-> **Für JEDEN der 13 Flows: Öffne JEDE beteiligte Datei. Lies JEDE Funktion die aufgerufen wird. Folge JEDEM Funktionsaufruf bis zum Ende.**
+> **Für JEDEN der 13 Flows: Lies JEDE beteiligte Datei mit Read. Lies JEDE Funktion die aufgerufen wird. Folge JEDEM Funktionsaufruf bis zum Ende.**
 >
-> "Zeile für Zeile" ist WÖRTLICH gemeint. Wenn du eine Funktion siehst (`await self.memory.load(...)`) — öffne `memory.py`, finde `load()`, lies was es tut, prüfe was es zurückgibt, prüfe ob der Aufrufer das Ergebnis korrekt verwendet.
+> "Zeile für Zeile" ist WÖRTLICH gemeint. Wenn du eine Funktion siehst (`await self.memory.load(...)`) — lies `memory.py` mit Read, finde `load()`, lies was es tut, prüfe was es zurückgibt, prüfe ob der Aufrufer das Ergebnis korrekt verwendet.
 >
 > Der Init-Sequenz und der System-Prompt sind **Pflicht-Output**, nicht optional.
+
+### Claude Code Tool-Einsatz in diesem Prompt
+
+| Aufgabe | Tool | Beispiel |
+|---|---|---|
+| Flow-Einstiegspunkte finden | **Grep** | `pattern="@app\.\(post\|get\|websocket\)" path="assistant/assistant/main.py"` |
+| Funktionsaufruf-Kette verfolgen | **Grep** → **Read** | Grep findet Aufrufer, Read zeigt Implementierung |
+| Init-Sequenz finden | **Read** `main.py` + **Grep** `pattern="async def.*init\|startup\|lifespan"` |
+| System-Prompt rekonstruieren | **Read** `context_builder.py` + `personality.py` |
+| Addon-Endpoints finden | **Grep** | `pattern="@.*route\|@app\." path="addon/"` |
+| WebSocket-Events finden | **Grep** | `pattern="emit_stream\|ws_send\|websocket" path="assistant/"` |
+| Shared-Schema-Nutzung prüfen | **Grep** | `pattern="ChatRequest\|ChatResponse\|MindHomeEvent" path="."` |
+| Flow-Kollisionen aufdecken | **Grep** | `pattern="asyncio\.Lock\|async with.*lock\|Queue" path="assistant/"` |
+
+**Parallelisierung**: Die 13 Flows können teilweise **parallel analysiert** werden:
+- **Gruppe A** (parallel): Flow 1, 2, 3 (verschiedene Einstiegspunkte)
+- **Gruppe B** (parallel): Flow 7, 8, 9 (Speech, Addon, Domain — unabhängig)
+- **Gruppe C** (parallel): Flow 11, 12, 13 (Boot, Upload, WebSocket)
+- **Gruppe D** (sequentiell nach A): Flow 4, 5, 6, 10 (bauen auf Flow 1 auf)
 
 - Folge dem Code **Zeile für Zeile** — keine Annahmen
 - Jede Aussage mit **Datei:Zeile** belegen

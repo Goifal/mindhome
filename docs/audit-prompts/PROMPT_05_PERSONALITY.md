@@ -166,12 +166,24 @@ Konkreter Vorschlag für einen verbesserten `SYSTEM_PROMPT_TEMPLATE` (oder Teile
 
 ### Gründlichkeits-Pflicht
 
-> **Lies `personality.py` KOMPLETT — jede Funktion, jede Konstante, jedes Template.** Lies `context_builder.py` KOMPLETT. Lies JEDE YAML-Config-Datei Zeile für Zeile. Prüfe ob JEDER Config-Wert im Code genutzt wird.
+> **Lies `personality.py` KOMPLETT mit Read — jede Funktion, jede Konstante, jedes Template.** Lies `context_builder.py` KOMPLETT. Lies JEDE YAML-Config-Datei. Prüfe ob JEDER Config-Wert im Code genutzt wird.
+
+### Claude Code Tool-Einsatz in diesem Prompt
+
+| Aufgabe | Tool | Beispiel |
+|---|---|---|
+| personality.py + context_builder.py lesen | **Read** (parallel) | Beide gleichzeitig lesen |
+| Alle 9 YAML-Configs lesen | **Read** (parallel, 2 Batches) | `settings.yaml`, `easter_eggs.yaml`, ... |
+| Config-Wert im Code finden | **Grep** | `Grep: pattern="sarcasm_level\|humor_level" path="assistant/"` |
+| Unbenutzte Config-Werte finden | **Grep** pro YAML-Key | `Grep: pattern="KEY_NAME" path="assistant/"` → 0 Treffer = unbenutzt |
+| Persönlichkeits-Pfade finden | **Grep** | `Grep: pattern="personality\|system_prompt\|SYSTEM_PROMPT" path="assistant/"` |
+| Addon-Config prüfen | **Read** `addon/config.yaml` + **Grep** nach Keys in Addon-Code |
+| Wo wird mood_detector genutzt? | **Grep** | `Grep: pattern="mood_detector\|detect_mood\|user_mood" path="assistant/"` |
 
 - **MCU-Jarvis ist der Maßstab** — nicht "was klingt nett", sondern "was würde Jarvis sagen"
 - Jede Kritik mit **konkretem Verbesserungsvorschlag**
 - System-Prompt-Änderungen: **Token-Budget beachten** — kürzer ist oft besser
-- Config-Audit: Jeden Wert **im Code nachverfolgen**, nicht nur die YAML lesen
+- Config-Audit: **Grep pro YAML-Key** um Nutzung im Code zu verifizieren, nicht nur die YAML lesen
 - Persönlichkeit muss **über alle Pfade identisch** sein — das ist das MCU-Prinzip
 
 ---

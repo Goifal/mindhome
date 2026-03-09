@@ -14,7 +14,18 @@ Dieser Prompt wird **vor** einem neuen Durchlauf der Prompt-Serie (P1–P7) verw
 
 - **Nach Prompt 7** eines Durchlaufs, wenn Fixes implementiert wurden und du prüfen willst ob sie wirken
 - **Nach größeren Code-Änderungen** zwischen zwei Audit-Runden
-- **Wenn der Context Window voll ist** und du eine neue Konversation starten musst
+- **Wenn der Context Window voll ist** und du eine neue Claude-Code-Session starten musst
+
+### Claude Code Hinweis
+
+Bei Claude Code wird der Reset typischerweise als **neue Session** gestartet:
+1. Beende die aktuelle Claude-Code-Session
+2. Starte eine neue Session im Projekt-Root (`/home/user/mindhome`)
+3. Übergib diesen PROMPT_RESET als erste Nachricht
+4. Optional: Füge die Zusammenfassung des letzten Durchlaufs ein (falls aus separater Session)
+5. Danach: PROMPT_01 als nächste Nachricht
+
+**Alternativ**: Wenn die Session noch läuft und genug Context Window hat, kann der Reset auch in derselben Session erfolgen.
 
 ---
 
