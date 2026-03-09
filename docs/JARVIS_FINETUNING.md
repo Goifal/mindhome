@@ -628,4 +628,182 @@ async def process(self, text: str, person=None, room=None,
 | Shortcuts brechen durch Context-Änderung | Niedrig | Shortcuts werden 1:1 verschoben, keine Logik-Änderung |
 | Performance-Regression durch zusätzliche Dataclass | Null | Dataclass ist ein flacher Container, kein Overhead |
 
+### 3.7 Error-Handling-Strategie
+
+**Status Quo**: `process()` hat **keinen** Top-Level try/except. Stattdessen 241 granulare try/except-Blöcke — jeder Shortcut, jeder Gather-Block fängt seine eigenen Fehler. Das ist gut und bleibt so.
+
+**Was fehlt**: Wenn eine Stage selbst crasht (unerwarteter AttributeError, unhandled Exception), gibt es keinen Fallback. Der User bekommt einen 500er.
+
+**Lösung**: Der Orchestrator bekommt einen Top-Level-Catch mit Graceful Degradation:
+
+```python
+async def process(self, text, person=None, room=None, ...) -> dict:
+    ctx = PipelineContext(raw_text=text, person=person, room=room, ...)
+
+    try:
+        ctx = await self._stage_normalize(ctx)
+        if ctx.early_return: return ctx.result
+
+        ctx = await self._stage_shortcuts(ctx)
+        if ctx.early_return: return ctx.result
+
+        ctx = await self._stage_classify(ctx)
+        ctx = await self._stage_gather(ctx)
+        ctx = await self._stage_think(ctx)
+        ctx = await self._stage_polish(ctx)
+
+        return ctx.result
+
+    except Exception as e:
+        logger.error("Pipeline-Fehler in Stage: %s", e, exc_info=True)
+        return self._result(
+            self.personality.get_varied_confirmation(success=False),
+            error=str(e),
+        )
+```
+
+**Regeln**:
+- Die granularen try/excepts **innerhalb** der Stages bleiben alle bestehen (1:1 verschoben)
+- Der Top-Level-Catch ist nur das letzte Sicherheitsnetz
+- Er loggt den vollen Stacktrace (`exc_info=True`) damit man debuggen kann
+- Er gibt eine Jarvis-typische Fehlermeldung statt eines 500ers
+
+### 3.8 Stage-Level Logging & Timing
+
+**Problem**: Wenn Jarvis langsam antwortet oder seltsame Antworten gibt — welche Stage war schuld? Heute: manuell im 10.000-Zeilen-Logfile suchen.
+
+**Lösung**: Jede Stage loggt Start, Ende und Dauer:
+
+```python
+async def _stage_gather(self, ctx: PipelineContext) -> PipelineContext:
+    t0 = time.monotonic()
+    logger.debug("[Pipeline] Stage GATHER start")
+
+    # ... bestehende Logik ...
+
+    dt = time.monotonic() - t0
+    logger.info("[Pipeline] Stage GATHER done (%.1fms)", dt * 1000)
+    return ctx
+```
+
+**Bonus**: Im Orchestrator die Gesamt-Pipeline-Zeit loggen:
+
+```python
+logger.info(
+    "[Pipeline] %s → %s (N:%.0f S:%.0f C:%.0f G:%.0f T:%.0f P:%.0fms)",
+    ctx.raw_text[:40], ctx.intent,
+    t_normalize, t_shortcuts, t_classify, t_gather, t_think, t_polish,
+)
+```
+
+Eine Zeile pro Request, alle Stage-Zeiten auf einen Blick. Wenn Gather plötzlich 2s braucht statt 200ms → sofort sichtbar.
+
+### 3.9 Helper-Zuordnung zu Stages
+
+Von 111 Helper-Methoden werden **61 von process()** aufgerufen, **50 nicht** (Callbacks, Background-Tasks, Init).
+
+Die Zuordnung der 61 process()-Helper zu Stages — relevant für den späteren File-Split (Option C):
+
+#### Stage 1: Normalize
+| Helper | Zeile | Funktion |
+|--------|-------|----------|
+| `_normalize_stt_text` | 7194 | Whisper-Text bereinigen |
+| `_update_stt_context` | 1050 | STT-Kontext aktualisieren |
+| `_detect_sarcasm_feedback` | 983 | Sarkasmus-Feedback erkennen |
+
+#### Stage 2: Shortcuts
+| Helper | Zeile | Funktion |
+|--------|-------|----------|
+| `_detect_calendar_diagnostic` | 8234 | Kalender-Diagnose |
+| `_detect_calendar_query` | 8294 | Kalender-Frage erkennen |
+| `_detect_weather_query` | 8246 | Wetter-Frage erkennen |
+| `_detect_alarm_command` | 7415 | Alarm-Befehl erkennen |
+| `_detect_device_command` | 7509 | Geräte-Befehl erkennen |
+| `_detect_media_command` | 7777 | Media-Befehl erkennen |
+| `_detect_intercom_command` | 7972 | Intercom-Befehl erkennen |
+| `_detect_smalltalk` | 8145 | Smalltalk erkennen |
+| `_is_morning_briefing_request` | 7916 | Morgen-Briefing? |
+| `_is_evening_briefing_request` | 7928 | Abend-Briefing? |
+| `_is_house_status_request` | 7940 | Haus-Status? |
+| `_is_status_report_request` | 7951 | Status-Report? |
+| `_is_status_query` | 7262 | Status-Query? |
+| `_handle_security_confirmation` | 6610 | Sicherheits-Bestätigung |
+| `_handle_automation_confirmation` | 6567 | Automations-Bestätigung |
+| `_handle_optimization_confirmation` | 6686 | Optimierungs-Bestätigung |
+| `_handle_memory_command` | 6886 | Memory-Befehl |
+| `_handle_das_uebliche` | 8069 | "Das Übliche" |
+| `_humanize_calendar` | 4908 | Kalender-Daten menschlich formulieren |
+| `_humanize_weather` | 4784 | Wetter-Daten menschlich formulieren |
+| `_humanize_alarms` | 5147 | Alarm-Daten menschlich formulieren |
+| `_humanize_house_status` | 4995 | Haus-Status menschlich formulieren |
+| `_deterministic_tool_call` | 7291 | Tool-Call ohne LLM |
+
+#### Stage 3: Classify
+| Helper | Zeile | Funktion |
+|--------|-------|----------|
+| `_classify_intent` | 8407 | Intent bestimmen |
+
+#### Stage 4: Gather
+| Helper | Zeile | Funktion |
+|--------|-------|----------|
+| `_build_memory_context` | 5977 | Memory-Kontext bauen |
+| `_build_jarvis_thinks_context` | 8874 | "Jarvis denkt"-Kontext |
+| `_get_situation_delta` | 8612 | Was hat sich geändert? |
+| `_get_conversation_memory` | 6008 | Gesprächs-Memory laden |
+| `_get_cross_room_context` | 9675 | Cross-Room-Kontext |
+| `_get_tutorial_hint` | 6521 | Tutorial-Hinweis |
+| `_get_summary_context` | 6048 | Zusammenfassungs-Kontext |
+| `_get_rag_context` | 6081 | RAG/Wissens-Kontext |
+| `_build_problem_solving_context` | 8644 | Problem-Lösungs-Kontext |
+| `_get_experiential_hints` | 8772 | Erfahrungs-Hinweise |
+| `_get_pending_learnings` | 8840 | Offene Lernvorschläge |
+| `_check_conversation_continuity` | 9096 | Gesprächs-Kontinuität |
+| `_get_whatif_prompt` | 8495 | What-If-Simulation |
+
+#### Stage 5: Think
+| Helper | Zeile | Funktion |
+|--------|-------|----------|
+| `_llm_with_cascade` | 910 | LLM-Call mit Fallback-Kaskade |
+| `_handle_delegation` | 9155 | An Sub-System delegieren |
+| `_extract_tool_calls_from_text` | 4640 | Tool-Calls aus Text parsen |
+| `_generate_situational_warning` | 9778 | Situationsabhängige Warnung |
+| `_humanize_query_result` | 4750 | Query-Ergebnis humanisieren |
+| `_generate_error_recovery` | 9888 | Fehler-Recovery generieren |
+| `_summarize_conversation_chunk` | 1019 | Gesprächs-Chunk zusammenfassen |
+
+#### Stage 6: Polish
+| Helper | Zeile | Funktion |
+|--------|-------|----------|
+| `_filter_response` | 5259 | Antwort filtern (Fluff, Formality) |
+| `_calculate_llm_voice_score` | 5845 | Voice-Score berechnen |
+| `_save_cross_room_context` | 9658 | Cross-Room-Kontext speichern |
+| `_extract_facts_background` | 6170 | Fakten im Hintergrund extrahieren |
+| `_is_correction` | 9203 | Ist das eine Korrektur? |
+| `_handle_correction` | 9228 | Korrektur verarbeiten |
+| `_log_experiential_memory` | 8764 | Erfahrungs-Memory loggen |
+| `_extract_intents_background` | 9287 | Intents im Hintergrund extrahieren |
+| `_save_situation_snapshot` | 8623 | Situations-Snapshot speichern |
+
+#### Shared (von mehreren Stages genutzt)
+| Helper | Zeile | Genutzt von |
+|--------|-------|-------------|
+| `_result` | 893 | Stage 1, 2, 5, 6 |
+| `_speak_and_emit` | 843 | Stage 1, 2, 5, 6 |
+| `_remember_exchange` | 1007 | Stage 1, 2, 5, 6 |
+| `_filter_response` | 5259 | Stage 2, 3, 5, 6 |
+| `_get_occupied_room` | 785 | Stage 2, 5, 6 |
+
+#### Nicht von process() genutzt (50 Methoden)
+
+Callbacks & Alerts (bleiben in `brain.py`):
+`_handle_timer_notification`, `_handle_learning_suggestion`, `_handle_cooking_timer`, `_handle_workshop_timer`, `_handle_time_alert`, `_handle_health_alert`, `_handle_device_health_alert`, `_handle_wellness_nudge`, `_handle_music_suggestion`, `_handle_visitor_event`, `_handle_ambient_audio_event`, `_handle_anticipation_suggestion`, `_handle_insight`, `_handle_intent_reminder`, `_handle_spontaneous_observation`, `_callback_should_speak`, `_safe_format`, `_format_callback_with_escalation`, `_handle_daily_summary`
+
+Background-Tasks (bleiben in `brain.py`):
+`_weekly_learning_report_loop`, `_run_daily_fact_decay`, `_run_autonomy_evolution`, `_entity_catalog_refresh_loop`
+
+Init & Utilities (bleiben in `brain.py`):
+`_load_configurable_data`, `reload_configurable_data`, `initialize`, `get_states_cached`, `health_check`, `shutdown`, `_get_error_recovery_fast`, `get_predictive_briefing`, `get_foresight_predictions`, `_handle_personal_date_command`
+
+**Hinweis**: Die 5 "Shared" Helper (`_result`, `_speak_and_emit`, `_remember_exchange`, `_filter_response`, `_get_occupied_room`) bleiben beim File-Split in `brain.py` als gemeinsame Utilities, oder wandern in eine eigene `pipeline_utils.py`.
+
 ---
