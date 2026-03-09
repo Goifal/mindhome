@@ -12,7 +12,7 @@ Dieser Prompt wird **vor** einem neuen Durchlauf der Prompt-Serie (P1–P7b inkl
 
 ## Wann verwenden?
 
-- **Nach Prompt 7** eines Durchlaufs, wenn Fixes implementiert wurden und du prüfen willst ob sie wirken
+- **Nach Prompt 7b** eines Durchlaufs, wenn Fixes implementiert wurden und du prüfen willst ob sie wirken
 - **Nach größeren Code-Änderungen** zwischen zwei Audit-Runden
 - **Wenn der Context Window voll ist** und du eine neue Claude-Code-Session starten musst
 
@@ -35,7 +35,7 @@ Bei Claude Code wird der Reset typischerweise als **neue Session** gestartet:
 >
 > ### Was das bedeutet:
 >
-> 1. **VERGISS alle bisherigen Kontext-Blöcke** (KONTEXT AUS PROMPT 1–7b inkl. 3a/3b, 4a–4c, 6a–6d, 7a/7b). Sie sind veraltet.
+> 1. **VERGISS alle bisherigen Kontext-Blöcke** (KONTEXT AUS PROMPT 1–7b: P1, P2, P3a, P3b, P4a, P4b, P4c, P5, P6a, P6b, P6c, P6d, P7a, P7b). Sie sind veraltet.
 > 2. **VERGISS alle bisherigen Bewertungen** — Module die vorher "okay" waren, können jetzt Bugs haben (und umgekehrt).
 > 3. **VERGISS alle bisherigen Bug-Listen** — du findest die Bugs NEU im aktuellen Code.
 > 4. **Lies JEDE Datei NEU** — auch wenn du sie im letzten Durchlauf gelesen hast. Der Code hat sich geändert.

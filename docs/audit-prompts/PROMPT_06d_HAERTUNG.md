@@ -30,9 +30,9 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte mit Fo
 
 ## Aufgabe
 
-### Schritt 1: Security-Bugs fixen (aus Prompt 4 Security-Report)
+### Schritt 1: Security-Bugs fixen (aus Prompt 4c Security-Report)
 
-Arbeite **jeden** Security-Bug aus dem Prompt-4-Report ab:
+Arbeite **jeden** Security-Bug aus dem Prompt-4c-Report ab:
 
 #### Die kritischsten Security-Checks
 
@@ -60,7 +60,7 @@ Arbeite **jeden** Security-Bug aus dem Prompt-4-Report ab:
 3. **Edit** — Fix implementieren
 4. **Grep** — Verifizieren dass alle Stellen gefixt sind
 
-### Schritt 2: Resilience implementieren (aus Prompt 4 Resilience-Report)
+### Schritt 2: Resilience implementieren (aus Prompt 4c Resilience-Report)
 
 **Für jedes Ausfallszenario** — stelle sicher dass Jarvis graceful degradiert:
 
@@ -184,7 +184,7 @@ Für jeden Fix:
 
 ---
 
-## ⚡ Übergabe an Prompt 7
+## ⚡ Übergabe an Prompt 7a
 
 ```
 ## KONTEXT AUS PROMPT 6d: Härtung
@@ -201,8 +201,8 @@ Für jeden Fix:
 ### Gesamt-Status nach 6a–6d
 [Zusammenfassung aller Harmonisierungs-Schritte]
 
-### Offene Punkte für Prompt 7
+### Offene Punkte für Prompt 7a
 [Was in Testing & Deployment verifiziert werden muss]
 ```
 
-**Wenn du Prompt 7 in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–6d) automatisch ein.
+**Wenn du Prompt 7a in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–6d) automatisch ein.

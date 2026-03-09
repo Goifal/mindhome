@@ -99,8 +99,8 @@ Prüfe die **Core-Module** (Priorität 1–4, ca. 26 Module) systematisch auf di
 | Quelle | Behauptung | Verifiziere im Code |
 |---|---|---|
 | `JARVIS_STATUS.md` | Bugs B1–B6 sind gefixt | Wirklich gefixt? |
-| `JARVIS_FEATURES_IMPLEMENTATION.md` | 5 Bugfixes implementiert | Fixes korrekt? |
-| `JARVIS_SELF_IMPROVEMENT.md` | 9 Self-Learning Features | Implementiert oder nur Stubs? |
+| `docs/JARVIS_FEATURES_IMPLEMENTATION.md` | 5 Bugfixes implementiert | Fixes korrekt? |
+| `docs/JARVIS_SELF_IMPROVEMENT.md` | 9 Self-Learning Features | Implementiert oder nur Stubs? |
 | `docs/JARVIS_AUDIT.md` | Audit-Findings | Findings behoben? |
 | Token Streaming | "Komplett fehlend" | Stimmt noch? |
 | Interrupt Queueing | "Komplett fehlend" | Stimmt noch? |

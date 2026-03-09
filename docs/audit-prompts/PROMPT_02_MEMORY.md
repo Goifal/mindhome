@@ -210,7 +210,7 @@ Prüfe jeden einzelnen Punkt und dokumentiere das Ergebnis mit Code-Referenz:
 | 5 | Blockiert Memory-Speicherung (nach dem Response) den nächsten Request? | ? | ? |
 | 6 | Wie groß ist der Memory-Kontext im Prompt? (Token-Budget vs. Nutzen) | ? | ? |
 
-> Diese Ergebnisse fließen in den Performance-Report von Prompt 4 (Fehlerklasse 13) ein.
+> Diese Ergebnisse fließen in den Performance-Report von Prompt 4c (Fehlerklasse 13) ein.
 
 ### Schritt 5 — Root Cause finden
 
@@ -322,9 +322,9 @@ Für jeden Memory-Bug:
 
 ---
 
-## ⚡ Übergabe an Prompt 3
+## ⚡ Übergabe an Prompt 3a
 
-Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 3:
+Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 3a:
 
 ```
 ## KONTEXT AUS PROMPT 2: Memory-Analyse
@@ -351,4 +351,4 @@ Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 
 [Redis-Roundtrips pro Request, ChromaDB-Query-Latenz, Embedding-Caching, Token-Budget]
 ```
 
-**Wenn du Prompt 3 in derselben Konversation erhältst**: Setze diesen Kontext-Block + den aus Prompt 1 automatisch ein.
+**Wenn du Prompt 3a in derselben Konversation erhältst**: Setze diesen Kontext-Block + den aus Prompt 1 automatisch ein.

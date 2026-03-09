@@ -47,7 +47,7 @@ Die Prompts sind für **Claude Code** (Anthropics CLI-Tool) optimiert. Übergib 
 2. Kopiere den Inhalt von Prompt 1 als Nachricht
 3. Claude Code führt die Analyse durch — liest Dateien, sucht mit Grep, führt Befehle aus
 4. Kopiere dann Prompt 2 als Nachricht — Claude Code nutzt seine Ergebnisse automatisch
-5. Wiederhole bis Prompt 7
+5. Wiederhole bis Prompt 7b
 
 > **Context-Window-Strategie**: Claude Code komprimiert die Konversation automatisch. Bei einem Projekt dieser Größe (276 Python-Dateien) wird der Kontext ab ca. Prompt 3–4 komprimiert. Die Kontext-Blöcke am Ende jedes Prompts (`## KONTEXT AUS PROMPT X`) sichern die wichtigsten Ergebnisse gegen Kompression.
 
@@ -59,7 +59,7 @@ Die Prompts sind für **Claude Code** (Anthropics CLI-Tool) optimiert. Übergib 
 2. Am Ende jeder Analyse erstellt Claude Code einen kompakten **Kontext-Block** (markiert mit `## KONTEXT AUS PROMPT X`)
 3. Kopiere diesen Block in den `## Kontext aus vorherigen Prompts`-Abschnitt des nächsten Prompts
 4. Starte eine neue Session und übergib den nächsten Prompt mit dem eingefügten Kontext
-5. Wiederhole bis Prompt 7
+5. Wiederhole bis Prompt 7b
 
 > **Vorteil**: Frischer Context Window für jeden Prompt. Maximale Gründlichkeit pro Prompt.
 
@@ -132,11 +132,11 @@ Wenn ein Prompt sagt "Implementiere den Fix":
 Der Code liegt auf GitHub. Es gibt kein laufendes Redis, ChromaDB, Ollama oder Home Assistant. `.env` fehlt (nur `.env.example`). Das LLM muss **alles aus dem Code herauslesen** — keine Annahmen, keine "das wird schon funktionieren".
 
 ### Ziel-Hardware
-Das System läuft auf: **AMD Ryzen 7 3700X**, **64GB DDR4**, **RTX 3090 (24GB VRAM)**, 500GB NVMe + 1TB SATA SSD. Die GPU wird für Ollama LLM-Inference genutzt. Relevant für Prompt 7 (Docker/GPU-Setup, OOM-Szenarien, Modell-Empfehlungen).
+Das System läuft auf: **AMD Ryzen 7 3700X**, **64GB DDR4**, **RTX 3090 (24GB VRAM)**, 500GB NVMe + 1TB SATA SSD. Die GPU wird für Ollama LLM-Inference genutzt. Relevant für Prompt 7b (Docker/GPU-Setup, OOM-Szenarien, Modell-Empfehlungen).
 
 ### Kontext-Block-Größe & Akkumulation
 
-Jeder Prompt generiert am Ende einen **Kontext-Block** für den nächsten Prompt. Damit die Blöcke bei Prompt 7 (der alle 9 vorherigen Blöcke braucht) nicht den Kontext sprengen:
+Jeder Prompt generiert am Ende einen **Kontext-Block** für den nächsten Prompt. Damit die Blöcke bei Prompt 7b (der alle ~13 vorherigen Blöcke braucht) nicht den Kontext sprengen:
 
 - **Max. 30–50 Zeilen pro Kontext-Block** — Zusammenfassung, nicht vollständiges Ergebnis
 - **Nur kritische Findings** in den Block — Details bleiben im ausführlichen Output

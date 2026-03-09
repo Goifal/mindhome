@@ -98,7 +98,7 @@ Für jeden Konflikt aus der Konflikt-Karte:
 3. Implementiere die Lösung mit **Edit**
 4. Verifiziere mit **Bash** (Tests)
 
-### Schritt 3: Flows reparieren (aus Prompt 3)
+### Schritt 3: Flows reparieren (aus Prompt 3a/3b)
 
 Arbeite die **Bruchstellen** aus der Flow-Analyse ab. Priorität:
 
@@ -113,9 +113,9 @@ Arbeite die **Bruchstellen** aus der Flow-Analyse ab. Priorität:
 - Implementiere den Fix
 - Prüfe ob andere Flows davon betroffen sind
 
-### Schritt 4: Performance-Optimierungen (aus Prompt 4, Fehlerklasse 13)
+### Schritt 4: Performance-Optimierungen (aus Prompt 4c, Fehlerklasse 13)
 
-Basierend auf den Performance-Findings aus Prompt 4:
+Basierend auf den Performance-Findings aus Prompt 4c:
 
 **Die drei wirkungsvollsten Optimierungen:**
 
@@ -131,7 +131,7 @@ Basierend auf den Performance-Findings aus Prompt 4:
 Grep: pattern="asyncio\.gather" path="assistant/assistant/" output_mode="count"
 ```
 
-### Schritt 5: 🟠 HOHE Bugs fixen (aus Prompt 4)
+### Schritt 5: 🟠 HOHE Bugs fixen (aus Prompt 4a–4c)
 
 Features die nicht funktionieren aber nicht crashen. Arbeite die 🟠-Bug-Liste ab.
 

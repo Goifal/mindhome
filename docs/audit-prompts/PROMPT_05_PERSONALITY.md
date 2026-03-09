@@ -28,7 +28,7 @@ Du bist ein KI-Ingenieur spezialisiert auf Prompt Engineering, Conversational AI
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–4 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
+> **Wenn du Prompts 1–4c bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Blöcke) automatisch. Du musst nichts einfügen.
 >
 > **Wenn dies eine neue Konversation ist**: Füge hier ein:
 > - Kontext-Block aus Prompt 4 gesamt (4a + 4b + 4c) (Bug-Report, besonders Persönlichkeits-bezogene Bugs)
