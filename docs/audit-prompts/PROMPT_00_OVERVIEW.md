@@ -17,7 +17,7 @@ Dazu: 105 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen.
 | # | Datei | Fokus | Abhängigkeit |
 |---|---|---|---|
 | 1 | `PROMPT_01_ARCHITEKTUR.md` | Architektur, Modul-Konflikte, **3-Service-Interaktion** | Keine — Startpunkt |
-| 2 | `PROMPT_02_MEMORY.md` | Memory-System End-to-End (**alle 13 Module**) | Nutzt Konflikt-Karte aus #1 |
+| 2 | `PROMPT_02_MEMORY.md` | Memory-System End-to-End (**alle 12 Module**) | Nutzt Konflikt-Karte aus #1 |
 | 3 | `PROMPT_03_FLOWS.md` | **9 kritische Pfade** inkl. Speech, Addon, Domain-Assistenten | Nutzt Ergebnisse aus #1 + #2 |
 | 4 | `PROMPT_04_BUGS.md` | Systematische Bug-Jagd (**87+ Module**, Security, Resilience) | Nutzt Architektur-Verständnis aus #1–#3 |
 | 5 | `PROMPT_05_PERSONALITY.md` | Persönlichkeit, Config, MCU-Authentizität | Nutzt Bug-Liste aus #4 |
@@ -52,7 +52,7 @@ Dazu: 105 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen.
 | Addon-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Speech-Service | ✅ | - | ✅ | ✅ | - | - | ✅ |
 | Architektur | ✅ | - | - | - | - | ✅ | - |
-| Memory (13 Module) | - | ✅ | ✅ | ✅ | - | ✅ | ✅ |
+| Memory (12 Module) | - | ✅ | ✅ | ✅ | - | ✅ | ✅ |
 | Flows (9 Pfade) | - | - | ✅ | - | - | ✅ | ✅ |
 | Bug-Jagd (12 Klassen) | - | - | - | ✅ | - | ✅ | - |
 | Security | - | - | - | ✅ | - | ✅ | ✅ |

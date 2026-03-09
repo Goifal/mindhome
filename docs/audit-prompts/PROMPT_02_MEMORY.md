@@ -63,7 +63,7 @@ Lies und **verifiziere im Code**:
 
 ### Schritt 2 — Memory-Modul-Abhängigkeiten kartieren
 
-Bevor du den Datenfluss verfolgst: Lies **jedes** der 13 Module und erstelle eine **Abhängigkeitskarte**:
+Bevor du den Datenfluss verfolgst: Lies **jedes** der 12 Module und erstelle eine **Abhängigkeitskarte**:
 
 | Modul | Importiert von | Wird importiert von | Shared State? |
 |---|---|---|---|
@@ -80,7 +80,7 @@ Bevor du den Datenfluss verfolgst: Lies **jedes** der 13 Module und erstelle ein
 | `embedding_extractor.py` | ? | ? | ? |
 | `context_builder.py` | ? | ? | ? |
 
-**Ziel**: Verstehen ob es einen kohärenten Memory-Stack gibt oder 13 isolierte Systeme.
+**Ziel**: Verstehen ob es einen kohärenten Memory-Stack gibt oder 12 isolierte Systeme.
 
 ### Schritt 3 — Kompletten Memory-Datenfluss verfolgen
 
@@ -161,7 +161,7 @@ Mögliche Root Causes (prüfe jede):
 - [ ] memory_extractor.py wird nie aufgerufen (Dead Code)
 - [ ] correction_memory.py wird nie abgefragt
 - [ ] dialogue_state.py wird nicht korrekt aktualisiert
-- [ ] 13 isolierte Memory-Silos ohne Verbindung
+- [ ] 12 isolierte Memory-Silos ohne Verbindung
 - [ ] Der Code existiert aber wird nie aufgerufen (Dead Code)
 
 ### Schritt 6 — Fix implementieren ODER Alternative vorschlagen
@@ -178,7 +178,7 @@ Mögliche Root Causes (prüfe jede):
 | **MemGPT-Pattern** | Bewährt, skalierbar | Komplex zu implementieren | ? |
 | **Hybrid**: Sliding Window + SQLite | Kurzzeitgedächtnis + Archiv | Mittlere Komplexität | ? |
 | **Aktuelles System fixen** | Kein Umbau nötig | Evtl. Design-Fehler | ? |
-| **Konsolidierung**: 13 Module → 3 | Weniger Silos, klarer | Umbau nötig | ? |
+| **Konsolidierung**: 12 Module → 3 | Weniger Silos, klarer | Umbau nötig | ? |
 
 ---
 
