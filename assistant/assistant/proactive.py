@@ -614,10 +614,12 @@ class ProactiveManager:
             await self._check_appliance_power(entity_id, new_val, old_val)
 
         # Feature 2: Manual Override Detection für Covers
-        # Ignoriere Transitions von/zu unavailable/unknown (Gerät geht offline/online)
+        # Ignoriere: unavailable/unknown (offline/online), opening/closing (Bewegungs-Abschlüsse)
         _non_physical = {"unavailable", "unknown", ""}
+        _transitional = {"opening", "closing"}  # opening->open / closing->closed sind keine neuen Aktionen
         if (entity_id.startswith("cover.") and new_val != old_val
-                and old_val not in _non_physical and new_val not in _non_physical):
+                and old_val not in _non_physical and new_val not in _non_physical
+                and old_val not in _transitional):
             try:
                 redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
                 if redis_client:
@@ -632,6 +634,9 @@ class ProactiveManager:
                             "Cover Manual Override: %s manuell bedient (%s -> %s), Automatik pausiert für %dh",
                             entity_id, old_val, new_val, override_hours,
                         )
+                    else:
+                        logger.debug("Cover state change %s (%s -> %s) — jarvis_acting gesetzt, kein Override",
+                                     entity_id, old_val, new_val)
             except Exception as e:
                 logger.debug("Cover Manual Override Detection Fehler: %s", e)
 
@@ -4369,13 +4374,14 @@ class ProactiveManager:
         self, action: str, position: int, season: str, reason: str, auto_level: int,
     ):
         """Kompatibilitaets-Wrapper für alte Aufrufe (z.B. aus routine_engine)."""
+        _redis = getattr(getattr(self.brain, "memory", None), "redis", None)
         states = await self.brain.ha.get_states()
         for s in (states or []):
             eid = s.get("entity_id", "")
             if eid.startswith("cover."):
                 if not await self.brain.executor._is_safe_cover(eid, s):
                     continue
-                await self._auto_cover_action(eid, position, reason, auto_level)
+                await self._auto_cover_action(eid, position, reason, auto_level, _redis)
 
     # ── Phase 11: Saugroboter-Automatik ────────────────────
 
