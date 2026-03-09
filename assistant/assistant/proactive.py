@@ -1629,22 +1629,6 @@ class ProactiveManager:
 
     async def _handle_mindhome_event(self, data: dict):
         """Verarbeitet MindHome-spezifische Events."""
-        # Addon-Cover-Automatik: jarvis_acting Key setzen, damit die
-        # Override-Erkennung den State-Change nicht als manuell interpretiert
-        if data.get("type") == "cover_auto_action":
-            entity_id = data.get("entity_id", "")
-            if entity_id:
-                try:
-                    redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
-                    if redis_client:
-                        acting_key = f"mha:cover:jarvis_acting:{entity_id}"
-                        await redis_client.set(acting_key, "1", ex=120)
-                        logger.debug("Cover jarvis_acting gesetzt via Addon-Event: %s (source=%s)",
-                                     entity_id, data.get("source", "?"))
-                except Exception as e:
-                    logger.debug("Cover jarvis_acting via Event Fehler: %s", e)
-            return  # Kein Notify nötig
-
         event_name = data.get("event", "")
         urgency = data.get("urgency", MEDIUM)
         await self._notify(event_name, urgency, data)

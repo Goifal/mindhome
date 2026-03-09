@@ -250,17 +250,6 @@ class CoverControlManager:
 
             if source == "manual":
                 self._set_manual_override(entity_id)
-            else:
-                # Automatische Aktion markieren, damit der Assistant-Prozess
-                # (proactive.py) den State-Change nicht als manuell erkennt
-                try:
-                    self.ha.fire_event("mindhome_event", {
-                        "type": "cover_auto_action",
-                        "entity_id": entity_id,
-                        "source": source,
-                    })
-                except Exception:
-                    pass  # Best-effort — Hauptaktion darf nicht blockiert werden
             self.ha.call_service("cover", "set_cover_position", {
                 "entity_id": entity_id,
                 "position": max(0, min(100, position)),
@@ -288,15 +277,6 @@ class CoverControlManager:
 
             if source == "manual":
                 self._set_manual_override(entity_id)
-            else:
-                try:
-                    self.ha.fire_event("mindhome_event", {
-                        "type": "cover_auto_action",
-                        "entity_id": entity_id,
-                        "source": source,
-                    })
-                except Exception:
-                    pass
             self.ha.call_service("cover", "set_cover_tilt_position", {
                 "entity_id": entity_id,
                 "tilt_position": max(0, min(100, tilt)),
