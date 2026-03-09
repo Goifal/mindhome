@@ -987,14 +987,20 @@ class AssistantBrain(BrainCallbacksMixin):
         Returns True (positiv), False (negativ), None (neutral/unklar).
         """
         text_lower = text.lower().strip()
-        # Kurze positive Reaktionen (1-3 Woerter)
         words = text_lower.split()
-        if len(words) <= 3:
-            if any(p in text_lower for p in self._sarcasm_positive):
-                return True
-        # Explizite Ablehnung (beliebige Laenge)
+        # Explizite Ablehnung ZUERST (beliebige Laenge) — "nicht witzig"
+        # muss als negativ erkannt werden, bevor "witzig" als positiv matcht.
         if any(p in text_lower for p in self._sarcasm_negative):
             return False
+        # Kurze positive Reaktionen (1-3 Woerter)
+        # Word-Boundary fuer kurze Patterns: "gut" darf nicht "guten" matchen
+        if len(words) <= 3:
+            for p in self._sarcasm_positive:
+                if len(p) <= 3 and p.isascii() and p.isalpha():
+                    if re.search(r'\b' + re.escape(p) + r'\b', text_lower):
+                        return True
+                elif p in text_lower:
+                    return True
         # Unklar — kein Feedback tracken
         return None
 
@@ -2538,8 +2544,14 @@ class AssistantBrain(BrainCallbacksMixin):
                 _upgrade_signals += 1  # Intelligence Fusion = mehr Kontext
             if live_insights:
                 _upgrade_signals += 1  # Aktive Insights = mehr zu verarbeiten
-        if sec_score and sec_score.get("level") == "critical":
-            _upgrade_signals = max(_upgrade_signals, self._opt_upgrade_signal_threshold)  # Kritische Sicherheit = sofort Deep
+        # Security-Upgrade nur wenn NICHT im Gespraechsmodus und NICHT bei
+        # einfachen Greetings/Device-Commands. Kritische Sicherheit (Tueren offen,
+        # Rauchmelder, etc.) ist Haus-Zustand — erzwingt kein Deep-Upgrade bei
+        # trivialen Antworten wie "Danke nichts davon". Security-Kontext bleibt
+        # trotzdem im Prompt.
+        _security_critical = (sec_score and sec_score.get("level") == "critical")
+        if _security_critical and not _conversation_mode and not _is_simple_greeting:
+            _upgrade_signals = max(_upgrade_signals, self._opt_upgrade_signal_threshold)
         elif sec_score and sec_score.get("level") == "warning":
             _upgrade_signals += 1  # Warnung = nur Kontext, kein Upgrade allein
 
@@ -2549,7 +2561,7 @@ class AssistantBrain(BrainCallbacksMixin):
         # NICHT — die sind fast immer aktiv und wuerden sonst bei Threshold=1
         # jeden Request auf Deep treiben.
         if (_upgrade_signals >= self._opt_upgrade_signal_threshold
-                and (_has_reasoning_need or (sec_score and sec_score.get("level") == "critical"))
+                and (_has_reasoning_need or (_security_critical and not _conversation_mode))
                 and model != self.model_router.model_deep):
             # Error-Mitigation VOR dem Upgrade pruefen: Wenn das Deep-Modell
             # wiederholt timeoutet (z.B. nicht im VRAM, keep_alive=0), NICHT
@@ -5646,7 +5658,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 text = re.sub(pattern, replacement, text)
             # Verbliebenes "Sie" nach konjugiertem Verb = Akkusativ → "dich"
             # z.B. "informiere Sie", "bitte Sie", "lasse Sie wissen"
-            text = re.sub(r"(?<=\b\w{3,}e\s)Sie\b", "dich", text)  # "informiere Sie" → "dich"
+            text = re.sub(r"(\b\w{3,}e\s)Sie\b", r"\1dich", text)  # "informiere Sie" → "informiere dich"
             text = re.sub(r"(?<=\bmuss\s)Sie\b", "dich", text)  # "muss Sie warnen" → "dich"
             text = re.sub(r"(?<=\bkann\s)Sie\b", "dich", text)  # "kann Sie informieren" → "dich"
             text = re.sub(r"(?<=\bwill\s)Sie\b", "dich", text)  # "will Sie bitten" → "dich"
@@ -7879,9 +7891,10 @@ class AssistantBrain(BrainCallbacksMixin):
         # "Musik" allein → play
         if action is None and "musik" in t:
             # "musik aus" / "musik stop" → stop, aber NICHT "musik aus den 80ern"
+            # "aus" muss am Satzende stehen um Stop zu triggern
             _words = t.split()
             _aus_idx = _words.index("aus") if "aus" in _words else -1
-            if _aus_idx >= 0 and (_aus_idx == len(_words) - 1 or _words[_aus_idx - 1] == "musik"):
+            if _aus_idx >= 0 and _aus_idx == len(_words) - 1:
                 action = "stop"
             else:
                 action = "play"

@@ -138,6 +138,15 @@ _DEVICE_VERBS = re.compile(
     r"|spiel|stopp|pause|pausier|lauter|leiser)e?\b",
 )
 
+# Eingebettete Verben: "ich will dass du X ausschaltest", "kannst du X einschalten"
+_DEVICE_VERBS_EMBEDDED = re.compile(
+    r"\b((?:ein|aus|an|ab|um)schalten?|(?:ein|aus|an|ab|um)schalt\w*"
+    r"|(?:ein|aus|an|ab|um)machen?\w*|(?:ein|aus)stellen?\w*"
+    r"|aktivieren?\w*|deaktivieren?\w*|abdunkeln?\w*|aufdrehen?\w*|zudrehen?\w*"
+    r"|hochfahren?\w*|runterfahren?\w*|oeffnen?\w*|schliessen?\w*"
+    r"|abspielen?\w*|stoppen?\w*|pausieren?\w*)\b",
+)
+
 _DEVICE_NOUNS = [
     "rollladen", "rolladen", "rollo", "jalousie",
     "licht", "lampe", "leuchte",
@@ -234,6 +243,13 @@ class PreClassifier:
             )
             if has_noun and has_action:
                 logger.debug("PreClassifier: DEVICE_FAST (noun+action: %s)", text)
+                return PROFILE_DEVICE_FAST
+
+        # 1b. Eingebettete Device-Verben: "Ich will dass du X ausschaltest"
+        #     Erkennt konjugierte Formen wie "ausschaltest", "einschalten", "anmachen"
+        if word_count <= 12 and not _is_question:
+            if _DEVICE_VERBS_EMBEDDED.search(text_lower):
+                logger.debug("PreClassifier: DEVICE_FAST (embedded verb: %s)", text)
                 return PROFILE_DEVICE_FAST
 
         # 2. Status-Abfragen: "Wie warm ist es?", "Sind die Rolllaeden offen?"

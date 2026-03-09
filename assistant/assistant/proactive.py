@@ -715,7 +715,16 @@ class ProactiveManager:
                     activity = _defaults.get(scene_id, "relaxing")
 
                 transition = scene_data.get("transition", 3)
-                silence = scene_data.get("silence", False)
+
+                # Silence-Defaults: UI speichert nur Abweichungen, daher
+                # muessen die gleichen Defaults wie im Frontend gelten
+                _silence_defaults = {
+                    "filmabend", "kino", "schlafen", "gute_nacht",
+                    "meditation", "konzentration", "telefonat", "meeting",
+                    "nicht_stoeren", "arbeit",
+                }
+                silence_default = scene_id in _silence_defaults
+                silence = scene_data.get("silence", silence_default)
 
                 # Aktivitaets-Override setzen
                 duration = max(transition * 20, 60)  # Mindestens 60 Min
