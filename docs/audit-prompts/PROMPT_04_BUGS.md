@@ -356,6 +356,30 @@ Module oder Funktionen die existieren aber **nie aufgerufen** werden.
 >
 > Ein übersehener kritischer Bug kann das ganze System zum Absturz bringen. Lieber langsam und gründlich als schnell und oberflächlich.
 
+### Batching-Strategie (93 Module sind zu viel für eine Session!)
+
+> **Arbeite die Module in Batches ab, parallel mit Read (5–7 gleichzeitig):**
+>
+> - **Batch 1** (Priorität 1 — Kern): `brain.py`, `brain_callbacks.py`, `main.py`, `websocket.py`
+> - **Batch 2** (Priorität 2 — Memory): `memory.py`, `semantic_memory.py`, `conversation.py`, `conversation_memory.py`, `memory_extractor.py`, `correction_memory.py`, `dialogue_state.py`
+> - **Batch 3** (Priorität 2+3): `embeddings.py`, `embedding_extractor.py`, `context_builder.py`, `personality.py`, `mood_detector.py`, `situation_model.py`, `time_awareness.py`
+> - **Batch 4** (Priorität 4 — Aktionen): `function_calling.py`, `function_validator.py`, `declarative_tools.py`, `action_planner.py`, `ollama_client.py`, `model_router.py`, `pre_classifier.py`, `request_context.py`
+> - **Batch 5** (Priorität 5 — Proaktiv): `proactive.py`, `proactive_planner.py`, `routine_engine.py`, `anticipation.py`, `spontaneous_observer.py`, `autonomy.py`, `self_automation.py`
+> - **Batch 6** (Priorität 5+6): `conditional_commands.py`, `protocol_engine.py`, `ha_client.py`, `light_engine.py`, `climate_model.py`, `cover_config.py`, `camera_manager.py`
+> - **Batch 7** (Priorität 6 — Audio): `tts_enhancer.py`, `sound_manager.py`, `ambient_audio.py`, `multi_room_audio.py`, `speaker_recognition.py`
+> - **Batch 8** (Priorität 7 — Intelligence): `insight_engine.py`, `learning_observer.py`, `learning_transfer.py`, `self_optimization.py`, `self_report.py`, `feedback.py`, `response_quality.py`
+> - **Batch 9** (Priorität 7+8): `intent_tracker.py`, `outcome_tracker.py`, `error_patterns.py`, `circuit_breaker.py`, `conflict_resolver.py`, `adaptive_thresholds.py`, `threat_assessment.py`
+> - **Batch 10** (Priorität 8+9): `config.py`, `constants.py`, `config_versioning.py`, `cooking_assistant.py`, `recipe_store.py`, `music_dj.py`, `smart_shopping.py`
+> - **Batch 11** (Priorität 9 — Domain): `calendar_intelligence.py`, `inventory.py`, `web_search.py`, `knowledge_base.py`, `summarizer.py`, `ocr.py`, `file_handler.py`
+> - **Batch 12** (Priorität 9 — Monitoring): `workshop_library.py`, `workshop_generator.py`, `health_monitor.py`, `device_health.py`, `energy_optimizer.py`, `predictive_maintenance.py`, `repair_planner.py`
+> - **Batch 13** (Priorität 9+10): `visitor_manager.py`, `follow_me.py`, `wellness_advisor.py`, `activity.py`, `seasonal_insight.py`, `explainability.py`, `diagnostics.py`, `task_registry.py`
+> - **Batch 14** (Priorität 10 — Addon): Alle `addon/rootfs/opt/mindhome/*.py` + `domains/*.py` + `engines/*.py`
+> - **Batch 15** (Priorität 11+12): `speech/server.py`, `speech/handler.py`, `shared/constants.py`, `shared/schemas/*.py`, `ha_integration/.../*.py`
+>
+> **Wichtig**: Nutze die Grep-Bulk-Suche (Fehlerklassen 1–13) **vor** den Batches um die verdächtigsten Stellen zu identifizieren. Dann lies die Module in Batch-Reihenfolge und achte besonders auf die Grep-Treffer.
+>
+> **Falls der Kontext knapp wird**: Prioritäten 1–4 (Batches 1–4) MÜSSEN komplett geprüft werden. Prioritäten 5–12 (Batches 5–15) mindestens auf die Top-6 Fehlerklassen (Async, Stille Fehler, Race Conditions, None, Init, Performance) prüfen.
+
 ### Claude Code Tool-Einsatz in diesem Prompt
 
 **Grep für systematische Bug-Suche** — bevor du Module einzeln liest:

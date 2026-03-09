@@ -226,13 +226,23 @@ async def test_simple_command_latency():
 
 ### Teil F: Installationsscripts prüfen
 
-Lies und prüfe:
+**Zuerst prüfen welche Scripts existieren** (nicht alle müssen vorhanden sein):
+```
+Glob: pattern="**/*.sh" path="assistant/"
+Glob: pattern="**/*.sh" path="addon/"
+Glob: pattern="*.sh"
+Glob: pattern="repository.yaml"
+```
+
+Lies und prüfe **(nur falls vorhanden!)**:
 - `assistant/install.sh` — Installiert es korrekt?
 - `assistant/update.sh` — Update-Logik robust?
 - `assistant/nvidia-watchdog.sh` — GPU-Monitoring
 - `install-nvidia-toolkit.sh` — GPU-Setup
 - `addon/rootfs/opt/mindhome/run.sh` — Addon-Startscript korrekt?
 - `repository.yaml` — HA-Repository-Config vollständig?
+
+> **Nicht-existierende Scripts dokumentieren als "nicht vorhanden"** — das ist selbst ein Finding (fehlende Install-Automation).
 
 | Script | Funktioniert? | Edge Cases abgedeckt? | Idempotent? |
 |---|---|---|---|
@@ -353,7 +363,8 @@ Das System läuft auf folgender Hardware:
 | Dockerfiles lesen | **Read** (parallel: alle 3) | `assistant/Dockerfile`, `addon/Dockerfile`, `speech/Dockerfile.whisper` |
 | Docker-Compose prüfen | **Read** (parallel) | `docker-compose.yml` + `docker-compose.gpu.yml` |
 | Docker build testen | **Bash** | `cd assistant && docker build -t jarvis-test . 2>&1 \| tail -20` |
-| Install-Scripts lesen | **Read** (parallel) | `install.sh`, `update.sh`, `nvidia-watchdog.sh` |
+| Install-Scripts finden | **Glob** | `**/*.sh` in `assistant/`, `addon/`, Root |
+| Install-Scripts lesen | **Read** (parallel, falls vorhanden) | `install.sh`, `update.sh`, `nvidia-watchdog.sh` |
 | Requirements prüfen | **Read** (parallel: alle 3) | `assistant/requirements.txt`, `addon/.../requirements.txt`, `speech/requirements.txt` |
 | Neue Tests schreiben | **Write/Edit** | Test-Datei erstellen, dann mit Bash ausführen |
 | Static Analysis | **Bash** | `cd assistant && python -m py_compile assistant/brain.py 2>&1` |
