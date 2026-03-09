@@ -72,8 +72,25 @@ Für jeden Konflikt aus der Konflikt-Karte:
 - Priority-Queue oder Lock-Mechanismus für gleichzeitige Aktionen
 - Regel: User-Aktion hat IMMER Vorrang
 
-#### Konflikt F: Assistant ↔ Addon Interaktion
-- (Wird in 6d adressiert — Addon-Koordination)
+#### Konflikt F: Assistant ↔ Addon Interaktion — Vorab-Check (Pflicht!)
+
+> ⚠️ **Bevor** du in Schritt 1 die Architektur umbauen darfst, musst du prüfen ob Addon davon betroffen ist.
+> Die eigentliche Addon-Koordination kommt in 6d — aber hier musst du sicherstellen, dass deine Architektur-Änderungen die Addon-Schnittstelle **nicht brechen**.
+
+**Pflicht-Check vor Architektur-Änderungen:**
+1. **Grep** — Wo ruft der Addon den Assistant auf? `pattern="assistant|api/chat|api/assistant" path="addon/rootfs/opt/mindhome/"`
+2. **Grep** — Wo ruft der Assistant den Addon auf? `pattern="addon|127\.0\.0\.1:8200" path="assistant/assistant/"`
+3. **Grep** — Shared Schemas: `pattern="from shared|import shared" path="assistant/" path="addon/"`
+4. Dokumentiere die **Schnittstellen-Punkte** (API-Endpoints, Shared-Schemas, Redis-Keys)
+5. **Regel**: Keine Architektur-Änderung darf diese Schnittstellen-Punkte brechen, ohne dass ein Migrations-Plan für den Addon existiert
+
+**Output in Kontext-Block:**
+```
+### Addon-Kompatibilitäts-Check (Pflicht vor Architektur-Umbau)
+- Schnittstellen: [Liste der API-Endpoints/Redis-Keys die Addon nutzt]
+- Von Architektur-Änderung betroffen: Ja/Nein
+- Falls Ja: Migrations-Plan für Addon: [...]
+```
 
 **Für jeden Konflikt:**
 1. Lies die beteiligten Module mit **Read**

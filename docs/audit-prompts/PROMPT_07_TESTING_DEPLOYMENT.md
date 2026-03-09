@@ -100,6 +100,43 @@ Basierend auf Prompt 3 (Flows) und Prompt 4 (Bugs) — prüfe ob es Tests gibt f
 | Speaker Recognition → korrekter User | ? | ? | ? |
 | Addon + Assistant gleichzeitige Aktion | ? | ? | ? |
 
+#### Security-Endpoint-Tests (Pflicht — aus P04 Sicherheits-Findings!)
+
+> ⚠️ P04 identifiziert kritische Endpoints (Factory-Reset, System-Restart, API-Key-Regeneration). P06d soll sie absichern. Hier **verifizieren** wir dass die Absicherung funktioniert.
+
+| Endpoint | Unauthenticated → 401? | Auth-geschützt? | Brute-Force-Schutz? | Test-Status |
+|---|---|---|---|---|
+| `/api/ui/factory-reset` | ? | ? | ? | ? |
+| `/api/ui/system/update` | ? | ? | ? | ? |
+| `/api/ui/system/restart` | ? | ? | ? | ? |
+| `/api/ui/api-key/regenerate` | ? | ? | ? | ? |
+| `/api/ui/auth` (PIN-Login) | ? | ? | ? | ? |
+
+**Prüf-Strategie:**
+1. **Grep** — `pattern="factory.reset|system.restart|api.key.*regenerate" path="assistant/assistant/main.py"` → Finde die Endpoint-Definitionen
+2. **Read** — Lies die Endpoint-Handler: Ist Auth-Middleware vorhanden? Wird Trust-Level geprüft?
+3. **Test schreiben** — Für jeden Endpoint: unauthenticated Request muss mit 401/403 abgelehnt werden
+4. **Brute-Force** — Für `/api/ui/auth`: Prüfe ob nach N fehlgeschlagenen Versuchen Rate-Limiting greift (HTTP 429 oder Lockout)
+
+```python
+# Beispiel-Test für Security-Endpoints
+async def test_factory_reset_requires_auth():
+    """Factory-Reset ohne Auth muss abgelehnt werden."""
+    async with AsyncClient(app=app) as client:
+        response = await client.post("/api/ui/factory-reset")
+        assert response.status_code in (401, 403), \
+            f"Factory-Reset ohne Auth erlaubt! Status: {response.status_code}"
+
+async def test_pin_auth_rate_limiting():
+    """Nach 10 falschen PIN-Versuchen: Rate-Limiting aktiv."""
+    async with AsyncClient(app=app) as client:
+        for i in range(10):
+            await client.post("/api/ui/auth", json={"pin": f"wrong_{i}"})
+        response = await client.post("/api/ui/auth", json={"pin": "wrong_11"})
+        assert response.status_code == 429, \
+            f"Kein Rate-Limiting nach 10 Fehlversuchen! Status: {response.status_code}"
+```
+
 Für **jedes fehlende kritische Szenario**: **Schreibe einen Test mit dem Write/Edit-Tool** und führe ihn sofort mit Bash aus:
 ```bash
 cd assistant && python -m pytest tests/test_neuer_test.py -v 2>&1
