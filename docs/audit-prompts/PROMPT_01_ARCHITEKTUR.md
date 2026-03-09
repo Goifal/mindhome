@@ -54,7 +54,7 @@ Die Module — sowohl innerhalb des Assistants als auch **zwischen Assistant und
 | **Vorverarbeitung** | `pre_classifier.py` (Intent), `request_context.py` (Request State) |
 | **Persönlichkeit** | `personality.py`, `mood_detector.py` |
 | **Aktionen** | `function_calling.py`, `function_validator.py`, `declarative_tools.py`, `action_planner.py`, `self_automation.py`, `conditional_commands.py`, `protocol_engine.py` |
-| **Memory** | `memory.py`, `semantic_memory.py`, `conversation.py`, `conversation_memory.py`, `memory_extractor.py`, `correction_memory.py`, `dialogue_state.py` |
+| **Memory** | `memory.py`, `semantic_memory.py`, `conversation_memory.py`, `memory_extractor.py`, `correction_memory.py`, `dialogue_state.py` |
 | **Embeddings** | `embeddings.py`, `embedding_extractor.py` |
 | **Kontext** | `context_builder.py`, `situation_model.py`, `time_awareness.py` |
 | **Proaktiv** | `proactive.py`, `proactive_planner.py`, `routine_engine.py` |
@@ -90,8 +90,9 @@ Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
 
 1. `docs/PROJECT_MINDHOME_ASSISTANT.md` — Architektur & Modul-Abhängigkeiten
 2. `docs/JARVIS_AUDIT.md` — Modul-Audit
-3. `docs/JARVIS_AUDIT_REPORT.md` — Audit-Ergebnisse
+3. `JARVIS_AUDIT_REPORT.md` (im Root-Verzeichnis) — Audit-Ergebnisse
 4. `JARVIS_MASTERPLAN.md` — Gesamtplan
+5. `docs/AUDIT_OPERATIONAL_RELIABILITY.md` — Operational Reliability Audit (falls vorhanden, wertvoller Kontext)
 
 ### Schritt 2 — Die drei Services verstehen
 
@@ -151,7 +152,7 @@ Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
 |---|---|---|---|
 | `memory.py` | Redis (Working Memory) | ? | ? |
 | `semantic_memory.py` | ChromaDB (Langzeit-Fakten) | ? | ? |
-| `conversation.py` | Gesprächsverlauf | ? | ? |
+| `ha_integration/.../conversation.py` | HA Voice Pipeline → Assistant Bridge | ? | ? |
 | `conversation_memory.py` | Konversations-Gedächtnis | ? | ? |
 | `memory_extractor.py` | Fakten-Extraktion aus Gesprächen | ? | ? |
 | `correction_memory.py` | Gelernte Korrekturen | ? | ? |

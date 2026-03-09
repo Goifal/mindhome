@@ -12,7 +12,7 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du ha
 >
 > **Wenn dies eine neue Konversation ist**: Füge hier die Kontext-Blöcke aus allen 5 vorherigen Prompts ein:
 > - Prompt 1: Konflikt-Karte & Architektur-Bewertung (inkl. 3-Service-Architektur & Addon-Konflikte!)
-> - Prompt 2: Memory-Diagnose & Root Cause (inkl. alle 13 Memory-Module)
+> - Prompt 2: Memory-Diagnose & Root Cause (inkl. alle 12 Memory-Module)
 > - Prompt 3: Flow-Analyse mit Bruchstellen & Kollisionen (inkl. Speech, Addon, Domain-Assistenten)
 > - Prompt 4: Bug-Report mit allen Bugs (inkl. Security, Resilience, Addon)
 > - Prompt 5: Persönlichkeits-Audit & Config-Analyse (inkl. Addon-Config)
@@ -23,7 +23,7 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du ha
 
 Basierend auf **allen** bisherigen Erkenntnissen: Implementiere die nötigen Fixes und Refactorings, um Jarvis von einem Flickenteppich zu einem **kohärenten System** zu machen.
 
-### Die 5 Harmonisierungs-Prinzipien
+### Die 7 Harmonisierungs-Prinzipien
 
 Jede Änderung muss mindestens eines dieser Prinzipien bedienen:
 

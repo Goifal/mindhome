@@ -163,10 +163,13 @@ User: "Was habe ich gestern über X gesagt?"
 
 ### Flow 7: Speech-Pipeline (NEU)
 
+> **Zusätzliche Doku**: Lies `docs/AUDIT_TTS_STT.md` und `docs/SPEECH_SETUP.md` für Kontext zur bestehenden Speech-Analyse.
+
 ```
 Audio-Input (Mikrofon / ESPHome Satellite)
-  → Speech-Server (speech/server.py): Whisper STT
-    → Text an Assistant (wie? HTTP? WebSocket?)
+  → ha_integration/.../conversation.py: HA Voice Pipeline Bridge
+    → Speech-Server (speech/server.py): Whisper STT
+      → Text an Assistant (wie? HTTP? WebSocket?)
       → speaker_recognition.py: Wer spricht?
         → brain.py: Verarbeitung (→ Flow 1)
           → TTS-Antwort generieren

@@ -29,6 +29,11 @@ Du bist ein Elite-DevOps-Engineer und QA-Experte mit tiefem Wissen in:
 
 Nach den Fixes aus Prompt 6: **Verifiziere** dass alles funktioniert, **teste** systematisch, und stelle sicher dass das Deployment **robust** ist.
 
+### Zusätzliche Dokumentation (lies diese zuerst!):
+- `docs/ASSISTANT_TEST_CHECKLIST.md` — Bestehende Test-Checkliste (falls vorhanden, als Basis nutzen)
+- `docs/AUDIT_OPERATIONAL_RELIABILITY.md` — Vorherige Reliability-Analyse (was wurde schon geprüft?)
+- `docs/AUDIT_TTS_STT.md` — Speech-System-Audit (relevant für Speech-Tests)
+
 ---
 
 ### Teil A: Bestehende Tests ausführen und bewerten

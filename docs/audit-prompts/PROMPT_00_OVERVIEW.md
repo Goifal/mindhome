@@ -4,10 +4,11 @@ Diese 7 Prompts sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu
 
 ## Das System
 
-Jarvis besteht aus **drei Services**:
-1. **Assistant** (`/assistant/assistant/`, ~89 Module, FastAPI) — KI-Kern
+Jarvis besteht aus **drei Services + HA-Integration**:
+1. **Assistant** (`/assistant/assistant/`, 89 Module, FastAPI) — KI-Kern
 2. **Addon** (`/addon/rootfs/opt/mindhome/`, ~71 Module, Flask) — Smart-Home-Logik
 3. **Speech** (`/speech/`, 2 Module, Whisper STT) — Spracheingabe
+4. **HA-Integration** (`/ha_integration/`, `conversation.py`) — Bridge zwischen HA Voice Pipeline und Assistant
 
 Dazu: 105 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen.
 

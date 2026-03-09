@@ -30,14 +30,15 @@ Jarvis merkt sich **keine Gespräche**. Trotz eines 3-Tier Memory Systems (Redis
 
 ### ALLE Memory-bezogenen Module
 
-Es gibt **nicht 4, sondern mindestens 10** Module die mit Memory/Wissen zu tun haben:
+Es gibt **nicht 4, sondern mindestens 12** Module die mit Memory/Wissen zu tun haben:
+
+> **Achtung**: `conversation.py` existiert nur als HA-Integration (`ha_integration/.../conversation.py`) — es ist eine Bridge zwischen der HA Voice Pipeline und dem Assistant, **kein** Memory-Modul. Das eigentliche Gesprächs-Memory ist `conversation_memory.py`.
 
 | Modul | Aufgabe | Technologie |
 |---|---|---|
 | `memory.py` | Working Memory | Redis |
 | `semantic_memory.py` | Langzeit-Fakten & Vektor-Suche | ChromaDB |
-| `conversation.py` | Gesprächsverlauf | ? |
-| `conversation_memory.py` | Konversations-Gedächtnis | ? |
+| `conversation_memory.py` | Konversations-Gedächtnis & Gesprächsverlauf | ? |
 | `memory_extractor.py` | Extrahiert Fakten aus Gesprächen | ? |
 | `correction_memory.py` | Lernt aus User-Korrekturen | ? |
 | `dialogue_state.py` | Konversations-Zustandsmaschine | ? |
@@ -48,7 +49,7 @@ Es gibt **nicht 4, sondern mindestens 10** Module die mit Memory/Wissen zu tun h
 | `embeddings.py` | Embedding-Modell-Verwaltung | ? |
 | `embedding_extractor.py` | Text → Embedding-Vektor | ? |
 
-**Kritische Frage**: Wie hängen diese 13 Module zusammen? Oder sind es 13 isolierte Inseln?
+**Kritische Frage**: Wie hängen diese 12 Module zusammen? Oder sind es 12 isolierte Inseln?
 
 ---
 
@@ -68,7 +69,6 @@ Bevor du den Datenfluss verfolgst: Lies **jedes** der 13 Module und erstelle ein
 |---|---|---|---|
 | `memory.py` | ? | ? | ? |
 | `semantic_memory.py` | ? | ? | ? |
-| `conversation.py` | ? | ? | ? |
 | `conversation_memory.py` | ? | ? | ? |
 | `memory_extractor.py` | ? | ? | ? |
 | `correction_memory.py` | ? | ? | ? |
@@ -95,7 +95,7 @@ Verfolge den **exakten Code-Pfad** einer Erinnerung. Lies jeden beteiligten File
 2. Vor der LLM-Antwort
    → Wird memory.py aufgerufen um relevante Erinnerungen zu laden?
    → Wird semantic_memory.py abgefragt?
-   → Wird conversation.py / conversation_memory.py abgefragt?
+   → Wird conversation_memory.py abgefragt?
    → Wird correction_memory.py geprüft (frühere Korrekturen)?
    → Wird knowledge_base.py einbezogen?
    → Werden die Ergebnisse an context_builder.py übergeben?
@@ -137,7 +137,7 @@ Prüfe jeden einzelnen Punkt und dokumentiere das Ergebnis mit Code-Referenz:
 | 11 | `memory_extractor.py`: Wird er aufgerufen? Extrahiert er korrekt Fakten? | ? | ? |
 | 12 | `correction_memory.py`: Werden Korrekturen gespeichert und bei nächster Antwort genutzt? | ? | ? |
 | 13 | `dialogue_state.py`: Wird der State korrekt verwaltet? Multi-Turn? | ? | ? |
-| 14 | `conversation.py` vs `conversation_memory.py`: Was macht jedes? Überlappen sie? | ? | ? |
+| 14 | `conversation_memory.py`: Verwaltet es sowohl Kurz- als auch Langzeit-Konversationen? | ? | ? |
 | 15 | `learning_observer.py`: Werden gelernte Muster im Prompt verwendet? | ? | ? |
 | 16 | `learning_transfer.py`: Funktioniert Wissenstransfer? Oder Dead Code? | ? | ? |
 | 17 | `knowledge_base.py`: Was enthält es? Wird es im Prompt genutzt? | ? | ? |
@@ -157,7 +157,7 @@ Mögliche Root Causes (prüfe jede):
 - [ ] Embeddings passen nicht zum Query-Embedding (falsches Modell?)
 - [ ] Async-Fehler: Memory-Abfrage wird nicht awaited
 - [ ] Race Condition: Antwort kommt vor Memory-Abruf
-- [ ] conversation.py und conversation_memory.py arbeiten gegeneinander
+- [ ] conversation_memory.py speichert/lädt nicht korrekt
 - [ ] memory_extractor.py wird nie aufgerufen (Dead Code)
 - [ ] correction_memory.py wird nie abgefragt
 - [ ] dialogue_state.py wird nicht korrekt aktualisiert
@@ -228,7 +228,7 @@ Für jeden Memory-Bug:
 
 - **Nur Memory** in diesem Prompt — keine anderen Bugs jagen
 - Folge dem Code, nicht der Dokumentation
-- **ALLE 13 Module** prüfen — nicht nur die offensichtlichen 4
+- **ALLE 12 Module** prüfen — nicht nur die offensichtlichen 4
 - Wenn du einen `await` vermisst oder eine Race Condition findest: Datei + Zeile + Beweis
 - Prüfe ob die Module **voneinander wissen** oder isolierte Silos sind
 - Einfach > Komplex: Wenn weniger Module robuster sind, sag es

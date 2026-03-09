@@ -53,7 +53,7 @@ Prüfe **jedes Modul** systematisch auf die folgenden **12 Fehlerklassen**. Arbe
 ### Priorität 2 — Memory-Kette
 5. `memory.py` — Working Memory
 6. `semantic_memory.py` — Langzeit-Fakten
-7. `conversation.py` — Gesprächsverlauf
+7. `ha_integration/.../conversation.py` — HA Voice Pipeline Bridge (prüfe ob korrekt mit Assistant verbunden)
 8. `conversation_memory.py` — Konversations-Gedächtnis
 9. `memory_extractor.py` — Fakten-Extraktion
 10. `correction_memory.py` — Korrektur-Lernen
