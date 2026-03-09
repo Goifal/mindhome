@@ -614,24 +614,38 @@ class ProactiveManager:
             await self._check_appliance_power(entity_id, new_val, old_val)
 
         # Feature 2: Manual Override Detection für Covers
-        # Ignoriere Transitions von/zu unavailable/unknown (Gerät geht offline/online)
+        # Ignoriere: unavailable/unknown (offline/online), opening/closing (Bewegungs-Transitions)
         _non_physical = {"unavailable", "unknown", ""}
+        _transitional = {"opening", "closing"}  # Abschluss-Transitions (opening->open) sind keine neuen Aktionen
         if (entity_id.startswith("cover.") and new_val != old_val
-                and old_val not in _non_physical and new_val not in _non_physical):
+                and old_val not in _non_physical and new_val not in _non_physical
+                and old_val not in _transitional):
             try:
+                # Primaer: HA-Context prüfen — user_id ist nur bei manueller Bedienung gesetzt
+                # (Dashboard, Schalter, etc.). API-Calls (Jarvis Addon + Assistant) haben kein user_id.
+                context = new_state.get("context", {}) if isinstance(new_state, dict) else {}
+                is_user_action = bool(context.get("user_id"))
+
+                # Fallback: jarvis_acting Redis-Key (wird von _execute_cover_action gesetzt)
                 redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
-                if redis_client:
+                jarvis_triggered = False
+                if redis_client and not is_user_action:
                     acting_key = f"mha:cover:jarvis_acting:{entity_id}"
-                    jarvis_triggered = await redis_client.get(acting_key)
-                    if not jarvis_triggered:
-                        override_hours = yaml_config.get("seasonal_actions", {}).get("cover_automation", {}).get("manual_override_hours", 2)
-                        override_ttl = int(override_hours * 3600)
+                    jarvis_triggered = bool(await redis_client.get(acting_key))
+
+                if is_user_action and not jarvis_triggered:
+                    override_hours = yaml_config.get("seasonal_actions", {}).get("cover_automation", {}).get("manual_override_hours", 2)
+                    override_ttl = int(override_hours * 3600)
+                    if redis_client:
                         override_key = f"mha:cover:manual_override:{entity_id}"
                         await redis_client.set(override_key, "1", ex=override_ttl)
-                        logger.info(
-                            "Cover Manual Override: %s manuell bedient (%s -> %s), Automatik pausiert für %dh",
-                            entity_id, old_val, new_val, override_hours,
-                        )
+                    logger.info(
+                        "Cover Manual Override: %s manuell bedient (%s -> %s), Automatik pausiert für %dh",
+                        entity_id, old_val, new_val, override_hours,
+                    )
+                elif not is_user_action and not jarvis_triggered:
+                    logger.debug("Cover state change %s (%s -> %s) — kein user_id, kein jarvis_acting — ignoriert",
+                                 entity_id, old_val, new_val)
             except Exception as e:
                 logger.debug("Cover Manual Override Detection Fehler: %s", e)
 
