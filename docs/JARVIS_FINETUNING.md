@@ -3,7 +3,8 @@
 **Datum**: 2026-03-09
 **Ziel**: Jarvis der sich erinnert, mitdenkt, und Charakter hat — gleichzeitig, nicht abwechselnd.
 **Prinzip**: Konsolidieren vor Expandieren. Kein neues Feature bis das Fundament steht.
-**Reihenfolge ist kritisch**: Phase 0 → 1 → 2 → 3. Jede Phase baut auf der vorherigen auf.
+**Implementierungsreihenfolge**: Phase 0 (Bugfixes, jederzeit parallel) → Phase 3 (Pipeline-Refactor) → Phase 2 (Prompt-Diät) → Phase 1 (Memory-Gateway).
+Phase 3 zuerst, weil Phase 2 und 1 danach gezielt einzelne Stages ändern statt in einer 3500-Zeilen-Methode zu arbeiten.
 
 ---
 
@@ -395,5 +396,236 @@ Ergebnis: Memory IMMER dabei + ~18 Gesprächsrunden im Kontext
 **Vergleich mit heute**:
 - **Heute**: ~3000t System-Prompt + ~2000t Prio 1 = 5000t weg. Verbleiben: ~2400t für alles andere. Memory wird regelmäßig gedroppt.
 - **Neu**: ~1850t Basis. Verbleiben: ~5500t. **Mehr als doppelt so viel Platz.** Memory wird NIE gedroppt.
+
+---
+
+## Phase 3: Pipeline-Refactor — brain.py aufbrechen
+
+**Ziel**: Die `process()` God-Method (3.547 Zeilen, Zeile 1076–4622) in 6 testbare Stages aufteilen. Für den User ändert sich **nichts**. Für die Wartbarkeit alles.
+
+**Warum zuerst?** Phase 2 (Prompt-Diät) ändert den Prompt-Assembly in Stage 4+5. Phase 1 (Memory-Gateway) ändert den Memory-Gather in Stage 4. Beides ist 10x einfacher wenn man eine `_stage_gather()` Methode editiert statt Zeile 2408–2931 in einer Riesenmethode.
+
+---
+
+### 3.1 PipelineContext — der State-Träger
+
+**Neue Datei**: `assistant/assistant/pipeline_context.py`
+
+Alle Variablen die heute als lokale `process()`-Variablen existieren und zwischen Stages geteilt werden, wandern in eine Dataclass:
+
+```python
+from dataclasses import dataclass, field
+from typing import Optional
+
+@dataclass
+class PipelineContext:
+    """Trägt den gesamten State durch die Pipeline."""
+
+    # --- Input (unveränderlich nach Normalize) ---
+    raw_text: str                          # Original-Input
+    text: str = ""                         # Nach STT-Normalisierung
+    person: Optional[str] = None
+    room: Optional[str] = None
+    files: Optional[list] = None
+    device_id: Optional[str] = None
+    voice_metadata: Optional[dict] = None
+    stream_callback: object = None
+
+    # --- Normalize-Output ---
+    is_pipeline: bool = False
+    is_whisper_mode: bool = False
+    is_retry: bool = False
+    speaker_confidence: float = 0.0
+
+    # --- Shortcut-Output ---
+    early_return: bool = False             # True = Stage hat finale Antwort
+    result: Optional[dict] = None          # Die finale Antwort (wenn early_return)
+
+    # --- Classify-Output ---
+    intent: str = ""                       # device_command, knowledge, conversation, ...
+    profile: object = None                 # Intent-Profile
+
+    # --- Gather-Output ---
+    sections: list = field(default_factory=list)   # [(name, text, priority), ...]
+    system_prompt: str = ""
+    messages: list = field(default_factory=list)    # Conversation history
+    available_tokens: int = 0
+
+    # --- Think-Output ---
+    raw_response: str = ""                 # LLM-Antwort vor Filtering
+    tool_results: list = field(default_factory=list)
+    model_used: str = ""
+
+    # --- Polish-Output ---
+    final_response: str = ""               # Nach Filtering + Sanity-Checks
+    actions: list = field(default_factory=list)
+```
+
+**Warum Dataclass statt Dict?** Autocomplete, Type-Hints, klare Dokumentation was jede Stage produziert. Kein `ctx["sections"]` Tippfehler-Risiko.
+
+### 3.2 Die 6 Stages
+
+**Datei**: `assistant/assistant/brain.py` — bestehende Methoden, neuer Orchestrator
+
+#### Stage 1: Normalize (Zeile 1076–1213 heute)
+
+```python
+async def _stage_normalize(self, ctx: PipelineContext) -> PipelineContext:
+    """STT-Normalisierung, Speaker-Erkennung, Whisper-Mode, Retry-Detection."""
+```
+
+Enthält:
+- Pipeline-Detection & STT-Normalisierung
+- Quality Feedback Loop (Sarkasmus, Humor)
+- Speaker Fallback Resolution
+- Whisper Mode Toggle
+- Retry Detection
+- Speaker Recognition & Voice Stats
+- Primary User Fallback
+- Dialogue State (Clarification, References)
+
+Kann `early_return` setzen bei: Speaker-Fallback-Frage, Whisper-Toggle-Bestätigung.
+
+#### Stage 2: Shortcuts (Zeile 1214–2236 heute)
+
+```python
+async def _stage_shortcuts(self, ctx: PipelineContext) -> PipelineContext:
+    """Deterministische Shortcuts — kein LLM nötig."""
+```
+
+Enthält die ~20 Shortcuts als Block:
+- Goodnight, Guest Mode, Security/Automation/Optimization Confirmation
+- Memory Commands, Cooking, Workshop, Action Planner
+- Easter Eggs, "Das Übliche"
+- Calendar, Weather, Alarm, Device, Media, Intercom Shortcuts
+- Morning/Evening Briefing, House Status, Status Report/Query
+- Smalltalk
+
+**Wichtig**: Die Shortcuts werden **nicht** refactored, nur rausgezogen. Sie funktionieren, also Finger weg. Vereinheitlichung (Shortcut-Registry) ist eine spätere Phase.
+
+Setzt `early_return = True` wenn ein Shortcut matched.
+
+#### Stage 3: Classify (Zeile 2237–2407 heute)
+
+```python
+async def _stage_classify(self, ctx: PipelineContext) -> PipelineContext:
+    """Intent-Classification + Listening-Sound."""
+```
+
+Enthält:
+- Listening Sound & Progress Emit
+- `_classify_intent()` Aufruf
+- Intent-Profile Aufbau
+
+#### Stage 4: Gather (Zeile 2408–2931 heute)
+
+```python
+async def _stage_gather(self, ctx: PipelineContext) -> PipelineContext:
+    """Kontext sammeln, Sections bauen, Token-Budget enforcing."""
+```
+
+Enthält:
+- Situation Delta
+- Personality Prompt (`build_system_prompt()`)
+- Alle Dynamic Sections (P1–P4): Mood, Security, Memory, RAG, Calendar, etc.
+- Token-Budget Enforcement (P1 immer, Rest nach Budget)
+
+**Das ist die Stage die Phase 2 (Prompt-Diät) und Phase 1 (Memory-Gateway) später ändern.** Deshalb muss sie sauber isoliert sein.
+
+#### Stage 5: Think (Zeile 2932–4002 heute)
+
+```python
+async def _stage_think(self, ctx: PipelineContext) -> PipelineContext:
+    """Conversation-Loading, LLM-Call, Tool-Execution-Loop."""
+```
+
+Enthält:
+- Conversation Memory Loading (mit dynamischem Limit + Summarization)
+- Character-Lock Reminder Injection
+- System-Prompt Final Assembly
+- Intent Routing (Knowledge-only, Delegation, Action Planner)
+- LLM-Call mit `_llm_with_cascade()`
+- Tool-Call Parsing & Execution Loop (bis zu N Iterationen)
+
+#### Stage 6: Polish (Zeile 4002–4622 heute)
+
+```python
+async def _stage_polish(self, ctx: PipelineContext) -> PipelineContext:
+    """Response-Filtering, Sanity-Checks, Logging."""
+```
+
+Enthält:
+- `_filter_response()` (Fluff entfernen, Formality, Gags)
+- Sanity Checks & Data-Leak Prevention
+- `_remember_exchange()` (Conversation speichern)
+- `_speak_and_emit()` (Ausgabe)
+- Logging & Return
+
+### 3.3 Der neue Orchestrator
+
+```python
+async def process(self, text: str, person=None, room=None,
+                  files=None, stream_callback=None,
+                  voice_metadata=None, device_id=None) -> dict:
+    """Haupteingang — orchestriert die 6 Pipeline-Stages."""
+
+    ctx = PipelineContext(
+        raw_text=text, person=person, room=room,
+        files=files, device_id=device_id,
+        voice_metadata=voice_metadata,
+        stream_callback=stream_callback,
+    )
+
+    ctx = await self._stage_normalize(ctx)
+    if ctx.early_return:
+        return ctx.result
+
+    ctx = await self._stage_shortcuts(ctx)
+    if ctx.early_return:
+        return ctx.result
+
+    ctx = await self._stage_classify(ctx)
+    ctx = await self._stage_gather(ctx)
+    ctx = await self._stage_think(ctx)
+    ctx = await self._stage_polish(ctx)
+
+    return ctx.result
+```
+
+**Von 3.547 Zeilen auf 20 Zeilen.** Der Rest lebt in den Stage-Methoden — gleicher Code, aber isoliert und testbar.
+
+### 3.4 Migrations-Strategie
+
+**Keine Big-Bang-Migration.** Stage für Stage:
+
+1. `PipelineContext` Dataclass anlegen
+2. `_stage_polish()` extrahieren (am Ende, wenigste Abhängigkeiten)
+3. `_stage_normalize()` extrahieren (am Anfang, klarste Grenzen)
+4. `_stage_shortcuts()` extrahieren (großer Block, aber simpel — nur rausschneiden)
+5. `_stage_classify()` extrahieren (klein)
+6. `_stage_gather()` extrahieren (komplex, viele Sections)
+7. `_stage_think()` extrahieren (komplex, LLM-Loop)
+8. Alten `process()` durch Orchestrator ersetzen
+
+**Nach jedem Schritt**: Integrationstests laufen lassen. Wenn was bricht → sofort fixen, nicht weitermachen.
+
+**Rückwärtskompatibilität**: Die Signatur `process(text, person, room, ...) -> dict` bleibt **exakt gleich**. Kein einziger Caller muss geändert werden.
+
+### 3.5 Was sich NICHT ändert
+
+- **Kein Feature wird hinzugefügt oder entfernt**
+- **Kein Verhalten ändert sich** — gleicher Input → gleicher Output
+- **Keine externen Schnittstellen ändern sich** (API, HA-Integration, etc.)
+- **Die 97 Helper-Methoden bleiben wo sie sind** (erst in einer späteren Phase ggf. zu den Stages verschieben)
+- **Shortcuts werden nicht vereinheitlicht** — nur als Block verschoben
+
+### 3.6 Risiken und Mitigierung
+
+| Risiko | Wahrscheinlichkeit | Mitigierung |
+|--------|-------------------|-------------|
+| Lokale Variable vergessen die zwischen Stages geteilt wird | Hoch | `PipelineContext` hat alle Felder. Fehlende Felder = AttributeError sofort sichtbar |
+| `self.*` State-Mutation in falscher Stage | Mittel | Code-Review: jede Stage dokumentiert welche `self.*` sie liest/schreibt |
+| Shortcuts brechen durch Context-Änderung | Niedrig | Shortcuts werden 1:1 verschoben, keine Logik-Änderung |
+| Performance-Regression durch zusätzliche Dataclass | Null | Dataclass ist ein flacher Container, kein Overhead |
 
 ---
