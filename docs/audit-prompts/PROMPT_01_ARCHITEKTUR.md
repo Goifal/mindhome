@@ -123,13 +123,13 @@ Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
 
 ### Schritt 2 — Die drei Services verstehen
 
-**2a)** Lies `brain.py` komplett. Verstehe:
+**2a)** Lies `brain.py` komplett (**⚠️ 10.000+ Zeilen! Read-Tool zeigt nur 2000 Zeilen auf einmal. Lies in Abschnitten: offset=1 limit=2000, dann offset=2001 limit=2000, usw. bis zum Ende!**). Verstehe:
 - Wie wird **jedes** Modul initialisiert?
 - In welcher **Reihenfolge** werden Module aufgerufen?
 - Gibt es eine zentrale **Koordination** oder ist brain.py nur eine dumme Weiterleitung?
 - Wo werden Entscheidungen getroffen — in brain.py oder in den Modulen selbst?
 
-**2a-2)** Lies `main.py` komplett (**⚠️ 8000+ Zeilen, 200+ API-Endpoints — das ist KEIN einfacher Server!**). Verstehe:
+**2a-2)** Lies `main.py` komplett (**⚠️ 8000+ Zeilen, 200+ API-Endpoints — das ist KEIN einfacher Server! Read-Tool zeigt nur 2000 Zeilen auf einmal. Lies in Abschnitten: offset=1 limit=2000, dann offset=2001 limit=2000, usw.**). Verstehe:
 - **API-Endpunkte**: Welche Endpoints gibt es? (`/api/assistant/*`, `/api/ui/*`, `/api/workshop/*`)
 - **Boot-Sequenz**: `_boot_announcement()` — Wie kündigt sich Jarvis nach dem Start an?
 - **Authentifizierung**: API-Key Middleware, PIN-Auth, Rate Limiting
@@ -372,7 +372,7 @@ Die vollständige Import-Tabelle aus Schritt 4 mit verwaisten Modulen, Zyklen un
 | Aufgabe | Tool | Beispiel |
 |---|---|---|
 | Dokumentation lesen (Schritt 1) | **Read** (parallel: alle 5 Docs gleichzeitig) | `Read: docs/PROJECT_MINDHOME_ASSISTANT.md` |
-| brain.py + main.py verstehen (Schritt 2) | **Read** (nacheinander, sind groß) | `Read: assistant/assistant/brain.py` |
+| brain.py + main.py verstehen (Schritt 2) | **Read** (nacheinander, in 2000-Zeilen-Abschnitten!) | `Read: assistant/assistant/brain.py` (offset=1, limit=2000), dann (offset=2001, limit=2000), usw. |
 | Addon + Speech verstehen (Schritt 2b/c) | **Read** (parallel: app.py + event_bus.py + server.py) | — |
 | Import-Karte (Schritt 4) | **Grep** (Bulk-Suche über alle Module) | `Grep: pattern="^from \." path="assistant/"` |
 | Shared-Schema-Nutzung prüfen | **Grep** | `Grep: pattern="from shared" path="."` |

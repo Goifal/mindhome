@@ -69,7 +69,7 @@ Claude Code hat spezialisierte Tools. Jeder Prompt nutzt sie gezielt:
 
 | Tool | Wofür | Statt |
 |---|---|---|
-| **Read** | Einzelne Dateien lesen (`brain.py`, `main.py`, YAML-Configs) | ~~cat, head, tail~~ |
+| **Read** | Einzelne Dateien lesen (`brain.py`, `main.py`, YAML-Configs). **⚠️ Limit: 2000 Zeilen pro Aufruf!** Große Dateien (brain.py=10.231, main.py=8.037 Zeilen) müssen in Abschnitten gelesen werden: `offset=1 limit=2000`, dann `offset=2001 limit=2000`, usw. | ~~cat, head, tail~~ |
 | **Grep** | Muster im Code suchen (Imports, Funktionsaufrufe, Redis-Keys, `await`) | ~~grep, rg~~ |
 | **Glob** | Dateien finden (`**/*.py`, `**/test_*.py`) | ~~find, ls~~ |
 | **Bash** | Befehle ausführen (`pytest`, `docker build`, `pylint`, `pip list`) | — |
@@ -129,6 +129,15 @@ Der Code liegt auf GitHub. Es gibt kein laufendes Redis, ChromaDB, Ollama oder H
 
 ### Ziel-Hardware
 Das System läuft auf: **AMD Ryzen 7 3700X**, **64GB DDR4**, **RTX 3090 (24GB VRAM)**, 500GB NVMe + 1TB SATA SSD. Die GPU wird für Ollama LLM-Inference genutzt. Relevant für Prompt 7 (Docker/GPU-Setup, OOM-Szenarien, Modell-Empfehlungen).
+
+### Kontext-Block-Größe
+
+Jeder Prompt generiert am Ende einen **Kontext-Block** für den nächsten Prompt. Damit die Blöcke bei Prompt 7 (der alle 9 vorherigen Blöcke braucht) nicht den Kontext sprengen:
+
+- **Max. 30–50 Zeilen pro Kontext-Block** — Zusammenfassung, nicht vollständiges Ergebnis
+- **Nur kritische Findings** in den Block — Details bleiben im ausführlichen Output
+- **Code-Referenzen kompakt**: `brain.py:123` statt langer Erklärungen
+- Bei Bug-Listen: Nur 🔴 und 🟠 Bugs im Kontext-Block, 🟡/🟢 nur als Zähler
 
 ### Gründlichkeits-Pflicht
 Jeder Prompt enthält eine **Gründlichkeits-Pflicht**:

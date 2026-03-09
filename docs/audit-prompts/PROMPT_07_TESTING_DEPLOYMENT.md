@@ -224,7 +224,7 @@ async def test_simple_command_latency():
 | Alerts bei kritischen Fehlern? | ? | ? |
 | Log-Rotation konfiguriert (Container-Logs wachsen!)? | ? | ? |
 
-### Teil F: Installationsscripts prüfen
+### Teil G: Installationsscripts prüfen
 
 **Zuerst prüfen welche Scripts existieren** (nicht alle müssen vorhanden sein):
 ```
@@ -251,7 +251,7 @@ Lies und prüfe **(nur falls vorhanden!)**:
 | nvidia-watchdog.sh | ? | ? | ? |
 | addon/run.sh | ? | ? | ? |
 
-### Teil G: Dependency-Audit (NEU)
+### Teil H: Dependency-Audit (NEU)
 
 **Claude Code: Mit Bash ausführen!**
 
@@ -271,7 +271,7 @@ cd ../../../../speech && pip-audit -r requirements.txt 2>&1 | head -30
 | Konflikte zwischen Services (gleiche Lib, verschiedene Versionen?) | ? | ? |
 | Veraltete Dependencies (>1 Jahr ohne Update?) | ? | ? |
 
-### Teil H: Frontend-Dateien prüfen (NEU)
+### Teil I: Frontend-Dateien prüfen (NEU)
 
 Lies und prüfe:
 - `addon/rootfs/opt/mindhome/static/frontend/app.jsx` — React-Frontend

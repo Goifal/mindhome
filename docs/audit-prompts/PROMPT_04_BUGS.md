@@ -52,9 +52,9 @@ Prüfe **jedes Modul** systematisch auf die folgenden **13 Fehlerklassen**. Arbe
 ## Modul-Priorität
 
 ### Priorität 1 — Kern (MUSS komplett geprüft werden)
-1. `brain.py` — Orchestrator, höchster Impact
+1. `brain.py` — Orchestrator, höchster Impact (**⚠️ 10.000+ Zeilen! Read in 2000-Zeilen-Abschnitten: offset=1/2001/4001/6001/8001/10001**)
 2. `brain_callbacks.py` — Event Hooks
-3. `main.py` — FastAPI-Server, Endpoints
+3. `main.py` — FastAPI-Server, Endpoints (**⚠️ 8000+ Zeilen! Read in 2000-Zeilen-Abschnitten: offset=1/2001/4001/6001/8001**)
 4. `websocket.py` — WebSocket-Server
 
 ### Priorität 2 — Memory-Kette
@@ -386,9 +386,11 @@ Module oder Funktionen die existieren aber **nie aufgerufen** werden.
 
 ```
 # Fehlerklasse 1: Fehlende awaits finden
-Grep: pattern="[^await ](self\.\w+\.\w+\()" path="assistant/assistant/" output_mode="content"
-# Besser: Coroutines die ohne await aufgerufen werden
+# ACHTUNG: [^await ] ist eine Character Class, NICHT "not preceded by await"!
+# Nutze stattdessen Negative Lookbehind:
 Grep: pattern="(?<!await )self\.(memory|semantic_memory|ha_client)\." path="assistant/assistant/" output_mode="content"
+# Alternativ: Alle self.X.Y()-Aufrufe finden und manuell prüfen welche await brauchen:
+Grep: pattern="^\s+self\.\w+\.\w+\(" path="assistant/assistant/" output_mode="content"
 
 # Fehlerklasse 2: Stille Fehler
 Grep: pattern="except.*:[\s]*pass|except.*:[\s]*$|except Exception" path="." output_mode="content"
