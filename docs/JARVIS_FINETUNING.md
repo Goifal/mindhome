@@ -43,3 +43,61 @@ Der gesamte bisherige Body von `clear_all_memory()` (Zeile 461-514) wird durch d
 **Achtung**: In `factory_reset()` Zeile 522-523 steht `result = await self.clear_all_memory()`. Das würde jetzt eine Endlos-Rekursion erzeugen. Deshalb muss Zeile 522-523 in `factory_reset()` entfernt werden — die Logik die dort stand (ChromaDB + Semantic + alte Redis-Patterns) ist redundant, weil `factory_reset()` danach sowieso `mha:*` scannt und alles löscht.
 
 ---
+
+### Fix 0.2: Key-Kollision `conv_memory` — semantische Suche geht verloren + Duplikat
+
+**Datei**: `assistant/assistant/brain.py`
+
+**Problem**: Zwei verschiedene Datenquellen verwenden denselben Key `"conv_memory"` in der Task-Map:
+
+- **Zeile 2356**: `_mega_tasks.append(("conv_memory", self._get_conversation_memory(text)))` — semantische Suche nach relevanten vergangenen Gesprächen
+- **Zeile 2394**: `_mega_tasks.append(("conv_memory", self.conversation_memory.get_memory_context()))` — Projekte & offene Fragen
+
+Weil beide den Key `"conv_memory"` verwenden, überschreibt Zeile 2394 das Ergebnis von Zeile 2356 im `_result_map`. Die semantische Suche wird berechnet, aber das Ergebnis **geht verloren**.
+
+Zusätzlich wird das (überschriebene) Ergebnis dann **doppelt** als Sektion eingefügt:
+- **Zeile 2800-2809**: `conv_memory` als Sektion mit Prio 2
+- **Zeile 2921-2924**: Dieselben Daten nochmal als Sektion `"conv_memory"` mit Prio 3
+
+**Auswirkung**:
+1. Jarvis kann sich nicht an vergangene Gespräche erinnern (semantische Suche wird weggeworfen)
+2. Projekte/Fragen werden doppelt in den Prompt gestopft (Token-Verschwendung)
+3. Bei knappem Budget wird die Prio-3-Version gedroppt, die Prio-2 bleibt — bringt nichts außer Verwirrung
+
+**Lösung**: Getrennte Keys, kein Duplikat, beide Prio 2:
+
+**Schritt 1 — Task-Keys trennen:**
+```python
+# Zeile 2356: Key umbenennen
+_mega_tasks.append(("conv_memory_semantic", self._get_conversation_memory(text)))
+
+# Zeile 2394: Key umbenennen
+_mega_tasks.append(("conv_memory_projects", self.conversation_memory.get_memory_context()))
+```
+
+**Schritt 2 — Sektion Zeile 2800-2809 auf neuen Key umstellen:**
+```python
+conv_memory_semantic = _safe_get("conv_memory_semantic")
+if conv_memory_semantic:
+    conv_text = (
+        "\n\nRELEVANTE VERGANGENE GESPRÄCHE:\n"
+        f"{conv_memory_semantic}\n"
+        "Referenziere beilaeufig wenn passend: 'Wie am Dienstag besprochen.' / "
+        "'Du hattest das erwaehnt.' Mit trockenem Humor wenn es sich anbietet. "
+        "NICHT: 'Laut meinen Aufzeichnungen...' oder 'In unserem Gespraech am...'"
+    )
+    sections.append(("conv_memory_semantic", conv_text, 2))
+```
+
+**Schritt 3 — Sektion Zeile 2921-2924 auf neuen Key umstellen:**
+```python
+conv_memory_projects = _safe_get("conv_memory_projects", "")
+if conv_memory_projects:
+    sections.append(("conv_memory_projects", f"\n\nGEDÄCHTNIS: {conv_memory_projects}", 2))
+```
+
+**Beide Prio 2** — Gespräche und Projekte sind der Kern von "sich erinnern" und "mitdenken". Prio 3 wäre riskant (werden bei knappem Budget als erstes gedroppt). Prio 1 wäre übertrieben (reserviert für Person-Memory).
+
+**Aufwand**: 4 Stellen umbenennen, keine neue Logik.
+
+---
