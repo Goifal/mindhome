@@ -101,3 +101,44 @@ if conv_memory_projects:
 **Aufwand**: 4 Stellen umbenennen, keine neue Logik.
 
 ---
+
+### Fix 0.3: ChromaDB Timeout verschluckt Fehler still
+
+**Datei**: `assistant/assistant/memory.py` → Methode zum Speichern von Episoden (Zeile 153-212)
+
+**Problem**: Wenn ein Chunk beim Speichern in ChromaDB timeouted (5-Sekunden-Limit), wird der Fehler geloggt und der Chunk übersprungen (`continue`). Der Aufrufer bekommt "Erfolg" zurück, obwohl Teile der Konversation fehlen. Der User denkt das Gespräch ist gespeichert — ist es aber nur teilweise.
+
+```python
+# Zeile 204-206: Stille Fehlerbehandlung
+except asyncio.TimeoutError:
+    logger.error("ChromaDB Timeout beim Speichern von Chunk %s", doc_id)
+    continue  # Chunk geht verloren, kein Fehler nach oben
+```
+
+**Auswirkung**: Episodisches Gedächtnis hat Lücken. Jarvis "erinnert" sich an Teile eines Gesprächs aber nicht an andere — ohne dass jemand es merkt.
+
+**Lösung**: Fehlgeschlagene Chunks zählen und im Rückgabewert melden:
+
+```python
+failed_chunks = 0
+
+# Im try/except:
+except asyncio.TimeoutError:
+    logger.error("ChromaDB Timeout beim Speichern von Chunk %s", doc_id)
+    failed_chunks += 1
+    continue
+
+# Am Ende der Methode:
+if failed_chunks:
+    logger.warning(
+        "Episodisches Gedaechtnis unvollstaendig: %d/%d Chunks fehlgeschlagen",
+        failed_chunks, total_chunks,
+    )
+return {"stored": total_chunks - failed_chunks, "failed": failed_chunks, "total": total_chunks}
+```
+
+Der Aufrufer kann dann entscheiden ob er es nochmal versucht oder den User warnt. Kein stilles Verschlucken mehr.
+
+**Aufwand**: 5-10 Zeilen.
+
+---
