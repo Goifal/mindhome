@@ -2,6 +2,8 @@
 
 Diese 7 Prompts sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu werden. Jeder Prompt ist fokussiert auf ein Thema und liefert als Output den Input für den nächsten.
 
+> **Für einen weiteren Durchlauf**: Nutze `PROMPT_RESET.md` **vor** Prompt 1, um den Kontext sauber zurückzusetzen und die Ergebnisse des vorherigen Durchlaufs als Vergleichsbasis zu sichern.
+
 ## Das System
 
 Jarvis besteht aus **drei Services + HA-Integration + Shared-Module**:
@@ -24,6 +26,7 @@ Dazu: 105 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen.
 | 5 | `PROMPT_05_PERSONALITY.md` | Persönlichkeit, Config, MCU-Authentizität | Nutzt Bug-Liste aus #4 |
 | 6 | `PROMPT_06_HARMONISIERUNG.md` | Integration, Kohärenz, **Addon-Koordination** | Baut auf allem auf |
 | 7 | `PROMPT_07_TESTING_DEPLOYMENT.md` | Tests, Docker, Resilience, **Verifikation** | Verifiziert die Fixes aus #6 |
+| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #7, vor erneutem #1 |
 
 ## Wie verwenden
 
