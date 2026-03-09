@@ -275,3 +275,125 @@ Diese separaten Sektionen werden durch den Gateway-Block ersetzt:
 **Kein bestehendes System wird gelöscht oder umgebaut.** Der Gateway ist eine neue Schicht DARÜBER.
 
 ---
+
+## Phase 2: Prompt-Diät
+
+**Ziel**: System-Prompt von ~3000 auf ~1200 Tokens komprimieren. Der frei werdende Platz geht an Memory (Phase 1) und längere Gespräche.
+
+**WICHTIG**: Jarvis muss danach **genau so** klingen wie vorher — trocken, sarkastisch, Butler-Ton. Kürzer heißt nicht weniger Charakter. Es heißt: denselben Charakter in weniger Tokens ausdrücken.
+
+---
+
+### 2.1 Personality-Prompt komprimieren
+
+**Datei**: `assistant/assistant/personality.py` → `build_system_prompt()`
+
+**Problem**: Der aktuelle Personality-Prompt besteht aus ~12 separaten Sections (~1500 Tokens). Viele Regeln sind redundant:
+- "Sei kurz" steht an 4 Stellen
+- "Keine Listen" an 3 Stellen
+- "Erfinde nichts" an 2 Stellen
+- Erklärungen warum eine Regel existiert (das LLM braucht kein "weil")
+- Beispiele die den Charakter beschreiben statt definieren
+
+**Lösung**: Alles in einen Block (~500 Tokens). Die variablen Teile (`{formality_prompt}`, `{humor_prompt}`, `{mood_addon}`) werden zur Laufzeit eingefügt — aber als EIN String, nicht als additive Blöcke:
+
+```
+Du bist {name}, J.A.R.V.I.S. — die KI dieses Hauses.
+SPRACHE: NUR Deutsch. Internes Denken ebenfalls Deutsch.
+TON: {formality_prompt} {humor_prompt}
+VERBOTEN: "Als KI...", "Ich bin ein Sprachmodell", "Es tut mir leid", "Leider", Listen.
+STIMMUNG: {mood_addon}
+ANREDE: {person_addressing}
+MAX {max_sentences} Sätze. FAKTEN-REGEL: Erfinde NICHTS. Unbekannt = ehrlich sagen.
+```
+
+**Was sich NICHT ändern darf** (Charakter-Kern):
+- Butler-Ton, trocken, präzise
+- Sarkasmus und Selbstironie
+- "Als KI..." ist verboten
+- Stimmung beeinflusst den Ton
+- Person wird korrekt angesprochen
+- Fakten-Regel: Erfinde NICHTS
+- Kurze Antworten, keine Listen
+
+**Was wegkann** (Token-Ballast):
+- Redundante Wiederholungen derselben Regeln
+- Erklärungen *warum* eine Regel existiert
+- Beispiel-Dialoge die den Charakter illustrieren statt definieren
+- Separate Sections für Self-Awareness, Empathy, Complexity — kann in 1-2 Sätze
+
+**Test-Pflicht**: Nach der Umstellung 10 verschiedene Prompts testen (Smalltalk, Device-Command, Wissensfrage, emotionale Situation, Humor-Situation). Jarvis muss in allen Fällen **genauso** klingen wie vorher. Wenn nicht → Prompt nachjustieren, nicht zurückrollen.
+
+### 2.2 Szenen-Intelligenz: Zwei Versionen
+
+**Datei**: `assistant/assistant/brain.py`
+
+**Problem**: `SCENE_INTELLIGENCE_PROMPT` ist ~700 Tokens und wird bei **jedem** Device-Command mit Prio 1 eingefügt. Bei "Mach das Licht an" sind 700 Tokens Szenen-Beispiele Verschwendung.
+
+**Lösung**: Zwei Versionen:
+
+**Mini (~150 Tokens)** — für Standard-Device-Commands:
+```
+SZENEN-REGELN:
+1. Ursache VOR Aktion prüfen (Fenster offen? Heizung aus?)
+2. Kontext beachten (Tageszeit, wer ist da)
+3. Einen Schritt weiterdenken (Heizung hoch + Fenster offen = Warnung)
+```
+
+**Voll (~700 Tokens)** — nur wenn der Text Szenen-Keywords enthält ("romantisch", "filmabend", "party", "krank", "gemütlich", etc.):
+```python
+if profile.category == "device_command":
+    if any(kw in text_lower for kw in SCENE_KEYWORDS):
+        sections.append(("scene_intelligence", SCENE_INTELLIGENCE_FULL, 1))
+    else:
+        sections.append(("scene_intelligence", SCENE_INTELLIGENCE_MINI, 2))
+```
+
+**Ersparnis**: ~550 Tokens bei 90% der Device-Commands.
+
+### 2.3 Character Lock Reminder kürzen
+
+**Datei**: `brain.py` Zeile 3067-3074
+
+**Aktuell** (~50 Tokens):
+```python
+_reminder = (
+    "[REMINDER] Du bist J.A.R.V.I.S. — trocken, praezise, Butler-Ton. "
+    "Kurz. Keine Listen. Erfinde NICHTS. NUR vorhandene Daten nutzen."
+)
+```
+
+**Neu** (~20 Tokens):
+```python
+_reminder = "[J.A.R.V.I.S. Trocken. Präzise. Keine Erfindungen.]"
+```
+
+Klingt wenig, aber der Reminder wird bei jedem Turn im Kontext mitgeschleppt. Bei 19 Gesprächsrunden sind das ~600 Token Ersparnis.
+
+### 2.4 Token-Budget Rechnung (Ziel)
+
+```
+Modell: num_ctx = 8192 (typisch für qwen3.5:9b)
+Reserve für Antwort: 800 Tokens
+
+Verfügbar: 7392 Tokens
+
+System-Prompt (Personality komprimiert):     ~500 Tokens
+Memory Gateway (Prio 0, immer):              ~800 Tokens (max)
+Szenen-Intelligenz Mini (Prio 1):            ~150 Tokens
+Mood + Security + Letzte Aktion (Prio 1):    ~200 Tokens
+Sonstige Prio 1:                             ~200 Tokens
+= Basis: ~1850 Tokens
+
+Verbleibend für Prio 2+ und Conversations:   ~5542 Tokens
+  → Conversations (65%):                     ~3602 Tokens (~36 Nachrichten á 100t)
+  → Prio 2+ Sektionen (35%):                ~1940 Tokens
+
+Ergebnis: Memory IMMER dabei + ~18 Gesprächsrunden im Kontext
+```
+
+**Vergleich mit heute**:
+- **Heute**: ~3000t System-Prompt + ~2000t Prio 1 = 5000t weg. Verbleiben: ~2400t für alles andere. Memory wird regelmäßig gedroppt.
+- **Neu**: ~1850t Basis. Verbleiben: ~5500t. **Mehr als doppelt so viel Platz.** Memory wird NIE gedroppt.
+
+---
