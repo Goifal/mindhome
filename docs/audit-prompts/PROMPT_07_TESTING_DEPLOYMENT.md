@@ -243,6 +243,16 @@ Top-5 Verbesserungen für Stabilität und Zuverlässigkeit im Produktionsbetrieb
 
 Du arbeitest mit dem Quellcode. Docker-Builds und pytest können ggf. nicht ausgeführt werden wenn Dependencies fehlen. Analysiere dann den Code statisch — lies Dockerfiles Zeile für Zeile, lies Tests Zeile für Zeile, simuliere gedanklich was passiert.
 
+### Ziel-Hardware
+
+Das System läuft auf folgender Hardware:
+- **CPU**: AMD Ryzen 7 3700X (8 Kerne / 16 Threads)
+- **RAM**: 64GB DDR4 3200MHz
+- **GPU**: ASUS ROG Strix **RTX 3090** (24GB VRAM) — für Ollama LLM-Inference
+- **Storage**: 500GB NVMe (System) + 1TB SATA SSD (Daten)
+
+> Berücksichtige dies bei GPU-Compose-Checks, VRAM-Limits, OOM-Szenarien und Modell-Empfehlungen.
+
 ---
 
 ## Regeln
