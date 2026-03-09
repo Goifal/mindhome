@@ -3730,6 +3730,20 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
         # Speech-Settings vor dem Merge merken (fuer Restart-Erkennung)
         old_speech = config.get("speech", {}).copy() if "speech" in config else {}
 
+        # Berechnete Maps VOR dem Merge aus der Base entfernen,
+        # damit sie komplett ersetzt statt gemerged werden.
+        # (deep_merge merged dict-in-dict — bei leeren Overrides
+        # bleiben sonst alte Eintraege stehen, z.B. geloeschte
+        # Device-Trigger)
+        _REPLACE_KEYS = [
+            ("scenes", "device_trigger_map"),
+            ("scenes", "trigger_map"),
+        ]
+        for section, key in _REPLACE_KEYS:
+            if section in safe_settings and key in safe_settings[section]:
+                if section in config and key in config[section]:
+                    del config[section][key]
+
         # Deep Merge (nur bereinigte Settings)
         _deep_merge(config, safe_settings)
 
