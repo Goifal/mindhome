@@ -13,23 +13,33 @@ Kein Umbau, nur gezielte Bugfixes. Kann sofort gemacht werden.
 
 ---
 
-### Fix 0.1: `clear_all_memory()` — fehlende Keys
+### Fix 0.1: `clear_all_memory()` — nur noch ein Lösch-Pfad
 
-**Datei**: `assistant/assistant/memory.py` → Methode `clear_all_memory()` (ca. Zeile 493-507)
+**Datei**: `assistant/assistant/memory.py` → Methode `clear_all_memory()` (Zeile 460-514)
 
-**Problem**: Beim Memory-Reset werden die Keys `mha:memory:projects`, `mha:memory:open_questions` und `mha:memory:summary:*` in Redis NICHT gelöscht. Das bedeutet: nach einem vollständigen Reset bleiben alte Projekte und offene Fragen als Geister-Daten im System. Der User denkt alles ist weg, aber Jarvis hat noch Überreste.
+**Problem**: `clear_all_memory()` löscht nur 5 Redis-Key-Patterns (`mha:archive:*`, `mha:context:*`, `mha:emotional_memory:*`, `mha:pending_topics`, `mha:conversations`). Aber 50+ andere Module erzeugen eigene `mha:*` Keys — Projekte, offene Fragen, Summaries, Lernmuster, Routinen, Gags, Speaker-Profile, und dutzende mehr. Nach einem "Lösche mein Gedächtnis" bleiben 95% des gelernten States als Geister-Daten im System. Im Log steht "GESAMTES GEDÄCHTNIS ZURÜCKGESETZT" — das stimmt nicht.
 
-**Ursache**: `clear_all_memory()` scannt nur bestimmte Key-Prefixes (`mha:conversation:*`, `mha:emotion:*`, etc.), aber das Prefix `mha:memory:*` (genutzt von `conversation_memory.py`) fehlt komplett.
+`factory_reset()` (Zeile 516) macht es richtig: scannt `mha:*` und löscht alles. Aber `clear_all_memory()` wird vom API-Endpoint (`main.py:933`) aufgerufen, nicht `factory_reset()`.
 
-**Lösung**: In der Scan-Schleife von `clear_all_memory()` zusätzlich nach `mha:memory:*` scannen:
+**Ursache**: Zwei getrennte Lösch-Pfade die nicht synchron gehalten werden. Jedes neue Modul mit eigenen Redis-Keys muss manuell in `clear_all_memory()` eingetragen werden — was nie passiert.
+
+**Lösung**: `clear_all_memory()` wird zum Wrapper für `factory_reset()`. Ein Lösch-Pfad statt zwei:
 
 ```python
-async for key in self.redis.scan_iter(match="mha:memory:*"):
-    keys.append(key)
+async def clear_all_memory(self) -> dict:
+    """Loescht das gesamte Gedaechtnis (alle mha:* Keys + ChromaDB + Semantic).
+
+    ACHTUNG: Unwiderruflich! Nur ueber PIN-geschuetzten Endpoint aufrufen.
+    """
+    return await self.factory_reset(include_uploads=False)
 ```
 
-**Regel**: Reset = ALLES weg. Kein Backup, keine Rückfrage, keine Ausnahmen. Wenn der User "Lösche mein Gedächtnis" sagt, meint er es. Alle `mha:*` Keys müssen gelöscht werden — Projekte, offene Fragen, Summaries, alles.
+Der gesamte bisherige Body von `clear_all_memory()` (Zeile 461-514) wird durch diesen Einzeiler ersetzt. `factory_reset()` bleibt unverändert — sie ruft jetzt nicht mehr `clear_all_memory()` auf (weil die Logik in `factory_reset()` selbst liegt).
 
-**Aufwand**: 3 Zeilen Code.
+**Regel**: Reset = ALLES weg. Kein Backup, keine Rückfrage, keine Ausnahmen. Wenn der User "Lösche mein Gedächtnis" sagt, meint er es.
+
+**Aufwand**: Body ersetzen, 1 Zeile neuer Code.
+
+**Achtung**: In `factory_reset()` Zeile 522-523 steht `result = await self.clear_all_memory()`. Das würde jetzt eine Endlos-Rekursion erzeugen. Deshalb muss Zeile 522-523 in `factory_reset()` entfernt werden — die Logik die dort stand (ChromaDB + Semantic + alte Redis-Patterns) ist redundant, weil `factory_reset()` danach sowieso `mha:*` scannt und alles löscht.
 
 ---
