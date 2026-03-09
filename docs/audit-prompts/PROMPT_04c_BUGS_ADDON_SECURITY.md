@@ -45,12 +45,16 @@ Prüfe die **Addon-Module, Speech, Shared-Module** (Priorität 10–12) und füh
 81. `addon/rootfs/opt/mindhome/event_bus.py` — Event-Bus
 82. `addon/rootfs/opt/mindhome/automation_engine.py` — Automationen
 83. `addon/rootfs/opt/mindhome/pattern_engine.py` — Pattern-Matching
-84. `addon/rootfs/opt/mindhome/domains/*.py` — Alle Domain-Module
-85. `addon/rootfs/opt/mindhome/engines/*.py` — Alle Engine-Module
+84. `addon/rootfs/opt/mindhome/task_scheduler.py` — Task-Scheduling
+85. `addon/rootfs/opt/mindhome/helpers.py`, `cover_helpers.py`, `init_db.py`, `version.py` — Hilfsdateien
+86. `addon/rootfs/opt/mindhome/domains/*.py` — Alle Domain-Module (21 Dateien)
+87. `addon/rootfs/opt/mindhome/engines/*.py` — Alle Engine-Module (15 Dateien)
+88. `addon/rootfs/opt/mindhome/routes/*.py` — Alle Route-Module (17 Dateien)
 
-> **Arbeite in 2 Batches:**
-> - **Batch 14a** (Addon-Kern): `app.py`, `ha_connection.py`, `event_bus.py`, `automation_engine.py`, `pattern_engine.py`, `base.py`, `models.py`, `db.py`
+> **Arbeite in 3 Batches:**
+> - **Batch 14a** (Addon-Kern): `app.py`, `ha_connection.py`, `event_bus.py`, `automation_engine.py`, `pattern_engine.py`, `task_scheduler.py`, `base.py`, `models.py`, `db.py`, `helpers.py`, `cover_helpers.py`, `init_db.py`, `version.py`
 > - **Batch 14b** (Addon-Domains+Engines): Alle `domains/*.py` + `engines/*.py`
+> - **Batch 14c** (Addon-Routes): Alle `routes/*.py` — API-Endpoints prüfen (Auth, Validierung, Error Handling)
 
 **Prüfe für jedes Addon-Modul alle 13 Fehlerklassen**, besonders:
 - Nutzt der Addon die **Shared Schemas** (`shared/schemas/`) oder eigene Definitionen?

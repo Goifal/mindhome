@@ -28,7 +28,7 @@ Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wi
 
 ## Aufgabe
 
-Prüfe die **Extended-Module** (Priorität 5–9, ca. 52 Module) systematisch auf die **13 Fehlerklassen** (siehe P04a).
+Prüfe die **Extended-Module** (Priorität 5–9, 63 Module) systematisch auf die **13 Fehlerklassen** (siehe P04a).
 
 > **Dieser Prompt ist Teil 2 von 3** der Bug-Jagd:
 > - **P04a**: Core-Module (brain, main, memory, context, actions) — ✅ erledigt
@@ -120,6 +120,7 @@ Prüfe die **Extended-Module** (Priorität 5–9, ca. 52 Module) systematisch au
 76. `explainability.py`
 77. `diagnostics.py`
 78. `task_registry.py`
+79. `timer_manager.py` — Timer-Verwaltung
 
 ---
 
@@ -146,7 +147,7 @@ Prüfe die **Extended-Module** (Priorität 5–9, ca. 52 Module) systematisch au
 > - **Batch 10** (Priorität 8+9): `config.py`, `constants.py`, `config_versioning.py`, `cooking_assistant.py`, `recipe_store.py`, `music_dj.py`, `smart_shopping.py`
 > - **Batch 11** (Priorität 9 — Domain): `calendar_intelligence.py`, `inventory.py`, `web_search.py`, `knowledge_base.py`, `summarizer.py`, `ocr.py`, `file_handler.py`
 > - **Batch 12** (Priorität 9 — Monitoring): `workshop_library.py`, `workshop_generator.py`, `health_monitor.py`, `device_health.py`, `energy_optimizer.py`, `predictive_maintenance.py`, `repair_planner.py`
-> - **Batch 13** (Priorität 9 — Rest): `visitor_manager.py`, `follow_me.py`, `wellness_advisor.py`, `activity.py`, `seasonal_insight.py`, `explainability.py`, `diagnostics.py`, `task_registry.py`
+> - **Batch 13** (Priorität 9 — Rest): `visitor_manager.py`, `follow_me.py`, `wellness_advisor.py`, `activity.py`, `seasonal_insight.py`, `explainability.py`, `diagnostics.py`, `task_registry.py`, `timer_manager.py`
 
 ---
 
