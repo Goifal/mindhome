@@ -4,6 +4,9 @@ Tests fuer RoutineEngine — Morning Briefing, Sleep-Awareness, Goodnight.
 
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
+
+_TZ = ZoneInfo("Europe/Berlin")
 
 import pytest
 
@@ -41,7 +44,7 @@ class TestSleepAwareness:
 
     @pytest.mark.asyncio
     async def test_sleep_hint_after_late_night(self, engine, redis_mock):
-        today = datetime.now().date().isoformat()
+        today = datetime.now(tz=_TZ).date().isoformat()
 
         async def sismember_side_effect(key, date_str):
             return date_str == today
@@ -53,7 +56,7 @@ class TestSleepAwareness:
 
     @pytest.mark.asyncio
     async def test_consecutive_nights_escalation(self, engine, redis_mock):
-        today = datetime.now().date()
+        today = datetime.now(tz=_TZ).date()
         late_dates = {(today - timedelta(days=i)).isoformat() for i in range(4)}
 
         async def sismember_side_effect(key, date_str):
@@ -79,7 +82,7 @@ class TestMorningBriefing:
 
     @pytest.mark.asyncio
     async def test_skip_when_already_done_today(self, engine, redis_mock):
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(tz=_TZ).strftime("%Y-%m-%d")
         # Lock existiert bereits (set NX gibt None zurueck) + done-Datum ist heute
         redis_mock.set = AsyncMock(return_value=None)
         redis_mock.get = AsyncMock(return_value=today)
@@ -88,7 +91,7 @@ class TestMorningBriefing:
 
     @pytest.mark.asyncio
     async def test_force_ignores_done_flag(self, engine, redis_mock, ollama_mock):
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(tz=_TZ).strftime("%Y-%m-%d")
         redis_mock.get = AsyncMock(return_value=today)
         redis_mock.sismember = AsyncMock(return_value=False)
         # Mock the briefing modules to return content

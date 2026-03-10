@@ -1060,4 +1060,4 @@ REGELN:
 
     def get_audit_log(self, limit: int = 20) -> list[dict]:
         """Gibt die letzten Audit-Log-Eintraege zurueck."""
-        return self._audit_log[-limit:]
+        return list(self._audit_log)[-limit:]

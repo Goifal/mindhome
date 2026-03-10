@@ -258,3 +258,104 @@ class TestConstants:
     def test_security_alert_is_level_1(self):
         """Sicherheitswarnungen muessen auf niedrigstem Level ausfuehrbar sein."""
         assert ACTION_PERMISSIONS["security_alert"] == 1
+
+
+# =====================================================================
+# can_execute() — Kombinierte Autonomie + Trust Pruefung
+# =====================================================================
+
+
+class TestCanExecute:
+    """Tests fuer can_execute() — Autonomie-Level UND Person-Trust kombiniert."""
+
+    def test_owner_with_sufficient_level(self, am):
+        result = am.can_execute(person="Sir", action_type="respond_to_command", function_name="set_light")
+        assert result["allowed"] is True
+        assert result["autonomy_ok"] is True
+        assert result["trust_ok"] is True
+
+    def test_owner_with_insufficient_level(self):
+        am = _make_autonomy(level=1)
+        result = am.can_execute(person="Sir", action_type="proactive_info", function_name="set_light")
+        assert result["allowed"] is False
+        assert result["autonomy_ok"] is False
+        assert result["trust_ok"] is True
+        assert "reason" in result
+
+    def test_guest_blocked_by_trust(self, am):
+        result = am.can_execute(person="Fremder", action_type="respond_to_command", function_name="lock_door")
+        assert result["allowed"] is False
+        assert result["autonomy_ok"] is True
+        assert result["trust_ok"] is False
+
+    def test_guest_allowed_for_light(self, am):
+        result = am.can_execute(person="Fremder", action_type="respond_to_command", function_name="set_light")
+        assert result["allowed"] is True
+
+    def test_both_blocked_reports_both_reasons(self):
+        am = _make_autonomy(level=1)
+        result = am.can_execute(person="Fremder", action_type="proactive_info", function_name="lock_door")
+        assert result["allowed"] is False
+        assert result["autonomy_ok"] is False
+        assert result["trust_ok"] is False
+        assert "reason" in result
+
+    def test_empty_person_treated_as_guest(self, am):
+        result = am.can_execute(person="", action_type="respond_to_command", function_name="lock_door")
+        assert result["allowed"] is False
+        assert result["trust_level"] == 0
+
+
+# =====================================================================
+# check_safety_caps() — Harte Sicherheitsgrenzen
+# =====================================================================
+
+
+class TestCheckSafetyCaps:
+    """Tests fuer check_safety_caps() — unabhaengig von Level/Trust."""
+
+    def test_valid_temperature(self, am):
+        result = am.check_safety_caps("set_temperature", {"temperature": 21})
+        assert result["allowed"] is True
+
+    def test_temperature_too_high(self, am):
+        result = am.check_safety_caps("set_temperature", {"temperature": 35})
+        assert result["allowed"] is False
+        assert "Maximum" in result["reason"]
+
+    def test_temperature_too_low(self, am):
+        result = am.check_safety_caps("set_temperature", {"temperature": 10})
+        assert result["allowed"] is False
+        assert "Minimum" in result["reason"]
+
+    def test_temperature_boundary_min(self, am):
+        result = am.check_safety_caps("set_temperature", {"temperature": 14})
+        assert result["allowed"] is True
+
+    def test_temperature_boundary_max(self, am):
+        result = am.check_safety_caps("set_temperature", {"temperature": 30})
+        assert result["allowed"] is True
+
+    def test_invalid_temperature_string(self, am):
+        result = am.check_safety_caps("set_temperature", {"temperature": "abc"})
+        assert result["allowed"] is False
+
+    def test_valid_brightness(self, am):
+        result = am.check_safety_caps("set_light", {"brightness": 50})
+        assert result["allowed"] is True
+
+    def test_brightness_out_of_range(self, am):
+        result = am.check_safety_caps("set_light", {"brightness": 150})
+        assert result["allowed"] is False
+
+    def test_brightness_negative(self, am):
+        result = am.check_safety_caps("set_light", {"brightness": -10})
+        assert result["allowed"] is False
+
+    def test_unrelated_function_passes(self, am):
+        result = am.check_safety_caps("play_media", {"volume": 100})
+        assert result["allowed"] is True
+
+    def test_no_args_passes(self, am):
+        result = am.check_safety_caps("set_temperature", {})
+        assert result["allowed"] is True
