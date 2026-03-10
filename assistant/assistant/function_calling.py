@@ -5205,12 +5205,15 @@ class FunctionExecutor:
         "option", "value", "code",
     })
 
+    # Fix: lock und alarm_control_panel aus generischem Gateway entfernt —
+    # diese muessen ueber dedizierte Funktionen (lock_door, set_alarm) mit
+    # Confirmation-Flow laufen, nicht ueber das generische call_service.
     _CALL_SERVICE_ALLOWED_DOMAINS = frozenset({
         "light", "switch", "climate", "cover", "fan",
         "media_player", "scene",
         "input_boolean", "input_number", "input_select", "input_text",
         "notify", "number", "select", "button",
-        "vacuum", "lock", "alarm_control_panel",
+        "vacuum",
         "shopping_list", "calendar", "timer", "counter",
     })
 
@@ -5469,9 +5472,24 @@ class FunctionExecutor:
         action = args.get("action", "")
         if not door or not action:
             return {"success": False, "message": "door und action erforderlich"}
+
+        # Fix: Nur lock/unlock als gueltige Aktionen akzeptieren
+        if action not in ("lock", "unlock"):
+            return {"success": False, "message": f"Ungueltige Aktion '{action}'. Erlaubt: lock, unlock"}
+
         entity_id = await self._find_entity("lock", door)
         if not entity_id:
             return {"success": False, "message": f"Kein Schloss '{door}' gefunden"}
+
+        # Fix: Unlock erfordert explizite Bestaetigung via Confirmation-Flow
+        if action == "unlock":
+            return {
+                "success": False,
+                "requires_confirmation": True,
+                "message": f"Sicherheitsabfrage: Tuer '{door}' wirklich entriegeln?",
+                "confirmation_action": "lock_door",
+                "confirmation_args": args,
+            }
 
         success = await self.ha.call_service(
             "lock", action, {"entity_id": entity_id}

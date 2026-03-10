@@ -161,8 +161,11 @@ class FireResponseManager:
                     feature_key=feature_key, entity_id=entity_id,
                     role=role, is_active=True
                 ).first() is not None
-        except Exception:
-            return False
+        except Exception as e:
+            # Fix: Failsafe — bei DB-Fehler ANNEHMEN dass Entity zugewiesen ist,
+            # damit Feueralarme NICHT stillschweigend ignoriert werden.
+            logger.error("DB-Fehler in _is_assigned_entity (Failsafe: True): %s", e)
+            return True
 
     def _handle_alarm(self, entity_id, alarm_type):
         """Execute emergency response for fire or CO alarm."""
@@ -467,8 +470,11 @@ class WaterLeakManager:
                     feature_key=feature_key, entity_id=entity_id,
                     role=role, is_active=True
                 ).first() is not None
-        except Exception:
-            return False
+        except Exception as e:
+            # Fix: Failsafe — bei DB-Fehler ANNEHMEN dass Entity zugewiesen ist,
+            # damit Wasserleck-Alarme NICHT stillschweigend ignoriert werden.
+            logger.error("DB-Fehler in _is_assigned_entity (Failsafe: True): %s", e)
+            return True
 
     def _handle_leak(self, entity_id):
         """Execute water leak response actions."""

@@ -2349,9 +2349,13 @@ class PersonalityEngine:
         if _wp_cfg.get("enabled", True) and context:
             weather = context.get("weather", {})
             if weather:
-                _temp = weather.get("temperature", "")
-                _condition = weather.get("condition", "")
-                _wind = weather.get("wind_speed", "")
+                # Fix: Typ-Validierung gegen Prompt Injection via kompromittierte HA-Entities
+                _temp_raw = weather.get("temperature", "")
+                _temp = str(_temp_raw)[:10] if isinstance(_temp_raw, (int, float, str)) else ""
+                _condition_raw = weather.get("condition", "")
+                _condition = str(_condition_raw)[:50].replace("\n", " ") if _condition_raw else ""
+                _wind_raw = weather.get("wind_speed", "")
+                _wind = str(_wind_raw)[:10] if isinstance(_wind_raw, (int, float, str)) else ""
                 _intensity = _wp_cfg.get("intensity", "normal")
                 if _temp or _condition:
                     parts = []
@@ -2374,6 +2378,9 @@ class PersonalityEngine:
             _topic_hint = ""
             _conv_topic = context.get("conversation_topic", "")
             if _conv_topic:
+                # Fix: Sanitize conversation_topic — kommt aus User-Text, Injection moeglich
+                _conv_topic = _conv_topic[:200].replace("\n", " ").replace("\r", " ")
+                _conv_topic = _conv_topic.replace("SYSTEM:", "").replace("ASSISTANT:", "").replace("USER:", "")
                 _topic_hint = (
                     f"Aktuelles Gespraechsthema: {_conv_topic}\n"
                     "Beziehe dich auf dieses Thema wenn relevant — "

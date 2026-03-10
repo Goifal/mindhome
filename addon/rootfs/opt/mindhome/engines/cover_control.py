@@ -778,7 +778,8 @@ class CoverControlManager:
             for fc in forecast[:4]:  # Naechste ~4 Stunden
                 fc_wind = fc.get("wind_speed", 0) or 0
                 if fc_wind > wind_threshold:
-                    return {"position": 100, "source": "weather_forecast_wind"}
+                    # Fix: Position 0 = eingefahren/geschlossen (war 100 = OFFEN bei Sturm!)
+                    return {"position": 0, "source": "weather_forecast_wind"}
         if forecast and cover_type == "roof_window" and config.get("rain_close_roof_windows"):
             for fc in forecast[:4]:
                 fc_condition = (fc.get("condition") or "").lower()
