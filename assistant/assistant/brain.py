@@ -1215,7 +1215,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             retry_query = self._last_failed_query
             self._last_failed_query = None
             logger.info("Retry nach 'Ja': Wiederhole '%s'", retry_query)
-            return await self.process(
+            return await self._process_inner(
                 text=retry_query, person=person, room=room,
                 files=files, stream_callback=stream_callback,
                 voice_metadata=voice_metadata, device_id=device_id,

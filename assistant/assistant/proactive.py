@@ -143,6 +143,7 @@ class ProactiveManager:
 
         # Event-Mapping: HA Event -> Priorität + Beschreibung (Hardcoded Defaults)
         _PRIORITY_MAP = {"critical": CRITICAL, "high": HIGH, "medium": MEDIUM, "low": LOW}
+        _dynamic_handlers = self.event_handlers  # Preserve dynamische Appliance-Handler (Z.98-110)
         self.event_handlers = {
             "alarm_triggered": (CRITICAL, "Alarm ausgeloest"),
             "smoke_detected": (CRITICAL, "Rauch erkannt"),
@@ -173,6 +174,8 @@ class ProactiveManager:
             "scene_device_triggered": (LOW, "Szene durch Geraet aktiviert"),
             "shopping_reminder": (LOW, "Einkaufs-Erinnerung"),
         }
+        # Dynamische Appliance-Handler (aus YAML devices) einfuegen — ueberschreiben Defaults
+        self.event_handlers.update(_dynamic_handlers)
         # YAML-Overrides anwenden (Event-Handler konfigurierbar)
         yaml_handlers = proactive_cfg.get("event_handlers", {})
         for event_name, info in yaml_handlers.items():
