@@ -91,6 +91,11 @@ async def _load_mindhome_domains(ha: HomeAssistantClient) -> None:
             return_exceptions=True,
         )
 
+        # Fix: Exception-Objekte einzeln pruefen statt still zu akzeptieren
+        for name, result in [("domains", domains_data), ("devices", devices_data), ("rooms", rooms_data)]:
+            if isinstance(result, BaseException):
+                logger.warning("MindHome API '%s' fehlgeschlagen: %s", name, result)
+
         # Domain-ID → Domain-Name Mapping
         domain_map: dict[int, str] = {}
         if isinstance(domains_data, list):

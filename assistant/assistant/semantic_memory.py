@@ -190,6 +190,7 @@ class SemanticMemory:
         if existing:
             return await self._update_existing_fact(existing, fact)
 
+        chroma_ok = True
         if self.chroma_collection:
             try:
                 self.chroma_collection.add(
@@ -198,8 +199,8 @@ class SemanticMemory:
                     ids=[fact.fact_id],
                 )
             except Exception as e:
-                logger.error("Fehler beim Speichern in ChromaDB: %s", e)
-                return False
+                chroma_ok = False
+                logger.error("Fehler beim Speichern in ChromaDB: %s (Redis-Speicherung wird trotzdem versucht)", e)
 
         redis_ok = True
         if self.redis:
@@ -232,6 +233,11 @@ class SemanticMemory:
                 fact.category, fact.person,
             )
             return False
+        if not chroma_ok:
+            logger.warning(
+                "Fakt nur in Redis gespeichert (ChromaDB fehlt): [%s] (Person: %s)",
+                fact.category, fact.person,
+            )
         return True
 
     async def _update_existing_fact(
