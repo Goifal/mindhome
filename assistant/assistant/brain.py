@@ -2391,7 +2391,7 @@ class AssistantBrain(BrainCallbacksMixin):
             )))
             _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
             _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
-            _mega_tasks.append(("conv_memory_ctx", self.conversation_memory.get_memory_context()))
+            _mega_tasks.append(("conv_memory", self.conversation_memory.get_memory_context()))
 
         # Conversation-Mode Detection + Memory-Callback parallelisieren
         # (bisher sequentiell NACH dem gather — spart ~50-200ms)
@@ -2919,9 +2919,9 @@ class AssistantBrain(BrainCallbacksMixin):
             sections.append(("continuity", cont_text, 3))
 
         # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
-        conv_memory_ctx = _safe_get("conv_memory_ctx", "")
+        conv_memory_ctx = _safe_get("conv_memory", "")
         if conv_memory_ctx:
-            sections.append(("conv_memory_ctx", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 3))
+            sections.append(("conv_memory", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 3))
 
         # --- Prio 4: Wenn Platz ---
         if tutorial_hint:
@@ -2986,8 +2986,7 @@ class AssistantBrain(BrainCallbacksMixin):
                 "continuity": "Gesprächskontinuität",
                 "experiential": "Erfahrungskontext",
                 "tutorial": "Tutorial-Hinweise",
-                "conv_memory": "Relevante vergangene Gespräche",
-                "conv_memory_ctx": "Projekte & offene Fragen",
+                "conv_memory": "Projekte & offene Fragen",
             }
             readable = [_dropped_labels.get(n, n) for n in dropped_names]
             system_prompt += (
