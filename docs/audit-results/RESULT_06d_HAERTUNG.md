@@ -4,8 +4,8 @@
 
 ```
 Baseline (6c): 905 passed, 239 failed, 244 errors
-Nach 6d:       905 passed, 239 failed, 244 errors — KEINE Regressionen
-Kein Code geändert — alle Items waren bereits implementiert (Verifizierung)
+Nach 6d (Nachtrag): Tests nach Code-Aenderungen erneut geprueft
+Code-Aenderungen: autonomy.py (can_execute + safety_caps), brain.py (Integration)
 ```
 
 ---
@@ -87,11 +87,17 @@ Kein Code geändert — alle Items waren bereits implementiert (Verifizierung)
 - **Status**: ✅ Kein Handlungsbedarf
 
 ### Security #11: Autonomy Limits
-- **Risiko**: 🟠
-- **Datei**: `autonomy.py`
-- **Problem**: Keine harten Grenzen für autonome Aktionen
-- **Fix**: Trust-Level-System (Level 0-2) mit `can_execute()` Prüfung. Absolute Safety-Caps wären nice-to-have.
-- **Status**: ⚠️ Trust-Level schützt, absolute Caps als Enhancement für P07a
+- **Risiko**: 🔴
+- **Datei**: `autonomy.py:124-230`
+- **Problem**: `can_act()` existierte aber wurde nie aufgerufen. Keine harten Grenzen.
+- **Fix (Nachtrag)**:
+  - `can_execute()` implementiert — kombinierte Autonomie-Level + Trust-Pruefung in einem Aufruf
+  - `check_safety_caps()` implementiert — harte Grenzen fuer Temperatur (14-30°C), Helligkeit (0-100%), Rate-Limits
+  - `SAFETY_CAPS` Dictionary mit konfigurierbaren Maximalwerten
+  - brain.py:8916 — `can_execute()` ersetzt manuelle Level-Pruefung im autonomen Aktions-Flow
+  - brain.py:3526 — `check_safety_caps()` im Function-Calling-Flow integriert (gilt fuer ALLE Aktionen)
+- **Verifiziert**: `can_act()` wird jetzt via `can_execute()` aufgerufen, Safety Caps blockieren gefaehrliche Werte
+- **Status**: ✅ Gefixt
 
 ### Security #12: WebSearch SSRF
 - **Risiko**: 🔴
@@ -117,9 +123,9 @@ Kein Code geändert — alle Items waren bereits implementiert (Verifizierung)
 
 ### Security #15: Sensitive Data in Logs
 - **Risiko**: 🟡
-- **Datei**: `main.py`
+- **Datei**: `main.py:69,133`
 - **Problem**: API-Keys/Tokens in Logs
-- **Fix**: `_redact_sensitive()` vorhanden in brain.py und web_search.py
+- **Fix**: `_SENSITIVE_PATTERNS.sub("[REDACTED]", msg)` in main.py (Zeilen 69 und 133) — Regex-basierte Maskierung sensitiver Daten in Error- und Activity-Buffern
 - **Status**: ✅ Kein Handlungsbedarf
 
 ---
@@ -171,6 +177,22 @@ Kein Code geändert — alle Items waren bereits implementiert (Verifizierung)
 
 **Prinzip**: Addon = kontinuierliche Automatik, Assistant = User-initiierte Aktionen. Entity-Ownership (2-Min-Fenster) verhindert Ping-Pong.
 
+### Nachtrag: Transport-Layer-Analyse (6d-Review)
+
+**Befund**: Alle 6 Addon-Module rufen `ha_connection.call_service()` auf, welches bei Zeile 177 automatisch `_is_entity_owned_by_assistant()` prueft. **Kein zusaetzlicher Code in den einzelnen Modulen noetig.**
+
+| Addon-Modul | Routing | Ownership-Check |
+|---|---|---|
+| `domains/light.py` | via `base.py:198` → `ha.call_service()` | ✅ Automatisch |
+| `engines/circadian.py` | Direkt `ha.call_service()` (Z. 294, 300, 322) | ✅ Automatisch |
+| `domains/climate.py` | via `base.py:198` → `ha.call_service()` | ✅ Automatisch |
+| `domains/cover.py` | Delegiert an Assistant (keine eigenen Calls) | ✅ N/A |
+| `domains/energy.py` | Nur Lese-Zugriff (keine Steuerung) | ✅ N/A |
+| `engines/camera_security.py` | Direkt `ha.call_service()` (Z. 203) | ✅ Automatisch |
+| `domains/camera.py` | Keine Aktionen (evaluate → leere Liste) | ✅ N/A |
+
+**Ergebnis**: Entity-Ownership-Check auf Transport-Layer (`ha_connection.py:177`) deckt alle 6 Modul-Paare automatisch ab. Koordination ist vollstaendig implementiert.
+
 ---
 
 ## 4. Verifikation
@@ -186,6 +208,8 @@ Kein Code geändert — alle Items waren bereits implementiert (Verifizierung)
 | Security: system/update + restart Token-geschützt | ✅ |
 | Security: api-key/recovery-key Token-geschützt | ✅ |
 | Security: XSS — React escaped, kein unsicheres innerHTML | ✅ |
+| Security: Autonomy Limits — can_execute() + Safety Caps implementiert | ✅ |
+| Security: Sensitive Data — _SENSITIVE_PATTERNS Maskierung in main.py | ✅ |
 | Resilience: Circuit Breaker (3 Instanzen, aktiv integriert) | ✅ |
 | Resilience: ErrorPatternTracker (6+ Stellen in brain.py) | ✅ |
 | Resilience: Redis/ChromaDB/Ollama/HA Fallbacks | ✅ |
@@ -200,9 +224,9 @@ Kein Code geändert — alle Items waren bereits implementiert (Verifizierung)
 ## KONTEXT AUS PROMPT 6d: Härtung
 
 ### Security-Status (15 Checks)
-- 12/15 vollständig implementiert
-- 2/15 teilweise (SEC-2: raw JSON Calls, SEC-11: Autonomy Caps — beide Low Priority)
-- 1/15 informational (SEC-13: XSS — React schützt nativ)
+- 13/15 vollstaendig implementiert (SEC-11 nachgeholt: can_execute + Safety Caps)
+- 1/15 teilweise (SEC-2: raw JSON Calls — interne APIs, Low Priority)
+- 1/15 informational (SEC-13: XSS — React schuetzt nativ)
 
 ### Resilience-Status
 - 9/10 vollständig (Disk-Check als Enhancement)
@@ -222,8 +246,12 @@ Kein Code geändert — alle Items waren bereits implementiert (Verifizierung)
 - 6c: Charakter — Personality verifiziert, Dead Code, Bug #15
 - 6d: Härtung — Security/Resilience/Addon vollständig verifiziert
 
-### Offene Punkte für Prompt 7a
+### Offene Punkte fuer Prompt 7a
 - SEC-2: 73 raw request.json() Calls (Low Priority, interne APIs)
-- SEC-11: Absolute Safety-Caps für Autonomie (nice-to-have)
 - Resilience #10: Aktiver Disk-Space-Check (nice-to-have)
+
+### Code-Aenderungen (Nachtrag 6d-Review)
+- autonomy.py: +can_execute(), +check_safety_caps(), +SAFETY_CAPS
+- brain.py:8916: can_execute() ersetzt manuelle Level-Pruefung
+- brain.py:3526: check_safety_caps() im Function-Calling-Flow
 ```

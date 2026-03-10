@@ -3523,6 +3523,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         })
                         continue
 
+                    # Safety Caps: Harte Grenzen pruefen (unabhaengig von Trust)
+                    if isinstance(func_args, dict):
+                        safety = self.autonomy.check_safety_caps(func_name, func_args)
+                        if not safety["allowed"]:
+                            logger.warning("Safety-Cap blockiert %s: %s", func_name, safety["reason"])
+                            executed_actions.append({
+                                "function": func_name,
+                                "args": func_args,
+                                "result": f"blocked: {safety['reason']}",
+                            })
+                            continue
+
                     # Phase 16.1: Konflikt-Check (Multi-User)
                     final_args = func_args
                     conflict_msg = None
@@ -8914,21 +8926,34 @@ Regeln:
         title = get_person_title(person)
 
         if mode == "auto" and self.autonomy.level >= 4:
-            # F-027: Trust-Check vor Auto-Execute
-            trust_level = self.autonomy.get_trust_level(person) if person else 0
-            # Sicherheitsrelevante Aktionen nur für Owner
-            from .conditional_commands import OWNER_ONLY_ACTIONS
-            if action in OWNER_ONLY_ACTIONS and trust_level < 2:
+            # F-027: Kombinierte Autonomie + Trust Pruefung via can_execute()
+            exec_check = self.autonomy.can_execute(
+                person=person or "",
+                action_type=action,
+                function_name=action,
+                domain=suggestion.get("domain", ""),
+            )
+            if not exec_check["allowed"]:
                 logger.warning(
-                    "F-027: Anticipation auto-execute blockiert (%s) — Person '%s' hat Trust %d",
-                    action, person, trust_level,
+                    "F-027: Anticipation auto-execute blockiert (%s) — %s",
+                    action, exec_check.get("reason", "keine Berechtigung"),
                 )
                 text = f"{title}, {desc}. Soll ich das uebernehmen? (Bestaetigung erforderlich)"
                 await emit_proactive(text, "anticipation_suggest", "medium")
                 return
 
-            # Automatisch ausfuehren + informieren
+            # Harte Sicherheitsgrenzen pruefen (Safety Caps)
             args = suggestion.get("args", {})
+            safety = self.autonomy.check_safety_caps(action, args)
+            if not safety["allowed"]:
+                logger.warning(
+                    "Safety-Cap blockiert %s: %s", action, safety["reason"],
+                )
+                text = f"{title}, {desc} — allerdings: {safety['reason']}"
+                await emit_proactive(text, "anticipation_blocked", "medium")
+                return
+
+            # Automatisch ausfuehren + informieren
             result = await self.executor.execute(action, args)
             text = f"{title}, {desc} — hab ich uebernommen. Wie jeden Tag um diese Zeit."
             await emit_proactive(text, "anticipation_auto", "medium")

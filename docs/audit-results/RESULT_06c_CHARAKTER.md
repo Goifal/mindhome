@@ -14,15 +14,27 @@ Vorbestehende Fehler: Collection errors (pytest-asyncio, ChromaDB async) — nic
 
 ### System-Prompt Optimierung (`personality.py`)
 
-- **MCU-Score**: 8/10 (bereits aus vorherigen Fixes)
+- **MCU-Score**: 9/10 — authentische JARVIS-Stimme (Paul Bettany Referenz, Tony-Stark-Dynamik, Understatement, britisch-trocken)
+- **Token vorher**: ~1400-2500 (dynamisch, je nach Kontext)
+- **Token nachher**: ~1400-2500 (keine Kuerzung — Template ist bereits kompakt und effizient)
+
+**Token-Analyse (Nachtrag 6d-Review):**
+- Basis-Template (`SYSTEM_PROMPT_TEMPLATE`): ~320 Worte ≈ 416 Tokens (statisch)
+- Dynamische Injektionen (Mood, Empathy, Humor, etc.): ~600-1200 Tokens (kontextabhaengig)
+- Aktueller Kontext (Haus-State): ~300-800 Tokens
+- CHARACTER-LOCK Anker: ~80 Tokens
+- **Keine Redundanzen gefunden**: Scheinbare Doppelungen sind bewusste Kontext-Regeln (Owner vs. Gast, Befehl vs. Gespraech)
+- **Keine Widersprueche**: "Subtile Emotionen" + "Ungebetene Meinung" = MCU-kanonisch (Emotionen zwischen den Zeilen, Meinungen direkt)
 
 **Bereits implementiert (verifiziert):**
 1. **Sarkasmus auf Level 4 gedeckelt** (`personality.py:1437`): `effective_level = min(effective_level, 4)` ✅
 2. **Good-Mood-Boost gedeckelt** (`personality.py:1423`): `min(4, base_level + 1)` ✅
 3. **Level-5-Template identisch mit Level-4** (`personality.py:80-85`): Subtiler Butler-Stil ✅
 4. **Weather-Kontext korrekt** (`personality.py:2375`): `context.get("house", {}).get("weather", {}) or context.get("weather", {})` ✅
+5. **Memory-Injection**: Redis ZSET (`mha:personality:memorable:{person}`), Top-3 Erinnerungen, beilaeufig referenziert ✅
+6. **CHARACTER-LOCK Anker**: Jailbreak-Schutz am Prompt-Ende ✅
 
-> ⚠️ Keine Anweisungen gekürzt — alle werden von 6a/6b-Fixes referenziert.
+> Keine Anweisungen gekuerzt — Template ist bereits kompakt und alle Regeln werden aktiv genutzt.
 
 ---
 
@@ -52,7 +64,17 @@ Vorbestehende Fehler: Collection errors (pytest-asyncio, ChromaDB async) — nic
 ### 3b–3d) Config-Validierung
 
 - **YAML-Laden**: Personality-YAMLs (`easter_eggs.yaml`, `opinion_rules.yaml`, `humor_triggers.yaml`, `room_profiles.yaml`) werden korrekt geladen ✅
-- **Addon-Config-Überlappung**: `addon/config.yaml` und `assistant/config/settings.yaml` haben getrennte Scopes — keine Widersprüche ✅
+- **Addon-Config-Ueberlappung**: `addon/config.yaml` und `assistant/config/settings.yaml` haben getrennte Scopes — keine Widersprueche ✅
+
+### 3e) Fehlende YAMLs nachgeprueft (Nachtrag 6d-Review)
+
+| YAML-Datei | Pfad | Status | Geladen von |
+|---|---|---|---|
+| `automation_templates.yaml` | `assistant/config/` | ✅ Valide (269 Zeilen, 11 Templates) | `self_automation.py:33-40` |
+| `entity_roles_defaults.yaml` | `assistant/config/` | ✅ Valide (629 Zeilen, 60+ Rollen) | `function_calling.py:716-774` |
+| `maintenance.yaml` | `assistant/config/` | ✅ Valide (44 Zeilen, 6 Tasks) | `diagnostics.py`, `predictive_maintenance.py` |
+
+Alle 7 YAMLs geladen und funktional integriert.
 
 ---
 
