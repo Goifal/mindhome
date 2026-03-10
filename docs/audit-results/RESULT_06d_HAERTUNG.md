@@ -2,8 +2,11 @@
 
 ## Phase Gate: Regression-Check
 
-- **Baseline (6c)**: 2493 passed, 1175 failed (alle in `test_workshop_library.py` — ChromaDB async, bekannt seit 6a)
-- **Nach 6d**: 2501 passed (+8 neue Tests), 1175 failed (identisch, keine Regressions)
+```
+Baseline (6c): 905 passed, 239 failed, 244 errors
+Nach 6d:       905 passed, 239 failed, 244 errors — KEINE Regressionen
+Kein Code geändert — alle Items waren bereits implementiert (Verifizierung)
+```
 
 ---
 
@@ -11,131 +14,135 @@
 
 ### Security #1: Prompt Injection
 - **Risiko**: 🟠
-- **Datei**: `context_builder.py`
+- **Datei**: `context_builder.py:89`
 - **Problem**: User-Input im System-Prompt
-- **Fix**: Bereits in 6a gefixt — `sanitize_for_system_prompt()` mit Delimiter-Injection-Schutz
+- **Fix**: `_sanitize_for_prompt()` bereinigt externen Text vor Prompt-Einbettung (max_len + label-basiert)
+- **Verifiziert**: 25+ Aufrufe in context_builder.py, alle externen Daten (HA-States, Medien, Kalender) werden sanitized
 - **Status**: ✅ Kein Handlungsbedarf
 
 ### Security #2: Input Validation
 - **Risiko**: 🟠
-- **Datei**: `main.py` (73 `await request.json()` Calls)
+- **Datei**: `main.py`
 - **Problem**: Rohe JSON-Inputs ohne Validierung
-- **Fix**: Kritische Endpoints (auth, setup, factory-reset, PIN-reset) nutzen bereits Pydantic-Models. Remaining 73 raw calls sind interne/HA-Calls mit geringerem Risiko.
+- **Fix**: Kritische Endpoints (auth, setup, factory-reset, PIN-reset) nutzen Pydantic-Models (`PinRequest`, `ResetPinRequest`, `BranchUpdateRequest`)
 - **Status**: ⚠️ Teilweise — kritische Endpoints geschützt, interne Calls akzeptabel
 
 ### Security #3: Factory Reset Schutz
 - **Risiko**: 🔴
-- **Datei**: `main.py:967`
+- **Datei**: `main.py:978`
 - **Problem**: Factory-Reset ohne Rate-Limiting
-- **Fix**: PIN-Brute-Force-Schutz implementiert (5 Versuche / 5 Min pro IP), `_check_pin_rate_limit()`, `_record_pin_failure()`, `_clear_pin_attempts()`
-- **Status**: ✅ Gefixt
+- **Fix**: `_check_pin_rate_limit(client_ip)` (5 Versuche / 5 Min), `_record_pin_failure()`, `_clear_pin_attempts()`
+- **Verifiziert**: Zeilen 978, 989, 993 + Definition Zeilen 2225-2260
+- **Status**: ✅ Bereits implementiert
 
 ### Security #4: System Update/Restart
 - **Risiko**: 🟠
-- **Datei**: `main.py`
+- **Datei**: `main.py:7867` (update), `main.py:7999` (restart)
 - **Problem**: Update/Restart-Endpoints ohne Auth
-- **Fix**: Bereits in 6a gefixt — Token-Check (`_check_token()`) auf allen kritischen Endpoints
-- **Status**: ✅ Kein Handlungsbedarf
+- **Fix**: `_check_token(token)` auf beiden Endpoints
+- **Status**: ✅ Bereits implementiert
 
 ### Security #5: API-Key Management
 - **Risiko**: 🟠
-- **Datei**: `main.py`
-- **Problem**: API-Key-Regeneration ohne Recovery-Key
-- **Fix**: Recovery-Key-Logik bereits implementiert in `/api/ui/reset-pin` mit `_verify_hash()`
-- **Status**: ✅ Kein Handlungsbedarf
+- **Datei**: `main.py:2556` (api-key), `main.py:2576` (recovery-key)
+- **Problem**: API-Key-Regeneration ohne Auth
+- **Fix**: `_check_token(token)` auf beiden Endpoints
+- **Status**: ✅ Bereits implementiert
 
 ### Security #6: PIN-Auth Brute-Force
 - **Risiko**: 🔴
-- **Datei**: `main.py:2388` (`/api/ui/auth`), `main.py:2437` (`/api/ui/reset-pin`)
+- **Datei**: `main.py:2397` (`/api/ui/auth`), `main.py:2446` (`/api/ui/reset-pin`)
 - **Problem**: Kein Rate-Limiting auf PIN-Eingabe
-- **Fix**: `_check_pin_rate_limit()` auf `/api/ui/auth`, `/api/ui/reset-pin`, `/api/ui/factory-reset` — 5 Versuche pro 5 Minuten pro IP, automatische Bereinigung abgelaufener Einträge
-- **Verifiziert**: 8 Unit-Tests in `test_main_auth.py::TestPinBruteForce` bestehen
-- **Status**: ✅ Gefixt
+- **Fix**: `_check_pin_rate_limit()` mit `_PIN_MAX_ATTEMPTS=5`, `_PIN_WINDOW_SECONDS=300`
+- **Verifiziert**: Zeilen 2225-2250 (Definition), 2397 (auth), 2446 (reset-pin), 978 (factory-reset)
+- **Status**: ✅ Bereits implementiert
 
 ### Security #7: File Upload
 - **Risiko**: 🟠
 - **Datei**: `file_handler.py`, `ocr.py`
 - **Problem**: Path Traversal, MIME-Type, Dateigröße
-- **Fix**: Bereits in 6a gefixt — `secure_filename()`, Extension-Whitelist, Größenlimit
+- **Fix**: Extension-Whitelist und Größenlimit vorhanden
 - **Status**: ✅ Kein Handlungsbedarf
 
 ### Security #8: Workshop Hardware Trust-Level
 - **Risiko**: 🔴
-- **Datei**: `main.py:6981`
+- **Datei**: `main.py:7048-7075`
 - **Problem**: Roboter-Arm + 3D-Drucker ohne Trust-Level-Prüfung
-- **Fix**: `_require_hardware_owner(request)` prüft Trust-Level 2 (Owner) auf allen 8 Workshop-Hardware-Endpoints. `_validate_arm_coordinates()` validiert Koordinaten (-1000 bis 1000) und Geschwindigkeit.
-- **Status**: ✅ Gefixt
+- **Fix**: `_require_hardware_owner(request)` prüft Trust-Level 2 (Owner) auf allen 8 Workshop-Endpoints. `_validate_arm_coordinates()` validiert Koordinaten (-1000 bis 1000) und Geschwindigkeit.
+- **Verifiziert**: 8 Endpoints (Zeilen 7093, 7104, 7112, 7123, 7137, 7147, 7155, 7168)
+- **Status**: ✅ Bereits implementiert
 
 ### Security #9: Function Call Safety
 - **Risiko**: 🟠
-- **Datei**: `function_calling.py`, `function_validator.py`
+- **Datei**: `function_calling.py`
 - **Problem**: Bösartige Tool-Calls
-- **Fix**: Bereits in 6a gefixt — `FunctionValidator` mit Whitelist, Parameter-Validierung, `_DANGEROUS_PATTERNS`
+- **Fix**: `_ALLOWED_FUNCTIONS` Whitelist, Parameter-Validierung in `execute()`, F-088 verhindert Exception-Leaking
 - **Status**: ✅ Kein Handlungsbedarf
 
 ### Security #10: Self-Automation Safety
 - **Risiko**: 🟠
 - **Datei**: `self_automation.py`
 - **Problem**: Gefährliche HA-Automationen
-- **Fix**: Bereits implementiert — `_is_safe_automation()` mit Blacklist für lock/alarm/security Domains
+- **Fix**: YAML-Templates mit `yaml.safe_load()`, keine dynamische Code-Ausführung
 - **Status**: ✅ Kein Handlungsbedarf
 
 ### Security #11: Autonomy Limits
 - **Risiko**: 🟠
 - **Datei**: `autonomy.py`
 - **Problem**: Keine harten Grenzen für autonome Aktionen
-- **Fix**: Trust-Level-System bereits implementiert (Level 0-2), `can_execute()` prüft Level. Absolute Safety-Caps (max Temperaturänderung, max Aktionen/Tag) wären nice-to-have, aber nicht kritisch da Trust-Level bereits greift.
+- **Fix**: Trust-Level-System (Level 0-2) mit `can_execute()` Prüfung. Absolute Safety-Caps wären nice-to-have.
 - **Status**: ⚠️ Trust-Level schützt, absolute Caps als Enhancement für P07a
 
 ### Security #12: WebSearch SSRF
 - **Risiko**: 🔴
-- **Datei**: `addon/routes/chat.py:_ALLOWED_PREFIXES`, `addon/routes/system.py:_ALLOWED_PREFIXES`
+- **Datei**: `addon/routes/chat.py:96-100`, `addon/routes/system.py:2074-2078`
 - **Problem**: `"172.2"` Prefix matchte auch öffentliche IPs wie 172.200.x.x
-- **Fix**: Expanded zu expliziten Prefixen `"172.16."` bis `"172.31."` (korrekte RFC 1918 Range)
-- **Verifiziert**: Grep zeigt korrekte Prefixes in beiden Dateien
-- **Status**: ✅ Gefixt
+- **Fix**: Explizite Prefixe `"172.16."` bis `"172.31."` (korrekte RFC 1918 Range)
+- **Verifiziert**: Beide Dateien haben 16 explizite 172.x Prefixe + 192.168., 10., 127., localhost, ::1
+- **Status**: ✅ Bereits implementiert
 
 ### Security #13: Frontend XSS
 - **Risiko**: 🟡
 - **Datei**: `app.jsx`, `app.js`
 - **Problem**: User-Input escaped?
-- **Fix**: React escaped standardmäßig (`{variable}` Syntax). Kein `dangerouslySetInnerHTML` gefunden. Vanilla `app.js` nutzt `textContent` statt `innerHTML`.
+- **Fix**: React escaped standardmäßig. `dangerouslySetInnerHTML` nur für CSS `<style>` Block (kein User-Input, Zeile 1771). Vanilla `app.js` nutzt `textContent`.
 - **Status**: ✅ Kein Handlungsbedarf
 
 ### Security #14: CORS
 - **Risiko**: 🟠
-- **Datei**: `addon/app.py`
+- **Datei**: `addon/app.py:58-62` (CORS), `addon/app.py:523-530` (Ingress)
 - **Problem**: Wildcard CORS (`*`) zu permissiv
-- **Fix**: CORS-Origins jetzt konfigurierbar via `CORS_ORIGINS` Environment-Variable (komma-separiert). Ingress-Token-Validierung via `X-Ingress-Token` Header für nicht-lokale Requests implementiert.
-- **Status**: ✅ Gefixt
+- **Fix**: `CORS_ORIGINS` Environment-Variable (komma-separiert). `X-Ingress-Token` Validierung für nicht-lokale Requests (localhost/::1/172.30.32.2 ausgenommen).
+- **Status**: ✅ Bereits implementiert
 
 ### Security #15: Sensitive Data in Logs
 - **Risiko**: 🟡
 - **Datei**: `main.py`
 - **Problem**: API-Keys/Tokens in Logs
-- **Fix**: Bereits in 6a gefixt — `_redact_sensitive()` für Log-Output, Tokens werden maskiert
+- **Fix**: `_redact_sensitive()` vorhanden in brain.py und web_search.py
 - **Status**: ✅ Kein Handlungsbedarf
 
 ---
 
 ## 2. Resilience-Status
 
-| # | Szenario | Vorher | Nachher | Implementierung |
-|---|---|---|---|---|
-| 1 | Ollama nicht erreichbar | ✅ Graceful | ✅ | `circuit_breaker.py` → `ollama_breaker`, Timeout + Error-Message in `ollama_client.py` |
-| 2 | Ollama crasht während Call | ✅ Retry | ✅ | Circuit Breaker: CLOSED→OPEN→HALF_OPEN, automatische Recovery |
-| 3 | Redis nicht erreichbar | ✅ Fallback | ✅ | `memory.py` mit In-Memory-Fallback, alle Redis-Calls in try/except |
-| 4 | ChromaDB nicht erreichbar | ✅ Fallback | ✅ | `knowledge_base.py`, `semantic_memory.py` — Redis-only Fallback |
-| 5 | Home Assistant nicht erreichbar | ✅ Graceful | ✅ | `ha_breaker` Circuit Breaker, Timeout-Werte in `ha_client.py` |
-| 6 | Speech-Server nicht erreichbar | ✅ Text-only | ✅ | Fallback auf Text-Mode in `ambient_audio.py` |
-| 7 | Addon nicht erreichbar | ✅ Standalone | ✅ | `mindhome_breaker` Circuit Breaker, Assistant funktioniert ohne Addon |
-| 8 | Netzwerk-Timeout | ✅ Retry | ✅ | Timeouts in `ha_client.py`, `ollama_client.py` konfiguriert |
-| 9 | Ungültiges LLM-Response | ✅ Fallback | ✅ | `brain.py` ErrorPatternTracker integriert (6+ Stellen), JSON-Parsing in try/except |
-| 10 | Disk voll | ⚠️ Teilweise | ⚠️ | Log-Rotation via Python logging, aber kein aktiver Disk-Space-Check |
+| # | Szenario | Status | Implementierung |
+|---|---|---|---|
+| 1 | Ollama nicht erreichbar | ✅ | `ollama_breaker` Circuit Breaker (`circuit_breaker.py:167`), Timeout in `ollama_client.py` |
+| 2 | Ollama crasht während Call | ✅ | Circuit Breaker: CLOSED→OPEN→HALF_OPEN (`circuit_breaker.py:23-127`), `record_failure()`/`record_success()` |
+| 3 | Redis nicht erreichbar | ✅ | `memory.py`: Graceful degradation — alle Methoden prüfen `if not self.redis: return` |
+| 4 | ChromaDB nicht erreichbar | ✅ | Fallback-Pattern in knowledge_base.py, semantic_memory.py |
+| 5 | Home Assistant nicht erreichbar | ✅ | `ha_breaker` Circuit Breaker (`circuit_breaker.py:168`), Timeouts in `ha_client.py` |
+| 6 | Speech-Server nicht erreichbar | ✅ | Text-only Fallback in `ambient_audio.py` |
+| 7 | Addon nicht erreichbar | ✅ | `mindhome_breaker` Circuit Breaker (`circuit_breaker.py:169`) |
+| 8 | Netzwerk-Timeout | ✅ | 5 Timeout-Konstanten in `constants.py:15-19` (30s/45s/120s) |
+| 9 | Ungültiges LLM-Response | ✅ | `ErrorPatternTracker` in brain.py (Zeilen 347, 759, 978, 2612, 3283) |
+| 10 | Disk voll | ⚠️ | Log-Rotation via Python logging, kein aktiver Disk-Space-Check |
 
-**Circuit Breaker Integration**: Alle 3 Breaker (`ollama_breaker`, `ha_breaker`, `mindhome_breaker`) sind aktiv in `brain.py` integriert und werden bei Service-Calls geprüft.
-
-**ErrorPatternTracker**: Vollständig integriert in `brain.py` an 6+ Stellen (Zeilen 344, 756, 975, 2589, 3251).
+**Circuit Breaker Integration**: 3 Breaker definiert und aktiv genutzt:
+- `ollama_breaker` → `ollama_client.py:343-345` (is_available check + record calls)
+- `ha_breaker` → `ha_client.py` (is_available check + record calls)
+- `mindhome_breaker` → `ha_client.py` (is_available check + record calls)
 
 ---
 
@@ -143,22 +150,24 @@
 
 ### Kernlösung: Redis-basierte Entity-Ownership
 
-| Komponente | Implementierung |
-|---|---|
-| **Ownership setzen** | `brain.py:3688` — nach jedem `call_service` wird `mha:entity_owner:{entity_id} = "assistant"` in Redis gesetzt (TTL: 120s) |
-| **Ownership abfragen** | `main.py` — neuer Endpoint `GET /api/assistant/entity_owner/{entity_id}` gibt Owner + TTL zurück |
-| **Addon-Prüfung** | Addon kann vor eigenen Aktionen den Endpoint abfragen und bei `owner=assistant` die Aktion überspringen (Anti-Flickering) |
+| Komponente | Implementierung | Verifiziert |
+|---|---|---|
+| **Ownership setzen** | `brain.py:3710-3722` — nach `call_service` wird `mha:entity_owner:{entity_id} = "assistant"` in Redis gesetzt (TTL: 120s) | ✅ |
+| **Ownership abfragen** | `main.py:676` — Endpoint `GET /api/assistant/entity_owner/{entity_id}` gibt Owner + TTL zurück | ✅ |
+| **Addon-Prüfung** | `addon/ha_connection.py:69-87` — `_is_entity_owned_by_assistant()` fragt Endpoint ab (Timeout: 2s), bei `owned=True` Aktion übersprungen | ✅ |
+| **call_service Check** | `addon/ha_connection.py:171-179` — Ownership-Check vor jeder HA-Aktion | ✅ |
+| **Graceful Degradation** | Wenn Assistant nicht erreichbar → Addon darf handeln (Zeile 84-86) | ✅ |
 
 ### Doppelte Module — Zuständigkeitsklärung
 
-| Assistant | Addon | Funktion | Zuständigkeit |
-|---|---|---|---|
-| `light_engine.py` | `domains/light.py` + `engines/circadian.py` | Licht | **Addon** für Automatik (circadian), **Assistant** für User-Requests. Entity-Ownership verhindert Konflikte. |
-| `climate_model.py` | `domains/climate.py` + `engines/comfort.py` | Klima | **Addon** für Comfort-Automatik, **Assistant** für direkte Steuerung. |
-| `cover_config.py` | `domains/cover.py` + `engines/cover_control.py` | Rollladen | **Addon** für Sonnenstand-Automatik, **Assistant** für User-Requests. |
-| `energy_optimizer.py` | `domains/energy.py` + `engines/energy.py` | Energie | **Addon** für kontinuierliche Optimierung, **Assistant** für Abfragen. |
-| `threat_assessment.py` | `engines/camera_security.py` | Sicherheit | **Assistant** für Analyse/Bewertung, **Addon** für Echtzeit-Detection. |
-| `camera_manager.py` | `domains/camera.py` | Kameras | **Assistant** für User-Requests, **Addon** für Streaming. |
+| Assistant | Addon | Zuständigkeit |
+|---|---|---|
+| `light_engine.py` | `domains/light.py` + `engines/circadian.py` | **Addon**: Automatik, **Assistant**: User-Requests |
+| `climate_model.py` | `domains/climate.py` + `engines/comfort.py` | **Addon**: Comfort-Automatik, **Assistant**: direkte Steuerung |
+| `cover_config.py` | `domains/cover.py` + `engines/cover_control.py` | **Addon**: Sonnenstand, **Assistant**: User-Requests |
+| `energy_optimizer.py` | `domains/energy.py` + `engines/energy.py` | **Addon**: Optimierung, **Assistant**: Abfragen |
+| `threat_assessment.py` | `engines/camera_security.py` | **Assistant**: Analyse, **Addon**: Echtzeit-Detection |
+| `camera_manager.py` | `domains/camera.py` | **Assistant**: User-Requests, **Addon**: Streaming |
 
 **Prinzip**: Addon = kontinuierliche Automatik, Assistant = User-initiierte Aktionen. Entity-Ownership (2-Min-Fenster) verhindert Ping-Pong.
 
@@ -168,21 +177,20 @@
 
 | Check | Status |
 |---|---|
-| Security: Prompt Injection geschützt | ✅ (6a) |
-| Security: Kritische Endpoints geschützt (PIN Rate-Limit) | ✅ |
-| Security: SSRF gefixt (172.x Prefixes) | ✅ |
-| Security: CORS gehärtet | ✅ |
-| Security: Workshop Hardware Trust-Level | ✅ |
+| Security: Prompt Injection geschützt (`_sanitize_for_prompt`) | ✅ |
+| Security: Kritische Endpoints PIN Rate-Limited | ✅ |
+| Security: SSRF gefixt (172.16-31 explizit) | ✅ |
+| Security: CORS gehärtet (CORS_ORIGINS + Ingress-Token) | ✅ |
+| Security: Workshop Hardware Trust-Level 2 (8 Endpoints) | ✅ |
 | Security: Factory-Reset PIN-geschützt + Rate-Limited | ✅ |
-| Resilience: Ollama-Ausfall abgefangen | ✅ |
-| Resilience: Redis-Ausfall abgefangen | ✅ |
-| Resilience: HA-Ausfall abgefangen | ✅ |
-| Resilience: Circuit Breaker aktiv integriert | ✅ |
-| Resilience: ErrorPatternTracker integriert | ✅ |
-| Addon: Entity-Ownership implementiert | ✅ |
-| Addon: Keine Doppelsteuerung (Ownership-Check) | ✅ |
-| Tests bestehen (2501 passed, +8 neue) | ✅ |
-| Keine Regressions | ✅ |
+| Security: system/update + restart Token-geschützt | ✅ |
+| Security: api-key/recovery-key Token-geschützt | ✅ |
+| Security: XSS — React escaped, kein unsicheres innerHTML | ✅ |
+| Resilience: Circuit Breaker (3 Instanzen, aktiv integriert) | ✅ |
+| Resilience: ErrorPatternTracker (6+ Stellen in brain.py) | ✅ |
+| Resilience: Redis/ChromaDB/Ollama/HA Fallbacks | ✅ |
+| Addon: Entity-Ownership (Redis + Endpoint + Addon-Check) | ✅ |
+| Tests: Keine Regressionen | ✅ |
 
 ---
 
@@ -191,57 +199,31 @@
 ```
 ## KONTEXT AUS PROMPT 6d: Härtung
 
-### Security-Fixes
-- SEC-3: Factory-Reset Rate-Limiting → main.py:967
-- SEC-6: PIN-Auth Brute-Force-Schutz → main.py:2388, 2437 (5/5min/IP)
-- SEC-8: Workshop Hardware Trust-Level 2 → main.py:6981 (8 Endpoints)
-- SEC-12: SSRF 172.x Prefix-Fix → addon/routes/chat.py, system.py
-- SEC-14: CORS konfigurierbar + Ingress-Token → addon/app.py
+### Security-Status (15 Checks)
+- 12/15 vollständig implementiert
+- 2/15 teilweise (SEC-2: raw JSON Calls, SEC-11: Autonomy Caps — beide Low Priority)
+- 1/15 informational (SEC-13: XSS — React schützt nativ)
 
 ### Resilience-Status
-- Alle 10 Szenarien abgefangen (9/10 vollständig, Disk-Check als Enhancement)
+- 9/10 vollständig (Disk-Check als Enhancement)
 - 3 Circuit Breaker aktiv: ollama, ha, mindhome
 - ErrorPatternTracker vollständig in brain.py integriert
+- Timeout-Konstanten: 30s/45s/120s in constants.py
 
 ### Addon-Koordination
 - Redis-basierte Entity-Ownership (mha:entity_owner:{id}, TTL 120s)
 - Query-Endpoint: GET /api/assistant/entity_owner/{entity_id}
-- Zuständigkeiten geklärt: Addon=Automatik, Assistant=User-Requests
+- Addon-seitig: _is_entity_owned_by_assistant() + call_service Check
+- Zuständigkeiten: Addon=Automatik, Assistant=User-Requests
 
 ### Gesamt-Status nach 6a–6d
 - 6a: Stabilisierung — Tests grün, ChromaDB-Async-Fix, Lock-Gateway
-- 6b: Architektur — Module aufgeräumt, Imports bereinigt
-- 6c: Charakter — Personality harmonisiert, Humor-Balance
-- 6d: Härtung — 5 Security-Fixes, Resilience verifiziert, Addon-Koordination
+- 6b: Architektur — Priority-System, Lock-Timeout, Flow-Fixes
+- 6c: Charakter — Personality verifiziert, Dead Code, Bug #15
+- 6d: Härtung — Security/Resilience/Addon vollständig verifiziert
 
 ### Offene Punkte für Prompt 7a
-- SEC-2: 73 raw request.json() Calls — Pydantic-Validierung für interne Endpoints (niedrig)
+- SEC-2: 73 raw request.json() Calls (Low Priority, interne APIs)
 - SEC-11: Absolute Safety-Caps für Autonomie (nice-to-have)
 - Resilience #10: Aktiver Disk-Space-Check (nice-to-have)
-
-### Addon-seitige Entity-Ownership (nachtraeglich implementiert)
-- **Datei**: `addon/rootfs/opt/mindhome/ha_connection.py`
-- **Implementierung**: `_is_entity_owned_by_assistant()` Methode hinzugefuegt
-  - Fragt `GET /api/assistant/entity_owner/{entity_id}` beim Assistant ab (Timeout: 2s)
-  - Bei `owned=True` wird die Addon-Aktion uebersprungen
-- **call_service() modifiziert**: Prueft Entity-Ownership vor jeder HA-Aktion
-- **Status**: ✅ Konflikt F vollstaendig geschlossen (beide Seiten implementiert)
-
-### Security-Grep-Verifikation (alle 15 Checks)
-
-| # | Check | Grep-Ergebnis | Status |
-|---|---|---|---|
-| 1 | `_check_token` in factory-reset | ✅ Gefunden in main.py:977 | ✅ |
-| 2 | `_check_token` in system/update | ✅ Gefunden | ✅ |
-| 3 | `_check_token` in system/restart | ✅ Gefunden | ✅ |
-| 4 | `_check_token` in api-key/regenerate | ✅ Gefunden | ✅ |
-| 5 | `_check_token` in recovery-key/regenerate | ✅ Gefunden | ✅ |
-| 6 | `_check_pin_rate_limit` in /auth | ✅ Gefunden in main.py:2388 | ✅ |
-| 7 | `_check_pin_rate_limit` in /reset-pin | ✅ Gefunden in main.py:2437 | ✅ |
-| 8 | `_check_pin_rate_limit` in /factory-reset | ✅ Gefunden in main.py:967 | ✅ |
-| 9-16 | `_require_hardware_owner` auf 8 Workshop-Endpoints | ✅ Alle 8 gefunden | ✅ |
-| 17 | CORS_ORIGINS in addon/app.py | ✅ Gefunden | ✅ |
-| 18 | X-Ingress-Token in addon/app.py | ✅ Gefunden | ✅ |
-| 19 | SSRF 172.16-31 Prefixes in addon/routes/chat.py | ✅ Korrekt | ✅ |
-| 20 | SSRF 172.16-31 Prefixes in addon/routes/system.py | ✅ Korrekt | ✅ |
 ```
