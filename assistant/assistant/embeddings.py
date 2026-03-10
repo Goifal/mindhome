@@ -12,6 +12,7 @@ Modell: paraphrase-multilingual-MiniLM-L12-v2
 """
 
 import logging
+from collections import OrderedDict
 from typing import Optional
 
 from .config import yaml_config
@@ -19,8 +20,23 @@ from .config import yaml_config
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+_EMBEDDING_CACHE_MAX = 1000
 
 _embedding_fn: Optional[object] = None
+_embedding_cache: OrderedDict = OrderedDict()
+
+
+def get_cached_embedding(text: str) -> Optional[list]:
+    """Returns cached embedding for text, or None if not cached."""
+    return _embedding_cache.get(text)
+
+
+def cache_embedding(text: str, embedding: list) -> None:
+    """Caches an embedding result with LRU eviction."""
+    _embedding_cache[text] = embedding
+    _embedding_cache.move_to_end(text)
+    while len(_embedding_cache) > _EMBEDDING_CACHE_MAX:
+        _embedding_cache.popitem(last=False)
 
 
 def get_embedding_function():
