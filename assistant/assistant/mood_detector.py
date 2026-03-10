@@ -114,7 +114,7 @@ class MoodDetector:
         self.positive_stress_reduction = mood_cfg.get("positive_stress_reduction", 0.1)
         self.negative_stress_boost = mood_cfg.get("negative_stress_boost", 0.1)
         self.impatient_stress_boost = mood_cfg.get("impatient_stress_boost", 0.2)
-        self.tired_boost = mood_cfg.get("tired_boost", 0.3)
+        self.tired_boost = mood_cfg.get("tired_boost", 0.15)
         self.repetition_stress_boost = mood_cfg.get("repetition_stress_boost", 0.15)
 
         self._last_decay_time = time.time()
@@ -290,10 +290,12 @@ class MoodDetector:
 
         signals = []
 
-        # 1. Zeitliches Muster: Schnelle aufeinanderfolgende Befehle = Stress
+        # 1. Zeitliches Muster: 4+ schnelle aufeinanderfolgende Befehle = Stress
         if self._interaction_times:
             time_since_last = now - self._interaction_times[-1]
-            if time_since_last < self.rapid_command_threshold:
+            rapid_count = sum(1 for i in range(1, len(self._interaction_times))
+                             if self._interaction_times[i] - self._interaction_times[i-1] < self.rapid_command_threshold)
+            if time_since_last < self.rapid_command_threshold and rapid_count >= 3:
                 self._stress_level = min(1.0, self._stress_level + self.rapid_command_stress_boost)
                 signals.append("rapid_commands")
 

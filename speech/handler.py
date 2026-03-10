@@ -36,13 +36,16 @@ _init_lock = threading.Lock()
 
 # C-7: asyncio.Lock serialisiert Transkriptionen (CTranslate2 ist nicht thread-safe)
 _model_lock: Optional[asyncio.Lock] = None
+_model_lock_init = __import__('threading').Lock()
 
 
 def _get_model_lock() -> asyncio.Lock:
-    """Gibt den shared asyncio.Lock zurueck (lazy-init)."""
+    """Gibt den shared asyncio.Lock zurueck (lazy-init, thread-safe)."""
     global _model_lock
     if _model_lock is None:
-        _model_lock = asyncio.Lock()
+        with _model_lock_init:
+            if _model_lock is None:
+                _model_lock = asyncio.Lock()
     return _model_lock
 
 

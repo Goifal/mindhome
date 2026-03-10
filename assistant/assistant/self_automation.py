@@ -106,7 +106,8 @@ class SelfAutomation:
         self._pending_ttl_seconds = 300  # 5 Minuten Timeout
 
         # Audit-Log (In-Memory + Redis wenn verfuegbar)
-        self._audit_log: list[dict] = []
+        from collections import deque
+        self._audit_log: deque = deque(maxlen=100)
         self._redis = None
 
     async def initialize(self, redis_client=None):

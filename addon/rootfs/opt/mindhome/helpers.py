@@ -80,6 +80,11 @@ def rate_limit_check(ip):
         if len(_rate_limit_data[ip]) >= _RATE_LIMIT_MAX:
             return False
         _rate_limit_data[ip].append(now)
+        # Cleanup stale IPs periodically
+        if len(_rate_limit_data) > 1000:
+            stale = [k for k, v in _rate_limit_data.items() if not v or now - v[-1] > _RATE_LIMIT_WINDOW * 2]
+            for k in stale:
+                del _rate_limit_data[k]
     return True
 
 
