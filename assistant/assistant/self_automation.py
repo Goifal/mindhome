@@ -11,6 +11,7 @@ Phase 13.2: Automation-Generierung mit Sicherheitskonzept.
 - Template-Bibliothek fuer haeufige Muster
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -98,6 +99,7 @@ class SelfAutomation:
         self._max_per_day = max(1, min(20, int(raw_max)))
         self._daily_count = 0
         self._daily_reset: Optional[datetime] = None
+        self._pending_lock = asyncio.Lock()
 
         # Pending Automations (warten auf Bestaetigung)
         self._pending: dict[str, dict] = {}
@@ -446,6 +448,10 @@ REGELN:
 - Keine lock.unlock Aktionen
 - Kein JSON-Kommentar, nur reines JSON"""
 
+        # Sanitize description: limit length, strip control chars, remove role markers
+        description = description[:500].replace('\n', ' ').replace('\r', '')
+        for marker in ('SYSTEM:', 'USER:', 'ASSISTANT:', '[INST]', '[/INST]'):
+            description = description.replace(marker, '')
         user_prompt = f"Erstelle eine Automation fuer: {description}"
 
         try:

@@ -3419,13 +3419,20 @@ class FunctionExecutor:
 
         try:
             hour = datetime.now().hour
+            states = None  # Lazy-load, einmal pro Request
+
+            async def _get_states():
+                nonlocal states
+                if states is None:
+                    states = await self.ha.get_states() or []
+                return states
 
             # Regel: Heizung hoch + Fenster offen
             if func_name == "set_climate":
-                states = await self.ha.get_states()
+                _states = await _get_states()
                 open_windows = [
                     s.get("attributes", {}).get("friendly_name", s["entity_id"])
-                    for s in (states or [])
+                    for s in _states
                     if s.get("entity_id", "").startswith(("binary_sensor.fenster", "binary_sensor.window"))
                     and s.get("state") == "on"
                 ]
@@ -3440,10 +3447,10 @@ class FunctionExecutor:
 
             # Regel: Alarm scharf + Fenster offen
             if func_name == "arm_security_system":
-                states = await self.ha.get_states()
+                _states = await _get_states()
                 open_windows = [
                     s.get("attributes", {}).get("friendly_name", s["entity_id"])
-                    for s in (states or [])
+                    for s in _states
                     if s.get("entity_id", "").startswith(("binary_sensor.fenster", "binary_sensor.window"))
                     and s.get("state") == "on"
                 ]
@@ -4783,6 +4790,7 @@ class FunctionExecutor:
                 }
 
         try:
+            import fcntl
             config = _yaml.safe_load(SETTINGS_PATH.read_text()) or {}
             if "seasonal_actions" not in config:
                 config["seasonal_actions"] = {}
@@ -4792,9 +4800,10 @@ class FunctionExecutor:
             for k, v in changes.items():
                 config["seasonal_actions"]["cover_automation"][k] = v
 
-            SETTINGS_PATH.write_text(
-                _yaml.safe_dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
-            )
+            with open(SETTINGS_PATH, 'w') as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                _yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                fcntl.flock(f, fcntl.LOCK_UN)
 
             # In-Memory Config aktualisieren
             import assistant.config as _cfg

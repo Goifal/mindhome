@@ -13,6 +13,7 @@ Analysiert User-Interaktionsmuster und erkennt:
 Nutzt Redis fuer die Interaktions-History und Pattern-Erkennung.
 """
 
+import asyncio
 import logging
 import time
 from collections import deque
@@ -79,6 +80,7 @@ class MoodDetector:
 
     def __init__(self):
         self.redis: Optional[redis.Redis] = None
+        self._analyze_lock = asyncio.Lock()
 
         # Per-Person State Storage
         # {person_key: {mood, stress, tiredness, frustration, positive,
@@ -275,6 +277,11 @@ class MoodDetector:
         Returns:
             Dict mit mood, stress_level, tiredness_level, signals
         """
+        async with self._analyze_lock:
+            return await self._analyze_inner(text, person)
+
+    async def _analyze_inner(self, text: str, person: str = "") -> dict:
+        """Innere Analyse-Logik (unter Lock)."""
         # Per-Person State laden
         self._load_person_state(person)
 

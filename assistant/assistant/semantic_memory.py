@@ -587,7 +587,7 @@ class SemanticMemory:
                 logger.error("Fehler beim Loeschen aus ChromaDB: %s", e)
 
         if not self.redis:
-            return True
+            return False
 
         if self.redis:
             try:

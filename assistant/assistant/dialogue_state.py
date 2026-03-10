@@ -107,6 +107,14 @@ class DialogueStateManager:
         """Gibt den Dialog-Zustand fuer eine Person zurueck."""
         key = (person or "_default").lower()
         if key not in self._states:
+            # Evict oldest entries if dict grows too large
+            if len(self._states) > 50:
+                oldest = sorted(
+                    self._states,
+                    key=lambda k: self._states[k].last_update if hasattr(self._states[k], 'last_update') else 0,
+                )[:25]
+                for old_key in oldest:
+                    del self._states[old_key]
             self._states[key] = DialogueState()
         state = self._states[key]
         # Stale-Check: Zustand zuruecksetzen wenn zu alt

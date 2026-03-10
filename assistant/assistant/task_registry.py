@@ -114,7 +114,7 @@ class TaskRegistry:
         try:
             results = await asyncio.wait_for(
                 asyncio.gather(*active, return_exceptions=True),
-                timeout=30,  # T2: Shutdown-Timeout
+                timeout=timeout,  # T2: Shutdown-Timeout
             )
         except asyncio.TimeoutError:
             logger.warning("T2: TaskRegistry shutdown timeout (30s) — %d Tasks liefen noch", len(active))

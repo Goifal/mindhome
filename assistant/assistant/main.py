@@ -2519,6 +2519,9 @@ def _cleanup_expired_tokens():
     expired = [t for t, ts in _active_tokens.items() if now - ts > _TOKEN_EXPIRY_SECONDS]
     for t in expired:
         _active_tokens.pop(t, None)
+    # Safety cap: prevent unbounded growth
+    if len(_active_tokens) > 10000:
+        _active_tokens.clear()
 
 
 def _check_token(token: str):

@@ -2216,50 +2216,51 @@ class PluginConflictDetector:
             state_map = {s["entity_id"]: s for s in states}
 
             session = self.Session()
-            devices = session.query(Device).filter(Device.room_id.isnot(None)).all()
+            try:
+                devices = session.query(Device).filter(Device.room_id.isnot(None)).all()
 
-            # Group devices by room
-            room_devices = defaultdict(list)
-            for d in devices:
-                room_devices[d.room_id].append(d)
+                # Group devices by room
+                room_devices = defaultdict(list)
+                for d in devices:
+                    room_devices[d.room_id].append(d)
 
-            for room_id, devs in room_devices.items():
-                # Check each conflict rule
-                for rule in self.CONFLICT_RULES:
-                    domain_a, check_a, domain_b, check_b, msg_de, msg_en = rule
+                for room_id, devs in room_devices.items():
+                    # Check each conflict rule
+                    for rule in self.CONFLICT_RULES:
+                        domain_a, check_a, domain_b, check_b, msg_de, msg_en = rule
 
-                    has_a = False
-                    has_b = False
+                        has_a = False
+                        has_b = False
 
-                    for d in devs:
-                        domain = session.get(Domain, d.domain_id)
-                        if not domain:
-                            continue
-                        ha_state = state_map.get(d.ha_entity_id, {})
-                        state_val = ha_state.get("state", "")
-                        attrs = ha_state.get("attributes", {})
+                        for d in devs:
+                            domain = session.get(Domain, d.domain_id)
+                            if not domain:
+                                continue
+                            ha_state = state_map.get(d.ha_entity_id, {})
+                            state_val = ha_state.get("state", "")
+                            attrs = ha_state.get("attributes", {})
 
-                        if domain.name == domain_a:
-                            if check_a == "heating" and attrs.get("hvac_action") == "heating":
-                                has_a = True
-                            elif check_a == "cooling" and attrs.get("hvac_action") == "cooling":
-                                has_a = True
+                            if domain.name == domain_a:
+                                if check_a == "heating" and attrs.get("hvac_action") == "heating":
+                                    has_a = True
+                                elif check_a == "cooling" and attrs.get("hvac_action") == "cooling":
+                                    has_a = True
 
-                        if domain.name == domain_b:
-                            if check_b == "open" and state_val == "on":
-                                has_b = True
+                            if domain.name == domain_b:
+                                if check_b == "open" and state_val == "on":
+                                    has_b = True
 
-                    if has_a and has_b:
-                        room = session.get(Room, room_id)
-                        conflicts.append({
-                            "room_id": room_id,
-                            "room_name": room.name if room else f"Room {room_id}",
-                            "message_de": msg_de,
-                            "message_en": msg_en,
-                            "severity": "warning",
-                        })
-
-            session.close()
+                        if has_a and has_b:
+                            room = session.get(Room, room_id)
+                            conflicts.append({
+                                "room_id": room_id,
+                                "room_name": room.name if room else f"Room {room_id}",
+                                "message_de": msg_de,
+                                "message_en": msg_en,
+                                "severity": "warning",
+                            })
+            finally:
+                session.close()
         except Exception as e:
             logger.warning(f"Plugin conflict check error: {e}")
 

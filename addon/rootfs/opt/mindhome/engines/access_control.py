@@ -38,7 +38,9 @@ class AccessControlManager:
         self.ha = ha_connection
         self.get_session = db_session_factory
         self.event_bus = event_bus
+        import threading
         self._is_running = False
+        self._timer_lock = threading.Lock()
         self._auto_lock_timers = {}  # entity_id -> unlock_time
 
     def start(self):

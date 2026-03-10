@@ -2435,6 +2435,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         )
         _result_map = dict(zip(_mega_keys, _mega_results))
 
+        # Filter out exception values — replace with None and log
+        for _rk, _rv in _result_map.items():
+            if isinstance(_rv, BaseException):
+                logger.warning("Parallel task '%s' failed: %s", _rk, _rv)
+                _result_map[_rk] = None
+
         # --- Context Build Ergebnis verarbeiten ---
         context = _result_map.get("context")
         if context is None:
@@ -9780,6 +9786,8 @@ Regeln:
             self.time_awareness, self.health_monitor, self.device_health,
             self.wellness_advisor, self.insight_engine, self.proactive,
             self.summarizer, self.feedback, self.knowledge_base,
+            self.cooking, self.repair_planner, self.multi_room_audio,
+            self.mood, self.sound_manager, self.timer_manager,
         ]:
             try:
                 await component.stop()

@@ -30,9 +30,11 @@ class SpecialModeBase:
     feature_flag = None  # Override if feature flag key differs from f"phase5.{mode_type}"
 
     def __init__(self, ha_connection, db_session_factory, event_bus):
+        import threading
         self.ha = ha_connection
         self.get_session = db_session_factory
         self.event_bus = event_bus
+        self._lock = threading.Lock()
         self._active = False
         self._active_log_id = None
         self._deactivation_timer = None
@@ -100,7 +102,8 @@ class SpecialModeBase:
 
         # Log activation
         self._active_log_id = self._log_activation(user_id, reason, previous_states)
-        self._active = True
+        with self._lock:
+            self._active = True
 
         # Apply mode-specific actions
         self._apply_actions(config)
@@ -135,8 +138,9 @@ class SpecialModeBase:
 
         # Log deactivation
         self._log_deactivation(user_id, reason)
-        self._active = False
-        self._active_log_id = None
+        with self._lock:
+            self._active = False
+            self._active_log_id = None
 
         self.event_bus.publish("mode.deactivated", {
             "mode_type": self.mode_type,

@@ -2064,7 +2064,7 @@ class PersonalityEngine:
                 ratio = pos_count / max(1, total)
 
                 old_level = self.sarcasm_level
-                if ratio > 0.7 and self.sarcasm_level < 5:
+                if ratio > 0.7 and self.sarcasm_level < 4:
                     self.sarcasm_level += 1
                     logger.info(
                         "Sarkasmus-Level erhöht: %d -> %d (%.0f%% positive Reaktionen)",

@@ -150,7 +150,7 @@ class RoutineEngine:
                 elif action in ("off", "turn_off"):
                     self.ha.call_service(domain, "turn_off", {"entity_id": entity})
                 activated.append(entity)
-                _time.sleep(1)  # 1s delay between steps
+                _time.sleep(0.1)  # Short delay between steps (reduced from 1s)
             except Exception as e:
                 logger.error(f"Routine step error {entity}: {e}")
 

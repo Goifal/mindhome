@@ -131,7 +131,10 @@ def api_get_predictions():
 @automation_bp.route("/api/predictions/<int:pred_id>/confirm", methods=["POST"])
 def api_confirm_prediction(pred_id):
     """Confirm a suggestion."""
-    result = _deps.get("automation_scheduler").feedback.confirm_prediction(pred_id)
+    sched = _deps.get("automation_scheduler")
+    if not sched:
+        return jsonify({"error": "Scheduler not ready"}), 503
+    result = sched.feedback.confirm_prediction(pred_id)
     return jsonify(result)
 
 
@@ -139,7 +142,10 @@ def api_confirm_prediction(pred_id):
 @automation_bp.route("/api/predictions/<int:pred_id>/reject", methods=["POST"])
 def api_reject_prediction(pred_id):
     """Reject a suggestion."""
-    result = _deps.get("automation_scheduler").feedback.reject_prediction(pred_id)
+    sched = _deps.get("automation_scheduler")
+    if not sched:
+        return jsonify({"error": "Scheduler not ready"}), 503
+    result = sched.feedback.reject_prediction(pred_id)
     return jsonify(result)
 
 
@@ -147,7 +153,10 @@ def api_reject_prediction(pred_id):
 @automation_bp.route("/api/predictions/<int:pred_id>/ignore", methods=["POST"])
 def api_ignore_prediction(pred_id):
     """Ignore / postpone a suggestion."""
-    result = _deps.get("automation_scheduler").feedback.ignore_prediction(pred_id)
+    sched = _deps.get("automation_scheduler")
+    if not sched:
+        return jsonify({"error": "Scheduler not ready"}), 503
+    result = sched.feedback.ignore_prediction(pred_id)
     return jsonify(result)
 
 
@@ -155,7 +164,10 @@ def api_ignore_prediction(pred_id):
 @automation_bp.route("/api/predictions/<int:pred_id>/undo", methods=["POST"])
 def api_undo_prediction(pred_id):
     """Undo an executed automation."""
-    result = _deps.get("automation_scheduler").executor.undo_prediction(pred_id)
+    sched = _deps.get("automation_scheduler")
+    if not sched:
+        return jsonify({"error": "Scheduler not ready"}), 503
+    result = sched.executor.undo_prediction(pred_id)
     return jsonify(result)
 
 
@@ -163,9 +175,12 @@ def api_undo_prediction(pred_id):
 @automation_bp.route("/api/automation/emergency-stop", methods=["POST"])
 def api_automation_emergency_stop():
     """Activate/deactivate emergency stop for all automations."""
+    sched = _deps.get("automation_scheduler")
+    if not sched:
+        return jsonify({"error": "Scheduler not ready"}), 503
     data = request.json or {}
     active = data.get("active", True)
-    _deps.get("automation_scheduler").executor.set_emergency_stop(active)
+    sched.executor.set_emergency_stop(active)
 
     # Also update system mode
     set_setting("system_mode", "emergency_stop" if active else "normal")
@@ -177,7 +192,10 @@ def api_automation_emergency_stop():
 @automation_bp.route("/api/automation/conflicts", methods=["GET"])
 def api_get_conflicts():
     """Get detected pattern conflicts."""
-    conflicts = _deps.get("automation_scheduler").conflict_det.check_conflicts()
+    sched = _deps.get("automation_scheduler")
+    if not sched:
+        return jsonify({"error": "Scheduler not ready"}), 503
+    conflicts = sched.conflict_det.check_conflicts()
     return jsonify(conflicts)
 
 
@@ -185,7 +203,10 @@ def api_get_conflicts():
 @automation_bp.route("/api/automation/generate-suggestions", methods=["POST"])
 def api_generate_suggestions():
     """Manually trigger suggestion generation."""
-    count = _deps.get("automation_scheduler").suggestion_gen.generate_suggestions()
+    sched = _deps.get("automation_scheduler")
+    if not sched:
+        return jsonify({"error": "Scheduler not ready"}), 503
+    count = sched.suggestion_gen.generate_suggestions()
     return jsonify({"success": True, "new_suggestions": count})
 
 

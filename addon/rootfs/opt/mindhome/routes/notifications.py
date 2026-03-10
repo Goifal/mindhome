@@ -100,7 +100,10 @@ def api_get_notifications():
 @notifications_bp.route("/api/notifications/unread-count", methods=["GET"])
 def api_notifications_unread_count():
     """Get unread notification count."""
-    count = _deps.get("automation_scheduler").notification_mgr.get_unread_count()
+    sched = _deps.get("automation_scheduler")
+    if not sched:
+        return jsonify({"error": "Scheduler not ready"}), 503
+    count = sched.notification_mgr.get_unread_count()
     return jsonify({"unread_count": count})
 
 
@@ -108,7 +111,10 @@ def api_notifications_unread_count():
 @notifications_bp.route("/api/notifications/<int:notif_id>/read", methods=["POST"])
 def api_mark_notification_read(notif_id):
     """Mark notification as read."""
-    success = _deps.get("automation_scheduler").notification_mgr.mark_read(notif_id)
+    sched = _deps.get("automation_scheduler")
+    if not sched:
+        return jsonify({"error": "Scheduler not ready"}), 503
+    success = sched.notification_mgr.mark_read(notif_id)
     return jsonify({"success": success})
 
 
@@ -116,7 +122,10 @@ def api_mark_notification_read(notif_id):
 @notifications_bp.route("/api/notifications/mark-all-read", methods=["POST"])
 def api_mark_all_read():
     """Mark all notifications as read."""
-    success = _deps.get("automation_scheduler").notification_mgr.mark_all_read()
+    sched = _deps.get("automation_scheduler")
+    if not sched:
+        return jsonify({"error": "Scheduler not ready"}), 503
+    success = sched.notification_mgr.mark_all_read()
     return jsonify({"success": success})
 
 
