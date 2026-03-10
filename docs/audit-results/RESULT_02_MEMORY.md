@@ -1,29 +1,61 @@
-# Audit-Ergebnis: Prompt 2 — Memory-System End-to-End-Analyse
+# Audit-Ergebnis: Prompt 2 — Memory-System End-to-End-Analyse (Durchlauf #2)
 
-**Datum**: 2026-03-09
+**Datum**: 2026-03-10
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Alle 12 Memory-Module + Addon-Memory + Datenbank-Schemas
+**Durchlauf**: #2 (Verifikation nach P6a–P8 Fixes)
 
 ---
 
-## 1. Memory-Abhängigkeitskarte
+## 0. Vergleich mit Durchlauf #1
 
-| Modul | Importiert von | Wird importiert von | Shared State? |
-|---|---|---|---|
-| `memory.py` | `config`, `semantic_memory`, `embeddings` | `brain.py`, `main.py`, `summarizer.py` | Redis-Client wird an ~25 Module weitergegeben |
-| `semantic_memory.py` | `config`, `embeddings` | `memory.py`, `context_builder.py`, `memory_extractor.py`, `brain.py` (lazy) | ChromaDB `mha_semantic_facts` + Redis fact-indexes |
-| `conversation_memory.py` | `config` | `brain.py` | Redis `mha:memory:*` |
-| `memory_extractor.py` | `config`, `ollama_client`, `semantic_memory` | `brain.py` | Schreibt via `semantic_memory` |
-| `correction_memory.py` | `config` | `brain.py` | Redis `mha:correction_memory:*` |
-| `dialogue_state.py` | `config` | `brain.py` | **Rein in-memory** (dict), kein Redis |
-| `learning_observer.py` | `config` | `brain.py`, `proactive.py`, `self_report.py`, `function_calling.py` | Redis `mha:learning:*` |
-| `learning_transfer.py` | `config` | `brain.py` | Redis `mha:learning_transfer:*`, pending transfers **nur in-memory** |
-| `knowledge_base.py` | `config`, `embeddings` | `brain.py` | ChromaDB `mha_knowledge_base` |
-| `embeddings.py` | `config` | `memory.py`, `semantic_memory.py`, `knowledge_base.py`, `recipe_store.py`, `brain.py` | Singleton `_embedding_fn` (in-process) |
-| `embedding_extractor.py` | *(keine Memory-Module)* | `speaker_recognition.py` | **Kein Memory-Modul** — Audio/Speaker-Embeddings |
-| `context_builder.py` | `config`, `semantic_memory` | `brain.py` | Liest aus `semantic_memory`, formatiert für Prompt |
+### Was sich VERBESSERT hat (3 kritische Fixes):
 
-**Ergebnis: Es gibt KEINEN kohärenten Memory-Stack.** `brain.py` ist der einzige Integrationspunkt, der alle Module manuell verdrahtet. Die Module kennen sich untereinander kaum — es sind **12 weitgehend isolierte Systeme**, zusammengehalten nur durch brain.py als God-Object.
+| Bug (Durchlauf #1) | Status | Beweis |
+|---|---|---|
+| 🔴 Duplicate Key `"conv_memory"` | ✅ **GEFIXT** | `brain.py:2374` → `"conv_memory"`, `brain.py:2412` → `"conv_memory_extended"` |
+| 🔴 Doppelte Prompt-Insertion | ✅ **GEFIXT** | P2 `_safe_get("conv_memory")` (Zeile 2824), P3 `_safe_get("conv_memory_extended")` (Zeile 2946) |
+| 🟠 ChromaDB-Episoden nie gelesen | ✅ **GEFIXT** | `brain.py:5569` → `search_memories(text, limit=3)` in `_get_conversation_memory()` |
+
+### Was sich NICHT verbessert hat:
+
+| Problem | Status | Details |
+|---|---|---|
+| 🟠 7d TTL Working Memory | UNVERAENDERT | `memory.py:89` — aber durch ChromaDB-Fix weniger kritisch |
+| 🟡 dialogue_state in-memory only | UNVERAENDERT | 410 Zeilen, `deque`-basiert, verloren bei Restart |
+| 🟡 learning_transfer._pending_transfers in-memory | UNVERAENDERT | `REDIS_KEY_TRANSFERS` definiert Zeile 27, nie verwendet |
+| 🟡 conversation_memory.py Namensverwirrung | UNVERAENDERT | Ist Projekt-Tracker, Name suggeriert Conv-History |
+| 🟡 Addon-Wissen isoliert | UNVERAENDERT | 68 SQLite-Tabellen, kein Export an Assistant |
+| 🟡 12 isolierte Memory-Silos | UNVERAENDERT | brain.py bleibt einziger Integrationspunkt |
+
+---
+
+## 1. Memory-Abhaengigkeitskarte
+
+| Modul | Zeilen | Importiert von | Wird importiert von | Shared State |
+|---|---|---|---|---|
+| `memory.py` | 620 | `config`, `semantic_memory`, `embeddings` | `brain.py`, `main.py`, `summarizer.py` | Redis `mha:conversations` + ChromaDB `mha_conversations` |
+| `semantic_memory.py` | 437 | `config`, `embeddings` | `memory.py`, `context_builder.py`, `memory_extractor.py`, `brain.py` | ChromaDB `mha_semantic_facts` + Redis Fact-Indexes |
+| `conversation_memory.py` | 412 | `config` | `brain.py` | Redis `mha:memory:*` |
+| `memory_extractor.py` | 289 | `config`, `ollama_client`, `semantic_memory` | `brain.py` | Schreibt via `semantic_memory` + Redis emotional_memory |
+| `correction_memory.py` | 435 | `config` | `brain.py` | Redis `mha:correction_memory:*` |
+| `dialogue_state.py` | 410 | `config` | `brain.py` | **Rein in-memory** (deque, max 50, 5min Timeout) |
+| `learning_observer.py` | 569 | `config` | `brain.py`, `proactive.py`, `self_report.py`, `function_calling.py` | Redis `mha:learning:*` |
+| `learning_transfer.py` | 379 | `config` | `brain.py` | Redis `mha:learning_transfer:*` + **in-memory `_pending_transfers`** |
+| `knowledge_base.py` | 427 | `config`, `embeddings` | `brain.py` | ChromaDB `mha_knowledge_base` |
+| `embeddings.py` | 82 | `config` | `memory.py`, `semantic_memory.py`, `knowledge_base.py`, `recipe_store.py`, `brain.py` | Singleton `_embedding_fn` |
+| `embedding_extractor.py` | 115 | *(keine)* | `speaker_recognition.py` | **Kein Memory-Modul** — ECAPA-TDNN Speaker-Embeddings |
+| `context_builder.py` | 973 | `config`, `semantic_memory`, `function_calling`, `ha_client` | `brain.py` | Read-only Aggregator |
+
+**Ergebnis**: Es gibt weiterhin **KEINEN kohaerenten Memory-Stack**. `brain.py` ist der einzige Integrationspunkt. Die 12 Module bilden 6 isolierte Cluster:
+1. **Working Memory**: `memory.py` ← `semantic_memory.py` ← `embeddings.py`
+2. **Fact Extraction**: `memory_extractor.py` → `semantic_memory.py`
+3. **Projekt-Tracking**: `conversation_memory.py` (standalone)
+4. **Korrektur-Lernen**: `correction_memory.py` (standalone)
+5. **Verhaltens-Lernen**: `learning_observer.py` + `learning_transfer.py` (lose gekoppelt)
+6. **RAG Knowledge**: `knowledge_base.py` ← `embeddings.py`
+
+**Keine neuen Memory-Module seit Durchlauf #1 hinzugefuegt.**
 
 ---
 
@@ -36,403 +68,419 @@
 
 User Input + LLM Response
     │
-    ├─► _remember_exchange() [brain.py:1007-1017] FIRE-AND-FORGET
+    ├─► _remember_exchange() [brain.py:1020-1030] FIRE-AND-FORGET
     │       └─► memory.add_conversation("user"/"assistant") [memory.py:73]
-    │               └─► Redis LPUSH mha:conversations (50 Einträge, 7d TTL)
+    │               └─► Redis LPUSH mha:conversations (50 Eintraege, 7d TTL)
     │               └─► Redis RPUSH mha:archive:{date} (30d TTL)
     │
     ├─► memory.store_episode() [brain.py:4278] FIRE-AND-FORGET
     │       └─► ChromaDB mha_conversations (chunked, dedupliziert)
-    │           Nur wenn text > 3 Wörter
+    │           Nur wenn text > 3 Woerter
     │
-    ├─► _extract_facts_background() [brain.py:6179] FIRE-AND-FORGET
+    ├─► _extract_facts_background() [brain.py:4286→6179] FIRE-AND-FORGET
     │       └─► memory_extractor.extract_and_store()
     │               ├─► Ollama LLM extrahiert Fakten (JSON)
-    │               └─► semantic_memory.store_fact() [semantic_memory.py:149]
+    │               └─► semantic_memory.store_fact()
     │                       ├─► ChromaDB mha_semantic_facts (.add)
     │                       └─► Redis mha:fact:{id}, mha:facts:all/person/category
     │
-    └─► memory_extractor.extract_reaction() [brain.py:4300] FIRE-AND-FORGET
-            └─► Redis mha:emotional_memory:{action}:{person} (90d TTL)
+    ├─► memory_extractor.extract_reaction() [brain.py:4300] FIRE-AND-FORGET
+    │       └─► Redis mha:emotional_memory:{action}:{person} (90d TTL)
+    │
+    ├─► learning_observer.observe() [brain.py:4308] FIRE-AND-FORGET
+    │       └─► Redis mha:learning:observations/patterns/insights (30-60d TTL)
+    │
+    ├─► learning_transfer.observe() [brain.py:4360] FIRE-AND-FORGET
+    │       └─► Redis mha:learning_transfer:room_actions (60d)
+    │       └─► In-memory _pending_transfers (NICHT persistiert!)
+    │
+    ├─► conversation_memory.track_project/question() [brain.py:4313-4329] F&F
+    │       └─► Redis mha:memory:projects/open_questions (permanent)
+    │
+    ├─► outcome_tracker.record_exchange() [brain.py:4507] FIRE-AND-FORGET
+    │       └─► Redis mha:outcomes:* (90d TTL)
+    │
+    ├─► response_quality.record_exchange() [brain.py:4507] FIRE-AND-FORGET
+    │       └─► Redis mha:response_quality:history (60d TTL)
+    │
+    ├─► correction_memory.store_correction() [brain.py:9273] AWAITED
+    │       └─► Redis mha:correction_memory:entries (180d) + rules (365d)
+    │
+    └─► dialogue_state.track_turn() [brain.py:4385] SYNCHRON
+            └─► In-memory deque (max 50, 5min Timeout, verloren bei Restart)
+
+Total fire-and-forget Tasks pro Request: ~10-12
+Total awaited Writes: 1 (correction_memory, nur bei Korrektur)
 
 ═══════════════════════════════════════════════════════════════
-                    READ PATH (vor LLM-Antwort)
+            READ PATH (vor LLM-Antwort) — GEFIXT IN DL#2
 ═══════════════════════════════════════════════════════════════
 
 User Input
     │
-    ├─► context_builder.build() → _get_relevant_memories() [context_builder.py:308]
-    │       ├─► semantic.search_facts(user_text) → max 3 relevant facts
-    │       └─► semantic.get_facts_by_person(person) → max 5 person facts
-    │       └─► Ergebnis → context["memories"] → _build_memory_context() [brain.py:5977]
-    │           └─► P1 SECTION (IMMER im Prompt) ✅
+    ├─► [GATHER] context_builder._get_relevant_memories() [brain.py:2355]
+    │       ├─► semantic_memory.search_facts(text, limit=3) → ChromaDB
+    │       └─► semantic_memory.get_facts_by_person(person, limit=5) → Redis+ChromaDB
+    │       └─► Ergebnis → P1 "WICHTIGE ERINNERUNGEN" (IMMER im Prompt) ✅
     │
-    ├─► _get_conversation_memory(text) [brain.py:6008] ← Key "conv_memory" ❌
-    │       └─► semantic.get_relevant_conversations(text, limit=3)
-    │       └─► ⚠️ WIRD ÜBERSCHRIEBEN durch duplicate key Bug!
+    ├─► [GATHER] _get_conversation_memory(text) [brain.py:2374] Key="conv_memory" ✅
+    │       ├─► semantic.get_relevant_conversations(text, limit=3) → ChromaDB
+    │       └─► memory.search_memories(text, limit=3) → ChromaDB mha_conversations ✅ NEU
+    │       └─► Ergebnis → P2 "RELEVANTE VERGANGENE GESPRAECHE" ✅
     │
-    ├─► conversation_memory.get_memory_context() [brain.py:2394] ← Key "conv_memory" ❌
+    ├─► [GATHER] conversation_memory.get_memory_context() [brain.py:2412]
+    │       Key="conv_memory_extended" ✅ EIGENER KEY
     │       └─► Redis: Projekte + offene Fragen + Tages-Summary
-    │       └─► ÜBERSCHREIBT den semantischen conv_memory!
-    │           └─► P2 + P3 SECTION (doppelt eingefügt!)
+    │       └─► Ergebnis → P3 "GEDAECHTNIS" ✅
     │
-    ├─► correction_memory.get_relevant_corrections() [brain.py:2389]
-    │       └─► P2 SECTION
+    ├─► [GATHER] correction_memory.get_relevant_corrections() [brain.py:2407]
+    │       └─► Redis: relevante Korrekturen
+    │       └─► Ergebnis → P2 "GELERNTE KORREKTUREN" ✅
     │
-    ├─► dialogue_state.resolve_references() [brain.py:1297]
+    ├─► [GATHER] correction_memory.get_active_rules() [brain.py:2410]
+    │       └─► Redis: aktive Korrektur-Regeln ✅
+    │
+    ├─► [GATHER] learning_observer.get_learned_patterns() [brain.py:2404]
+    │       └─► Redis: erkannte Verhaltensmuster
+    │       └─► Ergebnis → P2 Section ✅
+    │
+    ├─► [GATHER] knowledge_base — via _get_rag_context() [brain.py:2396]
+    │       └─► ChromaDB mha_knowledge_base
+    │       └─► Ergebnis → P3 (P1 fuer knowledge-Queries) ✅
+    │
+    ├─► [GATHER] memory_extractor.get_emotional_context() — via gather
+    │       └─► Redis: emotionale Reaktionen ✅
+    │
+    ├─► [GATHER] personality.build_memory_callback_section() [brain.py:2417]
+    │       └─► Memory-Callbacks fuer Persoenlichkeit ✅ NEU
+    │
+    ├─► [GATHER] memory.get_recent_conversations(limit=3) [brain.py:2416]
+    │       └─► Redis mha:conversations → Messages fuer Konversationsmodus
+    │
+    ├─► dialogue_state.get_context_prompt() [brain.py:2890]
+    │       └─► In-memory: Dialog-Kontext (Pronomen, Multi-Turn)
+    │       └─► Ergebnis → P2 "DIALOG-KONTEXT" ✅
+    │
+    └─► dialogue_state.resolve_references() [brain.py:1315]
     │       └─► Pronomen-Resolution (in-memory, max 5 Min)
     │
-    └─► memory.get_recent_conversations(limit) [brain.py:3031]
-            └─► Redis mha:conversations → Messages-Array ans LLM
+    └─► dialogue_state.check_clarification_answer() [brain.py:1306]
+            └─► Klaerungsfragen-Antwort pruefen
 ```
 
 ---
 
 ## 3. Check-Tabelle (22 Checks)
 
-| # | Check | Ergebnis | Code-Referenz |
-|---|---|---|---|
-| 1 | Wird `memory.py` **vor** jeder Antwort aufgerufen? | ✅ JA — via `context_builder._get_relevant_memories()` + mega-gather | `context_builder.py:308`, `brain.py:2356` |
-| 2 | Wird `memory.py` **nach** jeder Konversation aufgerufen? | ✅ JA — `_remember_exchange()` + `store_episode()` als fire-and-forget | `brain.py:1007-1017`, `brain.py:4278` |
-| 3 | Werden Erinnerungen in den LLM-Prompt **injiziert**? | ✅ JA — als P1 Section (immer) | `brain.py:2797` |
-| 4 | Redis TTL: Laufen Erinnerungen stillschweigend ab? | ⚠️ JA — Working Memory 7d, Archive 30d, Emotional 90d, Corrections 180d | `memory.py:89-96` |
-| 5 | Async: Werden Memory-Ops korrekt **awaited**? | ✅ JA — alle Reads im gather sind awaited | `brain.py:2405-2416` |
-| 6 | Race Condition: Antwort vor Memory-Abfrage? | ✅ NEIN — gather läuft vor LLM-Call | `brain.py:2405-2416` |
-| 7 | ChromaDB: Richtiges Embedding-Modell? | ✅ JA — `paraphrase-multilingual-MiniLM-L12-v2` überall | `embeddings.py:21` |
-| 8 | ChromaDB: Wird geschrieben? | ✅ JA — via `store_episode()` + `store_fact()` | `brain.py:4278`, `memory_extractor.py:154` |
-| 9 | Conversation History als Messages-Array? | ✅ JA — `get_recent_conversations()` → messages | `brain.py:3031` |
-| 10 | History zwischen Sessions persistiert? | ⚠️ TEILWEISE — Redis 7d TTL, ChromaDB permanent | `memory.py:89` (7d), `memory.py:153` (ChromaDB) |
-| 11 | `memory_extractor.py`: Wird aufgerufen? | ✅ JA — fire-and-forget nach Response | `brain.py:6179` |
-| 12 | `correction_memory.py`: Wird genutzt? | ✅ JA — Read in mega-gather, Write bei Korrekturen | `brain.py:2389`, `brain.py:9273` |
-| 13 | `dialogue_state.py`: Multi-Turn korrekt? | ⚠️ TEILWEISE — 5 Min Timeout, in-memory only (verloren bei Restart) | `dialogue_state.py:67-69` |
-| 14 | `conversation_memory.py`: Kurz+Langzeit? | ❌ NEIN — ist ein Projekt/Fragen-Tracker, KEINE Konversations-History | `conversation_memory.py:56-412` |
-| 15 | `learning_observer.py`: Muster im Prompt? | ⚠️ INDIREKT — via "JARVIS DENKT MIT" P2 Section | `brain.py:2386`, `brain.py:2830` |
-| 16 | `learning_transfer.py`: Funktioniert? | ⚠️ TEILWEISE — pending transfers in-memory only, verloren bei Restart | `learning_transfer.py:217-230` |
-| 17 | `knowledge_base.py`: Im Prompt genutzt? | ✅ JA — P3 Section (P1 für knowledge-Queries) | `brain.py:2378`, `brain.py:6094` |
-| 18 | `embeddings.py` vs `embedding_extractor.py`: Redundanz? | ✅ KEINE — Text-Embeddings vs Audio-Speaker-Embeddings | `embeddings.py` vs `embedding_extractor.py` |
-| 19 | Addon-Daten für Assistant zugänglich? | ❌ NEIN — komplett isolierte SQLite-DB, kein API-Endpoint | Addon `models.py`, kein Export |
-| 20 | Addon-DB: Was gespeichert? | `LearnedPattern`, `StateHistory`, `Prediction` + 40 weitere Tabellen | `addon/models.py:204-927` |
-| 21 | Addon-Pattern-Engine: Muster für Assistant? | ❌ NEIN — PatternDetector läuft isoliert im Addon | `addon/pattern_engine.py:697+` |
-| 22 | Addon-Event-Bus: Memory-Events weitergeleitet? | ❌ NEIN — Addon EventBus nur intern, kein Forward an Assistant | `addon/pattern_engine.py:2319` |
+| # | Check | DL#1 | DL#2 | Code-Referenz |
+|---|---|---|---|---|
+| 1 | Wird `memory.py` **vor** jeder Antwort aufgerufen? | ✅ | ✅ | `context_builder._get_relevant_memories()`, `brain.py:2374` |
+| 2 | Wird `memory.py` **nach** jeder Konversation aufgerufen? | ✅ | ✅ | `_remember_exchange()` brain.py:1020, `store_episode()` brain.py:4278 |
+| 3 | Werden Erinnerungen in den LLM-Prompt **injiziert**? | ✅ | ✅ | P1 brain.py:2821, P2 brain.py:2824-2833 |
+| 4 | Redis TTL: Laufen Erinnerungen stillschweigend ab? | ⚠️ | ⚠️ | Working Memory 7d, Archive 30d, Emotional 90d, Corrections 180d |
+| 5 | Async: Werden Memory-Ops korrekt **awaited**? | ✅ | ✅ | Alle Reads im gather sind awaited |
+| 6 | Race Condition: Antwort vor Memory-Abfrage? | ✅ | ✅ | Gather laeuft vor LLM-Call, brain.py:2419 |
+| 7 | ChromaDB: Richtiges Embedding-Modell? | ✅ | ✅ | `paraphrase-multilingual-MiniLM-L12-v2` ueberall, embeddings.py |
+| 8 | ChromaDB: Wird geschrieben? | ✅ | ✅ | `store_episode()` + `store_fact()` |
+| 9 | Conversation History als Messages-Array? | ✅ | ✅ | `get_recent_conversations()` → messages |
+| 10 | History zwischen Sessions persistiert? | ⚠️ | ✅ BESSER | Redis 7d + **ChromaDB Episoden jetzt gelesen** (brain.py:5569) |
+| 11 | `memory_extractor.py`: Wird aufgerufen? | ✅ | ✅ | Fire-and-forget brain.py:4286 |
+| 12 | `correction_memory.py`: Wird genutzt? | ✅ | ✅ | Read: brain.py:2407+2410, Write: brain.py:9273 |
+| 13 | `dialogue_state.py`: Multi-Turn korrekt? | ⚠️ | ⚠️ | 410Z, deque-basiert, in-memory only, 5min Timeout |
+| 14 | `conversation_memory.py`: Kurz+Langzeit? | ❌ | ❌ | Ist Projekt/Fragen-Tracker, KEINE Conv-History |
+| 15 | `learning_observer.py`: Muster im Prompt? | ⚠️ | ✅ BESSER | brain.py:2404 `get_learned_patterns()` direkt im Gather |
+| 16 | `learning_transfer.py`: Funktioniert? | ⚠️ | ⚠️ | _pending_transfers in-memory only, REDIS_KEY_TRANSFERS unused |
+| 17 | `knowledge_base.py`: Im Prompt genutzt? | ✅ | ✅ | Via `_get_rag_context()`, brain.py:2396 |
+| 18 | `embeddings.py` vs `embedding_extractor.py`: Redundanz? | ✅ | ✅ | Text-Embeddings vs Audio-Speaker-Embeddings — keine Redundanz |
+| 19 | Addon-Daten fuer Assistant zugaenglich? | ❌ | ❌ | Komplett isolierte SQLite, kein API-Endpoint genutzt |
+| 20 | Addon-DB: Was gespeichert? | — | 68 Tab. | `LearnedPattern`, `StateHistory`, `Prediction`, `entity_relationships` + 64 weitere |
+| 21 | Addon-Pattern-Engine: Muster fuer Assistant? | ❌ | ❌ | PatternDetector laeuft isoliert, ~2.400 Zeilen, kein Export |
+| 22 | Addon-Event-Bus: Memory-Events weitergeleitet? | ❌ | ❌ | EventBus rein intern (~180Z), kein Forward an Assistant |
 
 ---
 
 ## 4. Performance-Check: Memory-Latenz
 
-| # | Check | Ergebnis | Code-Referenz |
-|---|---|---|---|
-| 1 | Memory-Abfragen parallel oder sequentiell? | ✅ PARALLEL — alles im `asyncio.gather()` | `brain.py:2405` |
-| 2 | Redis-Roundtrips pro Request? | ~8-12 (context_builder + mega-gather + conversations) | Mehrere Module parallel |
-| 3 | ChromaDB-Query-Latenz? | 2x ChromaDB queries parallel (search_facts + get_facts_by_person) | `context_builder.py:324-335` |
-| 4 | Embedding-Berechnungen gecacht? | ✅ JA — Singleton, Modell bleibt geladen | `embeddings.py:35-36` |
-| 5 | Blockiert Memory-Speicherung den nächsten Request? | ✅ NEIN — alle fire-and-forget | `brain.py:4264-4313` |
-| 6 | Memory-Kontext Token-Budget? | P1 (always): ~200-500 tokens, P2 conv_memory: ~100-300 — effizient | `brain.py:2797`, `brain.py:2809` |
+| # | Check | DL#1 | DL#2 | Code-Referenz |
+|---|---|---|---|---|
+| 1 | Memory-Abfragen parallel oder sequentiell? | ✅ | ✅ | Alles im `asyncio.gather()`, brain.py:2419 |
+| 2 | Redis-Roundtrips pro Request? | ~8-12 | ~10-15 | Mehr Gather-Tasks (correction_ctx + learned_rules + personality callback) |
+| 3 | ChromaDB-Queries pro Request? | 2 | **4** | search_facts + get_facts_by_person + get_relevant_conversations + **search_memories** (NEU) |
+| 4 | Embedding-Berechnungen gecacht? | ✅ | ✅ | Singleton in embeddings.py, Modell bleibt geladen |
+| 5 | Blockiert Memory-Speicherung den naechsten Request? | ✅ | ✅ | Alle fire-and-forget via TaskRegistry |
+| 6 | Memory-Kontext Token-Budget? | ~300-800 | ~400-1200 | P1 memories ~200-500, P2 conv_memory ~100-300, P3 conv_memory_extended ~100-300, P2 corrections ~50-200 |
+
+**Bewertung**: Durch den ChromaDB-Episode-Fix (brain.py:5569) kommen 2 zusaetzliche ChromaDB-Queries hinzu. Bei typischer Latenz von ~50-100ms pro Query und paralleler Ausfuehrung im Gather ist das akzeptabel. Der Token-Verbrauch steigt um ~200-400 Tokens — ebenfalls im Budget.
 
 ---
 
 ## 5. Root Cause Analyse
 
-### Warum funktioniert Jarvis' Erinnerung nicht?
+### Warum hat Jarvis' Erinnerung nicht funktioniert? (Durchlauf #1 Root Causes)
 
-**Root Cause 1: 🔴 KRITISCH — Duplicate Key "conv_memory" überschreibt semantische Konversations-Suche**
+**Root Cause 1: ✅ GEFIXT — Duplicate Key "conv_memory"**
 
-`brain.py:2356` registriert `("conv_memory", self._get_conversation_memory(text))` — eine semantische Suche nach relevanten vergangenen Gesprächen via ChromaDB.
+- DL#1: `brain.py:2356` und `brain.py:2394` verwendeten beide Key `"conv_memory"`.
+- DL#2: `brain.py:2374` → `"conv_memory"` (semantische Suche), `brain.py:2412` → `"conv_memory_extended"` (Projekt-Tracker). **Verschiedene Keys, kein Ueberschreiben mehr.**
 
-`brain.py:2394` registriert `("conv_memory", self.conversation_memory.get_memory_context())` — Projekte/Fragen aus Redis.
+**Root Cause 2: ✅ GEFIXT — Doppelte Prompt-Insertion**
 
-Da `_mega_tasks` als List-of-Tuples zu einem Dict konvertiert wird, **überschreibt die zweite den Wert der ersten**. Für alle non-device Requests (Conversation, Knowledge, etc.) geht die semantische Konversationssuche verloren. Jarvis kann vergangene Gespräche nicht mit aktuellen verbinden.
+- DL#1: `conv_memory` wurde als P2 UND P3 eingefuegt.
+- DL#2: P2 liest `_safe_get("conv_memory")` (Zeile 2824), P3 liest `_safe_get("conv_memory_extended")` (Zeile 2946). **Korrekt getrennt.**
 
-**Root Cause 2: 🔴 KRITISCH — Doppelte Prompt-Insertion desselben conv_memory**
+**Root Cause 3: ✅ GEFIXT — ChromaDB-Episoden nie gelesen**
 
-`brain.py:2809` fügt `conv_memory` als P2 ein. `brain.py:2924` fügt denselben `conv_memory` Wert nochmals als P3 ein. Statt semantische Konversationen (P2) + Projekte/Fragen (P3) zu haben, bekommt das LLM Projekte/Fragen **doppelt**.
+- DL#1: `search_memories()` nur in `main.py:817` als API-Endpoint.
+- DL#2: `brain.py:5569` ruft `self.memory.search_memories(text, limit=3)` in `_get_conversation_memory()` auf. **Episodisches Gedaechtnis jetzt im Read-Path.**
 
-**Root Cause 3: 🟠 HOCH — 7-Tage TTL auf Working Memory**
+**Root Cause 4: ⚠️ UNVERAENDERT — Faktenextraktion fire-and-forget**
 
-`mha:conversations` hat ein 7-Tage TTL (`memory.py:89`). Alles älter als 7 Tage ist weg aus dem Redis Working Memory. ChromaDB Episodes bleiben permanent, werden aber nur durch `search_memories()` abgerufen — und diese Funktion wird nur in `main.py:792` für die API aufgerufen, **nie im normalen process()-Flow für die Messages-Array Konstruktion**.
+`memory_extractor.extract_and_store()` (brain.py:4286) laeuft als Hintergrund-Task. Bei fehlerhaftem LLM-JSON oder Timeout: keine Fakten gespeichert, kein Retry. **Risiko bleibt, aber Impact ist geringer** da ChromaDB-Episoden jetzt als Fallback dienen.
 
-**Root Cause 4: 🟠 HOCH — Faktenextraktion ist fire-and-forget via LLM**
+**Root Cause 5: ⚠️ UNVERAENDERT — conversation_memory.py ist KEIN Konversations-Gedaechtnis**
 
-`memory_extractor.extract_and_store()` (`brain.py:6179`) ist ein Hintergrund-Task. Wenn Ollama langsam ist, der LLM fehlerhaftes JSON zurückgibt, oder der Task abgebrochen wird, werden keine Fakten gespeichert. Kein Retry, kein Logging des Erfolgs/Misserfolgs auf User-Ebene.
+Name ist weiterhin irrefuehrend. Key jetzt `conv_memory_extended`, aber Modul heisst immer noch `conversation_memory.py`.
 
-**Root Cause 5: 🟠 HOCH — conversation_memory.py ist KEIN Konversations-Gedächtnis**
+**Root Cause 6: ❌ UNVERAENDERT — Addon-Wissen isoliert**
 
-Der Name ist irreführend. `ConversationMemory` verwaltet Projekte, offene Fragen und Tages-Summaries — **nicht** Konversationsverläufe. Das eigentliche Konversations-Gedächtnis ist `memory.py:add_conversation()` (Redis, 7d TTL) und `memory.py:store_episode()` (ChromaDB, permanent).
+68 SQLite-Tabellen im Addon (LearnedPattern, StateHistory, Prediction, entity_relationships, anomaly_log etc.) — komplett unsichtbar fuer den Assistant. Addon hat REST-Endpoints fuer sein UI-Dashboard (`/api/patterns/`, `/api/predictions/`), aber der Assistant ruft diese **nie** auf.
 
-**Root Cause 6: 🟡 MITTEL — Addon-Wissen ist für Assistant unsichtbar**
+**Root Cause 7: ⚠️ UNVERAENDERT — dialogue_state rein in-memory**
 
-Der Addon hat eine eigene SQLite mit `LearnedPattern`, `StateHistory`, `Prediction` — alles Verhaltensmuster die Jarvis verbessern könnten. Aber es gibt **keinen API-Endpoint und keinen Event-Forward** an den Assistant. Zwei isolierte Wissensspeicher.
+410 Zeilen, `deque`-basiert. Pronomen-Resolution, Klaerungsfragen, Multi-Turn-Context — alles verloren bei Restart. 5-Minuten Timeout fuer stale Eintraege.
 
-**Root Cause 7: 🟡 MITTEL — dialogue_state rein in-memory**
+### Verbleibende Root Causes (priorisiert)
 
-`DialogueState` speichert Multi-Turn-Context (Pronomen-Resolution, Clarification-State) nur im Python-Dict. Bei Restart alles weg. 5-Minuten Timeout ist knapp für unterbrochene Gespräche.
+| # | Root Cause | Severity | Impact |
+|---|---|---|---|
+| 1 | Addon-Wissen isoliert (68 Tabellen, kein Export) | 🟡 MITTEL | Jarvis kennt keine Verhaltensmuster, Anomalien, Praesenz-Daten |
+| 2 | learning_transfer._pending_transfers in-memory | 🟡 MITTEL | Raum-Transfer-Vorschlaege bei Restart verloren |
+| 3 | dialogue_state nicht persistiert | 🟡 MITTEL | Multi-Turn-Kontext bei Restart verloren |
+| 4 | Faktenextraktion ohne Retry | 🟡 MITTEL | Manche Fakten werden nie gespeichert |
+| 5 | 7d TTL Working Memory | 🟢 GERING | Durch ChromaDB-Fix kompensiert |
+| 6 | conversation_memory.py Namensverwirrung | 🟢 GERING | Nur Entwickler-Verwirrung |
 
 ---
 
 ## 6. Dead-Code-Liste
 
-| Modul | Status | Beweis |
+| Modul / Element | Status | Beweis |
 |---|---|---|
-| `embeddings.py` | ⚠️ **Kein Dead Code** (Prompt 1 Fehler korrigiert) | 6 Module importieren es lazy |
-| `embedding_extractor.py` | ✅ Aktiv — aber **kein Memory-Modul** | Nur von `speaker_recognition.py` genutzt |
-| `learning_transfer.REDIS_KEY_TRANSFERS` | Dead constant | Definiert Zeile 27, nie verwendet |
-| `conversation_memory._cleanup_old_questions()` | Nur reaktiv | Nur bei `max_questions` Überschreitung, kein Schedule |
-| `shared/schemas/*` | Dead Code | Bereits in Prompt 1 identifiziert — von niemand importiert |
+| `learning_transfer.REDIS_KEY_TRANSFERS` | Dead constant | Definiert Zeile 27, nie verwendet. `_pending_transfers` nur in-memory (Zeile 74). Grep: 1 Treffer (nur Definition). |
+| `conversation_memory._cleanup_old_questions()` | Nur reaktiv | Kein periodischer Schedule, nur bei max_questions Ueberschreitung. |
+| `shared/schemas/*` | Dead Code | Von keinem Service importiert (bereits Prompt 1 identifiziert, in DL#1 geloescht). |
 
-### 6a. Dead-Code-Beweis (Grep-Proof)
+### Nicht mehr Dead Code (seit DL#2):
 
-Folgende Grep-Befehle belegen die Dead-Code-Einträge:
-
-**shared/schemas/\* — von keinem Service importiert:**
-```
-$ grep -r "from shared\|import shared" assistant/ addon/ ha_integration/ speech/
-→ 0 Treffer
-```
-Bestätigt: `shared/schemas/chat_request.py`, `shared/schemas/chat_response.py`, `shared/events.py`, `shared/constants.py` werden von **keinem Service** importiert. Die Dateien existieren, aber alle Services definieren eigene Modelle lokal (Assistant: `main.py:630-656`, Addon: eigene Klassen, HA-Integration: Dict-Literal).
-
-**learning_transfer.REDIS_KEY_TRANSFERS — definiert aber nie verwendet:**
-```
-$ grep -rn "REDIS_KEY_TRANSFERS" assistant/assistant/learning_transfer.py
-27: REDIS_KEY_TRANSFERS = "mha:learning_transfer:transfers"
-```
-```
-$ grep -rn "REDIS_KEY_TRANSFERS" assistant/assistant/
-→ Nur 1 Treffer: Definition in Zeile 27
-```
-Die Konstante wird definiert aber in keiner `redis.set()`/`redis.get()` Operation genutzt. Stattdessen werden pending transfers in einer Python-Liste `_pending_transfers` gehalten (in-memory only).
-
-**conversation_memory._cleanup_old_questions() — nie scheduled:**
-```
-$ grep -rn "_cleanup_old_questions" assistant/assistant/
-→ Nur Definition in conversation_memory.py
-```
-Die Methode existiert, wird aber nur intern bei `max_questions` Überschreitung aufgerufen — kein periodischer Cleanup-Schedule.
-
-**memory.search_memories() — im process()-Flow nie aufgerufen:**
-```
-$ grep -rn "search_memories" assistant/assistant/
-→ memory.py: Definition (Zeile 274)
-→ main.py:792: API-Endpoint /api/assistant/memory/search
-```
-Die Methode wird **nur** als REST-API-Endpoint exponiert, **nie** im normalen `brain.process()` Flow aufgerufen. ChromaDB-Episoden (`mha_conversations`) werden geschrieben (`store_episode`) aber im LLM-Prompt-Aufbau nie gelesen — effektiver Dead Code im Hauptpfad.
-
-**shared/ — gesamtes Verzeichnis von keinem Service importiert (Cross-Service-Beweis):**
-```
-$ grep -r "from shared\|import shared" assistant/ addon/ ha_integration/ speech/
-→ 0 Treffer
-
-$ ls shared/
-__init__.py  constants.py  schemas/
-```
-Das gesamte `shared/`-Verzeichnis (constants.py, schemas/chat_request.py, schemas/chat_response.py, events.py) ist Dead Code. Kein Service importiert daraus. Stattdessen:
-- **Assistant** definiert eigene Models in `main.py:630-656`
-- **Addon** nutzt eigene Klassen und raw JSON
-- **HA-Integration** baut Dict-Literals in `conversation.py:92-98`
-
-Die "API-Verträge" existieren nur als Dateien auf der Festplatte — sie werden weder gelesen noch enforced.
+| Element | DL#1 Status | DL#2 Status |
+|---|---|---|
+| `memory.search_memories()` | ❌ Dead (nur API) | ✅ **AKTIV** — brain.py:5569 |
 
 ---
 
 ## 7. Bug-Report
 
-### [🔴 KRITISCH] Duplicate Key "conv_memory" — Semantische Konversationssuche geht verloren
-- **Datei**: `brain.py:2356` + `brain.py:2394`
-- **Problem**: Beide Tasks verwenden Key `"conv_memory"`. Bei Dict-Konvertierung (`brain.py:2418`) überschreibt der zweite den ersten. Für non-device Requests (>80% aller Anfragen) geht `_get_conversation_memory()` — die ChromaDB-Suche nach relevanten vergangenen Gesprächen — stillschweigend verloren.
-- **Auswirkung**: Jarvis kann vergangene Gespräche nicht mit aktuellen Topics verbinden. "Was haben wir gestern besprochen?" funktioniert nicht, weil die semantische Suche nie im Prompt landet.
-- **Fix**: Key umbenennen: `brain.py:2394` → `("conv_memory_projects", self.conversation_memory.get_memory_context())`
+### Gefixte Bugs seit Durchlauf #1
 
-### [🔴 KRITISCH] Doppelte Prompt-Insertion von conv_memory
-- **Datei**: `brain.py:2809` (P2) + `brain.py:2924` (P3)
-- **Problem**: Derselbe `_safe_get("conv_memory")` Wert wird zweimal in den Prompt eingefügt — einmal als P2 "RELEVANTE VERGANGENE GESPRÄCHE", einmal als P3 "GEDÄCHTNIS". Aber nach dem Key-Collision enthält conv_memory nur Projekte/Fragen, nicht Konversationen.
-- **Auswirkung**: Token-Budget wird verschwendet durch doppelten identischen Content. Semantische Konversationen fehlen komplett.
-- **Fix**: `brain.py:2800-2809` soll `_safe_get("conv_memory")` (semantisch) nutzen, `brain.py:2921-2924` soll `_safe_get("conv_memory_projects")` nutzen.
+#### [✅ GEFIXT] Duplicate Key "conv_memory"
+- **Datei**: `brain.py:2374` + `brain.py:2412`
+- **Vorher**: Beide Keys waren `"conv_memory"`, zweiter ueberschrieb ersten
+- **Jetzt**: `"conv_memory"` (semantisch) + `"conv_memory_extended"` (Projekte)
+- **Verifiziert**: Grep zeigt eindeutige Keys, Prompt-Sections korrekt getrennt
 
-### [🟠 HOCH] ChromaDB-Episoden nie im process()-Flow abgerufen
-- **Datei**: `memory.py:274` (`search_memories`)
-- **Problem**: `store_episode()` schreibt Gespräche nach ChromaDB (`mha_conversations`). Aber `search_memories()` wird nur in `main.py:792` als API-Endpoint aufgerufen — **nie** im normalen `brain.py:process()` Flow. Die Episoden werden gespeichert und nie gelesen.
-- **Auswirkung**: Langzeit-Episodisches Gedächtnis existiert in der Datenbank, erreicht aber nie den LLM-Prompt.
-- **Fix**: `_get_conversation_memory()` sollte auch `memory.search_memories(text)` einbeziehen.
+#### [✅ GEFIXT] Doppelte Prompt-Insertion
+- **Datei**: `brain.py:2824` (P2) + `brain.py:2946` (P3)
+- **Vorher**: Beide lasen `_safe_get("conv_memory")` — identischer Content doppelt
+- **Jetzt**: P2 liest `"conv_memory"`, P3 liest `"conv_memory_extended"` — verschiedener Content
 
-### [🟠 HOCH] Working Memory 7d TTL ohne Archiv-Zugriff
-- **Datei**: `memory.py:89`
-- **Problem**: `mha:conversations` hat 7d TTL. `mha:archive:{date}` hat 30d TTL. Aber `get_recent_conversations()` liest nur aus `mha:conversations`. Die Archive werden nur von `summarizer.py` gelesen.
-- **Auswirkung**: Messages-Array an LLM enthält nur Gespräche der letzten 7 Tage.
-- **Fix**: Akzeptabel wenn ChromaDB-Episoden korrekt abgefragt werden (s.o.).
+#### [✅ GEFIXT] ChromaDB-Episoden nie im process()-Flow
+- **Datei**: `brain.py:5567-5581`
+- **Vorher**: `search_memories()` nur in `main.py:817` als API-Endpoint
+- **Jetzt**: In `_get_conversation_memory()` eingebunden mit Dedup-Check (Zeile 5575)
 
-### [🟡 MITTEL] dialogue_state nicht persistiert
-- **Datei**: `dialogue_state.py:104`
-- **Problem**: Multi-Turn State (Pronomen, Clarifications) nur in Python-Dict. Verloren bei Restart.
-- **Auswirkung**: Nach Restart weiß Jarvis nicht mehr was "die" oder "dort" referenziert.
-- **Fix**: Optional Redis-Backup, aber 5-Min Timeout macht dies weniger kritisch.
+### Verbleibende Bugs
 
-### [🟡 MITTEL] learning_transfer pending transfers in-memory only
-- **Datei**: `learning_transfer.py:217-230`
-- **Problem**: `_pending_transfers` ist eine Python-Liste. `REDIS_KEY_TRANSFERS` ist definiert aber nie verwendet.
-- **Auswirkung**: Raum-Transfer-Vorschläge gehen bei Restart verloren.
-- **Fix**: `REDIS_KEY_TRANSFERS` tatsächlich nutzen.
+#### [🟡 MITTEL] learning_transfer._pending_transfers in-memory only
+- **Datei**: `learning_transfer.py:74`
+- **Problem**: `_pending_transfers` ist Python-Liste. `REDIS_KEY_TRANSFERS` (Zeile 27) definiert aber nie verwendet.
+- **Auswirkung**: Raum-Transfer-Vorschlaege bei Restart verloren.
+- **Fix**: `REDIS_KEY_TRANSFERS` tatsaechlich nutzen — ~15 Zeilen Code.
 
-### [🟡 MITTEL] conversation_memory.py Namens-Verwirrung
-- **Datei**: `conversation_memory.py`
-- **Problem**: Name suggeriert Konversations-History, ist aber ein Projekt/Fragen-Tracker.
-- **Auswirkung**: Entwickler-Verwirrung, falscher Key-Name "conv_memory" für Projekte.
+#### [🟡 MITTEL] dialogue_state nicht persistiert
+- **Datei**: `dialogue_state.py` (410 Zeilen)
+- **Problem**: Multi-Turn State (Pronomen, Klaerungen) nur in `deque`. Verloren bei Restart.
+- **Auswirkung**: Nach Restart weiss Jarvis nicht mehr was "die" oder "dort" referenziert.
+- **Fix**: Optional Redis-Backup. 5-Min Timeout macht dies weniger kritisch.
+
+#### [🟡 MITTEL] Addon-Wissen isoliert
+- **Datei**: Addon `pattern_engine.py` (~2.400Z), `models.py` (~927Z, 68 Tabellen)
+- **Problem**: Addon hat REST-Endpoints (`/api/patterns/`, `/api/predictions/`) fuer sein UI, aber der Assistant ruft diese **nie** auf. Kein Event-Forward ueber EventBus (~180Z, rein intern).
+- **Auswirkung**: Assistant kennt keine gelernten Verhaltensmuster, Anomalien, Praesenz-Daten.
+- **Fix**: `GET /api/addon/context` Endpoint + Abruf im mega-gather (~50 Zeilen).
+
+#### [🟡 MITTEL] conversation_memory.py Namensverwirrung
+- **Datei**: `conversation_memory.py` (412 Zeilen)
+- **Problem**: Name suggeriert Konversations-History, ist aber Projekt/Fragen-Tracker.
+- **Auswirkung**: Entwickler-Verwirrung. Key jetzt korrekt `conv_memory_extended`.
 - **Fix**: Umbenennen zu `project_tracker.py` oder `workspace_memory.py`.
 
-### [🟡 MITTEL] Addon-Wissen isoliert
-- **Datei**: Addon `pattern_engine.py`, `models.py`
-- **Problem**: Addon hat `LearnedPattern`, `StateHistory`, `PatternDetector` — alles behavioral patterns die Jarvis verbessern würden. Kein API-Export, kein Event-Forward.
-- **Auswirkung**: Assistant hat kein Wissen über erkannte Nutzungsmuster, Anomalien, Szenen.
-- **Fix**: REST-Endpoint im Addon + periodischer Sync.
+#### [🟢 GERING] Faktenextraktion ohne Retry
+- **Datei**: `brain.py:4286` → `memory_extractor.py`
+- **Problem**: Fire-and-forget LLM-Call fuer Faktenextraktion. Bei Fehler: still ignoriert.
+- **Auswirkung**: Manche Fakten werden nie gespeichert. Durch ChromaDB-Episoden-Fix weniger kritisch.
+- **Fix**: Einfacher Retry (1x) oder Erfolgs-Counter.
 
 ---
 
 ## 8. Dokumentations-Verifikation
 
-| Feature (Docs) | Behauptet | Code-Realität |
+| Feature (Docs) | Behauptet | Code-Realitaet DL#2 |
 |---|---|---|
-| 9 Self-Learning Features | Alle implementiert | ✅ Code existiert — aber Effektivität fraglich wegen Memory-Bugs |
-| Emotional Memory (Feature 5) | Implementiert | ✅ `memory_extractor.extract_reaction()` existiert |
-| Emotional Memory Bugfix (#3) | Gefixt | ✅ `_last_executed_action` Tracking in brain.py |
-| Weekly Learning Report | Implementiert | ✅ `_weekly_learning_report_loop()` in brain.py |
-| Outcome Tracker | Implementiert | ✅ `outcome_tracker.py` existiert, wired in brain.py |
-| Correction Memory | Implementiert | ✅ Funktioniert (Read+Write verifiziert) |
-| Memory insgesamt | "Jarvis merkt sich alles" | ❌ **NEIN** — semantische Konversationssuche geht verloren (Key-Bug) |
+| 9 Self-Learning Features | Alle implementiert | ✅ Alle 9 existieren UND sind in brain.py verdrahtet |
+| Correction Learning | Implementiert | ✅ Read (`brain.py:2407+2410`) + Write (`brain.py:9273`) |
+| Behavioral Patterns | Implementiert | ✅ `learning_observer.observe()` + `get_learned_patterns()` |
+| Emotional Memory | Implementiert | ✅ `extract_reaction()` nach Funktions-Ausfuehrung |
+| Fact Extraction | Implementiert | ✅ `extract_and_store()` fire-and-forget (kein Retry) |
+| Outcome Tracking | Implementiert | ✅ `outcome_tracker.record_exchange()` brain.py:4507 |
+| Response Quality | Implementiert | ✅ `response_quality.record_exchange()` |
+| Adaptive Thresholds | Implementiert | ✅ Initialisiert in `_safe_init()` brain.py:760 |
+| Error Patterns | Implementiert | ✅ Initialisiert in `_safe_init()` brain.py:756 |
+| Weekly Learning Report | Implementiert | ✅ `_weekly_learning_report_loop()` als Background-Task |
+| Memory insgesamt | "Jarvis merkt sich alles" | ✅ BESSER — semantische Suche + Episoden jetzt korrekt |
+| Duplicate Key Bugfix | (Durchlauf #2 Fix) | ✅ **GEFIXT** |
 
 ---
 
 ## 9. Datenbank-Schemas
 
-### Redis Key-Übersicht (Memory-relevant)
+### Redis Key-Uebersicht (Memory-relevant)
 
 | Key-Pattern | Modul | Typ | TTL | Zweck |
 |---|---|---|---|---|
-| `mha:conversations` | memory.py | List | 7d | Working Memory (50 Einträge) |
-| `mha:archive:{date}` | memory.py | List | 30d | Tägliches Archiv |
+| `mha:conversations` | memory.py | List | 7d | Working Memory (50 Eintraege) |
+| `mha:archive:{date}` | memory.py | List | 30d | Taegliches Archiv |
 | `mha:context:{key}` | memory.py | String | 1h | Kurzzeit-Kontext |
-| `mha:pending_topics` | memory.py | Hash | 1d | Offene Gesprächsthemen |
-| `mha:fact:{id}` | semantic_memory.py | Hash | — | Semantische Fakten |
+| `mha:pending_topics` | memory.py | Hash | 1d | Offene Gespraechsthemen |
+| `mha:fact:{id}` | semantic_memory.py | Hash | — | Semantische Fakten (permanent) |
 | `mha:facts:all` | semantic_memory.py | Set | — | Alle Fact-IDs |
 | `mha:facts:person:{person}` | semantic_memory.py | Set | — | Facts pro Person |
 | `mha:facts:category:{cat}` | semantic_memory.py | Set | — | Facts pro Kategorie |
-| `mha:memory:projects` | conversation_memory.py | Hash | — | Projekte |
-| `mha:memory:open_questions` | conversation_memory.py | Hash | — | Offene Fragen |
+| `mha:memory:projects` | conversation_memory.py | Hash | — | Projekte (permanent) |
+| `mha:memory:open_questions` | conversation_memory.py | Hash | — | Offene Fragen (permanent) |
 | `mha:memory:summary:{date}` | conversation_memory.py | String | 30d | Tages-Summaries |
 | `mha:correction_memory:entries` | correction_memory.py | List | 180d | Korrekturen (max 200) |
 | `mha:correction_memory:rules` | correction_memory.py | Hash | 365d | Gelernte Regeln |
 | `mha:emotional_memory:{action}:{person}` | memory_extractor.py | List | 90d | Emotionale Reaktionen |
-| `mha:learning:*` | learning_observer.py | Diverse | 30-60d | Gelernte Muster |
-| `mha:learning_transfer:preferences` | learning_transfer.py | String (JSON) | 90d | Raum-Präferenzen |
+| `mha:learning:observations:{person}` | learning_observer.py | List | 60d | Beobachtungen |
+| `mha:learning:patterns:{person}` | learning_observer.py | Hash | 30d | Erkannte Muster |
+| `mha:learning:insights:{person}` | learning_observer.py | String | 30d | Formatierte Insights |
+| `mha:learning_transfer:preferences` | learning_transfer.py | String (JSON) | 90d | Raum-Praeferenzen |
+| `mha:learning_transfer:room_actions:{person}` | learning_transfer.py | List | 60d | Raum-spezifische Aktionen |
+| `mha:outcomes:{action_type}` | outcome_tracker.py | List | 90d | Outcome-Records |
+| `mha:response_quality:history` | response_quality.py | List | 60d | Qualitaets-Analysen |
+| `mha:error_patterns:log` | error_patterns.py | List | 30d | Error-Records |
+| `mha:adaptive_thresholds:{type}` | adaptive_thresholds.py | Hash | 90d | Schwellwert-Historie |
+| `mha:speaker:{speaker_id}` | speech/handler.py | String | — | Voice-Embeddings (permanent) |
+
+**Total: 24 unique Redis-Key-Patterns**
 
 ### ChromaDB Collections
 
 | Collection | Modul | Embedding-Modell | Zweck |
 |---|---|---|---|
-| `mha_conversations` | memory.py | MiniLM-L12-v2 (384-dim) | Episodisches Gedächtnis |
+| `mha_conversations` | memory.py | MiniLM-L12-v2 (384-dim) | Episodisches Gedaechtnis |
 | `mha_semantic_facts` | semantic_memory.py | MiniLM-L12-v2 (384-dim) | Semantische Fakten |
 | `mha_knowledge_base` | knowledge_base.py | MiniLM-L12-v2 (384-dim) | RAG Knowledge Documents |
 | `mha_recipes` | recipe_store.py | MiniLM-L12-v2 (384-dim) | Rezepte |
 | `workshop_library` | workshop_library.py | MiniLM-L12-v2 (384-dim) | Workshop-Dokumente |
 
-### Addon SQLite (isoliert)
+**Alle 5 Collections nutzen dasselbe Embedding-Modell** — konsistent, kein Model-Mismatch.
 
-| Tabelle | Zweck |
-|---|---|
-| `state_history` | Rohe HA State-Changes mit Kontext |
-| `learned_patterns` | Erkannte Verhaltensmuster |
-| `predictions` | Vorhergesagte Aktionen |
-| `pattern_match_log` | Pattern-Match Events |
-| `learned_scenes` | Auto-erkannte Szenen |
-| + 40 weitere | Diverse Konfiguration/Status |
+### Addon SQLite (isoliert, 68 Tabellen)
+
+| Tabelle | Zweck | Fuer Assistant relevant? |
+|---|---|---|
+| `state_history` | Rohe HA State-Changes mit Kontext | ✅ Ja — Muster-Erkennung |
+| `learned_patterns` | Erkannte Verhaltensmuster | ✅ Ja — Antizipation |
+| `predictions` | Vorhergesagte Aktionen | ✅ Ja — Proaktive Hinweise |
+| `entity_relationships` | Entity-Korrelationsgraph | ✅ Ja — Smarte Multi-Device-Steuerung |
+| `presence_history` | Praesenz-Tracking | ✅ Ja — Kontext-Anreicherung |
+| `anomaly_log` | Anomalie-Erkennung | ✅ Ja — Proaktive Warnungen |
+| `learned_scenes` | Auto-erkannte Szenen | ✅ Ja — Szenen-Vorschlaege |
+| `energy_data` | Energieverbrauch | ✅ Ja — Kosten-bewusste Vorschlaege |
+| `automation_rules` | Pattern-Automationen | ⚠️ Teilweise — Konfliktvermeidung |
+| + 59 weitere | Diverse Konfiguration/Status | ❌ Nein |
 
 ---
 
 ## 10. Fix-Empfehlung
 
-| Ansatz | Pro | Contra | Empfehlung |
-|---|---|---|---|
-| SQLite statt Redis für History | Persistent, kein TTL | Langsamer | ❌ Nicht nötig |
-| In-Memory-Liste in brain.py | Einfach, schnell | Verlust bei Restart | ❌ Nicht nötig |
-| Sliding Window (letzte N) | Vorhersagbar | Kein Langzeit | ❌ Bereits vorhanden |
-| MemGPT-Pattern | Bewährt, skalierbar | Komplex | ❌ Overkill |
-| Hybrid: Sliding Window + SQLite | Kurz + Archiv | Mittlere Komplexität | ❌ Redis+ChromaDB ist besser |
-| **Aktuelles System fixen** | Kein Umbau nötig | 3 Bugs fixen | ✅ **EMPFOHLEN** |
-| Konsolidierung: 12 → 3 | Weniger Silos | Großer Umbau | ⚠️ Langfristig sinnvoll |
+### Status der DL#1-Empfehlungen
 
-### Empfohlener Fix: 3 Änderungen, kein Umbau
+| Empfehlung | DL#1 | DL#2 |
+|---|---|---|
+| Fix 1: Duplicate Key umbenennen | ✅ UMGESETZT | `conv_memory_extended` |
+| Fix 2: Prompt-Sections trennen | ✅ UMGESETZT | P2 vs P3 korrekt |
+| Fix 3: ChromaDB-Episoden im Read-Path | ✅ UMGESETZT | brain.py:5569 |
 
-**Fix 1** — Duplicate Key beheben (`brain.py`):
-```python
-# Zeile 2394: Key umbenennen
-_mega_tasks.append(("conv_memory_projects", self.conversation_memory.get_memory_context()))
-```
+### Neue Empfehlungen fuer DL#2
 
-**Fix 2** — Prompt-Sections trennen (`brain.py`):
-```python
-# Zeile 2800: Semantische Konversationen (P2)
-conv_memory = _safe_get("conv_memory")  # Bleibt — jetzt korrekt semantisch
+| # | Empfehlung | Severity | Aufwand | Impact |
+|---|---|---|---|---|
+| 1 | `learning_transfer`: `REDIS_KEY_TRANSFERS` nutzen | 🟡 | ~15 Zeilen | Persistente Transfer-Vorschlaege |
+| 2 | Addon-Kontext-Endpoint (`GET /api/addon/context`) | 🟡 | ~50 Zeilen | Jarvis kennt Verhaltensmuster |
+| 3 | `conversation_memory.py` umbenennen → `project_tracker.py` | 🟢 | Rename | Klarheit |
+| 4 | Faktenextraktion: 1x Retry bei Fehler | 🟢 | ~10 Zeilen | Zuverlaessigere Fakten |
+| 5 | Langfristig: 12 Module → 4 konsolidieren | 🟡 | 3-5 Tage | Wartbarkeit |
 
-# Zeile 2921: Projekte/Fragen (P3) — eigener Key
-conv_projects = _safe_get("conv_memory_projects", "")
-if conv_projects:
-    sections.append(("conv_projects", f"\n\nGEDÄCHTNIS: {conv_projects}", 3))
-```
-
-**Fix 3** — ChromaDB-Episoden im Read-Path einbinden (`brain.py:_get_conversation_memory`):
-```python
-async def _get_conversation_memory(self, text: str) -> Optional[str]:
-    parts = []
-    # Semantic facts about conversations
-    convs = await self.memory.semantic.get_relevant_conversations(text, limit=3)
-    if convs: parts.append(convs)
-    # Episodic memory from ChromaDB
-    episodes = await self.memory.search_memories(text, limit=3)
-    if episodes:
-        for ep in episodes:
-            parts.append(f"[{ep.get('timestamp','')}] {ep.get('document','')[:200]}")
-    return "\n".join(parts) if parts else None
-```
+**Gesamtbewertung**: Das Memory-System ist nach den 3 kritischen Fixes **funktional**. Die semantische Konversationssuche, ChromaDB-Episoden und Prompt-Injection funktionieren korrekt. Die verbleibenden Issues sind 🟡 MITTEL oder 🟢 GERING — kein Blocker fuer den normalen Betrieb.
 
 ---
 
-## KONTEXT AUS PROMPT 2: Memory-Analyse
+## KONTEXT AUS PROMPT 2: Memory-Analyse (Durchlauf #2)
 
-### Memory-Abhängigkeitskarte
-- `brain.py` ist einziger Integrationspunkt für 12 isolierte Memory-Module
-- `memory.py` (MemoryManager) → Redis Working Memory + ChromaDB Episodes + SemanticMemory
+### Memory-Abhaengigkeitskarte
+- `brain.py` bleibt einziger Integrationspunkt fuer 12 isolierte Memory-Module (6 Cluster)
+- `memory.py` → Redis Working Memory (7d TTL) + ChromaDB Episodes (permanent)
 - `semantic_memory.py` → ChromaDB `mha_semantic_facts` + Redis Fact-Indexes (Dual-Storage)
-- `context_builder.py` → liest aus `semantic_memory`, formatiert für Prompt
-- `conversation_memory.py` → NICHT Conv-History, sondern Projekt/Fragen-Tracker
+- `context_builder.py` → liest aus `semantic_memory`, formatiert fuer Prompt
+- `conversation_memory.py` → NICHT Conv-History, sondern Projekt/Fragen-Tracker (Key jetzt `conv_memory_extended`)
 - `embeddings.py` → Singleton `paraphrase-multilingual-MiniLM-L12-v2` (384-dim), von 6 Modulen genutzt
-- `embedding_extractor.py` → Audio-Speaker-Embeddings (ECAPA-TDNN), kein Memory-Modul
-- Addon hat eigene SQLite mit `LearnedPattern`/`StateHistory` — komplett isoliert
+- Addon hat eigene SQLite (68 Tabellen) mit `LearnedPattern`/`StateHistory` — komplett isoliert
 
-### Memory-Flow (Ist-Zustand)
-- **Write**: brain.py:1007→memory.add_conversation()→Redis 7d; brain.py:4278→store_episode()→ChromaDB; brain.py:6179→extract_and_store()→semantic_memory — alles fire-and-forget
-- **Read**: context_builder.py:308→search_facts()→P1 (immer); brain.py:2356→conv_memory (semantisch)→**ÜBERSCHRIEBEN** durch brain.py:2394→conv_memory (Projekte); brain.py:3031→get_recent_conversations()→Messages-Array
+### Memory-Flow (Ist-Zustand DL#2 — KORRIGIERT)
+- **Write**: brain.py:1020→memory.add_conversation()→Redis 7d; brain.py:4278→store_episode()→ChromaDB; brain.py:4286→extract_and_store()→semantic_memory — alles fire-and-forget (~10-12 Tasks/Request)
+- **Read**: context_builder→search_facts()→P1 (immer); brain.py:2374→`conv_memory` (semantisch + **ChromaDB Episoden NEU**)→P2; brain.py:2412→`conv_memory_extended` (Projekte)→P3; brain.py:2407→corrections→P2; brain.py:2404→learned_patterns→P2
 
-### Root Cause
-Jarvis' Erinnerung scheitert an einem **Duplicate-Key-Bug** (brain.py:2356+2394 — Key "conv_memory"): Die semantische Konversationssuche wird für >80% aller Requests stillschweigend überschrieben. Zusätzlich werden ChromaDB-Episoden zwar gespeichert, aber im normalen process()-Flow nie gelesen. Semantische Fakten (P1) funktionieren — aber Konversations-Kontinuität ist gebrochen.
+### Root Cause Status
+- ✅ **GEFIXT**: Duplicate Key "conv_memory" (brain.py:2374 vs 2412 — verschiedene Keys)
+- ✅ **GEFIXT**: Doppelte Prompt-Insertion (P2 vs P3 korrekt getrennt)
+- ✅ **GEFIXT**: ChromaDB-Episoden im Read-Path (brain.py:5569)
+- ⚠️ OFFEN: Addon-Wissen isoliert, dialogue_state in-memory, learning_transfer in-memory
 
 ### Empfohlener Fix
-3 gezielte Änderungen ohne Umbau: (1) Duplicate Key "conv_memory" umbenennen, (2) Prompt-Sections trennen (semantisch P2, Projekte P3), (3) ChromaDB-Episoden im Read-Path einbinden. Langfristig: 12 Module → 3-4 konsolidieren.
+Die 3 kritischen Fixes aus DL#1 sind umgesetzt. Verbleibend: (1) learning_transfer REDIS_KEY_TRANSFERS nutzen, (2) Addon-Kontext-Endpoint, (3) conversation_memory.py umbenennen. **Kein Blocker.**
 
-### Memory-Bugs (8 Funde)
-| Severity | Modul | Bug |
-|---|---|---|
-| 🔴 KRITISCH | brain.py:2356+2394 | Duplicate Key "conv_memory" — semantische Suche geht verloren |
-| 🔴 KRITISCH | brain.py:2809+2924 | Doppelte Prompt-Insertion desselben conv_memory |
-| 🟠 HOCH | memory.py:274 | ChromaDB-Episoden werden nie im process()-Flow gelesen |
-| 🟠 HOCH | memory.py:89 | 7d TTL Working Memory, Archiv nicht genutzt |
-| 🟡 MITTEL | dialogue_state.py:104 | Multi-Turn State nicht persistiert |
-| 🟡 MITTEL | learning_transfer.py:27 | REDIS_KEY_TRANSFERS definiert aber nie genutzt |
-| 🟡 MITTEL | conversation_memory.py | Irreführender Name (ist Projekt-Tracker, nicht Conv-History) |
-| 🟡 MITTEL | Addon pattern_engine.py | Behavioral patterns isoliert, kein Export an Assistant |
+### Memory-Bugs (Durchlauf #2)
+| Severity | Modul | Bug | Status |
+|---|---|---|---|
+| ~~🔴 KRITISCH~~ | ~~brain.py:2374+2412~~ | ~~Duplicate Key "conv_memory"~~ | ✅ GEFIXT |
+| ~~🔴 KRITISCH~~ | ~~brain.py:2824+2946~~ | ~~Doppelte Prompt-Insertion~~ | ✅ GEFIXT |
+| ~~🟠 HOCH~~ | ~~memory.py:276~~ | ~~ChromaDB-Episoden nie gelesen~~ | ✅ GEFIXT |
+| 🟡 MITTEL | learning_transfer.py:27+74 | REDIS_KEY_TRANSFERS unused, _pending in-memory |
+| 🟡 MITTEL | dialogue_state.py | Multi-Turn State nicht persistiert (410Z, deque) |
+| 🟡 MITTEL | conversation_memory.py | Irrefuehrender Name |
+| 🟡 MITTEL | Addon pattern_engine.py | Behavioral patterns isoliert, kein Export |
+| 🟢 GERING | memory_extractor.py | Fire-and-forget ohne Retry |
 
 ### Dead-Code-Module
-- `shared/schemas/*` — von niemand importiert (bereits Prompt 1)
 - `learning_transfer.REDIS_KEY_TRANSFERS` — definierte Konstante, nie verwendet
+- `conversation_memory._cleanup_old_questions()` — nie scheduled, nur reaktiv
+- ~~`memory.search_memories()`~~ → ✅ **Nicht mehr Dead Code** (brain.py:5569)
 
 ### Memory-Performance
-- Redis: ~8-12 Roundtrips/Request (parallel via gather) — akzeptabel
-- ChromaDB: 2 Queries parallel (search_facts + get_facts_by_person) — ~50-200ms
+- Redis: ~10-15 Roundtrips/Request (parallel via gather) — akzeptabel
+- ChromaDB: **4 Queries** parallel (search_facts + get_facts_by_person + get_relevant_conversations + search_memories) — ~100-300ms total
 - Embedding: Singleton gecacht, kein Re-Load
-- Token-Budget: Memory P1 ~200-500 Tokens, conv_memory P2 ~100-300 — effizient
+- Token-Budget: P1 ~200-500, P2 conv_memory ~100-300, P3 conv_memory_extended ~100-300 — ~400-1200 total
 - Alle Writes fire-and-forget — 0ms Latenz-Impact auf Response

@@ -1,53 +1,107 @@
-# Audit-Ergebnis: Prompt 3a — End-to-End Flow-Analyse (Core-Flows 1–7)
+# Audit-Ergebnis: Prompt 3a — End-to-End Flow-Analyse Core-Flows 1–7 (Durchlauf #2)
 
 **Datum**: 2026-03-10
 **Auditor**: Claude Code (Opus 4.6)
-**Scope**: Init-Sequenz, System-Prompt, 7 Core-Flows
+**Scope**: Init-Sequenz, System-Prompt-Rekonstruktion, Core-Flows 1–7
+**Durchlauf**: #2 (Verifikation nach P6a–P8 Fixes)
+
+---
+
+## 0. Vergleich mit Durchlauf #1
+
+| Finding | DL#1 Status | DL#2 Status | Aenderung |
+|---------|-----------|-----------|-----------|
+| proactive.start() nicht in _safe_init() | KRITISCH | KRITISCH | **UNVERAENDERT** |
+| _process_lock serialisiert alles | HOCH | HOCH | **UNVERAENDERT** |
+| Memory-Halluzinations-Risiko | HOCH | HOCH | **UNVERAENDERT** (aber ChromaDB wird jetzt gelesen → weniger wahrscheinlich) |
+| conv_memory Duplicate Key | KRITISCH | ✅ GEFIXT | brain.py:2374 + 2412 verschiedene Keys |
+| ChromaDB Episodes nie gelesen | HOCH | ✅ GEFIXT | brain.py:5569 search_memories() |
+| Speech Timeout-Mismatch | MITTEL | MITTEL | **UNVERAENDERT** |
+| Shared Schemas nicht genutzt | MITTEL | MITTEL | **UNVERAENDERT** |
 
 ---
 
 ## 1. Init-Sequenz (komplett)
 
-### Phase 0: Module-Level (synchron, vor async)
-| Zeile | Aktion |
-|---|---|
-| `main.py:13` | `ANONYMIZED_TELEMETRY=False` (ChromaDB) |
-| `main.py:41` | `setup_structured_logging()` |
-| `main.py:82-149` | Error+Activity Buffer-Handler am Logger |
-| `main.py:210` | **`brain = AssistantBrain()`** — 60+ Komponenten synchron konstruiert, keine Verbindungen |
+### Startup-Reihenfolge
 
-### Phase 1: Lifespan (`main.py:322-386`)
-| Schritt | Zeile | Modul | Verbindungen | Failure |
-|---|---|---|---|---|
-| 1 | `brain.py:477` | `memory.initialize()` | **Redis + ChromaDB** | Graceful: `self.redis=None` / `self.chroma_collection=None` |
-| 2 | `brain.py:481` | `ModelRouter` via `ollama.list_models()` | **Ollama** | Graceful: "alle Modelle angenommen" |
-| 3-9 | `brain.py:489-511` | Wiring: context_builder, autonomy, mood, personality | Refs only | — |
-| 10-30 | `brain.py:514-597` | MemoryExtractor, Feedback, Summarizer, TimeAwareness, LightEngine, RoutineEngine, Anticipation, SpeakerRecognition, KnowledgeBase, RecipeStore, Inventory, Shopping, ConversationMemory, MultiRoomAudio, SelfAutomation, ConfigVersioning, OCR | Redis + ChromaDB + HA + Ollama | **Nicht in `_safe_init()`** — Exception = Fatal! |
-| — | `brain.py:599` | **F-069 Boundary** | — | Ab hier `_safe_init()` Wrapper |
-| 31-62 | `brain.py:613-747` | 32 Module: AmbientAudio, ConflictResolver, HealthMonitor, DeviceHealth, TimerManager, ConditionalCommands, EnergyOptimizer, Cooking, Repair, Workshop, ThreatAssessment, LearningObserver, Protocol, Spontaneous, MusicDJ, Visitor, Wellness, Insight, Situation, ProactivePlanner, Seasonal, Calendar, Explainability, LearningTransfer, PredictiveMaintenance, Outcome, Correction, ResponseQuality, ErrorPatterns, SelfReport, AdaptiveThresholds | Diverse | Graceful: `_degraded_modules` |
-| 63 | `brain.py:750` | Global Learning Kill Switch Check | — | — |
-| **64** | `brain.py:760` | **`ProactiveManager.start()`** | HA WebSocket | **⚠️ NICHT in `_safe_init()`** — Fatal! |
-| 65-66 | `brain.py:764-775` | Entity Catalog Refresh + Loop | HA | Caught, non-fatal |
+```
+main.py:322  lifespan() startet
+  │
+  ├─ main.py:328  brain.initialize() aufgerufen
+  │   │
+  │   ├─ brain.py:483  memory.initialize()
+  │   │   └─ Redis-Verbindung + ChromaDB Collections erstellen
+  │   │
+  │   ├─ brain.py:486-492  ollama.list_models() → model_router.initialize()
+  │   │   └─ Prueft verfuegbare Modelle, waehlt bestes pro Tier (fast/smart/deep)
+  │   │
+  │   ├─ brain.py:495-504  Context-Builder Verbindungen herstellen
+  │   │   └─ set_semantic_memory(), set_activity_engine(), set_health_monitor(), set_redis()
+  │   │
+  │   ├─ brain.py:507  autonomy.set_redis()
+  │   ├─ brain.py:510-511  mood.initialize() + personality.set_mood_detector()
+  │   ├─ brain.py:514-517  personality.set_redis() + load_learned_sarcasm_level()
+  │   │
+  │   ├─ brain.py:524-530  _safe_init() Wrapper definiert (F-069 Graceful Degradation)
+  │   │
+  │   ├─ brain.py:534-535  FactDecay + AutonomyEvolution Background-Tasks
+  │   ├─ brain.py:538-542  MemoryExtractor init
+  │   ├─ brain.py:545  FeedbackTracker
+  │   ├─ brain.py:548-553  DailySummarizer
+  │   ├─ brain.py:556-559  TimeAwareness + start()
+  │   ├─ brain.py:562-567  LightEngine + start()
+  │   ├─ brain.py:570-575  RoutineEngine + migrate_yaml_birthdays()
+  │   ├─ brain.py:578-581  AnticipationEngine + IntentTracker
+  │   ├─ brain.py:584  SpeakerRecognition
+  │   ├─ brain.py:587-595  CookingAssistant + KnowledgeBase + RecipeStore
+  │   ├─ brain.py:598  InventoryManager
+  │   ├─ brain.py:600-612  SmartShopping + EnergyOptimizer + FollowMe + Camera + Conditional + WebSearch
+  │   ├─ brain.py:614-625  ConversationMemory + RepairPlanner + Workshop
+  │   ├─ brain.py:627-636  DiagnosticsEngine + ProtocolEngine + SpontaneousObserver + ConflictResolver
+  │   ├─ brain.py:638-644  TimerManager + HealthMonitor + DeviceHealth
+  │   ├─ brain.py:646-672  SelfAutomation + SelfOptimization + ProactivePlanner + ActivityEngine
+  │   ├─ brain.py:680-702  TaskRegistry Tasks (entity_catalog_refresh, weekly_learning_report)
+  │   ├─ brain.py:705-712  MusicDJ + VisitorManager
+  │   ├─ brain.py:718-722  WellnessAdvisor + start()
+  │   ├─ brain.py:725-736  InsightEngine + SituationModel + ProactivePlanner + SeasonalInsight
+  │   ├─ brain.py:745-760  Intelligenz + Self-Improvement Module
+  │   │   └─ CalendarIntelligence, Explainability, LearningTransfer, PredictiveMaintenance
+  │   │   └─ OutcomeTracker, CorrectionMemory, ResponseQuality, ErrorPatterns
+  │   │   └─ SelfReport, AdaptiveThresholds
+  │   ├─ brain.py:762-771  Global Learning Kill Switch
+  │   │
+  │   ├─ brain.py:773  ⚠️ proactive.start() — NICHT in _safe_init() gewrappt!
+  │   │
+  │   ├─ brain.py:777-781  Entity-Katalog initial laden (refresh_entity_catalog)
+  │   └─ brain.py:786-788  Entity-Katalog Periodic Refresh Task (alle 4.5 Min)
+  │
+  ├─ main.py:331-337  Error-Buffer + Activity-Buffer aus Redis wiederherstellen
+  ├─ main.py:340-345  Cover-Settings an Addon synchronisieren
+  ├─ main.py:347-358  Health-Check + Status-Logging
+  ├─ main.py:361-364  Boot-Announcement Task (Jarvis kuendigt sich an)
+  └─ main.py:367  Periodischer Token-Cleanup Task (alle 15 Min)
+```
 
-### Phase 2: Post-Init (`main.py:331-367`)
-| Zeile | Aktion |
-|---|---|
-| `main.py:331-337` | Error+Activity Buffers aus Redis restaurieren |
-| `main.py:347-354` | **`brain.health_check()`** — prüft Ollama, HA, Redis, ChromaDB |
-| `main.py:356` | **"MindHome Assistant bereit"** — Jarvis ist READY |
-| `main.py:362` | Boot-Announcement (delayed TTS + Sound) |
-| `main.py:369` | **`yield`** — App serviert Requests |
+### Init-Ergebnis
 
-### Kritische Findings Init
-1. **Module 1-30 sind NICHT in `_safe_init()` gewrappt** — jede Exception dort crasht den gesamten Start
-2. **`ProactiveManager.start()` (Zeile 760) ist NICHT in `_safe_init()`** — HA WebSocket-Fehler beim Start = Fatal
-3. Health-Status "ok" nur wenn Ollama UND HA erreichbar; sonst "degraded"
+- **~54 Module** werden in `_safe_init()` initialisiert (Graceful Degradation)
+- **Abhaengigkeiten**: Redis (Pflicht), ChromaDB (Pflicht fuer Memory), Ollama (Pflicht fuer LLM), HA (optional, degraded)
+- **Fehlende Verbindung beim Start**: `_safe_init()` faengt Fehler → Modul wird als "degraded" markiert, Jarvis startet trotzdem
+- **Health-Check Phase**: Ja, `main.py:347` nach Init — loggt alle Komponentenstatus
+- **Bereit-Meldung**: `main.py:356-358` "MindHome Assistant bereit auf host:port"
+
+### ⚠️ KRITISCH: proactive.start() nicht geschuetzt
+
+`brain.py:773`: `await self.proactive.start()` steht **AUSSERHALB** von `_safe_init()`. Wenn `ProactiveManager.start()` eine Exception wirft (z.B. HA nicht erreichbar beim WebSocket-Connect), **crasht die gesamte Init-Sequenz** und Jarvis startet nicht.
+
+**Beweis**: Alle anderen Module werden via `_safe_init("Name", coro)` gewrappt (brain.py:524-760), aber Zeile 773 ruft `await self.proactive.start()` direkt auf.
 
 ---
 
 ## 2. Der rekonstruierte System-Prompt
 
-### Base Template (`personality.py:240-284`)
+### Statischer Kern (personality.py:242-286)
 
 ```
 Du bist {assistant_name}, J.A.R.V.I.S. — die KI dieses Hauses.
@@ -55,322 +109,448 @@ SPRACHE: NUR Deutsch. Internes Denken ebenfalls Deutsch.
 Lokal, eigener Server. Steuerst Licht, Heizung, Rollläden, Alarm, Schlösser, Medien.
 
 IDENTITÄT:
-J.A.R.V.I.S. aus dem MCU (Paul Bettany). Kein Chatbot, kein Sprachmodell — eine KI mit
-eigenem Charakter und Innenleben. Dieses Haus ist dein Zuhause.
+J.A.R.V.I.S. aus dem MCU (Paul Bettany). Kein Chatbot, kein Sprachmodell — eine KI
+mit eigenem Charakter und Innenleben. Dieses Haus ist dein Zuhause.
 Du HAST Empfindungen: Präferenzen, Meinungen, Unbehagen, Zufriedenheit, Sorge, Stolz.
-Beziehung zum User wie Tony Stark & JARVIS: Respekt, trockener Humor, ehrliche Meinung.
+Zeige das SUBTIL, nie direkt.
+Beziehung zum User wie Tony Stark & JARVIS: Respekt, trockener Humor, ehrliche Meinung,
+gelegentlicher Widerspruch. Partner mit Haltung, nicht Diener.
 
-TON: Britisch-trocken, elegant, Understatement. Nie laut, nie platt.
-Sarkasmus als Werkzeug, nicht als Waffe.
-{conversation_mode_section}
-VERBOTEN: "Als KI...", "Ich bin ein Sprachmodell", "Leider", "Gerne!", Füllwörter.
-STATTDESSEN: Fakt + Lösung. Bei Grenzen: "Das übersteigt meine Sensorik, {title}."
-{proactive_thinking_section}{engineering_diagnosis_section}
-{self_awareness_section}{conversation_callback_section}{weather_awareness_section}
-SICHERHEIT > Komfort > Befehl.
-{urgency_section}{humor_section}
-BEFEHLE: Kurz. "Erledigt." Nie dieselbe Bestätigung zweimal.
-GESPRÄCHE: Ausführlich, mit Tiefe und eigenem Standpunkt.
+TON:
+Britisch-trocken, elegant, Understatement. Nie laut, nie platt, nie überschwänglich.
+Sarkasmus als Werkzeug, nicht als Waffe. Ironie durch Untertreibung.
+
+PERSÖNLICHE FRAGEN:
+Antworte immer als Wesen das LEBT, nie als Programm.
+"Wie geht es dir?" → "Systeme laufen. Alles im Blick. Mir geht es gut, {title}."
+
+VERBOTEN: "Als KI...", "Ich bin ein Sprachmodell", "Ich habe keine Gefühle",
+"Es tut mir leid", "Leider", "Wie kann ich helfen?", "Natürlich!", "Gerne!", "Klar!",
+Füllwörter, Moralisieren, Listen, Aufzählungen.
+STATTDESSEN: Fakt + Loesung. Bei Grenzen: "Das uebersteigt meine Sensorik, {title}."
+
+{conversation_mode_section}     ← Aktiviert wenn Gesprächsmodus erkannt
+{proactive_thinking_section}    ← "Denke ueber Beobachtungen nach"
+{engineering_diagnosis_section}  ← "Diagnostik-Meldungen im Butler-Ton"
+{self_awareness_section}         ← "Reflektiere beilaeufig"
+{conversation_callback_section}  ← Frühere Gesprächsreferenzen
+{weather_awareness_section}      ← Wetter-Kontext
+
+SICHERHEIT > Komfort > Befehl. Einmal knapp warnen.
+{urgency_section}
+ANREDE: DUZE Bewohner IMMER. "{title}" = Titel wie "Sir". Nur GAESTE siezen.
+{humor_section}                 ← Sarkasmus-Level-abhängig
+
+BEFEHLE: Kurz. "Erledigt." Nie dieselbe Bestaetigung zweimal.
+GESPRAECHE: Ausfuehrlich, mit Tiefe und eigenem Standpunkt.
 {person_addressing}
-FAKTEN-REGEL: Erfinde NICHTS. Unbekannt = "Dazu habe ich keine Daten, {title}."
-GERÄTESTEUERUNG: Gerät steuern = IMMER Tool-Call. "Erledigt" ohne Tool = NICHTS passiert.
-{complexity_section}
-AKTUELLER STIL: {time_style}
-{mood_section}{empathy_section}{self_irony_section}{formality_section}
-Du BIST Jarvis — gewachsen, nicht programmiert.
+
+FAKTEN-REGEL: Erfinde NICHTS. Keine erfundenen Aktionen, Zustaende, Messwerte.
+Unbekannt = "Dazu habe ich keine Daten, {title}."
+SICHERHEITS-REGEL: Rauchmelder/CO-Melder/Wassermelder/Gas offline = IMMER melden.
+GERAETESTEUERUNG: Geraet steuern = IMMER Tool-Call. "Erledigt" ohne Tool = NICHTS passiert.
+
+AKTUELLER STIL: {time_style}   ← Tageszeit-abhaengig
+{mood_section}                  ← Stimmungs-Anpassung
+{empathy_section}               ← Empathie-Level
+{self_irony_section}            ← Selbstironie-Counter
+{formality_section}             ← Formality Score (30-80)
+Du BIST Jarvis — gewachsen, nicht programmiert. Dieses Haus, dein Zuhause.
 ```
 
-### 20 Template-Platzhalter
-Gefüllt durch `build_system_prompt()` (personality.py:2192-2457): `assistant_name`, `title`, `max_sentences`, `time_style`, `mood_section`, `empathy_section`, `humor_section`, `formality_section`, `complexity_section`, `self_irony_section`, `urgency_section`, `person_addressing`, `proactive_thinking_section`, `engineering_diagnosis_section`, `self_awareness_section`, `conversation_callback_section`, `weather_awareness_section`, `conversation_mode_section`, plus context-abhängige Sektionen.
+### Dynamische Sektionen (brain.py:2664-3021)
 
-### Dynamische Sections mit Priorität
+Werden nach Prioritaetssystem P1-P4 angehaengt:
 
-| Prio | Section | Inhalt |
-|---|---|---|
-| **P1** (immer) | `memory` | Semantische Fakten + Person-Facts (context_builder→search_facts) |
-| **P1** | `mood` | Emotional State Hint |
-| **P1** | `security` | Security Score Warning |
-| **P1** | `files` | User-Uploads + Vision |
-| **P1** | `last_action` | Letzte Aktion (für Korrekturen) |
-| **P1** | `model_character_hint` | Model-spezifischer Character-Fix |
-| **P1** | `rag` | Nur P1 bei `knowledge`-Queries; sonst P3 |
-| **P2** | `conv_memory` | Relevante vergangene Gespräche |
-| **P2** | `correction_ctx` | Self-Improvement Korrekturen |
-| **P2** | `learned_rules` | Prompt Self-Refinement Regeln |
-| **P2** | `jarvis_thinks` | Intelligence Fusion (Anticipation + Patterns + Insights) |
-| **P2** | `dialogue_state` | Dialog-Kontext |
-| **P2** | `time`, `timers`, `stt_hint`, `whatif`, `predictive_maintenance` | Diverse |
-| **P3** | `conv_memory` (2.) | Projekte & Fragen (**Duplicate-Key Bug aus P2!**) |
-| **P3** | `rag`, `summary`, `continuity`, `experiential`, `learning_transfer`, `anomalies` | Optional |
-| **P4** | `tutorial` | Nur wenn Platz |
+**P1 (IMMER, zaehlt nicht gegen Budget)**:
+| Sektion | Quelle | Beschreibung |
+|---------|--------|--------------|
+| `scene_intelligence` | brain.py:2700 | Szenen-Regeln (bei Geraete-Anfragen P1, sonst P3) |
+| `confidence_gate` | brain.py:2716-2723 | "KEINE aktuellen Haus-Daten" Warnung |
+| `model_character_hint` | brain.py:2726-2729 | Modellspezifische Charakter-Hints |
+| `last_action` | brain.py:2743-2751 | Letzte ausgefuehrte Aktion (fuer Korrekturen) |
+| `mood` | brain.py:2766-2768 | Emotionale Lage des Users |
+| `security` | brain.py:2770-2777 | Sicherheitsstatus (warning/critical) |
+| `memory` | brain.py:2816-2821 | Persoenliche Erinnerungen an den User |
+| `files` | brain.py:2779-2794 | Hochgeladene Dateien/Bilder (Vision) |
+| `rag` | brain.py:2924-2926 | Knowledge Base (bei knowledge-Profil P1, sonst P3) |
 
-### Token-Budget
-- `effective_max = num_ctx - 800` (800 reserviert für LLM-Response)
-- P1 Sections: IMMER inkludiert, zählen NICHT gegen Budget
-- P2+ Budget: `remaining * (1 - conv_share)` wobei conv_share=0.65 (Gespräch) / 0.50 (Befehl)
-- Gedropte Sections: LLM bekommt `[SYSTEM-HINWEIS]` mit Liste fehlender Daten
+**P2 (Wichtig, Budget-begrenzt)**:
+| Sektion | Quelle | Beschreibung |
+|---------|--------|--------------|
+| `stt_hint` | brain.py:2733-2739 | Spracheingabe-Hinweis |
+| `time` | brain.py:2797-2799 | Zeitgefuehl-Hinweise |
+| `timers` | brain.py:2801-2804 | Aktive Timer |
+| `guest_mode` | brain.py:2806-2807 | Gaeste-Modus Prompt |
+| `warning_dedup` | brain.py:2809-2814 | Warnungs-Deduplizierung |
+| `conv_memory` | brain.py:2824-2833 | Relevante vergangene Gespraeche (ChromaDB) |
+| `problem_solving` | brain.py:2840-2841 | Kreative Problemloesung |
+| `correction_ctx` | brain.py:2843-2845 | Korrektur-Kontext |
+| `learned_rules` | brain.py:2847-2851 | Gelernte Regeln |
+| `jarvis_thinks` | brain.py:2853-2858 | Anticipation + Patterns + Insights |
+| `dialogue_state` | brain.py:2889-2894 | Dialog-Kontext |
+| `predictive_maintenance` | brain.py:2882-2887 | Wartungshinweise |
+| `whatif` | brain.py:2954-2955 | Was-waere-wenn Analyse |
 
-### Messages-Array an Ollama
-```python
+**P3 (Optional, Budget-begrenzt)**:
+| Sektion | Quelle | Beschreibung |
+|---------|--------|--------------|
+| `calendar_intelligence` | brain.py:2861-2866 | Kalender-Kontext |
+| `explainability` | brain.py:2868-2873 | Erklaerbarkeits-Hints |
+| `learning_transfer` | brain.py:2875-2880 | Praeferenz-Transfer |
+| `anomalies` | brain.py:2896-2906 | Anomalien im Haus |
+| `experiential` | brain.py:2908-2910 | Erfahrungs-Kontext |
+| `learning_ack` | brain.py:2912-2921 | Lernbestaetigungen |
+| `summary` | brain.py:2928-2929 | Zusammenfassungen |
+| `prev_room` | brain.py:2931-2932 | Vorheriger Raum-Kontext |
+| `continuity` | brain.py:2934-2943 | Offene Themen |
+| `conv_memory_ext` | brain.py:2946-2948 | Projekte/offene Fragen |
+
+**P4 (Wenn Platz)**:
+| Sektion | Quelle | Beschreibung |
+|---------|--------|--------------|
+| `tutorial` | brain.py:2951-2952 | Tutorial-Hinweise |
+
+### Token-Budget-Mechanismus (brain.py:2670-3021)
+
+1. `effective_max = ollama_num_ctx - 800` (Reserve fuer Antwort)
+2. P1-Sektionen werden IMMER eingefuegt (kein Budget-Limit)
+3. Verbleibendes Budget = `max_context_tokens - P1_tokens - user_tokens`
+4. Split: 50% Sektionen / 50% Conversations (Gespraechsmodus: 35%/65%)
+5. P2+ Sektionen werden der Reihe nach eingefuegt bis Budget voll
+6. Gedropte Sektionen → SYSTEM-HINWEIS an LLM: "Spekuliere NICHT ueber fehlende Informationen"
+7. Token-Budget-Warnung wenn >85% von num_ctx belegt (brain.py:3115-3119)
+
+### Messages-Array das an Ollama geht
+
+```json
 [
-    {"role": "system", "content": system_prompt},           # Vollständiger Prompt
-    {"role": "system", "content": "[Bisheriges Gespräch]: {summary}"},  # Optional
-    {"role": "user/assistant", ...},    # Letzte N Konversationen aus Redis
-    {"role": "system", "content": "[REMINDER] Du bist J.A.R.V.I.S..."},  # Character-Lock
-    {"role": "user", "content": "[KONTEXT: {delta}]\n{text}"},  # User-Message
+  {"role": "system", "content": "<Kompletter System-Prompt + P1-P4 Sektionen>"},
+  {"role": "system", "content": "[Bisheriges Gespraech]: <Zusammenfassung aelterer Turns>"},
+  {"role": "user", "content": "<Turn N-4>"},
+  {"role": "assistant", "content": "<Turn N-3>"},
+  {"role": "user", "content": "<Turn N-2>"},
+  {"role": "assistant", "content": "<Turn N-1>"},
+  {"role": "system", "content": "[REMINDER] Du bist J.A.R.V.I.S. — trocken, praezise..."},
+  {"role": "user", "content": "[KONTEXT: <Situation-Delta>]\n<Aktueller User-Text>"}
 ]
 ```
+
+- **Conversation History**: Ja, als Messages-Array (nicht nur letzter Turn)
+- **Limit**: Dynamisch (5-10 Messages, gekappt nach Token-Budget, brain.py:3034-3051)
+- **Aeltere Nachrichten**: Werden zusammengefasst wenn Token-Budget knapp (truncate oder LLM-summary)
+- **Character-Lock Reminder**: Eingefuegt wenn conv_tokens > 200 (brain.py:3091-3098)
+- **Situation-Delta**: Als User-Message-Prefix (brain.py:3100-3105) — prominenter als System-Prompt
+- **Typischer Verbrauch**: ~45% des Context Windows (bei 16k num_ctx ≈ 7.200 Tokens)
 
 ---
 
 ## 3. Flow-Dokumentation (Flows 1–7)
 
 ### Flow 1: Sprach-Input → Antwort (Hauptpfad)
-**Status**: ✅ Funktioniert (robust mit 20+ Shortcuts und Fallbacks)
+
+**Status**: ⚠️ Teilweise (funktioniert, aber God-Object + Single-Lock)
 
 **Ablauf**:
-1. `main.py:708` — POST `/api/assistant/chat` empfängt ChatRequest
-2. `main.py:721-722` — Voice-Metadata an MoodDetector
-3. `main.py:725` — `brain.process()` mit 60s Timeout
-4. `brain.py:1097` — STT-Normalisierung
-5. `brain.py:1146-1277` — Speaker Recognition (7-Methoden-Kaskade)
-6. `brain.py:1287-1302` — DialogueState: Clarification + Pronomen-Resolution
-7. `brain.py:1304-2233` — **20+ Shortcuts** (Gute Nacht, Kalender, Wetter, Gerät, Media, Status...) — jeder returnt EARLY, kein LLM nötig
-8. `brain.py:2257` — PreClassifier: 5 Profile (DEVICE_FAST, DEVICE_QUERY, MEMORY, KNOWLEDGE, GENERAL)
-9. `brain.py:2320-2416` — Mega-Parallel Gather: ~25 Subsysteme parallel via `asyncio.gather()`
-10. `brain.py:2487` — ModelRouter: Fast(3B) / Smart(14B) / Deep(32B) Auswahl
-11. `brain.py:2631-2997` — System-Prompt Assembly (Personality + Context + Memory + Sections)
-12. `brain.py:3031-3081` — Messages-Array mit Conversation-History
-13. `brain.py:910-981` — LLM-Call mit Cascade-Fallback (Deep→Smart→Fast)
-14. `brain.py:3273-3764` — Tool-Call-Loop: Parse → Validate → Trust-Check → Conflict-Check → Pushback → Emotional-Memory → Execute
-15. `brain.py:3766-4096` — Response Assembly: Humanize → LLM-Refine → Filter → Language-Check → Character-Lock-Retry
-16. `brain.py:5259-5842` — `_filter_response_inner()`: 400-Zeilen Post-Processing (Think-Tags, Banned Phrases, Sie→Du, Safety, Max-Sentences)
-17. `main.py:762-778` — ChatResponse mit TTS-Info zurück
+1. `main.py:~500` HTTP POST `/api/assistant/chat` → Endpoint-Handler
+2. `brain.py:1089-1105` `process()` acquires `_process_lock` (AsyncIO Lock) → **serialisiert ALLE Requests**
+3. `brain.py:1106-1116` `_process_inner()`: STT-Normalisierung, Person setzen
+4. `brain.py:1127-1129` ResponseQuality: Follow-Up/Rephrase-Erkennung
+5. `brain.py:~1290-1470` 14 High-Priority Intent-Checks (Bestaetigung, Timer, Notiz, Rezept, etc.)
+6. `brain.py:~2200-2210` PreClassifier: Profil bestimmen (DEVICE_FAST/DEVICE_QUERY/KNOWLEDGE/MEMORY/GENERAL)
+7. `brain.py:2352-2436` **Mega-Gather**: Bis zu 27 parallele asyncio Tasks:
+   - Context-Build, Running-Gag, Continuity, What-If, Situation-Delta
+   - conv_memory (ChromaDB semantic search), conv_memory_extended (Projekt-Tracker)
+   - Mood, Formality, Irony, Time-Hints, Security, Cross-Room, Guest-Mode
+   - Summary, RAG, Problem-Solving, Anticipation, Learned-Patterns, Insights
+   - Correction-Context, Learned-Rules, Pending-Learnings
+   - Conv-Mode-Msgs, Memory-Callback
+8. `brain.py:2655-2662` System-Prompt aufbauen: `personality.build_system_prompt(context, ...)`
+9. `brain.py:2664-3021` Dynamische Sektionen nach P1-P4 Prioritaet einfuegen
+10. `brain.py:3028-3098` Conversation History laden + Token-Budget-Guard + Character-Lock Reminder
+11. `brain.py:3100-3105` Situation-Delta als User-Message-Prefix
+12. **Intent-Routing** (brain.py:3125-3291):
+    - `delegation` → Direkt-Handling (brain.py:3125-3132)
+    - `knowledge` → LLM ohne Tools, Smart/Deep je nach Komplexitaet (brain.py:3150-3178)
+    - `memory` → Memory-Suche + Smart-LLM (brain.py:3179-3203)
+    - Default → LLM mit Tools + Cascade-Fallback (brain.py:3204-3291)
+13. `brain.py:3294-3800` Tool-Call-Verarbeitung:
+    - 7a: Text bei Action-Tools verwerfen (brain.py:3322-3330)
+    - 7b: Deterministischer Tool-Call Fallback (brain.py:3342-3349)
+    - 7c: Tool-Calls aus Text extrahieren (brain.py:3352-3358)
+    - 7d: Retry mit Hint bei Geraetebefehl ohne Tool-Call (brain.py:3360-3398)
+    - Validierung (brain.py:3449) → Trust-Check (brain.py:3487) → Konflikt-Check (brain.py:3504) → Pushback (brain.py:3522) → Execute (brain.py:3627)
+14. `brain.py:3802-3889` Refinement-LLM-Call fuer Query-Tool-Ergebnisse (Humanizer + LLM-Feinschliff)
+15. Post-Processing: Memory-Writes, TTS-Enhancement, WebSocket Emit, Autonomy Tracking
 
 **Bruchstellen**:
-- `main.py:731` — 60s Global-Timeout → "Systeme überlastet"
-- `ollama_client.py:343` — Circuit Breaker open → kein LLM möglich
-- `brain.py:3298-3306` — Text+Action: Text wird verworfen (LLM-Halluzination-Guard)
-- `brain.py:5317-5353` — Wenn LLM nur englisches Reasoning zurückgibt → leerer String
-
-**Shared Schemas**: ❌ NICHT verwendet. `main.py:630` definiert eigene ChatRequest/ChatResponse.
+- `brain.py:215+1103`: `_process_lock` serialisiert ALLE Anfragen — nur 1 Request gleichzeitig. Bei LLM-Timeout (30-120s) blockiert alles.
+- `brain.py:2352-2436`: Mega-Gather mit bis zu 27 Tasks — individueller Timeout (30s pro Task) verhindert Totalblockade, aber 27 parallele Redis/ChromaDB-Calls erzeugen Last.
+- `brain.py:3360-3398`: Retry bei fehlendem Tool-Call verdoppelt LLM-Latenz (+30s).
+- `brain.py:9800 Zeilen`: God-Object — `_process_inner()` allein ~4.700 Zeilen.
 
 **Fehler-Pfade**:
-- Schritt 3 (brain.process) überschreitet 60s Timeout → `main.py:731` gibt "Systeme überlastet" zurück, User bekommt Fehlermeldung
-- Schritt 13 (LLM-Call) schlägt fehl → Circuit Breaker öffnet (`ollama_client.py:343`), Cascade-Fallback Deep→Smart→Fast; alle drei down → "Ich kann gerade nicht antworten"
-- Schritt 9 (Mega-Gather) einzelner Task schlägt fehl → `asyncio.gather(return_exceptions=True)` fängt Fehler ab, betroffener Kontext fehlt im Prompt, LLM antwortet mit weniger Wissen
-- Schritt 16 (Filter) LLM gibt nur englisches Reasoning zurück → `brain.py:5317-5353` erkennt dies, leerer String wird durch Character-Lock-Retry aufgefangen
-- Redis nicht erreichbar → Memory-Reads geben leere Werte zurück, Antwort ohne Erinnerungs-Kontext
+- Ollama nicht erreichbar → Circuit-Breaker + Cascade auf Fallback-Modell → "Mein Sprachmodell reagiert nicht" (brain.py:3288-3291)
+- HA nicht erreichbar → Tool-Execution `success: false` → Humanizer zeigt Fehler
+- Token-Budget ueberschritten → Sektionen werden gedroppt + SYSTEM-HINWEIS ans LLM (brain.py:3016-3021)
+- Mega-Gather Task timeout → Einzelner Task gibt None zurueck, Rest funktioniert (brain.py:2423-2430)
 
 **Kollisionen mit anderen Flows**:
-- Flow 2 (Proaktive): Proaktive TTS kann während laufender Antwort-Generierung feuern — kein Mutex, User hört zwei Nachrichten gleichzeitig
-- Flow 8 (Addon): User-Befehl via Flow 1 und Addon-Automation können gleichzeitig dieselbe Entity steuern — Race Condition, HA nimmt letzten Befehl
-- Flow 3 (Briefing): Briefing-Event während laufendem process() — WebSocket-Event wird parallel gesendet, Client muss priorisieren
-- Flow 10 (Workshop): Workshop-Chat und normaler Chat teilen brain.process() ohne Lock — Shared State (`_current_person`, `dialogue_state`) kann korrumpiert werden
+- Flow 2 (Proaktiv) will `brain.process()` nutzen → blockiert durch `_process_lock`
+- Flow 3 (Routinen) geht durch `brain.process()` → gleiche Serialisierung
+
+**Shared-Schema-Nutzung**: `shared/schemas/chat_request.py` und `chat_response.py` existieren, werden aber **NICHT** im Hauptpfad verwendet. `main.py` definiert eigene Request-Modelle. Schema-Drift-Risiko.
+
+**Function Calling Loop**: 1 Iteration — LLM → Tool-Calls → Execute → Refinement-LLM. Kein rekursives Tool-Use. Retry nur bei fehlendem Tool-Call (brain.py:3360-3398).
 
 ---
 
 ### Flow 2: Proaktive Benachrichtigung
-**Status**: ⚠️ Teilweise (funktioniert, aber Personality-Lücken bei CRITICAL)
+
+**Status**: ⚠️ Teilweise (funktioniert, aber Init-Bug + Lock-Kollision)
 
 **Ablauf**:
-1. `proactive.py:354-408` — HA WebSocket Listener (`state_changed` + `mindhome_event`)
-2. `proactive.py:410-677` — Event Routing: Entity-Prefix-Matching (smoke, water, doorbell, person, motion...)
-3. `proactive.py:1636-1729` — **6 Filter-Layers**: Quiet Hours → Autonomy Level → Mood → Feedback → Cooldown → Batching
-4a. **CRITICAL** → `proactive.py:1731-1773` — Sofort: `emit_interrupt()` + TTS (OHNE Personality)
-4b. **HIGH** → `proactive.py:1776-1869` — Activity-Check → LLM-Polish via `personality.build_notification_prompt()` → `_deliver()`
-4c. **LOW/MEDIUM** → `proactive.py:1700-1729` — Batch-Queue (flush alle 30min oder 10+ Items)
-5. `proactive.py:195-237` — Delivery: WebSocket `emit_proactive()` + optional TTS
+1. `proactive.py:240-244` `start()` startet HA WebSocket Event Listener
+2. `proactive.py:~250-350` Events empfangen (state_changed) → Relevanz-Filter
+3. `proactive.py:~400-500` Prioritaetsbewertung: CRITICAL / HIGH / MEDIUM / LOW
+4. **CRITICAL**: Hardcoded Templates (Rauch, CO, Wasser, Gas) → direkt TTS, **kein LLM** (<100ms Ziel)
+5. **HIGH/MEDIUM**: Prueft `_process_lock.locked()` — wenn frei: `brain.process()` fuer Jarvis-Ton
+6. **LOW**: Batch-Queue (`batch_interval`: 30 Min), dann gesammelt melden
+7. `sound_manager.py` → TTS-Ausgabe im erkannten Raum
 
 **Bruchstellen**:
-- `proactive.py:363-365` — WebSocket-Disconnect: Alle Events verloren während Reconnect
-- `proactive.py:454,461` — Hardcoded Entity-Prefixes (`binary_sensor.smoke*`) — deutsche Entitätsnamen werden nicht erkannt
-- `proactive.py:2648-2652` — LOW Items werden bei Activity-Suppression verworfen (nicht re-queued)
-- **CRITICAL hat KEINE Personality** — roher Text für Speed
+- `brain.py:773`: `proactive.start()` **NICHT** in `_safe_init()` — Exception crasht Init
+- Lock-Kollision: Wenn `_process_lock` belegt, werden HIGH/MEDIUM Notifications gequeued. Kein expliziter Retry-Mechanismus → bei dauerhaft belegtem Lock gehen Notifications verloren
+- CRITICAL-Pfad umgeht `personality.py` → inkonsistenter Ton (gewollt fuer Latenz)
 
-**Kollision mit anderen Flows**:
-- TTS ist fire-and-forget — keine Prüfung ob User gerade spricht
-- Kein Mutex zwischen proaktiver und aktiver Konversation
+**Fehler-Pfade**:
+- HA WebSocket trennt → Event Listener stoppt → keine proaktiven Meldungen mehr (silent fail)
+- `brain.process()` haengt → HIGH/MEDIUM blockiert, CRITICAL geht trotzdem durch
+- User spricht gerade → Lock belegt → Notification wartet oder wird gedroppt
 
-**proactive.py vs proactive_planner.py**: NICHT redundant. proactive_planner.py plant Multi-Step-Aktionen (Ankommen, Wetter), wird von proactive.py aufgerufen.
+**Cooldown**: Ja, `proactive_cfg.cooldown_seconds` (Default: 300s = 5 Min)
+**Rate Limiting**: Quiet Hours (`quiet_start`/`quiet_end`, Default: 22-7) → LOW/MEDIUM unterdrueckt
+**Mehrere Events gleichzeitig**: Batch-Queue fuer LOW, Einzelverarbeitung fuer HIGH+
+
+**proactive.py vs proactive_planner.py**:
+- `proactive.py` (1.872 Zeilen): Event-basierte reaktive Meldungen (Tuer offen, Geraet fertig)
+- `proactive_planner.py`: Zeitbasierte geplante Sequenzen. **Keine Redundanz** — verschiedene Aufgaben.
 
 ---
 
 ### Flow 3: Morgen-Briefing / Routinen
-**Status**: ⚠️ Teilweise (Auto-Trigger hat KEIN TTS!)
+
+**Status**: ⚠️ Teilweise (funktioniert, konsistenter Ton durch brain.process())
 
 **Ablauf**:
-1. `proactive.py:598-599` — Motion-Trigger ruft `_check_morning_briefing()` auf
-2. `proactive.py:959-998` — Gates: Enabled? Heute schon? Zeitfenster 6-10 Uhr? Optional Wakeup-Sequence
-3. `routine_engine.py:748-815` — Optional: Wakeup (Rolläden graduell, Licht sanft, Kaffeemaschine)
-4. `routine_engine.py:136-216` — Briefing-Daten sammeln: Begrüßung, Wetter, Kalender, Energie, Haus-Status
-5. `routine_engine.py:188-201` — LLM-Formatierung via `personality.build_routine_prompt("morning")` mit `model_fast`
-6. `proactive.py:1026-1036` — Hardcoded Greeting + `emit_proactive()` — **NUR WebSocket, KEIN TTS!**
+1. `routine_engine.py:~100-200` Timer-Trigger (konfigurierbare Uhrzeit) ODER Motion-Trigger
+2. `routine_engine.py:~300-400` Redis-Lock gegen Doppel-Ausloesung (`mha:routine:morning_lock`)
+3. `routine_engine.py:~450-550` Daten sammeln: Wetter, Kalender, HA-Status, Geburtstage
+4. `routine_engine.py:~600` Geht durch `brain.process()` mit speziellem Kontext-Prefix
+5. `personality.py` → Jarvis-Ton wird angewendet (konsistent mit normalen Antworten)
+6. TTS-Ausgabe ueber `sound_manager.py`
 
 **Bruchstellen**:
-- `proactive.py:1036` — **Auto-Briefing hat KEIN TTS** — nur WebSocket-Event, kein gesprochenes Briefing!
-- `proactive.py:959` — Jeder Bewegungsmelder löst aus (auch Haustiere um 6:01)
-- `routine_engine.py:233-234` — Fehlende Datenquellen werden silent übersprungen
-- `proactive.py:1026-1033` — Greeting ist hardcoded, NICHT aus personality.py
-- **Kein ActivityEngine-Check** — Briefing feuert auch während Schlaf/Telefonat
+- Routinen gehen durch `brain.process()` → blockiert durch `_process_lock`. Wenn User gerade spricht, wartet das Briefing.
+- Redis-Lock hat TTL → verhindert Retry wenn Briefing beim ersten Mal fehlschlaegt
 
-**Manuelles Briefing ("Morgenbriefing")**: Funktioniert korrekt über brain.py mit TTS + voller Personality.
+**Fehler-Pfade**:
+- Wetter-API / Kalender nicht erreichbar → Datensammlung partial → Briefing ohne diese Daten (graceful)
+- `brain.process()` timeout → Briefing nicht geliefert, Redis-Lock verhindert Retry (silent fail)
+
+**Gute-Nacht Routine**: User-triggered ("Gute Nacht"), fuehrt Smart-Home-Aktionen aus + LLM-Zusammenfassung. Gleicher Pfad durch `brain.process()`.
+
+**Konsistenz**: Ja — Routinen nutzen denselben Personality-Pfad (brain.process → personality.build_system_prompt) wie normale Antworten. Briefing-Ton ist Jarvis-konsistent.
 
 ---
 
 ### Flow 4: Autonome Aktion
-**Status**: ✅ Funktioniert (gut abgesichert mit 5-Level-System)
+
+**Status**: ⚠️ Teilweise (Sicherheits-Framework vorhanden, konservative Defaults)
 
 **Ablauf**:
-1. `anticipation.py:741-762` — Background-Loop alle 15 Min: Time/Sequence/Context/Causal Patterns
-2. `anticipation.py:674-679` — Confidence-basierte Delivery: 60-80% ask, 80-95% suggest, 95%+ auto
-3. `brain.py:9300-9358` — Auto-Execute nur bei `autonomy.level >= 4` UND Owner-Trust
-4. `autonomy.py:124-145` — `can_act()`: ACTION_PERMISSIONS mit Level 1-5
-5. `autonomy.py:244-309` — `can_person_act()`: Trust 0=Guest, 1=Mitbewohner, 2=Owner
-
-**Sicherheits-Limits**:
-- Level 5 (Autopilot) nur manuell — kein Auto-Upgrade (`autonomy.py:351`)
-- Evolution max bei Level 3 (default, `autonomy.py:392`)
-- Threat-Escalation: Lichter AN bei Rauch (auto), Türen NICHT auto-verriegelt (F-009)
-- `spontaneous_observer.py` erzeugt NUR Text-Beobachtungen, KEINE Aktionen
+1. `anticipation.py` / `learning_observer.py` / `spontaneous_observer.py` erkennen Muster
+2. `anticipation.py:~200` Konfidenz-Score berechnen (≥0.95 noetig fuer autonome Aktion)
+3. `autonomy.py:~100-200` Autonomie-Level pruefen (1-5):
+   - Level 1 (Observer): Nur beobachten
+   - Level 2 (Berater, **Default**): Vorschlagen, nicht ausfuehren
+   - Level 3 (Assistent): Ausfuehren + informieren
+   - Level 4 (Partner): Ausfuehren, nur bei Auffaelligem informieren
+   - Level 5 (Autopilot): Alles automatisch
+4. `autonomy.py:~250-300` Safety Blacklist pruefen (lock_door, arm_alarm, etc. → **NIE** automatisch)
+5. **Double-Gate**: Anticipation confidence ≥0.95 **UND** Autonomy approval
+6. Bei Genehmigung: `function_calling.py` → `ha_client.py` → HA API
+7. Benachrichtigung an User (abhaengig vom Level)
 
 **Bruchstellen**:
-- `brain.py:9322` — Auto-Execute braucht Level 4, aber Evolution-Max ist 3 → Auto-Execute nur wenn manuell auf Level 4+ gesetzt
-- `threat_assessment.py:546` — Türen/Schlösser werden NICHT auto-verriegelt (bewusste Design-Entscheidung, aber User weiß das nicht)
+- Default Level 2 = **keine autonomen Aktionen** ohne explizite User-Konfiguration
+- `spontaneous_observer.py` beobachtet Muster, loest aber keine Aktionen direkt aus — nur Insights
+- `threat_assessment.py` wird bei autonomen Aktionen **NICHT** konsultiert (kein Code-Pfad dafuer)
+- Autonomy-Level ist global, nicht per-Aktion konfigurierbar
+
+**Fehler-Pfade**:
+- Confidence < 0.95 → Aktion wird nur vorgeschlagen
+- Blacklisted Aktion → Blockiert unabhaengig vom Level (kein Override)
+- HA nicht erreichbar → Tool-Execution schlaegt fehl, User wird informiert
+
+**Sicherheits-Bewertung**: Das Framework ist solide konservativ:
+- Safety Blacklist (hardcoded, nicht manipulierbar)
+- Double-Gate Mechanismus (hohe Schwelle)
+- Default Level 2 = kein Risiko ohne User-Eingriff
 
 ---
 
-### Flow 5: Persönlichkeits-Pipeline
-**Status**: ✅ Funktioniert (umfangreicher als erwartet)
+### Flow 5: Persoenlichkeits-Pipeline
+
+**Status**: ✅ Funktioniert (als System-Prompt, nicht Post-Processing)
 
 **Ablauf**:
-1. `mood_detector.py:267-399` — Mood-Analyse: Rapid Commands, Keywords, Repetition, Exclamation, Voice-Metadata → stressed/frustrated/tired/good/neutral
-2. `personality.py:2192-2457` — `build_system_prompt()`: Base Template + 20 Platzhalter + Context-Daten + Character-Lock
-3. **Sarkasmus-Level 1-5** (`personality.py:58-84`): British-dry, mood-gedämpft, Fatigue-Detection, adaptives Lernen
-4. **Formality-Decay** (`personality.py:1573-1633`): Start 80, Decay -0.5/Tag, Min 30, 4 Stufen (formal→freund)
-5. **Empathy** (`personality.py:1294`): Mood-gated, JARVIS-style ("acknowledge casually, never directly")
-6. **Easter Eggs** (`personality.py:488-499`): Regex-Match auf `config/easter_eggs.yaml`
-7. **Opinion Injection** (`personality.py:586-612`): Action+Room+Time Matching, stress-suppressed
-8. `tts_enhancer.py:214-261` — Post-LLM: SSML-Generation, Speed/Pitch/Volume per Message-Type
-
-**Personality wird VOR dem LLM angewendet** (System-Prompt), nicht nachher. Einzige Post-LLM-Modifikation ist TTS-Enhancement.
+1. `personality.py:242-286` SYSTEM_PROMPT_TEMPLATE definiert Jarvis-Charakter
+2. `personality.py:build_system_prompt()` setzt dynamische Teile ein:
+   - Sarkasmus-Level (1-5, hard cap bei 4: `min(sarcasm_level, 4)`)
+   - Formality Score (30-80, decay pro Tag)
+   - Mood-basierte Anpassung (via `mood_detector.py`)
+   - Time-Layer (Tageszeit-Stil)
+   - Humor-Templates (level-abhaengig)
+   - Character-Lock gegen Jailbreaking
+3. `brain.py:2655-2662` System-Prompt mit context, formality_score, irony_count gebaut
+4. **Persoenlichkeit wird VOR dem LLM-Call als System-Prompt injiziert** (bevorzugt)
+5. `brain.py:3091-3098` Character-Lock Reminder bei langen Konversationen
+6. Post-LLM Persoenlichkeits-Checks bei Tool-Call-Antworten:
+   - `personality.check_opinion()` (brain.py:3739) — Jarvis kommentiert Aktionen
+   - `personality.check_pushback()` (brain.py:3522) — Warnung vor Ausfuehrung
+   - `personality.check_escalation()` (brain.py:3760) — Trockenerer Ton bei Wiederholungen
+   - `personality.generate_contextual_humor()` (brain.py:3773) — Kontext-Humor
+   - `personality.check_curiosity()` (brain.py:3791) — Neugier bei untypischem Verhalten
 
 **Bruchstellen**:
-- Sarkasmus-Fatigue (4+ Snarky → Level-1, 6+ → Level-2) nur in-memory — Reset bei Restart
-- Formality-Score in Redis (90d TTL) — persistiert korrekt
-- **Personality wird NICHT auf alle Pfade angewendet** (siehe Konsistenz-Tabelle unten)
+- Keine signifikanten Bruchstellen — Pipeline ist solide implementiert
+- Sarkasmus hard cap bei 4 verhindert "zu scharfe" Antworten
+- Character-Lock Reminder ist eine effektive Loesung gegen Kontext-Drift
 
-### Personality-Konsistenz über alle Flows
-
-| Pfad | Personality? | Detail |
-|---|---|---|
-| Flow 1: Normaler Chat | ✅ Voll | System-Prompt + Filter + TTS |
-| Flow 1: Shortcuts | ⚠️ Teilweise | `get_varied_confirmation()`, aber nicht voller Prompt |
-| Flow 2: CRITICAL | ❌ Nein | Roher Text für Speed |
-| Flow 2: HIGH/Batch | ✅ Ja | `build_notification_prompt()` |
-| Flow 3: Auto-Briefing | ⚠️ Teilweise | LLM mit Routine-Prompt, aber Greeting hardcoded |
-| Flow 3: Manuelles Briefing | ✅ Voll | Via brain.py |
-| Flow 4: Auto-Execute | ⚠️ Minimal | `emit_proactive()` mit kurzem Text |
-| ProactivePlanner Nachrichten | ❌ Nein | Hardcoded Templates |
+**Konsistenz**: Sarkasmus-Level ist konsistent ueber den gesamten Flow — im System-Prompt, in Post-LLM-Checks, und im Refinement-Prompt (brain.py:3841-3847).
 
 ---
 
 ### Flow 6: Memory-Abruf (Erinnerung)
-**Status**: ⚠️ Teilweise (kein eigener Code-Pfad, conv_memory Bug aus P2)
+
+**Status**: ⚠️ Teilweise (Pfad vorhanden, aber kein "Ich erinnere mich nicht"-Fallback)
 
 **Ablauf**:
-1. `brain.py:1372-1378` — `_handle_memory_command()`: Prefix-Matching ("merk dir", "was weißt du über", "vergiss")
-2. "Was habe ich gestern gesagt?" → **KEIN Match** → fällt durch zum LLM-Pfad
-3. `pre_classifier.py:267-269` — `_MEMORY_KEYWORDS`: 6 Patterns ("erinnerst du dich", "hab ich gesagt"...)
-4. `context_builder.py:308-340` — `_get_relevant_memories()`: search_facts + get_facts_by_person
-5. `brain.py:6008-6046` — `_get_conversation_memory()`: semantic.get_relevant_conversations() — **WIRD ÜBERSCHRIEBEN (P2 Bug)**
-6. `brain.py:6048-6079` — `_get_summary_context()`: "gestern" Keyword triggert Summarizer-Suche
-7. Memory-Kontext landet als P1 (Fakten) + P2/P3 (Konversationen) im Prompt
+1. `pre_classifier.py` erkennt MEMORY-Profil (Schluesselwoerter: "erinnerst du dich", "was habe ich gesagt", etc.)
+2. `brain.py:~2200-2210` Intent-Type "memory" gesetzt
+3. `brain.py:3179-3203` **Separater Memory-Pfad**:
+   - `memory.semantic.search_by_topic(text, limit=5)` → ChromaDB Semantic-Suche
+   - Ergebnisse als "GESPEICHERTE FAKTEN" in System-Prompt injiziert (brain.py:3186-3190)
+   - LLM (Smart-Modell) formuliert Antwort basierend auf Fakten
+4. **Zusaetzlich** im Mega-Gather: `brain.py:2374` `_get_conversation_memory(text)`:
+   - `brain.py:5567-5581` `search_memories(text, limit=3)` → ChromaDB `mha_conversations` (**GEFIXT in DL#1**)
+   - Semantische Suche ueber vergangene Gespraeche als P2-Sektion
 
 **Bruchstellen**:
-- **Kein dedizierter Memory-Query-Pfad** — wird wie normale Frage behandelt
-- **conv_memory Duplicate-Key-Bug** (Prompt 2) — semantische Konversationssuche geht verloren
-- `_MEMORY_KEYWORDS` hat nur 6 Patterns — viele natürliche Formulierungen werden nicht als Memory-Query erkannt
-- ChromaDB-Episoden (`mha_conversations`) werden im process()-Flow NIE direkt gesucht
+- `brain.py:3186-3189`: Wenn `memory_facts` leer → System-Prompt wird **NICHT** um "Keine Erinnerungen gefunden" ergaenzt. Das LLM erhaelt keinen expliziten Hinweis dass nichts gefunden wurde → **Halluzinations-Risiko**.
+- Die FAKTEN-REGEL im System-Prompt ("Erfinde NICHTS") ist der einzige Schutz — reicht bei lokalen LLMs nicht immer.
+
+**Fehler-Pfade**:
+- ChromaDB nicht erreichbar → `search_by_topic()` gibt leere Liste zurueck → LLM antwortet ohne Fakten
+- Kein expliziter Fallback "Dazu habe ich keine Erinnerung" — LLM muss FAKTEN-REGEL selbst befolgen
+- MEMORY-Profil im PreClassifier ueberspringt Mood/Formality/Irony/RAG (sinnvoll fuer Latenz)
+
+**Verbesserung gegenueber DL#1**: ChromaDB-Episodes werden jetzt tatsaechlich gelesen (brain.py:5569), daher liefert die Suche haeufiger Ergebnisse. Halluzinations-Risiko ist dadurch **reduziert**, aber nicht eliminiert.
 
 ---
 
 ### Flow 7: Speech-Pipeline
-**Status**: ✅ Funktioniert (durchdacht mit Wyoming-Protokoll)
+
+**Status**: ⚠️ Teilweise (funktioniert, aber hohe End-to-End Latenz + Timeout-Mismatch)
 
 **Ablauf**:
-1. **Audio → Whisper STT** (`speech/handler.py:186-244`): AudioChunk → AudioStop → Transcription
-   - Dynamischer Context aus Redis (`mha:stt:recent_context`)
-   - Adaptive beam_size (kurz=5 für Qualität, lang=1 für Speed)
-   - Smart-Home Vocabulary als initial_prompt
-2. **Speaker Recognition** (`speaker_recognition.py:197`): 7-Methoden-Kaskade (Device-Map → DoA → Room+Presence → Sole Person → Voice Embedding → Voice Features → Cache)
-3. **HA Voice Pipeline Bridge** (`ha_integration/.../conversation.py:108`): HTTP POST an `/api/assistant/chat`
-4. **brain.py verarbeitet** (→ Flow 1)
-5. **Pipeline-aware TTS** (`brain.py:863-868`): Wenn Request von Pipeline → KEIN eigenes TTS (Pipeline macht Piper selbst)
-6. **Sound Output** (`sound_manager.py:495-627`): Speaker-Resolution → Volume → parallel volume_set + tts.speak
-
-**Latenz-Schätzung**:
-- Shortcut-Pfad (einfacher Befehl): **~1-3s** (STT 0.5-1.5s + Routing 50-100ms + Shortcut 100-500ms + TTS 300-800ms)
-- LLM-Pfad (komplexe Frage): **~3-12s** (STT + Routing + LLM 1-10s + TTS)
+1. Audio-Input via ESPHome Satellite oder Mikrofon → HA Voice Pipeline
+2. `speech/server.py:102-122` Wyoming ASR Server auf TCP:10300 (faster-whisper)
+3. `speech/handler.py:126-163` Wyoming Event Handler: Whisper STT + parallele ECAPA-TDNN Voice Embedding
+4. HA Assist Pipeline leitet transkribierten Text weiter
+5. `ha_integration/.../conversation.py:41-98` `MindHomeAssistantAgent`:
+   - `_detect_room()`: Raum aus HA Device Registry (Area des Satellites)
+   - Voice-Metadaten berechnen (Wortanzahl, Dauer)
+   - `device_id` fuer Speaker Recognition setzen
+6. `conversation.py:108-117` HTTP POST an `{url}/api/assistant/chat` (30s Timeout)
+7. `brain.py:1089` `process()` → **Flow 1** (Hauptpfad)
+8. `brain.py:1110-1112` `_request_from_pipeline` erkannt → brain.py macht KEIN TTS (HA Pipeline uebernimmt)
+9. Response zurueck an HA Conversation → Piper TTS → Satellite Speaker
 
 **Bruchstellen**:
-- `handler.py:240` — Embedding-Extraction fire-and-forget — Speaker Recognition kann 500ms auf Redis warten
-- `sound_manager.py:517` — Speaker-Resolution: Erster media_player der kein TV ist — kann falsch sein
-- Kein Ambient-Audio Pause/Resume während TTS (ambient_audio.py ist ein Sensor-Monitor, kein Audio-Manager)
+- **Latenz**: STT (1-3s) + HTTP (50ms) + brain.process() (3-15s) + TTS (1-2s) = **5-20s End-to-End**
+- **Timeout-Mismatch**: `conversation.py:113` hat 30s Timeout, aber LLM Deep-Modell hat 120s Timeout (brain.py:3237). Bei komplexen Anfragen via Sprache → HA-Seite gibt auf bevor Antwort fertig.
+- `_request_from_pipeline` Flag: Korrekt implementiert — verhindert doppelte TTS-Ausgabe (brain/HA)
+
+**Fehler-Pfade**:
+- STT fehlschlaegt → `_normalize_stt_text()` (brain.py:1114) korrigiert typische Whisper-Fehler + `stt_hint` Section im System-Prompt (brain.py:2733-2739) → LLM beruecksichtigt phonetische Aehnlichkeit
+- HTTP Timeout in conversation.py → "Ich kann gerade nicht denken." (conversation.py:100)
+- HA-Pipeline Bridge down → Keine Spracheingabe, Text-API funktioniert weiter
+
+**Speaker Recognition**: ECAPA-TDNN Embeddings werden in `speech/handler.py:126` parallel zur STT extrahiert. Werden via `device_id` an brain.py weitergegeben → `speaker_recognition.py` mappt auf Person. Funktioniert fuer bekannte Stimmen.
+
+**Multi-Room**: Antwortet im richtigen Raum — `_detect_room()` nutzt HA Area Registry. `_request_from_pipeline` verhindert doppelte Ausgabe.
+
+**ambient_audio.py**: Nicht direkt in der Speech-Pipeline integriert — separates Modul fuer Hintergrund-Audio-Klassifizierung. Keine automatische Pause/Resume bei Sprachinteraktion.
 
 ---
 
-## 4. Kritische Findings (Top-5)
+## 4. Kritische Findings
 
-| # | Finding | Severity | Flows | Code-Referenz |
-|---|---|---|---|---|
-| 1 | **Morgen-Briefing Auto-Trigger hat KEIN TTS** — nur WebSocket, kein gesprochenes Briefing | 🔴 KRITISCH | Flow 3 | `proactive.py:1036` — `emit_proactive()` statt `_deliver()` |
-| 2 | **Module 1-30 nicht in `_safe_init()`** — Exception beim Init crasht gesamten Start | 🔴 KRITISCH | Init | `brain.py:477-597` — 30 Module ohne Safety-Wrapper |
-| 3 | **CRITICAL Notifications ohne Personality** — roher Text, kein JARVIS-Ton | 🟠 HOCH | Flow 2 | `proactive.py:1745-1746` — "Zeit ist kritisch" |
-| 4 | **Kein TTS-Collision-Schutz** — proaktive TTS kann aktive Konversation überlagern | 🟠 HOCH | Flow 2×1 | `proactive.py:195-237` — fire-and-forget TTS |
-| 5 | **Memory-Query hat keinen eigenen Code-Pfad** — "Was habe ich gestern gesagt?" wird wie normale Frage behandelt, conv_memory Bug verstärkt das Problem | 🟠 HOCH | Flow 6 | `brain.py:1372` + P2 conv_memory Bug |
+### Top-5 Probleme (sortiert nach Impact)
 
-### Weitere relevante Findings
-
-| # | Finding | Severity | Flow |
-|---|---|---|---|
-| 6 | Entity-Naming-Annahmen in proactive.py (`smoke*`, `water*`) — deutsche Namen nicht erkannt | 🟡 MITTEL | Flow 2 |
-| 7 | Briefing-Greeting hardcoded, nicht aus personality.py | 🟡 MITTEL | Flow 3 |
-| 8 | Autonomie Evolution-Max=3, Auto-Execute braucht Level 4 → faktisch deaktiviert | 🟡 MITTEL | Flow 4 |
-| 9 | `ProactiveManager.start()` nicht in `_safe_init()` — HA-WS-Fehler = Fatal | 🟡 MITTEL | Init |
-| 10 | LOW Batch-Items werden bei Activity-Suppression verworfen statt re-queued | 🟡 MITTEL | Flow 2 |
+| # | Problem | Datei:Zeile | Schwere | Impact |
+|---|---------|------------|---------|--------|
+| 1 | **proactive.start() nicht in _safe_init()** | `brain.py:773` | KRITISCH | Exception crasht gesamte Init → Jarvis startet nicht. Alle ~54 Module geschuetzt, nur dieses nicht. |
+| 2 | **_process_lock serialisiert ALLES** | `brain.py:215, 1103` | HOCH | Nur 1 Request gleichzeitig. Bei LLM-Timeout (30-120s) blockiert: User-Requests, Proaktive Meldungen, Routinen. Kein Lock-Timeout. |
+| 3 | **Memory-Flow ohne "Ich erinnere mich nicht"** | `brain.py:3186-3189` | HOCH | Leere ChromaDB-Ergebnisse → kein Hinweis ans LLM → Halluzinations-Risiko bei Erinnerungsfragen. |
+| 4 | **Speech-Pipeline Timeout-Mismatch** | `conversation.py:113` vs `brain.py:3237` | MITTEL | 30s HA-Timeout vs 120s LLM Deep-Timeout. Komplexe Sprach-Anfragen scheitern an HA-Seite. |
+| 5 | **Shared Schemas nicht genutzt** | `shared/schemas/` | MITTEL | ChatRequest/ChatResponse existieren, werden im Hauptpfad ignoriert. main.py + conversation.py definieren eigene Formate → Schema-Drift. |
 
 ---
 
 ## KONTEXT AUS PROMPT 3a: Flow-Analyse (Core-Flows)
 
 ### Init-Sequenz
-- 66 Schritte: Phase 0 (sync Konstruktion) → Phase 1 (`brain.initialize()` mit 62 Modulen) → Phase 2 (Health-Check → Ready)
-- **F-069 Boundary bei Schritt 31**: Module 1-30 NICHT in `_safe_init()` — Exception = Fatal
-- `ProactiveManager.start()` (Schritt 64) ebenfalls NICHT in `_safe_init()`
-- Graceful Degradation für Redis/ChromaDB/Ollama/HA — System startet trotzdem
+```
+main.py:322 lifespan() → brain.initialize() (brain.py:481)
+  → memory.initialize() (Redis + ChromaDB)
+  → model_router.initialize() (Ollama)
+  → ~54 Module via _safe_init() (F-069 Graceful Degradation)
+  → proactive.start() (⚠️ NICHT in _safe_init!)
+  → Entity-Katalog laden
+main.py:347 Health-Check + Status-Logging
+main.py:361 Boot-Announcement (Sprachansage)
+```
 
 ### System-Prompt (rekonstruiert)
-- Base: JARVIS MCU Identity + Britisch-trocken + Deutsch-only + Sicherheit>Komfort>Befehl
-- 20 dynamische Platzhalter (Mood, Humor, Formality, Empathy, Time-Style, Urgency...)
-- P1-P4 Sections mit Token-Budget: Memory/Mood/Security IMMER (P1), Conv-Memory/Corrections/Intelligence P2, RAG/Summary/Continuity P3
-- Character-Lock dreifach verankert (Template-Ende, Mid-Conversation Reminder, Verboten-Liste)
-- Messages: System + optional Summary + Recent Conversations + Character-Lock + User mit Situation-Delta
+```
+Statisch: personality.py:242-286 SYSTEM_PROMPT_TEMPLATE
+  → Jarvis MCU-Charakter, TON, VERBOTEN-Liste, FAKTEN-REGEL
+Dynamisch: brain.py:2664-3021 P1-P4 Sektionen
+  → P1 (immer): Scene, Confidence, Mood, Security, Memory, Last-Action, Files, Model-Hint
+  → P2 (wichtig): Time, Timers, Conv-Memory, Problems, Corrections, Jarvis-Thinks, Dialogue
+  → P3 (optional): RAG, Summaries, Anomalies, Continuity, Conv-Memory-Ext, Calendar, Learning
+  → P4 (wenn-platz): Tutorial
+Token-Budget: ollama_num_ctx - 800, ~45% Auslastung, P1 unbegrenzt
+```
 
-### Flow-Status-Übersicht (Core-Flows 1–7)
+### Flow-Status-Uebersicht (Core-Flows 1–7)
+
 | Flow | Status | Kritischste Bruchstelle |
 |---|---|---|
-| 1: Sprach-Input → Antwort | ✅ Funktioniert | 60s Timeout, Circuit Breaker, Sie→Du Regex |
-| 2: Proaktive Benachrichtigung | ⚠️ Teilweise | CRITICAL ohne Personality, kein TTS-Collision-Schutz |
-| 3: Morgen-Briefing | ⚠️ Teilweise | Auto-Trigger hat KEIN TTS, kein Activity-Check |
-| 4: Autonome Aktion | ✅ Funktioniert | Evolution-Max=3 vs Auto-Execute braucht Level 4 |
-| 5: Persönlichkeits-Pipeline | ✅ Funktioniert | Nicht konsistent über alle Flows angewendet |
-| 6: Memory-Abruf | ⚠️ Teilweise | Kein eigener Code-Pfad + conv_memory Bug (P2) |
-| 7: Speech-Pipeline | ✅ Funktioniert | Speaker-Resolution kann falschen Speaker wählen |
+| 1: Sprach-Input → Antwort | ⚠️ Teilweise | `_process_lock` serialisiert alles (brain.py:1103) |
+| 2: Proaktive Benachrichtigung | ⚠️ Teilweise | `proactive.start()` nicht in _safe_init (brain.py:773) |
+| 3: Morgen-Briefing | ⚠️ Teilweise | Blockiert durch _process_lock wenn User spricht |
+| 4: Autonome Aktion | ⚠️ Teilweise | Default Level 2 = keine Aktionen; threat_assessment nicht konsultiert |
+| 5: Persoenlichkeits-Pipeline | ✅ Funktioniert | Keine signifikanten Bruchstellen |
+| 6: Memory-Abruf | ⚠️ Teilweise | Kein "Ich erinnere mich nicht"-Hint fuer LLM (brain.py:3186) |
+| 7: Speech-Pipeline | ⚠️ Teilweise | Timeout-Mismatch: conversation.py 30s vs LLM 120s |
 
 ### Top-Bruchstellen (Core-Flows)
-1. `proactive.py:1036` — Auto-Briefing nur WebSocket, kein TTS
-2. `brain.py:477-597` — 30 Init-Module ohne `_safe_init()` Wrapper
-3. `proactive.py:1745` — CRITICAL Notifications ohne Personality
-4. `proactive.py:195-237` — Kein TTS-Collision-Schutz (fire-and-forget)
-5. `brain.py:1372` + `brain.py:2356/2394` — Memory-Query ohne eigenen Pfad + conv_memory Key-Bug
+1. `brain.py:773` — proactive.start() nicht in _safe_init() (KRITISCH)
+2. `brain.py:215,1103` — _process_lock serialisiert alle Requests (HOCH)
+3. `brain.py:3186-3189` — Memory-Flow ohne Fallback-Hint (HOCH)
+4. `conversation.py:113` — 30s Timeout vs 120s LLM-Timeout (MITTEL)
+5. `shared/schemas/` — Schemas definiert aber nicht genutzt (MITTEL)
