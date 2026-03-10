@@ -4,27 +4,40 @@
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Extended-Flows 8–13, Flow-Kollisionen, Service-Interaktionsanalyse
 **Durchlauf**: #2 (Verifikation nach P6a–P8 Fixes)
+**Vergleichsbasis**: DL#1 (6 Extended-Flows 8-13, Flow-Kollisionen, 11 Findings)
 
 ---
 
-## 0. Vergleich mit Durchlauf #1
+## DL#1 vs DL#2 Vergleich
 
-| Finding | DL#1 Status | DL#2 Status | Aenderung |
-|---------|-----------|-----------|-----------|
-| Addon↔Assistant KEINE Koordination | KRITISCH | ⚠️ TEILWEISE GEFIXT | Entity-Ownership-Check implementiert (ha_connection.py:69-87 + main.py:676-693 + brain.py:3690) |
-| Addon nutzt keine Shared Schemas | MITTEL | MITTEL | **UNVERAENDERT** (shared/ wurde in P6c komplett geloescht) |
-| Addon nutzt keine Shared Constants | MITTEL | MITTEL | **UNVERAENDERT** |
-| Workshop-Chat umgeht API-Key | KRITISCH | ✅ GEFIXT | F-086: API-Key-Check in main.py:6247 + Middleware main.py:563 |
-| Workshop Hardware kein Trust-Level | HOCH | ✅ GEFIXT | `_require_hardware_owner()` in main.py:7043-7056 (Trust-Level 2) |
-| 3D-Drucker keine Bestaetigung | MITTEL | MITTEL | **UNVERAENDERT** — Start/Pause/Cancel ohne Confirmation |
-| brain.py kein Lock | KRITISCH | HOCH | `_process_lock` existiert (brain.py:215,1103) — serialisiert ALLES |
-| Proaktiv ignoriert Konversation | HOCH | HOCH | **UNVERAENDERT** |
-| Domain-Assistenten volle Personality | ✅ (DL#1) | ⚠️ KORREKTUR | Shortcuts umgehen `personality.build_system_prompt()` — nur `_filter_response()` |
-| Boot-Nachricht nicht personality.py | MITTEL | MITTEL | **UNVERAENDERT** — hardcoded Templates |
-| WebSocket kein Reconnection | MITTEL | MITTEL | **UNVERAENDERT** |
-| WebSocket Broadcast ohne send-Timeout | — (nicht erkannt) | 🟡 MITTEL | **NEU ERKANNT**: websocket.py:59 `send_text()` ohne `wait_for()` |
-| Boot-Nachricht trotz degraded Komponenten | — (nicht erkannt) | 🟡 MITTEL | **NEU ERKANNT**: "Alle Systeme online" auch wenn Systeme fehlen |
-| get_file_path() kein Confinement | MITTEL | ✅ GEFIXT | file_handler.py:105-109: `is_relative_to()` Check hinzugefuegt |
+### Gesamt-Statistik
+
+```
+DL#1: 11 Findings + 2 NEU erkannt in DL#2
+DL#2: 4 FIXED, 3 TEILWEISE, 4 UNFIXED, 2 NEU
+
+Flows: 3/6 vollstaendig funktional (Flows 10-12)
+       3/6 teilweise (Flows 8, 9, 13)
+```
+
+### DL#1 → DL#2 Status
+
+| # | Severity | Finding | DL#1-Zeile | DL#2-Zeile | Status | Beschreibung |
+|---|----------|---------|-----------|-----------|--------|-------------|
+| 1 | KRITISCH | Addon↔Assistant KEINE Koordination | — | ha_connection.py:69-87 | ⚠️ TEILWEISE | Entity-Ownership-Check implementiert, aber asymmetrisch |
+| 2 | MITTEL | Addon nutzt keine Shared Schemas | shared/ | N/A | ❌ UNFIXED | shared/ geloescht, kein Ersatz |
+| 3 | MITTEL | Addon nutzt keine Shared Constants | shared/ | N/A | ❌ UNFIXED | Ports/Events lokal definiert |
+| 4 | KRITISCH | Workshop-Chat umgeht API-Key | main.py:6118 | main.py:6247 | ✅ FIXED | F-086: API-Key-Check + Middleware |
+| 5 | HOCH | Workshop Hardware kein Trust-Level | — | main.py:7043-7056 | ✅ FIXED | `_require_hardware_owner()` (Trust-Level 2) |
+| 6 | MITTEL | 3D-Drucker keine Bestaetigung | — | — | ❌ UNFIXED | Start/Pause/Cancel ohne Confirmation |
+| 7 | KRITISCH | brain.py kein Lock | — | brain.py:215,1103 | ⚠️ TEILWEISE | `_process_lock` existiert, serialisiert aber ALLES |
+| 8 | HOCH | Proaktiv ignoriert Konversation | — | — | ❌ UNFIXED | Keine Queue, keine Konversations-Pruefung |
+| 9 | ✅ (DL#1) | Domain-Assistenten volle Personality | — | brain.py:1398-2029 | ⚠️ TEILWEISE | KORREKTUR: Shortcuts umgehen `build_system_prompt()` |
+| 10 | MITTEL | Boot-Nachricht nicht personality.py | main.py:262-266 | main.py:262-266 | ❌ UNFIXED | Hardcoded Templates |
+| 11 | MITTEL | WebSocket kein Reconnection | websocket.py | websocket.py | ❌ UNFIXED | Kein Server-seitiger Retry |
+| 12 | MITTEL | get_file_path() kein Confinement | file_handler.py | file_handler.py:105-109 | ✅ FIXED | `is_relative_to()` Check |
+| 13 | — | WebSocket Broadcast ohne Timeout | — | websocket.py:59 | ⚠️ NEU | `send_text()` ohne `wait_for()` |
+| 14 | — | Boot trotz degraded Komponenten | — | main.py:275-282 | ⚠️ NEU | "Alle Systeme online" auch wenn Systeme fehlen |
 
 ---
 
@@ -451,7 +464,7 @@ Client ─HTTP POST─→ main.py:/api/assistant/chat/upload
 
 ## 4. Kritische Findings (Top-5, aktualisiert)
 
-| # | Finding | DL#1 Severity | DL#2 Severity | Aenderung |
+| # | Finding | DL#1-Severity | DL#2-Severity | Aenderung |
 |---|---------|--------------|--------------|-----------|
 | 1 | **Addon ↔ Assistant Entity-Koordination asymmetrisch**: Addon prueft Assistant-Ownership (✅), aber Assistant prueft NICHT Addon-Ownership (❌). Addon-Circadian/Cover-Aktionen bleiben dem Assistant unsichtbar. TOCTOU-Risiko zwischen Check und Ausfuehrung. | 🔴 KRITISCH | 🟠 HOCH | **TEILWEISE GEFIXT** — Ownership-Check reduziert Risiko, Asymmetrie bleibt |
 | 2 | **brain.py _process_lock serialisiert ALLES**: Nur 1 Request gleichzeitig. Bei LLM-Timeout (30-120s) blockiert: User-Requests, Proaktive Meldungen, Routinen, Workshop-Chat. | 🔴 KRITISCH | 🟠 HOCH | **UNVERAENDERT** (war DL#1 als "kein Lock" beschrieben, tatsaechlich existiert Lock) |
@@ -463,7 +476,7 @@ Client ─HTTP POST─→ main.py:/api/assistant/chat/upload
 
 ## 5. Feature-Gaps (aktualisiert)
 
-| Feature | DL#1 Status | DL#2 Status | Impact |
+| Feature | DL#1-Status | DL#2-Status | Impact |
 |---------|-----------|-----------|--------|
 | **Action-Broker** (zentraler Koordinator fuer HA-Aufrufe beider Services) | ❌ Fehlt | ⚠️ Teilweise (Ownership-Check als Ersatz) | 🟠 HOCH (war KRITISCH) |
 | **Conversation Lock** (parallele brain.process()-Aufrufe serialisiert) | ❌ Fehlt (DL#1 Beschreibung) | ✅ Existiert (`_process_lock`, brain.py:215) — serialisiert aber zu stark | 🟡 MITTEL (Lock existiert, Granularitaet zu grob) |
@@ -507,7 +520,7 @@ Token-Budget: ollama_num_ctx - 800, ~45% Auslastung, P1 unbegrenzt
 
 ### Flow-Status-Uebersicht (alle 13 Flows)
 
-| Flow | DL#1 Status | DL#2 Status | Kritischste Bruchstelle |
+| Flow | DL#1-Status | DL#2-Status | Kritischste Bruchstelle |
 |------|------------|------------|------------------------|
 | 1: Sprach-Input → Antwort | ⚠️ Teilweise | ⚠️ Teilweise | `_process_lock` serialisiert alles (brain.py:1103) |
 | 2: Proaktive Benachrichtigung | ⚠️ Teilweise | ⚠️ Teilweise | `proactive.start()` nicht in _safe_init (brain.py:773) |

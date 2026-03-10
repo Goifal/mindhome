@@ -4,20 +4,33 @@
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Init-Sequenz, System-Prompt-Rekonstruktion, Core-Flows 1–7
 **Durchlauf**: #2 (Verifikation nach P6a–P8 Fixes)
+**Vergleichsbasis**: DL#1 (7 Core-Flows, 5 kritische Findings, Init-Sequenz)
 
 ---
 
-## 0. Vergleich mit Durchlauf #1
+## DL#1 vs DL#2 Vergleich
 
-| Finding | DL#1 Status | DL#2 Status | Aenderung |
-|---------|-----------|-----------|-----------|
-| proactive.start() nicht in _safe_init() | KRITISCH | KRITISCH | **UNVERAENDERT** |
-| _process_lock serialisiert alles | HOCH | HOCH | **UNVERAENDERT** |
-| Memory-Halluzinations-Risiko | HOCH | HOCH | **UNVERAENDERT** (aber ChromaDB wird jetzt gelesen → weniger wahrscheinlich) |
-| conv_memory Duplicate Key | KRITISCH | ✅ GEFIXT | brain.py:2374 + 2412 verschiedene Keys |
-| ChromaDB Episodes nie gelesen | HOCH | ✅ GEFIXT | brain.py:5569 search_memories() |
-| Speech Timeout-Mismatch | MITTEL | MITTEL | **UNVERAENDERT** |
-| Shared Schemas nicht genutzt | MITTEL | MITTEL | **UNVERAENDERT** |
+### Gesamt-Statistik
+
+```
+DL#1: 7 Findings (2 KRITISCH, 3 HOCH, 2 MITTEL)
+DL#2: 2 FIXED, 0 TEILWEISE, 5 UNFIXED
+
+Flows: 1/7 vollstaendig funktional (Flow 5: Personality)
+       5/7 teilweise (Flows 1-4, 6-7)
+```
+
+### DL#1 → DL#2 Status
+
+| # | Severity | Finding | DL#1-Zeile | DL#2-Zeile | Status | Beschreibung |
+|---|----------|---------|-----------|-----------|--------|-------------|
+| 1 | KRITISCH | proactive.start() nicht in _safe_init() | brain.py:773 | brain.py:773 | ❌ UNFIXED | Exception crasht gesamte Init |
+| 2 | HOCH | _process_lock serialisiert alles | brain.py:— | brain.py:215,1103 | ❌ UNFIXED | Lock existiert, serialisiert aber ALLE Requests |
+| 3 | HOCH | Memory-Halluzinations-Risiko | brain.py:3186-3189 | brain.py:3186-3189 | ❌ UNFIXED | Kein "Ich erinnere mich nicht"-Hint (ChromaDB-Fix reduziert Risiko) |
+| 4 | KRITISCH | conv_memory Duplicate Key | brain.py:2356+2394 | brain.py:2374+2412 | ✅ FIXED | Verschiedene Keys |
+| 5 | HOCH | ChromaDB Episodes nie gelesen | memory.py:276 | brain.py:5569 | ✅ FIXED | `search_memories()` in Read-Path |
+| 6 | MITTEL | Speech Timeout-Mismatch | conversation.py:113 | conversation.py:113 | ❌ UNFIXED | 30s HA-Timeout vs 120s LLM Deep-Timeout |
+| 7 | MITTEL | Shared Schemas nicht genutzt | shared/schemas/ | N/A | ❌ UNFIXED | shared/ geloescht, aber main.py+conversation.py definieren eigene Formate |
 
 ---
 

@@ -5,6 +5,29 @@
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: 63 Extended-Module in 9 Batches, 13 Fehlerklassen
 **Methode**: 9 parallele Audit-Agenten, jedes Modul komplett gelesen
+**Vergleichsbasis**: DL#1 (kein separater DL#1 fuer Extended-Module — Erstaudit in DL#2)
+
+---
+
+## DL#1 vs DL#2 Vergleich
+
+### Hinweis
+
+Die Extended-Module (Prioritaet 5-9) wurden erstmals in DL#2 systematisch auditiert.
+Es gibt keinen DL#1-Vergleich fuer diese 221 Bugs — sie sind alle **NEU identifiziert**.
+Die DL#1-Zeilen-Spalte entfaellt daher. Status-Tracking beginnt mit DL#2 als Baseline.
+
+```
+DL#2 Erstaudit: 221 Bugs (KRITISCH 1, HOCH 36, MITTEL 97, NIEDRIG 85, INFO 2)
+Alle Bugs sind NEU — keine DL#1-Vergleichsdaten vorhanden.
+
+Systemische Muster:
+  Sync I/O in async:          28 Vorkommen (dominantes HIGH-Pattern)
+  Stille Fehler (except:pass): 38 Vorkommen
+  Performance N+1:             25 Vorkommen
+  Race Conditions:             18 Vorkommen
+  Am staerksten betroffen:     proactive.py (16 Bugs), cooking_assistant.py (13 Bugs)
+```
 
 ---
 
