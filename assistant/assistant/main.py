@@ -1509,7 +1509,12 @@ async def voice_chat(
         raise HTTPException(status_code=504, detail="Verarbeitung Timeout")
     except Exception as e:
         logger.error("Voice-Chat fehlgeschlagen: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        _voice_err = random.choice([
+            "Da lief etwas nicht nach Plan. Einen Moment.",
+            "Nicht ganz wie vorgesehen. Ich bleibe dran.",
+            "Suboptimal. Ich pruefe eine Alternative.",
+        ])
+        raise HTTPException(status_code=500, detail=_voice_err)
 
 
 # ----- Phase 9: Speaker Recognition Endpoints -----

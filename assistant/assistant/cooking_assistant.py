@@ -105,22 +105,21 @@ COOKING_START_TRIGGERS = [
 
 COOKING_KEYWORDS = [
     "kochen", "backen", "zubereiten", "braten", "grillen",
-    "rezept für", "rezept für",
+    "rezept für",
     "wie mache ich", "wie macht man", "wie bereite ich",
     "wie koche ich", "wie backe ich", "wie brate ich",
 ]
 
 # Navigation per Sprache
-NAV_NEXT = ["weiter", "nächster schritt", "nächster schritt", "next", "und dann",
+NAV_NEXT = ["weiter", "nächster schritt", "next", "und dann",
             "was kommt jetzt", "wie gehts weiter"]
-NAV_PREV = ["zurück", "zurück", "vorheriger schritt", "nochmal den letzten"]
+NAV_PREV = ["zurück", "vorheriger schritt", "nochmal den letzten"]
 NAV_REPEAT = ["nochmal", "wiederhole", "wie war das", "sag das nochmal",
               "repeat", "bitte nochmal"]
-NAV_STATUS = ["wo bin ich", "welcher schritt", "status", "übersicht", "übersicht"]
+NAV_STATUS = ["wo bin ich", "welcher schritt", "status", "übersicht"]
 NAV_TIMER = ["timer", "stell timer", "stell einen timer", "weck mich",
              "erinner mich"]
-NAV_TIMER_CHECK = ["wie lange noch", "timer status", "läuft der timer",
-                   "läuft der timer"]
+NAV_TIMER_CHECK = ["wie lange noch", "timer status", "läuft der timer"]
 NAV_STOP = ["stop kochen", "stopp kochen", "abbrechen", "koch session beenden",
             "fertig kochen", "ich bin fertig", "koch modus beenden",
             "kochen beenden", "kochmodus beenden", "beende kochen",
@@ -128,7 +127,7 @@ NAV_STOP = ["stop kochen", "stopp kochen", "abbrechen", "koch session beenden",
             "kochen beende", "beenden"]
 NAV_INGREDIENTS = ["zutaten", "was brauche ich", "einkaufsliste",
                    "welche zutaten"]
-NAV_PORTIONS = ["für", "für", "portionen", "personen"]
+NAV_PORTIONS = ["für", "portionen", "personen"]
 NAV_SAVE = ["merk dir das rezept", "rezept speichern", "speichere das rezept",
             "merk dir dieses rezept"]
 

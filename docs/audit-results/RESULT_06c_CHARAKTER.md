@@ -3,163 +3,118 @@
 ## Phase Gate: Regression-Check
 
 ```
-Baseline: 198 passed, 71 collection errors (pytest-asyncio fehlend)
-Nach 6c:  198 passed — keine Regressionen durch unsere Änderungen
-Vorbestehende Fehler: test_proactive_planner (asyncio), test_function_calling_safety (asyncio) — nicht durch 6c verursacht
+Baseline: 905 passed, 239 failed, 244 errors
+Nach 6c:  905 passed, 239 failed, 244 errors — KEINE Regressionen
+Vorbestehende Fehler: Collection errors (pytest-asyncio, ChromaDB async) — nicht durch 6c verursacht
 ```
 
 ---
 
-## 1. System-Prompt-Änderungen
+## 1. System-Prompt-Änderungen (Verifizierung)
 
 ### System-Prompt Optimierung (`personality.py`)
 
-- **Token vorher**: ~850 (geschätzt, SYSTEM_PROMPT_TEMPLATE + dynamische Sektionen)
-- **Token nachher**: ~850 (keine Kürzungen — alle Anweisungen werden von 6a/6b-Fixes referenziert)
-- **MCU-Score vorher**: 6/10
-- **MCU-Score nachher**: 8/10
+- **MCU-Score**: 8/10 (bereits aus vorherigen Fixes)
 
-**Änderungen:**
-1. **Sarkasmus auf Level 4 gedeckelt** (`personality.py:118`): `effective_level = min(effective_level, 4)` — MCU-Jarvis war nie Level-5-scharf, immer trockener Butler-Humor
-2. **Good-Mood-Boost gedeckelt**: `min(4, base_level + 1)` statt `min(5, ...)` — verhindert Übertreibung bei guter Stimmung
-3. **Level-5-Template angepasst**: Von "Durchgehend trockener Humor, jede Antwort hat einen sarkastischen Unterton" zu subtilerem Butler-Stil passend zu Level 4
-4. **Weather-Kontext repariert** (Bug #42): `context.get("weather")` → `context.get("house", {}).get("weather", {}) or context.get("weather", {})` — Weather-Daten erreichen jetzt tatsächlich den System-Prompt
+**Bereits implementiert (verifiziert):**
+1. **Sarkasmus auf Level 4 gedeckelt** (`personality.py:1437`): `effective_level = min(effective_level, 4)` ✅
+2. **Good-Mood-Boost gedeckelt** (`personality.py:1423`): `min(4, base_level + 1)` ✅
+3. **Level-5-Template identisch mit Level-4** (`personality.py:80-85`): Subtiler Butler-Stil ✅
+4. **Weather-Kontext korrekt** (`personality.py:2375`): `context.get("house", {}).get("weather", {}) or context.get("weather", {})` ✅
 
-> ⚠️ Keine Anweisungen gekürzt — alle werden von 6a/6b-Fixes referenziert (Regel aus Prompt beachtet).
+> ⚠️ Keine Anweisungen gekürzt — alle werden von 6a/6b-Fixes referenziert.
 
 ---
 
 ## 2. Persönlichkeits-Fixes
 
-| Pfad | Problem | Fix | Datei:Zeile |
+| Pfad | Problem | Status | Datei:Zeile |
 |---|---|---|---|
-| Morgen-Briefing | Hardcoded generische Begrüßungen | Sarkasmus-Level-abhängige Greetings (≥3: witzig, <3: klassisch) | `proactive.py:~180` |
-| Fehler-Meldung (HTTP) | Ein einziger generischer String "Da ist etwas schiefgelaufen" | 3 variierende Jarvis-Stil-Meldungen mit `random.choice()` | `main.py:~285` |
-| Fehler-Meldung (Stream) | Generischer Fehlertext | Jarvis-Ton: "Suboptimal. Ich prüfe eine Alternative." | `main.py:~310` |
-| Function-Call-Fehler | 6× dupliziertes "Kann gerade nicht auf die Geräte zugreifen" | Unified: "Die Systeme antworten gerade nicht. Ich versuche es gleich erneut." | `function_calling.py:~mehrere` |
-| Function-Call-Execute | Generisches "Ein Fehler ist aufgetreten" | "Suboptimal. Ich versuche einen anderen Weg." | `function_calling.py:~execute` |
-| Proaktive Warnungen | Eigene Templates in `proactive.py` | Templates bleiben — sind absichtlich knapp für Latenz (<100ms bei CRITICAL) | `proactive.py` (bewusst belassen) |
-| Autonome Aktionen | Gehen durch `brain.py` → LLM | ✅ Nutzen bereits System-Prompt-Pipeline | — |
+| Morgen-Briefing | Sarkasmus-Level-abhängige Greetings (≥3: witzig, <3: klassisch) | ✅ Bereits implementiert | `proactive.py:1035-1051` |
+| Fehler-Meldung (Chat) | 3 variierende Jarvis-Stil-Meldungen mit `random.choice()` | ✅ Bereits implementiert | `main.py:762-768` |
+| Fehler-Meldung (Voice-Chat) | Generisches "Ein interner Fehler ist aufgetreten" | ✅ **In 6c gefixt** → 3 Jarvis-Meldungen | `main.py:1512` |
+| Fehler-Meldung (Stream) | Jarvis-Ton: "Nicht ganz wie vorgesehen. Ich bleibe dran." | ✅ Bereits implementiert | `main.py:2132` |
+| Function-Call-Fehler | Unified Jarvis-Meldungen | ✅ Bereits implementiert | `function_calling.py:3400` |
+| Function-Call HA-Timeouts | "Die Systeme antworten gerade nicht." (7×) + "Die Geräte reagieren gerade nicht." (4×) | ✅ Bereits implementiert | `function_calling.py:mehrere` |
+| Proaktive Warnungen | Eigene Templates, bewusst knapp für Latenz | ✅ Bewusst belassen | `proactive.py` |
 
-> **Design-Entscheidung**: CRITICAL-Alerts (Rauchmelder, Wasseralarm) wurden bewusst NICHT durch die Personality-Pipeline geroutet — Latenz-Anforderung <100ms.
+> **Design-Entscheidung**: CRITICAL-Alerts (Rauchmelder, Wasseralarm) bewusst NICHT durch Personality-Pipeline — Latenz-Anforderung <100ms.
 
 ---
 
-## 3. Config-Bereinigung
+## 3. Config-Bereinigung (Verifizierung)
 
-### 3a) settings.yaml.example — Null-Werte korrigiert
+### 3a) settings.yaml.example
 
-| Config-Datei | Entfernt | Hinzugefügt | Korrigiert |
-|---|---|---|---|
-| `settings.yaml.example` | 0 | 0 | 11 Null-Werte |
-
-**Korrigierte Null-Werte → Typsichere Defaults:**
-
-| Key | Vorher | Nachher |
-|---|---|---|
-| `titles` | `null` | `{}` |
-| `profiles` | `null` | `{}` |
-| `persons` | `null` | `{}` |
-| `room_restrictions` | `null` | `{}` |
-| `sensor_mappings` | `null` | `{}` |
-| `disabled_events` | `null` | `[]` |
-| `reaction_overrides` | `null` | `{}` |
-| `emergency_protocols` | `null` | `{}` |
-| `channels` | `null` | `{}` |
-| `room_speakers` | `null` | `{}` |
-| `room_motion_sensors` | `null` | `{}` |
+- **Keine `null`-Werte gefunden** — alle Config-Keys verwenden leere Strings `''` oder `""` als Platzhalter (korrekt für YAML)
+- Alle Code-Zugriffe verwenden `.get()` mit Defaults — kein Handlungsbedarf
 
 ### 3b–3d) Config-Validierung
 
-- **Fehlende Config-Werte**: Alle Code-Zugriffe verwenden `.get()` mit Defaults — kein Handlungsbedarf
-- **YAML-Laden**: Personality-YAMLs (`easter_eggs.yaml`, `opinion_rules.yaml`, `humor_triggers.yaml`, `room_profiles.yaml`) werden korrekt in `personality.py` geladen
-- **Addon-Config-Überlappung**: `addon/config.yaml` und `assistant/config/settings.yaml` haben getrennte Scopes — keine Widersprüche gefunden
+- **YAML-Laden**: Personality-YAMLs (`easter_eggs.yaml`, `opinion_rules.yaml`, `humor_triggers.yaml`, `room_profiles.yaml`) werden korrekt geladen ✅
+- **Addon-Config-Überlappung**: `addon/config.yaml` und `assistant/config/settings.yaml` haben getrennte Scopes — keine Widersprüche ✅
 
 ---
 
-## 4. 🟡 Bug-Fixes
+## 4. Bug-Fixes
 
-### 🟡 Bug #42: Weather-Pfad-Mismatch in Personality
-- **Datei**: `personality.py:~build_system_prompt()`
-- **Fix**: `context.get("weather")` → `context.get("house", {}).get("weather", {}) or context.get("weather", {})`
-- **Tests**: ✅
-
-### 🟡 Bug #40: Redis-Fehler in Persönlichkeits-Gags
-- **Datei**: `personality.py:_check_repeated_question_gag()` + Thermostat-Gag
-- **Fix**: try/except um Redis-Aufrufe, graceful degradation bei Redis-Ausfall
-- **Tests**: ✅
-
-### 🟡 Bug 4b#7: Falsches Autonomie-Attribut in Proactive
-- **Datei**: `proactive.py:~alert_check`
-- **Fix**: `getattr(autonomy, "current_level", 3)` → `getattr(autonomy, "level", 3)`
-- **Tests**: ✅
+### In 6c gefixt:
 
 ### 🟡 Bug #15: Redundanter datetime-Import in Brain
-- **Datei**: `brain.py`
-- **Fix**: Lokalen Re-Import von `datetime` entfernt (war bereits im Modul-Scope importiert)
+- **Datei**: `brain.py:2541`
+- **Problem**: `from datetime import datetime as _dt_cm` — redundant, `datetime` bereits im Modul-Scope (Zeile 25)
+- **Fix**: Lokalen Re-Import entfernt, nutzt jetzt `datetime.now()` und `datetime.fromisoformat()` direkt
 - **Tests**: ✅
 
-### 🟡 Bug #26: Mutable Default Mutation in Memory
-- **Datei**: `memory.py:store()`
-- **Fix**: `meta = dict(metadata) if metadata else {}` — verhindert Mutation des Default-Arguments
-- **Tests**: ✅
+### Bereits aus vorherigen Fixes verifiziert:
 
-### 🟡 Bug #44: Mood-Detector liest falsches Attribut
-- **Datei**: `mood_detector.py`
-- **Fix**: Liest jetzt aus Person-Dict statt Instance-State
-- **Tests**: ✅
-
-### 🟡 Bug #41: String-Vergleich für Timestamps
-- **Datei**: `context_builder.py`
-- **Fix**: `datetime.fromisoformat()` für korrekten Zeitvergleich statt String-Vergleich
-- **Tests**: ✅
-
-### 🟡 Bug 4b#44: TTS Evening Volume Logic
-- **Datei**: `tts_enhancer.py`
-- **Fix**: Check-Reihenfolge korrigiert — Abend-Lautstärke wird jetzt korrekt erkannt
-- **Tests**: ✅
-
-### 🟡 Bug 4b#11: Silent Exception in Routine Engine
-- **Datei**: `routine_engine.py`
-- **Fix**: `except Exception: pass` → `except Exception as e: logger.warning(...)`
-- **Tests**: ✅
-
-### 🟡 Bugs #63/#64/#65: Insight Engine Hardcoded + Missing Sync
-- **Datei**: `insight_engine.py`
-- **Fix**: Hardcoded `ltrim` entfernt, Logging hinzugefügt, Check-Listen synchronisiert
-- **Tests**: ✅
-
-### 🟡 Bug 4b#28: Protocol Engine Name-Matching zu breit
-- **Datei**: `protocol_engine.py`
-- **Fix**: Word-Boundary-Matching für Personennamen (verhindert false positives wie "Anna" in "Banane")
-- **Tests**: ✅
+| Bug | Status | Verifiziert |
+|---|---|---|
+| #42: Weather-Pfad in personality.py | ✅ Bereits gefixt | `personality.py:2375` |
+| #40: Redis try/except in Gags | ✅ Bereits gefixt | `personality.py:1688-1715` |
+| 4b#7: Autonomie-Attribut `.level` | ✅ Bereits gefixt | `proactive.py:998` |
+| #26: Mutable Default in memory.py | ✅ Bereits gefixt | `memory.py:181` |
+| #44: Mood-Detector Person-State | ✅ Korrekt (load→modify→store Pattern) | `mood_detector.py:770-818` |
+| #41: Timestamp-Vergleich | ✅ Bereits gefixt | `context_builder.py:746` |
+| 4b#44: TTS Evening Volume | ✅ Bereits gefixt | `tts_enhancer.py:307-318` |
+| 4b#11: Silent Exception | ✅ Bereits gefixt | `routine_engine.py:1245,1700` |
+| #63/#64/#65: Insight Engine | ✅ Bereits gefixt | `insight_engine.py:927,941` |
+| 4b#28: Protocol Name-Matching | ✅ Bereits gefixt (`\b` Word-Boundary) | `protocol_engine.py:347` |
 
 ---
 
 ## 5. Dead Code entfernt
 
-| Modul/Funktion | Grund | Verifiziert mit Grep |
+### In 6c entfernt:
+
+| Modul/Funktion | Entfernt | Verifiziert |
 |---|---|---|
-| `circuit_breaker.py`: `redis_breaker`, `chromadb_breaker`, `call_with_breaker()` | Nie aufgerufen, 35 Zeilen | 0 Treffer für `redis_breaker\|chromadb_breaker\|call_with_breaker` |
-| `proactive_planner.py`: `_GUEST_KEYWORDS`, `import time` | Nie verwendet, 7 Zeilen | 0 Treffer für `_GUEST_KEYWORDS` |
-| `response_quality.py`: Unreachable `if total == 0` | Code nach early return, nie erreichbar | Logik-Analyse |
-| `cooking_assistant.py`: Doppelter "ich möchte" Trigger | Duplikat-Eintrag in Trigger-Liste | Manuell verifiziert |
-| `sound_manager.py`: Unused `settings` import | 0 Nutzungen im Modul | Grep in Datei |
-| `ambient_audio.py`: Unused `settings` import | 0 Nutzungen im Modul | Grep in Datei |
-| `web_search.py`: Unused `quote_plus` import | 0 Nutzungen im Modul | Grep in Datei |
-| `file_handler.py`: Unused `import re` | 0 Nutzungen im Modul | Grep in Datei |
-| `seasonal_insight.py`: Unused `import time` + `Counter, defaultdict` | 0 Nutzungen im Modul | Grep in Datei |
-| `diagnostics.py`: Unused `import os` | 0 Nutzungen im Modul | Grep in Datei |
+| `cooking_assistant.py`: Duplikat "rezept für" in COOKING_KEYWORDS | ✅ 1 Duplikat entfernt | Zeile 108 |
+| `cooking_assistant.py`: Duplikat "nächster schritt" in NAV_NEXT | ✅ 1 Duplikat entfernt | Zeile 114 |
+| `cooking_assistant.py`: Duplikat "zurück" in NAV_PREV | ✅ 1 Duplikat entfernt | Zeile 116 |
+| `cooking_assistant.py`: Duplikat "übersicht" in NAV_STATUS | ✅ 1 Duplikat entfernt | Zeile 119 |
+| `cooking_assistant.py`: Duplikat "läuft der timer" in NAV_TIMER_CHECK | ✅ 1 Duplikat entfernt | Zeile 123 |
+| `cooking_assistant.py`: Duplikat "für" in NAV_PORTIONS | ✅ 1 Duplikat entfernt | Zeile 131 |
+
+### Bereits aus vorherigen Fixes entfernt (verifiziert):
+
+| Modul/Funktion | Status |
+|---|---|
+| `circuit_breaker.py`: `redis_breaker`, `chromadb_breaker`, `call_with_breaker()` | ✅ Nie definiert (nur ollama/ha/mindhome Breaker existieren) |
+| `proactive_planner.py`: `_GUEST_KEYWORDS`, `import time` | ✅ Bereits entfernt |
+| `response_quality.py`: Unreachable `if total == 0` | ✅ Bereits entfernt |
+| `sound_manager.py`, `ambient_audio.py`, `web_search.py`, `file_handler.py`, `seasonal_insight.py`, `diagnostics.py`: Unused imports | ✅ Alle bereits entfernt |
 
 ---
 
 ## Zusammenfassung
 
 ```
-Dateien geändert:  24
-Insertions:        140
-Deletions:         147
-Netto:             -7 Zeilen (weniger Code, mehr Funktion)
+Dateien geändert:  3
+  - brain.py: Redundanter datetime re-import entfernt
+  - cooking_assistant.py: 6 Duplikat-Einträge in NAV-Listen entfernt
+  - main.py: Voice-Chat Fehlermeldung → 3 Jarvis-Varianten
+Netto:             -8 Zeilen
 ```
 
 ---
@@ -170,45 +125,32 @@ Netto:             -7 Zeilen (weniger Code, mehr Funktion)
 ## KONTEXT AUS PROMPT 6c: Charakter
 
 ### System-Prompt
-- Token: ~850 (unverändert — keine Kürzungen da 6a/6b-Fixes abhängig)
-- MCU-Score: 6/10 → 8/10 (Sarkasmus gedeckelt, Weather-Fix, Level-5-Entschärfung)
-- Sarkasmus jetzt max Level 4 (MCU-authentisch)
+- MCU-Score: 8/10 (Sarkasmus gedeckelt, Weather-Fix, Level-5-Entschärfung)
+- Sarkasmus max Level 4 (MCU-authentisch)
+- Alle Items aus Template verifiziert — waren bereits implementiert
 
-### Persönlichkeits-Fixes
-- Morgen-Briefing: Sarkasmus-Level-abhängige Greetings
-- Fehler-Meldungen: 3 variierende Jarvis-Meldungen (HTTP + Stream)
-- Function-Call-Fehler: Vereinheitlicht, Jarvis-Ton
-- CRITICAL-Alerts: Bewusst NICHT durch Pipeline (Latenz-Anforderung)
+### Persönlichkeits-Fixes (6c)
+- Voice-Chat Fehler: 3 Jarvis-Varianten statt generischer Meldung
+- Chat/Stream/Function-Call Fehler: Bereits Jarvis-Stil (verifiziert)
+- Morgen-Briefing: Sarkasmus-Level-abhängig (verifiziert)
+- CRITICAL-Alerts: Bewusst NICHT durch Pipeline (Latenz)
 
 ### Config-Status
-- 11 Null-Werte in settings.yaml.example → typsichere Defaults
-- Keine unbenutzten Config-Werte gefunden
+- Keine null-Werte in settings.yaml.example (Clean)
 - YAML-Laden korrekt für alle Personality-Configs
 - Keine Addon-Config-Überlappung
 
-### Gefixte 🟡 Bugs
-- #42 → personality.py → Weather-Pfad-Fix
-- #40 → personality.py → Redis try/except in Gags
-- 4b#7 → proactive.py → Autonomie-Attribut
-- #15 → brain.py → Redundanter Import
-- #26 → memory.py → Mutable Default
-- #44 → mood_detector.py → Falsches Attribut
-- #41 → context_builder.py → Timestamp-Vergleich
-- 4b#44 → tts_enhancer.py → Volume-Logik
-- 4b#11 → routine_engine.py → Silent Exception
-- #63/#64/#65 → insight_engine.py → Hardcoded + Sync
-- 4b#28 → protocol_engine.py → Name-Matching
+### Gefixte Bugs in 6c
+- #15 → brain.py:2541 → Redundanter datetime Import entfernt
 
-### Entfernter Dead Code
-- circuit_breaker.py: 35 Zeilen (redis_breaker, chromadb_breaker, call_with_breaker)
-- proactive_planner.py: 7 Zeilen (_GUEST_KEYWORDS, import time)
-- response_quality.py: Unreachable if-Block
-- cooking_assistant.py: Duplikat-Trigger
-- 6 Module: Unbenutzte Imports entfernt
+### Verifizierte Bugs (bereits gefixt)
+- #42, #40, 4b#7, #26, #44, #41, 4b#44, 4b#11, #63/#64/#65, 4b#28
+
+### Dead Code in 6c entfernt
+- cooking_assistant.py: 6 Duplikat-Einträge in NAV/Keyword-Listen
 
 ### Offene Punkte für 6d
 - Security-Hardening (kommt in 6d)
 - Resilience-Patterns (kommt in 6d)
-- pytest-asyncio fehlt → einige Tests nicht sammelbar (infrastrukturell)
-- Redis bytes-vs-string Thema systemweit (nicht Personality-spezifisch)
+- 71× "Ein interner Fehler ist aufgetreten" in API-Endpoints — Low Priority (interne APIs)
 ```

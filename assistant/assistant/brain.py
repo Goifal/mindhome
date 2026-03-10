@@ -2538,10 +2538,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _cm_timeout = int(_conv_cfg.get("conversation_mode_timeout", 300))
             _cm_msgs = _safe_get("conv_mode_msgs") or []
             if _cm_msgs:
-                from datetime import datetime as _dt_cm
                 _cm_ts = _cm_msgs[-1].get("timestamp", "")
                 if _cm_ts:
-                    _cm_age = (_dt_cm.now() - _dt_cm.fromisoformat(_cm_ts)).total_seconds()
+                    _cm_age = (datetime.now() - datetime.fromisoformat(_cm_ts)).total_seconds()
                     if _cm_age < _cm_timeout:
                         _conversation_mode = True
                         # Topic-Continuity: Roh-Text aus letzten Nachrichten
