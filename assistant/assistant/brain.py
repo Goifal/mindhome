@@ -209,6 +209,9 @@ class AssistantBrain(BrainCallbacksMixin):
         self._states_cache_ts = 0.0
         self._STATES_CACHE_TTL = 2.0  # 2 Sekunden
 
+        # Fix: Lock fuer process() — verhindert concurrent Requests die Shared State korrumpieren
+        self._process_lock = asyncio.Lock()
+
         # Clients
         self.ha = HomeAssistantClient()
         self.ollama = OllamaClient()
@@ -510,92 +513,6 @@ class AssistantBrain(BrainCallbacksMixin):
         # Gelernten Sarkasmus-Level laden
         await self.personality.load_learned_sarcasm_level()
 
-        # Fact Decay: Einmal taeglich alte Fakten abbauen
-        self._task_registry.create_task(self._run_daily_fact_decay(), name="daily_fact_decay")
-
-        # Autonomy Evolution: Woechentlich pruefen ob Level-Aufstieg moeglich
-        self._task_registry.create_task(self._run_autonomy_evolution(), name="autonomy_evolution")
-
-        # Memory Extractor initialisieren
-        self.memory_extractor = MemoryExtractor(self.ollama, self.memory.semantic)
-
-        # Feedback Tracker initialisieren
-        await self.feedback.initialize(redis_client=self.memory.redis)
-
-        # Daily Summarizer initialisieren
-        self.summarizer.memory = self.memory
-        await self.summarizer.initialize(
-            redis_client=self.memory.redis,
-            chroma_collection=self.memory.chroma_collection,
-        )
-        self.summarizer.set_notify_callback(self._handle_daily_summary)
-
-        # Phase 6: TimeAwareness initialisieren und starten
-        await self.time_awareness.initialize(redis_client=self.memory.redis)
-        self.time_awareness.set_notify_callback(self._handle_time_alert)
-        await self.time_awareness.start()
-
-        # LightEngine: Praesenz, Bettsensor, Lux-Adaptiv, Daemmerung, Override
-        await self.light_engine.initialize(redis_client=self.memory.redis)
-        self.light_engine.mood = self.mood  # Mood-Awareness für adaptives Licht
-        await self.light_engine.start()
-        self.executor._light_engine = self.light_engine
-        self.time_awareness._light_engine = self.light_engine
-
-        # Phase 7: RoutineEngine initialisieren
-        await self.routines.initialize(redis_client=self.memory.redis)
-        self.routines.set_executor(self.executor)
-        self.routines.set_personality(self.personality)
-        self.routines._semantic_memory = self.memory.semantic
-        await self.routines.migrate_yaml_birthdays(self.memory.semantic)
-
-        # Phase 8: Anticipation Engine + Intent Tracker
-        await self.anticipation.initialize(redis_client=self.memory.redis)
-        self.anticipation.set_notify_callback(self._handle_anticipation_suggestion)
-        await self.intent_tracker.initialize(redis_client=self.memory.redis)
-        self.intent_tracker.set_notify_callback(self._handle_intent_reminder)
-
-        # Phase 9: Speaker Recognition initialisieren
-        await self.speaker_recognition.initialize(redis_client=self.memory.redis)
-
-        # Phase 11: Koch-Assistent mit Semantic Memory verbinden
-        self.cooking.semantic_memory = self.memory.semantic
-        self.cooking.set_notify_callback(self._handle_cooking_timer)
-
-        # Phase 11.1: Knowledge Base initialisieren
-        await self.knowledge_base.initialize()
-
-        # Recipe Store initialisieren und mit Koch-Assistent verbinden
-        await self.recipe_store.initialize()
-        self.cooking.recipe_store = self.recipe_store
-
-        # Phase 15.2: Inventory Manager initialisieren
-        await self.inventory.initialize(redis_client=self.memory.redis)
-
-        # Smart Shopping initialisieren
-        await self.smart_shopping.initialize(redis_client=self.memory.redis)
-        self.executor._smart_shopping = self.smart_shopping
-
-        # Konversations-Gedaechtnis++ initialisieren
-        await self.conversation_memory.initialize(redis_client=self.memory.redis)
-        self.executor._conversation_memory = self.conversation_memory
-
-        # Multi-Room Audio initialisieren
-        await self.multi_room_audio.initialize(redis_client=self.memory.redis)
-        await self.multi_room_audio.load_presets()
-        self.executor._multi_room_audio = self.multi_room_audio
-
-        # Phase 13.2: Self Automation initialisieren
-        await self.self_automation.initialize(redis_client=self.memory.redis)
-
-        # Phase 13.4: Config Versioning + Self Optimization initialisieren
-        await self.config_versioning.initialize(redis_client=self.memory.redis)
-        await self.self_optimization.initialize(redis_client=self.memory.redis)
-        self.executor.set_config_versioning(self.config_versioning)
-
-        # Phase 14.2: OCR Engine initialisieren
-        await self.ocr.initialize(redis_client=self.memory.redis)
-
         # F-069: Nicht-kritische Module in try/except wrappen für Degraded Startup.
         # Wenn ein Modul fehlschlaegt, laeuft der Assistent trotzdem —
         # nur die betroffene Funktionalitaet fehlt.
@@ -608,6 +525,99 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 _degraded_modules.append(name)
                 logger.error("F-069: %s Initialisierung fehlgeschlagen (degraded): %s", name, e)
+
+        # Fix: Module 1-30 ebenfalls in _safe_init wrappen (waren vorher ungeschuetzt)
+        # Fact Decay + Autonomy Evolution Background-Tasks
+        await _safe_init("FactDecay", self._start_fact_decay_task())
+        await _safe_init("AutonomyEvolution", self._start_autonomy_evolution_task())
+
+        # Memory Extractor initialisieren
+        try:
+            self.memory_extractor = MemoryExtractor(self.ollama, self.memory.semantic)
+        except Exception as e:
+            _degraded_modules.append("MemoryExtractor")
+            logger.error("F-069: MemoryExtractor init fehlgeschlagen: %s", e)
+
+        # Feedback Tracker initialisieren
+        await _safe_init("FeedbackTracker", self.feedback.initialize(redis_client=self.memory.redis))
+
+        # Daily Summarizer initialisieren
+        self.summarizer.memory = self.memory
+        await _safe_init("Summarizer", self.summarizer.initialize(
+            redis_client=self.memory.redis,
+            chroma_collection=self.memory.chroma_collection,
+        ))
+        self.summarizer.set_notify_callback(self._handle_daily_summary)
+
+        # Phase 6: TimeAwareness initialisieren und starten
+        await _safe_init("TimeAwareness", self.time_awareness.initialize(redis_client=self.memory.redis))
+        self.time_awareness.set_notify_callback(self._handle_time_alert)
+        if "TimeAwareness" not in _degraded_modules:
+            await _safe_init("TimeAwareness.start", self.time_awareness.start())
+
+        # LightEngine: Praesenz, Bettsensor, Lux-Adaptiv, Daemmerung, Override
+        await _safe_init("LightEngine", self.light_engine.initialize(redis_client=self.memory.redis))
+        self.light_engine.mood = self.mood
+        if "LightEngine" not in _degraded_modules:
+            await _safe_init("LightEngine.start", self.light_engine.start())
+        self.executor._light_engine = self.light_engine
+        self.time_awareness._light_engine = self.light_engine
+
+        # Phase 7: RoutineEngine initialisieren
+        await _safe_init("RoutineEngine", self.routines.initialize(redis_client=self.memory.redis))
+        self.routines.set_executor(self.executor)
+        self.routines.set_personality(self.personality)
+        self.routines._semantic_memory = self.memory.semantic
+        if "RoutineEngine" not in _degraded_modules:
+            await _safe_init("RoutineEngine.birthdays", self.routines.migrate_yaml_birthdays(self.memory.semantic))
+
+        # Phase 8: Anticipation Engine + Intent Tracker
+        await _safe_init("Anticipation", self.anticipation.initialize(redis_client=self.memory.redis))
+        self.anticipation.set_notify_callback(self._handle_anticipation_suggestion)
+        await _safe_init("IntentTracker", self.intent_tracker.initialize(redis_client=self.memory.redis))
+        self.intent_tracker.set_notify_callback(self._handle_intent_reminder)
+
+        # Phase 9: Speaker Recognition initialisieren
+        await _safe_init("SpeakerRecognition", self.speaker_recognition.initialize(redis_client=self.memory.redis))
+
+        # Phase 11: Koch-Assistent mit Semantic Memory verbinden
+        self.cooking.semantic_memory = self.memory.semantic
+        self.cooking.set_notify_callback(self._handle_cooking_timer)
+
+        # Phase 11.1: Knowledge Base initialisieren
+        await _safe_init("KnowledgeBase", self.knowledge_base.initialize())
+
+        # Recipe Store initialisieren und mit Koch-Assistent verbinden
+        await _safe_init("RecipeStore", self.recipe_store.initialize())
+        self.cooking.recipe_store = self.recipe_store
+
+        # Phase 15.2: Inventory Manager initialisieren
+        await _safe_init("Inventory", self.inventory.initialize(redis_client=self.memory.redis))
+
+        # Smart Shopping initialisieren
+        await _safe_init("SmartShopping", self.smart_shopping.initialize(redis_client=self.memory.redis))
+        self.executor._smart_shopping = self.smart_shopping
+
+        # Konversations-Gedaechtnis++ initialisieren
+        await _safe_init("ConversationMemory", self.conversation_memory.initialize(redis_client=self.memory.redis))
+        self.executor._conversation_memory = self.conversation_memory
+
+        # Multi-Room Audio initialisieren
+        await _safe_init("MultiRoomAudio", self.multi_room_audio.initialize(redis_client=self.memory.redis))
+        if "MultiRoomAudio" not in _degraded_modules:
+            await _safe_init("MultiRoomAudio.presets", self.multi_room_audio.load_presets())
+        self.executor._multi_room_audio = self.multi_room_audio
+
+        # Phase 13.2: Self Automation initialisieren
+        await _safe_init("SelfAutomation", self.self_automation.initialize(redis_client=self.memory.redis))
+
+        # Phase 13.4: Config Versioning + Self Optimization initialisieren
+        await _safe_init("ConfigVersioning", self.config_versioning.initialize(redis_client=self.memory.redis))
+        await _safe_init("SelfOptimization", self.self_optimization.initialize(redis_client=self.memory.redis))
+        self.executor.set_config_versioning(self.config_versioning)
+
+        # Phase 14.2: OCR Engine initialisieren
+        await _safe_init("OCR", self.ocr.initialize(redis_client=self.memory.redis))
 
         # Phase 14.3: Ambient Audio initialisieren und starten
         await _safe_init("AmbientAudio", self.ambient_audio.initialize(redis_client=self.memory.redis))
@@ -1087,6 +1097,11 @@ class AssistantBrain(BrainCallbacksMixin):
         Returns:
             Dict mit response, actions, model_used
         """
+        async with self._process_lock:
+            return await self._process_inner(text, person, room, files, stream_callback, voice_metadata, device_id)
+
+    async def _process_inner(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None, device_id: Optional[str] = None) -> dict:
+        """Innere process()-Implementierung, geschuetzt durch _process_lock."""
         # C-2: Erkennen ob Request von HA Assist Pipeline kommt
         # Die Pipeline uebernimmt TTS selbst via Wyoming Piper → brain.py darf NICHT auch sprechen
         self._request_from_pipeline = (
@@ -2391,7 +2406,7 @@ class AssistantBrain(BrainCallbacksMixin):
             )))
             _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
             _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
-            _mega_tasks.append(("conv_memory", self.conversation_memory.get_memory_context()))
+            _mega_tasks.append(("conv_memory_extended", self.conversation_memory.get_memory_context()))
 
         # Conversation-Mode Detection + Memory-Callback parallelisieren
         # (bisher sequentiell NACH dem gather — spart ~50-200ms)
@@ -2919,9 +2934,9 @@ class AssistantBrain(BrainCallbacksMixin):
             sections.append(("continuity", cont_text, 3))
 
         # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
-        conv_memory_ctx = _safe_get("conv_memory", "")
+        conv_memory_ctx = _safe_get("conv_memory_extended", "")
         if conv_memory_ctx:
-            sections.append(("conv_memory", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 3))
+            sections.append(("conv_memory_ext", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 3))
 
         # --- Prio 4: Wenn Platz ---
         if tutorial_hint:
@@ -9544,6 +9559,14 @@ Regeln:
             except Exception as e:
                 logger.debug("Weekly Learning Report Fehler: %s", e)
                 await asyncio.sleep(ERROR_BACKOFF_LONG)
+
+    async def _start_fact_decay_task(self):
+        """Startet den Fact-Decay Background-Task."""
+        self._task_registry.create_task(self._run_daily_fact_decay(), name="daily_fact_decay")
+
+    async def _start_autonomy_evolution_task(self):
+        """Startet den Autonomy-Evolution Background-Task."""
+        self._task_registry.create_task(self._run_autonomy_evolution(), name="autonomy_evolution")
 
     async def _run_daily_fact_decay(self):
         """Fuehrt einmal taeglich den Fact Decay aus (04:00 Uhr)."""

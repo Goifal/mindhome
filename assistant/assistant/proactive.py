@@ -95,6 +95,7 @@ class ProactiveManager:
 
         # Dynamische Geraete: devices ist eine Liste von {key, label, patterns}
         self._appliance_patterns = {}
+        self.event_handlers = {}  # Fix: Vor devices-Loop initialisieren (war erst bei Z.145)
         devices = appliance_cfg.get("devices", [])
         if devices:
             for dev in devices:
