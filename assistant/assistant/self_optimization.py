@@ -93,6 +93,8 @@ class SelfOptimization:
         last_run = await self._redis.get("mha:self_opt:last_run")
         if last_run:
             from datetime import timedelta
+            if isinstance(last_run, bytes):
+                last_run = last_run.decode()
             last_dt = datetime.fromisoformat(last_run)
             delta = timedelta(days=7) if self._interval == "weekly" else timedelta(days=1)
             if datetime.now() - last_dt < delta:
@@ -587,7 +589,10 @@ Wenn keine Aenderung noetig: []"""
                 key = f"mha:self_opt:character_breaks:{day}"
                 day_data = await self._redis.hgetall(key)
                 if day_data:
-                    stats[day] = {k: int(v) for k, v in day_data.items()}
+                    stats[day] = {
+                        (k.decode() if isinstance(k, bytes) else k): int(v)
+                        for k, v in day_data.items()
+                    }
             return stats
         except Exception:
             return {}

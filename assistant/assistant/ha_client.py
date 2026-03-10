@@ -53,6 +53,7 @@ class HomeAssistantClient:
         self._states_cache: Optional[list[dict]] = None
         self._states_cache_ts: float = 0.0
         self._STATES_CACHE_TTL = 5.0  # Sekunden (von 2s erhoeht — HA-States aendern sich selten innerhalb 5s)
+        self._states_lock: asyncio.Lock = asyncio.Lock()
 
     def _get_lock(self) -> asyncio.Lock:
         """Gibt den Session-Lock zurueck."""
@@ -76,18 +77,19 @@ class HomeAssistantClient:
 
     async def get_states(self) -> list[dict]:
         """Alle Entity-States von HA holen (mit kurzem Cache gegen N+1 Queries)."""
-        now = time.monotonic()
-        if self._states_cache is not None and (now - self._states_cache_ts) < self._STATES_CACHE_TTL:
-            return self._states_cache
-        result = await self._get_ha("/api/states") or []
-        if result:  # Nur nicht-leere Ergebnisse cachen
-            self._states_cache = result
-            self._states_cache_ts = now
-        else:
-            # Stale cache invalidieren wenn TTL abgelaufen
-            self._states_cache = None
-            self._states_cache_ts = 0
-        return result
+        async with self._states_lock:
+            now = time.monotonic()
+            if self._states_cache is not None and (now - self._states_cache_ts) < self._STATES_CACHE_TTL:
+                return self._states_cache
+            result = await self._get_ha("/api/states") or []
+            if result:  # Nur nicht-leere Ergebnisse cachen
+                self._states_cache = result
+                self._states_cache_ts = now
+            else:
+                # Stale cache invalidieren wenn TTL abgelaufen
+                self._states_cache = None
+                self._states_cache_ts = 0
+            return result
 
     async def get_state(self, entity_id: str) -> Optional[dict]:
         """State einer einzelnen Entity."""

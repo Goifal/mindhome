@@ -358,6 +358,8 @@ class HealthMonitor:
         try:
             last_reminder = await self.redis.get("mha:health:last_hydration")
             if last_reminder:
+                if isinstance(last_reminder, bytes):
+                    last_reminder = last_reminder.decode()
                 last_dt = datetime.fromisoformat(last_reminder)
                 if now - last_dt < timedelta(hours=self.hydration_interval):
                     return None

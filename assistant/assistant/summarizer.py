@@ -318,8 +318,11 @@ class DailySummarizer:
 
             summaries = []
             for key in keys:
+                key = key.decode() if isinstance(key, bytes) else key
                 content = await self.redis.get(key)
                 if content:
+                    if isinstance(content, bytes):
+                        content = content.decode()
                     date = key.replace("mha:summary:daily:", "")
                     summaries.append({"date": date, "content": content})
             return summaries
@@ -406,7 +409,10 @@ class DailySummarizer:
         """Holt eine existierende Zusammenfassung."""
         if not self.redis:
             return None
-        return await self.redis.get(f"mha:summary:{summary_type}:{date}")
+        val = await self.redis.get(f"mha:summary:{summary_type}:{date}")
+        if isinstance(val, bytes):
+            val = val.decode()
+        return val
 
     def _get_system_prompt(self) -> str:
         return """Du bist der MindHome Assistant Memory Processor.
@@ -468,14 +474,23 @@ Format: Fliesstext, kurze Saetze."""
             month = (datetime.now() - timedelta(days=1)).strftime("%Y-%m")
 
             # Personality-Daten sammeln
-            total = int(await self.redis.get("mha:personality:total_interactions") or 0)
-            positive = int(await self.redis.get("mha:personality:positive_reactions") or 0)
-            formality = int(float(await self.redis.get("mha:personality:formality") or 80))
+            _total_raw = await self.redis.get("mha:personality:total_interactions")
+            if isinstance(_total_raw, bytes):
+                _total_raw = _total_raw.decode()
+            total = int(_total_raw or 0)
+            _positive_raw = await self.redis.get("mha:personality:positive_reactions")
+            if isinstance(_positive_raw, bytes):
+                _positive_raw = _positive_raw.decode()
+            positive = int(_positive_raw or 0)
+            _formality_raw = await self.redis.get("mha:personality:formality")
+            if isinstance(_formality_raw, bytes):
+                _formality_raw = _formality_raw.decode()
+            formality = int(float(_formality_raw or 80))
 
             mood_history = await self.redis.lrange("mha:personality:mood_history", 0, 99)
             avg_mood = 0.5
             if mood_history:
-                values = [float(v) for v in mood_history]
+                values = [float(v.decode() if isinstance(v, bytes) else v) for v in mood_history]
                 if values:
                     avg_mood = round(sum(values) / len(values), 2)
 

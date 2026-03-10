@@ -8,6 +8,7 @@ Injiziert relevante Korrekturen als LLM-Kontext bei zukuenftigen Aktionen.
 Sicherheit: Read-only Memory. Beeinflusst nur LLM-Kontext. Max 200 Eintraege.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -49,6 +50,7 @@ class CorrectionMemory:
         self._max_context = self._cfg.get("max_context_entries", 3)
         self._rules_created_today = 0
         self._last_rules_day = ""
+        self._rules_lock = asyncio.Lock()
 
     async def initialize(self, redis_client):
         """Initialisiert mit Redis Client."""
@@ -374,13 +376,15 @@ class CorrectionMemory:
         if not self.redis:
             return
 
-        # Rate Limit: Max N Regeln pro Tag
+        # Rate Limit: Max N Regeln pro Tag — lock prevents concurrent overcount
         today = datetime.now().strftime("%Y-%m-%d")
-        if self._last_rules_day != today:
-            self._rules_created_today = 0
-            self._last_rules_day = today
-        if self._rules_created_today >= RULES_PER_DAY_LIMIT:
-            return
+        async with self._rules_lock:
+            if self._last_rules_day != today:
+                self._rules_created_today = 0
+                self._last_rules_day = today
+            if self._rules_created_today >= RULES_PER_DAY_LIMIT:
+                return
+            self._rules_created_today += 1
 
         # Aktuelle Eintraege laden und Muster suchen
         entries = await self._get_entries(limit=50)
@@ -464,7 +468,6 @@ class CorrectionMemory:
         )
         await self.redis.expire("mha:correction_memory:rules", 365 * 86400)
 
-        self._rules_created_today += 1
         logger.info("Neue Regel [%s]: %s (confidence: %.2f, similar: %d)",
                      correction_type, rule_text, confidence, len(similar))
 

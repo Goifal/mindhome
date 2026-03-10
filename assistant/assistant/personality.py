@@ -8,7 +8,9 @@ Phase 18: MCU-Upgrade — Memory Callbacks, Running Gag Evolution,
           Eskalierende Sorge, Neugier-Fragen, Think-Ahead.
 """
 
+import asyncio
 import collections
+import threading
 import hashlib
 import json
 import logging
@@ -328,6 +330,7 @@ class PersonalityEngine:
         self._casual_warnings = personality_config.get("casual_warnings") or list(CASUAL_WARNINGS)
 
         # State
+        self._state_lock = asyncio.Lock()
         self._current_mood: str = "neutral"
         self._mood_detector = None
         self._redis = None
@@ -2215,7 +2218,8 @@ class PersonalityEngine:
 
         # Stimmungsabhängige Anpassung
         mood = (context.get("mood") or {}).get("mood", "neutral") if context else "neutral"
-        self._current_mood = mood
+        async with self._state_lock:
+            self._current_mood = mood
         _neutral_fallback = self._mood_styles.get("neutral", {"style_addon": "", "max_sentences_mod": 0})
         mood_config = self._mood_styles.get(mood, _neutral_fallback)
 
@@ -2271,7 +2275,8 @@ class PersonalityEngine:
         if formality_score is None:
             # Per-Person Formality Override
             formality_score = person_profile.get("formality_start", self.formality_start)
-        self._current_formality = formality_score
+        async with self._state_lock:
+            self._current_formality = formality_score
         formality_section = self._build_formality_section(formality_score, mood=mood)
 
         # Person Anrede (nutzt self._current_formality für Titel-Häufigkeit)

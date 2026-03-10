@@ -357,8 +357,10 @@ class DeviceHealthMonitor:
             return None
 
         try:
+            if isinstance(start_raw, bytes):
+                start_raw = start_raw.decode()
             start_dt = datetime.fromisoformat(
-                start_raw.replace("Z", "+00:00") if isinstance(start_raw, str) else start_raw
+                start_raw.replace("Z", "+00:00")
             )
             if start_dt.tzinfo is None:
                 start_dt = start_dt.replace(tzinfo=timezone.utc)
@@ -411,10 +413,14 @@ class DeviceHealthMonitor:
             data = await self.redis.hgetall(key)
             if not data:
                 return None
+            decoded = {
+                (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
+                for k, v in data.items()
+            }
             return {
-                "mean": float(data.get("mean", 0)),
-                "stddev": float(data.get("stddev", 0)),
-                "samples": int(data.get("samples", 0)),
+                "mean": float(decoded.get("mean", 0)),
+                "stddev": float(decoded.get("stddev", 0)),
+                "samples": int(decoded.get("samples", 0)),
             }
         except Exception as e:
             logger.debug("Baseline fetch error [%s]: %s", entity_id, e)
@@ -456,7 +462,7 @@ class DeviceHealthMonitor:
             for samples in results:
                 for s in (samples or []):
                     try:
-                        all_values.append(float(s))
+                        all_values.append(float(s.decode() if isinstance(s, bytes) else s))
                     except (ValueError, TypeError):
                         continue
 

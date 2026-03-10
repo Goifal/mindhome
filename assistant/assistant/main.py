@@ -6099,12 +6099,14 @@ async def workshop_export(project_id: str):
 
 @app.post("/api/workshop/chat")
 async def workshop_chat(request: Request):
-    """Workshop-Chat Proxy — leitet an brain.process() weiter ohne API-Key.
+    """Workshop-Chat Proxy — leitet an brain.process() weiter.
 
-    Der regulaere /api/assistant/chat Endpoint erfordert einen API-Key.
-    Dieser Workshop-Proxy ist unter /api/workshop/ und damit nicht
-    durch die API-Key-Middleware geschuetzt.
+    F-086: Erfordert API-Key (gleicher Check wie /api/assistant/* Endpoints).
     """
+    # Explicit API key check (defense-in-depth, nicht nur auf Middleware verlassen)
+    if _api_key_required and not _check_api_key(request):
+        raise HTTPException(403, "Ungueltiger oder fehlender API Key")
+
     data = await request.json()
     text = data.get("text", "").strip()
     if not text:
@@ -6378,7 +6380,7 @@ async def workshop_delete_inventory(name: str):
 async def workshop_delete_file(project_id: str, filename: str):
     """Projektdatei loeschen."""
     try:
-        await brain.workshop_gen.delete_file(project_id, filename)
+        await brain.workshop_generator.delete_file(project_id, filename)
         return {"success": True, "message": f"{filename} gelöscht"}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -6462,7 +6464,7 @@ async def workshop_gen_3d_model(request: Request):
     if not requirement:
         raise HTTPException(400, "requirement erforderlich")
     try:
-        result = await brain.workshop_gen.generate_3d_model(
+        result = await brain.workshop_generator.generate_3d_model(
             project_id, requirement)
         return {"success": True, **result}
     except Exception as e:
@@ -6478,7 +6480,7 @@ async def workshop_gen_schematic(request: Request):
     if not requirement:
         raise HTTPException(400, "requirement erforderlich")
     try:
-        result = await brain.workshop_gen.generate_schematic(
+        result = await brain.workshop_generator.generate_schematic(
             project_id, requirement)
         return {"success": True, **result}
     except Exception as e:
@@ -6495,7 +6497,7 @@ async def workshop_gen_website(request: Request):
     if not requirement:
         raise HTTPException(400, "requirement erforderlich")
     try:
-        result = await brain.workshop_gen.generate_website(
+        result = await brain.workshop_generator.generate_website(
             project_id, requirement, context=context)
         return {"success": True, **result}
     except Exception as e:
@@ -6510,7 +6512,7 @@ async def workshop_gen_bom(request: Request):
     if not project_id:
         raise HTTPException(400, "project_id erforderlich")
     try:
-        result = await brain.workshop_gen.generate_bom(project_id)
+        result = await brain.workshop_generator.generate_bom(project_id)
         return {"success": True, **result}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -6524,7 +6526,7 @@ async def workshop_gen_docs(request: Request):
     if not project_id:
         raise HTTPException(400, "project_id erforderlich")
     try:
-        result = await brain.workshop_gen.generate_documentation(project_id)
+        result = await brain.workshop_generator.generate_documentation(project_id)
         return {"success": True, **result}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -6539,7 +6541,7 @@ async def workshop_gen_tests(request: Request):
     if not project_id or not filename:
         raise HTTPException(400, "project_id und filename erforderlich")
     try:
-        result = await brain.workshop_gen.generate_tests(
+        result = await brain.workshop_generator.generate_tests(
             project_id, filename)
         return {"success": True, **result}
     except Exception as e:

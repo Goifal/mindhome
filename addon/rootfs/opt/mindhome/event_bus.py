@@ -46,6 +46,7 @@ class MindHomeEventBus:
         self._lock = threading.Lock()
         self._history: deque = deque(maxlen=history_size)
         self._stats = defaultdict(int)
+        self._stats_lock = threading.Lock()
 
     def subscribe(self, event_type: str, handler: Callable, 
                   priority: int = 0, source_filter: Optional[str] = None) -> str:
@@ -96,7 +97,8 @@ class MindHomeEventBus:
         """
         event = Event(event_type, data, source, priority)
         self._history.append(event)
-        self._stats[event_type] += 1
+        with self._stats_lock:
+            self._stats[event_type] += 1
 
         # Collect matching handlers
         handlers_to_call = []

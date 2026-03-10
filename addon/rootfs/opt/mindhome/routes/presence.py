@@ -119,7 +119,7 @@ def api_delete_day_phase(phase_id):
 def api_current_day_phase():
     try:
         from pattern_engine import ContextBuilder
-        builder = ContextBuilder(ha_connection, engine)
+        builder = ContextBuilder(_ha(), _engine())
         ctx = builder.build()
         return jsonify({"day_phase": ctx.get("day_phase","unknown"), "day_phase_id": ctx.get("day_phase_id"), "time_slot": ctx.get("time_slot"), "is_dark": ctx.get("is_dark",False)})
     except Exception as e:
@@ -350,7 +350,7 @@ def api_presence_manual_override():
 
 @presence_bp.route("/api/sun", methods=["GET"])
 def api_get_sun():
-    return jsonify(_ha().get_sun_data() if hasattr(ha, 'get_sun_data') else {"error": "not available"})
+    return jsonify(_ha().get_sun_data() if hasattr(_ha(), 'get_sun_data') else {"error": "not available"})
 
 
 @presence_bp.route("/api/presence-modes/seed-defaults", methods=["POST"])

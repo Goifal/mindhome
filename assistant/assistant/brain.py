@@ -209,6 +209,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._states_cache = None
         self._states_cache_ts = 0.0
         self._STATES_CACHE_TTL = 2.0  # 2 Sekunden
+        self._states_lock = asyncio.Lock()
 
         # Fix: Lock fuer process() — verhindert concurrent Requests die Shared State korrumpieren
         self._process_lock = asyncio.Lock()
@@ -468,13 +469,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
     async def get_states_cached(self) -> list:
         """Cached get_states() — vermeidet 8x API-Call pro Request (P1)."""
         import time
-        now = time.monotonic()
-        if self._states_cache and (now - self._states_cache_ts) < self._STATES_CACHE_TTL:
-            return self._states_cache
-        states = await self.ha.get_states()
-        self._states_cache = states
-        self._states_cache_ts = now
-        return states
+        async with self._states_lock:
+            now = time.monotonic()
+            if self._states_cache and (now - self._states_cache_ts) < self._STATES_CACHE_TTL:
+                return self._states_cache
+            states = await self.ha.get_states()
+            self._states_cache = states
+            self._states_cache_ts = now
+            return states
 
     async def initialize(self):
         """Initialisiert alle Komponenten."""

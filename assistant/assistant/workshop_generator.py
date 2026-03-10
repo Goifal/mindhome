@@ -551,6 +551,7 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
             f"mha:repair:files:{project_id}", 0, -1)
         result = []
         for fn in filenames:
+            fn = fn.decode() if isinstance(fn, bytes) else fn
             fn = Path(fn).name
             filepath = self.FILES_DIR / project_id / fn
             if filepath.exists():
