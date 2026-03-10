@@ -1,8 +1,9 @@
 # Audit-Ergebnis: Prompt 4b — Systematische Bug-Jagd (Extended-Module, Prioritaet 5-9)
 
+**Durchlauf**: #2 (nach Fixes aus P6a-P8)
 **Datum**: 2026-03-10
 **Auditor**: Claude Code (Opus 4.6)
-**Scope**: 63 Extended-Module in 9 Batches (Prio 5-9), 13 Fehlerklassen
+**Scope**: 63 Extended-Module in 9 Batches, 13 Fehlerklassen
 **Methode**: 9 parallele Audit-Agenten, jedes Modul komplett gelesen
 
 ---
@@ -10,360 +11,407 @@
 ## Gesamt-Statistik
 
 ```
-Gesamt: 155 Bugs (Prioritaet 5-9)
-  KRITISCH: 12
-  HOCH: 39
-  MITTEL: 58
-  NIEDRIG: 46
+Gesamt: 221 Bugs (Prioritaet 5-9)
+  KRITISCH: 1
+  HOCH:     36
+  MITTEL:   97
+  NIEDRIG:  85
+  INFO:     2
 
-Haeufigste Fehlerklasse: Redis bytes vs string (42 Vorkommen)
-Zweithaeufigste: Stille Fehler / except:pass (22 Vorkommen)
-Am staerksten betroffenes Modul: repair_planner.py (8 Bugs)
-Zweitstaerkstes: wellness_advisor.py (7 Bugs inkl. Dead Code)
+Haeufigste Fehlerklasse: Stille Fehler / except:pass (38 Vorkommen)
+Zweithaeufigste: Sync I/O in async (28 Vorkommen)
+Dritthaeufigstes: Performance N+1 / sequentiell (25 Vorkommen)
+Am staerksten betroffenes Modul: proactive.py (16 Bugs)
+Zweitstaerkstes: cooking_assistant.py (13 Bugs)
 ```
 
+### Verteilung nach Fehlerklasse
+
+| # | Fehlerklasse | Anzahl | Kritischste offene |
+|---|---|---|---|
+| 1 | Async-Fehler (sync I/O in async) | 28 | workshop_library.py ChromaDB+Embeddings, knowledge_base.py, self_optimization.py YAML |
+| 2 | Stille Fehler (except: pass/debug) | 38 | proactive.py 4x `except: pass`, multi_room_audio.py 3x silent return |
+| 3 | Race Conditions | 18 | config.py _active_person, proactive.py _batch_flushing, feedback.py _pending |
+| 4 | None-Fehler | 15 | cooking_assistant.py 7x session-None, proactive.py 5x brain.X ohne Check |
+| 5 | Init-Fehler | 3 | proactive_planner.py redis=None vor initialize() |
+| 6 | API-Fehler (Timeouts) | 5 | threat_assessment.py get_states() ohne Timeout, cooking_assistant.py ollama.chat() |
+| 7 | Daten-Fehler (bytes/str) | 8 | outcome_tracker.py hgetall bytes-Keys, repair_planner.py arm_pick_tool |
+| 8 | Config-Fehler | 2 | autonomy.py Class-Variable statt Instance |
+| 9 | Memory Leaks | 10 | cooking_assistant.py Timer-Tasks, proactive.py _batch_queue |
+| 10 | Logik-Fehler | 12 | proactive.py event_handlers ueberschrieben (KRITISCH), ha_client.py Retry nur bei Exception |
+| 11 | Security | 7 | repair_planner.py 4x unvalidierte Redis-Keys, recipe_store.py MD5 |
+| 12 | Resilience | 10 | wellness_advisor.py 7x Redis ohne _safe_redis, light_engine.py Redis ohne Wrapper |
+| 13 | Performance (N+1/sequentiell) | 25 | inventory.py 4x N+1, energy_optimizer.py 14 seq. Redis, repair_planner.py 3x N+1 |
+
 ---
 
-## Bug-Report: Batch 5 — Proaktive Systeme (proactive.py, proactive_planner.py, routine_engine.py, anticipation.py, spontaneous_observer.py, autonomy.py, self_automation.py)
+## Bug-Report: Batch 5 — Proaktive Systeme (28 Bugs: 1 KRIT, 6 HOCH, 16 MITTEL, 5 NIEDRIG)
 
 | # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
 |---|----------|-------|-------|-------------|-------------|-----|
-| 1 | KRITISCH | proactive.py | 108 | Init | **`self.event_handlers` gelesen vor Definition.** Wird in Zeile 108 gebraucht (`if event_type not in self.event_handlers`) aber erst in Zeile 145 definiert. Wenn `appliance_monitor.devices` in YAML gesetzt ist, crasht `__init__` mit `AttributeError`. Deaktiviert gesamten ProactiveManager. | `self.event_handlers = {}` vor dem `devices`-Loop initialisieren. |
-| 2 | HOCH | proactive.py | 594 | Logic | **Operator-Praezedenz-Bug.** `entity_id.startswith("proximity.") or entity_id.startswith("sensor.") and "distance" in entity_id` — `and` bindet staerker als `or`. JEDE `proximity.*` Entity loest Geo-Fence-Logik aus. | Klammern: `... or (entity_id.startswith("sensor.") and "distance" in entity_id)` |
-| 3 | HOCH | proactive.py | 969, 1064 | Race Condition | **`_mb_triggered_today` / `_eb_triggered_today` ohne Lock.** Mehrere Motion-Events koennen doppeltes Briefing ausloesen. | `self._state_lock` verwenden. |
-| 4 | HOCH | self_automation.py | 449 | Security | **User-Beschreibung unsanitized in LLM-Prompt.** `f"Erstelle eine Automation fuer: {description}"` — Prompt Injection kann nicht-whitelisted Services generieren. | Sanitize: Zeilenumbrueche/Steuerzeichen entfernen, alphanumerisch beschraenken. |
-| 5 | HOCH | self_automation.py | 103 | Race Condition | **`_pending` dict ohne Lock.** Concurrent `generate_automation`, `confirm_automation`, `_cleanup_expired_pending` koennen sich gegenseitig korrumpieren. | `asyncio.Lock` einfuehren. |
-| 6 | HOCH | self_automation.py | 996-1001 | Race Condition | **`_daily_count` / `_daily_reset` ohne Lock.** Parallele Requests umgehen Rate-Limit. | `asyncio.Lock` oder atomaren Reset. |
-| 7 | MITTEL | proactive.py | 990 | None | **`getattr(autonomy, "current_level", 3)` — Attribut heisst `level`.** Fallback `3` greift immer, echtes Autonomie-Level wird ignoriert. | `getattr(autonomy, "level", 3)` |
-| 8 | MITTEL | proactive_planner.py | 218 | Logic | **`if not actions: return None` ist unerreichbar** — mindestens ein Eintrag wird immer hinzugefuegt (Zeile 212). | Check entfernen oder Musik-Hinzufuegung konditionell machen. |
-| 9 | MITTEL | anticipation.py | 131-135 | Data | **`redis.lrange()` gibt `bytes` zurueck.** `json.loads(e)` funktioniert, aber fehlende explizite Dekodierung (im Gegensatz zu spontaneous_observer.py:325). | `json.loads(e.decode() if isinstance(e, bytes) else e)` |
-| 10 | MITTEL | anticipation.py | 601 | Data | **`pattern_key` enthaelt rohe `description`.** Sonderzeichen/lange Strings erzeugen ungueltige/riesige Redis-Keys. | Key laengenlimitieren, Hash verwenden. |
-| 11 | MITTEL | routine_engine.py | 533 | Silent Error | **`except Exception: pass`** in `_get_energy_briefing()`. Energie-Daten fehlen stillschweigend im Briefing. | `logger.debug()` hinzufuegen. |
-| 12 | MITTEL | self_automation.py | 453 | API | **`ollama.chat()` ohne Timeout.** LLM-Haenger blockiert `generate_automation` unbegrenzt. | `asyncio.wait_for(..., timeout=30)` |
-| 13 | MITTEL | proactive.py | 1040 | None | **`self.brain.memory.redis` ohne None-Check.** An anderen Stellen korrekt (z.B. Zeile 1264). | Guard hinzufuegen. |
-| 14 | MITTEL | proactive.py | 5184 | None | **Inkonsistenter Redis-Zugriff.** `self.brain.redis` vs `self.brain.memory.redis` — unterschiedliche Pfade. | Einheitlich zugreifen. |
-| 15 | MITTEL | autonomy.py | 408 | Data | **`hgetall()` gibt `bytes`-Keys zurueck.** `stats.get("total", 0)` matched nie — echte Redis-Werte werden nie gelesen. | Keys dekodieren. |
-| 16 | NIEDRIG | proactive.py | 2130-2139 | Logic | **`_get_person_title()` dupliziert globale `get_person_title()`.** Code-Duplikation. | Eine entfernen. |
-| 17 | NIEDRIG | spontaneous_observer.py | 260-261 | Silent Error | **`except (ValueError, TypeError): pass`** in `_check_energy_comparison`. | `logger.debug()` |
-| 18 | NIEDRIG | self_automation.py | 107 | Memory | **`_audit_log` Liste statt deque.** Trimming (`[-100:]`) erstellt jedes Mal neue Liste. | `collections.deque(maxlen=100)` |
-| 19 | NIEDRIG | proactive.py | 1998-1999 | Performance | **`scan_iter` Keys in Liste gesammelt** statt direkt iteriert. | Direkt ueber Iterator arbeiten. |
+| 1 | KRITISCH | proactive.py | 98,146 | Logik (10) | `event_handlers` in Z.98 mit dynamischen Appliance-Handlern befuellt, dann in Z.146 komplett ueberschrieben. Alle YAML-konfigurierten Handler gehen verloren. | Hardcoded Dict als Basis, dynamische Handler DANACH einfuegen |
+| 2 | HOCH | proactive.py | 2620-2622 | Race (3) | `_batch_flushing` Boolean ohne Lock. Zwei Codepfade rufen `_flush_batch()` auf (Batch-Loop + Early-Flush aus `_notify`). | `asyncio.Lock` oder `_state_lock` mitnutzen |
+| 3 | HOCH | proactive.py | 1660-1661 | Stille (2) | `except Exception: pass` in `_accumulate_event` verschluckt alle Fehler | `logger.debug()` statt `pass` |
+| 4 | HOCH | proactive.py | 1688-1689 | Stille (2) | `except Exception: pass` im Mood-Check | `logger.debug()` statt `pass` |
+| 5 | HOCH | proactive.py | 1829-1830 | Stille (2) | `except Exception: pass` bei Narration | `logger.debug()` statt `pass` |
+| 6 | HOCH | self_automation.py | 36-39 | Async (1) | `_load_templates()` synchrones File-I/O beim Import auf Modul-Ebene | `aiofiles` oder lazy load in `initialize()` |
+| 7 | HOCH | proactive.py | 1298-1299 | Stille (2) | `except Exception: return` ohne Logging in `_check_personal_dates` | Logger hinzufuegen |
+| 8 | MITTEL | proactive.py | 1672 | None (4) | `self.brain.autonomy.level` ohne `getattr` Schutz | `getattr(self.brain.autonomy, "level", 2)` |
+| 9 | MITTEL | proactive.py | 1679 | None (4) | `self.brain.mood.get_current_mood()` ohne Null-Check | `getattr(self.brain, "mood", None)` |
+| 10 | MITTEL | proactive.py | 1693 | None (4) | `self.brain.feedback` ohne `getattr` | `getattr(self.brain, "feedback", None)` |
+| 11 | MITTEL | proactive.py | 1570 | None (4) | `self.brain.autonomy.level` in `_check_music_follow` ohne Check | `getattr` Schutz |
+| 12 | MITTEL | proactive.py | 1055-1056 | None (4) | `self.brain.memory.redis` direkt ohne Null-Check | Doppeltes `getattr` |
+| 13 | MITTEL | protocol_engine.py | 193-194 | Stille (2) | `except Exception: pass` beim Redis-Update der Undo-Steps | `logger.warning()` |
+| 14 | MITTEL | routine_engine.py | 1245-1246 | Stille (2) | `except Exception:` beim Personality-Prompt ohne Logging | `logger.debug()` |
+| 15 | MITTEL | anticipation.py | 741-762 | Shutdown (12) | `_check_loop` startet vor `set_notify_callback()` — Suggestions gehen verloren | Callback vor `initialize()` setzen |
+| 16 | MITTEL | spontaneous_observer.py | 97-128 | Shutdown (12) | Gleicher Init-Race wie anticipation.py | Callback als Parameter in `initialize()` |
+| 17 | MITTEL | proactive.py | 261-263 | Shutdown (12) | Task-Variablen in `start()` statt `__init__` deklariert | In `__init__` verschieben |
+| 18 | MITTEL | self_automation.py | 100 | Race (3) | `_daily_count`/`_daily_reset` ohne Lock | Lock oder Redis-basierter Counter |
+| 19 | MITTEL | proactive.py | 1724-1725 | Leak (9) | `_batch_queue` waechst auf 1000 Items bei Flush-Fehler | TTL auf Items oder Overflow-Handling |
+| 20 | MITTEL | proactive_planner.py | 40 | Init (5) | `self.redis = None` — Planung ohne Cooldown-Schutz moeglich | Early-return wenn `not self.redis` |
+| 21 | MITTEL | protocol_engine.py | 281-304 | Perf (13) | N+1 Redis in `list_protocols()` | Pipeline verwenden |
+| 22 | MITTEL | conditional_commands.py | 160-219 | Perf (13) | N+1 Redis in `check_event()` pro Conditional | Pipeline verwenden |
+| 23 | MITTEL | spontaneous_observer.py | 309-348 | Perf (13) | Gleiche Redis-Liste doppelt geladen | Einmal laden und durchreichen |
+| 24 | NIEDRIG | proactive.py | 2148-2157 | Dead Code | `_get_person_title()` dupliziert `config.get_person_title()` | Instance-Methode entfernen |
+| 25 | NIEDRIG | proactive.py | 1351 | Dead Code | Redundanter `from datetime import datetime` Import | Entfernen |
+| 26 | NIEDRIG | routine_engine.py | 1532 | Resilience (12) | `while True:` statt `while self._running:` | Running-Flag verwenden |
+| 27 | NIEDRIG | autonomy.py | 342 | Config (8) | `_redis = None` als Class-Variable statt Instance | In `__init__` verschieben |
+| 28 | NIEDRIG | self_automation.py | 109 | Leak (9) | `_audit_log` deque: bei Redis-Ausfall gehen Audit-Eintraege verloren | Warning-Log bei Redis-Ausfall |
 
 ---
 
-## Bug-Report: Batch 6 — HA-Integration (conditional_commands.py, protocol_engine.py, ha_client.py, light_engine.py, climate_model.py, cover_config.py, camera_manager.py)
+## Bug-Report: Batch 6 — HA-Integration & Covers (27 Bugs: 3 HOCH, 14 MITTEL, 10 NIEDRIG)
 
 | # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
 |---|----------|-------|-------|-------------|-------------|-----|
-| 20 | HOCH | ha_client.py | 53-54, 77-90 | Race Condition | **`_states_cache` ohne Lock.** Zwei gleichzeitige `get_states()` feuern beide HTTP-Request. | `asyncio.Lock` um Cache-Zyklus. |
-| 21 | HOCH | ha_client.py | 140-165 | API | **`get_camera_snapshot()` ohne Timeout/Retry.** Haengende Kamera blockiert bis Session-Timeout (20s). | Per-Request Timeout + Retry. |
-| 22 | HOCH | ha_client.py | 154-157 | Resilience | **Camera 404/500 oeffnet Circuit Breaker nicht.** `record_failure()` nur im Exception-Zweig. | Auch bei nicht-200 Status aufrufen. |
-| 23 | HOCH | ha_client.py | 357-377 | Resilience | **`mindhome_put/delete` ohne Retry-Logik** (im Gegensatz zu `mindhome_post`). | Retry-Loop analog zu `mindhome_post`. |
-| 24 | MITTEL | ha_client.py | 69-73 | Resilience | **`close()` nicht thread-safe.** Session ohne Lock geprueft/gesetzt. | `_session_lock` verwenden. |
-| 25 | MITTEL | protocol_engine.py | 124 | Logic | **`datetime.now().isoformat()` ohne Timezone.** Inkonsistent mit conditional_commands.py (UTC). | `datetime.now(timezone.utc)` |
-| 26 | MITTEL | protocol_engine.py | 193-194 | Silent Error | **`except Exception: pass`** bei Redis-Update der Undo-Steps. | `logger.warning()` |
-| 27 | MITTEL | protocol_engine.py | 267-270 | Resilience | **Undo-Fehler nur auf debug-Level.** `success: True` trotz fehlgeschlagener Schritte. | Fehler zaehlen, `success: False` bei Teilfehlern. |
-| 28 | MITTEL | protocol_engine.py | 345-350 | Logic | **`if name in text_lower` zu breit.** Protokoll "an" matched jeden Text mit "an". | `re.search(rf'\b{re.escape(name)}\b', text_lower)` |
-| 29 | MITTEL | light_engine.py | 187 | Logic | **Private `_get_adaptive_brightness` von externem Modul aufgerufen.** Enge Kopplung. | Methode oeffentlich machen oder auslagern. |
-| 30 | MITTEL | light_engine.py | 418, 530 | Performance | **Redis `KEYS` Befehl (O(N)).** Wird alle 60s aufgerufen. | `SCAN`-basierte Iteration. |
-| 31 | MITTEL | light_engine.py | 532-533 | Logic | **Pathlight-Timeout prueft `ttl <= 0`** — greift nur bei Keys ohne TTL (Bug-Fall). | Aktive Pathlights in Set tracken. |
-| 32 | MITTEL | camera_manager.py | 69, 77 | Memory | **Snapshot-Bytes (mehrere MB) im Response-Dict.** Haeufige Abfragen = Memory-Wachstum. | Separat zurueckgeben oder Groessencheck. |
-| 33 | NIEDRIG | conditional_commands.py | 140 | None | **Type-Hint `dict` statt `Optional[dict]`.** Korrekt abgefangen aber irreführend. | `Optional[dict] = None` |
-| 34 | NIEDRIG | conditional_commands.py | 282 | Logic | **Float-Vergleich mit `==`.** Unzuverlaessig bei Fliesskommazahlen. | `math.isclose()` |
-| 35 | NIEDRIG | protocol_engine.py | 369 | Logic/Security | **User-Input unsanitized in LLM-Prompt** via `prompt.replace("{description}", description)`. | Template-Engine oder Escape-Logik. |
-| 36 | NIEDRIG | cover_config.py | 196, 212 | Security | **`position` in `update_cover_schedule` nicht validiert** (im Gegensatz zu `create`). | `max(0, min(100, ...))` Validierung. |
-| 37 | NIEDRIG | cover_config.py | 35-44 | Resilience | **Korrupte Cover-Config = stiller Datenverlust.** Gibt leeres Dict zurueck. | Backup-Datei (.bak). |
-| 38 | NIEDRIG | climate_model.py | 279 | Logic | **Fehlende Warnung bei Temperatur ausserhalb 15-30 Grad.** Wert wird still verworfen. | Optionale Warnung. |
+| 29 | HOCH | ha_client.py | 72-73 | Resilience (12) | `close()` nicht thread-safe: `_session` ohne `_session_lock` | `async with self._session_lock:` in `close()` |
+| 30 | HOCH | ha_client.py | 367 | Race (3) | `mindhome_put()`: Session VOR Retry-Loop geholt, bei Close stale | Session pro Retry-Versuch holen |
+| 31 | HOCH | ha_client.py | 392 | Race (3) | `mindhome_delete()`: Identisches Problem wie #30 | Session in Loop verschieben |
+| 32 | MITTEL | ha_client.py | 377-378 | Logik (10) | `mindhome_put()`: Non-200 sofort `return None` statt Retry | Bei 5xx retrien, bei 4xx abbrechen |
+| 33 | MITTEL | ha_client.py | 399-400 | Logik (10) | `mindhome_delete()`: Identisch wie #32 | Differenzieren |
+| 34 | MITTEL | ha_client.py | 291 | API (6) | `mindhome_post()`: `timeout=0` wird als falsy behandelt — kein Timeout | `if timeout is not None` pruefen |
+| 35 | MITTEL | light_engine.py | 885 | Resilience (12) | `redis.get()` OHNE `_safe_redis()` Wrapper | `_safe_redis()` verwenden |
+| 36 | MITTEL | light_engine.py | 187 | Init (5) | Zugriff auf private Methode `FunctionExecutor._get_adaptive_brightness()` | In shared utility extrahieren |
+| 37 | MITTEL | light_engine.py | 291 | Race (3) | `_check_dusk_auto_on()` TOCTOU bei Redis-Flag | Atomare SET-NX verwenden |
+| 38 | MITTEL | light_engine.py | 418 | Perf (13) | `redis.keys()` O(N) ueber ALLE Keys | `SCAN` verwenden |
+| 39 | MITTEL | ha_client.py | 80-92 | Race (3) | `_states_lock` waehrend HTTP-Call gehalten — blockiert alle Caller | Lock nur fuer Cache-Read/Write |
+| 40 | MITTEL | cover_config.py | 35-54 | Race (3) | Alle read-modify-write Ops nicht atomar | File-Locking oder Redis/SQLite |
+| 41 | MITTEL | cover_config.py | 39 | Async (1) | Alle File-I/O sync in async-Kontext | `aiofiles` oder `asyncio.to_thread()` |
+| 42 | MITTEL | conditional_commands.py | 153 | Data (7) | `smembers()` Set waehrend Iteration durch `srem()` modifiziert | Lokale Kopie vor Iteration |
+| 43 | MITTEL | conditional_commands.py | 165 | Resilience (12) | `redis.get(key)` in Loop ohne try/except | try/except um Redis-Zugriffe |
+| 44 | MITTEL | conditional_commands.py | 294 | Resilience (12) | `list_conditionals()` Redis ohne try/except | try/except hinzufuegen |
+| 45 | NIEDRIG | light_engine.py | 530 | Perf (13) | `redis.keys()` + N+1 TTL-Abfragen | `SCAN` + Pipeline |
+| 46 | NIEDRIG | light_engine.py | 362-376 | Perf (13) | Sequentielle `get_state()` pro Licht | `asyncio.gather()` |
+| 47 | NIEDRIG | cover_config.py | 212-214 | Security (11) | `update_cover_schedule()` validiert Position nicht | `max(0, min(100, position))` |
+| 48 | NIEDRIG | camera_manager.py | 69 | Data (7) | Snapshot-Bytes im Return-Dict (nicht JSON-serialisierbar) | base64-Encoding |
+| 49 | NIEDRIG | camera_manager.py | 33-37 | Config (8) | Config einmalig im `__init__` — kein Reload | Live-Config-Read oder Reload |
+| 50 | NIEDRIG | protocol_engine.py | 124 | Data (7) | `datetime.now()` ohne Timezone | `datetime.now(timezone.utc)` |
+| 51 | NIEDRIG | protocol_engine.py | 199 | Data (7) | Gleicher Fehler wie #50 | `datetime.now(timezone.utc)` |
+| 52 | NIEDRIG | protocol_engine.py | 270 | Stille (2) | Undo-Fehler nur `logger.debug()`, Antwort meldet Erfolg | Fehler zaehlen und kommunizieren |
+| 53 | NIEDRIG | protocol_engine.py | 131 | Leak (9) | Protokolle in Redis ohne TTL | TTL setzen (z.B. 90 Tage) |
+| 54 | NIEDRIG | climate_model.py | 279 | Logik (10) | Regex matcht Zahlen die keine Temperaturen sind | Kontext-Regex verbessern |
+| 55 | NIEDRIG | ha_client.py | 6 | API (6) | `mindhome_post()` Timeout-Handling bei `timeout=None` | Explizite Pruefung |
 
 ---
 
-## Bug-Report: Batch 7 — Audio (tts_enhancer.py, sound_manager.py, ambient_audio.py, multi_room_audio.py, speaker_recognition.py)
+## Bug-Report: Batch 7 — Audio (16 Bugs: 3 HOCH, 7 MITTEL, 6 NIEDRIG)
 
 | # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
 |---|----------|-------|-------|-------------|-------------|-----|
-| 39 | HOCH | sound_manager.py | 302-303 | Silent Error | **`except Exception: pass` bei `unjoin`-Call.** Speaker bleiben gruppiert ohne Benachrichtigung. | Exception loggen. |
-| 40 | HOCH | multi_room_audio.py | 174 | Silent Error | **`except Exception: return []` in `list_groups()`.** Redis-Fehler werden nicht geloggt. | `logger.warning()` |
-| 41 | HOCH | multi_room_audio.py | 482 | Silent Error | **`except Exception: return None` in `_get_group()`.** Aufrufer interpretiert None als "nicht existent". | Loggen und ggf. Exception re-raisen. |
-| 42 | HOCH | multi_room_audio.py | 362-363 | Silent Error | **`except Exception: pass` bei `volume_set`.** Gibt `success: True` trotz Fehler zurueck. | Exception loggen, Erfolgs-Status korrekt reflektieren. |
-| 43 | HOCH | multi_room_audio.py | 495-496 | Silent Error | **`except Exception` bei `get_state()`.** Systematische HA-Probleme nie sichtbar. | Logger-Aufruf hinzufuegen. |
-| 44 | MITTEL | tts_enhancer.py | 309-315 | Logic | **Tageszeit-Logik-Fehler.** Abends (22-23:59) wird `vol_day` statt `vol_evening` zurueckgegeben wenn `night_start=0`. | Evening-Check vor Night-Check setzen. |
-| 45 | MITTEL | speaker_recognition.py | 877 | Silent Error | **`except Exception: pass`** beim Redis-Set der Pending-Ask. Rueckfrage ohne State. | Loggen. |
-| 46 | MITTEL | speaker_recognition.py | 905 | Silent Error | **`except Exception: return None`** in `resolve_fallback_answer()`. | Exception loggen. |
-| 47 | MITTEL | multi_room_audio.py | 101-102 | Silent Error | **`except Exception` in `create_group()`.** Exception nicht geloggt. | `logger.warning()` |
-| 48 | MITTEL | sound_manager.py | 549-556 | Memory | **`asyncio.create_task()` nicht referenziert.** Task kann vom GC eingesammelt werden. | Task in Set einfuegen. |
-| 49 | MITTEL | speaker_recognition.py | 192 | Data | **Inkonsistente bytes-Dekodierung.** `identify_by_embedding()` nutzt `json.loads(data)` auf Redis-bytes direkt (funktioniert, aber inkonsistent). | Konsistenz herstellen. |
-| 50 | NIEDRIG | multi_room_audio.py | 485-496 | Performance | **`get_state()` sequentiell pro Speaker.** Bei 5+ Speakern langsam. | `asyncio.gather()` |
-| 51 | NIEDRIG | speaker_recognition.py | 737-746 | Performance | **Embeddings sequentiell aus Redis geladen** pro Profil. | `asyncio.gather()` oder Pipeline. |
-| 52 | NIEDRIG | ambient_audio.py | 387-406 | Performance | **`get_state()` sequentiell pro Sensor** in `_poll_loop()`. | `asyncio.gather()` oder `get_states()`. |
-| 53 | NIEDRIG | tts_enhancer.py | 337 | Performance | **Regex bei jedem Aufruf neu kompiliert** in `check_whisper_command()`. | Vorkompilieren. |
+| 56 | HOCH | multi_room_audio.py | 484-496 | Perf (13) | `_get_speaker_names()` sequentielle `get_state()` pro Speaker — N+1 HTTP | `asyncio.gather()` oder gecachte States |
+| 57 | HOCH | multi_room_audio.py | 416-438 | Perf (13) | `_build_group_status()` identisches N+1 Pattern | `asyncio.gather()` |
+| 58 | HOCH | speaker_recognition.py | 722-771 | Perf (13) | `identify_by_embedding()` laedt Embeddings einzeln aus Redis — N+1 | `redis.mget()` verwenden |
+| 59 | MITTEL | multi_room_audio.py | 174 | Stille (2) | `except Exception:` ohne Logging in `list_groups()` | `logger.warning()` |
+| 60 | MITTEL | multi_room_audio.py | 481-482 | Stille (2) | `except Exception:` ohne Logging in `_get_group()` | `logger.debug()` |
+| 61 | MITTEL | multi_room_audio.py | 437-438 | Stille (2) | `except Exception:` ohne Logging in `_build_group_status()` | `logger.debug()` |
+| 62 | MITTEL | speaker_recognition.py | 358-368 | Perf (13) | `_get_persons_home()` Full-State-Dump bis 2x pro identify() | States einmal abrufen und durchreichen |
+| 63 | MITTEL | speaker_recognition.py | 150-153 | Race (3) | `_profiles` Dict ohne Lock bei concurrent enroll()/identify() | Lock auf gesamte `_profiles`-Mutation |
+| 64 | MITTEL | sound_manager.py | 95-96 | None (4) | `int(vol_cfg.get("evening_start", 22))` ohne try/except | `_safe_int` Pattern verwenden |
+| 65 | MITTEL | ambient_audio.py | 380-411 | Resilience (12) | `_poll_loop` kein Backoff bei HA-Fehler — Logspam | Exponentielles Backoff |
+| 66 | NIEDRIG | multi_room_audio.py | 101-102 | Stille (2) | `create_group()` loggt Fehler nicht | `logger.warning()` vor Return |
+| 67 | NIEDRIG | speaker_recognition.py | 151 | Race (3) | `_last_speaker` ohne Lock bei parallelen identify()-Aufrufen | Atomarer Zugriff |
+| 68 | NIEDRIG | sound_manager.py | 575 | Logik (10) | `success = False` Init semantisch verwirrend | Klarere Variable-Semantik |
+| 69 | NIEDRIG | ambient_audio.py | 199-208 | Resilience (12) | `stop()` raumt `_background_tasks` nicht auf | Tasks in `stop()` canceln |
+| 70 | NIEDRIG | tts_enhancer.py | 378 | Stille (2) | `except Exception:` in `_is_auto_night_whisper()` | `logger.debug()` |
+| 71 | NIEDRIG | speaker_recognition.py | 904 | Stille (2) | `except Exception:` in `resolve_fallback_answer()` | `logger.debug()` |
 
 ---
 
-## Bug-Report: Batch 8 — Intelligence (insight_engine.py, learning_observer.py, learning_transfer.py, self_optimization.py, self_report.py, feedback.py, response_quality.py)
+## Bug-Report: Batch 8 — Intelligence (24 Bugs: 4 HOCH, 12 MITTEL, 8 NIEDRIG)
 
 | # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
 |---|----------|-------|-------|-------------|-------------|-----|
-| 54 | HOCH | feedback.py | 262-264 | Data | **`key.replace(...)` auf `bytes` statt `str`.** `redis.scan()` gibt bytes zurueck. `TypeError`. Auch Zeile 299. | `.decode()` vor `.replace()` |
-| 55 | HOCH | feedback.py | 344-351 | Data | **`hgetall()` gibt bytes-Keys.** Downstream erwartet String-Keys. | Keys dekodieren. |
-| 56 | HOCH | self_optimization.py | 96 | Data | **`datetime.fromisoformat(last_run)` auf bytes.** `TypeError` bei jedem Aufruf — Rate-Limiting greift nie. | `.decode()` |
-| 57 | HOCH | self_optimization.py | 588-590 | Data | **`hgetall()` bytes-Keys** in `get_character_break_stats()`. | `.decode()` |
-| 58 | HOCH | feedback.py | 84, 406-411 | Race Condition | **`_pending` dict concurrent gelesen/geschrieben.** `pop()` waehrend Iteration → doppelter Score-Abzug. | Iteration ueber `list()`, Guard-Check. |
-| 59 | MITTEL | self_optimization.py | 420-421 | Silent Error | **`except Exception: return {}`** in `_get_feedback_stats()`. | `logger.debug()` |
-| 60 | MITTEL | learning_transfer.py | 73-74 | Memory | **`_pending_transfers` Liste ohne Limit.** Waechst unbegrenzt. | `self._pending_transfers = self._pending_transfers[:50]` |
-| 61 | MITTEL | self_optimization.py | 549-550, 575-576 | Silent Error | **2x `except Exception: pass`** in `track_filtered_phrase()` und `track_character_break()`. | `logger.debug()` |
-| 62 | MITTEL | self_optimization.py | 633-634 | Silent Error | **2x `except Exception: pass`** in `detect_new_banned_phrases()`. | `logger.debug()` |
-| 63 | MITTEL | insight_engine.py | 934 | Logic | **`ltrim` hardcoded auf 5** statt `self.max_temp_snapshots - 1`. Config-Erhoehung wirkungslos. | Dynamischen Wert verwenden. |
-| 64 | MITTEL | insight_engine.py | 936 | Silent Error | **`except Exception: pass`** in `_store_temp_snapshot()`. Trend-Prediction ohne Daten. | `logger.debug()` |
-| 65 | MITTEL | insight_engine.py | 878-890 | Logic | **`run_checks_now()` hat andere Check-Liste als `_run_all_checks()`.** 6 Checks fehlen on-demand. | Check-Listen synchronisieren. |
-| 66 | MITTEL | self_optimization.py | 623-625 | Data | **`hgetall()` bytes in Phrase-Filter.** String-Vergleiche schlagen fehl. | `.decode()` |
-| 67 | NIEDRIG | feedback.py | 338-344 | Resilience | **`_increment_counter()` ohne try/except.** Redis-Ausfall crasht Feedback-Verarbeitung. | try/except mit logger.debug. |
-| 68 | NIEDRIG | self_optimization.py | 366-379 | Resilience | **`_apply_parameter()` schreibt nicht atomar.** Absturz = korrupte settings.yaml. | Tempfile + `os.replace()`. |
-| 69 | NIEDRIG | learning_observer.py | 148 | Silent Error | **Fehler nur auf debug-Level.** Im Produktivbetrieb unsichtbar. | `logger.warning()` |
-| 70 | NIEDRIG | self_report.py | 50-53 | Logic | **Rate-Limit im RAM** (`_last_report_day`). Bei Neustart geht Wert verloren. | Aus Redis-Timestamp initialisieren. |
-| 71 | NIEDRIG | response_quality.py | 207 | Logic | **`if total == 0: return False` unerreichbar.** Dead Code. | Zeile entfernen. |
+| 72 | HOCH | feedback.py | 345-349 | Logik (10) | Double-decode: Z.345-346 decoded bytes, Z.348 versucht erneut `.decode()` auf String | Z.348 Dead Code entfernen |
+| 73 | HOCH | self_optimization.py | 370-381 | Async (1) | Synchrone File-I/O (`open()`, `yaml.safe_load/dump`) in async `_apply_parameter()` | `asyncio.to_thread()` |
+| 74 | HOCH | self_optimization.py | 664-686 | Async (1) | Synchrone File-I/O in async `add_banned_phrase()` | `asyncio.to_thread()` |
+| 75 | HOCH | learning_observer.py | 147-148 | Stille (2) | `except Exception: logger.debug()` in Hauptverarbeitungslogik | `logger.warning()` |
+| 76 | MITTEL | learning_transfer.py | 92-93 | Stille (2) | Preferences laden fehlgeschlagen — nur `logger.debug()` | `logger.warning()` |
+| 77 | MITTEL | learning_transfer.py | 105-106 | Stille (2) | Preferences speichern fehlgeschlagen — nur `logger.debug()` | `logger.warning()` |
+| 78 | MITTEL | insight_engine.py | 701 | Data (7) | `fromisoformat(away_since)` ohne Typ-Absicherung | Validierung vor Parse |
+| 79 | MITTEL | insight_engine.py | 448-449 | Stille (2) | `except Exception: logger.debug()` in `_run_all_checks()` | `logger.warning()` |
+| 80 | MITTEL | self_optimization.py | 421-423 | Stille (2) | `except Exception:` OHNE Logging in `_get_feedback_stats()` | Logger hinzufuegen |
+| 81 | MITTEL | self_optimization.py | 593-594 | Stille (2) | `except Exception:` ohne Logging in `get_character_break_stats()` | Logger hinzufuegen |
+| 82 | MITTEL | response_quality.py | 172-177 | Data (7) | `int(v)` Cast auf Float-Strings schlaegt fehl | `float(v)` verwenden |
+| 83 | MITTEL | feedback.py | 265-268 | Perf (13) | N+1 Redis in `get_stats()` — 4N Roundtrips pro Event-Type | Pipeline oder `mget` |
+| 84 | MITTEL | feedback.py | 296-313 | Perf (13) | N+1 Redis in `get_all_scores()` — einzelnes `get()` pro Key | `mget()` nach SCAN |
+| 85 | MITTEL | insight_engine.py | 382-399 | Perf (13) | Sequentielle Kalender-Abfragen pro Calendar-Entity | `asyncio.gather()` |
+| 86 | MITTEL | learning_transfer.py | 73-74 | Race (3) | `_preferences`/`_pending_transfers` ohne Lock | `asyncio.Lock()` |
+| 87 | MITTEL | self_optimization.py | 66 | Race (3) | `_pending_proposals` ohne Lock bei concurrent API-Aufrufen | `asyncio.Lock()` |
+| 88 | NIEDRIG | feedback.py | 52 | Leak (9) | `_pending: dict` ohne Groessenlimit | Maximum-Groesse erzwingen |
+| 89 | NIEDRIG | insight_engine.py | 620-678 | Resilience (12) | 8 sequentielle Redis-Calls in `_check_energy_anomaly()` | Pipeline mit `mget()` |
+| 90 | NIEDRIG | self_optimization.py | 384 | Init (5) | `load_yaml_config()` ohne Validierung nach korruptem Write | Validierung vor `clear()+update()` |
+| 91 | NIEDRIG | self_report.py | 50 | Race (3) | `_last_report_day` ohne Lock — doppelte Reports | `asyncio.Lock()` oder Redis-Check |
+| 92 | NIEDRIG | response_quality.py | 39-42 | Race (3) | Instance-Variablen ohne Lock bei Concurrent Access | Formal ein Risk |
+| 93 | NIEDRIG | insight_engine.py | 237-238 | Resilience (12) | Error-Loop ohne Backoff erzeugt Logspam | Exponentielles Backoff |
+| 94 | NIEDRIG | self_optimization.py | 331-348 | Security (11) | LLM-Ausgabe in `json.loads()` — grosses JSON-Array moeglich | Sofortiges Limit nach Parse |
+| 95 | NIEDRIG | self_report.py | 122 | Perf (13) | Redundantes `expire` bei jedem Report | Nur beim ersten `lpush` setzen |
 
 ---
 
-## Bug-Report: Batch 9 — Resilience & Tracking (intent_tracker.py, outcome_tracker.py, error_patterns.py, circuit_breaker.py, conflict_resolver.py, adaptive_thresholds.py, threat_assessment.py)
+## Bug-Report: Batch 9 — Resilience & Tracking (17 Bugs: 6 MITTEL, 11 NIEDRIG)
 
 | # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
 |---|----------|-------|-------|-------------|-------------|-----|
-| 72 | MITTEL | conflict_resolver.py | 146 | Race Condition | **`_recent_commands` ohne Lock.** `_cleanup_old_commands()` kann waehrend Iteration Keys loeschen. | `asyncio.Lock`. |
-| 73 | MITTEL | conflict_resolver.py | 311 | Silent Error | **`create_task` ohne Referenz.** Task kann vom GC eingesammelt werden. | Task in Set speichern. |
-| 74 | MITTEL | outcome_tracker.py | 57 | Race Condition | **`_pending_count` ohne Lock.** Parallele `track_action()` → inkonsistenter Zaehler. | `asyncio.Lock` oder Redis INCR/DECR. |
-| 75 | MITTEL | threat_assessment.py | 81 | API | **`get_states()` ohne Timeout.** Haengender HA-Server blockiert gesamte Threat-Loop. | `asyncio.wait_for(..., timeout=15)` |
-| 76 | MITTEL | threat_assessment.py | 96 | Logic | **Doppelte Weather-Logik.** `_check_storm_windows()` liest Wind selbst, obwohl `assess_threats()` bereits `weather_ctx` hat. | `weather_ctx` als Parameter uebergeben. |
-| 77 | NIEDRIG | circuit_breaker.py | 44-109 | Race Condition | **State-Mutation in Property.** `state` Property mutiert `_state` als Seiteneffekt. | Seiteneffekt in `try_acquire`. |
-| 78 | NIEDRIG | threat_assessment.py | 37 | Config | **`security_cfg.get("threat_assessment", True)`** — wenn Wert ein Dict ist, greift `if not self.enabled` nie. | `bool()` Konvertierung. |
-| 79 | NIEDRIG | threat_assessment.py | 100-101 | Performance | **Dreifach-redundante States-Iteration.** Jeder Sub-Check filtert komplett. | Einmalig filtern, Ergebnisse uebergeben. |
-| 80 | NIEDRIG | adaptive_thresholds.py | 54 | Race Condition | **`_adjustments_this_week` ohne Lock.** Parallele `run_analysis()` umgeht Rate-Limit. | `asyncio.Lock`. |
-| 81 | NIEDRIG | adaptive_thresholds.py | 242-253 | Security | **`_set_runtime_value()` schreibt beliebige yaml_config-Pfade.** Aktuell sicher (hardcoded Bounds). | Methode privat halten, Pfade gegen Allowlist validieren. |
-| 82 | NIEDRIG | intent_tracker.py | 300-301 | Data | **`hgetall()` bytes-Keys.** `.get("intent_id")` liefert `None` da Keys `b"intent_id"`. | Keys dekodieren. |
-| 83 | NIEDRIG | outcome_tracker.py | 200-202 | Data | **`key.split(":")` auf bytes.** `bytes.split()` braucht `b":"`. | Keys dekodieren. |
-| 84 | NIEDRIG | error_patterns.py | 87 | Logic | **Redundanter `int()` Cast** und verwirrende `max()`-Logik. | Saubere if/elif-Logik. |
+| 96 | MITTEL | circuit_breaker.py | 44-56 | Race (3) | State-Variablen ohne Lock bei concurrent access | `asyncio.Lock` einfuehren |
+| 97 | MITTEL | outcome_tracker.py | 208-209 | Data (7) | `hgetall` gibt bytes-Keys zurueck — downstream `get("total")` findet `b"total"` nicht | Keys explizit decodieren |
+| 98 | MITTEL | outcome_tracker.py | 155-156 | Data (7) | `redis.get()` gibt bytes zurueck — wird als String verwendet | `.decode()` vor Verwendung |
+| 99 | MITTEL | intent_tracker.py | 297-303 | Perf (13) | N+1 Redis in `get_active_intents()` — einzelne `hgetall` pro Intent | Pipeline verwenden |
+| 100 | MITTEL | adaptive_thresholds.py | 232-253 | Race (3) | `_set_runtime_value()` mutiert globales `yaml_config` ohne Lock | `asyncio.Lock` oder Copy-on-Write |
+| 101 | MITTEL | intent_tracker.py | 396-424 | Logik (10) | `_reminder_loop()` schlaeft ZUERST — ueberfaellige Intents erst nach 60 Min | Zuerst pruefen, dann schlafen |
+| 102 | NIEDRIG | circuit_breaker.py | 50-57 | Logik (10) | `state` Property hat Seiteneffekte — mutiert `_state` | Transition in dedizierte Methode |
+| 103 | NIEDRIG | outcome_tracker.py | 57,127 | Race (3) | `_pending_count` ohne Lock | Akzeptabel in asyncio |
+| 104 | NIEDRIG | intent_tracker.py | 300 | Data (7) | `intent_id` aus `smembers` ist bytes — wird in f-String eingesetzt | `.decode()` vor Verwendung |
+| 105 | NIEDRIG | conflict_resolver.py | 145-148 | Leak (9) | `_last_resolutions` waechst unbegrenzt | TTL oder max-Size |
+| 106 | NIEDRIG | conflict_resolver.py | 311-315 | Stille (2) | Fire-and-forget Task ohne Referenz — GC-Risk | Task in Set speichern |
+| 107 | NIEDRIG | threat_assessment.py | 81 | API (6) | `get_states()` ohne Timeout | `asyncio.wait_for()` |
+| 108 | NIEDRIG | threat_assessment.py | 535 | Perf (13) | Doppelter `get_states()` Call | States durchreichen |
+| 109 | NIEDRIG | threat_assessment.py | 37 | Config (8) | Verwirrender Config-Key-Name | Explizit `enabled` Key |
+| 110 | NIEDRIG | adaptive_thresholds.py | 173-178 | None (4) | `action_stats.get("total", 0)` findet bytes-Keys nicht → ZeroDivisionError | Guard `if total > 0` |
+| 111 | NIEDRIG | error_patterns.py | 130-138 | Data (7) | `json.loads(item)` auf bytes — funktioniert aber fragil | Explizit decodieren |
+| 112 | NIEDRIG | outcome_tracker.py | 297-298 | Logik (10) | `_classify_outcome()` unterscheidet nicht zwischen Ruecknahme und Weiterentwicklung | Richtung beruecksichtigen |
+
+### circuit_breaker.py und threat_assessment.py — Nutzung
+
+Beide Module sind **aktiv genutzt**:
+- **circuit_breaker.py**: Importiert in `ha_client.py`, `ollama_client.py`, `brain.py`, `main.py`
+- **threat_assessment.py**: Importiert in `brain.py`, `proactive.py`, `function_calling.py`, `main.py`
 
 ---
 
-## Bug-Report: Batch 10 — Config & Domain (config.py, constants.py, config_versioning.py, cooking_assistant.py, recipe_store.py, music_dj.py, smart_shopping.py)
+## Bug-Report: Batch 10 — Config & Domain-Start (31 Bugs: 5 HOCH, 14 MITTEL, 12 NIEDRIG)
 
 | # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
 |---|----------|-------|-------|-------------|-------------|-----|
-| 85 | KRITISCH | recipe_store.py | 53-65 | Async/Blocking | **Synchrone ChromaDB-Calls in async-Methoden.** `HttpClient()`, `get_or_create_collection()`, `count()` blockieren Event-Loop. | `asyncio.to_thread()` oder async ChromaDB Client. |
-| 86 | KRITISCH | recipe_store.py | 92-338 | Async/Blocking | **Saemtliche `chroma_collection.*` Aufrufe synchron.** `get()`, `add()`, `query()`, `count()`, `delete()` — ~15 Call-Sites blockieren. | Alle in `asyncio.to_thread()` wrappen. |
-| 87 | HOCH | recipe_store.py | 101-113 | Performance | **`ingest_all()` sequentiell** ueber alle Dateien. | `asyncio.gather()` oder Batching. |
-| 88 | HOCH | config.py | 319 | Race Condition | **`get_room_profiles()` TOCTOU.** Cache-Check vor Lock, Cache-Write unter Lock — inkonsistenter Read moeglich. | Gesamten Check unter Lock. |
-| 89 | HOCH | config_versioning.py | 133 | Logic | **`rsplit("_", 2)` bei Config-Namen mit Unterstrich.** `"easter_eggs_20260310_120000"` → `[0]` = `"easter"` statt `"easter_eggs"`. Rollbacks fuer solche Configs schlagen fehl. | Config-Name aus Redis-Metadaten lesen statt aus ID parsen. |
-| 90 | HOCH | cooking_assistant.py | 891 | Data | **Redis `get()` gibt bytes.** `json.loads(raw)` funktioniert, aber inkonsistent mit explizitem `.decode()` Pattern. | Konsistentes `.decode()`. |
-| 91 | MITTEL | music_dj.py | 383-384 | Silent Error | **`except Exception: pass`** beim Redis-Load der letzten Empfehlung. | `logger.debug()`. |
-| 92 | MITTEL | music_dj.py | 116-117 | Silent Error | **`except Exception: return "relaxing"`** ohne Logging in `_get_activity()`. | `logger.debug()`. |
-| 93 | MITTEL | config_versioning.py | 195-196 | Silent Error | **`except (...): pass`** beim Snapshot-Loeschen. Redis-Metadaten weg, Datei bleibt als Orphan. | Loggen. |
-| 94 | MITTEL | smart_shopping.py | 175 | Data | **`hgetall()` bytes-Keys.** Keys nicht dekodiert (Values schon). | Keys dekodieren. |
-| 95 | MITTEL | smart_shopping.py | 389-391 | Silent Error | **`except Exception: pass`** beim Einkaufslisten-Load. HA-API-Fehler unsichtbar. | `logger.debug()`. |
-| 96 | MITTEL | config.py | 241-247 | Race Condition | **`_active_person` ohne Lock.** In Multi-Thread FastAPI-Kontext fragwuerdig. | `threading.Lock`. |
-| 97 | NIEDRIG | cooking_assistant.py | 102 | Logic | **Doppelter Eintrag** `"ich möchte"` in `COOKING_START_TRIGGERS`. | Duplikat entfernen. |
-| 98 | NIEDRIG | recipe_store.py | 141 | Security | **MD5 fuer Content-Hashing.** Funktional OK, aber deprecated. | `hashlib.sha256`. |
+| 113 | HOCH | config.py | 241-247 | Race (3) | `_active_person` globaler String ohne Lock | `threading.Lock` |
+| 114 | HOCH | config.py | 319 | Race (3) | `get_room_profiles()` Fast-Path VOR Lock — nicht atomar | Fast-Path entfernen oder Tuple-Swap |
+| 115 | HOCH | cooking_assistant.py | 486-488 | None (4) | `_next_step()` greift auf `self.session` ohne None-Check — Race mit `_stop_session()` | None-Guard am Anfang |
+| 116 | HOCH | cooking_assistant.py | 196 | Leak (9) | `_timer_tasks` waechst unbegrenzt — abgelaufene Tasks bleiben | Erledigte Tasks entfernen |
+| 117 | HOCH | cooking_assistant.py | 196 | Leak (9) | `session.timers` ohne Limit — unbegrenzter Task-Spawn | Max 10 Timer pro Session |
+| 118 | MITTEL | config.py | 168-219 | Race (3) | `_entity_to_name` globales Dict ohne Lock bei Reload | Immutable-Muster oder Lock |
+| 119 | MITTEL | cooking_assistant.py | 508 | None (4) | `_prev_step()` ohne None-Guard fuer `self.session` | None-Check |
+| 120 | MITTEL | cooking_assistant.py | 518 | None (4) | `_repeat_step()` ohne None-Guard | None-Check |
+| 121 | MITTEL | cooking_assistant.py | 525-526 | None (4) | `_show_status()` ohne None-Guard | None-Check |
+| 122 | MITTEL | cooking_assistant.py | 550 | None (4) | `_show_ingredients()` ohne None-Guard | None-Check |
+| 123 | MITTEL | cooking_assistant.py | 563 | None (4) | `_adjust_portions()` ohne None-Guard | None-Check |
+| 124 | MITTEL | cooking_assistant.py | 612 | None (4) | `_set_timer_from_text()` ohne None-Guard | None-Check |
+| 125 | MITTEL | cooking_assistant.py | 298-303 | API (6) | `ollama.chat()` ohne Timeout | `asyncio.wait_for()` |
+| 126 | MITTEL | config_versioning.py | 195-196 | Stille (2) | `except (...): pass` bei Snapshot-Cleanup | `logger.debug()` |
+| 127 | MITTEL | config_versioning.py | 87-91 | Async (1) | `redis.pipeline()` ohne async Contextmanager | `async with self._redis.pipeline() as pipe:` |
+| 128 | MITTEL | recipe_store.py | 66 | Async (1) | `get_or_create_collection()` sync in async `initialize()` | `asyncio.to_thread()` |
+| 129 | MITTEL | recipe_store.py | 156 | Security (11) | `hashlib.md5()` fuer Content-Hash | `hashlib.sha256()` |
+| 130 | MITTEL | recipe_store.py | 349-350 | Async (1) | `delete_collection()`/`get_or_create_collection()` sync in async `clear()` | `asyncio.to_thread()` |
+| 131 | MITTEL | recipe_store.py | 263-268 | Logik (10) | `get_chunks()` laedt gesamte Collection, Offset/Limit erst danach | ChromaDB offset/limit Parameter nutzen |
+| 132 | MITTEL | smart_shopping.py | 289 | API (6) | `ha.api_get()` ohne Timeout | Timeout mitgeben |
+| 133 | MITTEL | smart_shopping.py | 302-316 | Perf (13) | `call_service()` sequentiell pro fehlende Zutat | `asyncio.gather()` |
+| 134 | NIEDRIG | cooking_assistant.py | 116 | Stille (2) | `_get_activity()` gibt `"relaxing"` ohne Logging zurueck | `logger.debug()` |
+| 135 | NIEDRIG | config_versioning.py | 133 | Logik (10) | `rsplit("_", 2)` — fragil bei Config-Namen mit 2+ Underscores | Eindeutigen Separator verwenden |
+| 136 | NIEDRIG | config_versioning.py | 266-268 | Async (1) | `health_status()` sync I/O | `asyncio.to_thread()` |
+| 137 | NIEDRIG | recipe_store.py | 137 | Async (1) | `_extract_pdf_text()` sync in async `ingest_file()` | `asyncio.to_thread()` |
+| 138 | NIEDRIG | recipe_store.py | 140 | Async (1) | `filepath.read_text()` sync in async | `asyncio.to_thread()` |
+| 139 | NIEDRIG | music_dj.py | 116-117 | Stille (2) | `except Exception: return "relaxing"` ohne Logging | `logger.debug()` |
+| 140 | NIEDRIG | music_dj.py | 384 | Stille (2) | `logger.debug("Unhandled: %s", e)` — irrefuehrende Message | Message korrigieren |
+| 141 | NIEDRIG | smart_shopping.py | 391 | Stille (2) | `logger.debug("Unhandled: %s", e)` — irrefuehrende Message | Message korrigieren |
+| 142 | NIEDRIG | cooking_assistant.py | 107-108 | Logik (10) | Duplikate in `COOKING_KEYWORDS` durch Unicode-Varianten | Duplikate entfernen |
+| 143 | NIEDRIG | cooking_assistant.py | 114-131 | Logik (10) | Duplikate in NAV-Listen durch Unicode-Varianten | Duplikate entfernen |
 
 ---
 
-## Bug-Report: Batch 11 — Domain (calendar_intelligence.py, inventory.py, web_search.py, knowledge_base.py, summarizer.py, ocr.py, file_handler.py)
+## Bug-Report: Batch 11 — Domain (20 Bugs: 3 HOCH, 8 MITTEL, 9 NIEDRIG)
 
 | # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
 |---|----------|-------|-------|-------------|-------------|-----|
-| 99 | KRITISCH | knowledge_base.py | 71-550 | Async/Blocking | **Alle ChromaDB-Calls synchron in async-Methoden.** `get_or_create_collection()`, `.count()`, `.get()`, `.add()`, `.query()`, `.upsert()`, `.delete()` — ~14 Call-Sites blockieren Event-Loop. | `asyncio.to_thread()` oder `chromadb.AsyncHttpClient`. |
-| 100 | KRITISCH | summarizer.py | 275, 391 | Async/Blocking | **`chroma_collection.query()` und `.upsert()` synchron** in async-Methoden. | `run_in_executor()`. |
-| 101 | HOCH | summarizer.py | 322-323 | Data | **Redis `scan()` gibt bytes-Keys.** `key.replace("mha:summary:daily:", "")` schlaegt fehl auf bytes. | `.decode()`. |
-| 102 | HOCH | summarizer.py | 407 | Data | **`redis.get()` gibt bytes, Rueckgabetyp ist `str`.** `_store_personality_snapshot()` Z.494: `bytes + str` → `TypeError`. | `.decode()`. |
-| 103 | HOCH | summarizer.py | 469-471 | Data/None | **`int(b"42" or 0)` → `TypeError`.** Redis bytes + or-Pattern fehlerhaft. | `raw = await ...; val = int(raw) if raw else 0` mit decode. |
-| 104 | HOCH | summarizer.py | 476 | Data | **`float(v)` auf bytes** aus `redis.lrange()`. `TypeError`. | `.decode()` vor `float()`. |
-| 105 | HOCH | summarizer.py | 315 | Data | **Bytes-Keys sortiert, dann `.replace()` mit str-Argument.** | Nach Scan alle Keys decodieren. |
-| 106 | MITTEL | knowledge_base.py | 330-331 | Performance | **Multi-Query sequentiell.** Jeder ChromaDB-Call blockiert. | `asyncio.gather()` nach async-Umstellung. |
-| 107 | MITTEL | knowledge_base.py | 200-205 | Performance | **`ingest_all()` sequentiell** ueber Dateien. | `asyncio.gather()` oder Batching. |
-| 108 | MITTEL | summarizer.py | 199-204 | Performance | **7 sequentielle Redis-Calls** in `summarize_week()`. | `asyncio.gather()`. |
-| 109 | MITTEL | summarizer.py | 243-251 | Performance | **Bis zu 31 sequentielle Redis-Calls** in `summarize_month()`. | `asyncio.gather()`. |
-| 110 | NIEDRIG | inventory.py | 99-111 | Performance | **O(n) Suche** ueber alle Items mit einzelnen `hgetall`-Calls. | Sekundaer-Index in Redis. |
-| 111 | NIEDRIG | web_search.py | 329-332 | Race Condition | **Cache-Eviction nicht atomar.** In asyncio akzeptabel. | `asyncio.Lock` optional. |
+| 144 | HOCH | knowledge_base.py | 71 | Async (1) | `get_or_create_collection()` sync ChromaDB in async `initialize()` | `asyncio.to_thread()` |
+| 145 | HOCH | knowledge_base.py | 549 | Async (1) | `delete_collection()` sync in async `clear()` | `asyncio.to_thread()` |
+| 146 | HOCH | knowledge_base.py | 558 | Async (1) | `get_or_create_collection()` sync in async `clear()` | `asyncio.to_thread()` |
+| 147 | MITTEL | inventory.py | 78-81 | Perf (13) | N+1 Redis in `remove_item()` — einzelne `hgetall` pro Item | Pipeline |
+| 148 | MITTEL | inventory.py | 99-103 | Perf (13) | N+1 Redis in `update_quantity()` | Pipeline |
+| 149 | MITTEL | inventory.py | 125-128 | Perf (13) | N+1 Redis in `list_items()` | Pipeline |
+| 150 | MITTEL | inventory.py | 173-176 | Perf (13) | N+1 Redis in `check_expiring()` | Pipeline |
+| 151 | MITTEL | knowledge_base.py | 219 | Async (1) | `_extract_pdf_text()` sync in async `ingest_file()` | `asyncio.to_thread()` |
+| 152 | MITTEL | knowledge_base.py | 222 | Async (1) | `filepath.read_text()` sync in async | `asyncio.to_thread()` |
+| 153 | MITTEL | knowledge_base.py | 333-338 | Perf (13) | Multi-Query ChromaDB sequentiell | `asyncio.gather()` |
+| 154 | MITTEL | ocr.py | 97-136 | Async (1) | PIL/Tesseract sync CPU-intensiv in async `analyze_image()` | `asyncio.to_thread()` |
+| 155 | NIEDRIG | summarizer.py | 348 | Leak (9) | `lrange 0 -1` laedt ALLE Konversationen ohne Limit | Limit verwenden |
+| 156 | NIEDRIG | summarizer.py | 305-313 | Perf (13) | SCAN sammelt alle Keys ohne Limit | Frueh abbrechen |
+| 157 | NIEDRIG | summarizer.py | 316 | Data (7) | bytes-Keys in `sort()` — TypeError wenn gemischt | Vor Sort decodieren |
+| 158 | NIEDRIG | knowledge_base.py | 459 | Logik (10) | `where=None` an ChromaDB undokumentiert | Explizite Conditional |
+| 159 | NIEDRIG | knowledge_base.py | 87 | Async (1) | `mkdir()` sync in async `initialize()` | `asyncio.to_thread()` |
+| 160 | NIEDRIG | knowledge_base.py | 238 | Security (11) | `hashlib.md5()` fuer Content-Hash | `hashlib.sha256()` |
+| 161 | NIEDRIG | ocr.py | 58 | Security (11) | Path-Validierung `".." in str(resolved)` unzuverlaessig | `is_relative_to()` verwenden |
+| 162 | NIEDRIG | file_handler.py | 61-96 | Async (1) | `save_upload()` komplett synchron | `asyncio.to_thread()` am Call-Site |
+| 163 | NIEDRIG | file_handler.py | 164 | Resilience (12) | `pdfplumber.open()` ohne spezifischen Exception-Handler | Spezifischer try/except |
 
 ---
 
-## Bug-Report: Batch 12 — Monitoring (workshop_library.py, workshop_generator.py, health_monitor.py, device_health.py, energy_optimizer.py, predictive_maintenance.py, repair_planner.py)
+## Bug-Report: Batch 12 — Monitoring (31 Bugs: 5 HOCH, 12 MITTEL, 14 NIEDRIG)
 
 | # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
 |---|----------|-------|-------|-------------|-------------|-----|
-| 112 | KRITISCH | workshop_library.py | 40-43 | Async/Blocking | **Synchrone ChromaDB-Calls** in `initialize()`. | `asyncio.to_thread()`. |
-| 113 | KRITISCH | workshop_library.py | 88-92 | Async/Blocking | **`collection.upsert()` synchron** in `ingest_document()`. | `asyncio.to_thread()`. |
-| 114 | KRITISCH | workshop_library.py | 103-116 | Async/Blocking | **`collection.count()` und `.query()` synchron** in `search()`. | `asyncio.to_thread()`. |
-| 115 | KRITISCH | workshop_library.py | 148 | Async/Blocking | **`collection.count()` synchron** in `get_stats()`. | `asyncio.to_thread()`. |
-| 116 | HOCH | health_monitor.py | 361 | Data | **`redis.get()` bytes an `fromisoformat()`.** `TypeError`. | `.decode()`. |
-| 117 | HOCH | device_health.py | 414-416 | Data | **`hgetall()` bytes-Keys.** `.get("mean", 0)` matched nie. Anomalie-Erkennung greift nie. | Keys/Values dekodieren. |
-| 118 | HOCH | device_health.py | 459 | Data | **`float(s)` auf bytes** aus `lrange()`. `TypeError`. | `.decode()`. |
-| 119 | HOCH | device_health.py | 361 | Data | **`start_raw.replace("Z", "+00:00")` auf bytes.** `AttributeError`. | Dekodieren vor Verarbeitung. |
-| 120 | HOCH | repair_planner.py | 299-304 | Data | **`hgetall()` bytes-Keys.** JSON-Felder werden nie korrekt geparsed. | Vorher dekodieren. |
-| 121 | HOCH | repair_planner.py | 334 | Data | **`hget()` bytes.** `srem()` mit bytes vs String-Key — alter Status nie entfernt. | `.decode()`. |
-| 122 | HOCH | repair_planner.py | 1137 | Data | **`hgetall()` bytes-Dicts** direkt in Ergebnis-Liste. | Dekodieren. |
-| 123 | HOCH | repair_planner.py | 989-990 | Data | **`hgetall()` bytes** in `list_workshop()`. | Dekodieren. |
-| 124 | HOCH | repair_planner.py | 1025-1026 | Data | **`hgetall()` bytes.** `.get("last_done")` matched nie, faellt auf Defaults. | Dekodieren. |
-| 125 | HOCH | repair_planner.py | 1509-1510 | Data | **`lrange()` bytes** in `get_journal()`. | Dekodieren. |
-| 126 | HOCH | repair_planner.py | 1543 | Data | **`hgetall()` bytes** in `get_snippet()`. | Dekodieren. |
-| 127 | HOCH | workshop_generator.py | 553-554 | Data | **`lrange()` bytes.** `Path(fn).name` auf bytes → falscher Pfad. | `.decode()`. |
-| 128 | MITTEL | workshop_library.py | 87 | Async/Performance | **Embedding-Funktion sequentiell pro Chunk.** Falls async, fehlt `await`. | Pruefen ob async; batch-embedden. |
-| 129 | MITTEL | workshop_library.py | 107 | Async | **`embedding_fn(query)` moeglicherweise async** ohne `await`. | `await` falls async. |
-| 130 | MITTEL | energy_optimizer.py | 291-299 | Performance | **7 sequentielle `redis.get()` Calls.** | `mget()`. |
-| 131 | MITTEL | energy_optimizer.py | 333-356 | Performance | **14 sequentielle `redis.get()` Calls.** | `mget()`. |
-| 132 | MITTEL | repair_planner.py | 322-326 | Performance | **N sequentielle `hgetall()` Calls** in `list_projects()`. | `asyncio.gather()` oder Pipeline. |
-| 133 | MITTEL | repair_planner.py | 1629-1636 | Performance | **N `ha.get_states()` Calls** in `check_all_devices()`. | Einmal cachen. |
+| 164 | HOCH | workshop_library.py | 41 | Async (1) | `get_or_create_collection()` sync ChromaDB in async | `asyncio.to_thread()` |
+| 165 | HOCH | workshop_library.py | 73 | Async (1) | `path.read_text()` sync File-I/O in async | `asyncio.to_thread()` |
+| 166 | HOCH | workshop_library.py | 89 | Async (1) | `embedding_fn(chunk)` sync in List-Comprehension, sequentiell | `asyncio.to_thread(lambda: [...])` |
+| 167 | HOCH | workshop_library.py | 117 | Async (1) | `embedding_fn(query)` sync in async `search()` | `asyncio.to_thread()` |
+| 168 | HOCH | repair_planner.py | 313-328 | Perf (13) | N+1 Redis in `list_projects()` — sequentielle `hgetall` | Pipeline oder `asyncio.gather` |
+| 169 | MITTEL | workshop_library.py | 40 | Async (1) | `WORKSHOP_DOCS_DIR.mkdir()` sync in async | `asyncio.to_thread()` |
+| 170 | MITTEL | workshop_library.py | 185-186 | Async (1) | PDF-Extraktion (fitz/pdfplumber/PyPDF2) komplett sync | `asyncio.to_thread()` |
+| 171 | MITTEL | workshop_generator.py | 508 | Async (1) | `filepath.write_text()` sync in async | `asyncio.to_thread()` |
+| 172 | MITTEL | workshop_generator.py | 543 | Async (1) | `filepath.read_text()` sync in async | `asyncio.to_thread()` |
+| 173 | MITTEL | workshop_generator.py | 586-589 | Async (1) | `zipfile.ZipFile` sync in async `export_project()` | `asyncio.to_thread()` |
+| 174 | MITTEL | repair_planner.py | 978-994 | Perf (13) | N+1 Redis in `list_workshop()` | Pipeline |
+| 175 | MITTEL | repair_planner.py | 1136-1147 | Perf (13) | N+1 Redis in `list_lent_tools()` | `asyncio.gather` |
+| 176 | MITTEL | repair_planner.py | 1442-1453 | None (4) | `arm_pick_tool()` bytes-Keys aus `hgetall` — `pos.get("x")` findet `b"x"` nicht | Bytes decodieren |
+| 177 | MITTEL | repair_planner.py | 1476-1478 | None (4) | `pause_timer()` `float(None)` → TypeError | Explizit bytes decodieren |
+| 178 | MITTEL | repair_planner.py | 1497-1506 | Leak (9) | `create_task()` ohne Referenz — GC-Risk. Kein Timer-Limit. | Task-Referenz speichern |
+| 179 | MITTEL | energy_optimizer.py | 286-299 | Perf (13) | 7 sequentielle `redis.get()` in `_check_anomaly()` | Pipeline |
+| 180 | MITTEL | energy_optimizer.py | 328-356 | Perf (13) | 14 sequentielle `redis.get()` in `_get_weekly_comparison()` | Pipeline |
+| 181 | MITTEL | device_health.py | 126-139 | Resilience (12) | `_check_loop()` kein Startup-Delay — Check vor Init | `await asyncio.sleep(startup_delay)` |
+| 182 | MITTEL | workshop_generator.py | 154-155 | None (4) | `model_router.model_deep` ohne `getattr` Schutz | `getattr()` verwenden |
+| 183 | MITTEL | workshop_generator.py | 511-519 | Leak (9) | `rpush` ohne Deduplizierung — Dateiname-Liste waechst | `sadd` statt `rpush` |
+| 184 | NIEDRIG | repair_planner.py | 453 | None (4) | `response.get()` — wenn String statt Dict: AttributeError | Typ-Check |
+| 185 | NIEDRIG | repair_planner.py | 541-544 | None (4) | 6 weitere Stellen mit gleichem `_resp.get()` Problem | Wrapper-Methode |
+| 186 | NIEDRIG | repair_planner.py | 964-965 | Security (11) | `add_workshop_item()` ohne Input-Validierung | Regex-Validierung |
+| 187 | NIEDRIG | repair_planner.py | 1540 | Security (11) | `save_snippet()` ohne Name-Validierung | Regex-Validierung |
+| 188 | NIEDRIG | repair_planner.py | 1002 | Security (11) | `add_maintenance_schedule()` ohne Validierung | Regex-Validierung |
+| 189 | NIEDRIG | repair_planner.py | 1119 | Security (11) | `lend_tool()` ohne Validierung | Regex-Validierung |
+| 190 | NIEDRIG | repair_planner.py | 948 | API (6) | `ollama.chat()` ohne `model` Parameter | Default-Model uebergeben |
+| 191 | NIEDRIG | energy_optimizer.py | 439 | Logik (10) | `val > 0` ignoriert Sensoren mit Wert 0 | `val is not None` verwenden |
+| 192 | NIEDRIG | predictive_maintenance.py | 170 | Perf (13) | `_save_devices()` serialisiert ALLE Devices pro Update | Individuellen Key pro Device |
+| 193 | NIEDRIG | predictive_maintenance.py | 119-125 | Leak (9) | `_devices` dict waechst unbegrenzt | Cleanup fuer nicht existierende Entities |
+| 194 | NIEDRIG | health_monitor.py | 314-328 | Dead Code | `_check_temperature()` nie aufgerufen (auskommentiert) | Entfernen |
 
 ---
 
-## Bug-Report: Batch 13 — Rest (visitor_manager.py, follow_me.py, wellness_advisor.py, activity.py, seasonal_insight.py, explainability.py, diagnostics.py, task_registry.py, timer_manager.py)
+## Bug-Report: Batch 13 — Rest (27 Bugs: 7 HOCH, 8 MITTEL, 10 NIEDRIG, 2 INFO)
 
 | # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
 |---|----------|-------|-------|-------------|-------------|-----|
-| 134 | KRITISCH | wellness_advisor.py | 237, 245 | Data | **`redis.get()` bytes an `fromisoformat()`.** `TypeError` wird gefangen → Timer resetten bei jedem Check. PC-Pause-Erinnerung wird **NIE** ausgeloest. | `.decode()`. |
-| 135 | KRITISCH | wellness_advisor.py | 330, 333 | Data | **Bytes an `fromisoformat()`.** Cooldown greift nie → Stress-Nudges bei **JEDEM** Check-Interval. | `.decode()`. |
-| 136 | KRITISCH | wellness_advisor.py | 629, 631-633 | Data | **Bytes an `fromisoformat()`.** Cooldown greift nie → Hydration-Erinnerungen alle 15 Min statt alle 2h. | `.decode()`. |
-| 137 | HOCH | wellness_advisor.py | 690, 693-694 | Data | **Bytes an `fromisoformat()`.** Cooldown greift nie → Ambient-Aktionen alle 15 Min statt alle 30 Min. | `.decode()`. |
-| 138 | HOCH | wellness_advisor.py | 256, 259 | Data | **Bytes an `fromisoformat()`.** 1h-Cooldown fuer Break-Erinnerungen ignoriert. | `.decode()`. |
-| 139 | HOCH | task_registry.py | 94, 117 | Init/Logic | **`shutdown(timeout=...)` Parameter ignoriert.** Hardcoded `timeout=30` statt Parameter. | `timeout=timeout`. |
-| 140 | MITTEL | wellness_advisor.py | 186-190 | Performance | **5 Wellness-Checks sequentiell.** Jeder macht HA + Redis Calls. | `asyncio.gather()`. |
-| 141 | MITTEL | follow_me.py | 125-146 | Performance | **3 Transfers sequentiell** (Music, Lights, Climate). Unabhaengig. | `asyncio.gather()`. |
-| 142 | MITTEL | diagnostics.py | 585-604 | Performance | **5 Diagnostik-Checks sequentiell.** | `asyncio.gather()`. |
-| 143 | MITTEL | diagnostics.py | 501-555 | Performance | **5 Connectivity-Checks sequentiell.** Bei Timeouts bis 25s. | `asyncio.gather()`. |
-| 144 | NIEDRIG | explainability.py | 55-58 | Silent Error | **`json.JSONDecodeError` mit `pass`.** Korrupte Eintraege still uebersprungen. | `logger.debug()`. |
-| 145 | NIEDRIG | timer_manager.py | 699, 749 | Silent Error | **`except Exception: pass`** bei Alarm-Cancel. Redis-Wecker ueberlebt Cancel. | Loggen + Fehlerstatus melden. |
-
----
-
-## Spezifische Pruefpunkte (aus Prompt)
-
-### Protocol Engine: "5 Bugs dokumentiert — Alle gefixt?"
-Die groebsten Bugs (Race Conditions, bytes-Decoding) scheinen gefixt. **Verbleibend:** stille Fehler beim Undo (Bug #26-27), zu breite Intent-Detection (Bug #28), inkonsistente Timestamps (Bug #25).
-
-### Insight Engine: "70% fertig — Was fehlt?"
-1. `run_checks_now()` fehlen 6 von 16 Checks (Bug #65)
-2. Keine Persistierung der Check-Ergebnisse in Redis
-3. Keine Wochen-Trends (nur 6 Snapshots a 30min)
-4. Temperatur-Snapshots nicht raumbezogen
-5. Kein konsistentes Health-Interface
-
-### Circuit Breaker: "Wird es genutzt?"
-**JA** — aktiv genutzt von `ha_client.py` (`ha_breaker`, `mindhome_breaker`), `ollama_client.py` (`ollama_breaker`), `brain.py` (`registry`), `main.py` (`registry`).
-**Dead Code:** `redis_breaker`, `chromadb_breaker`, `call_with_breaker()` — definiert aber nie importiert.
-
-### Threat Assessment: "Funktioniert es?"
-**JA** — voll integriert. Initialisiert in `brain.py`, periodisch aufgerufen von `proactive.py`, Security-Score abrufbar via `function_calling.py`.
+| 195 | HOCH | wellness_advisor.py | 240 | Resilience (12) | `redis.get()` OHNE `_safe_redis()` — direkt, crasht bei Redis-Fehler | `_safe_redis()` verwenden |
+| 196 | HOCH | wellness_advisor.py | 261 | Resilience (12) | `redis.get()` ohne `_safe_redis()` in Break-Reminder | `_safe_redis()` |
+| 197 | HOCH | wellness_advisor.py | 337 | Resilience (12) | `redis.get()` ohne `_safe_redis()` in Stress-Nudge | `_safe_redis()` |
+| 198 | HOCH | wellness_advisor.py | 402 | Resilience (12) | `redis.exists()` ohne `_safe_redis()` | `_safe_redis()` |
+| 199 | HOCH | wellness_advisor.py | 481 | Resilience (12) | `redis.exists()` ohne `_safe_redis()` in Late-Night | `_safe_redis()` |
+| 200 | HOCH | wellness_advisor.py | 638 | Resilience (12) | `redis.get()` ohne `_safe_redis()` in Hydration | `_safe_redis()` |
+| 201 | HOCH | wellness_advisor.py | 701 | Resilience (12) | `redis.get()` ohne `_safe_redis()` in Mood-Ambient | `_safe_redis()` |
+| 202 | MITTEL | wellness_advisor.py | 609 | Data (7) | `sismember` bytes vs String Inkonsistenz | Konsistentes Encoding |
+| 203 | MITTEL | follow_me.py | 91,96 | Race (3) | `_person_room`/`_last_transfer` ohne Lock bei parallelen Motion-Events | `asyncio.Lock()` |
+| 204 | MITTEL | visitor_manager.py | 280 | Race (3) | `_last_ring_time` ohne Lock — Cooldown umgehbar | `asyncio.Lock()` |
+| 205 | MITTEL | diagnostics.py | 436 | Async (1) | `open()` sync File-I/O in `_load_maintenance_tasks` | `aiofiles` oder `asyncio.to_thread()` |
+| 206 | MITTEL | diagnostics.py | 447 | Async (1) | `open(..., "w")` sync in `_save_maintenance_tasks` | `asyncio.to_thread()` |
+| 207 | MITTEL | diagnostics.py | 491 | Async (1) | `open(meminfo_path)` sync in `check_system_resources` | `asyncio.to_thread()` |
+| 208 | MITTEL | diagnostics.py | 558 | Resilience (12) | Redis-Verbindung ohne `async with` — Leak bei Fehler | `async with` oder `finally` |
+| 209 | MITTEL | timer_manager.py | 435 | Data (7) | `replace(tzinfo=_TZ)` — bei ZoneInfo akzeptabel, aber fragil | Kein Fix noetig |
+| 210 | NIEDRIG | follow_me.py | 250-251 | Stille (2) | Transfer-Fehler nur `logger.debug()` | `logger.warning()` |
+| 211 | NIEDRIG | follow_me.py | 185-186 | Stille (2) | Musik-Transfer-Fehler nur debug | `logger.warning()` |
+| 212 | NIEDRIG | follow_me.py | 279-280 | Stille (2) | Klima-Transfer-Fehler nur debug | `logger.warning()` |
+| 213 | NIEDRIG | seasonal_insight.py | 120 | Stille (2) | Loop-Fehler nur debug | `logger.warning()` |
+| 214 | NIEDRIG | visitor_manager.py | 139-140 | Stille (2) | Korrupte Besucher still uebersprungen | `logger.debug()` |
+| 215 | NIEDRIG | visitor_manager.py | 241 | Stille (2) | Parsing-Fehler still verschluckt | Logging hinzufuegen |
+| 216 | NIEDRIG | task_registry.py | 120 | Logik (10) | Timeout-Warnung sagt "30s" obwohl Default 10s | Message korrigieren |
+| 217 | NIEDRIG | wellness_advisor.py | 186-193 | Perf (13) | 4 parallele Checks rufen intern `detect_activity()` auf | Activity einmal vorladen |
+| 218 | NIEDRIG | follow_me.py | 224 | Dead Code | Redundanter lokaler `from datetime import datetime` | Entfernen |
+| 219 | INFO | diagnostics.py | 69 | Leak (9) | `_alert_cooldowns` waechst unbegrenzt | Periodisches Cleanup |
+| 220 | INFO | timer_manager.py | 137 | Leak (9) | `_tasks` dict: cancelled Tasks bleiben | Cleanup in shutdown |
+| 221 | NIEDRIG | explainability.py | 67 | None (4) | `context: dict = None` redundante Guard-Logik | Type-Hint korrigieren |
 
 ---
 
 ## Dead-Code-Liste
 
-| Modul | Element | Beschreibung |
-|-------|---------|-------------|
-| circuit_breaker.py | `redis_breaker` (Z.170) | Definiert, nie importiert |
-| circuit_breaker.py | `chromadb_breaker` (Z.171) | Definiert, nie importiert |
-| circuit_breaker.py | `call_with_breaker()` (Z.174-202) | Definiert, nie aufgerufen |
-| proactive_planner.py | `_GUEST_KEYWORDS` (Z.30-33) | Definiert, nie verwendet |
-| proactive_planner.py | `import time` (Z.16) | Importiert, nie verwendet |
-| proactive.py | `_get_person_title()` (Z.2130) | Dupliziert globale Funktion |
-| light_engine.py | `on_motion_clear()` (Z.211-213) | Leere Methode (`pass`) |
-| light_engine.py | `_is_morning_window()` (Z.911-917) | Nie aufgerufen, Logic inline |
-| ha_client.py | `_get_lock()` (Z.57-59) | Triviale Wrapper-Methode |
-| cover_config.py | `get_sensors_by_role()` | Nie aufgerufen |
-| tts_enhancer.py | 9 Instance-Variablen (Z.153-166) | `vol_day`, `vol_evening`, etc. — `get_volume()` liest live aus yaml_config |
-| sound_manager.py | `settings` Import (Z.29) | Importiert, nie verwendet |
-| ambient_audio.py | `settings` Import (Z.33) | Importiert, nie verwendet |
-| calendar_intelligence.py | `hour_activity` Counter (Z.145-158) | Befuellt, nie gelesen |
-| web_search.py | `quote_plus` Import (Z.37) | Importiert, nie verwendet |
-| file_handler.py | `import re` (Z.8) | Importiert, nie verwendet |
-| health_monitor.py | `_check_temperature()` (Z.314-328) | Methode existiert, Aufruf auskommentiert |
-| predictive_maintenance.py | 3 Redis-Key-Konstanten (Z.27-29) | Definiert, nie verwendet |
-| smart_shopping.py | `_KEY_PURCHASE_LOG` (Z.29) | Definiert, nie verwendet |
-| cooking_assistant.py | `CookingSession.raw_recipe` (Z.84) | Gesetzt, nie gelesen |
-| seasonal_insight.py | `import time` + `Counter, defaultdict` (Z.17) | Importiert, nie verwendet |
-| visitor_manager.py | `self.auto_guest_mode` (Z.54) | Gesetzt, nie verwendet |
-| diagnostics.py | `import os` (Z.19) | Importiert, nie verwendet |
-| wellness_advisor.py | `self.executor` (Z.42) | Immer `None`, Mood-Ambient-Feature dadurch tot |
-| response_quality.py | `if total == 0` Check (Z.207) | Unerreichbar |
+| Modul | Zeile(n) | Beschreibung |
+|-------|----------|-------------|
+| proactive.py | 2148-2157 | `_get_person_title()` dupliziert `config.get_person_title()` |
+| proactive.py | 1351 | Redundanter `from datetime import datetime` (bereits Modul-Level) |
+| tts_enhancer.py | 153-166 | `self.vol_day`, `self.evening_start`, `self.auto_night_whisper` etc. (12 Variablen) — gesetzt aber nie gelesen; Methoden lesen live aus `yaml_config` |
+| health_monitor.py | 314-328 | `_check_temperature()` definiert aber nie aufgerufen (auskommentiert in `check_all()`) |
+| repair_planner.py | 78-101 | NAV_SHOP, NAV_SAVE, NAV_CODE etc. (11 Sets) — erkannt in `is_repair_navigation()` aber nicht in `handle_navigation()` behandelt |
+| repair_planner.py | 105-114 | `REPAIR_KEYWORDS` Set definiert, nirgends im Modul verwendet |
+| feedback.py | 348 | Dead-Code-Zeile: Double-decode nach vorherigem Decode (Bug #72) |
+| self_optimization.py | 15 | `import re` — nie verwendet |
+| self_optimization.py | 95, 562, 568, 582-583 | Redundante lokale Re-Imports (`datetime`, `json`, `timedelta`) |
+| learning_observer.py | 345-346, 393, 405-406, 470 | Redundante `isinstance(x, bytes)` Checks — mit `decode_responses=True` immer False |
+| smart_shopping.py | 29 | `_KEY_PURCHASE_LOG` Sorted-Set Key definiert aber nie verwendet |
+| cooking_assistant.py | 84 | `raw_recipe` im CookingSession-Dataclass gesetzt aber nie gelesen |
+| calendar_intelligence.py | 145-158 | `hour_activity` Counter befuellt aber nie zurueckgegeben in `_detect_habits()` |
+| activity.py | 146-147 | `SILENCE_MATRIX`/`VOLUME_MATRIX` Modul-Level-Kopien — wahrscheinlich Dead Code |
+| follow_me.py | 224 | Redundanter lokaler `from datetime import datetime` |
 
 ---
 
-## Zero-Bug-Acknowledgments (Priority 5-9)
+## Top-10 Bugs (Prioritaet fuer P6a)
 
-Die folgenden Module aus Prioritaet 5-9 wurden vollstaendig auditiert und weisen **0 Bugs** auf:
-
-| Modul | Batch | Ergebnis |
-|-------|-------|----------|
-| `constants.py` | Batch 10 (Config & Domain) | 0 Bugs gefunden |
-| `calendar_intelligence.py` | Batch 11 (Domain) | 0 Bugs gefunden (nur Dead Code: `hour_activity` Counter) |
-| `ocr.py` | Batch 11 (Domain) | 0 Bugs gefunden |
-| `file_handler.py` | Batch 11 (Domain) | 0 Bugs gefunden (nur Dead Code: `import re`) |
-| `predictive_maintenance.py` | Batch 12 (Monitoring) | 0 Bugs gefunden (nur Dead Code: 3 Redis-Key-Konstanten) |
-| `visitor_manager.py` | Batch 13 (Rest) | 0 Bugs gefunden (nur Dead Code: `self.auto_guest_mode`) |
-| `activity.py` | Batch 13 (Rest) | 0 Bugs gefunden |
-| `seasonal_insight.py` | Batch 13 (Rest) | 0 Bugs gefunden (nur Dead Code: `import time` + `Counter, defaultdict`) |
-
-Alle anderen 55 Module aus Prioritaet 5-9 haben mindestens einen dokumentierten Bug (siehe Bug-Reports oben).
+| Rang | # | Severity | Modul | Beschreibung | Aufwand |
+|------|---|----------|-------|-------------|---------|
+| 1 | 1 | KRITISCH | proactive.py:98,146 | event_handlers ueberschrieben — YAML-Appliance-Handler verloren | 5 Zeilen: `.update()` statt Zuweisung |
+| 2 | 195-201 | HOCH | wellness_advisor.py | 7 Redis-Calls ohne `_safe_redis()` — crasht bei Redis-Fehler | 7x `_safe_redis()` einsetzen |
+| 3 | 164-167 | HOCH | workshop_library.py | 4x sync ChromaDB/Embedding in async — blockiert Event-Loop | 4x `asyncio.to_thread()` |
+| 4 | 144-146 | HOCH | knowledge_base.py | 3x sync ChromaDB in async — Init und Clear blockieren | 3x `asyncio.to_thread()` |
+| 5 | 2 | HOCH | proactive.py:2620 | `_batch_flushing` Race Condition ohne Lock | Lock verwenden |
+| 6 | 113-114 | HOCH | config.py | `_active_person` + Room-Profiles Fast-Path Race | Lock oder Tuple-Swap |
+| 7 | 115-124 | HOCH | cooking_assistant.py | 7x `self.session` ohne None-Guard + unbegrenzte Timer | None-Checks + Limit |
+| 8 | 73-74 | HOCH | self_optimization.py | Sync YAML I/O in async — blockiert Event-Loop | `asyncio.to_thread()` |
+| 9 | 56-58 | HOCH | multi_room_audio.py + speaker_recognition.py | 3x N+1 HTTP/Redis — Speaker-Status und Embeddings | `asyncio.gather()` + `mget()` |
+| 10 | 30-31 | HOCH | ha_client.py | Session vor Retry-Loop — stale bei Close | Session pro Versuch holen |
 
 ---
 
-## Fehlerklassen-Verteilung
-
-| Fehlerklasse | Anzahl | Kritischste |
-|---|:---:|---|
-| 1. Async/Blocking (ChromaDB) | 12 | knowledge_base.py, recipe_store.py, workshop_library.py, summarizer.py |
-| 2. Stille Fehler (except:pass) | 22 | multi_room_audio.py gibt `success:True` bei Fehler (#42) |
-| 3. Race Conditions | 10 | self_automation.py `_pending` + Rate-Limit (#5, #6) |
-| 4. None-Fehler | 5 | proactive.py `getattr` falscher Attributname (#7) |
-| 5. Init-Fehler | 2 | proactive.py `event_handlers` vor Definition (#1) |
-| 6. API-Fehler (Timeout) | 3 | ha_client.py Camera, self_automation.py Ollama |
-| 7. Daten-Fehler (bytes/str) | 42 | wellness_advisor.py — KEIN Cooldown funktioniert (#134-136) |
-| 8. Config-Fehler | 1 | threat_assessment.py bool vs Dict (#78) |
-| 9. Memory Leaks | 3 | learning_transfer.py `_pending_transfers` (#60) |
-| 10. Logik-Fehler | 14 | proactive.py Operator-Praezedenz (#2) |
-| 11. Security | 3 | self_automation.py Prompt Injection (#4) |
-| 12. Resilience | 7 | ha_client.py fehlende Retries (#23) |
-| 13. Performance | 19 | summarizer.py 31 sequentielle Redis-Calls (#109) |
-
----
-
-## KONTEXT AUS PROMPT 4b: Bug-Report (Extended-Module)
+## KONTEXT AUS PROMPT 4b (DL#2): Bug-Report (Extended-Module)
 
 ### Statistik
-Gesamt: 155 Bugs in Prioritaet 5-9 (KRITISCH 12, HOCH 39, MITTEL 58, NIEDRIG 46)
+Gesamt: 221 Bugs in Prioritaet 5-9 (KRITISCH 1, HOCH 36, MITTEL 97, NIEDRIG 85, INFO 2)
 
-### Kritische Bugs (12)
-1. `proactive.py:108` — Init: `event_handlers` gelesen vor Definition, crasht ProactiveManager
-2. `recipe_store.py:53-338` — Alle ChromaDB-Calls synchron in async-Methoden (~15 Sites)
-3. `knowledge_base.py:71-550` — Alle ChromaDB-Calls synchron in async-Methoden (~14 Sites)
-4. `summarizer.py:275,391` — ChromaDB query/upsert synchron in async
-5. `workshop_library.py:40-148` — Alle ChromaDB-Calls synchron (~6 Sites)
-6. `wellness_advisor.py:237,245` — Redis bytes an fromisoformat, PC-Pause-Erinnerung funktioniert NIE
-7. `wellness_advisor.py:330,333` — Redis bytes, Stress-Nudge-Cooldown greift nie
-8. `wellness_advisor.py:629,631` — Redis bytes, Hydration-Cooldown greift nie
+### Kritische Bugs (1)
+- `proactive.py:98,146` — event_handlers wird komplett ueberschrieben, YAML-Appliance-Handler gehen verloren
 
-### Hohe Bugs (39) — Top-10
-- `proactive.py:594` — Operator-Praezedenz: alle proximity-Entities loesen Geo-Fence aus
-- `self_automation.py:449` — User-Beschreibung unsanitized in LLM-Prompt
-- `self_automation.py:103,996` — Race Conditions auf _pending und _daily_count
-- `ha_client.py:53-90` — States-Cache Race Condition
-- `ha_client.py:140-165` — Camera Snapshot ohne Timeout/Retry
-- `repair_planner.py` — 8 Stellen mit undekodiertem Redis bytes
-- `device_health.py` — 3 Stellen mit undekodiertem Redis bytes
-- `summarizer.py` — 5 Stellen mit undekodiertem Redis bytes
-- `config_versioning.py:133` — rsplit bei Config-Namen mit Unterstrich
-- `feedback.py:84` — Race Condition auf _pending dict
+### Hohe Bugs (36) — Top-Cluster
+- **Sync I/O in async (11)**: workshop_library.py (4x ChromaDB/Embeddings), knowledge_base.py (3x), self_optimization.py (2x YAML), self_automation.py (1x Import-Zeit)
+- **Resilience (7)**: wellness_advisor.py 7x Redis-Calls ohne `_safe_redis()` Wrapper
+- **Race Conditions (4)**: proactive.py _batch_flushing, config.py _active_person + room_profiles, ha_client.py Session-Lifecycle
+- **Performance N+1 (3)**: multi_room_audio.py Speaker-Status, speaker_recognition.py Embeddings
+- **None-Fehler (2)**: cooking_assistant.py session-Race + unbegrenzte Timer
+- **Stille Fehler (5)**: proactive.py 4x `except: pass`, learning_observer.py Hauptlogik
+- **Memory Leaks (2)**: cooking_assistant.py Timer-Tasks unbegrenzt
+- **Logik (1)**: feedback.py Double-decode
+- **API (1)**: ha_client.py Session vor Retry-Loop
 
 ### Dead-Code-Liste
-- `circuit_breaker.py`: `redis_breaker`, `chromadb_breaker`, `call_with_breaker()` — nie importiert
-- `wellness_advisor.py`: `self.executor` immer None → Mood-Ambient-Feature tot
-- `health_monitor.py`: `_check_temperature()` — Aufruf auskommentiert
-- `tts_enhancer.py`: 9 Instance-Variablen — `get_volume()` liest live aus yaml_config
-- 25 weitere Dead-Code-Eintraege (Imports, Konstanten, Methoden)
+- proactive.py: `_get_person_title()` Duplikat, redundanter Import
+- tts_enhancer.py: 12 Instance-Variablen gesetzt aber nie gelesen
+- health_monitor.py: `_check_temperature()` nie aufgerufen
+- repair_planner.py: 11 NAV-Sets erkannt aber nicht behandelt, REPAIR_KEYWORDS ungenutzt
+- self_optimization.py: `import re` ungenutzt, 4 redundante Re-Imports
+- smart_shopping.py: `_KEY_PURCHASE_LOG` ungenutzt
+- calendar_intelligence.py: `hour_activity` Counter nie zurueckgegeben
 
 ### Resilience-Findings
-- `ha_client.py`: PUT/DELETE ohne Retry, Camera ohne Circuit-Breaker-Reporting bei HTTP-Fehlern
-- `multi_room_audio.py`: 5 stille except-Bloecke, gibt success:True bei Fehlern
-- `protocol_engine.py`: Undo meldet Erfolg trotz fehlgeschlagener Schritte
-- `self_automation.py`: Ollama-Chat ohne Timeout
-- `threat_assessment.py`: get_states() ohne Timeout
+- **wellness_advisor.py**: Definiert `_safe_redis()` aber nutzt es inkonsistent — 7 von 14 Redis-Calls direkt
+- **light_engine.py**: 1 Redis-Call ohne `_safe_redis()` Wrapper
+- **conditional_commands.py**: Redis-Calls in Loop ohne try/except
+- **circuit_breaker.py**: Aktiv genutzt (ha_client, ollama_client, brain, main), State-Properties mit Seiteneffekten
+- **threat_assessment.py**: Aktiv genutzt (brain, proactive, function_calling, main), `get_states()` ohne Timeout
 
-### Systemisches Problem: Redis bytes vs string
-42 von 155 Bugs (27%) sind Redis bytes/string-Inkonsistenzen. **Globaler Fix**: Redis-Client mit `decode_responses=True` konfigurieren wuerde alle 42 Bugs auf einen Schlag beheben.
+### Systemische Muster
+1. **Sync I/O in async** ist das dominante HIGH-Pattern (11 von 36 HIGH Bugs) — ChromaDB, File-I/O, Embeddings, YAML
+2. **N+1 Redis** bleibt systemisch (25 Stellen) — inventory.py, repair_planner.py, energy_optimizer.py am schlimmsten
+3. **`except Exception: pass` → `logger.debug()`** Bulk-Fix aus P8 maskiert Fehler — 38 stille-Fehler-Bugs
+4. **None-Fehler-Cluster** in cooking_assistant.py (7 Stellen) — alle session-bezogen
+5. **Race Conditions** in globalen Variablen (config.py) und Instance-Variablen ohne Lock
