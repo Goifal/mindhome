@@ -332,17 +332,18 @@ class ActionPlanner:
                     s.status = "done" if res.get("success", False) else "failed"
                     return s, fn, fa, res
 
-                try:
-                    results = await asyncio.wait_for(
-                        asyncio.gather(
-                            *[_run_step(s, fn, fa) for s, fn, fa in valid_steps],
-                            return_exceptions=True,
-                        ),
-                        timeout=120,  # T3: Action-Step Timeout
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning("T3: Action planner parallel steps timeout (120s)")
-                    results = [asyncio.TimeoutError()] * len(valid_steps)
+                tasks = [asyncio.create_task(_run_step(s, fn, fa)) for s, fn, fa in valid_steps]
+                done, pending = await asyncio.wait(tasks, timeout=120)
+                if pending:
+                    logger.warning("T3: Action planner %d steps timed out (120s)", len(pending))
+                    for t in pending:
+                        t.cancel()
+                results = []
+                for t in tasks:
+                    if t in done:
+                        results.append(t.result() if not t.cancelled() else asyncio.TimeoutError())
+                    else:
+                        results.append(asyncio.TimeoutError())
 
                 for idx, r in enumerate(results):
                     if isinstance(r, Exception):
@@ -428,10 +429,14 @@ class ActionPlanner:
 
             # Ergebnisse zurueck an LLM fuer naechste Iteration
             # Aktuelle Antwort des LLM als assistant message hinzufuegen
+            valid_tool_calls = [
+                tc for tc in tool_calls
+                if isinstance(tc, dict) and "function" in tc
+            ]
             planner_messages.append({
                 "role": "assistant",
                 "content": response_text or "",
-                "tool_calls": tool_calls,
+                "tool_calls": valid_tool_calls,
             })
             # Tool-Ergebnisse als tool response
             planner_messages.append({

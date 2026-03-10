@@ -977,8 +977,8 @@ class CoverControlManager:
                     "enabled": c.enabled if c.enabled is not None else True,
                     "group_ids": c.group_ids or [],
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return {}
 
     def _get_group_members(self, group_id):

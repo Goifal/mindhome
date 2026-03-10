@@ -2193,10 +2193,8 @@ def _ensure_columns(session, table, columns):
         logger.warning(f"Column check for {table} failed: {e}")
         try:
             session.rollback()
-        except Exception:
-            pass
-
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
 def run_migrations(engine):
     """Run pending database migrations safely. (#15 rollback-safe)"""
     Session = sessionmaker(bind=engine)
@@ -2212,9 +2210,8 @@ def run_migrations(engine):
             ).fetchone()
             if result:
                 current_version = int(result[0])
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         for migration in MIGRATIONS:
             if migration["version"] <= current_version:
                 continue
@@ -2283,7 +2280,7 @@ def run_migrations(engine):
         logger.error(f"Migration error: {e}")
         try:
             session.rollback()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     finally:
         session.close()

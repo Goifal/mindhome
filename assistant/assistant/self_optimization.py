@@ -459,13 +459,13 @@ Wenn keine Aenderung noetig: []"""
         if outcome_tracker:
             try:
                 baseline["outcome_stats"] = await outcome_tracker.get_stats()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         if response_quality:
             try:
                 baseline["quality_stats"] = await response_quality.get_stats()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         await self._redis.setex(
             f"mha:self_opt:baseline:{param}", 30 * 86400,
             json.dumps(baseline, ensure_ascii=False, default=str),
@@ -489,14 +489,13 @@ Wenn keine Aenderung noetig: []"""
         if outcome_tracker:
             try:
                 current_outcomes = await outcome_tracker.get_stats()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         if response_quality:
             try:
                 current_quality = await response_quality.get_stats()
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         # Einfacher Vergleich: Outcome-Score-Differenz
         baseline_outcomes = baseline.get("outcome_stats", {})
         score_changes = {}
@@ -548,9 +547,8 @@ Wenn keine Aenderung noetig: []"""
             key = "mha:self_opt:phrase_filter_counts"
             await self._redis.hincrby(key, clean, 1)
             await self._redis.expire(key, 30 * 86400)
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     async def track_character_break(self, break_type: str, detail: str = ""):
         """Trackt einen erkannten Charakter-Bruch pro Session.
 
@@ -574,9 +572,8 @@ Wenn keine Aenderung noetig: []"""
                 await self._redis.lpush(log_key, entry)
                 await self._redis.ltrim(log_key, 0, 49)
                 await self._redis.expire(log_key, 30 * 86400)
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     async def get_character_break_stats(self, days: int = 7) -> dict:
         """Gibt Character-Break-Statistiken der letzten N Tage zurueck."""
         if not self._redis:
@@ -609,9 +606,8 @@ Wenn keine Aenderung noetig: []"""
             key = "mha:self_opt:phrase_corrections"
             await self._redis.hincrby(key, clean, 1)
             await self._redis.expire(key, 90 * 86400)
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     async def detect_new_banned_phrases(self) -> list[dict]:
         """Erkennt Phrasen die haeufig gefiltert oder korrigiert werden.
 
@@ -625,8 +621,9 @@ Wenn keine Aenderung noetig: []"""
 
         # 1. Phrasen die der Filter oft entfernt (5+ mal)
         try:
-            filter_counts = await self._redis.hgetall("mha:self_opt:phrase_filter_counts")
-            for phrase, count_str in (filter_counts or {}).items():
+            raw_filter_counts = await self._redis.hgetall("mha:self_opt:phrase_filter_counts")
+            filter_counts = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in (raw_filter_counts or {}).items()}
+            for phrase, count_str in filter_counts.items():
                 count = int(count_str or 0)
                 if count >= 5:
                     suggestions.append({
@@ -635,13 +632,13 @@ Wenn keine Aenderung noetig: []"""
                         "source": "filter",
                         "reason": f"Wurde {count}x vom Filter entfernt — dauerhaft aufnehmen?",
                     })
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         # 2. Phrasen die User explizit korrigiert hat (2+ mal)
         try:
-            corrections = await self._redis.hgetall("mha:self_opt:phrase_corrections")
-            for phrase, count_str in (corrections or {}).items():
+            raw_corrections = await self._redis.hgetall("mha:self_opt:phrase_corrections")
+            corrections = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in (raw_corrections or {}).items()}
+            for phrase, count_str in corrections.items():
                 count = int(count_str or 0)
                 if count >= 2:
                     suggestions.append({
@@ -650,9 +647,8 @@ Wenn keine Aenderung noetig: []"""
                         "source": "correction",
                         "reason": f"User hat diese Formulierung {count}x korrigiert",
                     })
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         # Sortieren nach Haeufigkeit
         suggestions.sort(key=lambda s: s["count"], reverse=True)
         return suggestions[:5]

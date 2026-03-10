@@ -155,7 +155,10 @@ class FeedbackTracker:
         if not self.redis:
             return DEFAULT_SCORE
         score = await self.redis.get(f"mha:feedback:score:{event_type}")
-        return float(score) if score else DEFAULT_SCORE
+        if score:
+            score = score.decode() if isinstance(score, bytes) else score
+            return float(score)
+        return DEFAULT_SCORE
 
     async def should_notify(self, event_type: str, urgency: str) -> dict:
         """
@@ -341,7 +344,10 @@ class FeedbackTracker:
         score = await self.redis.get(f"mha:feedback:score:{event_type}:person:{person}")
         if isinstance(score, bytes):
             score = score.decode()
-        return float(score) if score else DEFAULT_SCORE
+        if score:
+            score = score.decode() if isinstance(score, bytes) else score
+            return float(score)
+        return DEFAULT_SCORE
 
     async def _increment_counter(self, event_type: str, counter_name: str):
         """Erhoeht einen Zaehler fuer einen Event-Typ."""
@@ -414,7 +420,7 @@ class FeedbackTracker:
         timeout = timedelta(seconds=self.auto_timeout_seconds)
 
         expired = []
-        for nid, info in self._pending.items():
+        for nid, info in list(self._pending.items()):
             if now - info["sent_at"] > timeout:
                 expired.append(nid)
 

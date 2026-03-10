@@ -46,8 +46,8 @@ def is_bed_occupied(states) -> bool:
             ]
         if bed_sensors:
             return any(s.get("state") == "on" for s in bed_sensors)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     return False
 
 

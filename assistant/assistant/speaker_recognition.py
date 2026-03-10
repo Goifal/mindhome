@@ -873,9 +873,8 @@ class SpeakerRecognition:
                 await self.redis.set(
                     SPEAKER_PENDING_ASK_KEY, json.dumps(pending), ex=60,
                 )
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         # Natuerliche Rueckfrage generieren
         if len(persons_home) == 2:
             return f"Kurze Frage — bist du {persons_home[0]} oder {persons_home[1]}?"
@@ -927,8 +926,8 @@ class SpeakerRecognition:
                     await self.enroll(person_id, person_name)
                 try:
                     await self.redis.delete(SPEAKER_PENDING_ASK_KEY)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
                 logger.info("Fallback-Antwort aufgeloest: %s", person_name)
                 return {
                     "person": person_name,
@@ -939,8 +938,8 @@ class SpeakerRecognition:
         # Nicht erkannt — Pending loeschen
         try:
             await self.redis.delete(SPEAKER_PENDING_ASK_KEY)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return None
 
     async def has_pending_ask(self) -> bool:

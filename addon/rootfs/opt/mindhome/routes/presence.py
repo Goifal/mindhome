@@ -172,7 +172,10 @@ def api_delete_presence_mode(mode_id):
 @presence_bp.route("/api/presence-modes/current", methods=["GET"])
 def api_current_presence_mode():
     try:
-        current = _deps.get("automation_scheduler").presence_mgr.get_current_mode()
+        sched = _deps.get("automation_scheduler")
+        if not sched:
+            return jsonify({"error": "Scheduler not ready"}), 503
+        current = sched.presence_mgr.get_current_mode()
         if current:
             return jsonify(current)
         # Fallback: no log exists yet - return placeholder without auto-selecting
@@ -185,7 +188,10 @@ def api_current_presence_mode():
 @presence_bp.route("/api/presence-modes/<int:mode_id>/activate", methods=["POST"])
 def api_activate_presence_mode(mode_id):
     try:
-        return jsonify(_deps.get("automation_scheduler").presence_mgr.set_mode(mode_id, trigger="manual"))
+        sched = _deps.get("automation_scheduler")
+        if not sched:
+            return jsonify({"error": "Scheduler not ready"}), 503
+        return jsonify(sched.presence_mgr.set_mode(mode_id, trigger="manual"))
     except Exception as e:
         logger.error("Operation failed: %s", e)
         return jsonify({"error": "Operation failed"}), 500

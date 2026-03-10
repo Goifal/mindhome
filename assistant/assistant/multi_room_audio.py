@@ -299,9 +299,8 @@ class MultiRoomAudio:
                     await self.ha.call_service("media_player", "unjoin", {
                         "entity_id": speakers[0],
                     })
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             await self.redis.delete(_KEY_ACTIVE_GROUP)
             return {"success": True, "message": f"Wiedergabe auf Gruppe '{group['name']}' gestoppt."}
         except Exception as e:
@@ -359,8 +358,8 @@ class MultiRoomAudio:
                     "entity_id": speaker,
                     "volume_level": volume / 100.0,
                 })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
             return {"success": True, "message": f"Lautstaerke von {speaker} in '{group_name}': {volume}%"}
 
         # Alle Speaker der Gruppe

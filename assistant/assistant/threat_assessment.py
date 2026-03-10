@@ -282,9 +282,8 @@ class ThreatAssessment:
             if guest_val is not None:
                 if (guest_val.decode() if isinstance(guest_val, bytes) else guest_val) == "active":
                     return []
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         # Device Tracker Entities
         tracked_devices = []
         for s in states:

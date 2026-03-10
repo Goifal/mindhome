@@ -224,9 +224,8 @@ class ContextBuilder:
                     evt_time = datetime.fromisoformat(first_start.replace("Z", "+00:00"))
                     diff = (evt_time - datetime.now(timezone.utc)).total_seconds() / 60
                     ctx["next_event_minutes"] = max(0, int(diff))
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         # #23 Vacation mode check
         if self.Session:
             try:
@@ -258,9 +257,8 @@ class ContextBuilder:
                         if current_phase:
                             ctx["day_phase"] = current_phase.name_de
                             ctx["day_phase_id"] = current_phase.id
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
                 # Phase 3: Holiday check
                 try:
                     today_str = now.strftime("%Y-%m-%d")
@@ -297,21 +295,18 @@ class ContextBuilder:
                     if last_mode:
                         ctx["presence_mode"] = last_mode.mode_name
                         ctx["presence_mode_id"] = last_mode.mode_id
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
                 # Phase 3: Shift info for persons
                 try:
                     shift_setting = session.query(SystemSetting).filter_by(key="current_shift").first()
                     if shift_setting:
                         ctx["current_shift"] = shift_setting.value
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
                 session.close()
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         return ctx
 
 
@@ -388,9 +383,8 @@ class StateLogger:
                             self._custom_thresholds["__global__"] = st
                     session.close()
                     self._thresholds_loaded = True
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             # Phase 3: Check custom threshold first, then default
             custom = self._custom_thresholds.get(entity_id) or self._custom_thresholds.get("__global__")
             threshold = SAMPLING_THRESHOLDS.get(device_class)
@@ -474,8 +468,8 @@ class StateLogger:
         _max_epm = self.MAX_EVENTS_PER_MINUTE
         try:
             _max_epm = int(get_setting("core.pattern_engine.max_events_per_minute", "600") or "600")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         if len(self._event_timestamps) >= _max_epm:
             if not self._rate_limit_warned or (self._rate_limit_warn_time and (now - self._rate_limit_warn_time).total_seconds() > 300):
                 logger.warning(f"Rate limit reached ({_max_epm}/min), dropping events")
@@ -558,9 +552,8 @@ class StateLogger:
                 logger.warning(f"Manual rule check error: {e}")
             finally:
                 session2.close()
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     def _slim_attributes(self, attrs):
         """Keep only relevant attributes for learning, not full HA dump."""
         if not attrs:
@@ -1782,8 +1775,8 @@ class PatternDetector:
             ps = session.query(PatternSettings).filter_by(key=key).first()
             if ps:
                 return type(default)(ps.value)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return default
 
     def _cluster_by_time(self, occurrences, window_minutes=30):

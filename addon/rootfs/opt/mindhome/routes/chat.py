@@ -362,8 +362,8 @@ def api_chat_upload():
             detail = ""
             try:
                 detail = resp.json().get("detail", "")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
             error_msg = f"Assistant returned {resp.status_code}: {detail}"
             logger.warning("Chat upload proxy error: %s", error_msg)
             return jsonify({"error": error_msg}), 502
@@ -511,6 +511,9 @@ def api_chat_voice():
 
     # Send audio to HA STT API
     audio_data = audio_file.read()
+    # Size limit: max 20MB
+    if len(audio_data) > 20 * 1024 * 1024:
+        return jsonify({"error": "Audio file too large (max 20MB)"}), 413
     content_type = audio_file.content_type or "audio/wav"
 
     # Convert non-WAV audio (e.g. webm from browser) to WAV for Whisper STT
@@ -882,6 +885,9 @@ def api_chat_voice_settings_update():
 @chat_bp.route("/api/chat/files/<path:filename>", methods=["GET"])
 def api_chat_serve_file(filename):
     """Proxy file serving from the Assistant (PC 2)."""
+    # Path traversal protection
+    if ".." in filename or filename.startswith("/"):
+        return jsonify({"error": "Invalid filename"}), 400
     assistant_url = _get_assistant_url()
     try:
         resp = requests.get(

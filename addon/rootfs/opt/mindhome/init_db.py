@@ -316,7 +316,7 @@ def create_default_settings(session):
 
     for setting_data in settings:
         setting = SystemSetting(**setting_data)
-        session.add(setting)
+        session.merge(setting)
 
     session.commit()
     print(f"Created {len(settings)} system settings.")

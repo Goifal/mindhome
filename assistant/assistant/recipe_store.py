@@ -101,15 +101,28 @@ class RecipeStore:
             logger.debug("Fehler beim Laden bestehender Recipe-Hashes: %s", e)
 
     async def ingest_all(self) -> int:
-        """Liest alle Dateien im Rezept-Verzeichnis ein."""
+        """Liest alle Dateien im Rezept-Verzeichnis ein (max 5 parallel)."""
         if not self._recipes_dir or not self.chroma_collection:
             return 0
 
-        total_chunks = 0
+        filepaths = []
         for ext in REC_UPLOAD_ALLOWED:
-            for filepath in self._recipes_dir.rglob(f"*{ext}"):
-                chunks = await self.ingest_file(filepath)
-                total_chunks += chunks
+            filepaths.extend(self._recipes_dir.rglob(f"*{ext}"))
+
+        if not filepaths:
+            return 0
+
+        sem = asyncio.Semaphore(5)
+
+        async def _ingest_limited(fp: Path) -> int:
+            async with sem:
+                return await self.ingest_file(fp)
+
+        results = await asyncio.gather(*[_ingest_limited(fp) for fp in filepaths], return_exceptions=True)
+        total_chunks = sum(r for r in results if isinstance(r, int))
+        for r in results:
+            if isinstance(r, BaseException):
+                logger.warning("Recipe ingest error: %s", r)
 
         if total_chunks > 0:
             logger.info("Recipe Store: %d neue Chunks ingestiert", total_chunks)

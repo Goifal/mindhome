@@ -696,9 +696,8 @@ class TimerManager:
                         if label.lower() in info.get("label", "").lower() and info.get("active"):
                             target_id = aid
                             break
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             # Fallback: In-Memory suchen (falls Redis unavailable)
             if not target_id:
                 label_lower = label.lower()
@@ -721,8 +720,8 @@ class TimerManager:
                         info = json.loads(data)
                         if info.get("active"):
                             active_alarms.append(aid)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             if len(active_alarms) == 1:
                 target_id = active_alarms[0]
             elif len(active_alarms) > 1:
@@ -746,9 +745,8 @@ class TimerManager:
         if self.redis:
             try:
                 await self.redis.hdel(KEY_ALARMS, target_id)
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         return {"success": True, "message": "Wecker gelöscht."}
 
     async def get_alarms(self) -> dict:

@@ -437,18 +437,26 @@ def access_locks():
 
 @security_bp.route("/api/security/access/locks/<path:entity_id>/lock", methods=["POST"])
 def access_lock(entity_id):
+    import re
+    if not re.match(r'^[a-z_]+\.[a-z0-9_]+$', entity_id):
+        return jsonify({"error": "Invalid entity_id format"}), 400
     mgr = _deps.get("access_control_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
+    logger.info("Lock requested for %s", entity_id)
     ok = mgr.lock(entity_id)
     return jsonify({"ok": ok})
 
 
 @security_bp.route("/api/security/access/locks/<path:entity_id>/unlock", methods=["POST"])
 def access_unlock(entity_id):
+    import re
+    if not re.match(r'^[a-z_]+\.[a-z0-9_]+$', entity_id):
+        return jsonify({"error": "Invalid entity_id format"}), 400
     mgr = _deps.get("access_control_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
+    logger.info("Unlock requested for %s", entity_id)
     ok = mgr.unlock(entity_id)
     return jsonify({"ok": ok})
 
@@ -693,12 +701,24 @@ def mode_config_set(mode_type):
 # Emergency Protocol Endpoints (#11)
 # ==============================================================================
 
+_emergency_trigger_times = []
+
 @security_bp.route("/api/security/emergency/trigger", methods=["POST"])
 def emergency_trigger():
+    import time
+    now = time.time()
+    # Rate limit: max 3 triggers per minute
+    _emergency_trigger_times[:] = [t for t in _emergency_trigger_times if now - t < 60]
+    if len(_emergency_trigger_times) >= 3:
+        logger.warning("Emergency trigger rate limit exceeded")
+        return jsonify({"error": "Rate limit exceeded"}), 429
+    _emergency_trigger_times.append(now)
+
     engine = _deps.get("emergency_protocol")
     if not engine:
         return jsonify({"error": "Not available"}), 503
     data = request.get_json(silent=True) or {}
+    logger.warning("Emergency trigger: type=%s source=%s", data.get("type", "panic"), data.get("source", "manual"))
     ok = engine.trigger(
         emergency_type=data.get("type", "panic"),
         source=data.get("source", "manual"),
@@ -857,9 +877,8 @@ def security_dashboard():
                         "name": s.get("attributes", {}).get("friendly_name"),
                     }
                     break
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     # Locks
     mgr = _deps.get("access_control_manager")
     if mgr:
@@ -907,9 +926,8 @@ def security_dashboard():
                     "message_en": evt.message_en,
                     "timestamp": evt.timestamp.isoformat() if evt.timestamp else None,
                 })
-    except Exception:
-        pass
-
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     return jsonify(dashboard)
 
 

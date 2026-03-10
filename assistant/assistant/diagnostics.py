@@ -99,7 +99,29 @@ class DiagnosticsEngine:
             due = self.check_maintenance()
             result["maintenance_due"] = due
 
+        # Disk space check
+        disk_status = self.check_disk_space()
+        result["disk_space"] = disk_status
+        if disk_status.get("status") == "warning":
+            result["healthy"] = False
+            result["issues"].append({
+                "entity_id": "system.disk",
+                "type": "disk_space_low",
+                "message": f"Disk space low: {disk_status['free_pct']:.1f}% free",
+            })
+
         return result
+
+    @staticmethod
+    def check_disk_space() -> dict:
+        """Prueft den verfuegbaren Speicherplatz."""
+        import shutil
+        usage = shutil.disk_usage("/")
+        free_pct = (usage.free / usage.total) * 100
+        if free_pct < 10:
+            logger.warning("Disk space low: %.1f%% free", free_pct)
+            return {"status": "warning", "free_pct": round(free_pct, 1)}
+        return {"status": "ok", "free_pct": round(free_pct, 1)}
 
     # ------------------------------------------------------------------
     # Feature 10.4: Entity-Diagnostik

@@ -209,6 +209,7 @@ class LearningTransfer:
                     for t in self._pending_transfers
                 ):
                     self._pending_transfers.append(transfer)
+                    self._pending_transfers = self._pending_transfers[-50:]  # Limit size
                     logger.info(
                         "Transfer-Vorschlag: %s -> %s (%s: %s)",
                         source_room, target_room, domain, transferable_attrs,

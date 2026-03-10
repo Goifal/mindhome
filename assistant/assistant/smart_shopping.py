@@ -387,9 +387,8 @@ class SmartShopping:
                 open_items = [i["name"] for i in items if not i.get("complete")]
                 if open_items:
                     parts.append(f"Einkaufsliste ({len(open_items)}): {', '.join(open_items[:10])}")
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         # Bald aufgebrauchte Artikel
         running_low = await self.get_items_running_low()
         if running_low:

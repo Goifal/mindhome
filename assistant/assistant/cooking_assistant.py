@@ -888,6 +888,7 @@ class CookingAssistant:
             raw = await self.redis.get(self.REDIS_SESSION_KEY)
             if not raw:
                 return
+            raw = raw.decode() if isinstance(raw, bytes) else raw
             data = json.loads(raw)
             steps = [
                 CookingStep(

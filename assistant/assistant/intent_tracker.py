@@ -298,8 +298,9 @@ class IntentTracker:
             intents = []
 
             for intent_id in intent_ids:
-                data = await self.redis.hgetall(f"mha:intent:{intent_id}")
-                if data:
+                raw_data = await self.redis.hgetall(f"mha:intent:{intent_id}")
+                if raw_data:
+                    data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_data.items()}
                     # JSON-Felder dekodieren
                     intent = {}
                     for k, v in data.items():

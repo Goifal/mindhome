@@ -145,9 +145,8 @@ def api_health_check():
         import resource
         mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         health["memory_kb"] = mem
-    except Exception:
-        pass
-
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     health["uptime_seconds"] = int(time.time() - _deps.get("start_time", 0)) if _deps.get("start_time", 0) else 0
     health["version"] = VERSION
     health["debug_mode"] = is_debug_mode()
@@ -1501,8 +1500,8 @@ def api_backup_import():
         except Exception as e:
             try:
                 session.rollback()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
             logger.error("Backup import failed: %s", e, exc_info=True)
             return jsonify({"error": "Internal server error"}), 500
 
@@ -1849,8 +1848,8 @@ def api_watchdog():
         free_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
         if free_gb < 0.5:
             issues.append(f"Low disk space: {free_gb:.1f} GB")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     with _watchdog_lock:
         _watchdog_status = {
             "last_check": datetime.now(timezone.utc).isoformat(),

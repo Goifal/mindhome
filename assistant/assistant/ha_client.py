@@ -153,14 +153,16 @@ class HomeAssistantClient:
             return None
         session = await self._get_session()
         try:
-            async with session.get(
-                f"{self.ha_url}/api/camera_proxy/{entity_id}",
-                headers=self._ha_headers,
-            ) as resp:
-                if resp.status == 200:
-                    ha_breaker.record_success()
-                    return await resp.read()
-                logger.warning("Camera Snapshot %s -> %d", entity_id, resp.status)
+            async with asyncio.timeout(10):
+                async with session.get(
+                    f"{self.ha_url}/api/camera_proxy/{entity_id}",
+                    headers=self._ha_headers,
+                ) as resp:
+                    if resp.status == 200:
+                        ha_breaker.record_success()
+                        return await resp.read()
+                    ha_breaker.record_failure()
+                    logger.warning("Camera Snapshot %s -> %d", entity_id, resp.status)
         except Exception as e:
             ha_breaker.record_failure()
             logger.error("Camera Snapshot Fehler: %s", e)
@@ -356,48 +358,54 @@ class HomeAssistantClient:
         else:
             logger.info("log_actions: Erfolgreich %d Aktionen geloggt", len(safe_actions))
 
-    async def mindhome_put(self, path: str, data: dict) -> Any:
-        """PUT auf die MindHome Add-on API mit Circuit Breaker."""
+    async def mindhome_put(self, path: str, data: dict, retries: int = 3) -> Any:
+        """PUT auf die MindHome Add-on API mit Circuit Breaker und Retry."""
         if not mindhome_breaker.is_available:
             logger.debug("MindHome Circuit Breaker OPEN — PUT %s uebersprungen", path)
             return None
 
         session = await self._get_session()
-        try:
-            async with session.put(
-                f"{self.mindhome_url}{path}",
-                json=data,
-            ) as resp:
-                if resp.status == 200:
-                    mindhome_breaker.record_success()
-                    return await resp.json()
-                logger.warning("MindHome PUT %s -> %d", path, resp.status)
-                return None
-        except Exception as e:
-            mindhome_breaker.record_failure()
-            logger.warning("MindHome PUT %s fehlgeschlagen: %s", path, e)
-            return None
+        for attempt in range(retries):
+            try:
+                async with session.put(
+                    f"{self.mindhome_url}{path}",
+                    json=data,
+                ) as resp:
+                    if resp.status == 200:
+                        mindhome_breaker.record_success()
+                        return await resp.json()
+                    logger.warning("MindHome PUT %s -> %d", path, resp.status)
+                    return None
+            except Exception as e:
+                mindhome_breaker.record_failure()
+                if attempt == retries - 1:
+                    logger.warning("MindHome PUT %s fehlgeschlagen: %s", path, e)
+                    return None
+                await asyncio.sleep(1)
 
-    async def mindhome_delete(self, path: str) -> Any:
-        """DELETE auf die MindHome Add-on API mit Circuit Breaker."""
+    async def mindhome_delete(self, path: str, retries: int = 3) -> Any:
+        """DELETE auf die MindHome Add-on API mit Circuit Breaker und Retry."""
         if not mindhome_breaker.is_available:
             logger.debug("MindHome Circuit Breaker OPEN — DELETE %s uebersprungen", path)
             return None
 
         session = await self._get_session()
-        try:
-            async with session.delete(
-                f"{self.mindhome_url}{path}",
-            ) as resp:
-                if resp.status == 200:
-                    mindhome_breaker.record_success()
-                    return await resp.json()
-                logger.warning("MindHome DELETE %s -> %d", path, resp.status)
-                return None
-        except Exception as e:
-            mindhome_breaker.record_failure()
-            logger.warning("MindHome DELETE %s fehlgeschlagen: %s", path, e)
-            return None
+        for attempt in range(retries):
+            try:
+                async with session.delete(
+                    f"{self.mindhome_url}{path}",
+                ) as resp:
+                    if resp.status == 200:
+                        mindhome_breaker.record_success()
+                        return await resp.json()
+                    logger.warning("MindHome DELETE %s -> %d", path, resp.status)
+                    return None
+            except Exception as e:
+                mindhome_breaker.record_failure()
+                if attempt == retries - 1:
+                    logger.warning("MindHome DELETE %s fehlgeschlagen: %s", path, e)
+                    return None
+                await asyncio.sleep(1)
 
     # ----- Interne HTTP Methoden mit Retry -----
 

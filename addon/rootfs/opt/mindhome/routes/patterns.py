@@ -107,9 +107,8 @@ def api_get_patterns():
             try:
                 ha_automated = ha.get_ha_automated_entities()
                 ha_automated_entities = getattr(ha, '_ha_auto_entities_only', set())
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         def _is_ha_covered(p):
             """Check if pattern's action entity is covered by a HA automation."""
             ad = p.action_definition or {}

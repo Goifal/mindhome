@@ -18,79 +18,79 @@
 #
 
 services:
-  # --- MindHome Assistant Service (das Gehirn) ---
   assistant:
     build: .
     container_name: mindhome-assistant
     restart: unless-stopped
     env_file: .env
     ports:
-      - "8200:8200"
+    - 8200:8200
     volumes:
-      - ./config:/app/config
-      - ./static:/app/static
-      - ./assistant:/app/assistant
-      - ${DATA_DIR:-./data}/assistant:/app/data
-      - ${DATA_DIR:-./data}/uploads:/app/data/uploads
-      # System-Management: Git-Repo + Docker-Socket fuer Dashboard-Updates
-      - ..:/repo
-      - /var/run/docker.sock:/var/run/docker.sock
-      # GPU-Status vom Host (nvidia-watchdog schreibt alle 60s)
-      - /var/lib/mindhome:/var/lib/mindhome:ro
+    - ./config:/app/config
+    - ./static:/app/static
+    - ./assistant:/app/assistant
+    - ${DATA_DIR:-./data}/assistant:/app/data
+    - ${DATA_DIR:-./data}/uploads:/app/data/uploads
+    - ..:/repo
+    - /var/run/docker.sock:/var/run/docker.sock
+    - /var/lib/mindhome:/var/lib/mindhome:ro
     depends_on:
       chromadb:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Ollama laeuft nativ auf dem Host
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+    - host.docker.internal:host-gateway
     environment:
-      - TZ=Europe/Berlin
-      - OLLAMA_URL=http://host.docker.internal:11434
-      - REDIS_URL=redis://redis:6379
-      - CHROMA_URL=http://chromadb:8000
-
-  # --- ChromaDB (Langzeitgedaechtnis / Vektor-DB) ---
-  # Nur ueber Docker-Netzwerk erreichbar (kein externer Zugriff noetig)
+    - TZ=Europe/Berlin
+    - OLLAMA_URL=http://host.docker.internal:11434
+    - REDIS_URL=redis://redis:6379
+    - CHROMA_URL=http://chromadb:8000
+    logging: &id001
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   chromadb:
     image: chromadb/chroma:0.5.23
     container_name: mha-chromadb
     restart: unless-stopped
     volumes:
-      - ${DATA_DIR:-./data}/chromadb:/chroma/chroma
+    - ${DATA_DIR:-./data}/chromadb:/chroma/chroma
     ports:
-      - "127.0.0.1:8100:8000"
+    - 127.0.0.1:8100:8000
     environment:
-      - ANONYMIZED_TELEMETRY=false
-      - IS_PERSISTENT=TRUE
+    - ANONYMIZED_TELEMETRY=false
+    - IS_PERSISTENT=TRUE
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      test:
+      - CMD
+      - curl
+      - -f
+      - http://localhost:8000/api/v1/heartbeat
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 15s
-
-  # --- Redis (Working Memory / Cache) ---
-  # Nur ueber Docker-Netzwerk erreichbar (kein externer Zugriff noetig)
+    logging: *id001
   redis:
     image: redis:7-alpine
     container_name: mha-redis
     restart: unless-stopped
     volumes:
-      - ${DATA_DIR:-./data}/redis:/data
+    - ${DATA_DIR:-./data}/redis:/data
     ports:
-      - "127.0.0.1:6379:6379"
+    - 127.0.0.1:6379:6379
     command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+      - CMD
+      - redis-cli
+      - ping
       interval: 30s
       timeout: 5s
       retries: 5
-
-  # --- Whisper STT + Voice Embeddings (Wyoming Protocol) ---
-  # Custom Image: faster-whisper + ECAPA-TDNN fuer Speaker Recognition
-  # HA verbindet sich via Wyoming Integration auf Port 10300
+    logging: *id001
   whisper:
     build:
       context: ../speech
@@ -98,58 +98,61 @@ services:
     container_name: mha-whisper
     restart: unless-stopped
     ports:
-      - "10300:10300"
+    - 10300:10300
     environment:
-      - TZ=Europe/Berlin
-      - WHISPER_MODEL=${WHISPER_MODEL:-small}
-      - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-de}
-      - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE:-1}
-      - WHISPER_COMPUTE=${WHISPER_COMPUTE:-int8}
-      - SPEECH_DEVICE=${SPEECH_DEVICE:-cpu}
-      - REDIS_URL=redis://redis:6379
+    - TZ=Europe/Berlin
+    - WHISPER_MODEL=${WHISPER_MODEL:-small}
+    - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-de}
+    - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE:-1}
+    - WHISPER_COMPUTE=${WHISPER_COMPUTE:-int8}
+    - SPEECH_DEVICE=${SPEECH_DEVICE:-cpu}
+    - REDIS_URL=redis://redis:6379
     volumes:
-      - ${DATA_DIR:-./data}/whisper-models:/app/models
-      - ../speech/server.py:/app/server.py
-      - ../speech/handler.py:/app/handler.py
-      - ./config/room_profiles.yaml:/app/config/room_profiles.yaml:ro
+    - ${DATA_DIR:-./data}/whisper-models:/app/models
+    - ../speech/server.py:/app/server.py
+    - ../speech/handler.py:/app/handler.py
+    - ./config/room_profiles.yaml:/app/config/room_profiles.yaml:ro
     depends_on:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost', 10300)); s.close()\""]
+      test:
+      - CMD-SHELL
+      - python -c "import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost',
+        10300)); s.close()"
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 300s
-
-  # --- Piper TTS (Wyoming Protocol) ---
-  # Offizielles rhasspy/wyoming-piper Image (keine Custom-Logik noetig)
-  # HA verbindet sich via Wyoming Integration auf Port 10200
+    logging: *id001
   piper:
     image: rhasspy/wyoming-piper:latest
     container_name: mha-piper
     restart: unless-stopped
     ports:
-      - "10200:10200"
-    command: --voice ${PIPER_VOICE:-de_DE-thorsten-high} --uri tcp://0.0.0.0:10200 --data-dir /data
+    - 10200:10200
+    command: --voice ${PIPER_VOICE:-de_DE-thorsten-high} --uri tcp://0.0.0.0:10200
+      --data-dir /data
     volumes:
-      - ${DATA_DIR:-./data}/piper-models:/data
+    - ${DATA_DIR:-./data}/piper-models:/data
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost', 10200)); s.close()\""]
+      test:
+      - CMD-SHELL
+      - python3 -c "import socket; s=socket.socket(); s.settimeout(5); s.connect(('localhost',
+        10200)); s.close()"
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
-
-  # --- Autoheal (Watchdog fuer unhealthy Container) ---
-  # Startet Container automatisch neu wenn Healthcheck 3x fehlschlaegt
+    logging: *id001
   autoheal:
     image: willfarrell/autoheal
     container_name: mha-autoheal
     restart: unless-stopped
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+    - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - AUTOHEAL_CONTAINER_LABEL=all
-      - AUTOHEAL_INTERVAL=30
-      - AUTOHEAL_START_PERIOD=60
+    - AUTOHEAL_CONTAINER_LABEL=all
+    - AUTOHEAL_INTERVAL=30
+    - AUTOHEAL_START_PERIOD=60
+    logging: *id001

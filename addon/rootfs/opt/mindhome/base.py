@@ -24,10 +24,12 @@ class DomainPlugin(ABC):
         self.ha = ha_connection
         self.get_session = db_session_factory
         self.logger = logging.getLogger(f"mindhome.domains.{self.DOMAIN_NAME}")
+        import threading
         self._is_running = False
         self._settings_cache = None
         self._context_cache = None
         self._context_cache_time = 0
+        self._cache_lock = threading.Lock()
 
     def start(self):
         self._is_running = True
@@ -228,7 +230,8 @@ class DomainPlugin(ABC):
 
     def get_entity_history(self, entity_id, hours=24):
         from datetime import timedelta
-        start = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        from datetime import timezone
+        start = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         return self.ha.get_history(entity_id, start)
 
     def is_entity_tracked(self, entity_id):

@@ -30,9 +30,11 @@ class SpecialModeBase:
     feature_flag = None  # Override if feature flag key differs from f"phase5.{mode_type}"
 
     def __init__(self, ha_connection, db_session_factory, event_bus):
+        import threading
         self.ha = ha_connection
         self.get_session = db_session_factory
         self.event_bus = event_bus
+        self._lock = threading.Lock()
         self._active = False
         self._active_log_id = None
         self._deactivation_timer = None
@@ -100,7 +102,8 @@ class SpecialModeBase:
 
         # Log activation
         self._active_log_id = self._log_activation(user_id, reason, previous_states)
-        self._active = True
+        with self._lock:
+            self._active = True
 
         # Apply mode-specific actions
         self._apply_actions(config)
@@ -135,8 +138,9 @@ class SpecialModeBase:
 
         # Log deactivation
         self._log_deactivation(user_id, reason)
-        self._active = False
-        self._active_log_id = None
+        with self._lock:
+            self._active = False
+            self._active_log_id = None
 
         self.event_bus.publish("mode.deactivated", {
             "mode_type": self.mode_type,
@@ -439,8 +443,8 @@ class CinemaMode(SpecialModeBase):
                     ).all()
                     for c in covers:
                         self.ha.call_service("cover", "close_cover", {"entity_id": c.entity_id})
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         logger.info("Cinema mode actions applied")
 
     def _on_media_state(self, event):
@@ -653,10 +657,8 @@ class NightLockdown(SpecialModeBase):
                     self.event_bus.publish("night.motion_alert", {
                         "entity_id": entity_id,
                     }, source="night_lockdown")
-        except Exception:
-            pass
-
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
 # ==============================================================================
 # #11 Emergency Protocol
 # ==============================================================================
@@ -862,8 +864,8 @@ class EmergencyProtocol(SpecialModeBase):
                             "title": f"NOTFALL: {contact.name}",
                             "message": f"Emergency type: {self._emergency_type}. Contact {contact.name} at {contact.phone or contact.email or 'N/A'}",
                         })
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
                 logger.info(f"Notified {len(contacts)} emergency contacts")
         except Exception as e:
             logger.error(f"Emergency contact notification error: {e}")
@@ -970,8 +972,8 @@ class EmergencyProtocol(SpecialModeBase):
                         self.ha.call_service("media_player", "volume_set", {
                             "entity_id": s.entity_id, "volume_level": vol
                         })
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
                     self.ha.call_service("tts", "speak", {
                         "entity_id": s.entity_id, "message": message
                     })
@@ -1008,6 +1010,6 @@ class EmergencyProtocol(SpecialModeBase):
                 if user and hasattr(user, 'pin_hash') and user.pin_hash:
                     import hashlib
                     return user.pin_hash == hashlib.sha256(str(pin).encode()).hexdigest()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return False

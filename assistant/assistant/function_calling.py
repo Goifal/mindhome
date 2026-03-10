@@ -1053,8 +1053,6 @@ async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
 async def _refresh_entity_catalog_inner(ha: HomeAssistantClient) -> None:
     """Innerer Refresh ohne Lock (wird von refresh_entity_catalog aufgerufen)."""
     global _entity_catalog, _entity_catalog_ts, _tools_cache
-    # Tools-Cache invalidieren wenn Entity-Katalog sich aendert
-    _tools_cache = None
 
     # MindHome Domain-Mapping laden (parallel zum HA-States-Abruf)
     import asyncio
@@ -1144,6 +1142,8 @@ async def _refresh_entity_catalog_inner(ha: HomeAssistantClient) -> None:
         "scenes": sorted(scenes),
     }
     _entity_catalog_ts = time.time()
+    # Tools-Cache invalidieren NACH Entity-Katalog-Update (atomarer Swap)
+    _tools_cache = None
     logger.info(
         "Entity-Katalog aktualisiert: %d rooms, %d lights, %d switches, %d covers, "
         "%d sensors, %d binary_sensors, %d scenes",
@@ -3124,6 +3124,7 @@ _ASSISTANT_TOOLS_STATIC = [
 _tools_cache: list | None = None
 _tools_cache_ts: float = 0
 _TOOLS_CACHE_TTL: int = 60  # Sekunden (entity_catalog hat 5min TTL, 60s ist sicher)
+_tools_cache_lock = __import__('threading').Lock()
 
 
 def get_assistant_tools() -> list:
@@ -3137,26 +3138,31 @@ def get_assistant_tools() -> list:
     if _tools_cache is not None and (time.time() - _tools_cache_ts) < _TOOLS_CACHE_TTL:
         return _tools_cache
 
-    tools = []
-    for tool in _ASSISTANT_TOOLS_STATIC:
-        fname = tool.get("function", {}).get("name", "")
-        if fname == "set_climate":
-            t = {
-                "type": "function",
-                "function": {
-                    "name": "set_climate",
-                    "description": _get_climate_tool_description(),
-                    "parameters": _get_climate_tool_parameters(),
-                },
-            }
-            tools.append(_inject_entity_hints(t))
-        elif fname == "activate_scene":
-            tools.append(_inject_entity_hints(_build_activate_scene_tool(tool)))
-        else:
-            tools.append(_inject_entity_hints(tool))
+    with _tools_cache_lock:
+        # Double-check after acquiring lock
+        if _tools_cache is not None and (time.time() - _tools_cache_ts) < _TOOLS_CACHE_TTL:
+            return _tools_cache
 
-    _tools_cache = tools
-    _tools_cache_ts = time.time()
+        tools = []
+        for tool in _ASSISTANT_TOOLS_STATIC:
+            fname = tool.get("function", {}).get("name", "")
+            if fname == "set_climate":
+                t = {
+                    "type": "function",
+                    "function": {
+                        "name": "set_climate",
+                        "description": _get_climate_tool_description(),
+                        "parameters": _get_climate_tool_parameters(),
+                    },
+                }
+                tools.append(_inject_entity_hints(t))
+            elif fname == "activate_scene":
+                tools.append(_inject_entity_hints(_build_activate_scene_tool(tool)))
+            else:
+                tools.append(_inject_entity_hints(tool))
+
+        _tools_cache = tools
+        _tools_cache_ts = time.time()
     return tools
 
 
@@ -3413,13 +3419,20 @@ class FunctionExecutor:
 
         try:
             hour = datetime.now().hour
+            states = None  # Lazy-load, einmal pro Request
+
+            async def _get_states():
+                nonlocal states
+                if states is None:
+                    states = await self.ha.get_states() or []
+                return states
 
             # Regel: Heizung hoch + Fenster offen
             if func_name == "set_climate":
-                states = await self.ha.get_states()
+                _states = await _get_states()
                 open_windows = [
                     s.get("attributes", {}).get("friendly_name", s["entity_id"])
-                    for s in (states or [])
+                    for s in _states
                     if s.get("entity_id", "").startswith(("binary_sensor.fenster", "binary_sensor.window"))
                     and s.get("state") == "on"
                 ]
@@ -3434,10 +3447,10 @@ class FunctionExecutor:
 
             # Regel: Alarm scharf + Fenster offen
             if func_name == "arm_security_system":
-                states = await self.ha.get_states()
+                _states = await _get_states()
                 open_windows = [
                     s.get("attributes", {}).get("friendly_name", s["entity_id"])
-                    for s in (states or [])
+                    for s in _states
                     if s.get("entity_id", "").startswith(("binary_sensor.fenster", "binary_sensor.window"))
                     and s.get("state") == "on"
                 ]
@@ -3806,7 +3819,7 @@ class FunctionExecutor:
                     await le.record_manual_override(entity_id)
                 except Exception as e:
                     if isinstance(e, asyncio.CancelledError): raise
-                    pass
+                    logger.debug("record_manual_override failed: %s", e)
         extras = []
         if brightness_pct is not None:
             extras.append(f"{brightness_pct}%")
@@ -4777,6 +4790,7 @@ class FunctionExecutor:
                 }
 
         try:
+            import fcntl
             config = _yaml.safe_load(SETTINGS_PATH.read_text()) or {}
             if "seasonal_actions" not in config:
                 config["seasonal_actions"] = {}
@@ -4786,9 +4800,10 @@ class FunctionExecutor:
             for k, v in changes.items():
                 config["seasonal_actions"]["cover_automation"][k] = v
 
-            SETTINGS_PATH.write_text(
-                _yaml.safe_dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
-            )
+            with open(SETTINGS_PATH, 'w') as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                _yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                fcntl.flock(f, fcntl.LOCK_UN)
 
             # In-Memory Config aktualisieren
             import assistant.config as _cfg

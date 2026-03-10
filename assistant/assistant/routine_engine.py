@@ -714,9 +714,8 @@ class RoutineEngine:
                     if isinstance(done, bytes):
                         done = done.decode("utf-8", errors="ignore")
                     wakeup_done = bool(done and done.startswith(today))
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             if wakeup_done:
                 logger.info("Morning covers_up übersprungen: Wakeup-Sequenz hat Rollläden schon gefahren")
             else:
@@ -779,9 +778,8 @@ class RoutineEngine:
                     done = done.decode("utf-8", errors="ignore")
                 if done and done.startswith(today):
                     return False
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         # Bettsensor prüfen
         bed_occupied = await self._is_bed_occupied()
         if bed_occupied:
@@ -808,9 +806,8 @@ class RoutineEngine:
             try:
                 today = datetime.now(tz=_TZ).strftime("%Y-%m-%d")
                 await self.redis.setex("mha:routine:wakeup_done_today", 86400, today)
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         logger.info("Aufwach-Sequenz abgeschlossen")
         return True
 
@@ -1709,8 +1706,8 @@ class RoutineEngine:
             # Kein YAML -> Flag setzen und fertig
             try:
                 await self.redis.set(flag_key, "1")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
             return 0
 
         migrated = 0
@@ -1737,9 +1734,8 @@ class RoutineEngine:
 
         try:
             await self.redis.set(flag_key, "1")
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         if migrated:
             logger.info(
                 "YAML-Geburtstage migriert: %d/%d in Semantic Memory",

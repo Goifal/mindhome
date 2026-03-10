@@ -950,8 +950,8 @@ class AutomationExecutor:
             for s in states:
                 if s.get("entity_id") == entity_id:
                     return s.get("state", "unknown")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return "unknown"
 
     def _get_execution_context(self, session):
@@ -1095,16 +1095,16 @@ class PhaseManager:
         t = dict(self.OBSERVE_TO_SUGGEST)
         try:
             t["min_events"] = int(get_setting("core.learning.events_needed", "100") or "100")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return t
 
     def _get_autonomous_thresholds(self):
         t = dict(self.SUGGEST_TO_AUTONOMOUS)
         try:
             t["min_confirmed"] = int(get_setting("core.learning.patterns_needed", "5") or "5")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return t
 
     @staticmethod
@@ -1182,7 +1182,7 @@ class PhaseManager:
 
         # Days since phase started
         if rds.phase_started_at:
-            now_naive = datetime.utcnow()
+            now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
             phase_naive = rds.phase_started_at.replace(tzinfo=None) if rds.phase_started_at.tzinfo else rds.phase_started_at
             days = (now_naive - phase_naive).days
             if days < t["min_days"]:
@@ -1229,7 +1229,7 @@ class PhaseManager:
         t = self._get_autonomous_thresholds()
 
         if rds.phase_started_at:
-            now_naive = datetime.utcnow()
+            now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
             phase_naive = rds.phase_started_at.replace(tzinfo=None) if rds.phase_started_at.tzinfo else rds.phase_started_at
             days = (now_naive - phase_naive).days
             if days < t["min_days"]:
@@ -1327,8 +1327,8 @@ class AnomalyDetector:
             ps = session.query(PatternSettings).filter_by(key=key).first()
             if ps:
                 return type(default)(ps.value)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return default
 
     def check_recent_anomalies(self, minutes=30):
@@ -1351,9 +1351,8 @@ class AnomalyDetector:
                 for ds in session.query(AnomalySetting).all():
                     if ds.device_id:
                         device_settings[ds.device_id] = ds
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
             cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
             recent = session.query(StateHistory).filter(
                 StateHistory.created_at >= cutoff,
@@ -1657,18 +1656,16 @@ class NotificationManager:
             raw = get_setting("notif_person_channels")
             if raw:
                 person_channels = _json.loads(raw)
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         # Load available channels for resolving channel_id → service_name
         channels_by_id = {}
         try:
             from models import NotificationChannel
             for ch in session.query(NotificationChannel).filter_by(is_enabled=True).all():
                 channels_by_id[ch.id] = ch.service_name
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         # Try push_channel from NotificationSettings for all non-guest users
         try:
             from models import User, UserRole
@@ -1746,9 +1743,8 @@ class NotificationManager:
                             self.ha.announce_tts(message, media_player_entity=entity_id)
                         except Exception as e:
                             logger.debug(f"TTS to {entity_id} failed: {e}")
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return sent
 
     def _get_motion_tts_speakers(self, tts_assignments, motion_mode):
@@ -1975,9 +1971,8 @@ class PresenceModeManager:
             if last and last.mode_id:
                 self._current_mode = last.mode_id
             session.close()
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     def get_current_mode(self):
         """Get current active presence mode."""
         session = self.Session()
@@ -2216,50 +2211,51 @@ class PluginConflictDetector:
             state_map = {s["entity_id"]: s for s in states}
 
             session = self.Session()
-            devices = session.query(Device).filter(Device.room_id.isnot(None)).all()
+            try:
+                devices = session.query(Device).filter(Device.room_id.isnot(None)).all()
 
-            # Group devices by room
-            room_devices = defaultdict(list)
-            for d in devices:
-                room_devices[d.room_id].append(d)
+                # Group devices by room
+                room_devices = defaultdict(list)
+                for d in devices:
+                    room_devices[d.room_id].append(d)
 
-            for room_id, devs in room_devices.items():
-                # Check each conflict rule
-                for rule in self.CONFLICT_RULES:
-                    domain_a, check_a, domain_b, check_b, msg_de, msg_en = rule
+                for room_id, devs in room_devices.items():
+                    # Check each conflict rule
+                    for rule in self.CONFLICT_RULES:
+                        domain_a, check_a, domain_b, check_b, msg_de, msg_en = rule
 
-                    has_a = False
-                    has_b = False
+                        has_a = False
+                        has_b = False
 
-                    for d in devs:
-                        domain = session.get(Domain, d.domain_id)
-                        if not domain:
-                            continue
-                        ha_state = state_map.get(d.ha_entity_id, {})
-                        state_val = ha_state.get("state", "")
-                        attrs = ha_state.get("attributes", {})
+                        for d in devs:
+                            domain = session.get(Domain, d.domain_id)
+                            if not domain:
+                                continue
+                            ha_state = state_map.get(d.ha_entity_id, {})
+                            state_val = ha_state.get("state", "")
+                            attrs = ha_state.get("attributes", {})
 
-                        if domain.name == domain_a:
-                            if check_a == "heating" and attrs.get("hvac_action") == "heating":
-                                has_a = True
-                            elif check_a == "cooling" and attrs.get("hvac_action") == "cooling":
-                                has_a = True
+                            if domain.name == domain_a:
+                                if check_a == "heating" and attrs.get("hvac_action") == "heating":
+                                    has_a = True
+                                elif check_a == "cooling" and attrs.get("hvac_action") == "cooling":
+                                    has_a = True
 
-                        if domain.name == domain_b:
-                            if check_b == "open" and state_val == "on":
-                                has_b = True
+                            if domain.name == domain_b:
+                                if check_b == "open" and state_val == "on":
+                                    has_b = True
 
-                    if has_a and has_b:
-                        room = session.get(Room, room_id)
-                        conflicts.append({
-                            "room_id": room_id,
-                            "room_name": room.name if room else f"Room {room_id}",
-                            "message_de": msg_de,
-                            "message_en": msg_en,
-                            "severity": "warning",
-                        })
-
-            session.close()
+                        if has_a and has_b:
+                            room = session.get(Room, room_id)
+                            conflicts.append({
+                                "room_id": room_id,
+                                "room_name": room.name if room else f"Room {room_id}",
+                                "message_de": msg_de,
+                                "message_en": msg_en,
+                                "severity": "warning",
+                            })
+            finally:
+                session.close()
         except Exception as e:
             logger.warning(f"Plugin conflict check error: {e}")
 
@@ -2494,9 +2490,8 @@ class AutomationScheduler:
                 try:
                     cal_events = self.ha.get_calendar_events(eid, start, end)
                     events.extend(cal_events)
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             # Match triggers to events
             for trigger in active_triggers:
                 keyword = (trigger.get("keyword", "")).lower()

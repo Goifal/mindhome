@@ -208,7 +208,7 @@ class FireResponseManager:
             self._activate_entities("fire_co", "hvac", "fan", "turn_on")
 
         # 5. Unlock doors (escape routes)
-        if config.get("unlock_on_fire", True):
+        if config.get("unlock_on_fire", False):
             self._activate_entities("fire_co", "emergency_lock", "lock", "unlock")
 
         # 6. TTS announcement

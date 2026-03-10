@@ -8,7 +8,7 @@ from homeassistant.const import CONF_API_KEY, CONF_URL
 
 from . import DOMAIN
 
-DEFAULT_URL = "http://192.168.1.200:8200"
+DEFAULT_URL = "http://192.168.1.200:8200"  # Default placeholder — user configures actual URL in setup
 
 
 class MindHomeAssistantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):

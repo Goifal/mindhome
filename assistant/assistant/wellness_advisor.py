@@ -183,12 +183,15 @@ class WellnessAdvisor:
                         await asyncio.sleep(self.check_interval)
                         continue
 
-                await self._check_pc_break()
-                await self._check_stress_intervention()
-                await self._check_meal_time()
-                await self._check_late_night()
-                await self._check_hydration()
-                await self._check_mood_ambient_actions()
+                await asyncio.gather(
+                    self._check_pc_break(),
+                    self._check_stress_intervention(),
+                    self._check_meal_time(),
+                    self._check_late_night(),
+                    self._check_hydration(),
+                    self._check_mood_ambient_actions(),
+                    return_exceptions=True,
+                )
             except Exception as e:
                 logger.error("Wellness-Check Fehler: %s", e)
 
@@ -698,7 +701,8 @@ class WellnessAdvisor:
         last = await self.redis.get(key)
         if last:
             try:
-                last_dt = datetime.fromisoformat(last)
+                last_str = last.decode() if isinstance(last, bytes) else last
+                last_dt = datetime.fromisoformat(last_str)
                 if (datetime.now() - last_dt).total_seconds() < 1800:
                     return
             except (ValueError, TypeError):

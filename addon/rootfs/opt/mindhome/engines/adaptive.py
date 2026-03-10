@@ -607,8 +607,8 @@ class SeasonalAdvisor:
                             "icon": "mdi-weather-rainy",
                             "category": "weather",
                         }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return None
 
 
