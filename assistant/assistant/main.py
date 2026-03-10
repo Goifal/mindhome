@@ -1513,7 +1513,7 @@ async def voice_chat(
         raise HTTPException(status_code=504, detail="Verarbeitung Timeout")
     except Exception as e:
         logger.error("Voice-Chat fehlgeschlagen: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)[:200])
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ----- Phase 9: Speaker Recognition Endpoints -----
@@ -2563,7 +2563,8 @@ async def ui_regenerate_api_key(token: str = ""):
         _audit_log("api_key_regenerated", {})
         return {"api_key": _assistant_api_key, "message": "Neuer API Key generiert. Addon und HA-Integration muessen aktualisiert werden."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/recovery-key/regenerate")
@@ -2582,7 +2583,8 @@ async def ui_regenerate_recovery_key(token: str = ""):
         _audit_log("recovery_key_regenerated", {})
         return {"recovery_key": new_recovery_key, "message": "Neuer Recovery-Key generiert. Bitte sicher aufbewahren!"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 class ApiKeyEnforcementRequest(BaseModel):
@@ -2619,7 +2621,8 @@ async def ui_set_api_key_enforcement(req: ApiKeyEnforcementRequest, token: str =
         logger.info("API Key Enforcement %s", status)
         return {"enforcement": _api_key_required, "message": f"API Key Pruefung {status}."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/known-devices")
@@ -2669,7 +2672,8 @@ async def ui_delete_known_device(req: dict, token: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/settings")
@@ -2681,7 +2685,8 @@ async def ui_get_settings(token: str = ""):
             config = yaml.safe_load(f) or {}
         return config
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # F-041: Settings-Validierung
@@ -3904,7 +3909,8 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
             "message": f"Settings gespeichert ({reloaded_count} Module aktualisiert){speech_hint}{fail_hint}",
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/entities")
@@ -3927,7 +3933,8 @@ async def ui_get_entities(token: str = "", domain: str = ""):
         entities.sort(key=lambda e: (e["domain"], e["name"]))
         return {"entities": entities, "total": len(entities)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ---------------------------------------------------------------
@@ -4046,7 +4053,8 @@ async def ui_get_room_temperature(token: str = ""):
             "active_count": len(temps),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.put("/api/ui/room-temperature")
@@ -4085,7 +4093,8 @@ async def ui_set_room_temperature(req: Request, token: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/room-temperature/available")
@@ -4118,7 +4127,8 @@ async def ui_get_available_temp_sensors(token: str = ""):
         sensors.sort(key=lambda x: x["name"])
         return {"sensors": sensors, "total": len(sensors)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/entities/mindhome")
@@ -4145,7 +4155,8 @@ async def ui_get_mindhome_entities(token: str = ""):
             "total": sum(len(v) for v in by_room.values()),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/lights")
@@ -4173,7 +4184,8 @@ async def ui_get_lights(token: str = ""):
         lights.sort(key=lambda l: l["name"])
         return {"lights": lights}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/covers")
@@ -4201,7 +4213,8 @@ async def ui_get_covers(token: str = ""):
         covers.sort(key=lambda c: c["name"])
         return {"covers": covers}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.put("/api/ui/covers/{entity_id:path}/type")
@@ -4234,7 +4247,8 @@ async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ── Cover Live-Status & Control (Proxy zum Addon) ──────────────────
@@ -4266,7 +4280,8 @@ async def ui_get_covers_live(token: str = ""):
         covers.sort(key=lambda c: c["name"])
         return {"covers": covers}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/covers/{entity_id:path}/position")
@@ -4283,7 +4298,8 @@ async def ui_set_cover_position(entity_id: str, request: Request, token: str = "
         })
         return {"success": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/covers/{entity_id:path}/open")
@@ -4294,7 +4310,8 @@ async def ui_open_cover(entity_id: str, token: str = ""):
         await brain.ha.call_service("cover", "open_cover", {"entity_id": entity_id})
         return {"success": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/covers/{entity_id:path}/close")
@@ -4305,7 +4322,8 @@ async def ui_close_cover(entity_id: str, token: str = ""):
         await brain.ha.call_service("cover", "close_cover", {"entity_id": entity_id})
         return {"success": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/covers/{entity_id:path}/stop")
@@ -4316,7 +4334,8 @@ async def ui_stop_cover(entity_id: str, token: str = ""):
         await brain.ha.call_service("cover", "stop_cover", {"entity_id": entity_id})
         return {"success": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/addon/cover-domain-toggle")
@@ -4342,7 +4361,8 @@ async def ui_toggle_addon_cover_domain(token: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ── Cover Groups (lokal gespeichert) ─────────────────────────────────
@@ -4355,7 +4375,8 @@ async def ui_get_cover_groups(token: str = ""):
         from .cover_config import load_cover_groups
         return load_cover_groups()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/covers/groups")
@@ -4367,7 +4388,8 @@ async def ui_create_cover_group(request: Request, token: str = ""):
         from .cover_config import create_cover_group
         return create_cover_group(data)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.put("/api/ui/covers/groups/{group_id}")
@@ -4384,7 +4406,8 @@ async def ui_update_cover_group(group_id: int, request: Request, token: str = ""
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.delete("/api/ui/covers/groups/{group_id}")
@@ -4399,7 +4422,8 @@ async def ui_delete_cover_group(group_id: int, token: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/covers/groups/{group_id}/control")
@@ -4427,7 +4451,8 @@ async def ui_control_cover_group(group_id: int, request: Request, token: str = "
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ── Cover Scenes (lokal gespeichert) ─────────────────────────────────
@@ -4440,7 +4465,8 @@ async def ui_get_cover_scenes(token: str = ""):
         from .cover_config import load_cover_scenes
         return load_cover_scenes()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/covers/scenes")
@@ -4452,7 +4478,8 @@ async def ui_create_cover_scene(request: Request, token: str = ""):
         from .cover_config import create_cover_scene
         return create_cover_scene(data)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.put("/api/ui/covers/scenes/{scene_id}")
@@ -4469,7 +4496,8 @@ async def ui_update_cover_scene(scene_id: int, request: Request, token: str = ""
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.delete("/api/ui/covers/scenes/{scene_id}")
@@ -4484,7 +4512,8 @@ async def ui_delete_cover_scene(scene_id: int, token: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/covers/scenes/{scene_id}/activate")
@@ -4513,7 +4542,8 @@ async def ui_activate_cover_scene(scene_id: int, token: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ── Scene Status (HA Szenen Live-Status) ─────────────────────────────
@@ -4575,7 +4605,8 @@ async def ui_scenes_status(token: str = ""):
             "ha_scenes": ha_scenes,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ── Cover Schedules (lokal gespeichert) ──────────────────────────────
@@ -4588,7 +4619,8 @@ async def ui_get_cover_schedules(token: str = ""):
         from .cover_config import load_cover_schedules
         return load_cover_schedules()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/covers/schedules")
@@ -4600,7 +4632,8 @@ async def ui_create_cover_schedule(request: Request, token: str = ""):
         from .cover_config import create_cover_schedule
         return create_cover_schedule(data)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.put("/api/ui/covers/schedules/{schedule_id}")
@@ -4617,7 +4650,8 @@ async def ui_update_cover_schedule(schedule_id: int, request: Request, token: st
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.delete("/api/ui/covers/schedules/{schedule_id}")
@@ -4632,7 +4666,8 @@ async def ui_delete_cover_schedule(schedule_id: int, token: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ── Cover Sensor Assignments (lokal gespeichert) ────────────────────
@@ -4645,7 +4680,8 @@ async def ui_get_cover_sensors(token: str = ""):
         from .cover_config import load_cover_sensors
         return load_cover_sensors()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/covers/sensors")
@@ -4657,7 +4693,8 @@ async def ui_add_cover_sensor(request: Request, token: str = ""):
         from .cover_config import create_cover_sensor
         return create_cover_sensor(data)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.delete("/api/ui/covers/sensors/{assignment_id}")
@@ -4672,7 +4709,8 @@ async def ui_delete_cover_sensor(assignment_id: int, token: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/covers/discover")
@@ -4701,7 +4739,8 @@ async def ui_discover_covers(token: str = ""):
                     sensors.append({"entity_id": eid, "name": name, "device_class": dc, "unit": ""})
         return {"covers": covers, "sensors": sensors}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ── Cover Action Log (Dashboard) ────────────────────────────────────
@@ -4714,7 +4753,8 @@ async def ui_get_cover_action_log(token: str = "", limit: int = 10):
         from .cover_config import load_cover_action_log
         return load_cover_action_log(limit)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ── Power-Close Regeln (Steckdose → Rollladen) ──────────────────────
@@ -4727,7 +4767,8 @@ async def ui_get_power_close_rules(token: str = ""):
         from .cover_config import load_power_close_rules
         return load_power_close_rules()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/covers/power-close")
@@ -4739,7 +4780,8 @@ async def ui_create_power_close_rule(request: Request, token: str = ""):
         from .cover_config import create_power_close_rule
         return create_power_close_rule(data)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.put("/api/ui/covers/power-close/{rule_id}")
@@ -4756,7 +4798,8 @@ async def ui_update_power_close_rule(rule_id: int, request: Request, token: str 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.delete("/api/ui/covers/power-close/{rule_id}")
@@ -4771,7 +4814,8 @@ async def ui_delete_power_close_rule(rule_id: int, token: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ── Opening Sensors (Fenster/Tueren/Tore Zuordnung) ───────────────
@@ -4822,7 +4866,8 @@ async def ui_set_opening_sensors(request: Request, token: str = ""):
 
         return {"success": True, "count": len(entities)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/opening-sensors/discover")
@@ -4861,7 +4906,8 @@ async def ui_discover_opening_sensors(token: str = ""):
         sensors.sort(key=lambda x: x["name"])
         return {"sensors": sensors}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ── Declarative Tools API (Phase 13.3) ────────────────────────────
@@ -5012,7 +5058,8 @@ async def ui_set_entity_annotations(request: Request, token: str = ""):
 
         return {"success": True, "count": len(annotations)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/entity-annotations/discover")
@@ -5053,7 +5100,8 @@ async def ui_discover_entity_annotations(token: str = ""):
         suggestions.sort(key=lambda x: (x["suggested_role"], x["name"]))
         return {"suggestions": suggestions, "count": len(suggestions)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/entity-roles")
@@ -5094,7 +5142,8 @@ async def ui_set_entity_roles(request: Request, token: str = ""):
 
         return {"success": True, "count": len(custom)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ── Room-Profiles API (room_profiles.yaml) ─────────────────────────
@@ -5110,7 +5159,8 @@ async def ui_get_room_profiles(token: str = ""):
             data = yaml.safe_load(f) or {}
         return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.put("/api/ui/room-profiles")
@@ -5145,7 +5195,8 @@ async def ui_update_room_profiles(request: Request, token: str = ""):
         _audit_log("room_profiles_update", {"changed_sections": list(updates.keys())})
         return {"success": True, "message": "Room-Profiles gespeichert"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/action-log")
@@ -5165,7 +5216,8 @@ async def ui_get_action_log(
         result = await brain.ha.mindhome_get(f"/api/action-log?{params}")
         return result or {"items": [], "total": 0, "has_more": False}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/stats")
@@ -5194,7 +5246,8 @@ async def ui_get_stats(token: str = ""):
             "mood": brain.mood.get_current_mood(),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ----- Phase 16.3: Live-Status WebSocket Broadcast -----
@@ -5222,7 +5275,8 @@ async def ui_live_status(token: str = ""):
             ),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ----- Presence: Live Person Status + Settings -----
@@ -5257,7 +5311,8 @@ async def ui_get_presence(token: str = ""):
             "unknown_count": len(persons) - home_count - away_count,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/presence/settings")
@@ -5268,7 +5323,8 @@ async def ui_get_presence_settings(token: str = ""):
         result = await brain.ha.mindhome_get("/api/presence/settings")
         return result or {}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.put("/api/ui/presence/settings")
@@ -5280,7 +5336,8 @@ async def ui_update_presence_settings(request: Request, token: str = ""):
         result = await brain.ha.mindhome_put("/api/presence/settings", data)
         return result or {"success": False}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ----- Phase 15.4: Notification Kanal-Wahl -----
@@ -5349,7 +5406,8 @@ async def ui_update_notification_channels(
         _audit_log("notification_channels_update", {"channels": list(req.channels.keys()) if isinstance(req.channels, dict) else []})
         return {"success": True, "channels": req.channels}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ----- Phase 15.1: Gesundheits-Trend-Dashboard -----
@@ -7189,7 +7247,8 @@ async def ui_get_easter_eggs(token: str = ""):
             data = yaml.safe_load(f) or {}
         return {"easter_eggs": data.get("easter_eggs", [])}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 class EasterEggUpdate(BaseModel):
@@ -7212,7 +7271,8 @@ async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
         _audit_log("easter_eggs_update", {"count": len(req.easter_eggs)})
         return {"success": True, "message": f"{len(req.easter_eggs)} Easter Eggs gespeichert"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 # ------------------------------------------------------------------
@@ -7230,7 +7290,8 @@ async def ui_list_snapshots(token: str = "", config_file: str = ""):
             snapshots = await brain.config_versioning.list_all_snapshots()
         return {"snapshots": snapshots, "total": len(snapshots)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 class RollbackRequest(BaseModel):
@@ -7286,7 +7347,8 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
             })
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/self-optimization/status")
@@ -7301,7 +7363,8 @@ async def ui_self_opt_status(token: str = ""):
             "versioning": brain.config_versioning.health_status(),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 class ProposalAction(BaseModel):
@@ -7323,7 +7386,8 @@ async def ui_self_opt_approve(req: ProposalAction, token: str = ""):
             _audit_log("self_opt_approve", {"index": req.index, "message": result.get("message", "")})
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/self-optimization/reject")
@@ -7336,7 +7400,8 @@ async def ui_self_opt_reject(req: ProposalAction, token: str = ""):
             _audit_log("self_opt_reject", {"index": req.index})
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/self-optimization/reject-all")
@@ -7349,7 +7414,8 @@ async def ui_self_opt_reject_all(token: str = ""):
             _audit_log("self_opt_reject_all", {})
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/self-optimization/run-analysis")
@@ -7364,7 +7430,8 @@ async def ui_self_opt_run_analysis(token: str = ""):
             "message": f"{len(proposals)} Vorschlag/Vorschlaege generiert" if proposals else "Keine Vorschlaege — alles optimal",
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.get("/api/ui/automations")
@@ -7407,7 +7474,8 @@ async def ui_list_automations(token: str = ""):
             "jarvis_automations": jarvis_automations,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.delete("/api/ui/automations/jarvis/{config_id}")
@@ -7420,7 +7488,8 @@ async def ui_delete_jarvis_automation(config_id: str, token: str = ""):
         result = await brain.self_automation.delete_jarvis_automation(config_id)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 @app.post("/api/ui/automations/jarvis/{entity_id:path}/toggle")
@@ -7440,7 +7509,8 @@ async def ui_toggle_jarvis_automation(entity_id: str, token: str = ""):
         await brain.ha.call_service("automation", service, {"entity_id": entity_id})
         return {"success": True, "new_state": "off" if current_state == "on" else "on"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fehler: {e}")
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
 def _deep_merge(base: dict, override: dict, _depth: int = 0):

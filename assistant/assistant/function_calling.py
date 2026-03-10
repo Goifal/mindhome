@@ -1053,8 +1053,6 @@ async def refresh_entity_catalog(ha: HomeAssistantClient) -> None:
 async def _refresh_entity_catalog_inner(ha: HomeAssistantClient) -> None:
     """Innerer Refresh ohne Lock (wird von refresh_entity_catalog aufgerufen)."""
     global _entity_catalog, _entity_catalog_ts, _tools_cache
-    # Tools-Cache invalidieren wenn Entity-Katalog sich aendert
-    _tools_cache = None
 
     # MindHome Domain-Mapping laden (parallel zum HA-States-Abruf)
     import asyncio
@@ -1144,6 +1142,8 @@ async def _refresh_entity_catalog_inner(ha: HomeAssistantClient) -> None:
         "scenes": sorted(scenes),
     }
     _entity_catalog_ts = time.time()
+    # Tools-Cache invalidieren NACH Entity-Katalog-Update (atomarer Swap)
+    _tools_cache = None
     logger.info(
         "Entity-Katalog aktualisiert: %d rooms, %d lights, %d switches, %d covers, "
         "%d sensors, %d binary_sensors, %d scenes",
@@ -3124,6 +3124,7 @@ _ASSISTANT_TOOLS_STATIC = [
 _tools_cache: list | None = None
 _tools_cache_ts: float = 0
 _TOOLS_CACHE_TTL: int = 60  # Sekunden (entity_catalog hat 5min TTL, 60s ist sicher)
+_tools_cache_lock = __import__('threading').Lock()
 
 
 def get_assistant_tools() -> list:
@@ -3137,26 +3138,31 @@ def get_assistant_tools() -> list:
     if _tools_cache is not None and (time.time() - _tools_cache_ts) < _TOOLS_CACHE_TTL:
         return _tools_cache
 
-    tools = []
-    for tool in _ASSISTANT_TOOLS_STATIC:
-        fname = tool.get("function", {}).get("name", "")
-        if fname == "set_climate":
-            t = {
-                "type": "function",
-                "function": {
-                    "name": "set_climate",
-                    "description": _get_climate_tool_description(),
-                    "parameters": _get_climate_tool_parameters(),
-                },
-            }
-            tools.append(_inject_entity_hints(t))
-        elif fname == "activate_scene":
-            tools.append(_inject_entity_hints(_build_activate_scene_tool(tool)))
-        else:
-            tools.append(_inject_entity_hints(tool))
+    with _tools_cache_lock:
+        # Double-check after acquiring lock
+        if _tools_cache is not None and (time.time() - _tools_cache_ts) < _TOOLS_CACHE_TTL:
+            return _tools_cache
 
-    _tools_cache = tools
-    _tools_cache_ts = time.time()
+        tools = []
+        for tool in _ASSISTANT_TOOLS_STATIC:
+            fname = tool.get("function", {}).get("name", "")
+            if fname == "set_climate":
+                t = {
+                    "type": "function",
+                    "function": {
+                        "name": "set_climate",
+                        "description": _get_climate_tool_description(),
+                        "parameters": _get_climate_tool_parameters(),
+                    },
+                }
+                tools.append(_inject_entity_hints(t))
+            elif fname == "activate_scene":
+                tools.append(_inject_entity_hints(_build_activate_scene_tool(tool)))
+            else:
+                tools.append(_inject_entity_hints(tool))
+
+        _tools_cache = tools
+        _tools_cache_ts = time.time()
     return tools
 
 
@@ -3806,7 +3812,7 @@ class FunctionExecutor:
                     await le.record_manual_override(entity_id)
                 except Exception as e:
                     if isinstance(e, asyncio.CancelledError): raise
-                    pass
+                    logger.debug("record_manual_override failed: %s", e)
         extras = []
         if brightness_pct is not None:
             extras.append(f"{brightness_pct}%")

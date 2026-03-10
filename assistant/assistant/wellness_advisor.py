@@ -698,7 +698,8 @@ class WellnessAdvisor:
         last = await self.redis.get(key)
         if last:
             try:
-                last_dt = datetime.fromisoformat(last)
+                last_str = last.decode() if isinstance(last, bytes) else last
+                last_dt = datetime.fromisoformat(last_str)
                 if (datetime.now() - last_dt).total_seconds() < 1800:
                     return
             except (ValueError, TypeError):
