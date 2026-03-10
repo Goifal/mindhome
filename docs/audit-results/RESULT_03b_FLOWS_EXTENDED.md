@@ -22,6 +22,8 @@
 | Domain-Assistenten volle Personality | ✅ (DL#1) | ⚠️ KORREKTUR | Shortcuts umgehen `personality.build_system_prompt()` — nur `_filter_response()` |
 | Boot-Nachricht nicht personality.py | MITTEL | MITTEL | **UNVERAENDERT** — hardcoded Templates |
 | WebSocket kein Reconnection | MITTEL | MITTEL | **UNVERAENDERT** |
+| WebSocket Broadcast ohne send-Timeout | — (nicht erkannt) | 🟡 MITTEL | **NEU ERKANNT**: websocket.py:59 `send_text()` ohne `wait_for()` |
+| Boot-Nachricht trotz degraded Komponenten | — (nicht erkannt) | 🟡 MITTEL | **NEU ERKANNT**: "Alle Systeme online" auch wenn Systeme fehlen |
 | get_file_path() kein Confinement | MITTEL | ✅ GEFIXT | file_handler.py:105-109: `is_relative_to()` Check hinzugefuegt |
 
 ---
@@ -239,6 +241,7 @@ def _require_hardware_owner(request):
 - 🔴 `brain.py:773`: `proactive.start()` NICHT in `_safe_init()` — **UNVERAENDERT seit DL#1** (wurde als gefixt in P6a gemeldet, ist aber nicht im Code!)
 - Boot-Nachricht hat **keine JARVIS-Persoenlichkeit** — hardcoded Templates
 - Wenn HA beim Start nicht erreichbar: kein Temperatur/Fenster-Status, aber Boot-Nachricht wird trotzdem gesendet
+- ⚠️ Boot-Nachricht kann "Alle Systeme online" sagen obwohl Komponenten degraded sind — failed-Check (main.py:275-282) haengt nur "X Systeme eingeschraenkt" an, aendert aber nicht die Basis-Nachricht
 
 **Fehler-Pfade**:
 - Gesamte `_boot_announcement()` in try/except — Fehler → Fallback-Nachricht (main.py:304-309)
@@ -349,7 +352,7 @@ if not path.is_relative_to(UPLOAD_DIR.resolve()):
 
 **Bruchstellen**:
 - ⚠️ **Kein Reconnection-Handling**: Bei WebSocket-Abbruch muss der Client selbst reconnecten — kein Server-seitiger Retry — **UNVERAENDERT**
-- ✅ Backpressure: `broadcast()` faengt send-Fehler ab und entfernt tote Connections (websocket.py:54-69)
+- ⚠️ **Backpressure unvollstaendig**: `broadcast()` entfernt tote Connections (websocket.py:54-69), aber `send_text()` hat **keinen Timeout** (websocket.py:59). Ein langsamer Client blockiert den gesamten Broadcast fuer ALLE Clients — kein `asyncio.wait_for()` Wrapper. Kein Backpressure-Queue.
 - ✅ Alle Antwort-Pfade (normal, proaktiv, routine, workshop) nutzen WebSocket-Events
 - ⚠️ **300s Timeout**: Inaktive Clients werden nach 5 Min getrennt — koennte UI-Clients betreffen die nur zuhoeren — **UNVERAENDERT**
 - ✅ **NEU (F-065)**: Shutdown-Broadcast informiert Clients vor Herunterfahren (main.py:373-378)
@@ -471,6 +474,7 @@ Client ─HTTP POST─→ main.py:/api/assistant/chat/upload
 | **Shortcut-Personality** (Shortcuts durch Personality-Pipeline) | — (nicht erkannt) | ❌ Fehlt | 🟡 MITTEL |
 | **3D-Drucker Bestaetigung** (Confirmation vor Start/Cancel) | ⚠️ Fehlt | ❌ Fehlt | 🟡 MITTEL |
 | **Addon→Assistant Back-Channel** (Addon informiert Assistant ueber eigene Aktionen) | ❌ Fehlt | ❌ Fehlt | 🟠 HOCH |
+| **WebSocket Broadcast Timeout** (send_text ohne Timeout blockiert alle Clients) | — (nicht erkannt) | ❌ Fehlt | 🟡 MITTEL |
 
 ---
 
