@@ -401,9 +401,10 @@ class AutonomyManager:
 
         try:
             # Statistiken aus Redis laden
-            stats = await self._redis.hgetall(self._REDIS_KEY_STATS)
-            if not stats:
+            raw_stats = await self._redis.hgetall(self._REDIS_KEY_STATS)
+            if not raw_stats:
                 return None
+            stats = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_stats.items()}
 
             total = int(stats.get("total", 0) or 0)
             accepted = int(stats.get("accepted", 0) or 0)

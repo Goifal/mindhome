@@ -688,8 +688,8 @@ async def entity_owner(entity_id: str):
             if owner:
                 ttl = await brain.memory.redis.ttl(key)
                 return {"owner": owner, "ttl": max(ttl, 0)}
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     return {"owner": None}
 
 
@@ -714,8 +714,8 @@ async def character_break_stats():
             raw = await brain.memory.redis.lrange("mha:self_opt:character_break_log", 0, 19)
             import json as _json
             log_entries = [_json.loads(e) for e in (raw or []) if e]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     return {
         "days": days,
         "by_day": stats,
@@ -893,8 +893,8 @@ async def ui_get_episodes(token: str = "", offset: int = 0, limit: int = 100):
     if brain.memory.chroma_collection:
         try:
             total = brain.memory.chroma_collection.count()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     return {"episodes": episodes, "total": total}
 
 
@@ -1290,10 +1290,8 @@ async def _wyoming_tts(text: str) -> bytes:
         writer.close()
         try:
             await writer.wait_closed()
-        except Exception:
-            pass
-
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
 async def _wyoming_stt(audio_data: bytes, sample_rate: int = 16000) -> str:
     """Transkribiert Audio via Wyoming STT (Whisper). Erwartet 16-bit PCM mono."""
     reader, writer = await asyncio.wait_for(
@@ -1347,10 +1345,8 @@ async def _wyoming_stt(audio_data: bytes, sample_rate: int = 16000) -> str:
         writer.close()
         try:
             await writer.wait_closed()
-        except Exception:
-            pass
-
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
 class TTSGenerateRequest(BaseModel):
     text: str
 
@@ -2058,8 +2054,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                                             "media_player", "media_stop",
                                                             {"entity_id": speaker},
                                                         ))
-                                                except Exception:
-                                                    pass
+                                                except Exception as e:
+                                                    logger.debug("Unhandled: %s", e)
                                             if stream_tokens_sent:
                                                 await emit_stream_end(
                                                     "".join(stream_tokens_sent),
@@ -2088,15 +2084,15 @@ async def websocket_endpoint(websocket: WebSocket):
                                     _recv_task.cancel()
                                     try:
                                         await _recv_task
-                                    except (asyncio.CancelledError, Exception):
-                                        pass
+                                    except (asyncio.CancelledError, Exception) as e:
+                                        logger.debug("Unhandled: %s", e)
                                 if _brain_task in done:
                                     if not _recv_task.done():
                                         _recv_task.cancel()
                                         try:
                                             await _recv_task
-                                        except (asyncio.CancelledError, Exception):
-                                            pass
+                                        except (asyncio.CancelledError, Exception) as e:
+                                            logger.debug("Unhandled: %s", e)
                                     try:
                                         result = _brain_task.result()
                                     except (asyncio.CancelledError, Exception) as e:
@@ -2123,8 +2119,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                     await emit_stream_end(
                                         "".join(stream_tokens_sent),
                                         tts_data={"interrupted": True})
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.debug("Unhandled: %s", e)
                           except Exception as e:
                             logger.error("Streaming-Fehler: %s", e, exc_info=True)
                             # Sicherstellen dass der Client nicht haengen bleibt
@@ -2179,9 +2175,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                     "media_player", "media_stop",
                                     {"entity_id": speaker},
                                 ))
-                        except Exception:
-                            pass
-
+                        except Exception as e:
+                            logger.debug("Unhandled: %s", e)
             except json.JSONDecodeError:
                 await ws_manager.send_personal(
                     websocket, "error", {"message": "Ungueltiges JSON"}
@@ -2197,8 +2192,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         websocket, "error",
                         {"message": "Interner Fehler bei der Verarbeitung"},
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
     except WebSocketDisconnect:
         pass
     finally:
@@ -6735,8 +6730,8 @@ async def workshop_notifications():
                 "message": f"Wartung faellig: {m.get('tool_name', '')}",
                 "time": m.get("last_done", ""),
             })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     try:
         lent = await brain.repair_planner.list_lent_tools()
         for t in (lent or []):
@@ -6746,8 +6741,8 @@ async def workshop_notifications():
                 "message": f"Verliehen: {t.get('tool_name', t.get('name', ''))} an {t.get('person', '')}",
                 "time": t.get("lent_at", t.get("date", "")),
             })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     return {"notifications": notifs, "count": len(notifs)}
 
 
@@ -7459,18 +7454,16 @@ async def ui_list_automations(token: str = ""):
                 if state:
                     entry["enabled"] = state == "on"
                 ha_automations.append(entry)
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         # Jarvis-Automationen
         jarvis_automations = []
         if hasattr(brain, "self_automation") and brain.self_automation:
             try:
                 jarvis_result = await brain.self_automation.list_jarvis_automations()
                 jarvis_automations = jarvis_result.get("automations", [])
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         return {
             "ha_automations": ha_automations,
             "ha_count": len(ha_automations),
@@ -7678,11 +7671,10 @@ async def ui_system_status(token: str = ""):
                         "free_gb": round(fr / (1024**3), 1),
                         "device": dev,
                     }
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     # RAM (via /proc/meminfo)
     ram_info = {}
     try:
@@ -7701,9 +7693,8 @@ async def ui_system_status(token: str = ""):
                 "free_gb": round(avail_kb / (1024**2), 1),
                 "percent": round(used_kb / total_kb * 100, 1) if total_kb else 0,
             }
-    except Exception:
-        pass
-
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     # CPU Load
     cpu_info = {}
     try:
@@ -7716,9 +7707,8 @@ async def ui_system_status(token: str = ""):
             "cores": cpu_count,
             "percent": round(load1 / cpu_count * 100, 1),
         }
-    except Exception:
-        pass
-
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     # GPU — Status-Datei vom Host-Watchdog lesen (nvidia-watchdog schreibt alle 60s)
     gpu_info = {}
     _gpu_status_file = Path("/var/lib/mindhome/gpu_status.json")
@@ -7733,8 +7723,8 @@ async def ui_system_status(token: str = ""):
                     "utilization_percent": int(data["utilization_percent"]),
                     "temperature_c": int(data["temperature_c"]),
                 }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     # Fallback 1: direktes nvidia-smi (falls Container GPU-Zugriff hat)
     if not gpu_info:
         rc_gpu, gpu_out = await _run_cmd([
@@ -7803,9 +7793,8 @@ async def ui_system_status(token: str = ""):
                                     "ollama_fallback": True,
                                 }
                                 break
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     # Remote claude/* Branches auflisten
     _, remote_branches_raw = await _run_cmd(
         ["git", "branch", "-r", "--list", "origin/claude/*"],
@@ -7933,8 +7922,8 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
                 for cfg_path, content in _saved_configs.items():
                     try:
                         cfg_path.write_text(content, encoding="utf-8")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
                 return {"success": False, "log": _update_log}
 
             # Checkout auf Ziel-Branch
@@ -7951,8 +7940,8 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
                 for cfg_path, content in _saved_configs.items():
                     try:
                         cfg_path.write_text(content, encoding="utf-8")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
                 _update_log.append(f"Rollback zu {old_branch}")
                 return {"success": False, "log": _update_log}
 
@@ -7976,8 +7965,8 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
             for cfg_path, content in _saved_configs.items():
                 try:
                     cfg_path.write_text(content, encoding="utf-8")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             _update_log.append("FEHLER: Git pull fehlgeschlagen")
             return {"success": False, "log": _update_log}
 
@@ -8195,18 +8184,16 @@ async def metrics():
             lines.append(f'# TYPE mindhome_circuit_{name}_closed gauge')
             lines.append(f'mindhome_circuit_{name}_closed {state_val}')
             lines.append(f'mindhome_circuit_{name}_failures {cb_status["failure_count"]}')
-    except Exception:
-        pass
-
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     # Task Registry Status
     try:
         if hasattr(brain, '_task_registry'):
             lines.append("# HELP mindhome_background_tasks Aktive Background-Tasks")
             lines.append("# TYPE mindhome_background_tasks gauge")
             lines.append(f"mindhome_background_tasks {brain._task_registry.task_count}")
-    except Exception:
-        pass
-
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     # Redis Memory (wenn verfuegbar)
     try:
         if brain.memory.redis:
@@ -8215,9 +8202,8 @@ async def metrics():
             lines.append("# HELP mindhome_redis_used_memory_bytes Redis Memory Usage")
             lines.append("# TYPE mindhome_redis_used_memory_bytes gauge")
             lines.append(f"mindhome_redis_used_memory_bytes {used}")
-    except Exception:
-        pass
-
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(
         content="\n".join(lines) + "\n",

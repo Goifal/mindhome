@@ -94,7 +94,7 @@ def api_get_calendar_triggers():
 @schedules_bp.route("/api/calendar/triggers", methods=["POST"])
 def api_create_calendar_trigger():
     """Create a calendar-based automation trigger."""
-    data = request.json
+    data = request.json or {}
     triggers = json.loads(get_setting("calendar_triggers") or "[]")
     trigger = {
         "id": str(int(time.time() * 1000)),
@@ -130,7 +130,7 @@ def api_get_calendar_triggers_alias():
 @schedules_bp.route("/api/calendar-triggers", methods=["PUT"])
 def api_update_calendar_triggers_alias():
     """Bulk update calendar triggers."""
-    data = request.json
+    data = request.json or {}
     set_setting("calendar_triggers", json.dumps(data.get("triggers", [])))
     return jsonify({"success": True})
 

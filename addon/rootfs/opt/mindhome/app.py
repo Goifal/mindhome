@@ -735,31 +735,26 @@ def graceful_shutdown(signum=None, frame=None):
                           ("cover_control_manager", cover_control_manager)]:
         try:
             eng.stop()
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     if domain_manager:
         try:
             domain_manager.stop_all()
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     try:
         ha.disconnect()
-    except Exception:
-        pass
-
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     try:
         with engine.connect() as conn:
             conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
-    except Exception:
-        pass
-
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     try:
         engine.dispose()
-    except Exception:
-        pass
-
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     logger.info("MindHome shutdown complete")
     sys.exit(0)
 

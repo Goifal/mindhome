@@ -494,8 +494,8 @@ class EnergyForecaster:
             for s in states:
                 if s.get("entity_id", "").startswith("weather."):
                     return s.get("state", "unknown")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return "unknown"
 
     def get_forecast(self, days=7):

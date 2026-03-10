@@ -108,8 +108,8 @@ class HAConnection:
                     body = ""
                     try:
                         body = e.response.text[:500] if e.response is not None else ""
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
                     # 404 on state lookups is normal (entity may not exist) — log as debug
                     if status_code == 404 and endpoint.startswith("states/"):
                         logger.debug(f"HA API entity not found: {endpoint}")
@@ -472,8 +472,8 @@ class HAConnection:
                 for ev in cal_events:
                     ev["calendar_entity"] = eid
                     events.append(ev)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         return sorted(events, key=lambda e: e.get("start", {}).get("dateTime", ""))
 
     def send_notification(self, message, title=None, target=None, data=None):
@@ -495,8 +495,8 @@ class HAConnection:
             try:
                 from helpers import get_setting
                 entity = get_setting("tts_media_player")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         if not entity:
             states = self.get_states()
             speakers = [s for s in states
@@ -606,9 +606,8 @@ class HAConnection:
                 msg["event_type"] = event_type
             try:
                 self._ws.send(json.dumps(msg))
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
     def _on_ws_open(self, ws):
         logger.info("WebSocket connection opened")
 
@@ -629,8 +628,8 @@ class HAConnection:
                 self._reconnect_attempts = 0
                 try:
                     self.get_timezone()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
                 with self._cb_lock:
                     cbs = list(self._event_callbacks)
                 for cb_info in cbs:
@@ -756,8 +755,8 @@ class HAConnection:
         if self._ws:
             try:
                 self._ws.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         if self._batch_thread and self._batch_thread.is_alive():
             self._batch_thread.join(timeout=5)
         logger.info("Disconnected")
@@ -768,8 +767,8 @@ class HAConnection:
         if self._ws:
             try:
                 self._ws.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         self._start_ws()
 
     def _process_offline_queue(self):

@@ -86,7 +86,7 @@ def api_get_domains():
 @domains_bp.route("/api/domains", methods=["POST"])
 def api_create_domain():
     """Create a custom domain."""
-    data = request.json
+    data = request.json or {}
     with get_db_session() as session:
         name = data.get("name", "").strip().lower().replace(" ", "_")
         if not name:
@@ -115,7 +115,7 @@ def api_create_domain():
 @domains_bp.route("/api/domains/<int:domain_id>", methods=["PUT"])
 def api_update_domain(domain_id):
     """Update a domain. System domains: only icon editable. Custom domains: all fields."""
-    data = request.json
+    data = request.json or {}
     with get_db_session() as session:
         domain = session.get(Domain, domain_id)
         if not domain:

@@ -169,8 +169,8 @@ class SemanticMemory:
             if lock_acquired and self.redis:
                 try:
                     await self.redis.delete(lock_key)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
 
     async def _store_fact_inner(self, fact: SemanticFact) -> bool:
         # Widerspruchserkennung: Pruefen ob ein widersprechender Fakt existiert
@@ -405,8 +405,8 @@ class SemanticMemory:
                                 ids=[fact_id],
                                 metadatas=[{**data, "confidence": str(round(new_confidence, 3))}],
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Unhandled: %s", e)
                     decayed += 1
 
             if decayed or deleted:
@@ -566,17 +566,16 @@ class SemanticMemory:
                 if not acquired:
                     logger.debug("Delete-Lock nicht erhalten: %s", fact_id)
                     return False
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         try:
             return await self._delete_fact_inner(fact_id)
         finally:
             if self.redis:
                 try:
                     await self.redis.delete(lock_key)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
 
     async def _delete_fact_inner(self, fact_id: str) -> bool:
         """Interne Loesch-Logik (unter Lock)."""
@@ -726,9 +725,8 @@ class SemanticMemory:
                     )
                     if results and results.get("ids") and results["ids"][0]:
                         fact_id = results["ids"][0][0]
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             if fact_id:
                 success = await self.delete_fact(fact_id)
                 if success:

@@ -366,8 +366,8 @@ class AccessControlManager:
                 ).order_by(PresenceLog.created_at.desc()).first()
                 if recent:
                     return recent.user_id
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return None
 
     def _log_access(self, entity_id, action, method, user_id=None, code_id=None):

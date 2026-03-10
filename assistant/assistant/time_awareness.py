@@ -300,9 +300,8 @@ class TimeAwareness:
                 try:
                     if await _le.is_manual_override_active(entity_id):
                         continue
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             device_key = f"light_{light_room}"
             minutes = await self._get_running_minutes(entity_id, device_key)
             if minutes and minutes >= threshold:

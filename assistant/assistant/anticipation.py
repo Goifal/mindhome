@@ -132,7 +132,7 @@ class AnticipationEngine:
             if len(raw_entries) < 10:
                 return []  # Zu wenig Daten
 
-            entries = [json.loads(e) for e in raw_entries]
+            entries = [json.loads(e.decode() if isinstance(e, bytes) else e) for e in raw_entries]
 
             patterns = []
 

@@ -890,8 +890,8 @@ class ProactiveManager:
                         if redis_client:
                             try:
                                 await redis_client.set(redis_key, "1", ex=86400)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug("Unhandled: %s", e)
                 logger.info(
                     "Power-Close: %s über Schwelle (%s W >= %s W) → %d/%d Covers geschlossen",
                     entity_id, new_num, threshold, closed_count, len(cover_ids),
@@ -912,8 +912,8 @@ class ProactiveManager:
                             if await redis_client.get(f"mha:cover:power_close:{cid}"):
                                 has_any_lock = True
                                 break
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Unhandled: %s", e)
                 if not (old_num >= threshold or has_any_lock):
                     continue  # Kein Schwellen-Übergang und kein Lock → nichts tun
                 # Nicht öffnen wenn jemand schläft — aber Lock trotzdem aufräumen
@@ -926,8 +926,8 @@ class ProactiveManager:
                     if redis_client:
                         try:
                             power_active = bool(await redis_client.get(redis_key))
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Unhandled: %s", e)
                     if not power_active:
                         continue
                     # Lock immer aufräumen — Strom ist unter Schwelle,
@@ -935,8 +935,8 @@ class ProactiveManager:
                     if redis_client:
                         try:
                             await redis_client.delete(redis_key)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Unhandled: %s", e)
                     if sleeping:
                         continue  # Cover nicht öffnen, aber Lock ist weg
                     acted = await self._auto_cover_action(
@@ -2904,9 +2904,8 @@ class ProactiveManager:
                     if high_urgency:
                         first = high_urgency[0]
                         return f"Wartungshinweis, {title} — {first['description']}"
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             return None
         except Exception as e:
             logger.debug("Observation-Generierung fehlgeschlagen: %s", e)
@@ -2947,9 +2946,8 @@ class ProactiveManager:
                 if saved_action:
                     last_schedule_action = saved_action if isinstance(saved_action, str) else saved_action.decode()
                 logger.debug("Cover-Schedule State aus Redis: date=%s action=%s", last_action_date, last_schedule_action)
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         # Fallback bei Redis-Restart: Wenn kein gespeicherter State vorhanden
         # und es ist nach der typischen Morgens-Öffnungszeit, defensiv "open" annehmen
         # um doppelte Morgens-Öffnung zu vermeiden
@@ -2986,8 +2984,8 @@ class ProactiveManager:
                 if _redis and weather.get("condition"):
                     try:
                         await _redis.set("mha:weather:current_condition", weather["condition"], ex=300)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
                 cover_profiles = self._load_cover_profiles()
 
                 # ── PRIORITÄTSSYSTEM ──────────────────────────────────
@@ -3042,8 +3040,8 @@ class ProactiveManager:
                     try:
                         await _redis.set(_SCHEDULE_KEY, new_schedule_action, ex=86400)
                         await _redis.set(_SCHEDULE_DATE_KEY, today, ex=86400)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
                 last_schedule_action = new_schedule_action
 
                 # 6. MARKISEN-AUSFAHREN bei Sonne (Bug 6: Dead Config lebendig machen)
@@ -3222,9 +3220,8 @@ class ProactiveManager:
                 if power_locked:
                     logger.debug("Cover-Auto: %s übersprungen — Power-Close Lock aktiv", entity_id)
                     return False
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         # Feature 2: Manual Override Schutz — wenn manuell bedient, nicht antasten
         if redis_client:
             override_key = f"mha:cover:manual_override:{entity_id}"
@@ -3268,9 +3265,8 @@ class ProactiveManager:
                 try:
                     from .cover_config import log_cover_action
                     log_cover_action(entity_id, position, reason)
-                except Exception:
-                    pass
-
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
                 # Cover-Licht Koordination: LightEngine informieren
                 try:
                     if hasattr(self.brain, "light_engine") and self.brain.light_engine:
@@ -3310,16 +3306,15 @@ class ProactiveManager:
         if redis_client:
             try:
                 storm_was_active = bool(await redis_client.get(storm_active_key))
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         if wind >= storm_speed:
             # Sturm aktiv: Covers sichern
             if redis_client:
                 try:
                     await redis_client.set(storm_active_key, "1", ex=7200)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             notified = False
             for s in (states or []):
                 eid = s.get("entity_id", "")
@@ -3355,8 +3350,8 @@ class ProactiveManager:
             if redis_client:
                 try:
                     await redis_client.delete(storm_active_key)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Unhandled: %s", e)
             logger.info("Cover-Wetter: Sturmwarnung aufgehoben (Wind %d km/h < %d km/h Schwelle)",
                         wind, storm_speed - hysteresis_wind)
 
@@ -3565,8 +3560,8 @@ class ProactiveManager:
                                 await redis_client.set(
                                     f"mha:cover:sun_closed:{entity_id}", "1", ex=7200,
                                 )
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug("Unhandled: %s", e)
             elif not sun_hitting:
                 # Sonne nicht mehr auf Fenster — wieder oeffnen
                 # ABER: Nicht oeffnen wenn Bettsensor aktiv (Feature 13)
@@ -3590,9 +3585,8 @@ class ProactiveManager:
                                 cycle_acted.add(entity_id)
                             try:
                                 await redis_client.delete(sun_closed_key)
-                            except Exception:
-                                pass
-
+                            except Exception as e:
+                                logger.debug("Unhandled: %s", e)
     async def _cover_temperature_logic(
         self, states, weather, cover_cfg, cover_profiles, auto_level, redis_client,
         cycle_acted=None,
@@ -3865,8 +3859,8 @@ class ProactiveManager:
                                     f"Morgens oeffnen Fallback ({_reason})",
                                     _auto_level, _redis,
                                 )
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug("Unhandled: %s", e)
                         if _count > 0:
                             await self._notify("seasonal_cover", LOW, {
                                 "action": "open",
@@ -3900,8 +3894,8 @@ class ProactiveManager:
                     try:
                         if redis_client:
                             await redis_client.delete(self._SLEEP_LOCK_KEY)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
                     await self._notify("seasonal_cover", LOW, {
                         "action": "open",
                         "message": f"Rollläden geöffnet ({reason})",
@@ -5150,8 +5144,8 @@ class ProactiveManager:
                 ]
             if bed_sensors:
                 return any(s.get("state") == "on" for s in bed_sensors)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return False
 
     _SLEEP_LOCK_KEY = "mha:cover:sleep_lock"

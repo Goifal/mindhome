@@ -3441,9 +3441,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             occupied = await self._get_occupied_room()
                             if occupied and occupied.lower() != "unbekannt":
                                 func_args["room"] = occupied
-                        except Exception:
-                            pass
-
+                        except Exception as e:
+                            logger.debug("Unhandled: %s", e)
                     logger.info("Function Call: %s(%s)", func_name, func_args)
 
                     # Validierung

@@ -119,9 +119,8 @@ class SleepDetector:
                     logger.debug("Sleep detected via bed occupancy sensor")
                     return True
                 return False  # Bed sensors exist but not occupied
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         # Priority 2: Fallback — no motion + lights off for 30+ min
         cutoff = now - timedelta(minutes=30)
         recent_motion = session.query(StateHistory).filter(
@@ -151,9 +150,8 @@ class SleepDetector:
                               or "bed" in s.get("entity_id", "").lower())]
             if lights_on:
                 return False
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return True
 
     def _detect_wake(self, session, now):
@@ -170,9 +168,8 @@ class SleepDetector:
                     logger.debug("Wake detected via bed occupancy sensor (all off)")
                     return True
                 return False  # Still in bed
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         # Priority 2: Fallback — motion or lights in last 5 min
         from models import StateHistory
         cutoff = now - timedelta(minutes=5)
@@ -231,9 +228,8 @@ class SleepDetector:
                         score -= 15
                     elif avg_temp < 16 or avg_temp > 22:
                         score -= 5
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return max(0, min(100, round(score)))
 
     def get_recent_sessions(self, user_id=None, days=7):

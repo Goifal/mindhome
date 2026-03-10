@@ -380,7 +380,6 @@ class MusicDJ:
                 raw = await self.redis.get("mha:music_dj:last_recommendation")
                 if raw:
                     result["last_recommendation"] = json.loads(raw)
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         return result

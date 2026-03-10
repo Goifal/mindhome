@@ -443,8 +443,8 @@ class CinemaMode(SpecialModeBase):
                     ).all()
                     for c in covers:
                         self.ha.call_service("cover", "close_cover", {"entity_id": c.entity_id})
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Unhandled: %s", e)
         logger.info("Cinema mode actions applied")
 
     def _on_media_state(self, event):
@@ -657,10 +657,8 @@ class NightLockdown(SpecialModeBase):
                     self.event_bus.publish("night.motion_alert", {
                         "entity_id": entity_id,
                     }, source="night_lockdown")
-        except Exception:
-            pass
-
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
 # ==============================================================================
 # #11 Emergency Protocol
 # ==============================================================================
@@ -866,8 +864,8 @@ class EmergencyProtocol(SpecialModeBase):
                             "title": f"NOTFALL: {contact.name}",
                             "message": f"Emergency type: {self._emergency_type}. Contact {contact.name} at {contact.phone or contact.email or 'N/A'}",
                         })
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
                 logger.info(f"Notified {len(contacts)} emergency contacts")
         except Exception as e:
             logger.error(f"Emergency contact notification error: {e}")
@@ -974,8 +972,8 @@ class EmergencyProtocol(SpecialModeBase):
                         self.ha.call_service("media_player", "volume_set", {
                             "entity_id": s.entity_id, "volume_level": vol
                         })
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
                     self.ha.call_service("tts", "speak", {
                         "entity_id": s.entity_id, "message": message
                     })
@@ -1012,6 +1010,6 @@ class EmergencyProtocol(SpecialModeBase):
                 if user and hasattr(user, 'pin_hash') and user.pin_hash:
                     import hashlib
                     return user.pin_hash == hashlib.sha256(str(pin).encode()).hexdigest()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
         return False

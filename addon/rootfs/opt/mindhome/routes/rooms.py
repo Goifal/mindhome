@@ -210,7 +210,7 @@ def api_import_rooms_from_ha():
 @rooms_bp.route("/api/rooms/<int:room_id>", methods=["PUT"])
 def api_update_room(room_id):
     """Update a room."""
-    data = request.json
+    data = request.json or {}
     with get_db_session() as session:
         room = session.get(Room, room_id)
         if not room:
@@ -244,7 +244,7 @@ def api_delete_room(room_id):
 @rooms_bp.route("/api/rooms/<int:room_id>/privacy", methods=["PUT"])
 def api_update_room_privacy(room_id):
     """Update privacy mode for a room."""
-    data = request.json
+    data = request.json or {}
     with get_db_session() as session:
         room = session.get(Room, room_id)
         if not room:

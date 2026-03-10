@@ -324,8 +324,8 @@ class CircadianLightManager:
                             "color_temp_kelvin": kelvin,
                             "transition": 60,
                         })
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Unhandled: %s", e)
         except Exception as e:
             logger.error(f"_apply_color_temp error: {e}")
 

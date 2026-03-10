@@ -877,9 +877,8 @@ def security_dashboard():
                         "name": s.get("attributes", {}).get("friendly_name"),
                     }
                     break
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.debug("Unhandled: %s", e)
     # Locks
     mgr = _deps.get("access_control_manager")
     if mgr:
@@ -927,9 +926,8 @@ def security_dashboard():
                     "message_en": evt.message_en,
                     "timestamp": evt.timestamp.isoformat() if evt.timestamp else None,
                 })
-    except Exception:
-        pass
-
+    except Exception as e:
+        logger.debug("Unhandled: %s", e)
     return jsonify(dashboard)
 
 

@@ -198,7 +198,8 @@ class OutcomeTracker:
                 for key in keys:
                     # Nur globale Stats: mha:outcome:stats:{action_type} (4 Teile)
                     # Skip room-specific (5 Teile) und person-specific (6 Teile) Keys
-                    parts = key.split(":")
+                    key_str = key.decode() if isinstance(key, bytes) else key
+                    parts = key_str.split(":")
                     if len(parts) != 4:
                         continue
                     action_type = parts[3]

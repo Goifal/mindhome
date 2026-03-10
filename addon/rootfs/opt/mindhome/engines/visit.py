@@ -120,8 +120,8 @@ class VisitPreparationManager:
                                 state = self.ha.get_state(entity)
                                 if state and state.get("state") == "home":
                                     self.activate(prep.id)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug("Unhandled: %s", e)
         except Exception as e:
             logger.error(f"check_triggers error: {e}")
 
