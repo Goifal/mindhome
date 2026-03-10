@@ -68,7 +68,9 @@ class KnowledgeBase:
             }
             if ef:
                 col_kwargs["embedding_function"] = ef
-            self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+            self.chroma_collection = await asyncio.to_thread(
+                self._chroma_client.get_or_create_collection, **col_kwargs
+            )
             _count = await asyncio.to_thread(self.chroma_collection.count)
             logger.info(
                 "Knowledge Base initialisiert (ChromaDB: mha_knowledge_base, %d Eintraege)",
@@ -546,7 +548,9 @@ class KnowledgeBase:
             return False
 
         try:
-            self._chroma_client.delete_collection("mha_knowledge_base")
+            await asyncio.to_thread(
+                self._chroma_client.delete_collection, "mha_knowledge_base"
+            )
             from .embeddings import get_embedding_function
             ef = get_embedding_function()
             col_kwargs = {
@@ -555,7 +559,9 @@ class KnowledgeBase:
             }
             if ef:
                 col_kwargs["embedding_function"] = ef
-            self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+            self.chroma_collection = await asyncio.to_thread(
+                self._chroma_client.get_or_create_collection, **col_kwargs
+            )
             self._ingested_hashes.clear()
             logger.info("Knowledge Base geloescht")
             return True

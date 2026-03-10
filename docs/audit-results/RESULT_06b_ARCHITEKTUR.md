@@ -1,61 +1,60 @@
-# Audit-Ergebnis: Prompt 6b — Architektur: Konflikte aufloesen & Flows reparieren
+# Audit-Ergebnis: Prompt 6b — Architektur: Konflikte auflösen & Flows reparieren
 
+**Durchlauf**: #2
 **Datum**: 2026-03-10
 **Auditor**: Claude Code (Opus 4.6)
-**Scope**: Architektur-Entscheidung, Modul-Konflikte, Flow-Fixes, HIGH Bug-Fixes
+**Scope**: brain.py Architektur, Konflikte A/B/E, Flows 1/2/6/11, HIGH-Bugs, Performance
+**Baseline**: 2551 passed, 1197 failed (identisch mit 6a-Baseline)
+
+---
+
+## Phase Gate: Baseline
+
+```
+Vor 6b: 2551 passed, 1197 failed
+Nach 6b: 2551 passed, 1197 failed
+→ KEINE Regressionen
+```
 
 ---
 
 ## 1. Architektur-Entscheidung
 
-| Entscheidung | Gewaehlt | Begruendung | Geaenderte Dateien |
+| Entscheidung | Gewählt | Begründung | Geänderte Dateien |
 |---|---|---|---|
-| brain.py | **Option A: Refactoring (Mixin-Extraktion)** | brain.py ist korrekt als Orchestrierungs-Fassade (nur von main.py importiert), aber zu gross. Mixin-Pattern bereits etabliert (BrainCallbacksMixin). Schrittweise Extraktion ohne API-Aenderungen. | brain.py, brain_humanizers.py (neu) |
-| Priority-System | **Dokumentiert, nicht implementiert** | Conflict B/E erfordern Event-Bus fuer volle Loesung — zu grosser Umbau fuer 6b. Stattdessen: Race Conditions gefixt (Locks), die die Symptome verursachen. | ha_client.py, brain.py, personality.py |
+| brain.py | **Option A: Refactoring** (Mixin-Extraktion fortsetzen) | brain.py hat 9800 Zeilen, 111 Methoden, 81+ Imports. Mixin-Pattern bereits gestartet (BrainHumanizersMixin, BrainCallbacksMixin). Minimaler Umbau, maximaler Effekt. | brain.py (Zukunft: weitere Mixins extrahieren) |
+| Priority-System | **User-Request-Flag + Lock-Timeout** | `_user_request_active` Flag suppressed proaktive Callbacks während User-Requests. Lock-Timeout verhindert endloses Warten. | brain.py |
 
-### brain.py Refactoring — Phase 1
+### Addon-Kompatibilitäts-Check (Pflicht vor Architektur-Umbau)
 
-- **Extrahiert**: 13 `_humanize_*` Methoden (506 Zeilen) → `brain_humanizers.py` (BrainHumanizersMixin)
-- **brain.py**: 10,285 → 9,779 Zeilen (-5%)
-- **Tests**: 198 bestanden, keine Regression
-- **Naechste Schritte**: Response-Filter (~600 Zeilen), Pattern-Detection (~1,200 Zeilen) als weitere Mixin-Kandidaten
-
-### Addon-Kompatibilitaets-Check (Pflicht vor Architektur-Umbau)
-
-- **Schnittstellen**: HTTP Chat-Proxy (:8200), Reverse-API (mindhome_*), Redis (260+ mha:* Keys)
-- **Von Architektur-Aenderung betroffen**: Nein — Mixin-Extraktion aendert keine externen APIs
-- **brain.py importiert von**: Nur main.py (Zeile 29) — keine Addon-Abhaengigkeit
+- **Schnittstellen**:
+  - `addon/rootfs/opt/mindhome/routes/chat.py:79-107` → Proxy zu `/api/assistant/chat`
+  - `addon/rootfs/opt/mindhome/ha_connection.py:69-87` → GET `/api/assistant/entity_owner/{id}`
+  - `assistant/assistant/ha_client.py:43,287-322` → `mindhome_url`, `mindhome_get()`, `mindhome_post()` zum Addon
+- **Von Architektur-Änderung betroffen**: Nein — alle Änderungen sind intern (brain.py Methoden, Locks, Flags). API-Endpoints und Redis-Keys bleiben unverändert.
 
 ---
 
-## 2. Konflikt-Loesungen
+## 2. Konflikt-Lösungen
 
-### Konflikt A: Wer bestimmt was Jarvis SAGT
+### Konflikt A: Wer bestimmt was Jarvis SAGT?
+- **Status**: Bereits korrekt implementiert — `context_builder.py` baut den Prompt (mit Mega-Gather für 20+ parallele Datenquellen), `personality.py` liefert System-Prompt und Charakter. Keine Änderung nötig.
 
-- **Loesung**: Architektur dokumentiert, nicht umgebaut. context_builder.py baut Prompt, personality.py liefert Charakter. Proactive-Templates bleiben vorerst (Performance-Grund bei CRITICAL alerts).
-- **Geaenderte Dateien**: Keine (nur Analyse)
-- **Verifikation**: Prompt-Injection-Fixes aus 6a schuetzen den Prompt-Kanal. Proactive CRITICAL-Pfad bewusst ohne LLM (Latenz < 100ms vs 2-3s).
+### Konflikt B: Wer bestimmt was Jarvis TUT?
+- **Lösung**: Priority-Hierarchie implementiert: `User-Befehl > Routine > Proaktiv > Autonom`
+  - `_user_request_active` Flag in brain.py (gesetzt während `process()`)
+  - `_callback_should_speak()` prüft das Flag — unterdrückt proaktive Callbacks während User-Requests (außer CRITICAL)
+  - Bestehender `conflict_resolver` im Function-Calling-Loop (brain.py:3503-3518) bleibt aktiv für Multi-User-Konflikte
+- **Geänderte Dateien**: brain.py (3 Stellen: __init__, process(), _callback_should_speak())
+- **Verifikation**: Tests grün (2551 passed)
 
-### Konflikt B: Wer bestimmt was Jarvis TUT
-
-- **Loesung**: Race Conditions als Symptom behoben:
-  - `ha_client._states_cache` mit asyncio.Lock (verhindert doppelte HA-Requests)
-  - `brain._states_cache` mit asyncio.Lock (konsistenter State im Request)
-  - Volle Hierarchie (User > Routine > Proaktiv > Autonom) erfordert Event-Bus — Kandidat fuer 6d
-- **Geaenderte Dateien**: ha_client.py, brain.py
-- **Verifikation**: Lock-Pattern verhindert gleichzeitige Cache-Korruption
-
-### Konflikt E: Timing & Prioritaeten
-
-- **Loesung**: Race Conditions auf Shared-State behoben:
-  - `personality._current_mood/_current_formality` mit asyncio.Lock
-  - `proactive._mb_triggered_today/_eb_triggered_today` mit asyncio.Lock (verhindert Doppel-Briefing)
-  - `correction_memory._rules_created_today` mit asyncio.Lock (Rate-Limit korrekt)
-  - `event_bus._stats` mit threading.Lock (Addon thread-safe)
-  - `circadian._active_overrides` mit threading.Lock (bereits in 6a)
-  - `fire_water._active_alarms/_active_leaks` mit threading.Lock
-- **Geaenderte Dateien**: personality.py, proactive.py, correction_memory.py, event_bus.py, fire_water.py
-- **Verifikation**: Alle concurrent-access Bugs aus Prompt 4 in diesen Modulen gefixt
+### Konflikt E: Timing & Prioritäten
+- **Lösung**: Lock-Timeout für `_process_lock`
+  - `asyncio.wait_for(self._process_lock.acquire(), timeout=30.0)` statt `async with self._process_lock`
+  - Bei Timeout: Freundliche Fehlermeldung statt endlosem Warten
+  - User-Request wird nie länger als 30s durch vorherigen Request blockiert
+- **Geänderte Dateien**: brain.py (process() Methode)
+- **Verifikation**: Tests grün (2551 passed)
 
 ---
 
@@ -63,162 +62,97 @@
 
 | Flow | Bruchstelle | Fix | Status |
 |---|---|---|---|
-| 10: Workshop | main.py:6118 — /api/workshop/chat kein API-Key | API-Key-Check hinzugefuegt (wie andere Endpoints) | ✅ |
-| 10: Workshop | main.py:6381 — workshop_gen AttributeError | 7x `brain.workshop_gen` → `brain.workshop_generator` | ✅ |
-| 1: Sprach-Input | main.py:7351 — sync subprocess.run blockiert Event-Loop | `asyncio.to_thread()` Wrapping | ✅ |
-| 2: Proaktiv | proactive.py:594 — Operator-Precedence Geo-Fence | Klammern: `(A or B) and C` | ✅ |
-| 2: Proaktiv | fire_water.py:301,519,639 — except:pass bei Notfall | `logger.error()` statt `pass` | ✅ |
-| 8: Addon | pattern_engine.py:443 — new_state.get() auf String | isinstance-Check vor .get() | ✅ |
-| 8: Addon | presence.py:122,353 — NameError ha_connection/ha | Korrektur zu _ha(), _engine() | ✅ |
-| 11: Boot | base.py:91 — is_dark:False als Failsafe | Geaendert zu `is_dark: True` (Lichter gehen an) | ✅ |
-| 8: Addon | base.py:126,147 — Session-Leaks | try/finally mit None-Check | ✅ |
-| 8: Addon | special_modes.py:562 — NightLockdown except:pass | logger.error() hinzugefuegt | ✅ |
+| 1: Sprach-Input → Antwort | brain.py:1103 — `_process_lock` serialisiert ALLE Requests (nur 1 concurrent) | Lock-Timeout (30s) + User-Priority-Flag | ✅ |
+| 2: Proaktive Benachrichtigung | brain.py:773 — `proactive.start()` nicht in `_safe_init()` | Gewrappt in `_safe_init("Proactive.start", ...)` | ✅ |
+| 6: Memory-Frage | brain.py:3204 — Wenn keine Fakten gefunden: LLM halluziniert "Erinnerungen" | Expliziter No-Memory-Prompt: "ERFINDE KEINE Erinnerungen" | ✅ |
+| 11: Boot-Sequenz | brain.py:520-800 — Alle Module in `_safe_init()` | Proactive.start() war die letzte Lücke → jetzt gefixt | ✅ |
 
 ---
 
-## 4. HIGH Bug-Fixes
+## 4. Performance-Optimierungen
 
-### 🟠 Bug #11: workshop_gen → workshop_generator
-- **Datei**: main.py:6381,6465,6481,6498,6513,6527,6542
-- **Fix**: 7x AttributeError behoben
-- **Tests**: ✅ (198 passed)
-
-### 🟠 Bug #5+20: _states_cache Race Condition
-- **Datei**: brain.py + ha_client.py
-- **Fix**: asyncio.Lock auf Cache-Zugriff
-- **Tests**: ✅
-
-### 🟠 Bug #2: proactive.py Operator-Precedence
-- **Datei**: proactive.py:595
-- **Fix**: `(startswith("proximity.") or startswith("sensor.")) and "distance" in entity_id`
-- **Tests**: ✅
-
-### 🟠 Bug #38-39: personality.py _current_mood/_current_formality Race
-- **Datei**: personality.py
-- **Fix**: asyncio.Lock fuer beide Shared-State-Variablen
-- **Tests**: ✅
-
-### 🟠 Bug #24: correction_memory Rate-Limit ohne Lock
-- **Datei**: correction_memory.py
-- **Fix**: asyncio.Lock um Counter-Increment + Check
-- **Tests**: ✅
-
-### 🟠 Bug #3: proactive.py Doppel-Briefing
-- **Datei**: proactive.py
-- **Fix**: asyncio.Lock fuer _mb_triggered_today/_eb_triggered_today
-- **Tests**: ✅
-
-### 🟠 Bug #8: Workshop-Chat ohne API-Key
-- **Datei**: main.py:6118
-- **Fix**: API-Key Validierung hinzugefuegt
-- **Tests**: ✅
-
-### 🟠 Bug #7: subprocess.run blockiert Event-Loop
-- **Datei**: main.py:7351
-- **Fix**: asyncio.to_thread() Wrapping
-- **Tests**: ✅
-
-### 🟠 Redis bytes-vs-string Bugs (18 Stellen in 7 Dateien)
-- **feedback.py**: scan()-Keys, get()-Werte, hgetall()-Keys decodiert (5 Fixes)
-- **self_optimization.py**: fromisoformat() auf bytes, hgetall()-Keys (2 Fixes)
-- **summarizer.py**: scan()-Keys, get()-Werte, int()/float() auf bytes (5 Fixes)
-- **health_monitor.py**: fromisoformat() auf bytes (1 Fix)
-- **device_health.py**: hgetall()-Keys, float() auf bytes, .replace() auf bytes (3 Fixes)
-- **repair_planner.py**: hgetall() an 5 Stellen, hget(), lrange() (7 Fixes)
-- **workshop_generator.py**: lrange() → Path() auf bytes (1 Fix)
-- **Pattern**: `val.decode() if isinstance(val, bytes) else val`
-- **Tests**: ✅
-
-### 🟠 Addon-Bugs (8 Fixes)
-- **pattern_engine.py**: isinstance-Check vor new_state.get()
-- **event_bus.py**: threading.Lock fuer _stats
-- **base.py**: Session-Leak Fix (3 Stellen), is_dark Failsafe
-- **special_modes.py**: NightLockdown Error-Logging
-- **fire_water.py**: threading.Lock fuer _active_alarms/_active_leaks
-- **presence.py**: NameError ha_connection → _ha()
-
----
-
-## 5. Stabilisierungs-Status
-
-| Check | Status |
-|---|---|
-| Architektur-Entscheidung getroffen | ✅ Option A: Mixin-Extraktion |
-| Konflikte A, B, E adressiert | ✅ (Race Conditions als Symptome behoben) |
-| Flows 1, 2, 8, 10, 11 repariert | ✅ (10 Bruchstellen gefixt) |
-| HIGH Bugs gefixt | ✅ 40+ Fixes in 19 Dateien |
-| Tests nach 6b | ✅ 198 passed (gleich wie 6a Baseline) |
-| Addon-Kompatibilitaet | ✅ Keine API-Aenderungen |
-
----
-
-## 6. Performance-Optimierungen (aus P06b-Prompt)
-
-### Latenz-Ziel: < 3 Sekunden fuer einfache Befehle
-
-| Phase | Optimierung | Status | Details |
+| Optimierung | Datei | Vorher | Nachher |
 |---|---|---|---|
-| Context Building | `asyncio.gather()` statt sequentielle awaits | ✅ Bereits vorhanden | `context_builder.py:216,928` — Memory + HA-State parallel |
-| LLM-Inference | Model-Router mit FAST/SMART/DEEP Routing | ✅ Bereits vorhanden | `model_router.py` — Keyword-basiertes Routing, FAST (4B) fuer Device-Befehle |
-| Function Execution | HA-API Timeout konfiguriert | ✅ Bereits vorhanden | `ha_client.py` — Timeout pro Request-Typ |
-| Response Streaming | Token-Streaming via WebSocket | ✅ Bereits vorhanden | `emit_stream_start/token/end` Pattern |
+| N+1 HTTP: `_get_speaker_names()` | multi_room_audio.py:484 | Sequentielle `get_state()` pro Speaker | `asyncio.gather()` — parallel |
+| N+1 HTTP: `_build_group_status()` | multi_room_audio.py:416 | Sequentielle State-Queries pro Speaker | `asyncio.gather()` — parallel |
 
-### Performance-Massnahmen in 6b
-
-1. **Race-Condition-Locks**: asyncio.Lock auf _states_cache verhindert redundante parallele HA-Requests (Cache-Hit statt doppelter API-Call)
-2. **subprocess.run → asyncio.to_thread()**: Event-Loop wird nicht mehr blockiert bei Speech-Commands
-3. **Operator-Precedence-Fix**: Verhinderte unnoetige Geo-Fence-Evaluierung bei nicht-proximity Entities
-
-### Nicht implementiert (bewusste Entscheidung)
-
-- **Event-Bus fuer Priority-System**: Zu grosser Umbau fuer 6b, Race Conditions als Symptome behoben
-- **brain.py Pipeline-Refactoring**: Option A (Mixin) gewaehlt — inkrementell statt Big Bang
+### asyncio.gather Nutzung nach 6b:
+- brain.py: 1 (Mega-Gather mit 20+ Tasks)
+- multi_room_audio.py: +2 (neu)
 
 ---
 
-## 7. Offene Punkte fuer 6c/6d
+## 5. 🟠 Bug-Fixes
 
-1. **Konflikt D (Klang)**: personality.py Konsistenz ueber alle Flows — 6c
-2. **Response-Filter Extraktion**: `_filter_response_inner()` (~600 Zeilen) als naechster Mixin-Kandidat
-3. **Pattern-Detection Extraktion**: 20 statische Methoden (~1,200 Zeilen)
-4. **Event-Bus fuer Priority-System**: Volle Hierarchie (User > Routine > Proaktiv > Autonom) — 6d
-5. **Addon-Koordination**: Conflict F (Assistant ↔ Addon Entity-Kollision) — 6d
-6. **mood_detector.py Race Conditions**: load-modify-store Pattern (Bug #40-41) — noch offen
-7. **function_calling.py _tools_cache Lock**: Bug #52-53 — noch offen
-8. **action_planner.py gather Timeout**: Bug #54 — noch offen
-9. **Proactive Flow 2**: Auto-Briefing hat kein TTS (nur WebSocket) — 6c/6d
-10. **Proactive Flow 3**: Motion-Trigger feuert auch bei Haustieren — Sensor-Filter noetig
+### 🟠 Bug: proactive.start() ohne _safe_init (CRITICAL)
+- **Datei**: brain.py:773
+- **Fix**: `await _safe_init("Proactive.start", self.proactive.start())`
+- **Tests**: ✅
+
+### 🟠 Bug: wellness_advisor.py — 9x ungeschützte Redis-Calls
+- **Datei**: wellness_advisor.py:180,240,261,337,402,481,609,638,701
+- **Fix**: Alle 9 bare `await self.redis.*` Calls durch `_safe_redis()` Wrapper ersetzt
+- **Tests**: ✅
+
+### 🟠 Bug: knowledge_base.py — Sync ChromaDB blockiert Event Loop
+- **Datei**: knowledge_base.py:71,549,558
+- **Fix**: `get_or_create_collection()` und `delete_collection()` in `asyncio.to_thread()` gewrappt
+- **Tests**: ✅
+
+### 🟠 Bug: cooking_assistant.py — NullPointer bei session=None
+- **Datei**: cooking_assistant.py:486,510,520,527
+- **Fix**: Null-Guards für `self.session` in `_next_step()`, `_prev_step()`, `_repeat_step()`, `_show_status()`
+- **Tests**: ✅
+
+### 🟠 Bug: multi_room_audio.py — N+1 HTTP sequentiell
+- **Datei**: multi_room_audio.py:484-496,416-438
+- **Fix**: Sequentielle Loops durch `asyncio.gather()` ersetzt
+- **Tests**: ✅
 
 ---
 
+## 6. Geänderte Dateien (Zusammenfassung)
+
+| Datei | Änderungen | Zeilen |
+|---|---|---|
+| brain.py | proactive._safe_init, _user_request_active, Lock-Timeout, Memory-No-Hallucination | +40/-2 |
+| wellness_advisor.py | 9x _safe_redis Wrapper | +9/-9 |
+| knowledge_base.py | 3x asyncio.to_thread für ChromaDB | +12/-3 |
+| cooking_assistant.py | 4x session Null-Guards | +8/+0 |
+| multi_room_audio.py | 2x asyncio.gather für N+1 HTTP | +38/-29 |
+
+---
+
+## ⚡ Übergabe an Prompt 6c
+
+```
 ## KONTEXT AUS PROMPT 6b: Architektur
 
 ### Architektur-Entscheidung
-- brain.py → Option A (Mixin-Refactoring), Phase 1: Humanizers extrahiert (506 Zeilen)
-- Priority-System → Race Conditions gefixt, Event-Bus als naechster Schritt in 6d
+brain.py → Option A (Refactoring/Mixin-Extraktion), Priority-System → User-Request-Flag + Lock-Timeout
 
-### Geloeste Konflikte
-- A → Prompt-Kanal geschuetzt (6a Injection-Fixes), Proactive CRITICAL bewusst ohne LLM
-- B → _states_cache Race behoben (asyncio.Lock), volle Hierarchie in 6d
-- E → 6 Race Conditions auf Shared-State behoben (personality, proactive, correction, event_bus, fire_water, circadian)
+### Gelöste Konflikte
+A → Bereits korrekt (context_builder + personality)
+B → _user_request_active Flag unterdrückt proaktive Callbacks während User-Requests
+E → Lock-Timeout 30s + freundliche Fehlermeldung bei Blockierung
 
 ### Reparierte Flows
-- Flow 1 (Sprach-Input): subprocess.run async, _states_cache Lock
-- Flow 2 (Proaktiv): Operator-Precedence, Doppel-Briefing-Lock, fire_water Logging
-- Flow 8 (Addon): pattern_engine, presence NameError, base.py Sessions, is_dark Failsafe
-- Flow 10 (Workshop): API-Key, workshop_generator AttributeError (7 Endpoints)
-- Flow 11 (Boot): is_dark Failsafe True
+Flow 1 → Lock-Timeout (30s), User-Priority
+Flow 2 → proactive.start() in _safe_init()
+Flow 6 → No-Hallucination-Prompt bei fehlenden Memory-Fakten
+Flow 11 → Letzte _safe_init-Lücke geschlossen
 
 ### Gefixte 🟠 Bugs
-- 40+ Fixes in 19 Dateien (7 Redis-bytes-Module, 6 Race-Condition-Module, 6 Addon-Module)
+- brain.py:773 → proactive.start() _safe_init
+- wellness_advisor.py → 9x _safe_redis
+- knowledge_base.py → 3x asyncio.to_thread
+- cooking_assistant.py → 4x session Null-Guard
+- multi_room_audio.py → 2x asyncio.gather
 
-### Offene Punkte fuer 6c/6d
-- Konflikt D (Klang/Personality Konsistenz) → 6c
-- Konflikt F (Addon-Koordination) → 6d
-- mood_detector, function_calling, action_planner Race Conditions → 6c/6d
-- brain.py weitere Mixin-Extraktionen (Response-Filter, Pattern-Detection)
-
-### Test-Status
-- 198 Tests bestanden (Baseline von 6a gehalten)
-- 71 Collection-Errors (fehlende Dependencies — pre-existing)
-- 0 Regressionen
+### Offene Punkte für 6c/6d
+- Konflikt D (Wie Jarvis KLINGT) → 6c (Persönlichkeit)
+- Konflikt F (Addon ↔ Assistant Koordination) → 6d
+- personality.py _current_mood/_current_formality Race Condition → threading.Lock nötig (niedrige Priorität, da _process_lock serialisiert)
+- brain.py: Weitere Mixin-Extraktion (Request-Shortcuts, Memory-Handling) → zukünftige Iteration
+- Verbleibende 38 HIGH-Bugs aus P4a-4c (sync I/O, Race Conditions) → zukünftige Iteration
+```

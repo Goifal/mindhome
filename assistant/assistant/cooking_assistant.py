@@ -484,6 +484,8 @@ class CookingAssistant:
     async def _next_step(self) -> str:
         """Geht zum nächsten Schritt."""
         session = self.session
+        if session is None:
+            return "Keine aktive Koch-Session. Sag mir was du kochen moechtest."
 
         session.current_step += 1
         await self._persist_session()
@@ -505,6 +507,8 @@ class CookingAssistant:
 
     async def _prev_step(self) -> str:
         """Geht zum vorherigen Schritt."""
+        if self.session is None:
+            return "Keine aktive Koch-Session. Sag mir was du kochen moechtest."
         if self.session.current_step <= 0:
             return "Du bist schon beim ersten Schritt."
 
@@ -515,6 +519,8 @@ class CookingAssistant:
 
     def _repeat_step(self) -> str:
         """Wiederholt den aktuellen Schritt."""
+        if self.session is None:
+            return "Keine aktive Koch-Session. Sag mir was du kochen moechtest."
         step = self.session.get_current_step()
         if step is None:
             return "Es gibt keinen aktuellen Schritt. Sag 'weiter' für den nächsten."
@@ -523,6 +529,8 @@ class CookingAssistant:
     def _show_status(self) -> str:
         """Zeigt den aktuellen Status."""
         session = self.session
+        if session is None:
+            return "Keine aktive Koch-Session. Sag mir was du kochen moechtest."
         step = session.get_current_step()
         elapsed = int(time.time() - session.started_at) // 60
 

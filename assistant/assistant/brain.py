@@ -213,6 +213,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Fix: Lock fuer process() — verhindert concurrent Requests die Shared State korrumpieren
         self._process_lock = asyncio.Lock()
+        # Conflict B: Flag zeigt an ob ein User-Request gerade verarbeitet wird.
+        # Proaktive/Routine-Callbacks pruefen dies und warten bzw. verzichten.
+        self._user_request_active = False
 
         # Clients
         self.ha = HomeAssistantClient()
@@ -770,7 +773,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             self.adaptive_thresholds.enabled = False
             logger.warning("GLOBAL: Alle Lern-Features deaktiviert (learning.enabled=false)")
 
-        await self.proactive.start()
+        await _safe_init("Proactive.start", self.proactive.start())
 
         # Entity-Katalog: Echte Raum-/Entity-Namen aus HA laden
         # für dynamische Tool-Beschreibungen (hilft dem LLM beim Matching)
@@ -1100,8 +1103,23 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         Returns:
             Dict mit response, actions, model_used
         """
-        async with self._process_lock:
+        # Conflict E: Timeout auf Lock-Erwerb — User wartet max 30s.
+        # Bei Timeout: Freundliche Fehlermeldung statt endlosem Warten.
+        try:
+            await asyncio.wait_for(self._process_lock.acquire(), timeout=30.0)
+        except asyncio.TimeoutError:
+            logger.warning("process_lock Timeout nach 30s — vorheriger Request blockiert")
+            return {
+                "response": "Einen Moment, ich bin noch mit einer anderen Anfrage beschaeftigt. Versuch es gleich nochmal.",
+                "actions": [],
+                "model_used": "timeout_fallback",
+            }
+        self._user_request_active = True
+        try:
             return await self._process_inner(text, person, room, files, stream_callback, voice_metadata, device_id)
+        finally:
+            self._user_request_active = False
+            self._process_lock.release()
 
     async def _process_inner(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None, device_id: Optional[str] = None) -> dict:
         """Innere process()-Implementierung, geschuetzt durch _process_lock."""
@@ -3188,6 +3206,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 memory_prompt = system_prompt + f"\n\nGESPEICHERTE FAKTEN ZU DIESER FRAGE:\n{facts_text}"
                 memory_prompt += "\nBeantworte basierend auf diesen gespeicherten Fakten."
                 memory_messages[0] = {"role": "system", "content": memory_prompt}
+            else:
+                # Flow 6 Fix: Kein Fakt gefunden — LLM explizit anweisen ehrlich zu antworten
+                # statt zu halluzinieren. Verhindert erfundene "Erinnerungen".
+                no_memory_prompt = system_prompt + (
+                    "\n\nDer User fragt nach einer Erinnerung, aber es wurden KEINE "
+                    "gespeicherten Fakten gefunden. Antworte ehrlich, dass du dazu "
+                    "nichts gespeichert hast. ERFINDE KEINE Erinnerungen."
+                )
+                memory_messages[0] = {"role": "system", "content": no_memory_prompt}
 
             model = self.model_router._cap_model(self.model_router.model_smart)
             _cascade = await self._llm_with_cascade(
@@ -5795,6 +5822,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
           - LED_BLINK: Nur visuelles Signal, kein TTS (Schlaf + high, Film + high)
         """
         try:
+            # Conflict B: User-Request hat IMMER Vorrang — proaktive Callbacks
+            # warten bis der User-Request fertig ist (ausser CRITICAL).
+            if urgency != "critical" and self._user_request_active:
+                logger.info(
+                    "Callback unterdrückt (User-Request aktiv): Quelle=%s, Urgency=%s",
+                    source, urgency,
+                )
+                return False
+
             # Unbekannte Urgency-Level (z.B. "info" von Ambient Audio) normalisieren,
             # damit sie nicht auf den Default TTS_LOUD der Silence Matrix fallen
             if urgency not in self._VALID_URGENCIES:

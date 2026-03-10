@@ -414,13 +414,16 @@ class MultiRoomAudio:
         return {"success": True, "message": "\n".join(lines)}
 
     async def _build_group_status(self, group: dict) -> dict:
-        """Detaillierter Status einer einzelnen Gruppe."""
+        """Detaillierter Status einer einzelnen Gruppe (parallel statt sequentiell)."""
         lines = [f"Gruppe '{group['name']}':"]
         if group.get("description"):
             lines.append(f"  {group['description']}")
 
-        for speaker in group.get("speakers", []):
-            vol = group.get("speaker_volumes", {}).get(speaker, "?")
+        speakers = group.get("speakers", [])
+        speaker_volumes = group.get("speaker_volumes", {})
+
+        async def _get_speaker_info(speaker: str) -> str:
+            vol = speaker_volumes.get(speaker, "?")
             try:
                 state = await self.ha.get_state(speaker)
                 if state:
@@ -431,11 +434,14 @@ class MultiRoomAudio:
                     if title:
                         info += f" — {title}"
                     info += f" (Vol: {vol}%)"
-                    lines.append(info)
-                else:
-                    lines.append(f"  {speaker}: nicht erreichbar (Vol: {vol}%)")
+                    return info
+                return f"  {speaker}: nicht erreichbar (Vol: {vol}%)"
             except Exception:
-                lines.append(f"  {speaker}: Fehler (Vol: {vol}%)")
+                return f"  {speaker}: Fehler (Vol: {vol}%)"
+
+        if speakers:
+            results = await asyncio.gather(*[_get_speaker_info(s) for s in speakers])
+            lines.extend(results)
 
         return {"success": True, "message": "\n".join(lines)}
 
@@ -482,18 +488,20 @@ class MultiRoomAudio:
             return None
 
     async def _get_speaker_names(self, entity_ids: list[str]) -> list[str]:
-        """Loest Entity-IDs zu friendly_names auf."""
-        names = []
-        for eid in entity_ids:
+        """Loest Entity-IDs zu friendly_names auf (parallel statt sequentiell)."""
+        async def _resolve(eid: str) -> str:
             try:
                 state = await self.ha.get_state(eid)
                 if state:
-                    names.append(state.get("attributes", {}).get("friendly_name", eid))
-                else:
-                    names.append(eid.replace("media_player.", ""))
+                    return state.get("attributes", {}).get("friendly_name", eid)
+                return eid.replace("media_player.", "")
             except Exception:
-                names.append(eid.replace("media_player.", ""))
-        return names
+                return eid.replace("media_player.", "")
+
+        if not entity_ids:
+            return []
+        results = await asyncio.gather(*[_resolve(eid) for eid in entity_ids])
+        return list(results)
 
     async def discover_speakers(self) -> list[dict]:
         """Erkennt alle verfuegbaren Speaker im HA-System."""
