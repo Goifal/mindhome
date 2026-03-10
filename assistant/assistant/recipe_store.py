@@ -9,6 +9,7 @@ allgemeinen Wissensdatenbank. Nur der Kochmodus greift darauf zu.
 - Semantische Suche fuer Rezept-Lookup beim Kochen
 """
 
+import asyncio
 import hashlib
 import logging
 from datetime import datetime
@@ -63,9 +64,10 @@ class RecipeStore:
             if ef:
                 col_kwargs["embedding_function"] = ef
             self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+            _count = await asyncio.to_thread(self.chroma_collection.count)
             logger.info(
                 "Recipe Store initialisiert (ChromaDB: mha_recipes, %d Eintraege)",
-                self.chroma_collection.count(),
+                _count,
             )
         except Exception as e:
             logger.warning("Recipe Store ChromaDB nicht verfuegbar: %s", e)
@@ -77,8 +79,8 @@ class RecipeStore:
         self._recipes_dir = config_dir / "recipes"
         self._recipes_dir.mkdir(exist_ok=True)
 
-        # Bestehende Hashes laden
-        self._load_ingested_hashes()
+        # Bestehende Hashes laden (sync Methode in Thread ausfuehren)
+        await asyncio.to_thread(self._load_ingested_hashes)
 
         # Auto-Ingestion beim Start
         if rec_config.get("auto_ingest", True):
@@ -153,7 +155,8 @@ class RecipeStore:
             }
 
             try:
-                self.chroma_collection.add(
+                await asyncio.to_thread(
+                    self.chroma_collection.add,
                     documents=[chunk],
                     metadatas=[metadata],
                     ids=[chunk_id],
@@ -179,7 +182,8 @@ class RecipeStore:
         max_distance = rec_config.get("max_distance", 1.0)
 
         try:
-            results = self.chroma_collection.query(
+            results = await asyncio.to_thread(
+                self.chroma_collection.query,
                 query_texts=[query],
                 n_results=limit,
             )
@@ -218,8 +222,10 @@ class RecipeStore:
             return {"enabled": False, "total_chunks": 0, "sources": []}
 
         try:
-            total = self.chroma_collection.count()
-            existing = self.chroma_collection.get(include=["metadatas"])
+            total = await asyncio.to_thread(self.chroma_collection.count)
+            existing = await asyncio.to_thread(
+                self.chroma_collection.get, include=["metadatas"],
+            )
             sources = set()
             if existing and existing.get("metadatas"):
                 for meta in existing["metadatas"]:
@@ -242,7 +248,8 @@ class RecipeStore:
 
         try:
             where = {"source_file": source} if source else None
-            results = self.chroma_collection.get(
+            results = await asyncio.to_thread(
+                self.chroma_collection.get,
                 include=["documents", "metadatas"],
                 where=where,
             )
@@ -270,7 +277,7 @@ class RecipeStore:
             return 0
 
         try:
-            self.chroma_collection.delete(ids=chunk_ids)
+            await asyncio.to_thread(self.chroma_collection.delete, ids=chunk_ids)
             logger.info("Recipe Store: %d Chunks geloescht", len(chunk_ids))
             return len(chunk_ids)
         except Exception as e:
@@ -283,7 +290,8 @@ class RecipeStore:
             return 0
 
         try:
-            results = self.chroma_collection.get(
+            results = await asyncio.to_thread(
+                self.chroma_collection.get,
                 where={"source_file": source_file},
                 include=["metadatas"],
             )
@@ -295,7 +303,7 @@ class RecipeStore:
                 h = meta.get("content_hash", "")
                 self._ingested_hashes.discard(h)
 
-            self.chroma_collection.delete(ids=chunk_ids)
+            await asyncio.to_thread(self.chroma_collection.delete, ids=chunk_ids)
             logger.info("Recipe Store: %d Chunks von '%s' geloescht", len(chunk_ids), source_file)
             return len(chunk_ids)
         except Exception as e:

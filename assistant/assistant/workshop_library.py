@@ -5,6 +5,7 @@ Eigene ChromaDB-Collection (workshop_library) fuer Werkstatt-Dokumente
 wie Datenblaetter, Reparaturanleitungen und Referenzhandbuecher.
 """
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Optional
@@ -41,10 +42,11 @@ class WorkshopLibrary:
             name=self.COLLECTION_NAME,
             metadata={"description": "Workshop technical reference library"},
         )
+        _count = await asyncio.to_thread(self.collection.count)
         logger.info(
             "WorkshopLibrary: Collection '%s' mit %d Dokumenten",
             self.COLLECTION_NAME,
-            self.collection.count(),
+            _count,
         )
 
     async def ingest_document(self, filepath: str) -> dict:
@@ -85,34 +87,44 @@ class WorkshopLibrary:
 
         if self.embedding_fn:
             embeddings = [self.embedding_fn(chunk) for chunk in chunks]
-            self.collection.upsert(
+            await asyncio.to_thread(
+                self.collection.upsert,
                 ids=ids, documents=chunks, metadatas=metadatas, embeddings=embeddings,
             )
         else:
-            self.collection.upsert(ids=ids, documents=chunks, metadatas=metadatas)
+            await asyncio.to_thread(
+                self.collection.upsert,
+                ids=ids, documents=chunks, metadatas=metadatas,
+            )
 
+        _total = await asyncio.to_thread(self.collection.count)
         return {
             "status": "ok",
             "document": path.name,
             "chunks": len(chunks),
-            "total_docs": self.collection.count(),
+            "total_docs": _total,
         }
 
     async def search(self, query: str, n_results: int = 5) -> list:
         """Sucht in der Workshop-Library."""
-        if not self.collection or self.collection.count() == 0:
+        if not self.collection:
+            return []
+        _count = await asyncio.to_thread(self.collection.count)
+        if _count == 0:
             return []
 
         if self.embedding_fn:
             query_embedding = self.embedding_fn(query)
-            results = self.collection.query(
+            results = await asyncio.to_thread(
+                self.collection.query,
                 query_embeddings=[query_embedding],
-                n_results=min(n_results, self.collection.count()),
+                n_results=min(n_results, _count),
             )
         else:
-            results = self.collection.query(
+            results = await asyncio.to_thread(
+                self.collection.query,
                 query_texts=[query],
-                n_results=min(n_results, self.collection.count()),
+                n_results=min(n_results, _count),
             )
 
         formatted = []
@@ -145,7 +157,7 @@ class WorkshopLibrary:
 
     async def get_stats(self) -> dict:
         """Gibt Statistiken der Workshop-Library zurueck."""
-        count = self.collection.count() if self.collection else 0
+        count = (await asyncio.to_thread(self.collection.count)) if self.collection else 0
         docs = await self.list_documents()
         return {
             "total_chunks": count,

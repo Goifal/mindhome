@@ -69,9 +69,10 @@ class KnowledgeBase:
             if ef:
                 col_kwargs["embedding_function"] = ef
             self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+            _count = await asyncio.to_thread(self.chroma_collection.count)
             logger.info(
                 "Knowledge Base initialisiert (ChromaDB: mha_knowledge_base, %d Eintraege)",
-                self.chroma_collection.count(),
+                _count,
             )
         except Exception as e:
             logger.warning("Knowledge Base ChromaDB nicht verfuegbar: %s", e)
@@ -85,8 +86,8 @@ class KnowledgeBase:
         # Verzeichnis erstellen falls nicht vorhanden
         self._knowledge_dir.mkdir(exist_ok=True)
 
-        # Bestehende Hashes laden (um Duplikat-Ingestion zu vermeiden)
-        self._load_ingested_hashes()
+        # Bestehende Hashes laden (sync Methode in Thread ausfuehren)
+        await asyncio.to_thread(self._load_ingested_hashes)
 
         # Auto-Ingestion beim Start
         if kb_config.get("auto_ingest", True):
@@ -250,7 +251,8 @@ class KnowledgeBase:
             }
 
             try:
-                self.chroma_collection.add(
+                await asyncio.to_thread(
+                    self.chroma_collection.add,
                     documents=[chunk],
                     metadatas=[metadata],
                     ids=[chunk_id],
@@ -294,7 +296,8 @@ class KnowledgeBase:
             }
 
             try:
-                self.chroma_collection.add(
+                await asyncio.to_thread(
+                    self.chroma_collection.add,
                     documents=[chunk],
                     metadatas=[metadata],
                     ids=[chunk_id],
@@ -328,7 +331,8 @@ class KnowledgeBase:
             all_hits: dict[str, dict] = {}  # content_hash -> best hit
 
             for q in queries:
-                results = self.chroma_collection.query(
+                results = await asyncio.to_thread(
+                    self.chroma_collection.query,
                     query_texts=[q],
                     n_results=fetch_per_query,
                 )
@@ -427,8 +431,10 @@ class KnowledgeBase:
             return {"enabled": False, "total_chunks": 0, "sources": []}
 
         try:
-            total = self.chroma_collection.count()
-            existing = self.chroma_collection.get(include=["metadatas"])
+            total = await asyncio.to_thread(self.chroma_collection.count)
+            existing = await asyncio.to_thread(
+                self.chroma_collection.get, include=["metadatas"],
+            )
             sources = set()
             if existing and existing.get("metadatas"):
                 for meta in existing["metadatas"]:
@@ -451,7 +457,8 @@ class KnowledgeBase:
 
         try:
             where = {"source_file": source} if source else None
-            results = self.chroma_collection.get(
+            results = await asyncio.to_thread(
+                self.chroma_collection.get,
                 include=["documents", "metadatas"],
                 where=where,
             )
@@ -480,7 +487,7 @@ class KnowledgeBase:
             return 0
 
         try:
-            self.chroma_collection.delete(ids=chunk_ids)
+            await asyncio.to_thread(self.chroma_collection.delete, ids=chunk_ids)
             logger.info("Knowledge Base: %d Chunks geloescht", len(chunk_ids))
             return len(chunk_ids)
         except Exception as e:
@@ -493,7 +500,8 @@ class KnowledgeBase:
             return 0
 
         try:
-            results = self.chroma_collection.get(
+            results = await asyncio.to_thread(
+                self.chroma_collection.get,
                 where={"source_file": source_file},
                 include=["metadatas"],
             )
@@ -506,7 +514,7 @@ class KnowledgeBase:
                 h = meta.get("content_hash", "")
                 self._ingested_hashes.discard(h)
 
-            self.chroma_collection.delete(ids=chunk_ids)
+            await asyncio.to_thread(self.chroma_collection.delete, ids=chunk_ids)
             logger.info("Knowledge Base: %d Chunks von '%s' geloescht", len(chunk_ids), source_file)
             return len(chunk_ids)
         except Exception as e:

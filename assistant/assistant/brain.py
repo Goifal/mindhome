@@ -6023,42 +6023,74 @@ class AssistantBrain(BrainCallbacksMixin):
     async def _get_conversation_memory(self, text: str) -> Optional[str]:
         """Kontext-Kette: Sucht relevante vergangene Gespraeche.
 
+        Kombiniert semantische Fakten-Konversationen MIT episodischem
+        ChromaDB-Gedaechtnis (mha_conversations) fuer vollstaendige
+        Konversations-Kontinuitaet.
+
         Wird parallel mit dem Context-Build ausgefuehrt.
         """
         try:
-            if not self.memory or not self.memory.semantic:
+            if not self.memory:
                 return None
-            convos = await self.memory.semantic.get_relevant_conversations(text, limit=3)
-            if not convos:
-                return None
+
             lines = []
-            for c in convos:
-                created = c.get("created_at", "")
-                date_str = ""
-                if created:
-                    try:
-                        from datetime import datetime
-                        dt = datetime.fromisoformat(created)
-                        days_ago = (datetime.now() - dt).days
-                        if days_ago == 0:
-                            date_str = "Heute"
-                        elif days_ago == 1:
-                            date_str = "Gestern"
-                        elif days_ago < 7:
-                            date_str = dt.strftime("%A")  # Wochentag
-                        else:
-                            date_str = f"Vor {days_ago} Tagen"
-                    except (ValueError, TypeError):
-                        pass
-                content = c.get("content", "")
-                if date_str:
-                    lines.append(f"- {date_str}: {content}")
-                else:
-                    lines.append(f"- {content}")
-            return "\n".join(lines)
+
+            # 1. Semantische Konversations-Suche (via semantic_memory)
+            if self.memory.semantic:
+                try:
+                    convos = await self.memory.semantic.get_relevant_conversations(text, limit=3)
+                    if convos:
+                        for c in convos:
+                            created = c.get("created_at", "")
+                            date_str = self._format_days_ago(created)
+                            content = c.get("content", "")
+                            if date_str:
+                                lines.append(f"- {date_str}: {content}")
+                            else:
+                                lines.append(f"- {content}")
+                except Exception as e:
+                    logger.debug("Semantic conv lookup fehlgeschlagen: %s", e)
+
+            # 2. Episodisches Gedaechtnis (ChromaDB mha_conversations)
+            try:
+                episodes = await self.memory.search_memories(text, limit=3)
+                if episodes:
+                    for ep in episodes:
+                        ts = ep.get("timestamp", "")
+                        date_str = self._format_days_ago(ts)
+                        content = ep.get("content", "")[:200]
+                        if content and content not in "\n".join(lines):
+                            if date_str:
+                                lines.append(f"- {date_str}: {content}")
+                            else:
+                                lines.append(f"- {content}")
+            except Exception as e:
+                logger.debug("Episodic memory lookup fehlgeschlagen: %s", e)
+
+            return "\n".join(lines) if lines else None
         except Exception as e:
             logger.debug("Kontext-Kette Lookup fehlgeschlagen: %s", e)
             return None
+
+    @staticmethod
+    def _format_days_ago(iso_str: str) -> str:
+        """Formatiert ISO-Timestamp als relative Zeitangabe."""
+        if not iso_str:
+            return ""
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(iso_str)
+            days_ago = (datetime.now() - dt).days
+            if days_ago == 0:
+                return "Heute"
+            elif days_ago == 1:
+                return "Gestern"
+            elif days_ago < 7:
+                return dt.strftime("%A")
+            else:
+                return f"Vor {days_ago} Tagen"
+        except (ValueError, TypeError):
+            return ""
 
     async def _get_summary_context(self, text: str) -> str:
         """Holt relevante Langzeit-Summaries wenn die Frage die Vergangenheit betrifft."""

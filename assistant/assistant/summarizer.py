@@ -272,7 +272,8 @@ class DailySummarizer:
             return []
 
         try:
-            results = self.chroma_collection.query(
+            results = await asyncio.to_thread(
+                self.chroma_collection.query,
                 query_texts=[query],
                 n_results=limit,
                 where={"type": {"$in": [DAILY, WEEKLY, MONTHLY]}},
@@ -388,7 +389,8 @@ class DailySummarizer:
         if self.chroma_collection:
             try:
                 doc_id = f"summary_{summary_type}_{date}"
-                self.chroma_collection.upsert(
+                await asyncio.to_thread(
+                    self.chroma_collection.upsert,
                     documents=[content],
                     metadatas=[{
                         "date": date,
