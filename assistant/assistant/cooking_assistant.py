@@ -99,7 +99,7 @@ class CookingSession:
 
 # Koch-Intent Erkennung
 COOKING_START_TRIGGERS = [
-    "ich will", "ich möchte", "ich möchte", "lass uns", "wir kochen",
+    "ich will", "ich möchte", "lass uns", "wir kochen",
     "wir backen", "hilf mir", "ich koche", "ich backe",
 ]
 

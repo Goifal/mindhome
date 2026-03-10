@@ -30,7 +30,7 @@ import time
 from datetime import datetime
 from typing import Optional, Callable, Awaitable
 
-from .config import yaml_config, settings
+from .config import yaml_config
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)

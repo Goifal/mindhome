@@ -739,8 +739,13 @@ async def chat(request: ChatRequest):
     except Exception as e:
         logger.error("brain.process() Exception fuer '%s': %s", request.text[:100], e, exc_info=True)
         error_type = type(e).__name__
+        _error_msgs = [
+            "Da lief etwas nicht nach Plan. Einen Moment, ich versuche es anders.",
+            "Nicht ganz wie vorgesehen. Ich bleibe dran.",
+            "Suboptimal. Ich pruefe eine Alternative.",
+        ]
         result = {
-            "response": "Da ist etwas schiefgelaufen. Versuch es nochmal.",
+            "response": random.choice(_error_msgs),
             "actions": [],
             "model_used": "error",
             "context_room": request.room or "unbekannt",
@@ -2096,12 +2101,11 @@ async def websocket_endpoint(websocket: WebSocket):
                           except Exception as e:
                             logger.error("Streaming-Fehler: %s", e, exc_info=True)
                             # Sicherstellen dass der Client nicht haengen bleibt
+                            _stream_error = "Nicht ganz wie vorgesehen. Ich bleibe dran."
                             if stream_tokens_sent:
-                                await emit_stream_end(
-                                    "Da ist etwas schiefgelaufen. Versuch es nochmal.")
+                                await emit_stream_end(_stream_error)
                             else:
-                                await emit_speaking(
-                                    "Da ist etwas schiefgelaufen. Versuch es nochmal.")
+                                await emit_speaking(_stream_error)
                         else:
                             # brain.process() sendet intern via _speak_and_emit
                             result = await brain.process(text, person, room=room,

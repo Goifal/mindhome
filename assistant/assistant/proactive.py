@@ -992,7 +992,7 @@ class ProactiveManager:
         ):
             try:
                 autonomy = getattr(self.brain, "autonomy", None)
-                level = getattr(autonomy, "current_level", 3) if autonomy else 3
+                level = getattr(autonomy, "level", 3) if autonomy else 3
                 wakeup_done = await self.brain.routines.execute_wakeup_sequence(
                     autonomy_level=level,
                 )
@@ -1028,12 +1028,23 @@ class ProactiveManager:
                     _title = ", ".join(_titles)
                 else:
                     _title = get_person_title()
-                _greetings = [
-                    f"Guten Morgen, {_title}.",
-                    f"Morgen, {_title}. Systeme laufen.",
-                    "Guten Morgen. Alles bereit.",
-                    f"Morgen, {_title}. Hier die Lage.",
-                ]
+                # Persoenlichkeits-konsistente Greetings basierend auf Sarkasmus-Level
+                _sarcasm = getattr(self.brain, "personality", None)
+                _sl = getattr(_sarcasm, "sarcasm_level", 2) if _sarcasm else 2
+                if _sl >= 3:
+                    _greetings = [
+                        f"Morgen, {_title}. Systeme laufen. Du uebrigens auch.",
+                        f"Guten Morgen, {_title}. Ich war schon wach.",
+                        f"Morgen, {_title}. Hier die Lage — kurz, bevor du fragst.",
+                        f"Guten Morgen. Alles im Griff, {_title}.",
+                    ]
+                else:
+                    _greetings = [
+                        f"Guten Morgen, {_title}.",
+                        f"Morgen, {_title}. Systeme laufen.",
+                        f"Guten Morgen. Alles bereit, {_title}.",
+                        f"Morgen, {_title}. Hier die Lage.",
+                    ]
                 greeting = random.choice(_greetings)
                 text = f"{greeting} {text}"
 

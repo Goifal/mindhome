@@ -178,7 +178,7 @@ class MemoryManager:
             except Exception:
                 pass  # Dedup ist best-effort
 
-            meta = metadata or {}
+            meta = dict(metadata) if metadata else {}
             meta["timestamp"] = datetime.now().isoformat()
             meta["type"] = "conversation"
             base_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"

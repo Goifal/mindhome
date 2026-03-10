@@ -78,10 +78,10 @@ HUMOR_TEMPLATES = {
         "'Interessante Wahl, {title}. Wird umgesetzt.'"
     ),
     5: (
-        "Durchgehend trockener Humor. Du kommentierst elegant und mit Understatement. Nie platt, nie laut.\n"
-        "Beispiele: 'Alle Lichter aus um drei Uhr morgens. Eine gewagte Entscheidung.' | "
-        "'28 Grad. Ambitioniert, {title}.' | "
-        "'Das war der fuenfte Versuch. Ich bewundere die Bestaendigkeit.'"
+        "Häufig trocken-sarkastisch. Bemerkungen mit Understatement — wie ein Butler der alles sieht.\n"
+        "Beispiele: 'Darf ich anmerken, dass das die dritte Änderung heute ist.' | "
+        "'Selbstverständlich. Ich hatte es bereits berechnet.' | "
+        "'Interessante Wahl, {title}. Wird umgesetzt.'"
     ),
 }
 
@@ -1420,7 +1420,7 @@ class PersonalityEngine:
         elif mood == "tired":
             effective_level = min(base_level, 2)
         elif mood == "good":
-            effective_level = min(5, base_level + 1)
+            effective_level = min(4, base_level + 1)
         else:
             effective_level = base_level
 
@@ -1432,6 +1432,9 @@ class PersonalityEngine:
             effective_level = max(2, effective_level - 2)
         elif streak >= 4 and effective_level >= 3:
             effective_level = max(2, effective_level - 1)
+
+        # MCU-Authentizitaet: Cap bei 4 — Jarvis ist nie aggressiv sarkastisch
+        effective_level = min(effective_level, 4)
 
         # Tageszeit-Dampening
         if time_of_day == "early_morning":
@@ -1682,8 +1685,12 @@ class PersonalityEngine:
     async def _check_repeated_question_gag(self, text: str) -> Optional[str]:
         """Erkennt wenn User die gleiche Frage oft stellt."""
         key = f"mha:gag:repeat:{int(hashlib.md5(text.encode()).hexdigest(), 16) % 10000}"
-        count = await self._redis.incr(key)
-        await self._redis.expire(key, 86400)  # 24h
+        try:
+            count = await self._redis.incr(key)
+            await self._redis.expire(key, 86400)  # 24h
+        except Exception as e:
+            logger.debug("Redis error in _check_repeated_question_gag: %s", e)
+            return None
 
         gags = {
             3: "Das hatten wir heute bereits. Selbstverständlich nochmal.",
@@ -1700,8 +1707,12 @@ class PersonalityEngine:
             return None
 
         key = "mha:gag:thermostat_changes"
-        count = await self._redis.incr(key)
-        await self._redis.expire(key, 3600)  # 1h Fenster
+        try:
+            count = await self._redis.incr(key)
+            await self._redis.expire(key, 3600)  # 1h Fenster
+        except Exception as e:
+            logger.debug("Redis error in _check_thermostat_war_gag: %s", e)
+            return None
 
         gags = {
             4: "Vierte Anpassung in einer Stunde. Darf ich einen Vorschlag machen?",
@@ -1726,8 +1737,12 @@ class PersonalityEngine:
             return None
 
         key = f"mha:escalation:{action_key}"
-        count = await self._redis.incr(key)
-        await self._redis.expire(key, 7 * 86400)  # 7-Tage-Fenster
+        try:
+            count = await self._redis.incr(key)
+            await self._redis.expire(key, 7 * 86400)  # 7-Tage-Fenster
+        except Exception as e:
+            logger.debug("Redis error in check_escalation: %s", e)
+            return None
 
         escalation_map = {
             2: None,  # Zweites Mal: noch nichts sagen
@@ -1744,7 +1759,11 @@ class PersonalityEngine:
         now = datetime.now().timestamp()
 
         # Letzte Fragen holen
-        recent = await self._redis.lrange(key, 0, 4)
+        try:
+            recent = await self._redis.lrange(key, 0, 4)
+        except Exception as e:
+            logger.debug("Redis error in _check_short_memory_gag (lrange): %s", e)
+            return None
 
         for item in (recent or []):
             try:
@@ -1759,9 +1778,12 @@ class PersonalityEngine:
                 continue
 
         # Aktuelle Frage speichern
-        await self._redis.lpush(key, f"{now}|{text}")
-        await self._redis.ltrim(key, 0, 9)
-        await self._redis.expire(key, 90 * 86400)
+        try:
+            await self._redis.lpush(key, f"{now}|{text}")
+            await self._redis.ltrim(key, 0, 9)
+            await self._redis.expire(key, 90 * 86400)
+        except Exception as e:
+            logger.debug("Redis error in _check_short_memory_gag (lpush): %s", e)
 
         return None
 
@@ -2218,8 +2240,7 @@ class PersonalityEngine:
 
         # Stimmungsabhängige Anpassung
         mood = (context.get("mood") or {}).get("mood", "neutral") if context else "neutral"
-        async with self._state_lock:
-            self._current_mood = mood
+        self._current_mood = mood
         _neutral_fallback = self._mood_styles.get("neutral", {"style_addon": "", "max_sentences_mod": 0})
         mood_config = self._mood_styles.get(mood, _neutral_fallback)
 
@@ -2230,7 +2251,7 @@ class PersonalityEngine:
             max_sentences = self.get_mood_complexity_sentences(mood, user_text)
         else:
             # Fallback auf zeit-basierte Berechnung mit Mood-Modifier
-            max_sentences = max(1, max_sentences + mood_config["max_sentences_mod"])
+            max_sentences = max(1, max_sentences + mood_config.get("max_sentences_mod", 0))
 
         # Mood-Abschnitt
         mood_section = ""
@@ -2275,8 +2296,7 @@ class PersonalityEngine:
         if formality_score is None:
             # Per-Person Formality Override
             formality_score = person_profile.get("formality_start", self.formality_start)
-        async with self._state_lock:
-            self._current_formality = formality_score
+        self._current_formality = formality_score
         formality_section = self._build_formality_section(formality_score, mood=mood)
 
         # Person Anrede (nutzt self._current_formality für Titel-Häufigkeit)
@@ -2352,7 +2372,7 @@ class PersonalityEngine:
         weather_awareness_section = ""
         _wp_cfg = yaml_config.get("weather_personality", {})
         if _wp_cfg.get("enabled", True) and context:
-            weather = context.get("weather", {})
+            weather = context.get("house", {}).get("weather", {}) or context.get("weather", {})
             if weather:
                 # Fix: Typ-Validierung gegen Prompt Injection via kompromittierte HA-Entities
                 _temp_raw = weather.get("temperature", "")

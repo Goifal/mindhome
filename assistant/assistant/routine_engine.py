@@ -530,8 +530,8 @@ class RoutineEngine:
                         parts.append(f"Solar: {solar}")
                     if price:
                         parts.append(f"Strompreis: {price}")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Energy briefing error: %s", e)
 
         return "Energie: " + ", ".join(parts) if parts else ""
 

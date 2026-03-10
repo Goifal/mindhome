@@ -742,8 +742,12 @@ class ContextBuilder:
                 and state.get("state") == "on"
             ):
                 last_changed = state.get("last_changed", "")
-                if not latest_motion or last_changed > latest_motion:
-                    latest_motion = last_changed
+                try:
+                    if not latest_motion or datetime.fromisoformat(last_changed) > datetime.fromisoformat(latest_motion):
+                        latest_motion = last_changed
+                except (ValueError, TypeError):
+                    if not latest_motion:
+                        latest_motion = last_changed
                     name = state.get("attributes", {}).get(
                         "friendly_name", entity_id
                     )

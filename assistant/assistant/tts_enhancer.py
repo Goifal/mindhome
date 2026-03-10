@@ -304,16 +304,26 @@ class TTSEnhancer:
             if activity == "sleeping":
                 return vol_sleeping
 
-            # Tageszeit-basiert
+            # Tageszeit-basiert — evening check before night check
             hour = datetime.now().hour
+
+            # Evening: between evening_start and night_start
+            is_evening = False
+            if night_start > evening_start:
+                is_evening = evening_start <= hour < night_start
+            elif night_start <= evening_start:
+                # night_start at or before evening_start (e.g. night_start=0)
+                is_evening = hour >= evening_start
+            if is_evening:
+                return vol_evening
+
+            # Night: between night_start and morning_start (may wrap midnight)
             if night_start > morning_start:
                 # Über Mitternacht: z.B. 22-6
                 if hour >= night_start or hour < morning_start:
                     return vol_night
             elif night_start <= hour < morning_start:
                 return vol_night
-            elif hour >= evening_start:
-                return vol_evening
 
             return vol_day
         except Exception as e:

@@ -13,7 +13,6 @@ egal welches Autonomie-Level.
 import asyncio
 import json
 import logging
-import time
 from datetime import datetime
 from typing import Optional
 
@@ -25,12 +24,6 @@ logger = logging.getLogger(__name__)
 
 # Redis-Key-Prefix
 _PREFIX = "mha:proactive_planner"
-
-# Gaeste-Keywords im Kalender
-_GUEST_KEYWORDS = [
-    "gast", "gaeste", "besuch", "party", "feier", "einladung",
-    "dinner", "abendessen", "geburtstag", "grillen", "brunch",
-]
 
 
 class ProactiveSequencePlanner:

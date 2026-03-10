@@ -716,15 +716,16 @@ class MoodDetector:
             hints.append("Stimmungstrend: instabil. Neutral bleiben.")
 
         # Voice-Signale als Kontext (wenn vorhanden)
-        voice_signals = self._last_voice_signals
+        voice_signals = s.get("voice_signals", [])
         if voice_signals:
             voice_desc = ", ".join(voice_signals[:3])
             hints.append(f"Stimm-Analyse: {voice_desc}.")
 
         # Voice-Emotion als zusaetzlicher Kontext (wenn vorhanden)
-        if self._last_voice_emotion and self._last_voice_emotion.get("confidence", 0) >= 0.4:
-            emo = self._last_voice_emotion["emotion"]
-            conf = self._last_voice_emotion["confidence"]
+        voice_emotion = s.get("voice_emotion") or self._last_voice_emotion
+        if voice_emotion and voice_emotion.get("confidence", 0) >= 0.4:
+            emo = voice_emotion["emotion"]
+            conf = voice_emotion["confidence"]
             emotion_labels = {
                 "happy": "froehlich", "sad": "traurig", "angry": "aergerlich",
                 "anxious": "aengstlich/nervoes", "tired": "muede",

@@ -344,7 +344,7 @@ class ProtocolEngine:
 
         for member in members:
             name = member.decode() if isinstance(member, bytes) else member
-            if name in text_lower or text_lower == name:
+            if re.search(rf'\b{re.escape(name)}\b', text_lower):
                 return name
 
         return None

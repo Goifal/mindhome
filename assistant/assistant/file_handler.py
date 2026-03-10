@@ -5,7 +5,6 @@ Verarbeitet hochgeladene Dateien: Speicherung, Text-Extraktion, Metadaten.
 
 import logging
 import os
-import re
 import uuid
 from pathlib import Path
 from typing import Optional

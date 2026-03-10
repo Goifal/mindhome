@@ -5573,7 +5573,6 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if not iso_str:
             return ""
         try:
-            from datetime import datetime
             dt = datetime.fromisoformat(iso_str)
             days_ago = (datetime.now() - dt).days
             if days_ago == 0:

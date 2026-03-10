@@ -16,7 +16,6 @@ Feature 10.6: Self-Diagnostik
 """
 
 import logging
-import os
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

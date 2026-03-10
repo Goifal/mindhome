@@ -3394,7 +3394,7 @@ class FunctionExecutor:
         except Exception as e:
             # F-088: Exception-Details NICHT an LLM/User leaken
             logger.error("Fehler bei %s: %s", function_name, e, exc_info=True)
-            return {"success": False, "message": "Da lief etwas schief. Bitte versuche es erneut."}
+            return {"success": False, "message": "Suboptimal. Ich versuche einen anderen Weg."}
 
     # ── Phase 18: Pre-Execution Consequence Check ──────────────
 
@@ -3819,7 +3819,7 @@ class FunctionExecutor:
         """Alle Lichter ein- oder ausschalten."""
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Die Geräte sind momentan nicht ansprechbar. Ich versuche es gleich erneut."}
+            return {"success": False, "message": "Die Systeme antworten gerade nicht. Ich versuche es gleich erneut."}
 
         service = "turn_on" if state == "on" else "turn_off"
         count = 0
@@ -3857,7 +3857,7 @@ class FunctionExecutor:
         # HA-States für aktuellen Status laden
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Kann gerade nicht auf die Geräte zugreifen."}
+            return {"success": False, "message": "Die Systeme antworten gerade nicht. Ich versuche es gleich erneut."}
 
         # State-Lookup: entity_id -> state-dict
         state_map = {}
@@ -3925,7 +3925,7 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Kann gerade nicht auf die Geräte zugreifen."}
+            return {"success": False, "message": "Die Systeme antworten gerade nicht. Ich versuche es gleich erneut."}
 
         state_map = {}
         for s in states:
@@ -3988,7 +3988,7 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Kann gerade nicht auf die Geräte zugreifen."}
+            return {"success": False, "message": "Die Systeme antworten gerade nicht. Ich versuche es gleich erneut."}
 
         search_norm = self._normalize_name(room_filter) if room_filter else ""
         players = []
@@ -4041,7 +4041,7 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Kann gerade nicht auf die Geräte zugreifen."}
+            return {"success": False, "message": "Die Systeme antworten gerade nicht. Ich versuche es gleich erneut."}
 
         state_map = {}
         for s in states:
@@ -4110,7 +4110,7 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Kann gerade nicht auf die Geräte zugreifen."}
+            return {"success": False, "message": "Die Systeme antworten gerade nicht. Ich versuche es gleich erneut."}
 
         state_map = {}
         # Sensor-Map für zugehoerige Power-Sensoren (sensor.*_power, sensor.*_current etc.)
@@ -8033,7 +8033,7 @@ class FunctionExecutor:
 
         states = await self.ha.get_states()
         if not states:
-            return {"success": False, "message": "Kann gerade nicht auf Home Assistant zugreifen."}
+            return {"success": False, "message": "Die Systeme antworten gerade nicht. Ich versuche es gleich erneut."}
 
         weather_entity = None
         for s in states:

@@ -13,8 +13,6 @@ Alle Daten in Redis mit TTL (max 2 Jahre).
 import asyncio
 import json
 import logging
-import time
-from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Optional
 
