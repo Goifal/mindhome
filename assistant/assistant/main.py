@@ -7350,8 +7350,8 @@ _update_lock = asyncio.Lock()
 _update_log: list[str] = []
 
 
-def _run_cmd(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tuple[int, str]:
-    """Fuehrt einen Shell-Befehl aus und gibt (returncode, output) zurueck."""
+def _run_cmd_sync(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tuple[int, str]:
+    """Synchrone Hilfsfunktion — nicht direkt aus async-Code aufrufen."""
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True,
@@ -7362,6 +7362,11 @@ def _run_cmd(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tupl
         return -1, "Timeout"
     except Exception as e:
         return -1, str(e)
+
+
+async def _run_cmd(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tuple[int, str]:
+    """Fuehrt einen Shell-Befehl aus ohne den Event-Loop zu blockieren."""
+    return await asyncio.to_thread(_run_cmd_sync, cmd, cwd, timeout)
 
 
 async def _ollama_api(path: str, method: str = "GET", json_data: dict | None = None) -> tuple[bool, dict | str]:
@@ -7420,14 +7425,14 @@ async def ui_system_status(token: str = ""):
     _check_token(token)
 
     # Git (via gemountetes /repo Volume)
-    _, branch = _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR))
-    _, commit = _run_cmd(["git", "log", "-1", "--format=%h %s"], cwd=str(_REPO_DIR))
-    _, git_status = _run_cmd(["git", "status", "--short"], cwd=str(_REPO_DIR))
+    _, branch = await _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR))
+    _, commit = await _run_cmd(["git", "log", "-1", "--format=%h %s"], cwd=str(_REPO_DIR))
+    _, git_status = await _run_cmd(["git", "status", "--short"], cwd=str(_REPO_DIR))
 
     # Container Health (via gemounteten Docker-Socket)
     containers = {}
     for name in ["mindhome-assistant", "mha-chromadb", "mha-redis", "mha-whisper", "mha-piper"]:
-        rc, out = _run_cmd(["docker", "inspect", "--format", "{{.State.Health.Status}}", name])
+        rc, out = await _run_cmd(["docker", "inspect", "--format", "{{.State.Health.Status}}", name])
         containers[name] = out.strip() if rc == 0 else "unknown"
 
     # Ollama (via HTTP API auf dem Host)
@@ -7534,7 +7539,7 @@ async def ui_system_status(token: str = ""):
         pass
     # Fallback 1: direktes nvidia-smi (falls Container GPU-Zugriff hat)
     if not gpu_info:
-        rc_gpu, gpu_out = _run_cmd([
+        rc_gpu, gpu_out = await _run_cmd([
             "nvidia-smi",
             "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
             "--format=csv,noheader,nounits",
@@ -7555,7 +7560,7 @@ async def ui_system_status(token: str = ""):
 
     # Fallback 2: nvidia-smi via Host PID namespace (Container hat Docker-Socket)
     if not gpu_info:
-        rc_gpu, gpu_out = _run_cmd([
+        rc_gpu, gpu_out = await _run_cmd([
             "nsenter", "--target", "1", "--mount", "--uts", "--",
             "nvidia-smi",
             "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
@@ -7604,7 +7609,7 @@ async def ui_system_status(token: str = ""):
             pass
 
     # Remote claude/* Branches auflisten
-    _, remote_branches_raw = _run_cmd(
+    _, remote_branches_raw = await _run_cmd(
         ["git", "branch", "-r", "--list", "origin/claude/*"],
         cwd=str(_REPO_DIR),
     )
@@ -7679,7 +7684,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
         _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update gestartet...")
 
         # Aktuellen Branch merken (fuer Rollback bei Fehler)
-        _, current_branch_raw = _run_cmd(
+        _, current_branch_raw = await _run_cmd(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR)
         )
         old_branch = current_branch_raw.strip()
@@ -7712,21 +7717,21 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
         # 0b. ALLE lokalen Aenderungen stashen, damit git pull/checkout sauber durchlaeuft.
         #     User-Config ist bereits in _saved_configs gesichert und wird danach
         #     wiederhergestellt — unabhaengig davon was Git macht.
-        _run_cmd(["git", "stash", "--include-untracked"], cwd=str(_REPO_DIR))
+        await _run_cmd(["git", "stash", "--include-untracked"], cwd=str(_REPO_DIR))
         _update_log.append("Lokale Aenderungen gestasht")
 
         # 1. Branch-Wechsel (falls gewuenscht)
         if switching:
             # Fetch des Ziel-Branches
             _update_log.append(f"Fetch origin/{target_branch}...")
-            rc_fetch, out_fetch = _run_cmd(
+            rc_fetch, out_fetch = await _run_cmd(
                 ["git", "fetch", "origin", target_branch],
                 cwd=str(_REPO_DIR), timeout=60,
             )
             if rc_fetch != 0:
                 _update_log.append(f"FEHLER: git fetch fehlgeschlagen: {out_fetch.strip()}")
                 # Stash droppen, Config wiederherstellen, abbrechen
-                _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
+                await _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
                 for cfg_path, content in _saved_configs.items():
                     try:
                         cfg_path.write_text(content, encoding="utf-8")
@@ -7736,15 +7741,15 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
 
             # Checkout auf Ziel-Branch
             _update_log.append(f"Checkout {target_branch}...")
-            rc_co, out_co = _run_cmd(
+            rc_co, out_co = await _run_cmd(
                 ["git", "checkout", target_branch],
                 cwd=str(_REPO_DIR), timeout=30,
             )
             if rc_co != 0:
                 _update_log.append(f"FEHLER: git checkout fehlgeschlagen: {out_co.strip()}")
                 # Zurueck zum alten Branch
-                _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
-                _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
+                await _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
+                await _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
                 for cfg_path, content in _saved_configs.items():
                     try:
                         cfg_path.write_text(content, encoding="utf-8")
@@ -7756,18 +7761,18 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
         # 2. Git Pull
         pull_branch = target_branch or old_branch
         _update_log.append(f"Git pull origin/{pull_branch}...")
-        rc, out = _run_cmd(
+        rc, out = await _run_cmd(
             ["git", "pull", "--rebase", "origin", pull_branch],
             cwd=str(_REPO_DIR), timeout=60,
         )
 
         # Stash wieder droppen (User-Config kommt aus _saved_configs, nicht aus stash)
-        _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
+        await _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
         _update_log.append(out.strip())
         if rc != 0:
             # Bei Fehler und Branch-Wechsel: zurueck zum alten Branch
             if switching:
-                _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
+                await _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
                 _update_log.append(f"Rollback zu {old_branch}")
             # User-Config wiederherstellen
             for cfg_path, content in _saved_configs.items():
@@ -7852,7 +7857,7 @@ async def ui_system_update_check(token: str = "", branch: str = ""):
     _check_token(token)
 
     # Aktuellen Branch ermitteln
-    _, current_branch_raw = _run_cmd(
+    _, current_branch_raw = await _run_cmd(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR)
     )
     current_branch = current_branch_raw.strip() or "main"
@@ -7860,7 +7865,7 @@ async def ui_system_update_check(token: str = "", branch: str = ""):
     is_different_branch = check_branch != current_branch
 
     # Fetch
-    rc, fetch_out = _run_cmd(
+    rc, fetch_out = await _run_cmd(
         ["git", "fetch", "origin", check_branch],
         cwd=str(_REPO_DIR), timeout=30,
     )
@@ -7873,8 +7878,8 @@ async def ui_system_update_check(token: str = "", branch: str = ""):
         }
 
     # Lokalen HEAD ermitteln
-    _, local = _run_cmd(["git", "rev-parse", "HEAD"], cwd=str(_REPO_DIR))
-    _, remote = _run_cmd(
+    _, local = await _run_cmd(["git", "rev-parse", "HEAD"], cwd=str(_REPO_DIR))
+    _, remote = await _run_cmd(
         ["git", "rev-parse", f"origin/{check_branch}"], cwd=str(_REPO_DIR)
     )
 
@@ -7896,14 +7901,14 @@ async def ui_system_update_check(token: str = "", branch: str = ""):
     # Bei anderem Branch oder unterschiedlichen Commits: Updates vorhanden
     if is_different_branch:
         # Commits auf dem Ziel-Branch anzeigen (letzte 20)
-        _, log = _run_cmd(
+        _, log = await _run_cmd(
             ["git", "log", "--oneline", "-20", f"origin/{check_branch}"],
             cwd=str(_REPO_DIR),
         )
         result["updates_available"] = True
         result["new_commits"] = log.strip().split("\n") if log.strip() else []
     else:
-        _, log = _run_cmd(
+        _, log = await _run_cmd(
             ["git", "log", "--oneline", f"{local}..{remote}"],
             cwd=str(_REPO_DIR),
         )

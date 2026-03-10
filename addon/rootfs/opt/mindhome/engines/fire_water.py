@@ -95,22 +95,28 @@ class FireResponseManager:
                         sensor_state = state.get("state", "unknown")
                         device_class = state.get("attributes", {}).get("device_class", "")
 
-                    alarm_active = a.entity_id in self._active_alarms
+                    with self._alarms_lock:
+                        alarm_active = a.entity_id in self._active_alarms
+                        alarm_type = self._active_alarms.get(a.entity_id)
                     sensors.append({
                         "entity_id": a.entity_id,
                         "state": sensor_state,
                         "device_class": device_class,
                         "alarm_active": alarm_active,
-                        "alarm_type": self._active_alarms.get(a.entity_id),
+                        "alarm_type": alarm_type,
                     })
         except Exception as e:
             logger.error(f"Error getting fire/CO status: {e}")
 
         return {
             "sensors": sensors,
-            "active_alarms": len(self._active_alarms),
+            "active_alarms": self._count_active_alarms(),
             "is_running": self._is_running,
         }
+
+    def _count_active_alarms(self):
+        with self._alarms_lock:
+            return len(self._active_alarms)
 
     def _on_state_changed(self, event):
         """Handle state change events — check for fire/CO triggers."""
@@ -404,10 +410,12 @@ class WaterLeakManager:
                 ).order_by(FeatureEntityAssignment.sort_order).all()
                 for a in sensor_assignments:
                     state = self.ha.get_state(a.entity_id) if self.ha else None
+                    with self._leaks_lock:
+                        leak_active = a.entity_id in self._active_leaks
                     sensors.append({
                         "entity_id": a.entity_id,
                         "state": state.get("state", "unknown") if state else "unknown",
-                        "leak_active": a.entity_id in self._active_leaks,
+                        "leak_active": leak_active,
                     })
 
                 # Valves
@@ -426,9 +434,13 @@ class WaterLeakManager:
         return {
             "sensors": sensors,
             "valves": valves,
-            "active_leaks": len(self._active_leaks),
+            "active_leaks": self._count_active_leaks(),
             "is_running": self._is_running,
         }
+
+    def _count_active_leaks(self):
+        with self._leaks_lock:
+            return len(self._active_leaks)
 
     def _on_state_changed(self, event):
         """Handle state change events — check for water leak triggers."""
@@ -649,7 +661,7 @@ class WaterLeakManager:
                         "title": "WASSERLECK!",
                         "message": f"Wasserleck erkannt: {entity_id}",
                     })
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error("Leak HA persistent_notification failed: %s", e)
         except Exception as e:
             logger.error(f"Leak notification error: {e}")
