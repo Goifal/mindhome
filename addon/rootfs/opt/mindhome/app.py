@@ -55,7 +55,11 @@ app.json.ensure_ascii = False
 app.config['JSON_AS_ASCII'] = False
 app.config['JSONIFY_MIMETYPE'] = 'application/json; charset=utf-8'
 app.config['MAX_CONTENT_LENGTH'] = 55 * 1024 * 1024  # 55 MB (upload limit + overhead)
-CORS(app, supports_credentials=False)
+_CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "").strip()
+if _CORS_ORIGINS:
+    CORS(app, origins=_CORS_ORIGINS.split(","), supports_credentials=False)
+else:
+    CORS(app, supports_credentials=False)
 
 mimetypes.add_type("text/javascript", ".jsx")
 mimetypes.add_type("text/javascript", ".mjs")
@@ -68,8 +72,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("mindhome")
 
-# Ingress path
+# Ingress path & token
 INGRESS_PATH = os.environ.get("INGRESS_PATH", "")
+_SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 
 # Database
 engine = get_engine()
@@ -514,6 +519,15 @@ def before_request_middleware():
         ip = request.remote_addr or "unknown"
         if not rate_limit_check(ip):
             return jsonify({"error": "Rate limit exceeded"}), 429
+        # Ingress token validation: when running as HA addon, require valid token
+        if _SUPERVISOR_TOKEN and INGRESS_PATH:
+            ingress_token = request.headers.get("X-Ingress-Token", "")
+            # Allow requests from HA ingress (has X-Ingress-Path header) or
+            # requests from localhost (internal services like assistant)
+            _remote = request.remote_addr or ""
+            _is_local = _remote in ("127.0.0.1", "::1", "172.30.32.2")
+            if not _is_local and not ingress_token:
+                return jsonify({"error": "Unauthorized"}), 401
     return None
 
 

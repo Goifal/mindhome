@@ -3676,6 +3676,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 name="mark_jarvis_action",
                             )
 
+                            # Conflict F: Mark entity ownership in Redis so the
+                            # addon can skip automations on recently-controlled
+                            # entities and avoid flickering/ping-pong.
+                            if self.memory and self.memory.redis:
+                                try:
+                                    await self.memory.redis.set(
+                                        f"mha:entity_owner:{entity_id}",
+                                        "assistant",
+                                        ex=120,  # 2-minute ownership window
+                                    )
+                                except Exception:
+                                    pass  # Non-critical
+
                         # Self-Improvement: Outcome Tracker — Wirkung der Aktion beobachten
                         self._task_registry.create_task(
                             self.outcome_tracker.track_action(
