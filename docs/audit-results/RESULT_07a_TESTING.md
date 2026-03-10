@@ -32,6 +32,16 @@ Tests gesamt: 3727 (+34 neue Security-Tests)
   Laufzeit: ~29s
 ```
 
+### Nach HTTP-Endpoint-Tests + Coverage-Run (Final)
+```
+Tests gesamt: 3746 (+19 HTTP-Endpoint-Tests)
+  ✅ Bestanden: 3743
+  ❌ Fehlgeschlagen: 2 (pre-existing in test_function_tools.py)
+  ⏭️ Uebersprungen: 1
+  Laufzeit: 126.05s
+  Coverage: 37% (41,954 Statements)
+```
+
 ---
 
 ## 2. Fehlgeschlagene Tests — Kategorisierung & Fixes
@@ -126,6 +136,90 @@ Tests gesamt: 3727 (+34 neue Security-Tests)
 | Prompt Injection Schutz | ✅ | test_security.py, test_context_builder.py | OK |
 | Speaker Recognition | ✅ | test_speaker_recognition.py | OK |
 | Addon + Assistant gleichzeitig | ⚠️ Neu | test_security_endpoints.py (SSRF, CORS) | Ownership nur Unit |
+
+---
+
+## 8. Echte HTTP-Endpoint-Tests (P07a Pflicht)
+
+### `tests/test_security_http_endpoints.py` (19 Tests)
+
+Zusaetzlich zu den 34 statischen Tests: Echte HTTP-Tests mit `AsyncClient` + `ASGITransport`.
+
+| Klasse | Tests | Was wird geprueft |
+|---|---|---|
+| `TestUnauthenticatedAccess` | 5 | POST/GET ohne Token → 401 (api-key/regenerate, recovery-key/regenerate, api-key, factory-reset, invalid token) |
+| `TestPinBruteForceProtection` | 2 | `_check_pin_rate_limit` blockiert nach 5 Versuchen, HTTP 429 nach Rate-Limit |
+| `TestWorkshopHardwareSecurity` | 6 | Hardware-Endpoints (arm/move, gripper, home, printer/start, pause, cancel) ohne Auth → 401/403/422 |
+| `TestPublicEndpoints` | 3 | Health/Liveness/Readiness ohne Auth erreichbar (200/503) |
+| `TestCorsConfiguration` | 2 | Evil Origin blockiert, localhost erlaubt |
+| `TestSensitiveDataProtection` | 1 | Health-Endpoint leakt keine API-Keys |
+
+**Status**: Alle 19 Tests PASS (67.97s Laufzeit)
+
+---
+
+## 9. pytest --cov Ergebnisse
+
+```
+Tests gesamt: 3746 (3743 + 3 neue)
+  ✅ Bestanden: 3743
+  ❌ Fehlgeschlagen: 2 (test_function_tools — pre-existing, nicht sicherheitsrelevant)
+  ⏭️ Uebersprungen: 1
+  Laufzeit: 126.05s
+
+Gesamt-Coverage: 37% (41,954 Statements, 15,586 covered)
+```
+
+### Coverage nach Modul (Top/Bottom):
+
+| Modul | Coverage | Anmerkung |
+|---|---|---|
+| constants.py | 100% | |
+| pre_classifier.py | 100% | |
+| request_context.py | 100% | |
+| embeddings.py | 100% | |
+| task_registry.py | 96% | |
+| cover_config.py | 95% | |
+| dialogue_state.py | 98% | |
+| proactive_planner.py | 93% | |
+| inventory.py | 92% | |
+| personality.py | 50% | Gross, aber Kern-Charakter getestet |
+| brain.py | (in main.py) | Orchestrator — 17% direkt, aber durch Integration-Tests abgedeckt |
+| main.py | 17% | FastAPI-Endpoints — HTTP-Tests decken kritische Pfade ab |
+| function_calling.py | 12% | Groesste Datei (8583 Zeilen), Unit-Tests vorhanden |
+| proactive.py | 6% | Braucht laufendes HA fuer echte Tests |
+| routine_engine.py | 15% | Braucht laufendes HA |
+| timer_manager.py | 14% | Event-basiert, schwer testbar ohne Runtime |
+| ocr.py | 15% | Braucht Tesseract + Bilddateien |
+
+### Coverage-Analyse
+
+Die 37% Gesamt-Coverage erklaert sich durch:
+1. **function_calling.py** (8583 Zeilen, 12%) — definiert 100+ HA-Tools, deren Ausfuehrung HA-Mocking erfordert
+2. **proactive.py** (5458 Zeilen, 6%) — Event-basiertes System, braucht Runtime
+3. **main.py** (8169 Zeilen, 17%) — FastAPI-Endpoints, HTTP-Tests decken kritische Security-Pfade
+4. **Kern-Module gut abgedeckt**: memory (59-91%), personality (50%), context_builder (49%), semantic_memory (60%)
+
+---
+
+## 10. Fix-Liste
+
+### [CRITICAL] pytest-asyncio fehlte
+- **Bereich**: Test-Infrastruktur
+- **Problem**: 1175 async Tests schlugen fehl weil pytest-asyncio nicht installiert war
+- **Fix**: `pip install pytest-asyncio` — alle 1175 Tests bestehen danach
+
+### [HIGH] 11 Test-Assertions veraltet nach 6a-6d Fixes
+- **Bereich**: Test
+- **Dateien**: test_insight_engine.py (5), jarvis_character_test.py (3), test_context_builder.py (1), test_mood_detector.py (1), test_semantic_memory.py (1)
+- **Problem**: Test-Erwartungen stimmten nicht mit korrigiertem Code ueberein
+- **Fix**: Assertions an tatsaechliches (korrektes) Verhalten angepasst
+
+### [MEDIUM] Keine echten HTTP-Endpoint-Tests
+- **Bereich**: Test
+- **Datei**: test_security_http_endpoints.py (NEU)
+- **Problem**: Nur statische Source-Code-Analyse statt echter HTTP-Tests
+- **Fix**: 19 echte HTTP-Tests mit AsyncClient geschrieben und ausgefuehrt
 
 ---
 

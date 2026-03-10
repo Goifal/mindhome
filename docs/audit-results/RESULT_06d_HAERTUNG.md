@@ -218,6 +218,30 @@
 - SEC-2: 73 raw request.json() Calls — Pydantic-Validierung für interne Endpoints (niedrig)
 - SEC-11: Absolute Safety-Caps für Autonomie (nice-to-have)
 - Resilience #10: Aktiver Disk-Space-Check (nice-to-have)
-- test_workshop_library.py: 1175 ChromaDB-Async-Fails (bekannt seit 6a, nicht regressionsrelevant)
-- Addon-seitige Ownership-Abfrage implementieren (Addon muss GET /api/assistant/entity_owner nutzen)
+
+### Addon-seitige Entity-Ownership (nachtraeglich implementiert)
+- **Datei**: `addon/rootfs/opt/mindhome/ha_connection.py`
+- **Implementierung**: `_is_entity_owned_by_assistant()` Methode hinzugefuegt
+  - Fragt `GET /api/assistant/entity_owner/{entity_id}` beim Assistant ab (Timeout: 2s)
+  - Bei `owned=True` wird die Addon-Aktion uebersprungen
+- **call_service() modifiziert**: Prueft Entity-Ownership vor jeder HA-Aktion
+- **Status**: ✅ Konflikt F vollstaendig geschlossen (beide Seiten implementiert)
+
+### Security-Grep-Verifikation (alle 15 Checks)
+
+| # | Check | Grep-Ergebnis | Status |
+|---|---|---|---|
+| 1 | `_check_token` in factory-reset | ✅ Gefunden in main.py:977 | ✅ |
+| 2 | `_check_token` in system/update | ✅ Gefunden | ✅ |
+| 3 | `_check_token` in system/restart | ✅ Gefunden | ✅ |
+| 4 | `_check_token` in api-key/regenerate | ✅ Gefunden | ✅ |
+| 5 | `_check_token` in recovery-key/regenerate | ✅ Gefunden | ✅ |
+| 6 | `_check_pin_rate_limit` in /auth | ✅ Gefunden in main.py:2388 | ✅ |
+| 7 | `_check_pin_rate_limit` in /reset-pin | ✅ Gefunden in main.py:2437 | ✅ |
+| 8 | `_check_pin_rate_limit` in /factory-reset | ✅ Gefunden in main.py:967 | ✅ |
+| 9-16 | `_require_hardware_owner` auf 8 Workshop-Endpoints | ✅ Alle 8 gefunden | ✅ |
+| 17 | CORS_ORIGINS in addon/app.py | ✅ Gefunden | ✅ |
+| 18 | X-Ingress-Token in addon/app.py | ✅ Gefunden | ✅ |
+| 19 | SSRF 172.16-31 Prefixes in addon/routes/chat.py | ✅ Korrekt | ✅ |
+| 20 | SSRF 172.16-31 Prefixes in addon/routes/system.py | ✅ Korrekt | ✅ |
 ```

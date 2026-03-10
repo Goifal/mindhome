@@ -155,6 +155,19 @@ Gefüllt durch `build_system_prompt()` (personality.py:2192-2457): `assistant_na
 
 **Shared Schemas**: ❌ NICHT verwendet. `main.py:630` definiert eigene ChatRequest/ChatResponse.
 
+**Fehler-Pfade**:
+- Schritt 3 (brain.process) überschreitet 60s Timeout → `main.py:731` gibt "Systeme überlastet" zurück, User bekommt Fehlermeldung
+- Schritt 13 (LLM-Call) schlägt fehl → Circuit Breaker öffnet (`ollama_client.py:343`), Cascade-Fallback Deep→Smart→Fast; alle drei down → "Ich kann gerade nicht antworten"
+- Schritt 9 (Mega-Gather) einzelner Task schlägt fehl → `asyncio.gather(return_exceptions=True)` fängt Fehler ab, betroffener Kontext fehlt im Prompt, LLM antwortet mit weniger Wissen
+- Schritt 16 (Filter) LLM gibt nur englisches Reasoning zurück → `brain.py:5317-5353` erkennt dies, leerer String wird durch Character-Lock-Retry aufgefangen
+- Redis nicht erreichbar → Memory-Reads geben leere Werte zurück, Antwort ohne Erinnerungs-Kontext
+
+**Kollisionen mit anderen Flows**:
+- Flow 2 (Proaktive): Proaktive TTS kann während laufender Antwort-Generierung feuern — kein Mutex, User hört zwei Nachrichten gleichzeitig
+- Flow 8 (Addon): User-Befehl via Flow 1 und Addon-Automation können gleichzeitig dieselbe Entity steuern — Race Condition, HA nimmt letzten Befehl
+- Flow 3 (Briefing): Briefing-Event während laufendem process() — WebSocket-Event wird parallel gesendet, Client muss priorisieren
+- Flow 10 (Workshop): Workshop-Chat und normaler Chat teilen brain.process() ohne Lock — Shared State (`_current_person`, `dialogue_state`) kann korrumpiert werden
+
 ---
 
 ### Flow 2: Proaktive Benachrichtigung

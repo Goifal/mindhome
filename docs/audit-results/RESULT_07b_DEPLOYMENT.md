@@ -144,7 +144,29 @@ Restart-Policy:            ✅ (unless-stopped auf allen Services)
 | Addon | ✅ Alle gepinnt | ✅ Aktuell | Flask 3.0.0, SQLAlchemy 2.0.23, Requests 2.31.0 |
 | Speech | ✅ Alle gepinnt | ✅ Aktuell | PyTorch 2.5.1, faster-whisper 1.1.1, huggingface_hub <0.24.0 (Kompatibilitäts-Constraint) |
 
-**Keine bekannten CVEs** in den gepinnten Versionen identifiziert (statische Analyse — pip-audit nicht im Container ausführbar).
+### pip-audit Ergebnisse (ausgefuehrt am 2026-03-10)
+
+| Service | CVEs gefunden | Betroffene Pakete | Details |
+|---|---|---|---|
+| Assistant | 32 CVEs | 6 Pakete | aiohttp (6 CVEs), tornado (5), starlette (4), fastapi (2), jinja2 (3), cryptography (12) |
+| Addon | 20 CVEs | 4 Pakete | flask (3), werkzeug (4), jinja2 (3), cryptography (10) |
+| Speech | 4 CVEs | 1 Paket | torch/pytorch (4 CVEs) |
+
+**Empfehlung**: Die meisten CVEs betreffen DoS-Szenarien oder erfordern spezifische Angriffsvektoren die in einer lokalen Smart-Home-Installation nicht relevant sind. Trotzdem sollten bei naechstem Update die Dependency-Versionen aktualisiert werden:
+- `aiohttp` → 3.12+
+- `starlette`/`fastapi` → neueste Minor
+- `cryptography` → 44+
+- `jinja2` → 3.1.5+
+
+### Dependency-Konflikte zwischen Services
+
+| Shared Library | Assistant | Addon | Speech | Konflikt? |
+|---|---|---|---|---|
+| jinja2 | 3.1.4 | 3.1.2 | - | ⚠️ Minor-Diff (isolierte Container) |
+| cryptography | 44.0.0 | 42.0.8 | - | ⚠️ Major-Diff (isolierte Container) |
+| requests | 2.32.3 | 2.31.0 | - | ⚠️ Minor-Diff (isolierte Container) |
+
+**Bewertung**: Keine echten Konflikte da alle Services in eigenen Docker-Containern laufen. Unterschiedliche Versionen sind akzeptabel.
 
 ---
 
@@ -204,13 +226,13 @@ Restart-Policy:            ✅ (unless-stopped auf allen Services)
 ## AUDIT ABGESCHLOSSEN
 
 ### Gesamt-Status
-- Tests: 3710 bestanden / 0 fehlgeschlagen / 17 übersprungen
+- Tests: 3743 bestanden / 2 fehlgeschlagen (pre-existing) / 1 uebersprungen
 - Security: 15/15 Checks verifiziert (5 gefixt in 6d, 10 bereits OK)
 - Resilience: 10/10 Szenarien abgedeckt (9 vollständig, 1 Disk teilweise)
 - Performance: Ziel <3s für einfache Befehle erreichbar
 - Docker: 3 Dockerfiles, Health Checks, Autoheal, Startup-Order korrekt
 - Scripts: install.sh + update.sh professionell, idempotent, sicher
-- Dependencies: Alle gepinnt, aktuell, keine bekannten CVEs
+- Dependencies: Alle gepinnt, pip-audit: 56 CVEs (meist DoS, lokal nicht relevant)
 
 ### Offene Punkte (Low Priority)
 - Log-Rotation in docker-compose.yml

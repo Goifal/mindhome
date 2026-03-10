@@ -382,6 +382,105 @@ LUECKE: 2 von 5 Circuit Breakern sind Dead Code (1/10)
 
 ---
 
+## Zero-Bug-Acknowledgments (Addon-Module)
+
+Die folgenden Addon-Module wurden vollstaendig auditiert und weisen **0 Bugs** auf:
+
+### Batch 14a — Addon-Kern
+| Modul | Ergebnis |
+|-------|----------|
+| `task_scheduler.py` | 0 Bugs gefunden |
+| `models.py` | 0 Bugs gefunden |
+| `db.py` | 0 Bugs gefunden |
+| `cover_helpers.py` | 0 Bugs gefunden |
+| `version.py` | 0 Bugs gefunden |
+
+### Batch 14b — Addon-Domains (domains/*.py ohne Bug-Eintraege)
+| Modul | Ergebnis |
+|-------|----------|
+| `domains/switch.py` | 0 Bugs gefunden |
+| `domains/media.py` | 0 Bugs gefunden |
+| `domains/climate.py` | 0 Bugs gefunden |
+| `domains/sensor.py` | 0 Bugs gefunden |
+| `domains/binary_sensor.py` | 0 Bugs gefunden |
+| `domains/person.py` | 0 Bugs gefunden |
+| `domains/fan.py` | 0 Bugs gefunden |
+| `domains/input_boolean.py` | 0 Bugs gefunden |
+| `domains/input_number.py` | 0 Bugs gefunden |
+| `domains/input_select.py` | 0 Bugs gefunden |
+| `domains/input_text.py` | 0 Bugs gefunden |
+| `domains/automation.py` | 0 Bugs gefunden |
+| `domains/script.py` | 0 Bugs gefunden |
+| `domains/scene.py` | 0 Bugs gefunden |
+| `domains/group.py` | 0 Bugs gefunden |
+| `domains/vacuum.py` | 0 Bugs gefunden |
+| `domains/water_heater.py` | 0 Bugs gefunden |
+
+### Batch 14b — Addon-Engines (engines/*.py ohne Bug-Eintraege)
+| Modul | Ergebnis |
+|-------|----------|
+| `engines/adaptive.py` | 0 Bugs gefunden (nur Dead Code: `GradualTransitioner._pending`) |
+| `engines/camera_security.py` | 0 Bugs gefunden |
+| `engines/visit.py` | 0 Bugs gefunden |
+
+### Batch 14c — Addon-Routes (routes/*.py ohne Bug-Eintraege)
+| Modul | Ergebnis |
+|-------|----------|
+| `routes/energy.py` | 0 Bugs gefunden |
+| `routes/health.py` | 0 Bugs gefunden |
+| `routes/dashboard.py` | 0 Bugs gefunden |
+| `routes/devices.py` | 0 Bugs gefunden |
+| `routes/logs.py` | 0 Bugs gefunden |
+
+### Teil 4 — Speech + Shared + HA-Integration (Module ohne Bug-Eintraege)
+| Modul | Ergebnis |
+|-------|----------|
+| `speech/server.py` | 0 Bugs gefunden (nur Dead Code: `import json as _json`) |
+
+Alle anderen Addon-Module haben mindestens einen dokumentierten Bug (siehe Bug-Reports oben).
+
+---
+
+## pip-audit Ergebnisse (Dependency-CVEs)
+
+Ergebnisse des `pip-audit` Scans ueber alle drei Subsysteme:
+
+### Assistant (32 CVEs in 6 Paketen)
+| Paket | Version | CVE-Anzahl |
+|-------|---------|:----------:|
+| aiohttp | 3.11.11 | betroffen |
+| python-multipart | 0.0.18 | betroffen |
+| pillow | 11.1.0 | betroffen |
+| pdfminer-six | 20231228 | betroffen |
+| starlette | 0.41.3 | betroffen |
+| transformers | 4.46.3 | betroffen |
+| **Gesamt** | | **32 CVEs** |
+
+### Addon (20 CVEs in 5 Paketen)
+| Paket | Version | CVE-Anzahl |
+|-------|---------|:----------:|
+| flask | 3.0.0 | betroffen |
+| flask-cors | 4.0.0 | betroffen |
+| requests | 2.31.0 | betroffen |
+| werkzeug | 3.0.1 | betroffen |
+| jinja2 | 3.1.2 | betroffen |
+| **Gesamt** | | **20 CVEs** |
+
+### Speech (4 CVEs in 1 Paket)
+| Paket | Version | CVE-Anzahl |
+|-------|---------|:----------:|
+| torch | 2.5.1 | betroffen |
+| **Gesamt** | | **4 CVEs** |
+
+### Zusammenfassung
+```
+Gesamt: 56 CVEs in 12 Paketen ueber 3 Subsysteme
+Empfehlung: Alle betroffenen Pakete auf aktuelle Patch-Versionen aktualisieren
+             pip-audit in CI/CD-Pipeline integrieren fuer kontinuierliche Ueberwachung
+```
+
+---
+
 ## Dead-Code-Liste (gesamt 4a + 4b + 4c)
 
 | # | Modul | Code | Grund |

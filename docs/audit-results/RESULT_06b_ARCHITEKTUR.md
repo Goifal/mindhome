@@ -152,7 +152,31 @@
 
 ---
 
-## 6. Offene Punkte fuer 6c/6d
+## 6. Performance-Optimierungen (aus P06b-Prompt)
+
+### Latenz-Ziel: < 3 Sekunden fuer einfache Befehle
+
+| Phase | Optimierung | Status | Details |
+|---|---|---|---|
+| Context Building | `asyncio.gather()` statt sequentielle awaits | ✅ Bereits vorhanden | `context_builder.py:216,928` — Memory + HA-State parallel |
+| LLM-Inference | Model-Router mit FAST/SMART/DEEP Routing | ✅ Bereits vorhanden | `model_router.py` — Keyword-basiertes Routing, FAST (4B) fuer Device-Befehle |
+| Function Execution | HA-API Timeout konfiguriert | ✅ Bereits vorhanden | `ha_client.py` — Timeout pro Request-Typ |
+| Response Streaming | Token-Streaming via WebSocket | ✅ Bereits vorhanden | `emit_stream_start/token/end` Pattern |
+
+### Performance-Massnahmen in 6b
+
+1. **Race-Condition-Locks**: asyncio.Lock auf _states_cache verhindert redundante parallele HA-Requests (Cache-Hit statt doppelter API-Call)
+2. **subprocess.run → asyncio.to_thread()**: Event-Loop wird nicht mehr blockiert bei Speech-Commands
+3. **Operator-Precedence-Fix**: Verhinderte unnoetige Geo-Fence-Evaluierung bei nicht-proximity Entities
+
+### Nicht implementiert (bewusste Entscheidung)
+
+- **Event-Bus fuer Priority-System**: Zu grosser Umbau fuer 6b, Race Conditions als Symptome behoben
+- **brain.py Pipeline-Refactoring**: Option A (Mixin) gewaehlt — inkrementell statt Big Bang
+
+---
+
+## 7. Offene Punkte fuer 6c/6d
 
 1. **Konflikt D (Klang)**: personality.py Konsistenz ueber alle Flows — 6c
 2. **Response-Filter Extraktion**: `_filter_response_inner()` (~600 Zeilen) als naechster Mixin-Kandidat

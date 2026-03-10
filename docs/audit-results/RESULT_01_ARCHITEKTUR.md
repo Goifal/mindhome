@@ -249,6 +249,104 @@ brain.py importiert **alle** der folgenden Module:
 | `embedding_extractor.py` | ✅ Wird von `speaker_recognition.py` importiert (Audio-Embeddings, kein Memory) |
 | `declarative_tools.py` | ⚠️ Prüfen — möglicherweise nur von brain.py dynamisch geladen |
 
+### 5. Verdrahtungs-Graph (Ergänzung)
+
+Vollständige per-Modul Import-Tabelle basierend auf `grep "^from \.|^import \." assistant/assistant/`:
+
+| Modul | Importiert | Wird importiert von |
+|-------|-----------|---------------------|
+| `action_planner.py` | config, function_calling, function_validator, ollama_client, websocket | brain.py |
+| `activity.py` | config, ha_client | brain.py |
+| `adaptive_thresholds.py` | config | brain.py |
+| `ambient_audio.py` | *(keine internen)* | brain.py, main.py (lazy) |
+| `anticipation.py` | config | brain.py |
+| `autonomy.py` | config | brain.py, conflict_resolver.py, main.py (lazy) |
+| `brain.py` | **80+ Module** (siehe Import-Karte oben) | main.py, websocket.py (indirekt) |
+| `brain_callbacks.py` | *(Mixin)* | brain.py |
+| `brain_humanizers.py` | *(Mixin)* | brain.py |
+| `calendar_intelligence.py` | config | brain.py |
+| `camera_manager.py` | config, ha_client, ollama_client | brain.py |
+| `circuit_breaker.py` | *(keine internen)* | ha_client.py, ollama_client.py, brain.py |
+| `climate_model.py` | config | brain.py, main.py (lazy) |
+| `conditional_commands.py` | *(config)* | brain.py |
+| `config.py` | *(stdlib/ext only)* | **fast alle Module** (~50+) |
+| `config_versioning.py` | config, constants | brain.py, self_optimization.py, function_calling.py |
+| `conflict_resolver.py` | config, autonomy, ollama_client | brain.py |
+| `constants.py` | *(keine)* | brain.py, health_monitor.py, sound_manager.py, feedback.py, config_versioning.py, ollama_client.py |
+| `context_builder.py` | config, function_calling, ha_client, semantic_memory | brain.py |
+| `conversation_memory.py` | config | brain.py |
+| `cooking_assistant.py` | config | brain.py |
+| `correction_memory.py` | config | brain.py |
+| `cover_config.py` | *(config-Datei)* | main.py, function_calling.py, proactive.py |
+| `declarative_tools.py` | config | function_calling.py, spontaneous_observer.py (lazy) |
+| `device_health.py` | config, function_calling, ha_client | brain.py |
+| `diagnostics.py` | config, function_calling, ha_client | brain.py |
+| `dialogue_state.py` | config | brain.py |
+| `embeddings.py` | config | memory.py, semantic_memory.py, knowledge_base.py, recipe_store.py, brain.py (alle lazy) |
+| `embedding_extractor.py` | *(ext only)* | speaker_recognition.py |
+| `energy_optimizer.py` | config, ha_client | brain.py |
+| `error_patterns.py` | config | brain.py |
+| `explainability.py` | *(config)* | brain.py |
+| `feedback.py` | config, constants | brain.py |
+| `file_handler.py` | *(stdlib)* | main.py, brain.py (lazy), memory.py (lazy), ocr.py (lazy) |
+| `follow_me.py` | config, ha_client | brain.py |
+| `function_calling.py` | config, config_versioning, declarative_tools, ha_client | brain.py, context_builder.py, action_planner.py, device_health.py, diagnostics.py |
+| `function_validator.py` | config | brain.py, action_planner.py |
+| `ha_client.py` | circuit_breaker, config | brain.py, context_builder.py, sound_manager.py, routine_engine.py, light_engine.py, self_automation.py, insight_engine.py, spontaneous_observer.py, threat_assessment.py, time_awareness.py, follow_me.py, energy_optimizer.py, multi_room_audio.py, camera_manager.py, device_health.py, diagnostics.py, smart_shopping.py, activity.py |
+| `health_monitor.py` | config, constants | brain.py |
+| `insight_engine.py` | config, ha_client | brain.py |
+| `intent_tracker.py` | config, ollama_client | brain.py |
+| `inventory.py` | *(config)* | brain.py |
+| `knowledge_base.py` | config, embeddings (lazy) | brain.py, recipe_store.py |
+| `learning_observer.py` | config | brain.py, spontaneous_observer.py (lazy) |
+| `learning_transfer.py` | config | brain.py |
+| `light_engine.py` | config, ha_client, function_calling | brain.py |
+| `main.py` | brain, config, cover_config, file_handler, request_context, websocket | *(Entry Point)* |
+| `memory.py` | config, semantic_memory, embeddings (lazy) | brain.py, main.py, summarizer.py |
+| `memory_extractor.py` | config, ollama_client, semantic_memory | brain.py |
+| `model_router.py` | config | brain.py |
+| `mood_detector.py` | config | brain.py |
+| `multi_room_audio.py` | config, ha_client | brain.py |
+| `music_dj.py` | config | brain.py |
+| `ocr.py` | config, file_handler (lazy) | brain.py |
+| `ollama_client.py` | circuit_breaker, config, constants | brain.py, self_automation.py, self_optimization.py, memory_extractor.py, protocol_engine.py, conflict_resolver.py, intent_tracker.py, action_planner.py, summarizer.py, routine_engine.py, camera_manager.py |
+| `outcome_tracker.py` | *(config)* | brain.py |
+| `personality.py` | config | brain.py |
+| `pre_classifier.py` | *(config)* | brain.py |
+| `predictive_maintenance.py` | config | brain.py, main.py (lazy) |
+| `proactive.py` | websocket, cover_config (lazy) | brain.py |
+| `proactive_planner.py` | config | brain.py |
+| `protocol_engine.py` | config, ollama_client | brain.py |
+| `recipe_store.py` | config, knowledge_base, embeddings (lazy) | brain.py |
+| `repair_planner.py` | config, websocket (lazy) | brain.py |
+| `request_context.py` | *(stdlib)* | main.py |
+| `response_quality.py` | config | brain.py |
+| `routine_engine.py` | config, ha_client, ollama_client, websocket | brain.py |
+| `seasonal_insight.py` | config | brain.py |
+| `self_automation.py` | config, ha_client, ollama_client | brain.py |
+| `self_optimization.py` | config, config_versioning, ollama_client | brain.py |
+| `self_report.py` | config | brain.py |
+| `semantic_memory.py` | config, embeddings (lazy) | memory.py, context_builder.py, memory_extractor.py, brain.py (lazy) |
+| `situation_model.py` | *(config)* | brain.py |
+| `smart_shopping.py` | config, ha_client | brain.py |
+| `sound_manager.py` | config, constants, ha_client | brain.py |
+| `speaker_recognition.py` | embedding_extractor | brain.py |
+| `spontaneous_observer.py` | config, ha_client, learning_observer (lazy), declarative_tools (lazy) | brain.py |
+| `summarizer.py` | config, ollama_client | brain.py |
+| `task_registry.py` | *(config)* | brain.py |
+| `threat_assessment.py` | config, ha_client | brain.py |
+| `time_awareness.py` | config, ha_client | brain.py |
+| `timer_manager.py` | config | brain.py |
+| `tts_enhancer.py` | config | brain.py |
+| `visitor_manager.py` | config | brain.py |
+| `web_search.py` | config | brain.py |
+| `websocket.py` | *(stdlib/ext)* | brain.py, main.py, action_planner.py, routine_engine.py, proactive.py, repair_planner.py (lazy), workshop_generator.py (lazy) |
+| `wellness_advisor.py` | config | brain.py |
+| `workshop_generator.py` | websocket (lazy) | brain.py |
+| `workshop_library.py` | *(config)* | brain.py |
+
+**Stern-Topologie bestätigt**: 65 von 88 Modulen werden **ausschließlich** von brain.py importiert. `config.py` und `ha_client.py` sind die einzigen echten Utility-Hubs.
+
 ### Zirkuläre Abhängigkeiten
 
 Keine **direkten** zirkulären Imports gefunden. brain.py ist ein Stern-Pattern: alles zeigt auf brain.py, brain.py zeigt auf alles, aber die Module kennen sich untereinander kaum. Dies verhindert Zyklen, **erzwingt aber** das God-Object-Pattern.
