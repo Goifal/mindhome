@@ -162,8 +162,11 @@ class TestGuessRoom:
 
     def test_motion_detected(self, builder):
         states = [
+            {"entity_id": "binary_sensor.motion_flur", "state": "on",
+             "last_changed": "2026-02-20T09:00:00",
+             "attributes": {"friendly_name": "Bewegung Flur"}},
             {"entity_id": "binary_sensor.motion_kueche", "state": "on",
-             "last_changed": "2026-02-20T10:00:00",
+             "last_changed": "INVALID",
              "attributes": {"friendly_name": "Bewegung Kueche"}},
         ]
         result = builder._guess_current_room(states)

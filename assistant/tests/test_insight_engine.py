@@ -626,7 +626,7 @@ class TestGuestPreparation:
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
             result = await insight_engine._check_guest_preparation(data)
         assert result is not None
-        assert "Tueren" in result["message"]
+        assert "Türen" in result["message"]
 
 
 # ============================================================
@@ -708,7 +708,7 @@ class TestAwaySecurityFull:
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
             result = await insight_engine._check_away_security_full(data)
         assert result is not None
-        assert "Tueren" in result["message"]
+        assert "Türen" in result["message"]
 
     @pytest.mark.asyncio
     async def test_open_door_plus_alarm_off(self, insight_engine):
@@ -723,7 +723,7 @@ class TestAwaySecurityFull:
         with patch.object(insight_engine, "_get_title_for_home", return_value="Sir"):
             result = await insight_engine._check_away_security_full(data)
         assert result is not None
-        assert "Tueren" in result["message"]
+        assert "Türen" in result["message"]
         assert "Alarm" in result["message"]
 
     @pytest.mark.asyncio
@@ -1020,7 +1020,7 @@ class TestNightSecurity:
                 result = await insight_engine._check_night_security(data)
         assert result is not None
         assert result["urgency"] == "high"
-        assert "Tueren" in result["message"]
+        assert "Türen" in result["message"]
 
     @pytest.mark.asyncio
     async def test_before_23_no_alert(self, insight_engine):
@@ -1122,7 +1122,7 @@ class TestNightSecurity:
                 result = await insight_engine._check_night_security(data)
         assert result is not None
         assert "Fenster" in result["message"]
-        assert "Tueren" in result["message"]
+        assert "Türen" in result["message"]
         assert result["urgency"] == "high"
 
 

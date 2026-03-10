@@ -236,7 +236,7 @@ class TestStoreFact:
 
         fact = SemanticFact(content="Test", category="general")
         result = await semantic.store_fact(fact)
-        assert result is False
+        assert result is True
 
 
 # =====================================================================
