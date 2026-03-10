@@ -673,6 +673,26 @@ async def health():
     return await brain.health_check()
 
 
+@app.get("/api/assistant/entity_owner/{entity_id:path}")
+async def entity_owner(entity_id: str):
+    """Conflict F: Check if an entity is currently owned by the assistant.
+
+    Returns {"owner": "assistant", "ttl": <seconds>} if owned,
+    or {"owner": null} if not. Used by the addon to avoid
+    overriding user-initiated actions (anti-flickering).
+    """
+    if brain.memory and brain.memory.redis:
+        try:
+            key = f"mha:entity_owner:{entity_id}"
+            owner = await brain.memory.redis.get(key)
+            if owner:
+                ttl = await brain.memory.redis.ttl(key)
+                return {"owner": owner, "ttl": max(ttl, 0)}
+        except Exception:
+            pass
+    return {"owner": None}
+
+
 @app.get("/api/assistant/character-break-stats")
 async def character_break_stats():
     """Character-Break Statistiken der letzten 7 Tage.
@@ -739,8 +759,13 @@ async def chat(request: ChatRequest):
     except Exception as e:
         logger.error("brain.process() Exception fuer '%s': %s", request.text[:100], e, exc_info=True)
         error_type = type(e).__name__
+        _error_msgs = [
+            "Da lief etwas nicht nach Plan. Einen Moment, ich versuche es anders.",
+            "Nicht ganz wie vorgesehen. Ich bleibe dran.",
+            "Suboptimal. Ich pruefe eine Alternative.",
+        ]
         result = {
-            "response": "Da ist etwas schiefgelaufen. Versuch es nochmal.",
+            "response": random.choice(_error_msgs),
             "actions": [],
             "model_used": "error",
             "context_room": request.room or "unbekannt",
@@ -942,12 +967,16 @@ class FactoryResetRequest(BaseModel):
 
 
 @app.post("/api/ui/factory-reset")
-async def ui_factory_reset(req: FactoryResetRequest, token: str = ""):
+async def ui_factory_reset(req: FactoryResetRequest, request: Request, token: str = ""):
     """Jarvis auf Grundeinstellung zuruecksetzen (PIN erforderlich).
 
     Loescht allen gelernten State (Redis + ChromaDB), behaelt Einstellungen.
     """
     _check_token(token)
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_pin_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warten.")
 
     env_pin = os.environ.get("JARVIS_UI_PIN")
     if env_pin:
@@ -957,8 +986,11 @@ async def ui_factory_reset(req: FactoryResetRequest, token: str = ""):
         valid = stored_hash and _verify_hash(req.pin, stored_hash)
 
     if not valid:
+        _record_pin_failure(client_ip)
         _audit_log("factory_reset", {"success": False, "reason": "wrong_pin"})
         raise HTTPException(status_code=403, detail="Falscher PIN")
+
+    _clear_pin_attempts(client_ip)
 
     # Knowledge Base + Recipe Store zuruecksetzen
     kb_cleared = await brain.knowledge_base.clear()
@@ -2096,12 +2128,11 @@ async def websocket_endpoint(websocket: WebSocket):
                           except Exception as e:
                             logger.error("Streaming-Fehler: %s", e, exc_info=True)
                             # Sicherstellen dass der Client nicht haengen bleibt
+                            _stream_error = "Nicht ganz wie vorgesehen. Ich bleibe dran."
                             if stream_tokens_sent:
-                                await emit_stream_end(
-                                    "Da ist etwas schiefgelaufen. Versuch es nochmal.")
+                                await emit_stream_end(_stream_error)
                             else:
-                                await emit_speaking(
-                                    "Da ist etwas schiefgelaufen. Versuch es nochmal.")
+                                await emit_speaking(_stream_error)
                         else:
                             # brain.process() sendet intern via _speak_and_emit
                             result = await brain.process(text, person, room=room,
@@ -2188,6 +2219,45 @@ SETTINGS_YAML_PATH = Path(__file__).parent.parent / "config" / "settings.yaml"
 _TOKEN_EXPIRY_SECONDS = 4 * 60 * 60  # 4 Stunden
 _active_tokens: dict[str, float] = {}  # token -> timestamp
 _token_lock = asyncio.Lock()
+
+# PIN brute-force protection: IP -> list of failed-attempt timestamps
+_pin_attempts: dict[str, list[float]] = {}
+_PIN_MAX_ATTEMPTS = 5
+_PIN_WINDOW_SECONDS = 300  # 5 Minuten
+
+
+def _check_pin_rate_limit(client_ip: str) -> bool:
+    """Prueft ob eine IP zu viele PIN-Versuche hat.
+
+    Returns True wenn erlaubt, False wenn blockiert.
+    Bereinigt abgelaufene Eintraege (> 5 Min) bei jedem Aufruf.
+    """
+    now = _time.time()
+    cutoff = now - _PIN_WINDOW_SECONDS
+
+    # Alte Eintraege bereinigen
+    if client_ip in _pin_attempts:
+        _pin_attempts[client_ip] = [t for t in _pin_attempts[client_ip] if t > cutoff]
+        if not _pin_attempts[client_ip]:
+            del _pin_attempts[client_ip]
+
+    # Leere IPs bereinigen (andere IPs mit nur alten Eintraegen)
+    stale_ips = [ip for ip, timestamps in _pin_attempts.items() if all(t <= cutoff for t in timestamps)]
+    for ip in stale_ips:
+        del _pin_attempts[ip]
+
+    attempts = _pin_attempts.get(client_ip, [])
+    return len(attempts) < _PIN_MAX_ATTEMPTS
+
+
+def _record_pin_failure(client_ip: str):
+    """Zeichnet einen fehlgeschlagenen PIN-Versuch auf."""
+    _pin_attempts.setdefault(client_ip, []).append(_time.time())
+
+
+def _clear_pin_attempts(client_ip: str):
+    """Loescht PIN-Versuche fuer eine IP nach erfolgreichem Login."""
+    _pin_attempts.pop(client_ip, None)
 
 
 def _get_dashboard_config() -> dict:
@@ -2318,10 +2388,14 @@ async def ui_setup(req: SetupRequest):
 
 
 @app.post("/api/ui/auth")
-async def ui_auth(req: PinRequest):
+async def ui_auth(req: PinRequest, request: Request):
     """PIN-Authentifizierung fuer das Jarvis Dashboard."""
     if not _is_setup_complete():
         raise HTTPException(status_code=400, detail="Setup noch nicht abgeschlossen")
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_pin_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warten.")
 
     # Vergleich: Env-PIN (Klartext, timing-safe) oder gehashter PIN aus YAML
     env_pin = os.environ.get("JARVIS_UI_PIN")
@@ -2336,8 +2410,11 @@ async def ui_auth(req: PinRequest):
             legacy_migration = True
 
     if not valid:
+        _record_pin_failure(client_ip)
         _audit_log("login", {"success": False})
         raise HTTPException(status_code=401, detail="Falscher PIN")
+
+    _clear_pin_attempts(client_ip)
 
     # Legacy-PIN-Hash automatisch auf PBKDF2 upgraden
     if legacy_migration:
@@ -2360,10 +2437,14 @@ async def ui_auth(req: PinRequest):
 
 
 @app.post("/api/ui/reset-pin")
-async def ui_reset_pin(req: ResetPinRequest):
+async def ui_reset_pin(req: ResetPinRequest, request: Request):
     """PIN zuruecksetzen mit Recovery-Key."""
     if not _is_setup_complete():
         raise HTTPException(status_code=400, detail="Setup noch nicht abgeschlossen")
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_pin_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Zu viele Versuche. Bitte warten.")
 
     if req.new_pin != req.new_pin_confirm:
         raise HTTPException(status_code=400, detail="PINs stimmen nicht ueberein")
@@ -2374,7 +2455,10 @@ async def ui_reset_pin(req: ResetPinRequest):
     # Recovery-Key pruefen
     stored_recovery_hash = _get_dashboard_config().get("recovery_key_hash", "")
     if not stored_recovery_hash or not _verify_hash(req.recovery_key, stored_recovery_hash):
+        _record_pin_failure(client_ip)
         raise HTTPException(status_code=401, detail="Falscher Recovery-Key")
+
+    _clear_pin_attempts(client_ip)
 
     # Neuen Recovery-Key generieren
     new_recovery_key = secrets.token_urlsafe(16)[:12].upper()
@@ -6099,12 +6183,14 @@ async def workshop_export(project_id: str):
 
 @app.post("/api/workshop/chat")
 async def workshop_chat(request: Request):
-    """Workshop-Chat Proxy — leitet an brain.process() weiter ohne API-Key.
+    """Workshop-Chat Proxy — leitet an brain.process() weiter.
 
-    Der regulaere /api/assistant/chat Endpoint erfordert einen API-Key.
-    Dieser Workshop-Proxy ist unter /api/workshop/ und damit nicht
-    durch die API-Key-Middleware geschuetzt.
+    F-086: Erfordert API-Key (gleicher Check wie /api/assistant/* Endpoints).
     """
+    # Explicit API key check (defense-in-depth, nicht nur auf Middleware verlassen)
+    if _api_key_required and not _check_api_key(request):
+        raise HTTPException(403, "Ungueltiger oder fehlender API Key")
+
     data = await request.json()
     text = data.get("text", "").strip()
     if not text:
@@ -6378,7 +6464,7 @@ async def workshop_delete_inventory(name: str):
 async def workshop_delete_file(project_id: str, filename: str):
     """Projektdatei loeschen."""
     try:
-        await brain.workshop_gen.delete_file(project_id, filename)
+        await brain.workshop_generator.delete_file(project_id, filename)
         return {"success": True, "message": f"{filename} gelöscht"}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -6462,7 +6548,7 @@ async def workshop_gen_3d_model(request: Request):
     if not requirement:
         raise HTTPException(400, "requirement erforderlich")
     try:
-        result = await brain.workshop_gen.generate_3d_model(
+        result = await brain.workshop_generator.generate_3d_model(
             project_id, requirement)
         return {"success": True, **result}
     except Exception as e:
@@ -6478,7 +6564,7 @@ async def workshop_gen_schematic(request: Request):
     if not requirement:
         raise HTTPException(400, "requirement erforderlich")
     try:
-        result = await brain.workshop_gen.generate_schematic(
+        result = await brain.workshop_generator.generate_schematic(
             project_id, requirement)
         return {"success": True, **result}
     except Exception as e:
@@ -6495,7 +6581,7 @@ async def workshop_gen_website(request: Request):
     if not requirement:
         raise HTTPException(400, "requirement erforderlich")
     try:
-        result = await brain.workshop_gen.generate_website(
+        result = await brain.workshop_generator.generate_website(
             project_id, requirement, context=context)
         return {"success": True, **result}
     except Exception as e:
@@ -6510,7 +6596,7 @@ async def workshop_gen_bom(request: Request):
     if not project_id:
         raise HTTPException(400, "project_id erforderlich")
     try:
-        result = await brain.workshop_gen.generate_bom(project_id)
+        result = await brain.workshop_generator.generate_bom(project_id)
         return {"success": True, **result}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -6524,7 +6610,7 @@ async def workshop_gen_docs(request: Request):
     if not project_id:
         raise HTTPException(400, "project_id erforderlich")
     try:
-        result = await brain.workshop_gen.generate_documentation(project_id)
+        result = await brain.workshop_generator.generate_documentation(project_id)
         return {"success": True, **result}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -6539,7 +6625,7 @@ async def workshop_gen_tests(request: Request):
     if not project_id or not filename:
         raise HTTPException(400, "project_id und filename erforderlich")
     try:
-        result = await brain.workshop_gen.generate_tests(
+        result = await brain.workshop_generator.generate_tests(
             project_id, filename)
         return {"success": True, **result}
     except Exception as e:
@@ -6895,6 +6981,38 @@ async def workshop_device_power(entity_id: str):
     return result
 
 
+# ── Workshop: Hardware Trust Check ──────────────────────────
+
+
+def _require_hardware_owner(request: Request) -> None:
+    """Prueft ob der Anfragende Owner-Trust (Level 2) hat.
+
+    Hardware-Endpunkte (Roboterarm, 3D-Drucker) duerfen nur von
+    Personen mit Trust-Level 2 (Owner) gesteuert werden.
+    Erwartet den Personennamen im X-Person Header.
+    """
+    person = request.headers.get("x-person", "").strip()
+    trust = brain.autonomy.get_trust_level(person)
+    if trust < 2:
+        raise HTTPException(
+            status_code=403,
+            detail="Hardware-Steuerung erfordert Owner-Berechtigung (Trust-Level 2)",
+        )
+
+
+def _validate_arm_coordinates(x, y, z, speed) -> None:
+    """Validiert Roboterarm-Koordinaten und Geschwindigkeit."""
+    for name, val in [("x", x), ("y", y), ("z", z)]:
+        if not isinstance(val, (int, float)):
+            raise HTTPException(400, f"{name} muss eine Zahl sein")
+        if val < -1000 or val > 1000:
+            raise HTTPException(400, f"{name} muss zwischen -1000 und 1000 liegen")
+    if not isinstance(speed, (int, float)):
+        raise HTTPException(400, "speed muss eine Zahl sein")
+    if speed < 0 or speed > 100:
+        raise HTTPException(400, "speed muss zwischen 0 und 100 liegen")
+
+
 # ── Workshop: 3D Printer Control ────────────────────────────
 
 
@@ -6911,6 +7029,7 @@ async def workshop_printer_status():
 @app.post("/api/workshop/printer/start")
 async def workshop_printer_start(request: Request):
     """3D-Druck starten."""
+    _require_hardware_owner(request)
     data = await request.json()
     result = await brain.repair_planner.start_print(
         project_id=data.get("project_id", ""),
@@ -6919,15 +7038,17 @@ async def workshop_printer_start(request: Request):
 
 
 @app.post("/api/workshop/printer/pause")
-async def workshop_printer_pause():
+async def workshop_printer_pause(request: Request):
     """3D-Druck pausieren."""
+    _require_hardware_owner(request)
     result = await brain.repair_planner.pause_print()
     return {"success": True, **result}
 
 
 @app.post("/api/workshop/printer/cancel")
-async def workshop_printer_cancel():
+async def workshop_printer_cancel(request: Request):
     """3D-Druck abbrechen."""
+    _require_hardware_owner(request)
     result = await brain.repair_planner.cancel_print()
     return {"success": True, **result}
 
@@ -6938,11 +7059,13 @@ async def workshop_printer_cancel():
 @app.post("/api/workshop/arm/move")
 async def workshop_arm_move(request: Request):
     """Roboterarm bewegen."""
+    _require_hardware_owner(request)
     data = await request.json()
     x = data.get("x", 0)
     y = data.get("y", 0)
     z = data.get("z", 0)
     speed = data.get("speed", 50)
+    _validate_arm_coordinates(x, y, z, speed)
     result = await brain.repair_planner.arm_move(x, y, z, speed)
     return {"success": True, **result}
 
@@ -6950,6 +7073,7 @@ async def workshop_arm_move(request: Request):
 @app.post("/api/workshop/arm/gripper")
 async def workshop_arm_gripper(request: Request):
     """Greifer oeffnen/schliessen."""
+    _require_hardware_owner(request)
     data = await request.json()
     action = data.get("action", "open")
     result = await brain.repair_planner.arm_gripper(action)
@@ -6957,8 +7081,9 @@ async def workshop_arm_gripper(request: Request):
 
 
 @app.post("/api/workshop/arm/home")
-async def workshop_arm_home():
+async def workshop_arm_home(request: Request):
     """Arm zur Home-Position."""
+    _require_hardware_owner(request)
     result = await brain.repair_planner.arm_home()
     return {"success": True, **result}
 
@@ -6966,6 +7091,7 @@ async def workshop_arm_home():
 @app.post("/api/workshop/arm/save-position")
 async def workshop_arm_save_position(request: Request):
     """Arm-Position speichern."""
+    _require_hardware_owner(request)
     data = await request.json()
     name = data.get("name", "").strip()
     position = data.get("position")
@@ -6978,6 +7104,7 @@ async def workshop_arm_save_position(request: Request):
 @app.post("/api/workshop/arm/pick-tool")
 async def workshop_arm_pick_tool(request: Request):
     """Werkzeug automatisch greifen."""
+    _require_hardware_owner(request)
     data = await request.json()
     tool_name = data.get("tool_name", "").strip()
     if not tool_name:
@@ -7348,8 +7475,8 @@ _update_lock = asyncio.Lock()
 _update_log: list[str] = []
 
 
-def _run_cmd(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tuple[int, str]:
-    """Fuehrt einen Shell-Befehl aus und gibt (returncode, output) zurueck."""
+def _run_cmd_sync(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tuple[int, str]:
+    """Synchrone Hilfsfunktion — nicht direkt aus async-Code aufrufen."""
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True,
@@ -7360,6 +7487,11 @@ def _run_cmd(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tupl
         return -1, "Timeout"
     except Exception as e:
         return -1, str(e)
+
+
+async def _run_cmd(cmd: list[str], cwd: str | None = None, timeout: int = 120) -> tuple[int, str]:
+    """Fuehrt einen Shell-Befehl aus ohne den Event-Loop zu blockieren."""
+    return await asyncio.to_thread(_run_cmd_sync, cmd, cwd, timeout)
 
 
 async def _ollama_api(path: str, method: str = "GET", json_data: dict | None = None) -> tuple[bool, dict | str]:
@@ -7418,14 +7550,14 @@ async def ui_system_status(token: str = ""):
     _check_token(token)
 
     # Git (via gemountetes /repo Volume)
-    _, branch = _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR))
-    _, commit = _run_cmd(["git", "log", "-1", "--format=%h %s"], cwd=str(_REPO_DIR))
-    _, git_status = _run_cmd(["git", "status", "--short"], cwd=str(_REPO_DIR))
+    _, branch = await _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR))
+    _, commit = await _run_cmd(["git", "log", "-1", "--format=%h %s"], cwd=str(_REPO_DIR))
+    _, git_status = await _run_cmd(["git", "status", "--short"], cwd=str(_REPO_DIR))
 
     # Container Health (via gemounteten Docker-Socket)
     containers = {}
     for name in ["mindhome-assistant", "mha-chromadb", "mha-redis", "mha-whisper", "mha-piper"]:
-        rc, out = _run_cmd(["docker", "inspect", "--format", "{{.State.Health.Status}}", name])
+        rc, out = await _run_cmd(["docker", "inspect", "--format", "{{.State.Health.Status}}", name])
         containers[name] = out.strip() if rc == 0 else "unknown"
 
     # Ollama (via HTTP API auf dem Host)
@@ -7532,7 +7664,7 @@ async def ui_system_status(token: str = ""):
         pass
     # Fallback 1: direktes nvidia-smi (falls Container GPU-Zugriff hat)
     if not gpu_info:
-        rc_gpu, gpu_out = _run_cmd([
+        rc_gpu, gpu_out = await _run_cmd([
             "nvidia-smi",
             "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
             "--format=csv,noheader,nounits",
@@ -7553,7 +7685,7 @@ async def ui_system_status(token: str = ""):
 
     # Fallback 2: nvidia-smi via Host PID namespace (Container hat Docker-Socket)
     if not gpu_info:
-        rc_gpu, gpu_out = _run_cmd([
+        rc_gpu, gpu_out = await _run_cmd([
             "nsenter", "--target", "1", "--mount", "--uts", "--",
             "nvidia-smi",
             "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
@@ -7602,7 +7734,7 @@ async def ui_system_status(token: str = ""):
             pass
 
     # Remote claude/* Branches auflisten
-    _, remote_branches_raw = _run_cmd(
+    _, remote_branches_raw = await _run_cmd(
         ["git", "branch", "-r", "--list", "origin/claude/*"],
         cwd=str(_REPO_DIR),
     )
@@ -7677,7 +7809,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
         _update_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Update gestartet...")
 
         # Aktuellen Branch merken (fuer Rollback bei Fehler)
-        _, current_branch_raw = _run_cmd(
+        _, current_branch_raw = await _run_cmd(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR)
         )
         old_branch = current_branch_raw.strip()
@@ -7710,21 +7842,21 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
         # 0b. ALLE lokalen Aenderungen stashen, damit git pull/checkout sauber durchlaeuft.
         #     User-Config ist bereits in _saved_configs gesichert und wird danach
         #     wiederhergestellt — unabhaengig davon was Git macht.
-        _run_cmd(["git", "stash", "--include-untracked"], cwd=str(_REPO_DIR))
+        await _run_cmd(["git", "stash", "--include-untracked"], cwd=str(_REPO_DIR))
         _update_log.append("Lokale Aenderungen gestasht")
 
         # 1. Branch-Wechsel (falls gewuenscht)
         if switching:
             # Fetch des Ziel-Branches
             _update_log.append(f"Fetch origin/{target_branch}...")
-            rc_fetch, out_fetch = _run_cmd(
+            rc_fetch, out_fetch = await _run_cmd(
                 ["git", "fetch", "origin", target_branch],
                 cwd=str(_REPO_DIR), timeout=60,
             )
             if rc_fetch != 0:
                 _update_log.append(f"FEHLER: git fetch fehlgeschlagen: {out_fetch.strip()}")
                 # Stash droppen, Config wiederherstellen, abbrechen
-                _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
+                await _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
                 for cfg_path, content in _saved_configs.items():
                     try:
                         cfg_path.write_text(content, encoding="utf-8")
@@ -7734,15 +7866,15 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
 
             # Checkout auf Ziel-Branch
             _update_log.append(f"Checkout {target_branch}...")
-            rc_co, out_co = _run_cmd(
+            rc_co, out_co = await _run_cmd(
                 ["git", "checkout", target_branch],
                 cwd=str(_REPO_DIR), timeout=30,
             )
             if rc_co != 0:
                 _update_log.append(f"FEHLER: git checkout fehlgeschlagen: {out_co.strip()}")
                 # Zurueck zum alten Branch
-                _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
-                _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
+                await _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
+                await _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
                 for cfg_path, content in _saved_configs.items():
                     try:
                         cfg_path.write_text(content, encoding="utf-8")
@@ -7754,18 +7886,18 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
         # 2. Git Pull
         pull_branch = target_branch or old_branch
         _update_log.append(f"Git pull origin/{pull_branch}...")
-        rc, out = _run_cmd(
+        rc, out = await _run_cmd(
             ["git", "pull", "--rebase", "origin", pull_branch],
             cwd=str(_REPO_DIR), timeout=60,
         )
 
         # Stash wieder droppen (User-Config kommt aus _saved_configs, nicht aus stash)
-        _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
+        await _run_cmd(["git", "stash", "drop"], cwd=str(_REPO_DIR))
         _update_log.append(out.strip())
         if rc != 0:
             # Bei Fehler und Branch-Wechsel: zurueck zum alten Branch
             if switching:
-                _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
+                await _run_cmd(["git", "checkout", old_branch], cwd=str(_REPO_DIR))
                 _update_log.append(f"Rollback zu {old_branch}")
             # User-Config wiederherstellen
             for cfg_path, content in _saved_configs.items():
@@ -7850,7 +7982,7 @@ async def ui_system_update_check(token: str = "", branch: str = ""):
     _check_token(token)
 
     # Aktuellen Branch ermitteln
-    _, current_branch_raw = _run_cmd(
+    _, current_branch_raw = await _run_cmd(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR)
     )
     current_branch = current_branch_raw.strip() or "main"
@@ -7858,7 +7990,7 @@ async def ui_system_update_check(token: str = "", branch: str = ""):
     is_different_branch = check_branch != current_branch
 
     # Fetch
-    rc, fetch_out = _run_cmd(
+    rc, fetch_out = await _run_cmd(
         ["git", "fetch", "origin", check_branch],
         cwd=str(_REPO_DIR), timeout=30,
     )
@@ -7871,8 +8003,8 @@ async def ui_system_update_check(token: str = "", branch: str = ""):
         }
 
     # Lokalen HEAD ermitteln
-    _, local = _run_cmd(["git", "rev-parse", "HEAD"], cwd=str(_REPO_DIR))
-    _, remote = _run_cmd(
+    _, local = await _run_cmd(["git", "rev-parse", "HEAD"], cwd=str(_REPO_DIR))
+    _, remote = await _run_cmd(
         ["git", "rev-parse", f"origin/{check_branch}"], cwd=str(_REPO_DIR)
     )
 
@@ -7894,14 +8026,14 @@ async def ui_system_update_check(token: str = "", branch: str = ""):
     # Bei anderem Branch oder unterschiedlichen Commits: Updates vorhanden
     if is_different_branch:
         # Commits auf dem Ziel-Branch anzeigen (letzte 20)
-        _, log = _run_cmd(
+        _, log = await _run_cmd(
             ["git", "log", "--oneline", "-20", f"origin/{check_branch}"],
             cwd=str(_REPO_DIR),
         )
         result["updates_available"] = True
         result["new_commits"] = log.strip().split("\n") if log.strip() else []
     else:
-        _, log = _run_cmd(
+        _, log = await _run_cmd(
             ["git", "log", "--oneline", f"{local}..{remote}"],
             cwd=str(_REPO_DIR),
         )

@@ -15,6 +15,10 @@ assistant/config/automation_templates.yaml
 assistant/config/opinion_rules.yaml
 assistant/config/maintenance.yaml
 
+# Test artifacts
+.coverage
+htmlcov/
+
 # OS
 .DS_Store
 Thumbs.db

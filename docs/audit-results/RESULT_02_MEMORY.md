@@ -178,6 +178,58 @@ Der Addon hat eine eigene SQLite mit `LearnedPattern`, `StateHistory`, `Predicti
 | `conversation_memory._cleanup_old_questions()` | Nur reaktiv | Nur bei `max_questions` Überschreitung, kein Schedule |
 | `shared/schemas/*` | Dead Code | Bereits in Prompt 1 identifiziert — von niemand importiert |
 
+### 6a. Dead-Code-Beweis (Grep-Proof)
+
+Folgende Grep-Befehle belegen die Dead-Code-Einträge:
+
+**shared/schemas/\* — von keinem Service importiert:**
+```
+$ grep -r "from shared\|import shared" assistant/ addon/ ha_integration/ speech/
+→ 0 Treffer
+```
+Bestätigt: `shared/schemas/chat_request.py`, `shared/schemas/chat_response.py`, `shared/events.py`, `shared/constants.py` werden von **keinem Service** importiert. Die Dateien existieren, aber alle Services definieren eigene Modelle lokal (Assistant: `main.py:630-656`, Addon: eigene Klassen, HA-Integration: Dict-Literal).
+
+**learning_transfer.REDIS_KEY_TRANSFERS — definiert aber nie verwendet:**
+```
+$ grep -rn "REDIS_KEY_TRANSFERS" assistant/assistant/learning_transfer.py
+27: REDIS_KEY_TRANSFERS = "mha:learning_transfer:transfers"
+```
+```
+$ grep -rn "REDIS_KEY_TRANSFERS" assistant/assistant/
+→ Nur 1 Treffer: Definition in Zeile 27
+```
+Die Konstante wird definiert aber in keiner `redis.set()`/`redis.get()` Operation genutzt. Stattdessen werden pending transfers in einer Python-Liste `_pending_transfers` gehalten (in-memory only).
+
+**conversation_memory._cleanup_old_questions() — nie scheduled:**
+```
+$ grep -rn "_cleanup_old_questions" assistant/assistant/
+→ Nur Definition in conversation_memory.py
+```
+Die Methode existiert, wird aber nur intern bei `max_questions` Überschreitung aufgerufen — kein periodischer Cleanup-Schedule.
+
+**memory.search_memories() — im process()-Flow nie aufgerufen:**
+```
+$ grep -rn "search_memories" assistant/assistant/
+→ memory.py: Definition (Zeile 274)
+→ main.py:792: API-Endpoint /api/assistant/memory/search
+```
+Die Methode wird **nur** als REST-API-Endpoint exponiert, **nie** im normalen `brain.process()` Flow aufgerufen. ChromaDB-Episoden (`mha_conversations`) werden geschrieben (`store_episode`) aber im LLM-Prompt-Aufbau nie gelesen — effektiver Dead Code im Hauptpfad.
+
+**shared/ — gesamtes Verzeichnis von keinem Service importiert (Cross-Service-Beweis):**
+```
+$ grep -r "from shared\|import shared" assistant/ addon/ ha_integration/ speech/
+→ 0 Treffer
+
+$ ls shared/
+__init__.py  constants.py  schemas/
+```
+Das gesamte `shared/`-Verzeichnis (constants.py, schemas/chat_request.py, schemas/chat_response.py, events.py) ist Dead Code. Kein Service importiert daraus. Stattdessen:
+- **Assistant** definiert eigene Models in `main.py:630-656`
+- **Addon** nutzt eigene Klassen und raw JSON
+- **HA-Integration** baut Dict-Literals in `conversation.py:92-98`
+
+Die "API-Verträge" existieren nur als Dateien auf der Festplatte — sie werden weder gelesen noch enforced.
+
 ---
 
 ## 7. Bug-Report

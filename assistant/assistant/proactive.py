@@ -95,6 +95,7 @@ class ProactiveManager:
 
         # Dynamische Geraete: devices ist eine Liste von {key, label, patterns}
         self._appliance_patterns = {}
+        self.event_handlers = {}  # Fix: Vor devices-Loop initialisieren (war erst bei Z.145)
         devices = appliance_cfg.get("devices", [])
         if devices:
             for dev in devices:
@@ -591,7 +592,7 @@ class ProactiveManager:
                         logger.debug("Proactive Planner (weather_changed): %s", _wp_err)
 
         # Phase 7.4: Geo-Fence Proximity (proximity.home Entity)
-        elif entity_id.startswith("proximity.") or entity_id.startswith("sensor.") and "distance" in entity_id:
+        elif (entity_id.startswith("proximity.") or entity_id.startswith("sensor.")) and "distance" in entity_id:
             await self._check_geo_fence(entity_id, new_val, old_val, new_state)
 
         # Phase 7.1 + 10.1: Bewegung erkannt → Morning/Evening Briefing + Musik-Follow + Nacht-Kamera + Follow-Me
@@ -964,18 +965,22 @@ class ProactiveManager:
         now = datetime.now()
         today = now.strftime("%Y-%m-%d")
 
-        # Reset am neuen Tag
-        if self._mb_last_date != today:
-            self._mb_triggered_today = False
-            self._mb_last_date = today
+        # Reset am neuen Tag — lock prevents double-trigger from concurrent motion events
+        async with self._state_lock:
+            if self._mb_last_date != today:
+                self._mb_triggered_today = False
+                self._mb_last_date = today
 
-        # Schon heute geliefert?
-        if self._mb_triggered_today:
-            return
+            # Schon heute geliefert?
+            if self._mb_triggered_today:
+                return
 
-        # Innerhalb des Morgen-Fensters?
-        if not (self._mb_window_start <= now.hour < self._mb_window_end):
-            return
+            # Innerhalb des Morgen-Fensters?
+            if not (self._mb_window_start <= now.hour < self._mb_window_end):
+                return
+
+            # Claim trigger slot before releasing lock
+            self._mb_triggered_today = True
 
         # Aufwach-Sequenz: Wenn Schlafzimmer-Sensor → stufenweises Aufwachen vor Briefing
         wakeup_done = False
@@ -987,7 +992,7 @@ class ProactiveManager:
         ):
             try:
                 autonomy = getattr(self.brain, "autonomy", None)
-                level = getattr(autonomy, "current_level", 3) if autonomy else 3
+                level = getattr(autonomy, "level", 3) if autonomy else 3
                 wakeup_done = await self.brain.routines.execute_wakeup_sequence(
                     autonomy_level=level,
                 )
@@ -1023,16 +1028,26 @@ class ProactiveManager:
                     _title = ", ".join(_titles)
                 else:
                     _title = get_person_title()
-                _greetings = [
-                    f"Guten Morgen, {_title}.",
-                    f"Morgen, {_title}. Systeme laufen.",
-                    "Guten Morgen. Alles bereit.",
-                    f"Morgen, {_title}. Hier die Lage.",
-                ]
+                # Persoenlichkeits-konsistente Greetings basierend auf Sarkasmus-Level
+                _sarcasm = getattr(self.brain, "personality", None)
+                _sl = getattr(_sarcasm, "sarcasm_level", 2) if _sarcasm else 2
+                if _sl >= 3:
+                    _greetings = [
+                        f"Morgen, {_title}. Systeme laufen. Du uebrigens auch.",
+                        f"Guten Morgen, {_title}. Ich war schon wach.",
+                        f"Morgen, {_title}. Hier die Lage — kurz, bevor du fragst.",
+                        f"Guten Morgen. Alles im Griff, {_title}.",
+                    ]
+                else:
+                    _greetings = [
+                        f"Guten Morgen, {_title}.",
+                        f"Morgen, {_title}. Systeme laufen.",
+                        f"Guten Morgen. Alles bereit, {_title}.",
+                        f"Morgen, {_title}. Hier die Lage.",
+                    ]
                 greeting = random.choice(_greetings)
                 text = f"{greeting} {text}"
 
-                self._mb_triggered_today = True
                 await emit_proactive(text, "morning_briefing", MEDIUM)
                 logger.info("Morning Briefing automatisch geliefert")
 
@@ -1059,21 +1074,24 @@ class ProactiveManager:
         now = datetime.now()
         today = now.strftime("%Y-%m-%d")
 
-        # Reset am neuen Tag
-        if self._eb_last_date != today:
-            self._eb_triggered_today = False
-            self._eb_last_date = today
+        # Reset am neuen Tag — lock prevents double-trigger from concurrent events
+        async with self._state_lock:
+            if self._eb_last_date != today:
+                self._eb_triggered_today = False
+                self._eb_last_date = today
 
-        if self._eb_triggered_today:
-            return
+            if self._eb_triggered_today:
+                return
 
-        if not (self._eb_window_start <= now.hour < self._eb_window_end):
-            return
+            if not (self._eb_window_start <= now.hour < self._eb_window_end):
+                return
+
+            # Claim trigger slot before releasing lock
+            self._eb_triggered_today = True
 
         try:
             text = await self.generate_evening_briefing()
             if text:
-                self._eb_triggered_today = True
                 await emit_proactive(text, "evening_briefing", LOW)
                 logger.info("Evening Briefing geliefert: %s", text[:80])
         except Exception as e:

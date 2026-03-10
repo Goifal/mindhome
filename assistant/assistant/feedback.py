@@ -260,6 +260,7 @@ class FeedbackTracker:
 
         stats = {}
         for key in keys:
+            key = key.decode() if isinstance(key, bytes) else key
             et = key.replace("mha:feedback:score:", "")
             stats[et] = await self._get_event_stats(et)
 
@@ -296,8 +297,11 @@ class FeedbackTracker:
                     cursor, match="mha:feedback:score:*", count=100
                 )
                 for key in keys:
+                    key = key.decode() if isinstance(key, bytes) else key
                     et = key.replace("mha:feedback:score:", "")
                     val = await self.redis.get(key)
+                    if isinstance(val, bytes):
+                        val = val.decode()
                     scores[et] = float(val) if val else DEFAULT_SCORE
                 if cursor == 0:
                     break
@@ -322,6 +326,8 @@ class FeedbackTracker:
         if person:
             person_key = f"mha:feedback:score:{event_type}:person:{person}"
             person_current = await self.redis.get(person_key)
+            if isinstance(person_current, bytes):
+                person_current = person_current.decode()
             person_score = float(person_current) if person_current else DEFAULT_SCORE
             person_new = max(0.0, min(1.0, person_score + delta))
             await self.redis.setex(person_key, REDIS_FEEDBACK_SCORE_TTL, str(person_new))
@@ -333,6 +339,8 @@ class FeedbackTracker:
         if not self.redis or not person:
             return DEFAULT_SCORE
         score = await self.redis.get(f"mha:feedback:score:{event_type}:person:{person}")
+        if isinstance(score, bytes):
+            score = score.decode()
         return float(score) if score else DEFAULT_SCORE
 
     async def _increment_counter(self, event_type: str, counter_name: str):
@@ -348,7 +356,10 @@ class FeedbackTracker:
         if not self.redis:
             return {}
         data = await self.redis.hgetall(f"mha:feedback:counters:{event_type}")
-        return {k: int(v) for k, v in data.items()}
+        return {
+            (k.decode() if isinstance(k, bytes) else k): int(v)
+            for k, v in data.items()
+        }
 
     async def _store_feedback_entry(
         self, event_type: str, feedback_type: str, delta: float

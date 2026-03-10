@@ -34,7 +34,7 @@ import re
 import socket
 import time
 from typing import Optional
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import urlparse
 
 import aiohttp
 

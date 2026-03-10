@@ -204,9 +204,6 @@ class ResponseQualityTracker:
         overlap = len(current_words & previous_words)
         total = len(current_words | previous_words)
 
-        if total == 0:
-            return False
-
         similarity = overlap / total
         return similarity >= self._rephrase_threshold
 

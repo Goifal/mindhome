@@ -88,7 +88,7 @@ class DomainPlugin(ABC):
         except Exception:
             self._context_cache = {
                 "anyone_home": self.ha.is_anyone_home(),
-                "is_dark": False, "is_rainy": self.ha.is_raining(),
+                "is_dark": True, "is_rainy": self.ha.is_raining(),
             }
             self._context_cache_time = now
         return self._context_cache
@@ -121,14 +121,17 @@ class DomainPlugin(ABC):
 
     def _load_settings(self):
         self._settings_cache = dict(self.DEFAULT_SETTINGS)
+        session = None
         try:
             from models import PluginSetting
             session = self.get_session()
             for s in session.query(PluginSetting).filter_by(plugin_name=self.DOMAIN_NAME).all():
                 self._settings_cache[s.setting_key] = s.setting_value
-            session.close()
         except Exception as e:
             self.logger.warning(f"Settings load error: {e}")
+        finally:
+            if session is not None:
+                session.close()
 
     def get_setting(self, key, default=None):
         if self._settings_cache is None:
@@ -142,6 +145,7 @@ class DomainPlugin(ABC):
         return val
 
     def set_setting(self, key, value):
+        session = None
         try:
             from models import PluginSetting
             session = self.get_session()
@@ -158,9 +162,13 @@ class DomainPlugin(ABC):
             session.commit()
             if self._settings_cache:
                 self._settings_cache[key] = str_value
-            session.close()
         except Exception as e:
+            if session is not None:
+                session.rollback()
             self.logger.warning(f"Setting save error: {e}")
+        finally:
+            if session is not None:
+                session.close()
 
     def is_enabled(self):
         return self.get_setting("enabled", "true") == "true"

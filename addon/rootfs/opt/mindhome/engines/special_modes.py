@@ -559,8 +559,8 @@ class NightLockdown(SpecialModeBase):
                     ).all()
                     for l in locks:
                         self.ha.call_service("lock", "lock", {"entity_id": l.entity_id})
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"NightLockdown lock doors error: {e}")
 
         # Turn off media
         if config.get("turn_off_media"):
@@ -572,8 +572,8 @@ class NightLockdown(SpecialModeBase):
                     ).all()
                     for m in media:
                         self.ha.call_service("media_player", "turn_off", {"entity_id": m.entity_id})
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"NightLockdown turn off media error: {e}")
 
         # Window check
         if config.get("window_check_enabled"):

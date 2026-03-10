@@ -88,6 +88,7 @@ from .threat_assessment import ThreatAssessment
 from .learning_observer import LearningObserver
 from .tts_enhancer import TTSEnhancer
 from .brain_callbacks import BrainCallbacksMixin
+from .brain_humanizers import BrainHumanizersMixin
 from .pre_classifier import PreClassifier
 from .circuit_breaker import registry as cb_registry, ollama_breaker, ha_breaker
 from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL, ENTITY_CATALOG_REFRESH_INTERVAL, ERROR_BACKOFF_LONG, ERROR_BACKOFF_SHORT
@@ -197,7 +198,7 @@ Frage nur bei Mehrdeutigkeit nach (z.B. "Welchen Raum?")."""
 SCENE_INTELLIGENCE_PROMPT = _build_scene_intelligence_prompt()
 
 
-class AssistantBrain(BrainCallbacksMixin):
+class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
     """Das zentrale Gehirn von MindHome Assistant."""
 
     def __init__(self):
@@ -208,6 +209,10 @@ class AssistantBrain(BrainCallbacksMixin):
         self._states_cache = None
         self._states_cache_ts = 0.0
         self._STATES_CACHE_TTL = 2.0  # 2 Sekunden
+        self._states_lock = asyncio.Lock()
+
+        # Fix: Lock fuer process() — verhindert concurrent Requests die Shared State korrumpieren
+        self._process_lock = asyncio.Lock()
 
         # Clients
         self.ha = HomeAssistantClient()
@@ -464,13 +469,14 @@ class AssistantBrain(BrainCallbacksMixin):
     async def get_states_cached(self) -> list:
         """Cached get_states() — vermeidet 8x API-Call pro Request (P1)."""
         import time
-        now = time.monotonic()
-        if self._states_cache and (now - self._states_cache_ts) < self._STATES_CACHE_TTL:
-            return self._states_cache
-        states = await self.ha.get_states()
-        self._states_cache = states
-        self._states_cache_ts = now
-        return states
+        async with self._states_lock:
+            now = time.monotonic()
+            if self._states_cache and (now - self._states_cache_ts) < self._STATES_CACHE_TTL:
+                return self._states_cache
+            states = await self.ha.get_states()
+            self._states_cache = states
+            self._states_cache_ts = now
+            return states
 
     async def initialize(self):
         """Initialisiert alle Komponenten."""
@@ -510,92 +516,6 @@ class AssistantBrain(BrainCallbacksMixin):
         # Gelernten Sarkasmus-Level laden
         await self.personality.load_learned_sarcasm_level()
 
-        # Fact Decay: Einmal taeglich alte Fakten abbauen
-        self._task_registry.create_task(self._run_daily_fact_decay(), name="daily_fact_decay")
-
-        # Autonomy Evolution: Woechentlich pruefen ob Level-Aufstieg moeglich
-        self._task_registry.create_task(self._run_autonomy_evolution(), name="autonomy_evolution")
-
-        # Memory Extractor initialisieren
-        self.memory_extractor = MemoryExtractor(self.ollama, self.memory.semantic)
-
-        # Feedback Tracker initialisieren
-        await self.feedback.initialize(redis_client=self.memory.redis)
-
-        # Daily Summarizer initialisieren
-        self.summarizer.memory = self.memory
-        await self.summarizer.initialize(
-            redis_client=self.memory.redis,
-            chroma_collection=self.memory.chroma_collection,
-        )
-        self.summarizer.set_notify_callback(self._handle_daily_summary)
-
-        # Phase 6: TimeAwareness initialisieren und starten
-        await self.time_awareness.initialize(redis_client=self.memory.redis)
-        self.time_awareness.set_notify_callback(self._handle_time_alert)
-        await self.time_awareness.start()
-
-        # LightEngine: Praesenz, Bettsensor, Lux-Adaptiv, Daemmerung, Override
-        await self.light_engine.initialize(redis_client=self.memory.redis)
-        self.light_engine.mood = self.mood  # Mood-Awareness für adaptives Licht
-        await self.light_engine.start()
-        self.executor._light_engine = self.light_engine
-        self.time_awareness._light_engine = self.light_engine
-
-        # Phase 7: RoutineEngine initialisieren
-        await self.routines.initialize(redis_client=self.memory.redis)
-        self.routines.set_executor(self.executor)
-        self.routines.set_personality(self.personality)
-        self.routines._semantic_memory = self.memory.semantic
-        await self.routines.migrate_yaml_birthdays(self.memory.semantic)
-
-        # Phase 8: Anticipation Engine + Intent Tracker
-        await self.anticipation.initialize(redis_client=self.memory.redis)
-        self.anticipation.set_notify_callback(self._handle_anticipation_suggestion)
-        await self.intent_tracker.initialize(redis_client=self.memory.redis)
-        self.intent_tracker.set_notify_callback(self._handle_intent_reminder)
-
-        # Phase 9: Speaker Recognition initialisieren
-        await self.speaker_recognition.initialize(redis_client=self.memory.redis)
-
-        # Phase 11: Koch-Assistent mit Semantic Memory verbinden
-        self.cooking.semantic_memory = self.memory.semantic
-        self.cooking.set_notify_callback(self._handle_cooking_timer)
-
-        # Phase 11.1: Knowledge Base initialisieren
-        await self.knowledge_base.initialize()
-
-        # Recipe Store initialisieren und mit Koch-Assistent verbinden
-        await self.recipe_store.initialize()
-        self.cooking.recipe_store = self.recipe_store
-
-        # Phase 15.2: Inventory Manager initialisieren
-        await self.inventory.initialize(redis_client=self.memory.redis)
-
-        # Smart Shopping initialisieren
-        await self.smart_shopping.initialize(redis_client=self.memory.redis)
-        self.executor._smart_shopping = self.smart_shopping
-
-        # Konversations-Gedaechtnis++ initialisieren
-        await self.conversation_memory.initialize(redis_client=self.memory.redis)
-        self.executor._conversation_memory = self.conversation_memory
-
-        # Multi-Room Audio initialisieren
-        await self.multi_room_audio.initialize(redis_client=self.memory.redis)
-        await self.multi_room_audio.load_presets()
-        self.executor._multi_room_audio = self.multi_room_audio
-
-        # Phase 13.2: Self Automation initialisieren
-        await self.self_automation.initialize(redis_client=self.memory.redis)
-
-        # Phase 13.4: Config Versioning + Self Optimization initialisieren
-        await self.config_versioning.initialize(redis_client=self.memory.redis)
-        await self.self_optimization.initialize(redis_client=self.memory.redis)
-        self.executor.set_config_versioning(self.config_versioning)
-
-        # Phase 14.2: OCR Engine initialisieren
-        await self.ocr.initialize(redis_client=self.memory.redis)
-
         # F-069: Nicht-kritische Module in try/except wrappen für Degraded Startup.
         # Wenn ein Modul fehlschlaegt, laeuft der Assistent trotzdem —
         # nur die betroffene Funktionalitaet fehlt.
@@ -608,6 +528,99 @@ class AssistantBrain(BrainCallbacksMixin):
             except Exception as e:
                 _degraded_modules.append(name)
                 logger.error("F-069: %s Initialisierung fehlgeschlagen (degraded): %s", name, e)
+
+        # Fix: Module 1-30 ebenfalls in _safe_init wrappen (waren vorher ungeschuetzt)
+        # Fact Decay + Autonomy Evolution Background-Tasks
+        await _safe_init("FactDecay", self._start_fact_decay_task())
+        await _safe_init("AutonomyEvolution", self._start_autonomy_evolution_task())
+
+        # Memory Extractor initialisieren
+        try:
+            self.memory_extractor = MemoryExtractor(self.ollama, self.memory.semantic)
+        except Exception as e:
+            _degraded_modules.append("MemoryExtractor")
+            logger.error("F-069: MemoryExtractor init fehlgeschlagen: %s", e)
+
+        # Feedback Tracker initialisieren
+        await _safe_init("FeedbackTracker", self.feedback.initialize(redis_client=self.memory.redis))
+
+        # Daily Summarizer initialisieren
+        self.summarizer.memory = self.memory
+        await _safe_init("Summarizer", self.summarizer.initialize(
+            redis_client=self.memory.redis,
+            chroma_collection=self.memory.chroma_collection,
+        ))
+        self.summarizer.set_notify_callback(self._handle_daily_summary)
+
+        # Phase 6: TimeAwareness initialisieren und starten
+        await _safe_init("TimeAwareness", self.time_awareness.initialize(redis_client=self.memory.redis))
+        self.time_awareness.set_notify_callback(self._handle_time_alert)
+        if "TimeAwareness" not in _degraded_modules:
+            await _safe_init("TimeAwareness.start", self.time_awareness.start())
+
+        # LightEngine: Praesenz, Bettsensor, Lux-Adaptiv, Daemmerung, Override
+        await _safe_init("LightEngine", self.light_engine.initialize(redis_client=self.memory.redis))
+        self.light_engine.mood = self.mood
+        if "LightEngine" not in _degraded_modules:
+            await _safe_init("LightEngine.start", self.light_engine.start())
+        self.executor._light_engine = self.light_engine
+        self.time_awareness._light_engine = self.light_engine
+
+        # Phase 7: RoutineEngine initialisieren
+        await _safe_init("RoutineEngine", self.routines.initialize(redis_client=self.memory.redis))
+        self.routines.set_executor(self.executor)
+        self.routines.set_personality(self.personality)
+        self.routines._semantic_memory = self.memory.semantic
+        if "RoutineEngine" not in _degraded_modules:
+            await _safe_init("RoutineEngine.birthdays", self.routines.migrate_yaml_birthdays(self.memory.semantic))
+
+        # Phase 8: Anticipation Engine + Intent Tracker
+        await _safe_init("Anticipation", self.anticipation.initialize(redis_client=self.memory.redis))
+        self.anticipation.set_notify_callback(self._handle_anticipation_suggestion)
+        await _safe_init("IntentTracker", self.intent_tracker.initialize(redis_client=self.memory.redis))
+        self.intent_tracker.set_notify_callback(self._handle_intent_reminder)
+
+        # Phase 9: Speaker Recognition initialisieren
+        await _safe_init("SpeakerRecognition", self.speaker_recognition.initialize(redis_client=self.memory.redis))
+
+        # Phase 11: Koch-Assistent mit Semantic Memory verbinden
+        self.cooking.semantic_memory = self.memory.semantic
+        self.cooking.set_notify_callback(self._handle_cooking_timer)
+
+        # Phase 11.1: Knowledge Base initialisieren
+        await _safe_init("KnowledgeBase", self.knowledge_base.initialize())
+
+        # Recipe Store initialisieren und mit Koch-Assistent verbinden
+        await _safe_init("RecipeStore", self.recipe_store.initialize())
+        self.cooking.recipe_store = self.recipe_store
+
+        # Phase 15.2: Inventory Manager initialisieren
+        await _safe_init("Inventory", self.inventory.initialize(redis_client=self.memory.redis))
+
+        # Smart Shopping initialisieren
+        await _safe_init("SmartShopping", self.smart_shopping.initialize(redis_client=self.memory.redis))
+        self.executor._smart_shopping = self.smart_shopping
+
+        # Konversations-Gedaechtnis++ initialisieren
+        await _safe_init("ConversationMemory", self.conversation_memory.initialize(redis_client=self.memory.redis))
+        self.executor._conversation_memory = self.conversation_memory
+
+        # Multi-Room Audio initialisieren
+        await _safe_init("MultiRoomAudio", self.multi_room_audio.initialize(redis_client=self.memory.redis))
+        if "MultiRoomAudio" not in _degraded_modules:
+            await _safe_init("MultiRoomAudio.presets", self.multi_room_audio.load_presets())
+        self.executor._multi_room_audio = self.multi_room_audio
+
+        # Phase 13.2: Self Automation initialisieren
+        await _safe_init("SelfAutomation", self.self_automation.initialize(redis_client=self.memory.redis))
+
+        # Phase 13.4: Config Versioning + Self Optimization initialisieren
+        await _safe_init("ConfigVersioning", self.config_versioning.initialize(redis_client=self.memory.redis))
+        await _safe_init("SelfOptimization", self.self_optimization.initialize(redis_client=self.memory.redis))
+        self.executor.set_config_versioning(self.config_versioning)
+
+        # Phase 14.2: OCR Engine initialisieren
+        await _safe_init("OCR", self.ocr.initialize(redis_client=self.memory.redis))
 
         # Phase 14.3: Ambient Audio initialisieren und starten
         await _safe_init("AmbientAudio", self.ambient_audio.initialize(redis_client=self.memory.redis))
@@ -1087,6 +1100,11 @@ class AssistantBrain(BrainCallbacksMixin):
         Returns:
             Dict mit response, actions, model_used
         """
+        async with self._process_lock:
+            return await self._process_inner(text, person, room, files, stream_callback, voice_metadata, device_id)
+
+    async def _process_inner(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None, device_id: Optional[str] = None) -> dict:
+        """Innere process()-Implementierung, geschuetzt durch _process_lock."""
         # C-2: Erkennen ob Request von HA Assist Pipeline kommt
         # Die Pipeline uebernimmt TTS selbst via Wyoming Piper → brain.py darf NICHT auch sprechen
         self._request_from_pipeline = (
@@ -2391,7 +2409,7 @@ class AssistantBrain(BrainCallbacksMixin):
             )))
             _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
             _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
-            _mega_tasks.append(("conv_memory", self.conversation_memory.get_memory_context()))
+            _mega_tasks.append(("conv_memory_extended", self.conversation_memory.get_memory_context()))
 
         # Conversation-Mode Detection + Memory-Callback parallelisieren
         # (bisher sequentiell NACH dem gather — spart ~50-200ms)
@@ -2919,9 +2937,9 @@ class AssistantBrain(BrainCallbacksMixin):
             sections.append(("continuity", cont_text, 3))
 
         # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
-        conv_memory_ctx = _safe_get("conv_memory", "")
+        conv_memory_ctx = _safe_get("conv_memory_extended", "")
         if conv_memory_ctx:
-            sections.append(("conv_memory", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 3))
+            sections.append(("conv_memory_ext", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 3))
 
         # --- Prio 4: Wenn Platz ---
         if tutorial_hint:
@@ -3657,6 +3675,19 @@ class AssistantBrain(BrainCallbacksMixin):
                                 self.learning_observer.mark_jarvis_action(entity_id),
                                 name="mark_jarvis_action",
                             )
+
+                            # Conflict F: Mark entity ownership in Redis so the
+                            # addon can skip automations on recently-controlled
+                            # entities and avoid flickering/ping-pong.
+                            if self.memory and self.memory.redis:
+                                try:
+                                    await self.memory.redis.set(
+                                        f"mha:entity_owner:{entity_id}",
+                                        "assistant",
+                                        ex=120,  # 2-minute ownership window
+                                    )
+                                except Exception:
+                                    pass  # Non-critical
 
                         # Self-Improvement: Outcome Tracker — Wirkung der Aktion beobachten
                         self._task_registry.create_task(
@@ -4743,516 +4774,8 @@ class AssistantBrain(BrainCallbacksMixin):
 
         return []
 
-    # ------------------------------------------------------------------
-    # Query-Result Humanizer (Fallback wenn LLM-Feedback-Loop fehlschlaegt)
-    # ------------------------------------------------------------------
+    # Humanizer-Methoden sind in brain_humanizers.py (BrainHumanizersMixin)
 
-    def _humanize_query_result(self, func_name: str, raw: str) -> str:
-        """Wandelt rohe Query-Ergebnisse in natuerliche JARVIS-Sprache um.
-
-        Template-basiert, kein LLM noetig. Greift nur als Fallback wenn der
-        LLM-Feedback-Loop keine Antwort produziert hat.
-        """
-        try:
-            if func_name == "get_weather":
-                return self._humanize_weather(raw)
-            elif func_name == "get_calendar_events":
-                return self._humanize_calendar(raw)
-            elif func_name == "get_entity_state":
-                return self._humanize_entity_state(raw)
-            elif func_name == "get_room_climate":
-                return self._humanize_room_climate(raw)
-            elif func_name == "get_house_status":
-                return self._humanize_house_status(raw)
-            elif func_name in ("get_alarms", "set_wakeup_alarm", "cancel_alarm"):
-                return self._humanize_alarms(raw)
-            elif func_name == "get_lights":
-                return self._humanize_lights(raw)
-            elif func_name == "get_switches":
-                return self._humanize_switches(raw)
-            elif func_name == "get_covers":
-                return self._humanize_covers(raw)
-            elif func_name == "get_media":
-                return self._humanize_media(raw)
-            elif func_name == "get_climate":
-                return self._humanize_climate_list(raw)
-        except Exception as e:
-            logger.warning("Humanize fehlgeschlagen für %s: %s", func_name, e, exc_info=True)
-        # Kein Template vorhanden — Rohdaten zurueckgeben
-        return raw
-
-    def _humanize_weather(self, raw: str) -> str:
-        """Wetter-Rohdaten → JARVIS-Stil Antwort.
-
-        Verarbeitet AKTUELL- und VORHERSAGE-Zeilen aus get_weather.
-        """
-        import re
-        from datetime import datetime as _dt
-
-        _conditions_map = {
-            "bewoelkt": "bewölkt", "bewölkt": "bewölkt",
-            "sonnig": "sonnig", "wolkenlos": "wolkenlos",
-            "klare nacht": "klare Nacht", "regen": "regnerisch",
-            "teilweise bewoelkt": "teilweise bewölkt",
-            "teilweise bewölkt": "teilweise bewölkt",
-            "nebel": "neblig", "schnee": "verschneit",
-            "gewitter": "gewittrig", "windig": "windig",
-            "starkregen": "Starkregen",
-        }
-
-        # --- Aktuelle Wetter-Zeile extrahieren ---
-        lines = raw.strip().split("\n")
-        current_line = ""
-        forecast_lines = []
-        for line in lines:
-            if line.startswith("AKTUELL:"):
-                current_line = line
-            elif line.startswith("VORHERSAGE"):
-                forecast_lines.append(line)
-        if not current_line:
-            current_line = lines[0] if lines else raw
-
-        # Temperatur extrahieren
-        temp_match = re.search(r"(-?\d+)[.,]?\d*\s*°C", current_line)
-        if not temp_match:
-            return raw
-        temp = int(temp_match.group(1))
-
-        # Condition extrahieren
-        condition = ""
-        cl_lower = current_line.lower()
-        for key, val in _conditions_map.items():
-            if key in cl_lower:
-                condition = val
-                break
-
-        # Wind extrahieren
-        wind_match = re.search(r"Wind\s+(?:aus\s+)?(\w+)\s+(?:mit\s+)?(\d+)[.,]?\d*\s*km/h", current_line, re.IGNORECASE)
-        if not wind_match:
-            wind_match = re.search(r"Wind\s+(\d+)[.,]?\d*\s*km/h\s+aus\s+(\w+)", current_line, re.IGNORECASE)
-            if wind_match:
-                wind_speed = int(wind_match.group(1))
-                wind_dir = wind_match.group(2)
-            else:
-                wind_speed = 0
-                wind_dir = ""
-        else:
-            wind_dir = wind_match.group(1)
-            wind_speed = int(wind_match.group(2))
-
-        # JARVIS-Stil: natuerlich, gerundet, knapp
-        if condition:
-            result = f"{temp} Grad, {condition}."
-        else:
-            result = f"{temp} Grad draussen."
-
-        # Wind nur erwaehnen wenn spuerbar (> 10 km/h)
-        if wind_speed > 10 and wind_dir:
-            result += f" Wind aus {wind_dir}."
-
-        # Kontext-Kommentar (JARVIS-Persoenlichkeit)
-        if temp <= 0:
-            result += f" Handschuhe empfohlen, {get_person_title(self._current_person)}."
-        elif temp <= 5:
-            result += " Jacke empfohlen."
-        elif temp >= 30:
-            result += f" Genuegend trinken, {get_person_title(self._current_person)}."
-
-        # --- Forecast-Zeilen verarbeiten ---
-        if forecast_lines:
-            _weekdays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag",
-                         "Freitag", "Samstag", "Sonntag"]
-            fc_parts = []
-            for fc_line in forecast_lines[:3]:
-                date_m = re.search(r'VORHERSAGE\s+(\d{4}-\d{2}-\d{2}):', fc_line)
-                temp_hi = re.search(r'Hoch\s+(-?\d+)', fc_line)
-                temp_lo = re.search(r'Tief\s+(-?\d+)', fc_line)
-                cond_m = re.search(r':\s+(\w[\w\s]*?),\s+Hoch', fc_line)
-                precip_m = re.search(r'Niederschlag\s+(\d+[.,]?\d*)\s*mm', fc_line)
-
-                if not (date_m and temp_hi):
-                    continue
-
-                # Datum → Wochentag
-                try:
-                    d = _dt.strptime(date_m.group(1), "%Y-%m-%d")
-                    day_name = _weekdays[d.weekday()]
-                except (ValueError, IndexError):
-                    day_name = date_m.group(1)
-
-                fc_text = f"{day_name}: {temp_hi.group(1)}"
-                if temp_lo:
-                    fc_text += f"/{temp_lo.group(1)}"
-                fc_text += " Grad"
-                if cond_m:
-                    fc_cond = cond_m.group(1).strip()
-                    # Condition uebersetzen wenn moeglich
-                    fc_cond_mapped = _conditions_map.get(fc_cond.lower(), fc_cond)
-                    fc_text += f", {fc_cond_mapped}"
-                if precip_m:
-                    try:
-                        precip_val = float(precip_m.group(1).replace(",", "."))
-                        if precip_val > 0:
-                            fc_text += f", {precip_m.group(1)} mm Regen"
-                    except ValueError:
-                        pass
-                fc_parts.append(fc_text)
-
-            if len(fc_parts) == 1:
-                result += f" {fc_parts[0]}."
-            elif fc_parts:
-                result += " " + ". ".join(fc_parts) + "."
-
-        return result
-
-    def _humanize_calendar(self, raw: str) -> str:
-        """Kalender-Rohdaten → JARVIS-Stil Antwort."""
-        if not raw or not raw.strip():
-            return raw
-
-        import re
-        raw_upper = raw.upper()
-
-        # Zeitkontext aus Header bestimmen ("TERMINE MORGEN", "TERMINE HEUTE", ...)
-        if "MORGEN" in raw_upper:
-            prefix_single = "Morgen steht"
-            prefix_multi = "Morgen stehen"
-            prefix_free = f"Morgen ist frei, {get_person_title(self._current_person)}."
-        elif "WOCHE" in raw_upper:
-            prefix_single = "Diese Woche steht"
-            prefix_multi = "Diese Woche stehen"
-            prefix_free = f"Die Woche ist frei, {get_person_title(self._current_person)}."
-        else:
-            prefix_single = "Heute steht"
-            prefix_multi = "Heute stehen"
-            prefix_free = f"Heute ist nichts geplant, {get_person_title(self._current_person)}."
-
-        # "KEINE TERMINE" Varianten
-        if "KEINE TERMINE" in raw_upper or "(0)" in raw:
-            return prefix_free
-
-        # Alle "HH:MM | Titel" Muster extrahieren (funktioniert ein- und mehrzeilig)
-        pattern = r"(\d{1,2}:\d{2})\s*\|\s*(.+?)(?:\n|$)"
-        matches = re.findall(pattern, raw)
-
-        # Ganztaegige Termine separat erfassen
-        ganztag_pattern = r"ganztaegig\s*\|\s*(.+?)(?:\n|$)"
-        ganztag_matches = re.findall(ganztag_pattern, raw, re.IGNORECASE)
-
-        if not matches and not ganztag_matches:
-            return raw
-
-        events = []
-        for time_str, title in matches:
-            title = title.strip()
-            # Ort/Info-Suffix entfernen (nach erstem |)
-            if " | " in title:
-                title = title.split(" | ")[0].strip()
-            # Uhrzeit natuerlicher formatieren
-            h, m = time_str.split(":")
-            h = int(h)
-            m = int(m)
-            if m == 0:
-                time_natural = f"um {h} Uhr"
-            else:
-                time_natural = f"um {h} Uhr {m}"
-            events.append(f"{title} {time_natural}")
-
-        for title in ganztag_matches:
-            events.append(title.strip())
-
-        if len(events) == 1:
-            return f"{prefix_single} {events[0]} an, {get_person_title(self._current_person)}."
-        listing = ", ".join(events[:-1]) + f" und {events[-1]}"
-        return f"{prefix_multi} {len(events)} Termine an: {listing}."
-
-    def _humanize_entity_state(self, raw: str) -> str:
-        """Entity-Status — JARVIS-Stil: knapp und praezise."""
-        if len(raw) < 80:
-            return raw
-        lines = raw.strip().split("\n")
-        if len(lines) <= 3:
-            return raw
-        summary = " ".join(l.strip().lstrip("- ") for l in lines[:3] if l.strip())
-        if len(lines) > 3:
-            summary += f" — plus {len(lines) - 3} weitere Datenpunkte."
-        return summary
-
-    def _humanize_room_climate(self, raw: str) -> str:
-        """Raum-Klima — JARVIS-Stil mit Messwert-Praezision."""
-        import re as _re
-        temp_m = _re.search(r'(-?\d+[.,]?\d*)\s*°?C', raw)
-        hum_m = _re.search(r'(\d+[.,]?\d*)\s*%', raw)
-        parts = []
-        if temp_m:
-            parts.append(f"{temp_m.group(1)} Grad")
-        if hum_m:
-            parts.append(f"Luftfeuchtigkeit {hum_m.group(1)}%")
-        if parts:
-            return ", ".join(parts) + "."
-        return raw
-
-    def _humanize_house_status(self, raw: str) -> str:
-        """Haus-Status in natuerliche JARVIS-Sprache.
-
-        Respektiert house_status.detail_level aus settings.yaml:
-          kompakt:      Nur Zusammenfassung (Zahlen, keine Namen)
-          normal:       Bereiche mit Namen (Default)
-          ausfuehrlich: Alle Details (Helligkeit, Soll-Temp, Medientitel etc.)
-
-        Verarbeitet die strukturierten Zeilen aus _exec_get_house_status():
-          Zuhause: Manuel, Julia
-          Temperaturen: Wohnzimmer: 22.5°C (Soll 21°C), Schlafzimmer: 19°C
-          Wetter: Sonnig, 8°C, Luftfeuchte 65%
-          Lichter an: Wohnzimmer-Decke: 100%, Flur-Licht: 50%
-          Alle Lichter aus
-          Sicherheit: disarmed
-          Offen: Schlafzimmer Fenster
-          Offline (2): Sensor Bad, Steckdose Flur
-        """
-        import re as _re
-
-        if not raw or not raw.strip():
-            return "Alles ruhig im Haus."
-
-        hs_cfg = cfg.yaml_config.get("house_status", {})
-        detail = hs_cfg.get("detail_level", "normal")
-
-        lines = raw.strip().split("\n")
-        parts = []
-        title = get_person_title(self._current_person)
-
-        _sec_map = {
-            "disarmed": "Alarmanlage aus",
-            "armed_home": "Alarmanlage aktiv (zuhause)",
-            "armed_away": "Alarmanlage aktiv (abwesend)",
-            "armed_night": "Alarmanlage aktiv (Nacht)",
-            "triggered": "ALARM AUSGELOEST",
-            "unknown": "",
-        }
-
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            # --- Anwesenheit ---
-            if line.startswith("Zuhause:"):
-                names = line.replace("Zuhause:", "").strip()
-                if names:
-                    if detail == "kompakt":
-                        count = len([n.strip() for n in names.split(",") if n.strip()])
-                        parts.append(f"{count} Person{'en' if count > 1 else ''} zuhause")
-                    else:
-                        parts.append(f"{names} ist zuhause" if "," not in names
-                                     else f"{names} sind zuhause")
-            elif line.startswith("Unterwegs:"):
-                names = line.replace("Unterwegs:", "").strip()
-                if names and detail != "kompakt":
-                    parts.append(f"{names} unterwegs")
-
-            # --- Temperaturen ---
-            elif line.startswith("Temperaturen:"):
-                temps = line.replace("Temperaturen:", "").strip()
-                if temps:
-                    if detail == "kompakt":
-                        # Nur erste Temperatur oder Durchschnitt
-                        all_temps = _re.findall(r"(-?\d+[.,]?\d*)\s*°C", temps)
-                        if all_temps:
-                            parts.append(f"{all_temps[0]}°C")
-                    elif detail == "normal":
-                        # Raum: Temp ohne Soll
-                        cleaned = _re.sub(r"\s*\(Soll [^)]+\)", "", temps)
-                        parts.append(cleaned)
-                    else:
-                        # ausfuehrlich: alles
-                        parts.append(temps)
-
-            # --- Wetter ---
-            elif line.startswith("Wetter:"):
-                weather = line.replace("Wetter:", "").strip()
-                if weather:
-                    if detail == "kompakt":
-                        # Nur Condition + Temp
-                        temp_m = _re.search(r"(-?\d+)\s*°C", weather)
-                        cond = weather.split(",")[0].strip() if "," in weather else weather
-                        if temp_m:
-                            parts.append(f"Draussen {temp_m.group(1)}°C, {cond}")
-                        else:
-                            parts.append(f"Draussen: {cond}")
-                    else:
-                        parts.append(f"Draussen: {weather}")
-
-            # --- Lichter ---
-            elif line.startswith("Lichter an:"):
-                lights = line.replace("Lichter an:", "").strip()
-                if lights:
-                    light_list = [l.strip() for l in lights.split(",")]
-                    if detail == "kompakt":
-                        parts.append(f"{len(light_list)} Licht{'er' if len(light_list) > 1 else ''} an")
-                    elif detail == "normal":
-                        # Namen ohne Helligkeit
-                        names_only = [_re.sub(r":\s*\d+%", "", l).strip() for l in light_list]
-                        if len(names_only) <= 4:
-                            parts.append(f"Lichter an: {', '.join(names_only)}")
-                        else:
-                            parts.append(f"{len(names_only)} Lichter an")
-                    else:
-                        # ausfuehrlich: mit Helligkeit
-                        parts.append(f"Lichter an: {lights}")
-            elif line.startswith("Alle Lichter aus"):
-                parts.append("Alle Lichter aus")
-
-            # --- Sicherheit ---
-            elif line.startswith("Sicherheit:"):
-                sec = line.replace("Sicherheit:", "").strip().lower()
-                sec_text = _sec_map.get(sec, sec)
-                if sec_text:
-                    parts.append(sec_text)
-
-            # --- Medien ---
-            elif line.startswith("Medien aktiv:"):
-                media = line.replace("Medien aktiv:", "").strip()
-                if media:
-                    if detail == "kompakt":
-                        parts.append("Medien aktiv")
-                    else:
-                        parts.append(f"Medien: {media}")
-
-            # --- Offene Fenster/Tueren ---
-            elif line.startswith("Offen:"):
-                items = line.replace("Offen:", "").strip()
-                if items:
-                    if detail == "kompakt":
-                        count = len([i.strip() for i in items.split(",") if i.strip()])
-                        parts.append(f"{count} offen")
-                    else:
-                        parts.append(f"Offen: {items}")
-
-            # --- Offline ---
-            elif line.startswith("Offline"):
-                if detail == "kompakt":
-                    # "Offline (3)" → nur Zahl
-                    m = _re.search(r"\((\d+)\)", line)
-                    if m:
-                        parts.append(f"{m.group(1)} Geraete offline")
-                else:
-                    parts.append(line)
-
-        if not parts:
-            return f"Alles ruhig im Haus, {title}."
-
-        return ". ".join(parts) + "."
-
-    def _humanize_alarms(self, raw: str) -> str:
-        """Wecker-Daten — JARVIS-Stil."""
-        import re
-
-        if not raw or "keine wecker" in raw.lower():
-            return "Kein Wecker gestellt."
-
-        # "Wecker gestellt: morgen um 08:15 Uhr." (set_wakeup_alarm result)
-        set_match = re.search(r"Wecker gestellt:\s*(.+)", raw, re.IGNORECASE)
-        if set_match:
-            return f"Wecker steht auf {set_match.group(1).strip()}."
-
-        # "Aktive Wecker:\n  - Wecker: 08:15 Uhr (einmalig)" (get_alarms result)
-        entries = re.findall(r"-\s*(.+?):\s*(\d{1,2}:\d{2})\s*Uhr\s*\(([^)]+)\)", raw)
-        if entries:
-            parts = []
-            for label, time_str, repeat in entries:
-                label = label.strip()
-                if repeat == "einmalig":
-                    parts.append(f"{time_str} Uhr")
-                else:
-                    parts.append(f"{time_str} Uhr ({repeat})")
-            if len(parts) == 1:
-                return f"Wecker auf {parts[0]}."
-            return f"{len(parts)} Wecker aktiv: " + ", ".join(parts) + "."
-
-        return raw
-
-    def _humanize_lights(self, raw: str) -> str:
-        """Licht-Status — JARVIS-Stil."""
-        lines = raw.strip().split("\n")
-        on_lights = []
-        for line in lines:
-            if ": on" in line:
-                name = line.lstrip("- ").split("[")[0].strip()
-                bri_match = re.search(r"\((\d+)%\)", line)
-                if bri_match:
-                    on_lights.append(f"{name} auf {bri_match.group(1)}%")
-                else:
-                    on_lights.append(name)
-        if not on_lights:
-            return "Alles dunkel."
-        if len(on_lights) == 1:
-            return f"{on_lights[0]}."
-        return f"{len(on_lights)} Lichter aktiv: {', '.join(on_lights)}."
-
-    def _humanize_switches(self, raw: str) -> str:
-        """Schalter/Steckdosen-Status — JARVIS-Stil."""
-        lines = raw.strip().split("\n")
-        on_items = []
-        for line in lines:
-            if ": on" in line:
-                name = line.lstrip("- ").split("[")[0].strip()
-                on_items.append(name)
-        if not on_items:
-            return "Alle Schalter aus."
-        if len(on_items) == 1:
-            return f"{on_items[0]} laeuft."
-        return f"{len(on_items)} Geraete aktiv: {', '.join(on_items)}."
-
-    def _humanize_covers(self, raw: str) -> str:
-        """Rollladen-Status — JARVIS-Stil."""
-        lines = raw.strip().split("\n")
-        open_items = []
-        for line in lines:
-            if ": open" in line or "offen" in line.lower():
-                name = line.lstrip("- ").split("[")[0].strip()
-                pos_match = re.search(r"\((\d+)%\)", line)
-                if pos_match:
-                    open_items.append(f"{name} auf {pos_match.group(1)}%")
-                else:
-                    open_items.append(name)
-        if not open_items:
-            return "Alle Rolllaeden unten."
-        if len(open_items) == 1:
-            return f"{open_items[0]} ist offen."
-        return f"{len(open_items)} Rolllaeden offen: {', '.join(open_items)}."
-
-    def _humanize_media(self, raw: str) -> str:
-        """Media-Player Status — JARVIS-Stil."""
-        lines = raw.strip().split("\n")
-        playing = []
-        for line in lines:
-            if "playing" in line.lower() or "spielt" in line.lower():
-                name = line.lstrip("- ").split("[")[0].strip()
-                playing.append(name)
-        if not playing:
-            return "Stille im Haus."
-        if len(playing) == 1:
-            return f"{playing[0]} laeuft."
-        return f"Medien aktiv: {', '.join(playing)}."
-
-    def _humanize_climate_list(self, raw: str) -> str:
-        """Klima-Geraete Status — JARVIS-Stil."""
-        import re as _re
-        lines = raw.strip().split("\n")
-        active = []
-        for line in lines:
-            temp_m = _re.search(r'(-?\d+[.,]?\d*)\s*°?C', line)
-            name = line.lstrip("- ").split("[")[0].split(":")[0].strip()
-            if temp_m and name:
-                active.append(f"{name}: {temp_m.group(1)}°C")
-        if active:
-            return ", ".join(active) + "."
-        if len(raw) < 120:
-            return raw
-        return "\n".join(lines[:5])
-
-    # ------------------------------------------------------------------
     # Phase 12: Response-Filter (Post-Processing)
     # ------------------------------------------------------------------
 
@@ -6008,42 +5531,73 @@ class AssistantBrain(BrainCallbacksMixin):
     async def _get_conversation_memory(self, text: str) -> Optional[str]:
         """Kontext-Kette: Sucht relevante vergangene Gespraeche.
 
+        Kombiniert semantische Fakten-Konversationen MIT episodischem
+        ChromaDB-Gedaechtnis (mha_conversations) fuer vollstaendige
+        Konversations-Kontinuitaet.
+
         Wird parallel mit dem Context-Build ausgefuehrt.
         """
         try:
-            if not self.memory or not self.memory.semantic:
+            if not self.memory:
                 return None
-            convos = await self.memory.semantic.get_relevant_conversations(text, limit=3)
-            if not convos:
-                return None
+
             lines = []
-            for c in convos:
-                created = c.get("created_at", "")
-                date_str = ""
-                if created:
-                    try:
-                        from datetime import datetime
-                        dt = datetime.fromisoformat(created)
-                        days_ago = (datetime.now() - dt).days
-                        if days_ago == 0:
-                            date_str = "Heute"
-                        elif days_ago == 1:
-                            date_str = "Gestern"
-                        elif days_ago < 7:
-                            date_str = dt.strftime("%A")  # Wochentag
-                        else:
-                            date_str = f"Vor {days_ago} Tagen"
-                    except (ValueError, TypeError):
-                        pass
-                content = c.get("content", "")
-                if date_str:
-                    lines.append(f"- {date_str}: {content}")
-                else:
-                    lines.append(f"- {content}")
-            return "\n".join(lines)
+
+            # 1. Semantische Konversations-Suche (via semantic_memory)
+            if self.memory.semantic:
+                try:
+                    convos = await self.memory.semantic.get_relevant_conversations(text, limit=3)
+                    if convos:
+                        for c in convos:
+                            created = c.get("created_at", "")
+                            date_str = self._format_days_ago(created)
+                            content = c.get("content", "")
+                            if date_str:
+                                lines.append(f"- {date_str}: {content}")
+                            else:
+                                lines.append(f"- {content}")
+                except Exception as e:
+                    logger.debug("Semantic conv lookup fehlgeschlagen: %s", e)
+
+            # 2. Episodisches Gedaechtnis (ChromaDB mha_conversations)
+            try:
+                episodes = await self.memory.search_memories(text, limit=3)
+                if episodes:
+                    for ep in episodes:
+                        ts = ep.get("timestamp", "")
+                        date_str = self._format_days_ago(ts)
+                        content = ep.get("content", "")[:200]
+                        if content and content not in "\n".join(lines):
+                            if date_str:
+                                lines.append(f"- {date_str}: {content}")
+                            else:
+                                lines.append(f"- {content}")
+            except Exception as e:
+                logger.debug("Episodic memory lookup fehlgeschlagen: %s", e)
+
+            return "\n".join(lines) if lines else None
         except Exception as e:
             logger.debug("Kontext-Kette Lookup fehlgeschlagen: %s", e)
             return None
+
+    @staticmethod
+    def _format_days_ago(iso_str: str) -> str:
+        """Formatiert ISO-Timestamp als relative Zeitangabe."""
+        if not iso_str:
+            return ""
+        try:
+            dt = datetime.fromisoformat(iso_str)
+            days_ago = (datetime.now() - dt).days
+            if days_ago == 0:
+                return "Heute"
+            elif days_ago == 1:
+                return "Gestern"
+            elif days_ago < 7:
+                return dt.strftime("%A")
+            else:
+                return f"Vor {days_ago} Tagen"
+        except (ValueError, TypeError):
+            return ""
 
     async def _get_summary_context(self, text: str) -> str:
         """Holt relevante Langzeit-Summaries wenn die Frage die Vergangenheit betrifft."""
@@ -9544,6 +9098,14 @@ Regeln:
             except Exception as e:
                 logger.debug("Weekly Learning Report Fehler: %s", e)
                 await asyncio.sleep(ERROR_BACKOFF_LONG)
+
+    async def _start_fact_decay_task(self):
+        """Startet den Fact-Decay Background-Task."""
+        self._task_registry.create_task(self._run_daily_fact_decay(), name="daily_fact_decay")
+
+    async def _start_autonomy_evolution_task(self):
+        """Startet den Autonomy-Evolution Background-Task."""
+        self._task_registry.create_task(self._run_autonomy_evolution(), name="autonomy_evolution")
 
     async def _run_daily_fact_decay(self):
         """Fuehrt einmal taeglich den Fact Decay aus (04:00 Uhr)."""

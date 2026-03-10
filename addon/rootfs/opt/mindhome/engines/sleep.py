@@ -295,7 +295,9 @@ class WakeUpManager:
                 return
 
             with self.get_session() as session:
-                now = datetime.now(timezone.utc)
+                # Fix: Lokalzeit verwenden — Weckzeiten (HH:MM) sind in Lokalzeit konfiguriert
+                from helpers import local_now as _local_now
+                now = _local_now()
                 configs = session.query(WakeUpConfig).filter(
                     WakeUpConfig.enabled == True,
                     WakeUpConfig.is_active == True

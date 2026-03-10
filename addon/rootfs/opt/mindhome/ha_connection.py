@@ -63,6 +63,30 @@ class HAConnection:
         }
 
     # ======================================================================
+    # Conflict-F: Entity Ownership Check (Assistant-Koordination)
+    # ======================================================================
+
+    def _is_entity_owned_by_assistant(self, entity_id: str) -> bool:
+        """Prueft ob der Assistant die Entity gerade kontrolliert.
+
+        Fragt den Assistant-Endpoint GET /api/assistant/entity_owner/{entity_id} ab.
+        Bei Verbindungsfehler: False (Addon darf handeln wenn Assistant nicht erreichbar).
+        """
+        try:
+            assistant_url = os.environ.get("ASSISTANT_URL", "http://192.168.1.100:8200")
+            resp = requests.get(
+                f"{assistant_url}/api/assistant/entity_owner/{entity_id}",
+                timeout=2,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("owned", False)
+        except Exception:
+            # Assistant nicht erreichbar — Addon darf handeln
+            pass
+        return False
+
+    # ======================================================================
     # REST API
     # ======================================================================
 
@@ -148,6 +172,11 @@ class HAConnection:
         payload = data or {}
         if entity_id:
             payload["entity_id"] = entity_id
+        # Conflict-F: Pruefe ob der Assistant die Entity gerade kontrolliert
+        eid = payload.get("entity_id") or entity_id
+        if eid and self._is_entity_owned_by_assistant(eid):
+            logger.info(f"Entity {eid} wird vom Assistant kontrolliert — Addon-Aktion uebersprungen ({domain}.{service})")
+            return None
         if domain == "climate" and service in ("set_temperature", "set_hvac_mode"):
             payload = self._validate_climate_call(payload)
         result = self._api_request("POST", f"services/{domain}/{service}", payload)

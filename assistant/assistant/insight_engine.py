@@ -404,15 +404,9 @@ class InsightEngine:
     # Regel-basierte Checks
     # ------------------------------------------------------------------
 
-    async def _run_all_checks(self) -> list[dict]:
-        """Fuehrt alle aktivierten Checks aus."""
-        data = await self._gather_data()
-        if not data["states"]:
-            return []
-
-        insights = []
-
-        check_methods = [
+    def _get_check_list(self) -> list[tuple]:
+        """Returns the canonical list of (enabled_flag, method) pairs for all checks."""
+        return [
             (self.check_weather_windows, self._check_weather_windows),
             (self.check_frost_heating, self._check_frost_heating),
             (self.check_calendar_travel, self._check_calendar_travel),
@@ -427,10 +421,21 @@ class InsightEngine:
             (self.check_away_security_full, self._check_away_security_full),
             (self.check_health_work_pattern, self._check_health_work_pattern),
             (self.check_humidity_contradiction, self._check_humidity_contradiction),
+            (True, self._check_trend_prediction),  # Trend-Prediction immer aktiv
             (self.check_night_security, self._check_night_security),
             (self.check_heating_vs_sun, self._check_heating_vs_sun),
             (self.check_forgotten_devices, self._check_forgotten_devices),
         ]
+
+    async def _run_all_checks(self) -> list[dict]:
+        """Fuehrt alle aktivierten Checks aus."""
+        data = await self._gather_data()
+        if not data["states"]:
+            return []
+
+        insights = []
+
+        check_methods = self._get_check_list()
 
         for enabled, method in check_methods:
             if not enabled:
@@ -875,19 +880,7 @@ class InsightEngine:
                 return []
 
             insights = []
-            check_methods = [
-                (self.check_weather_windows, self._check_weather_windows),
-                (self.check_frost_heating, self._check_frost_heating),
-                (self.check_calendar_travel, self._check_calendar_travel),
-                (self.check_energy_anomaly, self._check_energy_anomaly),
-                (self.check_away_devices, self._check_away_devices),
-                (self.check_temp_drop, self._check_temp_drop),
-                (self.check_window_temp, self._check_window_temp_drop),
-                (True, self._check_trend_prediction),  # Trend-Prediction immer aktiv
-                (self.check_night_security, self._check_night_security),
-                (self.check_heating_vs_sun, self._check_heating_vs_sun),
-                (self.check_forgotten_devices, self._check_forgotten_devices),
-            ]
+            check_methods = self._get_check_list()
 
             for enabled, method in check_methods:
                 if not enabled:
@@ -931,10 +924,10 @@ class InsightEngine:
                     "mha:insight:temp_history",
                     json.dumps({"ts": datetime.now().isoformat(), "temps": temps}),
                 )
-                await self.redis.ltrim("mha:insight:temp_history", 0, 5)
+                await self.redis.ltrim("mha:insight:temp_history", 0, self.max_temp_snapshots - 1)
                 await self.redis.expire("mha:insight:temp_history", 6 * 3600)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Temp snapshot error: %s", e)
 
     async def _check_trend_prediction(self, data: dict) -> Optional[dict]:
         """Einfache lineare Trend-Extrapolation fuer Raumtemperaturen."""

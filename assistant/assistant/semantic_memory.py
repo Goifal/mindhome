@@ -190,16 +190,18 @@ class SemanticMemory:
         if existing:
             return await self._update_existing_fact(existing, fact)
 
+        chroma_ok = True
         if self.chroma_collection:
             try:
-                self.chroma_collection.add(
+                await asyncio.to_thread(
+                    self.chroma_collection.add,
                     documents=[fact.content],
                     metadatas=[fact.to_dict()],
                     ids=[fact.fact_id],
                 )
             except Exception as e:
-                logger.error("Fehler beim Speichern in ChromaDB: %s", e)
-                return False
+                chroma_ok = False
+                logger.error("Fehler beim Speichern in ChromaDB: %s (Redis-Speicherung wird trotzdem versucht)", e)
 
         redis_ok = True
         if self.redis:
@@ -232,6 +234,11 @@ class SemanticMemory:
                 fact.category, fact.person,
             )
             return False
+        if not chroma_ok:
+            logger.warning(
+                "Fakt nur in Redis gespeichert (ChromaDB fehlt): [%s] (Person: %s)",
+                fact.category, fact.person,
+            )
         return True
 
     async def _update_existing_fact(
@@ -297,7 +304,8 @@ class SemanticMemory:
                     {"category": new_fact.category},
                 ]
             }
-            results = self.chroma_collection.query(
+            results = await asyncio.to_thread(
+                self.chroma_collection.query,
                 query_texts=[new_fact.content],
                 n_results=3,
                 where=where_filter,
@@ -417,7 +425,8 @@ class SemanticMemory:
             return None
 
         try:
-            results = self.chroma_collection.query(
+            results = await asyncio.to_thread(
+                self.chroma_collection.query,
                 query_texts=[query],
                 n_results=1,
             )
@@ -448,7 +457,8 @@ class SemanticMemory:
             if person:
                 where_filter = {"person": person}
 
-            results = self.chroma_collection.query(
+            results = await asyncio.to_thread(
+                self.chroma_collection.query,
                 query_texts=[query],
                 n_results=limit,
                 where=where_filter,
@@ -572,7 +582,7 @@ class SemanticMemory:
         """Interne Loesch-Logik (unter Lock)."""
         if self.chroma_collection:
             try:
-                self.chroma_collection.delete(ids=[fact_id])
+                await asyncio.to_thread(self.chroma_collection.delete, ids=[fact_id])
             except Exception as e:
                 logger.error("Fehler beim Loeschen aus ChromaDB: %s", e)
 
@@ -630,7 +640,8 @@ class SemanticMemory:
             return []
 
         try:
-            results = self.chroma_collection.query(
+            results = await asyncio.to_thread(
+                self.chroma_collection.query,
                 query_texts=[topic],
                 n_results=limit,
             )
@@ -708,7 +719,8 @@ class SemanticMemory:
             fact_id = None
             if self.chroma_collection:
                 try:
-                    results = self.chroma_collection.query(
+                    results = await asyncio.to_thread(
+                        self.chroma_collection.query,
                         query_texts=[fact["content"]],
                         n_results=1,
                     )

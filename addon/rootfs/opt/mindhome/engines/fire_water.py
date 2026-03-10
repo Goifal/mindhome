@@ -7,6 +7,7 @@ Event-based: reacts immediately to state_changed events.
 
 import logging
 import json
+import threading
 from datetime import datetime, timezone
 
 logger = logging.getLogger("mindhome.engines.fire_water")
@@ -45,6 +46,7 @@ class FireResponseManager:
         self.event_bus = event_bus
         self._is_running = False
         self._active_alarms = {}  # entity_id -> alarm_type
+        self._alarms_lock = threading.Lock()
 
     def start(self):
         self._is_running = True
@@ -93,22 +95,28 @@ class FireResponseManager:
                         sensor_state = state.get("state", "unknown")
                         device_class = state.get("attributes", {}).get("device_class", "")
 
-                    alarm_active = a.entity_id in self._active_alarms
+                    with self._alarms_lock:
+                        alarm_active = a.entity_id in self._active_alarms
+                        alarm_type = self._active_alarms.get(a.entity_id)
                     sensors.append({
                         "entity_id": a.entity_id,
                         "state": sensor_state,
                         "device_class": device_class,
                         "alarm_active": alarm_active,
-                        "alarm_type": self._active_alarms.get(a.entity_id),
+                        "alarm_type": alarm_type,
                     })
         except Exception as e:
             logger.error(f"Error getting fire/CO status: {e}")
 
         return {
             "sensors": sensors,
-            "active_alarms": len(self._active_alarms),
+            "active_alarms": self._count_active_alarms(),
             "is_running": self._is_running,
         }
+
+    def _count_active_alarms(self):
+        with self._alarms_lock:
+            return len(self._active_alarms)
 
     def _on_state_changed(self, event):
         """Handle state change events — check for fire/CO triggers."""
@@ -143,14 +151,16 @@ class FireResponseManager:
         if state_val == "on":
             # ALARM triggered
             alarm_type = "co" if device_class in ("gas", "co", "carbon_monoxide") else "fire"
-            if entity_id not in self._active_alarms:
-                self._active_alarms[entity_id] = alarm_type
-                self._handle_alarm(entity_id, alarm_type)
+            with self._alarms_lock:
+                if entity_id not in self._active_alarms:
+                    self._active_alarms[entity_id] = alarm_type
+                    self._handle_alarm(entity_id, alarm_type)
         elif state_val == "off":
             # Alarm cleared
-            if entity_id in self._active_alarms:
-                self._handle_alarm_cleared(entity_id)
-                del self._active_alarms[entity_id]
+            with self._alarms_lock:
+                if entity_id in self._active_alarms:
+                    self._handle_alarm_cleared(entity_id)
+                    del self._active_alarms[entity_id]
 
     def _is_assigned_entity(self, entity_id, feature_key, role):
         """Check if entity is assigned to feature with given role."""
@@ -161,8 +171,11 @@ class FireResponseManager:
                     feature_key=feature_key, entity_id=entity_id,
                     role=role, is_active=True
                 ).first() is not None
-        except Exception:
-            return False
+        except Exception as e:
+            # Fix: Failsafe — bei DB-Fehler ANNEHMEN dass Entity zugewiesen ist,
+            # damit Feueralarme NICHT stillschweigend ignoriert werden.
+            logger.error("DB-Fehler in _is_assigned_entity (Failsafe: True): %s", e)
+            return True
 
     def _handle_alarm(self, entity_id, alarm_type):
         """Execute emergency response for fire or CO alarm."""
@@ -298,8 +311,8 @@ class FireResponseManager:
                         "title": title,
                         "message": msg,
                     })
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error("Emergency HA persistent_notification failed: %s", e)
 
         except Exception as e:
             logger.error(f"Emergency notification error: {e}")
@@ -353,6 +366,7 @@ class WaterLeakManager:
         self.event_bus = event_bus
         self._is_running = False
         self._active_leaks = {}  # entity_id -> timestamp
+        self._leaks_lock = threading.Lock()
 
     def start(self):
         self._is_running = True
@@ -396,10 +410,12 @@ class WaterLeakManager:
                 ).order_by(FeatureEntityAssignment.sort_order).all()
                 for a in sensor_assignments:
                     state = self.ha.get_state(a.entity_id) if self.ha else None
+                    with self._leaks_lock:
+                        leak_active = a.entity_id in self._active_leaks
                     sensors.append({
                         "entity_id": a.entity_id,
                         "state": state.get("state", "unknown") if state else "unknown",
-                        "leak_active": a.entity_id in self._active_leaks,
+                        "leak_active": leak_active,
                     })
 
                 # Valves
@@ -418,9 +434,13 @@ class WaterLeakManager:
         return {
             "sensors": sensors,
             "valves": valves,
-            "active_leaks": len(self._active_leaks),
+            "active_leaks": self._count_active_leaks(),
             "is_running": self._is_running,
         }
+
+    def _count_active_leaks(self):
+        with self._leaks_lock:
+            return len(self._active_leaks)
 
     def _on_state_changed(self, event):
         """Handle state change events — check for water leak triggers."""
@@ -450,13 +470,15 @@ class WaterLeakManager:
             return
 
         if state_val == "on":
-            if entity_id not in self._active_leaks:
-                self._active_leaks[entity_id] = datetime.now(timezone.utc).isoformat()
-                self._handle_leak(entity_id)
+            with self._leaks_lock:
+                if entity_id not in self._active_leaks:
+                    self._active_leaks[entity_id] = datetime.now(timezone.utc).isoformat()
+                    self._handle_leak(entity_id)
         elif state_val == "off":
-            if entity_id in self._active_leaks:
-                self._handle_leak_cleared(entity_id)
-                del self._active_leaks[entity_id]
+            with self._leaks_lock:
+                if entity_id in self._active_leaks:
+                    self._handle_leak_cleared(entity_id)
+                    del self._active_leaks[entity_id]
 
     def _is_assigned_entity(self, entity_id, feature_key, role):
         """Check if entity is assigned to feature."""
@@ -467,8 +489,11 @@ class WaterLeakManager:
                     feature_key=feature_key, entity_id=entity_id,
                     role=role, is_active=True
                 ).first() is not None
-        except Exception:
-            return False
+        except Exception as e:
+            # Fix: Failsafe — bei DB-Fehler ANNEHMEN dass Entity zugewiesen ist,
+            # damit Wasserleck-Alarme NICHT stillschweigend ignoriert werden.
+            logger.error("DB-Fehler in _is_assigned_entity (Failsafe: True): %s", e)
+            return True
 
     def _handle_leak(self, entity_id):
         """Execute water leak response actions."""
@@ -516,10 +541,10 @@ class WaterLeakManager:
                                 "entity_id": s.entity_id,
                                 "message": tts_msg,
                             })
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+                        except Exception as e:
+                            logger.error("Water leak TTS call failed for %s: %s", s.entity_id, e)
+            except Exception as e:
+                logger.error("Water leak TTS speaker query failed: %s", e)
 
         # 6. Emit event
         self.event_bus.publish("emergency.water_leak", {
@@ -636,7 +661,7 @@ class WaterLeakManager:
                         "title": "WASSERLECK!",
                         "message": f"Wasserleck erkannt: {entity_id}",
                     })
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error("Leak HA persistent_notification failed: %s", e)
         except Exception as e:
             logger.error(f"Leak notification error: {e}")

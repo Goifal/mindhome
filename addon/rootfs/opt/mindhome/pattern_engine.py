@@ -440,7 +440,8 @@ class StateLogger:
 
             # Unknown sensor type: log with conservative fallback threshold
             try:
-                new_val = float(new_state.get("state", ""))
+                new_state_str = new_state.get("state", "") if isinstance(new_state, dict) else str(new_state)
+                new_val = float(new_state_str)
                 old_val = self._last_sensor_values.get(entity_id)
                 if old_val is not None and abs(new_val - old_val) < 10.0:
                     return False
@@ -448,8 +449,8 @@ class StateLogger:
                 return True
             except (ValueError, TypeError):
                 # Non-numeric sensor: log state text changes
-                old_text = old_state.get("state", "") if isinstance(old_state, dict) else ""
-                new_text = new_state.get("state", "") if isinstance(new_state, dict) else ""
+                old_text = old_state.get("state", "") if isinstance(old_state, dict) else str(old_state)
+                new_text = new_state.get("state", "") if isinstance(new_state, dict) else str(new_state)
                 return old_text != new_text
 
         # Unknown domains: log if state actually changed

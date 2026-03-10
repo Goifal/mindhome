@@ -242,7 +242,9 @@ class WellnessAdvisor:
             return
 
         try:
-            start_dt = datetime.fromisoformat(pc_start)
+            # Fix: Redis gibt bytes zurueck — decode vor fromisoformat
+            pc_start_str = pc_start.decode() if isinstance(pc_start, bytes) else pc_start
+            start_dt = datetime.fromisoformat(pc_start_str)
         except (ValueError, TypeError):
             await _safe_redis(self.redis, "setex", "mha:wellness:pc_start", 86400, now.isoformat())
             return
@@ -256,7 +258,9 @@ class WellnessAdvisor:
         last = await self.redis.get("mha:wellness:last_break_reminder")
         if last:
             try:
-                last_dt = datetime.fromisoformat(last)
+                # Fix: Redis bytes decode
+                last_str = last.decode() if isinstance(last, bytes) else last
+                last_dt = datetime.fromisoformat(last_str)
                 if (now - last_dt).total_seconds() < 3600:
                     return
             except (ValueError, TypeError):
@@ -330,7 +334,9 @@ class WellnessAdvisor:
         last = await self.redis.get("mha:wellness:last_stress_nudge")
         if last:
             try:
-                last_dt = datetime.fromisoformat(last)
+                # Fix: Redis bytes decode
+                last_str = last.decode() if isinstance(last, bytes) else last
+                last_dt = datetime.fromisoformat(last_str)
                 if (datetime.now() - last_dt).total_seconds() < cooldown_sec:
                     return
             except (ValueError, TypeError):
@@ -629,7 +635,9 @@ class WellnessAdvisor:
         last = await self.redis.get(key)
         if last:
             try:
-                last_dt = datetime.fromisoformat(last)
+                # Fix: Redis bytes decode
+                last_str = last.decode() if isinstance(last, bytes) else last
+                last_dt = datetime.fromisoformat(last_str)
                 elapsed_h = (datetime.now() - last_dt).total_seconds() / 3600
                 if elapsed_h < self.hydration_interval_hours:
                     return

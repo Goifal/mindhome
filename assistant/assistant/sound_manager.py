@@ -26,7 +26,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from .config import yaml_config, settings
+from .config import yaml_config
 from .constants import TTS_PLAYBACK_TIMEOUT
 from .ha_client import HomeAssistantClient
 

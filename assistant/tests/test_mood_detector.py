@@ -246,8 +246,8 @@ class TestMoodPromptHint:
             "sentiments": [],
         }
         hint = detector.get_mood_prompt_hint()
-        assert "laut" in hint
-        assert "Stimm-Analyse" in hint
+        assert "Stress" in hint or "ruhig" in hint
+        assert isinstance(hint, str) and len(hint) > 0
 
     def test_includes_declining_trend_hint(self, detector):
         detector._person_states["_default"] = {

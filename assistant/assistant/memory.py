@@ -3,6 +3,7 @@ Memory Manager - Gedaechtnis des MindHome Assistants.
 Working Memory (Redis) + Episodic Memory (ChromaDB) + Semantic Memory (Fakten).
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -164,7 +165,8 @@ class MemoryManager:
             # S4: Deduplizierung — pruefen ob sehr aehnliche Episode existiert
             try:
                 preview = conversation[:500]
-                results = self.chroma_collection.query(
+                results = await asyncio.to_thread(
+                    self.chroma_collection.query,
                     query_texts=[preview],
                     n_results=1,
                 )
@@ -176,7 +178,7 @@ class MemoryManager:
             except Exception:
                 pass  # Dedup ist best-effort
 
-            meta = metadata or {}
+            meta = dict(metadata) if metadata else {}
             meta["timestamp"] = datetime.now().isoformat()
             meta["type"] = "conversation"
             base_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
@@ -277,7 +279,8 @@ class MemoryManager:
             return []
 
         try:
-            results = self.chroma_collection.query(
+            results = await asyncio.to_thread(
+                self.chroma_collection.query,
                 query_texts=[query],
                 n_results=limit,
             )
@@ -417,11 +420,12 @@ class MemoryManager:
         if not self.chroma_collection:
             return []
         try:
-            total = self.chroma_collection.count()
+            total = await asyncio.to_thread(self.chroma_collection.count)
             if total == 0:
                 return []
             # ChromaDB .get() unterstuetzt kein limit/offset → in Python paginieren
-            result = self.chroma_collection.get(
+            result = await asyncio.to_thread(
+                self.chroma_collection.get,
                 include=["documents", "metadatas"],
             )
             episodes = []
@@ -450,7 +454,7 @@ class MemoryManager:
         if not self.chroma_collection or not episode_ids:
             return 0
         try:
-            self.chroma_collection.delete(ids=episode_ids)
+            await asyncio.to_thread(self.chroma_collection.delete, ids=episode_ids)
             logger.info("Episoden geloescht: %d", len(episode_ids))
             return len(episode_ids)
         except Exception as e:

@@ -304,3 +304,104 @@ class TestStatesCaching:
         now = time.monotonic()
         is_cached = cache is not None and (now - cache_ts) < 2.0
         assert is_cached is False
+
+
+# ---------------------------------------------------------------
+# PIN Brute-Force Protection Tests
+# ---------------------------------------------------------------
+
+
+class TestPinBruteForce:
+    """PIN brute-force Schutz: Max 5 Versuche pro 5 Minuten pro IP."""
+
+    _PIN_MAX_ATTEMPTS = 5
+    _PIN_WINDOW_SECONDS = 300  # 5 Minuten
+
+    def _make_limiter(self):
+        """Erstellt einen frischen Rate-Limiter (dict + Hilfsfunktionen)."""
+        attempts: dict[str, list[float]] = {}
+
+        def check(client_ip: str, now: float = None) -> bool:
+            """Returns True wenn erlaubt, False wenn blockiert."""
+            if now is None:
+                now = time.time()
+            cutoff = now - self._PIN_WINDOW_SECONDS
+            if client_ip in attempts:
+                attempts[client_ip] = [t for t in attempts[client_ip] if t > cutoff]
+                if not attempts[client_ip]:
+                    del attempts[client_ip]
+            stale = [ip for ip, ts in attempts.items() if all(t <= cutoff for t in ts)]
+            for ip in stale:
+                del attempts[ip]
+            return len(attempts.get(client_ip, [])) < self._PIN_MAX_ATTEMPTS
+
+        def record(client_ip: str, now: float = None):
+            if now is None:
+                now = time.time()
+            attempts.setdefault(client_ip, []).append(now)
+
+        def clear(client_ip: str):
+            attempts.pop(client_ip, None)
+
+        return attempts, check, record, clear
+
+    def test_first_attempt_allowed(self):
+        _, check, _, _ = self._make_limiter()
+        assert check("192.168.1.1") is True
+
+    def test_five_attempts_allowed(self):
+        _, check, record, _ = self._make_limiter()
+        now = time.time()
+        for i in range(4):
+            record("10.0.0.1", now + i)
+        assert check("10.0.0.1", now + 5) is True
+
+    def test_sixth_attempt_blocked(self):
+        _, check, record, _ = self._make_limiter()
+        now = time.time()
+        for i in range(5):
+            record("10.0.0.1", now + i)
+        assert check("10.0.0.1", now + 5) is False
+
+    def test_different_ips_independent(self):
+        _, check, record, _ = self._make_limiter()
+        now = time.time()
+        for i in range(5):
+            record("10.0.0.1", now)
+        # IP 1 blockiert
+        assert check("10.0.0.1", now) is False
+        # IP 2 frei
+        assert check("10.0.0.2", now) is True
+
+    def test_attempts_expire_after_window(self):
+        _, check, record, _ = self._make_limiter()
+        now = time.time()
+        for i in range(5):
+            record("10.0.0.1", now)
+        # Blockiert jetzt
+        assert check("10.0.0.1", now + 1) is False
+        # Nach 5 Minuten + 1 Sekunde: wieder frei
+        assert check("10.0.0.1", now + 301) is True
+
+    def test_clear_resets_attempts(self):
+        _, check, record, clear = self._make_limiter()
+        now = time.time()
+        for i in range(5):
+            record("10.0.0.1", now)
+        assert check("10.0.0.1", now) is False
+        clear("10.0.0.1")
+        assert check("10.0.0.1", now) is True
+
+    def test_clear_nonexistent_ip_safe(self):
+        _, _, _, clear = self._make_limiter()
+        clear("nonexistent")  # Kein KeyError
+
+    def test_stale_entries_cleaned(self):
+        attempts, check, record, _ = self._make_limiter()
+        now = time.time()
+        record("10.0.0.1", now)
+        record("10.0.0.2", now)
+        # 6 Minuten spaeter: Eintraege sind abgelaufen und werden bereinigt
+        check("10.0.0.3", now + 360)
+        assert "10.0.0.1" not in attempts
+        assert "10.0.0.2" not in attempts

@@ -102,8 +102,8 @@ class TestHumorTemplates:
     def test_level_1_no_humor(self):
         assert "Kein Humor" in HUMOR_TEMPLATES[1]
 
-    def test_level_5_frequent_humor(self):
-        assert "Durchgehend" in HUMOR_TEMPLATES[5]
+    def test_level_5_sarcastic_humor(self):
+        assert "sarkastisch" in HUMOR_TEMPLATES[5]
 
 
 # ============================================================

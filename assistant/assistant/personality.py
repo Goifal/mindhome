@@ -8,7 +8,9 @@ Phase 18: MCU-Upgrade — Memory Callbacks, Running Gag Evolution,
           Eskalierende Sorge, Neugier-Fragen, Think-Ahead.
 """
 
+import asyncio
 import collections
+import threading
 import hashlib
 import json
 import logging
@@ -76,10 +78,10 @@ HUMOR_TEMPLATES = {
         "'Interessante Wahl, {title}. Wird umgesetzt.'"
     ),
     5: (
-        "Durchgehend trockener Humor. Du kommentierst elegant und mit Understatement. Nie platt, nie laut.\n"
-        "Beispiele: 'Alle Lichter aus um drei Uhr morgens. Eine gewagte Entscheidung.' | "
-        "'28 Grad. Ambitioniert, {title}.' | "
-        "'Das war der fuenfte Versuch. Ich bewundere die Bestaendigkeit.'"
+        "Häufig trocken-sarkastisch. Bemerkungen mit Understatement — wie ein Butler der alles sieht.\n"
+        "Beispiele: 'Darf ich anmerken, dass das die dritte Änderung heute ist.' | "
+        "'Selbstverständlich. Ich hatte es bereits berechnet.' | "
+        "'Interessante Wahl, {title}. Wird umgesetzt.'"
     ),
 }
 
@@ -328,6 +330,7 @@ class PersonalityEngine:
         self._casual_warnings = personality_config.get("casual_warnings") or list(CASUAL_WARNINGS)
 
         # State
+        self._state_lock = asyncio.Lock()
         self._current_mood: str = "neutral"
         self._mood_detector = None
         self._redis = None
@@ -1417,7 +1420,7 @@ class PersonalityEngine:
         elif mood == "tired":
             effective_level = min(base_level, 2)
         elif mood == "good":
-            effective_level = min(5, base_level + 1)
+            effective_level = min(4, base_level + 1)
         else:
             effective_level = base_level
 
@@ -1429,6 +1432,9 @@ class PersonalityEngine:
             effective_level = max(2, effective_level - 2)
         elif streak >= 4 and effective_level >= 3:
             effective_level = max(2, effective_level - 1)
+
+        # MCU-Authentizitaet: Cap bei 4 — Jarvis ist nie aggressiv sarkastisch
+        effective_level = min(effective_level, 4)
 
         # Tageszeit-Dampening
         if time_of_day == "early_morning":
@@ -1679,8 +1685,12 @@ class PersonalityEngine:
     async def _check_repeated_question_gag(self, text: str) -> Optional[str]:
         """Erkennt wenn User die gleiche Frage oft stellt."""
         key = f"mha:gag:repeat:{int(hashlib.md5(text.encode()).hexdigest(), 16) % 10000}"
-        count = await self._redis.incr(key)
-        await self._redis.expire(key, 86400)  # 24h
+        try:
+            count = await self._redis.incr(key)
+            await self._redis.expire(key, 86400)  # 24h
+        except Exception as e:
+            logger.debug("Redis error in _check_repeated_question_gag: %s", e)
+            return None
 
         gags = {
             3: "Das hatten wir heute bereits. Selbstverständlich nochmal.",
@@ -1697,8 +1707,12 @@ class PersonalityEngine:
             return None
 
         key = "mha:gag:thermostat_changes"
-        count = await self._redis.incr(key)
-        await self._redis.expire(key, 3600)  # 1h Fenster
+        try:
+            count = await self._redis.incr(key)
+            await self._redis.expire(key, 3600)  # 1h Fenster
+        except Exception as e:
+            logger.debug("Redis error in _check_thermostat_war_gag: %s", e)
+            return None
 
         gags = {
             4: "Vierte Anpassung in einer Stunde. Darf ich einen Vorschlag machen?",
@@ -1723,8 +1737,12 @@ class PersonalityEngine:
             return None
 
         key = f"mha:escalation:{action_key}"
-        count = await self._redis.incr(key)
-        await self._redis.expire(key, 7 * 86400)  # 7-Tage-Fenster
+        try:
+            count = await self._redis.incr(key)
+            await self._redis.expire(key, 7 * 86400)  # 7-Tage-Fenster
+        except Exception as e:
+            logger.debug("Redis error in check_escalation: %s", e)
+            return None
 
         escalation_map = {
             2: None,  # Zweites Mal: noch nichts sagen
@@ -1741,7 +1759,11 @@ class PersonalityEngine:
         now = datetime.now().timestamp()
 
         # Letzte Fragen holen
-        recent = await self._redis.lrange(key, 0, 4)
+        try:
+            recent = await self._redis.lrange(key, 0, 4)
+        except Exception as e:
+            logger.debug("Redis error in _check_short_memory_gag (lrange): %s", e)
+            return None
 
         for item in (recent or []):
             try:
@@ -1756,9 +1778,12 @@ class PersonalityEngine:
                 continue
 
         # Aktuelle Frage speichern
-        await self._redis.lpush(key, f"{now}|{text}")
-        await self._redis.ltrim(key, 0, 9)
-        await self._redis.expire(key, 90 * 86400)
+        try:
+            await self._redis.lpush(key, f"{now}|{text}")
+            await self._redis.ltrim(key, 0, 9)
+            await self._redis.expire(key, 90 * 86400)
+        except Exception as e:
+            logger.debug("Redis error in _check_short_memory_gag (lpush): %s", e)
 
         return None
 
@@ -2226,7 +2251,7 @@ class PersonalityEngine:
             max_sentences = self.get_mood_complexity_sentences(mood, user_text)
         else:
             # Fallback auf zeit-basierte Berechnung mit Mood-Modifier
-            max_sentences = max(1, max_sentences + mood_config["max_sentences_mod"])
+            max_sentences = max(1, max_sentences + mood_config.get("max_sentences_mod", 0))
 
         # Mood-Abschnitt
         mood_section = ""
@@ -2347,11 +2372,15 @@ class PersonalityEngine:
         weather_awareness_section = ""
         _wp_cfg = yaml_config.get("weather_personality", {})
         if _wp_cfg.get("enabled", True) and context:
-            weather = context.get("weather", {})
+            weather = context.get("house", {}).get("weather", {}) or context.get("weather", {})
             if weather:
-                _temp = weather.get("temperature", "")
-                _condition = weather.get("condition", "")
-                _wind = weather.get("wind_speed", "")
+                # Fix: Typ-Validierung gegen Prompt Injection via kompromittierte HA-Entities
+                _temp_raw = weather.get("temperature", "")
+                _temp = str(_temp_raw)[:10] if isinstance(_temp_raw, (int, float, str)) else ""
+                _condition_raw = weather.get("condition", "")
+                _condition = str(_condition_raw)[:50].replace("\n", " ") if _condition_raw else ""
+                _wind_raw = weather.get("wind_speed", "")
+                _wind = str(_wind_raw)[:10] if isinstance(_wind_raw, (int, float, str)) else ""
                 _intensity = _wp_cfg.get("intensity", "normal")
                 if _temp or _condition:
                     parts = []
@@ -2374,6 +2403,9 @@ class PersonalityEngine:
             _topic_hint = ""
             _conv_topic = context.get("conversation_topic", "")
             if _conv_topic:
+                # Fix: Sanitize conversation_topic — kommt aus User-Text, Injection moeglich
+                _conv_topic = _conv_topic[:200].replace("\n", " ").replace("\r", " ")
+                _conv_topic = _conv_topic.replace("SYSTEM:", "").replace("ASSISTANT:", "").replace("USER:", "")
                 _topic_hint = (
                     f"Aktuelles Gespraechsthema: {_conv_topic}\n"
                     "Beziehe dich auf dieses Thema wenn relevant — "

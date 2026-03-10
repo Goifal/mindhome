@@ -299,6 +299,8 @@ class RepairPlanner:
         data = await self.redis.hgetall(f"mha:repair:project:{project_id}")
         if not data:
             return None
+        # Redis returns bytes – decode to str
+        data = {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in data.items()}
         # JSON-Felder parsen
         for key in ("parts", "tools", "notes", "expenses"):
             if key in data and isinstance(data[key], str):
@@ -334,6 +336,7 @@ class RepairPlanner:
             old = await self.redis.hget(
                 f"mha:repair:project:{project_id}", "status")
             if old:
+                old = old.decode() if isinstance(old, bytes) else old
                 await self.redis.srem(
                     f"mha:repair:projects:status:{old}", project_id)
             await self.redis.sadd(
@@ -986,6 +989,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
             data = await self.redis.hgetall(
                 f"mha:repair:workshop:{iid}")
             if data:
+                data = {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in data.items()}
                 items.append(data)
         return items
 
@@ -1020,6 +1024,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         for data in all_data:
             if isinstance(data, Exception):
                 continue
+            # Redis returns bytes – decode to str
+            data = {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in data.items()}
             try:
                 last = datetime.fromisoformat(
                     data.get("last_done", "2000-01-01T00:00:00"))
@@ -1133,7 +1139,12 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
             return []
         keys = [k async for k in self.redis.scan_iter(
             "mha:repair:lent:*")]
-        return [await self.redis.hgetall(k) for k in keys]
+        results = []
+        for k in keys:
+            data = await self.redis.hgetall(k)
+            data = {dk.decode() if isinstance(dk, bytes) else dk: dv.decode() if isinstance(dv, bytes) else dv for dk, dv in data.items()}
+            results.append(data)
+        return results
 
     # ── 3D-Drucker Steuerung (via HA) ────────────────────────
 
@@ -1506,7 +1517,7 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         entries = await self.redis.lrange(key, 0, -1)
         return {
             "date": datetime.now().strftime('%Y-%m-%d'),
-            "entries": [json.loads(e) for e in entries],
+            "entries": [json.loads(e.decode() if isinstance(e, bytes) else e) for e in entries],
         }
 
     async def add_journal_entry(self, note) -> dict:
@@ -1539,7 +1550,8 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         if not self.redis:
             return {}
         key = f"mha:repair:snippet:{name.lower().replace(' ', '_')}"
-        return await self.redis.hgetall(key)
+        data = await self.redis.hgetall(key)
+        return {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in data.items()}
 
     # ── Multi-Projekt ────────────────────────────────────────
 

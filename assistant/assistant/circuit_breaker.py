@@ -15,7 +15,7 @@ import asyncio
 import logging
 import time
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -167,36 +167,3 @@ registry = CircuitBreakerRegistry()
 ollama_breaker = registry.register("ollama", failure_threshold=5, recovery_timeout=15)
 ha_breaker = registry.register("home_assistant", failure_threshold=5, recovery_timeout=20)
 mindhome_breaker = registry.register("mindhome", failure_threshold=5, recovery_timeout=20)
-redis_breaker = registry.register("redis", failure_threshold=3, recovery_timeout=15)
-chromadb_breaker = registry.register("chromadb", failure_threshold=5, recovery_timeout=60)
-
-
-async def call_with_breaker(
-    breaker: CircuitBreaker,
-    coro_factory: Callable,
-    *args: Any,
-    fallback: Any = None,
-    **kwargs: Any,
-) -> Any:
-    """Fuehrt einen async Call mit Circuit-Breaker-Schutz aus.
-
-    Args:
-        breaker: Der zu verwendende Circuit Breaker
-        coro_factory: Async Funktion (nicht aufgerufen) die den Call ausfuehrt
-        fallback: Rueckgabewert wenn Circuit offen oder Call fehlschlaegt
-
-    Returns:
-        Ergebnis des Calls oder fallback
-    """
-    if not breaker.try_acquire():
-        logger.debug("Circuit %s ist OPEN — nutze Fallback", breaker.name)
-        return fallback
-
-    try:
-        result = await coro_factory(*args, **kwargs)
-        breaker.record_success()
-        return result
-    except Exception as e:
-        breaker.record_failure()
-        logger.warning("Circuit %s: Call fehlgeschlagen: %s", breaker.name, e)
-        return fallback

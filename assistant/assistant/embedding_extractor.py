@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # Lazy-loaded Model (nur einmal geladen)
 _classifier = None
 _model_loading = False
+_model_lock = __import__("threading").Lock()
 
 
 def _load_model():
@@ -23,10 +24,14 @@ def _load_model():
     global _classifier, _model_loading
     if _classifier is not None:
         return _classifier
-    if _model_loading:
-        return None
 
-    _model_loading = True
+    with _model_lock:
+        # Double-check nach Lock-Acquire
+        if _classifier is not None:
+            return _classifier
+        if _model_loading:
+            return None
+        _model_loading = True
     try:
         import torch
         from speechbrain.inference.speaker import EncoderClassifier
