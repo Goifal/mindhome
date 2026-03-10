@@ -87,6 +87,9 @@ class CircadianLightManager:
         self._is_running = False
         self._active_overrides = {}  # room_id -> {"type": str, "brightness_pct": int, "until": datetime}
         self._cached_status = {}  # room_id -> status dict
+        # Fix: Lock fuer _active_overrides — wird von Event-Callbacks + Check-Thread gleichzeitig genutzt
+        import threading
+        self._overrides_lock = threading.Lock()
 
     def start(self):
         self._is_running = True
@@ -95,7 +98,8 @@ class CircadianLightManager:
 
     def stop(self):
         self._is_running = False
-        self._active_overrides.clear()
+        with self._overrides_lock:
+            self._active_overrides.clear()
         logger.info("CircadianLightManager stopped")
 
     def _subscribe_events(self):
@@ -117,12 +121,13 @@ class CircadianLightManager:
                 from helpers import get_setting
                 _sleep_brightness = int(get_setting("phase4.circadian_lighting.sleep_brightness", "10") or "10")
                 for cfg in configs:
-                    self._active_overrides[cfg.room_id] = {
-                        "type": "sleep",
-                        "brightness_pct": cfg.override_sleep or _sleep_brightness,
-                        "transition_sec": cfg.override_transition_sec or 300,
-                        "until": None,  # until wake
-                    }
+                    with self._overrides_lock:
+                        self._active_overrides[cfg.room_id] = {
+                            "type": "sleep",
+                            "brightness_pct": cfg.override_sleep or _sleep_brightness,
+                            "transition_sec": cfg.override_transition_sec or 300,
+                            "until": None,  # until wake
+                        }
                     self._apply_brightness(cfg, cfg.override_sleep or _sleep_brightness, cfg.override_transition_sec or 300)
             logger.info(f"Circadian sleep override applied to {len(configs)} rooms")
         except Exception as e:
@@ -143,12 +148,13 @@ class CircadianLightManager:
                 _wakeup_brightness = int(get_setting("phase4.circadian_lighting.wakeup_brightness", "70") or "70")
                 _wakeup_duration_min = int(get_setting("phase4.circadian_lighting.wakeup_duration_min", "30") or "30")
                 for cfg in configs:
-                    self._active_overrides[cfg.room_id] = {
-                        "type": "wakeup",
-                        "brightness_pct": cfg.override_wakeup or _wakeup_brightness,
-                        "transition_sec": cfg.override_transition_sec or 300,
-                        "until": now + timedelta(minutes=_wakeup_duration_min),
-                    }
+                    with self._overrides_lock:
+                        self._active_overrides[cfg.room_id] = {
+                            "type": "wakeup",
+                            "brightness_pct": cfg.override_wakeup or _wakeup_brightness,
+                            "transition_sec": cfg.override_transition_sec or 300,
+                            "until": now + timedelta(minutes=_wakeup_duration_min),
+                        }
                     self._apply_brightness(cfg, cfg.override_wakeup or _wakeup_brightness, cfg.override_transition_sec or 300)
             logger.info("Circadian wakeup override applied")
         except Exception as e:
@@ -169,12 +175,13 @@ class CircadianLightManager:
                 _guest_brightness = int(get_setting("phase4.circadian_lighting.guest_brightness", "90") or "90")
                 _guest_duration_hours = int(get_setting("phase4.circadian_lighting.guest_duration_hours", "3") or "3")
                 for cfg in configs:
-                    self._active_overrides[cfg.room_id] = {
-                        "type": "guests",
-                        "brightness_pct": cfg.override_guests or _guest_brightness,
-                        "transition_sec": cfg.override_transition_sec or 300,
-                        "until": now + timedelta(hours=_guest_duration_hours),
-                    }
+                    with self._overrides_lock:
+                        self._active_overrides[cfg.room_id] = {
+                            "type": "guests",
+                            "brightness_pct": cfg.override_guests or _guest_brightness,
+                            "transition_sec": cfg.override_transition_sec or 300,
+                            "until": now + timedelta(hours=_guest_duration_hours),
+                        }
                     self._apply_brightness(cfg, cfg.override_guests or _guest_brightness, cfg.override_transition_sec or 300)
             logger.info("Circadian guest override applied")
         except Exception as e:
@@ -203,14 +210,14 @@ class CircadianLightManager:
                     room = session.query(Room).get(cfg.room_id)
                     room_name = room.name if room else f"Room {cfg.room_id}"
 
-                    # Check if override is active
-                    override = self._active_overrides.get(cfg.room_id)
-                    if override:
-                        if override.get("until") and now > override["until"]:
-                            # Override expired, remove and resume curve
+                    # Check if override is active (lock protects against concurrent event callbacks)
+                    with self._overrides_lock:
+                        override = self._active_overrides.get(cfg.room_id)
+                        if override and override.get("until") and now > override["until"]:
                             del self._active_overrides[cfg.room_id]
+                            override = None
                             logger.debug(f"Circadian override expired for room {room_name}")
-                        else:
+                    if override:
                             # Override still active, skip curve
                             self._cached_status[cfg.room_id] = {
                                 "room_id": cfg.room_id,

@@ -630,7 +630,9 @@ class AutomationExecutor:
                     excluded_pairs.add((exc.entity_a, exc.entity_b))
                     excluded_pairs.add((exc.entity_b, exc.entity_a))
 
-                now = datetime.now(timezone.utc)
+                # Fix: Lokalzeit verwenden — Pattern-Zeiten sind in Lokalzeit konfiguriert
+                from helpers import local_now as _local_now
+                now = _local_now()
 
                 # Build per-entity conflict map: entity -> [(pattern, target_state, confidence)]
                 entity_pattern_map = defaultdict(list)
@@ -2280,7 +2282,9 @@ class QuietHoursManager:
         session = self.Session()
         try:
             configs = session.query(QuietHoursConfig).filter_by(is_active=True).all()
-            now = datetime.now()
+            # Fix: Lokalzeit verwenden — Quiet Hours sind in Lokalzeit konfiguriert
+            from helpers import local_now as _local_now
+            now = _local_now()
             current_minutes = now.hour * 60 + now.minute
             current_weekday = now.weekday()  # 0=Mon, 6=Sun
 

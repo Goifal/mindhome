@@ -95,8 +95,22 @@ class AccessControlManager:
             logger.error(f"Error getting locks: {e}")
         return locks
 
+    def _is_assigned_lock(self, entity_id):
+        """Fix: Pruefen ob entity_id ein zugewiesenes Schloss ist."""
+        if not entity_id or not entity_id.startswith("lock."):
+            return False
+        try:
+            locks = self.get_locks()
+            return any(l["entity_id"] == entity_id for l in locks)
+        except Exception:
+            return False
+
     def lock(self, entity_id):
         """Lock a single lock."""
+        # Fix: Nur zugewiesene Schloesser erlauben
+        if not self._is_assigned_lock(entity_id):
+            logger.warning(f"Lock rejected: {entity_id} is not an assigned lock")
+            return False
         try:
             self.ha.call_service("lock", "lock", {"entity_id": entity_id})
             self._log_access(entity_id, "lock", "remote")
@@ -107,6 +121,10 @@ class AccessControlManager:
 
     def unlock(self, entity_id):
         """Unlock a single lock."""
+        # Fix: Nur zugewiesene Schloesser erlauben
+        if not self._is_assigned_lock(entity_id):
+            logger.warning(f"Unlock rejected: {entity_id} is not an assigned lock")
+            return False
         try:
             self.ha.call_service("lock", "unlock", {"entity_id": entity_id})
             self._log_access(entity_id, "unlock", "remote")
