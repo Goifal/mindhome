@@ -640,3 +640,210 @@ class TestEdgeCases:
         assert cb._state == CircuitState.CLOSED
         cb.record_failure()
         assert cb._state == CircuitState.OPEN
+
+
+# ---------------------------------------------------------------------------
+# 13. Tests using the ACTUAL module imports (covers lines in circuit_breaker.py)
+# ---------------------------------------------------------------------------
+
+from assistant.circuit_breaker import (
+    CircuitBreaker as RealCircuitBreaker,
+    CircuitState as RealCircuitState,
+    CircuitBreakerRegistry,
+    registry,
+    ollama_breaker,
+    ha_breaker,
+    mindhome_breaker,
+    redis_breaker,
+    chromadb_breaker,
+)
+
+
+class TestRealCircuitBreakerCheckRecovery:
+    """Tests that exercise _check_recovery, check_state, is_available, try_acquire
+    on the real module (covers missing lines 55-58, 62, 66-67, 76-78)."""
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_check_recovery_transitions_open_to_half_open(self, mock_time):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=2, recovery_timeout=10.0)
+        mock_time.return_value = 100.0
+        for _ in range(2):
+            cb.record_failure()
+        assert cb._state == RealCircuitState.OPEN
+        # Move time past recovery_timeout
+        mock_time.return_value = 111.0
+        cb._check_recovery()
+        assert cb._state == RealCircuitState.HALF_OPEN
+        assert cb._half_open_calls == 0
+
+    def test_state_property_returns_state(self):
+        cb = RealCircuitBreaker("test_svc")
+        assert cb.state == RealCircuitState.CLOSED
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_check_state_calls_check_recovery(self, mock_time):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=5.0)
+        mock_time.return_value = 50.0
+        cb.record_failure()
+        assert cb._state == RealCircuitState.OPEN
+        mock_time.return_value = 56.0
+        state = cb.check_state()
+        assert state == RealCircuitState.HALF_OPEN
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_is_available_half_open(self, mock_time):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=2)
+        mock_time.return_value = 50.0
+        cb.record_failure()
+        mock_time.return_value = 56.0
+        assert cb.is_available is True
+        cb._half_open_calls = 2
+        assert cb.is_available is False
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_is_available_open_returns_false(self, mock_time):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=100.0)
+        mock_time.return_value = 50.0
+        cb.record_failure()
+        mock_time.return_value = 51.0
+        assert cb.is_available is False
+
+
+class TestRealCircuitBreakerTryAcquire:
+    """Tests for try_acquire on real module (covers lines 82-95)."""
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_try_acquire_closed(self, mock_time):
+        cb = RealCircuitBreaker("test_svc")
+        mock_time.return_value = 100.0
+        assert cb.try_acquire() is True
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_try_acquire_half_open_within_limit(self, mock_time):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=2)
+        mock_time.return_value = 50.0
+        cb.record_failure()
+        mock_time.return_value = 56.0
+        assert cb.try_acquire() is True
+        assert cb._half_open_calls == 1
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_try_acquire_half_open_max_reached(self, mock_time):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=1)
+        mock_time.return_value = 50.0
+        cb.record_failure()
+        mock_time.return_value = 56.0
+        cb.try_acquire()  # uses up the one allowed call
+        assert cb.try_acquire() is False
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_try_acquire_open_rejected(self, mock_time):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=100.0)
+        mock_time.return_value = 50.0
+        cb.record_failure()
+        mock_time.return_value = 51.0
+        assert cb.try_acquire() is False
+
+
+class TestRealCircuitBreakerRecordSuccessFailure:
+    """Tests for record_success and record_failure on real module (covers lines 101-106, 117-118, 120-121)."""
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_record_success_half_open_closes(self, mock_time):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=1)
+        mock_time.return_value = 50.0
+        cb.record_failure()
+        mock_time.return_value = 56.0
+        cb._check_recovery()
+        assert cb._state == RealCircuitState.HALF_OPEN
+        cb.record_success()
+        assert cb._state == RealCircuitState.CLOSED
+        assert cb._failure_count == 0
+        assert cb._success_count == 0
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_record_failure_half_open_reopens(self, mock_time):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=1, recovery_timeout=5.0)
+        mock_time.return_value = 50.0
+        cb.record_failure()
+        mock_time.return_value = 56.0
+        cb._check_recovery()
+        mock_time.return_value = 57.0
+        cb.record_failure()
+        assert cb._state == RealCircuitState.OPEN
+
+    @patch("assistant.circuit_breaker.time.monotonic")
+    def test_record_failure_closed_to_open(self, mock_time):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=2)
+        mock_time.return_value = 100.0
+        cb.record_failure()
+        cb.record_failure()
+        assert cb._state == RealCircuitState.OPEN
+
+
+class TestRealCircuitBreakerResetAndStatus:
+    """Tests for reset and status on real module (covers lines 128-132, 136)."""
+
+    def test_reset_clears_everything(self):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=1)
+        cb.record_failure()
+        cb.reset()
+        assert cb._state == RealCircuitState.CLOSED
+        assert cb._failure_count == 0
+        assert cb._success_count == 0
+        assert cb._half_open_calls == 0
+
+    def test_status_returns_dict(self):
+        cb = RealCircuitBreaker("test_svc", failure_threshold=3, recovery_timeout=15.0)
+        s = cb.status()
+        assert s["name"] == "test_svc"
+        assert s["state"] == "closed"
+        assert s["failure_count"] == 0
+        assert s["failure_threshold"] == 3
+        assert s["recovery_timeout"] == 15.0
+
+
+class TestCircuitBreakerRegistryReal:
+    """Tests for CircuitBreakerRegistry (covers lines 168, 172, 176)."""
+
+    def test_register_and_get(self):
+        reg = CircuitBreakerRegistry()
+        cb = reg.register("test_service", failure_threshold=3, recovery_timeout=10.0)
+        assert cb.name == "test_service"
+        assert reg.get("test_service") is cb
+        assert reg.get("nonexistent") is None
+
+    def test_all_status(self):
+        reg = CircuitBreakerRegistry()
+        reg.register("svc1")
+        reg.register("svc2")
+        statuses = reg.all_status()
+        assert len(statuses) == 2
+        assert all(isinstance(s, dict) for s in statuses)
+
+    def test_all_available(self):
+        reg = CircuitBreakerRegistry()
+        reg.register("svc1")
+        reg.register("svc2")
+        avail = reg.all_available()
+        assert avail == {"svc1": True, "svc2": True}
+
+
+class TestGlobalBreakers:
+    """Tests for the global registry and pre-registered breakers."""
+
+    def test_global_registry_has_breakers(self):
+        assert registry.get("ollama") is ollama_breaker
+        assert registry.get("home_assistant") is ha_breaker
+        assert registry.get("mindhome") is mindhome_breaker
+        assert registry.get("redis") is redis_breaker
+        assert registry.get("chromadb") is chromadb_breaker
+
+    def test_global_all_status(self):
+        statuses = registry.all_status()
+        assert len(statuses) >= 5
+
+    def test_global_all_available(self):
+        avail = registry.all_available()
+        assert "ollama" in avail
+        assert "redis" in avail

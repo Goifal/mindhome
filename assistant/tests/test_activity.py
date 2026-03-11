@@ -508,3 +508,380 @@ class TestShouldDeliver:
         result = await engine.should_deliver("low")
         # Relaxing + low = suppress
         assert result["suppress"] is True
+
+
+# =====================================================================
+# Coverage: _build_matrix_from_config — Lines 178-180, 182-184
+# =====================================================================
+
+
+class TestBuildMatrixFromConfig:
+    """Tests fuer _build_matrix_from_config() — Ungueltige Urgencies und Werte."""
+
+    def test_unknown_urgency_ignored(self):
+        """Unbekannte Urgency wird ignoriert (lines 178-180)."""
+        from assistant.activity import _build_matrix_from_config, _DEFAULT_SILENCE_MATRIX, _VALID_DELIVERY_METHODS
+        config = {"relaxing": {"unknown_urgency": "tts_loud"}}
+        result = _build_matrix_from_config(config, _DEFAULT_SILENCE_MATRIX, validate_values=_VALID_DELIVERY_METHODS)
+        assert "unknown_urgency" not in result.get("relaxing", {})
+
+    def test_invalid_value_ignored(self):
+        """Ungueltiger Wert wird ignoriert (lines 182-184)."""
+        from assistant.activity import _build_matrix_from_config, _DEFAULT_SILENCE_MATRIX, _VALID_DELIVERY_METHODS
+        config = {"relaxing": {"high": "invalid_method"}}
+        result = _build_matrix_from_config(config, _DEFAULT_SILENCE_MATRIX, validate_values=_VALID_DELIVERY_METHODS)
+        # Should keep default value, not the invalid one
+        assert result["relaxing"]["high"] != "invalid_method"
+
+    def test_valid_override_applied(self):
+        """Gueltige Werte werden uebernommen."""
+        from assistant.activity import _build_matrix_from_config, _DEFAULT_SILENCE_MATRIX, _VALID_DELIVERY_METHODS
+        config = {"relaxing": {"high": "tts_quiet"}}
+        result = _build_matrix_from_config(config, _DEFAULT_SILENCE_MATRIX, validate_values=_VALID_DELIVERY_METHODS)
+        assert result["relaxing"]["high"] == "tts_quiet"
+
+    def test_no_validate_values_accepts_anything(self):
+        """Ohne validate_values werden alle Werte akzeptiert (Volume-Matrix)."""
+        from assistant.activity import _build_matrix_from_config, _DEFAULT_VOLUME_MATRIX
+        config = {"relaxing": {"high": 0.42}}
+        result = _build_matrix_from_config(config, _DEFAULT_VOLUME_MATRIX, validate_values=None)
+        assert result["relaxing"]["high"] == 0.42
+
+
+# =====================================================================
+# Coverage: Household entities — Lines 244-249
+# =====================================================================
+
+
+class TestHouseholdEntities:
+    """Tests fuer Haushaltsmitglieder-Entity Konfiguration."""
+
+    def test_household_entities_loaded(self, ha_mock):
+        """Primary user entity und member entities werden geladen (lines 244-249)."""
+        cfg = {
+            "activity": {},
+            "household": {
+                "primary_user_entity": "person.max",
+                "members": [
+                    {"ha_entity": "person.anna"},
+                    {"ha_entity": "person.lisa"},
+                    {"ha_entity": ""},  # empty should be skipped
+                    {},  # missing ha_entity should be skipped
+                ],
+            },
+        }
+        with patch("assistant.activity.yaml_config", cfg):
+            eng = ActivityEngine(ha_mock)
+        assert "person.max" in eng._household_entities
+        assert "person.anna" in eng._household_entities
+        assert "person.lisa" in eng._household_entities
+        assert "" not in eng._household_entities
+
+    def test_no_household_config(self, ha_mock):
+        """Ohne Household-Config bleibt _household_entities leer."""
+        with patch("assistant.activity.yaml_config", {"activity": {}}):
+            eng = ActivityEngine(ha_mock)
+        assert len(eng._household_entities) == 0
+
+
+# =====================================================================
+# Coverage: reload_config — Lines 297-320
+# =====================================================================
+
+
+class TestReloadConfig:
+    """Tests fuer reload_config()."""
+
+    def test_reload_config_basic(self, ha_mock):
+        """reload_config laedt alle Konfigurationen neu (lines 297-320)."""
+        with patch("assistant.activity.yaml_config", {"activity": {}}):
+            eng = ActivityEngine(ha_mock)
+        new_cfg = {
+            "entities": {"media_players": ["media_player.new"]},
+            "thresholds": {"night_start": 23, "night_end": 6},
+        }
+        eng.reload_config(new_cfg)
+        assert eng.media_players == ["media_player.new"]
+        assert eng.night_start == 23
+        assert eng.night_end == 6
+
+    def test_reload_config_with_silence_keywords(self, ha_mock):
+        """reload_config laedt konfigurierte silence_keywords (lines 300-306)."""
+        with patch("assistant.activity.yaml_config", {"activity": {}}):
+            eng = ActivityEngine(ha_mock)
+        new_cfg = {
+            "silence_keywords": {
+                "watching": ["filmabend_custom"],
+                "sleeping": ["nacht_custom"],
+            },
+        }
+        eng.reload_config(new_cfg)
+        assert "filmabend_custom" in eng._silence_keywords.get("watching", [])
+
+    def test_reload_config_without_silence_keywords(self, ha_mock):
+        """reload_config ohne silence_keywords nutzt Defaults (lines 307-308)."""
+        with patch("assistant.activity.yaml_config", {"activity": {}}):
+            eng = ActivityEngine(ha_mock)
+        eng.reload_config({})
+        assert eng._silence_keywords == dict(ActivityEngine.SILENCE_KEYWORDS)
+
+    def test_reload_config_with_matrix_overrides(self, ha_mock):
+        """reload_config laedt silence/volume matrix overrides (lines 311-319)."""
+        with patch("assistant.activity.yaml_config", {"activity": {}}):
+            eng = ActivityEngine(ha_mock)
+        new_cfg = {
+            "silence_matrix": {"relaxing": {"low": "tts_quiet"}},
+            "volume_matrix": {"relaxing": {"low": 0.99}},
+        }
+        eng.reload_config(new_cfg)
+        assert eng._silence_matrix["relaxing"]["low"] == "tts_quiet"
+        assert eng._volume_matrix["relaxing"]["low"] == 0.99
+
+
+# =====================================================================
+# Coverage: TTL cache — Line 380
+# =====================================================================
+
+
+class TestTTLCache:
+    """Tests fuer den TTL-Cache bei detect_activity."""
+
+    @pytest.mark.asyncio
+    async def test_ttl_cache_returns_cached_result(self, engine, ha_mock):
+        """Wiederholter Aufruf innerhalb TTL gibt Cache zurueck (line 380)."""
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "person.max", "state": "home"},
+        ])
+        result1 = await engine.detect_activity()
+        # Set cache as fresh
+        import time
+        engine._cache_ts = time.monotonic()
+        engine._cache_ttl = 100  # long TTL
+        result2 = await engine.detect_activity()
+        assert result2 is result1  # same object returned from cache
+
+
+# =====================================================================
+# Coverage: Volume night/evening — Lines 462, 465-466, 468-469
+# =====================================================================
+
+
+class TestVolumeNightEvening:
+    """Tests fuer Volume-Level Tageszeit-Anpassungen."""
+
+    def test_volume_night_non_critical_capped(self, engine):
+        """Nacht + non-critical wird auf 0.3 gekappt (lines 465-466)."""
+        with patch("assistant.activity.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 25, 23, 0)  # 23 Uhr = Nacht
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            vol = engine.get_volume_level(RELAXING, "high")
+            assert vol <= 0.3
+
+    def test_volume_night_critical_not_capped(self, engine):
+        """Nacht + critical bleibt ungekappt (line 465 condition)."""
+        with patch("assistant.activity.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 25, 23, 0)
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            vol = engine.get_volume_level(RELAXING, "critical")
+            assert vol == 1.0
+
+    def test_volume_evening_non_critical_non_high_capped(self, engine):
+        """Abend (1h vor Nacht) + medium wird auf 0.5 gekappt (lines 468-469)."""
+        with patch("assistant.activity.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 25, 21, 0)  # 21 Uhr = 1h vor 22
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            vol = engine.get_volume_level(RELAXING, "medium")
+            assert vol <= 0.5
+
+    def test_volume_evening_high_not_capped(self, engine):
+        """Abend + high wird NICHT gekappt (line 468 condition)."""
+        with patch("assistant.activity.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 25, 21, 0)
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            vol = engine.get_volume_level(RELAXING, "high")
+            assert vol == 0.8  # Default relaxing.high
+
+    def test_volume_night_start_equals_end_path(self, ha_mock):
+        """Wenn night_start <= night_end (ungewoehnlich): Else-Branch (line 462)."""
+        with patch("assistant.activity.yaml_config", {"activity": {
+            "thresholds": {"night_start": 2, "night_end": 7},
+        }}):
+            eng = ActivityEngine(ha_mock)
+        with patch("assistant.activity.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 25, 3, 0)  # 3 Uhr, within 2-7
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            vol = eng.get_volume_level(RELAXING, "medium")
+            assert vol <= 0.3
+
+
+# =====================================================================
+# Coverage: Auto-Discovery — Lines 566, 568, 575-579
+# =====================================================================
+
+
+class TestAutoDiscovery:
+    """Tests fuer _auto_discover() und Auto-Discovery in Check-Methoden."""
+
+    def test_auto_discover_active_states_filter(self, engine):
+        """active_states Filter: Entity mit unpassendem State wird uebersprungen (line 566)."""
+        states = [
+            {"entity_id": "binary_sensor.zoom_call", "state": "off",
+             "attributes": {"friendly_name": "Zoom Call"}},
+        ]
+        result = ActivityEngine._auto_discover(
+            states, ("binary_sensor.",), [], engine._MIC_RE, "Mic",
+            active_states={"on"},
+        )
+        assert result == ""
+
+    def test_auto_discover_inactive_states_filter(self, engine):
+        """inactive_states Filter: Entity im inaktiven State wird uebersprungen (line 568)."""
+        states = [
+            {"entity_id": "media_player.fire_tv", "state": "off",
+             "attributes": {"friendly_name": "Fire TV"}},
+        ]
+        result = ActivityEngine._auto_discover(
+            states, ("media_player.",), [], engine._TV_RE, "TV",
+            inactive_states={"off", "standby"},
+        )
+        assert result == ""
+
+    def test_auto_discover_finds_match(self, engine):
+        """Auto-Discovery findet Entity per Pattern-Match (lines 575-579)."""
+        states = [
+            {"entity_id": "media_player.fire_tv", "state": "playing",
+             "attributes": {"friendly_name": "Fire TV Stick"}},
+        ]
+        result = ActivityEngine._auto_discover(
+            states, ("media_player.",), [], engine._TV_RE, "TV",
+            inactive_states={"off", "standby"},
+        )
+        assert result == "media_player.fire_tv"
+
+    def test_auto_discover_match_by_friendly_name(self, engine):
+        """Auto-Discovery matched auf friendly_name (line 574)."""
+        states = [
+            {"entity_id": "media_player.xyz123", "state": "playing",
+             "attributes": {"friendly_name": "Samsung TV"}},
+        ]
+        result = ActivityEngine._auto_discover(
+            states, ("media_player.",), [], engine._TV_RE, "TV",
+            inactive_states={"off", "standby"},
+        )
+        assert result == "media_player.xyz123"
+
+    def test_auto_discover_skips_configured(self, engine):
+        """Auto-Discovery ueberspringt bereits konfigurierte Entities."""
+        states = [
+            {"entity_id": "media_player.fire_tv", "state": "playing",
+             "attributes": {"friendly_name": "Fire TV"}},
+        ]
+        result = ActivityEngine._auto_discover(
+            states, ("media_player.",), ["media_player.fire_tv"], engine._TV_RE, "TV",
+            inactive_states={"off", "standby"},
+        )
+        assert result == ""
+
+
+# =====================================================================
+# Coverage: _check_sleeping night fallback — Line 657
+# =====================================================================
+
+
+class TestSleepingNightFallback:
+    """Tests fuer _check_sleeping Nacht-Fallback."""
+
+    def test_sleeping_night_lights_off_fallback(self, engine):
+        """Nacht + alle Lichter aus = sleeping (Fallback, line 657)."""
+        with patch("assistant.activity.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 25, 23, 0)
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            states = [
+                {"entity_id": "light.wohnzimmer", "state": "off"},
+                {"entity_id": "light.kueche", "state": "off"},
+            ]
+            assert engine._check_sleeping(states) is True
+
+    def test_sleeping_night_lights_on_not_sleeping(self, engine):
+        """Nacht + Licht an = nicht sleeping."""
+        with patch("assistant.activity.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 2, 25, 23, 0)
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            states = [
+                {"entity_id": "light.wohnzimmer", "state": "on"},
+            ]
+            assert engine._check_sleeping(states) is False
+
+
+# =====================================================================
+# Coverage: _check_pc_active — Lines 669, 676
+# =====================================================================
+
+
+class TestPcActiveConfigured:
+    """Tests fuer _check_pc_active mit expliziter Config."""
+
+    def test_pc_sensors_configured_empty_returns_false(self, ha_mock):
+        """Explizit leere PC-Sensoren-Liste = bewusst deaktiviert (line 669)."""
+        cfg = {"activity": {"entities": {"pc_sensors": []}}}
+        with patch("assistant.activity.yaml_config", cfg):
+            eng = ActivityEngine(ha_mock)
+        states = [{"entity_id": "binary_sensor.pc_active", "state": "on"}]
+        assert eng._check_pc_active(states) is False
+
+    def test_pc_sensors_configured_no_discovery(self, ha_mock):
+        """Explizit konfigurierte PC-Sensoren: kein Auto-Discovery (line 676)."""
+        cfg = {"activity": {"entities": {"pc_sensors": ["binary_sensor.my_pc"]}}}
+        with patch("assistant.activity.yaml_config", cfg):
+            eng = ActivityEngine(ha_mock)
+        states = [
+            {"entity_id": "binary_sensor.my_pc", "state": "off"},
+            {"entity_id": "binary_sensor.computer_xyz", "state": "on",
+             "attributes": {"friendly_name": "Computer"}},
+        ]
+        # Configured sensor is off, auto-discovery should NOT trigger
+        assert eng._check_pc_active(states) is False
+
+
+# =====================================================================
+# Coverage: _check_guests with household entities — Lines 692, 695
+# =====================================================================
+
+
+class TestGuestsWithHousehold:
+    """Tests fuer _check_guests mit konfigurierten Haushaltsmitgliedern."""
+
+    def test_guests_with_household_entities_unknown_person(self, ha_mock):
+        """Unbekannte Person zuhause = Gast (lines 691-692, 694-695)."""
+        cfg = {
+            "activity": {},
+            "household": {
+                "primary_user_entity": "person.max",
+                "members": [{"ha_entity": "person.anna"}],
+            },
+        }
+        with patch("assistant.activity.yaml_config", cfg):
+            eng = ActivityEngine(ha_mock)
+        states = [
+            {"entity_id": "person.max", "state": "home"},
+            {"entity_id": "person.anna", "state": "home"},
+            {"entity_id": "person.visitor", "state": "home"},
+        ]
+        assert eng._check_guests(states) is True
+
+    def test_guests_with_household_entities_no_unknown(self, ha_mock):
+        """Nur Haushaltsmitglieder = keine Gaeste (line 695 returns False)."""
+        cfg = {
+            "activity": {},
+            "household": {
+                "primary_user_entity": "person.max",
+                "members": [{"ha_entity": "person.anna"}],
+            },
+        }
+        with patch("assistant.activity.yaml_config", cfg):
+            eng = ActivityEngine(ha_mock)
+        states = [
+            {"entity_id": "person.max", "state": "home"},
+            {"entity_id": "person.anna", "state": "home"},
+        ]
+        assert eng._check_guests(states) is False
