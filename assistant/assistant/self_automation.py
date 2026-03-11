@@ -457,7 +457,7 @@ REGELN:
 
         try:
             model = self._cfg.get("model", settings.model_deep)
-            result = await self.ollama.chat(
+            result = await asyncio.wait_for(self.ollama.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -465,7 +465,7 @@ REGELN:
                 model=model,
                 temperature=0.2,
                 max_tokens=512,
-            )
+            ), timeout=30)
 
             content = result.get("message", {}).get("content", "")
             if not content:

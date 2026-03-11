@@ -679,6 +679,9 @@ class PersonalityEngine:
         if self._curiosity_last_date != today:
             self._curiosity_count_today = {}
             self._curiosity_last_date = today
+        # Size cap to prevent unbounded memory growth
+        if len(self._curiosity_count_today) > 100:
+            self._curiosity_count_today = dict(list(self._curiosity_count_today.items())[-50:])
 
         user_key = (person or "_default").lower().strip()
         if self._curiosity_count_today.get(user_key, 0) >= max_daily:
@@ -1385,7 +1388,7 @@ class PersonalityEngine:
         notes = []
         new_alerts = []
         for alert in alerts:
-            alert_key = str(int(hashlib.md5(alert.lower().strip().encode()).hexdigest(), 16) % 10_000_000)
+            alert_key = hashlib.sha256(alert.lower().strip().encode()).hexdigest()[:12]
             if await self.was_warning_given(alert_key):
                 notes.append(f"[BEREITS GEWARNT: '{alert}' — NICHT wiederholen, nur erwähnen wenn gefragt]")
             else:

@@ -239,17 +239,21 @@ def resolve_person_by_entity(entity_id: str) -> str:
 # identifiziert wird (Sprache, Praesenz, Speaker-Recognition).
 # Damit kann get_person_title() ohne Argument den richtigen Titel liefern.
 _active_person: str = ""
+import threading as _threading
+_active_person_lock = _threading.Lock()
 
 
 def set_active_person(name: str) -> None:
     """Setzt die aktuell aktive Person (vom brain/proactive Modul)."""
     global _active_person
-    _active_person = name or ""
+    with _active_person_lock:
+        _active_person = name or ""
 
 
 def get_active_person() -> str:
     """Gibt die aktuell aktive Person zurueck."""
-    return _active_person
+    with _active_person_lock:
+        return _active_person
 
 
 def _lookup_title(titles: dict, name: str) -> str:

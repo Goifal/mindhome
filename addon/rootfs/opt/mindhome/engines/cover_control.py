@@ -102,7 +102,8 @@ class CoverControlManager:
         self._wake_pending_open = False  # Deferred wake-open (too dark at wake time)
 
     def start(self):
-        self._is_running = True
+        with self._lock:
+            self._is_running = True
         self.event_bus.subscribe("state.changed", self._on_state_changed, priority=30)
         self.event_bus.subscribe("sleep.detected", self._on_sleep_detected, priority=30)
         self.event_bus.subscribe("sleep.wake_detected", self._on_wake_detected, priority=30)
@@ -111,9 +112,10 @@ class CoverControlManager:
         logger.info("CoverControlManager started")
 
     def stop(self):
-        self._is_running = False
-        self._manual_overrides.clear()
-        self._pending_actions.clear()
+        with self._lock:
+            self._is_running = False
+            self._manual_overrides.clear()
+            self._pending_actions.clear()
         logger.info("CoverControlManager stopped")
 
     # ── Config ──────────────────────────────────────────────

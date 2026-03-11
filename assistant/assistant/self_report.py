@@ -47,6 +47,14 @@ class SelfReport:
 
         # Rate Limit: Max 1 Report pro Tag
         today = datetime.now().strftime("%Y-%m-%d")
+        # On restart, try to recover last report day from Redis
+        if not self._last_report_day and self.redis:
+            try:
+                _cached_day = await self.redis.get("mha:self_report:last_day")
+                if _cached_day:
+                    self._last_report_day = _cached_day.decode() if isinstance(_cached_day, bytes) else _cached_day
+            except Exception:
+                pass
         if self._last_report_day == today:
             cached = await self.get_latest_report()
             if cached:
@@ -122,6 +130,10 @@ class SelfReport:
         await self.redis.expire("mha:self_report:history", 365 * 86400)
 
         self._last_report_day = today
+        try:
+            await self.redis.setex("mha:self_report:last_day", 86400, today)
+        except Exception:
+            pass
         logger.info("Self-Report generiert (%d Zeichen)", len(summary))
 
         return report

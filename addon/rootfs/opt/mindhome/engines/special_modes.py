@@ -1009,7 +1009,10 @@ class EmergencyProtocol(SpecialModeBase):
                 user = session.query(User).get(user_id)
                 if user and hasattr(user, 'pin_hash') and user.pin_hash:
                     import hashlib
-                    return user.pin_hash == hashlib.sha256(str(pin).encode()).hexdigest()
+                    pin_hash = hashlib.sha256(str(pin).encode()).hexdigest()
+                    # Constant-time comparison to prevent timing attacks
+                    import hmac
+                    return hmac.compare_digest(user.pin_hash, pin_hash)
         except Exception as e:
             logger.debug("Unhandled: %s", e)
         return False

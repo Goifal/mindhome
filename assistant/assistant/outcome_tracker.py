@@ -55,6 +55,7 @@ class OutcomeTracker:
         self.ha = None
         self.enabled = False
         self._pending_count = 0
+        self._pending_lock = asyncio.Lock()
         self._max_pending = 20
         self._cfg = yaml_config.get("outcome_tracker", {})
         self._observation_delay = self._cfg.get("observation_delay_seconds", 180)

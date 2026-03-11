@@ -11,6 +11,7 @@ Features:
 Wird periodisch von proactive.py aufgerufen.
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
@@ -78,7 +79,11 @@ class ThreatAssessment:
         if not self.enabled:
             return []
 
-        states = await self.ha.get_states()
+        try:
+            states = await asyncio.wait_for(self.ha.get_states(), timeout=15)
+        except asyncio.TimeoutError:
+            logger.warning("get_states() timed out in threat assessment")
+            return []
         if not states:
             return []
 

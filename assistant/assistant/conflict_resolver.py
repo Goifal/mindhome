@@ -144,6 +144,7 @@ class ConflictResolver:
 
         # State: Letzte Befehle pro Person
         self._recent_commands: dict[str, list[dict]] = defaultdict(list)
+        self._commands_lock = asyncio.Lock()
         # State: Letzte Konfliktloesungen (Cooldown)
         self._last_resolutions: dict[str, float] = {}
         # State: Konflikt-History

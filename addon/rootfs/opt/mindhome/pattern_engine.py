@@ -333,6 +333,7 @@ class StateLogger:
 
         # Rate limiter: sliding window
         self._event_timestamps = []  # list of timestamps
+        self._event_timestamps_lock = threading.Lock()
         self._rate_limit_warned = False
         self._rate_limit_warn_time = None
 
@@ -464,19 +465,20 @@ class StateLogger:
         # Rate limit check
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=60)
-        self._event_timestamps = [t for t in self._event_timestamps if t > cutoff]
         _max_epm = self.MAX_EVENTS_PER_MINUTE
         try:
             _max_epm = int(get_setting("core.pattern_engine.max_events_per_minute", "600") or "600")
         except Exception as e:
             logger.debug("Unhandled: %s", e)
-        if len(self._event_timestamps) >= _max_epm:
-            if not self._rate_limit_warned or (self._rate_limit_warn_time and (now - self._rate_limit_warn_time).total_seconds() > 300):
-                logger.warning(f"Rate limit reached ({_max_epm}/min), dropping events")
-                self._rate_limit_warned = True
-                self._rate_limit_warn_time = now
-            return
-        self._rate_limit_warned = False
+        with self._event_timestamps_lock:
+            self._event_timestamps = [t for t in self._event_timestamps if t > cutoff]
+            if len(self._event_timestamps) >= _max_epm:
+                if not self._rate_limit_warned or (self._rate_limit_warn_time and (now - self._rate_limit_warn_time).total_seconds() > 300):
+                    logger.warning(f"Rate limit reached ({_max_epm}/min), dropping events")
+                    self._rate_limit_warned = True
+                    self._rate_limit_warn_time = now
+                return
+            self._rate_limit_warned = False
 
         old_state = old_state_obj.get("state") if old_state_obj else None
         new_state = new_state_obj.get("state", "")
@@ -533,7 +535,8 @@ class StateLogger:
                         time.sleep(0.1 * (_attempt + 1))
                     else:
                         raise
-            self._event_timestamps.append(now)
+            with self._event_timestamps_lock:
+                self._event_timestamps.append(now)
             logger.debug(f"Logged: {entity_id} {old_state} → {new_state}")
 
         except Exception as e:

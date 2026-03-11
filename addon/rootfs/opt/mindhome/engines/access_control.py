@@ -180,7 +180,9 @@ class AccessControlManager:
         """Create a new access code (stored hashed)."""
         from models import AccessCode
         try:
-            code_hash = hashlib.sha256(code.encode()).hexdigest()
+            import os as _os
+            salt = _os.urandom(16).hex()
+            code_hash = salt + ":" + hashlib.sha256((salt + code).encode()).hexdigest()
             with self.get_session() as session:
                 ac = AccessCode(
                     name=name,
@@ -214,7 +216,9 @@ class AccessControlManager:
                     if key in updates:
                         setattr(ac, key, updates[key])
                 if "code" in updates:
-                    ac.code_hash = hashlib.sha256(updates["code"].encode()).hexdigest()
+                    import os as _os
+                    salt = _os.urandom(16).hex()
+                    ac.code_hash = salt + ":" + hashlib.sha256((salt + updates["code"]).encode()).hexdigest()
                 return True
         except Exception as e:
             logger.error(f"Error updating code: {e}")

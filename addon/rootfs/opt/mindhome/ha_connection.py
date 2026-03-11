@@ -61,6 +61,7 @@ class HAConnection:
             "api_calls": 0, "api_errors": 0, "ws_messages": 0,
             "ws_reconnects": 0, "events_received": 0, "events_batched": 0, "retries": 0,
         }
+        self._stats_lock = threading.Lock()
 
     # ======================================================================
     # Conflict-F: Entity Ownership Check (Assistant-Koordination)
@@ -95,13 +96,15 @@ class HAConnection:
         attempts = RETRY_MAX_ATTEMPTS if retry else 1
         for attempt in range(attempts):
             try:
-                self._stats["api_calls"] += 1
+                with self._stats_lock:
+                    self._stats["api_calls"] += 1
                 response = requests.request(method, url, headers=self.headers, json=data, timeout=10)
                 response.raise_for_status()
                 self._is_online = True
                 return response.json() if response.text else None
             except requests.exceptions.HTTPError as e:
-                self._stats["api_errors"] += 1
+                with self._stats_lock:
+                    self._stats["api_errors"] += 1
                 status_code = e.response.status_code if e.response is not None else 0
                 # Don't retry client errors (4xx) — the request is wrong, retrying won't help
                 if 400 <= status_code < 500:
@@ -121,7 +124,8 @@ class HAConnection:
                     return None
                 if attempt < attempts - 1:
                     wait = RETRY_BACKOFF_BASE ** attempt
-                    self._stats["retries"] += 1
+                    with self._stats_lock:
+                        self._stats["retries"] += 1
                     logger.warning(f"HA API retry {attempt+1}/{attempts} for {endpoint} in {wait:.1f}s: {e}")
                     time.sleep(wait)
                 else:
@@ -129,10 +133,12 @@ class HAConnection:
                     self._is_online = False
                     return None
             except requests.exceptions.RequestException as e:
-                self._stats["api_errors"] += 1
+                with self._stats_lock:
+                    self._stats["api_errors"] += 1
                 if attempt < attempts - 1:
                     wait = RETRY_BACKOFF_BASE ** attempt
-                    self._stats["retries"] += 1
+                    with self._stats_lock:
+                        self._stats["retries"] += 1
                     logger.warning(f"HA API retry {attempt+1}/{attempts} for {endpoint} in {wait:.1f}s: {e}")
                     time.sleep(wait)
                 else:
@@ -584,7 +590,11 @@ class HAConnection:
 
         self._response_handlers[msg_id] = handler
         try:
-            self._ws.send(json.dumps(msg))
+            ws = self._ws
+            if ws is None:
+                logger.warning("WebSocket object is None")
+                return None
+            ws.send(json.dumps(msg))
             result_event.wait(timeout=10)
             return result_data[0]
         except BrokenPipeError as e:
