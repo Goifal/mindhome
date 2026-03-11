@@ -66,7 +66,7 @@ class CameraManager:
                 "success": True,
                 "message": "Snapshot abgerufen, aber Bild-Analyse nicht verfuegbar.",
                 "image_available": True,
-                "snapshot": image_data,
+                "snapshot": base64.b64encode(image_data).decode(),
             }
 
         return {
@@ -74,7 +74,7 @@ class CameraManager:
             "message": description,
             "image_available": True,
             "camera_entity": entity_id,
-            "snapshot": image_data,
+            "snapshot": base64.b64encode(image_data).decode(),
         }
 
     async def describe_doorbell(self) -> Optional[str]:

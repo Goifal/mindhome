@@ -377,8 +377,17 @@ Wenn keine Aenderung noetig: []"""
                 node = node[key]
             node[path[-1]] = new_value
 
-            with open(_SETTINGS_PATH, "w") as f:
-                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            import tempfile
+            tmp_fd, tmp_path = tempfile.mkstemp(
+                dir=_SETTINGS_PATH.parent, suffix=".yaml.tmp",
+            )
+            try:
+                with open(tmp_fd, "w") as f:
+                    yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                Path(tmp_path).replace(_SETTINGS_PATH)
+            except BaseException:
+                Path(tmp_path).unlink(missing_ok=True)
+                raise
 
             # Hot-Reload: yaml_config im Speicher aktualisieren
             _new = load_yaml_config()

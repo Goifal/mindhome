@@ -13,6 +13,7 @@ Wird von proactive.py bei jedem state_changed Event geprueft.
 
 import json
 import logging
+import math
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -57,7 +58,7 @@ class ConditionalCommands:
         trigger_type: str,
         trigger_value: str,
         action_function: str,
-        action_args: dict,
+        action_args: Optional[dict],
         label: str = "",
         ttl_hours: int = 24,
         one_shot: bool = True,
@@ -137,7 +138,7 @@ class ConditionalCommands:
         }
 
     async def check_event(self, entity_id: str, new_state: str, old_state: str = "",
-                          attributes: dict = None) -> list[dict]:
+                          attributes: Optional[dict] = None) -> list[dict]:
         """Prueft ob ein Event eine Bedingung ausloest.
 
         Wird von proactive.py bei jedem state_changed aufgerufen.
@@ -278,7 +279,7 @@ class ConditionalCommands:
                     return True
                 if operator == "<" and attr_num < target_num:
                     return True
-                if operator == "=" and attr_num == target_num:
+                if operator == "=" and math.isclose(attr_num, target_num, rel_tol=1e-9, abs_tol=1e-9):
                     return True
             except (ValueError, TypeError):
                 if operator == "=" and str(attr_val) == target_val:

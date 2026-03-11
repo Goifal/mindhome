@@ -320,11 +320,29 @@ class RepairPlanner:
                 f"mha:repair:projects:status:{status_filter}")
         else:
             ids = await self.redis.smembers("mha:repair:projects:all")
+        if not ids:
+            return []
+        decoded_ids = [
+            pid.decode() if isinstance(pid, bytes) else pid
+            for pid in ids
+        ]
+        pipe = self.redis.pipeline()
+        for pid in decoded_ids:
+            pipe.hgetall(f"mha:repair:project:{pid}")
+        results = await pipe.execute()
         projects = []
-        for pid in ids:
-            p = await self.get_project(pid)
-            if p and (not category_filter or p.get("category") == category_filter):
-                projects.append(p)
+        for data in results:
+            if not data:
+                continue
+            data = {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in data.items()}
+            for key in ("parts", "tools", "notes", "expenses"):
+                if key in data and isinstance(data[key], str):
+                    try:
+                        data[key] = json.loads(data[key])
+                    except (json.JSONDecodeError, TypeError):
+                        data[key] = []
+            if not category_filter or data.get("category") == category_filter:
+                projects.append(data)
         return projects
 
     async def update_project(self, project_id, **kwargs) -> Optional[dict]:
@@ -1638,13 +1656,37 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
     async def check_all_devices(self) -> list:
         """Prüft alle verknuepften Geräte."""
         projects = await self.list_projects()
+        # Collect all entities that need checking
+        entity_projects = [
+            (p.get("device_entity"), p.get("title"))
+            for p in projects if p.get("device_entity")
+        ]
+        if not entity_projects:
+            return []
+        # Fetch all states once instead of N sequential calls
+        try:
+            states = await self.ha.get_states()
+        except Exception:
+            return [
+                {"entity": entity, "state": "ha_unavailable", "project": title}
+                for entity, title in entity_projects
+            ]
+        states_by_id = {
+            s.get("entity_id"): s for s in (states or [])
+        }
         devices = []
-        for p in projects:
-            entity = p.get("device_entity")
-            if entity:
-                status = await self.check_device_online(entity)
-                status["project"] = p.get("title")
-                devices.append(status)
+        for entity, title in entity_projects:
+            s = states_by_id.get(entity)
+            if s:
+                status = {
+                    "entity": entity,
+                    "state": s.get("state", "unknown"),
+                    "last_updated": s.get("last_updated", ""),
+                }
+            else:
+                status = {"entity": entity, "state": "not_found"}
+            status["project"] = title
+            devices.append(status)
         return devices
 
     # ── Push-Benachrichtigung ────────────────────────────────

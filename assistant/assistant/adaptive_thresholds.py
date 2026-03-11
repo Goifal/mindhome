@@ -11,6 +11,7 @@ Sicherheit:
 - Alle Anpassungen geloggt mit Audit-Trail.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -53,6 +54,7 @@ class AdaptiveThresholds:
         self._cfg = yaml_config.get("adaptive_thresholds", {})
         self._adjustments_this_week = 0
         self._last_adjustment_week: str = ""
+        self._adjust_lock = asyncio.Lock()
 
     async def initialize(self, redis_client):
         """Initialisiert mit Redis Client."""
@@ -69,45 +71,46 @@ class AdaptiveThresholds:
         if not self.enabled or not self.redis:
             return {"adjusted": [], "skipped": []}
 
-        # Rate Limit
-        current_week = datetime.now().strftime("%Y-W%W")
-        if self._last_adjustment_week != current_week:
-            self._adjustments_this_week = 0
-            self._last_adjustment_week = current_week
-
-        if self._adjustments_this_week >= MAX_ADJUSTMENTS_PER_WEEK:
-            return {"adjusted": [], "skipped": ["rate_limit_reached"]}
-
-        # Daten-Menge prüfen
-        if not await self._has_sufficient_data(outcome_tracker):
-            return {"adjusted": [], "skipped": ["insufficient_data"]}
-
-        adjusted = []
-        skipped = []
-
-        for param_name, bounds in _AUTO_BOUNDS.items():
-            try:
-                result = await self._analyze_parameter(
-                    param_name, bounds, outcome_tracker, feedback_tracker
-                )
-                if result:
-                    if result.get("adjusted"):
-                        adjusted.append(result)
-                        self._adjustments_this_week += 1
-                    else:
-                        skipped.append(result.get("reason", "no_change"))
-            except Exception as e:
-                logger.debug("AdaptiveThresholds Fehler bei %s: %s", param_name, e)
-                skipped.append(f"{param_name}: {e}")
+        async with self._adjust_lock:
+            # Rate Limit
+            current_week = datetime.now().strftime("%Y-W%W")
+            if self._last_adjustment_week != current_week:
+                self._adjustments_this_week = 0
+                self._last_adjustment_week = current_week
 
             if self._adjustments_this_week >= MAX_ADJUSTMENTS_PER_WEEK:
-                break
+                return {"adjusted": [], "skipped": ["rate_limit_reached"]}
 
-        # Ergebnisse loggen
-        if adjusted:
-            await self._log_adjustments(adjusted)
+            # Daten-Menge prüfen
+            if not await self._has_sufficient_data(outcome_tracker):
+                return {"adjusted": [], "skipped": ["insufficient_data"]}
 
-        return {"adjusted": adjusted, "skipped": skipped}
+            adjusted = []
+            skipped = []
+
+            for param_name, bounds in _AUTO_BOUNDS.items():
+                try:
+                    result = await self._analyze_parameter(
+                        param_name, bounds, outcome_tracker, feedback_tracker
+                    )
+                    if result:
+                        if result.get("adjusted"):
+                            adjusted.append(result)
+                            self._adjustments_this_week += 1
+                        else:
+                            skipped.append(result.get("reason", "no_change"))
+                except Exception as e:
+                    logger.debug("AdaptiveThresholds Fehler bei %s: %s", param_name, e)
+                    skipped.append(f"{param_name}: {e}")
+
+                if self._adjustments_this_week >= MAX_ADJUSTMENTS_PER_WEEK:
+                    break
+
+            # Ergebnisse loggen
+            if adjusted:
+                await self._log_adjustments(adjusted)
+
+            return {"adjusted": adjusted, "skipped": skipped}
 
     async def get_adjustment_history(self) -> list[dict]:
         """Gibt Anpassungs-Historie zurück."""
@@ -240,7 +243,15 @@ class AdaptiveThresholds:
         return cfg
 
     def _set_runtime_value(self, path: list[str], value):
-        """Schreibt Wert in Laufzeit-Config (NICHT in Datei!)."""
+        """Schreibt Wert in Laufzeit-Config (NICHT in Datei!).
+
+        Nur Pfade die in _AUTO_BOUNDS definiert sind werden akzeptiert.
+        """
+        # Whitelist: Nur bekannte Auto-Adjust Pfade erlauben
+        allowed_paths = [b["path"] for b in _AUTO_BOUNDS.values()]
+        if path not in allowed_paths:
+            logger.warning("SICHERHEIT: _set_runtime_value blockiert fuer Pfad %s", path)
+            return
         cfg = yaml_config
         for key in path[:-1]:
             if isinstance(cfg, dict):

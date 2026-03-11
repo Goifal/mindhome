@@ -11,6 +11,7 @@ Phase 13.4: Sichert Config-Dateien vor jeder Aenderung.
 
 import json
 import logging
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -130,7 +131,12 @@ class ConfigVersioning:
         if not self._redis:
             return {"success": False, "message": "Redis nicht verfuegbar"}
 
-        config_file = snapshot_id.rsplit("_", 2)[0]
+        # Snapshot IDs are formatted as "{config_file}_{YYYYMMDD}_{HHMMSS}"
+        # rsplit("_", 2) breaks on config names with underscores, so use regex
+        match = re.match(r'^(.+)_v(\d+)_(\d{8}_\d{6})$', snapshot_id)
+        if not match:
+            match = re.match(r"^(.+)_(\d{8}_\d{6})$", snapshot_id)
+        config_file = match.group(1) if match else snapshot_id.rsplit("_", 2)[0]
         snapshots = await self.list_snapshots(config_file)
 
         target = None
@@ -192,8 +198,8 @@ class ConfigVersioning:
                     if old_path.exists():
                         old_path.unlink()
                         logger.debug("Alter Snapshot geloescht: %s", old_path)
-                except (json.JSONDecodeError, KeyError, OSError):
-                    pass
+                except (json.JSONDecodeError, KeyError, OSError) as e:
+                    logger.warning("Fehler beim Loeschen eines alten Snapshots: %s", e)
 
         await self._enforce_disk_quota()
 

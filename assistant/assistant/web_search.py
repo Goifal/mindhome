@@ -237,6 +237,7 @@ class WebSearch:
         # F-079: Ergebnis-Cache (query_hash → {ts, result})
         self._cache: dict[str, dict] = {}
         self._cache_ttl = ws_cfg.get("cache_ttl_seconds", 300)  # 5 Min Default
+        self._cache_lock = asyncio.Lock()
 
         # F-076: SearXNG ist ein vertrauenswuerdiger interner Service
         # (Admin-konfiguriert) — SSRF-Check nur fuer Suchergebnis-URLs, nicht
@@ -311,27 +312,29 @@ class WebSearch:
         """F-079: Erzeugt einen Cache-Key fuer eine Query."""
         return hashlib.sha256(query.lower().strip().encode("utf-8")).hexdigest()[:16]
 
-    def _get_cached(self, query: str) -> dict | None:
+    async def _get_cached(self, query: str) -> dict | None:
         """F-079: Prueft ob ein gecachtes Ergebnis vorhanden und gueltig ist."""
-        key = self._get_cache_key(query)
-        entry = self._cache.get(key)
-        if entry and (time.monotonic() - entry["ts"]) < self._cache_ttl:
-            logger.debug("Cache-Hit fuer Query: %.40s", query)
-            return entry["result"]
-        # Abgelaufene Eintraege entfernen
-        if key in self._cache:
-            del self._cache[key]
-        return None
+        async with self._cache_lock:
+            key = self._get_cache_key(query)
+            entry = self._cache.get(key)
+            if entry and (time.monotonic() - entry["ts"]) < self._cache_ttl:
+                logger.debug("Cache-Hit fuer Query: %.40s", query)
+                return entry["result"]
+            # Abgelaufene Eintraege entfernen
+            if key in self._cache:
+                del self._cache[key]
+            return None
 
-    def _set_cached(self, query: str, result: dict) -> None:
+    async def _set_cached(self, query: str, result: dict) -> None:
         """F-079: Speichert ein Ergebnis im Cache."""
-        # Cache-Groesse begrenzen (max 100 Eintraege)
-        if len(self._cache) >= 100:
-            # Aeltesten Eintrag entfernen
-            oldest_key = min(self._cache, key=lambda k: self._cache[k]["ts"])
-            del self._cache[oldest_key]
-        key = self._get_cache_key(query)
-        self._cache[key] = {"ts": time.monotonic(), "result": result}
+        async with self._cache_lock:
+            # Cache-Groesse begrenzen (max 100 Eintraege)
+            if len(self._cache) >= 100:
+                # Aeltesten Eintrag entfernen
+                oldest_key = min(self._cache, key=lambda k: self._cache[k]["ts"])
+                del self._cache[oldest_key]
+            key = self._get_cache_key(query)
+            self._cache[key] = {"ts": time.monotonic(), "result": result}
 
     async def search(self, query: str) -> dict:
         """Fuehrt eine Web-Suche durch.
@@ -361,7 +364,7 @@ class WebSearch:
             }
 
         # F-079: Cache pruefen
-        cached = self._get_cached(clean_query)
+        cached = await self._get_cached(clean_query)
         if cached is not None:
             return cached
 
@@ -373,7 +376,7 @@ class WebSearch:
 
             if not results:
                 result = {"success": True, "message": f"Keine Ergebnisse gefunden."}
-                self._set_cached(clean_query, result)
+                await self._set_cached(clean_query, result)
                 return result
 
             # Ergebnisse formatieren + F-012: Sanitisierung gegen Prompt Injection
@@ -395,7 +398,7 @@ class WebSearch:
                 "message": "\n".join(lines),
             }
             # F-079: Ergebnis cachen
-            self._set_cached(clean_query, result)
+            await self._set_cached(clean_query, result)
             return result
 
         except Exception as e:

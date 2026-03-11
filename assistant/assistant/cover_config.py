@@ -10,6 +10,7 @@ und Cover-Automation-Log (letzte Aktionen) — alles lokal.
 
 import json
 import logging
+import shutil
 import time
 from pathlib import Path
 from typing import Optional
@@ -48,6 +49,8 @@ def save_cover_configs(configs: dict) -> None:
     """Cover-Configs in lokale JSON-Datei speichern."""
     try:
         _ensure_dir()
+        if _COVER_CONFIG_FILE.exists():
+            shutil.copy2(_COVER_CONFIG_FILE, _COVER_CONFIG_FILE.with_suffix(".json.bak"))
         _COVER_CONFIG_FILE.write_text(json.dumps(configs, indent=2, ensure_ascii=False))
     except Exception as e:
         logger.error("Cover-Config speichern fehlgeschlagen: %s", e)
@@ -70,6 +73,8 @@ def _load_list(filepath: Path) -> list:
 def _save_list(filepath: Path, items: list) -> None:
     try:
         _ensure_dir()
+        if filepath.exists():
+            shutil.copy2(filepath, filepath.with_suffix(".json.bak"))
         filepath.write_text(json.dumps(items, indent=2, ensure_ascii=False))
     except Exception as e:
         logger.error("Speichern von %s fehlgeschlagen: %s", filepath.name, e)
@@ -209,9 +214,16 @@ def update_cover_schedule(schedule_id: int, data: dict) -> Optional[dict]:
     schedule = _find_by_id(schedules, schedule_id)
     if not schedule:
         return None
+    if "position" in data:
+        pos = data["position"]
+        if not isinstance(pos, (int, float)) or not (0 <= pos <= 100):
+            raise ValueError(f"Position must be between 0 and 100, got {pos!r}")
     for key in ("time_str", "position", "entity_id", "group_id", "days", "is_active"):
         if key in data:
-            schedule[key] = data[key]
+            if key == "position":
+                schedule[key] = max(0, min(100, data[key]))
+            else:
+                schedule[key] = data[key]
     save_cover_schedules(schedules)
     return schedule
 

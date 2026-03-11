@@ -35,7 +35,8 @@ class ThreatAssessment:
         self.redis: Optional[aioredis.Redis] = None
 
         security_cfg = yaml_config.get("security", {})
-        self.enabled = security_cfg.get("threat_assessment", True)
+        _raw_enabled = security_cfg.get("threat_assessment", True)
+        self.enabled = bool(_raw_enabled) and str(_raw_enabled).lower() not in ("false", "0", "no", "off")
         self.night_start = security_cfg.get("night_start_hour", 23)
         self.night_end = security_cfg.get("night_end_hour", 6)
 
@@ -98,7 +99,7 @@ class ThreatAssessment:
             threats.extend(night_threats)
 
         # 2. Offene Fenster/Türen bei Sturm
-        storm_threats = self._check_storm_windows(states)
+        storm_threats = self._check_storm_windows(states, weather_ctx)
         threats.extend(storm_threats)
 
         # 3. Tür offen + niemand zuhause
@@ -174,23 +175,26 @@ class ThreatAssessment:
 
         return threats
 
-    def _check_storm_windows(self, states: list[dict]) -> list[dict]:
+    def _check_storm_windows(self, states: list[dict], weather_ctx: dict = None) -> list[dict]:
         """Prueft ob Fenster bei Sturmwarnung offen sind."""
         threats = []
 
-        # Windgeschwindigkeit prüfen
-        wind_speed = None
-        for s in states:
-            if s.get("entity_id", "").startswith("weather."):
-                wind_speed = s.get("attributes", {}).get("wind_speed")
-                break
+        # Windgeschwindigkeit aus bereits extrahiertem Wetter-Kontext verwenden
+        if weather_ctx:
+            wind_speed_val = weather_ctx.get("wind_speed", 0)
+        else:
+            wind_speed = None
+            for s in states:
+                if s.get("entity_id", "").startswith("weather."):
+                    wind_speed = s.get("attributes", {}).get("wind_speed")
+                    break
+            if wind_speed is None:
+                return []
+            try:
+                wind_speed_val = float(wind_speed)
+            except (ValueError, TypeError):
+                return []
 
-        if wind_speed is None:
-            return []
-        try:
-            wind_speed_val = float(wind_speed)
-        except (ValueError, TypeError):
-            return []
         wind_threshold = float(yaml_config.get("weather_warnings", {}).get("wind_speed_high", 60))
         if wind_speed_val < wind_threshold:  # kein Sturm
             return []

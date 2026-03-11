@@ -201,7 +201,7 @@ class ProactiveSequencePlanner:
                 "description": "Angenehme Beleuchtung",
             })
 
-        # Hintergrundmusik
+        # Hintergrundmusik (immer bei Gaeste-Event)
         actions.append({
             "type": "play_media",
             "args": {"content_type": "ambient"},

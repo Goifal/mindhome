@@ -3594,7 +3594,7 @@ class FunctionExecutor:
         return curve[-1][key]
 
     @staticmethod
-    def _get_adaptive_brightness(room: str, entity_id: str = "") -> int:
+    def get_adaptive_brightness(room: str, entity_id: str = "") -> int:
         """Berechnet Helligkeit basierend auf Tageszeit + Raum-Profil.
 
         Wenn lighting.circadian.enabled: nutzt interpolierte Helligkeitskurve.
@@ -3694,7 +3694,7 @@ class FunctionExecutor:
                     except (ValueError, TypeError):
                         pass
                 else:
-                    service_data["brightness_pct"] = self._get_adaptive_brightness(room_name, entity_id)
+                    service_data["brightness_pct"] = self.get_adaptive_brightness(room_name, entity_id)
             await self.ha.call_service("light", service, service_data)
             count += 1
 
@@ -3786,7 +3786,7 @@ class FunctionExecutor:
                 pass
         elif state == "on" and "brightness" not in args:
             # Phase 11: Adaptive Helligkeit wenn keine explizite Angabe
-            brightness_pct = self._get_adaptive_brightness(room, entity_id)
+            brightness_pct = self.get_adaptive_brightness(room, entity_id)
             service_data["brightness_pct"] = brightness_pct
         # Phase 9: Transition-Parameter (sanftes Dimmen) — muss int/float sein
         if "transition" in args:
@@ -3850,7 +3850,7 @@ class FunctionExecutor:
                     else:
                         # Adaptive Helligkeit wenn keine explizite Angabe
                         room_name = eid.split(".", 1)[1] if "." in eid else ""
-                        service_data["brightness_pct"] = self._get_adaptive_brightness(room_name, eid)
+                        service_data["brightness_pct"] = self.get_adaptive_brightness(room_name, eid)
                 await self.ha.call_service("light", service, service_data)
                 count += 1
 

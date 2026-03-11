@@ -47,19 +47,28 @@ class CircuitBreaker:
         self._last_failure_time: float = 0
         self._half_open_calls = 0
 
-    @property
-    def state(self) -> CircuitState:
+    def _check_recovery(self) -> None:
+        """Prueft ob der Recovery-Timeout abgelaufen ist und wechselt ggf. zu HALF_OPEN."""
         if self._state == CircuitState.OPEN:
             if time.monotonic() - self._last_failure_time >= self.recovery_timeout:
                 self._state = CircuitState.HALF_OPEN
                 self._half_open_calls = 0
                 logger.info("Circuit %s: OPEN -> HALF_OPEN", self.name)
+
+    @property
+    def state(self) -> CircuitState:
+        return self._state
+
+    def check_state(self) -> CircuitState:
+        """Prueft und aktualisiert den State (inkl. Recovery-Check) und gibt ihn zurueck."""
+        self._check_recovery()
         return self._state
 
     @property
     def is_available(self) -> bool:
         """Prueft ob der Dienst voraussichtlich erreichbar ist (read-only)."""
-        s = self.state
+        self._check_recovery()
+        s = self._state
         if s == CircuitState.CLOSED:
             return True
         if s == CircuitState.HALF_OPEN:
@@ -68,7 +77,8 @@ class CircuitBreaker:
 
     def try_acquire(self) -> bool:
         """Reserviert einen Call-Slot. Im HALF_OPEN: inkrementiert Zaehler."""
-        s = self.state
+        self._check_recovery()
+        s = self._state
         if s == CircuitState.CLOSED:
             return True
         if s == CircuitState.HALF_OPEN:
@@ -119,7 +129,7 @@ class CircuitBreaker:
         """Status fuer Diagnostik/Metrics."""
         return {
             "name": self.name,
-            "state": self.state.value,
+            "state": self.check_state().value,
             "failure_count": self._failure_count,
             "failure_threshold": self.failure_threshold,
             "recovery_timeout": self.recovery_timeout,

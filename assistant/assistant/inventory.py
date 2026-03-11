@@ -121,13 +121,21 @@ class InventoryManager:
             else:
                 item_ids = await self.redis.smembers("mha:inventory:all")
 
+            # Pipeline statt einzelner hgetall-Aufrufe
+            decoded_ids = [
+                iid.decode() if isinstance(iid, bytes) else iid
+                for iid in item_ids
+            ]
             items = []
-            for item_id in item_ids:
-                item_id = item_id.decode() if isinstance(item_id, bytes) else item_id
-                raw = await self.redis.hgetall(f"mha:inventory:{item_id}")
-                data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
-                if data:
-                    items.append(data)
+            if decoded_ids:
+                pipe = self.redis.pipeline()
+                for item_id in decoded_ids:
+                    pipe.hgetall(f"mha:inventory:{item_id}")
+                results = await pipe.execute()
+                for raw in results:
+                    data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
+                    if data:
+                        items.append(data)
 
             if not items:
                 return {"success": True, "message": "Der Vorrat ist leer."}
@@ -170,9 +178,19 @@ class InventoryManager:
             item_ids = await self.redis.smembers("mha:inventory:all")
             expiring = []
 
-            for item_id in item_ids:
-                item_id = item_id.decode() if isinstance(item_id, bytes) else item_id
-                raw = await self.redis.hgetall(f"mha:inventory:{item_id}")
+            decoded_ids = [
+                iid.decode() if isinstance(iid, bytes) else iid
+                for iid in item_ids
+            ]
+            if not decoded_ids:
+                return []
+
+            pipe = self.redis.pipeline()
+            for item_id in decoded_ids:
+                pipe.hgetall(f"mha:inventory:{item_id}")
+            results = await pipe.execute()
+
+            for raw in results:
                 data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
                 if not data:
                     continue

@@ -153,7 +153,7 @@ class RecipeStore:
         new_chunks = 0
 
         for i, chunk in enumerate(chunks):
-            content_hash = hashlib.md5(chunk.encode()).hexdigest()
+            content_hash = hashlib.sha256(chunk.encode()).hexdigest()
 
             if content_hash in self._ingested_hashes:
                 continue

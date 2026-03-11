@@ -731,19 +731,29 @@ class SpeakerRecognition:
         if not embedding or not self._profiles:
             return None
 
+        # Load all embeddings in parallel via Redis pipeline
+        profile_ids = list(self._profiles.keys())
+        stored_embeddings: dict[str, list[float]] = {}
+        if self.redis and profile_ids:
+            try:
+                pipe = self.redis.pipeline()
+                for pid in profile_ids:
+                    pipe.get(f"mha:speaker:embedding:{pid}")
+                results = await pipe.execute()
+                for pid, data in zip(profile_ids, results):
+                    if data:
+                        try:
+                            stored_embeddings[pid] = json.loads(data)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+            except Exception as e:
+                logger.debug("Embedding retrieval failed: %s", e)
+
         best_match = None
         best_similarity = 0.0
 
         for pid, profile in self._profiles.items():
-            # Embedding aus Redis laden
-            stored = None
-            if self.redis:
-                try:
-                    data = await self.redis.get(f"mha:speaker:embedding:{pid}")
-                    if data:
-                        stored = json.loads(data)
-                except Exception as e:
-                    logger.debug("Embedding retrieval failed: %s", e)
+            stored = stored_embeddings.get(pid)
 
             if not stored or len(stored) != len(embedding):
                 continue

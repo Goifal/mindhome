@@ -370,9 +370,24 @@ class ProtocolEngine:
         name = re.sub(r"_+", "_", name).strip("_")
         return name[:50]
 
+    @staticmethod
+    def _sanitize_input(text: str, max_length: int = 500) -> str:
+        """Sanitizes user input before passing to LLM prompt.
+
+        Strips control characters, removes role markers, and limits length.
+        """
+        # Remove control characters (keep newlines and tabs)
+        sanitized = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+        # Remove potential role/injection markers
+        sanitized = re.sub(r'(?i)\b(system|user|assistant)\s*:', '', sanitized)
+        # Limit length
+        sanitized = sanitized[:max_length].strip()
+        return sanitized
+
     async def _parse_steps(self, description: str) -> list[dict]:
         """Parst Schritte aus natuerlicher Beschreibung via LLM."""
-        prompt = _PARSE_PROMPT.replace("{description}", description)
+        sanitized_description = self._sanitize_input(description)
+        prompt = _PARSE_PROMPT.replace("{description}", sanitized_description)
 
         try:
             response = await self.ollama.chat(

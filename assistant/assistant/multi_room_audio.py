@@ -420,24 +420,29 @@ class MultiRoomAudio:
         if group.get("description"):
             lines.append(f"  {group['description']}")
 
-        for speaker in group.get("speakers", []):
+        speakers = group.get("speakers", [])
+        # Alle Speaker-States parallel abrufen
+        state_results = await asyncio.gather(
+            *(self.ha.get_state(speaker) for speaker in speakers),
+            return_exceptions=True,
+        )
+
+        for speaker, state in zip(speakers, state_results):
             vol = group.get("speaker_volumes", {}).get(speaker, "?")
-            try:
-                state = await self.ha.get_state(speaker)
-                if state:
-                    s = state.get("state", "unknown")
-                    title = state.get("attributes", {}).get("media_title", "")
-                    name = state.get("attributes", {}).get("friendly_name", speaker)
-                    info = f"  {name}: {s}"
-                    if title:
-                        info += f" — {title}"
-                    info += f" (Vol: {vol}%)"
-                    lines.append(info)
-                else:
-                    lines.append(f"  {speaker}: nicht erreichbar (Vol: {vol}%)")
-            except Exception as e:
-                logger.debug("Speaker state check failed: %s", e)
+            if isinstance(state, BaseException):
+                logger.debug("Speaker state check failed: %s", state)
                 lines.append(f"  {speaker}: Fehler (Vol: {vol}%)")
+            elif state:
+                s = state.get("state", "unknown")
+                title = state.get("attributes", {}).get("media_title", "")
+                name = state.get("attributes", {}).get("friendly_name", speaker)
+                info = f"  {name}: {s}"
+                if title:
+                    info += f" — {title}"
+                info += f" (Vol: {vol}%)"
+                lines.append(info)
+            else:
+                lines.append(f"  {speaker}: nicht erreichbar (Vol: {vol}%)")
 
         return {"success": True, "message": "\n".join(lines)}
 
@@ -486,16 +491,18 @@ class MultiRoomAudio:
 
     async def _get_speaker_names(self, entity_ids: list[str]) -> list[str]:
         """Loest Entity-IDs zu friendly_names auf."""
+        state_results = await asyncio.gather(
+            *(self.ha.get_state(eid) for eid in entity_ids),
+            return_exceptions=True,
+        )
         names = []
-        for eid in entity_ids:
-            try:
-                state = await self.ha.get_state(eid)
-                if state:
-                    names.append(state.get("attributes", {}).get("friendly_name", eid))
-                else:
-                    names.append(eid.replace("media_player.", ""))
-            except Exception as e:
-                logger.debug("Friendly name lookup failed for %s: %s", eid, e)
+        for eid, state in zip(entity_ids, state_results):
+            if isinstance(state, BaseException):
+                logger.debug("Friendly name lookup failed for %s: %s", eid, state)
+                names.append(eid.replace("media_player.", ""))
+            elif state:
+                names.append(state.get("attributes", {}).get("friendly_name", eid))
+            else:
                 names.append(eid.replace("media_player.", ""))
         return names
 

@@ -10,6 +10,7 @@ Pro-Person Profile aus settings.yaml konfigurierbar.
 Cooldown verhindert Ping-Pong bei schnellen Raumwechseln.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -121,29 +122,26 @@ class FollowMeEngine:
         room_speakers = multi_room_cfg.get("room_speakers", {})
         profile = self.get_profile(person_key)
 
-        # 1. Musik transferieren
+        # 1-3: Musik, Licht, Klima parallel transferieren
+        transfer_coros = []
         if self.transfer_music:
-            action = await self._transfer_music(
+            transfer_coros.append(self._transfer_music(
                 old_room, new_room, room_speakers, others_in_old_room,
-            )
-            if action:
-                result["actions"].append(action)
-
-        # 2. Licht transferieren
+            ))
         if self.transfer_lights:
-            action = await self._transfer_lights(
+            transfer_coros.append(self._transfer_lights(
                 old_room, new_room, profile, others_in_old_room,
-            )
-            if action:
-                result["actions"].append(action)
-
-        # 3. Klima anpassen
+            ))
         if self.transfer_climate:
-            action = await self._transfer_climate(
+            transfer_coros.append(self._transfer_climate(
                 old_room, new_room, profile, others_in_old_room,
-            )
-            if action:
-                result["actions"].append(action)
+            ))
+
+        if transfer_coros:
+            actions = await asyncio.gather(*transfer_coros, return_exceptions=True)
+            for action in actions:
+                if isinstance(action, dict):
+                    result["actions"].append(action)
 
         if result["actions"]:
             return result

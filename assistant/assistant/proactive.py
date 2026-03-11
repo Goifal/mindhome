@@ -5182,7 +5182,7 @@ class ProactiveManager:
 
         # 3. Sleep-Lock setzen/prüfen (sticky — gegen Sensor-Flackern)
         try:
-            _redis = self.brain.redis if hasattr(self.brain, 'redis') else None
+            _redis = self.brain.memory.redis if self.brain.memory and hasattr(self.brain.memory, 'redis') else None
             if not _redis:
                 return is_sleeping_now
 
