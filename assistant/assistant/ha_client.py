@@ -278,7 +278,7 @@ class HomeAssistantClient:
                 return []
             params["domain"] = domain
         if room:
-            if not _re.match(r'^[a-zA-Z0-9_\s\-äöüÄÖÜß]+$', room):
+            if not _re.match(r'^[a-zA-Z0-9_\s\-,.()äöüÄÖÜß]+$', room):
                 logger.warning("search_devices: Invalid room rejected: %s", room[:50])
                 return []
             params["room"] = room
