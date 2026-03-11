@@ -180,7 +180,7 @@ Bestehendes Rezept:
 {recipe_text}"""
 
 
-MAX_TIMERS_PER_SESSION = 50  # Bug #117: Limit active timers per session
+MAX_TIMERS_PER_SESSION = 10  # Bug #117: Limit active timers per session
 
 
 class CookingAssistant:
@@ -557,6 +557,8 @@ class CookingAssistant:
 
     def _show_ingredients(self) -> str:
         """Zeigt die Zutatenliste."""
+        if not self.session:
+            return "Keine aktive Koch-Session. Sag mir was du kochen moechtest."
         if not self.session.ingredients:
             return "Keine Zutaten gespeichert."
 
@@ -567,6 +569,8 @@ class CookingAssistant:
 
     async def _adjust_portions(self, new_portions: int) -> str:
         """Passt die Portionen an (einfache Skalierung)."""
+        if not self.session:
+            return "Keine aktive Koch-Session. Sag mir was du kochen moechtest."
         if new_portions < 1 or new_portions > 20:
             return "Portionen muessen zwischen 1 und 20 liegen."
 
@@ -612,6 +616,9 @@ class CookingAssistant:
         minutes = int(match.group(1))
         if minutes < 1 or minutes > 180:
             return "Timer muss zwischen 1 und 180 Minuten liegen."
+
+        if not self.session:
+            return "Keine aktive Koch-Session. Sag mir was du kochen moechtest."
 
         # Bug #117: Limit active timers per session
         active_timers = [t for t in self.session.timers if not t.is_done]

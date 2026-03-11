@@ -14,6 +14,7 @@ Generiert Artefakte fuer Werkstatt-Projekte:
 - Projekt-Export als ZIP
 """
 
+import asyncio
 import json
 import logging
 import math
@@ -138,7 +139,7 @@ class WorkshopGenerator:
     async def initialize(self, redis_client):
         """Initialisiert mit Redis und erstellt Verzeichnisse."""
         self.redis = redis_client
-        self.FILES_DIR.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(self.FILES_DIR.mkdir, parents=True, exist_ok=True)
         logger.info("WorkshopGenerator initialisiert (FILES_DIR=%s)", self.FILES_DIR)
 
     def set_model_router(self, router):
@@ -500,16 +501,16 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
         if not re.match(r'^[a-zA-Z0-9._-]+$', str(filename)):
             return {"status": "error", "message": "Invalid filename"}
         project_dir = self.FILES_DIR / project_id
-        project_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(project_dir.mkdir, parents=True, exist_ok=True)
         filepath = project_dir / filename
         # Zusätzlicher Resolve-Check
         if not filepath.resolve().is_relative_to(self.FILES_DIR.resolve()):
             return {"status": "error", "message": "Path traversal blocked"}
-        filepath.write_text(content, encoding="utf-8")
+        await asyncio.to_thread(filepath.write_text, content, encoding="utf-8")
 
         # Redis: Datei-Liste und Versionierung
         if self.redis:
-            await self.redis.rpush(
+            await self.redis.sadd(
                 f"mha:repair:files:{project_id}", filename)
             await self.redis.rpush(
                 f"mha:repair:versions:{project_id}:{filename}",
@@ -537,11 +538,15 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
         if not re.match(r'^[a-zA-Z0-9._-]+$', str(filename)):
             return ""
         filepath = self.FILES_DIR / project_id / filename
-        if (filepath.exists()
-                and filepath.resolve().is_relative_to(
-                    self.FILES_DIR.resolve())):
-            return filepath.read_text(encoding="utf-8")
-        return ""
+
+        def _read():
+            if (filepath.exists()
+                    and filepath.resolve().is_relative_to(
+                        self.FILES_DIR.resolve())):
+                return filepath.read_text(encoding="utf-8")
+            return ""
+
+        return await asyncio.to_thread(_read)
 
     async def list_files(self, project_id) -> list:
         """Listet Dateien eines Projekts."""
@@ -549,28 +554,39 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
             return []
         filenames = await self.redis.lrange(
             f"mha:repair:files:{project_id}", 0, -1)
-        result = []
-        for fn in filenames:
-            fn = fn.decode() if isinstance(fn, bytes) else fn
-            fn = Path(fn).name
-            filepath = self.FILES_DIR / project_id / fn
-            if filepath.exists():
-                result.append({
-                    "name": fn,
-                    "size": filepath.stat().st_size,
-                    "modified": datetime.fromtimestamp(
-                        filepath.stat().st_mtime).isoformat(),
-                })
-        return result
+
+        def _collect_file_info():
+            result = []
+            for fn in filenames:
+                fn = fn.decode() if isinstance(fn, bytes) else fn
+                fn = Path(fn).name
+                filepath = self.FILES_DIR / project_id / fn
+                if filepath.exists():
+                    result.append({
+                        "name": fn,
+                        "size": filepath.stat().st_size,
+                        "modified": datetime.fromtimestamp(
+                            filepath.stat().st_mtime).isoformat(),
+                    })
+            return result
+
+        return await asyncio.to_thread(_collect_file_info)
 
     async def delete_file(self, project_id, filename) -> dict:
         """Loescht eine Projekt-Datei."""
         filename = Path(filename).name
         filepath = self.FILES_DIR / project_id / filename
-        if (filepath.exists()
-                and filepath.resolve().is_relative_to(
-                    self.FILES_DIR.resolve())):
-            filepath.unlink()
+
+        def _delete():
+            if (filepath.exists()
+                    and filepath.resolve().is_relative_to(
+                        self.FILES_DIR.resolve())):
+                filepath.unlink()
+                return True
+            return False
+
+        deleted = await asyncio.to_thread(_delete)
+        if deleted:
             if self.redis:
                 await self.redis.lrem(
                     f"mha:repair:files:{project_id}", 0, filename)
@@ -580,11 +596,15 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
     async def export_project(self, project_id) -> str:
         """Exportiert alle Projekt-Dateien als ZIP."""
         project_dir = self.FILES_DIR / project_id
-        if not project_dir.exists():
-            return ""
         zip_path = self.FILES_DIR / f"{project_id}_export.zip"
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for f in project_dir.iterdir():
-                if f.is_file():
-                    zf.write(f, f.name)
-        return str(zip_path)
+
+        def _create_zip():
+            if not project_dir.exists():
+                return ""
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for f in project_dir.iterdir():
+                    if f.is_file():
+                        zf.write(f, f.name)
+            return str(zip_path)
+
+        return await asyncio.to_thread(_create_zip)

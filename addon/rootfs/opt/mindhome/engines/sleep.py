@@ -120,7 +120,7 @@ class SleepDetector:
                     return True
                 return False  # Bed sensors exist but not occupied
         except Exception as e:
-            logger.debug("Unhandled: %s", e)
+            logger.warning("Sleep detection bed sensor check failed: %s", e)
         # Priority 2: Fallback — no motion + lights off for 30+ min
         cutoff = now - timedelta(minutes=30)
         recent_motion = session.query(StateHistory).filter(
@@ -151,7 +151,7 @@ class SleepDetector:
             if lights_on:
                 return False
         except Exception as e:
-            logger.debug("Unhandled: %s", e)
+            logger.warning("Sleep detection light check failed: %s", e)
         return True
 
     def _detect_wake(self, session, now):
@@ -169,7 +169,7 @@ class SleepDetector:
                     return True
                 return False  # Still in bed
         except Exception as e:
-            logger.debug("Unhandled: %s", e)
+            logger.warning("Wake detection bed sensor check failed: %s", e)
         # Priority 2: Fallback — motion or lights in last 5 min
         from models import StateHistory
         cutoff = now - timedelta(minutes=5)

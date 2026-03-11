@@ -169,11 +169,12 @@ class ResponseQualityTracker:
 
         stats = {}
         for category in ("device_command", "knowledge", "smalltalk", "analysis"):
-            data = await self.redis.hgetall(f"mha:response_quality:stats:{category}")
-            if data:
+            raw_data = await self.redis.hgetall(f"mha:response_quality:stats:{category}")
+            if raw_data:
                 score = await self.get_quality_score(category)
+                data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_data.items()}
                 stats[category] = {
-                    k: int(v) for k, v in data.items()
+                    k: float(v) for k, v in data.items()
                 }
                 stats[category]["score"] = score
 

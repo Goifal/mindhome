@@ -381,6 +381,8 @@ class AmbientAudioClassifier:
         """Pollt HA-Sensoren auf Audio-Events."""
         # Letzten State pro Sensor merken
         last_states: dict[str, str] = {}
+        _consecutive_errors = 0
+        _max_backoff = 60  # seconds
 
         while self._running:
             try:
@@ -415,8 +417,14 @@ class AmbientAudioClassifier:
                         except Exception as e:
                             logger.debug("Sensor-Poll fehlgeschlagen (%s): %s", entity_id, e)
 
+                _consecutive_errors = 0
+
             except Exception as e:
-                logger.error("Ambient Audio Poll-Loop Fehler: %s", e)
+                _consecutive_errors += 1
+                _backoff = min(self._poll_interval * (2 ** _consecutive_errors), _max_backoff)
+                logger.error("Ambient Audio Poll-Loop Fehler (backoff %.1fs): %s", _backoff, e)
+                await asyncio.sleep(_backoff)
+                continue
 
             await asyncio.sleep(self._poll_interval)
 

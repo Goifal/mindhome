@@ -15,6 +15,7 @@ Feature 10.6: Self-Diagnostik
 - Service-Health Aggregation
 """
 
+import asyncio
 import logging
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -96,11 +97,11 @@ class DiagnosticsEngine:
                 result["healthy"] = False
 
         if self.maintenance_enabled:
-            due = self.check_maintenance()
+            due = await asyncio.to_thread(self.check_maintenance)
             result["maintenance_due"] = due
 
         # Disk space check
-        disk_status = self.check_disk_space()
+        disk_status = await asyncio.to_thread(self.check_disk_space)
         result["disk_space"] = disk_status
         if disk_status.get("status") == "warning":
             result["healthy"] = False
@@ -322,6 +323,12 @@ class DiagnosticsEngine:
         if last and (now - last) < timedelta(minutes=self.alert_cooldown):
             return False
         self._alert_cooldowns[alert_key] = now
+        # Periodic cleanup to prevent unbounded growth
+        if len(self._alert_cooldowns) > 500:
+            cutoff = now - timedelta(hours=24)
+            self._alert_cooldowns = {
+                k: v for k, v in self._alert_cooldowns.items() if v > cutoff
+            }
         return True
 
     # ------------------------------------------------------------------
@@ -554,9 +561,11 @@ class DiagnosticsEngine:
             try:
                 import redis.asyncio as aioredis
                 r = aioredis.from_url(settings.redis_url, socket_timeout=3)
-                await r.ping()
-                await r.aclose()
-                return "redis", {"status": "connected"}
+                try:
+                    await r.ping()
+                    return "redis", {"status": "connected"}
+                finally:
+                    await r.aclose()
             except Exception as e:
                 logger.error("Redis Health-Check fehlgeschlagen: %s", e)
                 return "redis", {"status": "disconnected"}
@@ -623,14 +632,14 @@ class DiagnosticsEngine:
         }
         report["entities"]["overview"] = system_status
 
-        # System-Ressourcen (synchron)
-        resources = self.check_system_resources()
+        # System-Ressourcen (in Thread ausfuehren)
+        resources = await asyncio.to_thread(self.check_system_resources)
         report["system"] = resources
 
         report["connectivity"] = connectivity
 
-        # Wartung (synchron)
-        maintenance = self.check_maintenance()
+        # Wartung (in Thread ausfuehren)
+        maintenance = await asyncio.to_thread(self.check_maintenance)
         report["maintenance"] = maintenance
 
         # Summary berechnen

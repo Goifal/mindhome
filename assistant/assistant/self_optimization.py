@@ -13,7 +13,6 @@ Phase 13.4: Kontrollierte Prompt-Selbstoptimierung.
 import asyncio
 import json
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -65,6 +64,7 @@ class SelfOptimization:
 
         self._redis = None
         self._pending_proposals: list[dict] = []
+        self._proposals_lock = asyncio.Lock()
 
     async def initialize(self, redis_client):
         """Initialisiert mit Redis-Client."""
@@ -125,7 +125,8 @@ class SelfOptimization:
             if self._validate_proposal(p):
                 valid_proposals.append(p)
 
-        self._pending_proposals = valid_proposals
+        async with self._proposals_lock:
+            self._pending_proposals = valid_proposals
 
         if valid_proposals:
             await self._redis.set(
@@ -145,14 +146,15 @@ class SelfOptimization:
         if not self.is_enabled():
             return []
 
-        if self._pending_proposals:
-            return self._pending_proposals
+        async with self._proposals_lock:
+            if self._pending_proposals:
+                return self._pending_proposals
 
-        if self._redis:
-            raw = await self._redis.get("mha:self_opt:pending")
-            if raw:
-                self._pending_proposals = json.loads(raw)
-        return self._pending_proposals
+            if self._redis:
+                raw = await self._redis.get("mha:self_opt:pending")
+                if raw:
+                    self._pending_proposals = json.loads(raw)
+            return self._pending_proposals
 
     async def approve_proposal(self, index: int) -> dict:
         """User genehmigt einen Vorschlag. Wendet die Aenderung an.
@@ -183,7 +185,8 @@ class SelfOptimization:
 
         if result["success"]:
             proposals.pop(index)
-            self._pending_proposals = proposals
+            async with self._proposals_lock:
+                self._pending_proposals = proposals
             if self._redis:
                 if proposals:
                     await self._redis.set(
@@ -217,7 +220,8 @@ class SelfOptimization:
             return {"success": False, "message": f"Vorschlag #{index} existiert nicht"}
 
         rejected = proposals.pop(index)
-        self._pending_proposals = proposals
+        async with self._proposals_lock:
+            self._pending_proposals = proposals
 
         if self._redis:
             if proposals:
@@ -242,7 +246,8 @@ class SelfOptimization:
             return {"success": False, "message": "Selbstoptimierung ist deaktiviert"}
         proposals = await self.get_pending_proposals()
         count = len(proposals)
-        self._pending_proposals = []
+        async with self._proposals_lock:
+            self._pending_proposals = []
         if self._redis:
             await self._redis.delete("mha:self_opt:pending")
         return {"success": True, "message": f"{count} Vorschlaege abgelehnt"}
@@ -433,7 +438,7 @@ Wenn keine Aenderung noetig: []"""
                 stats[key_suffix] = int(val) if val else 0
             return stats
         except Exception as e:
-            logger.debug("Self-optimization data retrieval failed: %s", e)
+            logger.warning("Self-optimization data retrieval failed: %s", e)
             return {}
 
     # Feature 9a: Neue Datenquellen
@@ -590,7 +595,7 @@ Wenn keine Aenderung noetig: []"""
                 await self._redis.ltrim(log_key, 0, 49)
                 await self._redis.expire(log_key, 30 * 86400)
         except Exception as e:
-            logger.debug("Unhandled: %s", e)
+            logger.warning("Character break tracking failed: %s", e)
     async def get_character_break_stats(self, days: int = 7) -> dict:
         """Gibt Character-Break-Statistiken der letzten N Tage zurueck."""
         if not self._redis:

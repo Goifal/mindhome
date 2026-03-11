@@ -80,23 +80,25 @@ class DomainPlugin(ABC):
         """Get current context (cached 30s)."""
         import time as _time
         now = _time.time()
-        if self._context_cache and (now - self._context_cache_time) < 30:
-            return self._context_cache
+        with self._cache_lock:
+            if self._context_cache and (now - self._context_cache_time) < 30:
+                return self._context_cache
         try:
             from pattern_engine import ContextBuilder
             builder = ContextBuilder(self.ha)
-            self._context_cache = builder.build()
-            self._context_cache_time = now
+            ctx = builder.build()
         except Exception as e:
             self.logger.warning(
                 "ContextBuilder failed, falling back to hardcoded is_dark=True: %s", e
             )
-            self._context_cache = {
+            ctx = {
                 "anyone_home": self.ha.is_anyone_home(),
                 "is_dark": True, "is_rainy": self.ha.is_raining(),
             }
+        with self._cache_lock:
+            self._context_cache = ctx
             self._context_cache_time = now
-        return self._context_cache
+        return ctx
 
     def is_anyone_home(self):
         return self.get_context().get("anyone_home", False)

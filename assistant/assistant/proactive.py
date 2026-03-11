@@ -534,7 +534,8 @@ class ProactiveManager:
                             "person": {"name": name},
                             "house": status,
                         }
-                        _auto_lvl = self.brain.autonomy.level if hasattr(self.brain, "autonomy") else 2
+                        _autonomy = getattr(self.brain, "autonomy", None)
+                        _auto_lvl = _autonomy.level if _autonomy is not None else 2
                         _plan = await self.brain.proactive_planner.plan_from_context_change(
                             "person_arrived", _plan_ctx, _auto_lvl,
                         )
@@ -582,7 +583,8 @@ class ProactiveManager:
                                 _w_ctx["house"]["open_windows"].append(
                                     _eid.replace("binary_sensor.", "").replace("_", " ")
                                 )
-                        _auto_lvl = self.brain.autonomy.level if hasattr(self.brain, "autonomy") else 2
+                        _autonomy = getattr(self.brain, "autonomy", None)
+                        _auto_lvl = _autonomy.level if _autonomy is not None else 2
                         _plan = await self.brain.proactive_planner.plan_from_context_change(
                             "weather_changed", _w_ctx, _auto_lvl,
                         )
@@ -1572,7 +1574,8 @@ class ProactiveManager:
 
             # Phase 10.1: Auto-Follow bei hohem Autonomie-Level
             auto_follow = multi_room_cfg.get("auto_follow", False)
-            if auto_follow and self.brain.autonomy.level >= 4:
+            _autonomy = getattr(self.brain, "autonomy", None)
+            if auto_follow and _autonomy and _autonomy.level >= 4:
                 # Automatisch Musik transferieren
                 target_speaker = multi_room_cfg.get("room_speakers", {}).get(new_room)
                 if target_speaker:
@@ -1590,7 +1593,7 @@ class ProactiveManager:
                 "from_room": playing_room,
                 "to_room": new_room,
                 "player_entity": playing_entity,
-                "auto_followed": auto_follow and self.brain.autonomy.level >= 4,
+                "auto_followed": auto_follow and _autonomy and _autonomy.level >= 4,
             })
 
         except Exception as e:
@@ -1674,7 +1677,8 @@ class ProactiveManager:
 
         # Autonomie-Level prüfen
         if urgency != CRITICAL:
-            level = self.brain.autonomy.level
+            _autonomy = getattr(self.brain, "autonomy", None)
+            level = _autonomy.level if _autonomy else 2
             if level < 2:  # Level 1 = nur Befehle
                 return
 
@@ -3206,7 +3210,8 @@ class ProactiveManager:
 
         Checks: Dedup, Manual Override, Power-Close-Lock, Fenster-offen-Schutz.
         """
-        level = self.brain.autonomy.level
+        _autonomy = getattr(self.brain, "autonomy", None)
+        level = _autonomy.level if _autonomy else 2
 
         # Power-Close Lock: Wenn Strom-Automatik aktiv, andere Automatiken blockieren
         if not skip_power_lock and redis_client:
@@ -5396,7 +5401,8 @@ class ProactiveManager:
                     continue
 
                 # Autonomie-Level prüfen (mindestens Level 2)
-                if self.brain.autonomy.level < 2:
+                _autonomy = getattr(self.brain, "autonomy", None)
+                if (_autonomy.level if _autonomy else 2) < 2:
                     await asyncio.sleep(interval)
                     continue
 

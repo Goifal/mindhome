@@ -376,7 +376,13 @@ class HomeAssistantClient:
                         mindhome_breaker.record_success()
                         return await resp.json()
                     logger.warning("MindHome PUT %s -> %d", path, resp.status)
-                    return None
+                    if 400 <= resp.status < 500:
+                        return None  # Client error — don't retry
+                    # 5xx: retry
+                    if attempt == retries - 1:
+                        return None
+                    await asyncio.sleep(1)
+                    continue
             except Exception as e:
                 mindhome_breaker.record_failure()
                 if attempt == retries - 1:
@@ -400,7 +406,13 @@ class HomeAssistantClient:
                         mindhome_breaker.record_success()
                         return await resp.json()
                     logger.warning("MindHome DELETE %s -> %d", path, resp.status)
-                    return None
+                    if 400 <= resp.status < 500:
+                        return None  # Client error — don't retry
+                    # 5xx: retry
+                    if attempt == retries - 1:
+                        return None
+                    await asyncio.sleep(1)
+                    continue
             except Exception as e:
                 mindhome_breaker.record_failure()
                 if attempt == retries - 1:

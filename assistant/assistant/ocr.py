@@ -4,6 +4,7 @@ Tesseract-OCR fuer Text-Extraktion aus Bildern,
 optionales Vision-LLM fuer Bild-Beschreibung via Ollama.
 """
 
+import asyncio
 import base64
 import io
 import logging
@@ -55,7 +56,8 @@ def _validate_image_path(image_path: Path) -> bool:
     # Pfadtraversal verhindern
     try:
         resolved = image_path.resolve()
-        if ".." in str(resolved):
+        allowed_base = Path("/tmp").resolve()
+        if not resolved.is_relative_to(allowed_base):
             logger.warning("F-045: Pfadtraversal erkannt: %s", image_path)
             return False
     except (OSError, ValueError):
@@ -342,8 +344,8 @@ class OCREngine:
                     logger.debug("Vision-LLM Cache Hit: %s", file_info.get("name"))
                     return cached if isinstance(cached, str) else cached.decode("utf-8")
 
-            # Prepare image for API
-            image_b64 = self._prepare_image_b64(image_path)
+            # Prepare image for API (CPU-intensive PIL work)
+            image_b64 = await asyncio.to_thread(self._prepare_image_b64, image_path)
             if not image_b64:
                 return None
 
@@ -442,15 +444,17 @@ class OCREngine:
 
         image_path = get_file_path(file_info.get("unique_name", ""))
         if image_path:
-            # Erst Confidence-Version versuchen
-            conf_result = extract_text_with_confidence(image_path, self.languages)
+            # Erst Confidence-Version versuchen (CPU-intensive, in Thread ausfuehren)
+            conf_result = await asyncio.to_thread(
+                extract_text_with_confidence, image_path, self.languages
+            )
             if conf_result:
                 result["ocr_text"] = conf_result["text"]
                 result["has_text"] = True
                 result["ocr_confidence"] = conf_result["avg_confidence"]
             else:
                 # Fallback auf einfache Version
-                ocr_text = self.extract_text(image_path)
+                ocr_text = await asyncio.to_thread(self.extract_text, image_path)
                 if ocr_text:
                     result["ocr_text"] = ocr_text
                     result["has_text"] = True

@@ -293,10 +293,16 @@ class ProtocolEngine:
         if not members:
             return []
 
+        decoded_names = [
+            member.decode() if isinstance(member, bytes) else member
+            for member in members
+        ]
+
+        keys = [f"{_PREFIX}:{name}" for name in decoded_names]
+        raw_values = await self.redis.mget(keys)
+
         protocols = []
-        for member in members:
-            name = member.decode() if isinstance(member, bytes) else member
-            raw = await self.redis.get(f"{_PREFIX}:{name}")
+        for name, raw in zip(decoded_names, raw_values):
             if raw:
                 try:
                     p = json.loads(raw.decode() if isinstance(raw, bytes) else raw)

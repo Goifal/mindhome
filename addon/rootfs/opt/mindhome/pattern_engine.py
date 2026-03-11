@@ -381,13 +381,15 @@ class StateLogger:
             if not self._thresholds_loaded:
                 try:
                     session = self.Session()
-                    for st in session.query(SensorThreshold).all():
-                        if st.entity_id:
-                            self._custom_thresholds[st.entity_id] = st
-                        else:
-                            self._custom_thresholds["__global__"] = st
-                    session.close()
-                    self._thresholds_loaded = True
+                    try:
+                        for st in session.query(SensorThreshold).all():
+                            if st.entity_id:
+                                self._custom_thresholds[st.entity_id] = st
+                            else:
+                                self._custom_thresholds["__global__"] = st
+                        self._thresholds_loaded = True
+                    finally:
+                        session.close()
                 except Exception as e:
                     logger.debug("Unhandled: %s", e)
             # Phase 3: Check custom threshold first, then default

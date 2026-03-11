@@ -31,6 +31,7 @@ class FollowMeEngine:
         # Tracking: Person → letzter bekannter Raum + Zeitpunkt
         self._person_room: dict[str, str] = {}
         self._last_transfer: dict[str, datetime] = {}
+        self._tracking_lock = asyncio.Lock()
 
     def _load_config(self):
         """Laedt Konfiguration aus settings.yaml."""
@@ -81,31 +82,33 @@ class FollowMeEngine:
 
         # Person bestimmen (Fallback: "default")
         person_key = person or "default"
-        old_room = self._person_room.get(person_key)
 
-        # Gleicher Raum → kein Transfer
-        if old_room and old_room.lower() == new_room.lower():
-            return None
+        async with self._tracking_lock:
+            old_room = self._person_room.get(person_key)
 
-        # Cooldown pruefen
-        last = self._last_transfer.get(person_key)
-        if last and datetime.now() - last < timedelta(seconds=self.cooldown_seconds):
-            return None
+            # Gleicher Raum → kein Transfer
+            if old_room and old_room.lower() == new_room.lower():
+                return None
 
-        # Raumwechsel registrieren
-        self._person_room[person_key] = new_room
-        self._last_transfer[person_key] = datetime.now()
+            # Cooldown pruefen
+            last = self._last_transfer.get(person_key)
+            if last and datetime.now() - last < timedelta(seconds=self.cooldown_seconds):
+                return None
 
-        if not old_room:
-            # Erster bekannter Aufenthaltsort → kein Transfer noetig
-            return None
+            # Raumwechsel registrieren
+            self._person_room[person_key] = new_room
+            self._last_transfer[person_key] = datetime.now()
 
-        # Pruefen ob Person allein im alten Raum war
-        # (wenn andere noch da sind, nichts abschalten)
-        others_in_old_room = [
-            p for p, r in self._person_room.items()
-            if r and r.lower() == old_room.lower() and p != person_key
-        ]
+            if not old_room:
+                # Erster bekannter Aufenthaltsort → kein Transfer noetig
+                return None
+
+            # Pruefen ob Person allein im alten Raum war
+            # (wenn andere noch da sind, nichts abschalten)
+            others_in_old_room = [
+                p for p, r in self._person_room.items()
+                if r and r.lower() == old_room.lower() and p != person_key
+            ]
 
         logger.info(
             "Follow-Me: %s wechselt von %s nach %s (andere in %s: %d)",
@@ -181,7 +184,7 @@ class FollowMeEngine:
             return {"type": "music", "from": old_room, "to": new_room}
 
         except Exception as e:
-            logger.debug("Follow-Me Musik-Transfer fehlgeschlagen: %s", e)
+            logger.warning("Follow-Me Musik-Transfer fehlgeschlagen: %s", e)
             return None
 
     async def _transfer_lights(
@@ -219,7 +222,6 @@ class FollowMeEngine:
                 # Per-Lampe Helligkeit aus room_profiles (Tag/Nacht)
                 per_light = new_room_cfg.get("light_brightness", {}).get(entity_id)
                 if per_light:
-                    from datetime import datetime
                     hour = datetime.now().hour
                     if 7 <= hour < 21:
                         bri = per_light.get("day", brightness)
@@ -246,7 +248,7 @@ class FollowMeEngine:
             return {"type": "lights", "from": old_room, "to": new_room}
 
         except Exception as e:
-            logger.debug("Follow-Me Licht-Transfer fehlgeschlagen: %s", e)
+            logger.warning("Follow-Me Licht-Transfer fehlgeschlagen: %s", e)
             return None
 
     async def _transfer_climate(
@@ -275,7 +277,7 @@ class FollowMeEngine:
             return {"type": "climate", "from": old_room, "to": new_room}
 
         except Exception as e:
-            logger.debug("Follow-Me Klima-Transfer fehlgeschlagen: %s", e)
+            logger.warning("Follow-Me Klima-Transfer fehlgeschlagen: %s", e)
             return None
 
     def _find_speaker(self, room: str, room_speakers: dict) -> Optional[str]:

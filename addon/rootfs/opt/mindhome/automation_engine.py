@@ -984,8 +984,10 @@ class AutomationExecutor:
 
             # Holiday
             from models import Holiday
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            today_md = datetime.now().strftime("%m-%d")
+            from helpers import local_now as _local_now_holiday
+            _now_holiday = _local_now_holiday()
+            today_str = _now_holiday.strftime("%Y-%m-%d")
+            today_md = _now_holiday.strftime("%m-%d")
             is_holiday = session.query(Holiday).filter(
                 Holiday.is_active == True,
                 ((Holiday.date == today_str) |

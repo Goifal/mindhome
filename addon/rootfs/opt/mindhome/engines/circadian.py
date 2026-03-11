@@ -121,14 +121,17 @@ class CircadianLightManager:
                 from helpers import get_setting
                 _sleep_brightness = int(get_setting("phase4.circadian_lighting.sleep_brightness", "10") or "10")
                 for cfg in configs:
-                    with self._overrides_lock:
-                        self._active_overrides[cfg.room_id] = {
-                            "type": "sleep",
-                            "brightness_pct": cfg.override_sleep or _sleep_brightness,
-                            "transition_sec": cfg.override_transition_sec or 300,
-                            "until": None,  # until wake
-                        }
-                    self._apply_brightness(cfg, cfg.override_sleep or _sleep_brightness, cfg.override_transition_sec or 300)
+                    try:
+                        with self._overrides_lock:
+                            self._active_overrides[cfg.room_id] = {
+                                "type": "sleep",
+                                "brightness_pct": cfg.override_sleep or _sleep_brightness,
+                                "transition_sec": cfg.override_transition_sec or 300,
+                                "until": None,  # until wake
+                            }
+                        self._apply_brightness(cfg, cfg.override_sleep or _sleep_brightness, cfg.override_transition_sec or 300)
+                    except Exception as e:
+                        logger.error("Circadian sleep override failed for room %s: %s", cfg.room_id, e)
             logger.info(f"Circadian sleep override applied to {len(configs)} rooms")
         except Exception as e:
             logger.error(f"Circadian _on_sleep error: {e}")
@@ -325,7 +328,7 @@ class CircadianLightManager:
                             "transition": 60,
                         })
                     except Exception as e:
-                        logger.debug("Unhandled: %s", e)
+                        logger.warning("Circadian color temp scheduling failed: %s", e)
         except Exception as e:
             logger.error(f"_apply_color_temp error: {e}")
 

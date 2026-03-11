@@ -97,7 +97,6 @@ class CoverControlManager:
         self._lock = threading.RLock()
         self._manual_overrides = {}  # entity_id -> override_until (datetime)
         self._last_simulation = {}  # entity_id -> last_sim_time
-        self._pending_actions = {}  # entity_id -> {priority, position, source}
         self._executed_schedules = {}  # schedule_id -> last_exec_date (to prevent double-fire)
         self._wake_pending_open = False  # Deferred wake-open (too dark at wake time)
 
@@ -115,7 +114,6 @@ class CoverControlManager:
         with self._lock:
             self._is_running = False
             self._manual_overrides.clear()
-            self._pending_actions.clear()
         logger.info("CoverControlManager stopped")
 
     # ── Config ──────────────────────────────────────────────

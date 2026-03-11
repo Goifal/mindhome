@@ -178,6 +178,7 @@ class RepairPlanner:
         self._notify_callback = None
         self.camera_manager = None   # CameraManager (set by brain)
         self.ocr_engine = None       # OCREngine (set by brain)
+        self._background_tasks: set = set()  # prevent GC of fire-and-forget tasks
 
         # Config
         ws_cfg = yaml_config.get("workshop", {})
@@ -1009,12 +1010,16 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         else:
             ids = await self.redis.smembers("mha:repair:workshop:all")
         items = []
-        for iid in ids:
-            data = await self.redis.hgetall(
-                f"mha:repair:workshop:{iid}")
-            if data:
-                data = {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in data.items()}
-                items.append(data)
+        decoded_ids = [iid.decode() if isinstance(iid, bytes) else iid for iid in ids]
+        if decoded_ids:
+            pipe = self.redis.pipeline()
+            for iid in decoded_ids:
+                pipe.hgetall(f"mha:repair:workshop:{iid}")
+            results = await pipe.execute()
+            for data in results:
+                if data:
+                    data = {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in data.items()}
+                    items.append(data)
         return items
 
     async def add_maintenance_schedule(self, tool_name,
@@ -1164,10 +1169,14 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         keys = [k async for k in self.redis.scan_iter(
             "mha:repair:lent:*")]
         results = []
-        for k in keys:
-            data = await self.redis.hgetall(k)
-            data = {dk.decode() if isinstance(dk, bytes) else dk: dv.decode() if isinstance(dv, bytes) else dv for dk, dv in data.items()}
-            results.append(data)
+        if keys:
+            pipe = self.redis.pipeline()
+            for k in keys:
+                pipe.hgetall(k)
+            all_data = await pipe.execute()
+            for data in all_data:
+                data = {dk.decode() if isinstance(dk, bytes) else dk: dv.decode() if isinstance(dv, bytes) else dv for dk, dv in data.items()}
+                results.append(data)
         return results
 
     # ── 3D-Drucker Steuerung (via HA) ────────────────────────
@@ -1464,10 +1473,11 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
         if not self.redis:
             return {"status": "error", "message": "Redis nicht verfügbar"}
         key = f"mha:repair:arm:positions:{tool_name.lower()}"
-        pos = await self.redis.hgetall(key)
-        if not pos:
+        raw_pos = await self.redis.hgetall(key)
+        if not raw_pos:
             return {"status": "error",
                     "message": f"Position '{tool_name}' nicht gespeichert"}
+        pos = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_pos.items()}
         await self.arm_gripper("open")
         await self.arm_move(
             float(pos.get("x", 0)),
@@ -1527,7 +1537,9 @@ Gib konkrete Werte, Pruefschritte und erwartete Ergebnisse an."""
             if self._notify_callback:
                 await self._notify_callback(msg)
 
-        asyncio.create_task(_timer_callback())
+        task = asyncio.create_task(_timer_callback())
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
         return {"status": "ok", "timer_id": timer_id,
                 "minutes": minutes, "reason": reason}
 

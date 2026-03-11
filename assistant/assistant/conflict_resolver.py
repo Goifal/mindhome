@@ -305,6 +305,12 @@ class ConflictResolver:
 
                 # Cooldown setzen
                 self._last_resolutions[cooldown_key] = now
+                # Periodic cleanup: keep only recent resolutions
+                if len(self._last_resolutions) > 200:
+                    cutoff = now - 86400  # 24h
+                    self._last_resolutions = {
+                        k: v for k, v in self._last_resolutions.items() if v > cutoff
+                    }
 
                 # History speichern
                 self._conflict_history.append(resolution)

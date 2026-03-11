@@ -128,7 +128,7 @@ class MoodDetector:
         self.wpm_normal = voice_cfg.get("wpm_normal", 130)
         self.voice_weight = voice_cfg.get("voice_weight", 0.3)
         self._last_voice_signals: list[str] = []
-        self._last_voice_emotion: dict = {}
+        self._last_voice_emotion: dict[str, dict] = {}  # per-person voice emotion
 
         # Voice-Mood Integration (Quick Win 4)
         self.voice_mood_integration = mood_cfg.get("voice_mood_integration", True)
@@ -196,7 +196,7 @@ class MoodDetector:
             "last_texts": self._last_texts,
             "last_decay_time": self._last_decay_time,
             "voice_signals": self._last_voice_signals,
-            "voice_emotion": self._last_voice_emotion,
+            "voice_emotion": self._last_voice_emotion.get(key, {}),
             "created_time": self._created_time,
         }
         # Begrenze auf 20 Personen
@@ -732,7 +732,7 @@ class MoodDetector:
             hints.append(f"Stimm-Analyse: {voice_desc}.")
 
         # Voice-Emotion als zusaetzlicher Kontext (wenn vorhanden)
-        voice_emotion = s.get("voice_emotion") or self._last_voice_emotion
+        voice_emotion = s.get("voice_emotion") or self._last_voice_emotion.get(key)
         if voice_emotion and voice_emotion.get("confidence", 0) >= 0.4:
             emo = voice_emotion["emotion"]
             conf = voice_emotion["confidence"]
@@ -934,7 +934,7 @@ class MoodDetector:
         }
         # Voice-Emotion fuer Prompt-Hint speichern
         if self.voice_mood_integration:
-            self._last_voice_emotion = result
+            self._last_voice_emotion[self._active_person_key] = result
         return result
 
     def get_voice_signals(self) -> list[str]:

@@ -2450,9 +2450,16 @@ class PersonalityEngine:
             weather_awareness_section=weather_awareness_section,
             conversation_mode_section=conversation_mode_section,
         )
-        prompt = SYSTEM_PROMPT_TEMPLATE.format_map(
-            collections.defaultdict(str, format_kwargs)
-        )
+        try:
+            prompt = SYSTEM_PROMPT_TEMPLATE.format_map(format_kwargs)
+        except KeyError as exc:
+            logger.warning("Missing template key %s – using empty string fallback", exc)
+            # Fallback: fill missing keys with empty string
+            from string import Formatter
+            needed = {fn for _, fn, _, _ in Formatter().parse(SYSTEM_PROMPT_TEMPLATE) if fn is not None}
+            for k in needed:
+                format_kwargs.setdefault(k, "")
+            prompt = SYSTEM_PROMPT_TEMPLATE.format_map(format_kwargs)
 
         # Kontext anhaengen
         if context:
@@ -2545,7 +2552,8 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
             title = titles.get(primary_user.lower(), "Sir")
 
             # Titel-Evolution: "Sir"-Häufigkeit haengt vom Formality-Score ab
-            formality = getattr(self, '_current_formality', self.formality_start)
+            with self._mood_formality_lock:
+                formality = getattr(self, '_current_formality', self.formality_start)
             if formality >= 70:
                 title_freq = f"Verwende \"{title}\" HAEUFIG — fast in jedem Satz."
             elif formality >= 50:
@@ -2893,10 +2901,6 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         time_of_day = self.get_time_of_day()
         time_style = self.get_time_style(time_of_day)
 
-        # Snapshot shared state to avoid race condition
-        _mood_snapshot = self._current_mood
-        _formality_snapshot = getattr(self, '_current_formality', self.formality_start)
-
         # Humor/Sarkasmus — bei CRITICAL komplett aus
         has_alerts = urgency == "critical"
         with self._mood_formality_lock:
@@ -2996,10 +3000,6 @@ WICHTIG: Erfinde KEINE Ursachen, Gruende oder Erklaerungen. NUR die gegebenen Fa
         """
         time_of_day = self.get_time_of_day()
         time_style = self.get_time_style(time_of_day)
-
-        # Snapshot shared state to avoid race condition
-        _mood_snapshot = self._current_mood
-        _formality_snapshot = getattr(self, '_current_formality', self.formality_start)
 
         # Humor — Morgens gedaempft, Abends lockerer
         with self._mood_formality_lock:
@@ -3138,7 +3138,8 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         )
 
         # Titel anhaengen bei formeller Anrede
-        formality = getattr(self, '_current_formality', self.formality_start)
+        with self._mood_formality_lock:
+            formality = getattr(self, '_current_formality', self.formality_start)
         title = get_person_title(person) if person else get_person_title()
         if formality >= 50 and random.random() < 0.5:
             text = f"{title}, {text[0].lower()}{text[1:]}"
@@ -3197,7 +3198,8 @@ Kein unterwuerfiger Ton. Du bist ein brillanter Butler, kein Chatbot."""
         Returns:
             Nachricht passend zum aktuellen Formality-Level
         """
-        formality = getattr(self, '_current_formality', self.formality_start)
+        with self._mood_formality_lock:
+            formality = getattr(self, '_current_formality', self.formality_start)
         style = "formal" if formality >= 50 else "casual"
 
         messages = self._PROGRESS_MESSAGES.get(step, {}).get(style)

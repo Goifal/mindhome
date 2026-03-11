@@ -510,9 +510,17 @@ class SemanticMemory:
 
         try:
             fact_ids = await self.redis.smembers(f"mha:facts:person:{person}")
+            fact_ids_list = list(fact_ids)
+            if not fact_ids_list:
+                return []
+
+            pipe = self.redis.pipeline()
+            for fact_id in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fact_id}")
+            results = await pipe.execute()
+
             facts = []
-            for fact_id in fact_ids:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            for data in results:
                 if data:
                     facts.append({
                         "content": data.get("content", ""),
@@ -533,9 +541,17 @@ class SemanticMemory:
 
         try:
             fact_ids = await self.redis.smembers(f"mha:facts:category:{category}")
+            fact_ids_list = list(fact_ids)
+            if not fact_ids_list:
+                return []
+
+            pipe = self.redis.pipeline()
+            for fact_id in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fact_id}")
+            results = await pipe.execute()
+
             facts = []
-            for fact_id in fact_ids:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            for data in results:
                 if data:
                     facts.append({
                         "content": data.get("content", ""),
@@ -554,9 +570,17 @@ class SemanticMemory:
 
         try:
             fact_ids = await self.redis.smembers("mha:facts:all")
+            fact_ids_list = list(fact_ids)
+            if not fact_ids_list:
+                return []
+
+            pipe = self.redis.pipeline()
+            for fact_id in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fact_id}")
+            results = await pipe.execute()
+
             facts = []
-            for fact_id in fact_ids:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            for fact_id, data in zip(fact_ids_list, results):
                 if data:
                     facts.append({
                         "fact_id": data.get("fact_id", fact_id),

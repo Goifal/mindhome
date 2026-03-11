@@ -117,7 +117,7 @@ class TaskRegistry:
                 timeout=timeout,  # T2: Shutdown-Timeout
             )
         except asyncio.TimeoutError:
-            logger.warning("T2: TaskRegistry shutdown timeout (30s) — %d Tasks liefen noch", len(active))
+            logger.warning("T2: TaskRegistry shutdown timeout (%.0fs) — %d Tasks liefen noch", timeout, len(active))
             results = [asyncio.TimeoutError()] * len(active)
 
         cancelled = sum(1 for r in results if isinstance(r, asyncio.CancelledError))

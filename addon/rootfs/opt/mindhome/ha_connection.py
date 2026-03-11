@@ -625,7 +625,8 @@ class HAConnection:
         try:
             data = json.loads(message)
             msg_type = data.get("type", "")
-            self._stats["ws_messages"] += 1
+            with self._stats_lock:
+                self._stats["ws_messages"] += 1
 
             if msg_type == "auth_required":
                 ws.send(json.dumps({"type": "auth", "access_token": self.token}))
@@ -660,12 +661,14 @@ class HAConnection:
             elif msg_type == "event":
                 event = data.get("event", {})
                 event_type = event.get("event_type", "")
-                self._stats["events_received"] += 1
+                with self._stats_lock:
+                    self._stats["events_received"] += 1
                 with self._cb_lock:
                     has_batch = bool(self._batch_callbacks)
                 if has_batch:
                     self._event_queue.put(event)
-                    self._stats["events_batched"] += 1
+                    with self._stats_lock:
+                        self._stats["events_batched"] += 1
                 else:
                     with self._cb_lock:
                         cbs = list(self._event_callbacks)
@@ -695,7 +698,8 @@ class HAConnection:
         self._ws_connected = False
         if self._should_run:
             self._reconnect_attempts += 1
-            self._stats["ws_reconnects"] += 1
+            with self._stats_lock:
+                self._stats["ws_reconnects"] += 1
             if self._reconnect_attempts > MAX_RECONNECT_ATTEMPTS:
                 logger.error(f"Max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) reached.")
                 return

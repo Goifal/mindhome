@@ -745,13 +745,13 @@ class ContextBuilder:
                 try:
                     if not latest_motion or datetime.fromisoformat(last_changed) > datetime.fromisoformat(latest_motion):
                         latest_motion = last_changed
+                        name = state.get("attributes", {}).get(
+                            "friendly_name", entity_id
+                        )
+                        latest_room = name.replace("Bewegung ", "").replace(" Motion", "")
                 except (ValueError, TypeError):
                     if not latest_motion:
                         latest_motion = last_changed
-                    name = state.get("attributes", {}).get(
-                        "friendly_name", entity_id
-                    )
-                    latest_room = name.replace("Bewegung ", "").replace(" Motion", "")
 
         return latest_room
 

@@ -63,7 +63,9 @@ class RecipeStore:
             }
             if ef:
                 col_kwargs["embedding_function"] = ef
-            self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+            self.chroma_collection = await asyncio.to_thread(
+                self._chroma_client.get_or_create_collection, **col_kwargs
+            )
             _count = await asyncio.to_thread(self.chroma_collection.count)
             logger.info(
                 "Recipe Store initialisiert (ChromaDB: mha_recipes, %d Eintraege)",
@@ -77,7 +79,7 @@ class RecipeStore:
         # Rezept-Verzeichnis bestimmen
         config_dir = Path(__file__).parent.parent / "config"
         self._recipes_dir = config_dir / "recipes"
-        self._recipes_dir.mkdir(exist_ok=True)
+        await asyncio.to_thread(self._recipes_dir.mkdir, exist_ok=True)
 
         # Bestehende Hashes laden (sync Methode in Thread ausfuehren)
         await asyncio.to_thread(self._load_ingested_hashes)
@@ -134,10 +136,10 @@ class RecipeStore:
             return 0
 
         if filepath.suffix.lower() == ".pdf":
-            content = KnowledgeBase._extract_pdf_text(filepath)
+            content = await asyncio.to_thread(KnowledgeBase._extract_pdf_text, filepath)
         else:
             try:
-                content = filepath.read_text(encoding="utf-8", errors="ignore")
+                content = await asyncio.to_thread(filepath.read_text, encoding="utf-8", errors="ignore")
             except Exception as e:
                 logger.warning("Fehler beim Lesen von %s: %s", filepath.name, e)
                 return 0
@@ -261,10 +263,16 @@ class RecipeStore:
 
         try:
             where = {"source_file": source} if source else None
+            get_kwargs = {
+                "include": ["documents", "metadatas"],
+            }
+            if where:
+                get_kwargs["where"] = where
+            # Apply limit+offset at DB level to avoid loading entire collection
+            get_kwargs["limit"] = offset + limit
             results = await asyncio.to_thread(
                 self.chroma_collection.get,
-                include=["documents", "metadatas"],
-                where=where,
+                **get_kwargs,
             )
             chunks = []
             if results and results.get("ids"):
@@ -347,7 +355,7 @@ class RecipeStore:
             return False
 
         try:
-            self._chroma_client.delete_collection("mha_recipes")
+            await asyncio.to_thread(self._chroma_client.delete_collection, "mha_recipes")
             from .embeddings import get_embedding_function
             ef = get_embedding_function()
             col_kwargs = {
@@ -356,7 +364,9 @@ class RecipeStore:
             }
             if ef:
                 col_kwargs["embedding_function"] = ef
-            self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+            self.chroma_collection = await asyncio.to_thread(
+                self._chroma_client.get_or_create_collection, **col_kwargs
+            )
             self._ingested_hashes.clear()
             logger.info("Recipe Store geloescht")
             return True

@@ -215,12 +215,20 @@ def api_get_settings():
 
 
 
+_ALLOWED_SETTINGS_KEYS = {
+    "system_mode", "theme", "view_mode", "language", "data_retention_days",
+    "onboarding_completed", "notification_enabled", "tts_enabled",
+}
+
 @system_bp.route("/api/system/settings/<key>", methods=["PUT"])
 def api_update_setting(key):
     """Update a system setting."""
     import re
-    if not re.match(r'^[a-z][a-z0-9_]{1,63}$', key):
+    if not re.match(r'^[a-z][a-z0-9_.]{1,63}$', key):
         return jsonify({"error": "Ungueltiger Setting-Key"}), 400
+    if key not in _ALLOWED_SETTINGS_KEYS:
+        logger.warning("Blocked attempt to change disallowed setting key: %s", key)
+        return jsonify({"error": "Setting-Key nicht erlaubt"}), 403
     data = request.json or {}
     set_setting(key, data.get("value"))
     return jsonify({"success": True, "key": key, "value": data.get("value")})

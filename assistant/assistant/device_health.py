@@ -125,6 +125,8 @@ class DeviceHealthMonitor:
 
     async def _check_loop(self):
         """Periodische Anomalie-Erkennung."""
+        # Initial delay to let HA states settle after startup
+        await asyncio.sleep(60)
         while self._running:
             try:
                 alerts = await self.check_all()

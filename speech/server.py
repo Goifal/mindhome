@@ -34,7 +34,6 @@ def _build_initial_prompt() -> str:
     _config_path = os.getenv("ROOM_PROFILES_PATH", "/app/config/room_profiles.yaml")
     try:
         if os.path.exists(_config_path):
-            import json as _json
             # Einfaches YAML-Parsing ohne PyYAML — nur die rooms-Keys extrahieren
             with open(_config_path, "r", encoding="utf-8") as f:
                 content = f.read()

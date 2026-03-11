@@ -210,17 +210,16 @@ class SpontaneousObserver:
             return None
 
         try:
-            # Heutige und letzte Wochen-Daten aus Redis
-            today_key = f"mha:energy:daily:{datetime.now().strftime('%Y-%m-%d')}"
-            today_val = await self.redis.get(today_key)
+            # Heutige und letzte Wochen-Daten per mget aus Redis
+            from datetime import timedelta
+            now_ts = datetime.now()
+            today_key = f"mha:energy:daily:{now_ts.strftime('%Y-%m-%d')}"
+            week_ago = now_ts - timedelta(days=7)
+            week_key = f"mha:energy:daily:{week_ago.strftime('%Y-%m-%d')}"
+            today_val, week_val = await self.redis.mget([today_key, week_key])
             if not today_val:
                 return None
 
-            # 7 Tage zurueck
-            from datetime import timedelta
-            week_ago = datetime.now() - timedelta(days=7)
-            week_key = f"mha:energy:daily:{week_ago.strftime('%Y-%m-%d')}"
-            week_val = await self.redis.get(week_key)
             if not week_val:
                 return None
 

@@ -317,6 +317,9 @@ class DailySummarizer:
                 if cursor == 0:
                     break
 
+            # Bytes-Keys dekodieren
+            keys = [k.decode() if isinstance(k, bytes) else k for k in keys]
+
             # Nach Datum sortieren (neueste zuerst)
             keys.sort(reverse=True)
             keys = keys[:limit]

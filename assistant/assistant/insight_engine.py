@@ -446,7 +446,7 @@ class InsightEngine:
                     insights.append(result)
                     await self._set_cooldown(result["check"])
             except Exception as e:
-                logger.debug("Check %s fehlgeschlagen: %s", method.__name__, e)
+                logger.warning("Check %s fehlgeschlagen: %s", method.__name__, e)
 
         return insights
 
@@ -618,16 +618,26 @@ class InsightEngine:
             return None
 
         try:
-            # 7-Tage-Durchschnitt aus Redis
+            # 7-Tage-Durchschnitt + heutiger Verbrauch per mget laden
+            now_ts = datetime.now()
+            all_keys = [
+                f"mha:energy:daily:{(now_ts - timedelta(days=i)).strftime('%Y-%m-%d')}"
+                for i in range(1, 8)
+            ]
+            today_key = f"mha:energy:daily:{now_ts.strftime('%Y-%m-%d')}"
+            all_keys.append(today_key)
+            raw_results = await self.redis.mget(all_keys)
+
             values = []
-            for i in range(1, 8):
-                day = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
-                raw = await self.redis.get(f"mha:energy:daily:{day}")
+            for raw in raw_results[:7]:
                 if raw:
-                    day_data = json.loads(raw)
-                    val = day_data.get("consumption_wh", 0)
-                    if val > 0:
-                        values.append(val)
+                    try:
+                        day_data = json.loads(raw)
+                        val = day_data.get("consumption_wh", 0)
+                        if val > 0:
+                            values.append(val)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
 
             if len(values) < 3:
                 return None
@@ -636,9 +646,8 @@ class InsightEngine:
             if avg <= 0:
                 return None
 
-            # Heutigen Verbrauch ermitteln
-            today_key = f"mha:energy:daily:{datetime.now().strftime('%Y-%m-%d')}"
-            today_raw = await self.redis.get(today_key)
+            # Heutigen Verbrauch aus dem letzten mget-Ergebnis
+            today_raw = raw_results[7]
             if not today_raw:
                 return None
 
@@ -698,6 +707,7 @@ class InsightEngine:
                 await self.redis.setex(away_key, 86400, datetime.now().isoformat())
                 return None  # Gerade erst gegangen
             try:
+                away_since = away_since.decode() if isinstance(away_since, bytes) else away_since
                 since_dt = datetime.fromisoformat(away_since)
                 minutes_away = (datetime.now() - since_dt).total_seconds() / 60
                 if minutes_away < self.away_minutes:

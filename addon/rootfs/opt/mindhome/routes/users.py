@@ -130,8 +130,8 @@ def api_create_user():
         except ValueError:
             return jsonify({"error": f"Ungueltiger Rolle: {data.get('role')}"}), 400
         import re
-        _name = str(data.get("name", "")).strip()[:100]
-        if not _name or not re.match(r'^[\w\s\-\.]+$', _name):
+        _name = re.sub(r'[^a-zA-Z0-9_\- ]', '', str(data.get("name", "")))[:50].strip()
+        if not _name:
             return jsonify({"error": "Ungueltiger Name"}), 400
         user = User(
             name=_name,
@@ -169,7 +169,11 @@ def api_update_user(user_id):
             return jsonify({"error": "User not found"}), 404
 
         if "name" in data:
-            user.name = data["name"]
+            import re
+            _name = re.sub(r'[^a-zA-Z0-9_\- äöüÄÖÜß]', '', str(data["name"]))[:50].strip()
+            if not _name:
+                return jsonify({"error": "Ungueltiger Name"}), 400
+            user.name = _name
         if "role" in data:
             try:
                 user.role = UserRole(data["role"])

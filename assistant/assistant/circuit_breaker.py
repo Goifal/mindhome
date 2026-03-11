@@ -13,6 +13,7 @@ Zusaetzlich: Retry-Logik mit exponentiellem Backoff.
 
 import asyncio
 import logging
+import threading
 import time
 from enum import Enum
 from typing import Optional
@@ -46,6 +47,7 @@ class CircuitBreaker:
         self._success_count = 0
         self._last_failure_time: float = 0
         self._half_open_calls = 0
+        self._lock = threading.Lock()
 
     def _check_recovery(self) -> None:
         """Prueft ob der Recovery-Timeout abgelaufen ist und wechselt ggf. zu HALF_OPEN."""
@@ -77,53 +79,57 @@ class CircuitBreaker:
 
     def try_acquire(self) -> bool:
         """Reserviert einen Call-Slot. Im HALF_OPEN: inkrementiert Zaehler."""
-        self._check_recovery()
-        s = self._state
-        if s == CircuitState.CLOSED:
-            return True
-        if s == CircuitState.HALF_OPEN:
-            if self._half_open_calls < self.half_open_max_calls:
-                self._half_open_calls += 1
+        with self._lock:
+            self._check_recovery()
+            s = self._state
+            if s == CircuitState.CLOSED:
                 return True
-            logger.debug("Circuit %s HALF_OPEN max calls reached", self.name)
+            if s == CircuitState.HALF_OPEN:
+                if self._half_open_calls < self.half_open_max_calls:
+                    self._half_open_calls += 1
+                    return True
+                logger.debug("Circuit %s HALF_OPEN max calls reached", self.name)
+                return False
+            # S7: OPEN-State nicht stumm
+            logger.debug("Circuit %s OPEN — rejecting call", self.name)
             return False
-        # S7: OPEN-State nicht stumm
-        logger.debug("Circuit %s OPEN — rejecting call", self.name)
-        return False
 
     def record_success(self) -> None:
         """Meldet einen erfolgreichen Call."""
-        if self._state == CircuitState.HALF_OPEN:
-            self._success_count += 1
-            if self._success_count >= self.half_open_max_calls:
-                self._state = CircuitState.CLOSED
-                self._failure_count = 0
-                self._success_count = 0
-                logger.info("Circuit %s: HALF_OPEN -> CLOSED", self.name)
-        else:
-            self._failure_count = max(0, self._failure_count - 1)
+        with self._lock:
+            if self._state == CircuitState.HALF_OPEN:
+                self._success_count += 1
+                if self._success_count >= self.half_open_max_calls:
+                    self._state = CircuitState.CLOSED
+                    self._failure_count = 0
+                    self._success_count = 0
+                    logger.info("Circuit %s: HALF_OPEN -> CLOSED", self.name)
+            else:
+                self._failure_count = max(0, self._failure_count - 1)
 
     def record_failure(self) -> None:
         """Meldet einen fehlgeschlagenen Call."""
-        self._failure_count += 1
-        self._last_failure_time = time.monotonic()
+        with self._lock:
+            self._failure_count += 1
+            self._last_failure_time = time.monotonic()
 
-        if self._state == CircuitState.HALF_OPEN:
-            self._state = CircuitState.OPEN
-            logger.warning("Circuit %s: HALF_OPEN -> OPEN (Test-Call fehlgeschlagen)", self.name)
-        elif self._failure_count >= self.failure_threshold:
-            self._state = CircuitState.OPEN
-            logger.warning(
-                "Circuit %s: CLOSED -> OPEN (%d Fehler)",
-                self.name, self._failure_count,
-            )
+            if self._state == CircuitState.HALF_OPEN:
+                self._state = CircuitState.OPEN
+                logger.warning("Circuit %s: HALF_OPEN -> OPEN (Test-Call fehlgeschlagen)", self.name)
+            elif self._failure_count >= self.failure_threshold:
+                self._state = CircuitState.OPEN
+                logger.warning(
+                    "Circuit %s: CLOSED -> OPEN (%d Fehler)",
+                    self.name, self._failure_count,
+                )
 
     def reset(self) -> None:
         """Setzt den Circuit Breaker zurueck."""
-        self._state = CircuitState.CLOSED
-        self._failure_count = 0
-        self._success_count = 0
-        self._half_open_calls = 0
+        with self._lock:
+            self._state = CircuitState.CLOSED
+            self._failure_count = 0
+            self._success_count = 0
+            self._half_open_calls = 0
 
     def status(self) -> dict:
         """Status fuer Diagnostik/Metrics."""

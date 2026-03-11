@@ -158,12 +158,17 @@ class ConditionalCommands:
         if not cond_ids:
             return []
 
-        for cond_id in cond_ids:
-            if isinstance(cond_id, bytes):
-                cond_id = cond_id.decode()
+        decoded_ids = [
+            cond_id.decode() if isinstance(cond_id, bytes) else cond_id
+            for cond_id in cond_ids
+        ]
 
+        # Batch-fetch all conditionals via mget
+        keys = [f"{KEY_PREFIX}{cond_id}" for cond_id in decoded_ids]
+        raw_values = await self.redis.mget(keys)
+
+        for cond_id, raw in zip(decoded_ids, raw_values):
             key = f"{KEY_PREFIX}{cond_id}"
-            raw = await self.redis.get(key)
             if not raw:
                 await self.redis.srem(KEY_INDEX, cond_id)
                 continue
@@ -296,13 +301,23 @@ class ConditionalCommands:
         if not cond_ids:
             return {"success": True, "message": "Keine bedingten Befehle aktiv."}
 
-        lines = ["Aktive bedingte Befehle:"]
-        for cond_id in cond_ids:
-            if isinstance(cond_id, bytes):
-                cond_id = cond_id.decode()
+        decoded_ids = [
+            cond_id.decode() if isinstance(cond_id, bytes) else cond_id
+            for cond_id in cond_ids
+        ]
 
-            key = f"{KEY_PREFIX}{cond_id}"
-            raw = await self.redis.get(key)
+        # Batch-fetch all conditionals via mget
+        keys = [f"{KEY_PREFIX}{cond_id}" for cond_id in decoded_ids]
+        raw_values = await self.redis.mget(keys)
+
+        # Batch-fetch all TTLs via pipeline
+        pipe = self.redis.pipeline()
+        for key in keys:
+            pipe.ttl(key)
+        ttl_values = await pipe.execute()
+
+        lines = ["Aktive bedingte Befehle:"]
+        for cond_id, raw, ttl in zip(decoded_ids, raw_values, ttl_values):
             if not raw:
                 await self.redis.srem(KEY_INDEX, cond_id)
                 continue
@@ -311,7 +326,6 @@ class ConditionalCommands:
                 raw = raw.decode()
             cond = json.loads(raw)
 
-            ttl = await self.redis.ttl(key)
             ttl_hours = max(0, ttl // 3600) if ttl > 0 else 0
             shot = "einmalig" if cond.get("one_shot") else "dauerhaft"
             lines.append(f"  - {cond['label']} ({shot}, noch {ttl_hours}h gültig)")

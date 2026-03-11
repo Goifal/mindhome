@@ -1058,7 +1058,10 @@ async def _refresh_entity_catalog_inner(ha: HomeAssistantClient) -> None:
     import asyncio
     states_task = ha.get_states()
     mindhome_task = _load_mindhome_domains(ha)
-    states, _ = await asyncio.gather(states_task, mindhome_task, return_exceptions=True)
+    states, mindhome_result = await asyncio.gather(states_task, mindhome_task, return_exceptions=True)
+
+    if isinstance(mindhome_result, BaseException):
+        logger.warning("MindHome domain loading failed: %s", mindhome_result)
 
     if isinstance(states, BaseException) or not states:
         if isinstance(states, BaseException):

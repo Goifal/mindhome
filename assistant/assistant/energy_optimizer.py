@@ -284,10 +284,10 @@ class EnergyOptimizer:
             return None
 
         try:
-            # Letzte 7 Tage parallel laden
+            # Letzte 7 Tage per mget laden
             days = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
-            import asyncio
-            raw_results = await asyncio.gather(*(self.redis.get(f"{KEY_DAILY_ENERGY}{day}") for day in days))
+            keys = [f"{KEY_DAILY_ENERGY}{day}" for day in days]
+            raw_results = await self.redis.mget(keys)
             values = []
             for raw in raw_results:
                 if raw:
@@ -331,13 +331,12 @@ class EnergyOptimizer:
             last_week = []
             now = datetime.now()
 
-            # Alle 14 Tage parallel laden (7 diese Woche + 7 letzte Woche)
-            import asyncio
+            # Alle 14 Tage per mget laden (7 diese Woche + 7 letzte Woche)
             all_keys = []
             for i in range(7):
                 all_keys.append(f"{KEY_DAILY_ENERGY}{(now - timedelta(days=i)).strftime('%Y-%m-%d')}")
                 all_keys.append(f"{KEY_DAILY_ENERGY}{(now - timedelta(days=i + 7)).strftime('%Y-%m-%d')}")
-            raw_results = await asyncio.gather(*(self.redis.get(k) for k in all_keys))
+            raw_results = await self.redis.mget(all_keys)
 
             for idx in range(7):
                 raw = raw_results[idx * 2]
@@ -442,7 +441,7 @@ class EnergyOptimizer:
             if any(kw in eid_lower for kw in search_keywords):
                 try:
                     val = float(s.get("state", 0))
-                    if val > 0:
+                    if val >= 0:
                         return val
                 except (ValueError, TypeError):
                     continue

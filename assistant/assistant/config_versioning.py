@@ -9,6 +9,7 @@ Phase 13.4: Sichert Config-Dateien vor jeder Aenderung.
 - Redis-basierte Metadaten + Datei-Backups
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -41,7 +42,7 @@ class ConfigVersioning:
     async def initialize(self, redis_client=None) -> None:
         """Initialisiert mit Redis-Client fuer Metadaten."""
         self._redis = redis_client
-        _SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(_SNAPSHOT_DIR.mkdir, parents=True, exist_ok=True)
         logger.info(
             "ConfigVersioning initialisiert (enabled=%s, max=%d)",
             self._enabled, self._max_snapshots,
@@ -72,7 +73,7 @@ class ConfigVersioning:
             snapshot_id = f"{config_file}_{timestamp}"
             snapshot_path = _SNAPSHOT_DIR / f"{snapshot_id}.yaml"
 
-            shutil.copy2(yaml_path, snapshot_path)
+            await asyncio.to_thread(shutil.copy2, yaml_path, snapshot_path)
 
             metadata = {
                 "id": snapshot_id,
@@ -161,7 +162,7 @@ class ConfigVersioning:
                 changed_by="user",
             )
 
-            shutil.copy2(snapshot_path, original_path)
+            await asyncio.to_thread(shutil.copy2, snapshot_path, original_path)
 
             logger.info("Rollback ausgefuehrt: %s -> %s", snapshot_id, original_path)
             return {
@@ -195,8 +196,15 @@ class ConfigVersioning:
                 try:
                     meta = json.loads(raw)
                     old_path = Path(meta["snapshot_path"])
-                    if old_path.exists():
-                        old_path.unlink()
+
+                    def _remove(p=old_path):
+                        if p.exists():
+                            p.unlink()
+                            return True
+                        return False
+
+                    removed = await asyncio.to_thread(_remove)
+                    if removed:
                         logger.debug("Alter Snapshot geloescht: %s", old_path)
                 except (json.JSONDecodeError, KeyError, OSError) as e:
                     logger.warning("Fehler beim Loeschen eines alten Snapshots: %s", e)
@@ -207,7 +215,8 @@ class ConfigVersioning:
         """F-044: Loescht aelteste Snapshots wenn Disk-Quota ueberschritten wird."""
         max_mb = self._cfg.get("max_disk_mb", 50)
         max_bytes = max_mb * 1024 * 1024
-        try:
+
+        def _enforce_sync():
             total = sum(f.stat().st_size for f in _SNAPSHOT_DIR.iterdir() if f.is_file())
             if total <= max_bytes:
                 return
@@ -221,6 +230,9 @@ class ConfigVersioning:
                     f.unlink()
                     total -= size
                     logger.info("F-044: Snapshot %s geloescht (Disk-Quota)", f.name)
+
+        try:
+            await asyncio.to_thread(_enforce_sync)
         except Exception as e:
             logger.warning("F-044: Disk-Quota Check fehlgeschlagen: %s", e)
 
