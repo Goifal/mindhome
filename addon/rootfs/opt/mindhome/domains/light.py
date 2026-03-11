@@ -78,7 +78,7 @@ class LightDomain(DomainPlugin):
         # Night mode -> dim
         if self.get_setting("night_dim", True):
             phase = ctx.get("day_phase", "")
-            if phase in ("Nacht", "Nachtruhe", "Night"):
+            if phase.lower() in ("nacht", "nachtruhe", "night"):
                 for e in entities:
                     if e.get("state") == "on":
                         brightness = e.get("attributes", {}).get("brightness", 255)

@@ -285,10 +285,15 @@ class SpecialModeBase:
         """Start a timer to auto-deactivate the mode."""
         if self._deactivation_timer:
             self._deactivation_timer.cancel()
+        def _safe_deactivate():
+            try:
+                self.deactivate(user_id=user_id, reason="timeout")
+            except Exception as e:
+                logger.error(f"Deactivation timer callback error: {e}")
+                self._active = False  # Failsafe: don't leave mode stuck active
         self._deactivation_timer = threading.Timer(
             minutes * 60,
-            self.deactivate,
-            kwargs={"user_id": user_id, "reason": "timeout"},
+            _safe_deactivate,
         )
         self._deactivation_timer.daemon = True
         self._deactivation_timer.start()
@@ -831,9 +836,11 @@ class EmergencyProtocol(SpecialModeBase):
             self._escalation_timers.append(t3)
 
     def _cancel_escalation(self):
-        for t in self._escalation_timers:
-            t.cancel()
+        # Copy list to avoid race with timer callbacks modifying it
+        timers = list(self._escalation_timers)
         self._escalation_timers.clear()
+        for t in timers:
+            t.cancel()
 
     def _escalation_step_notify_users(self):
         """Escalation: notify all users via push."""
