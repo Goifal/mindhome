@@ -175,8 +175,8 @@ class MemoryManager:
                         and results["distances"][0][0] < 0.1):
                     logger.debug("Episode-Duplikat erkannt, uebersprungen")
                     return
-            except Exception:
-                pass  # Dedup ist best-effort
+            except Exception as e:
+                logger.debug("Dedup-Check fehlgeschlagen: %s", e)
 
             meta = dict(metadata) if metadata else {}
             meta["timestamp"] = datetime.now().isoformat()
@@ -457,8 +457,9 @@ class MemoryManager:
             return 0
         try:
             await asyncio.to_thread(self.chroma_collection.delete, ids=episode_ids)
-            logger.info("Episoden geloescht: %d", len(episode_ids))
-            return len(episode_ids)
+            deleted_count = len(episode_ids)
+            logger.info("Episoden geloescht: %d", deleted_count)
+            return deleted_count
         except Exception as e:
             logger.error("Fehler beim Loeschen der Episoden: %s", e)
             return 0

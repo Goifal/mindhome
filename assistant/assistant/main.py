@@ -2261,7 +2261,8 @@ def _get_dashboard_config() -> dict:
         with open(SETTINGS_YAML_PATH) as f:
             config = yaml.safe_load(f) or {}
         return config.get("dashboard", {})
-    except Exception:
+    except Exception as e:
+        logger.debug("Dashboard config load failed: %s", e)
         return {}
 
 
@@ -4959,7 +4960,8 @@ async def ui_suggest_declarative_tools(request: Request, token: str = ""):
 
     try:
         body = await request.json()
-    except Exception:
+    except Exception as e:
+        logger.debug("Request body parse failed: %s", e)
         body = {}
     use_llm = body.get("use_llm", True) if isinstance(body, dict) else True
 
@@ -6694,7 +6696,8 @@ async def workshop_duplicate_project(project_id: str, request: Request):
     try:
         data = await request.json() if request.headers.get(
             "content-type", "").startswith("application/json") else {}
-    except Exception:
+    except Exception as e:
+        logger.debug("JSON body parse failed: %s", e)
         data = {}
     try:
         p = await brain.repair_planner.get_project(project_id)
@@ -7310,7 +7313,8 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
         try:
             with open(SETTINGS_YAML_PATH) as f:
                 pre_rollback = yaml.safe_load(f) or {}
-        except Exception:
+        except Exception as e:
+            logger.debug("Pre-rollback settings read failed: %s", e)
             pre_rollback = {}
 
         result = await brain.config_versioning.rollback(req.snapshot_id)
@@ -7841,7 +7845,8 @@ async def _docker_restart(container: str = "mindhome-assistant", timeout: int = 
             url = f"http://localhost/containers/{container}/restart?t={timeout}"
             async with session.post(url) as resp:
                 return resp.status == 204
-    except Exception:
+    except Exception as e:
+        logger.debug("HA restart request failed: %s", e)
         return False
 
 

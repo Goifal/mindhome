@@ -81,6 +81,7 @@ class MoodDetector:
     def __init__(self):
         self.redis: Optional[redis.Redis] = None
         self._analyze_lock = asyncio.Lock()
+        self._voice_lock = __import__('threading').Lock()
 
         # Per-Person State Storage
         # {person_key: {mood, stress, tiredness, frustration, positive,
@@ -766,6 +767,11 @@ class MoodDetector:
         if not self.voice_enabled or not metadata:
             return []
 
+        with self._voice_lock:
+            return self._analyze_voice_metadata_inner(metadata, person)
+
+    def _analyze_voice_metadata_inner(self, metadata: dict, person: str) -> list[str]:
+        """Inner implementation of voice metadata analysis, called under lock."""
         # Per-Person State laden damit Voice-Aenderungen nicht verloren gehen
         self._load_person_state(person)
 

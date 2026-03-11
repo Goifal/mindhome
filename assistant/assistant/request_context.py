@@ -35,9 +35,9 @@ class RequestContextMiddleware:
             return
 
         # Request-ID aus Header oder neu generieren
-        headers = dict(scope.get("headers", []))
+        raw_headers = scope.get("headers", [])
         request_id = ""
-        for key, value in headers.items():
+        for key, value in raw_headers:
             if key == b"x-request-id":
                 request_id = value.decode("utf-8", errors="replace")
                 break

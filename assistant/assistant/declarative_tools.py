@@ -212,12 +212,23 @@ class DeclarativeToolRegistry:
 
 
 # ── Executor ──────────────────────────────────────────────────
+_shared_registry = None
+
+
+def _get_shared_registry() -> DeclarativeToolRegistry:
+    """Return a shared registry instance (lazy-initialized)."""
+    global _shared_registry
+    if _shared_registry is None:
+        _shared_registry = DeclarativeToolRegistry()
+    return _shared_registry
+
+
 class DeclarativeToolExecutor:
     """Fuehrt deklarative Tools aus — nur Lese-Zugriff auf HA."""
 
     def __init__(self, ha_client):
         self.ha = ha_client
-        self.registry = DeclarativeToolRegistry()
+        self.registry = _get_shared_registry()
 
     async def execute(self, tool_name: str) -> dict:
         """Fuehrt ein deklaratives Tool aus und gibt Ergebnis zurueck."""

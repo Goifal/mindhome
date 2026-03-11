@@ -6,7 +6,7 @@ Sendet Events wie assistant.speaking, assistant.thinking, etc.
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -48,7 +48,7 @@ class ConnectionManager:
         message = json.dumps({
             "event": event,
             "data": data or {},
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
         disconnected = []
@@ -73,7 +73,7 @@ class ConnectionManager:
         message = json.dumps({
             "event": event,
             "data": data or {},
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         try:
             await websocket.send_text(message)

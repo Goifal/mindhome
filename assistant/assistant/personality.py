@@ -2243,7 +2243,8 @@ class PersonalityEngine:
 
         # Stimmungsabhängige Anpassung
         mood = (context.get("mood") or {}).get("mood", "neutral") if context else "neutral"
-        self._current_mood = mood
+        # Thread-safe write (read-only access elsewhere uses snapshot)
+        self._current_mood = mood  # atomic str assignment in CPython
         _neutral_fallback = self._mood_styles.get("neutral", {"style_addon": "", "max_sentences_mod": 0})
         mood_config = self._mood_styles.get(mood, _neutral_fallback)
 
@@ -2886,14 +2887,18 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         time_of_day = self.get_time_of_day()
         time_style = self.get_time_style(time_of_day)
 
+        # Snapshot shared state to avoid race condition
+        _mood_snapshot = self._current_mood
+        _formality_snapshot = getattr(self, '_current_formality', self.formality_start)
+
         # Humor/Sarkasmus — bei CRITICAL komplett aus
         has_alerts = urgency == "critical"
         humor_line = self._build_humor_section(
-            self._current_mood, time_of_day, has_alerts=has_alerts,
+            _mood_snapshot, time_of_day, has_alerts=has_alerts,
         )
 
         # Formality
-        formality = getattr(self, '_current_formality', self.formality_start)
+        formality = _formality_snapshot
         if formality >= 70:
             tone = "professionell, respektvoll"
         elif formality >= 50:
@@ -2984,11 +2989,15 @@ WICHTIG: Erfinde KEINE Ursachen, Gruende oder Erklaerungen. NUR die gegebenen Fa
         time_of_day = self.get_time_of_day()
         time_style = self.get_time_style(time_of_day)
 
+        # Snapshot shared state to avoid race condition
+        _mood_snapshot = self._current_mood
+        _formality_snapshot = getattr(self, '_current_formality', self.formality_start)
+
         # Humor — Morgens gedaempft, Abends lockerer
-        humor_line = self._build_humor_section(self._current_mood, time_of_day)
+        humor_line = self._build_humor_section(_mood_snapshot, time_of_day)
 
         # Formality
-        formality = getattr(self, '_current_formality', self.formality_start)
+        formality = _formality_snapshot
         formality_section = self._build_formality_section(formality)
 
         # Selbstironie — nur wenn noch Budget
