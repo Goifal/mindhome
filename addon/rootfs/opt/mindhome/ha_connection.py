@@ -689,7 +689,14 @@ class HAConnection:
             logger.error(f"Invalid WS message: {message[:100]}")
 
     def _on_ws_error(self, ws, error):
-        logger.error(f"WebSocket error: {error}")
+        # Transient errors (ConnectionReset, BrokenPipe) are expected during
+        # network blips — reconnect logic handles them. Only log as WARNING.
+        _err_str = str(error)
+        _transient = any(t in _err_str for t in ("Connection reset", "Broken pipe", "timed out", "ConnectionReset"))
+        if _transient:
+            logger.warning(f"WebSocket transient error (will reconnect): {error}")
+        else:
+            logger.error(f"WebSocket error: {error}")
         self._ws_connected = False
         self._is_online = False
 

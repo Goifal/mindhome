@@ -7730,12 +7730,23 @@ class FunctionExecutor:
         brain = main_module.brain
         try:
             result = await brain.threat_assessment.get_security_score()
+            score = result["score"]
+            level = result["level"]
             details = result.get("details", [])
+            details_str = ", ".join(details) if details else "Alles in Ordnung"
+            # Human-readable message so short-text refinement skip doesn't output raw JSON
+            _level_map = {"good": "gut", "warning": "Warnung", "critical": "kritisch", "disabled": "deaktiviert"}
+            _level_de = _level_map.get(level, level)
+            if score < 0:
+                message = "Der Sicherheits-Check ist deaktiviert."
+            else:
+                message = f"Sicherheits-Score: {score}/100 ({_level_de}). {details_str}."
             return {
                 "success": True,
-                "score": result["score"],
-                "level": result["level"],
-                "details": ", ".join(details) if details else "Alles in Ordnung",
+                "score": score,
+                "level": level,
+                "details": details_str,
+                "message": message,
             }
         except Exception as e:
             return {"success": False, "message": f"Sicherheits-Check fehlgeschlagen: {e}"}

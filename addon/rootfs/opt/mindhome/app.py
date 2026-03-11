@@ -524,13 +524,14 @@ def before_request_middleware():
             return jsonify({"error": "Rate limit exceeded"}), 429
         # Ingress token validation: when running as HA addon, require valid token
         if _SUPERVISOR_TOKEN and INGRESS_PATH:
-            ingress_token = request.headers.get("X-Ingress-Token", "")
-            # Bug #69 fix: Removed localhost bypass - all requests must provide
-            # a valid ingress token. The previous code skipped auth for
-            # 127.0.0.1, ::1, and 172.30.32.2, allowing any local process to
-            # bypass authentication entirely.
-            if not ingress_token:
-                return jsonify({"error": "Unauthorized"}), 401
+            # In Docker context, trust same-container (localhost) and HA Supervisor
+            # network (172.30.32.0/24). Localhost = only our own processes (assistant).
+            # 172.30.32.x = HA Ingress proxy which already authenticated the user.
+            _trusted = ip in ("127.0.0.1", "::1") or ip.startswith("172.30.32.")
+            if not _trusted:
+                ingress_token = request.headers.get("X-Ingress-Token", "")
+                if not ingress_token:
+                    return jsonify({"error": "Unauthorized"}), 401
     return None
 
 

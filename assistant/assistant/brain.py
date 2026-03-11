@@ -971,7 +971,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             "message": msg,
                             "error": False,
                         }
-                    logger.error("LLM Fehler (%s): %s", current, response["error"])
+                    _err_msg = str(response["error"])
+                    logger.error("LLM Fehler (%s): %s", current, _err_msg)
+                    # JSON parse errors from small models: upgrade to smart model
+                    if "failed to parse JSON" in _err_msg and current == self.model_router.model_fast:
+                        _smart = self.model_router.model_smart
+                        if _smart and _smart != current:
+                            logger.info("LLM JSON-Fehler: Upgrade %s -> %s", current, _smart)
+                            current = _smart
+                            continue
             except asyncio.TimeoutError:
                 logger.error("LLM Timeout (%.0fs) für %s", timeout, current)
                 self._task_registry.create_task(
@@ -4208,8 +4216,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Wenn die Antwort spezifische Temperatur- oder Prozentwerte nennt,
         # die NICHT in den Context-Daten (System-Prompt) standen, werden sie entfernt.
         if response_text and messages:
-            # System-Prompt enthaelt alle Context-Daten (Temperatur, Batterie, etc.)
-            _ctx_data = messages[0].get("content", "") if messages else ""
+            # Collect ALL context data: system prompt + tool results (assistant/tool messages)
+            # Tool results (e.g. get_room_climate) may contain sensor values not in the system prompt.
+            _ctx_parts = []
+            for _msg in messages:
+                _c = _msg.get("content", "")
+                if isinstance(_c, str) and _c:
+                    _ctx_parts.append(_c)
+            _ctx_data = "\n".join(_ctx_parts)
             if _ctx_data:
                 # Alle Zahlen aus der Antwort extrahieren (z.B. "22 Grad", "65%")
                 _resp_numbers_raw = set(re.findall(r"(\d+(?:[.,]\d+)?)\s*(?:Grad|°|%|Prozent)", response_text))
