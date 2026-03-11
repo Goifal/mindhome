@@ -9852,11 +9852,38 @@ Regeln:
             self.summarizer, self.feedback, self.knowledge_base,
             self.cooking, self.repair_planner, self.multi_room_audio,
             self.mood, self.sound_manager, self.timer_manager,
+            # Previously missing components:
+            self.activity, self.follow_me, self.light_engine,
+            self.speaker_recognition, self.diagnostics, self.ocr,
+            self.conflict_resolver, self.inventory, self.smart_shopping,
+            self.conversation_memory, self.self_automation,
+            self.config_versioning, self.self_optimization,
+            self.workshop_generator, self.workshop_library, self.recipe_store,
+            self.camera_manager, self.conditional_commands,
+            self.energy_optimizer, self.web_search, self.threat_assessment,
+            self.learning_observer, self.proactive_planner,
+            self.seasonal_insight, self.calendar_intelligence,
+            self.explainability, self.learning_transfer,
+            self.dialogue_state, self.climate_model,
+            self.predictive_maintenance, self.situation_model,
+            self.protocol_engine, self.spontaneous, self.music_dj,
+            self.visitor_manager, self.outcome_tracker,
+            self.correction_memory, self.response_quality,
+            self.error_patterns, self.self_report, self.adaptive_thresholds,
+            self.tts_enhancer, self.personality, self.autonomy,
+            self.routines, self.action_planner,
         ]:
             try:
                 await component.stop()
             except Exception as e:
                 logger.warning("Shutdown: %s.stop() fehlgeschlagen: %s", type(component).__name__, e)
+
+        # Optional components
+        if self.memory_extractor is not None:
+            try:
+                await self.memory_extractor.stop()
+            except Exception as e:
+                logger.warning("Shutdown: MemoryExtractor.stop() fehlgeschlagen: %s", e)
 
         logger.info("Shutdown: Schliesse Verbindungen...")
         await self.memory.close()

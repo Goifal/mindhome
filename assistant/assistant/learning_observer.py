@@ -145,7 +145,7 @@ class LearningObserver:
             # Wochentag-spezifischer Pattern-Check
             await self._check_weekday_pattern(action_key, time_slot, weekday, entity_id, new_state, person=person)
         except Exception as e:
-            logger.debug("Learning Observer state_change Fehler: %s", e)
+            logger.warning("Learning Observer state_change Fehler: %s", e)
 
     async def _check_pattern(self, action_key: str, time_slot: str,
                              entity_id: str, new_state: str, person: str = ""):
@@ -476,7 +476,7 @@ class LearningObserver:
                 except (json.JSONDecodeError, AttributeError):
                     continue
         except Exception as e:
-            logger.debug("Lern-Report Antworten lesen fehlgeschlagen: %s", e)
+            logger.warning("Lern-Report Antworten lesen fehlgeschlagen: %s", e)
 
         return {
             "patterns": patterns,

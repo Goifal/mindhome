@@ -180,6 +180,9 @@ Bestehendes Rezept:
 {recipe_text}"""
 
 
+MAX_TIMERS_PER_SESSION = 50  # Bug #117: Limit active timers per session
+
+
 class CookingAssistant:
     """Koch-Assistent mit Schritt-für-Schritt Fuehrung."""
 
@@ -610,6 +613,11 @@ class CookingAssistant:
         if minutes < 1 or minutes > 180:
             return "Timer muss zwischen 1 und 180 Minuten liegen."
 
+        # Bug #117: Limit active timers per session
+        active_timers = [t for t in self.session.timers if not t.is_done]
+        if len(active_timers) >= MAX_TIMERS_PER_SESSION:
+            return f"Maximale Anzahl aktiver Timer ({MAX_TIMERS_PER_SESSION}) erreicht. Warte bis ein Timer abläuft."
+
         # Label extrahieren
         label_match = re.search(r"(?:für|für)\s+(.+?)(?:\s*$)", text.lower())
         label = label_match.group(1) if label_match else f"Timer ({minutes} Min)"
@@ -619,6 +627,7 @@ class CookingAssistant:
         self.session.timers.append(timer)
 
         # Hintergrund-Task für Benachrichtigung
+        self._cleanup_completed_tasks()
         task = asyncio.create_task(self._timer_watcher(timer))
         self._timer_tasks.append(task)
 
@@ -632,11 +641,17 @@ class CookingAssistant:
         if not step.timer_minutes:
             return "Dieser Schritt hat keine Zeitangabe."
 
+        # Bug #117: Limit active timers per session
+        active_timers = [t for t in self.session.timers if not t.is_done]
+        if len(active_timers) >= MAX_TIMERS_PER_SESSION:
+            return f"Maximale Anzahl aktiver Timer ({MAX_TIMERS_PER_SESSION}) erreicht. Warte bis ein Timer abläuft."
+
         label = f"Schritt {step.number}"
         timer = CookingTimer(label=label, duration_seconds=step.timer_minutes * 60)
         timer.start()
         self.session.timers.append(timer)
 
+        self._cleanup_completed_tasks()
         task = asyncio.create_task(self._timer_watcher(timer))
         self._timer_tasks.append(task)
 
@@ -644,6 +659,10 @@ class CookingAssistant:
         await self._persist_session()
 
         return f"Timer gesetzt: {label} — {step.timer_minutes} Minuten. Ich sage Bescheid wenn er abgelaufen ist."
+
+    def _cleanup_completed_tasks(self):
+        """Entfernt abgeschlossene oder abgebrochene Tasks aus _timer_tasks."""
+        self._timer_tasks = [t for t in self._timer_tasks if not t.done()]
 
     async def _timer_watcher(self, timer: CookingTimer):
         """Überwacht einen Timer und benachrichtigt bei Ablauf."""
@@ -662,6 +681,9 @@ class CookingAssistant:
                 await self._notify_callback({"message": message, "type": "cooking_timer"})
         except asyncio.CancelledError:
             pass
+        finally:
+            # Bug #116: Clean up completed tasks to prevent unbounded growth
+            self._cleanup_completed_tasks()
 
     def _check_timers(self) -> str:
         """Zeigt alle aktiven Timer."""

@@ -125,13 +125,15 @@ class SpecialModeBase:
 
     def deactivate(self, user_id=None, reason="manual"):
         """Deactivate mode: restore previous states, log."""
-        if not self._active:
-            return False
+        with self._lock:
+            if not self._active:
+                return False
+            self._active = False
 
-        # Cancel timer
-        if self._deactivation_timer:
-            self._deactivation_timer.cancel()
-            self._deactivation_timer = None
+            # Cancel timer while holding the lock
+            if self._deactivation_timer:
+                self._deactivation_timer.cancel()
+                self._deactivation_timer = None
 
         # Restore previous entity states
         self._restore_previous_states()
@@ -139,7 +141,6 @@ class SpecialModeBase:
         # Log deactivation
         self._log_deactivation(user_id, reason)
         with self._lock:
-            self._active = False
             self._active_log_id = None
 
         self.event_bus.publish("mode.deactivated", {
@@ -283,15 +284,16 @@ class SpecialModeBase:
 
     def _start_deactivation_timer(self, minutes, user_id):
         """Start a timer to auto-deactivate the mode."""
-        if self._deactivation_timer:
-            self._deactivation_timer.cancel()
-        self._deactivation_timer = threading.Timer(
-            minutes * 60,
-            self.deactivate,
-            kwargs={"user_id": user_id, "reason": "timeout"},
-        )
-        self._deactivation_timer.daemon = True
-        self._deactivation_timer.start()
+        with self._lock:
+            if self._deactivation_timer:
+                self._deactivation_timer.cancel()
+            self._deactivation_timer = threading.Timer(
+                minutes * 60,
+                self.deactivate,
+                kwargs={"user_id": user_id, "reason": "timeout"},
+            )
+            self._deactivation_timer.daemon = True
+            self._deactivation_timer.start()
 
     def _apply_actions(self, config):
         """Override in subclass: apply mode-specific entity changes."""

@@ -440,10 +440,14 @@ def access_lock(entity_id):
     import re
     if not re.match(r'^[a-z_]+\.[a-z0-9_]+$', entity_id):
         return jsonify({"error": "Invalid entity_id format"}), 400
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id") or request.headers.get("X-User-Id")
+    if not user_id:
+        return jsonify({"error": "user_id required for lock operations"}), 403
     mgr = _deps.get("access_control_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
-    logger.info("Lock requested for %s", entity_id)
+    logger.info("Lock requested for %s by user=%s", entity_id, user_id)
     ok = mgr.lock(entity_id)
     return jsonify({"ok": ok})
 
@@ -453,10 +457,14 @@ def access_unlock(entity_id):
     import re
     if not re.match(r'^[a-z_]+\.[a-z0-9_]+$', entity_id):
         return jsonify({"error": "Invalid entity_id format"}), 400
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id") or request.headers.get("X-User-Id")
+    if not user_id:
+        return jsonify({"error": "user_id required for unlock operations"}), 403
     mgr = _deps.get("access_control_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
-    logger.info("Unlock requested for %s", entity_id)
+    logger.info("Unlock requested for %s by user=%s", entity_id, user_id)
     ok = mgr.unlock(entity_id)
     return jsonify({"ok": ok})
 
@@ -718,11 +726,14 @@ def emergency_trigger():
     if not engine:
         return jsonify({"error": "Not available"}), 503
     data = request.get_json(silent=True) or {}
-    logger.warning("Emergency trigger: type=%s source=%s", data.get("type", "panic"), data.get("source", "manual"))
+    user_id = data.get("user_id") or request.headers.get("X-User-Id")
+    if not user_id:
+        return jsonify({"error": "user_id required for emergency trigger"}), 403
+    logger.warning("Emergency trigger: type=%s source=%s user=%s", data.get("type", "panic"), data.get("source", "manual"), user_id)
     ok = engine.trigger(
         emergency_type=data.get("type", "panic"),
         source=data.get("source", "manual"),
-        user_id=data.get("user_id"),
+        user_id=user_id,
     )
     return jsonify({"ok": ok, "is_active": engine.is_active})
 
