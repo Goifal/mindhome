@@ -422,3 +422,301 @@ class TestGetTimeOfDay:
         with patch("assistant.music_dj.datetime") as mock_dt:
             mock_dt.now.return_value = MagicMock(hour=2)
             assert _get_time_of_day() == "night"
+
+
+# ============================================================
+# Coverage: lines 78-81, 85-87, 91, 95 (initialize, reload_config, callbacks)
+# ============================================================
+
+class TestInitializeAndConfig:
+    @pytest.mark.asyncio
+    async def test_initialize_with_redis(self, mood_mock, activity_mock, redis_mock):
+        """initialize sets redis, loads config from yaml_config."""
+        dj = MusicDJ(mood_mock, activity_mock)
+        with patch("assistant.music_dj.yaml_config", {"music_dj": {"enabled": False, "default_volume": 30}}):
+            await dj.initialize(redis_client=redis_mock)
+        assert dj.redis is redis_mock
+        assert dj.enabled is False
+        assert dj._config == {"enabled": False, "default_volume": 30}
+
+    @pytest.mark.asyncio
+    async def test_initialize_no_config(self, mood_mock, activity_mock):
+        """initialize with no music_dj in yaml_config uses defaults."""
+        dj = MusicDJ(mood_mock, activity_mock)
+        with patch("assistant.music_dj.yaml_config", {}):
+            await dj.initialize(redis_client=None)
+        assert dj.redis is None
+        assert dj.enabled is True
+        assert dj._config == {}
+
+    def test_reload_config(self, dj):
+        """reload_config updates _config and enabled."""
+        dj.reload_config({"enabled": False, "default_volume": 50})
+        assert dj.enabled is False
+        assert dj._config["default_volume"] == 50
+
+    def test_set_notify_callback(self, dj):
+        """set_notify_callback stores callback."""
+        cb = MagicMock()
+        dj.set_notify_callback(cb)
+        assert dj._notify_callback is cb
+
+    def test_set_executor(self, dj):
+        """set_executor stores executor."""
+        ex = MagicMock()
+        dj.set_executor(ex)
+        assert dj.executor is ex
+
+
+# ============================================================
+# Coverage: lines 116-118 (_get_activity exception)
+# ============================================================
+
+class TestGetActivityException:
+    @pytest.mark.asyncio
+    async def test_activity_exception_returns_relaxing(self, dj, activity_mock):
+        """When activity detection fails, default to 'relaxing'."""
+        activity_mock.detect_activity.side_effect = Exception("sensor error")
+        result = await dj._get_activity()
+        assert result == "relaxing"
+
+
+# ============================================================
+# Coverage: lines 146, 152, 157, 163, 165 (more genre mappings)
+# ============================================================
+
+class TestContextToGenreAdditional:
+    def test_tired_afternoon_returns_easy_listening(self, dj):
+        """Tired in afternoon -> easy_listening."""
+        ctx = {"mood": "tired", "stress_level": 0.0, "tiredness_level": 0.5, "time_of_day": "afternoon"}
+        assert dj._context_to_genre(ctx, "relaxing") == "easy_listening"
+
+    def test_good_morning_returns_acoustic(self, dj):
+        """Good mood in morning -> acoustic_morning."""
+        ctx = {"mood": "good", "stress_level": 0.0, "tiredness_level": 0.0, "time_of_day": "morning"}
+        assert dj._context_to_genre(ctx, "relaxing") == "acoustic_morning"
+
+    def test_good_afternoon_returns_easy_listening(self, dj):
+        """Good mood in afternoon -> easy_listening."""
+        ctx = {"mood": "good", "stress_level": 0.0, "tiredness_level": 0.0, "time_of_day": "afternoon"}
+        assert dj._context_to_genre(ctx, "relaxing") == "easy_listening"
+
+    def test_good_night_returns_chill_evening(self, dj):
+        """Good mood at night -> chill_evening (fallback)."""
+        ctx = {"mood": "good", "stress_level": 0.0, "tiredness_level": 0.0, "time_of_day": "night"}
+        assert dj._context_to_genre(ctx, "relaxing") == "chill_evening"
+
+    def test_neutral_morning_returns_acoustic(self, dj):
+        """Neutral mood in morning -> acoustic_morning."""
+        ctx = {"mood": "neutral", "stress_level": 0.0, "tiredness_level": 0.0, "time_of_day": "morning"}
+        assert dj._context_to_genre(ctx, "relaxing") == "acoustic_morning"
+
+    def test_neutral_evening_returns_jazz(self, dj):
+        """Neutral mood in evening -> jazz_dinner."""
+        ctx = {"mood": "neutral", "stress_level": 0.0, "tiredness_level": 0.0, "time_of_day": "evening"}
+        assert dj._context_to_genre(ctx, "relaxing") == "jazz_dinner"
+
+    def test_neutral_default_returns_easy_listening(self, dj):
+        """Neutral mood, no special time/activity -> easy_listening."""
+        ctx = {"mood": "neutral", "stress_level": 0.0, "tiredness_level": 0.0, "time_of_day": "night"}
+        assert dj._context_to_genre(ctx, "relaxing") == "easy_listening"
+
+    def test_tired_night_returns_sleep(self, dj):
+        """Tired at night -> sleep_ambient."""
+        ctx = {"mood": "tired", "stress_level": 0.0, "tiredness_level": 0.8, "time_of_day": "night"}
+        assert dj._context_to_genre(ctx, "relaxing") == "sleep_ambient"
+
+
+# ============================================================
+# Coverage: lines 188-189 (_apply_preferences exception)
+# ============================================================
+
+class TestApplyPreferencesException:
+    @pytest.mark.asyncio
+    async def test_preference_check_exception(self, dj, redis_mock):
+        """When Redis raises exception in preferences, return original genre."""
+        redis_mock.hget.side_effect = Exception("redis error")
+        result = await dj._apply_preferences("focus_lofi", "Max")
+        assert result == "focus_lofi"
+
+    @pytest.mark.asyncio
+    async def test_blocked_easy_listening_switches_to_acoustic(self, dj, redis_mock):
+        """When easy_listening is blocked, switches to acoustic_morning."""
+        redis_mock.hget = AsyncMock(return_value=b"-5")
+        result = await dj._apply_preferences("easy_listening", "Max")
+        assert result == "acoustic_morning"
+
+
+# ============================================================
+# Coverage: lines 256-257 (get_recommendation redis save exception)
+# ============================================================
+
+class TestGetRecommendationRedisException:
+    @pytest.mark.asyncio
+    async def test_redis_save_exception(self, dj, redis_mock, mood_mock):
+        """Redis save exception is caught silently."""
+        mood_mock.get_current_mood.return_value = {"mood": "good", "stress_level": 0.0, "tiredness_level": 0.0}
+        redis_mock.setex.side_effect = Exception("redis write error")
+        result = await dj.get_recommendation(person="Max")
+        assert result["success"] is True
+        assert result["genre"] is not None
+
+
+# ============================================================
+# Coverage: lines 286, 288 (play_recommendation no genre from recommendation)
+# ============================================================
+
+class TestPlayRecommendationEdgeCases:
+    @pytest.mark.asyncio
+    async def test_play_suppressed_activity(self, dj, activity_mock):
+        """play_recommendation when genre is None returns reason."""
+        executor = AsyncMock()
+        executor.execute = AsyncMock(return_value={"success": True})
+        dj.executor = executor
+        activity_mock.detect_activity.return_value = {"activity": "sleeping"}
+        result = await dj.play_recommendation(person="Max")
+        assert result["success"] is True
+        assert "message" in result
+
+    @pytest.mark.asyncio
+    async def test_play_disabled_dj(self, dj):
+        """play_recommendation with disabled DJ returns rec's error."""
+        executor = AsyncMock()
+        dj.executor = executor
+        dj.enabled = False
+        result = await dj.play_recommendation()
+        assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_play_genre_override_unknown_genre(self, dj):
+        """play_recommendation with unknown genre_override falls to recommendation."""
+        executor = AsyncMock()
+        executor.execute = AsyncMock(return_value={"success": True})
+        dj.executor = executor
+        result = await dj.play_recommendation(person="Max", genre_override="nonexistent_genre")
+        assert result["success"] is True
+
+
+# ============================================================
+# Coverage: lines 308, 319 (play_recommendation no volume, executor failure)
+# ============================================================
+
+class TestPlayRecommendationNoVolume:
+    @pytest.mark.asyncio
+    async def test_play_without_default_volume(self, dj, mood_mock):
+        """play_recommendation without default_volume skips volume call."""
+        executor = AsyncMock()
+        executor.execute = AsyncMock(return_value={"success": True})
+        dj.executor = executor
+        dj._config["default_volume"] = None
+        mood_mock.get_current_mood.return_value = {"mood": "neutral", "stress_level": 0.0, "tiredness_level": 0.0}
+        result = await dj.play_recommendation(person="Max")
+        assert result["success"] is True
+        # Only one execute call (play), no volume
+        assert executor.execute.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_play_executor_failure(self, dj, mood_mock):
+        """play_recommendation returns executor failure result."""
+        executor = AsyncMock()
+        executor.execute = AsyncMock(return_value={"success": False, "message": "Media player unavailable"})
+        dj.executor = executor
+        dj._config["default_volume"] = None
+        mood_mock.get_current_mood.return_value = {"mood": "neutral", "stress_level": 0.0, "tiredness_level": 0.0}
+        result = await dj.play_recommendation()
+        assert result["success"] is False
+
+
+# ============================================================
+# Coverage: lines 332-334 (record_feedback load exception)
+# ============================================================
+
+class TestRecordFeedbackEdgeCases:
+    @pytest.mark.asyncio
+    async def test_record_feedback_load_exception(self, dj, redis_mock):
+        """record_feedback returns error when loading recommendation fails."""
+        redis_mock.get = AsyncMock(side_effect=Exception("redis down"))
+        result = await dj.record_feedback(positive=True, person="Max")
+        assert result["success"] is False
+        assert "konnte nicht geladen" in result["message"].lower() or "nicht geladen" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_record_feedback_save_exception(self, dj, redis_mock):
+        """record_feedback returns error when saving feedback fails."""
+        redis_mock.get = AsyncMock(return_value=json.dumps({
+            "genre": "focus_lofi", "query": "test", "label": "Lo-Fi", "person": "Max",
+        }).encode())
+        redis_mock.hincrby = AsyncMock(side_effect=Exception("write fail"))
+        result = await dj.record_feedback(positive=True, person="Max")
+        assert result["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_record_feedback_default_person(self, dj, redis_mock):
+        """record_feedback uses 'default' when no person given."""
+        redis_mock.get = AsyncMock(return_value=json.dumps({
+            "genre": "jazz_dinner", "query": "test", "label": "Jazz",
+        }).encode())
+        redis_mock.hincrby = AsyncMock(return_value=1)
+        result = await dj.record_feedback(positive=True, person="")
+        assert result["success"] is True
+
+
+# ============================================================
+# Coverage: lines 354-356 (record_feedback hincrby error path)
+# ============================================================
+
+class TestRecordFeedbackStoreError:
+    @pytest.mark.asyncio
+    async def test_feedback_store_error_message(self, dj, redis_mock):
+        """Feedback storage error returns descriptive message."""
+        redis_mock.get = AsyncMock(return_value=json.dumps({
+            "genre": "party_hits", "query": "test", "label": "Party", "person": "Max",
+        }).encode())
+        redis_mock.hincrby = AsyncMock(return_value=1)
+        redis_mock.lpush = AsyncMock(side_effect=Exception("lpush fail"))
+        result = await dj.record_feedback(positive=True, person="Max")
+        assert result["success"] is False
+        assert "liess sich nicht speichern" in result["message"].lower() or "nicht speichern" in result["message"].lower()
+
+
+# ============================================================
+# Coverage: lines 384-386 (get_music_status redis exception)
+# ============================================================
+
+class TestGetMusicStatusEdgeCases:
+    @pytest.mark.asyncio
+    async def test_status_redis_exception(self, dj, redis_mock):
+        """get_music_status handles Redis exception gracefully."""
+        redis_mock.get = AsyncMock(side_effect=Exception("redis down"))
+        result = await dj.get_music_status()
+        assert result["success"] is True
+        # Should not have last_recommendation due to exception
+        assert "last_recommendation" not in result
+
+    @pytest.mark.asyncio
+    async def test_status_with_last_recommendation(self, dj, redis_mock):
+        """get_music_status includes last recommendation from Redis."""
+        redis_mock.get = AsyncMock(return_value=json.dumps({
+            "genre": "focus_lofi", "query": "lofi", "label": "Lo-Fi",
+            "person": "Max", "context": {"mood": "neutral"},
+        }).encode())
+        result = await dj.get_music_status()
+        assert result["success"] is True
+        assert "last_recommendation" in result
+        assert result["last_recommendation"]["genre"] == "focus_lofi"
+
+    @pytest.mark.asyncio
+    async def test_status_no_redis(self, dj):
+        """get_music_status works without Redis."""
+        dj.redis = None
+        result = await dj.get_music_status()
+        assert result["success"] is True
+        assert "last_recommendation" not in result
+
+    @pytest.mark.asyncio
+    async def test_status_suggested_genre_none(self, dj, activity_mock):
+        """get_music_status with suppressed activity shows None genre."""
+        activity_mock.detect_activity.return_value = {"activity": "sleeping"}
+        result = await dj.get_music_status()
+        assert result["suggested_genre"] is None
+        assert result["suggested_label"] is None

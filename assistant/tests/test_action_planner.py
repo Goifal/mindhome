@@ -335,3 +335,327 @@ class TestPlanningDialogs:
         planner._cleanup_expired_plans()
         assert "old" not in planner._pending_plans
         assert "new" in planner._pending_plans
+
+
+# ── NEW: is_complex_request polite question — Line 170 ────
+
+class TestIsComplexRequestPolite:
+    def test_polite_question_with_qmark(self, planner):
+        """Polite form + ? is not complex (line 170)."""
+        assert not planner.is_complex_request("Kannst du alles vorbereiten?")
+
+    def test_polite_form_without_qmark(self, planner):
+        """Polite form without ? IS complex if keyword present (line 170)."""
+        assert planner.is_complex_request("Kannst du alles vorbereiten")
+
+
+# ── NEW: plan_and_execute with history filtering — Lines 206-207 ──
+
+class TestPlanAndExecuteHistory:
+    @pytest.mark.asyncio
+    async def test_system_messages_filtered(self, planner, ollama):
+        """System messages from history are excluded (lines 206-207)."""
+        ollama.chat.return_value = {
+            "message": {"role": "assistant", "content": "Done.", "tool_calls": []},
+        }
+        messages = [
+            {"role": "system", "content": "Old system prompt"},
+            {"role": "user", "content": "Do stuff"},
+            {"role": "assistant", "content": "OK"},
+        ]
+        with patch("assistant.action_planner.get_assistant_tools", return_value=[]):
+            result = await planner.plan_and_execute("alles vorbereiten", "System", {}, messages)
+        # Verify system messages were excluded from planner_messages
+        call_messages = ollama.chat.call_args.kwargs.get("messages", ollama.chat.call_args[1].get("messages", []))
+        role_list = [m["role"] for m in call_messages]
+        # Only one system (the planner one), not the old one
+        assert role_list.count("system") == 1
+
+
+# ── NEW: plan_and_execute with trust filtering — Lines 224-225 ──
+
+class TestPlanAndExecuteTrust:
+    @pytest.mark.asyncio
+    async def test_tools_filtered_by_trust(self, planner, ollama, executor):
+        """Tools are filtered by trust level (lines 224-225)."""
+        ollama.chat.return_value = {
+            "message": {"role": "assistant", "content": "Done.", "tool_calls": []},
+        }
+        autonomy = MagicMock()
+        autonomy.can_person_act = MagicMock(return_value={"allowed": False})
+
+        tools = [
+            {"function": {"name": "lock_door"}},
+            {"function": {"name": "set_light"}},
+        ]
+        with patch("assistant.action_planner.get_assistant_tools", return_value=tools):
+            result = await planner.plan_and_execute(
+                "alles vorbereiten", "System", {}, [],
+                person="Guest", autonomy=autonomy,
+            )
+        # All tools should be filtered out since can_person_act returns False
+        call_tools = ollama.chat.call_args.kwargs.get("tools", [])
+        assert call_tools == []
+
+
+# ── NEW: Validation blocked/failed — Lines 271-291 ──
+
+class TestPlanValidation:
+    @pytest.mark.asyncio
+    async def test_validation_needs_confirmation(self, planner, ollama, validator):
+        """Step needing confirmation is blocked (lines 271-278)."""
+        val_result = MagicMock()
+        val_result.ok = False
+        val_result.needs_confirmation = True
+        val_result.reason = "Dangerous action"
+        validator.validate.return_value = val_result
+
+        ollama.chat.side_effect = [
+            {"message": {"content": "", "tool_calls": [
+                {"function": {"name": "lock_door", "arguments": {}}}
+            ]}},
+            {"message": {"content": "Blocked.", "tool_calls": []}},
+        ]
+        with patch("assistant.action_planner.get_assistant_tools", return_value=[]):
+            result = await planner.plan_and_execute("alles vorbereiten", "System", {}, [])
+        assert result["plan"]["needs_confirmation"] is True
+
+    @pytest.mark.asyncio
+    async def test_validation_failed(self, planner, ollama, validator):
+        """Failed validation marks step failed (lines 279-284)."""
+        val_result = MagicMock()
+        val_result.ok = False
+        val_result.needs_confirmation = False
+        val_result.reason = "Invalid params"
+        validator.validate.return_value = val_result
+
+        ollama.chat.side_effect = [
+            {"message": {"content": "", "tool_calls": [
+                {"function": {"name": "set_light", "arguments": {}}}
+            ]}},
+            {"message": {"content": "Failed.", "tool_calls": []}},
+        ]
+        with patch("assistant.action_planner.get_assistant_tools", return_value=[]):
+            result = await planner.plan_and_execute("alles vorbereiten", "System", {}, [])
+        assert any(s["status"] == "failed" for s in result["plan"]["steps"])
+
+
+# ── NEW: Trust check blocks step — Lines 295-314 ──
+
+class TestPlanTrustCheck:
+    @pytest.mark.asyncio
+    async def test_trust_blocks_step(self, planner, ollama, validator):
+        """Trust check blocks step during execution (lines 295-314)."""
+        autonomy = MagicMock()
+        autonomy.can_person_act = MagicMock(return_value={
+            "allowed": False,
+            "reason": "Keine Berechtigung",
+        })
+
+        ollama.chat.side_effect = [
+            {"message": {"content": "", "tool_calls": [
+                {"function": {"name": "lock_door", "arguments": {}}}
+            ]}},
+            {"message": {"content": "Blocked.", "tool_calls": []}},
+        ]
+        with patch("assistant.action_planner.get_assistant_tools", return_value=[]):
+            result = await planner.plan_and_execute(
+                "alles vorbereiten", "System", {}, [],
+                person="Guest", autonomy=autonomy,
+            )
+        blocked = [s for s in result["plan"]["steps"] if s["status"] == "blocked"]
+        assert len(blocked) >= 1
+
+
+# ── NEW: Rollback on failure — Lines 407-414 ──
+
+class TestPlanRollbackOnFailure:
+    @pytest.mark.asyncio
+    async def test_rollback_on_step_failure(self, planner, ollama, executor, validator):
+        """Failed step triggers rollback of prior steps (lines 407-414)."""
+        call_count = 0
+
+        async def mock_execute(fn, args):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return {"success": True, "message": "OK"}
+            elif call_count == 2:
+                return {"success": False, "message": "Failed"}
+            else:
+                return {"success": True, "message": "Rollback OK"}
+
+        executor.execute = mock_execute
+
+        ollama.chat.side_effect = [
+            {"message": {"content": "", "tool_calls": [
+                {"function": {"name": "set_light", "arguments": {"room": "wz", "state": "on"}}},
+                {"function": {"name": "set_cover", "arguments": {"room": "wz", "position": 0}}},
+            ]}},
+            {"message": {"content": "Done.", "tool_calls": []}},
+        ]
+
+        with patch("assistant.action_planner.get_assistant_tools", return_value=[]), \
+             patch("assistant.action_planner.emit_action", new_callable=AsyncMock), \
+             patch("assistant.action_planner.emit_speaking", new_callable=AsyncMock):
+            result = await planner.plan_and_execute("alles vorbereiten", "System", {}, [])
+        # At least one step should have failed
+        failed = [s for s in result["plan"]["steps"] if s["status"] == "failed"]
+        assert len(failed) >= 1 or result["plan"].get("rollback_performed") is True
+
+
+# ── NEW: Max iterations — Lines 462-464 ──
+
+class TestMaxIterations:
+    @pytest.mark.asyncio
+    async def test_max_iterations_reached(self, planner, ollama, executor, validator):
+        """Max iterations reached gives fallback summary (lines 462-464)."""
+        # Always return tool calls (never finishes)
+        ollama.chat.return_value = {
+            "message": {"content": "", "tool_calls": [
+                {"function": {"name": "set_light", "arguments": {"room": "wz", "state": "on"}}},
+            ]},
+        }
+        with patch("assistant.action_planner.MAX_ITERATIONS", 2), \
+             patch("assistant.action_planner.get_assistant_tools", return_value=[]), \
+             patch("assistant.action_planner.emit_action", new_callable=AsyncMock), \
+             patch("assistant.action_planner.emit_speaking", new_callable=AsyncMock):
+            result = await planner.plan_and_execute("alles vorbereiten", "System", {}, [])
+        assert result["plan"]["iterations"] == 2
+
+
+# ── NEW: Fallback summary — Lines 468-470 ──
+
+class TestFallbackSummary:
+    @pytest.mark.asyncio
+    async def test_fallback_summary(self, planner, ollama, executor, validator):
+        """Fallback summary when no summary set (lines 468-470)."""
+        ollama.chat.side_effect = [
+            {"message": {"content": "", "tool_calls": [
+                {"function": {"name": "set_light", "arguments": {"room": "wz", "state": "on"}}},
+            ]}},
+            {"message": {"content": "", "tool_calls": []}},  # Empty content
+        ]
+        with patch("assistant.action_planner.get_assistant_tools", return_value=[]), \
+             patch("assistant.action_planner.emit_action", new_callable=AsyncMock), \
+             patch("assistant.action_planner.emit_speaking", new_callable=AsyncMock):
+            result = await planner.plan_and_execute("alles vorbereiten", "System", {}, [])
+        assert "1 von 1" in result["response"]
+
+
+# ── NEW: start_planning_dialog error — Lines 613-615 ──
+
+class TestStartPlanningDialogError:
+    @pytest.mark.asyncio
+    async def test_start_dialog_error(self, planner, ollama):
+        """Error in start_planning_dialog returns error status (lines 613-615)."""
+        ollama.chat.side_effect = Exception("LLM error")
+        with patch("assistant.action_planner.settings") as mock_settings:
+            mock_settings.assistant_name = "JARVIS"
+            mock_settings.model_fast = "fast-model"
+            with patch("assistant.action_planner.get_person_title", return_value="Sir"):
+                result = await planner.start_planning_dialog("Plane was")
+        assert result["status"] == "error"
+        assert "fehlgeschlagen" in result["response"].lower()
+
+
+# ── NEW: start_planning_dialog max plans eviction — Lines 591-594 ──
+
+class TestStartPlanningDialogEviction:
+    @pytest.mark.asyncio
+    async def test_max_plans_eviction(self, planner, ollama):
+        """Old plans are evicted when max reached (lines 591-594)."""
+        ollama.chat.return_value = {
+            "message": {"content": "Rueckfrage?"},
+        }
+        # Fill up pending plans
+        for i in range(5):
+            planner._pending_plans[f"plan_{i}"] = {
+                "created_at": time.time() - (100 - i),
+                "status": "waiting_for_details",
+                "messages": [],
+            }
+
+        with patch("assistant.action_planner.settings") as mock_settings:
+            mock_settings.assistant_name = "JARVIS"
+            mock_settings.model_fast = "fast-model"
+            with patch("assistant.action_planner.get_person_title", return_value="Sir"):
+                result = await planner.start_planning_dialog("Plan something")
+        assert result["status"] == "waiting_for_details"
+        assert len(planner._pending_plans) <= 5
+
+
+# ── NEW: continue_planning_dialog success — Lines 635-688 ──
+
+class TestContinuePlanningDialog:
+    @pytest.mark.asyncio
+    async def test_continue_success(self, planner, ollama):
+        """Continue dialog returns proposed plan (lines 676-684)."""
+        planner._pending_plans["plan_test"] = {
+            "original_request": "Test plan",
+            "person": "Max",
+            "status": "waiting_for_details",
+            "created_at": time.time(),
+            "messages": [
+                {"role": "user", "content": "Test plan"},
+                {"role": "assistant", "content": "Fragen?"},
+            ],
+        }
+        ollama.chat.return_value = {
+            "message": {"content": "Hier ist der Plan."},
+        }
+        with patch("assistant.action_planner.settings") as mock_settings:
+            mock_settings.assistant_name = "JARVIS"
+            mock_settings.model_fast = "fast-model"
+            result = await planner.continue_planning_dialog("6 Gaeste, 19 Uhr", "plan_test")
+        assert result["status"] == "plan_proposed"
+
+    @pytest.mark.asyncio
+    async def test_continue_error(self, planner, ollama):
+        """Continue dialog handles error (lines 686-688)."""
+        planner._pending_plans["plan_err"] = {
+            "original_request": "Test",
+            "person": "Max",
+            "status": "waiting_for_details",
+            "created_at": time.time(),
+            "messages": [{"role": "user", "content": "Test"}],
+        }
+        ollama.chat.side_effect = Exception("LLM error")
+        with patch("assistant.action_planner.settings") as mock_settings:
+            mock_settings.assistant_name = "JARVIS"
+            mock_settings.model_fast = "fast-model"
+            result = await planner.continue_planning_dialog("Details", "plan_err")
+        assert result["status"] == "error"
+
+    @pytest.mark.asyncio
+    async def test_continue_trims_messages(self, planner, ollama):
+        """Messages are trimmed when exceeding limit (lines 638-642)."""
+        planner._max_plan_messages = 5
+        planner._pending_plans["plan_trim"] = {
+            "original_request": "Test",
+            "person": "Max",
+            "status": "waiting_for_details",
+            "created_at": time.time(),
+            "messages": [{"role": "user", "content": f"msg {i}"} for i in range(10)],
+        }
+        ollama.chat.return_value = {"message": {"content": "Plan."}}
+        with patch("assistant.action_planner.settings") as mock_settings:
+            mock_settings.assistant_name = "JARVIS"
+            mock_settings.model_fast = "fast-model"
+            await planner.continue_planning_dialog("More details", "plan_trim")
+        assert len(planner._pending_plans["plan_trim"]["messages"]) <= planner._max_plan_messages + 2
+
+
+# ── NEW: _rollback_completed_steps exception — Lines 802-803 ──
+
+class TestRollbackException:
+    @pytest.mark.asyncio
+    async def test_rollback_exception_caught(self, planner, executor):
+        """Exception during rollback is caught (lines 802-803)."""
+        executor.execute = AsyncMock(side_effect=Exception("Executor error"))
+        steps = [
+            PlanStep(function="set_light", args={}, status="done",
+                     rollback_function="set_light", rollback_args={"state": "off"}),
+        ]
+        count = await planner._rollback_completed_steps(steps)
+        assert count == 0

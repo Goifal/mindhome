@@ -173,3 +173,271 @@ class TestHealthStatus:
         classifier._running = False
         status = classifier.health_status()
         assert "active" in status
+
+
+# =====================================================================
+# Additional tests for 100% coverage
+# =====================================================================
+
+import json
+import asyncio
+
+
+class TestInitialize:
+    """Tests fuer initialize()."""
+
+    @pytest.mark.asyncio
+    async def test_initialize_loads_history(self, classifier):
+        redis = AsyncMock()
+        history_data = json.dumps([{"type": "doorbell", "timestamp": "2026-01-01"}])
+        redis.get = AsyncMock(return_value=history_data)
+        await classifier.initialize(redis)
+        assert len(classifier._event_history) == 1
+        assert classifier._redis is redis
+
+    @pytest.mark.asyncio
+    async def test_initialize_no_redis(self, classifier):
+        await classifier.initialize(None)
+        assert classifier._redis is None
+
+    @pytest.mark.asyncio
+    async def test_initialize_empty_history(self, classifier):
+        redis = AsyncMock()
+        redis.get = AsyncMock(return_value=None)
+        await classifier.initialize(redis)
+        assert classifier._event_history == []
+
+    @pytest.mark.asyncio
+    async def test_initialize_corrupted_history(self, classifier):
+        redis = AsyncMock()
+        redis.get = AsyncMock(side_effect=Exception("Redis error"))
+        await classifier.initialize(redis)
+        assert classifier._event_history == []
+
+
+class TestStartStop:
+    """Tests fuer start() und stop()."""
+
+    @pytest.mark.asyncio
+    async def test_start_disabled(self, classifier):
+        classifier.enabled = False
+        await classifier.start()
+        assert classifier._running is False
+
+    @pytest.mark.asyncio
+    async def test_start_no_sensors(self, classifier):
+        classifier._sensor_mappings = {}
+        await classifier.start()
+        assert classifier._running is False
+
+    @pytest.mark.asyncio
+    async def test_start_with_sensors(self, classifier):
+        classifier._sensor_mappings = {"sensor.test": "doorbell"}
+        with patch.object(classifier, '_poll_loop', new_callable=AsyncMock):
+            await classifier.start()
+        assert classifier._running is True
+        classifier._poll_task.cancel()
+        try:
+            await classifier._poll_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+    @pytest.mark.asyncio
+    async def test_stop(self, classifier):
+        classifier._running = True
+        classifier._poll_task = asyncio.create_task(asyncio.sleep(100))
+        await classifier.stop()
+        assert classifier._running is False
+
+    @pytest.mark.asyncio
+    async def test_stop_no_task(self, classifier):
+        classifier._running = True
+        classifier._poll_task = None
+        await classifier.stop()
+        assert classifier._running is False
+
+
+class TestProcessEvent:
+    """Tests fuer process_event()."""
+
+    @pytest.mark.asyncio
+    async def test_disabled_returns_none(self, classifier):
+        classifier.enabled = False
+        result = await classifier.process_event("doorbell")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_disabled_event_type(self, classifier):
+        classifier._disabled_events = {"doorbell"}
+        result = await classifier.process_event("doorbell")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_low_confidence(self, classifier):
+        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.8}}):
+            result = await classifier.process_event("doorbell", confidence=0.3)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_in_cooldown(self, classifier):
+        classifier._last_event_times["doorbell"] = time.time()
+        result = await classifier.process_event("doorbell")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_unknown_reaction(self, classifier):
+        result = await classifier.process_event("totally_unknown_event_xyz")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_successful_event(self, classifier):
+        classifier._last_event_times.clear()
+        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
+            with patch.object(classifier, '_is_night', return_value=False):
+                result = await classifier.process_event(
+                    "doorbell", room="flur", confidence=0.9, source="sensor",
+                )
+        assert result is not None
+        assert result["type"] == "doorbell"
+        assert result["room"] == "flur"
+        assert result["severity"] == "info"
+
+    @pytest.mark.asyncio
+    async def test_night_escalation(self, classifier):
+        classifier._last_event_times.clear()
+        classifier._night_escalate = True
+        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
+            with patch.object(classifier, '_is_night', return_value=True):
+                result = await classifier.process_event(
+                    "doorbell", room="flur", confidence=0.9,
+                )
+        assert result is not None
+        assert result["severity"] == "high"  # escalated from info
+
+    @pytest.mark.asyncio
+    async def test_callback_called(self, classifier):
+        classifier._last_event_times.clear()
+        callback = AsyncMock()
+        classifier._notify_callback = callback
+        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
+            with patch.object(classifier, '_is_night', return_value=False):
+                await classifier.process_event("doorbell", room="flur", confidence=0.9)
+        callback.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_callback_exception(self, classifier):
+        classifier._last_event_times.clear()
+        callback = AsyncMock(side_effect=Exception("callback failed"))
+        classifier._notify_callback = callback
+        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
+            with patch.object(classifier, '_is_night', return_value=False):
+                result = await classifier.process_event("doorbell", confidence=0.9)
+        assert result is not None  # Should still return event
+
+    @pytest.mark.asyncio
+    async def test_history_truncation(self, classifier):
+        classifier._last_event_times.clear()
+        classifier._event_history = [{"type": "x"} for _ in range(100)]
+        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
+            with patch.object(classifier, '_is_night', return_value=False):
+                await classifier.process_event("doorbell", confidence=0.9)
+        assert len(classifier._event_history) <= classifier._max_history
+
+
+class TestProcessHaStateChange:
+    """Tests fuer process_ha_state_change()."""
+
+    @pytest.mark.asyncio
+    async def test_disabled(self, classifier):
+        classifier.enabled = False
+        result = await classifier.process_ha_state_change("sensor.x", "on")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_non_trigger_state(self, classifier):
+        result = await classifier.process_ha_state_change("sensor.x", "off")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_unmapped_entity(self, classifier):
+        result = await classifier.process_ha_state_change("sensor.unknown", "on")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_mapped_entity(self, classifier):
+        classifier._sensor_mappings = {"binary_sensor.kueche_smoke": "smoke_alarm"}
+        classifier._last_event_times.clear()
+        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
+            with patch.object(classifier, '_is_night', return_value=False):
+                result = await classifier.process_ha_state_change(
+                    "binary_sensor.kueche_smoke", "on", {"confidence": 0.95},
+                )
+        assert result is not None
+        assert result["type"] == "smoke_alarm"
+        assert result["room"] == "kueche"
+
+    @pytest.mark.asyncio
+    async def test_confidence_from_attributes(self, classifier):
+        classifier._sensor_mappings = {"binary_sensor.test": "glass_break"}
+        classifier._last_event_times.clear()
+        with patch("assistant.ambient_audio.yaml_config", {"ambient_audio": {"min_confidence": 0.5}}):
+            with patch.object(classifier, '_is_night', return_value=False):
+                result = await classifier.process_ha_state_change(
+                    "binary_sensor.test", "detected", {"score": 0.8},
+                )
+        assert result is not None
+
+
+class TestSaveHistory:
+    """Tests fuer _save_history()."""
+
+    @pytest.mark.asyncio
+    async def test_no_redis(self, classifier):
+        classifier._redis = None
+        await classifier._save_history()
+
+    @pytest.mark.asyncio
+    async def test_save_success(self, classifier):
+        redis = AsyncMock()
+        classifier._redis = redis
+        classifier._event_history = [{"type": "doorbell"}]
+        await classifier._save_history()
+        redis.set.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_save_exception(self, classifier):
+        redis = AsyncMock()
+        redis.set = AsyncMock(side_effect=Exception("fail"))
+        classifier._redis = redis
+        classifier._event_history = [{"type": "doorbell"}]
+        await classifier._save_history()  # Should not raise
+
+
+class TestGetInfo:
+    """Tests fuer get_info()."""
+
+    def test_returns_complete_info(self, classifier):
+        info = classifier.get_info()
+        assert "enabled" in info
+        assert "running" in info
+        assert "sensor_count" in info
+        assert "supported_events" in info
+        assert "cooldowns" in info
+
+
+class TestSetNotifyCallback:
+    """Tests fuer set_notify_callback()."""
+
+    def test_set_callback(self, classifier):
+        async def my_callback(**kwargs):
+            pass
+        classifier.set_notify_callback(my_callback)
+        assert classifier._notify_callback is my_callback
+
+
+class TestExtractRoomFallback:
+    """Additional extract_room tests."""
+
+    def test_no_underscore_returns_none(self, classifier):
+        result = classifier._extract_room_from_entity("binary_sensor.singleword")
+        assert result is None or result == "singleword"

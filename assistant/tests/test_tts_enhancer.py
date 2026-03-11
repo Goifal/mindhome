@@ -286,3 +286,248 @@ class TestEnhanceNarration:
         result = enhancer.enhance_narration(segments)
         assert "&lt;" in result["ssml"]
         assert "&amp;" in result["ssml"]
+
+
+# ------------------------------------------------------------------ #
+# Zusaetzliche Tests fuer 100% Coverage
+# ------------------------------------------------------------------ #
+
+class TestSafeFloatInt:
+    """Tests fuer _safe_float und _safe_int im __init__ — Zeilen 156-157, 162-163."""
+
+    def test_safe_float_invalid_value(self):
+        """_safe_float mit ungueltigem Wert nutzt Default (Zeilen 156-157)."""
+        cfg = {"tts": {}, "volume": {"day": "not_a_number", "evening": None}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        assert e.vol_day == 0.8  # Default
+        assert e.vol_evening == 0.5  # Default
+
+    def test_safe_int_invalid_value(self):
+        """_safe_int mit ungueltigem Wert nutzt Default (Zeilen 162-163)."""
+        cfg = {"tts": {}, "volume": {"evening_start": "abc", "night_start": []}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        assert e.evening_start == 22  # Default
+        assert e.night_start == 0  # Default
+
+
+class TestEnhanceProsodyVariation:
+    """Tests fuer enhance mit prosody_variation — Zeilen 249-250."""
+
+    def test_prosody_variation_enabled(self):
+        """Mit prosody_variation werden Speed/Pitch aus Maps gelesen (Zeilen 249-250)."""
+        cfg = {"tts": {"prosody_variation": True}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            result = e.enhance("Erledigt.", message_type="confirmation")
+        assert result["speed"] == 105  # confirmation speed
+        assert result["pitch"] == "+5%"  # confirmation pitch
+
+
+class TestGetVolumeLiveConfig:
+    """Tests fuer get_volume mit Live-Config-Parsing — Zeilen 291, 295."""
+
+    def test_get_volume_invalid_float_fallback(self):
+        """_f in get_volume faengt ungueltige Floats ab (Zeile 291)."""
+        cfg = {"tts": {}, "volume": {"day": "invalid", "emergency": "bad"}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            vol = e.get_volume()
+        # Default-Werte werden genutzt
+        assert isinstance(vol, float)
+
+    def test_get_volume_invalid_int_fallback(self):
+        """_i in get_volume faengt ungueltige Ints ab (Zeile 295)."""
+        cfg = {"tts": {}, "volume": {"evening_start": "abc", "night_start": "xyz"}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            vol = e.get_volume()
+        assert isinstance(vol, float)
+
+
+class TestGetVolumeTimeOfDay:
+    """Tests fuer Tageszeit-basierte Lautstaerke — Zeilen 325, 330, 335-336, 338."""
+
+    def test_evening_volume(self):
+        """Abend-Lautstaerke zwischen evening_start und night_start (Zeilen 325, 330)."""
+        from datetime import datetime as _dt
+        cfg = {"tts": {}, "volume": {"evening_start": 20, "night_start": 23, "morning_start": 7}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            with patch.object(_tts_mod, "datetime") as mock_dt:
+                mock_dt.now.return_value = _dt(2026, 3, 11, 21, 0)  # 21 Uhr
+                vol = e.get_volume()
+        assert vol == 0.5  # vol_evening Default
+
+    def test_night_volume_over_midnight(self):
+        """Nacht-Lautstaerke ueber Mitternacht (Zeilen 335-336)."""
+        from datetime import datetime as _dt
+        cfg = {"tts": {}, "volume": {"evening_start": 18, "night_start": 23, "morning_start": 7}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            # Test at 1:00 AM (nach Mitternacht, sollte Night sein)
+            with patch.object(_tts_mod, "datetime") as mock_dt:
+                mock_dt.now.return_value = _dt(2026, 3, 11, 1, 0)
+                vol = e.get_volume()
+        assert vol == 0.3  # vol_night Default
+
+    def test_night_volume_non_wrapping(self):
+        """Nacht-Lautstaerke ohne Mitternachts-Wrap (Zeile 338)."""
+        from datetime import datetime as _dt
+        cfg = {"tts": {}, "volume": {"evening_start": 22, "night_start": 2, "morning_start": 7}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            with patch.object(_tts_mod, "datetime") as mock_dt:
+                mock_dt.now.return_value = _dt(2026, 3, 11, 4, 0)  # 4 Uhr
+                vol = e.get_volume()
+        assert vol == 0.3  # vol_night
+
+
+class TestGetVolumeException:
+    """Tests fuer get_volume Exception-Handler — Zeilen 341-343."""
+
+    def test_get_volume_exception_returns_fallback(self):
+        """get_volume gibt 0.8 zurueck bei allgemeinem Fehler (Zeilen 341-343)."""
+        cfg = {"tts": {}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        # yaml_config.get wirft Exception
+        with patch.object(_tts_mod, "yaml_config", MagicMock(get=MagicMock(side_effect=Exception("config broken")))):
+            vol = e.get_volume()
+        assert vol == 0.8
+
+
+class TestAutoNightWhisper:
+    """Tests fuer _is_auto_night_whisper — Zeilen 384-391."""
+
+    def test_auto_night_whisper_active_over_midnight(self):
+        """Auto-Night-Whisper aktiv bei Nachtzeit ueber Mitternacht (Zeilen 387-388)."""
+        from datetime import datetime as _dt
+        cfg = {"tts": {"auto_night_whisper": True}, "volume": {"auto_whisper_start": 23, "auto_whisper_end": 6}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            with patch.object(_tts_mod, "datetime") as mock_dt:
+                mock_dt.now.return_value = _dt(2026, 3, 11, 2, 0)  # 2 Uhr nachts
+                assert e._is_auto_night_whisper() is True
+
+    def test_auto_night_whisper_inactive_during_day(self):
+        """Auto-Night-Whisper inaktiv tagsueber (Zeile 389 false branch)."""
+        from datetime import datetime as _dt
+        cfg = {"tts": {"auto_night_whisper": True}, "volume": {"auto_whisper_start": 23, "auto_whisper_end": 6}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            with patch.object(_tts_mod, "datetime") as mock_dt:
+                mock_dt.now.return_value = _dt(2026, 3, 11, 14, 0)  # 14 Uhr
+                assert e._is_auto_night_whisper() is False
+
+    def test_auto_night_whisper_disabled(self):
+        """Auto-Night-Whisper deaktiviert in Config (Zeile 383)."""
+        cfg = {"tts": {"auto_night_whisper": False}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            assert e._is_auto_night_whisper() is False
+
+    def test_auto_night_whisper_exception(self):
+        """Auto-Night-Whisper faengt Exceptions ab (Zeilen 390-391)."""
+        cfg = {"tts": {}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+        with patch.object(_tts_mod, "yaml_config", MagicMock(get=MagicMock(side_effect=Exception("oops")))):
+            assert e._is_auto_night_whisper() is False
+
+    def test_is_whisper_mode_auto_night(self):
+        """is_whisper_mode gibt True zurueck bei Auto-Night-Whisper."""
+        from datetime import datetime as _dt
+        cfg = {"tts": {"auto_night_whisper": True}, "volume": {"auto_whisper_start": 23, "auto_whisper_end": 6}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            with patch.object(_tts_mod, "datetime") as mock_dt:
+                mock_dt.now.return_value = _dt(2026, 3, 11, 1, 0)
+                assert e.is_whisper_mode is True
+
+    def test_auto_night_whisper_non_wrapping(self):
+        """Auto-Night-Whisper mit start < end (kein Mitternachts-Wrap) (Zeile 389)."""
+        from datetime import datetime as _dt
+        cfg = {"tts": {"auto_night_whisper": True}, "volume": {"auto_whisper_start": 1, "auto_whisper_end": 5}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            with patch.object(_tts_mod, "datetime") as mock_dt:
+                mock_dt.now.return_value = _dt(2026, 3, 11, 3, 0)  # Innerhalb 1-5
+                assert e._is_auto_night_whisper() is True
+
+
+class TestGenerateSSMLCoverage:
+    """Tests fuer _generate_ssml — Zeilen 408, 410, 413, 433, 442-455, 458."""
+
+    def test_ssml_with_speed_and_pitch(self):
+        """SSML mit speed != 100 und pitch != 0% generiert prosody-Tag (Zeilen 408, 410, 413, 458)."""
+        cfg = {"tts": {"ssml_enabled": True, "prosody_variation": True}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            ssml = e._generate_ssml("Hallo Welt.", "warning", 85, "-10%")
+        assert 'rate="85%"' in ssml
+        assert 'pitch="-10%"' in ssml
+        assert '<prosody' in ssml
+        assert '</prosody></speak>' in ssml
+
+    def test_ssml_greeting_first_sentence_pause(self):
+        """Erster Satz bei Begruessung bekommt Pause danach (Zeilen 436-439)."""
+        cfg = {"tts": {"ssml_enabled": True}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            ssml = e._generate_ssml("Guten Morgen. Hier dein Briefing.", "greeting", 100)
+        assert f'break time="{e.pause_greeting}ms"' in ssml
+
+    def test_ssml_warning_emphasis_and_pause(self):
+        """Warning: Pause vor erstem Satz + Emphasis bei Warn-Woertern (Zeilen 442-445)."""
+        cfg = {"tts": {"ssml_enabled": True}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            ssml = e._generate_ssml("Warnung: Fenster offen.", "warning", 100)
+        assert f'break time="{e.pause_important}ms"' in ssml
+        assert "<emphasis" in ssml
+
+    def test_ssml_briefing_pause_between_sentences(self):
+        """Briefing: Pause zwischen Saetzen (Zeilen 448-449)."""
+        cfg = {"tts": {"ssml_enabled": True}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            ssml = e._generate_ssml("Satz eins. Satz zwei. Satz drei.", "briefing", 100)
+        # Pause_important zwischen briefing-Saetzen (nicht vor erstem)
+        assert ssml.count(f'break time="{e.pause_important}ms"') >= 1
+
+    def test_ssml_sentence_pause_between_sentences(self):
+        """Pause zwischen Saetzen bei normalem Text (Zeilen 454-455)."""
+        cfg = {"tts": {"ssml_enabled": True}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            ssml = e._generate_ssml("Erster Satz. Zweiter Satz.", "casual", 100)
+        assert f'break time="{e.pause_sentence}ms"' in ssml
+
+    def test_ssml_no_prosody_when_defaults(self):
+        """Kein prosody-Tag bei speed=100 und pitch=0% (Zeile 414-415)."""
+        cfg = {"tts": {"ssml_enabled": True}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            ssml = e._generate_ssml("Einfacher Text.", "casual", 100, "0%")
+        assert ssml.startswith("<speak>")
+        assert ssml.endswith("</speak>")
+        assert "<prosody" not in ssml
+
+    def test_ssml_english_title_lang_wrap(self):
+        """Englische Titel werden mit <lang> gewrappt im SSML (Zeilen 423-425)."""
+        cfg = {"tts": {"ssml_enabled": True}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            ssml = e._generate_ssml("Guten Morgen, Sir.", "greeting", 100)
+        assert '<lang xml:lang="en-US">' in ssml
+
+    def test_ssml_xml_escape(self):
+        """Sonderzeichen werden XML-escaped (Zeile 419)."""
+        cfg = {"tts": {"ssml_enabled": True}, "volume": {}}
+        with patch.object(_tts_mod, "yaml_config", cfg):
+            e = TTSEnhancer()
+            ssml = e._generate_ssml("Temperatur < 5°C & Warnung.", "casual", 100)
+        assert "&lt;" in ssml
+        assert "&amp;" in ssml

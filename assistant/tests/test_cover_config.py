@@ -389,3 +389,118 @@ class TestPowerCloseRules:
 
     def test_delete_rule_not_found(self):
         assert delete_power_close_rule(99) is False
+
+
+# =====================================================================
+# Zusaetzliche Tests fuer 100% Coverage
+# =====================================================================
+
+
+class TestSaveCoverConfigsCoverage:
+    """Zusaetzliche Tests fuer save_cover_configs — Zeilen 53, 55-57."""
+
+    def test_save_creates_backup(self, tmp_data_dir):
+        """Wenn Datei existiert, wird ein Backup erstellt (Zeile 53)."""
+        cfg_file = tmp_data_dir / "cover_configs.json"
+        cfg_file.write_text(json.dumps({"old": True}))
+        save_cover_configs({"new": True})
+        bak_file = cfg_file.with_suffix(".json.bak")
+        assert bak_file.exists()
+        assert json.loads(bak_file.read_text()) == {"old": True}
+        assert json.loads(cfg_file.read_text()) == {"new": True}
+
+    def test_save_configs_error_raises(self, tmp_data_dir):
+        """save_cover_configs wirft Exception bei Schreibfehler (Zeilen 55-57)."""
+        with patch("assistant.cover_config._ensure_dir"):
+            with patch("assistant.cover_config._COVER_CONFIG_FILE") as mock_file:
+                mock_file.exists.return_value = False
+                mock_file.write_text.side_effect = PermissionError("read-only")
+                with pytest.raises(PermissionError):
+                    save_cover_configs({"test": True})
+
+
+class TestLoadListCoverage:
+    """Zusaetzliche Tests fuer _load_list — Zeilen 68-69."""
+
+    def test_load_list_non_list_data(self, tmp_data_dir):
+        """_load_list gibt leere Liste zurueck wenn JSON kein Array ist (Zeile 68 implizit)."""
+        groups_file = tmp_data_dir / "cover_groups.json"
+        groups_file.write_text(json.dumps({"not": "a list"}))
+        result = load_cover_groups()
+        assert result == []
+
+    def test_load_list_invalid_json(self, tmp_data_dir):
+        """_load_list faengt JSONDecodeError ab (Zeilen 68-69)."""
+        groups_file = tmp_data_dir / "cover_groups.json"
+        groups_file.write_text("not valid json {{{")
+        result = load_cover_groups()
+        assert result == []
+
+
+class TestSaveListCoverage:
+    """Zusaetzliche Tests fuer _save_list — Zeilen 79-81."""
+
+    def test_save_list_creates_backup(self, tmp_data_dir):
+        """_save_list erstellt Backup wenn Datei existiert (Zeile 79 implizit)."""
+        groups_file = tmp_data_dir / "cover_groups.json"
+        groups_file.write_text(json.dumps([{"id": 1, "name": "Alt"}]))
+        save_cover_groups([{"id": 1, "name": "Neu"}])
+        bak = groups_file.with_suffix(".json.bak")
+        assert bak.exists()
+
+    def test_save_list_error_raises(self, tmp_data_dir):
+        """_save_list wirft Exception bei Schreibfehler (Zeilen 79-81)."""
+        from assistant.cover_config import _save_list
+        with patch("assistant.cover_config._ensure_dir"):
+            mock_path = MagicMock()
+            mock_path.exists.return_value = False
+            mock_path.write_text.side_effect = PermissionError("fs error")
+            mock_path.name = "test.json"
+            with pytest.raises(PermissionError):
+                _save_list(mock_path, [{"id": 1}])
+
+
+class TestUpdateCoverGroupCoverage:
+    """Zusaetzliche Tests fuer update_cover_group — Zeile 128."""
+
+    def test_update_group_entity_ids(self):
+        """Update nur entity_ids (Zeile 128)."""
+        create_cover_group({"name": "G1", "entity_ids": ["cover.a"]})
+        result = update_cover_group(1, {"entity_ids": ["cover.b", "cover.c"]})
+        assert result is not None
+        assert result["entity_ids"] == ["cover.b", "cover.c"]
+        assert result["name"] == "G1"  # Name nicht geaendert
+
+
+class TestUpdateCoverScheduleCoverage:
+    """Zusaetzliche Tests fuer update_cover_schedule — Zeilen 218-220, 224."""
+
+    def test_update_schedule_invalid_position_string(self):
+        """Position mit ungueltigem Wert wirft ValueError (Zeilen 218-220)."""
+        create_cover_schedule({"position": 50})
+        with pytest.raises(ValueError, match="Position must be between 0 and 100"):
+            update_cover_schedule(1, {"position": 150})
+
+    def test_update_schedule_invalid_position_negative(self):
+        """Negative Position wirft ValueError (Zeilen 218-220)."""
+        create_cover_schedule({"position": 50})
+        with pytest.raises(ValueError):
+            update_cover_schedule(1, {"position": -10})
+
+    def test_update_schedule_clamps_valid_position(self):
+        """Position wird auf 0-100 geclampt (Zeile 224)."""
+        create_cover_schedule({"position": 50})
+        result = update_cover_schedule(1, {"position": 75})
+        assert result["position"] == 75
+
+
+class TestLogCoverActionCoverage:
+    """Zusaetzliche Tests fuer log_cover_action — Zeilen 303-304."""
+
+    def test_log_cover_action_save_error(self, tmp_data_dir):
+        """log_cover_action faengt Fehler beim Speichern ab (Zeilen 303-304)."""
+        from assistant.cover_config import _save_list
+        with patch("assistant.cover_config._save_list", side_effect=Exception("write error")):
+            # Sollte nicht werfen, sondern Fehler loggen
+            log_cover_action("cover.test", 50, "test_reason")
+            # Kein Assert noetig — der Test prueft dass keine Exception ausbricht

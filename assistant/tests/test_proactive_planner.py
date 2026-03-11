@@ -270,3 +270,78 @@ class TestPlannerStatus:
         planner_with_redis.redis.scan = AsyncMock(return_value=(0, [b"key1", b"key2"]))
         status = await planner_with_redis.get_status()
         assert status["active_cooldowns"] == 2
+
+
+# ============================================================
+# Zusaetzliche Tests fuer 100% Coverage
+# ============================================================
+
+class TestCooldownExceptions:
+    """Tests fuer Cooldown-Exception-Handling — Zeilen 74-75, 94-95."""
+
+    @pytest.mark.asyncio
+    async def test_cooldown_check_exception(self, ha_mock):
+        """Cooldown-Check Exception wird abgefangen (Zeilen 74-75)."""
+        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+            p = ProactiveSequencePlanner(ha=ha_mock)
+        redis = AsyncMock()
+        redis.exists = AsyncMock(side_effect=Exception("Redis down"))
+        redis.setex = AsyncMock()
+        p.redis = redis
+
+        context = {
+            "weather": {"condition": "hail"},
+            "house": {"open_windows": []},
+        }
+        # Trotz Redis-Fehler beim Cooldown-Check sollte der Plan erstellt werden
+        result = await p.plan_from_context_change("weather_changed", context)
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_cooldown_set_exception(self, ha_mock):
+        """Cooldown-Set Exception wird abgefangen (Zeilen 94-95)."""
+        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+            p = ProactiveSequencePlanner(ha=ha_mock)
+        redis = AsyncMock()
+        redis.exists = AsyncMock(return_value=0)
+        redis.setex = AsyncMock(side_effect=Exception("Redis write error"))
+        p.redis = redis
+
+        context = {
+            "weather": {"condition": "pouring"},
+            "house": {"open_windows": ["Fenster1"]},
+        }
+        result = await p.plan_from_context_change("weather_changed", context)
+        # Plan wird trotzdem zurueckgegeben
+        assert result is not None
+
+
+class TestGuestSequenceNoActions:
+    """Tests fuer _plan_guest_sequence — Zeile 212 (immer Musik, daher nie leer)."""
+
+    @pytest.mark.asyncio
+    async def test_daytime_guest_has_music(self, planner_with_redis):
+        """Tagsueher hat nur Musik, aber nie leer (implizites Zeile 212)."""
+        p = planner_with_redis
+        p.redis.exists = AsyncMock(return_value=0)
+        with patch("assistant.proactive_planner.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 12, 0)
+            result = await p.plan_from_context_change("calendar_event_soon", {})
+        assert result is not None
+        action_types = [a["type"] for a in result["actions"]]
+        assert "play_media" in action_types
+
+
+class TestStatusExceptions:
+    """Tests fuer get_status — Zeilen 241-243."""
+
+    @pytest.mark.asyncio
+    async def test_status_redis_scan_exception(self, ha_mock):
+        """get_status faengt Scan-Fehler ab (Zeilen 241-243)."""
+        with patch("assistant.proactive_planner.yaml_config", {"proactive_planner": {"enabled": True}}):
+            p = ProactiveSequencePlanner(ha=ha_mock)
+        redis = AsyncMock()
+        redis.scan = AsyncMock(side_effect=Exception("Scan failed"))
+        p.redis = redis
+        status = await p.get_status()
+        assert status["active_cooldowns"] == -1

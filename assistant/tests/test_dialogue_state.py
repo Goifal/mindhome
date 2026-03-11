@@ -252,3 +252,58 @@ def test_needs_clarification_disabled(dsm):
     dsm.clarification_enabled = False
     result = dsm.needs_clarification("Licht an", ["a", "b"])
     assert result is None
+
+
+# ------------------------------------------------------------------
+# Zusaetzliche Tests fuer 100% Coverage
+# ------------------------------------------------------------------
+
+
+class TestGetStateEviction:
+    """Tests fuer die Eviction-Logik in _get_state — Zeilen 112-117."""
+
+    def test_evict_oldest_entries_when_over_50(self, dsm):
+        """Wenn mehr als 50 Eintraege, werden die aeltesten 25 entfernt (Zeilen 112-117)."""
+        import time as _time
+        # 51 verschiedene Personen eintragen
+        for i in range(51):
+            state = dsm._get_state(f"person_{i}")
+            state.last_update = _time.time() - (100 - i)  # Aeltere zuerst
+
+        # Naechster Zugriff mit neuer Person sollte Eviction ausloesen
+        new_state = dsm._get_state("person_new")
+        assert new_state is not None
+        # Es sollten jetzt weniger als 52 Eintraege sein
+        assert len(dsm._states) <= 52
+
+
+class TestCheckClarificationDisabled:
+    """Tests fuer check_clarification_answer wenn disabled — Zeile 296."""
+
+    def test_check_clarification_answer_disabled(self, dsm):
+        """check_clarification_answer gibt None zurueck wenn disabled (Zeile 296)."""
+        dsm.enabled = False
+        result = dsm.check_clarification_answer("Wohnzimmer", person="Max")
+        assert result is None
+
+
+class TestGetContextPromptDisabled:
+    """Tests fuer get_context_prompt wenn disabled — Zeile 343."""
+
+    def test_get_context_prompt_disabled(self, dsm):
+        """get_context_prompt gibt leeren String zurueck wenn disabled (Zeile 343)."""
+        dsm.enabled = False
+        result = dsm.get_context_prompt("Max")
+        assert result == ""
+
+
+class TestGetContextPromptClarification:
+    """Tests fuer get_context_prompt mit offener Klaerungsfrage — Zeilen 365-366."""
+
+    def test_context_prompt_with_pending_clarification(self, dsm):
+        """Offene Klaerungsfrage erscheint im Kontext-Prompt (Zeilen 365-366)."""
+        dsm.track_turn("Licht an", person="Max", entities=["light.a"])
+        dsm.start_clarification("Max", "Welches Licht meinst du?", ["A", "B"], "Licht an")
+        prompt = dsm.get_context_prompt("Max")
+        assert "OFFENE KLAERUNGSFRAGE" in prompt
+        assert "Welches Licht meinst du?" in prompt

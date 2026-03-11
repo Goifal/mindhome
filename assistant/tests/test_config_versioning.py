@@ -273,3 +273,192 @@ async def test_cleanup_old_snapshots_removes_excess(cv, mock_redis, tmp_path):
         await cv._cleanup_old_snapshots("test")
     # rpop should be called to_remove=2 times
     assert mock_redis.rpop.call_count == 2
+
+
+# ------------------------------------------------------------------
+# NEW: create_snapshot exception handling — Lines 100-102
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_snapshot_exception(cv, mock_redis, tmp_path):
+    """Exception during snapshot returns None (lines 100-102)."""
+    cv._redis = mock_redis
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("key: value")
+
+    # Make pipeline.execute raise to trigger the except block
+    pipe = mock_redis.pipeline()
+    pipe.execute = AsyncMock(side_effect=Exception("Redis down"))
+
+    with patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path / "snapshots"):
+        (tmp_path / "snapshots").mkdir()
+        result = await cv.create_snapshot("test", config_file, reason="test")
+    assert result is None
+
+
+# ------------------------------------------------------------------
+# NEW: rollback exception — Lines 174-176
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rollback_exception(cv, mock_redis, tmp_path):
+    """Exception during rollback returns failure (lines 174-176)."""
+    cv._redis = mock_redis
+    mock_redis.llen.return_value = 0
+
+    original = tmp_path / "test.yaml"
+    original.write_text("old: value")
+    snapshot_file = tmp_path / "test_20250101_120000.yaml"
+    snapshot_file.write_text("key: restored")
+
+    snap = json.dumps({
+        "id": "test_20250101_120000",
+        "config_file": "test",
+        "original_path": str(original),
+        "snapshot_path": str(snapshot_file),
+        "timestamp": "2025-01-01T12:00:00",
+    })
+    mock_redis.lrange.return_value = [snap]
+
+    # Make shutil.copy2 fail to trigger except block
+    with patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path), \
+         patch("assistant.config_versioning.shutil.copy2", side_effect=Exception("disk full")):
+        result = await cv.rollback("test_20250101_120000")
+    assert result["success"] is False
+    assert "Rollback-Fehler" in result["message"]
+
+
+# ------------------------------------------------------------------
+# NEW: _cleanup decode/key errors — Lines 209-210
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cleanup_decode_error(cv, mock_redis, tmp_path):
+    """Handles JSONDecodeError during cleanup (lines 209-210)."""
+    cv._redis = mock_redis
+    mock_redis.llen.return_value = 7  # > max_snapshots=5
+
+    # Return invalid JSON for rpop
+    mock_redis.rpop.side_effect = ["not-valid-json", None]
+
+    with patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path):
+        await cv._cleanup_old_snapshots("test")
+    # Should not raise, rpop called for to_remove=2 items
+
+
+@pytest.mark.asyncio
+async def test_cleanup_key_error(cv, mock_redis, tmp_path):
+    """Handles KeyError during cleanup (lines 209-210)."""
+    cv._redis = mock_redis
+    mock_redis.llen.return_value = 6  # > max_snapshots=5
+
+    # JSON without "snapshot_path" key
+    mock_redis.rpop.side_effect = [json.dumps({"other_key": "value"})]
+
+    with patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path):
+        await cv._cleanup_old_snapshots("test")
+    # Should not raise
+
+
+# ------------------------------------------------------------------
+# NEW: _enforce_disk_quota file deletion — Lines 224-232
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_enforce_disk_quota_deletes_oldest(cv, tmp_path):
+    """Deletes oldest snapshots when disk quota exceeded (lines 224-232)."""
+    cv._redis = AsyncMock()
+    cv._redis.llen = AsyncMock(return_value=2)
+    cv._cfg = {"max_disk_mb": 0}  # 0 MB quota = always over
+
+    # Create files with different timestamps
+    import time
+    f1 = tmp_path / "old.yaml"
+    f1.write_text("a" * 100)
+    time.sleep(0.05)
+    f2 = tmp_path / "new.yaml"
+    f2.write_text("b" * 100)
+
+    with patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path):
+        await cv._enforce_disk_quota()
+    # At least one file should have been deleted
+    remaining = list(tmp_path.glob("*.yaml"))
+    assert len(remaining) < 2
+
+
+# ------------------------------------------------------------------
+# NEW: _enforce_disk_quota exception — Lines 236-237
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_enforce_disk_quota_exception(cv):
+    """Handles exception in disk quota check (lines 236-237)."""
+    cv._redis = AsyncMock()
+    cv._cfg = {"max_disk_mb": 50}
+
+    with patch("assistant.config_versioning._SNAPSHOT_DIR") as mock_dir:
+        mock_dir.iterdir.side_effect = OSError("permission denied")
+        # Should not raise
+        await cv._enforce_disk_quota()
+
+
+# ------------------------------------------------------------------
+# NEW: reload_config update exception/rollback — Lines 271-275
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reload_config_update_exception_rollback(cv, mock_redis, tmp_path):
+    """Config rollback on update exception (lines 271-275)."""
+    cv._redis = mock_redis
+    mock_redis.llen.return_value = 0
+    config_file = tmp_path / "settings.yaml"
+    config_file.write_text("key: value")
+
+    original_config = {"old_key": "old_val"}
+
+    class FailingDict(dict):
+        """Dict that fails on the second update() call."""
+        _call_count = 0
+
+        def update(self, other):
+            self._call_count += 1
+            if self._call_count >= 1:
+                raise RuntimeError("update failed")
+            super().update(other)
+
+    failing_config = FailingDict(original_config)
+
+    with patch("assistant.config_versioning._CONFIG_DIR", tmp_path), \
+         patch("assistant.config_versioning._SNAPSHOT_DIR", tmp_path / "snapshots"), \
+         patch("assistant.config_versioning.load_yaml_config", return_value={"new_key": "new_val"}), \
+         patch("assistant.config_versioning.yaml_config", failing_config):
+        (tmp_path / "snapshots").mkdir(exist_ok=True)
+        result = await cv.reload_config()
+
+    assert result["success"] is False
+
+
+# ------------------------------------------------------------------
+# NEW: reload_config general exception — Lines 280-282
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reload_config_general_exception(cv, mock_redis, tmp_path):
+    """General exception during reload returns failure (lines 280-282)."""
+    cv._redis = mock_redis
+
+    with patch("assistant.config_versioning._CONFIG_DIR", tmp_path), \
+         patch("assistant.config_versioning.load_yaml_config", side_effect=Exception("YAML broken")):
+        config_file = tmp_path / "settings.yaml"
+        config_file.write_text("key: value")
+        result = await cv.reload_config()
+
+    assert result["success"] is False
+    assert "YAML broken" in result["message"]

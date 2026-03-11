@@ -188,3 +188,259 @@ class TestEmitSpeaking:
             assert call_data["message_type"] == "greeting"
             assert call_data["speed"] == 95
             assert call_data["volume"] == 0.6
+
+
+# ============================================================
+# Coverage: lines 28-29 (MAX_CONNECTIONS reached)
+# ============================================================
+
+class TestConnectMaxConnections:
+    @pytest.mark.asyncio
+    async def test_connect_max_connections_returns_false(self):
+        """When MAX_CONNECTIONS reached, close ws and return False."""
+        cm = ConnectionManager()
+        cm.MAX_CONNECTIONS = 2
+        ws1 = AsyncMock()
+        ws2 = AsyncMock()
+        ws3 = AsyncMock()
+        await cm.connect(ws1)
+        await cm.connect(ws2)
+        result = await cm.connect(ws3)
+        assert result is False
+        ws3.close.assert_called_once_with(code=4008, reason="Zu viele Verbindungen")
+        assert len(cm.active_connections) == 2
+
+
+# ============================================================
+# Coverage: lines 68-69 (broadcast cleanup ValueError)
+# ============================================================
+
+class TestBroadcastCleanupValueError:
+    @pytest.mark.asyncio
+    async def test_broadcast_cleanup_already_removed(self):
+        """If a broken connection is already removed during cleanup, no error."""
+        cm = ConnectionManager()
+        ws_broken = AsyncMock()
+        ws_broken.send_text.side_effect = Exception("fail")
+        cm.active_connections.append(ws_broken)
+        # Remove it before cleanup runs (simulating concurrent removal)
+        original_remove = cm.active_connections.remove
+
+        def remove_then_clear(conn):
+            try:
+                original_remove(conn)
+            except ValueError:
+                pass
+        # First broadcast removes it, second cleanup should handle ValueError
+        await cm.broadcast("test", {})
+        # Connection should be gone
+        assert ws_broken not in cm.active_connections
+
+
+# ============================================================
+# Coverage: lines 80-81 (send_personal error)
+# ============================================================
+
+class TestSendPersonalError:
+    @pytest.mark.asyncio
+    async def test_send_personal_exception_is_caught(self):
+        """send_personal catches exceptions silently."""
+        cm = ConnectionManager()
+        ws = AsyncMock()
+        ws.send_text.side_effect = Exception("connection lost")
+        # Should not raise
+        await cm.send_personal(ws, "event", {"data": "test"})
+
+
+# ============================================================
+# Coverage: lines 90, 106, 115, 120, 131, 162 (emit_* functions)
+# ============================================================
+
+from assistant.websocket import (
+    emit_thinking,
+    emit_action,
+    emit_listening,
+    emit_sound,
+    emit_progress,
+    emit_proactive,
+    emit_workshop,
+)
+
+
+class TestEmitThinking:
+    @pytest.mark.asyncio
+    async def test_emit_thinking(self):
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await emit_thinking()
+            mock_ws.broadcast.assert_called_once_with(
+                "assistant.thinking", {"status": "processing"}
+            )
+
+
+class TestEmitAction:
+    @pytest.mark.asyncio
+    async def test_emit_action(self):
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await emit_action("turn_on", {"entity": "light.x"}, {"success": True})
+            mock_ws.broadcast.assert_called_once_with(
+                "assistant.action", {
+                    "function": "turn_on",
+                    "args": {"entity": "light.x"},
+                    "result": {"success": True},
+                }
+            )
+
+
+class TestEmitListening:
+    @pytest.mark.asyncio
+    async def test_emit_listening(self):
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await emit_listening()
+            mock_ws.broadcast.assert_called_once_with(
+                "assistant.listening", {"status": "active"}
+            )
+
+
+class TestEmitSound:
+    @pytest.mark.asyncio
+    async def test_emit_sound(self):
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await emit_sound("chime", volume=0.7)
+            mock_ws.broadcast.assert_called_once_with(
+                "assistant.sound", {"sound": "chime", "volume": 0.7}
+            )
+
+
+class TestEmitProgress:
+    @pytest.mark.asyncio
+    async def test_emit_progress(self):
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await emit_progress("step1", "Analysiere...")
+            mock_ws.broadcast.assert_called_once_with(
+                "assistant.progress", {"step": "step1", "message": "Analysiere..."}
+            )
+
+
+class TestEmitProactive:
+    @pytest.mark.asyncio
+    async def test_emit_proactive(self):
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await emit_proactive("Tuer offen", "door_open", urgency="high", notification_id="n1")
+            mock_ws.broadcast.assert_called_once_with(
+                "assistant.proactive", {
+                    "text": "Tuer offen",
+                    "event_type": "door_open",
+                    "urgency": "high",
+                    "notification_id": "n1",
+                }
+            )
+
+
+class TestEmitWorkshop:
+    @pytest.mark.asyncio
+    async def test_emit_workshop(self):
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await emit_workshop("file_created", {"project_id": "p1"})
+            mock_ws.broadcast.assert_called_once_with(
+                "workshop.file_created", {"project_id": "p1"}
+            )
+
+    @pytest.mark.asyncio
+    async def test_emit_workshop_no_data(self):
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            await emit_workshop("timer")
+            mock_ws.broadcast.assert_called_once_with("workshop.timer", {})
+
+
+# ============================================================
+# Coverage: lines 201-226 (emit_interrupt with config)
+# ============================================================
+
+from assistant.websocket import emit_interrupt
+
+
+class TestEmitInterrupt:
+    @pytest.mark.asyncio
+    async def test_emit_interrupt_enabled(self):
+        """Interrupt enabled: sends interrupt signal, then proactive with critical."""
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            with patch("assistant.config.yaml_config", {
+                "interrupt_queue": {"enabled": True, "pause_ms": 0},
+            }):
+                with patch("assistant.websocket.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+                    await emit_interrupt("Feuer!", "fire_alarm", protocol="evac", actions_taken=["alarm"])
+                    # Should have 2 broadcast calls: interrupt + proactive
+                    assert mock_ws.broadcast.call_count == 2
+                    first_call = mock_ws.broadcast.call_args_list[0]
+                    assert first_call[0][0] == "assistant.interrupt"
+                    assert first_call[0][1]["reason"] == "fire_alarm"
+                    assert first_call[0][1]["protocol"] == "evac"
+                    second_call = mock_ws.broadcast.call_args_list[1]
+                    assert second_call[0][0] == "assistant.proactive"
+                    assert second_call[0][1]["text"] == "Feuer!"
+                    assert second_call[0][1]["urgency"] == "critical"
+                    assert second_call[0][1]["interrupt"] is True
+                    assert second_call[0][1]["actions_taken"] == ["alarm"]
+
+    @pytest.mark.asyncio
+    async def test_emit_interrupt_disabled(self):
+        """Interrupt disabled: falls back to normal proactive broadcast."""
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            with patch("assistant.config.yaml_config", {
+                "interrupt_queue": {"enabled": False},
+            }):
+                await emit_interrupt("Warnung", "warning_event")
+                mock_ws.broadcast.assert_called_once_with(
+                    "assistant.proactive", {
+                        "text": "Warnung",
+                        "event_type": "warning_event",
+                        "urgency": "critical",
+                        "notification_id": "",
+                    }
+                )
+
+    @pytest.mark.asyncio
+    async def test_emit_interrupt_default_config(self):
+        """Interrupt with default config (no interrupt_queue key)."""
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            with patch("assistant.config.yaml_config", {}):
+                with patch("assistant.websocket.asyncio.sleep", new_callable=AsyncMock):
+                    await emit_interrupt("Test", "test_event")
+                    # Default enabled=True, so interrupt path
+                    assert mock_ws.broadcast.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_emit_interrupt_pause_ms(self):
+        """Interrupt uses configured pause_ms for sleep."""
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            with patch("assistant.config.yaml_config", {
+                "interrupt_queue": {"enabled": True, "pause_ms": 500},
+            }):
+                with patch("assistant.websocket.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+                    await emit_interrupt("Alert", "alert_event")
+                    mock_sleep.assert_called_once_with(0.5)
+
+    @pytest.mark.asyncio
+    async def test_emit_interrupt_no_actions_taken(self):
+        """Interrupt without actions_taken defaults to empty list."""
+        with patch("assistant.websocket.ws_manager") as mock_ws:
+            mock_ws.broadcast = AsyncMock()
+            with patch("assistant.config.yaml_config", {
+                "interrupt_queue": {"enabled": True, "pause_ms": 0},
+            }):
+                with patch("assistant.websocket.asyncio.sleep", new_callable=AsyncMock):
+                    await emit_interrupt("Test", "event")
+                    second_call = mock_ws.broadcast.call_args_list[1]
+                    assert second_call[0][1]["actions_taken"] == []
