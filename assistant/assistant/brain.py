@@ -3320,7 +3320,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # 7. Antwort verarbeiten
             message = _cascade["message"]
             response_text = _cascade["text"]
-            tool_calls = message.get("tool_calls", [])
+            raw_tool_calls = message.get("tool_calls", [])
+            # BUG-17: Validate tool_calls structure — Ollama may return malformed entries
+            tool_calls = [
+                tc for tc in raw_tool_calls
+                if isinstance(tc, dict) and "function" in tc
+            ]
             executed_actions = []
 
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
