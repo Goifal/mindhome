@@ -125,13 +125,15 @@ class SpecialModeBase:
 
     def deactivate(self, user_id=None, reason="manual"):
         """Deactivate mode: restore previous states, log."""
-        if not self._active:
-            return False
+        with self._lock:
+            if not self._active:
+                return False
+            self._active = False
 
-        # Cancel timer
-        if self._deactivation_timer:
-            self._deactivation_timer.cancel()
-            self._deactivation_timer = None
+            # Cancel timer while holding the lock
+            if self._deactivation_timer:
+                self._deactivation_timer.cancel()
+                self._deactivation_timer = None
 
         # Restore previous entity states
         self._restore_previous_states()
@@ -139,7 +141,6 @@ class SpecialModeBase:
         # Log deactivation
         self._log_deactivation(user_id, reason)
         with self._lock:
-            self._active = False
             self._active_log_id = None
 
         self.event_bus.publish("mode.deactivated", {
@@ -283,20 +284,21 @@ class SpecialModeBase:
 
     def _start_deactivation_timer(self, minutes, user_id):
         """Start a timer to auto-deactivate the mode."""
-        if self._deactivation_timer:
-            self._deactivation_timer.cancel()
         def _safe_deactivate():
             try:
                 self.deactivate(user_id=user_id, reason="timeout")
             except Exception as e:
                 logger.error(f"Deactivation timer callback error: {e}")
                 self._active = False  # Failsafe: don't leave mode stuck active
-        self._deactivation_timer = threading.Timer(
-            minutes * 60,
-            _safe_deactivate,
-        )
-        self._deactivation_timer.daemon = True
-        self._deactivation_timer.start()
+        with self._lock:
+            if self._deactivation_timer:
+                self._deactivation_timer.cancel()
+            self._deactivation_timer = threading.Timer(
+                minutes * 60,
+                _safe_deactivate,
+            )
+            self._deactivation_timer.daemon = True
+            self._deactivation_timer.start()
 
     def _apply_actions(self, config):
         """Override in subclass: apply mode-specific entity changes."""
@@ -815,38 +817,40 @@ class EmergencyProtocol(SpecialModeBase):
         """Start escalation chain with timed steps."""
         self._cancel_escalation()
 
-        # Step 2: Push notification to all users
-        t1 = threading.Timer(
-            config.get("escalation_step1_delay_sec", 30),
-            self._escalation_step_notify_users,
-        )
-        t1.daemon = True
-        t1.start()
-        self._escalation_timers.append(t1)
-
-        # Step 3: Notify emergency contacts
-        if config.get("notify_emergency_contacts"):
-            t2 = threading.Timer(
-                config.get("escalation_step2_delay_sec", 60),
-                self._escalation_step_notify_contacts,
+        with self._lock:
+            # Step 2: Push notification to all users
+            t1 = threading.Timer(
+                config.get("escalation_step1_delay_sec", 30),
+                self._escalation_step_notify_users,
             )
-            t2.daemon = True
-            t2.start()
-            self._escalation_timers.append(t2)
+            t1.daemon = True
+            t1.start()
+            self._escalation_timers.append(t1)
 
-            # Step 4: Second notification to contacts
-            t3 = threading.Timer(
-                config.get("escalation_step3_delay_sec", 300),
-                self._escalation_step_notify_contacts,
-            )
-            t3.daemon = True
-            t3.start()
-            self._escalation_timers.append(t3)
+            # Step 3: Notify emergency contacts
+            if config.get("notify_emergency_contacts"):
+                t2 = threading.Timer(
+                    config.get("escalation_step2_delay_sec", 60),
+                    self._escalation_step_notify_contacts,
+                )
+                t2.daemon = True
+                t2.start()
+                self._escalation_timers.append(t2)
+
+                # Step 4: Second notification to contacts
+                t3 = threading.Timer(
+                    config.get("escalation_step3_delay_sec", 300),
+                    self._escalation_step_notify_contacts,
+                )
+                t3.daemon = True
+                t3.start()
+                self._escalation_timers.append(t3)
 
     def _cancel_escalation(self):
-        # Copy list to avoid race with timer callbacks modifying it
-        timers = list(self._escalation_timers)
-        self._escalation_timers.clear()
+        with self._lock:
+            # Copy list to avoid race with timer callbacks modifying it
+            timers = list(self._escalation_timers)
+            self._escalation_timers.clear()
         for t in timers:
             t.cancel()
 

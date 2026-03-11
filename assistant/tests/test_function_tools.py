@@ -157,7 +157,7 @@ class TestExecDeviceHealth:
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_get_device_health({})
         assert result["success"] is True
-        assert result["message"] == "Alle Geraete normal"
+        assert result["message"] == "Alle Geräte normal"
         assert result["alerts"] == []
 
     @pytest.mark.asyncio
@@ -251,7 +251,7 @@ class TestExecDescribeDoorbell:
         with patch("assistant.main.brain", mock_brain):
             result = await executor._exec_describe_doorbell({})
         assert result["success"] is False
-        assert "nicht verfuegbar" in result["message"]
+        assert "nicht verfügbar" in result["message"]
 
     @pytest.mark.asyncio
     async def test_empty_string_returns_false(self):

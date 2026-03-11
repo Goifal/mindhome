@@ -349,7 +349,6 @@ class FeedbackTracker:
         if isinstance(score, bytes):
             score = score.decode()
         if score:
-            score = score.decode() if isinstance(score, bytes) else score
             return float(score)
         return DEFAULT_SCORE
 

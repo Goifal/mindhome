@@ -213,6 +213,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Fix: Lock fuer process() — verhindert concurrent Requests die Shared State korrumpieren
         self._process_lock = asyncio.Lock()
+        # Conflict B: Flag zeigt an ob ein User-Request gerade verarbeitet wird.
+        # Proaktive/Routine-Callbacks pruefen dies und warten bzw. verzichten.
+        self._user_request_active = False
 
         # Clients
         self.ha = HomeAssistantClient()
@@ -770,7 +773,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             self.adaptive_thresholds.enabled = False
             logger.warning("GLOBAL: Alle Lern-Features deaktiviert (learning.enabled=false)")
 
-        await self.proactive.start()
+        await _safe_init("Proactive.start", self.proactive.start())
 
         # Entity-Katalog: Echte Raum-/Entity-Namen aus HA laden
         # für dynamische Tool-Beschreibungen (hilft dem LLM beim Matching)
@@ -1100,8 +1103,23 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         Returns:
             Dict mit response, actions, model_used
         """
-        async with self._process_lock:
+        # Conflict E: Timeout auf Lock-Erwerb — User wartet max 30s.
+        # Bei Timeout: Freundliche Fehlermeldung statt endlosem Warten.
+        try:
+            await asyncio.wait_for(self._process_lock.acquire(), timeout=30.0)
+        except asyncio.TimeoutError:
+            logger.warning("process_lock Timeout nach 30s — vorheriger Request blockiert")
+            return {
+                "response": "Einen Moment, ich bin noch mit einer anderen Anfrage beschaeftigt. Versuch es gleich nochmal.",
+                "actions": [],
+                "model_used": "timeout_fallback",
+            }
+        self._user_request_active = True
+        try:
             return await self._process_inner(text, person, room, files, stream_callback, voice_metadata, device_id)
+        finally:
+            self._user_request_active = False
+            self._process_lock.release()
 
     async def _process_inner(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None, device_id: Optional[str] = None) -> dict:
         """Innere process()-Implementierung, geschuetzt durch _process_lock."""
@@ -1215,7 +1233,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             retry_query = self._last_failed_query
             self._last_failed_query = None
             logger.info("Retry nach 'Ja': Wiederhole '%s'", retry_query)
-            return await self.process(
+            return await self._process_inner(
                 text=retry_query, person=person, room=room,
                 files=files, stream_callback=stream_callback,
                 voice_metadata=voice_metadata, device_id=device_id,
@@ -2520,10 +2538,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _cm_timeout = int(_conv_cfg.get("conversation_mode_timeout", 300))
             _cm_msgs = _safe_get("conv_mode_msgs") or []
             if _cm_msgs:
-                from datetime import datetime as _dt_cm
                 _cm_ts = _cm_msgs[-1].get("timestamp", "")
                 if _cm_ts:
-                    _cm_age = (_dt_cm.now() - _dt_cm.fromisoformat(_cm_ts)).total_seconds()
+                    _cm_age = (datetime.now() - datetime.fromisoformat(_cm_ts)).total_seconds()
                     if _cm_age < _cm_timeout:
                         _conversation_mode = True
                         # Topic-Continuity: Roh-Text aus letzten Nachrichten
@@ -3188,6 +3205,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 memory_prompt = system_prompt + f"\n\nGESPEICHERTE FAKTEN ZU DIESER FRAGE:\n{facts_text}"
                 memory_prompt += "\nBeantworte basierend auf diesen gespeicherten Fakten."
                 memory_messages[0] = {"role": "system", "content": memory_prompt}
+            else:
+                # Flow 6 Fix: Kein Fakt gefunden — LLM explizit anweisen ehrlich zu antworten
+                # statt zu halluzinieren. Verhindert erfundene "Erinnerungen".
+                no_memory_prompt = system_prompt + (
+                    "\n\nDer User fragt nach einer Erinnerung, aber es wurden KEINE "
+                    "gespeicherten Fakten gefunden. Antworte ehrlich, dass du dazu "
+                    "nichts gespeichert hast. ERFINDE KEINE Erinnerungen."
+                )
+                memory_messages[0] = {"role": "system", "content": no_memory_prompt}
 
             model = self.model_router._cap_model(self.model_router.model_smart)
             _cascade = await self._llm_with_cascade(
@@ -3294,7 +3320,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # 7. Antwort verarbeiten
             message = _cascade["message"]
             response_text = _cascade["text"]
-            tool_calls = message.get("tool_calls", [])
+            raw_tool_calls = message.get("tool_calls", [])
+            # BUG-17: Validate tool_calls structure — Ollama may return malformed entries
+            tool_calls = [
+                tc for tc in raw_tool_calls
+                if isinstance(tc, dict) and "function" in tc
+            ]
             executed_actions = []
 
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
@@ -3496,6 +3527,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             "result": f"blocked: {trust_check.get('reason', 'Keine Berechtigung')}",
                         })
                         continue
+
+                    # Safety Caps: Harte Grenzen pruefen (unabhaengig von Trust)
+                    if isinstance(func_args, dict):
+                        safety = self.autonomy.check_safety_caps(func_name, func_args)
+                        if not safety["allowed"]:
+                            logger.warning("Safety-Cap blockiert %s: %s", func_name, safety["reason"])
+                            executed_actions.append({
+                                "function": func_name,
+                                "args": func_args,
+                                "result": f"blocked: {safety['reason']}",
+                            })
+                            continue
 
                     # Phase 16.1: Konflikt-Check (Multi-User)
                     final_args = func_args
@@ -5795,6 +5838,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
           - LED_BLINK: Nur visuelles Signal, kein TTS (Schlaf + high, Film + high)
         """
         try:
+            # Conflict B: User-Request hat IMMER Vorrang — proaktive Callbacks
+            # warten bis der User-Request fertig ist (ausser CRITICAL).
+            if urgency != "critical" and self._user_request_active:
+                logger.info(
+                    "Callback unterdrückt (User-Request aktiv): Quelle=%s, Urgency=%s",
+                    source, urgency,
+                )
+                return False
+
             # Unbekannte Urgency-Level (z.B. "info" von Ambient Audio) normalisieren,
             # damit sie nicht auf den Default TTS_LOUD der Silence Matrix fallen
             if urgency not in self._VALID_URGENCIES:
@@ -8879,21 +8931,34 @@ Regeln:
         title = get_person_title(person)
 
         if mode == "auto" and self.autonomy.level >= 4:
-            # F-027: Trust-Check vor Auto-Execute
-            trust_level = self.autonomy.get_trust_level(person) if person else 0
-            # Sicherheitsrelevante Aktionen nur für Owner
-            from .conditional_commands import OWNER_ONLY_ACTIONS
-            if action in OWNER_ONLY_ACTIONS and trust_level < 2:
+            # F-027: Kombinierte Autonomie + Trust Pruefung via can_execute()
+            exec_check = self.autonomy.can_execute(
+                person=person or "",
+                action_type=action,
+                function_name=action,
+                domain=suggestion.get("domain", ""),
+            )
+            if not exec_check["allowed"]:
                 logger.warning(
-                    "F-027: Anticipation auto-execute blockiert (%s) — Person '%s' hat Trust %d",
-                    action, person, trust_level,
+                    "F-027: Anticipation auto-execute blockiert (%s) — %s",
+                    action, exec_check.get("reason", "keine Berechtigung"),
                 )
                 text = f"{title}, {desc}. Soll ich das uebernehmen? (Bestaetigung erforderlich)"
                 await emit_proactive(text, "anticipation_suggest", "medium")
                 return
 
-            # Automatisch ausfuehren + informieren
+            # Harte Sicherheitsgrenzen pruefen (Safety Caps)
             args = suggestion.get("args", {})
+            safety = self.autonomy.check_safety_caps(action, args)
+            if not safety["allowed"]:
+                logger.warning(
+                    "Safety-Cap blockiert %s: %s", action, safety["reason"],
+                )
+                text = f"{title}, {desc} — allerdings: {safety['reason']}"
+                await emit_proactive(text, "anticipation_blocked", "medium")
+                return
+
+            # Automatisch ausfuehren + informieren
             result = await self.executor.execute(action, args)
             text = f"{title}, {desc} — hab ich uebernommen. Wie jeden Tag um diese Zeit."
             await emit_proactive(text, "anticipation_auto", "medium")
@@ -9787,11 +9852,38 @@ Regeln:
             self.summarizer, self.feedback, self.knowledge_base,
             self.cooking, self.repair_planner, self.multi_room_audio,
             self.mood, self.sound_manager, self.timer_manager,
+            # Previously missing components:
+            self.activity, self.follow_me, self.light_engine,
+            self.speaker_recognition, self.diagnostics, self.ocr,
+            self.conflict_resolver, self.inventory, self.smart_shopping,
+            self.conversation_memory, self.self_automation,
+            self.config_versioning, self.self_optimization,
+            self.workshop_generator, self.workshop_library, self.recipe_store,
+            self.camera_manager, self.conditional_commands,
+            self.energy_optimizer, self.web_search, self.threat_assessment,
+            self.learning_observer, self.proactive_planner,
+            self.seasonal_insight, self.calendar_intelligence,
+            self.explainability, self.learning_transfer,
+            self.dialogue_state, self.climate_model,
+            self.predictive_maintenance, self.situation_model,
+            self.protocol_engine, self.spontaneous, self.music_dj,
+            self.visitor_manager, self.outcome_tracker,
+            self.correction_memory, self.response_quality,
+            self.error_patterns, self.self_report, self.adaptive_thresholds,
+            self.tts_enhancer, self.personality, self.autonomy,
+            self.routines, self.action_planner,
         ]:
             try:
                 await component.stop()
             except Exception as e:
                 logger.warning("Shutdown: %s.stop() fehlgeschlagen: %s", type(component).__name__, e)
+
+        # Optional components
+        if self.memory_extractor is not None:
+            try:
+                await self.memory_extractor.stop()
+            except Exception as e:
+                logger.warning("Shutdown: MemoryExtractor.stop() fehlgeschlagen: %s", e)
 
         logger.info("Shutdown: Schliesse Verbindungen...")
         await self.memory.close()

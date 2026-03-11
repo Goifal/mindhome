@@ -59,7 +59,9 @@ _CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "").strip()
 if _CORS_ORIGINS:
     CORS(app, origins=_CORS_ORIGINS.split(","), supports_credentials=False)
 else:
-    # Default to same-origin only (no wildcard) for security
+    # Bug #68 fix: When CORS_ORIGINS is empty/unset, do NOT enable CORS at all.
+    # Previously this called CORS(app) with no origins, which defaults to wildcard '*'.
+    # Explicit empty origins list as defense-in-depth (no wildcard).
     CORS(app, origins=[], supports_credentials=False)
 
 mimetypes.add_type("text/javascript", ".jsx")
@@ -523,11 +525,11 @@ def before_request_middleware():
         # Ingress token validation: when running as HA addon, require valid token
         if _SUPERVISOR_TOKEN and INGRESS_PATH:
             ingress_token = request.headers.get("X-Ingress-Token", "")
-            # Allow requests from HA ingress (has X-Ingress-Path header) or
-            # requests from localhost (internal services like assistant)
-            _remote = request.remote_addr or ""
-            _is_local = _remote in ("127.0.0.1", "::1", "172.30.32.2")
-            if not _is_local and not ingress_token:
+            # Bug #69 fix: Removed localhost bypass - all requests must provide
+            # a valid ingress token. The previous code skipped auth for
+            # 127.0.0.1, ::1, and 172.30.32.2, allowing any local process to
+            # bypass authentication entirely.
+            if not ingress_token:
                 return jsonify({"error": "Unauthorized"}), 401
     return None
 

@@ -222,6 +222,18 @@ class SemanticMemory:
             except Exception as e:
                 logger.error("Fehler beim Redis-Index (Fakt in ChromaDB aber nicht indexiert): %s", e)
                 redis_ok = False
+                # Rollback: ChromaDB-Eintrag loeschen um verwaiste Eintraege zu vermeiden
+                if chroma_ok and self.chroma_collection:
+                    try:
+                        await asyncio.to_thread(
+                            self.chroma_collection.delete, ids=[fact.fact_id]
+                        )
+                        logger.info("ChromaDB-Rollback erfolgreich fuer Fakt: %s", fact.fact_id)
+                    except Exception as rollback_err:
+                        logger.error(
+                            "ChromaDB-Rollback fehlgeschlagen fuer Fakt %s: %s",
+                            fact.fact_id, rollback_err,
+                        )
 
         if redis_ok:
             logger.info(
@@ -260,7 +272,8 @@ class SemanticMemory:
                 updated_meta["times_confirmed"] = str(times_confirmed)
                 updated_meta["confidence"] = str(new_confidence)
                 new_content = new_fact.content if len(new_fact.content) > len(existing.get("content", "")) else existing.get("content", "")
-                self.chroma_collection.update(
+                await asyncio.to_thread(
+                    self.chroma_collection.update,
                     ids=[fact_id],
                     documents=[new_content],
                     metadatas=[updated_meta],

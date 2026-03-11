@@ -334,7 +334,13 @@ class RepairPlanner:
         for data in results:
             if not data:
                 continue
-            data = {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v for k, v in data.items()}
+            # Redis returns bytes – decode to str
+            data = {
+                k.decode() if isinstance(k, bytes) else k:
+                v.decode() if isinstance(v, bytes) else v
+                for k, v in data.items()
+            }
+            # JSON-Felder parsen
             for key in ("parts", "tools", "notes", "expenses"):
                 if key in data and isinstance(data[key], str):
                     try:

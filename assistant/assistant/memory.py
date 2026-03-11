@@ -423,12 +423,11 @@ class MemoryManager:
             total = await asyncio.to_thread(self.chroma_collection.count)
             if total == 0:
                 return []
-            # Limit fuer ChromaDB-Abruf um Speicher zu schonen
-            max_fetch = min(offset + limit, 1000)
+            # Fetch all entries so we can sort globally before paginating
             result = await asyncio.to_thread(
                 self.chroma_collection.get,
                 include=["documents", "metadatas"],
-                limit=max_fetch,
+                limit=total,
             )
             episodes = []
             ids = result.get("ids", [])

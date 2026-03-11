@@ -10,6 +10,7 @@ Phase 13.4: Kontrollierte Prompt-Selbstoptimierung.
 - Snapshot vor jeder Aenderung via ConfigVersioning
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -367,27 +368,30 @@ Wenn keine Aenderung noetig: []"""
         try:
             old_value = self._get_current_values().get(param)
 
-            with open(_SETTINGS_PATH) as f:
-                config = yaml.safe_load(f) or {}
+            def _read_and_write():
+                import tempfile
+                with open(_SETTINGS_PATH) as f:
+                    config = yaml.safe_load(f) or {}
 
-            node = config
-            for key in path[:-1]:
-                if key not in node:
-                    node[key] = {}
-                node = node[key]
-            node[path[-1]] = new_value
+                node = config
+                for key in path[:-1]:
+                    if key not in node:
+                        node[key] = {}
+                    node = node[key]
+                node[path[-1]] = new_value
 
-            import tempfile
-            tmp_fd, tmp_path = tempfile.mkstemp(
-                dir=_SETTINGS_PATH.parent, suffix=".yaml.tmp",
-            )
-            try:
-                with open(tmp_fd, "w") as f:
-                    yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-                Path(tmp_path).replace(_SETTINGS_PATH)
-            except BaseException:
-                Path(tmp_path).unlink(missing_ok=True)
-                raise
+                tmp_fd, tmp_path = tempfile.mkstemp(
+                    dir=_SETTINGS_PATH.parent, suffix=".yaml.tmp",
+                )
+                try:
+                    with open(tmp_fd, "w") as f:
+                        yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                    Path(tmp_path).replace(_SETTINGS_PATH)
+                except BaseException:
+                    Path(tmp_path).unlink(missing_ok=True)
+                    raise
+
+            await asyncio.to_thread(_read_and_write)
 
             # Hot-Reload: yaml_config im Speicher aktualisieren
             _new = load_yaml_config()
@@ -676,8 +680,11 @@ Wenn keine Aenderung noetig: []"""
             return {"success": False, "message": "Phrase zu kurz"}
 
         try:
-            with open(_SETTINGS_PATH) as f:
-                config = yaml.safe_load(f) or {}
+            def _read_config():
+                with open(_SETTINGS_PATH) as f:
+                    return yaml.safe_load(f) or {}
+
+            config = await asyncio.to_thread(_read_config)
 
             # Snapshot vor Aenderung
             await self.versioning.create_snapshot(
@@ -696,8 +703,11 @@ Wenn keine Aenderung noetig: []"""
 
             config["response_filter"]["banned_phrases"].append(phrase)
 
-            with open(_SETTINGS_PATH, "w") as f:
-                yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            def _write_config():
+                with open(_SETTINGS_PATH, "w") as f:
+                    yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+            await asyncio.to_thread(_write_config)
 
             # Hot-Reload
             _new = load_yaml_config()

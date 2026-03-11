@@ -1,8 +1,8 @@
 # RESULT 05: Persoenlichkeit, Config & MCU-Authentizitaet
 
-> **Audit-Datum**: 2026-03-10
+> **Audit-Datum**: 2026-03-10 (aktualisiert)
 > **Auditor**: Claude Opus 4.6
-> **Scope**: personality.py, context_builder.py, mood_detector.py, explainability.py, 7 YAML-Configs, settings.yaml, Addon-Configs
+> **Scope**: personality.py (3000+ Zeilen), context_builder.py, mood_detector.py, explainability.py, config.py, constants.py, 8 YAML-Configs, settings.yaml, Addon-Configs, Translations, HA-Manifest
 > **Referenz**: PROMPT_05_PERSONALITY.md (Teile A–G)
 
 ---
@@ -72,7 +72,9 @@
 | 4 | Spitz, grenzt an Provokation | ⚠️ Grenzwertig — Jarvis provoziert nie direkt |
 | 5 | Maximaler Sarkasmus | ❌ Zu viel — MCU-Jarvis geht nie ueber Level 3 hinaus |
 
-**Befund**: Level 4–5 sind nicht MCU-authentisch. Jarvis ist witzig durch Understatement, nicht durch Schaerfe. Empfehlung: Level 4 = max, Level 5 entfernen oder auf "Iron Man 3 Finale"-Momente beschraenken.
+**BUG: HUMOR_TEMPLATES Level 4 und 5 sind IDENTISCH** (personality.py:74-86). Beide enthalten exakt denselben Text ("Haeufig trocken-sarkastisch. Bemerkungen mit Understatement..."). Das bedeutet: Level 5 existiert nur auf dem Papier — es gibt keine Eskalation ueber Level 4 hinaus.
+
+**Befund**: Level 4–5 sind nicht MCU-authentisch UND Level 5 ist ein Code-Duplikat. Jarvis ist witzig durch Understatement, nicht durch Schaerfe. Empfehlung: Level 5 komplett entfernen (ohnehin Duplikat von Level 4), Cap bei 4. Code in `_build_humor_section()` (:1437) limitiert bereits auf `min(effective_level, 4)` — das bestaetigt, dass Level 5 de facto tot ist.
 
 ### 3.2 Humor-Fatigue-Tracking
 
@@ -120,10 +122,12 @@
 
 | Risiko | Schwere | Beispiel |
 |---|---|---|
-| Substring-Matching Keywords | HOCH | "nicht" in "Vergiss nicht die Milch" → negative_keyword erkannt |
-| Schnelle Befehle = Stress | MITTEL | 2 Befehle in 5 Sek → rapid_command_stress_boost:0.15. Normale Multi-Befehle werden als Stress gewertet |
-| Tired-Override | MITTEL | Nach 23 Uhr pauschal tired_boost:0.3, auch wenn User hellwach ist |
-| Kein Reset-Mechanismus | HOCH | Einmal gestresst → bleibt gestresst bis Decay (300 Sek). User kann nicht sagen "mir geht's gut" als aktiven Reset |
+| Substring-Matching Keywords | HOCH | "nicht" in "Vergiss nicht die Milch" → negative_keyword erkannt. "egal" in "das ist mir egal ob links oder rechts" → negativ |
+| Schnelle Befehle = Stress | MITTEL | 4+ Befehle in <5 Sek (rapid_command_threshold) → rapid_command_stress_boost:0.15. Normale Multi-Befehle werden als Stress gewertet |
+| Tired-Override | MITTEL | Nach 23 Uhr (tired_hour_start) pauschal tired_boost:0.05 + 0.1 bei kurzen Nachrichten, auch wenn User hellwach ist |
+| Kein Reset-Mechanismus | HOCH | Einmal gestresst → bleibt gestresst bis Decay (stress_decay_seconds:300). User kann nicht sagen "mir geht's gut" als aktiven Reset |
+| Eskalations-Dopplung | MITTEL | Zeile 338-345: Wenn User 2+ aehnliche Nachrichten schickt, wird repetition_stress_boost *2 addiert — zusaetzlich zum normalen Repetition-Boost. Doppelter Stress-Hit |
+| Voice-Mood ohne Text-Korrelation | LOW | Voice-Emotion und Text-Mood werden unabhaengig bewertet. Froehlicher Text + traurige Stimme koennte widerspruechliche Mood-Signale erzeugen |
 
 ---
 
@@ -174,8 +178,9 @@
 | **entity_roles_defaults.yaml** | ✅ | function_calling.py:711 `_load_entity_roles_from_yaml()` | ✅ Python-Defaults als Fallback |
 | **maintenance.yaml** | ✅ | diagnostics.py:411 `_load_maintenance_tasks()` | ✅ Leere Liste als Fallback |
 | **addon/config.yaml** | ✅ | HA Addon-Framework | ✅ Standard-HA-Verarbeitung |
+| **config_versioning.py** | ✅ | brain.py, main.py, function_calling.py | ✅ Snapshots in Redis mit 90-Tage-TTL |
 
-**Befund**: Alle 8 Config-Dateien werden korrekt geladen. Fehler-Handling ist durchweg robust mit sinnvollen Fallbacks.
+**Befund**: Alle 8 Config-Dateien werden korrekt geladen. config_versioning.py trackt Aenderungen korrekt. Fehler-Handling ist durchweg robust mit sinnvollen Fallbacks.
 
 ### 6.2 settings.yaml.example — Detail-Audit
 
@@ -217,11 +222,14 @@
 
 | Aspekt | Status |
 |---|---|
-| addon/config.yaml | ✅ v1.5.10, ingress Port 5000 |
-| addon/build.yaml | ✅ Python 3.12 Alpine |
-| Ueberlappung mit Assistant | ⚠️ Addon hat eigene language/log_level Config, Assistant hat eigene — keine Synchronisation |
-| ha_integration/manifest.json | ✅ v1.1.1, depends on "conversation" |
-| .env.example | ✅ Alle kritischen Vars dokumentiert (HA_URL, HA_TOKEN, OLLAMA_URL, Ports, Modelle) |
+| addon/config.yaml | ✅ v1.5.10, ingress Port 5000, 4 Architekturen |
+| addon/build.yaml | ✅ Python 3.12 Alpine, Version 1.5.10 (konsistent mit config.yaml) |
+| Ueberlappung mit Assistant | ⚠️ Addon hat eigene language/log_level Config, Assistant hat eigene in settings.yaml — keine Synchronisation |
+| ha_integration/manifest.json | ⚠️ v1.1.1 — inkonsistent mit Addon v1.5.10. Sollte synchron gehalten werden |
+| .env.example | ✅ Alle kritischen Vars dokumentiert (HA_URL, HA_TOKEN, OLLAMA_URL, Ports, Modelle, Speech-Services) |
+| Translations de.json | ✅ Vollstaendig — 8 Sektionen mit allen UI-Strings |
+| Translations en.json | ✅ Vollstaendig — identische Struktur wie de.json |
+| config_versioning.py | ✅ Aktiv genutzt in brain.py, main.py, function_calling.py — Snapshots in Redis |
 
 ---
 
@@ -296,7 +304,32 @@ Die response_filter-Sektion in settings.yaml ist eine der staerksten MCU-Authent
 - Per-User Tracking
 - **Problem**: Der Gradient von 80 → 30 ist fuer das LLM schwer zu interpretieren. "Formality 47" bedeutet fuer ein LLM nichts Konkretes. Besser: 3-4 diskrete Stufen mit klaren Anweisungen.
 
-### 9.3 context_builder.py Bug
+### 9.3 Phase 18 MCU-Upgrade Features (Neue Befunde)
+
+personality.py enthaelt 5 Phase-18-Features die MCU-Authentizitaet deutlich erhoehen:
+
+| Feature | Zeile | Status | MCU-Authentisch? |
+|---|---|---|---|
+| **Neugier-Fragen** (check_curiosity) | :659 | ✅ Aktiv | ✅ "Um diese Uhrzeit, Sir? Alles in Ordnung?" — perfekter Butler |
+| **Memory Callbacks** (build_memory_callback_section) | :725 | ✅ Aktiv, Redis-backed | ✅ "Wie am Dienstag" statt "Laut Aufzeichnungen" — excellent |
+| **Running Gag Evolution** (build_evolved_gag) | :810 | ✅ Aktiv, Redis-backed | ✅ "Wir kennen das Spiel mittlerweile" — authentische Entwicklung |
+| **Eskalierende Sorge** (check_escalating_concern) | :868 | ✅ Aktiv, 3 Stufen | ✅ Von trocken zu ernsthaft besorgt — MCU-Jarvis pur |
+| **Think-Ahead** (build_next_step_hint) | :945 | ✅ Aktiv, statisch | ✅ Proaktive Folgevorschlaege ohne LLM-Overhead |
+
+**Befund**: Phase 18 ist die staerkste MCU-Authentizitaets-Erweiterung. Alle 5 Features haben korrekte Rate-Limits (max 2 Neugier/Tag, max 30 Gag-Eintraege) und sind per YAML konfigurierbar.
+
+### 9.4 Version-Inkonsistenz
+
+| Datei | Version | Konsistent? |
+|---|---|---|
+| addon/config.yaml | 1.5.10 | ✅ |
+| addon/build.yaml | 1.5.10 | ✅ |
+| ha_integration/manifest.json | 1.1.1 | ❌ Stark abweichend |
+| settings.yaml (assistant.version) | 1.4.1 | ⚠️ Zwischen Addon und HA-Integration |
+
+Die drei Versionsnummern (1.5.10, 1.4.1, 1.1.1) sind nicht synchronisiert. Empfehlung: Zentrale VERSION-Datei oder gemeinsame Variable.
+
+### 9.5 context_builder.py Bug
 
 **Weather-Pfad-Bug**: context_builder.py speichert Wetter unter `context["house"]["weather"]`, aber personality.py liest `context["weather"]`. Ergebnis: Wetter-Kontext kann im System-Prompt fehlen, obwohl er vorhanden ist.
 
@@ -322,6 +355,8 @@ Die response_filter-Sektion in settings.yaml ist eine der staerksten MCU-Authent
 | P5-H3 | Mood-Detection Substring-Matching durch Wort-Grenzen ersetzen | mood_detector.py |
 | P5-H4 | Expliziter Mood-Reset-Befehl ("Mir geht's gut") | mood_detector.py |
 | P5-H5 | proactive.py Greetings durch build_notification_prompt() ersetzen | proactive.py |
+| P5-H6 | HUMOR_TEMPLATES Level 5 entfernen (identisch mit Level 4) | personality.py:74-86 |
+| P5-H7 | Eskalations-Dopplung in mood_detector.py fixen (Zeile 338-345) | mood_detector.py |
 
 ### Prioritaet MEDIUM (Config)
 
@@ -332,6 +367,7 @@ Die response_filter-Sektion in settings.yaml ist eine der staerksten MCU-Authent
 | P5-M3 | Easter Egg Trigger "reaktor", "turm", "infinity" praezisieren | easter_eggs.yaml |
 | P5-M4 | Formality-Decay auf 3-4 diskrete Stufen umstellen | personality.py, settings.yaml |
 | P5-M5 | Easter Egg Cooldown implementieren | personality.py |
+| P5-M6 | Version-Inkonsistenz beheben (addon 1.5.10, assistant 1.4.1, HA-Integration 1.1.1) | config.yaml, settings.yaml, manifest.json |
 
 ---
 
@@ -340,10 +376,10 @@ Die response_filter-Sektion in settings.yaml ist eine der staerksten MCU-Authent
 | Schwere | Anzahl | Beispiele |
 |---|---|---|
 | CRITICAL | 2 | Weather-Pfad-Bug, 25-35% User-Texte ohne Personality |
-| HIGH | 5 | Mood false-positives, kein Mood-Reset, hardcoded Boot/Error-Text, Sarkasmus L5 nicht MCU |
-| MEDIUM | 5 | 14 undokumentierte Config-Keys, null statt leere Container, Easter-Egg-Trigger-Kollisionen |
+| HIGH | 6 | HUMOR_TEMPLATES L4==L5 Duplikat, Mood false-positives, kein Mood-Reset, hardcoded Boot/Error-Text, Sarkasmus L5 nicht MCU, Eskalations-Dopplung in mood_detector |
+| MEDIUM | 6 | 14 undokumentierte Config-Keys, null statt leere Container, Easter-Egg-Trigger-Kollisionen, Version-Inkonsistenz (1.5.10/1.4.1/1.1.1), HA-Manifest Version veraltet |
 | LOW | 3 | Weekend-Morning nur Samstag, Formality-Gradient unscharf, Humor-Fatigue Substring-Match |
-| **Gesamt** | **15** | |
+| **Gesamt** | **17** | |
 
 ---
 
@@ -368,7 +404,8 @@ Die response_filter-Sektion in settings.yaml ist eine der staerksten MCU-Authent
 - Running-Gags aus System-Prompt in Konversations-Kontext verschieben (~150 Token)
 - Mood als einzeiligen Tag statt Instruktions-Block (~200 Token)
 - Formality-Decay: 3-4 diskrete Stufen statt Gradient (80→30)
-- Sarkasmus Level 5 entfernen (nicht MCU-authentisch)
+- Sarkasmus Level 5 entfernen (nicht MCU-authentisch UND Duplikat von Level 4)
+- Phase 18 MCU-Upgrade Features sind exzellent — alle 5 Features MCU-authentisch
 
 ### Config-Probleme
 - settings.yaml.example: 14 Sektionen fehlen die im Code referenziert werden
@@ -389,4 +426,5 @@ Die response_filter-Sektion in settings.yaml ist eine der staerksten MCU-Authent
 - opinion_rules.yaml: 25 Regeln mit pushback_level System
 - humor_triggers.yaml: 10 Trigger-Kategorien mit Placeholder-System
 - response_filter: 28 banned_phrases + 12 banned_starters — staerkstes MCU-Feature
-- 15 Bugs gefunden (2 CRITICAL, 5 HIGH, 5 MEDIUM, 3 LOW)
+- Version-Inkonsistenz: addon 1.5.10, assistant 1.4.1, HA-Integration 1.1.1
+- 17 Bugs gefunden (2 CRITICAL, 6 HIGH, 6 MEDIUM, 3 LOW)

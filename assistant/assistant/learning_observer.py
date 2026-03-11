@@ -476,7 +476,7 @@ class LearningObserver:
                 except (json.JSONDecodeError, AttributeError):
                     continue
         except Exception as e:
-            logger.debug("Lern-Report Antworten lesen fehlgeschlagen: %s", e)
+            logger.warning("Lern-Report Antworten lesen fehlgeschlagen: %s", e)
 
         return {
             "patterns": patterns,

@@ -182,6 +182,121 @@ class AutonomyManager:
         5: "Autopilot",
     }
 
+    # ------------------------------------------------------------------
+    # Harte Sicherheitsgrenzen (Safety Caps)
+    # ------------------------------------------------------------------
+
+    SAFETY_CAPS = {
+        "max_temperature_change": 3,       # Max +/- Grad pro Aktion
+        "min_temperature": 14,             # Absolutes Minimum (Celsius)
+        "max_temperature": 30,             # Absolutes Maximum (Celsius)
+        "max_actions_per_minute": 10,      # Rate-Limit pro Person
+        "max_actions_per_hour": 100,       # Rate-Limit pro Person
+        "max_automation_creations_per_day": 5,
+        "max_brightness": 100,             # Prozent
+    }
+
+    def can_execute(
+        self, person: str, action_type: str,
+        function_name: str = "", domain: str = "", room: str = "",
+    ) -> dict:
+        """Kombinierte Pruefung: Autonomie-Level UND Person-Trust.
+
+        Prueft beide Hierarchien (Assistant-Autonomie + Person-Vertrauen)
+        in einem Aufruf und gibt ein einheitliches Ergebnis zurueck.
+
+        Args:
+            person: Name der Person
+            action_type: Art der Aktion (z.B. "proactive_info", "execute_function_call")
+            function_name: Konkrete Funktion (z.B. "lock_door")
+            domain: Optionale Domaene (z.B. "climate")
+            room: Raum fuer Raum-Scoping
+
+        Returns:
+            Dict mit allowed, autonomy_ok, trust_ok, reason
+        """
+        # 1. Autonomie-Level pruefen
+        autonomy_ok = self.can_act(action_type, domain)
+
+        # 2. Person-Trust pruefen
+        trust_result = self.can_person_act(person, function_name, room)
+        trust_ok = trust_result["allowed"]
+
+        allowed = autonomy_ok and trust_ok
+
+        result = {
+            "allowed": allowed,
+            "autonomy_ok": autonomy_ok,
+            "autonomy_level": self._get_effective_level(action_type, domain),
+            "trust_ok": trust_ok,
+            "trust_level": trust_result["trust_level"],
+            "trust_name": trust_result.get("trust_name", ""),
+        }
+
+        if not allowed:
+            reasons = []
+            if not autonomy_ok:
+                required = self._action_permissions.get(action_type, 5)
+                reasons.append(
+                    f"Autonomie-Level {self._get_effective_level(action_type, domain)} "
+                    f"reicht nicht fuer '{action_type}' (benoetigt: {required})"
+                )
+            if not trust_ok:
+                reasons.append(trust_result.get("reason", "Trust-Check fehlgeschlagen"))
+            result["reason"] = "; ".join(reasons)
+
+        return result
+
+    def check_safety_caps(self, function_name: str, args: dict) -> dict:
+        """Prueft harte Sicherheitsgrenzen unabhaengig von Level/Trust.
+
+        Diese Grenzen koennen NICHT ueberschrieben werden — auch nicht vom Owner.
+
+        Args:
+            function_name: Name der Funktion
+            args: Funktions-Argumente
+
+        Returns:
+            Dict mit allowed und ggf. reason
+        """
+        caps = self.SAFETY_CAPS
+
+        # Temperatur-Grenzen
+        if function_name in ("set_temperature", "set_climate", "adjust_temperature"):
+            temp = args.get("temperature")
+            if temp is not None:
+                try:
+                    temp = float(temp)
+                except (ValueError, TypeError):
+                    return {"allowed": False, "reason": "Ungueltige Temperaturangabe."}
+                if temp < caps["min_temperature"]:
+                    return {
+                        "allowed": False,
+                        "reason": f"Temperatur {temp}°C liegt unter dem Minimum von {caps['min_temperature']}°C.",
+                    }
+                if temp > caps["max_temperature"]:
+                    return {
+                        "allowed": False,
+                        "reason": f"Temperatur {temp}°C ueberschreitet das Maximum von {caps['max_temperature']}°C.",
+                    }
+
+        # Helligkeit-Grenzen
+        if function_name in ("set_light", "set_brightness"):
+            brightness = args.get("brightness")
+            if brightness is not None:
+                try:
+                    brightness = int(brightness)
+                except (ValueError, TypeError):
+                    pass
+                else:
+                    if brightness < 0 or brightness > caps["max_brightness"]:
+                        return {
+                            "allowed": False,
+                            "reason": f"Helligkeit muss zwischen 0 und {caps['max_brightness']}% liegen.",
+                        }
+
+        return {"allowed": True}
+
     def get_level_info(self) -> dict:
         """Gibt Info ueber das aktuelle Level zurueck."""
         descriptions = {

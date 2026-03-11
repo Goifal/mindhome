@@ -177,7 +177,7 @@ class WellnessAdvisor:
             try:
                 # F-061: Wellness-Checks bei aktiven Notfaellen unterdruecken
                 if self.redis:
-                    active_threats = await self.redis.get("mha:threat:active")
+                    active_threats = await _safe_redis(self.redis, "get", "mha:threat:active")
                     if active_threats:
                         logger.debug("Wellness-Checks uebersprungen: aktive Bedrohung")
                         await asyncio.sleep(self.check_interval)
@@ -237,7 +237,7 @@ class WellnessAdvisor:
             return
 
         now = datetime.now()
-        pc_start = await self.redis.get("mha:wellness:pc_start")
+        pc_start = await _safe_redis(self.redis, "get", "mha:wellness:pc_start")
 
         if not pc_start:
             # Timer starten
@@ -258,7 +258,7 @@ class WellnessAdvisor:
             return
 
         # Cooldown: 1h zwischen Erinnerungen
-        last = await self.redis.get("mha:wellness:last_break_reminder")
+        last = await _safe_redis(self.redis, "get", "mha:wellness:last_break_reminder")
         if last:
             try:
                 # Fix: Redis bytes decode
@@ -334,7 +334,7 @@ class WellnessAdvisor:
         cooldown_sec = 900 if mood_trend == "declining" else 1800
 
         # Nur einmal pro Stress-Episode
-        last = await self.redis.get("mha:wellness:last_stress_nudge")
+        last = await _safe_redis(self.redis, "get", "mha:wellness:last_stress_nudge")
         if last:
             try:
                 # Fix: Redis bytes decode
@@ -399,7 +399,7 @@ class WellnessAdvisor:
 
             # Cooldown: Nur 1x pro Mahlzeit pro Tag
             key = f"mha:wellness:meal_{meal}_{now.strftime('%Y-%m-%d')}"
-            if await self.redis.exists(key):
+            if await _safe_redis(self.redis, "exists", key):
                 continue
 
             # Pruefen ob Kueche aktiv war (= wahrscheinlich gegessen)
@@ -478,7 +478,7 @@ class WellnessAdvisor:
 
         # Nur 1x pro Nacht (Redis TTL 6h)
         key = "mha:wellness:last_latenight"
-        if await self.redis.exists(key):
+        if await _safe_redis(self.redis, "exists", key):
             return
 
         await _safe_redis(self.redis, "setex", key, 6 * 3600, "1")
@@ -606,7 +606,7 @@ class WellnessAdvisor:
             check_date = datetime.now().date()
             for _ in range(14):  # Max 14 Tage zurueck
                 check_date = check_date - timedelta(days=1)
-                is_member = await self.redis.sismember(key, check_date.isoformat())
+                is_member = await _safe_redis(self.redis, "sismember", key, check_date.isoformat())
                 if is_member:
                     consecutive += 1
                 else:
@@ -635,7 +635,7 @@ class WellnessAdvisor:
             return  # Nachts nicht erinnern
 
         key = "mha:wellness:last_hydration"
-        last = await self.redis.get(key)
+        last = await _safe_redis(self.redis, "get", key)
         if last:
             try:
                 # Fix: Redis bytes decode
@@ -698,7 +698,7 @@ class WellnessAdvisor:
 
         # Cooldown: Max 1x pro 30 Minuten ambient actions ausfuehren
         key = "mha:wellness:last_ambient_action"
-        last = await self.redis.get(key)
+        last = await _safe_redis(self.redis, "get", key)
         if last:
             try:
                 last_str = last.decode() if isinstance(last, bytes) else last

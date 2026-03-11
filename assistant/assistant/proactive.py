@@ -83,6 +83,7 @@ class ProactiveManager:
         self.batch_max_items = batch_cfg.get("max_items", 10)
         self._batch_queue: list[dict] = []
         self._batch_flushing = False  # Guard gegen konkurrierende Flushes
+        self._batch_flush_lock = asyncio.Lock()  # Lock für concurrent _batch_flushing access
 
         # F-033: Lock für shared state (batch_queue, mb_triggered etc.)
         self._state_lock = asyncio.Lock()
@@ -143,6 +144,7 @@ class ProactiveManager:
 
         # Event-Mapping: HA Event -> Priorität + Beschreibung (Hardcoded Defaults)
         _PRIORITY_MAP = {"critical": CRITICAL, "high": HIGH, "medium": MEDIUM, "low": LOW}
+        _dynamic_handlers = self.event_handlers  # Preserve dynamische Appliance-Handler (Z.98-110)
         self.event_handlers = {
             "alarm_triggered": (CRITICAL, "Alarm ausgeloest"),
             "smoke_detected": (CRITICAL, "Rauch erkannt"),
@@ -173,6 +175,8 @@ class ProactiveManager:
             "scene_device_triggered": (LOW, "Szene durch Geraet aktiviert"),
             "shopping_reminder": (LOW, "Einkaufs-Erinnerung"),
         }
+        # Dynamische Appliance-Handler (aus YAML devices) einfuegen — ueberschreiben Defaults
+        self.event_handlers.update(_dynamic_handlers)
         # YAML-Overrides anwenden (Event-Handler konfigurierbar)
         yaml_handlers = proactive_cfg.get("event_handlers", {})
         for event_name, info in yaml_handlers.items():
@@ -1295,7 +1299,8 @@ class ProactiveManager:
             already = await redis_client.get(flag_key)
             if already:
                 return
-        except Exception:
+        except Exception as e:
+            logger.warning("Error in _check_personal_dates: %s", e)
             return
 
         try:
@@ -1657,8 +1662,8 @@ class ProactiveManager:
         # MCU-JARVIS: Event für Rückkehr-Briefing akkumulieren
         try:
             await self._accumulate_event(event_type, urgency, data)
-        except Exception:
-            pass  # Akkumulation darf nie den Hauptpfad blockieren
+        except Exception as e:
+            logger.warning("Error in _accumulate_event: %s", e)
 
         # Quiet Hours: Nur CRITICAL darf nachts durch
         if urgency != CRITICAL and self._is_quiet_hours():
@@ -1685,8 +1690,8 @@ class ProactiveManager:
                         f" ({detail})" if detail else ""
                     )
                     return
-            except Exception:
-                pass  # Mood-Check darf nie den Hauptpfad blockieren
+            except Exception as e:
+                logger.warning("Error in Mood-Check: %s", e)
 
         # Cooldown prüfen (mit adaptivem Cooldown aus Feedback)
         effective_cooldown = self.cooldown
@@ -1826,8 +1831,8 @@ class ProactiveManager:
                     detail=data.get("detail", ""),
                     person=_narr_person,
                 )
-            except Exception:
-                pass  # Fallback auf LLM-generierte Meldung
+            except Exception as e:
+                logger.warning("Error in narration: %s", e)
 
         if narration_text:
             text = narration_text
@@ -2606,14 +2611,16 @@ class ProactiveManager:
         Dedup: Gleiche event_types werden zusammengefasst (letztes Vorkommen behalten).
         """
         # Guard: Nur ein Flush gleichzeitig (verhindert 2 TTS-Nachrichten in 1 Sekunde)
-        if self._batch_flushing:
-            return
-        self._batch_flushing = True
+        async with self._batch_flush_lock:
+            if self._batch_flushing:
+                return
+            self._batch_flushing = True
 
         try:
             await self._flush_batch_inner()
         finally:
-            self._batch_flushing = False
+            async with self._batch_flush_lock:
+                self._batch_flushing = False
 
     async def _flush_batch_inner(self):
         """Innerer Flush — nimmt ALLE Items aus der Queue (nicht nur max_items)."""

@@ -4,29 +4,39 @@
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Alle 12 Memory-Module + Addon-Memory + Datenbank-Schemas
 **Durchlauf**: #2 (Verifikation nach P6a–P8 Fixes)
+**Vergleichsbasis**: DL#1 (3 kritische Memory-Bugs, 6 offene Probleme, 22 Checks)
 
 ---
 
-## 0. Vergleich mit Durchlauf #1
+## DL#1 vs DL#2 Vergleich
 
-### Was sich VERBESSERT hat (3 kritische Fixes):
+### Gesamt-Statistik
 
-| Bug (Durchlauf #1) | Status | Beweis |
-|---|---|---|
-| 🔴 Duplicate Key `"conv_memory"` | ✅ **GEFIXT** | `brain.py:2374` → `"conv_memory"`, `brain.py:2412` → `"conv_memory_extended"` |
-| 🔴 Doppelte Prompt-Insertion | ✅ **GEFIXT** | P2 `_safe_get("conv_memory")` (Zeile 2824), P3 `_safe_get("conv_memory_extended")` (Zeile 2946) |
-| 🟠 ChromaDB-Episoden nie gelesen | ✅ **GEFIXT** | `brain.py:5569` → `search_memories(text, limit=3)` in `_get_conversation_memory()` |
+```
+DL#1: 3 kritische Bugs + 6 offene Probleme
+DL#2: 3 FIXED, 0 TEILWEISE, 6 UNFIXED
 
-### Was sich NICHT verbessert hat:
+Veraenderung:
+  Vollstaendig behoben:  3 (33%) — alle 3 KRITISCHEN gefixt!
+  Unveraendert:          6 (67%) — alle MITTEL/GERING
 
-| Problem | Status | Details |
-|---|---|---|
-| 🟠 7d TTL Working Memory | UNVERAENDERT | `memory.py:89` — aber durch ChromaDB-Fix weniger kritisch |
-| 🟡 dialogue_state in-memory only | UNVERAENDERT | 410 Zeilen, `deque`-basiert, verloren bei Restart |
-| 🟡 learning_transfer._pending_transfers in-memory | UNVERAENDERT | `REDIS_KEY_TRANSFERS` definiert Zeile 27, nie verwendet |
-| 🟡 conversation_memory.py Namensverwirrung | UNVERAENDERT | Ist Projekt-Tracker, Name suggeriert Conv-History |
-| 🟡 Addon-Wissen isoliert | UNVERAENDERT | 68 SQLite-Tabellen, kein Export an Assistant |
-| 🟡 12 isolierte Memory-Silos | UNVERAENDERT | brain.py bleibt einziger Integrationspunkt |
+Check-Tabelle: 14/22 OK (DL#1: 12/22)
+Dead Code: 1 reaktiviert (memory.search_memories)
+```
+
+### DL#1 → DL#2 Status
+
+| # | Severity | Modul | DL#1-Zeile | DL#2-Zeile | Status | Beschreibung |
+|---|----------|-------|-----------|-----------|--------|-------------|
+| 1 | KRITISCH | brain.py | 2356+2394 | 2374+2412 | ✅ FIXED | Distinct keys: `conv_memory` + `conv_memory_extended` |
+| 2 | KRITISCH | brain.py | 2824+2946 | 2824+2946 | ✅ FIXED | P2 liest `conv_memory`, P3 liest `conv_memory_extended` |
+| 3 | HOCH | brain.py/memory.py | 276/— | 5569 | ✅ FIXED | `search_memories(text, limit=3)` in `_get_conversation_memory()` |
+| 4 | MITTEL | memory.py | 89 | 89 | ❌ UNFIXED | 7d TTL Working Memory (durch ChromaDB-Fix weniger kritisch) |
+| 5 | MITTEL | dialogue_state.py | ganzes Modul | ganzes Modul | ❌ UNFIXED | In-memory only, `deque`-basiert, verloren bei Restart |
+| 6 | MITTEL | learning_transfer.py | 27+74 | 27+74 | ❌ UNFIXED | `REDIS_KEY_TRANSFERS` definiert, nie verwendet |
+| 7 | MITTEL | conversation_memory.py | ganzes Modul | ganzes Modul | ❌ UNFIXED | Irrefuehrender Name (ist Projekt-Tracker) |
+| 8 | MITTEL | Addon pattern_engine.py | ganzes Modul | ganzes Modul | ❌ UNFIXED | 68 SQLite-Tabellen, kein Export an Assistant |
+| 9 | MITTEL | brain.py | — | — | ❌ UNFIXED | 12 isolierte Memory-Silos, brain.py einziger Integrationspunkt |
 
 ---
 
@@ -172,7 +182,7 @@ User Input
 
 ## 3. Check-Tabelle (22 Checks)
 
-| # | Check | DL#1 | DL#2 | Code-Referenz |
+| # | Check | DL#1-Status | DL#2-Status | Code-Referenz |
 |---|---|---|---|---|
 | 1 | Wird `memory.py` **vor** jeder Antwort aufgerufen? | ✅ | ✅ | `context_builder._get_relevant_memories()`, `brain.py:2374` |
 | 2 | Wird `memory.py` **nach** jeder Konversation aufgerufen? | ✅ | ✅ | `_remember_exchange()` brain.py:1020, `store_episode()` brain.py:4278 |
@@ -201,7 +211,7 @@ User Input
 
 ## 4. Performance-Check: Memory-Latenz
 
-| # | Check | DL#1 | DL#2 | Code-Referenz |
+| # | Check | DL#1-Status | DL#2-Status | Code-Referenz |
 |---|---|---|---|---|
 | 1 | Memory-Abfragen parallel oder sequentiell? | ✅ | ✅ | Alles im `asyncio.gather()`, brain.py:2419 |
 | 2 | Redis-Roundtrips pro Request? | ~8-12 | ~10-15 | Mehr Gather-Tasks (correction_ctx + learned_rules + personality callback) |

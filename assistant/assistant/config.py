@@ -239,8 +239,7 @@ def resolve_person_by_entity(entity_id: str) -> str:
 # identifiziert wird (Sprache, Praesenz, Speaker-Recognition).
 # Damit kann get_person_title() ohne Argument den richtigen Titel liefern.
 _active_person: str = ""
-import threading as _threading
-_active_person_lock = _threading.Lock()
+_active_person_lock = threading.Lock()
 
 
 def set_active_person(name: str) -> None:
@@ -319,10 +318,10 @@ _room_profiles_lock = threading.Lock()
 def get_room_profiles() -> dict:
     """Liefert room_profiles.yaml aus Cache (oder laedt bei Bedarf von Disk)."""
     global _room_profiles_cache, _room_profiles_ts
-    now = time.time()
-    if _room_profiles_cache and (now - _room_profiles_ts) < _ROOM_PROFILES_TTL:
-        return _room_profiles_cache
     with _room_profiles_lock:
+        now = time.time()
+        if _room_profiles_cache and (now - _room_profiles_ts) < _ROOM_PROFILES_TTL:
+            return _room_profiles_cache
         # Double-check nach Lock-Erwerb (anderer Thread koennte Cache schon erneuert haben)
         if _room_profiles_cache and (time.time() - _room_profiles_ts) < _ROOM_PROFILES_TTL:
             return _room_profiles_cache

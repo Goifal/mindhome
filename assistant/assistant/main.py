@@ -887,7 +887,7 @@ async def memory_stats():
 @app.get("/api/ui/memory/episodes")
 async def ui_get_episodes(token: str = "", offset: int = 0, limit: int = 100):
     """Alle Episoden aus dem Langzeitgedaechtnis (PIN-geschuetzt)."""
-    _check_token(token)
+    await _check_token(token)
     episodes = await brain.memory.get_all_episodes(offset=offset, limit=limit)
     total = 0
     if brain.memory.chroma_collection:
@@ -901,7 +901,7 @@ async def ui_get_episodes(token: str = "", offset: int = 0, limit: int = 100):
 @app.post("/api/ui/memory/episodes/delete")
 async def ui_delete_episodes(request: Request, token: str = ""):
     """Einzelne Episoden loeschen (PIN-geschuetzt)."""
-    _check_token(token)
+    await _check_token(token)
     body = await request.json()
     ids = body.get("ids", [])
     if not ids:
@@ -913,7 +913,7 @@ async def ui_delete_episodes(request: Request, token: str = ""):
 @app.get("/api/ui/memory/facts")
 async def ui_get_facts(token: str = ""):
     """Alle Fakten mit Statistiken (PIN-geschuetzt)."""
-    _check_token(token)
+    await _check_token(token)
     facts = await brain.memory.semantic.get_all_facts()
     stats = await brain.memory.semantic.get_stats()
     return {"facts": facts, "stats": stats}
@@ -922,7 +922,7 @@ async def ui_get_facts(token: str = ""):
 @app.post("/api/ui/memory/facts/delete")
 async def ui_delete_facts(request: Request, token: str = ""):
     """Einzelne Fakten loeschen (PIN-geschuetzt)."""
-    _check_token(token)
+    await _check_token(token)
     body = await request.json()
     ids = body.get("ids", [])
     if not ids:
@@ -941,7 +941,7 @@ class MemoryResetRequest(BaseModel):
 @app.post("/api/ui/memory/reset")
 async def ui_memory_reset(req: MemoryResetRequest, token: str = ""):
     """Gesamtes Gedaechtnis zuruecksetzen (PIN-Bestaetigung erforderlich)."""
-    _check_token(token)
+    await _check_token(token)
 
     # PIN nochmal verifizieren fuer diese kritische Aktion
     env_pin = os.environ.get("JARVIS_UI_PIN")
@@ -972,7 +972,7 @@ async def ui_factory_reset(req: FactoryResetRequest, request: Request, token: st
 
     Loescht allen gelernten State (Redis + ChromaDB), behaelt Einstellungen.
     """
-    _check_token(token)
+    await _check_token(token)
 
     client_ip = request.client.host if request.client else "unknown"
     if not _check_pin_rate_limit(client_ip):
@@ -1136,7 +1136,7 @@ async def get_settings():
 @app.put("/api/assistant/settings")
 async def update_settings(update: SettingsUpdate, token: str = ""):
     """Einstellungen aktualisieren (PIN-geschuetzt)."""
-    _check_token(token)
+    await _check_token(token)
     result = {}
     if update.autonomy_level is not None:
         old_level = brain.autonomy.level
@@ -1364,8 +1364,8 @@ async def tts_generate(request: TTSGenerateRequest):
             headers={"Content-Disposition": "inline"},
         )
     except Exception as e:
-        logger.error("TTS-Generierung fehlgeschlagen: %s", e)
-        raise HTTPException(status_code=503, detail=f"TTS nicht verfügbar: {e}")
+        logger.error("TTS-Generierung fehlgeschlagen: %s", e, exc_info=True)
+        raise HTTPException(status_code=503, detail="TTS nicht verfügbar")
 
 
 @app.post("/api/assistant/stt")
@@ -1391,11 +1391,11 @@ async def stt_transcribe(audio: UploadFile = File(...)):
                 pcm_data = wf.readframes(wf.getnframes())
                 # Resample zu 16kHz mono wenn noetig
                 if wf.getnchannels() > 1 or sample_rate != 16000 or wf.getsampwidth() != 2:
-                    pcm_data = _convert_audio_to_16k_mono(audio_bytes)
+                    pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
                     sample_rate = 16000
         else:
             # WebM/OGG/MP3: ffmpeg konvertieren
-            pcm_data = _convert_audio_to_16k_mono(audio_bytes)
+            pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
             sample_rate = 16000
 
         text = await _wyoming_stt(pcm_data, sample_rate)
@@ -1405,27 +1405,33 @@ async def stt_transcribe(audio: UploadFile = File(...)):
         raise
     except Exception as e:
         logger.error("STT-Transkription fehlgeschlagen: %s", e, exc_info=True)
-        raise HTTPException(status_code=503, detail=f"STT nicht verfügbar: {e}")
+        raise HTTPException(status_code=503, detail="STT nicht verfügbar")
 
 
-def _convert_audio_to_16k_mono(audio_bytes: bytes) -> bytes:
+async def _convert_audio_to_16k_mono(audio_bytes: bytes) -> bytes:
     """Konvertiert beliebiges Audio zu 16kHz 16-bit mono PCM via ffmpeg."""
-    import subprocess
-    result = subprocess.run(
-        [
-            "ffmpeg", "-i", "pipe:0",
-            "-ar", "16000", "-ac", "1", "-f", "s16le",
-            "-acodec", "pcm_s16le", "pipe:1",
-        ],
-        input=audio_bytes,
-        capture_output=True,
-        timeout=30,
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-i", "pipe:0",
+        "-ar", "16000", "-ac", "1", "-f", "s16le",
+        "-acodec", "pcm_s16le", "pipe:1",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
-    if result.returncode != 0:
-        # S5: Keine internen Details an Client — nur ins Log
-        logger.error("ffmpeg conversion failed: %s", result.stderr.decode()[:200])
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(input=audio_bytes), timeout=30
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        logger.error("ffmpeg conversion timed out after 30s")
         raise RuntimeError("Audio conversion failed")
-    return result.stdout
+    if proc.returncode != 0:
+        # S5: Keine internen Details an Client — nur ins Log
+        logger.error("ffmpeg conversion failed: %s", stderr.decode()[:200])
+        raise RuntimeError("Audio conversion failed")
+    return stdout
 
 
 # ----- Voice Chat: Full Voice Conversation Endpoint -----
@@ -1463,9 +1469,9 @@ async def voice_chat(
                 pcm_data = wf.readframes(wf.getnframes())
                 sr = wf.getframerate()
                 if wf.getnchannels() > 1 or sr != 16000 or wf.getsampwidth() != 2:
-                    pcm_data = _convert_audio_to_16k_mono(audio_bytes)
+                    pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
         else:
-            pcm_data = _convert_audio_to_16k_mono(audio_bytes)
+            pcm_data = await _convert_audio_to_16k_mono(audio_bytes)
 
         # 2. STT
         user_text = await _wyoming_stt(pcm_data, 16000)
@@ -1509,7 +1515,12 @@ async def voice_chat(
         raise HTTPException(status_code=504, detail="Verarbeitung Timeout")
     except Exception as e:
         logger.error("Voice-Chat fehlgeschlagen: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+        _voice_err = random.choice([
+            "Da lief etwas nicht nach Plan. Einen Moment.",
+            "Nicht ganz wie vorgesehen. Ich bleibe dran.",
+            "Suboptimal. Ich pruefe eine Alternative.",
+        ])
+        raise HTTPException(status_code=500, detail=_voice_err)
 
 
 # ----- Phase 9: Speaker Recognition Endpoints -----
@@ -1590,7 +1601,7 @@ async def maintenance_tasks():
 @app.post("/api/assistant/maintenance/complete")
 async def complete_maintenance(task_name: str, token: str = ""):
     """Phase 10: Wartungsaufgabe als erledigt markieren (PIN-geschuetzt)."""
-    _check_token(token)
+    await _check_token(token)
     success = brain.diagnostics.complete_task(task_name)
     if not success:
         raise HTTPException(status_code=404, detail=f"Aufgabe '{task_name}' nicht gefunden")
@@ -2425,9 +2436,10 @@ async def ui_auth(req: PinRequest, request: Request):
             logger.warning("PIN-Hash Migration fehlgeschlagen: %s", e)
 
     token = hashlib.sha256(f"{req.pin}{datetime.now().isoformat()}{secrets.token_hex(8)}".encode()).hexdigest()[:32]
-    _active_tokens[token] = datetime.now(timezone.utc).timestamp()
-    # Abgelaufene Tokens aufraumen
-    _cleanup_expired_tokens()
+    async with _token_lock:
+        _active_tokens[token] = datetime.now(timezone.utc).timestamp()
+        # Abgelaufene Tokens aufraumen
+        _cleanup_expired_tokens()
     _audit_log("login", {"success": True})
     return {"token": token}
 
@@ -2463,7 +2475,8 @@ async def ui_reset_pin(req: ResetPinRequest, request: Request):
     _save_dashboard_config(pin_hash, recovery_hash, setup_complete=True)
 
     # Alle bestehenden Sessions ungueltig machen
-    _active_tokens.clear()
+    async with _token_lock:
+        _active_tokens.clear()
 
     logger.info("Dashboard: PIN zurueckgesetzt via Recovery-Key")
     _audit_log("pin_reset", {"via": "recovery_key"})
@@ -2520,25 +2533,26 @@ def _cleanup_expired_tokens():
         _active_tokens.clear()
 
 
-def _check_token(token: str):
+async def _check_token(token: str):
     """Prueft ob ein UI-Token gueltig ist und nicht abgelaufen."""
     # API Key als Token akzeptieren (fuer Addon-Proxy)
     if _assistant_api_key and token and secrets.compare_digest(token, _assistant_api_key):
         return
-    if token not in _active_tokens:
-        raise HTTPException(status_code=401, detail="Nicht autorisiert")
-    # Ablaufzeit pruefen
-    created = _active_tokens[token]
-    now = datetime.now(timezone.utc).timestamp()
-    if now - created > _TOKEN_EXPIRY_SECONDS:
-        _active_tokens.pop(token, None)
-        raise HTTPException(status_code=401, detail="Sitzung abgelaufen. Bitte erneut anmelden.")
+    async with _token_lock:
+        if token not in _active_tokens:
+            raise HTTPException(status_code=401, detail="Nicht autorisiert")
+        # Ablaufzeit pruefen
+        created = _active_tokens[token]
+        now = datetime.now(timezone.utc).timestamp()
+        if now - created > _TOKEN_EXPIRY_SECONDS:
+            _active_tokens.pop(token, None)
+            raise HTTPException(status_code=401, detail="Sitzung abgelaufen. Bitte erneut anmelden.")
 
 
 @app.get("/api/ui/api-key")
 async def ui_get_api_key(token: str = ""):
     """API Key + Enforcement-Status anzeigen (PIN-geschuetzt)."""
-    _check_token(token)
+    await _check_token(token)
     return {
         "api_key": _assistant_api_key,
         "enforcement": _api_key_required,
@@ -2549,7 +2563,7 @@ async def ui_get_api_key(token: str = ""):
 @app.post("/api/ui/api-key/regenerate")
 async def ui_regenerate_api_key(token: str = ""):
     """API Key neu generieren (PIN-geschuetzt). Invalidiert alle bestehenden Clients."""
-    _check_token(token)
+    await _check_token(token)
     global _assistant_api_key
     _assistant_api_key = secrets.token_urlsafe(32)
 
@@ -2569,7 +2583,7 @@ async def ui_regenerate_api_key(token: str = ""):
 @app.post("/api/ui/recovery-key/regenerate")
 async def ui_regenerate_recovery_key(token: str = ""):
     """Recovery-Key neu generieren (nur fuer eingeloggte User)."""
-    _check_token(token)
+    await _check_token(token)
     new_recovery_key = secrets.token_urlsafe(16)[:12].upper()
     recovery_hash = _hash_value(new_recovery_key)
 
@@ -2597,7 +2611,7 @@ async def ui_set_api_key_enforcement(req: ApiKeyEnforcementRequest, token: str =
     Aktiviert oder deaktiviert die API Key Pruefung fuer /api/assistant/* Endpoints.
     WICHTIG: Erst aktivieren NACHDEM der Key in Addon + HA-Integration eingetragen wurde!
     """
-    _check_token(token)
+    await _check_token(token)
 
     # Env-Variable erzwingt Enforcement — Dashboard darf nicht deaktivieren
     if not req.enabled and os.getenv("ASSISTANT_API_KEY", "").strip():
@@ -2627,7 +2641,7 @@ async def ui_set_api_key_enforcement(req: ApiKeyEnforcementRequest, token: str =
 @app.get("/api/ui/known-devices")
 async def ui_get_known_devices(token: str = ""):
     """Bekannte Netzwerk-Geraete aus Redis + aktuelle device_tracker States."""
-    _check_token(token)
+    await _check_token(token)
     devices = []
     try:
         ta = brain.threat_assessment
@@ -2657,7 +2671,7 @@ async def ui_get_known_devices(token: str = ""):
 @app.delete("/api/ui/known-devices")
 async def ui_delete_known_device(req: dict, token: str = ""):
     """Geraet aus der Liste bekannter Geraete entfernen."""
-    _check_token(token)
+    await _check_token(token)
     entity_id = req.get("entity_id", "")
     if not entity_id:
         raise HTTPException(status_code=400, detail="entity_id fehlt")
@@ -2678,7 +2692,7 @@ async def ui_delete_known_device(req: dict, token: str = ""):
 @app.get("/api/ui/settings")
 async def ui_get_settings(token: str = ""):
     """Alle Settings aus settings.yaml als JSON."""
-    _check_token(token)
+    await _check_token(token)
     try:
         with open(SETTINGS_YAML_PATH) as f:
             config = yaml.safe_load(f) or {}
@@ -3788,7 +3802,7 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
     SICHERHEIT: Sicherheitskritische Sub-Keys (dashboard.*, security.api_key,
     self_optimization.immutable_keys) werden automatisch herausgefiltert.
     """
-    _check_token(token)
+    await _check_token(token)
 
     try:
         # SICHERHEIT: Geschuetzte Keys herausfiltern
@@ -3915,7 +3929,7 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
 @app.get("/api/ui/entities")
 async def ui_get_entities(token: str = "", domain: str = ""):
     """Alle HA-Entities holen (optional nach Domain filtern)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         states = await brain.ha.get_states()
         entities = []
@@ -3943,7 +3957,7 @@ async def ui_get_entities(token: str = "", domain: str = ""):
 @app.get("/api/ui/energy/live")
 async def ui_energy_live(token: str = ""):
     """Aktuelle Energie-Werte (Solar, Verbrauch, Preis, Export) fuer Dashboard."""
-    _check_token(token)
+    await _check_token(token)
     try:
         eo = brain.energy_optimizer
         states = await brain.ha.get_states()
@@ -4014,7 +4028,7 @@ async def ui_energy_live(token: str = ""):
 @app.get("/api/ui/room-temperature")
 async def ui_get_room_temperature(token: str = ""):
     """Konfigurierte Raumtemperatur-Sensoren mit aktuellem Wert und Mittelwert."""
-    _check_token(token)
+    await _check_token(token)
     try:
         import assistant.config as cfg
         rt_cfg = cfg.yaml_config.get("room_temperature", {})
@@ -4059,7 +4073,7 @@ async def ui_get_room_temperature(token: str = ""):
 @app.put("/api/ui/room-temperature")
 async def ui_set_room_temperature(req: Request, token: str = ""):
     """Raumtemperatur-Sensoren konfigurieren. Body: {"sensors": ["sensor.x", ...]}"""
-    _check_token(token)
+    await _check_token(token)
     try:
         data = await req.json()
         sensor_list = data.get("sensors", [])
@@ -4099,7 +4113,7 @@ async def ui_set_room_temperature(req: Request, token: str = ""):
 @app.get("/api/ui/room-temperature/available")
 async def ui_get_available_temp_sensors(token: str = ""):
     """Alle verfuegbaren Temperatur-Sensoren aus Home Assistant."""
-    _check_token(token)
+    await _check_token(token)
     try:
         states = await brain.ha.get_states()
         sensors = []
@@ -4133,7 +4147,7 @@ async def ui_get_available_temp_sensors(token: str = ""):
 @app.get("/api/ui/entities/mindhome")
 async def ui_get_mindhome_entities(token: str = ""):
     """Entities aus MindHome Device-DB mit Raum- und Domain-Zuordnung."""
-    _check_token(token)
+    await _check_token(token)
     try:
         devices = await brain.ha.search_devices() or []
         # Nach Raum gruppieren
@@ -4161,7 +4175,7 @@ async def ui_get_mindhome_entities(token: str = ""):
 @app.get("/api/ui/lights")
 async def ui_get_lights(token: str = ""):
     """Alle light.*-Entities aus HA mit aktuellem Status fuer Licht-Tab."""
-    _check_token(token)
+    await _check_token(token)
     try:
         states = await brain.ha.get_states()
         lights = []
@@ -4190,7 +4204,7 @@ async def ui_get_lights(token: str = ""):
 @app.get("/api/ui/covers")
 async def ui_get_covers(token: str = ""):
     """Alle Cover-Entities mit Typ-Konfiguration (fuer Rollladen/Garagentor-Verwaltung)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         states = await brain.ha.get_states()
         configs = load_cover_configs()
@@ -4219,7 +4233,7 @@ async def ui_get_covers(token: str = ""):
 @app.put("/api/ui/covers/{entity_id:path}/type")
 async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
     """Cover-Typ und enabled-Status setzen (lokal + Addon-Sync)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         data = await request.json()
         payload = {}
@@ -4255,7 +4269,7 @@ async def ui_set_cover_type(entity_id: str, request: Request, token: str = ""):
 @app.get("/api/ui/covers/live")
 async def ui_get_covers_live(token: str = ""):
     """Cover-Entities mit Live-Position aus Home Assistant."""
-    _check_token(token)
+    await _check_token(token)
     try:
         states = await brain.ha.get_states()
         configs = load_cover_configs()
@@ -4286,7 +4300,7 @@ async def ui_get_covers_live(token: str = ""):
 @app.post("/api/ui/covers/{entity_id:path}/position")
 async def ui_set_cover_position(entity_id: str, request: Request, token: str = ""):
     """Cover-Position direkt setzen (0-100)."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     position = data.get("position")
     if position is None:
@@ -4304,7 +4318,7 @@ async def ui_set_cover_position(entity_id: str, request: Request, token: str = "
 @app.post("/api/ui/covers/{entity_id:path}/open")
 async def ui_open_cover(entity_id: str, token: str = ""):
     """Cover vollstaendig oeffnen."""
-    _check_token(token)
+    await _check_token(token)
     try:
         await brain.ha.call_service("cover", "open_cover", {"entity_id": entity_id})
         return {"success": True}
@@ -4316,7 +4330,7 @@ async def ui_open_cover(entity_id: str, token: str = ""):
 @app.post("/api/ui/covers/{entity_id:path}/close")
 async def ui_close_cover(entity_id: str, token: str = ""):
     """Cover vollstaendig schliessen."""
-    _check_token(token)
+    await _check_token(token)
     try:
         await brain.ha.call_service("cover", "close_cover", {"entity_id": entity_id})
         return {"success": True}
@@ -4328,7 +4342,7 @@ async def ui_close_cover(entity_id: str, token: str = ""):
 @app.post("/api/ui/covers/{entity_id:path}/stop")
 async def ui_stop_cover(entity_id: str, token: str = ""):
     """Cover stoppen."""
-    _check_token(token)
+    await _check_token(token)
     try:
         await brain.ha.call_service("cover", "stop_cover", {"entity_id": entity_id})
         return {"success": True}
@@ -4340,7 +4354,7 @@ async def ui_stop_cover(entity_id: str, token: str = ""):
 @app.post("/api/ui/addon/cover-domain-toggle")
 async def ui_toggle_addon_cover_domain(token: str = ""):
     """Addon Cover-Domain Plugin ein/ausschalten (Konsolidierung)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         # Hole alle Domains vom Addon
         domains = await brain.ha.mindhome_get("/api/domains")
@@ -4369,7 +4383,7 @@ async def ui_toggle_addon_cover_domain(token: str = ""):
 @app.get("/api/ui/covers/groups")
 async def ui_get_cover_groups(token: str = ""):
     """Cover-Gruppen aus lokaler JSON laden."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import load_cover_groups
         return load_cover_groups()
@@ -4381,7 +4395,7 @@ async def ui_get_cover_groups(token: str = ""):
 @app.post("/api/ui/covers/groups")
 async def ui_create_cover_group(request: Request, token: str = ""):
     """Neue Cover-Gruppe erstellen (lokal)."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     try:
         from .cover_config import create_cover_group
@@ -4394,7 +4408,7 @@ async def ui_create_cover_group(request: Request, token: str = ""):
 @app.put("/api/ui/covers/groups/{group_id}")
 async def ui_update_cover_group(group_id: int, request: Request, token: str = ""):
     """Cover-Gruppe aktualisieren (lokal)."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     try:
         from .cover_config import update_cover_group
@@ -4412,7 +4426,7 @@ async def ui_update_cover_group(group_id: int, request: Request, token: str = ""
 @app.delete("/api/ui/covers/groups/{group_id}")
 async def ui_delete_cover_group(group_id: int, token: str = ""):
     """Cover-Gruppe loeschen (lokal)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import delete_cover_group
         if not delete_cover_group(group_id):
@@ -4428,7 +4442,7 @@ async def ui_delete_cover_group(group_id: int, token: str = ""):
 @app.post("/api/ui/covers/groups/{group_id}/control")
 async def ui_control_cover_group(group_id: int, request: Request, token: str = ""):
     """Alle Cover einer Gruppe auf Position setzen (direkt via HA)."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     position = data.get("position", 100)
     try:
@@ -4459,7 +4473,7 @@ async def ui_control_cover_group(group_id: int, request: Request, token: str = "
 @app.get("/api/ui/covers/scenes")
 async def ui_get_cover_scenes(token: str = ""):
     """Cover-Szenen aus lokaler JSON laden."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import load_cover_scenes
         return load_cover_scenes()
@@ -4471,7 +4485,7 @@ async def ui_get_cover_scenes(token: str = ""):
 @app.post("/api/ui/covers/scenes")
 async def ui_create_cover_scene(request: Request, token: str = ""):
     """Neue Cover-Szene erstellen (lokal)."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     try:
         from .cover_config import create_cover_scene
@@ -4484,7 +4498,7 @@ async def ui_create_cover_scene(request: Request, token: str = ""):
 @app.put("/api/ui/covers/scenes/{scene_id}")
 async def ui_update_cover_scene(scene_id: int, request: Request, token: str = ""):
     """Cover-Szene aktualisieren (lokal)."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     try:
         from .cover_config import update_cover_scene
@@ -4502,7 +4516,7 @@ async def ui_update_cover_scene(scene_id: int, request: Request, token: str = ""
 @app.delete("/api/ui/covers/scenes/{scene_id}")
 async def ui_delete_cover_scene(scene_id: int, token: str = ""):
     """Cover-Szene loeschen (lokal)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import delete_cover_scene
         if not delete_cover_scene(scene_id):
@@ -4518,7 +4532,7 @@ async def ui_delete_cover_scene(scene_id: int, token: str = ""):
 @app.post("/api/ui/covers/scenes/{scene_id}/activate")
 async def ui_activate_cover_scene(scene_id: int, token: str = ""):
     """Cover-Szene aktivieren (direkt via HA)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import load_cover_scenes, _find_by_id
         scenes = load_cover_scenes()
@@ -4550,7 +4564,7 @@ async def ui_activate_cover_scene(scene_id: int, token: str = ""):
 @app.get("/api/ui/scenes/status")
 async def ui_scenes_status(token: str = ""):
     """Jarvis Szenen-Status: Aktive Aktivitaet + HA-Szenen."""
-    _check_token(token)
+    await _check_token(token)
     try:
         # 1. Interne Jarvis-Aktivitaet (ActivityEngine)
         activity_info = await brain.activity.detect_activity()
@@ -4613,7 +4627,7 @@ async def ui_scenes_status(token: str = ""):
 @app.get("/api/ui/covers/schedules")
 async def ui_get_cover_schedules(token: str = ""):
     """Cover-Zeitplaene aus lokaler JSON laden."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import load_cover_schedules
         return load_cover_schedules()
@@ -4625,7 +4639,7 @@ async def ui_get_cover_schedules(token: str = ""):
 @app.post("/api/ui/covers/schedules")
 async def ui_create_cover_schedule(request: Request, token: str = ""):
     """Neuen Cover-Zeitplan erstellen (lokal)."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     try:
         from .cover_config import create_cover_schedule
@@ -4638,7 +4652,7 @@ async def ui_create_cover_schedule(request: Request, token: str = ""):
 @app.put("/api/ui/covers/schedules/{schedule_id}")
 async def ui_update_cover_schedule(schedule_id: int, request: Request, token: str = ""):
     """Cover-Zeitplan aktualisieren (lokal)."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     try:
         from .cover_config import update_cover_schedule
@@ -4656,7 +4670,7 @@ async def ui_update_cover_schedule(schedule_id: int, request: Request, token: st
 @app.delete("/api/ui/covers/schedules/{schedule_id}")
 async def ui_delete_cover_schedule(schedule_id: int, token: str = ""):
     """Cover-Zeitplan loeschen (lokal)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import delete_cover_schedule
         if not delete_cover_schedule(schedule_id):
@@ -4674,7 +4688,7 @@ async def ui_delete_cover_schedule(schedule_id: int, token: str = ""):
 @app.get("/api/ui/covers/sensors")
 async def ui_get_cover_sensors(token: str = ""):
     """Sensor-Zuordnungen fuer Cover-Automatik aus lokaler JSON laden."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import load_cover_sensors
         return load_cover_sensors()
@@ -4686,7 +4700,7 @@ async def ui_get_cover_sensors(token: str = ""):
 @app.post("/api/ui/covers/sensors")
 async def ui_add_cover_sensor(request: Request, token: str = ""):
     """Sensor-Zuordnung fuer Cover-Automatik hinzufuegen (lokal)."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     try:
         from .cover_config import create_cover_sensor
@@ -4699,7 +4713,7 @@ async def ui_add_cover_sensor(request: Request, token: str = ""):
 @app.delete("/api/ui/covers/sensors/{assignment_id}")
 async def ui_delete_cover_sensor(assignment_id: int, token: str = ""):
     """Sensor-Zuordnung entfernen (lokal)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import delete_cover_sensor
         if not delete_cover_sensor(assignment_id):
@@ -4715,7 +4729,7 @@ async def ui_delete_cover_sensor(assignment_id: int, token: str = ""):
 @app.get("/api/ui/covers/discover")
 async def ui_discover_covers(token: str = ""):
     """Verfuegbare Cover- und Sensor-Entities aus Home Assistant entdecken (direkt)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         states = await brain.ha.get_states()
         covers = []
@@ -4747,7 +4761,7 @@ async def ui_discover_covers(token: str = ""):
 @app.get("/api/ui/covers/action-log")
 async def ui_get_cover_action_log(token: str = "", limit: int = 10):
     """Letzte automatische Cover-Aktionen fuer das Dashboard."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import load_cover_action_log
         return load_cover_action_log(limit)
@@ -4761,7 +4775,7 @@ async def ui_get_cover_action_log(token: str = "", limit: int = 10):
 @app.get("/api/ui/covers/power-close")
 async def ui_get_power_close_rules(token: str = ""):
     """Power-Close-Regeln laden."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import load_power_close_rules
         return load_power_close_rules()
@@ -4773,7 +4787,7 @@ async def ui_get_power_close_rules(token: str = ""):
 @app.post("/api/ui/covers/power-close")
 async def ui_create_power_close_rule(request: Request, token: str = ""):
     """Neue Power-Close-Regel erstellen."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     try:
         from .cover_config import create_power_close_rule
@@ -4786,7 +4800,7 @@ async def ui_create_power_close_rule(request: Request, token: str = ""):
 @app.put("/api/ui/covers/power-close/{rule_id}")
 async def ui_update_power_close_rule(rule_id: int, request: Request, token: str = ""):
     """Power-Close-Regel aktualisieren."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     try:
         from .cover_config import update_power_close_rule
@@ -4804,7 +4818,7 @@ async def ui_update_power_close_rule(rule_id: int, request: Request, token: str 
 @app.delete("/api/ui/covers/power-close/{rule_id}")
 async def ui_delete_power_close_rule(rule_id: int, token: str = ""):
     """Power-Close-Regel loeschen."""
-    _check_token(token)
+    await _check_token(token)
     try:
         from .cover_config import delete_power_close_rule
         if not delete_power_close_rule(rule_id):
@@ -4822,7 +4836,7 @@ async def ui_delete_power_close_rule(rule_id: int, token: str = ""):
 @app.get("/api/ui/opening-sensors")
 async def ui_get_opening_sensors(token: str = ""):
     """Oeffnungs-Sensoren Konfiguration lesen (settings.yaml)."""
-    _check_token(token)
+    await _check_token(token)
     from .config import yaml_config
     entities = yaml_config.get("opening_sensors", {}).get("entities", {}) or {}
     return {"entities": entities}
@@ -4836,7 +4850,7 @@ async def ui_set_opening_sensors(request: Request, token: str = ""):
     merged nur opening_sensors.entities, und schreibt zurueck.
     Andere Einstellungen bleiben unberuehrt.
     """
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     entities = data.get("entities", {})
     # Validierung
@@ -4872,7 +4886,7 @@ async def ui_set_opening_sensors(request: Request, token: str = ""):
 @app.get("/api/ui/opening-sensors/discover")
 async def ui_discover_opening_sensors(token: str = ""):
     """Verfuegbare Oeffnungs-Sensoren aus Home Assistant entdecken."""
-    _check_token(token)
+    await _check_token(token)
     try:
         states = await brain.ha.get_states()
         sensors = []
@@ -4914,7 +4928,7 @@ async def ui_discover_opening_sensors(token: str = ""):
 @app.get("/api/ui/declarative-tools")
 async def ui_get_declarative_tools(token: str = ""):
     """Alle deklarativen Tools auflisten."""
-    _check_token(token)
+    await _check_token(token)
     from .declarative_tools import get_registry
     decl_cfg = yaml_config.get("declarative_tools", {})
     enabled = decl_cfg.get("enabled", True)
@@ -4928,7 +4942,7 @@ async def ui_get_declarative_tools(token: str = ""):
 @app.post("/api/ui/declarative-tools")
 async def ui_create_declarative_tool(request: Request, token: str = ""):
     """Deklaratives Tool erstellen oder aktualisieren."""
-    _check_token(token)
+    await _check_token(token)
     if not yaml_config.get("declarative_tools", {}).get("enabled", True):
         raise HTTPException(status_code=403, detail="Analyse-Tools sind deaktiviert")
     from .declarative_tools import get_registry
@@ -4953,7 +4967,7 @@ async def ui_suggest_declarative_tools(request: Request, token: str = ""):
 
     Hybrid: Regel-basierte Analyse + optionale LLM-Verfeinerung.
     """
-    _check_token(token)
+    await _check_token(token)
     if not yaml_config.get("declarative_tools", {}).get("enabled", True):
         raise HTTPException(status_code=403, detail="Analyse-Tools sind deaktiviert")
     from .declarative_tools import get_registry, generate_suggestions, refine_suggestions_with_llm
@@ -4969,7 +4983,8 @@ async def ui_suggest_declarative_tools(request: Request, token: str = ""):
     try:
         states = await brain.ha.get_states()
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"HA nicht erreichbar: {e}")
+        logger.error("HA nicht erreichbar: %s", e, exc_info=True)
+        raise HTTPException(status_code=502, detail="HA nicht erreichbar")
 
     if not states:
         return {"suggestions": [], "count": 0}
@@ -4994,7 +5009,7 @@ async def ui_suggest_declarative_tools(request: Request, token: str = ""):
 @app.delete("/api/ui/declarative-tools/{tool_name}")
 async def ui_delete_declarative_tool(tool_name: str, token: str = ""):
     """Deklaratives Tool loeschen."""
-    _check_token(token)
+    await _check_token(token)
     from .declarative_tools import get_registry
     registry = get_registry()
     result = registry.delete_tool(tool_name)
@@ -5006,7 +5021,7 @@ async def ui_delete_declarative_tool(tool_name: str, token: str = ""):
 @app.post("/api/ui/declarative-tools/{tool_name}/test")
 async def ui_test_declarative_tool(tool_name: str, token: str = ""):
     """Deklaratives Tool testweise ausfuehren."""
-    _check_token(token)
+    await _check_token(token)
     from .declarative_tools import DeclarativeToolExecutor
     executor = DeclarativeToolExecutor(brain.ha)
     result = await executor.execute(tool_name)
@@ -5018,7 +5033,7 @@ async def ui_test_declarative_tool(tool_name: str, token: str = ""):
 @app.get("/api/ui/entity-annotations")
 async def ui_get_entity_annotations(token: str = ""):
     """Entity-Annotationen aus settings.yaml lesen."""
-    _check_token(token)
+    await _check_token(token)
     annotations = yaml_config.get("entity_annotations", {}) or {}
     return {"annotations": annotations, "count": len(annotations)}
 
@@ -5029,7 +5044,7 @@ async def ui_set_entity_annotations(request: Request, token: str = ""):
 
     Dynamische Rollen-Validierung: Standard-Rollen + eigene aus entity_roles.
     """
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     annotations = data.get("annotations", {})
 
@@ -5065,7 +5080,7 @@ async def ui_set_entity_annotations(request: Request, token: str = ""):
 @app.get("/api/ui/entity-annotations/discover")
 async def ui_discover_entity_annotations(token: str = ""):
     """Auto-Erkennung: Schlaegt Annotationen vor basierend auf HA device_class."""
-    _check_token(token)
+    await _check_token(token)
     try:
         states = await brain.ha.get_states()
         existing = yaml_config.get("entity_annotations", {}) or {}
@@ -5107,7 +5122,7 @@ async def ui_discover_entity_annotations(token: str = ""):
 @app.get("/api/ui/entity-roles")
 async def ui_get_entity_roles(token: str = ""):
     """Standard-Rollen + eigene Rollen laden."""
-    _check_token(token)
+    await _check_token(token)
     from .function_calling import _DEFAULT_ROLES_DICT
     custom = yaml_config.get("entity_roles", {}) or {}
     return {"default_roles": _DEFAULT_ROLES_DICT, "custom_roles": custom}
@@ -5116,7 +5131,7 @@ async def ui_get_entity_roles(token: str = ""):
 @app.put("/api/ui/entity-roles")
 async def ui_set_entity_roles(request: Request, token: str = ""):
     """Eigene Rollen in settings.yaml speichern."""
-    _check_token(token)
+    await _check_token(token)
     data = await request.json()
     custom = data.get("custom_roles", {})
 
@@ -5153,7 +5168,7 @@ ROOM_PROFILES_YAML_PATH = Path(__file__).parent.parent / "config" / "room_profil
 @app.get("/api/ui/room-profiles")
 async def ui_get_room_profiles(token: str = ""):
     """Room-Profiles aus room_profiles.yaml als JSON."""
-    _check_token(token)
+    await _check_token(token)
     try:
         with open(ROOM_PROFILES_YAML_PATH) as f:
             data = yaml.safe_load(f) or {}
@@ -5166,7 +5181,7 @@ async def ui_get_room_profiles(token: str = ""):
 @app.put("/api/ui/room-profiles")
 async def ui_update_room_profiles(request: Request, token: str = ""):
     """Room-Profiles in room_profiles.yaml aktualisieren (Deep Merge)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         body = await request.json()
         updates = body.get("profiles", {})
@@ -5208,7 +5223,7 @@ async def ui_get_action_log(
     period: str = "7d",
 ):
     """Jarvis Action-Log vom MindHome Add-on holen (mit Filtern)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         params = f"limit={limit}&offset={offset}&period={period}"
         if type:
@@ -5223,7 +5238,7 @@ async def ui_get_action_log(
 @app.get("/api/ui/stats")
 async def ui_get_stats(token: str = ""):
     """Kombinierte Statistiken fuer das Dashboard."""
-    _check_token(token)
+    await _check_token(token)
     try:
         semantic_stats = await brain.memory.semantic.get_stats()
         kb_stats = await brain.knowledge_base.get_stats()
@@ -5255,7 +5270,7 @@ async def ui_get_stats(token: str = ""):
 @app.get("/api/ui/live-status")
 async def ui_live_status(token: str = ""):
     """Phase 16.3: Live-Status aller Systeme fuer Dashboard-Polling."""
-    _check_token(token)
+    await _check_token(token)
     try:
         health = await brain.health_check()
         mood = brain.mood.get_current_mood()
@@ -5284,7 +5299,7 @@ async def ui_live_status(token: str = ""):
 @app.get("/api/ui/presence")
 async def ui_get_presence(token: str = ""):
     """Live-Anwesenheitsstatus aller Personen aus Home Assistant."""
-    _check_token(token)
+    await _check_token(token)
     try:
         states = await brain.ha.get_states()
         persons = []
@@ -5318,7 +5333,7 @@ async def ui_get_presence(token: str = ""):
 @app.get("/api/ui/presence/settings")
 async def ui_get_presence_settings(token: str = ""):
     """Presence-Einstellungen vom MindHome Addon holen."""
-    _check_token(token)
+    await _check_token(token)
     try:
         result = await brain.ha.mindhome_get("/api/presence/settings")
         return result or {}
@@ -5330,7 +5345,7 @@ async def ui_get_presence_settings(token: str = ""):
 @app.put("/api/ui/presence/settings")
 async def ui_update_presence_settings(request: Request, token: str = ""):
     """Presence-Einstellungen im MindHome Addon aktualisieren."""
-    _check_token(token)
+    await _check_token(token)
     try:
         data = await request.json()
         result = await brain.ha.mindhome_put("/api/presence/settings", data)
@@ -5345,7 +5360,7 @@ async def ui_update_presence_settings(request: Request, token: str = ""):
 @app.get("/api/ui/notification-channels")
 async def ui_notification_channels(token: str = ""):
     """Phase 15.4: Verfuegbare Benachrichtigungs-Kanaele und deren Status."""
-    _check_token(token)
+    await _check_token(token)
     channels = {
         "websocket": {
             "enabled": True,
@@ -5383,7 +5398,7 @@ async def ui_update_notification_channels(
     req: NotificationChannelUpdate, token: str = "",
 ):
     """Phase 15.4: Kanal-Praeferenzen aktualisieren."""
-    _check_token(token)
+    await _check_token(token)
     # In settings.yaml speichern
     try:
         config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
@@ -5415,7 +5430,7 @@ async def ui_update_notification_channels(
 @app.get("/api/ui/health-trends")
 async def ui_health_trends(token: str = "", hours: int = 24):
     """Phase 15.1: Trend-Daten fuer Raumklima (CO2, Temp, Humidity)."""
-    _check_token(token)
+    await _check_token(token)
     hours = min(hours, 168)  # Max 7 Tage
 
     # Aktueller Status — Durchschnittswerte pro Sensortyp berechnen
@@ -5468,7 +5483,7 @@ async def ui_health_trends(token: str = "", hours: int = 24):
 @app.get("/api/ui/knowledge")
 async def ui_knowledge_info(token: str = ""):
     """Knowledge Base Statistiken und Dateiliste."""
-    _check_token(token)
+    await _check_token(token)
     stats = await brain.knowledge_base.get_stats()
     # Dateien im Knowledge-Verzeichnis auflisten
     kb_dir = Path(__file__).parent.parent / "config" / "knowledge"
@@ -5487,7 +5502,7 @@ async def ui_knowledge_info(token: str = ""):
 @app.post("/api/ui/knowledge/ingest")
 async def ui_knowledge_ingest(token: str = ""):
     """Knowledge Base neu einlesen (alle Dateien)."""
-    _check_token(token)
+    await _check_token(token)
     count = await brain.knowledge_base.ingest_all()
     stats = await brain.knowledge_base.get_stats()
     _audit_log("knowledge_base_ingest", {"new_chunks": count, "total_chunks": stats.get("total_chunks", 0)})
@@ -5497,7 +5512,7 @@ async def ui_knowledge_ingest(token: str = ""):
 @app.get("/api/ui/knowledge/chunks")
 async def ui_knowledge_chunks(token: str = "", source: str = "", offset: int = 0, limit: int = 50):
     """Alle Knowledge-Chunks auflisten (optional gefiltert nach Quelle)."""
-    _check_token(token)
+    await _check_token(token)
     chunks = await brain.knowledge_base.get_chunks(source=source, offset=offset, limit=min(limit, 200))
     stats = await brain.knowledge_base.get_stats()
     return {"chunks": chunks, "total": stats.get("total_chunks", 0)}
@@ -5506,7 +5521,7 @@ async def ui_knowledge_chunks(token: str = "", source: str = "", offset: int = 0
 @app.post("/api/ui/knowledge/chunks/delete")
 async def ui_knowledge_delete_chunks(request: Request, token: str = ""):
     """Einzelne Knowledge-Chunks loeschen."""
-    _check_token(token)
+    await _check_token(token)
     body = await request.json()
     chunk_ids = body.get("ids", [])
     if not chunk_ids:
@@ -5520,7 +5535,7 @@ async def ui_knowledge_delete_chunks(request: Request, token: str = ""):
 @app.post("/api/ui/knowledge/file/delete")
 async def ui_knowledge_file_delete(request: Request, token: str = ""):
     """Alle Chunks einer Datei aus der Knowledge Base loeschen."""
-    _check_token(token)
+    await _check_token(token)
     body = await request.json()
     filename = body.get("filename", "")
     if not filename:
@@ -5534,7 +5549,7 @@ async def ui_knowledge_file_delete(request: Request, token: str = ""):
 @app.post("/api/ui/knowledge/file/reingest")
 async def ui_knowledge_file_reingest(request: Request, token: str = ""):
     """Einzelne Datei loeschen und neu einlesen."""
-    _check_token(token)
+    await _check_token(token)
     body = await request.json()
     filename = body.get("filename", "")
     if not filename:
@@ -5552,7 +5567,7 @@ async def ui_knowledge_rebuild(token: str = ""):
     Noetig nach Wechsel des Embedding-Modells, damit alle Vektoren
     mit dem neuen Modell berechnet werden.
     """
-    _check_token(token)
+    await _check_token(token)
     result = await brain.knowledge_base.rebuild()
     _audit_log("knowledge_base_rebuild", result)
     return result
@@ -5561,7 +5576,7 @@ async def ui_knowledge_rebuild(token: str = ""):
 @app.post("/api/ui/knowledge/upload")
 async def ui_knowledge_upload(file: UploadFile = File(...), token: str = Form("")):
     """Datei in die Wissensdatenbank hochladen und sofort einlesen."""
-    _check_token(token)
+    await _check_token(token)
     from .knowledge_base import KB_UPLOAD_MAX_SIZE, KB_UPLOAD_ALLOWED
 
     if not file.filename:
@@ -5599,7 +5614,7 @@ async def ui_knowledge_upload(file: UploadFile = File(...), token: str = Form(""
 @app.get("/api/ui/recipes")
 async def ui_recipes_info(token: str = ""):
     """Recipe Store Statistiken und Dateiliste."""
-    _check_token(token)
+    await _check_token(token)
     stats = await brain.recipe_store.get_stats()
     recipe_dir = Path(__file__).parent.parent / "config" / "recipes"
     files = []
@@ -5617,7 +5632,7 @@ async def ui_recipes_info(token: str = ""):
 @app.post("/api/ui/recipes/ingest")
 async def ui_recipes_ingest(token: str = ""):
     """Recipe Store neu einlesen (alle Dateien)."""
-    _check_token(token)
+    await _check_token(token)
     count = await brain.recipe_store.ingest_all()
     stats = await brain.recipe_store.get_stats()
     _audit_log("recipe_store_ingest", {"new_chunks": count, "total_chunks": stats.get("total_chunks", 0)})
@@ -5627,7 +5642,7 @@ async def ui_recipes_ingest(token: str = ""):
 @app.get("/api/ui/recipes/chunks")
 async def ui_recipes_chunks(token: str = "", source: str = "", offset: int = 0, limit: int = 50):
     """Alle Rezept-Chunks auflisten (optional gefiltert nach Quelle)."""
-    _check_token(token)
+    await _check_token(token)
     chunks = await brain.recipe_store.get_chunks(source=source, offset=offset, limit=min(limit, 200))
     stats = await brain.recipe_store.get_stats()
     return {"chunks": chunks, "total": stats.get("total_chunks", 0)}
@@ -5636,7 +5651,7 @@ async def ui_recipes_chunks(token: str = "", source: str = "", offset: int = 0, 
 @app.post("/api/ui/recipes/chunks/delete")
 async def ui_recipes_delete_chunks(request: Request, token: str = ""):
     """Einzelne Rezept-Chunks loeschen."""
-    _check_token(token)
+    await _check_token(token)
     body = await request.json()
     chunk_ids = body.get("ids", [])
     if not chunk_ids:
@@ -5650,7 +5665,7 @@ async def ui_recipes_delete_chunks(request: Request, token: str = ""):
 @app.post("/api/ui/recipes/file/delete")
 async def ui_recipes_file_delete(request: Request, token: str = ""):
     """Alle Chunks einer Rezeptdatei loeschen."""
-    _check_token(token)
+    await _check_token(token)
     body = await request.json()
     filename = body.get("filename", "")
     if not filename:
@@ -5664,7 +5679,7 @@ async def ui_recipes_file_delete(request: Request, token: str = ""):
 @app.post("/api/ui/recipes/file/reingest")
 async def ui_recipes_file_reingest(request: Request, token: str = ""):
     """Einzelne Rezeptdatei loeschen und neu einlesen."""
-    _check_token(token)
+    await _check_token(token)
     body = await request.json()
     filename = body.get("filename", "")
     if not filename:
@@ -5678,7 +5693,7 @@ async def ui_recipes_file_reingest(request: Request, token: str = ""):
 @app.post("/api/ui/recipes/rebuild")
 async def ui_recipes_rebuild(token: str = ""):
     """Recipe Store komplett neu aufbauen (Collection loeschen + alle Dateien neu einlesen)."""
-    _check_token(token)
+    await _check_token(token)
     result = await brain.recipe_store.rebuild()
     _audit_log("recipe_store_rebuild", result)
     return result
@@ -5687,7 +5702,7 @@ async def ui_recipes_rebuild(token: str = ""):
 @app.post("/api/ui/recipes/upload")
 async def ui_recipes_upload(file: UploadFile = File(...), token: str = Form("")):
     """Rezeptdatei hochladen und sofort einlesen."""
-    _check_token(token)
+    await _check_token(token)
     from .recipe_store import REC_UPLOAD_MAX_SIZE, REC_UPLOAD_ALLOWED
 
     if not file.filename:
@@ -5722,7 +5737,7 @@ async def ui_recipes_upload(file: UploadFile = File(...), token: str = Form(""))
 @app.get("/api/ui/personal-dates")
 async def ui_get_personal_dates(token: str = ""):
     """Alle gespeicherten persoenlichen Daten (Geburtstage, Jahrestage) auflisten."""
-    _check_token(token)
+    await _check_token(token)
     try:
         semantic = brain.memory.semantic
         if not semantic or not semantic.redis:
@@ -5754,7 +5769,7 @@ async def ui_get_personal_dates(token: str = ""):
 @app.post("/api/ui/personal-dates")
 async def ui_add_personal_date(request: Request, token: str = ""):
     """Neues persoenliches Datum hinzufuegen."""
-    _check_token(token)
+    await _check_token(token)
     body = await request.json()
     date_type = body.get("date_type", "birthday")
     person_name = body.get("person_name", "").strip()
@@ -5791,7 +5806,7 @@ async def ui_add_personal_date(request: Request, token: str = ""):
 @app.delete("/api/ui/personal-dates/{fact_id}")
 async def ui_delete_personal_date(fact_id: str, token: str = ""):
     """Persoenliches Datum loeschen."""
-    _check_token(token)
+    await _check_token(token)
     try:
         semantic = brain.memory.semantic
         success = await semantic.delete_fact(fact_id)
@@ -5807,7 +5822,7 @@ async def ui_delete_personal_date(fact_id: str, token: str = ""):
 @app.get("/api/ui/logs")
 async def ui_get_logs(token: str = "", limit: int = 50):
     """Letzte Konversationen aus dem Working Memory."""
-    _check_token(token)
+    await _check_token(token)
     conversations = await brain.memory.get_recent_conversations(min(limit, 200))
     return {"conversations": conversations, "total": len(conversations)}
 
@@ -5815,7 +5830,7 @@ async def ui_get_logs(token: str = "", limit: int = 50):
 @app.get("/api/ui/audit")
 async def ui_get_audit(token: str = "", limit: int = 50):
     """Audit-Log: Letzte Dashboard-Aenderungen und Auth-Events."""
-    _check_token(token)
+    await _check_token(token)
     entries = []
     if _AUDIT_LOG_PATH.exists():
         with open(_AUDIT_LOG_PATH) as f:
@@ -5834,7 +5849,7 @@ async def ui_get_audit(token: str = "", limit: int = 50):
 @app.get("/api/ui/errors")
 async def ui_get_errors(token: str = "", limit: int = 100, level: str = ""):
     """Fehlerspeicher: Letzte WARNING/ERROR Log-Eintraege."""
-    _check_token(token)
+    await _check_token(token)
     entries = list(_error_buffer)
     if level:
         entries = [e for e in entries if e["level"] == level.upper()]
@@ -5845,7 +5860,7 @@ async def ui_get_errors(token: str = "", limit: int = 100, level: str = ""):
 @app.delete("/api/ui/errors")
 async def ui_clear_errors(token: str = ""):
     """Fehlerspeicher leeren."""
-    _check_token(token)
+    await _check_token(token)
     _error_buffer.clear()
     return {"status": "ok"}
 
@@ -5853,7 +5868,7 @@ async def ui_clear_errors(token: str = ""):
 @app.get("/api/ui/activity")
 async def ui_get_activity(token: str = "", limit: int = 200, module: str = "", level: str = ""):
     """Aktivitaetsprotokoll: Alles was Jarvis intern macht (INFO+ Logs)."""
-    _check_token(token)
+    await _check_token(token)
     entries = list(_activity_buffer)
     if module:
         entries = [e for e in entries if e.get("module", "").lower() == module.lower()
@@ -5870,7 +5885,7 @@ async def ui_get_activity(token: str = "", limit: int = 200, module: str = "", l
 @app.delete("/api/ui/activity")
 async def ui_clear_activity(token: str = ""):
     """Aktivitaetsprotokoll leeren."""
-    _check_token(token)
+    await _check_token(token)
     _activity_buffer.clear()
     return {"status": "ok"}
 
@@ -7242,7 +7257,7 @@ EASTER_EGGS_PATH = Path(__file__).parent.parent / "config" / "easter_eggs.yaml"
 @app.get("/api/ui/easter-eggs")
 async def ui_get_easter_eggs(token: str = ""):
     """Alle Easter Eggs aus easter_eggs.yaml."""
-    _check_token(token)
+    await _check_token(token)
     try:
         with open(EASTER_EGGS_PATH) as f:
             data = yaml.safe_load(f) or {}
@@ -7259,7 +7274,7 @@ class EasterEggUpdate(BaseModel):
 @app.put("/api/ui/easter-eggs")
 async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
     """Easter Eggs speichern."""
-    _check_token(token)
+    await _check_token(token)
     try:
         data = {"easter_eggs": req.easter_eggs}
         with open(EASTER_EGGS_PATH, "w") as f:
@@ -7283,7 +7298,7 @@ async def ui_update_easter_eggs(req: EasterEggUpdate, token: str = ""):
 @app.get("/api/ui/snapshots")
 async def ui_list_snapshots(token: str = "", config_file: str = ""):
     """Listet Config-Snapshots (optional gefiltert nach config_file)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         if config_file:
             snapshots = await brain.config_versioning.list_snapshots(config_file)
@@ -7307,7 +7322,7 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
     aktuellen Config beibehalten, falls der Snapshot aeltere/schwaecher
     konfigurierte Versionen enthaelt.
     """
-    _check_token(token)
+    await _check_token(token)
     try:
         # Aktuelle Security-Sections sichern BEVOR Rollback
         try:
@@ -7356,7 +7371,7 @@ async def ui_rollback(req: RollbackRequest, token: str = ""):
 @app.get("/api/ui/self-optimization/status")
 async def ui_self_opt_status(token: str = ""):
     """Status der Selbstoptimierung inkl. offener Vorschlaege."""
-    _check_token(token)
+    await _check_token(token)
     try:
         proposals = await brain.self_optimization.get_pending_proposals()
         return {
@@ -7376,7 +7391,7 @@ class ProposalAction(BaseModel):
 @app.post("/api/ui/self-optimization/approve")
 async def ui_self_opt_approve(req: ProposalAction, token: str = ""):
     """User genehmigt einen Optimierungs-Vorschlag (explizite Zustimmung)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         result = await brain.self_optimization.approve_proposal(req.index)
         if result["success"]:
@@ -7395,7 +7410,7 @@ async def ui_self_opt_approve(req: ProposalAction, token: str = ""):
 @app.post("/api/ui/self-optimization/reject")
 async def ui_self_opt_reject(req: ProposalAction, token: str = ""):
     """User lehnt einen Optimierungs-Vorschlag ab."""
-    _check_token(token)
+    await _check_token(token)
     try:
         result = await brain.self_optimization.reject_proposal(req.index)
         if result["success"]:
@@ -7409,7 +7424,7 @@ async def ui_self_opt_reject(req: ProposalAction, token: str = ""):
 @app.post("/api/ui/self-optimization/reject-all")
 async def ui_self_opt_reject_all(token: str = ""):
     """User lehnt alle Optimierungs-Vorschlaege ab."""
-    _check_token(token)
+    await _check_token(token)
     try:
         result = await brain.self_optimization.reject_all()
         if result["success"]:
@@ -7423,7 +7438,7 @@ async def ui_self_opt_reject_all(token: str = ""):
 @app.post("/api/ui/self-optimization/run-analysis")
 async def ui_self_opt_run_analysis(token: str = ""):
     """Manuelle Analyse-Ausloesung (nur durch User, nie automatisch)."""
-    _check_token(token)
+    await _check_token(token)
     try:
         proposals = await brain.self_optimization.run_analysis()
         return {
@@ -7439,7 +7454,7 @@ async def ui_self_opt_run_analysis(token: str = ""):
 @app.get("/api/ui/automations")
 async def ui_list_automations(token: str = ""):
     """Liste aller HA-Automationen + Jarvis-Automationen fuer die UI."""
-    _check_token(token)
+    await _check_token(token)
     try:
         # HA-Automationen direkt laden
         ha_automations = []
@@ -7481,7 +7496,7 @@ async def ui_list_automations(token: str = ""):
 @app.delete("/api/ui/automations/jarvis/{config_id}")
 async def ui_delete_jarvis_automation(config_id: str, token: str = ""):
     """Loescht eine Jarvis-Automation."""
-    _check_token(token)
+    await _check_token(token)
     if not hasattr(brain, "self_automation") or not brain.self_automation:
         raise HTTPException(status_code=503, detail="Self-Automation nicht verfügbar")
     try:
@@ -7495,7 +7510,7 @@ async def ui_delete_jarvis_automation(config_id: str, token: str = ""):
 @app.post("/api/ui/automations/jarvis/{entity_id:path}/toggle")
 async def ui_toggle_jarvis_automation(entity_id: str, token: str = ""):
     """Aktiviert/Deaktiviert eine Jarvis-Automation."""
-    _check_token(token)
+    await _check_token(token)
     try:
         states = await brain.ha.get_states()
         current_state = None
@@ -7603,7 +7618,7 @@ async def _ollama_api(path: str, method: str = "GET", json_data: dict | None = N
 @app.get("/api/ui/models/available")
 async def ui_models_available(token: str = ""):
     """Liefert alle in Ollama installierten Modelle fuer die UI-Dropdowns."""
-    _check_token(token)
+    await _check_token(token)
     ok, data = await _ollama_api("/api/tags")
     if not ok or not isinstance(data, dict):
         return {"models": []}
@@ -7617,7 +7632,7 @@ async def ui_models_available(token: str = ""):
 @app.get("/api/ui/system/status")
 async def ui_system_status(token: str = ""):
     """Systemstatus: Git, Container, Ollama, Speicher."""
-    _check_token(token)
+    await _check_token(token)
 
     # Git (via gemountetes /repo Volume)
     _, branch = await _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(_REPO_DIR))
@@ -7864,7 +7879,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
     Optionaler Body-Parameter 'branch': Wenn angegeben, wird auf diesen Branch
     gewechselt bevor der Pull ausgefuehrt wird.
     """
-    _check_token(token)
+    await _check_token(token)
 
     if _update_lock.locked():
         raise HTTPException(status_code=409, detail="Update laeuft bereits")
@@ -7996,7 +8011,7 @@ async def ui_system_update(token: str = "", body: BranchUpdateRequest | None = N
 @app.post("/api/ui/system/restart")
 async def ui_system_restart(token: str = ""):
     """Container-Restart via Docker Engine API (atomar, kein Crash)."""
-    _check_token(token)
+    await _check_token(token)
 
     if _update_lock.locked():
         raise HTTPException(status_code=409, detail="Update/Restart laeuft bereits")
@@ -8010,7 +8025,7 @@ async def ui_system_restart(token: str = ""):
 @app.post("/api/ui/system/update-models")
 async def ui_system_update_models(token: str = ""):
     """Aktualisiert alle installierten Ollama-Modelle via HTTP API."""
-    _check_token(token)
+    await _check_token(token)
 
     if _update_lock.locked():
         raise HTTPException(status_code=409, detail="Update laeuft bereits")
@@ -8046,7 +8061,7 @@ async def ui_system_update_check(token: str = "", branch: str = ""):
     Optionaler Query-Parameter 'branch': Wenn angegeben, wird gegen diesen
     Remote-Branch verglichen statt gegen den aktuellen Branch.
     """
-    _check_token(token)
+    await _check_token(token)
 
     # Aktuellen Branch ermitteln
     _, current_branch_raw = await _run_cmd(

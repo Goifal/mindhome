@@ -68,10 +68,11 @@ class HomeAssistantClient:
             return self._session
 
     async def close(self) -> None:
-        """Schliesst die HTTP Session."""
-        if self._session and not self._session.closed:
-            await self._session.close()
-            self._session = None
+        """Schliesst die HTTP Session (thread-safe)."""
+        async with self._get_lock():
+            if self._session and not self._session.closed:
+                await self._session.close()
+                self._session = None
 
     # ----- Home Assistant API -----
 
@@ -364,8 +365,8 @@ class HomeAssistantClient:
             logger.debug("MindHome Circuit Breaker OPEN — PUT %s uebersprungen", path)
             return None
 
-        session = await self._get_session()
         for attempt in range(retries):
+            session = await self._get_session()
             try:
                 async with session.put(
                     f"{self.mindhome_url}{path}",
@@ -389,8 +390,8 @@ class HomeAssistantClient:
             logger.debug("MindHome Circuit Breaker OPEN — DELETE %s uebersprungen", path)
             return None
 
-        session = await self._get_session()
         for attempt in range(retries):
+            session = await self._get_session()
             try:
                 async with session.delete(
                     f"{self.mindhome_url}{path}",
