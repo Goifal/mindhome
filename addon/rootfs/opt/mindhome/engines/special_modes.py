@@ -804,38 +804,40 @@ class EmergencyProtocol(SpecialModeBase):
         """Start escalation chain with timed steps."""
         self._cancel_escalation()
 
-        # Step 2: Push notification to all users
-        t1 = threading.Timer(
-            config.get("escalation_step1_delay_sec", 30),
-            self._escalation_step_notify_users,
-        )
-        t1.daemon = True
-        t1.start()
-        self._escalation_timers.append(t1)
-
-        # Step 3: Notify emergency contacts
-        if config.get("notify_emergency_contacts"):
-            t2 = threading.Timer(
-                config.get("escalation_step2_delay_sec", 60),
-                self._escalation_step_notify_contacts,
+        with self._lock:
+            # Step 2: Push notification to all users
+            t1 = threading.Timer(
+                config.get("escalation_step1_delay_sec", 30),
+                self._escalation_step_notify_users,
             )
-            t2.daemon = True
-            t2.start()
-            self._escalation_timers.append(t2)
+            t1.daemon = True
+            t1.start()
+            self._escalation_timers.append(t1)
 
-            # Step 4: Second notification to contacts
-            t3 = threading.Timer(
-                config.get("escalation_step3_delay_sec", 300),
-                self._escalation_step_notify_contacts,
-            )
-            t3.daemon = True
-            t3.start()
-            self._escalation_timers.append(t3)
+            # Step 3: Notify emergency contacts
+            if config.get("notify_emergency_contacts"):
+                t2 = threading.Timer(
+                    config.get("escalation_step2_delay_sec", 60),
+                    self._escalation_step_notify_contacts,
+                )
+                t2.daemon = True
+                t2.start()
+                self._escalation_timers.append(t2)
+
+                # Step 4: Second notification to contacts
+                t3 = threading.Timer(
+                    config.get("escalation_step3_delay_sec", 300),
+                    self._escalation_step_notify_contacts,
+                )
+                t3.daemon = True
+                t3.start()
+                self._escalation_timers.append(t3)
 
     def _cancel_escalation(self):
-        for t in self._escalation_timers:
-            t.cancel()
-        self._escalation_timers.clear()
+        with self._lock:
+            for t in self._escalation_timers:
+                t.cancel()
+            self._escalation_timers.clear()
 
     def _escalation_step_notify_users(self):
         """Escalation: notify all users via push."""

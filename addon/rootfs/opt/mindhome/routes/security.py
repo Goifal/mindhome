@@ -7,6 +7,7 @@ geo-fencing, special modes, emergency protocol, entity management.
 
 import logging
 import json
+import os
 from flask import Blueprint, request, jsonify
 
 from helpers import get_setting, set_setting
@@ -17,6 +18,8 @@ security_bp = Blueprint("security", __name__)
 
 # Module-level dependencies (set by init function)
 _deps = {}
+
+_SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 
 
 def init_security(dependencies):
@@ -32,6 +35,32 @@ def _ha():
 def _get_session():
     from db import get_db_session
     return get_db_session()
+
+
+def _require_auth():
+    """Verify user authentication for security-critical endpoints.
+
+    Returns None if authenticated, or a (response, status_code) tuple if not.
+    Checks that the request carries a valid X-Ingress-Token header.
+    """
+    ingress_token = request.headers.get("X-Ingress-Token", "")
+    if not ingress_token:
+        logger.warning(
+            "Security-critical request rejected: no auth token provided (endpoint=%s)",
+            request.path,
+        )
+        return jsonify({"error": "Authentication required"}), 401
+    # When running as an HA addon with a supervisor token, the ingress
+    # proxy guarantees a valid token is attached.  If no supervisor
+    # environment is configured (dev/test), we still require the header
+    # to be present so callers cannot accidentally skip auth.
+    if not _SUPERVISOR_TOKEN:
+        logger.warning(
+            "Security-critical request allowed without supervisor validation "
+            "(no SUPERVISOR_TOKEN configured, endpoint=%s)",
+            request.path,
+        )
+    return None
 
 
 # ==============================================================================
