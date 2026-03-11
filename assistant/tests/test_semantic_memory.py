@@ -129,6 +129,23 @@ def redis_mock():
     r.smembers = AsyncMock(return_value=set())
     r.scard = AsyncMock(return_value=0)
     r.delete = AsyncMock()
+
+    # Pipeline-Mock: delegiert hgetall-Aufrufe an r.hgetall
+    def _make_pipe():
+        pipe_keys = []
+        pipe = MagicMock()
+        pipe.hgetall = MagicMock(side_effect=lambda key: pipe_keys.append(key))
+
+        async def _execute():
+            results = []
+            for key in pipe_keys:
+                results.append(await r.hgetall(key))
+            return results
+
+        pipe.execute = AsyncMock(side_effect=_execute)
+        return pipe
+
+    r.pipeline = MagicMock(side_effect=_make_pipe)
     return r
 
 

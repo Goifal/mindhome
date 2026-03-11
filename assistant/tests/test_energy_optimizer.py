@@ -58,13 +58,15 @@ class TestAnomalyDetection:
     @pytest.mark.asyncio
     async def test_detects_anomaly(self, optimizer, redis_mock):
         """30%+ ueber Durchschnitt = Anomalie."""
-        # 7 Tage mit 300W Durchschnitt simulieren
-        async def fake_get(key):
-            if "mha:energy:daily:" in key:
-                return json.dumps({"consumption_wh": 300, "avg_price_cent": 25})
-            return None
+        # 7 Tage mit 300W Durchschnitt simulieren — mget gibt Liste zurueck
+        async def fake_mget(keys):
+            return [
+                json.dumps({"consumption_wh": 300, "avg_price_cent": 25})
+                if "mha:energy:daily:" in k else None
+                for k in keys
+            ]
 
-        redis_mock.get = AsyncMock(side_effect=fake_get)
+        redis_mock.mget = AsyncMock(side_effect=fake_mget)
 
         # 500W = 67% ueber 300W Durchschnitt → Anomalie
         result = await optimizer._check_anomaly(500.0)
@@ -74,12 +76,14 @@ class TestAnomalyDetection:
     @pytest.mark.asyncio
     async def test_no_anomaly_within_threshold(self, optimizer, redis_mock):
         """Unter 30% = keine Anomalie."""
-        async def fake_get(key):
-            if "mha:energy:daily:" in key:
-                return json.dumps({"consumption_wh": 400, "avg_price_cent": 25})
-            return None
+        async def fake_mget(keys):
+            return [
+                json.dumps({"consumption_wh": 400, "avg_price_cent": 25})
+                if "mha:energy:daily:" in k else None
+                for k in keys
+            ]
 
-        redis_mock.get = AsyncMock(side_effect=fake_get)
+        redis_mock.mget = AsyncMock(side_effect=fake_mget)
 
         # 450W = 12.5% ueber 400W → keine Anomalie
         result = await optimizer._check_anomaly(450.0)
@@ -95,24 +99,28 @@ class TestWeeklyComparison:
     @pytest.mark.asyncio
     async def test_more_consumption(self, optimizer, redis_mock):
         """Erkennt hoehere Verbrauchswoche."""
-        call_count = 0
+        now = datetime.now()
 
-        async def fake_get(key):
-            nonlocal call_count
-            call_count += 1
-            if "mha:energy:daily:" in key:
-                # Aktuelle Woche: 500W, letzte Woche: 300W
-                now = datetime.now()
+        async def fake_mget(keys):
+            results = []
+            for key in keys:
+                matched = False
                 for i in range(7):
                     day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
                     if day in key:
-                        return json.dumps({"consumption_wh": 500})
+                        results.append(json.dumps({"consumption_wh": 500}))
+                        matched = True
+                        break
                     day_lw = (now - timedelta(days=i + 7)).strftime("%Y-%m-%d")
                     if day_lw in key:
-                        return json.dumps({"consumption_wh": 300})
-            return None
+                        results.append(json.dumps({"consumption_wh": 300}))
+                        matched = True
+                        break
+                if not matched:
+                    results.append(None)
+            return results
 
-        redis_mock.get = AsyncMock(side_effect=fake_get)
+        redis_mock.mget = AsyncMock(side_effect=fake_mget)
         result = await optimizer._get_weekly_comparison()
         # Kann None sein wenn die Keys nicht matchen — das ist OK fuer Unit-Test
 

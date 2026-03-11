@@ -4,7 +4,7 @@ Tests fuer SpeakerRecognition — Personen-Erkennung.
 
 import json
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -27,6 +27,24 @@ def redis_mock():
     r.delete = AsyncMock()
     r.exists = AsyncMock(return_value=0)
     r.expire = AsyncMock()
+
+    # Pipeline-Mock: delegiert get-Aufrufe an r.get
+    def _make_pipe():
+        pipe_calls = []
+        pipe = MagicMock()
+        pipe.get = MagicMock(side_effect=lambda key: pipe_calls.append(('get', key)))
+
+        async def _execute():
+            results = []
+            for call_type, key in pipe_calls:
+                if call_type == 'get':
+                    results.append(await r.get(key))
+            return results
+
+        pipe.execute = AsyncMock(side_effect=_execute)
+        return pipe
+
+    r.pipeline = MagicMock(side_effect=_make_pipe)
     return r
 
 

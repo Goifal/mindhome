@@ -275,22 +275,26 @@ class TestEnergyAnomalyCheck:
     async def test_high_consumption(self, insight_with_redis):
         engine = insight_with_redis
 
-        # 7-Tage-Durchschnitt: 5000 Wh
-        async def fake_get(key):
-            if "daily:" in key and datetime.now().strftime("%Y-%m-%d") in key:
-                return json.dumps({"consumption_wh": 8000})
-            if "daily:" in key:
-                return json.dumps({"consumption_wh": 5000})
-            return None
+        # mget wird mit 8 Keys aufgerufen (7 vergangene Tage + heute)
+        async def fake_mget(keys):
+            today_str = "2025-06-15"
+            results = []
+            for key in keys:
+                if today_str in key:
+                    results.append(json.dumps({"consumption_wh": 8000}))
+                elif "daily:" in key:
+                    results.append(json.dumps({"consumption_wh": 5000}))
+                else:
+                    results.append(None)
+            return results
 
-        engine.redis.get = AsyncMock(side_effect=fake_get)
+        engine.redis.mget = AsyncMock(side_effect=fake_mget)
 
         with patch.object(engine, "_get_title_for_home", return_value="Sir"):
             with patch("assistant.insight_engine.datetime") as mock_dt:
                 mock_dt.now.return_value = datetime(2025, 6, 15, 12, 0)
                 mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
                 result = await engine._check_energy_anomaly({})
-        # Result depends on the projected vs avg calculation
         # At noon, projected = 8000/12*24 = 16000, avg = 5000, increase = 220%
         assert result is not None
         assert result["check"] == "energy_anomaly"
@@ -299,14 +303,18 @@ class TestEnergyAnomalyCheck:
     async def test_normal_consumption(self, insight_with_redis):
         engine = insight_with_redis
 
-        async def fake_get(key):
-            if "2025-06-15" in key:
-                return json.dumps({"consumption_wh": 2000})
-            if "daily:" in key:
-                return json.dumps({"consumption_wh": 5000})
-            return None
+        async def fake_mget(keys):
+            results = []
+            for key in keys:
+                if "2025-06-15" in key:
+                    results.append(json.dumps({"consumption_wh": 2000}))
+                elif "daily:" in key:
+                    results.append(json.dumps({"consumption_wh": 5000}))
+                else:
+                    results.append(None)
+            return results
 
-        engine.redis.get = AsyncMock(side_effect=fake_get)
+        engine.redis.mget = AsyncMock(side_effect=fake_mget)
 
         with patch("assistant.insight_engine.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2025, 6, 15, 12, 0)

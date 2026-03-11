@@ -331,7 +331,7 @@ class PersonalityEngine:
 
         # State
         self._state_lock = asyncio.Lock()
-        self._mood_formality_lock = threading.Lock()
+        self.__mood_formality_lock = threading.Lock()
         self._current_mood: str = "neutral"
         self._mood_detector = None
         self._redis = None
@@ -363,6 +363,15 @@ class PersonalityEngine:
             "PersonalityEngine initialisiert (Sarkasmus: %d, Meinung: %d, Ironie: %s)",
             self.sarcasm_level, self.opinion_intensity, self.self_irony_enabled,
         )
+
+    @property
+    def _mood_formality_lock(self) -> threading.Lock:
+        """Lazy-initialisiertes Lock fuer thread-safe Zugriff auf Mood/Formality."""
+        try:
+            return self.__mood_formality_lock
+        except AttributeError:
+            self.__mood_formality_lock = threading.Lock()
+            return self.__mood_formality_lock
 
     def set_mood_detector(self, mood_detector):
         """Setzt die Referenz zum MoodDetector."""

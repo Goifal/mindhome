@@ -26,7 +26,7 @@ def ha_mock():
 
 @pytest.fixture
 def redis_mock():
-    """AsyncMock Redis Client."""
+    """AsyncMock Redis Client mit Pipeline-Support."""
     mock = AsyncMock()
     mock.hset = AsyncMock()
     mock.hgetall = AsyncMock(return_value={})
@@ -34,6 +34,23 @@ def redis_mock():
     mock.srem = AsyncMock()
     mock.smembers = AsyncMock(return_value=set())
     mock.delete = AsyncMock()
+
+    # Pipeline-Mock: delegiert hgetall-Aufrufe an mock.hgetall
+    def _make_pipe():
+        pipe_keys = []
+        pipe = MagicMock()
+        pipe.hgetall = MagicMock(side_effect=lambda key: pipe_keys.append(key))
+
+        async def _execute():
+            results = []
+            for key in pipe_keys:
+                results.append(await mock.hgetall(key))
+            return results
+
+        pipe.execute = AsyncMock(side_effect=_execute)
+        return pipe
+
+    mock.pipeline = MagicMock(side_effect=_make_pipe)
     return mock
 
 
