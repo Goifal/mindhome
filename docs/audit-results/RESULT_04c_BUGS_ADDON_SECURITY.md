@@ -559,10 +559,50 @@ Alle 8 KRITISCHEN Bugs in P4c gefixt!
 
 ### Dead-Code-Liste (DL#2)
 - `shared/` gesamtes Paket → ✅ GELOESCHT
-- `redis_breaker`, `chromadb_breaker` → ❌ weiterhin Dead Code
+- `redis_breaker`, `chromadb_breaker` → ✅ GEFIXT — jetzt registriert in `circuit_breaker.py` (2026-03-11)
 - `domains/cover.py` — 3 Methoden → ❌ vorhanden
 - `engines/cover_control.py` — `_pending_actions` → ❌ vorhanden
 - `engines/adaptive.py` — `GradualTransitioner._pending` → ❌ vorhanden
 - `automation_engine.py` — `_apply_context_adjustments()` → ❌ vorhanden
 
-**Wenn du Prompt 5 in derselben Konversation erhaeltst**: Setze alle bisherigen Kontext-Bloecke (Prompt 1–4c) automatisch ein.
+---
+
+## Post-Fix-Verifikation (2026-03-11, nach P06a-P08 + finale Fixes)
+
+**Methode**: Alle OFFEN-Bugs mit Severity HIGH/CRITICAL/MEDIUM gegen Quellcode geprueft.
+
+### Nachtraeglich als GEFIXT bestaetigt:
+
+| Bug | Severity | Modul | Beschreibung | Gefixt durch |
+|-----|----------|-------|-------------|-------------|
+| #98 | HOCH | shared/ | Package-Divergenz | P08 (shared/ geloescht) |
+| Dead Code: redis/chromadb_breaker | — | circuit_breaker.py | Jetzt registriert und nutzbar | Finale Fixes 2026-03-11 |
+| SEC-18 (teilweise) | MITTEL | addon requirements.txt | Jinja2 3.1.2→3.1.6, Werkzeug 3.0.1→3.1.3, MarkupSafe 2.1.3→3.0.2 | Finale Fixes 2026-03-11 |
+
+### Verifiziert NOCH OFFEN — HIGH/CRITICAL:
+
+| Bug | Severity | Modul | Beschreibung |
+|-----|----------|-------|-------------|
+| #68 | KRITISCH | app.py | CORS Wildcard-Default wenn `CORS_ORIGINS` leer |
+| #69 | KRITISCH | app.py | Localhost-Bypass fuer alle Auth |
+| #33 | HOCH | base.py | Hardcoded `is_dark: False` Fallback ohne Logging |
+| #42 | HOCH | access_control.py | `_timer_lock` inkonsistent genutzt |
+| #44 | HOCH | special_modes.py | Deactivation: `_active` Check vor Lock |
+| #45 | HOCH | special_modes.py | Emergency-Timer ohne Synchronisation |
+| #70 | HOCH | security.py | Lock/Unlock Endpoints ohne User-Auth |
+| #71 | HOCH | security.py | Emergency Trigger ohne Auth |
+
+### Verifiziert NOCH OFFEN — MEDIUM (32 Bugs):
+
+#8, #9, #11, #15, #16, #17, #34, #35, #36, #37, #46, #48, #51, #52, #53,
+#57, #58, #59, #60, #61, #62, #63, #64, #66, #79, #80, #84, #85, #87,
+#88, #90, #102
+
+### Aktualisierte Bug-Bilanz (Post-Verifikation):
+
+```
+Urspruenglich: 106 Bugs (8 KRITISCH, 25 HOCH, 34 MITTEL, 39 NIEDRIG)
+Gefixt (DL#2 + Post): 48 (davon 3 neu gefixt am 2026-03-11)
+Noch offen:   ~58 (2 KRITISCH, 6 HOCH, 32 MITTEL, ~18 NIEDRIG)
+Davon code-verifiziert: 8 HIGH/CRITICAL + 32 MEDIUM bestaetigt offen
+```

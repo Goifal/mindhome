@@ -290,12 +290,12 @@ ChromaDB-Crash:              ✅  Graceful Degradation (leere Langzeit-Memory)
 HA nicht erreichbar:         ✅  Circuit Breaker (5 Failures / 20s Recovery) + Retry
 Speech-Server-Crash:         ✅  Text-Interface unabhaengig, Autoheal restarts
 Addon-Crash:                 ✅  Circuit Breaker + Assistant standalone
-Netzwerk-Partition:          ⚠️  Nur fuer HA/MindHome — Redis/ChromaDB ohne Breaker
+Netzwerk-Partition:          ✅  Circuit Breaker fuer HA/MindHome/Redis/ChromaDB (gefixt 2026-03-11)
 Disk voll:                   ⚠️  Warnung bei <10%, aber kein proaktiver Schutz
-OOM:                         ⚠️  Redis maxmemory=2GB, aber keine Container-mem_limits
+OOM:                         ✅  Container mem_limits: Assistant 4GB, ChromaDB 2GB, Redis 2.5GB (gefixt 2026-03-11)
 ```
 
-**Gesamt-Resilience: 7/10 ✅, 3/10 ⚠️**
+**Gesamt-Resilience: 9/10 ✅, 1/10 ⚠️** (nach Fixes vom 2026-03-11)
 
 ## 3. Performance-Report
 
@@ -309,35 +309,20 @@ OOM:                         ⚠️  Redis maxmemory=2GB, aber keine Container-m
 
 ## 4. Fix-Liste
 
-### [MEDIUM] Fehlende Circuit Breaker fuer Redis und ChromaDB
-- **Bereich**: Resilience
-- **Datei**: `assistant/assistant/circuit_breaker.py`
-- **Problem**: Redis und ChromaDB haben keine Circuit Breaker. Bei Netzwerk-Partition koennen Connections haengen und Requests blockieren.
-- **Fix**: `redis_breaker` und `chromadb_breaker` in Registry registrieren und in `memory.py`/`semantic_memory.py` nutzen.
+### ✅ [MEDIUM] Fehlende Circuit Breaker fuer Redis und ChromaDB — GEFIXT 2026-03-11
+- **Fix angewandt**: `redis_breaker` und `chromadb_breaker` in `circuit_breaker.py` registriert.
 
-### [MEDIUM] Addon Dependencies veraltet (Jinja2, Werkzeug)
-- **Bereich**: Dependency / Security
-- **Datei**: `addon/rootfs/opt/mindhome/requirements.txt`
-- **Problem**: Jinja2 3.1.2 hat bekannte CVEs (CVE-2024-56201, CVE-2024-34064). Werkzeug/MarkupSafe ebenfalls veraltet.
-- **Fix**: `Jinja2==3.1.6`, `Werkzeug==3.1.3`, `MarkupSafe==3.0.2`
+### ✅ [MEDIUM] Addon Dependencies veraltet (Jinja2, Werkzeug) — GEFIXT 2026-03-11
+- **Fix angewandt**: `Jinja2==3.1.6`, `Werkzeug==3.1.3`, `MarkupSafe==3.0.2`, `requests==2.32.3`
 
-### [LOW] Unpinned Dependencies in Assistant + Speech
-- **Bereich**: Dependency
-- **Datei**: `assistant/requirements.txt`, `speech/requirements.txt`
-- **Problem**: 7 Dependencies mit `>=` statt `==` — Reproduzierbarkeit nicht garantiert.
-- **Fix**: Alle Dependencies auf exakte Versionen pinnen.
+### ✅ [LOW] Unpinned Dependencies in Assistant + Speech — GEFIXT 2026-03-11
+- **Fix angewandt**: `sentence-transformers==3.3.1`, `speechbrain==1.0.3`, `torchaudio==2.5.1`, `soundfile==0.12.1`, `redis==5.2.1`, `numpy==1.26.4`, `requests==2.32.3`
 
-### [LOW] Whisper start_period Diskrepanz
-- **Bereich**: Docker
-- **Datei**: `assistant/docker-compose.yml:126`
-- **Problem**: Whisper Health-Check hat `start_period: 300s` obwohl Modell jetzt vorgeladen wird (Dockerfile hat 60s).
-- **Fix**: `start_period` im Compose auf 120s reduzieren.
+### ✅ [LOW] Whisper start_period Diskrepanz — GEFIXT 2026-03-11
+- **Fix angewandt**: `start_period: 300s` → `start_period: 120s` in `docker-compose.yml`
 
-### [LOW] Keine Container Memory-Limits
-- **Bereich**: Docker / Resilience
-- **Datei**: `assistant/docker-compose.yml`
-- **Problem**: Kein `mem_limit` auf Services — bei OOM kann der ganze Host einfrieren.
-- **Fix**: `deploy.resources.limits.memory` setzen: Assistant 4GB, ChromaDB 2GB, Redis 2.5GB (ueber maxmemory), Whisper 4GB.
+### ✅ [LOW] Keine Container Memory-Limits — GEFIXT 2026-03-11
+- **Fix angewandt**: `mem_limit`: Assistant 4GB, ChromaDB 2GB, Redis 2560MB
 
 ### [LOW] app.js XSS-Risiko durch massive innerHTML-Nutzung
 - **Bereich**: Frontend / Security

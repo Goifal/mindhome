@@ -249,6 +249,47 @@ Aktuelle Bug-Bilanz (DL#2):
 
 ---
 
+## Post-Fix-Verifikation (2026-03-11, nach P06a-P08 + finale Fixes)
+
+**Methode**: Jeder HIGH/CRITICAL Bug gegen den tatsaechlichen Quellcode geprueft.
+
+### Nachtraeglich als GEFIXT bestaetigt (im Code verifiziert):
+
+| Bug | Severity | Beschreibung | Gefixt durch |
+|-----|----------|-------------|-------------|
+| NEW-1 | KRITISCH | Deadlock bei Retry: `_process_inner()` statt `self.process()` | P06a |
+| #3/NEW-7 | KRITISCH/HOCH | `proactive.start()` in `_safe_init()` gewrappt | P06b |
+
+### Verifiziert NOCH OFFEN (im Code geprueft, Bug existiert noch):
+
+| Bug | Severity | Modul | Beschreibung |
+|-----|----------|-------|-------------|
+| #20 | KRITISCH | semantic_memory.py | Kein ChromaDB-Rollback bei Redis-Failure |
+| #4 | HOCH | brain.py | Shutdown verpasst 30+ Komponenten |
+| #6 | HOCH | main.py | `_token_lock` definiert aber nie acquired (Dead Code) |
+| #7/NEW-6 | HOCH | main.py | `subprocess.run()` blockiert Event-Loop (ffmpeg 30s) |
+| #9 | HOCH | main.py | 3 HTTPExceptions + ~25 Endpoints leaken `str(e)` |
+| #21 | HOCH | memory.py | Hard-Cap 1000 verhindert Pagination |
+| #36 | HOCH | personality.py | `_current_mood` ohne Lock |
+| #37 | HOCH | personality.py | `_current_formality` ohne Lock |
+| #39 | HOCH | mood_detector.py | `analyze_voice_metadata()` ohne Lock |
+| #53 | HOCH | function_calling.py | `_tools_cache = None` ohne Lock bei Invalidation |
+| #56 | HOCH | function_calling.py | `_ASSISTANT_TOOLS_STATIC` bei Module-Load (unnoetig) |
+| #58 | HOCH | function_calling.py | TOCTOU: settings.yaml Read vor Lock |
+| NEW-A | HOCH | semantic_memory.py | 2 synchrone ChromaDB `.update()` Calls |
+
+### Aktualisierte Bug-Bilanz (Post-Verifikation):
+
+```
+Offene HIGH/CRITICAL Bugs:  13 (1 KRITISCH, 12 HOCH)
+Offene MITTEL Bugs:         ~33
+Offene NIEDRIG Bugs:        ~16
+Gesamt offen (P04a):        ~62
+Davon code-verifiziert:     13 HIGH/CRITICAL bestaetigt offen
+```
+
+---
+
 ## KONTEXT AUS PROMPT 4a (DL#2): Bug-Report (Core-Module)
 
 ### Statistik

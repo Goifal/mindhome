@@ -438,3 +438,65 @@ Gesamt: 221 Bugs in Prioritaet 5-9 (KRITISCH 1, HOCH 36, MITTEL 97, NIEDRIG 85, 
 3. **`except Exception: pass` → `logger.debug()`** Bulk-Fix aus P8 maskiert Fehler — 38 stille-Fehler-Bugs
 4. **None-Fehler-Cluster** in cooking_assistant.py (7 Stellen) — alle session-bezogen
 5. **Race Conditions** in globalen Variablen (config.py) und Instance-Variablen ohne Lock
+
+---
+
+## Post-Fix-Verifikation (2026-03-11, nach P06a-P08 + finale Fixes)
+
+**Methode**: Jeder HIGH/CRITICAL Bug gegen den tatsaechlichen Quellcode geprueft.
+
+### Nachtraeglich als GEFIXT bestaetigt (im Code verifiziert):
+
+| Bug | Severity | Modul | Beschreibung | Gefixt durch |
+|-----|----------|-------|-------------|-------------|
+| #1 | KRITISCH | proactive.py | event_handlers ueberschrieben | P06a |
+| #56 | HOCH | multi_room_audio.py | `_build_group_status()` N+1 → `asyncio.gather()` | P06b |
+| #57 | HOCH | multi_room_audio.py | `_get_speaker_names()` N+1 → `asyncio.gather()` | P06b |
+| #115 | HOCH | cooking_assistant.py | `_next_step()` session None-Check | P06b |
+| #144 | HOCH | knowledge_base.py | `get_or_create_collection()` → `asyncio.to_thread()` | P06b |
+| #145 | HOCH | knowledge_base.py | `delete_collection()` → `asyncio.to_thread()` | P06b |
+| #146 | HOCH | knowledge_base.py | `get_or_create_collection()` → `asyncio.to_thread()` | P06b |
+| #195 | HOCH | wellness_advisor.py | Redis get() → `_safe_redis()` | P06b |
+| #196 | HOCH | wellness_advisor.py | Redis get() → `_safe_redis()` | P06b |
+| #197 | HOCH | wellness_advisor.py | Redis get() → `_safe_redis()` | P06b |
+| #198 | HOCH | wellness_advisor.py | Redis exists() → `_safe_redis()` | P06b |
+| #199 | HOCH | wellness_advisor.py | Redis exists() → `_safe_redis()` | P06b |
+| #200 | HOCH | wellness_advisor.py | Redis get() → `_safe_redis()` | P06b |
+| #201 | HOCH | wellness_advisor.py | Redis get() → `_safe_redis()` | P06b |
+
+### Verifiziert NOCH OFFEN (im Code geprueft, Bug existiert noch):
+
+| Bug | Severity | Modul | Beschreibung |
+|-----|----------|-------|-------------|
+| #2 | HOCH | proactive.py | `_batch_flushing` Boolean ohne Lock |
+| #3 | HOCH | proactive.py | `except Exception: pass` in `_accumulate_event` |
+| #4 | HOCH | proactive.py | `except Exception: pass` in Mood-Check |
+| #5 | HOCH | proactive.py | `except Exception: pass` in Narration |
+| #6 | HOCH | self_automation.py | `_load_templates()` sync File-I/O bei Module-Load |
+| #7 | HOCH | proactive.py | `except Exception: return` ohne Logging in `_check_personal_dates` |
+| #29 | HOCH | ha_client.py | `close()` nicht thread-safe (kein `_session_lock`) |
+| #30 | HOCH | ha_client.py | `mindhome_put()` Session vor Retry-Loop geholt |
+| #31 | HOCH | ha_client.py | `mindhome_delete()` gleiche stale-Session |
+| #58 | HOCH | speaker_recognition.py | `identify_by_embedding()` N+1 Redis |
+| #72 | HOCH | feedback.py | Redundanter Double-Decode |
+| #73 | HOCH | self_optimization.py | Sync File-I/O in async `_apply_parameter()` |
+| #74 | HOCH | self_optimization.py | Sync File-I/O in async `add_banned_phrase()` |
+| #75 | HOCH | learning_observer.py | `logger.debug()` statt `logger.warning()` |
+| #113 | HOCH | config.py | `_active_person` global ohne Lock |
+| #114 | HOCH | config.py | `get_room_profiles()` Fast-Path vor Lock |
+| #116 | HOCH | cooking_assistant.py | `_timer_tasks` waechst unbegrenzt |
+| #117 | HOCH | cooking_assistant.py | `session.timers` ohne Limit |
+| #164 | HOCH | workshop_library.py | Sync ChromaDB `get_or_create_collection()` |
+| #165 | HOCH | workshop_library.py | Sync `path.read_text()` in async |
+| #166 | HOCH | workshop_library.py | Sync Embeddings in List-Comprehension |
+| #167 | HOCH | workshop_library.py | Sync `embedding_fn(query)` in async `search()` |
+| #168 | HOCH | repair_planner.py | N+1 Redis in `list_projects()` |
+
+### Aktualisierte Bug-Bilanz (Post-Verifikation):
+
+```
+Urspruenglich: 221 Bugs (1 KRITISCH, 36 HOCH, 97 MITTEL, 85 NIEDRIG, 2 INFO)
+Gefixt:        14 (1 KRITISCH, 13 HOCH)
+Noch offen:    207 (0 KRITISCH, 23 HOCH, ~97 MITTEL, ~85 NIEDRIG, 2 INFO)
+Davon code-verifiziert: 23 HIGH bestaetigt offen
+```
