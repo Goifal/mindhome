@@ -466,6 +466,9 @@ def access_locks():
 
 @security_bp.route("/api/security/access/locks/<path:entity_id>/lock", methods=["POST"])
 def access_lock(entity_id):
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     import re
     if not re.match(r'^[a-z_]+\.[a-z0-9_]+$', entity_id):
         return jsonify({"error": "Invalid entity_id format"}), 400
@@ -483,6 +486,9 @@ def access_lock(entity_id):
 
 @security_bp.route("/api/security/access/locks/<path:entity_id>/unlock", methods=["POST"])
 def access_unlock(entity_id):
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     import re
     if not re.match(r'^[a-z_]+\.[a-z0-9_]+$', entity_id):
         return jsonify({"error": "Invalid entity_id format"}), 400
@@ -500,6 +506,9 @@ def access_unlock(entity_id):
 
 @security_bp.route("/api/security/access/lock-all", methods=["POST"])
 def access_lock_all():
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     mgr = _deps.get("access_control_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
