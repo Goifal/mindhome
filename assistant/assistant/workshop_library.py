@@ -50,6 +50,12 @@ class WorkshopLibrary:
             _count,
         )
 
+    async def _resolve_embedding(self, result):
+        """Resolves an embedding result that may be a coroutine."""
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
     async def ingest_document(self, filepath: str) -> dict:
         """Importiert ein Dokument in die Workshop-Library.
 
@@ -87,10 +93,15 @@ class WorkshopLibrary:
         ]
 
         if self.embedding_fn:
-            embeddings = [self.embedding_fn(chunk) for chunk in chunks]
+            # Batch embedding: compute all chunks concurrently if async, or in one thread pass
+            raw_results = [self.embedding_fn(chunk) for chunk in chunks]
+            if raw_results and inspect.isawaitable(raw_results[0]):
+                embeddings = await asyncio.gather(*raw_results)
+            else:
+                embeddings = raw_results
             await asyncio.to_thread(
                 self.collection.upsert,
-                ids=ids, documents=chunks, metadatas=metadatas, embeddings=embeddings,
+                ids=ids, documents=chunks, metadatas=metadatas, embeddings=list(embeddings),
             )
         else:
             await asyncio.to_thread(
@@ -115,7 +126,7 @@ class WorkshopLibrary:
             return []
 
         if self.embedding_fn:
-            query_embedding = self.embedding_fn(query)
+            query_embedding = await self._resolve_embedding(self.embedding_fn(query))
             results = await asyncio.to_thread(
                 self.collection.query,
                 query_embeddings=[query_embedding],

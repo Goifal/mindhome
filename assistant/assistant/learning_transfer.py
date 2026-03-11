@@ -72,7 +72,7 @@ class LearningTransfer:
         # Gemerkte Praeferenzen pro Raum und Domaene
         # Format: {"{room}:{domain}": [{attribute: value, count: N, last_seen: ts}]}
         self._preferences: dict[str, list[dict]] = {}
-        self._pending_transfers: deque[dict] = deque(maxlen=50)
+        self._pending_transfers: deque[dict] = deque(maxlen=100)
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis."""
