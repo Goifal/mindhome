@@ -4,12 +4,16 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.5.10"
-BUILD = 101
-BUILD_DATE = "2026-03-04"
+VERSION = "1.5.11"
+BUILD = 102
+BUILD_DATE = "2026-03-11"
 CODENAME = "Jarvis Voice"
 
 # Changelog
+# Build 102: v1.5.11 Jarvis Voice — Test Coverage Audit
+#   - NEU: Umfassende Test-Suite erweitert (~5.250+ Tests, Coverage 37% → 47%)
+#   - NEU: 5 neue Test-Dateien + 28 erweiterte Test-Dateien
+#   - NEU: 23 Module auf 100% Coverage, 17+ Module ueber 95%
 # Build 99: v1.5.8 Jarvis Voice — SQLite Database Lock Fix
 #   - FIX: "database is locked" Fehler durch Batch-Commits in pattern_engine/automation_engine
 #   - FIX: db_write_with_retry() fuer action-log, set_setting, health_metrics
