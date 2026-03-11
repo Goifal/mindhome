@@ -237,3 +237,170 @@ def test_extract_embedding_base64_decode():
     b64 = _make_pcm_b64(num_samples)
     raw = base64.b64decode(b64)
     assert len(raw) == num_samples * 2  # 16-bit = 2 bytes per sample
+
+
+# ── Zusaetzliche Tests fuer 100% Coverage — Zeilen 31, 37-46, 50-52, 80-81 ──
+
+
+class TestLoadModelCoverage:
+    """Tests fuer _load_model — fehlende Zweige (Zeilen 31, 37-46, 50-52)."""
+
+    def test_load_model_double_check_after_lock(self):
+        """Zweiter Check nach Lock-Acquire findet bereits geladenes Modell (Zeile 31).
+
+        Wir simulieren den Fall indem _classifier zwischen erstem und zweitem
+        Check gesetzt wird, indem wir direkt den Code-Pfad testen: _classifier
+        ist bereits gesetzt wenn der Lock betreten wird.
+        """
+        import assistant.embedding_extractor as mod
+        original_classifier = mod._classifier
+        try:
+            # Erster Aufruf: _classifier ist None, also wird Lock betreten
+            # Innerhalb des Locks: _classifier ist bereits gesetzt (anderer Thread)
+            # Da wir keinen echten zweiten Thread haben, testen wir den Code-Pfad
+            # indem wir _classifier setzen BEVOR _load_model aufgerufen wird
+            # — das deckt Zeile 25-26 (erste Pruefung) ab.
+            # Fuer die innere Pruefung (Zeile 31) nutzen wir einen eigenen Lock
+            import threading
+            mock_lock = threading.Lock()
+            sentinel = MagicMock()
+
+            # Setze _classifier auf None damit wir den Lock betreten
+            mod._classifier = None
+            mod._model_loading = False
+
+            # Ersetze den Lock durch einen der _classifier setzt nachdem er betreten wird
+            original_lock = mod._model_lock
+            class FakeLock:
+                def __enter__(self_lock):
+                    original_lock.__enter__()
+                    mod._classifier = sentinel  # Simuliere zweiten Thread
+                    return self_lock
+                def __exit__(self_lock, *args):
+                    return original_lock.__exit__(*args)
+
+            mod._model_lock = FakeLock()
+            try:
+                result = mod._load_model()
+                assert result is sentinel
+            finally:
+                mod._model_lock = original_lock
+        finally:
+            mod._classifier = original_classifier
+
+    def test_load_model_success_with_mocked_imports(self):
+        """Erfolgreiches Laden des Modells (Zeilen 37-46)."""
+        import assistant.embedding_extractor as mod
+        original = mod._classifier
+        original_loading = mod._model_loading
+        try:
+            mod._classifier = None
+            mod._model_loading = False
+
+            mock_classifier_instance = MagicMock()
+            mock_encoder = MagicMock()
+            mock_encoder.from_hparams.return_value = mock_classifier_instance
+
+            mock_torch = MagicMock()
+            mock_sb_module = MagicMock()
+            mock_sb_inference = MagicMock()
+            mock_sb_speaker = MagicMock()
+            mock_sb_speaker.EncoderClassifier = mock_encoder
+
+            with patch.dict("sys.modules", {
+                "torch": mock_torch,
+                "speechbrain": mock_sb_module,
+                "speechbrain.inference": mock_sb_inference,
+                "speechbrain.inference.speaker": mock_sb_speaker,
+            }):
+                result = mod._load_model()
+                assert result is mock_classifier_instance
+        finally:
+            mod._classifier = original
+            mod._model_loading = original_loading
+
+    def test_load_model_general_exception(self):
+        """Allgemeiner Fehler beim Laden wird abgefangen (Zeilen 50-52)."""
+        import assistant.embedding_extractor as mod
+        original = mod._classifier
+        original_loading = mod._model_loading
+        try:
+            mod._classifier = None
+            mod._model_loading = False
+
+            def raise_error(*args, **kwargs):
+                raise RuntimeError("Model file corrupted")
+
+            mock_torch = MagicMock()
+            mock_sb_module = MagicMock()
+            mock_sb_inference = MagicMock()
+            mock_sb_speaker = MagicMock()
+            mock_sb_speaker.EncoderClassifier.from_hparams.side_effect = raise_error
+
+            with patch.dict("sys.modules", {
+                "torch": mock_torch,
+                "speechbrain": mock_sb_module,
+                "speechbrain.inference": mock_sb_inference,
+                "speechbrain.inference.speaker": mock_sb_speaker,
+            }):
+                result = mod._load_model()
+                assert result is None
+        finally:
+            mod._classifier = original
+            mod._model_loading = original_loading
+
+    def test_load_model_import_error_speechbrain(self):
+        """ImportError bei speechbrain wird abgefangen (Zeilen 47-49)."""
+        import assistant.embedding_extractor as mod
+        original = mod._classifier
+        original_loading = mod._model_loading
+        try:
+            mod._classifier = None
+            mod._model_loading = False
+
+            original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
+
+            def fake_import(name, *args, **kwargs):
+                if "speechbrain" in name or name == "torch":
+                    raise ImportError("not installed")
+                return original_import(name, *args, **kwargs)
+
+            with patch("builtins.__import__", side_effect=fake_import):
+                result = mod._load_model()
+                assert result is None
+        finally:
+            mod._classifier = original
+            mod._model_loading = original_loading
+
+
+class TestExtractEmbeddingAudioMinimum:
+    """Tests fuer extract_embedding Audio-Minimum — Zeilen 80-81."""
+
+    def test_audio_exactly_at_minimum(self):
+        """Audio mit exakt 6400 Bytes (0.2s) sollte verarbeitet werden (Zeile 80-81)."""
+        import assistant.embedding_extractor as mod
+
+        mock_torch = MagicMock()
+        mock_torchaudio = MagicMock()
+        mock_tensor = MagicMock()
+        mock_torch.tensor.return_value = mock_tensor
+        mock_torch.float32 = "float32"
+        mock_tensor.__truediv__ = MagicMock(return_value=mock_tensor)
+        mock_tensor.unsqueeze.return_value = mock_tensor
+
+        mock_embedding = MagicMock()
+        mock_embedding.squeeze.return_value.tolist.return_value = [0.1] * 192
+
+        mock_classifier = MagicMock()
+        mock_classifier.encode_batch.return_value = mock_embedding
+
+        # Exakt 3200 Samples = 6400 Bytes (Minimum)
+        audio_b64 = _make_pcm_b64(3200)
+
+        modules_patch = {"torch": mock_torch, "torchaudio": mock_torchaudio,
+                         "torchaudio.functional": mock_torchaudio.functional}
+        with patch.object(mod, "_load_model", return_value=mock_classifier):
+            with patch.dict("sys.modules", modules_patch):
+                result = mod.extract_embedding(audio_b64)
+                assert result is not None
+                assert len(result) == 192

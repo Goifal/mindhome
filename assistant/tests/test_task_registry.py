@@ -280,3 +280,31 @@ class TestStatus:
         assert s["total_registered"] == 1
         assert s["active"] == 0
         assert s["tasks"][0]["done"] is True
+
+
+# ---------------------------------------------------------------------------
+# Zusaetzliche Tests fuer 100% Coverage — Zeilen 119-121
+# ---------------------------------------------------------------------------
+
+class TestShutdownTimeout:
+    """Tests fuer shutdown Timeout-Handling — Zeilen 119-121."""
+
+    @pytest.mark.asyncio
+    async def test_shutdown_timeout_logs_warning(self):
+        """Bei Timeout werden die Tasks trotzdem beendet (Zeilen 119-121)."""
+        reg = TaskRegistry()
+
+        async def _stuck():
+            """Coroutine die cancel ignoriert."""
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                # Simuliere Task der nicht sofort stoppt
+                await asyncio.sleep(3600)
+
+        reg.create_task(_stuck(), name="stuck1")
+        reg.create_task(_stuck(), name="stuck2")
+        # Sehr kurzes Timeout erzwingt TimeoutError
+        await reg.shutdown(timeout=0.01)
+        assert reg._shutting_down is True
+        assert len(reg._tasks) == 0

@@ -422,3 +422,86 @@ class TestInitialization:
         }
         result = await manager.remove_item("Milch")
         assert result["success"] is True
+
+
+# =====================================================================
+# Zusaetzliche Tests fuer 100% Coverage
+# =====================================================================
+
+
+class TestRemoveItemCoverage:
+    """Zusaetzliche Tests fuer remove_item — Zeilen 97-98."""
+
+    @pytest.mark.asyncio
+    async def test_remove_item_exception(self, manager, redis_mock):
+        """remove_item faengt allgemeine Exceptions ab (Zeilen 97-98)."""
+        redis_mock.smembers.side_effect = Exception("Redis connection lost")
+        result = await manager.remove_item("Milch")
+        assert result["success"] is False
+        assert "Problem" in result["message"]
+
+
+class TestUpdateQuantityCoverage:
+    """Zusaetzliche Tests fuer update_quantity — Zeilen 124-125."""
+
+    @pytest.mark.asyncio
+    async def test_update_quantity_exception(self, manager, redis_mock):
+        """update_quantity faengt allgemeine Exceptions ab (Zeilen 124-125)."""
+        redis_mock.smembers.side_effect = Exception("Redis error")
+        result = await manager.update_quantity("Milch", 5)
+        assert result["success"] is False
+        assert "Problem" in result["message"]
+
+
+class TestListItemsCoverage:
+    """Zusaetzliche Tests fuer list_items — Zeilen 175, 183-184."""
+
+    @pytest.mark.asyncio
+    async def test_list_items_expiring_soon(self, manager, redis_mock):
+        """Artikel der in 2 Tagen ablaeuft zeigt Warnung (Zeile 175)."""
+        soon = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+        redis_mock.smembers.return_value = {"inv_joghurt_abc"}
+        redis_mock.hgetall.return_value = {
+            "name": "Joghurt",
+            "quantity": "1",
+            "expiry_date": soon,
+            "category": "kuehlschrank",
+        }
+        result = await manager.list_items()
+        assert result["success"] is True
+        assert "laeuft in" in result["message"]
+        assert "Tag(en) ab" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_list_items_exception(self, manager, redis_mock):
+        """list_items faengt allgemeine Exceptions ab (Zeilen 183-184)."""
+        redis_mock.smembers.side_effect = Exception("Redis down")
+        result = await manager.list_items()
+        assert result["success"] is False
+        assert "Problem" in result["message"]
+
+
+class TestCheckExpiringCoverage:
+    """Zusaetzliche Tests fuer check_expiring — Zeilen 200, 210, 228-230."""
+
+    @pytest.mark.asyncio
+    async def test_check_expiring_empty_ids(self, manager, redis_mock):
+        """check_expiring gibt leere Liste zurueck bei leeren IDs (Zeile 200)."""
+        redis_mock.smembers.return_value = set()
+        result = await manager.check_expiring()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_check_expiring_skips_empty_data(self, manager, redis_mock):
+        """check_expiring ueberspringt Eintraege ohne Daten (Zeile 210)."""
+        redis_mock.smembers.return_value = {"inv_empty_abc"}
+        redis_mock.hgetall.return_value = {}
+        result = await manager.check_expiring()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_check_expiring_exception(self, manager, redis_mock):
+        """check_expiring faengt Exceptions ab (Zeilen 228-230)."""
+        redis_mock.smembers.side_effect = Exception("Redis exploded")
+        result = await manager.check_expiring()
+        assert result == []

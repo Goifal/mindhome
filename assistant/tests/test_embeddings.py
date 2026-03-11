@@ -179,3 +179,43 @@ def test_module_logger_exists():
     import assistant.embeddings as mod
     assert mod.logger is not None
     assert mod.logger.name == "assistant.embeddings"
+
+
+# ── Zusaetzliche Tests fuer 100% Coverage — Zeilen 31, 36-39 ──
+
+
+class TestEmbeddingCache:
+    """Tests fuer get_cached_embedding und cache_embedding (Zeilen 31, 36-39)."""
+
+    def test_get_cached_embedding_miss(self):
+        """get_cached_embedding gibt None zurueck fuer nicht gecachten Text (Zeile 31)."""
+        from assistant.embeddings import get_cached_embedding, _embedding_cache
+        # Sicherstellen dass der Key nicht im Cache ist
+        result = get_cached_embedding("dieser_text_ist_nicht_gecacht_xyz_12345")
+        assert result is None
+
+    def test_cache_embedding_stores_and_retrieves(self):
+        """cache_embedding speichert Embedding und get_cached_embedding findet es (Zeilen 36-39)."""
+        from assistant.embeddings import get_cached_embedding, cache_embedding, _embedding_cache
+        test_text = "__test_cache_text__"
+        test_embedding = [0.1, 0.2, 0.3]
+        try:
+            cache_embedding(test_text, test_embedding)
+            result = get_cached_embedding(test_text)
+            assert result == test_embedding
+        finally:
+            _embedding_cache.pop(test_text, None)
+
+    def test_cache_embedding_lru_eviction(self):
+        """cache_embedding entfernt aelteste Eintraege bei Ueberschreitung des Limits (Zeilen 38-39)."""
+        from assistant.embeddings import cache_embedding, _embedding_cache, _EMBEDDING_CACHE_MAX
+        original_cache = dict(_embedding_cache)
+        try:
+            _embedding_cache.clear()
+            # Cache bis zum Limit fuellen + 1 mehr
+            for i in range(_EMBEDDING_CACHE_MAX + 5):
+                cache_embedding(f"__eviction_test_{i}__", [float(i)])
+            assert len(_embedding_cache) <= _EMBEDDING_CACHE_MAX
+        finally:
+            _embedding_cache.clear()
+            _embedding_cache.update(original_cache)

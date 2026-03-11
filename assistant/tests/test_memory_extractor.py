@@ -401,3 +401,123 @@ class TestConstants:
     def test_max_conversation_length(self):
         assert MAX_CONVERSATION_LENGTH >= 500
         assert MAX_CONVERSATION_LENGTH <= 10000
+
+
+# =====================================================================
+# Zusaetzliche Tests fuer 100% Coverage
+# =====================================================================
+
+
+class TestShouldExtractCoverage:
+    """Zusaetzliche Tests fuer _should_extract — fehlende Zeilen."""
+
+    def test_empty_content_skipped(self, extractor):
+        """Fakten ohne Content werden uebersprungen (Zeile 141)."""
+        # Implizit getestet via extract_and_store mit leeren facts
+
+    def test_greeting_filtered(self, extractor):
+        """Gruesse und Smalltalk werden gefiltert (Zeile 186 — greetings check)."""
+        assert extractor._should_extract("hallo", "Hi!") is False
+        assert extractor._should_extract("wie gehts", "Gut!") is False
+
+    def test_confirmations_filtered(self, extractor):
+        """Einzelwort-Bestaetigungen werden gefiltert (Zeile 195)."""
+        assert extractor._should_extract("ja", "OK.") is False
+        assert extractor._should_extract("danke", "Gern!") is False
+        assert extractor._should_extract("verstehe", "OK.") is False
+
+    def test_proactive_marker_filtered(self, extractor):
+        """Proaktive Meldungen werden gefiltert (Zeile 205/209)."""
+        assert extractor._should_extract("[proaktiv] Status-Meldung fuer das System",
+                                         "OK.") is False
+
+
+class TestParseFacts_FallbackBranch:
+    """Zusaetzliche Tests fuer _parse_facts — Zeilen 288-289."""
+
+    def test_parse_facts_invalid_inner_json(self, extractor):
+        """Fallback JSON-Parsing schlaegt fehl bei kaputtem innerem JSON (Zeilen 288-289)."""
+        output = 'Some text [{"content": "broken json' + '] more text'
+        result = extractor._parse_facts(output)
+        assert result == []
+
+
+class TestExtractAndStoreCoverage:
+    """Zusaetzliche Tests fuer extract_and_store — fehlende Zeilen 141, 323, 327."""
+
+    @pytest.mark.asyncio
+    async def test_extract_skips_empty_content_fact(self, extractor, ollama_mock, semantic_mock):
+        """Fakten mit leerem Content werden uebersprungen (Zeile 141)."""
+        ollama_mock.chat = AsyncMock(return_value={
+            "message": {"content": json.dumps([
+                {"content": "", "category": "general", "person": "Max"},
+                {"content": "Guter Fakt hier drin", "category": "preference", "person": "Max"},
+            ])},
+        })
+        result = await extractor.extract_and_store(
+            user_text="Ich habe heute viel erlebt und es war wirklich interessant",
+            assistant_response="Klingt spannend!",
+            person="Max",
+        )
+        # Nur 1 Fakt gespeichert (der mit Content)
+        assert len(result) == 1
+
+
+class TestExtractReactionCoverage:
+    """Tests fuer extract_reaction — fehlende Zeilen 323, 327, 352-353."""
+
+    @pytest.mark.asyncio
+    async def test_extract_reaction_disabled(self, extractor):
+        """extract_reaction kehrt zurueck wenn emotional_memory disabled (Zeile 323)."""
+        with patch("assistant.memory_extractor.yaml_config", {"emotional_memory": {"enabled": False}, "memory": {}}):
+            await extractor.extract_reaction("nein", "set_climate", False, "Max", redis_client=AsyncMock())
+            # Kein Fehler, kehrt einfach zurueck
+
+    @pytest.mark.asyncio
+    async def test_extract_reaction_no_redis(self, extractor):
+        """extract_reaction kehrt zurueck wenn kein Redis (Zeile 327)."""
+        with patch("assistant.memory_extractor.yaml_config", {"emotional_memory": {"enabled": True}, "memory": {}}):
+            await extractor.extract_reaction("nein", "set_climate", False, "Max", redis_client=None)
+            # Kein Fehler, kehrt einfach zurueck
+
+    @pytest.mark.asyncio
+    async def test_extract_reaction_exception(self, extractor):
+        """extract_reaction faengt Exceptions ab (Zeilen 352-353)."""
+        redis = AsyncMock()
+        redis.lpush = AsyncMock(side_effect=Exception("Redis error"))
+        with patch("assistant.memory_extractor.yaml_config", {"emotional_memory": {"enabled": True, "decay_days": 90}, "memory": {}}):
+            await extractor.extract_reaction("nein", "set_climate", False, "Max", redis_client=redis)
+            # Kein Fehler — Exception wird abgefangen
+
+
+class TestExtractReactionPositive:
+    """Tests fuer extract_reaction — positiver Pfad (Zeile 371)."""
+
+    @pytest.mark.asyncio
+    async def test_extract_reaction_positive_success(self, extractor):
+        """extract_reaction speichert positive Reaktion erfolgreich."""
+        redis = AsyncMock()
+        with patch("assistant.memory_extractor.yaml_config", {"emotional_memory": {"enabled": True, "decay_days": 90}, "memory": {}}):
+            await extractor.extract_reaction("super", "set_light", True, "Max", redis_client=redis)
+            redis.lpush.assert_called_once()
+            redis.ltrim.assert_called_once()
+            redis.expire.assert_called_once()
+
+
+class TestGetEmotionalContextCoverage:
+    """Tests fuer get_emotional_context — fehlende Zeilen 400-402."""
+
+    @pytest.mark.asyncio
+    async def test_get_emotional_context_exception(self):
+        """get_emotional_context faengt Exceptions ab (Zeilen 400-402)."""
+        redis = AsyncMock()
+        redis.lrange = AsyncMock(side_effect=Exception("Redis error"))
+        with patch("assistant.memory_extractor.yaml_config", {"emotional_memory": {"enabled": True, "negative_threshold": 2}, "memory": {}}):
+            result = await MemoryExtractor.get_emotional_context("set_climate", "Max", redis_client=redis)
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_detect_negative_reaction(self, extractor):
+        """detect_negative_reaction erkennt negative Muster."""
+        assert extractor.detect_negative_reaction("nein, lass das") is True
+        assert extractor.detect_negative_reaction("super gemacht") is False
