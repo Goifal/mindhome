@@ -751,6 +751,9 @@ _emergency_trigger_times = []
 
 @security_bp.route("/api/security/emergency/trigger", methods=["POST"])
 def emergency_trigger():
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     import time
     now = time.time()
     # Rate limit: max 3 triggers per minute
