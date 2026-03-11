@@ -322,3 +322,214 @@ async def test_extract_pdf_all_fail(lib, tmp_path):
         with patch("builtins.__import__", side_effect=ImportError("no module")):
             result = await lib._extract_pdf(pdf_path)
             assert result == ""
+
+
+# ── Coverage: lines 56-58 (_resolve_embedding) ──────────────
+
+@pytest.mark.asyncio
+async def test_resolve_embedding_awaitable(lib):
+    """_resolve_embedding awaits coroutines."""
+    async def _coro():
+        return [0.1, 0.2]
+    result = await lib._resolve_embedding(_coro())
+    assert result == [0.1, 0.2]
+
+
+@pytest.mark.asyncio
+async def test_resolve_embedding_non_awaitable(lib):
+    """_resolve_embedding returns non-awaitable results directly."""
+    result = await lib._resolve_embedding([0.1, 0.2])
+    assert result == [0.1, 0.2]
+
+
+# ── Coverage: lines 210-211 (extract_pdf fitz returns empty) ─
+
+@pytest.mark.asyncio
+async def test_extract_pdf_fitz_empty_then_pdfplumber(lib, tmp_path):
+    """When fitz returns empty text, falls through to pdfplumber."""
+    pdf_path = tmp_path / "test.pdf"
+    pdf_path.write_bytes(b"fake")
+
+    mock_fitz = MagicMock()
+    mock_doc = MagicMock()
+    mock_page = MagicMock()
+    mock_page.get_text.return_value = ""  # empty text
+    mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+    mock_fitz.open.return_value = mock_doc
+
+    mock_pdfplumber = MagicMock()
+    mock_pdf = MagicMock()
+    mock_plumber_page = MagicMock()
+    mock_plumber_page.extract_text.return_value = "pdfplumber text"
+    mock_pdf.pages = [mock_plumber_page]
+    mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
+    mock_pdf.__exit__ = MagicMock(return_value=False)
+    mock_pdfplumber.open.return_value = mock_pdf
+
+    with patch.dict("sys.modules", {"fitz": mock_fitz, "pdfplumber": mock_pdfplumber}):
+        result = await lib._extract_pdf(pdf_path)
+    assert "pdfplumber text" in result
+
+
+# ── Coverage: lines 216-225 (pdfplumber success path) ────────
+
+@pytest.mark.asyncio
+async def test_extract_pdf_pdfplumber_success(lib, tmp_path):
+    """pdfplumber extracts text when fitz is not available."""
+    pdf_path = tmp_path / "test.pdf"
+    pdf_path.write_bytes(b"fake")
+
+    mock_pdfplumber = MagicMock()
+    mock_pdf = MagicMock()
+    mock_page1 = MagicMock()
+    mock_page1.extract_text.return_value = "Page 1"
+    mock_page2 = MagicMock()
+    mock_page2.extract_text.return_value = "Page 2"
+    mock_pdf.pages = [mock_page1, mock_page2]
+    mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
+    mock_pdf.__exit__ = MagicMock(return_value=False)
+    mock_pdfplumber.open.return_value = mock_pdf
+
+    def selective_import(name, *args, **kwargs):
+        if name == "fitz":
+            raise ImportError("no fitz")
+        if name == "pdfplumber":
+            return mock_pdfplumber
+        return original_import(name, *args, **kwargs)
+
+    import builtins
+    original_import = builtins.__import__
+    with patch.dict("sys.modules", {"fitz": None}):
+        with patch("builtins.__import__", side_effect=selective_import):
+            result = await lib._extract_pdf(pdf_path)
+    assert "Page 1" in result
+    assert "Page 2" in result
+
+
+# ── Coverage: lines 228-229 (pdfplumber exception) ──────────
+
+@pytest.mark.asyncio
+async def test_extract_pdf_pdfplumber_exception(lib, tmp_path):
+    """When pdfplumber raises exception, falls through to PyPDF2."""
+    pdf_path = tmp_path / "test.pdf"
+    pdf_path.write_bytes(b"fake")
+
+    mock_pdfplumber = MagicMock()
+    mock_pdfplumber.open.side_effect = Exception("pdfplumber error")
+
+    mock_pypdf2 = MagicMock()
+    mock_reader = MagicMock()
+    mock_reader_page = MagicMock()
+    mock_reader_page.extract_text.return_value = "PyPDF2 text"
+    mock_reader.pages = [mock_reader_page]
+    mock_pypdf2.PdfReader.return_value = mock_reader
+
+    def selective_import(name, *args, **kwargs):
+        if name == "fitz":
+            raise ImportError("no fitz")
+        if name == "pdfplumber":
+            return mock_pdfplumber
+        if name == "PyPDF2":
+            return mock_pypdf2
+        return original_import(name, *args, **kwargs)
+
+    import builtins
+    original_import = builtins.__import__
+    with patch.dict("sys.modules", {"fitz": None}):
+        with patch("builtins.__import__", side_effect=selective_import):
+            result = await lib._extract_pdf(pdf_path)
+    assert "PyPDF2 text" in result
+
+
+# ── Coverage: lines 234-243 (PyPDF2 success path) ───────────
+
+@pytest.mark.asyncio
+async def test_extract_pdf_pypdf2_success(lib, tmp_path):
+    """PyPDF2 extracts text when fitz and pdfplumber unavailable."""
+    pdf_path = tmp_path / "test.pdf"
+    pdf_path.write_bytes(b"fake")
+
+    mock_pypdf2 = MagicMock()
+    mock_reader = MagicMock()
+    mock_page = MagicMock()
+    mock_page.extract_text.return_value = "PyPDF2 content"
+    mock_reader.pages = [mock_page]
+    mock_pypdf2.PdfReader.return_value = mock_reader
+
+    def selective_import(name, *args, **kwargs):
+        if name == "fitz":
+            raise ImportError("no fitz")
+        if name == "pdfplumber":
+            raise ImportError("no pdfplumber")
+        if name == "PyPDF2":
+            return mock_pypdf2
+        return original_import(name, *args, **kwargs)
+
+    import builtins
+    original_import = builtins.__import__
+    with patch.dict("sys.modules", {"fitz": None, "pdfplumber": None}):
+        with patch("builtins.__import__", side_effect=selective_import):
+            result = await lib._extract_pdf(pdf_path)
+    assert "PyPDF2 content" in result
+
+
+# ── Coverage: lines 246-247 (PyPDF2 exception) ──────────────
+
+@pytest.mark.asyncio
+async def test_extract_pdf_pypdf2_exception(lib, tmp_path):
+    """When PyPDF2 raises exception, returns empty string."""
+    pdf_path = tmp_path / "test.pdf"
+    pdf_path.write_bytes(b"fake")
+
+    mock_pypdf2 = MagicMock()
+    mock_pypdf2.PdfReader.side_effect = Exception("PyPDF2 error")
+
+    def selective_import(name, *args, **kwargs):
+        if name == "fitz":
+            raise ImportError("no fitz")
+        if name == "pdfplumber":
+            raise ImportError("no pdfplumber")
+        if name == "PyPDF2":
+            return mock_pypdf2
+        return original_import(name, *args, **kwargs)
+
+    import builtins
+    original_import = builtins.__import__
+    with patch.dict("sys.modules", {"fitz": None, "pdfplumber": None}):
+        with patch("builtins.__import__", side_effect=selective_import):
+            result = await lib._extract_pdf(pdf_path)
+    assert result == ""
+
+
+# ── Coverage: lines 216-225 pdfplumber with None page text ───
+
+@pytest.mark.asyncio
+async def test_extract_pdf_pdfplumber_none_page_text(lib, tmp_path):
+    """pdfplumber skips pages with None text."""
+    pdf_path = tmp_path / "test.pdf"
+    pdf_path.write_bytes(b"fake")
+
+    mock_pdfplumber = MagicMock()
+    mock_pdf = MagicMock()
+    page_with_text = MagicMock()
+    page_with_text.extract_text.return_value = "Good page"
+    page_without_text = MagicMock()
+    page_without_text.extract_text.return_value = None
+    mock_pdf.pages = [page_with_text, page_without_text]
+    mock_pdf.__enter__ = MagicMock(return_value=mock_pdf)
+    mock_pdf.__exit__ = MagicMock(return_value=False)
+    mock_pdfplumber.open.return_value = mock_pdf
+
+    def selective_import(name, *args, **kwargs):
+        if name == "fitz":
+            raise ImportError("no fitz")
+        if name == "pdfplumber":
+            return mock_pdfplumber
+        return original_import(name, *args, **kwargs)
+
+    import builtins
+    original_import = builtins.__import__
+    with patch.dict("sys.modules", {"fitz": None}):
+        with patch("builtins.__import__", side_effect=selective_import):
+            result = await lib._extract_pdf(pdf_path)
+    assert "Good page" in result

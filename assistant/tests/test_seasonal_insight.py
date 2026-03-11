@@ -221,3 +221,168 @@ class TestSeasonalStatus:
         seasonal_with_redis.redis.scan = AsyncMock(return_value=(0, [b"k1", b"k2", b"k3"]))
         status = await seasonal_with_redis.get_status()
         assert status["months_with_data"] == 3
+
+    @pytest.mark.asyncio
+    async def test_status_with_redis_multiple_pages(self, seasonal_with_redis):
+        """get_status with multi-page scan loop."""
+        seasonal_with_redis.redis.scan = AsyncMock(side_effect=[
+            (5, [b"k1", b"k2"]),
+            (0, [b"k3"]),
+        ])
+        status = await seasonal_with_redis.get_status()
+        assert status["months_with_data"] == 3
+
+    @pytest.mark.asyncio
+    async def test_status_with_redis_scan_exception(self, seasonal_with_redis):
+        """get_status when scan raises exception."""
+        seasonal_with_redis.redis.scan = AsyncMock(side_effect=RuntimeError("scan failed"))
+        status = await seasonal_with_redis.get_status()
+        assert status["months_with_data"] == -1
+
+
+# ============================================================
+# _seasonal_loop Tests
+# ============================================================
+
+class TestSeasonalLoop:
+
+    @pytest.mark.asyncio
+    async def test_seasonal_loop_calls_check(self, seasonal_with_redis):
+        """_seasonal_loop calls _check_seasonal_patterns and notifies."""
+        call_count = 0
+
+        async def mock_check():
+            nonlocal call_count
+            call_count += 1
+            seasonal_with_redis._running = False  # stop after first iteration
+            return "Seasonal insight message"
+
+        callback = AsyncMock()
+        seasonal_with_redis._notify_callback = callback
+        seasonal_with_redis._running = True
+
+        with patch.object(seasonal_with_redis, "_check_seasonal_patterns", side_effect=mock_check), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            await seasonal_with_redis._seasonal_loop()
+
+        assert call_count == 1
+        callback.assert_called_once_with(
+            "Seasonal insight message",
+            urgency="low",
+            event_type="seasonal_insight",
+        )
+
+    @pytest.mark.asyncio
+    async def test_seasonal_loop_no_insight(self, seasonal_with_redis):
+        """_seasonal_loop does not notify when no insight returned."""
+        async def mock_check():
+            seasonal_with_redis._running = False
+            return None
+
+        callback = AsyncMock()
+        seasonal_with_redis._notify_callback = callback
+        seasonal_with_redis._running = True
+
+        with patch.object(seasonal_with_redis, "_check_seasonal_patterns", side_effect=mock_check), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            await seasonal_with_redis._seasonal_loop()
+
+        callback.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_seasonal_loop_exception_continues(self, seasonal_with_redis):
+        """_seasonal_loop catches exceptions and continues."""
+        call_count = 0
+
+        async def mock_check():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("boom")
+            seasonal_with_redis._running = False
+            return None
+
+        seasonal_with_redis._running = True
+        with patch.object(seasonal_with_redis, "_check_seasonal_patterns", side_effect=mock_check), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            await seasonal_with_redis._seasonal_loop()
+
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_seasonal_loop_cancelled(self, seasonal_with_redis):
+        """_seasonal_loop exits on CancelledError."""
+        import asyncio
+
+        async def mock_check():
+            raise asyncio.CancelledError()
+
+        seasonal_with_redis._running = True
+        with patch.object(seasonal_with_redis, "_check_seasonal_patterns", side_effect=mock_check), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
+            await seasonal_with_redis._seasonal_loop()
+        # Should exit cleanly
+
+
+# ============================================================
+# _check_seasonal_patterns cooldown Tests
+# ============================================================
+
+class TestCheckSeasonalPatternsCooldown:
+
+    @pytest.mark.asyncio
+    async def test_returns_none_no_redis(self, seasonal):
+        result = await seasonal._check_seasonal_patterns()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_cooldown_active_returns_none(self, seasonal_with_redis):
+        """When cooldown key exists, returns None."""
+        seasonal_with_redis.redis.exists = AsyncMock(return_value=1)
+        with patch("assistant.seasonal_insight.get_person_title", return_value="Sir"):
+            result = await seasonal_with_redis._check_seasonal_patterns()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_cooldown_exception_returns_none(self, seasonal_with_redis):
+        """Exception checking cooldown returns None."""
+        seasonal_with_redis.redis.exists = AsyncMock(side_effect=RuntimeError("redis down"))
+        with patch("assistant.seasonal_insight.get_person_title", return_value="Sir"):
+            result = await seasonal_with_redis._check_seasonal_patterns()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_transition_insight_sets_cooldown(self, seasonal_with_redis):
+        """When transition insight found, cooldown is set."""
+        seasonal_with_redis.redis.exists = AsyncMock(return_value=0)
+        with patch("assistant.seasonal_insight.get_person_title", return_value="Sir"), \
+             patch.object(seasonal_with_redis, "_check_seasonal_transition",
+                         new_callable=AsyncMock, return_value="Season change tip"):
+            result = await seasonal_with_redis._check_seasonal_patterns()
+        assert result == "Season change tip"
+        seasonal_with_redis.redis.setex.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_yoy_insight_sets_cooldown(self, seasonal_with_redis):
+        """When YoY insight found (no transition), cooldown is set."""
+        seasonal_with_redis.redis.exists = AsyncMock(return_value=0)
+        with patch("assistant.seasonal_insight.get_person_title", return_value="Sir"), \
+             patch.object(seasonal_with_redis, "_check_seasonal_transition",
+                         new_callable=AsyncMock, return_value=None), \
+             patch.object(seasonal_with_redis, "_check_year_over_year",
+                         new_callable=AsyncMock, return_value="YoY insight"):
+            result = await seasonal_with_redis._check_seasonal_patterns()
+        assert result == "YoY insight"
+        seasonal_with_redis.redis.setex.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_no_insights_returns_none(self, seasonal_with_redis):
+        """When no transition and no YoY insight, returns None."""
+        seasonal_with_redis.redis.exists = AsyncMock(return_value=0)
+        with patch("assistant.seasonal_insight.get_person_title", return_value="Sir"), \
+             patch.object(seasonal_with_redis, "_check_seasonal_transition",
+                         new_callable=AsyncMock, return_value=None), \
+             patch.object(seasonal_with_redis, "_check_year_over_year",
+                         new_callable=AsyncMock, return_value=None):
+            result = await seasonal_with_redis._check_seasonal_patterns()
+        assert result is None

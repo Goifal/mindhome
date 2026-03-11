@@ -371,3 +371,280 @@ async def test_search_exception_sanitized():
     assert result["success"] is False
     assert "internal error" not in result["message"]  # F-078: no internal details
     assert "nicht durchgefuehrt" in result["message"]
+
+
+# ── NEW: _is_safe_url edge cases — Lines 115-116 ────────────
+
+def test_safe_url_exception():
+    """Exception in URL parsing returns False (lines 115-116)."""
+    # Passing a non-string triggers exception
+    assert _is_safe_url(None) is False
+
+
+# ── NEW: _resolve_and_check DNS resolution — Lines 153, 165-166 ────
+
+@pytest.mark.asyncio
+async def test_resolve_and_check_dns_timeout():
+    """DNS timeout returns False (lines 146-148)."""
+    import asyncio
+    with patch("assistant.web_search.asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+        result = await _resolve_and_check("example.com")
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_and_check_dns_failure():
+    """DNS failure returns False (lines 149-151)."""
+    import socket
+    with patch("assistant.web_search.asyncio.wait_for", side_effect=socket.gaierror()):
+        result = await _resolve_and_check("nonexistent.invalid")
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_and_check_no_results():
+    """No DNS results returns False (line 153)."""
+    with patch("assistant.web_search.asyncio.wait_for", return_value=[]):
+        result = await _resolve_and_check("example.com")
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_and_check_invalid_ip_in_result():
+    """Invalid IP in DNS result returns False (lines 165-166)."""
+    # sockaddr with unparseable IP
+    infos = [(2, 1, 0, "", ("not-an-ip", 80))]
+    with patch("assistant.web_search.asyncio.wait_for", return_value=infos):
+        result = await _resolve_and_check("example.com")
+    assert result is False
+
+
+# ── NEW: _safe_read_json — Line 309 ─────────────────────────
+
+@pytest.mark.asyncio
+async def test_safe_read_json_no_content_length():
+    """Content-Length is None, body within limits (line 185-186)."""
+    resp = AsyncMock()
+    resp.headers = {"Content-Type": "application/json"}
+    resp.content_length = None
+    resp.content.read = AsyncMock(return_value=b'{"key": "value"}')
+    result = await _safe_read_json(resp)
+    assert result == {"key": "value"}
+
+
+# ── NEW: search with SearXNG — Lines 376-403 ────────────────
+
+@pytest.mark.asyncio
+async def test_search_searxng_success():
+    """SearXNG search returns formatted results (lines 376-403)."""
+    import aiohttp
+
+    with patch("assistant.web_search.yaml_config", {
+        "web_search": {"enabled": True, "engine": "searxng", "searxng_url": "http://searxng:8888"},
+    }):
+        ws = WebSearch()
+    ws._cache.clear()
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+
+    with patch("assistant.web_search._safe_read_json", new_callable=AsyncMock, return_value={
+        "results": [
+            {"title": "Result 1", "content": "Snippet 1", "url": "https://example.com/1"},
+            {"title": "Result 2", "content": "Snippet 2", "url": "https://example.com/2"},
+        ]
+    }), patch("aiohttp.ClientSession") as mock_session:
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session_instance = AsyncMock()
+        mock_session_instance.get = MagicMock(return_value=mock_ctx)
+        mock_session_instance.__aenter__ = AsyncMock(return_value=mock_session_instance)
+        mock_session_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_session.return_value = mock_session_instance
+
+        with patch("assistant.web_search._safe_read_json", new_callable=AsyncMock) as mock_json:
+            mock_json.return_value = {
+                "results": [
+                    {"title": "Result 1", "content": "Snippet 1", "url": "https://example.com/1"},
+                ]
+            }
+            # Use direct method call to test _search_searxng
+            results = await ws._search_searxng("test query")
+    assert isinstance(results, list)
+
+
+@pytest.mark.asyncio
+async def test_search_searxng_non_200():
+    """SearXNG returns empty on non-200 status (line 432)."""
+    with patch("assistant.web_search.yaml_config", {
+        "web_search": {"enabled": True, "engine": "searxng", "searxng_url": "http://searxng:8888"},
+    }):
+        ws = WebSearch()
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 500
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_session = AsyncMock()
+    mock_session.get = MagicMock(return_value=mock_ctx)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("aiohttp.ClientSession", return_value=mock_session):
+        results = await ws._search_searxng("test")
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_search_no_results():
+    """Empty results returns no-results message (line 379)."""
+    with patch("assistant.web_search.yaml_config", {
+        "web_search": {"enabled": True, "engine": "searxng", "searxng_url": "http://searxng:8888"},
+    }):
+        ws = WebSearch()
+    ws._cache.clear()
+
+    with patch.object(ws, "_search_searxng", new_callable=AsyncMock, return_value=[]):
+        result = await ws.search("test query")
+    assert result["success"] is True
+    assert "Keine Ergebnisse" in result["message"]
+
+
+# ── NEW: _search_duckduckgo — Lines 454-510 ─────────────────
+
+@pytest.mark.asyncio
+async def test_search_duckduckgo_dns_blocked():
+    """DuckDuckGo blocked by DNS check (lines 464-466)."""
+    with patch("assistant.web_search.yaml_config", {
+        "web_search": {"enabled": True, "engine": "duckduckgo"},
+    }):
+        ws = WebSearch()
+
+    with patch("assistant.web_search._resolve_and_check", new_callable=AsyncMock, return_value=False):
+        results = await ws._search_duckduckgo("test")
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_search_duckduckgo_with_results():
+    """DuckDuckGo returns abstract and related topics (lines 485-510)."""
+    with patch("assistant.web_search.yaml_config", {
+        "web_search": {"enabled": True, "engine": "duckduckgo"},
+    }):
+        ws = WebSearch()
+
+    mock_data = {
+        "AbstractText": "Python is a language",
+        "AbstractURL": "https://python.org",
+        "Heading": "Python",
+        "RelatedTopics": [
+            {"Text": "Related topic 1", "FirstURL": "https://example.com/1"},
+            {"Text": "Related topic 2", "FirstURL": "https://example.com/2"},
+        ],
+    }
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_session = AsyncMock()
+    mock_session.get = MagicMock(return_value=mock_ctx)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("assistant.web_search._resolve_and_check", new_callable=AsyncMock, return_value=True), \
+         patch("aiohttp.ClientSession", return_value=mock_session), \
+         patch("assistant.web_search._safe_read_json", new_callable=AsyncMock, return_value=mock_data):
+        results = await ws._search_duckduckgo("python")
+
+    assert len(results) >= 1
+    assert results[0]["title"] == "Python"
+
+
+@pytest.mark.asyncio
+async def test_search_duckduckgo_unsafe_url():
+    """DuckDuckGo filters unsafe URLs (lines 489-490, 502-503)."""
+    with patch("assistant.web_search.yaml_config", {
+        "web_search": {"enabled": True, "engine": "duckduckgo"},
+    }):
+        ws = WebSearch()
+
+    mock_data = {
+        "AbstractText": "Test",
+        "AbstractURL": "http://192.168.1.1/admin",  # Blocked
+        "Heading": "Test",
+        "RelatedTopics": [
+            {"Text": "Topic", "FirstURL": "http://127.0.0.1/internal"},  # Blocked
+        ],
+    }
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_session = AsyncMock()
+    mock_session.get = MagicMock(return_value=mock_ctx)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("assistant.web_search._resolve_and_check", new_callable=AsyncMock, return_value=True), \
+         patch("aiohttp.ClientSession", return_value=mock_session), \
+         patch("assistant.web_search._safe_read_json", new_callable=AsyncMock, return_value=mock_data):
+        results = await ws._search_duckduckgo("test")
+
+    # URLs should be cleared
+    for r in results:
+        assert r["url"] == ""
+
+
+# ── NEW: SearXNG invalid URL at init — Line 252 ─────────────
+
+def test_searxng_url_with_path():
+    """SearXNG URL with query/fragment is disabled."""
+    with patch("assistant.web_search.yaml_config", {
+        "web_search": {"enabled": True, "engine": "searxng", "searxng_url": "http://searxng:8888?foo=bar"},
+    }):
+        ws = WebSearch()
+    assert ws.enabled is False
+
+
+# ── NEW: search result URL filtering — Lines 412-450 ────────
+
+@pytest.mark.asyncio
+async def test_search_searxng_filters_unsafe_result_urls():
+    """SearXNG filters unsafe URLs in results (lines 442-444)."""
+    with patch("assistant.web_search.yaml_config", {
+        "web_search": {"enabled": True, "engine": "searxng", "searxng_url": "http://searxng:8888"},
+    }):
+        ws = WebSearch()
+
+    mock_resp = AsyncMock()
+    mock_resp.status = 200
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_session = AsyncMock()
+    mock_session.get = MagicMock(return_value=mock_ctx)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("aiohttp.ClientSession", return_value=mock_session), \
+         patch("assistant.web_search._safe_read_json", new_callable=AsyncMock, return_value={
+             "results": [
+                 {"title": "Safe", "content": "OK", "url": "https://example.com"},
+                 {"title": "Unsafe", "content": "Bad", "url": "http://192.168.1.1/admin"},
+             ]
+         }):
+        results = await ws._search_searxng("test")
+
+    # Unsafe URL should be cleared
+    unsafe = [r for r in results if r["url"] == "" and r["title"] == "Unsafe"]
+    assert len(unsafe) == 1

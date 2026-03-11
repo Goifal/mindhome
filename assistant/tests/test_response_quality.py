@@ -138,3 +138,163 @@ class TestGetQualityScore:
         tracker.redis.get.return_value = "0.92"
         score = await tracker.get_quality_score("device_command")
         assert score == 0.92
+
+    @pytest.mark.asyncio
+    async def test_no_score_below_min_exchanges(self, tracker):
+        """Returns default when no stored score and total < MIN_EXCHANGES."""
+        tracker.redis.get.return_value = None
+        tracker.redis.hget.return_value = str(MIN_EXCHANGES_FOR_SCORE - 1)
+        score = await tracker.get_quality_score("knowledge")
+        assert score == DEFAULT_SCORE
+
+    @pytest.mark.asyncio
+    async def test_no_redis_returns_default(self):
+        t = ResponseQualityTracker()
+        t.redis = None
+        t.enabled = True
+        score = await t.get_quality_score("device_command")
+        assert score == DEFAULT_SCORE
+
+
+# ── initialize ───────────────────────────────────────────
+
+class TestInitialize:
+    """Tests fuer initialize()."""
+
+    @pytest.mark.asyncio
+    async def test_initialize_with_redis(self, redis_mock):
+        t = ResponseQualityTracker()
+        await t.initialize(redis_mock)
+        assert t.redis is redis_mock
+        assert t.enabled is True
+
+    @pytest.mark.asyncio
+    async def test_initialize_with_none(self):
+        t = ResponseQualityTracker()
+        await t.initialize(None)
+        assert t.enabled is False
+
+
+# ── get_person_score ─────────────────────────────────────
+
+class TestGetPersonScore:
+    """Tests fuer get_person_score()."""
+
+    @pytest.mark.asyncio
+    async def test_returns_stored_person_score(self, tracker):
+        tracker.redis.get.return_value = "0.85"
+        score = await tracker.get_person_score("device_command", "Max")
+        assert score == 0.85
+
+    @pytest.mark.asyncio
+    async def test_no_stored_returns_default(self, tracker):
+        tracker.redis.get.return_value = None
+        score = await tracker.get_person_score("device_command", "Max")
+        assert score == DEFAULT_SCORE
+
+    @pytest.mark.asyncio
+    async def test_no_redis_returns_default(self):
+        t = ResponseQualityTracker()
+        t.redis = None
+        t.enabled = True
+        score = await t.get_person_score("device_command", "Max")
+        assert score == DEFAULT_SCORE
+
+    @pytest.mark.asyncio
+    async def test_empty_person_returns_default(self, tracker):
+        score = await tracker.get_person_score("device_command", "")
+        assert score == DEFAULT_SCORE
+
+
+# ── get_stats ────────────────────────────────────────────
+
+class TestGetStats:
+    """Tests fuer get_stats()."""
+
+    @pytest.mark.asyncio
+    async def test_no_redis_returns_empty(self):
+        t = ResponseQualityTracker()
+        t.redis = None
+        t.enabled = True
+        stats = await t.get_stats()
+        assert stats == {}
+
+    @pytest.mark.asyncio
+    async def test_returns_stats_with_data(self, tracker):
+        tracker.redis.hgetall = AsyncMock(side_effect=[
+            {b"clear": b"10", b"unclear": b"2", b"total": b"12"},  # device_command
+            {},  # knowledge
+            {},  # smalltalk
+            {},  # analysis
+        ])
+        tracker.redis.get = AsyncMock(return_value="0.85")
+        tracker.redis.hget = AsyncMock(return_value="12")
+        stats = await tracker.get_stats()
+        assert "device_command" in stats
+        assert stats["device_command"]["score"] == 0.85
+        assert stats["device_command"]["clear"] == 10.0
+
+    @pytest.mark.asyncio
+    async def test_empty_categories_excluded(self, tracker):
+        tracker.redis.hgetall = AsyncMock(return_value={})
+        stats = await tracker.get_stats()
+        assert stats == {}
+
+
+# ── _update_score ────────────────────────────────────────
+
+class TestUpdateScore:
+    """Tests fuer _update_score() EMA calculation."""
+
+    @pytest.mark.asyncio
+    async def test_no_redis_returns_early(self):
+        t = ResponseQualityTracker()
+        t.redis = None
+        await t._update_score("device_command", 1.0)
+        # No exception
+
+    @pytest.mark.asyncio
+    async def test_below_min_exchanges_no_update(self, tracker):
+        tracker.redis.hget = AsyncMock(return_value=str(MIN_EXCHANGES_FOR_SCORE - 1))
+        await tracker._update_score("device_command", 1.0)
+        tracker.redis.setex.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ema_calculation(self, tracker):
+        tracker.redis.hget = AsyncMock(return_value=str(MIN_EXCHANGES_FOR_SCORE + 5))
+        tracker.redis.get = AsyncMock(return_value="0.5")
+        await tracker._update_score("device_command", 1.0)
+        # EMA: 0.1 * 1.0 + 0.9 * 0.5 = 0.55
+        tracker.redis.setex.assert_called_once()
+        call_args = tracker.redis.setex.call_args[0]
+        new_score = float(call_args[2])
+        assert abs(new_score - 0.55) < 0.01
+
+    @pytest.mark.asyncio
+    async def test_ema_with_no_existing_score(self, tracker):
+        tracker.redis.hget = AsyncMock(return_value=str(MIN_EXCHANGES_FOR_SCORE + 5))
+        tracker.redis.get = AsyncMock(return_value=None)
+        await tracker._update_score("device_command", 0.0)
+        # EMA: 0.1 * 0.0 + 0.9 * 0.5 (DEFAULT_SCORE) = 0.45
+        tracker.redis.setex.assert_called_once()
+        call_args = tracker.redis.setex.call_args[0]
+        new_score = float(call_args[2])
+        assert abs(new_score - 0.45) < 0.01
+
+    @pytest.mark.asyncio
+    async def test_ema_per_person(self, tracker):
+        tracker.redis.hget = AsyncMock(return_value=str(MIN_EXCHANGES_FOR_SCORE + 5))
+        tracker.redis.get = AsyncMock(return_value="0.8")
+        await tracker._update_score("device_command", 1.0, person="Max")
+        tracker.redis.setex.assert_called_once()
+        key_arg = tracker.redis.setex.call_args[0][0]
+        assert "person:Max" in key_arg
+
+    @pytest.mark.asyncio
+    async def test_score_clamped_to_0_1(self, tracker):
+        tracker.redis.hget = AsyncMock(return_value=str(MIN_EXCHANGES_FOR_SCORE + 5))
+        tracker.redis.get = AsyncMock(return_value="0.99")
+        await tracker._update_score("device_command", 1.0)
+        call_args = tracker.redis.setex.call_args[0]
+        new_score = float(call_args[2])
+        assert 0.0 <= new_score <= 1.0

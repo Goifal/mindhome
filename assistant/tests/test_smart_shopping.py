@@ -377,3 +377,290 @@ class TestGetShoppingContext:
 
         context = await shop.get_shopping_context()
         assert "Samstag" in context
+
+
+# ============================================================
+# set_notify_callback Tests
+# ============================================================
+
+class TestSetNotifyCallback:
+    def test_sets_callback(self, shop):
+        cb = AsyncMock()
+        shop.set_notify_callback(cb)
+        assert shop._notify_callback is cb
+
+
+# ============================================================
+# initialize Tests
+# ============================================================
+
+class TestInitialize:
+    @pytest.mark.asyncio
+    async def test_initialize_sets_redis(self, shop, redis_mock):
+        shop.redis = None
+        await shop.initialize(redis_mock)
+        assert shop.redis is redis_mock
+
+    @pytest.mark.asyncio
+    async def test_initialize_with_none(self, shop):
+        await shop.initialize(None)
+        assert shop.redis is None
+
+
+# ============================================================
+# check_and_notify Tests
+# ============================================================
+
+class TestCheckAndNotify:
+    @pytest.mark.asyncio
+    async def test_disabled_returns_empty(self, shop_disabled):
+        result = await shop_disabled.check_and_notify()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_no_callback_returns_empty(self, shop):
+        shop._notify_callback = None
+        result = await shop.check_and_notify()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_notifies_running_low_items(self, shop, redis_mock):
+        from datetime import datetime, timedelta
+        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        pred = json.dumps({
+            "item": "Milch",
+            "next_expected": yesterday,
+            "confidence": 0.8,
+        })
+        redis_mock.hgetall = AsyncMock(return_value={b"milch": pred.encode()})
+        redis_mock.exists = AsyncMock(return_value=0)  # no cooldown
+
+        cb = AsyncMock()
+        shop._notify_callback = cb
+
+        result = await shop.check_and_notify()
+        assert "Milch" in result
+        cb.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cooldown_prevents_notification(self, shop, redis_mock):
+        from datetime import datetime, timedelta
+        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        pred = json.dumps({
+            "item": "Milch",
+            "next_expected": yesterday,
+            "confidence": 0.8,
+        })
+        redis_mock.hgetall = AsyncMock(return_value={b"milch": pred.encode()})
+        redis_mock.exists = AsyncMock(return_value=1)  # cooldown active
+
+        cb = AsyncMock()
+        shop._notify_callback = cb
+
+        result = await shop.check_and_notify()
+        assert result == []
+        cb.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_notify_callback_exception_handled(self, shop, redis_mock):
+        from datetime import datetime, timedelta
+        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        pred = json.dumps({
+            "item": "Butter",
+            "next_expected": yesterday,
+            "confidence": 0.8,
+        })
+        redis_mock.hgetall = AsyncMock(return_value={b"butter": pred.encode()})
+        redis_mock.exists = AsyncMock(return_value=0)
+
+        cb = AsyncMock(side_effect=RuntimeError("notify failed"))
+        shop._notify_callback = cb
+
+        result = await shop.check_and_notify()
+        assert result == []  # notification failed, not added
+
+    @pytest.mark.asyncio
+    async def test_notifies_item_soon_to_expire(self, shop, redis_mock):
+        from datetime import datetime, timedelta
+        tomorrow = (datetime.now() + timedelta(hours=12)).isoformat()
+        pred = json.dumps({
+            "item": "Eier",
+            "next_expected": tomorrow,
+            "confidence": 0.5,
+        })
+        redis_mock.hgetall = AsyncMock(return_value={b"eier": pred.encode()})
+        redis_mock.exists = AsyncMock(return_value=0)
+
+        cb = AsyncMock()
+        shop._notify_callback = cb
+
+        result = await shop.check_and_notify()
+        assert "Eier" in result
+
+
+# ============================================================
+# _check_reminder_cooldown Tests
+# ============================================================
+
+class TestCheckReminderCooldown:
+    @pytest.mark.asyncio
+    async def test_no_redis_returns_false(self, ha_mock):
+        with patch("assistant.smart_shopping.yaml_config", SHOPPING_CONFIG):
+            s = SmartShopping(ha_mock)
+        s.redis = None
+        result = await s._check_reminder_cooldown("Milch")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_cooldown_active(self, shop, redis_mock):
+        redis_mock.exists = AsyncMock(return_value=1)
+        result = await shop._check_reminder_cooldown("Milch")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_no_cooldown(self, shop, redis_mock):
+        redis_mock.exists = AsyncMock(return_value=0)
+        result = await shop._check_reminder_cooldown("Milch")
+        assert result is False
+
+
+# ============================================================
+# _set_reminder_cooldown Tests
+# ============================================================
+
+class TestSetReminderCooldown:
+    @pytest.mark.asyncio
+    async def test_no_redis_returns_early(self, ha_mock):
+        with patch("assistant.smart_shopping.yaml_config", SHOPPING_CONFIG):
+            s = SmartShopping(ha_mock)
+        s.redis = None
+        await s._set_reminder_cooldown("Milch")
+        # No exception
+
+    @pytest.mark.asyncio
+    async def test_sets_cooldown(self, shop, redis_mock):
+        await shop._set_reminder_cooldown("Milch")
+        redis_mock.setex.assert_called_once()
+        key_arg = redis_mock.setex.call_args[0][0]
+        assert "milch" in key_arg
+
+    @pytest.mark.asyncio
+    async def test_cooldown_key_normalized(self, shop, redis_mock):
+        await shop._set_reminder_cooldown("Gouda Kaese")
+        key_arg = redis_mock.setex.call_args[0][0]
+        assert "gouda_kaese" in key_arg
+
+
+# ============================================================
+# record_purchase prediction path Tests
+# ============================================================
+
+class TestRecordPurchasePrediction:
+    @pytest.mark.asyncio
+    async def test_purchase_stores_prediction(self, shop, redis_mock):
+        """When prediction is calculated, it's stored in Redis."""
+        dates = [
+            datetime(2025, 1, 1),
+            datetime(2025, 1, 8),
+        ]
+        entries = _make_purchase_entries(dates)
+        redis_mock.lrange = AsyncMock(return_value=entries)
+        redis_mock.hincrby = AsyncMock()
+
+        result = await shop.record_purchase("Milch")
+        assert result["success"] is True
+        redis_mock.hset.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_purchase_exception(self, shop, redis_mock):
+        """Redis exception during purchase recording."""
+        redis_mock.rpush = AsyncMock(side_effect=RuntimeError("Redis down"))
+        result = await shop.record_purchase("Milch")
+        assert result["success"] is False
+
+
+# ============================================================
+# get_predictions exception Tests
+# ============================================================
+
+class TestGetPredictionsException:
+    @pytest.mark.asyncio
+    async def test_exception_returns_empty(self, shop, redis_mock):
+        redis_mock.hgetall = AsyncMock(side_effect=RuntimeError("Redis down"))
+        result = await shop.get_predictions()
+        assert result == []
+
+
+# ============================================================
+# get_items_running_low edge cases
+# ============================================================
+
+class TestGetItemsRunningLowEdgeCases:
+    @pytest.mark.asyncio
+    async def test_invalid_date_skipped(self, shop, redis_mock):
+        pred = json.dumps({
+            "item": "Bad",
+            "next_expected": "not-a-date",
+            "confidence": 0.8,
+        })
+        redis_mock.hgetall = AsyncMock(return_value={b"bad": pred.encode()})
+        result = await shop.get_items_running_low()
+        assert len(result) == 0
+
+
+# ============================================================
+# get_shopping_context edge cases
+# ============================================================
+
+class TestGetShoppingContextEdgeCases:
+    @pytest.mark.asyncio
+    async def test_api_exception_handled(self, shop, ha_mock, redis_mock):
+        ha_mock.api_get = AsyncMock(side_effect=RuntimeError("API down"))
+        redis_mock.hgetall = AsyncMock(return_value={})
+        context = await shop.get_shopping_context()
+        # Should not crash, just return whatever other parts provide
+        assert isinstance(context, str)
+
+    @pytest.mark.asyncio
+    async def test_includes_running_low_items(self, shop, ha_mock, redis_mock):
+        ha_mock.api_get = AsyncMock(return_value=[])
+        from datetime import datetime, timedelta
+        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+        pred = json.dumps({
+            "item": "Milch",
+            "next_expected": yesterday,
+            "confidence": 0.8,
+            "days_until": -1,
+        })
+        redis_mock.hgetall = AsyncMock(side_effect=[
+            {b"milch": pred.encode()},  # predictions
+            {},  # shopping day pattern
+        ])
+        context = await shop.get_shopping_context()
+        assert "Milch" in context
+
+    @pytest.mark.asyncio
+    async def test_get_shopping_day_pattern_exception(self, shop, redis_mock):
+        redis_mock.hgetall = AsyncMock(side_effect=RuntimeError("fail"))
+        result = await shop.get_shopping_day_pattern()
+        assert result is None
+
+
+# ============================================================
+# add_missing_ingredients edge cases
+# ============================================================
+
+class TestAddMissingIngredientsEdgeCases:
+    @pytest.mark.asyncio
+    async def test_call_service_exception(self, shop, ha_mock):
+        ha_mock.api_get = AsyncMock(return_value=[])
+        ha_mock.call_service = AsyncMock(side_effect=RuntimeError("HA error"))
+        result = await shop.add_missing_ingredients(["Mehl"])
+        assert result["added"] == []
+        assert result["already_on_list"] == []
+
+    @pytest.mark.asyncio
+    async def test_no_added_no_already(self, shop, ha_mock):
+        ha_mock.api_get = AsyncMock(return_value=[])
+        result = await shop.add_missing_ingredients(["", "  "])
+        assert "Keine Zutaten" in result["message"]

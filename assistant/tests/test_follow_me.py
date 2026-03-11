@@ -298,3 +298,211 @@ class TestHandleMotion:
                 "binary_sensor.motion_wohnzimmer", "alice"
             )
         assert result is None
+
+
+# ============================================================
+# _transfer_climate Tests
+# ============================================================
+
+class TestTransferClimate:
+
+    @pytest.mark.asyncio
+    async def test_climate_transfer_success(self, engine, ha_mock):
+        profile = {"comfort_temp": 23, "eco_temp_offset": 3}
+        result = await engine._transfer_climate(
+            "wohnzimmer", "schlafzimmer", profile, []
+        )
+        assert result is not None
+        assert result["type"] == "climate"
+        assert result["from"] == "wohnzimmer"
+        assert result["to"] == "schlafzimmer"
+        # Should call set_temperature twice (new room + old room eco)
+        assert ha_mock.call_service.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_climate_transfer_others_in_old_room(self, engine, ha_mock):
+        profile = {"comfort_temp": 22}
+        result = await engine._transfer_climate(
+            "wohnzimmer", "schlafzimmer", profile, ["bob"]
+        )
+        assert result is not None
+        # Should call set_temperature only once (new room only, old room stays)
+        assert ha_mock.call_service.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_climate_transfer_exception(self, engine, ha_mock):
+        ha_mock.call_service = AsyncMock(side_effect=RuntimeError("HA error"))
+        profile = {"comfort_temp": 22}
+        result = await engine._transfer_climate(
+            "wohnzimmer", "schlafzimmer", profile, []
+        )
+        assert result is None
+
+
+# ============================================================
+# _transfer_lights Tests
+# ============================================================
+
+class TestTransferLights:
+
+    @pytest.mark.asyncio
+    async def test_lights_transfer_with_room_profiles(self, engine, ha_mock):
+        """Lights transferred using room profile entities."""
+        profile = {"light_brightness": 80}
+        room_profiles = {
+            "rooms": {
+                "schlafzimmer": {
+                    "light_entities": ["light.schlafzimmer_decke"],
+                },
+                "wohnzimmer": {
+                    "light_entities": ["light.wohnzimmer_decke"],
+                },
+            }
+        }
+        with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
+             patch("assistant.config.get_room_profiles", return_value=room_profiles):
+            result = await engine._transfer_lights(
+                "wohnzimmer", "schlafzimmer", profile, []
+            )
+        assert result is not None
+        assert result["type"] == "lights"
+
+    @pytest.mark.asyncio
+    async def test_lights_transfer_per_light_brightness_day(self, engine, ha_mock):
+        """Per-light brightness from room_profiles (daytime)."""
+        profile = {"light_brightness": 80}
+        room_profiles = {
+            "rooms": {
+                "schlafzimmer": {
+                    "light_entities": ["light.schlafzimmer_decke"],
+                    "light_brightness": {
+                        "light.schlafzimmer_decke": {"day": 100, "night": 30},
+                    },
+                },
+            }
+        }
+        with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
+             patch("assistant.config.get_room_profiles", return_value=room_profiles), \
+             patch("assistant.follow_me.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 14, 0)  # 2 PM (daytime)
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = await engine._transfer_lights(
+                "wohnzimmer", "schlafzimmer", profile, []
+            )
+        assert result is not None
+        # Check that brightness_pct was set to daytime value (100)
+        turn_on_calls = [
+            c for c in ha_mock.call_service.call_args_list
+            if c.args[1] == "turn_on"
+        ]
+        assert len(turn_on_calls) >= 1
+        assert turn_on_calls[0].args[2]["brightness_pct"] == 100
+
+    @pytest.mark.asyncio
+    async def test_lights_transfer_per_light_brightness_night(self, engine, ha_mock):
+        """Per-light brightness from room_profiles (nighttime)."""
+        profile = {"light_brightness": 80}
+        room_profiles = {
+            "rooms": {
+                "schlafzimmer": {
+                    "light_entities": ["light.schlafzimmer_decke"],
+                    "light_brightness": {
+                        "light.schlafzimmer_decke": {"day": 100, "night": 30},
+                    },
+                },
+            }
+        }
+        with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
+             patch("assistant.config.get_room_profiles", return_value=room_profiles), \
+             patch("assistant.follow_me.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2025, 6, 15, 23, 0)  # 11 PM (nighttime)
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            result = await engine._transfer_lights(
+                "wohnzimmer", "schlafzimmer", profile, []
+            )
+        assert result is not None
+        turn_on_calls = [
+            c for c in ha_mock.call_service.call_args_list
+            if c.args[1] == "turn_on"
+        ]
+        assert len(turn_on_calls) >= 1
+        assert turn_on_calls[0].args[2]["brightness_pct"] == 30
+
+    @pytest.mark.asyncio
+    async def test_lights_fallback_entity(self, engine, ha_mock):
+        """When no light_entities in room profile, falls back to light.{room}."""
+        profile = {"light_brightness": 75}
+        room_profiles = {"rooms": {}}
+        with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
+             patch("assistant.config.get_room_profiles", return_value=room_profiles):
+            result = await engine._transfer_lights(
+                "wohnzimmer", "schlafzimmer", profile, []
+            )
+        assert result is not None
+        turn_on_calls = [
+            c for c in ha_mock.call_service.call_args_list
+            if c.args[1] == "turn_on"
+        ]
+        assert any("light.schlafzimmer" in str(c) for c in turn_on_calls)
+
+    @pytest.mark.asyncio
+    async def test_lights_color_temp(self, engine, ha_mock):
+        """Color temp passed when in profile."""
+        profile = {"light_brightness": 80, "light_color_temp": 4000}
+        room_profiles = {"rooms": {}}
+        with patch("assistant.follow_me.yaml_config", {**FOLLOW_ME_CONFIG, "lighting": {"default_transition": 2}}), \
+             patch("assistant.config.get_room_profiles", return_value=room_profiles):
+            result = await engine._transfer_lights(
+                "wohnzimmer", "schlafzimmer", profile, []
+            )
+        assert result is not None
+        turn_on_calls = [
+            c for c in ha_mock.call_service.call_args_list
+            if c.args[1] == "turn_on"
+        ]
+        assert turn_on_calls[0].args[2]["color_temp_kelvin"] == 4000
+
+    @pytest.mark.asyncio
+    async def test_lights_transfer_exception(self, engine, ha_mock):
+        """Exception during lights transfer returns None."""
+        with patch("assistant.config.get_room_profiles", side_effect=RuntimeError("config error")):
+            result = await engine._transfer_lights(
+                "wohnzimmer", "schlafzimmer", {}, []
+            )
+        assert result is None
+
+
+# ============================================================
+# _transfer_music Tests
+# ============================================================
+
+class TestTransferMusic:
+
+    @pytest.mark.asyncio
+    async def test_music_transfer_no_speaker(self, engine, ha_mock):
+        """No speaker found returns None."""
+        result = await engine._transfer_music(
+            "garage", "kueche", {}, []
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_music_transfer_not_playing(self, engine, ha_mock):
+        """Old speaker not playing returns None."""
+        speakers = FOLLOW_ME_CONFIG["multi_room"]["room_speakers"]
+        ha_mock.get_state = AsyncMock(return_value={"state": "idle"})
+        result = await engine._transfer_music(
+            "wohnzimmer", "kueche", speakers, []
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_music_transfer_exception(self, engine, ha_mock):
+        """Exception during music transfer returns None."""
+        speakers = FOLLOW_ME_CONFIG["multi_room"]["room_speakers"]
+        ha_mock.get_state = AsyncMock(return_value={"state": "playing"})
+        ha_mock.call_service = AsyncMock(side_effect=RuntimeError("HA error"))
+        result = await engine._transfer_music(
+            "wohnzimmer", "kueche", speakers, []
+        )
+        assert result is None

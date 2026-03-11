@@ -428,3 +428,244 @@ class TestHealthStatus:
     def test_health_status_disabled(self, recognition):
         recognition.enabled = False
         assert recognition.health_status() == "disabled"
+
+
+# ============================================================
+# Additional Coverage Tests
+# ============================================================
+
+class TestInitializeProfiles:
+    """Tests fuer initialize() — Profile aus Redis laden."""
+
+    @pytest.mark.asyncio
+    async def test_initialize_loads_profiles(self, recognition, redis_mock):
+        profiles_data = {
+            "max": {"name": "Max", "person_id": "max", "avg_wpm": 130,
+                    "avg_duration": 3.5, "avg_volume": 0.6, "sample_count": 5,
+                    "last_identified": 0, "devices": ["media_player.kueche"]},
+        }
+        redis_mock.get = AsyncMock(side_effect=lambda key: {
+            "mha:speaker:profiles": json.dumps(profiles_data),
+            "mha:speaker:last_identified": "max",
+        }.get(key))
+
+        await recognition.initialize(redis_mock)
+        assert "max" in recognition._profiles
+        assert recognition._profiles["max"].name == "Max"
+        assert recognition._last_speaker == "max"
+
+    @pytest.mark.asyncio
+    async def test_initialize_disabled(self, ha_client, redis_mock):
+        with patch("assistant.speaker_recognition.yaml_config") as mock_cfg:
+            mock_cfg.get.return_value = {"enabled": False}
+            sr = SpeakerRecognition(ha_client)
+            await sr.initialize(redis_mock)
+            assert sr.redis is redis_mock
+
+    @pytest.mark.asyncio
+    async def test_initialize_redis_error(self, recognition, redis_mock):
+        redis_mock.get = AsyncMock(side_effect=Exception("Redis down"))
+        await recognition.initialize(redis_mock)
+        # Should not crash, profiles remain empty
+        assert len(recognition._profiles) == 0
+
+    @pytest.mark.asyncio
+    async def test_initialize_without_redis(self, recognition):
+        await recognition.initialize(None)
+        assert recognition.redis is None
+
+
+class TestIdentifyByRoom:
+    """Tests fuer _identify_by_room()."""
+
+    @pytest.mark.asyncio
+    async def test_single_person_home(self, recognition):
+        recognition.ha = AsyncMock()
+        recognition.ha.get_states = AsyncMock(return_value=[
+            {"entity_id": "person.max", "state": "home",
+             "attributes": {"friendly_name": "Max"}},
+        ])
+        result = await recognition._identify_by_room("wohnzimmer")
+        assert result == "Max"
+
+    @pytest.mark.asyncio
+    async def test_multiple_persons_preferred_room(self, recognition):
+        recognition.ha = AsyncMock()
+        recognition.ha.get_states = AsyncMock(return_value=[
+            {"entity_id": "person.max", "state": "home",
+             "attributes": {"friendly_name": "Max"}},
+            {"entity_id": "person.lisa", "state": "home",
+             "attributes": {"friendly_name": "Lisa"}},
+        ])
+        with patch("assistant.speaker_recognition.yaml_config") as mock_cfg:
+            mock_cfg.get.side_effect = lambda key, default=None: {
+                "speaker_recognition": recognition._sr_cfg_backup if hasattr(recognition, '_sr_cfg_backup') else {},
+                "person_profiles": {
+                    "profiles": {
+                        "max": {"preferred_room": "wohnzimmer"},
+                        "lisa": {"preferred_room": "schlafzimmer"},
+                    }
+                },
+            }.get(key, default or {})
+            result = await recognition._identify_by_room("wohnzimmer")
+            assert result == "Max"
+
+    @pytest.mark.asyncio
+    async def test_no_persons_home(self, recognition):
+        recognition.ha = AsyncMock()
+        recognition.ha.get_states = AsyncMock(return_value=[
+            {"entity_id": "person.max", "state": "not_home",
+             "attributes": {"friendly_name": "Max"}},
+        ])
+        result = await recognition._identify_by_room("wohnzimmer")
+        assert result is None
+
+
+class TestIdentifySolePerson:
+    """Tests fuer _identify_sole_person()."""
+
+    @pytest.mark.asyncio
+    async def test_sole_person(self, recognition):
+        recognition.ha = AsyncMock()
+        recognition.ha.get_states = AsyncMock(return_value=[
+            {"entity_id": "person.max", "state": "home",
+             "attributes": {"friendly_name": "Max"}},
+        ])
+        result = await recognition._identify_sole_person()
+        assert result == "Max"
+
+    @pytest.mark.asyncio
+    async def test_multiple_persons(self, recognition):
+        recognition.ha = AsyncMock()
+        recognition.ha.get_states = AsyncMock(return_value=[
+            {"entity_id": "person.max", "state": "home",
+             "attributes": {"friendly_name": "Max"}},
+            {"entity_id": "person.lisa", "state": "home",
+             "attributes": {"friendly_name": "Lisa"}},
+        ])
+        result = await recognition._identify_sole_person()
+        assert result is None
+
+
+class TestSetCurrentSpeaker:
+    """Tests fuer set_current_speaker()."""
+
+    @pytest.mark.asyncio
+    async def test_set_current_speaker_with_profile(self, recognition, redis_mock):
+        profile = SpeakerProfile("Max", "max")
+        recognition._profiles["max"] = profile
+        await recognition.set_current_speaker("max")
+        assert recognition._last_speaker == "max"
+        assert profile.last_identified > 0
+        redis_mock.set.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_set_current_speaker_no_profile(self, recognition, redis_mock):
+        await recognition.set_current_speaker("unknown")
+        assert recognition._last_speaker == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_set_current_speaker_redis_error(self, recognition, redis_mock):
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        redis_mock.set = AsyncMock(side_effect=Exception("Redis fail"))
+        # Should not raise
+        await recognition.set_current_speaker("max")
+        assert recognition._last_speaker == "max"
+
+
+class TestRemoveProfile:
+    """Tests fuer remove_profile()."""
+
+    @pytest.mark.asyncio
+    async def test_remove_existing_profile(self, recognition, redis_mock):
+        profile = SpeakerProfile("Max", "max")
+        profile.devices = ["media_player.kueche"]
+        recognition._profiles["max"] = profile
+        recognition._device_mapping["media_player.kueche"] = "max"
+
+        result = await recognition.remove_profile("max")
+        assert result is True
+        assert "max" not in recognition._profiles
+        assert "media_player.kueche" not in recognition._device_mapping
+
+    @pytest.mark.asyncio
+    async def test_remove_nonexistent_profile(self, recognition, redis_mock):
+        result = await recognition.remove_profile("unknown")
+        assert result is False
+
+
+class TestGetProfiles:
+    """Tests fuer get_profiles()."""
+
+    def test_get_profiles_empty(self, recognition):
+        result = recognition.get_profiles()
+        assert result == []
+
+    def test_get_profiles_with_data(self, recognition):
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        recognition._profiles["lisa"] = SpeakerProfile("Lisa", "lisa")
+        result = recognition.get_profiles()
+        assert len(result) == 2
+        names = [p["name"] for p in result]
+        assert "Max" in names
+        assert "Lisa" in names
+
+
+class TestGetLastSpeaker:
+    """Tests fuer get_last_speaker()."""
+
+    def test_no_last_speaker(self, recognition):
+        result = recognition.get_last_speaker()
+        assert result is None
+
+    def test_last_speaker_in_profiles(self, recognition):
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        recognition._last_speaker = "max"
+        result = recognition.get_last_speaker()
+        assert result == "Max"
+
+    def test_last_speaker_not_in_profiles(self, recognition):
+        recognition._last_speaker = "unknown"
+        result = recognition.get_last_speaker()
+        assert result is None
+
+
+class TestLearnEmbedding:
+    """Tests fuer learn_embedding_from_audio()."""
+
+    @pytest.mark.asyncio
+    async def test_learn_disabled(self, recognition):
+        recognition.enabled = False
+        await recognition.learn_embedding_from_audio("max", {"audio_pcm_b64": "abc"})
+        # Should return without doing anything
+
+    @pytest.mark.asyncio
+    async def test_learn_unknown_person(self, recognition):
+        await recognition.learn_embedding_from_audio("unknown", {"audio_pcm_b64": "abc"})
+        # Person not in profiles, should return
+
+    @pytest.mark.asyncio
+    async def test_learn_no_metadata(self, recognition):
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        await recognition.learn_embedding_from_audio("max", {})
+        # No audio metadata, should return
+
+    @pytest.mark.asyncio
+    async def test_learn_with_cached_embedding(self, recognition, redis_mock):
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        recognition._last_embedding = [0.1, 0.2, 0.3]
+
+        with patch.object(recognition, "store_embedding", new=AsyncMock()) as mock_store:
+            await recognition.learn_embedding_from_audio("max", {"wpm": 130})
+            mock_store.assert_called_once_with("max", [0.1, 0.2, 0.3])
+        assert recognition._last_embedding is None
+
+    @pytest.mark.asyncio
+    async def test_learn_with_wyoming_fallback(self, recognition, redis_mock):
+        recognition._profiles["max"] = SpeakerProfile("Max", "max")
+        recognition._last_embedding = None
+
+        with patch.object(recognition, "_get_wyoming_embedding", new=AsyncMock(return_value=[0.5, 0.6])), \
+             patch.object(recognition, "store_embedding", new=AsyncMock()) as mock_store:
+            await recognition.learn_embedding_from_audio("max", {"wpm": 130})
+            mock_store.assert_called_once_with("max", [0.5, 0.6])

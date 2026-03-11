@@ -385,3 +385,172 @@ async def test_rebuild_success(mock_ef, store):
 async def test_reingest_file_no_recipes_dir(store_uninit):
     result = await store_uninit.reingest_file("test.txt")
     assert result == 0
+
+
+# ── initialize ───────────────────────────────────────────
+
+class TestInitialize:
+    """Tests fuer initialize()."""
+
+    @pytest.mark.asyncio
+    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"enabled": False}})
+    async def test_disabled_returns_early(self):
+        s = RecipeStore()
+        await s.initialize()
+        assert s.chroma_collection is None
+
+    @pytest.mark.asyncio
+    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"enabled": True, "auto_ingest": False}})
+    @patch("assistant.recipe_store.settings")
+    async def test_chromadb_exception(self, mock_settings):
+        mock_settings.chroma_url = "http://localhost:8000"
+        s = RecipeStore()
+        with patch("chromadb.HttpClient", side_effect=RuntimeError("connection refused")):
+            await s.initialize()
+        assert s.chroma_collection is None
+
+    @pytest.mark.asyncio
+    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"enabled": True, "auto_ingest": True}})
+    @patch("assistant.recipe_store.settings")
+    async def test_successful_init_with_auto_ingest(self, mock_settings, tmp_path):
+        mock_settings.chroma_url = "http://localhost:8000"
+        mock_collection = MagicMock()
+        mock_collection.count.return_value = 5
+        mock_collection.get.return_value = {"metadatas": []}
+        mock_client = MagicMock()
+        mock_client.get_or_create_collection.return_value = mock_collection
+
+        s = RecipeStore()
+        with patch("chromadb.HttpClient", return_value=mock_client), \
+             patch("assistant.embeddings.get_embedding_function", return_value=None), \
+             patch.object(Path, "mkdir"):
+            # Override _recipes_dir to a temp dir with no files
+            await s.initialize()
+        assert s.chroma_collection is mock_collection
+
+
+# ── ingest_all with files ────────────────────────────────
+
+class TestIngestAll:
+    """Tests fuer ingest_all() with actual file iteration."""
+
+    @pytest.mark.asyncio
+    async def test_ingest_all_no_files(self, store, tmp_path):
+        store._recipes_dir = tmp_path  # empty directory
+        result = await store.ingest_all()
+        assert result == 0
+
+    @pytest.mark.asyncio
+    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+    @patch("assistant.recipe_store.KnowledgeBase")
+    async def test_ingest_all_with_files(self, mock_kb, store, tmp_path):
+        (tmp_path / "recipe1.txt").write_text("Rezept eins")
+        (tmp_path / "recipe2.md").write_text("Rezept zwei")
+        store._recipes_dir = tmp_path
+
+        mock_kb._split_text.return_value = ["chunk_a"]
+        store.chroma_collection.add = MagicMock()
+
+        result = await store.ingest_all()
+        assert result == 2
+
+    @pytest.mark.asyncio
+    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+    @patch("assistant.recipe_store.KnowledgeBase")
+    async def test_ingest_all_with_exception(self, mock_kb, store, tmp_path):
+        (tmp_path / "bad.txt").write_text("bad content")
+        store._recipes_dir = tmp_path
+
+        mock_kb._split_text.return_value = ["chunk"]
+        store.chroma_collection.add = MagicMock(side_effect=RuntimeError("db error"))
+
+        result = await store.ingest_all()
+        assert result == 0  # Exception caught, no chunks stored
+
+
+# ── ingest_file additional paths ─────────────────────────
+
+class TestIngestFilePdf:
+    """Tests fuer ingest_file() PDF path and error paths."""
+
+    @pytest.mark.asyncio
+    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+    @patch("assistant.recipe_store.KnowledgeBase")
+    async def test_ingest_pdf_file(self, mock_kb, store, tmp_path):
+        pdf_file = tmp_path / "recipe.pdf"
+        pdf_file.write_bytes(b"fake pdf content")
+
+        mock_kb._extract_pdf_text.return_value = "Extracted PDF text"
+        mock_kb._split_text.return_value = ["pdf_chunk"]
+        store.chroma_collection.add = MagicMock()
+
+        result = await store.ingest_file(pdf_file)
+        assert result == 1
+        mock_kb._extract_pdf_text.assert_called_once_with(pdf_file)
+
+    @pytest.mark.asyncio
+    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {}})
+    async def test_ingest_file_read_error(self, store, tmp_path):
+        bad_file = tmp_path / "missing.txt"
+        # File doesn't exist, read_text will fail
+        result = await store.ingest_file(bad_file)
+        assert result == 0
+
+    @pytest.mark.asyncio
+    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+    @patch("assistant.recipe_store.KnowledgeBase")
+    async def test_ingest_file_chunk_add_exception(self, mock_kb, store, tmp_path):
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text("some content")
+
+        mock_kb._split_text.return_value = ["chunk1", "chunk2"]
+        store.chroma_collection.add = MagicMock(side_effect=RuntimeError("add failed"))
+
+        result = await store.ingest_file(recipe_file)
+        assert result == 0  # Both chunks fail
+
+
+# ── delete_source_chunks hash cleanup ────────────────────
+
+class TestDeleteSourceChunksHashCleanup:
+    """Tests fuer delete_source_chunks() no-results and error paths."""
+
+    @pytest.mark.asyncio
+    async def test_delete_source_no_results(self, store):
+        store.chroma_collection.get.return_value = {"ids": []}
+        result = await store.delete_source_chunks("nonexistent.txt")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_delete_source_exception(self, store):
+        store.chroma_collection.get.side_effect = RuntimeError("db error")
+        result = await store.delete_source_chunks("recipe.txt")
+        assert result == 0
+
+
+# ── reingest_file ────────────────────────────────────────
+
+class TestReingestFile:
+    """Tests fuer reingest_file() with actual file lookup."""
+
+    @pytest.mark.asyncio
+    async def test_reingest_file_not_found(self, store, tmp_path):
+        store._recipes_dir = tmp_path  # no files
+        result = await store.reingest_file("nonexistent.txt")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    @patch("assistant.recipe_store.yaml_config", {"recipe_store": {"chunk_size": 800, "chunk_overlap": 100}})
+    @patch("assistant.recipe_store.KnowledgeBase")
+    async def test_reingest_file_success(self, mock_kb, store, tmp_path):
+        recipe = tmp_path / "recipe.txt"
+        recipe.write_text("Updated recipe content")
+        store._recipes_dir = tmp_path
+
+        # delete_source_chunks returns no results
+        store.chroma_collection.get.return_value = {"ids": [], "metadatas": []}
+        mock_kb._split_text.return_value = ["new_chunk"]
+        store.chroma_collection.add = MagicMock()
+
+        result = await store.reingest_file("recipe.txt")
+        assert result == 1
