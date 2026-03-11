@@ -1056,7 +1056,7 @@ class ProactiveManager:
                 logger.info("Morning Briefing automatisch geliefert")
 
                 # B3: Pending Tages-Zusammenfassung nach Briefing liefern
-                if self.brain.memory.redis:
+                if self.brain.memory and self.brain.memory.redis:
                     pending = await self.brain.memory.redis.get("mha:pending_summary")
                     if pending:
                         summary = pending.decode() if isinstance(pending, bytes) else pending
@@ -2149,17 +2149,6 @@ class ProactiveManager:
         except Exception as e:
             logger.error("Fehler beim Status-Bericht: %s", e)
             return "Status-Abfrage fehlgeschlagen. Systeme prüfen."
-
-    def _get_person_title(self, person_name: str) -> str:
-        """Gibt die korrekte Anrede für eine Person zurück (Jarvis-Style)."""
-        person_cfg = yaml_config.get("persons", {})
-        titles = person_cfg.get("titles", {})
-
-        # Hauptbenutzer = konfigurierter Titel
-        if person_name.lower() == settings.user_name.lower():
-            return titles.get(person_name.lower(), get_person_title())
-        # Andere: Titel aus Config oder Vorname
-        return titles.get(person_name.lower(), person_name)
 
     async def _get_persons_at_home(self) -> list[str]:
         """Gibt die Liste der aktuell anwesenden Personen zurück.
@@ -5200,7 +5189,7 @@ class ProactiveManager:
 
         # 3. Sleep-Lock setzen/prüfen (sticky — gegen Sensor-Flackern)
         try:
-            _redis = self.brain.redis if hasattr(self.brain, 'redis') else None
+            _redis = self.brain.memory.redis if self.brain.memory and hasattr(self.brain.memory, 'redis') else None
             if not _redis:
                 return is_sleeping_now
 
@@ -5352,7 +5341,7 @@ class ProactiveManager:
                         })
 
                     # Taegliches Kostentracking (einmal pro Tag via Redis-Cooldown)
-                    if self.brain.memory.redis:
+                    if self.brain.memory and self.brain.memory.redis:
                         tracked_key = "mha:energy:daily_tracked"
                         from datetime import datetime as _dt
                         today = _dt.now().strftime("%Y-%m-%d")

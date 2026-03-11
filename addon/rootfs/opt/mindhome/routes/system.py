@@ -218,6 +218,9 @@ def api_get_settings():
 @system_bp.route("/api/system/settings/<key>", methods=["PUT"])
 def api_update_setting(key):
     """Update a system setting."""
+    import re
+    if not re.match(r'^[a-z][a-z0-9_]{1,63}$', key):
+        return jsonify({"error": "Ungueltiger Setting-Key"}), 400
     data = request.json or {}
     set_setting(key, data.get("value"))
     return jsonify({"success": True, "key": key, "value": data.get("value")})

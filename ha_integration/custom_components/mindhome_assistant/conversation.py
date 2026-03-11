@@ -75,7 +75,7 @@ class MindHomeAssistantAgent(ConversationEntity):
     ) -> ConversationResult:
         """Verarbeitet Spracheingabe ueber MindHome Assistant API."""
         text = user_input.text
-        person = user_input.context.user_id if user_input.context else None
+        person = await self._resolve_person_name(user_input)
 
         # Phase 9: Voice-Metadaten berechnen
         now = time.time()
@@ -137,6 +137,31 @@ class MindHomeAssistantAgent(ConversationEntity):
             response=intent_response,
             conversation_id=user_input.conversation_id,
         )
+
+    # ------------------------------------------------------------------
+    # Person Resolution: UUID -> Display Name
+    # ------------------------------------------------------------------
+
+    async def _resolve_person_name(
+        self, user_input: ConversationInput
+    ) -> str | None:
+        """Resolves HA user_id (UUID) to a human-readable person name.
+
+        The memory chain expects human-readable names, not UUIDs.
+        Falls back to UUID if no display name can be resolved.
+        """
+        user_id = user_input.context.user_id if user_input.context else None
+        if not user_id:
+            return None
+
+        try:
+            user = await self.hass.auth.async_get_user(user_id)
+            if user and user.name:
+                return user.name
+        except Exception as e:
+            _LOGGER.debug("Person name resolution failed: %s", e)
+
+        return user_id
 
     # ------------------------------------------------------------------
     # Phase 9: Voice-Metadaten

@@ -81,6 +81,7 @@ class MoodDetector:
     def __init__(self):
         self.redis: Optional[redis.Redis] = None
         self._analyze_lock = asyncio.Lock()
+        self._voice_lock = __import__('threading').Lock()
 
         # Per-Person State Storage
         # {person_key: {mood, stress, tiredness, frustration, positive,

@@ -113,7 +113,8 @@ class MusicDJ:
         try:
             result = await self.activity.detect_activity()
             return result.get("activity", "relaxing")
-        except Exception:
+        except Exception as e:
+            logger.debug("Activity detection failed: %s", e)
             return "relaxing"
 
     def _context_to_genre(self, context: dict, activity: str) -> Optional[str]:
@@ -328,7 +329,8 @@ class MusicDJ:
             if not raw:
                 return {"success": False, "message": "Keine aktuelle Empfehlung zum Bewerten."}
             last = json.loads(raw)
-        except Exception:
+        except Exception as e:
+            logger.debug("Last recommendation load failed: %s", e)
             return {"success": False, "message": "Empfehlung konnte nicht geladen werden."}
 
         genre = last.get("genre", "unknown")

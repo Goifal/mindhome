@@ -26,12 +26,14 @@ class FunctionValidator:
     """Validiert Function Calls vor der Ausfuehrung."""
 
     def __init__(self):
-        # Aktionen die Bestaetigung brauchen (statisch)
-        security = yaml_config.get("security", {})
-        confirm_list = security.get("require_confirmation", [])
-        self.require_confirmation = set(confirm_list)
         # Feature 10: HA-Client fuer Live-Daten-Pushback (gesetzt via set_ha_client)
         self.ha = None
+
+    @property
+    def require_confirmation(self) -> set:
+        """Liest require_confirmation live aus yaml_config (Hot-Reload-faehig)."""
+        security = yaml_config.get("security", {})
+        return set(security.get("require_confirmation", []))
 
     def set_ha_client(self, ha_client) -> None:
         """Setzt den HA-Client fuer Live-Daten-Abfragen (Feature 10)."""

@@ -312,10 +312,12 @@ class SuggestionGenerator:
                         context["guests_home"] = True
                         context["active_contexts"].append("guests")
 
-            # Check holidays
+            # Check holidays (use local time, not UTC)
             from models import Holiday
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            today_md = datetime.now().strftime("%m-%d")
+            from helpers import local_now as _local_now
+            _now_local = _local_now()
+            today_str = _now_local.strftime("%Y-%m-%d")
+            today_md = _now_local.strftime("%m-%d")
             is_holiday = session.query(Holiday).filter(
                 Holiday.is_active == True,
                 ((Holiday.date == today_str) |

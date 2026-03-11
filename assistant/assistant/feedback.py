@@ -50,6 +50,7 @@ class FeedbackTracker:
         # Pending notifications: warten auf Feedback
         # {notification_id: {"event_type": str, "sent_at": datetime}}
         self._pending: dict[str, dict] = {}
+        self._pending_lock = asyncio.Lock()
 
         # Auto-Timeout Task
         self._timeout_task: Optional[asyncio.Task] = None
@@ -81,10 +82,11 @@ class FeedbackTracker:
 
     async def track_notification(self, notification_id: str, event_type: str):
         """Registriert eine gesendete proaktive Meldung (wartet auf Feedback)."""
-        self._pending[notification_id] = {
-            "event_type": event_type,
-            "sent_at": datetime.now(),
-        }
+        async with self._pending_lock:
+            self._pending[notification_id] = {
+                "event_type": event_type,
+                "sent_at": datetime.now(),
+            }
 
         # Gesamt-Zaehler erhoehen
         await self._increment_counter(event_type, "total_sent")
@@ -112,7 +114,8 @@ class FeedbackTracker:
 
         # Event-Typ ermitteln
         event_type = None
-        pending_entry = self._pending.get(notification_id)
+        async with self._pending_lock:
+            pending_entry = self._pending.get(notification_id)
         if pending_entry is not None:
             event_type = pending_entry.get("event_type")
         else:
@@ -134,7 +137,8 @@ class FeedbackTracker:
         await self._increment_counter(event_type, feedback_type)
 
         # Pending erst nach erfolgreichem Score-Update entfernen
-        self._pending.pop(notification_id, None)
+        async with self._pending_lock:
+            self._pending.pop(notification_id, None)
 
         logger.info(
             "Feedback [%s] fuer '%s': %+.2f -> Score: %.2f",
@@ -352,9 +356,12 @@ class FeedbackTracker:
         """Erhoeht einen Zaehler fuer einen Event-Typ."""
         if not self.redis:
             return
-        await self.redis.hincrby(
-            f"mha:feedback:counters:{event_type}", counter_name, 1
-        )
+        try:
+            await self.redis.hincrby(
+                f"mha:feedback:counters:{event_type}", counter_name, 1
+            )
+        except Exception as e:
+            logger.warning("Counter increment failed for %s/%s: %s", event_type, counter_name, e)
 
     async def _get_counters(self, event_type: str) -> dict:
         """Holt alle Zaehler fuer einen Event-Typ."""
@@ -419,12 +426,14 @@ class FeedbackTracker:
         timeout = timedelta(seconds=self.auto_timeout_seconds)
 
         expired = []
-        for nid, info in list(self._pending.items()):
-            if now - info["sent_at"] > timeout:
-                expired.append(nid)
+        async with self._pending_lock:
+            for nid, info in list(self._pending.items()):
+                if now - info["sent_at"] > timeout:
+                    expired.append(nid)
 
         for nid in expired:
-            info = self._pending.pop(nid, None)
+            async with self._pending_lock:
+                info = self._pending.pop(nid, None)
             if info is None:
                 continue
             await self._update_score(info["event_type"], FEEDBACK_DELTAS["ignored"])

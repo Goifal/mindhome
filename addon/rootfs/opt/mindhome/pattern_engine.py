@@ -304,9 +304,10 @@ class ContextBuilder:
                         ctx["current_shift"] = shift_setting.value
                 except Exception as e:
                     logger.debug("Unhandled: %s", e)
-                session.close()
             except Exception as e:
                 logger.debug("Unhandled: %s", e)
+            finally:
+                session.close()
         return ctx
 
 
@@ -326,13 +327,15 @@ class StateLogger:
         self.ha = ha_connection
         self.context_builder = ContextBuilder(ha_connection, engine)
 
-        # Motion sensor debounce tracking
+        # Motion sensor debounce tracking (bounded to prevent unbounded growth)
         self._motion_last_on = {}  # entity_id -> datetime
         self._last_sensor_values = {}  # entity_id -> last_logged_value
         self._last_sensor_times = {}  # entity_id -> last_logged_timestamp
+        self._MAX_SENSOR_TRACKING = 500
 
         # Rate limiter: sliding window
         self._event_timestamps = []  # list of timestamps
+        self._event_timestamps_lock = threading.Lock()
         self._rate_limit_warned = False
         self._rate_limit_warn_time = None
 
@@ -359,6 +362,8 @@ class StateLogger:
                     if last_on and (now - last_on).total_seconds() < _get_motion_debounce():
                         return False
                     self._motion_last_on[entity_id] = now
+                    if len(self._motion_last_on) > self._MAX_SENSOR_TRACKING:
+                        self._motion_last_on.clear()
                 elif new_state == "off":
                     if not hasattr(self, '_motion_last_off'):
                         self._motion_last_off = {}
@@ -415,6 +420,9 @@ class StateLogger:
 
                     self._last_sensor_values[entity_id] = new_val
                     self._last_sensor_times[entity_id] = now_ts
+                    if len(self._last_sensor_values) > self._MAX_SENSOR_TRACKING:
+                        self._last_sensor_values.clear()
+                        self._last_sensor_times.clear()
                     return True
                 except (ValueError, TypeError):
                     return False
@@ -464,19 +472,20 @@ class StateLogger:
         # Rate limit check
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=60)
-        self._event_timestamps = [t for t in self._event_timestamps if t > cutoff]
         _max_epm = self.MAX_EVENTS_PER_MINUTE
         try:
             _max_epm = int(get_setting("core.pattern_engine.max_events_per_minute", "600") or "600")
         except Exception as e:
             logger.debug("Unhandled: %s", e)
-        if len(self._event_timestamps) >= _max_epm:
-            if not self._rate_limit_warned or (self._rate_limit_warn_time and (now - self._rate_limit_warn_time).total_seconds() > 300):
-                logger.warning(f"Rate limit reached ({_max_epm}/min), dropping events")
-                self._rate_limit_warned = True
-                self._rate_limit_warn_time = now
-            return
-        self._rate_limit_warned = False
+        with self._event_timestamps_lock:
+            self._event_timestamps = [t for t in self._event_timestamps if t > cutoff]
+            if len(self._event_timestamps) >= _max_epm:
+                if not self._rate_limit_warned or (self._rate_limit_warn_time and (now - self._rate_limit_warn_time).total_seconds() > 300):
+                    logger.warning(f"Rate limit reached ({_max_epm}/min), dropping events")
+                    self._rate_limit_warned = True
+                    self._rate_limit_warn_time = now
+                return
+            self._rate_limit_warned = False
 
         old_state = old_state_obj.get("state") if old_state_obj else None
         new_state = new_state_obj.get("state", "")
@@ -533,7 +542,8 @@ class StateLogger:
                         time.sleep(0.1 * (_attempt + 1))
                     else:
                         raise
-            self._event_timestamps.append(now)
+            with self._event_timestamps_lock:
+                self._event_timestamps.append(now)
             logger.debug(f"Logged: {entity_id} {old_state} → {new_state}")
 
         except Exception as e:

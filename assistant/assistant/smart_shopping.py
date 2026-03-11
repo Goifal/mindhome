@@ -173,6 +173,7 @@ class SmartShopping:
             raw = await self.redis.hgetall(_KEY_PREDICTIONS)
             predictions = []
             for key, val in raw.items():
+                key = key.decode() if isinstance(key, bytes) else key
                 val_str = val.decode() if isinstance(val, bytes) else val
                 pred = json.loads(val_str)
                 predictions.append(pred)

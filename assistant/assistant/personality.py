@@ -681,6 +681,9 @@ class PersonalityEngine:
         if self._curiosity_last_date != today:
             self._curiosity_count_today = {}
             self._curiosity_last_date = today
+        # Size cap to prevent unbounded memory growth
+        if len(self._curiosity_count_today) > 100:
+            self._curiosity_count_today = dict(list(self._curiosity_count_today.items())[-50:])
 
         user_key = (person or "_default").lower().strip()
         if self._curiosity_count_today.get(user_key, 0) >= max_daily:
@@ -1388,7 +1391,7 @@ class PersonalityEngine:
         notes = []
         new_alerts = []
         for alert in alerts:
-            alert_key = str(int(hashlib.md5(alert.lower().strip().encode()).hexdigest(), 16) % 10_000_000)
+            alert_key = hashlib.sha256(alert.lower().strip().encode()).hexdigest()[:12]
             if await self.was_warning_given(alert_key):
                 notes.append(f"[BEREITS GEWARNT: '{alert}' — NICHT wiederholen, nur erwähnen wenn gefragt]")
             else:
@@ -2244,6 +2247,7 @@ class PersonalityEngine:
 
         # Stimmungsabhängige Anpassung
         mood = (context.get("mood") or {}).get("mood", "neutral") if context else "neutral"
+        # Thread-safe write
         with self._mood_formality_lock:
             self._current_mood = mood
         _neutral_fallback = self._mood_styles.get("neutral", {"style_addon": "", "max_sentences_mod": 0})
@@ -2889,6 +2893,10 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
         time_of_day = self.get_time_of_day()
         time_style = self.get_time_style(time_of_day)
 
+        # Snapshot shared state to avoid race condition
+        _mood_snapshot = self._current_mood
+        _formality_snapshot = getattr(self, '_current_formality', self.formality_start)
+
         # Humor/Sarkasmus — bei CRITICAL komplett aus
         has_alerts = urgency == "critical"
         with self._mood_formality_lock:
@@ -2988,6 +2996,10 @@ WICHTIG: Erfinde KEINE Ursachen, Gruende oder Erklaerungen. NUR die gegebenen Fa
         """
         time_of_day = self.get_time_of_day()
         time_style = self.get_time_style(time_of_day)
+
+        # Snapshot shared state to avoid race condition
+        _mood_snapshot = self._current_mood
+        _formality_snapshot = getattr(self, '_current_formality', self.formality_start)
 
         # Humor — Morgens gedaempft, Abends lockerer
         with self._mood_formality_lock:

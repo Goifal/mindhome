@@ -6,6 +6,7 @@ wie Datenblaetter, Reparaturanleitungen und Referenzhandbuecher.
 """
 
 import asyncio
+import inspect
 import logging
 from pathlib import Path
 from typing import Optional
@@ -50,6 +51,12 @@ class WorkshopLibrary:
             _count,
         )
 
+    async def _resolve_embedding(self, result):
+        """Resolves an embedding result that may be a coroutine."""
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
     async def ingest_document(self, filepath: str) -> dict:
         """Importiert ein Dokument in die Workshop-Library.
 
@@ -92,7 +99,7 @@ class WorkshopLibrary:
             )
             await asyncio.to_thread(
                 self.collection.upsert,
-                ids=ids, documents=chunks, metadatas=metadatas, embeddings=embeddings,
+                ids=ids, documents=chunks, metadatas=metadatas, embeddings=list(embeddings),
             )
         else:
             await asyncio.to_thread(

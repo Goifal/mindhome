@@ -15,6 +15,7 @@ Konfigurierbar in der Jarvis Assistant UI.
 import json
 import logging
 import time
+from collections import deque
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -71,7 +72,7 @@ class LearningTransfer:
         # Gemerkte Praeferenzen pro Raum und Domaene
         # Format: {"{room}:{domain}": [{attribute: value, count: N, last_seen: ts}]}
         self._preferences: dict[str, list[dict]] = {}
-        self._pending_transfers: list[dict] = []
+        self._pending_transfers: deque[dict] = deque(maxlen=100)
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis."""
@@ -209,7 +210,6 @@ class LearningTransfer:
                     for t in self._pending_transfers
                 ):
                     self._pending_transfers.append(transfer)
-                    self._pending_transfers = self._pending_transfers[-50:]  # Limit size
                     logger.info(
                         "Transfer-Vorschlag: %s -> %s (%s: %s)",
                         source_room, target_room, domain, transferable_attrs,

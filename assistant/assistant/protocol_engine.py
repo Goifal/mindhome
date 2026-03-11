@@ -17,7 +17,7 @@ Architektur:
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -121,7 +121,7 @@ class ProtocolEngine:
             "name": name,
             "name_normalized": name_normalized,
             "created_by": person,
-            "created_at": datetime.now().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "description": description,
             "steps": steps,
             "undo_steps": undo_steps,
@@ -190,13 +190,13 @@ class ProtocolEngine:
             protocol["undo_steps"] = live_undo_steps
             try:
                 await self.redis.set(f"{_PREFIX}:{name_normalized}", json.dumps(protocol))
-            except Exception:
-                pass  # Fallback: alte Undo-Steps bleiben
+            except Exception as e:
+                logger.debug("Undo-steps Redis update failed: %s", e)
 
         # Letzten Ausfuehrungsstatus speichern (fuer Undo)
         last_exec = {
             "protocol": name_normalized,
-            "executed_at": datetime.now().isoformat(),
+            "executed_at": datetime.now(timezone.utc).isoformat(),
             "person": person,
             "steps_executed": len(executed),
         }
@@ -273,9 +273,15 @@ class ProtocolEngine:
         await self.redis.delete(f"{_PREFIX}:last_executed:{name_normalized}")
 
         title = get_person_title(person)
+        total = len(undo_steps)
+        all_ok = executed == total
         return {
-            "success": True,
-            "message": f"Protokoll '{protocol.get('name', name)}' rueckgaengig gemacht, {title}.",
+            "success": all_ok,
+            "message": (
+                f"Protokoll '{protocol.get('name', name)}' rueckgaengig gemacht, {title}."
+                if all_ok else
+                f"Undo teilweise fehlgeschlagen ({executed}/{total} Schritte), {title}."
+            ),
         }
 
     async def list_protocols(self) -> list[dict]:
@@ -364,9 +370,24 @@ class ProtocolEngine:
         name = re.sub(r"_+", "_", name).strip("_")
         return name[:50]
 
+    @staticmethod
+    def _sanitize_input(text: str, max_length: int = 500) -> str:
+        """Sanitizes user input before passing to LLM prompt.
+
+        Strips control characters, removes role markers, and limits length.
+        """
+        # Remove control characters (keep newlines and tabs)
+        sanitized = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+        # Remove potential role/injection markers
+        sanitized = re.sub(r'(?i)\b(system|user|assistant)\s*:', '', sanitized)
+        # Limit length
+        sanitized = sanitized[:max_length].strip()
+        return sanitized
+
     async def _parse_steps(self, description: str) -> list[dict]:
         """Parst Schritte aus natuerlicher Beschreibung via LLM."""
-        prompt = _PARSE_PROMPT.replace("{description}", description)
+        sanitized_description = self._sanitize_input(description)
+        prompt = _PARSE_PROMPT.replace("{description}", sanitized_description)
 
         try:
             response = await self.ollama.chat(

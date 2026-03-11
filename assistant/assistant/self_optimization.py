@@ -369,6 +369,7 @@ Wenn keine Aenderung noetig: []"""
             old_value = self._get_current_values().get(param)
 
             def _read_and_write():
+                import tempfile
                 with open(_SETTINGS_PATH) as f:
                     config = yaml.safe_load(f) or {}
 
@@ -379,8 +380,16 @@ Wenn keine Aenderung noetig: []"""
                     node = node[key]
                 node[path[-1]] = new_value
 
-                with open(_SETTINGS_PATH, "w") as f:
-                    yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                tmp_fd, tmp_path = tempfile.mkstemp(
+                    dir=_SETTINGS_PATH.parent, suffix=".yaml.tmp",
+                )
+                try:
+                    with open(tmp_fd, "w") as f:
+                        yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                    Path(tmp_path).replace(_SETTINGS_PATH)
+                except BaseException:
+                    Path(tmp_path).unlink(missing_ok=True)
+                    raise
 
             await asyncio.to_thread(_read_and_write)
 
@@ -423,7 +432,8 @@ Wenn keine Aenderung noetig: []"""
                 val = await self._redis.get(f"mha:feedback:count:{key_suffix}")
                 stats[key_suffix] = int(val) if val else 0
             return stats
-        except Exception:
+        except Exception as e:
+            logger.debug("Self-optimization data retrieval failed: %s", e)
             return {}
 
     # Feature 9a: Neue Datenquellen
@@ -433,7 +443,8 @@ Wenn keine Aenderung noetig: []"""
             return {}
         try:
             return await outcome_tracker.get_stats()
-        except Exception:
+        except Exception as e:
+            logger.debug("Self-optimization data retrieval failed: %s", e)
             return {}
 
     async def _get_quality_stats(self, response_quality=None) -> dict:
@@ -442,7 +453,8 @@ Wenn keine Aenderung noetig: []"""
             return {}
         try:
             return await response_quality.get_stats()
-        except Exception:
+        except Exception as e:
+            logger.debug("Self-optimization data retrieval failed: %s", e)
             return {}
 
     async def _get_correction_patterns(self, correction_memory=None) -> list:
@@ -451,7 +463,8 @@ Wenn keine Aenderung noetig: []"""
             return []
         try:
             return await correction_memory.get_correction_patterns()
-        except Exception:
+        except Exception as e:
+            logger.debug("Self-optimization data retrieval failed: %s", e)
             return []
 
     # Feature 9b: Effectiveness Tracking
@@ -595,7 +608,8 @@ Wenn keine Aenderung noetig: []"""
                         for k, v in day_data.items()
                     }
             return stats
-        except Exception:
+        except Exception as e:
+            logger.debug("Self-optimization data retrieval failed: %s", e)
             return {}
 
     async def track_user_phrase_correction(self, original_phrase: str):

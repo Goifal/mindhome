@@ -58,8 +58,11 @@ app.config['MAX_CONTENT_LENGTH'] = 55 * 1024 * 1024  # 55 MB (upload limit + ove
 _CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "").strip()
 if _CORS_ORIGINS:
     CORS(app, origins=_CORS_ORIGINS.split(","), supports_credentials=False)
-# Bug #68 fix: When CORS_ORIGINS is empty/unset, do NOT enable CORS at all.
-# Previously this called CORS(app) with no origins, which defaults to wildcard '*'.
+else:
+    # Bug #68 fix: When CORS_ORIGINS is empty/unset, do NOT enable CORS at all.
+    # Previously this called CORS(app) with no origins, which defaults to wildcard '*'.
+    # Explicit empty origins list as defense-in-depth (no wildcard).
+    CORS(app, origins=[], supports_credentials=False)
 
 mimetypes.add_type("text/javascript", ".jsx")
 mimetypes.add_type("text/javascript", ".mjs")

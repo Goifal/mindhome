@@ -144,6 +144,7 @@ class ConflictResolver:
 
         # State: Letzte Befehle pro Person
         self._recent_commands: dict[str, list[dict]] = defaultdict(list)
+        self._commands_lock = __import__('threading').Lock()
         # State: Letzte Konfliktloesungen (Cooldown)
         self._last_resolutions: dict[str, float] = {}
         # State: Konflikt-History
@@ -209,15 +210,16 @@ class ConflictResolver:
         }
 
         person_key = person.lower()
-        self._recent_commands[person_key].append(command)
+        with self._commands_lock:
+            self._recent_commands[person_key].append(command)
 
-        # Ring-Buffer: Alte Befehle entfernen
-        if len(self._recent_commands[person_key]) > self._max_commands:
-            self._recent_commands[person_key] = \
-                self._recent_commands[person_key][-self._max_commands:]
+            # Ring-Buffer: Alte Befehle entfernen
+            if len(self._recent_commands[person_key]) > self._max_commands:
+                self._recent_commands[person_key] = \
+                    self._recent_commands[person_key][-self._max_commands:]
 
-        # Abgelaufene Befehle bereinigen (aelter als conflict_window)
-        self._cleanup_old_commands()
+            # Abgelaufene Befehle bereinigen (aelter als conflict_window)
+            self._cleanup_old_commands()
 
     async def check_conflict(
         self,

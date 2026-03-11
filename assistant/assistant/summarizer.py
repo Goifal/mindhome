@@ -195,11 +195,11 @@ class DailySummarizer:
             logger.info("Wochen-Summary fuer %s existiert bereits", week_key)
             return existing
 
-        # Tages-Summaries sammeln
+        # Tages-Summaries sammeln (parallel)
+        days = [(start_dt + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+        results = await asyncio.gather(*(self._get_summary(day, DAILY) for day in days))
         daily_summaries = []
-        for i in range(7):
-            day = (start_dt + timedelta(days=i)).strftime("%Y-%m-%d")
-            day_summary = await self._get_summary(day, DAILY)
+        for day, day_summary in zip(days, results):
             if day_summary:
                 daily_summaries.append(f"[{day}]: {day_summary}")
 
@@ -235,21 +235,26 @@ class DailySummarizer:
             logger.info("Monats-Summary fuer %s existiert bereits", month)
             return existing
 
-        # Wochen-Summaries und Tages-Summaries des Monats sammeln
+        # Wochen-Summaries und Tages-Summaries des Monats sammeln (parallel)
         year, mon = month.split("-")
         summaries = []
 
-        # Alle Tages-Summaries des Monats
+        # Alle gueltigen Tage des Monats ermitteln
+        valid_dates = []
         for day in range(1, 32):
             try:
                 date = f"{year}-{mon}-{day:02d}"
-                # Pruefen ob Datum gueltig
                 datetime.strptime(date, "%Y-%m-%d")
-                day_summary = await self._get_summary(date, DAILY)
-                if day_summary:
-                    summaries.append(f"[{date}]: {day_summary}")
+                valid_dates.append(date)
             except ValueError:
                 break  # Ungeltiges Datum (z.B. 31. Feb)
+
+        # Alle Tages-Summaries parallel laden
+        if valid_dates:
+            results = await asyncio.gather(*(self._get_summary(date, DAILY) for date in valid_dates))
+            for date, day_summary in zip(valid_dates, results):
+                if day_summary:
+                    summaries.append(f"[{date}]: {day_summary}")
 
         if not summaries:
             logger.info("Keine Summaries fuer Monat %s", month)

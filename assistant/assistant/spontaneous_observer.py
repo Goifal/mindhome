@@ -257,8 +257,8 @@ class SpontaneousObserver:
                     "type": "energy_comparison",
                     "urgency": "low",
                 }
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as e:
+            logger.debug("Energy comparison parse error: %s", e)
         return None
 
     async def _check_weather_streak(self) -> Optional[dict]:
@@ -287,8 +287,8 @@ class SpontaneousObserver:
                                     "type": "weather_streak",
                                     "urgency": "low",
                                 }
-                        except (ValueError, TypeError):
-                            pass
+                        except (ValueError, TypeError) as e:
+                            logger.debug("Weather temp parse error: %s", e)
 
                     if condition in ("snowy", "snowy-rainy"):
                         title = await self._get_title_for_present()

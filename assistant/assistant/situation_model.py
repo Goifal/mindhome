@@ -92,6 +92,9 @@ class SituationModel:
             t = raw_time if isinstance(raw_time, str) else raw_time.decode(errors="replace")
             try:
                 last_dt = datetime.fromisoformat(t)
+                # Ensure both are naive for consistent subtraction
+                if last_dt.tzinfo is not None:
+                    last_dt = last_dt.replace(tzinfo=None)
                 diff = datetime.now() - last_dt
                 minutes = int(diff.total_seconds() / 60)
                 if minutes < self.min_pause_minutes:

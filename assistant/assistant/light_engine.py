@@ -184,7 +184,7 @@ class LightEngine:
             if ha_state and ha_state.get("state") == "on":
                 continue
 
-            brightness = FunctionExecutor._get_adaptive_brightness(room, light_id)
+            brightness = FunctionExecutor.get_adaptive_brightness(room, light_id)
 
             # Mood-Awareness: Bei Stress gedaempfter, bei Muedigkeit minimal
             if self.mood:
@@ -366,7 +366,7 @@ class LightEngine:
                 ha_state = await self.ha.get_state(light_id)
                 if ha_state and ha_state.get("state") == "on":
                     continue
-                brightness = FunctionExecutor._get_adaptive_brightness(room_name, light_id)
+                brightness = FunctionExecutor.get_adaptive_brightness(room_name, light_id)
                 data = {"entity_id": light_id, "brightness_pct": brightness}
                 try:
                     data["transition"] = int(transition)
@@ -415,9 +415,13 @@ class LightEngine:
         if not (now.hour >= start_hour or now.hour < 6):
             # Tagsüber: Night-Dim Flags zuruecksetzen
             if self.redis and now.hour == 12:
-                keys = await _safe_redis(self.redis, "keys", f"{_R_NIGHT_DIM}*") or []
-                for k in keys:
-                    await _safe_redis(self.redis, "delete", k)
+                cursor = b"0"
+                while True:
+                    cursor, _keys = await self.redis.scan(cursor, match=f"{_R_NIGHT_DIM}*", count=100)
+                    for k in _keys:
+                        await _safe_redis(self.redis, "delete", k)
+                    if cursor == b"0" or cursor == 0:
+                        break
             return
 
         transition = cfg.get("night_dimming_transition", 300)
@@ -527,10 +531,18 @@ class LightEngine:
             return
 
         # Alle Pathlight-Keys mit kurzer Restlaufzeit finden
-        keys = await _safe_redis(self.redis, "keys", f"{_R_PATHLIGHT}*") or []
+        keys = []
+        cursor = b"0"
+        while True:
+            cursor, _batch = await self.redis.scan(cursor, match=f"{_R_PATHLIGHT}*", count=100)
+            keys.extend(_batch)
+            if cursor == b"0" or cursor == 0:
+                break
         for key in keys:
-            ttl = await _safe_redis(self.redis, "ttl", key) or -1
-            if ttl <= 0:
+            ttl = await _safe_redis(self.redis, "ttl", key)
+            if ttl is None:
+                ttl = -2
+            if ttl < 1:  # -2 = key not found, -1 = no expiry (shouldn't happen), 0 = about to expire
                 # Key ist abgelaufen → Licht ausschalten
                 entity_id = key.decode() if isinstance(key, bytes) else key
                 entity_id = entity_id.replace(_R_PATHLIGHT, "")
@@ -815,7 +827,7 @@ class LightEngine:
 
             attrs = ha_state.get("attributes", {})
             current_pct = round(attrs.get("brightness", 128) / 255 * 100)
-            target = FunctionExecutor._get_adaptive_brightness(cover_room, light_id)
+            target = FunctionExecutor.get_adaptive_brightness(cover_room, light_id)
 
             # Cover schliesst → Licht muss heller (Tageslicht blockiert)
             if position < 30 and current_pct < target:
@@ -843,7 +855,7 @@ class LightEngine:
                     continue
                 if await self.is_manual_override_active(light_id):
                     continue
-                target = FunctionExecutor._get_adaptive_brightness(room_name, light_id)
+                target = FunctionExecutor.get_adaptive_brightness(room_name, light_id)
                 attrs = ha_state.get("attributes", {})
                 current_pct = round(attrs.get("brightness", 128) / 255 * 100)
                 if abs(current_pct - target) < 5:

@@ -597,7 +597,10 @@ class AnticipationEngine:
                 continue
 
             # Wurde dieser Vorschlag kuerzlich schon gemacht?
-            pattern_key = f"mha:anticipation:suggested:{pattern.get('description', '')}"
+            import hashlib as _hl
+            _desc = pattern.get('description', '')[:200]
+            _desc_hash = _hl.sha256(_desc.encode()).hexdigest()[:16]
+            pattern_key = f"mha:anticipation:suggested:{_desc_hash}"
             already_suggested = await self.redis.get(pattern_key)
             if already_suggested:
                 continue

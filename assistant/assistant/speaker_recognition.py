@@ -731,16 +731,12 @@ class SpeakerRecognition:
         if not embedding or not self._profiles:
             return None
 
-        best_match = None
-        best_similarity = 0.0
-
-        # Batch-fetch all embeddings via Redis pipeline to avoid N+1 calls
+        # Load all embeddings in parallel via Redis pipeline
         profile_ids = list(self._profiles.keys())
-        stored_embeddings: dict[str, Optional[list]] = {}
-
+        stored_embeddings: dict[str, list[float]] = {}
         if self.redis and profile_ids:
             try:
-                pipe = self.redis.pipeline(transaction=False)
+                pipe = self.redis.pipeline()
                 for pid in profile_ids:
                     pipe.get(f"mha:speaker:embedding:{pid}")
                 results = await pipe.execute()
@@ -749,11 +745,12 @@ class SpeakerRecognition:
                         try:
                             stored_embeddings[pid] = json.loads(data)
                         except (json.JSONDecodeError, TypeError):
-                            stored_embeddings[pid] = None
-                    else:
-                        stored_embeddings[pid] = None
+                            pass
             except Exception as e:
-                logger.debug("Embedding batch retrieval failed: %s", e)
+                logger.debug("Embedding retrieval failed: %s", e)
+
+        best_match = None
+        best_similarity = 0.0
 
         for pid, profile in self._profiles.items():
             stored = stored_embeddings.get(pid)
@@ -914,7 +911,8 @@ class SpeakerRecognition:
             if not raw:
                 return None
             pending = json.loads(raw)
-        except Exception:
+        except Exception as e:
+            logger.debug("Pending ask resolve failed: %s", e)
             return None
 
         # Antwort cleanen
@@ -961,7 +959,8 @@ class SpeakerRecognition:
             return False
         try:
             return await self.redis.exists(SPEAKER_PENDING_ASK_KEY) > 0
-        except Exception:
+        except Exception as e:
+            logger.debug("Pending ask check failed: %s", e)
             return False
 
     def health_status(self) -> str:
@@ -970,6 +969,7 @@ class SpeakerRecognition:
             return "disabled"
         try:
             embeds = "embeddings:on" if embeddings_available() else "embeddings:off"
-        except Exception:
+        except Exception as e:
+            logger.debug("Embeddings check failed: %s", e)
             embeds = "embeddings:error"
         return f"active ({len(self._profiles)} profiles, {len(self._device_mapping)} devices, {embeds})"

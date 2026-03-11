@@ -148,7 +148,7 @@ class SemanticMemory:
 
     async def store_fact(self, fact: SemanticFact) -> bool:
         # F-007: Lock um den gesamten Read-Write-Zyklus gegen TOCTOU
-        lock_key = f"mha:fact_lock:{int(hashlib.md5(fact.content.encode()).hexdigest(), 16) % 100000}"
+        lock_key = f"mha:fact_lock:{hashlib.sha256(fact.content.encode()).hexdigest()[:12]}"
         lock_acquired = False
         if self.redis:
             try:
@@ -368,8 +368,14 @@ class SemanticMemory:
             decayed = 0
             deleted = 0
 
-            for fact_id in fact_ids:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            # Batch-fetch all fact data via pipeline to avoid N+1
+            fact_ids_list = list(fact_ids)
+            pipe = self.redis.pipeline()
+            for fact_id in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fact_id}")
+            all_data = await pipe.execute()
+
+            for fact_id, data in zip(fact_ids_list, all_data):
                 if not data:
                     continue
 
@@ -420,7 +426,7 @@ class SemanticMemory:
                                 metadatas=[{**data, "confidence": str(round(new_confidence, 3))}],
                             )
                         except Exception as e:
-                            logger.debug("Unhandled: %s", e)
+                            logger.debug("ChromaDB update in decay failed: %s", e)
                     decayed += 1
 
             if decayed or deleted:

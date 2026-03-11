@@ -284,11 +284,12 @@ class EnergyOptimizer:
             return None
 
         try:
-            # Letzte 7 Tage laden
+            # Letzte 7 Tage parallel laden
+            days = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
+            import asyncio
+            raw_results = await asyncio.gather(*(self.redis.get(f"{KEY_DAILY_ENERGY}{day}") for day in days))
             values = []
-            for i in range(1, 8):
-                day = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
-                raw = await self.redis.get(f"{KEY_DAILY_ENERGY}{day}")
+            for raw in raw_results:
                 if raw:
                     try:
                         data = json.loads(raw)
@@ -330,10 +331,16 @@ class EnergyOptimizer:
             last_week = []
             now = datetime.now()
 
+            # Alle 14 Tage parallel laden (7 diese Woche + 7 letzte Woche)
+            import asyncio
+            all_keys = []
             for i in range(7):
-                # Diese Woche
-                day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
-                raw = await self.redis.get(f"{KEY_DAILY_ENERGY}{day}")
+                all_keys.append(f"{KEY_DAILY_ENERGY}{(now - timedelta(days=i)).strftime('%Y-%m-%d')}")
+                all_keys.append(f"{KEY_DAILY_ENERGY}{(now - timedelta(days=i + 7)).strftime('%Y-%m-%d')}")
+            raw_results = await asyncio.gather(*(self.redis.get(k) for k in all_keys))
+
+            for idx in range(7):
+                raw = raw_results[idx * 2]
                 if raw:
                     try:
                         data = json.loads(raw)
@@ -343,9 +350,7 @@ class EnergyOptimizer:
                     except (json.JSONDecodeError, TypeError):
                         pass
 
-                # Letzte Woche
-                day_lw = (now - timedelta(days=i + 7)).strftime("%Y-%m-%d")
-                raw_lw = await self.redis.get(f"{KEY_DAILY_ENERGY}{day_lw}")
+                raw_lw = raw_results[idx * 2 + 1]
                 if raw_lw:
                     try:
                         data_lw = json.loads(raw_lw)

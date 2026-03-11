@@ -189,7 +189,7 @@ class ModelRouter:
     def _is_model_installed(self, model_name: str) -> bool:
         """Prueft ob ein Modell in Ollama installiert ist."""
         if not self._available_models:
-            return True  # Kein Check moeglich -> optimistisch
+            return False  # Kein Check moeglich -> pessimistisch (Fallback nutzen)
 
         model_lower = model_name.lower()
         for available in self._available_models:

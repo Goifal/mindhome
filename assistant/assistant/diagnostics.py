@@ -528,62 +528,69 @@ class DiagnosticsEngine:
         import aiohttp
         import asyncio
 
+        async def _check_ha():
+            try:
+                ha_ok = await self.ha.is_available()
+                return "home_assistant", {
+                    "status": "connected" if ha_ok else "disconnected",
+                }
+            except Exception as e:
+                logger.error("HA Health-Check fehlgeschlagen: %s", e)
+                return "home_assistant", {"status": "error"}
+
+        async def _check_ollama():
+            try:
+                timeout = aiohttp.ClientTimeout(total=5)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(f"{settings.ollama_url}/api/tags") as resp:
+                        return "ollama", {
+                            "status": "connected" if resp.status == 200 else "disconnected",
+                        }
+            except Exception as e:
+                logger.error("Ollama Health-Check fehlgeschlagen: %s", e)
+                return "ollama", {"status": "disconnected"}
+
+        async def _check_redis():
+            try:
+                import redis.asyncio as aioredis
+                r = aioredis.from_url(settings.redis_url, socket_timeout=3)
+                await r.ping()
+                await r.aclose()
+                return "redis", {"status": "connected"}
+            except Exception as e:
+                logger.error("Redis Health-Check fehlgeschlagen: %s", e)
+                return "redis", {"status": "disconnected"}
+
+        async def _check_chromadb():
+            try:
+                timeout = aiohttp.ClientTimeout(total=5)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(f"{settings.chroma_url}/api/v1/heartbeat") as resp:
+                        return "chromadb", {
+                            "status": "connected" if resp.status == 200 else "disconnected",
+                        }
+            except Exception as e:
+                logger.error("ChromaDB Health-Check fehlgeschlagen: %s", e)
+                return "chromadb", {"status": "disconnected"}
+
+        async def _check_mindhome():
+            try:
+                mh_status = await self.ha._get_mindhome("/api/health")
+                return "mindhome_addon", {
+                    "url": settings.mindhome_url,
+                    "status": "connected" if mh_status else "disconnected",
+                }
+            except Exception as e:
+                return "mindhome_addon", {"url": settings.mindhome_url, "status": f"disconnected: {e}"}
+
+        check_results = await asyncio.gather(
+            _check_ha(), _check_ollama(), _check_redis(),
+            _check_chromadb(), _check_mindhome(),
+        )
+
         results = {}
-
-        # Home Assistant
-        try:
-            ha_ok = await self.ha.is_available()
-            results["home_assistant"] = {
-                "status": "connected" if ha_ok else "disconnected",
-            }
-        except Exception as e:
-            logger.error("HA Health-Check fehlgeschlagen: %s", e)
-            results["home_assistant"] = {"status": "error"}
-
-        # Ollama
-        try:
-            timeout = aiohttp.ClientTimeout(total=5)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(f"{settings.ollama_url}/api/tags") as resp:
-                    results["ollama"] = {
-                        "status": "connected" if resp.status == 200 else "disconnected",
-                    }
-        except Exception as e:
-            logger.error("Ollama Health-Check fehlgeschlagen: %s", e)
-            results["ollama"] = {"status": "disconnected"}
-
-        # Redis
-        try:
-            import redis.asyncio as aioredis
-            r = aioredis.from_url(settings.redis_url, socket_timeout=3)
-            await r.ping()
-            await r.aclose()
-            results["redis"] = {"status": "connected"}
-        except Exception as e:
-            logger.error("Redis Health-Check fehlgeschlagen: %s", e)
-            results["redis"] = {"status": "disconnected"}
-
-        # ChromaDB
-        try:
-            timeout = aiohttp.ClientTimeout(total=5)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(f"{settings.chroma_url}/api/v1/heartbeat") as resp:
-                    results["chromadb"] = {
-                        "status": "connected" if resp.status == 200 else "disconnected",
-                    }
-        except Exception as e:
-            logger.error("ChromaDB Health-Check fehlgeschlagen: %s", e)
-            results["chromadb"] = {"status": "disconnected"}
-
-        # MindHome Addon
-        try:
-            mh_status = await self.ha._get_mindhome("/api/health")
-            results["mindhome_addon"] = {
-                "url": settings.mindhome_url,
-                "status": "connected" if mh_status else "disconnected",
-            }
-        except Exception as e:
-            results["mindhome_addon"] = {"url": settings.mindhome_url, "status": f"disconnected: {e}"}
+        for name, status in check_results:
+            results[name] = status
 
         return results
 
@@ -602,26 +609,27 @@ class DiagnosticsEngine:
             "summary": {"total_warnings": 0, "status": "healthy"},
         }
 
-        # Entity-Checks
-        issues = await self.check_entities()
+        # Parallel: Entity-Checks, System-Status, Netzwerk-Konnektivitaet
+        import asyncio
+        issues, system_status, connectivity = await asyncio.gather(
+            self.check_entities(),
+            self.get_system_status(),
+            self.check_connectivity(),
+        )
+
         report["entities"] = {
             "issues": issues,
             "issues_count": len(issues),
         }
-
-        # System-Status
-        system_status = await self.get_system_status()
         report["entities"]["overview"] = system_status
 
-        # System-Ressourcen
+        # System-Ressourcen (synchron)
         resources = self.check_system_resources()
         report["system"] = resources
 
-        # Netzwerk-Konnektivitaet
-        connectivity = await self.check_connectivity()
         report["connectivity"] = connectivity
 
-        # Wartung
+        # Wartung (synchron)
         maintenance = self.check_maintenance()
         report["maintenance"] = maintenance
 

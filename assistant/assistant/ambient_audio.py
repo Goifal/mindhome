@@ -384,26 +384,36 @@ class AmbientAudioClassifier:
 
         while self._running:
             try:
-                for entity_id, event_type in self._sensor_mappings.items():
-                    try:
-                        state_data = await self.ha.get_state(entity_id)
-                        if not state_data:
-                            continue
+                entity_ids = list(self._sensor_mappings.keys())
+                if entity_ids:
+                    # Alle Sensor-States parallel abrufen
+                    state_results = await asyncio.gather(
+                        *(self.ha.get_state(eid) for eid in entity_ids),
+                        return_exceptions=True,
+                    )
 
-                        current_state = state_data.get("state", "off")
-                        prev_state = last_states.get(entity_id, "off")
+                    for entity_id, state_data in zip(entity_ids, state_results):
+                        try:
+                            if isinstance(state_data, BaseException):
+                                logger.debug("Sensor-Poll fehlgeschlagen (%s): %s", entity_id, state_data)
+                                continue
+                            if not state_data:
+                                continue
 
-                        # Nur bei Zustandsaenderung zu "aktiv"
-                        if current_state != prev_state:
-                            last_states[entity_id] = current_state
-                            if current_state in ("on", "detected", "triggered"):
-                                await self.process_ha_state_change(
-                                    entity_id=entity_id,
-                                    new_state=current_state,
-                                    attributes=state_data.get("attributes", {}),
-                                )
-                    except Exception as e:
-                        logger.debug("Sensor-Poll fehlgeschlagen (%s): %s", entity_id, e)
+                            current_state = state_data.get("state", "off")
+                            prev_state = last_states.get(entity_id, "off")
+
+                            # Nur bei Zustandsaenderung zu "aktiv"
+                            if current_state != prev_state:
+                                last_states[entity_id] = current_state
+                                if current_state in ("on", "detected", "triggered"):
+                                    await self.process_ha_state_change(
+                                        entity_id=entity_id,
+                                        new_state=current_state,
+                                        attributes=state_data.get("attributes", {}),
+                                    )
+                        except Exception as e:
+                            logger.debug("Sensor-Poll fehlgeschlagen (%s): %s", entity_id, e)
 
             except Exception as e:
                 logger.error("Ambient Audio Poll-Loop Fehler: %s", e)

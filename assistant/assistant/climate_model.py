@@ -115,6 +115,17 @@ class ClimateModel:
         if not self.enabled:
             return {"error": "Climate Model deaktiviert"}
 
+        if state.current_temp < 5 or state.current_temp > 35:
+            logger.warning(
+                "Temperatur ausserhalb des normalen Bereichs (5-35°C) in %s: %.1f°C",
+                state.room, state.current_temp,
+            )
+        if state.target_temp < 5 or state.target_temp > 35:
+            logger.warning(
+                "Zieltemperatur ausserhalb des normalen Bereichs (5-35°C) in %s: %.1f°C",
+                state.room, state.target_temp,
+            )
+
         duration = min(duration_minutes, self.max_simulation_minutes)
         params = self._get_params(state.room)
         step = self.simulation_step_minutes
@@ -133,6 +144,10 @@ class ClimateModel:
         )
 
         if changes:
+            if "set_target" in changes:
+                target = changes["set_target"]
+                if not (5 <= target <= 35):
+                    logger.warning("Temperature %.1f°C is outside recommended range (5-35°C)", target)
             if changes.get("close_windows"):
                 sim_state.windows_open = 0
             if changes.get("open_windows"):

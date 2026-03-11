@@ -98,7 +98,7 @@ async def test_start_idempotent(engine):
     "lighting": {"enabled": True, "presence_control": {"enabled": True, "auto_on_motion": True}},
 })
 async def test_on_motion_turns_on_light(mock_fe, mock_profiles, engine):
-    mock_fe._get_adaptive_brightness = MagicMock(return_value=70)
+    mock_fe.get_adaptive_brightness = MagicMock(return_value=70)
     engine.ha.get_state = AsyncMock(return_value={"state": "off"})
     engine.redis = None
 
@@ -125,7 +125,7 @@ async def test_on_motion_disabled(engine):
     "lighting": {"enabled": True, "presence_control": {"enabled": True, "auto_on_motion": True}},
 })
 async def test_on_motion_skips_already_on(mock_fe, mock_profiles, engine):
-    mock_fe._get_adaptive_brightness = MagicMock(return_value=70)
+    mock_fe.get_adaptive_brightness = MagicMock(return_value=70)
     engine.ha.get_state = AsyncMock(return_value={"state": "on"})
     engine.redis = None
 
@@ -154,7 +154,7 @@ async def test_on_motion_sleep_mode_uses_pathlight(mock_profiles, engine, redis_
     "lighting": {"enabled": True, "presence_control": {"enabled": True, "auto_on_motion": True}},
 })
 async def test_on_motion_with_mood_stressed(mock_fe, mock_profiles, engine):
-    mock_fe._get_adaptive_brightness = MagicMock(return_value=70)
+    mock_fe.get_adaptive_brightness = MagicMock(return_value=70)
     engine.ha.get_state = AsyncMock(return_value={"state": "off"})
     engine.redis = None
     engine.mood = MagicMock()

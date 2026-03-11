@@ -195,17 +195,30 @@ class KnowledgeBase:
     async def ingest_all(self) -> int:
         """Liest alle Dateien im Wissens-Verzeichnis ein und speichert sie.
 
-        Scannt auch Unterverzeichnisse rekursiv.
+        Scannt auch Unterverzeichnisse rekursiv. Max 5 parallel.
         """
         if not self._knowledge_dir or not self.chroma_collection:
             return 0
 
-        total_chunks = 0
+        filepaths = []
         for ext in SUPPORTED_EXTENSIONS:
             # Rekursiv suchen (** statt nur direkte Dateien)
-            for filepath in self._knowledge_dir.rglob(f"*{ext}"):
-                chunks = await self.ingest_file(filepath)
-                total_chunks += chunks
+            filepaths.extend(self._knowledge_dir.rglob(f"*{ext}"))
+
+        if not filepaths:
+            return 0
+
+        sem = asyncio.Semaphore(5)
+
+        async def _ingest_limited(fp: Path) -> int:
+            async with sem:
+                return await self.ingest_file(fp)
+
+        results = await asyncio.gather(
+            *[_ingest_limited(fp) for fp in filepaths],
+            return_exceptions=True,
+        )
+        total_chunks = sum(r for r in results if isinstance(r, int))
 
         if total_chunks > 0:
             logger.info("Knowledge Base: %d neue Chunks ingestiert", total_chunks)
@@ -332,12 +345,23 @@ class KnowledgeBase:
 
             all_hits: dict[str, dict] = {}  # content_hash -> best hit
 
-            for q in queries:
-                results = await asyncio.to_thread(
+            # Parallele Suche ueber alle Query-Varianten
+            async def _run_query(q):
+                return await asyncio.to_thread(
                     self.chroma_collection.query,
                     query_texts=[q],
                     n_results=fetch_per_query,
                 )
+
+            all_results = await asyncio.gather(
+                *[_run_query(q) for q in queries],
+                return_exceptions=True,
+            )
+
+            for results in all_results:
+                if isinstance(results, Exception):
+                    logger.debug("Query-Fehler: %s", results)
+                    continue
 
                 if not results or not results.get("documents") or not results["documents"][0]:
                     continue

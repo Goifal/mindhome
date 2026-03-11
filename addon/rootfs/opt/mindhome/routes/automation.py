@@ -294,7 +294,7 @@ def api_get_anomaly_settings():
 @automation_bp.route("/api/anomaly-settings", methods=["POST"])
 def api_create_anomaly_setting():
     """Create or update anomaly setting."""
-    data = request.json
+    data = request.json or {}
     with get_db_session() as session:
         try:
             setting = AnomalySetting(
@@ -367,7 +367,7 @@ def api_phase_progress(room_id, domain_id):
 @automation_bp.route("/api/phases/speed", methods=["PUT"])
 def api_set_learning_speed():
     """Set global learning speed."""
-    data = request.json
+    data = request.json or {}
     speed = data.get("speed", "normal")  # "conservative", "normal", "aggressive"
     set_setting("learning_speed", speed)
     return jsonify({"success": True, "speed": speed})
@@ -437,7 +437,7 @@ def api_get_extended_anomaly_settings():
 @automation_bp.route("/api/anomaly-settings/extended", methods=["PUT"])
 def api_update_extended_anomaly_settings():
     """Update extended anomaly settings."""
-    data = request.json
+    data = request.json or {}
     string_settings = ["global_sensitivity", "paused_until"]
     int_settings = ["value_deviation_pct", "offline_timeout_min", "stuck_timeout_hours", "reaction_delay_min", "battery_threshold"]
     json_settings = [
@@ -463,7 +463,7 @@ def api_update_extended_anomaly_settings():
 @automation_bp.route("/api/anomaly-settings/pause", methods=["POST"])
 def api_pause_anomaly():
     """Temporarily pause anomaly detection."""
-    data = request.json
+    data = request.json or {}
     hours = data.get("hours", 1)
     until = (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
     set_setting("anomaly_paused_until", until)
@@ -526,7 +526,7 @@ def api_get_device_anomaly_config(device_id):
 @automation_bp.route("/api/anomaly-settings/device/<int:device_id>", methods=["PUT"])
 def api_update_device_anomaly_config(device_id):
     """Update anomaly config for a specific device."""
-    data = request.json
+    data = request.json or {}
     current = json.loads(get_setting(f"anomaly_device_{device_id}") or "{}")
     current.update(data)
     set_setting(f"anomaly_device_{device_id}", json.dumps(current))

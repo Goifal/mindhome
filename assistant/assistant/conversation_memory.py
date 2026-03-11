@@ -75,7 +75,8 @@ class ConversationMemory:
         if existing and existing.get("name", "").lower() == name.lower():
             return {"success": False, "message": f"Projekt '{name}' existiert bereits (Status: {existing.get('status', '?')}). Nutze update_project um es zu aendern."}
 
-        project_id = f"proj_{datetime.now().strftime('%Y%m%d%H%M%S')}_{name.lower().replace(' ', '_')[:20]}"
+        import secrets
+        project_id = f"proj_{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(3)}_{name.lower().replace(' ', '_')[:20]}"
         project = {
             "id": project_id,
             "name": name,

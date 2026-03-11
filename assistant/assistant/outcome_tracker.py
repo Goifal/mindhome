@@ -55,6 +55,7 @@ class OutcomeTracker:
         self.ha = None
         self.enabled = False
         self._pending_count = 0
+        self._pending_lock = asyncio.Lock()
         self._max_pending = 20
         self._cfg = yaml_config.get("outcome_tracker", {})
         self._observation_delay = self._cfg.get("observation_delay_seconds", 180)
@@ -124,7 +125,8 @@ class OutcomeTracker:
             self._observation_delay + 120,  # Etwas mehr TTL als Delay
             json.dumps(pending, ensure_ascii=False),
         )
-        self._pending_count += 1
+        async with self._pending_lock:
+            self._pending_count += 1
 
         # Delayed Check als Background Task
         if self._task_registry:
@@ -290,7 +292,8 @@ class OutcomeTracker:
         except Exception as e:
             logger.debug("OutcomeTracker delayed check Fehler: %s", e)
         finally:
-            self._pending_count = max(0, self._pending_count - 1)
+            async with self._pending_lock:
+                self._pending_count = max(0, self._pending_count - 1)
             if self.redis:
                 await self.redis.delete(f"mha:outcome:pending:{obs_id}")
 

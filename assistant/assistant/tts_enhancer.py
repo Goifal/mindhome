@@ -61,6 +61,8 @@ _ENGLISH_TITLE_PHONETIC_PATTERN = re.compile(
     r"\b(Sir|Ma'am|Madam)\b", re.IGNORECASE,
 )
 
+# P-4: Vorcompiliertes Sentence-Splitting Pattern (statt re.split pro Aufruf)
+_SENTENCE_SPLIT_PATTERN = re.compile(r'(?<=[.!?])\s+')
 
 # Nachrichtentyp-Erkennung via Keywords
 MESSAGE_TYPE_PATTERNS = {
@@ -134,6 +136,16 @@ class TTSEnhancer:
         self.whisper_cancel = tts_cfg.get("whisper_cancel_triggers", [
             "normal", "laut", "normale lautstärke"
         ])
+
+        # P-5: Vorcompilierte Whisper-Patterns (statt re.compile pro Aufruf)
+        self._whisper_trigger_patterns = [
+            re.compile(rf"\b{re.escape(t)}\b", re.IGNORECASE)
+            for t in self.whisper_triggers
+        ]
+        self._whisper_cancel_patterns = [
+            re.compile(rf"\b{re.escape(t)}\b", re.IGNORECASE)
+            for t in self.whisper_cancel
+        ]
 
         # Volume Konfiguration
         vol_cfg = yaml_config.get("volume", {})
@@ -344,13 +356,13 @@ class TTSEnhancer:
         """
         text_lower = text.lower().strip()
 
-        if any(re.search(rf"\b{re.escape(t)}\b", text_lower) for t in self.whisper_cancel):
+        if any(p.search(text_lower) for p in self._whisper_cancel_patterns):
             if self._whisper_mode:
                 self._whisper_mode = False
                 logger.info("Flüstermodus deaktiviert")
                 return "deactivate"
 
-        if any(re.search(rf"\b{re.escape(t)}\b", text_lower) for t in self.whisper_triggers):
+        if any(p.search(text_lower) for p in self._whisper_trigger_patterns):
             self._whisper_mode = True
             logger.info("Flüstermodus aktiviert")
             return "activate"
@@ -464,7 +476,7 @@ class TTSEnhancer:
     def _split_sentences(text: str) -> list[str]:
         """Teilt Text in Sätze auf."""
         # Einfaches Splitting an Satzzeichen
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = _SENTENCE_SPLIT_PATTERN.split(text)
         return [s for s in sentences if s.strip()]
 
     # ------------------------------------------------------------------

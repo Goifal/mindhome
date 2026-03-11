@@ -171,7 +171,8 @@ class MultiRoomAudio:
                 groups.append(json.loads(val_str))
             groups.sort(key=lambda g: g.get("name", ""))
             return groups
-        except Exception:
+        except Exception as e:
+            logger.debug("list_groups failed: %s", e)
             return []
 
     # ------------------------------------------------------------------
@@ -436,7 +437,8 @@ class MultiRoomAudio:
                     info += f" (Vol: {vol}%)"
                     return info
                 return f"  {speaker}: nicht erreichbar (Vol: {vol}%)"
-            except Exception:
+            except Exception as e:
+                logger.debug("Speaker state check failed: %s", e)
                 return f"  {speaker}: Fehler (Vol: {vol}%)"
 
         if speakers:
@@ -484,7 +486,8 @@ class MultiRoomAudio:
                 return None
             raw_str = raw.decode() if isinstance(raw, bytes) else raw
             return json.loads(raw_str)
-        except Exception:
+        except Exception as e:
+            logger.debug("Group data parse failed: %s", e)
             return None
 
     async def _get_speaker_names(self, entity_ids: list[str]) -> list[str]:
@@ -495,7 +498,8 @@ class MultiRoomAudio:
                 if state:
                     return state.get("attributes", {}).get("friendly_name", eid)
                 return eid.replace("media_player.", "")
-            except Exception:
+            except Exception as e:
+                logger.debug("Friendly name lookup failed for %s: %s", eid, e)
                 return eid.replace("media_player.", "")
 
         if not entity_ids:
