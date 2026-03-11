@@ -55,8 +55,8 @@ class ExplainabilityEngine:
             for entry in reversed(raw):
                 try:
                     self._decisions.append(json.loads(entry))
-                except json.JSONDecodeError:
-                    pass
+                except json.JSONDecodeError as e:
+                    logger.debug("Decision entry parse failed: %s", e)
         except Exception as e:
             logger.debug("Decisions laden fehlgeschlagen: %s", e)
 

@@ -901,7 +901,8 @@ class SpeakerRecognition:
             if not raw:
                 return None
             pending = json.loads(raw)
-        except Exception:
+        except Exception as e:
+            logger.debug("Pending ask resolve failed: %s", e)
             return None
 
         # Antwort cleanen
@@ -948,7 +949,8 @@ class SpeakerRecognition:
             return False
         try:
             return await self.redis.exists(SPEAKER_PENDING_ASK_KEY) > 0
-        except Exception:
+        except Exception as e:
+            logger.debug("Pending ask check failed: %s", e)
             return False
 
     def health_status(self) -> str:
@@ -957,6 +959,7 @@ class SpeakerRecognition:
             return "disabled"
         try:
             embeds = "embeddings:on" if embeddings_available() else "embeddings:off"
-        except Exception:
+        except Exception as e:
+            logger.debug("Embeddings check failed: %s", e)
             embeds = "embeddings:error"
         return f"active ({len(self._profiles)} profiles, {len(self._device_mapping)} devices, {embeds})"

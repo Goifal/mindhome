@@ -99,7 +99,7 @@ class SelfAutomation:
         self._max_per_day = max(1, min(20, int(raw_max)))
         self._daily_count = 0
         self._daily_reset: Optional[datetime] = None
-        self._pending_lock = asyncio.Lock()
+        self._pending_lock = __import__('threading').Lock()
 
         # Pending Automations (warten auf Bestaetigung)
         self._pending: dict[str, dict] = {}
@@ -204,13 +204,14 @@ class SelfAutomation:
         )
 
         # In Pending speichern
-        self._pending[pending_id] = {
-            "automation": automation,
-            "description": description,
-            "person": person,
-            "created": datetime.now().isoformat(),
-            "method": generation_method,
-        }
+        with self._pending_lock:
+            self._pending[pending_id] = {
+                "automation": automation,
+                "description": description,
+                "person": person,
+                "created": datetime.now().isoformat(),
+                "method": generation_method,
+            }
 
         self._audit("proposed", description, person, automation)
 
@@ -236,7 +237,8 @@ class SelfAutomation:
             Dict mit success, message, automation_id
         """
         self._cleanup_expired_pending()
-        pending = self._pending.pop(pending_id, None)
+        with self._pending_lock:
+            pending = self._pending.pop(pending_id, None)
         if not pending:
             return {
                 "success": False,
@@ -1002,15 +1004,17 @@ REGELN:
 
     def _check_rate_limit(self) -> bool:
         """Prueft ob das Tageslimit erreicht ist."""
-        now = datetime.now()
-        if self._daily_reset is None or now.date() > self._daily_reset.date():
-            self._daily_count = 0
-            self._daily_reset = now
-        return self._daily_count < self._max_per_day
+        with self._pending_lock:
+            now = datetime.now()
+            if self._daily_reset is None or now.date() > self._daily_reset.date():
+                self._daily_count = 0
+                self._daily_reset = now
+            return self._daily_count < self._max_per_day
 
     def _increment_daily_count(self):
         """Erhoeht den Tages-Zaehler."""
-        self._daily_count += 1
+        with self._pending_lock:
+            self._daily_count += 1
         if self._redis:
             import asyncio
             _t = asyncio.create_task(self._save_daily_count())

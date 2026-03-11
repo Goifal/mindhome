@@ -419,7 +419,8 @@ Wenn keine Aenderung noetig: []"""
                 val = await self._redis.get(f"mha:feedback:count:{key_suffix}")
                 stats[key_suffix] = int(val) if val else 0
             return stats
-        except Exception:
+        except Exception as e:
+            logger.debug("Self-optimization data retrieval failed: %s", e)
             return {}
 
     # Feature 9a: Neue Datenquellen
@@ -429,7 +430,8 @@ Wenn keine Aenderung noetig: []"""
             return {}
         try:
             return await outcome_tracker.get_stats()
-        except Exception:
+        except Exception as e:
+            logger.debug("Self-optimization data retrieval failed: %s", e)
             return {}
 
     async def _get_quality_stats(self, response_quality=None) -> dict:
@@ -438,7 +440,8 @@ Wenn keine Aenderung noetig: []"""
             return {}
         try:
             return await response_quality.get_stats()
-        except Exception:
+        except Exception as e:
+            logger.debug("Self-optimization data retrieval failed: %s", e)
             return {}
 
     async def _get_correction_patterns(self, correction_memory=None) -> list:
@@ -447,7 +450,8 @@ Wenn keine Aenderung noetig: []"""
             return []
         try:
             return await correction_memory.get_correction_patterns()
-        except Exception:
+        except Exception as e:
+            logger.debug("Self-optimization data retrieval failed: %s", e)
             return []
 
     # Feature 9b: Effectiveness Tracking
@@ -591,7 +595,8 @@ Wenn keine Aenderung noetig: []"""
                         for k, v in day_data.items()
                     }
             return stats
-        except Exception:
+        except Exception as e:
+            logger.debug("Self-optimization data retrieval failed: %s", e)
             return {}
 
     async def track_user_phrase_correction(self, original_phrase: str):
