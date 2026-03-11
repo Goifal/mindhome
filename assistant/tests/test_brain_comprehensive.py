@@ -105,80 +105,33 @@ class TestBuildSceneIntelligencePrompt:
 @pytest.fixture
 def brain():
     """Creates a Brain instance with all dependencies mocked."""
-    with patch("assistant.brain.HomeAssistantClient"), \
-         patch("assistant.brain.OllamaClient"), \
-         patch("assistant.brain.ContextBuilder"), \
-         patch("assistant.brain.ModelRouter"), \
-         patch("assistant.brain.PreClassifier"), \
-         patch("assistant.brain.PersonalityEngine"), \
-         patch("assistant.brain.FunctionExecutor"), \
-         patch("assistant.brain.FunctionValidator"), \
-         patch("assistant.brain.MemoryManager"), \
-         patch("assistant.brain.AutonomyManager"), \
-         patch("assistant.brain.FeedbackTracker"), \
-         patch("assistant.brain.ActivityEngine"), \
-         patch("assistant.brain.FollowMeEngine"), \
-         patch("assistant.brain.LightEngine"), \
-         patch("assistant.brain.ProactiveManager"), \
-         patch("assistant.brain.DailySummarizer"), \
-         patch("assistant.brain.MoodDetector"), \
-         patch("assistant.brain.ActionPlanner"), \
-         patch("assistant.brain.TimeAwareness"), \
-         patch("assistant.brain.RoutineEngine"), \
-         patch("assistant.brain.AnticipationEngine"), \
-         patch("assistant.brain.IntentTracker"), \
-         patch("assistant.brain.TTSEnhancer"), \
-         patch("assistant.brain.SoundManager"), \
-         patch("assistant.brain.SpeakerRecognition"), \
-         patch("assistant.brain.DiagnosticsEngine"), \
-         patch("assistant.brain.OCREngine"), \
-         patch("assistant.brain.AmbientAudioClassifier"), \
-         patch("assistant.brain.ConflictResolver"), \
-         patch("assistant.brain.HealthMonitor"), \
-         patch("assistant.brain.InventoryManager"), \
-         patch("assistant.brain.SmartShopping"), \
-         patch("assistant.brain.ConversationMemory"), \
-         patch("assistant.brain.MultiRoomAudio"), \
-         patch("assistant.brain.DeviceHealthMonitor"), \
-         patch("assistant.brain.InsightEngine"), \
-         patch("assistant.brain.SelfAutomation"), \
-         patch("assistant.brain.ConfigVersioning"), \
-         patch("assistant.brain.SelfOptimization"), \
-         patch("assistant.brain.CookingAssistant"), \
-         patch("assistant.brain.RepairPlanner"), \
-         patch("assistant.brain.WorkshopGenerator"), \
-         patch("assistant.brain.WorkshopLibrary"), \
-         patch("assistant.brain.KnowledgeBase"), \
-         patch("assistant.brain.RecipeStore"), \
-         patch("assistant.brain.TimerManager"), \
-         patch("assistant.brain.CameraManager"), \
-         patch("assistant.brain.ConditionalCommands"), \
-         patch("assistant.brain.EnergyOptimizer"), \
-         patch("assistant.brain.WebSearch"), \
-         patch("assistant.brain.ThreatAssessment"), \
-         patch("assistant.brain.LearningObserver"), \
-         patch("assistant.brain.WellnessAdvisor"), \
-         patch("assistant.brain.ProactiveSequencePlanner"), \
-         patch("assistant.brain.SeasonalInsightEngine"), \
-         patch("assistant.brain.CalendarIntelligence"), \
-         patch("assistant.brain.ExplainabilityEngine"), \
-         patch("assistant.brain.LearningTransfer"), \
-         patch("assistant.brain.DialogueStateManager"), \
-         patch("assistant.brain.ClimateModel"), \
-         patch("assistant.brain.PredictiveMaintenance"), \
-         patch("assistant.brain.SituationModel"), \
-         patch("assistant.brain.ProtocolEngine"), \
-         patch("assistant.brain.SpontaneousObserver"), \
-         patch("assistant.brain.MusicDJ"), \
-         patch("assistant.brain.VisitorManager"), \
-         patch("assistant.brain.OutcomeTracker"), \
-         patch("assistant.brain.CorrectionMemory"), \
-         patch("assistant.brain.ResponseQualityTracker"), \
-         patch("assistant.brain.ErrorPatternTracker"), \
-         patch("assistant.brain.SelfReport"), \
-         patch("assistant.brain.AdaptiveThresholds"), \
-         patch("assistant.brain.TaskRegistry"), \
-         patch("assistant.brain.cfg") as mock_cfg:
+    from contextlib import ExitStack
+    _BRAIN_PATCHES = [
+        "HomeAssistantClient", "OllamaClient", "ContextBuilder", "ModelRouter",
+        "PreClassifier", "PersonalityEngine", "FunctionExecutor", "FunctionValidator",
+        "MemoryManager", "AutonomyManager", "FeedbackTracker", "ActivityEngine",
+        "FollowMeEngine", "LightEngine", "ProactiveManager", "DailySummarizer",
+        "MoodDetector", "ActionPlanner", "TimeAwareness", "RoutineEngine",
+        "AnticipationEngine", "IntentTracker", "TTSEnhancer", "SoundManager",
+        "SpeakerRecognition", "DiagnosticsEngine", "OCREngine",
+        "AmbientAudioClassifier", "ConflictResolver", "HealthMonitor",
+        "InventoryManager", "SmartShopping", "ConversationMemory", "MultiRoomAudio",
+        "DeviceHealthMonitor", "InsightEngine", "SelfAutomation", "ConfigVersioning",
+        "SelfOptimization", "CookingAssistant", "RepairPlanner", "WorkshopGenerator",
+        "WorkshopLibrary", "KnowledgeBase", "RecipeStore", "TimerManager",
+        "CameraManager", "ConditionalCommands", "EnergyOptimizer", "WebSearch",
+        "ThreatAssessment", "LearningObserver", "WellnessAdvisor",
+        "ProactiveSequencePlanner", "SeasonalInsightEngine", "CalendarIntelligence",
+        "ExplainabilityEngine", "LearningTransfer", "DialogueStateManager",
+        "ClimateModel", "PredictiveMaintenance", "SituationModel", "ProtocolEngine",
+        "SpontaneousObserver", "MusicDJ", "VisitorManager", "OutcomeTracker",
+        "CorrectionMemory", "ResponseQualityTracker", "ErrorPatternTracker",
+        "SelfReport", "AdaptiveThresholds", "TaskRegistry",
+    ]
+    with ExitStack() as stack:
+        for name in _BRAIN_PATCHES:
+            stack.enter_context(patch(f"assistant.brain.{name}"))
+        mock_cfg = stack.enter_context(patch("assistant.brain.cfg"))
         mock_cfg.yaml_config = {}
         from assistant.brain import AssistantBrain
         b = AssistantBrain()
@@ -566,11 +519,11 @@ class TestFormatDaysAgo:
 class TestBriefingDetection:
     def test_morning_briefing(self):
         from assistant.brain import AssistantBrain
-        assert AssistantBrain._is_morning_briefing_request("Guten Morgen") is True
+        assert AssistantBrain._is_morning_briefing_request("Morgenbriefing bitte") is True
 
     def test_evening_briefing(self):
         from assistant.brain import AssistantBrain
-        assert AssistantBrain._is_evening_briefing_request("Guten Abend Jarvis") is True
+        assert AssistantBrain._is_evening_briefing_request("Abendbriefing") is True
 
     def test_house_status(self):
         from assistant.brain import AssistantBrain
