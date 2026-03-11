@@ -38,7 +38,7 @@ class WorkshopLibrary:
         """
         self.chroma_client = chroma_client
         self.embedding_fn = embedding_fn
-        WORKSHOP_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(WORKSHOP_DOCS_DIR.mkdir, parents=True, exist_ok=True)
         self.collection = await asyncio.to_thread(
             self.chroma_client.get_or_create_collection,
             name=self.COLLECTION_NAME,
@@ -154,16 +154,19 @@ class WorkshopLibrary:
 
     async def list_documents(self) -> list:
         """Listet alle Dokumente in der Library."""
-        files = []
-        if not WORKSHOP_DOCS_DIR.exists():
+        def _list_sync():
+            files = []
+            if not WORKSHOP_DOCS_DIR.exists():
+                return files
+            for f in WORKSHOP_DOCS_DIR.iterdir():
+                if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS:
+                    files.append({
+                        "name": f.name,
+                        "size_mb": round(f.stat().st_size / 1024 / 1024, 2),
+                    })
             return files
-        for f in WORKSHOP_DOCS_DIR.iterdir():
-            if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS:
-                files.append({
-                    "name": f.name,
-                    "size_mb": round(f.stat().st_size / 1024 / 1024, 2),
-                })
-        return files
+
+        return await asyncio.to_thread(_list_sync)
 
     async def get_stats(self) -> dict:
         """Gibt Statistiken der Workshop-Library zurueck."""
@@ -189,62 +192,65 @@ class WorkshopLibrary:
 
     async def _extract_pdf(self, path: Path) -> str:
         """Extrahiert Text aus PDF (Pattern: knowledge_base.py)."""
-        # 1. PyMuPDF (fitz)
-        try:
-            import fitz  # PyMuPDF
-            doc = fitz.open(str(path))
-            pages = []
-            for page in doc:
-                pages.append(page.get_text())
-            doc.close()
-            text = "\n\n".join(pages)
-            if text.strip():
-                logger.info("PDF gelesen via PyMuPDF: %s (%d Seiten)", path.name, len(pages))
-                return text
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.debug("PyMuPDF Fehler bei %s: %s", path.name, e)
+        def _extract_sync():
+            # 1. PyMuPDF (fitz)
+            try:
+                import fitz  # PyMuPDF
+                doc = fitz.open(str(path))
+                pages = []
+                for page in doc:
+                    pages.append(page.get_text())
+                doc.close()
+                text = "\n\n".join(pages)
+                if text.strip():
+                    logger.info("PDF gelesen via PyMuPDF: %s (%d Seiten)", path.name, len(pages))
+                    return text
+            except ImportError:
+                pass
+            except Exception as e:
+                logger.debug("PyMuPDF Fehler bei %s: %s", path.name, e)
 
-        # 2. pdfplumber
-        try:
-            import pdfplumber
-            pages = []
-            with pdfplumber.open(path) as pdf:
-                for page in pdf.pages:
+            # 2. pdfplumber
+            try:
+                import pdfplumber
+                pages = []
+                with pdfplumber.open(path) as pdf:
+                    for page in pdf.pages:
+                        page_text = page.extract_text()
+                        if page_text:
+                            pages.append(page_text)
+                text = "\n\n".join(pages)
+                if text.strip():
+                    logger.info("PDF gelesen via pdfplumber: %s (%d Seiten)", path.name, len(pages))
+                    return text
+            except ImportError:
+                pass
+            except Exception as e:
+                logger.debug("pdfplumber Fehler bei %s: %s", path.name, e)
+
+            # 3. PyPDF2
+            try:
+                from PyPDF2 import PdfReader
+                reader = PdfReader(str(path))
+                pages = []
+                for page in reader.pages:
                     page_text = page.extract_text()
                     if page_text:
                         pages.append(page_text)
-            text = "\n\n".join(pages)
-            if text.strip():
-                logger.info("PDF gelesen via pdfplumber: %s (%d Seiten)", path.name, len(pages))
-                return text
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.debug("pdfplumber Fehler bei %s: %s", path.name, e)
+                text = "\n\n".join(pages)
+                if text.strip():
+                    logger.info("PDF gelesen via PyPDF2: %s (%d Seiten)", path.name, len(pages))
+                    return text
+            except ImportError:
+                pass
+            except Exception as e:
+                logger.debug("PyPDF2 Fehler bei %s: %s", path.name, e)
 
-        # 3. PyPDF2
-        try:
-            from PyPDF2 import PdfReader
-            reader = PdfReader(str(path))
-            pages = []
-            for page in reader.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    pages.append(page_text)
-            text = "\n\n".join(pages)
-            if text.strip():
-                logger.info("PDF gelesen via PyPDF2: %s (%d Seiten)", path.name, len(pages))
-                return text
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.debug("PyPDF2 Fehler bei %s: %s", path.name, e)
+            logger.warning(
+                "PDF %s konnte nicht gelesen werden. "
+                "Installiere: pip install PyMuPDF oder pdfplumber oder PyPDF2",
+                path.name,
+            )
+            return ""
 
-        logger.warning(
-            "PDF %s konnte nicht gelesen werden. "
-            "Installiere: pip install PyMuPDF oder pdfplumber oder PyPDF2",
-            path.name,
-        )
-        return ""
+        return await asyncio.to_thread(_extract_sync)

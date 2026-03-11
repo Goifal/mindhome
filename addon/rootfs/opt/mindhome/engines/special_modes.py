@@ -319,10 +319,15 @@ class SpecialModeBase:
         except Exception as e:
             logger.error(f"Apply entity actions error for {fk}: {e}")
 
+    _ALLOWED_DOMAINS = {"light", "cover", "climate", "media_player", "lock"}
+
     def _apply_single_entity(self, entity_id, role, role_config):
         """Apply role-specific action to a single entity."""
         try:
             domain = entity_id.split(".")[0]
+            if domain not in self._ALLOWED_DOMAINS:
+                logger.warning("Blocked service call for unknown domain: %s", domain)
+                return
             if domain == "light":
                 svc_data = {"entity_id": entity_id}
                 if "brightness" in role_config:
@@ -856,13 +861,21 @@ class EmergencyProtocol(SpecialModeBase):
 
     def _escalation_step_notify_users(self):
         """Escalation: notify all users via push."""
+        with self._lock:
+            if not self._active:
+                return
+            emergency_type = self._emergency_type
         logger.info("Emergency escalation: notifying all users")
         self.event_bus.publish("emergency.notify_users", {
-            "type": self._emergency_type,
+            "type": emergency_type,
         }, source="emergency_protocol")
 
     def _escalation_step_notify_contacts(self):
         """Escalation: notify emergency contacts from DB."""
+        with self._lock:
+            if not self._active:
+                return
+            emergency_type = self._emergency_type
         logger.info("Emergency escalation: notifying emergency contacts")
         try:
             from models import EmergencyContact, NotificationLog, NotificationType
@@ -874,14 +887,14 @@ class EmergencyProtocol(SpecialModeBase):
                     session.add(NotificationLog(
                         notification_type=NotificationType.CRITICAL,
                         title="NOTFALL / EMERGENCY",
-                        message=f"Emergency ({self._emergency_type}). Contact: {contact.name}, Phone: {contact.phone or 'N/A'}",
+                        message=f"Emergency ({emergency_type}). Contact: {contact.name}, Phone: {contact.phone or 'N/A'}",
                         was_sent=True,
                         user_id=contact.user_id if hasattr(contact, 'user_id') else 1,
                     ))
                     try:
                         self.ha.call_service("notify", "persistent_notification", {
                             "title": f"NOTFALL: {contact.name}",
-                            "message": f"Emergency type: {self._emergency_type}. Contact {contact.name} at {contact.phone or contact.email or 'N/A'}",
+                            "message": f"Emergency type: {emergency_type}. Contact {contact.name} at {contact.phone or contact.email or 'N/A'}",
                         })
                     except Exception as e:
                         logger.debug("Unhandled: %s", e)
@@ -889,7 +902,7 @@ class EmergencyProtocol(SpecialModeBase):
         except Exception as e:
             logger.error(f"Emergency contact notification error: {e}")
         self.event_bus.publish("emergency.notify_contacts", {
-            "type": self._emergency_type,
+            "type": emergency_type,
         }, source="emergency_protocol")
 
     def _all_lights_on(self):
@@ -992,7 +1005,7 @@ class EmergencyProtocol(SpecialModeBase):
                             "entity_id": s.entity_id, "volume_level": vol
                         })
                     except Exception as e:
-                        logger.debug("Unhandled: %s", e)
+                        logger.error("Security TTS volume set failed: %s", e)
                     self.ha.call_service("tts", "speak", {
                         "entity_id": s.entity_id, "message": message
                     })
@@ -1028,7 +1041,10 @@ class EmergencyProtocol(SpecialModeBase):
                 user = session.query(User).get(user_id)
                 if user and hasattr(user, 'pin_hash') and user.pin_hash:
                     import hashlib
-                    # Use user-specific salt for PIN hashing
+                    # LIMITATION: Uses SHA-256 with a predictable per-user salt.
+                    # Ideally should use hashlib.pbkdf2_hmac('sha256', pin.encode(), salt, 100000)
+                    # with a random salt stored alongside the hash. Changing the algorithm
+                    # requires migrating existing stored pin_hash values.
                     _salt = f"mha:{user_id}:pin"
                     pin_hash = hashlib.sha256(f"{_salt}:{pin}".encode()).hexdigest()
                     # Constant-time comparison to prevent timing attacks

@@ -373,7 +373,7 @@ def api_get_extended_notification_settings():
 @notifications_bp.route("/api/notification-settings/extended", methods=["PUT"])
 def api_update_extended_notification_settings():
     """Update extended notification settings."""
-    data = request.json
+    data = request.json or {}
     setting_keys = [
         "quiet_hours", "weekday_rules", "vacation_coupling",
         "escalation", "repeat_rules", "confirmation_required", "fallback_channels",

@@ -385,7 +385,7 @@ class AccessControlManager:
                 if recent:
                     return recent.user_id
         except Exception as e:
-            logger.debug("Unhandled: %s", e)
+            logger.error("Access control person matching failed: %s", e)
         return None
 
     def _log_access(self, entity_id, action, method, user_id=None, code_id=None):

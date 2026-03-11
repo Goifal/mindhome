@@ -265,11 +265,34 @@ class FeedbackTracker:
         except Exception as e:
             logger.warning("L1: Feedback score SCAN failed: %s", e)
 
-        stats = {}
+        # Collect event types from keys
+        event_types = []
         for key in keys:
             key = key.decode() if isinstance(key, bytes) else key
             et = key.replace("mha:feedback:score:", "")
-            stats[et] = await self._get_event_stats(et)
+            event_types.append(et)
+
+        # Batch-fetch all scores via mget
+        if event_types:
+            score_keys = [f"mha:feedback:score:{et}" for et in event_types]
+            raw_scores = await self.redis.mget(score_keys)
+        else:
+            raw_scores = []
+
+        stats = {}
+        for et, raw_score in zip(event_types, raw_scores):
+            if isinstance(raw_score, bytes):
+                raw_score = raw_score.decode()
+            score = float(raw_score) if raw_score else DEFAULT_SCORE
+            counters = await self._get_counters(et)
+            recent = await self._get_recent_feedback(et, limit=5)
+            cooldown = self._calculate_cooldown(score)
+            stats[et] = {
+                "score": score,
+                "cooldown_seconds": cooldown,
+                "counters": counters,
+                "recent_feedback": recent,
+            }
 
         return {
             "event_types": stats,
@@ -297,6 +320,7 @@ class FeedbackTracker:
             return {}
 
         scores = {}
+        all_keys = []
         cursor = 0
         try:
             while True:
@@ -305,15 +329,20 @@ class FeedbackTracker:
                 )
                 for key in keys:
                     key = key.decode() if isinstance(key, bytes) else key
-                    et = key.replace("mha:feedback:score:", "")
-                    val = await self.redis.get(key)
-                    if isinstance(val, bytes):
-                        val = val.decode()
-                    scores[et] = float(val) if val else DEFAULT_SCORE
+                    all_keys.append(key)
                 if cursor == 0:
                     break
         except Exception as e:
             logger.warning("L2: Feedback all_scores SCAN failed: %s", e)
+            return scores
+
+        if all_keys:
+            raw_values = await self.redis.mget(all_keys)
+            for key, val in zip(all_keys, raw_values):
+                et = key.replace("mha:feedback:score:", "")
+                if isinstance(val, bytes):
+                    val = val.decode()
+                scores[et] = float(val) if val else DEFAULT_SCORE
 
         return scores
 

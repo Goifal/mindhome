@@ -297,8 +297,19 @@ class IntentTracker:
             intent_ids = await self.redis.smembers("mha:intents:active")
             intents = []
 
-            for intent_id in intent_ids:
-                raw_data = await self.redis.hgetall(f"mha:intent:{intent_id}")
+            decoded_ids = [
+                raw_id.decode() if isinstance(raw_id, bytes) else raw_id
+                for raw_id in intent_ids
+            ]
+            if not decoded_ids:
+                return []
+
+            pipe = self.redis.pipeline()
+            for intent_id in decoded_ids:
+                pipe.hgetall(f"mha:intent:{intent_id}")
+            results = await pipe.execute()
+
+            for intent_id, raw_data in zip(decoded_ids, results):
                 if raw_data:
                     data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw_data.items()}
                     # JSON-Felder dekodieren
@@ -397,8 +408,6 @@ class IntentTracker:
         """Prueft stuendlich auf faellige Intents."""
         while self._running:
             try:
-                await asyncio.sleep(self.check_interval)
-
                 due_intents = await self.get_due_intents()
                 for intent in due_intents:
                     reminder = intent.get("reminder_text", "")
@@ -416,6 +425,8 @@ class IntentTracker:
                         })
 
                     logger.info("Intent-Erinnerung: %s", intent.get("intent", ""))
+
+                await asyncio.sleep(self.check_interval)
 
             except asyncio.CancelledError:
                 break

@@ -86,7 +86,7 @@ class KnowledgeBase:
         self._knowledge_dir = config_dir / "knowledge"
 
         # Verzeichnis erstellen falls nicht vorhanden
-        self._knowledge_dir.mkdir(exist_ok=True)
+        await asyncio.to_thread(self._knowledge_dir.mkdir, exist_ok=True)
 
         # Bestehende Hashes laden (sync Methode in Thread ausfuehren)
         await asyncio.to_thread(self._load_ingested_hashes)
@@ -231,10 +231,10 @@ class KnowledgeBase:
 
         # Phase 11.1: PDF-Support
         if filepath.suffix.lower() == ".pdf":
-            content = self._extract_pdf_text(filepath)
+            content = await asyncio.to_thread(self._extract_pdf_text, filepath)
         else:
             try:
-                content = filepath.read_text(encoding="utf-8", errors="ignore")
+                content = await asyncio.to_thread(filepath.read_text, encoding="utf-8", errors="ignore")
             except Exception as e:
                 logger.warning("Fehler beim Lesen von %s: %s", filepath.name, e)
                 return 0

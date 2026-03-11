@@ -155,6 +155,7 @@ class OutcomeTracker:
         # Verwende letzten Aktionstyp wenn keiner angegeben
         if not action_type:
             last = await self.redis.get("mha:outcome:last_action_type")
+            last = last.decode() if isinstance(last, bytes) else last
             action_type = last or "unknown"
 
         await self._store_outcome(action_type, outcome, person)
@@ -166,10 +167,13 @@ class OutcomeTracker:
 
         score = await self.redis.get(f"mha:outcome:score:{action_type}")
         if score is not None:
+            score = score.decode() if isinstance(score, bytes) else score
             return float(score)
 
         # Pruefen ob genug Daten fuer Score-Berechnung
         total = await self.redis.hget(f"mha:outcome:stats:{action_type}", "total")
+        if total is not None:
+            total = total.decode() if isinstance(total, bytes) else total
         if not total or int(total) < MIN_OUTCOMES_FOR_SCORE:
             return DEFAULT_SCORE
 
@@ -183,6 +187,8 @@ class OutcomeTracker:
         score = await self.redis.get(
             f"mha:outcome:score:{action_type}:person:{person}"
         )
+        if score is not None:
+            score = score.decode() if isinstance(score, bytes) else score
         return float(score) if score is not None else DEFAULT_SCORE
 
     async def get_stats(self) -> dict:
@@ -205,8 +211,10 @@ class OutcomeTracker:
                     if len(parts) != 4:
                         continue
                     action_type = parts[3]
-                    data = await self.redis.hgetall(f"mha:outcome:stats:{action_type}")
+                    raw = await self.redis.hgetall(f"mha:outcome:stats:{action_type}")
+                    data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()}
                     score = await self.redis.get(f"mha:outcome:score:{action_type}")
+                    score = score.decode() if isinstance(score, bytes) else score
                     stats[action_type] = {
                         k: int(v) for k, v in data.items()
                     }
@@ -396,10 +404,14 @@ class OutcomeTracker:
 
         # Minimum-Datenmenge pruefen
         total = await self.redis.hget(stats_key, "total")
+        if total is not None:
+            total = total.decode() if isinstance(total, bytes) else total
         if not total or int(total) < MIN_OUTCOMES_FOR_SCORE:
             return
 
         current = await self.redis.get(score_key)
+        if current is not None:
+            current = current.decode() if isinstance(current, bytes) else current
         current_score = float(current) if current else DEFAULT_SCORE
 
         # EMA: Score = alpha * new + (1-alpha) * old

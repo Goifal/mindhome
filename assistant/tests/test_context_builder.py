@@ -166,11 +166,26 @@ class TestGuessRoom:
              "last_changed": "2026-02-20T09:00:00",
              "attributes": {"friendly_name": "Bewegung Flur"}},
             {"entity_id": "binary_sensor.motion_kueche", "state": "on",
+             "last_changed": "2026-02-20T09:05:00",
+             "attributes": {"friendly_name": "Bewegung Kueche"}},
+        ]
+        result = builder._guess_current_room(states)
+        # Kueche hat den neueren Timestamp → wird als aktueller Raum erkannt
+        assert "Kueche" in result
+
+    def test_motion_invalid_timestamp_ignored(self, builder):
+        """Sensor mit ungueltigem Timestamp wird uebersprungen."""
+        states = [
+            {"entity_id": "binary_sensor.motion_flur", "state": "on",
+             "last_changed": "2026-02-20T09:00:00",
+             "attributes": {"friendly_name": "Bewegung Flur"}},
+            {"entity_id": "binary_sensor.motion_kueche", "state": "on",
              "last_changed": "INVALID",
              "attributes": {"friendly_name": "Bewegung Kueche"}},
         ]
         result = builder._guess_current_room(states)
-        assert "Kueche" in result
+        # Flur hat den einzig gueltigen Timestamp
+        assert "Flur" in result
 
     def test_no_motion(self, builder):
         states = [

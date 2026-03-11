@@ -204,7 +204,10 @@ def api_toggle_domain(domain_id):
 @domains_bp.route("/api/domains/status", methods=["GET"])
 def api_domain_status():
     """Get live status from all active domain plugins."""
-    return jsonify(_domain_manager().get_all_status())
+    dm = _domain_manager()
+    if dm is None:
+        return jsonify({})
+    return jsonify(dm.get_all_status())
 
 
 
@@ -218,7 +221,10 @@ def api_domain_capabilities():
 @domains_bp.route("/api/domains/<domain_name>/features", methods=["GET"])
 def api_domain_features(domain_name):
     """Get trackable features for a domain (for privacy settings)."""
-    features = _domain_manager().get_trackable_features(domain_name)
+    dm = _domain_manager()
+    if dm is None:
+        return jsonify({"domain": domain_name, "features": []})
+    features = dm.get_trackable_features(domain_name)
     return jsonify({"domain": domain_name, "features": features})
 
 

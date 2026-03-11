@@ -192,30 +192,45 @@ class FireResponseManager:
         )
 
         # 2. Lights to 100% (emergency lighting)
-        from helpers import get_setting
-        brightness = int(get_setting("phase5.fire_co.emergency_brightness_pct", "100") or "100")
-        brightness_val = int(brightness * 2.55)
-        self._activate_entities("fire_co", "emergency_light", "light", "turn_on", {"brightness": brightness_val})
+        try:
+            from helpers import get_setting
+            brightness = int(get_setting("phase5.fire_co.emergency_brightness_pct", "100") or "100")
+            brightness_val = int(brightness * 2.55)
+            self._activate_entities("fire_co", "emergency_light", "light", "turn_on", {"brightness": brightness_val})
+        except Exception as e:
+            logger.error("Emergency lighting failed: %s", e)
 
         # 3. Covers open (escape routes)
-        self._activate_entities("fire_co", "emergency_cover", "cover", "open_cover")
+        try:
+            self._activate_entities("fire_co", "emergency_cover", "cover", "open_cover")
+        except Exception as e:
+            logger.error("Emergency cover open failed: %s", e)
 
         # 4. HVAC control
-        if alarm_type == "fire" and config.get("stop_hvac_on_fire", True):
-            self._activate_entities("fire_co", "hvac", "climate", "turn_off")
-            self._activate_entities("fire_co", "hvac", "fan", "turn_off")
-        elif alarm_type == "co" and config.get("start_hvac_on_co", True):
-            self._activate_entities("fire_co", "hvac", "fan", "turn_on")
+        try:
+            if alarm_type == "fire" and config.get("stop_hvac_on_fire", True):
+                self._activate_entities("fire_co", "hvac", "climate", "turn_off")
+                self._activate_entities("fire_co", "hvac", "fan", "turn_off")
+            elif alarm_type == "co" and config.get("start_hvac_on_co", True):
+                self._activate_entities("fire_co", "hvac", "fan", "turn_on")
+        except Exception as e:
+            logger.error("Emergency HVAC control failed: %s", e)
 
         # 5. Unlock doors (escape routes)
-        if config.get("unlock_on_fire", False):
-            self._activate_entities("fire_co", "emergency_lock", "lock", "unlock")
+        try:
+            if config.get("unlock_on_fire", False):
+                self._activate_entities("fire_co", "emergency_lock", "lock", "unlock")
+        except Exception as e:
+            logger.error("Emergency door unlock failed: %s", e)
 
         # 6. TTS announcement
-        lang_key = f"tts_message_{alarm_type}_de"
-        tts_msg = config.get(lang_key, self.DEFAULT_CONFIG[lang_key])
-        tts_volume = config.get("tts_volume", 100) / 100.0
-        self._send_tts("fire_co", tts_msg, tts_volume)
+        try:
+            lang_key = f"tts_message_{alarm_type}_de"
+            tts_msg = config.get(lang_key, self.DEFAULT_CONFIG[lang_key])
+            tts_volume = config.get("tts_volume", 100) / 100.0
+            self._send_tts("fire_co", tts_msg, tts_volume)
+        except Exception as e:
+            logger.error("Emergency TTS announcement failed: %s", e)
 
         # 7. Notification
         self._send_emergency_notification(alarm_type, entity_id, config)
@@ -547,10 +562,13 @@ class WaterLeakManager:
                 logger.error("Water leak TTS speaker query failed: %s", e)
 
         # 6. Emit event
-        self.event_bus.publish("emergency.water_leak", {
-            "entity_id": entity_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }, source="water_leak")
+        try:
+            self.event_bus.publish("emergency.water_leak", {
+                "entity_id": entity_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }, source="water_leak")
+        except Exception as e:
+            logger.error("Water leak event publish failed: %s", e)
 
     def _handle_leak_cleared(self, entity_id):
         """Handle leak being cleared."""

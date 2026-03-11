@@ -426,6 +426,9 @@ def camera_snapshot_delete(event_id):
 
 @security_bp.route("/api/security/cameras/<path:entity_id>/snapshot", methods=["POST"])
 def camera_take_snapshot(entity_id):
+    import re
+    if not re.match(r'^[a-z_]+\.[a-z0-9_]+$', entity_id):
+        return jsonify({"error": "Invalid entity_id format"}), 400
     mgr = _deps.get("camera_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
@@ -575,6 +578,10 @@ def access_log():
     limit = max(1, min(500, request.args.get("limit", 50, type=int)))
     offset = max(0, request.args.get("offset", 0, type=int))
     entity_id = request.args.get("entity_id")
+    if entity_id:
+        import re
+        if not re.match(r'^[a-z_]+\.[a-z0-9_]+$', entity_id):
+            return jsonify({"error": "Invalid entity_id"}), 400
     return jsonify(mgr.get_log(limit=limit, offset=offset, entity_id=entity_id))
 
 
@@ -693,6 +700,9 @@ def _mode_engine(mode_type):
 
 @security_bp.route("/api/security/modes/<mode_type>/activate", methods=["POST"])
 def mode_activate(mode_type):
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     engine = _mode_engine(mode_type)
     if not engine:
         return jsonify({"error": f"Unknown mode: {mode_type}"}), 404
@@ -707,6 +717,9 @@ def mode_activate(mode_type):
 
 @security_bp.route("/api/security/modes/<mode_type>/deactivate", methods=["POST"])
 def mode_deactivate(mode_type):
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     engine = _mode_engine(mode_type)
     if not engine:
         return jsonify({"error": f"Unknown mode: {mode_type}"}), 404

@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 # Redis Keys
 _KEY_CONSUMPTION = "mha:shopping:consumption:"       # + item_name_lower
-_KEY_PURCHASE_LOG = "mha:shopping:purchases"          # Sorted Set (timestamp)
 _KEY_PREDICTIONS = "mha:shopping:predictions"         # Hash
 _KEY_SHOPPING_DAYS = "mha:shopping:shopping_days"     # Hash (weekday -> count)
 _KEY_LAST_REMINDER = "mha:shopping:last_reminder:"    # + item_name_lower

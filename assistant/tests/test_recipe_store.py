@@ -169,7 +169,7 @@ async def test_ingest_file_skips_existing_hashes(mock_kb, store, tmp_path):
     recipe_file.write_text("existing content")
 
     mock_kb._split_text.return_value = ["chunk1"]
-    content_hash = hashlib.md5("chunk1".encode()).hexdigest()
+    content_hash = hashlib.sha256("chunk1".encode()).hexdigest()
     store._ingested_hashes.add(content_hash)
 
     result = await store.ingest_file(recipe_file)

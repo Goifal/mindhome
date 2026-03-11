@@ -294,8 +294,8 @@ def get_person_title(name: str = "") -> str:
         if title:
             return title
     # Aktive Person (gesetzt durch brain.py bei Gespraech oder proactive bei Praesenz)
-    if not name and _active_person:
-        title = _lookup_title(titles, _active_person)
+    if not name and get_active_person():
+        title = _lookup_title(titles, get_active_person())
         if title:
             return title
     # Fallback: primary user Titel

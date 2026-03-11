@@ -10,6 +10,7 @@ Features:
 - Automatischer Gaeste-Modus bei Besucher-Ankunft
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -55,6 +56,7 @@ class VisitorManager:
         self.ring_cooldown_seconds = cfg.get("ring_cooldown_seconds", 30)
         self.history_max = cfg.get("history_max", _DEFAULT_HISTORY_MAX)
         self._last_ring_time = 0.0
+        self._ring_lock = asyncio.Lock()
 
     async def initialize(self, redis_client):
         """Initialisiert Redis-Verbindung."""
@@ -277,9 +279,10 @@ class VisitorManager:
         now = time.time()
 
         # Cooldown pruefen (verhindert Doppel-Klingeln)
-        if now - self._last_ring_time < self.ring_cooldown_seconds:
-            return {"handled": False, "reason": "cooldown"}
-        self._last_ring_time = now
+        async with self._ring_lock:
+            if now - self._last_ring_time < self.ring_cooldown_seconds:
+                return {"handled": False, "reason": "cooldown"}
+            self._last_ring_time = now
 
         result = {
             "handled": True,

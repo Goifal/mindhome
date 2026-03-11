@@ -550,32 +550,33 @@ class SpeakerRecognition:
         if not self.enabled:
             return False
 
-        if len(self._profiles) >= self.max_profiles and person_id not in self._profiles:
-            logger.warning("Maximale Anzahl Speaker-Profile erreicht (%d)", self.max_profiles)
-            return False
+        async with self._save_lock:
+            if len(self._profiles) >= self.max_profiles and person_id not in self._profiles:
+                logger.warning("Maximale Anzahl Speaker-Profile erreicht (%d)", self.max_profiles)
+                return False
 
-        if person_id in self._profiles:
-            profile = self._profiles[person_id]
-            if audio_features:
-                profile.update_voice_stats(
-                    wpm=audio_features.get("wpm", 0),
-                    duration=audio_features.get("duration", 0),
-                    volume=audio_features.get("volume", 0),
-                )
-        else:
-            profile = SpeakerProfile(name, person_id)
-            if audio_features:
-                profile.update_voice_stats(
-                    wpm=audio_features.get("wpm", 0),
-                    duration=audio_features.get("duration", 0),
-                    volume=audio_features.get("volume", 0),
-                )
-            self._profiles[person_id] = profile
+            if person_id in self._profiles:
+                profile = self._profiles[person_id]
+                if audio_features:
+                    profile.update_voice_stats(
+                        wpm=audio_features.get("wpm", 0),
+                        duration=audio_features.get("duration", 0),
+                        volume=audio_features.get("volume", 0),
+                    )
+            else:
+                profile = SpeakerProfile(name, person_id)
+                if audio_features:
+                    profile.update_voice_stats(
+                        wpm=audio_features.get("wpm", 0),
+                        duration=audio_features.get("duration", 0),
+                        volume=audio_features.get("volume", 0),
+                    )
+                self._profiles[person_id] = profile
 
-        # Device-Zuordnung
-        if device_id and device_id not in profile.devices:
-            profile.devices.append(device_id)
-            self._device_mapping[device_id] = person_id
+            # Device-Zuordnung
+            if device_id and device_id not in profile.devices:
+                profile.devices.append(device_id)
+                self._device_mapping[device_id] = person_id
 
         await self._save_profiles()
         logger.info("Speaker-Profil gespeichert: %s (%s)", name, person_id)
@@ -598,15 +599,17 @@ class SpeakerRecognition:
 
     async def remove_profile(self, person_id: str) -> bool:
         """Entfernt ein Profil."""
-        if person_id in self._profiles:
-            profile = self._profiles[person_id]
-            # Device-Mappings entfernen
-            for device in profile.devices:
-                self._device_mapping.pop(device, None)
-            del self._profiles[person_id]
-            await self._save_profiles()
-            return True
-        return False
+        async with self._save_lock:
+            if person_id in self._profiles:
+                profile = self._profiles[person_id]
+                # Device-Mappings entfernen
+                for device in profile.devices:
+                    self._device_mapping.pop(device, None)
+                del self._profiles[person_id]
+            else:
+                return False
+        await self._save_profiles()
+        return True
 
     def get_profiles(self) -> list[dict]:
         """Gibt alle gespeicherten Profile zurueck."""

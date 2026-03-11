@@ -142,7 +142,11 @@ class ActionPlanner:
     # Fragewoerter — wenn der Satz damit beginnt, ist es eine Frage, kein Befehl
     _QUESTION_STARTS = (
         "was ", "wer ", "wie ", "wo ", "warum ", "wieso ", "weshalb ",
-        "wann ", "welche", "wieviel", "wie viel", "woher ", "wohin ",
+        "wann ", "welche ", "welcher ", "welches ", "wieviel ",
+        "wie viel", "woher ", "wohin ",
+    )
+    # Polite forms that are only questions if combined with '?'
+    _POLITE_STARTS = (
         "kannst du", "koenntest du", "wuerdest du", "hast du", "bist du",
         "machst du", "denkst du", "findest du", "magst du", "weisst du",
     )
@@ -158,8 +162,11 @@ class ActionPlanner:
         """
         text_lower = text.lower().strip()
 
-        # Fragen sind keine komplexen Aktionen
-        if text_lower.endswith("?") or text_lower.startswith(self._QUESTION_STARTS):
+        # Pure question words always indicate a question
+        if text_lower.startswith(self._QUESTION_STARTS):
+            return False
+        # Polite forms are only questions when they end with '?'
+        if text_lower.endswith("?") and text_lower.startswith(self._POLITE_STARTS):
             return False
 
         return any(kw in text_lower for kw in COMPLEX_KEYWORDS)
@@ -341,7 +348,13 @@ class ActionPlanner:
                 results = []
                 for t in tasks:
                     if t in done:
-                        results.append(t.result() if not t.cancelled() else asyncio.TimeoutError())
+                        if t.cancelled():
+                            results.append(asyncio.CancelledError())
+                        else:
+                            try:
+                                results.append(t.result())
+                            except Exception as exc:
+                                results.append(exc)
                     else:
                         results.append(asyncio.TimeoutError())
 

@@ -12,6 +12,7 @@ Domaenen:
 Konfigurierbar in der Jarvis Assistant UI.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -73,6 +74,7 @@ class LearningTransfer:
         # Format: {"{room}:{domain}": [{attribute: value, count: N, last_seen: ts}]}
         self._preferences: dict[str, list[dict]] = {}
         self._pending_transfers: deque[dict] = deque(maxlen=100)
+        self._lock = asyncio.Lock()
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis."""
@@ -91,7 +93,7 @@ class LearningTransfer:
             if raw:
                 self._preferences = json.loads(raw)
         except Exception as e:
-            logger.debug("Preferences laden fehlgeschlagen: %s", e)
+            logger.warning("Preferences laden fehlgeschlagen: %s", e)
 
     async def _save_preferences(self):
         """Speichert Praeferenzen in Redis."""
@@ -104,7 +106,7 @@ class LearningTransfer:
                 ex=86400 * 90,  # 90 Tage
             )
         except Exception as e:
-            logger.debug("Preferences speichern fehlgeschlagen: %s", e)
+            logger.warning("Preferences speichern fehlgeschlagen: %s", e)
 
     async def observe_action(
         self,
@@ -131,33 +133,34 @@ class LearningTransfer:
         if not filtered:
             return
 
-        if key not in self._preferences:
-            self._preferences[key] = []
+        async with self._lock:
+            if key not in self._preferences:
+                self._preferences[key] = []
 
-        # Existierende Praeferenz aktualisieren oder neue anlegen
-        prefs = self._preferences[key]
-        updated = False
-        for pref in prefs:
-            # Gleiche Attribute? -> Count erhoehen
-            if all(pref.get(k) == v for k, v in filtered.items()):
-                pref["count"] = pref.get("count", 1) + 1
-                pref["last_seen"] = time.time()
-                pref["person"] = person
-                updated = True
-                break
+            # Existierende Praeferenz aktualisieren oder neue anlegen
+            prefs = self._preferences[key]
+            updated = False
+            for pref in prefs:
+                # Gleiche Attribute? -> Count erhoehen
+                if all(pref.get(k) == v for k, v in filtered.items()):
+                    pref["count"] = pref.get("count", 1) + 1
+                    pref["last_seen"] = time.time()
+                    pref["person"] = person
+                    updated = True
+                    break
 
-        if not updated:
-            prefs.append({
-                **filtered,
-                "count": 1,
-                "last_seen": time.time(),
-                "person": person,
-            })
+            if not updated:
+                prefs.append({
+                    **filtered,
+                    "count": 1,
+                    "last_seen": time.time(),
+                    "person": person,
+                })
 
-        # Max 20 Praeferenzen pro Raum+Domaene
-        self._preferences[key] = sorted(prefs, key=lambda p: p.get("count", 0), reverse=True)[:20]
+            # Max 20 Praeferenzen pro Raum+Domaene
+            self._preferences[key] = sorted(prefs, key=lambda p: p.get("count", 0), reverse=True)[:20]
 
-        await self._save_preferences()
+            await self._save_preferences()
 
         # Transfer-Vorschlaege generieren
         if self.auto_suggest:
@@ -203,17 +206,18 @@ class LearningTransfer:
                 }
 
                 # Duplikat-Check
-                if not any(
-                    t["source_room"] == source_room
-                    and t["target_room"] == target_room
-                    and t["domain"] == domain
-                    for t in self._pending_transfers
-                ):
-                    self._pending_transfers.append(transfer)
-                    logger.info(
-                        "Transfer-Vorschlag: %s -> %s (%s: %s)",
-                        source_room, target_room, domain, transferable_attrs,
-                    )
+                async with self._lock:
+                    if not any(
+                        t["source_room"] == source_room
+                        and t["target_room"] == target_room
+                        and t["domain"] == domain
+                        for t in self._pending_transfers
+                    ):
+                        self._pending_transfers.append(transfer)
+                        logger.info(
+                            "Transfer-Vorschlag: %s -> %s (%s: %s)",
+                            source_room, target_room, domain, transferable_attrs,
+                        )
 
     def _find_similar_rooms(self, room: str) -> list[str]:
         """Findet Raeume in der gleichen Gruppe."""

@@ -314,7 +314,7 @@ async def _periodic_token_cleanup():
     while True:
         await asyncio.sleep(TOKEN_CLEANUP_INTERVAL)  # 15 Minuten
         try:
-            _cleanup_expired_tokens()
+            await _cleanup_expired_tokens()
         except Exception as e:
             logger.debug("Token-Cleanup Fehler: %s", e)
 
@@ -1718,8 +1718,8 @@ async def chat_upload(
         mb = MAX_FILE_SIZE // (1024 * 1024)
         raise HTTPException(status_code=413, detail=f"Datei zu gross (max {mb} MB)")
 
-    # Save file and extract text
-    file_info = save_upload(file.filename, content)
+    # Save file and extract text (sync I/O + potential OCR → run in thread)
+    file_info = await asyncio.to_thread(save_upload, file.filename, content)
 
     text = caption.strip() if caption.strip() else (
         f"Datei erhalten: {file_info['name']}"
@@ -2439,7 +2439,7 @@ async def ui_auth(req: PinRequest, request: Request):
     async with _token_lock:
         _active_tokens[token] = datetime.now(timezone.utc).timestamp()
         # Abgelaufene Tokens aufraumen
-        _cleanup_expired_tokens()
+        _cleanup_expired_tokens_inner()
     _audit_log("login", {"success": True})
     return {"token": token}
 
@@ -2522,8 +2522,8 @@ def _audit_log(action: str, details: dict = None):
         logger.warning("Audit-Log Fehler: %s", exc)
 
 
-def _cleanup_expired_tokens():
-    """Entfernt abgelaufene Tokens (thread-safe: nur aus async-Kontext aufrufen)."""
+def _cleanup_expired_tokens_inner():
+    """Entfernt abgelaufene Tokens (muss unter _token_lock aufgerufen werden)."""
     now = datetime.now(timezone.utc).timestamp()
     expired = [t for t, ts in _active_tokens.items() if now - ts > _TOKEN_EXPIRY_SECONDS]
     for t in expired:
@@ -2531,6 +2531,12 @@ def _cleanup_expired_tokens():
     # Safety cap: prevent unbounded growth
     if len(_active_tokens) > 10000:
         _active_tokens.clear()
+
+
+async def _cleanup_expired_tokens():
+    """Entfernt abgelaufene Tokens (thread-safe)."""
+    async with _token_lock:
+        _cleanup_expired_tokens_inner()
 
 
 async def _check_token(token: str):
@@ -6540,7 +6546,8 @@ async def workshop_delete_file(project_id: str, filename: str):
         await brain.workshop_generator.delete_file(project_id, filename)
         return {"success": True, "message": f"{filename} gelöscht"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.get("/api/workshop/project/{project_id}/safety-checklist")
@@ -6551,7 +6558,8 @@ async def workshop_safety_checklist(project_id: str):
             project_id)
         return {"success": True, "checklist": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.get("/api/workshop/environment")
@@ -6561,7 +6569,8 @@ async def workshop_environment():
         result = await brain.repair_planner.get_workshop_environment()
         return {"success": True, **result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.get("/api/workshop/snippets/{name}")
@@ -6571,7 +6580,8 @@ async def workshop_get_snippet(name: str):
         result = await brain.repair_planner.get_snippet(name)
         return {"success": True, "snippet": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.get("/api/workshop/devices/check-all")
@@ -6581,7 +6591,8 @@ async def workshop_check_all_devices():
         result = await brain.repair_planner.check_all_devices()
         return {"success": True, "devices": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/notify")
@@ -6596,7 +6607,8 @@ async def workshop_notify(request: Request):
             message, level=data.get("level", "info"))
         return {"success": True, **result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.get("/api/workshop/session/project")
@@ -6606,7 +6618,8 @@ async def workshop_active_project():
         result = await brain.repair_planner.get_active_project()
         return {"success": True, "project": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 # ── Workshop: Generators ────────────────────────────────────
@@ -6625,7 +6638,8 @@ async def workshop_gen_3d_model(request: Request):
             project_id, requirement)
         return {"success": True, **result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/generate/schematic")
@@ -6641,7 +6655,8 @@ async def workshop_gen_schematic(request: Request):
             project_id, requirement)
         return {"success": True, **result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/generate/website")
@@ -6658,7 +6673,8 @@ async def workshop_gen_website(request: Request):
             project_id, requirement, context=context)
         return {"success": True, **result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/generate/bom")
@@ -6672,7 +6688,8 @@ async def workshop_gen_bom(request: Request):
         result = await brain.workshop_generator.generate_bom(project_id)
         return {"success": True, **result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/generate/documentation")
@@ -6686,7 +6703,8 @@ async def workshop_gen_docs(request: Request):
         result = await brain.workshop_generator.generate_documentation(project_id)
         return {"success": True, **result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/generate/tests")
@@ -6702,7 +6720,8 @@ async def workshop_gen_tests(request: Request):
             project_id, filename)
         return {"success": True, **result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/project/{project_id}/duplicate")
@@ -6732,7 +6751,8 @@ async def workshop_duplicate_project(project_id: str, request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.get("/api/workshop/notifications")
@@ -6779,7 +6799,8 @@ async def workshop_troubleshoot(request: Request):
         result = await brain.repair_planner.troubleshoot(project_id, symptom)
         return {"success": True, "result": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/simulate")
@@ -6794,7 +6815,8 @@ async def workshop_simulate(request: Request):
         result = await brain.repair_planner.simulate_design(project_id, question)
         return {"success": True, "result": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/compare-components")
@@ -6810,7 +6832,8 @@ async def workshop_compare_components(request: Request):
         result = await brain.repair_planner.compare_components(comp_a, comp_b, use_case)
         return {"success": True, "result": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/analyze-error-log")
@@ -6826,7 +6849,8 @@ async def workshop_analyze_error_log(request: Request):
             project_id, log_text)
         return {"success": True, "result": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/evaluate-measurement")
@@ -6842,7 +6866,8 @@ async def workshop_evaluate_measurement(request: Request):
             project_id, measurement_text)
         return {"success": True, "result": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/suggest-improvements")
@@ -6856,7 +6881,8 @@ async def workshop_suggest_improvements(request: Request):
         result = await brain.repair_planner.suggest_improvements(project_id)
         return {"success": True, "result": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/calibration")
@@ -6870,7 +6896,8 @@ async def workshop_calibration(request: Request):
         result = await brain.repair_planner.calibration_guide(device_type)
         return {"success": True, "guide": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/scan-object")
@@ -6884,7 +6911,8 @@ async def workshop_scan_object(request: Request):
             description=description, camera_name=camera_name)
         return {"success": True, "result": result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 # ── Workshop: Tool Lending & Maintenance ────────────────────
@@ -6956,7 +6984,8 @@ async def workshop_from_template(request: Request):
             template, title=title)
         return {"success": True, **result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.get("/api/workshop/projects/search")
@@ -7097,7 +7126,8 @@ async def workshop_printer_status():
         result = await brain.repair_planner.get_printer_status()
         return {"success": True, **result}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.warning("Endpoint error: %s", e)
+        return {"success": False, "error": "Interner Fehler"}
 
 
 @app.post("/api/workshop/printer/start")

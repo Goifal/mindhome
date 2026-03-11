@@ -76,16 +76,23 @@ class InventoryManager:
 
         try:
             item_ids = await self.redis.smembers("mha:inventory:all")
-            for item_id in item_ids:
-                item_id = item_id.decode() if isinstance(item_id, bytes) else item_id
-                raw = await self.redis.hgetall(f"mha:inventory:{item_id}")
-                data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
-                if data and data.get("name", "").lower() == name.lower():
-                    category = data.get("category", "sonstiges")
-                    await self.redis.delete(f"mha:inventory:{item_id}")
-                    await self.redis.srem("mha:inventory:all", item_id)
-                    await self.redis.srem(f"mha:inventory:cat:{category}", item_id)
-                    return {"success": True, "message": f"'{name}' aus dem Vorrat entfernt."}
+            decoded_ids = [
+                iid.decode() if isinstance(iid, bytes) else iid
+                for iid in item_ids
+            ]
+            if decoded_ids:
+                pipe = self.redis.pipeline()
+                for item_id in decoded_ids:
+                    pipe.hgetall(f"mha:inventory:{item_id}")
+                results = await pipe.execute()
+                for item_id, raw in zip(decoded_ids, results):
+                    data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
+                    if data and data.get("name", "").lower() == name.lower():
+                        category = data.get("category", "sonstiges")
+                        await self.redis.delete(f"mha:inventory:{item_id}")
+                        await self.redis.srem("mha:inventory:all", item_id)
+                        await self.redis.srem(f"mha:inventory:cat:{category}", item_id)
+                        return {"success": True, "message": f"'{name}' aus dem Vorrat entfernt."}
             return {"success": False, "message": f"'{name}' nicht im Vorrat gefunden."}
         except Exception as e:
             return {"success": False, "message": f"Da gab es ein Problem: {e}"}
@@ -97,15 +104,22 @@ class InventoryManager:
 
         try:
             item_ids = await self.redis.smembers("mha:inventory:all")
-            for item_id in item_ids:
-                item_id = item_id.decode() if isinstance(item_id, bytes) else item_id
-                raw = await self.redis.hgetall(f"mha:inventory:{item_id}")
-                data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
-                if data and data.get("name", "").lower() == name.lower():
-                    if quantity <= 0:
-                        return await self.remove_item(name)
-                    await self.redis.hset(f"mha:inventory:{item_id}", "quantity", str(quantity))
-                    return {"success": True, "message": f"'{name}' Menge auf {quantity} aktualisiert."}
+            decoded_ids = [
+                iid.decode() if isinstance(iid, bytes) else iid
+                for iid in item_ids
+            ]
+            if decoded_ids:
+                pipe = self.redis.pipeline()
+                for item_id in decoded_ids:
+                    pipe.hgetall(f"mha:inventory:{item_id}")
+                results = await pipe.execute()
+                for item_id, raw in zip(decoded_ids, results):
+                    data = {(k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v) for k, v in raw.items()} if raw else {}
+                    if data and data.get("name", "").lower() == name.lower():
+                        if quantity <= 0:
+                            return await self.remove_item(name)
+                        await self.redis.hset(f"mha:inventory:{item_id}", "quantity", str(quantity))
+                        return {"success": True, "message": f"'{name}' Menge auf {quantity} aktualisiert."}
             return {"success": False, "message": f"'{name}' nicht im Vorrat gefunden."}
         except Exception as e:
             return {"success": False, "message": f"Da gab es ein Problem: {e}"}
