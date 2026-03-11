@@ -304,9 +304,10 @@ class ContextBuilder:
                         ctx["current_shift"] = shift_setting.value
                 except Exception as e:
                     logger.debug("Unhandled: %s", e)
-                session.close()
             except Exception as e:
                 logger.debug("Unhandled: %s", e)
+            finally:
+                session.close()
         return ctx
 
 
@@ -326,10 +327,11 @@ class StateLogger:
         self.ha = ha_connection
         self.context_builder = ContextBuilder(ha_connection, engine)
 
-        # Motion sensor debounce tracking
+        # Motion sensor debounce tracking (bounded to prevent unbounded growth)
         self._motion_last_on = {}  # entity_id -> datetime
         self._last_sensor_values = {}  # entity_id -> last_logged_value
         self._last_sensor_times = {}  # entity_id -> last_logged_timestamp
+        self._MAX_SENSOR_TRACKING = 500
 
         # Rate limiter: sliding window
         self._event_timestamps = []  # list of timestamps
@@ -360,6 +362,8 @@ class StateLogger:
                     if last_on and (now - last_on).total_seconds() < _get_motion_debounce():
                         return False
                     self._motion_last_on[entity_id] = now
+                    if len(self._motion_last_on) > self._MAX_SENSOR_TRACKING:
+                        self._motion_last_on.clear()
                 elif new_state == "off":
                     if not hasattr(self, '_motion_last_off'):
                         self._motion_last_off = {}
@@ -416,6 +420,9 @@ class StateLogger:
 
                     self._last_sensor_values[entity_id] = new_val
                     self._last_sensor_times[entity_id] = now_ts
+                    if len(self._last_sensor_values) > self._MAX_SENSOR_TRACKING:
+                        self._last_sensor_values.clear()
+                        self._last_sensor_times.clear()
                     return True
                 except (ValueError, TypeError):
                     return False

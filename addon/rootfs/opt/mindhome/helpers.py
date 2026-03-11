@@ -56,10 +56,11 @@ def utc_iso(dt):
     """Convert datetime to ISO string with Z suffix for UTC. Handles None."""
     if dt is None:
         return None
-    s = dt.isoformat()
-    if not dt.tzinfo and not s.endswith('Z'):
-        s += 'Z'
-    return s
+    if dt.tzinfo is None:
+        # Assume naive datetime is UTC, make it aware
+        from datetime import timezone
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 
 # ==============================================================================

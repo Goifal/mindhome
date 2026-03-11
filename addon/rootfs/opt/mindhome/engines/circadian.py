@@ -207,7 +207,7 @@ class CircadianLightManager:
                 local_time = _local_now()
 
                 for cfg in configs:
-                    room = session.query(Room).get(cfg.room_id)
+                    room = session.get(Room, cfg.room_id)
                     room_name = room.name if room else f"Room {cfg.room_id}"
 
                     # Check if override is active (lock protects against concurrent event callbacks)
@@ -342,7 +342,7 @@ class CircadianLightManager:
                 ).all()
                 result = []
                 for cfg in configs:
-                    room = session.query(Room).get(cfg.room_id)
+                    room = session.get(Room, cfg.room_id)
                     result.append({
                         "room_id": cfg.room_id,
                         "room_name": room.name if room else f"Room {cfg.room_id}",

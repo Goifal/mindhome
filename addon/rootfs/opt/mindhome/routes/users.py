@@ -129,8 +129,12 @@ def api_create_user():
             role = UserRole(data.get("role", "user"))
         except ValueError:
             return jsonify({"error": f"Ungueltiger Rolle: {data.get('role')}"}), 400
+        import re
+        _name = str(data.get("name", "")).strip()[:100]
+        if not _name or not re.match(r'^[\w\s\-\.]+$', _name):
+            return jsonify({"error": "Ungueltiger Name"}), 400
         user = User(
-            name=data["name"],
+            name=_name,
             role=role,
             ha_person_entity=data.get("ha_person_entity"),
             language=data.get("language", get_language())

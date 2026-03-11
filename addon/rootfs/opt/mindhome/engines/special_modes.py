@@ -375,6 +375,9 @@ class SpecialModeBase:
                     })
             elif domain == "lock":
                 action = role_config.get("action", "lock")
+                if action not in ("lock", "unlock"):
+                    logger.warning(f"Invalid lock action '{action}' for {entity_id}, defaulting to lock")
+                    action = "lock"
                 self.ha.call_service("lock", action, {"entity_id": entity_id})
         except Exception as e:
             logger.debug(f"Apply action error for {entity_id}: {e}")
@@ -589,13 +592,18 @@ class NightLockdown(SpecialModeBase):
             self._check_open_windows(config)
 
         # Alarm panel
-        if config.get("alarm_panel_enabled") and config.get("alarm_panel_entity"):
-            try:
-                self.ha.call_service("alarm_control_panel", "alarm_arm_night", {
-                    "entity_id": config["alarm_panel_entity"]
-                })
-            except Exception as e:
-                logger.debug(f"Alarm panel set error: {e}")
+        _alarm_entity = config.get("alarm_panel_entity", "")
+        if config.get("alarm_panel_enabled") and _alarm_entity:
+            import re
+            if not re.match(r'^alarm_control_panel\.[a-z0-9_]+$', _alarm_entity):
+                logger.warning(f"Invalid alarm entity: {_alarm_entity}")
+            else:
+                try:
+                    self.ha.call_service("alarm_control_panel", "alarm_arm_night", {
+                        "entity_id": _alarm_entity
+                    })
+                except Exception as e:
+                    logger.debug(f"Alarm panel set error: {e}")
 
         logger.info("Night lockdown actions applied")
 
@@ -1016,7 +1024,9 @@ class EmergencyProtocol(SpecialModeBase):
                 user = session.query(User).get(user_id)
                 if user and hasattr(user, 'pin_hash') and user.pin_hash:
                     import hashlib
-                    pin_hash = hashlib.sha256(str(pin).encode()).hexdigest()
+                    # Use user-specific salt for PIN hashing
+                    _salt = f"mha:{user_id}:pin"
+                    pin_hash = hashlib.sha256(f"{_salt}:{pin}".encode()).hexdigest()
                     # Constant-time comparison to prevent timing attacks
                     import hmac
                     return hmac.compare_digest(user.pin_hash, pin_hash)

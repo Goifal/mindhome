@@ -59,7 +59,8 @@ _CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "").strip()
 if _CORS_ORIGINS:
     CORS(app, origins=_CORS_ORIGINS.split(","), supports_credentials=False)
 else:
-    CORS(app, supports_credentials=False)
+    # Default to same-origin only (no wildcard) for security
+    CORS(app, origins=[], supports_credentials=False)
 
 mimetypes.add_type("text/javascript", ".jsx")
 mimetypes.add_type("text/javascript", ".mjs")

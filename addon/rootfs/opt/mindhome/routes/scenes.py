@@ -183,8 +183,9 @@ def api_scene_suggestions():
         suggestions = []
         for p in patterns:
             suggestions.append({
-                "id": p.id, "description": p.description,
-                "entities": p.entities, "match_count": p.match_count,
+                "id": p.id, "description": p.description_de or p.description_en or "",
+                "entities": p.pattern_data.get("entities", []) if isinstance(p.pattern_data, dict) else [],
+                "match_count": p.match_count,
                 "confidence": p.confidence, "status": p.status
             })
         return jsonify(suggestions)
