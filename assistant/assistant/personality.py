@@ -331,6 +331,7 @@ class PersonalityEngine:
 
         # State
         self._state_lock = asyncio.Lock()
+        self._mood_formality_lock = threading.Lock()
         self._current_mood: str = "neutral"
         self._mood_detector = None
         self._redis = None
@@ -597,7 +598,8 @@ class PersonalityEngine:
 
         # Bei Stress/Frustration: Keine ungebetenen Kommentare
         # F-020: Expliziter mood-Parameter statt self._current_mood (Race Condition)
-        effective_mood = mood or self._current_mood
+        with self._mood_formality_lock:
+            effective_mood = mood or self._current_mood
         if effective_mood in ("stressed", "frustrated"):
             return None
 
@@ -1018,7 +1020,8 @@ class PersonalityEngine:
         Bei stressed/tired: Nur die kuerzesten Bestätigungen verwenden.
         Kontextbezogene Bestätigungen werden bevorzugt wenn passend.
         """
-        effective_mood = mood or self._current_mood
+        with self._mood_formality_lock:
+            effective_mood = mood or self._current_mood
 
         # F-021: Per-User History statt globaler Liste
         user_key = person or "_default"
@@ -1814,7 +1817,8 @@ class PersonalityEngine:
 
         # Mood-Check: Kein Humor bei Stress/Muedigkeit
         # F-020: Expliziter mood-Parameter statt self._current_mood (Race Condition)
-        mood = mood or self._current_mood
+        with self._mood_formality_lock:
+            mood = mood or self._current_mood
         if mood in ("tired", "stressed", "frustrated"):
             return None
 
@@ -2240,7 +2244,8 @@ class PersonalityEngine:
 
         # Stimmungsabhängige Anpassung
         mood = (context.get("mood") or {}).get("mood", "neutral") if context else "neutral"
-        self._current_mood = mood
+        with self._mood_formality_lock:
+            self._current_mood = mood
         _neutral_fallback = self._mood_styles.get("neutral", {"style_addon": "", "max_sentences_mod": 0})
         mood_config = self._mood_styles.get(mood, _neutral_fallback)
 
@@ -2296,7 +2301,8 @@ class PersonalityEngine:
         if formality_score is None:
             # Per-Person Formality Override
             formality_score = person_profile.get("formality_start", self.formality_start)
-        self._current_formality = formality_score
+        with self._mood_formality_lock:
+            self._current_formality = formality_score
         formality_section = self._build_formality_section(formality_score, mood=mood)
 
         # Person Anrede (nutzt self._current_formality für Titel-Häufigkeit)
@@ -2885,12 +2891,14 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
 
         # Humor/Sarkasmus — bei CRITICAL komplett aus
         has_alerts = urgency == "critical"
+        with self._mood_formality_lock:
+            _mood = self._current_mood
+            formality = self._current_formality
         humor_line = self._build_humor_section(
-            self._current_mood, time_of_day, has_alerts=has_alerts,
+            _mood, time_of_day, has_alerts=has_alerts,
         )
 
         # Formality
-        formality = getattr(self, '_current_formality', self.formality_start)
         if formality >= 70:
             tone = "professionell, respektvoll"
         elif formality >= 50:
@@ -2982,10 +2990,12 @@ WICHTIG: Erfinde KEINE Ursachen, Gruende oder Erklaerungen. NUR die gegebenen Fa
         time_style = self.get_time_style(time_of_day)
 
         # Humor — Morgens gedaempft, Abends lockerer
-        humor_line = self._build_humor_section(self._current_mood, time_of_day)
+        with self._mood_formality_lock:
+            _mood = self._current_mood
+            formality = self._current_formality
+        humor_line = self._build_humor_section(_mood, time_of_day)
 
         # Formality
-        formality = getattr(self, '_current_formality', self.formality_start)
         formality_section = self._build_formality_section(formality)
 
         # Selbstironie — nur wenn noch Budget

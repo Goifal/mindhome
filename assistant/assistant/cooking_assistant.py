@@ -105,22 +105,21 @@ COOKING_START_TRIGGERS = [
 
 COOKING_KEYWORDS = [
     "kochen", "backen", "zubereiten", "braten", "grillen",
-    "rezept für", "rezept für",
+    "rezept für",
     "wie mache ich", "wie macht man", "wie bereite ich",
     "wie koche ich", "wie backe ich", "wie brate ich",
 ]
 
 # Navigation per Sprache
-NAV_NEXT = ["weiter", "nächster schritt", "nächster schritt", "next", "und dann",
+NAV_NEXT = ["weiter", "nächster schritt", "next", "und dann",
             "was kommt jetzt", "wie gehts weiter"]
-NAV_PREV = ["zurück", "zurück", "vorheriger schritt", "nochmal den letzten"]
+NAV_PREV = ["zurück", "vorheriger schritt", "nochmal den letzten"]
 NAV_REPEAT = ["nochmal", "wiederhole", "wie war das", "sag das nochmal",
               "repeat", "bitte nochmal"]
-NAV_STATUS = ["wo bin ich", "welcher schritt", "status", "übersicht", "übersicht"]
+NAV_STATUS = ["wo bin ich", "welcher schritt", "status", "übersicht"]
 NAV_TIMER = ["timer", "stell timer", "stell einen timer", "weck mich",
              "erinner mich"]
-NAV_TIMER_CHECK = ["wie lange noch", "timer status", "läuft der timer",
-                   "läuft der timer"]
+NAV_TIMER_CHECK = ["wie lange noch", "timer status", "läuft der timer"]
 NAV_STOP = ["stop kochen", "stopp kochen", "abbrechen", "koch session beenden",
             "fertig kochen", "ich bin fertig", "koch modus beenden",
             "kochen beenden", "kochmodus beenden", "beende kochen",
@@ -128,7 +127,7 @@ NAV_STOP = ["stop kochen", "stopp kochen", "abbrechen", "koch session beenden",
             "kochen beende", "beenden"]
 NAV_INGREDIENTS = ["zutaten", "was brauche ich", "einkaufsliste",
                    "welche zutaten"]
-NAV_PORTIONS = ["für", "für", "portionen", "personen"]
+NAV_PORTIONS = ["für", "portionen", "personen"]
 NAV_SAVE = ["merk dir das rezept", "rezept speichern", "speichere das rezept",
             "merk dir dieses rezept"]
 
@@ -179,6 +178,9 @@ WICHTIG: Antworte NUR im JSON-Format:
 
 Bestehendes Rezept:
 {recipe_text}"""
+
+
+MAX_TIMERS_PER_SESSION = 50  # Bug #117: Limit active timers per session
 
 
 class CookingAssistant:
@@ -484,6 +486,8 @@ class CookingAssistant:
     async def _next_step(self) -> str:
         """Geht zum nächsten Schritt."""
         session = self.session
+        if session is None:
+            return "Keine aktive Koch-Session. Sag mir was du kochen moechtest."
 
         session.current_step += 1
         await self._persist_session()
@@ -505,6 +509,8 @@ class CookingAssistant:
 
     async def _prev_step(self) -> str:
         """Geht zum vorherigen Schritt."""
+        if self.session is None:
+            return "Keine aktive Koch-Session. Sag mir was du kochen moechtest."
         if self.session.current_step <= 0:
             return "Du bist schon beim ersten Schritt."
 
@@ -515,6 +521,8 @@ class CookingAssistant:
 
     def _repeat_step(self) -> str:
         """Wiederholt den aktuellen Schritt."""
+        if self.session is None:
+            return "Keine aktive Koch-Session. Sag mir was du kochen moechtest."
         step = self.session.get_current_step()
         if step is None:
             return "Es gibt keinen aktuellen Schritt. Sag 'weiter' für den nächsten."
@@ -523,6 +531,8 @@ class CookingAssistant:
     def _show_status(self) -> str:
         """Zeigt den aktuellen Status."""
         session = self.session
+        if session is None:
+            return "Keine aktive Koch-Session. Sag mir was du kochen moechtest."
         step = session.get_current_step()
         elapsed = int(time.time() - session.started_at) // 60
 
@@ -603,6 +613,11 @@ class CookingAssistant:
         if minutes < 1 or minutes > 180:
             return "Timer muss zwischen 1 und 180 Minuten liegen."
 
+        # Bug #117: Limit active timers per session
+        active_timers = [t for t in self.session.timers if not t.is_done]
+        if len(active_timers) >= MAX_TIMERS_PER_SESSION:
+            return f"Maximale Anzahl aktiver Timer ({MAX_TIMERS_PER_SESSION}) erreicht. Warte bis ein Timer abläuft."
+
         # Label extrahieren
         label_match = re.search(r"(?:für|für)\s+(.+?)(?:\s*$)", text.lower())
         label = label_match.group(1) if label_match else f"Timer ({minutes} Min)"
@@ -612,6 +627,7 @@ class CookingAssistant:
         self.session.timers.append(timer)
 
         # Hintergrund-Task für Benachrichtigung
+        self._cleanup_completed_tasks()
         task = asyncio.create_task(self._timer_watcher(timer))
         self._timer_tasks.append(task)
 
@@ -625,11 +641,17 @@ class CookingAssistant:
         if not step.timer_minutes:
             return "Dieser Schritt hat keine Zeitangabe."
 
+        # Bug #117: Limit active timers per session
+        active_timers = [t for t in self.session.timers if not t.is_done]
+        if len(active_timers) >= MAX_TIMERS_PER_SESSION:
+            return f"Maximale Anzahl aktiver Timer ({MAX_TIMERS_PER_SESSION}) erreicht. Warte bis ein Timer abläuft."
+
         label = f"Schritt {step.number}"
         timer = CookingTimer(label=label, duration_seconds=step.timer_minutes * 60)
         timer.start()
         self.session.timers.append(timer)
 
+        self._cleanup_completed_tasks()
         task = asyncio.create_task(self._timer_watcher(timer))
         self._timer_tasks.append(task)
 
@@ -637,6 +659,10 @@ class CookingAssistant:
         await self._persist_session()
 
         return f"Timer gesetzt: {label} — {step.timer_minutes} Minuten. Ich sage Bescheid wenn er abgelaufen ist."
+
+    def _cleanup_completed_tasks(self):
+        """Entfernt abgeschlossene oder abgebrochene Tasks aus _timer_tasks."""
+        self._timer_tasks = [t for t in self._timer_tasks if not t.done()]
 
     async def _timer_watcher(self, timer: CookingTimer):
         """Überwacht einen Timer und benachrichtigt bei Ablauf."""
@@ -655,6 +681,9 @@ class CookingAssistant:
                 await self._notify_callback({"message": message, "type": "cooking_timer"})
         except asyncio.CancelledError:
             pass
+        finally:
+            # Bug #116: Clean up completed tasks to prevent unbounded growth
+            self._cleanup_completed_tasks()
 
     def _check_timers(self) -> str:
         """Zeigt alle aktiven Timer."""

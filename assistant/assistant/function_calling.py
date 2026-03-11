@@ -1143,7 +1143,8 @@ async def _refresh_entity_catalog_inner(ha: HomeAssistantClient) -> None:
     }
     _entity_catalog_ts = time.time()
     # Tools-Cache invalidieren NACH Entity-Katalog-Update (atomarer Swap)
-    _tools_cache = None
+    with _tools_cache_lock:
+        _tools_cache = None
     logger.info(
         "Entity-Katalog aktualisiert: %d rooms, %d lights, %d switches, %d covers, "
         "%d sensors, %d binary_sensors, %d scenes",
@@ -1302,7 +1303,15 @@ def _get_climate_tool_parameters() -> dict:
 # Ollama Tool-Definitionen (Function Calling Format)
 # ASSISTANT_TOOLS wird als Funktion gebaut, damit set_climate
 # bei jedem Aufruf den aktuellen heating.mode aus yaml_config liest.
-_ASSISTANT_TOOLS_STATIC = [
+_ASSISTANT_TOOLS_STATIC = None
+
+
+def _get_assistant_tools_static() -> list:
+    """Lazy initialization of static tools list."""
+    global _ASSISTANT_TOOLS_STATIC
+    if _ASSISTANT_TOOLS_STATIC is not None:
+        return _ASSISTANT_TOOLS_STATIC
+    _ASSISTANT_TOOLS_STATIC = [
     {
         "type": "function",
         "function": {
@@ -3119,6 +3128,7 @@ _ASSISTANT_TOOLS_STATIC = [
         },
     },
 ]
+    return _ASSISTANT_TOOLS_STATIC
 
 
 _tools_cache: list | None = None
@@ -3144,7 +3154,7 @@ def get_assistant_tools() -> list:
             return _tools_cache
 
         tools = []
-        for tool in _ASSISTANT_TOOLS_STATIC:
+        for tool in _get_assistant_tools_static():
             fname = tool.get("function", {}).get("name", "")
             if fname == "set_climate":
                 t = {
@@ -4791,17 +4801,20 @@ class FunctionExecutor:
 
         try:
             import fcntl
-            config = _yaml.safe_load(SETTINGS_PATH.read_text()) or {}
-            if "seasonal_actions" not in config:
-                config["seasonal_actions"] = {}
-            if "cover_automation" not in config["seasonal_actions"]:
-                config["seasonal_actions"]["cover_automation"] = {}
-
-            for k, v in changes.items():
-                config["seasonal_actions"]["cover_automation"][k] = v
-
-            with open(SETTINGS_PATH, 'w') as f:
+            with open(SETTINGS_PATH, 'r+') as f:
                 fcntl.flock(f, fcntl.LOCK_EX)
+                f.seek(0)
+                config = _yaml.safe_load(f.read()) or {}
+                if "seasonal_actions" not in config:
+                    config["seasonal_actions"] = {}
+                if "cover_automation" not in config["seasonal_actions"]:
+                    config["seasonal_actions"]["cover_automation"] = {}
+
+                for k, v in changes.items():
+                    config["seasonal_actions"]["cover_automation"][k] = v
+
+                f.seek(0)
+                f.truncate()
                 _yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
                 fcntl.flock(f, fcntl.LOCK_UN)
 

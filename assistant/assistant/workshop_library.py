@@ -38,7 +38,8 @@ class WorkshopLibrary:
         self.chroma_client = chroma_client
         self.embedding_fn = embedding_fn
         WORKSHOP_DOCS_DIR.mkdir(parents=True, exist_ok=True)
-        self.collection = self.chroma_client.get_or_create_collection(
+        self.collection = await asyncio.to_thread(
+            self.chroma_client.get_or_create_collection,
             name=self.COLLECTION_NAME,
             metadata={"description": "Workshop technical reference library"},
         )
@@ -70,7 +71,7 @@ class WorkshopLibrary:
         if path.suffix.lower() == ".pdf":
             text = await self._extract_pdf(path)
         else:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            text = await asyncio.to_thread(path.read_text, encoding="utf-8", errors="replace")
 
         if not text.strip():
             return {"status": "error", "message": "Dokument ist leer"}
@@ -86,7 +87,9 @@ class WorkshopLibrary:
         ]
 
         if self.embedding_fn:
-            embeddings = [self.embedding_fn(chunk) for chunk in chunks]
+            embeddings = await asyncio.to_thread(
+                lambda: [self.embedding_fn(chunk) for chunk in chunks]
+            )
             await asyncio.to_thread(
                 self.collection.upsert,
                 ids=ids, documents=chunks, metadatas=metadatas, embeddings=embeddings,
@@ -114,7 +117,7 @@ class WorkshopLibrary:
             return []
 
         if self.embedding_fn:
-            query_embedding = self.embedding_fn(query)
+            query_embedding = await asyncio.to_thread(self.embedding_fn, query)
             results = await asyncio.to_thread(
                 self.collection.query,
                 query_embeddings=[query_embedding],

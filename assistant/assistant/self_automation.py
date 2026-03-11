@@ -32,12 +32,17 @@ logger = logging.getLogger(__name__)
 _CONFIG_DIR = Path(__file__).parent.parent / "config"
 _TEMPLATES_PATH = _CONFIG_DIR / "automation_templates.yaml"
 
-def _load_templates() -> dict:
-    """Laedt die Automation-Templates und Security-Config."""
+def _load_templates_sync() -> dict:
+    """Laedt die Automation-Templates und Security-Config (synchron)."""
     if _TEMPLATES_PATH.exists():
         with open(_TEMPLATES_PATH) as f:
             return yaml.safe_load(f) or {}
     return {}
+
+
+async def _load_templates() -> dict:
+    """Laedt die Automation-Templates und Security-Config (async, non-blocking)."""
+    return await asyncio.to_thread(_load_templates_sync)
 
 
 class SelfAutomation:
@@ -47,11 +52,11 @@ class SelfAutomation:
         self.ha = ha_client
         self.ollama = ollama
 
-        # Config laden
+        # Config laden (Templates werden async in initialize() geladen)
         self._cfg = yaml_config.get("self_automation", {})
-        self._templates_cfg = _load_templates()
-        self._security = self._templates_cfg.get("security", {})
-        self._templates = self._templates_cfg.get("templates", {})
+        self._templates_cfg: dict = {}
+        self._security: dict = {}
+        self._templates: dict = {}
 
         # Security: Whitelists/Blacklists
         self._allowed_services = set(self._security.get("allowed_services", [
@@ -112,6 +117,19 @@ class SelfAutomation:
 
     async def initialize(self, redis_client=None):
         """Initialisiert den Automation Manager."""
+        # Templates async laden (vermeidet blocking I/O im Event-Loop)
+        self._templates_cfg = await _load_templates()
+        self._security = self._templates_cfg.get("security", {})
+        self._templates = self._templates_cfg.get("templates", {})
+
+        # Security-Listen aus geladener Config aktualisieren (falls vorhanden)
+        if "allowed_services" in self._security:
+            self._allowed_services = set(self._security["allowed_services"])
+        if "blocked_services" in self._security:
+            self._blocked_services = set(self._security["blocked_services"])
+        if "allowed_trigger_platforms" in self._security:
+            self._allowed_trigger_platforms = set(self._security["allowed_trigger_platforms"])
+
         self._redis = redis_client
         if self._redis:
             try:
@@ -1060,4 +1078,4 @@ REGELN:
 
     def get_audit_log(self, limit: int = 20) -> list[dict]:
         """Gibt die letzten Audit-Log-Eintraege zurueck."""
-        return self._audit_log[-limit:]
+        return list(self._audit_log)[-limit:]

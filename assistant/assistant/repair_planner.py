@@ -320,11 +320,32 @@ class RepairPlanner:
                 f"mha:repair:projects:status:{status_filter}")
         else:
             ids = await self.redis.smembers("mha:repair:projects:all")
+        if not ids:
+            return []
+        pipe = self.redis.pipeline()
+        id_list = list(ids)
+        for pid in id_list:
+            pipe.hgetall(f"mha:repair:project:{pid}")
+        results = await pipe.execute()
         projects = []
-        for pid in ids:
-            p = await self.get_project(pid)
-            if p and (not category_filter or p.get("category") == category_filter):
-                projects.append(p)
+        for data in results:
+            if not data:
+                continue
+            # Redis returns bytes – decode to str
+            data = {
+                k.decode() if isinstance(k, bytes) else k:
+                v.decode() if isinstance(v, bytes) else v
+                for k, v in data.items()
+            }
+            # JSON-Felder parsen
+            for key in ("parts", "tools", "notes", "expenses"):
+                if key in data and isinstance(data[key], str):
+                    try:
+                        data[key] = json.loads(data[key])
+                    except (json.JSONDecodeError, TypeError):
+                        data[key] = []
+            if not category_filter or data.get("category") == category_filter:
+                projects.append(data)
         return projects
 
     async def update_project(self, project_id, **kwargs) -> Optional[dict]:

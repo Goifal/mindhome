@@ -87,7 +87,10 @@ class DomainPlugin(ABC):
             builder = ContextBuilder(self.ha)
             self._context_cache = builder.build()
             self._context_cache_time = now
-        except Exception:
+        except Exception as e:
+            self.logger.warning(
+                "ContextBuilder failed, falling back to hardcoded is_dark=True: %s", e
+            )
             self._context_cache = {
                 "anyone_home": self.ha.is_anyone_home(),
                 "is_dark": True, "is_rainy": self.ha.is_raining(),

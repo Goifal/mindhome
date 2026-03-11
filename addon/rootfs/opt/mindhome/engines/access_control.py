@@ -50,7 +50,8 @@ class AccessControlManager:
 
     def stop(self):
         self._is_running = False
-        self._auto_lock_timers.clear()
+        with self._timer_lock:
+            self._auto_lock_timers.clear()
         logger.info("AccessControlManager stopped")
 
     # ── Config ──────────────────────────────────────────────
@@ -116,6 +117,9 @@ class AccessControlManager:
         try:
             self.ha.call_service("lock", "lock", {"entity_id": entity_id})
             self._log_access(entity_id, "lock", "remote")
+            # Cancel any pending auto-lock timer for this entity
+            with self._timer_lock:
+                self._auto_lock_timers.pop(entity_id, None)
             return True
         except Exception as e:
             logger.error(f"Lock failed for {entity_id}: {e}")
@@ -133,7 +137,8 @@ class AccessControlManager:
             # Start auto-lock timer
             config = self.get_config()
             if config.get("auto_lock_enabled"):
-                self._auto_lock_timers[entity_id] = datetime.now(timezone.utc)
+                with self._timer_lock:
+                    self._auto_lock_timers[entity_id] = datetime.now(timezone.utc)
             return True
         except Exception as e:
             logger.error(f"Unlock failed for {entity_id}: {e}")
@@ -272,7 +277,10 @@ class AccessControlManager:
         now = datetime.now(timezone.utc)
         expired = []
 
-        for entity_id, unlock_time in list(self._auto_lock_timers.items()):
+        with self._timer_lock:
+            timer_snapshot = list(self._auto_lock_timers.items())
+
+        for entity_id, unlock_time in timer_snapshot:
             if now - unlock_time >= delay:
                 state = self.ha.get_state(entity_id) if self.ha else None
                 if state and state.get("state") == "unlocked":
@@ -284,8 +292,10 @@ class AccessControlManager:
                         logger.error(f"Auto-lock failed for {entity_id}: {e}")
                 expired.append(entity_id)
 
-        for eid in expired:
-            self._auto_lock_timers.pop(eid, None)
+        if expired:
+            with self._timer_lock:
+                for eid in expired:
+                    self._auto_lock_timers.pop(eid, None)
 
     # ── Event Handler ───────────────────────────────────────
 
@@ -326,6 +336,9 @@ class AccessControlManager:
 
         if new_val == "locked":
             self._log_access(entity_id, "lock", "unknown")
+            # Cancel any pending auto-lock timer since the lock is now locked
+            with self._timer_lock:
+                self._auto_lock_timers.pop(entity_id, None)
             self.event_bus.publish("access.locked", {"entity_id": entity_id}, source="access_control")
 
         elif new_val == "unlocked":
@@ -345,7 +358,8 @@ class AccessControlManager:
 
             # Start auto-lock timer
             if config.get("auto_lock_enabled"):
-                self._auto_lock_timers[entity_id] = datetime.now(timezone.utc)
+                with self._timer_lock:
+                    self._auto_lock_timers[entity_id] = datetime.now(timezone.utc)
 
         elif new_val == "jammed":
             self._log_access(entity_id, "jammed", "auto")

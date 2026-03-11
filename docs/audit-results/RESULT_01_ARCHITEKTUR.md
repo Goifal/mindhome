@@ -4,6 +4,38 @@
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Drei-Service-Architektur, Modul-Konflikte A–F, Verdrahtungs-Graph, Architektur-Bewertung
 **Durchlauf**: #2 (Verifikation nach P6a–P8 Fixes)
+**Vergleichsbasis**: DL#1 (Architektur-Analyse: 6 Konflikte, 6 semantische Luecken, 2 God-Objects)
+
+---
+
+## DL#1 vs DL#2 Vergleich
+
+### Gesamt-Statistik
+
+```
+Konflikte A-F:
+  A (Sprache):       ⚠️ TEILWEISE — CRITICAL-Alerts bewusst hardcoded, Error-Texte auf Jarvis-Stil
+  B (Aktionen):      ❌ UNFIXED — Addon↔Assistant Last-Write-Wins, Ownership-Check asymmetrisch
+  C (Wissen):        ❌ UNFIXED — 12 isolierte Memory-Silos, Addon-SQLite ohne Sync
+  D (Klang):         ✅ FIXED — Sarkasmus gedeckelt, TTS-Pipeline konsistent
+  E (Timing):        ⚠️ TEILWEISE — Intern geloest (_process_lock), cross-service offen
+  F (Addon↔Assist):  ⚠️ TEILWEISE — Advisory Entity-Ownership-Check implementiert, asymmetrisch
+
+God-Objects:
+  brain.py:   ❌ UNFIXED — 9.800 Zeilen, 81 Imports, ~4.700Z _process_inner()
+  main.py:    ❌ VERSCHLECHTERT — 7.809 → 8.228 Zeilen, 270 Endpoints
+  config.py:  ❌ UNFIXED — 74 Module importieren config
+
+Architektur-Verbesserungen:
+  ✅ _process_lock + _states_lock in brain.py (Race Conditions)
+  ✅ 36/37 Module in _safe_init() (Graceful Degradation)
+  ✅ 12+ Locks in Feature-Modulen
+  ✅ shared/ Dead Code entfernt
+  ✅ Entity-Ownership-Check (Addon→Assistant)
+  ❌ proactive.start() NICHT in _safe_init() (REGRESSION)
+  ❌ Kein bidirektionaler State-Sync
+  ❌ Kein Event-Bus zwischen Services
+```
 
 ---
 
@@ -356,30 +388,40 @@ SCHICHT 0: INFRASTRUKTUR (6 Module — importieren nichts Internes)
 
 ---
 
-## 7. Vergleich mit Durchlauf #1
+## 7. DL#1 → DL#2 Detailvergleich
 
-### Was sich VERBESSERT hat:
-- ✅ `_process_lock` in brain.py (Race Conditions eliminiert)
-- ✅ `_states_lock` in brain.py (Cache-Korruption verhindert)
-- ✅ 12+ Locks in Modulen (personality, proactive, mood_detector, event_bus, fire_water, etc.)
-- ✅ 136 `except Exception: pass` → `logger.debug()` (Debugging verbessert)
-- ✅ 71 Error-Detail-Leaks gefixt
-- ✅ Redis-bytes-Decode an 10+ Stellen
-- ✅ shared/ Dead Code entfernt
+### Was sich VERBESSERT hat (FIXED/TEILWEISE):
 
-### Was sich NICHT verbessert hat:
-- ❌ brain.py ist immer noch ~9.800 Zeilen (Ziel war weitere Mixin-Extraktion)
-- ❌ main.py ist GEWACHSEN (7.809 → 8.228 Zeilen)
-- ❌ ProactiveManager.start() ist immer noch NICHT in _safe_init() (Regression oder nie gefixt)
-- ❌ Addon↔Assistant Koordination unveraendert (Advisory Check einziges Mittel)
-- ❌ Kein Event-Bus oder Priority-System zwischen Services
-- ❌ Kein kohaerenter Memory-Stack
-- ❌ config.py immer noch monolithisch (74 Importeure)
+| # | Finding | DL#1-Status | DL#2-Status | Beschreibung |
+|---|---------|------------|------------|-------------|
+| 1 | `_process_lock` in brain.py | ❌ Kein Lock | ✅ FIXED | Race Conditions eliminiert |
+| 2 | `_states_lock` in brain.py | ❌ Kein Lock | ✅ FIXED | Cache-Korruption verhindert |
+| 3 | Modul-Locks | ❌ 0 Locks | ✅ FIXED | 12+ Locks in personality, proactive, mood_detector, event_bus, fire_water, etc. |
+| 4 | `except Exception: pass` | 136 Stellen | ⚠️ TEILWEISE | → `logger.debug()` (nur DEBUG-Level, nicht WARNING) |
+| 5 | Error-Detail-Leaks | 71 Stellen | ✅ FIXED | Generische Meldungen statt `str(e)` |
+| 6 | Redis bytes-Decode | 10+ Stellen | ✅ FIXED | Explizites `.decode()` |
+| 7 | shared/ Dead Code | Komplettes Paket | ✅ FIXED | Entfernt |
+| 8 | Entity-Ownership | ❌ Keine Koordination | ⚠️ TEILWEISE | Advisory Check Addon→Assistant (asymmetrisch) |
+
+### Was sich NICHT verbessert hat (UNFIXED):
+
+| # | Finding | DL#1-Status | DL#2-Status | Beschreibung |
+|---|---------|------------|------------|-------------|
+| 9 | brain.py God-Object | 9.800 Zeilen | ❌ UNFIXED | Ziel war Mixin-Extraktion, nur 531Z ausgelagert |
+| 10 | main.py God-Object | 7.809 Zeilen | ❌ VERSCHLECHTERT | Gewachsen auf 8.228 Zeilen, 270 Endpoints |
+| 11 | proactive.start() | Nicht in _safe_init() | ❌ UNFIXED | REGRESSION — als gefixt gemeldet, aber nicht im Code |
+| 12 | Addon↔Assistant Sync | Advisory Check | ❌ UNFIXED | Kein bidirektionaler State-Sync |
+| 13 | Event-Bus | ❌ Fehlt | ❌ UNFIXED | Kein Priority-System zwischen Services |
+| 14 | Memory-Stack | 12 Silos | ❌ UNFIXED | Kein kohaerenter Memory-Stack |
+| 15 | config.py Coupling | 74 Importeure | ❌ UNFIXED | Immer noch monolithisch |
 
 ### Neue Risiken durch P6-P8 Fixes:
-- ⚠️ 12+ neue Locks — potenzielle Deadlock-Gefahr bei verschachtelter Akquisition
-- ⚠️ Double-Check-Locking in `function_calling.py` — Python Memory Ordering subtil
-- ⚠️ 136 Stellen `except Exception: pass` → `logger.debug()` — Verhaltensaenderung bei Debug-Level
+
+| # | Risiko | Status | Beschreibung |
+|---|--------|--------|-------------|
+| 16 | Deadlock-Gefahr | ⚠️ NEU | 12+ neue Locks — potenzielle Deadlock bei verschachtelter Akquisition |
+| 17 | Memory Ordering | ⚠️ NEU | Double-Check-Locking in `function_calling.py` |
+| 18 | Debug-Level Masking | ⚠️ NEU | 136x `except: pass` → `logger.debug()` — Fehler nur bei Debug sichtbar |
 
 ---
 
