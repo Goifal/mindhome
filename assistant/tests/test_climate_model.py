@@ -516,3 +516,105 @@ class TestGenerateDescription:
         sim = self._state(target_temp=25.0, heating_active=True)
         desc = self._model()._generate_description(s, sim, {}, 21.0, 1.0, 60, False, None)
         assert "nicht erreicht" in desc
+
+
+# ---------------------------------------------------------------------------
+# Zusaetzliche Tests fuer 100% Coverage
+# ---------------------------------------------------------------------------
+
+@patch("assistant.climate_model.yaml_config", {})
+class TestClimateModelChangesEdgeCases:
+    """Tests fuer bisher ungetestete Aenderungs-Zweige im simulate()."""
+
+    def _model(self):
+        from assistant.climate_model import ClimateModel
+        return ClimateModel()
+
+    def _state(self, **kw):
+        from assistant.climate_model import RoomThermalState
+        defaults = dict(room="Bad", current_temp=20.0, outdoor_temp=5.0, target_temp=21.0)
+        defaults.update(kw)
+        return RoomThermalState(**defaults)
+
+    def test_changes_set_target_out_of_range_warning(self):
+        """set_target ausserhalb 5-35 Grad loggt Warnung (Zeile 150)."""
+        model = self._model()
+        state = self._state()
+        result = model.simulate(state, changes={"set_target": 2, "heating_on": True})
+        assert result["changes_applied"]["set_target"] == 2
+
+    def test_changes_open_windows(self):
+        """open_windows Aenderung (Zeile 154)."""
+        model = self._model()
+        state = self._state(windows_open=0)
+        result = model.simulate(state, changes={"open_windows": 2})
+        assert result is not None
+
+    def test_changes_heating_off(self):
+        """heating_off Aenderung (Zeile 158)."""
+        model = self._model()
+        state = self._state(heating_active=True)
+        result = model.simulate(state, changes={"heating_off": True})
+        assert result is not None
+
+    def test_changes_cooling_off(self):
+        """cooling_off Aenderung (Zeile 162)."""
+        model = self._model()
+        state = self._state(cooling_active=True)
+        result = model.simulate(state, changes={"cooling_off": True})
+        assert result is not None
+
+    def test_changes_cooling_on(self):
+        """cooling_on Aenderung (Zeile 164)."""
+        model = self._model()
+        state = self._state(current_temp=28.0, target_temp=22.0)
+        result = model.simulate(state, changes={"cooling_on": True})
+        assert result["final_temp"] < 28.0
+
+    def test_cooling_reaches_target(self):
+        """Kuehlung erreicht Zieltemperatur (Zeilen 218-219)."""
+        model = self._model()
+        state = self._state(current_temp=25.0, target_temp=22.0,
+                            cooling_active=True, outdoor_temp=20.0)
+        result = model.simulate(state, duration_minutes=120)
+        assert result["reaches_target"] is True
+        assert result["time_to_target_minutes"] is not None
+
+
+@patch("assistant.climate_model.yaml_config", {})
+class TestGenerateDescriptionCoverage:
+    """Zusaetzliche Tests fuer _generate_description — fehlende Zweige."""
+
+    def _model(self):
+        from assistant.climate_model import ClimateModel
+        return ClimateModel()
+
+    def _state(self, **kw):
+        from assistant.climate_model import RoomThermalState
+        defaults = dict(room="Flur", current_temp=20.0, outdoor_temp=5.0)
+        defaults.update(kw)
+        return RoomThermalState(**defaults)
+
+    def test_open_windows_description(self):
+        """'Fenster geoeffnet' in Beschreibung (Zeile 402)."""
+        s = self._state()
+        desc = self._model()._generate_description(s, s, {"open_windows": 1}, 19.0, -1.0, 60, False, None)
+        assert "Fenster" in desc
+
+    def test_heating_off_description(self):
+        """'Heizung ausgeschaltet' in Beschreibung (Zeile 406)."""
+        s = self._state()
+        desc = self._model()._generate_description(s, s, {"heating_off": True}, 19.0, -1.0, 60, False, None)
+        assert "Heizung ausgeschaltet" in desc
+
+    def test_cooling_on_description(self):
+        """'Kuehlung eingeschaltet' in Beschreibung (Zeile 408)."""
+        s = self._state()
+        desc = self._model()._generate_description(s, s, {"cooling_on": True}, 19.0, -1.0, 60, False, None)
+        assert "Kuehlung eingeschaltet" in desc
+
+    def test_cooling_off_description(self):
+        """'Kuehlung ausgeschaltet' in Beschreibung (Zeile 410)."""
+        s = self._state()
+        desc = self._model()._generate_description(s, s, {"cooling_off": True}, 20.0, 0.0, 60, False, None)
+        assert "Kuehlung ausgeschaltet" in desc

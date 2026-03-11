@@ -294,3 +294,68 @@ class TestConfig:
             assert cm.enabled is False
             assert cm.vision_model == "custom_vision"
             assert cm.camera_map == {"vorne": "camera.front"}
+
+
+# =====================================================================
+# Zusaetzliche Tests fuer 100% Coverage
+# =====================================================================
+
+
+class TestGetCameraViewCoverage:
+    """Zusaetzliche Tests fuer get_camera_view — fehlende Zeilen 60, 65."""
+
+    @pytest.mark.asyncio
+    async def test_view_snapshot_fails(self, cm, ha_mock):
+        """Snapshot-Abruf fehlgeschlagen (Zeile 60)."""
+        ha_mock.get_camera_snapshot = AsyncMock(return_value=None)
+        result = await cm.get_camera_view(camera_name="haustuer")
+        assert result["success"] is False
+        assert "Snapshot" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_view_analysis_fails(self, cm, ha_mock, ollama_mock):
+        """Bild-Analyse nicht verfuegbar — description ist None (Zeile 65)."""
+        ha_mock.get_camera_snapshot = AsyncMock(return_value=b"image_data")
+        ollama_mock.chat = AsyncMock(return_value={"error": "Model not loaded"})
+        result = await cm.get_camera_view(camera_name="haustuer")
+        assert result["success"] is True
+        assert "Bild-Analyse nicht verfuegbar" in result["message"]
+        assert result["image_available"] is True
+
+
+class TestDescribeDoorbellCoverage:
+    """Zusaetzliche Tests fuer describe_doorbell — fehlende Zeile 87."""
+
+    @pytest.mark.asyncio
+    async def test_doorbell_disabled(self, cm):
+        """describe_doorbell gibt None zurueck wenn deaktiviert (Zeile 87)."""
+        cm.enabled = False
+        result = await cm.describe_doorbell()
+        assert result is None
+
+
+class TestAnalyzeNightMotionCoverage:
+    """Zusaetzliche Tests fuer analyze_night_motion — fehlende Zeilen 199-205, 212."""
+
+    @pytest.mark.asyncio
+    async def test_night_motion_fallback_outdoor_camera(self, cm, ha_mock, ollama_mock):
+        """Fallback: Erste Outdoor-Kamera wird gesucht (Zeilen 199-205)."""
+        cm.camera_map = {}
+        ha_mock.get_states = AsyncMock(return_value=[
+            {"entity_id": "light.flur", "state": "on", "attributes": {}},
+            {"entity_id": "camera.outdoor_einfahrt", "state": "idle", "attributes": {}},
+        ])
+        ha_mock.get_camera_snapshot = AsyncMock(return_value=b"image_data")
+        ollama_mock.chat = AsyncMock(return_value={
+            "message": {"content": "Person im Garten gesichtet."},
+        })
+        result = await cm.analyze_night_motion("binary_sensor.motion_unbekannt")
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_night_motion_snapshot_fails(self, cm, ha_mock):
+        """Snapshot fehlgeschlagen bei analyze_night_motion (Zeile 212)."""
+        cm.camera_map = {"garten": "camera.garten_cam"}
+        ha_mock.get_camera_snapshot = AsyncMock(return_value=None)
+        result = await cm.analyze_night_motion("binary_sensor.motion_garten")
+        assert result is None
