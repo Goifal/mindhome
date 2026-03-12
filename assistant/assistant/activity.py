@@ -341,13 +341,24 @@ class ActivityEngine:
     def check_silence_trigger(self, text: str) -> Optional[str]:
         """Prueft ob ein Text einen Silence-Modus triggern soll.
 
+        Single-word keywords use word-boundary matching to prevent false
+        positives from STT artifacts (e.g. "ruhe" matching in "wir ruhe dich").
+        Multi-word keywords use substring matching (e.g. "gute nacht").
+
         Returns:
             Aktivitaets-String oder None
         """
         text_lower = text.lower().strip()
         for activity, keywords in self._silence_keywords.items():
-            if any(kw in text_lower for kw in keywords):
-                return activity
+            for kw in keywords:
+                if " " in kw:
+                    # Multi-word: substring match (e.g. "gute nacht", "serie schauen")
+                    if kw in text_lower:
+                        return activity
+                else:
+                    # Single-word: word boundary match to avoid STT false positives
+                    if re.search(rf"\b{re.escape(kw)}\b", text_lower):
+                        return activity
         return None
 
     async def detect_activity(self) -> dict:

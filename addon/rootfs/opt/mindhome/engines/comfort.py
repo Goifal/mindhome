@@ -424,7 +424,11 @@ class VentilationMonitor:
                         needs_ventilation = True
                         reason = f"CO2 {int(co2_ppm)} ppm > {vr.co2_threshold} ppm"
                     elif vr.last_ventilated:
-                        mins_since = (now - vr.last_ventilated).total_seconds() / 60
+                        # SQLite returns naive datetimes — ensure tz-aware comparison
+                        _last_vent = vr.last_ventilated
+                        if _last_vent.tzinfo is None:
+                            _last_vent = _last_vent.replace(tzinfo=timezone.utc)
+                        mins_since = (now - _last_vent).total_seconds() / 60
                         if mins_since > vr.reminder_interval_min:
                             needs_ventilation = True
                             reason = f"Letzte Lueftung vor {int(mins_since)} Min"

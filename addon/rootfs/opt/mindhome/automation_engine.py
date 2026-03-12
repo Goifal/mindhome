@@ -185,6 +185,7 @@ class SuggestionGenerator:
         Patterns matched within the grace period (default 14 days) are not affected.
 
         Uses batch commits (every 50 patterns) to avoid holding long DB locks.
+        Uses no_autoflush to prevent Query-invoked autoflush from hitting DB locks.
         """
         BATCH_SIZE = 50
         session = self.Session()
@@ -192,12 +193,15 @@ class SuggestionGenerator:
             now = datetime.now(timezone.utc)
             grace_cutoff = now - timedelta(days=CONFIDENCE_DECAY_GRACE_DAYS)
 
-            # Find active patterns that haven't matched recently
-            stale_patterns = session.query(LearnedPattern).filter(
-                LearnedPattern.is_active == True,
-                LearnedPattern.status.in_(["observed", "suggested", "active"]),
-                LearnedPattern.confidence > CONFIDENCE_DECAY_MIN,
-            ).all()
+            # no_autoflush prevents SQLite "database is locked" errors when the
+            # query triggers an autoflush of pending changes from other sessions.
+            with session.no_autoflush:
+                # Find active patterns that haven't matched recently
+                stale_patterns = session.query(LearnedPattern).filter(
+                    LearnedPattern.is_active == True,
+                    LearnedPattern.status.in_(["observed", "suggested", "active"]),
+                    LearnedPattern.confidence > CONFIDENCE_DECAY_MIN,
+                ).all()
 
             decayed_count = 0
             dirty_count = 0
@@ -415,7 +419,10 @@ class SuggestionGenerator:
 
         # 6. Last matched info
         if pattern.last_matched_at:
-            days_ago = (datetime.now(timezone.utc) - pattern.last_matched_at).days
+            _last_matched = pattern.last_matched_at
+            if _last_matched.tzinfo is None:
+                _last_matched = _last_matched.replace(tzinfo=timezone.utc)
+            days_ago = (datetime.now(timezone.utc) - _last_matched).days
             if days_ago == 0:
                 parts_de.append("Zuletzt heute beobachtet")
                 parts_en.append("Last observed today")

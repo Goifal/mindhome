@@ -70,7 +70,11 @@ class SleepDetector:
                         # Check for wake-up: motion or light activity
                         if self._detect_wake(session, now):
                             active_session.sleep_end = now
-                            duration_h = (now - active_session.sleep_start).total_seconds() / 3600
+                            # SQLite returns naive datetimes — ensure tz-aware comparison
+                            _sleep_start = active_session.sleep_start
+                            if _sleep_start and _sleep_start.tzinfo is None:
+                                _sleep_start = _sleep_start.replace(tzinfo=timezone.utc)
+                            duration_h = (now - _sleep_start).total_seconds() / 3600
                             active_session.quality_score = self._calc_quality(
                                 session, active_session.sleep_start, now, uid
                             )
