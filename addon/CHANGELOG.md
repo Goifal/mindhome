@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.13 – Jarvis Voice (Build 104)
+
+### Bugfixes
+- **LLM keep_alive Duration-Error behoben**: Numerische Werte wie `-1` (nie entladen) und `0` (sofort entladen) werden jetzt als Integer an Ollama uebergeben statt als String — Go's `time.ParseDuration` akzeptiert keine nackten Zahlen ohne Einheit
+- **MindHome 401 Unauthorized behoben**: Assistant-Calls an das Addon wurden von der Ingress-Middleware blockiert — Addon akzeptiert jetzt X-API-Key Header fuer Service-zu-Service Auth
+- **MindHome-Headers hinzugefuegt**: Assistant sendet `assistant_api_key` bei allen GET/POST Calls an das MindHome Addon
+
+---
+
 ## 1.5.10 – Jarvis Voice (Build 101)
 
 - Fix PhaseManager._commit_with_retry missing attribute

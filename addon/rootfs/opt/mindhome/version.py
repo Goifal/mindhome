@@ -4,12 +4,16 @@ MindHome Version Info
 Alle Dateien importieren von hier - Version nur an EINER Stelle ändern.
 """
 
-VERSION = "1.5.12"
-BUILD = 103
-BUILD_DATE = "2026-03-12"
+VERSION = "1.5.13"
+BUILD = 104
+BUILD_DATE = "2026-03-13"
 CODENAME = "Jarvis Voice"
 
 # Changelog
+# Build 104: v1.5.13 Jarvis Voice — LLM keep_alive Fix + MindHome Auth
+#   - FIX: LLM keep_alive "-1" Duration-Error (numerische Werte als int statt String)
+#   - FIX: MindHome 401 Unauthorized bei Assistant-Calls (X-API-Key Auth in Middleware)
+#   - NEU: Service-zu-Service Authentifizierung (Assistant → Addon via API-Key)
 # Build 102: v1.5.11 Jarvis Voice — Test Coverage Audit
 #   - NEU: Umfassende Test-Suite erweitert (~5.250+ Tests, Coverage 37% → 47%)
 #   - NEU: 5 neue Test-Dateien + 28 erweiterte Test-Dateien
