@@ -248,16 +248,25 @@ class OllamaClient:
         return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
 
     @property
-    def keep_alive(self) -> str:
+    def keep_alive(self) -> str | int:
         """Liest keep_alive aus yaml_config.
 
         Steuert wie lange Ollama ein Modell nach dem letzten Request im VRAM haelt.
         Kuerzere Werte sparen GPU-Strom im Idle (~10W bei RTX 3070).
         Konfigurierbar in settings.yaml unter ollama.keep_alive (z.B. '120s', '5m', '0').
+
+        Rein numerische Werte (-1, 0) werden als int zurueckgegeben,
+        da Ollama diese als Spezialwerte erwartet (-1 = nie entladen,
+        0 = sofort entladen). Go's time.ParseDuration akzeptiert keine
+        nackten Zahlen ohne Einheit — daher int statt String.
         """
         from .config import yaml_config
         ollama_cfg = yaml_config.get("ollama") or {}
-        return str(ollama_cfg.get("keep_alive", self._DEFAULT_KEEP_ALIVE))
+        val = ollama_cfg.get("keep_alive", self._DEFAULT_KEEP_ALIVE)
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return str(val)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Gibt die shared aiohttp Session zurück (thread-safe lazy init)."""

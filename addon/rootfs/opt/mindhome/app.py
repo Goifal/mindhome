@@ -529,9 +529,16 @@ def before_request_middleware():
             # 172.30.32.x = HA Ingress proxy which already authenticated the user.
             _trusted = ip in ("127.0.0.1", "::1") or ip.startswith("172.30.32.")
             if not _trusted:
+                # Prüfe X-Ingress-Token (HA Ingress Proxy)
                 ingress_token = request.headers.get("X-Ingress-Token", "")
-                if not ingress_token:
-                    return jsonify({"error": "Unauthorized"}), 401
+                if ingress_token:
+                    return None
+                # Prüfe X-API-Key (Service-zu-Service, z.B. Assistant)
+                api_key = request.headers.get("X-API-Key", "")
+                expected_key = get_setting("assistant_api_key", "") or os.environ.get("ASSISTANT_API_KEY", "")
+                if api_key and expected_key and api_key == expected_key:
+                    return None
+                return jsonify({"error": "Unauthorized"}), 401
     return None
 
 

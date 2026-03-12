@@ -45,6 +45,10 @@ class HomeAssistantClient:
             "Authorization": f"Bearer {self.ha_token}",
             "Content-Type": "application/json",
         }
+        # MindHome Add-on Auth: API-Key fuer Service-zu-Service Calls
+        self._mindhome_headers: dict[str, str] = {}
+        if settings.assistant_api_key:
+            self._mindhome_headers["X-API-Key"] = settings.assistant_api_key
         # Shared Session (wird lazy initialisiert)
         self._session: Optional[aiohttp.ClientSession] = None
         # F-034: Lock im __init__ erstellen statt lazy (Race Condition bei gleichzeitigem Zugriff)
@@ -303,6 +307,7 @@ class HomeAssistantClient:
                 async with session.post(
                     f"{self.mindhome_url}{path}",
                     json=data,
+                    headers=self._mindhome_headers,
                     timeout=req_timeout,
                 ) as resp:
                     if resp.status == 200:
@@ -681,6 +686,7 @@ class HomeAssistantClient:
             try:
                 async with session.get(
                     f"{self.mindhome_url}{path}",
+                    headers=self._mindhome_headers,
                 ) as resp:
                     if resp.status == 200:
                         mindhome_breaker.record_success()
