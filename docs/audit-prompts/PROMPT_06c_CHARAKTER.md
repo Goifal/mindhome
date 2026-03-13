@@ -126,6 +126,11 @@ Grep: pattern="sarcasm|sarkasm" path="assistant/config/" output_mode="content"
 
 **5b) Für jedes Sarkasmus-Level (1–5) verifizieren:**
 
+> **WICHTIG: Sarkasmus-Level ≠ Eskalations-Stufe (P06d Schritt 4)**
+> - **Sarkasmus-Level (1–5)** = WIE WITZIG Jarvis spricht (Humor-Dimension)
+> - **Eskalations-Stufe (1–4)** = WIE ERNST die Situation ist (Gefahren-Dimension)
+> - Beides sind **unabhängige Dimensionen**. Jarvis kann bei Eskalationsstufe 1 (alles okay) Sarkasmus-Level 3 nutzen, aber bei Eskalationsstufe 4 (Notfall) ist Sarkasmus IMMER 0.
+
 | Level | Erwartetes Verhalten | Prüfen |
 |---|---|---|
 | 1 | Höflich, kein Sarkasmus | Gibt es einen Code-Pfad der Level 1 erzeugt? |
@@ -139,6 +144,7 @@ Grep: pattern="sarcasm|sarkasm" path="assistant/config/" output_mode="content"
 - Falls Level-System nicht existiert → In `personality.py` als einfaches Template-System einbauen
 - Falls Eskalation (z.B. "dumme Frage" → höheres Level) nicht funktioniert → Trigger fixen
 - **Test**: Gleiche Frage bei Level 1 und Level 5 muss unterschiedliche Antworten erzeugen
+- **Integration mit Eskalation**: Bei Eskalationsstufe ≥3 (P06d) muss Sarkasmus automatisch auf 0 gesetzt werden
 
 ### Schritt 6: Mood-Detection → Persönlichkeit integrieren
 

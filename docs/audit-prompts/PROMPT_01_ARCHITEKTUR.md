@@ -124,6 +124,8 @@ Die Module — sowohl innerhalb des Assistants als auch **zwischen Assistant und
 
 Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
 
+> **WICHTIG**: Prüfe ZUERST mit `Glob: pattern="**/{dateiname}"` ob die Datei existiert. Manche Dokumentationen können in einem früheren Durchlauf umbenannt oder entfernt worden sein. Falls eine Datei nicht existiert → überspringe sie und dokumentiere "Datei nicht vorhanden" im Output.
+
 1. `docs/PROJECT_MINDHOME_ASSISTANT.md` — Architektur & Modul-Abhängigkeiten
 2. `docs/JARVIS_AUDIT.md` — Modul-Audit
 3. `JARVIS_AUDIT_REPORT.md` (im Root-Verzeichnis) — Audit-Ergebnisse

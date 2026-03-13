@@ -125,6 +125,23 @@ Wenn ein Prompt sagt "Implementiere den Fix":
 - **Nutze Edit**: Ändere die Datei direkt mit dem Edit-Tool
 - **Nicht**: Zeige nur einen Diff oder Code-Vorschlag
 
+## Bug-Typ → Fix-Prompt Zuordnung
+
+Wenn ein Bug in P04a-P04c gefunden wird, muss er dem richtigen Fix-Prompt zugeordnet werden:
+
+| Bug-Typ | Fix-Prompt | Beispiele |
+|---|---|---|
+| **Memory** (Fakten vergessen, Kontext fehlt, Priorität) | **P06a** | limit=3, intent_type=="memory", Priority 3 |
+| **Architektur** (God-Object, Dopplungen, Flows) | **P06b** | brain.py Refactoring, Service-Koordination |
+| **Persönlichkeit** (Floskeln, Humor, MCU-Bruch) | **P06c** | "Natürlich!", Sarkasmus-Level falsch, Dead Code |
+| **Security** (Injection, Auth, Race Conditions) | **P06d** | User-Input unescaped, fehlende Locks, kein Timeout |
+| **Tool-Calling** (Gerät reagiert nicht, falsche Entity) | **P06e** | Tool-Call fehlgeschlagen, entity_id falsch, kein Fallback |
+| **TTS/Sprache** ("speak" in Ausgabe, Meta-Leakage) | **P06f** | "speak:", Markdown in TTS, Funktionsnamen hörbar |
+| **Fehlende awaits** | **P06a** (🔴) oder **P06b** (🟠) | Je nach Schweregrad |
+| **Stille Fehler** (except: pass) | **P06a** (🔴) oder **P06d** | Je nach Sicherheitsrelevanz |
+
+> **Regel**: 🔴 Bugs → P06a (Stabilisierung zuerst). 🟠 Bugs → P06b-P06d (je nach Typ). 🟡 Bugs → P06c (Charakter/Cleanup). Wenn unklar → P06a.
+
 ## Was jeder Prompt abdeckt
 
 | Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P6a | P6b | P6c | P6d | P6e | P6f | P7a | P7b |

@@ -148,11 +148,19 @@ Führe diese Suchen **vor** dem Batch-Reading durch:
 
 ```
 # Fehlerklasse 1: Fehlende awaits finden
-# ACHTUNG: [^await ] ist eine Character Class, NICHT "not preceded by await"!
-# Nutze stattdessen Negative Lookbehind:
+# ACHTUNG: Negative Lookbehind kann je nach Grep-Engine fehlschlagen!
+# STRATEGIE: Zwei Suchen kombinieren — erst alle Aufrufe finden, dann mit await filtern.
+#
+# Schritt A: Alle async-relevanten Aufrufe finden:
+Grep: pattern="self\.(memory|semantic_memory|ha_client)\.\w+\(" path="assistant/assistant/" output_mode="content"
+#
+# Schritt B: Alle korrekt ge-awaiteten Aufrufe finden:
+Grep: pattern="await self\.(memory|semantic_memory|ha_client)\.\w+\(" path="assistant/assistant/" output_mode="content"
+#
+# Schritt C: Vergleiche A und B — jede Zeile in A die NICHT in B ist = fehlender await
+# Falls Negative Lookbehind funktioniert, geht es auch direkt:
 Grep: pattern="(?<!await )self\.(memory|semantic_memory|ha_client)\." path="assistant/assistant/" output_mode="content"
-# Alternativ: Alle self.X.Y()-Aufrufe finden und manuell prüfen welche await brauchen:
-Grep: pattern="^\s+self\.\w+\.\w+\(" path="assistant/assistant/" output_mode="content"
+# Wenn diese Suche einen Fehler wirft → nutze Schritt A+B+C oben
 
 # Fehlerklasse 2: Stille Fehler
 Grep: pattern="except.*:[\s]*pass|except.*:[\s]*$|except Exception" path="assistant/assistant/" output_mode="content"
