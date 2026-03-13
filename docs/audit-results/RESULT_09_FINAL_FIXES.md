@@ -4,6 +4,8 @@
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Alle verbleibenden Bugs aus DL#2 (P4a + P4b + P4c + P08)
 
+> **DL#3 (2026-03-13)**: Historisches Fix-Log aus DL#2. P02 Memory-Reparatur aendert diese Fixes nicht. Alle dokumentierten Fixes bleiben gueltig.
+
 ## 1. Zusammenfassung
 
 | Kategorie | Inventar (Phase 0) | Gefixt (P09) | Bereits gefixt (P06-P08) | Won't Fix | Begruendung |
