@@ -226,6 +226,161 @@ Module oder Funktionen die laut Prompt 4 (Dead-Code-Liste) nie aufgerufen werden
 - Gesamt eingesparte Zeilen: ~N
 ```
 
+### Schritt 9: Proaktivitäts-Engine — Jarvis warnt BEVOR man fragt
+
+> **MCU-Referenz**: Jarvis erkennt Probleme und meldet sie AKTIV — "Sir, ich registriere einen Druckabfall im linken Triebwerk." Tony hat nicht gefragt. Jarvis hat es selbst erkannt.
+
+**9a) Bestehende Proaktivität prüfen:**
+```
+Grep: pattern="proactive|proaktiv|warning_check|check_warnings" path="assistant/assistant/" output_mode="content"
+Read: assistant/assistant/proactive.py (falls vorhanden)
+```
+
+**9b) Proaktive Trigger-Tabelle definieren:**
+
+Diese Tabelle muss in `assistant/config/proactive_rules.yaml` oder direkt in `proactive.py` existieren:
+
+| Szenario | Trigger-Bedingung | Jarvis sagt | Wiederholung | Eskalation |
+|---|---|---|---|---|
+| Fenster offen + Regen | `window.state=open AND weather=rain` | "Sir, Fenster offen bei Regen." | Nach 3 Min, dann alle 10 Min | Stufe 3 nach 15 Min → autonom schließen |
+| Tür offen + Nacht | `door.state=open AND hour>22` | "Haustür steht offen, Sir." | Sofort + nach 5 Min | Stufe 3 nach 10 Min |
+| Temperatur zu hoch | `indoor_temp > 28` | "28 Grad drinnen, Sir. Klimaanlage?" | Nach 15 Min | Stufe 2 nach 30 Min |
+| Gerät nicht erreichbar | `device.state=unavailable` | "Ich erreiche {device} nicht mehr." | Sofort (einmalig) | Stufe 2 wenn kritisches Gerät |
+| Heizung + Fenster offen | `heating=on AND window=open` | "Heizung läuft bei offenem Fenster, Sir." | Sofort + nach 5 Min | Stufe 2 nach 10 Min |
+| Rauchmelder offline | `smoke_detector.state=unavailable` | "Rauchmelder {name} meldet sich nicht. Das ist ernst." | Sofort | Stufe 4 (IMMER melden) |
+| Unbekannte Bewegung nachts | `motion=detected AND nobody_home AND hour>23` | "Bewegung erkannt bei leerer Wohnung." | Sofort | Stufe 3 sofort |
+| Energieverbrauch anomal | `power > 2x average` | "Ungewöhnlich hoher Stromverbrauch, Sir." | Nach 30 Min | Stufe 1 (nur Info) |
+
+**9c) Implementierungs-Check:**
+```
+Grep: pattern="async.*check_proactive|proactive.*loop|warning.*loop" path="assistant/assistant/" output_mode="content"
+```
+
+Falls NICHT vorhanden, muss implementiert werden:
+```python
+# In brain.py oder proactive.py:
+async def _proactive_monitor_loop(self):
+    """Läuft alle 30s, prüft Trigger, gibt nur NEUE Warnungen aus."""
+    while self._running:
+        for rule in self._proactive_rules:
+            if await self._check_trigger(rule) and not self._already_warned(rule):
+                message = await self._format_proactive_warning(rule)
+                await self.speaker_manager.speak_response(message)
+                self._mark_warned(rule)
+        await asyncio.sleep(30)
+```
+
+**9d) Ton der proaktiven Warnungen:**
+- MUSS durch `personality.py` formatiert werden (gleicher Jarvis-Ton)
+- Kurz, faktisch, keine Floskeln
+- "Sir, [Fakt]. [Vorschlag?]" — NICHT "Achtung! Es könnte ein Problem geben!"
+
+### Schritt 10: Opinion-System — Jarvis hat Standpunkte
+
+> **MCU-Referenz**: "Darf ich anmerken, Sir, dass Sie seit 72 Stunden nicht geschlafen haben?" — Jarvis gibt ungefragt seine Meinung ab wenn es relevant ist.
+
+**10a) opinion_rules.yaml prüfen:**
+```
+Read: assistant/config/opinion_rules.yaml
+Grep: pattern="opinion|standpunkt|meinung|anmerken" path="assistant/assistant/" output_mode="content"
+```
+
+**10b) Falls leer oder nicht genutzt — Jarvis-Standpunkte definieren:**
+
+```yaml
+# opinion_rules.yaml — Jarvis' Werte und Standpunkte
+opinions:
+  energy_efficiency:
+    trigger_keywords: ["heiz auf 26", "alle lichter an", "heizung voll"]
+    response_hint: "Hinweis auf Energieverbrauch. Trocken, nicht belehrend."
+    example: "26 Grad, Sir? Das ist... ambitioniert für die Jahreszeit."
+
+  security_first:
+    trigger_keywords: ["tür offen lassen", "alarm aus", "kamera deaktivieren"]
+    response_hint: "Sicherheitsbedenken äußern. Bestimmt aber nicht blockierend."
+    example: "Ich würde davon abraten, Sir. Aber es ist Ihr Haus."
+
+  user_wellbeing:
+    trigger_keywords: ["schlecht geschlafen", "müde", "gestresst"]
+    response_hint: "Subtiler Hinweis, nicht Therapeut spielen."
+    example: "Soll ich die Beleuchtung etwas angenehmer gestalten?"
+
+  unnecessary_actions:
+    trigger_keywords: ["licht an", "heizung an"]
+    trigger_condition: "already_on"  # Gerät ist schon an
+    response_hint: "Trocken darauf hinweisen."
+    example: "Das Licht ist bereits an, Sir. Soll es heller?"
+
+  bad_timing:
+    trigger_keywords: ["party", "musik laut", "alle lichter"]
+    trigger_condition: "late_night"  # Nach 22 Uhr
+    response_hint: "Dezent auf Uhrzeit hinweisen."
+    example: "Es ist 23 Uhr, Sir. Die Nachbarn wären vermutlich dankbar für Zurückhaltung."
+```
+
+**10c) Integration in brain.py:**
+```python
+# In _build_context() oder vor dem LLM-Call:
+opinion_hint = await self._check_opinions(user_message, context)
+if opinion_hint:
+    system_prompt += f"\nDEIN STANDPUNKT: {opinion_hint}"
+```
+
+**10d) Wichtig:** Jarvis' Meinung ist KEIN Veto. Er äußert sie, führt dann trotzdem aus.
+- "26 Grad, Sir? Ambitioniert. Wird eingestellt." — Meinung + Ausführung in einer Antwort.
+
+### Schritt 11: Situationsbewusstsein — Raum-Kontext praktisch nutzen
+
+> **MCU-Referenz**: Jarvis weiß IMMER wo Tony ist und was um ihn herum passiert. "Die Temperatur in der Werkstatt beträgt 14 Grad, Sir. Soll ich die Heizung aktivieren?"
+
+**11a) Wie wird der aktuelle Raum bestimmt?**
+```
+Grep: pattern="current_room|active_room|request_context|speaker_source|media_player.*source" path="assistant/assistant/" output_mode="content"
+```
+
+**11b) Raum-Detection muss folgende Quellen nutzen (Priorität):**
+
+| Priorität | Quelle | Wie | Beispiel |
+|---|---|---|---|
+| 1 | **Explizit im Befehl** | User sagt "im Schlafzimmer" | "Licht im Schlafzimmer an" |
+| 2 | **Sprach-Input-Quelle** | Welcher Lautsprecher/Mikrofon hat den Befehl empfangen? | media_player.wohnzimmer → Wohnzimmer |
+| 3 | **Letzter Bewegungsmelder** | Welcher Raum hat zuletzt Bewegung erkannt? | motion.flur → Flur |
+| 4 | **Default aus Config** | `settings.yaml → default_room` | Wohnzimmer |
+
+**11c) In context_builder.py oder brain.py implementieren:**
+```python
+async def _resolve_room_context(self, user_message: str, source_device: str) -> str:
+    """Bestimmt in welchem Raum der User ist."""
+    # Prio 1: Explizit im Befehl
+    room = self._extract_room_from_message(user_message)
+    if room:
+        return room
+
+    # Prio 2: Sprach-Input-Quelle
+    if source_device:
+        room = self._device_to_room(source_device)
+        if room:
+            return room
+
+    # Prio 3: Letzter Bewegungsmelder
+    room = await self._get_last_motion_room()
+    if room:
+        return room
+
+    # Prio 4: Default
+    return self.config.get("default_room", "Wohnzimmer")
+```
+
+**11d) Raum-Kontext im System-Prompt nutzen:**
+```
+Dein Kontext: User spricht aus "{room}".
+- "Licht an" ohne Raum → {room}
+- "hier" → {room}
+- "zu kalt" → Temperatur in {room}
+```
+
+**11e) Verifizieren:** Der Raum-Kontext muss in `_deterministic_tool_call()` (P06e) und im System-Prompt verwendet werden.
+
 ---
 
 ## Output-Format

@@ -231,6 +231,145 @@ async def acquire_device_lock(entity_id: str, source: str) -> bool:
 2. Entscheiden: Wer ist zuständig? (Entscheidungsbaum oben)
 3. **Edit** — Koordination implementieren (API-Call, Event, Lock, oder Elimination)
 
+### Schritt 4: Eskalations-Protokoll — Der Ton wird ernster wenn es ernst wird
+
+> **MCU-Referenz**: Jarvis' Stimme ändert sich bei Gefahr — von trocken-locker ("Alles nominal, Sir") zu kurz und dringend ("Sir, sofort raus!"). Das ist kein Zufall, sondern System.
+
+**4-Stufen-Eskalationsmodell:**
+
+| Stufe | Name | Ton | Antwort-Stil | Beispiel | Autonomie |
+|---|---|---|---|---|---|
+| **1. INFO** | Normal | Trocken, beiläufig | "Sir, [Fakt]." | "Fenster offen im Bad." | Nur melden |
+| **2. WARNUNG** | Ernst | Direkter, kürzer | "Sir, [Fakt]. [Bewertung]." | "Fenster offen bei Regen. Das sollte nicht so bleiben." | Melden + Lösung anbieten |
+| **3. DRINGEND** | Dringlich | Kurz, bestimmt | "[Fakt]. [Aktion]." | "Wasserschaden-Risiko. Ich schließe die Fenster." | Handeln + informieren |
+| **4. NOTFALL** | Alarm | Minimal, sofort | "[Aktion]. [Fakt]." | "Rauchmelder! Feuerlöscher aktiviert." | Sofort autonom handeln |
+
+**Stufen-Trigger:**
+```python
+def _determine_escalation_stage(self, warning_type: str, time_active: float, ignore_count: int) -> int:
+    """Bestimmt Eskalationsstufe basierend auf Zeit und Ignorierung."""
+    if warning_type in ("smoke", "co", "water_leak", "intruder"):
+        return 4  # Notfall — IMMER sofort Stufe 4
+    if ignore_count >= 3 or time_active > 600:
+        return 3  # Dringend — 3x ignoriert oder 10+ Min
+    if ignore_count >= 1 or time_active > 180:
+        return 2  # Warnung — 1x ignoriert oder 3+ Min
+    return 1  # Info — erste Meldung
+```
+
+**Stufen-spezifische Formatierung im System-Prompt:**
+```python
+ESCALATION_PROMPTS = {
+    1: "Antworte normal, beiläufig, trocken.",
+    2: "Antworte ernster. Kürzer. Bewertung hinzufügen.",
+    3: "Antworte dringlich. Maximal 1 Satz. Handlung ankündigen.",
+    4: "NOTFALL. Handlung zuerst, Erklärung danach. Kein Humor.",
+}
+```
+
+**Implementierungs-Check:**
+```
+Grep: pattern="escalat|eskalat|warning_stage|alert_level" path="assistant/assistant/" output_mode="content"
+```
+Falls nicht vorhanden → in `brain.py` oder `proactive.py` implementieren.
+
+### Schritt 5: Autonomie-Whitelist — Was Jarvis DARF und was NICHT
+
+> **MCU-Referenz**: Jarvis aktiviert selbstständig Feuerlöscher, ruft Hilfe, sperrt Türen — aber fragt bei strategischen Entscheidungen ("Soll ich Miss Potts informieren, Sir?").
+
+**Autonomie-Regeln nach Aktion:**
+
+| Kategorie | Aktion | Autonom? | Bestätigung nötig? | Trust-Level |
+|---|---|---|---|---|
+| **Licht** | An/Aus/Dimmen | ✅ Ja | Nein | Niedrig |
+| **Rollladen** | Auf/Zu/Position | ✅ Ja | Nein | Niedrig |
+| **Klima** | Temperatur ändern | ❌ Nein | Ja, außer Notfall | Mittel |
+| **Türschloss** | Öffnen | ❌ Nein (IMMER) | Ja + PIN | Hoch |
+| **Türschloss** | Schließen | ✅ Ja (Sicherheit) | Nein | Mittel |
+| **Alarm** | Auslösen | ✅ Ja (Notfall) | Nein | Kritisch |
+| **Alarm** | Deaktivieren | ❌ Nein | Ja + PIN | Hoch |
+| **Szenen** | "Gute Nacht" etc. | ✅ Ja (bekannte) | Nein | Niedrig |
+| **Automation** | Erstellen/Ändern | ❌ Nein (IMMER) | Ja | Hoch |
+| **HA Neustart** | System-Restart | ❌ Nein (IMMER) | Ja + Recovery-Key | Kritisch |
+| **Kamera** | Stream starten | ✅ Ja | Nein | Niedrig |
+| **Workshop-Geräte** | Roboter-Arm/3D-Druck | ❌ Nein | Ja + Trust-Level 3 | Kritisch |
+
+**Notfall-Overrides** (Stufe 4 Eskalation — Jarvis handelt OHNE Bestätigung):
+
+| Notfall | Autonome Aktion | Begründung |
+|---|---|---|
+| Rauchmelder | Alarm + Fenster ZU + Belüftung AUS | Brandschutz |
+| CO-Melder | Alarm + Fenster AUF + Belüftung AN | CO-Abzug |
+| Wassersensor | Alarm + Ventil ZU (falls vorhanden) | Wasserschaden |
+| Einbruch (Kamera+Motion nachts) | Alarm + Türen ZU + Lichter AN | Abschreckung |
+
+**Implementierungs-Check:**
+```
+Grep: pattern="autonomy|AUTONOMY|can_act|requires_confirmation|trust_level" path="assistant/assistant/" output_mode="content"
+Read: assistant/assistant/autonomy.py (falls vorhanden)
+Read: assistant/assistant/self_automation.py (falls vorhanden)
+```
+
+Falls Autonomie-Regeln nur als Konzept existieren → in Code umsetzen:
+```python
+AUTONOMY_RULES = {
+    "light": {"autonomous": True, "trust_level": 0},
+    "cover": {"autonomous": True, "trust_level": 0},
+    "climate": {"autonomous": False, "trust_level": 1},
+    "lock.open": {"autonomous": False, "trust_level": 2, "requires_pin": True},
+    "lock.close": {"autonomous": True, "trust_level": 1},
+    "alarm.trigger": {"autonomous": True, "trust_level": 0},  # Notfall
+    "alarm.disarm": {"autonomous": False, "trust_level": 2, "requires_pin": True},
+    "automation.create": {"autonomous": False, "trust_level": 2},
+}
+```
+
+### Schritt 6: "Trotzdem"-Logik — Wenn User Jarvis' Bedenken ignoriert
+
+> **MCU-Referenz**: Tony: "Deaktiviere die Sicherheitsprotokolle." Jarvis: "Ich würde davon abraten, Sir." Tony: "Trotzdem." Jarvis: "Verstanden. Aber ich werde intensiver überwachen."
+
+**Das Problem:** Jarvis äußert Bedenken (Opinion-System aus P06c), User ignoriert sie. Was dann?
+
+**Regeln:**
+
+| User sagt | Jarvis tut | Jarvis merkt sich |
+|---|---|---|
+| Ignoriert Warnung (wiederholt Befehl) | Führt aus + "Verstanden, Sir." | `ignored_warning` in Memory |
+| "Trotzdem" / "Mach einfach" | Führt aus + "Wie gewünscht." | `override_count` +1 |
+| Deaktiviert Sicherheit | Führt aus (wenn Trust-Level reicht) + intensiveres Monitoring | `security_override` + Monitoring-Interval halbiert |
+
+**Implementierung:**
+```python
+async def _handle_override(self, action: str, warning_type: str) -> str:
+    """User ignoriert Jarvis-Bedenken. Ausführen aber dokumentieren."""
+    # Befehl trotzdem ausführen
+    await self._execute_action(action)
+
+    # Warnung in Memory speichern
+    await self.memory.add(f"jarvis:override:{warning_type}", {
+        "action": action,
+        "timestamp": time.time(),
+        "count": self._override_counts.get(warning_type, 0) + 1
+    })
+
+    # Intensiveres Monitoring wenn Sicherheit betroffen
+    if warning_type in ("security", "fire", "health"):
+        self._monitoring_interval = max(10, self._monitoring_interval // 2)
+
+    # Antwort (Jarvis-Ton: respektvoll aber nicht glücklich)
+    count = self._override_counts.get(warning_type, 1)
+    if count == 1:
+        return "Verstanden, Sir."
+    elif count == 2:
+        return "Wie gewünscht. Ich behalte es im Auge."
+    else:
+        return "Wird umgesetzt. Meine Bedenken bleiben bestehen."
+```
+
+**Eskalation bei wiederholtem Ignorieren:**
+- 3x ignoriert + Situation verschlechtert sich → Stufe 3 Eskalation (nicht mehr fragen, handeln)
+- Beispiel: Fenster 3x offen gelassen bei Regen + 15 Min vergangen → Jarvis schließt autonom
+
 ## Addon-Systematische Analyse
 
 Pruefe ALLE Addon-Module auf:
@@ -351,8 +490,12 @@ Wenn ein Bug NICHT gefixt werden kann, dokumentiere ihn im OFFEN-Block mit:
 
 - □ Alle 5 Security-Checks bestanden
 - □ Resilience-Szenarien getestet
-- □ Circuit-Breaker vorhanden
-- □ Addon-Koordination geprueft
+- □ Circuit-Breaker in mindestens 5 Modulen integriert (nicht nur existierend)
+- □ Addon-Koordination: Jede Dopplung hat klare Zuständigkeit (kein "?" mehr)
+- □ Eskalations-Protokoll: 4 Stufen implementiert und getestet
+- □ Autonomie-Whitelist: Jede Aktion hat klaren Trust-Level
+- □ Notfall-Overrides: Rauch/CO/Wasser/Einbruch → autonom OHNE Bestätigung
+- □ "Trotzdem"-Logik: Ignorierte Warnungen werden gespeichert und eskaliert
 - □ Tests bestehen nach allen Aenderungen
 
 ### Erfolgs-Check (Schnellpruefung)

@@ -95,6 +95,57 @@ Prüfe: Sind interne Begriffe in der Banned-Liste?
 
 ## FIXES (in dieser Reihenfolge)
 
+### FIX 0: Floskeln-Filter mit Jarvis-Fallback-Antworten
+
+> **MCU-Referenz**: Jarvis sagt NIE "Natürlich!", "Gerne!", "Kann ich noch etwas tun?". Er sagt "Erledigt.", "Wie gewünscht.", "Wird gemacht." — kurz, trocken, effizient.
+
+**Das Problem:** `_filter_response()` entfernt Floskeln, aber was wenn die Antwort DANACH leer oder zu kurz ist? Es braucht Jarvis-authentische Fallback-Antworten.
+
+**Datei:** `assistant/assistant/brain.py`
+**Position:** IN `_filter_response_inner()`, NACH dem Banned-Phrases-Filter
+
+**Read** brain.py um `banned_phrases` / `BANNED` zu finden
+**Grep** `"banned_phrases\|BANNED\|_banned"` in brain.py
+
+**Edit** — NACH dem Banned-Phrases-Filter einfügen:
+
+```python
+# Fallback wenn Text nach Floskeln-Filter zu kurz ist
+if not text or len(text.strip()) < 5:
+    # Intent-basierte Jarvis-Fallbacks (KEINE Floskeln!)
+    _jarvis_fallbacks = {
+        "device_control": [
+            "Erledigt.", "Wie gewünscht.", "Wird gemacht.",
+            "Umgesetzt.", "Erledigt, Sir.",
+        ],
+        "query": [
+            "Keine weiteren Daten verfügbar.",
+            "Das übersteigt meine aktuelle Sensorik.",
+        ],
+        "greeting": [
+            "Sir.", "Guten Morgen, Sir.", "Willkommen zurück.",
+        ],
+        "confirmation": [
+            "Verstanden.", "Notiert.", "Wird berücksichtigt.",
+        ],
+        "unknown": [
+            "Sir?", "Ich bin hier.", "Systeme bereit.",
+        ],
+    }
+    import random
+    intent = _detect_intent(original_text) if original_text else "unknown"
+    fallbacks = _jarvis_fallbacks.get(intent, _jarvis_fallbacks["unknown"])
+    text = random.choice(fallbacks)
+    logger.info("Floskeln-Fallback aktiviert: intent=%s → '%s'", intent, text)
+```
+
+**Verifizieren:**
+```
+Grep: "jarvis_fallbacks\|Floskeln-Fallback" in brain.py → mindestens 1 Treffer
+```
+
+**Warum FIX 0 (vor allen anderen):** Die Floskeln-Filterung ist die Grundlage. Wenn danach leerer Text rauskommt und kein Fallback existiert, sagt Jarvis NICHTS — oder schlimmer, spricht den leeren String als TTS. FIX 0 stellt sicher dass IMMER eine Jarvis-authentische Antwort rauskommt.
+
 ### FIX 1: Meta-Leakage-Filter in _filter_response_inner()
 
 **Datei:** `assistant/assistant/brain.py`
