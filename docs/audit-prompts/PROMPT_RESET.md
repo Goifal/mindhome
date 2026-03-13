@@ -50,37 +50,62 @@ Falls ein vorheriger Durchlauf existiert, fasse ihn kompakt zusammen:
 ```
 ## ZUSAMMENFASSUNG DURCHLAUF #X
 
-### Architektur (P01)
+### Analyse-Phase
+#### Architektur (P01)
 - Kritischste Konflikte: [Top 3 mit Status]
-- Core-Flows: [Welche funktionieren, welche nicht]
 
-### Memory (P02)
+#### Memory (P02)
 - Fakten-Abruf: [Funktioniert / Nicht]
-- Conversation-History: [limit=3 gefixt? → limit=10?]
-- Memory-Prioritaet: [3 → 1 gefixt?]
+- Memory-Prioritaet: [Gefixt? Status]
 
-### Geraetesteuerung (P03)
+#### Flows (P03a + P03b)
+- Core-Flows 1–7: [Welche funktionieren, welche nicht]
+- Extended-Flows 8–13: [Kollisionen gefunden?]
+
+#### Bug-Jagd (P04a + P04b + P04c)
+- Gesamt: X Bugs (KRITISCH: X, HOCH: X, MITTEL: X, NIEDRIG: X)
+- Security-Findings: [Top 3]
+- Performance: [Latenz-Budget eingehalten?]
+
+#### Persoenlichkeit (P05)
+- MCU-Score: X/10
+- System-Prompt: [Token-Anzahl]
+- Config-Inkonsistenzen: [Anzahl]
+
+### Fix-Phase
+#### Stabilisierung (P06a)
+- Kritische Bugs gefixt: X von Y
+- Memory repariert: [Ja/Nein]
+
+#### Architektur (P06b)
+- Konflikte aufgeloest: X von Y
+- Flows repariert: [Welche]
+
+#### Charakter (P06c)
+- Persoenlichkeit harmonisiert: [Ja/Nein]
+- Dead Code entfernt: [Anzahl Dateien]
+
+#### Haertung (P06d)
+- Security-Luecken geschlossen: X von Y
+- Resilience implementiert: [Welche Szenarien]
+
+#### Geraetesteuerung (P06e)
 - Tool-Calling: [Zuverlaessig / Unzuverlaessig]
 - Deterministic Fallback: [Erweitert / Nicht]
 - System-Prompt Tool-Pflicht: [Prominent / Begraben]
 
-### TTS & Response (P04)
+#### TTS & Response (P06f)
 - Meta-Leakage: ["speak" in TTS? Gefixt?]
 - Pre-TTS-Filter: [Implementiert / Nicht]
-- Banned Phrases: [Erweitert / Nicht]
 
-### Bug-Fixes (P05)
-- Gesamt: X Bugs (KRITISCH: X, HOCH: X, MITTEL: X)
-- Gefixt: X
-- Offen: X
+### Verifikation
+#### Testing (P07a)
+- Tests bestanden: X von Y
+- OFFEN-Bug-Validierung: X bestaetigt, Y gefixt, Z false-positive
 
-### Persoenlichkeit (P06)
-- System-Prompt: [Token-Anzahl, MCU-Score X/10]
-- Floskeln gefiltert: [Ja/Nein]
-
-### Sicherheit (P07)
-- Security-Fixes: X von 5
-- Resilience: [Welche Szenarien abgedeckt]
+#### Deployment (P07b)
+- Docker Build: [Erfolgreich / Fehlgeschlagen]
+- Performance: [Latenz gemessen?]
 ```
 
 ## SCHRITT 2: Unfixte Bugs als Checkliste
@@ -192,8 +217,8 @@ Alle Kontext-Bloecke verworfen: Ja
 | 06b | PROMPT_06b_ARCHITEKTUR.md | Fix: Architektur-Konflikte |
 | 06c | PROMPT_06c_CHARAKTER.md | Fix: Persoenlichkeit + Anti-Floskel |
 | 06d | PROMPT_06d_HAERTUNG.md | Fix: Security + Resilience + Addon |
-| 06e | PROMPT_06e_GERAETESTEUERUNG.md | **NEU** Fix: Tool-Calling + System-Prompt |
-| 06f | PROMPT_06f_TTS_RESPONSE.md | **NEU** Fix: speak-Filter + Meta-Leakage |
+| 06e | PROMPT_06e_GERAETESTEUERUNG.md | Fix: Tool-Calling + System-Prompt |
+| 06f | PROMPT_06f_TTS_RESPONSE.md | Fix: speak-Filter + Meta-Leakage |
 | 07a | PROMPT_07a_TESTING.md | Testing + Coverage |
 | 07b | PROMPT_07b_DEPLOYMENT.md | Docker + Deployment |
 | RESET | PROMPT_RESET.md | Naechster Durchlauf vorbereiten |

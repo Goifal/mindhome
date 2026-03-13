@@ -344,7 +344,9 @@ Am Ende dieses Prompts erstelle folgenden Block:
 ```
 === KONTEXT FUER NAECHSTEN PROMPT ===
 GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
-OFFEN: [Liste der nicht gefixten Issues mit Grund]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
 GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
 REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
 NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
