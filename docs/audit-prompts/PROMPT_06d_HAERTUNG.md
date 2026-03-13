@@ -4,6 +4,15 @@
 
 Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte mit Fokus auf Security und Resilience. In 6a–6c hast du stabilisiert, die Architektur aufgeräumt und den Charakter harmonisiert. Jetzt härtest du das System.
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## Kontext aus vorherigen Prompts
@@ -123,6 +132,24 @@ Grep: pattern="error_patterns|ErrorPattern" path="assistant/assistant/" output_m
 2. Entscheiden: Wer ist zuständig?
 3. **Edit** — Koordination implementieren (API-Call, Event, oder Elimination)
 
+## Addon-Systematische Analyse
+
+Pruefe ALLE Addon-Module auf:
+- Thread-Safety (Flask ist multi-threaded)
+- Authentifizierung (API-Keys, Trust-Levels)
+- Race Conditions bei gleichzeitigen Requests
+
+Dateien: `addon/rootfs/opt/mindhome/routes/*.py`, `addon/rootfs/opt/mindhome/engines/*.py`
+
+## Dependency-Audit
+
+```bash
+pip-audit -r assistant/requirements.txt
+pip-audit -r addon/requirements.txt
+```
+
+Pruefe auf bekannte CVEs. Dokumentiere alle Findings.
+
 ---
 
 ## Output-Format
@@ -167,6 +194,15 @@ Für jeden Fix:
 
 ---
 
+## Rollback-Regel
+
+Vor dem ersten Edit: Merke dir den aktuellen Stand.
+Wenn ein Fix einen ImportError oder SyntaxError verursacht:
+1. SOFORT revert (Edit zuruecknehmen)
+2. Im OFFEN-Block dokumentieren: "Fix X verursacht Regression Y"
+3. Zum naechsten Fix weitergehen
+NIEMALS einen kaputten Fix stehen lassen.
+
 ## Regeln
 
 ### Gründlichkeits-Pflicht
@@ -200,6 +236,12 @@ Für jeden Fix:
 
 ---
 
+## Erfolgs-Kriterien
+
+- □ Alle 5 Security-Checks bestanden
+- □ Resilience-Szenarien getestet
+- □ Circuit-Breaker vorhanden
+
 ## ⚡ Übergabe an Prompt 7a
 
 ```
@@ -222,3 +264,17 @@ Für jeden Fix:
 ```
 
 **Wenn du Prompt 7a in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–6d) automatisch ein.
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

@@ -24,6 +24,42 @@ Du bist ein KI-Ingenieur spezialisiert auf Prompt Engineering, Conversational AI
 - Weiß wann Humor angebracht ist und wann nicht
 - Loyal, diskret, kompetent — nie aufdringlich oder nervig
 
+## Praxis-Testszenarien
+
+Diese Dialoge MUESSEN nach den Fixes funktionieren:
+
+```
+TEST 1: Einfacher Befehl
+  User: "Mach Licht an"
+  FALSCH: "Natuerlich! Ich schalte jetzt das Licht fuer dich ein. Kann ich sonst noch etwas tun?"
+  RICHTIG: "Erledigt."
+
+TEST 2: Status-Abfrage
+  User: "Wie warm ist es?"
+  FALSCH: "Gerne! Die aktuelle Temperatur betraegt 22 Grad Celsius im Wohnzimmer."
+  RICHTIG: "22 Grad im Wohnzimmer."
+
+TEST 3: Komplexe Frage
+  User: "Was steht heute an?"
+  → Morgen-Briefing im MCU-Jarvis-Stil, kurz und informativ
+
+TEST 4: Humor-Check
+  User: "Ist das Wetter gut?"
+  RICHTIG: "22 Grad und Sonnenschein. Selbst ich wuerde rausgehen, Sir."
+  FALSCH: "Haha, ja das Wetter ist wirklich super!"
+```
+
+---
+
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## Kontext aus vorherigen Prompts
@@ -193,6 +229,12 @@ Konkreter Vorschlag für einen verbesserten `SYSTEM_PROMPT_TEMPLATE` (oder Teile
 
 ---
 
+## Erfolgskriterien
+
+MCU-Score dokumentiert, System-Prompt Token-Zahl geschaetzt
+
+---
+
 ## ⚡ Übergabe an Prompt 6a
 
 Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 6:
@@ -217,3 +259,19 @@ Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 
 ```
 
 **Wenn du Prompt 6a in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–5) automatisch ein.
+
+---
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

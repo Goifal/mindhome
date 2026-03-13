@@ -4,6 +4,15 @@
 
 Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. In Prompt 6a hast du das System stabilisiert. Jetzt räumst du die Architektur auf.
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## Kontext aus vorherigen Prompts
@@ -200,6 +209,15 @@ Für jeden gefixten Bug:
 
 ---
 
+## Rollback-Regel
+
+Vor dem ersten Edit: Merke dir den aktuellen Stand.
+Wenn ein Fix einen ImportError oder SyntaxError verursacht:
+1. SOFORT revert (Edit zuruecknehmen)
+2. Im OFFEN-Block dokumentieren: "Fix X verursacht Regression Y"
+3. Zum naechsten Fix weitergehen
+NIEMALS einen kaputten Fix stehen lassen.
+
 ## Regeln
 
 ### Gründlichkeits-Pflicht
@@ -223,6 +241,12 @@ Bevor du zu 6c übergehst:
 
 ---
 
+## Erfolgs-Kriterien
+
+- □ Architektur-Konflikte aufgeloest
+- □ Performance-Optimierungen verifiziert
+- □ Kein ImportError
+
 ## ⚡ Übergabe an Prompt 6c
 
 ```
@@ -242,4 +266,18 @@ Bevor du zu 6c übergehst:
 
 ### Offene Punkte für 6c/6d
 [Was noch fehlt]
+```
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
 ```

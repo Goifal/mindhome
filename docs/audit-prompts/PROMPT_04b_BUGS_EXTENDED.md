@@ -6,6 +6,17 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Flask, Redis,
 
 ---
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
+---
+
 ## ⚠️ Arbeitsumgebung: GitHub-Repository
 
 Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wie der Code mit fehlenden `.env`-Werten, fehlenden Credentials und nicht-erreichbaren Services umgeht.
@@ -185,6 +196,12 @@ Gesamt: X Bugs (Priorität 5–9)
 
 ---
 
+## Erfolgskriterien
+
+Alle Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert, Datei:Zeile Referenzen
+
+---
+
 ## ⚡ Übergabe an Prompt 4c
 
 Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 4c:
@@ -209,3 +226,19 @@ Gesamt: X Bugs in Priorität 5–9 (🔴 X, 🟠 X, 🟡 X, 🟢 X)
 ```
 
 **Wenn du Prompt 4c in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke automatisch ein.
+
+---
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

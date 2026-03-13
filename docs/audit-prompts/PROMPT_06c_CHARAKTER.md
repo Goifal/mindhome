@@ -4,6 +4,15 @@
 
 Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. In 6a hast du stabilisiert, in 6b die Architektur aufgeräumt. Jetzt machst du Jarvis zu **einem** Charakter.
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## Kontext aus vorherigen Prompts
@@ -67,6 +76,19 @@ Lies `personality.py` — besonders `SYSTEM_PROMPT_TEMPLATE` und `build_system_p
 2. **Grep** — `pattern="system_prompt|SYSTEM_PROMPT|template" path="assistant/assistant/proactive.py"` etc.
 3. **Edit** — Eigene Templates entfernen, durch Pipeline-Aufruf ersetzen
 4. **Bash** — Tests laufen lassen
+
+## Banned Phrases fuer Qwen 3.5
+
+Diese Floskeln MUESSEN in brain.py _filter_response gefiltert werden:
+- "Natuerlich!"
+- "Gerne!"
+- "Selbstverstaendlich!"
+- "Kann ich dir noch etwas helfen?"
+- "Kann ich sonst noch etwas tun?"
+- "Ich schalte jetzt"
+- "Ich werde jetzt"
+
+Pruefe mit: `grep "banned_phrases\|banned_starters" brain.py`
 
 ### Schritt 3: Config aufräumen (aus Prompt 5)
 
@@ -145,6 +167,15 @@ Module oder Funktionen die laut Prompt 4 (Dead-Code-Liste) nie aufgerufen werden
 
 ---
 
+## Rollback-Regel
+
+Vor dem ersten Edit: Merke dir den aktuellen Stand.
+Wenn ein Fix einen ImportError oder SyntaxError verursacht:
+1. SOFORT revert (Edit zuruecknehmen)
+2. Im OFFEN-Block dokumentieren: "Fix X verursacht Regression Y"
+3. Zum naechsten Fix weitergehen
+NIEMALS einen kaputten Fix stehen lassen.
+
 ## Regeln
 
 ### Gründlichkeits-Pflicht
@@ -164,6 +195,12 @@ Module oder Funktionen die laut Prompt 4 (Dead-Code-Liste) nie aufgerufen werden
 2. **Git-Tag setzen**: `git tag checkpoint-6c`
 
 ---
+
+## Erfolgs-Kriterien
+
+- □ MCU-Score >= 7/10
+- □ System-Prompt unter 800 Tokens Basis
+- □ Floskeln in banned_phrases
 
 ## ⚡ Übergabe an Prompt 6d
 
@@ -187,4 +224,18 @@ Module oder Funktionen die laut Prompt 4 (Dead-Code-Liste) nie aufgerufen werden
 
 ### Offene Punkte für 6d
 [Was noch fehlt]
+```
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
 ```

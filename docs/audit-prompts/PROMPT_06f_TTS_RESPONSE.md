@@ -1,4 +1,4 @@
-# PROMPT 04 — TTS & Response-Filter: Meta-Leakage eliminieren
+# PROMPT 06f — TTS & Response-Filter: Meta-Leakage eliminieren
 
 ## ZIEL
 
@@ -15,7 +15,7 @@ Jarvis darf NIEMALS interne Begriffe wie "speak", "tts", "emit", Funktionsnamen,
 
 ## KONTEXT AUS VORHERIGEM PROMPT
 
-[Hier den Output-Block aus PROMPT_03 einfügen]
+[Hier den Output-Block aus PROMPT_06e einfuegen]
 
 ## ARCHITEKTUR
 

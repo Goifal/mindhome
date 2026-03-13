@@ -158,6 +158,15 @@ Jeder Prompt enthält eine **Gründlichkeits-Pflicht**:
 
 Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Die Rolle wird in jedem Prompt wiederholt, damit sie auch einzeln funktionieren.
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ## Erwarteter Gesamt-Output nach allen 16 Prompts
 
 1. **Konflikt-Karte** — Welche Module gegeneinander arbeiten (inkl. Addon ↔ Assistant)
@@ -174,3 +183,24 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 6d. **Gehärtetes System** — Security geschlossen, Resilience implementiert, Addon koordiniert
 7a. **Test-Report** — Tests bestehen, Coverage-Lücken geschlossen, Security-Endpoints verifiziert
 7b. **Deployment-Report** — Docker läuft, **Performance gemessen**, Resilience getestet
+
+## Erfolgsmetriken
+
+- Alle Module gelesen mit Datei:Zeile Referenzen
+- Jeder Prompt liefert einen vollstaendigen Kontext-Block fuer den naechsten Prompt
+- Alle 13 Flows dokumentiert mit Status und Bruchstellen
+- Alle 6 Konfliktkarten ausgefuellt mit Code-Referenzen
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

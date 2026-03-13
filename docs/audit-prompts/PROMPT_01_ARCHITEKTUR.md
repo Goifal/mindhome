@@ -15,6 +15,15 @@ Du kennst **J.A.R.V.I.S. aus dem MCU** in- und auswendig und nutzt ihn als Golds
 - **Widerspricht sich nie**, kennt immer den Kontext, handelt koordiniert
 - **Eine Stimme, ein Charakter** — egal ob Licht, Wetter oder Warnung
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## ⚠️ Arbeitsumgebung: GitHub-Repository
@@ -389,6 +398,16 @@ Die vollständige Import-Tabelle aus Schritt 4 mit verwaisten Modulen, Zyklen un
 
 ---
 
+## Erfolgsmetriken
+
+- Alle Module gelesen mit Datei:Zeile Referenzen
+- Alle 6 Konfliktkarten (A-F) vollstaendig ausgefuellt mit Code-Referenzen
+- Vollstaendiger Verdrahtungs-Graph aller Module erstellt
+- Service-Interaktions-Diagramm dokumentiert mit konkreten Kommunikationskanaelen
+- Top-5 Architektur-Probleme identifiziert und mit Severity bewertet
+
+---
+
 ## ⚡ Übergabe an Prompt 2
 
 **WICHTIG**: Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block**, den du direkt in Prompt 2 einsetzt. Dieser Block soll enthalten:
@@ -417,3 +436,19 @@ Formatiere ihn so:
 ```
 
 **Wenn du Prompt 2 in derselben Konversation erhältst**: Setze diesen Kontext-Block automatisch ein — der User muss nichts kopieren.
+
+---
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

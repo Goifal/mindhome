@@ -6,6 +6,15 @@ Du bist ein Elite-Software-Ingenieur spezialisiert auf Memory-Systeme in Convers
 
 **LLM-Hinweis (Qwen 3.5 / Codestral)**: Dieses Prompt ist optimiert fuer praezise Code-Edits. Jeder Fix hat exakte Datei, Zeile und Code-Aenderung. Arbeite die Fixes **sequentiell** ab — ein Fix nach dem anderen. Nutze Read um die aktuelle Zeile zu verifizieren, dann Edit um die Aenderung zu machen, dann Grep um sicherzustellen dass nichts kaputt ist.
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## Arbeitsumgebung
@@ -57,6 +66,82 @@ System 5 (Bonus): personality.py:739 build_memory_callback_section()
 2. Semantic Facts werden nicht geladen ausser bei Memory-Intent (Fix 2)
 3. Memory-Intent-Erkennung ist zu eng (Fix 3)
 4. Memory-Kontext hat falsche Prioritaet — wird gedroppt (Fix 5)
+
+---
+
+## Bekannte kritische Memory-Bugs (aus vorherigen Audits)
+
+Diese Bugs wurden in vorherigen Durchlaeufen identifiziert und MUESSEN gefixt werden:
+
+### BUG 1: get_recent_conversations(limit=3) — zu wenig Kontext
+
+**Dateien:** brain.py Zeile ~3080 und ~2442
+**Problem:** Nur die letzten 3 Konversationen werden als Kontext geladen. User erwartet Erinnerung an die letzten 10+ Nachrichten.
+**Fix:**
+```python
+# VORHER:
+recent = await self.memory.get_recent_conversations(limit=3)
+# NACHHER:
+recent = await self.memory.get_recent_conversations(limit=10)
+```
+**Verify:** `grep "get_recent_conversations" brain.py` → limit muss 10 sein
+
+### BUG 2: Semantische Fakten nur bei intent_type=="memory" geladen
+
+**Datei:** brain.py ca. Zeile 2430 (_mega_tasks)
+**Problem:** search_facts() und get_facts_by_person() werden NUR aufgerufen wenn brain.py den Intent als "memory" klassifiziert. Bei normalen Gespraechen fehlen gespeicherte Fakten KOMPLETT im System-Prompt.
+**Fix:** In _mega_tasks IMMER semantic facts laden:
+```python
+# HINZUFUEGEN in _mega_tasks (ca. Zeile 2430):
+_mega_tasks.append(("person_facts", self.memory.semantic.get_facts_by_person(person or "")))
+_mega_tasks.append(("relevant_facts", self.memory.semantic.search_facts(text, limit=5)))
+```
+Dann im Context-Build (nach Zeile 2462):
+```python
+person_facts = _safe_get("person_facts", [])
+relevant_facts = _safe_get("relevant_facts", [])
+```
+**Verify:** `grep "search_facts\|get_facts_by_person" brain.py` → muss in _mega_tasks stehen
+
+### BUG 3: Memory-Prioritaet 3 statt 1
+
+**Datei:** brain.py ca. Zeile 2973
+**Problem:** conv_memory_ext hat Prioritaet 3. Bei knappem Token-Budget wird das Gedaechtnis WEGGELASSEN. Memory ist aber KERNFUNKTION.
+**Fix:**
+```python
+# VORHER:
+sections.append(("conv_memory_ext", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 3))
+# NACHHER:
+sections.append(("conv_memory_ext", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 1))
+```
+**Verify:** `grep "conv_memory_ext" brain.py` → Prioritaet muss 1 sein
+
+### BUG 4: Memory-Kontext-Header zu vage
+
+**Datei:** brain.py _build_memory_context() ca. Zeile 5562
+**Problem:** Der Header "nutze mit Haltung wie ein alter Bekannter" ist zu unspezifisch. Das LLM weiss nicht dass das SEINE Erinnerungen sind.
+**Fix:** Header aendern zu:
+```python
+header = (
+    "DEIN GEDAECHTNIS — folgende Fakten WEISST DU ueber den User:\n"
+    "Nutze sie AKTIV aber BEILAEUFIG. Nicht als Datenbank-Abfrage.\n"
+)
+```
+
+### BUG 5: Memory-Intent-Erkennung zu eng
+
+**Datei:** brain.py (wo intent_type erkannt wird)
+**Problem:** Nur wenige Keywords loesen "memory"-Intent aus. Viele Erinnerungs-Fragen werden nicht erkannt.
+**Fix:** Keywords erweitern:
+```python
+memory_keywords = [
+    "weisst du", "kennst du", "erinnerst du",
+    "was habe ich", "wer bin ich", "wie heisse ich",
+    "mein name", "mein geburtstag", "meine frau", "mein mann",
+    "wo wohne ich", "was mag ich", "was habe ich gesagt",
+    "letzte woche", "gestern", "remember", "erinnere dich",
+]
+```
 
 ---
 
@@ -370,6 +455,34 @@ FEHLERFALL OHNE FIX: "Ich habe keine Informationen ueber deine Todo-Liste"
 
 ---
 
+## Praxis-Testszenarien
+
+Diese Dialoge MUESSEN nach den Fixes funktionieren:
+
+```
+TEST 1: Fakten-Speicherung + Abruf
+  User: "Mein Geburtstag ist am 15. Maerz"
+  → Jarvis speichert Fakt (semantic_memory.store_fact)
+  User: "Wann habe ich Geburtstag?"
+  → Jarvis: "Am 15. Maerz, Sir." (NICHT "Dazu habe ich keine Daten")
+
+TEST 2: Kurzzeit-Gedaechtnis
+  User: "Ich fahre morgen nach Muenchen"
+  [30 Sekunden Pause]
+  User: "Wohin fahre ich morgen?"
+  → Jarvis: "Nach Muenchen." (aus recent_conversations, limit MUSS >3)
+
+TEST 3: Personen-Fakten
+  User: "Meine Frau heisst Lisa"
+  User: "Wie heisst meine Frau?"
+  → Jarvis: "Lisa." (aus semantic_memory.get_facts_by_person)
+
+TEST 4: Token-Budget-Test
+  → Memory-Sektion darf NIEMALS wegen Token-Budget wegfallen (Prioritaet 1!)
+```
+
+---
+
 ## ERFOLGSMETRIKEN
 
 Nach allen 5 Fixes muessen diese Bedingungen erfuellt sein:
@@ -382,6 +495,17 @@ Nach allen 5 Fixes muessen diese Bedingungen erfuellt sein:
 | 4 | Memory Header | `_build_memory_context()` Header | Direktiver Text mit "Nutze AKTIV" |
 | 5 | Memory Priority | conversation_memory Priority | `priority=1` |
 | 6 | Keine Regressionen | `cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q` | Tests bestehen |
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ grep "get_recent_conversations" brain.py → limit muss 10 sein (NICHT 3)
+□ grep "search_facts\|get_facts_by_person" brain.py → muss in _mega_tasks
+□ grep "conv_memory_ext" brain.py → Prioritaet muss 1 sein (NICHT 3)
+□ grep "DEIN GEDAECHTNIS" brain.py → neuer Header in _build_memory_context
+□ python -c "import assistant.brain" → kein ImportError
+□ python -c "import assistant.memory" → kein ImportError
+```
 
 ---
 
@@ -404,6 +528,15 @@ git add assistant/assistant/brain.py && git commit -m "Fix 2: Semantic facts alw
 git log --oneline -10  # Letzten guten Commit finden
 git revert <commit-hash>  # Einzelnen Fix rueckgaengig machen
 ```
+
+### Rollback-Regel
+
+Vor dem ersten Edit: Merke dir den aktuellen Stand.
+Wenn ein Fix einen ImportError oder SyntaxError verursacht:
+1. SOFORT revert (Edit zuruecknehmen)
+2. Im OFFEN-Block dokumentieren: "Fix X verursacht Regression Y"
+3. Zum naechsten Fix weitergehen
+NIEMALS einen kaputten Fix stehen lassen.
 
 ---
 

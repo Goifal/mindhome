@@ -146,7 +146,7 @@ Regressions-Check: X intakt, Y revertiert
 Delta-Checkliste erstellt: Ja/Nein
 Alle Kontext-Bloecke verworfen: Ja
 
-→ Starte jetzt mit PROMPT_01_ARCHITEKTUR_FLOWS.md
+→ Starte jetzt mit PROMPT_01_ARCHITEKTUR.md
 ```
 
 ---
@@ -171,17 +171,29 @@ Alle Kontext-Bloecke verworfen: Ja
 
 ---
 
-## NEUE PROMPT-REIHENFOLGE
+## PROMPT-REIHENFOLGE
 
 | Nr | Datei | Fokus |
 |----|-------|-------|
-| 01 | PROMPT_01_ARCHITEKTUR_FLOWS.md | Analyse: Konflikte + Core-Flows |
-| 02 | PROMPT_02_MEMORY.md | Fix: Memory-Integration + Fakten-Abruf |
-| 03 | PROMPT_03_GERAETESTEUERUNG.md | Fix: Tool-Calling + System-Prompt |
-| 04 | PROMPT_04_TTS_RESPONSE.md | Fix: speak-Filter + Meta-Leakage |
-| 05 | PROMPT_05_BUGFIXES.md | Fix: Systematische Bug-Fixes (max 20) |
-| 06 | PROMPT_06_PERSOENLICHKEIT.md | Fix: MCU-Charakter + Config |
-| 07 | PROMPT_07_SICHERHEIT.md | Fix: Top-5 Security + Resilience |
+| 00 | PROMPT_00_OVERVIEW.md | Architektur-Ueberblick + Modul-Karte |
+| 01 | PROMPT_01_ARCHITEKTUR.md | Analyse: Konflikte A-F |
+| 02 | PROMPT_02_MEMORY.md | Analyse + Fix: Memory-System (5 kritische Bugs) |
+| 03a | PROMPT_03a_FLOWS_CORE.md | Analyse: 7 Core-Flows |
+| 03b | PROMPT_03b_FLOWS_EXTENDED.md | Analyse: 6 Extended-Flows + Kollisionen |
+| 04a | PROMPT_04a_BUGS_CORE.md | Bug-Finding: Core-Module (13 Fehlerklassen) |
+| 04b | PROMPT_04b_BUGS_EXTENDED.md | Bug-Finding: Extended-Module |
+| 04c | PROMPT_04c_BUGS_ADDON_SECURITY.md | Bug-Finding: Addon + Security |
+| 05 | PROMPT_05_PERSONALITY.md | Analyse: MCU-Authentizitaet + Config |
+| 06a | PROMPT_06a_STABILISIERUNG.md | Fix: Kritische Bugs (mit Code-Templates) |
+| 06b | PROMPT_06b_ARCHITEKTUR.md | Fix: Architektur-Konflikte |
+| 06c | PROMPT_06c_CHARAKTER.md | Fix: Persoenlichkeit + Anti-Floskel |
+| 06d | PROMPT_06d_HAERTUNG.md | Fix: Security + Resilience + Addon |
+| 06e | PROMPT_06e_GERAETESTEUERUNG.md | **NEU** Fix: Tool-Calling + System-Prompt |
+| 06f | PROMPT_06f_TTS_RESPONSE.md | **NEU** Fix: speak-Filter + Meta-Leakage |
+| 07a | PROMPT_07a_TESTING.md | Testing + Coverage |
+| 07b | PROMPT_07b_DEPLOYMENT.md | Docker + Deployment |
+| 08 | PROMPT_08_REMAINING_FIXES.md | Verbleibende Fixes |
+| 09 | PROMPT_09_REMAINING_BUGS.md | Verbleibende Bugs |
 | RESET | PROMPT_RESET.md | Naechster Durchlauf vorbereiten |
 
 ---
@@ -194,6 +206,6 @@ ZUSAMMENFASSUNG: [Kompakte Zusammenfassung des vorherigen Durchlaufs]
 UNFIXTE BUGS: [Anzahl, Top 3 kritischste]
 REGRESSIONS: [Anzahl, welche]
 DELTA: [Was hat sich geaendert]
-NAECHSTER SCHRITT: Starte PROMPT_01_ARCHITEKTUR_FLOWS.md
+NAECHSTER SCHRITT: Starte PROMPT_00_OVERVIEW.md
 =====================================
 ```

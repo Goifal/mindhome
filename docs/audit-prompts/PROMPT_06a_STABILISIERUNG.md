@@ -4,6 +4,15 @@
 
 Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du hast in den vorherigen 5 Prompts das System analysiert. Jetzt stabilisierst du es.
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## Kontext aus vorherigen Prompts
@@ -43,6 +52,58 @@ Arbeite **jeden** 🔴 KRITISCHEN Bug aus dem Prompt-4-Report ab:
 - None-Zugriffe ohne Check → AttributeError
 - Init-Reihenfolge-Fehler → Crash beim Start
 - Ungeschützte Security-Endpoints → Angriffsfläche
+
+## Fix-Templates — Haeufige Bug-Typen
+
+### Async/Sync Mismatch (blockiert Event-Loop)
+```python
+# VORHER (blockiert Event-Loop):
+result = sync_function(args)
+# NACHHER:
+result = await asyncio.to_thread(sync_function, args)
+```
+
+### Silent Errors (verschluckte Fehler)
+```python
+# VORHER:
+except Exception:
+    pass
+# NACHHER:
+except Exception as e:
+    logger.warning("Beschreibung: %s", e)
+```
+
+### N+1 Redis (Schleife statt Pipeline)
+```python
+# VORHER:
+for key in keys:
+    val = await redis.get(key)
+# NACHHER:
+pipe = redis.pipeline()
+for key in keys:
+    pipe.get(key)
+vals = await pipe.execute()
+```
+
+### Race Condition (fehlende Lock-Absicherung)
+```python
+# VORHER:
+if not self._running:
+    self._running = True
+# NACHHER:
+async with self._lock:
+    if not self._running:
+        self._running = True
+```
+
+### None-Guard (fehlende Null-Pruefung)
+```python
+# VORHER:
+result = obj.method()
+# NACHHER:
+if obj is not None:
+    result = obj.method()
+```
 
 **Priorität innerhalb der 🔴 Bugs:**
 1. Bugs die den **Start verhindern** (Init-Fehler)
@@ -122,6 +183,15 @@ Was muss in Prompt 6b (Architektur) beachtet werden?
 
 ---
 
+## Rollback-Regel
+
+Vor dem ersten Edit: Merke dir den aktuellen Stand.
+Wenn ein Fix einen ImportError oder SyntaxError verursacht:
+1. SOFORT revert (Edit zuruecknehmen)
+2. Im OFFEN-Block dokumentieren: "Fix X verursacht Regression Y"
+3. Zum naechsten Fix weitergehen
+NIEMALS einen kaputten Fix stehen lassen.
+
 ## Regeln
 
 ### Gründlichkeits-Pflicht
@@ -153,6 +223,12 @@ Bevor du zu 6b übergehst:
 
 ---
 
+## Erfolgs-Kriterien
+
+- □ Alle KRITISCH Bugs gefixt
+- □ python -c 'import assistant.brain' kein Error
+- □ Checkpoints dokumentiert
+
 ## ⚡ Übergabe an Prompt 6b
 
 Formatiere am Ende einen kompakten **Kontext-Block**:
@@ -171,4 +247,18 @@ Formatiere am Ende einen kompakten **Kontext-Block**:
 
 ### Test-Status
 [X Tests bestanden, Y fehlgeschlagen]
+```
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
 ```

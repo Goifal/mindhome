@@ -4,6 +4,15 @@
 
 Du bist ein Elite-Software-Architekt mit tiefem Wissen in AsyncIO, FastAPI, Flask, LLM-Integration, Function Calling, Speech Processing und Smart Home (Home Assistant). Du kennst J.A.R.V.I.S. aus dem MCU als Goldstandard für einen kohärenten, koordinierten Assistenten.
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## Kontext aus vorherigen Prompts
@@ -297,6 +306,16 @@ Top-5 Probleme aus Flows 1–7, sortiert nach Impact.
 
 ---
 
+## Erfolgsmetriken
+
+- Alle Module gelesen mit Datei:Zeile Referenzen
+- Init-Sequenz vollstaendig dokumentiert mit exakter Reihenfolge und Datei:Zeile
+- System-Prompt rekonstruiert mit allen dynamischen Teilen und deren Herkunft
+- Alle 7 Core-Flows (1-7) dokumentiert mit Status, Bruchstellen und Fehler-Pfaden
+- Top-5 kritische Bruchstellen identifiziert und mit Datei:Zeile belegt
+
+---
+
 ## ⚡ Übergabe an Prompt 3b
 
 Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 3b:
@@ -326,3 +345,19 @@ Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 
 ```
 
 **Wenn du Prompt 3b in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke automatisch ein.
+
+---
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

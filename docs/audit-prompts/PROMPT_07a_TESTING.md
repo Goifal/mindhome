@@ -8,6 +8,15 @@ Du bist ein Elite-QA-Engineer mit tiefem Wissen in:
 - **Security Testing**: Endpoint-Schutz, Rate-Limiting, Auth-Verifikation
 - **Resilience Testing**: Service-Ausfall-Szenarien, Graceful Degradation
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## Kontext aus vorherigen Prompts
@@ -196,6 +205,15 @@ Für jedes gefundene Problem:
 
 ---
 
+## Rollback-Regel
+
+Vor dem ersten Edit: Merke dir den aktuellen Stand.
+Wenn ein Fix einen ImportError oder SyntaxError verursacht:
+1. SOFORT revert (Edit zuruecknehmen)
+2. Im OFFEN-Block dokumentieren: "Fix X verursacht Regression Y"
+3. Zum naechsten Fix weitergehen
+NIEMALS einen kaputten Fix stehen lassen.
+
 ## Regeln
 
 - **Tests MÜSSEN mit Bash ausgeführt werden** — nicht nur lesen, sondern tatsächlich `pytest` starten
@@ -217,6 +235,12 @@ Für jedes gefundene Problem:
 
 ---
 
+## Erfolgs-Kriterien
+
+- □ Tests ausgefuehrt
+- □ Coverage dokumentiert
+- □ Alle KRITISCH Tests bestehen
+
 ## ⚡ Übergabe an Prompt 7b
 
 Formatiere am Ende einen kompakten **Kontext-Block** für Prompt 7b:
@@ -236,3 +260,17 @@ Neue Tests geschrieben: [Liste]
 ```
 
 **Wenn du Prompt 7b in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke automatisch ein.
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

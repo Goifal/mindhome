@@ -1,4 +1,4 @@
-# Prompt 3: Geraetesteuerung — Tool-Calling reparieren
+# Prompt 6e: Geraetesteuerung — Tool-Calling reparieren
 
 ## Rolle
 
@@ -18,11 +18,12 @@ Jarvis steuert Geraete ueber LLM-Tool-Calls. Das LLM (Qwen 3.5, 4B Parameter) ge
 
 ## Kontext aus vorherigen Prompts
 
-> **Wenn du Prompts 1–2 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Bloecke) automatisch. Du musst nichts einfuegen.
+> **Wenn du Prompts 1–6d bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Bloecke) automatisch.
 >
 > **Wenn dies eine neue Konversation ist**: Fuege hier ein:
 > - Kontext-Block aus Prompt 1 (Konflikt-Karte, besonders brain.py-Architektur)
-> - Kontext-Block aus Prompt 2 (Memory-Analyse, besonders Kontext-Aufbau)
+> - Kontext-Block aus Prompt 4a (Bug-Report, besonders Tool-Calling Bugs)
+> - Kontext-Block aus Prompt 6a-6d (Stabilisierungs-/Architektur-/Charakter-/Haertungs-Ergebnisse)
 >
 > **Ohne diese Kontext-Bloecke** fehlt dir das Verstaendnis wie brain.py die Tool-Calls orchestriert und wie der System-Prompt aufgebaut wird.
 
