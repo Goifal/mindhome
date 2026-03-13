@@ -166,6 +166,113 @@ memory_keywords = [
 ]
 ```
 
+### BUG 6: 🔴 _should_extract() Wort-Minimum zu hoch — kurze Fakten werden IGNORIERT
+
+**Datei:** `assistant/assistant/memory_extractor.py` Zeile 175
+**Problem:** `len(user_text.split()) < max(self._min_words, 5)` erfordert MINDESTENS 5 Woerter. Viele wertvolle Fakten sind kuerzer:
+- "Meine Frau heisst Lisa" = 4 Woerter → NICHT extrahiert!
+- "Ich mag 21 Grad" = 4 Woerter → NICHT extrahiert!
+- "Mein Name ist Max" = 4 Woerter → NICHT extrahiert!
+
+**Das ist wahrscheinlich DER Hauptgrund warum keine neuen Fakten gespeichert werden.**
+
+**Fix:**
+```python
+# VORHER (memory_extractor.py:175):
+if len(user_text.split()) < max(self._min_words, 5):
+    return False
+
+# NACHHER: Minimum auf 3 Woerter senken
+if len(user_text.split()) < max(self._min_words, 3):
+    return False
+```
+
+**Zusaetzlich** in `assistant/config/settings.yaml` (falls konfiguriert):
+```yaml
+memory:
+  extraction_min_words: 3  # War 5, jetzt 3
+```
+
+**Verify:**
+```
+Grep: pattern="min_words|_min_words|extraction_min_words" path="assistant/assistant/memory_extractor.py" output_mode="content"
+Grep: pattern="extraction_min_words" path="assistant/config/" output_mode="content"
+```
+
+### BUG 7: 🟠 LLM-Extraktion scheitert leise — kein Logging bei JSON-Parse-Fehler
+
+**Datei:** `assistant/assistant/memory_extractor.py` Zeile 262-264, 288-289
+**Problem:** Wenn Qwen 3.5 kein valides JSON zurueckgibt (was haeufig vorkommt bei kleinen Modellen), wird der Fehler nur als `logger.debug` geloggt. Der User merkt NICHTS. Fakten verschwinden leise.
+
+**Fix:**
+```python
+# VORHER (memory_extractor.py:262-264):
+except Exception as e:
+    logger.error("Fehler bei Fakten-Extraktion: %s", e)
+    return []
+
+# NACHHER: Detailliertes Logging + Metriken
+except Exception as e:
+    logger.error("Fehler bei Fakten-Extraktion: %s (model=%s, text_len=%d)",
+                 e, self._extraction_model, len(conversation))
+    return []
+```
+
+Und in `_parse_facts()`:
+```python
+# VORHER (memory_extractor.py:291):
+logger.debug("Konnte LLM-Antwort nicht parsen: %s", text[:200])
+
+# NACHHER: Von debug auf warning erhoehen
+logger.warning("Fakten-JSON-Parse fehlgeschlagen (Qwen-Output war kein valides JSON): %s", text[:300])
+```
+
+**Verify:**
+```
+Grep: pattern="logger\.(debug|warning|error).*pars|logger\.(debug|warning|error).*Extraktion" path="assistant/assistant/memory_extractor.py" output_mode="content"
+```
+
+### BUG 8: 🟠 Fire-and-Forget ohne Retry bei Extraktions-Fehler
+
+**Datei:** `assistant/assistant/brain.py` Zeile 4380-4386
+**Problem:** `_extract_facts_background()` wird als Background-Task gestartet. Wenn sie fehlschlaegt, gibt es keinen Retry und keinen Hinweis. Wertvolle Fakten gehen verloren.
+
+**Fix:** Retry-Logik in `_extract_facts_background()`:
+```python
+# NACHHER (brain.py _extract_facts_background):
+async def _extract_facts_background(self, user_text, assistant_response, person, context):
+    """Extrahiert Fakten im Hintergrund mit 1x Retry."""
+    for attempt in range(2):  # Max 2 Versuche
+        try:
+            facts = await self.memory_extractor.extract_and_store(
+                user_text=user_text,
+                assistant_response=assistant_response,
+                person=person,
+                context=context,
+            )
+            if facts:
+                logger.info("Hintergrund-Extraktion: %d Fakt(en) gespeichert (Versuch %d)",
+                           len(facts), attempt + 1)
+            return
+        except Exception as e:
+            if attempt == 0:
+                logger.warning("Fakten-Extraktion Versuch 1 fehlgeschlagen, retrying: %s", e)
+                await asyncio.sleep(1)
+            else:
+                logger.error("Fakten-Extraktion endgueltig fehlgeschlagen: %s", e)
+```
+
+### BUG 2 — KORREKTUR: context_builder laedt Fakten BEREITS immer
+
+> **UPDATE**: Die Code-Analyse zeigt dass `context_builder.py:322-340` die Fakten bereits IMMER laedt (nicht hinter `intent_type=="memory"`). BUG 2 wie oben beschrieben ist moeglicherweise BEREITS GEFIXT.
+>
+> **Methodik**: Pruefe ZUERST mit Read/Grep ob search_facts() und get_facts_by_person() schon in `context_builder.py:_get_relevant_memories()` stehen. Falls ja → BUG 2 ist bereits gefixt, ueberspringe den Fix. Falls nein → Fix wie oben beschrieben anwenden.
+>
+> ```
+> Grep: pattern="search_facts|get_facts_by_person" path="assistant/assistant/context_builder.py" output_mode="content"
+> ```
+> Erwartetes Ergebnis: Mindestens 2 Treffer in `_get_relevant_memories()`.
+
 ---
 
 ## DIE 5 FIXES
@@ -519,19 +626,25 @@ Nach allen 5 Fixes muessen diese Bedingungen erfuellt sein:
 | # | Metrik | Pruefung | Ziel |
 |---|---|---|---|
 | 1 | Konversations-Window | Grep nach `get_recent_conversations` | Alle Stellen: `limit=10` |
-| 2 | Semantic Facts immer geladen | `search_facts`/`get_facts_by_person` nicht hinter `intent_type=="memory"` | Ausserhalb der Bedingung |
+| 2 | Semantic Facts immer geladen | `search_facts`/`get_facts_by_person` in context_builder.py | Ausserhalb von intent-Bedingung |
 | 3 | Memory Keywords | Mindestens 20 Keywords in der Liste | Deutsche + Englische Keywords |
 | 4 | Memory Header | `_build_memory_context()` Header | Direktiver Text mit "Nutze AKTIV" |
 | 5 | Memory Priority | conversation_memory Priority | `priority=1` |
-| 6 | Keine Regressionen | `cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q` | Tests bestehen |
+| 6 | Wort-Minimum | `_should_extract()` min_words | `max(self._min_words, 3)` (NICHT 5!) |
+| 7 | Parse-Logging | `_parse_facts()` Logger-Level | `logger.warning` (NICHT debug!) |
+| 8 | Retry-Logik | `_extract_facts_background()` | Mindestens 2 Versuche |
+| 9 | Keine Regressionen | `cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q` | Tests bestehen |
 
 ### Erfolgs-Check (Schnellpruefung)
 
 ```
 □ grep "get_recent_conversations" brain.py → limit muss 10 sein (NICHT 3)
-□ grep "search_facts\|get_facts_by_person" brain.py → muss in _mega_tasks
+□ grep "search_facts\|get_facts_by_person" context_builder.py → muss in _get_relevant_memories
 □ grep "conv_memory_ext" brain.py → Prioritaet muss 1 sein (NICHT 3)
 □ grep "DEIN GEDAECHTNIS" brain.py → neuer Header in _build_memory_context
+□ grep "min_words.*3\|_min_words.*3" memory_extractor.py → Minimum muss 3 sein (NICHT 5!)
+□ grep "logger.warning.*pars\|logger.warning.*JSON" memory_extractor.py → Warning statt Debug
+□ grep "for attempt\|range(2)" brain.py → Retry-Logik vorhanden
 □ python -c "import assistant.brain" → kein ImportError
 □ python -c "import assistant.memory" → kein ImportError
 ```
