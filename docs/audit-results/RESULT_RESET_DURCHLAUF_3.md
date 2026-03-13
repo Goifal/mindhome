@@ -199,59 +199,130 @@ Fuer JEDEN Fix aus den vorherigen Durchlaeufen:
 
 ## Durchlauf-Tracking
 
-| Durchlauf | Datum | Bugs gefunden | Bugs behandelt | Offen | Regressions |
-|---|---|---|---|---|---|
-| #1 | 2026-03-10 | 225 | 173 (157 gefixt, 16 bereits OK) | 52 | N/A |
-| #2 | 2026-03-10 | (Verifikation) | 8 Log-Audit + Tests | 52+ | Zu pruefen |
-| #3 | 2026-03-13 | P04a: 92 + P04b: 92 + P04c: 48 NEUE | P02: 11 Memory-Fixes | 131 (P4a) + 299 (P4b) + 106 (P4c) | 0 Regressionen |
+| Durchlauf | Datum | Phase | Bugs gefunden | Bugs behandelt | Offen | Regressions |
+|---|---|---|---|---|---|---|
+| #1 | 2026-03-10 | Komplett (P01-P10) | 225 | 173 (157 gefixt, 16 bereits OK) | 52 | N/A |
+| #2 | 2026-03-10 | Komplett (Verifikation) | — | 8 Log-Audit + Tests | 52+ | Zu pruefen |
+| #3 | 2026-03-13 | **Analyse abgeschlossen, Fix-Phase ausstehend** | 232 NEUE (P04a: 92, P04b: 92, P04c: 48) | P02: 11 Memory-Fixes, Fix 3: Memory-Keywords 25→32 | ~536 gesamt (131 P4a + 299 P4b + 106 P4c) | 0 Regressionen bisher |
 
 ---
 
 ## DURCHLAUF #3 — FORTSCHRITT (Stand 2026-03-13)
 
-### Abgeschlossene Prompts (DL#3):
-- P01 (Architektur): Verifiziert, DL#3-Header hinzugefuegt
-- **P02 (Memory): 11 Code-Fixes implementiert** — Kern des DL#3
-  - Confidence 0.6→0.4, Relevance 0.3→0.2, Limit 3→10
-  - conv_memory_ext Priority 3→1 (immer im System-Prompt)
-  - "ERFINDE KEINE Erinnerungen" Halluzinations-Schutz
-  - proactive.start() in _safe_init() gewrappt
-  - + 6 weitere Fixes (siehe RESULT_02)
-- P03a/P03b (Flows): Verifiziert, proactive.start() REGRESSION aufgeloest
-- **P04a (Bugs Core): VOLLSTAENDIG NEU AUSGEFUEHRT** — 5 parallele Agents, alle 26 Module gelesen
-  - 92 NEUE Bugs gefunden (4 KRITISCH, 22 HOCH, 42 MITTEL, 15 NIEDRIG)
-  - Gesamt offen: ~131 Bugs (inkl. DL#2-Altlasten)
-  - Kritischste: DL3-ME1 (Prompt-Injection Memory), DL3-AI1 (action_planner Reihenfolge), DL3-AI2/AI3 (pre_classifier Frage-Erkennung)
-- **P04b (Bugs Extended): VOLLSTAENDIG NEU AUSGEFUEHRT** — 7 parallele Agents, alle 63 Module gelesen
-  - 92 NEUE Bugs gefunden (5 KRITISCH, 18 HOCH, 41 MITTEL, 28 NIEDRIG)
-  - Gesamt offen: 299 Bugs (207 DL#2 + 92 DL#3 neu)
-  - Kritischste: DL3-H01/H02 (ha_client PUT/DELETE ohne Auth), DL3-D01/M01 (OCR Pfad-Validierung blockiert Uploads)
-- **P04c (Bugs Addon): VOLLSTAENDIG NEU AUSGEFUEHRT** — 6 parallele Agents
-  - 48 NEUE Findings (N1-N38, S1-S4, P1-P6)
-  - Gesamt: ~106 offene Bugs
-- P05 (Personality): Verifiziert, P02 verbessert Memory-Kontext indirekt
-- P06a-P09: Historische Fix-Logs, DL#3-Notes hinzugefuegt
+### Status-Uebersicht
 
-### Naechste Schritte:
-- **P01 bis P03b** — Muss neu ausgefuehrt werden (User-Feedback: nicht korrekt ausgefuehrt)
-- Danach: P05 (Personality) und weitere Prompts in Reihenfolge
+| Phase | Prompt | Status DL#3 | Ergebnis |
+|---|---|---|---|
+| Analyse | P01 (Architektur) | ABGESCHLOSSEN | Vollstaendig neu analysiert, DL#3-Header in RESULT_01 |
+| Analyse | P02 (Memory) | ABGESCHLOSSEN + CODE-FIXES | 11 Code-Fixes implementiert (Kern des DL#3) |
+| Analyse | P03a (Flows Core) | ABGESCHLOSSEN | Verifiziert nach P02-Fixes, proactive.start() Regression aufgeloest |
+| Analyse | P03b (Flows Extended) | ABGESCHLOSSEN | Verifiziert nach P02-Fixes |
+| Analyse | P04a (Bugs Core) | ABGESCHLOSSEN (NEU) | 92 neue Bugs (4 KRIT, 22 HOCH, 42 MITTEL, 15 NIEDRIG) |
+| Analyse | P04b (Bugs Extended) | ABGESCHLOSSEN (NEU) | 92 neue Bugs (5 KRIT, 18 HOCH, 41 MITTEL, 28 NIEDRIG) |
+| Analyse | P04c (Bugs Addon) | ABGESCHLOSSEN (NEU) | 48 neue Findings (N1-N38, S1-S4, P1-P6) |
+| Analyse | P05 (Personality) | ABGESCHLOSSEN | Verifiziert, P02 verbessert Memory-Kontext indirekt |
+| Fix | P06a (Stabilisierung) | **AUSSTEHEND** | Kritische Bugs + Memory aus P04a-P04c fixen |
+| Fix | P06b (Architektur) | **AUSSTEHEND** | Konflikte aufloesen, Flows reparieren |
+| Fix | P06c (Charakter) | **AUSSTEHEND** | Persoenlichkeit harmonisieren |
+| Fix | P06d (Haertung) | **AUSSTEHEND** | Security + Resilience |
+| Fix | P06e (Geraetesteuerung) | **AUSSTEHEND** | Tool-Calling + System-Prompt |
+| Fix | P06f (TTS/Response) | **AUSSTEHEND** | speak-Filter + Meta-Leakage |
+| Verifikation | P07a (Testing) | **AUSSTEHEND** | Tests + Coverage |
+| Verifikation | P07b (Deployment) | **AUSSTEHEND** | Docker + Performance |
+| Qualitaet | P08a (Codequalitaet) | **AUSSTEHEND** | Docs + Deps + CI/CD |
+| Qualitaet | P08b (Betrieb) | **AUSSTEHEND** | Multi-User + Monitoring |
+| Abschluss | P09a (Fix Codequalitaet) | **AUSSTEHEND** | P08a Findings fixen |
+| Abschluss | P09b (Fix Betrieb) | **AUSSTEHEND** | P08b Findings fixen |
+| Abschluss | P10 (Final Validation) | **AUSSTEHEND** | Zero-Bug Declaration |
 
-→ DL#3 hat P04a, P04b und P04c vollstaendig neu ausgefuehrt mit jeweils 5-7 parallelen Agents
+### Abgeschlossene Prompts — Details:
+
+**P01 (Architektur):** Vollstaendig neu analysiert. DL#3-Header in RESULT_01_ARCHITEKTUR.md geschrieben.
+
+**P02 (Memory): 11 Code-Fixes implementiert — Kern des DL#3**
+- Confidence 0.6→0.4, Relevance 0.3→0.2, Limit 3→10
+- conv_memory_ext Priority 3→1 (immer im System-Prompt)
+- "ERFINDE KEINE Erinnerungen" Halluzinations-Schutz
+- proactive.start() in _safe_init() gewrappt
+- + 6 weitere Fixes (siehe RESULT_02)
+
+**P03a/P03b (Flows):** Verifiziert nach P02-Fixes. proactive.start() REGRESSION aufgeloest.
+
+**P04a (Bugs Core): VOLLSTAENDIG NEU AUSGEFUEHRT** — 5 parallele Agents, alle 26 Module gelesen
+- 92 NEUE Bugs (4 KRITISCH, 22 HOCH, 42 MITTEL, 15 NIEDRIG)
+- Gesamt offen: ~131 Bugs (inkl. DL#2-Altlasten)
+- Kritischste: DL3-ME1 (Prompt-Injection Memory), DL3-AI1 (action_planner Reihenfolge), DL3-AI2/AI3 (pre_classifier Frage-Erkennung)
+
+**P04b (Bugs Extended): VOLLSTAENDIG NEU AUSGEFUEHRT** — 7 parallele Agents, alle 63 Module gelesen
+- 92 NEUE Bugs (5 KRITISCH, 18 HOCH, 41 MITTEL, 28 NIEDRIG)
+- Gesamt offen: 299 Bugs (207 DL#2 + 92 DL#3 neu)
+- Kritischste: DL3-H01/H02 (ha_client PUT/DELETE ohne Auth), DL3-D01/M01 (OCR Pfad-Validierung blockiert Uploads)
+
+**P04c (Bugs Addon): VOLLSTAENDIG NEU AUSGEFUEHRT** — 6 parallele Agents
+- 48 NEUE Findings (N1-N38, S1-S4, P1-P6)
+- Gesamt: ~106 offene Bugs
+
+**P05 (Personality):** Verifiziert. P02 Memory-Reparatur verbessert Memory-Kontext indirekt.
+
+**Zusaetzlicher Code-Fix:** Memory-Intent-Keywords erweitert (25→32) — Commit 52a504f
+
+**P06a-P09:** Historische Fix-Logs aus DL#2 mit DL#3-Notes versehen (keine Aenderungen noetig, Fixes bleiben gueltig).
+
+### Bug-Zusammenfassung DL#3 (Analyse-Phase):
+
+| Quelle | KRITISCH | HOCH | MITTEL | NIEDRIG | Gesamt |
+|---|---|---|---|---|---|
+| P04a (Core) — NEU | 4 | 22 | 42 | 15 | 92 |
+| P04b (Extended) — NEU | 5 | 18 | 41 | 28 | 92 |
+| P04c (Addon) — NEU | — | — | — | — | 48 (N38+S4+P6) |
+| DL#2 Altlasten | — | 10 | 16 | 26 | 52 |
+| **Gesamt offen** | **9+** | **50+** | **99+** | **69+** | **~536** |
+
+### Kritischste offene Bugs (Top 10):
+
+1. DL3-ME1 — Prompt-Injection ueber Memory (memory_extractor.py)
+2. DL3-H01 — ha_client PUT ohne Auth-Header
+3. DL3-H02 — ha_client DELETE ohne Auth-Header
+4. DL3-AI1 — action_planner Reihenfolge-Bug
+5. DL3-AI2 — pre_classifier Frage-Erkennung falsch
+6. DL3-AI3 — pre_classifier false positives
+7. DL3-D01 — OCR Pfad-Validierung blockiert Uploads
+8. DL3-M01 — OCR Upload-Pfad Konflikt
+9. F-068 — brain.py God Class (9.906 Zeilen — verschlechtert seit DL#1)
+10. F-029 — Redis Graceful Degradation (systemweit)
+
+### Naechste Schritte (Fix-Phase):
+
+Die **gesamte Analyse-Phase (P01-P05) ist abgeschlossen**. Als naechstes startet die **Fix-Phase**:
+
+1. **P06a (Stabilisierung)** — Alle KRITISCHEN Bugs aus P04a-P04c fixen + Memory verifizieren
+2. **P06b (Architektur)** — brain.py God-Class, Konflikte aufloesen
+3. **P06c (Charakter)** — Persoenlichkeits-Inkonsistenzen
+4. **P06d (Haertung)** — Security-Bugs (DL3-H01/H02, DL3-ME1), Resilience
+5. **P06e (Geraetesteuerung)** — Tool-Calling Fixes
+6. **P06f (TTS/Response)** — speak-Filter, Meta-Leakage
+7. **P07a-P07b** — Testing + Deployment Verifikation
+8. **P08a-P10** — Codequalitaet, Betrieb, Final Validation
+
+→ **Naechster Prompt: PROMPT_06a_STABILISIERUNG.md**
 
 ---
 
 ```
 === KONTEXT FUER NAECHSTEN PROMPT ===
-ZUSAMMENFASSUNG: Durchlauf #1 fand 225 Bugs (157 gefixt, 52 aufgeschoben).
-  Seit dem letzten Reset: 133 Commits, v1.5.11-v1.5.13, massive Test-Erweiterung (115 Dateien),
-  8 Log-Audit-Bugs gefixt, Prompt-Struktur finalisiert (P08a-P10).
-  brain.py wuchs auf 9.906 Zeilen (trotz Mixin-Extraktion).
-UNFIXTE BUGS: 67 total. Top 3 kritischste:
-  1. brain.py God Class (9.906 Zeilen — verschlechtert)
-  2. Redis Graceful Degradation (systemweit, keine systematische Loesung)
-  3. Event-Bus / Priority-System (nur dokumentiert, nicht implementiert)
-REGRESSIONS: 2 intakt, 3 teilweise gefixt, 3 weiterhin offen, 10+ zu pruefen
-DELTA: 133 Commits, 218 Dateien, v1.5.11→v1.5.13, 115 Test-Dateien hinzugefuegt
-NAECHSTER SCHRITT: Starte PROMPT_00_OVERVIEW.md
+ZUSAMMENFASSUNG DL#3: Analyse-Phase KOMPLETT (P01-P05).
+  P02: 11 Memory-Fixes implementiert + Memory-Keywords 25→32.
+  P04a/P04b/P04c: Vollstaendig neu ausgefuehrt mit parallelen Agents.
+  232 NEUE Bugs gefunden (9 KRIT, 40 HOCH, 83 MITTEL, 43 NIEDRIG + 48 Addon).
+  Gesamt offen: ~536 Bugs (inkl. 52 DL#2-Altlasten).
+KRITISCHSTE BUGS:
+  1. DL3-ME1 Prompt-Injection Memory (memory_extractor.py)
+  2. DL3-H01/H02 ha_client PUT/DELETE ohne Auth
+  3. DL3-AI1 action_planner Reihenfolge
+  4. F-068 brain.py God Class (9.906 Zeilen)
+  5. F-029 Redis Graceful Degradation (systemweit)
+CODE-FIXES IN DL#3: P02 (11 Memory-Fixes), Fix 3 (Keywords 25→32)
+REGRESSIONS: 0 bisher. proactive.start() Regression aus P02 aufgeloest.
+NAECHSTER SCHRITT: Starte PROMPT_06a_STABILISIERUNG.md (Fix-Phase beginnt)
 =====================================
 ```
