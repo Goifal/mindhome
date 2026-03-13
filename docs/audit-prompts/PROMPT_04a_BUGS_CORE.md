@@ -240,7 +240,21 @@ Am stärksten betroffenes Modul: [Name] (X Bugs)
 
 ## Erfolgskriterien
 
-Alle Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert, Datei:Zeile Referenzen
+- Alle Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert, Datei:Zeile Referenzen
+- Jeder Bug hat: Datei:Zeile, Fehlerklasse, Severity, konkreten Fix-Vorschlag
+- Mindestens 20 Bugs in den Core-Modulen (brain.py, main.py, memory.py, personality.py, function_calling.py) gefunden
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ Bug-Report enthaelt Datei:Zeile fuer jeden Bug
+□ Bugs sind nach 13 Fehlerklassen kategorisiert
+□ Severity-Verteilung dokumentiert (KRITISCH/HOCH/MITTEL/NIEDRIG)
+□ Fuer jeden KRITISCH/HOCH Bug ist ein konkreter Fix-Vorschlag vorhanden
+□ Async-Fehler in brain.py geprueft: grep "def [^_].*self\." brain.py | grep -v "async def"
+□ Silent Exceptions geprueft: grep "except.*pass\|except.*:" brain.py | wc -l
+□ None-Guards geprueft: grep "\.redis\.\|\.memory\.\|\.brain\." brain.py | head -20
+```
 
 ---
 

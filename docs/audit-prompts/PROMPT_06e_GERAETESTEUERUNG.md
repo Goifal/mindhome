@@ -222,7 +222,21 @@ switch_patterns = [
 ]
 ```
 
-#### Schritt 3: Raum-Erkennung hinzufuegen
+#### Schritt 3: Entity-ID-Aufloesung und Raum-Erkennung
+
+**KRITISCH**: Die deterministischen Tool-Calls brauchen eine gueltige `entity_id` fuer HA.
+Methode:
+1. **Raum erkennen** aus dem Text (Patterns unten)
+2. **Entity-ID zusammenbauen**: `light.{raum}` oder `cover.{raum}` etc.
+3. **Falls kein Raum erkannt**: Default auf den Raum aus `request_context` (der Raum in dem der User spricht)
+4. **Falls kein Default-Raum**: Entity-ID weglassen und den LLM-Pfad nutzen (Fallback)
+
+```
+Grep: pattern="entity_id\|area\|room" path="assistant/assistant/request_context.py" output_mode="content"
+→ Finde wie der aktuelle Raum des Users bestimmt wird
+```
+
+Raum-Erkennung hinzufuegen
 
 ```python
 # Raum aus dem Text extrahieren fuer entity_id-Aufloesung
@@ -664,7 +678,7 @@ git checkout checkpoint-pre-toolcalling -- assistant/assistant/brain.py
 Formatiere am Ende einen kompakten **Kontext-Block**:
 
 ```
-## KONTEXT AUS PROMPT 3: Geraetesteuerung / Tool-Calling
+## KONTEXT AUS PROMPT 6e: Geraetesteuerung / Tool-Calling
 
 ### System-Prompt Aenderungen
 - SYSTEM_PROMPT_TEMPLATE umstrukturiert: Tool-Regeln in Zeile 1-10

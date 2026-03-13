@@ -4,6 +4,14 @@
 
 Du bist ein Elite-Software-Ingenieur mit Expertise in Python-Async-Programmierung, Redis, SQLAlchemy, FastAPI, Flask und Smart-Home-Systemen. Du hast die gesamte Audit-Serie (Prompts 1–8) und deren Ergebnisse (RESULT_01 bis RESULT_08) vorliegen. Deine Aufgabe: **Jedes einzelne offene Finding finden, verstehen, und fixen.**
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## ⚠️ Arbeitsumgebung
@@ -482,3 +490,44 @@ Erstelle `docs/audit-results/RESULT_09_FINAL_FIXES.md` mit folgendem Format:
 5. **Bei Unsicherheit**: Konservativen Fix waehlen (z.B. Logging statt Refactoring). Lieber einen einfachen Fix der sicher funktioniert als einen eleganten der Regressionen verursacht.
 6. **Tests**: Falls `pytest` ausfuehrbar ist, nach jeder Phase laufen lassen. Falls Dependencies fehlen (pydantic_settings etc.), ist das OK — Syntax-Check reicht als Minimum.
 7. **Addon-Pfade**: Der Addon-Code liegt direkt in `addon/` (nicht in `addon/rootfs/opt/mindhome/`). Pruefe den tatsaechlichen Pfad mit `ls`.
+
+---
+
+## ROLLBACK-STRATEGIE
+
+```bash
+# Vor dem Start: Branch erstellen
+cd /home/user/mindhome
+git checkout -b fix/remaining-bugs-p09
+git add -A && git commit -m "Checkpoint: Vor P09-Fixes"
+
+# Nach jeder Phase: Commit
+git add -A && git commit -m "P09 Phase X: Beschreibung"
+
+# Falls Rollback noetig:
+git log --oneline -10
+git revert <commit-hash>
+```
+
+Vor dem ersten Edit: Merke dir den aktuellen Stand.
+Wenn ein Fix einen ImportError oder SyntaxError verursacht:
+1. SOFORT revert (Edit zuruecknehmen)
+2. Im OFFEN-Block dokumentieren: "Fix X verursacht Regression Y"
+3. Zum naechsten Fix weitergehen
+NIEMALS einen kaputten Fix stehen lassen.
+
+---
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

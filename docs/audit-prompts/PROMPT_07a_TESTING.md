@@ -205,6 +205,36 @@ Für jedes gefundene Problem:
 
 ---
 
+## Test-Template (fuer neue Tests)
+
+Wenn du neue Tests schreibst, verwende dieses Template:
+
+```python
+# tests/test_<modul>.py
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+# Fuer async Tests:
+@pytest.mark.asyncio
+async def test_<scenario_beschreibung>():
+    """Beschreibung was getestet wird."""
+    # Arrange
+    mock_brain = MagicMock()
+    mock_brain.memory = AsyncMock()
+
+    # Act
+    result = await function_under_test(mock_brain, input_data)
+
+    # Assert
+    assert result is not None
+    assert result.status == "expected"
+    mock_brain.memory.get_recent_conversations.assert_called_once()
+```
+
+Namenskonvention: `test_<modul>_<szenario>.py` z.B. `test_brain_memory_retrieval.py`
+
+---
+
 ## Rollback-Regel
 
 Vor dem ersten Edit: Merke dir den aktuellen Stand.
@@ -237,9 +267,21 @@ NIEMALS einen kaputten Fix stehen lassen.
 
 ## Erfolgs-Kriterien
 
-- □ Tests ausgefuehrt
-- □ Coverage dokumentiert
+- □ Tests ausgefuehrt und Ergebnisse dokumentiert
+- □ Coverage dokumentiert (Zeilen-Coverage pro Modul)
 - □ Alle KRITISCH Tests bestehen
+- □ Neue Tests fuer die Fixes aus P06a-P06f geschrieben
+- □ Security-Endpoints getestet
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ cd /home/user/mindhome/assistant && python -m pytest tests/ --tb=short -q → Ergebnis dokumentiert
+□ cd /home/user/mindhome/assistant && python -m pytest tests/ --co -q | wc -l → Anzahl Tests
+□ ls assistant/tests/test_*.py | wc -l → Anzahl Test-Dateien
+□ grep "def test_" assistant/tests/ -r | wc -l → Anzahl Test-Funktionen
+□ python3 -m py_compile assistant/assistant/brain.py → kein Error
+```
 
 ## ⚡ Übergabe an Prompt 7b
 

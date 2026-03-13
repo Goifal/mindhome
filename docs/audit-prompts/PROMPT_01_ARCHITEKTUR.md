@@ -46,7 +46,7 @@ Jarvis ist ein lokaler KI-Butler für Home Assistant. Das Projekt besteht aus **
 
 Das System ist NICHT nur der Assistant. Es besteht aus:
 
-1. **Assistant-Server** (`/assistant/assistant/`, 88 Python-Module, FastAPI)
+1. **Assistant-Server** (`/assistant/assistant/`, 89 Python-Module, FastAPI)
    - KI-Kern: LLM, Memory, Persönlichkeit, Function Calling
    - Kommuniziert mit HA über REST/WebSocket API
 
@@ -261,6 +261,33 @@ Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
 **KRITISCH**: Erstelle eine **vollständige Import-Karte** aller Module. Nicht nur Memory — ALLE.
 
 **Shared-Module Prüfung**: Prüfe zusätzlich ob und wie die Dateien aus `/shared/` (constants.py, schemas/) von Assistant, Addon und HA-Integration importiert werden. Nutzen alle Services dieselben Schemas oder definieren sie eigene?
+
+#### Shared-Module Audit (PFLICHT)
+
+```
+# 1. Welche Shared-Schemas existieren?
+Glob: pattern="shared/**/*.py"
+
+# 2. Wer importiert die Shared-Schemas?
+Grep: pattern="from shared|import shared" path="." output_mode="content"
+
+# 3. Definiert der Assistant eigene Request/Response-Klassen?
+Grep: pattern="class.*Request|class.*Response" path="assistant/assistant/" output_mode="content"
+
+# 4. Definiert der Addon eigene Request/Response-Klassen?
+Grep: pattern="class.*Request|class.*Response" path="addon/rootfs/opt/mindhome/" output_mode="content"
+
+# 5. Nutzen alle Services dieselben Ports/Konstanten?
+Grep: pattern="8200|5000|ASSISTANT_PORT|ADDON.*PORT" path="." output_mode="content"
+```
+
+Erwartetes Ergebnis:
+| Shared-Datei | Von Assistant importiert? | Von Addon importiert? | Von HA-Integration importiert? | Abweichende eigene Definitionen? |
+|---|---|---|---|---|
+| shared/constants.py | ? | ? | ? | ? |
+| shared/schemas/chat_request.py | ? | ? | ? | ? |
+| shared/schemas/chat_response.py | ? | ? | ? | ? |
+| shared/schemas/events.py | ? | ? | ? | ? |
 
 #### Claude Code Strategie — Import-Karte effizient erstellen
 

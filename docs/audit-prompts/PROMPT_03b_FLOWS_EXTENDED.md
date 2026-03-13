@@ -110,6 +110,30 @@ User: "Hilf mir beim Reparieren meiner Lampe" / Workshop-UI
 - 3D-Drucker- und Roboter-Arm-Steuerung: Über `ha_client.py` oder direkte API-Calls?
 - Sicherheit: Kann jeder User Roboter-Arme steuern? Trust-Level-Check?
 
+**Sub-Flows des Workshop-Systems** (jeden einzeln verfolgen):
+
+```
+10a: Workshop-Chat
+  User fragt → /api/workshop/chat → brain.py oder eigener LLM-Call?
+  → Persoenlichkeits-Pipeline? → Antwort
+
+10b: Projekt-Management
+  User erstellt Projekt → /api/workshop/projects → repair_planner.py
+  → Schritt-Navigation → Diagnose → Status-Tracking
+
+10c: Code-Generierung
+  User will Arduino-Code → /api/workshop/generate/* → workshop_generator.py
+  → Template-System? → LLM-basiert? → Output-Validierung?
+
+10d: 3D-Druck + Roboter-Arm
+  User steuert Hardware → /api/workshop/printer/* oder /api/workshop/robot/*
+  → ha_client.py oder direkte API? → Sicherheits-Check?
+
+10e: Technische Referenz (RAG)
+  User sucht Datenblatt → /api/workshop/library/* → workshop_library.py
+  → ChromaDB Query → Embedding-basierte Suche → Ergebnis
+```
+
 ---
 
 ### Flow 11: Boot-Sequenz & Startup-Announcement
@@ -213,6 +237,21 @@ Für jeden Flow:
 ### 3. Service-Interaktions-Analyse
 
 Wie kommunizieren die drei Services (Assistant, Addon, Speech) in jedem Flow?
+
+**Pruefe diese konkreten Kommunikationskanaele**:
+```
+Grep: pattern="requests\.(get|post|put)|aiohttp|httpx|fetch" path="addon/rootfs/opt/mindhome/" output_mode="content"
+→ Findet HTTP-Calls vom Addon zum Assistant (oder umgekehrt)
+
+Grep: pattern="ASSISTANT_PORT|8200|ADDON.*PORT|5000" path="." output_mode="content"
+→ Findet Port-Referenzen die auf Service-Kommunikation hindeuten
+
+Grep: pattern="websocket|ws://|wss://" path="addon/rootfs/opt/mindhome/" output_mode="content"
+→ Findet WebSocket-Verbindungen vom Addon
+
+Grep: pattern="from shared|import shared" path="addon/rootfs/opt/mindhome/" output_mode="content"
+→ Prueft ob Addon die Shared-Schemas ueberhaupt importiert
+```
 
 ### 4. Kritische Findings
 

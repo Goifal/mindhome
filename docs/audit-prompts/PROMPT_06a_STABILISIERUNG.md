@@ -198,11 +198,24 @@ NIEMALS einen kaputten Fix stehen lassen.
 
 > **Jeder Fix muss VERIFIZIERT sein.** Lies die Datei mit Read, mache die Änderung mit Edit, lies den umgebenden Code, stelle sicher dass der Fix keine neuen Probleme einführt. Prüfe mit Grep alle Aufrufer der geänderten Funktion.
 
+### Pre-Edit Template (Vor JEDEM Edit ausfuellen!)
+
+```
+Datei: [path/to/file.py]
+Zeile: [exact line number]
+VORHER (exakt kopiert aus Read):
+  [die originale fehlerhafte Zeile]
+NACHHER (Fix):
+  [die korrigierte Zeile]
+Warum: [1-Satz Erklaerung des Bugs]
+Aufrufer geprueft: [Grep-Ergebnis: X Stellen, alle kompatibel]
+```
+
 ### Claude Code Tool-Einsatz
 
 | Aufgabe | Tool | Wichtig |
 |---|---|---|
-| Datei lesen vor dem Fix | **Read** | IMMER erst lesen, dann editieren |
+| Datei lesen vor dem Fix | **Read** | IMMER erst lesen, dann editieren — siehe Pre-Edit Template |
 | Fix implementieren | **Edit** | Direkt in der Datei ändern |
 | Aufrufer prüfen nach Fix | **Grep** | Alle Stellen die die geänderte Funktion nutzen |
 | Tests laufen lassen | **Bash** | `python -m pytest tests/test_X.py -x` |
@@ -227,7 +240,20 @@ Bevor du zu 6b übergehst:
 
 - □ Alle KRITISCH Bugs gefixt
 - □ python -c 'import assistant.brain' kein Error
+- □ python -c 'import assistant.memory' kein Error
+- □ python -c 'import assistant.personality' kein Error
 - □ Checkpoints dokumentiert
+- □ Jeder Fix verifiziert mit Read → Grep → Edit → Verify Methodik
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q
+□ python3 -m py_compile assistant/assistant/brain.py
+□ python3 -m py_compile assistant/assistant/memory.py
+□ grep "except.*pass" assistant/assistant/brain.py → sollte 0 sein (alle silent exceptions gefixt)
+□ grep "_safe_init" assistant/assistant/brain.py → alle Module in _safe_init gewrapped
+```
 
 ## ⚡ Übergabe an Prompt 6b
 

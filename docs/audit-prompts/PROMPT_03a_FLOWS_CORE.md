@@ -55,7 +55,31 @@ main.py startet
   → Wann ist Jarvis "bereit"?
 ```
 
-Dokumentiere die **exakte Init-Reihenfolge** mit Datei:Zeile.
+Dokumentiere die **exakte Init-Reihenfolge** mit Datei:Zeile. Erwartetes Format:
+
+```
+INIT-REIHENFOLGE:
+1. main.py:XX → lifespan() startet
+2. main.py:XX → brain = Brain() erstellt
+3. brain.py:XX → __init__() → self.memory = Memory(...)
+4. brain.py:XX → __init__() → self.personality = Personality(...)
+5. brain.py:XX → initialize() → await self.memory.connect()
+6. brain.py:XX → initialize() → await self.ollama.check_model()
+...
+N. main.py:XX → _boot_announcement() → "Alle Systeme online, Sir."
+
+DEPENDENCIES CHECK:
+- Redis: brain.py:XX → memory.py:XX → Verbindung noetig? [Ja/Nein]
+- ChromaDB: brain.py:XX → semantic_memory.py:XX → Verbindung noetig? [Ja/Nein]
+- Ollama: brain.py:XX → ollama_client.py:XX → Verbindung noetig? [Ja/Nein]
+- HA: brain.py:XX → ha_client.py:XX → Verbindung noetig? [Ja/Nein]
+
+FAILURE MODES:
+- Redis fehlt → [Was passiert? Crash / Degraded / Retry?]
+- ChromaDB fehlt → [Was passiert?]
+- Ollama fehlt → [Was passiert?]
+- HA fehlt → [Was passiert?]
+```
 
 #### B) Der exakte LLM-Prompt: Was geht an Ollama?
 
@@ -67,7 +91,49 @@ Dokumentiere die **exakte Init-Reihenfolge** mit Datei:Zeile.
 5. Wie viele **Token** verbraucht der Kontext typischerweise?
 6. Was passiert wenn der Kontext das **Context-Window übersteigt**? Wird gekürzt? Was wird zuerst entfernt?
 
-**Zeige den rekonstruierten System-Prompt** — den Text den Ollama tatsächlich sieht.
+**Zeige den rekonstruierten System-Prompt** — den Text den Ollama tatsächlich sieht. Erwartetes Format:
+
+```
+REKONSTRUIERTER SYSTEM-PROMPT (Struktur):
+=== BEGINN SYSTEM-PROMPT ===
+
+[Block 1: Identitaet — aus personality.py:XXX SYSTEM_PROMPT_TEMPLATE]
+"Du bist Jarvis, ..."
+
+[Block 2: Persoenlichkeit — aus personality.py:XXX]
+"Sarkasmus-Level: X, ..."
+
+[Block 3: Tageszeit — aus time_awareness.py:XXX]
+"Es ist [Uhrzeit], [Tageszeit-Kontext]"
+
+[Block 4: Situation — aus situation_model.py:XXX]
+"Aktueller Kontext: ..."
+
+[Block 5: Memory — aus brain.py:XXX _build_memory_context()]
+"Erinnerungen: ..."
+
+[Block 6: Tools — aus function_calling.py:XXX get_assistant_tools()]
+[Liste der verfuegbaren Tools/Functions]
+
+[Block 7: Dynamischer Kontext — aus context_builder.py:XXX]
+"HA-Status, Wetter, etc."
+
+=== ENDE SYSTEM-PROMPT ===
+
+HERKUNFT:
+- Block 1-2: personality.py → build_system_prompt() → Zeile XXX
+- Block 3: time_awareness.py → get_time_context() → Zeile XXX
+- Block 5: brain.py → _build_memory_context() → Zeile XXX
+- Block 6: function_calling.py → get_assistant_tools() → Zeile XXX
+- Zusammenbau: context_builder.py → build_context() → Zeile XXX (oder brain.py?)
+
+TOKEN-BUDGET:
+- Basis (statisch): ~XXX Tokens
+- Dynamisch (Memory, Situation, Tools): ~XXX Tokens
+- Gesamt typisch: ~XXX Tokens
+- Context-Window Qwen 3.5: 32.768 Tokens
+- Verbleibend fuer User-Input + Antwort: ~XXX Tokens
+```
 
 ---
 

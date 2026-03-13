@@ -42,10 +42,14 @@ Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. In Pr
 
 ### ⚠️ Phase Gate: Regression-Check vor Start
 
-Bevor du irgendetwas änderst:
-1. **Tests ausführen**: `cd assistant && python -m pytest --tb=short -q` — Ergebnis dokumentieren
-2. **Dieses Ergebnis ist die Baseline** — nach jeder Änderung in 6b müssen diese Tests weiterhin grün sein
-3. Falls Tests schon fehlschlagen → zurück zu 6a, dort zuerst fixen
+Bevor du irgendetwas aenderst:
+1. **Tests ausfuehren**: `cd assistant && python -m pytest --tb=short -q` — Ergebnis dokumentieren
+2. **Dieses Ergebnis ist die Baseline** — nach jeder Aenderung in 6b muessen diese Tests weiterhin gruen sein
+3. Falls Tests schon fehlschlagen → zurueck zu 6a, dort zuerst fixen
+
+> **Phase Gate Baseline erklaert**: Der "Baseline" ist der Test-Zustand am ENDE von Prompt 6a.
+> Beispiel: Wenn nach 6a 142 Tests gruen und 3 Tests rot (xfail) sind, dann ist die 6b-Baseline: mindestens 142 gruen.
+> Wenn nach einer Aenderung in 6b nur noch 140 gruen sind = **REGRESSION** → Fix zuruecknehmen!
 
 ### Schritt 1: Architektur-Entscheidung — brain.py
 
@@ -243,9 +247,20 @@ Bevor du zu 6c übergehst:
 
 ## Erfolgs-Kriterien
 
-- □ Architektur-Konflikte aufgeloest
+- □ Architektur-Konflikte aufgeloest (mind. Konflikte A, B, E aus P01)
 - □ Performance-Optimierungen verifiziert
 - □ Kein ImportError
+- □ Tests nicht verschlechtert gegenueber 6a-Baseline
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q
+□ python3 -m py_compile assistant/assistant/brain.py
+□ python3 -m py_compile assistant/assistant/function_calling.py
+□ grep "asyncio.Lock\|_lock" assistant/assistant/brain.py → Race-Condition-Schutz vorhanden
+□ grep "priority" assistant/assistant/brain.py | head -10 → Priority-System konsistent
+```
 
 ## ⚡ Übergabe an Prompt 6c
 

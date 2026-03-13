@@ -318,16 +318,38 @@ NIEMALS einen kaputten Fix stehen lassen.
 | Requirements prüfen | **Read** (parallel: alle 3) | `assistant/requirements.txt`, `addon/.../requirements.txt`, `speech/requirements.txt` |
 | Static Analysis | **Bash** | `cd assistant && python -m py_compile assistant/brain.py 2>&1` |
 
-- **Docker-Builds wenn möglich ausführen** — `docker build` mit Bash, falls Docker verfügbar
+- **Docker-Builds wenn moeglich ausfuehren** — `docker build` mit Bash, falls Docker verfuegbar
 - **Resilience ist nicht optional** — ein Smart-Home-Butler MUSS robust sein (MCU-Jarvis crasht nicht)
+
+### Falls Docker NICHT verfuegbar
+
+Wenn `docker` nicht installiert ist (haeufig in Analyse-Umgebungen):
+1. **Dockerfile Zeile fuer Zeile lesen** — jeder `RUN`-Befehl, jede `COPY`-Anweisung
+2. **Pruefen ob alle requirements.txt von den Dockerfiles referenziert werden**
+3. **Pruefen ob Ports korrekt exponiert werden**: `EXPOSE` vs. `docker-compose.yml` ports
+4. **Pruefen ob Volumes konsistent sind**: Wo werden Daten persistiert?
+5. **GPU-Pass-Through pruefen**: `--gpus all` oder `deploy.resources.reservations.devices` in compose
+6. **Static Analysis statt Build**: `python3 -m py_compile` fuer alle Python-Dateien
 
 ---
 
 ## Erfolgs-Kriterien
 
-- □ Docker Build erfolgreich
-- □ Health-Checks vorhanden
-- □ Startup-Reihenfolge korrekt
+- □ Docker Build erfolgreich (oder Dockerfile-Analyse wenn Docker nicht verfuegbar)
+- □ Health-Checks vorhanden (/healthz, /readyz)
+- □ Startup-Reihenfolge korrekt und Dependency-Failures behandelt
+- □ GPU/VRAM-Budget dokumentiert fuer RTX 3090
+- □ Resilience-Szenarien dokumentiert
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ ls **/Dockerfile* → alle Dockerfiles gefunden
+□ grep "HEALTHCHECK\|healthz\|readyz" **/Dockerfile* → Health-Checks in Docker
+□ grep "healthz\|readyz" assistant/assistant/main.py → Health-Endpoints vorhanden
+□ grep "GPU\|gpu\|cuda\|NVIDIA" **/Dockerfile* docker-compose*.yml → GPU-Config
+□ grep "restart:\|restart_policy" docker-compose*.yml → Restart-Policy konfiguriert
+```
 
 ## ⚡ Nächster Schritt: Neuer Durchlauf?
 

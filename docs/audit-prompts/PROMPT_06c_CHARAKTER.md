@@ -201,6 +201,16 @@ NIEMALS einen kaputten Fix stehen lassen.
 - □ MCU-Score >= 7/10
 - □ System-Prompt unter 800 Tokens Basis
 - □ Floskeln in banned_phrases
+- □ Tests bestehen nach allen Aenderungen
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ grep "Natuerlich\|Gerne\|Selbstverstaendlich" personality.py → in banned_phrases Liste
+□ grep "banned_phrases\|BANNED\|_banned" brain.py → Filter aktiv
+□ python3 -m py_compile assistant/assistant/personality.py → kein Error
+□ cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q
+```
 
 ## ⚡ Übergabe an Prompt 6d
 

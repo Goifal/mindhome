@@ -41,6 +41,13 @@ Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wi
 
 Prüfe die **Extended-Module** (Priorität 5–9, 63 Module) systematisch auf die **13 Fehlerklassen** (siehe P04a).
 
+> **Modul-Existenz-Verifikation (Pflicht!)**
+> Nicht alle 63 Module muessen existieren. BEVOR du die Batches analysierst:
+> ```
+> Glob: pattern="*.py" path="assistant/assistant/"
+> ```
+> Dokumentiere welche Module aus den Listen NICHT gefunden wurden → als "existiert nicht" markieren und ueberspringen.
+
 > **Dieser Prompt ist Teil 2 von 3** der Bug-Jagd:
 > - **P04a**: Core-Module (brain, main, memory, context, actions) — ✅ erledigt
 > - **P04b** (dieser): Extended-Module (proaktiv, HA, audio, intelligence, resilience, domains) — Priorität 5–9
@@ -198,7 +205,20 @@ Gesamt: X Bugs (Priorität 5–9)
 
 ## Erfolgskriterien
 
-Alle Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert, Datei:Zeile Referenzen
+- Alle Extended-Module (Prio 5-9) gelesen, Bugs nach 13 Fehlerklassen kategorisiert
+- Jeder Bug hat: Datei:Zeile, Fehlerklasse, Severity, konkreten Fix-Vorschlag
+- Mindestens 30 Bugs in den Extended-Modulen gefunden
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ Bug-Report enthaelt Datei:Zeile fuer jeden Bug
+□ Bugs sind nach 13 Fehlerklassen kategorisiert
+□ Severity-Verteilung dokumentiert (KRITISCH/HOCH/MITTEL/NIEDRIG)
+□ Proaktive Module geprueft: grep "async def\|await" proactive.py proactive_planner.py
+□ Intelligence-Module geprueft: grep "except\|try:" insight_engine.py anticipation.py learning_observer.py
+□ Audio-Module geprueft: grep "await\|async" sound_manager.py tts_enhancer.py multi_room_audio.py
+```
 
 ---
 

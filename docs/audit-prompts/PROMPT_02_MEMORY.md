@@ -30,6 +30,29 @@ Du bist ein Elite-Software-Ingenieur spezialisiert auf Memory-Systeme in Convers
 
 ---
 
+## Alle 12 Memory-relevanten Module
+
+Lies JEDES dieser Module mit Read, um die Memory-Architektur vollstaendig zu verstehen:
+
+| # | Modul | Pfad | Funktion |
+|---|---|---|---|
+| 1 | memory.py | assistant/assistant/memory.py | Redis Working Memory, get_recent_conversations() |
+| 2 | semantic_memory.py | assistant/assistant/semantic_memory.py | ChromaDB Langzeit-Fakten, search_facts(), get_facts_by_person() |
+| 3 | conversation_memory.py | assistant/assistant/conversation_memory.py | Projekt-Tracking, offene Fragen, Daily Summaries |
+| 4 | memory_extractor.py | assistant/assistant/memory_extractor.py | Fakten-Extraktion aus Gespraechen |
+| 5 | correction_memory.py | assistant/assistant/correction_memory.py | Gelernte Korrekturen |
+| 6 | dialogue_state.py | assistant/assistant/dialogue_state.py | Konversations-Zustandsmaschine |
+| 7 | embeddings.py | assistant/assistant/embeddings.py | Embedding-Generierung fuer Memory-Suche |
+| 8 | embedding_extractor.py | assistant/assistant/embedding_extractor.py | Feature-Extraktion |
+| 9 | learning_observer.py | assistant/assistant/learning_observer.py | Gelerntes aus Verhalten |
+| 10 | learning_transfer.py | assistant/assistant/learning_transfer.py | Wissenstransfer zwischen Domains |
+| 11 | knowledge_base.py | assistant/assistant/knowledge_base.py | Lokales Wissen |
+| 12 | personality.py | assistant/assistant/personality.py | build_memory_callback_section() — eigenes Memory-System! |
+
+> **ACHTUNG**: Module 1-4 sind die KERN-Memory-Module. Module 5-12 ergaenzen das Memory-System. Pruefe ob sie ALLE korrekt in brain.py integriert sind.
+
+---
+
 ## DAS PROBLEM: Jarvis hat Alzheimer
 
 Jarvis vergisst **alles**. Trotz 3 separater Memory-Systeme (Redis, ChromaDB, SemanticMemory) funktioniert die Erinnerung nicht. Die Root Causes sind **bekannt und verifiziert**:
@@ -240,7 +263,13 @@ mega_tasks = {
 }
 ```
 
-**ACHTUNG**: Die exakten Variablennamen und Task-Struktur muessen aus dem Code gelesen werden. Lies ZUERST den _mega_tasks-Bereich und die intent_type=="memory"-Bedingung, dann adaptiere den Fix.
+**ACHTUNG**: Die exakten Variablennamen und Task-Struktur muessen aus dem Code gelesen werden.
+Methodik:
+1. `Grep: pattern="_mega_tasks" path="assistant/assistant/brain.py" output_mode="content"` → Finde die Stelle wo Tasks definiert werden
+2. `Read: brain.py` mit offset um diese Stelle herum (±30 Zeilen) → Verstehe das Task-Format (dict, list, oder anderes)
+3. Fuege die zwei neuen Tasks im SELBEN Format hinzu wie die bestehenden Tasks
+4. `Grep: pattern="intent_type.*memory|intent.*==.*memory" path="assistant/assistant/brain.py" output_mode="content"` → Finde die alte Bedingung
+5. Entferne oder kommentiere die alte `if intent_type == "memory"` Bedingung fuer search_facts/get_facts_by_person
 
 **Warum?** Semantic Facts sind das Langzeitgedaechtnis von Jarvis. Wenn der User sagt "Meine Frau heisst Lisa" und spaeter fragt "Wie heisst meine Frau?", wird das als intent_type="question" klassifiziert — und Lisa wird nie gefunden. Das ist der Hauptgrund warum Jarvis vergisst.
 

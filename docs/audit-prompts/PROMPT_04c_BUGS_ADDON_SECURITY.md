@@ -112,13 +112,13 @@ Prüfe **alle** diese Security-Checks:
 | 5 | Self-Automation Safety | `self_automation.py` | Kann Jarvis gefährliche HA-Automationen generieren? |
 | 6 | Autonomy Limits | `autonomy.py` | Gibt es harte Grenzen für autonome Aktionen? |
 | 7 | Threat Assessment | `threat_assessment.py` | Funktioniert es? Wird es genutzt? |
-| 8 | **Factory Reset** | `main.py` | Ist `/api/ui/factory-reset` ausreichend geschützt? Trust-Level + Bestätigung? |
+| 8 | **Factory Reset** | `main.py` | Endpoint `/api/ui/factory-reset`: (1) Braucht `trust_level >= 3`? (2) Braucht Bestaetigungscode (OTP/PIN/Recovery-Key)? (3) Wird User benachrichtigt? Grep: `pattern="factory.reset" path="assistant/assistant/main.py" output_mode="content"` |
 | 9 | **System Update/Restart** | `main.py` | Sind `/api/ui/system/update` und `/restart` geschützt? |
 | 10 | **API-Key Management** | `main.py` | Ist `/api/ui/api-key/regenerate` geschützt? Recovery-Key-Logik sicher? |
 | 11 | **PIN-Auth** | `main.py` | Ist die PIN-Authentifizierung (`/api/ui/auth`) sicher? Brute-Force-Schutz? |
 | 12 | **File Upload** | `main.py`, `file_handler.py`, `ocr.py` | Path Traversal, Injection über Dateinamen, Dateigröße, MIME-Type? |
 | 13 | **Workshop Hardware** | `main.py` | Sind `/api/workshop/arm/*` und `/api/workshop/printer/*` Trust-Level-geschützt? |
-| 14 | **Sensitive Data in Logs** | `main.py` | Werden API-Keys/Tokens in Error/Activity Buffer redacted? |
+| 14 | **Sensitive Data in Logs** | `main.py` | Werden API-Keys/Tokens in Error/Activity Buffer redacted? Grep: `pattern="api.key\|api_key\|token\|password" path="assistant/assistant/main.py" output_mode="content"` → pruefen ob jeder Match ein `redact\|redacted\|****` hat |
 | 15 | **WebSearch SSRF** | `web_search.py` | IP-Blocklist, DNS-Rebinding-Check, URL-Validierung |
 | 16 | **Frontend XSS** | `addon/.../app.jsx`, `assistant/.../app.js` | Werden API-Responses escaped? User-Input in DOM? |
 | 17 | **CORS** | `main.py`, `addon/app.py` | CORS-Headers korrekt? Zu permissiv (allow-origin: *)? |
@@ -264,7 +264,21 @@ Performance-Probleme: X
 
 ## Erfolgskriterien
 
-Alle Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert, Datei:Zeile Referenzen
+- Alle Addon-Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert
+- Security-Audit: Mindestens 5 Security-relevante Findings
+- Performance/Latenz: Mindestens 3 Performance-Findings mit Messvorschlaegen
+- Addon ↔ Assistant Interaktion geprueft
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ Addon-Module gelesen: grep "def " addon/rootfs/opt/mindhome/app.py | wc -l
+□ Security-Checks: grep "eval\|exec\|os.system\|subprocess" addon/ -r
+□ SQL-Injection geprueft: grep "f\".*SELECT\|format.*SELECT" addon/ -r
+□ Auth-Check: grep "api_key\|auth\|token\|secret" addon/rootfs/opt/mindhome/app.py
+□ Thread-Safety: grep "threading\|Lock\|global " addon/rootfs/opt/mindhome/ -r | wc -l
+□ Frontend-Security: grep "innerHTML\|eval\|document\.write" ha_integration/ -r
+```
 
 ---
 

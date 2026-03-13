@@ -33,9 +33,16 @@ User-Eingabe → brain.py process()
 
 ### Schritt 1: Response-Filter lesen
 
+Zuerst die exakte Position finden:
 ```
-Lies: assistant/assistant/brain.py
-Offset: 4844, Limit: 200
+Grep: pattern="def _filter_response" path="assistant/assistant/brain.py" output_mode="content"
+→ Finde die Zeile wo _filter_response_inner() definiert ist
+```
+
+Dann den Filter lesen:
+```
+Read: assistant/assistant/brain.py
+Offset: [Ergebnis aus Grep], Limit: 200
 Funktion: _filter_response_inner()
 
 Prüfe:
@@ -44,6 +51,14 @@ Prüfe:
 □ Werden JSON-Fragmente ({"name": "...", "arguments": ...}) gefiltert?
 □ Werden <tool_call>...</tool_call> XML-Tags gefiltert?
 □ In welcher Reihenfolge laufen die Filter-Schritte?
+```
+
+Bestehende Meta-Filter pruefen:
+```
+Grep: pattern="speak\|tts\|emit\|meta" path="assistant/assistant/brain.py" output_mode="content"
+→ Gibt es bereits einen Filter fuer diese Begriffe?
+→ Falls ja: Ist er vollstaendig? Fehlen Patterns?
+→ Falls nein: Filter muss komplett neu erstellt werden (siehe FIX 1)
 ```
 
 ### Schritt 2: Sound Manager lesen
@@ -255,16 +270,21 @@ Alle müssen bestehen:
 □ python -c "import assistant.sound_manager" → kein ImportError
 ```
 
+## ⚡ Uebergabe an Prompt 7a
+
+> **Nach P06f ist die Fix-Phase abgeschlossen (P06a-P06f).** Weiter mit P07a (Testing) um alle Fixes zu verifizieren.
+
 ## OUTPUT
 
 Am Ende dieses Prompts erstelle folgenden Block:
 
 ```
-=== KONTEXT FÜR NÄCHSTEN PROMPT ===
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+PROMPT: 6f (TTS & Response-Filter)
 GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
 OFFEN: [Liste der nicht gefixten Issues mit Grund]
-GEÄNDERTE DATEIEN: [Liste aller editierten Dateien]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
 REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
-NÄCHSTER SCHRITT: [Was der nächste Prompt tun soll]
+NAECHSTER SCHRITT: Starte PROMPT_07a_TESTING.md
 ===================================
 ```

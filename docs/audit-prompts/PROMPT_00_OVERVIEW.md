@@ -1,13 +1,13 @@
 # Jarvis Audit — Prompt-Serie (Übersicht)
 
-Diese **16 Prompts** sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu werden. Jeder Prompt ist fokussiert auf ein Thema und liefert als Output den Input für den nächsten.
+Diese **20 Prompts** sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu werden. Jeder Prompt ist fokussiert auf ein Thema und liefert als Output den Input für den nächsten.
 
 > **Für einen weiteren Durchlauf**: Nutze `PROMPT_RESET.md` **vor** Prompt 1, um den Kontext sauber zurückzusetzen und die Ergebnisse des vorherigen Durchlaufs als Vergleichsbasis zu sichern.
 
 ## Das System
 
 Jarvis besteht aus **drei Services + HA-Integration + Shared-Module**:
-1. **Assistant** (`/assistant/assistant/`, 88 Module, FastAPI) — KI-Kern (inkl. `brain.py` 10.231 Zeilen, `main.py` 8.000+ Zeilen)
+1. **Assistant** (`/assistant/assistant/`, 89 Module, FastAPI) — KI-Kern (inkl. `brain.py` 10.231 Zeilen, `main.py` 8.000+ Zeilen)
 2. **Addon** (`/addon/rootfs/opt/mindhome/`, 67 Module, Flask) — Smart-Home-Logik (14 Kern + 16 Engines + 23 Domains + 17 Routes)
 3. **Speech** (`/speech/`, 2 Module, Whisper STT) — Spracheingabe
 4. **HA-Integration** (`/ha_integration/`, 3 Python-Dateien + `manifest.json` + `strings.json`) — Bridge zwischen HA Voice Pipeline und Assistant
@@ -33,9 +33,13 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 | 6b | `PROMPT_06b_ARCHITEKTUR.md` | **Architektur-Entscheidungen** + Konflikte + Flows + **Performance** | Konflikte aus #1 + Flows aus #3a/3b |
 | 6c | `PROMPT_06c_CHARAKTER.md` | **Persönlichkeit harmonisieren** + Config + 🟡 Bugs + Dead Code | Personality aus #5 + Bugs aus #4a–4c |
 | 6d | `PROMPT_06d_HAERTUNG.md` | **Security** + **Resilience** + **Addon-Koordination** | Security aus #4c + Konflikt F aus #1 |
-| 7a | `PROMPT_07a_TESTING.md` | Tests + Coverage + **Security-Endpoint-Tests** | Verifiziert Fixes aus #6a–6d |
+| 6e | `PROMPT_06e_GERAETESTEUERUNG.md` | **Tool-Calling** + **System-Prompt** + Gerätesteuerung | Pain-Point: Geräte reagieren nicht |
+| 6f | `PROMPT_06f_TTS_RESPONSE.md` | **speak-Filter** + **Meta-Leakage** + TTS-Pipeline | Pain-Point: "speak" in Sprachausgabe |
+| 7a | `PROMPT_07a_TESTING.md` | Tests + Coverage + **Security-Endpoint-Tests** | Verifiziert Fixes aus #6a–6f |
 | 7b | `PROMPT_07b_DEPLOYMENT.md` | Docker + Deployment + **Resilience** + **Performance** | Nutzt Test-Ergebnisse aus #7a |
-| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #7b, vor erneutem #1 |
+| 8 | `PROMPT_08_REMAINING_FIXES.md` | Verbleibende Fixes aus vorherigen Durchläufen | Nutzt Ergebnisse aus #6a–6f |
+| 9 | `PROMPT_09_REMAINING_BUGS.md` | Verbleibende Bugs dokumentieren | Nutzt alle vorherigen Ergebnisse |
+| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #9, vor erneutem #1 |
 
 ## Wie verwenden
 
@@ -52,6 +56,26 @@ Die Prompts sind für **Claude Code** (Anthropics CLI-Tool) optimiert. Übergib 
 > **Context-Window-Strategie**: Claude Code komprimiert die Konversation automatisch. Bei einem Projekt dieser Größe (276 Python-Dateien) wird der Kontext ab ca. Prompt 3–4 komprimiert. Die Kontext-Blöcke am Ende jedes Prompts (`## KONTEXT AUS PROMPT X`) sichern die wichtigsten Ergebnisse gegen Kompression.
 
 **Wenn der Kontext zu knapp wird**: Starte eine neue Session und füge die Kontext-Blöcke aus den vorherigen Prompts manuell ein (siehe Abschnitt in jedem Prompt).
+
+**Beispiel eines Kontext-Blocks** (so sieht der Output am Ende jedes Prompts aus):
+```
+## KONTEXT AUS PROMPT 1: Architektur-Analyse
+
+### Konflikt-Karte
+- A (WER SAGT): personality.py + context_builder.py + mood_detector.py → kein Koordinator, personality.py:242 ueberschreibt mood
+- B (WER TUT): function_calling.py:3143 + action_planner.py:89 → kein Mutex, parallele Aufrufe moeglich
+- F (ASSISTANT↔ADDON): Beide steuern HA-Entities, kein Locking, Addon hat eigenen event_bus.py
+
+### Service-Interaktion
+Assistant ←HTTP→ Addon (Port 5000), Assistant ←WS→ HA, Addon ←WS→ HA (eigene Connection)
+
+### Top-5 Architektur-Probleme
+1. 🔴 brain.py God-Object (10.231 Zeilen, alle Flows)
+2. 🔴 Addon+Assistant steuern gleiche Entities ohne Koordination
+3. 🟠 12 Memory-Silos ohne Integration
+4. 🟠 main.py zweites God-Object (8.037 Zeilen, 200+ Endpoints)
+5. 🟡 Kein zentraler State-Manager
+```
 
 ### Option B: Separate Sessions (bei Context-Limits)
 
@@ -105,26 +129,28 @@ Wenn ein Prompt sagt "Implementiere den Fix":
 
 ## Was jeder Prompt abdeckt
 
-| Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P6a | P6b | P6c | P6d | P7a | P7b |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Addon-Module | ✅ | ✅ | - | ✅ | - | - | ✅ | ✅ | - | - | - | ✅ | - | ✅ |
-| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | ✅ | - | - | - | - | - | - | ✅ |
-| Speech-Service | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | - | ✅ |
-| Architektur | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | - |
-| Memory (12 Module) | - | ✅ | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | ✅ | - |
-| Flows (13 Pfade) | - | - | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | ✅ |
-| Bug-Jagd (13 Klassen) | - | - | - | - | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | - | - |
-| **Performance & Latenz** | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - | ✅ |
-| Security | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | ✅ | - |
-| Resilience | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | ✅ |
-| Persönlichkeit / MCU | ✅ | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | - |
-| Config / YAML | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - |
-| Tests (103 Dateien) | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - |
-| Docker / Deployment | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ |
-| Frontend (app.jsx, app.js) | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | ✅ |
-| Dependencies (requirements.txt) | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ |
-| Translations / Manifests | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - |
+| Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P6a | P6b | P6c | P6d | P6e | P6f | P7a | P7b |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Addon-Module | ✅ | ✅ | - | ✅ | - | - | ✅ | ✅ | - | - | - | ✅ | - | - | - | ✅ |
+| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ |
+| Speech-Service | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ |
+| Architektur | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - |
+| Memory (12 Module) | - | ✅ | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | ✅ | - |
+| Flows (13 Pfade) | - | - | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ |
+| Bug-Jagd (13 Klassen) | - | - | - | - | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | - | - | - | - |
+| **Gerätesteuerung/Tool-Calling** | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - |
+| **TTS/Meta-Leakage** | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - |
+| **Performance & Latenz** | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | ✅ |
+| Security | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - |
+| Resilience | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ |
+| Persönlichkeit / MCU | ✅ | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - |
+| Config / YAML | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ | - | - |
+| Tests (103 Dateien) | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - |
+| Docker / Deployment | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ |
+| Frontend (app.jsx, app.js) | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ |
+| Dependencies (requirements.txt) | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ |
+| Translations / Manifests | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - |
 
 ## Wichtige Rahmenbedingungen
 
@@ -167,7 +193,7 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 - Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
 - character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
 
-## Erwarteter Gesamt-Output nach allen 16 Prompts
+## Erwarteter Gesamt-Output nach allen 20 Prompts
 
 1. **Konflikt-Karte** — Welche Module gegeneinander arbeiten (inkl. Addon ↔ Assistant)
 2. **Memory-Diagnose** — Warum Jarvis vergisst + Fix
@@ -181,6 +207,8 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 6b. **Optimierte Architektur** — Konflikte aufgelöst, Flows repariert, **Latenz optimiert**
 6c. **Harmonisierter Charakter** — Eine Stimme, saubere Config, Dead Code entfernt
 6d. **Gehärtetes System** — Security geschlossen, Resilience implementiert, Addon koordiniert
+6e. **Funktionierende Gerätesteuerung** — Tool-Calling zuverlässig, System-Prompt optimiert, deterministic Fallback erweitert
+6f. **Saubere Sprachausgabe** — Kein "speak"/Meta-Leakage in TTS, Response-Filter gehärtet
 7a. **Test-Report** — Tests bestehen, Coverage-Lücken geschlossen, Security-Endpoints verifiziert
 7b. **Deployment-Report** — Docker läuft, **Performance gemessen**, Resilience getestet
 

@@ -136,11 +136,26 @@ Lies `settings.yaml` komplett. Lies auch `config.py` und `constants.py`.
 
 > **Wichtig**: Nicht alle YAML/JSON-Configs müssen existieren. Prüfe mit `Glob: pattern="**/*.yaml" path="assistant/assistant/"` und `Glob: pattern="**/*.yaml" path="addon/"` welche tatsächlich vorhanden sind. Überspringe nicht-existierende Dateien und dokumentiere sie als "nicht vorhanden".
 
-### Teil F: Persönlichkeits-Konsistenz über Code-Pfade
+### Config-Fallback-Check (Wichtig!)
 
-**Die kritische Frage**: Hat Jarvis **eine** Persönlichkeit oder **mehrere** je nach Code-Pfad?
+Fuer JEDE YAML-Datei die personality.py referenziert:
+1. Pruefe: Existiert sie im Repo? → `Glob: pattern="easter_eggs.yaml" path="assistant/"`
+2. Pruefe: Versucht personality.py sie zu laden? → `Grep: pattern="easter_eggs|opinion_rules" path="assistant/assistant/personality.py" output_mode="content"`
+3. Ergebnis:
+   - Datei existiert + Code laedt sie = OK
+   - Datei NICHT vorhanden + Code versucht zu laden = BUG (FileNotFoundError!)
+   - Datei vorhanden + Code laedt nicht = WARNUNG (ungenutzte Config)
 
-Prüfe ob der Ton **identisch** ist bei:
+### Teil F: Persoenlichkeits-Konsistenz ueber Code-Pfade
+
+**Die kritische Frage**: Hat Jarvis **eine** Persoenlichkeit oder **mehrere** je nach Code-Pfad?
+
+**Verifikations-Methode fuer jeden Code-Pfad:**
+1. **Read** — Die Funktion lesen die diesen Pfad implementiert
+2. **Grep** — Nach Aufrufen von `personality.build_*()`, `SYSTEM_PROMPT`, `sarcasm_level` suchen
+3. **Vergleichen**: Werden dieselben personality-Module wie in `brain.py` benutzt?
+
+Pruefe ob der Ton **identisch** ist bei:
 - Normaler Antwort auf eine Frage
 - Proaktiver Warnung (`proactive.py`)
 - Morgen-Briefing (`routine_engine.py`)
@@ -231,7 +246,21 @@ Konkreter Vorschlag für einen verbesserten `SYSTEM_PROMPT_TEMPLATE` (oder Teile
 
 ## Erfolgskriterien
 
-MCU-Score dokumentiert, System-Prompt Token-Zahl geschaetzt
+- MCU-Score (1-10) dokumentiert mit Begruendung fuer jeden Aspekt
+- System-Prompt Token-Zahl geschaetzt (Basis + dynamisch)
+- Alle Persoenlichkeits-Quellen identifiziert (personality.py, context_builder.py, mood_detector.py, etc.)
+- Config-Audit: Unbenutzte YAML-Keys identifiziert
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ grep "SYSTEM_PROMPT_TEMPLATE" personality.py → Template gefunden und analysiert
+□ grep "sarkasm\|humor\|ironi\|easter" personality.py → Persoenlichkeits-Features dokumentiert
+□ grep "mood\|stimmung\|emotion" personality.py → Mood-Integration geprueft
+□ grep "character_hint\|personality" settings.yaml → Config-Eintraege gefunden
+□ Alle Pfade durch die eine Antwort geht identifiziert (mind. 5 verschiedene)
+□ Token-Schaetzung: Basis-System-Prompt < 800 Tokens (Ziel)
+```
 
 ---
 

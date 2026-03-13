@@ -241,8 +241,23 @@ NIEMALS einen kaputten Fix stehen lassen.
 - □ Alle 5 Security-Checks bestanden
 - □ Resilience-Szenarien getestet
 - □ Circuit-Breaker vorhanden
+- □ Addon-Koordination geprueft
+- □ Tests bestehen nach allen Aenderungen
 
-## ⚡ Übergabe an Prompt 7a
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ grep "circuit_breaker\|CircuitBreaker" assistant/assistant/brain.py → vorhanden
+□ grep "rate_limit\|RateLimit" assistant/assistant/main.py → Rate-Limiting aktiv
+□ grep "sanitize\|escape\|validate" assistant/assistant/brain.py → Input-Validierung
+□ grep "eval\|exec\|os.system" assistant/assistant/ -r → sollte 0 sein
+□ python3 -m py_compile assistant/assistant/brain.py → kein Error
+□ cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q
+```
+
+## ⚡ Übergabe an Prompt 6e
+
+> **Nach P06d folgen P06e (Geraetesteuerung) und P06f (TTS/Response)** bevor es zu P07a (Testing) geht. Diese adressieren die zwei groessten User-Pain-Points: Geraete reagieren nicht + "speak" in Sprachausgabe.
 
 ```
 ## KONTEXT AUS PROMPT 6d: Härtung
