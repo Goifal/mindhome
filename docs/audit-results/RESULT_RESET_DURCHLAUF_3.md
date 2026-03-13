@@ -203,19 +203,32 @@ Fuer JEDEN Fix aus den vorherigen Durchlaeufen:
 |---|---|---|---|---|---|
 | #1 | 2026-03-10 | 225 | 173 (157 gefixt, 16 bereits OK) | 52 | N/A |
 | #2 | 2026-03-10 | (Verifikation) | 8 Log-Audit + Tests | 52+ | Zu pruefen |
-| #3 | 2026-03-13 | ? | ? | ? | ? |
+| #3 | 2026-03-13 | P02 verifiziert | 11 Memory-Fixes (P02) | 60 (P4a) + 207 (P4b) + 58 (P4c) | 0 Regressionen |
 
 ---
 
-## RESET ABGESCHLOSSEN — Bereit fuer Durchlauf #3
+## DURCHLAUF #3 — FORTSCHRITT (Stand 2026-03-13)
 
-Vorheriger Durchlauf zusammengefasst: Ja (Durchlauf #1 + #2)
-Unfixte Bugs uebernommen: 15 explizite + 52 aufgeschobene = 67 Bugs
-Regressions-Check: 2 intakt, 3 teilweise gefixt (F-029/F-043/F-047), 3 offen (F-035/F-039/F-068), 10+ zu pruefen
-Delta-Checkliste erstellt: Ja (9 offene Punkte, 10 geaenderte Bereiche, 7 neue Risiken)
-Alle Kontext-Bloecke verworfen: Ja
+### Abgeschlossene Prompts (DL#3):
+- P01 (Architektur): Verifiziert, DL#3-Header hinzugefuegt
+- **P02 (Memory): 11 Code-Fixes implementiert** — Kern des DL#3
+  - Confidence 0.6→0.4, Relevance 0.3→0.2, Limit 3→10
+  - conv_memory_ext Priority 3→1 (immer im System-Prompt)
+  - "ERFINDE KEINE Erinnerungen" Halluzinations-Schutz
+  - proactive.start() in _safe_init() gewrappt
+  - + 6 weitere Fixes (siehe RESULT_02)
+- P03a/P03b (Flows): Verifiziert, proactive.start() REGRESSION aufgeloest
+- P04a (Bugs Core): 0 KRITISCH offen (runter von 1), 11 HOCH offen
+- P04b (Bugs Extended): Unveraendert (207 offen, P02 betrifft Extended nicht)
+- P04c (Bugs Addon): Unveraendert (58 offen, P02 betrifft Addon nicht)
+- P05 (Personality): Verifiziert, P02 verbessert Memory-Kontext indirekt
+- P06a-P09: Historische Fix-Logs, DL#3-Notes hinzugefuegt
 
-→ Starte jetzt mit PROMPT_00_OVERVIEW.md
+### Naechste Schritte:
+- Weitere Prompt-Durchlaeufe wenn gewuenscht (P06e Geraetesteuerung, P06f TTS, etc.)
+- Oder direkt P10 Final Validation
+
+→ DL#3 fokussierte sich auf Memory-Reparatur (P02) und Verifikation aller Results
 
 ---
 
