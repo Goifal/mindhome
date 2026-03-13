@@ -1,48 +1,83 @@
-# Audit-Ergebnis: Prompt 3b — End-to-End Flow-Analyse (Extended-Flows 8–13) + Kollisionen
+# Audit-Ergebnis: Prompt 3b — End-to-End Flow-Analyse (Extended-Flows 8–13) + Kollisionen (Durchlauf #3)
 
-**Datum**: 2026-03-10 (DL#2), 2026-03-13 (DL#3 — Verifikation nach P02 Fixes)
+**Datum**: 2026-03-10 (DL#2), 2026-03-13 (DL#3 — Vollstaendige Neu-Analyse)
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Extended-Flows 8–13, Flow-Kollisionen, Service-Interaktionsanalyse
-**Durchlauf**: #3 (Verifikation nach P02 Memory-Reparatur)
+**Durchlauf**: #3 — Vollstaendige Analyse mit 4 parallelen Agents, alle Dateien gelesen
 **Vergleichsbasis**: DL#2 (4 FIXED, 3 TEILWEISE, 4 UNFIXED, 2 NEU)
 
 ---
 
-## DL#3: Verifikation nach P02 Memory-Reparatur
+## DL#3: Vollstaendige Neu-Analyse (2026-03-13)
 
-### DL#2 → DL#3 Status-Update (Top-Findings)
+### NEUES KRITISCHES FINDING: Entity-Ownership KAPUTT
+
+**🔴 KRITISCH — Feldname-Mismatch macht Entity-Ownership unwirksam:**
+- Assistant Endpoint (`main.py:690`): gibt `{"owner": "assistant", "ttl": ...}` zurueck
+- Addon Consumer (`ha_connection.py:84`): liest `data.get("owned", False)` — Feld heisst `"owned"` statt `"owner"`
+- **Ergebnis**: Ownership-Check gibt IMMER False zurueck → Addon ueberspringt NIE eine Aktion → KEINE Koordination aktiv
+- **Impact**: Alle DL#2-Bewertungen die "TEILWEISE GEFIXT durch Ownership-Check" sagten, sind falsch — der Check ist funktionslos
+
+### DL#2 → DL#3 Status-Update (alle Findings)
 
 | # | Severity | Finding | DL#2-Status | DL#3-Status | Beschreibung |
 |---|----------|---------|-------------|-------------|-------------|
-| 3 | KRITISCH | proactive.start() nicht in _safe_init() | 🔴 REGRESSION | ✅ FIXED | brain.py:776 jetzt `await _safe_init("Proactive.start", ...)` |
-| 6 | HOCH | Memory-Halluzinations-Risiko (aus P03a) | ❌ UNFIXED | ✅ FIXED | brain.py:3216-3224: "ERFINDE KEINE Erinnerungen" Prompt |
-| — | — | conv_memory_ext Priority zu niedrig | P3 | ✅ P1 | brain.py:2973 Priority 3→1 (P02 Fix 5) |
-
-### Alle anderen Findings: UNVERAENDERT seit DL#2
-
-- Entity-Koordination asymmetrisch: ⚠️ TEILWEISE (nur Addon→Assistant)
-- _process_lock serialisiert alles: ❌ UNFIXED
-- Domain-Shortcuts Personality-Bypass: ❌ UNFIXED
-- Proaktiv ignoriert Konversation: ❌ UNFIXED
-- Boot-Nachricht ohne Personality: ❌ UNFIXED
-- WebSocket kein Reconnection: ❌ UNFIXED
-- 3D-Drucker keine Bestaetigung: ❌ UNFIXED
+| 1 | KRITISCH | Addon↔Assistant Koordination | ⚠️ TEILWEISE | 🔴 KAPUTT | Entity-Ownership Feldname-Mismatch: `"owner"` vs `"owned"` (ha_connection.py:84 vs main.py:690) |
+| 2 | MITTEL | Addon nutzt keine Shared Schemas | ❌ UNFIXED | ❌ UNFIXED | shared/ geloescht, kein Ersatz |
+| 3 | KRITISCH | proactive.start() nicht in _safe_init() | 🔴 REGRESSION | ✅ FIXED | brain.py:776 jetzt in _safe_init() |
+| 4 | KRITISCH | Workshop-Chat umgeht API-Key | ✅ FIXED | ✅ FIXED | main.py:562-564 Middleware + main.py:6270 defense-in-depth |
+| 5 | HOCH | Workshop Hardware kein Trust-Level | ✅ FIXED | ✅ FIXED | main.py:7090-7103 _require_hardware_owner (Trust≥2) |
+| 6 | MITTEL | 3D-Drucker keine Bestaetigung | ❌ UNFIXED | ❌ UNFIXED | Start/Pause/Cancel ohne Confirmation |
+| 7 | HOCH | _process_lock serialisiert alles | ⚠️ TEILWEISE | ❌ UNFIXED | brain.py:215,1117: Single Lock, 30s Timeout |
+| 8 | HOCH | Proaktiv ignoriert Konversation | ❌ UNFIXED | ❌ UNFIXED | proactive.py: KEIN Check auf laufende Konversation |
+| 9 | HOCH | Domain-Shortcuts Personality-Bypass | ⚠️ TEILWEISE | ❌ UNFIXED | 29 Shortcuts umgehen personality.build_system_prompt() |
+| 10 | MITTEL | Boot-Nachricht nicht personality.py | ❌ UNFIXED | ❌ UNFIXED | Hardcoded Templates, "Alle Systeme online" trotz degraded |
+| 11 | MITTEL | WebSocket kein Reconnection | ❌ UNFIXED | ❌ UNFIXED | Kein Event-Recovery, kein Replay-Buffer |
+| 12 | MITTEL | get_file_path() kein Confinement | ✅ FIXED | ✅ FIXED | is_relative_to() Check |
+| 13 | MITTEL | WebSocket Broadcast ohne Timeout | ⚠️ NEU | ❌ UNFIXED | send_text() ohne asyncio.wait_for() |
+| 14 | MITTEL | Boot trotz degraded | ⚠️ NEU | ❌ UNFIXED | Widerspruch: "Alle Systeme online" + "N eingeschraenkt" |
+| **NEU** | **KRITISCH** | **Entity-Ownership Feldname-Mismatch** | — | 🔴 NEU | **ha_connection.py:84 liest "owned", main.py:690 sendet "owner"** |
+| **NEU** | **KRITISCH** | **fire_water.py Emergency durch Ownership blockiert** | — | 🔴 NEU | **Notfall-Aktionen gehen durch call_service() → Ownership-Check → koennen blockiert werden** |
+| **NEU** | **HOCH** | **OCR Pfad-Validierung blockiert Uploads** | — | ❌ UNFIXED | **ocr.py:59 allowed_base=/tmp, UPLOAD_DIR=/app/data/uploads** |
+| **NEU** | **HOCH** | **Kein TTS-Lock** | — | 🔴 NEU | **sound_manager.py: speak_response() ohne Lock, parallele TTS moeglich** |
+| **NEU** | **MITTEL** | **Workshop-Shortcuts ohne _filter_response()** | — | 🔴 NEU | **brain.py:1448,1457: Workshop-Antworten ungefiltert** |
 
 ### Gesamt-Statistik DL#3
 
 ```
 DL#1: 11 Findings + 2 NEU in DL#2
 DL#2: 4 FIXED, 3 TEILWEISE, 4 UNFIXED, 2 NEU
-DL#3: 6 FIXED, 3 TEILWEISE, 4 UNFIXED
+DL#3: 4 FIXED, 0 TEILWEISE, 8 UNFIXED, 5 NEU (davon 2 KRITISCH)
 
-Flows: 4/6 funktional (Flows 10-12, 13)
-       2/6 teilweise (Flows 8, 9)
-       proactive.start() REGRESSION aufgeloest ✅
+Flows: 2/6 funktional (Flow 11: Boot, Flow 12: Upload)
+       4/6 teilweise (Flows 8, 9, 10, 13)
+       Entity-Ownership KAPUTT — Koordination zwischen Addon+Assistant funktionslos
 ```
 
 ---
 
-## DL#1 vs DL#2 Vergleich
+## DL#3 — Verifizierte Code-Referenzen (Aktualisiert)
+
+### Kritischste Code-Stellen (alle mit Read-Tool verifiziert)
+
+| Finding | Datei:Zeile (DL#2) | Datei:Zeile (DL#3) | Status |
+|---------|--------------------|--------------------|--------|
+| Entity-Ownership Endpoint | main.py:676-693 | main.py:676-693 | Sendet `"owner"` |
+| Entity-Ownership Consumer | ha_connection.py:69-87 | ha_connection.py:70-88 | Liest `"owned"` — **MISMATCH** |
+| call_service Ownership-Check | ha_connection.py:175-179 | ha_connection.py:182-185 | Geht durch _is_entity_owned |
+| fire_water Emergency | fire_water.py:277 | fire_water.py:277 | Geht durch call_service → Ownership |
+| _process_lock | brain.py:215 | brain.py:215 | Unveraendert |
+| process() Lock-Acquire | brain.py:1103 | brain.py:1117 | +14 Zeilen verschoben |
+| proactive.start() | brain.py:773 | brain.py:776 | ✅ In _safe_init() |
+| Shortcut-Kaskade | brain.py:1348-2300 | brain.py:1348-2277 | 29 Shortcuts verifiziert |
+| personality.build_system_prompt() | brain.py:2655 | brain.py:2680 | Einziger Aufruf |
+| OCR allowed_base | ocr.py:59 | ocr.py:59 | `/tmp` — Bug bleibt |
+| UPLOAD_DIR | file_handler.py:15 | file_handler.py:15 | `/app/data/uploads` |
+| broadcast() | websocket.py:43-69 | websocket.py:43-69 | Kein Timeout |
+
+---
+
+## DL#1 vs DL#2 Vergleich (historisch)
 
 ### Gesamt-Statistik
 
@@ -496,32 +531,37 @@ Client ─HTTP POST─→ main.py:/api/assistant/chat/upload
 
 ---
 
-## 4. Kritische Findings (Top-5, aktualisiert)
+## 4. Kritische Findings (Top-7, DL#3 aktualisiert)
 
-| # | Finding | DL#1-Severity | DL#2-Severity | Aenderung |
+| # | Finding | DL#2-Severity | DL#3-Severity | Aenderung |
 |---|---------|--------------|--------------|-----------|
-| 1 | **Addon ↔ Assistant Entity-Koordination asymmetrisch**: Addon prueft Assistant-Ownership (✅), aber Assistant prueft NICHT Addon-Ownership (❌). Addon-Circadian/Cover-Aktionen bleiben dem Assistant unsichtbar. TOCTOU-Risiko zwischen Check und Ausfuehrung. | 🔴 KRITISCH | 🟠 HOCH | **TEILWEISE GEFIXT** — Ownership-Check reduziert Risiko, Asymmetrie bleibt |
-| 2 | **brain.py _process_lock serialisiert ALLES**: Nur 1 Request gleichzeitig. Bei LLM-Timeout (30-120s) blockiert: User-Requests, Proaktive Meldungen, Routinen, Workshop-Chat. | 🔴 KRITISCH | 🟠 HOCH | **UNVERAENDERT** (war DL#1 als "kein Lock" beschrieben, tatsaechlich existiert Lock) |
-| 3 | **proactive.start() nicht in _safe_init()**: `brain.py:773` — Exception crasht gesamte Init. Wurde als "gefixt in P6a" gemeldet, ist aber im Code NICHT gefixt. | 🔴 KRITISCH (aus P3a) | 🔴 KRITISCH | **REGRESSION — immer noch nicht gefixt** |
-| 4 | **Domain-Shortcuts umgehen Personality**: Cooking/Calendar/Weather-Shortcuts nutzen nur `_filter_response()`, nicht `personality.build_system_prompt()`. Calendar hat eigenen Mini-System-Prompt. | — (in DL#1 nicht erkannt) | 🟡 MITTEL | **NEU ERKANNT** |
-| 5 | **Proaktiv-Events ignorieren laufende Konversation**: Proactive/Routine-Events werden sofort gesendet ohne zu pruefen ob gerade ein User-Request verarbeitet wird. | 🟠 HOCH | 🟠 HOCH | **UNVERAENDERT** |
+| 1 | **🔴 Entity-Ownership Feldname-Mismatch**: `main.py:690` sendet `"owner"`, `ha_connection.py:84` liest `"owned"` → Check gibt IMMER False zurueck → KEINE Koordination aktiv. Alle DL#2-"TEILWEISE GEFIXT"-Bewertungen waren falsch. | 🟠 HOCH | 🔴 KRITISCH | **VERSCHLECHTERT — war nie funktional** |
+| 2 | **🔴 fire_water.py Emergency durch Ownership blockiert**: Notfall-Aktionen (Wasser/Feuer) gehen durch `call_service()` → Ownership-Check → koennen durch (defekten) Check blockiert werden. Sicherheitskritisch. | — (nicht erkannt) | 🔴 KRITISCH | **NEU IN DL#3** |
+| 3 | **brain.py _process_lock serialisiert ALLES**: Nur 1 Request gleichzeitig. Bei LLM-Timeout (30-120s) blockiert: User-Requests, Proaktive Meldungen, Routinen, Workshop-Chat. | 🟠 HOCH | 🟠 HOCH | **UNVERAENDERT** |
+| 4 | **29 Domain-Shortcuts umgehen Personality**: Nur `brain.py:2680` ruft `personality.build_system_prompt()` auf. 29 Shortcuts in der Cascade (brain.py:1348-2277) nutzen nur `_filter_response()`. Workshop-Shortcuts (brain.py:1448,1457) ueberspringen sogar `_filter_response()`. | 🟡 MITTEL | 🟠 HOCH | **HOCHGESTUFT — Ausmass groesser als in DL#2 erkannt** |
+| 5 | **Proaktiv-Events ignorieren laufende Konversation**: Proactive/Routine-Events werden sofort gesendet ohne zu pruefen ob gerade ein User-Request verarbeitet wird. Keine Queue. | 🟠 HOCH | 🟠 HOCH | **UNVERAENDERT** |
+| 6 | **OCR Pfad-Mismatch**: `ocr.py:59` prueft `allowed_base = Path("/tmp")`, aber `UPLOAD_DIR = /app/data/uploads` → OCR schlaegt bei regulaeren Uploads still fehl. | — (nicht erkannt) | 🟡 MITTEL | **NEU IN DL#3** |
+| 7 | ~~**proactive.start() nicht in _safe_init()**~~ | 🔴 KRITISCH | ✅ GEFIXT | **GEFIXT in DL#3** (brain.py:776) |
 
 ---
 
-## 5. Feature-Gaps (aktualisiert)
+## 5. Feature-Gaps (DL#3 aktualisiert)
 
-| Feature | DL#1-Status | DL#2-Status | Impact |
+| Feature | DL#2-Status | DL#3-Status | Impact |
 |---------|-----------|-----------|--------|
-| **Action-Broker** (zentraler Koordinator fuer HA-Aufrufe beider Services) | ❌ Fehlt | ⚠️ Teilweise (Ownership-Check als Ersatz) | 🟠 HOCH (war KRITISCH) |
-| **Conversation Lock** (parallele brain.process()-Aufrufe serialisiert) | ❌ Fehlt (DL#1 Beschreibung) | ✅ Existiert (`_process_lock`, brain.py:215) — serialisiert aber zu stark | 🟡 MITTEL (Lock existiert, Granularitaet zu grob) |
-| **Cross-Service State Sync** (bidirektional) | ❌ Fehlt | ⚠️ Unidirektional (Addon→Assistant, nicht umgekehrt) | 🟠 HOCH |
+| **Action-Broker** (zentraler Koordinator fuer HA-Aufrufe beider Services) | ⚠️ Teilweise (Ownership-Check als Ersatz) | ❌ KAPUTT (Ownership-Check funktionslos durch Feldname-Mismatch) | 🔴 KRITISCH |
+| **Emergency-Bypass** (Notfall-Aktionen ohne Ownership-Check) | — (nicht erkannt) | ❌ Fehlt (fire_water.py geht durch normalen call_service) | 🔴 KRITISCH |
+| **Conversation Lock** (parallele brain.process()-Aufrufe serialisiert) | ✅ Existiert, zu grob | ❌ UNFIXED (serialisiert alles, 30s Timeout) | 🟠 HOCH |
+| **Cross-Service State Sync** (bidirektional) | ⚠️ Unidirektional | ❌ UNFIXED (Addon→Assistant richtung defekt) | 🟠 HOCH |
 | **Proactive Queue** (Priority-Queue fuer proaktive Meldungen) | ❌ Fehlt | ❌ Fehlt | 🟠 HOCH |
+| **Addon→Assistant Back-Channel** (Addon informiert Assistant ueber eigene Aktionen) | ❌ Fehlt | ❌ Fehlt | 🟠 HOCH |
+| **Shortcut-Personality** (29 Shortcuts durch Personality-Pipeline) | ❌ Fehlt | ❌ Fehlt | 🟠 HOCH |
+| **TTS Concurrency Lock** (sound_manager.py speak_response ohne Lock) | — (nicht erkannt) | ❌ Fehlt | 🟡 MITTEL |
 | **Boot-Persoenlichkeit** | ❌ Hardcoded | ❌ Hardcoded | 🟡 MITTEL |
 | **WebSocket Reconnection** (Server-seitig) | ❌ Fehlt | ❌ Fehlt | 🟡 MITTEL |
-| **Shortcut-Personality** (Shortcuts durch Personality-Pipeline) | — (nicht erkannt) | ❌ Fehlt | 🟡 MITTEL |
-| **3D-Drucker Bestaetigung** (Confirmation vor Start/Cancel) | ⚠️ Fehlt | ❌ Fehlt | 🟡 MITTEL |
-| **Addon→Assistant Back-Channel** (Addon informiert Assistant ueber eigene Aktionen) | ❌ Fehlt | ❌ Fehlt | 🟠 HOCH |
-| **WebSocket Broadcast Timeout** (send_text ohne Timeout blockiert alle Clients) | — (nicht erkannt) | ❌ Fehlt | 🟡 MITTEL |
+| **WebSocket Broadcast Timeout** (send_text ohne Timeout) | ❌ Fehlt | ❌ Fehlt | 🟡 MITTEL |
+| **3D-Drucker Bestaetigung** (Confirmation vor Start/Cancel) | ❌ Fehlt | ❌ Fehlt | 🟡 MITTEL |
+| **OCR Upload-Pfad Alignment** (ocr.py /tmp vs /app/data/uploads) | — (nicht erkannt) | ❌ Fehlt | 🟡 MITTEL |
 
 ---
 
@@ -571,35 +611,46 @@ Memory: Confidence≥0.4 (P02: war 0.6), Relevance>0.2 (P02: war 0.3), limit=10 
 | 12: File-Upload & OCR | ✅ Funktioniert | ✅ Funktioniert | get_file_path() Confinement GEFIXT |
 | 13: WebSocket-Streaming | ✅ Funktioniert | ✅ Funktioniert | Kein Reconnection-Handling |
 
-### Top-Bruchstellen (alle Flows) — DL#3
-1. ~~🔴 proactive.start() nicht in _safe_init()~~ ✅ GEFIXT (brain.py:776)
-2. 🟠 **Addon↔Assistant Koordination asymmetrisch** — Ownership-Check nur Addon→Assistant
-3. 🟠 **_process_lock serialisiert ALLES** — brain.py:215,1103 — 1 Request gleichzeitig
-4. 🟠 **Proactive ignoriert laufende Konversation** — keine Queue
-5. 🟡 **Domain-Shortcuts umgehen Personality** — _filter_response() statt build_system_prompt()
+### Top-10 Bruchstellen (alle Flows) — DL#3
+1. 🔴 **Entity-Ownership Feldname-Mismatch** — `main.py:690` sendet `"owner"`, `ha_connection.py:84` liest `"owned"` → Check IMMER False → KEINE Koordination
+2. 🔴 **fire_water.py Emergency durch Ownership blockiert** — Notfall-Aktionen gehen durch `call_service()` → Ownership-Check → koennen blockiert werden
+3. 🟠 **_process_lock serialisiert ALLES** — brain.py:215,1117 — 1 Request gleichzeitig, 30s Timeout
+4. 🟠 **Proactive ignoriert laufende Konversation** — keine Queue, kein Check
+5. 🟠 **29 Shortcuts umgehen personality.build_system_prompt()** — brain.py:1348-2277, nur _filter_response() oder gar nichts (Workshop)
+6. 🟠 **Addon↔Assistant Koordination komplett defekt** — Einziger Mechanismus (Ownership) ist durch Feldname-Mismatch funktionslos
+7. 🟡 **OCR Pfad-Mismatch** — ocr.py:59 prueft `/tmp`, UPLOAD_DIR ist `/app/data/uploads`
+8. 🟡 **WebSocket broadcast() ohne Timeout** — websocket.py:43-69: `send_text()` ohne `asyncio.wait_for()`
+9. 🟡 **sound_manager.py kein TTS-Lock** — `speak_response()` kann parallel aufgerufen werden
+10. 🟡 **conversation.py 30s Timeout vs LLM 120s** — Timeout-Mismatch killt lange Antworten
 
-### Kollisionen
-- Addon-Engines vs. Assistant-Module auf denselben HA-Entities — **TEILWEISE ENTSCHAERFT** durch Ownership-Check (asymmetrisch)
-- Parallele brain.process()-Aufrufe werden durch _process_lock serialisiert
+### Kollisionen — DL#3
+- Addon-Engines vs. Assistant-Module auf denselben HA-Entities — **NICHT ENTSCHAERFT** (Ownership-Check ist durch Feldname-Mismatch funktionslos)
+- Parallele brain.process()-Aufrufe werden durch _process_lock serialisiert (zu grob)
 - Proaktive Events waehrend laufender Verarbeitung — UNVERAENDERT
+- fire_water.py Notfall-Aktionen koennen durch defekten Ownership-Check blockiert werden — **NEU KRITISCH**
 
-### Feature-Gaps
-- Kein bidirektionaler State-Sync (Addon→Assistant Back-Channel fehlt)
-- Keine Proactive-Queue
-- Shortcuts ohne volle Personality
-- 3D-Drucker ohne Bestaetigung
-- Kein WebSocket Reconnection-Handling
+### Feature-Gaps — DL#3
+- ❌ Entity-Ownership KAPUTT (Feldname-Mismatch "owner" vs "owned")
+- ❌ Emergency-Bypass fuer fire_water.py fehlt
+- ❌ Kein bidirektionaler State-Sync (Addon→Assistant Back-Channel fehlt)
+- ❌ Keine Proactive-Queue
+- ❌ 29 Shortcuts ohne volle Personality
+- ❌ TTS Concurrency Lock fehlt
+- ❌ OCR Pfad-Alignment fehlt
+- ❌ 3D-Drucker ohne Bestaetigung
+- ❌ Kein WebSocket Reconnection-Handling
+- ❌ Kein WebSocket Broadcast Timeout
 
 ### Gegenueber DL#1 GEFIXT (kumulativ bis DL#3)
 - ✅ Workshop API-Key-Bypass (F-086)
 - ✅ Workshop Hardware Trust-Level
 - ✅ get_file_path() Pfad-Confinement
-- ✅ Entity-Ownership-Check (Addon→Assistant Richtung)
 - ✅ Shutdown-Broadcast (F-065)
 - ✅ Sentence-Level TTS im Streaming
-- ✅ proactive.start() in _safe_init() (DL#3)
+- ✅ proactive.start() in _safe_init() (DL#3, brain.py:776)
 - ✅ Memory-Halluzinations-Schutz (DL#3, brain.py:3216-3224)
 - ✅ conv_memory_ext Priority 3→1 (DL#3, brain.py:2973)
+- ~~✅ Entity-Ownership-Check~~ → 🔴 KAPUTT (Feldname-Mismatch, nie funktional gewesen)
 
 ---
 
@@ -609,18 +660,25 @@ GEFIXT (DL#3):
 - proactive.start() in _safe_init() (brain.py:776)
 - Memory-Halluzinations-Hint (brain.py:3216-3224)
 - conv_memory_ext Priority 1 (brain.py:2973)
+- Workshop API-Key + Trust-Level (main.py:562-564, main.py:7090-7103)
+- get_file_path() Confinement (is_relative_to Check)
 - + alle P02 Memory-Fixes (11 Fixes, siehe RESULT_02)
 OFFEN:
-- 🟠 [HOCH] Addon↔Assistant Koordination asymmetrisch | Ownership-Check nur Addon→Assistant, kein Back-Channel
-- 🟠 [HOCH] _process_lock serialisiert alle Requests | brain.py:215,1103 | ARCHITEKTUR_NOETIG
+- 🔴 [KRITISCH] Entity-Ownership Feldname-Mismatch | main.py:690 "owner" vs ha_connection.py:84 "owned" | KOORDINATION KOMPLETT DEFEKT
+- 🔴 [KRITISCH] fire_water.py Emergency durch Ownership blockiert | call_service() → Ownership-Check → Notfall blockierbar
+- 🟠 [HOCH] _process_lock serialisiert alle Requests | brain.py:215,1117 | ARCHITEKTUR_NOETIG
 - 🟠 [HOCH] Proactive ignoriert laufende Konversation | Keine Queue
-- 🟡 [MITTEL] Domain-Shortcuts umgehen Personality | brain.py:1398-2029
+- 🟠 [HOCH] 29 Shortcuts umgehen personality.build_system_prompt() | brain.py:1348-2277
+- 🟠 [HOCH] Addon↔Assistant Koordination komplett defekt | Einziger Mechanismus funktionslos
+- 🟡 [MITTEL] OCR Pfad-Mismatch | ocr.py:59 /tmp vs UPLOAD_DIR /app/data/uploads
+- 🟡 [MITTEL] WebSocket broadcast() ohne Timeout | websocket.py:43-69
+- 🟡 [MITTEL] sound_manager.py kein TTS-Lock | speak_response() parallel aufrufbar
 - 🟡 [MITTEL] conversation.py 30s Timeout vs LLM 120s | Einfacher Fix
 - 🟡 [MITTEL] Boot-Nachricht ohne Personality | Hardcoded Templates
 - 🟡 [MITTEL] WebSocket kein Reconnection | websocket.py
 - 🟡 [MITTEL] 3D-Drucker keine Bestaetigung | repair_planner.py
 GEAENDERTE DATEIEN: [Keine Code-Aenderungen — reiner Analyse+Doku-Update]
-REGRESSIONEN: [Keine — proactive.start() REGRESSION aus DL#2 ist aufgeloest]
-NAECHSTER SCHRITT: Prompt 4a — Bug-Fixes
+REGRESSIONEN: [Entity-Ownership war in DL#2 als "TEILWEISE GEFIXT" bewertet — DL#3 zeigt: war NIE funktional]
+NAECHSTER SCHRITT: Prompt 4a — Bug-Katalog (Systematische Bug-Erfassung)
 ===================================
 ```
