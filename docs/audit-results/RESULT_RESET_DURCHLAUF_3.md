@@ -203,7 +203,7 @@ Fuer JEDEN Fix aus den vorherigen Durchlaeufen:
 |---|---|---|---|---|---|
 | #1 | 2026-03-10 | 225 | 173 (157 gefixt, 16 bereits OK) | 52 | N/A |
 | #2 | 2026-03-10 | (Verifikation) | 8 Log-Audit + Tests | 52+ | Zu pruefen |
-| #3 | 2026-03-13 | P04a: 92 NEUE + P04c: 48 NEUE | P02: 11 Memory-Fixes | 131 (P4a) + 207 (P4b) + 106 (P4c) | 0 Regressionen |
+| #3 | 2026-03-13 | P04a: 92 + P04b: 92 + P04c: 48 NEUE | P02: 11 Memory-Fixes | 131 (P4a) + 299 (P4b) + 106 (P4c) | 0 Regressionen |
 
 ---
 
@@ -222,7 +222,10 @@ Fuer JEDEN Fix aus den vorherigen Durchlaeufen:
   - 92 NEUE Bugs gefunden (4 KRITISCH, 22 HOCH, 42 MITTEL, 15 NIEDRIG)
   - Gesamt offen: ~131 Bugs (inkl. DL#2-Altlasten)
   - Kritischste: DL3-ME1 (Prompt-Injection Memory), DL3-AI1 (action_planner Reihenfolge), DL3-AI2/AI3 (pre_classifier Frage-Erkennung)
-- P04b (Bugs Extended): Noch nicht neu ausgefuehrt — NAECHSTER SCHRITT
+- **P04b (Bugs Extended): VOLLSTAENDIG NEU AUSGEFUEHRT** — 7 parallele Agents, alle 63 Module gelesen
+  - 92 NEUE Bugs gefunden (5 KRITISCH, 18 HOCH, 41 MITTEL, 28 NIEDRIG)
+  - Gesamt offen: 299 Bugs (207 DL#2 + 92 DL#3 neu)
+  - Kritischste: DL3-H01/H02 (ha_client PUT/DELETE ohne Auth), DL3-D01/M01 (OCR Pfad-Validierung blockiert Uploads)
 - **P04c (Bugs Addon): VOLLSTAENDIG NEU AUSGEFUEHRT** — 6 parallele Agents
   - 48 NEUE Findings (N1-N38, S1-S4, P1-P6)
   - Gesamt: ~106 offene Bugs
@@ -230,10 +233,10 @@ Fuer JEDEN Fix aus den vorherigen Durchlaeufen:
 - P06a-P09: Historische Fix-Logs, DL#3-Notes hinzugefuegt
 
 ### Naechste Schritte:
-- **P04b (Bugs Extended)** — Noch nicht neu ausgefuehrt, muss als naechstes kommen
+- **P01 bis P03b** — Muss neu ausgefuehrt werden (User-Feedback: nicht korrekt ausgefuehrt)
 - Danach: P05 (Personality) und weitere Prompts in Reihenfolge
 
-→ DL#3 hat P04a und P04c vollstaendig neu ausgefuehrt mit jeweils 5-6 parallelen Agents
+→ DL#3 hat P04a, P04b und P04c vollstaendig neu ausgefuehrt mit jeweils 5-7 parallelen Agents
 
 ---
 

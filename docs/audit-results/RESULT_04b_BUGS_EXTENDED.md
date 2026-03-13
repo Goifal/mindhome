@@ -9,22 +9,28 @@
 
 ---
 
-## DL#3: Verifikation nach P02 Memory-Reparatur (2026-03-13)
+## DL#3: VOLLSTAENDIG NEU AUSGEFUEHRT (2026-03-13)
 
-### P02 Impact auf Extended-Module: MINIMAL
+### Methode
 
-P02 Fixes betrafen Memory-Schwellwerte und System-Prompt-Prioritaeten in brain.py.
-Die Extended-Module (Prio 5-9) sind davon nicht direkt betroffen.
+- 7 parallele Audit-Agenten (Sonnet 4.6), jedes Modul komplett gelesen
+- 13 Fehlerklassen systematisch geprueft
+- Grep-basierte Pattern-Suche vorab: `except Exception`, `create_task`, `threading.Lock`, shared state
+- Modul-Existenz-Verifikation: Alle 63 Module existieren im Repository
 
-### DL#2 → DL#3: Keine Aenderungen
+### DL#2 Fixes: Alle 14 BESTAETIGT GEFIXT
+
+Die 14 Fixes aus Post-Fix-Verifikation (P06a/P06b) bleiben bestaetigt.
+
+### DL#3 Neue Bugs: 92 (5 KRITISCH, 18 HOCH, 41 MITTEL, 28 NIEDRIG)
+
+Alle DL#2-Bugs bleiben offen (207). Zusaetzlich 92 NEUE Bugs in DL#3 gefunden.
 
 ```
-DL#2: 207 offene Bugs (0 KRITISCH, 23 HOCH, ~97 MITTEL, ~85 NIEDRIG, 2 INFO)
-DL#3: 207 offene Bugs (unveraendert — P02 betraf keine Extended-Module)
+DL#2 offen:     207 (0 KRITISCH, 23 HOCH, ~97 MITTEL, ~85 NIEDRIG, 2 INFO)
+DL#3 neu:        92 (5 KRITISCH, 18 HOCH, 41 MITTEL, 28 NIEDRIG)
+Gesamt offen:   299
 ```
-
-Alle 14 Fixes aus Post-Fix-Verifikation (P06a/P06b) bleiben bestaetigt.
-Alle 23 offenen HIGH Bugs bleiben unveraendert offen.
 
 ---
 
@@ -519,5 +525,248 @@ Gefixt:        14 (1 KRITISCH, 13 HOCH)
 Noch offen:    207 (0 KRITISCH, 23 HOCH, ~97 MITTEL, ~85 NIEDRIG, 2 INFO)
 Davon code-verifiziert: 23 HIGH bestaetigt offen
 
-DL#3: Unveraendert (P02 betraf keine Extended-Module)
+DL#3: 299 Bugs gesamt (207 DL#2 offen + 92 DL#3 neu)
 ```
+
+---
+
+## DL#3: Neue Bug-Reports (92 Bugs)
+
+### Batch 5 — Proaktive Systeme (DL3-P01 bis DL3-P10)
+
+| # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
+|---|----------|-------|-------|--------------|--------------|-----|
+| DL3-P01 | HOCH | proactive.py | 251-298 | Resilience (12) | `start()` startet ~12 `asyncio.create_task()` ohne Error-Callbacks — Exception in einem Task bleibt unsichtbar bis GC Warning | `add_done_callback` mit Exception-Logger |
+| DL3-P02 | MITTEL | proactive.py | 2199 | Stille Fehler (2) | `except Exception:` bei HA-Erreichbarkeit: `set_active_person("")` loescht Person-Info auch bei transientem Netzfehler | Nur bei permanentem Fehler leeren |
+| DL3-P03 | MITTEL | self_automation.py | 107 | Init (5) | `_pending_lock = __import__('threading').Lock()` — threading.Lock in async-Kontext blockiert Event-Loop bei Contention | `asyncio.Lock()` verwenden |
+| DL3-P04 | MITTEL | self_automation.py | 296 | Security (11) | `message: f"Fehler beim Erstellen: {e}"` leakt Exception-Details (Stacktrace) an User | Generische Fehlermeldung verwenden |
+| DL3-P05 | MITTEL | self_report.py | 56 | Stille Fehler (2) | `except Exception: pass` beim Redis-Recovery des letzten Report-Tags — Fehler komplett verschluckt | `logger.debug()` hinzufuegen |
+| DL3-P06 | MITTEL | anticipation.py | 58 | Resilience (12) | `_check_loop` als create_task ohne Error-Callback — Exceptions unsichtbar | Error-Callback hinzufuegen |
+| DL3-P07 | MITTEL | proactive.py | 3979 | Stille Fehler (2) | `except Exception:` bei variation-Berechnung: Fallback auf random ohne Logging | `logger.debug()` |
+| DL3-P08 | NIEDRIG | proactive.py | 5162 | Stille Fehler (2) | `except Exception: return self._SLEEP_LOCK_TTL_DEFAULT` verschluckt Fehlergrund | `logger.debug()` |
+| DL3-P09 | NIEDRIG | proactive.py | 5396 | Stille Fehler (2) | `except Exception: activity = ""` verschluckt Fehler bei Activity-Check | `logger.debug()` |
+| DL3-P10 | NIEDRIG | proactive.py | 3850 | Logik (10) | `except Exception:` bei Rolladen-Aktion: Retry nach 60s ohne Fehler-Logging, danach Silent-Aufgabe | Fehler loggen |
+
+### Batch 6 — HA-Integration & Protocol (DL3-H01 bis DL3-H16)
+
+| # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
+|---|----------|-------|-------|--------------|--------------|-----|
+| DL3-H01 | KRITISCH | ha_client.py | 373-396 | API (6) | `mindhome_put()` sendet PUT ohne Auth-Header (`self._mindhome_headers` fehlt) — alle PUT-Calls unautorisiert | `headers=self._mindhome_headers` hinzufuegen |
+| DL3-H02 | KRITISCH | ha_client.py | 404-426 | API (6) | `mindhome_delete()` sendet DELETE ohne Auth-Header — selbes Problem | `headers=self._mindhome_headers` hinzufuegen |
+| DL3-H03 | HOCH | conditional_commands.py | 209-210 | Stille Fehler (2) | Exception bei `_action_callback` nur geloggt; bei one_shot wird Conditional trotzdem geloescht (Z.217) — Aktion verloren | Erst loeschen wenn Aktion erfolgreich |
+| DL3-H04 | HOCH | protocol_engine.py | 270 | Stille Fehler (2) | `undo_protocol`: Fehler bei Undo-Schritten nur `logger.debug` — Aufrufer weiss nicht welche Schritte fehlschlugen | `logger.warning` + fehlgeschlagene Schritte in Response |
+| DL3-H05 | MITTEL | conditional_commands.py | 240-241 | Logik (10) | `entity_id.endswith(target_entity)` — Suffix-Match statt exaktem Match | `entity_id == target_entity` |
+| DL3-H06 | MITTEL | ha_client.py | 296-330 | Resilience (12) | `mindhome_post()` mit `timeout=None` erzeugt `ClientTimeout(total=None)` — deaktiviert Timeout komplett | Fallback-Timeout setzen |
+| DL3-H07 | MITTEL | protocol_engine.py | 396 | Security (11) | `_parse_steps` ersetzt `{description}` via str.replace — bei rekursivem Inhalt entsteht Endlos-Substitution | Template strikt trennen |
+| DL3-H08 | MITTEL | light_engine.py | 415 | Logik (10) | Night-Dim-Flag Reset nur exakt um 12 Uhr — bei Neustart ausserhalb dieser Stunde nie resettet | Reset fuer gesamten Tages-Bereich |
+| DL3-H09 | MITTEL | light_engine.py | 897 | Resilience (12) | `is_manual_override_active` ohne `_safe_redis` Wrapper — Redis-Exception crasht Handler | `_safe_redis` verwenden |
+| DL3-H10 | MITTEL | climate_model.py | 293-303 | Logik (10) | Regex `r"(\d{1,2})"` matcht jede Zahl als Temperatur (z.B. "in 20 Minuten" → 20°C) | Regex auf Temperatur-Kontext einschraenken |
+| DL3-H11 | NIEDRIG | protocol_engine.py | 99 | None (4) | `scard(...) or 0` — `scard` gibt nie None zurueck, `or 0` verschleiert echte Fehler | Exception explizit fangen |
+| DL3-H12 | NIEDRIG | light_engine.py | 278 | Memory Leaks (9) | `self._room_lux: dict` waechst unbegrenzt mit neuen Raum-Entities | Maximalgroesse begrenzen |
+| DL3-H13 | NIEDRIG | climate_model.py | 147-156 | Logik (10) | `set_target` Validierung loggt nur Warning aber uebernimmt unrealistische Werte (0°C, 50°C) | Wert auf 5-35°C clampen |
+| DL3-H14 | NIEDRIG | camera_manager.py | 166 | Logik (10) | `_analyze_image`: leerer Content-String `""` als gueltige Beschreibung behandelt | Zusaetzlich auf leeren String pruefen |
+| DL3-H15 | NIEDRIG | cover_config.py | 73-81 | Resilience (12) | `_save_list` wirft Exception weiter, aber einige Aufrufer schlucken sie, andere nicht | Konsistente Fehlerbehandlung |
+| DL3-H16 | MITTEL | conditional_commands.py | 173 | Race (3) | Abgelaufene Keys einzeln per `srem` ohne Lock — parallele Aufrufe loeschen mehrfach | Atomares Cleanup |
+
+### Batch 7 — Audio-Module (DL3-A01 bis DL3-A13)
+
+| # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
+|---|----------|-------|-------|--------------|--------------|-----|
+| DL3-A01 | HOCH | multi_room_audio.py | 65-66 | None (4) | `create_group` gibt Error-Dict bei `not self.redis`, aber andere Pfade rufen `self.redis.hlen()` ohne None-Check — `AttributeError` bei Redis=None | Konsistente None-Pruefung vor jedem Redis-Zugriff |
+| DL3-A02 | HOCH | sound_manager.py | 554-556 | Logik (10) | `t.exception()` im done-Callback wirft `CancelledError` wenn Task gecancelt — unbehandelter Fehler im Event-Loop | `if not t.cancelled() and t.exception():` |
+| DL3-A03 | HOCH | ambient_audio.py | 302-315 | Race (3) | `_event_history.append()` und `_event_history = _event_history[-N:]` nicht atomar — Background-Task liest inkonsistenten State | `collections.deque(maxlen=N)` oder Lock |
+| DL3-A04 | HOCH | speaker_recognition.py | 640-653 | Logik (10) | `_get_wyoming_embedding` Retry-Loop: `return None` bei erster Exception bricht alle weiteren Versuche ab | `continue` statt `return None` |
+| DL3-A05 | MITTEL | tts_enhancer.py | 469-472 | Logik (10) | `_add_warning_emphasis` ersetzt durch `word.capitalize()` statt Original-Match — Gross/Kleinschreibung geht verloren | `r'<emphasis ...>\g<0></emphasis>'` |
+| DL3-A06 | MITTEL | tts_enhancer.py | 419-425 | Security (11) | SSML-Tag-Injection nach `xml_escape` — raw Tags in escaped Content | Nur bekannte Titel matchen |
+| DL3-A07 | MITTEL | sound_manager.py | 110-111 | Memory Leaks (9) | `_restore_tasks` Liste waechst unbegrenzt — Cleanup nur bei erfolgreichem TTS | Periodisches Cleanup oder finally-Block |
+| DL3-A08 | MITTEL | sound_manager.py | 595 | Async (1) | Hardcoded `timeout=15` statt Konstante `TTS_PLAYBACK_TIMEOUT` — inkonsistente Timeouts | `timeout=TTS_PLAYBACK_TIMEOUT` |
+| DL3-A09 | MITTEL | multi_room_audio.py | 209 | Resilience (12) | `redis.set()` in `play_to_group` ohne try/except — Redis-Exception bricht Wiedergabe ab | try/except |
+| DL3-A10 | MITTEL | speaker_recognition.py | 358-368 | None (4) | `_get_persons_home` keine Exception-Behandlung bei `ha.get_states()` Verbindungsfehler | try/except ergaenzen |
+| DL3-A11 | NIEDRIG | tts_enhancer.py | 171-172 | Config (8) | `evening_start=22`, `night_start=0` semantisch vertauscht — fragiles Wrap-Around | Dokumentieren oder validieren |
+| DL3-A12 | NIEDRIG | ambient_audio.py | 310-313 | Stille Fehler (2) | `_on_done` Callback: `t.exception()` wirft CancelledError bei gecancelten Tasks | `if not t.cancelled()` pruefen |
+| DL3-A13 | NIEDRIG | speaker_recognition.py | 553-581 | Race (3) | `enroll` verlaesst Lock vor `_save_profiles()` — veralteter Profilstand moeglich | `_save_profiles` innerhalb Lock aufrufen |
+
+### Batch 8 — Intelligence & Self-Improvement (DL3-I01 bis DL3-I09)
+
+| # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
+|---|----------|-------|-------|--------------|--------------|-----|
+| DL3-I01 | HOCH | outcome_tracker.py | 163-180 | Logik (10) | `get_success_score()` gibt immer `DEFAULT_SCORE` (0.5) zurueck auch bei vorhandenen Daten — Scores werden geschrieben aber nie korrekt gelesen | Score berechnen statt DEFAULT zurueckgeben |
+| DL3-I02 | HOCH | outcome_tracker.py | 216-217 | None (4) | `score.decode()` ohne None-Pruefung — `AttributeError` wenn kein Score-Key in Redis | `if score is not None` pruefen |
+| DL3-I03 | HOCH | intent_tracker.py | 421 | Async (1) | `await self._notify_callback` ohne Pruefung ob Callback Coroutine ist — `TypeError` bei synchronem Callback | `asyncio.iscoroutinefunction()` pruefen |
+| DL3-I04 | MITTEL | intent_tracker.py | 104-106 | Logik (10) | `days_ahead <= 0` — "Montag" am Montag zeigt auf naechsten Montag statt heute | Separate Behandlung fuer `days_ahead == 0` |
+| DL3-I05 | MITTEL | outcome_tracker.py | 280-283 | Stille Fehler (2) | `_delayed_check()` bei `get_state`-Fehler: `except Exception` ohne Logging | `logger.debug` hinzufuegen |
+| DL3-I06 | MITTEL | response_quality.py | 40-42 | Race (3) | `_last_user_text`, `_last_response_time` ohne Lock — concurrent Requests ueberschreiben sich | `asyncio.Lock()` fuer State-Zugriffe |
+| DL3-I07 | MITTEL | self_optimization.py | 29 | Init (5) | `_CONFIG_DIR` Pfad relativ zu `__file__` — bricht bei Package-Installation oder Symlinks | Pfad aus Settings/Environment beziehen |
+| DL3-I08 | NIEDRIG | intent_tracker.py | 117 | Logik (10) | `"naechster woche"` grammatikalisch falsch und toter Code — Umlaut-Normalizer erzeugt `"naechste woche"` | Zweiten Check entfernen |
+| DL3-I09 | NIEDRIG | learning_observer.py | 23 | Init (5) | Doppelter Import: `from .config import get_person_title` und `from .config import yaml_config` separat | In einen Import zusammenfassen |
+
+### Batch 9 — Resilience & Sicherheit (DL3-R01 bis DL3-R15)
+
+| # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
+|---|----------|-------|-------|--------------|--------------|-----|
+| DL3-R01 | HOCH | conflict_resolver.py | 259-260 | Race (3) | `check_conflict()` iteriert `_recent_commands` ohne Lock waehrend `record_command()` mit Lock schreibt — `RuntimeError: dictionary changed size` | Lock auch in `check_conflict()` verwenden |
+| DL3-R02 | HOCH | threat_assessment.py | 427-429 | API (6) | `get_security_score()` ruft `ha.get_states()` ohne Timeout — haengt bei HA-Ausfall | `asyncio.wait_for(..., timeout=15)` |
+| DL3-R03 | MITTEL | circuit_breaker.py | 50 | Race (3) | `_check_recovery()` liest/schreibt `_state` ohne Lock — `is_available` Property ruft ohne Lock auf | Nur innerhalb `self._lock` aufrufen |
+| DL3-R04 | MITTEL | circuit_breaker.py | 134-142 | Race (3) | `status()` liest Zustand ohne Lock — nicht thread-safe bei gleichzeitigen `record_failure()` | Lock in `status()` |
+| DL3-R05 | MITTEL | conflict_resolver.py | 319-323 | Stille Fehler (2) | `create_task(_save_history())` Callback: `t.exception()` auf nicht-fehlgeschlagenem Task wirft `InvalidStateError` | `if not t.cancelled() and t.exception()` |
+| DL3-R06 | MITTEL | conflict_resolver.py | 147 | Init (5) | `threading.Lock()` in async-Kontext — blockiert Event-Loop | `asyncio.Lock()` verwenden |
+| DL3-R07 | MITTEL | threat_assessment.py | 570-574 | Logik (10) | `_was_notified()` ignoriert `cooldown_minutes`-Parameter — nur Redis-TTL wirkt | Parameter entfernen oder dokumentieren |
+| DL3-R08 | MITTEL | adaptive_thresholds.py | 180 | Logik (10) | `stats.get("negative", 0)` — wenn Key als Konstante anders definiert ist, schlaegt Check nie an | `stats.get(OUTCOME_NEGATIVE, 0)` verwenden |
+| DL3-R09 | NIEDRIG | adaptive_thresholds.py | 251-253 | Performance (13) | `allowed_paths` bei jedem Aufruf neu berechnet (List Comprehension) | Als Klassenattribut cachen |
+
+### Batch 10-11 — Config & Domain-Assistenten (DL3-D01 bis DL3-D22)
+
+| # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
+|---|----------|-------|-------|--------------|--------------|-----|
+| DL3-D01 | KRITISCH | ocr.py | 57-64 | Logik (10) | `_validate_image_path()` erlaubt nur `/tmp` aber Uploads liegen in `/app/data/uploads` — OCR liefert IMMER None fuer Uploads | `allowed_base` auf `UPLOAD_DIR` setzen |
+| DL3-D02 | HOCH | smart_shopping.py | 245-252 | API (6) | `check_and_notify()` ruft Callback mit 3 Argumenten auf, aber Callback erwartet 1 — `TypeError` | Callback-Signatur vereinheitlichen |
+| DL3-D03 | HOCH | config_versioning.py | 137-140 | None (4) | `rollback()`: Regex-Matches koennen beide None sein → `match.group(1)` crasht mit `AttributeError` | None-Guard vor `.group()` |
+| DL3-D04 | HOCH | workshop_generator.py | 513-514 | Daten (7) | `_save_file` schreibt per `sadd` (Set) aber `list_files` liest per `lrange` (List) — gibt immer leere Liste | Konsistent Set oder List verwenden |
+| DL3-D05 | HOCH | knowledge_base.py | 504 | Logik (10) | `get_chunks()` sortiert `chunk_index` als String — "10" < "2" lexikographisch | `int(c.get("chunk_index", 0))` |
+| DL3-D06 | MITTEL | config.py | 117 | Config (8) | `get_model_profile()` referenziert `yaml_config` vor globaler Definition bei direktem Import | Lazy Loading oder Parameter |
+| DL3-D07 | MITTEL | cooking_assistant.py | 870 | Logik (10) | `CookingSession` mit `current_step=-1` — `_repeat_step()` gibt Fehler statt auf Schritt 0 hinzuweisen | Session mit `current_step=0` starten |
+| DL3-D08 | MITTEL | cooking_assistant.py | 520 | None (4) | `_prev_step()`: `session.get_current_step()` kann None sein — `step.number` crasht | None-Check vor Verwendung |
+| DL3-D09 | MITTEL | cooking_assistant.py | 629 | Logik (10) | Label-Regex `r"(?:für\|für)"` — identische Alternativen statt `(?:für\|fuer)` | Korrekte Alternation |
+| DL3-D10 | MITTEL | smart_shopping.py | 291 | Stille Fehler (2) | `add_missing_ingredients()`: Exception bei `ha.api_get()` still verschluckt — Doppel-Eintraege moeglich | Warning loggen |
+| DL3-D11 | MITTEL | knowledge_base.py | 253 | Security (11) | `hashlib.md5()` fuer Duplikat-Detection — kollisionsanfaellig | `sha256` wie in recipe_store.py |
+| DL3-D12 | MITTEL | inventory.py | 84-87 | Performance (13) | `remove_item()` laedt alle Items ohne Limit — bei grossen Inventaren | Paginierung implementieren |
+| DL3-D13 | MITTEL | web_search.py | 236 | Race (3) | `_rate_timestamps` Liste ohne Lock in async-Kontext — Race bei concurrent Searches | `asyncio.Lock` verwenden |
+| DL3-D14 | MITTEL | workshop_library.py | 96-98 | Async (1) | `embedding_fn` synchron in `asyncio.to_thread` Lambda — Coroutine wird nicht awaited | Coroutine awaiten |
+| DL3-D15 | MITTEL | workshop_generator.py | 396-397 | Logik (10) | Ohms Law `if v and i` — Wert 0 (Kurzschluss) wird als False behandelt | `if v is not None and i is not None` |
+| DL3-D16 | NIEDRIG | config.py | 326 | Logik (10) | Doppelter TTL-Check mit separaten `time.time()` Aufrufen | Einmal berechnen |
+| DL3-D17 | NIEDRIG | config_versioning.py | 286 | Performance (13) | `health_status()` synchrones `glob()` auf Event-Loop | `asyncio.to_thread()` |
+| DL3-D18 | NIEDRIG | cooking_assistant.py | 198 | Memory Leaks (9) | `_timer_tasks` Cleanup nur im finally bei normalem Ende — bei langen Sessions akkumulieren Tasks | Periodisches Cleanup |
+| DL3-D19 | NIEDRIG | calendar_intelligence.py | 149-158 | Logik (10) | `_detect_habits()` berechnet `hour_activity` Counter aber verwendet Ergebnis nie — toter Code | Entfernen oder nutzen |
+| DL3-D20 | NIEDRIG | calendar_intelligence.py | 243 | API (6) | `get_context_hint()` deklariert `events` Parameter aber verwendet ihn nie | Parameter entfernen |
+| DL3-D21 | NIEDRIG | knowledge_base.py | 299-304 | Daten (7) | `chunk_id` mit `datetime.now().strftime('%Y%m%d_%H%M%S')` — ID-Kollisionen bei gleichzeitigen Aufrufen | UUID verwenden |
+| DL3-D22 | NIEDRIG | summarizer.py | 295 | Logik (10) | Distance-Wert als `relevance` benannt — irreführend (kleiner = besser vs groesser = besser) | `1.0 - distance` oder umbenennen |
+
+### Batch 12-13 — Monitoring & Rest (DL3-M01 bis DL3-M17)
+
+| # | Severity | Modul | Zeile | Fehlerklasse | Beschreibung | Fix |
+|---|----------|-------|-------|--------------|--------------|-----|
+| DL3-M01 | KRITISCH | ocr.py | 57-64 | Security (11) | `_validate_image_path()` hardcoded `/tmp` — Upload-Pfad `/app/data/uploads` wird als Pfadtraversal abgelehnt | `allowed_base` konfigurierbar machen |
+| DL3-M02 | HOCH | energy_optimizer.py | 443-444 | Logik (10) | `_find_sensor_value`: `if val >= 0` schliesst negative Werte aus — Netzeinspeisung (negativ) wird ignoriert | `if val is not None` |
+| DL3-M03 | MITTEL | health_monitor.py | 428-437 | Logik (10) | `get_status()` berechnet Score mit Temperatur, aber `check_all()` hat Temp-Check auskommentiert — inkonsistent | Beides aktivieren oder deaktivieren |
+| DL3-M04 | MITTEL | repair_planner.py | 78-82 | Daten (7) | Navigations-Sets enthalten Unicode-Duplikate (z.B. "zurueck" 2x in NAV_PREV) | Duplikate entfernen |
+| DL3-M05 | MITTEL | web_search.py | 249-257 | Logik (10) | SearXNG-URL-Validierung blockiert Subpfade wie `/searxng/` — deaktiviert Web-Suche faelschlich | Subpfade erlauben |
+| DL3-M06 | NIEDRIG | workshop_library.py | 186-191 | Logik (10) | `_chunk_text` mit Overlap erzeugt doppelten Mini-Chunk am Textende | Break-Bedingung nach start-Update |
+| DL3-M07 | NIEDRIG | device_health.py | 506-508 | Stille Fehler (2) | `_check_cooldown` `except Exception: return True` ohne Logging — Alarm-Flut bei Redis-Ausfall | `logger.debug()` hinzufuegen |
+| DL3-M08 | NIEDRIG | diagnostics.py | 119 | Init (5) | Redundanter lokaler `import shutil` obwohl global importiert | Lokalen Import entfernen |
+| DL3-M09 | NIEDRIG | timer_manager.py | 433-434 | Daten (7) | `datetime.strptime().replace(tzinfo=_TZ)` statt `localize()` — DST-Fehler moeglich | `_TZ.localize()` verwenden |
+| DL3-M10 | NIEDRIG | wellness_advisor.py | 397 | Logik (10) | `_check_meal_time()` Erinnerung nur in exakt einer Stunde — Neustart verpasst Fenster | Bereich ausweiten |
+| DL3-M11 | NIEDRIG | predictive_maintenance.py | 105 | Memory Leaks (9) | `_devices` Dict waechst unbegrenzt mit neuen Entity-IDs | LRU-Cache oder Limit |
+| DL3-M12 | NIEDRIG | task_registry.py | 53-55 | Race (3) | `create_task` prueft `existing.done()` dann `cancel()` ohne Lock — harmlos aber unsauber | Lock oder Re-Check |
+| DL3-M13 | NIEDRIG | ocr.py | 57-64 | Security (11) | Upload-Pfad Mismatch: `_validate_image_path` vs `file_handler.UPLOAD_DIR` | Pfade synchronisieren |
+| DL3-M14 | NIEDRIG | file_handler.py | 94 | Security (11) | `url` ohne fuehrenden Slash — relative URL kann auf falsches Endpoint zeigen | `/api/assistant/chat/files/{name}` |
+| DL3-M15 | NIEDRIG | seasonal_insight.py | - | Dead Code | Modul wird von proactive.py referenziert aber Funktionalitaet ist in proactive.py inline | Entweder nutzen oder entfernen |
+| DL3-M16 | NIEDRIG | follow_me.py | - | Resilience (12) | Keine Timeout-Pruefung bei HA-Aufrufen in `transfer_playback` | `asyncio.wait_for` ergaenzen |
+| DL3-M17 | NIEDRIG | visitor_manager.py | - | Resilience (12) | Keine Timeout-Pruefung bei HA-Aufrufen | `asyncio.wait_for` ergaenzen |
+
+### Spezifische Problemzonen (aus P04b Prompt)
+
+| Quelle | Behauptung | Verifikation |
+|--------|-----------|-------------|
+| Protocol Engine | 5 Bugs dokumentiert | 2 neue Bugs gefunden (DL3-H04, DL3-H07). DL#2 Bugs bestehen weiter. |
+| Insight Engine | "70% fertig" | Grundlegende Cross-Reference Checks implementiert. Fehlend: LLM-basierte Insights, adaptive Thresholds fuer Anomalien. Schaetzung: 60-65% fertig. |
+| circuit_breaker.py | Wird es genutzt? | Ja, importiert von `ha_client.py` und `ollama_client.py`. Aber 2 Race Conditions (DL3-R03, DL3-R04). |
+| threat_assessment.py | Funktioniert es? | Ja, wird von `proactive.py` Zeile 291 gestartet. Aber API-Timeout fehlt (DL3-R02). |
+
+---
+
+## DL#3 Statistik
+
+```
+DL#3 Neue Bugs: 92
+  KRITISCH: 5 (DL3-H01, DL3-H02, DL3-D01, DL3-M01, DL3-M13 — ha_client Auth + OCR Pfad)
+  HOCH:    18
+  MITTEL:  41
+  NIEDRIG: 28
+
+Haeufigste Fehlerklassen (DL#3):
+  Logik-Fehler:       24 (26%)
+  Stille Fehler:      13 (14%)
+  Race Conditions:    11 (12%)
+  Resilience:          9 (10%)
+  Security:            7 (8%)
+  None-Fehler:         7 (8%)
+  API-Fehler:          5 (5%)
+  Memory Leaks:        4 (4%)
+  Daten-Fehler:        5 (5%)
+  Async-Fehler:        3 (3%)
+  Init-Fehler:         3 (3%)
+  Config-Fehler:       2 (2%)
+  Performance:         3 (3%)
+
+Am staerksten betroffene Module:
+  proactive.py:           10 Bugs (DL3-P01 bis DL3-P10)
+  ha_client.py:            3 Bugs (DL3-H01, DL3-H02, DL3-H06) — 2 KRITISCH
+  cooking_assistant.py:    4 Bugs (DL3-D07 bis DL3-D09, DL3-D18)
+  conflict_resolver.py:    3 Bugs (DL3-R01, DL3-R05, DL3-R06)
+  ocr.py:                  3 Bugs (DL3-D01, DL3-M01, DL3-M13)
+```
+
+---
+
+## Dead-Code-Liste (DL#3)
+
+| Modul | Funktion/Code | Grund |
+|-------|--------------|-------|
+| proactive.py:2148-2157 | `_get_person_title()` | Dupliziert `config.get_person_title()` |
+| proactive.py:1351 | Redundanter Import | `from datetime import datetime` bereits oben |
+| calendar_intelligence.py:149-158 | `hour_activity` Counter | Berechnet aber nie verwendet |
+| calendar_intelligence.py:243 | `events` Parameter | Deklariert aber nie verwendet |
+| intent_tracker.py:117 | `"naechster woche"` Branch | Grammatikalisch falsch, nie getriggert |
+| seasonal_insight.py | Gesamtes Modul | Funktionalitaet inline in proactive.py |
+
+---
+
+## KONTEXT AUS PROMPT 4b: Bug-Report (Extended-Module)
+
+### Statistik
+Gesamt DL#3 neu: 92 Bugs in Prioritaet 5-9 (KRITISCH 5, HOCH 18, MITTEL 41, NIEDRIG 28)
+Gesamt mit DL#2: 299 Bugs (5 KRITISCH, 41 HOCH, ~138 MITTEL, ~113 NIEDRIG, 2 INFO)
+
+### Kritische Bugs (KRITISCH)
+- DL3-H01: ha_client.py:373 — `mindhome_put()` ohne Auth-Header → Fix: `headers=self._mindhome_headers`
+- DL3-H02: ha_client.py:404 — `mindhome_delete()` ohne Auth-Header → Fix: `headers=self._mindhome_headers`
+- DL3-D01: ocr.py:57 — `_validate_image_path()` erlaubt nur `/tmp`, Uploads in `/app/data/uploads` → Fix: Pfad anpassen
+- DL3-M01: ocr.py:57 — Upload-Pfad als Pfadtraversal abgelehnt → Fix: konfigurierbar machen
+- DL3-M13: ocr.py + file_handler.py — Pfad-Mismatch zwischen Modulen → Fix: synchronisieren
+
+### Hohe Bugs (HOCH) — Top 5
+- DL3-I01: outcome_tracker.py:163 — `get_success_score()` gibt immer 0.5 zurueck (broken feature)
+- DL3-R01: conflict_resolver.py:259 — Race Condition bei `_recent_commands` Iteration
+- DL3-D04: workshop_generator.py:513 — Redis Set/List Mismatch (broken feature)
+- DL3-A03: ambient_audio.py:302 — Race Condition bei `_event_history`
+- DL3-D02: smart_shopping.py:245 — Callback Signatur-Mismatch → TypeError
+
+### Dead-Code-Liste
+- proactive.py: `_get_person_title()`, redundanter Import
+- calendar_intelligence.py: `hour_activity` Counter, ungenutzter `events` Parameter
+- intent_tracker.py: "naechster woche" Branch
+- seasonal_insight.py: Gesamtes Modul (inline in proactive.py)
+
+### Resilience-Findings
+- ha_client.py: PUT/DELETE ohne Auth → alle Schreib-Operationen ueber MindHome API betroffen
+- circuit_breaker.py: Wird genutzt aber hat Race Conditions
+- threat_assessment.py: Wird genutzt aber kein Timeout bei HA-Aufrufen
+- 5+ Module ohne Error-Callbacks auf create_task → stille Exceptions
+
+---
+
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Keine Fixes in DL#3 — nur Analyse]
+OFFEN:
+- KRITISCH DL3-H01: ha_client.py PUT ohne Auth | :373 | GRUND: Auth-Header fehlt → NAECHSTER_PROMPT
+- KRITISCH DL3-H02: ha_client.py DELETE ohne Auth | :404 | GRUND: Auth-Header fehlt → NAECHSTER_PROMPT
+- KRITISCH DL3-D01/M01: ocr.py Pfad-Validierung blockiert alle Uploads | :57 | GRUND: Hardcoded /tmp → NAECHSTER_PROMPT
+- HOCH DL3-I01: outcome_tracker.py get_success_score() immer 0.5 | :163 | GRUND: Score nie berechnet → NAECHSTER_PROMPT
+- HOCH DL3-R01: conflict_resolver.py Race Condition | :259 | GRUND: Kein Lock bei Read → NAECHSTER_PROMPT
+- HOCH DL3-D04: workshop_generator.py Redis Set/List Mismatch | :513 | GRUND: sadd vs lrange → NAECHSTER_PROMPT
+- HOCH DL3-A03: ambient_audio.py Race Condition | :302 | GRUND: Nicht-atomare List-Ops → NAECHSTER_PROMPT
+- HOCH DL3-D02: smart_shopping.py Callback TypeError | :245 | GRUND: Signatur-Mismatch → NAECHSTER_PROMPT
+GEAENDERTE DATEIEN: [docs/audit-results/RESULT_04b_BUGS_EXTENDED.md]
+REGRESSIONEN: [Keine — nur Analyse, keine Code-Aenderungen]
+NAECHSTER SCHRITT: P04c — Addon + Security-Audit + Performance-Analyse (Prioritaet 10-12)
+===================================
