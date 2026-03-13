@@ -4,13 +4,19 @@
 
 Frischer Start fuer einen neuen Audit-Durchlauf (P01-P07). Vorherige Ergebnisse kompakt zusammenfassen, alle Kontext-Bloecke verwerfen, unfixte Bugs als Checkliste uebernehmen.
 
-## LLM-SPEZIFISCH (Qwen 3.5)
+## LLM-SPEZIFISCH
 
+### Produktions-LLM (Qwen 3.5 via Ollama)
 - Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
 - Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
 - Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
 - Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
 - character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
+### Audit-LLM (Claude Opus 4.6 via Claude Code)
+- Modell: claude-opus-4-6
+- Audit-Durchlaeufe #1-#3 durchgefuehrt mit Claude Code
+- Zugriff auf alle Dateien via CLI-Tools (Read, Grep, Glob, Bash)
 
 ## WANN VERWENDEN
 
@@ -192,11 +198,11 @@ Alle Kontext-Bloecke verworfen: Ja
 
 ## DURCHLAUF-TRACKING
 
-| Durchlauf | Datum | Bugs gefunden | Bugs gefixt | Regressions |
-|---|---|---|---|---|
-| #1 | ? | ? | ? | ? |
-| #2 | ? | ? | ? | ? |
-| #3 | ? | ? | ? | ? |
+| Durchlauf | Datum | Bugs gefunden | Bugs behandelt | Offen | Regressions |
+|---|---|---|---|---|---|
+| #1 | 2026-03-10 | 225 | 173 (157 gefixt, 16 bereits OK) | 52 | N/A |
+| #2 | 2026-03-10 | (Verifikation) | 8 Log-Audit + Tests | 52+ | Zu pruefen |
+| #3 | 2026-03-13 | ? | ? | ? | ? |
 
 ---
 
