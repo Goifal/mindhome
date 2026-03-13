@@ -6,6 +6,17 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Flask, Redis,
 
 ---
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
+---
+
 ## ⚠️ Arbeitsumgebung: GitHub-Repository
 
 Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wie der Code mit fehlenden `.env`-Werten, fehlenden Credentials und nicht-erreichbaren Services umgeht.
@@ -29,6 +40,13 @@ Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wi
 ## Aufgabe
 
 Prüfe die **Extended-Module** (Priorität 5–9, 63 Module) systematisch auf die **13 Fehlerklassen** (siehe P04a).
+
+> **Modul-Existenz-Verifikation (Pflicht!)**
+> Nicht alle 63 Module muessen existieren. BEVOR du die Batches analysierst:
+> ```
+> Glob: pattern="*.py" path="assistant/assistant/"
+> ```
+> Dokumentiere welche Module aus den Listen NICHT gefunden wurden → als "existiert nicht" markieren und ueberspringen.
 
 > **Dieser Prompt ist Teil 2 von 3** der Bug-Jagd:
 > - **P04a**: Core-Module (brain, main, memory, context, actions) — ✅ erledigt
@@ -185,6 +203,25 @@ Gesamt: X Bugs (Priorität 5–9)
 
 ---
 
+## Erfolgskriterien
+
+- Alle Extended-Module (Prio 5-9) gelesen, Bugs nach 13 Fehlerklassen kategorisiert
+- Jeder Bug hat: Datei:Zeile, Fehlerklasse, Severity, konkreten Fix-Vorschlag
+- Mindestens 30 Bugs in den Extended-Modulen gefunden
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ Bug-Report enthaelt Datei:Zeile fuer jeden Bug
+□ Bugs sind nach 13 Fehlerklassen kategorisiert
+□ Severity-Verteilung dokumentiert (KRITISCH/HOCH/MITTEL/NIEDRIG)
+□ Proaktive Module geprueft: grep "async def\|await" proactive.py proactive_planner.py
+□ Intelligence-Module geprueft: grep "except\|try:" insight_engine.py anticipation.py learning_observer.py
+□ Audio-Module geprueft: grep "await\|async" sound_manager.py tts_enhancer.py multi_room_audio.py
+```
+
+---
+
 ## ⚡ Übergabe an Prompt 4c
 
 Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 4c:
@@ -209,3 +246,21 @@ Gesamt: X Bugs in Priorität 5–9 (🔴 X, 🟠 X, 🟡 X, 🟢 X)
 ```
 
 **Wenn du Prompt 4c in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke automatisch ein.
+
+---
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

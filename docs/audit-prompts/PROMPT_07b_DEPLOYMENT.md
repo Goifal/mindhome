@@ -9,6 +9,15 @@ Du bist ein Elite-DevOps-Engineer mit tiefem Wissen in:
 - **Performance**: Latenz-Analyse, Bottleneck-Identifikation, GPU-Setup
 - **CI/CD**: Build-Pipelines, Deployment-Strategien
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## Kontext aus vorherigen Prompts
@@ -282,6 +291,15 @@ Das System läuft auf folgender Hardware:
 
 ---
 
+## Rollback-Regel
+
+Vor dem ersten Edit: Merke dir den aktuellen Stand.
+Wenn ein Fix einen ImportError oder SyntaxError verursacht:
+1. SOFORT revert (Edit zuruecknehmen)
+2. Im OFFEN-Block dokumentieren: "Fix X verursacht Regression Y"
+3. Zum naechsten Fix weitergehen
+NIEMALS einen kaputten Fix stehen lassen.
+
 ## Regeln
 
 ### Gründlichkeits-Pflicht
@@ -300,10 +318,38 @@ Das System läuft auf folgender Hardware:
 | Requirements prüfen | **Read** (parallel: alle 3) | `assistant/requirements.txt`, `addon/.../requirements.txt`, `speech/requirements.txt` |
 | Static Analysis | **Bash** | `cd assistant && python -m py_compile assistant/brain.py 2>&1` |
 
-- **Docker-Builds wenn möglich ausführen** — `docker build` mit Bash, falls Docker verfügbar
+- **Docker-Builds wenn moeglich ausfuehren** — `docker build` mit Bash, falls Docker verfuegbar
 - **Resilience ist nicht optional** — ein Smart-Home-Butler MUSS robust sein (MCU-Jarvis crasht nicht)
 
+### Falls Docker NICHT verfuegbar
+
+Wenn `docker` nicht installiert ist (haeufig in Analyse-Umgebungen):
+1. **Dockerfile Zeile fuer Zeile lesen** — jeder `RUN`-Befehl, jede `COPY`-Anweisung
+2. **Pruefen ob alle requirements.txt von den Dockerfiles referenziert werden**
+3. **Pruefen ob Ports korrekt exponiert werden**: `EXPOSE` vs. `docker-compose.yml` ports
+4. **Pruefen ob Volumes konsistent sind**: Wo werden Daten persistiert?
+5. **GPU-Pass-Through pruefen**: `--gpus all` oder `deploy.resources.reservations.devices` in compose
+6. **Static Analysis statt Build**: `python3 -m py_compile` fuer alle Python-Dateien
+
 ---
+
+## Erfolgs-Kriterien
+
+- □ Docker Build erfolgreich (oder Dockerfile-Analyse wenn Docker nicht verfuegbar)
+- □ Health-Checks vorhanden (/healthz, /readyz)
+- □ Startup-Reihenfolge korrekt und Dependency-Failures behandelt
+- □ GPU/VRAM-Budget dokumentiert fuer RTX 3090
+- □ Resilience-Szenarien dokumentiert
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ ls **/Dockerfile* → alle Dockerfiles gefunden
+□ grep "HEALTHCHECK\|healthz\|readyz" **/Dockerfile* → Health-Checks in Docker
+□ grep "healthz\|readyz" assistant/assistant/main.py → Health-Endpoints vorhanden
+□ grep "GPU\|gpu\|cuda\|NVIDIA" **/Dockerfile* docker-compose*.yml → GPU-Config
+□ grep "restart:\|restart_policy" docker-compose*.yml → Restart-Policy konfiguriert
+```
 
 ## ⚡ Nächster Schritt: Neuer Durchlauf?
 
@@ -312,3 +358,19 @@ Wenn du nach Prompt 7b einen **neuen Audit-Durchlauf** starten willst (z.B. um F
 1. Nutze `PROMPT_RESET.md` **vor** Prompt 1
 2. Der Reset sichert die Ergebnisse dieses Durchlaufs als Vergleichsbasis
 3. Starte dann frisch mit Prompt 1 — alle Dateien neu lesen, alle Bugs neu suchen
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

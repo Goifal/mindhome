@@ -6,6 +6,17 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Flask, Redis,
 
 ---
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
+---
+
 ## ⚠️ Arbeitsumgebung: GitHub-Repository
 
 Du arbeitest mit dem Quellcode, nicht mit einem laufenden System.
@@ -81,10 +92,38 @@ Prüfe die **Addon-Module, Speech, Shared-Module** (Priorität 10–12) und füh
 
 ### Shared Schema Verification (Pflicht!)
 
-Für jedes Schema:
-1. **Grep** — Wo wird es importiert? `pattern="ChatRequest" path="."`
-2. **Grep** — Wird es lokal neu definiert? `pattern="class ChatRequest" path="."`
-3. Ergebnis: Nutzen alle Services dasselbe Schema, oder gibt es Abweichungen?
+Für **jedes** der 3 Shared Schemas (`ChatRequest`, `ChatResponse`, `MindHomeEvent`):
+
+**Schritt 1 — Import-Prüfung:**
+```
+Grep: pattern="from shared.schemas import|from shared.schemas." path="." output_mode="content"
+Grep: pattern="ChatRequest" path="." output_mode="content"
+Grep: pattern="ChatResponse" path="." output_mode="content"
+Grep: pattern="MindHomeEvent" path="." output_mode="content"
+```
+
+**Schritt 2 — Duplikat-Prüfung:**
+```
+Grep: pattern="class ChatRequest|class ChatResponse|class MindHomeEvent" path="." output_mode="content"
+```
+
+**Schritt 3 — Port/Konstanten-Konsistenz:**
+```
+Grep: pattern="from shared.constants import|from shared import constants" path="." output_mode="content"
+Grep: pattern="port.*=.*[0-9]{4}" path="." output_mode="content" glob="*.py"
+```
+
+**Pass/Fail Kriterien:**
+
+| Check | ✅ PASS | ❌ FAIL |
+|---|---|---|
+| Import-Quelle | Alle Services importieren aus `shared/schemas/` | Service definiert eigene Klasse oder importiert aus anderem Pfad |
+| Feld-Konsistenz | `ChatRequest` hat identische Felder in Assistant + Addon + Speech | Felder weichen ab (z.B. Addon hat `extra_field` das Assistant nicht kennt) |
+| Port-Konsistenz | Alle Services nutzen `shared/constants.py` für Ports | Hardcoded Ports (z.B. `port=5000` statt `ADDON_PORT`) |
+| Event-Typen | `MindHomeEvent` Enum-Werte werden konsistent genutzt | String-Literale statt Enum (z.B. `"light_on"` statt `MindHomeEvent.LIGHT_ON`) |
+| Serialisierung | Gleiche JSON-Serialisierung in allen Services | Ein Service nutzt `.dict()`, anderer `.model_dump()` oder manuelles Dict |
+
+> **Jeder FAIL ist ein 🟠 HOCH Bug.** Zwei oder mehr FAILs für dasselbe Schema → 🔴 KRITISCH.
 
 ---
 
@@ -101,13 +140,13 @@ Prüfe **alle** diese Security-Checks:
 | 5 | Self-Automation Safety | `self_automation.py` | Kann Jarvis gefährliche HA-Automationen generieren? |
 | 6 | Autonomy Limits | `autonomy.py` | Gibt es harte Grenzen für autonome Aktionen? |
 | 7 | Threat Assessment | `threat_assessment.py` | Funktioniert es? Wird es genutzt? |
-| 8 | **Factory Reset** | `main.py` | Ist `/api/ui/factory-reset` ausreichend geschützt? Trust-Level + Bestätigung? |
+| 8 | **Factory Reset** | `main.py` | Endpoint `/api/ui/factory-reset`: (1) Braucht `trust_level >= 3`? (2) Braucht Bestaetigungscode (OTP/PIN/Recovery-Key)? (3) Wird User benachrichtigt? Grep: `pattern="factory.reset" path="assistant/assistant/main.py" output_mode="content"` |
 | 9 | **System Update/Restart** | `main.py` | Sind `/api/ui/system/update` und `/restart` geschützt? |
 | 10 | **API-Key Management** | `main.py` | Ist `/api/ui/api-key/regenerate` geschützt? Recovery-Key-Logik sicher? |
 | 11 | **PIN-Auth** | `main.py` | Ist die PIN-Authentifizierung (`/api/ui/auth`) sicher? Brute-Force-Schutz? |
 | 12 | **File Upload** | `main.py`, `file_handler.py`, `ocr.py` | Path Traversal, Injection über Dateinamen, Dateigröße, MIME-Type? |
 | 13 | **Workshop Hardware** | `main.py` | Sind `/api/workshop/arm/*` und `/api/workshop/printer/*` Trust-Level-geschützt? |
-| 14 | **Sensitive Data in Logs** | `main.py` | Werden API-Keys/Tokens in Error/Activity Buffer redacted? |
+| 14 | **Sensitive Data in Logs** | `main.py` | Werden API-Keys/Tokens in Error/Activity Buffer redacted? Grep: `pattern="api.key\|api_key\|token\|password" path="assistant/assistant/main.py" output_mode="content"` → pruefen ob jeder Match ein `redact\|redacted\|****` hat |
 | 15 | **WebSearch SSRF** | `web_search.py` | IP-Blocklist, DNS-Rebinding-Check, URL-Validierung |
 | 16 | **Frontend XSS** | `addon/.../app.jsx`, `assistant/.../app.js` | Werden API-Responses escaped? User-Input in DOM? |
 | 17 | **CORS** | `main.py`, `addon/app.py` | CORS-Headers korrekt? Zu permissiv (allow-origin: *)? |
@@ -251,6 +290,26 @@ Performance-Probleme: X
 
 ---
 
+## Erfolgskriterien
+
+- Alle Addon-Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert
+- Security-Audit: Mindestens 5 Security-relevante Findings
+- Performance/Latenz: Mindestens 3 Performance-Findings mit Messvorschlaegen
+- Addon ↔ Assistant Interaktion geprueft
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ Addon-Module gelesen: grep "def " addon/rootfs/opt/mindhome/app.py | wc -l
+□ Security-Checks: grep "eval\|exec\|os.system\|subprocess" addon/ -r
+□ SQL-Injection geprueft: grep "f\".*SELECT\|format.*SELECT" addon/ -r
+□ Auth-Check: grep "api_key\|auth\|token\|secret" addon/rootfs/opt/mindhome/app.py
+□ Thread-Safety: grep "threading\|Lock\|global " addon/rootfs/opt/mindhome/ -r | wc -l
+□ Frontend-Security: grep "innerHTML\|eval\|document\.write" ha_integration/ -r
+```
+
+---
+
 ## ⚡ Übergabe an Prompt 5
 
 Formatiere am Ende einen kompakten **Kontext-Block** für Prompt 5:
@@ -284,3 +343,21 @@ Gesamt: X Bugs (🔴 X, 🟠 X, 🟡 X, 🟢 X)
 ```
 
 **Wenn du Prompt 5 in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke (Prompt 1–4c) automatisch ein.
+
+---
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

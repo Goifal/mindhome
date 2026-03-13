@@ -6,6 +6,17 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Redis, Chroma
 
 ---
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
+---
+
 ## ⚠️ Arbeitsumgebung: GitHub-Repository
 
 Du arbeitest mit dem Quellcode, nicht mit einem laufenden System. Prüfe auch wie der Code mit fehlenden `.env`-Werten, fehlenden Credentials und nicht-erreichbaren Services umgeht.
@@ -137,11 +148,19 @@ Führe diese Suchen **vor** dem Batch-Reading durch:
 
 ```
 # Fehlerklasse 1: Fehlende awaits finden
-# ACHTUNG: [^await ] ist eine Character Class, NICHT "not preceded by await"!
-# Nutze stattdessen Negative Lookbehind:
+# ACHTUNG: Negative Lookbehind kann je nach Grep-Engine fehlschlagen!
+# STRATEGIE: Zwei Suchen kombinieren — erst alle Aufrufe finden, dann mit await filtern.
+#
+# Schritt A: Alle async-relevanten Aufrufe finden:
+Grep: pattern="self\.(memory|semantic_memory|ha_client)\.\w+\(" path="assistant/assistant/" output_mode="content"
+#
+# Schritt B: Alle korrekt ge-awaiteten Aufrufe finden:
+Grep: pattern="await self\.(memory|semantic_memory|ha_client)\.\w+\(" path="assistant/assistant/" output_mode="content"
+#
+# Schritt C: Vergleiche A und B — jede Zeile in A die NICHT in B ist = fehlender await
+# Falls Negative Lookbehind funktioniert, geht es auch direkt:
 Grep: pattern="(?<!await )self\.(memory|semantic_memory|ha_client)\." path="assistant/assistant/" output_mode="content"
-# Alternativ: Alle self.X.Y()-Aufrufe finden und manuell prüfen welche await brauchen:
-Grep: pattern="^\s+self\.\w+\.\w+\(" path="assistant/assistant/" output_mode="content"
+# Wenn diese Suche einen Fehler wirft → nutze Schritt A+B+C oben
 
 # Fehlerklasse 2: Stille Fehler
 Grep: pattern="except.*:[\s]*pass|except.*:[\s]*$|except Exception" path="assistant/assistant/" output_mode="content"
@@ -227,6 +246,26 @@ Am stärksten betroffenes Modul: [Name] (X Bugs)
 
 ---
 
+## Erfolgskriterien
+
+- Alle Module gelesen, Bugs nach 13 Fehlerklassen kategorisiert, Datei:Zeile Referenzen
+- Jeder Bug hat: Datei:Zeile, Fehlerklasse, Severity, konkreten Fix-Vorschlag
+- Mindestens 20 Bugs in den Core-Modulen (brain.py, main.py, memory.py, personality.py, function_calling.py) gefunden
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ Bug-Report enthaelt Datei:Zeile fuer jeden Bug
+□ Bugs sind nach 13 Fehlerklassen kategorisiert
+□ Severity-Verteilung dokumentiert (KRITISCH/HOCH/MITTEL/NIEDRIG)
+□ Fuer jeden KRITISCH/HOCH Bug ist ein konkreter Fix-Vorschlag vorhanden
+□ Async-Fehler in brain.py geprueft: grep "def [^_].*self\." brain.py | grep -v "async def"
+□ Silent Exceptions geprueft: grep "except.*pass\|except.*:" brain.py | wc -l
+□ None-Guards geprueft: grep "\.redis\.\|\.memory\.\|\.brain\." brain.py | head -20
+```
+
+---
+
 ## ⚡ Übergabe an Prompt 4b
 
 Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 4b:
@@ -248,3 +287,21 @@ Gesamt: X Bugs in Priorität 1–4 (🔴 X, 🟠 X, 🟡 X, 🟢 X)
 ```
 
 **Wenn du Prompt 4b in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke automatisch ein.
+
+---
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

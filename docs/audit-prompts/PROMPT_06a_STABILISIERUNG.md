@@ -4,6 +4,15 @@
 
 Du bist ein Elite-Software-Architekt, KI-Ingenieur und MCU-Jarvis-Experte. Du hast in den vorherigen 5 Prompts das System analysiert. Jetzt stabilisierst du es.
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## Kontext aus vorherigen Prompts
@@ -44,11 +53,93 @@ Arbeite **jeden** 🔴 KRITISCHEN Bug aus dem Prompt-4-Report ab:
 - Init-Reihenfolge-Fehler → Crash beim Start
 - Ungeschützte Security-Endpoints → Angriffsfläche
 
+## Fix-Templates — Haeufige Bug-Typen
+
+### Async/Sync Mismatch (blockiert Event-Loop)
+```python
+# VORHER (blockiert Event-Loop):
+result = sync_function(args)
+# NACHHER:
+result = await asyncio.to_thread(sync_function, args)
+```
+
+### Silent Errors (verschluckte Fehler)
+```python
+# VORHER:
+except Exception:
+    pass
+# NACHHER:
+except Exception as e:
+    logger.warning("Beschreibung: %s", e)
+```
+
+### N+1 Redis (Schleife statt Pipeline)
+```python
+# VORHER:
+for key in keys:
+    val = await redis.get(key)
+# NACHHER:
+pipe = redis.pipeline()
+for key in keys:
+    pipe.get(key)
+vals = await pipe.execute()
+```
+
+### Race Condition (fehlende Lock-Absicherung)
+```python
+# VORHER:
+if not self._running:
+    self._running = True
+# NACHHER:
+async with self._lock:
+    if not self._running:
+        self._running = True
+```
+
+### None-Guard (fehlende Null-Pruefung)
+```python
+# VORHER:
+result = obj.method()
+# NACHHER:
+if obj is not None:
+    result = obj.method()
+```
+
 **Priorität innerhalb der 🔴 Bugs:**
 1. Bugs die den **Start verhindern** (Init-Fehler)
 2. Bugs die den **Haupt-Flow crashen** (Sprach-Input → Antwort)
 3. Bugs die **Datenverlust** verursachen (Memory, Config)
 4. **Security-Lücken** die sofort ausnutzbar sind
+
+### Explizites Bug-Mapping: P04 → P06
+
+> **PFLICHT**: Erstelle als erstes eine Zuordnungstabelle die JEDEN Bug aus P04 einem Fix-Prompt zuweist. Kein Bug darf ohne Zuordnung bleiben.
+
+**Bevor du den ersten Bug fixst**, lies den gesamten P04-Report (4a + 4b + 4c) und erstelle diese Tabelle:
+
+```
+### Bug-Zuordnung P04 → P06
+
+| Bug-# | Severity | Beschreibung | Datei:Zeile | Zugeordnet an |
+|---|---|---|---|---|
+| 1 | 🔴 | [Beschreibung] | [Datei:Zeile] | **P06a** (dieser Prompt) |
+| 2 | 🔴 | [Beschreibung] | [Datei:Zeile] | **P06a** (dieser Prompt) |
+| ... | 🟠 | [Beschreibung] | [Datei:Zeile] | **P06b** (Architektur) |
+| ... | 🟡 | [Beschreibung] | [Datei:Zeile] | **P06c** (Charakter) |
+| ... | 🔴 | [Security-Bug] | [Datei:Zeile] | **P06d** (Härtung) |
+| ... | 🟠 | [Tool-Calling-Bug] | [Datei:Zeile] | **P06e** (Gerätesteuerung) |
+| ... | 🟡 | [TTS-Bug] | [Datei:Zeile] | **P06f** (TTS/Response) |
+```
+
+**Zuordnungs-Regeln:**
+- 🔴 KRITISCH (Crash/Datenverlust/Security-sofort) → **P06a** (dieser Prompt)
+- 🔴 KRITISCH (Security allgemein) → **P06d**
+- 🟠 HOCH (Architektur/Flow/Performance) → **P06b**
+- 🟠 HOCH (Tool-Calling) → **P06e**
+- 🟡 MITTEL (Persönlichkeit/Config/Dead Code) → **P06c**
+- 🟡 MITTEL (TTS/Response-Leakage) → **P06f**
+
+**Am Ende von P06a**: Übergib die Zuordnungstabelle im Kontext-Block an P06b, damit jeder nachfolgende Prompt weiß WELCHE Bugs er fixen muss.
 
 ### Schritt 2: Memory reparieren (aus Prompt 2)
 
@@ -122,17 +213,51 @@ Was muss in Prompt 6b (Architektur) beachtet werden?
 
 ---
 
+## Rollback-Regel
+
+Vor dem ersten Edit: Merke dir den aktuellen Stand.
+Wenn ein Fix einen ImportError oder SyntaxError verursacht:
+1. SOFORT revert (Edit zuruecknehmen)
+2. Im OFFEN-Block dokumentieren mit Eskalation (siehe unten)
+3. Zum naechsten Fix weitergehen
+NIEMALS einen kaputten Fix stehen lassen.
+
+## Eskalations-Regel
+
+Wenn ein Bug NICHT gefixt werden kann, dokumentiere ihn im OFFEN-Block mit:
+- **Severity**: 🔴 KRITISCH / 🟠 HOCH / 🟡 MITTEL
+- **Grund**: Warum nicht loesbar (Regression, Architektur-Umbau noetig, Domainwissen fehlt, etc.)
+- **Eskalation**:
+  - `NAECHSTER_PROMPT` — Bug gehoert thematisch in P06b–P06f
+  - `ARCHITEKTUR_NOETIG` — Fix erfordert groesseren Umbau, naechster Durchlauf
+  - `MENSCH` — Braucht menschliche Entscheidung oder Domainwissen
+
+**MENSCH-Bugs: NICHT stoppen.** Triff die beste Entscheidung selbst, dokumentiere WARUM, und mach weiter.
+
 ## Regeln
 
 ### Gründlichkeits-Pflicht
 
 > **Jeder Fix muss VERIFIZIERT sein.** Lies die Datei mit Read, mache die Änderung mit Edit, lies den umgebenden Code, stelle sicher dass der Fix keine neuen Probleme einführt. Prüfe mit Grep alle Aufrufer der geänderten Funktion.
 
+### Pre-Edit Template (Vor JEDEM Edit ausfuellen!)
+
+```
+Datei: [path/to/file.py]
+Zeile: [exact line number]
+VORHER (exakt kopiert aus Read):
+  [die originale fehlerhafte Zeile]
+NACHHER (Fix):
+  [die korrigierte Zeile]
+Warum: [1-Satz Erklaerung des Bugs]
+Aufrufer geprueft: [Grep-Ergebnis: X Stellen, alle kompatibel]
+```
+
 ### Claude Code Tool-Einsatz
 
 | Aufgabe | Tool | Wichtig |
 |---|---|---|
-| Datei lesen vor dem Fix | **Read** | IMMER erst lesen, dann editieren |
+| Datei lesen vor dem Fix | **Read** | IMMER erst lesen, dann editieren — siehe Pre-Edit Template |
 | Fix implementieren | **Edit** | Direkt in der Datei ändern |
 | Aufrufer prüfen nach Fix | **Grep** | Alle Stellen die die geänderte Funktion nutzen |
 | Tests laufen lassen | **Bash** | `python -m pytest tests/test_X.py -x` |
@@ -144,6 +269,15 @@ Was muss in Prompt 6b (Architektur) beachtet werden?
 - **Wenn ein Fix Tests bricht**: (a) Fix rückgängig machen (`git checkout -- datei.py`), (b) Ursache analysieren — ist der Test falsch oder der Fix?, (c) Fix anpassen und erneut versuchen
 - **Abhängigkeitsreihenfolge beachten**: Wenn Bug A in `memory.py` liegt und Bug B in `brain.py` `memory.py` aufruft → fixe zuerst A, dann B
 
+### Scope-Begrenzung
+Pro Durchlauf: MAX 20 Bugs fixen. Strikt nach Priorität:
+KRITISCH → HOCH → MITTEL → NIEDRIG.
+NIEMALS einen MITTEL Bug vor allen HOCH Bugs fixen.
+
+### Checkpoint
+Nach jedem 5. Fix: Zusammenfassung:
+"=== CHECKPOINT: Bugs 1-5 gefixt. KRITISCH: X/Y done, HOCH: X/Y done ==="
+
 ### ⚠️ Phase Gate: Checkpoint am Ende von 6a
 
 Bevor du zu 6b übergehst:
@@ -152,6 +286,25 @@ Bevor du zu 6b übergehst:
 3. Nur wenn Tests grün sind → weiter zu 6b
 
 ---
+
+## Erfolgs-Kriterien
+
+- □ Alle KRITISCH Bugs gefixt
+- □ python -c 'import assistant.brain' kein Error
+- □ python -c 'import assistant.memory' kein Error
+- □ python -c 'import assistant.personality' kein Error
+- □ Checkpoints dokumentiert
+- □ Jeder Fix verifiziert mit Read → Grep → Edit → Verify Methodik
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q
+□ python3 -m py_compile assistant/assistant/brain.py
+□ python3 -m py_compile assistant/assistant/memory.py
+□ grep "except.*pass" assistant/assistant/brain.py → sollte 0 sein (alle silent exceptions gefixt)
+□ grep "_safe_init" assistant/assistant/brain.py → alle Module in _safe_init gewrapped
+```
 
 ## ⚡ Übergabe an Prompt 6b
 
@@ -171,4 +324,20 @@ Formatiere am Ende einen kompakten **Kontext-Block**:
 
 ### Test-Status
 [X Tests bestanden, Y fehlgeschlagen]
+```
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
 ```

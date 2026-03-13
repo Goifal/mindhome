@@ -15,6 +15,15 @@ Du kennst **J.A.R.V.I.S. aus dem MCU** in- und auswendig und nutzt ihn als Golds
 - **Widerspricht sich nie**, kennt immer den Kontext, handelt koordiniert
 - **Eine Stimme, ein Charakter** — egal ob Licht, Wetter oder Warnung
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## ⚠️ Arbeitsumgebung: GitHub-Repository
@@ -37,7 +46,7 @@ Jarvis ist ein lokaler KI-Butler für Home Assistant. Das Projekt besteht aus **
 
 Das System ist NICHT nur der Assistant. Es besteht aus:
 
-1. **Assistant-Server** (`/assistant/assistant/`, 88 Python-Module, FastAPI)
+1. **Assistant-Server** (`/assistant/assistant/`, 89 Python-Module, FastAPI)
    - KI-Kern: LLM, Memory, Persönlichkeit, Function Calling
    - Kommuniziert mit HA über REST/WebSocket API
 
@@ -114,6 +123,8 @@ Die Module — sowohl innerhalb des Assistants als auch **zwischen Assistant und
 ### Schritt 1 — Dokumentation lesen
 
 Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
+
+> **WICHTIG**: Prüfe ZUERST mit `Glob: pattern="**/{dateiname}"` ob die Datei existiert. Manche Dokumentationen können in einem früheren Durchlauf umbenannt oder entfernt worden sein. Falls eine Datei nicht existiert → überspringe sie und dokumentiere "Datei nicht vorhanden" im Output.
 
 1. `docs/PROJECT_MINDHOME_ASSISTANT.md` — Architektur & Modul-Abhängigkeiten
 2. `docs/JARVIS_AUDIT.md` — Modul-Audit
@@ -253,6 +264,33 @@ Lies diese Dateien **komplett** (aber vertraue keiner Aussage blind):
 
 **Shared-Module Prüfung**: Prüfe zusätzlich ob und wie die Dateien aus `/shared/` (constants.py, schemas/) von Assistant, Addon und HA-Integration importiert werden. Nutzen alle Services dieselben Schemas oder definieren sie eigene?
 
+#### Shared-Module Audit (PFLICHT)
+
+```
+# 1. Welche Shared-Schemas existieren?
+Glob: pattern="shared/**/*.py"
+
+# 2. Wer importiert die Shared-Schemas?
+Grep: pattern="from shared|import shared" path="." output_mode="content"
+
+# 3. Definiert der Assistant eigene Request/Response-Klassen?
+Grep: pattern="class.*Request|class.*Response" path="assistant/assistant/" output_mode="content"
+
+# 4. Definiert der Addon eigene Request/Response-Klassen?
+Grep: pattern="class.*Request|class.*Response" path="addon/rootfs/opt/mindhome/" output_mode="content"
+
+# 5. Nutzen alle Services dieselben Ports/Konstanten?
+Grep: pattern="8200|5000|ASSISTANT_PORT|ADDON.*PORT" path="." output_mode="content"
+```
+
+Erwartetes Ergebnis:
+| Shared-Datei | Von Assistant importiert? | Von Addon importiert? | Von HA-Integration importiert? | Abweichende eigene Definitionen? |
+|---|---|---|---|---|
+| shared/constants.py | ? | ? | ? | ? |
+| shared/schemas/chat_request.py | ? | ? | ? | ? |
+| shared/schemas/chat_response.py | ? | ? | ? | ? |
+| shared/schemas/events.py | ? | ? | ? | ? |
+
 #### Claude Code Strategie — Import-Karte effizient erstellen
 
 **Nutze Grep** statt jede Datei einzeln zu öffnen:
@@ -389,6 +427,16 @@ Die vollständige Import-Tabelle aus Schritt 4 mit verwaisten Modulen, Zyklen un
 
 ---
 
+## Erfolgsmetriken
+
+- Alle Module gelesen mit Datei:Zeile Referenzen
+- Alle 6 Konfliktkarten (A-F) vollstaendig ausgefuellt mit Code-Referenzen
+- Vollstaendiger Verdrahtungs-Graph aller Module erstellt
+- Service-Interaktions-Diagramm dokumentiert mit konkreten Kommunikationskanaelen
+- Top-5 Architektur-Probleme identifiziert und mit Severity bewertet
+
+---
+
 ## ⚡ Übergabe an Prompt 2
 
 **WICHTIG**: Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block**, den du direkt in Prompt 2 einsetzt. Dieser Block soll enthalten:
@@ -417,3 +465,21 @@ Formatiere ihn so:
 ```
 
 **Wenn du Prompt 2 in derselben Konversation erhältst**: Setze diesen Kontext-Block automatisch ein — der User muss nichts kopieren.
+
+---
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

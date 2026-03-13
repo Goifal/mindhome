@@ -8,6 +8,15 @@ Du bist ein Elite-QA-Engineer mit tiefem Wissen in:
 - **Security Testing**: Endpoint-Schutz, Rate-Limiting, Auth-Verifikation
 - **Resilience Testing**: Service-Ausfall-Szenarien, Graceful Degradation
 
+## LLM-Spezifisch (Qwen 3.5)
+
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
+
 ---
 
 ## Kontext aus vorherigen Prompts
@@ -29,11 +38,28 @@ Du bist ein Elite-QA-Engineer mit tiefem Wissen in:
 
 ## Aufgabe
 
-Nach den Fixes aus Prompt 6a–6d: **Teste** systematisch und **schließe Test-Lücken**.
+Nach den Fixes aus Prompt 6a–6f: **Teste** systematisch und **schließe Test-Lücken**.
 
 > **Dieser Prompt ist Teil 1 von 2** der Verifikation:
-> - **P07a** (dieser): Tests ausführen + Test-Coverage + Security-Endpoint-Tests
+> - **P07a** (dieser): Tests ausführen + Test-Coverage + Security-Endpoint-Tests + **OFFEN-Bug-Validierung**
 > - **P07b**: Docker + Deployment + Resilience + Performance-Verifikation
+
+### OFFEN-Bug-Validierung (VOR den Tests!)
+
+Pruefe ALLE OFFEN-Eintraege aus P06a–P06f Kontext-Bloecken:
+
+1. **Sammle** alle Bugs mit Status OFFEN aus den Kontext-Bloecken von P06a–P06f
+2. **Pruefe fuer jeden OFFEN-Bug**:
+   - Existiert der Bug noch? (Read die Datei, verifiziere)
+   - Wurde er vielleicht durch einen anderen Fix mitgeloest?
+   - Ist der angegebene GRUND noch gueltig?
+3. **Ergebnis dokumentieren**:
+   - ✅ `FALSE_POSITIVE` — Bug existiert nicht (mehr) → aus Liste streichen
+   - ✅ `INDIREKT_GEFIXT` — durch anderen Fix mitgeloest → dokumentieren welcher
+   - ❌ `BESTAETIGT` — Bug existiert noch, Eskalation bleibt bestehen
+   - 🔧 `JETZT_FIXBAR` — mit neuem Kontext (nach P06a–f) doch loesbar → **sofort fixen**
+
+**Ziel: Maximale Bug-Reduktion vor dem naechsten Durchlauf.** Jeder Bug der hier gefixt werden kann, spart einen ganzen Durchlauf.
 
 ### Zusätzliche Dokumentation (lies diese zuerst!):
 - `docs/ASSISTANT_TEST_CHECKLIST.md` — Bestehende Test-Checkliste (falls vorhanden, als Basis nutzen)
@@ -71,16 +97,32 @@ cd assistant && python -m pytest --tb=short -q 2>&1 | tail -50
 
 **Schritt 4** — Test-Coverage bewerten:
 
-| Modul-Bereich | Tests vorhanden? | Abdeckung |
+```bash
+cd assistant && python -m pytest --cov=assistant --cov-report=term-missing --cov-branch -q 2>&1 | head -80
+```
+
+| Modul-Bereich | Tests vorhanden? | Abdeckung | Ziel |
+|---|---|---|---|
+| brain.py (Orchestrator) | ? | ? | **≥ 70%** |
+| Memory-Kette (7 Module) | ? | ? | **≥ 80%** |
+| Function Calling | ? | ? | **≥ 80%** |
+| Persönlichkeit | ? | ? | ≥ 60% |
+| Proaktive Systeme | ? | ? | ≥ 50% |
+| Speech Pipeline | ? | ? | ≥ 50% |
+| **Addon-Module** | ? | ? | Nur statisch (kein HA) |
+| **Integration zwischen Services** | ? | ? | **≥ 70%** |
+
+**Coverage-Schwellwerte (Pflicht!):**
+
+| Kategorie | Ziel-Coverage | Begründung |
 |---|---|---|
-| brain.py (Orchestrator) | ? | ? |
-| Memory-Kette (7 Module) | ? | ? |
-| Function Calling | ? | ? |
-| Persönlichkeit | ? | ? |
-| Proaktive Systeme | ? | ? |
-| Speech Pipeline | ? | ? |
-| **Addon-Module** | ? | ? |
-| **Integration zwischen Services** | ? | ? |
+| 🔴 Kritische Module (brain, memory, function_calling) | **≥ 80% Line + Branch** | Core-Logik, höchstes Risiko |
+| 🟠 Wichtige Module (personality, context, handlers) | **≥ 60% Line** | Wichtig aber weniger komplex |
+| 🟡 Support-Module (helpers, utils, formatters) | **≥ 40% Line** | Geringes Risiko |
+| ⬜ Addon-Module | **Statische Analyse** | Kein pytest möglich (braucht HA) |
+
+> **Tool:** `pytest-cov` (bereits in requirements.txt). Wenn nicht vorhanden: `pip install pytest-cov`
+> **Akzeptanz-Kriterium:** Gesamt-Coverage **≥ 60%**, kein kritisches Modul unter 50%.
 
 ### Teil B: Kritische Test-Lücken schließen
 
@@ -196,6 +238,45 @@ Für jedes gefundene Problem:
 
 ---
 
+## Test-Template (fuer neue Tests)
+
+Wenn du neue Tests schreibst, verwende dieses Template:
+
+```python
+# tests/test_<modul>.py
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+# Fuer async Tests:
+@pytest.mark.asyncio
+async def test_<scenario_beschreibung>():
+    """Beschreibung was getestet wird."""
+    # Arrange
+    mock_brain = MagicMock()
+    mock_brain.memory = AsyncMock()
+
+    # Act
+    result = await function_under_test(mock_brain, input_data)
+
+    # Assert
+    assert result is not None
+    assert result.status == "expected"
+    mock_brain.memory.get_recent_conversations.assert_called_once()
+```
+
+Namenskonvention: `test_<modul>_<szenario>.py` z.B. `test_brain_memory_retrieval.py`
+
+---
+
+## Rollback-Regel
+
+Vor dem ersten Edit: Merke dir den aktuellen Stand.
+Wenn ein Fix einen ImportError oder SyntaxError verursacht:
+1. SOFORT revert (Edit zuruecknehmen)
+2. Im OFFEN-Block dokumentieren: "Fix X verursacht Regression Y"
+3. Zum naechsten Fix weitergehen
+NIEMALS einen kaputten Fix stehen lassen.
+
 ## Regeln
 
 - **Tests MÜSSEN mit Bash ausgeführt werden** — nicht nur lesen, sondern tatsächlich `pytest` starten
@@ -217,6 +298,24 @@ Für jedes gefundene Problem:
 
 ---
 
+## Erfolgs-Kriterien
+
+- □ Tests ausgefuehrt und Ergebnisse dokumentiert
+- □ Coverage dokumentiert (Zeilen-Coverage pro Modul)
+- □ Alle KRITISCH Tests bestehen
+- □ Neue Tests fuer die Fixes aus P06a-P06f geschrieben
+- □ Security-Endpoints getestet
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+□ cd /home/user/mindhome/assistant && python -m pytest tests/ --tb=short -q → Ergebnis dokumentiert
+□ cd /home/user/mindhome/assistant && python -m pytest tests/ --co -q | wc -l → Anzahl Tests
+□ ls assistant/tests/test_*.py | wc -l → Anzahl Test-Dateien
+□ grep "def test_" assistant/tests/ -r | wc -l → Anzahl Test-Funktionen
+□ python3 -m py_compile assistant/assistant/brain.py → kein Error
+```
+
 ## ⚡ Übergabe an Prompt 7b
 
 Formatiere am Ende einen kompakten **Kontext-Block** für Prompt 7b:
@@ -236,3 +335,25 @@ Neue Tests geschrieben: [Liste]
 ```
 
 **Wenn du Prompt 7b in derselben Konversation erhältst**: Setze alle bisherigen Kontext-Blöcke automatisch ein.
+
+## Output
+
+Am Ende dieses Prompts erstelle folgenden Block:
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN-BUG-VALIDIERUNG:
+- [X von Y] OFFEN-Bugs aus P06a–P06f geprueft
+- FALSE_POSITIVE: [Anzahl] — [Liste]
+- INDIREKT_GEFIXT: [Anzahl] — [Liste mit Referenz welcher Fix]
+- JETZT_GEFIXT: [Anzahl] — [Liste der in P07a gefixten Bugs]
+- BESTAETIGT_OFFEN: [Anzahl] — [Liste mit Eskalation]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: ARCHITEKTUR_NOETIG | MENSCH
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
+```

@@ -1,204 +1,243 @@
-# Prompt RESET: Neuer Audit-Durchlauf vorbereiten
+# PROMPT RESET — Neuer Audit-Durchlauf vorbereiten
 
-## Zweck
+## ZIEL
 
-Dieser Prompt wird **vor** einem neuen Durchlauf der Prompt-Serie (P1–P7b inkl. P3a/3b, P4a–4c, P6a–6d, P7a/7b) verwendet. Er sorgt dafür, dass:
+Frischer Start fuer einen neuen Audit-Durchlauf (P01-P07). Vorherige Ergebnisse kompakt zusammenfassen, alle Kontext-Bloecke verwerfen, unfixte Bugs als Checkliste uebernehmen.
 
-1. **Alle vorherigen Kontext-Blöcke verworfen** werden
-2. Die **Ergebnisse des letzten Durchlaufs** kompakt zusammengefasst werden (als Vergleichsbasis)
-3. Der neue Durchlauf mit **frischem Blick** startet — ohne Bias aus der vorherigen Analyse
+## LLM-SPEZIFISCH (Qwen 3.5)
 
----
+- Modell: qwen3.5:4b (fast), qwen3.5:9b (smart), qwen3.5:35b (deep)
+- Neigt zu hoeflichen Floskeln ("Natuerlich!", "Gerne!")
+- Thinking-Mode bei Tool-Calls DEAKTIVIEREN (supports_think_with_tools: false)
+- Tool-Call-Format: Ollama-Standard ({"name": "...", "arguments": {...}})
+- character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
 
-## Wann verwenden?
+## WANN VERWENDEN
 
-- **Nach Prompt 7b** eines Durchlaufs, wenn Fixes implementiert wurden und du prüfen willst ob sie wirken
-- **Nach größeren Code-Änderungen** zwischen zwei Audit-Runden
-- **Wenn der Context Window voll ist** und du eine neue Claude-Code-Session starten musst
+- **Nach PROMPT_07** eines Durchlaufs
+- **Nach groesseren Code-Aenderungen** zwischen Audit-Runden
+- **Neue Claude-Code-Session** (Context Window voll)
 
 ### Claude Code Hinweis
 
-Bei Claude Code wird der Reset typischerweise als **neue Session** gestartet:
-1. Beende die aktuelle Claude-Code-Session
-2. Starte eine neue Session im Projekt-Root (`/home/user/mindhome`)
-3. Übergib diesen PROMPT_RESET als erste Nachricht
-4. Optional: Füge die Zusammenfassung des letzten Durchlaufs ein (falls aus separater Session)
-5. Danach: PROMPT_01 als nächste Nachricht
-
-**Alternativ**: Wenn die Session noch läuft und genug Context Window hat, kann der Reset auch in derselben Session erfolgen.
+1. Beende die aktuelle Session
+2. Starte neue Session im Projekt-Root (`/home/user/mindhome`)
+3. Uebergib diesen PROMPT_RESET als erste Nachricht
+4. Danach: PROMPT_01_ARCHITEKTUR_FLOWS.md
 
 ---
 
-## Anweisung an das LLM
+## ANWEISUNG
 
-> **Du startest jetzt einen NEUEN, FRISCHEN Audit-Durchlauf der Jarvis-Codebase.**
+> **Du startest einen NEUEN, FRISCHEN Audit-Durchlauf.**
 >
-> ### Was das bedeutet:
+> 1. **VERGISS** alle bisherigen Kontext-Bloecke (P01-P07). Sie sind veraltet.
+> 2. **VERGISS** alle bisherigen Bewertungen.
+> 3. **Lies JEDE Datei NEU** — der Code hat sich geaendert.
+> 4. **Keine Annahmen** aus dem vorherigen Durchlauf uebernehmen.
 >
-> 1. **VERGISS alle bisherigen Kontext-Blöcke** (KONTEXT AUS PROMPT 1–7b: P1, P2, P3a, P3b, P4a, P4b, P4c, P5, P6a, P6b, P6c, P6d, P7a, P7b). Sie sind veraltet.
-> 2. **VERGISS alle bisherigen Bewertungen** — Module die vorher "okay" waren, können jetzt Bugs haben (und umgekehrt).
-> 3. **VERGISS alle bisherigen Bug-Listen** — du findest die Bugs NEU im aktuellen Code.
-> 4. **Lies JEDE Datei NEU** — auch wenn du sie im letzten Durchlauf gelesen hast. Der Code hat sich geändert.
-> 5. **Keine Annahmen** aus dem vorherigen Durchlauf übernehmen. Alles verifizieren.
->
-> ### Was du BEHALTEN sollst:
->
-> - Dein **Wissen über die Architektur** (3 Services, Shared-Module, HA-Integration)
-> - Die **Prompt-Struktur** (P1–P7 und was jeder Prompt erwartet)
-> - Die **Gründlichkeits-Pflicht** (jede Datei öffnen, jede Zeile lesen, Code-Referenzen)
->
-> ### Dein Auftrag jetzt:
->
-> Fasse den **vorherigen Durchlauf** kompakt zusammen (als Vergleichsbasis für den neuen Durchlauf), dann bestätige dass du bereit bist für Prompt 1.
+> **BEHALTE:**
+> - Wissen ueber die Architektur (3 Services, brain.py als Zentrale)
+> - Die Prompt-Struktur (P01-P07)
+> - Die Gruendlichkeits-Pflicht
 
 ---
 
-## Aufgabe
+## SCHRITT 1: Vorherigen Durchlauf zusammenfassen
 
-### Schritt 1 — Vorherigen Durchlauf zusammenfassen
-
-Erstelle eine kompakte **Zusammenfassung des letzten Durchlaufs**. Wenn du keinen vorherigen Durchlauf in dieser Konversation hattest, überspringe diesen Schritt.
+Falls ein vorheriger Durchlauf existiert, fasse ihn kompakt zusammen:
 
 ```
-## ZUSAMMENFASSUNG VORHERIGER DURCHLAUF (Durchlauf #X)
+## ZUSAMMENFASSUNG DURCHLAUF #X
 
-### Datum / Kontext
-[Wann wurde der letzte Durchlauf gemacht? Was war der Anlass?]
+### Analyse-Phase
+#### Architektur (P01)
+- Kritischste Konflikte: [Top 3 mit Status]
 
-### Architektur-Bewertung (P1)
-- God-Objects: [brain.py / main.py — Status]
-- Kritischste Konflikte: [Top 3]
-- Architektur-Entscheidung: [Was wurde empfohlen/umgesetzt?]
+#### Memory (P02)
+- Fakten-Abruf: [Funktioniert / Nicht]
+- Memory-Prioritaet: [Gefixt? Status]
 
-### Memory-Status (P2)
-- Root Cause: [Was war das Hauptproblem?]
-- Fix: [Was wurde implementiert?]
-- Status: [Funktioniert / Teilweise / Offen]
+#### Flows (P03a + P03b)
+- Core-Flows 1–7: [Welche funktionieren, welche nicht]
+- Extended-Flows 8–13: [Kollisionen gefunden?]
 
-### Flow-Status (P3)
-| Flow | Status im letzten Durchlauf |
-|---|---|
-| 1: Sprach-Input → Antwort | ✅/⚠️/❌ |
-| 2: Proaktive Benachrichtigung | ✅/⚠️/❌ |
-| 3: Morgen-Briefing | ✅/⚠️/❌ |
-| 4: Autonome Aktion | ✅/⚠️/❌ |
-| 5: Persönlichkeits-Pipeline | ✅/⚠️/❌ |
-| 6: Memory-Abruf | ✅/⚠️/❌ |
-| 7: Speech-Pipeline | ✅/⚠️/❌ |
-| 8: Addon-Automation | ✅/⚠️/❌ |
-| 9: Domain-Assistenten | ✅/⚠️/❌ |
-| 10: Workshop-System | ✅/⚠️/❌ |
-| 11: Boot-Sequenz | ✅/⚠️/❌ |
-| 12: File-Upload & OCR | ✅/⚠️/❌ |
-| 13: WebSocket-Streaming | ✅/⚠️/❌ |
+#### Bug-Jagd (P04a + P04b + P04c)
+- Gesamt: X Bugs (KRITISCH: X, HOCH: X, MITTEL: X, NIEDRIG: X)
+- Security-Findings: [Top 3]
+- Performance: [Latenz-Budget eingehalten?]
 
-### Bug-Statistik (P4)
-- Gesamt: X Bugs (🔴 X, 🟠 X, 🟡 X, 🟢 X)
-- Davon behoben in P6: X
-- Offen geblieben: X
-- Security-Findings: X (davon behoben: X)
-
-### Persönlichkeit (P5)
+#### Persoenlichkeit (P05)
 - MCU-Score: X/10
-- Kritischste Inkonsistenz: [Beschreibung]
-- Config-Probleme: [Anzahl]
+- System-Prompt: [Token-Anzahl]
+- Config-Inkonsistenzen: [Anzahl]
 
-### Stabilisierung (P6a)
-- 🔴 Bugs gefixt: X von Y
-- Memory-Fix: [Was implementiert? Status?]
+### Fix-Phase
+#### Stabilisierung (P06a)
+- Kritische Bugs gefixt: X von Y
+- Memory repariert: [Ja/Nein]
 
-### Architektur (P6b)
-- Architektur-Entscheidungen: [brain.py → ?, Priority-System → ?]
-- Konflikte aufgelöst: [A, B, E — Status]
-- Performance-Optimierungen: [Was verbessert?]
+#### Architektur (P06b)
+- Konflikte aufgeloest: X von Y
+- Flows repariert: [Welche]
 
-### Charakter (P6c)
-- System-Prompt: [Token vorher/nachher, MCU-Score]
-- Persönlichkeits-Pfade vereinheitlicht: [Ja/Nein]
-- Config bereinigt: [Ja/Nein]
-- Dead Code entfernt: [Anzahl Module/Funktionen]
+#### Charakter (P06c)
+- Persoenlichkeit harmonisiert: [Ja/Nein]
+- Dead Code entfernt: [Anzahl Dateien]
 
-### Härtung (P6d)
-- Security-Fixes: X
-- Resilience: [Welche Szenarien abgedeckt?]
-- Addon-Koordination: [Status]
+#### Haertung (P06d)
+- Security-Luecken geschlossen: X von Y
+- Resilience implementiert: [Welche Szenarien]
 
-### Test & Deployment (P7)
-- Tests: X bestanden / X fehlgeschlagen
-- Docker: ✅/❌
-- Resilience-Lücken: [Anzahl]
+#### Geraetesteuerung (P06e)
+- Tool-Calling: [Zuverlaessig / Unzuverlaessig]
+- Deterministic Fallback: [Erweitert / Nicht]
+- System-Prompt Tool-Pflicht: [Prominent / Begraben]
+
+#### TTS & Response (P06f)
+- Meta-Leakage: ["speak" in TTS? Gefixt?]
+- Pre-TTS-Filter: [Implementiert / Nicht]
+
+### Verifikation
+#### Testing (P07a)
+- Tests bestanden: X von Y
+- OFFEN-Bug-Validierung: X bestaetigt, Y gefixt, Z false-positive
+
+#### Deployment (P07b)
+- Docker Build: [Erfolgreich / Fehlgeschlagen]
+- Performance: [Latenz gemessen?]
 ```
 
-### Schritt 2 — Delta-Checkliste erstellen
+## SCHRITT 2: Unfixte Bugs als Checkliste
 
-Erstelle eine Liste von **Punkten die im neuen Durchlauf besonders beachtet** werden sollen:
+**KRITISCH:** Uebernimm ALLE unfixten Bugs aus den OFFEN-Bloecken von P06a–P06f als Checkliste. Diese haben HOECHSTE Prioritaet im neuen Durchlauf.
 
-```
-## DELTA-CHECKLISTE FÜR NEUEN DURCHLAUF
-
-### Aus letztem Durchlauf offen gebliebene Punkte
-- [ ] [Beschreibung] — [Welcher Prompt prüft das?]
-- [ ] ...
-
-### Bereiche die sich seit dem letzten Durchlauf geändert haben
-- [ ] [Datei/Modul] — [Was wurde geändert?]
-- [ ] ...
-
-### Neue Risiken durch die Änderungen aus P6a–6d
-- [ ] [Beschreibung] — [Könnte neue Bugs eingeführt haben]
-- [ ] ...
-```
-
-### Schritt 3 — Reset bestätigen
-
-Bestätige mit dieser Aussage:
+Sammle die OFFEN-Eintraege aus allen Kontext-Bloecken und sortiere nach Eskalations-Kategorie:
 
 ```
-✅ RESET ABGESCHLOSSEN — Bereit für Durchlauf #X
+## UNFIXTE BUGS AUS DURCHLAUF #X
 
-Vorheriger Durchlauf zusammengefasst: Ja/Nein (kein vorheriger vorhanden)
+### 🔴 KRITISCH — MENSCH (Autonome Entscheidung getroffen)
+- [ ] [Bug-Beschreibung] — Datei:Zeile — ENTSCHEIDUNG: [was wurde entschieden + warum]
+  → Im naechsten Durchlauf: Ergebnis der Entscheidung verifizieren
+
+### 🔴🟠 ARCHITEKTUR_NOETIG (Groesserer Umbau erforderlich)
+- [ ] [Bug-Beschreibung] — Datei:Zeile — Grund: [warum Architektur-Umbau]
+  → Im naechsten Durchlauf: P06b (Architektur) priorisiert behandeln
+
+### 🟠🟡 NAECHSTER_PROMPT (Thematisch verschoben, nicht aufgegriffen)
+- [ ] [Bug-Beschreibung] — Datei:Zeile — Ursprungs-Prompt: [P06x]
+  → Im naechsten Durchlauf: Gezielt im richtigen Prompt aufgreifen
+```
+
+**Regel: Kein Bug verschwindet.** Jeder OFFEN-Eintrag aus P06a–P06f MUSS in dieser Liste auftauchen. Wenn ein Bug in P07a als "doch gefixt" oder "false positive" erkannt wurde, dokumentiere das explizit.
+
+## SCHRITT 3: Regressions-Check
+
+Pruefe ob bereits gefixte Bugs noch gefixt sind:
+
+```
+## REGRESSIONS-CHECK
+
+Fuer JEDEN Fix aus dem vorherigen Durchlauf:
+1. Lies die Datei an der Fix-Stelle
+2. Pruefe ob der Fix noch vorhanden ist
+3. Wenn revertiert → zurueck auf die Unfixte-Liste
+
+Ergebnis:
+- Fixes intakt: X von Y
+- Regressions gefunden: [Liste]
+```
+
+## SCHRITT 4: Delta-Checkliste
+
+```
+## DELTA-CHECKLISTE
+
+### Offen gebliebene Punkte
+- [ ] [Beschreibung] — [Welcher Prompt prueft das?]
+
+### Bereiche die sich geaendert haben
+- [ ] [Datei/Modul] — [Was wurde geaendert?]
+
+### Neue Risiken durch Aenderungen
+- [ ] [Beschreibung] — [Koennte neue Bugs eingefuehrt haben]
+```
+
+## SCHRITT 5: Reset bestaetigen
+
+```
+RESET ABGESCHLOSSEN — Bereit fuer Durchlauf #X
+
+Vorheriger Durchlauf zusammengefasst: Ja/Nein
+Unfixte Bugs uebernommen: X Bugs
+Regressions-Check: X intakt, Y revertiert
 Delta-Checkliste erstellt: Ja/Nein
-Alle Kontext-Blöcke verworfen: Ja
-Frischer Blick aktiv: Ja
+Alle Kontext-Bloecke verworfen: Ja
 
-→ Bitte starte jetzt mit PROMPT_01_ARCHITEKTUR.md
+→ Starte jetzt mit PROMPT_01_ARCHITEKTUR.md
 ```
 
 ---
 
-## Für separate Konversationen (Option B)
-
-Wenn du den Reset in einer **neuen Konversation** machst und die Ergebnisse des vorherigen Durchlaufs manuell einfügen musst:
-
-1. Kopiere die **Zusammenfassung** aus dem Ende der alten Konversation hier rein:
-
-```
-[HIER ZUSAMMENFASSUNG AUS DEM VORHERIGEN DURCHLAUF EINFÜGEN]
-```
-
-2. Das LLM erstellt daraus die Delta-Checkliste und startet frisch.
-
----
-
-## Regeln
+## REGELN
 
 - **KEINE Ergebnisse aus dem vorherigen Durchlauf als "gegeben" annehmen** — alles neu verifizieren
-- **Jede Datei neu lesen** — der Code hat sich geändert
-- **Vergleiche aktiv** — wenn im letzten Durchlauf ein Bug bei `brain.py:123` war, prüfe ob er jetzt behoben ist
-- **Neue Bugs suchen** — Fixes können neue Probleme eingeführt haben (Regressions)
-- **Nicht nur die geänderten Stellen prüfen** — auch "stabile" Module können durch Änderungen in anderen Modulen betroffen sein
-- Die Delta-Checkliste ist ein **Leitfaden**, kein Limit — der neue Durchlauf ist genauso gründlich wie der erste
+- **Jede Datei neu lesen** — der Code hat sich geaendert
+- **Vergleiche aktiv** — pruefen ob vorherige Bugs behoben sind
+- **Neue Bugs suchen** — Fixes koennen Regressions eingefuehrt haben
+- Die Delta-Checkliste ist ein **Leitfaden**, kein Limit
 
 ---
 
-## Durchlauf-Nummerierung
+## DURCHLAUF-TRACKING
 
-Halte fest welcher Durchlauf das ist:
+| Durchlauf | Datum | Bugs gefunden | Bugs gefixt | Regressions |
+|---|---|---|---|---|
+| #1 | ? | ? | ? | ? |
+| #2 | ? | ? | ? | ? |
+| #3 | ? | ? | ? | ? |
 
-| Durchlauf | Datum | Fokus | Ergebnis |
-|---|---|---|---|
-| #1 | ? | Erstanalyse | ? Bugs gefunden, ? behoben |
-| #2 | ? | Verifikation nach Fixes | ? neue Bugs, ? Regressions |
-| #3 | ? | ... | ... |
+---
 
-> Diese Tabelle hilft den Fortschritt über mehrere Durchläufe zu tracken.
+## PROMPT-REIHENFOLGE
+
+| Nr | Datei | Fokus |
+|----|-------|-------|
+| 00 | PROMPT_00_OVERVIEW.md | Architektur-Ueberblick + Modul-Karte |
+| 01 | PROMPT_01_ARCHITEKTUR.md | Analyse: Konflikte A-F |
+| 02 | PROMPT_02_MEMORY.md | Analyse + Fix: Memory-System (5 kritische Bugs) |
+| 03a | PROMPT_03a_FLOWS_CORE.md | Analyse: 7 Core-Flows |
+| 03b | PROMPT_03b_FLOWS_EXTENDED.md | Analyse: 6 Extended-Flows + Kollisionen |
+| 04a | PROMPT_04a_BUGS_CORE.md | Bug-Finding: Core-Module (13 Fehlerklassen) |
+| 04b | PROMPT_04b_BUGS_EXTENDED.md | Bug-Finding: Extended-Module |
+| 04c | PROMPT_04c_BUGS_ADDON_SECURITY.md | Bug-Finding: Addon + Security |
+| 05 | PROMPT_05_PERSONALITY.md | Analyse: MCU-Authentizitaet + Config |
+| 06a | PROMPT_06a_STABILISIERUNG.md | Fix: Kritische Bugs (mit Code-Templates) |
+| 06b | PROMPT_06b_ARCHITEKTUR.md | Fix: Architektur-Konflikte |
+| 06c | PROMPT_06c_CHARAKTER.md | Fix: Persoenlichkeit + Anti-Floskel |
+| 06d | PROMPT_06d_HAERTUNG.md | Fix: Security + Resilience + Addon |
+| 06e | PROMPT_06e_GERAETESTEUERUNG.md | Fix: Tool-Calling + System-Prompt |
+| 06f | PROMPT_06f_TTS_RESPONSE.md | Fix: speak-Filter + Meta-Leakage |
+| 07a | PROMPT_07a_TESTING.md | Testing + Coverage |
+| 07b | PROMPT_07b_DEPLOYMENT.md | Docker + Deployment |
+| 08a | PROMPT_08a_CODEQUALITAET.md | Analyse: Docs, Dependencies, CI/CD, Lokalisierung |
+| 08b | PROMPT_08b_BETRIEB.md | Analyse: Multi-User, Frontend, Monitoring, Persistenz |
+| 09a | PROMPT_09a_FIX_CODEQUALITAET.md | Fix: Alle P08a Findings beheben |
+| 09b | PROMPT_09b_FIX_BETRIEB.md | Fix: Alle P08b Findings beheben |
+| 10 | PROMPT_10_FINAL_VALIDATION.md | Zero-Bug: Alle offenen Bugs fixen + Abschluss |
+| RESET | PROMPT_RESET.md | Naechster Durchlauf vorbereiten |
+
+---
+
+## OUTPUT
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+ZUSAMMENFASSUNG: [Kompakte Zusammenfassung des vorherigen Durchlaufs]
+UNFIXTE BUGS: [Anzahl, Top 3 kritischste]
+REGRESSIONS: [Anzahl, welche]
+DELTA: [Was hat sich geaendert]
+NAECHSTER SCHRITT: Starte PROMPT_00_OVERVIEW.md
+=====================================
+```
