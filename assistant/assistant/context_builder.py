@@ -298,7 +298,9 @@ class ContextBuilder:
                     guest_val = guest_val.decode()
                 guest_mode_active = guest_val == "active"
 
-            if self.semantic and user_text and not guest_mode_active:
+            if guest_mode_active:
+                logger.info("Guest-Mode aktiv — Memory-Abruf uebersprungen")
+            elif self.semantic and user_text:
                 context["memories"] = await self._get_relevant_memories(
                     user_text, person
                 )
@@ -317,7 +319,7 @@ class ContextBuilder:
         mem_cfg = yaml_config.get("memory", {})
         max_relevant = int(mem_cfg.get("max_relevant_facts_in_context", 3))
         max_person = int(mem_cfg.get("max_person_facts_in_context", 5))
-        min_confidence = float(mem_cfg.get("min_confidence_for_context", 0.6))
+        min_confidence = float(mem_cfg.get("min_confidence_for_context", 0.4))
 
         try:
             # Fakten die zur aktuellen Anfrage passen
@@ -326,7 +328,7 @@ class ContextBuilder:
             )
             memories["relevant_facts"] = [
                 sanitized for f in relevant
-                if f.get("relevance", 0) > 0.3
+                if f.get("relevance", 0) > 0.2
                 and (sanitized := _sanitize_for_prompt(f["content"], 500, "semantic_fact"))
             ]
 

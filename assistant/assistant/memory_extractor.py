@@ -171,8 +171,22 @@ class MemoryExtractor:
         """
         text_lower = user_text.lower().strip().rstrip("!?.")
 
+        # WHITELIST: Diese Patterns IMMER extrahieren, egal wie kurz
+        force_extract_patterns = [
+            "merk dir", "merkt euch", "merke dir",
+            "vergiss nicht", "vergiss das nicht",
+            "ab sofort", "von jetzt an", "ab heute",
+            "ich heisse", "ich heiße", "mein name ist",
+            "meine frau", "mein mann", "mein partner",
+            "mein geburtstag", "ich bin geboren",
+            "ich mag", "ich hasse", "ich bevorzuge",
+            "ich bin allergisch", "ich vertrage kein",
+        ]
+        if any(p in text_lower for p in force_extract_patterns):
+            return True  # Erzwungene Extraktion!
+
         # Zu kurze Texte überspringen (erhöhtes Minimum)
-        if len(user_text.split()) < max(self._min_words, 5):
+        if len(user_text.split()) < max(self._min_words, 3):
             return False
 
         # Reine Befehle überspringen (kein Fakten-Potenzial)
@@ -260,7 +274,8 @@ class MemoryExtractor:
             return self._parse_facts(content)
 
         except Exception as e:
-            logger.error("Fehler bei Fakten-Extraktion: %s", e)
+            logger.error("Fehler bei Fakten-Extraktion: %s (model=%s, text_len=%d)",
+                         e, self._extraction_model, len(conversation))
             return []
 
     def _parse_facts(self, llm_output: str) -> list[dict]:
@@ -288,7 +303,7 @@ class MemoryExtractor:
             except json.JSONDecodeError:
                 pass
 
-        logger.debug("Konnte LLM-Antwort nicht parsen: %s", text[:200])
+        logger.warning("Fakten-JSON-Parse fehlgeschlagen (LLM-Output war kein valides JSON): %s", text[:300])
         return []
 
     # ------------------------------------------------------------------
