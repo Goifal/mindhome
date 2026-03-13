@@ -280,6 +280,84 @@ Grep: pattern="light_patterns|cover_patterns|climate_patterns|switch_patterns" p
 
 **Erfolgskriterium**: `_deterministic_tool_call()` erkennt Licht-, Rollladen-, Klima- und Schalter-Befehle und gibt strukturierte Tool-Calls zurueck.
 
+### Fix 3b: Entity-ID Validierung gegen Home Assistant (PFLICHT)
+
+> **Gap**: Deterministic Tool-Calls bauen Entity-IDs zusammen (z.B. `light.wohnzimmer`), aber validieren NICHT ob diese Entity in HA existiert. Ein falscher Tool-Call an eine nicht-existente Entity crasht oder wird ignoriert.
+
+#### Schritt 1: Prüfe wie HA-Entities aktuell aufgelöst werden
+
+```
+Grep: pattern="entity_id|entity_list|get_entities|search_entities" path="assistant/assistant/" output_mode="content"
+Grep: pattern="area_registry|device_registry|entity_registry" path="assistant/assistant/" output_mode="content"
+```
+
+#### Schritt 2: Entity-Validierung einbauen
+
+```python
+async def _resolve_entity_id(self, device_type: str, room: str) -> str | None:
+    """Löst einen Gerätetyp + Raum in eine gültige HA entity_id auf.
+
+    Gibt None zurück wenn keine passende Entity gefunden wird
+    → dann Fallback auf LLM-Pfad statt falscher Tool-Call.
+    """
+    # Mögliche entity_id-Formate probieren
+    candidates = [
+        f"{device_type}.{room}",                    # light.wohnzimmer
+        f"{device_type}.{room}_licht",               # light.wohnzimmer_licht
+        f"{device_type}.{room}_deckenlampe",          # light.wohnzimmer_deckenlampe
+        f"{device_type}.{room}_main",                 # light.wohnzimmer_main
+    ]
+
+    # Gegen HA-Entity-Liste validieren
+    try:
+        known_entities = await self.ha_client.get_entities(domain=device_type)
+        for candidate in candidates:
+            if candidate in known_entities:
+                return candidate
+        # Fuzzy-Match: Suche nach Entities die den Raum-Namen enthalten
+        for entity_id in known_entities:
+            if room in entity_id:
+                return entity_id
+    except Exception as e:
+        logger.warning("Entity-Validierung fehlgeschlagen: %s — Fallback auf LLM", e)
+
+    return None  # Keine passende Entity → LLM-Pfad nutzen
+```
+
+#### Schritt 3: In _deterministic_tool_call() integrieren
+
+```python
+# VORHER: Entity-ID wird zusammengebaut ohne Validierung
+entity_id = f"light.{room}"
+return {"name": "set_light", "arguments": {"entity_id": entity_id, **params}}
+
+# NACHHER: Entity-ID wird gegen HA validiert
+entity_id = await self._resolve_entity_id("light", room)
+if entity_id is None:
+    logger.info("Entity nicht gefunden für light.%s — Fallback auf LLM", room)
+    return None  # Fallback: LLM soll es versuchen
+return {"name": "set_light", "arguments": {"entity_id": entity_id, **params}}
+```
+
+#### Schritt 4: Entity-Cache einbauen (Performance)
+
+```python
+# Entity-Liste nicht bei JEDEM Befehl von HA abfragen — Cache für 5 Minuten
+_entity_cache: dict[str, list[str]] = {}
+_entity_cache_expiry: float = 0
+
+async def _get_cached_entities(self, domain: str) -> list[str]:
+    import time
+    if time.time() > self._entity_cache_expiry:
+        self._entity_cache = {}
+        self._entity_cache_expiry = time.time() + 300  # 5 Min Cache
+    if domain not in self._entity_cache:
+        self._entity_cache[domain] = await self.ha_client.get_entities(domain=domain)
+    return self._entity_cache[domain]
+```
+
+**Erfolgskriterium**: Kein deterministischer Tool-Call wird mit einer Entity-ID abgesetzt die in HA nicht existiert. Bei unbekannter Entity → automatischer Fallback auf LLM-Pfad.
+
 ---
 
 ### Fix 4: Dynamische Tool-Selektion (brain.py)

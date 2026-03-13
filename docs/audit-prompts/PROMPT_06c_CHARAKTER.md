@@ -114,12 +114,117 @@ Prüfe ob `addon/config.yaml` und `assistant/config/settings.yaml` sich widerspr
 
 Logik-Fehler, fehlende Integrationen, Inkonsistenzen. Arbeite die 🟡-Bug-Liste ab.
 
-### Schritt 5: Dead Code entfernen
+### Schritt 5: Sarkasmus-System (5 Stufen) verifizieren & fixen
+
+> **Gap aus P05**: Das Sarkasmus-Level-System (1–5) wird analysiert aber nie gefixt/getestet.
+
+**5a) Sarkasmus-Level-Mechanik prüfen:**
+```
+Grep: pattern="sarcasm|sarkasm|humor_level|irony_level" path="assistant/assistant/" output_mode="content"
+Grep: pattern="sarcasm|sarkasm" path="assistant/config/" output_mode="content"
+```
+
+**5b) Für jedes Sarkasmus-Level (1–5) verifizieren:**
+
+| Level | Erwartetes Verhalten | Prüfen |
+|---|---|---|
+| 1 | Höflich, kein Sarkasmus | Gibt es einen Code-Pfad der Level 1 erzeugt? |
+| 2 | Leicht trocken | Wird der Ton merklich anders als Level 1? |
+| 3 | Britisch-sarkastisch (Standard-Jarvis) | Ist dies der Default? |
+| 4 | Spöttisch, direkter | Gibt es Trigger die auf Level 4 eskalieren? |
+| 5 | Maximaler Sarkasmus ("Stark-Level") | Wird Level 5 jemals erreicht? |
+
+**5c) Fixes:**
+- Falls Level-System existiert aber nicht funktioniert → Code-Pfad reparieren
+- Falls Level-System nicht existiert → In `personality.py` als einfaches Template-System einbauen
+- Falls Eskalation (z.B. "dumme Frage" → höheres Level) nicht funktioniert → Trigger fixen
+- **Test**: Gleiche Frage bei Level 1 und Level 5 muss unterschiedliche Antworten erzeugen
+
+### Schritt 6: Mood-Detection → Persönlichkeit integrieren
+
+> **Gap aus P05**: `mood_detector.py` existiert aber beeinflusst den Ton nicht nachweislich.
+
+**6a) Mood-System analysieren:**
+```
+Grep: pattern="mood_detector|MoodDetector|detect_mood|current_mood" path="assistant/assistant/" output_mode="content"
+Read: assistant/assistant/mood_detector.py (falls vorhanden)
+```
+
+**6b) Integration prüfen:**
+- Wird `mood_detector` in `brain.py` oder `personality.py` aufgerufen?
+- Fließt das erkannte Mood in den System-Prompt oder die Response-Generierung ein?
+- Gibt es einen Code-Pfad: User sagt etwas Trauriges → Jarvis wird empathischer?
+
+**6c) Falls NICHT integriert:**
+```python
+# In personality.py build_system_prompt() oder context_builder.py:
+mood = await mood_detector.get_current_mood()
+if mood in ("sad", "frustrated"):
+    personality_hint += " Sei etwas einfühlsamer, aber bleib Jarvis."
+elif mood in ("happy", "excited"):
+    personality_hint += " Mehr Humor erlaubt."
+```
+
+**Test**: Sage "Ich hatte einen schlechten Tag" → Jarvis-Ton muss sich merklich anpassen (weniger Sarkasmus, mehr Empathie — aber immer noch Jarvis, nicht "Therapeuten-Bot").
+
+### Schritt 7: Easter Eggs Trigger-Zuverlässigkeit
+
+> **Gap aus P05**: Easter Eggs YAML wird geladen, aber triggern die Easter Eggs auch zuverlässig?
+
+**7a) Easter-Egg-Trigger-Mechanik analysieren:**
+```
+Read: assistant/config/easter_eggs.yaml
+Grep: pattern="easter_egg|EasterEgg|trigger.*easter|check.*easter" path="assistant/assistant/" output_mode="content"
+```
+
+**7b) Für JEDES Easter Egg in der YAML prüfen:**
+1. Gibt es einen Code-Pfad der diesen Trigger erkennt?
+2. Wird der Trigger-Text korrekt gematched (exact match, regex, keyword)?
+3. Kommt die Easter-Egg-Antwort tatsächlich beim User an (oder wird sie vom Filter verschluckt)?
+
+**7c) MCU-Authentizität der Easter Eggs prüfen:**
+- Referenzieren sie echte MCU-Szenen/Zitate?
+- Passen sie zum Jarvis-Charakter (nicht zu Iron Man, nicht zu Vision)?
+- Sind sie auf Deutsch authentisch oder krampfhaft übersetzt?
+
+**7d) Falls Easter Eggs nicht triggern:**
+- Trigger-Matching reparieren (z.B. case-insensitive, Fuzzy-Match)
+- Sicherstellen dass Easter-Egg-Check VOR dem normalen LLM-Call läuft
+- Easter-Egg-Antwort NICHT durch `_filter_response` oder `banned_phrases` filtern lassen
+
+### Schritt 8: Dead Code systematisch entfernen
+
+> **Gap aus P04**: Dead Code wird gefunden aber nicht systematisch aufgeräumt.
+
+**PFLICHT**: Erstelle eine vollständige Dead-Code-Tabelle bevor du etwas löschst.
 
 Module oder Funktionen die laut Prompt 4 (Dead-Code-Liste) nie aufgerufen werden:
+
+**8a) Dead-Code-Inventar erstellen:**
+
+```
+### Dead-Code-Inventar
+
+| # | Modul/Funktion | Typ | Grep-Ergebnis | Dynamisch geladen? | Aktion |
+|---|---|---|---|---|---|
+| 1 | [Name] | Modul/Funktion/Klasse | X Treffer | Ja/Nein | Entfernen/Behalten/Prüfen |
+| 2 | ... | ... | ... | ... | ... |
+```
+
+**8b) Für JEDES Element im Inventar:**
 - **Grep** um zu verifizieren: `pattern="modul_name|funktion_name" path="assistant/"` → 0 Treffer
-- Wenn tatsächlich Dead Code: Entfernen oder als deprecated markieren
+- **Dynamisches Laden prüfen**: `Grep: pattern="importlib|__import__|getattr.*module" path="assistant/"` → Falls ja, könnte das Modul dynamisch geladen werden
+- **Config-Referenz prüfen**: `Grep: pattern="modul_name" path="assistant/config/"` → Falls in Config referenziert, wird es wahrscheinlich dynamisch geladen
+- Wenn tatsächlich Dead Code (0 Treffer + nicht dynamisch): Entfernen
 - **Vorsicht**: Manche Module werden dynamisch geladen — Grep prüft nur statische Imports
+
+**8c) Dead-Code-Bericht:**
+```
+### Dead Code entfernt
+- [X] Module entfernt, [Y] Funktionen entfernt
+- [Z] Module BEHALTEN weil dynamisch geladen
+- Gesamt eingesparte Zeilen: ~N
+```
 
 ---
 
@@ -208,11 +313,42 @@ Wenn ein Bug NICHT gefixt werden kann, dokumentiere ihn im OFFEN-Block mit:
 
 ---
 
+## MCU-Score Bewertungs-Rubrik
+
+> **Gap**: "MCU-Score 7/10" ist bedeutungslos ohne konkrete Anker. Hier die verbindliche Rubrik:
+
+| Score | Beschreibung | Konkrete Kriterien |
+|---|---|---|
+| **10/10** | Perfekter MCU-Jarvis | Nie Floskeln, immer "Sir", britisch-trocken, eigene Meinung, proaktive Hinweise ohne Aufforderung, Sarkasmus Level 3 als Default, Easter Eggs triggern zuverlässig |
+| **9/10** | Exzellent | Wie 10, aber gelegentlich etwas zu höflich oder zu lang |
+| **8/10** | Sehr gut | Klarer Jarvis-Charakter erkennbar, aber 1-2 Floskeln pro 20 Antworten, Sarkasmus nicht immer konsistent |
+| **7/10** | Gut (Minimum) | Jarvis-Ton erkennbar, aber manchmal generischer Assistent-Ton ("Gerne!"), Humor nicht immer treffend |
+| **6/10** | Akzeptabel | Manchmal Jarvis, manchmal generisch, Easter Eggs selten, Mood beeinflusst Ton kaum |
+| **5/10** | Mittelmäßig | Mehr generischer Assistent als Jarvis, häufige Floskeln, kein Sarkasmus |
+| **≤4/10** | Ungenügend | Kein erkennbarer Jarvis-Charakter, Standard-Chatbot-Antworten |
+
+**Bewertungs-Methode**: Prüfe 10 verschiedene Antwort-Szenarien und bewerte jedes einzeln:
+1. Einfache Frage ("Wie spät ist es?")
+2. Gerätesteuerung-Bestätigung ("Licht ist an")
+3. Fehler-Meldung ("HA nicht erreichbar")
+4. Morgen-Briefing
+5. Proaktive Warnung ("Fenster offen bei Regen")
+6. Sarkasmus-Trigger ("Das war eine dumme Frage")
+7. Easter-Egg-Trigger
+8. Emotionale Situation ("Ich bin traurig")
+9. Wissens-Frage ("Wer war Alan Turing?")
+10. Multi-Command-Bestätigung ("Alles erledigt")
+
+**Jedes Szenario**: Klingt die Antwort nach MCU-Jarvis (Paul Bettany)? Ja = 1 Punkt, Nein = 0 Punkte.
+
 ## Erfolgs-Kriterien
 
-- □ MCU-Score >= 7/10
+- □ MCU-Score >= 7/10 (nach obiger Rubrik bewertet)
 - □ System-Prompt unter 800 Tokens Basis
 - □ Floskeln in banned_phrases
+- □ Sarkasmus-Level-System funktioniert (Level 1 ≠ Level 5)
+- □ Mood-Detection beeinflusst Antwort-Ton nachweislich
+- □ Mindestens 3 Easter Eggs triggern zuverlässig
 - □ Tests bestehen nach allen Aenderungen
 
 ### Erfolgs-Check (Schnellpruefung)

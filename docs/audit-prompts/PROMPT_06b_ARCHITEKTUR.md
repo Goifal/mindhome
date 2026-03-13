@@ -169,6 +169,43 @@ Basierend auf den Performance-Findings aus Prompt 4c:
 Grep: pattern="asyncio\.gather" path="assistant/assistant/" output_mode="count"
 ```
 
+### Performance-Messung (Vorher/Nachher-Benchmark)
+
+> **PFLICHT**: Performance-Optimierungen ohne Messung sind Spekulation. Dokumentiere konkrete Metriken.
+
+**VOR dem ersten Performance-Fix** — Baseline messen:
+
+```bash
+# Baseline: Wie viele sequentielle await-Ketten gibt es?
+grep -c "await" assistant/assistant/brain.py
+grep -c "asyncio.gather" assistant/assistant/brain.py
+
+# Baseline: Wie viele LLM-Calls pro User-Request?
+grep -c "ollama_client\.\|\.chat\.\|\.generate(" assistant/assistant/brain.py
+```
+
+**NACH jedem Performance-Fix** — gleiche Metriken erneut erheben.
+
+**Output-Format für Performance-Messung:**
+
+```
+### Performance-Benchmark
+
+| Metrik | Vorher (Baseline) | Nachher | Verbesserung |
+|---|---|---|---|
+| Sequentielle await-Ketten in brain.py | X | Y | -Z% |
+| asyncio.gather Aufrufe | X | Y | +Z |
+| LLM-Calls pro User-Request (einfacher Befehl) | X | Y | -Z |
+| LLM-Calls pro User-Request (komplexe Frage) | X | Y | -Z |
+| Geschätzte Latenz einfacher Befehl | ~Xs | ~Ys | -Z% |
+| System-Prompt Token-Länge (expandiert) | ~X | ~Y | -Z% |
+```
+
+**Zielwerte:**
+- Einfacher Befehl ("Licht an"): **< 3 Sekunden** End-to-End
+- LLM-Calls pro einfachem Befehl: **maximal 1** (ideal: 0 bei deterministischem Fallback)
+- asyncio.gather Nutzung: **überall** wo unabhängige awaits stehen
+
 ### Schritt 5: 🟠 HOHE Bugs fixen (aus Prompt 4a–4c)
 
 Features die nicht funktionieren aber nicht crashen. Arbeite die 🟠-Bug-Liste ab.

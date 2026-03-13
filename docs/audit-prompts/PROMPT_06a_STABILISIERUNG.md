@@ -111,6 +111,36 @@ if obj is not None:
 3. Bugs die **Datenverlust** verursachen (Memory, Config)
 4. **Security-Lücken** die sofort ausnutzbar sind
 
+### Explizites Bug-Mapping: P04 → P06
+
+> **PFLICHT**: Erstelle als erstes eine Zuordnungstabelle die JEDEN Bug aus P04 einem Fix-Prompt zuweist. Kein Bug darf ohne Zuordnung bleiben.
+
+**Bevor du den ersten Bug fixst**, lies den gesamten P04-Report (4a + 4b + 4c) und erstelle diese Tabelle:
+
+```
+### Bug-Zuordnung P04 → P06
+
+| Bug-# | Severity | Beschreibung | Datei:Zeile | Zugeordnet an |
+|---|---|---|---|---|
+| 1 | 🔴 | [Beschreibung] | [Datei:Zeile] | **P06a** (dieser Prompt) |
+| 2 | 🔴 | [Beschreibung] | [Datei:Zeile] | **P06a** (dieser Prompt) |
+| ... | 🟠 | [Beschreibung] | [Datei:Zeile] | **P06b** (Architektur) |
+| ... | 🟡 | [Beschreibung] | [Datei:Zeile] | **P06c** (Charakter) |
+| ... | 🔴 | [Security-Bug] | [Datei:Zeile] | **P06d** (Härtung) |
+| ... | 🟠 | [Tool-Calling-Bug] | [Datei:Zeile] | **P06e** (Gerätesteuerung) |
+| ... | 🟡 | [TTS-Bug] | [Datei:Zeile] | **P06f** (TTS/Response) |
+```
+
+**Zuordnungs-Regeln:**
+- 🔴 KRITISCH (Crash/Datenverlust/Security-sofort) → **P06a** (dieser Prompt)
+- 🔴 KRITISCH (Security allgemein) → **P06d**
+- 🟠 HOCH (Architektur/Flow/Performance) → **P06b**
+- 🟠 HOCH (Tool-Calling) → **P06e**
+- 🟡 MITTEL (Persönlichkeit/Config/Dead Code) → **P06c**
+- 🟡 MITTEL (TTS/Response-Leakage) → **P06f**
+
+**Am Ende von P06a**: Übergib die Zuordnungstabelle im Kontext-Block an P06b, damit jeder nachfolgende Prompt weiß WELCHE Bugs er fixen muss.
+
 ### Schritt 2: Memory reparieren (aus Prompt 2)
 
 Basierend auf der Root-Cause-Analyse aus Prompt 2 — implementiere den empfohlenen Fix.

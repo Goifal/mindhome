@@ -102,6 +102,52 @@ Grep: pattern="error_patterns|ErrorPattern" path="assistant/assistant/" output_m
 - Wird `error_patterns.py` genutzt? Führt es zu Verbesserungen?
 - Wenn nicht genutzt: **Integrieren**, nicht nur existieren lassen
 
+### Circuit Breaker Integration (Pflicht)
+
+> **Gap**: `circuit_breaker.py` existiert aber wird möglicherweise nicht genutzt. Ein Circuit Breaker der nicht integriert ist, ist totes Gewicht.
+
+**Schritt 1: Ist-Zustand erfassen:**
+```
+Read: assistant/assistant/circuit_breaker.py
+Grep: pattern="from.*circuit_breaker|import.*circuit_breaker" path="assistant/assistant/" output_mode="content"
+```
+
+**Schritt 2: Wenn circuit_breaker.py NICHT importiert wird — in diese 5 Module integrieren:**
+
+| Modul | Wofür | Circuit Breaker Konfiguration |
+|---|---|---|
+| `ollama_client.py` | LLM-Calls an Ollama | `failure_threshold=3, recovery_timeout=30s` |
+| `ha_client.py` | Home Assistant API-Calls | `failure_threshold=5, recovery_timeout=60s` |
+| `sound_manager.py` | TTS/Speech-Server-Calls | `failure_threshold=3, recovery_timeout=15s` |
+| `web_search.py` | Web-Anfragen | `failure_threshold=3, recovery_timeout=120s` |
+| `chroma_manager.py` | ChromaDB-Zugriffe (falls vorhanden) | `failure_threshold=5, recovery_timeout=60s` |
+
+**Schritt 3: Integration-Pattern:**
+```python
+# In jedem Modul wo externe Services aufgerufen werden:
+from circuit_breaker import CircuitBreaker
+
+_cb = CircuitBreaker(failure_threshold=3, recovery_timeout=30)
+
+async def call_external_service(self, ...):
+    if _cb.is_open():
+        logger.warning("Circuit Breaker offen für [Service] — Fallback")
+        return self._fallback_response()
+    try:
+        result = await self._actual_call(...)
+        _cb.record_success()
+        return result
+    except Exception as e:
+        _cb.record_failure()
+        raise
+```
+
+**Schritt 4: Verifizieren:**
+```
+Grep: pattern="circuit_breaker|CircuitBreaker" path="assistant/assistant/" output_mode="count"
+→ Mindestens 5 Dateien müssen CircuitBreaker importieren
+```
+
 ### Schritt 3: Addon-Koordination fixen (Konflikt F aus Prompt 1)
 
 **Das Kernproblem**: Assistant und Addon können gleichzeitig dieselbe HA-Entity steuern.
@@ -127,10 +173,63 @@ Grep: pattern="error_patterns|ErrorPattern" path="assistant/assistant/" output_m
 | `threat_assessment.py` | `engines/camera_security.py` | Sicherheit | ? |
 | `camera_manager.py` | `domains/camera.py` | Kameras | ? |
 
+**Entscheidungsbaum für jede Dopplung:**
+
+> **Gap**: Die 6 Dopplungen oben haben kein "?" als Lösung — sie brauchen eine klare Entscheidung.
+
+Für JEDE Dopplung diesen Entscheidungsbaum durchlaufen:
+
+```
+1. Braucht die Funktion Echtzeit-Reaktion (< 100ms)?
+   → JA: Addon ist zuständig (läuft lokal, kein LLM-Umweg)
+   → NEIN: Weiter zu 2.
+
+2. Braucht die Funktion LLM-Intelligenz (Kontext, Sprache, Entscheidung)?
+   → JA: Assistant ist zuständig (hat LLM-Zugang)
+   → NEIN: Weiter zu 3.
+
+3. Braucht die Funktion Sensordaten-Auswertung über Zeit (Trends, Muster)?
+   → JA: Addon ist zuständig (hat Engines für kontinuierliche Auswertung)
+   → NEIN: Weiter zu 4.
+
+4. Ist die Funktion ein User-Befehl ("Licht an")?
+   → JA: Assistant ist zuständig (empfängt User-Input)
+   → NEIN: Addon ist zuständig (Default für Automatisierungen)
+```
+
+**Ergebnis pro Dopplung dokumentieren:**
+
+```
+| Dopplung | Entscheidung | Begründung (Baum-Pfad) | Koordination |
+|---|---|---|---|
+| Licht | Assistant: User-Befehle, Addon: Circadian | Baum 4→Ja / Baum 3→Ja | Addon setzt Baseline, Assistant überschreibt temporär |
+| Klima | Assistant: User-Befehle, Addon: Comfort-Engine | Baum 4→Ja / Baum 3→Ja | Addon regelt automatisch, Assistant überschreibt bei Befehl |
+| Rollladen | Assistant: User-Befehle, Addon: Auto-Cover | Baum 4→Ja / Baum 1→Ja | Addon reagiert auf Wetter/Sonne, Assistant auf User |
+| Energie | Addon: komplett | Baum 3→Ja | Assistant liest nur Daten, steuert nicht |
+| Sicherheit | Addon: Echtzeit-Alarme, Assistant: Berichte | Baum 1→Ja / Baum 2→Ja | Addon alarmiert sofort, Assistant fasst zusammen |
+| Kameras | Addon: Überwachung, Assistant: Abfragen | Baum 1→Ja / Baum 2→Ja | Addon monitort, Assistant antwortet auf Fragen |
+```
+
+**Lock-Mechanismus für gleichzeitige Steuerung:**
+Wenn Assistant UND Addon dasselbe Gerät steuern können, MUSS ein Lock existieren:
+```python
+# Redis-basierter Lock: Wer zuletzt geschrieben hat, hat Vorrang für X Sekunden
+LOCK_KEY = f"device_lock:{entity_id}"
+LOCK_TTL = 30  # Sekunden
+
+async def acquire_device_lock(entity_id: str, source: str) -> bool:
+    """Versucht ein Gerät zu locken. source = 'assistant' oder 'addon'."""
+    existing = await redis.get(LOCK_KEY)
+    if existing and existing != source:
+        return False  # Andere Quelle hat Lock
+    await redis.set(LOCK_KEY, source, ex=LOCK_TTL)
+    return True
+```
+
 **Für jede Dopplung:**
 1. **Read** — Beide Module lesen und vergleichen
-2. Entscheiden: Wer ist zuständig?
-3. **Edit** — Koordination implementieren (API-Call, Event, oder Elimination)
+2. Entscheiden: Wer ist zuständig? (Entscheidungsbaum oben)
+3. **Edit** — Koordination implementieren (API-Call, Event, Lock, oder Elimination)
 
 ## Addon-Systematische Analyse
 
