@@ -4,7 +4,7 @@ Diese Prompts sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu w
 
 > **Für einen weiteren Durchlauf**: Nutze `PROMPT_RESET.md` **vor** Prompt 1, um den Kontext sauber zurückzusetzen und die Ergebnisse des vorherigen Durchlaufs als Vergleichsbasis zu sichern.
 
-> **v2 Änderungen**: Konsolidiert von 20 Prompts auf 8. Weniger Analyse-Overhead, mehr fokussierte Fixes. Jeder Fix-Prompt enthält konkrete Code-Beispiele und Praxis-Testszenarien.
+> **v2**: Kombiniert das Beste aus v1 (gründliche Bug-Jagd über alle Module) mit neuen fokussierten Fix-Prompts (konkrete Code-Beispiele, Praxis-Testszenarien, User-Pain-Points).
 
 ## Das System
 
@@ -19,7 +19,7 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 
 > **Modul-Definition**: Ein Modul = eine `.py`-Datei (ohne `__init__.py` und Test-Dateien).
 
-## Reihenfolge (8 Prompts)
+## Reihenfolge (10 Prompts)
 
 | # | Datei | Fokus | Typ | Abhängigkeit |
 |---|---|---|---|---|
@@ -27,19 +27,26 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 | 2 | `PROMPT_02_MEMORY.md` | Memory-System **Analyse + Fix** (6 bekannte Bugs) | Analyse+Fix | Nutzt Konflikt-Karte aus #1 |
 | 3 | `PROMPT_03_GERAETESTEUERUNG.md` | **Tool-Calling** + System-Prompt + Gerätesteuerung | Fix | Nutzt Architektur aus #1 |
 | 4 | `PROMPT_04_TTS_RESPONSE.md` | **speak-Filter** + Meta-Leakage + TTS-Pipeline | Fix | Unabhängig (kann parallel zu #3) |
-| 5 | `PROMPT_05_BUGFIXES.md` | **Systematische Bug-Fixes** (max 20/Durchlauf) | Fix | Nutzt RESULT-Dateien aus vorherigem Durchlauf |
+| 4a | `PROMPT_04a_BUGS_CORE.md` | Bug-Jagd: **Core-Module** (Prio 1–4, 26 Module, 13 Fehlerklassen) | Analyse | Nutzt Architektur aus #1–#4 |
+| 4b | `PROMPT_04b_BUGS_EXTENDED.md` | Bug-Jagd: **Extended-Module** (Prio 5–9, 63 Module) | Analyse | Nutzt Patterns aus #4a |
+| 5 | `PROMPT_05_BUGFIXES.md` | **Systematische Bug-Fixes** (max 20/Durchlauf) | Fix | Nutzt Bug-Liste aus #4a + #4b |
 | 6 | `PROMPT_06_PERSOENLICHKEIT.md` | Persönlichkeit + MCU-Charakter + Config | Analyse+Fix | Nutzt Ergebnisse aus #1-#5 |
-| 7 | `PROMPT_07_SICHERHEIT.md` | **Top-5 Security** + Resilience + Circuit Breaker | Analyse+Fix | Nutzt Ergebnisse aus #1-#6 |
+| 7 | `PROMPT_07_SICHERHEIT.md` | **Top-5 Security** + Resilience + Addon + Circuit Breaker | Analyse+Fix | Nutzt Ergebnisse aus #1-#6 |
 | ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Reset | Nach #7, vor erneutem #1 |
 
 ### Parallelisierung
 
-Prompts 3 und 4 können **parallel** ausgeführt werden (keine Abhängigkeit). Alle anderen sind sequentiell.
+Mehrere Prompts können **parallel** ausgeführt werden:
 
 ```
 #1 (Architektur) → #2 (Memory) → #3 (Geräte) ─┐
-                                  #4 (TTS)    ──┤→ #5 (Bugfixes) → #6 (Persönlichkeit) → #7 (Sicherheit) → RESET
+                                  #4 (TTS)    ──┤
+                                  #4a (Bugs)  ──┤→ #5 (Bugfixes) → #6 (Persönlichkeit) → #7 (Sicherheit) → RESET
+                                  #4b (Bugs)  ──┘
 ```
+
+> **P03, P04, P04a, P04b** können alle gleichzeitig laufen (separate Claude-Code-Sessions).
+> **P04b** braucht die Patterns aus P04a — entweder nacheinander oder P04a-Kontext-Block in P04b einfügen.
 
 ## Wie verwenden
 
@@ -82,20 +89,21 @@ Claude Code kann **mehrere Dateien gleichzeitig lesen** (5–7 parallele Read-Au
 
 ## Was jeder Prompt abdeckt
 
-| Aspekt | P1 | P2 | P3 | P4 | P5 | P6 | P7 |
-|---|---|---|---|---|---|---|---|
-| Architektur & Konflikte | ✅ | - | - | - | - | - | - |
-| Flows (13 Pfade) | ✅ | - | - | - | - | - | - |
-| Memory (12 Module) | - | ✅ | - | - | ✅ | - | - |
-| Gerätesteuerung/Tool-Calling | - | - | ✅ | - | - | - | - |
-| TTS/Meta-Leakage | - | - | - | ✅ | - | - | - |
-| Bug-Fixes (13 Klassen) | - | - | - | - | ✅ | - | - |
-| Persönlichkeit / MCU | - | - | - | - | - | ✅ | - |
-| Security & Resilience | - | - | - | - | - | - | ✅ |
-| Config / YAML | - | ✅ | ✅ | ✅ | - | ✅ | - |
-| Addon-Module | ✅ | - | - | - | ✅ | - | ✅ |
-| Tests | - | - | - | - | ✅ | - | ✅ |
-| Docker / Deployment | - | - | - | - | - | - | ✅ |
+| Aspekt | P1 | P2 | P3 | P4 | P4a | P4b | P5 | P6 | P7 |
+|---|---|---|---|---|---|---|---|---|---|
+| Architektur & Konflikte | ✅ | - | - | - | - | - | - | - | - |
+| Flows (13 Pfade) | ✅ | - | - | - | - | - | - | - | - |
+| Memory (12 Module) | - | ✅ | - | - | ✅ | - | ✅ | - | - |
+| Gerätesteuerung/Tool-Calling | - | - | ✅ | - | - | - | - | - | - |
+| TTS/Meta-Leakage | - | - | - | ✅ | - | - | - | - | - |
+| Bug-Jagd Core (26 Module) | - | - | - | - | ✅ | - | - | - | - |
+| Bug-Jagd Extended (63 Module) | - | - | - | - | - | ✅ | - | - | - |
+| Bug-Fixes (max 20/Lauf) | - | - | - | - | - | - | ✅ | - | - |
+| Persönlichkeit / MCU | - | - | - | - | - | - | - | ✅ | - |
+| Security & Resilience | - | - | - | - | - | - | - | - | ✅ |
+| Addon-Module | ✅ | - | - | - | - | - | ✅ | - | ✅ |
+| Config / YAML | - | ✅ | ✅ | ✅ | - | - | - | ✅ | - |
+| Docker / Deployment | - | - | - | - | - | - | - | - | ✅ |
 
 ## LLM-Spezifisch (Qwen 3.5)
 
@@ -161,22 +169,24 @@ Der Code liegt auf GitHub. Kein laufendes Redis, ChromaDB, Ollama oder Home Assi
 
 ## Erwarteter Gesamt-Output nach allen Prompts
 
-1. **Konflikt-Karte + Flow-Dokumentation** — Architektur, 13 Flows, Kollisionen
-2. **Repariertes Memory-System** — 6 Bugs gefixt, Fakten-Abruf funktioniert
-3. **Funktionierende Gerätesteuerung** — Tool-Calling zuverlässig, System-Prompt optimiert
-4. **Saubere Sprachausgabe** — Kein Meta-Leakage in TTS
-5. **Stabilisierte Codebase** — Top-20 Bugs gefixt
-6. **Harmonisierter Charakter** — MCU-Score ≥7/10, Config sauber
-7. **Gehärtetes System** — Top-5 Security + Resilience
+1. **Konflikt-Karte + Flow-Dokumentation** — Architektur, 13 Flows, Kollisionen (P01)
+2. **Repariertes Memory-System** — 6 Bugs gefixt, Fakten-Abruf funktioniert (P02)
+3. **Funktionierende Gerätesteuerung** — Tool-Calling zuverlässig, System-Prompt optimiert (P03)
+4. **Saubere Sprachausgabe** — Kein Meta-Leakage in TTS (P04)
+5. **Vollständige Bug-Liste** — Alle 89+ Module mit 13 Fehlerklassen geprüft (P04a+P04b)
+6. **Stabilisierte Codebase** — Top-20 Bugs gefixt pro Durchlauf (P05)
+7. **Harmonisierter Charakter** — MCU-Score ≥7/10, Config sauber (P06)
+8. **Gehärtetes System** — Top-5 Security + Resilience (P07)
 
 ## Vergleich v1 → v2
 
-| Aspekt | v1 (20 Prompts) | v2 (8 Prompts) |
+| Aspekt | v1 (20 Prompts) | v2 (10 Prompts) |
 |---|---|---|
-| Analyse-Prompts | 8 (P01-P05) | 1 (P01) |
+| Analyse-Prompts | 8 (P01-P05) | 3 (P01, P04a, P04b) |
 | Fix-Prompts | 8 (P06a-P06f, P07a-P07b) | 6 (P02-P07) |
 | User-Pain-Points | Nicht adressiert | P03 (Geräte), P04 (TTS) |
+| Bug-Jagd Gründlichkeit | 13 Klassen, 89+ Module | Gleich (P04a+P04b beibehalten) |
 | Bug-Fix-Scope | Unbegrenzt (~200+) | Max 20 pro Durchlauf |
-| Code-Beispiele | Keine | In jedem Fix-Prompt |
+| Code-Beispiele in Fixes | Keine | In jedem Fix-Prompt |
 | Testszenarien | Nur P07a | In P02, P03, P04 |
-| Context-Window-Verbrauch | Hoch (viel Analyse) | Niedrig (fokussiert) |
+| Context-Window-Verbrauch | Hoch (viel Redundanz) | Niedrig (fokussiert) |
