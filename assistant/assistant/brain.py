@@ -3470,7 +3470,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         try:
                             func_args = json.loads(func_args)
                         except (json.JSONDecodeError, ValueError):
-                            func_args = {}
+                            logger.warning("Ungueltiges JSON in Tool-Call Arguments: %.100s", func_args)
+                            continue  # DL3-B2 Fix: Ueberspringe statt leere Args
 
                     # Raum-Fallback: Wenn set_* ohne Raum → besetzten Raum nutzen
                     if (func_name.startswith("set_")
@@ -6266,8 +6267,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 logger.error("Security-Confirmation: Korrupte Daten in Redis")
                 await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
                 return None
-            # Person-Check: nur dieselbe Person darf bestaetigen
-            if pending.get("person") and person and pending["person"] != person:
+            # Person-Check: nur dieselbe Person darf bestaetigen (DL3-B1 Fix)
+            pending_person = pending.get("person", "")
+            if not pending_person:
+                logger.warning("Security-Confirmation abgelehnt: kein Person-Feld in Pending-Daten")
+                await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
+                return None
+            if person and pending_person != person:
                 logger.warning(
                     "Security-Confirmation abgelehnt: %s != %s",
                     person, pending["person"],
@@ -8404,6 +8410,8 @@ Regeln:
 
     async def _log_experiential_memory(self, entry_json: str) -> None:
         """Speichert eine Action-Outcome-Entry in Redis."""
+        if not self.memory.redis:
+            return
         try:
             await self.memory.redis.lpush("mha:action_outcomes", entry_json)
             await self.memory.redis.ltrim("mha:action_outcomes", 0, 499)
