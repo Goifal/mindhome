@@ -37,7 +37,12 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 | 6f | `PROMPT_06f_TTS_RESPONSE.md` | **speak-Filter** + **Meta-Leakage** + TTS-Pipeline | Pain-Point: "speak" in Sprachausgabe |
 | 7a | `PROMPT_07a_TESTING.md` | Tests + Coverage + **Security-Endpoint-Tests** | Verifiziert Fixes aus #6a–6f |
 | 7b | `PROMPT_07b_DEPLOYMENT.md` | Docker + Deployment + **Resilience** + **Performance** | Nutzt Test-Ergebnisse aus #7a |
-| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #7b, vor erneutem #1 |
+| 8a | `PROMPT_08a_CODEQUALITAET.md` | **Docs** + **Dependencies** + **CI/CD** + Lokalisierung | Nach #7b |
+| 8b | `PROMPT_08b_BETRIEB.md` | **Multi-User** + **Frontend** + **Monitoring** + Persistenz | Nach #8a |
+| 9a | `PROMPT_09a_FIX_CODEQUALITAET.md` | **Fix: alle P08a Findings** — Docs, Deps, CI/CD, Scripts | Nutzt Findings aus #8a |
+| 9b | `PROMPT_09b_FIX_BETRIEB.md` | **Fix: alle P08b Findings** — Concurrency, Logging, Health | Nutzt Findings aus #8b |
+| 10 | `PROMPT_10_FINAL_VALIDATION.md` | **Zero-Bug Abschluss** — ALLE offenen Bugs fixen, Regression-Test | Nutzt ALLE Kontext-Blöcke |
+| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #10, vor erneutem #1 |
 
 ## Wie verwenden
 
@@ -144,28 +149,34 @@ Wenn ein Bug in P04a-P04c gefunden wird, muss er dem richtigen Fix-Prompt zugeor
 
 ## Was jeder Prompt abdeckt
 
-| Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P6a | P6b | P6c | P6d | P6e | P6f | P7a | P7b |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Addon-Module | ✅ | ✅ | - | ✅ | - | - | ✅ | ✅ | - | - | - | ✅ | - | - | - | ✅ |
-| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ |
-| Speech-Service | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ |
-| Architektur | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - |
-| Memory (12 Module) | - | ✅ | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | ✅ | - |
-| Flows (13 Pfade) | - | - | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ |
-| Bug-Jagd (13 Klassen) | - | - | - | - | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | - | - | - | - |
-| **Gerätesteuerung/Tool-Calling** | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - |
-| **TTS/Meta-Leakage** | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - |
-| **Performance & Latenz** | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | ✅ |
-| Security | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - |
-| Resilience | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ |
-| Persönlichkeit / MCU | ✅ | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - |
-| Config / YAML | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ | - | - |
-| Tests (103 Dateien) | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - |
-| Docker / Deployment | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ |
-| Frontend (app.jsx, app.js) | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ |
-| Dependencies (requirements.txt) | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ |
-| Translations / Manifests | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - |
+| Aspekt | P1 | P2 | P3a | P3b | P4a | P4b | P4c | P5 | P6a | P6b | P6c | P6d | P6e | P6f | P7a | P7b | P8a | P8b | P9a | P9b | P10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Assistant-Module | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Addon-Module | ✅ | ✅ | - | ✅ | - | - | ✅ | ✅ | - | - | - | ✅ | - | - | - | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Shared-Module (API-Verträge) | ✅ | - | ✅ | ✅ | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | ✅ | - | ✅ | - | ✅ |
+| Speech-Service | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
+| Architektur | ✅ | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | - | - | - |
+| Memory (12 Module) | - | ✅ | ✅ | - | ✅ | - | - | - | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ |
+| Flows (13 Pfade) | - | - | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - |
+| Bug-Jagd (13 Klassen) | - | - | - | - | ✅ | ✅ | ✅ | - | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - | - | - | ✅ |
+| **Gerätesteuerung/Tool-Calling** | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | ✅ |
+| **TTS/Meta-Leakage** | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | ✅ |
+| **Performance & Latenz** | - | - | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
+| Security | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ |
+| Resilience | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
+| Persönlichkeit / MCU | ✅ | - | ✅ | - | - | - | - | ✅ | - | - | ✅ | - | - | - | - | - | - | - | - | - | - |
+| Config / YAML | - | - | - | - | - | - | - | ✅ | - | - | ✅ | - | ✅ | ✅ | - | - | ✅ | - | ✅ | - | - |
+| Tests (103 Dateien) | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | ✅ |
+| Docker / Deployment | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
+| Frontend (app.jsx, app.js) | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ | - | - | - | ✅ | - | ✅ | - | ✅ | ✅ |
+| Dependencies (requirements.txt) | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | ✅ | - | ✅ | - | ✅ |
+| Translations / Manifests | - | - | - | - | - | - | - | ✅ | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
+| **Dokumentation (README)** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | ✅ |
+| **CI/CD Pipeline** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
+| **Multi-User / Concurrency** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
+| **Logging / Monitoring** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
+| **Daten-Persistenz / Backup** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | ✅ |
+| **Shell-Scripts** | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | - | ✅ | - | ✅ | - | - |
 
 ## Wichtige Rahmenbedingungen
 
@@ -184,7 +195,13 @@ Jeder Prompt generiert am Ende einen **Kontext-Block** für den nächsten Prompt
 - **Code-Referenzen kompakt**: `brain.py:123` statt langer Erklärungen
 - Bei Bug-Listen: Nur 🔴 und 🟠 Bugs im Kontext-Block, 🟡/🟢 nur als Zähler
 
-> **⚠️ Akkumulation**: Bei 15 Kontext-Blöcken á 30–50 Zeilen können das ~400 Zeilen (~3.000 Tokens) nur für Kontext sein. Dank der Aufteilung in kleinere Prompts (~1.500 Tokens statt ~3.900) bleibt aber mehr Platz für die eigentliche Arbeit. **Ab Prompt 6a–6d wird es eng** — erwäge dann separate Sessions (Option B) oder kürze ältere Kontext-Blöcke auf das absolute Minimum.
+> **⚠️ Akkumulation**: Bei 21 Kontext-Blöcken á 30–50 Zeilen können das ~600 Zeilen (~4.500 Tokens) nur für Kontext sein. Dank der Aufteilung in kleinere Prompts bleibt aber Platz für die eigentliche Arbeit. **Ab Prompt 6a–6d wird es eng** — erwäge dann separate Sessions (Option B) oder kürze ältere Kontext-Blöcke auf das absolute Minimum. **Ab P09a** nur noch die OFFEN-Liste der vorherigen Prompts mitgeben, nicht alle Kontext-Blöcke.
+
+### Bewusste Redundanzen
+Einige Elemente wiederholen sich in mehreren Prompts (Phase-Gate, 13 Fehlerklassen, Rolle). Das ist **gewollt** — jeder Prompt muss standalone funktionieren, falls er in einer separaten Session genutzt wird. Referenz-Definitionen:
+- **13 Fehlerklassen**: Vollständig in P04a, Kurzreferenz in P04b/P04c
+- **Phase Gate (Regression-Check)**: In jedem Fix-Prompt (P06a–P09b, P10)
+- **Eskalations-Schema**: Vollständig in P00, referenziert in allen Fix-Prompts
 
 ### Gründlichkeits-Pflicht
 Jeder Prompt enthält eine **Gründlichkeits-Pflicht**:
@@ -226,6 +243,11 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 6f. **Saubere Sprachausgabe** — Kein "speak"/Meta-Leakage in TTS, Response-Filter gehärtet
 7a. **Test-Report** — Tests bestehen, Coverage-Lücken geschlossen, Security-Endpoints verifiziert
 7b. **Deployment-Report** — Docker läuft, **Performance gemessen**, Resilience getestet
+8a. **Code-Qualitäts-Report** — README aktuell, Dependencies sauber, CI/CD bewertet, Lokalisierung geprüft
+8b. **Betriebs-Report** — Multi-User sicher, Frontend gehärtet, Logging strukturiert, Persistenz gesichert
+9a. **Code-Qualität gefixt** — Alle P08a Findings behoben: Docs, Deps, CI/CD, Scripts, Übersetzungen
+9b. **Betrieb gefixt** — Alle P08b Findings behoben: Locks, Logging, Health-Endpoints, Volumes
+10. **Zero-Bug Declaration** — ALLE offenen Bugs gefixt, Regression-Test bestanden, Security clean
 
 ## Erfolgsmetriken
 
@@ -233,6 +255,13 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 - Jeder Prompt liefert einen vollstaendigen Kontext-Block fuer den naechsten Prompt
 - Alle 13 Flows dokumentiert mit Status und Bruchstellen
 - Alle 6 Konfliktkarten ausgefuellt mit Code-Referenzen
+- **Dependencies gepinnt**, keine unused/missing, keine CVEs
+- **CI/CD Pipeline** vorhanden (GitHub Actions oder aequivalent)
+- **Multi-User sicher** — Request-Isolation, LLM-Concurrency, Redis-Key-Isolation
+- **Logging strukturiert** — kein print(), keine Secrets in Logs, Request-ID Tracking
+- **Health-Endpoints** in allen Services mit Dependency-Checks
+- **Daten-Persistenz** gesichert (Redis AOF, Volume-Mounts)
+- **Zero-Bug Declaration** am Ende von P10 — kein einziger offener Bug
 
 ## Eskalations-Schema fuer offene Bugs
 

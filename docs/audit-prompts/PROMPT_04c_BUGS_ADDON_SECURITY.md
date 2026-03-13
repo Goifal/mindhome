@@ -92,10 +92,38 @@ Prüfe die **Addon-Module, Speech, Shared-Module** (Priorität 10–12) und füh
 
 ### Shared Schema Verification (Pflicht!)
 
-Für jedes Schema:
-1. **Grep** — Wo wird es importiert? `pattern="ChatRequest" path="."`
-2. **Grep** — Wird es lokal neu definiert? `pattern="class ChatRequest" path="."`
-3. Ergebnis: Nutzen alle Services dasselbe Schema, oder gibt es Abweichungen?
+Für **jedes** der 3 Shared Schemas (`ChatRequest`, `ChatResponse`, `MindHomeEvent`):
+
+**Schritt 1 — Import-Prüfung:**
+```
+Grep: pattern="from shared.schemas import|from shared.schemas." path="." output_mode="content"
+Grep: pattern="ChatRequest" path="." output_mode="content"
+Grep: pattern="ChatResponse" path="." output_mode="content"
+Grep: pattern="MindHomeEvent" path="." output_mode="content"
+```
+
+**Schritt 2 — Duplikat-Prüfung:**
+```
+Grep: pattern="class ChatRequest|class ChatResponse|class MindHomeEvent" path="." output_mode="content"
+```
+
+**Schritt 3 — Port/Konstanten-Konsistenz:**
+```
+Grep: pattern="from shared.constants import|from shared import constants" path="." output_mode="content"
+Grep: pattern="port.*=.*[0-9]{4}" path="." output_mode="content" glob="*.py"
+```
+
+**Pass/Fail Kriterien:**
+
+| Check | ✅ PASS | ❌ FAIL |
+|---|---|---|
+| Import-Quelle | Alle Services importieren aus `shared/schemas/` | Service definiert eigene Klasse oder importiert aus anderem Pfad |
+| Feld-Konsistenz | `ChatRequest` hat identische Felder in Assistant + Addon + Speech | Felder weichen ab (z.B. Addon hat `extra_field` das Assistant nicht kennt) |
+| Port-Konsistenz | Alle Services nutzen `shared/constants.py` für Ports | Hardcoded Ports (z.B. `port=5000` statt `ADDON_PORT`) |
+| Event-Typen | `MindHomeEvent` Enum-Werte werden konsistent genutzt | String-Literale statt Enum (z.B. `"light_on"` statt `MindHomeEvent.LIGHT_ON`) |
+| Serialisierung | Gleiche JSON-Serialisierung in allen Services | Ein Service nutzt `.dict()`, anderer `.model_dump()` oder manuelles Dict |
+
+> **Jeder FAIL ist ein 🟠 HOCH Bug.** Zwei oder mehr FAILs für dasselbe Schema → 🔴 KRITISCH.
 
 ---
 

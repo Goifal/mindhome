@@ -97,16 +97,32 @@ cd assistant && python -m pytest --tb=short -q 2>&1 | tail -50
 
 **Schritt 4** — Test-Coverage bewerten:
 
-| Modul-Bereich | Tests vorhanden? | Abdeckung |
+```bash
+cd assistant && python -m pytest --cov=assistant --cov-report=term-missing --cov-branch -q 2>&1 | head -80
+```
+
+| Modul-Bereich | Tests vorhanden? | Abdeckung | Ziel |
+|---|---|---|---|
+| brain.py (Orchestrator) | ? | ? | **≥ 70%** |
+| Memory-Kette (7 Module) | ? | ? | **≥ 80%** |
+| Function Calling | ? | ? | **≥ 80%** |
+| Persönlichkeit | ? | ? | ≥ 60% |
+| Proaktive Systeme | ? | ? | ≥ 50% |
+| Speech Pipeline | ? | ? | ≥ 50% |
+| **Addon-Module** | ? | ? | Nur statisch (kein HA) |
+| **Integration zwischen Services** | ? | ? | **≥ 70%** |
+
+**Coverage-Schwellwerte (Pflicht!):**
+
+| Kategorie | Ziel-Coverage | Begründung |
 |---|---|---|
-| brain.py (Orchestrator) | ? | ? |
-| Memory-Kette (7 Module) | ? | ? |
-| Function Calling | ? | ? |
-| Persönlichkeit | ? | ? |
-| Proaktive Systeme | ? | ? |
-| Speech Pipeline | ? | ? |
-| **Addon-Module** | ? | ? |
-| **Integration zwischen Services** | ? | ? |
+| 🔴 Kritische Module (brain, memory, function_calling) | **≥ 80% Line + Branch** | Core-Logik, höchstes Risiko |
+| 🟠 Wichtige Module (personality, context, handlers) | **≥ 60% Line** | Wichtig aber weniger komplex |
+| 🟡 Support-Module (helpers, utils, formatters) | **≥ 40% Line** | Geringes Risiko |
+| ⬜ Addon-Module | **Statische Analyse** | Kein pytest möglich (braucht HA) |
+
+> **Tool:** `pytest-cov` (bereits in requirements.txt). Wenn nicht vorhanden: `pip install pytest-cov`
+> **Akzeptanz-Kriterium:** Gesamt-Coverage **≥ 60%**, kein kritisches Modul unter 50%.
 
 ### Teil B: Kritische Test-Lücken schließen
 

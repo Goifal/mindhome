@@ -221,6 +221,11 @@ Alle Kontext-Bloecke verworfen: Ja
 | 06f | PROMPT_06f_TTS_RESPONSE.md | Fix: speak-Filter + Meta-Leakage |
 | 07a | PROMPT_07a_TESTING.md | Testing + Coverage |
 | 07b | PROMPT_07b_DEPLOYMENT.md | Docker + Deployment |
+| 08a | PROMPT_08a_CODEQUALITAET.md | Analyse: Docs, Dependencies, CI/CD, Lokalisierung |
+| 08b | PROMPT_08b_BETRIEB.md | Analyse: Multi-User, Frontend, Monitoring, Persistenz |
+| 09a | PROMPT_09a_FIX_CODEQUALITAET.md | Fix: Alle P08a Findings beheben |
+| 09b | PROMPT_09b_FIX_BETRIEB.md | Fix: Alle P08b Findings beheben |
+| 10 | PROMPT_10_FINAL_VALIDATION.md | Zero-Bug: Alle offenen Bugs fixen + Abschluss |
 | RESET | PROMPT_RESET.md | Naechster Durchlauf vorbereiten |
 
 ---
