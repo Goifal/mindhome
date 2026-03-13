@@ -273,6 +273,129 @@ async def _extract_facts_background(self, user_text, assistant_response, person,
 > ```
 > Erwartetes Ergebnis: Mindestens 2 Treffer in `_get_relevant_memories()`.
 
+### BUG 9: 🔴 Keine Whitelist fuer explizite Merk-Befehle in _should_extract()
+
+**Datei:** `assistant/assistant/memory_extractor.py` Zeile 166-211
+**Problem:** `_should_extract()` prueft Wort-Minimum und Blacklists, hat aber KEINE Whitelist fuer explizite Merk-Befehle. Wenn der User sagt "Merk dir: Kaffee schwarz" (4 Woerter), wird es durch BUG 6 geblockt. Aber selbst mit Fix 6 (min=3) fehlt eine Erzwungene-Extraktion fuer:
+- "Merk dir dass..."
+- "Vergiss nicht dass..."
+- "Ab sofort immer..."
+- "Von jetzt an..."
+- "Ich heiße..." / "Mein Name ist..."
+
+Diese Pattern MUESSEN immer extrahiert werden, egal wie kurz.
+
+**Fix:** Whitelist VOR den Filtern einbauen:
+```python
+# NACHHER (memory_extractor.py, am Anfang von _should_extract):
+def _should_extract(self, user_text: str, assistant_response: str) -> bool:
+    text_lower = user_text.lower().strip().rstrip("!?.")
+
+    # WHITELIST: Diese Patterns IMMER extrahieren, egal wie kurz
+    force_extract_patterns = [
+        "merk dir", "merkt euch", "merke dir",
+        "vergiss nicht", "vergiss das nicht",
+        "ab sofort", "von jetzt an", "ab heute",
+        "ich heisse", "ich heiße", "mein name ist",
+        "meine frau", "mein mann", "mein partner",
+        "mein geburtstag", "ich bin geboren",
+        "ich mag", "ich hasse", "ich bevorzuge",
+        "ich bin allergisch", "ich vertrage kein",
+    ]
+    if any(p in text_lower for p in force_extract_patterns):
+        return True  # Erzwungene Extraktion!
+
+    # Rest der bestehenden Filter...
+    if len(user_text.split()) < max(self._min_words, 3):
+        return False
+    # ... (bestehender Code)
+```
+
+**Verify:**
+```
+Grep: pattern="force_extract|WHITELIST|merk dir|von jetzt an" path="assistant/assistant/memory_extractor.py" output_mode="content"
+```
+
+### BUG 10: 🟠 Relevance-Filter (0.3) und Confidence-Filter (0.6) zu streng
+
+**Datei:** `assistant/assistant/context_builder.py` Zeile 320, 328-330, 338
+**Problem:** Zwei Filter verhindern dass gespeicherte Fakten im System-Prompt erscheinen:
+
+1. `relevance > 0.3` (Zeile 329): ChromaDB-Vektorabstand muss < 0.7 sein. Bei kurzen oder anders formulierten Fragen (z.B. "Wie trinke ich Kaffee?" vs. gespeichert "Kaffee schwarz") kann die Relevance unter 0.3 fallen → Fakt wird nicht gezeigt.
+
+2. `confidence >= 0.6` (Zeile 338): Fakten mit Kategorie "general" starten bei 0.5 → werden NIE gezeigt. Nach Decay sinken auch andere Fakten unter 0.6.
+
+**Fix:**
+```python
+# VORHER (context_builder.py:320):
+min_confidence = float(mem_cfg.get("min_confidence_for_context", 0.6))
+# NACHHER:
+min_confidence = float(mem_cfg.get("min_confidence_for_context", 0.4))
+
+# VORHER (context_builder.py:329):
+if f.get("relevance", 0) > 0.3
+# NACHHER:
+if f.get("relevance", 0) > 0.2
+```
+
+**Zusaetzlich** in `assistant/config/settings.yaml`:
+```yaml
+memory:
+  min_confidence_for_context: 0.4  # War 0.6 — zu streng fuer neue/general Fakten
+```
+
+**Verify:**
+```
+Grep: pattern="min_confidence|relevance.*>" path="assistant/assistant/context_builder.py" output_mode="content"
+Grep: pattern="min_confidence_for_context" path="assistant/config/" output_mode="content"
+```
+
+### BUG 11: 🟠 Guest-Mode blockiert Memory KOMPLETT ohne Feedback
+
+**Datei:** `assistant/assistant/context_builder.py` Zeile 301-306
+**Problem:** Wenn `mha:routine:guest_mode` in Redis auf "active" steht, werden KEINE Fakten geladen — nicht mal fuer den Hauptbenutzer. Falls dieser Redis-Key versehentlich gesetzt wurde (z.B. durch einen fehlerhaften Automation-Trigger), ist das gesamte Gedaechtnis stumm.
+
+**Debug-Schritt** (VOR dem Fix):
+```
+Bash: redis-cli GET "mha:routine:guest_mode" 2>/dev/null || echo "Redis nicht erreichbar"
+```
+Falls Ergebnis "active" → DAS ist der Grund warum keine Fakten ankommen!
+
+**Fix:** Logging hinzufuegen damit der Zustand sichtbar wird:
+```python
+# NACHHER (context_builder.py, ca. Zeile 301):
+if guest_mode_active:
+    logger.info("Guest-Mode aktiv — Memory-Abruf uebersprungen")
+else:
+    if self.semantic and user_text:
+        context["memories"] = await self._get_relevant_memories(user_text, person)
+```
+
+**Verify:**
+```
+Grep: pattern="guest.*mode.*aktiv|guest.*mode.*skip|Guest-Mode" path="assistant/assistant/context_builder.py" output_mode="content"
+```
+
+### ARCHITEKTUR-HINWEIS: ConversationMemory + CorrectionMemory sind isolierte Silos
+
+> **Kein direkter Bug, aber Architektur-Schwaeche:**
+>
+> Die Code-Analyse zeigt dass die 5 Memory-Systeme NICHT vollstaendig verbunden sind:
+>
+> | System | Verbunden mit | Status |
+> |---|---|---|
+> | SemanticMemory | MemoryManager, ContextBuilder, MemoryExtractor | ✅ Verbunden |
+> | MemoryManager (Working/Episodic) | SemanticMemory | ✅ Verbunden |
+> | ConversationMemory | NUR brain.py direkt | ❌ Silo |
+> | CorrectionMemory | NUR brain.py direkt | ❌ Silo |
+> | Personality Memory (mha:personality:memorable) | NUR personality.py | ❌ Silo |
+>
+> **Auswirkung:** Korrekturen (CorrectionMemory) beeinflussen nicht die Fakten-Extraktion. Wenn der User sagt "Nein, nicht 21 Grad, ich mag 22 Grad" → die Korrektur wird in CorrectionMemory gespeichert, aber SemanticMemory hat immer noch "21 Grad". Ebenso: personality.py hat ein EIGENES Memory-System (`mha:personality:memorable:{person}`) das nicht mit SemanticMemory synchronisiert ist.
+>
+> **Empfehlung fuer spaetere Prompts (P06b Architektur):** Memory-Silos konsolidieren. CorrectionMemory → sollte SemanticMemory-Fakten updaten. Personality-Memory → sollte mit SemanticMemory zusammengefuehrt werden.
+>
+> **KEIN Fix in P02** — das ist eine Architektur-Entscheidung fuer P06b.
+
 ---
 
 ## DIE 5 FIXES
@@ -633,7 +756,11 @@ Nach allen 5 Fixes muessen diese Bedingungen erfuellt sein:
 | 6 | Wort-Minimum | `_should_extract()` min_words | `max(self._min_words, 3)` (NICHT 5!) |
 | 7 | Parse-Logging | `_parse_facts()` Logger-Level | `logger.warning` (NICHT debug!) |
 | 8 | Retry-Logik | `_extract_facts_background()` | Mindestens 2 Versuche |
-| 9 | Keine Regressionen | `cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q` | Tests bestehen |
+| 9 | Whitelist | `_should_extract()` hat force_extract_patterns | "merk dir", "ich mag", etc. VOR den Filtern |
+| 10 | Confidence-Schwelle | `min_confidence_for_context` | `0.4` (NICHT 0.6!) |
+| 11 | Relevance-Filter | `context_builder.py` relevance > | `0.2` (NICHT 0.3!) |
+| 12 | Guest-Mode-Logging | `context_builder.py` Guest-Mode | Logger.info wenn Guest-Mode Fakten blockiert |
+| 13 | Keine Regressionen | `cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q` | Tests bestehen |
 
 ### Erfolgs-Check (Schnellpruefung)
 
@@ -645,6 +772,10 @@ Nach allen 5 Fixes muessen diese Bedingungen erfuellt sein:
 □ grep "min_words.*3\|_min_words.*3" memory_extractor.py → Minimum muss 3 sein (NICHT 5!)
 □ grep "logger.warning.*pars\|logger.warning.*JSON" memory_extractor.py → Warning statt Debug
 □ grep "for attempt\|range(2)" brain.py → Retry-Logik vorhanden
+□ grep "force_extract\|merk dir" memory_extractor.py → Whitelist existiert VOR Filtern
+□ grep "min_confidence_for_context.*0.4\|min_confidence.*0.4" context_builder.py → 0.4 nicht 0.6
+□ grep "relevance.*0.2" context_builder.py → 0.2 nicht 0.3
+□ grep "Guest-Mode\|guest.*mode.*aktiv" context_builder.py → Logging vorhanden
 □ python -c "import assistant.brain" → kein ImportError
 □ python -c "import assistant.memory" → kein ImportError
 ```
