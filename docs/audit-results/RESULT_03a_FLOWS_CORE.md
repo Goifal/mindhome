@@ -1,9 +1,9 @@
-# Audit-Ergebnis: Prompt 3a — End-to-End Flow-Analyse Core-Flows 1–7 (Durchlauf #2)
+# Audit-Ergebnis: Prompt 3a — End-to-End Flow-Analyse Core-Flows 1–7 (Durchlauf #3)
 
-**Datum**: 2026-03-10 (DL#2), 2026-03-13 (DL#3 — Verifikation nach P02 Fixes)
+**Datum**: 2026-03-10 (DL#2), 2026-03-13 (DL#3)
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Init-Sequenz, System-Prompt-Rekonstruktion, Core-Flows 1–7
-**Durchlauf**: #3 (Verifikation nach P02 Memory-Reparatur)
+**Durchlauf**: #3 — Vollstaendige Analyse + Verifikation nach P02 Memory-Reparatur
 **Vergleichsbasis**: DL#2 (2 FIXED, 5 UNFIXED)
 
 ---
