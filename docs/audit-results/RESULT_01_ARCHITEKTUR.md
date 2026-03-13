@@ -1,40 +1,36 @@
-# Audit-Ergebnis: Prompt 1 — Architektur-Analyse & Modul-Konflikte (Durchlauf #2)
+# Audit-Ergebnis: Prompt 1 — Architektur-Analyse & Modul-Konflikte (Durchlauf #3)
 
-**Datum**: 2026-03-10
+**Datum**: 2026-03-13
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Drei-Service-Architektur, Modul-Konflikte A–F, Verdrahtungs-Graph, Architektur-Bewertung
-**Durchlauf**: #2 (Verifikation nach P6a–P8 Fixes)
-**Vergleichsbasis**: DL#1 (Architektur-Analyse: 6 Konflikte, 6 semantische Luecken, 2 God-Objects)
+**Durchlauf**: #3 (Verifikation nach DL#2, 125 Commits seit 2026-03-10)
+**Vergleichsbasis**: DL#2 (Architektur-Analyse: 6 Konflikte, God-Objects, Entity-Ownership Advisory)
 
 ---
 
-## DL#1 vs DL#2 Vergleich
+## DL#2 vs DL#3 Vergleich
 
 ### Gesamt-Statistik
 
 ```
 Konflikte A-F:
-  A (Sprache):       ⚠️ TEILWEISE — CRITICAL-Alerts bewusst hardcoded, Error-Texte auf Jarvis-Stil
-  B (Aktionen):      ❌ UNFIXED — Addon↔Assistant Last-Write-Wins, Ownership-Check asymmetrisch
-  C (Wissen):        ❌ UNFIXED — 12 isolierte Memory-Silos, Addon-SQLite ohne Sync
-  D (Klang):         ✅ FIXED — Sarkasmus gedeckelt, TTS-Pipeline konsistent
-  E (Timing):        ⚠️ TEILWEISE — Intern geloest (_process_lock), cross-service offen
-  F (Addon↔Assist):  ⚠️ TEILWEISE — Advisory Entity-Ownership-Check implementiert, asymmetrisch
+  A (Sprache):       ⚠️ TEILWEISE — CRITICAL-Alerts bewusst hardcoded (unveraendert seit DL#2)
+  B (Aktionen):      ❌ UNFIXED — Addon↔Assistant Last-Write-Wins (unveraendert)
+  C (Wissen):        ❌ UNFIXED — 12 isolierte Memory-Silos (unveraendert)
+  D (Klang):         ✅ FIXED — Sarkasmus gedeckelt, TTS-Pipeline konsistent (unveraendert)
+  E (Timing):        ⚠️ TEILWEISE — Intern geloest, cross-service offen (unveraendert)
+  F (Addon↔Assist):  ⚠️ TEILWEISE — Advisory Entity-Ownership-Check (unveraendert)
 
 God-Objects:
-  brain.py:   ❌ UNFIXED — 9.800 Zeilen, 81 Imports, ~4.700Z _process_inner()
-  main.py:    ❌ VERSCHLECHTERT — 7.809 → 8.228 Zeilen, 270 Endpoints
-  config.py:  ❌ UNFIXED — 74 Module importieren config
+  brain.py:   ❌ UNFIXED — 9.800 → 9.906 Zeilen (+106), 81 Imports, ~4.700Z _process_inner()
+  main.py:    ❌ UNFIXED — 8.228 → 8.278 Zeilen (+50), 273 Endpoints (+3)
+  config.py:  ❌ UNFIXED — 74 → 75 Module importieren config
 
-Architektur-Verbesserungen:
-  ✅ _process_lock + _states_lock in brain.py (Race Conditions)
-  ✅ 36/37 Module in _safe_init() (Graceful Degradation)
-  ✅ 12+ Locks in Feature-Modulen
-  ✅ shared/ Dead Code entfernt
-  ✅ Entity-Ownership-Check (Addon→Assistant)
-  ❌ proactive.start() NICHT in _safe_init() (REGRESSION)
+Fixes seit DL#2:
+  ✅ ProactiveManager.start() JETZT in _safe_init() gewrappt (brain.py:776)
   ❌ Kein bidirektionaler State-Sync
   ❌ Kein Event-Bus zwischen Services
+  ❌ Keine main.py Aufspaltung
 ```
 
 ---
@@ -62,7 +58,7 @@ Architektur-Verbesserungen:
           │                                        │
           │  GET /api/assistant/                    │  Wyoming ASR (TCP)
           │  entity_owner/{id}                     │  Port 10300
-          │  (Advisory Check)                      │
+          │  (Advisory Check, 2s Timeout)          │
           └────────────────────────────────────────┤
                                           ┌────────┴───────────┐
                                           │  Speech-Server     │
@@ -79,22 +75,23 @@ Architektur-Verbesserungen:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Kommunikationskanaele
+### Kommunikationskanaele (unveraendert seit DL#2)
 
 | Von | Nach | Protokoll | Code-Referenz |
 |-----|------|-----------|---------------|
 | HA-Integration | Assistant | HTTP POST `/api/assistant/chat` | `conversation.py:108-109` |
 | Addon | Assistant | HTTP POST (Proxy) `/api/assistant/chat` | `routes/chat.py:159` |
-| Addon | Assistant | GET `/api/assistant/entity_owner/{id}` (Advisory) | `ha_connection.py:177` |
+| Addon | Assistant | GET `/api/assistant/entity_owner/{id}` (Advisory) | `ha_connection.py:70-88` |
 | Assistant | HA | REST API + WebSocket (Events) | `ha_client.py`, `proactive.py` |
 | Addon | HA | REST API (`/core/api/`) + WebSocket (Events) | `ha_connection.py:69-147` |
 | Speech | Redis | Voice Embeddings (`mha:speaker:*`) | `speech/handler.py:410-426` |
 | Assistant | Redis | Memory, State, Embeddings | `memory.py`, `semantic_memory.py` |
 
-### Aenderungen seit Durchlauf #1
+### Aenderungen seit DL#2
 
-- **shared/ geloescht** — Keine gemeinsamen Schemas mehr. Jeder Service definiert eigene Datenstrukturen.
-- **Entity-Ownership-Check im Addon** — `ha_connection.py:177` prueft via HTTP GET ob der Assistant eine Entity "besitzt". Ist aber **advisory** (Timeout 2s, bei Fehler wird trotzdem gehandelt).
+- **ProactiveManager.start() gefixt** — Jetzt in `_safe_init()` gewrappt (brain.py:776). DL#2-Finding #1 (🔴 KRITISCH) ist **BEHOBEN**.
+- **Keine strukturellen Aenderungen** — Kommunikationskanaele identisch zu DL#2.
+- **shared/ weiterhin geloescht** — 0 Imports gefunden (Grep-verifiziert).
 
 ---
 
@@ -102,52 +99,78 @@ Architektur-Verbesserungen:
 
 ### 2a) brain.py — Primaeres God-Object
 
-| Metrik | Durchlauf #1 | Durchlauf #2 | Delta |
-|--------|-------------|-------------|-------|
-| **Zeilen** | 10.231 → 9.779 (nach Mixin) | 9.800 | +21 |
-| **Imports** | 81 interne Module | 81 interne Module | 0 |
-| **Methoden** | 80+ | 68+ direkt + 15 Mixin | 0 |
-| **_process_inner()** | ~4.838 Zeilen | ~4.700 Zeilen | -138 |
-| **Init-Komponenten** | 50+ Objekte | 50+ Objekte | 0 |
-| **Locks** | 0 | 2 (asyncio.Lock) | +2 ✅ |
+| Metrik | DL#1 | DL#2 | DL#3 | Delta DL#2→3 |
+|--------|------|------|------|-------------|
+| **Zeilen** | 10.231 → 9.779 | 9.800 | 9.906 | +106 |
+| **Imports** | 81 | 81 | 81 | 0 |
+| **Methoden** | 80+ | 68 + 15 Mixin | 41 direkt + Mixin | Umstrukturiert |
+| **_process_inner()** | ~4.838 | ~4.700 | ~4.700 | 0 |
+| **Init-Komponenten** | 50+ | 50+ | 47 explizit + Locks | 0 |
+| **Locks** | 0 | 2 | 2 | 0 |
+| **Per-Request-State** | 11 Variablen | 11 Variablen | 11 Variablen | 0 |
 
-**Bewertung**: brain.py ist weiterhin ein God-Object. Die Mixin-Extraktion (Phase 1: `brain_humanizers.py` 502Z, `brain_callbacks.py` 29Z) hat 531 Zeilen ausgelagert, aber das Grundproblem besteht: Ein monolithischer `_process_inner()` mit ~4.700 Zeilen.
+**Bewertung**: brain.py ist weiterhin ein God-Object mit 9.906 Zeilen. Die Mixin-Extraktion bleibt auf Phase 1 (`brain_humanizers.py`, `brain_callbacks.py`). `_process_inner()` ist weiterhin ~4.700 Zeilen.
 
-**Positiv seit Durchlauf #1:**
-- `_process_lock` (asyncio.Lock) schuetzt alle per-Request-State-Variablen ✅
-- `_states_lock` (asyncio.Lock) schuetzt HA-States-Cache ✅
-- 36 von 37 Modulen in `_safe_init()` gewrappt ✅
+**Positiv seit DL#2:**
+- ✅ **ProactiveManager.start() in _safe_init()** (brain.py:776) — DL#2-Bug BEHOBEN
+- ✅ `_process_lock` mit 30s Timeout (brain.py:1117) — korrekt implementiert
+- ✅ `_states_lock` fuer HA-Cache (brain.py:212) — stabil
 
-**Kritischer Bug (NEU):**
-- **ProactiveManager.start() (Zeile 773) ist NICHT in `_safe_init()` gewrappt** — identisch zu Durchlauf #1!
-- Der Bug wurde in RESULT_06a als "gefixt" gemeldet, ist aber im aktuellen Code NICHT gefixt.
-- Wenn HA nicht erreichbar ist beim Start → Exception → gesamter Start schlaegt fehl.
-- **Severity**: 🔴 KRITISCH — Verletzung von F-069 Graceful Degradation.
+**Per-Request-State-Variablen** (brain.py:351-374, geschuetzt durch _process_lock):
+
+| Zeile | Variable | Typ | Race-Condition-Risiko |
+|-------|----------|-----|----------------------|
+| 352 | `_last_failed_query` | Optional[str] | Geschuetzt ✅ |
+| 355 | `_current_person` | str | Geschuetzt ✅ |
+| 358 | `_last_context` | dict | Geschuetzt ✅ |
+| 361 | `_last_executed_action` | str | Geschuetzt ✅ |
+| 362 | `_last_executed_action_args` | dict | Geschuetzt ✅ |
+| 365 | `_request_from_pipeline` | bool | Geschuetzt ✅ |
+| 366 | `_active_conversation_mode` | bool | Geschuetzt ✅ |
+| 369 | `_last_response_was_snarky` | bool | Geschuetzt ✅ |
+| 370 | `_last_humor_category` | Optional[str] | Geschuetzt ✅ |
+| 371 | `_active_conversation_topic` | str | Geschuetzt ✅ |
+| 374 | `_last_formality_score` | Optional[int] | Geschuetzt ✅ |
 
 ### 2b) main.py — Sekundaeres God-Object
 
-| Metrik | Durchlauf #1 | Durchlauf #2 | Delta |
-|--------|-------------|-------------|-------|
-| **Zeilen** | ~7.809 | 8.228 | +419 |
-| **API-Endpoints** | ~200 | 270 | +70 |
-| **brain.process() Aufrufe** | ~6 | 6 | 0 |
+| Metrik | DL#1 | DL#2 | DL#3 | Delta DL#2→3 |
+|--------|------|------|------|-------------|
+| **Zeilen** | ~7.809 | 8.228 | 8.278 | +50 |
+| **API-Endpoints** | ~200 | 270 | 273 | +3 |
+| **brain.process() Aufrufe** | ~6 | 6 | 5 aktiv + 5 Referenzen | 0 |
+| **Private Hilfsfunktionen** | — | — | 97 | — |
 
-**Bewertung**: main.py ist GEWACHSEN und noch staerker ein God-Object. Es enthaelt:
-- 270 API-Endpoints in einer einzigen Datei
-- Signifikante Business-Logik (PIN-Auth, Settings-Reload, Cover-Management, Workshop 70+ Endpoints)
-- Error/Activity-Buffer-System mit Redis-Persistenz
+**Endpoint-Verteilung (DL#3):**
 
-**Aufspaltungs-Empfehlung:**
-```
-main.py (8.228Z) → Aufspaltung in:
-├── main.py (~500Z)          — Nur Route-Registration, Lifespan
-├── auth.py (~500Z)          — PIN, Tokens, API-Keys, Rate-Limiting
-├── settings_routes.py (~300Z) — Settings-CRUD und Validation
-├── cover_routes.py (~300Z)  — Cover/Blind-Management
-├── workshop_routes.py (~400Z) — Workshop-Endpoints
-├── system_routes.py (~400Z) — Git, Docker, Ollama Ops
-└── buffer_manager.py (~150Z) — Error/Activity Ring-Buffer
-```
+| Domain | GET | POST | PUT | DELETE | Total | % |
+|--------|-----|------|-----|--------|-------|---|
+| `/api/ui/*` | 69 | 42 | 13 | 11 | 135 | 49% |
+| `/api/workshop/*` | 30 | 50 | 1 | 3 | 84 | 31% |
+| `/api/assistant/*` | 25 | 12 | 2 | 1 | 40 | 15% |
+| Sonstige | 6 | 6 | 0 | 0 | 14 | 5% |
+| **Total** | **130** | **110** | **16** | **15** | **273** | |
+
+**Business-Logik die extrahiert werden sollte:**
+
+| Bereich | Zeilen | Empfohlenes Modul |
+|---------|--------|-------------------|
+| PIN-Authentifizierung | 2235-2468 (~233Z) | `auth_manager.py` |
+| Settings-Reload | 2926-3623 (~697Z) | `config_manager.py` |
+| Cover-Management | 3670-4570 (~900Z) | `cover_manager.py` |
+| Workshop-Endpoints | 5979-7262 (~1.283Z) | `workshop_routes.py` |
+| **Gesamt extrahierbar** | **~3.113 Zeilen** | **4 Module** |
+
+**Bewertung**: main.py waechst weiter (+50 Zeilen). Die empfohlene Aufspaltung aus DL#2 wurde nicht umgesetzt. 49% aller Endpoints sind UI-spezifisch, 31% Workshop — diese koennten sofort extrahiert werden.
+
+### 2c) config.py — Mega-Coupling
+
+| Metrik | DL#2 | DL#3 |
+|--------|------|------|
+| **Importeure** | 74 Module | 75 Module (+1) |
+| **Haeufigster Import** | `yaml_config` | `yaml_config` (38×) |
+
+**Status**: Unveraendert. Ein Fehler in config.py betrifft ~83% aller Module.
 
 ---
 
@@ -155,105 +178,103 @@ main.py (8.228Z) → Aufspaltung in:
 
 ### Konflikt A: Wer bestimmt was Jarvis SAGT?
 
-| Modul | Was es tut | Wie es die Antwort beeinflusst | Koordination mit anderen? |
-|---|---|---|---|
-| `personality.py` | Sarkasmus (1-4), Humor, Running Gags, Formality | Build-System-Prompt mit dynamischen Sektionen (~850 Token) | Liest mood_detector, gibt Prompt an LLM |
-| `context_builder.py` | Baut den System-Prompt (HA-States, Wetter, Kalender) | Sammelt parallel Kontext, baut P1-P4 Prompt-Sektionen | Liest semantic_memory, function_calling, ha_client |
-| `mood_detector.py` | Erkennt User-Stimmung aus Text/Voice | Beeinflusst personality.py Sarkasmus-Level | Wird von personality.py gelesen |
-| `routine_engine.py` | Morning Briefing, Gute-Nacht Templates | In P6c auf Jarvis-Stil angepasst | Eigene LLM-Calls (nicht via brain.process) |
-| `proactive.py` | CRITICAL-Alerts, Proaktive Nachrichten | **Hardcoded Templates fuer CRITICAL** (Latenz <100ms) | Kein personality.py, eigene Templates |
-| `situation_model.py` | Situations-Kontext (Schlaf, Arbeit, Party) | Liefert Kontext-String fuer System-Prompt | Wird von brain.py gelesen |
-| `time_awareness.py` | Tageszeit, Feiertage, Jahreszeiten | Liefert Zeitkontext fuer System-Prompt | Wird von brain.py gelesen |
+| Modul | Was es tut | Wie es die Antwort beeinflusst | Koordination | Status |
+|---|---|---|---|---|
+| `personality.py` | Sarkasmus (1-4), Humor, Formality | System-Prompt mit ~850 Token | Liest mood_detector | ✅ |
+| `context_builder.py` | System-Prompt (HA-States, Wetter, Kalender) | P1-P4 Prompt-Sektionen parallel | Liest semantic_memory, ha_client | ✅ |
+| `mood_detector.py` | User-Stimmung aus Text/Voice | Beeinflusst Sarkasmus-Level | Wird von personality gelesen | ✅ |
+| `routine_engine.py` | Morning Briefing, Gute-Nacht | Eigene LLM-Calls, Jarvis-Stil | Nicht via brain.process() | ⚠️ |
+| `proactive.py` | CRITICAL-Alerts, Proaktive Nachrichten | **Hardcoded Templates** (<100ms) | Kein personality.py | ⚠️ Bewusst |
+| `situation_model.py` | Situations-Kontext | Kontext-String fuer System-Prompt | Wird von brain.py gelesen | ✅ |
+| `time_awareness.py` | Tageszeit, Feiertage | Zeitkontext fuer System-Prompt | Wird von brain.py gelesen | ✅ |
 
-**Zusammenfassung:** personality.py + context_builder.py + brain.py bilden die Haupt-Pipeline. Die meisten Module liefern nur Kontext. **Proactive CRITICAL-Alerts umgehen die Pipeline bewusst** (Latenz-Entscheidung). Error-Meldungen in main.py wurden in P8 auf generische Jarvis-Texte angepasst (71 Stellen). **Status: ⚠️ Teilweise geloest** — CRITICAL-Pfad bewusst belassen, 3 variierende Error-Meldungen eingefuehrt.
+**Status DL#3: ⚠️ TEILWEISE — unveraendert seit DL#2.**
+Personality-Pipeline funktioniert fuer regulaere Anfragen. CRITICAL-Alerts und routine_engine umgehen die Pipeline bewusst (Latenz / eigenstaendige LLM-Calls).
 
 ### Konflikt B: Wer bestimmt was Jarvis TUT?
 
-| Modul | Was es tut | Wann es handelt | Koordination mit anderen? |
+| Modul | Wann es handelt | Koordination | Status |
 |---|---|---|---|
-| `function_calling.py` | Direkte HA-Aktionen via Tool-Calls | Bei LLM-generiertem Tool-Call | Validiert durch function_validator |
-| `function_validator.py` | Validiert Function Calls (Bereiche, Typen) | Vor Ausfuehrung | Prueft Trust-Level |
-| `action_planner.py` | Multi-Step-Planung | Bei komplexen Anfragen | Nutzt function_calling + ollama |
-| `anticipation.py` | Vorausschauend handeln (Confidence-Schwellen) | Bei hoher Confidence (>0.95 fuer auto) | Schreibt Vorschlaege, brain.py entscheidet |
-| `autonomy.py` | Entscheidet OB gehandelt wird | Bei jedem proaktiven Handlungsvorschlag | Trust-Level-basiert |
-| `self_automation.py` | Generiert HA-Automationen aus NL | Bei User-Request | Rate-Limited, Whitelist |
-| `routine_engine.py` | Feste Ablaeufe (Morning, Gute-Nacht) | Zeitgesteuert | Eigene HA-Calls |
-| `conditional_commands.py` | If/Then-Automationen | Event-getriggert | Eigene Ausfuehrung |
-| `conflict_resolver.py` | Loest Konflikte zwischen Intents | Bei konkurrierenden Aktionen | Nutzt autonomy + ollama |
-| **Addon: automation_engine.py** | Pattern-basierte Automationen | Bei erkanntem Pattern + Confidence | **Advisory Entity-Ownership-Check** |
-| **Addon: 21 Domain-Module** | Direkte HA-Steuerung (Licht, Klima, Cover) | Bei state_changed Events | **Advisory Entity-Ownership-Check** |
-| **Addon: circadian.py** | Zirkadiane Lichtsteuerung | Periodisch (alle 5 Min) | **KEINE Koordination mit light_engine.py** |
-| **Addon: cover_control.py** | Rollladen-Automatik | Bei Sonnenstand/Wetter-Events | **KEINE Koordination mit cover_config.py** |
+| `function_calling.py` | Bei LLM-Tool-Call | Validiert durch function_validator | ✅ Intern |
+| `function_validator.py` | Vor Ausfuehrung | Prueft Trust-Level | ✅ |
+| `action_planner.py` | Bei komplexen Anfragen | Nutzt function_calling + ollama | ✅ |
+| `anticipation.py` | Bei Confidence >0.95 | brain.py entscheidet | ✅ |
+| `autonomy.py` | Bei proaktivem Handeln | Trust-Level-basiert | ✅ |
+| `self_automation.py` | Bei User-Request | Rate-Limited, Whitelist | ✅ |
+| `routine_engine.py` | Zeitgesteuert | Eigene HA-Calls | ⚠️ |
+| `conditional_commands.py` | Event-getriggert | Eigene Ausfuehrung | ⚠️ |
+| `conflict_resolver.py` | Bei konkurrierenden Intents | Nutzt autonomy + ollama | ✅ |
+| **Addon: automation_engine.py** | Bei Pattern + Confidence | **Advisory Entity-Check** | 🔴 |
+| **Addon: 21 Domain-Module** | Bei state_changed Events | **Advisory Entity-Check** | 🔴 |
+| **Addon: circadian.py** | Alle 5 Min | **KEINE Koordination mit light_engine.py** | 🔴 |
+| **Addon: cover_control.py** | Bei Sonnenstand/Wetter | **KEINE Koordination mit cover_config.py** | 🔴 |
 
-**🔴 KRITISCH: Addon ↔ Assistant Entity-Kollision**
-- Addon `circadian.py` steuert **dieselben Lichter** wie Assistant `light_engine.py`
-- Addon `cover_control.py` steuert **dieselben Rolllaeden** wie Assistant `cover_config.py`
-- Addon hat einen **Advisory** Entity-Ownership-Check (`ha_connection.py:177`), aber:
-  - Timeout: 2 Sekunden — bei Nichterreichbarkeit handelt der Addon trotzdem
-  - Kein transaktionales Locking — Race Condition moeglich
-  - Last-Write-Wins — wer zuletzt schreibt, gewinnt
-  - Kein Back-Channel vom Addon zum Assistant bei Konflikten
-- **Status seit Durchlauf #1: UNVERAENDERT** — Entity-Ownership-Check existiert, ist aber advisory und nicht enforced.
+**🔴 KRITISCH: Addon ↔ Assistant Entity-Kollision — UNVERAENDERT seit DL#2.**
+- Advisory Check in `ha_connection.py:70-88`: 2s Timeout, bei Fehler handelt Addon trotzdem
+- Aufruf bei `ha_connection.py:183`: Logging bei Skip, aber kein Locking
+- Last-Write-Wins bleibt bestehen
+- Kein transaktionales Entity-Locking
+- Kein Back-Channel Addon → Assistant
 
 ### Konflikt C: Wer bestimmt was Jarvis WEISS?
 
-| Modul | Datenquelle | Wird von anderen gelesen? | Synchronisiert? |
+| Modul | Datenquelle | Synchronisiert? | Status |
 |---|---|---|---|
-| `memory.py` | Redis (Working Memory, 50 Eintraege, 7d TTL) | brain.py, summarizer.py | Ja (Redis) |
-| `semantic_memory.py` | ChromaDB + Redis (Langzeit-Fakten) | context_builder, memory_extractor | Ja (ChromaDB + Redis-Fallback) ✅ |
-| `conversation_memory.py` | Redis (mha:memory:*) | brain.py | Ja (Redis) |
-| `memory_extractor.py` | Ollama LLM → semantic_memory | brain.py (fire-and-forget) | Async, eventual consistency |
-| `correction_memory.py` | Redis (mha:correction_memory:*) | brain.py | Ja (Redis, mit Lock seit P6b) ✅ |
-| `dialogue_state.py` | In-Memory Dict (max 50 Eintraege) | brain.py | **Nein — Verlust bei Restart** |
-| `learning_observer.py` | Redis (mha:learning:*) | brain.py, proactive.py | Ja (Redis) |
-| `learning_transfer.py` | Redis + In-Memory pending (max 50) | brain.py | Teilweise (pending nur in-memory) |
-| `knowledge_base.py` | ChromaDB (mha_knowledge_base) | brain.py | Ja (ChromaDB) |
-| `context_builder.py` | Liest aus allen obigen + HA | brain.py | Read-only Aggregator |
-| **Addon: pattern_engine.py** | SQLite (state_history) | Addon-intern | **KEINE Synchronisierung mit Assistant** |
-| **Addon: db.py / models.py** | SQLite (68 Tabellen) | Addon-intern | **KEINE Synchronisierung mit Assistant** |
+| `memory.py` | Redis (Working Memory, 50 Eintraege, 7d TTL) | Ja (Redis) | ✅ |
+| `semantic_memory.py` | ChromaDB + Redis (Langzeit-Fakten) | Ja (ChromaDB + Redis-Fallback) | ✅ |
+| `conversation_memory.py` | Redis (mha:memory:*) | Ja (Redis) | ✅ |
+| `memory_extractor.py` | Ollama LLM → semantic_memory | Async, eventual consistency | ⚠️ |
+| `correction_memory.py` | Redis (mha:correction_memory:*) | Ja (Redis, mit Lock) | ✅ |
+| `dialogue_state.py` | In-Memory Dict (max 50) | **NEIN — Verlust bei Restart** | 🟠 |
+| `learning_observer.py` | Redis (mha:learning:*) | Ja (Redis) | ✅ |
+| `learning_transfer.py` | Redis + In-Memory pending (max 50) | Teilweise (pending in-memory) | ⚠️ |
+| `knowledge_base.py` | ChromaDB (mha_knowledge_base) | Ja (ChromaDB) | ✅ |
+| `context_builder.py` | Aggregiert aus allen obigen + HA | Read-only | ✅ |
+| **Addon: pattern_engine.py** | SQLite (state_history) | **KEINE Sync mit Assistant** | 🔴 |
+| **Addon: db.py / models.py** | SQLite (68 Tabellen) | **KEINE Sync mit Assistant** | 🔴 |
 
-**Zusammenfassung:** 12 weitgehend isolierte Memory-Systeme im Assistant, zusammengehalten nur durch brain.py. Addon hat **komplett separate Datenhaltung** (SQLite) ohne jegliche Synchronisierung mit dem Assistant. **Status seit Durchlauf #1: UNVERAENDERT** — kein kohaerenter Memory-Stack, kein Wissensaustausch Addon↔Assistant.
+**Status DL#3: ❌ UNFIXED — 12 isolierte Memory-Systeme, unveraendert seit DL#2.**
 
 ### Konflikt D: Wie Jarvis KLINGT
 
-| Modul | Was es steuert | Code-Referenz | Status |
-|---|---|---|---|
-| `personality.py` | Charakter, Sarkasmus (gedeckelt auf 4), Formality | `personality.py:118, 240-284` | ✅ MCU-Score 8/10 |
-| `mood_detector.py` | Ton-Anpassung an User-Stimmung | `mood_detector.py` (mit asyncio.Lock) | ✅ Thread-safe |
-| `context_builder.py` | System-Prompt-Zusammenbau mit P1-P4 Priorisierung | `context_builder.py:216, 928` | ✅ Parallel async |
-| `tts_enhancer.py` | TTS-Anpassungen (Emotion, Pausen, Speed) | `tts_enhancer.py` | ✅ Funktioniert |
-| `sound_manager.py` | Audio-Wiedergabe, Auto-Volume | `sound_manager.py` | ✅ Funktioniert |
-| `multi_room_audio.py` | Raum-spezifische Ausgabe | `multi_room_audio.py` | ✅ Funktioniert |
+| Modul | Was es steuert | Status |
+|---|---|---|
+| `personality.py` | Charakter, Sarkasmus (gedeckelt auf 4), Formality | ✅ MCU-Score 8/10 |
+| `mood_detector.py` | Ton-Anpassung (mit asyncio.Lock) | ✅ Thread-safe |
+| `context_builder.py` | System-Prompt P1-P4 (parallel async) | ✅ |
+| `tts_enhancer.py` | TTS Emotion, Pausen, Speed | ✅ |
+| `sound_manager.py` | Audio-Wiedergabe, Auto-Volume | ✅ |
+| `multi_room_audio.py` | Raum-spezifische Ausgabe | ✅ |
 
-**Status: ✅ Weitgehend geloest** — Sarkasmus auf Level 4 gedeckelt, Weather-Kontext-Bug repariert, Error-Meldungen auf Jarvis-Stil angepasst.
+**Status DL#3: ✅ GELOEST — unveraendert seit DL#2.**
 
 ### Konflikt E: Timing & Prioritaeten
 
-| Szenario | Was passiert? | Code-Referenz | Status |
-|---|---|---|---|
-| Proaktive Warnung WAEHREND User spricht | `_process_lock` serialisiert — Warnung wartet | `brain.py:1103` | ✅ Geloest |
-| Morgen-Briefing WAEHREND Konversation laeuft | `_mb_triggered_today` mit asyncio.Lock | `proactive.py` | ✅ Geloest (P6b) |
-| Zwei autonome Aktionen gleichzeitig | `_process_lock` serialisiert | `brain.py:1103` | ✅ Geloest |
-| anticipation + function_calling gleichzeitig | Sequenziell im _process_inner() | `brain.py` | ✅ Kein Konflikt |
-| Addon-Automation + Assistant-Aktion gleichzeitig | **Advisory Check, kein Locking** | `ha_connection.py:177` | 🔴 OFFEN |
-| Addon-Event + Proactive.py gleichzeitig | **Keine Koordination** | — | 🔴 OFFEN |
+| Szenario | Was passiert? | Status |
+|---|---|---|
+| Proaktiv WAEHREND User spricht | `_process_lock` serialisiert (30s Timeout) | ✅ |
+| Morgen-Briefing WAEHREND Konversation | `_mb_triggered_today` mit Lock | ✅ |
+| Zwei autonome Aktionen gleichzeitig | `_process_lock` serialisiert | ✅ |
+| anticipation + function_calling gleichzeitig | Sequenziell in _process_inner() | ✅ |
+| **Addon + Assistant gleichzeitig** | **Advisory Check, kein Locking** | 🔴 OFFEN |
+| **Addon-Event + Proactive gleichzeitig** | **Keine Koordination** | 🔴 OFFEN |
 
-**Status seit Durchlauf #1:** Die internen Konflikte (innerhalb des Assistant) sind durch `_process_lock` und Module-Level-Locks geloest. Die **cross-service Konflikte** (Addon vs Assistant) sind **UNVERAENDERT** offen.
+**Status DL#3: ⚠️ TEILWEISE — unveraendert seit DL#2.**
 
 ### Konflikt F: Assistant ↔ Addon Interaktion
 
 | Frage | Antwort | Code-Referenz |
 |---|---|---|
-| Wie kommunizieren Assistant und Addon? | HTTP REST (Chat-Proxy + Entity-Owner-Check) | `routes/chat.py:159`, `ha_connection.py:177` |
-| Steuern beide dieselben HA-Entities? | **JA** — Lichter, Rolllaeden, Klima | `circadian.py` vs `light_engine.py`, `cover_control.py` vs `cover_config.py` |
-| Hat der Addon seinen eigenen HA-State-Cache? | Ja — via fresh `get_states()` REST calls (nicht gecacht) | `ha_connection.py` |
-| Kennt der Assistant den Addon-State? | **NEIN** — keine Rueckkanal-Information | — |
-| Kennt der Addon die Assistant-Entscheidungen? | **Minimal** — Advisory Entity-Ownership GET | `ha_connection.py:177` |
-| Wer hat Vorrang? | **Niemand** — Last-Write-Wins | — |
-| Koennen Addon-Automationen die Assistant-Logik unterlaufen? | **JA** — Addon kann jederzeit Entities steuern | `automation_engine.py:_execute_action()` |
-| Nutzen beide denselben Redis? | **NEIN** — Addon nutzt kein Redis | — |
+| Kommunikation | HTTP REST (Chat-Proxy + Entity-Owner) | `routes/chat.py:159`, `ha_connection.py:70-88` |
+| Gleiche Entities? | **JA** — Lichter, Rolllaeden, Klima | `circadian.py` vs `light_engine.py` |
+| Addon State-Cache? | Fresh REST calls (nicht gecacht) | `ha_connection.py` |
+| Assistant kennt Addon-State? | **NEIN** | — |
+| Addon kennt Assistant? | **Minimal** — Advisory GET | `ha_connection.py:70-88, 183` |
+| Vorrang? | **Niemand** — Last-Write-Wins | — |
+| Addon unterlauft Assistant? | **JA** — jederzeit | `automation_engine.py` |
+| Gemeinsames Redis? | **NEIN** — Addon hat kein Redis | — |
 
-**Status seit Durchlauf #1: UNVERAENDERT** — Entity-Ownership-Check existiert als Advisory, keine echte Koordination.
+**Status DL#3: ⚠️ TEILWEISE — unveraendert seit DL#2.**
 
 ---
 
@@ -287,141 +308,151 @@ SCHICHT 0: INFRASTRUKTUR (6 Module — importieren nichts Internes)
 
 ### 4.2 God-Object-Indikatoren (importiert von 10+ Modulen)
 
-| Modul | Importiert von | Status |
-|---|---|---|
-| `config` | **74 Module** | 🔴 MEGA-GOD-OBJECT |
-| `ha_client` | 21 Module | 🟠 Hoch, aber erwartbar (HA-API) |
-| `ollama_client` | 12 Module | 🟡 Akzeptabel (LLM-API) |
-| `constants` | 8 Module | ✅ Normal |
-| `function_calling` | 6 Module | ✅ Normal |
-| `websocket` | 5 Module | ✅ Normal |
+| Modul | Importiert von | Status | Delta DL#2→3 |
+|---|---|---|---|
+| `config` | **75 Module** | 🔴 MEGA-GOD-OBJECT | +1 |
+| `ha_client` | 21 Module | 🟠 Hoch (HA-API) | 0 |
+| `ollama_client` | 12 Module | 🟡 Akzeptabel (LLM-API) | 0 |
+| `constants` | 8 Module | ✅ Normal | 0 |
+| `function_calling` | 6 Module | ✅ Normal | 0 |
+| `websocket` | 5 Module | ✅ Normal | 0 |
 
-### 4.3 Verwaiste Module (importiert von NIEMANDEM)
+### 4.3 Shared-Module-Audit
 
-| Modul | Erwartung | Status |
-|---|---|---|
-| `main.py` | Entry Point — korrekt nicht importiert | ✅ OK |
-| `embeddings.py` | Importiert nur von brain.py via Aufruf, nicht via Import | ⚠️ Pruefen ob tatsaechlich genutzt |
+| Pruefung | Ergebnis |
+|----------|----------|
+| shared/ Verzeichnis existiert? | **NEIN** — geloescht in DL#1 P6c |
+| `from shared` / `import shared` Imports? | **0 Treffer** (Grep-verifiziert) |
+| Eigene Request/Response-Klassen im Assistant? | **JA** — `ChatRequest`, `ChatResponse`, `TTSInfo` in main.py:630-655 |
+| Eigene Request/Response-Klassen im Addon? | **NEIN** — kein Pydantic, sendet raw JSON |
+| Gemeinsame Ports/Konstanten? | **Hardcoded** — Port 8200 in Addon als `ASSISTANT_URL` Env-Var |
 
-### 4.4 Zirkulaere Abhaengigkeiten
+### 4.4 Verwaiste Module
 
-**KEINE GEFUNDEN** — ✅ Exzellente Architektur-Disziplin. Sauberer DAG (Directed Acyclic Graph).
+| Modul | Status |
+|---|---|
+| `main.py` | ✅ Entry Point — korrekt nicht importiert |
+| `embeddings.py` | ⚠️ Nur via brain.py dynamisch geladen |
+| Alle anderen 88 Module | ✅ Mindestens 1 Importeur |
 
-### 4.5 Fehlende Verbindungen (Semantische Luecken)
+### 4.5 Zirkulaere Abhaengigkeiten
 
-| # | Luecke | Betroffene Module | Impact |
-|---|--------|-------------------|--------|
-| 1 | **Memory-Silos** | 9 Memory-Module kennen sich nicht | Kein kohaerenter Memory-Stack |
-| 2 | **Wahrnehmungs-Isolation** | activity, ambient_audio, threat_assessment, spontaneous_observer | Keine vereinheitlichte Sensor-Interpretation |
-| 3 | **Zeit-Isolation** | time_awareness, timer_manager, calendar_intelligence, seasonal_insight | Kein geteilter zeitlicher Kontext |
-| 4 | **Persoenlichkeits-Isolation** | personality, mood_detector, speaker_recognition | Emotion/Stimmung/Erkennung nicht verknuepft |
-| 5 | **Komfort-Isolation** | climate_model, energy_optimizer, light_engine | Keine koordinierte Optimierung |
-| 6 | **Proactive ↔ Perception** | proactive importiert NICHT spontaneous_observer/activity | Proaktivitaet nicht umgebungsbewusst |
+**KEINE GEFUNDEN** — ✅ Sauberer DAG (automatisierte Analyse ueber 90 Module).
 
-### 4.6 Addon-Architektur
+### 4.6 Fehlende Verbindungen (Semantische Luecken)
 
-**✅ EXZELLENT** — Sauberes Plugin-Pattern:
-- 21 Domain-Module erben alle von `base.py`
-- 14 Engines unabhaengig voneinander
-- 13 HTTP-Routes sauber getrennt
-- **Null Cross-Domain-Imports** — vorbildlich
+| # | Luecke | Betroffene Module | Impact | Delta DL#2→3 |
+|---|--------|-------------------|--------|-------------|
+| 1 | **Memory-Silos** | 9 Memory-Module isoliert | Kein kohaerenter Stack | ❌ Unveraendert |
+| 2 | **Wahrnehmungs-Isolation** | activity, ambient_audio, threat_assessment, spontaneous_observer | Keine vereinheitlichte Sensor-Interpretation | ❌ Unveraendert |
+| 3 | **Zeit-Isolation** | time_awareness, timer_manager, calendar_intelligence, seasonal_insight | Kein geteilter zeitlicher Kontext | ❌ Unveraendert |
+| 4 | **Persoenlichkeits-Isolation** | personality, mood_detector, speaker_recognition | Emotion/Stimmung/Erkennung nicht verknuepft | ❌ Unveraendert |
+| 5 | **Komfort-Isolation** | climate_model, energy_optimizer, light_engine | Keine koordinierte Optimierung | ❌ Unveraendert |
+| 6 | **Proactive ↔ Perception** | proactive ↛ spontaneous_observer/activity | Proaktivitaet nicht umgebungsbewusst | ❌ Unveraendert |
+
+### 4.7 Addon-Architektur
+
+**✅ EXZELLENT — unveraendert seit DL#2**
+- 21 Domain-Module erben von `base.py`
+- 14 Engines unabhaengig
+- 13+ HTTP-Routes sauber getrennt
+- Null Cross-Domain-Imports
+
+### 4.8 Modul-Gesamtstatistik
+
+| Service | Module | Zeilen (gesamt) |
+|---------|--------|-----------------|
+| Assistant | 90 (davon 2 Mixins) | ~81.416 |
+| Addon | 48 | ~unbekannt |
+| Speech | 2 | ~700 |
+| HA-Integration | 3 | ~300 |
+| **Gesamt** | **143** | **~82.400+** |
 
 ---
 
 ## 5. Vorverarbeitung (Schritt 5)
 
-### 5.1 Pre-Classifier (`pre_classifier.py`)
+### 5.1 Pre-Classifier (`pre_classifier.py`, 285 Zeilen)
 
-**Funktion:** Leichtgewichtige Anfrage-Klassifikation VOR Context-Build. Regex/Keyword-basiert.
-
-**Profile:**
-| Profil | Wann | Welche Subsysteme DEAKTIVIERT |
-|--------|------|-------------------------------|
+| Profil | Trigger | Deaktivierte Subsysteme |
+|--------|---------|------------------------|
 | `DEVICE_FAST` | "Licht an", ≤8 Woerter, Verb-Start | Mood, Formality, Irony, RAG, Summary, Activity, Memories |
 | `DEVICE_QUERY` | "Wie warm ist es?", ≤10 Woerter | Mood, Formality, Irony, RAG, Summary |
 | `KNOWLEDGE` | "Was ist...", ohne Smart-Home-Bezug | House-Status, Activity, Room-Profile |
 | `MEMORY` | "Erinnerst du dich..." | House-Status, Activity, Room-Profile |
-| `GENERAL` | Alles andere | Nichts deaktiviert (volle Pipeline) |
+| `GENERAL` | Alles andere | Nichts deaktiviert |
 
-**Bewertung:** ✅ Sauber implementiert, gute Latenz-Optimierung. Word-Boundary-Matching fuer kurze Woerter ("an", "aus"). Embedded-Verb-Erkennung fuer konjugierte Formen.
+**Bewertung DL#3:** ✅ Unveraendert, sauber implementiert.
 
-### 5.2 Request Context (`request_context.py`)
+### 5.2 Request Context (`request_context.py`, 102 Zeilen)
 
-**Funktion:** Request-ID-Tracing + Structured Logging Middleware.
-
-**Features:**
-- `ContextVar` fuer Request-ID (asyncio-kompatibel)
-- X-Request-ID Header-Propagation
-- Structured Log-Format mit Request-ID
-- ✅ Kein Business-Logic — rein infrastrukturell, korrekt implementiert.
+- `ContextVar` fuer Request-ID (asyncio-kompatibel) ✅
+- X-Request-ID Header-Propagation ✅
+- Structured Log-Format ✅
 
 ---
 
 ## 6. Architektur-Bewertung
 
-### 6.1 Staerken der aktuellen Architektur
+### 6.1 Staerken
 
-1. **Null zirkulaere Abhaengigkeiten** — sauberer 5-Schichten-DAG
-2. **Addon-Architektur vorbildlich** — Plugin-Pattern, keine Cross-Domain-Imports
-3. **Graceful Degradation** — 36/37 Module in `_safe_init()`, `_degraded_modules` Liste
-4. **Thread-Safety verbessert** — `_process_lock` und `_states_lock` in brain.py, Locks in 12+ Modulen
-5. **Security solide** — PIN-Brute-Force-Schutz, Error-Detail-Leak-Fixes, Path-Traversal-Schutz
-6. **Pre-Classifier** — Effektive Latenz-Optimierung fuer einfache Befehle
+1. **Null zirkulaere Abhaengigkeiten** — sauberer 5-Schichten-DAG (90 Module verifiziert)
+2. **Addon-Architektur vorbildlich** — Plugin-Pattern, Cross-Domain-freie Module
+3. **Graceful Degradation** — 37/37 Module in `_safe_init()` (DL#2-Bug behoben!)
+4. **Thread-Safety** — `_process_lock` (30s Timeout), `_states_lock`, 12+ Feature-Locks
+5. **Security** — PIN-Brute-Force, Error-Detail-Leak-Fixes, Path-Traversal, Entity-ID-Validierung
+6. **Pre-Classifier** — Latenz-Optimierung fuer einfache Befehle
 
 ### 6.2 Fundamentale Schwaechen
 
-1. **🔴 brain.py bleibt God-Object** — 9.800 Zeilen, 81 Imports, 50+ Komponenten, 4.700-Zeilen-Methode
-2. **🔴 main.py waechst** — 8.228 Zeilen, 270 Endpoints, signifikante Business-Logik in einer Datei
-3. **🔴 config.py ist Mega-God-Object** — 74 Module importieren config. Ein Fehler betrifft 90% des Systems.
-4. **🔴 Addon↔Assistant Koordination fehlt** — Advisory Entity-Check ist nicht ausreichend
+1. **🔴 brain.py God-Object** — 9.906 Zeilen, 81 Imports, 47 Komponenten, 4.700-Zeilen _process_inner()
+2. **🔴 main.py God-Object** — 8.278 Zeilen, 273 Endpoints, ~3.113Z Business-Logik extrahierbar
+3. **🔴 config.py Mega-Coupling** — 75 Importeure (83% aller Module)
+4. **🔴 Addon↔Assistant Koordination fehlt** — Advisory Entity-Check nicht ausreichend
 5. **🟠 Memory-Silos** — 12 isolierte Systeme ohne kohaerenten Stack
+6. **🟠 6 Semantische Luecken** — Module die zusammenarbeiten sollten, kennen sich nicht
 
 ### 6.3 Top-5 Architektur-Aenderungen mit hoechstem Impact
 
 | # | Aenderung | Severity | Impact | Aufwand |
 |---|-----------|----------|--------|---------|
-| 1 | **ProactiveManager.start() in _safe_init() wrappen** | 🔴 | Verhindert fatalen Startup-Crash | 1 Zeile |
-| 2 | **main.py aufspalten** (8.228Z → 7 Module) | 🟠 | Wartbarkeit, Code-Reviews, Testing | 2-3 Tage |
-| 3 | **config.py aufspalten** (74 Importeure → 6 Sub-Configs) | 🟠 | Blast-Radius reduzieren, Coupling senken | 3-5 Tage |
-| 4 | **brain.py _process_inner() dekomponieren** (4.700Z → 10 Phasen) | 🟠 | Testbarkeit, Lesbarkeit | 2-3 Tage |
-| 5 | **Addon↔Assistant Event-Bus** (oder Shared Redis) | 🟡 | Entity-Konflikte eliminieren | 5-7 Tage |
+| 1 | **main.py aufspalten** (8.278Z → 5+ Module) | 🟠 | Wartbarkeit, Reviews, Tests | 2-3 Tage |
+| 2 | **config.py aufspalten** (75 Importeure → Sub-Configs) | 🟠 | Blast-Radius reduzieren | 3-5 Tage |
+| 3 | **brain.py _process_inner() dekomponieren** (4.700Z → Phasen) | 🟠 | Testbarkeit, Lesbarkeit | 2-3 Tage |
+| 4 | **Addon↔Assistant Shared State** (Redis oder Event-Bus) | 🟡 | Entity-Konflikte eliminieren | 5-7 Tage |
+| 5 | **Memory-Coordinator** (Facade ueber 9 Memory-Module) | 🟡 | Kohaerenter Wissensstand | 3-4 Tage |
+
+*Anmerkung: DL#2-Top-1 (ProactiveManager.start() in _safe_init()) wurde BEHOBEN und faellt weg.*
 
 ---
 
-## 7. DL#1 → DL#2 Detailvergleich
+## 7. DL#2 → DL#3 Detailvergleich
 
-### Was sich VERBESSERT hat (FIXED/TEILWEISE):
+### Was sich VERBESSERT hat:
 
-| # | Finding | DL#1-Status | DL#2-Status | Beschreibung |
+| # | Finding | DL#2-Status | DL#3-Status | Beschreibung |
 |---|---------|------------|------------|-------------|
-| 1 | `_process_lock` in brain.py | ❌ Kein Lock | ✅ FIXED | Race Conditions eliminiert |
-| 2 | `_states_lock` in brain.py | ❌ Kein Lock | ✅ FIXED | Cache-Korruption verhindert |
-| 3 | Modul-Locks | ❌ 0 Locks | ✅ FIXED | 12+ Locks in personality, proactive, mood_detector, event_bus, fire_water, etc. |
-| 4 | `except Exception: pass` | 136 Stellen | ⚠️ TEILWEISE | → `logger.debug()` (nur DEBUG-Level, nicht WARNING) |
-| 5 | Error-Detail-Leaks | 71 Stellen | ✅ FIXED | Generische Meldungen statt `str(e)` |
-| 6 | Redis bytes-Decode | 10+ Stellen | ✅ FIXED | Explizites `.decode()` |
-| 7 | shared/ Dead Code | Komplettes Paket | ✅ FIXED | Entfernt |
-| 8 | Entity-Ownership | ❌ Keine Koordination | ⚠️ TEILWEISE | Advisory Check Addon→Assistant (asymmetrisch) |
+| 1 | ProactiveManager.start() | 🔴 NICHT in _safe_init() | ✅ FIXED | brain.py:776 — `_safe_init("Proactive.start", self.proactive.start())` |
 
-### Was sich NICHT verbessert hat (UNFIXED):
+### Was sich NICHT verbessert hat:
 
-| # | Finding | DL#1-Status | DL#2-Status | Beschreibung |
-|---|---------|------------|------------|-------------|
-| 9 | brain.py God-Object | 9.800 Zeilen | ❌ UNFIXED | Ziel war Mixin-Extraktion, nur 531Z ausgelagert |
-| 10 | main.py God-Object | 7.809 Zeilen | ❌ VERSCHLECHTERT | Gewachsen auf 8.228 Zeilen, 270 Endpoints |
-| 11 | proactive.start() | Nicht in _safe_init() | ❌ UNFIXED | REGRESSION — als gefixt gemeldet, aber nicht im Code |
-| 12 | Addon↔Assistant Sync | Advisory Check | ❌ UNFIXED | Kein bidirektionaler State-Sync |
-| 13 | Event-Bus | ❌ Fehlt | ❌ UNFIXED | Kein Priority-System zwischen Services |
-| 14 | Memory-Stack | 12 Silos | ❌ UNFIXED | Kein kohaerenter Memory-Stack |
-| 15 | config.py Coupling | 74 Importeure | ❌ UNFIXED | Immer noch monolithisch |
+| # | Finding | DL#2 | DL#3 | Delta |
+|---|---------|------|------|-------|
+| 2 | brain.py God-Object | 9.800Z | 9.906Z | +106Z ❌ |
+| 3 | main.py God-Object | 8.228Z, 270 EP | 8.278Z, 273 EP | +50Z, +3 EP ❌ |
+| 4 | config.py Coupling | 74 Importeure | 75 Importeure | +1 ❌ |
+| 5 | Addon↔Assistant Sync | Advisory Check | Advisory Check | 0 ❌ |
+| 6 | Event-Bus fehlt | Fehlt | Fehlt | 0 ❌ |
+| 7 | Memory-Stack | 12 Silos | 12 Silos | 0 ❌ |
+| 8 | 6 Semantische Luecken | Offen | Offen | 0 ❌ |
 
-### Neue Risiken durch P6-P8 Fixes:
+### Risiken aus DL#2 (unveraendert):
 
-| # | Risiko | Status | Beschreibung |
-|---|--------|--------|-------------|
-| 16 | Deadlock-Gefahr | ⚠️ NEU | 12+ neue Locks — potenzielle Deadlock bei verschachtelter Akquisition |
-| 17 | Memory Ordering | ⚠️ NEU | Double-Check-Locking in `function_calling.py` |
-| 18 | Debug-Level Masking | ⚠️ NEU | 136x `except: pass` → `logger.debug()` — Fehler nur bei Debug sichtbar |
+| # | Risiko | Status |
+|---|--------|--------|
+| 9 | Deadlock-Gefahr (12+ Locks) | ⚠️ Weiterhin potentiell |
+| 10 | Double-Check-Locking (function_calling.py) | ⚠️ Weiterhin potentiell |
+| 11 | Debug-Level Masking (136× logger.debug) | ⚠️ Unveraendert |
 
 ---
 
@@ -429,34 +460,60 @@ SCHICHT 0: INFRASTRUKTUR (6 Module — importieren nichts Internes)
 
 ### Konflikt-Karte
 
-- **A (Sprache):** ⚠️ Teilweise geloest — personality.py Pipeline funktioniert, CRITICAL-Alerts bewusst hardcoded, Error-Texte Jarvis-Stil
-- **B (Aktionen):** 🔴 Offen — Assistant intern serialisiert (_process_lock), aber Addon↔Assistant Last-Write-Wins
-- **C (Wissen):** 🔴 Offen — 12 isolierte Memory-Silos, Addon hat separate SQLite ohne Sync
-- **D (Klang):** ✅ Geloest — Sarkasmus gedeckelt, TTS-Pipeline konsistent
-- **E (Timing):** ⚠️ Intern geloest — _process_lock serialisiert, aber keine cross-service Queue
-- **F (Addon↔Assistant):** 🔴 Offen — Advisory Entity-Check, kein Locking, kein Shared State
+- **A (Sprache):** ⚠️ Teilweise — personality.py Pipeline funktioniert, CRITICAL-Alerts bewusst hardcoded, routine_engine eigene LLM-Calls
+- **B (Aktionen):** 🔴 Offen — Assistant intern serialisiert (_process_lock), Addon↔Assistant Last-Write-Wins, circadian vs light_engine, cover_control vs cover_config
+- **C (Wissen):** 🔴 Offen — 12 isolierte Memory-Silos, Addon SQLite ohne Sync, dialogue_state In-Memory
+- **D (Klang):** ✅ Geloest — Sarkasmus gedeckelt (4), TTS-Pipeline konsistent
+- **E (Timing):** ⚠️ Intern geloest (_process_lock 30s), cross-service offen (kein Event-Bus)
+- **F (Addon↔Assistant):** ⚠️ Advisory Check — ha_connection.py:70-88 (2s Timeout, Fallback: Addon handelt trotzdem)
 
 ### Service-Interaktion
 
-3 Services + HA-Integration. Kommunikation via HTTP REST (Chat-Proxy + Advisory Entity-Owner). Speech via Redis (Embeddings). Kein gemeinsamer Event-Bus. Kein Shared State zwischen Addon und Assistant.
+3 Services + HA-Integration. Kommunikation via HTTP REST (Chat-Proxy + Advisory Entity-Owner-GET). Speech via Redis (Embeddings). Kein gemeinsamer Event-Bus. Addon hat keine Redis-Anbindung. Kein bidirektionaler State-Sync.
 
 ### Top-5 Architektur-Probleme
 
-1. 🔴 **ProactiveManager.start() nicht in _safe_init()** — fataler Startup-Bug
-2. 🔴 **Addon↔Assistant Entity-Kollision** — circadian vs light_engine, cover_control vs cover_config
-3. 🟠 **brain.py God-Object** — 9.800 Zeilen, 81 Imports, 4.700-Zeilen process()
-4. 🟠 **main.py God-Object** — 8.228 Zeilen, 270 Endpoints, Business-Logik
-5. 🟠 **config.py Mega-Coupling** — 74 Module importieren config
+1. 🟠 **main.py God-Object** — 8.278Z, 273 EP, ~3.113Z extrahierbare Business-Logik
+2. 🟠 **brain.py God-Object** — 9.906Z, 81 Imports, 4.700Z _process_inner()
+3. 🟠 **config.py Mega-Coupling** — 75 Module importieren config (83% aller Module)
+4. 🔴 **Addon↔Assistant Entity-Kollision** — Last-Write-Wins, Advisory-only Check
+5. 🟠 **12 Memory-Silos** — kein kohaerenter Stack, Addon-Wissen isoliert
 
 ### Architektur-Entscheidung
 
-**brain.py → Weiter Mixin-Extraktion (Option A):**
-- Phase 2: Response-Filter (~600Z), Pattern-Detection (~1.200Z), Memory-Handling
-- _process_inner() in 10 Phasen-Methoden dekomponieren
-- RequestContext Dataclass statt 11 per-Request-Instanz-Attribute
-- Kein Event-Bus (zu grosser Umbau), aber Coordinator-Pattern fuer semantische Gruppen
+**brain.py → Weiter Mixin-Extraktion (Phase 2 empfohlen):**
+- Phase 2: _process_inner() in 10 Phasen-Methoden → RequestContext Dataclass
+- Response-Filter (~600Z), Pattern-Detection (~1.200Z) extrahieren
+- Kein Event-Bus (zu grosser Umbau), aber Coordinator-Pattern fuer Memory-Facade
 
-**main.py → Aufspalten (NEUE Empfehlung Durchlauf #2):**
-- 7 Module statt 1 monolithische Datei
-- Workshop-Routes separat (70+ Endpoints)
-- Auth-Logik in eigenes Modul
+**main.py → Aufspaltung (DRINGEND empfohlen, seit DL#2 unveraendert):**
+- Workshop-Routes (84 EP, ~1.283Z) → `workshop_routes.py`
+- Cover-Management (~900Z) → `cover_manager.py`
+- Settings-Reload (~697Z) → `config_manager.py`
+- PIN-Auth (~233Z) → `auth_manager.py`
+
+---
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: ProactiveManager.start() in _safe_init() (brain.py:776)
+OFFEN:
+- 🔴 Addon↔Assistant Entity-Kollision | ha_connection.py:70-88,183 | GRUND: Last-Write-Wins, Advisory-only
+  → ESKALATION: ARCHITEKTUR_NOETIG (Shared Redis oder Event-Bus)
+- 🟠 brain.py God-Object | brain.py:9906 Zeilen, 81 Imports | GRUND: Kein weiteres Refactoring seit DL#1
+  → ESKALATION: NAECHSTER_PROMPT (P6b Mixin Phase 2)
+- 🟠 main.py God-Object | main.py:8278 Zeilen, 273 EP | GRUND: ~3.113Z extrahierbar
+  → ESKALATION: NAECHSTER_PROMPT (P6b Aufspaltung)
+- 🟠 config.py Mega-Coupling | 75 Importeure | GRUND: Monolithisch
+  → ESKALATION: NAECHSTER_PROMPT (P6b Sub-Configs)
+- 🟠 12 Memory-Silos | 9 Assistant + 2 Addon + 1 dialogue_state | GRUND: Kein kohaerenter Stack
+  → ESKALATION: NAECHSTER_PROMPT (P2 Memory)
+- 🟡 6 Semantische Luecken | Module die sich nicht kennen | GRUND: Architektonisch
+  → ESKALATION: ARCHITEKTUR_NOETIG
+- ⚠️ Deadlock-Risiko | 12+ Locks verschachtelt | GRUND: Keine Lock-Hierarchie definiert
+  → ESKALATION: NAECHSTER_PROMPT (P4 Bug-Analyse)
+GEAENDERTE DATEIEN: docs/audit-results/RESULT_01_ARCHITEKTUR.md (aktualisiert auf DL#3)
+REGRESSIONEN: Keine neuen (ProactiveManager-Regression aus DL#2 behoben)
+NAECHSTER SCHRITT: PROMPT_02_MEMORY.md — Memory-Analyse mit Fokus auf 12 Silos und fehlenden Stack
+===================================
+```
