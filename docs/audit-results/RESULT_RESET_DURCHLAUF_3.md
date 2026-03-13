@@ -84,10 +84,10 @@
 
 ### ARCHITEKTUR_NOETIG (Groesserer Umbau erforderlich)
 
-- [ ] **F-068 brain.py God Class** — brain.py:1-9906 — VERSCHLECHTERT: Von 3.429 → 9.906 Zeilen (trotz Extraktion von brain_humanizers.py, brain_callbacks.py). Empfehlung: Weitere Mixin-Extraktion (Response-Filter ~600Z, Pattern-Detection ~1.200Z)
+- [ ] **F-068 brain.py God Class** — brain.py:1-9906 — VERSCHLECHTERT (+188%): Von 3.429 → 9.906 Zeilen. brain_humanizers.py (502Z) und brain_callbacks.py (29Z) extrahiert, aber kein brain_core.py, brain_proactive.py oder brain_tools.py. Hunderte Methoden fuer Autonomy, Speaker Recognition, Activity, Alarms, Timers, Reminders, Feedback, Response Quality, Emotions, Humor, Sarkasmus — alles in einer Datei.
   → Im naechsten Durchlauf: P01 + P06b priorisiert behandeln
 
-- [ ] **F-029 Redis Graceful Degradation** — moduluebergreifend — OFFEN: Viele Module haben try/except fuer Redis, aber keine systematische Degradation mit sinnvollen Defaults (personality.py, timer_manager.py, memory.py)
+- [ ] **F-029 Redis Graceful Degradation** — moduluebergreifend — TEILWEISE GEFIXT: Module haben try/except und pruefen `if not self.redis`, aber Degradation ist nicht "graceful" — sie geben leere Listen/Defaults zurueck statt alternative Speicher-Strategien zu nutzen. memory.py setzt self.redis=None bei Fehler, personality.py hat 50+ try/except-Bloecke. Kein alternativer State-Storage als Fallback.
   → Im naechsten Durchlauf: P06d (Haertung) priorisiert
 
 - [ ] **Event-Bus / Priority-System** — brain.py — OFFEN: User > Routine > Proaktiv > Autonom Hierarchie nur dokumentiert, nicht implementiert. Kein Event-Bus.
@@ -101,16 +101,16 @@
 
 ### NAECHSTER_PROMPT (Thematisch verschoben)
 
-- [ ] **F-035 brain.py Overly Broad Exception** — brain.py process() — OFFEN: Faengt weiterhin generisches `Exception` statt spezifischer Typen. SystemExit/KeyboardInterrupt werden verschluckt.
+- [ ] **F-035 brain.py Overly Broad Exception** — brain.py — OFFEN: 21+ bare `except Exception` Handler (Zeilen 144, 494, 531, 543, 684, 783, 855, 991, 1070, 1095, 1345, 1360, 1547, 1644, 1659, 1707, 1753, 1801, 1884, 1937 etc.). SystemExit/KeyboardInterrupt werden verschluckt.
   → Im naechsten Durchlauf: P04a Bug-Jagd
 
-- [ ] **F-039 Zwei Settings-Endpoints** — main.py — OFFEN: PUT /api/assistant/settings und PUT /api/ui/settings koennen sich gegenseitig ueberschreiben
+- [ ] **F-039 Zwei Settings-Endpoints** — main.py — OFFEN: PUT /api/assistant/settings (Zeile 1136, nur autonomy_level) vs PUT /api/ui/settings (Zeile 3804, deep_merge in YAML) vs PUT /api/ui/presence/settings (Zeile 5351). Kein Locking, kein Version-Check, Race Conditions moeglich.
   → Im naechsten Durchlauf: P04a Bug-Jagd
 
-- [ ] **F-043 Knowledge Base Chunking** — knowledge_base.py — OFFEN: 300-Zeichen-Chunks mit 100 Overlap schneiden Fakten mitten im Satz
+- [ ] **F-043 Knowledge Base Chunking** — knowledge_base.py — TEILWEISE GEFIXT: Chunk-Groesse verbessert (300→500 Zeichen, Overlap 100→50, konfigurierbar via settings.yaml). ABER: _split_text_into_chunks() nutzt weiterhin einfaches Zeichen-basiertes Splitting ohne Satz-Erkennung. Nur memory.py episodic hat sentence-aware Splitting (`re.split(r'(?<=[.!?])\s+', segment)`).
   → Im naechsten Durchlauf: P04a Bug-Jagd
 
-- [ ] **F-047 WebSocket Auth nur bei Connect** — main.py — OFFEN: Kein per-Message oder periodisches Re-Auth. Token-Rotation nicht durchgesetzt.
+- [ ] **F-047 WebSocket Auth nur bei Connect** — main.py — TEILWEISE GEFIXT: Auth weiterhin NUR beim Handshake (Zeile 1853-1867). ABER: Neue Safeguards hinzugefuegt — Rate-Limiting (30 msgs/10s), Inactivity-Timeout (5 Min), Keep-alive Ping/Pong (25s). Kompromittiertes Token gilt fuer gesamte Session.
   → Im naechsten Durchlauf: P04c Security
 
 - [ ] **OOM/VRAM-Check** — fehlt — OFFEN: Kein Check ob GPU-Speicher fuer LLM ausreicht
@@ -153,8 +153,10 @@ Fuer JEDEN Fix aus den vorherigen Durchlaeufen:
 | 327 Bug-Fixes (38397d2) | 218 Dateien | Stichproben in P04 | Bulk-Fix aller Severity-Levels |
 
 **Ergebnis:**
-- Fixes intakt (verifiziert): brain_humanizers.py, brain_callbacks.py Extraktionen
-- Fixes zu pruefen: Alle anderen — Code hat sich seit Audit signifikant geaendert (133 Commits, 218 Dateien)
+- Fixes intakt (verifiziert): brain_humanizers.py (502Z), brain_callbacks.py (29Z) Extraktionen
+- Teilweise gefixt: F-029 (Redis try/except vorhanden, aber keine graceful Degradation), F-043 (Chunks 300→500, aber kein Sentence-Splitting), F-047 (Rate-Limiting + Timeout hinzugefuegt, aber kein per-Message Auth)
+- Weiterhin offen: F-035 (21+ bare `except Exception`), F-039 (3 Settings-Endpoints ohne Sync), F-068 (9906 Zeilen, +188%)
+- Fixes zu pruefen: Alle Code-Fixes — 133 Commits, 218 Dateien seit Audit
 - Regressions-Risiko: HOCH — Bulk-Fixes (327 Bugs in einem Commit) erhoehen Regressionsrisiko
 
 ---
@@ -209,7 +211,7 @@ Fuer JEDEN Fix aus den vorherigen Durchlaeufen:
 
 Vorheriger Durchlauf zusammengefasst: Ja (Durchlauf #1 + #2)
 Unfixte Bugs uebernommen: 15 explizite + 52 aufgeschobene = 67 Bugs
-Regressions-Check: 2 intakt, 10+ zu pruefen im neuen Durchlauf
+Regressions-Check: 2 intakt, 3 teilweise gefixt (F-029/F-043/F-047), 3 offen (F-035/F-039/F-068), 10+ zu pruefen
 Delta-Checkliste erstellt: Ja (9 offene Punkte, 10 geaenderte Bereiche, 7 neue Risiken)
 Alle Kontext-Bloecke verworfen: Ja
 
@@ -227,7 +229,7 @@ UNFIXTE BUGS: 67 total. Top 3 kritischste:
   1. brain.py God Class (9.906 Zeilen — verschlechtert)
   2. Redis Graceful Degradation (systemweit, keine systematische Loesung)
   3. Event-Bus / Priority-System (nur dokumentiert, nicht implementiert)
-REGRESSIONS: 2 Extraktionen intakt, 10+ Fixes zu pruefen (hohe Aenderungsrate)
+REGRESSIONS: 2 intakt, 3 teilweise gefixt, 3 weiterhin offen, 10+ zu pruefen
 DELTA: 133 Commits, 218 Dateien, v1.5.11→v1.5.13, 115 Test-Dateien hinzugefuegt
 NAECHSTER SCHRITT: Starte PROMPT_00_OVERVIEW.md
 =====================================
