@@ -1,6 +1,6 @@
 # Jarvis Audit — Prompt-Serie (Übersicht)
 
-Diese **20 Prompts** sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu werden. Jeder Prompt ist fokussiert auf ein Thema und liefert als Output den Input für den nächsten.
+Diese Prompts sind dafür gedacht, **der Reihe nach** an ein LLM übergeben zu werden. Jeder Prompt ist fokussiert auf ein Thema und liefert als Output den Input für den nächsten.
 
 > **Für einen weiteren Durchlauf**: Nutze `PROMPT_RESET.md` **vor** Prompt 1, um den Kontext sauber zurückzusetzen und die Ergebnisse des vorherigen Durchlaufs als Vergleichsbasis zu sichern.
 
@@ -37,9 +37,7 @@ Dazu: 103 Test-Dateien, 3 Dockerfiles, 2 docker-compose Konfigurationen, 2 Front
 | 6f | `PROMPT_06f_TTS_RESPONSE.md` | **speak-Filter** + **Meta-Leakage** + TTS-Pipeline | Pain-Point: "speak" in Sprachausgabe |
 | 7a | `PROMPT_07a_TESTING.md` | Tests + Coverage + **Security-Endpoint-Tests** | Verifiziert Fixes aus #6a–6f |
 | 7b | `PROMPT_07b_DEPLOYMENT.md` | Docker + Deployment + **Resilience** + **Performance** | Nutzt Test-Ergebnisse aus #7a |
-| 8 | `PROMPT_08_REMAINING_FIXES.md` | Verbleibende Fixes aus vorherigen Durchläufen | Nutzt Ergebnisse aus #6a–6f |
-| 9 | `PROMPT_09_REMAINING_BUGS.md` | Verbleibende Bugs dokumentieren | Nutzt alle vorherigen Ergebnisse |
-| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #9, vor erneutem #1 |
+| ↻ | `PROMPT_RESET.md` | **Reset für neuen Durchlauf** | Nach #7b, vor erneutem #1 |
 
 ## Wie verwenden
 
@@ -193,7 +191,7 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 - Kann bei langem System-Prompt den Fokus auf Tool-Calls verlieren
 - character_hint in settings.yaml model_profiles nutzen fuer Anti-Floskel
 
-## Erwarteter Gesamt-Output nach allen 20 Prompts
+## Erwarteter Gesamt-Output nach allen Prompts
 
 1. **Konflikt-Karte** — Welche Module gegeneinander arbeiten (inkl. Addon ↔ Assistant)
 2. **Memory-Diagnose** — Warum Jarvis vergisst + Fix

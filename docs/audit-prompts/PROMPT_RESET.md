@@ -192,8 +192,6 @@ Alle Kontext-Bloecke verworfen: Ja
 | 06f | PROMPT_06f_TTS_RESPONSE.md | **NEU** Fix: speak-Filter + Meta-Leakage |
 | 07a | PROMPT_07a_TESTING.md | Testing + Coverage |
 | 07b | PROMPT_07b_DEPLOYMENT.md | Docker + Deployment |
-| 08 | PROMPT_08_REMAINING_FIXES.md | Verbleibende Fixes |
-| 09 | PROMPT_09_REMAINING_BUGS.md | Verbleibende Bugs |
 | RESET | PROMPT_RESET.md | Naechster Durchlauf vorbereiten |
 
 ---
