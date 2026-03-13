@@ -1,11 +1,51 @@
 # Audit-Ergebnis: Prompt 4a — Systematische Bug-Jagd (Core-Module, Prioritaet 1-4)
 
-**Durchlauf**: #2 (Verifikation nach Fixes aus P6a-P8)
-**Datum**: 2026-03-10
+**Durchlauf**: #2 (DL#2), aktualisiert DL#3 (2026-03-13, nach P02 Memory-Reparatur)
+**Datum**: 2026-03-10 (DL#2), 2026-03-13 (DL#3)
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: 26 Core-Module in 4 Batches, 13 Fehlerklassen, Cross-Modul-Pruefung
 **Methode**: 3 parallele Audit-Agenten + manuelle Verifikation kritischer Findings
 **Vergleichsbasis**: DL#1 (88 Bugs: 10 KRITISCH, 18 HOCH, 38 MITTEL, 22 NIEDRIG)
+
+---
+
+## DL#3: Verifikation nach P02 Memory-Reparatur (2026-03-13)
+
+### Zusaetzlich als GEFIXT bestaetigt (DL#3):
+
+| Bug | Severity | Beschreibung | Gefixt durch |
+|-----|----------|-------------|-------------|
+| #3/NEW-7 | KRITISCH/HOCH | `proactive.start()` in `_safe_init()` (brain.py:776) | P02/P06b — verifiziert in DL#3 |
+| NEW-1 | KRITISCH | Deadlock bei Retry: `_process_inner()` statt `self.process()` | P06a — bereits in DL#2 Post-Fix bestaetigt |
+
+### Memory-bezogene Updates (P02 Fixes):
+
+| Bug | Severity | DL#2-Status | DL#3-Status | Beschreibung |
+|-----|----------|-------------|-------------|-------------|
+| #20 | KRITISCH | ⚠️ TEILWEISE | ⚠️ TEILWEISE | Kein ChromaDB-Rollback bei Redis-Failure — unveraendert |
+| #21 | HOCH | ⚠️ TEILWEISE | ⚠️ TEILWEISE | Hard-Cap 1000 fuer Pagination — unveraendert |
+| NEW-A | HOCH | ❌ UNFIXED | ❌ UNFIXED | 2 synchrone ChromaDB `.update()` Calls — unveraendert |
+| NEW-E | MITTEL | ❌ UNFIXED | ❌ UNFIXED | N+1 Redis Pattern — unveraendert |
+| #27 | MITTEL | ❌ UNFIXED | ❌ UNFIXED | MD5 Lock-Key Kollisionen — unveraendert |
+
+### P02 Fixes die P04a-Scope betreffen (positiv):
+- Memory Confidence-Schwelle 0.6→0.4 (brain.py:3167) — mehr Facts werden abgerufen
+- Memory Relevance-Schwelle 0.3→0.2 (brain.py:3172) — breiterer Match
+- Memory Limit 3→10 (brain.py:3163) — mehr Context
+- conv_memory_ext Priority 3→1 (brain.py:2973) — immer im System-Prompt
+- "ERFINDE KEINE Erinnerungen" Hint (brain.py:3216-3224) — reduziert Halluzinationen
+
+### Aktualisierte Bug-Bilanz (DL#3):
+
+```
+DL#2: 62 offene Bugs (1 KRITISCH, 12 HOCH, 33 MITTEL, 16 NIEDRIG)
+DL#3: 60 offene Bugs (0 KRITISCH, 11 HOCH, 33 MITTEL, 16 NIEDRIG)
+
+Aenderung DL#2→DL#3:
+  KRITISCH: 1→0 (NEW-1 Deadlock bestaetigt gefixt)
+  HOCH: 12→11 (NEW-7 proactive.start() bestaetigt gefixt)
+  MITTEL/NIEDRIG: unveraendert
+```
 
 ---
 
@@ -290,30 +330,18 @@ Davon code-verifiziert:     13 HIGH/CRITICAL bestaetigt offen
 
 ---
 
-## KONTEXT AUS PROMPT 4a (DL#2): Bug-Report (Core-Module)
+## KONTEXT AUS PROMPT 4a (DL#3): Bug-Report (Core-Module)
 
 ### Statistik
 DL#1: 88 Bugs → DL#2: 26 FIXED, 15 PARTIALLY, 33 UNFIXED, 14 NEW
-Aktuelle Bug-Bilanz: 62 offene Bugs (1 KRITISCH, 12 HOCH, 33 MITTEL, 16 NIEDRIG)
+DL#3: 60 offene Bugs (0 KRITISCH, 11 HOCH, 33 MITTEL, 16 NIEDRIG)
 
-### Kritische Bugs (1 offen)
-1. `brain.py:1218` — **NEW-1: Deadlock bei Retry** — `_process_inner()` haelt `_process_lock`, ruft `self.process()` auf → nicht-reentrant Lock → garantierter Deadlock
+### Kritische Bugs (0 offen — alle gefixt)
+- ~~NEW-1: Deadlock bei Retry~~ → FIXED (P06a)
+- ~~Bug #3/NEW-7: proactive.start() ohne _safe_init()~~ → FIXED (brain.py:776)
+- Alle uebrigen DL#1 KRITISCH → FIXED (see DL#2 details above)
 
-### Frueherer KRITISCH-Status (alle gefixt)
-- Bug #1 (conv_memory Duplikat) → FIXED
-- Bug #2 (process() ohne Lock) → FIXED (aber Regression NEW-1)
-- Bug #3 (Module ohne _safe_init) → TEILWEISE (proactive.start() offen)
-- Bug #19 (embedding_extractor TOCTOU) → FIXED
-- Bug #20 (semantic_memory Rollback) → TEILWEISE
-- Bug #34 (Prompt Injection conversation_topic) → FIXED
-- Bug #35 (Prompt Injection Weather) → FIXED
-- Bug #49 (call_service Gateway lock/alarm) → FIXED
-- Bug #50 (lock_door unlock ohne Confirmation) → FIXED
-- Bug #51 (return_exceptions nicht geprueft) → FIXED
-- Bug #52 (_tools_cache ohne Lock) → FIXED
-
-### Hohe Bugs (12 offen)
-- `brain.py:773` — NEW-7: proactive.start() ohne _safe_init()
+### Hohe Bugs (11 offen)
 - `main.py:1414` — NEW-6: Synchrones subprocess.run (ffmpeg 30s)
 - `personality.py:2243` — #36: _current_mood Race Condition (unfixed)
 - `personality.py:2299` — #37: _current_formality Race Condition (unfixed)
@@ -326,10 +354,15 @@ Aktuelle Bug-Bilanz: 62 offene Bugs (1 KRITISCH, 12 HOCH, 33 MITTEL, 16 NIEDRIG)
 - `function_calling.py:4794` — #58: settings.yaml TOCTOU (teilweise)
 - `function_calling.py:1361` — #56: _ASSISTANT_TOOLS_STATIC bei Module-Load (unfixed)
 
+### P02 Memory-Fixes (positiv fuer P04a-Scope)
+- Confidence 0.6→0.4, Relevance 0.3→0.2, Limit 3→10
+- conv_memory_ext Priority 3→1
+- "ERFINDE KEINE Erinnerungen" Hint
+
 ### Patterns die in 4b weitergesucht werden sollten
 1. **Race Conditions auf Instance-Variables** — personality.py (#36/#37) und mood_detector.py (#39) unfixed. In 4b: proactive.py, routine_engine.py, anticipation.py pruefen
 2. **N+1 Redis** — Systemisches Pattern in semantic_memory.py (5+ Methoden). In 4b: Alle Redis-intensiven Module pruefen
 3. **`except Exception: pass` → `logger.debug()`** — Bulk-Fix aus P8 funktional identisch mit `pass` bei Default-Log-Level. In 4b: Pruefen ob kritische Fehler dadurch maskiert
 4. **Synchrone I/O in async Handlern** — main.py hat ~20 ungefixte Stellen. In 4b: Alle async Endpoints pruefen
-5. **Deadlock-Risiko bei verschachtelten Locks** — NEW-1 zeigt reales Deadlock durch Lock-Regression. In 4b: Alle Module mit asyncio.Lock auf Reentrance-Risiko pruefen
+5. **Deadlock-Risiko bei verschachtelten Locks** — ~~NEW-1 Deadlock gefixt~~. In 4b: Alle Module mit asyncio.Lock auf Reentrance-Risiko pruefen
 6. **Shutdown-Asymmetrie** — 30+ Komponenten in `initialize()` ohne korrespondierenden `shutdown()` Call. In 4b: Pruefen welche Module Background-Tasks/Connections halten
