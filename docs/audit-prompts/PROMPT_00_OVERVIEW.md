@@ -217,6 +217,36 @@ Alle Prompts nutzen dieselbe Rollen-Definition: Elite-Software-Architekt, KI-Ing
 - Alle 13 Flows dokumentiert mit Status und Bruchstellen
 - Alle 6 Konfliktkarten ausgefuellt mit Code-Referenzen
 
+## Eskalations-Schema fuer offene Bugs
+
+Jeder Bug der in einem Fix-Prompt (P06a–P06f) nicht geloest werden kann, MUSS mit Severity und Eskalations-Kategorie dokumentiert werden. **Kein Bug darf stillschweigend uebersprungen werden.**
+
+### OFFEN-Block Format
+
+```
+OFFEN:
+- 🔴 [KRITISCH] Beschreibung | Datei:Zeile | GRUND: [warum nicht loesbar]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
+- 🟠 [HOCH] Beschreibung | Datei:Zeile | GRUND: [warum nicht loesbar]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
+```
+
+### Eskalations-Kategorien
+
+| Kategorie | Bedeutung | Was passiert |
+|---|---|---|
+| `NAECHSTER_PROMPT` | Bug gehoert thematisch in einen spaeteren Prompt | Wird dort aufgegriffen (z.B. Security-Bug in P06a → P06d) |
+| `ARCHITEKTUR_NOETIG` | Fix erfordert groesseren Umbau der nicht in diesen Prompt passt | P06b (Architektur) oder naechster Durchlauf |
+| `MENSCH` | LLM kann Bug nicht loesen — braucht menschliche Entscheidung oder Domainwissen | **Wird in RESET als PRIORITAET 1 uebernommen** |
+
+### Regeln
+
+1. **Jeder Fix-Prompt prueft zuerst** die OFFEN-Liste des vorherigen Prompts auf Bugs mit `→ ESKALATION: NAECHSTER_PROMPT`
+2. **P07a (Testing) validiert** alle OFFEN-Bugs: Sind sie wirklich nicht loesbar oder wurde etwas uebersehen?
+3. **RESET uebernimmt** alle verbleibenden OFFEN-Bugs als priorisierte Checkliste fuer den naechsten Durchlauf
+4. **🔴 KRITISCH + MENSCH** = Audit wird pausiert, User wird informiert. Nicht weitermachen bis geklaert.
+5. **Kein Bug verschwindet** — er wird entweder GEFIXT, ESKALIERT, oder im naechsten Durchlauf erneut geprueft
+
 ## Output
 
 Am Ende dieses Prompts erstelle folgenden Block:
@@ -224,7 +254,9 @@ Am Ende dieses Prompts erstelle folgenden Block:
 ```
 === KONTEXT FUER NAECHSTEN PROMPT ===
 GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
-OFFEN: [Liste der nicht gefixten Issues mit Grund]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
 GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
 REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
 NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]

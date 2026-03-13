@@ -646,6 +646,18 @@ git checkout checkpoint-pre-toolcalling -- assistant/assistant/brain.py
 2. **Fix 3**: Deterministic Tool-Calls umgehen das LLM — wenn die Pattern-Erkennung falsch matched, wird das falsche Geraet gesteuert. IMMER mit Raum-Validierung gegen HA-Entity-Liste pruefen
 3. **Fix 4**: False Positives bei der Intent-Erkennung koennten relevante Tools ausfiltern. Logging einbauen und im Zweifel ALLE Tools senden (Fallback)
 
+## Eskalations-Regel
+
+Wenn ein Bug NICHT gefixt werden kann, dokumentiere ihn im OFFEN-Block mit:
+- **Severity**: 🔴 KRITISCH / 🟠 HOCH / 🟡 MITTEL
+- **Grund**: Warum nicht loesbar (Regression, Architektur-Umbau noetig, Domainwissen fehlt, etc.)
+- **Eskalation**:
+  - `NAECHSTER_PROMPT` — Bug gehoert thematisch in P06f
+  - `ARCHITEKTUR_NOETIG` — Fix erfordert groesseren Umbau, naechster Durchlauf
+  - `MENSCH` — Braucht menschliche Entscheidung oder Domainwissen
+
+**🔴 KRITISCH + MENSCH = STOPP.** Informiere den User sofort, nicht erst am Ende.
+
 ---
 
 ## Regeln
@@ -713,7 +725,9 @@ Am Ende dieses Prompts erstelle folgenden Block:
 ```
 === KONTEXT FUER NAECHSTEN PROMPT ===
 GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
-OFFEN: [Liste der nicht gefixten Issues mit Grund]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
 GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
 REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
 NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]

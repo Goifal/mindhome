@@ -38,11 +38,28 @@ Du bist ein Elite-QA-Engineer mit tiefem Wissen in:
 
 ## Aufgabe
 
-Nach den Fixes aus Prompt 6a–6d: **Teste** systematisch und **schließe Test-Lücken**.
+Nach den Fixes aus Prompt 6a–6f: **Teste** systematisch und **schließe Test-Lücken**.
 
 > **Dieser Prompt ist Teil 1 von 2** der Verifikation:
-> - **P07a** (dieser): Tests ausführen + Test-Coverage + Security-Endpoint-Tests
+> - **P07a** (dieser): Tests ausführen + Test-Coverage + Security-Endpoint-Tests + **OFFEN-Bug-Validierung**
 > - **P07b**: Docker + Deployment + Resilience + Performance-Verifikation
+
+### OFFEN-Bug-Validierung (VOR den Tests!)
+
+Pruefe ALLE OFFEN-Eintraege aus P06a–P06f Kontext-Bloecken:
+
+1. **Sammle** alle Bugs mit Status OFFEN aus den Kontext-Bloecken von P06a–P06f
+2. **Pruefe fuer jeden OFFEN-Bug**:
+   - Existiert der Bug noch? (Read die Datei, verifiziere)
+   - Wurde er vielleicht durch einen anderen Fix mitgeloest?
+   - Ist der angegebene GRUND noch gueltig?
+3. **Ergebnis dokumentieren**:
+   - ✅ `FALSE_POSITIVE` — Bug existiert nicht (mehr) → aus Liste streichen
+   - ✅ `INDIREKT_GEFIXT` — durch anderen Fix mitgeloest → dokumentieren welcher
+   - ❌ `BESTAETIGT` — Bug existiert noch, Eskalation bleibt bestehen
+   - 🔧 `JETZT_FIXBAR` — mit neuem Kontext (nach P06a–f) doch loesbar → **sofort fixen**
+
+**Ziel: Maximale Bug-Reduktion vor dem naechsten Durchlauf.** Jeder Bug der hier gefixt werden kann, spart einen ganzen Durchlauf.
 
 ### Zusätzliche Dokumentation (lies diese zuerst!):
 - `docs/ASSISTANT_TEST_CHECKLIST.md` — Bestehende Test-Checkliste (falls vorhanden, als Basis nutzen)
@@ -310,7 +327,15 @@ Am Ende dieses Prompts erstelle folgenden Block:
 ```
 === KONTEXT FUER NAECHSTEN PROMPT ===
 GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
-OFFEN: [Liste der nicht gefixten Issues mit Grund]
+OFFEN-BUG-VALIDIERUNG:
+- [X von Y] OFFEN-Bugs aus P06a–P06f geprueft
+- FALSE_POSITIVE: [Anzahl] — [Liste]
+- INDIREKT_GEFIXT: [Anzahl] — [Liste mit Referenz welcher Fix]
+- JETZT_GEFIXT: [Anzahl] — [Liste der in P07a gefixten Bugs]
+- BESTAETIGT_OFFEN: [Anzahl] — [Liste mit Eskalation]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: ARCHITEKTUR_NOETIG | MENSCH
 GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
 REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
 NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]

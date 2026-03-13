@@ -172,9 +172,21 @@ Module oder Funktionen die laut Prompt 4 (Dead-Code-Liste) nie aufgerufen werden
 Vor dem ersten Edit: Merke dir den aktuellen Stand.
 Wenn ein Fix einen ImportError oder SyntaxError verursacht:
 1. SOFORT revert (Edit zuruecknehmen)
-2. Im OFFEN-Block dokumentieren: "Fix X verursacht Regression Y"
+2. Im OFFEN-Block dokumentieren mit Eskalation (siehe unten)
 3. Zum naechsten Fix weitergehen
 NIEMALS einen kaputten Fix stehen lassen.
+
+## Eskalations-Regel
+
+Wenn ein Bug NICHT gefixt werden kann, dokumentiere ihn im OFFEN-Block mit:
+- **Severity**: 🔴 KRITISCH / 🟠 HOCH / 🟡 MITTEL
+- **Grund**: Warum nicht loesbar (Regression, Architektur-Umbau noetig, Domainwissen fehlt, etc.)
+- **Eskalation**:
+  - `NAECHSTER_PROMPT` — Bug gehoert thematisch in P06d–P06f
+  - `ARCHITEKTUR_NOETIG` — Fix erfordert groesseren Umbau, naechster Durchlauf
+  - `MENSCH` — Braucht menschliche Entscheidung oder Domainwissen
+
+**🔴 KRITISCH + MENSCH = STOPP.** Informiere den User sofort, nicht erst am Ende.
 
 ## Regeln
 
@@ -243,7 +255,9 @@ Am Ende dieses Prompts erstelle folgenden Block:
 ```
 === KONTEXT FUER NAECHSTEN PROMPT ===
 GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
-OFFEN: [Liste der nicht gefixten Issues mit Grund]
+OFFEN:
+- 🔴/🟠/🟡 [SEVERITY] Beschreibung | Datei:Zeile | GRUND: [...]
+  → ESKALATION: NAECHSTER_PROMPT | ARCHITEKTUR_NOETIG | MENSCH
 GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
 REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
 NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]

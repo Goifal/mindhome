@@ -85,23 +85,27 @@ Falls ein vorheriger Durchlauf existiert, fasse ihn kompakt zusammen:
 
 ## SCHRITT 2: Unfixte Bugs als Checkliste
 
-**KRITISCH:** Uebernimm ALLE unfixten Bugs aus dem vorherigen Durchlauf als Checkliste. Diese haben HOECHSTE Prioritaet im neuen Durchlauf.
+**KRITISCH:** Uebernimm ALLE unfixten Bugs aus den OFFEN-Bloecken von P06a–P06f als Checkliste. Diese haben HOECHSTE Prioritaet im neuen Durchlauf.
+
+Sammle die OFFEN-Eintraege aus allen Kontext-Bloecken und sortiere nach Eskalations-Kategorie:
 
 ```
 ## UNFIXTE BUGS AUS DURCHLAUF #X
 
-### KRITISCH (MUSS gefixt werden)
-- [ ] [Bug-Beschreibung] — Datei:Zeile — Grund warum nicht gefixt
-- [ ] ...
+### 🔴 KRITISCH — MENSCH (User muss entscheiden)
+- [ ] [Bug-Beschreibung] — Datei:Zeile — Grund: [warum nicht loesbar]
+  ⚠️ DIESE BUGS VOR DEM NAECHSTEN DURCHLAUF MIT DEM USER KLAEREN!
 
-### HOCH (SOLLTE gefixt werden)
-- [ ] [Bug-Beschreibung] — Datei:Zeile — Grund
-- [ ] ...
+### 🔴🟠 ARCHITEKTUR_NOETIG (Groesserer Umbau erforderlich)
+- [ ] [Bug-Beschreibung] — Datei:Zeile — Grund: [warum Architektur-Umbau]
+  → Im naechsten Durchlauf: P06b (Architektur) priorisiert behandeln
 
-### MITTEL (KANN gefixt werden)
-- [ ] [Bug-Beschreibung] — Datei:Zeile — Grund
-- [ ] ...
+### 🟠🟡 NAECHSTER_PROMPT (Thematisch verschoben, nicht aufgegriffen)
+- [ ] [Bug-Beschreibung] — Datei:Zeile — Ursprungs-Prompt: [P06x]
+  → Im naechsten Durchlauf: Gezielt im richtigen Prompt aufgreifen
 ```
+
+**Regel: Kein Bug verschwindet.** Jeder OFFEN-Eintrag aus P06a–P06f MUSS in dieser Liste auftauchen. Wenn ein Bug in P07a als "doch gefixt" oder "false positive" erkannt wurde, dokumentiere das explizit.
 
 ## SCHRITT 3: Regressions-Check
 
