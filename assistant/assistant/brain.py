@@ -8060,6 +8060,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             "mein geburtstag", "mein name", "meine frau", "mein mann",
             "was mag ich", "was habe ich gesagt",
             "erinnere dich", "was hast du dir gemerkt",
+            "wer bin ich", "wie heisse ich", "wie heiße ich",
+            "letzte woche", "gestern", "remember",
+            "do you know my", "what did i tell you",
+            "what do you know about", "did i mention",
         ]
         if any(kw in text_lower for kw in memory_keywords):
             return "memory"
