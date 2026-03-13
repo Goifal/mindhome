@@ -168,13 +168,18 @@ memory_keywords = [
 
 ### BUG 6: 🔴 _should_extract() Wort-Minimum zu hoch — kurze Fakten werden IGNORIERT
 
-**Datei:** `assistant/assistant/memory_extractor.py` Zeile 175
-**Problem:** `len(user_text.split()) < max(self._min_words, 5)` erfordert MINDESTENS 5 Woerter. Viele wertvolle Fakten sind kuerzer:
+**Dateien:** `assistant/assistant/memory_extractor.py` Zeile 175 UND `assistant/assistant/brain.py` Zeile ~4380
+**Problem:** Es gibt eine **DOPPELTE Wort-Zaehlung** die zusammen wirkt:
+
+1. `brain.py:4380`: `if self.memory_extractor and len(text.split()) > 3:` — MINDESTENS 4 Woerter noetig damit Extraktion ueberhaupt startet
+2. `memory_extractor.py:175`: `if len(user_text.split()) < max(self._min_words, 5):` — MINDESTENS 5 Woerter noetig um nicht gefiltert zu werden
+
+Ergebnis: Text braucht MINDESTENS 5 Woerter um durch beide Filter zu kommen. Viele wertvolle Fakten sind kuerzer:
 - "Meine Frau heisst Lisa" = 4 Woerter → NICHT extrahiert!
 - "Ich mag 21 Grad" = 4 Woerter → NICHT extrahiert!
 - "Mein Name ist Max" = 4 Woerter → NICHT extrahiert!
 
-**Das ist wahrscheinlich DER Hauptgrund warum keine neuen Fakten gespeichert werden.**
+**Das ist DER Hauptgrund warum keine neuen Fakten gespeichert werden.**
 
 **Fix:**
 ```python
@@ -186,6 +191,15 @@ if len(user_text.split()) < max(self._min_words, 5):
 if len(user_text.split()) < max(self._min_words, 3):
     return False
 ```
+
+**AUCH in brain.py** (ca. Zeile 4380):
+```python
+# VORHER:
+if self.memory_extractor and len(text.split()) > 3:
+# NACHHER:
+if self.memory_extractor and len(text.split()) > 2:
+```
+Damit gehen auch 3-Woerter-Saetze ("Ich mag Kaffee") durch den ersten Filter.
 
 **Zusaetzlich** in `assistant/config/settings.yaml` (falls konfiguriert):
 ```yaml
