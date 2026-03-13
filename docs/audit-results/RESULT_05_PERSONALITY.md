@@ -1,9 +1,14 @@
 # RESULT 05: Persoenlichkeit, Config & MCU-Authentizitaet
 
-> **Audit-Datum**: 2026-03-10 (aktualisiert)
+> **Audit-Datum**: 2026-03-10 (DL#2), 2026-03-13 (DL#3)
 > **Auditor**: Claude Opus 4.6
 > **Scope**: personality.py (3000+ Zeilen), context_builder.py, mood_detector.py, explainability.py, config.py, constants.py, 8 YAML-Configs, settings.yaml, Addon-Configs, Translations, HA-Manifest
 > **Referenz**: PROMPT_05_PERSONALITY.md (Teile A–G)
+>
+> **DL#3 Note**: P02 Memory-Fixes verbessern den Memory-Kontext im System-Prompt
+> (conv_memory_ext Priority 3→1, mehr Facts, "ERFINDE KEINE Erinnerungen" Hint).
+> Dies betrifft die Personality indirekt positiv — Jarvis hat mehr Erinnerungen
+> verfuegbar und halluziniert weniger. Alle 17 Findings bleiben unveraendert offen.
 
 ---
 

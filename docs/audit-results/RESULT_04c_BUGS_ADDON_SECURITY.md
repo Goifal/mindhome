@@ -1,11 +1,156 @@
 # Audit-Ergebnis: Prompt 4c — Addon + Security-Audit + Performance-Analyse
 
-**Durchlauf**: #2 (Verifikation nach Fixes aus P6a-P8)
-**Datum**: 2026-03-10
+**Durchlauf**: #2 (DL#2), aktualisiert DL#3 (2026-03-13)
+**Datum**: 2026-03-10 (DL#2), 2026-03-13 (DL#3)
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: 67+ Addon-Module, Speech-Server, Shared-Schemas, HA-Integration, 18 Security-Checks, 10 Resilience-Szenarien, 12 Performance-Checks
 **Methode**: 4 parallele Verifikations-Agenten, jedes Modul komplett gelesen
 **Vergleichsbasis**: DL#1 (106 Bugs: 8 KRITISCH, 25 HOCH, 34 MITTEL, 39 NIEDRIG)
+
+---
+
+## DL#3: Vollstaendiges Re-Audit (2026-03-13)
+
+### Methode
+6 parallele Analyse-Agenten: Addon-Kern, Domains+Engines, Routes, Speech+HA-Integration, Security-Audit, Performance+Resilience. Jedes Modul vollstaendig gelesen.
+
+### P02 Impact auf Addon/Security/Performance: KEINE (bestaetigt)
+P02 Memory-Fixes betrafen nur Assistant brain.py. Addon/Security/Performance unveraendert.
+
+### DL#3 Neue Findings
+
+**Zusaetzlich zu den DL#1/DL#2 Bugs wurden folgende NEUE Probleme identifiziert:**
+
+#### Neue Addon-Kern Bugs
+
+| # | Severity | Modul | Zeile | Beschreibung |
+|---|----------|-------|-------|-------------|
+| N1 | HOCH | `ha_connection.py` | 70-88 | `_is_entity_owned_by_assistant()` bei JEDEM `call_service()` synchron mit 2s Timeout — kein Cache, kein Circuit Breaker. Wenn Assistant nicht laeuft: 2s Latenz pro Call |
+| N2 | HOCH | `ha_connection.py` | 85-87 | Silent `except Exception: pass` in Ownership-Check. Verbirgt Fehlkonfigurationen |
+| N3 | HOCH | `ha_connection.py` | 114 | Variable Shadowing: inneres `except Exception as e` ueberschreibt aeusseres HTTPError `e` |
+| N4 | MITTEL | `ha_connection.py` | 77 | Hardcoded IP `192.168.1.100:8200` als Default fuer ASSISTANT_URL |
+| N5 | MITTEL | `ha_connection.py` | 795-803 | Offline-Queue Ping-Pong: `call_service()` in `_process_offline_queue()` kann Items endlos re-queuen |
+| N6 | MITTEL | `event_bus.py` | 130-132 | Kein Timeout fuer blockierende Event-Handler. Ein langsamer Handler blockiert alle Events |
+| N7 | MITTEL | `task_scheduler.py` | 93-105 | `enable()`/`disable()`/`trigger_now()` lesen `self._tasks` ohne Lock — Data Race mit `_run_loop()` |
+| N8 | MITTEL | `task_scheduler.py` | 170-184 | `get_status()` iteriert `_tasks` ohne Lock — RuntimeError moeglich |
+| N9 | KRITISCH | `pattern_engine.py` | 1073 | Naive vs aware datetime in `explain_confidence()`: `datetime.now(timezone.utc) - last_matched_at` wirft TypeError wenn `last_matched_at` naive ist |
+
+#### Neue Domain+Engine Bugs
+
+| # | Severity | Modul | Zeile | Beschreibung |
+|---|----------|-------|-------|-------------|
+| N10 | HOCH | `engines/energy.py` | 352 | `call_service("switch", "turn_off", entity_id=switch_entity)` — Signatur-Inkonsistenz, `entity_id` muss in `data`-Dict statt als Kwarg |
+| N11 | MITTEL | `domains/climate.py` | 105,142 | `_evaluate_curve` vergleicht `phase` case-sensitiv ("Nacht" vs "nacht") — inkonsistent mit `light.py` das `.lower()` nutzt |
+| N12 | MITTEL | `domains/climate.py` | 84-94 | Wiederholter Offset-Anwendung: `away_offset` wird bei jedem `evaluate()` erneut auf bereits-offset-Temperatur addiert → unbegrenzte Drift |
+| N13 | MITTEL | `domains/vacuum.py` | 54 | `context.get()` ohne `ctx = context or self.get_context()` Fallback — AttributeError wenn `context=None` |
+| N14 | MITTEL | `domains/motion_control.py` | 82 | `return actions` statt `return self.execute_or_suggest(actions)` — Auto-Modus wird nie angewendet |
+| N15 | MITTEL | `engines/cover_control.py` | global | `_manual_overrides` Zugriff ohne Lock in `_is_overridden()` und `get_covers()` |
+| N16 | MITTEL | `engines/sleep.py` | 193 | Naive datetime in `_calc_quality()` — `start` aus SQLite ohne tzinfo, `end` potentiell aware → TypeError |
+| N17 | MITTEL | `engines/health_dashboard.py` | 451-453 | Invertierte `_comparison()` Argumente fuer `screen_time` — "besser" zeigt als "schlechter" |
+| N18 | NIEDRIG | `domains/air_quality.py` | 67,74 | Setting-Key-Mismatch: `co2_warning` vs `co2_warning_enabled` |
+| N19 | NIEDRIG | `domains/weather.py` | 17 | Fehlender `is_entity_tracked()` Check in `on_state_change()` |
+| N20 | NIEDRIG | `domains/solar.py` | 99-121 | `evaluate()` gibt andere Struktur zurueck als alle anderen Domains |
+
+#### Neue Route Bugs
+
+| # | Severity | Modul | Zeile | Beschreibung |
+|---|----------|-------|-------|-------------|
+| N21 | KRITISCH | `routes/system.py` | 912 | Hot-Update-Endpoint schreibt beliebigen Inhalt in `app.jsx` — nur Debug-Mode, aber XSS-Sanitierung unzureichend (nur `<script src>`, nicht inline) |
+| N22 | HOCH | `routes/` (global) | — | Keine CSRF-Protection. Alle State-aendernden POST/PUT/DELETE anfaellig |
+| N23 | HOCH | `routes/` (global) | — | Kein Rate-Limiting ausser Emergency-Trigger. Brute-Force auf Emergency-Cancel-PIN moeglich |
+| N24 | HOCH | `routes/security.py` | 795-804 | Emergency-Cancel PIN ohne Rate-Limit oder Lockout |
+| N25 | HOCH | `routes/automation.py` | 371 | `learning_speed` akzeptiert beliebige Strings ohne Whitelist-Validierung |
+| N26 | HOCH | `routes/automation.py` | 466-468 | `anomaly_pause` Stunden unbeschraenkt — 999999 deaktiviert Anomalie-Erkennung permanent |
+| N27 | HOCH | `routes/automation.py` | 273 | Null-Pointer: `automation_scheduler.anomaly_det` ohne None-Check → AttributeError mit Stack-Trace |
+| N28 | HOCH | `routes/system.py` | 113 | Health-Endpoint gibt `str(e)[:100]` bei DB-Fehler zurueck — Information Leakage |
+| N29 | MITTEL | `routes/chat.py` | 196,251 | Interne `assistant_url` in API-Response exponiert |
+| N30 | MITTEL | `routes/presence.py` | 222-226 | `data["user_id"]` ohne Key-Check → KeyError mit Stack-Trace |
+| N31 | MITTEL | `routes/schedules.py` | 183-184 | `data["start_date"]`/`data["end_date"]` ohne Pflichtfeld-Validierung |
+| N32 | MITTEL | `routes/automation.py` | 297-303 | `sensitivity`/`auto_action` ohne Whitelist |
+
+#### Neue Speech + HA-Integration Bugs
+
+| # | Severity | Modul | Zeile | Beschreibung |
+|---|----------|-------|-------|-------------|
+| N33 | MITTEL | `speech/handler.py` | 95-104 | Redis Lazy-Init Race Condition: zwei Threads koennen gleichzeitig zwei Connections erstellen |
+| N34 | MITTEL | `ha_integration/config_flow.py` | 14-69 | Kein Duplikat-Check (`_async_abort_entries_match` fehlt) — mehrere identische Eintraege moeglich |
+| N35 | MITTEL | `ha_integration/config_flow.py` | 34-56 | API-Key Validierung: Status != 200 und != 403 → "cannot_connect" Fehlermeldung obwohl Server erreichbar |
+| N36 | MITTEL | `ha_integration/conversation.py` | 262-283 | `volume` aus externer API ohne Range-Validierung [0.0-1.0] |
+| N37 | NIEDRIG | `ha_integration/__init__.py` | 26 | `entry.data["url"]` statt `.get("url")` — KeyError bei korruptem Config-Entry |
+| N38 | NIEDRIG | `ha_integration/config_flow.py` | 29 | Eigene `ClientSession` statt `async_get_clientsession(hass)` |
+
+#### Security-Audit DL#3 (Neue Findings)
+
+| # | Risiko | Check | Modul | Beschreibung |
+|---|--------|-------|-------|-------------|
+| S1 | HOCH | #4 | `main.py:2558-2566` | API-Key GET-Endpoint gibt Key im Klartext zurueck — in Proxy-Logs/Browser-History sichtbar |
+| S2 | MITTEL | #2/#4 | `main.py:466,489` | API-Key Enforcement kann per Endpoint deaktiviert werden — dann 269 Endpoints ungeschuetzt |
+| S3 | MITTEL | #5 | `main.py:2230-2266` | PIN Rate-Limiting nur In-Memory — nach Neustart zurueckgesetzt, Brute-Force in ~7 Tagen moeglich |
+| S4 | MITTEL | #8 | `main.py:404-426` | CORS per Env-Variable auf `*` setzbar — dann Cross-Origin-Angriffe moeglich |
+| S5 | NIEDRIG | #1 | `context_builder.py:45-86` | Prompt-Injection-Schutz: umfassend implementiert (Regex + Unicode + Boundary-Check) |
+| S6 | NIEDRIG | #3 | `main.py:969-1005` | Factory-Reset: PIN + Token + Rate-Limit — angemessen geschuetzt |
+| S7 | NIEDRIG | #6 | `file_handler.py` | File-Upload: Extension-Whitelist, UUID-Prefix, Path-Traversal-Schutz — gut |
+| S8 | NIEDRIG | #7 | `web_search.py` | SSRF-Schutz: IP-Blocklist, DNS-Rebinding-Check, Redirect-Block — vorbildlich |
+
+**Security-Score DL#3: 14/18 bestanden (unveraendert)**
+- Positiv: Prompt-Injection, Factory-Reset, File-Upload, SSRF alle gut geschuetzt
+- Offen: Input-Validation (73 Endpoints), Workshop Bounds, API-Key Klartext, PIN In-Memory
+
+#### Resilience DL#3
+
+| # | Szenario | Status | Details |
+|---|----------|--------|---------|
+| 1 | Ollama nicht erreichbar | ✅ OK | Circuit Breaker + Model Cascade (Deep→Smart→Fast) |
+| 2 | Redis nicht erreichbar | ⚠️ TEILWEISE | Module setzen `self.redis=None`, aber kein Retry, kein Reconnect. `redis_breaker` registriert aber NICHT verdrahtet |
+| 3 | ChromaDB nicht erreichbar | ⚠️ TEILWEISE | `return_exceptions=True` in gather mit 15s Timeout. `chromadb_breaker` registriert aber NICHT verdrahtet |
+| 4 | Home Assistant nicht erreichbar | ✅ OK | Error-Handling + Reconnect in `ha_client.py` |
+| 5 | Speech-Server nicht erreichbar | ✅ OK | Text-only Fallback |
+| 6 | Addon nicht erreichbar | ✅ OK | Assistant funktioniert standalone |
+| 7 | Netzwerk-Timeout LLM | ✅ OK | Tier-basierte Timeouts + Circuit Breaker |
+| 8 | Ungueltiges LLM-Response | ✅ OK | Parsing mit Fallback auf leeren String |
+| 9 | `circuit_breaker.py` | ⚠️ TEILWEISE | Ollama+HA verdrahtet, Redis+ChromaDB NICHT |
+| 10 | `error_patterns.py` | ✅ OK | Fehler werden klassifiziert |
+
+#### Performance DL#3
+
+| Phase | Geschaetzt | Ziel | Status |
+|-------|-----------|------|--------|
+| Pre-Classification | <50ms | <50ms | ✅ |
+| Context Building (gather) | 100-500ms | <200ms | ⚠️ |
+| LLM-Inference (Ollama) | 1500-8000ms | <2000ms | ⚠️ Fast OK, Smart grenzwertig |
+| Function Execution + HA | 200-500ms | <500ms | ✅ |
+| Response Processing | <100ms | <200ms | ✅ |
+| **Gesamt (Fast-Modell)** | **~2000-4000ms** | **<3000ms** | ⚠️ |
+
+**Performance-Bottlenecks:**
+
+| # | Severity | Beschreibung | Modul |
+|---|----------|-------------|-------|
+| P1 | KRITISCH | 50+ Komponenten in `__init__` synchron instanziiert — Startup 30-60s+ | `brain.py:204-349` |
+| P2 | HOCH | 62x sequentielles `_safe_init()` ohne Parallelisierung | `brain.py:484-777` |
+| P3 | HOCH | 2-3 LLM-Calls bei komplexen Requests (Tool-Call + Refinement + Character) | `brain.py` |
+| P4 | HOCH | Redis-Failure ohne Circuit Breaker → 30+ Module einzeln fehlschlagend | `memory.py` et al. |
+| P5 | MITTEL | Action-Planner 120s Timeout + Process-Lock → ein Request kann alle blockieren | `brain.py:1114` |
+| P6 | MITTEL | Caching hand-rolled und inkonsistent, kein shared Cache-Utility | diverse |
+
+### DL#3 Aktualisierte Bug-Bilanz
+
+```
+DL#2-Bestand:          ~58 offene Bugs (2 KRITISCH, 6 HOCH, 32 MITTEL, ~18 NIEDRIG)
+DL#3 Neue Bugs:        +38 (2 KRITISCH, 10 HOCH, 18 MITTEL, 8 NIEDRIG)
+DL#3 Security:         +4 (1 HOCH, 3 MITTEL)
+DL#3 Performance:      +6 (1 KRITISCH, 3 HOCH, 2 MITTEL)
+DL#3 Resilience:       3 TEILWEISE (Redis/ChromaDB Breaker, Input Validation)
+
+DL#3 Gesamt P04c:      ~106 offene Bugs
+  KRITISCH:              5 (2 alt + 3 neu: N9 datetime, N21 hot-update, P1 startup)
+  HOCH:                 20 (6 alt + 14 neu)
+  MITTEL:               55 (32 alt + 23 neu)
+  NIEDRIG:              26 (18 alt + 8 neu)
+
+Security:              14/18 bestanden (unveraendert)
+Resilience:            7/10 OK, 3 TEILWEISE
+```
 
 ---
 
@@ -521,45 +666,56 @@ Dead Code: 1 von 11 geloescht (shared/)
 
 ---
 
-## KONTEXT AUS PROMPT 4 (gesamt: 4a + 4b + 4c): Bug-Report — DL#2
+## KONTEXT AUS PROMPT 4c — DL#3
 
 ### Statistik
 ```
-P4c DL#2: 106 Bugs → 45 FIXED, 18 TEILWEISE, 43 UNFIXED
-Alle 8 KRITISCHEN Bugs in P4c gefixt!
+DL#2 Bestand P4c:     ~58 offene Bugs (2 KRITISCH, 6 HOCH, 32 MITTEL, ~18 NIEDRIG)
+DL#3 Neue Findings:   +48 (N1-N38 Bugs + S1-S4 Security + P1-P6 Performance)
+DL#3 Gesamt P4c:      ~106 offene Bugs (5 KRITISCH, 20 HOCH, 55 MITTEL, 26 NIEDRIG)
+Security:             14/18 bestanden (unveraendert)
+Resilience:           7/10 OK, 3 TEILWEISE (Redis/ChromaDB Breaker unverdrahtet)
 ```
 
-### Kritische Bugs (Top-10) — DL#2 Status
-1. `brain.py:2356+2394` — Doppelter Key "conv_memory" (4a) → ✅ FIXED (in P4a DL#2)
-2. `brain.py:4838` — God-Method (4a) → ❌ UNFIXED (Architektur)
-3. `memory.py:32-42` — Redis bytes vs string (4b) → verifiziert in P4b DL#2
-4. `automation_engine.py:732-740` — UTC vs Lokalzeit (4c) → ✅ FIXED
-5. `automation_engine.py:2283-2284` — UTC vs Lokalzeit (4c) → ✅ FIXED
-6. `sleep.py:326-330` — UTC/Lokal WakeUp-Rampe (4c) → ✅ FIXED
-7. `cover_control.py:781` — Markise bei Sturm (4c) → ✅ FIXED
-8. `fire_water.py:164,470` — Feueralarm bei DB-Fehler (4c) → ✅ FIXED
-9. `circadian.py:88` — Race Condition `_active_overrides` (4c) → ✅ FIXED
-10. `access_control.py:108-120` — lock/unlock ohne Whitelist (4c) → ✅ FIXED
+### Kritische Bugs DL#3 (Top-5)
+1. `pattern_engine.py:1073` — N9: Naive vs aware datetime TypeError (NEU)
+2. `routes/system.py:912` — N21: Hot-Update Endpoint XSS (NEU)
+3. `brain.py:204-349` — P1: 50+ Komponenten synchron in __init__ (NEU, Performance)
+4. `app.py` — #68: CORS Wildcard-Default (DL#2)
+5. `app.py` — #69: Localhost-Bypass Auth (DL#2)
 
-### Security-Report (DL#2)
-- **14/18 Checks bestanden** (+3: SEC-4 lock.unlock, SEC-11 Brute-Force, SEC-17 CORS)
-- **Offen MITTEL**: Input-Validation (73 Endpoints), Workshop ohne Bounds
-- **ADDON**: Ingress-Token-Check implementiert, aber localhost-Bypass + kein User-Auth
+### Hohe Bugs DL#3 (Top-10)
+1. `ha_connection.py:70-88` — N1: Entity-Ownership 2s Timeout pro call_service (NEU)
+2. `ha_connection.py:85-87` — N2: Silent exception in Ownership-Check (NEU)
+3. `ha_connection.py:114` — N3: Variable Shadowing (NEU)
+4. `energy.py:352` — N10: call_service Signatur-Fehler (NEU)
+5. `routes/security.py:795-804` — N24: Emergency PIN ohne Rate-Limit (NEU)
+6. `main.py:2558-2566` — S1: API-Key Klartext in GET Response (NEU)
+7. `brain.py:484-777` — P2: 62x sequentielles _safe_init (NEU, Performance)
+8. `brain.py` — P3: 2-3 LLM-Calls bei komplexen Requests (NEU, Performance)
+9. `memory.py et al.` — P4: Redis-Failure ohne Circuit Breaker (NEU, Resilience)
+10. Routes global — N22/N23: Kein CSRF, kein Rate-Limiting (NEU)
 
-### Resilience-Report (unveraendert)
-- **Abgefangen**: Ollama, HA, Addon, LLM-Timeout, LLM-Response
-- **Teilweise**: Redis, ChromaDB, Speech
-- **Dead Code**: `redis_breaker` und `chromadb_breaker` weiterhin registriert aber nie importiert
+### Security-Report DL#3
+- **14/18 bestanden** — Prompt-Injection, SSRF, File-Upload, Factory-Reset alle gut
+- **Neu HOCH**: API-Key Klartext in Response (S1)
+- **Neu MITTEL**: API-Key Enforcement deaktivierbar (S2), PIN In-Memory (S3), CORS overridable (S4)
+- **Offen**: Input-Validation (73 Addon Endpoints ohne Pydantic), Workshop Bounds
 
-### Performance-Report (unveraendert)
-- **Latenz Shortcut-Pfad**: 50-200ms (OPTIMAL)
-- **Latenz Fast-Modell**: 1500-4000ms (OK)
-- **Latenz Smart-Modell**: 2500-8000ms (GRENZWERTIG)
-- **Bottlenecks**: Startup, Semantic Memory N+1, Vacuum, MindHome-Cache, Humanizer
+### Resilience-Report DL#3
+- **OK (7/10)**: Ollama, HA, Addon, LLM-Timeout, LLM-Response, Speech, Error-Patterns
+- **TEILWEISE (3/10)**: Redis (kein Breaker verdrahtet), ChromaDB (kein Breaker verdrahtet), Circuit Breaker Setup
 
-### Dead-Code-Liste (DL#2)
-- `shared/` gesamtes Paket → ✅ GELOESCHT
-- `redis_breaker`, `chromadb_breaker` → ✅ GEFIXT — jetzt registriert in `circuit_breaker.py` (2026-03-11)
+### Performance-Report DL#3
+- **Shortcut-Pfad**: 50-200ms (OPTIMAL)
+- **Fast-Modell**: 1500-4000ms (OK)
+- **Smart-Modell**: 2500-8000ms (GRENZWERTIG)
+- **Startup**: 30-60s+ (KRITISCH — P1+P2)
+- **Bottlenecks**: Startup-Init (P1/P2), Multi-LLM-Calls (P3), Redis ohne Breaker (P4), 120s Action-Planner Lock (P5)
+
+### Dead-Code-Liste (DL#3 — unveraendert)
+- `shared/` → ✅ GELOESCHT, keine Imports mehr
+- `redis_breaker`, `chromadb_breaker` → registriert aber NICHT verdrahtet
 - `domains/cover.py` — 3 Methoden → ❌ vorhanden
 - `engines/cover_control.py` — `_pending_actions` → ❌ vorhanden
 - `engines/adaptive.py` — `GradualTransitioner._pending` → ❌ vorhanden

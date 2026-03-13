@@ -793,13 +793,13 @@ proactive:
       description: Solar-Ueberschuss
 memory:
   extraction_enabled: true
-  extraction_min_words: 5
+  extraction_min_words: 3
   extraction_model: qwen3.5:4b
   extraction_temperature: 0.1
   extraction_max_tokens: 512
   max_person_facts_in_context: 5
   max_relevant_facts_in_context: 3
-  min_confidence_for_context: 0.6
+  min_confidence_for_context: 0.4
   duplicate_threshold: 0.15
   episode_min_words: 3
   default_confidence: 0.7

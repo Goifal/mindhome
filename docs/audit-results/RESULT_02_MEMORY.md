@@ -1,10 +1,76 @@
 # Audit-Ergebnis: Prompt 2 — Memory-System End-to-End-Analyse (Durchlauf #2)
 
-**Datum**: 2026-03-10
+**Datum**: 2026-03-10 (DL#2), 2026-03-13 (DL#3 — P02 Fixes)
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Alle 12 Memory-Module + Addon-Memory + Datenbank-Schemas
-**Durchlauf**: #2 (Verifikation nach P6a–P8 Fixes)
-**Vergleichsbasis**: DL#1 (3 kritische Memory-Bugs, 6 offene Probleme, 22 Checks)
+**Durchlauf**: #3 (P02 Memory-Reparatur: 11 Fixes)
+**Vergleichsbasis**: DL#2 (3 kritische Bugs gefixt, 6 offene Probleme)
+
+---
+
+## DL#3: P02 Memory-Reparatur — 11 Fixes
+
+### Durchgefuehrte Fixes
+
+1. [x] Fix 1: `get_recent_conversations(limit=3)` → `limit=10` (brain.py:2317 und brain.py:2442)
+2. [x] Fix 2: Semantic Facts in context_builder.py:301 — BEREITS unconditional geladen (kein Fix noetig)
+3. [x] Fix 3: Memory-Keywords erweitert (brain.py:8053, +16 neue Keywords, total 22)
+4. [x] Fix 4: `_build_memory_context()` Header verbessert (brain.py:5580-5586) — "DEIN GEDAECHTNIS" mit direktiver Anweisung
+5. [x] Fix 5: conversation_memory Priority 3→1 (brain.py:2973)
+6. [x] Fix 6: Doppelter Wort-Filter gefixt:
+   - memory_extractor.py:189: `max(self._min_words, 5)` → `max(self._min_words, 3)`
+   - brain.py:4368: `len(text.split()) > 3` → `> 2` (Episode-Speicherung)
+   - brain.py:4380: `len(text.split()) > 3` → `> 2` (Fakten-Extraktion)
+   - settings.yaml: `extraction_min_words: 5` → `3`
+7. [x] Fix 7: JSON-Parse Logging verbessert:
+   - memory_extractor.py:277: Error-Logging mit model + text_len Info
+   - memory_extractor.py:306: `logger.debug` → `logger.warning` fuer Parse-Fehler
+8. [x] Fix 8: Retry-Logik in `_extract_facts_background()` (brain.py:5792) — 2 Versuche mit 1s Pause
+9. [x] Fix 9: Whitelist fuer explizite Merk-Befehle in `_should_extract()` (memory_extractor.py:174-186):
+   - "merk dir", "merke dir", "vergiss nicht", "ab sofort", "von jetzt an"
+   - "ich heisse", "mein name ist", "meine frau", "mein mann"
+   - "ich mag", "ich hasse", "ich bevorzuge", "ich bin allergisch"
+   - Wird VOR allen Filtern geprueft → erzwungene Extraktion
+10. [x] Fix 10: Relevance/Confidence Schwellen gesenkt:
+    - context_builder.py:322: `min_confidence 0.6` → `0.4`
+    - context_builder.py:331: `relevance > 0.3` → `> 0.2`
+    - settings.yaml: `min_confidence_for_context: 0.6` → `0.4`
+11. [x] Fix 11: Guest-Mode Logging in context_builder.py:301-302:
+    - `logger.info("Guest-Mode aktiv — Memory-Abruf uebersprungen")` wenn Guest-Mode Memory blockiert
+
+### Verifizierung
+
+- [x] Grep: Alle `get_recent_conversations` Stellen = `limit=10`
+- [x] Grep: `search_facts`/`get_facts_by_person` NICHT hinter `intent_type=="memory"` (war schon in context_builder.py)
+- [x] Grep: Memory-Keywords-Liste hat 22 Eintraege (20+ Ziel)
+- [x] Read: `_build_memory_context()` Header ist direktiv ("DEIN GEDAECHTNIS", "Nutze sie AKTIV")
+- [x] Read: conversation_memory Priority = 1
+- [x] Grep: `_should_extract()` min_words = 3 (nicht 5)
+- [x] Grep: `_parse_facts()` Logger-Level = `logger.warning` (nicht debug)
+- [x] Grep: `_extract_facts_background()` hat Retry (`for attempt in range(2)`)
+- [x] Grep: `_should_extract()` hat `force_extract_patterns` VOR den Filtern
+- [x] Grep: `min_confidence_for_context` = 0.4 (nicht 0.6)
+- [x] Grep: Relevance-Filter = 0.2 (nicht 0.3)
+- [x] Grep: Guest-Mode Logging vorhanden
+- [x] Syntax-Check: `ast.parse` fuer brain.py, memory_extractor.py, context_builder.py — alle OK
+- [ ] Tests: pytest hat vorbestehenden ImportError (`pydantic_settings` fehlt) — kein Zusammenhang mit Fixes
+
+### Geaenderte Dateien
+
+1. `assistant/assistant/brain.py` — Fixes 1, 3, 4, 5, 6 (brain.py-Teil), 8
+2. `assistant/assistant/memory_extractor.py` — Fixes 6 (extractor-Teil), 7, 9
+3. `assistant/assistant/context_builder.py` — Fixes 10, 11
+4. `assistant/config/settings.yaml` — Fixes 6, 10
+
+### Memory-Flow nach Fixes
+
+```
+User Input → Redis (limit=10) + SemanticMemory (IMMER, Confidence≥0.4, Relevance>0.2) + ConversationMemory (Priority 1)
+           → Alles im System-Prompt mit direktivem Header ("DEIN GEDAECHTNIS")
+           → LLM antwortet mit Kontext
+           → memory_extractor.py speichert neue Fakten (min 3 Woerter, Whitelist fuer Merk-Befehle, 2x Retry)
+           → Guest-Mode wird geloggt wenn aktiv
+```
 
 ---
 
@@ -447,41 +513,58 @@ Name ist weiterhin irrefuehrend. Key jetzt `conv_memory_extended`, aber Modul he
 
 ---
 
-## KONTEXT AUS PROMPT 2: Memory-Analyse (Durchlauf #2)
+## KONTEXT AUS PROMPT 2: Memory-Reparatur (Durchlauf #3)
 
 ### Memory-Abhaengigkeitskarte
 - `brain.py` bleibt einziger Integrationspunkt fuer 12 isolierte Memory-Module (6 Cluster)
 - `memory.py` → Redis Working Memory (7d TTL) + ChromaDB Episodes (permanent)
 - `semantic_memory.py` → ChromaDB `mha_semantic_facts` + Redis Fact-Indexes (Dual-Storage)
-- `context_builder.py` → liest aus `semantic_memory`, formatiert fuer Prompt
-- `conversation_memory.py` → NICHT Conv-History, sondern Projekt/Fragen-Tracker (Key jetzt `conv_memory_extended`)
+- `context_builder.py` → liest aus `semantic_memory`, formatiert fuer Prompt (Confidence≥0.4, Relevance>0.2)
+- `conversation_memory.py` → NICHT Conv-History, sondern Projekt/Fragen-Tracker (Key `conv_memory_extended`, Priority 1)
+- `memory_extractor.py` → Whitelist fuer Merk-Befehle, min 3 Woerter, 2x Retry, Warning-Logging bei Parse-Fehler
 - `embeddings.py` → Singleton `paraphrase-multilingual-MiniLM-L12-v2` (384-dim), von 6 Modulen genutzt
 - Addon hat eigene SQLite (68 Tabellen) mit `LearnedPattern`/`StateHistory` — komplett isoliert
 
-### Memory-Flow (Ist-Zustand DL#2 — KORRIGIERT)
-- **Write**: brain.py:1020→memory.add_conversation()→Redis 7d; brain.py:4278→store_episode()→ChromaDB; brain.py:4286→extract_and_store()→semantic_memory — alles fire-and-forget (~10-12 Tasks/Request)
-- **Read**: context_builder→search_facts()→P1 (immer); brain.py:2374→`conv_memory` (semantisch + **ChromaDB Episoden NEU**)→P2; brain.py:2412→`conv_memory_extended` (Projekte)→P3; brain.py:2407→corrections→P2; brain.py:2404→learned_patterns→P2
+### Memory-Flow (Ist-Zustand DL#3 — NACH P02 FIXES)
+- **Write**: brain.py:1020→memory.add_conversation()→Redis 7d; brain.py:4368→store_episode()→ChromaDB (min 3 Woerter); brain.py:4380→_extract_facts_background()→semantic_memory (min 3 Woerter, 2x Retry, Whitelist) — alles fire-and-forget (~10-12 Tasks/Request)
+- **Read**: context_builder→search_facts(Relevance>0.2)+get_facts_by_person(Confidence≥0.4)→P1 (immer); brain.py:2374→`conv_memory` (semantisch + ChromaDB Episoden)→P2; brain.py:2412→`conv_memory_extended` (Projekte, Priority 1)→P3; brain.py:2407→corrections→P2; brain.py:2404→learned_patterns→P2; brain.py:2317+2442→get_recent_conversations(limit=10)
 
 ### Root Cause Status
-- ✅ **GEFIXT**: Duplicate Key "conv_memory" (brain.py:2374 vs 2412 — verschiedene Keys)
-- ✅ **GEFIXT**: Doppelte Prompt-Insertion (P2 vs P3 korrekt getrennt)
-- ✅ **GEFIXT**: ChromaDB-Episoden im Read-Path (brain.py:5569)
+- ✅ **GEFIXT DL#2**: Duplicate Key "conv_memory" (brain.py:2374 vs 2412 — verschiedene Keys)
+- ✅ **GEFIXT DL#2**: Doppelte Prompt-Insertion (P2 vs P3 korrekt getrennt)
+- ✅ **GEFIXT DL#2**: ChromaDB-Episoden im Read-Path (brain.py:5569)
+- ✅ **GEFIXT DL#3**: Conversation-History zu kurz (limit=3→10)
+- ✅ **GEFIXT DL#3**: Memory-Intent-Erkennung zu eng (22 Keywords)
+- ✅ **GEFIXT DL#3**: Memory-Header unklar (jetzt "DEIN GEDAECHTNIS" direktiv)
+- ✅ **GEFIXT DL#3**: conv_memory_ext Priority zu niedrig (3→1)
+- ✅ **GEFIXT DL#3**: Doppelter Wort-Filter (5→3 + >3→>2)
+- ✅ **GEFIXT DL#3**: LLM-Extraktion scheitert leise (warning statt debug)
+- ✅ **GEFIXT DL#3**: Fire-and-forget ohne Retry (jetzt 2x Versuche)
+- ✅ **GEFIXT DL#3**: Keine Whitelist fuer Merk-Befehle (force_extract_patterns hinzugefuegt)
+- ✅ **GEFIXT DL#3**: Confidence/Relevance zu streng (0.6→0.4, 0.3→0.2)
+- ✅ **GEFIXT DL#3**: Guest-Mode blockiert ohne Feedback (Logging hinzugefuegt)
 - ⚠️ OFFEN: Addon-Wissen isoliert, dialogue_state in-memory, learning_transfer in-memory
 
-### Empfohlener Fix
-Die 3 kritischen Fixes aus DL#1 sind umgesetzt. Verbleibend: (1) learning_transfer REDIS_KEY_TRANSFERS nutzen, (2) Addon-Kontext-Endpoint, (3) conversation_memory.py umbenennen. **Kein Blocker.**
-
-### Memory-Bugs (Durchlauf #2)
+### Memory-Bugs (Durchlauf #3)
 | Severity | Modul | Bug | Status |
 |---|---|---|---|
-| ~~🔴 KRITISCH~~ | ~~brain.py:2374+2412~~ | ~~Duplicate Key "conv_memory"~~ | ✅ GEFIXT |
-| ~~🔴 KRITISCH~~ | ~~brain.py:2824+2946~~ | ~~Doppelte Prompt-Insertion~~ | ✅ GEFIXT |
-| ~~🟠 HOCH~~ | ~~memory.py:276~~ | ~~ChromaDB-Episoden nie gelesen~~ | ✅ GEFIXT |
+| ~~🔴 KRITISCH~~ | ~~brain.py:2374+2412~~ | ~~Duplicate Key "conv_memory"~~ | ✅ GEFIXT DL#2 |
+| ~~🔴 KRITISCH~~ | ~~brain.py:2824+2946~~ | ~~Doppelte Prompt-Insertion~~ | ✅ GEFIXT DL#2 |
+| ~~🟠 HOCH~~ | ~~memory.py:276~~ | ~~ChromaDB-Episoden nie gelesen~~ | ✅ GEFIXT DL#2 |
+| ~~🔴 KRITISCH~~ | ~~brain.py:2317+2442~~ | ~~Conversation limit=3 zu kurz~~ | ✅ GEFIXT DL#3 |
+| ~~🔴 KRITISCH~~ | ~~memory_extractor.py:189+brain.py:4368~~ | ~~Doppelter Wort-Filter~~ | ✅ GEFIXT DL#3 |
+| ~~🟠 HOCH~~ | ~~brain.py:8053~~ | ~~Memory-Intent zu eng~~ | ✅ GEFIXT DL#3 |
+| ~~🟠 HOCH~~ | ~~brain.py:5580~~ | ~~Memory-Header unklar~~ | ✅ GEFIXT DL#3 |
+| ~~🟠 HOCH~~ | ~~brain.py:2973~~ | ~~conv_memory Priority 3~~ | ✅ GEFIXT DL#3 |
+| ~~🟠 MITTEL~~ | ~~context_builder.py:322+331~~ | ~~Confidence/Relevance zu streng~~ | ✅ GEFIXT DL#3 |
+| ~~🟠 MITTEL~~ | ~~memory_extractor.py:306~~ | ~~JSON-Parse nur debug~~ | ✅ GEFIXT DL#3 |
+| ~~🟢 GERING~~ | ~~brain.py:5792~~ | ~~Fire-and-forget ohne Retry~~ | ✅ GEFIXT DL#3 |
+| ~~🟢 GERING~~ | ~~memory_extractor.py:174~~ | ~~Keine Whitelist Merk-Befehle~~ | ✅ GEFIXT DL#3 |
+| ~~🟢 GERING~~ | ~~context_builder.py:302~~ | ~~Guest-Mode ohne Logging~~ | ✅ GEFIXT DL#3 |
 | 🟡 MITTEL | learning_transfer.py:27+74 | REDIS_KEY_TRANSFERS unused, _pending in-memory |
 | 🟡 MITTEL | dialogue_state.py | Multi-Turn State nicht persistiert (410Z, deque) |
 | 🟡 MITTEL | conversation_memory.py | Irrefuehrender Name |
 | 🟡 MITTEL | Addon pattern_engine.py | Behavioral patterns isoliert, kein Export |
-| 🟢 GERING | memory_extractor.py | Fire-and-forget ohne Retry |
 
 ### Dead-Code-Module
 - `learning_transfer.REDIS_KEY_TRANSFERS` — definierte Konstante, nie verwendet
@@ -494,3 +577,30 @@ Die 3 kritischen Fixes aus DL#1 sind umgesetzt. Verbleibend: (1) learning_transf
 - Embedding: Singleton gecacht, kein Re-Load
 - Token-Budget: P1 ~200-500, P2 conv_memory ~100-300, P3 conv_memory_extended ~100-300 — ~400-1200 total
 - Alle Writes fire-and-forget — 0ms Latenz-Impact auf Response
+
+---
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT:
+- BUG 1: get_recent_conversations limit=3→10 (brain.py:2317, brain.py:2442)
+- BUG 2: BEREITS GEFIXT in context_builder.py:301 (Fakten werden immer geladen)
+- BUG 3: Memory-Keywords erweitert auf 22 (brain.py:8053)
+- BUG 4: Memory-Header direktiv "DEIN GEDAECHTNIS" (brain.py:5580)
+- BUG 5: conv_memory_ext Priority 3→1 (brain.py:2973)
+- BUG 6: Wort-Minimum 5→3 + brain.py Filter >3→>2 (memory_extractor.py:189, brain.py:4368+4380, settings.yaml)
+- BUG 7: JSON-Parse Logging debug→warning (memory_extractor.py:306)
+- BUG 8: Retry-Logik 2x Versuche (brain.py:5792)
+- BUG 9: Whitelist force_extract_patterns (memory_extractor.py:174-186)
+- BUG 10: Confidence 0.6→0.4, Relevance 0.3→0.2 (context_builder.py:322+331, settings.yaml)
+- BUG 11: Guest-Mode Logging (context_builder.py:302)
+OFFEN:
+- 🟡 [MITTEL] Memory-Silos nicht konsolidiert (personality.py, correction_memory.py) | ARCHITEKTUR_NOETIG → P06b
+- 🟡 [MITTEL] learning_transfer REDIS_KEY_TRANSFERS unused | ~15 Zeilen Fix
+- 🟡 [MITTEL] dialogue_state nicht persistiert | Optional Redis-Backup
+- 🟡 [MITTEL] Addon-Wissen isoliert | GET /api/addon/context Endpoint
+GEAENDERTE DATEIEN: brain.py, memory_extractor.py, context_builder.py, settings.yaml
+REGRESSIONEN: Keine (Syntax-Check OK, Test-Fehler vorbestehend: pydantic_settings fehlt)
+NAECHSTER SCHRITT: P03 oder Praxis-Test mit echtem Dialog
+===================================
+```

@@ -6,6 +6,8 @@
 **Scope**: brain.py Architektur, Konflikte A/B/E, Flows 1/2/6/11, HIGH-Bugs, Performance
 **Baseline**: 2551 passed, 1197 failed (identisch mit 6a-Baseline)
 
+> **DL#3 (2026-03-13)**: Historisches Fix-Log aus DL#2. P02 Memory-Reparatur aendert diese Fixes nicht. Alle dokumentierten Fixes bleiben gueltig.
+
 ---
 
 ## Phase Gate: Baseline

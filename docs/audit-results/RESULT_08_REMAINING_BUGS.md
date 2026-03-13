@@ -4,6 +4,8 @@
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Alle 222 offenen Findings aus dem Audit (Prompts 1-7b) systematisch abarbeiten + 3 Quick-Win-Infrastruktur-Verbesserungen
 
+> **DL#3 (2026-03-13)**: Historisches Fix-Log aus DL#2. P02 Memory-Reparatur aendert diese Fixes nicht. Alle dokumentierten Fixes bleiben gueltig.
+
 ---
 
 ## 1. Zusammenfassung

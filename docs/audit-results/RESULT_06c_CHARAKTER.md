@@ -1,5 +1,7 @@
 # RESULT 06c: Charakter — Persönlichkeit harmonisieren & Config aufräumen
 
+> **DL#3 (2026-03-13)**: Historisches Fix-Log aus DL#2. P02 Memory-Reparatur aendert diese Fixes nicht. Alle dokumentierten Fixes bleiben gueltig.
+
 ## Phase Gate: Regression-Check
 
 ```

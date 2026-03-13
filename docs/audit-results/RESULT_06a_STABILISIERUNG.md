@@ -5,6 +5,8 @@
 **Scope**: Alle verbleibenden 🔴 KRITISCHEN Bugs aus P4a/P4b + Memory-Verifikation aus P2
 **Durchlauf**: #3 (nach DL#2 — nur noch 2 KRITISCHE Bugs offen)
 
+> **DL#3 (2026-03-13)**: Historisches Fix-Log aus DL#2. P02 Memory-Reparatur aendert diese Fixes nicht. Alle dokumentierten Fixes bleiben gueltig.
+
 ---
 
 ## DL#2 vs DL#3 Vergleich

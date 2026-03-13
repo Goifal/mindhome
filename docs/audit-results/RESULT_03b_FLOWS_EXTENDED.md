@@ -1,10 +1,44 @@
 # Audit-Ergebnis: Prompt 3b — End-to-End Flow-Analyse (Extended-Flows 8–13) + Kollisionen
 
-**Datum**: 2026-03-10
+**Datum**: 2026-03-10 (DL#2), 2026-03-13 (DL#3 — Verifikation nach P02 Fixes)
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Extended-Flows 8–13, Flow-Kollisionen, Service-Interaktionsanalyse
-**Durchlauf**: #2 (Verifikation nach P6a–P8 Fixes)
-**Vergleichsbasis**: DL#1 (6 Extended-Flows 8-13, Flow-Kollisionen, 11 Findings)
+**Durchlauf**: #3 (Verifikation nach P02 Memory-Reparatur)
+**Vergleichsbasis**: DL#2 (4 FIXED, 3 TEILWEISE, 4 UNFIXED, 2 NEU)
+
+---
+
+## DL#3: Verifikation nach P02 Memory-Reparatur
+
+### DL#2 → DL#3 Status-Update (Top-Findings)
+
+| # | Severity | Finding | DL#2-Status | DL#3-Status | Beschreibung |
+|---|----------|---------|-------------|-------------|-------------|
+| 3 | KRITISCH | proactive.start() nicht in _safe_init() | 🔴 REGRESSION | ✅ FIXED | brain.py:776 jetzt `await _safe_init("Proactive.start", ...)` |
+| 6 | HOCH | Memory-Halluzinations-Risiko (aus P03a) | ❌ UNFIXED | ✅ FIXED | brain.py:3216-3224: "ERFINDE KEINE Erinnerungen" Prompt |
+| — | — | conv_memory_ext Priority zu niedrig | P3 | ✅ P1 | brain.py:2973 Priority 3→1 (P02 Fix 5) |
+
+### Alle anderen Findings: UNVERAENDERT seit DL#2
+
+- Entity-Koordination asymmetrisch: ⚠️ TEILWEISE (nur Addon→Assistant)
+- _process_lock serialisiert alles: ❌ UNFIXED
+- Domain-Shortcuts Personality-Bypass: ❌ UNFIXED
+- Proaktiv ignoriert Konversation: ❌ UNFIXED
+- Boot-Nachricht ohne Personality: ❌ UNFIXED
+- WebSocket kein Reconnection: ❌ UNFIXED
+- 3D-Drucker keine Bestaetigung: ❌ UNFIXED
+
+### Gesamt-Statistik DL#3
+
+```
+DL#1: 11 Findings + 2 NEU in DL#2
+DL#2: 4 FIXED, 3 TEILWEISE, 4 UNFIXED, 2 NEU
+DL#3: 6 FIXED, 3 TEILWEISE, 4 UNFIXED
+
+Flows: 4/6 funktional (Flows 10-12, 13)
+       2/6 teilweise (Flows 8, 9)
+       proactive.start() REGRESSION aufgeloest ✅
+```
 
 ---
 
@@ -243,7 +277,7 @@ def _require_hardware_owner(request):
 
 **Dependency-Failure**:
 - Module in `_safe_init()` → Graceful Degradation, `_degraded_modules` Liste
-- ⚠️ `proactive.start()` (brain.py:773) **IMMER NOCH NICHT** in `_safe_init()` gewrappt — **REGRESSION**
+- ✅ `proactive.start()` (brain.py:776) JETZT in `_safe_init()` gewrappt — **GEFIXT in DL#3**
 - `brain.health_check()` zeigt Status an, crasht aber nicht bei "degraded"
 
 **Ready-Status**:
@@ -251,7 +285,7 @@ def _require_hardware_owner(request):
 - Health Probe: `GET /healthz` — immer 200, Inhalt zeigt Status
 
 **Bruchstellen**:
-- 🔴 `brain.py:773`: `proactive.start()` NICHT in `_safe_init()` — **UNVERAENDERT seit DL#1** (wurde als gefixt in P6a gemeldet, ist aber nicht im Code!)
+- ✅ `brain.py:776`: `proactive.start()` JETZT in `_safe_init()` gewrappt — **GEFIXT in DL#3**
 - Boot-Nachricht hat **keine JARVIS-Persoenlichkeit** — hardcoded Templates
 - Wenn HA beim Start nicht erreichbar: kein Temperatur/Fenster-Status, aber Boot-Nachricht wird trotzdem gesendet
 - ⚠️ Boot-Nachricht kann "Alle Systeme online" sagen obwohl Komponenten degraded sind — failed-Check (main.py:275-282) haengt nur "X Systeme eingeschraenkt" an, aendert aber nicht die Basis-Nachricht
@@ -491,7 +525,7 @@ Client ─HTTP POST─→ main.py:/api/assistant/chat/upload
 
 ---
 
-## KONTEXT AUS PROMPT 3 (gesamt: 3a + 3b): Flow-Analyse
+## KONTEXT AUS PROMPT 3 (gesamt: 3a + 3b): Flow-Analyse — DL#3
 
 ### Init-Sequenz
 ```
@@ -499,45 +533,46 @@ main.py:322 lifespan() → brain.initialize() (brain.py:481)
   → memory.initialize() (Redis + ChromaDB)
   → model_router.initialize() (Ollama)
   → ~54 Module via _safe_init() (F-069 Graceful Degradation)
-  → proactive.start() (⚠️ NICHT in _safe_init! — REGRESSION)
+  → proactive.start() ✅ JETZT in _safe_init() (brain.py:776) — DL#3 GEFIXT
   → Entity-Katalog laden
 main.py:347 Health-Check + Status-Logging
 main.py:361 Boot-Announcement (Sprachansage, hardcoded Templates)
 main.py:373 [NEU F-065] Shutdown-Broadcast an WebSocket-Clients
 ```
 
-### System-Prompt (rekonstruiert)
+### System-Prompt (rekonstruiert, nach P02 Fixes)
 ```
 Statisch: personality.py:242-286 SYSTEM_PROMPT_TEMPLATE
   → Jarvis MCU-Charakter, TON, VERBOTEN-Liste, FAKTEN-REGEL
 Dynamisch: brain.py:2664-3021 P1-P4 Sektionen
-  → P1 (immer): Scene, Confidence, Mood, Security, Memory, Last-Action, Files, Model-Hint
+  → P1 (immer): Scene, Confidence, Mood, Security, Memory, Last-Action, Files, Model-Hint, Conv-Memory-Ext (P02: 3→1)
   → P2 (wichtig): Time, Timers, Conv-Memory, Problems, Corrections, Jarvis-Thinks, Dialogue
-  → P3 (optional): RAG, Summaries, Anomalies, Continuity, Conv-Memory-Ext, Calendar, Learning
+  → P3 (optional): RAG, Summaries, Anomalies, Continuity, Calendar, Learning
   → P4 (wenn-platz): Tutorial
 Token-Budget: ollama_num_ctx - 800, ~45% Auslastung, P1 unbegrenzt
+Memory: Confidence≥0.4 (P02: war 0.6), Relevance>0.2 (P02: war 0.3), limit=10 (P02: war 3)
 ```
 
-### Flow-Status-Uebersicht (alle 13 Flows)
+### Flow-Status-Uebersicht (alle 13 Flows) — DL#3
 
-| Flow | DL#1-Status | DL#2-Status | Kritischste Bruchstelle |
+| Flow | DL#2-Status | DL#3-Status | Kritischste Bruchstelle |
 |------|------------|------------|------------------------|
 | 1: Sprach-Input → Antwort | ⚠️ Teilweise | ⚠️ Teilweise | `_process_lock` serialisiert alles (brain.py:1103) |
-| 2: Proaktive Benachrichtigung | ⚠️ Teilweise | ⚠️ Teilweise | `proactive.start()` nicht in _safe_init (brain.py:773) |
+| 2: Proaktive Benachrichtigung | ⚠️ Teilweise | ✅ Verbessert | proactive.start() GEFIXT ✅ (brain.py:776) |
 | 3: Morgen-Briefing | ⚠️ Teilweise | ⚠️ Teilweise | Blockiert durch _process_lock wenn User spricht |
-| 4: Autonome Aktion | ⚠️ Teilweise | ⚠️ Teilweise | Default Level 2 = keine Aktionen; threat_assessment nicht konsultiert |
+| 4: Autonome Aktion | ⚠️ Teilweise | ⚠️ Teilweise | Default Level 2 = keine Aktionen |
 | 5: Persoenlichkeits-Pipeline | ✅ Funktioniert | ✅ Funktioniert | Keine signifikanten Bruchstellen |
-| 6: Memory-Abruf | ⚠️ Teilweise | ⚠️ Teilweise | Kein "Ich erinnere mich nicht"-Hint fuer LLM (brain.py:3186) |
+| 6: Memory-Abruf | ⚠️ Teilweise | ✅ Verbessert | "ERFINDE KEINE Erinnerungen" Hint GEFIXT ✅ (brain.py:3216) |
 | 7: Speech-Pipeline | ⚠️ Teilweise | ⚠️ Teilweise | Timeout-Mismatch: conversation.py 30s vs LLM 120s |
-| 8: Addon-Automation | ⚠️ Teilweise | ⚠️ Teilweise | Ownership-Check NEU aber asymmetrisch (nur Addon→Assistant) |
-| 9: Domain-Assistenten | ✅ Funktioniert | ⚠️ Teilweise | **KORREKTUR**: Shortcuts umgehen personality.build_system_prompt() |
-| 10: Workshop-System | ⚠️ Teilweise | ✅ Funktioniert | API-Key + Trust-Level GEFIXT; 3D-Drucker-Bestaetigung offen |
-| 11: Boot-Sequenz | ✅ Funktioniert | ✅ Funktioniert | Boot-Nachricht nicht durch personality.py; proactive.start() REGRESSION |
-| 12: File-Upload & OCR | ✅ Funktioniert | ✅ Funktioniert | get_file_path() Confinement GEFIXT (file_handler.py:105-109) |
-| 13: WebSocket-Streaming | ✅ Funktioniert | ✅ Funktioniert | Kein Reconnection-Handling; 300s Timeout; NEU: Shutdown-Broadcast |
+| 8: Addon-Automation | ⚠️ Teilweise | ⚠️ Teilweise | Ownership-Check asymmetrisch (nur Addon→Assistant) |
+| 9: Domain-Assistenten | ⚠️ Teilweise | ⚠️ Teilweise | Shortcuts umgehen personality.build_system_prompt() |
+| 10: Workshop-System | ✅ Funktioniert | ✅ Funktioniert | API-Key + Trust-Level GEFIXT |
+| 11: Boot-Sequenz | ✅ Funktioniert | ✅ Funktioniert | Boot-Nachricht nicht durch personality.py (akzeptabel) |
+| 12: File-Upload & OCR | ✅ Funktioniert | ✅ Funktioniert | get_file_path() Confinement GEFIXT |
+| 13: WebSocket-Streaming | ✅ Funktioniert | ✅ Funktioniert | Kein Reconnection-Handling |
 
-### Top-Bruchstellen (alle Flows)
-1. 🔴 **proactive.start() nicht in _safe_init()** — brain.py:773 — REGRESSION (alle Durchlaeufe offen)
+### Top-Bruchstellen (alle Flows) — DL#3
+1. ~~🔴 proactive.start() nicht in _safe_init()~~ ✅ GEFIXT (brain.py:776)
 2. 🟠 **Addon↔Assistant Koordination asymmetrisch** — Ownership-Check nur Addon→Assistant
 3. 🟠 **_process_lock serialisiert ALLES** — brain.py:215,1103 — 1 Request gleichzeitig
 4. 🟠 **Proactive ignoriert laufende Konversation** — keine Queue
@@ -545,7 +580,7 @@ Token-Budget: ollama_num_ctx - 800, ~45% Auslastung, P1 unbegrenzt
 
 ### Kollisionen
 - Addon-Engines vs. Assistant-Module auf denselben HA-Entities — **TEILWEISE ENTSCHAERFT** durch Ownership-Check (asymmetrisch)
-- Parallele brain.process()-Aufrufe werden durch _process_lock serialisiert (war DL#1 falsch als "kein Lock" beschrieben)
+- Parallele brain.process()-Aufrufe werden durch _process_lock serialisiert
 - Proaktive Events waehrend laufender Verarbeitung — UNVERAENDERT
 
 ### Feature-Gaps
@@ -555,10 +590,37 @@ Token-Budget: ollama_num_ctx - 800, ~45% Auslastung, P1 unbegrenzt
 - 3D-Drucker ohne Bestaetigung
 - Kein WebSocket Reconnection-Handling
 
-### Gegenueber DL#1 GEFIXT
+### Gegenueber DL#1 GEFIXT (kumulativ bis DL#3)
 - ✅ Workshop API-Key-Bypass (F-086)
 - ✅ Workshop Hardware Trust-Level
 - ✅ get_file_path() Pfad-Confinement
 - ✅ Entity-Ownership-Check (Addon→Assistant Richtung)
 - ✅ Shutdown-Broadcast (F-065)
 - ✅ Sentence-Level TTS im Streaming
+- ✅ proactive.start() in _safe_init() (DL#3)
+- ✅ Memory-Halluzinations-Schutz (DL#3, brain.py:3216-3224)
+- ✅ conv_memory_ext Priority 3→1 (DL#3, brain.py:2973)
+
+---
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT (DL#3):
+- proactive.start() in _safe_init() (brain.py:776)
+- Memory-Halluzinations-Hint (brain.py:3216-3224)
+- conv_memory_ext Priority 1 (brain.py:2973)
+- + alle P02 Memory-Fixes (11 Fixes, siehe RESULT_02)
+OFFEN:
+- 🟠 [HOCH] Addon↔Assistant Koordination asymmetrisch | Ownership-Check nur Addon→Assistant, kein Back-Channel
+- 🟠 [HOCH] _process_lock serialisiert alle Requests | brain.py:215,1103 | ARCHITEKTUR_NOETIG
+- 🟠 [HOCH] Proactive ignoriert laufende Konversation | Keine Queue
+- 🟡 [MITTEL] Domain-Shortcuts umgehen Personality | brain.py:1398-2029
+- 🟡 [MITTEL] conversation.py 30s Timeout vs LLM 120s | Einfacher Fix
+- 🟡 [MITTEL] Boot-Nachricht ohne Personality | Hardcoded Templates
+- 🟡 [MITTEL] WebSocket kein Reconnection | websocket.py
+- 🟡 [MITTEL] 3D-Drucker keine Bestaetigung | repair_planner.py
+GEAENDERTE DATEIEN: [Keine Code-Aenderungen — reiner Analyse+Doku-Update]
+REGRESSIONEN: [Keine — proactive.start() REGRESSION aus DL#2 ist aufgeloest]
+NAECHSTER SCHRITT: Prompt 4a — Bug-Fixes
+===================================
+```

@@ -2314,10 +2314,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 and intent_type == "knowledge"
                 and not profile.need_rag):
             logger.info("Knowledge Fast-Path: Ueberspringe mega-gather")
-            recent = await self.memory.get_recent_conversations(limit=3)
+            recent = await self.memory.get_recent_conversations(limit=10)
             _kfp_system = self.personality.build_minimal_system_prompt()
             _kfp_messages = [{"role": "system", "content": _kfp_system}]
-            for conv in recent[-3:]:
+            for conv in recent[-10:]:
                 _kfp_messages.append({"role": conv["role"], "content": conv["content"]})
             _kfp_messages.append({"role": "user", "content": text})
 
@@ -2439,7 +2439,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Conversation-Mode Detection + Memory-Callback parallelisieren
         # (bisher sequentiell NACH dem gather — spart ~50-200ms)
-        _mega_tasks.append(("conv_mode_msgs", self.memory.get_recent_conversations(limit=3)))
+        _mega_tasks.append(("conv_mode_msgs", self.memory.get_recent_conversations(limit=10)))
         _mega_tasks.append(("memory_callback", self.personality.build_memory_callback_section(person or "")))
 
         _mega_keys, _mega_coros = zip(*_mega_tasks)
@@ -2970,7 +2970,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
         conv_memory_ctx = _safe_get("conv_memory_extended", "")
         if conv_memory_ctx:
-            sections.append(("conv_memory_ext", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 3))
+            sections.append(("conv_memory_ext", f"\n\nGEDAECHTNIS: {conv_memory_ctx}", 1))
 
         # --- Prio 4: Wenn Platz ---
         if tutorial_hint:
@@ -4365,7 +4365,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         )
 
         # 10. Episode speichern (Langzeitgedaechtnis, fire-and-forget)
-        if len(text.split()) > 3:
+        if len(text.split()) > 2:
             episode = f"User: {text}\nAssistant: {response_text}"
             self._task_registry.create_task(
                 self.memory.store_episode(episode, {
@@ -4377,7 +4377,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             )
 
         # 11. Fakten extrahieren (async im Hintergrund)
-        if self.memory_extractor and len(text.split()) > 3:
+        if self.memory_extractor and len(text.split()) > 2:
             self._task_registry.create_task(
                 self._extract_facts_background(
                     text, response_text, person or "unknown", context
@@ -5578,13 +5578,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         if parts:
             parts.insert(0, (
-                "\n\nGEDAECHTNIS (nutze diese Infos MIT HALTUNG — "
-                "wie ein alter Bekannter, nicht wie eine Datenbank):\n"
-                "ANWEISUNG: Wenn eine Erinnerung zur aktuellen Frage passt, baue sie TROCKEN ein.\n"
-                "RICHTIG: 'Milch? Beim letzten Mal endete das... suboptimal.' / "
-                "'Wie am Dienstag. Nur ohne den Zwischenfall.'\n"
-                "FALSCH: 'Laut meinen Daten hast du gesagt...' / 'In meiner Datenbank steht...'\n"
-                "Nicht erzwingen — nur einbauen wenn es PASST und WITZIG oder NUETZLICH ist."
+                "\n\nDEIN GEDAECHTNIS — folgende Fakten WEISST DU ueber den User:\n"
+                "Nutze sie AKTIV aber BEILAEUFIG in deinen Antworten.\n"
+                "Wenn der User nach Informationen fragt die hier stehen, antworte damit.\n"
+                "Ignoriere diese Fakten NICHT — sie sind dein Gedaechtnis.\n"
+                "Stil: Wie ein alter Bekannter, nicht wie eine Datenbank."
             ))
             return "\n".join(parts)
 
@@ -5790,20 +5788,27 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         person: str,
         context: dict,
     ):
-        """Extrahiert Fakten im Hintergrund (non-blocking)."""
-        try:
-            facts = await self.memory_extractor.extract_and_store(
-                user_text=user_text,
-                assistant_response=assistant_response,
-                person=person,
-                context=context,
-            )
-            if facts:
-                logger.info(
-                    "Hintergrund-Extraktion: %d Fakt(en) gespeichert", len(facts)
+        """Extrahiert Fakten im Hintergrund mit 1x Retry."""
+        for attempt in range(2):  # Max 2 Versuche
+            try:
+                facts = await self.memory_extractor.extract_and_store(
+                    user_text=user_text,
+                    assistant_response=assistant_response,
+                    person=person,
+                    context=context,
                 )
-        except Exception as e:
-            logger.error("Fehler bei Hintergrund-Fakten-Extraktion: %s", e)
+                if facts:
+                    logger.info(
+                        "Hintergrund-Extraktion: %d Fakt(en) gespeichert (Versuch %d)",
+                        len(facts), attempt + 1,
+                    )
+                return
+            except Exception as e:
+                if attempt == 0:
+                    logger.warning("Fakten-Extraktion Versuch 1 fehlgeschlagen, retrying: %s", e)
+                    await asyncio.sleep(1)
+                else:
+                    logger.error("Fakten-Extraktion endgueltig fehlgeschlagen: %s", e)
 
         # Kontext-Kette: Substantielle Gespraeche als conversation_topic speichern
         try:
@@ -8048,6 +8053,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         memory_keywords = [
             "erinnerst du dich", "weisst du noch", "was weisst du",
             "habe ich dir", "hab ich gesagt", "was war",
+            "habe ich erwaehnt", "habe ich erzaehlt",
+            "kennst du mein", "kennst du meine",
+            "wann habe ich", "wann ist mein", "wie heisst mein", "wie heisst meine",
+            "wo wohne ich", "wo arbeite ich", "was mache ich beruflich",
+            "mein geburtstag", "mein name", "meine frau", "mein mann",
+            "was mag ich", "was habe ich gesagt",
+            "erinnere dich", "was hast du dir gemerkt",
+            "wer bin ich", "wie heisse ich", "wie heiße ich",
+            "letzte woche", "gestern", "remember",
+            "do you know my", "what did i tell you",
+            "what do you know about", "did i mention",
         ]
         if any(kw in text_lower for kw in memory_keywords):
             return "memory"
