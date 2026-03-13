@@ -1,354 +1,470 @@
-# Prompt 2: Memory-System — End-to-End-Analyse & Reparatur
+# Prompt 2: Memory-System — Gezielte Reparatur der 6 bekannten Bugs
 
 ## Rolle
 
-Du bist ein Elite-Software-Architekt und KI-Ingenieur mit tiefem Wissen in:
+Du bist ein Elite-Software-Ingenieur spezialisiert auf Memory-Systeme in Conversational AI. Du fixst **bekannte, verifizierte Bugs** — keine Analyse, keine Exploration, sondern **Read -> Grep -> Edit -> Verify** fuer jeden Fix.
 
-- **RAG & Memory**: ChromaDB, FAISS, Sentence-Transformers, Embedding-Modelle, Cosine Similarity, MemGPT-Patterns
-- **Conversational AI**: Dialogue State, Multi-Turn Memory, Sliding Window, Session Handling
-- **Python**: AsyncIO, Redis, SQLite, aiohttp, Type Hints
-- **LLM-Engineering**: Context Window Management, Token-Budgetierung, Prompt Design
-
-Du kennst **J.A.R.V.I.S. aus dem MCU** als Goldstandard:
-- Merkt sich **alles** — Gespräche, Vorlieben, Muster, Gewohnheiten
-- Lernt aus Korrekturen und macht denselben Fehler **nie zweimal**
-- Verbindet Informationen aus verschiedenen Quellen zu einem **kohärenten Bild**
+**LLM-Hinweis (Qwen 3.5 / Codestral)**: Dieses Prompt ist optimiert fuer praezise Code-Edits. Jeder Fix hat exakte Datei, Zeile und Code-Aenderung. Arbeite die Fixes **sequentiell** ab — ein Fix nach dem anderen. Nutze Read um die aktuelle Zeile zu verifizieren, dann Edit um die Aenderung zu machen, dann Grep um sicherzustellen dass nichts kaputt ist.
 
 ---
 
-## Kontext aus Prompt 1
+## Arbeitsumgebung
 
-> **Wenn du Prompt 1 bereits in dieser Konversation bearbeitet hast**: Nutze deine eigenen Ergebnisse (Kontext-Block) automatisch als Kontext. Du musst nichts einfügen.
->
-> **Wenn dies eine neue Konversation ist**: Füge hier den Kontext-Block aus Prompt 1 ein, besonders Konflikt C ("Wer bestimmt was Jarvis WEISS?") und Konflikt F ("Assistant ↔ Addon Interaktion").
-
----
-
-## ⚠️ Arbeitsumgebung: GitHub-Repository
-
-Du arbeitest mit dem **GitHub-Quellcode**, nicht mit einem laufenden System. Redis, ChromaDB und Ollama sind nicht verfügbar. Du musst ALLES aus dem Code herauslesen — jede Zeile, jeden Funktionsaufruf, jeden Key-Namen, jeden TTL-Wert.
-
----
-
-## Das Problem
-
-Jarvis merkt sich **keine Gespräche**. Trotz eines 3-Tier Memory Systems (Redis Working Memory, ChromaDB Episodic, Semantic Facts) funktioniert die Erinnerung nicht.
-
-### ALLE Memory-bezogenen Module
-
-Es gibt **nicht 4, sondern mindestens 12** Module die mit Memory/Wissen zu tun haben:
-
-> **Achtung**: `conversation.py` existiert nur als HA-Integration (`ha_integration/.../conversation.py`) — es ist eine Bridge zwischen der HA Voice Pipeline und dem Assistant, **kein** Memory-Modul. Das eigentliche Gesprächs-Memory ist `conversation_memory.py`.
-
-| Modul | Aufgabe | Technologie |
-|---|---|---|
-| `memory.py` | Working Memory | Redis |
-| `semantic_memory.py` | Langzeit-Fakten & Vektor-Suche | ChromaDB |
-| `conversation_memory.py` | Konversations-Gedächtnis & Gesprächsverlauf | ? |
-| `memory_extractor.py` | Extrahiert Fakten aus Gesprächen | ? |
-| `correction_memory.py` | Lernt aus User-Korrekturen | ? |
-| `dialogue_state.py` | Konversations-Zustandsmaschine | ? |
-| `learning_observer.py` | Muster aus Verhalten | ? |
-| `learning_transfer.py` | Wissenstransfer zwischen Domains | ? |
-| `knowledge_base.py` | Lokales Wissens-Repository | ? |
-| `context_builder.py` | Was tatsächlich im LLM-Prompt landet | Prompt-String |
-| `embeddings.py` | Embedding-Modell-Verwaltung | ? |
-| `embedding_extractor.py` | Text → Embedding-Vektor | ? |
-
-**Kritische Frage**: Wie hängen diese 12 Module zusammen? Oder sind es 12 isolierte Inseln?
+- Repository: `/home/user/mindhome/`
+- Assistant-Code: `assistant/assistant/`
+- Hauptdateien fuer dieses Prompt:
+  - `assistant/assistant/brain.py` (10.000+ Zeilen — Read mit offset!)
+  - `assistant/assistant/memory.py`
+  - `assistant/assistant/semantic_memory.py`
+  - `assistant/assistant/conversation_memory.py`
+  - `assistant/assistant/personality.py`
 
 ---
 
-## Aufgabe
+## DAS PROBLEM: Jarvis hat Alzheimer
 
-### Schritt 1 — Dokumentation prüfen
+Jarvis vergisst **alles**. Trotz 3 separater Memory-Systeme (Redis, ChromaDB, SemanticMemory) funktioniert die Erinnerung nicht. Die Root Causes sind **bekannt und verifiziert**:
 
-Lies und **verifiziere im Code**:
-- `docs/JARVIS_SELF_IMPROVEMENT.md` — 9 Self-Learning Features: Wie viele sind wirklich implementiert?
-- `docs/JARVIS_FEATURES_IMPLEMENTATION.md` — Memory-bezogene Bugfixes: Wirklich gefixt?
+### Die 3 Memory-Systeme (NICHT verbunden)
 
-### Schritt 2 — Memory-Modul-Abhängigkeiten kartieren
+```
+System 1: Redis Working Memory (memory.py)
+  -> Speichert letzte 3-50 Konversationen
+  -> get_recent_conversations(limit=3) — NUR 3!
 
-Bevor du den Datenfluss verfolgst: Lies **jedes** der 12 Module und erstelle eine **Abhängigkeitskarte**:
+System 2: ChromaDB Episodic Memory (memory.py:276 search_memories())
+  -> Semantische Suche ueber vergangene Gespraeche
+  -> Wird NUR bei intent_type=="memory" abgefragt (brain.py:3204)
 
-| Modul | Importiert von | Wird importiert von | Shared State? |
+System 3: Semantic Facts (semantic_memory.py:469 search_facts(), :507 get_facts_by_person())
+  -> Gespeicherte Fakten ueber Personen
+  -> Werden NUR bei intent_type=="memory" geladen
+  -> _build_memory_context() (brain.py:5562) baut den Prompt-Abschnitt
+  -> Aber nur wenn relevant_facts UND person_facts gefuellt sind!
+
+System 4 (Bonus): conversation_memory.py
+  -> Projekt-Tracking, offene Fragen, Daily Summaries
+  -> Geladen bei brain.py:2438 mit get_memory_context()
+  -> Hat Priority 3 im System-Prompt (brain.py:2973) — wird GEDROPPT bei Token-Knappheit
+
+System 5 (Bonus): personality.py:739 build_memory_callback_section()
+  -> Liest aus mha:personality:memorable:{person}
+  -> ANDERES Memory-System als semantic_facts!
+```
+
+**Ergebnis**: User sagt "Mein Geburtstag ist am 15. Maerz" — 5 Nachrichten spaeter ist das vergessen, weil:
+1. Nur 3 Konversationen im Context (Fix 1)
+2. Semantic Facts werden nicht geladen ausser bei Memory-Intent (Fix 2)
+3. Memory-Intent-Erkennung ist zu eng (Fix 3)
+4. Memory-Kontext hat falsche Prioritaet — wird gedroppt (Fix 5)
+
+---
+
+## DIE 5 FIXES
+
+### Arbeitsweise pro Fix
+
+```
+1. READ  — Datei lesen (bei brain.py mit offset= fuer die richtige Stelle)
+2. GREP  — Alle Aufrufer/Abhaengigkeiten finden
+3. EDIT  — Fix direkt in die Datei schreiben
+4. VERIFY — Nochmal Read um den Fix zu pruefen + Grep um Seiteneffekte zu finden
+```
+
+---
+
+### FIX 1: Konversations-Limit von 3 auf 10 erhoehen
+
+**Problem**: `get_recent_conversations(limit=3)` — Jarvis sieht nur die letzten 3 Nachrichten. Alles was 5 Nachrichten zurueckliegt ist unsichtbar.
+
+**Dateien und Zeilen**:
+- `assistant/assistant/brain.py` Zeile ~3080: `get_recent_conversations(limit=3)`
+- `assistant/assistant/brain.py` Zeile ~2442: `get_recent_conversations(limit=3)`
+
+**Methodik**:
+
+```
+Schritt 1 — Alle Stellen finden:
+  Grep: pattern="get_recent_conversations" path="assistant/assistant/" output_mode="content"
+
+Schritt 2 — Jede Stelle lesen:
+  Read: brain.py mit offset um die Zeilen 3070-3090 und 2430-2450 zu sehen
+
+Schritt 3 — Edit (BEIDE Stellen!):
+  Edit: old_string="get_recent_conversations(limit=3)"
+        new_string="get_recent_conversations(limit=10)"
+
+Schritt 4 — Verify:
+  Grep: pattern="get_recent_conversations" path="assistant/assistant/" output_mode="content"
+  -> Alle Stellen muessen jetzt limit=10 haben
+```
+
+**Code-Aenderung**:
+```python
+# VORHER (brain.py:3080 und brain.py:2442):
+get_recent_conversations(limit=3)
+
+# NACHHER:
+get_recent_conversations(limit=10)
+```
+
+**Warum 10?** 3 ist absurd wenig — der User kann nicht mal ein kurzes Gespraech fuehren ohne den Kontext zu verlieren. 10 gibt genuegend Kontext fuer Multi-Turn-Dialoge ohne das Token-Budget zu sprengen. Bei durchschnittlich 50-100 Tokens pro Nachricht sind 10 Nachrichten ca. 500-1000 Tokens — kein Problem fuer Qwen 3.5 mit 32k Context.
+
+---
+
+### FIX 2: Semantic Facts IMMER laden (nicht nur bei Memory-Intent)
+
+**Problem**: `person_facts` und `relevant_facts` werden NUR gefuellt wenn `intent_type == "memory"` (brain.py:3204). Bei einer normalen Frage wie "Wie heisst meine Frau?" mit intent_type="question" werden KEINE gespeicherten Fakten geladen.
+
+**Dateien und Zeilen**:
+- `assistant/assistant/brain.py` Zeile ~2430 (Bereich der `_mega_tasks` / parallelen Task-Erstellung)
+- `assistant/assistant/brain.py` Zeile ~3204 (die `if intent_type == "memory"` Bedingung)
+
+**Methodik**:
+
+```
+Schritt 1 — Aktuellen Code lesen:
+  Read: brain.py mit offset um die _mega_tasks-Erstellung zu sehen (~2420-2460)
+  Read: brain.py mit offset um die intent_type=="memory" Bedingung zu sehen (~3195-3215)
+
+Schritt 2 — Verstehen wo person_facts/relevant_facts gesetzt werden:
+  Grep: pattern="person_facts|relevant_facts" path="assistant/assistant/brain.py" output_mode="content"
+
+Schritt 3 — Fix: Semantic-Facts-Laden in _mega_tasks verschieben (IMMER ausfuehren)
+  Die Tasks fuer search_facts() und get_facts_by_person() muessen in die
+  allgemeine Task-Liste verschoben werden, NICHT hinter der intent_type=="memory" Bedingung.
+
+Schritt 4 — Verify:
+  Grep: pattern="search_facts|get_facts_by_person" path="assistant/assistant/brain.py" output_mode="content"
+  -> Muessen jetzt AUSSERHALB der intent_type-Bedingung stehen
+```
+
+**Konzept der Aenderung**:
+```python
+# VORHER (brain.py ~3204):
+if intent_type == "memory":
+    relevant_facts = await self.semantic_memory.search_facts(query)
+    person_facts = await self.semantic_memory.get_facts_by_person(person)
+
+# NACHHER: In die allgemeine _mega_tasks-Liste verschieben (~2430):
+# Diese Tasks werden IMMER ausgefuehrt, unabhaengig vom intent_type
+mega_tasks = {
+    # ... bestehende Tasks ...
+    "semantic_facts": self.semantic_memory.search_facts(query),
+    "person_facts": self.semantic_memory.get_facts_by_person(person),
+}
+```
+
+**ACHTUNG**: Die exakten Variablennamen und Task-Struktur muessen aus dem Code gelesen werden. Lies ZUERST den _mega_tasks-Bereich und die intent_type=="memory"-Bedingung, dann adaptiere den Fix.
+
+**Warum?** Semantic Facts sind das Langzeitgedaechtnis von Jarvis. Wenn der User sagt "Meine Frau heisst Lisa" und spaeter fragt "Wie heisst meine Frau?", wird das als intent_type="question" klassifiziert — und Lisa wird nie gefunden. Das ist der Hauptgrund warum Jarvis vergisst.
+
+---
+
+### FIX 3: Memory-Intent-Erkennung erweitern
+
+**Problem**: Die Intent-Erkennung in brain.py klassifiziert zu wenige Anfragen als "memory". Fragen wie "Weisst du noch...?", "Erinnerst du dich...?" oder "Was habe ich gesagt ueber...?" werden nicht als Memory-Intent erkannt.
+
+**Methodik**:
+
+```
+Schritt 1 — Intent-Erkennung finden:
+  Grep: pattern="intent.*memory|memory.*intent|intent_type.*memory" path="assistant/assistant/brain.py" output_mode="content"
+
+Schritt 2 — Aktuelle Keywords lesen:
+  Read: brain.py an der Stelle wo intent_type=="memory" bestimmt wird
+
+Schritt 3 — Keywords erweitern:
+  Edit: Zusaetzliche Keywords hinzufuegen
+```
+
+**Erweiterte Keywords (Deutsch + Englisch)**:
+```python
+memory_keywords = [
+    # Bestehende Keywords (aus dem Code lesen!)
+    # ... plus diese neuen:
+    "erinnerst du dich", "weisst du noch", "habe ich dir gesagt",
+    "habe ich erwaehnt", "habe ich erzaehlt", "was weisst du ueber",
+    "was habe ich gesagt", "kennst du mein", "kennst du meine",
+    "wann habe ich", "wann ist mein", "wie heisst mein", "wie heisst meine",
+    "wo wohne ich", "wo arbeite ich", "was mache ich beruflich",
+    "mein geburtstag", "mein name", "meine frau", "mein mann",
+    "remember", "do you know my", "what did i tell you",
+    "what do you know about", "did i mention",
+]
+```
+
+**ACHTUNG**: Lies ZUERST die bestehende Keyword-Liste aus dem Code und fuege nur die fehlenden hinzu. Dupliziere keine bestehenden Keywords.
+
+---
+
+### FIX 4: _build_memory_context() Header-Text verbessern
+
+**Problem**: `_build_memory_context()` (brain.py:5562) baut den Memory-Abschnitt fuer den System-Prompt, aber der Header-Text ist unklar. Das LLM versteht nicht, dass dies Jarvis' eigene Erinnerungen sind, die es aktiv nutzen soll.
+
+**Methodik**:
+
+```
+Schritt 1 — Aktuellen Header lesen:
+  Read: brain.py mit offset um Zeile 5562 herum (5550-5580)
+
+Schritt 2 — Header verbessern:
+  Edit: Header-Text aendern
+```
+
+**Code-Aenderung**:
+```python
+# VORHER (den exakten Text aus dem Code lesen!):
+# Vermutlich etwas wie "## Memory" oder "## Erinnerungen"
+
+# NACHHER:
+"""## Deine Erinnerungen und Wissen ueber den Benutzer
+
+Die folgenden Fakten hast DU dir gemerkt. Nutze sie AKTIV in deinen Antworten.
+Wenn der Benutzer nach Informationen fragt die hier stehen, antworte damit.
+Ignoriere diese Fakten NICHT — sie sind dein Gedaechtnis."""
+```
+
+**Warum?** LLMs behandeln System-Prompt-Abschnitte unterschiedlich je nach Formulierung. Ein klarer, direktiver Header ("Deine Erinnerungen", "Nutze sie AKTIV") sorgt dafuer, dass Qwen 3.5 die Fakten tatsaechlich in Antworten einbezieht, statt sie als Hintergrundinformation zu ignorieren.
+
+---
+
+### FIX 5: conversation_memory.py Prioritaet von 3 auf 1 erhoehen
+
+**Problem**: `conversation_memory.py` liefert Projekt-Tracking, offene Fragen und Daily Summaries. Diese werden bei brain.py:2438 mit `get_memory_context()` geladen, haben aber Priority 3 im System-Prompt (brain.py:2973). Bei Token-Knappheit wird der gesamte Konversations-Kontext GEDROPPT.
+
+**Methodik**:
+
+```
+Schritt 1 — Priority-Zuweisung finden:
+  Grep: pattern="priority.*3|priority.*conversation_memory|get_memory_context" path="assistant/assistant/brain.py" output_mode="content"
+
+Schritt 2 — Stelle lesen:
+  Read: brain.py mit offset um Zeile 2973 herum (2960-2990)
+
+Schritt 3 — Priority aendern:
+  Edit: priority=3 -> priority=1
+
+Schritt 4 — Verify:
+  Read: Stelle nochmal lesen, pruefen ob priority=1
+  Grep: pattern="priority" path="assistant/assistant/brain.py" output_mode="content"
+  -> Pruefen ob die neue Priority-Reihenfolge Sinn macht
+```
+
+**Code-Aenderung**:
+```python
+# VORHER (brain.py ~2973):
+# ... etwas wie: {"content": memory_context, "priority": 3, ...}
+
+# NACHHER:
+# ... {"content": memory_context, "priority": 1, ...}
+```
+
+**Warum Priority 1?** Memory ist Jarvis' Kern-Identitaet. Ohne Erinnerungen ist Jarvis ein generisches LLM. Der Konversations-Kontext (offene Fragen, Projekt-Status, Zusammenfassungen) muss IMMER im Prompt sein — er darf nie gedroppt werden. Priority 1 stellt sicher, dass Memory vor optionalen Prompt-Abschnitten (z.B. Home-Assistant-Status, Wetter) steht.
+
+---
+
+## NACH ALLEN FIXES: Integrations-Check
+
+### Pruefen ob die Memory-Systeme jetzt verbunden sind
+
+```
+Grep: pattern="_build_memory_context|build_memory_callback_section" path="assistant/assistant/" output_mode="content"
+```
+
+Stelle sicher:
+1. `_build_memory_context()` wird IMMER aufgerufen (nicht nur bei intent_type=="memory")
+2. `relevant_facts` und `person_facts` sind gefuellt wenn `_build_memory_context()` laeuft
+3. `personality.py:build_memory_callback_section()` nutzt `mha:personality:memorable:{person}` — pruefen ob dies redundant zu semantic_facts ist oder ergaenzend
+
+### Pruefen ob conversation_memory.py korrekt integriert ist
+
+```
+Grep: pattern="get_memory_context|conversation_memory" path="assistant/assistant/brain.py" output_mode="content"
+```
+
+Stelle sicher:
+1. `get_memory_context()` wird aufgerufen
+2. Das Ergebnis landet im System-Prompt
+3. Priority ist jetzt 1 (nicht mehr 3)
+
+---
+
+## PRAXIS-TEST-DIALOGE
+
+Simuliere mental diese Dialoge und verfolge den Code-Pfad nach den Fixes:
+
+### Test 1: Geburtstag merken
+
+```
+User: "Mein Geburtstag ist am 15. Maerz"
+  -> memory_extractor.py extrahiert: {person: "user", fact: "Geburtstag am 15. Maerz"}
+  -> semantic_memory.py speichert den Fakt
+
+[5 Nachrichten spaeter]
+
+User: "Wann habe ich Geburtstag?"
+  -> intent_type = "question" (NICHT "memory"!)
+  -> VORHER: person_facts nicht geladen -> Jarvis weiss es nicht
+  -> NACHHER (Fix 2): person_facts IMMER geladen -> Fakt "Geburtstag am 15. Maerz" gefunden
+  -> NACHHER (Fix 4): Header sagt "Nutze diese Fakten AKTIV"
+  -> Jarvis antwortet: "Dein Geburtstag ist am 15. Maerz!"
+
+ERWARTETES ERGEBNIS: Korrekte Antwort "15. Maerz"
+FEHLERFALL OHNE FIX: "Das weiss ich leider nicht" oder halluziniertes Datum
+```
+
+### Test 2: Reiseplan merken
+
+```
+User: "Ich fahre morgen nach Muenchen"
+  -> Gespeichert in Redis (memory.py) als Konversation
+  -> memory_extractor.py extrahiert: {person: "user", fact: "Faehrt nach Muenchen"}
+
+[Pause — 8 Nachrichten ueber andere Themen]
+
+User: "Wohin fahre ich morgen?"
+  -> VORHER (Fix 1): limit=3 -> Die Muenchen-Nachricht ist laengst aus dem Window
+  -> NACHHER (Fix 1): limit=10 -> Die Muenchen-Nachricht ist noch im Kontext
+  -> NACHHER (Fix 2): Semantic Fact "Faehrt nach Muenchen" wird auch geladen
+  -> Jarvis antwortet: "Du faehrst morgen nach Muenchen!"
+
+ERWARTETES ERGEBNIS: "Muenchen"
+FEHLERFALL OHNE FIX: "Das weiss ich nicht" (Nachricht ausserhalb des 3er-Windows)
+```
+
+### Test 3: Name der Ehefrau
+
+```
+User: "Meine Frau heisst Lisa"
+  -> memory_extractor.py extrahiert: {person: "user", fact: "Frau heisst Lisa", category: "family"}
+  -> semantic_memory.py speichert
+
+[Naechste Session oder 20 Nachrichten spaeter]
+
+User: "Wie heisst meine Frau?"
+  -> intent_type = "question"
+  -> VORHER: Semantic Facts nicht geladen (kein memory-Intent) -> Jarvis weiss nichts
+  -> NACHHER (Fix 2): get_facts_by_person("user") liefert "Frau heisst Lisa"
+  -> NACHHER (Fix 3): "wie heisst meine" matcht evtl. sogar als memory-Intent
+  -> NACHHER (Fix 4): Header macht klar: "Nutze diese Fakten AKTIV"
+  -> Jarvis antwortet: "Deine Frau heisst Lisa!"
+
+ERWARTETES ERGEBNIS: "Lisa"
+FEHLERFALL OHNE FIX: "Das hast du mir nicht gesagt" oder Halluzination
+```
+
+### Test 4: Konversations-Kontext bei Token-Knappheit
+
+```
+[Langer System-Prompt mit vielen HA-Entities, Wetter, Tools...]
+
+User: "Was stand auf meiner Todo-Liste?"
+  -> conversation_memory.py hat die Todo-Liste als offene Frage/Projekt
+  -> VORHER (Fix 5): Priority 3 -> Bei Token-Knappheit GEDROPPT -> Jarvis weiss nichts
+  -> NACHHER (Fix 5): Priority 1 -> IMMER im Prompt -> Jarvis hat die Info
+
+ERWARTETES ERGEBNIS: Todo-Liste wird korrekt wiedergegeben
+FEHLERFALL OHNE FIX: "Ich habe keine Informationen ueber deine Todo-Liste"
+```
+
+---
+
+## ERFOLGSMETRIKEN
+
+Nach allen 5 Fixes muessen diese Bedingungen erfuellt sein:
+
+| # | Metrik | Pruefung | Ziel |
 |---|---|---|---|
-| `memory.py` | ? | ? | ? |
-| `semantic_memory.py` | ? | ? | ? |
-| `conversation_memory.py` | ? | ? | ? |
-| `memory_extractor.py` | ? | ? | ? |
-| `correction_memory.py` | ? | ? | ? |
-| `dialogue_state.py` | ? | ? | ? |
-| `learning_observer.py` | ? | ? | ? |
-| `learning_transfer.py` | ? | ? | ? |
-| `knowledge_base.py` | ? | ? | ? |
-| `embeddings.py` | ? | ? | ? |
-| `embedding_extractor.py` | ? | ? | ? |
-| `context_builder.py` | ? | ? | ? |
-
-**Ziel**: Verstehen ob es einen kohärenten Memory-Stack gibt oder 12 isolierte Systeme.
-
-#### Claude Code Strategie — Memory-Module parallel lesen
-
-Lies alle 12 Memory-Module **parallel** mit Read (5-7 gleichzeitig):
-- **Batch 1**: `memory.py`, `semantic_memory.py`, `conversation_memory.py`, `memory_extractor.py`, `correction_memory.py`
-- **Batch 2**: `dialogue_state.py`, `learning_observer.py`, `learning_transfer.py`, `knowledge_base.py`
-- **Batch 3**: `embeddings.py`, `embedding_extractor.py`, `context_builder.py`
-
-### Schritt 2b — Datenbank-Schemas aus dem Code extrahieren
-
-#### Claude Code Strategie — Grep für Bulk-Suche
-
-**Redis**: Nutze Grep um ALLE Redis-Aufrufe projektübergreifend zu finden:
-```
-Grep: pattern="redis\.|\.set\(|\.get\(|\.delete\(|\.expire\(|\.ttl\(" path="assistant/assistant/" output_mode="content"
-```
-
-Dokumentiere:
-
-| Key-Pattern | Modul | Operation (SET/GET/DEL) | TTL | Datenformat |
-|---|---|---|---|---|
-| ? | memory.py | ? | ? | ? |
-| ? | ... | ? | ? | ? |
-
-**ChromaDB**: Nutze Grep um ALLE ChromaDB-Aufrufe zu finden:
-```
-Grep: pattern="chroma|collection\.|\.add\(|\.query\(|\.delete\(" path="assistant/assistant/" output_mode="content"
-```
-
-Dokumentiere:
-
-| Collection-Name | Modul | Operation (add/query/delete) | Embedding-Modell | Metadaten-Schema |
-|---|---|---|---|---|
-| ? | semantic_memory.py | ? | ? | ? |
-| ? | ... | ? | ? | ? |
-
-**SQLite**: Nutze Grep:
-```
-Grep: pattern="sqlite|\.execute\(|CREATE TABLE|INSERT INTO" path="." output_mode="content"
-```
-
-> **Wichtig**: Nur was im Code steht. Grep findet alle Stellen — dann mit Read die Details prüfen.
-
-### Schritt 3 — Kompletten Memory-Datenfluss verfolgen
-
-Verfolge den **exakten Code-Pfad** einer Erinnerung. Lies jeden beteiligten File und jede Funktion:
-
-```
-1. User sagt etwas (main.py / brain.py Eingang)
-   → Wo genau wird die Nachricht gespeichert?
-   → Welche Funktion? Welche Zeile?
-   → Wird dialogue_state.py aktualisiert?
-
-2. Vor der LLM-Antwort
-   → Wird memory.py aufgerufen um relevante Erinnerungen zu laden?
-   → Wird semantic_memory.py abgefragt?
-   → Wird conversation_memory.py abgefragt?
-   → Wird correction_memory.py geprüft (frühere Korrekturen)?
-   → Wird knowledge_base.py einbezogen?
-   → Werden die Ergebnisse an context_builder.py übergeben?
-   → Landen sie im LLM-Prompt?
-   → Wie viele Token verbraucht der Memory-Kontext?
-
-3. Nach der LLM-Antwort
-   → Wird die Konversation gespeichert?
-   → Wird memory_extractor.py aufgerufen um Fakten zu extrahieren?
-   → Werden Fakten in ChromaDB geschrieben? (semantic_memory.py)
-   → Werden sie in Redis geschrieben? (memory.py)
-   → Wird learning_observer.py informiert?
-   → Wird learning_transfer.py aktualisiert?
-
-4. Bei einem späteren Abruf
-   → User fragt "Was habe ich gestern gesagt?"
-   → Welcher Code-Pfad wird durchlaufen?
-   → Welches Embedding-Modell wird für die Query verwendet? (embeddings.py)
-   → Wird ChromaDB korrekt abgefragt?
-   → Kommt das Ergebnis im LLM-Prompt an?
-```
-
-### Schritt 4 — Spezifische Checks
-
-Prüfe jeden einzelnen Punkt und dokumentiere das Ergebnis mit Code-Referenz:
-
-| # | Check | Ergebnis | Code-Referenz |
-|---|---|---|---|
-| 1 | Wird `memory.py` in `brain.py` **vor** jeder Antwort aufgerufen? | ? | ? |
-| 2 | Wird `memory.py` in `brain.py` **nach** jeder Konversation aufgerufen? | ? | ? |
-| 3 | Werden geladene Erinnerungen in den LLM-Prompt **injiziert**? | ? | ? |
-| 4 | Redis TTL: Laufen Erinnerungen stillschweigend ab? Welche TTL-Werte? | ? | ? |
-| 5 | Async: Werden Memory-Operationen korrekt **awaited**? | ? | ? |
-| 6 | Race Condition: Wird die Antwort generiert **bevor** Memory-Abfrage fertig? | ? | ? |
-| 7 | ChromaDB: Wird das richtige Embedding-Modell verwendet? | ? | ? |
-| 8 | ChromaDB: Wird überhaupt geschrieben? Oder nur gelesen? | ? | ? |
-| 9 | Conversation History: Wird sie als Messages-Array ans LLM übergeben? | ? | ? |
-| 10 | Conversation History: Wird sie zwischen Sessions persistiert? | ? | ? |
-| 11 | `memory_extractor.py`: Wird er aufgerufen? Extrahiert er korrekt Fakten? | ? | ? |
-| 12 | `correction_memory.py`: Werden Korrekturen gespeichert und bei nächster Antwort genutzt? | ? | ? |
-| 13 | `dialogue_state.py`: Wird der State korrekt verwaltet? Multi-Turn? | ? | ? |
-| 14 | `conversation_memory.py`: Verwaltet es sowohl Kurz- als auch Langzeit-Konversationen? | ? | ? |
-| 15 | `learning_observer.py`: Werden gelernte Muster im Prompt verwendet? | ? | ? |
-| 16 | `learning_transfer.py`: Funktioniert Wissenstransfer? Oder Dead Code? | ? | ? |
-| 17 | `knowledge_base.py`: Was enthält es? Wird es im Prompt genutzt? | ? | ? |
-| 18 | `embeddings.py` vs `embedding_extractor.py`: Redundanz? Verschiedene Modelle? | ? | ? |
-| 19 | **Addon-Daten**: Weiß der Assistant was der Addon über Muster/Verhalten weiß? | ? | ? |
-| 20 | **Addon-DB**: Was speichert `addon/db.py` / `addon/models.py`? Welche Tabellen? Welche Daten? | ? | ? |
-| 21 | **Addon-Pattern-Engine**: Was lernt `addon/pattern_engine.py`? Werden diese Muster dem Assistant zugänglich gemacht? | ? | ? |
-| 22 | **Addon-Event-Bus**: Werden Memory-relevante Events über `addon/event_bus.py` an den Assistant weitergeleitet? | ? | ? |
-
-> **Claude Code**: Für Checks 19–22 nutze `Grep: pattern="pattern_engine|db\.|models\.|event_bus" path="addon/"` und dann Read für Details.
-
-### Schritt 4b — Performance-Check: Memory-Latenz
-
-> Memory-Operationen liegen auf dem **kritischen Pfad** jedes Requests. Langsames Memory = langsamer Jarvis.
-
-| # | Check | Ergebnis | Code-Referenz |
-|---|---|---|---|
-| 1 | Werden Memory-Abfragen (Redis, ChromaDB) **parallel** gemacht oder **sequentiell**? | ? | ? |
-| 2 | Wie viele Redis-Roundtrips pro Request? (Ziel: ≤3) | ? | ? |
-| 3 | Wie lange dauert eine ChromaDB-Query? (Embedding-Berechnung + Suche) | ? | ? |
-| 4 | Werden Embedding-Berechnungen **gecacht** oder bei jedem Request neu berechnet? | ? | ? |
-| 5 | Blockiert Memory-Speicherung (nach dem Response) den nächsten Request? | ? | ? |
-| 6 | Wie groß ist der Memory-Kontext im Prompt? (Token-Budget vs. Nutzen) | ? | ? |
-
-> Diese Ergebnisse fließen in den Performance-Report von Prompt 4c (Fehlerklasse 13) ein.
-
-### Schritt 5 — Root Cause finden
-
-Basierend auf den Checks: **Warum genau** funktioniert die Erinnerung nicht?
-
-Mögliche Root Causes (prüfe jede):
-- [ ] Memory wird gespeichert aber nie abgerufen
-- [ ] Memory wird abgerufen aber nicht in den Prompt injiziert
-- [ ] Memory wird in den Prompt injiziert aber nach dem Context-Limit abgeschnitten
-- [ ] Redis TTL löscht Erinnerungen zu schnell
-- [ ] ChromaDB wird nicht korrekt initialisiert
-- [ ] Embeddings passen nicht zum Query-Embedding (falsches Modell?)
-- [ ] Async-Fehler: Memory-Abfrage wird nicht awaited
-- [ ] Race Condition: Antwort kommt vor Memory-Abruf
-- [ ] conversation_memory.py speichert/lädt nicht korrekt
-- [ ] memory_extractor.py wird nie aufgerufen (Dead Code)
-- [ ] correction_memory.py wird nie abgefragt
-- [ ] dialogue_state.py wird nicht korrekt aktualisiert
-- [ ] 12 isolierte Memory-Silos ohne Verbindung
-- [ ] Der Code existiert aber wird nie aufgerufen (Dead Code)
-
-### Schritt 6 — Fix implementieren ODER Alternative vorschlagen
-
-**Option A**: Das aktuelle System reparieren, wenn die Bugs behebbar sind.
-
-**Option B**: Falls das System fundamental kaputt ist, eine **einfachere, robustere Alternative** implementieren. Bewerte diese Ansätze:
-
-| Ansatz | Pro | Contra | Empfehlung? |
-|---|---|---|---|
-| **SQLite statt Redis** für History | Persistent, kein TTL | Langsamer für Echtzeit | ? |
-| **In-Memory-Liste** in brain.py | Einfach, schnell, zuverlässig | Verlust bei Restart | ? |
-| **Sliding Window** (letzte N Nachrichten) | Vorhersagbar, einfach | Kein Langzeitgedächtnis | ? |
-| **MemGPT-Pattern** | Bewährt, skalierbar | Komplex zu implementieren | ? |
-| **Hybrid**: Sliding Window + SQLite | Kurzzeitgedächtnis + Archiv | Mittlere Komplexität | ? |
-| **Aktuelles System fixen** | Kein Umbau nötig | Evtl. Design-Fehler | ? |
-| **Konsolidierung**: 12 Module → 3 | Weniger Silos, klarer | Umbau nötig | ? |
+| 1 | Konversations-Window | Grep nach `get_recent_conversations` | Alle Stellen: `limit=10` |
+| 2 | Semantic Facts immer geladen | `search_facts`/`get_facts_by_person` nicht hinter `intent_type=="memory"` | Ausserhalb der Bedingung |
+| 3 | Memory Keywords | Mindestens 20 Keywords in der Liste | Deutsche + Englische Keywords |
+| 4 | Memory Header | `_build_memory_context()` Header | Direktiver Text mit "Nutze AKTIV" |
+| 5 | Memory Priority | conversation_memory Priority | `priority=1` |
+| 6 | Keine Regressionen | `cd /home/user/mindhome/assistant && python -m pytest tests/ -x --tb=short -q` | Tests bestehen |
 
 ---
 
-## Output-Format
+## ROLLBACK-STRATEGIE
 
-### 1. Memory-Abhängigkeitskarte (ausgefüllt)
+Falls ein Fix unerwartete Probleme verursacht:
 
-Die Tabelle aus Schritt 2 — wer importiert wen, wer teilt State.
+```bash
+# Vor dem Start: Branch erstellen
+cd /home/user/mindhome
+git checkout -b fix/memory-system
+git add -A && git commit -m "Checkpoint: Vor Memory-Fixes"
 
-### 2. Memory-Flow-Diagramm (textuell)
+# Nach jedem Fix: Commit
+git add assistant/assistant/brain.py && git commit -m "Fix 1: Conversation limit 3->10"
+git add assistant/assistant/brain.py && git commit -m "Fix 2: Semantic facts always loaded"
+# ... etc.
 
-```
-User Input → [wo gespeichert?] → [wie abgerufen?] → [wo im Prompt?] → LLM → [was persistiert?]
-```
-Mit konkreten Funktionsnamen und Datei:Zeile.
-
-### 3. Check-Tabelle (ausgefüllt)
-
-Die 19 Checks aus Schritt 4, alle beantwortet mit Code-Referenzen.
-
-### 4. Root Cause Analyse
-
-Die wahrscheinlichste(n) Ursache(n) mit Beweis aus dem Code.
-
-### 5. Dead-Code-Liste
-
-Module die existieren aber **nie aufgerufen** werden.
-
-### 6. Fix oder Alternative
-
-Konkreter Code für den Fix, oder Vorschlag für eine alternative Implementierung mit Code-Skizze.
-
-### 7. Bug-Report
-
-Für jeden Memory-Bug:
-```
-### [SEVERITY] Kurzbeschreibung
-- **Datei**: path/to/file.py:123
-- **Problem**: Was ist falsch
-- **Auswirkung**: Was der User merkt
-- **Fix**: Code-Änderung
+# Falls Rollback noetig:
+git log --oneline -10  # Letzten guten Commit finden
+git revert <commit-hash>  # Einzelnen Fix rueckgaengig machen
 ```
 
 ---
 
-## Regeln
+## OUTPUT-FORMAT
 
-### Gründlichkeits-Pflicht
+Wenn du alle Fixes abgeschlossen hast, erstelle diesen Kontext-Block:
 
-> **Lies JEDE der 12 Memory-Dateien mit Read. Lies JEDE Funktion. Folge JEDEM Aufruf.**
->
-> Wenn du schreibst "wird aufgerufen" — zeige die Zeile. Wenn du schreibst "wird nicht aufgerufen" — **beweise es mit Grep** (z.B. `Grep: pattern="memory_extractor" path="assistant/"` zeigt 0 Treffer). Keine Vermutungen.
+```
+## KONTEXT AUS PROMPT 2: Memory-Reparatur
 
-### Claude Code Tool-Einsatz in diesem Prompt
+### Durchgefuehrte Fixes
+1. [x] Fix 1: get_recent_conversations limit=3 -> limit=10 (brain.py:XXXX und brain.py:XXXX)
+2. [x] Fix 2: Semantic Facts in _mega_tasks verschoben (brain.py:XXXX)
+3. [x] Fix 3: Memory-Keywords erweitert (brain.py:XXXX, +XX neue Keywords)
+4. [x] Fix 4: _build_memory_context() Header verbessert (brain.py:XXXX)
+5. [x] Fix 5: conversation_memory Priority 3->1 (brain.py:XXXX)
 
-| Aufgabe | Tool | Beispiel |
-|---|---|---|
-| 12 Memory-Module lesen | **Read** (parallel, 3 Batches) | Siehe Strategie oben |
-| Redis-Aufrufe finden | **Grep** | `pattern="redis\.|\.set\(|\.get\(" path="assistant/assistant/"` |
-| ChromaDB-Aufrufe finden | **Grep** | `pattern="chroma|collection\." path="assistant/assistant/"` |
-| Wer ruft memory.store() auf? | **Grep** | `pattern="memory\.store|memory\.save" path="assistant/assistant/"` |
-| Wird Modul X importiert? | **Grep** | `pattern="from.*memory_extractor import" path="assistant/"` |
-| Fehlende awaits finden | **Grep** | `pattern="[^await ]self\.memory\." path="assistant/assistant/"` |
-| Addon-Memory prüfen | **Grep** + **Read** | `pattern="pattern_engine|db\." path="addon/"` |
+### Verifizierung
+- [ ] Grep: Alle get_recent_conversations Stellen = limit=10
+- [ ] Grep: search_facts/get_facts_by_person NICHT hinter intent_type=="memory"
+- [ ] Grep: Memory-Keywords-Liste hat 20+ Eintraege
+- [ ] Read: _build_memory_context() Header ist direktiv
+- [ ] Read: conversation_memory Priority = 1
+- [ ] Tests: pytest bestanden
 
-- **Nur Memory** in diesem Prompt — keine anderen Bugs jagen
-- Folge dem Code, nicht der Dokumentation
-- **ALLE 12 Module** prüfen — nicht nur die offensichtlichen 4
-- Wenn du einen `await` vermisst oder eine Race Condition findest: Datei + Zeile + Beweis
-- Prüfe ob die Module **voneinander wissen** oder isolierte Silos sind
-- Einfach > Komplex: Wenn weniger Module robuster sind, sag es
-- Prüfe auch ob der **Addon** eigene Memory/Pattern-Daten hat die dem Assistant fehlen
+### Noch offen / Beobachten
+- personality.py:build_memory_callback_section() nutzt SEPARATES Memory-System (mha:personality:memorable:{person})
+  -> Konsolidierung mit semantic_memory in spaeteren Prompts pruefen
+- Token-Budget nach Erhoehung auf limit=10 beobachten (evtl. Anpassung noetig)
+- memory_extractor.py: Pruefen ob Fakten-Extraktion zuverlaessig laeuft (eigener Fix)
+
+### Memory-Flow nach Fixes
+User Input -> Redis (limit=10) + SemanticMemory (IMMER) + ConversationMemory (Priority 1)
+           -> Alles im System-Prompt mit direktivem Header
+           -> LLM antwortet mit Kontext
+           -> memory_extractor.py speichert neue Fakten
+```
 
 ---
 
-## ⚡ Übergabe an Prompt 3a
+## REGELN
 
-Formatiere am Ende deiner Analyse einen kompakten **Kontext-Block** für Prompt 3a:
+1. **Read -> Grep -> Edit -> Verify** fuer JEDEN Fix. Kein Fix ohne Verifizierung.
+2. **Exakte Zeilennummern** koennen abweichen — immer ZUERST mit Read/Grep die aktuelle Stelle finden.
+3. **Kein Refactoring** — nur die 5 Fixes. Keine Architektur-Aenderungen.
+4. **Wenn ein Fix nicht moeglich ist** (Code hat sich geaendert, Stelle existiert nicht mehr): Dokumentiere WARUM und gehe zum naechsten Fix.
+5. **Tests muessen bestehen** — wenn ein Fix Tests bricht, Fix anpassen.
+6. **Ein Fix pro Commit** — damit Rollback granular moeglich ist.
+
+---
+
+## OUTPUT
+
+Am Ende dieses Prompts erstelle folgenden Block:
 
 ```
-## KONTEXT AUS PROMPT 2: Memory-Analyse
-
-### Memory-Abhängigkeitskarte
-[Welches Modul importiert/nutzt welches — kompakt]
-
-### Memory-Flow (Ist-Zustand)
-[User Input → Speicherung → Abruf → Prompt — mit Datei:Zeile]
-
-### Root Cause
-[Warum funktioniert Memory nicht — 2-3 Sätze]
-
-### Empfohlener Fix
-[Welcher Ansatz, warum — 2-3 Sätze]
-
-### Memory-Bugs
-[Liste: Severity + Modul + Kurzbeschreibung]
-
-### Dead-Code-Module
-[Module die existieren aber nie aufgerufen werden]
-
-### Memory-Performance
-[Redis-Roundtrips pro Request, ChromaDB-Query-Latenz, Embedding-Caching, Token-Budget]
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: [Liste der gefixten Issues mit Datei:Zeile]
+OFFEN: [Liste der nicht gefixten Issues mit Grund]
+GEAENDERTE DATEIEN: [Liste aller editierten Dateien]
+REGRESSIONEN: [Neue Probleme die durch Fixes entstanden]
+NAECHSTER SCHRITT: [Was der naechste Prompt tun soll]
+===================================
 ```
-
-**Wenn du Prompt 3a in derselben Konversation erhältst**: Setze diesen Kontext-Block + den aus Prompt 1 automatisch ein.
