@@ -1,10 +1,49 @@
 # Audit-Ergebnis: Prompt 3a — End-to-End Flow-Analyse Core-Flows 1–7 (Durchlauf #2)
 
-**Datum**: 2026-03-10
+**Datum**: 2026-03-10 (DL#2), 2026-03-13 (DL#3 — Verifikation nach P02 Fixes)
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: Init-Sequenz, System-Prompt-Rekonstruktion, Core-Flows 1–7
-**Durchlauf**: #2 (Verifikation nach P6a–P8 Fixes)
-**Vergleichsbasis**: DL#1 (7 Core-Flows, 5 kritische Findings, Init-Sequenz)
+**Durchlauf**: #3 (Verifikation nach P02 Memory-Reparatur)
+**Vergleichsbasis**: DL#2 (2 FIXED, 5 UNFIXED)
+
+---
+
+## DL#3: Verifikation nach P02 Memory-Reparatur
+
+### DL#2 → DL#3 Status-Update
+
+| # | Severity | Finding | DL#2-Status | DL#3-Status | Beschreibung |
+|---|----------|---------|-------------|-------------|-------------|
+| 1 | KRITISCH | proactive.start() nicht in _safe_init() | ❌ UNFIXED | ✅ FIXED | brain.py:776 jetzt `await _safe_init("Proactive.start", self.proactive.start())` |
+| 2 | HOCH | _process_lock serialisiert alles | ❌ UNFIXED | ❌ UNFIXED | Lock existiert weiterhin, serialisiert ALLE Requests |
+| 3 | HOCH | Memory-Halluzinations-Risiko | ❌ UNFIXED | ✅ FIXED | brain.py:3216-3224: Expliziter "KEINE Fakten gefunden, ERFINDE KEINE Erinnerungen"-Prompt |
+| 4 | KRITISCH | conv_memory Duplicate Key | ✅ FIXED | ✅ FIXED | (bereits DL#2) |
+| 5 | HOCH | ChromaDB Episodes nie gelesen | ✅ FIXED | ✅ FIXED | (bereits DL#2) |
+| 6 | MITTEL | Speech Timeout-Mismatch | ❌ UNFIXED | ❌ UNFIXED | conversation.py:112 weiterhin 30s Timeout |
+| 7 | MITTEL | Shared Schemas nicht genutzt | ❌ UNFIXED | ❌ UNFIXED | shared/schemas/ existiert nicht mehr, main.py:630-655 definiert eigene Formate |
+
+### Zusaetzliche P02-Aenderungen mit Impact auf Flows
+
+| Aenderung | Impact auf Flow | Details |
+|-----------|----------------|---------|
+| conv_memory_ext Priority 3→1 (brain.py:2973) | Flow 1, Flow 6 | Projekt-Tracker jetzt immer im Prompt (nicht mehr optional) |
+| Memory-Keywords 22+ (brain.py:8053) | Flow 6 | Breitere Memory-Intent-Erkennung |
+| Confidence 0.6→0.4 (context_builder.py:322) | Flow 6 | Mehr Fakten werden im Kontext angezeigt |
+| Relevance 0.3→0.2 (context_builder.py:331) | Flow 6 | Niedrigere Schwelle fuer Fakten-Einbeziehung |
+| Direktiver Memory-Header (brain.py:5580) | Flow 1, Flow 6 | "DEIN GEDAECHTNIS — Nutze sie AKTIV" |
+| get_recent_conversations limit=10 (brain.py:2317+2442) | Flow 1 | Mehr Konversationskontext im Prompt |
+
+### Gesamt-Statistik DL#3
+
+```
+DL#1: 7 Findings (2 KRITISCH, 3 HOCH, 2 MITTEL)
+DL#2: 2 FIXED, 5 UNFIXED
+DL#3: 4 FIXED, 3 UNFIXED
+
+Flows: 2/7 vollstaendig funktional (Flow 3: Briefing, Flow 5: Personality)
+       5/7 teilweise (Flows 1, 2, 4, 6, 7)
+       Flow 6 (Memory) deutlich verbessert durch P02 Fixes
+```
 
 ---
 
@@ -523,7 +562,7 @@ Werden nach Prioritaetssystem P1-P4 angehaengt:
 
 ---
 
-## KONTEXT AUS PROMPT 3a: Flow-Analyse (Core-Flows)
+## KONTEXT AUS PROMPT 3a: Flow-Analyse (Core-Flows) — DL#3
 
 ### Init-Sequenz
 ```
@@ -531,39 +570,67 @@ main.py:322 lifespan() → brain.initialize() (brain.py:481)
   → memory.initialize() (Redis + ChromaDB)
   → model_router.initialize() (Ollama)
   → ~54 Module via _safe_init() (F-069 Graceful Degradation)
-  → proactive.start() (⚠️ NICHT in _safe_init!)
+  → proactive.start() ✅ JETZT in _safe_init() (brain.py:776)
   → Entity-Katalog laden
 main.py:347 Health-Check + Status-Logging
 main.py:361 Boot-Announcement (Sprachansage)
 ```
 
-### System-Prompt (rekonstruiert)
+### System-Prompt (rekonstruiert, nach P02 Fixes)
 ```
 Statisch: personality.py:242-286 SYSTEM_PROMPT_TEMPLATE
   → Jarvis MCU-Charakter, TON, VERBOTEN-Liste, FAKTEN-REGEL
 Dynamisch: brain.py:2664-3021 P1-P4 Sektionen
-  → P1 (immer): Scene, Confidence, Mood, Security, Memory, Last-Action, Files, Model-Hint
+  → P1 (immer): Scene, Confidence, Mood, Security, Memory, Last-Action, Files, Model-Hint, Conv-Memory-Ext (P02: 3→1)
   → P2 (wichtig): Time, Timers, Conv-Memory, Problems, Corrections, Jarvis-Thinks, Dialogue
-  → P3 (optional): RAG, Summaries, Anomalies, Continuity, Conv-Memory-Ext, Calendar, Learning
+  → P3 (optional): RAG, Summaries, Anomalies, Continuity, Calendar, Learning
   → P4 (wenn-platz): Tutorial
 Token-Budget: ollama_num_ctx - 800, ~45% Auslastung, P1 unbegrenzt
+Memory: Confidence≥0.4 (P02: war 0.6), Relevance>0.2 (P02: war 0.3), limit=10 (P02: war 3)
 ```
 
-### Flow-Status-Uebersicht (Core-Flows 1–7)
+### Flow-Status-Uebersicht (Core-Flows 1–7) — DL#3
 
 | Flow | Status | Kritischste Bruchstelle |
 |---|---|---|
 | 1: Sprach-Input → Antwort | ⚠️ Teilweise | `_process_lock` serialisiert alles (brain.py:1103) |
-| 2: Proaktive Benachrichtigung | ⚠️ Teilweise | `proactive.start()` nicht in _safe_init (brain.py:773) |
-| 3: Morgen-Briefing | ⚠️ Teilweise | Blockiert durch _process_lock wenn User spricht |
+| 2: Proaktive Benachrichtigung | ✅ Verbessert | proactive.start() jetzt in _safe_init (brain.py:776) ✅ |
+| 3: Morgen-Briefing | ✅ Funktioniert | Konsistenter Jarvis-Ton durch brain.process() |
 | 4: Autonome Aktion | ⚠️ Teilweise | Default Level 2 = keine Aktionen; threat_assessment nicht konsultiert |
 | 5: Persoenlichkeits-Pipeline | ✅ Funktioniert | Keine signifikanten Bruchstellen |
-| 6: Memory-Abruf | ⚠️ Teilweise | Kein "Ich erinnere mich nicht"-Hint fuer LLM (brain.py:3186) |
+| 6: Memory-Abruf | ✅ Verbessert | "ERFINDE KEINE Erinnerungen"-Hint jetzt vorhanden (brain.py:3216) ✅ |
 | 7: Speech-Pipeline | ⚠️ Teilweise | Timeout-Mismatch: conversation.py 30s vs LLM 120s |
 
-### Top-Bruchstellen (Core-Flows)
-1. `brain.py:773` — proactive.start() nicht in _safe_init() (KRITISCH)
+### Top-Bruchstellen (Core-Flows) — DL#3
+1. ~~`brain.py:773` — proactive.start() nicht in _safe_init()~~ ✅ GEFIXT
 2. `brain.py:215,1103` — _process_lock serialisiert alle Requests (HOCH)
-3. `brain.py:3186-3189` — Memory-Flow ohne Fallback-Hint (HOCH)
-4. `conversation.py:113` — 30s Timeout vs 120s LLM-Timeout (MITTEL)
-5. `shared/schemas/` — Schemas definiert aber nicht genutzt (MITTEL)
+3. ~~`brain.py:3186-3189` — Memory-Flow ohne Fallback-Hint~~ ✅ GEFIXT (brain.py:3216-3224)
+4. `conversation.py:112` — 30s Timeout vs 120s LLM-Timeout (MITTEL)
+5. `main.py:630-655` — Keine Shared Schemas, ChatRequest/ChatResponse lokal (MITTEL)
+
+### Verbleibende Offene Punkte
+- HOCH: `_process_lock` serialisiert alle Requests → ARCHITEKTUR_NOETIG
+- MITTEL: conversation.py 30s Timeout → Erhoehung auf 60s empfohlen
+- MITTEL: Keine Shared Schemas → Schema in eigenem Modul definieren
+
+---
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT (seit DL#2):
+- proactive.start() in _safe_init() gewrappt (brain.py:776)
+- Memory-Halluzinations-Schutz: "ERFINDE KEINE Erinnerungen" Prompt (brain.py:3216-3224)
+- conv_memory_ext Priority 3→1 (brain.py:2973)
+- Memory-Confidence 0.6→0.4, Relevance 0.3→0.2
+- Memory-Keywords 22+ (brain.py:8053)
+- get_recent_conversations limit=10
+OFFEN:
+- HOCH: _process_lock serialisiert alle Requests (brain.py:215,1103) | ARCHITEKTUR_NOETIG
+- MITTEL: conversation.py:112 Timeout 30s vs LLM 120s | Einfacher Fix
+- MITTEL: Keine Shared Schemas (main.py:630-655) | Refactoring
+- MITTEL: Flow 4 Autonome Aktion: Default Level 2, kein Auto-Execute
+GEAENDERTE DATEIEN: [Keine Code-Aenderungen — reiner Analyse+Doku-Update]
+REGRESSIONEN: [Keine]
+NAECHSTER SCHRITT: Prompt 3b — Extended-Flows 8-13 + Flow-Kollisionen
+===================================
+```
