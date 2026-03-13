@@ -790,25 +790,6 @@ TEST 4: Token-Budget-Test
   → Memory-Sektion darf NIEMALS wegen Token-Budget wegfallen (Prioritaet 1!)
 ```
 
-## Praxis-Testszenarien (v2 — erweitert)
-
-TEST-DIALOG 1: Fakten-Speicherung + Abruf
-  User: "Mein Geburtstag ist am 15. Maerz"
-  → Jarvis speichert Fakt (semantic_memory.store_fact)
-  User: "Wann habe ich Geburtstag?"
-  → Jarvis: "Am 15. Maerz, {title}." (NICHT "Dazu habe ich keine Daten")
-
-TEST-DIALOG 2: Kurzzeit-Gedaechtnis
-  User: "Ich fahre morgen nach Muenchen"
-  [30 Sekunden Pause]
-  User: "Wohin fahre ich morgen?"
-  → Jarvis: "Nach Muenchen." (aus recent_conversations, limit MUSS >3)
-
-TEST-DIALOG 3: Personen-Fakten
-  User: "Meine Frau heisst Lisa"
-  User: "Wie heisst meine Frau?"
-  → Jarvis: "Lisa." (aus semantic_memory.get_facts_by_person)
-
 ---
 
 ## ERFOLGSMETRIKEN
@@ -938,25 +919,6 @@ Fuer JEDEN Bug:
 
 ---
 
-## Rollback-Regel (v2)
-
-Vor dem ersten Edit: git stash oder Backup notieren.
-Wenn ein Fix einen ImportError oder Syntax-Fehler verursacht:
-1. SOFORT revert (Edit zuruecknehmen)
-2. Im OFFEN-Block dokumentieren
-3. Zum naechsten Fix weitergehen
-
----
-
-## Erfolgs-Check (v2)
-
-```
-□ grep "get_recent_conversations" brain.py → limit 10+
-□ grep "search_facts\|get_facts_by_person" brain.py → in _mega_tasks (unconditional)
-□ grep "conv_memory_ext.*1\|priority.*1" brain.py → priority 1
-□ grep "min_words\|>=.*3\|>.*2" brain.py memory_extractor.py → Filter relaxed
-□ python -c "import assistant.brain" → kein ImportError
-```
 
 ---
 

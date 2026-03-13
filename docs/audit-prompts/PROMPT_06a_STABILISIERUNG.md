@@ -111,57 +111,6 @@ if obj is not None:
 3. Bugs die **Datenverlust** verursachen (Memory, Config)
 4. **Security-Lücken** die sofort ausnutzbar sind
 
-## Fix-Templates (Häufigste Bug-Typen)
-
-### Async/Sync Mismatch
-```
-VORHER:
-  result = sync_function(args)
-NACHHER:
-  result = await asyncio.to_thread(sync_function, args)
-```
-
-### Stille Fehler
-```
-VORHER:
-  except Exception:
-      pass
-NACHHER:
-  except Exception as e:
-      logger.warning("Context: %s", e)
-```
-
-### N+1 Redis
-```
-VORHER:
-  for key in keys:
-      val = await redis.get(key)
-NACHHER:
-  pipe = redis.pipeline()
-  for key in keys:
-      pipe.get(key)
-  results = await pipe.execute()
-```
-
-### Race Condition
-```
-VORHER:
-  self._counter += 1
-NACHHER:
-  async with self._lock:
-      self._counter += 1
-```
-
-### None-Guard
-```
-VORHER:
-  value = self.brain.module.method()
-NACHHER:
-  module = getattr(self.brain, 'module', None)
-  if module:
-      value = module.method()
-```
-
 ### Explizites Bug-Mapping: P04 → P06
 
 > **PFLICHT**: Erstelle als erstes eine Zuordnungstabelle die JEDEN Bug aus P04 einem Fix-Prompt zuweist. Kein Bug darf ohne Zuordnung bleiben.
@@ -375,16 +324,6 @@ Formatiere am Ende einen kompakten **Kontext-Block**:
 
 ### Test-Status
 [X Tests bestanden, Y fehlgeschlagen]
-```
-
-## Erfolgs-Check
-
-```
-□ Alle KRITISCH Bugs gefixt
-□ Mindestens 15 von 20 Bugs gefixt
-□ Jeder Fix hat Pre-Edit Template (VORHER/NACHHER)
-□ python -c "import assistant.brain" → kein ImportError
-□ Keine Regressionen dokumentiert
 ```
 
 ## Output
