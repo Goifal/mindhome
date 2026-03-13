@@ -1,11 +1,28 @@
 # Audit-Ergebnis: Prompt 4c — Addon + Security-Audit + Performance-Analyse
 
-**Durchlauf**: #2 (Verifikation nach Fixes aus P6a-P8)
-**Datum**: 2026-03-10
+**Durchlauf**: #2 (DL#2), aktualisiert DL#3 (2026-03-13)
+**Datum**: 2026-03-10 (DL#2), 2026-03-13 (DL#3)
 **Auditor**: Claude Code (Opus 4.6)
 **Scope**: 67+ Addon-Module, Speech-Server, Shared-Schemas, HA-Integration, 18 Security-Checks, 10 Resilience-Szenarien, 12 Performance-Checks
 **Methode**: 4 parallele Verifikations-Agenten, jedes Modul komplett gelesen
 **Vergleichsbasis**: DL#1 (106 Bugs: 8 KRITISCH, 25 HOCH, 34 MITTEL, 39 NIEDRIG)
+
+---
+
+## DL#3: Verifikation nach P02 Memory-Reparatur (2026-03-13)
+
+### P02 Impact auf Addon/Security/Performance: KEINE
+
+P02 Fixes betrafen ausschliesslich Memory-Schwellwerte und System-Prompt-Prioritaeten
+im Assistant (brain.py). Addon-Module, Security-Checks und Performance sind nicht betroffen.
+
+```
+DL#2: ~58 offene Bugs (2 KRITISCH, 6 HOCH, 32 MITTEL, ~18 NIEDRIG)
+DL#3: ~58 offene Bugs (unveraendert)
+Security: 14/18 OK (unveraendert)
+Resilience: unveraendert
+Performance: unveraendert
+```
 
 ---
 
@@ -521,7 +538,7 @@ Dead Code: 1 von 11 geloescht (shared/)
 
 ---
 
-## KONTEXT AUS PROMPT 4 (gesamt: 4a + 4b + 4c): Bug-Report — DL#2
+## KONTEXT AUS PROMPT 4 (gesamt: 4a + 4b + 4c): Bug-Report — DL#3
 
 ### Statistik
 ```
