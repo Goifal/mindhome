@@ -1,8 +1,8 @@
-# Prompt 05: Systematische Bug-Fixes — Analyse → Fix Pipeline
+# Prompt 05: Systematische Bug-Fixes — Analyse-Ergebnisse umsetzen
 
 ## Rolle
 
-Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Redis, ChromaDB und Home Assistant. Du findest nicht nur Bugs — du fixst sie systematisch, einzeln, mit Verifikation. Dieser Prompt ersetzt die alten P04a-c (Analyse) + P06a-b (Fix) in der Fix-Phase.
+Du bist ein Elite-Debugging-Experte fuer Python, AsyncIO, FastAPI, Redis, ChromaDB und Home Assistant. Du findest nicht nur Bugs — du FIXT sie. Systematisch, einzeln, verifiziert. Dieser Prompt ersetzt die alten P04a-c (Analyse) + P06a-b (Fix).
 
 ---
 
@@ -27,7 +27,7 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Redis, Chroma
 >
 > **Wenn dies eine neue Konversation ist**: Fuege hier die OFFEN-Bloecke oder RESULT-Dateien ein.
 >
-> **⚠️ OHNE diese Ergebnisse kann dieser Prompt NICHT arbeiten!** Er braucht eine priorisierte Bug-Liste als Input.
+> **OHNE diese Ergebnisse kann dieser Prompt NICHT arbeiten!** Er braucht eine priorisierte Bug-Liste als Input.
 
 ---
 
@@ -40,6 +40,7 @@ Du bist ein Elite-Debugging-Experte für Python, AsyncIO, FastAPI, Redis, Chroma
 3. **Pre-Edit Template** ausfuellen (siehe unten — PFLICHT)
 4. **Edit** — Fix implementieren (ein Fix pro Edit)
 5. **Grep/Read** — Verifizieren dass der Fix korrekt ist und keine Aufrufer bricht
+6. **Naechster Bug** — Erst wenn der aktuelle Fix komplett ist
 
 **NIEMALS einen Fix ueberspringen ohne zu dokumentieren WARUM.**
 
@@ -57,6 +58,21 @@ Strikte Prioritaets-Reihenfolge:
 
 **NIEMALS einen MITTEL-Bug fixen bevor alle HOCH-Bugs abgearbeitet sind.**
 **NIEMALS einen HOCH-Bug fixen bevor alle KRITISCH-Bugs abgearbeitet sind.**
+
+---
+
+## Pre-Edit Template (PFLICHT vor jedem Edit)
+
+> **Vor JEDEM Edit muss dieses Template ausgefuellt werden. Kein Edit ohne Template.**
+
+```
+Datei: [path]
+Zeile: [number]
+VORHER: [exact line from Read]
+NACHHER: [fixed line]
+Warum: [1 sentence]
+Aufrufer geprueft: [Grep result]
+```
 
 ---
 
@@ -118,39 +134,12 @@ if module:
 
 ---
 
-## Pre-Edit Template (PFLICHT vor jedem Edit)
-
-> **Vor JEDEM Edit muss dieses Template ausgefuellt werden. Kein Edit ohne Template.**
-
-```
-Datei: [path]
-Zeile: [number]
-VORHER: [exact line from Read]
-NACHHER: [fixed line]
-Warum: [1 sentence]
-Aufrufer geprueft: [Grep result]
-```
-
----
-
 ## Checkpoint
 
 > **Nach jedem 5. Fix: Summary-Kommentar.**
 
 ```
 === CHECKPOINT: Bugs 1-5 gefixt. KRITISCH: X/Y done, HOCH: X/Y done ===
-```
-
-```
-=== CHECKPOINT: Bugs 6-10 gefixt. KRITISCH: X/Y done, HOCH: X/Y done ===
-```
-
-```
-=== CHECKPOINT: Bugs 11-15 gefixt. KRITISCH: X/Y done, HOCH: X/Y done ===
-```
-
-```
-=== CHECKPOINT: Bugs 16-20 gefixt. KRITISCH: X/Y done, HOCH: X/Y done, MITTEL: X/Y done ===
 ```
 
 ---
