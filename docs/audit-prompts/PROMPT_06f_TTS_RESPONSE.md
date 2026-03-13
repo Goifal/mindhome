@@ -267,7 +267,7 @@ Wenn ein Bug NICHT gefixt werden kann, dokumentiere ihn im OFFEN-Block mit:
   - `ARCHITEKTUR_NOETIG` — Fix erfordert groesseren Umbau, naechster Durchlauf
   - `MENSCH` — Braucht menschliche Entscheidung oder Domainwissen
 
-**🔴 KRITISCH + MENSCH = STOPP.** Informiere den User sofort, nicht erst am Ende.
+**MENSCH-Bugs: NICHT stoppen.** Triff die beste Entscheidung selbst, dokumentiere WARUM, und mach weiter.
 **P06f ist der letzte Fix-Prompt** — alle verbleibenden OFFEN-Bugs gehen an P07a zur Validierung und dann an RESET.
 
 ## ERFOLGS-CHECK

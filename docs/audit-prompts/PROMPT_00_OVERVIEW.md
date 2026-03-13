@@ -237,14 +237,14 @@ OFFEN:
 |---|---|---|
 | `NAECHSTER_PROMPT` | Bug gehoert thematisch in einen spaeteren Prompt | Wird dort aufgegriffen (z.B. Security-Bug in P06a → P06d) |
 | `ARCHITEKTUR_NOETIG` | Fix erfordert groesseren Umbau der nicht in diesen Prompt passt | P06b (Architektur) oder naechster Durchlauf |
-| `MENSCH` | LLM kann Bug nicht loesen — braucht menschliche Entscheidung oder Domainwissen | **Wird in RESET als PRIORITAET 1 uebernommen** |
+| `MENSCH` | LLM kann Bug nicht allein loesen — braucht Domainwissen oder Architektur-Entscheidung | **Eigene beste Entscheidung treffen, Wahl + Begruendung dokumentieren. User wird am Ende informiert.** |
 
 ### Regeln
 
 1. **Jeder Fix-Prompt prueft zuerst** die OFFEN-Liste des vorherigen Prompts auf Bugs mit `→ ESKALATION: NAECHSTER_PROMPT`
 2. **P07a (Testing) validiert** alle OFFEN-Bugs: Sind sie wirklich nicht loesbar oder wurde etwas uebersehen?
 3. **RESET uebernimmt** alle verbleibenden OFFEN-Bugs als priorisierte Checkliste fuer den naechsten Durchlauf
-4. **🔴 KRITISCH + MENSCH** = Audit wird pausiert, User wird informiert. Nicht weitermachen bis geklaert.
+4. **MENSCH-Bugs: NICHT stoppen.** Triff die beste Entscheidung selbst, dokumentiere WARUM du dich so entschieden hast, und mach weiter. Der User wird am Ende ueber alle MENSCH-Entscheidungen informiert.
 5. **Kein Bug verschwindet** — er wird entweder GEFIXT, ESKALIERT, oder im naechsten Durchlauf erneut geprueft
 
 ## Output

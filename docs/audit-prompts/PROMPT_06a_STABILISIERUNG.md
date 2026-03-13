@@ -202,7 +202,7 @@ Wenn ein Bug NICHT gefixt werden kann, dokumentiere ihn im OFFEN-Block mit:
   - `ARCHITEKTUR_NOETIG` — Fix erfordert groesseren Umbau, naechster Durchlauf
   - `MENSCH` — Braucht menschliche Entscheidung oder Domainwissen
 
-**🔴 KRITISCH + MENSCH = STOPP.** Informiere den User sofort, nicht erst am Ende.
+**MENSCH-Bugs: NICHT stoppen.** Triff die beste Entscheidung selbst, dokumentiere WARUM, und mach weiter.
 
 ## Regeln
 

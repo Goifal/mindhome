@@ -92,9 +92,9 @@ Sammle die OFFEN-Eintraege aus allen Kontext-Bloecken und sortiere nach Eskalati
 ```
 ## UNFIXTE BUGS AUS DURCHLAUF #X
 
-### 🔴 KRITISCH — MENSCH (User muss entscheiden)
-- [ ] [Bug-Beschreibung] — Datei:Zeile — Grund: [warum nicht loesbar]
-  ⚠️ DIESE BUGS VOR DEM NAECHSTEN DURCHLAUF MIT DEM USER KLAEREN!
+### 🔴 KRITISCH — MENSCH (Autonome Entscheidung getroffen)
+- [ ] [Bug-Beschreibung] — Datei:Zeile — ENTSCHEIDUNG: [was wurde entschieden + warum]
+  → Im naechsten Durchlauf: Ergebnis der Entscheidung verifizieren
 
 ### 🔴🟠 ARCHITEKTUR_NOETIG (Groesserer Umbau erforderlich)
 - [ ] [Bug-Beschreibung] — Datei:Zeile — Grund: [warum Architektur-Umbau]
