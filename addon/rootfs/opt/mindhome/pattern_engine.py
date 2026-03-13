@@ -1068,9 +1068,12 @@ class PatternDetector:
         else:
             factors.append({"factor": "few_matches", "detail": f"{mc} matches", "impact": "low"})
 
-        # Staleness
+        # Staleness (N9 Fix: naive datetime sicher machen)
         if p.last_matched_at:
-            days = (datetime.now(timezone.utc) - p.last_matched_at).days
+            lma = p.last_matched_at
+            if lma.tzinfo is None:
+                lma = lma.replace(tzinfo=timezone.utc)
+            days = (datetime.now(timezone.utc) - lma).days
             if days > 14:
                 factors.append({"factor": "stale", "detail": f"last match {days}d ago", "impact": "-decay"})
             else:
