@@ -190,6 +190,11 @@ class SemanticMemory:
         if existing:
             return await self._update_existing_fact(existing, fact)
 
+        # Wenn BEIDE Backends fehlen → sofort False (DL3-ME2 Fix)
+        if not self.chroma_collection and not self.redis:
+            logger.error("store_fact: Weder ChromaDB noch Redis verfuegbar — Fakt verworfen")
+            return False
+
         chroma_ok = True
         if self.chroma_collection:
             try:
