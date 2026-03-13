@@ -198,6 +198,28 @@ if text:
     text = text[0].upper() + text[1:]
 ```
 
+**Referenz-Implementierung (kompakt):**
+
+```python
+# 0e. Meta-Leakage: LLM gibt interne Begriffe/Funktionsnamen aus
+_meta_patterns = [
+    r'\bspeak\b', r'\btts\b', r'\bemit\b',
+    r'\btool_call\b', r'\bfunction_call\b',
+    r'\bset_light\b', r'\bset_cover\b', r'\bset_climate\b',
+    r'\bset_switch\b', r'\bget_\w+\b',
+    r'\bemit_speaking\b', r'\bemit_action\b',
+    r'\bspeak_response\b', r'\bcall_service\b',
+    r'<tool_call>.*?</tool_call>',
+    r'\{"name":\s*"\w+".*?"arguments".*?\}',
+]
+for pattern in _meta_patterns:
+    new_text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    if new_text != text:
+        logger.info("Meta-Leakage entfernt: pattern=%s", pattern)
+    text = new_text
+text = re.sub(r'\s{2,}', ' ', text).strip()
+```
+
 **Verify:**
 ```
 Grep: "meta_leak_patterns\|Meta-Leakage" in brain.py → mindestens 1 Treffer
@@ -336,6 +358,28 @@ Alle müssen bestehen:
 ## ⚡ Uebergabe an Prompt 7a
 
 > **Nach P06f ist die Fix-Phase abgeschlossen (P06a-P06f).** Weiter mit P07a (Testing) um alle Fixes zu verifizieren.
+
+## Praxis-Testszenarien
+
+TEST 1: Sprachausgabe ohne Meta-Leakage
+  User: "Mach Licht an" (per Voice)
+  → TTS-Ausgabe: "Erledigt." (NICHT "speak Erledigt" oder "tts Erledigt")
+
+TEST 2: Status-Abfrage
+  User: "Wie ist das Wetter?"
+  → TTS darf KEINE Funktionsnamen enthalten
+
+TEST 3: Komplexer Befehl
+  User: "Mach Licht an und sag mir die Temperatur"
+  → Antwort darf KEIN JSON oder tool_call Tags enthalten
+
+## Erfolgs-Check
+□ grep "meta_patterns\|Meta-Leakage" brain.py → mindestens 1 Treffer
+□ grep "VERBOTEN.*speak\|VERBOTEN.*tts" personality.py → vorhanden
+□ grep "fallback\|Ersatz.*Antwort" brain.py → Empty-Response-Fallback existiert
+□ python -c "import assistant.brain" → kein ImportError
+
+---
 
 ## OUTPUT
 
