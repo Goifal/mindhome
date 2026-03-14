@@ -3254,16 +3254,20 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # (a) vacuum.enabled in settings.yaml UND
             # (b) User tatsaechlich ueber Staubsaugen spricht.
             # Verhindert dass das LLM bei unbekannten Befehlen auf set_vacuum defaulted.
+            # P06e: Intent-basierte Tool-Selektion — kleine Modelle (4B) werden
+            # von 45+ Tools ueberfordert. Bei eindeutigem Intent nur relevante
+            # Tools senden (max ~15), sonst alle.
+            _text_low = text.lower()
+            _llm_tools = self._select_tools_for_intent(_text_low)
+
+            # Vacuum-Filter: set_vacuum nur anbieten wenn User davon spricht
             _vacuum_enabled = cfg.yaml_config.get("vacuum", {}).get("enabled", True)
             _vacuum_kw = {"saug", "staubsaug", "vacuum", "saugen", "sauger",
                           "roboter", "roborock", "dreame", "wischen", "mopp"}
-            _text_low = text.lower()
             _offer_vacuum = _vacuum_enabled and any(kw in _text_low for kw in _vacuum_kw)
-            if _offer_vacuum:
-                _llm_tools = get_assistant_tools()
-            else:
+            if not _offer_vacuum:
                 _llm_tools = [
-                    t for t in get_assistant_tools()
+                    t for t in _llm_tools
                     if t.get("function", {}).get("name") not in ("set_vacuum", "get_vacuum")
                 ]
 
@@ -3385,14 +3389,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # 7d. Retry: LLM hat bei Geraetebefehl/Status-Query keinen Tool-Call gemacht
             if not tool_calls and (self._is_device_command(text) or self._is_status_query(text)):
                 logger.warning("Geraetebefehl ohne Tool-Call erkannt: '%s' -> Retry mit Hint", text)
-                hint_msg = (
-                    f"Du MUSST jetzt einen Function-Call ausfuehren! "
-                    f"Der User hat gesagt: \"{text}\". "
-                    f"Nutze den passenden Tool-Call: "
-                    f"Für Status-Abfragen: get_lights, get_covers, get_climate, get_entity_state, get_house_status. "
-                    f"Für Steuerung: set_light, set_cover, set_climate. "
-                    f"KEIN Text. NUR der Function-Call."
-                )
+                hint_msg = self._build_tool_call_hint(text)
                 retry_messages = messages + [
                     {"role": "assistant", "content": response_text},
                     {"role": "user", "content": hint_msg},
@@ -6873,6 +6870,147 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         text = re.sub(r"\s{2,}", " ", text).strip()
 
         return text
+
+    def _build_tool_call_hint(self, user_text: str) -> str:
+        """P06e: Generiert einen spezifischen Retry-Hint mit Tool-Name und Parametern.
+
+        Statt generischem "Nutze ein Tool" werden konkrete Beispiele genannt,
+        damit kleine Modelle (4B) den richtigen Tool-Call generieren.
+        """
+        t = user_text.lower()
+        hints = []
+
+        # Licht
+        if any(w in t for w in ["licht", "lampe", "beleuchtung", "leuchte"]):
+            state = "on" if any(w in t for w in ["an", "ein"]) else "off"
+            pct = re.search(r'(\d{1,3})\s*(?:%|prozent)', t)
+            if pct:
+                hints.append(
+                    f"Nutze set_light mit state='on', brightness={pct.group(1)}. "
+                    f"Beispiel: set_light(room='wohnzimmer', state='on', brightness={pct.group(1)})"
+                )
+            else:
+                hints.append(
+                    f"Nutze set_light mit state='{state}'. "
+                    f"Beispiel: set_light(room='wohnzimmer', state='{state}')"
+                )
+
+        # Rollladen
+        if any(w in t for w in ["rollladen", "rollo", "jalousie"]):
+            pct = re.search(r'(\d{1,3})\s*(?:%|prozent)', t)
+            if pct:
+                hints.append(
+                    f"Nutze set_cover mit position={pct.group(1)}. "
+                    f"Beispiel: set_cover(room='wohnzimmer', position={pct.group(1)})"
+                )
+            elif any(w in t for w in ["hoch", "auf", "oeffne"]):
+                hints.append(
+                    "Nutze set_cover mit action='open'. "
+                    "Beispiel: set_cover(room='wohnzimmer', action='open')"
+                )
+            elif any(w in t for w in ["runter", "zu", "schliess"]):
+                hints.append(
+                    "Nutze set_cover mit action='close'. "
+                    "Beispiel: set_cover(room='wohnzimmer', action='close')"
+                )
+
+        # Heizung
+        if any(w in t for w in ["heizung", "thermostat", "temperatur"]):
+            temp = re.search(r'(\d{1,2}(?:[.,]\d)?)\s*(?:grad|°)', t)
+            if temp:
+                tv = temp.group(1).replace(",", ".")
+                hints.append(
+                    f"Nutze set_climate mit temperature={tv}. "
+                    f"Beispiel: set_climate(room='wohnzimmer', temperature={tv})"
+                )
+            else:
+                hints.append(
+                    "Nutze set_climate. "
+                    "Beispiel: set_climate(room='wohnzimmer', temperature=22)"
+                )
+
+        # Schalter/Steckdose
+        if any(w in t for w in ["steckdose", "schalter", "ventilator"]):
+            state = "on" if any(w in t for w in ["an", "ein"]) else "off"
+            hints.append(
+                f"Nutze set_switch mit state='{state}'. "
+                f"Beispiel: set_switch(room='buero', state='{state}')"
+            )
+
+        if hints:
+            return (
+                f"WICHTIG: Du MUSST einen Tool-Call generieren! "
+                f"Der User hat gesagt: \"{user_text}\". "
+                f"Antworte NICHT mit Text, sondern rufe das passende Tool auf.\n"
+                + "\n".join(hints)
+            )
+
+        # Generischer Fallback (Status-Queries oder unbekannter Intent)
+        return (
+            f"Du MUSST jetzt einen Function-Call ausfuehren! "
+            f"Der User hat gesagt: \"{user_text}\". "
+            f"Nutze den passenden Tool-Call: "
+            f"Fuer Status-Abfragen: get_lights, get_covers, get_climate, get_entity_state, get_house_status. "
+            f"Fuer Steuerung: set_light, set_cover, set_climate, set_switch. "
+            f"KEIN Text. NUR der Function-Call."
+        )
+
+    def _select_tools_for_intent(self, text_lower: str) -> list:
+        """P06e: Waehlt nur relevante Tools basierend auf dem erkannten Intent.
+
+        Reduziert die Tool-Liste von 45+ auf max ~15, um kleine Modelle
+        nicht zu ueberfordern. Bei unklarem Intent → alle Tools.
+        """
+        CONTROL_KEYWORDS = {
+            "mach", "schalte", "stell", "dreh", "dimm", "oeffne", "schliess",
+            "fahr", "setz", "einschalten", "ausschalten", "anmachen", "ausmachen",
+            "licht", "lampe", "rollladen", "rollo", "jalousie", "heizung",
+            "thermostat", "temperatur", "steckdose", "schalter",
+        }
+        QUERY_KEYWORDS = {
+            "wie ist", "was ist", "status", "wie warm", "wie kalt",
+            "ist das", "sind die", "offen", "geschlossen", "welche",
+            "zeig", "liste", "an oder aus",
+        }
+
+        is_control = any(kw in text_lower for kw in CONTROL_KEYWORDS)
+        is_query = any(kw in text_lower for kw in QUERY_KEYWORDS)
+
+        all_tools = get_assistant_tools()
+
+        if is_control and not is_query:
+            # Nur Steuerungs-Tools
+            _CONTROL_NAMES = {
+                "set_light", "set_cover", "set_climate", "set_switch",
+                "set_media_player", "set_fan", "set_lock",
+                "get_entity_state", "call_ha_service", "run_scene",
+                "set_input_boolean", "set_input_number",
+                "set_light_all", "arm_security_system",
+            }
+            filtered = [t for t in all_tools
+                        if t.get("function", {}).get("name") in _CONTROL_NAMES]
+            if filtered:
+                logger.debug("P06e Tool-Selektion: %d/%d Tools (control intent)",
+                             len(filtered), len(all_tools))
+                return filtered
+
+        if is_query and not is_control:
+            # Nur Abfrage-Tools
+            _QUERY_NAMES = {
+                "get_entity_state", "get_lights", "get_covers", "get_climate",
+                "get_switches", "get_media", "get_alarms", "get_house_status",
+                "get_weather", "get_calendar", "get_shopping_list",
+                "search_entities", "get_area_entities", "get_entity_history",
+            }
+            filtered = [t for t in all_tools
+                        if t.get("function", {}).get("name") in _QUERY_NAMES]
+            if filtered:
+                logger.debug("P06e Tool-Selektion: %d/%d Tools (query intent)",
+                             len(filtered), len(all_tools))
+                return filtered
+
+        # Unklarer Intent → alle Tools
+        return all_tools
 
     def _is_device_command(self, text: str) -> bool:
         """Erkennt ob der Text ein Geraete-Steuerungsbefehl ist.
