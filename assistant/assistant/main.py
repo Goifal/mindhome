@@ -3881,6 +3881,11 @@ async def ui_update_settings(req: SettingsUpdateFull, token: str = ""):
             cfg.settings.model_smart = _models_new["smart"]
         if _models_new.get("deep"):
             cfg.settings.model_deep = _models_new["deep"]
+        # Notify-Modell: explizit oder automatisch auf Fast-Modell
+        if _models_new.get("notify"):
+            cfg.settings.model_notify = _models_new["notify"]
+        else:
+            cfg.settings.model_notify = cfg.settings.model_fast
 
         # ModelRouter neu laden (Enabled-Status, Keywords)
         if hasattr(brain, "model_router") and brain.model_router:
