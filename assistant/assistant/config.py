@@ -155,6 +155,11 @@ if _models.get("smart"):
 if _models.get("deep"):
     settings.model_deep = _models["deep"]
 
+# Security: API-Key fuer Service-to-Service Auth (Assistant <-> Addon)
+_security = yaml_config.get("security", {})
+if _security.get("api_key"):
+    settings.assistant_api_key = _security["api_key"]
+
 # Household → user_name, persons, trust_levels synchronisieren
 _household = yaml_config.get("household") or {}
 if _household.get("primary_user"):
