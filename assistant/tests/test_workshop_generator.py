@@ -253,7 +253,9 @@ class TestGenerateCode:
     async def test_generate_code_success(self):
         wg = _make_wg_with_router()
         wg.redis = None  # no redis
-        result = await wg.generate_code("proj1", "blink LED", language="arduino")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wg.FILES_DIR = Path(tmpdir)
+            result = await wg.generate_code("proj1", "blink LED", language="arduino")
         assert result["status"] == "ok"
         assert result["language"] == "arduino"
         assert result["filename"].endswith(".ino")
@@ -407,7 +409,9 @@ class TestGenerateCodeWithRedis:
         """generate_code with project_id but no redis still works."""
         wg = _make_wg_with_router()
         wg.redis = None
-        result = await wg.generate_code("proj1", "test", language="html")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wg.FILES_DIR = Path(tmpdir)
+            result = await wg.generate_code("proj1", "test", language="html")
         assert result["status"] == "ok"
         assert result["filename"].endswith(".html")
 
@@ -417,7 +421,9 @@ class TestGenerateCodeWithRedis:
         wg = _make_wg_with_router()
         wg.redis = None
         long_code = "x" * 5000
-        result = await wg.generate_code(None, "extend", language="cpp", existing_code=long_code)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wg.FILES_DIR = Path(tmpdir)
+            result = await wg.generate_code(None, "extend", language="cpp", existing_code=long_code)
         assert result["status"] == "ok"
         assert result["filename"].endswith(".cpp")
 
@@ -426,7 +432,9 @@ class TestGenerateCodeWithRedis:
         """Unknown language falls back to .txt extension."""
         wg = _make_wg_with_router()
         wg.redis = None
-        result = await wg.generate_code(None, "test", language="rust")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wg.FILES_DIR = Path(tmpdir)
+            result = await wg.generate_code(None, "test", language="rust")
         assert result["status"] == "ok"
         assert result["filename"].endswith(".txt")
 
