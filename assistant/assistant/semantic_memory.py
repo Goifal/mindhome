@@ -917,14 +917,16 @@ class SemanticMemory:
                             results["distances"][0][i] if results.get("distances") else 1.0
                         )
                         fact_id = results["ids"][0][i] if results.get("ids") and results["ids"][0] else ""
-                        # Grosszuegigerer Filter als search_facts
-                        if distance < 1.5:
+                        confidence = float(meta.get("confidence", 0.5))
+                        # Grosszuegigerer Filter als search_facts, aber
+                        # Confidence-Filter um veraltete Fakten auszuschliessen
+                        if distance < 1.5 and confidence >= 0.3:
                             facts.append({
                                 "content": doc,
                                 "fact_id": fact_id,
                                 "category": meta.get("category", "general"),
                                 "person": meta.get("person", "unknown"),
-                                "confidence": float(meta.get("confidence", 0.5)),
+                                "confidence": confidence,
                                 "times_confirmed": int(meta.get("times_confirmed", 1)),
                                 "relevance": 1.0 - min(distance, 1.0),
                                 "source": meta.get("source_conversation", ""),

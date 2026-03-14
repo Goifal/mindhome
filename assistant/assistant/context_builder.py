@@ -332,7 +332,7 @@ class ContextBuilder:
             )
             memories["relevant_facts"] = [
                 sanitized for f in relevant
-                if f.get("relevance", 0) > 0.2
+                if f.get("relevance", 0) > 0.35
                 and (sanitized := _sanitize_for_prompt(f["content"], 500, "semantic_fact"))
             ]
 
