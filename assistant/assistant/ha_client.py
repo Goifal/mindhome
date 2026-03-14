@@ -358,7 +358,7 @@ class HomeAssistantClient:
         logger.info("log_actions: %d Aktionen melden (%s)",
                      len(safe_actions),
                      [a["function"] for a in safe_actions])
-        result = await self.mindhome_post("/api/action-log", payload, retries=1, timeout=45)
+        result = await self.mindhome_post("/api/action-log", payload, retries=0, timeout=10)
         if result is None:
             logger.warning("log_actions: POST /api/action-log fehlgeschlagen (result=None)")
         else:

@@ -7139,6 +7139,34 @@ class FunctionExecutor:
                     best_match = entity_id
                     best_len = score
 
+        # Phase 3: Erweiterter Fuzzy-Search — Einzelwort-Matching
+        # Wenn Phase 1+2 nichts finden, versuche Teilwörter des Suchbegriffs
+        # gegen alle Entities im Domain zu matchen
+        if not best_match:
+            search_words = [w for w in search_norm.split() if len(w) > 3]
+            if search_words:
+                all_entities = [
+                    s for s in (states or await self.ha.get_states() or [])
+                    if s.get("entity_id", "").startswith(f"{domain}.")
+                    and not self.is_entity_hidden(s.get("entity_id", ""))
+                ]
+                word_matches: list[tuple[int, int, str]] = []
+                for entity in all_entities:
+                    eid = entity.get("entity_id", "").lower()
+                    fname = (entity.get("attributes", {}).get("friendly_name", "") or "").lower()
+                    eid_norm = self._normalize_name(eid.split(".", 1)[1] if "." in eid else eid)
+                    fname_norm = self._normalize_name(fname)
+                    match_count = sum(1 for w in search_words if w in eid_norm or w in fname_norm)
+                    if match_count > 0:
+                        word_matches.append((match_count, len(fname_norm), entity.get("entity_id")))
+                if word_matches:
+                    word_matches.sort(key=lambda x: (-x[0], x[1]))  # Meiste Treffer, kürzester Name
+                    best_match = word_matches[0][2]
+                    logger.info(
+                        "_find_entity: Fuzzy-Match '%s' -> %s (%d Wort-Treffer)",
+                        search, best_match, word_matches[0][0],
+                    )
+
         if not best_match:
             # Diagnose: Alle verfügbaren Entities dieser Domain loggen
             available = [

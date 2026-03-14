@@ -119,10 +119,45 @@ class TestDeviceFastEmbeddedVerbs:
         assert result.category == "device_command", f"'{text}' sollte DEVICE_FAST sein"
 
     def test_too_long_embedded_verb_goes_general(self, classifier):
-        """Eingebettete Verben mit >12 Woertern → GENERAL."""
-        long_text = "Ich moechte bitte dass du jetzt sofort endlich mal die Lampe im Wohnzimmer ausschaltest bitte danke"
+        """Eingebettete Verben mit >16 Woertern → GENERAL."""
+        long_text = "Ich moechte bitte dass du jetzt sofort endlich mal die Lampe im Wohnzimmer ausschaltest bitte danke und zwar sofort"
         result = classifier.classify(long_text)
-        # >12 Woerter → nicht als embedded verb erkannt
+        # >16 Woerter → nicht als embedded verb erkannt
+        assert result.category == "general"
+
+    def test_embedded_verb_up_to_16_words(self, classifier):
+        """Eingebettete Verben mit bis zu 16 Woertern → DEVICE_FAST."""
+        text = "Ich moechte bitte dass du jetzt sofort endlich mal die Lampe im Wohnzimmer ausschaltest bitte danke"
+        result = classifier.classify(text)
+        assert result.category == "device_command"
+
+
+# ============================================================
+# DEVICE_FAST: Trennbare Verben (Verb...Praefix-am-Ende)
+# ============================================================
+
+class TestDeviceFastSeparatedVerbs:
+    """Trennbare Verben: 'schalte die Maschine aus', 'mach das Licht an'."""
+
+    @pytest.fixture
+    def classifier(self):
+        return PreClassifier()
+
+    @pytest.mark.parametrize("text", [
+        "schalte die Steckdose im Wohnzimmer aus",
+        "mach die Steckdose an",
+        "Das ist gut und jetzt schaltet die Maschine im Wohnzimmer aus",
+        "dreh die Heizung im Schlafzimmer ab",
+        "stell die Lampe im Flur an",
+    ])
+    def test_separated_verbs_recognized(self, classifier, text):
+        result = classifier.classify(text)
+        assert result.category == "device_command", f"'{text}' sollte device_command sein"
+
+    def test_separated_verb_without_device_noun_goes_general(self, classifier):
+        """Trennbares Verb ohne Geraete-Nomen bei >8 Woertern → GENERAL."""
+        text = "Kannst du bitte das grosse schwere Buch im oberen Regal um stellen"
+        result = classifier.classify(text)
         assert result.category == "general"
 
 
@@ -139,8 +174,9 @@ class TestDeviceFastProfile:
         assert PROFILE_DEVICE_FAST.need_time_hints is True
         assert PROFILE_DEVICE_FAST.need_security is True
         assert PROFILE_DEVICE_FAST.need_guest_mode is True
+        # Mood muss AN sein (Frustrations-Erkennung auch bei Device-Commands)
+        assert PROFILE_DEVICE_FAST.need_mood is True
         # Diese sollten AUS sein:
-        assert PROFILE_DEVICE_FAST.need_mood is False
         assert PROFILE_DEVICE_FAST.need_formality is False
         assert PROFILE_DEVICE_FAST.need_irony is False
         assert PROFILE_DEVICE_FAST.need_memories is False
