@@ -649,8 +649,7 @@ class SpeakerRecognition:
                                      len(embedding), attempt + 1)
                         return embedding
             except Exception as e:
-                logger.debug("Wyoming-Embedding lesen fehlgeschlagen: %s", e)
-                return None
+                logger.debug("Wyoming-Embedding lesen fehlgeschlagen (Versuch %d): %s", attempt + 1, e)
 
             # Noch nicht da — kurz warten und nochmal versuchen
             if attempt < len(delays) - 1:

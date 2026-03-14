@@ -510,7 +510,7 @@ REGELN: Vollstaendige, ausfuehrbare Tests. Edge Cases abdecken."""
 
         # Redis: Datei-Liste und Versionierung
         if self.redis:
-            await self.redis.sadd(
+            await self.redis.rpush(
                 f"mha:repair:files:{project_id}", filename)
             await self.redis.rpush(
                 f"mha:repair:versions:{project_id}:{filename}",

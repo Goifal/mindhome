@@ -81,12 +81,16 @@ class CorrectionMemory:
             "hour": datetime.now().hour,
         }
 
-        await self.redis.lpush(
-            "mha:correction_memory:entries",
-            json.dumps(entry, ensure_ascii=False),
-        )
-        await self.redis.ltrim("mha:correction_memory:entries", 0, self._max_entries - 1)
-        await self.redis.expire("mha:correction_memory:entries", 180 * 86400)
+        try:
+            await self.redis.lpush(
+                "mha:correction_memory:entries",
+                json.dumps(entry, ensure_ascii=False),
+            )
+            await self.redis.ltrim("mha:correction_memory:entries", 0, self._max_entries - 1)
+            await self.redis.expire("mha:correction_memory:entries", 180 * 86400)
+        except Exception as e:
+            logger.warning("Korrektur-Speicherung fehlgeschlagen: %s", e)
+            return
 
         logger.info("Korrektur gespeichert: %s -> %s (Person: %s)",
                      original_action, clean_text[:60], person or "unbekannt")

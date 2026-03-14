@@ -692,8 +692,7 @@ class TestSaveFileValidation:
             with patch("assistant.websocket.emit_workshop", new_callable=AsyncMock):
                 result = await wg._save_file("proj1", "test.txt", "hello world")
         assert result["status"] == "ok"
-        redis.sadd.assert_called_once()
-        redis.rpush.assert_called_once()
+        assert redis.rpush.call_count == 2  # files list + version history
 
     @pytest.mark.asyncio
     async def test_save_file_ws_emit_fails(self):
