@@ -81,7 +81,7 @@ class HAConnection:
             )
             if resp.status_code == 200:
                 data = resp.json()
-                return data.get("owned", False)
+                return bool(data.get("owner"))
         except Exception:
             # Assistant nicht erreichbar — Addon darf handeln
             pass
