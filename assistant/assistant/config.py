@@ -150,6 +150,9 @@ if _models.get("fast"):
     settings.model_fast = _models["fast"]
 if _models.get("notify"):
     settings.model_notify = _models["notify"]
+else:
+    # Notify-Modell automatisch auf Fast-Modell setzen wenn nicht explizit konfiguriert
+    settings.model_notify = settings.model_fast
 if _models.get("smart"):
     settings.model_smart = _models["smart"]
 if _models.get("deep"):
