@@ -262,7 +262,8 @@ class SemanticMemory:
             return False
         if not chroma_ok:
             logger.warning(
-                "Fakt nur in Redis gespeichert (ChromaDB fehlt): [%s] (Person: %s)",
+                "Fakt nur in Redis gespeichert (ChromaDB fehlt, Redis-Fallback-Suche aktiv): "
+                "[%s] (Person: %s) — Vektor-Suche nicht verfuegbar, Keyword-Suche als Fallback",
                 fact.category, fact.person,
             )
         return True
@@ -527,62 +528,125 @@ class SemanticMemory:
     async def search_facts(
         self, query: str, limit: int = 5, person: Optional[str] = None
     ) -> list[dict]:
-        if not self.chroma_collection:
-            return []
+        # ChromaDB-Suche versuchen, bei Fehler Redis-Fallback
+        if self.chroma_collection:
+            try:
+                return await self._search_facts_chromadb(query, limit, person)
+            except Exception as e:
+                logger.warning("ChromaDB search_facts fehlgeschlagen, versuche Redis-Fallback: %s", e)
 
+        # Fallback: Alle Fakten aus Redis laden und nach Query-Keywords filtern
+        if self.redis:
+            return await self._search_facts_redis_fallback(query, limit, person)
+
+        return []
+
+    async def _search_facts_chromadb(
+        self, query: str, limit: int, person: Optional[str] = None
+    ) -> list[dict]:
+        """Semantische Suche via ChromaDB Vektor-Aehnlichkeit."""
+        where_filter = None
+        if person:
+            where_filter = {"person": person}
+
+        results = await asyncio.to_thread(
+            self.chroma_collection.query,
+            query_texts=[query],
+            n_results=limit,
+            where=where_filter,
+        )
+
+        min_confidence = float(yaml_config.get("memory", {}).get(
+            "min_confidence_for_context", 0.4
+        ))
+        now = datetime.now()
+        facts = []
+        if results and results.get("documents"):
+            for i, doc in enumerate(results["documents"][0]):
+                meta = results["metadatas"][0][i] if results.get("metadatas") else {}
+                distance = (
+                    results["distances"][0][i] if results.get("distances") else 1.0
+                )
+                confidence = float(meta.get("confidence", 0.5))
+                # Fakten mit zu niedriger Confidence herausfiltern
+                if confidence < min_confidence:
+                    continue
+                base_relevance = 1.0 - min(distance, 1.0)
+                # Aktualitaets-Boost: Kuerzlich bestaetigte Fakten bevorzugen
+                recency_boost = 0.0
+                updated_at = meta.get("updated_at", "")
+                if updated_at:
+                    try:
+                        days_old = (now - datetime.fromisoformat(updated_at)).days
+                        # Max 10% Boost fuer Fakten der letzten 7 Tage,
+                        # linear abfallend ueber 90 Tage
+                        if days_old < 90:
+                            recency_boost = 0.1 * max(0.0, 1.0 - days_old / 90.0)
+                    except (ValueError, TypeError):
+                        pass
+                facts.append({
+                    "content": doc,
+                    "category": meta.get("category", "general"),
+                    "person": meta.get("person", "unknown"),
+                    "confidence": confidence,
+                    "times_confirmed": int(meta.get("times_confirmed", 1)),
+                    "relevance": min(1.0, base_relevance + recency_boost),
+                })
+        # Nach Relevanz sortieren damit aktuellere Fakten oben stehen
+        facts.sort(key=lambda f: f["relevance"], reverse=True)
+        return facts
+
+    async def _search_facts_redis_fallback(
+        self, query: str, limit: int, person: Optional[str] = None
+    ) -> list[dict]:
+        """Keyword-basierte Suche ueber Redis wenn ChromaDB nicht verfuegbar.
+
+        Kein Vektor-Matching, aber besser als gar keine Ergebnisse.
+        """
         try:
-            where_filter = None
             if person:
-                where_filter = {"person": person}
+                fact_ids = await self.redis.smembers(f"mha:facts:person:{person}")
+            else:
+                fact_ids = await self.redis.smembers("mha:facts:all")
 
-            results = await asyncio.to_thread(
-                self.chroma_collection.query,
-                query_texts=[query],
-                n_results=limit,
-                where=where_filter,
-            )
+            if not fact_ids:
+                return []
+
+            fact_ids_list = list(fact_ids)
+            pipe = self.redis.pipeline()
+            for fid in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fid}")
+            all_data = await pipe.execute()
 
             min_confidence = float(yaml_config.get("memory", {}).get(
                 "min_confidence_for_context", 0.4
             ))
-            now = datetime.now()
+            query_words = set(query.lower().split())
             facts = []
-            if results and results.get("documents"):
-                for i, doc in enumerate(results["documents"][0]):
-                    meta = results["metadatas"][0][i] if results.get("metadatas") else {}
-                    distance = (
-                        results["distances"][0][i] if results.get("distances") else 1.0
-                    )
-                    confidence = float(meta.get("confidence", 0.5))
-                    # Fakten mit zu niedriger Confidence herausfiltern
-                    if confidence < min_confidence:
-                        continue
-                    base_relevance = 1.0 - min(distance, 1.0)
-                    # Aktualitaets-Boost: Kuerzlich bestaetigte Fakten bevorzugen
-                    recency_boost = 0.0
-                    updated_at = meta.get("updated_at", "")
-                    if updated_at:
-                        try:
-                            days_old = (now - datetime.fromisoformat(updated_at)).days
-                            # Max 10% Boost fuer Fakten der letzten 7 Tage,
-                            # linear abfallend ueber 90 Tage
-                            if days_old < 90:
-                                recency_boost = 0.1 * max(0.0, 1.0 - days_old / 90.0)
-                        except (ValueError, TypeError):
-                            pass
+            for data in all_data:
+                if not data:
+                    continue
+                confidence = float(data.get("confidence", 0.5))
+                if confidence < min_confidence:
+                    continue
+                content = data.get("content", "")
+                content_lower = content.lower()
+                # Einfacher Keyword-Match: wie viele Query-Woerter im Fakt?
+                matches = sum(1 for w in query_words if w in content_lower)
+                if matches > 0:
                     facts.append({
-                        "content": doc,
-                        "category": meta.get("category", "general"),
-                        "person": meta.get("person", "unknown"),
+                        "content": content,
+                        "category": data.get("category", "general"),
+                        "person": data.get("person", "unknown"),
                         "confidence": confidence,
-                        "times_confirmed": int(meta.get("times_confirmed", 1)),
-                        "relevance": min(1.0, base_relevance + recency_boost),
+                        "times_confirmed": int(data.get("times_confirmed", 1)),
+                        "relevance": min(1.0, matches / max(len(query_words), 1)),
                     })
-            # Nach Relevanz sortieren damit aktuellere Fakten oben stehen
+
             facts.sort(key=lambda f: f["relevance"], reverse=True)
-            return facts
+            return facts[:limit]
         except Exception as e:
-            logger.error("Fehler bei Fakten-Suche: %s", e)
+            logger.error("Redis-Fallback search_facts fehlgeschlagen: %s", e)
             return []
 
     async def get_facts_by_person(self, person: str) -> list[dict]:
@@ -836,39 +900,45 @@ class SemanticMemory:
         Sucht alle Fakten zu einem Thema (semantisch).
         Gibt auch niedrig-relevante Treffer zurueck.
         """
-        if not self.chroma_collection:
-            return []
+        # ChromaDB versuchen
+        if self.chroma_collection:
+            try:
+                results = await asyncio.to_thread(
+                    self.chroma_collection.query,
+                    query_texts=[topic],
+                    n_results=limit,
+                )
 
-        try:
-            results = await asyncio.to_thread(
-                self.chroma_collection.query,
-                query_texts=[topic],
-                n_results=limit,
-            )
+                facts = []
+                if results and results.get("documents"):
+                    for i, doc in enumerate(results["documents"][0]):
+                        meta = results["metadatas"][0][i] if results.get("metadatas") else {}
+                        distance = (
+                            results["distances"][0][i] if results.get("distances") else 1.0
+                        )
+                        fact_id = results["ids"][0][i] if results.get("ids") and results["ids"][0] else ""
+                        # Grosszuegigerer Filter als search_facts
+                        if distance < 1.5:
+                            facts.append({
+                                "content": doc,
+                                "fact_id": fact_id,
+                                "category": meta.get("category", "general"),
+                                "person": meta.get("person", "unknown"),
+                                "confidence": float(meta.get("confidence", 0.5)),
+                                "times_confirmed": int(meta.get("times_confirmed", 1)),
+                                "relevance": 1.0 - min(distance, 1.0),
+                                "source": meta.get("source_conversation", ""),
+                                "created_at": meta.get("created_at", ""),
+                            })
+                return facts
+            except Exception as e:
+                logger.warning("ChromaDB search_by_topic fehlgeschlagen, versuche Redis-Fallback: %s", e)
 
-            facts = []
-            if results and results.get("documents"):
-                for i, doc in enumerate(results["documents"][0]):
-                    meta = results["metadatas"][0][i] if results.get("metadatas") else {}
-                    distance = (
-                        results["distances"][0][i] if results.get("distances") else 1.0
-                    )
-                    # Grosszuegigerer Filter als search_facts
-                    if distance < 1.5:
-                        facts.append({
-                            "content": doc,
-                            "category": meta.get("category", "general"),
-                            "person": meta.get("person", "unknown"),
-                            "confidence": float(meta.get("confidence", 0.5)),
-                            "times_confirmed": int(meta.get("times_confirmed", 1)),
-                            "relevance": 1.0 - min(distance, 1.0),
-                            "source": meta.get("source_conversation", ""),
-                            "created_at": meta.get("created_at", ""),
-                        })
-            return facts
-        except Exception as e:
-            logger.error("Fehler bei Themen-Suche: %s", e)
-            return []
+        # Redis-Fallback: Keyword-basierte Suche
+        if self.redis:
+            return await self._search_facts_redis_fallback(topic, limit)
+
+        return []
 
     async def get_relevant_conversations(
         self, topic: str, limit: int = 3
@@ -906,28 +976,35 @@ class SemanticMemory:
         """
         Loescht alle Fakten die zu einem Thema passen.
         Gibt die Anzahl geloeschter Fakten zurueck.
+
+        Nutzt eine niedrige Relevanz-Schwelle (0.2), damit der User auch
+        indirekt passende Fakten loeschen kann. Bei explizitem 'Vergiss'
+        soll nichts uebrig bleiben.
         """
-        # Erst suchen, dann loeschen
         matching = await self.search_by_topic(topic, limit=20)
         deleted = 0
 
         for fact in matching:
-            if fact.get("relevance", 0) < 0.4:
-                continue  # Nur hoch-relevante loeschen
+            if fact.get("relevance", 0) < 0.2:
+                continue  # Nur komplett irrelevante ignorieren
 
-            # Fakt-ID finden
-            fact_id = None
-            if self.chroma_collection:
+            # fact_id direkt aus search_by_topic (wenn vorhanden)
+            fact_id = fact.get("fact_id", "")
+
+            # Fallback: Ueber Redis nach fact_id suchen
+            if not fact_id and self.redis:
                 try:
-                    results = await asyncio.to_thread(
-                        self.chroma_collection.query,
-                        query_texts=[fact["content"]],
-                        n_results=1,
-                    )
-                    if results and results.get("ids") and results["ids"][0]:
-                        fact_id = results["ids"][0][0]
+                    all_ids = await self.redis.smembers("mha:facts:all")
+                    for fid in all_ids:
+                        fdata = await self.redis.hget(f"mha:fact:{fid}", "content")
+                        if fdata:
+                            fdata_str = fdata if isinstance(fdata, str) else fdata.decode()
+                            if fdata_str == fact.get("content", ""):
+                                fact_id = fid if isinstance(fid, str) else fid.decode()
+                                break
                 except Exception as e:
-                    logger.debug("Unhandled: %s", e)
+                    logger.debug("Redis fact_id Lookup fehlgeschlagen: %s", e)
+
             if fact_id:
                 success = await self.delete_fact(fact_id)
                 if success:

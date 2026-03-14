@@ -164,6 +164,7 @@ class MemoryManager:
         Deduplizierung: Prüft ob aehnliche Episode bereits existiert.
         """
         if not self.chroma_collection:
+            logger.warning("Episode nicht gespeichert — ChromaDB nicht verfuegbar")
             return
 
         try:
