@@ -215,7 +215,8 @@ class ActionPlanner:
             logger.info("Action Planner: Iteration %d", iteration + 1)
 
             # LLM aufrufen — Modell und max_tokens aus planner-Config
-            planner_model = _planner_cfg.get("model", "") or settings.model_deep
+            from .config import resolve_model
+            planner_model = resolve_model(_planner_cfg.get("model", ""), fallback_tier="deep")
             planner_max_tokens = int(_planner_cfg.get("max_tokens", 512))
 
             # SICHERHEIT: Tools VOR dem LLM-Aufruf nach Trust-Level filtern

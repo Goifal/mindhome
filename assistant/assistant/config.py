@@ -392,3 +392,22 @@ def get_all_bed_sensors() -> list[str]:
             if s not in sensors:
                 sensors.append(s)
     return sensors
+
+
+def resolve_model(yaml_value: str, fallback_tier: str = "smart") -> str:
+    """Validiert einen Modellnamen aus settings.yaml gegen die aktuelle Konfiguration.
+
+    Wenn der YAML-Wert ein aktuell konfiguriertes Modell ist, wird er verwendet.
+    Andernfalls wird das Modell des angegebenen Tiers zurueckgegeben.
+    Verhindert dass veraltete Modellnamen (z.B. qwen3.5:9b) in der YAML
+    weiterhin genutzt werden nachdem der User die Modelle geaendert hat.
+
+    Args:
+        yaml_value: Modellname aus settings.yaml (kann leer sein)
+        fallback_tier: 'fast', 'smart' oder 'deep'
+    """
+    active_models = {settings.model_fast, settings.model_smart, settings.model_deep}
+    if yaml_value and yaml_value in active_models:
+        return yaml_value
+    tier_map = {"fast": settings.model_fast, "smart": settings.model_smart, "deep": settings.model_deep}
+    return tier_map.get(fallback_tier, settings.model_smart)
