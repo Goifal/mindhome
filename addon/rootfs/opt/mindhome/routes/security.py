@@ -529,6 +529,10 @@ def access_codes_list():
 
 @security_bp.route("/api/security/access/codes", methods=["POST"])
 def access_code_create():
+    # P06d: Security-critical — access code creation requires auth
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     mgr = _deps.get("access_control_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
@@ -553,6 +557,10 @@ def access_code_create():
 
 @security_bp.route("/api/security/access/codes/<int:code_id>", methods=["PUT"])
 def access_code_update(code_id):
+    # P06d: Security-critical — access code update requires auth
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     mgr = _deps.get("access_control_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
@@ -563,6 +571,10 @@ def access_code_update(code_id):
 
 @security_bp.route("/api/security/access/codes/<int:code_id>", methods=["DELETE"])
 def access_code_delete(code_id):
+    # P06d: Security-critical — access code deletion requires auth
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     mgr = _deps.get("access_control_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
@@ -616,6 +628,10 @@ def geofence_zones_list():
 
 @security_bp.route("/api/security/geofence/zones", methods=["POST"])
 def geofence_zone_create():
+    # P06d: Geofence zone creation requires auth
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     mgr = _deps.get("geofence_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
@@ -639,6 +655,10 @@ def geofence_zone_create():
 
 @security_bp.route("/api/security/geofence/zones/<int:zone_id>", methods=["PUT"])
 def geofence_zone_update(zone_id):
+    # P06d: Geofence zone update requires auth
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     mgr = _deps.get("geofence_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
@@ -649,6 +669,10 @@ def geofence_zone_update(zone_id):
 
 @security_bp.route("/api/security/geofence/zones/<int:zone_id>", methods=["DELETE"])
 def geofence_zone_delete(zone_id):
+    # P06d: Geofence zone deletion requires auth
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     mgr = _deps.get("geofence_manager")
     if not mgr:
         return jsonify({"error": "Not available"}), 503
@@ -760,7 +784,9 @@ def mode_config_set(mode_type):
 # Emergency Protocol Endpoints (#11)
 # ==============================================================================
 
+import threading as _threading
 _emergency_trigger_times = []
+_emergency_trigger_lock = _threading.Lock()
 
 @security_bp.route("/api/security/emergency/trigger", methods=["POST"])
 def emergency_trigger():
@@ -769,12 +795,13 @@ def emergency_trigger():
         return auth_error
     import time
     now = time.time()
-    # Rate limit: max 3 triggers per minute
-    _emergency_trigger_times[:] = [t for t in _emergency_trigger_times if now - t < 60]
-    if len(_emergency_trigger_times) >= 3:
-        logger.warning("Emergency trigger rate limit exceeded")
-        return jsonify({"error": "Rate limit exceeded"}), 429
-    _emergency_trigger_times.append(now)
+    # P06d T1: Thread-safe rate limit: max 3 triggers per minute
+    with _emergency_trigger_lock:
+        _emergency_trigger_times[:] = [t for t in _emergency_trigger_times if now - t < 60]
+        if len(_emergency_trigger_times) >= 3:
+            logger.warning("Emergency trigger rate limit exceeded")
+            return jsonify({"error": "Rate limit exceeded"}), 429
+        _emergency_trigger_times.append(now)
 
     engine = _deps.get("emergency_protocol")
     if not engine:
@@ -794,6 +821,10 @@ def emergency_trigger():
 
 @security_bp.route("/api/security/emergency/cancel", methods=["POST"])
 def emergency_cancel():
+    # P06d: Emergency cancel requires same auth as trigger
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     engine = _deps.get("emergency_protocol")
     if not engine:
         return jsonify({"error": "Not available"}), 503
@@ -822,6 +853,10 @@ def emergency_config_get():
 
 @security_bp.route("/api/security/emergency/config", methods=["PUT"])
 def emergency_config_set():
+    # P06d: Emergency config change requires auth
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     engine = _deps.get("emergency_protocol")
     if not engine:
         return jsonify({"error": "Not available"}), 503
