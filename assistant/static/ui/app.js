@@ -1895,13 +1895,13 @@ function fKeyValue(path, label, keyLabel='Schluessel', valLabel='Wert', hint='')
        <input type="text" class="kv-key" value="${esc(String(k))}" placeholder="${keyLabel}">
        <span class="kv-arrow">&#8594;</span>
        <input type="text" class="kv-val" value="${esc(v == null ? '' : String(v))}" placeholder="${valLabel}">
-       <button class="kv-rm" onclick="kvRemove(this,'${path}')" title="Entfernen">&#10005;</button>
+       <button class="kv-rm" onclick="kvRemove(this,'${esc(path)}')" title="Entfernen">&#10005;</button>
      </div>`
   ).join('');
   return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
-    <div class="kv-editor" data-path="${path}">
+    <div class="kv-editor" data-path="${esc(path)}">
       ${rows}
-      <button class="kv-add" onclick="kvAdd(this,'${path}','${keyLabel}','${valLabel}')">+ Zuordnung</button>
+      <button class="kv-add" onclick="kvAdd(this,'${esc(path)}','${esc(keyLabel)}','${esc(valLabel)}')">+ Zuordnung</button>
     </div>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
 function kvAdd(btn, path, keyLabel, valLabel) {
@@ -1909,10 +1909,10 @@ function kvAdd(btn, path, keyLabel, valLabel) {
   if (!editor) return;
   const row = document.createElement('div');
   row.className = 'kv-row';
-  row.innerHTML = `<input type="text" class="kv-key" placeholder="${keyLabel}">
+  row.innerHTML = `<input type="text" class="kv-key" placeholder="${esc(keyLabel)}">
     <span class="kv-arrow">&#8594;</span>
-    <input type="text" class="kv-val" placeholder="${valLabel}">
-    <button class="kv-rm" onclick="kvRemove(this,'${path}')" title="Entfernen">&#10005;</button>`;
+    <input type="text" class="kv-val" placeholder="${esc(valLabel)}">
+    <button class="kv-rm" onclick="kvRemove(this,'${esc(path)}')" title="Entfernen">&#10005;</button>`;
   editor.insertBefore(row, btn);
   kvSync(editor, path);
 }

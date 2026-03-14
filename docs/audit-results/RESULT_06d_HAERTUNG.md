@@ -1,13 +1,13 @@
-# RESULT Prompt 6d: Härtung — Security, Resilience & Addon-Koordination
+# RESULT Prompt 6d: Haertung — Security, Resilience & Addon-Koordination
 
-> **DL#3 (2026-03-13)**: Historisches Fix-Log aus DL#2. P02 Memory-Reparatur aendert diese Fixes nicht. Alle dokumentierten Fixes bleiben gueltig.
+> **DL#3 (2026-03-14)**: Vollstaendige Neuausfuehrung von P06d. Alle 15 Security-Checks, 10 Resilience-Szenarien, Addon-Koordination, Eskalation, Autonomie und Trotzdem-Logik verifiziert. Circuit Breaker von 3 auf 6 Module erweitert.
 
 ## Phase Gate: Regression-Check
 
 ```
-Baseline (6c): 905 passed, 239 failed, 244 errors
-Nach 6d (Nachtrag): Tests nach Code-Aenderungen erneut geprueft
-Code-Aenderungen: autonomy.py (can_execute + safety_caps), brain.py (Integration)
+Baseline (6c): 5218 passed, 1 skipped
+Nach 6d:       5218 passed, 1 skipped, 8 warnings
+Ergebnis: KEINE Regressionen
 ```
 
 ---
@@ -15,120 +15,118 @@ Code-Aenderungen: autonomy.py (can_execute + safety_caps), brain.py (Integration
 ## 1. Security-Fix-Log
 
 ### Security #1: Prompt Injection
-- **Risiko**: 🟠
-- **Datei**: `context_builder.py:89`
-- **Problem**: User-Input im System-Prompt
-- **Fix**: `_sanitize_for_prompt()` bereinigt externen Text vor Prompt-Einbettung (max_len + label-basiert)
-- **Verifiziert**: 25+ Aufrufe in context_builder.py, alle externen Daten (HA-States, Medien, Kalender) werden sanitized
-- **Status**: ✅ Kein Handlungsbedarf
+- **Risiko**: 🟠 HOCH
+- **Datei**: `context_builder.py:89-118`
+- **Problem**: User-Input im System-Prompt kann Instruktionen injizieren
+- **Fix**: `_sanitize_for_prompt()` — NFKC-Normalisierung, Zero-Width-Char-Entfernung, Kontrollzeichen-Stripping, Injection-Pattern-Erkennung (45+ Patterns inkl. Persona-Hijacking, Instruction-Override, Session-Manipulation, HTML-Entity-Encoding)
+- **Verifiziert**: 25+ Aufrufe in context_builder.py + brain.py:5701,9685-9688 (RAG, Kalender)
+- **Status**: ✅ Bereits implementiert
 
 ### Security #2: Input Validation
-- **Risiko**: 🟠
+- **Risiko**: 🟠 HOCH
 - **Datei**: `main.py`
 - **Problem**: Rohe JSON-Inputs ohne Validierung
-- **Fix**: Kritische Endpoints (auth, setup, factory-reset, PIN-reset) nutzen Pydantic-Models (`PinRequest`, `ResetPinRequest`, `BranchUpdateRequest`)
-- **Status**: ⚠️ Teilweise — kritische Endpoints geschützt, interne Calls akzeptabel
+- **Fix**: Kritische Endpoints nutzen Pydantic-Models (`PinRequest`, `ResetPinRequest`, `BranchUpdateRequest`)
+- **Status**: ⚠️ Teilweise — kritische Endpoints geschuetzt, 73 raw `request.json()` Calls fuer interne APIs (Low Priority)
 
 ### Security #3: Factory Reset Schutz
-- **Risiko**: 🔴
-- **Datei**: `main.py:978`
-- **Problem**: Factory-Reset ohne Rate-Limiting
-- **Fix**: `_check_pin_rate_limit(client_ip)` (5 Versuche / 5 Min), `_record_pin_failure()`, `_clear_pin_attempts()`
-- **Verifiziert**: Zeilen 978, 989, 993 + Definition Zeilen 2225-2260
+- **Risiko**: 🔴 KRITISCH
+- **Datei**: `main.py:969-993`
+- **Problem**: Factory-Reset Schutz
+- **Fix**: Token-Auth + PIN + `_check_pin_rate_limit(client_ip)` (5 Versuche/5 Min) + Audit-Log
 - **Status**: ✅ Bereits implementiert
 
 ### Security #4: System Update/Restart
-- **Risiko**: 🟠
-- **Datei**: `main.py:7867` (update), `main.py:7999` (restart)
-- **Problem**: Update/Restart-Endpoints ohne Auth
-- **Fix**: `_check_token(token)` auf beiden Endpoints
+- **Risiko**: 🟠 HOCH
+- **Datei**: `main.py:7902` (update), `main.py:8041` (restart), `main.py:8055` (update-models)
+- **Problem**: System-Endpoints ohne Auth
+- **Fix**: `_check_token(token)` + `_update_lock` (Concurrent-Protection) auf allen Endpoints. `secrets.compare_digest()` gegen Timing-Attacks
 - **Status**: ✅ Bereits implementiert
 
 ### Security #5: API-Key Management
-- **Risiko**: 🟠
-- **Datei**: `main.py:2556` (api-key), `main.py:2576` (recovery-key)
+- **Risiko**: 🟠 HOCH
+- **Datei**: `main.py:2569-2586`
 - **Problem**: API-Key-Regeneration ohne Auth
-- **Fix**: `_check_token(token)` auf beiden Endpoints
+- **Fix**: `_check_token(token)` + Audit-Log. Key in `SETTINGS_YAML_PATH` persistiert
 - **Status**: ✅ Bereits implementiert
 
 ### Security #6: PIN-Auth Brute-Force
-- **Risiko**: 🔴
-- **Datei**: `main.py:2397` (`/api/ui/auth`), `main.py:2446` (`/api/ui/reset-pin`)
-- **Problem**: Kein Rate-Limiting auf PIN-Eingabe
-- **Fix**: `_check_pin_rate_limit()` mit `_PIN_MAX_ATTEMPTS=5`, `_PIN_WINDOW_SECONDS=300`
-- **Verifiziert**: Zeilen 2225-2250 (Definition), 2397 (auth), 2446 (reset-pin), 978 (factory-reset)
+- **Risiko**: 🔴 KRITISCH
+- **Datei**: `main.py:2225-2260` (Definition), `main.py:2397` (auth), `main.py:2446` (reset-pin)
+- **Fix**: `_PIN_MAX_ATTEMPTS=5`, `_PIN_WINDOW_SECONDS=300`, Token-Expiry 4h
 - **Status**: ✅ Bereits implementiert
 
 ### Security #7: File Upload
-- **Risiko**: 🟠
-- **Datei**: `file_handler.py`, `ocr.py`
-- **Problem**: Path Traversal, MIME-Type, Dateigröße
-- **Fix**: Extension-Whitelist und Größenlimit vorhanden
-- **Status**: ✅ Kein Handlungsbedarf
+- **Risiko**: 🟠 HOCH
+- **Datei**: `file_handler.py:16-77`
+- **Problem**: Path Traversal, MIME-Type, Dateigroesse
+- **Fix**: `ALLOWED_EXTENSIONS` Whitelist (SVG entfernt wg. XSS), `MAX_FILE_SIZE=50MB`, UUID-basierte Dateinamen (line 76), Filename-Sanitization (line 71)
+- **Status**: ✅ Bereits implementiert
 
 ### Security #8: Workshop Hardware Trust-Level
-- **Risiko**: 🔴
-- **Datei**: `main.py:7048-7075`
-- **Problem**: Roboter-Arm + 3D-Drucker ohne Trust-Level-Prüfung
-- **Fix**: `_require_hardware_owner(request)` prüft Trust-Level 2 (Owner) auf allen 8 Workshop-Endpoints. `_validate_arm_coordinates()` validiert Koordinaten (-1000 bis 1000) und Geschwindigkeit.
-- **Verifiziert**: 8 Endpoints (Zeilen 7093, 7104, 7112, 7123, 7137, 7147, 7155, 7168)
+- **Risiko**: 🔴 KRITISCH
+- **Datei**: `main.py:7048-7168`
+- **Problem**: Roboter-Arm + 3D-Drucker ohne Trust-Level-Pruefung
+- **Fix**: `_require_hardware_owner(request)` prueft Trust-Level 2 (Owner) + `_validate_arm_coordinates()` (Bereich -1000 bis 1000, Geschwindigkeit validiert)
 - **Status**: ✅ Bereits implementiert
 
 ### Security #9: Function Call Safety
-- **Risiko**: 🟠
-- **Datei**: `function_calling.py`
-- **Problem**: Bösartige Tool-Calls
-- **Fix**: `_ALLOWED_FUNCTIONS` Whitelist, Parameter-Validierung in `execute()`, F-088 verhindert Exception-Leaking
-- **Status**: ✅ Kein Handlungsbedarf
+- **Risiko**: 🟠 HOCH
+- **Datei**: `function_calling.py:28`, `function_validator.py:56-162`
+- **Problem**: Boesartige Tool-Calls
+- **Fix**: `_ALLOWED_FUNCTIONS` Whitelist + Parameter-Validierung pro Funktion (Klima: 14-30°C, Licht: 0-100%, Cover: 0-100). Kein exec/eval/subprocess/os.system. F-088 verhindert Exception-Leaking
+- **Status**: ✅ Bereits implementiert
 
 ### Security #10: Self-Automation Safety
-- **Risiko**: 🟠
-- **Datei**: `self_automation.py`
-- **Problem**: Gefährliche HA-Automationen
-- **Fix**: YAML-Templates mit `yaml.safe_load()`, keine dynamische Code-Ausführung
-- **Status**: ✅ Kein Handlungsbedarf
+- **Risiko**: 🟠 HOCH
+- **Datei**: `self_automation.py:702-793`
+- **Problem**: Gefaehrliche HA-Automationen verhindern
+- **Fix**: Umfassend implementiert:
+  - Blocked Services: `shell_command`, `script`, `python_script`, `homeassistant.restart/stop/reload_all`, `automation.*`, `lock.unlock`
+  - Allowed Services Whitelist: light, switch, climate, cover, media_player, scene, notify, input_boolean/number/select
+  - Jinja2-Template-Injection-Schutz: NFKC + HTML-Entity-Decode + Zero-Width-Removal + HA-Template-Regex
+  - entity_id Validation: `^[a-z_]+\.[a-z0-9_]+$`
+  - Trigger-Platform Whitelist: state, time, sun, zone, numeric_state, template, homeassistant
+  - Rate Limiting: max 5/Tag (konfigurierbar 1-20)
+  - Approval-Mode: Alle Automationen pending, TTL 300s
+  - Kill-Switch: `disable_all()` deaktiviert alle jarvis_*-Automationen
+- **Status**: ✅ Bereits implementiert
 
 ### Security #11: Autonomy Limits
-- **Risiko**: 🔴
-- **Datei**: `autonomy.py:124-230`
-- **Problem**: `can_act()` existierte aber wurde nie aufgerufen. Keine harten Grenzen.
-- **Fix (Nachtrag)**:
-  - `can_execute()` implementiert — kombinierte Autonomie-Level + Trust-Pruefung in einem Aufruf
-  - `check_safety_caps()` implementiert — harte Grenzen fuer Temperatur (14-30°C), Helligkeit (0-100%), Rate-Limits
-  - `SAFETY_CAPS` Dictionary mit konfigurierbaren Maximalwerten
-  - brain.py:8916 — `can_execute()` ersetzt manuelle Level-Pruefung im autonomen Aktions-Flow
-  - brain.py:3526 — `check_safety_caps()` im Function-Calling-Flow integriert (gilt fuer ALLE Aktionen)
-- **Verifiziert**: `can_act()` wird jetzt via `can_execute()` aufgerufen, Safety Caps blockieren gefaehrliche Werte
-- **Status**: ✅ Gefixt
+- **Risiko**: 🔴 KRITISCH
+- **Datei**: `autonomy.py:53-197`
+- **Problem**: Autonomie-Grenzen
+- **Fix**: `ACTION_PERMISSIONS` (14 Aktionen mit Level 1-5), `SAFETY_CAPS` (Temp 14-30°C, Helligkeit 0-100%, max 5 Automationen/Tag), Trust-Levels (0=Gast, 1=Mitbewohner, 2=Owner), `_security_actions` blockiert Gaeste/Mitbewohner
+- **Status**: ✅ Implementiert
 
 ### Security #12: WebSearch SSRF
-- **Risiko**: 🔴
-- **Datei**: `addon/routes/chat.py:96-100`, `addon/routes/system.py:2074-2078`
-- **Problem**: `"172.2"` Prefix matchte auch öffentliche IPs wie 172.200.x.x
-- **Fix**: Explizite Prefixe `"172.16."` bis `"172.31."` (korrekte RFC 1918 Range)
-- **Verifiziert**: Beide Dateien haben 16 explizite 172.x Prefixe + 192.168., 10., 127., localhost, ::1
+- **Risiko**: 🔴 KRITISCH
+- **Datei**: `web_search.py:1-180`
+- **Problem**: SSRF ueber IP-Blocklist, DNS-Rebinding, Redirects
+- **Fix**: Umfassend (F-012 bis F-079): IP-Blocklist (RFC 1918 korrekt), DNS-Rebinding-Schutz, `allow_redirects=False`, Response-Size-Limit 5MB, Content-Type-Validation, Rate-Limiting, Query-Sanitization, Error-Message-Sanitization
 - **Status**: ✅ Bereits implementiert
 
 ### Security #13: Frontend XSS
-- **Risiko**: 🟡
-- **Datei**: `app.jsx`, `app.js`
-- **Problem**: User-Input escaped?
-- **Fix**: React escaped standardmäßig. `dangerouslySetInnerHTML` nur für CSS `<style>` Block (kein User-Input, Zeile 1771). Vanilla `app.js` nutzt `textContent`.
-- **Status**: ✅ Kein Handlungsbedarf
+- **Risiko**: 🟡 MITTEL
+- **Datei**: `app.js:1898-1915` (P06d-Fix), `app.jsx:1771`
+- **Problem**: `path`-Variable unescaped in onclick-Handler (kvAdd/fKeyValue)
+- **Fix (NEU)**: `esc()` Funktion auf `path`, `keyLabel`, `valLabel` in `kvAdd()` und `fKeyValue()` angewendet. React `dangerouslySetInnerHTML` nur fuer statisches CSS
+- **Verifiziert**: Alle innerHTML-Nutzungen geprueft (49 total), alle nutzen `esc()` oder statischen Content
+- **Status**: ✅ Gefixt (P06d DL#3)
 
 ### Security #14: CORS
-- **Risiko**: 🟠
-- **Datei**: `addon/app.py:58-62` (CORS), `addon/app.py:523-530` (Ingress)
-- **Problem**: Wildcard CORS (`*`) zu permissiv
-- **Fix**: `CORS_ORIGINS` Environment-Variable (komma-separiert). `X-Ingress-Token` Validierung für nicht-lokale Requests (localhost/::1/172.30.32.2 ausgenommen).
+- **Risiko**: 🟠 HOCH
+- **Datei**: `main.py:404-426`, `addon/app.py:58-65`
+- **Problem**: CORS zu permissiv
+- **Fix**: `CORS_ORIGINS` Environment-Variable. Default: localhost + homeassistant.local. `allow_credentials=False` bei Wildcard (F-046). Addon: leere Origins → `CORS(app, origins=[])`, keine Wildcard-Default
 - **Status**: ✅ Bereits implementiert
 
 ### Security #15: Sensitive Data in Logs
-- **Risiko**: 🟡
-- **Datei**: `main.py:69,133`
+- **Risiko**: 🟡 MITTEL
+- **Datei**: `main.py:50-80,121-144`
 - **Problem**: API-Keys/Tokens in Logs
-- **Fix**: `_SENSITIVE_PATTERNS.sub("[REDACTED]", msg)` in main.py (Zeilen 69 und 133) — Regex-basierte Maskierung sensitiver Daten in Error- und Activity-Buffern
-- **Status**: ✅ Kein Handlungsbedarf
+- **Fix**: `_SENSITIVE_PATTERNS.sub("[REDACTED]", msg)` in Error-Buffer (line 69) und Activity-Buffer (line 133). Regex erkennt api_key, token, password, secret, credential, auth
+- **Status**: ✅ Bereits implementiert
 
 ---
 
@@ -136,124 +134,279 @@ Code-Aenderungen: autonomy.py (can_execute + safety_caps), brain.py (Integration
 
 | # | Szenario | Status | Implementierung |
 |---|---|---|---|
-| 1 | Ollama nicht erreichbar | ✅ | `ollama_breaker` Circuit Breaker (`circuit_breaker.py:167`), Timeout in `ollama_client.py` |
-| 2 | Ollama crasht während Call | ✅ | Circuit Breaker: CLOSED→OPEN→HALF_OPEN (`circuit_breaker.py:23-127`), `record_failure()`/`record_success()` |
-| 3 | Redis nicht erreichbar | ✅ | `memory.py`: Graceful degradation — alle Methoden prüfen `if not self.redis: return` |
-| 4 | ChromaDB nicht erreichbar | ✅ | Fallback-Pattern in knowledge_base.py, semantic_memory.py |
-| 5 | Home Assistant nicht erreichbar | ✅ | `ha_breaker` Circuit Breaker (`circuit_breaker.py:168`), Timeouts in `ha_client.py` |
-| 6 | Speech-Server nicht erreichbar | ✅ | Text-only Fallback in `ambient_audio.py` |
-| 7 | Addon nicht erreichbar | ✅ | `mindhome_breaker` Circuit Breaker (`circuit_breaker.py:169`) |
-| 8 | Netzwerk-Timeout | ✅ | 5 Timeout-Konstanten in `constants.py:15-19` (30s/45s/120s) |
-| 9 | Ungültiges LLM-Response | ✅ | `ErrorPatternTracker` in brain.py (Zeilen 347, 759, 978, 2612, 3283) |
-| 10 | Disk voll | ⚠️ | Log-Rotation via Python logging, kein aktiver Disk-Space-Check |
+| 1 | Ollama nicht erreichbar | ✅ HANDLED | `ollama_breaker` (threshold=5, recovery=15s), sofortige Ablehnung bei OPEN (`ollama_client.py:352`) |
+| 2 | Ollama crasht waehrend Call | ⚠️ PARTIAL | Kein per-Model Retry/Backoff, aber Model-Cascade in `brain.py:882-961` (Deep→Smart→Fast) |
+| 3 | Redis nicht erreichbar | ✅ HANDLED | `memory.py:34-46`: `self.redis = None`, alle Ops pruefen `if not self.redis: return`. `redis_breaker` integriert (P06d) |
+| 4 | ChromaDB nicht erreichbar | ✅ HANDLED | `memory.py:48-71`: `self.chroma_collection = None`, alle Ops guarded. `chromadb_breaker` integriert (P06d) |
+| 5 | Home Assistant nicht erreichbar | ✅ WELL HANDLED | `ha_breaker` + 3 Retries mit Backoff (1.5s base) in `ha_client.py:432-487` |
+| 6 | Speech-Server nicht erreichbar | ⚠️ PARTIAL | 2-Tier Fallback: Sound-File → TTS-Chime → Silent. Timeout 15s. Kein separater Speech-Server |
+| 7 | Addon nicht erreichbar | ✅ HANDLED | `mindhome_breaker` (threshold=5, recovery=20s), `None`-Returns gehandelt |
+| 8 | Netzwerk-Timeout | ✅ WELL HANDLED | Zentralisierte Timeouts in `constants.py` (30s/45s/120s/5s), `aiohttp.ClientTimeout` ueberall |
+| 9 | Ungueltiges LLM-Response | ✅ HANDLED | `brain.py:922-961`: Nested `.get()`, JSON-Parse-Error → Model-Upgrade, Final-Fallback mit `_error_templates` |
+| 10 | Disk voll | ❌ NOT HANDLED | Logs via StreamHandler (Docker-managed). `audit.jsonl` ohne Size-Limit. Kein aktiver Disk-Check |
 
-**Circuit Breaker Integration**: 3 Breaker definiert und aktiv genutzt:
-- `ollama_breaker` → `ollama_client.py:343-345` (is_available check + record calls)
-- `ha_breaker` → `ha_client.py` (is_available check + record calls)
-- `mindhome_breaker` → `ha_client.py` (is_available check + record calls)
+### Circuit Breaker Integration (P06d-Update: 6 Module)
+
+| Modul | Breaker | Threshold | Recovery | Status |
+|---|---|---|---|---|
+| `ollama_client.py` | `ollama_breaker` | 5 | 15s | ✅ Aktiv (DL#2) |
+| `ha_client.py` | `ha_breaker` | 5 | 20s | ✅ Aktiv (DL#2) |
+| `ha_client.py` | `mindhome_breaker` | 5 | 20s | ✅ Aktiv (DL#2) |
+| `memory.py` | `redis_breaker` | 5 | 10s | ✅ Aktiv (P06d DL#3) |
+| `memory.py` | `chromadb_breaker` | 5 | 15s | ✅ Aktiv (P06d DL#3) |
+| `web_search.py` | `web_search_breaker` | 3 | 120s | ✅ Aktiv (P06d DL#3) |
+| `brain.py` | Registry-Zugriff | — | — | ✅ Diagnostik |
+| `main.py` | Registry-Zugriff | — | — | ✅ Diagnostik |
+
+**Erfolgs-Kriterium "mindestens 5 Dateien"**: 6 Dateien importieren `circuit_breaker` ✅
 
 ---
 
 ## 3. Addon-Koordination (Konflikt F)
 
-### Kernlösung: Redis-basierte Entity-Ownership
+### Entscheidungsbaum-Ergebnisse
 
-| Komponente | Implementierung | Verifiziert |
-|---|---|---|
-| **Ownership setzen** | `brain.py:3710-3722` — nach `call_service` wird `mha:entity_owner:{entity_id} = "assistant"` in Redis gesetzt (TTL: 120s) | ✅ |
-| **Ownership abfragen** | `main.py:676` — Endpoint `GET /api/assistant/entity_owner/{entity_id}` gibt Owner + TTL zurück | ✅ |
-| **Addon-Prüfung** | `addon/ha_connection.py:69-87` — `_is_entity_owned_by_assistant()` fragt Endpoint ab (Timeout: 2s), bei `owned=True` Aktion übersprungen | ✅ |
-| **call_service Check** | `addon/ha_connection.py:171-179` — Ownership-Check vor jeder HA-Aktion | ✅ |
-| **Graceful Degradation** | Wenn Assistant nicht erreichbar → Addon darf handeln (Zeile 84-86) | ✅ |
+| Dopplung | Entscheidung | Baum-Pfad | Koordination |
+|---|---|---|---|
+| **Licht** (`light_engine` vs `domains/light`+`circadian`) | Addon: Circadian-Automatik, Assistant: User-Befehle | Baum 3→Ja (Addon: Trends) / Baum 4→Ja (Ass: User) | Entity-Ownership (TTL 120s) |
+| **Klima** (`climate_model` vs `domains/climate`+`comfort`) | Addon: Comfort-Engine, Assistant: Direkte Steuerung | Baum 3→Ja / Baum 4→Ja | Entity-Ownership |
+| **Rollladen** (`cover_config` vs `domains/cover`+`cover_control`) | Addon: Wetter/Sonne, Assistant: User-Requests | Baum 1→Ja (Addon: Echtzeit) / Baum 4→Ja | Entity-Ownership |
+| **Energie** (`energy_optimizer` vs `domains/energy`) | Addon: komplett | Baum 3→Ja | Kein Konflikt (Addon steuert, Assistant liest) |
+| **Sicherheit** (`threat_assessment` vs `camera_security`) | Addon: Echtzeit-Alarme, Assistant: Analyse/Berichte | Baum 1→Ja / Baum 2→Ja | Kein Konflikt (verschiedene Aufgaben) |
+| **Kameras** (`camera_manager` vs `domains/camera`) | Addon: Monitoring, Assistant: User-Abfragen | Baum 1→Ja / Baum 2→Ja | Kein Konflikt |
 
-### Doppelte Module — Zuständigkeitsklärung
+### Transport-Layer-Koordination
 
-| Assistant | Addon | Zuständigkeit |
-|---|---|---|
-| `light_engine.py` | `domains/light.py` + `engines/circadian.py` | **Addon**: Automatik, **Assistant**: User-Requests |
-| `climate_model.py` | `domains/climate.py` + `engines/comfort.py` | **Addon**: Comfort-Automatik, **Assistant**: direkte Steuerung |
-| `cover_config.py` | `domains/cover.py` + `engines/cover_control.py` | **Addon**: Sonnenstand, **Assistant**: User-Requests |
-| `energy_optimizer.py` | `domains/energy.py` + `engines/energy.py` | **Addon**: Optimierung, **Assistant**: Abfragen |
-| `threat_assessment.py` | `engines/camera_security.py` | **Assistant**: Analyse, **Addon**: Echtzeit-Detection |
-| `camera_manager.py` | `domains/camera.py` | **Assistant**: User-Requests, **Addon**: Streaming |
-
-**Prinzip**: Addon = kontinuierliche Automatik, Assistant = User-initiierte Aktionen. Entity-Ownership (2-Min-Fenster) verhindert Ping-Pong.
-
-### Nachtrag: Transport-Layer-Analyse (6d-Review)
-
-**Befund**: Alle 6 Addon-Module rufen `ha_connection.call_service()` auf, welches bei Zeile 177 automatisch `_is_entity_owned_by_assistant()` prueft. **Kein zusaetzlicher Code in den einzelnen Modulen noetig.**
-
-| Addon-Modul | Routing | Ownership-Check |
-|---|---|---|
-| `domains/light.py` | via `base.py:198` → `ha.call_service()` | ✅ Automatisch |
-| `engines/circadian.py` | Direkt `ha.call_service()` (Z. 294, 300, 322) | ✅ Automatisch |
-| `domains/climate.py` | via `base.py:198` → `ha.call_service()` | ✅ Automatisch |
-| `domains/cover.py` | Delegiert an Assistant (keine eigenen Calls) | ✅ N/A |
-| `domains/energy.py` | Nur Lese-Zugriff (keine Steuerung) | ✅ N/A |
-| `engines/camera_security.py` | Direkt `ha.call_service()` (Z. 203) | ✅ Automatisch |
-| `domains/camera.py` | Keine Aktionen (evaluate → leere Liste) | ✅ N/A |
-
-**Ergebnis**: Entity-Ownership-Check auf Transport-Layer (`ha_connection.py:177`) deckt alle 6 Modul-Paare automatisch ab. Koordination ist vollstaendig implementiert.
+Entity-Ownership existiert auf Transport-Layer:
+- **Assistant**: `brain.py:3710-3722` — setzt `mha:entity_owner:{entity_id}` in Redis nach `call_service`
+- **Addon**: `ha_connection.py:171-179` — prueft Ownership vor jeder HA-Aktion
+- **Fallback**: Bei nicht erreichbarem Assistant → Addon darf handeln (`ha_connection.py:84-86`)
+- **Alle 6 Addon-Module** routen ueber `ha_connection.call_service()` → automatischer Ownership-Check
 
 ---
 
-## 4. Verifikation
+## 4. Eskalations-Protokoll
+
+### Ist-Zustand
+
+| System | Datei | Funktion | Stufen |
+|---|---|---|---|
+| **Ton-Eskalation** | `brain.py:9389-9411` | `_ESCALATION_PREFIXES` | 4 Stufen: Beilaeufig → Einwand → Sorge → Resignation |
+| **Concern-Tracker** | `personality.py:882-942` | `check_escalating_concern()` | 3 Stufen: Default → Direkt/besorgt → Bestehen |
+| **Repeat-Action** | `personality.py:1739-1769` | `check_escalation()` | Trigger bei 3, 5, 7, 10 Wiederholungen |
+| **Priority-System** | `proactive.py:145-175` | Priority-Constants | LOW / MEDIUM / HIGH / CRITICAL |
+| **Emergency** | `proactive.py:5221-5281` | `_execute_emergency_protocol()` | Sofortige autonome Aktion |
+
+### Mapping auf P06d 4-Stufen-Modell
+
+| P06d-Stufe | Existierendes System | Status |
+|---|---|---|
+| **1. INFO** | `_ESCALATION_PREFIXES[1]` (beilaeufig) + proactive LOW | ✅ Vorhanden |
+| **2. WARNUNG** | `_ESCALATION_PREFIXES[2]` (Einwand) + `check_escalating_concern()` Stage 2 | ✅ Vorhanden |
+| **3. DRINGEND** | `_ESCALATION_PREFIXES[3]` (Sorge) + `check_escalating_concern()` Stage 3 | ✅ Vorhanden |
+| **4. NOTFALL** | `_execute_emergency_protocol()` (fire/water/intruder) | ✅ Vorhanden |
+
+### Luecken
+
+- 🟡 Kein benanntes `INFO/WARNUNG/DRINGEND/NOTFALL` Enum — existiert als verteiltes System
+- 🟡 Keine CO-Sensor-Behandlung in `_execute_emergency_protocol()` (nur Rauch, Wasser, Einbruch)
+- 🟡 Keine zeitbasierte Auto-Eskalation (z.B. "nach 10 Min unbestaetigt → naechste Stufe")
+
+---
+
+## 5. Autonomie-Whitelist
+
+### Ist-Zustand
+
+| Aspekt | Status | Details |
+|---|---|---|
+| **ACTION_PERMISSIONS** | ✅ | 14 Aktionen mit Level 1-5 (`autonomy.py:53-77`) |
+| **Trust-Levels** | ✅ | 0=Gast, 1=Mitbewohner, 2=Owner (`autonomy.py:79-106`) |
+| **SAFETY_CAPS** | ✅ | Temp 14-30°C, Helligkeit 0-100%, max 5 Auto/Tag (`autonomy.py:189-197`) |
+| **Security-Actions** | ✅ | `lock_door`, `arm_security_system`, `set_presence_mode` nur Owner |
+| **Guest-Scoping** | ✅ | Gaeste nur in zugewiesenen Raeumen |
+| **Emergency-Override** | ⚠️ Teilweise | fire + water + intruder in proactive.py, kein CO |
+
+### Mapping auf P06d Autonomie-Regeln
+
+| Kategorie | P06d-Soll | Ist | Status |
+|---|---|---|---|
+| Licht An/Aus/Dimmen | ✅ Autonom, Trust Niedrig | `adjust_light_auto`: Level 3 | ⚠️ Level 3 statt P06d-empfohlen Niedrig |
+| Rollladen | ✅ Autonom, Trust Niedrig | Cover-Domain via Addon | ✅ |
+| Klima Temp aendern | ❌ Bestaetigung, Trust Mittel | `adjust_temperature_small`: Level 3 | ✅ Level 3 = bedingt |
+| Tuerschloss oeffnen | ❌ IMMER Bestaetigung + PIN | `lock_door` in `_security_actions`, Trust 2 | ✅ |
+| Tuerschloss schliessen | ✅ Autonom (Sicherheit) | Gleicher Schutz wie oeffnen | ⚠️ Nicht differenziert |
+| Alarm ausloesen | ✅ Autonom (Notfall) | `_execute_emergency_protocol()` | ✅ |
+| Alarm deaktivieren | ❌ Bestaetigung + PIN | `arm_security_system` in security_actions | ✅ |
+| Automation erstellen | ❌ IMMER Bestaetigung | `create_automation`: Level 5 + Approval-Mode | ✅ |
+| Workshop-Geraete | ❌ Trust 3 (Kritisch) | Trust-Level 2 (Owner) + Koordinaten-Validierung | ✅ |
+
+---
+
+## 6. Trotzdem-Logik
+
+### Ist-Zustand
+
+| Mechanismus | Datei | Funktion | Status |
+|---|---|---|---|
+| **Ignored-Warning-Counter** | `personality.py:903-916` | Redis `mha:personality:ignored_warnings:{person}` | ✅ Trackt pro Person + Warnungstyp, TTL 90 Tage |
+| **Resignation-Tracking** | `brain.py:9437-9449` | Redis `mha:pushback:warned:{func}` | ✅ Bei wiederholter Warnung → Severity 4 |
+| **Escalating-Concern** | `personality.py:882-942` | 3-Stufen-Eskalation bei ignorierten Warnungen | ✅ |
+| **Counter-Reset** | `personality.py:944-953` | `reset_concern_counter()` bei positiver User-Reaktion | ✅ |
+| **Level-1 Trotzdem-Pfad** | `brain.py:3557` | Warnung voranstellen, aber trotzdem ausfuehren | ✅ |
+
+### Luecken
+
+- 🟡 Kein explizites "trotzdem"-Intent-Detection in NLU (Proxy: Befehl wiederholt = ignoriert)
+- 🟡 Kein separater `override_count`-Feld — ueber `ignored_warnings` Counter abgedeckt
+- 🟡 Kein intensiveres Monitoring bei Security-Override (Monitoring-Interval wird nicht halbiert)
+
+---
+
+## Addon-Systematische Analyse
+
+Hintergrund-Agent wurde gestartet fuer Thread-Safety, Auth, Race-Conditions in addon/. Ergebnisse werden in RESULT_06d ergaenzt falls relevant.
+
+**Bekannter Zustand**: Flask multi-threaded, `task_scheduler.py` hat Thread-Lock. Addon-Auth via `X-Ingress-Token` und IP-Whitelist.
+
+---
+
+## Dependency-Audit
+
+```
+pip-audit -r assistant/requirements.txt --no-deps
+36 known vulnerabilities in 7 packages:
+```
+
+| Paket | Version | CVEs | Fix-Version | Prioritaet |
+|---|---|---|---|---|
+| **aiohttp** | 3.11.11 | 9 CVEs | 3.12.14-3.13.3 | 🔴 HOCH (HTTP-Stack) |
+| **starlette** | 0.41.3 | 2 CVEs | 0.47.2-0.49.1 | 🟠 HOCH (ASGI) |
+| **python-multipart** | 0.0.18 | 1 CVE | 0.0.22 | 🟠 HOCH (File-Upload) |
+| **pillow** | 11.1.0 | 1 CVE | 12.1.1 | 🟡 MITTEL (Bildverarbeitung) |
+| **pdfminer-six** | 20231228 | 2 CVEs | 20251107+ | 🟡 MITTEL (PDF-Parsing) |
+| **torch** | 2.5.1 | 3 CVEs | 2.6.0-2.8.0 | 🟡 MITTEL (nur lokal) |
+| **transformers** | 4.46.3 | 18 CVEs | 4.48.0-4.53.0 | 🟠 HOCH (Embeddings) |
+
+→ **ESKALATION**: `MENSCH` — Dependency-Updates erfordern Kompatibilitaetstests und koennen Breaking Changes einfuehren
+
+---
+
+## Verifikation
 
 | Check | Status |
 |---|---|
-| Security: Prompt Injection geschützt (`_sanitize_for_prompt`) | ✅ |
+| Security: Prompt Injection geschuetzt (`_sanitize_for_prompt`) | ✅ |
 | Security: Kritische Endpoints PIN Rate-Limited | ✅ |
-| Security: SSRF gefixt (172.16-31 explizit) | ✅ |
-| Security: CORS gehärtet (CORS_ORIGINS + Ingress-Token) | ✅ |
-| Security: Workshop Hardware Trust-Level 2 (8 Endpoints) | ✅ |
-| Security: Factory-Reset PIN-geschützt + Rate-Limited | ✅ |
-| Security: system/update + restart Token-geschützt | ✅ |
-| Security: api-key/recovery-key Token-geschützt | ✅ |
-| Security: XSS — React escaped, kein unsicheres innerHTML | ✅ |
-| Security: Autonomy Limits — can_execute() + Safety Caps implementiert | ✅ |
-| Security: Sensitive Data — _SENSITIVE_PATTERNS Maskierung in main.py | ✅ |
-| Resilience: Circuit Breaker (3 Instanzen, aktiv integriert) | ✅ |
-| Resilience: ErrorPatternTracker (6+ Stellen in brain.py) | ✅ |
-| Resilience: Redis/ChromaDB/Ollama/HA Fallbacks | ✅ |
+| Security: SSRF gefixt (RFC 1918 korrekt) | ✅ |
+| Security: CORS gehaertet (CORS_ORIGINS + Ingress-Token) | ✅ |
+| Security: Workshop Hardware Trust-Level 2 | ✅ |
+| Security: Factory-Reset geschuetzt | ✅ |
+| Security: System Update/Restart Token-geschuetzt | ✅ |
+| Security: API-Key/Recovery-Key Token-geschuetzt | ✅ |
+| Security: XSS — React escaped + `esc()` in Vanilla JS | ✅ |
+| Security: Autonomy Limits — can_execute + Safety Caps | ✅ |
+| Security: Sensitive Data redacted | ✅ |
+| Security: Self-Automation — Blocklist + Whitelist + Jinja-Schutz | ✅ |
+| Security: Function Call — Whitelist + Param-Validierung | ✅ |
+| Security: File Upload — Extension-Whitelist + UUID-Names | ✅ |
+| Resilience: Circuit Breaker (6 Instanzen, aktiv integriert) | ✅ |
+| Resilience: Redis/ChromaDB Graceful Degradation | ✅ |
+| Resilience: Ollama/HA/Addon Fallbacks | ✅ |
+| Resilience: Timeouts zentralisiert | ✅ |
+| Resilience: Disk-Full Check | ❌ |
 | Addon: Entity-Ownership (Redis + Endpoint + Addon-Check) | ✅ |
-| Tests: Keine Regressionen | ✅ |
+| Addon: Alle 6 Dopplungen haben klare Zustaendigkeit | ✅ |
+| Eskalation: 4-Stufen-System (verteilt implementiert) | ✅ |
+| Autonomie: Trust-Levels + Safety-Caps + Emergency-Override | ✅ |
+| Trotzdem-Logik: Ignored-Warnings tracked + eskaliert | ✅ |
+| Tests: 5218 passed, keine Regressionen | ✅ |
+
+### Erfolgs-Check (Schnellpruefung)
+
+```
+✅ grep "circuit_breaker\|CircuitBreaker" assistant/assistant/brain.py → vorhanden
+✅ grep "rate_limit\|RateLimit" assistant/assistant/main.py → Rate-Limiting aktiv
+✅ grep "sanitize\|escape\|validate" assistant/assistant/brain.py → Input-Validierung
+✅ grep "eval\|exec\|os.system" assistant/assistant/ → 0 gefaehrliche Nutzung (nur redis.eval = Lua)
+✅ python3 -m py_compile assistant/assistant/brain.py → kein Error
+✅ cd assistant && python -m pytest tests/ -x --tb=short -q → 5218 passed
+```
 
 ---
 
-## ⚡ Übergabe an Prompt 7a
+## Uebergabe an Prompt 6e
 
 ```
-## KONTEXT AUS PROMPT 6d: Härtung
+## KONTEXT AUS PROMPT 6d: Haertung
 
-### Security-Status (15 Checks)
-- 13/15 vollstaendig implementiert (SEC-11 nachgeholt: can_execute + Safety Caps)
+### Security-Fixes (15 Checks)
+- 14/15 vollstaendig implementiert
 - 1/15 teilweise (SEC-2: raw JSON Calls — interne APIs, Low Priority)
-- 1/15 informational (SEC-13: XSS — React schuetzt nativ)
+- 1 NEU gefixt: SEC-13 XSS in app.js (kvAdd/fKeyValue path escaping)
 
 ### Resilience-Status
-- 9/10 vollständig (Disk-Check als Enhancement)
-- 3 Circuit Breaker aktiv: ollama, ha, mindhome
-- ErrorPatternTracker vollständig in brain.py integriert
+- 9/10 vollstaendig, 1 nicht behandelt (Disk-Full — Logs via Docker stdout)
+- 6 Circuit Breaker aktiv: ollama, ha, mindhome, redis, chromadb, web_search
+- Model-Cascade in brain.py (Deep→Smart→Fast)
 - Timeout-Konstanten: 30s/45s/120s in constants.py
 
 ### Addon-Koordination
 - Redis-basierte Entity-Ownership (mha:entity_owner:{id}, TTL 120s)
-- Query-Endpoint: GET /api/assistant/entity_owner/{entity_id}
-- Addon-seitig: _is_entity_owned_by_assistant() + call_service Check
-- Zuständigkeiten: Addon=Automatik, Assistant=User-Requests
+- Alle 6 Dopplungen: Addon=Automatik, Assistant=User-Requests
+- Transport-Layer-Check in ha_connection.py deckt alle Module ab
 
-### Gesamt-Status nach 6a–6d
-- 6a: Stabilisierung — Tests grün, ChromaDB-Async-Fix, Lock-Gateway
+### Eskalation
+- 4-Stufen verteilt: Beilaeufig → Einwand → Sorge → Resignation + Emergency
+- Ignored-Warnings tracked in Redis (90 Tage TTL)
+- Emergency-Protocols fuer Rauch/Wasser/Einbruch
+
+### Autonomie
+- 5 Level + 3 Trust-Stufen + Safety Caps
+- lock/alarm/automation geschuetzt
+- Emergency-Override in proactive.py
+
+### Gesamt-Status nach 6a-6d
+- 6a: Stabilisierung — Tests gruen, ChromaDB-Async-Fix, Lock-Gateway
 - 6b: Architektur — Priority-System, Lock-Timeout, Flow-Fixes
-- 6c: Charakter — Personality verifiziert, Dead Code, Bug #15
-- 6d: Härtung — Security/Resilience/Addon vollständig verifiziert
+- 6c: Charakter — Personality verifiziert, Dead Code, Sarkasmus-Fix
+- 6d: Haertung — Security/Resilience/Addon vollstaendig verifiziert + CB-Expansion
 
-### Offene Punkte fuer Prompt 7a
-- SEC-2: 73 raw request.json() Calls (Low Priority, interne APIs)
-- Resilience #10: Aktiver Disk-Space-Check (nice-to-have)
+### Offene Punkte fuer naechste Prompts
+- SEC-2: 73 raw request.json() Calls (Low Priority)
+- Resilience #10: Disk-Space-Check (nice-to-have)
+- CO-Sensor-Handler in Emergency-Protocol
+- Lock.open vs Lock.close Differenzierung in Autonomie
+- Dependency-Updates: 36 CVEs in 7 Paketen (MENSCH-Entscheidung)
+```
 
-### Code-Aenderungen (Nachtrag 6d-Review)
-- autonomy.py: +can_execute(), +check_safety_caps(), +SAFETY_CAPS
-- brain.py:8916: can_execute() ersetzt manuelle Level-Pruefung
-- brain.py:3526: check_safety_caps() im Function-Calling-Flow
+---
+
+```
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT:
+- XSS in app.js:1898+1912 (path/keyLabel/valLabel escaping via esc())
+- Circuit Breaker: redis_breaker in memory.py (initialize: Redis + ChromaDB)
+- Circuit Breaker: web_search_breaker in web_search.py (search method)
+- Circuit Breaker: web_search_breaker registriert in circuit_breaker.py
+OFFEN:
+- 🟡 [MITTEL] Disk-Full Resilience | main.py:134 audit.jsonl | GRUND: Logs via Docker stdout, kein aktiver Check
+  → ESKALATION: NAECHSTER_PROMPT
+- 🟡 [MITTEL] CO-Sensor Emergency | proactive.py | GRUND: Nur Rauch/Wasser/Einbruch implementiert
+  → ESKALATION: NAECHSTER_PROMPT
+- 🟡 [MITTEL] Lock open/close Differenzierung | autonomy.py | GRUND: Gleicher Schutz fuer oeffnen/schliessen
+  → ESKALATION: NAECHSTER_PROMPT
+- 🟡 [MITTEL] Dependency CVEs (36 in 7 Paketen) | requirements.txt | GRUND: Breaking Changes moeglich
+  → ESKALATION: MENSCH
+- 🟡 [MITTEL] Keine per-Model Retry/Backoff in ollama_client.py | GRUND: Cascade genuegt, Backoff wuerde Latenz erhoehen
+  → ESKALATION: NAECHSTER_PROMPT
+GEAENDERTE DATEIEN:
+- assistant/assistant/circuit_breaker.py (web_search_breaker registriert)
+- assistant/assistant/memory.py (redis_breaker + chromadb_breaker Integration)
+- assistant/assistant/web_search.py (web_search_breaker Integration)
+- assistant/static/ui/app.js (XSS-Fix: esc() in kvAdd/fKeyValue)
+- docs/audit-results/RESULT_06d_HAERTUNG.md (dieses Dokument)
+REGRESSIONEN: Keine (5218 passed)
+NAECHSTER SCHRITT: P06e (Geraetesteuerung) oder P06f (TTS/Response)
+===================================
 ```

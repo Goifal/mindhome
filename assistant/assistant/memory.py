@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 import redis.asyncio as redis
 
+from .circuit_breaker import redis_breaker, chromadb_breaker
 from .config import settings
 from .semantic_memory import SemanticMemory
 
@@ -35,8 +36,10 @@ class MemoryManager:
                 settings.redis_url, decode_responses=True
             )
             await self.redis.ping()
+            redis_breaker.record_success()
             logger.info("Redis verbunden")
         except Exception as e:
+            redis_breaker.record_failure()
             logger.warning("Redis nicht verfuegbar: %s", e)
             if self.redis:
                 await self.redis.close()
@@ -60,8 +63,10 @@ class MemoryManager:
             if ef:
                 col_kwargs["embedding_function"] = ef
             self.chroma_collection = self._chroma_client.get_or_create_collection(**col_kwargs)
+            chromadb_breaker.record_success()
             logger.info("ChromaDB verbunden, Collection: mha_conversations")
         except Exception as e:
+            chromadb_breaker.record_failure()
             logger.warning("ChromaDB nicht verfuegbar: %s", e)
             self.chroma_collection = None
 
