@@ -376,6 +376,7 @@ class HomeAssistantClient:
                 async with session.put(
                     f"{self.mindhome_url}{path}",
                     json=data,
+                    headers=self._mindhome_headers,
                 ) as resp:
                     if resp.status == 200:
                         mindhome_breaker.record_success()
@@ -406,6 +407,7 @@ class HomeAssistantClient:
             try:
                 async with session.delete(
                     f"{self.mindhome_url}{path}",
+                    headers=self._mindhome_headers,
                 ) as resp:
                     if resp.status == 200:
                         mindhome_breaker.record_success()

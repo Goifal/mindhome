@@ -177,7 +177,16 @@ class OutcomeTracker:
         if not total or int(total) < MIN_OUTCOMES_FOR_SCORE:
             return DEFAULT_SCORE
 
-        return DEFAULT_SCORE
+        # Score aus positiv/negativ Verhaeltnis berechnen
+        positive = await self.redis.hget(f"mha:outcome:stats:{action_type}", "positive")
+        if positive is not None:
+            positive = positive.decode() if isinstance(positive, bytes) else positive
+        positive = int(positive) if positive else 0
+        total_int = int(total)
+        computed_score = positive / total_int if total_int > 0 else DEFAULT_SCORE
+        # Score cachen fuer schnelleren Zugriff
+        await self.redis.set(f"mha:outcome:score:{action_type}", str(round(computed_score, 4)))
+        return computed_score
 
     async def get_person_score(self, action_type: str, person: str) -> float:
         """Per-Person Score fuer einen Aktionstyp."""

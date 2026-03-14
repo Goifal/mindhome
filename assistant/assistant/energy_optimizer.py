@@ -441,8 +441,7 @@ class EnergyOptimizer:
             if any(kw in eid_lower for kw in search_keywords):
                 try:
                     val = float(s.get("state", 0))
-                    if val >= 0:
-                        return val
+                    return val  # Negative Werte = Netzeinspeisung (Solar)
                 except (ValueError, TypeError):
                     continue
 

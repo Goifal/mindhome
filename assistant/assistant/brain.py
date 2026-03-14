@@ -597,71 +597,48 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         await _safe_init("RecipeStore", self.recipe_store.initialize())
         self.cooking.recipe_store = self.recipe_store
 
-        # Phase 15.2: Inventory Manager initialisieren
-        await _safe_init("Inventory", self.inventory.initialize(redis_client=self.memory.redis))
+        # P06b: Mittlere Features parallel initialisieren
+        await asyncio.gather(
+            _safe_init("Inventory", self.inventory.initialize(redis_client=self.memory.redis)),
+            _safe_init("SmartShopping", self.smart_shopping.initialize(redis_client=self.memory.redis)),
+            _safe_init("ConversationMemory", self.conversation_memory.initialize(redis_client=self.memory.redis)),
+            _safe_init("MultiRoomAudio", self.multi_room_audio.initialize(redis_client=self.memory.redis)),
+            _safe_init("SelfAutomation", self.self_automation.initialize(redis_client=self.memory.redis)),
+            _safe_init("ConfigVersioning", self.config_versioning.initialize(redis_client=self.memory.redis)),
+            _safe_init("SelfOptimization", self.self_optimization.initialize(redis_client=self.memory.redis)),
+            _safe_init("OCR", self.ocr.initialize(redis_client=self.memory.redis)),
+            _safe_init("AmbientAudio", self.ambient_audio.initialize(redis_client=self.memory.redis)),
+            _safe_init("ConflictResolver", self.conflict_resolver.initialize(redis_client=self.memory.redis)),
+            _safe_init("HealthMonitor", self.health_monitor.initialize(redis_client=self.memory.redis)),
+            _safe_init("DeviceHealth", self.device_health.initialize(redis_client=self.memory.redis)),
+            _safe_init("TimerManager", self.timer_manager.initialize(redis_client=self.memory.redis)),
+            _safe_init("ConditionalCommands", self.conditional_commands.initialize(redis_client=self.memory.redis)),
+            _safe_init("EnergyOptimizer", self.energy_optimizer.initialize(redis_client=self.memory.redis)),
+            _safe_init("CookingAssistant", self.cooking.initialize(redis_client=self.memory.redis)),
+            _safe_init("RepairPlanner", self.repair_planner.initialize(redis_client=self.memory.redis)),
+            _safe_init("WorkshopGenerator", self.workshop_generator.initialize(redis_client=self.memory.redis)),
+        )
 
-        # Smart Shopping initialisieren
-        await _safe_init("SmartShopping", self.smart_shopping.initialize(redis_client=self.memory.redis))
+        # Post-init wiring (Callbacks, Cross-References, Start-Calls)
         self.executor._smart_shopping = self.smart_shopping
-
-        # Konversations-Gedaechtnis++ initialisieren
-        await _safe_init("ConversationMemory", self.conversation_memory.initialize(redis_client=self.memory.redis))
         self.executor._conversation_memory = self.conversation_memory
+        self.executor._multi_room_audio = self.multi_room_audio
+        self.executor.set_config_versioning(self.config_versioning)
+        self.ambient_audio.set_notify_callback(self._handle_ambient_audio_event)
+        self.health_monitor.set_notify_callback(self._handle_health_alert)
+        self.device_health.set_notify_callback(self._handle_device_health_alert)
+        self.timer_manager.set_notify_callback(self._handle_timer_notification)
+        self.timer_manager.set_action_callback(lambda func, args: self.executor.execute(func, args))
+        self.conditional_commands.set_action_callback(lambda func, args: self.executor.execute(func, args))
 
-        # Multi-Room Audio initialisieren
-        await _safe_init("MultiRoomAudio", self.multi_room_audio.initialize(redis_client=self.memory.redis))
         if "MultiRoomAudio" not in _degraded_modules:
             await _safe_init("MultiRoomAudio.presets", self.multi_room_audio.load_presets())
-        self.executor._multi_room_audio = self.multi_room_audio
-
-        # Phase 13.2: Self Automation initialisieren
-        await _safe_init("SelfAutomation", self.self_automation.initialize(redis_client=self.memory.redis))
-
-        # Phase 13.4: Config Versioning + Self Optimization initialisieren
-        await _safe_init("ConfigVersioning", self.config_versioning.initialize(redis_client=self.memory.redis))
-        await _safe_init("SelfOptimization", self.self_optimization.initialize(redis_client=self.memory.redis))
-        self.executor.set_config_versioning(self.config_versioning)
-
-        # Phase 14.2: OCR Engine initialisieren
-        await _safe_init("OCR", self.ocr.initialize(redis_client=self.memory.redis))
-
-        # Phase 14.3: Ambient Audio initialisieren und starten
-        await _safe_init("AmbientAudio", self.ambient_audio.initialize(redis_client=self.memory.redis))
-        self.ambient_audio.set_notify_callback(self._handle_ambient_audio_event)
         if "AmbientAudio" not in _degraded_modules:
             await _safe_init("AmbientAudio.start", self.ambient_audio.start())
-
-        # Phase 16.1: Conflict Resolver initialisieren
-        await _safe_init("ConflictResolver", self.conflict_resolver.initialize(redis_client=self.memory.redis))
-
-        # Phase 15.1: Health Monitor initialisieren und starten
-        await _safe_init("HealthMonitor", self.health_monitor.initialize(redis_client=self.memory.redis))
-        self.health_monitor.set_notify_callback(self._handle_health_alert)
         if "HealthMonitor" not in _degraded_modules:
             await _safe_init("HealthMonitor.start", self.health_monitor.start())
-
-        # Phase 15.3: Device Health Monitor initialisieren und starten
-        await _safe_init("DeviceHealth", self.device_health.initialize(redis_client=self.memory.redis))
-        self.device_health.set_notify_callback(self._handle_device_health_alert)
         if "DeviceHealth" not in _degraded_modules:
             await _safe_init("DeviceHealth.start", self.device_health.start())
-
-        # Phase 17: Neue Features initialisieren
-        await _safe_init("TimerManager", self.timer_manager.initialize(redis_client=self.memory.redis))
-        self.timer_manager.set_notify_callback(self._handle_timer_notification)
-        self.timer_manager.set_action_callback(
-            lambda func, args: self.executor.execute(func, args)
-        )
-        await _safe_init("ConditionalCommands", self.conditional_commands.initialize(redis_client=self.memory.redis))
-        self.conditional_commands.set_action_callback(
-            lambda func, args: self.executor.execute(func, args)
-        )
-        await _safe_init("EnergyOptimizer", self.energy_optimizer.initialize(redis_client=self.memory.redis))
-        await _safe_init("CookingAssistant", self.cooking.initialize(redis_client=self.memory.redis))
-
-        # Workshop-Modus initialisieren
-        await _safe_init("RepairPlanner", self.repair_planner.initialize(redis_client=self.memory.redis))
-        await _safe_init("WorkshopGenerator", self.workshop_generator.initialize(redis_client=self.memory.redis))
         self.repair_planner.set_generator(self.workshop_generator)
         self.repair_planner.set_model_router(self.model_router)
         self.repair_planner.semantic_memory = self.memory.semantic
@@ -685,82 +662,61 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _degraded_modules.append("WorkshopLibrary")
             logger.error("F-069: WorkshopLibrary init fehlgeschlagen: %s", e)
 
-        await _safe_init("ThreatAssessment", self.threat_assessment.initialize(redis_client=self.memory.redis))
-        await _safe_init("LearningObserver", self.learning_observer.initialize(redis_client=self.memory.redis))
+        # P06b: Spaete Features parallel initialisieren
+        await asyncio.gather(
+            _safe_init("ThreatAssessment", self.threat_assessment.initialize(redis_client=self.memory.redis)),
+            _safe_init("LearningObserver", self.learning_observer.initialize(redis_client=self.memory.redis)),
+            _safe_init("ProtocolEngine", self.protocol_engine.initialize(redis_client=self.memory.redis)),
+            _safe_init("SpontaneousObserver", self.spontaneous.initialize(redis_client=self.memory.redis)),
+            _safe_init("MusicDJ", self.music_dj.initialize(redis_client=self.memory.redis)),
+            _safe_init("VisitorManager", self.visitor_manager.initialize(redis_client=self.memory.redis)),
+            _safe_init("WellnessAdvisor", self.wellness_advisor.initialize(redis_client=self.memory.redis)),
+            _safe_init("InsightEngine", self.insight_engine.initialize(
+                redis_client=self.memory.redis, ollama=self.ollama)),
+            _safe_init("SituationModel", self.situation_model.initialize(redis_client=self.memory.redis)),
+            _safe_init("ProactivePlanner", self.proactive_planner.initialize(redis_client=self.memory.redis)),
+            _safe_init("SeasonalInsight", self.seasonal_insight.initialize(
+                redis_client=self.memory.redis, notify_callback=self._handle_insight)),
+        )
+
+        # Post-init wiring
         self.learning_observer.set_notify_callback(self._handle_learning_suggestion)
-
-        # Jarvis-Feature 2: Benannte Protokolle
-        await _safe_init("ProtocolEngine", self.protocol_engine.initialize(redis_client=self.memory.redis))
         self.protocol_engine.set_executor(self.executor)
-
-        # Jarvis-Feature 4: Spontane Beobachtungen
-        await _safe_init("SpontaneousObserver", self.spontaneous.initialize(redis_client=self.memory.redis))
         self.spontaneous.set_notify_callback(self._handle_spontaneous_observation)
+        self.music_dj.set_notify_callback(self._handle_music_suggestion)
+        self.music_dj.set_executor(self.executor)
+        self.visitor_manager.set_notify_callback(self._handle_visitor_event)
+        self.visitor_manager.set_executor(self.executor)
+        self.validator.set_ha_client(self.ha)
+        self.wellness_advisor.set_notify_callback(self._handle_wellness_nudge)
+        self.wellness_advisor.executor = self.executor
+        self.insight_engine.set_notify_callback(self._handle_insight)
 
-        # Jarvis-Feature 8: Woechentlicher Lern-Bericht (Background-Task)
+        if "WellnessAdvisor" not in _degraded_modules:
+            await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
+
+        # Woechentlicher Lern-Bericht
         weekly_cfg = cfg.yaml_config.get("learning", {}).get("weekly_report", {})
         if weekly_cfg.get("enabled", True):
             self._task_registry.create_task(
                 self._weekly_learning_report_loop(), name="weekly_learning_report"
             )
 
-        # Feature 11: Smart DJ (kontextbewusste Musikempfehlungen)
-        await _safe_init("MusicDJ", self.music_dj.initialize(redis_client=self.memory.redis))
-        self.music_dj.set_notify_callback(self._handle_music_suggestion)
-        self.music_dj.set_executor(self.executor)
-
-        # Feature 12: Besucher-Management
-        await _safe_init("VisitorManager", self.visitor_manager.initialize(redis_client=self.memory.redis))
-        self.visitor_manager.set_notify_callback(self._handle_visitor_event)
-        self.visitor_manager.set_executor(self.executor)
-
-        # Jarvis-Feature 10: Daten-basierter Widerspruch — HA-Client für Live-Daten
-        self.validator.set_ha_client(self.ha)
-
-        # Wellness Advisor initialisieren und starten
-        await _safe_init("WellnessAdvisor", self.wellness_advisor.initialize(redis_client=self.memory.redis))
-        self.wellness_advisor.set_notify_callback(self._handle_wellness_nudge)
-        self.wellness_advisor.executor = self.executor  # Phase 17.4: Ambient Actions
-        if "WellnessAdvisor" not in _degraded_modules:
-            await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
-
-        # Phase 17.3: InsightEngine (Jarvis denkt voraus)
-        await _safe_init("InsightEngine", self.insight_engine.initialize(
-            redis_client=self.memory.redis, ollama=self.ollama,
-        ))
-        self.insight_engine.set_notify_callback(self._handle_insight)
-
-        # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
-        await _safe_init("SituationModel", self.situation_model.initialize(redis_client=self.memory.redis))
-
-        # Phase 18: ProactiveSequencePlanner
-        await _safe_init("ProactivePlanner", self.proactive_planner.initialize(
-            redis_client=self.memory.redis,
-        ))
-
-        # Phase 18: SeasonalInsightEngine
-        await _safe_init("SeasonalInsight", self.seasonal_insight.initialize(
-            redis_client=self.memory.redis,
-            notify_callback=self._handle_insight,
-        ))
-
-        # Intelligenz-Features: Quick Wins + Medium Effort
-        await _safe_init("CalendarIntelligence", self.calendar_intelligence.initialize(redis_client=self.memory.redis))
-        await _safe_init("Explainability", self.explainability.initialize(redis_client=self.memory.redis))
-        await _safe_init("LearningTransfer", self.learning_transfer.initialize(redis_client=self.memory.redis))
-        await _safe_init("PredictiveMaintenance", self.predictive_maintenance.initialize(redis_client=self.memory.redis))
-
-        # Self-Improvement: Geschlossene Feedback-Loops
-        await _safe_init("OutcomeTracker", self.outcome_tracker.initialize(
-            redis_client=self.memory.redis, ha_client=self.ha, task_registry=self._task_registry,
-        ))
-        await _safe_init("CorrectionMemory", self.correction_memory.initialize(redis_client=self.memory.redis))
-        await _safe_init("ResponseQuality", self.response_quality.initialize(redis_client=self.memory.redis))
-        await _safe_init("ErrorPatterns", self.error_patterns.initialize(redis_client=self.memory.redis))
-        await _safe_init("SelfReport", self.self_report.initialize(
-            redis_client=self.memory.redis, ollama_client=self.ollama,
-        ))
-        await _safe_init("AdaptiveThresholds", self.adaptive_thresholds.initialize(redis_client=self.memory.redis))
+        # P06b: Intelligenz + Self-Improvement parallel initialisieren
+        await asyncio.gather(
+            _safe_init("CalendarIntelligence", self.calendar_intelligence.initialize(redis_client=self.memory.redis)),
+            _safe_init("Explainability", self.explainability.initialize(redis_client=self.memory.redis)),
+            _safe_init("LearningTransfer", self.learning_transfer.initialize(redis_client=self.memory.redis)),
+            _safe_init("PredictiveMaintenance", self.predictive_maintenance.initialize(redis_client=self.memory.redis)),
+            _safe_init("OutcomeTracker", self.outcome_tracker.initialize(
+                redis_client=self.memory.redis, ha_client=self.ha, task_registry=self._task_registry)),
+            _safe_init("CorrectionMemory", self.correction_memory.initialize(redis_client=self.memory.redis)),
+            _safe_init("ResponseQuality", self.response_quality.initialize(redis_client=self.memory.redis)),
+            _safe_init("ErrorPatterns", self.error_patterns.initialize(redis_client=self.memory.redis)),
+            _safe_init("SelfReport", self.self_report.initialize(
+                redis_client=self.memory.redis, ollama_client=self.ollama)),
+            _safe_init("AdaptiveThresholds", self.adaptive_thresholds.initialize(redis_client=self.memory.redis)),
+        )
 
         # Global Learning Kill Switch
         _learning_enabled = cfg.yaml_config.get("learning", {}).get("enabled", True)
@@ -1786,6 +1742,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 device_cmd = {"function": _la, "args": _la_args}
 
         if not device_cmd:
+            # P06e: Multi-Command-Erkennung ("Licht aus und Rollladen runter")
+            # Splittet auf "und" / Komma und erkennt jeden Teil einzeln.
+            device_cmd = self._detect_multi_device_command(text, room=room or "")
+        if not device_cmd:
             # Geraete-Shortcut: Einfache Befehle (Licht/Rollladen/Heizung)
             # direkt ausfuehren — kein Context Build, kein LLM noetig.
             device_cmd = self._detect_device_command(text, room=room or "")
@@ -1816,6 +1776,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     logger.info("Geräte-Shortcut blockiert (Trust: %s) — Fallback",
                                 trust.get("reason", ""))
                 else:
+                    # P06e: Multi-Command — extra Kommandos extrahieren
+                    _extra_cmds = func_args.pop("_extra_cmds", [])
                     if person:
                         func_args["_person"] = person
                     result = await self.executor.execute(func_name, func_args)
@@ -1830,6 +1792,23 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         # Entity nicht aufloesbar → LLM hat mehr Kontext
                         logger.info("Geräte-Shortcut: '%s' — Fallback auf LLM", error_msg)
                     else:
+                        all_actions = [{"function": func_name, "args": func_args, "result": result}]
+
+                        # P06e: Extra-Kommandos ausfuehren (Multi-Command)
+                        for extra in _extra_cmds:
+                            _ex_name = extra["function"]
+                            _ex_args = extra["args"]
+                            if person:
+                                _ex_args["_person"] = person
+                            if not _ex_args.get("room") and func_args.get("room"):
+                                _ex_args["room"] = func_args["room"]
+                            try:
+                                _ex_result = await self.executor.execute(_ex_name, _ex_args)
+                                all_actions.append({"function": _ex_name, "args": _ex_args, "result": _ex_result})
+                                logger.info("Multi-Cmd: %s(%s) -> %s", _ex_name, _ex_args, _ex_result.get("success") if isinstance(_ex_result, dict) else "?")
+                            except Exception as ex_e:
+                                logger.warning("Multi-Cmd fehlgeschlagen: %s(%s): %s", _ex_name, _ex_args, ex_e)
+
                         if success:
                             # set_light mit state=off → turn_off_light für passende Bestaetigung
                             _confirm_action = func_name
@@ -1861,7 +1840,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 response_text, room=room, tts_data=tts_data,
                             )
 
-                        await emit_action(func_name, func_args, result)
+                        for _act in all_actions:
+                            await emit_action(_act["function"], _act["args"], _act["result"])
 
                         # Learning Observer
                         if success:
@@ -1880,7 +1860,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     name="mark_jarvis_action",
                                 )
 
-                        return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
+                        return self._result(response_text, actions=all_actions, model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -3274,16 +3254,20 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # (a) vacuum.enabled in settings.yaml UND
             # (b) User tatsaechlich ueber Staubsaugen spricht.
             # Verhindert dass das LLM bei unbekannten Befehlen auf set_vacuum defaulted.
+            # P06e: Intent-basierte Tool-Selektion — kleine Modelle (4B) werden
+            # von 45+ Tools ueberfordert. Bei eindeutigem Intent nur relevante
+            # Tools senden (max ~15), sonst alle.
+            _text_low = text.lower()
+            _llm_tools = self._select_tools_for_intent(_text_low)
+
+            # Vacuum-Filter: set_vacuum nur anbieten wenn User davon spricht
             _vacuum_enabled = cfg.yaml_config.get("vacuum", {}).get("enabled", True)
             _vacuum_kw = {"saug", "staubsaug", "vacuum", "saugen", "sauger",
                           "roboter", "roborock", "dreame", "wischen", "mopp"}
-            _text_low = text.lower()
             _offer_vacuum = _vacuum_enabled and any(kw in _text_low for kw in _vacuum_kw)
-            if _offer_vacuum:
-                _llm_tools = get_assistant_tools()
-            else:
+            if not _offer_vacuum:
                 _llm_tools = [
-                    t for t in get_assistant_tools()
+                    t for t in _llm_tools
                     if t.get("function", {}).get("name") not in ("set_vacuum", "get_vacuum")
                 ]
 
@@ -3380,6 +3364,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # Status-Queries ("Sind alle Licht abgedreht?").
             if not tool_calls and (self._is_device_command(text) or self._is_status_query(text)):
                 fallback_tc = self._deterministic_tool_call(text)
+                # P06e: Auch _detect_device_command als Fallback versuchen
+                if not fallback_tc:
+                    _dev_cmd = self._detect_device_command(text, room=room or "")
+                    if _dev_cmd:
+                        fallback_tc = {"function": {"name": _dev_cmd["function"],
+                                                     "arguments": _dev_cmd["args"]}}
                 if fallback_tc:
                     logger.info("Deterministischer Tool-Call: %s(%s)",
                                 fallback_tc["function"]["name"],
@@ -3399,14 +3389,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # 7d. Retry: LLM hat bei Geraetebefehl/Status-Query keinen Tool-Call gemacht
             if not tool_calls and (self._is_device_command(text) or self._is_status_query(text)):
                 logger.warning("Geraetebefehl ohne Tool-Call erkannt: '%s' -> Retry mit Hint", text)
-                hint_msg = (
-                    f"Du MUSST jetzt einen Function-Call ausfuehren! "
-                    f"Der User hat gesagt: \"{text}\". "
-                    f"Nutze den passenden Tool-Call: "
-                    f"Für Status-Abfragen: get_lights, get_covers, get_climate, get_entity_state, get_house_status. "
-                    f"Für Steuerung: set_light, set_cover, set_climate. "
-                    f"KEIN Text. NUR der Function-Call."
-                )
+                hint_msg = self._build_tool_call_hint(text)
                 retry_messages = messages + [
                     {"role": "assistant", "content": response_text},
                     {"role": "user", "content": hint_msg},
@@ -3470,7 +3453,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         try:
                             func_args = json.loads(func_args)
                         except (json.JSONDecodeError, ValueError):
-                            func_args = {}
+                            logger.warning("Ungueltiges JSON in Tool-Call Arguments: %.100s", func_args)
+                            continue  # DL3-B2 Fix: Ueberspringe statt leere Args
 
                     # Raum-Fallback: Wenn set_* ohne Raum → besetzten Raum nutzen
                     if (func_name.startswith("set_")
@@ -5004,6 +4988,36 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             else:
                 return ""
 
+        # 0e. Meta-Leakage entfernen: LLM gibt interne Begriffe/Funktionsnamen aus
+        # Qwen 3.5 neigt dazu, Funktionsnamen wie "speak" oder "set_light" in den
+        # Antwort-Text zu schreiben. Bei TTS wird das dann vorgelesen.
+        _meta_leak_patterns = [
+            r'\bspeak\b', r'\btts\b', r'\bemit\b',
+            r'\btool_call\b', r'\bfunction_call\b',
+            r'\bset_light\b', r'\bset_cover\b', r'\bset_climate\b',
+            r'\bset_switch\b', r'\bplay_media\b', r'\bset_vacuum\b',
+            r'\bactivate_scene\b', r'\barm_security_system\b',
+            r'\bget_lights\b', r'\bget_covers\b', r'\bget_climate\b',
+            r'\bget_switches\b', r'\bget_house_status\b', r'\bget_weather\b',
+            r'\bget_entity_state\b', r'\bget_entity_history\b',
+            r'\bspeak_response\b', r'\bemit_speaking\b', r'\bemit_action\b',
+            r'\bcall_service\b', r'\bcall_ha_service\b',
+            r'\brun_scene\b', r'\brun_script\b', r'\brun_automation\b',
+            r'<tool_call>.*?</tool_call>',
+            r'\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:.*?\}',
+        ]
+        for _ml_pat in _meta_leak_patterns:
+            _new = re.sub(_ml_pat, '', text, flags=re.IGNORECASE | re.DOTALL)
+            if _new != text:
+                logger.info("Meta-Leakage entfernt: %s", _ml_pat[:30])
+            text = _new
+        # Bereinigung: Mehrfach-Leerzeichen und leere Klammern
+        text = re.sub(r'\s{2,}', ' ', text).strip()
+        text = re.sub(r'\(\s*\)', '', text).strip()
+        text = re.sub(r'^\s*[,;:\-\u2013\u2014]\s*', '', text).strip()
+        if text:
+            text = text[0].upper() + text[1:]
+
         # 1. Banned Phrases komplett entfernen
         # NUR Phrasen die den JARVIS-Charakter brechen (KI-Identitaet, LLM-Floskeln).
         # Natuerliche Gespraechselemente werden NICHT mehr geblockt.
@@ -5064,6 +5078,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             "Das ist eine tolle Frage",
             "Das ist eine gute Frage",
             "Das ist eine interessante Frage",
+            # --- Qwen 3.5 spezifische Floskeln (P06c) ---
+            "Natürlich!", "Natuerlich!",
+            "Gerne!", "Gerne,",
+            "Selbstverständlich!", "Selbstverstaendlich!",
+            "Klar!", "Klar,",
+            "Kann ich dir noch etwas helfen?",
+            "Kann ich sonst noch etwas tun?",
+            "Kann ich sonst noch etwas fuer dich tun?",
+            "Ich schalte jetzt", "Ich werde jetzt",
         ])
         for phrase in banned_phrases:
             # Case-insensitive Entfernung mit Wortgrenzen-Check
@@ -5421,10 +5444,21 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                en_hits, de_hits, text)
                 return ""
 
+        # P06f Fix 0: Jarvis-Fallback wenn Text nach Filterung leer/zu kurz ist
+        if not text or len(text.strip()) < 5:
+            import random
+            _jarvis_fallbacks = [
+                "Erledigt.", "Wie gewünscht.", "Wird gemacht.",
+                "Umgesetzt.", "Verstanden.", "Notiert.",
+                "Sir?", "Systeme bereit.",
+            ]
+            text = random.choice(_jarvis_fallbacks)
+            logger.info("Floskeln-Fallback aktiviert: '%s' (original: '%s')", text, original[:80])
+
         if text != original:
             logger.debug("Response-Filter: '%s' -> '%s'", original[:80], text[:80])
 
-        return text if text else ""
+        return text
 
     @staticmethod
     def _calculate_llm_voice_score(text: str, conversation_mode: bool = False) -> int:
@@ -6266,8 +6300,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 logger.error("Security-Confirmation: Korrupte Daten in Redis")
                 await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
                 return None
-            # Person-Check: nur dieselbe Person darf bestaetigen
-            if pending.get("person") and person and pending["person"] != person:
+            # Person-Check: nur dieselbe Person darf bestaetigen (DL3-B1 Fix)
+            pending_person = pending.get("person", "")
+            if not pending_person:
+                logger.warning("Security-Confirmation abgelehnt: kein Person-Feld in Pending-Daten")
+                await self.memory.redis.delete(SECURITY_CONFIRM_KEY)
+                return None
+            if person and pending_person != person:
                 logger.warning(
                     "Security-Confirmation abgelehnt: %s != %s",
                     person, pending["person"],
@@ -6873,6 +6912,147 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         return text
 
+    def _build_tool_call_hint(self, user_text: str) -> str:
+        """P06e: Generiert einen spezifischen Retry-Hint mit Tool-Name und Parametern.
+
+        Statt generischem "Nutze ein Tool" werden konkrete Beispiele genannt,
+        damit kleine Modelle (4B) den richtigen Tool-Call generieren.
+        """
+        t = user_text.lower()
+        hints = []
+
+        # Licht
+        if any(w in t for w in ["licht", "lampe", "beleuchtung", "leuchte"]):
+            state = "on" if any(w in t for w in ["an", "ein"]) else "off"
+            pct = re.search(r'(\d{1,3})\s*(?:%|prozent)', t)
+            if pct:
+                hints.append(
+                    f"Nutze set_light mit state='on', brightness={pct.group(1)}. "
+                    f"Beispiel: set_light(room='wohnzimmer', state='on', brightness={pct.group(1)})"
+                )
+            else:
+                hints.append(
+                    f"Nutze set_light mit state='{state}'. "
+                    f"Beispiel: set_light(room='wohnzimmer', state='{state}')"
+                )
+
+        # Rollladen
+        if any(w in t for w in ["rollladen", "rollo", "jalousie"]):
+            pct = re.search(r'(\d{1,3})\s*(?:%|prozent)', t)
+            if pct:
+                hints.append(
+                    f"Nutze set_cover mit position={pct.group(1)}. "
+                    f"Beispiel: set_cover(room='wohnzimmer', position={pct.group(1)})"
+                )
+            elif any(w in t for w in ["hoch", "auf", "oeffne"]):
+                hints.append(
+                    "Nutze set_cover mit action='open'. "
+                    "Beispiel: set_cover(room='wohnzimmer', action='open')"
+                )
+            elif any(w in t for w in ["runter", "zu", "schliess"]):
+                hints.append(
+                    "Nutze set_cover mit action='close'. "
+                    "Beispiel: set_cover(room='wohnzimmer', action='close')"
+                )
+
+        # Heizung
+        if any(w in t for w in ["heizung", "thermostat", "temperatur"]):
+            temp = re.search(r'(\d{1,2}(?:[.,]\d)?)\s*(?:grad|°)', t)
+            if temp:
+                tv = temp.group(1).replace(",", ".")
+                hints.append(
+                    f"Nutze set_climate mit temperature={tv}. "
+                    f"Beispiel: set_climate(room='wohnzimmer', temperature={tv})"
+                )
+            else:
+                hints.append(
+                    "Nutze set_climate. "
+                    "Beispiel: set_climate(room='wohnzimmer', temperature=22)"
+                )
+
+        # Schalter/Steckdose
+        if any(w in t for w in ["steckdose", "schalter", "ventilator"]):
+            state = "on" if any(w in t for w in ["an", "ein"]) else "off"
+            hints.append(
+                f"Nutze set_switch mit state='{state}'. "
+                f"Beispiel: set_switch(room='buero', state='{state}')"
+            )
+
+        if hints:
+            return (
+                f"WICHTIG: Du MUSST einen Tool-Call generieren! "
+                f"Der User hat gesagt: \"{user_text}\". "
+                f"Antworte NICHT mit Text, sondern rufe das passende Tool auf.\n"
+                + "\n".join(hints)
+            )
+
+        # Generischer Fallback (Status-Queries oder unbekannter Intent)
+        return (
+            f"Du MUSST jetzt einen Function-Call ausfuehren! "
+            f"Der User hat gesagt: \"{user_text}\". "
+            f"Nutze den passenden Tool-Call: "
+            f"Fuer Status-Abfragen: get_lights, get_covers, get_climate, get_entity_state, get_house_status. "
+            f"Fuer Steuerung: set_light, set_cover, set_climate, set_switch. "
+            f"KEIN Text. NUR der Function-Call."
+        )
+
+    def _select_tools_for_intent(self, text_lower: str) -> list:
+        """P06e: Waehlt nur relevante Tools basierend auf dem erkannten Intent.
+
+        Reduziert die Tool-Liste von 45+ auf max ~15, um kleine Modelle
+        nicht zu ueberfordern. Bei unklarem Intent → alle Tools.
+        """
+        CONTROL_KEYWORDS = {
+            "mach", "schalte", "stell", "dreh", "dimm", "oeffne", "schliess",
+            "fahr", "setz", "einschalten", "ausschalten", "anmachen", "ausmachen",
+            "licht", "lampe", "rollladen", "rollo", "jalousie", "heizung",
+            "thermostat", "temperatur", "steckdose", "schalter",
+        }
+        QUERY_KEYWORDS = {
+            "wie ist", "was ist", "status", "wie warm", "wie kalt",
+            "ist das", "sind die", "offen", "geschlossen", "welche",
+            "zeig", "liste", "an oder aus",
+        }
+
+        is_control = any(kw in text_lower for kw in CONTROL_KEYWORDS)
+        is_query = any(kw in text_lower for kw in QUERY_KEYWORDS)
+
+        all_tools = get_assistant_tools()
+
+        if is_control and not is_query:
+            # Nur Steuerungs-Tools
+            _CONTROL_NAMES = {
+                "set_light", "set_cover", "set_climate", "set_switch",
+                "set_media_player", "set_fan", "set_lock",
+                "get_entity_state", "call_ha_service", "run_scene",
+                "set_input_boolean", "set_input_number",
+                "set_light_all", "arm_security_system",
+            }
+            filtered = [t for t in all_tools
+                        if t.get("function", {}).get("name") in _CONTROL_NAMES]
+            if filtered:
+                logger.debug("P06e Tool-Selektion: %d/%d Tools (control intent)",
+                             len(filtered), len(all_tools))
+                return filtered
+
+        if is_query and not is_control:
+            # Nur Abfrage-Tools
+            _QUERY_NAMES = {
+                "get_entity_state", "get_lights", "get_covers", "get_climate",
+                "get_switches", "get_media", "get_alarms", "get_house_status",
+                "get_weather", "get_calendar", "get_shopping_list",
+                "search_entities", "get_area_entities", "get_entity_history",
+            }
+            filtered = [t for t in all_tools
+                        if t.get("function", {}).get("name") in _QUERY_NAMES]
+            if filtered:
+                logger.debug("P06e Tool-Selektion: %d/%d Tools (query intent)",
+                             len(filtered), len(all_tools))
+                return filtered
+
+        # Unklarer Intent → alle Tools
+        return all_tools
+
     def _is_device_command(self, text: str) -> bool:
         """Erkennt ob der Text ein Geraete-Steuerungsbefehl ist.
 
@@ -7402,6 +7582,48 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return {"function": "set_switch", "args": {"room": effective_room, "state": state}}
 
         return None
+
+    @classmethod
+    def _detect_multi_device_command(cls, text: str, room: str = "") -> Optional[dict]:
+        """P06e: Erkennt Multi-Befehle ('Licht aus und Rollladen runter').
+
+        Splittet auf ' und ' oder ', ' und versucht jeden Teil einzeln
+        zu erkennen. Gibt das erste Kommando als device_cmd zurueck
+        und speichert die restlichen als _extra_cmds im args-Dict.
+
+        Returns:
+            {"function": ..., "args": {..., "_extra_cmds": [...]}} oder None.
+        """
+        t = text.lower().strip()
+        # Nur wenn "und" oder Komma vorhanden
+        if " und " not in t and ", " not in t:
+            return None
+        # Nicht bei Fragen
+        if t.endswith("?"):
+            return None
+
+        import re as _re
+        parts = _re.split(r'\s+und\s+|,\s*', text)
+        if len(parts) < 2:
+            return None
+
+        cmds = []
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            cmd = cls._detect_device_command(part, room=room)
+            if cmd:
+                cmds.append(cmd)
+
+        if len(cmds) < 2:
+            # Weniger als 2 erkannte Kommandos → kein Multi-Command
+            return None
+
+        # Erstes Kommando zurueckgeben, Rest als _extra_cmds
+        first = cmds[0]
+        first["args"]["_extra_cmds"] = cmds[1:]
+        return first
 
     @staticmethod
     def _detect_media_command(text: str, room: str = "") -> Optional[dict]:
@@ -8404,6 +8626,8 @@ Regeln:
 
     async def _log_experiential_memory(self, entry_json: str) -> None:
         """Speichert eine Action-Outcome-Entry in Redis."""
+        if not self.memory.redis:
+            return
         try:
             await self.memory.redis.lpush("mha:action_outcomes", entry_json)
             await self.memory.redis.ltrim("mha:action_outcomes", 0, 499)

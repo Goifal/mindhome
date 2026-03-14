@@ -230,7 +230,10 @@ class PreClassifier:
 
         # 1. Geraete-Befehle: Verb-Start oder Nomen+Aktion, max 8 Woerter
         #    ABER: Fragen ("ist ... an?", "sind ... offen?") sind Status-Queries, keine Commands
-        _is_question = text_lower.rstrip().endswith("?") or text_lower.startswith(("ist ", "sind ", "wie ", "was "))
+        #    FIX DL3-AI2/AI3: ? allein reicht NICHT — Fragewort muss dabei sein
+        _question_starts = text_lower.startswith(("ist ", "sind ", "wie ", "was ", "wer ", "wo ", "wann ", "welch"))
+        _has_question_mark = text_lower.rstrip().endswith("?")
+        _is_question = _question_starts and (_has_question_mark or word_count <= 6)
         if word_count <= 8 and not _is_question:
             if _DEVICE_VERBS.search(text_lower):
                 logger.debug("PreClassifier: DEVICE_FAST (verb: %s)", text)

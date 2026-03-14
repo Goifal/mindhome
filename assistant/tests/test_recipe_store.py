@@ -448,7 +448,8 @@ class TestIngestAll:
         (tmp_path / "recipe2.md").write_text("Rezept zwei")
         store._recipes_dir = tmp_path
 
-        mock_kb._split_text.return_value = ["chunk_a"]
+        # Unterschiedliche Chunks pro Datei — verhindert Hash-Deduplizierung
+        mock_kb._split_text.side_effect = [["chunk_a"], ["chunk_b"]]
         store.chroma_collection.add = MagicMock()
 
         result = await store.ingest_all()

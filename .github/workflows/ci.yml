@@ -1,0 +1,68 @@
+name: MindHome CI
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-assistant:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install CPU-only PyTorch
+        run: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+      - name: Install dependencies
+        run: pip install -r assistant/requirements.txt
+      - name: Install test dependencies
+        run: pip install pytest pytest-asyncio
+      - name: Run tests
+        run: cd assistant && python -m pytest --tb=short -q
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install ruff
+      - run: ruff check --select=E9,F63,F7,F82 --ignore=F823 assistant/ addon/ speech/
+
+  static-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile check all Python files
+        run: |
+          find assistant/assistant -name "*.py" -exec python -m py_compile {} \;
+          find addon/rootfs/opt/mindhome -name "*.py" -exec python -m py_compile {} \;
+          find speech -name "*.py" -exec python -m py_compile {} \;
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pip-audit
+      - name: Audit assistant dependencies
+        run: pip-audit -r assistant/requirements.txt --skip-editable --ignore-vuln PYSEC-2024-139 || true
+      - name: Audit addon dependencies
+        run: pip-audit -r addon/rootfs/opt/mindhome/requirements.txt --skip-editable || true
+      - name: Audit speech dependencies
+        run: pip-audit -r speech/requirements.txt --skip-editable --ignore-vuln PYSEC-2024-139 || true
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t mindhome-assistant ./assistant
+      - run: docker build -f speech/Dockerfile.whisper -t mindhome-speech ./speech

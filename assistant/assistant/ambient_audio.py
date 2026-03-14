@@ -309,7 +309,7 @@ class AmbientAudioClassifier:
 
         def _on_done(t: asyncio.Task) -> None:
             self._background_tasks.discard(t)
-            if t.exception():
+            if not t.cancelled() and t.exception():
                 logger.warning("_save_history fehlgeschlagen: %s", t.exception())
 
         task.add_done_callback(_on_done)

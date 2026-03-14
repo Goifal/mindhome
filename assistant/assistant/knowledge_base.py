@@ -501,7 +501,7 @@ class KnowledgeBase:
                         "chunk_index": meta.get("chunk_index", 0),
                     })
             # Sortieren nach Quelle + Index
-            chunks.sort(key=lambda c: (c["source"], c["chunk_index"]))
+            chunks.sort(key=lambda c: (c["source"], int(c["chunk_index"])))
             return chunks[offset:offset + limit]
         except Exception as e:
             logger.error("Fehler beim Laden der Chunks: %s", e)

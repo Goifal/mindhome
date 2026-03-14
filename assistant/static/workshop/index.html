@@ -2118,13 +2118,16 @@ async function viewFile(filename) {
         const display = document.getElementById('code-display');
 
         if (ext === 'svg') {
-            document.getElementById('schematic-display').innerHTML = content;
+            // Sanitize SVG: remove script tags and event handlers
+            const sanitized = content.replace(/<script[\s\S]*?<\/script>/gi, '')
+                .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '');
+            document.getElementById('schematic-display').innerHTML = sanitized;
             return;
         }
 
         const langMap = { py: 'python', ino: 'cpp', cpp: 'cpp', c: 'c', js: 'javascript', yaml: 'yaml', html: 'markup' };
         const lang = langMap[ext] || 'markup';
-        let highlighted = content;
+        let highlighted = escHtml(content);
         try { highlighted = Prism.highlight(content, Prism.languages[lang] || Prism.languages.markup, lang); } catch(e) {}
 
         display.innerHTML = '<div class="code-container">' +
@@ -3337,16 +3340,17 @@ async function invBulkDelete() {
 
 function showInvQR(name) {
     const overlay = document.getElementById('new-project-modal');
-    overlay.innerHTML = '<div class="modal"><h3>QR-Code: ' + name + '</h3>' +
+    const safeName = escHtml(name);
+    overlay.innerHTML = '<div class="modal"><h3>QR-Code: ' + safeName + '</h3>' +
         generateQR('INVENTAR:' + name) +
         '<div class="modal-btns"><button onclick="document.getElementById(\'new-project-modal\').classList.add(\'hidden\');resetProjectModal()">Schliessen</button>' +
-        '<button class="btn-primary" onclick="printInvQR(\'' + name + '\')">Drucken</button></div></div>';
+        '<button class="btn-primary" onclick="printInvQR(\'' + safeName + '\')">Drucken</button></div></div>';
     overlay.classList.remove('hidden');
 }
 
 function printInvQR(name) {
     const w = window.open('', '_blank');
-    w.document.write('<html><body style="text-align:center;padding:40px">' + generateQR('INVENTAR:' + name) + '<p>' + name + '</p></body></html>');
+    w.document.write('<html><body style="text-align:center;padding:40px">' + generateQR('INVENTAR:' + name) + '<p>' + escHtml(name) + '</p></body></html>');
     w.document.close(); w.print();
 }
 

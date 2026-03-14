@@ -424,7 +424,10 @@ class ThreatAssessment:
         if not self.enabled:
             return {"score": -1, "level": "disabled", "details": []}
 
-        states = await self.ha.get_states()
+        try:
+            states = await asyncio.wait_for(self.ha.get_states(), timeout=10.0)
+        except asyncio.TimeoutError:
+            return {"score": -1, "level": "unknown", "details": ["HA-Timeout (10s)"]}
         if not states:
             return {"score": -1, "level": "unknown", "details": ["Keine HA-Daten verfügbar"]}
 

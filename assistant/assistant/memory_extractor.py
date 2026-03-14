@@ -6,9 +6,19 @@ extrahierte Fakten im Semantic Memory.
 
 import json
 import logging
+import re
 from typing import Optional
 
 from .config import settings, yaml_config
+
+# Injection-Schutz: Gleiches Pattern wie context_builder.py / correction_memory.py
+_INJECTION_PATTERN = re.compile(
+    r'\[(?:SYSTEM|INSTRUCTION|OVERRIDE|ADMIN|COMMAND|PROMPT|ROLE)\b'
+    r'|IGNORE\s+(?:ALL\s+)?(?:PREVIOUS\s+)?INSTRUCTIONS'
+    r'|SYSTEM\s*(?:MODE|OVERRIDE|INSTRUCTION)'
+    r'|<\/?(?:system|instruction|admin|role|prompt)\b',
+    re.IGNORECASE,
+)
 from .ollama_client import OllamaClient
 from .semantic_memory import SemanticFact, SemanticMemory
 
@@ -224,6 +234,19 @@ class MemoryExtractor:
 
         return True
 
+    @staticmethod
+    def _sanitize_for_extraction(text: str, max_len: int = 1000) -> str:
+        """Bereinigt User-Text gegen Prompt-Injection in der Fakten-Extraktion."""
+        if not text or not isinstance(text, str):
+            return ""
+        text = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+        text = re.sub(r'\s{2,}', ' ', text).strip()
+        text = text[:max_len]
+        if _INJECTION_PATTERN.search(text):
+            logger.warning("Prompt-Injection in Memory-Extraktion blockiert: %.80s", text)
+            return "[BLOCKIERT — verdaechtiger Input]"
+        return text
+
     def _format_conversation(
         self,
         user_text: str,
@@ -235,18 +258,21 @@ class MemoryExtractor:
         parts = []
 
         if person and person != "unknown":
-            parts.append(f"Person: {person}")
+            parts.append(f"Person: {self._sanitize_for_extraction(person, 50)}")
 
         if context:
             room = context.get("room", "")
             time_info = context.get("time", {})
             if room:
-                parts.append(f"Raum: {room}")
+                parts.append(f"Raum: {self._sanitize_for_extraction(room, 50)}")
             if time_info:
-                parts.append(f"Zeit: {time_info.get('datetime', '')}")
+                parts.append(f"Zeit: {self._sanitize_for_extraction(str(time_info.get('datetime', '')), 50)}")
 
-        parts.append(f"{person or 'User'}: {user_text}")
-        parts.append(f"Assistant: {assistant_response}")
+        # Sanitize user input against prompt injection
+        safe_user = self._sanitize_for_extraction(user_text)
+        safe_assistant = self._sanitize_for_extraction(assistant_response)
+        parts.append(f"{person or 'User'}: {safe_user}")
+        parts.append(f"Assistant: {safe_assistant}")
 
         conversation = "\n".join(parts)
         # Auf maximale Laenge begrenzen

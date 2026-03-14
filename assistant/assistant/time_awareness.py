@@ -515,6 +515,8 @@ class TimeAwareness:
         try:
             today = datetime.now().strftime("%Y-%m-%d")
             stored_date = await self.redis.get(KEY_COUNTER_DATE)
+            if isinstance(stored_date, bytes):
+                stored_date = stored_date.decode()
             if stored_date and stored_date != today:
                 # Neuer Tag -> alle Zaehler loeschen
                 keys = []

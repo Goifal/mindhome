@@ -477,7 +477,8 @@ class ContextBuilder:
                 if last_changed:
                     try:
                         changed_dt = datetime.fromisoformat(last_changed.replace("Z", "+00:00"))
-                        now_dt = datetime.now().astimezone() if changed_dt.tzinfo else datetime.now()
+                        # P06c DL3-CP8: Einheitliche TZ-Behandlung — immer aware
+                        now_dt = datetime.now(timezone.utc) if changed_dt.tzinfo else datetime.now()
                         diff_s = (now_dt - changed_dt).total_seconds()
                         if 0 <= diff_s < 7200:  # letzte 2 Stunden
                             name = _sanitize_for_prompt(

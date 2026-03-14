@@ -185,3 +185,4 @@ ha_breaker = registry.register("home_assistant", failure_threshold=5, recovery_t
 mindhome_breaker = registry.register("mindhome", failure_threshold=5, recovery_timeout=20)
 redis_breaker = registry.register("redis", failure_threshold=5, recovery_timeout=10)
 chromadb_breaker = registry.register("chromadb", failure_threshold=5, recovery_timeout=15)
+web_search_breaker = registry.register("web_search", failure_threshold=3, recovery_timeout=120)

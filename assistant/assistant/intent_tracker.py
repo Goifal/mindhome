@@ -418,11 +418,13 @@ class IntentTracker:
                         )
 
                     if self._notify_callback:
-                        await self._notify_callback({
+                        _result = self._notify_callback({
                             "type": "intent_reminder",
                             "intent": intent,
                             "text": reminder,
                         })
+                        if asyncio.iscoroutine(_result):
+                            await _result
 
                     logger.info("Intent-Erinnerung: %s", intent.get("intent", ""))
 

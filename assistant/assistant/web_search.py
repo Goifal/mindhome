@@ -39,6 +39,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 
+from .circuit_breaker import web_search_breaker
 from .config import yaml_config
 
 logger = logging.getLogger(__name__)
@@ -369,6 +370,11 @@ class WebSearch:
         if cached is not None:
             return cached
 
+        # P06d: Circuit Breaker — wiederholte Ausfaelle verhindern
+        if not web_search_breaker.try_acquire():
+            logger.warning("Web-Suche Circuit Breaker offen — ueberspringe")
+            return {"success": False, "message": "Web-Suche voruebergehend nicht verfuegbar."}
+
         try:
             if self.engine == "searxng":
                 results = await self._search_searxng(clean_query)
@@ -400,11 +406,13 @@ class WebSearch:
             }
             # F-079: Ergebnis cachen
             self._set_cached(clean_query, result)
+            web_search_breaker.record_success()
             return result
 
         except Exception as e:
             # F-078: Exception-Details NICHT an LLM/User leaken
             logger.error("Web-Suche fehlgeschlagen: %s", e)
+            web_search_breaker.record_failure()
             return {"success": False, "message": "Die Suche konnte nicht durchgefuehrt werden."}
 
     async def _search_searxng(self, query: str) -> list[dict]:

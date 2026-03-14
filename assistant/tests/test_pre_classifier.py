@@ -306,11 +306,11 @@ class TestEdgeCases:
         result = classifier.classify("Hallo")
         assert result.category == "general"
 
-    def test_question_mark_prevents_device_command(self, classifier):
-        """Fragezeichen am Ende verhindert Device-Command."""
+    def test_question_mark_alone_does_not_prevent_device_command(self, classifier):
+        """Imperativ-Befehl mit ? am Ende ist weiterhin ein Device-Command (DL3-AI2 Fix)."""
         result = classifier.classify("Schalte das Licht an?")
-        # '?' am Ende → ist eine Frage, kein Befehl
-        assert result.category != "device_command"
+        # Kein Fragewort → Befehl in rhetorischer Frageform → bleibt Device-Command
+        assert result.category == "device_command"
 
     def test_question_start_prevents_device_command(self, classifier):
         """'Ist/Sind/Wie/Was' am Anfang verhindert Device-Command."""

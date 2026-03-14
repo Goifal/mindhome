@@ -208,7 +208,8 @@ class ConversationMemory:
                 if name_lower in proj.get("name", "").lower():
                     return proj
             return None
-        except Exception:
+        except Exception as e:
+            logger.debug("ConversationMemory Lesefehler: %s", e)
             return None
 
     # ------------------------------------------------------------------
@@ -316,7 +317,8 @@ class ConversationMemory:
                 if search_lower in q.get("question", "").lower():
                     return q
             return None
-        except Exception:
+        except Exception as e:
+            logger.debug("ConversationMemory Lesefehler: %s", e)
             return None
 
     async def _cleanup_old_questions(self):
@@ -389,7 +391,8 @@ class ConversationMemory:
                 return None
             raw_str = raw.decode() if isinstance(raw, bytes) else raw
             return json.loads(raw_str)
-        except Exception:
+        except Exception as e:
+            logger.debug("ConversationMemory Lesefehler: %s", e)
             return None
 
     async def get_recent_summaries(self, days: int = 7) -> list[dict]:

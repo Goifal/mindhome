@@ -1895,13 +1895,13 @@ function fKeyValue(path, label, keyLabel='Schluessel', valLabel='Wert', hint='')
        <input type="text" class="kv-key" value="${esc(String(k))}" placeholder="${keyLabel}">
        <span class="kv-arrow">&#8594;</span>
        <input type="text" class="kv-val" value="${esc(v == null ? '' : String(v))}" placeholder="${valLabel}">
-       <button class="kv-rm" onclick="kvRemove(this,'${path}')" title="Entfernen">&#10005;</button>
+       <button class="kv-rm" onclick="kvRemove(this,'${esc(path)}')" title="Entfernen">&#10005;</button>
      </div>`
   ).join('');
   return `<div class="form-group"><label>${label}${helpBtn(path)}</label>
-    <div class="kv-editor" data-path="${path}">
+    <div class="kv-editor" data-path="${esc(path)}">
       ${rows}
-      <button class="kv-add" onclick="kvAdd(this,'${path}','${keyLabel}','${valLabel}')">+ Zuordnung</button>
+      <button class="kv-add" onclick="kvAdd(this,'${esc(path)}','${esc(keyLabel)}','${esc(valLabel)}')">+ Zuordnung</button>
     </div>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
 }
 function kvAdd(btn, path, keyLabel, valLabel) {
@@ -1909,10 +1909,10 @@ function kvAdd(btn, path, keyLabel, valLabel) {
   if (!editor) return;
   const row = document.createElement('div');
   row.className = 'kv-row';
-  row.innerHTML = `<input type="text" class="kv-key" placeholder="${keyLabel}">
+  row.innerHTML = `<input type="text" class="kv-key" placeholder="${esc(keyLabel)}">
     <span class="kv-arrow">&#8594;</span>
-    <input type="text" class="kv-val" placeholder="${valLabel}">
-    <button class="kv-rm" onclick="kvRemove(this,'${path}')" title="Entfernen">&#10005;</button>`;
+    <input type="text" class="kv-val" placeholder="${esc(valLabel)}">
+    <button class="kv-rm" onclick="kvRemove(this,'${esc(path)}')" title="Entfernen">&#10005;</button>`;
   editor.insertBefore(row, btn);
   kvSync(editor, path);
 }
@@ -4771,7 +4771,7 @@ async function loadKnownDevices() {
   if (!c) return;
   c.innerHTML = '<span style="color:var(--text-muted)">Lade Geräte...</span>';
   try {
-    const r = await fetch(`/api/ui/known-devices?token=${encodeURIComponent(TOKEN)}`);
+    const r = await fetch('/api/ui/known-devices', {headers: {'Authorization': `Bearer ${TOKEN}`}});
     if (!r.ok) { c.innerHTML = '<span style="color:var(--danger)">Fehler beim Laden</span>'; return; }
     const data = await r.json();
     const devices = data.devices || [];
@@ -4791,8 +4791,8 @@ async function loadKnownDevices() {
 async function removeKnownDevice(entityId) {
   if (!confirm('Geraet "' + entityId + '" aus der Liste entfernen? Beim naechsten Auftauchen wird es als unbekannt gemeldet.')) return;
   try {
-    await fetch(`/api/ui/known-devices?token=${encodeURIComponent(TOKEN)}`, {
-      method: 'DELETE', headers: {'Content-Type':'application/json'},
+    await fetch('/api/ui/known-devices', {
+      method: 'DELETE', headers: {'Content-Type':'application/json', 'Authorization': `Bearer ${TOKEN}`},
       body: JSON.stringify({entity_id: entityId})
     });
     loadKnownDevices();

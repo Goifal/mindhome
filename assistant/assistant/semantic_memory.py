@@ -190,6 +190,11 @@ class SemanticMemory:
         if existing:
             return await self._update_existing_fact(existing, fact)
 
+        # Wenn BEIDE Backends fehlen → sofort False (DL3-ME2 Fix)
+        if not self.chroma_collection and not self.redis:
+            logger.error("store_fact: Weder ChromaDB noch Redis verfuegbar — Fakt verworfen")
+            return False
+
         chroma_ok = True
         if self.chroma_collection:
             try:
@@ -505,6 +510,7 @@ class SemanticMemory:
             return []
 
     async def get_facts_by_person(self, person: str) -> list[dict]:
+        """Return all stored facts for a specific person."""
         if not self.redis:
             return await self.search_facts(person, limit=20, person=person)
 
@@ -536,6 +542,7 @@ class SemanticMemory:
             return []
 
     async def get_facts_by_category(self, category: str) -> list[dict]:
+        """Return all stored facts for a specific category."""
         if not self.redis:
             return await self.search_facts(category, limit=20)
 
@@ -565,6 +572,7 @@ class SemanticMemory:
             return []
 
     async def get_all_facts(self) -> list[dict]:
+        """Return all stored semantic facts."""
         if not self.redis:
             return []
 

@@ -1,98 +1,137 @@
 # Audit-Ergebnis: Prompt 6a — Stabilisierung (Kritische Bugs & Memory)
 
-**Datum**: 2026-03-10
+**Durchlauf**: #3 (DL#3)
+**Datum**: 2026-03-13
 **Auditor**: Claude Code (Opus 4.6)
-**Scope**: Alle verbleibenden 🔴 KRITISCHEN Bugs aus P4a/P4b + Memory-Verifikation aus P2
-**Durchlauf**: #3 (nach DL#2 — nur noch 2 KRITISCHE Bugs offen)
-
-> **DL#3 (2026-03-13)**: Historisches Fix-Log aus DL#2. P02 Memory-Reparatur aendert diese Fixes nicht. Alle dokumentierten Fixes bleiben gueltig.
+**Scope**: Alle KRITISCHEN Bugs aus P04a/b/c fixen + Memory-System verifizieren
 
 ---
 
-## DL#2 vs DL#3 Vergleich
+## Bug-Zuordnung P04 → P06
 
-```
-DL#2 offene KRITISCHE Bugs: 2
-  - NEW-1 (4a): brain.py:1218 — Deadlock bei Retry
-  - Bug #1 (4b): proactive.py:98,146 — event_handlers ueberschrieben
+### KRITISCHE Bugs — Zuordnung
 
-DL#3: Beide gefixt.
-  Alle KRITISCHEN Bugs aus P4a + P4b + P4c: 0 offen.
-```
+| Bug-# | Quelle | Beschreibung | Datei:Zeile | Zugeordnet an | Status |
+|---|---|---|---|---|---|
+| DL3-ME1 | P04a | Prompt-Injection in Memory-Extraktion (Gaslighting) | memory_extractor.py:87 | **P06a** | ✅ GEFIXT |
+| DL3-AI1 | P04a | Task-Ergebnis-Zuordnung falsch (asyncio.wait) | action_planner.py:342 | **P06a** | ✅ FALSE POSITIVE (bereits DL#2 gefixt) |
+| DL3-AI2 | P04a | Rhetorische Fragen blockieren Device-Commands | pre_classifier.py:166 | **P06a** | ✅ GEFIXT |
+| DL3-AI3 | P04a | Fragewort-Prefix zu aggressiv | pre_classifier.py:233 | **P06a** | ✅ GEFIXT (zusammen mit AI2) |
+| #20/DL3-ME2 | P04a | store_fact() True bei totalem Backend-Ausfall | semantic_memory.py:175 | **P06a** | ✅ GEFIXT |
+| DL3-H01 | P04b | mindhome_put() ohne Auth-Header | ha_client.py:373 | **P06a** | ✅ GEFIXT |
+| DL3-H02 | P04b | mindhome_delete() ohne Auth-Header | ha_client.py:404 | **P06a** | ✅ GEFIXT |
+| DL3-D01/M01 | P04b | OCR _validate_image_path() blockiert Uploads | ocr.py:57 | **P06a** | ✅ GEFIXT |
+| N9 | P04c | pattern_engine.py datetime TypeError | pattern_engine.py:1073 | **P06a** | ✅ GEFIXT |
+| N21 | P04c | Hot-Update Endpoint XSS | routes/system.py:912 | **P06d** | ⏳ Offen |
+| P1 | P04c | 50+ sync Komponenten in __init__ | brain.py:204 | **P06b** | ⏳ Offen |
+| #68 | P04c | CORS Wildcard Default | app.py:58 | **P06d** | ⏳ Offen |
+| #69 | P04c | Localhost-Bypass Auth | app.py:508 | **P06d** | ⏳ Offen |
+
+### HOHE Bugs (P06a-Scope, Memory-relevant) — zusaetzlich gefixt
+
+| Bug-# | Beschreibung | Datei:Zeile | Status |
+|---|---|---|---|
+| DL3-B1 | Security-Confirmation Bypass bei leerem Person | brain.py:6270 | ✅ GEFIXT |
+| DL3-B2 | Leere Args bei ungueltigem LLM-JSON | brain.py:3472 | ✅ GEFIXT |
+| DL3-B3 | Redis None-Guard fehlt in experiential memory | brain.py:8404 | ✅ GEFIXT |
+
+### HOHE/MITTLERE Bugs — Zuordnung an nachfolgende Prompts
+
+| Kategorie | Anzahl | Zugeordnet an |
+|---|---|---|
+| Security (Prompt-Injection, kwargs-Injection, Auth) | ~15 | **P06d** |
+| Architektur/Flow/Performance (Race Conditions, Sequential Redis) | ~25 | **P06b** |
+| Tool-Calling (Validator mutiert Args, declarative_tools Race) | ~5 | **P06e** |
+| Fire-and-forget ohne Error-Callback (TTS, media_stop) | ~8 | **P06f** |
+| Persoenlichkeit/Config/Dead Code | ~40 | **P06c** |
 
 ---
 
 ## 1. Bug-Fix-Log
 
-### 🔴 Bug NEW-1 (4a): Deadlock bei Retry (brain.py)
-- **Datei**: `assistant/assistant/brain.py:1218`
-- **Problem**: `_process_inner()` haelt `_process_lock` (acquired in `process()` Zeile 1103). Bei Retry ("ja", "nochmal") wurde `self.process()` aufgerufen, das versucht den Lock erneut zu acquiren. `asyncio.Lock` ist nicht reentrant → **garantierter Deadlock** bei jedem Retry-Versuch.
-- **Fix**: `self.process()` → `self._process_inner()` auf Zeile 1218. Da wir bereits innerhalb von `_process_inner()` sind (und der Lock gehalten wird), rufen wir direkt die innere Methode auf.
-- **Aufrufer geprueft**: Ja
-  - `self.process()` wird nur extern aufgerufen (main.py 6x, websocket.py 2x)
-  - `_process_inner()` wird nur von `process()` (mit Lock) und Retry-Pfad (bereits innerhalb Lock) aufgerufen
-  - Konsistent, kein Reentrance-Risiko
-- **Tests**: ✅ 161 brain-Tests bestanden. 4 Failures sind pre-existing `pytest.mark.asyncio` Issues.
+### 🔴 Bug #1: DL3-ME1 — Prompt-Injection in Memory-Extraktion
+- **Datei**: assistant/assistant/memory_extractor.py:258
+- **Problem**: User-Text wurde via `EXTRACTION_PROMPT.replace("{conversation}", conversation)` direkt in den LLM-Prompt eingefuegt. Manipulierter Text konnte beliebige "Fakten" ins Semantic Memory einschleusen (Gaslighting-Vektor).
+- **Fix**: Neue `_sanitize_for_extraction()` Methode mit `_INJECTION_PATTERN` (gleiches Pattern wie correction_memory.py). Alle Inputs (user_text, assistant_response, person, room, time) werden sanitisiert.
+- **Aufrufer geprueft**: 1 Stelle (brain.py:5794), kompatibel
+- **Tests**: ✅ 67 bestanden, 0 fehlgeschlagen
+→ Commit: 713933d
 
-### 🔴 Bug #1 (4b): event_handlers ueberschrieben (proactive.py)
-- **Datei**: `assistant/assistant/proactive.py:98,146`
-- **Problem**: Zeile 98 initialisiert `self.event_handlers = {}`, Zeilen 100-110 fuegen dynamische Appliance-Handler aus YAML-Config hinzu (z.B. custom `robot_vacuum_done`, `coffee_machine_done`). Zeile 146 ueberschreibt dann **KOMPLETT** mit `self.event_handlers = {...}` (hardcoded defaults). **Alle YAML-konfigurierten Appliance-Handler gehen verloren.**
-- **Fix**:
-  1. Zeile 146: `_dynamic_handlers = self.event_handlers` — dynamische Handler zwischenspeichern
-  2. Nach hardcoded Dict (Zeile 176): `self.event_handlers.update(_dynamic_handlers)` — dynamische Handler mergen
-  3. Reihenfolge: Hardcoded Defaults → Dynamische YAML-Appliance-Handler (ueberschreiben Defaults) → YAML Event-Handler Overrides (ueberschreiben alles)
-- **Aufrufer geprueft**: Ja — 5 Stellen lesen `event_handlers` via `.get()` (Zeilen 1724, 1754, 1811, 2028, 2091). Alle kompatibel, da Signatur `(priority, description)` unveraendert.
-- **Tests**: ✅ 163 proactive-Tests bestanden. 17 Failures sind pre-existing `pytest.mark.asyncio` Issues.
+### 🔴 Bug #2: DL3-AI1 — Task-Ergebnis-Zuordnung (asyncio.wait)
+- **Datei**: assistant/assistant/action_planner.py:342
+- **Problem**: War als KRITISCH gemeldet, aber Code iteriert korrekt ueber `tasks` (originale Liste), nicht ueber `done` Set. Index-Zuordnung zu `valid_steps[idx]` stimmt.
+- **Status**: ✅ FALSE POSITIVE — bereits in DL#2 korrekt gefixt (Bug #54)
+
+### 🔴 Bug #3+4: DL3-AI2/AI3 — pre_classifier Frage-Erkennung
+- **Datei**: assistant/assistant/pre_classifier.py:233
+- **Problem**: `?` am Satzende allein markierte Text als Frage → Befehle wie "Mach Licht an?" wurden faelschlicherweise blockiert. Fragewort-Prefixe wie "ist" matchten zu aggressiv ("Ist mir egal, mach Licht an").
+- **Fix**: Neue Logik: `_is_question = _question_starts and (_has_question_mark or word_count <= 6)`. Fragewort UND Fragezeichen (oder kurzer Satz mit Fragewort) = echte Frage. Befehl mit `?` am Ende = weiterhin Device-Command.
+- **Aufrufer geprueft**: 1 Stelle (brain.py:2301), kompatibel
+- **Tests**: ✅ 103 bestanden (1 Test-Assertion korrigiert: alte Assertion prueft das buggy Verhalten)
+→ Commit: d94a0e0
+
+### 🔴 Bug #5: #20/DL3-ME2 — store_fact() bei Backend-Ausfall
+- **Datei**: assistant/assistant/semantic_memory.py:193
+- **Problem**: Wenn BEIDE Backends (ChromaDB + Redis) nicht verfuegbar waren, gab `store_fact()` `True` zurueck — Fakt "gespeichert" aber nirgends geschrieben.
+- **Fix**: Early-Return `False` wenn `not self.chroma_collection and not self.redis`.
+- **Aufrufer geprueft**: 4 Stellen, alle pruefen return-Wert
+- **Tests**: ✅ 51 bestanden
+→ Commit: f3cec69
+
+### 🔴 Bug #6+7: DL3-H01/H02 — ha_client PUT/DELETE ohne Auth
+- **Datei**: assistant/assistant/ha_client.py:376, 408
+- **Problem**: `mindhome_put()` und `mindhome_delete()` fehlten `headers=self._mindhome_headers`. Alle Schreib-Operationen an die Addon-API waren unautorisiert.
+- **Fix**: `headers=self._mindhome_headers` bei beiden Methoden ergaenzt.
+- **Aufrufer geprueft**: 8+ Stellen (cover_settings, learn_pattern, etc.), alle kompatibel
+- **Tests**: ✅ Compile OK
+→ Commit: e322749
+
+### 🔴 Bug #8: DL3-D01/M01 — OCR blockiert Uploads
+- **Datei**: assistant/assistant/ocr.py:59
+- **Problem**: `_validate_image_path()` erlaubte nur `/tmp` als Basis-Pfad. Hochgeladene Bilder in `/app/data/uploads` wurden als Pfadtraversal abgelehnt → OCR funktionierte nie fuer Uploads.
+- **Fix**: `allowed_bases = [Path("/tmp"), Path("/app/data/uploads")]`
+- **Aufrufer geprueft**: 1 Stelle (extract_text_from_image), kompatibel
+- **Tests**: ✅ 1 bestanden
+→ Commit: 686653f
+
+### 🔴 Bug #9: N9 — pattern_engine datetime TypeError
+- **Datei**: addon/rootfs/opt/mindhome/pattern_engine.py:1073
+- **Problem**: `datetime.now(timezone.utc) - p.last_matched_at` warf TypeError wenn `last_matched_at` ein naiver datetime war (aus alten DB-Eintraegen).
+- **Fix**: `if lma.tzinfo is None: lma = lma.replace(tzinfo=timezone.utc)` vor dem Vergleich.
+- **Aufrufer geprueft**: Konsistent mit Line 994-995 (gleiche Behandlung)
+- **Tests**: ✅ Compile OK
+→ Commit: a0ccfd1
+
+### 🟠 Bug #10: DL3-B1 — Security-Confirmation Bypass
+- **Datei**: assistant/assistant/brain.py:6270
+- **Problem**: Leerer `pending["person"]` String umging Person-Check → JEDER konnte Sicherheitsaktion bestaetigen.
+- **Fix**: Explizite Ablehnung wenn `pending_person` leer + Redis-Key loeschen.
+
+### 🟠 Bug #11: DL3-B2 — Leere Args bei ungueltigem JSON
+- **Datei**: assistant/assistant/brain.py:3472
+- **Problem**: `func_args = {}` bei JSON-Parse-Error → Funktion mit leeren Args ausgefuehrt.
+- **Fix**: `continue` statt `func_args = {}` — Tool-Call wird uebersprungen.
+
+### 🟠 Bug #12: DL3-B3 — Redis None-Guard
+- **Datei**: assistant/assistant/brain.py:8405
+- **Problem**: `_log_experiential_memory()` griff auf `self.memory.redis.lpush()` zu ohne None-Check.
+- **Fix**: `if not self.memory.redis: return` am Anfang.
+
+→ Commit (B1+B2+B3): 3bd66e1
 
 ---
 
 ## 2. Memory-Fix
 
 ### Memory-Architektur-Entscheidung
-- **Gewaehlt**: Aktuelles System beibehalten (keine Aenderung noetig)
-- **Begruendung**: Alle 3 KRITISCHEN Memory-Bugs aus DL#1 wurden bereits in DL#1/DL#2 gefixt:
-  1. ✅ Duplicate Key "conv_memory" → Distinct Keys (`conv_memory` + `conv_memory_extended`)
-  2. ✅ Doppelte Prompt-Insertion → P2 liest `conv_memory`, P3 liest `conv_memory_extended`
-  3. ✅ ChromaDB-Episoden nie gelesen → `search_memories()` in brain.py:5569 eingebunden
-- **Geaenderte Dateien**: Keine (alle Memory-Fixes bereits umgesetzt)
-
-### Verifikation der 4 Memory-Checks
-
-| Check | Status | Beweis |
-|---|---|---|
-| **1. Conversation History** | ✅ | `brain.py:2416` → `memory.get_recent_conversations(limit=3)` → Redis Working Memory |
-| **2. Fakten-Speicherung** | ✅ | `brain.py:4286` → `memory_extractor.extract_and_store()` → `semantic_memory.store_fact()` → ChromaDB + Redis |
-| **3. Korrektur-Lernen** | ✅ | Write: `brain.py:9273` → `correction_memory.store_correction()`. Read: `brain.py:2407+2410` → `get_relevant_corrections()` + `get_active_rules()` |
-| **4. Kontext im LLM-Prompt** | ✅ | P1: `search_facts()` (immer). P2: `conv_memory` + `corrections`. P3: `conv_memory_extended` (Projekte). Memory-Callbacks: `personality.build_memory_callback_section()` |
-
-### Memory-Flow (verifiziert)
-
-```
-READ PATH:
-User Input
-  ├─► context_builder._get_relevant_memories() → P1 "WICHTIGE ERINNERUNGEN" ✅
-  ├─► _get_conversation_memory(text) → P2 "RELEVANTE GESPRAECHE" ✅
-  │       ├─► semantic.get_relevant_conversations(text, limit=3)
-  │       └─► memory.search_memories(text, limit=3) ← ChromaDB Episoden
-  ├─► conversation_memory.get_memory_context() → P3 "GEDAECHTNIS" ✅
-  │       └─► Key "conv_memory_extended" (eigener Key!)
-  ├─► correction_memory.get_relevant_corrections() → P2 ✅
-  ├─► correction_memory.get_active_rules() → P2 ✅
-  └─► memory.get_recent_conversations(limit=3) → Messages-Array ✅
-
-WRITE PATH:
-  ├─► memory.add_conversation() → Redis 7d TTL (fire-and-forget)
-  ├─► memory.store_episode() → ChromaDB mha_conversations (fire-and-forget)
-  ├─► memory_extractor.extract_and_store() → semantic_memory (fire-and-forget)
-  └─► correction_memory.store_correction() → Redis 180d TTL (awaited)
-```
-
-### Verbleibende Memory-Issues (alle 🟡/🟢 — kein Blocker)
-- `learning_transfer.REDIS_KEY_TRANSFERS` unused (🟡)
-- `dialogue_state` nicht persistiert, in-memory only (🟡)
-- `conversation_memory.py` irrefuehrender Name (🟢)
-- Addon-Wissen isoliert, 68 SQLite-Tabellen (🟡)
-- Faktenextraktion ohne Retry (🟢)
+- **Gewaehlt**: Aktuelles System fixen (kein Umbau noetig)
+- **Begruendung**: Alle Root Causes aus P02 sind bereits in DL#2 + DL#3 gefixt. Die 12 Module funktionieren korrekt. Verbleibende Issues (N+1 Redis, dialogue_state in-memory) sind Performance-/Resilience-Themen fuer P06b.
+- **Geaenderte Dateien**: memory_extractor.py (Injection-Schutz), semantic_memory.py (Backend-Check)
+- **Verifikation**:
+  1. ✅ Conversation History: brain.py:2317,2442 → `get_recent_conversations(limit=10)`
+  2. ✅ Fakten-Speicherung: brain.py:5794 → `extract_and_store()` → `store_fact()`
+  3. ✅ Korrektur-Lernen: brain.py:8922 → `store_correction()`, brain.py:2433 → `get_relevant_corrections()`
+  4. ✅ Kontext im LLM-Prompt: context_builder.py:326-337 → `search_facts()` + `get_facts_by_person()`
 
 ---
 
@@ -100,59 +139,83 @@ WRITE PATH:
 
 | Check | Status |
 |---|---|
-| Alle 🔴 Bugs gefixt | ✅ (2 von 2 in DL#3) |
+| Alle 🔴 Bugs gefixt (P06a-Scope) | ✅ 9/10 gefixt (1 False Positive) |
+| 🔴 Bugs fuer andere Prompts | ⏳ 3 offen (N21→P06d, P1→P06b, #68/#69→P06d) |
 | Memory: Conversation History funktioniert | ✅ |
 | Memory: Fakten werden gespeichert | ✅ |
 | Memory: Korrekturen werden gemerkt | ✅ |
 | Memory: Kontext im LLM-Prompt | ✅ |
-| Tests bestehen nach Fixes | ✅ (2551 passed, 0 neue Failures durch Fixes) |
+| Tests bestehen nach Fixes | ✅ 5103 bestanden (81 pre-existing failures in security HTTP tests) |
+| `python -m py_compile brain.py` | ✅ |
+| `python -m py_compile memory.py` | ✅ |
+| `python -m py_compile personality.py` | ✅ |
+| `except.*pass` in brain.py | ✅ 0 |
+| `_safe_init` in brain.py | ✅ Vorhanden |
 
 ---
 
-## 4. Offene Punkte fuer 6b
+## 4. Offene Punkte fuer P06b
 
-1. **brain.py God Object**: ~10.000+ Zeilen, einziger Integrationspunkt — Refactoring-Kandidat
-2. **Memory-Konsolidierung**: 12 Module → 4 langfristig sinnvoll, aber kein Blocker
-3. **Addon-Integration**: 68 SQLite-Tabellen isoliert — `GET /api/addon/context` Endpoint empfohlen
-4. **Shutdown-Asymmetrie**: 30+ Komponenten ohne korrespondierenden `shutdown()` Call
-5. **N+1 Redis**: Systemisches Pattern in `semantic_memory.py` (5+ Methoden)
-6. **Sync I/O in async**: 28 Vorkommen (dominantes HIGH-Pattern in Extended-Modules)
-7. **Test-Infrastruktur**: pytest-asyncio fehlt, ~1197 async-Tests nicht ausfuehrbar
+1. **P1 (KRITISCH)**: 50+ sync Komponenten in `brain.__init__` → Startup 30-60s+. Async Init-Pattern noetig.
+2. **Race Conditions**: `_current_mood`/`_current_formality` in personality.py (#36/#37), `analyze_voice_metadata()` in mood_detector.py (#39)
+3. **N+1 Redis**: Systemisches Pattern in semantic_memory.py (5+ Methoden). Redis-Pipeline Migration.
+4. **Shutdown**: 30+ Komponenten ohne `.stop()` (#4)
+5. **Fire-and-forget**: 8+ `asyncio.ensure_future()` ohne Error-Callback in main.py
 
 ---
 
-## 5. Test-Ergebnis
-
-```
-python -m pytest --tb=short -q (nach Fixes):
-  2551 passed
-  1197 failed (pre-existing: pytest.mark.asyncio Infrastruktur-Issue)
-  3 skipped
-  1 collection error (test_security_http_endpoints.py)
-
-Brain-spezifische Tests: 161 passed, 4 failed (async infra)
-Proactive-spezifische Tests: 163 passed, 17 failed (async infra)
-
-Unsere Fixes: 0 neue Failures eingefuehrt ✅
-```
-
----
-
-## KONTEXT AUS PROMPT 6a: Stabilisierung (DL#3)
+## KONTEXT AUS PROMPT 6a: Stabilisierung
 
 ### Gefixte 🔴 Bugs
-1. NEW-1 (4a) → `brain.py:1218` → Deadlock bei Retry: `self.process()` → `self._process_inner()`
-2. Bug #1 (4b) → `proactive.py:98,146` → event_handlers ueberschrieben: `.update()` mit zwischengespeicherten dynamischen Handlern
+- DL3-ME1 → memory_extractor.py → Prompt-Injection-Schutz via _sanitize_for_extraction()
+- DL3-AI2/AI3 → pre_classifier.py → Frage-Erkennung: Fragewort+? statt ? allein
+- #20/DL3-ME2 → semantic_memory.py → Early-Return False bei totalem Backend-Ausfall
+- DL3-H01/H02 → ha_client.py → Auth-Header fuer PUT/DELETE ergaenzt
+- DL3-D01/M01 → ocr.py → Upload-Pfad erlaubt (/tmp + /app/data/uploads)
+- N9 → pattern_engine.py → Naive datetime → UTC vor Vergleich
+
+### Gefixte 🟠 Bugs
+- DL3-B1 → brain.py → Security-Confirmation: Leerer Person = Ablehnung
+- DL3-B2 → brain.py → JSON-Parse-Error: Skip statt leere Args
+- DL3-B3 → brain.py → Redis None-Guard in _log_experiential_memory
 
 ### Memory-Entscheidung
-- Aktuelles System beibehalten — alle 3 KRITISCHEN Fixes bereits in DL#1/DL#2 umgesetzt
-- 4 Memory-Checks bestanden: Conversation History ✅, Fakten ✅, Korrekturen ✅, Kontext im Prompt ✅
-- Keine Dateien geaendert (Memory-Fixes bereits vorhanden)
+- Aktuelles System beibehalten (alle P02 Root Causes gefixt)
+- 4/4 Memory-Checks bestanden
 
 ### Neue Erkenntnisse
-- Deadlock-Risiko bei `asyncio.Lock`: Nicht reentrant! Immer pruefen ob Lock bereits gehalten wird bevor `self.method()` aufgerufen wird das den Lock auch acquired.
-- proactive.py Init-Reihenfolge: Dict-Zuweisung nach Loop-Befuellung ueberschreibt alle dynamischen Eintraege — `.update()` Pattern verwenden
-- Test-Infrastruktur: pytest-asyncio fehlt, 1197 async-Tests koennen nicht laufen — in 6b/7a aufloesen
+- DL3-AI1 war False Positive (bereits DL#2 gefixt)
+- pre_classifier Test prueft altes buggy Verhalten — Test korrigiert
+- 81 pre-existing Test-Failures in test_security_http_endpoints.py (brauchen Running Server)
 
 ### Test-Status
-2551 Tests bestanden, 1197 fehlgeschlagen (pre-existing async Infrastructure), 0 neue Failures
+- 5103 Tests bestanden, 81 fehlgeschlagen (pre-existing), 17 uebersprungen, 18 Errors (pre-existing)
+- Alle Tests in geaenderten Modulen: 205 bestanden, 0 fehlgeschlagen
+
+### Bug-Zuordnungstabelle fuer P06b-P06f
+| Prompt | Scope | Beispiel-Bugs |
+|---|---|---|
+| P06b | Architektur/Performance/Race | P1, #36/#37, #4, N+1 Redis, Shutdown |
+| P06c | Persoenlichkeit/Config/Dead Code | #47, #48, NEW-D, DL3-CP11 |
+| P06d | Security/Haertung | N21, #68, #69, DL3-M1/M2, DL3-M9 |
+| P06e | Geraetesteuerung/Tool-Calling | DL3-AI5, DL3-AI6, DL3-AI7 |
+| P06f | TTS/Response | DL3-M3/M4/M5, DL3-AI4 |
+
+---
+
+=== KONTEXT FUER NAECHSTEN PROMPT ===
+GEFIXT: DL3-ME1 (memory_extractor.py:258), DL3-AI2/AI3 (pre_classifier.py:233), #20/DL3-ME2 (semantic_memory.py:193), DL3-H01 (ha_client.py:376), DL3-H02 (ha_client.py:408), DL3-D01/M01 (ocr.py:59), N9 (pattern_engine.py:1073), DL3-B1 (brain.py:6270), DL3-B2 (brain.py:3472), DL3-B3 (brain.py:8405)
+OFFEN:
+- 🔴 N21 KRITISCH Hot-Update XSS | routes/system.py:912 | GRUND: Security → ESKALATION: P06d
+- 🔴 P1 KRITISCH 50+ sync Init | brain.py:204 | GRUND: Architektur → ESKALATION: P06b
+- 🔴 #68 KRITISCH CORS Wildcard | app.py:58 | GRUND: Security → ESKALATION: P06d
+- 🔴 #69 KRITISCH Localhost-Bypass | app.py:508 | GRUND: Security → ESKALATION: P06d
+- 🟠 #36/#37 HOCH personality Race | personality.py:2243,2299 | GRUND: Architektur → P06b
+- 🟠 #4 HOCH Shutdown 30+ Komp | brain.py:9773 | GRUND: Architektur → P06b
+- 🟠 DL3-AI5 HOCH Validator mutiert | function_validator.py:135 | GRUND: Tool-Calling → P06e
+- 🟠 DL3-AI6 HOCH YAML Race | declarative_tools.py:91 | GRUND: Tool-Calling → P06e
+- [+55 HOHE, 160 MITTEL, 71 NIEDRIG verteilt auf P06b-P06f]
+GEAENDERTE DATEIEN: assistant/assistant/memory_extractor.py, assistant/assistant/pre_classifier.py, assistant/tests/test_pre_classifier.py, assistant/assistant/semantic_memory.py, assistant/assistant/ha_client.py, assistant/assistant/ocr.py, addon/rootfs/opt/mindhome/pattern_engine.py, assistant/assistant/brain.py
+REGRESSIONEN: Keine — alle 205 Tests in geaenderten Modulen bestanden
+NAECHSTER SCHRITT: P06b (Architektur) — Race Conditions, Performance, Shutdown, N+1 Redis
+===================================

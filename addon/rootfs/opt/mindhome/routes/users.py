@@ -18,6 +18,14 @@ from flask import Blueprint, request, jsonify, Response, make_response, send_fro
 from sqlalchemy import func as sa_func, text
 
 from db import get_db_session, get_db_readonly
+
+
+def _require_auth():
+    """P06d: Require auth for user management routes."""
+    ingress_token = request.headers.get("X-Ingress-Token", "")
+    if not ingress_token:
+        return jsonify({"error": "Authentication required"}), 401
+    return None
 from helpers import (
     get_ha_timezone, local_now, utc_iso, sanitize_input, sanitize_dict,
     audit_log, is_debug_mode, set_debug_mode, get_setting, set_setting,
@@ -121,6 +129,9 @@ def api_get_users():
 @users_bp.route("/api/users", methods=["POST"])
 def api_create_user():
     """Create a new user."""
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     data = request.get_json() or {}
     if not data.get("name"):
         return jsonify({"error": "Name ist erforderlich"}), 400
@@ -162,6 +173,9 @@ def api_create_user():
 @users_bp.route("/api/users/<int:user_id>", methods=["PUT"])
 def api_update_user(user_id):
     """Update a user."""
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     data = request.json or {}
     with get_db_session() as session:
         user = session.get(User, user_id)
@@ -193,6 +207,9 @@ def api_update_user(user_id):
 @users_bp.route("/api/users/<int:user_id>", methods=["DELETE"])
 def api_delete_user(user_id):
     """Delete a user (soft delete)."""
+    auth_error = _require_auth()
+    if auth_error:
+        return auth_error
     with get_db_session() as session:
         user = session.get(User, user_id)
         if not user:

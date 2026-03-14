@@ -256,7 +256,9 @@ class ConflictResolver:
         now = time.time()
 
         # Alle kürzlichen Befehle anderer Personen in derselben Domain prüfen
-        for other_person, commands in self._recent_commands.items():
+        with self._commands_lock:
+            snapshot = dict(self._recent_commands)
+        for other_person, commands in snapshot.items():
             if other_person == person_lower:
                 continue
 

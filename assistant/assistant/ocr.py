@@ -53,12 +53,12 @@ def _validate_image_path(image_path: Path) -> bool:
     if dangerous_chars.intersection(name):
         logger.warning("F-045: Gefaehrliche Zeichen im Dateinamen: %s", name)
         return False
-    # Pfadtraversal verhindern
+    # Pfadtraversal verhindern — erlaubt /tmp UND Upload-Verzeichnis (DL3-D01 Fix)
     try:
         resolved = image_path.resolve()
-        allowed_base = Path("/tmp").resolve()
-        if not resolved.is_relative_to(allowed_base):
-            logger.warning("F-045: Pfadtraversal erkannt: %s", image_path)
+        allowed_bases = [Path("/tmp").resolve(), Path("/app/data/uploads").resolve()]
+        if not any(resolved.is_relative_to(base) for base in allowed_bases):
+            logger.warning("F-045: Pfadtraversal erkannt: %s (erlaubt: %s)", image_path, allowed_bases)
             return False
     except (OSError, ValueError):
         return False

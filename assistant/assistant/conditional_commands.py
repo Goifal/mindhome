@@ -208,6 +208,8 @@ class ConditionalCommands:
                         })
                     except Exception as e:
                         logger.error("Conditional Action fehlgeschlagen: %s", e)
+                        # Bei Fehler: one_shot NICHT loeschen, Aktion soll erneut versucht werden
+                        continue
 
                 # Zaehler erhöhen
                 cond["executed_count"] = cond.get("executed_count", 0) + 1
