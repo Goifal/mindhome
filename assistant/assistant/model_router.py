@@ -229,17 +229,24 @@ class ModelRouter:
             return bool(re.search(r'\b' + re.escape(keyword) + r'\b', text))
         return keyword in text
 
-    def select_model(self, text: str) -> str:
+    def get_tier(self, model: str) -> str:
+        """Gibt den Tier-Namen fuer ein Modell zurueck.
+
+        Wichtig wenn alle Tiers das gleiche Modell nutzen — dann kann
+        der Tier nicht mehr am Modellnamen abgelesen werden.
         """
-        Waehlt das passende Modell fuer die Anfrage (3 Stufen).
+        if model == self.model_fast and model != self.model_smart:
+            return "fast"
+        if model == self.model_deep and model != self.model_smart:
+            return "deep"
+        return "smart"
 
-        Routing-Logik:
-          1. Kurze Befehle mit Fast-Keywords → Fast (3B)
-          2. Deep-Keywords oder sehr lange Anfragen → Deep (32B)
-          3. Alles andere → Smart (14B)
+    def select_model_and_tier(self, text: str) -> tuple[str, str]:
+        """Waehlt Modell UND gibt den Tier-Namen zurueck.
 
-        Falls ein Modell nicht verfuegbar oder deaktiviert ist,
-        wird automatisch auf das naechstkleinere zurueckgefallen.
+        Returns:
+            Tuple (model_name, tier) wobei tier 'fast', 'smart' oder 'deep' ist.
+            Wichtig fuer korrekten num_ctx wenn alle Tiers das gleiche Modell nutzen.
         """
         text_lower = text.lower().strip()
         word_count = len(text_lower.split())
@@ -249,7 +256,7 @@ class ModelRouter:
             for keyword in self.fast_keywords:
                 if self._word_match(keyword, text_lower):
                     logger.debug("FAST model fuer: '%s' (keyword: %s)", text, keyword)
-                    return self.model_fast
+                    return self.model_fast, "fast"
 
         # 2. Deep-Keywords -> Deep-Modell
         for keyword in self.deep_keywords:
@@ -257,14 +264,14 @@ class ModelRouter:
                 model = self._cap_model(self.model_deep)
                 logger.debug("DEEP model fuer: '%s' (keyword: %s, actual: %s)",
                              text, keyword, model)
-                return model
+                return model, "deep"
 
         # 3. Sehr lange Anfragen (>15 Woerter) -> Deep
         if word_count >= self.deep_min_words:
             model = self._cap_model(self.model_deep)
             logger.debug("DEEP model fuer lange Anfrage (%d Woerter): '%s' (actual: %s)",
                          word_count, text[:80], model)
-            return model
+            return model, "deep"
 
         # 4. Fragen -> schlaues Modell
         if any(text_lower.startswith(w) for w in [
@@ -272,11 +279,16 @@ class ModelRouter:
         ]):
             model = self._cap_model(self.model_smart)
             logger.debug("SMART model fuer Frage: '%s' (actual: %s)", text, model)
-            return model
+            return model, "smart"
 
         # Default: schlaues Modell
         model = self._cap_model(self.model_smart)
         logger.debug("SMART model (default) fuer: '%s' (actual: %s)", text, model)
+        return model, "smart"
+
+    def select_model(self, text: str) -> str:
+        """Waehlt das passende Modell (Rueckwaertskompatibel, ohne Tier)."""
+        model, _tier = self.select_model_and_tier(text)
         return model
 
     def get_fallback_model(self, current_model: str) -> str:

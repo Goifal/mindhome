@@ -234,24 +234,51 @@ class OllamaClient:
         self._session: Optional[aiohttp.ClientSession] = None
         self._session_lock: asyncio.Lock = asyncio.Lock()
 
-    def num_ctx_for(self, model: str) -> int:
+    def num_ctx_for(self, model: str, tier: str = "") -> int:
         """Liest num_ctx pro Modell-Tier aus yaml_config.
+
+        Args:
+            model: Modellname (fuer Rueckwaertskompatibilitaet)
+            tier: Expliziter Tier-Name ('fast', 'smart', 'deep', 'notify').
+                  Wenn gesetzt, wird dieser statt Modellname-Matching verwendet.
+                  Wichtig wenn alle Tiers das gleiche Modell nutzen.
 
         Konfigurierbar in settings.yaml:
           ollama:
             num_ctx_fast: 2048
             num_ctx_smart: 4096
             num_ctx_deep: 8192
+
+        Wenn alle Tiers das gleiche Modell nutzen, wird der hoechste
+        num_ctx verwendet (smart oder deep), damit Ollama das Modell
+        nicht staendig mit verschiedenen Kontextgroessen neu laden muss.
         """
         from .config import yaml_config
         ollama_cfg = yaml_config.get("ollama") or {}
 
-        if model == settings.model_fast:
+        # Wenn alle Tiers das gleiche Modell nutzen: einheitlichen num_ctx verwenden
+        # damit Ollama nicht staendig zwischen verschiedenen ctx-Groessen wechselt
+        _all_same = (settings.model_fast == settings.model_smart == settings.model_deep)
+        if _all_same:
+            # Hoechsten konfigurierten Wert nehmen (smart als Standard)
+            return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
+
+        # Tier-basiertes Matching (praeziser als Modellname wenn Tiers verschieden)
+        if tier == "fast":
             return int(ollama_cfg.get("num_ctx_fast", self._DEFAULT_NUM_CTX_FAST))
-        elif model == settings.model_deep:
+        elif tier == "deep":
             return int(ollama_cfg.get("num_ctx_deep", self._DEFAULT_NUM_CTX_DEEP))
-        elif model == settings.model_notify:
-            # Notify-Modell: Eigener ctx oder Fallback auf Fast-Wert (Notifications sind kurz)
+        elif tier == "notify":
+            return int(ollama_cfg.get("num_ctx_notify", ollama_cfg.get("num_ctx_fast", self._DEFAULT_NUM_CTX_FAST)))
+        elif tier == "smart":
+            return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
+
+        # Fallback: Modellname-Matching (Rueckwaertskompatibilitaet)
+        if model == settings.model_fast and model != settings.model_smart:
+            return int(ollama_cfg.get("num_ctx_fast", self._DEFAULT_NUM_CTX_FAST))
+        elif model == settings.model_deep and model != settings.model_fast:
+            return int(ollama_cfg.get("num_ctx_deep", self._DEFAULT_NUM_CTX_DEEP))
+        elif model == settings.model_notify and model != settings.model_fast:
             return int(ollama_cfg.get("num_ctx_notify", ollama_cfg.get("num_ctx_fast", self._DEFAULT_NUM_CTX_FAST)))
         else:
             return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
@@ -317,6 +344,7 @@ class OllamaClient:
         temperature: float = LLM_DEFAULT_TEMPERATURE,
         max_tokens: int = LLM_DEFAULT_MAX_TOKENS,
         think: Optional[bool] = None,
+        tier: str = "",
     ) -> dict:
         """
         Sendet eine Chat-Anfrage an Ollama.
@@ -328,6 +356,8 @@ class OllamaClient:
             temperature: Kreativitaet (0.0 - 1.0)
             max_tokens: Maximale Antwort-Laenge
             think: LLM Thinking Mode (True/False/None=auto)
+            tier: Expliziter Tier-Name ('fast','smart','deep','notify')
+                  fuer korrekten num_ctx wenn alle Modelle gleich sind
 
         Returns:
             Ollama API Response dict
@@ -353,7 +383,7 @@ class OllamaClient:
             "stream": False,
             "keep_alive": self.keep_alive,
             "options": _model_options(
-                model, temperature, max_tokens, self.num_ctx_for(model),
+                model, temperature, max_tokens, self.num_ctx_for(model, tier=tier),
                 think_enabled=think_enabled or False,
             ),
         }
@@ -418,6 +448,7 @@ class OllamaClient:
         temperature: float = LLM_DEFAULT_TEMPERATURE,
         max_tokens: int = LLM_DEFAULT_MAX_TOKENS,
         think: Optional[bool] = None,
+        tier: str = "",
     ):
         """
         Streaming Chat — gibt Token-für-Token zurück (async generator).
@@ -451,7 +482,7 @@ class OllamaClient:
             "stream": True,
             "keep_alive": self.keep_alive,
             "options": _model_options(
-                model, temperature, max_tokens, self.num_ctx_for(model),
+                model, temperature, max_tokens, self.num_ctx_for(model, tier=tier),
                 think_enabled=think_enabled or False,
             ),
         }

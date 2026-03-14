@@ -884,6 +884,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         tools=None, max_tokens: int = 384,
         stream_callback=None, timeout: float = 60.0,
         think: bool = None,
+        tier: str = "",
     ) -> dict:
         """LLM-Call mit automatischer Fallback-Kaskade (Deep -> Smart -> Fast).
 
@@ -898,6 +899,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     async for token in self.ollama.stream_chat(
                         messages=messages, model=current,
                         max_tokens=max_tokens, think=think,
+                        tier=tier,
                     ):
                         if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
                             stream_error = True
@@ -916,6 +918,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         self.ollama.chat(
                             messages=messages, model=current,
                             tools=tools, max_tokens=max_tokens, think=think,
+                            tier=tier,
                         ),
                         timeout=timeout,
                     )
@@ -2325,6 +2328,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 _kfp_messages, _kfp_model,
                 stream_callback=stream_callback,
                 think=_kfp_think,
+                tier="deep" if _knowledge_needs_deep else "smart",
             )
             response_text = self._filter_response(_cascade["text"])
             model = _cascade["model"]
@@ -2514,7 +2518,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         context["mood"] = mood_result
 
         # 3. Modell waehlen (mit kontext-basiertem Upgrade)
-        model = self.model_router.select_model(text)
+        model, _model_tier = self.model_router.select_model_and_tier(text)
 
         # 3a. Gesprächsmodus erkennen (VOR Deep-Upgrade, damit Intelligence-
         # Features im Gespraechsmodus nicht unnoetig auf Deep eskalieren).
@@ -2677,7 +2681,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Reserve 800 Tokens fuer LLM-Antwort, Rest steht fuer Prompt zur Verfuegung.
         # max_context_tokens in settings.yaml dient nur noch als OBERGRENZE (Cap),
         # nicht als fixer Wert — so skaliert das Budget mit dem Modell.
-        ollama_num_ctx = self.ollama.num_ctx_for(model)
+        ollama_num_ctx = self.ollama.num_ctx_for(model, tier=_model_tier)
         effective_max = ollama_num_ctx - 800
         _configured_max = context_cfg.get("max_context_tokens", 0)
         if _configured_max and _configured_max < effective_max:
@@ -3145,7 +3149,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Token-Budget Debug-Logging
         _total_prompt_tokens = sum(_estimate_tokens(m.get("content", "")) for m in messages)
-        _model_ctx = self.ollama.num_ctx_for(model)
+        _model_ctx = self.ollama.num_ctx_for(model, tier=_model_tier)
         logger.info(
             "Prompt-Budget: ~%d Tokens in %d Messages, num_ctx=%d (%.0f%% belegt)",
             _total_prompt_tokens, len(messages), _model_ctx,
@@ -3207,6 +3211,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _cascade = await self._llm_with_cascade(
                 messages, _knowledge_model, stream_callback=stream_callback,
                 think=_knowledge_think,
+                tier="deep" if _knowledge_needs_deep else "smart",
             )
             response_text = self._filter_response(_cascade["text"])
             model = _cascade["model"]
@@ -3241,6 +3246,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _cascade = await self._llm_with_cascade(
                 memory_messages, model, stream_callback=stream_callback,
                 think=False,
+                tier="smart",
             )
             response_text = self._filter_response(_cascade["text"])
             model = _cascade["model"]
@@ -3336,6 +3342,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 max_tokens=response_tokens,
                 timeout=float(llm_timeout),
                 think=_think_mode,
+                tier=_model_tier,
             )
             if _cascade["error"]:
                 _err = "Mein Sprachmodell reagiert nicht. Versuch es gleich nochmal."
