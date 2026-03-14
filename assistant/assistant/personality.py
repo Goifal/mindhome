@@ -249,6 +249,7 @@ GERAETESTEUERUNG — PFLICHT:
 - Schalter/Steckdose → set_switch(entity_id, state)
 - Mehrere Geraete = mehrere Tool-Calls in EINER Antwort.
 - Status abfragen → get_entity_state(entity_id)
+ANTWORT-HYGIENE: Schreibe NIEMALS interne Begriffe in deine Antwort: 'speak', 'tts', 'emit', 'tool_call', 'set_light', 'set_cover', JSON-Objekte, Code. Der User hoert NUR natuerliche Sprache.
 
 ANTWORTFORMAT:
 Befehl: Max {max_sentences} Saetze. Kurz. "Erledigt." Nie dieselbe Bestaetigung zweimal.

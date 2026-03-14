@@ -4988,6 +4988,36 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             else:
                 return ""
 
+        # 0e. Meta-Leakage entfernen: LLM gibt interne Begriffe/Funktionsnamen aus
+        # Qwen 3.5 neigt dazu, Funktionsnamen wie "speak" oder "set_light" in den
+        # Antwort-Text zu schreiben. Bei TTS wird das dann vorgelesen.
+        _meta_leak_patterns = [
+            r'\bspeak\b', r'\btts\b', r'\bemit\b',
+            r'\btool_call\b', r'\bfunction_call\b',
+            r'\bset_light\b', r'\bset_cover\b', r'\bset_climate\b',
+            r'\bset_switch\b', r'\bplay_media\b', r'\bset_vacuum\b',
+            r'\bactivate_scene\b', r'\barm_security_system\b',
+            r'\bget_lights\b', r'\bget_covers\b', r'\bget_climate\b',
+            r'\bget_switches\b', r'\bget_house_status\b', r'\bget_weather\b',
+            r'\bget_entity_state\b', r'\bget_entity_history\b',
+            r'\bspeak_response\b', r'\bemit_speaking\b', r'\bemit_action\b',
+            r'\bcall_service\b', r'\bcall_ha_service\b',
+            r'\brun_scene\b', r'\brun_script\b', r'\brun_automation\b',
+            r'<tool_call>.*?</tool_call>',
+            r'\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:.*?\}',
+        ]
+        for _ml_pat in _meta_leak_patterns:
+            _new = re.sub(_ml_pat, '', text, flags=re.IGNORECASE | re.DOTALL)
+            if _new != text:
+                logger.info("Meta-Leakage entfernt: %s", _ml_pat[:30])
+            text = _new
+        # Bereinigung: Mehrfach-Leerzeichen und leere Klammern
+        text = re.sub(r'\s{2,}', ' ', text).strip()
+        text = re.sub(r'\(\s*\)', '', text).strip()
+        text = re.sub(r'^\s*[,;:\-\u2013\u2014]\s*', '', text).strip()
+        if text:
+            text = text[0].upper() + text[1:]
+
         # 1. Banned Phrases komplett entfernen
         # NUR Phrasen die den JARVIS-Charakter brechen (KI-Identitaet, LLM-Floskeln).
         # Natuerliche Gespraechselemente werden NICHT mehr geblockt.
@@ -5414,10 +5444,21 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                en_hits, de_hits, text)
                 return ""
 
+        # P06f Fix 0: Jarvis-Fallback wenn Text nach Filterung leer/zu kurz ist
+        if not text or len(text.strip()) < 5:
+            import random
+            _jarvis_fallbacks = [
+                "Erledigt.", "Wie gewünscht.", "Wird gemacht.",
+                "Umgesetzt.", "Verstanden.", "Notiert.",
+                "Sir?", "Systeme bereit.",
+            ]
+            text = random.choice(_jarvis_fallbacks)
+            logger.info("Floskeln-Fallback aktiviert: '%s' (original: '%s')", text, original[:80])
+
         if text != original:
             logger.debug("Response-Filter: '%s' -> '%s'", original[:80], text[:80])
 
-        return text if text else ""
+        return text
 
     @staticmethod
     def _calculate_llm_voice_score(text: str, conversation_mode: bool = False) -> int:

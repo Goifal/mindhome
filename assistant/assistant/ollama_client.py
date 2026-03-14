@@ -93,6 +93,22 @@ def validate_notification(text: str) -> str:
 
     text = text.strip()
 
+    # --- Check 0: Meta-Leakage (interne Funktionsnamen/Begriffe) entfernen ---
+    # P06f: Qwen 3.5 kann tool_call/speak/emit in Notifications leaken
+    import re as _re
+    text = _re.sub(
+        r'\b(?:speak|tts|emit|tool_call|function_call|call_service'
+        r'|speak_response|emit_speaking|emit_action'
+        r'|set_light|set_cover|set_climate|set_switch|set_vacuum'
+        r'|play_media|get_lights|get_covers|get_climate|get_switches'
+        r'|get_house_status|get_weather|get_entity_state'
+        r'|run_scene|run_script|call_ha_service)\b',
+        '', text, flags=_re.IGNORECASE,
+    )
+    text = _re.sub(r'\s{2,}', ' ', text).strip()
+    if not text:
+        return ""
+
     # --- Check 1: Meta-Kommentar / Reasoning erkannt ---
     text_lower = text.lower()
     meta_hits = sum(1 for m in _META_MARKERS if m in text_lower)

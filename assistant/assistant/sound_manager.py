@@ -539,6 +539,24 @@ class SoundManager:
         except Exception as e:
             logger.debug("Speaker volume state retrieval failed: %s", e)
 
+        # P06f: Pre-TTS-Filter — Meta-Begriffe entfernen bevor Text gesprochen wird
+        # Sicherheitsnetz falls _filter_response etwas durchlaesst
+        import re as _re
+        text = _re.sub(
+            r'\b(?:speak|tts|emit|tool_call|function_call|call_service'
+            r'|speak_response|emit_speaking|emit_action'
+            r'|set_light|set_cover|set_climate|set_switch|set_vacuum'
+            r'|play_media|activate_scene|arm_security_system'
+            r'|get_lights|get_covers|get_climate|get_switches'
+            r'|get_house_status|get_weather|get_entity_state'
+            r'|run_scene|run_script|run_automation|call_ha_service)\b',
+            '', text, flags=_re.IGNORECASE,
+        ).strip()
+        text = _re.sub(r'\s{2,}', ' ', text).strip()
+        if not text:
+            logger.warning("Pre-TTS-Filter hat gesamten Text entfernt — Fallback")
+            text = "Erledigt."
+
         # SSML-Text bevorzugen, sonst Plaintext
         speak_text = tts_data.get("ssml", text) if tts_data.get("ssml") else text
 

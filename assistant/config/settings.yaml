@@ -489,6 +489,8 @@ model_profiles:
       Statt 'Natuerlich, ich schalte das Licht ein!' sagst du 'Erledigt.'
       Statt 'Gerne! Die Temperatur betraegt...' sagst du '22 Grad.'
       NIEMALS mit 'Also,' oder 'Grundsaetzlich' anfangen.
+      NIEMALS interne Begriffe wie 'speak', 'tts', 'emit', 'tool_call'
+      oder Funktionsnamen in die Antwort schreiben.
   qwen3:
     supports_think_tags: true
     supports_think_with_tools: false
