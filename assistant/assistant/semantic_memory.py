@@ -309,21 +309,32 @@ class SemanticMemory:
     async def _check_contradiction(self, new_fact: SemanticFact) -> Optional[dict]:
         """Prueft ob ein neuer Fakt einem bestehenden widerspricht.
 
-        Sucht nach Fakten der gleichen Person + Kategorie die semantisch
-        aehnlich aber inhaltlich anders sind (z.B. unterschiedliche Zahlen
-        fuer die gleiche Praeferenz).
+        Sucht nach Fakten der gleichen Person die semantisch aehnlich aber
+        inhaltlich anders sind (z.B. unterschiedliche Zahlen, Gegensaetze).
+        Prueft zuerst innerhalb der gleichen Kategorie, dann ueber alle
+        Kategorien der Person hinweg (z.B. preference vs habit).
         """
         if not self.chroma_collection:
             return None
 
+        # Zwei Durchlaeufe: 1) gleiche Kategorie, 2) nur gleiche Person
+        _filters = [
+            {"$and": [{"person": new_fact.person}, {"category": new_fact.category}]},
+            {"person": new_fact.person},
+        ]
+
+        for where_filter in _filters:
+            result = await self._check_contradiction_with_filter(new_fact, where_filter)
+            if result:
+                return result
+
+        return None
+
+    async def _check_contradiction_with_filter(
+        self, new_fact: SemanticFact, where_filter: dict
+    ) -> Optional[dict]:
+        """Prueft Widersprueche mit einem bestimmten Filter."""
         try:
-            # Suche nach aehnlichen Fakten der gleichen Person+Kategorie
-            where_filter = {
-                "$and": [
-                    {"person": new_fact.person},
-                    {"category": new_fact.category},
-                ]
-            }
             results = await asyncio.to_thread(
                 self.chroma_collection.query,
                 query_texts=[new_fact.content],

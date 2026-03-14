@@ -322,9 +322,13 @@ class ContextBuilder:
         min_confidence = float(mem_cfg.get("min_confidence_for_context", 0.4))
 
         try:
-            # Fakten die zur aktuellen Anfrage passen
+            # Erwähnte Person erkennen: "Was mag Lisa?" → Lisa-Fakten holen
+            mentioned_person = self._detect_mentioned_person(user_text)
+
+            # Fakten die zur aktuellen Anfrage passen (ohne Person-Filter,
+            # damit auch Fakten ueber andere Personen gefunden werden)
             relevant = await self.semantic.search_facts(
-                query=user_text, limit=max_relevant, person=person or None
+                query=user_text, limit=max_relevant, person=None
             )
             memories["relevant_facts"] = [
                 sanitized for f in relevant
@@ -332,7 +336,17 @@ class ContextBuilder:
                 and (sanitized := _sanitize_for_prompt(f["content"], 500, "semantic_fact"))
             ]
 
-            # Allgemeine Fakten über die Person (Praeferenzen)
+            # Fakten ueber die erwaehnte Person (z.B. "Was mag Lisa?")
+            if mentioned_person and mentioned_person.lower() != (person or "").lower():
+                mentioned_facts = await self.semantic.get_facts_by_person(mentioned_person)
+                for f in mentioned_facts[:max_person]:
+                    content = f.get("content", "")
+                    if (f.get("confidence", 0) >= min_confidence
+                            and (sanitized := _sanitize_for_prompt(content, 500, "person_fact"))
+                            and sanitized not in memories["relevant_facts"]):
+                        memories["relevant_facts"].append(sanitized)
+
+            # Allgemeine Fakten über den fragenden User (Praeferenzen)
             if person:
                 person_facts = await self.semantic.get_facts_by_person(person)
                 memories["person_facts"] = [
@@ -344,6 +358,39 @@ class ContextBuilder:
             logger.error("Fehler beim Laden semantischer Erinnerungen: %s", e)
 
         return memories
+
+    @staticmethod
+    def _detect_mentioned_person(text: str) -> str:
+        """Erkennt ob im Text eine andere Person erwaehnt wird.
+
+        Prueft gegen bekannte Haushaltsmitglieder aus der Konfiguration.
+        """
+        text_lower = text.lower()
+
+        # Bekannte Personen aus household config
+        household = yaml_config.get("household") or {}
+        known_names = set()
+
+        primary = (household.get("primary_user") or "").strip().lower()
+        if primary:
+            known_names.add(primary)
+
+        for m in household.get("members") or []:
+            name = (m.get("name") or "").strip().lower()
+            if name:
+                known_names.add(name)
+
+        # Auch aus persons.titles
+        titles = (yaml_config.get("persons") or {}).get("titles") or {}
+        for name in titles:
+            known_names.add(name.lower())
+
+        # Laengste Namen zuerst prüfen (um "Max" nicht vor "Maximilian" zu matchen)
+        for name in sorted(known_names, key=len, reverse=True):
+            if name in text_lower:
+                return name
+
+        return ""
 
     def _extract_house_status(self, states: list[dict]) -> dict:
         """Extrahiert den Haus-Status aus HA States."""

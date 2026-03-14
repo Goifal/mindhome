@@ -453,6 +453,39 @@ class TestContradictionDetection:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_contradiction_cross_category(self, semantic, chroma_mock):
+        """Widerspruch ueber Kategorie-Grenzen: preference vs habit."""
+        # Erster Aufruf (gleiche Kategorie) findet nichts
+        # Zweiter Aufruf (nur Person) findet den Widerspruch
+        call_count = [0]
+        def _query_side_effect(**kwargs):
+            call_count[0] += 1
+            where = kwargs.get("where", {})
+            # Erster Aufruf: category + person Filter -> nichts
+            if isinstance(where, dict) and "$and" in where:
+                return {"documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]]}
+            # Zweiter Aufruf: nur person Filter -> findet alten Fakt
+            return {
+                "documents": [["Max mag Kaffee"]],
+                "metadatas": [[{"category": "preference", "person": "Max"}]],
+                "distances": [[0.3]],
+                "ids": [["fact_old"]],
+            }
+
+        chroma_mock.query = MagicMock(side_effect=_query_side_effect)
+
+        fact = SemanticFact(
+            content="Max hasst Kaffee",
+            category="habit",
+            person="Max",
+        )
+        result = await semantic._check_contradiction(fact)
+
+        assert result is not None
+        assert result["fact_id"] == "fact_old"
+        assert "mag" in result["content"]
+
+    @pytest.mark.asyncio
     async def test_contradiction_no_chroma(self, semantic_no_backends):
         fact = SemanticFact(content="Test 42", category="general")
         result = await semantic_no_backends._check_contradiction(fact)
