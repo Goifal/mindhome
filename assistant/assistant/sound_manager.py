@@ -570,6 +570,9 @@ class SoundManager:
 
         # Alexa/Echo: Keine Audio-Dateien, stattdessen Alexa-eigener TTS
         if self._is_alexa_speaker(speaker_entity):
+            # Alexa versteht kein SSML ueber notify.alexa_media — immer Plaintext
+            # Sonst werden <prosody rate="105%"> etc. woertlich vorgelesen
+            alexa_text = text  # Immer den gefilterten Plaintext verwenden
             # Volume trotzdem setzen (fire-and-forget)
             if old_volume is None or abs(old_volume - volume) > 0.01:
                 task = asyncio.create_task(self.ha.call_service(
@@ -583,7 +586,7 @@ class SoundManager:
                     if exc:
                         logger.debug("Alexa Volume-Set fehlgeschlagen: %s", exc)
                 task.add_done_callback(_log_volume_error)
-            return await self._speak_via_alexa(speak_text, speaker_entity)
+            return await self._speak_via_alexa(alexa_text, speaker_entity)
 
         # TTS-Entity finden (T-3: gecacht nach erstem Lookup)
         tts_entity = await self._find_tts_entity()
