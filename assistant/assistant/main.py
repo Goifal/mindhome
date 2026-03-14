@@ -5599,9 +5599,14 @@ async def ui_knowledge_upload(file: UploadFile = File(...), token: str = Form(""
 
     # Sicheren Dateinamen erzeugen
     safe_name = Path(file.filename).name.replace("/", "_").replace("\\", "_")
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Ungueltiger Dateiname")
     kb_dir = Path(__file__).parent.parent / "config" / "knowledge"
     kb_dir.mkdir(parents=True, exist_ok=True)
     target = kb_dir / safe_name
+    # P06d: Path-Traversal-Schutz (analog zu Workshop F-087)
+    if not target.resolve().is_relative_to(kb_dir.resolve()):
+        raise HTTPException(status_code=400, detail="Ungueltiger Dateipfad")
 
     # Datei speichern
     target.write_bytes(content)
@@ -5724,9 +5729,14 @@ async def ui_recipes_upload(file: UploadFile = File(...), token: str = Form(""))
         raise HTTPException(status_code=413, detail=f"Datei zu gross (max {mb} MB)")
 
     safe_name = Path(file.filename).name.replace("/", "_").replace("\\", "_")
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Ungueltiger Dateiname")
     recipe_dir = Path(__file__).parent.parent / "config" / "recipes"
     recipe_dir.mkdir(parents=True, exist_ok=True)
     target = recipe_dir / safe_name
+    # P06d: Path-Traversal-Schutz (analog zu Workshop F-087)
+    if not target.resolve().is_relative_to(recipe_dir.resolve()):
+        raise HTTPException(status_code=400, detail="Ungueltiger Dateipfad")
 
     target.write_bytes(content)
 
