@@ -4993,26 +4993,36 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # 0e. Meta-Leakage entfernen: LLM gibt interne Begriffe/Funktionsnamen aus
         # Qwen 3.5 neigt dazu, Funktionsnamen wie "speak" oder "set_light" in den
         # Antwort-Text zu schreiben. Bei TTS wird das dann vorgelesen.
-        _meta_leak_patterns = [
-            r'\bspeak\b', r'\btts\b', r'\bemit\b',
-            r'\btool_call\b', r'\bfunction_call\b',
-            r'\bset_light\b', r'\bset_cover\b', r'\bset_climate\b',
-            r'\bset_switch\b', r'\bplay_media\b', r'\bset_vacuum\b',
-            r'\bactivate_scene\b', r'\barm_security_system\b',
-            r'\bget_lights\b', r'\bget_covers\b', r'\bget_climate\b',
-            r'\bget_switches\b', r'\bget_house_status\b', r'\bget_weather\b',
-            r'\bget_entity_state\b', r'\bget_entity_history\b',
-            r'\bspeak_response\b', r'\bemit_speaking\b', r'\bemit_action\b',
-            r'\bcall_service\b', r'\bcall_ha_service\b',
-            r'\brun_scene\b', r'\brun_script\b', r'\brun_automation\b',
-            r'<tool_call>.*?</tool_call>',
-            r'\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:.*?\}',
+        # Strategie: Ganze Saetze verwerfen die Meta-Begriffe enthalten,
+        # statt nur das Wort zu entfernen (hinterlaesst sonst wirren Rest-Text).
+        _meta_leak_words = re.compile(
+            r'\b(?:speak|tts|emit|tool_call|function_call|call_service'
+            r'|speak_response|emit_speaking|emit_action'
+            r'|set_light|set_cover|set_climate|set_switch|set_vacuum'
+            r'|play_media|activate_scene|arm_security_system'
+            r'|get_lights|get_covers|get_climate|get_switches'
+            r'|get_house_status|get_weather|get_entity_state|get_entity_history'
+            r'|call_ha_service|run_scene|run_script|run_automation)\b',
+            re.IGNORECASE,
+        )
+        _meta_block_patterns = [
+            re.compile(r'<tool_call>.*?</tool_call>', re.DOTALL),
+            re.compile(r'\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:.*?\}', re.DOTALL),
         ]
-        for _ml_pat in _meta_leak_patterns:
-            _new = re.sub(_ml_pat, '', text, flags=re.IGNORECASE | re.DOTALL)
+        # Block-Patterns (tool_call XML, JSON) komplett entfernen
+        for _bp in _meta_block_patterns:
+            _new = _bp.sub('', text)
             if _new != text:
-                logger.info("Meta-Leakage entfernt: %s", _ml_pat[:30])
+                logger.info("Meta-Leakage Block entfernt: %s", _bp.pattern[:30])
             text = _new
+        # Satz-weise filtern: Saetze mit Meta-Begriffen komplett verwerfen
+        if _meta_leak_words.search(text):
+            _sentences = re.split(r'(?<=[.!?])\s+', text)
+            _clean = [s for s in _sentences if not _meta_leak_words.search(s)]
+            _removed = len(_sentences) - len(_clean)
+            if _removed:
+                logger.info("Meta-Leakage: %d von %d Saetzen verworfen", _removed, len(_sentences))
+            text = ' '.join(_clean).strip()
         # Bereinigung: Mehrfach-Leerzeichen und leere Klammern
         text = re.sub(r'\s{2,}', ' ', text).strip()
         text = re.sub(r'\(\s*\)', '', text).strip()
@@ -5090,6 +5100,28 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             "Kann ich sonst noch etwas fuer dich tun?",
             "Ich schalte jetzt", "Ich werde jetzt",
         ])
+        # 1a. Narrations-Phrasen: Ganzen Satz verwerfen statt nur die Phrase zu entfernen.
+        # Sonst bleibt wirrer Rest-Text der vorgelesen wird.
+        _narration_phrases = [
+            "Ich schalte jetzt", "Ich werde jetzt", "Ich werde das",
+            "Ich rufe jetzt", "Ich fuehre jetzt", "Ich führe jetzt",
+        ]
+        _narration_re = re.compile(
+            '|'.join(re.escape(p) for p in _narration_phrases), re.IGNORECASE
+        )
+        if _narration_re.search(text):
+            _sentences = re.split(r'(?<=[.!?])\s+', text)
+            _clean = [s for s in _sentences if not _narration_re.search(s)]
+            _removed = len(_sentences) - len(_clean)
+            if _removed:
+                logger.info("Narration: %d Satz/Saetze verworfen", _removed)
+                for phrase in _narration_phrases:
+                    if re.search(re.escape(phrase), text, re.IGNORECASE):
+                        self._task_registry.create_task(
+                            self.self_optimization.track_filtered_phrase(phrase),
+                            name="track_phrase",
+                        )
+            text = ' '.join(_clean).strip()
         for phrase in banned_phrases:
             # Case-insensitive Entfernung mit Wortgrenzen-Check
             # Verhindert dass "Ich bin ein KI" aus "Ich bin ein KI-Modell"

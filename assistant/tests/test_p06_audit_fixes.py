@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from assistant.ollama_client import validate_notification
+from assistant.assistant.ollama_client import validate_notification
 
 
 # ============================================================

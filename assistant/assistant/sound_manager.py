@@ -540,7 +540,9 @@ class SoundManager:
             logger.debug("Speaker volume state retrieval failed: %s", e)
 
         # P06f: Pre-TTS-Filter — Meta-Begriffe entfernen bevor Text gesprochen wird
-        # Sicherheitsnetz falls _filter_response etwas durchlaesst
+        # Sicherheitsnetz falls _filter_response etwas durchlaesst.
+        # Strategie: Ganze Saetze verwerfen die Meta-Begriffe enthalten,
+        # statt nur das Wort zu entfernen (sonst bleibt wirrer Rest-Text).
         import re as _re
         _meta_leak_re = _re.compile(
             r'\b(?:speak|tts|emit|tool_call|function_call|call_service'
@@ -552,7 +554,11 @@ class SoundManager:
             r'|run_scene|run_script|run_automation|call_ha_service)\b',
             _re.IGNORECASE,
         )
-        text = _meta_leak_re.sub('', text).strip()
+        if _meta_leak_re.search(text):
+            _sentences = _re.split(r'(?<=[.!?])\s+', text)
+            _clean = [s for s in _sentences if not _meta_leak_re.search(s)]
+            logger.info("Pre-TTS-Filter: %d/%d Saetze behalten", len(_clean), len(_sentences))
+            text = ' '.join(_clean).strip()
         text = _re.sub(r'\s{2,}', ' ', text).strip()
         if not text:
             logger.warning("Pre-TTS-Filter hat gesamten Text entfernt — Fallback")
@@ -563,9 +569,9 @@ class SoundManager:
         # Pre-TTS-Filter auch auf SSML anwenden — sonst werden Meta-Begriffe
         # trotz Plaintext-Filter im SSML vorgelesen
         if speak_text != text:
-            speak_text = _meta_leak_re.sub('', speak_text).strip()
-            speak_text = _re.sub(r'\s{2,}', ' ', speak_text).strip()
-            if not speak_text or speak_text in ('<speak></speak>', '<speak> </speak>'):
+            if _meta_leak_re.search(speak_text):
+                # SSML ist kontaminiert — Plaintext bevorzugen
+                logger.info("SSML enthält Meta-Leakage, nutze Plaintext")
                 speak_text = text
 
         # Alexa/Echo: Keine Audio-Dateien, stattdessen Alexa-eigener TTS
