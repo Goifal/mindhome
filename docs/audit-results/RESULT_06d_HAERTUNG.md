@@ -267,11 +267,29 @@ Entity-Ownership existiert auf Transport-Layer:
 
 ---
 
-## Addon-Systematische Analyse
+## Addon-Systematische Analyse (P06d DL#3)
 
-Hintergrund-Agent wurde gestartet fuer Thread-Safety, Auth, Race-Conditions in addon/. Ergebnisse werden in RESULT_06d ergaenzt falls relevant.
+Systematische Sicherheitsanalyse des Addon-Codes (Flask/Python). Ergebnisse und Fixes:
 
-**Bekannter Zustand**: Flask multi-threaded, `task_scheduler.py` hat Thread-Lock. Addon-Auth via `X-Ingress-Token` und IP-Whitelist.
+### Kritische Fixes (GEFIXT)
+
+| ID | Problem | Datei | Fix | Status |
+|---|---|---|---|---|
+| **A6** | API-Key-Vergleich mit `==` (Timing Side-Channel) | `app.py` | `hmac.compare_digest()` | ✅ Gefixt |
+| **A3** | Access-Code CRUD ohne Auth | `routes/security.py` | `_require_auth()` auf POST/PUT/DELETE | ✅ Gefixt |
+| **A4** | Emergency cancel/config ohne Auth | `routes/security.py` | `_require_auth()` auf POST/PUT | ✅ Gefixt |
+| **A5** | Geofence-Zone CRUD ohne Auth | `routes/security.py` | `_require_auth()` auf POST/PUT/DELETE | ✅ Gefixt |
+| **A7** | User CRUD ohne Auth | `routes/users.py` | `_require_auth()` auf POST/PUT/DELETE | ✅ Gefixt |
+| **T1** | Race Condition auf Emergency Rate-Limit | `routes/security.py` | `threading.Lock` auf `_emergency_trigger_times` | ✅ Gefixt |
+
+### Dokumentierte Architektur-Punkte (OFFEN)
+
+| ID | Problem | Risiko | Grund |
+|---|---|---|---|
+| **A1** | Auth-Bypass wenn `INGRESS_PATH` leer | 🟡 MITTEL | Architektur-Entscheidung, HA-Addon-Design |
+| **A2** | Ingress-Token Wert wird nicht validiert (nur Praesenz) | 🟡 MITTEL | HA-Ingress-Modell prueft Token serverseitig |
+| **T2-T5** | Thread-Safety in Engine-Modulen (climate, cover, energy, circadian) | 🟢 NIEDRIG | Module verwenden eigene Locks wo noetig, Flask-GIL schuetzt teilweise |
+| **R1-R2** | Race Conditions in Scheduler + DB-Sessions | 🟢 NIEDRIG | SQLAlchemy Scoped Sessions, DB-Level Locking |
 
 ---
 
@@ -324,6 +342,10 @@ pip-audit -r assistant/requirements.txt --no-deps
 | Eskalation: 4-Stufen-System (verteilt implementiert) | ✅ |
 | Autonomie: Trust-Levels + Safety-Caps + Emergency-Override | ✅ |
 | Trotzdem-Logik: Ignored-Warnings tracked + eskaliert | ✅ |
+| Addon: API-Key Timing-Safe (hmac.compare_digest) | ✅ |
+| Addon: Security-Endpoints Auth-geschuetzt (8 Routes) | ✅ |
+| Addon: User-CRUD Auth-geschuetzt (3 Routes) | ✅ |
+| Addon: Emergency Rate-Limit Thread-Safe | ✅ |
 | Tests: 5218 passed, keine Regressionen | ✅ |
 
 ### Erfolgs-Check (Schnellpruefung)
@@ -409,8 +431,11 @@ GEAENDERTE DATEIEN:
 - assistant/assistant/circuit_breaker.py (web_search_breaker registriert)
 - assistant/assistant/memory.py (redis_breaker + chromadb_breaker Integration)
 - assistant/assistant/web_search.py (web_search_breaker Integration)
-- assistant/assistant/main.py (Workshop-Auth: 3 Endpoints gehaertet)
+- assistant/assistant/main.py (Workshop-Auth: 3 Endpoints gehaertet, Path-Traversal-Schutz)
 - assistant/static/ui/app.js (XSS-Fix: esc() in kvAdd/fKeyValue)
+- addon/rootfs/opt/mindhome/app.py (A6: hmac.compare_digest)
+- addon/rootfs/opt/mindhome/routes/security.py (A3-A5: Auth, T1: Thread-Lock)
+- addon/rootfs/opt/mindhome/routes/users.py (A7: Auth auf User CRUD)
 - docs/audit-results/RESULT_06d_HAERTUNG.md (dieses Dokument)
 REGRESSIONEN: Keine (5218 passed)
 NAECHSTER SCHRITT: P06e (Geraetesteuerung) oder P06f (TTS/Response)
