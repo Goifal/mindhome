@@ -2976,9 +2976,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # (nach Base-Prompt + P1-Sektionen, nicht aus dem alten section_budget)
         _prompt_after_p1 = _estimate_tokens(system_prompt)
         _remaining_for_p2_and_conv = max(0, max_context_tokens - _prompt_after_p1 - user_tokens_est)
-        # Im Gespraechsmodus: Conversations brauchen mehr Platz (65%) damit
+        # Im Gespraechsmodus: Conversations brauchen mehr Platz damit
         # der Kontext nicht verloren geht. Ausserhalb: 50/50 Split.
-        _conv_share = 0.65 if _conversation_mode else 0.50
+        # 55/45 statt 65/35: Verhindert Dropping wichtiger P2-Sektionen
+        # wie jarvis_thinks bei kleinem num_ctx.
+        _conv_share = 0.55 if _conversation_mode else 0.50
         section_budget_p2 = max(200, int(_remaining_for_p2_and_conv * (1 - _conv_share)))
 
         # Phase 3: P2+ Sektionen nach Budget einfuegen
