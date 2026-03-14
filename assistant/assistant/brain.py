@@ -1742,6 +1742,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 device_cmd = {"function": _la, "args": _la_args}
 
         if not device_cmd:
+            # P06e: Multi-Command-Erkennung ("Licht aus und Rollladen runter")
+            # Splittet auf "und" / Komma und erkennt jeden Teil einzeln.
+            device_cmd = self._detect_multi_device_command(text, room=room or "")
+        if not device_cmd:
             # Geraete-Shortcut: Einfache Befehle (Licht/Rollladen/Heizung)
             # direkt ausfuehren — kein Context Build, kein LLM noetig.
             device_cmd = self._detect_device_command(text, room=room or "")
@@ -1772,6 +1776,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     logger.info("Geräte-Shortcut blockiert (Trust: %s) — Fallback",
                                 trust.get("reason", ""))
                 else:
+                    # P06e: Multi-Command — extra Kommandos extrahieren
+                    _extra_cmds = func_args.pop("_extra_cmds", [])
                     if person:
                         func_args["_person"] = person
                     result = await self.executor.execute(func_name, func_args)
@@ -1786,6 +1792,23 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         # Entity nicht aufloesbar → LLM hat mehr Kontext
                         logger.info("Geräte-Shortcut: '%s' — Fallback auf LLM", error_msg)
                     else:
+                        all_actions = [{"function": func_name, "args": func_args, "result": result}]
+
+                        # P06e: Extra-Kommandos ausfuehren (Multi-Command)
+                        for extra in _extra_cmds:
+                            _ex_name = extra["function"]
+                            _ex_args = extra["args"]
+                            if person:
+                                _ex_args["_person"] = person
+                            if not _ex_args.get("room") and func_args.get("room"):
+                                _ex_args["room"] = func_args["room"]
+                            try:
+                                _ex_result = await self.executor.execute(_ex_name, _ex_args)
+                                all_actions.append({"function": _ex_name, "args": _ex_args, "result": _ex_result})
+                                logger.info("Multi-Cmd: %s(%s) -> %s", _ex_name, _ex_args, _ex_result.get("success") if isinstance(_ex_result, dict) else "?")
+                            except Exception as ex_e:
+                                logger.warning("Multi-Cmd fehlgeschlagen: %s(%s): %s", _ex_name, _ex_args, ex_e)
+
                         if success:
                             # set_light mit state=off → turn_off_light für passende Bestaetigung
                             _confirm_action = func_name
@@ -1817,7 +1840,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 response_text, room=room, tts_data=tts_data,
                             )
 
-                        await emit_action(func_name, func_args, result)
+                        for _act in all_actions:
+                            await emit_action(_act["function"], _act["args"], _act["result"])
 
                         # Learning Observer
                         if success:
@@ -1836,7 +1860,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     name="mark_jarvis_action",
                                 )
 
-                        return self._result(response_text, actions=[{"function": func_name, "args": func_args, "result": result}], model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
+                        return self._result(response_text, actions=all_actions, model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
                 logger.warning("Geraete-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
@@ -3336,6 +3360,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # Status-Queries ("Sind alle Licht abgedreht?").
             if not tool_calls and (self._is_device_command(text) or self._is_status_query(text)):
                 fallback_tc = self._deterministic_tool_call(text)
+                # P06e: Auch _detect_device_command als Fallback versuchen
+                if not fallback_tc:
+                    _dev_cmd = self._detect_device_command(text, room=room or "")
+                    if _dev_cmd:
+                        fallback_tc = {"function": {"name": _dev_cmd["function"],
+                                                     "arguments": _dev_cmd["args"]}}
                 if fallback_tc:
                     logger.info("Deterministischer Tool-Call: %s(%s)",
                                 fallback_tc["function"]["name"],
@@ -7373,6 +7403,48 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return {"function": "set_switch", "args": {"room": effective_room, "state": state}}
 
         return None
+
+    @classmethod
+    def _detect_multi_device_command(cls, text: str, room: str = "") -> Optional[dict]:
+        """P06e: Erkennt Multi-Befehle ('Licht aus und Rollladen runter').
+
+        Splittet auf ' und ' oder ', ' und versucht jeden Teil einzeln
+        zu erkennen. Gibt das erste Kommando als device_cmd zurueck
+        und speichert die restlichen als _extra_cmds im args-Dict.
+
+        Returns:
+            {"function": ..., "args": {..., "_extra_cmds": [...]}} oder None.
+        """
+        t = text.lower().strip()
+        # Nur wenn "und" oder Komma vorhanden
+        if " und " not in t and ", " not in t:
+            return None
+        # Nicht bei Fragen
+        if t.endswith("?"):
+            return None
+
+        import re as _re
+        parts = _re.split(r'\s+und\s+|,\s*', text)
+        if len(parts) < 2:
+            return None
+
+        cmds = []
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            cmd = cls._detect_device_command(part, room=room)
+            if cmd:
+                cmds.append(cmd)
+
+        if len(cmds) < 2:
+            # Weniger als 2 erkannte Kommandos → kein Multi-Command
+            return None
+
+        # Erstes Kommando zurueckgeben, Rest als _extra_cmds
+        first = cmds[0]
+        first["args"]["_extra_cmds"] = cmds[1:]
+        return first
 
     @staticmethod
     def _detect_media_command(text: str, room: str = "") -> Optional[dict]:
