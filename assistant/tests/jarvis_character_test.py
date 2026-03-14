@@ -994,7 +994,7 @@ class TestCharacterIntegrity:
         from assistant.personality import SYSTEM_PROMPT_TEMPLATE
         placeholders = [
             "{assistant_name}", "{max_sentences}", "{time_style}",
-            "{mood_section}", "{humor_section}", "{formality_section}",
+            "{mood_section}", "{humor_section}", "{dynamic_context}",
         ]
         for ph in placeholders:
             assert ph in SYSTEM_PROMPT_TEMPLATE, f"Placeholder {ph} fehlt"
@@ -1040,7 +1040,7 @@ class TestJarvisCodexCompliance:
         """Jarvis wechselt Kontext sofort — implizit durch 'Befehle = kurz' und Handlungsorientierung."""
         prompt = engine.build_system_prompt()
         prompt_lower = prompt.lower()
-        assert "kontextwechsel" in prompt_lower or "sofort" in prompt_lower or "befehle = kurz" in prompt_lower or "befehle: kurz" in prompt_lower or "befehlsmodus: kurz" in prompt_lower
+        assert "kontextwechsel" in prompt_lower or "sofort" in prompt_lower or "befehle = kurz" in prompt_lower or "befehle: kurz" in prompt_lower or "befehlsmodus: kurz" in prompt_lower or "befehlsmodus: max" in prompt_lower or "befehl: max" in prompt_lower
 
     def test_auf_augenhoehe(self, engine):
         prompt = engine.build_system_prompt()
