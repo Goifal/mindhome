@@ -1734,18 +1734,22 @@ def _get_assistant_tools_static() -> list:
         "type": "function",
         "function": {
             "name": "set_switch",
-            "description": "Steckdose oder Schalter ein- oder ausschalten.",
+            "description": "Steckdose, Schalter oder Geraet (Maschine, Kaffeemaschine, Siebtraeger, Ventilator, Pumpe etc.) ein- oder ausschalten. Auch fuer Geraete nutzen die per Steckdose/Switch gesteuert werden!",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "room": {
                         "type": "string",
-                        "description": "Raumname VOLLSTAENDIG inkl. Personen-Praefix falls genannt (z.B. 'manuel buero', 'julia buero', 'kueche') oder Name der Steckdose/des Schalters. NICHT den Personennamen weglassen!",
+                        "description": "Raumname ODER Geraetename ODER beides (z.B. 'wohnzimmer', 'siebtraegermaschine', 'kaffeemaschine wohnzimmer'). VOLLSTAENDIG inkl. Personen-Praefix falls genannt (z.B. 'manuel buero'). NICHT den Personennamen weglassen!",
                     },
                     "state": {
                         "type": "string",
                         "enum": ["on", "off"],
                         "description": "Einschalten oder ausschalten",
+                    },
+                    "device_hint": {
+                        "type": "string",
+                        "description": "Optionaler Geraetename wenn 'room' den Raum enthaelt (z.B. device_hint='siebtraeger' bei room='wohnzimmer')",
                     },
                 },
                 "required": ["room", "state"],
@@ -4221,6 +4225,7 @@ class FunctionExecutor:
         """Steckdose oder Schalter ein-/ausschalten."""
         room = args.get("room")
         state = args.get("state")
+        device_hint = args.get("device_hint", "")
 
         # LLM-Fallback: entity_id statt room
         if not room and args.get("entity_id"):
@@ -4233,7 +4238,15 @@ class FunctionExecutor:
         if not room:
             return {"success": False, "message": "Kein Raum/Name angegeben"}
 
-        entity_id = await self._find_entity("switch", room)
+        # Zuerst: device_hint als Suchbegriff versuchen (z.B. "siebträger maschine")
+        entity_id = None
+        if device_hint:
+            entity_id = await self._find_entity("switch", device_hint, device_hint=room)
+            if not entity_id:
+                # Fallback: device_hint + room kombiniert
+                entity_id = await self._find_entity("switch", f"{device_hint} {room}")
+        if not entity_id:
+            entity_id = await self._find_entity("switch", room, device_hint=device_hint)
         if not entity_id:
             return {"success": False, "message": f"Kein Schalter in '{room}' gefunden"}
 

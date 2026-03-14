@@ -420,6 +420,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             "heizung", "thermostat", "klima",
             "steckdose", "schalter", "musik", "lautsprecher",
             "wecker", "timer", "erinnerung",
+            "maschine", "geraet", "gerät", "kaffeemaschine",
+            "siebtraeger", "siebträger", "ventilator", "luefter",
+            "lüfter", "pumpe", "boiler",
         ]
         self._action_words = set(cmd_cfg.get("action_words") or [
             "auf", "zu", "an", "aus", "hoch", "runter",
@@ -5054,6 +5057,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             r'</?break[^>]*>',
             r'</?emphasis[^>]*>',
             r'<lang[^>]*>.*?</lang>',
+            # SSML-Attribute als Standalone-Text: "rate 85%" etc.
+            r'\brate\s*=?\s*"?\d+%"?',
+            r'\bpitch\s*=?\s*"?[+-]?\d+(?:%|Hz|st)"?',
+            r'\bvolume\s*=?\s*"?\w+"?',
+            # Markdown-Artefakte die ueber TTS vorgelesen werden
+            r'\*{1,3}',
+            r'#{1,6}\s+',
+            # Interne JSON/Dict-Fragmente
+            r'\{\s*"(?:entity_id|service|domain|state)"\s*:.*?\}',
+            # "Aktion ausgefuehrt" / "Tool erfolgreich" Meta-Text
+            r'\b(?:tool|aktion|function)\s+(?:erfolgreich|ausgef[uü]hrt|completed)\b',
         ]
         for _ml_pat in _meta_leak_patterns:
             _new = re.sub(_ml_pat, '', text, flags=re.IGNORECASE | re.DOTALL)
@@ -7271,6 +7285,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 return {"function": {"name": "set_cover",
                                      "arguments": {"action": "close", "room": _room}}}
 
+        # Steckdosen/Schalter/Generische Geräte
+        _switch_nouns = ["steckdose", "schalter", "maschine", "geraet",
+                         "gerät", "kaffeemaschine", "siebtraeger", "siebträger",
+                         "ventilator", "luefter", "lüfter", "pumpe", "boiler"]
+        if any(n in t for n in _switch_nouns):
+            state = "on" if (words & {"an", "ein"}) else "off" if (words & {"aus"}) else None
+            if state:
+                return {"function": {"name": "set_switch",
+                                     "arguments": {"room": _room or t, "state": state}}}
+
         return None
 
     @staticmethod
@@ -7618,8 +7642,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 if mode:
                     return {"function": "arm_security_system", "args": {"mode": mode}}
 
-        # --- STECKDOSE / SCHALTER ---
-        if any(n in t for n in ["steckdose", "schalter"]):
+        # --- STECKDOSE / SCHALTER / GENERISCHE GERÄTE ---
+        _switch_nouns = ["steckdose", "schalter", "maschine", "geraet",
+                         "gerät", "kaffeemaschine", "siebtraeger", "siebträger",
+                         "ventilator", "luefter", "lüfter", "pumpe", "boiler"]
+        _matched_device = ""
+        for n in _switch_nouns:
+            if n in t:
+                _matched_device = n
+                break
+        if _matched_device:
             state = None
             if any(v in t for v in ["einschalten", "anschalten", "anmachen"]):
                 state = "on"
@@ -7631,7 +7663,20 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 state = "off"
             if state is None:
                 return None
-            return {"function": "set_switch", "args": {"room": effective_room, "state": state}}
+            # Gerätenamen als device_hint extrahieren (für besseres Entity-Matching)
+            # Alles außer Raum, Aktionswörtern und Command-Verben = Gerätename
+            _device_words = []
+            for w in words:
+                if (w not in _ACTIONS and w not in _CMD
+                        and w != effective_room.lower()
+                        and w not in ("an", "aus", "ein", "ab")
+                        and len(w) > 2):
+                    _device_words.append(w)
+            device_hint = " ".join(_device_words) if _device_words else ""
+            args = {"room": effective_room, "state": state}
+            if device_hint:
+                args["device_hint"] = device_hint
+            return {"function": "set_switch", "args": args}
 
         return None
 

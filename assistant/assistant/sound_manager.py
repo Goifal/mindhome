@@ -549,10 +549,22 @@ class SoundManager:
             r'|play_media|activate_scene|arm_security_system'
             r'|get_lights|get_covers|get_climate|get_switches'
             r'|get_house_status|get_weather|get_entity_state'
-            r'|run_scene|run_script|run_automation|call_ha_service)\b',
+            r'|run_scene|run_script|run_automation|call_ha_service'
+            r'|prosody)\b',
             _re.IGNORECASE,
         )
         text = _meta_leak_re.sub('', text).strip()
+        # SSML-Tags als Plaintext entfernen (Sicherheitsnetz)
+        text = _re.sub(r'</?speak>', '', text).strip()
+        text = _re.sub(r'<prosody[^>]*>', '', text).strip()
+        text = _re.sub(r'</prosody>', '', text).strip()
+        text = _re.sub(r'</?break[^>]*>', '', text).strip()
+        text = _re.sub(r'</?emphasis[^>]*>', '', text).strip()
+        # SSML-Attribute als losgeloester Text: "rate 85%", "pitch +10%"
+        text = _re.sub(r'\brate\s*=?\s*"?\d+%"?', '', text).strip()
+        text = _re.sub(r'\bpitch\s*=?\s*"?[+-]?\d+(?:%|Hz|st)"?', '', text).strip()
+        # Markdown-Artefakte
+        text = _re.sub(r'\*{1,3}', '', text).strip()
         text = _re.sub(r'\s{2,}', ' ', text).strip()
         if not text:
             logger.warning("Pre-TTS-Filter hat gesamten Text entfernt — Fallback")
