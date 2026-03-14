@@ -43,6 +43,21 @@ jobs:
           find addon/rootfs/opt/mindhome -name "*.py" -exec python -m py_compile {} \;
           find speech -name "*.py" -exec python -m py_compile {} \;
 
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pip-audit
+      - name: Audit assistant dependencies
+        run: pip-audit -r assistant/requirements.txt --skip-editable --ignore-vuln PYSEC-2024-139 || true
+      - name: Audit addon dependencies
+        run: pip-audit -r addon/rootfs/opt/mindhome/requirements.txt --skip-editable || true
+      - name: Audit speech dependencies
+        run: pip-audit -r speech/requirements.txt --skip-editable --ignore-vuln PYSEC-2024-139 || true
+
   docker-build:
     runs-on: ubuntu-latest
     steps:
