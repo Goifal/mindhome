@@ -68,7 +68,11 @@ Ergebnis: KEINE Regressionen
 - **Datei**: `main.py:7048-7168`
 - **Problem**: Roboter-Arm + 3D-Drucker ohne Trust-Level-Pruefung
 - **Fix**: `_require_hardware_owner(request)` prueft Trust-Level 2 (Owner) + `_validate_arm_coordinates()` (Bereich -1000 bis 1000, Geschwindigkeit validiert)
-- **Status**: ✅ Bereits implementiert
+- **Fix (P06d DL#3 NEU)**: `_require_hardware_owner()` hinzugefuegt auf:
+  - `GET /api/workshop/printer/status` (line 7122) — Info-Disclosure geschlossen
+  - `POST /api/workshop/files/{project_id}/upload` (line 6299) — Unauthentifizierter Upload geschlossen
+  - `POST /api/workshop/library/ingest` (line 6232) — Unauthentifizierter Import geschlossen
+- **Status**: ✅ Gefixt (P06d DL#3)
 
 ### Security #9: Function Call Safety
 - **Risiko**: 🟠 HOCH
@@ -389,6 +393,7 @@ GEFIXT:
 - Circuit Breaker: redis_breaker in memory.py (initialize: Redis + ChromaDB)
 - Circuit Breaker: web_search_breaker in web_search.py (search method)
 - Circuit Breaker: web_search_breaker registriert in circuit_breaker.py
+- Workshop Auth: _require_hardware_owner() auf printer/status, files/upload, library/ingest
 OFFEN:
 - 🟡 [MITTEL] Disk-Full Resilience | main.py:134 audit.jsonl | GRUND: Logs via Docker stdout, kein aktiver Check
   → ESKALATION: NAECHSTER_PROMPT
@@ -404,6 +409,7 @@ GEAENDERTE DATEIEN:
 - assistant/assistant/circuit_breaker.py (web_search_breaker registriert)
 - assistant/assistant/memory.py (redis_breaker + chromadb_breaker Integration)
 - assistant/assistant/web_search.py (web_search_breaker Integration)
+- assistant/assistant/main.py (Workshop-Auth: 3 Endpoints gehaertet)
 - assistant/static/ui/app.js (XSS-Fix: esc() in kvAdd/fKeyValue)
 - docs/audit-results/RESULT_06d_HAERTUNG.md (dieses Dokument)
 REGRESSIONEN: Keine (5218 passed)

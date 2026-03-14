@@ -6230,8 +6230,10 @@ async def workshop_library_documents():
 
 
 @app.post("/api/workshop/library/ingest")
-async def workshop_library_ingest(file: UploadFile = File(...)):
+async def workshop_library_ingest(request: Request, file: UploadFile = File(...)):
     """Importiert ein Dokument in die Workshop-Library."""
+    # P06d: Workshop-Library-Import erfordert Owner-Trust
+    _require_hardware_owner(request)
     # F-087: Path-Traversal-Schutz — nur Dateiname ohne Verzeichnis-Komponenten
     safe_name = Path(file.filename).name if file.filename else "upload"
     if not safe_name or safe_name in (".", ".."):
@@ -6297,8 +6299,10 @@ async def workshop_chat(request: Request):
 
 
 @app.post("/api/workshop/files/{project_id}/upload")
-async def workshop_upload_file(project_id: str, file: UploadFile = File(...)):
+async def workshop_upload_file(project_id: str, request: Request, file: UploadFile = File(...)):
     """Laedt eine Datei in ein Workshop-Projekt hoch."""
+    # P06d: Workshop-Upload erfordert Owner-Trust
+    _require_hardware_owner(request)
     project = await brain.repair_planner.get_project(project_id)
     if not project:
         raise HTTPException(404, "Projekt nicht gefunden")
@@ -7120,8 +7124,10 @@ def _validate_arm_coordinates(x, y, z, speed) -> None:
 
 
 @app.get("/api/workshop/printer/status")
-async def workshop_printer_status():
+async def workshop_printer_status(request: Request):
     """3D-Drucker Status abfragen."""
+    # P06d: Printer-Status erfordert Owner-Trust (Info-Disclosure)
+    _require_hardware_owner(request)
     try:
         result = await brain.repair_planner.get_printer_status()
         return {"success": True, **result}
