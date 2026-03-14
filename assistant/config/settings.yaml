@@ -375,9 +375,9 @@ ollama:
   # num_gpu: 99              # Alle Layer auf GPU (99 = Maximum)
   # num_parallel: 2          # Parallele Requests (braucht ~2x VRAM pro Modell)
 models:
-  fast: qwen3.5:4b
-  smart: qwen3.5:9b
-  deep: qwen3.5:9b
+  fast: qwen3.5:35b
+  smart: qwen3.5:35b
+  deep: qwen3.5:35b
   enabled:
     fast: true
     smart: true
