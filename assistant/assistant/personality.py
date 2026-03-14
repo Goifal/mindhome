@@ -1639,13 +1639,17 @@ class PersonalityEngine:
             effective_score = min(formality_score + 20, 70)
 
         if effective_score >= 70:
-            return self._formality_prompts.get("formal", "")
+            val = self._formality_prompts.get("formal", "")
         elif effective_score >= 50:
-            return self._formality_prompts.get("butler", "")
+            val = self._formality_prompts.get("butler", "")
         elif effective_score >= 35:
-            return self._formality_prompts.get("locker", "")
+            val = self._formality_prompts.get("locker", "")
         else:
-            return self._formality_prompts.get("freund", "")
+            val = self._formality_prompts.get("freund", "")
+        # Guard: config may deliver dicts instead of plain strings
+        if isinstance(val, dict):
+            val = val.get("text", val.get("prompt", str(val)))
+        return str(val) if val else ""
 
     # ------------------------------------------------------------------
     # Running Gags (Phase 6.9)
