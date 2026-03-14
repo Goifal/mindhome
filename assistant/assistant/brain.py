@@ -597,71 +597,48 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         await _safe_init("RecipeStore", self.recipe_store.initialize())
         self.cooking.recipe_store = self.recipe_store
 
-        # Phase 15.2: Inventory Manager initialisieren
-        await _safe_init("Inventory", self.inventory.initialize(redis_client=self.memory.redis))
+        # P06b: Mittlere Features parallel initialisieren
+        await asyncio.gather(
+            _safe_init("Inventory", self.inventory.initialize(redis_client=self.memory.redis)),
+            _safe_init("SmartShopping", self.smart_shopping.initialize(redis_client=self.memory.redis)),
+            _safe_init("ConversationMemory", self.conversation_memory.initialize(redis_client=self.memory.redis)),
+            _safe_init("MultiRoomAudio", self.multi_room_audio.initialize(redis_client=self.memory.redis)),
+            _safe_init("SelfAutomation", self.self_automation.initialize(redis_client=self.memory.redis)),
+            _safe_init("ConfigVersioning", self.config_versioning.initialize(redis_client=self.memory.redis)),
+            _safe_init("SelfOptimization", self.self_optimization.initialize(redis_client=self.memory.redis)),
+            _safe_init("OCR", self.ocr.initialize(redis_client=self.memory.redis)),
+            _safe_init("AmbientAudio", self.ambient_audio.initialize(redis_client=self.memory.redis)),
+            _safe_init("ConflictResolver", self.conflict_resolver.initialize(redis_client=self.memory.redis)),
+            _safe_init("HealthMonitor", self.health_monitor.initialize(redis_client=self.memory.redis)),
+            _safe_init("DeviceHealth", self.device_health.initialize(redis_client=self.memory.redis)),
+            _safe_init("TimerManager", self.timer_manager.initialize(redis_client=self.memory.redis)),
+            _safe_init("ConditionalCommands", self.conditional_commands.initialize(redis_client=self.memory.redis)),
+            _safe_init("EnergyOptimizer", self.energy_optimizer.initialize(redis_client=self.memory.redis)),
+            _safe_init("CookingAssistant", self.cooking.initialize(redis_client=self.memory.redis)),
+            _safe_init("RepairPlanner", self.repair_planner.initialize(redis_client=self.memory.redis)),
+            _safe_init("WorkshopGenerator", self.workshop_generator.initialize(redis_client=self.memory.redis)),
+        )
 
-        # Smart Shopping initialisieren
-        await _safe_init("SmartShopping", self.smart_shopping.initialize(redis_client=self.memory.redis))
+        # Post-init wiring (Callbacks, Cross-References, Start-Calls)
         self.executor._smart_shopping = self.smart_shopping
-
-        # Konversations-Gedaechtnis++ initialisieren
-        await _safe_init("ConversationMemory", self.conversation_memory.initialize(redis_client=self.memory.redis))
         self.executor._conversation_memory = self.conversation_memory
+        self.executor._multi_room_audio = self.multi_room_audio
+        self.executor.set_config_versioning(self.config_versioning)
+        self.ambient_audio.set_notify_callback(self._handle_ambient_audio_event)
+        self.health_monitor.set_notify_callback(self._handle_health_alert)
+        self.device_health.set_notify_callback(self._handle_device_health_alert)
+        self.timer_manager.set_notify_callback(self._handle_timer_notification)
+        self.timer_manager.set_action_callback(lambda func, args: self.executor.execute(func, args))
+        self.conditional_commands.set_action_callback(lambda func, args: self.executor.execute(func, args))
 
-        # Multi-Room Audio initialisieren
-        await _safe_init("MultiRoomAudio", self.multi_room_audio.initialize(redis_client=self.memory.redis))
         if "MultiRoomAudio" not in _degraded_modules:
             await _safe_init("MultiRoomAudio.presets", self.multi_room_audio.load_presets())
-        self.executor._multi_room_audio = self.multi_room_audio
-
-        # Phase 13.2: Self Automation initialisieren
-        await _safe_init("SelfAutomation", self.self_automation.initialize(redis_client=self.memory.redis))
-
-        # Phase 13.4: Config Versioning + Self Optimization initialisieren
-        await _safe_init("ConfigVersioning", self.config_versioning.initialize(redis_client=self.memory.redis))
-        await _safe_init("SelfOptimization", self.self_optimization.initialize(redis_client=self.memory.redis))
-        self.executor.set_config_versioning(self.config_versioning)
-
-        # Phase 14.2: OCR Engine initialisieren
-        await _safe_init("OCR", self.ocr.initialize(redis_client=self.memory.redis))
-
-        # Phase 14.3: Ambient Audio initialisieren und starten
-        await _safe_init("AmbientAudio", self.ambient_audio.initialize(redis_client=self.memory.redis))
-        self.ambient_audio.set_notify_callback(self._handle_ambient_audio_event)
         if "AmbientAudio" not in _degraded_modules:
             await _safe_init("AmbientAudio.start", self.ambient_audio.start())
-
-        # Phase 16.1: Conflict Resolver initialisieren
-        await _safe_init("ConflictResolver", self.conflict_resolver.initialize(redis_client=self.memory.redis))
-
-        # Phase 15.1: Health Monitor initialisieren und starten
-        await _safe_init("HealthMonitor", self.health_monitor.initialize(redis_client=self.memory.redis))
-        self.health_monitor.set_notify_callback(self._handle_health_alert)
         if "HealthMonitor" not in _degraded_modules:
             await _safe_init("HealthMonitor.start", self.health_monitor.start())
-
-        # Phase 15.3: Device Health Monitor initialisieren und starten
-        await _safe_init("DeviceHealth", self.device_health.initialize(redis_client=self.memory.redis))
-        self.device_health.set_notify_callback(self._handle_device_health_alert)
         if "DeviceHealth" not in _degraded_modules:
             await _safe_init("DeviceHealth.start", self.device_health.start())
-
-        # Phase 17: Neue Features initialisieren
-        await _safe_init("TimerManager", self.timer_manager.initialize(redis_client=self.memory.redis))
-        self.timer_manager.set_notify_callback(self._handle_timer_notification)
-        self.timer_manager.set_action_callback(
-            lambda func, args: self.executor.execute(func, args)
-        )
-        await _safe_init("ConditionalCommands", self.conditional_commands.initialize(redis_client=self.memory.redis))
-        self.conditional_commands.set_action_callback(
-            lambda func, args: self.executor.execute(func, args)
-        )
-        await _safe_init("EnergyOptimizer", self.energy_optimizer.initialize(redis_client=self.memory.redis))
-        await _safe_init("CookingAssistant", self.cooking.initialize(redis_client=self.memory.redis))
-
-        # Workshop-Modus initialisieren
-        await _safe_init("RepairPlanner", self.repair_planner.initialize(redis_client=self.memory.redis))
-        await _safe_init("WorkshopGenerator", self.workshop_generator.initialize(redis_client=self.memory.redis))
         self.repair_planner.set_generator(self.workshop_generator)
         self.repair_planner.set_model_router(self.model_router)
         self.repair_planner.semantic_memory = self.memory.semantic
@@ -685,82 +662,61 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _degraded_modules.append("WorkshopLibrary")
             logger.error("F-069: WorkshopLibrary init fehlgeschlagen: %s", e)
 
-        await _safe_init("ThreatAssessment", self.threat_assessment.initialize(redis_client=self.memory.redis))
-        await _safe_init("LearningObserver", self.learning_observer.initialize(redis_client=self.memory.redis))
+        # P06b: Spaete Features parallel initialisieren
+        await asyncio.gather(
+            _safe_init("ThreatAssessment", self.threat_assessment.initialize(redis_client=self.memory.redis)),
+            _safe_init("LearningObserver", self.learning_observer.initialize(redis_client=self.memory.redis)),
+            _safe_init("ProtocolEngine", self.protocol_engine.initialize(redis_client=self.memory.redis)),
+            _safe_init("SpontaneousObserver", self.spontaneous.initialize(redis_client=self.memory.redis)),
+            _safe_init("MusicDJ", self.music_dj.initialize(redis_client=self.memory.redis)),
+            _safe_init("VisitorManager", self.visitor_manager.initialize(redis_client=self.memory.redis)),
+            _safe_init("WellnessAdvisor", self.wellness_advisor.initialize(redis_client=self.memory.redis)),
+            _safe_init("InsightEngine", self.insight_engine.initialize(
+                redis_client=self.memory.redis, ollama=self.ollama)),
+            _safe_init("SituationModel", self.situation_model.initialize(redis_client=self.memory.redis)),
+            _safe_init("ProactivePlanner", self.proactive_planner.initialize(redis_client=self.memory.redis)),
+            _safe_init("SeasonalInsight", self.seasonal_insight.initialize(
+                redis_client=self.memory.redis, notify_callback=self._handle_insight)),
+        )
+
+        # Post-init wiring
         self.learning_observer.set_notify_callback(self._handle_learning_suggestion)
-
-        # Jarvis-Feature 2: Benannte Protokolle
-        await _safe_init("ProtocolEngine", self.protocol_engine.initialize(redis_client=self.memory.redis))
         self.protocol_engine.set_executor(self.executor)
-
-        # Jarvis-Feature 4: Spontane Beobachtungen
-        await _safe_init("SpontaneousObserver", self.spontaneous.initialize(redis_client=self.memory.redis))
         self.spontaneous.set_notify_callback(self._handle_spontaneous_observation)
+        self.music_dj.set_notify_callback(self._handle_music_suggestion)
+        self.music_dj.set_executor(self.executor)
+        self.visitor_manager.set_notify_callback(self._handle_visitor_event)
+        self.visitor_manager.set_executor(self.executor)
+        self.validator.set_ha_client(self.ha)
+        self.wellness_advisor.set_notify_callback(self._handle_wellness_nudge)
+        self.wellness_advisor.executor = self.executor
+        self.insight_engine.set_notify_callback(self._handle_insight)
 
-        # Jarvis-Feature 8: Woechentlicher Lern-Bericht (Background-Task)
+        if "WellnessAdvisor" not in _degraded_modules:
+            await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
+
+        # Woechentlicher Lern-Bericht
         weekly_cfg = cfg.yaml_config.get("learning", {}).get("weekly_report", {})
         if weekly_cfg.get("enabled", True):
             self._task_registry.create_task(
                 self._weekly_learning_report_loop(), name="weekly_learning_report"
             )
 
-        # Feature 11: Smart DJ (kontextbewusste Musikempfehlungen)
-        await _safe_init("MusicDJ", self.music_dj.initialize(redis_client=self.memory.redis))
-        self.music_dj.set_notify_callback(self._handle_music_suggestion)
-        self.music_dj.set_executor(self.executor)
-
-        # Feature 12: Besucher-Management
-        await _safe_init("VisitorManager", self.visitor_manager.initialize(redis_client=self.memory.redis))
-        self.visitor_manager.set_notify_callback(self._handle_visitor_event)
-        self.visitor_manager.set_executor(self.executor)
-
-        # Jarvis-Feature 10: Daten-basierter Widerspruch — HA-Client für Live-Daten
-        self.validator.set_ha_client(self.ha)
-
-        # Wellness Advisor initialisieren und starten
-        await _safe_init("WellnessAdvisor", self.wellness_advisor.initialize(redis_client=self.memory.redis))
-        self.wellness_advisor.set_notify_callback(self._handle_wellness_nudge)
-        self.wellness_advisor.executor = self.executor  # Phase 17.4: Ambient Actions
-        if "WellnessAdvisor" not in _degraded_modules:
-            await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
-
-        # Phase 17.3: InsightEngine (Jarvis denkt voraus)
-        await _safe_init("InsightEngine", self.insight_engine.initialize(
-            redis_client=self.memory.redis, ollama=self.ollama,
-        ))
-        self.insight_engine.set_notify_callback(self._handle_insight)
-
-        # Phase 17: Situation Model (Delta-Tracking zwischen Gespraechen)
-        await _safe_init("SituationModel", self.situation_model.initialize(redis_client=self.memory.redis))
-
-        # Phase 18: ProactiveSequencePlanner
-        await _safe_init("ProactivePlanner", self.proactive_planner.initialize(
-            redis_client=self.memory.redis,
-        ))
-
-        # Phase 18: SeasonalInsightEngine
-        await _safe_init("SeasonalInsight", self.seasonal_insight.initialize(
-            redis_client=self.memory.redis,
-            notify_callback=self._handle_insight,
-        ))
-
-        # Intelligenz-Features: Quick Wins + Medium Effort
-        await _safe_init("CalendarIntelligence", self.calendar_intelligence.initialize(redis_client=self.memory.redis))
-        await _safe_init("Explainability", self.explainability.initialize(redis_client=self.memory.redis))
-        await _safe_init("LearningTransfer", self.learning_transfer.initialize(redis_client=self.memory.redis))
-        await _safe_init("PredictiveMaintenance", self.predictive_maintenance.initialize(redis_client=self.memory.redis))
-
-        # Self-Improvement: Geschlossene Feedback-Loops
-        await _safe_init("OutcomeTracker", self.outcome_tracker.initialize(
-            redis_client=self.memory.redis, ha_client=self.ha, task_registry=self._task_registry,
-        ))
-        await _safe_init("CorrectionMemory", self.correction_memory.initialize(redis_client=self.memory.redis))
-        await _safe_init("ResponseQuality", self.response_quality.initialize(redis_client=self.memory.redis))
-        await _safe_init("ErrorPatterns", self.error_patterns.initialize(redis_client=self.memory.redis))
-        await _safe_init("SelfReport", self.self_report.initialize(
-            redis_client=self.memory.redis, ollama_client=self.ollama,
-        ))
-        await _safe_init("AdaptiveThresholds", self.adaptive_thresholds.initialize(redis_client=self.memory.redis))
+        # P06b: Intelligenz + Self-Improvement parallel initialisieren
+        await asyncio.gather(
+            _safe_init("CalendarIntelligence", self.calendar_intelligence.initialize(redis_client=self.memory.redis)),
+            _safe_init("Explainability", self.explainability.initialize(redis_client=self.memory.redis)),
+            _safe_init("LearningTransfer", self.learning_transfer.initialize(redis_client=self.memory.redis)),
+            _safe_init("PredictiveMaintenance", self.predictive_maintenance.initialize(redis_client=self.memory.redis)),
+            _safe_init("OutcomeTracker", self.outcome_tracker.initialize(
+                redis_client=self.memory.redis, ha_client=self.ha, task_registry=self._task_registry)),
+            _safe_init("CorrectionMemory", self.correction_memory.initialize(redis_client=self.memory.redis)),
+            _safe_init("ResponseQuality", self.response_quality.initialize(redis_client=self.memory.redis)),
+            _safe_init("ErrorPatterns", self.error_patterns.initialize(redis_client=self.memory.redis)),
+            _safe_init("SelfReport", self.self_report.initialize(
+                redis_client=self.memory.redis, ollama_client=self.ollama)),
+            _safe_init("AdaptiveThresholds", self.adaptive_thresholds.initialize(redis_client=self.memory.redis)),
+        )
 
         # Global Learning Kill Switch
         _learning_enabled = cfg.yaml_config.get("learning", {}).get("enabled", True)
