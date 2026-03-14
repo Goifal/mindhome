@@ -130,16 +130,29 @@ def redis_mock():
     r.scard = AsyncMock(return_value=0)
     r.delete = AsyncMock()
 
-    # Pipeline-Mock: delegiert hgetall-Aufrufe an r.hgetall
+    # Pipeline-Mock: delegiert Aufrufe an die entsprechenden Redis-Methoden
     def _make_pipe():
-        pipe_keys = []
+        pipe_ops = []
         pipe = MagicMock()
-        pipe.hgetall = MagicMock(side_effect=lambda key: pipe_keys.append(key))
+
+        def _track(method_name):
+            def _side_effect(*args, **kwargs):
+                pipe_ops.append((method_name, args, kwargs))
+            return _side_effect
+
+        pipe.hgetall = MagicMock(side_effect=_track("hgetall"))
+        pipe.hget = MagicMock(side_effect=_track("hget"))
+        pipe.hset = MagicMock(side_effect=_track("hset"))
+        pipe.sadd = MagicMock(side_effect=_track("sadd"))
+        pipe.srem = MagicMock(side_effect=_track("srem"))
+        pipe.scard = MagicMock(side_effect=_track("scard"))
+        pipe.delete = MagicMock(side_effect=_track("delete"))
 
         async def _execute():
             results = []
-            for key in pipe_keys:
-                results.append(await r.hgetall(key))
+            for method_name, args, kwargs in pipe_ops:
+                fn = getattr(r, method_name)
+                results.append(await fn(*args, **kwargs))
             return results
 
         pipe.execute = AsyncMock(side_effect=_execute)
@@ -301,7 +314,7 @@ class TestUpdateExistingFact:
         assert float(update_meta["confidence"]) <= 1.0
 
     @pytest.mark.asyncio
-    async def test_update_prefers_longer_content(self, semantic, chroma_mock):
+    async def test_update_uses_newer_content(self, semantic, chroma_mock):
         existing = {
             "fact_id": "fact_x",
             "content": "Max Kaffee",
@@ -315,9 +328,28 @@ class TestUpdateExistingFact:
 
         await semantic._update_existing_fact(existing, new_fact)
 
-        # Laengerer Content wird bevorzugt
+        # Neuerer Content wird immer verwendet
         updated_doc = chroma_mock.update.call_args[1]["documents"][0]
         assert "morgens" in updated_doc
+
+    @pytest.mark.asyncio
+    async def test_update_newer_shorter_content_wins(self, semantic, chroma_mock):
+        """Auch kuerzerer neuer Content gewinnt ueber laengeren alten."""
+        existing = {
+            "fact_id": "fact_y",
+            "content": "Max trinkt morgens immer einen starken Kaffee mit Milch",
+            "confidence": "0.7",
+            "times_confirmed": "1",
+        }
+        new_fact = SemanticFact(
+            content="Max trinkt keinen Kaffee mehr",
+            category="habit",
+        )
+
+        await semantic._update_existing_fact(existing, new_fact)
+
+        updated_doc = chroma_mock.update.call_args[1]["documents"][0]
+        assert updated_doc == "Max trinkt keinen Kaffee mehr"
 
     @pytest.mark.asyncio
     async def test_update_no_fact_id_returns_false(self, semantic):
