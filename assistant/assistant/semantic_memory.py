@@ -242,6 +242,13 @@ class SemanticMemory:
                             fact.fact_id, rollback_err,
                         )
 
+        # Bei person-Fakten Relationship Cache aktualisieren
+        if redis_ok and fact.category == "person":
+            try:
+                await self.refresh_relationship_cache()
+            except Exception:
+                pass
+
         if redis_ok:
             logger.info(
                 "Neuer Fakt gespeichert: [%s] (Person: %s)",
@@ -538,6 +545,7 @@ class SemanticMemory:
             min_confidence = float(yaml_config.get("memory", {}).get(
                 "min_confidence_for_context", 0.4
             ))
+            now = datetime.now()
             facts = []
             if results and results.get("documents"):
                 for i, doc in enumerate(results["documents"][0]):
@@ -549,14 +557,29 @@ class SemanticMemory:
                     # Fakten mit zu niedriger Confidence herausfiltern
                     if confidence < min_confidence:
                         continue
+                    base_relevance = 1.0 - min(distance, 1.0)
+                    # Aktualitaets-Boost: Kuerzlich bestaetigte Fakten bevorzugen
+                    recency_boost = 0.0
+                    updated_at = meta.get("updated_at", "")
+                    if updated_at:
+                        try:
+                            days_old = (now - datetime.fromisoformat(updated_at)).days
+                            # Max 10% Boost fuer Fakten der letzten 7 Tage,
+                            # linear abfallend ueber 90 Tage
+                            if days_old < 90:
+                                recency_boost = 0.1 * max(0.0, 1.0 - days_old / 90.0)
+                        except (ValueError, TypeError):
+                            pass
                     facts.append({
                         "content": doc,
                         "category": meta.get("category", "general"),
                         "person": meta.get("person", "unknown"),
                         "confidence": confidence,
                         "times_confirmed": int(meta.get("times_confirmed", 1)),
-                        "relevance": 1.0 - min(distance, 1.0),
+                        "relevance": min(1.0, base_relevance + recency_boost),
                     })
+            # Nach Relevanz sortieren damit aktuellere Fakten oben stehen
+            facts.sort(key=lambda f: f["relevance"], reverse=True)
             return facts
         except Exception as e:
             logger.error("Fehler bei Fakten-Suche: %s", e)
@@ -593,6 +616,78 @@ class SemanticMemory:
         except Exception as e:
             logger.error("Fehler bei Person-Fakten: %s", e)
             return []
+
+    def _get_cached_relationship(
+        self, pattern: str, keywords: list[str], known_names: set[str]
+    ) -> str:
+        """Loest Beziehungsbegriffe auf (synchron, aus Cache).
+
+        Prueft den internen Relationship-Cache (befuellt durch
+        ``_refresh_relationship_cache``) ob fuer einen Beziehungsbegriff
+        ein Name bekannt ist.
+        """
+        cache = getattr(self, "_relationship_cache", None)
+        if cache and pattern in cache:
+            return cache[pattern]
+        return ""
+
+    async def refresh_relationship_cache(self):
+        """Laedt Beziehungs-Fakten aus dem Gedaechtnis und baut Lookup auf.
+
+        Wird periodisch aufgerufen, damit ``_get_cached_relationship``
+        synchron antworten kann.
+        """
+        if not self.redis:
+            return
+
+        try:
+            person_facts = await self.get_facts_by_category("person")
+            cache: dict[str, str] = {}
+
+            # Bekannte Namen aus Config
+            household = yaml_config.get("household") or {}
+            known_names = set()
+            for m in household.get("members") or []:
+                name = (m.get("name") or "").strip()
+                if name:
+                    known_names.add(name)
+            primary = (household.get("primary_user") or "").strip()
+            if primary:
+                known_names.add(primary)
+            titles = (yaml_config.get("persons") or {}).get("titles") or {}
+            for name in titles:
+                known_names.add(name)
+
+            _RELATION_KEYWORDS = {
+                "meine frau": ["frau", "ehefrau", "partnerin", "wife"],
+                "mein mann": ["mann", "ehemann", "partner", "husband"],
+                "mein sohn": ["sohn", "son"],
+                "meine tochter": ["tochter", "daughter"],
+                "mein bruder": ["bruder", "brother"],
+                "meine schwester": ["schwester", "sister"],
+                "meine mutter": ["mutter", "mama", "mother"],
+                "mein vater": ["vater", "papa", "father"],
+                "mein partner": ["partner", "partnerin"],
+            }
+
+            for fact in person_facts:
+                content_lower = (fact.get("content") or "").lower()
+                for rel_pattern, kws in _RELATION_KEYWORDS.items():
+                    if rel_pattern in cache:
+                        continue
+                    if any(kw in content_lower for kw in kws):
+                        # Name aus dem Fakt extrahieren: pruefe welcher
+                        # bekannte Name im Content vorkommt
+                        for name in known_names:
+                            if name.lower() in content_lower:
+                                cache[rel_pattern] = name.lower()
+                                break
+
+            self._relationship_cache = cache
+            if cache:
+                logger.debug("Relationship Cache aktualisiert: %s", cache)
+        except Exception as e:
+            logger.debug("Relationship Cache Fehler: %s", e)
 
     async def get_facts_by_category(self, category: str) -> list[dict]:
         """Return all stored facts for a specific category."""

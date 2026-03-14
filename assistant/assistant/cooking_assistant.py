@@ -978,19 +978,35 @@ class CookingAssistant:
             return ""
 
         try:
-            # Suche nach Allergien, Unvertraeglichkeiten, Vorlieben
+            seen = set()
+            prefs = []
+
+            # 1. Person-spezifische Fakten (Allergien, Gesundheit, Vorlieben)
+            person_facts = await self.semantic_memory.get_facts_by_person(person)
+            for f in person_facts:
+                content = f.get("content", "")
+                category = f.get("category", "")
+                if content and category in ("health", "preference"):
+                    # Nur essen-relevante Fakten
+                    _lower = content.lower()
+                    if any(kw in _lower for kw in (
+                        "allerg", "essen", "mag", "hass", "vegetar", "vegan",
+                        "laktose", "gluten", "unvertraeg", "diaet", "kein",
+                        "nicht essen", "kochen", "gericht", "rezept",
+                    )):
+                        if content not in seen:
+                            seen.add(content)
+                            prefs.append(f"- {content}")
+
+            # 2. Topic-Suche als Ergaenzung (findet auch Fakten anderer Personen)
             facts = await self.semantic_memory.search_by_topic(
                 "essen kochen allergie unvertraeglichkeit vegetarisch vegan laktose",
                 limit=10,
             )
-
-            if not facts:
-                return ""
-
-            prefs = []
             for f in facts:
                 content = f.get("content", "")
-                if content:
+                if content and content not in seen:
+                    seen.add(content)
                     prefs.append(f"- {content}")
 
             if prefs:

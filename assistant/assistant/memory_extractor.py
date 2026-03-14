@@ -409,8 +409,65 @@ class MemoryExtractor:
                 "Emotionale Reaktion gespeichert: %s auf %s von %s",
                 sentiment, action_performed, person,
             )
+
+            # Bei negativer Reaktion: Korrektur als Praeferenz extrahieren
+            # z.B. "Nein, 21 Grad!" nach set_climate(23) → Praeferenz speichern
+            if not accepted and self.semantic and action_performed.startswith("set_"):
+                try:
+                    await self._extract_correction_preference(
+                        user_text, action_performed, person,
+                    )
+                except Exception as pref_err:
+                    logger.debug("Korrektur-Praeferenz-Extraktion fehlgeschlagen: %s", pref_err)
+
         except Exception as e:
             logger.debug("Emotionale Reaktion speichern fehlgeschlagen: %s", e)
+
+    async def _extract_correction_preference(
+        self, user_text: str, action: str, person: str,
+    ) -> None:
+        """Extrahiert eine Praeferenz aus einer Korrektur-Aussage.
+
+        Wenn der User eine Aktion korrigiert (z.B. 'Nein, 21 Grad!'),
+        wird daraus ein Praeferenz-Fakt abgeleitet und gespeichert.
+        """
+        from .semantic_memory import SemanticFact
+
+        prompt = (
+            "Der User hat eine Smart-Home-Aktion korrigiert.\n"
+            f"Aktion: {action}\n"
+            f"User-Korrektur: {user_text}\n\n"
+            "Extrahiere die PRAEFERENZ des Users als kurzen Fakt (1 Satz, Deutsch).\n"
+            "Beispiele:\n"
+            "- 'Nein, 21 Grad!' → 'bevorzugt 21 Grad'\n"
+            "- 'Zu hell, mach dunkler' → 'bevorzugt gedimmtes Licht'\n"
+            "- 'Das Licht soll warm sein' → 'bevorzugt warmes Licht'\n\n"
+            "Wenn KEINE klare Praeferenz erkennbar ist, antworte mit: KEINE\n"
+            "Antwort (NUR den Fakt oder KEINE):"
+        )
+
+        try:
+            result = await self.ollama.generate(
+                prompt=prompt,
+                temperature=0.1,
+                max_tokens=60,
+            )
+            result = (result or "").strip()
+
+            if not result or "KEINE" in result.upper() or len(result) < 5:
+                return
+
+            fact = SemanticFact(
+                content=f"{person} {result}" if person else result,
+                category="preference",
+                person=person,
+                confidence=0.85,
+                source_conversation=f"Korrektur: {user_text[:100]}",
+            )
+            await self.semantic.store_fact(fact)
+            logger.info("Korrektur-Praeferenz gespeichert: %s", result[:60])
+        except Exception as e:
+            logger.debug("Korrektur-LLM fehlgeschlagen: %s", e)
 
     @staticmethod
     async def get_emotional_context(

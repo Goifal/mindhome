@@ -61,6 +61,7 @@ class RoutineEngine:
         self.briefing_enabled = mb_cfg.get("enabled", True)
         self.briefing_modules = mb_cfg.get("modules", [
             "greeting", "weather", "calendar", "house_status", "travel",
+            "personal_memory",
         ])
         self.weekday_style = mb_cfg.get("weekday_style", "kurz")
         self.weekend_style = mb_cfg.get("weekend_style", "ausfuehrlich")
@@ -94,6 +95,7 @@ class RoutineEngine:
         self.briefing_enabled = mb_cfg.get("enabled", True)
         self.briefing_modules = mb_cfg.get("modules", [
             "greeting", "weather", "calendar", "house_status", "travel",
+            "personal_memory",
         ])
         self.weekday_style = mb_cfg.get("weekday_style", "kurz")
         self.weekend_style = mb_cfg.get("weekend_style", "ausfuehrlich")
@@ -230,8 +232,55 @@ class RoutineEngine:
                 return await self._get_house_status_briefing()
             elif module == "travel":
                 return await self.get_travel_briefing()
+            elif module == "personal_memory":
+                return await self._get_personal_memory_briefing(person)
         except Exception as e:
             logger.debug("Briefing-Modul '%s' fehlgeschlagen: %s", module, e)
+        return ""
+
+    async def _get_personal_memory_briefing(self, person: str) -> str:
+        """Liefert relevante Erinnerungen und anstehende Daten fuer das Briefing."""
+        if not self._semantic_memory or not person:
+            return ""
+
+        parts = []
+        try:
+            # Anstehende persoenliche Daten (naechste 7 Tage)
+            upcoming = await self._semantic_memory.get_upcoming_personal_dates(days_ahead=7)
+            for entry in upcoming:
+                if entry["days_until"] > 0:  # Heute wird schon in greeting abgedeckt
+                    name = entry["person"].capitalize()
+                    label = entry.get("label", "")
+                    days = entry["days_until"]
+                    day_text = f"in {days} Tagen" if days > 1 else "morgen"
+                    parts.append(f"{name}: {label} {day_text}")
+
+            # Gespeicherte Absichten/Plaene (intent-Fakten)
+            intent_facts = await self._semantic_memory.get_facts_by_category("intent")
+            for f in intent_facts:
+                content = f.get("content", "")
+                if content and f.get("confidence", 0) >= 0.5:
+                    parts.append(f"Geplant: {content}")
+
+            # Offene Gespraeche aus der letzten Session
+            if self.redis:
+                from .memory import MemoryManager
+                pending_key = "mha:conversations:pending"
+                pending_raw = await self.redis.lrange(pending_key, 0, 2)
+                import json as _json
+                for raw in (pending_raw or []):
+                    try:
+                        item = _json.loads(raw if isinstance(raw, str) else raw.decode())
+                        topic = item.get("topic", "")
+                        if topic:
+                            parts.append(f"Offenes Thema: {topic}")
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.debug("Personal Memory Briefing fehlgeschlagen: %s", e)
+
+        if parts:
+            return "Persoenliche Erinnerungen:\n" + "\n".join(f"- {p}" for p in parts[:5])
         return ""
 
     async def _get_greeting_context(self, person: str) -> str:

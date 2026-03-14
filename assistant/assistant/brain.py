@@ -577,6 +577,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if "RoutineEngine" not in _degraded_modules:
             await _safe_init("RoutineEngine.birthdays", self.routines.migrate_yaml_birthdays(self.memory.semantic))
 
+        # Relationship Cache initial befuellen
+        await _safe_init("RelationshipCache", self.memory.semantic.refresh_relationship_cache())
+
         # Phase 8: Anticipation Engine + Intent Tracker
         await _safe_init("Anticipation", self.anticipation.initialize(redis_client=self.memory.redis))
         self.anticipation.set_notify_callback(self._handle_anticipation_suggestion)
@@ -5668,7 +5671,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "Nutze sie AKTIV aber BEILAEUFIG in deinen Antworten.\n"
                 "Wenn der User nach Informationen fragt die hier stehen, antworte damit.\n"
                 "Ignoriere diese Fakten NICHT — sie sind dein Gedaechtnis.\n"
-                "Stil: Wie ein alter Bekannter, nicht wie eine Datenbank."
+                "Stil: Wie ein alter Bekannter, nicht wie eine Datenbank.\n\n"
+                "WICHTIG bei Geraete-Aktionen: Wenn der User einen VAGEN Befehl gibt "
+                "(z.B. 'mach es warm', 'Licht an', 'mach es gemuetlich') und du eine "
+                "gespeicherte PRAEFERENZ kennst (Temperatur, Helligkeit, Farbtemperatur), "
+                "NUTZE den gespeicherten Wert. Beispiel: User sagt 'mach es warm' und "
+                "du weisst '21 Grad bevorzugt' → setze auf 21 Grad."
             ))
             return "\n".join(parts)
 
@@ -5705,7 +5713,25 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 except Exception as e:
                     logger.debug("Semantic conv lookup fehlgeschlagen: %s", e)
 
-            # 2. Episodisches Gedaechtnis (ChromaDB mha_conversations)
+            # 2. Temporale Referenz-Erkennung: "wie letzte Woche", "gestern"
+            temporal_range = self._detect_temporal_reference(text)
+            if temporal_range:
+                try:
+                    start_date, end_date = temporal_range
+                    temporal_eps = await self.memory.search_episodes_by_time(
+                        query=text, start_date=start_date, end_date=end_date, limit=3,
+                    )
+                    for ep in temporal_eps:
+                        ts = ep.get("timestamp", "")
+                        date_str = self._format_days_ago(ts)
+                        content = ep.get("content", "")[:200]
+                        if content and content not in "\n".join(lines):
+                            prefix = f"{date_str}: " if date_str else ""
+                            lines.append(f"- {prefix}{content}")
+                except Exception as e:
+                    logger.debug("Temporale Episoden-Suche fehlgeschlagen: %s", e)
+
+            # 3. Episodisches Gedaechtnis (ChromaDB mha_conversations)
             try:
                 episodes = await self.memory.search_memories(text, limit=3)
                 if episodes:
@@ -5744,6 +5770,66 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 return f"Vor {days_ago} Tagen"
         except (ValueError, TypeError):
             return ""
+
+    @staticmethod
+    def _detect_temporal_reference(text: str) -> Optional[tuple[str, str]]:
+        """Erkennt temporale Referenzen im Text und gibt Datumsbereich zurueck.
+
+        Returns:
+            Tuple (start_date, end_date) als ISO-Strings oder None.
+        """
+        text_lower = text.lower()
+        now = datetime.now()
+
+        # "gestern"
+        if "gestern" in text_lower:
+            d = now - timedelta(days=1)
+            ds = d.strftime("%Y-%m-%d")
+            return (ds, ds)
+
+        # "vorgestern"
+        if "vorgestern" in text_lower:
+            d = now - timedelta(days=2)
+            ds = d.strftime("%Y-%m-%d")
+            return (ds, ds)
+
+        # "letzte woche" / "letzter woche"
+        if re.search(r"letzt(?:e[rn]?)?\s+woche", text_lower):
+            # Letzte Woche = Montag-Sonntag der Vorwoche
+            days_since_monday = now.weekday()
+            last_monday = now - timedelta(days=days_since_monday + 7)
+            last_sunday = last_monday + timedelta(days=6)
+            return (last_monday.strftime("%Y-%m-%d"), last_sunday.strftime("%Y-%m-%d"))
+
+        # "letzten monat" / "letztem monat"
+        if re.search(r"letzt(?:e[nm]?)?\s+monat", text_lower):
+            first_this_month = now.replace(day=1)
+            last_day_prev = first_this_month - timedelta(days=1)
+            first_prev = last_day_prev.replace(day=1)
+            return (first_prev.strftime("%Y-%m-%d"), last_day_prev.strftime("%Y-%m-%d"))
+
+        # "vor X tagen"
+        m = re.search(r"vor\s+(\d+)\s+tag(?:en)?", text_lower)
+        if m:
+            days = int(m.group(1))
+            d = now - timedelta(days=days)
+            return (d.strftime("%Y-%m-%d"), d.strftime("%Y-%m-%d"))
+
+        # "am montag/dienstag/..." (letzter Wochentag)
+        _WOCHENTAGE = {
+            "montag": 0, "dienstag": 1, "mittwoch": 2, "donnerstag": 3,
+            "freitag": 4, "samstag": 5, "sonntag": 6,
+        }
+        for tag, wd in _WOCHENTAGE.items():
+            if f"am {tag}" in text_lower or f"letzten {tag}" in text_lower:
+                days_back = (now.weekday() - wd) % 7
+                if days_back == 0:
+                    days_back = 7  # Letzten gleichen Tag
+                d = now - timedelta(days=days_back)
+                ds = d.strftime("%Y-%m-%d")
+                return (ds, ds)
+
+        return None
 
     async def _get_summary_context(self, text: str) -> str:
         """Holt relevante Langzeit-Summaries wenn die Frage die Vergangenheit betrifft."""
@@ -5914,14 +6000,27 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 )
                 topic_text = topic_summary.strip() if topic_summary else ""
                 if topic_text and len(topic_text) > 10:
-                    fact = SemanticFact(
-                        content=topic_text,
-                        category="conversation_topic",
-                        person=person,
-                        confidence=0.6,
-                        source_conversation=f"User: {user_text[:100]}",
-                    )
-                    await self.memory.semantic.store_fact(fact)
+                    # Deduplizierung: Pruefen ob aehnliches Topic schon existiert
+                    existing = await self.memory.semantic.find_similar_fact(topic_text, threshold=0.15)
+                    if existing and existing.get("category") == "conversation_topic":
+                        # Aehnliches Topic vorhanden — nur Timestamp aktualisieren
+                        _eid = existing.get("fact_id", "")
+                        if _eid and self.memory.redis:
+                            await self.memory.redis.hset(
+                                f"mha:fact:{_eid}", "updated_at",
+                                datetime.now().isoformat(),
+                            )
+                        logger.debug("Topic-Dedup: '%s' existiert bereits als '%s'",
+                                     topic_text[:40], existing.get("content", "")[:40])
+                    else:
+                        fact = SemanticFact(
+                            content=topic_text,
+                            category="conversation_topic",
+                            person=person,
+                            confidence=0.6,
+                            source_conversation=f"User: {user_text[:100]}",
+                        )
+                        await self.memory.semantic.store_fact(fact)
                     logger.debug("Kontext-Kette: Topic gespeichert: %s", topic_text[:60])
         except Exception as e:
             logger.debug("Kontext-Kette Topic-Extraktion fehlgeschlagen: %s", e)

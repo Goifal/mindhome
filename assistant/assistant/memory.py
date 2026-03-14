@@ -315,6 +315,52 @@ class MemoryManager:
             logger.error("Fehler bei Memory-Suche: %s", e)
             return []
 
+    async def search_episodes_by_time(
+        self, query: str, start_date: str, end_date: str, limit: int = 5,
+    ) -> list[dict]:
+        """Sucht Episoden in einem bestimmten Zeitraum.
+
+        Args:
+            query: Suchtext fuer Vektor-Aehnlichkeit
+            start_date: Start-Datum (ISO-Format, z.B. '2025-03-01')
+            end_date: End-Datum (ISO-Format, z.B. '2025-03-07')
+            limit: Max Ergebnisse
+        """
+        if not self.chroma_collection:
+            return []
+
+        try:
+            results = await asyncio.to_thread(
+                self.chroma_collection.query,
+                query_texts=[query],
+                n_results=limit * 3,  # Mehr holen, dann filtern
+                where={
+                    "$and": [
+                        {"timestamp": {"$gte": start_date}},
+                        {"timestamp": {"$lte": end_date + "T23:59:59"}},
+                    ]
+                },
+            )
+
+            episodes = []
+            if results and results.get("documents"):
+                docs = results["documents"][0] if results["documents"] else []
+                metas = results["metadatas"][0] if results.get("metadatas") and results["metadatas"] else []
+                for i, doc in enumerate(docs):
+                    if i >= limit:
+                        break
+                    meta = metas[i] if i < len(metas) else {}
+                    episodes.append({
+                        "content": doc,
+                        "timestamp": meta.get("timestamp", "") if isinstance(meta, dict) else "",
+                        "person": meta.get("person", "") if isinstance(meta, dict) else "",
+                    })
+            return episodes
+        except Exception as e:
+            logger.debug("Temporale Episoden-Suche fehlgeschlagen: %s", e)
+            # Fallback: Normale Suche ohne Zeitfilter
+            return await self.search_memories(query, limit=limit)
+
     # ----- Phase 8: Konversations-Kontinuitaet -----
 
     async def mark_conversation_pending(
