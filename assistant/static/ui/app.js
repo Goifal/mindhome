@@ -4771,7 +4771,7 @@ async function loadKnownDevices() {
   if (!c) return;
   c.innerHTML = '<span style="color:var(--text-muted)">Lade Geräte...</span>';
   try {
-    const r = await fetch(`/api/ui/known-devices?token=${encodeURIComponent(TOKEN)}`);
+    const r = await fetch('/api/ui/known-devices', {headers: {'Authorization': `Bearer ${TOKEN}`}});
     if (!r.ok) { c.innerHTML = '<span style="color:var(--danger)">Fehler beim Laden</span>'; return; }
     const data = await r.json();
     const devices = data.devices || [];
@@ -4791,8 +4791,8 @@ async function loadKnownDevices() {
 async function removeKnownDevice(entityId) {
   if (!confirm('Geraet "' + entityId + '" aus der Liste entfernen? Beim naechsten Auftauchen wird es als unbekannt gemeldet.')) return;
   try {
-    await fetch(`/api/ui/known-devices?token=${encodeURIComponent(TOKEN)}`, {
-      method: 'DELETE', headers: {'Content-Type':'application/json'},
+    await fetch('/api/ui/known-devices', {
+      method: 'DELETE', headers: {'Content-Type':'application/json', 'Authorization': `Bearer ${TOKEN}`},
       body: JSON.stringify({entity_id: entityId})
     });
     loadKnownDevices();

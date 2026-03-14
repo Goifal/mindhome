@@ -102,7 +102,7 @@ class AutonomyManager:
             "get_house_status", "get_room_climate",
         ]))
         self._security_actions = set(trust_cfg.get("security_actions", [
-            "lock_door", "arm_security_system", "set_presence_mode",
+            "lock_door", "unlock_door", "arm_security_system", "disarm_alarm", "set_presence_mode",
         ]))
 
         # Konfigurierbare Action-Permissions und Evolution-Criteria

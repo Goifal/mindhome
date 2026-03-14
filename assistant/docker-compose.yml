@@ -100,6 +100,7 @@ services:
       dockerfile: Dockerfile.whisper
     container_name: mha-whisper
     restart: unless-stopped
+    mem_limit: 2g
     ports:
     - 10300:10300
     environment:
@@ -132,6 +133,7 @@ services:
     image: rhasspy/wyoming-piper:latest
     container_name: mha-piper
     restart: unless-stopped
+    mem_limit: 1g
     ports:
     - 10200:10200
     command: --voice ${PIPER_VOICE:-de_DE-thorsten-high} --uri tcp://0.0.0.0:10200
