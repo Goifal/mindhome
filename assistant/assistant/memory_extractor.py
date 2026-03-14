@@ -291,6 +291,7 @@ class MemoryExtractor:
                 model=self._extraction_model,
                 temperature=self._extraction_temperature,
                 max_tokens=self._extraction_max_tokens,
+                think=False,  # Kein Thinking — nur JSON-Output
             )
 
             if "error" in response:
@@ -309,6 +310,19 @@ class MemoryExtractor:
         """Parst die LLM-Antwort in eine Liste von Fakten."""
         # JSON-Array aus der Antwort extrahieren
         text = llm_output.strip()
+
+        # Think-Tags entfernen (Qwen3.5 denkt manchmal vor der Antwort)
+        if "<think>" in text:
+            think_end = text.find("</think>")
+            if think_end != -1:
+                text = text[think_end + 8:].strip()
+
+        # Markdown Code-Block entfernen (```json ... ```)
+        if text.startswith("```"):
+            lines = text.split("\n")
+            # Erste Zeile (```json) und letzte (```) entfernen
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            text = "\n".join(lines).strip()
 
         # Versuche direktes JSON-Parsing
         try:
@@ -329,6 +343,10 @@ class MemoryExtractor:
                     return [f for f in result if isinstance(f, dict) and f.get("content")]
             except json.JSONDecodeError:
                 pass
+
+        # Leere Antwort oder nur Whitespace → keine Fakten (kein Warning noetig)
+        if not text or text in ("[]", "null", "None", "keine", "Keine"):
+            return []
 
         logger.warning("Fakten-JSON-Parse fehlgeschlagen (LLM-Output war kein valides JSON): %s", text[:300])
         return []
