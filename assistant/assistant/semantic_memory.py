@@ -211,19 +211,21 @@ class SemanticMemory:
         redis_ok = True
         if self.redis:
             try:
-                await self.redis.hset(
+                pipe = self.redis.pipeline()
+                pipe.hset(
                     f"mha:fact:{fact.fact_id}",
                     mapping=fact.to_dict(),
                 )
-                await self.redis.sadd(
+                pipe.sadd(
                     f"mha:facts:person:{fact.person}",
                     fact.fact_id,
                 )
-                await self.redis.sadd(
+                pipe.sadd(
                     f"mha:facts:category:{fact.category}",
                     fact.fact_id,
                 )
-                await self.redis.sadd("mha:facts:all", fact.fact_id)
+                pipe.sadd("mha:facts:all", fact.fact_id)
+                await pipe.execute()
             except Exception as e:
                 logger.error("Fehler beim Redis-Index (Fakt in ChromaDB aber nicht indexiert): %s", e)
                 redis_ok = False
@@ -276,7 +278,8 @@ class SemanticMemory:
                 updated_meta["updated_at"] = now
                 updated_meta["times_confirmed"] = str(times_confirmed)
                 updated_meta["confidence"] = str(new_confidence)
-                new_content = new_fact.content if len(new_fact.content) > len(existing.get("content", "")) else existing.get("content", "")
+                # Neuerer Fakt gewinnt immer (aktuellere Information)
+                new_content = new_fact.content
                 await asyncio.to_thread(
                     self.chroma_collection.update,
                     ids=[fact_id],
@@ -288,13 +291,12 @@ class SemanticMemory:
 
         if self.redis:
             try:
-                await self.redis.hset(f"mha:fact:{fact_id}", "updated_at", now)
-                await self.redis.hset(
-                    f"mha:fact:{fact_id}", "times_confirmed", str(times_confirmed)
-                )
-                await self.redis.hset(
-                    f"mha:fact:{fact_id}", "confidence", str(new_confidence)
-                )
+                pipe = self.redis.pipeline()
+                pipe.hset(f"mha:fact:{fact_id}", "updated_at", now)
+                pipe.hset(f"mha:fact:{fact_id}", "times_confirmed", str(times_confirmed))
+                pipe.hset(f"mha:fact:{fact_id}", "confidence", str(new_confidence))
+                pipe.hset(f"mha:fact:{fact_id}", "content", new_fact.content)
+                await pipe.execute()
             except Exception as e:
                 logger.error("Fehler beim Redis-Update: %s", e)
 
@@ -339,11 +341,39 @@ class SemanticMemory:
                 # Aehnlich genug um verwandt zu sein (< 0.8) aber
                 # verschieden genug um ein Widerspruch zu sein (> 0.15)
                 if 0.15 < distance < 0.8:
-                    # Pruefen ob es numerische Werte gibt die sich unterscheiden
                     import re
+                    is_contradiction = False
+
+                    # 1. Numerische Widersprueche (z.B. "21 Grad" vs "22 Grad")
                     old_nums = set(re.findall(r'\d+(?:\.\d+)?', doc))
                     new_nums = set(re.findall(r'\d+(?:\.\d+)?', new_fact.content))
                     if old_nums and new_nums and old_nums != new_nums:
+                        is_contradiction = True
+
+                    # 2. Gegensatz-Paare (z.B. "mag Kaffee" vs "hasst Kaffee")
+                    if not is_contradiction:
+                        _opposites = [
+                            (r'\bmag\b', r'\b(?:hasst|hasse|mag nicht|mag kein)\b'),
+                            (r'\bliebt\b', r'\b(?:hasst|hasse)\b'),
+                            (r'\bkein(?:e|en|er)?\b', r'\b(?:hat|ist|mag|liebt)\b'),
+                            (r'\bnicht\b', r'\b(?:immer|gerne|gern)\b'),
+                            (r'\bmorgens\b', r'\babends\b'),
+                            (r'\bwarm\b', r'\bkalt\b'),
+                            (r'\bkuehl\b', r'\bwarm\b'),
+                        ]
+                        doc_lower = doc.lower()
+                        new_lower = new_fact.content.lower()
+                        for pat_a, pat_b in _opposites:
+                            a_in_old = bool(re.search(pat_a, doc_lower))
+                            b_in_old = bool(re.search(pat_b, doc_lower))
+                            a_in_new = bool(re.search(pat_a, new_lower))
+                            b_in_new = bool(re.search(pat_b, new_lower))
+                            # Gegensatz: ein Pattern im alten, das andere im neuen
+                            if (a_in_old and b_in_new) or (b_in_old and a_in_new):
+                                is_contradiction = True
+                                break
+
+                    if is_contradiction:
                         fact_id = results["ids"][0][i] if results.get("ids") else ""
                         return {
                             "fact_id": fact_id,
@@ -464,7 +494,12 @@ class SemanticMemory:
             ):
                 distance = results["distances"][0][0]
                 if distance <= threshold:
-                    meta = results["metadatas"][0][0] if results.get("metadatas") else {}
+                    meta = dict(results["metadatas"][0][0]) if results.get("metadatas") else {}
+                    # fact_id und content aus ChromaDB-Ergebnis sicherstellen
+                    if not meta.get("fact_id") and results.get("ids") and results["ids"][0]:
+                        meta["fact_id"] = results["ids"][0][0]
+                    if not meta.get("content") and results["documents"][0]:
+                        meta["content"] = results["documents"][0][0]
                     return meta
         except Exception as e:
             logger.error("Fehler bei Duplikat-Suche: %s", e)
@@ -489,6 +524,9 @@ class SemanticMemory:
                 where=where_filter,
             )
 
+            min_confidence = float(yaml_config.get("memory", {}).get(
+                "min_confidence_for_context", 0.4
+            ))
             facts = []
             if results and results.get("documents"):
                 for i, doc in enumerate(results["documents"][0]):
@@ -496,11 +534,15 @@ class SemanticMemory:
                     distance = (
                         results["distances"][0][i] if results.get("distances") else 1.0
                     )
+                    confidence = float(meta.get("confidence", 0.5))
+                    # Fakten mit zu niedriger Confidence herausfiltern
+                    if confidence < min_confidence:
+                        continue
                     facts.append({
                         "content": doc,
                         "category": meta.get("category", "general"),
                         "person": meta.get("person", "unknown"),
-                        "confidence": float(meta.get("confidence", 0.5)),
+                        "confidence": confidence,
                         "times_confirmed": int(meta.get("times_confirmed", 1)),
                         "relevance": 1.0 - min(distance, 1.0),
                     })
@@ -640,20 +682,21 @@ class SemanticMemory:
         if not self.redis:
             return False
 
-        if self.redis:
-            try:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
-                if data:
-                    person = data.get("person", "unknown")
-                    category = data.get("category", "general")
-                    await self.redis.srem(f"mha:facts:person:{person}", fact_id)
-                    await self.redis.srem(f"mha:facts:category:{category}", fact_id)
-                    await self.redis.srem("mha:facts:all", fact_id)
-                    await self.redis.delete(f"mha:fact:{fact_id}")
-                    logger.info("Fakt geloescht: %s", fact_id)
-                    return True
-            except Exception as e:
-                logger.error("Fehler beim Loeschen aus Redis: %s", e)
+        try:
+            data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            if data:
+                person = data.get("person", "unknown")
+                category = data.get("category", "general")
+                pipe = self.redis.pipeline()
+                pipe.srem(f"mha:facts:person:{person}", fact_id)
+                pipe.srem(f"mha:facts:category:{category}", fact_id)
+                pipe.srem("mha:facts:all", fact_id)
+                pipe.delete(f"mha:fact:{fact_id}")
+                await pipe.execute()
+                logger.info("Fakt geloescht: %s", fact_id)
+                return True
+        except Exception as e:
+            logger.error("Fehler beim Loeschen aus Redis: %s", e)
 
         return False
 
@@ -800,8 +843,14 @@ class SemanticMemory:
                 fact_ids = await self.redis.smembers("mha:facts:all")
 
             corrections = []
-            for fact_id in fact_ids:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            fact_ids_list = list(fact_ids)
+            if not fact_ids_list:
+                return []
+            pipe = self.redis.pipeline()
+            for fact_id in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fact_id}")
+            all_data = await pipe.execute()
+            for data in all_data:
                 if data:
                     source = data.get("source_conversation", "")
                     if source.startswith("correction:"):
@@ -828,9 +877,15 @@ class SemanticMemory:
 
         try:
             fact_ids = await self.redis.smembers("mha:facts:all")
+            fact_ids_list = list(fact_ids)
+            if not fact_ids_list:
+                return []
+            pipe = self.redis.pipeline()
+            for fact_id in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fact_id}")
+            all_data = await pipe.execute()
             todays = []
-            for fact_id in fact_ids:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            for data in all_data:
                 if data:
                     created = data.get("created_at", "")
                     if created.startswith(today):
@@ -932,8 +987,14 @@ class SemanticMemory:
             current_year = now.year
             results = []
 
-            for fact_id in fact_ids:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            # Pipeline fuer Batch-Fetch
+            fact_ids_list = list(fact_ids)
+            pipe = self.redis.pipeline()
+            for fact_id in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fact_id}")
+            all_data = await pipe.execute()
+
+            for fact_id, data in zip(fact_ids_list, all_data):
                 if not data:
                     continue
 
@@ -1035,19 +1096,31 @@ class SemanticMemory:
             return {"total_facts": 0, "categories": {}, "persons": []}
 
         try:
-            total = await self.redis.scard("mha:facts:all")
-            categories = {}
+            # Pipeline fuer total + alle Kategorie-Counts
+            pipe = self.redis.pipeline()
+            pipe.scard("mha:facts:all")
             for cat in FACT_CATEGORIES:
-                count = await self.redis.scard(f"mha:facts:category:{cat}")
+                pipe.scard(f"mha:facts:category:{cat}")
+            stats_results = await pipe.execute()
+            total = stats_results[0]
+            categories = {}
+            for idx, cat in enumerate(FACT_CATEGORIES):
+                count = stats_results[idx + 1]
                 if count > 0:
                     categories[cat] = count
 
-            persons = set()
+            # Pipeline fuer Person-Lookup
             fact_ids = await self.redis.smembers("mha:facts:all")
-            for fact_id in fact_ids:
-                person = await self.redis.hget(f"mha:fact:{fact_id}", "person")
-                if person:
-                    persons.add(person)
+            fact_ids_list = list(fact_ids)
+            persons = set()
+            if fact_ids_list:
+                pipe = self.redis.pipeline()
+                for fact_id in fact_ids_list:
+                    pipe.hget(f"mha:fact:{fact_id}", "person")
+                person_results = await pipe.execute()
+                for person in person_results:
+                    if person:
+                        persons.add(person)
 
             return {
                 "total_facts": total,

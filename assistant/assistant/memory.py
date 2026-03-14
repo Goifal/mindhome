@@ -196,20 +196,28 @@ class MemoryManager:
                 chunk_meta["total_chunks"] = str(len(chunks))
                 doc_id = f"{base_id}_{i}" if len(chunks) > 1 else base_id
 
-                # P3: Timeout auf ChromaDB-Operationen
-                import asyncio
-                try:
-                    await asyncio.wait_for(
-                        asyncio.to_thread(
-                            self.chroma_collection.add,
-                            documents=[chunk],
-                            metadatas=[chunk_meta],
-                            ids=[doc_id],
-                        ),
-                        timeout=5.0,
-                    )
-                except asyncio.TimeoutError:
-                    logger.error("ChromaDB Timeout beim Speichern von Chunk %s", doc_id)
+                # P3: Timeout auf ChromaDB-Operationen mit 1x Retry
+                stored = False
+                for _attempt in range(2):
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.to_thread(
+                                self.chroma_collection.add,
+                                documents=[chunk],
+                                metadatas=[chunk_meta],
+                                ids=[doc_id],
+                            ),
+                            timeout=5.0 * (_attempt + 1),
+                        )
+                        stored = True
+                        break
+                    except asyncio.TimeoutError:
+                        if _attempt == 0:
+                            logger.warning("ChromaDB Timeout bei Chunk %s, Retry...", doc_id)
+                            await asyncio.sleep(0.5)
+                        else:
+                            logger.error("ChromaDB Timeout beim Speichern von Chunk %s nach Retry", doc_id)
+                if not stored:
                     continue
 
             logger.debug(
