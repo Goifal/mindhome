@@ -82,7 +82,7 @@ MindHome Assistant ist ein separater, lokaler KI-Sprachassistent der auf einem z
 | **MindHome Assistant** | PC 2 (Ubuntu) | FastAPI, Ollama, ChromaDB, Redis | 8200 |
 
 ### Features
-- Lokale LLM-Inference (Qwen 2.5 via Ollama)
+- Lokale LLM-Inference (Qwen 3.5 via Ollama)
 - Function Calling (Licht, Klima, Szenen, Alarme, Schloesser)
 - 3-Schichten-Gedaechtnis (Working + Episodic + Semantic)
 - Proaktive Meldungen (Morgen-Briefing, Ankunft, Warnungen)
@@ -131,7 +131,7 @@ mindhome/
 │   ├── install.sh
 │   ├── .env.example
 │   ├── config/settings.yaml
-│   └── assistant/               # Python-Package (22 Module)
+│   └── assistant/               # Python-Package (90 Module)
 │       ├── main.py              # FastAPI Server
 │       ├── brain.py             # Orchestrator
 │       ├── personality.py       # Persoenlichkeits-Engine
@@ -211,7 +211,7 @@ mindhome/
 
 ## Technologie
 
-- **Backend:** Python 3.11, Flask, SQLAlchemy, SQLite
+- **Backend:** Python 3.12, Flask, SQLAlchemy, SQLite
 - **Frontend:** React (JSX), Babel 7, CSS Custom Properties
 - **Verbindung:** Home Assistant REST API + WebSocket
 - **Container:** Docker (Alpine Linux)
@@ -329,7 +329,7 @@ See [docs/PROJECT_MINDHOME_ASSISTANT.md](docs/PROJECT_MINDHOME_ASSISTANT.md) for
 
 ## Technology
 
-- **Backend:** Python 3.11, Flask, SQLAlchemy, SQLite
+- **Backend:** Python 3.12, Flask, SQLAlchemy, SQLite
 - **Frontend:** React (JSX), Babel 7, CSS Custom Properties
 - **Connection:** Home Assistant REST API + WebSocket
 - **Container:** Docker (Alpine Linux)

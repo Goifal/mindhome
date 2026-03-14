@@ -1,0 +1,51 @@
+name: MindHome CI
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-assistant:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install CPU-only PyTorch
+        run: pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+      - name: Install dependencies
+        run: pip install -r assistant/requirements.txt
+      - name: Run tests
+        run: cd assistant && python -m pytest --tb=short -q
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install ruff
+      - run: ruff check assistant/ addon/ speech/ shared/
+
+  static-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile check all Python files
+        run: |
+          find assistant/assistant -name "*.py" -exec python -m py_compile {} \;
+          find addon/rootfs/opt/mindhome -name "*.py" -exec python -m py_compile {} \;
+          find speech -name "*.py" -exec python -m py_compile {} \;
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t mindhome-assistant ./assistant
+      - run: docker build -f speech/Dockerfile.whisper -t mindhome-speech ./speech
