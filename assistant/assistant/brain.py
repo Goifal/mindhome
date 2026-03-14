@@ -3098,15 +3098,47 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         _cl_cfg = cfg.yaml_config.get("character_lock", {})
         if (_cl_cfg.get("enabled", True) and _cl_cfg.get("mid_conversation_reminder", True)
                 and conv_tokens_used > 200):
-            _reminder = (
-                "[REMINDER] Du bist J.A.R.V.I.S. — trocken, praezise, Butler-Ton. "
-                "Kurz. Keine Listen. Erfinde NICHTS. NUR vorhandene Daten nutzen."
-            )
+            _current_mood = getattr(self, "_current_mood", "neutral")
+            if _current_mood in ("frustrated", "stressed"):
+                _reminder = (
+                    "[REMINDER] Du bist J.A.R.V.I.S. — trocken, praezise, Butler-Ton. "
+                    "Kurz. Keine Listen. Erfinde NICHTS. NUR vorhandene Daten nutzen. "
+                    "WICHTIG: User ist frustriert. MAX 1-2 Saetze. Sofort handeln, nicht fragen. "
+                    "Wenn du ein Geraet nicht findest, nutze get_switches mit dem richtigen Raum."
+                )
+            else:
+                _reminder = (
+                    "[REMINDER] Du bist J.A.R.V.I.S. — trocken, praezise, Butler-Ton. "
+                    "Kurz. Keine Listen. Erfinde NICHTS. NUR vorhandene Daten nutzen."
+                )
             messages.append({"role": "system", "content": _reminder})
 
+        # Raum-Kontext aus letzten Nachrichten extrahieren
+        # Hilft dem LLM den richtigen Raum zu nutzen wenn der User
+        # in Folge-Befehlen keinen Raum mehr explizit nennt
+        from .function_calling import _mindhome_rooms
+        _room_keywords = [r.lower() for r in _mindhome_rooms] if _mindhome_rooms else []
+        _last_mentioned_room = None
+        for msg in reversed(recent):
+            content_lower = (msg.get("content") or "").lower()
+            for rk in _room_keywords:
+                if rk in content_lower:
+                    _last_mentioned_room = rk
+                    break
+            if _last_mentioned_room:
+                break
+
         # Situation Delta als User-Message-Prefix (prominenter als System-Prompt-Sektion)
-        if situation_delta:
+        _room_hint = ""
+        if _last_mentioned_room and _last_mentioned_room not in text.lower():
+            _room_hint = f"Zuletzt genannter Raum: {_last_mentioned_room}"
+
+        if situation_delta and _room_hint:
+            user_content = f"[KONTEXT: {situation_delta.strip()} | {_room_hint}]\n{text}"
+        elif situation_delta:
             user_content = f"[KONTEXT: {situation_delta.strip()}]\n{text}"
+        elif _room_hint:
+            user_content = f"[KONTEXT: {_room_hint}]\n{text}"
         else:
             user_content = text
         messages.append({"role": "user", "content": user_content})
@@ -5007,6 +5039,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             r'\brun_scene\b', r'\brun_script\b', r'\brun_automation\b',
             r'<tool_call>.*?</tool_call>',
             r'\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:.*?\}',
+            # SSML-Tags: LLM gibt manchmal TTS-Markup in den Text aus
+            r'</?speak>',
+            r'<prosody[^>]*>',
+            r'</prosody>',
+            r'\bprosody\b',
+            r'</?break[^>]*>',
+            r'</?emphasis[^>]*>',
+            r'<lang[^>]*>.*?</lang>',
         ]
         for _ml_pat in _meta_leak_patterns:
             _new = re.sub(_ml_pat, '', text, flags=re.IGNORECASE | re.DOTALL)
@@ -5379,7 +5419,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Verbessertes Satz-Splitting: Schutzt Abkuerzungen, Dezimalzahlen und Auslassungspunkte
         max_sentences = max_sentences_override or filter_config.get("max_response_sentences", 0)
         if max_sentences > 0 and not max_sentences_override and getattr(self, "_active_conversation_mode", False):
-            max_sentences = 0  # Unbegrenzt im Gesprächsmodus
+            # Bei Frustration/Stress: Satz-Limit beibehalten trotz Gesprächsmodus
+            _current_mood = getattr(self, "_current_mood", "neutral")
+            if _current_mood not in ("frustrated", "stressed"):
+                max_sentences = 0  # Unbegrenzt im Gesprächsmodus (nur bei guter/neutraler Stimmung)
         if max_sentences > 0:
             # Schutz-Tokens: Bekannte Abkuerzungen und Muster VOR dem Split ersetzen
             _protected = text

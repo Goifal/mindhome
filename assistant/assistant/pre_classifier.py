@@ -54,7 +54,7 @@ PROFILE_DEVICE_FAST = RequestProfile(
     need_activity=False,
     need_room_profile=True,       # Raum-Kontext fuer Geraete-Zuordnung
     need_memories=False,
-    need_mood=False,
+    need_mood=True,               # Mood auch bei Device-Commands — Frustration muss erkannt werden
     need_formality=False,
     need_irony=False,
     need_time_hints=True,         # Zeitkontext ist wichtig (z.B. "Licht aus" um 3 Uhr)
@@ -145,6 +145,12 @@ _DEVICE_VERBS_EMBEDDED = re.compile(
     r"|aktivieren?\w*|deaktivieren?\w*|abdunkeln?\w*|aufdrehen?\w*|zudrehen?\w*"
     r"|hochfahren?\w*|runterfahren?\w*|oeffnen?\w*|schliessen?\w*"
     r"|abspielen?\w*|stoppen?\w*|pausieren?\w*)\b",
+)
+
+# Trennbare Verben: "schalte die Maschine aus", "mach das Licht an"
+# Deutsche Trennverben haben den Praefix am Satzende
+_DEVICE_VERBS_SEPARATED = re.compile(
+    r"\b(mach|schalt\w*|stell\w*|dreh\w*|fahr\w*)\b.+\b(ein|aus|an|ab|auf|zu|um|hoch|runter)\b"
 )
 
 _DEVICE_NOUNS = [
@@ -250,10 +256,22 @@ class PreClassifier:
 
         # 1b. Eingebettete Device-Verben: "Ich will dass du X ausschaltest"
         #     Erkennt konjugierte Formen wie "ausschaltest", "einschalten", "anmachen"
-        if word_count <= 12 and not _is_question:
+        if word_count <= 16 and not _is_question:
             if _DEVICE_VERBS_EMBEDDED.search(text_lower):
                 logger.debug("PreClassifier: DEVICE_FAST (embedded verb: %s)", text)
                 return PROFILE_DEVICE_FAST
+
+        # 1c. Trennbare Verben: "schalte die Maschine aus", "mach das Licht an"
+        #     Deutsche Trennverben: Verb am Anfang/Mitte, Praefix am Satzende
+        if word_count <= 16 and not _is_question:
+            if _DEVICE_VERBS_SEPARATED.search(text_lower):
+                _has_device_context = (
+                    any(n in text_lower for n in _DEVICE_NOUNS)
+                    or any(w in text_lower for w in ("maschine", "geraet", "gerät", "dose"))
+                )
+                if _has_device_context:
+                    logger.debug("PreClassifier: DEVICE_FAST (separated verb: %s)", text)
+                    return PROFILE_DEVICE_FAST
 
         # 2. Status-Abfragen: "Wie warm ist es?", "Sind die Rolllaeden offen?"
         if word_count <= 10:
