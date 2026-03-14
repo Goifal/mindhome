@@ -574,6 +574,21 @@ class SoundManager:
                 logger.info("SSML enthält Meta-Leakage, nutze Plaintext")
                 speak_text = text
 
+        # Piper TTS SSML-Sanitizer: Piper unterstuetzt nur <speak>, <s>, <break>,
+        # <say-as> — NICHT <prosody>, <emphasis>, <lang>, <voice>.
+        # Nicht unterstuetzte Tags werden als Text vorgelesen!
+        if '<' in speak_text:
+            # Tags entfernen die Piper nicht versteht (alles ausser speak/s/break/say-as)
+            speak_text = _re.sub(
+                r'</?(?:prosody|emphasis|lang|voice|audio|mark|sub|phoneme|p)\b[^>]*>',
+                '', speak_text,
+            )
+            # Leere <speak></speak> Wrapper entfernen wenn nur Plaintext uebrig
+            _inner = _re.sub(r'</?(?:speak|s|break|say-as)\b[^>]*/?>', '', speak_text).strip()
+            if _inner == text:
+                # SSML hat keinen Mehrwert mehr — Plaintext nutzen
+                speak_text = text
+
         # Alexa/Echo: Keine Audio-Dateien, stattdessen Alexa-eigener TTS
         if self._is_alexa_speaker(speaker_entity):
             # Volume trotzdem setzen (fire-and-forget)
