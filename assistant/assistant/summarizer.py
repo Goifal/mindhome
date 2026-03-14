@@ -47,7 +47,8 @@ class DailySummarizer:
         summarizer_cfg = yaml_config.get("summarizer", {})
         self.run_hour = summarizer_cfg.get("run_hour", 3)
         self.run_minute = summarizer_cfg.get("run_minute", 0)
-        self.model = summarizer_cfg.get("model", settings.model_deep)
+        from .config import resolve_model
+        self.model = resolve_model(summarizer_cfg.get("model", ""), fallback_tier="smart")
         self.max_tokens_daily = summarizer_cfg.get("max_tokens_daily", 512)
         self.max_tokens_weekly = summarizer_cfg.get("max_tokens_weekly", 384)
         self.max_tokens_monthly = summarizer_cfg.get("max_tokens_monthly", 512)

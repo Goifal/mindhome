@@ -476,7 +476,8 @@ REGELN:
         user_prompt = f"Erstelle eine Automation fuer: {description}"
 
         try:
-            model = self._cfg.get("model", settings.model_deep)
+            from .config import resolve_model
+            model = resolve_model(self._cfg.get("model", ""), fallback_tier="deep")
             result = await asyncio.wait_for(self.ollama.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},

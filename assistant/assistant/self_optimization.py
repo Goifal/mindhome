@@ -56,7 +56,8 @@ class SelfOptimization:
         self._approval_mode = self._cfg.get("approval_mode", "manual")
         self._interval = self._cfg.get("analysis_interval", "weekly")
         self._max_proposals = self._cfg.get("max_proposals_per_cycle", 3)
-        self._model = self._cfg.get("model", settings.model_deep)
+        from .config import resolve_model
+        self._model = resolve_model(self._cfg.get("model", ""), fallback_tier="deep")
         self._bounds = self._cfg.get("parameter_bounds", {})
         # SICHERHEIT: Mindestmenge an immutable Keys, die NICHT per Config ueberschrieben werden kann
         _HARDCODED_IMMUTABLE = {"trust_levels", "security", "autonomy", "dashboard", "models"}

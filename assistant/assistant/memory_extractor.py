@@ -97,7 +97,8 @@ class MemoryExtractor:
         # Config aus settings.yaml lesen
         mem_cfg = yaml_config.get("memory", {})
         self.enabled = mem_cfg.get("extraction_enabled", True)
-        self._extraction_model = mem_cfg.get("extraction_model", settings.model_smart)
+        from .config import resolve_model
+        self._extraction_model = resolve_model(mem_cfg.get("extraction_model", ""), fallback_tier="fast")
         self._extraction_temperature = float(mem_cfg.get("extraction_temperature", 0.1))
         self._extraction_max_tokens = int(mem_cfg.get("extraction_max_tokens", 512))
         self._min_words = int(mem_cfg.get("extraction_min_words", _DEFAULT_MIN_WORDS))

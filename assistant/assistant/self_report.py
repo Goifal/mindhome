@@ -26,7 +26,8 @@ class SelfReport:
         self.ollama = None
         self.enabled = False
         self._cfg = yaml_config.get("self_report", {})
-        self._model = self._cfg.get("model", settings.model_deep)
+        from .config import resolve_model
+        self._model = resolve_model(self._cfg.get("model", ""), fallback_tier="deep")
         self._last_report_day: str = ""
 
     async def initialize(self, redis_client, ollama_client):
