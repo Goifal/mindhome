@@ -5021,6 +5021,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             "Das ist eine tolle Frage",
             "Das ist eine gute Frage",
             "Das ist eine interessante Frage",
+            # --- Qwen 3.5 spezifische Floskeln (P06c) ---
+            "Natürlich!", "Natuerlich!",
+            "Gerne!", "Gerne,",
+            "Selbstverständlich!", "Selbstverstaendlich!",
+            "Klar!", "Klar,",
+            "Kann ich dir noch etwas helfen?",
+            "Kann ich sonst noch etwas tun?",
+            "Kann ich sonst noch etwas fuer dich tun?",
+            "Ich schalte jetzt", "Ich werde jetzt",
         ])
         for phrase in banned_phrases:
             # Case-insensitive Entfernung mit Wortgrenzen-Check

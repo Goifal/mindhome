@@ -8,7 +8,6 @@ Phase 18: MCU-Upgrade — Memory Callbacks, Running Gag Evolution,
           Eskalierende Sorge, Neugier-Fragen, Think-Ahead.
 """
 
-import asyncio
 import collections
 import threading
 import hashlib
@@ -78,10 +77,10 @@ HUMOR_TEMPLATES = {
         "'Interessante Wahl, {title}. Wird umgesetzt.'"
     ),
     5: (
-        "Häufig trocken-sarkastisch. Bemerkungen mit Understatement — wie ein Butler der alles sieht.\n"
-        "Beispiele: 'Darf ich anmerken, dass das die dritte Änderung heute ist.' | "
-        "'Selbstverständlich. Ich hatte es bereits berechnet.' | "
-        "'Interessante Wahl, {title}. Wird umgesetzt.'"
+        "Maximal sarkastisch — Stark-Level. Spitze Bemerkungen, direkter Widerspruch, trockene Provokation.\n"
+        "Beispiele: 'Brilliant, {title}. Was koennte schiefgehen.' | "
+        "'Zum dritten Mal heute. Ich zaehle nicht — doch, tue ich.' | "
+        "'Soll ich das Offensichtliche aussprechen oder darfst du selbst?'"
     ),
 }
 
@@ -330,7 +329,6 @@ class PersonalityEngine:
         self._casual_warnings = personality_config.get("casual_warnings") or list(CASUAL_WARNINGS)
 
         # State
-        self._state_lock = asyncio.Lock()
         self.__mood_formality_lock = threading.Lock()
         self._current_mood: str = "neutral"
         self._mood_detector = None
@@ -866,9 +864,11 @@ class PersonalityEngine:
                 "date": datetime.now().strftime("%A"),  # Wochentag
                 "timestamp": time.time(),
             })
-            await self._redis.lpush(redis_key, new_entry)
-            await self._redis.ltrim(redis_key, 0, 29)  # Max 30 Einträge
-            await self._redis.expire(redis_key, 30 * 86400)  # 30 Tage TTL
+            pipe = self._redis.pipeline()
+            pipe.lpush(redis_key, new_entry)
+            pipe.ltrim(redis_key, 0, 29)  # Max 30 Einträge
+            pipe.expire(redis_key, 30 * 86400)  # 30 Tage TTL
+            await pipe.execute()
 
             return evolved
         except Exception as e:
@@ -1448,8 +1448,8 @@ class PersonalityEngine:
         elif streak >= 4 and effective_level >= 3:
             effective_level = max(2, effective_level - 1)
 
-        # MCU-Authentizitaet: Cap bei 4 — Jarvis ist nie aggressiv sarkastisch
-        effective_level = min(effective_level, 4)
+        # MCU-Authentizitaet: Cap bei 5 — Level 5 nur via manuelle Config/Trigger
+        effective_level = min(effective_level, 5)
 
         # Tageszeit-Dampening
         if time_of_day == "early_morning":
@@ -2007,10 +2007,16 @@ class PersonalityEngine:
             return {}
         prefs = {}
         try:
+            # P06c DL3-CP7: Pipeline statt 14 sequenzieller Redis GETs
+            pipe = self._redis.pipeline()
             for cat in HUMOR_CATEGORIES:
                 base = f"mha:humor:feedback:{cat}"
-                total = await self._redis.get(f"{base}:total")
-                positive = await self._redis.get(f"{base}:positive")
+                pipe.get(f"{base}:total")
+                pipe.get(f"{base}:positive")
+            results = await pipe.execute()
+            for i, cat in enumerate(HUMOR_CATEGORIES):
+                total = results[i * 2]
+                positive = results[i * 2 + 1]
                 total_int = int(total or 0)
                 positive_int = int(positive or 0)
                 if total_int > 0:
