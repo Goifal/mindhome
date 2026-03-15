@@ -29,7 +29,7 @@
 | Komponente | Detail |
 |---|---|
 | GPU | 24 GB VRAM |
-| Modelle | Qwen3.5 35B (einziges Modell aktuell) |
+| Modelle | Qwen3.5 35B (aktuell einziges Modell — Fast/Smart/Deep zeigen alle auf 35B) |
 | Context Windows | Fast 16k, Smart 32k, Deep 64k |
 | TTS | Piper (lokal, begrenzte Expressivitaet) |
 | Users | 2 Erwachsene (spaeter Kinder) |
@@ -146,9 +146,9 @@ Dynamic Few-Shot, Prompt-Versionierung
 | # | Feature | Status | Was zu tun ist |
 |---|---|---|---|
 | B1 | core_identity.py | NEU | Python-Konstanten: Name, Rolle, Werte, Grenzen. Wird vor dynamischem Prompt geladen, unveraenderlich |
-| B2 | Context Compaction | ERWEITERN | Automatisch bei >70% Context: 4B-Modell fasst aeltere Turns zusammen |
+| B2 | Context Compaction | ERWEITERN | Automatisch bei >70% Context: Fast-Modell (`model_fast`) fasst aeltere Turns zusammen |
 | B3 | Pre-Compaction Memory Flush | NEU | Vor Compaction Fakten in Semantic Memory sichern |
-| B4 | Background Reasoning | ERWEITERN | Idle-Detection (5+ Min) → 9B denkt ueber Haus-Zustand nach, cached Insights |
+| B4 | Background Reasoning | ERWEITERN | Idle-Detection (5+ Min) → Smart-Modell (`model_smart`) denkt ueber Haus-Zustand nach, cached Insights |
 | B5 | Inner State | ERWEITERN | Separater JARVIS-Mood (besorgt/amuesiert/stolz/erleichtert), persistent in Redis, beeinflusst Prompt |
 | B6 | Relationship Model | ERWEITERN | Inside Jokes, Kommunikationsstil-Praeferenzen, Beziehungsgeschichte pro Person |
 | B7 | Unified Consciousness | NEU | Refactoring: ALLE Signale in EINEM Prompt-Pass statt separate Module einzeln |
@@ -178,7 +178,7 @@ Dynamic Few-Shot, Prompt-Versionierung
 | # | Feature | Status | Was zu tun ist |
 |---|---|---|---|
 | D1 | Task-aware Temperature | NEU | `model_router.py`: Geraet→0.3, Chat→0.8, Analyse→0.5 |
-| D2 | GPU-Smart Architecture | CONFIG | Bereits 4B/9B/35B Setup. Optimieren: 4B fuer Triage nutzen |
+| D2 | GPU-Smart Architecture | CONFIG | Bereits Fast/Smart/Deep Setup. Optimieren: Fast-Modell (`model_fast`) fuer Triage nutzen |
 | D3 | Kontextuelles Schweigen | ERWEITERN | `situation_model.py` einbinden: Film→still, Gaeste→diskret |
 | D4 | Eskalations-Intelligenz | NEU | `proactive.py`: Notification-Counter pro Event, graduell eskalieren |
 | D5 | Quality Feedback Loop | NEU | `response_quality.py` → `personality.py`: Schlechte Patterns vermeiden |
@@ -339,9 +339,11 @@ Neue Prompt-Sektionen einfuegen:
 ```python
 class ModelRouter:
     # 3 Stufen:
-    # - model_fast (4B): Einfache Befehle ("Licht an")
-    # - model_smart (9B): Fragen, Konversation, Standard
-    # - model_deep (35B): Komplexe Planung, Multi-Step
+    # - model_fast: Einfache Befehle ("Licht an") — settings.model_fast
+    # - model_smart: Fragen, Konversation, Standard — settings.model_smart
+    # - model_deep: Komplexe Planung, Multi-Step — settings.model_deep
+    # Aktuell zeigen alle drei auf dasselbe Modell (Qwen3.5 35B).
+    # Wenn spaeter kleinere Modelle dazukommen, automatisch genutzt.
 
     def route(self, text: str, ...) -> str:
         # Keyword-Matching → Tier-Auswahl
@@ -566,12 +568,12 @@ async def _execute_anticipated_action(self, pattern, confidence, person):
 
 #### Schritt 2: B4 — Background Reasoning
 
-Neues Feature: Idle-Detection → 35B-Modell denkt im Hintergrund (mit niedrigerer Temperature).
+Neues Feature: Idle-Detection → Smart-Modell (`model_smart`) denkt im Hintergrund (mit niedrigerer Temperature).
 
 ```python
 # In brain.py oder neues background_reasoning.py
 async def _idle_reasoning_loop(self):
-    """Wenn 5+ Minuten kein User-Input: 9B denkt ueber Haus-Zustand nach."""
+    """Wenn 5+ Minuten kein User-Input: Smart-Modell denkt ueber Haus-Zustand nach."""
     while self._running:
         await asyncio.sleep(60)  # Check jede Minute
         idle_time = time.time() - self._last_interaction
@@ -628,8 +630,8 @@ cd /home/user/mindhome && python -m pytest assistant/tests/ -x
 #### B2+B3: Context Compaction + Memory Flush
 
 Wenn Context > 70% gefuellt:
-1. Alle Fakten aus alten Turns in Semantic Memory flushen (35B-Modell)
-2. Alte Turns zusammenfassen (35B-Modell)
+1. Alle Fakten aus alten Turns in Semantic Memory flushen (Fast-Modell (`model_fast`))
+2. Alte Turns zusammenfassen (Fast-Modell (`model_fast`))
 3. Zusammenfassung als neuen "System-Turn" einfuegen
 
 #### B5: Inner State
