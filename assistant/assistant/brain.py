@@ -426,14 +426,21 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             "heizung", "thermostat", "klima",
             "steckdose", "schalter", "musik", "lautsprecher",
             "wecker", "timer", "erinnerung",
+            # Haushaltsgeraete (Switches)
+            "maschine", "kaffeemaschine", "siebtraeger", "spuelmaschine",
+            "waschmaschine", "trockner", "ventilator", "luefter",
+            "pumpe", "boiler", "bewaesserung",
         ]
         self._action_words = set(cmd_cfg.get("action_words") or [
             "auf", "zu", "an", "aus", "hoch", "runter",
             "offen", "ein", "ab", "halb", "stopp",
             "oeffne", "schliess", "oeffnen", "schliessen",
+            "einschalten", "ausschalten", "anmachen", "ausmachen",
+            "aktivieren", "deaktivieren", "starten",
         ])
         self._command_verbs = cmd_cfg.get("command_verbs") or [
             "mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess",
+            "aktiviere ", "deaktiviere ", "starte ",
         ]
         self._query_markers = cmd_cfg.get("query_markers") or [
             "welche", "sind ", "ist ", "status", "zeig", "liste",
@@ -7778,6 +7785,33 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # --- Steuerungsbefehle: "Licht aus", "Rollladen hoch" ---
         _has_alle = "alle" in words or "alles" in words
 
+        # Switches: "Siebträgermaschine ein", "Kaffeemaschine an", "Steckdose Kueche aus"
+        _switch_nouns = ["maschine", "kaffeemaschine", "siebtraeger", "steckdose",
+                         "pumpe", "boiler", "bewaesserung", "ventilator", "luefter"]
+        if any(n in t for n in _switch_nouns):
+            state = "on" if (words & {"an", "ein", "einschalten", "aktivieren",
+                                      "starten", "anmachen"}) else \
+                    "off" if (words & {"aus", "ausschalten", "deaktivieren",
+                                       "ausmachen", "stopp", "stop"}) else None
+            if state:
+                # Switch-Name aus Entity-Katalog matchen
+                from .function_calling import _entity_catalog
+                _switches = _entity_catalog.get("switches", [])
+                _best_match = ""
+                for _sw in _switches:
+                    # Entries sind "name (friendly_name) [Rolle]"
+                    _sw_lower = _sw.lower()
+                    for _kw in t.split():
+                        if len(_kw) >= 4 and _kw in _sw_lower:
+                            _best_match = _sw.split(" (")[0].split(" [")[0].strip()
+                            break
+                    if _best_match:
+                        break
+                return {"function": {"name": "set_switch",
+                                     "arguments": {"entity_id": f"switch.{_best_match}" if _best_match else "",
+                                                   "state": state,
+                                                   "room": _room}}}
+
         # Lichter an/aus/dimmen
         if any(n in t for n in ["licht", "lichter", "lampe", "lampen", "leuchte"]):
             state = "on" if (words & {"an", "ein"}) else "off" if (words & {"aus"}) else None
@@ -7943,6 +7977,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         _CMD_VERBS = [
             "mach", "schalte", "schalt", "stell", "setz",
             "dreh", "fahr", "oeffne", "schliess",
+            "aktiviere", "deaktiviere", "starte",
         ]
         has_verb = any(t.startswith(v) for v in _CMD_VERBS)
         if not has_verb and len(words) > 6:
@@ -7983,7 +8018,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         "gleich", "etwas", "einfach", "kurz"}
             for _noun in ["licht", "lampe", "leuchte", "rollladen", "rolladen",
                           "rollo", "jalousie", "heizung", "thermostat",
-                          "steckdose", "schalter"]:
+                          "steckdose", "schalter", "maschine", "kaffeemaschine",
+                          "siebtraeger"]:
                 _idx = t.find(_noun)
                 if _idx < 0:
                     continue
@@ -8149,12 +8185,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 if mode:
                     return {"function": "arm_security_system", "args": {"mode": mode}}
 
-        # --- STECKDOSE / SCHALTER ---
-        if any(n in t for n in ["steckdose", "schalter"]):
+        # --- STECKDOSE / SCHALTER / HAUSHALTSGERAETE ---
+        _switch_nouns = ["steckdose", "schalter", "maschine", "kaffeemaschine",
+                         "siebtraeger", "spuelmaschine", "waschmaschine",
+                         "trockner", "ventilator", "luefter", "pumpe", "boiler",
+                         "bewaesserung"]
+        if any(n in t for n in _switch_nouns):
             state = None
-            if any(v in t for v in ["einschalten", "anschalten", "anmachen"]):
+            if any(v in t for v in ["einschalten", "anschalten", "anmachen",
+                                     "aktivieren", "starten"]):
                 state = "on"
-            elif any(v in t for v in ["ausschalten", "abschalten", "ausmachen"]):
+            elif any(v in t for v in ["ausschalten", "abschalten", "ausmachen",
+                                       "deaktivieren", "stoppen"]):
                 state = "off"
             elif _re.search(r'\b(?:an|ein)\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
                 state = "on"
@@ -8162,7 +8204,22 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 state = "off"
             if state is None:
                 return None
-            return {"function": "set_switch", "args": {"room": effective_room, "state": state}}
+            # Entity-Matching: Geraetename im Switch-Katalog suchen
+            from .function_calling import _entity_catalog
+            _switches = _entity_catalog.get("switches", [])
+            _best = ""
+            for _sw in _switches:
+                _sw_l = _sw.lower()
+                for _kw in words:
+                    if len(_kw) >= 4 and _kw in _sw_l:
+                        _best = _sw.split(" (")[0].split(" [")[0].strip()
+                        break
+                if _best:
+                    break
+            args = {"state": state, "room": effective_room}
+            if _best:
+                args["entity_id"] = f"switch.{_best}"
+            return {"function": "set_switch", "args": args}
 
         return None
 
