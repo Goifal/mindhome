@@ -2032,5 +2032,22 @@ latency_optimization:
   refinement_skip_max_chars: 120
   tools_cache_ttl: 60
   conv_summary_mode: truncate
+# ── Session 6: Fortgeschrittene Intelligenz ──────────────────
+# B4: Background Reasoning — Idle-Analyse mit Smart-Modell
+background_reasoning:
+  enabled: true
+  idle_minutes: 5
+  check_interval_seconds: 60
+  cooldown_minutes: 30
+# B8: Dynamic Skill Acquisition — Abstrakte Konzepte lernen
+dynamic_skills:
+  enabled: true
+  min_observations: 3
+# C6: Semantic History Search — Gespraeche durchsuchen
+semantic_history_search:
+  enabled: true
+# C9: Automation-Debugging — HA-Automatisierungen analysieren
+automation_debugging:
+  enabled: true
 entity_annotations: {}
 entity_roles: {}

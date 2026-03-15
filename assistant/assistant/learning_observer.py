@@ -34,6 +34,10 @@ KEY_AUTOMATED = "mha:learning:automated"  # F-053: Tracks automated entity+times
 
 WEEKDAY_NAMES_DE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 
+# B8: Redis-Keys fuer abstrakte Konzepte
+KEY_ABSTRACT_CONCEPTS = "mha:learning:abstract_concepts"
+KEY_CONCEPT_OBSERVATIONS = "mha:learning:concept_observations"
+
 
 def _parse_person_prefix(action: str) -> tuple[str, str]:
     """Extrahiert Person-Prefix aus einem Redis-Action-Key.
@@ -525,3 +529,255 @@ class LearningObserver:
             lines.append(f"\n{suggestions} Vorschläge gemacht: {accepted} akzeptiert, {declined} abgelehnt.")
 
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # B8: Dynamic Skill Acquisition — Abstrakte Konzepte
+    # ------------------------------------------------------------------
+
+    async def observe_abstract_action(self, actions: list[dict], trigger_text: str,
+                                       person: str = ""):
+        """B8: Beobachtet zusammengehoerige Aktionen und erkennt abstrakte Konzepte.
+
+        Wenn ein User z.B. sagt "Feierabend" und dann Licht dimmt, Musik an,
+        Heizung hoch → erkennt das als Konzept "Feierabend".
+
+        Args:
+            actions: Liste der ausgefuehrten Aktionen [{entity_id, new_state, ...}]
+            trigger_text: Der User-Text der die Aktionen ausgeloest hat
+            person: Person die das Konzept nutzt
+        """
+        if not self.enabled or not self.redis:
+            return
+
+        _cfg = yaml_config.get("dynamic_skills", {})
+        if not _cfg.get("enabled", True):
+            return
+
+        # Mindestens 2 Aktionen fuer ein abstraktes Konzept
+        if len(actions) < 2:
+            return
+
+        # Konzept-Erkennung: Trigger-Text auf abstrakte Begriffe pruefen
+        _concept_name = self._extract_concept_name(trigger_text)
+        if not _concept_name:
+            return
+
+        try:
+            now = datetime.now()
+            person_prefix = f"{person}:" if person else ""
+            concept_key = f"{KEY_CONCEPT_OBSERVATIONS}:{person_prefix}{_concept_name}"
+
+            # Aktionen serialisieren
+            _action_set = sorted([
+                f"{a.get('entity_id', '')}:{a.get('new_state', '')}"
+                for a in actions if a.get("entity_id")
+            ])
+            _action_hash = "|".join(_action_set)
+
+            observation = json.dumps({
+                "actions": _action_set,
+                "action_hash": _action_hash,
+                "trigger": trigger_text[:200],
+                "person": person,
+                "hour": now.hour,
+                "weekday": now.weekday(),
+                "timestamp": now.isoformat(),
+            }, ensure_ascii=False)
+
+            await self.redis.lpush(concept_key, observation)
+            await self.redis.ltrim(concept_key, 0, 29)
+            await self.redis.expire(concept_key, 90 * 86400)
+
+            # Pruefen ob genug Beobachtungen fuer Konzept-Erstellung
+            _min_obs = _cfg.get("min_observations", 3)
+            obs_count = await self.redis.llen(concept_key)
+            if obs_count >= _min_obs:
+                await self._maybe_create_concept(
+                    _concept_name, concept_key, person, _cfg
+                )
+
+        except Exception as e:
+            logger.debug("B8 Abstract Action Observation Fehler: %s", e)
+
+    def _extract_concept_name(self, text: str) -> str:
+        """B8: Extrahiert einen abstrakten Konzeptnamen aus dem User-Text.
+
+        Erkennt Ausdruecke wie "Feierabend", "Filmabend", "Gute Nacht",
+        "Morgenroutine" etc.
+        """
+        text_lower = text.lower().strip()
+
+        # Bekannte abstrakte Konzepte (erweiterbar)
+        _CONCEPT_TRIGGERS = {
+            "feierabend": "feierabend",
+            "filmabend": "filmabend",
+            "gute nacht": "gute_nacht",
+            "guten morgen": "guten_morgen",
+            "morgenroutine": "morgenroutine",
+            "abendroutine": "abendroutine",
+            "party": "party",
+            "partymodus": "party",
+            "romantisch": "romantisch",
+            "date night": "date_night",
+            "kochmodus": "kochmodus",
+            "kochen": "kochmodus",
+            "arbeitsmodus": "arbeitsmodus",
+            "konzentration": "konzentration",
+            "entspannung": "entspannung",
+            "chillen": "entspannung",
+            "gaming": "gaming",
+            "aufwachen": "aufwachen",
+            "schlafenszeit": "gute_nacht",
+            "gaeste kommen": "gaeste",
+            "besuch kommt": "gaeste",
+        }
+
+        for trigger, concept in _CONCEPT_TRIGGERS.items():
+            if trigger in text_lower:
+                return concept
+
+        return ""
+
+    async def _maybe_create_concept(self, concept_name: str, obs_key: str,
+                                     person: str, cfg: dict):
+        """B8: Prueft Beobachtungen und erstellt ggf. ein abstraktes Konzept."""
+        try:
+            raw_obs = await self.redis.lrange(obs_key, 0, 29)
+            if not raw_obs:
+                return
+
+            observations = []
+            for r in raw_obs:
+                try:
+                    obs = json.loads(r) if isinstance(r, str) else json.loads(r.decode())
+                    observations.append(obs)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+            if len(observations) < cfg.get("min_observations", 3):
+                return
+
+            # Pruefen ob Konzept schon existiert
+            person_prefix = f"{person}:" if person else ""
+            existing = await self.redis.hget(KEY_ABSTRACT_CONCEPTS, f"{person_prefix}{concept_name}")
+            if existing:
+                return
+
+            # Kern-Aktionen extrahieren (Aktionen die in >50% der Beobachtungen vorkommen)
+            from collections import Counter
+            _action_counter = Counter()
+            for obs in observations:
+                for action in obs.get("actions", []):
+                    _action_counter[action] += 1
+
+            _threshold = len(observations) * 0.5
+            _core_actions = [
+                action for action, count in _action_counter.items()
+                if count >= _threshold
+            ]
+
+            if len(_core_actions) < 2:
+                return
+
+            # Zeitanalyse: Typische Stunde
+            hours = [obs.get("hour", 12) for obs in observations]
+            _avg_hour = round(sum(hours) / len(hours))
+
+            # Wochentag-Analyse
+            weekdays = [obs.get("weekday", 0) for obs in observations]
+            weekday_counts = Counter(weekdays)
+            _primary_days = [d for d, c in weekday_counts.most_common(3) if c >= 2]
+
+            concept = {
+                "name": concept_name,
+                "core_actions": _core_actions,
+                "typical_hour": _avg_hour,
+                "primary_weekdays": _primary_days,
+                "observation_count": len(observations),
+                "person": person,
+                "created": datetime.now().isoformat(),
+            }
+
+            await self.redis.hset(
+                KEY_ABSTRACT_CONCEPTS,
+                f"{person_prefix}{concept_name}",
+                json.dumps(concept, ensure_ascii=False),
+            )
+            await self.redis.expire(KEY_ABSTRACT_CONCEPTS, 365 * 86400)
+
+            logger.info(
+                "B8: Abstraktes Konzept '%s' erstellt (%d Kern-Aktionen, %d Beobachtungen, Person: %s)",
+                concept_name, len(_core_actions), len(observations), person or "global",
+            )
+
+            # Vorschlag an User senden
+            if self._notify_callback:
+                friendly_actions = []
+                for a in _core_actions[:5]:
+                    parts = a.split(":", 1)
+                    if len(parts) == 2:
+                        entity = parts[0].split(".", 1)[-1].replace("_", " ").title()
+                        friendly_actions.append(f"{entity} → {parts[1]}")
+
+                title = get_person_title()
+                msg = (
+                    f"{title}, ich habe bemerkt, dass '{concept_name}' fuer dich "
+                    f"folgendes bedeutet: {', '.join(friendly_actions)}. "
+                    f"Soll ich mir das so merken?"
+                )
+                await self._notify_callback({
+                    "message": msg,
+                    "type": "concept_learned",
+                    "concept": concept_name,
+                    "actions": _core_actions,
+                    "person": person,
+                })
+
+        except Exception as e:
+            logger.debug("B8 Concept Creation Fehler: %s", e)
+
+    async def get_concept(self, concept_name: str, person: str = "") -> Optional[dict]:
+        """B8: Laedt ein abstraktes Konzept.
+
+        Args:
+            concept_name: Name des Konzepts (z.B. "feierabend")
+            person: Person-spezifisch oder global
+
+        Returns:
+            Konzept-Dict oder None
+        """
+        if not self.redis:
+            return None
+        try:
+            person_prefix = f"{person}:" if person else ""
+            raw = await self.redis.hget(KEY_ABSTRACT_CONCEPTS, f"{person_prefix}{concept_name}")
+            if not raw:
+                # Fallback: Globales Konzept wenn kein person-spezifisches existiert
+                if person:
+                    raw = await self.redis.hget(KEY_ABSTRACT_CONCEPTS, concept_name)
+            if raw:
+                return json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+        except Exception as e:
+            logger.debug("B8 Get Concept Fehler: %s", e)
+        return None
+
+    async def get_all_concepts(self, person: str = "") -> list[dict]:
+        """B8: Listet alle gelernten Konzepte auf."""
+        if not self.redis:
+            return []
+        try:
+            all_data = await self.redis.hgetall(KEY_ABSTRACT_CONCEPTS)
+            concepts = []
+            for key, val in all_data.items():
+                key_str = key.decode() if isinstance(key, bytes) else key
+                if person and not key_str.startswith(f"{person}:") and ":" in key_str:
+                    continue
+                try:
+                    concept = json.loads(val) if isinstance(val, str) else json.loads(val.decode())
+                    concepts.append(concept)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            return concepts
+        except Exception as e:
+            logger.debug("B8 Get All Concepts Fehler: %s", e)
+            return []

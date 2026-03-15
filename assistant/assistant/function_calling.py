@@ -3130,6 +3130,54 @@ def _get_assistant_tools_static() -> list:
             },
         },
     },
+    # C6: Semantic History Search — Durchsucht vergangene Gespraeche
+    {
+        "type": "function",
+        "function": {
+            "name": "search_history",
+            "description": "Durchsucht die Gespraechs-Historie nach vergangenen Interaktionen. Nutze dieses Tool wenn der User fragt 'Was habe ich gestern gesagt?', 'Wann haben wir ueber X geredet?', 'Was war das mit dem Licht letzte Woche?' oder aehnliche Fragen zur Vergangenheit.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Suchbegriff oder Thema das in der Historie gesucht werden soll.",
+                    },
+                    "days_back": {
+                        "type": "integer",
+                        "description": "Wie viele Tage zurueck suchen (Standard: 7, Max: 30).",
+                    },
+                    "person": {
+                        "type": "string",
+                        "description": "Optional: Nur Gespraeche dieser Person durchsuchen.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    # C9: Automation-Debugging — Analysiert HA-Automatisierungen
+    {
+        "type": "function",
+        "function": {
+            "name": "debug_automation",
+            "description": "Analysiert Home-Assistant-Automatisierungen und deren letzte Ausfuehrungen. Nutze dieses Tool wenn der User fragt warum eine Automatisierung nicht funktioniert hat, wann sie zuletzt gelaufen ist, oder welche Automatisierungen aktiv sind. Gibt Trigger, Bedingungen, Aktionen und letzte Ausfuehrungszeiten zurueck.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "automation_name": {
+                        "type": "string",
+                        "description": "Name oder Teil des Namens der Automatisierung. Leer lassen fuer eine Uebersicht aller Automatisierungen.",
+                    },
+                    "show_trace": {
+                        "type": "boolean",
+                        "description": "Wenn true, wird der letzte Ausfuehrungs-Trace angezeigt (detailliert).",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
     return _ASSISTANT_TOOLS_STATIC
 
@@ -3241,6 +3289,7 @@ class FunctionExecutor:
         "create_declarative_tool", "list_declarative_tools",
         "delete_declarative_tool", "run_declarative_tool",
         "suggest_declarative_tools",
+        "search_history", "debug_automation",
     })
 
     # LLMs übersetzen deutsche Raumnamen manchmal ins Englische
@@ -8640,6 +8689,250 @@ class FunctionExecutor:
             return {"success": False, "message": "name ist erforderlich."}
         executor = DeclarativeToolExecutor(self.ha)
         return await executor.execute(name)
+
+    # ── C6: Semantic History Search ──────────────────────────────
+
+    async def _exec_search_history(self, args: dict) -> dict:
+        """C6: Durchsucht Gespraechs-Archive in Redis nach einem Suchbegriff."""
+        query = args.get("query", "").strip()
+        if not query:
+            return {"success": False, "message": "Suchbegriff (query) ist erforderlich."}
+
+        days_back = min(int(args.get("days_back", 7)), 30)
+        person_filter = args.get("person", "").lower().strip()
+
+        _cfg = yaml_config.get("semantic_history_search", {})
+        if not _cfg.get("enabled", True):
+            return {"success": False, "message": "History-Suche ist deaktiviert."}
+
+        try:
+            import redis.asyncio as aioredis
+            from .config import settings
+            _redis_url = settings.get("REDIS_URL", "redis://localhost:6379")
+            redis_client = aioredis.from_url(_redis_url, decode_responses=True)
+        except Exception as e:
+            return {"success": False, "message": f"Redis-Verbindung fehlgeschlagen: {e}"}
+
+        try:
+            from datetime import datetime, timedelta
+            query_lower = query.lower()
+            query_words = set(query_lower.split())
+            matches = []
+
+            for day_offset in range(days_back):
+                date = (datetime.now() - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+                archive_key = f"mha:archive:{date}"
+
+                try:
+                    entries = await redis_client.lrange(archive_key, 0, -1)
+                except Exception:
+                    continue
+
+                for entry_raw in entries:
+                    try:
+                        import json
+                        entry = json.loads(entry_raw) if isinstance(entry_raw, str) else json.loads(entry_raw.decode())
+                    except (json.JSONDecodeError, TypeError, AttributeError):
+                        continue
+
+                    content = entry.get("content", "").lower()
+                    role = entry.get("role", "")
+                    timestamp = entry.get("timestamp", "")
+
+                    # Person-Filter
+                    if person_filter and entry.get("person", "").lower() != person_filter:
+                        continue
+
+                    # Keyword-Match: Mindestens 1 Query-Wort im Content
+                    if any(w in content for w in query_words):
+                        _score = sum(1 for w in query_words if w in content)
+                        matches.append({
+                            "date": date,
+                            "timestamp": timestamp,
+                            "role": role,
+                            "content": entry.get("content", "")[:300],
+                            "person": entry.get("person", ""),
+                            "score": _score,
+                        })
+
+            await redis_client.aclose()
+
+            # Nach Relevanz sortieren
+            matches.sort(key=lambda m: m["score"], reverse=True)
+            matches = matches[:15]  # Max 15 Treffer
+
+            if not matches:
+                return {
+                    "success": True,
+                    "message": f"Keine Treffer fuer '{query}' in den letzten {days_back} Tagen gefunden.",
+                    "results": [],
+                }
+
+            # Ergebnis formatieren
+            lines = [f"{len(matches)} Treffer fuer '{query}':\n"]
+            for m in matches:
+                _role_de = "User" if m["role"] == "user" else "Jarvis"
+                _ts = m.get("timestamp", m.get("date", "?"))
+                _person = f" ({m['person']})" if m.get("person") else ""
+                lines.append(f"[{_ts}] {_role_de}{_person}: {m['content']}")
+
+            # Auch in action_outcomes suchen
+            _action_matches = []
+            try:
+                redis_client2 = aioredis.from_url(_redis_url, decode_responses=True)
+                raw_actions = await redis_client2.lrange("mha:action_outcomes", 0, 499)
+                await redis_client2.aclose()
+                for raw in raw_actions:
+                    try:
+                        import json
+                        a = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+                        _action_str = json.dumps(a.get("args", {}), ensure_ascii=False).lower()
+                        if any(w in _action_str or w in a.get("action", "").lower() for w in query_words):
+                            _action_matches.append(
+                                f"[{a.get('timestamp', '?')}] Aktion: {a.get('action', '?')} "
+                                f"Args: {json.dumps(a.get('args', {}), ensure_ascii=False)[:150]}"
+                            )
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+            except Exception:
+                pass
+
+            if _action_matches:
+                lines.append(f"\n{len(_action_matches)} passende Aktionen:")
+                lines.extend(_action_matches[:5])
+
+            return {
+                "success": True,
+                "message": "\n".join(lines),
+                "results": matches,
+            }
+
+        except Exception as e:
+            await redis_client.aclose()
+            return {"success": False, "message": f"Suche fehlgeschlagen: {e}"}
+
+    # ── C9: Automation-Debugging ──────────────────────────────
+
+    async def _exec_debug_automation(self, args: dict) -> dict:
+        """C9: Analysiert HA-Automatisierungen und deren Status."""
+        automation_name = args.get("automation_name", "").strip()
+        show_trace = args.get("show_trace", False)
+
+        _cfg = yaml_config.get("automation_debugging", {})
+        if not _cfg.get("enabled", True):
+            return {"success": False, "message": "Automation-Debugging ist deaktiviert."}
+
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return {"success": False, "message": "Keine HA-States verfuegbar."}
+        except Exception as e:
+            return {"success": False, "message": f"HA nicht erreichbar: {e}"}
+
+        # Alle Automatisierungen filtern
+        automations = [
+            s for s in states
+            if s.get("entity_id", "").startswith("automation.")
+        ]
+
+        if not automations:
+            return {"success": True, "message": "Keine Automatisierungen in Home Assistant gefunden."}
+
+        # Optional nach Name filtern
+        if automation_name:
+            name_lower = automation_name.lower()
+            filtered = [
+                a for a in automations
+                if name_lower in a.get("attributes", {}).get("friendly_name", "").lower()
+                or name_lower in a.get("entity_id", "").lower()
+            ]
+            if not filtered:
+                # Fuzzy-Fallback
+                filtered = [
+                    a for a in automations
+                    if any(w in a.get("attributes", {}).get("friendly_name", "").lower()
+                           for w in name_lower.split())
+                ]
+            automations = filtered
+
+        if not automations:
+            return {
+                "success": True,
+                "message": f"Keine Automatisierung mit '{automation_name}' gefunden. "
+                           f"Versuche es ohne Filter fuer eine Uebersicht.",
+            }
+
+        lines = [f"{len(automations)} Automatisierung(en) gefunden:\n"]
+
+        for auto in automations[:10]:
+            eid = auto.get("entity_id", "")
+            attrs = auto.get("attributes", {})
+            name = attrs.get("friendly_name", eid)
+            state = auto.get("state", "?")
+            last_triggered = attrs.get("last_triggered", "nie")
+            current_state_str = "AKTIV" if state == "on" else "DEAKTIVIERT"
+
+            lines.append(f"**{name}** ({eid})")
+            lines.append(f"  Status: {current_state_str}")
+            lines.append(f"  Zuletzt ausgeloest: {last_triggered}")
+
+            # Trace laden wenn gewuenscht
+            if show_trace:
+                try:
+                    trace_data = await self.ha.call_api(
+                        "GET", f"api/config/automation/trace/{eid}"
+                    )
+                    if trace_data and isinstance(trace_data, list) and len(trace_data) > 0:
+                        latest_trace = trace_data[0]
+                        _trace_state = latest_trace.get("state", "?")
+                        _trace_ts = latest_trace.get("timestamp", "?")
+                        _trigger = latest_trace.get("trigger", {})
+                        _trigger_desc = _trigger.get("description", str(_trigger)[:200])
+                        lines.append(f"  Letzter Trace ({_trace_ts}): {_trace_state}")
+                        lines.append(f"  Trigger: {_trigger_desc}")
+
+                        # Fehler im Trace?
+                        _trace_error = latest_trace.get("error", "")
+                        if _trace_error:
+                            lines.append(f"  FEHLER: {_trace_error}")
+                    else:
+                        lines.append("  Kein Trace verfuegbar.")
+                except Exception as trace_e:
+                    lines.append(f"  Trace nicht ladbar: {trace_e}")
+
+            lines.append("")
+
+        # Zusammenfassung
+        _active = sum(1 for a in automations if a.get("state") == "on")
+        _inactive = len(automations) - _active
+        lines.append(f"Zusammenfassung: {_active} aktiv, {_inactive} deaktiviert")
+
+        # Probleme erkennen
+        problems = []
+        for auto in automations:
+            attrs = auto.get("attributes", {})
+            lt = attrs.get("last_triggered")
+            if lt and lt != "None":
+                try:
+                    from datetime import datetime, timedelta
+                    lt_dt = datetime.fromisoformat(lt.replace("Z", "+00:00"))
+                    age_days = (datetime.now(lt_dt.tzinfo) - lt_dt).days
+                    if age_days > 30 and auto.get("state") == "on":
+                        name = attrs.get("friendly_name", auto.get("entity_id", "?"))
+                        problems.append(f"'{name}' ist aktiv aber seit {age_days} Tagen nicht ausgeloest worden")
+                except (ValueError, TypeError):
+                    pass
+
+        if problems:
+            lines.append(f"\nMoegliche Probleme:")
+            for p in problems[:5]:
+                lines.append(f"- {p}")
+
+        return {
+            "success": True,
+            "message": "\n".join(lines),
+            "automation_count": len(automations),
+        }
 
     async def _exec_suggest_declarative_tools(self, args: dict) -> dict:
         """Generiert Tool-Vorschlaege basierend auf vorhandenen HA-Entities."""

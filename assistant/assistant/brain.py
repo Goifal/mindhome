@@ -218,6 +218,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Proaktive/Routine-Callbacks pruefen dies und warten bzw. verzichten.
         self._user_request_active = False
 
+        # B4: Background Reasoning — Idle-Timer fuer Smart-Modell-Analyse
+        self._last_interaction_ts: float = 0.0
+        self._idle_reasoning_pending: bool = False
+
         # Clients
         self.ha = HomeAssistantClient()
         self.ollama = OllamaClient()
@@ -766,6 +770,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             self._entity_catalog_refresh_loop(), name="entity_catalog_refresh"
         )
 
+        # B4: Background Reasoning — Idle-Loop starten
+        _idle_cfg = cfg.yaml_config.get("background_reasoning", {})
+        if _idle_cfg.get("enabled", True):
+            self._task_registry.create_task(
+                self._idle_reasoning_loop(), name="idle_reasoning"
+            )
+
         if _degraded_modules:
             logger.warning(
                 "F-069: Jarvis gestartet im DEGRADED MODE — %d Module ausgefallen: %s",
@@ -1157,10 +1168,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "model_used": "timeout_fallback",
             }
         self._user_request_active = True
+        self._last_interaction_ts = time.time()  # B4: Idle-Timer zuruecksetzen
+        self._idle_reasoning_pending = False  # B4: Idle-Analyse abbrechen
         try:
             return await self._process_inner(text, person, room, files, stream_callback, voice_metadata, device_id)
         finally:
             self._user_request_active = False
+            self._last_interaction_ts = time.time()  # B4: auch nach Antwort
             self._process_lock.release()
 
     async def _process_inner(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None, device_id: Optional[str] = None) -> dict:
@@ -2491,6 +2505,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns(person=person or "")))
             _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
             _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
+            _mega_tasks.append(("idle_insights", self._get_idle_insights()))
             _mega_tasks.append(("correction_ctx", self.correction_memory.get_relevant_corrections(
                 action_type="", args=None, person=person or "",
             )))
@@ -2596,6 +2611,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         learned_patterns = _safe_get("learned_patterns") or []
         live_insights = _safe_get("insights_now") or []
         experiential_hint = _safe_get("experiential")
+        idle_insight = _safe_get("idle_insights")  # B4
         correction_ctx = _safe_get("correction_ctx")
         learned_rules = _safe_get("learned_rules") or []
         pending_learnings = _safe_get("pending_learnings")
@@ -3019,6 +3035,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Experiential Memory: "Letztes Mal als du das gemacht hast..."
         if experiential_hint:
             sections.append(("experiential", f"\n\n{experiential_hint}", 3))
+
+        # B4: Idle-Insights einweben (niedrige Prio, nur wenn relevant)
+        if idle_insight:
+            sections.append(("idle_insight", f"\n\n{idle_insight}\nErwaehne dies NUR wenn es zum aktuellen Thema passt.", 4))
 
         # MCU-Persoenlichkeit: Lern-Bestaetigung (einmalig pro Regel)
         if pending_learnings:
@@ -4779,6 +4799,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         self._log_experiential_memory(outcome_entry),
                         name="log_experiential",
                     )
+
+        # B8: Abstrakte Konzepte beobachten (mehrere Aktionen auf einen Trigger)
+        _dskill_cfg = cfg.yaml_config.get("dynamic_skills", {})
+        if _dskill_cfg.get("enabled", True) and len(executed_actions) >= 2:
+            _successful_actions = [
+                {"entity_id": a.get("args", {}).get("entity_id", "") or
+                 f"{a['function'].replace('set_', '')}.{a.get('args', {}).get('room', 'unknown')}",
+                 "new_state": a.get("args", {}).get("state", "")}
+                for a in executed_actions
+                if isinstance(a.get("result"), dict) and a["result"].get("success")
+            ]
+            if len(_successful_actions) >= 2:
+                self._task_registry.create_task(
+                    self.learning_observer.observe_abstract_action(
+                        _successful_actions, text, person=person or "",
+                    ),
+                    name="observe_abstract_action",
+                )
 
         # Phase 8: Intent-Extraktion im Hintergrund
         if len(text.split()) > 5:
@@ -7419,6 +7457,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "get_switches", "get_media", "get_alarms", "get_house_status",
                 "get_weather", "get_calendar", "get_shopping_list",
                 "search_entities", "get_area_entities", "get_entity_history",
+                "search_history", "debug_automation",
             }
             filtered = [t for t in all_tools
                         if t.get("function", {}).get("name") in _QUERY_NAMES]
@@ -9996,6 +10035,203 @@ Regeln:
             except Exception as e:
                 logger.debug("Entity-Katalog Background-Refresh Fehler: %s", e)
                 await asyncio.sleep(ERROR_BACKOFF_SHORT)
+
+    # ── B4: Background Reasoning — Idle-Loop ──────────────────────
+
+    async def _idle_reasoning_loop(self):
+        """B4: Prueft periodisch ob das System idle ist und startet dann
+        eine Smart-Modell-Analyse im Hintergrund.
+
+        Idle = kein User-Request seit N Minuten (default 5).
+        GPU-Contention-Guard: Ueberspringt wenn _user_request_active.
+        Max 1 Insight pro Idle-Periode.
+        """
+        _cfg = cfg.yaml_config.get("background_reasoning", {})
+        _idle_minutes = _cfg.get("idle_minutes", 5)
+        _check_interval = _cfg.get("check_interval_seconds", 60)
+        _cooldown_minutes = _cfg.get("cooldown_minutes", 30)
+
+        while True:
+            try:
+                await asyncio.sleep(_check_interval)
+
+                if not _cfg.get("enabled", True):
+                    continue
+
+                # GPU-Contention-Guard
+                if self._user_request_active:
+                    continue
+
+                # Idle-Check: Letzte Interaktion > N Minuten her
+                if self._last_interaction_ts <= 0:
+                    continue
+                idle_seconds = time.time() - self._last_interaction_ts
+                if idle_seconds < _idle_minutes * 60:
+                    continue
+
+                # Schon ein Insight in dieser Idle-Periode erzeugt?
+                if self._idle_reasoning_pending:
+                    continue
+
+                # Cooldown: Max 1 Insight pro N Minuten
+                if self.memory.redis:
+                    _last = await self.memory.redis.get("mha:idle_reasoning:last_run")
+                    if _last:
+                        continue
+
+                self._idle_reasoning_pending = True
+                await self._run_idle_reasoning()
+                self._idle_reasoning_pending = False
+
+                # Cooldown setzen
+                if self.memory.redis:
+                    await self.memory.redis.setex(
+                        "mha:idle_reasoning:last_run",
+                        _cooldown_minutes * 60,
+                        datetime.now().isoformat(),
+                    )
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self._idle_reasoning_pending = False
+                logger.debug("B4 Idle Reasoning Loop Fehler: %s", e)
+                await asyncio.sleep(120)
+
+    async def _run_idle_reasoning(self):
+        """B4: Fuehrt eine Background-Analyse mit Smart-Modell durch.
+
+        Sammelt aktuellen Kontext (HA-States, letzte Gespraeche, Wetter)
+        und laesst das Smart-Modell nach Insights suchen.
+        Ergebnisse werden in Redis gespeichert und beim naechsten
+        User-Kontakt eingewoben.
+        """
+        if not self.memory.redis or not self.ollama:
+            return
+
+        # Nochmal GPU-Guard pruefen
+        if self._user_request_active:
+            return
+
+        try:
+            # Kontext sammeln
+            _context_parts = []
+
+            # Aktuelle Uhrzeit + Wochentag
+            now = datetime.now()
+            _context_parts.append(
+                f"Aktuelle Zeit: {now.strftime('%A %d.%m.%Y %H:%M')} Uhr"
+            )
+
+            # Letzte Gespraeche (aus Archiv)
+            today_str = now.strftime("%Y-%m-%d")
+            try:
+                recent = await self.memory.get_conversations_for_date(today_str)
+                if recent:
+                    _last_convs = recent[-6:]  # Letzte 3 Paare
+                    _conv_text = "\n".join(
+                        f"- [{c.get('role', '?')}]: {c.get('content', '')[:150]}"
+                        for c in _last_convs
+                    )
+                    _context_parts.append(f"Letzte Gespraeche heute:\n{_conv_text}")
+            except Exception:
+                pass
+
+            # HA-States (Zusammenfassung)
+            try:
+                states = await self.ha.get_states()
+                if states:
+                    _active = []
+                    for s in states:
+                        eid = s.get("entity_id", "")
+                        state = s.get("state", "")
+                        if eid.startswith("light.") and state == "on":
+                            _active.append(f"{eid}: an")
+                        elif eid.startswith("climate.") and state not in ("off", "unavailable"):
+                            attrs = s.get("attributes", {})
+                            temp = attrs.get("current_temperature", "?")
+                            _active.append(f"{eid}: {state} ({temp}°C)")
+                        elif eid.startswith("sensor.") and "temperature" in eid:
+                            _active.append(f"{eid}: {state}")
+                    if _active:
+                        _context_parts.append(
+                            f"Aktive HA-Entities:\n" + "\n".join(f"- {a}" for a in _active[:15])
+                        )
+            except Exception:
+                pass
+
+            if not _context_parts:
+                return
+
+            _context = "\n\n".join(_context_parts)
+
+            # GPU-Guard: Nochmal pruefen vor LLM-Call
+            if self._user_request_active:
+                return
+
+            # Smart-Modell fuer Analyse nutzen
+            _model = self.model_router.get_model("smart") if self.model_router else "qwen3.5:latest"
+            _system = (
+                "Du bist Jarvis, ein intelligenter Haus-Assistent. "
+                "Analysiere den folgenden Kontext und generiere EIN nuetzliches Insight. "
+                "Das kann sein: eine Optimierung (Energie, Komfort), ein Muster das dir auffaellt, "
+                "oder eine proaktive Empfehlung. "
+                "Antworte in einem einzigen Satz, direkt und konkret. "
+                "Wenn nichts Auffaelliges → antworte mit 'KEIN_INSIGHT'."
+            )
+
+            response = await self.ollama.chat(
+                model=_model,
+                messages=[
+                    {"role": "system", "content": _system},
+                    {"role": "user", "content": _context},
+                ],
+                options={"temperature": 0.3, "num_predict": 150},
+            )
+
+            _insight = response.get("message", {}).get("content", "").strip()
+
+            if not _insight or "KEIN_INSIGHT" in _insight:
+                logger.debug("B4: Kein Insight generiert")
+                return
+
+            # Insight in Redis speichern
+            _entry = json.dumps({
+                "insight": _insight,
+                "timestamp": now.isoformat(),
+                "context_summary": _context[:300],
+            }, ensure_ascii=False)
+            await self.memory.redis.lpush("mha:idle_insights", _entry)
+            await self.memory.redis.ltrim("mha:idle_insights", 0, 9)
+            await self.memory.redis.expire("mha:idle_insights", 7 * 86400)
+
+            logger.info("B4: Idle Insight generiert: %s", _insight[:80])
+
+        except Exception as e:
+            logger.debug("B4 Run Idle Reasoning Fehler: %s", e)
+
+    async def _get_idle_insights(self) -> str:
+        """B4: Laedt gespeicherte Idle-Insights fuer den naechsten User-Kontakt."""
+        if not self.memory.redis:
+            return ""
+        try:
+            raw = await self.memory.redis.lrange("mha:idle_insights", 0, 2)
+            if not raw:
+                return ""
+            insights = []
+            for r in raw:
+                try:
+                    entry = json.loads(r) if isinstance(r, str) else json.loads(r.decode())
+                    insights.append(entry.get("insight", ""))
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            if insights:
+                # Insights loeschen nach Abruf (einmalig einweben)
+                await self.memory.redis.delete("mha:idle_insights")
+                return "HINTERGRUND-ANALYSE: " + " | ".join(insights)
+        except Exception as e:
+            logger.debug("B4 Get Idle Insights Fehler: %s", e)
+        return ""
 
     async def _handle_daily_summary(self, data: dict):
         """Callback für Tages-Zusammenfassungen — wird morgens beim naechsten Kontakt gesprochen."""
