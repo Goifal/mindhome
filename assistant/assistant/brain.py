@@ -7786,27 +7786,42 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         _has_alle = "alle" in words or "alles" in words
 
         # Switches: "Siebträgermaschine ein", "Kaffeemaschine an", "Steckdose Kueche aus"
-        _switch_nouns = ["maschine", "kaffeemaschine", "siebtraeger", "steckdose",
-                         "pumpe", "boiler", "bewaesserung", "ventilator", "luefter"]
+        _switch_nouns = ["maschine", "kaffeemaschine", "siebtraeger", "siebträger",
+                         "steckdose", "pumpe", "boiler", "bewaesserung",
+                         "ventilator", "luefter"]
         if any(n in t for n in _switch_nouns):
             state = "on" if (words & {"an", "ein", "einschalten", "aktivieren",
                                       "starten", "anmachen"}) else \
                     "off" if (words & {"aus", "ausschalten", "deaktivieren",
                                        "ausmachen", "stopp", "stop"}) else None
             if state:
-                # Switch-Name aus Entity-Katalog matchen
+                # Switch-Name aus Entity-Katalog matchen.
+                # NUR Geraete-Nomen verwenden, NICHT Verben/Fuellwoerter wie
+                # "schalte", "bitte", "jarvis" — die matchen sonst falsche Switches.
                 from .function_calling import _entity_catalog
                 _switches = _entity_catalog.get("switches", [])
+                _SKIP_MATCH = {"schalte", "schalt", "mach", "mache", "stell",
+                               "stelle", "setz", "setze", "dreh", "drehe",
+                               "aktiviere", "deaktiviere", "starte", "bitte",
+                               "jarvis", "jetzt", "sofort", "gleich", "noch",
+                               "wieder", "einfach", "kurz", "gerade", "hier",
+                               "dass", "doch", "auch", "aber", "weil", "dann",
+                               "kannst", "willst", "soll", "bitte", "danke"}
+                _device_words = [w for w in t.split()
+                                 if len(w) >= 4 and w not in _SKIP_MATCH
+                                 and w not in {"an", "aus", "ein"}]
                 _best_match = ""
+                _best_score = 0
                 for _sw in _switches:
-                    # Entries sind "name (friendly_name) [Rolle]"
                     _sw_lower = _sw.lower()
-                    for _kw in t.split():
-                        if len(_kw) >= 4 and _kw in _sw_lower:
-                            _best_match = _sw.split(" (")[0].split(" [")[0].strip()
-                            break
-                    if _best_match:
-                        break
+                    _score = 0
+                    for _kw in _device_words:
+                        if _kw in _sw_lower:
+                            # Laengere Matches = besser (spezifischer)
+                            _score += len(_kw)
+                    if _score > _best_score:
+                        _best_score = _score
+                        _best_match = _sw.split(" (")[0].split(" [")[0].strip()
                 return {"function": {"name": "set_switch",
                                      "arguments": {"entity_id": f"switch.{_best_match}" if _best_match else "",
                                                    "state": state,
@@ -8204,18 +8219,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 state = "off"
             if state is None:
                 return None
-            # Entity-Matching: Geraetename im Switch-Katalog suchen
+            # Entity-Matching: Geraetename im Switch-Katalog suchen.
+            # Nur Geraete-Nomen matchen, keine Verben/Fuellwoerter.
             from .function_calling import _entity_catalog
             _switches = _entity_catalog.get("switches", [])
+            _SKIP = {"schalte", "schalt", "mach", "mache", "stell", "stelle",
+                     "setz", "setze", "dreh", "drehe", "aktiviere", "deaktiviere",
+                     "starte", "bitte", "jarvis", "jetzt", "sofort", "gleich",
+                     "noch", "wieder", "einfach", "kurz", "gerade", "dass",
+                     "doch", "auch", "aber", "weil", "dann", "danke"}
+            _dev_words = [w for w in word_set
+                          if len(w) >= 4 and w not in _SKIP
+                          and w not in {"an", "aus", "ein"}]
             _best = ""
+            _best_score = 0
             for _sw in _switches:
                 _sw_l = _sw.lower()
-                for _kw in words:
-                    if len(_kw) >= 4 and _kw in _sw_l:
-                        _best = _sw.split(" (")[0].split(" [")[0].strip()
-                        break
-                if _best:
-                    break
+                _score = sum(len(w) for w in _dev_words if w in _sw_l)
+                if _score > _best_score:
+                    _best_score = _score
+                    _best = _sw.split(" (")[0].split(" [")[0].strip()
             args = {"state": state, "room": effective_room}
             if _best:
                 args["entity_id"] = f"switch.{_best}"
