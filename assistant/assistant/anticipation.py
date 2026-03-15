@@ -48,7 +48,7 @@ class AnticipationEngine:
         thresholds = cfg.get("thresholds", {})
         self.threshold_ask = thresholds.get("ask", 0.6)
         self.threshold_suggest = thresholds.get("suggest", 0.8)
-        self.threshold_auto = thresholds.get("auto", 0.95)
+        self.threshold_auto = thresholds.get("auto", 0.90)
 
     async def initialize(self, redis_client: Optional[redis.Redis] = None):
         """Initialisiert die Engine."""

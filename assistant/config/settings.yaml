@@ -280,6 +280,21 @@ situative_improvisation:
   enabled: true
 creative_problem_solving:
   enabled: true
+multi_turn_tools:
+  enabled: true
+  max_iterations: 3
+inner_state:
+  enabled: true
+# C3: Self-initiated Follow-ups — JARVIS greift offene Themen proaktiv auf
+self_followup:
+  enabled: true
+  min_age_minutes: 15      # Mindest-Alter eines Themas bevor Follow-up
+  cooldown_minutes: 60     # Max 1 Follow-up pro Stunde
+  max_per_check: 1         # Max Follow-ups pro Pruefzyklus
+# C7: Butler-Instinkt — Automatische Ausfuehrung bei hoher Confidence
+butler_instinct:
+  enabled: true
+  min_autonomy_level: 3    # Autonomie-Level ab dem Auto-Execute erlaubt ist
 character_lock:
   enabled: true
   closing_anchor: true
@@ -1201,7 +1216,7 @@ anticipation:
   thresholds:
     ask: 0.6
     suggest: 0.8
-    auto: 0.95
+    auto: 0.90   # C7: Von 0.95 auf 0.90 gesenkt (Butler-Instinkt)
 insights:
   enabled: true
   check_interval_minutes: 30

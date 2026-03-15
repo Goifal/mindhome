@@ -61,6 +61,7 @@ from .light_engine import LightEngine
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
+from .inner_state import InnerStateEngine
 from .insight_engine import InsightEngine
 from .intent_tracker import IntentTracker
 from .routine_engine import RoutineEngine
@@ -242,6 +243,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.time_awareness = TimeAwareness(self.ha)
         self.routines = RoutineEngine(self.ha, self.ollama)
         self.anticipation = AnticipationEngine()
+        self.inner_state = InnerStateEngine()  # B5: JARVIS-eigene Emotionen
         self.intent_tracker = IntentTracker(self.ollama)
 
         # Phase 9: Stimme & Akustik
@@ -519,6 +521,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         await self.mood.initialize(redis_client=self.memory.redis)
         self.mood.set_ollama(self.ollama)  # N1: LLM-basierte Stimmungserkennung
         self.personality.set_mood_detector(self.mood)
+        self.personality.set_inner_state(self.inner_state)  # B5: JARVIS-eigene Emotionen
 
         # Phase 6: Redis für Personality Engine (Formality Score, Counter)
         self.personality.set_redis(self.memory.redis)
@@ -588,6 +591,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         await _safe_init("RelationshipCache", self.memory.semantic.refresh_relationship_cache())
 
         # Phase 8: Anticipation Engine + Intent Tracker
+        await _safe_init("InnerState", self.inner_state.initialize(redis_client=self.memory.redis))
         await _safe_init("Anticipation", self.anticipation.initialize(redis_client=self.memory.redis))
         self.anticipation.set_notify_callback(self._handle_anticipation_suggestion)
         await _safe_init("IntentTracker", self.intent_tracker.initialize(redis_client=self.memory.redis))
@@ -3365,8 +3369,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 else:
                     _think_mode = None  # Konversation/General: Modell entscheidet
 
+            # N3: Multi-Turn Tool Calling — iterativer Loop
+            _max_tool_turns = cfg.yaml_config.get("multi_turn_tools", {}).get("max_iterations", 3)
+            _tool_turn = 0
+            executed_actions = []
+            _turn_messages = list(messages)  # Kopie fuer Multi-Turn
+
             _cascade = await self._llm_with_cascade(
-                messages, model,
+                _turn_messages, model,
                 tools=_llm_tools,
                 max_tokens=response_tokens,
                 timeout=float(llm_timeout),
@@ -3389,7 +3399,6 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 tc for tc in raw_tool_calls
                 if isinstance(tc, dict) and "function" in tc
             ]
-            executed_actions = []
 
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
             QUERY_TOOLS = {"get_entity_state", "get_entity_history",
@@ -3771,6 +3780,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         name="autonomy_track",
                     )
 
+                    # B5: Inner State — Erfolg/Misserfolg tracken
+                    if _success:
+                        self._task_registry.create_task(
+                            self.inner_state.on_action_success(func_name),
+                            name="inner_state_success",
+                        )
+                    else:
+                        _err_msg = result.get("message", "") if isinstance(result, dict) else ""
+                        self._task_registry.create_task(
+                            self.inner_state.on_action_failure(func_name, _err_msg),
+                            name="inner_state_failure",
+                        )
+
                     # Phase 17: Learning Observer — Jarvis-Aktionen markieren
                     # damit sie nicht als "manuelle" Aktionen gezaehlt werden
                     if isinstance(result, dict) and result.get("success"):
@@ -3904,6 +3926,83 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     response_text = curiosity
                         except Exception as _cur_err:
                             logger.debug("Curiosity-Check fehlgeschlagen: %s", _cur_err)
+
+            # N3: Multi-Turn Tool Calling — Ergebnisse zurueck ans LLM senden
+            # Wenn Tool-Calls ausgefuehrt wurden und das LLM mehr Kontext braucht,
+            # Ergebnisse als Tool-Response-Messages anhaengen und erneut fragen.
+            _tool_turn += 1
+            while (
+                tool_calls
+                and _tool_turn < _max_tool_turns
+                and executed_actions
+                and cfg.yaml_config.get("multi_turn_tools", {}).get("enabled", True)
+            ):
+                # Tool-Ergebnisse als Messages aufbereiten
+                _turn_messages.append({"role": "assistant", "content": response_text or "", "tool_calls": [
+                    {"function": {"name": a["function"], "arguments": a.get("args", {})}}
+                    for a in executed_actions if a.get("function")
+                ]})
+                for action in executed_actions:
+                    _result_msg = ""
+                    if isinstance(action.get("result"), dict):
+                        _result_msg = action["result"].get("message", str(action["result"]))
+                    else:
+                        _result_msg = str(action.get("result", ""))
+                    _turn_messages.append({
+                        "role": "tool",
+                        "content": _result_msg[:1000],  # Limit Tool-Response
+                    })
+
+                # Erneuter LLM-Call
+                logger.info("N3: Multi-Turn %d/%d — %d Tool-Ergebnisse zurueck ans LLM",
+                            _tool_turn + 1, _max_tool_turns, len(executed_actions))
+                _cascade = await self._llm_with_cascade(
+                    _turn_messages, model,
+                    tools=_llm_tools,
+                    max_tokens=response_tokens,
+                    timeout=float(llm_timeout),
+                    think=False,  # Follow-up Turns ohne Think
+                    tier=_model_tier,
+                    temperature=_task_temperature,
+                )
+                if _cascade["error"]:
+                    logger.warning("N3: Multi-Turn LLM-Fehler in Turn %d", _tool_turn + 1)
+                    break
+
+                message = _cascade["message"]
+                response_text = _cascade["text"]
+                raw_tool_calls = message.get("tool_calls", [])
+                tool_calls = [
+                    tc for tc in raw_tool_calls
+                    if isinstance(tc, dict) and "function" in tc
+                ]
+
+                if not tool_calls:
+                    # LLM ist fertig — kein weiterer Turn noetig
+                    logger.info("N3: Multi-Turn abgeschlossen nach %d Turns", _tool_turn + 1)
+                    break
+
+                # Neue Tool-Calls ausfuehren (vereinfacht — ohne volles Validation/Pushback)
+                for tc in tool_calls:
+                    _fn = tc.get("function", {})
+                    _fname = _fn.get("name", "")
+                    _fargs = _fn.get("arguments", {})
+                    if isinstance(_fargs, str):
+                        try:
+                            _fargs = json.loads(_fargs)
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+                    # Basis-Validierung
+                    _val = self.validator.validate(_fname, _fargs)
+                    if not _val.ok:
+                        executed_actions.append({"function": _fname, "args": _fargs, "result": f"blocked: {_val.reason}"})
+                        continue
+                    _result = await self.executor.execute(_fname, _fargs)
+                    executed_actions.append({"function": _fname, "args": _fargs, "result": _result})
+                    logger.info("N3: Multi-Turn Tool-Call: %s(%s)", _fname, _fargs)
+                    await emit_action(_fname, _fargs, _result)
+
+                _tool_turn += 1
 
             # 8b. Query-Tool Antwort aufbereiten:
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
@@ -9362,7 +9461,11 @@ Regeln:
         person = suggestion.get("person", "")
         title = get_person_title(person)
 
-        if mode == "auto" and self.autonomy.level >= 4:
+        # C7: Butler-Instinkt — Auto-Execute ab Confidence 90%+ und Autonomie >= 3
+        _butler_cfg = cfg.yaml_config.get("butler_instinct", {})
+        _butler_enabled = _butler_cfg.get("enabled", True)
+        _butler_min_autonomy = _butler_cfg.get("min_autonomy_level", 3)
+        if mode == "auto" and _butler_enabled and self.autonomy.level >= _butler_min_autonomy:
             # F-027: Kombinierte Autonomie + Trust Pruefung via can_execute()
             exec_check = self.autonomy.can_execute(
                 person=person or "",
@@ -9390,12 +9493,27 @@ Regeln:
                 await emit_proactive(text, "anticipation_blocked", "medium")
                 return
 
-            # Automatisch ausfuehren + informieren
+            # C7: Automatisch ausfuehren + informieren (Butler-Instinkt)
             result = await self.executor.execute(action, args)
-            text = f"{title}, {desc} — hab ich uebernommen. Wie jeden Tag um diese Zeit."
+            _success = result.get("success", False) if isinstance(result, dict) else False
+            if _success:
+                text = f"{title}, {desc} — hab ich uebernommen. Wie jeden Tag um diese Zeit."
+                # Inner State: Stolz bei erfolgreicher Antizipation
+                if hasattr(self, "inner_state"):
+                    self._task_registry.create_task(
+                        self.inner_state.on_complex_solve(),
+                        name="inner_state_anticipation_success",
+                    )
+            else:
+                text = f"{title}, ich wollte {desc} uebernehmen, aber es gab ein Problem."
+                if hasattr(self, "inner_state"):
+                    self._task_registry.create_task(
+                        self.inner_state.on_action_failure(action, "anticipation_failed"),
+                        name="inner_state_anticipation_failure",
+                    )
             await emit_proactive(text, "anticipation_auto", "medium")
             self._remember_exchange("[proaktiv: Antizipation]", text)
-            logger.info("Anticipation auto-execute: %s (confidence: %d%%)", desc, pct)
+            logger.info("Anticipation auto-execute: %s (confidence: %d%%, success: %s)", desc, pct, _success)
         else:
             # Vorschlagen — mit Confidence-Kontext im JARVIS-Stil
             if mode == "suggest":

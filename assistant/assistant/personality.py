@@ -332,6 +332,7 @@ class PersonalityEngine:
         self.__mood_formality_lock = threading.Lock()
         self._current_mood: str = "neutral"
         self._mood_detector = None
+        self._inner_state = None  # B5: JARVIS-eigene Emotionen
         self._redis = None
         # F-021: Per-User Confirmation-Tracking (statt shared Instanzvariable)
         self._last_confirmations: dict[str, list[str]] = {}
@@ -374,6 +375,10 @@ class PersonalityEngine:
     def set_mood_detector(self, mood_detector):
         """Setzt die Referenz zum MoodDetector."""
         self._mood_detector = mood_detector
+
+    def set_inner_state(self, inner_state):
+        """B5: Setzt die Referenz zur InnerStateEngine."""
+        self._inner_state = inner_state
 
     def set_redis(self, redis_client):
         """Setzt Redis-Client für State-Persistenz."""
@@ -2565,6 +2570,13 @@ class PersonalityEngine:
             _dynamic_parts.append(_improv_section.strip())
         if _creative_section:
             _dynamic_parts.append(_creative_section.strip())
+
+        # B5: Inner State — JARVIS-eigene Emotionen als Prompt-Kontext
+        if self._inner_state:
+            _inner_hint = self._inner_state.get_prompt_section()
+            if _inner_hint:
+                _dynamic_parts.append(_inner_hint.strip())
+
         dynamic_context = "\n".join(_dynamic_parts) + "\n" if _dynamic_parts else ""
 
         format_kwargs = dict(

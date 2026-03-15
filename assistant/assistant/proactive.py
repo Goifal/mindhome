@@ -299,7 +299,13 @@ class ProactiveManager:
         if ambient_cfg.get("enabled", False):
             self._ambient_task = asyncio.create_task(self._run_ambient_presence_loop())
 
-        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient)")
+        # C3: Follow-up Loop — offene Themen proaktiv aufgreifen
+        self._followup_task: Optional[asyncio.Task] = None
+        followup_cfg = yaml_config.get("self_followup", {})
+        if followup_cfg.get("enabled", True):
+            self._followup_task = asyncio.create_task(self._run_followup_loop())
+
+        logger.info("Proactive Manager gestartet (Feedback + Diagnostik + Batching + Saisonal + Notfall + Threat + Ambient + Follow-up)")
 
     async def stop(self):
         """Stoppt den Event Listener."""
@@ -345,6 +351,13 @@ class ProactiveManager:
             self._observation_task.cancel()
             try:
                 await self._observation_task
+            except asyncio.CancelledError:
+                pass
+        # C3: Follow-up Task beenden
+        if hasattr(self, "_followup_task") and self._followup_task:
+            self._followup_task.cancel()
+            try:
+                await self._followup_task
             except asyncio.CancelledError:
                 pass
         # Phase 11: Vacuum-Tasks sauber beenden
@@ -970,6 +983,146 @@ class ProactiveManager:
                         "Power-Close: %s unter Schwelle (%s W < %s W) → %d/%d Covers geöffnet",
                         entity_id, new_num, threshold, opened_count, len(cover_ids),
                     )
+
+    # ------------------------------------------------------------------
+    # C3: Self-initiated Follow-ups — Offene Themen proaktiv aufgreifen
+    # ------------------------------------------------------------------
+
+    async def _run_followup_loop(self):
+        """Periodischer Check auf offene Gespraechsthemen.
+
+        Prueft alle 10 Minuten ob es unerledigte Themen gibt die
+        JARVIS von sich aus ansprechen sollte (Butler-Instinkt).
+        """
+        await asyncio.sleep(120)  # 2 Min Startup-Delay
+        logger.info("Follow-up Loop gestartet")
+
+        while self._running:
+            try:
+                await self._check_pending_followups()
+            except Exception as e:
+                logger.debug("Follow-up Check Fehler: %s", e)
+
+            await asyncio.sleep(600)  # Alle 10 Minuten
+
+    async def _check_pending_followups(self):
+        """Prueft offene Themen und generiert natuerliche Follow-ups."""
+        followup_cfg = yaml_config.get("self_followup", {})
+        if not followup_cfg.get("enabled", True):
+            return
+
+        # Quiet Hours: Keine Follow-ups nachts
+        if self._is_quiet_hours():
+            return
+
+        # Offene Themen aus Memory laden
+        pending = await self.brain.memory.get_pending_conversations()
+        if not pending:
+            return
+
+        # Nur Themen die mindestens 15 Min alt sind (User hatte Zeit)
+        min_age = followup_cfg.get("min_age_minutes", 15)
+        max_per_check = followup_cfg.get("max_per_check", 1)
+        candidates = [t for t in pending if t.get("age_minutes", 0) >= min_age]
+
+        if not candidates:
+            return
+
+        # Cooldown: Max 1 Follow-up pro Stunde
+        _cooldown_key = "mha:followup:last_check"
+        if self.brain.memory.redis:
+            try:
+                last = await self.brain.memory.redis.get(_cooldown_key)
+                if last:
+                    last_dt = datetime.fromisoformat(last)
+                    cooldown_min = followup_cfg.get("cooldown_minutes", 60)
+                    if (datetime.now() - last_dt).total_seconds() < cooldown_min * 60:
+                        return
+            except Exception:
+                pass
+
+        # Aeltestes Thema zuerst
+        candidates.sort(key=lambda t: t.get("age_minutes", 0), reverse=True)
+        delivered = 0
+
+        for topic_entry in candidates[:max_per_check]:
+            topic = topic_entry.get("topic", "")
+            context = topic_entry.get("context", "")
+            person = topic_entry.get("person", "")
+
+            if not topic:
+                continue
+
+            # JARVIS-Stil Follow-up generieren via LLM
+            followup_text = await self._generate_followup_message(
+                topic, context, person,
+            )
+
+            if followup_text:
+                await self._deliver(
+                    followup_text,
+                    event_type="pending_followup",
+                    urgency=LOW,
+                    delivery_method="tts_quiet",
+                    volume=0.6,
+                )
+                # Thema als erledigt markieren (wurde angesprochen)
+                await self.brain.memory.resolve_conversation(topic)
+                delivered += 1
+                logger.info("Follow-up geliefert: %s", topic)
+
+        # Cooldown-Marker setzen
+        if delivered > 0 and self.brain.memory.redis:
+            try:
+                await self.brain.memory.redis.set(
+                    _cooldown_key, datetime.now().isoformat(), ex=7200,
+                )
+            except Exception:
+                pass
+
+    async def _generate_followup_message(
+        self, topic: str, context: str, person: str,
+    ) -> str:
+        """Generiert eine natuerliche Follow-up Nachricht im JARVIS-Stil."""
+        title = get_person_title(person) if person else get_person_title()
+
+        prompt = (
+            f"Du bist JARVIS, ein Butler-KI. Generiere eine kurze, natuerliche "
+            f"Follow-up Nachricht fuer {title}.\n\n"
+            f"Offenes Thema: {topic}\n"
+        )
+        if context:
+            prompt += f"Kontext: {context}\n"
+        prompt += (
+            f"\nRegeln:\n"
+            f"- Maximal 1-2 Saetze\n"
+            f"- Natuerlich, nicht aufdringlich\n"
+            f"- JARVIS-typisch: hoeflich, knapp, butler-maessig\n"
+            f"- Sprich {title} direkt an\n"
+            f"- Kein 'Hallo' oder 'Guten Tag'\n"
+            f"- Beispiel: '{title}, du wolltest mir noch von deinem Meeting erzaehlen.'\n"
+        )
+
+        try:
+            from .ollama_client import OllamaClient
+            ollama: OllamaClient = self.brain.ollama
+            response = await asyncio.wait_for(
+                ollama.chat(
+                    model=self.brain.model_router.fast_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.7,
+                ),
+                timeout=8.0,
+            )
+            text = response.get("message", {}).get("content", "").strip()
+            # Validierung: Nicht zu lang, nicht leer
+            if text and len(text) < 300:
+                return text
+        except Exception as e:
+            logger.debug("Follow-up LLM Fehler: %s", e)
+
+        # Fallback: Statische Nachricht
+        return f"{title}, du hattest vorhin '{topic}' erwaehnt — soll ich daran erinnern?"
 
     async def _check_morning_briefing(self, motion_entity: str = ""):
         """Phase 7.1: Prüft ob Morning Briefing bei erster Bewegung am Morgen geliefert werden soll."""
