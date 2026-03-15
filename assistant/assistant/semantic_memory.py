@@ -211,19 +211,21 @@ class SemanticMemory:
         redis_ok = True
         if self.redis:
             try:
-                await self.redis.hset(
+                pipe = self.redis.pipeline()
+                pipe.hset(
                     f"mha:fact:{fact.fact_id}",
                     mapping=fact.to_dict(),
                 )
-                await self.redis.sadd(
+                pipe.sadd(
                     f"mha:facts:person:{fact.person}",
                     fact.fact_id,
                 )
-                await self.redis.sadd(
+                pipe.sadd(
                     f"mha:facts:category:{fact.category}",
                     fact.fact_id,
                 )
-                await self.redis.sadd("mha:facts:all", fact.fact_id)
+                pipe.sadd("mha:facts:all", fact.fact_id)
+                await pipe.execute()
             except Exception as e:
                 logger.error("Fehler beim Redis-Index (Fakt in ChromaDB aber nicht indexiert): %s", e)
                 redis_ok = False
@@ -240,6 +242,13 @@ class SemanticMemory:
                             fact.fact_id, rollback_err,
                         )
 
+        # Bei person-Fakten Relationship Cache aktualisieren
+        if redis_ok and fact.category == "person":
+            try:
+                await self.refresh_relationship_cache()
+            except Exception:
+                pass
+
         if redis_ok:
             logger.info(
                 "Neuer Fakt gespeichert: [%s] (Person: %s)",
@@ -253,7 +262,8 @@ class SemanticMemory:
             return False
         if not chroma_ok:
             logger.warning(
-                "Fakt nur in Redis gespeichert (ChromaDB fehlt): [%s] (Person: %s)",
+                "Fakt nur in Redis gespeichert (ChromaDB fehlt, Redis-Fallback-Suche aktiv): "
+                "[%s] (Person: %s) — Vektor-Suche nicht verfuegbar, Keyword-Suche als Fallback",
                 fact.category, fact.person,
             )
         return True
@@ -276,7 +286,8 @@ class SemanticMemory:
                 updated_meta["updated_at"] = now
                 updated_meta["times_confirmed"] = str(times_confirmed)
                 updated_meta["confidence"] = str(new_confidence)
-                new_content = new_fact.content if len(new_fact.content) > len(existing.get("content", "")) else existing.get("content", "")
+                # Neuerer Fakt gewinnt immer (aktuellere Information)
+                new_content = new_fact.content
                 await asyncio.to_thread(
                     self.chroma_collection.update,
                     ids=[fact_id],
@@ -288,13 +299,12 @@ class SemanticMemory:
 
         if self.redis:
             try:
-                await self.redis.hset(f"mha:fact:{fact_id}", "updated_at", now)
-                await self.redis.hset(
-                    f"mha:fact:{fact_id}", "times_confirmed", str(times_confirmed)
-                )
-                await self.redis.hset(
-                    f"mha:fact:{fact_id}", "confidence", str(new_confidence)
-                )
+                pipe = self.redis.pipeline()
+                pipe.hset(f"mha:fact:{fact_id}", "updated_at", now)
+                pipe.hset(f"mha:fact:{fact_id}", "times_confirmed", str(times_confirmed))
+                pipe.hset(f"mha:fact:{fact_id}", "confidence", str(new_confidence))
+                pipe.hset(f"mha:fact:{fact_id}", "content", new_fact.content)
+                await pipe.execute()
             except Exception as e:
                 logger.error("Fehler beim Redis-Update: %s", e)
 
@@ -307,21 +317,32 @@ class SemanticMemory:
     async def _check_contradiction(self, new_fact: SemanticFact) -> Optional[dict]:
         """Prueft ob ein neuer Fakt einem bestehenden widerspricht.
 
-        Sucht nach Fakten der gleichen Person + Kategorie die semantisch
-        aehnlich aber inhaltlich anders sind (z.B. unterschiedliche Zahlen
-        fuer die gleiche Praeferenz).
+        Sucht nach Fakten der gleichen Person die semantisch aehnlich aber
+        inhaltlich anders sind (z.B. unterschiedliche Zahlen, Gegensaetze).
+        Prueft zuerst innerhalb der gleichen Kategorie, dann ueber alle
+        Kategorien der Person hinweg (z.B. preference vs habit).
         """
         if not self.chroma_collection:
             return None
 
+        # Zwei Durchlaeufe: 1) gleiche Kategorie, 2) nur gleiche Person
+        _filters = [
+            {"$and": [{"person": new_fact.person}, {"category": new_fact.category}]},
+            {"person": new_fact.person},
+        ]
+
+        for where_filter in _filters:
+            result = await self._check_contradiction_with_filter(new_fact, where_filter)
+            if result:
+                return result
+
+        return None
+
+    async def _check_contradiction_with_filter(
+        self, new_fact: SemanticFact, where_filter: dict
+    ) -> Optional[dict]:
+        """Prueft Widersprueche mit einem bestimmten Filter."""
         try:
-            # Suche nach aehnlichen Fakten der gleichen Person+Kategorie
-            where_filter = {
-                "$and": [
-                    {"person": new_fact.person},
-                    {"category": new_fact.category},
-                ]
-            }
             results = await asyncio.to_thread(
                 self.chroma_collection.query,
                 query_texts=[new_fact.content],
@@ -339,11 +360,39 @@ class SemanticMemory:
                 # Aehnlich genug um verwandt zu sein (< 0.8) aber
                 # verschieden genug um ein Widerspruch zu sein (> 0.15)
                 if 0.15 < distance < 0.8:
-                    # Pruefen ob es numerische Werte gibt die sich unterscheiden
                     import re
+                    is_contradiction = False
+
+                    # 1. Numerische Widersprueche (z.B. "21 Grad" vs "22 Grad")
                     old_nums = set(re.findall(r'\d+(?:\.\d+)?', doc))
                     new_nums = set(re.findall(r'\d+(?:\.\d+)?', new_fact.content))
                     if old_nums and new_nums and old_nums != new_nums:
+                        is_contradiction = True
+
+                    # 2. Gegensatz-Paare (z.B. "mag Kaffee" vs "hasst Kaffee")
+                    if not is_contradiction:
+                        _opposites = [
+                            (r'\bmag\b', r'\b(?:hasst|hasse|mag nicht|mag kein)\b'),
+                            (r'\bliebt\b', r'\b(?:hasst|hasse)\b'),
+                            (r'\bkein(?:e|en|er)?\b', r'\b(?:hat|ist|mag|liebt)\b'),
+                            (r'\bnicht\b', r'\b(?:immer|gerne|gern)\b'),
+                            (r'\bmorgens\b', r'\babends\b'),
+                            (r'\bwarm\b', r'\bkalt\b'),
+                            (r'\bkuehl\b', r'\bwarm\b'),
+                        ]
+                        doc_lower = doc.lower()
+                        new_lower = new_fact.content.lower()
+                        for pat_a, pat_b in _opposites:
+                            a_in_old = bool(re.search(pat_a, doc_lower))
+                            b_in_old = bool(re.search(pat_b, doc_lower))
+                            a_in_new = bool(re.search(pat_a, new_lower))
+                            b_in_new = bool(re.search(pat_b, new_lower))
+                            # Gegensatz: ein Pattern im alten, das andere im neuen
+                            if (a_in_old and b_in_new) or (b_in_old and a_in_new):
+                                is_contradiction = True
+                                break
+
+                    if is_contradiction:
                         fact_id = results["ids"][0][i] if results.get("ids") else ""
                         return {
                             "fact_id": fact_id,
@@ -443,6 +492,76 @@ class SemanticMemory:
         except Exception as e:
             logger.error("Fehler bei Fact Decay: %s", e)
 
+    async def verify_consistency(self):
+        """Prueft Konsistenz zwischen Redis und ChromaDB.
+
+        Erkennt verwaiste Fakten (in einem System aber nicht im anderen)
+        und re-indexiert sie. Wird taeglich nach dem Decay ausgefuehrt.
+        """
+        if not self.redis or not self.chroma_collection:
+            return
+
+        try:
+            redis_ids = await self.redis.smembers("mha:facts:all")
+            redis_ids_set = {
+                (fid if isinstance(fid, str) else fid.decode())
+                for fid in redis_ids
+            }
+
+            if not redis_ids_set:
+                return
+
+            # Stichprobe: Maximal 100 Fakten pruefen (Performance)
+            check_ids = list(redis_ids_set)[:100]
+            orphaned_redis = 0
+            reindexed = 0
+
+            for fact_id in check_ids:
+                # Pruefen ob der Fakt in ChromaDB existiert
+                try:
+                    result = await asyncio.to_thread(
+                        self.chroma_collection.get,
+                        ids=[fact_id],
+                    )
+                    if not result or not result.get("ids") or not result["ids"]:
+                        # Fakt in Redis aber nicht in ChromaDB → re-indexieren
+                        data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+                        if data:
+                            content = data.get("content", "")
+                            if isinstance(content, bytes):
+                                content = content.decode()
+                            if content:
+                                meta = {}
+                                for k, v in data.items():
+                                    key = k if isinstance(k, str) else k.decode()
+                                    val = v if isinstance(v, str) else v.decode()
+                                    meta[key] = val
+                                try:
+                                    await asyncio.to_thread(
+                                        self.chroma_collection.add,
+                                        documents=[content],
+                                        metadatas=[meta],
+                                        ids=[fact_id],
+                                    )
+                                    reindexed += 1
+                                except Exception:
+                                    orphaned_redis += 1
+                        else:
+                            # Fakt-ID in Index aber keine Daten → Index bereinigen
+                            await self.redis.srem("mha:facts:all", fact_id)
+                            orphaned_redis += 1
+                except Exception:
+                    pass  # ChromaDB-Query fehlgeschlagen, ueberspringe
+
+            if reindexed or orphaned_redis:
+                logger.info(
+                    "Konsistenz-Check: %d re-indexiert, %d verwaist bereinigt (von %d geprueft)",
+                    reindexed, orphaned_redis, len(check_ids),
+                )
+
+        except Exception as e:
+            logger.error("Konsistenz-Check fehlgeschlagen: %s", e)
+
     async def find_similar_fact(
         self, query: str, threshold: float = 0.15
     ) -> Optional[dict]:
@@ -464,7 +583,12 @@ class SemanticMemory:
             ):
                 distance = results["distances"][0][0]
                 if distance <= threshold:
-                    meta = results["metadatas"][0][0] if results.get("metadatas") else {}
+                    meta = dict(results["metadatas"][0][0]) if results.get("metadatas") else {}
+                    # fact_id und content aus ChromaDB-Ergebnis sicherstellen
+                    if not meta.get("fact_id") and results.get("ids") and results["ids"][0]:
+                        meta["fact_id"] = results["ids"][0][0]
+                    if not meta.get("content") and results["documents"][0]:
+                        meta["content"] = results["documents"][0][0]
                     return meta
         except Exception as e:
             logger.error("Fehler bei Duplikat-Suche: %s", e)
@@ -474,39 +598,168 @@ class SemanticMemory:
     async def search_facts(
         self, query: str, limit: int = 5, person: Optional[str] = None
     ) -> list[dict]:
-        if not self.chroma_collection:
-            return []
+        # ChromaDB-Suche versuchen, bei Fehler Redis-Fallback
+        if self.chroma_collection:
+            try:
+                return await self._search_facts_chromadb(query, limit, person)
+            except Exception as e:
+                logger.warning("ChromaDB search_facts fehlgeschlagen, versuche Redis-Fallback: %s", e)
 
+        # Fallback: Alle Fakten aus Redis laden und nach Query-Keywords filtern
+        if self.redis:
+            return await self._search_facts_redis_fallback(query, limit, person)
+
+        return []
+
+    async def _search_facts_chromadb(
+        self, query: str, limit: int, person: Optional[str] = None
+    ) -> list[dict]:
+        """Semantische Suche via ChromaDB Vektor-Aehnlichkeit."""
+        where_filter = None
+        if person:
+            where_filter = {"person": person}
+
+        results = await asyncio.to_thread(
+            self.chroma_collection.query,
+            query_texts=[query],
+            n_results=limit,
+            where=where_filter,
+        )
+
+        min_confidence = float(yaml_config.get("memory", {}).get(
+            "min_confidence_for_context", 0.4
+        ))
+        now = datetime.now()
+        facts = []
+        if results and results.get("documents"):
+            for i, doc in enumerate(results["documents"][0]):
+                meta = results["metadatas"][0][i] if results.get("metadatas") else {}
+                distance = (
+                    results["distances"][0][i] if results.get("distances") else 1.0
+                )
+                confidence = float(meta.get("confidence", 0.5))
+                # Fakten mit zu niedriger Confidence herausfiltern
+                if confidence < min_confidence:
+                    continue
+                base_relevance = 1.0 - min(distance, 1.0)
+                # Aktualitaets-Boost: Kuerzlich bestaetigte Fakten bevorzugen
+                recency_boost = 0.0
+                updated_at = meta.get("updated_at", "")
+                if updated_at:
+                    try:
+                        days_old = (now - datetime.fromisoformat(updated_at)).days
+                        # Max 10% Boost fuer Fakten der letzten 7 Tage,
+                        # linear abfallend ueber 90 Tage
+                        if days_old < 90:
+                            recency_boost = 0.1 * max(0.0, 1.0 - days_old / 90.0)
+                    except (ValueError, TypeError):
+                        pass
+                facts.append({
+                    "content": doc,
+                    "category": meta.get("category", "general"),
+                    "person": meta.get("person", "unknown"),
+                    "confidence": confidence,
+                    "times_confirmed": int(meta.get("times_confirmed", 1)),
+                    "relevance": min(1.0, base_relevance + recency_boost),
+                })
+        # Nach Relevanz sortieren damit aktuellere Fakten oben stehen
+        facts.sort(key=lambda f: f["relevance"], reverse=True)
+        return facts
+
+    # Stoppwoerter fuer Redis-Fallback (haeufige dt. Woerter ohne Bedeutung)
+    _STOPWORDS = frozenset({
+        "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer",
+        "einem", "einen", "und", "oder", "aber", "ist", "sind", "war",
+        "hat", "haben", "wird", "kann", "ich", "du", "er", "sie", "es",
+        "wir", "ihr", "was", "wie", "wo", "wer", "von", "zu", "in",
+        "mit", "auf", "an", "fuer", "für", "ueber", "über", "bei",
+        "nach", "vor", "aus", "um", "nicht", "auch", "noch", "schon",
+        "sehr", "ja", "nein", "mal", "so", "da", "dann", "wenn",
+    })
+
+    async def _search_facts_redis_fallback(
+        self, query: str, limit: int, person: Optional[str] = None
+    ) -> list[dict]:
+        """Keyword-basierte Suche ueber Redis wenn ChromaDB nicht verfuegbar.
+
+        Nutzt Stoppwort-Filterung, Teilwort-Matching und Confidence-Gewichtung
+        fuer bessere Ergebnisse als einfaches Keyword-Matching.
+        """
         try:
-            where_filter = None
             if person:
-                where_filter = {"person": person}
+                fact_ids = await self.redis.smembers(f"mha:facts:person:{person}")
+            else:
+                fact_ids = await self.redis.smembers("mha:facts:all")
 
-            results = await asyncio.to_thread(
-                self.chroma_collection.query,
-                query_texts=[query],
-                n_results=limit,
-                where=where_filter,
-            )
+            if not fact_ids:
+                return []
+
+            fact_ids_list = list(fact_ids)
+            pipe = self.redis.pipeline()
+            for fid in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fid}")
+            all_data = await pipe.execute()
+
+            min_confidence = float(yaml_config.get("memory", {}).get(
+                "min_confidence_for_context", 0.4
+            ))
+            # Stoppwoerter entfernen, Wortstamm-Prefixe fuer Teilwort-Match
+            query_words = {
+                w for w in query.lower().split()
+                if w not in self._STOPWORDS and len(w) > 2
+            }
+            if not query_words:
+                # Nur Stoppwoerter → alle Woerter behalten
+                query_words = set(query.lower().split())
+
+            # Wortstamm-Prefixe (erste 4 Zeichen) fuer unscharfes Matching
+            query_stems = {w[:4] for w in query_words if len(w) >= 4}
 
             facts = []
-            if results and results.get("documents"):
-                for i, doc in enumerate(results["documents"][0]):
-                    meta = results["metadatas"][0][i] if results.get("metadatas") else {}
-                    distance = (
-                        results["distances"][0][i] if results.get("distances") else 1.0
-                    )
+            for data in all_data:
+                if not data:
+                    continue
+                content = data.get("content", "")
+                if isinstance(content, bytes):
+                    content = content.decode()
+                confidence = float(data.get("confidence", 0.5))
+                if confidence < min_confidence:
+                    continue
+
+                content_lower = content.lower()
+                content_words = content_lower.split()
+
+                # Exakte Wort-Matches
+                exact_matches = sum(1 for w in query_words if w in content_lower)
+                # Stamm-Matches (unscharfes Matching)
+                stem_matches = 0
+                if query_stems:
+                    content_stems = {w[:4] for w in content_words if len(w) >= 4}
+                    stem_matches = len(query_stems & content_stems)
+
+                # Kombinierter Score: exakte Matches zaehlen doppelt
+                total_score = (exact_matches * 2 + stem_matches) / max(len(query_words) * 2 + len(query_stems), 1)
+
+                if total_score > 0:
+                    # Confidence als Boost-Faktor (0.5-1.0 → 0.75-1.0)
+                    conf_boost = 0.5 + confidence * 0.5
+                    fact_id = data.get("fact_id", "")
+                    if isinstance(fact_id, bytes):
+                        fact_id = fact_id.decode()
                     facts.append({
-                        "content": doc,
-                        "category": meta.get("category", "general"),
-                        "person": meta.get("person", "unknown"),
-                        "confidence": float(meta.get("confidence", 0.5)),
-                        "times_confirmed": int(meta.get("times_confirmed", 1)),
-                        "relevance": 1.0 - min(distance, 1.0),
+                        "content": content,
+                        "fact_id": fact_id,
+                        "category": (data.get("category") or b"general").decode() if isinstance(data.get("category"), bytes) else data.get("category", "general"),
+                        "person": (data.get("person") or b"unknown").decode() if isinstance(data.get("person"), bytes) else data.get("person", "unknown"),
+                        "confidence": confidence,
+                        "times_confirmed": int(data.get("times_confirmed", 1)),
+                        "relevance": min(1.0, total_score * conf_boost),
                     })
-            return facts
+
+            facts.sort(key=lambda f: f["relevance"], reverse=True)
+            return facts[:limit]
         except Exception as e:
-            logger.error("Fehler bei Fakten-Suche: %s", e)
+            logger.error("Redis-Fallback search_facts fehlgeschlagen: %s", e)
             return []
 
     async def get_facts_by_person(self, person: str) -> list[dict]:
@@ -540,6 +793,78 @@ class SemanticMemory:
         except Exception as e:
             logger.error("Fehler bei Person-Fakten: %s", e)
             return []
+
+    def _get_cached_relationship(
+        self, pattern: str, keywords: list[str], known_names: set[str]
+    ) -> str:
+        """Loest Beziehungsbegriffe auf (synchron, aus Cache).
+
+        Prueft den internen Relationship-Cache (befuellt durch
+        ``_refresh_relationship_cache``) ob fuer einen Beziehungsbegriff
+        ein Name bekannt ist.
+        """
+        cache = getattr(self, "_relationship_cache", None)
+        if cache and pattern in cache:
+            return cache[pattern]
+        return ""
+
+    async def refresh_relationship_cache(self):
+        """Laedt Beziehungs-Fakten aus dem Gedaechtnis und baut Lookup auf.
+
+        Wird periodisch aufgerufen, damit ``_get_cached_relationship``
+        synchron antworten kann.
+        """
+        if not self.redis:
+            return
+
+        try:
+            person_facts = await self.get_facts_by_category("person")
+            cache: dict[str, str] = {}
+
+            # Bekannte Namen aus Config
+            household = yaml_config.get("household") or {}
+            known_names = set()
+            for m in household.get("members") or []:
+                name = (m.get("name") or "").strip()
+                if name:
+                    known_names.add(name)
+            primary = (household.get("primary_user") or "").strip()
+            if primary:
+                known_names.add(primary)
+            titles = (yaml_config.get("persons") or {}).get("titles") or {}
+            for name in titles:
+                known_names.add(name)
+
+            _RELATION_KEYWORDS = {
+                "meine frau": ["frau", "ehefrau", "partnerin", "wife"],
+                "mein mann": ["mann", "ehemann", "partner", "husband"],
+                "mein sohn": ["sohn", "son"],
+                "meine tochter": ["tochter", "daughter"],
+                "mein bruder": ["bruder", "brother"],
+                "meine schwester": ["schwester", "sister"],
+                "meine mutter": ["mutter", "mama", "mother"],
+                "mein vater": ["vater", "papa", "father"],
+                "mein partner": ["partner", "partnerin"],
+            }
+
+            for fact in person_facts:
+                content_lower = (fact.get("content") or "").lower()
+                for rel_pattern, kws in _RELATION_KEYWORDS.items():
+                    if rel_pattern in cache:
+                        continue
+                    if any(kw in content_lower for kw in kws):
+                        # Name aus dem Fakt extrahieren: pruefe welcher
+                        # bekannte Name im Content vorkommt
+                        for name in known_names:
+                            if name.lower() in content_lower:
+                                cache[rel_pattern] = name.lower()
+                                break
+
+            self._relationship_cache = cache
+            if cache:
+                logger.debug("Relationship Cache aktualisiert: %s", cache)
+        except Exception as e:
+            logger.debug("Relationship Cache Fehler: %s", e)
 
     async def get_facts_by_category(self, category: str) -> list[dict]:
         """Return all stored facts for a specific category."""
@@ -640,20 +965,21 @@ class SemanticMemory:
         if not self.redis:
             return False
 
-        if self.redis:
-            try:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
-                if data:
-                    person = data.get("person", "unknown")
-                    category = data.get("category", "general")
-                    await self.redis.srem(f"mha:facts:person:{person}", fact_id)
-                    await self.redis.srem(f"mha:facts:category:{category}", fact_id)
-                    await self.redis.srem("mha:facts:all", fact_id)
-                    await self.redis.delete(f"mha:fact:{fact_id}")
-                    logger.info("Fakt geloescht: %s", fact_id)
-                    return True
-            except Exception as e:
-                logger.error("Fehler beim Loeschen aus Redis: %s", e)
+        try:
+            data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            if data:
+                person = data.get("person", "unknown")
+                category = data.get("category", "general")
+                pipe = self.redis.pipeline()
+                pipe.srem(f"mha:facts:person:{person}", fact_id)
+                pipe.srem(f"mha:facts:category:{category}", fact_id)
+                pipe.srem("mha:facts:all", fact_id)
+                pipe.delete(f"mha:fact:{fact_id}")
+                await pipe.execute()
+                logger.info("Fakt geloescht: %s", fact_id)
+                return True
+        except Exception as e:
+            logger.error("Fehler beim Loeschen aus Redis: %s", e)
 
         return False
 
@@ -687,39 +1013,47 @@ class SemanticMemory:
         Sucht alle Fakten zu einem Thema (semantisch).
         Gibt auch niedrig-relevante Treffer zurueck.
         """
-        if not self.chroma_collection:
-            return []
+        # ChromaDB versuchen
+        if self.chroma_collection:
+            try:
+                results = await asyncio.to_thread(
+                    self.chroma_collection.query,
+                    query_texts=[topic],
+                    n_results=limit,
+                )
 
-        try:
-            results = await asyncio.to_thread(
-                self.chroma_collection.query,
-                query_texts=[topic],
-                n_results=limit,
-            )
+                facts = []
+                if results and results.get("documents"):
+                    for i, doc in enumerate(results["documents"][0]):
+                        meta = results["metadatas"][0][i] if results.get("metadatas") else {}
+                        distance = (
+                            results["distances"][0][i] if results.get("distances") else 1.0
+                        )
+                        fact_id = results["ids"][0][i] if results.get("ids") and results["ids"][0] else ""
+                        confidence = float(meta.get("confidence", 0.5))
+                        # Grosszuegigerer Filter als search_facts, aber
+                        # Confidence-Filter um veraltete Fakten auszuschliessen
+                        if distance < 1.5 and confidence >= 0.3:
+                            facts.append({
+                                "content": doc,
+                                "fact_id": fact_id,
+                                "category": meta.get("category", "general"),
+                                "person": meta.get("person", "unknown"),
+                                "confidence": confidence,
+                                "times_confirmed": int(meta.get("times_confirmed", 1)),
+                                "relevance": 1.0 - min(distance, 1.0),
+                                "source": meta.get("source_conversation", ""),
+                                "created_at": meta.get("created_at", ""),
+                            })
+                return facts
+            except Exception as e:
+                logger.warning("ChromaDB search_by_topic fehlgeschlagen, versuche Redis-Fallback: %s", e)
 
-            facts = []
-            if results and results.get("documents"):
-                for i, doc in enumerate(results["documents"][0]):
-                    meta = results["metadatas"][0][i] if results.get("metadatas") else {}
-                    distance = (
-                        results["distances"][0][i] if results.get("distances") else 1.0
-                    )
-                    # Grosszuegigerer Filter als search_facts
-                    if distance < 1.5:
-                        facts.append({
-                            "content": doc,
-                            "category": meta.get("category", "general"),
-                            "person": meta.get("person", "unknown"),
-                            "confidence": float(meta.get("confidence", 0.5)),
-                            "times_confirmed": int(meta.get("times_confirmed", 1)),
-                            "relevance": 1.0 - min(distance, 1.0),
-                            "source": meta.get("source_conversation", ""),
-                            "created_at": meta.get("created_at", ""),
-                        })
-            return facts
-        except Exception as e:
-            logger.error("Fehler bei Themen-Suche: %s", e)
-            return []
+        # Redis-Fallback: Keyword-basierte Suche
+        if self.redis:
+            return await self._search_facts_redis_fallback(topic, limit)
+
+        return []
 
     async def get_relevant_conversations(
         self, topic: str, limit: int = 3
@@ -757,28 +1091,35 @@ class SemanticMemory:
         """
         Loescht alle Fakten die zu einem Thema passen.
         Gibt die Anzahl geloeschter Fakten zurueck.
+
+        Nutzt eine niedrige Relevanz-Schwelle (0.2), damit der User auch
+        indirekt passende Fakten loeschen kann. Bei explizitem 'Vergiss'
+        soll nichts uebrig bleiben.
         """
-        # Erst suchen, dann loeschen
         matching = await self.search_by_topic(topic, limit=20)
         deleted = 0
 
         for fact in matching:
-            if fact.get("relevance", 0) < 0.4:
-                continue  # Nur hoch-relevante loeschen
+            if fact.get("relevance", 0) < 0.2:
+                continue  # Nur komplett irrelevante ignorieren
 
-            # Fakt-ID finden
-            fact_id = None
-            if self.chroma_collection:
+            # fact_id direkt aus search_by_topic (wenn vorhanden)
+            fact_id = fact.get("fact_id", "")
+
+            # Fallback: Ueber Redis nach fact_id suchen
+            if not fact_id and self.redis:
                 try:
-                    results = await asyncio.to_thread(
-                        self.chroma_collection.query,
-                        query_texts=[fact["content"]],
-                        n_results=1,
-                    )
-                    if results and results.get("ids") and results["ids"][0]:
-                        fact_id = results["ids"][0][0]
+                    all_ids = await self.redis.smembers("mha:facts:all")
+                    for fid in all_ids:
+                        fdata = await self.redis.hget(f"mha:fact:{fid}", "content")
+                        if fdata:
+                            fdata_str = fdata if isinstance(fdata, str) else fdata.decode()
+                            if fdata_str == fact.get("content", ""):
+                                fact_id = fid if isinstance(fid, str) else fid.decode()
+                                break
                 except Exception as e:
-                    logger.debug("Unhandled: %s", e)
+                    logger.debug("Redis fact_id Lookup fehlgeschlagen: %s", e)
+
             if fact_id:
                 success = await self.delete_fact(fact_id)
                 if success:
@@ -800,8 +1141,14 @@ class SemanticMemory:
                 fact_ids = await self.redis.smembers("mha:facts:all")
 
             corrections = []
-            for fact_id in fact_ids:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            fact_ids_list = list(fact_ids)
+            if not fact_ids_list:
+                return []
+            pipe = self.redis.pipeline()
+            for fact_id in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fact_id}")
+            all_data = await pipe.execute()
+            for data in all_data:
                 if data:
                     source = data.get("source_conversation", "")
                     if source.startswith("correction:"):
@@ -828,9 +1175,15 @@ class SemanticMemory:
 
         try:
             fact_ids = await self.redis.smembers("mha:facts:all")
+            fact_ids_list = list(fact_ids)
+            if not fact_ids_list:
+                return []
+            pipe = self.redis.pipeline()
+            for fact_id in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fact_id}")
+            all_data = await pipe.execute()
             todays = []
-            for fact_id in fact_ids:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            for data in all_data:
                 if data:
                     created = data.get("created_at", "")
                     if created.startswith(today):
@@ -932,8 +1285,14 @@ class SemanticMemory:
             current_year = now.year
             results = []
 
-            for fact_id in fact_ids:
-                data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+            # Pipeline fuer Batch-Fetch
+            fact_ids_list = list(fact_ids)
+            pipe = self.redis.pipeline()
+            for fact_id in fact_ids_list:
+                pipe.hgetall(f"mha:fact:{fact_id}")
+            all_data = await pipe.execute()
+
+            for fact_id, data in zip(fact_ids_list, all_data):
                 if not data:
                     continue
 
@@ -1035,19 +1394,31 @@ class SemanticMemory:
             return {"total_facts": 0, "categories": {}, "persons": []}
 
         try:
-            total = await self.redis.scard("mha:facts:all")
-            categories = {}
+            # Pipeline fuer total + alle Kategorie-Counts
+            pipe = self.redis.pipeline()
+            pipe.scard("mha:facts:all")
             for cat in FACT_CATEGORIES:
-                count = await self.redis.scard(f"mha:facts:category:{cat}")
+                pipe.scard(f"mha:facts:category:{cat}")
+            stats_results = await pipe.execute()
+            total = stats_results[0]
+            categories = {}
+            for idx, cat in enumerate(FACT_CATEGORIES):
+                count = stats_results[idx + 1]
                 if count > 0:
                     categories[cat] = count
 
-            persons = set()
+            # Pipeline fuer Person-Lookup
             fact_ids = await self.redis.smembers("mha:facts:all")
-            for fact_id in fact_ids:
-                person = await self.redis.hget(f"mha:fact:{fact_id}", "person")
-                if person:
-                    persons.add(person)
+            fact_ids_list = list(fact_ids)
+            persons = set()
+            if fact_ids_list:
+                pipe = self.redis.pipeline()
+                for fact_id in fact_ids_list:
+                    pipe.hget(f"mha:fact:{fact_id}", "person")
+                person_results = await pipe.execute()
+                for person in person_results:
+                    if person:
+                        persons.add(person)
 
             return {
                 "total_facts": total,

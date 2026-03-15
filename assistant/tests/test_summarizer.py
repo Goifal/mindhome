@@ -31,8 +31,11 @@ def summarizer(ollama_mock):
     """DailySummarizer with mocked yaml_config, ollama, and no memory."""
     mock_settings = MagicMock()
     mock_settings.model_deep = "qwen3.5:27b"
+    mock_settings.model_smart = "test-model"
+    mock_settings.model_fast = "qwen3.5:7b"
     with patch("assistant.summarizer.yaml_config", SUMMARIZER_CONFIG), \
-         patch("assistant.summarizer.settings", mock_settings):
+         patch("assistant.summarizer.settings", mock_settings), \
+         patch("assistant.config.settings", mock_settings):
         s = DailySummarizer(ollama_mock, memory=None)
     return s
 
@@ -42,10 +45,13 @@ def summarizer_with_memory(ollama_mock):
     """DailySummarizer with a mock memory manager."""
     mock_settings = MagicMock()
     mock_settings.model_deep = "qwen3.5:27b"
+    mock_settings.model_smart = "test-model"
+    mock_settings.model_fast = "qwen3.5:7b"
     memory = MagicMock()
     memory.get_conversations_for_date = AsyncMock(return_value=[])
     with patch("assistant.summarizer.yaml_config", SUMMARIZER_CONFIG), \
-         patch("assistant.summarizer.settings", mock_settings):
+         patch("assistant.summarizer.settings", mock_settings), \
+         patch("assistant.config.settings", mock_settings):
         s = DailySummarizer(ollama_mock, memory=memory)
     return s
 
@@ -58,8 +64,11 @@ class TestSummarizerInit:
     def test_default_config_values(self, ollama_mock):
         mock_settings = MagicMock()
         mock_settings.model_deep = "fallback-model"
+        mock_settings.model_smart = "fallback-model"
+        mock_settings.model_fast = "fallback-fast"
         with patch("assistant.summarizer.yaml_config", {}), \
-             patch("assistant.summarizer.settings", mock_settings):
+             patch("assistant.summarizer.settings", mock_settings), \
+             patch("assistant.config.settings", mock_settings):
             s = DailySummarizer(ollama_mock)
         assert s.run_hour == 3
         assert s.run_minute == 0

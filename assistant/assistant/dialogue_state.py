@@ -69,11 +69,17 @@ class DialogueState:
         return (time.time() - self.last_update) > timeout_seconds
 
     def reset(self):
-        """Setzt den Zustand zurueck."""
+        """Setzt den Zustand zurueck.
+
+        Behält last_entities und last_rooms fuer Kontext-Kontinuitaet,
+        da diese auch nach Pausen relevant sein koennen ('das Licht'
+        bezieht sich oft auf den zuletzt besprochenen Raum).
+        """
         self.state = "idle"
         self.pending_clarification = None
         self.multi_step_context = None
         self.turn_count = 0
+        # last_entities, last_rooms, last_actions, last_domains bleiben erhalten
 
     def to_dict(self) -> dict:
         """Serialisiert den Zustand fuer Debug/API."""
@@ -95,7 +101,7 @@ class DialogueStateManager:
     def __init__(self):
         cfg = yaml_config.get("dialogue", {})
         self.enabled = cfg.get("enabled", True)
-        self.timeout_seconds = cfg.get("timeout_seconds", 300)
+        self.timeout_seconds = cfg.get("timeout_seconds", 600)
         self.auto_resolve_references = cfg.get("auto_resolve_references", True)
         self.clarification_enabled = cfg.get("clarification_enabled", True)
         self.max_clarification_options = cfg.get("max_clarification_options", 5)

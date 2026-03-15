@@ -130,16 +130,29 @@ def redis_mock():
     r.scard = AsyncMock(return_value=0)
     r.delete = AsyncMock()
 
-    # Pipeline-Mock: delegiert hgetall-Aufrufe an r.hgetall
+    # Pipeline-Mock: delegiert Aufrufe an die entsprechenden Redis-Methoden
     def _make_pipe():
-        pipe_keys = []
+        pipe_ops = []
         pipe = MagicMock()
-        pipe.hgetall = MagicMock(side_effect=lambda key: pipe_keys.append(key))
+
+        def _track(method_name):
+            def _side_effect(*args, **kwargs):
+                pipe_ops.append((method_name, args, kwargs))
+            return _side_effect
+
+        pipe.hgetall = MagicMock(side_effect=_track("hgetall"))
+        pipe.hget = MagicMock(side_effect=_track("hget"))
+        pipe.hset = MagicMock(side_effect=_track("hset"))
+        pipe.sadd = MagicMock(side_effect=_track("sadd"))
+        pipe.srem = MagicMock(side_effect=_track("srem"))
+        pipe.scard = MagicMock(side_effect=_track("scard"))
+        pipe.delete = MagicMock(side_effect=_track("delete"))
 
         async def _execute():
             results = []
-            for key in pipe_keys:
-                results.append(await r.hgetall(key))
+            for method_name, args, kwargs in pipe_ops:
+                fn = getattr(r, method_name)
+                results.append(await fn(*args, **kwargs))
             return results
 
         pipe.execute = AsyncMock(side_effect=_execute)
@@ -301,7 +314,7 @@ class TestUpdateExistingFact:
         assert float(update_meta["confidence"]) <= 1.0
 
     @pytest.mark.asyncio
-    async def test_update_prefers_longer_content(self, semantic, chroma_mock):
+    async def test_update_uses_newer_content(self, semantic, chroma_mock):
         existing = {
             "fact_id": "fact_x",
             "content": "Max Kaffee",
@@ -315,9 +328,28 @@ class TestUpdateExistingFact:
 
         await semantic._update_existing_fact(existing, new_fact)
 
-        # Laengerer Content wird bevorzugt
+        # Neuerer Content wird immer verwendet
         updated_doc = chroma_mock.update.call_args[1]["documents"][0]
         assert "morgens" in updated_doc
+
+    @pytest.mark.asyncio
+    async def test_update_newer_shorter_content_wins(self, semantic, chroma_mock):
+        """Auch kuerzerer neuer Content gewinnt ueber laengeren alten."""
+        existing = {
+            "fact_id": "fact_y",
+            "content": "Max trinkt morgens immer einen starken Kaffee mit Milch",
+            "confidence": "0.7",
+            "times_confirmed": "1",
+        }
+        new_fact = SemanticFact(
+            content="Max trinkt keinen Kaffee mehr",
+            category="habit",
+        )
+
+        await semantic._update_existing_fact(existing, new_fact)
+
+        updated_doc = chroma_mock.update.call_args[1]["documents"][0]
+        assert updated_doc == "Max trinkt keinen Kaffee mehr"
 
     @pytest.mark.asyncio
     async def test_update_no_fact_id_returns_false(self, semantic):
@@ -419,6 +451,39 @@ class TestContradictionDetection:
         )
         result = await semantic._check_contradiction(fact)
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_contradiction_cross_category(self, semantic, chroma_mock):
+        """Widerspruch ueber Kategorie-Grenzen: preference vs habit."""
+        # Erster Aufruf (gleiche Kategorie) findet nichts
+        # Zweiter Aufruf (nur Person) findet den Widerspruch
+        call_count = [0]
+        def _query_side_effect(**kwargs):
+            call_count[0] += 1
+            where = kwargs.get("where", {})
+            # Erster Aufruf: category + person Filter -> nichts
+            if isinstance(where, dict) and "$and" in where:
+                return {"documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]]}
+            # Zweiter Aufruf: nur person Filter -> findet alten Fakt
+            return {
+                "documents": [["Max mag Kaffee"]],
+                "metadatas": [[{"category": "preference", "person": "Max"}]],
+                "distances": [[0.3]],
+                "ids": [["fact_old"]],
+            }
+
+        chroma_mock.query = MagicMock(side_effect=_query_side_effect)
+
+        fact = SemanticFact(
+            content="Max hasst Kaffee",
+            category="habit",
+            person="Max",
+        )
+        result = await semantic._check_contradiction(fact)
+
+        assert result is not None
+        assert result["fact_id"] == "fact_old"
+        assert "mag" in result["content"]
 
     @pytest.mark.asyncio
     async def test_contradiction_no_chroma(self, semantic_no_backends):
