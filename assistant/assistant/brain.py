@@ -3258,7 +3258,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if (_cl_cfg.get("enabled", True) and _cl_cfg.get("mid_conversation_reminder", True)
                 and conv_tokens_used > 200):
             _current_mood = getattr(self, "_current_mood", "neutral")
-            if _current_mood in ("frustrated", "stressed"):
+            _mood_signals = getattr(self, "_mood_signals", [])
+            if "correction_detected" in _mood_signals:
+                _reminder = (
+                    "[REMINDER] Du bist J.A.R.V.I.S. — trocken, praezise, Butler-Ton. "
+                    "Kurz. Keine Listen. Erfinde NICHTS. NUR vorhandene Daten nutzen. "
+                    "WICHTIG: Der User KORRIGIERT dich gerade. Nimm die Korrektur an, "
+                    "bestaetige die richtige Information und passe deine Antwort an. "
+                    "Nicht widersprechen, wenn der User faktisch Recht hat."
+                )
+            elif _current_mood in ("frustrated", "stressed"):
                 _reminder = (
                     "[REMINDER] Du bist J.A.R.V.I.S. — trocken, praezise, Butler-Ton. "
                     "Kurz. Keine Listen. Erfinde NICHTS. NUR vorhandene Daten nutzen. "
@@ -4615,6 +4624,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Phase 17.4: Mood-Aware Response Post-Processing
         # Wenn User gestresst/frustriert/muede: Gags unterdruecken, Response kuerzen
         _current_mood = (mood_result or {}).get("mood", "neutral")
+        self._current_mood = _current_mood
+        self._mood_signals = (mood_result or {}).get("signals", [])
         _mood_config = self.personality.get_mood_response_config(_current_mood)
 
         if _mood_config.get("suppress_humor") and gag_response and response_text:
