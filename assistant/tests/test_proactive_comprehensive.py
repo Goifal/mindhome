@@ -379,3 +379,253 @@ class TestCheckMorningBriefing:
             with patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify:
                 await pm._check_morning_briefing()
                 mock_notify.assert_not_called()
+
+
+# ── Rate-Limiting ────────────────────────────────────────────────────
+
+class TestCoverRateLimiting:
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_not_reached(self, pm):
+        redis = AsyncMock()
+        redis.get = AsyncMock(return_value="3")
+        result = await pm._check_cover_rate_limit("cover.test", redis)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_reached(self, pm):
+        redis = AsyncMock()
+        redis.get = AsyncMock(return_value="6")
+        result = await pm._check_cover_rate_limit("cover.test", redis)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_no_redis(self, pm):
+        result = await pm._check_cover_rate_limit("cover.test", None)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_increment_rate(self, pm):
+        redis = AsyncMock()
+        pipe = AsyncMock()
+        redis.pipeline = MagicMock(return_value=pipe)
+        pipe.execute = AsyncMock(return_value=[1, True])
+        await pm._increment_cover_rate("cover.test", redis)
+        pipe.incr.assert_called_once()
+        pipe.expire.assert_called_once()
+
+
+# ── Reason-State ─────────────────────────────────────────────────────
+
+class TestCoverReasonState:
+
+    @pytest.mark.asyncio
+    async def test_set_and_get_reason(self, pm):
+        redis = AsyncMock()
+        redis.set = AsyncMock()
+        await pm._set_cover_reason("cover.test", 50, "Sonnenschutz", redis)
+        redis.set.assert_called_once()
+        call_args = redis.set.call_args
+        assert "mha:cover:reason:cover.test" in str(call_args)
+
+    @pytest.mark.asyncio
+    async def test_get_reason_empty(self, pm):
+        pm.brain.memory.redis.get = AsyncMock(return_value=None)
+        result = await pm.get_cover_reason("cover.test")
+        assert result == {}
+
+
+# ── Dry-Run Modus ────────────────────────────────────────────────────
+
+class TestDryRunMode:
+
+    @pytest.mark.asyncio
+    async def test_dry_run_flag_prevents_action(self, pm):
+        """Dry-Run mode should log but not call HA service."""
+        pm.brain.ha.get_states = AsyncMock(return_value=[
+            {"entity_id": "cover.test", "state": "open",
+             "attributes": {"current_position": 100, "device_class": "shutter"}},
+        ])
+        pm.brain.executor = MagicMock()
+        pm.brain.executor._is_safe_cover = AsyncMock(return_value=True)
+        pm.brain.executor._translate_cover_position_from_ha = MagicMock(return_value=100)
+        pm.brain.autonomy = MagicMock()
+        pm.brain.autonomy.level = 5
+
+        result = await pm._auto_cover_action(
+            "cover.test", 0, "Test", 3, None, dry_run=True,
+        )
+        assert result is False
+        pm.brain.ha.call_service.assert_not_called()
+
+
+# ── State-Machine ────────────────────────────────────────────────────
+
+class TestCoverStateMachine:
+
+    def test_initial_state_is_idle(self, pm):
+        cs = pm._get_cover_state("cover.test")
+        assert cs.state == pm.CoverState.IDLE
+
+    def test_transition_records_history(self, pm):
+        cs = pm._get_cover_state("cover.test2")
+        cs.transition(pm.CoverState.SUN_PROTECTED, "Sonnenschutz")
+        assert cs.state == pm.CoverState.SUN_PROTECTED
+        assert len(cs.history) == 1
+        assert cs.history[0][2] == pm.CoverState.SUN_PROTECTED
+
+    def test_no_op_transition(self, pm):
+        cs = pm._get_cover_state("cover.test3")
+        cs.transition(pm.CoverState.IDLE, "no change")
+        assert len(cs.history) == 0
+
+    def test_to_dict(self, pm):
+        cs = pm._get_cover_state("cover.test4")
+        cs.transition(pm.CoverState.STORM_SECURED, "Sturm")
+        d = cs.to_dict()
+        assert d["state"] == pm.CoverState.STORM_SECURED
+        assert "entity_id" in d
+
+    def test_get_all_cover_states(self, pm):
+        pm._get_cover_state("cover.a")
+        pm._get_cover_state("cover.b")
+        states = pm.get_all_cover_states()
+        assert len(states) >= 2
+
+
+# ── Room Matching ────────────────────────────────────────────────────
+
+class TestRoomMatching:
+
+    def test_fallback_heuristic(self, pm):
+        room = pm._get_room_for_cover("cover.wohnzimmer_links")
+        assert room == "wohnzimmer"
+
+    def test_config_mapping(self, pm):
+        with patch("assistant.proactive.yaml_config", {
+            "seasonal_actions": {
+                "cover_automation": {
+                    "room_mapping": {"cover.spezial_42": "buero"},
+                },
+            },
+        }), patch("assistant.proactive._get_room_profiles_cached", return_value={"cover_profiles": {"covers": []}}):
+            room = pm._get_room_for_cover("cover.spezial_42")
+            assert room == "buero"
+
+
+# ── Cover Summary ────────────────────────────────────────────────────
+
+class TestCoverSummary:
+
+    @pytest.mark.asyncio
+    async def test_summary_empty(self, pm):
+        pm.brain.ha.get_states = AsyncMock(return_value=[])
+        result = await pm.get_cover_summary()
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_summary_with_covers(self, pm):
+        pm.brain.ha.get_states = AsyncMock(return_value=[
+            {"entity_id": "cover.wz", "attributes": {"current_position": 100, "friendly_name": "Wohnzimmer"}},
+            {"entity_id": "cover.sz", "attributes": {"current_position": 0, "friendly_name": "Schlafzimmer"}},
+        ])
+        pm.brain.executor = MagicMock()
+        pm.brain.executor._translate_cover_position_from_ha = MagicMock(side_effect=lambda eid, pos: pos)
+        result = await pm.get_cover_summary()
+        assert "offen" in result or "geschlossen" in result
+
+
+# ── Debug-Assistent ──────────────────────────────────────────────────
+
+class TestDebugAssistant:
+
+    @pytest.mark.asyncio
+    async def test_debug_no_entity(self, pm):
+        pm.brain.ha.get_states = AsyncMock(return_value=[
+            {"entity_id": "cover.test", "attributes": {"current_position": 50, "friendly_name": "Test"}},
+        ])
+        result = await pm.debug_cover_state()
+        assert "Cover-Status" in result
+
+    @pytest.mark.asyncio
+    async def test_debug_specific_entity(self, pm):
+        pm.brain.ha.get_states = AsyncMock(return_value=[
+            {"entity_id": "cover.test", "attributes": {"current_position": 50, "friendly_name": "Test"}},
+        ])
+        pm.brain.memory.redis.get = AsyncMock(return_value=None)
+        result = await pm.debug_cover_state("cover.test")
+        assert "Test" in result
+        assert "Position" in result
+
+    @pytest.mark.asyncio
+    async def test_debug_not_found(self, pm):
+        pm.brain.ha.get_states = AsyncMock(return_value=[])
+        result = await pm.debug_cover_state("cover.nonexistent")
+        assert "nicht gefunden" in result
+
+
+# ── Config-Assistent ─────────────────────────────────────────────────
+
+class TestConfigAssistant:
+
+    @pytest.mark.asyncio
+    async def test_config_help(self, pm):
+        with patch("assistant.proactive.yaml_config", {
+            "seasonal_actions": {
+                "cover_automation": {
+                    "weather_protection": True,
+                    "heat_protection_temp": 26,
+                    "storm_wind_speed": 50,
+                },
+            },
+        }), patch("assistant.proactive._get_room_profiles_cached", return_value={
+            "cover_profiles": {"covers": []},
+            "markisen": {},
+        }):
+            result = await pm.get_cover_config_help()
+            assert "Konfiguration" in result
+            assert "26" in result
+
+
+# ── Weather Event Handler ────────────────────────────────────────────
+
+class TestWeatherEventHandler:
+
+    @pytest.mark.asyncio
+    async def test_wind_spike_triggers_storm(self, pm):
+        pm.brain.memory.redis.get = AsyncMock(return_value=None)
+        pm.brain.memory.redis.set = AsyncMock()
+        with patch("assistant.proactive.yaml_config", {
+            "seasonal_actions": {"cover_automation": {"storm_wind_speed": 50}},
+        }), patch("assistant.cover_config.get_sensor_by_role", return_value="sensor.wind"):
+            # This should log a warning about wind spike
+            await pm._handle_weather_event("sensor.wind", "55", "20")
+
+    @pytest.mark.asyncio
+    async def test_non_weather_entity_ignored(self, pm):
+        with patch("assistant.cover_config.get_sensor_by_role", return_value="sensor.wind"):
+            # Should not raise
+            await pm._handle_weather_event("light.wohnzimmer", "on", "off")
+
+
+# ── Anomaly Detection ────────────────────────────────────────────────
+
+class TestAnomalyDetection:
+
+    @pytest.mark.asyncio
+    async def test_anomaly_tracking(self, pm):
+        redis = AsyncMock()
+        redis.incr = AsyncMock(return_value=1)
+        redis.expire = AsyncMock()
+        await pm._track_cover_anomaly("cover.test", redis)
+        redis.incr.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_anomaly_triggers_notification_at_4(self, pm):
+        redis = AsyncMock()
+        redis.incr = AsyncMock(return_value=4)
+        redis.delete = AsyncMock()
+        with patch.object(pm, "_notify", new_callable=AsyncMock) as mock_notify:
+            await pm._track_cover_anomaly("cover.test", redis)
+            mock_notify.assert_called_once()
+            assert "Ping-Pong" in str(mock_notify.call_args)
