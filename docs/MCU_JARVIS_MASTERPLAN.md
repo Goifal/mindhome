@@ -88,41 +88,62 @@ main.py (FastAPI :8200)
 
 | Feature | Datei | Details |
 |---|---|---|
-| Understatement-Humor | `personality.py` | "Trocken-britischer Humor wie ein Butler" |
-| Selbst-ironischer Humor | `personality.py` | Selbstironie-System mit Daily-Budget |
-| Adaptive Antwortlaenge | `personality.py` | mood_complexity Matrix, kurz/ausfuehrlich Modi |
-| Web Search | `web_search.py` | Vollstaendig implementiert (nur `enabled: false`) |
+| Understatement-Humor | `personality.py:68` | HUMOR_TEMPLATES Level 3: "Trocken-britischer Humor wie ein Butler" |
+| Selbst-ironischer Humor | `personality.py:298-299` | `self_irony_max_per_day=3`, `try_reserve_self_irony()` Zeile 1535 |
+| Adaptive Antwortlaenge | `personality.py:88-92` | COMPLEXITY_PROMPTS (kurz/normal/ausfuehrlich) + mood_complexity Integration Zeile 1245-1273 |
+| Web Search | `web_search.py` + `settings.yaml:1275` | Vollstaendig implementiert, `enabled: false` |
+| Error Recovery in Character | `personality.py:204-218` | `CONFIRMATIONS_FAILED` + `CONFIRMATIONS_FAILED_SNARKY` — Fehler bereits als JARVIS formuliert |
+| Implizite Intent-Erkennung | `anticipation.py:536-573` | `detect_implicit_prerequisites()` — "entspannen" → Rolladen+Licht+Temp+Musik |
+| Konversations-Stil-Anpassung | `personality.py:2424-2443` | `{conversation_mode_section}` existiert mit Topic-Hint und Modus-Erkennung |
+| Eskalations-Sprache | `personality.py:876-936, 1737-1767` | `check_escalating_concern()` + `check_escalation()` mit abgestufter Sprache |
+| Meta-Kognition | `personality.py:2359-2367` | Self-awareness Sektion mit Meta-Humor |
+| Multi-Task Narration | `websocket.py:126` + `brain.py:2284,3273,3476` | `emit_progress()` sendet Echtzeit-Updates ("context","thinking","action") |
+| Eskalations-Intelligenz | `proactive.py:5638` | `escalate_threat()` mit Threat-Assessment-Tracking |
+| Quality Tracking | `response_quality.py:35-220` | Quality-Scoring mit Redis-Storage (aber KEIN Feedback zurueck in personality.py) |
+| Laufender Kommentar | `spontaneous_observer.py` + `brain.py:9416` | SpontaneousObserver voll funktional, Callback-basiert, Silence-Gating |
+| Temporal Reasoning (Klima) | `climate_model.py` + `predictive_maintenance.py` | Temperatur-Simulation, Batterie-Prognose, Wartungsplanung |
 
 ### TEILWEISE IMPLEMENTIERT (erweitern statt neu bauen)
 
-| Feature | Was existiert | Was fehlt |
-|---|---|---|
-| Few-Shot Examples | Einzelne Beispiele in `SYSTEM_PROMPT_TEMPLATE` | Nicht systematisch (5-8 JARVIS-Dialogbeispiele) |
-| Confidence-Sprachstil | Confidence-Tracking existiert | Sprachvariation fehlt |
-| Voice-Optimierung | TTS-Enhancer (`tts_enhancer.py`) existiert | Voice-Output-Modus fehlt, kein `tts_speed` in Config |
-| Health Nagging | `health_monitor.py` existiert (Hydration/Klima-Monitoring) | Butler-Nagging-Stil fehlt, kein explizites Schlaf-Tracking |
-| Context Compaction | Summarization-Patterns in `brain.py` | Nicht automatisch |
-| Background Reasoning | Background-Extraction existiert | Kein Idle-Reasoning |
-| Inner State | Selbst-Bewusstsein erwaehnt | Kein separater JARVIS-Mood |
-| Relationship Model | Per-Person-Cache existiert (`_get_person_profile()`) | Inside Jokes fehlen |
-| Temporal Reasoning | Foresight/Predictions existieren | Begrenzt |
-| Emotionale Kontinuitaet | Redis `emotional_memory` Keys existieren | Minimal genutzt |
-| Automatic RAG | RAG bei Wissensfragen | Nicht automatisch bei jedem Query |
-| Running Commentary | `SpontaneousObserver` existiert | Nicht ins Gespraech gewebt |
-| Intent-Referenzierung | `resolve_references()` existiert | Begrenzter Scope |
-| Butler-Instinkt | Confidence-Thresholds existieren (`AnticipationEngine`) | Auto-Execution unklar |
-| Kontextuelles Schweigen | Scene/Keyword-basiert | Nicht situativ |
+| Feature | Was existiert (Datei:Zeile) | Was fehlt | Luecke |
+|---|---|---|---|
+| Few-Shot Examples | `personality.py:275-278` — 3 Beispiele (Befehl, Gespraech, Meinung) | Nur 3 statt 5-8, keine Pushback/Empathie/Kreativitaet-Beispiele | 20% fertig |
+| Voice-Optimierung | `tts_enhancer.py` — SSML, Prosody, Speed/Pitch-Maps, Whisper-Modus | Kein `output_mode` Flag (voice vs. chat), SSML wird immer generiert | 95% fertig |
+| Health Nagging | `health_monitor.py` — CO2, Feuchte, Temperatur, Hydration-Reminder | Kein Butler-Stil, keine Persoenlichkeit in Alerts, kein Schlaf-Tracking | 40% fertig |
+| Context Compaction | `brain.py:1005-1034` — `_summarize_conversation_chunk()`, LLM + Text-Kuerzung | Reaktiv (erst bei Overflow), nicht automatisch bei >70% | 70% fertig |
+| Relationship Model | `personality.py:450-472` — `_get_person_profile()` mit humor/formality Felder | Keine Inside Jokes, keine Beziehungsgeschichte, `profiles: null` in Config | 20% fertig |
+| Emotionale Kontinuitaet | `memory_extractor.py:389` — `mha:emotional_memory:{action}:{person}` schreiben | Write-only! Emotional Memory wird NIE gelesen/referenziert | 50% fertig |
+| Automatic RAG | `brain.py:301` — KnowledgeBase initialisiert | Trigger-Logik unklar, nicht automatisch bei Wissensfragen | 20% fertig |
+| Intent-Referenzierung | `dialogue_state.py:180-256` — Entity/Room/Action-Deques (letzte 5/3/5) | Nur In-Session, kein "wie gestern", kein Action-Log-Suche | 40% fertig |
+| Butler-Instinkt | `anticipation.py:49-51` — Thresholds ask=0.6, suggest=0.8, auto=0.95 | Nur Vorschlaege bei 95%, keine Auto-Execution | 30% fertig |
+| Protektives Override | `function_validator.py:35-46` + `personality.py:269` — "SICHERHEIT > Komfort > Befehl" | Basis-Sicherheitschecks existieren, kein ausfuehrliches In-Character-Override | 50% fertig |
+| Narrative Gespraechsboegen | `dialogue_state.py` — Gespraechs-States (idle→follow_up→multi_step) | Kein Callback zu frueheren Themen, keine strukturierten Boegen | 30% fertig |
+| Proaktives Selbst-Lernen | `learning_observer.py` — Muster-Erkennung + Automatisierungs-Vorschlaege | Nur passiv, kein aktives Fragen bei Wissensluecken | 50% fertig |
+| Self-initiated Follow-ups | `memory.py` — `mha:pending_topics` Redis-Key existiert | Wird gespeichert aber nie proaktiv wieder aufgegriffen | 30% fertig |
+| Narrative Zusammenfassungen | `summarizer.py` — DailySummarizer mit Mood-History | Daten-Format statt Narrativ | 60% fertig |
 
 ### NICHT IMPLEMENTIERT (neu bauen)
 
-`core_identity.py`, Dramatisches Timing, Error Recovery in Character,
-Implizite Intent-Erkennung, Narrative Gespraechsboegen, Ethische Argumentation,
-Protektives Override, Situative Improvisation, Konversations-Stil-Anpassung,
-Eskalations-Sprache, Kreative Problemloesung, Meta-Kognition,
-Unified Consciousness, Dynamic Skill Acquisition, Multi-Task Orchestration,
-Proaktives Selbst-Lernen, Self-initiated Follow-ups, Semantic History Search,
-Task-aware Temperature, Eskalations-Intelligenz, Quality Feedback Loop,
-Dynamic Few-Shot, Prompt-Versionierung
+| Feature | Status | Details |
+|---|---|---|
+| `core_identity.py` (B1) | NEU | Unveraenderliche JARVIS-Identitaet als Python-Modul |
+| Confidence-Sprachstil (A2) | NEU | Kein `{confidence_section}` Platzhalter, kein Confidence-Metric in PersonalityEngine |
+| Dramatisches Timing (A3) | NEU | Keinerlei Timing-Anweisungen im SYSTEM_PROMPT_TEMPLATE |
+| Ethische Argumentation (A7) | NEU | Keine Konsequenz-Erklaerung im Prompt |
+| Situative Improvisation (A10) | NEU | Keine Improvisation-Anweisungen |
+| Kreative Problemloesung (A13) | NEU | Keine Workaround-Anweisungen im Prompt |
+| Background Reasoning (B4) | NEU | Kein Idle-Detection, kein Background-Reasoning-Loop |
+| Inner State (B5) | NEU | Kein separater JARVIS-Mood, nur User-Mood via MoodDetector |
+| Pre-Compaction Memory Flush (B3) | NEU | Keine Fakten-Sicherung vor Summarization |
+| Dynamic Skill Acquisition (B8) | NEU | Pattern-Lernen existiert, aber keine abstrakten Konzepte |
+| Familien-Persoenlichkeit (C8) | NEU | Speaker Recognition existiert, fuettert aber NICHT in personality.py |
+| Kontextuelles Schweigen (D3) | NEU | SituationModel trackt nur Deltas, keine Message-Unterdrueckung |
+| Semantic History Search (C6) | NEU | Kein search_history Tool |
+| Automation-Debugging (C9) | NEU | Kein debug_automation Tool |
+| Task-aware Temperature (D1) | NEU | Keine Temperature-Anpassung pro Task-Typ |
+| Dynamic Few-Shot (D6) | NEU | Keine dynamische Beispiel-Auswahl aus Quality-Scores |
+| Prompt-Versionierung (D7) | NEU | Kein Prompt-Hashing oder A/B-Testing |
+| Quality Feedback Loop (D5) | NEU | response_quality.py sammelt Daten, gibt aber NICHTS an personality.py zurueck |
 
 ---
 
@@ -132,65 +153,65 @@ Dynamic Few-Shot, Prompt-Versionierung
 
 | # | Feature | Status | Was zu tun ist |
 |---|---|---|---|
-| A1 | Few-Shot Examples | ERWEITERN | 5-8 systematische JARVIS-Dialogbeispiele in `SYSTEM_PROMPT_TEMPLATE` hinzufuegen (Befehl, Humor, Pushback, Empathie, Kreativitaet) |
-| A2 | Confidence-Sprachstil | ERWEITERN | Neue Prompt-Sektion: "Bei hoher Confidence assertiv, bei niedriger ehrlich unsicher" |
-| A3 | Dramatisches Timing | NEU | Prompt-Sektion: Spannungsaufbau, rhetorische Pausen ("..."), Timing bei Enthüllungen |
-| A4 | Voice-Optimierung | ERWEITERN | Output-Mode Flag (`voice`/`chat`), Voice-Regeln im Prompt (kurze Saetze, keine Klammern) |
-| A5 | Narrative Gespraechsboegen | NEU | Prompt: Gespraeche natuerlich abschliessen, Callbacks zu frueheren Themen |
-| A6 | Error Recovery in Character | NEU | Prompt: Fehler als JARVIS formulieren ("Das System wehrt sich"), nie technisch |
+| A1 | Few-Shot Examples | ERWEITERN | 3 Beispiele existieren (personality.py:275-278). Auf 5-8 erweitern: Pushback, Empathie, Kreativitaet hinzufuegen |
+| A2 | Confidence-Sprachstil | NEU | Kein `{confidence_section}` Platzhalter. Neuen Platzhalter + `_build_confidence_section()` Methode erstellen |
+| A3 | Dramatisches Timing | NEU | Prompt-Sektion fuer Spannungsaufbau, rhetorische Pausen bei Enthüllungen |
+| A4 | Voice-Optimierung | ERWEITERN | `tts_enhancer.py` ist 95% fertig (SSML, Prosody, Whisper-Modus). Nur `output_mode` Flag (voice/chat) fehlt |
+| A5 | Narrative Gespraechsboegen | ERWEITERN | `dialogue_state.py` hat States (idle→follow_up). Fehlt: Callbacks zu frueheren Themen |
+| A6 | Error Recovery in Character | ~~NEU~~ EXISTIERT | `CONFIRMATIONS_FAILED` + `_SNARKY` in personality.py:204-218. Pruefen ob ausreichend |
 | A7 | Ethische Argumentation | NEU | Prompt: Konsequenzen erklaeren statt Regeln zitieren |
-| A8 | Protektives Override | NEU | Prompt: In Character ablehnen koennen ("Das wuerde ich nicht empfehlen, Sir") |
-| A9 | Implizite Intent-Erkennung | NEU | Prompt: Zwischen den Zeilen lesen, Stimmungen als Wuensche interpretieren |
-| A10 | Situative Improvisation | NEU | Prompt: Bei Unerwartetem kreativ + humorvoll reagieren |
-| A11 | Konversations-Stil-Anpassung | NEU | Prompt: Modus erkennen (Befehl/Plausch/Problem/Abendgespraech) |
-| A12 | Eskalations-Sprache | NEU | Prompt: Sprachlich abgestuft (dezent → direkt → dringend) |
+| A8 | Protektives Override | ERWEITERN | `function_validator.py:35-46` + "SICHERHEIT > Komfort" Regel existiert. Ausfuehrlichere In-Character-Ablehnungen fehlen |
+| A9 | Implizite Intent-Erkennung | ~~NEU~~ EXISTIERT | `detect_implicit_prerequisites()` in anticipation.py:536-573. Pruefen ob Prompt-Sektion noetig |
+| A10 | Situative Improvisation | NEU | Keine Improvisation-Anweisungen im Prompt |
+| A11 | Konversations-Stil-Anpassung | ~~NEU~~ EXISTIERT | `{conversation_mode_section}` in personality.py:2424-2443. Moeglicherweise erweitern |
+| A12 | Eskalations-Sprache | ~~NEU~~ EXISTIERT | `check_escalation()` + `check_escalating_concern()` in personality.py. Funktional |
 | A13 | Kreative Problemloesung | NEU | Prompt: Workarounds vorschlagen, nicht nur Probleme melden |
-| A14 | Health Nagging | ERWEITERN | Prompt: Butler-Stil-Nagging ("Sir, 14 Stunden wach...") |
-| A15 | Meta-Kognition | NEU | Prompt: Eigene Grenzen kommunizieren, nachschlagen anbieten |
+| A14 | Health Nagging | ERWEITERN | `health_monitor.py` hat Sensor-Monitoring. Butler-Stil-Persoenlichkeit in Alerts fehlt |
+| A15 | Meta-Kognition | ~~NEU~~ EXISTIERT | personality.py:2359-2367. Self-awareness Sektion vorhanden |
 
 ### Kategorie B: Architektur — Neue Module
 
 | # | Feature | Status | Was zu tun ist |
 |---|---|---|---|
-| B1 | core_identity.py | NEU | Python-Konstanten: Name, Rolle, Werte, Grenzen. Wird vor dynamischem Prompt geladen, unveraenderlich |
-| B2 | Context Compaction | ERWEITERN | Automatisch bei >70% Context: Fast-Modell (`model_fast`) fasst aeltere Turns zusammen |
+| B1 | core_identity.py | NEU | Python-Konstanten: Name, Rolle, Werte, Grenzen. Unveraenderlich |
+| B2 | Context Compaction | ERWEITERN | `_summarize_conversation_chunk()` existiert (brain.py:1005). Automatisch bei >70% triggern statt erst bei Overflow |
 | B3 | Pre-Compaction Memory Flush | NEU | Vor Compaction Fakten in Semantic Memory sichern |
-| B4 | Background Reasoning | ERWEITERN | Idle-Detection (5+ Min) → Smart-Modell (`model_smart`) denkt ueber Haus-Zustand nach, cached Insights |
-| B5 | Inner State | ERWEITERN | Separater JARVIS-Mood (besorgt/amuesiert/stolz/erleichtert), persistent in Redis, beeinflusst Prompt |
-| B6 | Relationship Model | ERWEITERN | Inside Jokes, Kommunikationsstil-Praeferenzen, Beziehungsgeschichte pro Person |
-| B7 | Unified Consciousness | NEU | Refactoring: ALLE Signale in EINEM Prompt-Pass statt separate Module einzeln |
-| B8 | Dynamic Skill Acquisition | ERWEITERN | Abstrakte Konzepte lernen ("Feierabend" = Konzept, variiert nach Kontext) |
-| B9 | Temporal Reasoning | ERWEITERN | LLM mit Sensordaten + Zeitreihen: "Was passiert wenn..." Szenarien simulieren |
-| B10 | Emotionale Kontinuitaet | ERWEITERN | Emotional Memory aktiv nutzen: "Geht es Ihnen heute besser?" |
-| B11 | Multi-Task Orchestration + Narration | NEU | Streaming-Enhancement: Echtzeit-Erzaehlung waehrend Ausfuehrung |
-| B12 | Proaktives Selbst-Lernen | NEU | JARVIS fragt gezielt bei Wissensluecken statt nur passiv zu beobachten |
+| B4 | Background Reasoning | NEU | Kein Idle-Loop vorhanden. Komplett neu: 5+ Min Idle → Smart-Modell denkt nach |
+| B5 | Inner State | NEU | Kein JARVIS-Mood (nur User-Mood via MoodDetector). Neues Modul `inner_state.py` |
+| B6 | Relationship Model | ERWEITERN | `_get_person_profile()` hat humor/formality. Fehlt: Inside Jokes, Beziehungsgeschichte, `profiles: null` befuellen |
+| B7 | Unified Consciousness | PRUEFEN | `_mega_tasks` in brain.py:2445+ sammelt bereits parallel. Pruefen ob echtes Refactoring noetig |
+| B8 | Dynamic Skill Acquisition | ERWEITERN | `learning_observer.py` lernt Action-Patterns. Fehlt: Abstrakte Konzepte ("Feierabend") |
+| B9 | Temporal Reasoning | ~~ERWEITERN~~ EXISTIERT | `climate_model.py` + `predictive_maintenance.py` voll funktional |
+| B10 | Emotionale Kontinuitaet | ERWEITERN | `mha:emotional_memory` wird geschrieben (memory_extractor.py:389) aber NIE gelesen. Read-Logik bauen |
+| B11 | Multi-Task Orchestration | ~~NEU~~ EXISTIERT | `emit_progress()` in websocket.py:126 sendet Echtzeit-Updates. Pruefen ob ausreichend |
+| B12 | Proaktives Selbst-Lernen | ERWEITERN | `learning_observer.py` erkennt Muster passiv. Fehlt: Aktives Fragen bei Wissensluecken |
 
 ### Kategorie C: Integration — Module verbinden
 
 | # | Feature | Status | Was zu tun ist |
 |---|---|---|---|
-| C1 | Automatisches RAG | ERWEITERN | `brain.py`: Bei Wissensfragen automatisch Knowledge Base + Web Search triggern |
-| C2 | Web Search aktivieren | CONFIG | `settings.yaml`: `enabled: true` + Research-Modus-Prompt |
-| C3 | Self-initiated Follow-ups | NEU | `pending_topics` Redis-Key aktiv nutzen → spaeter proaktiv melden |
-| C4 | Laufender Kommentar | ERWEITERN | Proactive Events in laufendes Gespraech weben statt separate Notification |
-| C5 | Intent-Referenzierung | ERWEITERN | `resolve_references()` erweitern: Action-Log durchsuchen, "wie gestern" verstehen |
-| C6 | Semantic History Search | NEU | Neues Tool: "Was hast du gemacht?" → Narrative Antwort aus Logs |
-| C7 | Butler-Instinkt | ERWEITERN | Anticipation bei 90%+ → HANDELN (Autonomie-Level-abhaengig), nicht fragen |
-| C8 | Familien-Persoenlichkeit | NEU | Speaker Recognition → person-spezifischer Prompt-Abschnitt in `personality.py` |
-| C9 | Automation-Debugging | NEU | Neues Tool: Logs + Trigger-Bedingungen analysieren und natuerlich erklaeren |
-| C10 | Narrative Zusammenfassungen | NEU | `summarizer.py` Ausgabe als Geschichte statt Datenliste formatieren |
+| C1 | Automatisches RAG | ERWEITERN | `KnowledgeBase` initialisiert (brain.py:301). Automatischer Trigger bei Wissensfragen fehlt |
+| C2 | Web Search aktivieren | CONFIG | `settings.yaml:1275`: `enabled: false` → `true` setzen + Research-Modus-Prompt |
+| C3 | Self-initiated Follow-ups | ERWEITERN | `mha:pending_topics` Redis-Key existiert (memory.py). Wird gespeichert aber nie proaktiv aufgegriffen |
+| C4 | Laufender Kommentar | ~~ERWEITERN~~ EXISTIERT | `SpontaneousObserver` voll funktional mit Callback, Silence-Gating, 2/Tag Limit |
+| C5 | Intent-Referenzierung | ERWEITERN | `resolve_references()` in dialogue_state.py:180. Nur In-Session (Deques). Kein "wie gestern" |
+| C6 | Semantic History Search | NEU | Kein search_history Tool in function_calling.py |
+| C7 | Butler-Instinkt | ERWEITERN | `threshold_auto=0.95` aber nur Vorschlaege. Auto-Execution + Threshold-Senkung auf 0.90 |
+| C8 | Familien-Persoenlichkeit | ERWEITERN | `speaker_recognition.py` existiert + in brain.py integriert. Fuettert aber NICHT in personality.py Prompt |
+| C9 | Automation-Debugging | NEU | Kein debug_automation Tool |
+| C10 | Narrative Zusammenfassungen | ERWEITERN | `summarizer.py` existiert mit Mood-History. Output ist Daten-Format, kein Narrativ |
 
 ### Kategorie D: Technische Optimierung
 
 | # | Feature | Status | Was zu tun ist |
 |---|---|---|---|
-| D1 | Task-aware Temperature | NEU | `model_router.py`: Geraet→0.3, Chat→0.8, Analyse→0.5 |
-| D2 | GPU-Smart Architecture | CONFIG | Bereits Fast/Smart/Deep Setup. Optimieren: Fast-Modell (`model_fast`) fuer Triage nutzen |
-| D3 | Kontextuelles Schweigen | ERWEITERN | `situation_model.py` einbinden: Film→still, Gaeste→diskret |
-| D4 | Eskalations-Intelligenz | NEU | `proactive.py`: Notification-Counter pro Event, graduell eskalieren |
-| D5 | Quality Feedback Loop | NEU | `response_quality.py` → `personality.py`: Schlechte Patterns vermeiden |
-| D6 | Dynamic Few-Shot | NEU | Beste JARVIS-Antworten (quality_score > 0.8) als Prompt-Beispiele |
-| D7 | Prompt-Versionierung | NEU | Prompt-Varianten tracken + Quality-Score vergleichen |
+| D1 | Task-aware Temperature | NEU | Keine Temperature-Anpassung pro Task-Typ in model_router.py |
+| D2 | GPU-Smart Architecture | CONFIG | Alle Tiers zeigen auf 35B. Spaeter: Kleinere Modelle fuer Fast-Tier |
+| D3 | Kontextuelles Schweigen | NEU | `situation_model.py` trackt nur Deltas, keine Message-Unterdrueckung bei Film/Gaeste/Schlaf |
+| D4 | Eskalations-Intelligenz | ~~NEU~~ EXISTIERT | `escalate_threat()` in proactive.py. Pruefen ob graduelle Eskalation ausreichend |
+| D5 | Quality Feedback Loop | ERWEITERN | `response_quality.py` sammelt Scores. Feedback-Kanal zurueck in personality.py fehlt |
+| D6 | Dynamic Few-Shot | NEU | Keine dynamische Beispiel-Auswahl aus Quality-Scores |
+| D7 | Prompt-Versionierung | NEU | Kein Prompt-Hashing oder A/B-Testing |
 
 ---
 
@@ -700,7 +721,8 @@ cd /home/user/mindhome && python -m pytest assistant/tests/ -x
 
 Grosses Refactoring: Alle Signale (Proaktiv, Anticipation, Mood, Memory, Situation) in EINEM Prompt-Pass verarbeiten statt separate Module-Aufrufe.
 
-**VORSICHT:** Dies ist ein grosses Refactoring. Brain.py ist 518KB. Inkrementell vorgehen.
+**VORSICHT:** Brain.py ist ~507KB / 10.303 Zeilen. `_mega_tasks` (Zeile 2445+) sammelt bereits
+parallel. Pruefen ob echtes Refactoring noetig oder ob das bestehende System ausreicht.
 
 #### B8: Dynamic Skill Acquisition
 
@@ -815,7 +837,7 @@ cd /home/user/mindhome && python -m pytest assistant/tests/ -x
 │   │   ├── humor_triggers.yaml      # Humor-Trigger
 │   │   ├── opinion_rules.yaml       # Meinungs-Regeln
 │   │   └── room_profiles.yaml       # Raum-Profile
-│   └── tests/                       # 119 Test-Dateien
+│   └── tests/                       # 114 Test-Dateien
 │       ├── conftest.py              # Pytest Fixtures
 │       ├── jarvis_character_test.py # Charakter-Tests
 │       └── ...
