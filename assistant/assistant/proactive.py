@@ -1866,6 +1866,25 @@ class ProactiveManager:
             except Exception as e:
                 logger.warning("Error in Mood-Check: %s", e)
 
+        # D3: Kontextuelles Schweigen — Activity-basierte Unterdrückung
+        # Film/Gäste/Schlaf → nur HIGH+ darf durch
+        if urgency not in (CRITICAL, HIGH):
+            try:
+                _activity = getattr(self.brain, "activity", None)
+                if _activity:
+                    result = await _activity.should_deliver(urgency)
+                    if result.get("suppress"):
+                        activity = result.get("activity", "unknown")
+                        detail = data.get("entity") or data.get("task") or data.get("message") or ""
+                        logger.info(
+                            "D3: Meldung unterdrückt (Activity=%s): [%s] %s%s",
+                            activity, urgency, event_type,
+                            f" ({detail})" if detail else "",
+                        )
+                        return
+            except Exception as e:
+                logger.warning("D3: Activity-Check fehlgeschlagen: %s", e)
+
         # Cooldown prüfen (mit adaptivem Cooldown aus Feedback)
         effective_cooldown = self.cooldown
         feedback = self.brain.feedback
@@ -2021,6 +2040,24 @@ class ProactiveManager:
                 event_type, urgency, notification_id, delivery_method, text,
             )
             return
+
+        # D4: Eskalations-Intelligenz — graduelle Steigerung bei wiederholten Meldungen
+        try:
+            _esc_key = f"mha:notify_escalation:{event_type}"
+            _redis = getattr(self.brain, "memory", None)
+            _redis = _redis.redis if _redis else None
+            if _redis:
+                _esc_count = await _redis.incr(_esc_key)
+                await _redis.expire(_esc_key, 6 * 3600)  # 6h Fenster
+                if _esc_count == 1:
+                    description = f"Nur zur Info: {description}"
+                elif _esc_count == 2:
+                    description = f"Nochmal dazu: {description}"
+                elif _esc_count >= 3:
+                    _title = get_person_title()
+                    description = f"{_title}, das ist wirklich wichtig: {description}"
+        except Exception as e:
+            logger.debug("D4: Eskalations-Counter fehlgeschlagen: %s", e)
 
         prompt = self._build_notification_prompt(event_type, description, data, urgency)
 

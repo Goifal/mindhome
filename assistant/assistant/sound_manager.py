@@ -558,15 +558,15 @@ class SoundManager:
             logger.warning("Pre-TTS-Filter hat gesamten Text entfernt — Fallback")
             text = "Erledigt."
 
-        # SSML-Text bevorzugen, sonst Plaintext
-        speak_text = tts_data.get("ssml", text) if tts_data.get("ssml") else text
-        # Pre-TTS-Filter auch auf SSML anwenden — sonst werden Meta-Begriffe
-        # trotz Plaintext-Filter im SSML vorgelesen
-        if speak_text != text:
-            speak_text = _meta_leak_re.sub('', speak_text).strip()
-            speak_text = _re.sub(r'\s{2,}', ' ', speak_text).strip()
-            if not speak_text or speak_text in ('<speak></speak>', '<speak> </speak>'):
-                speak_text = text
+        # SSML: Piper TTS versteht KEIN SSML — Tags werden woertlich vorgelesen.
+        # Daher immer den Plaintext verwenden und alle XML-Tags entfernen.
+        speak_text = text
+        # Sicherheitsnetz: Falls noch SSML-Tags im Text sind (z.B. aus LLM-Output),
+        # komplett entfernen damit Piper sie nicht vorliest.
+        speak_text = _re.sub(r'<[^>]+>', '', speak_text).strip()
+        speak_text = _re.sub(r'\s{2,}', ' ', speak_text).strip()
+        if not speak_text:
+            speak_text = text
 
         # Alexa/Echo: Keine Audio-Dateien, stattdessen Alexa-eigener TTS
         if self._is_alexa_speaker(speaker_entity):

@@ -1231,6 +1231,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     self.personality.track_humor_success(cat, humor_fb),
                     name="humor_feedback",
                 )
+                # B6: Positive Humor-Reaktion → Inside Joke speichern
+                if humor_fb and person:
+                    _joke_text = f"Humor ({cat}) kam gut an bei {text[:60]}"
+                    self._task_registry.create_task(
+                        self.personality.record_inside_joke(person, _joke_text),
+                        name="b6_inside_joke",
+                    )
             self._last_humor_category = None
 
         # Phase 9.1: Pending Speaker-Rueckfrage aufloesen
@@ -2769,6 +2776,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         try:
             _rel_ctx = await self.personality.get_relationship_context(person or "")
             self.personality._relationship_context = _rel_ctx
+            # B6: Erster Kontakt des Tages → Milestone tracken
+            if person and self.memory and self.memory.redis:
+                _b6_key = f"mha:relationship:daily_contact:{person.lower()}"
+                _b6_first = await self.memory.redis.set(_b6_key, "1", ex=86400, nx=True)
+                if _b6_first and not _rel_ctx:
+                    # Allererstes Gespraech mit dieser Person → Milestone
+                    self._task_registry.create_task(
+                        self.personality.record_milestone(
+                            person, "Erstes Gespraech mit JARVIS",
+                        ),
+                        name="b6_first_contact",
+                    )
         except Exception:
             pass
 
@@ -3627,7 +3646,64 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         name="pre_action_ack",
                     )
 
-                for tool_call in tool_calls:
+                # N4: Parallel Tool Execution — read-only Queries parallel ausfuehren
+                _N4_PARALLEL_TOOLS = {
+                    "get_entity_state", "get_entity_history", "get_lights",
+                    "get_covers", "get_media", "get_climate", "get_switches",
+                    "get_house_status", "get_full_status_report", "get_weather",
+                    "get_energy_report", "get_room_climate", "get_device_health",
+                    "get_alarms", "get_timer_status", "get_security_score",
+                    "get_active_intents", "get_wellness_status",
+                    "get_learned_patterns", "get_vacuum", "get_remotes",
+                    "list_capabilities", "list_conditionals",
+                    "list_jarvis_automations", "list_declarative_tools",
+                    "search_history",
+                }
+                if (len(tool_calls) > 1
+                        and all(
+                            tc.get("function", {}).get("name", "") in _N4_PARALLEL_TOOLS
+                            for tc in tool_calls
+                        )):
+                    # Alle Calls sind read-only → parallel ausfuehren
+                    async def _exec_query(tc):
+                        _f = tc.get("function", {})
+                        _fn = _f.get("name", "")
+                        _fa = _f.get("arguments", {})
+                        if isinstance(_fa, str):
+                            try:
+                                _fa = json.loads(_fa)
+                            except (json.JSONDecodeError, ValueError):
+                                return {"function": _fn, "args": _fa, "result": {"success": False, "message": "Ungueltige Argumente"}}
+                        _res = await self.executor.execute(_fn, _fa)
+                        return {"function": _fn, "args": _fa, "result": _res}
+
+                    logger.info("N4: %d read-only Queries parallel ausfuehren", len(tool_calls))
+                    _parallel_results = await asyncio.gather(
+                        *[_exec_query(tc) for tc in tool_calls],
+                        return_exceptions=True,
+                    )
+                    for _pr in _parallel_results:
+                        if isinstance(_pr, Exception):
+                            logger.warning("N4: Paralleler Query fehlgeschlagen: %s", _pr)
+                            continue
+                        executed_actions.append(_pr)
+                        if _pr["function"] in QUERY_TOOLS:
+                            has_query_results = True
+                        await emit_action(_pr["function"], _pr["args"], _pr["result"])
+                else:
+                    pass  # Sequentieller Fallback folgt unten
+
+                # Sequentieller Loop fuer gemischte/Action Tool-Calls
+                # (wird uebersprungen wenn N4-Parallel oben bereits ausgefuehrt hat)
+                _n4_parallel_done = (
+                    len(tool_calls) > 1
+                    and all(
+                        tc.get("function", {}).get("name", "") in _N4_PARALLEL_TOOLS
+                        for tc in tool_calls
+                    )
+                )
+
+                for tool_call in ([] if _n4_parallel_done else tool_calls):
                     func = tool_call.get("function", {})
                     func_name = func.get("name", "")
                     func_args = func.get("arguments", {})
@@ -3894,6 +3970,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         self._task_registry.create_task(
                             self.inner_state.on_action_failure(func_name, _err_msg),
                             name="inner_state_failure",
+                        )
+                        # B12: Bei fehlgeschlagenem Tool → Wissenslücke melden
+                        self._task_registry.create_task(
+                            self.learning_observer.observe_knowledge_gap(
+                                text, tool_failed=True, person=person,
+                            ),
+                            name="b12_knowledge_gap",
                         )
 
                     # Phase 17: Learning Observer — Jarvis-Aktionen markieren

@@ -325,6 +325,15 @@ self_learning:
 # N6: JSON-Mode fuer Tool-Calls — stabilere Erkennung
 json_mode_tools:
   enabled: true
+# A4: Voice-Modus — TTS-optimierte Ausgabe
+voice_mode:
+  enabled: true
+# D1: Task-aware Temperature — dynamische Temperature pro Task-Typ
+task_temperature:
+  enabled: true
+# S8#1: Krisen-Modus — Humor deaktivieren bei Critical-Events
+crisis_mode:
+  enabled: true
 character_lock:
   enabled: true
   closing_anchor: true
@@ -384,7 +393,9 @@ foresight:
   weather_alerts: true
   departure_warning_minutes: 45
 calendar:
-  entities: []
+  entities:
+    - calendar.max
+    - calendar.anna
 household:
   primary_user: ''
   members: []
@@ -1247,6 +1258,37 @@ anticipation:
     ask: 0.6
     suggest: 0.8
     auto: 0.90   # C7: Von 0.95 auf 0.90 gesenkt (Butler-Instinkt)
+  # A9: Implizite Intent-Erkennung — konfigurierbare Muster
+  intent_sequences:
+    entspannen:
+      - Rollladen runter
+      - Licht dimmen
+      - Temperatur senken
+      - Ambient-Musik
+    arbeiten:
+      - Rollladen hoch
+      - Licht hell
+      - Temperatur normal
+    schlafen:
+      - Tueren verriegeln
+      - Alle Lichter aus
+      - Heizung Eco
+      - Alarm scharf
+    gaeste:
+      - Angenehme Beleuchtung
+      - Angenehme Temperatur
+      - Hintergrundmusik
+    kochen:
+      - Kuechenlicht hell
+      - Dunstabzug an
+    filmabend:
+      - Wohnzimmer Licht dimmen
+      - Rollladen runter
+      - TV einschalten
+    feierabend:
+      - Licht gedimmt
+      - Temperatur angenehm
+      - Entspannungsmusik
 insights:
   enabled: true
   check_interval_minutes: 30
@@ -1387,7 +1429,17 @@ multi_room:
   room_motion_sensors: null
 person_profiles:
   enabled: true
-  profiles: null
+  profiles:
+    max:
+      title: Sir
+      humor: 4
+      formality_start: 60
+      response_style: direkt
+    anna:
+      title: Ma'am
+      humor: 3
+      formality_start: 70
+      response_style: ausfuehrlich
 trust_levels:
   default: 0
   persons: null
