@@ -2792,6 +2792,21 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("smart_shopping", "min_purchases"): (2, 10),
         ("smart_shopping", "reminder_days_before"): (0, 7),
         ("smart_shopping", "reminder_cooldown_hours"): (6, 72),
+        # Background Reasoning (B4)
+        ("background_reasoning", "idle_minutes"): (2, 30),
+        ("background_reasoning", "check_interval_seconds"): (30, 300),
+        ("background_reasoning", "cooldown_minutes"): (5, 120),
+        # Dynamic Skills / Abstrakte Konzepte (B8)
+        ("dynamic_skills", "min_observations"): (2, 10),
+        # Context Compaction
+        ("context_compaction", "threshold"): (0.5, 0.95),
+        # Quality Feedback (D5)
+        ("quality_feedback", "weak_threshold"): (0.1, 0.8),
+        # Dynamic Few-Shot (D6)
+        ("dynamic_few_shot", "max_per_category"): (3, 30),
+        ("dynamic_few_shot", "max_examples_in_prompt"): (1, 10),
+        # Self-Learning (B12)
+        ("self_learning", "cooldown_minutes"): (5, 120),
         # Model Profiles — Wertebereiche fuer LLM-Parameter
         # (Gilt fuer alle Profile: default, qwen3.5, llama, etc.)
     }

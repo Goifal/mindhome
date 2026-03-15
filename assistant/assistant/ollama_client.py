@@ -345,6 +345,7 @@ class OllamaClient:
         max_tokens: int = LLM_DEFAULT_MAX_TOKENS,
         think: Optional[bool] = None,
         tier: str = "",
+        format: Optional[str] = None,
     ) -> dict:
         """
         Sendet eine Chat-Anfrage an Ollama.
@@ -390,6 +391,15 @@ class OllamaClient:
 
         if tools:
             payload["tools"] = tools
+            # N6: JSON-Mode fuer Tool-Calls — stabilere Tool-Call Erkennung
+            if format is None:
+                from .config import yaml_config as _yaml_cfg
+                if _yaml_cfg.get("json_mode_tools", {}).get("enabled", True):
+                    payload["format"] = "json"
+            elif format:
+                payload["format"] = format
+        elif format:
+            payload["format"] = format
 
         if think_enabled is not None:
             payload["think"] = think_enabled

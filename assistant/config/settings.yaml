@@ -270,6 +270,61 @@ self_awareness:
 proactive_personality:
   enabled: true
   sarcasm_in_notifications: true
+core_identity:
+  enabled: true
+confidence_style:
+  enabled: true
+dramatic_timing:
+  enabled: true
+situative_improvisation:
+  enabled: true
+creative_problem_solving:
+  enabled: true
+multi_turn_tools:
+  enabled: true
+  max_iterations: 3
+inner_state:
+  enabled: true
+# C3: Self-initiated Follow-ups — JARVIS greift offene Themen proaktiv auf
+self_followup:
+  enabled: true
+  min_age_minutes: 15      # Mindest-Alter eines Themas bevor Follow-up
+  cooldown_minutes: 60     # Max 1 Follow-up pro Stunde
+  max_per_check: 1         # Max Follow-ups pro Pruefzyklus
+# C7: Butler-Instinkt — Automatische Ausfuehrung bei hoher Confidence
+butler_instinct:
+  enabled: true
+  min_autonomy_level: 3    # Autonomie-Level ab dem Auto-Execute erlaubt ist
+# B3: Pre-Compaction Memory Flush — Fakten sichern vor Zusammenfassung
+pre_compaction_flush:
+  enabled: true
+# B2: Proaktive Context Compaction — frueh kompaktieren statt erst bei Overflow
+context_compaction:
+  threshold: 0.70          # Bei 70% Budget-Auslastung kompaktieren
+  prefer_llm: true         # LLM-Zusammenfassung statt Text-Kuerzung
+# C5: Cross-Session Intent-Referenzierung ("wie gestern", "wie letzte Woche")
+cross_session_references:
+  enabled: true
+# D5: Quality Feedback Loop — schlechte Patterns in Personality-Prompt einbauen
+quality_feedback:
+  enabled: true
+  weak_threshold: 0.3      # Score unter dem eine Kategorie als schlecht gilt
+# B6: Relationship Model — Inside Jokes, Kommunikationsstil, Milestones
+relationship_model:
+  enabled: true
+# D3: Kontextuelles Schweigen — Antwort-Stil an Situation anpassen
+contextual_silence:
+  enabled: true
+# A5: Narrative Gespraechsboegen — Callback zu frueheren Themen
+narrative_arcs:
+  enabled: true
+# B12: Proaktives Selbst-Lernen — aktiv fragen bei Wissensluecken
+self_learning:
+  enabled: true
+  cooldown_minutes: 30     # Max 1 Lern-Notiz pro 30 Minuten
+# N6: JSON-Mode fuer Tool-Calls — stabilere Erkennung
+json_mode_tools:
+  enabled: true
 character_lock:
   enabled: true
   closing_anchor: true
@@ -842,6 +897,7 @@ planner:
   - besuch kommt
   - gaeste
 mood:
+  llm_sentiment: true
   rapid_command_seconds: 5
   stress_decay_seconds: 300
   frustration_threshold: 3
@@ -1190,7 +1246,7 @@ anticipation:
   thresholds:
     ask: 0.6
     suggest: 0.8
-    auto: 0.95
+    auto: 0.90   # C7: Von 0.95 auf 0.90 gesenkt (Butler-Instinkt)
 insights:
   enabled: true
   check_interval_minutes: 30
@@ -1976,5 +2032,31 @@ latency_optimization:
   refinement_skip_max_chars: 120
   tools_cache_ttl: 60
   conv_summary_mode: truncate
+# ── Session 6: Fortgeschrittene Intelligenz ──────────────────
+# B4: Background Reasoning — Idle-Analyse mit Smart-Modell
+background_reasoning:
+  enabled: true
+  idle_minutes: 5
+  check_interval_seconds: 60
+  cooldown_minutes: 30
+# B8: Dynamic Skill Acquisition — Abstrakte Konzepte lernen
+dynamic_skills:
+  enabled: true
+  min_observations: 3
+# C6: Semantic History Search — Gespraeche durchsuchen
+semantic_history_search:
+  enabled: true
+# C9: Automation-Debugging — HA-Automatisierungen analysieren
+automation_debugging:
+  enabled: true
+# ── Session 7: Selbstverbesserung ────────────────────────────
+# D6: Dynamic Few-Shot — Gute Antworten als Beispiele in Prompt laden
+dynamic_few_shot:
+  enabled: true
+  max_per_category: 10
+  max_examples_in_prompt: 3
+# D7: Prompt-Versionierung — Hash + Quality-Score Tracking
+prompt_versioning:
+  enabled: true
 entity_annotations: {}
 entity_roles: {}

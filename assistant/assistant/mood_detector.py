@@ -14,6 +14,7 @@ Nutzt Redis fuer die Interaktions-History und Pattern-Erkennung.
 """
 
 import asyncio
+import json
 import logging
 import time
 from collections import deque
@@ -22,7 +23,7 @@ from typing import Optional
 
 import redis.asyncio as redis
 
-from .config import yaml_config
+from .config import yaml_config, settings
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class MoodDetector:
 
     def __init__(self):
         self.redis: Optional[redis.Redis] = None
+        self._ollama = None  # N1: OllamaClient fuer LLM-basierte Sentiment-Analyse
         self._analyze_lock = asyncio.Lock()
         self._voice_lock = __import__('threading').Lock()
 
@@ -132,6 +134,112 @@ class MoodDetector:
 
         # Voice-Mood Integration (Quick Win 4)
         self.voice_mood_integration = mood_cfg.get("voice_mood_integration", True)
+
+    # ------------------------------------------------------------------
+    # N1: LLM-basierte Sentiment-Analyse
+    # ------------------------------------------------------------------
+
+    def set_ollama(self, ollama_client):
+        """Setzt den OllamaClient fuer LLM-basierte Stimmungserkennung."""
+        self._ollama = ollama_client
+        logger.info("MoodDetector: LLM-Sentiment via OllamaClient aktiviert")
+
+    async def _llm_analyze_sentiment(self, text: str) -> Optional[dict]:
+        """N1: LLM-basierte Sentiment-Analyse mit dem Fast-Model.
+
+        Nutzt das schnelle Modell fuer nuancierte Stimmungserkennung.
+        Ergaenzt (nicht ersetzt) die Keyword-basierte Erkennung.
+
+        Returns:
+            Dict mit sentiment, intensity, nuance oder None bei Fehler/Timeout.
+        """
+        _mood_cfg = yaml_config.get("mood", {})
+        if not _mood_cfg.get("llm_sentiment", True) or not self._ollama:
+            return None
+
+        # Nur bei Texten mit genuegend Kontext (>3 Woerter)
+        if len(text.split()) < 4:
+            return None
+
+        try:
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Du analysierst die Stimmung eines Smart-Home-Nutzers. "
+                        "Antworte NUR mit einem JSON-Objekt, kein anderer Text.\n"
+                        "Format: {\"sentiment\": \"...\", \"intensity\": 0.0-1.0, \"nuance\": \"...\"}\n"
+                        "sentiment: gut|neutral|gestresst|frustriert|muede|aufgeregt|besorgt\n"
+                        "intensity: Staerke der Emotion (0.0=kaum, 1.0=sehr stark)\n"
+                        "nuance: Ein Wort das den Unterton beschreibt (z.B. ungeduldig, entspannt, genervt, dankbar)"
+                    ),
+                },
+                {"role": "user", "content": text[:500]},  # Limit Input
+            ]
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=messages,
+                    model=settings.model_fast,
+                    temperature=0.1,
+                    max_tokens=80,
+                    think=False,
+                    tier="fast",
+                ),
+                timeout=3.0,  # Hartes Timeout — darf den Flow nicht blockieren
+            )
+            content = (response.get("message", {}).get("content", "") or "").strip()
+
+            # JSON aus Antwort extrahieren (LLM koennte Markdown-Wrapper nutzen)
+            if "{" in content:
+                json_str = content[content.index("{"):content.rindex("}") + 1]
+                result = json.loads(json_str)
+                # Validierung
+                if result.get("sentiment") and isinstance(result.get("intensity", 0), (int, float)):
+                    result["intensity"] = max(0.0, min(1.0, float(result["intensity"])))
+                    return result
+        except asyncio.TimeoutError:
+            logger.debug("N1: LLM-Sentiment Timeout (>3s) — Fallback auf Keywords")
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            logger.debug("N1: LLM-Sentiment Parse-Fehler: %s", e)
+        except Exception as e:
+            logger.debug("N1: LLM-Sentiment Fehler: %s", e)
+        return None
+
+    def _apply_llm_sentiment(self, llm_result: dict, signals: list):
+        """N1: Wendet das LLM-Sentiment-Ergebnis auf die internen Scores an."""
+        sentiment = llm_result.get("sentiment", "neutral")
+        intensity = llm_result.get("intensity", 0.5)
+        nuance = llm_result.get("nuance", "")
+
+        # LLM-Gewicht: Staerker als einzelne Keywords, aber nicht dominant
+        llm_weight = 0.6  # 60% LLM, 40% Keywords (bei Widerspruch)
+
+        # Sentiment-Mapping auf interne Scores
+        sentiment_map = {
+            "gut": {"stress": -0.15, "tiredness": 0.0, "frustration": -1, "positive": 1},
+            "neutral": {"stress": 0.0, "tiredness": 0.0, "frustration": 0, "positive": 0},
+            "gestresst": {"stress": 0.2, "tiredness": 0.0, "frustration": 0, "positive": 0},
+            "frustriert": {"stress": 0.15, "tiredness": 0.0, "frustration": 2, "positive": 0},
+            "muede": {"stress": 0.0, "tiredness": 0.2, "frustration": 0, "positive": 0},
+            "aufgeregt": {"stress": 0.1, "tiredness": -0.1, "frustration": 0, "positive": 0},
+            "besorgt": {"stress": 0.15, "tiredness": 0.0, "frustration": 0, "positive": 0},
+        }
+
+        adjustments = sentiment_map.get(sentiment, sentiment_map["neutral"])
+        weight = llm_weight * intensity
+
+        self._stress_level = max(0.0, min(1.0,
+            self._stress_level + adjustments["stress"] * weight))
+        self._tiredness_level = max(0.0, min(1.0,
+            self._tiredness_level + adjustments["tiredness"] * weight))
+        self._frustration_count = max(0,
+            self._frustration_count + int(adjustments["frustration"] * weight))
+        self._positive_count = max(0,
+            self._positive_count + int(adjustments["positive"] * weight))
+
+        signals.append(f"llm_sentiment:{sentiment}")
+        if nuance:
+            signals.append(f"llm_nuance:{nuance}")
 
     # ------------------------------------------------------------------
     # Per-Person State Management
@@ -382,6 +490,11 @@ class MoodDetector:
         self._interaction_times.append(now)
         self._interaction_lengths.append(text_len)
         self._last_texts.append(text_lower)
+
+        # N1: LLM-basierte Sentiment-Analyse (ergaenzt Keywords)
+        llm_result = await self._llm_analyze_sentiment(text)
+        if llm_result:
+            self._apply_llm_sentiment(llm_result, signals)
 
         # 3. Gesamt-Stimmung bestimmen
         self._current_mood = self._determine_mood()

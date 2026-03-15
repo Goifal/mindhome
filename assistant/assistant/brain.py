@@ -61,6 +61,7 @@ from .light_engine import LightEngine
 from .personality import PersonalityEngine
 from .proactive import ProactiveManager
 from .anticipation import AnticipationEngine
+from .inner_state import InnerStateEngine
 from .insight_engine import InsightEngine
 from .intent_tracker import IntentTracker
 from .routine_engine import RoutineEngine
@@ -217,6 +218,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Proaktive/Routine-Callbacks pruefen dies und warten bzw. verzichten.
         self._user_request_active = False
 
+        # B4: Background Reasoning — Idle-Timer fuer Smart-Modell-Analyse
+        self._last_interaction_ts: float = 0.0
+        self._idle_reasoning_pending: bool = False
+
         # Clients
         self.ha = HomeAssistantClient()
         self.ollama = OllamaClient()
@@ -242,6 +247,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.time_awareness = TimeAwareness(self.ha)
         self.routines = RoutineEngine(self.ha, self.ollama)
         self.anticipation = AnticipationEngine()
+        self.inner_state = InnerStateEngine()  # B5: JARVIS-eigene Emotionen
         self.intent_tracker = IntentTracker(self.ollama)
 
         # Phase 9: Stimme & Akustik
@@ -503,6 +509,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Health Monitor mit Context Builder verbinden (Trend-Indikatoren)
         self.context_builder.set_health_monitor(self.health_monitor)
 
+        # S8#7: Energy Optimizer mit Context Builder verbinden
+        self.context_builder.set_energy_optimizer(self.energy_optimizer)
+
+        # S8#8: Calendar Intelligence mit Context Builder verbinden
+        self.context_builder.set_calendar_intelligence(self.calendar_intelligence)
+
         # Redis für Context Builder (Guest-Mode-Check)
         self.context_builder.set_redis(self.memory.redis)
 
@@ -511,10 +523,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Mood Detector initialisieren
         await self.mood.initialize(redis_client=self.memory.redis)
+        self.mood.set_ollama(self.ollama)  # N1: LLM-basierte Stimmungserkennung
         self.personality.set_mood_detector(self.mood)
+        self.personality.set_inner_state(self.inner_state)  # B5: JARVIS-eigene Emotionen
 
         # Phase 6: Redis für Personality Engine (Formality Score, Counter)
         self.personality.set_redis(self.memory.redis)
+
+        # C5: Redis fuer cross-session Intent-Referenzierung
+        self.dialogue_state.set_redis(self.memory.redis)
+
+        # D5: Quality Feedback → Personality
+        self.personality.set_response_quality(self.response_quality)
 
         # Gelernten Sarkasmus-Level laden
         await self.personality.load_learned_sarcasm_level()
@@ -581,6 +601,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         await _safe_init("RelationshipCache", self.memory.semantic.refresh_relationship_cache())
 
         # Phase 8: Anticipation Engine + Intent Tracker
+        await _safe_init("InnerState", self.inner_state.initialize(redis_client=self.memory.redis))
         await _safe_init("Anticipation", self.anticipation.initialize(redis_client=self.memory.redis))
         self.anticipation.set_notify_callback(self._handle_anticipation_suggestion)
         await _safe_init("IntentTracker", self.intent_tracker.initialize(redis_client=self.memory.redis))
@@ -749,6 +770,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             self._entity_catalog_refresh_loop(), name="entity_catalog_refresh"
         )
 
+        # B4: Background Reasoning — Idle-Loop starten
+        _idle_cfg = cfg.yaml_config.get("background_reasoning", {})
+        if _idle_cfg.get("enabled", True):
+            self._task_registry.create_task(
+                self._idle_reasoning_loop(), name="idle_reasoning"
+            )
+
         if _degraded_modules:
             logger.warning(
                 "F-069: Jarvis gestartet im DEGRADED MODE — %d Module ausgefallen: %s",
@@ -888,11 +916,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         stream_callback=None, timeout: float = 60.0,
         think: bool = None,
         tier: str = "",
+        temperature: float = None,
     ) -> dict:
         """LLM-Call mit automatischer Fallback-Kaskade (Deep -> Smart -> Fast).
 
         Returns: {"text": str, "model": str, "message": dict, "error": bool}
         """
+        # D1: Task-aware Temperature — kwargs nur wenn explizit gesetzt
+        _temp_kwargs = {"temperature": temperature} if temperature is not None else {}
+
         current = model
         while current:
             try:
@@ -902,7 +934,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     async for token in self.ollama.stream_chat(
                         messages=messages, model=current,
                         max_tokens=max_tokens, think=think,
-                        tier=tier,
+                        tier=tier, **_temp_kwargs,
                     ):
                         if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
                             stream_error = True
@@ -921,7 +953,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         self.ollama.chat(
                             messages=messages, model=current,
                             tools=tools, max_tokens=max_tokens, think=think,
-                            tier=tier,
+                            tier=tier, **_temp_kwargs,
                         ),
                         timeout=timeout,
                     )
@@ -1001,6 +1033,57 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             await self.memory.add_conversation("assistant", assistant_text)
 
         self._task_registry.create_task(_save(), name="memory_exchange")
+
+    async def _pre_compaction_memory_flush(self, messages: list[dict]):
+        """B3: Sichert Fakten aus Nachrichten in Semantic Memory BEVOR sie kompaktiert werden.
+
+        Verhindert Informationsverlust bei Context Compaction: Alle relevanten
+        Fakten werden extrahiert und persistent gespeichert, bevor die
+        Nachrichten zusammengefasst oder gekuerzt werden.
+        """
+        _flush_cfg = cfg.yaml_config.get("pre_compaction_flush", {})
+        if not _flush_cfg.get("enabled", True):
+            return
+        if not self.memory_extractor or not messages:
+            return
+
+        try:
+            # User-Assistant Paare aus den Nachrichten bilden
+            pairs = []
+            _user_text = ""
+            for m in messages:
+                if m.get("role") == "user":
+                    _user_text = m.get("content", "")
+                elif m.get("role") == "assistant" and _user_text:
+                    pairs.append((_user_text, m.get("content", "")))
+                    _user_text = ""
+
+            if not pairs:
+                return
+
+            # Fakten parallel extrahieren (Fire-and-forget, max 5s Timeout)
+            _extracted = 0
+            for user_t, assist_t in pairs:
+                try:
+                    facts = await asyncio.wait_for(
+                        self.memory_extractor.extract_and_store(
+                            user_text=user_t,
+                            assistant_response=assist_t,
+                            person="unknown",
+                        ),
+                        timeout=5.0,
+                    )
+                    _extracted += len(facts) if facts else 0
+                except asyncio.TimeoutError:
+                    break  # Bei Timeout restliche Paare ueberspringen
+                except Exception:
+                    continue
+
+            if _extracted > 0:
+                logger.info("B3 Pre-Compaction Flush: %d Fakten aus %d Paaren gesichert",
+                            _extracted, len(pairs))
+        except Exception as e:
+            logger.debug("Pre-Compaction Flush Fehler: %s", e)
 
     async def _summarize_conversation_chunk(self, messages: list[dict]) -> Optional[str]:
         """Fasst aeltere Gespraechs-Nachrichten zu einer kompakten Zusammenfassung zusammen.
@@ -1085,10 +1168,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "model_used": "timeout_fallback",
             }
         self._user_request_active = True
+        self._last_interaction_ts = time.time()  # B4: Idle-Timer zuruecksetzen
+        self._idle_reasoning_pending = False  # B4: Idle-Analyse abbrechen
         try:
             return await self._process_inner(text, person, room, files, stream_callback, voice_metadata, device_id)
         finally:
             self._user_request_active = False
+            self._last_interaction_ts = time.time()  # B4: auch nach Antwort
             self._process_lock.release()
 
     async def _process_inner(self, text: str, person: Optional[str] = None, room: Optional[str] = None, files: Optional[list] = None, stream_callback=None, voice_metadata: Optional[dict] = None, device_id: Optional[str] = None) -> dict:
@@ -1300,6 +1386,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     text = f"{_clar_text} ({_clar_opt})"
                     logger.info("Klärung aufgelöst: '%s' -> '%s'", _clarification.get("clarification_question"), _clar_opt)
             else:
+                # C5: Action-Log Cache fuer temporale Referenzen laden
+                await self._refresh_action_log_cache()
                 _ref_result = self.dialogue_state.resolve_references(text, person or "", room or "")
                 if _ref_result.get("had_references"):
                     # Referenz-Hinweis wird im Kontext-Prompt eingebaut (siehe context assembly)
@@ -2417,12 +2505,21 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _mega_tasks.append(("learned_patterns", self.learning_observer.get_learned_patterns(person=person or "")))
             _mega_tasks.append(("insights_now", self.insight_engine.run_checks_now()))
             _mega_tasks.append(("experiential", self._get_experiential_hints(text)))
+            _mega_tasks.append(("idle_insights", self._get_idle_insights()))
             _mega_tasks.append(("correction_ctx", self.correction_memory.get_relevant_corrections(
                 action_type="", args=None, person=person or "",
             )))
             _mega_tasks.append(("learned_rules", self.correction_memory.get_active_rules(person=person or "")))
             _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
             _mega_tasks.append(("conv_memory_extended", self.conversation_memory.get_memory_context()))
+
+        # B10: Emotionale Kontinuitaet — vergangene negative Reaktionen beruecksichtigen
+        if self.memory_extractor and self._last_executed_action:
+            _mega_tasks.append(("emotional_ctx", MemoryExtractor.get_emotional_context(
+                action_type=self._last_executed_action,
+                person=person or "user",
+                redis_client=self.memory.redis,
+            )))
 
         # Conversation-Mode Detection + Memory-Callback parallelisieren
         # (bisher sequentiell NACH dem gather — spart ~50-200ms)
@@ -2514,14 +2611,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         learned_patterns = _safe_get("learned_patterns") or []
         live_insights = _safe_get("insights_now") or []
         experiential_hint = _safe_get("experiential")
+        idle_insight = _safe_get("idle_insights")  # B4
         correction_ctx = _safe_get("correction_ctx")
         learned_rules = _safe_get("learned_rules") or []
         pending_learnings = _safe_get("pending_learnings")
+        emotional_ctx = _safe_get("emotional_ctx")  # B10: Emotionale Kontinuitaet
 
         context["mood"] = mood_result
 
         # 3. Modell waehlen (mit kontext-basiertem Upgrade)
         model, _model_tier = self.model_router.select_model_and_tier(text)
+        # D1: Task-aware Temperature
+        _task_temperature = self.model_router.get_task_temperature(text)
 
         # 3a. Gesprächsmodus erkennen (VOR Deep-Upgrade, damit Intelligence-
         # Features im Gespraechsmodus nicht unnoetig auf Deep eskalieren).
@@ -2663,6 +2764,20 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Phase 18: Memory-Callback-Section (aus mega-gather, nicht sequentiell)
         memory_callback_section = _safe_get("memory_callback", "")
+
+        # B6: Relationship Context fuer aktuelle Person laden
+        try:
+            _rel_ctx = await self.personality.get_relationship_context(person or "")
+            self.personality._relationship_context = _rel_ctx
+        except Exception:
+            pass
+
+        # D3: Aktuelle Aktivitaet fuer kontextuelles Schweigen
+        try:
+            _activity_result = await self.activity.detect_activity()
+            self.personality._current_activity = _activity_result.get("activity", "")
+        except Exception:
+            self.personality._current_activity = ""
 
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
@@ -2921,6 +3036,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if experiential_hint:
             sections.append(("experiential", f"\n\n{experiential_hint}", 3))
 
+        # B4: Idle-Insights einweben (niedrige Prio, nur wenn relevant)
+        if idle_insight:
+            sections.append(("idle_insight", f"\n\n{idle_insight}\nErwaehne dies NUR wenn es zum aktuellen Thema passt.", 4))
+
         # MCU-Persoenlichkeit: Lern-Bestaetigung (einmalig pro Regel)
         if pending_learnings:
             _la_text = (
@@ -2965,6 +3084,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         if whatif_prompt:
             sections.append(("whatif", whatif_prompt, 2))
+
+        # B10: Emotionale Kontinuitaet — vergangene negative Reaktionen als Kontext
+        if emotional_ctx:
+            sections.append(("emotional_memory", f"\n{emotional_ctx}", 2))
 
         # Sektionen nach Prioritaet sortieren und mit Budget einfuegen
         sections.sort(key=lambda s: s[2])
@@ -3069,16 +3192,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         recent = await self.memory.get_recent_conversations(limit=effective_limit)
         messages = [{"role": "system", "content": system_prompt}]
         conv_tokens_used = 0
-        # Wenn nicht alle Nachrichten reinpassen, aeltere zusammenfassen
+        # B2: Proaktive Context Compaction — bei >70% Budget statt erst bei Overflow
         # damit mehr Kontext erhalten bleibt (auch im Befehls-Modus).
+        _compaction_cfg = cfg.yaml_config.get("context_compaction", {})
+        _compaction_threshold = float(_compaction_cfg.get("threshold", 0.70))
         if len(recent) > 4:
-            # Budget pruefen: Passen alle rein?
             total_est = sum(_estimate_tokens(c.get("content", "")) for c in recent)
-            if total_est > available_tokens:
+            _compaction_budget = int(available_tokens * _compaction_threshold)
+            if total_est > _compaction_budget:
                 split = len(recent) // 2
                 older = recent[:split]
                 recent = recent[split:]
-                if self._opt_conv_summary_mode == "llm":
+                # B3: Fakten aus kompaktierten Nachrichten sichern
+                self._task_registry.create_task(
+                    self._pre_compaction_memory_flush(older),
+                    name="pre_compaction_flush",
+                )
+                # B2: Bei proaktiver Compaction LLM-Modus bevorzugen
+                _use_llm = (self._opt_conv_summary_mode == "llm"
+                            or _compaction_cfg.get("prefer_llm", True))
+                if _use_llm:
                     # LLM-basierte Zusammenfassung (genauer, aber +500-2000ms)
                     summary = await self._summarize_conversation_chunk(older)
                 else:
@@ -3339,13 +3472,20 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 else:
                     _think_mode = None  # Konversation/General: Modell entscheidet
 
+            # N3: Multi-Turn Tool Calling — iterativer Loop
+            _max_tool_turns = cfg.yaml_config.get("multi_turn_tools", {}).get("max_iterations", 3)
+            _tool_turn = 0
+            executed_actions = []
+            _turn_messages = list(messages)  # Kopie fuer Multi-Turn
+
             _cascade = await self._llm_with_cascade(
-                messages, model,
+                _turn_messages, model,
                 tools=_llm_tools,
                 max_tokens=response_tokens,
                 timeout=float(llm_timeout),
                 think=_think_mode,
                 tier=_model_tier,
+                temperature=_task_temperature,  # D1: Task-aware Temperature
             )
             if _cascade["error"]:
                 _err = "Mein Sprachmodell reagiert nicht. Versuch es gleich nochmal."
@@ -3362,7 +3502,6 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 tc for tc in raw_tool_calls
                 if isinstance(tc, dict) and "function" in tc
             ]
-            executed_actions = []
 
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
             QUERY_TOOLS = {"get_entity_state", "get_entity_history",
@@ -3744,6 +3883,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         name="autonomy_track",
                     )
 
+                    # B5: Inner State — Erfolg/Misserfolg tracken
+                    if _success:
+                        self._task_registry.create_task(
+                            self.inner_state.on_action_success(func_name),
+                            name="inner_state_success",
+                        )
+                    else:
+                        _err_msg = result.get("message", "") if isinstance(result, dict) else ""
+                        self._task_registry.create_task(
+                            self.inner_state.on_action_failure(func_name, _err_msg),
+                            name="inner_state_failure",
+                        )
+
                     # Phase 17: Learning Observer — Jarvis-Aktionen markieren
                     # damit sie nicht als "manuelle" Aktionen gezaehlt werden
                     if isinstance(result, dict) and result.get("success"):
@@ -3877,6 +4029,83 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     response_text = curiosity
                         except Exception as _cur_err:
                             logger.debug("Curiosity-Check fehlgeschlagen: %s", _cur_err)
+
+            # N3: Multi-Turn Tool Calling — Ergebnisse zurueck ans LLM senden
+            # Wenn Tool-Calls ausgefuehrt wurden und das LLM mehr Kontext braucht,
+            # Ergebnisse als Tool-Response-Messages anhaengen und erneut fragen.
+            _tool_turn += 1
+            while (
+                tool_calls
+                and _tool_turn < _max_tool_turns
+                and executed_actions
+                and cfg.yaml_config.get("multi_turn_tools", {}).get("enabled", True)
+            ):
+                # Tool-Ergebnisse als Messages aufbereiten
+                _turn_messages.append({"role": "assistant", "content": response_text or "", "tool_calls": [
+                    {"function": {"name": a["function"], "arguments": a.get("args", {})}}
+                    for a in executed_actions if a.get("function")
+                ]})
+                for action in executed_actions:
+                    _result_msg = ""
+                    if isinstance(action.get("result"), dict):
+                        _result_msg = action["result"].get("message", str(action["result"]))
+                    else:
+                        _result_msg = str(action.get("result", ""))
+                    _turn_messages.append({
+                        "role": "tool",
+                        "content": _result_msg[:1000],  # Limit Tool-Response
+                    })
+
+                # Erneuter LLM-Call
+                logger.info("N3: Multi-Turn %d/%d — %d Tool-Ergebnisse zurueck ans LLM",
+                            _tool_turn + 1, _max_tool_turns, len(executed_actions))
+                _cascade = await self._llm_with_cascade(
+                    _turn_messages, model,
+                    tools=_llm_tools,
+                    max_tokens=response_tokens,
+                    timeout=float(llm_timeout),
+                    think=False,  # Follow-up Turns ohne Think
+                    tier=_model_tier,
+                    temperature=_task_temperature,
+                )
+                if _cascade["error"]:
+                    logger.warning("N3: Multi-Turn LLM-Fehler in Turn %d", _tool_turn + 1)
+                    break
+
+                message = _cascade["message"]
+                response_text = _cascade["text"]
+                raw_tool_calls = message.get("tool_calls", [])
+                tool_calls = [
+                    tc for tc in raw_tool_calls
+                    if isinstance(tc, dict) and "function" in tc
+                ]
+
+                if not tool_calls:
+                    # LLM ist fertig — kein weiterer Turn noetig
+                    logger.info("N3: Multi-Turn abgeschlossen nach %d Turns", _tool_turn + 1)
+                    break
+
+                # Neue Tool-Calls ausfuehren (vereinfacht — ohne volles Validation/Pushback)
+                for tc in tool_calls:
+                    _fn = tc.get("function", {})
+                    _fname = _fn.get("name", "")
+                    _fargs = _fn.get("arguments", {})
+                    if isinstance(_fargs, str):
+                        try:
+                            _fargs = json.loads(_fargs)
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+                    # Basis-Validierung
+                    _val = self.validator.validate(_fname, _fargs)
+                    if not _val.ok:
+                        executed_actions.append({"function": _fname, "args": _fargs, "result": f"blocked: {_val.reason}"})
+                        continue
+                    _result = await self.executor.execute(_fname, _fargs)
+                    executed_actions.append({"function": _fname, "args": _fargs, "result": _result})
+                    logger.info("N3: Multi-Turn Tool-Call: %s(%s)", _fname, _fargs)
+                    await emit_action(_fname, _fargs, _result)
+
+                _tool_turn += 1
 
             # 8b. Query-Tool Antwort aufbereiten:
             # 1. Humanizer wandelt Rohdaten in natuerliche Sprache um (zuverlaessig)
@@ -4571,6 +4800,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         name="log_experiential",
                     )
 
+        # B8: Abstrakte Konzepte beobachten (mehrere Aktionen auf einen Trigger)
+        _dskill_cfg = cfg.yaml_config.get("dynamic_skills", {})
+        if _dskill_cfg.get("enabled", True) and len(executed_actions) >= 2:
+            _successful_actions = [
+                {"entity_id": a.get("args", {}).get("entity_id", "") or
+                 f"{a['function'].replace('set_', '')}.{a.get('args', {}).get('room', 'unknown')}",
+                 "new_state": a.get("args", {}).get("state", "")}
+                for a in executed_actions
+                if isinstance(a.get("result"), dict) and a["result"].get("success")
+            ]
+            if len(_successful_actions) >= 2:
+                self._task_registry.create_task(
+                    self.learning_observer.observe_abstract_action(
+                        _successful_actions, text, person=person or "",
+                    ),
+                    name="observe_abstract_action",
+                )
+
         # Phase 8: Intent-Extraktion im Hintergrund
         if len(text.split()) > 5:
             self._task_registry.create_task(
@@ -4594,10 +4841,50 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 category=profile.category if profile else "unknown",
                 person=person or "",
                 was_thanked=_is_thanked,
+                response_text=response_text or "",
             ),
             name="quality_record",
         )
         self.response_quality.update_last_exchange(text, profile.category if profile else "unknown")
+
+        # D7: Prompt-Version Quality tracken
+        _d7_cfg = cfg.yaml_config.get("prompt_versioning", {})
+        if _d7_cfg.get("enabled", True):
+            _prompt_hash = self.personality.get_current_prompt_hash()
+            if _prompt_hash:
+                _score_target = 1.0 if _is_thanked else 0.8
+                self._task_registry.create_task(
+                    self.personality.record_prompt_quality(
+                        _prompt_hash,
+                        profile.category if profile else "unknown",
+                        _score_target,
+                    ),
+                    name="prompt_version_quality",
+                )
+
+        # D5: Quality Hints periodisch aktualisieren (alle ~10 Exchanges)
+        _d5_counter = getattr(self, "_d5_exchange_counter", 0) + 1
+        self._d5_exchange_counter = _d5_counter
+        if _d5_counter % 10 == 0:
+            self._task_registry.create_task(
+                self.personality.refresh_quality_hints(),
+                name="quality_hints_refresh",
+            )
+            # D6: Few-Shot-Beispiele aktualisieren (gleicher Intervall wie D5)
+            self._task_registry.create_task(
+                self.personality.refresh_few_shot_examples(
+                    category=profile.category if profile else "",
+                ),
+                name="few_shot_refresh",
+            )
+
+        # B12: Proaktives Selbst-Lernen — Wissensluecken erkennen
+        _selflearn_cfg = cfg.yaml_config.get("self_learning", {})
+        if _selflearn_cfg.get("enabled", True) and response_text:
+            self._task_registry.create_task(
+                self._check_knowledge_gap(text, response_text, person or ""),
+                name="self_learning_check",
+            )
 
         # Self-Improvement: Outcome Tracker — "Danke" = POSITIVE
         if _is_thanked and self._last_executed_action:
@@ -7193,6 +7480,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "get_switches", "get_media", "get_alarms", "get_house_status",
                 "get_weather", "get_calendar", "get_shopping_list",
                 "search_entities", "get_area_entities", "get_entity_history",
+                "search_history", "debug_automation",
             }
             filtered = [t for t in all_tools
                         if t.get("function", {}).get("name") in _QUERY_NAMES]
@@ -8775,6 +9063,75 @@ Regeln:
     # Speichert Aktion + Kontext und recalled bei aehnlichen Aktionen.
     # ------------------------------------------------------------------
 
+    async def _check_knowledge_gap(self, user_text: str, response_text: str, person: str):
+        """B12: Erkennt Wissensluecken und merkt sich Lernbedarf.
+
+        Wenn JARVIS unsicher antwortet oder ein Muster erkennt das er nicht
+        versteht, wird eine Lern-Notiz in Redis gespeichert. Diese wird
+        beim naechsten passenden Moment als proaktive Frage gestellt.
+        """
+        if not self.memory.redis:
+            return
+
+        _b12_cfg = cfg.yaml_config.get("self_learning", {})
+
+        # Unsicherheitsmarker in der Antwort erkennen
+        _uncertainty_markers = [
+            "ich bin mir nicht sicher", "ich weiss nicht", "ich kenne",
+            "leider kann ich", "dazu habe ich keine", "das ist mir nicht bekannt",
+            "keine informationen", "nicht in meinen daten",
+        ]
+        response_lower = response_text.lower()
+        has_uncertainty = any(m in response_lower for m in _uncertainty_markers)
+
+        if not has_uncertainty:
+            return
+
+        # Cooldown: Max 1 Lern-Notiz pro 30 Minuten
+        cooldown_key = "mha:self_learning:last_gap"
+        try:
+            last = await self.memory.redis.get(cooldown_key)
+            if last:
+                from datetime import datetime
+                last_dt = datetime.fromisoformat(last)
+                cooldown_min = _b12_cfg.get("cooldown_minutes", 30)
+                if (datetime.now() - last_dt).total_seconds() < cooldown_min * 60:
+                    return
+
+            # Lern-Notiz speichern
+            gap_entry = json.dumps({
+                "question": user_text[:200],
+                "person": person,
+                "timestamp": datetime.now().isoformat(),
+            }, ensure_ascii=False)
+            await self.memory.redis.lpush("mha:self_learning:gaps", gap_entry)
+            await self.memory.redis.ltrim("mha:self_learning:gaps", 0, 19)
+            await self.memory.redis.set(cooldown_key, datetime.now().isoformat(), ex=7200)
+            logger.info("B12: Wissensluecke erkannt: %s", user_text[:80])
+        except Exception as e:
+            logger.debug("B12 Knowledge Gap Check Fehler: %s", e)
+
+    async def _refresh_action_log_cache(self):
+        """C5: Laedt die letzten Action-Outcomes in den DialogueState-Cache.
+
+        Da resolve_references() synchron ist, muss der Cache vorher
+        async befuellt werden.
+        """
+        if not self.memory.redis:
+            return
+        try:
+            raw = await self.memory.redis.lrange("mha:action_outcomes", 0, 99)
+            entries = []
+            for r in raw:
+                try:
+                    entry = json.loads(r) if isinstance(r, str) else json.loads(r.decode())
+                    entries.append(entry)
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    continue
+            self.dialogue_state.set_action_log_cache(entries)
+        except Exception as e:
+            logger.debug("C5 Action-Log Cache Fehler: %s", e)
+
     async def _log_experiential_memory(self, entry_json: str) -> None:
         """Speichert eine Action-Outcome-Entry in Redis."""
         if not self.memory.redis:
@@ -9335,7 +9692,11 @@ Regeln:
         person = suggestion.get("person", "")
         title = get_person_title(person)
 
-        if mode == "auto" and self.autonomy.level >= 4:
+        # C7: Butler-Instinkt — Auto-Execute ab Confidence 90%+ und Autonomie >= 3
+        _butler_cfg = cfg.yaml_config.get("butler_instinct", {})
+        _butler_enabled = _butler_cfg.get("enabled", True)
+        _butler_min_autonomy = _butler_cfg.get("min_autonomy_level", 3)
+        if mode == "auto" and _butler_enabled and self.autonomy.level >= _butler_min_autonomy:
             # F-027: Kombinierte Autonomie + Trust Pruefung via can_execute()
             exec_check = self.autonomy.can_execute(
                 person=person or "",
@@ -9363,12 +9724,27 @@ Regeln:
                 await emit_proactive(text, "anticipation_blocked", "medium")
                 return
 
-            # Automatisch ausfuehren + informieren
+            # C7: Automatisch ausfuehren + informieren (Butler-Instinkt)
             result = await self.executor.execute(action, args)
-            text = f"{title}, {desc} — hab ich uebernommen. Wie jeden Tag um diese Zeit."
+            _success = result.get("success", False) if isinstance(result, dict) else False
+            if _success:
+                text = f"{title}, {desc} — hab ich uebernommen. Wie jeden Tag um diese Zeit."
+                # Inner State: Stolz bei erfolgreicher Antizipation
+                if hasattr(self, "inner_state"):
+                    self._task_registry.create_task(
+                        self.inner_state.on_complex_solve(),
+                        name="inner_state_anticipation_success",
+                    )
+            else:
+                text = f"{title}, ich wollte {desc} uebernehmen, aber es gab ein Problem."
+                if hasattr(self, "inner_state"):
+                    self._task_registry.create_task(
+                        self.inner_state.on_action_failure(action, "anticipation_failed"),
+                        name="inner_state_anticipation_failure",
+                    )
             await emit_proactive(text, "anticipation_auto", "medium")
             self._remember_exchange("[proaktiv: Antizipation]", text)
-            logger.info("Anticipation auto-execute: %s (confidence: %d%%)", desc, pct)
+            logger.info("Anticipation auto-execute: %s (confidence: %d%%, success: %s)", desc, pct, _success)
         else:
             # Vorschlagen — mit Confidence-Kontext im JARVIS-Stil
             if mode == "suggest":
@@ -9682,6 +10058,203 @@ Regeln:
             except Exception as e:
                 logger.debug("Entity-Katalog Background-Refresh Fehler: %s", e)
                 await asyncio.sleep(ERROR_BACKOFF_SHORT)
+
+    # ── B4: Background Reasoning — Idle-Loop ──────────────────────
+
+    async def _idle_reasoning_loop(self):
+        """B4: Prueft periodisch ob das System idle ist und startet dann
+        eine Smart-Modell-Analyse im Hintergrund.
+
+        Idle = kein User-Request seit N Minuten (default 5).
+        GPU-Contention-Guard: Ueberspringt wenn _user_request_active.
+        Max 1 Insight pro Idle-Periode.
+        """
+        _cfg = cfg.yaml_config.get("background_reasoning", {})
+        _idle_minutes = _cfg.get("idle_minutes", 5)
+        _check_interval = _cfg.get("check_interval_seconds", 60)
+        _cooldown_minutes = _cfg.get("cooldown_minutes", 30)
+
+        while True:
+            try:
+                await asyncio.sleep(_check_interval)
+
+                if not _cfg.get("enabled", True):
+                    continue
+
+                # GPU-Contention-Guard
+                if self._user_request_active:
+                    continue
+
+                # Idle-Check: Letzte Interaktion > N Minuten her
+                if self._last_interaction_ts <= 0:
+                    continue
+                idle_seconds = time.time() - self._last_interaction_ts
+                if idle_seconds < _idle_minutes * 60:
+                    continue
+
+                # Schon ein Insight in dieser Idle-Periode erzeugt?
+                if self._idle_reasoning_pending:
+                    continue
+
+                # Cooldown: Max 1 Insight pro N Minuten
+                if self.memory.redis:
+                    _last = await self.memory.redis.get("mha:idle_reasoning:last_run")
+                    if _last:
+                        continue
+
+                self._idle_reasoning_pending = True
+                await self._run_idle_reasoning()
+                self._idle_reasoning_pending = False
+
+                # Cooldown setzen
+                if self.memory.redis:
+                    await self.memory.redis.setex(
+                        "mha:idle_reasoning:last_run",
+                        _cooldown_minutes * 60,
+                        datetime.now().isoformat(),
+                    )
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self._idle_reasoning_pending = False
+                logger.debug("B4 Idle Reasoning Loop Fehler: %s", e)
+                await asyncio.sleep(120)
+
+    async def _run_idle_reasoning(self):
+        """B4: Fuehrt eine Background-Analyse mit Smart-Modell durch.
+
+        Sammelt aktuellen Kontext (HA-States, letzte Gespraeche, Wetter)
+        und laesst das Smart-Modell nach Insights suchen.
+        Ergebnisse werden in Redis gespeichert und beim naechsten
+        User-Kontakt eingewoben.
+        """
+        if not self.memory.redis or not self.ollama:
+            return
+
+        # Nochmal GPU-Guard pruefen
+        if self._user_request_active:
+            return
+
+        try:
+            # Kontext sammeln
+            _context_parts = []
+
+            # Aktuelle Uhrzeit + Wochentag
+            now = datetime.now()
+            _context_parts.append(
+                f"Aktuelle Zeit: {now.strftime('%A %d.%m.%Y %H:%M')} Uhr"
+            )
+
+            # Letzte Gespraeche (aus Archiv)
+            today_str = now.strftime("%Y-%m-%d")
+            try:
+                recent = await self.memory.get_conversations_for_date(today_str)
+                if recent:
+                    _last_convs = recent[-6:]  # Letzte 3 Paare
+                    _conv_text = "\n".join(
+                        f"- [{c.get('role', '?')}]: {c.get('content', '')[:150]}"
+                        for c in _last_convs
+                    )
+                    _context_parts.append(f"Letzte Gespraeche heute:\n{_conv_text}")
+            except Exception:
+                pass
+
+            # HA-States (Zusammenfassung)
+            try:
+                states = await self.ha.get_states()
+                if states:
+                    _active = []
+                    for s in states:
+                        eid = s.get("entity_id", "")
+                        state = s.get("state", "")
+                        if eid.startswith("light.") and state == "on":
+                            _active.append(f"{eid}: an")
+                        elif eid.startswith("climate.") and state not in ("off", "unavailable"):
+                            attrs = s.get("attributes", {})
+                            temp = attrs.get("current_temperature", "?")
+                            _active.append(f"{eid}: {state} ({temp}°C)")
+                        elif eid.startswith("sensor.") and "temperature" in eid:
+                            _active.append(f"{eid}: {state}")
+                    if _active:
+                        _context_parts.append(
+                            f"Aktive HA-Entities:\n" + "\n".join(f"- {a}" for a in _active[:15])
+                        )
+            except Exception:
+                pass
+
+            if not _context_parts:
+                return
+
+            _context = "\n\n".join(_context_parts)
+
+            # GPU-Guard: Nochmal pruefen vor LLM-Call
+            if self._user_request_active:
+                return
+
+            # Smart-Modell fuer Analyse nutzen
+            _model = self.model_router.get_model("smart") if self.model_router else "qwen3.5:latest"
+            _system = (
+                "Du bist Jarvis, ein intelligenter Haus-Assistent. "
+                "Analysiere den folgenden Kontext und generiere EIN nuetzliches Insight. "
+                "Das kann sein: eine Optimierung (Energie, Komfort), ein Muster das dir auffaellt, "
+                "oder eine proaktive Empfehlung. "
+                "Antworte in einem einzigen Satz, direkt und konkret. "
+                "Wenn nichts Auffaelliges → antworte mit 'KEIN_INSIGHT'."
+            )
+
+            response = await self.ollama.chat(
+                model=_model,
+                messages=[
+                    {"role": "system", "content": _system},
+                    {"role": "user", "content": _context},
+                ],
+                options={"temperature": 0.3, "num_predict": 150},
+            )
+
+            _insight = response.get("message", {}).get("content", "").strip()
+
+            if not _insight or "KEIN_INSIGHT" in _insight:
+                logger.debug("B4: Kein Insight generiert")
+                return
+
+            # Insight in Redis speichern
+            _entry = json.dumps({
+                "insight": _insight,
+                "timestamp": now.isoformat(),
+                "context_summary": _context[:300],
+            }, ensure_ascii=False)
+            await self.memory.redis.lpush("mha:idle_insights", _entry)
+            await self.memory.redis.ltrim("mha:idle_insights", 0, 9)
+            await self.memory.redis.expire("mha:idle_insights", 7 * 86400)
+
+            logger.info("B4: Idle Insight generiert: %s", _insight[:80])
+
+        except Exception as e:
+            logger.debug("B4 Run Idle Reasoning Fehler: %s", e)
+
+    async def _get_idle_insights(self) -> str:
+        """B4: Laedt gespeicherte Idle-Insights fuer den naechsten User-Kontakt."""
+        if not self.memory.redis:
+            return ""
+        try:
+            raw = await self.memory.redis.lrange("mha:idle_insights", 0, 2)
+            if not raw:
+                return ""
+            insights = []
+            for r in raw:
+                try:
+                    entry = json.loads(r) if isinstance(r, str) else json.loads(r.decode())
+                    insights.append(entry.get("insight", ""))
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            if insights:
+                # Insights loeschen nach Abruf (einmalig einweben)
+                await self.memory.redis.delete("mha:idle_insights")
+                return "HINTERGRUND-ANALYSE: " + " | ".join(insights)
+        except Exception as e:
+            logger.debug("B4 Get Idle Insights Fehler: %s", e)
+        return ""
 
     async def _handle_daily_summary(self, data: dict):
         """Callback für Tages-Zusammenfassungen — wird morgens beim naechsten Kontakt gesprochen."""
