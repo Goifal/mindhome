@@ -410,7 +410,9 @@ class TestUrgencySystem:
         assert section == ""
 
     def test_single_alert_elevated(self, engine):
-        section = engine._build_urgency_section({"alerts": ["Rauchmelder Kueche"]})
+        # Nicht-Krisen-Alert: "Bewegungsmelder" enthält kein Krisen-Keyword
+        # (Rauchmelder wuerde seit S8#1 direkt KRITISCH auslösen)
+        section = engine._build_urgency_section({"alerts": ["Bewegungsmelder Flur"]})
         assert "ERHOEHT" in section or "ERHÖHT" in section
 
     def test_multiple_alerts_critical(self, engine):
