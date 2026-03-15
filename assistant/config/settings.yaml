@@ -2049,5 +2049,14 @@ semantic_history_search:
 # C9: Automation-Debugging — HA-Automatisierungen analysieren
 automation_debugging:
   enabled: true
+# ── Session 7: Selbstverbesserung ────────────────────────────
+# D6: Dynamic Few-Shot — Gute Antworten als Beispiele in Prompt laden
+dynamic_few_shot:
+  enabled: true
+  max_per_category: 10
+  max_examples_in_prompt: 3
+# D7: Prompt-Versionierung — Hash + Quality-Score Tracking
+prompt_versioning:
+  enabled: true
 entity_annotations: {}
 entity_roles: {}

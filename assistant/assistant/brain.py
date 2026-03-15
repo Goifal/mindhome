@@ -4841,10 +4841,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 category=profile.category if profile else "unknown",
                 person=person or "",
                 was_thanked=_is_thanked,
+                response_text=response_text or "",
             ),
             name="quality_record",
         )
         self.response_quality.update_last_exchange(text, profile.category if profile else "unknown")
+
+        # D7: Prompt-Version Quality tracken
+        _d7_cfg = cfg.yaml_config.get("prompt_versioning", {})
+        if _d7_cfg.get("enabled", True):
+            _prompt_hash = self.personality.get_current_prompt_hash()
+            if _prompt_hash:
+                _score_target = 1.0 if _is_thanked else 0.8
+                self._task_registry.create_task(
+                    self.personality.record_prompt_quality(
+                        _prompt_hash,
+                        profile.category if profile else "unknown",
+                        _score_target,
+                    ),
+                    name="prompt_version_quality",
+                )
 
         # D5: Quality Hints periodisch aktualisieren (alle ~10 Exchanges)
         _d5_counter = getattr(self, "_d5_exchange_counter", 0) + 1
@@ -4853,6 +4869,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             self._task_registry.create_task(
                 self.personality.refresh_quality_hints(),
                 name="quality_hints_refresh",
+            )
+            # D6: Few-Shot-Beispiele aktualisieren (gleicher Intervall wie D5)
+            self._task_registry.create_task(
+                self.personality.refresh_few_shot_examples(
+                    category=profile.category if profile else "",
+                ),
+                name="few_shot_refresh",
             )
 
         # B12: Proaktives Selbst-Lernen — Wissensluecken erkennen

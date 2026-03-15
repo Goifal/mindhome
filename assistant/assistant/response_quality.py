@@ -79,7 +79,7 @@ class ResponseQualityTracker:
 
     async def record_exchange(self, category: str, person: str = "",
                               had_followup: bool = False, was_rephrased: bool = False,
-                              was_thanked: bool = False):
+                              was_thanked: bool = False, response_text: str = ""):
         """Bewertet einen Austausch und aktualisiert Scores."""
         if not self.enabled or not self.redis:
             return
@@ -125,6 +125,12 @@ class ResponseQualityTracker:
         await self.redis.lpush("mha:response_quality:history", entry)
         await self.redis.ltrim("mha:response_quality:history", 0, 299)
         await self.redis.expire("mha:response_quality:history", 90 * 86400)
+
+        # D6: Gute Antworten als Few-Shot-Beispiele speichern
+        if score_target >= 0.8 and self._last_user_text:
+            await self._store_few_shot_example(
+                category, self._last_user_text, response_text, person
+            )
 
         logger.debug("Response Quality [%s]: %s (Person: %s)", category, quality, person or "-")
 
@@ -262,3 +268,75 @@ class ResponseQualityTracker:
                         "total": total,
                     })
         return weak
+
+    # ── D6: Dynamic Few-Shot Examples ──────────────────────────
+
+    async def _store_few_shot_example(self, category: str, user_text: str,
+                                      response_text: str, person: str):
+        """D6: Speichert einen guten Austausch als Few-Shot-Beispiel.
+
+        Wird nur aufgerufen wenn score_target >= 0.8 (gute Qualitaet).
+        Speichert User+Response-Text als Beispiel-Paar.
+        """
+        if not self.redis or not user_text:
+            return
+
+        # Ohne Response-Text kein sinnvolles Few-Shot-Beispiel
+        if not response_text:
+            return
+
+        try:
+            _cfg = yaml_config.get("dynamic_few_shot", {})
+            if not _cfg.get("enabled", True):
+                return
+
+            _max_examples = _cfg.get("max_per_category", 10)
+            _key = f"mha:few_shot:{category}"
+
+            entry = json.dumps({
+                "user_text": user_text[:200],
+                "response_text": response_text[:300],
+                "category": category,
+                "person": person,
+                "timestamp": datetime.now().isoformat(),
+            }, ensure_ascii=False)
+
+            await self.redis.lpush(_key, entry)
+            await self.redis.ltrim(_key, 0, _max_examples - 1)
+            await self.redis.expire(_key, 60 * 86400)  # 60 Tage TTL
+
+        except Exception as e:
+            logger.debug("D6 Few-Shot Store Fehler: %s", e)
+
+    async def get_few_shot_examples(self, category: str, limit: int = 3) -> list[dict]:
+        """D6: Laedt die besten Few-Shot-Beispiele fuer eine Kategorie.
+
+        Args:
+            category: Antwort-Kategorie (device_command, knowledge, smalltalk, analysis)
+            limit: Max. Anzahl Beispiele
+
+        Returns:
+            Liste von {user_text, category, person, timestamp} Dicts
+        """
+        if not self.redis:
+            return []
+
+        try:
+            _cfg = yaml_config.get("dynamic_few_shot", {})
+            if not _cfg.get("enabled", True):
+                return []
+
+            _key = f"mha:few_shot:{category}"
+            raw = await self.redis.lrange(_key, 0, limit - 1)
+            examples = []
+            for r in raw:
+                try:
+                    entry = json.loads(r) if isinstance(r, str) else json.loads(r.decode())
+                    examples.append(entry)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            return examples
+
+        except Exception as e:
+            logger.debug("D6 Few-Shot Load Fehler: %s", e)
+            return []

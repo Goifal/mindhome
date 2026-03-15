@@ -335,6 +335,8 @@ class PersonalityEngine:
         self._inner_state = None  # B5: JARVIS-eigene Emotionen
         self._response_quality = None  # D5: Quality Feedback
         self._quality_hints: str = ""  # D5: Gecachte VERMEIDE-Hints
+        self._few_shot_section: str = ""  # D6: Gecachte Few-Shot-Beispiele
+        self._current_prompt_hash: str = ""  # D7: Hash des aktuellen System-Prompts
         self._relationship_context: str = ""  # B6: Gecachter Beziehungskontext
         self._current_activity: str = ""  # D3: Aktuelle Aktivitaet (sleeping, watching, etc.)
         self._redis = None
@@ -472,6 +474,150 @@ class PersonalityEngine:
         except Exception as e:
             logger.debug("D5 Quality Hints Fehler: %s", e)
             self._quality_hints = ""
+
+    # ------------------------------------------------------------------
+    # D7: Prompt-Versionierung — Hash + Quality-Score Tracking
+    # ------------------------------------------------------------------
+
+    def get_current_prompt_hash(self) -> str:
+        """D7: Gibt den Hash des aktuellen System-Prompts zurueck."""
+        return self._current_prompt_hash
+
+    async def record_prompt_quality(self, prompt_hash: str, category: str,
+                                     quality_score: float):
+        """D7: Speichert Quality-Score fuer eine Prompt-Version.
+
+        Args:
+            prompt_hash: MD5-Hash des Prompts (12 Zeichen)
+            category: Antwort-Kategorie
+            quality_score: Score 0.0-1.0
+        """
+        if not self._redis or not prompt_hash:
+            return
+
+        _d7_cfg = yaml_config.get("prompt_versioning", {})
+        if not _d7_cfg.get("enabled", True):
+            return
+
+        try:
+            _key = f"mha:prompt_version:{prompt_hash}"
+
+            pipe = self._redis.pipeline()
+            pipe.hincrbyfloat(_key, "total_score", quality_score)
+            pipe.hincrby(_key, "count", 1)
+            pipe.hset(_key, "last_category", category)
+            pipe.hset(_key, "last_seen", datetime.now().isoformat())
+            pipe.expire(_key, 90 * 86400)
+            await pipe.execute()
+
+            # Prompt-Version in Index speichern
+            await self._redis.sadd("mha:prompt_versions", prompt_hash)
+            await self._redis.expire("mha:prompt_versions", 90 * 86400)
+
+        except Exception as e:
+            logger.debug("D7 Prompt Quality Record Fehler: %s", e)
+
+    async def get_prompt_version_stats(self) -> list[dict]:
+        """D7: Gibt Statistiken aller bekannten Prompt-Versionen zurueck.
+
+        Returns:
+            Liste von {hash, avg_score, count, last_category, last_seen} Dicts,
+            sortiert nach avg_score (beste zuerst).
+        """
+        if not self._redis:
+            return []
+
+        try:
+            _versions = await self._redis.smembers("mha:prompt_versions")
+            if not _versions:
+                return []
+
+            stats = []
+            for v in _versions:
+                _hash = v.decode() if isinstance(v, bytes) else v
+                _data = await self._redis.hgetall(f"mha:prompt_version:{_hash}")
+                if not _data:
+                    continue
+
+                _decode = {
+                    (k.decode() if isinstance(k, bytes) else k):
+                    (v.decode() if isinstance(v, bytes) else v)
+                    for k, v in _data.items()
+                }
+
+                _total = float(_decode.get("total_score", 0))
+                _count = int(_decode.get("count", 0))
+                if _count == 0:
+                    continue
+
+                stats.append({
+                    "hash": _hash,
+                    "avg_score": round(_total / _count, 3),
+                    "count": _count,
+                    "last_category": _decode.get("last_category", ""),
+                    "last_seen": _decode.get("last_seen", ""),
+                })
+
+            stats.sort(key=lambda s: s["avg_score"], reverse=True)
+            return stats
+
+        except Exception as e:
+            logger.debug("D7 Prompt Version Stats Fehler: %s", e)
+            return []
+
+    async def refresh_few_shot_examples(self, category: str = ""):
+        """D6: Laedt dynamische Few-Shot-Beispiele aus Redis.
+
+        Wird periodisch von brain.py aufgerufen (nicht bei jedem Request).
+        Beste Antworten (quality_score >= 0.8) dienen als Prompt-Beispiele.
+
+        Args:
+            category: Aktuelle Kategorie (wenn bekannt) — priorisiert Beispiele dieser Kategorie.
+        """
+        _d6_cfg = yaml_config.get("dynamic_few_shot", {})
+        if not _d6_cfg.get("enabled", True) or not self._response_quality:
+            self._few_shot_section = ""
+            return
+
+        try:
+            _max = _d6_cfg.get("max_examples_in_prompt", 3)
+            examples = []
+
+            # Priorisiert aktuelle Kategorie
+            _categories = ["device_command", "knowledge", "smalltalk", "analysis"]
+            if category and category in _categories:
+                _categories.remove(category)
+                _categories.insert(0, category)
+
+            for cat in _categories:
+                cat_examples = await self._response_quality.get_few_shot_examples(cat, limit=2)
+                for ex in cat_examples:
+                    if len(examples) >= _max:
+                        break
+                    examples.append(ex)
+                if len(examples) >= _max:
+                    break
+
+            if not examples:
+                self._few_shot_section = ""
+                return
+
+            lines = ["BEISPIELE GUTER ANTWORTEN (aus Feedback gelernt):"]
+            for ex in examples:
+                _user = ex.get("user_text", "")[:150]
+                _response = ex.get("response_text", "")[:200]
+                if _user and _response:
+                    lines.append(f"User: \"{_user}\" → Jarvis: \"{_response}\"")
+
+            if len(lines) > 1:
+                self._few_shot_section = "\n".join(lines)
+                logger.debug("D6 Few-Shot: %d Beispiele geladen", len(lines) - 1)
+            else:
+                self._few_shot_section = ""
+
+        except Exception as e:
+            logger.debug("D6 Few-Shot Refresh Fehler: %s", e)
+            self._few_shot_section = ""
 
     # ------------------------------------------------------------------
     # Config-Laden Hilfsmethoden
@@ -2820,6 +2966,10 @@ class PersonalityEngine:
         if self._quality_hints:
             _dynamic_parts.append(self._quality_hints)
 
+        # D6: Dynamic Few-Shot — Gute Antworten als Beispiele
+        if self._few_shot_section:
+            _dynamic_parts.append(self._few_shot_section)
+
         # B6: Relationship Model — Inside Jokes, Kommunikationsstil, Milestones
         if self._relationship_context:
             _dynamic_parts.append(self._relationship_context)
@@ -2903,6 +3053,17 @@ Du bist jetzt zusaetzlich ein brillanter Ingenieur und Werkstatt-Meister.
 - Nutze das manage_repair Tool für ALLE Werkstatt-Aktionen.
 - Wenn der User ein Projekt hat, beziehe dich immer darauf.
 """
+
+        # D7: Prompt-Hash berechnen (ohne volatile Kontextdaten)
+        # Basiert auf Template + dynamischen Sections, nicht auf Echtzeit-Kontext
+        _d7_cfg = yaml_config.get("prompt_versioning", {})
+        if _d7_cfg.get("enabled", True):
+            import hashlib
+            # Hash der strukturellen Teile (ohne aktuelle HA-States etc.)
+            _hash_input = dynamic_context + humor_section + formality_section
+            self._current_prompt_hash = hashlib.md5(
+                _hash_input.encode("utf-8")
+            ).hexdigest()[:12]
 
         return prompt
 
