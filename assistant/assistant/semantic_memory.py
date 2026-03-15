@@ -492,6 +492,76 @@ class SemanticMemory:
         except Exception as e:
             logger.error("Fehler bei Fact Decay: %s", e)
 
+    async def verify_consistency(self):
+        """Prueft Konsistenz zwischen Redis und ChromaDB.
+
+        Erkennt verwaiste Fakten (in einem System aber nicht im anderen)
+        und re-indexiert sie. Wird taeglich nach dem Decay ausgefuehrt.
+        """
+        if not self.redis or not self.chroma_collection:
+            return
+
+        try:
+            redis_ids = await self.redis.smembers("mha:facts:all")
+            redis_ids_set = {
+                (fid if isinstance(fid, str) else fid.decode())
+                for fid in redis_ids
+            }
+
+            if not redis_ids_set:
+                return
+
+            # Stichprobe: Maximal 100 Fakten pruefen (Performance)
+            check_ids = list(redis_ids_set)[:100]
+            orphaned_redis = 0
+            reindexed = 0
+
+            for fact_id in check_ids:
+                # Pruefen ob der Fakt in ChromaDB existiert
+                try:
+                    result = await asyncio.to_thread(
+                        self.chroma_collection.get,
+                        ids=[fact_id],
+                    )
+                    if not result or not result.get("ids") or not result["ids"]:
+                        # Fakt in Redis aber nicht in ChromaDB → re-indexieren
+                        data = await self.redis.hgetall(f"mha:fact:{fact_id}")
+                        if data:
+                            content = data.get("content", "")
+                            if isinstance(content, bytes):
+                                content = content.decode()
+                            if content:
+                                meta = {}
+                                for k, v in data.items():
+                                    key = k if isinstance(k, str) else k.decode()
+                                    val = v if isinstance(v, str) else v.decode()
+                                    meta[key] = val
+                                try:
+                                    await asyncio.to_thread(
+                                        self.chroma_collection.add,
+                                        documents=[content],
+                                        metadatas=[meta],
+                                        ids=[fact_id],
+                                    )
+                                    reindexed += 1
+                                except Exception:
+                                    orphaned_redis += 1
+                        else:
+                            # Fakt-ID in Index aber keine Daten → Index bereinigen
+                            await self.redis.srem("mha:facts:all", fact_id)
+                            orphaned_redis += 1
+                except Exception:
+                    pass  # ChromaDB-Query fehlgeschlagen, ueberspringe
+
+            if reindexed or orphaned_redis:
+                logger.info(
+                    "Konsistenz-Check: %d re-indexiert, %d verwaist bereinigt (von %d geprueft)",
+                    reindexed, orphaned_redis, len(check_ids),
+                )
+
+        except Exception as e:
+            logger.error("Konsistenz-Check fehlgeschlagen: %s", e)
+
     async def find_similar_fact(
         self, query: str, threshold: float = 0.15
     ) -> Optional[dict]:
@@ -596,12 +666,24 @@ class SemanticMemory:
         facts.sort(key=lambda f: f["relevance"], reverse=True)
         return facts
 
+    # Stoppwoerter fuer Redis-Fallback (haeufige dt. Woerter ohne Bedeutung)
+    _STOPWORDS = frozenset({
+        "der", "die", "das", "den", "dem", "des", "ein", "eine", "einer",
+        "einem", "einen", "und", "oder", "aber", "ist", "sind", "war",
+        "hat", "haben", "wird", "kann", "ich", "du", "er", "sie", "es",
+        "wir", "ihr", "was", "wie", "wo", "wer", "von", "zu", "in",
+        "mit", "auf", "an", "fuer", "für", "ueber", "über", "bei",
+        "nach", "vor", "aus", "um", "nicht", "auch", "noch", "schon",
+        "sehr", "ja", "nein", "mal", "so", "da", "dann", "wenn",
+    })
+
     async def _search_facts_redis_fallback(
         self, query: str, limit: int, person: Optional[str] = None
     ) -> list[dict]:
         """Keyword-basierte Suche ueber Redis wenn ChromaDB nicht verfuegbar.
 
-        Kein Vektor-Matching, aber besser als gar keine Ergebnisse.
+        Nutzt Stoppwort-Filterung, Teilwort-Matching und Confidence-Gewichtung
+        fuer bessere Ergebnisse als einfaches Keyword-Matching.
         """
         try:
             if person:
@@ -621,26 +703,57 @@ class SemanticMemory:
             min_confidence = float(yaml_config.get("memory", {}).get(
                 "min_confidence_for_context", 0.4
             ))
-            query_words = set(query.lower().split())
+            # Stoppwoerter entfernen, Wortstamm-Prefixe fuer Teilwort-Match
+            query_words = {
+                w for w in query.lower().split()
+                if w not in self._STOPWORDS and len(w) > 2
+            }
+            if not query_words:
+                # Nur Stoppwoerter → alle Woerter behalten
+                query_words = set(query.lower().split())
+
+            # Wortstamm-Prefixe (erste 4 Zeichen) fuer unscharfes Matching
+            query_stems = {w[:4] for w in query_words if len(w) >= 4}
+
             facts = []
             for data in all_data:
                 if not data:
                     continue
+                content = data.get("content", "")
+                if isinstance(content, bytes):
+                    content = content.decode()
                 confidence = float(data.get("confidence", 0.5))
                 if confidence < min_confidence:
                     continue
-                content = data.get("content", "")
+
                 content_lower = content.lower()
-                # Einfacher Keyword-Match: wie viele Query-Woerter im Fakt?
-                matches = sum(1 for w in query_words if w in content_lower)
-                if matches > 0:
+                content_words = content_lower.split()
+
+                # Exakte Wort-Matches
+                exact_matches = sum(1 for w in query_words if w in content_lower)
+                # Stamm-Matches (unscharfes Matching)
+                stem_matches = 0
+                if query_stems:
+                    content_stems = {w[:4] for w in content_words if len(w) >= 4}
+                    stem_matches = len(query_stems & content_stems)
+
+                # Kombinierter Score: exakte Matches zaehlen doppelt
+                total_score = (exact_matches * 2 + stem_matches) / max(len(query_words) * 2 + len(query_stems), 1)
+
+                if total_score > 0:
+                    # Confidence als Boost-Faktor (0.5-1.0 → 0.75-1.0)
+                    conf_boost = 0.5 + confidence * 0.5
+                    fact_id = data.get("fact_id", "")
+                    if isinstance(fact_id, bytes):
+                        fact_id = fact_id.decode()
                     facts.append({
                         "content": content,
-                        "category": data.get("category", "general"),
-                        "person": data.get("person", "unknown"),
+                        "fact_id": fact_id,
+                        "category": (data.get("category") or b"general").decode() if isinstance(data.get("category"), bytes) else data.get("category", "general"),
+                        "person": (data.get("person") or b"unknown").decode() if isinstance(data.get("person"), bytes) else data.get("person", "unknown"),
                         "confidence": confidence,
                         "times_confirmed": int(data.get("times_confirmed", 1)),
-                        "relevance": min(1.0, matches / max(len(query_words), 1)),
+                        "relevance": min(1.0, total_score * conf_boost),
                     })
 
             facts.sort(key=lambda f: f["relevance"], reverse=True)

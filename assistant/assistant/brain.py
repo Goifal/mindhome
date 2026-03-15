@@ -9597,6 +9597,12 @@ Regeln:
                 logger.info("Fact Decay gestartet (täglich 04:00)")
                 await self.memory.semantic.apply_decay()
 
+                # Konsistenz-Check: Verwaiste Fakten zwischen Redis und ChromaDB
+                try:
+                    await self.memory.semantic.verify_consistency()
+                except Exception as e:
+                    logger.warning("Konsistenz-Check fehlgeschlagen: %s", e)
+
                 # Tagesverbrauch speichern (für Anomalie-Erkennung & Wochen-Vergleich)
                 try:
                     await self.energy_optimizer.track_daily_cost()
