@@ -426,14 +426,21 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             "heizung", "thermostat", "klima",
             "steckdose", "schalter", "musik", "lautsprecher",
             "wecker", "timer", "erinnerung",
+            # Haushaltsgeraete (Switches)
+            "maschine", "kaffeemaschine", "siebtraeger", "spuelmaschine",
+            "waschmaschine", "trockner", "ventilator", "luefter",
+            "pumpe", "boiler", "bewaesserung",
         ]
         self._action_words = set(cmd_cfg.get("action_words") or [
             "auf", "zu", "an", "aus", "hoch", "runter",
             "offen", "ein", "ab", "halb", "stopp",
             "oeffne", "schliess", "oeffnen", "schliessen",
+            "einschalten", "ausschalten", "anmachen", "ausmachen",
+            "aktivieren", "deaktivieren", "starten",
         ])
         self._command_verbs = cmd_cfg.get("command_verbs") or [
             "mach ", "schalte ", "stell ", "setz ", "dreh ", "oeffne ", "schliess",
+            "aktiviere ", "deaktiviere ", "starte ",
         ]
         self._query_markers = cmd_cfg.get("query_markers") or [
             "welche", "sind ", "ist ", "status", "zeig", "liste",
@@ -3258,7 +3265,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if (_cl_cfg.get("enabled", True) and _cl_cfg.get("mid_conversation_reminder", True)
                 and conv_tokens_used > 200):
             _current_mood = getattr(self, "_current_mood", "neutral")
-            if _current_mood in ("frustrated", "stressed"):
+            _mood_signals = getattr(self, "_mood_signals", [])
+            if "correction_detected" in _mood_signals:
+                _reminder = (
+                    "[REMINDER] Du bist J.A.R.V.I.S. — trocken, praezise, Butler-Ton. "
+                    "Kurz. Keine Listen. Erfinde NICHTS. NUR vorhandene Daten nutzen. "
+                    "WICHTIG: Der User KORRIGIERT dich gerade. Nimm die Korrektur an, "
+                    "bestaetige die richtige Information und passe deine Antwort an. "
+                    "Nicht widersprechen, wenn der User faktisch Recht hat."
+                )
+            elif _current_mood in ("frustrated", "stressed"):
                 _reminder = (
                     "[REMINDER] Du bist J.A.R.V.I.S. — trocken, praezise, Butler-Ton. "
                     "Kurz. Keine Listen. Erfinde NICHTS. NUR vorhandene Daten nutzen. "
@@ -4426,6 +4442,27 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         # Personality-konsistente Fehlermeldung statt generischem "Problem: ..."
                         response_text = self.personality.get_error_response("general")
 
+        # Halluzinations-Schutz: Bei device_command mit 0 Aktionen darf das
+        # LLM nicht behaupten, es haette etwas getan. Typisch: "Ich habe den
+        # Befehl gesendet" oder "Die Maschine laeuft bereits" ohne Tool-Call.
+        if (profile and profile.category == "device_command"
+                and not executed_actions and response_text):
+            _halluc_patterns = [
+                r"(?:habe|hab)\s+(?:den|die|das|einen)?\s*(?:Befehl|Aktion)",
+                r"(?:bereits|schon)\s+(?:aktiviert|eingeschaltet|ausgef[uü]hrt|gesendet|erledigt)",
+                r"(?:l[aä]uft|ist)\s+(?:bereits|schon)\s+(?:seit|an|aktiv)",
+                r"(?:habe|hab).*(?:ausgef[uü]hrt|gesendet|eingeschaltet|aktiviert|erledigt)",
+                r"Befehl.*(?:erhalten|best[aä]tigt|gesendet|ausgef[uü]hrt)",
+                r"(?:eingeschaltet|aktiviert|gestartet).*(?:best[aä]tigt|erhalten)",
+            ]
+            _text_low = response_text.lower()
+            if any(re.search(p, _text_low, re.IGNORECASE) for p in _halluc_patterns):
+                logger.warning(
+                    "Halluzinations-Schutz: LLM behauptet Aktion bei 0 ausgefuehrten "
+                    "Aktionen. Text verworfen: '%s'", response_text[:80],
+                )
+                response_text = self.personality.get_error_response("unknown_device")
+
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
         # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur für
         # den General-Pfad (Tool-Calls) filtern, um doppelte Filterung zu vermeiden.
@@ -4615,6 +4652,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Phase 17.4: Mood-Aware Response Post-Processing
         # Wenn User gestresst/frustriert/muede: Gags unterdruecken, Response kuerzen
         _current_mood = (mood_result or {}).get("mood", "neutral")
+        self._current_mood = _current_mood
+        self._mood_signals = (mood_result or {}).get("signals", [])
         _mood_config = self.personality.get_mood_response_config(_current_mood)
 
         if _mood_config.get("suppress_humor") and gag_response and response_text:
@@ -5649,6 +5688,35 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 verb_stem = m.group(1)  # z.B. "präzisier", "nenn"
                 return verb_stem + "e"
             text = re.sub(r"\b(\w{4,})en Sie\b", _imperativ_replace, text)
+
+            # "Sie VERB" Muster (Subjekt VOR Verb) → "du VERBst"
+            _sie_verb_map = [
+                (r"\bSie sollte\b", "du solltest"), (r"\bsie sollte\b", "du solltest"),
+                (r"\bSie sollten\b", "du solltest"), (r"\bsie sollten\b", "du solltest"),
+                (r"\bSie k[oö]nnte\b", "du könntest"), (r"\bsie k[oö]nnte\b", "du könntest"),
+                (r"\bSie k[oö]nnten\b", "du könntest"), (r"\bsie k[oö]nnten\b", "du könntest"),
+                (r"\bSie m[uü]sste\b", "du müsstest"), (r"\bsie m[uü]sste\b", "du müsstest"),
+                (r"\bSie m[uü]ssten\b", "du müsstest"), (r"\bsie m[uü]ssten\b", "du müsstest"),
+                (r"\bSie w[uü]rde\b", "du würdest"), (r"\bsie w[uü]rde\b", "du würdest"),
+                (r"\bSie w[uü]rden\b", "du würdest"), (r"\bsie w[uü]rden\b", "du würdest"),
+                (r"\bSie haben\b", "du hast"), (r"\bsie haben\b", "du hast"),
+                (r"\bSie sind\b", "du bist"), (r"\bsie sind\b", "du bist"),
+                (r"\bSie werden\b", "du wirst"), (r"\bsie werden\b", "du wirst"),
+                (r"\bSie m[uü]ssen\b", "du musst"), (r"\bsie m[uü]ssen\b", "du musst"),
+                (r"\bSie k[oö]nnen\b", "du kannst"), (r"\bsie k[oö]nnen\b", "du kannst"),
+                (r"\bSie wollen\b", "du willst"), (r"\bsie wollen\b", "du willst"),
+                (r"\bSie sollen\b", "du sollst"), (r"\bsie sollen\b", "du sollst"),
+                (r"\bSie d[uü]rfen\b", "du darfst"), (r"\bsie d[uü]rfen\b", "du darfst"),
+            ]
+            for pattern, replacement in _sie_verb_map:
+                text = re.sub(pattern, replacement, text)
+
+            # Reflexivpronomen: "sich" → "dich" nach du-Kontext
+            # "du solltest sich" → "du solltest dich"
+            # "du kannst sich" → "du kannst dich"
+            text = re.sub(r"(\bdu\s+\w+(?:st|t)\s+)sich\b", r"\1dich", text)
+            # "dich ... sich aufwaermen" Pattern auch abfangen
+            text = re.sub(r"(\bdu\b.{0,30})\bsich\b", r"\1dich", text)
 
             _formal_map = [
                 (r"\bIhnen\b", "dir"), (r"\bIhre\b", "deine"),
@@ -7717,6 +7785,33 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # --- Steuerungsbefehle: "Licht aus", "Rollladen hoch" ---
         _has_alle = "alle" in words or "alles" in words
 
+        # Switches: "Siebträgermaschine ein", "Kaffeemaschine an", "Steckdose Kueche aus"
+        _switch_nouns = ["maschine", "kaffeemaschine", "siebtraeger", "steckdose",
+                         "pumpe", "boiler", "bewaesserung", "ventilator", "luefter"]
+        if any(n in t for n in _switch_nouns):
+            state = "on" if (words & {"an", "ein", "einschalten", "aktivieren",
+                                      "starten", "anmachen"}) else \
+                    "off" if (words & {"aus", "ausschalten", "deaktivieren",
+                                       "ausmachen", "stopp", "stop"}) else None
+            if state:
+                # Switch-Name aus Entity-Katalog matchen
+                from .function_calling import _entity_catalog
+                _switches = _entity_catalog.get("switches", [])
+                _best_match = ""
+                for _sw in _switches:
+                    # Entries sind "name (friendly_name) [Rolle]"
+                    _sw_lower = _sw.lower()
+                    for _kw in t.split():
+                        if len(_kw) >= 4 and _kw in _sw_lower:
+                            _best_match = _sw.split(" (")[0].split(" [")[0].strip()
+                            break
+                    if _best_match:
+                        break
+                return {"function": {"name": "set_switch",
+                                     "arguments": {"entity_id": f"switch.{_best_match}" if _best_match else "",
+                                                   "state": state,
+                                                   "room": _room}}}
+
         # Lichter an/aus/dimmen
         if any(n in t for n in ["licht", "lichter", "lampe", "lampen", "leuchte"]):
             state = "on" if (words & {"an", "ein"}) else "off" if (words & {"aus"}) else None
@@ -7882,6 +7977,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         _CMD_VERBS = [
             "mach", "schalte", "schalt", "stell", "setz",
             "dreh", "fahr", "oeffne", "schliess",
+            "aktiviere", "deaktiviere", "starte",
         ]
         has_verb = any(t.startswith(v) for v in _CMD_VERBS)
         if not has_verb and len(words) > 6:
@@ -7922,7 +8018,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         "gleich", "etwas", "einfach", "kurz"}
             for _noun in ["licht", "lampe", "leuchte", "rollladen", "rolladen",
                           "rollo", "jalousie", "heizung", "thermostat",
-                          "steckdose", "schalter"]:
+                          "steckdose", "schalter", "maschine", "kaffeemaschine",
+                          "siebtraeger"]:
                 _idx = t.find(_noun)
                 if _idx < 0:
                     continue
@@ -8088,12 +8185,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 if mode:
                     return {"function": "arm_security_system", "args": {"mode": mode}}
 
-        # --- STECKDOSE / SCHALTER ---
-        if any(n in t for n in ["steckdose", "schalter"]):
+        # --- STECKDOSE / SCHALTER / HAUSHALTSGERAETE ---
+        _switch_nouns = ["steckdose", "schalter", "maschine", "kaffeemaschine",
+                         "siebtraeger", "spuelmaschine", "waschmaschine",
+                         "trockner", "ventilator", "luefter", "pumpe", "boiler",
+                         "bewaesserung"]
+        if any(n in t for n in _switch_nouns):
             state = None
-            if any(v in t for v in ["einschalten", "anschalten", "anmachen"]):
+            if any(v in t for v in ["einschalten", "anschalten", "anmachen",
+                                     "aktivieren", "starten"]):
                 state = "on"
-            elif any(v in t for v in ["ausschalten", "abschalten", "ausmachen"]):
+            elif any(v in t for v in ["ausschalten", "abschalten", "ausmachen",
+                                       "deaktivieren", "stoppen"]):
                 state = "off"
             elif _re.search(r'\b(?:an|ein)\s*(?:(?:im|in|vom)\s+\w+)?\s*$', t):
                 state = "on"
@@ -8101,7 +8204,22 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 state = "off"
             if state is None:
                 return None
-            return {"function": "set_switch", "args": {"room": effective_room, "state": state}}
+            # Entity-Matching: Geraetename im Switch-Katalog suchen
+            from .function_calling import _entity_catalog
+            _switches = _entity_catalog.get("switches", [])
+            _best = ""
+            for _sw in _switches:
+                _sw_l = _sw.lower()
+                for _kw in words:
+                    if len(_kw) >= 4 and _kw in _sw_l:
+                        _best = _sw.split(" (")[0].split(" [")[0].strip()
+                        break
+                if _best:
+                    break
+            args = {"state": state, "room": effective_room}
+            if _best:
+                args["entity_id"] = f"switch.{_best}"
+            return {"function": "set_switch", "args": args}
 
         return None
 

@@ -534,13 +534,15 @@ class TestApplyDecay:
         assert detector._tiredness_level < 0.3
 
     def test_decay_after_long_pause_resets_frustration(self, detector):
+        # Nach 700s (~11 Minuten) Pause: Frustration sinkt um 11 Steps
+        # (1 pro 60s), also von 3 auf 0 (max(0, 3-11))
         detector._frustration_count = 3
         detector._positive_count = 2
         detector._stress_level = 0.5
         detector._last_decay_time = time.time() - 700  # >10 minutes
         detector._apply_decay(time.time())
-        assert detector._frustration_count == 2
-        assert detector._positive_count == 1
+        assert detector._frustration_count == 0
+        assert detector._positive_count == 0
 
     def test_no_decay_under_60_seconds(self, detector):
         detector._stress_level = 0.5

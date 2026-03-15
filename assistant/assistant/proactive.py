@@ -1436,7 +1436,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=150,
+                max_tokens=300,
             )
             text = validate_notification(
                 response.get("message", {}).get("content", "")
@@ -2916,7 +2916,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=150,
+                max_tokens=250,
             )
 
             text = validate_notification(

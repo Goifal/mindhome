@@ -412,6 +412,18 @@ class MoodDetector:
         text_lower = text.lower().strip()
         text_len = len(text.split())
 
+        # Korrektur-Erkennung: "Nein, Restmuell ist am Dienstag" o.ae.
+        # Korrekturen sind KEINE Frustration — der User liefert neue Information.
+        # Heuristik: Nachricht beginnt mit Negation UND enthaelt genuegend
+        # Folgetext (>= 6 Woerter insgesamt) mit korrigierendem Inhalt.
+        # Kurze Saetze wie "Das stimmt nicht, falsch!" sind Frustration, keine Korrektur.
+        _is_correction = False
+        _correction_starters = ("nein", "falsch", "stimmt nicht", "nicht ganz",
+                                "das stimmt nicht", "das ist falsch", "ne ")
+        if any(text_lower.startswith(s) for s in _correction_starters) and text_len >= 6:
+            _is_correction = True
+            signals.append("correction_detected")
+
         # Positive Signale
         if any(kw in text_lower for kw in POSITIVE_KEYWORDS):
             self._positive_count += 1
@@ -419,11 +431,16 @@ class MoodDetector:
             self._frustration_count = max(0, self._frustration_count - 1)
             signals.append("positive_language")
 
-        # Negative/frustrierte Signale
+        # Negative/frustrierte Signale — bei Korrekturen abgeschwaecht
         if any(kw in text_lower for kw in NEGATIVE_KEYWORDS):
-            self._frustration_count += 1
-            self._stress_level = min(1.0, self._stress_level + self.negative_stress_boost)
-            signals.append("negative_language")
+            if _is_correction:
+                # Korrektur: kein Frustrations-Anstieg, nur minimaler Stress
+                self._stress_level = min(1.0, self._stress_level + self.negative_stress_boost * 0.2)
+                signals.append("negative_language_correction")
+            else:
+                self._frustration_count += 1
+                self._stress_level = min(1.0, self._stress_level + self.negative_stress_boost)
+                signals.append("negative_language")
 
         # Ungeduldige Signale
         if any(kw in text_lower for kw in IMPATIENT_KEYWORDS):
@@ -437,14 +454,16 @@ class MoodDetector:
             signals.append("tired_keywords")
 
         # Frustrierte Wiederholung (gleicher/aehnlicher Text wie vorher)
-        if self._last_texts and self._is_repetition(text_lower):
+        # Bei Korrekturen: aehnliches Thema ist erwartet, nicht frustrierend
+        if self._last_texts and self._is_repetition(text_lower) and not _is_correction:
             self._frustration_count += 2
             self._stress_level = min(1.0, self._stress_level + self.repetition_stress_boost)
             signals.append("repetition")
 
         # Eskalations-Erkennung: Mehrere aehnliche Anfragen hintereinander
         # → User versucht es wiederholt → starke Frustration
-        if len(self._last_texts) >= 2:
+        # Bei Korrekturen: Themen-Overlap ist normal, keine Eskalation
+        if len(self._last_texts) >= 2 and not _is_correction:
             _recent = list(self._last_texts)[-2:]
             _rep_count = sum(1 for lt in _recent if self._word_overlap(text_lower, lt) > 0.5)
             if _rep_count >= 1:
@@ -459,8 +478,8 @@ class MoodDetector:
             self._stress_level = min(1.0, self._stress_level + 0.1)
             signals.append("exclamation_marks")
 
-        # Frustrierter Anfang
-        if any(text_lower.startswith(p) for p in FRUSTRATED_PREFIXES):
+        # Frustrierter Anfang — bei Korrekturen nicht triggern
+        if not _is_correction and any(text_lower.startswith(p) for p in FRUSTRATED_PREFIXES):
             self._frustration_count += 1
             signals.append("frustrated_prefix")
 
@@ -479,6 +498,9 @@ class MoodDetector:
         # Sentiment fuer Trend-Analyse aufzeichnen
         if "positive_language" in signals:
             self._interaction_sentiments.append("positive")
+        elif "correction_detected" in signals:
+            # Korrekturen sind neutral, nicht negativ
+            self._interaction_sentiments.append("neutral")
         elif "negative_language" in signals or "impatient_language" in signals:
             self._interaction_sentiments.append("negative")
         elif "tired_keywords" in signals:
@@ -645,9 +667,12 @@ class MoodDetector:
             decay_factor = elapsed / self.stress_decay_seconds
             self._stress_level = max(0.0, self._stress_level - decay_factor * 0.3)
             self._tiredness_level = max(0.0, self._tiredness_level - decay_factor * 0.1)
-            if elapsed > 600:  # Nach 10 Minuten Pause: Frustration reset
-                self._frustration_count = max(0, self._frustration_count - 1)
-                self._positive_count = max(0, self._positive_count - 1)
+            # Frustration graduell abbauen — auch waehrend aktivem Chat.
+            # Pro 60s-Intervall: -1 Frustration, damit sich der Zaehler nicht
+            # endlos aufstaut und der Assistent wieder zuhoert.
+            _decay_steps = max(1, int(elapsed / 60))
+            self._frustration_count = max(0, self._frustration_count - _decay_steps)
+            self._positive_count = max(0, self._positive_count - _decay_steps)
             self._last_decay_time = now
 
     # ------------------------------------------------------------------
