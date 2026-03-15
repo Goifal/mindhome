@@ -3094,9 +3094,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 cont_text = f"\n\nOFFENE THEMEN ({len(topics)}):\n"
                 for t in topics:
                     cont_text += f"- {t}\n"
-                cont_text += "Erwaehne kurz die offenen Themen."
+                cont_text += (
+                    "Erwaehne beilaeufig die offenen Themen — wie ein Butler "
+                    "der sich erinnert: 'Uebrigens, vorhin ging es um [Thema]. "
+                    "Soll ich da weitermachen?' Nicht als Liste."
+                )
             else:
-                cont_text = f"\n\nOFFENES THEMA: {continuity_hint}"
+                cont_text = (
+                    f"\n\nOFFENES THEMA: {continuity_hint}\n"
+                    "Erwaehne beilaeufig: 'Wir hatten vorhin [Thema] — "
+                    "soll ich da weitermachen?' Nur wenn es passt."
+                )
             sections.append(("continuity", cont_text, 3))
 
         # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
@@ -4461,7 +4469,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     "Halluzinations-Schutz: LLM behauptet Aktion bei 0 ausgefuehrten "
                     "Aktionen. Text verworfen: '%s'", response_text[:80],
                 )
-                response_text = self.personality.get_error_response("unknown_device")
+                # LLM-kontextbezogene Fehlermeldung statt generischem Template
+                response_text = await self._generate_contextual_error(
+                    text, "unknown_device"
+                )
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
         # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur für
@@ -5274,6 +5285,75 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         return []
 
     # Humanizer-Methoden sind in brain_humanizers.py (BrainHumanizersMixin)
+
+    # LLM-kontextbezogene Fehlermeldungen
+    # ------------------------------------------------------------------
+
+    async def _generate_contextual_error(
+        self, user_text: str, error_type: str = "general"
+    ) -> str:
+        """Generiert eine kontextbezogene Fehlermeldung mit LLM.
+
+        Statt generischer Templates erhaelt das LLM den Kontext (was der User
+        wollte, welche Geraete verfuegbar sind) und formuliert eine hilfreiche
+        JARVIS-Butler-Fehlermeldung mit Alternativen.
+
+        Fallback: personality.get_error_response() bei LLM-Fehler.
+        """
+        fallback = self.personality.get_error_response(error_type)
+        if not self.ollama or not user_text:
+            return fallback
+        try:
+            # Verfuegbare Geraete als Kontext sammeln
+            _alternatives = ""
+            if error_type == "unknown_device":
+                from .function_calling import _entity_catalog
+                _switches = _entity_catalog.get("switches", [])[:15]
+                _lights = _entity_catalog.get("lights", [])[:10]
+                if _switches or _lights:
+                    _devs = [s.split(" (")[0].split(" [")[0].strip()
+                             for s in (_switches + _lights)]
+                    _alternatives = "Verfuegbare Geraete: " + ", ".join(_devs[:15])
+
+            _prompt = (
+                f"Der User sagte: \"{user_text}\"\n"
+                f"Fehlertyp: {error_type}\n"
+            )
+            if _alternatives:
+                _prompt += f"{_alternatives}\n"
+            _prompt += (
+                "\nFormuliere eine kurze JARVIS-Butler-Fehlermeldung (1 Satz). "
+                "Erklaere was schief ging. "
+            )
+            if _alternatives:
+                _prompt += "Schlage ein aehnliches Geraet vor falls passend. "
+            _prompt += "Kein Markdown, keine Emojis, max 30 Woerter."
+
+            response = await asyncio.wait_for(
+                self.ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S., ein trockener britischer KI-Butler. "
+                                "Formuliere hilfreiche Fehlermeldungen. Kurz und praezise."
+                            ),
+                        },
+                        {"role": "user", "content": _prompt},
+                    ],
+                    model=settings.model_fast,
+                    think=False,
+                    max_tokens=80,
+                    tier="fast",
+                ),
+                timeout=3.0,
+            )
+            _text = (response.get("message", {}).get("content", "") or "").strip()
+            if _text and len(_text) > 10:
+                return _text
+        except Exception as e:
+            logger.debug("Kontextbezogene Fehlermeldung fehlgeschlagen: %s", e)
+        return fallback
 
     # Phase 12: Response-Filter (Post-Processing)
     # ------------------------------------------------------------------
@@ -9713,9 +9793,14 @@ Regeln:
             ready_topics = []
             for item in pending:
                 topic = item.get("topic", "")
+                context_info = item.get("context", "")
                 age = item.get("age_minutes", 0)
                 if topic and resume_after <= age <= expire_minutes:
-                    ready_topics.append(topic)
+                    # Kontext anhaengen wenn vorhanden
+                    if context_info:
+                        ready_topics.append(f"{topic} ({context_info})")
+                    else:
+                        ready_topics.append(topic)
 
             if not ready_topics:
                 return None

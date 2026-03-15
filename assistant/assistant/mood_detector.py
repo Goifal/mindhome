@@ -157,8 +157,8 @@ class MoodDetector:
         if not _mood_cfg.get("llm_sentiment", True) or not self._ollama:
             return None
 
-        # Nur bei Texten mit genuegend Kontext (>3 Woerter)
-        if len(text.split()) < 4:
+        # Nur bei Texten mit genuegend Kontext (>2 Woerter)
+        if len(text.split()) < 3:
             return None
 
         try:
@@ -212,7 +212,7 @@ class MoodDetector:
         nuance = llm_result.get("nuance", "")
 
         # LLM-Gewicht: Staerker als einzelne Keywords, aber nicht dominant
-        llm_weight = 0.6  # 60% LLM, 40% Keywords (bei Widerspruch)
+        llm_weight = 0.8  # 80% LLM, 20% Keywords (LLM versteht Kontext besser)
 
         # Sentiment-Mapping auf interne Scores
         sentiment_map = {

@@ -561,7 +561,13 @@ class ProactiveManager:
                             "person_arrived", _plan_ctx, _auto_lvl,
                         )
                         if _plan:
-                            _plan_msg = _plan.get("message") if _plan.get("needs_confirmation") else _plan.get("auto_message", "")
+                            if _plan.get("needs_confirmation"):
+                                _plan_msg = _plan.get("message", "")
+                            else:
+                                _plan_msg = _plan.get("auto_message", "")
+                                # LLM-Polish: "Ich habe mir erlaubt..." Butler-Stil
+                                if _plan_msg:
+                                    _plan_msg = await self._polish_auto_action(_plan_msg)
                             if _plan_msg:
                                 await self._notify("person_arrived", LOW, {
                                     "message": _plan_msg,
@@ -610,7 +616,12 @@ class ProactiveManager:
                             "weather_changed", _w_ctx, _auto_lvl,
                         )
                         if _plan:
-                            _plan_msg = _plan.get("message") if _plan.get("needs_confirmation") else _plan.get("auto_message", "")
+                            if _plan.get("needs_confirmation"):
+                                _plan_msg = _plan.get("message", "")
+                            else:
+                                _plan_msg = _plan.get("auto_message", "")
+                                if _plan_msg:
+                                    _plan_msg = await self._polish_auto_action(_plan_msg)
                             if _plan_msg:
                                 await self._notify("weather_warning", LOW, {
                                     "message": _plan_msg,
@@ -2987,6 +2998,10 @@ class ProactiveManager:
 
                 observation = await self._generate_observation()
 
+                # LLM-Polish: JARVIS-Stil statt Template-Text
+                if observation:
+                    observation = await self._polish_observation(observation)
+
                 # FIX-C2: Nutze self._notify() statt self._notify_callback
                 if observation:
                     await self._notify(
@@ -3116,6 +3131,83 @@ class ProactiveManager:
         except Exception as e:
             logger.debug("Observation-Generierung fehlgeschlagen: %s", e)
             return None
+
+    async def _polish_auto_action(self, raw_text: str) -> str:
+        """Poliert eine Auto-Aktions-Nachricht in JARVIS-Butler-Stil.
+
+        Aus "Willkommen, Sir. Beleuchtung — erledigt." wird
+        "Ich habe mir erlaubt, die Beleuchtung einzuschalten, Sir."
+        """
+        if not raw_text or not getattr(self.brain, "ollama", None):
+            return raw_text
+        try:
+            response = await asyncio.wait_for(
+                self.brain.ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": self._get_notification_system_prompt(),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                "Formuliere diese autonome Aktion um — JARVIS-Butler-Stil. "
+                                "Verwende 'Ich habe mir erlaubt...' oder 'Ich habe bereits...'. "
+                                "Max 2 Saetze. Behalte die Fakten exakt bei:\n\n"
+                                + raw_text
+                            ),
+                        },
+                    ],
+                    model=settings.model_notify,
+                    think=False,
+                    max_tokens=120,
+                ),
+                timeout=5.0,
+            )
+            polished = (response.get("message", {}).get("content", "") or "").strip()
+            if polished and len(polished) > 10:
+                return polished
+        except Exception as e:
+            logger.debug("Auto-Action-LLM-Polish fehlgeschlagen: %s", e)
+        return raw_text
+
+    async def _polish_observation(self, raw_text: str) -> str:
+        """Poliert eine Beobachtung mit LLM in JARVIS-Butler-Stil.
+
+        Falls LLM nicht verfuegbar, wird der Rohtext zurueckgegeben.
+        """
+        if not raw_text or not getattr(self.brain, "ollama", None):
+            return raw_text
+        try:
+            response = await asyncio.wait_for(
+                self.brain.ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": self._get_notification_system_prompt(),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                "Formuliere diese Beobachtung um — kurz, trocken, JARVIS-Butler-Stil. "
+                                "Max 2 Saetze. Behalte die Fakten exakt bei, "
+                                "aendere nur den Ton (trockener Humor, britischer Butler):\n\n"
+                                + raw_text
+                            ),
+                        },
+                    ],
+                    model=settings.model_notify,
+                    think=False,
+                    max_tokens=120,
+                ),
+                timeout=5.0,
+            )
+            polished = (response.get("message", {}).get("content", "") or "").strip()
+            if polished and len(polished) > 10:
+                return polished
+        except Exception as e:
+            logger.debug("Observation-LLM-Polish fehlgeschlagen: %s", e)
+        return raw_text
 
     async def _run_seasonal_loop(self):
         """Zentrale Cover-Automatik.
