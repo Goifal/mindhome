@@ -1154,6 +1154,20 @@ D6 (Dynamic Few-Shot) → Braucht D5 (Quality Feedback)
     - LLM koennte eigene Entscheidungen erklaeren: "Ich habe die Heizung runtergedreht weil..."
     - Passt zu Hintergrund-Transparenz (Punkt 6)
 
+### Kategorie N: LLM-Erweiterungen (Review-Ergebnis — Neue Features)
+
+Diese Features wurden bei der Code-Analyse als fehlend identifiziert und sind
+NICHT durch bestehende Plan-Items abgedeckt.
+
+| # | Feature | Status | Was zu tun ist |
+|---|---|---|---|
+| N1 | Mood Detector → LLM | NEU | `mood_detector.py:39-51` nutzt Keyword-Listen (POSITIVE/NEGATIVE/IMPATIENT/TIRED_KEYWORDS). Stimmung wird durch Substring-Matching erkannt statt durch LLM-Verstaendnis. Sarkasmus, Ironie, Kontext werden komplett verpasst. Fast-Modell-Call fuer Sentiment-Analyse einbauen. **KRITISCH: Steuert die gesamte Persoenlichkeits-Anpassung** |
+| N2 | Zentraler format_as_jarvis() Wrapper | NEU | 33% aller proaktiven Nachrichten umgehen die Persoenlichkeit: Briefings (proactive.py:1073, 1117), Anticipation-Vorschlaege (brain.py:9352, 9363, 9369), Self-Optimization (brain.py:9550, 9558). Zentralen Wrapper bauen der JEDE ausgehende proaktive Nachricht durch einen kurzen LLM-Call (Fast-Modell) schickt fuer JARVIS-Stil-Formatierung |
+| N3 | Multi-Turn Tool Calling | NEU | Aktuell: LLM → Tool → Antwort (single-shot). LLM kann NICHT iterieren (Ergebnis analysieren → naechsten Tool-Call entscheiden). Tool-Loop in brain.py mit MAX_ITERATIONS=3 und Timeout. Ollama unterstuetzt das nativ ueber role:tool Messages |
+| N4 | Parallel Tool Execution | NEU | Tool-Calls werden sequentiell ausgefuehrt. 5 Lichter schalten = 5x nacheinander. Unabhaengige Tool-Calls per asyncio.gather parallel ausfuehren. Abhaengige weiterhin sequentiell |
+| N5 | LLM-generiertes Briefing | NEU | Morgen/Abend-Briefings in proactive.py:1073, 1117 sind Template-basiert und gehen direkt per emit_proactive() raus. Stattdessen: Alle Kontextdaten (Wetter, Kalender, Energie, Haus, offene Themen) sammeln und dem LLM als EIN natuerliches Butler-Briefing generieren lassen. NICHT identisch mit C10 (Summarizer) |
+| N6 | JSON-Mode fuer Tool-Calls | NEU | Ollama unterstuetzt `format: "json"` nativ. Aktuell Free-Form-Text fuer Tool-Call-Argumente → gelegentlich halluzinierte Parameter. JSON-Mode NUR bei Tool-Call-Responses aktivieren, NICHT bei normaler Konversation |
+
 ### Empfehlung: Priorisierung fuer maximalen Impact
 
 **Sofort (1 Session):**
@@ -1163,22 +1177,29 @@ D6 (Dynamic Few-Shot) → Braucht D5 (Quality Feedback)
 4. C2: Web Search aktivieren — 5 Min, `enabled: true`
 
 **Naechste Session:**
-5. B5: Inner State — JARVIS bekommt eigene Gefuehle
-6. B10: Emotional Memory lesen — "Geht es dir besser?"
-7. B4: Background Reasoning — JARVIS denkt im Idle
-8. D1: Task-Temperature — Bessere Steuerung
+5. N1: Mood Detector → LLM — KRITISCH, steuert alles
+6. N2: format_as_jarvis() Wrapper — 33% der Nachrichten werden JARVIS
+7. N5: LLM-generiertes Briefing — taeglicher MCU-Moment
+8. B5: Inner State — JARVIS bekommt eigene Gefuehle
+
+**Dritte Session:**
+9. N3: Multi-Turn Tool Calling — komplexe Aufgaben werden moeglich
+10. N4: Parallel Tool Execution — schnellere Multi-Device-Aktionen
+11. B10: Emotional Memory lesen — "Geht es dir besser?"
+12. D1: Task-Temperature — Bessere Steuerung
 
 **Spaeter:**
-9. D5+D6: Quality Feedback + Dynamic Few-Shot — Selbstverbesserung
-10. C5: Intent-Referenzierung mit "wie gestern" — Temporal-Verstaendnis
-11. C6: Semantic History Search — "Was hast du gemacht?"
-12. B2+B3: Context Compaction — Lange Gespraeche
+13. D5+D6: Quality Feedback + Dynamic Few-Shot — Selbstverbesserung
+14. C5: Intent-Referenzierung mit "wie gestern" — Temporal-Verstaendnis
+15. C6: Semantic History Search — "Was hast du gemacht?"
+16. B2+B3: Context Compaction — Lange Gespraeche
+17. N6: JSON-Mode fuer Tool-Calls — Stabilitaet
 
 ---
 
-## Erwartetes Endergebnis (95% MCU JARVIS)
+## Erwartetes Endergebnis (70-80% MCU JARVIS)
 
-Nach allen 5 Phasen:
+Nach allen Phasen + N-Features:
 
 - **Klingt** wie MCU JARVIS (Humor, Timing, Pushback, Empathie)
 - **Handelt** wie MCU JARVIS (proaktiv, eigenstaendig, vorausschauend)
@@ -1186,8 +1207,9 @@ Nach allen 5 Phasen:
 - **Fuehlt** wie MCU JARVIS (eigene Emotionen, Beziehungen)
 - **Lernt** wie MCU JARVIS (aus Fehlern, aus Beobachtungen, durch Fragen)
 
-### Verbleibende 5% (technische Limits)
+### Verbleibende 20-30% (technische Limits)
 
-- Antwortzeit 1-3s (nicht Echtzeit wie im Film)
-- Piper TTS ohne Stimm-Expressivitaet (kein hoerbarer Sarkasmus)
-- Weltwissen begrenzt auf LLM-Training + Web-Suche
+- Piper TTS ohne Stimm-Expressivitaet (~10-15%) — kein hoerbarer Sarkasmus
+- LLM-Reasoning-Tiefe (~5-10%) — Qwen3.5 35B ist sehr gut, aber nicht Frontier
+- Latenz (~3-5%) — 0.5-2s vs. Echtzeit im Film
+- **Mit TTS-Upgrade (Fish Speech, XTTS v2, Kokoro): 80-88% erreichbar**
