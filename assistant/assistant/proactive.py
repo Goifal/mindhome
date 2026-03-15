@@ -174,6 +174,8 @@ class ProactiveManager:
             "solar_surplus": (LOW, "Solar-Überschuss"),
             "scene_device_triggered": (LOW, "Szene durch Geraet aktiviert"),
             "shopping_reminder": (LOW, "Einkaufs-Erinnerung"),
+            "window_open_cover_blocked": (LOW, "Fenster offen — Cover blockiert"),
+            "cover_anomaly": (MEDIUM, "Cover-Anomalie erkannt"),
         }
         # Dynamische Appliance-Handler (aus YAML devices) einfuegen — ueberschreiben Defaults
         self.event_handlers.update(_dynamic_handlers)
@@ -446,6 +448,12 @@ class ProactiveManager:
 
         if new_val == old_val:
             return
+
+        # Event-basierte Wetter-Sensoren: Sofort-Reaktion auf kritische Änderungen
+        try:
+            await self._handle_weather_event(entity_id, new_val, old_val)
+        except Exception as _we:
+            logger.debug("Weather-Event-Handler Fehler: %s", _we)
 
         # Alarmsystem
         if entity_id.startswith("alarm_control_panel.") and new_val == "triggered":
@@ -897,7 +905,7 @@ class ProactiveManager:
                             try:
                                 await redis_client.set(redis_key, "1", ex=86400)
                             except Exception as e:
-                                logger.debug("Unhandled: %s", e)
+                                logger.warning("Unhandled: %s", e)
                 logger.info(
                     "Power-Close: %s über Schwelle (%s W >= %s W) → %d/%d Covers geschlossen",
                     entity_id, new_num, threshold, closed_count, len(cover_ids),
@@ -919,7 +927,7 @@ class ProactiveManager:
                                 has_any_lock = True
                                 break
                         except Exception as e:
-                            logger.debug("Unhandled: %s", e)
+                            logger.warning("Unhandled: %s", e)
                 if not (old_num >= threshold or has_any_lock):
                     continue  # Kein Schwellen-Übergang und kein Lock → nichts tun
                 # Nicht öffnen wenn jemand schläft — aber Lock trotzdem aufräumen
@@ -933,7 +941,7 @@ class ProactiveManager:
                         try:
                             power_active = bool(await redis_client.get(redis_key))
                         except Exception as e:
-                            logger.debug("Unhandled: %s", e)
+                            logger.warning("Unhandled: %s", e)
                     if not power_active:
                         continue
                     # Lock immer aufräumen — Strom ist unter Schwelle,
@@ -942,7 +950,7 @@ class ProactiveManager:
                         try:
                             await redis_client.delete(redis_key)
                         except Exception as e:
-                            logger.debug("Unhandled: %s", e)
+                            logger.warning("Unhandled: %s", e)
                     if sleeping:
                         continue  # Cover nicht öffnen, aber Lock ist weg
                     acted = await self._auto_cover_action(
@@ -1020,6 +1028,14 @@ class ProactiveManager:
                         text = f"{text}\n{predictive}"
                 except Exception as e:
                     logger.debug("Predictive Briefing Fehler: %s", e)
+
+                # Cover-Zusammenfassung im Morgen-Briefing
+                try:
+                    cover_summary = await self.get_cover_summary()
+                    if cover_summary:
+                        text = f"{text}\n{cover_summary}"
+                except Exception as e:
+                    logger.debug("Cover-Summary Fehler: %s", e)
 
                 # JARVIS-Begrüßung: Person-aware Anrede
                 _mb_persons = await self._get_persons_at_home()
@@ -2905,7 +2921,7 @@ class ProactiveManager:
                         first = high_urgency[0]
                         return f"Wartungshinweis, {title} — {first['description']}"
                 except Exception as e:
-                    logger.debug("Unhandled: %s", e)
+                    logger.warning("Unhandled: %s", e)
             return None
         except Exception as e:
             logger.debug("Observation-Generierung fehlgeschlagen: %s", e)
@@ -2929,8 +2945,18 @@ class ProactiveManager:
         await asyncio.sleep(PROACTIVE_SEASONAL_STARTUP_DELAY)
 
         # Redis-Keys für Dedup von automatischen Aktionen
-        _redis = getattr(self.brain, "memory", None)
-        _redis = getattr(_redis, "redis", None) if _redis else None
+        # Graceful Degradation: Bei Redis-Ausfall wird ohne Redis weitergearbeitet
+        _redis = None
+        _redis_available = False
+        try:
+            _redis = getattr(self.brain, "memory", None)
+            _redis = getattr(_redis, "redis", None) if _redis else None
+            if _redis:
+                await _redis.ping()
+                _redis_available = True
+        except Exception as e:
+            logger.warning("Cover-Loop: Redis nicht erreichbar — Safe Mode aktiv (kein Dedup, kein Lock): %s", e)
+            _redis = None
 
         # Zeitplan-Dedup: aus Redis laden damit Restart kein Doppel-Trigger ausloest
         _SCHEDULE_KEY = "mha:cover:last_schedule_action"
@@ -2947,7 +2973,7 @@ class ProactiveManager:
                     last_schedule_action = saved_action if isinstance(saved_action, str) else saved_action.decode()
                 logger.debug("Cover-Schedule State aus Redis: date=%s action=%s", last_action_date, last_schedule_action)
             except Exception as e:
-                logger.debug("Unhandled: %s", e)
+                logger.warning("Unhandled: %s", e)
         # Fallback bei Redis-Restart: Wenn kein gespeicherter State vorhanden
         # und es ist nach der typischen Morgens-Öffnungszeit, defensiv "open" annehmen
         # um doppelte Morgens-Öffnung zu vermeiden
@@ -2958,8 +2984,25 @@ class ProactiveManager:
                 last_action_date = _now.strftime("%Y-%m-%d")
                 logger.info("Cover-Schedule: Redis leer, nach 10 Uhr → defensiv 'open' angenommen")
 
+        # Startup-Reconciliation: Beim Start prüfen ob Covers im erwarteten Zustand sind
+        await self._startup_reconciliation(_redis)
+
         while self._running:
             try:
+                # Graceful Redis Re-Connect: Redis periodisch prüfen
+                if not _redis or not _redis_available:
+                    try:
+                        _redis_candidate = getattr(self.brain, "memory", None)
+                        _redis_candidate = getattr(_redis_candidate, "redis", None) if _redis_candidate else None
+                        if _redis_candidate:
+                            await _redis_candidate.ping()
+                            _redis = _redis_candidate
+                            _redis_available = True
+                            logger.info("Cover-Loop: Redis wieder erreichbar — Safe Mode deaktiviert")
+                    except Exception:
+                        _redis = None
+                        _redis_available = False
+
                 # Config bei jedem Zyklus frisch lesen (Hot-Reload aus UI)
                 seasonal_cfg = yaml_config.get("seasonal_actions", {})
                 check_interval = seasonal_cfg.get("check_interval_minutes", 15)
@@ -2973,7 +3016,15 @@ class ProactiveManager:
                     last_schedule_action = ""
                     last_action_date = today
 
-                states = await self.brain.ha.get_states()
+                # HA API Timeout-Handling
+                try:
+                    states = await asyncio.wait_for(
+                        self.brain.ha.get_states(), timeout=30.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Cover-Loop: HA API Timeout bei get_states() — Zyklus übersprungen")
+                    await asyncio.sleep(check_interval * 60)
+                    continue
                 if not states:
                     await asyncio.sleep(check_interval * 60)
                     continue
@@ -2985,7 +3036,7 @@ class ProactiveManager:
                     try:
                         await _redis.set("mha:weather:current_condition", weather["condition"], ex=300)
                     except Exception as e:
-                        logger.debug("Unhandled: %s", e)
+                        logger.warning("Unhandled: %s", e)
                 cover_profiles = self._load_cover_profiles()
 
                 # ── PRIORITÄTSSYSTEM ──────────────────────────────────
@@ -3041,7 +3092,7 @@ class ProactiveManager:
                         await _redis.set(_SCHEDULE_KEY, new_schedule_action, ex=86400)
                         await _redis.set(_SCHEDULE_DATE_KEY, today, ex=86400)
                     except Exception as e:
-                        logger.debug("Unhandled: %s", e)
+                        logger.warning("Unhandled: %s", e)
                 last_schedule_action = new_schedule_action
 
                 # 6. MARKISEN-AUSFAHREN bei Sonne (Bug 6: Dead Config lebendig machen)
@@ -3068,6 +3119,8 @@ class ProactiveManager:
                 if cover_cfg.get("presence_aware", False):
                     await self._cover_presence_logic(states, cover_cfg, auto_level, _redis, _cycle_acted)
 
+                # 11. PROAKTIVE VORSCHLÄGE (Schwellwerte optimieren)
+                await self._check_threshold_suggestions(weather, cover_cfg, _redis)
 
             except Exception as e:
                 logger.error("Cover-Automation Fehler: %s", e)
@@ -3153,6 +3206,36 @@ class ProactiveManager:
             rain_state = state_map[rain_eid].get("state", "off")
             rain = rain_state in ("on", "True", "true")
 
+        # Sensor-Plausibilitätsprüfung: unglaubwürdige Werte auf sichere Defaults setzen
+        if not (-40 <= temp <= 55):
+            logger.warning("Sensor-Plausibilität: Temperatur %s°C außerhalb [-40,55] — ignoriert", temp)
+            temp = 10.0
+        if not (0 <= wind <= 250):
+            logger.warning("Sensor-Plausibilität: Wind %s km/h außerhalb [0,250] — ignoriert", wind)
+            wind = 0.0
+        if not (0 <= lux <= 200000):
+            logger.warning("Sensor-Plausibilität: Lux %s außerhalb [0,200000] — ignoriert", lux)
+            lux = 0.0
+
+        # Sensor-Staleness: Warnung wenn Sensor seit >3h nicht aktualisiert
+        from datetime import timezone
+        for _eid, _label in [
+            (get_sensor_by_role("wind_sensor"), "Wind"),
+            (get_sensor_by_role("temp_outdoor"), "Temperatur"),
+        ]:
+            if _eid and _eid in state_map:
+                _lc = state_map[_eid].get("last_changed", "")
+                if _lc:
+                    try:
+                        from dateutil.parser import isoparse
+                        _last = isoparse(_lc)
+                        _age_h = (datetime.now(timezone.utc) - _last).total_seconds() / 3600
+                        if _age_h > 3:
+                            logger.warning("Sensor-Staleness: %s (%s) seit %.1fh nicht aktualisiert",
+                                           _label, _eid, _age_h)
+                    except Exception:
+                        pass
+
         return {
             "temperature": temp,
             "wind_speed": wind,
@@ -3182,36 +3265,220 @@ class ProactiveManager:
         return data.get("cover_profiles", {}).get("covers", [])
 
     @staticmethod
+    def _get_room_for_cover(entity_id: str) -> str:
+        """Raum-Matching über Config: Prüft zuerst cover_profiles, dann Entity-ID Heuristik."""
+        # 1. Explizites Mapping aus cover_profiles
+        data = _get_room_profiles_cached()
+        for cover in data.get("cover_profiles", {}).get("covers", []):
+            if cover.get("entity_id") == entity_id:
+                room = cover.get("room", "")
+                if room:
+                    return room.lower()
+        # 2. Explizites room_mapping aus Config
+        room_mapping = yaml_config.get("seasonal_actions", {}).get(
+            "cover_automation", {},
+        ).get("room_mapping", {})
+        if entity_id in room_mapping:
+            return room_mapping[entity_id].lower()
+        # 3. Fallback: Heuristik aus Entity-ID
+        return entity_id.lower().replace("cover.", "").split("_")[0]
+
+    @staticmethod
     def _is_window_open(states: list, entity_id: str) -> bool:
-        """Prüft ob ein zugeordneter Fenster-Sensor offen ist (Feature 1)."""
+        """Prüft ob ein zugeordneter Fenster-Sensor offen ist (Feature 1).
+
+        Raum-Matching: Nutzt _get_room_for_cover für zuverlässigeres Matching.
+        """
         opening_sensors = yaml_config.get("opening_sensors", {}).get("entities", {})
-        # Suche Fenster-Sensoren die zum gleichen Raum/Cover gehoeren
-        eid_lower = entity_id.lower()
+        cover_room = ProactiveManager._get_room_for_cover(entity_id)
         for sensor_eid, sensor_cfg in (opening_sensors or {}).items():
-            # Match: Sensor-Name enthaelt ähnlichen Raumnamen wie Cover
             sensor_lower = sensor_eid.lower()
             sensor_type = sensor_cfg.get("type", "fenster") if isinstance(sensor_cfg, dict) else "fenster"
             if sensor_type not in ("fenster", "tuer"):
                 continue
-            # Raum aus Entity-ID extrahieren (cover.wohnzimmer → wohnzimmer)
-            cover_room = eid_lower.replace("cover.", "").split("_")[0]
-            if cover_room and cover_room in sensor_lower:
+            # Prüfe: Sensor enthält Raumnamen ODER explizites Cover-Mapping
+            sensor_room = ""
+            if isinstance(sensor_cfg, dict):
+                sensor_room = sensor_cfg.get("room", "").lower()
+            if (cover_room and cover_room in sensor_lower) or (sensor_room and sensor_room == cover_room):
                 for s in (states or []):
                     if s.get("entity_id") == sensor_eid and s.get("state") == "on":
                         return True
         return False
 
+    async def _startup_reconciliation(self, redis_client):
+        """Startup-Reconciliation: Prüft ob Covers nach Neustart im erwarteten Zustand sind.
+
+        Liest gespeicherte Reason-States aus Redis und vergleicht mit aktuellen
+        Positionen. Loggt Abweichungen und setzt ggf. Covers auf erwartete Position.
+        """
+        if not redis_client:
+            logger.info("Startup-Reconciliation: Übersprungen (kein Redis)")
+            return
+        try:
+            import json as _json
+            states = await self.brain.ha.get_states()
+            if not states:
+                return
+            cover_states = [s for s in states if s.get("entity_id", "").startswith("cover.")]
+            reconciled = 0
+            for cs in cover_states:
+                eid = cs.get("entity_id")
+                reason_raw = await redis_client.get(f"mha:cover:reason:{eid}")
+                if not reason_raw:
+                    continue
+                try:
+                    reason_data = _json.loads(reason_raw if isinstance(reason_raw, str) else reason_raw.decode())
+                except Exception:
+                    continue
+                expected_pos = reason_data.get("position")
+                if expected_pos is None:
+                    continue
+                current_pos = cs.get("attributes", {}).get("current_position")
+                if current_pos is None:
+                    continue
+                try:
+                    jarvis_pos = self.brain.executor._translate_cover_position_from_ha(eid, int(current_pos))
+                    if abs(jarvis_pos - expected_pos) > 15:
+                        logger.info(
+                            "Startup-Reconciliation: %s erwartet %d%%, ist %d%% (Grund: %s)",
+                            eid, expected_pos, jarvis_pos, reason_data.get("reason", "?"),
+                        )
+                        reconciled += 1
+                except (ValueError, TypeError):
+                    pass
+            if reconciled > 0:
+                logger.info("Startup-Reconciliation: %d Cover mit Abweichungen gefunden", reconciled)
+            else:
+                logger.info("Startup-Reconciliation: Alle Cover im erwarteten Zustand")
+        except Exception as e:
+            logger.warning("Startup-Reconciliation Fehler: %s", e)
+
+    # Rate-Limiting: max Aktionen pro Cover pro Stunde
+    _COVER_RATE_LIMIT_MAX = 6
+    _COVER_RATE_LIMIT_WINDOW = 3600  # 1 Stunde
+
+    async def _check_cover_rate_limit(self, entity_id: str, redis_client) -> bool:
+        """Prüft ob Rate-Limit für dieses Cover erreicht ist (max 6x/h). Returns True wenn blockiert."""
+        if not redis_client:
+            return False
+        try:
+            rate_key = f"mha:cover:rate_limit:{entity_id}"
+            count = await redis_client.get(rate_key)
+            if count and int(count) >= self._COVER_RATE_LIMIT_MAX:
+                logger.warning("Cover Rate-Limit: %s hat %s Aktionen/h erreicht — blockiert",
+                               entity_id, count)
+                return True
+        except Exception as e:
+            logger.warning("Unhandled: %s", e)
+        return False
+
+    async def _increment_cover_rate(self, entity_id: str, redis_client):
+        """Zählt Cover-Aktion hoch für Rate-Limiting."""
+        if not redis_client:
+            return
+        try:
+            rate_key = f"mha:cover:rate_limit:{entity_id}"
+            pipe = redis_client.pipeline()
+            pipe.incr(rate_key)
+            pipe.expire(rate_key, self._COVER_RATE_LIMIT_WINDOW)
+            await pipe.execute()
+        except Exception as e:
+            logger.warning("Unhandled: %s", e)
+
+    async def _set_cover_reason(self, entity_id: str, position: int, reason: str, redis_client):
+        """Speichert den Grund für die aktuelle Cover-Position in Redis."""
+        if not redis_client:
+            return
+        try:
+            import json as _json
+            reason_data = _json.dumps({
+                "position": position,
+                "reason": reason,
+                "timestamp": datetime.now().isoformat(),
+            })
+            await redis_client.set(f"mha:cover:reason:{entity_id}", reason_data, ex=86400)
+        except Exception as e:
+            logger.warning("Unhandled: %s", e)
+
+    async def get_cover_reason(self, entity_id: str) -> dict:
+        """Liest den Grund für die aktuelle Cover-Position (für Debug-Assistent)."""
+        try:
+            import json as _json
+            _redis = self.brain.memory.redis if self.brain.memory and hasattr(self.brain.memory, 'redis') else None
+            if not _redis:
+                return {}
+            data = await _redis.get(f"mha:cover:reason:{entity_id}")
+            if data:
+                return _json.loads(data if isinstance(data, str) else data.decode())
+        except Exception as e:
+            logger.warning("Unhandled: %s", e)
+        return {}
+
+    async def _schedule_position_verify(self, entity_id: str, target_position: int, redis_client):
+        """Plant eine Positions-Rückmelde-Prüfung nach 60s."""
+        async def _verify():
+            await asyncio.sleep(60)
+            try:
+                states = await self.brain.ha.get_states()
+                state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
+                current_pos = state.get("attributes", {}).get("current_position")
+                if current_pos is not None:
+                    jarvis_pos = self.brain.executor._translate_cover_position_from_ha(
+                        entity_id, int(current_pos),
+                    )
+                    if abs(jarvis_pos - target_position) > 10:
+                        logger.warning(
+                            "Cover Positions-Check: %s sollte bei %d%% sein, ist aber bei %d%%",
+                            entity_id, target_position, jarvis_pos,
+                        )
+                        # Anomalie tracken
+                        await self._track_cover_anomaly(entity_id, redis_client)
+            except Exception as e:
+                logger.debug("Cover Positions-Check Fehler: %s", e)
+        self.brain._task_registry.create_task(_verify(), name=f"cover_verify_{entity_id}")
+
+    async def _track_cover_anomaly(self, entity_id: str, redis_client):
+        """Trackt Anomalien (Ping-Pong-Erkennung): Wenn >4 Anomalien in 2h → Warnung."""
+        if not redis_client:
+            return
+        try:
+            anomaly_key = f"mha:cover:anomaly:{entity_id}"
+            count = await redis_client.incr(anomaly_key)
+            if count == 1:
+                await redis_client.expire(anomaly_key, 7200)  # 2h Fenster
+            if count >= 4:
+                logger.warning("Cover Anomalie: %s hat %d unerwartete Positionsänderungen in 2h (Ping-Pong?)",
+                               entity_id, count)
+                await self._notify("cover_anomaly", MEDIUM, {
+                    "message": f"Rollladen {entity_id} zeigt ungewöhnliches Verhalten ({count} Anomalien in 2h) — möglicherweise Ping-Pong",
+                    "entity": entity_id,
+                })
+                await redis_client.delete(anomaly_key)  # Reset nach Warnung
+        except Exception as e:
+            logger.warning("Unhandled: %s", e)
+
     async def _auto_cover_action(
         self, entity_id: str, position: int, reason: str,
         auto_level: int, redis_client=None, *, skip_power_lock: bool = False,
-        dedup_ttl: int = 1800,
+        dedup_ttl: int = 1800, dry_run: bool = False,
     ) -> bool:
         """Fuehrt eine automatische Cover-Aktion aus (oder schlaegt vor).
 
-        Checks: Dedup, Manual Override, Power-Close-Lock, Fenster-offen-Schutz.
+        Checks: Dedup, Manual Override, Power-Close-Lock, Fenster-offen-Schutz,
+        Rate-Limiting, Reason-State, Positions-Rückmelde-Check.
         """
+        # Dry-Run Modus: Nur loggen, nicht ausführen
+        _dry_run = dry_run or yaml_config.get("seasonal_actions", {}).get(
+            "cover_automation", {},
+        ).get("dry_run", False)
+
         _autonomy = getattr(self.brain, "autonomy", None)
         level = _autonomy.level if _autonomy else 2
+
+        # Rate-Limiting: max 6 Aktionen pro Cover pro Stunde
+        if await self._check_cover_rate_limit(entity_id, redis_client):
+            return False
 
         # Power-Close Lock: Wenn Strom-Automatik aktiv, andere Automatiken blockieren
         if not skip_power_lock and redis_client:
@@ -3222,7 +3489,7 @@ class ProactiveManager:
                     logger.debug("Cover-Auto: %s übersprungen — Power-Close Lock aktiv", entity_id)
                     return False
             except Exception as e:
-                logger.debug("Unhandled: %s", e)
+                logger.warning("Unhandled: %s", e)
         # Feature 2: Manual Override Schutz — wenn manuell bedient, nicht antasten
         if redis_client:
             override_key = f"mha:cover:manual_override:{entity_id}"
@@ -3241,7 +3508,14 @@ class ProactiveManager:
 
         if level >= auto_level:
             try:
-                states = await self.brain.ha.get_states()
+                # HA API Timeout-Handling: get_states mit Timeout
+                try:
+                    states = await asyncio.wait_for(
+                        self.brain.ha.get_states(), timeout=15.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Cover-Auto: HA API Timeout bei get_states() für %s", entity_id)
+                    return False
                 state = next((s for s in (states or []) if s.get("entity_id") == entity_id), {})
                 if not await self.brain.executor._is_safe_cover(entity_id, state):
                     return False
@@ -3249,25 +3523,76 @@ class ProactiveManager:
                 # Feature 1: Fenster-offen-Schutz (nur beim Schliessen)
                 if position < 50 and self._is_window_open(states, entity_id):
                     logger.info("Cover-Auto: %s Schliessen übersprungen — Fenster offen", entity_id)
+                    # Fenster-offen-Benachrichtigung senden
+                    await self._notify("window_open_cover_blocked", LOW, {
+                        "message": f"Rollladen {entity_id} nicht geschlossen — Fenster ist offen",
+                        "entity": entity_id,
+                    })
+                    return False
+
+                # Idempotenz: Nicht bewegen wenn schon am Ziel (±5%)
+                current_pos = state.get("attributes", {}).get("current_position")
+                if current_pos is not None:
+                    try:
+                        jarvis_pos = self.brain.executor._translate_cover_position_from_ha(
+                            entity_id, int(current_pos),
+                        )
+                        if abs(jarvis_pos - position) <= 5:
+                            logger.debug("Cover-Auto: %s bereits bei %d%% (Ziel %d%%) — übersprungen",
+                                         entity_id, jarvis_pos, position)
+                            return False
+                    except (ValueError, TypeError):
+                        pass
+
+                # Dry-Run: Nur loggen, nicht ausführen
+                if _dry_run:
+                    logger.info("Cover-Auto [DRY-RUN]: %s -> %d%% (%s)", entity_id, position, reason)
                     return False
 
                 ha_pos = self.brain.executor._translate_cover_position(entity_id, position)
                 # Feature 2: Markierung setzen BEVOR HA-Call, damit der State-Change als Jarvis-ausgeloest erkannt wird
                 if redis_client:
                     acting_key = f"mha:cover:jarvis_acting:{entity_id}"
-                    await redis_client.set(acting_key, "1", ex=120)
+                    await redis_client.set(acting_key, "1", ex=300)
                 await self.brain.ha.call_service(
                     "cover", "set_cover_position",
                     {"entity_id": entity_id, "position": ha_pos},
                 )
                 logger.info("Cover-Auto: %s -> %d%% (HA: %d%%) (%s)", entity_id, position, ha_pos, reason)
 
+                # Rate-Limiting: Zähler erhöhen
+                await self._increment_cover_rate(entity_id, redis_client)
+
+                # Reason-State in Redis speichern
+                await self._set_cover_reason(entity_id, position, reason, redis_client)
+
+                # Positions-Rückmelde-Check nach 60s
+                await self._schedule_position_verify(entity_id, position, redis_client)
+
+                # State-Machine Transition
+                cs = self._get_cover_state(entity_id)
+                if "sturm" in reason.lower() or "storm" in reason.lower():
+                    cs.transition(self.CoverState.STORM_SECURED, reason)
+                elif "sonne" in reason.lower() or "sonnenschutz" in reason.lower() or "blendschutz" in reason.lower():
+                    cs.transition(self.CoverState.SUN_PROTECTED, reason)
+                elif "nacht" in reason.lower() or "isolier" in reason.lower():
+                    cs.transition(self.CoverState.NIGHT_CLOSED, reason)
+                elif "heizung" in reason.lower():
+                    cs.transition(self.CoverState.HEATING_INSULATION, reason)
+                elif "morgens" in reason.lower() or "oeffnen" in reason.lower():
+                    cs.transition(self.CoverState.SCHEDULE_OPEN, reason)
+                elif "abends" in reason.lower() or "schliessen" in reason.lower():
+                    cs.transition(self.CoverState.SCHEDULE_CLOSED, reason)
+                else:
+                    new_state = self.CoverState.SCHEDULE_OPEN if position > 50 else self.CoverState.SCHEDULE_CLOSED
+                    cs.transition(new_state, reason)
+
                 # Feature 17: Aktions-Log für Dashboard
                 try:
                     from .cover_config import log_cover_action
                     log_cover_action(entity_id, position, reason)
                 except Exception as e:
-                    logger.debug("Unhandled: %s", e)
+                    logger.warning("Unhandled: %s", e)
                 # Cover-Licht Koordination: LightEngine informieren
                 try:
                     if hasattr(self.brain, "light_engine") and self.brain.light_engine:
@@ -3308,14 +3633,14 @@ class ProactiveManager:
             try:
                 storm_was_active = bool(await redis_client.get(storm_active_key))
             except Exception as e:
-                logger.debug("Unhandled: %s", e)
+                logger.warning("Unhandled: %s", e)
         if wind >= storm_speed:
             # Sturm aktiv: Covers sichern
             if redis_client:
                 try:
                     await redis_client.set(storm_active_key, "1", ex=7200)
                 except Exception as e:
-                    logger.debug("Unhandled: %s", e)
+                    logger.warning("Unhandled: %s", e)
             notified = False
             for s in (states or []):
                 eid = s.get("entity_id", "")
@@ -3352,7 +3677,7 @@ class ProactiveManager:
                 try:
                     await redis_client.delete(storm_active_key)
                 except Exception as e:
-                    logger.debug("Unhandled: %s", e)
+                    logger.warning("Unhandled: %s", e)
             logger.info("Cover-Wetter: Sturmwarnung aufgehoben (Wind %d km/h < %d km/h Schwelle)",
                         wind, storm_speed - hysteresis_wind)
 
@@ -3562,11 +3887,11 @@ class ProactiveManager:
                                     f"mha:cover:sun_closed:{entity_id}", "1", ex=7200,
                                 )
                             except Exception as e:
-                                logger.debug("Unhandled: %s", e)
+                                logger.warning("Unhandled: %s", e)
             elif not sun_hitting:
                 # Sonne nicht mehr auf Fenster — wieder oeffnen
-                # ABER: Nicht oeffnen wenn Bettsensor aktiv (Feature 13)
-                if bed_occupied:
+                # ABER: Nicht oeffnen wenn geschlafen wird (Feature 13)
+                if bed_occupied or await self._is_sleeping(states):
                     continue
                 if cycle_acted is not None and entity_id in cycle_acted:
                     continue
@@ -3587,7 +3912,7 @@ class ProactiveManager:
                             try:
                                 await redis_client.delete(sun_closed_key)
                             except Exception as e:
-                                logger.debug("Unhandled: %s", e)
+                                logger.warning("Unhandled: %s", e)
     async def _cover_temperature_logic(
         self, states, weather, cover_cfg, cover_profiles, auto_level, redis_client,
         cycle_acted=None,
@@ -3741,7 +4066,7 @@ class ProactiveManager:
         except (ValueError, IndexError):
             open_min, close_min = 450, 1140
 
-        tolerance = 15
+        tolerance = 20  # Muss > check_interval sein damit kein Zyklus die Aktion verpasst
         gradual = cover_cfg.get("gradual_morning", False)
         wave_open = cover_cfg.get("wave_open", False)
 
@@ -3861,7 +4186,7 @@ class ProactiveManager:
                                     _auto_level, _redis,
                                 )
                             except Exception as e:
-                                logger.debug("Unhandled: %s", e)
+                                logger.warning("Unhandled: %s", e)
                         if _count > 0:
                             await self._notify("seasonal_cover", LOW, {
                                 "action": "open",
@@ -3896,7 +4221,7 @@ class ProactiveManager:
                         if redis_client:
                             await redis_client.delete(self._SLEEP_LOCK_KEY)
                     except Exception as e:
-                        logger.debug("Unhandled: %s", e)
+                        logger.warning("Unhandled: %s", e)
                     await self._notify("seasonal_cover", LOW, {
                         "action": "open",
                         "message": f"Rollläden geöffnet ({reason})",
@@ -3934,7 +4259,7 @@ class ProactiveManager:
                     continue
                 acted = await self._auto_cover_action(
                     eid, 0, f"Abends schliessen ({reason})",
-                    auto_level, redis_client,
+                    auto_level, redis_client, dedup_ttl=900,
                 )
                 if acted:
                     count += 1
@@ -5146,18 +5471,18 @@ class ProactiveManager:
             if bed_sensors:
                 return any(s.get("state") == "on" for s in bed_sensors)
         except Exception as e:
-            logger.debug("Unhandled: %s", e)
+            logger.warning("Unhandled: %s", e)
         return False
 
     _SLEEP_LOCK_KEY = "mha:cover:sleep_lock"
-    _SLEEP_LOCK_TTL_DEFAULT = 300  # 5 Minuten Fallback
+    _SLEEP_LOCK_TTL_DEFAULT = 1800  # 30 Minuten Fallback
 
     @property
     def _sleep_lock_ttl(self) -> int:
-        """Sleep-Lock TTL aus Config (Minuten → Sekunden), Fallback 5 Min."""
+        """Sleep-Lock TTL aus Config (Minuten → Sekunden), Fallback 30 Min."""
         try:
             cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
-            minutes = cover_cfg.get("sleep_lock_minutes", 5)
+            minutes = cover_cfg.get("sleep_lock_minutes", 30)
             return max(60, int(minutes) * 60)  # Minimum 1 Minute
         except Exception:
             return self._SLEEP_LOCK_TTL_DEFAULT
@@ -5452,3 +5777,382 @@ class ProactiveManager:
                 logger.debug("Ambient Presence Fehler: %s", e)
 
             await asyncio.sleep(interval)
+
+    # ------------------------------------------------------------------
+    # Event-basierte Wetter-Sensoren (WebSocket-Subscription)
+    # ------------------------------------------------------------------
+
+    async def _subscribe_weather_events(self, ws):
+        """Subscribed auf Wetter-Sensor State-Changes via WebSocket.
+
+        Statt alle 15 Min zu pollen, reagiert die Cover-Automation sofort
+        auf kritische Wetter-Änderungen (Wind-Spitzen, Regeneinbruch).
+        """
+        from .cover_config import get_sensor_by_role
+        weather_sensors = []
+        for role in ("wind_sensor", "temp_outdoor", "rain_sensor", "sun_sensor"):
+            eid = get_sensor_by_role(role)
+            if eid:
+                weather_sensors.append(eid)
+        if not weather_sensors:
+            return
+
+        self._weather_event_cache = {}
+        logger.info("Wetter-Event-Subscription: %d Sensoren registriert", len(weather_sensors))
+
+    async def _handle_weather_event(self, entity_id: str, new_state: str, old_state: str):
+        """Reagiert auf kritische Wetter-Changes (Wind-Spike, Regen-Start)."""
+        from .cover_config import get_sensor_by_role
+
+        _redis = getattr(getattr(self.brain, "memory", None), "redis", None)
+
+        # Wind-Spike: Sofortiger Sturmschutz wenn Wind plötzlich über Schwelle
+        wind_eid = get_sensor_by_role("wind_sensor")
+        if entity_id == wind_eid:
+            try:
+                wind = float(new_state)
+                cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
+                storm_speed = cover_cfg.get("storm_wind_speed", 50)
+                if wind >= storm_speed:
+                    # Sofort-Dedup: Nicht doppelt auslösen wenn Loop auch gerade prüft
+                    if _redis:
+                        dedup = await _redis.get("mha:cover:weather_event_storm")
+                        if dedup:
+                            return
+                        await _redis.set("mha:cover:weather_event_storm", "1", ex=300)
+                    logger.warning("Wetter-Event: Wind-Spike %s km/h >= %s — Sofort-Sturmschutz",
+                                   wind, storm_speed)
+            except (ValueError, TypeError):
+                pass
+
+        # Regen-Start: Sofort Markisen einfahren
+        rain_eid = get_sensor_by_role("rain_sensor")
+        if entity_id == rain_eid and new_state in ("on", "True", "true") and old_state in ("off", "False", "false"):
+            if _redis:
+                dedup = await _redis.get("mha:cover:weather_event_rain")
+                if dedup:
+                    return
+                await _redis.set("mha:cover:weather_event_rain", "1", ex=300)
+            logger.info("Wetter-Event: Regeneinbruch erkannt — Markisen sofort einfahren")
+
+    # ------------------------------------------------------------------
+    # State-Machine pro Cover
+    # ------------------------------------------------------------------
+
+    class CoverState:
+        """Einfache State-Machine pro Cover.
+
+        States: idle, sun_protected, storm_secured, night_closed,
+                manual_override, schedule_open, schedule_closed
+        Transitions werden protokolliert für Debugging.
+        """
+        IDLE = "idle"
+        SUN_PROTECTED = "sun_protected"
+        STORM_SECURED = "storm_secured"
+        NIGHT_CLOSED = "night_closed"
+        MANUAL_OVERRIDE = "manual_override"
+        SCHEDULE_OPEN = "schedule_open"
+        SCHEDULE_CLOSED = "schedule_closed"
+        HEATING_INSULATION = "heating_insulation"
+
+        def __init__(self, entity_id: str):
+            self.entity_id = entity_id
+            self.state = self.IDLE
+            self.since = datetime.now()
+            self.history: list[tuple[str, str, str]] = []  # (timestamp, from, to)
+
+        def transition(self, new_state: str, reason: str = ""):
+            if new_state != self.state:
+                self.history.append((
+                    datetime.now().isoformat(),
+                    self.state,
+                    new_state,
+                ))
+                # Max 20 History-Einträge behalten
+                if len(self.history) > 20:
+                    self.history = self.history[-20:]
+                logger.debug("CoverState %s: %s → %s (%s)",
+                             self.entity_id, self.state, new_state, reason)
+                self.state = new_state
+                self.since = datetime.now()
+
+        def to_dict(self) -> dict:
+            return {
+                "entity_id": self.entity_id,
+                "state": self.state,
+                "since": self.since.isoformat(),
+                "history": self.history[-5:],
+            }
+
+    _cover_states: dict[str, "ProactiveManager.CoverState"] = {}
+
+    def _get_cover_state(self, entity_id: str) -> "ProactiveManager.CoverState":
+        """Holt oder erstellt die State-Machine für ein Cover."""
+        if entity_id not in self._cover_states:
+            self._cover_states[entity_id] = self.CoverState(entity_id)
+        return self._cover_states[entity_id]
+
+    def get_all_cover_states(self) -> list[dict]:
+        """Gibt alle Cover-States zurück (für Debug/Dashboard)."""
+        return [cs.to_dict() for cs in self._cover_states.values()]
+
+    # ------------------------------------------------------------------
+    # Morgen-Briefing: Cover-Zusammenfassung
+    # ------------------------------------------------------------------
+
+    async def get_cover_summary(self) -> str:
+        """Erzeugt eine Zusammenfassung des Cover-Zustands für das Morgen-Briefing."""
+        try:
+            import json as _json
+            states = await self.brain.ha.get_states()
+            if not states:
+                return ""
+            covers = [s for s in states if s.get("entity_id", "").startswith("cover.")]
+            if not covers:
+                return ""
+
+            open_covers = []
+            closed_covers = []
+            partial_covers = []
+            for c in covers:
+                eid = c.get("entity_id")
+                pos = c.get("attributes", {}).get("current_position")
+                if pos is None:
+                    continue
+                try:
+                    jarvis_pos = self.brain.executor._translate_cover_position_from_ha(eid, int(pos))
+                except (ValueError, TypeError):
+                    jarvis_pos = int(pos)
+                name = c.get("attributes", {}).get("friendly_name", eid.replace("cover.", ""))
+                if jarvis_pos >= 90:
+                    open_covers.append(name)
+                elif jarvis_pos <= 10:
+                    closed_covers.append(name)
+                else:
+                    partial_covers.append(f"{name} ({jarvis_pos}%)")
+
+            # Anomalien der letzten Nacht prüfen
+            anomaly_count = 0
+            _redis = getattr(getattr(self.brain, "memory", None), "redis", None)
+            if _redis:
+                for c in covers:
+                    eid = c.get("entity_id")
+                    anomaly_raw = await _redis.get(f"mha:cover:anomaly:{eid}")
+                    if anomaly_raw:
+                        try:
+                            anomaly_count += int(anomaly_raw)
+                        except (ValueError, TypeError):
+                            pass
+
+            parts = []
+            if open_covers:
+                parts.append(f"{len(open_covers)} offen")
+            if closed_covers:
+                parts.append(f"{len(closed_covers)} geschlossen")
+            if partial_covers:
+                parts.append(f"{len(partial_covers)} teilweise ({', '.join(partial_covers[:3])})")
+            if anomaly_count > 0:
+                parts.append(f"{anomaly_count} Anomalien letzte Nacht")
+
+            if not parts:
+                return ""
+            return f"Rollläden: {', '.join(parts)}."
+        except Exception as e:
+            logger.debug("Cover-Summary Fehler: %s", e)
+            return ""
+
+    # ------------------------------------------------------------------
+    # Proaktive Vorschläge (Schwellwerte anpassen)
+    # ------------------------------------------------------------------
+
+    async def _check_threshold_suggestions(self, weather: dict, cover_cfg: dict, redis_client):
+        """Analysiert ob Schwellwerte suboptimal sind und schlägt Anpassungen vor.
+
+        Beispiel: Sonnenschutz triggert bei 26°C aber Nutzer öffnet manuell schon bei 24°C
+        → Vorschlag: heat_protection_temp auf 24°C senken.
+        """
+        if not redis_client:
+            return
+        try:
+            # Nur 1x pro Tag prüfen
+            dedup_key = "mha:cover:threshold_suggestion"
+            already = await redis_client.get(dedup_key)
+            if already:
+                return
+            await redis_client.set(dedup_key, "1", ex=86400)
+
+            suggestions = []
+            temp = weather.get("temperature", 20)
+            heat_temp = cover_cfg.get("heat_protection_temp", 26)
+
+            # Prüfe: Wurden Cover manuell bei niedrigerer Temperatur geschlossen?
+            import json as _json
+            keys = []
+            # Scan für manuelle Override-Keys
+            cursor = 0
+            while True:
+                cursor, batch = await redis_client.scan(cursor, match="mha:cover:manual_override:*", count=50)
+                keys.extend(batch)
+                if cursor == 0:
+                    break
+
+            if len(keys) >= 3 and temp < heat_temp - 2:
+                suggestions.append(
+                    f"Sonnenschutz-Schwelle liegt bei {heat_temp}°C, aber {len(keys)} Rollläden "
+                    f"wurden manuell gesteuert bei {temp:.0f}°C. Vorschlag: heat_protection_temp "
+                    f"auf {int(temp)}°C senken?"
+                )
+
+            # Wind-Schwelle: Sturmschutz zu oft/selten ausgelöst?
+            storm_count_raw = await redis_client.get("mha:cover:storm_trigger_count")
+            if storm_count_raw:
+                storm_count = int(storm_count_raw)
+                storm_speed = cover_cfg.get("storm_wind_speed", 50)
+                if storm_count > 10:  # >10 Sturmauslösungen → Schwelle evtl. zu niedrig
+                    suggestions.append(
+                        f"Sturmschutz wurde {storm_count}x in letzter Zeit ausgelöst. "
+                        f"Vorschlag: storm_wind_speed von {storm_speed} auf {storm_speed + 5} km/h erhöhen?"
+                    )
+
+            for suggestion in suggestions:
+                await self._notify("learning_suggestion", LOW, {
+                    "message": suggestion,
+                    "suggestion": True,
+                })
+        except Exception as e:
+            logger.debug("Threshold-Suggestion Fehler: %s", e)
+
+    # ------------------------------------------------------------------
+    # Konfigurations-Assistent
+    # ------------------------------------------------------------------
+
+    async def get_cover_config_help(self, question: str = "") -> str:
+        """Konfigurations-Assistent: Beantwortet Fragen zur Cover-Konfiguration.
+
+        Kann vom LLM aufgerufen werden wenn der Nutzer nach Cover-Einstellungen fragt.
+        """
+        try:
+            cover_cfg = yaml_config.get("seasonal_actions", {}).get("cover_automation", {})
+            profiles = self._load_cover_profiles()
+            rp_data = _get_room_profiles_cached()
+            markise_cfg = rp_data.get("markisen", {})
+
+            config_summary = []
+            config_summary.append("=== Cover-Automation Konfiguration ===")
+            config_summary.append(f"Wetter-Schutz: {'aktiv' if cover_cfg.get('weather_protection', True) else 'inaktiv'}")
+            config_summary.append(f"Sonnenschutz-Temperatur: {cover_cfg.get('heat_protection_temp', 26)}°C")
+            config_summary.append(f"Sturm-Windgeschwindigkeit: {cover_cfg.get('storm_wind_speed', 50)} km/h")
+            config_summary.append(f"Hysterese Wind: {cover_cfg.get('hysteresis_wind', 10)} km/h")
+            config_summary.append(f"Hysterese Temperatur: {cover_cfg.get('hysteresis_temp', 2)}°C")
+            config_summary.append(f"Sun-Tracking: {'aktiv' if cover_cfg.get('sun_tracking', True) else 'inaktiv'}")
+            config_summary.append(f"Nacht-Isolierung: {'aktiv' if cover_cfg.get('night_insulation', True) else 'inaktiv'}")
+            config_summary.append(f"Frost-Schutz Temp: {cover_cfg.get('frost_protection_temp', 3)}°C")
+            config_summary.append(f"Morgen-Sonnencheck: {'aktiv' if cover_cfg.get('wakeup_sun_check', True) else 'inaktiv'}")
+            config_summary.append(f"Graduelles Öffnen: {'aktiv' if cover_cfg.get('gradual_morning', False) else 'inaktiv'}")
+            config_summary.append(f"Wellen-Öffnen: {'aktiv' if cover_cfg.get('wave_open', False) else 'inaktiv'}")
+            config_summary.append(f"Heizungs-Integration: {'aktiv' if cover_cfg.get('heating_integration', False) else 'inaktiv'}")
+            config_summary.append(f"Dry-Run: {'aktiv' if cover_cfg.get('dry_run', False) else 'inaktiv'}")
+            config_summary.append(f"Markisen Wind-Einfahrt: {markise_cfg.get('wind_retract_speed', 40)} km/h")
+            config_summary.append(f"Markisen Regen-Einfahrt: {'ja' if markise_cfg.get('rain_retract', True) else 'nein'}")
+            config_summary.append(f"\n{len(profiles)} Cover-Profile konfiguriert:")
+            for p in profiles[:10]:
+                config_summary.append(
+                    f"  - {p.get('entity_id')}: Raum={p.get('room', '?')}, "
+                    f"auto={'ja' if p.get('allow_auto') else 'nein'}, "
+                    f"Azimut {p.get('sun_exposure_start', 0)}-{p.get('sun_exposure_end', 360)}°"
+                )
+
+            return "\n".join(config_summary)
+        except Exception as e:
+            return f"Konfigurations-Fehler: {e}"
+
+    # ------------------------------------------------------------------
+    # Debug-Assistent: "Warum ist mein Rollladen zu?"
+    # ------------------------------------------------------------------
+
+    async def debug_cover_state(self, entity_id: str = "") -> str:
+        """Erklärt warum ein Cover in seinem aktuellen Zustand ist.
+
+        Kombiniert: Reason-State aus Redis, State-Machine History,
+        aktuelle Sensor-Werte, und Cover-Profil-Konfiguration.
+        """
+        try:
+            import json as _json
+            parts = []
+
+            if not entity_id:
+                # Wenn keine Entity angegeben: alle Cover mit Reason auflisten
+                states = await self.brain.ha.get_states()
+                covers = [s for s in (states or []) if s.get("entity_id", "").startswith("cover.")]
+                for c in covers[:15]:
+                    eid = c.get("entity_id")
+                    name = c.get("attributes", {}).get("friendly_name", eid)
+                    pos = c.get("attributes", {}).get("current_position", "?")
+                    reason = await self.get_cover_reason(eid)
+                    reason_text = reason.get("reason", "kein Grund gespeichert") if reason else "kein Grund gespeichert"
+                    parts.append(f"- {name}: Position {pos}% — {reason_text}")
+                return "Cover-Status:\n" + "\n".join(parts) if parts else "Keine Cover gefunden."
+
+            # Einzelnes Cover analysieren
+            states = await self.brain.ha.get_states()
+            state = next((s for s in (states or []) if s.get("entity_id") == entity_id), None)
+            if not state:
+                return f"Cover {entity_id} nicht gefunden."
+
+            name = state.get("attributes", {}).get("friendly_name", entity_id)
+            pos = state.get("attributes", {}).get("current_position", "?")
+            parts.append(f"=== {name} ({entity_id}) ===")
+            parts.append(f"Position: {pos}%")
+
+            # Reason-State
+            reason = await self.get_cover_reason(entity_id)
+            if reason:
+                parts.append(f"Letzter Grund: {reason.get('reason', '?')}")
+                parts.append(f"Zeitpunkt: {reason.get('timestamp', '?')}")
+            else:
+                parts.append("Kein Grund gespeichert (manuell oder vor Reason-Tracking)")
+
+            # State-Machine
+            if entity_id in self._cover_states:
+                cs = self._cover_states[entity_id]
+                parts.append(f"State-Machine: {cs.state} (seit {cs.since.strftime('%H:%M')})")
+                if cs.history:
+                    parts.append("Letzte Übergänge:")
+                    for ts, from_s, to_s in cs.history[-5:]:
+                        parts.append(f"  {ts}: {from_s} → {to_s}")
+
+            # Cover-Profil
+            profiles = self._load_cover_profiles()
+            profile = next((p for p in profiles if p.get("entity_id") == entity_id), None)
+            if profile:
+                parts.append(f"Profil: Raum={profile.get('room', '?')}, "
+                             f"Azimut {profile.get('sun_exposure_start', 0)}-{profile.get('sun_exposure_end', 360)}°, "
+                             f"auto={'ja' if profile.get('allow_auto') else 'nein'}")
+
+            # Aktuelle Checks
+            _redis = getattr(getattr(self.brain, "memory", None), "redis", None)
+            if _redis:
+                manual = await _redis.get(f"mha:cover:manual_override:{entity_id}")
+                if manual:
+                    ttl = await _redis.ttl(f"mha:cover:manual_override:{entity_id}")
+                    parts.append(f"⚠ Manueller Override aktiv (noch {ttl}s)")
+                power_lock = await _redis.get(f"mha:cover:power_close:{entity_id}")
+                if power_lock:
+                    parts.append("⚠ Power-Close Lock aktiv")
+                acting = await _redis.get(f"mha:cover:jarvis_acting:{entity_id}")
+                if acting:
+                    parts.append("ℹ Jarvis-Acting Flag aktiv")
+                anomaly = await _redis.get(f"mha:cover:anomaly:{entity_id}")
+                if anomaly:
+                    parts.append(f"⚠ {anomaly} Anomalien in letzter Zeit")
+                rate = await _redis.get(f"mha:cover:rate_limit:{entity_id}")
+                if rate:
+                    parts.append(f"Rate-Limit: {rate}/{self._COVER_RATE_LIMIT_MAX} Aktionen/h")
+
+            # Fenster-Status
+            if self._is_window_open(states, entity_id):
+                parts.append("⚠ Fenster ist offen — Schließen blockiert")
+
+            return "\n".join(parts)
+        except Exception as e:
+            return f"Debug-Fehler: {e}"
