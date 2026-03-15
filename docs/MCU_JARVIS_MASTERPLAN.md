@@ -979,6 +979,139 @@ Wenn eine Session nicht alles schafft:
 
 ---
 
+## 8. Machbarkeitsanalyse und LLM-Potenzial
+
+### Bereinigte Feature-Bilanz nach Code-Verifikation
+
+| Kategorie | Urspruenglich | Existiert bereits | Wirklich zu bauen |
+|---|---|---|---|
+| EXISTIERT (nicht anfassen) | 4 | **14** | 0 |
+| ERWEITERN | 15 | — | **14** (Luecken schliessen) |
+| NEU bauen | 18 | — | **9** (statt 18, da 9 bereits existieren) |
+| **Gesamt Aufwand** | **37** | **14 fertig** | **23 Features** |
+
+### Machbarkeit pro Phase
+
+**Phase 1 (Persoenlichkeit):** SOFORT UMSETZBAR
+- B1 core_identity.py: ~30 Min, kein Risiko
+- A1 Few-Shot: ~20 Min, nur Text ergaenzen in personality.py:275-278
+- A2 Confidence: ~45 Min, neuer Platzhalter + Methode in PersonalityEngine
+- A3 Dramatisches Timing: ~15 Min, reine Prompt-Ergaenzung
+- A7, A10, A13: Jeweils ~15 Min, reine Prompt-Sektionen
+- A4 Voice-Mode: ~30 Min, Flag in build_system_prompt() + tts_enhancer.py
+- **Risiko:** Gering. Nur personality.py + neues core_identity.py. Keine Architektur-Aenderung.
+
+**Phase 2 (Proaktivitaet):** MACHBAR, MITTLERER AUFWAND
+- C7 Butler-Instinkt: ~1h, anticipation.py Threshold + Auto-Execute Logik
+- B4 Background Reasoning: ~2h, neuer async Loop in brain.py. ACHTUNG: GPU-Last bei Idle-Reasoning
+- C3 Follow-ups: ~1h, pending_topics Read-Logik in proactive.py
+- D3 Kontextuelles Schweigen: ~1h, situation_model.py → _callback_should_speak() Integration
+- **Risiko:** Mittel. B4 koennte GPU-Ressourcen verbrauchen waehrend User wartet.
+  **Mitigation:** Idle-Reasoning NUR wenn kein Request pending. Timeout bei >10s.
+
+**Phase 3 (Gedaechtnis):** MACHBAR, HOHER AUFWAND
+- B5 Inner State: ~2h, neues Modul + Redis-Keys + personality.py Integration
+- B10 Emotionale Kontinuitaet: ~1h, Read-Logik fuer emotional_memory + Prompt-Injection
+- B2 Context Compaction: ~2h, automatischer Trigger bei Token-Zaehlung
+- **Risiko:** Mittel-Hoch. B2 beruehrt den Kern-Flow in brain.py.
+  **Mitigation:** Feature-Toggle, extensive Tests, Fallback auf bestehende Methode.
+
+**Phase 4 (Intelligenz):** KOMPLEX, SCHRITTWEISE
+- B7 Unified Consciousness: PRUEFEN ob noetig — `_mega_tasks` ist bereits ein Single-Pass
+- C5 Intent-Referenzierung: ~2h, Date-Parser + Action-Log-Abfrage in dialogue_state.py
+- C6 Semantic History: ~3h, neues Tool + Narrative-Generierung
+- **Risiko:** Hoch bei B7 (brain.py Refactoring). Empfehlung: B7 ueberspringen wenn
+  `_mega_tasks` ausreicht. Stattdessen Einzelfeatures verbessern.
+
+**Phase 5 (Optimierung):** LANGFRISTIG
+- D1 Task-Temperature: ~30 Min, Dict in model_router.py
+- D5 Quality Feedback: ~2h, Pipeline response_quality.py → personality.py
+- D6/D7: Aufwendig, aber kein Risiko fuer bestehenden Code
+- **Risiko:** Gering. Alles hinter Feature-Toggles.
+
+### Kritische Abhaengigkeiten
+
+```
+B1 (core_identity.py) → Phase 1 Basis, KEINE Abhaengigkeit
+A1-A15 (Prompt-Sektionen) → Haengen von personality.py Platzhalter-System ab
+B5 (Inner State) → Braucht Redis, beeinflusst personality.py
+B4 (Background Reasoning) → Braucht Idle-Detection in brain.py + Ollama-Client
+B10 (Emotionale Kontinuitaet) → Braucht B5 (Inner State) fuer vollstaendiges Bild
+D5 (Quality Feedback) → Braucht response_quality.py Daten (existiert)
+D6 (Dynamic Few-Shot) → Braucht D5 (Quality Feedback)
+```
+
+### LLM-Potenzial: Was Qwen3.5 35B kann und der Plan noch nicht nutzt
+
+**BEREITS GENUTZT:**
+- Function Calling (74 Tools)
+- Persoenlichkeits-Prompting (mood/formality/sarcasm)
+- Zusammenfassung (summarizer.py)
+- Fakten-Extraktion (memory_extractor.py)
+- Implizite Intent-Erkennung (anticipation.py)
+- Muster-Erkennung (learning_observer.py)
+
+**IM PLAN, ABER NOCH NICHT UMGESETZT — SINNVOLL:**
+- **Task-aware Temperature (D1):** 35B kann bei 0.3 praezise Geraete steuern UND bei 0.8 kreativ plaudern
+- **Background Reasoning (B4):** 35B kann Haus-Zustand analysieren und Insights cachen
+- **Temporal Reasoning erweitert:** "Was passiert wenn..." Szenarien ueber Klima hinaus
+- **Quality Feedback (D5):** LLM bewertet eigene Antworten und lernt daraus
+- **Dynamic Few-Shot (D6):** Beste eigene Antworten als Beispiele recyclen
+
+**NICHT IM PLAN, ABER SINNVOLL MIT 35B:**
+
+1. **Chain-of-Thought fuer komplexe Entscheidungen**
+   - Bei Sicherheits-Entscheidungen oder Multi-Device-Szenarien: Explizites Durchdenken
+   - `personality.py`: "Bei komplexen Entscheidungen: Denke Schritt fuer Schritt durch"
+   - Qwen3.5 unterstuetzt `<think>` Tags (config.py:89 `supports_think_tags`)
+
+2. **Kontext-Kompression via LLM**
+   - Statt einfacher Truncation: LLM komprimiert alte Turns semantisch
+   - Behält Fakten, Stimmung und offene Themen, entfernt Wiederholungen
+   - Passt gut zu B2 (Context Compaction)
+
+3. **Selbst-Korrektur bei Tool-Fehlern**
+   - Wenn ein Function-Call fehlschlaegt: LLM analysiert Fehler und versucht Alternative
+   - `correction_memory.py` existiert bereits — LLM koennte aktiv daraus lernen
+   - "Letztes Mal hat set_light mit dieser Entity nicht funktioniert → Alternative probieren"
+
+4. **Multi-Turn Reasoning fuer Routinen**
+   - LLM plant komplexe Routinen ueber mehrere Schritte: "Guten Morgen" →
+     Rolladen + Licht + Kaffee + Briefing, abhaengig von Wochentag/Wetter/Kalender
+   - `action_planner.py` existiert, aber Routine-Planung koennte LLM-gestuetzt sein
+
+5. **Erklaerbare Entscheidungen**
+   - `explainability.py` existiert bereits — LLM koennte eigene Entscheidungen
+     natuerlichsprachlich erklaeren ("Ich habe die Heizung runtergedreht weil...")
+   - Passt zu A15 (Meta-Kognition)
+
+6. **Sentiment-bewusste Antwort-Generierung**
+   - LLM erkennt User-Stimmung nicht nur ueber MoodDetector sondern auch im eigenen
+     Reasoning: "Der User klingt genervt → kuerzere Antwort, kein Humor"
+   - Teilweise in MOOD_STYLES, aber LLM koennte dies feingranularer selbst steuern
+
+### Empfehlung: Priorisierung fuer maximalen Impact
+
+**Sofort (1 Session):**
+1. B1: core_identity.py — 30 Min, hoher Impact
+2. A1: Few-Shot auf 7 Beispiele — 20 Min, sofort spuerbar
+3. A2+A3+A7+A10+A13: Prompt-Sektionen — je 15 Min, nur Text
+4. C2: Web Search aktivieren — 5 Min, `enabled: true`
+
+**Naechste Session:**
+5. B5: Inner State — JARVIS bekommt eigene Gefuehle
+6. B10: Emotional Memory lesen — "Geht es dir besser?"
+7. B4: Background Reasoning — JARVIS denkt im Idle
+8. D1: Task-Temperature — Bessere Steuerung
+
+**Spaeter:**
+9. D5+D6: Quality Feedback + Dynamic Few-Shot — Selbstverbesserung
+10. C5: Intent-Referenzierung mit "wie gestern" — Temporal-Verstaendnis
+11. C6: Semantic History Search — "Was hast du gemacht?"
+12. B2+B3: Context Compaction — Lange Gespraeche
+
+---
+
 ## Erwartetes Endergebnis (95% MCU JARVIS)
 
 Nach allen 5 Phasen:
