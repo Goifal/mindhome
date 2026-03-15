@@ -1218,18 +1218,24 @@ D6 (Dynamic Few-Shot) → Braucht D5 (Quality Feedback)
 18. C5: Intent-Referenzierung "wie gestern" — 2h
 19. D5: Quality Feedback → personality.py — 2h
 
-**Spaeter / Niedrige Prioritaet:**
-20. B4: Background Reasoning — GPU-Contention pruefen
-21. C6: Semantic History Search — 3h
-22. C9: Automation-Debugging — 2h
-23. D3: Kontextuelles Schweigen — 1h
-24. D6: Dynamic Few-Shot — abhaengig von D5
-25. D7: Prompt-Versionierung — bei 2 Usern wenig Sinn
-26. N6: JSON-Mode — Stabilitaet
-27. B6: Relationship Model — Profiles befuellen
-28. A5: Narrative Boegen — Callback zu Themen
-29. B8: Dynamic Skill Acquisition — Abstrakte Konzepte
-30. B12: Proaktives Selbst-Lernen — aktiv fragen
+**Session 5 — Beziehungen & Kontext (~4h):**
+20. B6: Relationship Model — 1h, Profiles befuellen, Inside Jokes
+21. D3: Kontextuelles Schweigen — 1h, Film/Gaeste/Schlaf-Unterdrueckung
+22. A5: Narrative Gespraechsboegen — 1h, Callback zu frueheren Themen
+23. B12: Proaktives Selbst-Lernen — 1h, aktiv fragen bei Wissensluecken
+24. N6: JSON-Mode fuer Tool-Calls — 30 Min, Stabilitaet
+
+**Session 6 — Fortgeschrittene Intelligenz (~5h):**
+25. B4: Background Reasoning — 2-3h, GPU-Contention testen mit MoE
+26. B8: Dynamic Skill Acquisition — 1.5h, Abstrakte Konzepte ("Feierabend")
+27. C6: Semantic History Search — 3h, "Was hast du gestern gemacht?"
+28. C9: Automation-Debugging — 2h, Neues Tool debug_automation
+
+**Session 7 — Selbstverbesserung (~4h):**
+29. D6: Dynamic Few-Shot — 2h, abhaengig von D5 (Session 4)
+30. D7: Prompt-Versionierung — 2h
+
+> Nach Session 7 sind ALLE Features implementiert. Nichts bleibt offen.
 
 ---
 
