@@ -3415,6 +3415,28 @@ class FunctionExecutor:
             logger.error("Fehler bei %s: %s", function_name, e, exc_info=True)
             return {"success": False, "message": "Suboptimal. Ich versuche einen anderen Weg."}
 
+    async def execute_parallel(self, calls: list[tuple[str, dict]]) -> list[dict]:
+        """N4: Fuehrt mehrere Funktionen parallel aus.
+
+        Args:
+            calls: Liste von (function_name, arguments) Tuples
+
+        Returns:
+            Liste von Ergebnis-Dicts in gleicher Reihenfolge
+        """
+        if not calls:
+            return []
+        if len(calls) == 1:
+            return [await self.execute(calls[0][0], calls[0][1])]
+        results = await asyncio.gather(
+            *(self.execute(name, args) for name, args in calls),
+            return_exceptions=True,
+        )
+        return [
+            r if isinstance(r, dict) else {"success": False, "message": "Paralleler Aufruf fehlgeschlagen"}
+            for r in results
+        ]
+
     # ── Phase 18: Pre-Execution Consequence Check ──────────────
 
     async def _check_consequences(self, func_name: str, args: dict) -> Optional[str]:

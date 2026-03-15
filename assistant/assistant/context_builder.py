@@ -134,6 +134,8 @@ class ContextBuilder:
         self.semantic: Optional[SemanticMemory] = None
         self._activity_engine = None
         self._health_monitor = None
+        self._energy_optimizer = None
+        self._calendar_intelligence = None
         self._redis = None
         # Weather-Warning-Cache (ändert sich selten, spart Iteration pro Request)
         self._weather_cache: list[str] = []
@@ -155,6 +157,14 @@ class ContextBuilder:
     def set_health_monitor(self, health_monitor):
         """Setzt die Referenz zum Health Monitor (für Trend-Indikatoren)."""
         self._health_monitor = health_monitor
+
+    def set_energy_optimizer(self, energy_optimizer):
+        """S8#7: Setzt die Referenz zum Energy Optimizer."""
+        self._energy_optimizer = energy_optimizer
+
+    def set_calendar_intelligence(self, calendar_intelligence):
+        """S8#8: Setzt die Referenz zur Calendar Intelligence."""
+        self._calendar_intelligence = calendar_intelligence
 
     async def build(
         self, trigger: str = "voice", user_text: str = "", person: str = "",
@@ -203,6 +213,17 @@ class ContextBuilder:
         # Health-Trend-Indikatoren (Raumklima-Trends aus Snapshots)
         if self._health_monitor:
             parallel_tasks.append(("health_trend", self._health_monitor.get_trend_summary()))
+
+        # S8#7: Energie-Status als Kontext (Preis, Solar, Verbrauch)
+        if self._energy_optimizer:
+            parallel_tasks.append(("energy", self._energy_optimizer.get_energy_report()))
+
+        # S8#8: Kalender-Kontext (Konflikte, Gewohnheiten)
+        # get_context_hint() ist sync — in async wrappen
+        if self._calendar_intelligence:
+            async def _get_cal_hint():
+                return self._calendar_intelligence.get_context_hint()
+            parallel_tasks.append(("calendar_hint", _get_cal_hint()))
 
         # Semantisches Gedaechtnis — Guest-Mode-Check + Fakten parallel holen
         need_memories = not profile or profile.need_memories
@@ -287,6 +308,22 @@ class ContextBuilder:
             logger.debug("Health-Trend Fehler: %s", health_trend)
         elif health_trend:
             context["health_trend"] = health_trend
+
+        # S8#7: Energie-Kontext
+        energy_result = _result_map.get("energy")
+        if isinstance(energy_result, BaseException):
+            logger.debug("Energy-Report Fehler: %s", energy_result)
+        elif energy_result and isinstance(energy_result, dict):
+            _msg = energy_result.get("message", "")
+            if _msg and energy_result.get("success"):
+                context["energy"] = _msg
+
+        # S8#8: Kalender-Kontext
+        calendar_hint = _result_map.get("calendar_hint")
+        if isinstance(calendar_hint, BaseException):
+            logger.debug("Calendar-Hint Fehler: %s", calendar_hint)
+        elif calendar_hint and isinstance(calendar_hint, str):
+            context["calendar_intelligence"] = calendar_hint
 
         # Semantisches Gedaechtnis - relevante Fakten zur Anfrage
         # Im Guest-Mode keine persoenlichen Fakten preisgeben

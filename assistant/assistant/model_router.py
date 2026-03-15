@@ -41,6 +41,16 @@ class ModelRouter:
         self._smart_enabled = True
         self._fast_enabled = True
 
+        # D1: Task-aware Temperature — Temperatur je nach Aufgabentyp
+        self._task_temperatures = {
+            "command": 0.3,       # Geraetesteuerung: deterministisch
+            "factual": 0.4,       # Fakten-Fragen: wenig Kreativitaet
+            "conversation": 0.7,  # Gespraech: natuerlich, variabel
+            "creative": 0.8,      # Kreative Aufgaben: mehr Freiheit
+            "analysis": 0.5,      # Analyse/Diagnose: balanciert
+            "default": 0.6,       # Standard
+        }
+
         # Keywords und Config laden
         self._load_config()
 
@@ -285,6 +295,47 @@ class ModelRouter:
         model = self._cap_model(self.model_smart)
         logger.debug("SMART model (default) fuer: '%s' (actual: %s)", text, model)
         return model, "smart"
+
+    def classify_task(self, text: str) -> str:
+        """D1: Klassifiziert die Aufgabe fuer task-aware Temperature.
+
+        Returns:
+            Task-Typ: 'command', 'factual', 'conversation', 'creative', 'analysis', 'default'
+        """
+        text_lower = text.lower().strip()
+
+        # Command: Geraetesteuerung
+        for keyword in self.fast_keywords:
+            if self._word_match(keyword, text_lower):
+                return "command"
+
+        # Creative: Schreibaufgaben, Ideen
+        _creative_kw = ("schreib", "formulier", "erfinde", "stell dir vor", "was waere wenn",
+                        "was wäre wenn", "hypothetisch", "kreativ", "idee")
+        if any(kw in text_lower for kw in _creative_kw):
+            return "creative"
+
+        # Analysis: Diagnose, Vergleich, Erklaerung
+        _analysis_kw = ("analysier", "vergleich", "unterschied", "vor- und nachteil",
+                        "optimier", "berechne", "erklaer", "warum genau", "diagnos")
+        if any(kw in text_lower for kw in _analysis_kw):
+            return "analysis"
+
+        # Factual: Kurze Fakten-Fragen
+        _factual_starts = ("was ist", "wann ", "wo ", "wer ", "wie viel", "wie hoch", "wie warm")
+        if any(text_lower.startswith(w) for w in _factual_starts):
+            return "factual"
+
+        # Conversation: Laengerer Text, Fragen, Meinungen
+        if len(text_lower.split()) > 8 or "?" in text:
+            return "conversation"
+
+        return "default"
+
+    def get_task_temperature(self, text: str) -> float:
+        """D1: Gibt die optimale Temperature fuer den Task-Typ zurueck."""
+        task_type = self.classify_task(text)
+        return self._task_temperatures.get(task_type, self._task_temperatures["default"])
 
     def select_model(self, text: str) -> str:
         """Waehlt das passende Modell (Rueckwaertskompatibel, ohne Tier)."""

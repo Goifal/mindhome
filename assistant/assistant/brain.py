@@ -503,6 +503,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Health Monitor mit Context Builder verbinden (Trend-Indikatoren)
         self.context_builder.set_health_monitor(self.health_monitor)
 
+        # S8#7: Energy Optimizer mit Context Builder verbinden
+        self.context_builder.set_energy_optimizer(self.energy_optimizer)
+
+        # S8#8: Calendar Intelligence mit Context Builder verbinden
+        self.context_builder.set_calendar_intelligence(self.calendar_intelligence)
+
         # Redis für Context Builder (Guest-Mode-Check)
         self.context_builder.set_redis(self.memory.redis)
 
@@ -511,6 +517,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Mood Detector initialisieren
         await self.mood.initialize(redis_client=self.memory.redis)
+        self.mood.set_ollama(self.ollama)  # N1: LLM-basierte Stimmungserkennung
         self.personality.set_mood_detector(self.mood)
 
         # Phase 6: Redis für Personality Engine (Formality Score, Counter)
@@ -888,11 +895,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         stream_callback=None, timeout: float = 60.0,
         think: bool = None,
         tier: str = "",
+        temperature: float = None,
     ) -> dict:
         """LLM-Call mit automatischer Fallback-Kaskade (Deep -> Smart -> Fast).
 
         Returns: {"text": str, "model": str, "message": dict, "error": bool}
         """
+        # D1: Task-aware Temperature — kwargs nur wenn explizit gesetzt
+        _temp_kwargs = {"temperature": temperature} if temperature is not None else {}
+
         current = model
         while current:
             try:
@@ -902,7 +913,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     async for token in self.ollama.stream_chat(
                         messages=messages, model=current,
                         max_tokens=max_tokens, think=think,
-                        tier=tier,
+                        tier=tier, **_temp_kwargs,
                     ):
                         if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
                             stream_error = True
@@ -921,7 +932,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         self.ollama.chat(
                             messages=messages, model=current,
                             tools=tools, max_tokens=max_tokens, think=think,
-                            tier=tier,
+                            tier=tier, **_temp_kwargs,
                         ),
                         timeout=timeout,
                     )
@@ -2424,6 +2435,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _mega_tasks.append(("pending_learnings", self._get_pending_learnings()))
             _mega_tasks.append(("conv_memory_extended", self.conversation_memory.get_memory_context()))
 
+        # B10: Emotionale Kontinuitaet — vergangene negative Reaktionen beruecksichtigen
+        if self.memory_extractor and self._last_executed_action:
+            _mega_tasks.append(("emotional_ctx", MemoryExtractor.get_emotional_context(
+                action_type=self._last_executed_action,
+                person=person or "user",
+                redis_client=self.memory.redis,
+            )))
+
         # Conversation-Mode Detection + Memory-Callback parallelisieren
         # (bisher sequentiell NACH dem gather — spart ~50-200ms)
         _mega_tasks.append(("conv_mode_msgs", self.memory.get_recent_conversations(limit=10)))
@@ -2517,11 +2536,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         correction_ctx = _safe_get("correction_ctx")
         learned_rules = _safe_get("learned_rules") or []
         pending_learnings = _safe_get("pending_learnings")
+        emotional_ctx = _safe_get("emotional_ctx")  # B10: Emotionale Kontinuitaet
 
         context["mood"] = mood_result
 
         # 3. Modell waehlen (mit kontext-basiertem Upgrade)
         model, _model_tier = self.model_router.select_model_and_tier(text)
+        # D1: Task-aware Temperature
+        _task_temperature = self.model_router.get_task_temperature(text)
 
         # 3a. Gesprächsmodus erkennen (VOR Deep-Upgrade, damit Intelligence-
         # Features im Gespraechsmodus nicht unnoetig auf Deep eskalieren).
@@ -2966,6 +2988,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if whatif_prompt:
             sections.append(("whatif", whatif_prompt, 2))
 
+        # B10: Emotionale Kontinuitaet — vergangene negative Reaktionen als Kontext
+        if emotional_ctx:
+            sections.append(("emotional_memory", f"\n{emotional_ctx}", 2))
+
         # Sektionen nach Prioritaet sortieren und mit Budget einfuegen
         sections.sort(key=lambda s: s[2])
         sections_added = []
@@ -3346,6 +3372,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 timeout=float(llm_timeout),
                 think=_think_mode,
                 tier=_model_tier,
+                temperature=_task_temperature,  # D1: Task-aware Temperature
             )
             if _cascade["error"]:
                 _err = "Mein Sprachmodell reagiert nicht. Versuch es gleich nochmal."

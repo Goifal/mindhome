@@ -852,6 +852,7 @@ planner:
   - besuch kommt
   - gaeste
 mood:
+  llm_sentiment: true
   rapid_command_seconds: 5
   stress_decay_seconds: 300
   frustration_threshold: 3
