@@ -4435,6 +4435,27 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         # Personality-konsistente Fehlermeldung statt generischem "Problem: ..."
                         response_text = self.personality.get_error_response("general")
 
+        # Halluzinations-Schutz: Bei device_command mit 0 Aktionen darf das
+        # LLM nicht behaupten, es haette etwas getan. Typisch: "Ich habe den
+        # Befehl gesendet" oder "Die Maschine laeuft bereits" ohne Tool-Call.
+        if (profile and profile.category == "device_command"
+                and not executed_actions and response_text):
+            _halluc_patterns = [
+                r"(?:habe|hab)\s+(?:den|die|das|einen)?\s*(?:Befehl|Aktion)",
+                r"(?:bereits|schon)\s+(?:aktiviert|eingeschaltet|ausgef[uü]hrt|gesendet|erledigt)",
+                r"(?:l[aä]uft|ist)\s+(?:bereits|schon)\s+(?:seit|an|aktiv)",
+                r"(?:habe|hab).*(?:ausgef[uü]hrt|gesendet|eingeschaltet|aktiviert|erledigt)",
+                r"Befehl.*(?:erhalten|best[aä]tigt|gesendet|ausgef[uü]hrt)",
+                r"(?:eingeschaltet|aktiviert|gestartet).*(?:best[aä]tigt|erhalten)",
+            ]
+            _text_low = response_text.lower()
+            if any(re.search(p, _text_low, re.IGNORECASE) for p in _halluc_patterns):
+                logger.warning(
+                    "Halluzinations-Schutz: LLM behauptet Aktion bei 0 ausgefuehrten "
+                    "Aktionen. Text verworfen: '%s'", response_text[:80],
+                )
+                response_text = self.personality.get_error_response("unknown_device")
+
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
         # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur für
         # den General-Pfad (Tool-Calls) filtern, um doppelte Filterung zu vermeiden.
@@ -5660,6 +5681,35 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 verb_stem = m.group(1)  # z.B. "präzisier", "nenn"
                 return verb_stem + "e"
             text = re.sub(r"\b(\w{4,})en Sie\b", _imperativ_replace, text)
+
+            # "Sie VERB" Muster (Subjekt VOR Verb) → "du VERBst"
+            _sie_verb_map = [
+                (r"\bSie sollte\b", "du solltest"), (r"\bsie sollte\b", "du solltest"),
+                (r"\bSie sollten\b", "du solltest"), (r"\bsie sollten\b", "du solltest"),
+                (r"\bSie k[oö]nnte\b", "du könntest"), (r"\bsie k[oö]nnte\b", "du könntest"),
+                (r"\bSie k[oö]nnten\b", "du könntest"), (r"\bsie k[oö]nnten\b", "du könntest"),
+                (r"\bSie m[uü]sste\b", "du müsstest"), (r"\bsie m[uü]sste\b", "du müsstest"),
+                (r"\bSie m[uü]ssten\b", "du müsstest"), (r"\bsie m[uü]ssten\b", "du müsstest"),
+                (r"\bSie w[uü]rde\b", "du würdest"), (r"\bsie w[uü]rde\b", "du würdest"),
+                (r"\bSie w[uü]rden\b", "du würdest"), (r"\bsie w[uü]rden\b", "du würdest"),
+                (r"\bSie haben\b", "du hast"), (r"\bsie haben\b", "du hast"),
+                (r"\bSie sind\b", "du bist"), (r"\bsie sind\b", "du bist"),
+                (r"\bSie werden\b", "du wirst"), (r"\bsie werden\b", "du wirst"),
+                (r"\bSie m[uü]ssen\b", "du musst"), (r"\bsie m[uü]ssen\b", "du musst"),
+                (r"\bSie k[oö]nnen\b", "du kannst"), (r"\bsie k[oö]nnen\b", "du kannst"),
+                (r"\bSie wollen\b", "du willst"), (r"\bsie wollen\b", "du willst"),
+                (r"\bSie sollen\b", "du sollst"), (r"\bsie sollen\b", "du sollst"),
+                (r"\bSie d[uü]rfen\b", "du darfst"), (r"\bsie d[uü]rfen\b", "du darfst"),
+            ]
+            for pattern, replacement in _sie_verb_map:
+                text = re.sub(pattern, replacement, text)
+
+            # Reflexivpronomen: "sich" → "dich" nach du-Kontext
+            # "du solltest sich" → "du solltest dich"
+            # "du kannst sich" → "du kannst dich"
+            text = re.sub(r"(\bdu\s+\w+(?:st|t)\s+)sich\b", r"\1dich", text)
+            # "dich ... sich aufwaermen" Pattern auch abfangen
+            text = re.sub(r"(\bdu\b.{0,30})\bsich\b", r"\1dich", text)
 
             _formal_map = [
                 (r"\bIhnen\b", "dir"), (r"\bIhre\b", "deine"),
