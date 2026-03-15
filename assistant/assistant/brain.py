@@ -542,6 +542,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # D5: Quality Feedback → Personality
         self.personality.set_response_quality(self.response_quality)
+        self.personality.set_ollama(self.ollama)
 
         # Gelernten Sarkasmus-Level laden
         await self.personality.load_learned_sarcasm_level()
