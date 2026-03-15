@@ -30,7 +30,7 @@
 |---|---|
 | GPU | 24 GB VRAM |
 | Modelle | Qwen3.5 35B (aktuell einziges Modell — Fast/Smart/Deep zeigen alle auf 35B) |
-| Context Windows | Fast 16k, Smart 32k, Deep 64k |
+| Context Windows | Nicht per-Tier konfiguriert (abhaengig vom Modell, aktuell alle 35B) |
 | TTS | Piper (lokal, begrenzte Expressivitaet) |
 | Users | 2 Erwachsene (spaeter Kinder) |
 | Speaker Recognition | vorhanden |
@@ -63,8 +63,8 @@ main.py (FastAPI :8200)
 
 ### Bestehende Infrastruktur
 
-- **92 Python-Module** im `assistant/assistant/` Package
-- **119 Test-Dateien** in `assistant/tests/`
+- **89 Python-Module** im `assistant/assistant/` Package
+- **114 Test-Dateien** in `assistant/tests/`
 - **~83.500 LOC** gesamt
 - **144 Function-Call Tools**, 90+ Module
 - **Memory:** 3-Tier (Working/Episodic/Semantic) — auto-loaded in Context
@@ -92,7 +92,7 @@ main.py (FastAPI :8200)
 |---|---|---|
 | Few-Shot Examples | Einzelne Beispiele in `SYSTEM_PROMPT_TEMPLATE` | Nicht systematisch (5-8 JARVIS-Dialogbeispiele) |
 | Confidence-Sprachstil | Confidence-Tracking existiert | Sprachvariation fehlt |
-| Voice-Optimierung | `tts_speed` Config existiert | Voice-Output-Modus fehlt |
+| Voice-Optimierung | TTS-Enhancer (`tts_enhancer.py`) existiert | Voice-Output-Modus fehlt, kein `tts_speed` in Config |
 | Health Nagging | Schlaf-Tracking existiert | Butler-Nagging-Stil fehlt |
 | Context Compaction | Summarization-Patterns in `brain.py` | Nicht automatisch |
 | Background Reasoning | Background-Extraction existiert | Kein Idle-Reasoning |
@@ -801,7 +801,7 @@ cd /home/user/mindhome && python -m pytest assistant/tests/ -x
 │   │   ├── web_search.py            # Web-Suche
 │   │   ├── summarizer.py            # Tages-/Wochen-Zusammenfassungen
 │   │   ├── tts_enhancer.py          # TTS-Aufbereitung
-│   │   └── ... (92 Module gesamt)
+│   │   └── ... (89 Module gesamt)
 │   ├── config/
 │   │   ├── settings.yaml            # Hauptkonfiguration (43KB)
 │   │   ├── easter_eggs.yaml         # Easter Eggs
