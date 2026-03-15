@@ -270,6 +270,16 @@ self_awareness:
 proactive_personality:
   enabled: true
   sarcasm_in_notifications: true
+core_identity:
+  enabled: true
+confidence_style:
+  enabled: true
+dramatic_timing:
+  enabled: true
+situative_improvisation:
+  enabled: true
+creative_problem_solving:
+  enabled: true
 character_lock:
   enabled: true
   closing_anchor: true

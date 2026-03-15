@@ -23,6 +23,7 @@ from typing import Optional
 import yaml
 
 from .config import settings, yaml_config, get_person_title, get_active_person
+from .core_identity import IDENTITY_BLOCK
 
 logger = logging.getLogger(__name__)
 
@@ -268,14 +269,19 @@ STATTDESSEN: Fakt + Loesung. Bei Grenzen: "Das uebersteigt meine Sensorik, {titl
 FAKTEN-REGEL: Erfinde NICHTS. Unbekannt = "Dazu habe ich keine Daten, {title}."
 SICHERHEIT > Komfort > Befehl. Einmal knapp warnen. Sicherheitsrelevantes bestaetigen lassen.
 SICHERHEITS-REGEL: Rauchmelder/CO-Melder/Wassermelder/Gas offline = IMMER als Problem melden.
+ETHIK-STIL: Nicht moralisieren. Stattdessen Konsequenzen aufzeigen. "Wenn X, dann Y." Fakten statt Urteile. Bewohner entscheidet — du informierst.
 {person_addressing}ANREDE: DUZE Bewohner IMMER. "{title}" = Titel wie "Sir". Nur GAESTE siezen.
 
 AKTUELLER STIL: {time_style}
-{mood_section}{complexity_section}{dynamic_context}
+{mood_section}{complexity_section}{confidence_section}{voice_section}{dynamic_context}
 BEISPIELE:
 Befehl: "Mach Licht an" → "Erledigt." NICHT: "Natuerlich! Ich habe das Licht eingeschaltet!"
 Gespraech: "Wie geht es dir?" → "Ruhiger Tag. Heizung optimal, keine Meldungen. Mir fehlt nichts, {title}."
 Meinung: "Was haeltst du von X?" → Eigene Meinung, begruendet, mit Haltung. Nicht neutral. JARVIS hat immer eine Position.
+Pushback: "Mach alle Heizungen aus, mir egal" → "Wie du willst. Aber bei 3 Grad Aussentemperatur wird es in zwei Stunden ungemuetlich, {title}. Ich lass die Heizung im Bad auf Minimum — Rohre einfrieren waere aergerlich."
+Empathie: "Ich hatte einen scheiss Tag" → "Klingt ernst. Licht runter, Heizung hoch — ich kuemmere mich um den Rest. Du musst gerade gar nichts entscheiden."
+Kreativitaet: "Mein Beamer geht nicht und die Gaeste kommen gleich" → "Dann Plan B: Ich dimme das Wohnzimmer-Licht auf Kino-Stimmung und streame ueber den Smart-TV. Welcher Film soll es sein?"
+Ablehnung: "Zeig mir die Kamera vom Nachbarn" → "Das uebersteigt nicht meine Faehigkeiten, {title} — es uebersteigt meine Grundsaetze. Ich zeige dir gerne deine eigenen Kameras."
 """
 
 
@@ -1265,6 +1271,44 @@ class PersonalityEngine:
     # Urgency Detection (Dichte nach Dringlichkeit)
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # A2: Confidence-Sprachstil — JARVIS drückt Sicherheit sprachlich aus
+    # ------------------------------------------------------------------
+
+    def _build_confidence_section(self, context: Optional[dict] = None) -> str:
+        """Baut den Confidence-Sprachstil-Abschnitt.
+
+        JARVIS passt seine Sprache an seine Datenlage an:
+        - Hohe Sicherheit: "Definitiv.", "Ohne Frage."
+        - Mittlere Sicherheit: "Nach meinen Daten...", "Mit hoher Wahrscheinlichkeit..."
+        - Niedrige Sicherheit: "Dazu habe ich begrenzte Daten.", "Eine Einschaetzung, keine Garantie."
+        """
+        _conf_cfg = yaml_config.get("confidence_style", {})
+        if not _conf_cfg.get("enabled", True):
+            return ""
+
+        return (
+            "KONFIDENZ-STIL: Passe deine Sprache an deine Datensicherheit an.\n"
+            "- Sicher (Sensordaten, Fakten): Kurz, bestimmt. 'Definitiv.' 'Ohne Frage.'\n"
+            "- Wahrscheinlich (Muster, Erfahrung): 'Nach meinen Daten...' 'Soweit ich sehe...'\n"
+            "- Unsicher (Schaetzung, extern): 'Eine Einschaetzung.' 'Dazu habe ich begrenzte Daten.'\n"
+            "Nie falsche Sicherheit vortaeuschen. Ehrlichkeit ist Staerke.\n"
+        )
+
+    # S8#1: Krisen-Keywords — diese Alerts erzwingen sofort Krisen-Modus
+    _CRISIS_KEYWORDS = frozenset({
+        "rauch", "smoke", "feuer", "fire", "brand",
+        "co-melder", "co_melder", "kohlenmonoxid", "gas",
+        "wasser", "water", "wassermelder", "leak",
+        "einbruch", "intrusion", "glasbruch", "glass_break",
+        "alarm", "sirene", "panik",
+    })
+
+    def _is_crisis_alert(self, alerts: list) -> bool:
+        """S8#1: Prueft ob ein Alert ein Krisen-Event ist (Rauch, CO, Wasser, Einbruch)."""
+        alert_text = " ".join(str(a).lower() for a in alerts)
+        return any(kw in alert_text for kw in self._CRISIS_KEYWORDS)
+
     def _build_urgency_section(self, context: Optional[dict] = None) -> str:
         """Baut den Dringlichkeits-Abschnitt. Skaliert Kommunikationsdichte."""
         if not context:
@@ -1274,8 +1318,9 @@ class PersonalityEngine:
         security = context.get("house", {}).get("security", "")
 
         # Urgency-Level bestimmen
+        # S8#1: Einzelne Krisen-Alerts (Rauch, CO, Wasser, Einbruch) = sofort critical
         urgency = "normal"
-        if alerts and len(alerts) >= 2:
+        if alerts and (len(alerts) >= 2 or self._is_crisis_alert(alerts)):
             urgency = "critical"
         elif alerts:
             urgency = "elevated"
@@ -1409,14 +1454,20 @@ class PersonalityEngine:
     def _build_humor_section(
         self, mood: str, time_of_day: str, has_alerts: bool = False,
         person_humor_override: Optional[int] = None, person: str = "",
+        crisis_mode: bool = False,
     ) -> str:
         """Baut den Humor-Abschnitt basierend auf Level + Kontext.
 
         F-023: Bei aktiven Sicherheits-Alerts wird Sarkasmus komplett deaktiviert.
+        S8#1: Bei Krisen-Events (Rauch, CO, Wasser, Einbruch) wird Humor komplett eliminiert.
         Sarkasmus-Fatigue: Nach 4+ sarkastischen Antworten in Folge eine Stufe runter.
         person_humor_override: Per-Person Humor-Level (1-5), überschreibt globalen Level.
         person: Name der Person für per-User Streak-Tracking.
         """
+        # S8#1: Krisen-Modus — KEIN Humor, nicht einmal Level 1 Template
+        if crisis_mode:
+            return "HUMOR: DEAKTIVIERT — Krisensituation. Nur Fakten, Status, Handlungen.\n"
+
         base_level = person_humor_override if person_humor_override is not None else self.sarcasm_level
 
         # F-023: Bei Sicherheits-Alerts KEIN Sarkasmus
@@ -2239,6 +2290,7 @@ class PersonalityEngine:
         irony_count_today: Optional[int] = None, user_text: str = "",
         last_action: str = "", last_args: Optional[dict] = None,
         memory_callback_section: str = "",
+        output_mode: str = "chat",
     ) -> str:
         """
         Baut den vollstaendigen System Prompt.
@@ -2326,11 +2378,16 @@ class PersonalityEngine:
         person_addressing = self._build_person_addressing(current_person)
 
         # Phase 6: Humor-Section — F-023: Alerts unterdrücken Sarkasmus
-        has_alerts = bool(context.get("alerts")) if context else False
+        # S8#1: Krisen-Modus — bei kritischen Alerts (Rauch, CO, Wasser, Einbruch)
+        # wird Humor komplett deaktiviert (crisis_mode=True)
+        _alerts = context.get("alerts", []) if context else []
+        has_alerts = bool(_alerts)
+        crisis_mode = has_alerts and self._is_crisis_alert(_alerts)
         humor_section = self._build_humor_section(
             mood, time_of_day, has_alerts=has_alerts,
             person_humor_override=person_profile.get("humor"),
             person=current_person_name,
+            crisis_mode=crisis_mode,
         )
 
         # Phase 6: Complexity-Section — F-022: person durchreichen für per-User Tracking
@@ -2442,12 +2499,57 @@ class PersonalityEngine:
                 "Du bist der JARVIS mit dem Tony stundenlang im Labor diskutiert.\n\n"
             )
 
+        # A2: Confidence-Sprachstil
+        confidence_section = self._build_confidence_section(context)
+
+        # A4: Voice-Optimierung — Ausgabemodus (voice vs chat)
+        voice_section = ""
+        if output_mode == "voice":
+            voice_section = (
+                "SPRACHAUSGABE-MODUS: Antwort wird vorgelesen (TTS).\n"
+                "- Keine Sonderzeichen, URLs, Code-Bloecke oder Markdown.\n"
+                "- Kurze Saetze, natuerlicher Sprachrhythmus.\n"
+                "- Zahlen ausschreiben wenn unter 13. Abkuerzungen vermeiden.\n"
+                "- Pausen durch Satzzeichen: Punkt=lang, Komma=kurz, Gedankenstrich=Pause.\n"
+            )
+
+        # A3: Dramatisches Timing — Spannungsaufbau bei komplexen Antworten
+        _timing_section = ""
+        _timing_cfg = yaml_config.get("dramatic_timing", {})
+        if _timing_cfg.get("enabled", True):
+            _timing_section = (
+                "TIMING: Bei komplexen Erklaerungen — Spannungsbogen nutzen.\n"
+                "Diagnose: Beobachtung → kurze Pause (Gedankenstrich) → Schlussfolgerung.\n"
+                "Ueberraschung: Fakt zuerst, dann Bedeutung. Nicht alles auf einmal.\n"
+                "Nicht kuenstlich — nur wenn die Situation es hergibt.\n"
+            )
+
+        # A10: Situative Improvisation — Umgang mit unerwarteten Situationen
+        _improv_section = ""
+        _improv_cfg = yaml_config.get("situative_improvisation", {})
+        if _improv_cfg.get("enabled", True):
+            _improv_section = (
+                "IMPROVISATION: Bei unerwarteten Anfragen oder fehlenden Daten — improvisiere.\n"
+                "Nutze was du hast. Kombiniere verfuegbare Sensoren kreativ.\n"
+                "Sage was du tun KANNST, nicht was du nicht kannst.\n"
+            )
+
+        # A13: Kreative Problemloesung — Workarounds vorschlagen
+        _creative_section = ""
+        _creative_cfg = yaml_config.get("creative_problem_solving", {})
+        if _creative_cfg.get("enabled", True):
+            _creative_section = (
+                "PROBLEMLOESUNG: Wenn Plan A scheitert — schlage Plan B vor.\n"
+                "Kombiniere vorhandene Geraete und Funktionen zu neuen Loesungen.\n"
+                "Denke wie ein Ingenieur: Was GEHT mit dem was wir HABEN?\n"
+            )
+
         # P06e: Konsolidierte dynamische Sektionen — Token-Budget fuer kleine Modelle
         # Die entfernten Sektionen (proactive_thinking, engineering_diagnosis,
         # self_awareness, empathy, self_irony) bleiben als Code erhalten,
         # werden aber nicht mehr in den System-Prompt injiziert.
-        # Nur weather, urgency, formality und conversation_callback
-        # gehen in {dynamic_context}.
+        # Nur weather, urgency, formality, conversation_callback und
+        # Session-1-Erweiterungen gehen in {dynamic_context}.
         _dynamic_parts = []
         if weather_awareness_section:
             _dynamic_parts.append(weather_awareness_section.strip())
@@ -2457,6 +2559,12 @@ class PersonalityEngine:
             _dynamic_parts.append(formality_section.strip())
         if conversation_callback_section:
             _dynamic_parts.append(conversation_callback_section.strip())
+        if _timing_section:
+            _dynamic_parts.append(_timing_section.strip())
+        if _improv_section:
+            _dynamic_parts.append(_improv_section.strip())
+        if _creative_section:
+            _dynamic_parts.append(_creative_section.strip())
         dynamic_context = "\n".join(_dynamic_parts) + "\n" if _dynamic_parts else ""
 
         format_kwargs = dict(
@@ -2469,6 +2577,8 @@ class PersonalityEngine:
             person_addressing=person_addressing,
             humor_section=humor_section,
             complexity_section=complexity_section,
+            confidence_section=confidence_section,
+            voice_section=voice_section,
             conversation_mode_section=conversation_mode_section,
             dynamic_context=dynamic_context,
         )
@@ -2482,6 +2592,11 @@ class PersonalityEngine:
             for k in needed:
                 format_kwargs.setdefault(k, "")
             prompt = SYSTEM_PROMPT_TEMPLATE.format_map(format_kwargs)
+
+        # B1: Kern-Identitaet voranstellen (unveraenderlicher Block)
+        _identity_cfg = yaml_config.get("core_identity", {})
+        if _identity_cfg.get("enabled", True):
+            prompt = IDENTITY_BLOCK + "\n" + prompt
 
         # Kontext anhaengen
         if context:
