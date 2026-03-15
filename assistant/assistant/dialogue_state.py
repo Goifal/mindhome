@@ -4,6 +4,9 @@ Dialogue State Manager - Echte Dialogfuehrung mit Referenz-Aufloesung.
 Medium Effort Feature: Tracked den Gespraechszustand, loest Referenzen auf
 ("es", "das", "dort", "den gleichen") und verwaltet Klaerungsfragen.
 
+C5: Cross-Session Intent-Referenzierung — "wie gestern", "wie letzte Woche"
+durchsucht das Action-Log in Redis.
+
 Zustaende:
 - idle: Kein aktiver Dialog
 - awaiting_clarification: Wartet auf Antwort zu Klaerungsfrage
@@ -13,10 +16,12 @@ Zustaende:
 Konfigurierbar in der Jarvis Assistant UI unter "Intelligenz".
 """
 
+import json
 import logging
 import re
 import time
 from collections import deque
+from datetime import datetime, timedelta
 from typing import Optional
 
 from .config import yaml_config
@@ -39,6 +44,19 @@ ROOM_REFERENCES_DE = {
 ACTION_REFERENCES_DE = {
     "nochmal", "das gleiche", "genauso", "wieder",
     "auch", "ebenfalls", "dasselbe",
+}
+
+# C5: Temporale Referenzen fuer cross-session Aktionen
+TEMPORAL_REFERENCES_DE = {
+    "wie gestern": timedelta(days=1),
+    "wie vorgestern": timedelta(days=2),
+    "wie letzte woche": timedelta(days=7),
+    "wie letzten freitag": timedelta(days=7),  # Approximation
+    "wie letztes mal": timedelta(days=3),
+    "wie vorher": timedelta(hours=4),
+    "wie vorhin": timedelta(hours=2),
+    "wie heute morgen": timedelta(hours=8),
+    "wie immer": timedelta(days=7),  # Sucht in den letzten 7 Tagen
 }
 
 # Klaerungsmuster: "Welches X?" Antworten die eine Auswahl treffen
@@ -108,6 +126,13 @@ class DialogueStateManager:
 
         # Per-Person Dialog-Zustaende
         self._states: dict[str, DialogueState] = {}
+
+        # C5: Redis-Client fuer cross-session Referenzierung
+        self._redis = None
+
+    def set_redis(self, redis_client):
+        """C5: Setzt Redis-Client fuer Action-Log Zugriff."""
+        self._redis = redis_client
 
     def _get_state(self, person: str = "") -> DialogueState:
         """Gibt den Dialog-Zustand fuer eine Person zurueck."""
@@ -243,6 +268,14 @@ class DialogueStateManager:
                 hints.append(f"'{ref}' bezieht sich auf letzte Aktion: {last_action.get('description', str(last_action))}")
                 break
 
+        # C5: Temporale Referenzen ("wie gestern", "wie letzte Woche")
+        _cross_cfg = yaml_config.get("cross_session_references", {})
+        if _cross_cfg.get("enabled", True):
+            temporal_hint = self._resolve_temporal_reference(text_lower, person)
+            if temporal_hint:
+                had_references = True
+                hints.append(temporal_hint)
+
         context_hint = ""
         if hints:
             context_hint = "Referenz-Aufloesung: " + ". ".join(hints) + "."
@@ -254,6 +287,87 @@ class DialogueStateManager:
             "resolved_rooms": resolved_rooms,
             "context_hint": context_hint,
         }
+
+    # ------------------------------------------------------------------
+    # C5: Cross-Session Temporale Referenzierung
+    # ------------------------------------------------------------------
+
+    def _resolve_temporal_reference(self, text_lower: str, person: str = "") -> str:
+        """Loest temporale Referenzen wie 'wie gestern' ueber das Action-Log auf.
+
+        Durchsucht mha:action_outcomes in Redis nach Aktionen die zum
+        Zeitfenster passen und gibt einen Kontext-Hint zurueck.
+        """
+        if not self._redis:
+            return ""
+
+        matched_ref = ""
+        matched_delta = None
+
+        for ref_text, delta in TEMPORAL_REFERENCES_DE.items():
+            if ref_text in text_lower:
+                matched_ref = ref_text
+                matched_delta = delta
+                break
+
+        if not matched_ref or not matched_delta:
+            return ""
+
+        # Synchroner Redis-Zugriff ist hier nicht moeglich (resolve_references ist sync).
+        # Stattdessen: Cached Action-Log nutzen falls vorhanden.
+        try:
+            cached = self._get_cached_action_log()
+            if not cached:
+                return ""
+
+            now = datetime.now()
+            target_time = now - matched_delta
+            # Zeitfenster: +/- 2 Stunden um den Zielzeitpunkt
+            window_start = target_time - timedelta(hours=2)
+            window_end = target_time + timedelta(hours=2)
+            # Fuer "wie immer": Breites Fenster (letzte 7 Tage)
+            if matched_ref == "wie immer":
+                window_start = now - timedelta(days=7)
+                window_end = now
+
+            matching_actions = []
+            for entry in cached:
+                try:
+                    ts_str = entry.get("timestamp", "")
+                    if not ts_str:
+                        continue
+                    ts = datetime.fromisoformat(ts_str)
+                    if window_start <= ts <= window_end:
+                        action = entry.get("action", entry.get("function", ""))
+                        desc = entry.get("description", action)
+                        if action and entry.get("success", True):
+                            matching_actions.append(desc)
+                except (ValueError, TypeError):
+                    continue
+
+            if matching_actions:
+                # Deduplizieren und max 3 Aktionen zeigen
+                unique = list(dict.fromkeys(matching_actions))[:3]
+                actions_str = ", ".join(unique)
+                return (f"'{matched_ref}' referenziert fruehere Aktionen: {actions_str}")
+
+        except Exception as e:
+            logger.debug("C5 Temporal Reference Fehler: %s", e)
+
+        return ""
+
+    def _get_cached_action_log(self) -> list[dict]:
+        """Laedt das Action-Log aus dem internen Cache.
+
+        Da resolve_references() synchron ist, kann kein async Redis-Call
+        gemacht werden. Stattdessen wird der Cache von set_action_log_cache()
+        genutzt, der von brain.py periodisch befuellt wird.
+        """
+        return getattr(self, "_action_log_cache", [])
+
+    def set_action_log_cache(self, entries: list[dict]):
+        """C5: Setzt den Action-Log Cache (von brain.py aufgerufen)."""
+        self._action_log_cache = entries
 
     def start_clarification(
         self,

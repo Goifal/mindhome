@@ -295,6 +295,20 @@ self_followup:
 butler_instinct:
   enabled: true
   min_autonomy_level: 3    # Autonomie-Level ab dem Auto-Execute erlaubt ist
+# B3: Pre-Compaction Memory Flush — Fakten sichern vor Zusammenfassung
+pre_compaction_flush:
+  enabled: true
+# B2: Proaktive Context Compaction — frueh kompaktieren statt erst bei Overflow
+context_compaction:
+  threshold: 0.70          # Bei 70% Budget-Auslastung kompaktieren
+  prefer_llm: true         # LLM-Zusammenfassung statt Text-Kuerzung
+# C5: Cross-Session Intent-Referenzierung ("wie gestern", "wie letzte Woche")
+cross_session_references:
+  enabled: true
+# D5: Quality Feedback Loop — schlechte Patterns in Personality-Prompt einbauen
+quality_feedback:
+  enabled: true
+  weak_threshold: 0.3      # Score unter dem eine Kategorie als schlecht gilt
 character_lock:
   enabled: true
   closing_anchor: true

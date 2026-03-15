@@ -526,6 +526,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Phase 6: Redis für Personality Engine (Formality Score, Counter)
         self.personality.set_redis(self.memory.redis)
 
+        # C5: Redis fuer cross-session Intent-Referenzierung
+        self.dialogue_state.set_redis(self.memory.redis)
+
+        # D5: Quality Feedback → Personality
+        self.personality.set_response_quality(self.response_quality)
+
         # Gelernten Sarkasmus-Level laden
         await self.personality.load_learned_sarcasm_level()
 
@@ -1017,6 +1023,57 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         self._task_registry.create_task(_save(), name="memory_exchange")
 
+    async def _pre_compaction_memory_flush(self, messages: list[dict]):
+        """B3: Sichert Fakten aus Nachrichten in Semantic Memory BEVOR sie kompaktiert werden.
+
+        Verhindert Informationsverlust bei Context Compaction: Alle relevanten
+        Fakten werden extrahiert und persistent gespeichert, bevor die
+        Nachrichten zusammengefasst oder gekuerzt werden.
+        """
+        _flush_cfg = cfg.yaml_config.get("pre_compaction_flush", {})
+        if not _flush_cfg.get("enabled", True):
+            return
+        if not self.memory_extractor or not messages:
+            return
+
+        try:
+            # User-Assistant Paare aus den Nachrichten bilden
+            pairs = []
+            _user_text = ""
+            for m in messages:
+                if m.get("role") == "user":
+                    _user_text = m.get("content", "")
+                elif m.get("role") == "assistant" and _user_text:
+                    pairs.append((_user_text, m.get("content", "")))
+                    _user_text = ""
+
+            if not pairs:
+                return
+
+            # Fakten parallel extrahieren (Fire-and-forget, max 5s Timeout)
+            _extracted = 0
+            for user_t, assist_t in pairs:
+                try:
+                    facts = await asyncio.wait_for(
+                        self.memory_extractor.extract_and_store(
+                            user_text=user_t,
+                            assistant_response=assist_t,
+                            person="unknown",
+                        ),
+                        timeout=5.0,
+                    )
+                    _extracted += len(facts) if facts else 0
+                except asyncio.TimeoutError:
+                    break  # Bei Timeout restliche Paare ueberspringen
+                except Exception:
+                    continue
+
+            if _extracted > 0:
+                logger.info("B3 Pre-Compaction Flush: %d Fakten aus %d Paaren gesichert",
+                            _extracted, len(pairs))
+        except Exception as e:
+            logger.debug("Pre-Compaction Flush Fehler: %s", e)
+
     async def _summarize_conversation_chunk(self, messages: list[dict]) -> Optional[str]:
         """Fasst aeltere Gespraechs-Nachrichten zu einer kompakten Zusammenfassung zusammen.
 
@@ -1315,6 +1372,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     text = f"{_clar_text} ({_clar_opt})"
                     logger.info("Klärung aufgelöst: '%s' -> '%s'", _clarification.get("clarification_question"), _clar_opt)
             else:
+                # C5: Action-Log Cache fuer temporale Referenzen laden
+                await self._refresh_action_log_cache()
                 _ref_result = self.dialogue_state.resolve_references(text, person or "", room or "")
                 if _ref_result.get("had_references"):
                     # Referenz-Hinweis wird im Kontext-Prompt eingebaut (siehe context assembly)
@@ -3099,16 +3158,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         recent = await self.memory.get_recent_conversations(limit=effective_limit)
         messages = [{"role": "system", "content": system_prompt}]
         conv_tokens_used = 0
-        # Wenn nicht alle Nachrichten reinpassen, aeltere zusammenfassen
+        # B2: Proaktive Context Compaction — bei >70% Budget statt erst bei Overflow
         # damit mehr Kontext erhalten bleibt (auch im Befehls-Modus).
+        _compaction_cfg = cfg.yaml_config.get("context_compaction", {})
+        _compaction_threshold = float(_compaction_cfg.get("threshold", 0.70))
         if len(recent) > 4:
-            # Budget pruefen: Passen alle rein?
             total_est = sum(_estimate_tokens(c.get("content", "")) for c in recent)
-            if total_est > available_tokens:
+            _compaction_budget = int(available_tokens * _compaction_threshold)
+            if total_est > _compaction_budget:
                 split = len(recent) // 2
                 older = recent[:split]
                 recent = recent[split:]
-                if self._opt_conv_summary_mode == "llm":
+                # B3: Fakten aus kompaktierten Nachrichten sichern
+                self._task_registry.create_task(
+                    self._pre_compaction_memory_flush(older),
+                    name="pre_compaction_flush",
+                )
+                # B2: Bei proaktiver Compaction LLM-Modus bevorzugen
+                _use_llm = (self._opt_conv_summary_mode == "llm"
+                            or _compaction_cfg.get("prefer_llm", True))
+                if _use_llm:
                     # LLM-basierte Zusammenfassung (genauer, aber +500-2000ms)
                     summary = await self._summarize_conversation_chunk(older)
                 else:
@@ -4724,6 +4793,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             name="quality_record",
         )
         self.response_quality.update_last_exchange(text, profile.category if profile else "unknown")
+
+        # D5: Quality Hints periodisch aktualisieren (alle ~10 Exchanges)
+        _d5_counter = getattr(self, "_d5_exchange_counter", 0) + 1
+        self._d5_exchange_counter = _d5_counter
+        if _d5_counter % 10 == 0:
+            self._task_registry.create_task(
+                self.personality.refresh_quality_hints(),
+                name="quality_hints_refresh",
+            )
 
         # Self-Improvement: Outcome Tracker — "Danke" = POSITIVE
         if _is_thanked and self._last_executed_action:
@@ -8900,6 +8978,27 @@ Regeln:
     # Experiential Memory: "Letztes Mal als du das gemacht hast..."
     # Speichert Aktion + Kontext und recalled bei aehnlichen Aktionen.
     # ------------------------------------------------------------------
+
+    async def _refresh_action_log_cache(self):
+        """C5: Laedt die letzten Action-Outcomes in den DialogueState-Cache.
+
+        Da resolve_references() synchron ist, muss der Cache vorher
+        async befuellt werden.
+        """
+        if not self.memory.redis:
+            return
+        try:
+            raw = await self.memory.redis.lrange("mha:action_outcomes", 0, 99)
+            entries = []
+            for r in raw:
+                try:
+                    entry = json.loads(r) if isinstance(r, str) else json.loads(r.decode())
+                    entries.append(entry)
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    continue
+            self.dialogue_state.set_action_log_cache(entries)
+        except Exception as e:
+            logger.debug("C5 Action-Log Cache Fehler: %s", e)
 
     async def _log_experiential_memory(self, entry_json: str) -> None:
         """Speichert eine Action-Outcome-Entry in Redis."""

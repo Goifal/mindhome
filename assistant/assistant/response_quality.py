@@ -232,3 +232,33 @@ class ResponseQualityTracker:
         new_score = max(0.0, min(1.0, new_score))
 
         await self.redis.setex(score_key, 90 * 86400, str(round(new_score, 4)))
+
+    async def get_weak_categories(self, threshold: float = 0.3) -> list[dict]:
+        """D5: Gibt Kategorien mit schlechtem Quality-Score zurueck.
+
+        Wird von personality.py genutzt um VERMEIDE-Hints zu generieren.
+
+        Args:
+            threshold: Score-Schwelle unter der eine Kategorie als schlecht gilt.
+
+        Returns:
+            Liste von {category, score, rephrase_count, total} Dicts.
+        """
+        if not self.redis:
+            return []
+
+        weak = []
+        for category in ("device_command", "knowledge", "smalltalk", "analysis"):
+            score = await self.get_quality_score(category)
+            if score < threshold:
+                stats = await self.redis.hgetall(f"mha:response_quality:stats:{category}")
+                total = int(stats.get("total", stats.get(b"total", 0)))
+                rephrased = int(stats.get("rephrased", stats.get(b"rephrased", 0)))
+                if total >= MIN_EXCHANGES_FOR_SCORE:
+                    weak.append({
+                        "category": category,
+                        "score": round(score, 2),
+                        "rephrase_count": rephrased,
+                        "total": total,
+                    })
+        return weak

@@ -333,6 +333,8 @@ class PersonalityEngine:
         self._current_mood: str = "neutral"
         self._mood_detector = None
         self._inner_state = None  # B5: JARVIS-eigene Emotionen
+        self._response_quality = None  # D5: Quality Feedback
+        self._quality_hints: str = ""  # D5: Gecachte VERMEIDE-Hints
         self._redis = None
         # F-021: Per-User Confirmation-Tracking (statt shared Instanzvariable)
         self._last_confirmations: dict[str, list[str]] = {}
@@ -383,6 +385,49 @@ class PersonalityEngine:
     def set_redis(self, redis_client):
         """Setzt Redis-Client für State-Persistenz."""
         self._redis = redis_client
+
+    def set_response_quality(self, response_quality):
+        """D5: Setzt die Referenz zum ResponseQualityTracker."""
+        self._response_quality = response_quality
+
+    async def refresh_quality_hints(self):
+        """D5: Aktualisiert VERMEIDE-Hints aus schlechten Quality-Patterns.
+
+        Wird periodisch von brain.py aufgerufen (nicht bei jedem Request).
+        Kategorien mit quality_score < 0.3 werden als VERMEIDE-Hinweise
+        in den Prompt eingebaut.
+        """
+        _d5_cfg = yaml_config.get("quality_feedback", {})
+        if not _d5_cfg.get("enabled", True) or not self._response_quality:
+            self._quality_hints = ""
+            return
+
+        try:
+            threshold = float(_d5_cfg.get("weak_threshold", 0.3))
+            weak = await self._response_quality.get_weak_categories(threshold)
+            if not weak:
+                self._quality_hints = ""
+                return
+
+            # Kategorie-spezifische VERMEIDE-Hints
+            _category_hints = {
+                "device_command": "Bei Geraete-Befehlen: Praeziser antworten, weniger reden, sofort handeln.",
+                "knowledge": "Bei Wissens-Fragen: Genauer recherchieren, keine Vermutungen.",
+                "smalltalk": "Bei Smalltalk: Natuerlicher antworten, weniger formell.",
+                "analysis": "Bei Analysen: Strukturierter antworten, klare Schlussfolgerungen.",
+            }
+
+            hints = ["VERMEIDE (aus Qualitaets-Feedback gelernt):"]
+            for w in weak:
+                cat = w["category"]
+                hint = _category_hints.get(cat, f"Kategorie '{cat}' verbessern.")
+                hints.append(f"- {hint} (Score: {w['score']}, {w['rephrase_count']}x umformuliert)")
+
+            self._quality_hints = "\n".join(hints)
+            logger.info("D5 Quality Hints aktualisiert: %d schwache Kategorien", len(weak))
+        except Exception as e:
+            logger.debug("D5 Quality Hints Fehler: %s", e)
+            self._quality_hints = ""
 
     # ------------------------------------------------------------------
     # Config-Laden Hilfsmethoden
@@ -2576,6 +2621,10 @@ class PersonalityEngine:
             _inner_hint = self._inner_state.get_prompt_section()
             if _inner_hint:
                 _dynamic_parts.append(_inner_hint.strip())
+
+        # D5: Quality Feedback — VERMEIDE-Hints aus schlechten Patterns
+        if self._quality_hints:
+            _dynamic_parts.append(self._quality_hints)
 
         dynamic_context = "\n".join(_dynamic_parts) + "\n" if _dynamic_parts else ""
 
