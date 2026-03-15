@@ -43,22 +43,29 @@ PC 1: HAOS (Intel NUC)                PC 2: Assistant Server (Ubuntu)
 ┌──────────────────────────┐          ┌──────────────────────────────┐
 │  Home Assistant            │          │  Ollama (Qwen 3.5 LLM)      │
 │  MindHome Add-on (:8099)   │◄── LAN──►│  MindHome Assistant (:8200)  │
-│  Whisper (STT)             │          │  ChromaDB (:8100) Memory     │
-│  Piper (TTS)               │          │  Redis (:6379) Cache         │
-└──────────────────────────┘          └──────────────────────────────┘
+└──────────────────────────┘          │  ChromaDB (:8100) Memory     │
+                                       │  Redis (:6379) Cache         │
+                                       │  Whisper STT (:10300)        │
+                                       │  Piper TTS (:10200)          │
+                                       └──────────────────────────────┘
 ```
 
 ### Request-Flow
 
 ```
 main.py (FastAPI :8200)
-  → brain.py (Orchestrator)
-    → context_builder.py (HA-Daten + Memory sammeln)
-    → model_router.py (Fast/Smart/Deep waehlen)
-    → personality.py (System-Prompt bauen)
-    → ollama_client.py (LLM aufrufen)
-    → function_calling.py (Tool-Calls ausfuehren)
-    → memory_extractor.py (Fakten extrahieren)
+  → brain.py::process() → _process_inner()
+    → PARALLEL mega-gather:
+      ├── context_builder.build() (HA-Daten + Memory)
+      ├── mood_detector (Stimmung erkennen)
+      ├── formality (Formalitaet bestimmen)
+      ├── anticipation (Muster pruefen)
+      └── RAG / Knowledge Base (falls relevant)
+    → model_router.route() (Fast/Smart/Deep waehlen)
+    → personality.build_system_prompt() (System-Prompt bauen)
+    → ollama.chat() via _llm_with_cascade() (LLM aufrufen)
+    → function_calling (Tool-Calls ausfuehren)
+    → memory_extractor.extract_and_store() (async, im Hintergrund)
 ```
 
 ### Bestehende Infrastruktur
@@ -66,7 +73,7 @@ main.py (FastAPI :8200)
 - **89 Python-Module** im `assistant/assistant/` Package
 - **114 Test-Dateien** in `assistant/tests/`
 - **~83.500 LOC** gesamt
-- **144 Function-Call Tools**, 90+ Module
+- **74 Function-Call Tools**, 90 Module
 - **Memory:** 3-Tier (Working/Episodic/Semantic) — auto-loaded in Context
 - **Proaktiv:** Event-basiert (HA WebSocket) + Polling (15 Min / 2-4h)
 - **Autonomie:** 5 Level (Assistent→Autopilot), domain-spezifisch, person-basierte Trust-Levels
@@ -788,7 +795,7 @@ cd /home/user/mindhome && python -m pytest assistant/tests/ -x
 │   │   ├── model_router.py          # 3-Tier LLM Routing
 │   │   ├── config.py                # Settings-Loader (.env + YAML)
 │   │   ├── context_builder.py       # Kontext-Aufbau (HA + Memory)
-│   │   ├── function_calling.py      # 144 Tool-Funktionen (393KB)
+│   │   ├── function_calling.py      # 74 Tool-Funktionen (384KB)
 │   │   ├── action_planner.py        # Multi-Step Planning
 │   │   ├── ollama_client.py         # Ollama REST API Client
 │   │   ├── proactive.py             # Proaktive Meldungen
