@@ -100,7 +100,7 @@ main.py (FastAPI :8200)
 | Few-Shot Examples | Einzelne Beispiele in `SYSTEM_PROMPT_TEMPLATE` | Nicht systematisch (5-8 JARVIS-Dialogbeispiele) |
 | Confidence-Sprachstil | Confidence-Tracking existiert | Sprachvariation fehlt |
 | Voice-Optimierung | TTS-Enhancer (`tts_enhancer.py`) existiert | Voice-Output-Modus fehlt, kein `tts_speed` in Config |
-| Health Nagging | Schlaf-Tracking existiert | Butler-Nagging-Stil fehlt |
+| Health Nagging | `health_monitor.py` existiert (Hydration/Klima-Monitoring) | Butler-Nagging-Stil fehlt, kein explizites Schlaf-Tracking |
 | Context Compaction | Summarization-Patterns in `brain.py` | Nicht automatisch |
 | Background Reasoning | Background-Extraction existiert | Kein Idle-Reasoning |
 | Inner State | Selbst-Bewusstsein erwaehnt | Kein separater JARVIS-Mood |
@@ -790,7 +790,7 @@ cd /home/user/mindhome && python -m pytest assistant/tests/ -x
 ├── assistant/
 │   ├── assistant/
 │   │   ├── main.py                  # FastAPI Server (:8200)
-│   │   ├── brain.py                 # Orchestrator (518KB, verbindet alles)
+│   │   ├── brain.py                 # Orchestrator (~507KB / 10.303 Zeilen)
 │   │   ├── personality.py           # System-Prompt + Persoenlichkeit
 │   │   ├── model_router.py          # 3-Tier LLM Routing
 │   │   ├── config.py                # Settings-Loader (.env + YAML)
@@ -947,10 +947,10 @@ Wenn eine Session nicht alles schafft:
 
 ### Bekannte Fallstricke
 
-- **brain.py ist 518KB** — NICHT komplett lesen. Nur die relevanten Methoden suchen
+- **brain.py ist ~507KB / 10.303 Zeilen** — NICHT komplett lesen. Nur die relevanten Methoden suchen
 - **function_calling.py ist 393KB** — Gleicher Hinweis
 - **settings.yaml ist 43KB** — Nur die relevante Sektion lesen
-- **Alle Imports in brain.py sind alphabetisch** — Neue Imports alphabetisch einordnen
+- **Imports in brain.py sind weitgehend alphabetisch** — Neue Imports alphabetisch einordnen (Zeile 32 `from . import config as cfg` bricht die Reihenfolge leicht)
 - **PersonalityEngine nutzt Threading-Lock** — Thread-safe arbeiten
 - **Redis-Keys brauchen TTL** — Nie ohne Expiry setzen
 - **Piper TTS** hat begrenzte Expressivitaet — Voice-Optimierung (A4) beruecksichtigen
