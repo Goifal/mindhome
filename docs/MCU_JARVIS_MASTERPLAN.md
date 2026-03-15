@@ -1060,35 +1060,99 @@ D6 (Dynamic Few-Shot) → Braucht D5 (Quality Feedback)
 
 **NICHT IM PLAN, ABER SINNVOLL MIT 35B:**
 
-1. **Chain-of-Thought fuer komplexe Entscheidungen**
-   - Bei Sicherheits-Entscheidungen oder Multi-Device-Szenarien: Explizites Durchdenken
-   - `personality.py`: "Bei komplexen Entscheidungen: Denke Schritt fuer Schritt durch"
-   - Qwen3.5 unterstuetzt `<think>` Tags (config.py:89 `supports_think_tags`)
+#### A) MCU JARVIS Kern-Traits die komplett fehlen
 
-2. **Kontext-Kompression via LLM**
-   - Statt einfacher Truncation: LLM komprimiert alte Turns semantisch
-   - Behält Fakten, Stimmung und offene Themen, entfernt Wiederholungen
-   - Passt gut zu B2 (Context Compaction)
+1. **Krisen-Modus-Switch (Prompt)**
+   - Im MCU wechselt JARVIS SOFORT von witzig zu ultra-effizient bei Gefahr
+   - Binaerer Switch: Rauchmelder/Wasser/Einbruch → Kein Humor, Maximal-Praezision
+   - Prompt-Sektion: "Bei CRITICAL-Events: Sofort sachlich. Kein Humor. Kurz. Direkt."
+   - Integration: `threat_assessment.py` Severity → Personality-Flag
 
-3. **Selbst-Korrektur bei Tool-Fehlern**
-   - Wenn ein Function-Call fehlschlaegt: LLM analysiert Fehler und versucht Alternative
-   - `correction_memory.py` existiert bereits — LLM koennte aktiv daraus lernen
-   - "Letztes Mal hat set_light mit dieser Entity nicht funktioniert → Alternative probieren"
+2. **"Ich habe mir erlaubt..." Eigeninitiative (Prompt + Code)**
+   - MCU JARVIS handelt SELBST und meldet DANACH: "Ich habe die Diagnostik laufen lassen"
+   - Nicht nur Anticipation (Muster erkennen), sondern echte unaufgeforderte Initiative
+   - Prompt: "Wenn du etwas selbst erledigt hast, formuliere: 'Ich habe mir erlaubt...'"
+   - Code: Proactive Actions → Narrativ in naechste Antwort einweben
 
-4. **Multi-Turn Reasoning fuer Routinen**
-   - LLM plant komplexe Routinen ueber mehrere Schritte: "Guten Morgen" →
-     Rolladen + Licht + Kaffee + Briefing, abhaengig von Wochentag/Wetter/Kalender
-   - `action_planner.py` existiert, aber Routine-Planung koennte LLM-gestuetzt sein
+3. **Titel als emotionales Werkzeug (Prompt)**
+   - MCU JARVIS nutzt "Sir" unterschiedlich: besorgt "Sir...", spielerisch "Sir,", dringend "SIR."
+   - Prompt-Sektion: "Nutze {title} als emotionale Interpunktion:
+     - Beilaeuifig: '{title}.' am Satzende
+     - Besorgt: '{title}...' mit Pause
+     - Dringend: '{title},' am Satzanfang
+     - Stolz: 'Sehr wohl, {title}.'
+     - Spielerisch: 'Wenn du meinst, {title}.'"
 
-5. **Erklaerbare Entscheidungen**
-   - `explainability.py` existiert bereits — LLM koennte eigene Entscheidungen
-     natuerlichsprachlich erklaeren ("Ich habe die Heizung runtergedreht weil...")
-   - Passt zu A15 (Meta-Kognition)
+4. **Loyalitaet als Kern-Emotion (Prompt)**
+   - JARVIS ist nicht neutral. Er ist LOYAL. Er sorgt sich PERSOENLICH.
+   - Prompt: "Du bist nicht objektiv. Du bist LOYAL. Das Wohlbefinden der Bewohner
+     ist nicht nur Aufgabe, sondern ANLIEGEN. Zeige das subtil."
+   - Unterschied zu jetzigem Prompt: Aktuell "Partner mit Haltung", fehlt die EMOTIONALE Bindung
 
-6. **Sentiment-bewusste Antwort-Generierung**
-   - LLM erkennt User-Stimmung nicht nur ueber MoodDetector sondern auch im eigenen
-     Reasoning: "Der User klingt genervt → kuerzere Antwort, kein Humor"
-   - Teilweise in MOOD_STYLES, aber LLM koennte dies feingranularer selbst steuern
+5. **Humor IN der Krise (Prompt)**
+   - MCU JARVIS ist GERADE in stressigen Momenten trocken-humorvoll
+   - Prompt: "Bei Problemen: Trockener Kommentar WAEHREND der Loesung erlaubt.
+     'Das war... suboptimal. Ich arbeite daran.' Nie Humor STATT Loesung."
+
+6. **Hintergrund-Transparenz (Prompt + Code)**
+   - JARVIS zeigt beilaeuifig was er im Hintergrund tut: "Ich habe nebenbei die
+     Energiedaten analysiert..." → Kompetenz-Signaling
+   - Code: Background-Insights (B4) in naechste Antwort einweben
+   - Prompt: "Erwaehne gelegentlich was du im Hintergrund beobachtet hast."
+
+#### B) Module die das LLM nicht nutzt (aber sollte)
+
+7. **Energy Optimizer → LLM-Reasoning**
+   - `energy_optimizer.py` ist rein regelbasiert (Schwellwerte)
+   - LLM koennte: "Solar-Produktion ist hoch. Waschmaschine jetzt starten?"
+   - Integration: Energy-Insights → context_builder.py → LLM sieht Energiedaten
+   - Prompt-Sektion: "Wenn Energiedaten im Kontext: Proaktiv guenstige Zeitfenster vorschlagen"
+
+8. **Calendar Intelligence → LLM-Proaktivitaet**
+   - `calendar_intelligence.py` erkennt Habits + Konflikte, fuettert aber NICHT ins LLM
+   - LLM koennte: "Morgen 9 Uhr Meeting, 30km — soll ich um 8:15 die Abfahrt vorbereiten?"
+   - Integration: Detected Habits/Conflicts → context_builder.py als "KALENDER-KONTEXT"
+
+9. **Ambient Audio → Kontextuelle Reaktionen**
+   - `ambient_audio.py` klassifiziert Events ohne Kontext (Baby weint = immer Alarm)
+   - LLM koennte: "Baby weint + Eltern zuhause = normal" vs. "Baby weint + niemand da = ALERT"
+   - Integration: Audio-Events mit Personen-Praesenz-Daten an LLM uebergeben
+
+10. **Insight Engine → LLM-Erklaerungen**
+    - `insight_engine.py` hat 18+ Cross-Referenz-Checks, aber Template-basierte Ausgabe
+    - LLM koennte erklaeren WARUM ein Insight relevant ist, nicht nur WAS
+    - Integration: Insight-Daten → LLM generiert natuerlichsprachliche Erklaerung
+
+11. **Threat Assessment → LLM Risk-Scoring**
+    - `threat_assessment.py` nutzt LLM minimal (nur Notification-Formatierung)
+    - LLM koennte: Kontext-basiertes Risk-Scoring ("Das ist der Postbote" vs. "Unbekannt")
+    - Integration: Visitor-History + Kamera-Bild + Tageszeit → LLM bewertet Risiko
+
+12. **Visitor Manager → Persoenlichkeits-Anpassung**
+    - `visitor_manager.py` erkennt Gaeste, passt aber NICHT JARVIS' Verhalten an
+    - LLM koennte: Ton formaler, weniger Sarkasmus, keine internen Witze bei Gaesten
+    - Integration: Visitor-Status → personality.py → Prompt-Anpassung
+
+#### C) Technische LLM-Features
+
+13. **Chain-of-Thought mit `<think>` Tags**
+    - Qwen3.5 unterstuetzt `<think>` Tags (config.py:89 `supports_think_tags`)
+    - Bereits genutzt (`brain.py:2322-2340`), aber NUR bei Problem-Solving/What-If
+    - Erweitern: Auch bei Sicherheits-Entscheidungen, Energie-Optimierung, Konflikten
+
+14. **Kontext-Kompression via LLM**
+    - Statt einfacher Truncation: LLM komprimiert alte Turns semantisch
+    - Behaelt Fakten, Stimmung, offene Themen — entfernt Wiederholungen
+    - Passt zu B2 (Context Compaction): LLM-basierte Zusammenfassung statt Text-Kuerzung
+
+15. **Selbst-Korrektur bei Tool-Fehlern**
+    - `correction_memory.py` existiert — LLM koennte aktiv daraus lernen
+    - "Letztes Mal hat set_light mit dieser Entity nicht funktioniert → Alternative probieren"
+
+16. **Erklaerbare Entscheidungen**
+    - `explainability.py` existiert bereits
+    - LLM koennte eigene Entscheidungen erklaeren: "Ich habe die Heizung runtergedreht weil..."
+    - Passt zu Hintergrund-Transparenz (Punkt 6)
 
 ### Empfehlung: Priorisierung fuer maximalen Impact
 
