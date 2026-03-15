@@ -47,6 +47,10 @@ const _searchIndex = [
   {tab:'tab-jarvis', title:'Eskalierende Besorgnis', keywords:'warnungen ignoriert ernster butler sorge', icon:'&#128680;'},
   {tab:'tab-jarvis', title:'Neugier-Fragen', keywords:'ungewöhnlich verhalten nachfragen früh unterwegs', icon:'&#128270;'},
   {tab:'tab-jarvis', title:'Situations-Modell', keywords:'hausstatus gespräch delta veränderung', icon:'&#128269;'},
+  {tab:'tab-jarvis', title:'Beziehungsmodell', keywords:'beziehung person joke stil milestone insider', icon:'&#129309;'},
+  {tab:'tab-jarvis', title:'Kontextuelles Schweigen', keywords:'schweigen aktivität film schlafen gäste fokus', icon:'&#128164;'},
+  {tab:'tab-jarvis', title:'Selbst-Lernen', keywords:'wissensluecke selbst lernen proaktiv gap erkennen', icon:'&#128218;'},
+  {tab:'tab-jarvis', title:'JSON-Modus fuer Tools', keywords:'json modus tools format ollama', icon:'&#128196;'},
   // Stimmung (tab-mood)
   {tab:'tab-mood', title:'Stimmungserkennung', keywords:'mood stress frustration muede worte', icon:'&#128578;'},
   {tab:'tab-mood', title:'Stress-Einfluss', keywords:'stress boost reduktion ungeduld negative', icon:'&#9889;'},
@@ -120,12 +124,20 @@ const _searchIndex = [
   {tab:'tab-intelligence', title:'Prädiktive Wartung', keywords:'wartung batterie lebensdauer health score vorhersage', icon:'&#128295;'},
   {tab:'tab-intelligence', title:'Konsequenz-Bewusstsein', keywords:'konsequenz kontext sinnvoll warnung hinweis', icon:'&#9888;'},
   {tab:'tab-intelligence', title:'Unaufgeforderte Beobachtungen', keywords:'beobachtung periodisch licht fenster batterie alarm', icon:'&#128065;'},
+  {tab:'tab-intelligence', title:'Background Reasoning', keywords:'idle hintergrund analyse smart modell insight', icon:'&#129504;'},
+  {tab:'tab-intelligence', title:'Abstrakte Konzepte', keywords:'feierabend filmabend konzept routine skill dynamisch', icon:'&#127793;'},
+  {tab:'tab-intelligence', title:'History-Suche', keywords:'suche history verlauf gespräch archiv search', icon:'&#128270;'},
+  {tab:'tab-intelligence', title:'Automation-Debugging', keywords:'automation debug fehler trace analyse ha', icon:'&#128295;'},
   // Autonomie (tab-autonomie)
   {tab:'tab-autonomie', title:'Autonomie', keywords:'autonomie level assistent butler mitbewohner vertrauter autopilot', icon:'&#9889;'},
   {tab:'tab-autonomie', title:'Aktions-Berechtigungen', keywords:'berechtigung aktion permission level', icon:'&#128272;'},
   {tab:'tab-autonomie', title:'Evolution-Kriterien', keywords:'evolution aufstieg kriterien tage interaktionen', icon:'&#128200;'},
   {tab:'tab-autonomie', title:'Selbstoptimierung', keywords:'selbstoptimierung analyse vorschläge genehmigung approval', icon:'&#129302;'},
   {tab:'tab-autonomie', title:'Lern-System', keywords:'lernen outcome tracker korrektur response quality error', icon:'&#129504;'},
+  {tab:'tab-autonomie', title:'Kontext-Kompaktierung', keywords:'kompaktierung kontext token budget llm zusammenfassung', icon:'&#128230;'},
+  {tab:'tab-autonomie', title:'Quality Feedback', keywords:'quality feedback schwelle vermeide hints', icon:'&#128200;'},
+  {tab:'tab-autonomie', title:'Dynamic Few-Shot', keywords:'few shot beispiel gute antwort lernen prompt', icon:'&#127919;'},
+  {tab:'tab-autonomie', title:'Prompt-Versionierung', keywords:'prompt version hash ab test tracking', icon:'&#128203;'},
   {tab:'tab-autonomie', title:'Feedback-System', keywords:'feedback score cooldown boost unterdrücken', icon:'&#128200;'},
   {tab:'tab-autonomie', title:'Self-Automation', keywords:'self automation ha automatisierung sprache erstellen', icon:'&#127919;'},
   // Analyse-Tools (tab-declarative-tools)
@@ -1722,6 +1734,29 @@ const HELP_TEXTS = {
   'adaptive_thresholds.enabled': {title:'Lernende Schwellwerte', text:'Passt Parameter automatisch an basierend auf Outcome-Daten. Nur innerhalb enger Grenzen, nur zur Laufzeit.'},
   'adaptive_thresholds.auto_adjust': {title:'Auto-Anpassung', text:'Erlaubt automatische Anpassung ohne User-Bestätigung (innerhalb enger Grenzen).'},
   'adaptive_thresholds.analysis_interval_hours': {title:'Analyse-Intervall', text:'Wie oft die Schwellwert-Analyse läuft (in Stunden). 168 = woechentlich.'},
+  // === SESSION 4-7: Fortgeschrittene Features ===
+  'context_compaction.threshold': {title:'Kompaktierungs-Schwelle', text:'Ab diesem Anteil des Token-Budgets wird der Kontext zusammengefasst. 0.70 = bei 70% Auslastung. Niedrigerer Wert = frueheres Kompaktieren.'},
+  'context_compaction.prefer_llm': {title:'LLM-Kompaktierung bevorzugen', text:'Nutzt das LLM fuer intelligente Zusammenfassungen statt einfacher Abschneidung. Besser aber langsamer.'},
+  'pre_compaction_flush.enabled': {title:'Pre-Compaction Flush', text:'Sichert Fakten aus Nachrichten in das Langzeitgedaechtnis BEVOR sie kompaktiert werden. Verhindert Informationsverlust.'},
+  'cross_session_references.enabled': {title:'Cross-Session Referenzen', text:'Versteht temporale Bezuege wie "wie gestern", "wie letztes Mal" durch Abgleich mit vergangenen Aktionen.'},
+  'quality_feedback.enabled': {title:'Quality Feedback Loop', text:'Kategorien mit schlechtem Score generieren VERMEIDE-Hints im Prompt. Automatische Selbstverbesserung.'},
+  'quality_feedback.weak_threshold': {title:'Schwach-Schwelle', text:'Score unter dem eine Kategorie als "schwach" gilt und Verbesserungs-Hints generiert werden (0-1).'},
+  'relationship_model.enabled': {title:'Beziehungsmodell', text:'Speichert pro Person: Inside Jokes, Kommunikationsstil, Meilensteine. Jarvis erinnert sich an eure gemeinsame Geschichte.'},
+  'contextual_silence.enabled': {title:'Kontextuelles Schweigen', text:'Passt Antwort-Stil an die aktuelle Situation an: Ultra-kurz beim Film, Fluestern nachts, diskret bei Gaesten, nicht stoeren beim Telefonieren.'},
+  'self_learning.enabled': {title:'Proaktives Selbst-Lernen', text:'Erkennt Wissensluecken in eigenen Antworten und merkt sich offene Fragen fuer spaeter.'},
+  'self_learning.cooldown_minutes': {title:'Lernluecken-Cooldown', text:'Mindestabstand zwischen erkannten Wissensluecken (Minuten). Verhindert Spam.'},
+  'json_mode_tools.enabled': {title:'JSON-Modus fuer Tools', text:'Aktiviert automatisch JSON-Format bei Ollama-Anfragen mit Tool-Calls. Verbessert die Zuverlaessigkeit der Tool-Nutzung.'},
+  'background_reasoning.enabled': {title:'Background Reasoning', text:'Im Idle-Modus (kein User-Input seit X Minuten) analysiert Jarvis den Haus-Status mit dem Smart-Modell und generiert Insights fuer den naechsten Kontakt.'},
+  'background_reasoning.idle_minutes': {title:'Idle-Zeit (Minuten)', text:'Nach wie vielen Minuten ohne Interaktion startet die Hintergrund-Analyse.'},
+  'background_reasoning.cooldown_minutes': {title:'Analyse-Cooldown (Minuten)', text:'Mindestabstand zwischen zwei Hintergrund-Analysen.'},
+  'dynamic_skills.enabled': {title:'Abstrakte Konzepte', text:'Lernt zusammengehoerige Aktionen als Konzepte: "Feierabend" = Licht dimmen + Musik + Heizung. Nach 3 Beobachtungen wird ein Konzept vorgeschlagen.'},
+  'dynamic_skills.min_observations': {title:'Min. Beobachtungen', text:'Wie oft ein Konzept beobachtet werden muss bevor es als gelernt gilt.'},
+  'semantic_history_search.enabled': {title:'History-Suche', text:'Erlaubt Jarvis vergangene Gespraeche zu durchsuchen: "Was habe ich gestern gesagt?", "Wann haben wir ueber X geredet?"'},
+  'automation_debugging.enabled': {title:'Automation-Debugging', text:'Jarvis kann HA-Automatisierungen analysieren: Status, Trigger, letzte Ausfuehrung, Fehler. Frag z.B. "Warum hat die Automatisierung nicht ausgeloest?"'},
+  'dynamic_few_shot.enabled': {title:'Dynamic Few-Shot', text:'Speichert gute Antworten (Quality-Score >= 0.8) als Beispiele und laedt sie in den Prompt. Jarvis lernt aus seinen besten Antworten.'},
+  'dynamic_few_shot.max_per_category': {title:'Max. Beispiele pro Kategorie', text:'Wie viele gute Antworten pro Kategorie in Redis gespeichert werden.'},
+  'dynamic_few_shot.max_examples_in_prompt': {title:'Max. Beispiele im Prompt', text:'Wie viele Few-Shot-Beispiele gleichzeitig im Prompt erscheinen. Mehr = bessere Qualitaet, aber mehr Token.'},
+  'prompt_versioning.enabled': {title:'Prompt-Versionierung', text:'Trackt einen Hash des System-Prompts zusammen mit Quality-Scores. Ermoeglicht A/B-Vergleich verschiedener Prompt-Varianten.'},
   'feedback.auto_timeout_seconds': {title:'Feedback-Timeout', text:'Timeout für Feedback-Anfragen (Sek).'},
   'feedback.base_cooldown_seconds': {title:'Feedback-Abstand', text:'Min. Abstand zwischen Feedback-Anfragen.'},
   'feedback.score_suppress': {title:'Unterdrücken unter', text:'Unter diesem Score wird Feature unterdrückt.'},
@@ -4547,6 +4582,25 @@ function renderJarvisFeatures() {
     fRange('situation_model.min_pause_minutes', 'Mindest-Pause zwischen Deltas (Min)', 5, 120, 5) +
     fRange('situation_model.max_changes', 'Max. gemeldete Änderungen', 1, 10, 1) +
     fRange('situation_model.temp_threshold', 'Temperatur-Schwelle (°C)', 1, 5, 0.5)
+  ) +
+  // --- Session 5: Beziehungen & Kontext ---
+  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#129309; Beziehungen &amp; Kontext (Session 5)</div>' +
+  sectionWrap('&#129309;', 'Beziehungsmodell',
+    fInfo('Jarvis merkt sich pro Person: Inside Jokes (mit Score), Kommunikationsstil (formell/locker), und Meilensteine ("Erster Streit ueber Temperatur"). Bereichert den Prompt mit Beziehungs-Kontext.') +
+    fToggle('relationship_model.enabled', 'Beziehungsmodell aktiv')
+  ) +
+  sectionWrap('&#128164;', 'Kontextuelles Schweigen',
+    fInfo('Passt Antwort-Stil automatisch an die erkannte Aktivitaet an: Ultra-kurz beim Film, Fluester-Modus nachts, diskret bei Gaesten, nicht stoeren beim Telefonieren, minimal bei fokussierter Arbeit.') +
+    fToggle('contextual_silence.enabled', 'Kontextuelles Schweigen aktiv')
+  ) +
+  sectionWrap('&#128218;', 'Proaktives Selbst-Lernen',
+    fInfo('Erkennt Wissensluecken in eigenen Antworten (Unsicherheits-Marker wie "ich bin mir nicht sicher") und merkt sich die Fragen fuer spaetere Nachforschung.') +
+    fToggle('self_learning.enabled', 'Selbst-Lernen aktiv') +
+    fNum('self_learning.cooldown_minutes', 'Cooldown (Minuten)', 10, 120, 10)
+  ) +
+  sectionWrap('&#128196;', 'JSON-Modus fuer Tools',
+    fInfo('Aktiviert automatisch JSON-Output-Format bei Ollama-Anfragen die Tool-Calls enthalten. Verbessert die Zuverlaessigkeit der Geraete-Steuerung erheblich.') +
+    fToggle('json_mode_tools.enabled', 'JSON-Modus aktiv')
   );
 }
 
@@ -5246,6 +5300,27 @@ function renderAutonomie() {
     fToggle('adaptive_thresholds.enabled', 'Lernende Schwellwerte aktiv') +
     fToggle('adaptive_thresholds.auto_adjust', 'Auto-Anpassung') +
     fNum('adaptive_thresholds.analysis_interval_hours', 'Analyse-Intervall (Stunden)', 24, 336, 24)
+  ) +
+  // --- Session 4-7: Fortgeschrittene Lern-Features ---
+  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#129504; Fortgeschrittene Intelligenz (Sessions 4-7)</div>' +
+  sectionWrap('&#128230;', 'Kontext-Kompaktierung',
+    fInfo('Steuert wann und wie der Gespraechs-Kontext zusammengefasst wird um Token-Budget einzuhalten. Pre-Compaction Flush sichert Fakten bevor sie verloren gehen.') +
+    fRange('context_compaction.threshold', 'Kompaktierungs-Schwelle', 0.5, 0.95, 0.05, {0.5:'50%',0.6:'60%',0.7:'70% (Standard)',0.8:'80%',0.9:'90%',0.95:'95%'}) +
+    fToggle('context_compaction.prefer_llm', 'LLM-Kompaktierung bevorzugen') +
+    fToggle('pre_compaction_flush.enabled', 'Pre-Compaction Flush (Fakten sichern)')
+  ) +
+  sectionWrap('&#128279;', 'Cross-Session &amp; Quality Feedback',
+    fInfo('Cross-Session Referenzen: Versteht "wie gestern", "wie letztes Mal". Quality Feedback Loop: Schwache Kategorien generieren automatische VERMEIDE-Hints im Prompt.') +
+    fToggle('cross_session_references.enabled', 'Cross-Session Referenzen') +
+    fToggle('quality_feedback.enabled', 'Quality Feedback Loop') +
+    fRange('quality_feedback.weak_threshold', 'Schwach-Schwelle', 0.1, 0.5, 0.05, {0.1:'0.1',0.2:'0.2',0.3:'0.3 (Standard)',0.4:'0.4',0.5:'0.5'})
+  ) +
+  sectionWrap('&#127919;', 'Dynamic Few-Shot &amp; Prompt-Tracking',
+    fInfo('Few-Shot: Gute Antworten (Score >= 0.8) werden als Beispiele in den Prompt geladen — Jarvis lernt aus seinen besten Antworten. Prompt-Versionierung: Trackt welche Prompt-Variante wie gut funktioniert.') +
+    fToggle('dynamic_few_shot.enabled', 'Dynamic Few-Shot aktiv') +
+    fNum('dynamic_few_shot.max_per_category', 'Max. Beispiele pro Kategorie', 3, 20) +
+    fNum('dynamic_few_shot.max_examples_in_prompt', 'Max. Beispiele im Prompt', 1, 5) +
+    fToggle('prompt_versioning.enabled', 'Prompt-Versionierung aktiv')
   ) +
   sectionWrap('&#128200;', 'Feedback-System',
     fInfo('Wie reagiert der Assistent auf positives/negatives Feedback? Scores bestimmen wie häufig er sich meldet.') +
@@ -10936,6 +11011,27 @@ function renderIntelligence() {
     fToggle('observation_loop.enabled', 'Beobachtungen aktiv') +
     fNum('observation_loop.interval_hours', 'Prüf-Intervall (Stunden)', 1, 12) +
     fNum('observation_loop.max_daily', 'Max. Beobachtungen pro Tag', 1, 5)
+  ) +
+  // --- Session 6: Fortgeschrittene Intelligenz ---
+  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#129504; Fortgeschrittene Intelligenz (Session 6)</div>' +
+  sectionWrap('&#129504;', 'Background Reasoning',
+    fInfo('Wenn niemand mit Jarvis spricht, analysiert er im Hintergrund den Haus-Status mit dem Smart-Modell. Insights werden beim naechsten User-Kontakt beilaeufig eingewoben. GPU-Contention-Guard: Analyse wird uebersprungen wenn ein User-Request aktiv ist.') +
+    fToggle('background_reasoning.enabled', 'Background Reasoning aktiv') +
+    fNum('background_reasoning.idle_minutes', 'Idle-Zeit (Minuten)', 2, 30) +
+    fNum('background_reasoning.cooldown_minutes', 'Cooldown (Minuten)', 10, 120, 10)
+  ) +
+  sectionWrap('&#127793;', 'Abstrakte Konzepte (Dynamic Skills)',
+    fInfo('Lernt zusammengehoerige Aktionen als abstrakte Konzepte: "Feierabend" = Licht dimmen + Musik an + Heizung hoch. Erkennt Kern-Aktionen (>50% Haeufigkeit) und schlaegt das Konzept nach N Beobachtungen vor.') +
+    fToggle('dynamic_skills.enabled', 'Abstrakte Konzepte aktiv') +
+    fNum('dynamic_skills.min_observations', 'Min. Beobachtungen', 2, 10)
+  ) +
+  sectionWrap('&#128270;', 'Semantic History Search',
+    fInfo('Neues Tool fuer Jarvis: Durchsucht vergangene Gespraeche per Keyword-Suche. Frag z.B. "Was habe ich gestern ueber das Licht gesagt?" oder "Wann haben wir ueber die Heizung geredet?"') +
+    fToggle('semantic_history_search.enabled', 'History-Suche aktiv')
+  ) +
+  sectionWrap('&#128295;', 'Automation-Debugging',
+    fInfo('Neues Tool: Jarvis analysiert HA-Automatisierungen auf Probleme. Zeigt Status, Trigger, letzte Ausfuehrung und erkennt Automatisierungen die aktiv aber lange nicht ausgeloest wurden. Frag z.B. "Warum hat die Nachtlicht-Automation nicht funktioniert?"') +
+    fToggle('automation_debugging.enabled', 'Automation-Debugging aktiv')
   );
 }
 
