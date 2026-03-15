@@ -6658,9 +6658,53 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return
         if not await self._callback_should_speak("low", source="LearningObserver"):
             return
+        # LLM-Polish: Variation statt immer gleicher Template-Text
+        message = await self._polish_learning_suggestion(message, alert)
         formatted = await self._safe_format(message, "low")
         await self._speak_and_emit(formatted)
         logger.info("Learning -> Vorschlag: %s", formatted)
+
+    async def _polish_learning_suggestion(self, message: str, alert: dict) -> str:
+        """Poliert Learning-Vorschlaege mit LLM fuer natuerliche Variation."""
+        if not self.ollama:
+            return message
+        try:
+            entity = alert.get("entity_id", "")
+            count = alert.get("count", 0)
+            time_slot = alert.get("time_slot", "")
+            response = await asyncio.wait_for(
+                self.ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S., trockener britischer KI-Butler. "
+                                "Formuliere einen beilaeufigen Vorschlag zur Automatisierung. "
+                                "Variiere die Formulierung — nie zweimal gleich. "
+                                "Max 2 Saetze. Endet mit einer Frage ob automatisiert werden soll."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Beobachtung: {entity} wird regelmaessig um {time_slot} Uhr "
+                                f"geschaltet ({count}x beobachtet). Schlage Automatisierung vor."
+                            ),
+                        },
+                    ],
+                    model=settings.model_fast,
+                    think=False,
+                    max_tokens=80,
+                    tier="fast",
+                ),
+                timeout=3.0,
+            )
+            polished = (response.get("message", {}).get("content", "") or "").strip()
+            if polished and len(polished) > 15:
+                return polished
+        except Exception as e:
+            logger.debug("Learning-Suggestion LLM-Polish fehlgeschlagen: %s", e)
+        return message
 
     async def _handle_cooking_timer(self, alert: dict):
         """Callback für Koch-Timer — meldet wenn Timer abgelaufen ist."""

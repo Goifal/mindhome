@@ -2061,12 +2061,11 @@ class ProactiveManager:
                 _esc_count = await _redis.incr(_esc_key)
                 await _redis.expire(_esc_key, 6 * 3600)  # 6h Fenster
                 if _esc_count == 1:
-                    description = f"Nur zur Info: {description}"
+                    description = f"[ERSTE MELDUNG] {description}"
                 elif _esc_count == 2:
-                    description = f"Nochmal dazu: {description}"
+                    description = f"[WIEDERHOLUNG #{_esc_count} — erhoehe Dringlichkeit natuerlich] {description}"
                 elif _esc_count >= 3:
-                    _title = get_person_title()
-                    description = f"{_title}, das ist wirklich wichtig: {description}"
+                    description = f"[WIEDERHOLUNG #{_esc_count} — sehr dringend, Butler wird bestimmter] {description}"
         except Exception as e:
             logger.debug("D4: Eskalations-Counter fehlgeschlagen: %s", e)
 
@@ -3131,6 +3130,69 @@ class ProactiveManager:
         except Exception as e:
             logger.debug("Observation-Generierung fehlgeschlagen: %s", e)
             return None
+
+    async def _contextualize_threat(self, threat: dict) -> str:
+        """Kontextualisiert Bedrohungsmeldungen mit LLM.
+
+        Kombiniert Bedrohungstyp mit Wetter, Uhrzeit und Kontext
+        fuer eine sinnvolle Einschaetzung statt generischer Warnung.
+        """
+        raw_msg = threat.get("message", "")
+        if not raw_msg or not getattr(self.brain, "ollama", None):
+            return raw_msg
+        try:
+            # Kontext sammeln: Uhrzeit, Wetter
+            from datetime import datetime
+            hour = datetime.now().hour
+            weather_info = ""
+            try:
+                states = await self.brain.ha.get_states()
+                for s in (states or []):
+                    if s.get("entity_id", "").startswith("weather."):
+                        attrs = s.get("attributes", {})
+                        weather_info = (
+                            f"Wetter: {s.get('state', '?')}, "
+                            f"Wind: {attrs.get('wind_speed', '?')} km/h"
+                        )
+                        break
+            except Exception:
+                pass
+
+            response = await asyncio.wait_for(
+                self.brain.ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S., Sicherheits-KI. "
+                                "Bewerte diese Bedrohung im Kontext und formuliere "
+                                "eine praezise Meldung. Schaetze ein ob es ernst ist "
+                                "oder harmlosen Ursprung haben koennte. Max 2 Saetze."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Bedrohung: {raw_msg}\n"
+                                f"Uhrzeit: {hour}:00 Uhr\n"
+                                f"{weather_info}\n"
+                                f"Typ: {threat.get('type', 'unbekannt')}"
+                            ),
+                        },
+                    ],
+                    model=settings.model_fast,
+                    think=False,
+                    max_tokens=100,
+                    tier="fast",
+                ),
+                timeout=3.0,
+            )
+            polished = (response.get("message", {}).get("content", "") or "").strip()
+            if polished and len(polished) > 15:
+                return polished
+        except Exception as e:
+            logger.debug("Threat-Kontext LLM fehlgeschlagen: %s", e)
+        return raw_msg
 
     async def _polish_auto_action(self, raw_text: str) -> str:
         """Poliert eine Auto-Aktions-Nachricht in JARVIS-Butler-Stil.
@@ -5908,9 +5970,11 @@ class ProactiveManager:
                         "low": LOW,
                     }
                     urgency = urgency_map.get(threat.get("urgency", "medium"), MEDIUM)
+                    # LLM-Kontext: Bedrohung mit Wetter/Uhrzeit kontextualisieren
+                    threat_msg = await self._contextualize_threat(threat)
                     await self._notify("threat_detected", urgency, {
                         "type": threat.get("type", "unknown"),
-                        "message": threat.get("message", ""),
+                        "message": threat_msg,
                         "entity": threat.get("entity", ""),
                     })
 
