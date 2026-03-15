@@ -781,3 +781,73 @@ class LearningObserver:
         except Exception as e:
             logger.debug("B8 Get All Concepts Fehler: %s", e)
             return []
+
+    # ------------------------------------------------------------------
+    # B12: Proaktives Selbst-Lernen — bei Wissenslücken aktiv fragen
+    # ------------------------------------------------------------------
+
+    _B12_COOLDOWN_KEY = "mha:learning:b12_last_ask"
+
+    async def observe_knowledge_gap(self, user_text: str, tool_failed: bool = False,
+                                     no_tool_match: bool = False, person: str = ""):
+        """B12: Erkennt Wissenslücken und fragt proaktiv nach.
+
+        Wird aufgerufen wenn:
+        - Ein Tool fehlschlaegt (tool_failed=True)
+        - Kein passendes Tool gefunden wurde (no_tool_match=True)
+        - Der User etwas sagt das JARVIS nicht einordnen kann
+
+        Args:
+            user_text: Was der User gesagt hat
+            tool_failed: Ob ein Tool-Call fehlgeschlagen ist
+            no_tool_match: Ob kein Tool gefunden wurde
+            person: Aktuelle Person
+        """
+        if not self.enabled or not self.redis or not self._notify_callback:
+            return
+
+        _sl_cfg = yaml_config.get("self_learning", {})
+        if not _sl_cfg.get("enabled", True):
+            return
+
+        # Cooldown prüfen (max 1 Lern-Frage pro 30 Min)
+        cooldown_min = _sl_cfg.get("cooldown_minutes", 30)
+        try:
+            last_ask = await self.redis.get(self._B12_COOLDOWN_KEY)
+            if last_ask:
+                last_dt = datetime.fromisoformat(last_ask.decode() if isinstance(last_ask, bytes) else last_ask)
+                if (datetime.now() - last_dt).total_seconds() < cooldown_min * 60:
+                    return
+        except Exception:
+            pass
+
+        title = get_person_title(person) if person else get_person_title()
+
+        message = None
+        if tool_failed:
+            message = (
+                f"{title}, das hat nicht funktioniert wie erwartet. "
+                f"Gibt es etwas das ich ueber dieses Geraet wissen sollte?"
+            )
+        elif no_tool_match:
+            # Nur fragen wenn der User-Text kein einfacher Chat ist
+            if len(user_text.split()) >= 4:
+                message = (
+                    f"Ich bin nicht sicher ob ich das richtig verstanden habe, {title}. "
+                    f"Kannst du mir erklaeren was du mit '{user_text[:80]}' meinst?"
+                )
+
+        if message:
+            try:
+                await self.redis.set(
+                    self._B12_COOLDOWN_KEY,
+                    datetime.now().isoformat(),
+                    ex=cooldown_min * 60,
+                )
+                await self._notify_callback({
+                    "message": message,
+                    "type": "knowledge_gap",
+                    "person": person,
+                })
+            except Exception as e:
+                logger.debug("B12: Lern-Frage fehlgeschlagen: %s", e)
