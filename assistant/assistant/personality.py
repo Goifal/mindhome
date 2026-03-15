@@ -335,6 +335,8 @@ class PersonalityEngine:
         self._inner_state = None  # B5: JARVIS-eigene Emotionen
         self._response_quality = None  # D5: Quality Feedback
         self._quality_hints: str = ""  # D5: Gecachte VERMEIDE-Hints
+        self._relationship_context: str = ""  # B6: Gecachter Beziehungskontext
+        self._current_activity: str = ""  # D3: Aktuelle Aktivitaet (sleeping, watching, etc.)
         self._redis = None
         # F-021: Per-User Confirmation-Tracking (statt shared Instanzvariable)
         self._last_confirmations: dict[str, list[str]] = {}
@@ -389,6 +391,48 @@ class PersonalityEngine:
     def set_response_quality(self, response_quality):
         """D5: Setzt die Referenz zum ResponseQualityTracker."""
         self._response_quality = response_quality
+
+    def _build_contextual_silence_section(self) -> str:
+        """D3: Generiert Prompt-Hint basierend auf aktueller Aktivitaet.
+
+        Film → minimal, kein Smalltalk, nur auf Frage antworten
+        Gaeste → diskret, kurz, formell
+        Schlaf → ultra-kurz, nur essentielles
+        Fokus → knapp, keine Ablenkung
+        """
+        _d3_cfg = yaml_config.get("contextual_silence", {})
+        if not _d3_cfg.get("enabled", True) or not self._current_activity:
+            return ""
+
+        _hints = {
+            "watching": (
+                "KONTEXT: User schaut Film/Serie. "
+                "ULTRA-KURZ antworten. Kein Smalltalk. "
+                "Nur auf direkte Fragen reagieren. Max 1 Satz."
+            ),
+            "sleeping": (
+                "KONTEXT: User schlaeft. "
+                "NUR bei expliziter Anfrage antworten. "
+                "Fluester-Modus: Minimal, sanft, keine Energie."
+            ),
+            "guests": (
+                "KONTEXT: Gaeste anwesend. "
+                "Diskret und formell. Keine persoenlichen Details. "
+                "Kurz, professionell, Butler-Modus verstaerkt."
+            ),
+            "focused": (
+                "KONTEXT: User arbeitet konzentriert. "
+                "Nur Essentielles. Keine Ablenkung. "
+                "Knappste moegliche Antworten."
+            ),
+            "in_call": (
+                "KONTEXT: User telefoniert. "
+                "NICHT unterbrechen ausser CRITICAL. "
+                "Wenn angesprochen: Fluester-kurz, 1 Satz max."
+            ),
+        }
+
+        return _hints.get(self._current_activity, "")
 
     async def refresh_quality_hints(self):
         """D5: Aktualisiert VERMEIDE-Hints aus schlechten Quality-Patterns.
@@ -526,6 +570,124 @@ class PersonalityEngine:
                 except (ValueError, TypeError):
                     del profile[int_field]
         return profile
+
+    # ------------------------------------------------------------------
+    # B6: Relationship Model — Inside Jokes, Kommunikationsstil, Milestones
+    # ------------------------------------------------------------------
+
+    async def get_relationship_context(self, person: str) -> str:
+        """B6: Laedt Beziehungsdaten und generiert einen Prompt-Abschnitt.
+
+        Laedt aus Redis:
+        - Inside Jokes (letzte 3)
+        - Kommunikationsstil-Praeferenzen (gelernt)
+        - Beziehungs-Milestones
+
+        Returns:
+            Prompt-Abschnitt oder leerer String.
+        """
+        _b6_cfg = yaml_config.get("relationship_model", {})
+        if not _b6_cfg.get("enabled", True) or not self._redis or not person:
+            return ""
+
+        person_key = person.lower().strip()
+        parts = []
+
+        try:
+            # Inside Jokes laden (ZSET, sortiert nach Timestamp)
+            jokes_key = f"mha:relationship:jokes:{person_key}"
+            raw_jokes = await self._redis.zrevrange(jokes_key, 0, 2)
+            if raw_jokes:
+                jokes = []
+                for j in raw_jokes:
+                    try:
+                        entry = json.loads(j)
+                        jokes.append(entry.get("joke", ""))
+                    except (json.JSONDecodeError, TypeError):
+                        jokes.append(str(j))
+                if jokes:
+                    parts.append(
+                        "INSIDE JOKES mit " + person + ": "
+                        + " | ".join(j for j in jokes if j)
+                    )
+
+            # Kommunikationsstil-Praeferenzen (HASH)
+            style_key = f"mha:relationship:style:{person_key}"
+            style = await self._redis.hgetall(style_key)
+            if style:
+                style_hints = []
+                for k, v in style.items():
+                    k_str = k.decode() if isinstance(k, bytes) else k
+                    v_str = v.decode() if isinstance(v, bytes) else v
+                    style_hints.append(f"{k_str}: {v_str}")
+                if style_hints:
+                    parts.append("KOMMUNIKATIONSSTIL: " + ", ".join(style_hints))
+
+            # Milestones (LIST, letzte 3)
+            ms_key = f"mha:relationship:milestones:{person_key}"
+            raw_ms = await self._redis.lrange(ms_key, 0, 2)
+            if raw_ms:
+                milestones = []
+                for m in raw_ms:
+                    try:
+                        entry = json.loads(m)
+                        milestones.append(
+                            f"{entry.get('date', '?')}: {entry.get('event', '')}"
+                        )
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                if milestones:
+                    parts.append("BEZIEHUNGS-MILESTONES: " + " | ".join(milestones))
+
+        except Exception as e:
+            logger.debug("B6 Relationship Context Fehler: %s", e)
+
+        return "\n".join(parts) if parts else ""
+
+    async def record_inside_joke(self, person: str, joke: str):
+        """B6: Speichert einen Inside Joke fuer eine Person."""
+        if not self._redis or not person or not joke:
+            return
+        person_key = person.lower().strip()
+        key = f"mha:relationship:jokes:{person_key}"
+        entry = json.dumps({"joke": joke[:150], "date": datetime.now().strftime("%Y-%m-%d")})
+        try:
+            await self._redis.zadd(key, {entry: time.time()})
+            count = await self._redis.zcard(key)
+            if count > 10:
+                await self._redis.zremrangebyrank(key, 0, count - 11)
+            await self._redis.expire(key, 180 * 86400)  # 6 Monate
+        except Exception as e:
+            logger.debug("Inside Joke speichern fehlgeschlagen: %s", e)
+
+    async def record_comm_style(self, person: str, key: str, value: str):
+        """B6: Speichert eine Kommunikationsstil-Praeferenz."""
+        if not self._redis or not person:
+            return
+        person_key = person.lower().strip()
+        redis_key = f"mha:relationship:style:{person_key}"
+        try:
+            await self._redis.hset(redis_key, key, value)
+            await self._redis.expire(redis_key, 365 * 86400)
+        except Exception as e:
+            logger.debug("Comm Style speichern fehlgeschlagen: %s", e)
+
+    async def record_milestone(self, person: str, event: str):
+        """B6: Speichert einen Beziehungs-Milestone."""
+        if not self._redis or not person or not event:
+            return
+        person_key = person.lower().strip()
+        key = f"mha:relationship:milestones:{person_key}"
+        entry = json.dumps({
+            "event": event[:200],
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        })
+        try:
+            await self._redis.lpush(key, entry)
+            await self._redis.ltrim(key, 0, 19)  # Max 20 Milestones
+            await self._redis.expire(key, 365 * 86400)
+        except Exception as e:
+            logger.debug("Milestone speichern fehlgeschlagen: %s", e)
 
     # ------------------------------------------------------------------
     # Easter Eggs (Phase 6.3)
@@ -2594,6 +2756,34 @@ class PersonalityEngine:
                 "Denke wie ein Ingenieur: Was GEHT mit dem was wir HABEN?\n"
             )
 
+        # A5: Narrative Gespraechsboegen — Callback zu frueheren Themen
+        _narrative_section = ""
+        _narrative_cfg = yaml_config.get("narrative_arcs", {})
+        if _narrative_cfg.get("enabled", True):
+            _narrative_section = (
+                "NARRATIVE: Fuehre Gespraeche als natuerliche Boegen.\n"
+                "Greife fruehere Themen beilaeufig auf wenn passend "
+                "('Uebrigens, vorhin meintest du...').\n"
+                "Schliesse laengere Gespraeche mit kurzem Rueckblick ab "
+                "('Zusammengefasst: ...').\n"
+                "Nutze Uebergaenge statt harter Themenwechsel.\n"
+                "Nicht erzwingen — nur wenn es natuerlich passt.\n"
+            )
+
+        # B12: Proaktives Selbst-Lernen — bei Wissensluecken aktiv fragen
+        _selflearn_section = ""
+        _selflearn_cfg = yaml_config.get("self_learning", {})
+        if _selflearn_cfg.get("enabled", True):
+            _selflearn_section = (
+                "SELBST-LERNEN: Wenn dir Wissen fehlt — frag aktiv nach.\n"
+                "Beispiel: 'Mir ist aufgefallen, dass du freitags oft X machst. "
+                "Soll ich das als Routine merken?'\n"
+                "Beispiel: 'Ich kenne die Temperatur-Praeferenz fuer das Schlafzimmer nicht. "
+                "Was ist angenehm fuer dich?'\n"
+                "Nicht bei jedem Gespraech — nur wenn eine echte Luecke auffaellt.\n"
+                "Max 1 Lern-Frage pro Gespraech. Natuerlich einbauen, nicht aufzwingen.\n"
+            )
+
         # P06e: Konsolidierte dynamische Sektionen — Token-Budget fuer kleine Modelle
         # Die entfernten Sektionen (proactive_thinking, engineering_diagnosis,
         # self_awareness, empathy, self_irony) bleiben als Code erhalten,
@@ -2615,6 +2805,10 @@ class PersonalityEngine:
             _dynamic_parts.append(_improv_section.strip())
         if _creative_section:
             _dynamic_parts.append(_creative_section.strip())
+        if _narrative_section:
+            _dynamic_parts.append(_narrative_section.strip())
+        if _selflearn_section:
+            _dynamic_parts.append(_selflearn_section.strip())
 
         # B5: Inner State — JARVIS-eigene Emotionen als Prompt-Kontext
         if self._inner_state:
@@ -2625,6 +2819,15 @@ class PersonalityEngine:
         # D5: Quality Feedback — VERMEIDE-Hints aus schlechten Patterns
         if self._quality_hints:
             _dynamic_parts.append(self._quality_hints)
+
+        # B6: Relationship Model — Inside Jokes, Kommunikationsstil, Milestones
+        if self._relationship_context:
+            _dynamic_parts.append(self._relationship_context)
+
+        # D3: Kontextuelles Schweigen — Antwort-Stil an Situation anpassen
+        _silence_hint = self._build_contextual_silence_section()
+        if _silence_hint:
+            _dynamic_parts.append(_silence_hint)
 
         dynamic_context = "\n".join(_dynamic_parts) + "\n" if _dynamic_parts else ""
 

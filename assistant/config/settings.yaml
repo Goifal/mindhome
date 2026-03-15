@@ -309,6 +309,22 @@ cross_session_references:
 quality_feedback:
   enabled: true
   weak_threshold: 0.3      # Score unter dem eine Kategorie als schlecht gilt
+# B6: Relationship Model — Inside Jokes, Kommunikationsstil, Milestones
+relationship_model:
+  enabled: true
+# D3: Kontextuelles Schweigen — Antwort-Stil an Situation anpassen
+contextual_silence:
+  enabled: true
+# A5: Narrative Gespraechsboegen — Callback zu frueheren Themen
+narrative_arcs:
+  enabled: true
+# B12: Proaktives Selbst-Lernen — aktiv fragen bei Wissensluecken
+self_learning:
+  enabled: true
+  cooldown_minutes: 30     # Max 1 Lern-Notiz pro 30 Minuten
+# N6: JSON-Mode fuer Tool-Calls — stabilere Erkennung
+json_mode_tools:
+  enabled: true
 character_lock:
   enabled: true
   closing_anchor: true

@@ -2749,6 +2749,20 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Phase 18: Memory-Callback-Section (aus mega-gather, nicht sequentiell)
         memory_callback_section = _safe_get("memory_callback", "")
 
+        # B6: Relationship Context fuer aktuelle Person laden
+        try:
+            _rel_ctx = await self.personality.get_relationship_context(person or "")
+            self.personality._relationship_context = _rel_ctx
+        except Exception:
+            pass
+
+        # D3: Aktuelle Aktivitaet fuer kontextuelles Schweigen
+        try:
+            _activity_result = await self.activity.detect_activity()
+            self.personality._current_activity = _activity_result.get("activity", "")
+        except Exception:
+            self.personality._current_activity = ""
+
         system_prompt = self.personality.build_system_prompt(
             context, formality_score=formality_score,
             irony_count_today=irony_count,
@@ -4801,6 +4815,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             self._task_registry.create_task(
                 self.personality.refresh_quality_hints(),
                 name="quality_hints_refresh",
+            )
+
+        # B12: Proaktives Selbst-Lernen — Wissensluecken erkennen
+        _selflearn_cfg = cfg.yaml_config.get("self_learning", {})
+        if _selflearn_cfg.get("enabled", True) and response_text:
+            self._task_registry.create_task(
+                self._check_knowledge_gap(text, response_text, person or ""),
+                name="self_learning_check",
             )
 
         # Self-Improvement: Outcome Tracker — "Danke" = POSITIVE
@@ -8978,6 +9000,54 @@ Regeln:
     # Experiential Memory: "Letztes Mal als du das gemacht hast..."
     # Speichert Aktion + Kontext und recalled bei aehnlichen Aktionen.
     # ------------------------------------------------------------------
+
+    async def _check_knowledge_gap(self, user_text: str, response_text: str, person: str):
+        """B12: Erkennt Wissensluecken und merkt sich Lernbedarf.
+
+        Wenn JARVIS unsicher antwortet oder ein Muster erkennt das er nicht
+        versteht, wird eine Lern-Notiz in Redis gespeichert. Diese wird
+        beim naechsten passenden Moment als proaktive Frage gestellt.
+        """
+        if not self.memory.redis:
+            return
+
+        _b12_cfg = cfg.yaml_config.get("self_learning", {})
+
+        # Unsicherheitsmarker in der Antwort erkennen
+        _uncertainty_markers = [
+            "ich bin mir nicht sicher", "ich weiss nicht", "ich kenne",
+            "leider kann ich", "dazu habe ich keine", "das ist mir nicht bekannt",
+            "keine informationen", "nicht in meinen daten",
+        ]
+        response_lower = response_text.lower()
+        has_uncertainty = any(m in response_lower for m in _uncertainty_markers)
+
+        if not has_uncertainty:
+            return
+
+        # Cooldown: Max 1 Lern-Notiz pro 30 Minuten
+        cooldown_key = "mha:self_learning:last_gap"
+        try:
+            last = await self.memory.redis.get(cooldown_key)
+            if last:
+                from datetime import datetime
+                last_dt = datetime.fromisoformat(last)
+                cooldown_min = _b12_cfg.get("cooldown_minutes", 30)
+                if (datetime.now() - last_dt).total_seconds() < cooldown_min * 60:
+                    return
+
+            # Lern-Notiz speichern
+            gap_entry = json.dumps({
+                "question": user_text[:200],
+                "person": person,
+                "timestamp": datetime.now().isoformat(),
+            }, ensure_ascii=False)
+            await self.memory.redis.lpush("mha:self_learning:gaps", gap_entry)
+            await self.memory.redis.ltrim("mha:self_learning:gaps", 0, 19)
+            await self.memory.redis.set(cooldown_key, datetime.now().isoformat(), ex=7200)
+            logger.info("B12: Wissensluecke erkannt: %s", user_text[:80])
+        except Exception as e:
+            logger.debug("B12 Knowledge Gap Check Fehler: %s", e)
 
     async def _refresh_action_log_cache(self):
         """C5: Laedt die letzten Action-Outcomes in den DialogueState-Cache.
