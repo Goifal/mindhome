@@ -30,6 +30,9 @@ from .constants import (
 logger = logging.getLogger(__name__)
 _metrics_logger = logging.getLogger(__name__ + ".metrics")
 
+# Maximale Groesse des Think-Tag Buffers bevor Content geflusht wird
+_THINK_BUFFER_MAX_CHARS = 100_000
+
 # Regex zum Entfernen von LLM Think-Bloecken (<think>...</think>)
 _THINK_PATTERN = re.compile(r"<think>[\s\S]*?</think>\s*", re.DOTALL)
 
@@ -553,6 +556,8 @@ class OllamaClient:
                     try:
                         data = _json.loads(line)
                     except (ValueError, _json.JSONDecodeError):
+                        logger.debug("Ollama Stream: Malformed JSON chunk uebersprungen: %s",
+                                     line[:200] if isinstance(line, str) else line[:200])
                         continue
 
                     content = data.get("message", {}).get("content", "")
@@ -564,8 +569,12 @@ class OllamaClient:
                     _think_buffer += content
 
                     # Guard against unbounded buffer growth
-                    if len(_think_buffer) > 100_000:
-                        logger.warning("_think_buffer exceeded 100k chars, flushing")
+                    if len(_think_buffer) > _THINK_BUFFER_MAX_CHARS:
+                        logger.warning("_think_buffer exceeded 100k chars, flushing content")
+                        # Content retten statt verwerfen — nur Think-Tags strippen
+                        _think_buffer = strip_think_tags(_think_buffer)
+                        if _think_buffer:
+                            yield _think_buffer
                         _think_buffer = ""
                         in_think_block = False
 

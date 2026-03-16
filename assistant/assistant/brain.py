@@ -139,8 +139,8 @@ def _estimate_tokens(text: str) -> int:
     return int(len(text) / 1.8)
 
 
-def _audit_log(action: str, details: dict = None):
-    """Schreibt einen Audit-Eintrag (append-only JSONL)."""
+def _audit_log_sync(action: str, details: dict = None):
+    """Schreibt einen Audit-Eintrag (append-only JSONL) — blocking I/O."""
     try:
         _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         entry = {
@@ -152,6 +152,16 @@ def _audit_log(action: str, details: dict = None):
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as exc:
         logger.warning("Audit-Log Fehler: %s", exc)
+
+
+def _audit_log(action: str, details: dict = None):
+    """Audit-Eintrag non-blocking schreiben (via Thread-Pool)."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, _audit_log_sync, action, details)
+    except RuntimeError:
+        # Kein laufender Event-Loop — synchron schreiben
+        _audit_log_sync(action, details)
 
 # Phase 7.5: Szenen-Intelligenz — Reasoning Framework statt Lookup-Tabelle
 def _build_scene_intelligence_prompt() -> str:
@@ -958,7 +968,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             stream_error = True
                             continue
                         collected.append(token)
-                        await stream_callback(token)
+                        try:
+                            await stream_callback(token)
+                        except Exception as _cb_err:
+                            logger.warning("stream_callback Fehler: %s", _cb_err)
+                            stream_error = True
+                            break
                     if not stream_error and collected:
                         return {
                             "text": "".join(collected),
@@ -3625,7 +3640,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # BUG-17: Validate tool_calls structure — Ollama may return malformed entries
             tool_calls = [
                 tc for tc in raw_tool_calls
-                if isinstance(tc, dict) and "function" in tc
+                if isinstance(tc, dict)
+                and isinstance(tc.get("function"), dict)
+                and tc["function"].get("name")
             ]
 
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
