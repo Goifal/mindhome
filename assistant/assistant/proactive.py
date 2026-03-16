@@ -188,6 +188,144 @@ class ProactiveManager:
                 desc = info.get("description", event_name)
                 self.event_handlers[event_name] = (prio, desc)
 
+        # Salience Scoring: Notification-Historie fuer Fatigue-Berechnung
+        # Speichert Zeitstempel der letzten Benachrichtigungen (maxlen begrenzt Speicher)
+        self._notification_timestamps: collections.deque[float] = collections.deque(maxlen=200)
+        # Ignorierte Events pro Typ: zaehlt wie oft User aehnliche Events ignoriert hat
+        self._dismissed_event_types: collections.Counter = collections.Counter()
+
+    # ------------------------------------------------------------------
+    # Attention / Salience Scoring
+    # ------------------------------------------------------------------
+
+    # Schweregrad-Gewichtung pro Prioritaet
+    _SEVERITY_SCORES = {
+        CRITICAL: 1.0,
+        HIGH: 0.8,
+        MEDIUM: 0.5,
+        LOW: 0.25,
+    }
+
+    # Aktivitaets-Schwellwerte: hoeher = schwieriger zu unterbrechen
+    _ACTIVITY_THRESHOLDS = {
+        "sleeping": 0.9,        # Schlaf: nur bei sehr hoher Salienz unterbrechen
+        "in_call": 0.85,        # Telefonat/Videocall: fast nie unterbrechen
+        "watching": 0.7,        # Film/TV: erhoehter Schwellwert
+        "focused": 0.65,        # Konzentriertes Arbeiten
+        "guests": 0.6,          # Gaeste da: zurueckhaltend
+        "relaxing": 0.4,        # Entspannung: moderate Schwelle
+        "idle": 0.2,            # Nichts los: fast alles durchlassen
+        "away": 0.5,            # Abwesend: mittel (manche Events relevant)
+        "unknown": 0.3,         # Unbekannt: eher durchlassen
+    }
+
+    def calculate_salience(self, event: dict, user_activity: str) -> float:
+        """Berechnet wie unterbrechungswuerdig ein Event ist (0.0 - 1.0).
+
+        Faktoren:
+        - Event-Schweregrad (critical > high > medium > low)
+        - Benutzer-Aktivitaet (sleeping = hohe Schwelle, idle = niedrige)
+        - Tageszeit (nachts hoehere Schwelle fuer unwichtige Events)
+        - Notification Fatigue (viele Meldungen → reduzierte Salienz)
+        - Ignorier-Historie (oft ignorierte Event-Typen → reduzierte Salienz)
+
+        Args:
+            event: Event-Dict mit mindestens "event_type" und optional "urgency"
+            user_activity: Aktuelle Aktivitaet des Users (sleeping, watching, idle, ...)
+
+        Returns:
+            Score 0.0-1.0 — der Aufrufer entscheidet ueber den Schwellwert
+        """
+        event_type = event.get("event_type", "")
+        urgency = event.get("urgency", MEDIUM)
+
+        # 1. Basis-Score aus Schweregrad
+        base_score = self._SEVERITY_SCORES.get(urgency, 0.3)
+
+        # 2. Tageszeit-Modifikator: nachts (22-7) sind LOW/MEDIUM weniger salient
+        hour = datetime.now().hour
+        time_modifier = 1.0
+        if self._quiet_start > self._quiet_end:
+            is_night = hour >= self._quiet_start or hour < self._quiet_end
+        else:
+            is_night = self._quiet_start <= hour < self._quiet_end
+        if is_night and urgency in (LOW, MEDIUM):
+            time_modifier = 0.5  # Nachtabsenkung fuer unwichtige Events
+
+        # 3. Notification Fatigue: je mehr Meldungen kuerzlich, desto weniger salient
+        fatigue = self._notification_fatigue_score()
+
+        # 4. Ignorier-Abzug: Wenn der User diesen Event-Typ oft ignoriert hat
+        dismiss_count = self._dismissed_event_types.get(event_type, 0)
+        # Jedes Ignorieren reduziert Salienz um 5%, max 40% Reduktion
+        dismiss_penalty = max(0.6, 1.0 - dismiss_count * 0.05)
+
+        # 5. Aktivitaets-Relevanz: inverse Schwelle = wie leicht durchzukommen
+        # Hohe Schwelle = schwer durchzukommen = Salienz wird relativ betrachtet
+        activity_threshold = self._ACTIVITY_THRESHOLDS.get(user_activity, 0.3)
+        # Je hoeher die Schwelle, desto mehr wird der Score gedaempft
+        # (aber CRITICAL bleibt immer hoch)
+        if urgency == CRITICAL:
+            activity_modifier = 1.0  # CRITICAL ignoriert Aktivitaet
+        else:
+            # Invertierte Daempfung: hohe Schwelle = staerkere Reduktion
+            activity_modifier = max(0.3, 1.0 - activity_threshold * 0.5)
+
+        # Endgueltiger Score: alle Faktoren kombinieren
+        score = base_score * time_modifier * fatigue * dismiss_penalty * activity_modifier
+
+        # Auf 0.0-1.0 begrenzen
+        return max(0.0, min(1.0, round(score, 3)))
+
+    def _notification_fatigue_score(self) -> float:
+        """Berechnet Ermuedungs-Multiplikator basierend auf kuerzlichen Benachrichtigungen.
+
+        Zaehlt wie viele Notifications in der letzten Stunde gesendet wurden
+        und gibt einen Multiplikator zurueck:
+        - 1.0 = keine Ermuedung (0-2 Notifications/Stunde)
+        - 0.7 = leichte Ermuedung (3-5 Notifications)
+        - 0.5 = moderate Ermuedung (6-10 Notifications)
+        - 0.3 = starke Ermuedung (>10 Notifications) — Unterbrechungen reduzieren
+
+        Returns:
+            Multiplikator 0.3-1.0 fuer Salienz-Berechnung
+        """
+        now = time.time()
+        one_hour_ago = now - 3600
+
+        # Zaehle Notifications der letzten Stunde
+        recent_count = sum(1 for ts in self._notification_timestamps if ts > one_hour_ago)
+
+        if recent_count <= 2:
+            return 1.0    # Keine Ermuedung
+        elif recent_count <= 5:
+            return 0.7    # Leichte Ermuedung
+        elif recent_count <= 10:
+            return 0.5    # Moderate Ermuedung
+        else:
+            return 0.3    # Starke Ermuedung — nur Wichtiges durchlassen
+
+    def record_notification_sent(self, event_type: str = ""):
+        """Registriert eine gesendete Notification fuer Fatigue-Tracking.
+
+        Wird vom Notification-System aufgerufen wenn eine Meldung tatsaechlich
+        zugestellt wurde.
+
+        Args:
+            event_type: Event-Typ (fuer zukuenftige Event-spezifische Fatigue)
+        """
+        self._notification_timestamps.append(time.time())
+
+    def record_notification_dismissed(self, event_type: str):
+        """Registriert dass der User eine Notification ignoriert/dismissed hat.
+
+        Erhoehte Dismiss-Zaehler fuehren zu reduzierter Salienz fuer diesen Event-Typ.
+
+        Args:
+            event_type: Der Event-Typ der ignoriert wurde
+        """
+        self._dismissed_event_types[event_type] += 1
+
     # ------------------------------------------------------------------
     # LED Status-Indikator: Systemzustand als Lichtfarbe
     # ------------------------------------------------------------------
