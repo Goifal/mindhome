@@ -9381,6 +9381,17 @@ class StateChangeLog:
     _SEVERITY_ORDER = {"critical": 0, "high": 1, "info": 2}
     # Maximale Anzahl Konflikte im Prompt (critical immer dabei)
     _MAX_CONFLICTS = 12
+    # Generische Loesungsvorschlaege basierend auf Trigger-Rolle
+    _RESOLUTIONS = {
+        "window_contact": "Fenster schliessen",
+        "door_contact": "Tuer schliessen",
+        "smoke": "Raum lueften, Quelle pruefen",
+        "co_detector": "Sofort lueften, Gebaeude verlassen",
+        "gas_detector": "Gas abstellen, lueften, Gebaeude verlassen",
+        "water_leak": "Wasserzufuhr pruefen",
+        "motion": "Bewegungsmelder pruefen",
+        "presence": "Anwesenheit pruefen",
+    }
 
     def format_conflicts_for_prompt(self, states: dict) -> str:
         """Formatiert aktive Geraete-Konflikte als LLM-Kontext.
@@ -9472,17 +9483,6 @@ class StateChangeLog:
         selected = critical_entries + other_entries[:max_other]
 
         # --- Schritt 5: Formatierung mit Loesungsvorschlaegen ---
-        # Generische Loesungen basierend auf Trigger-Rolle
-        _RESOLUTIONS = {
-            "window_contact": "Fenster schliessen",
-            "door_contact": "Tuer schliessen",
-            "smoke": "Raum lueften, Quelle pruefen",
-            "co_detector": "Sofort lueften, Gebaeude verlassen",
-            "gas_detector": "Gas abstellen, lueften, Gebaeude verlassen",
-            "water_leak": "Wasserzufuhr pruefen",
-            "motion": "Bewegungsmelder pruefen",
-            "presence": "Anwesenheit pruefen",
-        }
         lines: list[str] = []
         for (hint, effect, severity), group_data in selected:
             rooms = group_data["rooms"]
@@ -9496,7 +9496,7 @@ class StateChangeLog:
                 sev_prefix = "KRITISCH: "
             elif severity == "high":
                 sev_prefix = "WICHTIG: "
-            resolution = _RESOLUTIONS.get(trigger_role, "")
+            resolution = self._RESOLUTIONS.get(trigger_role, "")
             res_info = f" → Loesung: {resolution}" if resolution else ""
             lines.append(f"- {sev_prefix}{hint}{room_info} ({effect}){res_info}")
 
