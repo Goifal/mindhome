@@ -1084,12 +1084,18 @@ class ProactiveManager:
             affects_domain = dep.get("affects", "")
             same_room = dep.get("same_room", False)
 
+            # requires_state: Nur Konflikt wenn betroffenes Entity in bestimmtem State ist
+            required_states = dep.get("requires_state")
+
             # Finde betroffene Entities
             for eid, st in state_dict.items():
                 e_role = entity_roles.get(eid, "")
                 e_domain = eid.split(".")[0] if "." in eid else ""
                 if e_domain == affects_domain or e_role == affects_domain:
                     if same_room and entity_room and entity_rooms.get(eid, "") != entity_room:
+                        continue
+                    # requires_state: Nur Konflikt wenn Entity in passendem State
+                    if required_states and st not in required_states:
                         continue
                     # Konflikt gefunden
                     room_info = f" ({entity_room})" if entity_room else ""
@@ -5872,7 +5878,7 @@ class ProactiveManager:
         # Anwesenheits-Guard: Nicht starten wenn jemand zuhause
         can_start, block_reason = await self._vacuum_can_start()
         if not can_start:
-            logger.info("Vacuum-Guard: %s für '%s' blockiert — %s (%s)",
+            logger.info("Vacuum-Guard: %s fuer '%s' blockiert — %s | Trigger: %s",
                          robot.get("nickname", "Saugroboter"), room, block_reason, reason)
             return False
 

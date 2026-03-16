@@ -235,13 +235,8 @@ DEVICE_DEPENDENCIES = [
     # =====================================================================
     {
         "role": "motion", "state": "on",
-        "affects": "light", "same_room": True,
-        "effect": "Bewegung erkannt → Licht-Automation moeglich",
-        "hint": "Bewegung → Licht koennte automatisch geschaltet werden",
-    },
-    {
-        "role": "motion", "state": "on",
         "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
         "effect": "Bewegung bei aktivem Alarm → moeglicher Einbruch",
         "hint": "Bewegung bei scharfem Alarm → Einbruch-Warnung",
     },
@@ -1486,6 +1481,7 @@ class StateChangeLog:
 
             # Betroffene Rolle/Domain
             affected = dep["affects"]
+            required_states = dep.get("requires_state")
 
             # Pruefen ob betroffene Rolle/Domain aktiv ist
             # Matcht sowohl gegen Rollen als auch HA-Domains
@@ -1501,6 +1497,10 @@ class StateChangeLog:
 
                     # Match gegen Rolle ODER Domain
                     if eid_role != affected and eid_domain != affected:
+                        continue
+
+                    # requires_state: Nur Konflikt wenn Entity in passendem State
+                    if required_states and val not in required_states:
                         continue
 
                     # same_room Check
