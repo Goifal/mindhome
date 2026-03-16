@@ -462,6 +462,24 @@ class ProactiveManager:
         if new_val == old_val:
             return
 
+        # State-Change-Log: Relevante Aenderungen mit Quelle protokollieren
+        _log_domains = ("light.", "switch.", "climate.", "cover.", "media_player.",
+                        "binary_sensor.fenster", "binary_sensor.window",
+                        "binary_sensor.door", "binary_sensor.tuer",
+                        "alarm_control_panel.")
+        if any(entity_id.startswith(d) for d in _log_domains):
+            try:
+                if hasattr(self.brain, "state_change_log"):
+                    friendly = new_state.get("attributes", {}).get(
+                        "friendly_name", entity_id
+                    )
+                    await self.brain.state_change_log.log_change(
+                        entity_id, old_val, new_val, new_state,
+                        friendly_name=friendly,
+                    )
+            except Exception as _scl_err:
+                logger.debug("State-Change-Log Fehler: %s", _scl_err)
+
         # Event-basierte Wetter-Sensoren: Sofort-Reaktion auf kritische Änderungen
         try:
             await self._handle_weather_event(entity_id, new_val, old_val)
@@ -561,7 +579,13 @@ class ProactiveManager:
                             "person_arrived", _plan_ctx, _auto_lvl,
                         )
                         if _plan:
-                            _plan_msg = _plan.get("message") if _plan.get("needs_confirmation") else _plan.get("auto_message", "")
+                            if _plan.get("needs_confirmation"):
+                                _plan_msg = _plan.get("message", "")
+                            else:
+                                _plan_msg = _plan.get("auto_message", "")
+                                # LLM-Polish: "Ich habe mir erlaubt..." Butler-Stil
+                                if _plan_msg:
+                                    _plan_msg = await self._polish_auto_action(_plan_msg)
                             if _plan_msg:
                                 await self._notify("person_arrived", LOW, {
                                     "message": _plan_msg,
@@ -610,7 +634,12 @@ class ProactiveManager:
                             "weather_changed", _w_ctx, _auto_lvl,
                         )
                         if _plan:
-                            _plan_msg = _plan.get("message") if _plan.get("needs_confirmation") else _plan.get("auto_message", "")
+                            if _plan.get("needs_confirmation"):
+                                _plan_msg = _plan.get("message", "")
+                            else:
+                                _plan_msg = _plan.get("auto_message", "")
+                                if _plan_msg:
+                                    _plan_msg = await self._polish_auto_action(_plan_msg)
                             if _plan_msg:
                                 await self._notify("weather_warning", LOW, {
                                     "message": _plan_msg,
@@ -2050,12 +2079,11 @@ class ProactiveManager:
                 _esc_count = await _redis.incr(_esc_key)
                 await _redis.expire(_esc_key, 6 * 3600)  # 6h Fenster
                 if _esc_count == 1:
-                    description = f"Nur zur Info: {description}"
+                    description = f"[ERSTE MELDUNG] {description}"
                 elif _esc_count == 2:
-                    description = f"Nochmal dazu: {description}"
+                    description = f"[WIEDERHOLUNG #{_esc_count} — erhoehe Dringlichkeit natuerlich] {description}"
                 elif _esc_count >= 3:
-                    _title = get_person_title()
-                    description = f"{_title}, das ist wirklich wichtig: {description}"
+                    description = f"[WIEDERHOLUNG #{_esc_count} — sehr dringend, Butler wird bestimmter] {description}"
         except Exception as e:
             logger.debug("D4: Eskalations-Counter fehlgeschlagen: %s", e)
 
@@ -2987,6 +3015,10 @@ class ProactiveManager:
 
                 observation = await self._generate_observation()
 
+                # LLM-Polish: JARVIS-Stil statt Template-Text
+                if observation:
+                    observation = await self._polish_observation(observation)
+
                 # FIX-C2: Nutze self._notify() statt self._notify_callback
                 if observation:
                     await self._notify(
@@ -3116,6 +3148,146 @@ class ProactiveManager:
         except Exception as e:
             logger.debug("Observation-Generierung fehlgeschlagen: %s", e)
             return None
+
+    async def _contextualize_threat(self, threat: dict) -> str:
+        """Kontextualisiert Bedrohungsmeldungen mit LLM.
+
+        Kombiniert Bedrohungstyp mit Wetter, Uhrzeit und Kontext
+        fuer eine sinnvolle Einschaetzung statt generischer Warnung.
+        """
+        raw_msg = threat.get("message", "")
+        if not raw_msg or not getattr(self.brain, "ollama", None):
+            return raw_msg
+        try:
+            # Kontext sammeln: Uhrzeit, Wetter
+            from datetime import datetime
+            hour = datetime.now().hour
+            weather_info = ""
+            try:
+                states = await self.brain.ha.get_states()
+                for s in (states or []):
+                    if s.get("entity_id", "").startswith("weather."):
+                        attrs = s.get("attributes", {})
+                        weather_info = (
+                            f"Wetter: {s.get('state', '?')}, "
+                            f"Wind: {attrs.get('wind_speed', '?')} km/h"
+                        )
+                        break
+            except Exception:
+                pass
+
+            response = await asyncio.wait_for(
+                self.brain.ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S., Sicherheits-KI. "
+                                "Bewerte diese Bedrohung im Kontext und formuliere "
+                                "eine praezise Meldung. Schaetze ein ob es ernst ist "
+                                "oder harmlosen Ursprung haben koennte. Max 2 Saetze."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Bedrohung: {raw_msg}\n"
+                                f"Uhrzeit: {hour}:00 Uhr\n"
+                                f"{weather_info}\n"
+                                f"Typ: {threat.get('type', 'unbekannt')}"
+                            ),
+                        },
+                    ],
+                    model=settings.model_fast,
+                    think=False,
+                    max_tokens=100,
+                    tier="fast",
+                ),
+                timeout=3.0,
+            )
+            polished = (response.get("message", {}).get("content", "") or "").strip()
+            if polished and len(polished) > 15:
+                return polished
+        except Exception as e:
+            logger.debug("Threat-Kontext LLM fehlgeschlagen: %s", e)
+        return raw_msg
+
+    async def _polish_auto_action(self, raw_text: str) -> str:
+        """Poliert eine Auto-Aktions-Nachricht in JARVIS-Butler-Stil.
+
+        Aus "Willkommen, Sir. Beleuchtung — erledigt." wird
+        "Ich habe mir erlaubt, die Beleuchtung einzuschalten, Sir."
+        """
+        if not raw_text or not getattr(self.brain, "ollama", None):
+            return raw_text
+        try:
+            response = await asyncio.wait_for(
+                self.brain.ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": self._get_notification_system_prompt(),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                "Formuliere diese autonome Aktion um — JARVIS-Butler-Stil. "
+                                "Verwende 'Ich habe mir erlaubt...' oder 'Ich habe bereits...'. "
+                                "Max 2 Saetze. Behalte die Fakten exakt bei:\n\n"
+                                + raw_text
+                            ),
+                        },
+                    ],
+                    model=settings.model_notify,
+                    think=False,
+                    max_tokens=120,
+                ),
+                timeout=5.0,
+            )
+            polished = (response.get("message", {}).get("content", "") or "").strip()
+            if polished and len(polished) > 10:
+                return polished
+        except Exception as e:
+            logger.debug("Auto-Action-LLM-Polish fehlgeschlagen: %s", e)
+        return raw_text
+
+    async def _polish_observation(self, raw_text: str) -> str:
+        """Poliert eine Beobachtung mit LLM in JARVIS-Butler-Stil.
+
+        Falls LLM nicht verfuegbar, wird der Rohtext zurueckgegeben.
+        """
+        if not raw_text or not getattr(self.brain, "ollama", None):
+            return raw_text
+        try:
+            response = await asyncio.wait_for(
+                self.brain.ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": self._get_notification_system_prompt(),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                "Formuliere diese Beobachtung um — kurz, trocken, JARVIS-Butler-Stil. "
+                                "Max 2 Saetze. Behalte die Fakten exakt bei, "
+                                "aendere nur den Ton (trockener Humor, britischer Butler):\n\n"
+                                + raw_text
+                            ),
+                        },
+                    ],
+                    model=settings.model_notify,
+                    think=False,
+                    max_tokens=120,
+                ),
+                timeout=5.0,
+            )
+            polished = (response.get("message", {}).get("content", "") or "").strip()
+            if polished and len(polished) > 10:
+                return polished
+        except Exception as e:
+            logger.debug("Observation-LLM-Polish fehlgeschlagen: %s", e)
+        return raw_text
 
     async def _run_seasonal_loop(self):
         """Zentrale Cover-Automatik.
@@ -5816,9 +5988,11 @@ class ProactiveManager:
                         "low": LOW,
                     }
                     urgency = urgency_map.get(threat.get("urgency", "medium"), MEDIUM)
+                    # LLM-Kontext: Bedrohung mit Wetter/Uhrzeit kontextualisieren
+                    threat_msg = await self._contextualize_threat(threat)
                     await self._notify("threat_detected", urgency, {
                         "type": threat.get("type", "unknown"),
-                        "message": threat.get("message", ""),
+                        "message": threat_msg,
                         "entity": threat.get("entity", ""),
                     })
 

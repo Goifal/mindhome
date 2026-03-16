@@ -8,6 +8,7 @@ Phase 18: MCU-Upgrade — Memory Callbacks, Running Gag Evolution,
           Eskalierende Sorge, Neugier-Fragen, Think-Ahead.
 """
 
+import asyncio
 import collections
 import threading
 import hashlib
@@ -340,6 +341,7 @@ class PersonalityEngine:
         self._relationship_context: str = ""  # B6: Gecachter Beziehungskontext
         self._current_activity: str = ""  # D3: Aktuelle Aktivitaet (sleeping, watching, etc.)
         self._redis = None
+        self._ollama = None
         # F-021: Per-User Confirmation-Tracking (statt shared Instanzvariable)
         self._last_confirmations: dict[str, list[str]] = {}
         # F-022: Per-User Interaction-Time (statt shared float)
@@ -393,6 +395,10 @@ class PersonalityEngine:
     def set_response_quality(self, response_quality):
         """D5: Setzt die Referenz zum ResponseQualityTracker."""
         self._response_quality = response_quality
+
+    def set_ollama(self, ollama_client):
+        """Setzt Ollama-Client fuer LLM-generierten Humor."""
+        self._ollama = ollama_client
 
     def _build_contextual_silence_section(self) -> str:
         """D3: Generiert Prompt-Hint basierend auf aktueller Aktivitaet.
@@ -2274,7 +2280,7 @@ class PersonalityEngine:
                 # Kategorie kommt nicht gut an — überspringen
                 return None
 
-        # Template waehlen + formatieren
+        # LLM-generierter Humor (Template als Fallback)
         template = random.choice(templates)
         humor_text = template.format(
             temp=situation.get("temp", "?"),
@@ -2285,6 +2291,13 @@ class PersonalityEngine:
             hours=situation.get("hours", "?"),
             title=get_person_title(),
         )
+
+        # LLM-Polish: Einzigartiger Humor statt Template-Rotation
+        llm_humor = await self._generate_humor_llm(
+            func_name, func_args, situation, humor_text,
+        )
+        if llm_humor:
+            humor_text = llm_humor
 
         # Fatigue tracken (per User)
         self._humor_consecutive[_hc_key] = self._humor_consecutive.get(_hc_key, 0) + 1
@@ -2299,6 +2312,74 @@ class PersonalityEngine:
                 logger.debug("Redis-Operation fehlgeschlagen", exc_info=True)
 
         return humor_text
+
+    async def _generate_humor_llm(
+        self, func_name: str, func_args: dict,
+        situation: dict, fallback_text: str,
+    ) -> Optional[str]:
+        """Generiert einzigartigen JARVIS-Humor per LLM.
+
+        Nutzt die erkannte Situation als Kontext und erzeugt einen
+        trockenen Einzeiler der sich nie wiederholt.
+        Fallback: None (dann wird Template verwendet).
+        """
+        if not self._ollama:
+            return None
+        try:
+            from .config import settings
+            title = get_person_title()
+            situation_key = situation.get("key", "")
+            hour = situation.get("hour", datetime.now().hour)
+            temp = situation.get("temp", "")
+            weather = situation.get("weather", "")
+            room = situation.get("room", "")
+            count = situation.get("count", "")
+
+            # Kontext-String bauen
+            ctx_parts = [f"Aktion: {func_name}"]
+            if room:
+                ctx_parts.append(f"Raum: {room}")
+            if temp:
+                ctx_parts.append(f"Temperatur: {temp}°C")
+            if weather:
+                ctx_parts.append(f"Wetter: {weather}")
+            if count:
+                ctx_parts.append(f"Heute schon {count}x")
+            ctx_parts.append(f"Uhrzeit: {hour}:00")
+            ctx_parts.append(f"Situation: {situation_key}")
+
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S. — trockener britischer KI-Butler. "
+                                "Generiere einen EINZIGEN kurzen Kommentar zur Situation. "
+                                "Trocken, subtil, nie platt. Wie ein Butler der innerlich "
+                                "schmunzelt. Max 12 Woerter. Kein Markdown. "
+                                f"Anrede: {title}."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": "\n".join(ctx_parts),
+                        },
+                    ],
+                    model=settings.model_fast,
+                    think=False,
+                    max_tokens=40,
+                    tier="fast",
+                ),
+                timeout=2.5,
+            )
+            text = (response.get("message", {}).get("content", "") or "").strip()
+            # Validierung: Muss kurz sein, kein Markdown, kein leerer Text
+            if text and 5 < len(text) < 120 and not text.startswith(("#", "*", "-")):
+                return text
+        except Exception as e:
+            logger.debug("LLM-Humor fehlgeschlagen: %s", e)
+        return None
 
     def _detect_humor_situation(
         self, func_name: str, args: dict, context: dict | None = None

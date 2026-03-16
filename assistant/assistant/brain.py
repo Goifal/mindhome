@@ -103,6 +103,7 @@ from .proactive_planner import ProactiveSequencePlanner
 from .seasonal_insight import SeasonalInsightEngine
 from .calendar_intelligence import CalendarIntelligence
 from .explainability import ExplainabilityEngine
+from .state_change_log import StateChangeLog
 from .learning_transfer import LearningTransfer
 from .dialogue_state import DialogueStateManager
 from .climate_model import ClimateModel
@@ -328,6 +329,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Intelligenz-Features: Quick Wins + Medium Effort
         self.calendar_intelligence = CalendarIntelligence()
         self.explainability = ExplainabilityEngine()
+        self.state_change_log = StateChangeLog()
         self.learning_transfer = LearningTransfer()
         self.dialogue_state = DialogueStateManager()
         self.climate_model = ClimateModel()
@@ -542,6 +544,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # D5: Quality Feedback → Personality
         self.personality.set_response_quality(self.response_quality)
+        self.personality.set_ollama(self.ollama)
 
         # Gelernten Sarkasmus-Level laden
         await self.personality.load_learned_sarcasm_level()
@@ -737,6 +740,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         await asyncio.gather(
             _safe_init("CalendarIntelligence", self.calendar_intelligence.initialize(redis_client=self.memory.redis)),
             _safe_init("Explainability", self.explainability.initialize(redis_client=self.memory.redis)),
+            _safe_init("StateChangeLog", self.state_change_log.initialize(redis_client=self.memory.redis)),
             _safe_init("LearningTransfer", self.learning_transfer.initialize(redis_client=self.memory.redis)),
             _safe_init("PredictiveMaintenance", self.predictive_maintenance.initialize(redis_client=self.memory.redis)),
             _safe_init("OutcomeTracker", self.outcome_tracker.initialize(
@@ -1967,6 +1971,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                         entity_id),
                                     name="mark_jarvis_action",
                                 )
+                                self.state_change_log.mark_jarvis_action(entity_id)
 
                         return self._result(response_text, actions=all_actions, model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
@@ -3058,6 +3063,76 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             )
             sections.append(("anomalies", anomaly_text, 3))
 
+        # State-Change-Log: Letzte Geraete-Aenderungen mit Quelle
+        try:
+            _scl_text = self.state_change_log.format_for_prompt(10)
+            if _scl_text:
+                sections.append(("state_changes", _scl_text, 3))
+        except Exception:
+            logger.debug("State-Change-Log Prompt fehlgeschlagen", exc_info=True)
+
+        # Geraete-Konflikte + Automations-Kontext: States einmalig laden
+        _causal_states = None
+        try:
+            _causal_states = await self.get_states_cached()
+        except Exception:
+            logger.debug("States fuer Kausal-Kontext laden fehlgeschlagen", exc_info=True)
+
+        # Geraete-Konflikte: Physikalische Abhaengigkeiten erkennen
+        if _causal_states:
+            try:
+                _state_dict = {
+                    s.get("entity_id"): s.get("state", "")
+                    for s in _causal_states
+                    if s.get("entity_id")
+                }
+                _conflict_text = self.state_change_log.format_conflicts_for_prompt(
+                    _state_dict
+                )
+                if _conflict_text:
+                    sections.append(("device_conflicts", _conflict_text, 3))
+            except Exception:
+                logger.debug("Geraete-Konflikte Prompt fehlgeschlagen", exc_info=True)
+
+        # HA-Automations-Kontext: Welche Automationen existieren/kuerzlich feuerten
+        if _causal_states:
+            try:
+                _auto_list = [
+                    s for s in _causal_states
+                    if s.get("entity_id", "").startswith("automation.")
+                ]
+                _auto_text = self.state_change_log.format_automations_for_prompt(
+                    _auto_list
+                )
+                if _auto_text:
+                    sections.append(("automations", _auto_text, 4))
+            except Exception:
+                logger.debug("HA-Automations-Kontext Prompt fehlgeschlagen", exc_info=True)
+
+        # Decision History: Letzte JARVIS-Entscheidungen
+        try:
+            _recent_decisions = self.explainability.explain_last(5)
+            if _recent_decisions:
+                _dec_lines = []
+                for _d in _recent_decisions:
+                    _age = time.time() - _d.get("timestamp", 0)
+                    if _age < 1800:  # Nur letzte 30 Min
+                        _dec_lines.append(
+                            f"- {_d.get('time_str', '?')}: {_d.get('action', '?')} "
+                            f"(Grund: {_d.get('reason', '?')}, "
+                            f"Trigger: {_d.get('trigger', '?')})"
+                        )
+                if _dec_lines:
+                    _dec_text = (
+                        "\n\nMEINE LETZTEN ENTSCHEIDUNGEN:\n"
+                        + "\n".join(_dec_lines)
+                        + "\nNutze diese Info wenn der User fragt warum du "
+                        "etwas getan hast."
+                    )
+                    sections.append(("decisions", _dec_text, 3))
+        except Exception:
+            logger.debug("Decision-History Prompt fehlgeschlagen", exc_info=True)
+
         # Experiential Memory: "Letztes Mal als du das gemacht hast..."
         if experiential_hint:
             sections.append(("experiential", f"\n\n{experiential_hint}", 3))
@@ -3094,9 +3169,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 cont_text = f"\n\nOFFENE THEMEN ({len(topics)}):\n"
                 for t in topics:
                     cont_text += f"- {t}\n"
-                cont_text += "Erwaehne kurz die offenen Themen."
+                cont_text += (
+                    "Erwaehne beilaeufig die offenen Themen — wie ein Butler "
+                    "der sich erinnert: 'Uebrigens, vorhin ging es um [Thema]. "
+                    "Soll ich da weitermachen?' Nicht als Liste."
+                )
             else:
-                cont_text = f"\n\nOFFENES THEMA: {continuity_hint}"
+                cont_text = (
+                    f"\n\nOFFENES THEMA: {continuity_hint}\n"
+                    "Erwaehne beilaeufig: 'Wir hatten vorhin [Thema] — "
+                    "soll ich da weitermachen?' Nur wenn es passt."
+                )
             sections.append(("continuity", cont_text, 3))
 
         # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
@@ -4010,6 +4093,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 self.learning_observer.mark_jarvis_action(entity_id),
                                 name="mark_jarvis_action",
                             )
+                            self.state_change_log.mark_jarvis_action(entity_id)
 
                             # Conflict F: Mark entity ownership in Redis so the
                             # addon can skip automations on recently-controlled
@@ -4461,7 +4545,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     "Halluzinations-Schutz: LLM behauptet Aktion bei 0 ausgefuehrten "
                     "Aktionen. Text verworfen: '%s'", response_text[:80],
                 )
-                response_text = self.personality.get_error_response("unknown_device")
+                # LLM-kontextbezogene Fehlermeldung statt generischem Template
+                response_text = await self._generate_contextual_error(
+                    text, "unknown_device"
+                )
 
         # Phase 12: Response-Filter (Post-Processing) — Floskeln entfernen
         # Knowledge/Memory-Pfade filtern bereits inline, daher hier nur für
@@ -5274,6 +5361,75 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         return []
 
     # Humanizer-Methoden sind in brain_humanizers.py (BrainHumanizersMixin)
+
+    # LLM-kontextbezogene Fehlermeldungen
+    # ------------------------------------------------------------------
+
+    async def _generate_contextual_error(
+        self, user_text: str, error_type: str = "general"
+    ) -> str:
+        """Generiert eine kontextbezogene Fehlermeldung mit LLM.
+
+        Statt generischer Templates erhaelt das LLM den Kontext (was der User
+        wollte, welche Geraete verfuegbar sind) und formuliert eine hilfreiche
+        JARVIS-Butler-Fehlermeldung mit Alternativen.
+
+        Fallback: personality.get_error_response() bei LLM-Fehler.
+        """
+        fallback = self.personality.get_error_response(error_type)
+        if not self.ollama or not user_text:
+            return fallback
+        try:
+            # Verfuegbare Geraete als Kontext sammeln
+            _alternatives = ""
+            if error_type == "unknown_device":
+                from .function_calling import _entity_catalog
+                _switches = _entity_catalog.get("switches", [])[:15]
+                _lights = _entity_catalog.get("lights", [])[:10]
+                if _switches or _lights:
+                    _devs = [s.split(" (")[0].split(" [")[0].strip()
+                             for s in (_switches + _lights)]
+                    _alternatives = "Verfuegbare Geraete: " + ", ".join(_devs[:15])
+
+            _prompt = (
+                f"Der User sagte: \"{user_text}\"\n"
+                f"Fehlertyp: {error_type}\n"
+            )
+            if _alternatives:
+                _prompt += f"{_alternatives}\n"
+            _prompt += (
+                "\nFormuliere eine kurze JARVIS-Butler-Fehlermeldung (1 Satz). "
+                "Erklaere was schief ging. "
+            )
+            if _alternatives:
+                _prompt += "Schlage ein aehnliches Geraet vor falls passend. "
+            _prompt += "Kein Markdown, keine Emojis, max 30 Woerter."
+
+            response = await asyncio.wait_for(
+                self.ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S., ein trockener britischer KI-Butler. "
+                                "Formuliere hilfreiche Fehlermeldungen. Kurz und praezise."
+                            ),
+                        },
+                        {"role": "user", "content": _prompt},
+                    ],
+                    model=settings.model_fast,
+                    think=False,
+                    max_tokens=80,
+                    tier="fast",
+                ),
+                timeout=3.0,
+            )
+            _text = (response.get("message", {}).get("content", "") or "").strip()
+            if _text and len(_text) > 10:
+                return _text
+        except Exception as e:
+            logger.debug("Kontextbezogene Fehlermeldung fehlgeschlagen: %s", e)
+        return fallback
 
     # Phase 12: Response-Filter (Post-Processing)
     # ------------------------------------------------------------------
@@ -6578,9 +6734,53 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return
         if not await self._callback_should_speak("low", source="LearningObserver"):
             return
+        # LLM-Polish: Variation statt immer gleicher Template-Text
+        message = await self._polish_learning_suggestion(message, alert)
         formatted = await self._safe_format(message, "low")
         await self._speak_and_emit(formatted)
         logger.info("Learning -> Vorschlag: %s", formatted)
+
+    async def _polish_learning_suggestion(self, message: str, alert: dict) -> str:
+        """Poliert Learning-Vorschlaege mit LLM fuer natuerliche Variation."""
+        if not self.ollama:
+            return message
+        try:
+            entity = alert.get("entity_id", "")
+            count = alert.get("count", 0)
+            time_slot = alert.get("time_slot", "")
+            response = await asyncio.wait_for(
+                self.ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S., trockener britischer KI-Butler. "
+                                "Formuliere einen beilaeufigen Vorschlag zur Automatisierung. "
+                                "Variiere die Formulierung — nie zweimal gleich. "
+                                "Max 2 Saetze. Endet mit einer Frage ob automatisiert werden soll."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Beobachtung: {entity} wird regelmaessig um {time_slot} Uhr "
+                                f"geschaltet ({count}x beobachtet). Schlage Automatisierung vor."
+                            ),
+                        },
+                    ],
+                    model=settings.model_fast,
+                    think=False,
+                    max_tokens=80,
+                    tier="fast",
+                ),
+                timeout=3.0,
+            )
+            polished = (response.get("message", {}).get("content", "") or "").strip()
+            if polished and len(polished) > 15:
+                return polished
+        except Exception as e:
+            logger.debug("Learning-Suggestion LLM-Polish fehlgeschlagen: %s", e)
+        return message
 
     async def _handle_cooking_timer(self, alert: dict):
         """Callback für Koch-Timer — meldet wenn Timer abgelaufen ist."""
@@ -7786,27 +7986,42 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         _has_alle = "alle" in words or "alles" in words
 
         # Switches: "Siebträgermaschine ein", "Kaffeemaschine an", "Steckdose Kueche aus"
-        _switch_nouns = ["maschine", "kaffeemaschine", "siebtraeger", "steckdose",
-                         "pumpe", "boiler", "bewaesserung", "ventilator", "luefter"]
+        _switch_nouns = ["maschine", "kaffeemaschine", "siebtraeger", "siebträger",
+                         "steckdose", "pumpe", "boiler", "bewaesserung",
+                         "ventilator", "luefter"]
         if any(n in t for n in _switch_nouns):
             state = "on" if (words & {"an", "ein", "einschalten", "aktivieren",
                                       "starten", "anmachen"}) else \
                     "off" if (words & {"aus", "ausschalten", "deaktivieren",
                                        "ausmachen", "stopp", "stop"}) else None
             if state:
-                # Switch-Name aus Entity-Katalog matchen
+                # Switch-Name aus Entity-Katalog matchen.
+                # NUR Geraete-Nomen verwenden, NICHT Verben/Fuellwoerter wie
+                # "schalte", "bitte", "jarvis" — die matchen sonst falsche Switches.
                 from .function_calling import _entity_catalog
                 _switches = _entity_catalog.get("switches", [])
+                _SKIP_MATCH = {"schalte", "schalt", "mach", "mache", "stell",
+                               "stelle", "setz", "setze", "dreh", "drehe",
+                               "aktiviere", "deaktiviere", "starte", "bitte",
+                               "jarvis", "jetzt", "sofort", "gleich", "noch",
+                               "wieder", "einfach", "kurz", "gerade", "hier",
+                               "dass", "doch", "auch", "aber", "weil", "dann",
+                               "kannst", "willst", "soll", "bitte", "danke"}
+                _device_words = [w for w in t.split()
+                                 if len(w) >= 4 and w not in _SKIP_MATCH
+                                 and w not in {"an", "aus", "ein"}]
                 _best_match = ""
+                _best_score = 0
                 for _sw in _switches:
-                    # Entries sind "name (friendly_name) [Rolle]"
                     _sw_lower = _sw.lower()
-                    for _kw in t.split():
-                        if len(_kw) >= 4 and _kw in _sw_lower:
-                            _best_match = _sw.split(" (")[0].split(" [")[0].strip()
-                            break
-                    if _best_match:
-                        break
+                    _score = 0
+                    for _kw in _device_words:
+                        if _kw in _sw_lower:
+                            # Laengere Matches = besser (spezifischer)
+                            _score += len(_kw)
+                    if _score > _best_score:
+                        _best_score = _score
+                        _best_match = _sw.split(" (")[0].split(" [")[0].strip()
                 return {"function": {"name": "set_switch",
                                      "arguments": {"entity_id": f"switch.{_best_match}" if _best_match else "",
                                                    "state": state,
@@ -8204,18 +8419,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 state = "off"
             if state is None:
                 return None
-            # Entity-Matching: Geraetename im Switch-Katalog suchen
+            # Entity-Matching: Geraetename im Switch-Katalog suchen.
+            # Nur Geraete-Nomen matchen, keine Verben/Fuellwoerter.
             from .function_calling import _entity_catalog
             _switches = _entity_catalog.get("switches", [])
+            _SKIP = {"schalte", "schalt", "mach", "mache", "stell", "stelle",
+                     "setz", "setze", "dreh", "drehe", "aktiviere", "deaktiviere",
+                     "starte", "bitte", "jarvis", "jetzt", "sofort", "gleich",
+                     "noch", "wieder", "einfach", "kurz", "gerade", "dass",
+                     "doch", "auch", "aber", "weil", "dann", "danke"}
+            _dev_words = [w for w in word_set
+                          if len(w) >= 4 and w not in _SKIP
+                          and w not in {"an", "aus", "ein"}]
             _best = ""
+            _best_score = 0
             for _sw in _switches:
                 _sw_l = _sw.lower()
-                for _kw in words:
-                    if len(_kw) >= 4 and _kw in _sw_l:
-                        _best = _sw.split(" (")[0].split(" [")[0].strip()
-                        break
-                if _best:
-                    break
+                _score = sum(len(w) for w in _dev_words if w in _sw_l)
+                if _score > _best_score:
+                    _best_score = _score
+                    _best = _sw.split(" (")[0].split(" [")[0].strip()
             args = {"state": state, "room": effective_room}
             if _best:
                 args["entity_id"] = f"switch.{_best}"
@@ -9690,9 +9913,14 @@ Regeln:
             ready_topics = []
             for item in pending:
                 topic = item.get("topic", "")
+                context_info = item.get("context", "")
                 age = item.get("age_minutes", 0)
                 if topic and resume_after <= age <= expire_minutes:
-                    ready_topics.append(topic)
+                    # Kontext anhaengen wenn vorhanden
+                    if context_info:
+                        ready_topics.append(f"{topic} ({context_info})")
+                    else:
+                        ready_topics.append(topic)
 
             if not ready_topics:
                 return None

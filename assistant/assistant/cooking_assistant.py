@@ -318,8 +318,10 @@ class CookingAssistant:
             for task in self._timer_tasks:
                 task.cancel()
             self._timer_tasks.clear()
-        # Gericht aus Text extrahieren
+        # Gericht aus Text extrahieren (Regex → LLM-Fallback)
         dish = self._extract_dish(text)
+        if not dish:
+            dish = await self._extract_dish_llm(text)
         if not dish:
             return "Was möchtest du kochen? Sag mir einfach das Gericht."
 
@@ -810,6 +812,41 @@ class CookingAssistant:
                 if after and len(after) > 2:
                     return after.rstrip(".?!").strip()
 
+        return ""
+
+    async def _extract_dish_llm(self, text: str) -> str:
+        """LLM-Fallback fuer Gericht-Erkennung wenn Regex scheitert."""
+        if not self.ollama:
+            return ""
+        try:
+            from .config import settings
+            response = await asyncio.wait_for(
+                self.ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Extrahiere den Gerichtnamen aus der Koch-Anfrage. "
+                                "Antworte NUR mit dem Gerichtnamen, nichts anderes. "
+                                "Wenn kein Gericht erkennbar ist, antworte mit: NONE"
+                            ),
+                        },
+                        {"role": "user", "content": text[:200]},
+                    ],
+                    model=settings.model_fast,
+                    think=False,
+                    max_tokens=20,
+                    tier="fast",
+                ),
+                timeout=3.0,
+            )
+            dish = (response.get("message", {}).get("content", "") or "").strip()
+            dish = dish.strip('"\'.-!? ')
+            if dish and dish.upper() != "NONE" and len(dish) > 1 and len(dish) < 60:
+                logger.info("Koch-Gericht per LLM erkannt: '%s' (Regex fehlgeschlagen)", dish)
+                return dish.lower()
+        except Exception as e:
+            logger.debug("LLM Gericht-Erkennung fehlgeschlagen: %s", e)
         return ""
 
     def _extract_explicit_portions(self, text: str) -> int:
