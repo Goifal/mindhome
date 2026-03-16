@@ -934,6 +934,17 @@ class RoutineEngine:
             return
 
         try:
+            # Dependency-Check (z.B. Kaffeemaschine + Wasserleitung)
+            try:
+                from .state_change_log import StateChangeLog
+                states = await self.ha.get_states() or []
+                hints = StateChangeLog.check_action_dependencies(
+                    "set_switch", {"entity_id": entity, "state": "on"}, states,
+                )
+                if hints:
+                    logger.info("Wakeup coffee: Dependency-Warnung: %s", hints[0])
+            except Exception:
+                pass
             await self.ha.call_service(
                 "homeassistant", "turn_on", {"entity_id": entity},
             )
