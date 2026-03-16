@@ -731,6 +731,14 @@ class ProactiveManager:
                 if visitor_info.get("expected"):
                     data["expected_visitor"] = True
             await self._notify("doorbell", MEDIUM, data)
+            try:
+                await self.brain.ha.log_activity(
+                    "proactive", "doorbell",
+                    "Tuerklingel betaetigt" + (f" — {camera_desc[:100]}" if camera_desc else ""),
+                    arguments={"entity_id": entity_id},
+                )
+            except Exception:
+                pass
 
         # Person tracker (Phase 7: erweitert mit Abschied + Abwesenheits-Summary)
         elif entity_id.startswith("person."):
@@ -760,6 +768,14 @@ class ProactiveManager:
                     "person": name,
                     "status_report": status,
                 })
+                try:
+                    await self.brain.ha.log_activity(
+                        "presence", "person_arrived",
+                        f"{name} ist angekommen",
+                        arguments={"person": name},
+                    )
+                except Exception:
+                    pass
 
                 # Phase 18: Proactive Planner — Multi-Step-Plan bei Ankunft
                 if hasattr(self.brain, "proactive_planner") and self.brain.proactive_planner.enabled:
@@ -801,6 +817,14 @@ class ProactiveManager:
                     _departure_data["shopping_items"] = _shopping_items
                     _departure_data["shopping_count"] = len(_shopping_items)
                 await self._notify("person_left", MEDIUM, _departure_data)
+                try:
+                    await self.brain.ha.log_activity(
+                        "presence", "person_left",
+                        f"{name} hat das Haus verlassen",
+                        arguments={"person": name},
+                    )
+                except Exception:
+                    pass
                 # MCU-JARVIS: Abwesenheits-Akkumulator starten
                 if yaml_config.get("return_briefing", {}).get("enabled", True):
                     await self._start_absence_accumulator(name)
@@ -1060,12 +1084,18 @@ class ProactiveManager:
             affects_domain = dep.get("affects", "")
             same_room = dep.get("same_room", False)
 
+            # requires_state: Nur Konflikt wenn betroffenes Entity in bestimmtem State ist
+            required_states = dep.get("requires_state")
+
             # Finde betroffene Entities
             for eid, st in state_dict.items():
                 e_role = entity_roles.get(eid, "")
                 e_domain = eid.split(".")[0] if "." in eid else ""
                 if e_domain == affects_domain or e_role == affects_domain:
                     if same_room and entity_room and entity_rooms.get(eid, "") != entity_room:
+                        continue
+                    # requires_state: Nur Konflikt wenn Entity in passendem State
+                    if required_states and st not in required_states:
                         continue
                     # Konflikt gefunden
                     room_info = f" ({entity_room})" if entity_room else ""
@@ -1102,6 +1132,14 @@ class ProactiveManager:
             "hints": hints,
             "message": "; ".join(hints),
         })
+        try:
+            await self.brain.ha.log_activity(
+                "anomaly", "device_dependency_conflict",
+                f"Geraetekonflikt: {entity_id} ({role}) → {'; '.join(hints[:2])}",
+                arguments={"entity_id": entity_id, "role": role, "conflicts": len(found_conflicts)},
+            )
+        except Exception:
+            pass
 
     async def _check_appliance_power(self, entity_id: str, new_val: str, old_val: str):
         """Appliance-Erkennung: Setzt idle-Marker bei Power-Drop, bestaetigt nach Wartezeit."""
@@ -3248,6 +3286,15 @@ class ProactiveManager:
                     "Batch-Summary gesendet (%d Items, id: %s): %s",
                     len(items), notification_id, text,
                 )
+                try:
+                    event_types = list({i.get("event_type", "") for i in items})
+                    await self.brain.ha.log_activity(
+                        "proactive", "batch_summary",
+                        f"Proaktive Meldung: {text[:150]}",
+                        arguments={"items": len(items), "event_types": event_types[:5]},
+                    )
+                except Exception:
+                    pass
 
         except Exception as e:
             logger.error("Batch-Summary Fehler: %s", e)
@@ -4241,6 +4288,16 @@ class ProactiveManager:
                     log_cover_action(entity_id, position, reason)
                 except Exception as e:
                     logger.warning("Unhandled: %s", e)
+                # Activity-Log fuer UI
+                try:
+                    await self.brain.ha.log_activity(
+                        "cover_auto", "set_cover_position",
+                        f"Cover {entity_id} -> {position}% ({reason})",
+                        arguments={"entity_id": entity_id, "position": position},
+                        result=reason,
+                    )
+                except Exception:
+                    pass
                 # Cover-Licht Koordination: LightEngine informieren
                 try:
                     if hasattr(self.brain, "light_engine") and self.brain.light_engine:
@@ -5201,6 +5258,14 @@ class ProactiveManager:
                             "Heizung Wetter-Anpassung: Offset %+.1f → %+.1f (%s)",
                             current_offset, new_offset, ", ".join(reasons),
                         )
+                        try:
+                            await self.brain.ha.log_activity(
+                                "proactive", "heating_weather_adjust",
+                                f"Heizung angepasst: {current_offset:+.1f} → {new_offset:+.1f} ({', '.join(reasons)})",
+                                arguments={"entity_id": curve_entity, "old_offset": current_offset, "new_offset": new_offset},
+                            )
+                        except Exception:
+                            pass
                 except Exception as e:
                     logger.warning("Heizungs-Wetter-Anpassung fehlgeschlagen: %s", e)
         else:
@@ -5268,6 +5333,15 @@ class ProactiveManager:
             await self._notify("co2_ventilation", LOW, {
                 "message": f"CO2 hoch ({int(high_co2_rooms[0][1])} ppm) — Rolllaeden geoeffnet + bitte lüften!",
             })
+            try:
+                rooms_info = [(r, int(v)) for r, v in high_co2_rooms[:3]]
+                await self.brain.ha.log_activity(
+                    "proactive", "co2_ventilation",
+                    f"CO2-Lueftung: {int(high_co2_rooms[0][1])} ppm — Rolllaeden geoeffnet",
+                    arguments={"rooms": rooms_info},
+                )
+            except Exception:
+                pass
 
     # Feature 16: Privacy-Modus (Abendlicher Sichtschutz)
     async def _cover_privacy_mode(self, states, sun, cover_profiles, auto_level, redis_client, cycle_acted=None):
@@ -5505,6 +5579,15 @@ class ProactiveManager:
         success = await self.brain.ha.call_service("vacuum", "start", {"entity_id": entity_id})
         if success:
             logger.info("Vacuum: %s gestartet (%s) — Alarm auf arm_home", nickname, reason)
+            try:
+                await self.brain.ha.log_activity(
+                    "vacuum_auto", "vacuum_start",
+                    f"Staubsauger {nickname} gestartet ({reason})",
+                    arguments={"entity_id": entity_id, "fan_speed": fan_speed, "mode": mode},
+                    result=reason,
+                )
+            except Exception:
+                pass
         else:
             # Alarm zurückschalten wenn Start fehlgeschlagen
             await self._vacuum_alarm_switch("arm_away")
@@ -5587,6 +5670,14 @@ class ProactiveManager:
                     await self._notify("vacuum_paused_arrival", LOW, {
                         "message": "Saugroboter pausiert — jemand ist nachhause gekommen",
                     })
+                    try:
+                        await self.brain.ha.log_activity(
+                            "vacuum_auto", "vacuum_paused",
+                            f"Staubsauger pausiert — Ankunft erkannt ({len(interrupted)} Roboter)",
+                            arguments={"interrupted_floors": interrupted},
+                        )
+                    except Exception:
+                        pass
 
                 # Fall 2: Niemand zuhause + unterbrochene Reinigung → Fortsetzen
                 if not anyone_home and guard_cfg.get("resume_on_departure"):
@@ -5626,6 +5717,14 @@ class ProactiveManager:
                         await self._notify("vacuum_resumed", LOW, {
                             "message": "Saugroboter setzt Reinigung fort — alle sind wieder weg",
                         })
+                        try:
+                            await self.brain.ha.log_activity(
+                                "vacuum_auto", "vacuum_resumed",
+                                f"Staubsauger Reinigung fortgesetzt ({len(floors)} Roboter)",
+                                arguments={"floors": floors},
+                            )
+                        except Exception:
+                            pass
 
                 # Fall 3: Alle Vacuums fertig (docked) → Alarm zurückschalten
                 if all_docked and not cleaning_robots:
@@ -5779,7 +5878,7 @@ class ProactiveManager:
         # Anwesenheits-Guard: Nicht starten wenn jemand zuhause
         can_start, block_reason = await self._vacuum_can_start()
         if not can_start:
-            logger.info("Vacuum-Guard: %s für '%s' blockiert — %s (%s)",
+            logger.info("Vacuum-Guard: %s fuer '%s' blockiert — %s | Trigger: %s",
                          robot.get("nickname", "Saugroboter"), room, block_reason, reason)
             return False
 
@@ -6306,6 +6405,18 @@ class ProactiveManager:
                 "Notfall-Protokoll '%s': blockierte Aktionen: %s",
                 protocol_name, blocked,
             )
+
+        # Activity-Log fuer UI
+        try:
+            await self.brain.ha.log_activity(
+                "emergency",
+                f"emergency_{protocol_name}",
+                f"Notfall-Protokoll '{protocol_name}': {len(executed)} Aktionen ausgefuehrt",
+                arguments={"executed": executed[:20], "blocked": blocked[:10]},
+                result=f"{len(executed)} ausgefuehrt, {len(blocked)} blockiert",
+            )
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Phase 17: Threat Assessment Loop

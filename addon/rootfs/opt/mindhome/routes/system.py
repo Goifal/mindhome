@@ -573,6 +573,24 @@ def api_create_action_log():
 
     user_text = str(data.get("user_text", "") or "")
     response_text = str(data.get("response", "") or "")
+    custom_reason = str(data.get("reason", "") or "")
+    # Allow caller to specify action_type (default: jarvis_action for backwards compat)
+    _VALID_ACTION_TYPES = {
+        "jarvis_action", "emergency", "cover_auto", "vacuum_auto",
+        "proactive", "presence", "observation", "automation",
+        "quick_action", "suggestion", "anomaly", "system", "first_time",
+    }
+    req_action_type = str(data.get("action_type", "jarvis_action") or "jarvis_action")
+    if req_action_type not in _VALID_ACTION_TYPES:
+        req_action_type = "jarvis_action"
+
+    # Reason-Prioritaet: custom_reason > user_text > "Automatisch"
+    if custom_reason:
+        effective_reason = custom_reason[:200]
+    elif user_text:
+        effective_reason = f"Benutzer: {user_text[:150]}"
+    else:
+        effective_reason = "Automatisch"
 
     try:
         from db import db_write_with_retry
@@ -595,14 +613,14 @@ def api_create_action_log():
                     result_msg = str(result_raw)
 
                 entry = ActionLog(
-                    action_type="jarvis_action",
+                    action_type=req_action_type,
                     action_data={
                         "function": func,
                         "arguments": args,
                         "result": result_msg[:500],
                         "response": response_text[:200],
                     },
-                    reason=f"Benutzer: {user_text[:150]}" if user_text else "Automatisch",
+                    reason=effective_reason,
                 )
                 session.add(entry)
                 count += 1
