@@ -7180,13 +7180,6 @@ DEVICE_DEPENDENCIES = [
         "severity": "info",
     },
     {
-        "role": "server", "state": "on",
-        "affects": "indoor_temp", "same_room": True,
-        "effect": "Server an → produziert Abwaerme",
-        "hint": "Server → Serverraum wird waermer, Kuehlung beachten",
-        "severity": "info",
-    },
-    {
         "role": "nas", "state": "on",
         "affects": "indoor_temp", "same_room": True,
         "effect": "NAS an → leichte Abwaerme",
