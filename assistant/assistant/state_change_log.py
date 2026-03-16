@@ -524,19 +524,20 @@ DEVICE_DEPENDENCIES = [
         "effect": "Herd an + niemand in Kueche → Brandgefahr",
         "hint": "Herd an → Brandgefahr wenn unbeaufsichtigt",
         "severity": "high",
+        "requires_state": {"armed_away", "armed_night"},
     },
     {
         "role": "fridge", "state": "on",
         "affects": "notify", "same_room": False,
-        "effect": "Kuehlschrank offen → Lebensmittel verderben",
-        "hint": "Kuehlschrank steht offen → sofort schliessen",
+        "effect": "Kuehlschrank offen/warm → Lebensmittel verderben",
+        "hint": "Kuehlschrank: Tuer zu lange offen oder Temperatur zu hoch → sofort pruefen",
         "severity": "info",
     },
     {
         "role": "freezer", "state": "on",
         "affects": "notify", "same_room": False,
-        "effect": "Gefrierschrank Temperatur zu hoch → Lebensmittel tauen",
-        "hint": "Gefrierschrank zu warm → Lebensmittel in Gefahr",
+        "effect": "Gefrierschrank Tuer offen/Temperatur zu hoch → Lebensmittel tauen",
+        "hint": "Gefrierschrank: Tuer offen oder zu warm → Lebensmittel in Gefahr!",
         "severity": "info",
     },
     {
@@ -552,6 +553,7 @@ DEVICE_DEPENDENCIES = [
         "effect": "Saugroboter loest Bewegungsmelder aus → kein Einbruch",
         "hint": "Saugroboter aktiv → Fehlalarm vermeiden",
         "severity": "high",
+        "requires_state": {"armed_away", "armed_night"},
     },
 
     # =====================================================================
@@ -998,9 +1000,9 @@ DEVICE_DEPENDENCIES = [
     {
         "role": "outdoor_temp", "state": "on",
         "affects": "irrigation", "same_room": False,
-        "effect": "Aussentemperatur beeinflusst Bewaesserungsbedarf",
-        "hint": "Heiss → Pflanzen brauchen mehr Wasser",
-        "severity": "info",
+        "effect": "Aussentemperatur beeinflusst Bewaesserung: Hitze=mehr, Frost=stoppen",
+        "hint": "Hitze → mehr giessen. Frost → Bewaesserung AUS, Rohrbruchgefahr!",
+        "severity": "high",
     },
     {
         "role": "water_temp", "state": "on",
@@ -1503,13 +1505,7 @@ DEVICE_DEPENDENCIES = [
     },
 
     # --- Frost-Schutz: Bewaesserung + Pool ---
-    {
-        "role": "outdoor_temp", "state": "on",
-        "affects": "irrigation", "same_room": False,
-        "effect": "Frost → Bewaesserung kann Rohre beschaedigen",
-        "hint": "Frost + Bewaesserung → Rohrbruchgefahr, Bewaesserung stoppen",
-        "severity": "high",
-    },
+    # (outdoor_temp → irrigation: Duplikat entfernt, Frost+Hitze oben zusammengefuehrt)
     {
         "role": "outdoor_temp", "state": "on",
         "affects": "pool", "same_room": False,
@@ -1585,14 +1581,7 @@ DEVICE_DEPENDENCIES = [
         "severity": "info",
     },
 
-    # --- Licht + Tageslicht-Sensor ---
-    {
-        "role": "light_level", "state": "on",
-        "affects": "blinds", "same_room": True,
-        "effect": "Hohe Helligkeit → Beschattung sinnvoll",
-        "hint": "Starkes Tageslicht → Rollladen/Jalousie gegen Blendung",
-        "severity": "info",
-    },
+    # (light_level → blinds: Duplikat entfernt, existiert bereits oben)
 
     # =================================================================
     # SICHERHEIT / BRANDSCHUTZ — fehlende Szenarien
@@ -4698,14 +4687,7 @@ DEVICE_DEPENDENCIES = [
         "hint": "Alle weg → Gaming-Konsole/PC ausschalten",
         "severity": "info",
     },
-    # Presence off → Projector aus
-    {
-        "role": "presence", "state": "off",
-        "affects": "projector", "same_room": False,
-        "effect": "Niemand zuhause → Beamer ausschalten",
-        "hint": "Alle weg → Beamer ausschalten",
-        "severity": "info",
-    },
+    # (presence off → projector: Duplikat entfernt, existiert oben)
     # Presence off → Speaker aus
     {
         "role": "presence", "state": "off",
@@ -5624,21 +5606,7 @@ DEVICE_DEPENDENCIES = [
         "severity": "info",
     },
 
-    # === Kühlschrank / Gefrierschrank Tür offen ===
-    {
-        "role": "fridge", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Kuehlschrank-Tuer offen → Benachrichtigung",
-        "hint": "Kuehlschrank-Tuer zu lange offen → Warnung, Lebensmittel!",
-        "severity": "info",
-    },
-    {
-        "role": "freezer", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Gefrierschrank-Tuer offen → Benachrichtigung",
-        "hint": "Gefrierschrank-Tuer zu lange offen → Warnung!",
-        "severity": "info",
-    },
+    # (fridge/freezer → notify: Duplikat entfernt, existiert bereits oben)
 
     # === NAS als Affected ===
     {
