@@ -282,7 +282,7 @@ class LearningTransfer:
             return ""
 
         hints = []
-        for t in self._pending_transfers[:2]:
+        for t in list(self._pending_transfers)[:2]:
             if not room or t["target_room"] == room.lower():
                 attrs = ", ".join(f"{k}={v}" for k, v in t["attributes"].items())
                 hints.append(
