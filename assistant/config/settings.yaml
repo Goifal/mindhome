@@ -1289,6 +1289,36 @@ anticipation:
       - Licht gedimmt
       - Temperatur angenehm
       - Entspannungsmusik
+# LLM Enhancer — Macht Jarvis intelligenter durch gezielte LLM-Nutzung
+llm_enhancer:
+  enabled: true
+  # Smart Intent: Erkennt implizite Absichten ("Mir ist kalt" -> Heizung hoch)
+  smart_intent:
+    enabled: true
+    min_confidence: 0.65
+    # model: ""  # Leer = model_fast aus Hauptconfig
+  # Conversation Summary: LLM-basierte Gespraechs-Zusammenfassung
+  conversation_summary:
+    enabled: true
+    min_messages: 4
+    # model: ""  # Leer = model_fast
+  # Proactive Suggestions: LLM-basierte smarte Vorschlaege
+  proactive_suggestions:
+    enabled: true
+    min_patterns: 1
+    max_per_day: 5
+    # model: ""  # Leer = model_smart
+  # Response Rewriter: Natuerlichere Antworten
+  response_rewriter:
+    enabled: true
+    min_response_length: 15
+    max_response_length: 500
+    skip_patterns:
+      - "Erledigt"
+      - "Verstanden"
+      - "Wird gemacht"
+    # model: ""  # Leer = model_fast
+
 insights:
   enabled: true
   check_interval_minutes: 30
