@@ -9373,11 +9373,24 @@ class StateChangeLog:
                     "same_room": same_room,
                     "effect": dep["effect"],
                     "hint": dep["hint"],
+                    "severity": dep.get("severity", "info"),
                 })
         return conflicts
 
+    # Severity-Rangfolge fuer Sortierung (niedrigerer Wert = hoehere Prioritaet)
+    _SEVERITY_ORDER = {"critical": 0, "high": 1, "info": 2}
+    # Maximale Anzahl Konflikte im Prompt (critical immer dabei)
+    _MAX_CONFLICTS = 12
+
     def format_conflicts_for_prompt(self, states: dict) -> str:
         """Formatiert aktive Geraete-Konflikte als LLM-Kontext.
+
+        Optimierungen gegenueber der Basisversion:
+        1. Severity-Sortierung: critical → high → info
+        2. Semantische Gruppierung: gleicher Hint aus mehreren Raeumen
+           wird zu einer Zeile mit Raum-Liste zusammengefasst
+        3. Max-Limit: Maximal _MAX_CONFLICTS Eintraege, critical immer
+           enthalten, Rest nach Severity aufgefuellt
 
         Args:
             states: Dict entity_id -> state-string
@@ -9401,26 +9414,72 @@ class StateChangeLog:
         except ImportError:
             _sanitize_for_prompt = None
 
-        lines = []
-        seen = set()
+        # --- Schritt 1: Deduplizierung (trigger_entity + affected_role) ---
+        seen_entity_keys: set[tuple[str, str]] = set()
+        deduped: list[dict] = []
         for c in active_conflicts:
-            # Raum-Info in Hinweis einbauen wenn vorhanden
-            room = c.get("trigger_room", "")
-            if room and _sanitize_for_prompt:
-                room = _sanitize_for_prompt(room, 50, "conflict_room")
-            room_info = f" [{room}]" if room else ""
+            key = (c["trigger_entity"], c["affected_role"])
+            if key in seen_entity_keys:
+                continue
+            seen_entity_keys.add(key)
+            deduped.append(c)
+
+        # --- Schritt 2: Severity-Sortierung ---
+        sev_order = self._SEVERITY_ORDER
+        deduped.sort(key=lambda c: sev_order.get(c.get("severity", "info"), 2))
+
+        # --- Schritt 3: Semantische Gruppierung ---
+        # Gleicher Hint + gleicher Effect → Raeume zusammenfassen
+        # Key: (hint, effect, severity) → list of rooms
+        from collections import OrderedDict
+        grouped: OrderedDict[tuple[str, str, str], list[str]] = OrderedDict()
+        for c in deduped:
             hint = c.get("hint", "")
             effect = c.get("effect", "")
+            severity = c.get("severity", "info")
             if _sanitize_for_prompt:
                 hint = _sanitize_for_prompt(hint, 200, "conflict_hint")
                 effect = _sanitize_for_prompt(effect, 200, "conflict_effect")
             if not hint:
                 continue
-            key = (c["trigger_entity"], c["affected_role"])
-            if key in seen:
-                continue
-            seen.add(key)
-            lines.append(f"- {hint}{room_info} ({effect})")
+            room = c.get("trigger_room", "")
+            if room and _sanitize_for_prompt:
+                room = _sanitize_for_prompt(room, 50, "conflict_room")
+            group_key = (hint, effect, severity)
+            if group_key not in grouped:
+                grouped[group_key] = []
+            if room and room not in grouped[group_key]:
+                grouped[group_key].append(room)
+
+        if not grouped:
+            return ""
+
+        # --- Schritt 4: Max-Limit mit Critical-Garantie ---
+        all_entries = list(grouped.items())
+        # Critical immer dabei
+        critical_entries = [
+            e for e in all_entries if e[0][2] == "critical"
+        ]
+        other_entries = [
+            e for e in all_entries if e[0][2] != "critical"
+        ]
+        # Auffuellen bis _MAX_CONFLICTS (critical zuerst, dann Rest)
+        max_other = max(0, self._MAX_CONFLICTS - len(critical_entries))
+        selected = critical_entries + other_entries[:max_other]
+
+        # --- Schritt 5: Formatierung ---
+        lines: list[str] = []
+        for (hint, effect, severity), rooms in selected:
+            if rooms:
+                room_info = f" [{', '.join(rooms)}]"
+            else:
+                room_info = ""
+            sev_prefix = ""
+            if severity == "critical":
+                sev_prefix = "KRITISCH: "
+            elif severity == "high":
+                sev_prefix = "WICHTIG: "
+            lines.append(f"- {sev_prefix}{hint}{room_info} ({effect})")
 
         if not lines:
             return ""
