@@ -382,6 +382,35 @@ class HomeAssistantClient:
         else:
             logger.info("log_actions: Erfolgreich %d Aktionen geloggt", len(safe_actions))
 
+    async def log_activity(
+        self,
+        action_type: str,
+        function: str,
+        reason: str,
+        arguments: dict | None = None,
+        result: str = "",
+    ) -> None:
+        """Log eine proaktive Aktivitaet an MindHome ActionLog.
+
+        action_type: z.B. 'emergency', 'cover_auto', 'vacuum_auto', 'proactive', 'presence'
+        """
+        payload = {
+            "action_type": action_type,
+            "actions": [{
+                "function": function,
+                "arguments": arguments or {},
+                "result": {"success": True, "message": result[:500] if result else ""},
+            }],
+            "user_text": "",
+            "response": reason[:200] if reason else "",
+        }
+        try:
+            resp = await self.mindhome_post("/api/action-log", payload, retries=0, timeout=10)
+            if resp is None:
+                logger.debug("log_activity: POST fehlgeschlagen fuer %s/%s", action_type, function)
+        except Exception as e:
+            logger.debug("log_activity Fehler: %s", e)
+
     async def mindhome_put(self, path: str, data: dict, retries: int = 3) -> Any:
         """PUT auf die MindHome Add-on API mit Circuit Breaker und Retry."""
         if not mindhome_breaker.is_available:

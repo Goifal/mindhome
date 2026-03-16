@@ -573,6 +573,15 @@ def api_create_action_log():
 
     user_text = str(data.get("user_text", "") or "")
     response_text = str(data.get("response", "") or "")
+    # Allow caller to specify action_type (default: jarvis_action for backwards compat)
+    _VALID_ACTION_TYPES = {
+        "jarvis_action", "emergency", "cover_auto", "vacuum_auto",
+        "proactive", "presence", "observation", "automation",
+        "quick_action", "suggestion", "anomaly", "system", "first_time",
+    }
+    req_action_type = str(data.get("action_type", "jarvis_action") or "jarvis_action")
+    if req_action_type not in _VALID_ACTION_TYPES:
+        req_action_type = "jarvis_action"
 
     try:
         from db import db_write_with_retry
@@ -595,7 +604,7 @@ def api_create_action_log():
                     result_msg = str(result_raw)
 
                 entry = ActionLog(
-                    action_type="jarvis_action",
+                    action_type=req_action_type,
                     action_data={
                         "function": func,
                         "arguments": args,

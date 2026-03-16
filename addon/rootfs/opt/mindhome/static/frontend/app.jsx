@@ -6034,18 +6034,22 @@ const ActivitiesPage = () => {
 
     const typeIcons = {
         observation: 'mdi-eye', quick_action: 'mdi-lightning-bolt', automation: 'mdi-robot',
-        suggestion: 'mdi-lightbulb-on', anomaly: 'mdi-alert', system: 'mdi-cog', first_time: 'mdi-star-circle'
+        suggestion: 'mdi-lightbulb-on', anomaly: 'mdi-alert', system: 'mdi-cog', first_time: 'mdi-star-circle',
+        jarvis_action: 'mdi-message-text', emergency: 'mdi-shield-alert', cover_auto: 'mdi-blinds',
+        vacuum_auto: 'mdi-robot-vacuum', proactive: 'mdi-brain', presence: 'mdi-account-arrow-right'
     };
     const typeColors = {
         observation: 'var(--text-muted)', quick_action: 'var(--info)', automation: 'var(--warning)',
-        suggestion: 'var(--accent-primary)', anomaly: 'var(--danger)', system: 'var(--text-secondary)'
+        suggestion: 'var(--accent-primary)', anomaly: 'var(--danger)', system: 'var(--text-secondary)',
+        jarvis_action: 'var(--info)', emergency: 'var(--danger)', cover_auto: 'var(--accent-secondary)',
+        vacuum_auto: 'var(--success)', proactive: 'var(--accent-primary)', presence: 'var(--warning)'
     };
 
     const tabTypes = {
         all: null,
-        devices: ['observation'],
-        automations: ['automation', 'suggestion', 'quick_action'],
-        system: ['anomaly', 'system', 'first_time']
+        devices: ['observation', 'cover_auto', 'vacuum_auto'],
+        automations: ['automation', 'suggestion', 'quick_action', 'jarvis_action', 'proactive'],
+        system: ['anomaly', 'system', 'first_time', 'emergency', 'presence']
     };
 
     const getDeviceName = (id) => devices.find(d => d.id === id)?.name || '';
@@ -6176,6 +6180,36 @@ const ActivitiesPage = () => {
                                     {log.action_type === 'automation' && (
                                         <span className="badge badge-warning" style={{ fontSize: 10 }}>
                                             <span className="mdi mdi-robot" style={{ marginRight: 2 }} />MindHome
+                                        </span>
+                                    )}
+                                    {log.action_type === 'emergency' && (
+                                        <span className="badge badge-danger" style={{ fontSize: 10 }}>
+                                            <span className="mdi mdi-shield-alert" style={{ marginRight: 2 }} />Notfall
+                                        </span>
+                                    )}
+                                    {log.action_type === 'jarvis_action' && (
+                                        <span className="badge badge-info" style={{ fontSize: 10 }}>
+                                            <span className="mdi mdi-message-text" style={{ marginRight: 2 }} />Jarvis
+                                        </span>
+                                    )}
+                                    {log.action_type === 'cover_auto' && (
+                                        <span className="badge" style={{ fontSize: 10, background: 'var(--accent-secondary)', color: '#fff' }}>
+                                            <span className="mdi mdi-blinds" style={{ marginRight: 2 }} />Rollladen
+                                        </span>
+                                    )}
+                                    {log.action_type === 'vacuum_auto' && (
+                                        <span className="badge badge-success" style={{ fontSize: 10 }}>
+                                            <span className="mdi mdi-robot-vacuum" style={{ marginRight: 2 }} />Staubsauger
+                                        </span>
+                                    )}
+                                    {log.action_type === 'presence' && (
+                                        <span className="badge badge-warning" style={{ fontSize: 10 }}>
+                                            <span className="mdi mdi-account-arrow-right" style={{ marginRight: 2 }} />Anwesenheit
+                                        </span>
+                                    )}
+                                    {log.action_type === 'proactive' && (
+                                        <span className="badge" style={{ fontSize: 10, background: 'var(--accent-primary)', color: '#fff' }}>
+                                            <span className="mdi mdi-brain" style={{ marginRight: 2 }} />Proaktiv
                                         </span>
                                     )}
                                 </div>
