@@ -404,8 +404,12 @@ class OllamaClient:
         elif tools and not profile.supports_think_with_tools:
             # Modell kann Think+Tools nicht gleichzeitig
             think_enabled = False
+        elif tier == "smart":
+            # Smart-Tier: Thinking deaktivieren — spart 500-2000 Reasoning-Tokens
+            # und halbiert die Latenz. Deep-Tier behaelt Thinking fuer komplexe Aufgaben.
+            think_enabled = False
         else:
-            think_enabled = None  # Ollama/Modell entscheidet
+            think_enabled = None  # Deep-Tier: Modell entscheidet
 
         payload = {
             "model": model,
@@ -512,6 +516,8 @@ class OllamaClient:
         if think is not None:
             think_enabled = think
         elif model == settings.model_fast:
+            think_enabled = False
+        elif tier == "smart":
             think_enabled = False
         else:
             think_enabled = None
