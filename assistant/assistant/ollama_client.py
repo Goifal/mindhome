@@ -256,12 +256,8 @@ class OllamaClient:
         from .config import yaml_config
         ollama_cfg = yaml_config.get("ollama") or {}
 
-        # Wenn alle Tiers das gleiche Modell nutzen: einheitlichen num_ctx verwenden
-        # damit Ollama nicht staendig zwischen verschiedenen ctx-Groessen wechselt
-        _all_same = (settings.model_fast == settings.model_smart == settings.model_deep)
-        if _all_same:
-            # Hoechsten konfigurierten Wert nehmen (smart als Standard)
-            return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
+        # Auch wenn alle Tiers das gleiche Modell nutzen, tier-spezifischen
+        # num_ctx respektieren — Ollama laedt ohnehin mit dem groessten ctx.
 
         # Tier-basiertes Matching (praeziser als Modellname wenn Tiers verschieden)
         if tier == "fast":

@@ -1162,9 +1162,9 @@ const HELP_TEXTS = {
   'models.deep_min_words': {title:'Deep ab Wörtern', text:'Ab wie vielen Wörtern automatisch das Deep-Modell genutzt wird.'},
   'models.options.temperature': {title:'Kreativitaet', text:'Wie kreativ die Antworten sein sollen.', detail:'0 = deterministisch, 0.7 = Standard, 2.0 = sehr kreativ'},
   'models.options.max_tokens': {title:'Max. Antwortlänge', text:'Maximale Länge einer Antwort in Tokens (~0.75 Wörter pro Token).'},
-  'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster für das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. 2048 empfohlen für 4B Modelle.'},
-  'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster für das Smart-Modell (Gespräche).', detail:'4096 = Standard. Mehr Kontext = besseres Gesprächsgedächtnis, aber mehr VRAM.'},
-  'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster für das Deep-Modell (komplexe Aufgaben).', detail:'MoE-Modelle (z.B. Qwen3.5-27B) sind VRAM-effizient und vertragen 8192+.'},
+  'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster für das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. MoE-Modelle (Qwen3.5) vertragen groessere Fenster bei wenig VRAM.'},
+  'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster für das Smart-Modell (Gespräche).', detail:'Mehr Kontext = besseres Gesprächsgedächtnis. Qwen3.5 MoE unterstuetzt bis 262K.'},
+  'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster für das Deep-Modell (komplexe Aufgaben).', detail:'Qwen3.5 MoE unterstuetzt bis 262K. Groessere Fenster brauchen mehr VRAM, sind aber bei MoE effizient.'},
   'ollama.keep_alive': {title:'Keep-Alive', text:'Wie lange das Modell nach dem letzten Request im VRAM bleibt.', detail:'Länger = schnellere Antworten (kein Nachladen), aber mehr Strom im Idle. "5m" = 5 Minuten, "-1" = nie entladen, "0" = sofort entladen. Bei aktiver Nutzung empfohlen: "5m" oder länger.'},
   'ollama.flash_attn': {title:'Flash Attention', text:'Beschleunigt die Inferenz bei neueren GPUs (RTX 30xx+).', detail:'Flash Attention reduziert VRAM-Verbrauch und beschleunigt die Token-Generierung. Erfordert CUDA-fähige GPU. Bei Problemen deaktivieren.'},
   'ollama.num_gpu': {title:'GPU-Layer', text:'Wie viele Modell-Layer auf die GPU geladen werden.', detail:'Automatisch = Ollama berechnet anhand des freien VRAMs wie viele Layer passen (beste Option für grosse Modelle). 99 = alles auf GPU erzwingen (kann bei grossen Modellen fehlschlagen). 0 = nur CPU.'},
@@ -2934,9 +2934,9 @@ function renderPersonality() {
     fRange('models.deep_min_words', 'Deep ab Wörtern', 5, 50, 1, {5:'5',10:'10',15:'15',20:'20',25:'25',30:'30',35:'35',40:'40',45:'45',50:'50'}) +
     fRange('models.options.temperature', 'Kreativitaet (Temperatur)', 0, 2, 0.1, {0:'Exakt',0.5:'Konservativ',0.7:'Standard',1:'Kreativ',1.5:'Sehr kreativ',2:'Maximum'}) +
     fRange('models.options.max_tokens', 'Antwortlänge (Max Tokens)', 64, 4096, 64) +
-    fRange('ollama.num_ctx_fast', 'Kontext Fast-Modell', 1024, 16384, 1024, {1024:'1K',2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K'}) +
-    fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',24576:'24K',32768:'32K'}) +
-    fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 65536, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',32768:'32K',49152:'48K',65536:'64K'}) +
+    fRange('ollama.num_ctx_fast', 'Kontext Fast-Modell', 1024, 65536, 1024, {1024:'1K',2048:'2K',4096:'4K',8192:'8K',16384:'16K',32768:'32K',65536:'64K'}) +
+    fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 131072, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',32768:'32K',65536:'64K',131072:'128K'}) +
+    fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 131072, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',32768:'32K',65536:'64K',131072:'128K'}) +
     '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">GPU-Performance</div>' +
     fSelect('ollama.keep_alive', 'Keep-Alive (Modell im VRAM halten)', [
       {v:'0',l:'Sofort entladen (spart Strom)'},
