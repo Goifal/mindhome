@@ -2960,11 +2960,12 @@ function renderPersonality() {
     fToggle('latency_optimization.knowledge_fast_path', 'Wissensfragen Fast-Path') +
     fInfo('Bei reinen Wissensfragen ("Was ist die Hauptstadt von Frankreich?") wird der komplette Subsystem-Gather (Mood, Security, Sensoren etc.) uebersprungen und direkt das LLM gefragt. Spart ~500-2000ms pro Wissensfrage. Deaktivieren wenn Wissensfragen auch Haus-Kontext beruecksichtigen sollen.') +
     fSelect('latency_optimization.think_control', 'Think-Modus Steuerung', [
-      {v:'auto',l:'Auto — Thinking nur bei Gespräch + Reasoning (empfohlen)'},
-      {v:'always_off',l:'Immer aus — Schnellste Antworten, weniger Qualitaet'},
-      {v:'always_on',l:'Immer an — Beste Qualitaet, langsamere Antworten'}
+      {v:'smart_off',l:'Smart aus — Thinking nur fuer Deep-Tier (empfohlen)'},
+      {v:'auto',l:'Auto — Modell entscheidet selbst'},
+      {v:'off',l:'Immer aus — Schnellste Antworten, weniger Qualitaet'},
+      {v:'on',l:'Immer an — Beste Qualitaet, langsamere Antworten'}
     ]) +
-    fInfo('Qwen3.5 hat einen internen "Denk-Modus" der 200-2000 extra Tokens generiert bevor die Antwort kommt (2-10s). "Auto" deaktiviert das für einfache Befehle (Licht an, Temperatur?) und aktiviert es nur bei Reasoning. "Immer aus" spart maximal Zeit, kann aber bei komplexen Fragen schlechtere Antworten geben.') +
+    fInfo('Qwen3.5 hat einen internen "Denk-Modus" der 500-2000 extra Tokens generiert bevor die Antwort kommt (2-10s). "Smart aus" deaktiviert Thinking fuer normale Gespraeche (Smart-Tier) und laesst es fuer komplexe Aufgaben (Deep-Tier) aktiv — beste Balance aus Geschwindigkeit und Qualitaet. "Immer aus" spart maximal Zeit, kann aber bei komplexen Fragen schlechtere Antworten geben.') +
     fRange('latency_optimization.upgrade_signal_threshold', 'Deep-Upgrade Schwelle', 1, 10, 1, {1:'1 (oft Deep)',3:'3',5:'5 (Standard)',7:'7',10:'10 (selten Deep)'}) +
     fInfo('Bestimmt ab wie vielen Kontext-Signalen (Problemlösung, What-If, kritische Sicherheit) vom Smart-Modell (9B, schnell) auf das Deep-Modell (27B, langsam) gewechselt wird. Niedrig = oft Deep (3-20s langsamer, bessere Analyse). Hoch = selten Deep (schneller, reicht für die meisten Anfragen).') +
     fRange('latency_optimization.refinement_skip_max_chars', 'Refinement ueberspringen bis (Zeichen)', 0, 500, 10, {0:'Nie (immer Refinement)',80:'80',120:'120 (Standard)',200:'200',300:'300',500:'500 (fast immer skip)'}) +
