@@ -8100,6 +8100,627 @@ DEVICE_DEPENDENCIES = [
     # Running → Energy
     # Update → Automation
     # Problem → Automation
+
+    # ============================================================
+    # 43. MAEHROBOTER / ROBOT MOWER
+    # ============================================================
+    # Robot Mower ON → Bewegungsmelder (Fehlalarme)
+    {
+        "role": "robot_mower", "state": "on",
+        "affects": "motion", "same_room": False,
+        "effect": "Maehroboter aktiv → Bewegungsmelder kann ausloesen",
+        "hint": "Maehroboter faehrt im Garten → Bewegungsmelder-Alarme ignorieren",
+        "severity": "high",
+    },
+    # Robot Mower ON → Alarm (Fehlausloesung)
+    {
+        "role": "robot_mower", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
+        "effect": "Maehroboter aktiv → Alarm koennte ausloesen",
+        "hint": "Maehroboter bewegt sich → Alarm-Fehlausloesung moeglich wenn scharf",
+        "severity": "critical",
+    },
+    # Robot Mower ON → Laerm/Geraeusch
+    {
+        "role": "robot_mower", "state": "on",
+        "affects": "noise", "same_room": False,
+        "effect": "Maehroboter aktiv → Geraeuschpegel steigt",
+        "hint": "Maehroboter laeuft → Laerm im Garten beachten (Ruhezeiten)",
+        "severity": "info",
+    },
+    # Robot Mower ON → Regen (stoppen bei Regen)
+    {
+        "role": "robot_mower", "state": "on",
+        "affects": "rain", "same_room": False,
+        "effect": "Maehroboter aktiv → bei Regen zurueck zur Station",
+        "hint": "Maehroboter maehen bei Regen → Rasen wird beschaedigt, zurueckrufen",
+        "severity": "high",
+    },
+    # Rain → Robot Mower (inverse: Regen stoppt Maeher)
+    {
+        "role": "rain", "state": "on",
+        "affects": "robot_mower", "same_room": False,
+        "effect": "Regen erkannt → Maehroboter sollte stoppen",
+        "hint": "Regen → Maehroboter zurueck zur Ladestation schicken",
+        "severity": "high",
+    },
+    # Robot Mower ON → Energie
+    {
+        "role": "robot_mower", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Maehroboter laedt → Stromverbrauch steigt",
+        "hint": "Maehroboter an Ladestation → erhoehter Energieverbrauch",
+        "severity": "info",
+    },
+    # Robot Mower ON → Schlaf (nicht mähen wenn geschlafen wird)
+    {
+        "role": "robot_mower", "state": "on",
+        "affects": "bed_occupancy", "same_room": False,
+        "effect": "Maehroboter aktiv → Schlaf koennte gestoert werden",
+        "hint": "Maehroboter laeuft → wenn jemand schlaeft, Laerm vermeiden",
+        "severity": "high",
+    },
+    # Robot Mower ON → Gartenbeleuchtung
+    {
+        "role": "robot_mower", "state": "on",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Maehroboter aktiv → Gartenbeleuchtung beachten",
+        "hint": "Maehroboter unterwegs → Gartenlichter koennen Sensoren verwirren",
+        "severity": "info",
+    },
+    # Robot Mower ON → Bewaesserung (nicht gleichzeitig)
+    {
+        "role": "robot_mower", "state": "on",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Maehroboter aktiv → Bewaesserung pausieren",
+        "hint": "Maehroboter maehen → Bewaesserung gleichzeitig vermeiden",
+        "severity": "high",
+    },
+    # Irrigation ON → Robot Mower (inverse)
+    {
+        "role": "irrigation", "state": "on",
+        "affects": "robot_mower", "same_room": False,
+        "effect": "Bewaesserung aktiv → Maehroboter nicht starten",
+        "hint": "Rasen wird bewaessert → Maehroboter warten lassen bis trocken",
+        "severity": "high",
+    },
+    # Robot Mower OFF/Docked → Bewegungsmelder wieder normal
+    {
+        "role": "robot_mower", "state": "off",
+        "affects": "motion", "same_room": False,
+        "effect": "Maehroboter in Station → Bewegungsmelder wieder zuverlaessig",
+        "hint": "Maehroboter geparkt → Garten-Bewegungsmelder normal auswerten",
+        "severity": "info",
+    },
+    # Robot Mower OFF → Alarm wieder normal
+    {
+        "role": "robot_mower", "state": "off",
+        "affects": "alarm", "same_room": False,
+        "effect": "Maehroboter in Station → Alarm wieder zuverlaessig",
+        "hint": "Maehroboter geparkt → Alarm-System wieder normal",
+        "severity": "info",
+    },
+    # Robot Mower OFF → Bewaesserung freigeben
+    {
+        "role": "robot_mower", "state": "off",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Maehroboter in Station → Bewaesserung wieder moeglich",
+        "hint": "Maehroboter fertig → Bewaesserung kann starten",
+        "severity": "info",
+    },
+
+    # ============================================================
+    # 44. KAMIN / FIREPLACE
+    # ============================================================
+    # Fireplace ON → Rauchmelder (kann ausloesen)
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "smoke", "same_room": True,
+        "effect": "Kamin brennt → Rauchmelder koennte ausloesen",
+        "hint": "Kamin/Ofen an → Rauchmelder-Empfindlichkeit im Raum beachten",
+        "severity": "critical",
+    },
+    # Fireplace ON → CO-Melder (Vergiftungsgefahr!)
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "co", "same_room": True,
+        "effect": "Kamin brennt → CO-Werte ueberwachen!",
+        "hint": "Kamin/Ofen aktiv → CO-Melder MUSS aktiv sein, Vergiftungsgefahr!",
+        "severity": "critical",
+    },
+    # Fireplace ON → Lueftung/Abzug (Kaminzug braucht Frischluft)
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "ventilation", "same_room": True,
+        "effect": "Kamin brennt → Lueftung beachten (Kaminzug)",
+        "hint": "Kamin aktiv → Dunstabzug AUS (stoert Kaminzug!), Zuluft sichern",
+        "severity": "critical",
+    },
+    # Fireplace ON → Fenster (Frischluftzufuhr)
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Kamin brennt → Fenster fuer Frischluftzufuhr",
+        "hint": "Kamin/Ofen aktiv → Fenster leicht oeffnen fuer Frischluftzufuhr",
+        "severity": "high",
+    },
+    # Fireplace ON → Heizung (Raumtemperatur steigt)
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Kamin brennt → Raum wird gewaermt",
+        "hint": "Kamin/Ofen heizt → Heizung/Thermostat im Raum reduzieren",
+        "severity": "high",
+    },
+    # Fireplace ON → Raumtemperatur
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Kamin brennt → Temperatur steigt stark",
+        "hint": "Kamin aktiv → Raumtemperatur steigt deutlich, Thermostat anpassen",
+        "severity": "high",
+    },
+    # Fireplace ON → Luftqualitaet
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "air_quality", "same_room": True,
+        "effect": "Kamin brennt → Feinstaub/Partikel im Raum",
+        "hint": "Kamin/Ofen aktiv → Luftqualitaet verschlechtert sich, lueften",
+        "severity": "high",
+    },
+    # Fireplace ON → Energie (Holz/Gas statt Strom)
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Kamin brennt → alternative Heizquelle aktiv",
+        "hint": "Kamin heizt → Stromheizung reduzierbar, Energiemix beachten",
+        "severity": "info",
+    },
+    # Fireplace ON → Alarm
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "effect": "Kamin brennt → Brandmelder koennte ausloesen",
+        "hint": "Kamin aktiv → Rauch-/Brandmelder Fehlalarme moeglich",
+        "severity": "high",
+    },
+    # Fireplace ON → Presence (nie unbeaufsichtigt)
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "presence", "same_room": True,
+        "effect": "Kamin brennt → nicht unbeaufsichtigt lassen!",
+        "hint": "Kamin/Ofen aktiv → jemand MUSS im Haus sein, Brandgefahr!",
+        "severity": "critical",
+    },
+    # Fireplace OFF → Raumtemperatur sinkt
+    {
+        "role": "fireplace", "state": "off",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Kamin aus → Temperatur sinkt langsam",
+        "hint": "Kamin erloschen → Raum kuehlt ab, Heizung wieder hochfahren",
+        "severity": "info",
+    },
+    # Fireplace OFF → Luftqualitaet erholt sich
+    {
+        "role": "fireplace", "state": "off",
+        "affects": "air_quality", "same_room": True,
+        "effect": "Kamin aus → Luftqualitaet verbessert sich",
+        "hint": "Kamin erloschen → gut lueften, Feinstaub abtransportieren",
+        "severity": "info",
+    },
+    # Fireplace OFF → Rauchmelder normal
+    {
+        "role": "fireplace", "state": "off",
+        "affects": "smoke", "same_room": True,
+        "effect": "Kamin aus → Rauchmelder wieder normal",
+        "hint": "Kamin erloschen → Rauchmelder wieder zuverlaessig",
+        "severity": "info",
+    },
+    # Fireplace OFF → Lueftung normal
+    {
+        "role": "fireplace", "state": "off",
+        "affects": "ventilation", "same_room": True,
+        "effect": "Kamin aus → Lueftung wieder normal betreibbar",
+        "hint": "Kamin erloschen → Dunstabzug/Lueftung wieder nutzbar",
+        "severity": "info",
+    },
+    # Fireplace ON → Radiator/Heating (Parity)
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "radiator", "same_room": True,
+        "effect": "Kamin brennt → Heizkoerper runterdrehen",
+        "hint": "Kamin heizt den Raum → Heizkoerper reduzieren spart Energie",
+        "severity": "high",
+    },
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "floor_heating", "same_room": True,
+        "effect": "Kamin brennt → Fussbodenheizung reduzieren",
+        "hint": "Kamin heizt → Fussbodenheizung im Raum drosseln",
+        "severity": "high",
+    },
+    {
+        "role": "fireplace", "state": "on",
+        "affects": "heating", "same_room": True,
+        "effect": "Kamin brennt → Heizung reduzieren",
+        "hint": "Kamin heizt → Heizung im Raum runterregeln",
+        "severity": "high",
+    },
+
+    # ============================================================
+    # 45. SAUNA
+    # ============================================================
+    # Sauna ON → Energie (6-10 kW!)
+    {
+        "role": "sauna", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Sauna an → extremer Stromverbrauch (6-10 kW!)",
+        "hint": "Sauna heizt auf → 6-10 kW Verbrauch! Andere Grossverbraucher verschieben",
+        "severity": "critical",
+    },
+    # Sauna ON → Netzverbrauch
+    {
+        "role": "sauna", "state": "on",
+        "affects": "grid_consumption", "same_room": False,
+        "effect": "Sauna an → Netzverbrauch steigt massiv",
+        "hint": "Sauna → massiver Netzstrom-Verbrauch, ideal bei Solarueberschuss starten",
+        "severity": "high",
+    },
+    # Sauna ON → Raumtemperatur (Umgebung heizt mit)
+    {
+        "role": "sauna", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Sauna an → Umgebungstemperatur steigt",
+        "hint": "Sauna heizt → benachbarter Raum wird waermer, Thermostat anpassen",
+        "severity": "high",
+    },
+    # Sauna ON → Klima/Thermostat
+    {
+        "role": "sauna", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Sauna an → Klima im Raum anpassen",
+        "hint": "Sauna aktiv → Thermostat im Saunaraum anpassen",
+        "severity": "high",
+    },
+    # Sauna ON → Luftfeuchtigkeit (extrem hoch)
+    {
+        "role": "sauna", "state": "on",
+        "affects": "humidity", "same_room": True,
+        "effect": "Sauna an → Luftfeuchtigkeit steigt extrem",
+        "hint": "Sauna aktiv → Luftfeuchtigkeit extrem hoch, nach Sitzung lueften!",
+        "severity": "high",
+    },
+    # Sauna ON → Lueftung (danach wichtig)
+    {
+        "role": "sauna", "state": "on",
+        "affects": "ventilation", "same_room": True,
+        "effect": "Sauna an → Lueftung nach Sitzung wichtig",
+        "hint": "Sauna laeuft → nach dem Saunagang gut lueften, Schimmelgefahr",
+        "severity": "high",
+    },
+    # Sauna ON → Rauchmelder (Dampf kann ausloesen)
+    {
+        "role": "sauna", "state": "on",
+        "affects": "smoke", "same_room": True,
+        "effect": "Sauna an → Dampf kann Rauchmelder ausloesen",
+        "hint": "Sauna/Dampf → Rauchmelder-Fehlalarm moeglich",
+        "severity": "high",
+    },
+    # Sauna ON → Wasserverbrauch (Aufguss)
+    {
+        "role": "sauna", "state": "on",
+        "affects": "water_consumption", "same_room": False,
+        "effect": "Sauna an → Wasserverbrauch fuer Aufguss/Abkuehlung",
+        "hint": "Sauna aktiv → Wasserverbrauch durch Aufguss und Dusche beachten",
+        "severity": "info",
+    },
+    # Sauna ON → Licht (Saunabeleuchtung)
+    {
+        "role": "sauna", "state": "on",
+        "affects": "light", "same_room": True,
+        "effect": "Sauna an → Saunabeleuchtung einschalten",
+        "hint": "Sauna aktiv → gedimmtes Saunalicht einschalten, Entspannung",
+        "severity": "info",
+    },
+    # Sauna ON → Presence (nie unbeaufsichtigt)
+    {
+        "role": "sauna", "state": "on",
+        "affects": "presence", "same_room": False,
+        "effect": "Sauna an → jemand muss im Haus sein",
+        "hint": "Sauna laeuft → Person MUSS im Haus sein, Gesundheitsrisiko!",
+        "severity": "critical",
+    },
+    # Sauna OFF → Energie normalisiert
+    {
+        "role": "sauna", "state": "off",
+        "affects": "energy", "same_room": False,
+        "effect": "Sauna aus → Stromverbrauch sinkt deutlich",
+        "hint": "Sauna beendet → 6-10 kW weniger Verbrauch",
+        "severity": "info",
+    },
+    # Sauna OFF → Lueftung starten
+    {
+        "role": "sauna", "state": "off",
+        "affects": "ventilation", "same_room": True,
+        "effect": "Sauna aus → jetzt lueften!",
+        "hint": "Sauna beendet → Lueftung einschalten, Feuchtigkeit abfuehren",
+        "severity": "high",
+    },
+    # Sauna OFF → Raumtemperatur sinkt
+    {
+        "role": "sauna", "state": "off",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Sauna aus → Umgebungstemperatur normalisiert sich",
+        "hint": "Sauna beendet → Raumtemperatur sinkt wieder auf Normal",
+        "severity": "info",
+    },
+
+    # ============================================================
+    # 46. AQUARIUM
+    # ============================================================
+    # Aquarium ON → Energie (Dauerbetrieb: Pumpe, Heizung, Licht)
+    {
+        "role": "aquarium", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Aquarium aktiv → konstanter Stromverbrauch",
+        "hint": "Aquarium-Equipment (Pumpe/Heizung/Licht) → dauerhafter Grundverbrauch",
+        "severity": "info",
+    },
+    # Aquarium ON → Wasserleck (Risiko)
+    {
+        "role": "aquarium", "state": "on",
+        "affects": "water_leak", "same_room": True,
+        "effect": "Aquarium aktiv → Wasserleck-Risiko",
+        "hint": "Aquarium im Raum → Wassersensor ist kritisch wichtig!",
+        "severity": "critical",
+    },
+    # Water Leak → Aquarium (bidirektional)
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "aquarium", "same_room": True,
+        "effect": "Wasserleck erkannt → Aquarium pruefen!",
+        "hint": "Wasserleck im Aquarium-Raum → sofort Aquarium und Schlaeuche pruefen!",
+        "severity": "critical",
+    },
+    # Aquarium ON → Raumtemperatur (Aquarienheizung waermt mit)
+    {
+        "role": "aquarium", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Aquarium → leichte Erwaermung des Raums",
+        "hint": "Aquarium-Heizung → Raum wird minimal waermer, Thermostat beachten",
+        "severity": "info",
+    },
+    # Aquarium ON → Luftfeuchtigkeit (Verdunstung)
+    {
+        "role": "aquarium", "state": "on",
+        "affects": "humidity", "same_room": True,
+        "effect": "Aquarium → Verdunstung erhoeht Luftfeuchtigkeit",
+        "hint": "Aquarium offen → Luftfeuchtigkeit steigt, gut lueften",
+        "severity": "info",
+    },
+    # Aquarium ON → Geraeusch (Pumpe/Filter)
+    {
+        "role": "aquarium", "state": "on",
+        "affects": "noise", "same_room": True,
+        "effect": "Aquarium-Pumpe → Grundgeraeusch im Raum",
+        "hint": "Aquarium-Filter/Pumpe → Hintergrundgeraeusch beachten",
+        "severity": "info",
+    },
+    # Aquarium Problem → Notify (Fische in Gefahr!)
+    {
+        "role": "aquarium", "state": "problem",
+        "affects": "notify", "same_room": False,
+        "effect": "Aquarium-Problem → Fische in Gefahr!",
+        "hint": "Aquarium Stoerung → SOFORT pruefen! Fische koennten sterben!",
+        "severity": "critical",
+    },
+    # Aquarium OFF → Notify (Ausfall ist kritisch!)
+    {
+        "role": "aquarium", "state": "off",
+        "affects": "notify", "same_room": False,
+        "effect": "Aquarium aus → KRITISCH! Pumpe/Heizung ausgefallen!",
+        "hint": "Aquarium-Equipment AUS → Lebensbedrohlich fuer Fische! Sofort handeln!",
+        "severity": "critical",
+    },
+    # Aquarium ON → Wassertemperatur
+    {
+        "role": "aquarium", "state": "on",
+        "affects": "water_temp", "same_room": True,
+        "effect": "Aquarium → Wassertemperatur muss stabil bleiben",
+        "hint": "Aquarium aktiv → Wassertemperatur ueberwachen (24-26°C typisch)",
+        "severity": "high",
+    },
+    # Indoor Temp → Aquarium (Raumtemperatur beeinflusst Wassertemp)
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "aquarium", "same_room": True,
+        "effect": "Raumtemperatur-Aenderung → Aquarium-Wassertemp beachten",
+        "hint": "Raumtemperatur aendert sich → Aquarium-Heizung muss kompensieren",
+        "severity": "info",
+    },
+
+    # ============================================================
+    # 47. 3D-DRUCKER / 3D PRINTER
+    # ============================================================
+    # 3D Printer ON → Luftqualitaet (VOC/Feinstaub!)
+    {
+        "role": "3d_printer", "state": "on",
+        "affects": "air_quality", "same_room": True,
+        "effect": "3D-Drucker druckt → VOC und Feinstaub!",
+        "hint": "3D-Drucker aktiv → VOC/Partikel freigesetzt! Lueftung MUSS laufen!",
+        "severity": "critical",
+    },
+    # 3D Printer ON → Lueftung (MUSS laufen!)
+    {
+        "role": "3d_printer", "state": "on",
+        "affects": "ventilation", "same_room": True,
+        "effect": "3D-Drucker druckt → Lueftung erforderlich",
+        "hint": "3D-Drucker aktiv → Absaugung/Lueftung einschalten, VOC gefaehrlich!",
+        "severity": "critical",
+    },
+    # 3D Printer ON → Fenster (Lueftung sicherstellen)
+    {
+        "role": "3d_printer", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "3D-Drucker druckt → Fenster fuer Frischluft",
+        "hint": "3D-Drucker laeuft → Fenster oeffnen fuer Frischluft (VOC!)",
+        "severity": "high",
+    },
+    # 3D Printer ON → Energie
+    {
+        "role": "3d_printer", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "3D-Drucker druckt → Stromverbrauch steigt",
+        "hint": "3D-Drucker aktiv → 200-500W Verbrauch fuer Stunden",
+        "severity": "info",
+    },
+    # 3D Printer ON → Laerm
+    {
+        "role": "3d_printer", "state": "on",
+        "affects": "noise", "same_room": True,
+        "effect": "3D-Drucker druckt → Geraeuschpegel steigt",
+        "hint": "3D-Drucker laeuft → Motoren/Luefter verursachen Laerm",
+        "severity": "info",
+    },
+    # 3D Printer ON → Rauchmelder (Brandgefahr!)
+    {
+        "role": "3d_printer", "state": "on",
+        "affects": "smoke", "same_room": True,
+        "effect": "3D-Drucker druckt → Brandrisiko bei Fehlfunktion",
+        "hint": "3D-Drucker aktiv → Rauchmelder MUSS aktiv sein, Brandgefahr!",
+        "severity": "critical",
+    },
+    # 3D Printer ON → Raumtemperatur
+    {
+        "role": "3d_printer", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "3D-Drucker druckt → Raum wird waermer",
+        "hint": "3D-Drucker Heizbett/Hotend → Raum heizt sich auf (bis +3°C)",
+        "severity": "info",
+    },
+    # 3D Printer ON → Presence (Brandrisiko unbeaufsichtigt!)
+    {
+        "role": "3d_printer", "state": "on",
+        "affects": "presence", "same_room": False,
+        "effect": "3D-Drucker druckt → nicht lange unbeaufsichtigt lassen",
+        "hint": "3D-Drucker laeuft → Brandgefahr! Regelmaessig kontrollieren!",
+        "severity": "high",
+    },
+    # 3D Printer ON → Luefter/Fan
+    {
+        "role": "3d_printer", "state": "on",
+        "affects": "fan", "same_room": True,
+        "effect": "3D-Drucker druckt → Raumluefter einschalten",
+        "hint": "3D-Drucker aktiv → Luefter fuer Abluft nutzen (VOC-Reduktion)",
+        "severity": "high",
+    },
+    # 3D Printer OFF → Energie normal
+    {
+        "role": "3d_printer", "state": "off",
+        "affects": "energy", "same_room": False,
+        "effect": "3D-Drucker fertig → Stromverbrauch sinkt",
+        "hint": "3D-Druck beendet → Energieverbrauch normalisiert",
+        "severity": "info",
+    },
+    # 3D Printer OFF → Luftqualitaet erholt sich
+    {
+        "role": "3d_printer", "state": "off",
+        "affects": "air_quality", "same_room": True,
+        "effect": "3D-Drucker aus → Luftqualitaet verbessert sich",
+        "hint": "3D-Druck beendet → weiter lueften bis VOC-Werte normal",
+        "severity": "info",
+    },
+    # 3D Printer OFF → Geraeusch normal
+    {
+        "role": "3d_printer", "state": "off",
+        "affects": "noise", "same_room": True,
+        "effect": "3D-Drucker aus → Geraeuschpegel sinkt",
+        "hint": "3D-Druck beendet → Raum wieder leise",
+        "severity": "info",
+    },
+
+    # ============================================================
+    # 48. HEIZDECKE / ELECTRIC BLANKET
+    # ============================================================
+    # Electric Blanket ON → Bettbelegung
+    {
+        "role": "electric_blanket", "state": "on",
+        "affects": "bed_occupancy", "same_room": True,
+        "effect": "Heizdecke an → Bett wird vorgewaermt",
+        "hint": "Heizdecke aktiv → Bett wird vorgeheizt, Schlafkomfort verbessert",
+        "severity": "info",
+    },
+    # Electric Blanket ON → Energie
+    {
+        "role": "electric_blanket", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Heizdecke an → Stromverbrauch steigt",
+        "hint": "Heizdecke aktiv → 50-200W Verbrauch",
+        "severity": "info",
+    },
+    # Electric Blanket ON → Presence (Brandgefahr unbeaufsichtigt!)
+    {
+        "role": "electric_blanket", "state": "on",
+        "affects": "presence", "same_room": False,
+        "effect": "Heizdecke an → nicht unbeaufsichtigt lassen!",
+        "hint": "Heizdecke laeuft → Brandgefahr! Nach 30min automatisch abschalten!",
+        "severity": "high",
+    },
+    # Electric Blanket ON → Rauchmelder (Brandgefahr)
+    {
+        "role": "electric_blanket", "state": "on",
+        "affects": "smoke", "same_room": True,
+        "effect": "Heizdecke an → Brandrisiko bei Fehlfunktion",
+        "hint": "Heizdecke aktiv → Rauchmelder muss funktionieren, Brandgefahr!",
+        "severity": "high",
+    },
+    # Electric Blanket ON → Klima/Thermostat
+    {
+        "role": "electric_blanket", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Heizdecke an → Raumheizung kann reduziert werden",
+        "hint": "Heizdecke waermt Bett → Schlafzimmer-Heizung absenken moeglich",
+        "severity": "info",
+    },
+    # Electric Blanket ON → Heizung (Parity)
+    {
+        "role": "electric_blanket", "state": "on",
+        "affects": "radiator", "same_room": True,
+        "effect": "Heizdecke an → Heizkoerper reduzieren",
+        "hint": "Heizdecke waermt → Heizkoerper im Schlafzimmer runterdrehen",
+        "severity": "info",
+    },
+    {
+        "role": "electric_blanket", "state": "on",
+        "affects": "floor_heating", "same_room": True,
+        "effect": "Heizdecke an → Fussbodenheizung reduzieren",
+        "hint": "Heizdecke waermt → Fussbodenheizung nachts reduzierbar",
+        "severity": "info",
+    },
+    {
+        "role": "electric_blanket", "state": "on",
+        "affects": "heating", "same_room": True,
+        "effect": "Heizdecke an → Heizung reduzieren",
+        "hint": "Heizdecke waermt → Heizung im Schlafzimmer drosseln",
+        "severity": "info",
+    },
+    # Electric Blanket ON → Notify (Abschalt-Erinnerung)
+    {
+        "role": "electric_blanket", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Heizdecke an → Abschalt-Erinnerung setzen",
+        "hint": "Heizdecke laeuft → nach 30-60min Erinnerung zum Abschalten senden!",
+        "severity": "high",
+    },
+    # Electric Blanket OFF → Energie normal
+    {
+        "role": "electric_blanket", "state": "off",
+        "affects": "energy", "same_room": False,
+        "effect": "Heizdecke aus → Stromverbrauch sinkt",
+        "hint": "Heizdecke ausgeschaltet → Energieverbrauch normalisiert",
+        "severity": "info",
+    },
 ]
 
 

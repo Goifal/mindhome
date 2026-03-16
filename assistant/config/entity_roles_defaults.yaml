@@ -509,6 +509,42 @@ roles:
     icon: "\U0001F4DE"
     keywords: ["gegensprech", "sprechanlage", "tuersprechanlage", "klingelanlage", "intercom", "door station", "video doorbell"]
 
+  # --- Garten & Aussen (erweitert) ---
+  robot_mower:
+    label: "Maehroboter"
+    icon: "\U0001F33F"
+    keywords: ["maehroboter", "rasenmaeher", "robotermaeher", "husqvarna", "gardena",
+               "automower", "robot mower", "lawn mower", "robotic mower"]
+
+  # --- Wellness & Komfort ---
+  sauna:
+    label: "Sauna"
+    icon: "\U0001F9D6"
+    keywords: ["sauna", "dampfsauna", "infrarotsauna", "finnische sauna",
+               "infrared sauna", "steam sauna", "finnish sauna"]
+  electric_blanket:
+    label: "Heizdecke"
+    icon: "\U0001F6CF\uFE0F"
+    keywords: ["heizdecke", "waermedecke", "heizkissen", "electric blanket",
+               "heated blanket", "heating pad"]
+
+  # --- Spezialgeraete ---
+  fireplace:
+    label: "Kamin/Ofen"
+    icon: "\U0001F525"
+    keywords: ["kamin", "kaminofen", "ofen", "gaskamin", "elektrokamin",
+               "fireplace", "wood stove", "gas fireplace", "electric fireplace"]
+  aquarium:
+    label: "Aquarium"
+    icon: "\U0001F41F"
+    keywords: ["aquarium", "fischbecken", "meerwasser", "suesswasser",
+               "fish tank", "aquatic"]
+  3d_printer:
+    label: "3D-Drucker"
+    icon: "\U0001F5A8\uFE0F"
+    keywords: ["3d-drucker", "3d drucker", "3d printer", "octoprint", "bambu",
+               "prusa", "filament", "fdm", "resin"]
+
   # --- Sonstiges ---
   scene:
     label: "Szene"
