@@ -124,12 +124,19 @@ SECURITY_CONFIRM_TTL = REDIS_SECURITY_CONFIRM_TTL
 def _estimate_tokens(text: str) -> int:
     """Schaetzt BPE-Tokens für deutschen Text.
 
-    Konservative Schaetzung: ~1.4 chars/token für deutsche BPE-Tokenizer
-    (Umlaute, Komposita, Sonderzeichen brauchen mehr Tokens als Englisch).
-    Vorher: // 2, was ~25-50% zu optimistisch war und zu stillem
-    Kontext-Truncation durch Ollama fuehrte.
+    Konservative Schaetzung: ~1.8 chars/token für deutsche BPE-Tokenizer.
+    Deutsche Texte haben Umlaute (ä/ö/ü → multi-byte), Komposita
+    (Heizungssteuerung → viele Sub-Tokens) und Sonderzeichen, die alle
+    mehr Tokens pro Wort brauchen als Englisch.
+
+    Fruehere Werte:
+      // 2   → ~25-50% zu optimistisch → stilles Kontext-Truncation
+      / 1.4  → immer noch ~25% zu optimistisch für deutschen Text
+
+    1.8 ist empirisch besser kalibriert und laesst Sicherheitspuffer.
+    Idealerweise durch echte prompt_eval_count Werte aus Ollama validieren.
     """
-    return int(len(text) / 1.4)
+    return int(len(text) / 1.8)
 
 
 def _audit_log(action: str, details: dict = None):

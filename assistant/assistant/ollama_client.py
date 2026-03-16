@@ -28,6 +28,7 @@ from .constants import (
 )
 
 logger = logging.getLogger(__name__)
+_metrics_logger = logging.getLogger(__name__ + ".metrics")
 
 # Regex zum Entfernen von LLM Think-Bloecken (<think>...</think>)
 _THINK_PATTERN = re.compile(r"<think>[\s\S]*?</think>\s*", re.DOTALL)
@@ -62,6 +63,35 @@ _GERMAN_MARKERS = [
     # Allgemein
     "bereits", "aktuell", "guten", "herr", "frau",
 ]
+
+
+def _log_ollama_metrics(result: dict, model: str, endpoint: str = "chat") -> None:
+    """Loggt Ollama-Metriken (Token-Counts, Latenzen) aus der API-Response."""
+    prompt_tokens = result.get("prompt_eval_count")
+    eval_tokens = result.get("eval_count")
+    total_ns = result.get("total_duration")
+    prompt_ns = result.get("prompt_eval_duration")
+    eval_ns = result.get("eval_duration")
+    load_ns = result.get("load_duration")
+
+    if prompt_tokens is None and eval_tokens is None:
+        return  # Keine Metriken in Response (z.B. bei Fehler)
+
+    total_ms = round(total_ns / 1e6, 1) if total_ns else None
+    prompt_ms = round(prompt_ns / 1e6, 1) if prompt_ns else None
+    eval_ms = round(eval_ns / 1e6, 1) if eval_ns else None
+    load_ms = round(load_ns / 1e6, 1) if load_ns else None
+
+    # Tokens/s berechnen
+    eval_tps = round(eval_tokens / (eval_ns / 1e9), 1) if eval_tokens and eval_ns else None
+
+    _metrics_logger.info(
+        "ollama_%s model=%s prompt_tokens=%s eval_tokens=%s "
+        "total_ms=%s prompt_ms=%s eval_ms=%s load_ms=%s eval_tps=%s",
+        endpoint, model,
+        prompt_tokens, eval_tokens,
+        total_ms, prompt_ms, eval_ms, load_ms, eval_tps,
+    )
 
 
 def strip_think_tags(text: str) -> str:
@@ -427,6 +457,7 @@ class OllamaClient:
                     return result
 
                 ollama_breaker.record_success()
+                _log_ollama_metrics(result, model, "chat")
 
                 # Think-Tags aus der Antwort strippen (Sicherheitsnetz)
                 msg = result.get("message", {})
@@ -644,6 +675,7 @@ class OllamaClient:
                     return ""
                 result = await resp.json()
                 ollama_breaker.record_success()
+                _log_ollama_metrics(result, model, "generate")
                 text = result.get("response", "")
                 return strip_think_tags(text)
         except asyncio.TimeoutError:
