@@ -2491,6 +2491,82 @@ DEVICE_DEPENDENCIES = [
         "hint": "Verbindung unterbrochen → Alarm-System pruefen",
         "severity": "high",
     },
+
+    # =================================================================
+    # ZONE — Geografische Bereiche (Zuhause, Arbeit, Schule, ...)
+    # =================================================================
+
+    # Zone-Wechsel → Anwesenheit/Presence-Kontext
+    {
+        "role": "zone", "state": "on",
+        "affects": "presence", "same_room": False,
+        "effect": "Person betritt Zone → Anwesenheits-Status aendert sich",
+        "hint": "Zone betreten → Anwesenheit aktualisieren (zuhause/weg/Arbeit)",
+        "severity": "info",
+    },
+    # Zone → Klima vorbereiten (Person naehert sich Zuhause)
+    {
+        "role": "zone", "state": "on",
+        "affects": "climate", "same_room": False,
+        "effect": "Person naehert sich Zuhause-Zone → Heizung/Kuehlung vorbereiten",
+        "hint": "Person naehert sich → Klima auf Komforttemperatur vorheizen/vorkuehlen",
+        "severity": "info",
+    },
+    # Zone → Licht vorbereiten
+    {
+        "role": "zone", "state": "on",
+        "affects": "light", "same_room": False,
+        "effect": "Person naehert sich Zuhause → Beleuchtung vorbereiten",
+        "hint": "Person kommt → Licht einschalten wenn dunkel",
+        "severity": "info",
+    },
+    # Zone → Garagentor
+    {
+        "role": "zone", "state": "on",
+        "affects": "garage_door", "same_room": False,
+        "effect": "Person naehert sich → Garagentor oeffnen vorbereiten",
+        "hint": "Person naehert sich → Garage oeffnen wenn Auto erkannt",
+        "severity": "info",
+    },
+    # Zone → Alarm deaktivieren
+    {
+        "role": "zone", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "effect": "Person betritt Zuhause-Zone → Alarm deaktivieren",
+        "hint": "Person kommt nach Hause → Alarm deaktivieren",
+        "severity": "info",
+    },
+    # Zone verlassen → Alarm scharf schalten
+    {
+        "role": "zone", "state": "off",
+        "affects": "alarm", "same_room": False,
+        "effect": "Letzte Person verlaesst Zuhause-Zone → Alarm aktivieren",
+        "hint": "Alle weg → Alarm scharf schalten",
+        "severity": "info",
+    },
+    # Zone verlassen → Geraete ausschalten
+    {
+        "role": "zone", "state": "off",
+        "affects": "light", "same_room": False,
+        "effect": "Alle haben Zone verlassen → Licht ausschalten",
+        "hint": "Alle weg → Beleuchtung ausschalten",
+        "severity": "info",
+    },
+    {
+        "role": "zone", "state": "off",
+        "affects": "climate", "same_room": False,
+        "effect": "Alle haben Zone verlassen → Klima auf Abwesenheit",
+        "hint": "Alle weg → Heizung/Kuehlung auf Eco-Modus",
+        "severity": "info",
+    },
+    # Zone → Benachrichtigung (Kind kommt in Schule an)
+    {
+        "role": "zone", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Person betritt Zone → Benachrichtigung (z.B. Kind in Schule)",
+        "hint": "Zone-Eintritt erkannt → Benachrichtigung senden",
+        "severity": "info",
+    },
 ]
 
 
