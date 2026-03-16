@@ -6250,7 +6250,7 @@ class ProactiveManager:
             "alarm_control_panel", "siren", "fan",
         }
 
-        logger.warning("NOTFALL-PROTOKOLL '%s' wird ausgefuehrt (%d Aktionen, Autonomie: %d)",
+        logger.warning("NOTFALL-PROTOKOLL '%s' wird ausgefuehrt (%d Protokoll-Aktionen, Autonomie: %d)",
                         protocol_name, len(actions), _auto_lvl)
 
         executed = []
@@ -6298,10 +6298,14 @@ class ProactiveManager:
 
         # Audit-Log
         logger.warning(
-            "NOTFALL-PROTOKOLL '%s' abgeschlossen: %d ausgefuehrt, %d blockiert. "
-            "Ausgefuehrt: %s | Blockiert: %s",
-            protocol_name, len(executed), len(blocked), executed, blocked,
+            "Notfall-Protokoll '%s': %d Aktionen ausgefuehrt, %d blockiert: %s",
+            protocol_name, len(executed), len(blocked), [e for e in executed],
         )
+        if blocked:
+            logger.warning(
+                "Notfall-Protokoll '%s': blockierte Aktionen: %s",
+                protocol_name, blocked,
+            )
 
     # ------------------------------------------------------------------
     # Phase 17: Threat Assessment Loop
