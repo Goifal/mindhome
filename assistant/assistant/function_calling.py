@@ -3453,9 +3453,14 @@ class FunctionExecutor:
             result = await handler(arguments)
 
             # Phase 18: Consequence-Hint an Ergebnis anfuegen
+            # WICHTIG: Hint ist rein informativ — Aktion wurde BEREITS ausgefuehrt.
+            # Das LLM soll den User beilaeufig informieren, aber die Aktion
+            # NICHT rueckgaengig machen oder als Fehler darstellen.
             if consequence_hint and isinstance(result, dict) and result.get("success"):
                 existing_msg = result.get("message", "")
-                result["message"] = f"{existing_msg} (Hinweis: {consequence_hint})"
+                result["message"] = (
+                    f"{existing_msg} (Info-Hinweis, Aktion wurde ausgefuehrt: {consequence_hint})"
+                )
                 result["consequence_hint"] = consequence_hint
 
             return result

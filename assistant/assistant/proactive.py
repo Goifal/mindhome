@@ -5996,8 +5996,17 @@ class ProactiveManager:
     # Notfall-Protokolle
     # ------------------------------------------------------------------
 
+    # Erlaubte Notfall-Protokollnamen (Whitelist)
+    _VALID_EMERGENCY_PROTOCOLS = frozenset({"fire", "intrusion", "water_leak", "gas_leak", "co_alarm"})
+
     async def _execute_emergency_protocol(self, protocol_name: str):
         """Fuehrt ein konfiguriertes Notfall-Protokoll aus.
+
+        Sicherheits-Massnahmen:
+        - Nur vordefinierte Protokollnamen erlaubt (Whitelist)
+        - Erlaubte Domains/Services beschraenkt (keine beliebigen HA-Calls)
+        - Vollstaendiges Audit-Logging jeder Aktion
+        - Autonomie-Check: Bei Level 1 werden nur Notifications gesendet
 
         Protokolle werden in settings.yaml definiert unter emergency_protocols.
         Beispiel:
@@ -6008,19 +6017,49 @@ class ProactiveManager:
                   - {domain: lock, service: unlock, target: all}
                   - {domain: notify, service: notify, data: {message: "FEUERALARM!"}}
         """
+        # Whitelist-Check: Nur bekannte Protokollnamen erlaubt
+        if protocol_name not in self._VALID_EMERGENCY_PROTOCOLS:
+            logger.warning(
+                "SECURITY: Unbekannter Notfall-Protokollname '%s' abgelehnt",
+                protocol_name,
+            )
+            return
+
         protocol = self._emergency_protocols.get(protocol_name)
         if not protocol:
-            logger.debug("Kein Notfall-Protokoll für '%s' konfiguriert", protocol_name)
+            logger.debug("Kein Notfall-Protokoll fuer '%s' konfiguriert", protocol_name)
             return
 
         actions = protocol.get("actions", [])
         if not actions:
             return
 
-        logger.warning("NOTFALL-PROTOKOLL '%s' wird ausgeführt (%d Aktionen)",
-                        protocol_name, len(actions))
+        # Autonomie-Check: Bei Level 1 nur benachrichtigen, nicht handeln
+        _autonomy = getattr(self.brain, "autonomy", None)
+        _auto_lvl = _autonomy.level if _autonomy is not None else 2
+        if _auto_lvl < 2:
+            logger.warning(
+                "NOTFALL-PROTOKOLL '%s': Autonomie-Level %d — nur Notification, keine Aktionen",
+                protocol_name, _auto_lvl,
+            )
+            await self._notify(f"emergency_{protocol_name}", CRITICAL, {
+                "protocol": protocol_name,
+                "message": f"Notfall '{protocol_name}' erkannt. Autonomie-Level zu niedrig fuer automatische Aktionen.",
+                "actions_blocked": len(actions),
+            })
+            return
+
+        # Erlaubte Domains/Services fuer Emergency (keine beliebigen Calls)
+        _ALLOWED_EMERGENCY_DOMAINS = {
+            "light", "lock", "switch", "cover", "notify",
+            "alarm_control_panel", "siren", "fan",
+        }
+
+        logger.warning("NOTFALL-PROTOKOLL '%s' wird ausgefuehrt (%d Aktionen, Autonomie: %d)",
+                        protocol_name, len(actions), _auto_lvl)
 
         executed = []
+        blocked = []
         for action in actions:
             domain = action.get("domain", "")
             service = action.get("service", "")
@@ -6030,9 +6069,17 @@ class ProactiveManager:
             if not domain or not service:
                 continue
 
+            # Domain-Whitelist pruefen
+            if domain not in _ALLOWED_EMERGENCY_DOMAINS:
+                logger.warning(
+                    "SECURITY: Emergency-Aktion mit Domain '%s' blockiert (nicht erlaubt)",
+                    domain,
+                )
+                blocked.append(f"{domain}.{service}")
+                continue
+
             try:
                 if target == "all":
-                    # Alle Entities dieser Domain
                     states = await self.brain.ha.get_states()
                     for s in (states or []):
                         eid = s.get("entity_id", "")
@@ -6054,9 +6101,12 @@ class ProactiveManager:
             except Exception as e:
                 logger.error("Notfall-Aktion fehlgeschlagen: %s.%s -> %s", domain, service, e)
 
-        if executed:
-            logger.warning("Notfall-Protokoll '%s': %d Aktionen ausgeführt: %s",
-                            protocol_name, len(executed), executed)
+        # Audit-Log
+        logger.warning(
+            "NOTFALL-PROTOKOLL '%s' abgeschlossen: %d ausgefuehrt, %d blockiert. "
+            "Ausgefuehrt: %s | Blockiert: %s",
+            protocol_name, len(executed), len(blocked), executed, blocked,
+        )
 
     # ------------------------------------------------------------------
     # Phase 17: Threat Assessment Loop

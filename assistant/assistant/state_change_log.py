@@ -1543,23 +1543,44 @@ class StateChangeLog:
         if not active_conflicts:
             return ""
 
+        # F-090: Sanitization — Room-Namen und Hints koennen aus
+        # Annotations/HA stammen → Prompt-Injection verhindern
+        try:
+            from .context_builder import _sanitize_for_prompt
+        except ImportError:
+            _sanitize_for_prompt = None
+
         lines = []
         seen = set()
         for c in active_conflicts:
             # Raum-Info in Hinweis einbauen wenn vorhanden
             room = c.get("trigger_room", "")
+            if room and _sanitize_for_prompt:
+                room = _sanitize_for_prompt(room, 50, "conflict_room")
             room_info = f" [{room}]" if room else ""
+            hint = c.get("hint", "")
+            effect = c.get("effect", "")
+            if _sanitize_for_prompt:
+                hint = _sanitize_for_prompt(hint, 200, "conflict_hint")
+                effect = _sanitize_for_prompt(effect, 200, "conflict_effect")
+            if not hint:
+                continue
             key = (c["trigger_entity"], c["affected_role"])
             if key in seen:
                 continue
             seen.add(key)
-            lines.append(f"- {c['hint']}{room_info} ({c['effect']})")
+            lines.append(f"- {hint}{room_info} ({effect})")
+
+        if not lines:
+            return ""
 
         return (
-            "\n\nAKTIVE GERAETE-KONFLIKTE:\n"
+            "\n\nAKTIVE GERAETE-KONFLIKTE (rein informativ):\n"
             + "\n".join(lines)
             + "\nWeise den User beilaeufig auf diese Konflikte hin, "
-            "wenn er nach Energie, Heizung oder Raumklima fragt."
+            "wenn er nach Energie, Heizung oder Raumklima fragt. "
+            "WICHTIG: Diese Konflikte sind nur Hinweise — verweigere "
+            "NIEMALS eine Aktion des Users wegen eines Konflikts."
         )
 
     def format_for_prompt(self, n: int = 10) -> str:
