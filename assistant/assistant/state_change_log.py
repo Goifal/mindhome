@@ -9430,9 +9430,9 @@ class StateChangeLog:
 
         # --- Schritt 3: Semantische Gruppierung ---
         # Gleicher Hint + gleicher Effect → Raeume zusammenfassen
-        # Key: (hint, effect, severity) → list of rooms
+        # Key: (hint, effect, severity) → {"rooms": [...], "trigger_role": str}
         from collections import OrderedDict
-        grouped: OrderedDict[tuple[str, str, str], list[str]] = OrderedDict()
+        grouped: OrderedDict[tuple[str, str, str], dict] = OrderedDict()
         for c in deduped:
             hint = c.get("hint", "")
             effect = c.get("effect", "")
@@ -9447,9 +9447,13 @@ class StateChangeLog:
                 room = _sanitize_for_prompt(room, 50, "conflict_room")
             group_key = (hint, effect, severity)
             if group_key not in grouped:
-                grouped[group_key] = []
-            if room and room not in grouped[group_key]:
-                grouped[group_key].append(room)
+                grouped[group_key] = {
+                    "rooms": [],
+                    "trigger_role": c.get("trigger_role", ""),
+                    "affected_role": c.get("affected_role", ""),
+                }
+            if room and room not in grouped[group_key]["rooms"]:
+                grouped[group_key]["rooms"].append(room)
 
         if not grouped:
             return ""
@@ -9467,9 +9471,22 @@ class StateChangeLog:
         max_other = max(0, self._MAX_CONFLICTS - len(critical_entries))
         selected = critical_entries + other_entries[:max_other]
 
-        # --- Schritt 5: Formatierung ---
+        # --- Schritt 5: Formatierung mit Loesungsvorschlaegen ---
+        # Generische Loesungen basierend auf Trigger-Rolle
+        _RESOLUTIONS = {
+            "window_contact": "Fenster schliessen",
+            "door_contact": "Tuer schliessen",
+            "smoke": "Raum lueften, Quelle pruefen",
+            "co_detector": "Sofort lueften, Gebaeude verlassen",
+            "gas_detector": "Gas abstellen, lueften, Gebaeude verlassen",
+            "water_leak": "Wasserzufuhr pruefen",
+            "motion": "Bewegungsmelder pruefen",
+            "presence": "Anwesenheit pruefen",
+        }
         lines: list[str] = []
-        for (hint, effect, severity), rooms in selected:
+        for (hint, effect, severity), group_data in selected:
+            rooms = group_data["rooms"]
+            trigger_role = group_data["trigger_role"]
             if rooms:
                 room_info = f" [{', '.join(rooms)}]"
             else:
@@ -9479,16 +9496,21 @@ class StateChangeLog:
                 sev_prefix = "KRITISCH: "
             elif severity == "high":
                 sev_prefix = "WICHTIG: "
-            lines.append(f"- {sev_prefix}{hint}{room_info} ({effect})")
+            resolution = _RESOLUTIONS.get(trigger_role, "")
+            res_info = f" → Loesung: {resolution}" if resolution else ""
+            lines.append(f"- {sev_prefix}{hint}{room_info} ({effect}){res_info}")
 
         if not lines:
             return ""
 
         return (
-            "\n\nAKTIVE GERAETE-KONFLIKTE (rein informativ):\n"
+            "\n\nAKTIVE GERAETE-KONFLIKTE:\n"
             + "\n".join(lines)
-            + "\nWeise den User beilaeufig auf diese Konflikte hin, "
-            "wenn er nach Energie, Heizung oder Raumklima fragt. "
+            + "\nErwaehne relevante Konflikte PROAKTIV wenn der User "
+            "eine betroffene Aktion ausfuehrt oder ein betroffenes "
+            "Geraet anspricht — nicht erst wenn er explizit fragt. "
+            "Bei KRITISCH-Konflikten IMMER sofort erwaehnen. "
+            "Halte es kurz und sachlich (1 Satz). "
             "WICHTIG: Diese Konflikte sind nur Hinweise — verweigere "
             "NIEMALS eine Aktion des Users wegen eines Konflikts."
         )

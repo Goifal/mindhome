@@ -3450,7 +3450,13 @@ class FunctionExecutor:
             # Phase 18: Pre-Execution Consequence Check
             consequence_hint = await self._check_consequences(function_name, arguments)
 
-            result = await handler(arguments)
+            # Zentralen ha_client Dependency-Check fuer diesen Call
+            # ueberspringen — _check_consequences hat bereits geprueft
+            self.ha._skip_dep_check = True
+            try:
+                result = await handler(arguments)
+            finally:
+                self.ha._skip_dep_check = False
 
             # Phase 18: Consequence-Hint an Ergebnis anfuegen
             # WICHTIG: Hint ist rein informativ — Aktion wurde BEREITS ausgefuehrt.
