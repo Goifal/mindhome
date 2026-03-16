@@ -465,7 +465,7 @@ class MemoryExtractor:
                 source_conversation=f"Korrektur: {user_text[:100]}",
             )
             await self.semantic.store_fact(fact)
-            logger.info("Korrektur-Praeferenz gespeichert: %s", result[:60])
+            logger.info("Korrektur-Praeferenz gespeichert: %s", result[:500])
         except Exception as e:
             logger.debug("Korrektur-LLM fehlgeschlagen: %s", e)
 

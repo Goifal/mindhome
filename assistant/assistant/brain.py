@@ -1358,7 +1358,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         silence_activity = self.activity.check_silence_trigger(text)
         if silence_activity:
             self.activity.set_manual_override(silence_activity)
-            logger.info("Silence-Trigger: %s (aus Text: '%s')", silence_activity, text[:50])
+            logger.info("Silence-Trigger: %s (aus Text: '%s')", silence_activity, text[:500])
 
         # Phase 9: Speaker Recognition — Person ermitteln wenn nicht angegeben
         # Voice-Metadaten aufbereiten (WPM aus Text + Dauer berechnen)
@@ -1674,7 +1674,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 # Humanizer-First: sofortige Antwort + Filter
                 response_text = self._filter_response(self._humanize_calendar(cal_msg))
                 logger.info("Kalender-Shortcut humanisiert: '%s' -> '%s'",
-                            cal_msg[:60], response_text[:60])
+                            cal_msg[:500], response_text[:500])
 
                 self._remember_exchange(text, response_text)
                 tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
@@ -1785,7 +1785,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 else:
                     response_text = self._filter_response(self._humanize_weather(weather_msg))
                 logger.info("Wetter-Shortcut humanisiert: '%s' -> '%s'",
-                            weather_msg[:60], response_text[:60])
+                            weather_msg[:500], response_text[:500])
 
                 self._remember_exchange(text, response_text)
                 tts_data = self.tts_enhancer.enhance(response_text, message_type="casual")
@@ -2356,7 +2356,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         if not response_text or len(response_text) < 5:
                             response_text = self._filter_response(raw)
 
-                        logger.info("Status-Query-Shortcut Antwort: '%s'", response_text[:120])
+                        logger.info("Status-Query-Shortcut Antwort: '%s'", response_text[:500])
 
                         self._remember_exchange(text, response_text)
                         tts_data = self.tts_enhancer.enhance(
@@ -4395,7 +4395,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     # bereits auf den Punkt und das LLM fuegt nur Risiko hinzu.
                     # Das spart den Refinement-LLM-Call (~500-2000ms).
                     if len(humanized_text) < self._opt_refinement_skip_max_chars:
-                        logger.info("Tool-Feedback übersprungen (kurz genug): '%s'", humanized_text[:80])
+                        logger.info("Tool-Feedback übersprungen (kurz genug): '%s'", humanized_text[:500])
                     else:
                       try:
                         # Persoenlichkeits-Kontext für Refinement
@@ -4444,7 +4444,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             "content": f"Frage: {text}\nDaten: {_refinement_data}",
                         }]
 
-                        logger.info("Tool-Feedback: LLM verfeinert '%s'", humanized_text[:80])
+                        logger.info("Tool-Feedback: LLM verfeinert '%s'", humanized_text[:500])
                         feedback_response = await asyncio.wait_for(
                             self.ollama.chat(
                                 messages=feedback_messages,
@@ -4481,7 +4481,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 _has_halluc = any(m in _refined_lower for m in _halluc_markers)
                                 _has_profanity = any(p in _refined_lower for p in _profanity)
                                 if _has_profanity:
-                                    logger.warning("Refinement verworfen (Profanitaet/OOC): '%s'", refined[:80])
+                                    logger.warning("Refinement verworfen (Profanitaet/OOC): '%s'", refined[:500])
                                 _too_long = len(refined) > len(humanized_text) * 3.5 if refined else False
                                 # Zahlen-Check: Wichtige Zahlen aus Humanizer muessen erhalten bleiben
                                 # Normalisierung: 22.0 == 22, damit Reformatierungen nicht als Verlust gelten
@@ -4513,7 +4513,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     )
                                 elif refined and len(refined) > 5:
                                     response_text = refined
-                                    logger.info("Tool-Feedback verfeinert: '%s'", response_text[:120])
+                                    logger.info("Tool-Feedback verfeinert: '%s'", response_text[:500])
                                 else:
                                     logger.info("Tool-Feedback verworfen (zu kurz/leer), nutze Humanizer")
                         else:
@@ -4638,7 +4638,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # verworfen wurde, humanisierten Text wiederherstellen
         if not response_text and has_query_results and humanized_text:
             response_text = self._filter_response(humanized_text, max_sentences_override=night_limit)
-            logger.info("Query-Humanizer Fallback: '%s'", response_text[:80])
+            logger.info("Query-Humanizer Fallback: '%s'", response_text[:500])
 
         # Sprach-Retry: Wenn Antwort verworfen wurde (nicht Deutsch), nochmal mit explizitem Sprach-Prompt
         if not response_text and text:
@@ -4668,7 +4668,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     retry_text = self._filter_response(retry_text)
                 if retry_text:
                     response_text = retry_text
-                    logger.info("Sprach-Retry erfolgreich: '%s'", response_text[:80])
+                    logger.info("Sprach-Retry erfolgreich: '%s'", response_text[:500])
             except Exception as e:
                 logger.warning("Sprach-Retry fehlgeschlagen: %s", e)
             if not response_text:
@@ -4743,7 +4743,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             _accept = len(_char_text) < len(response_text)
                     if _accept:
                         response_text = _char_text
-                        logger.info("Character-Retry erfolgreich: '%s'", response_text[:80])
+                        logger.info("Character-Retry erfolgreich: '%s'", response_text[:500])
                     else:
                         logger.info("Character-Retry: Ergebnis nicht kuerzer, behalte Original")
                 except Exception as e:
@@ -4790,7 +4790,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 _clean.append(s)
                         if _clean:
                             response_text = " ".join(_clean)
-                            logger.info("Halluzinations-Guard: Bereinigte Antwort: '%s'", response_text[:80])
+                            logger.info("Halluzinations-Guard: Bereinigte Antwort: '%s'", response_text[:500])
                         # Wenn alles entfernt wurde, Fallback
                         elif not _clean:
                             logger.warning("Halluzinations-Guard: Gesamte Antwort verworfen, nutze Fallback")
@@ -4886,7 +4886,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "als kuenstliche intelligenz", "als künstliche intelligenz",
             ]
             if any(ib in _resp_lower for ib in _identity_breaks):
-                logger.warning("Sanity-Check: KI-Identitaets-Bruch in Antwort: '%s'", response_text[:80])
+                logger.warning("Sanity-Check: KI-Identitaets-Bruch in Antwort: '%s'", response_text[:500])
                 self._task_registry.create_task(
                     self.self_optimization.track_character_break(
                         "identity", response_text[:80]),
@@ -5296,7 +5296,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if response_text:
             import re as _re
             if _re.search(r'\d{1,2}:\d{2}\s*\|', response_text):
-                logger.warning("Rohdaten-Leak (Kalender) vor Senden erkannt: '%s'", response_text[:80])
+                logger.warning("Rohdaten-Leak (Kalender) vor Senden erkannt: '%s'", response_text[:500])
                 response_text = self._humanize_calendar(response_text)
             elif response_text.lstrip().startswith("AKTUELL:"):
                 logger.warning("Rohdaten-Leak (Wetter) vor Senden erkannt")
@@ -5304,13 +5304,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # Tool-Result-Muster: "Licht wohnzimmer on (80%)" oder aehnliche
             # Rohdaten die nicht per TTS gesprochen werden sollen
             elif _re.search(r'Licht \w+ (on|off)\b', response_text):
-                logger.warning("Rohdaten-Leak (Licht-Result) vor Senden erkannt: '%s'", response_text[:80])
+                logger.warning("Rohdaten-Leak (Licht-Result) vor Senden erkannt: '%s'", response_text[:500])
                 response_text = self.personality.get_varied_confirmation(
                     success=True, action="set_light",
                 )
             # HA-Service-Call-Artefakte im Text (z.B. "tts.speak", "light.turn_on")
             elif _re.search(r'\b(tts\.speak|light\.turn_|cover\.(?:open|close|set)|climate\.set)\b', response_text):
-                logger.warning("Rohdaten-Leak (Service-Call) vor Senden erkannt: '%s'", response_text[:80])
+                logger.warning("Rohdaten-Leak (Service-Call) vor Senden erkannt: '%s'", response_text[:500])
                 response_text = self.personality.get_varied_confirmation(success=True)
 
         result = self._result(response_text, actions=executed_actions, model=model, room=context.get("room"), tts=tts_data)
@@ -5580,9 +5580,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             _german_parts = [p.strip() for p in _parts if p.strip() and len(p.strip()) > 3]
             if _german_parts:
                 text = " ".join(_german_parts)
-                logger.warning("Nicht-lateinisches Reasoning entfernt, Rest: '%s'", text[:100])
+                logger.warning("Nicht-lateinisches Reasoning entfernt, Rest: '%s'", text[:500])
             else:
-                logger.warning("Komplett nicht-lateinische Antwort verworfen: '%s'", text[:100])
+                logger.warning("Komplett nicht-lateinische Antwort verworfen: '%s'", text[:500])
                 return ""
 
         # 0b. Implizites Reasoning entfernen (LLM gibt CoT ohne <think> Tags aus)
@@ -5617,9 +5617,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         german_lines.append(line_stripped)
                 if german_lines:
                     text = " ".join(german_lines)
-                    logger.warning("Implizites Reasoning entfernt, deutsche Antwort extrahiert: '%s'", text[:100])
+                    logger.warning("Implizites Reasoning entfernt, deutsche Antwort extrahiert: '%s'", text[:500])
                 else:
-                    logger.warning("Implizites Reasoning erkannt, keine deutsche Antwort gefunden: '%s'", text[:100])
+                    logger.warning("Implizites Reasoning erkannt, keine deutsche Antwort gefunden: '%s'", text[:500])
                     text = ""
                 break
 
@@ -5636,7 +5636,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 extracted = m.group(1).strip().rstrip(".")
                 if extracted:
                     text = extracted
-                    logger.info("Deutsches Reasoning entfernt, Antwort: '%s'", text[:100])
+                    logger.info("Deutsches Reasoning entfernt, Antwort: '%s'", text[:500])
                 break
 
         # 0d. Meta-Narration entfernen: Zeilen die mit Reasoning-Markern beginnen
@@ -5652,7 +5652,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             clean_lines = [l for l in lines if not any(l.startswith(m) for m in _de_meta_markers)]
             if clean_lines:
                 text = " ".join(clean_lines)
-                logger.info("Meta-Narration entfernt: '%s'", text[:100])
+                logger.info("Meta-Narration entfernt: '%s'", text[:500])
             else:
                 # Alles war Meta — Fallback auf leeren String (Confirmation greift)
                 text = ""
@@ -5675,7 +5675,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     _fb_clean = [p.strip() for p in _fb_parts if p.strip() and len(p.strip()) > 5]
                     if _fb_clean:
                         text = " ".join(_fb_clean)
-                        logger.info("Multi-Pass Fallback: Nicht-lateinisch entfernt, Rest: '%s'", text[:100])
+                        logger.info("Multi-Pass Fallback: Nicht-lateinisch entfernt, Rest: '%s'", text[:500])
                     else:
                         return ""
                 else:
@@ -5684,7 +5684,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     _last_sentences = _sentences[-2:] if len(_sentences) > 1 else _sentences
                     text = " ".join(_last_sentences).strip()
                     if text:
-                        logger.info("Multi-Pass Fallback: Letzte Sätze behalten: '%s'", text[:100])
+                        logger.info("Multi-Pass Fallback: Letzte Sätze behalten: '%s'", text[:500])
                     else:
                         return ""
             else:
@@ -6012,7 +6012,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             text = re.sub(r"(?<=\bdarf\s)Sie\b", "dich", text)  # "darf Sie stoeren" → "dich"
             # Finaler Catch-all: Restliches "Sie" → "du" (Subjekt-Annahme)
             text = re.sub(r"\bSie\b", "du", text)
-            logger.info("Sie->du Korrektur angewendet: '%s'", text[:80])
+            logger.info("Sie->du Korrektur angewendet: '%s'", text[:500])
 
         # 3c. LLM-Refusals entfernen (LLM verweigert manchmal trotz gueltiger Daten)
         if self._refusal_patterns_cfg:
@@ -6092,7 +6092,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         ]
         for _sp in _dismiss_patterns:
             if _sp.search(text):
-                logger.warning("Safety-Filter: Sicherheitsgeraet als ignorierbar dargestellt: '%s'", text[:120])
+                logger.warning("Safety-Filter: Sicherheitsgeraet als ignorierbar dargestellt: '%s'", text[:500])
                 # Ganzen Satz mit dem Dismissal ersetzen
                 sentences = re.split(r'(?<=[.!?])\s+', text)
                 safe_sentences = []
@@ -6195,7 +6195,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 "Sir?", "Systeme bereit.",
             ]
             text = random.choice(_jarvis_fallbacks)
-            logger.info("Floskeln-Fallback aktiviert: '%s' (original: '%s')", text, original[:80])
+            logger.info("Floskeln-Fallback aktiviert: '%s' (original: '%s')", text, original[:500])
 
         if text != original:
             logger.debug("Response-Filter: '%s' -> '%s'", original[:80], text[:80])
@@ -9634,7 +9634,7 @@ Regeln:
             await self.memory.redis.lpush("mha:self_learning:gaps", gap_entry)
             await self.memory.redis.ltrim("mha:self_learning:gaps", 0, 19)
             await self.memory.redis.set(cooldown_key, datetime.now().isoformat(), ex=7200)
-            logger.info("B12: Wissensluecke erkannt: %s", user_text[:80])
+            logger.info("B12: Wissensluecke erkannt: %s", user_text[:500])
         except Exception as e:
             logger.debug("B12 Knowledge Gap Check Fehler: %s", e)
 
@@ -10329,12 +10329,12 @@ Regeln:
         urgency = insight.get("urgency", "low")
         check = insight.get("check", "unknown")
         if not await self._callback_should_speak(urgency, source=f"Insight/{check}"):
-            logger.info("Insight unterdrückt (Silence Matrix): [%s] %s", check, message[:60])
+            logger.info("Insight unterdrückt (Silence Matrix): [%s] %s", check, message[:500])
             return
         formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
         self._remember_exchange("[proaktiv: Insight]", formatted)
-        logger.info("Insight zugestellt [%s/%s]: %s", check, urgency, message[:80])
+        logger.info("Insight zugestellt [%s/%s]: %s", check, urgency, message[:500])
         try:
             await self.ha.log_activity(
                 "proactive", f"insight_{check}",
@@ -10362,12 +10362,12 @@ Regeln:
             return
         urgency = observation.get("urgency", "low")
         if not await self._callback_should_speak(urgency, source="SpontaneousObserver"):
-            logger.info("Spontane Beobachtung unterdrückt: %s", message[:60])
+            logger.info("Spontane Beobachtung unterdrückt: %s", message[:500])
             return
         formatted = await self._safe_format(message, urgency)
         await self._speak_and_emit(formatted)
         self._remember_exchange("[proaktiv: Beobachtung]", formatted)
-        logger.info("Spontane Beobachtung: %s", message[:80])
+        logger.info("Spontane Beobachtung: %s", message[:500])
 
     async def _weekly_learning_report_loop(self):
         """Feature 8: Sendet woechentlich einen Lern-Bericht (konfigurierter Tag + Uhrzeit)."""
@@ -10794,7 +10794,7 @@ Regeln:
             await self.memory.redis.ltrim("mha:idle_insights", 0, 9)
             await self.memory.redis.expire("mha:idle_insights", 7 * 86400)
 
-            logger.info("B4: Idle Insight generiert: %s", _insight[:80])
+            logger.info("B4: Idle Insight generiert: %s", _insight[:500])
 
         except Exception as e:
             logger.debug("B4 Run Idle Reasoning Fehler: %s", e)

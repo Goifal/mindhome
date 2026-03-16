@@ -1056,7 +1056,12 @@ class ProactiveManager:
             return
 
         # Nur Regeln pruefen die durch diese Rolle getriggert werden
-        matching_deps = [d for d in DEVICE_DEPENDENCIES if d["role"] == role and d["state"] == new_val]
+        # severity=info Regeln sind nur fuer LLM-Kontext, nicht fuer Notifications
+        matching_deps = [
+            d for d in DEVICE_DEPENDENCIES
+            if d["role"] == role and d["state"] == new_val
+            and d.get("severity", "info") in ("critical", "high")
+        ]
         if not matching_deps:
             return
 
@@ -1116,12 +1121,12 @@ class ProactiveManager:
         if redis_client:
             await redis_client.set(cooldown_key, "1", ex=1800)
 
-        # Sicherheits-relevante Rollen → HIGH, Rest → MEDIUM
-        safety_roles = {
-            "smoke", "co", "gas", "water_leak", "flood",
-            "window_contact", "door_contact",
-        }
-        urgency = HIGH if role in safety_roles else MEDIUM
+        # Urgency aus severity der gematchten Regeln ableiten
+        has_critical = any(
+            d.get("severity") == "critical" for d in matching_deps
+            if d["role"] == role and d["state"] == new_val
+        )
+        urgency = HIGH if has_critical else MEDIUM
 
         hints = [c["hint"] for c in found_conflicts[:3]]
         await self._notify("device_dependency_conflict", urgency, {
@@ -1621,7 +1626,7 @@ class ProactiveManager:
             text = await self.generate_evening_briefing()
             if text:
                 await emit_proactive(text, "evening_briefing", LOW)
-                logger.info("Evening Briefing geliefert: %s", text[:80])
+                logger.info("Evening Briefing geliefert: %s", text[:500])
         except Exception as e:
             logger.debug("Evening Briefing Fehler: %s", e)
 
