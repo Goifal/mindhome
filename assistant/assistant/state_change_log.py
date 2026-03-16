@@ -1722,6 +1722,894 @@ DEVICE_DEPENDENCIES = [
         "effect": "Auto weg + Garage offen → vergessen zu schliessen",
         "hint": "Auto weg, Garage offen → schliessen vergessen?",
     },
+
+    # =====================================================================
+    # 41. DURCHZUG / RAUM-WECHSELWIRKUNGEN
+    # =====================================================================
+    {
+        "condition": ("binary_sensor.fenster", "on"),
+        "affects": "fan",
+        "effect": "Fenster offen + Ventilator → Durchzug entsteht",
+        "hint": "Fenster offen + Ventilator → starker Durchzug, Tueren koennen zuschlagen",
+    },
+    {
+        "condition": ("binary_sensor.window", "on"),
+        "affects": "fan",
+        "effect": "Fenster offen + Ventilator → Durchzug",
+        "hint": "Fenster offen + Ventilator → Durchzug entsteht",
+    },
+    {
+        "condition": ("binary_sensor.fenster", "on"),
+        "affects": "notify",
+        "effect": "Mehrere Fenster offen → Durchzug im ganzen Haus",
+        "hint": "Mehrere Fenster offen → Durchzug, Tueren knallen",
+    },
+    {
+        "condition": ("binary_sensor.tuer", "on"),
+        "affects": "climate",
+        "effect": "Zimmertuer offen → Temperatur gleicht sich zwischen Raeumen an",
+        "hint": "Tuer offen → Raumtemperaturen mischen sich",
+    },
+
+    # =====================================================================
+    # 42. TEICHPUMPE / BRUNNEN / WASSERSPIEL
+    # =====================================================================
+    {
+        "condition": ("switch.teichpumpe", "on"),
+        "affects": "energy",
+        "effect": "Teichpumpe an → Dauerstromverbrauch",
+        "hint": "Teichpumpe laeuft → Stromverbrauch beachten",
+    },
+    {
+        "condition": ("switch.pond_pump", "on"),
+        "affects": "energy",
+        "effect": "Teichpumpe an → Dauerstromverbrauch",
+        "hint": "Teichpumpe laeuft → dauerhafter Stromverbrauch",
+    },
+    {
+        "condition": ("switch.teichpumpe", "off"),
+        "affects": "notify",
+        "effect": "Teichpumpe aus → Wasserqualitaet verschlechtert sich",
+        "hint": "Teichpumpe aus → Fische brauchen Sauerstoff",
+    },
+    {
+        "condition": ("switch.brunnen", "on"),
+        "affects": "energy",
+        "effect": "Brunnen/Wasserspiel an → Stromverbrauch",
+        "hint": "Brunnen laeuft → Stromverbrauch",
+    },
+    {
+        "condition": ("switch.fountain", "on"),
+        "affects": "energy",
+        "effect": "Brunnen/Wasserspiel an → Stromverbrauch",
+        "hint": "Wasserspiel laeuft → Stromverbrauch",
+    },
+    {
+        "condition": ("switch.brunnen", "on"),
+        "affects": "notify",
+        "effect": "Brunnen bei Frost → Einfrieren, Beschaedigung",
+        "hint": "Brunnen bei Frost → kann einfrieren und kaputtgehen",
+    },
+
+    # =====================================================================
+    # 43. ZISTERNE / REGENWASSER / WASSERENTHAERTUNG
+    # =====================================================================
+    {
+        "condition": ("sensor.zisterne", "on"),
+        "affects": "switch",
+        "effect": "Zisterne leer → Bewaesserung auf Leitungswasser umschalten",
+        "hint": "Zisterne leer → kein Regenwasser mehr, Leitungswasser noetig",
+    },
+    {
+        "condition": ("sensor.cistern", "on"),
+        "affects": "switch",
+        "effect": "Zisterne-Fuellstand → Bewaesserungsstrategie anpassen",
+        "hint": "Zisterne Fuellstand → Wassernutzung optimieren",
+    },
+    {
+        "condition": ("sensor.zisterne", "on"),
+        "affects": "notify",
+        "effect": "Zisterne voll → bei Regen laeuft sie ueber",
+        "hint": "Zisterne voll → Ueberlauf bei weiterem Regen",
+    },
+    {
+        "condition": ("sensor.wasserenthaertung", "on"),
+        "affects": "notify",
+        "effect": "Wasserenthaertung → Salz nachfuellen?",
+        "hint": "Wasserenthaertung → Salzstand pruefen",
+    },
+    {
+        "condition": ("sensor.water_softener", "on"),
+        "affects": "notify",
+        "effect": "Wasserenthaertung → Regeneriersalz pruefen",
+        "hint": "Enthaerter → Salz bald nachfuellen",
+    },
+    {
+        "condition": ("switch.osmose", "on"),
+        "affects": "energy",
+        "effect": "Osmoseanlage an → Strom- und Wasserverbrauch",
+        "hint": "Osmoseanlage laeuft → Wasser- und Stromverbrauch",
+    },
+
+    # =====================================================================
+    # 44. OUTDOOR-KUECHE / GRILL / TERRASSE
+    # =====================================================================
+    {
+        "condition": ("switch.grill", "on"),
+        "affects": "alarm_control_panel",
+        "effect": "Grill an → Brandgefahr bei Wind",
+        "hint": "Grill an → Vorsicht bei Wind, Brandgefahr",
+    },
+    {
+        "condition": ("switch.grill", "on"),
+        "affects": "notify",
+        "effect": "Grill an → nicht unbeaufsichtigt lassen",
+        "hint": "Grill laeuft → nicht vergessen",
+    },
+    {
+        "condition": ("switch.outdoor_kueche", "on"),
+        "affects": "energy",
+        "effect": "Outdoor-Kueche an → Stromverbrauch",
+        "hint": "Aussenkueche aktiv → Stromverbrauch",
+    },
+    {
+        "condition": ("switch.terrassenheizung", "on"),
+        "affects": "energy",
+        "effect": "Terrassenheizung an → hoher Energieverbrauch",
+        "hint": "Terrassenheizung → hoher Gas-/Stromverbrauch",
+    },
+    {
+        "condition": ("switch.patio_heater", "on"),
+        "affects": "energy",
+        "effect": "Terrassenheizung an → hoher Energieverbrauch",
+        "hint": "Terrassenheizer → Energieverschwendung bei Wind",
+    },
+    {
+        "condition": ("light.terrasse", "on"),
+        "affects": "notify",
+        "effect": "Terrassenbeleuchtung an → Insekten anlocken",
+        "hint": "Terrassenlicht an → zieht Insekten an im Sommer",
+    },
+    {
+        "condition": ("light.aussen", "on"),
+        "affects": "notify",
+        "effect": "Aussenbeleuchtung an → Lichtverschmutzung, Nachbarn, Insekten",
+        "hint": "Aussenlicht an → Lichtverschmutzung beachten",
+    },
+    {
+        "condition": ("light.outdoor", "on"),
+        "affects": "energy",
+        "effect": "Aussenbeleuchtung an → Stromverbrauch die ganze Nacht",
+        "hint": "Aussenlicht brennt → Strom die ganze Nacht?",
+    },
+
+    # =====================================================================
+    # 45. BODENFEUCHTESENSOR / PFLANZENSENSOR
+    # =====================================================================
+    {
+        "condition": ("sensor.bodenfeucht", "on"),
+        "affects": "switch",
+        "effect": "Boden trocken → Bewaesserung noetig",
+        "hint": "Boden trocken → Pflanzen brauchen Wasser",
+    },
+    {
+        "condition": ("sensor.soil_moisture", "on"),
+        "affects": "switch",
+        "effect": "Bodenfeuchtigkeit → Bewaesserung steuern",
+        "hint": "Bodenfeuchte → Bewaesserung anpassen",
+    },
+    {
+        "condition": ("sensor.plant", "on"),
+        "affects": "notify",
+        "effect": "Pflanzensensor → Pflanze braucht Aufmerksamkeit",
+        "hint": "Pflanze → Wasser/Licht/Duenger noetig",
+    },
+    {
+        "condition": ("sensor.pflanze", "on"),
+        "affects": "notify",
+        "effect": "Pflanzensensor → Pflanze braucht Pflege",
+        "hint": "Pflanze meldet sich → giessen oder duengen",
+    },
+
+    # =====================================================================
+    # 46. SMART SPEAKER / DISPLAY → LAUTSTAERKE / KONTEXT
+    # =====================================================================
+    {
+        "condition": ("media_player.echo", "playing"),
+        "affects": "notify",
+        "effect": "Smart Speaker spielt → Sprachbefehle schwer erkennbar",
+        "hint": "Musik laeuft auf Speaker → Spracherkennung eingeschraenkt",
+    },
+    {
+        "condition": ("media_player.google", "playing"),
+        "affects": "notify",
+        "effect": "Smart Speaker spielt → Sprachbefehle schwer erkennbar",
+        "hint": "Google Speaker spielt → Spracherkennung beeintraechtigt",
+    },
+    {
+        "condition": ("media_player.sonos", "playing"),
+        "affects": "notify",
+        "effect": "Sonos spielt → Lautstaerke beachten nachts",
+        "hint": "Sonos laeuft → Nachbarn bei offenen Fenstern?",
+    },
+
+    # =====================================================================
+    # 47. AUFZUG / TREPPENHAUS
+    # =====================================================================
+    {
+        "condition": ("sensor.aufzug", "on"),
+        "affects": "energy",
+        "effect": "Aufzug faehrt → kurzzeitig hoher Stromverbrauch",
+        "hint": "Aufzug aktiv → kurzer Stromstoss",
+    },
+    {
+        "condition": ("sensor.elevator", "on"),
+        "affects": "energy",
+        "effect": "Aufzug aktiv → Stromverbrauch",
+        "hint": "Aufzug → Energieverbrauch",
+    },
+    {
+        "condition": ("light.treppenhaus", "on"),
+        "affects": "energy",
+        "effect": "Treppenhauslicht an → oft vergessen auszuschalten",
+        "hint": "Treppenlicht brennt → automatisch ausschalten?",
+    },
+    {
+        "condition": ("light.staircase", "on"),
+        "affects": "energy",
+        "effect": "Treppenlicht an → laeuft oft unnoetig",
+        "hint": "Treppenlicht → Timer oder Bewegungsmelder sinnvoll",
+    },
+
+    # =====================================================================
+    # 48. LADESTATIONEN / AKKUS (HANDY/LAPTOP/WERKZEUG)
+    # =====================================================================
+    {
+        "condition": ("sensor.phone_battery", "on"),
+        "affects": "notify",
+        "effect": "Handy-Akku niedrig → aufladen",
+        "hint": "Handy Akku niedrig → ans Ladekabel",
+    },
+    {
+        "condition": ("sensor.tablet_battery", "on"),
+        "affects": "notify",
+        "effect": "Tablet-Akku niedrig → aufladen",
+        "hint": "Tablet Akku niedrig → laden",
+    },
+    {
+        "condition": ("switch.ladestation", "on"),
+        "affects": "energy",
+        "effect": "Ladestation aktiv → Stromverbrauch",
+        "hint": "Ladestation laedt → Stromverbrauch",
+    },
+    {
+        "condition": ("switch.charger", "on"),
+        "affects": "energy",
+        "effect": "Ladegeraet aktiv → Stromverbrauch, bei Vollladung abschalten",
+        "hint": "Ladegeraet → bei vollem Akku Stecker ziehen",
+    },
+
+    # =====================================================================
+    # 49. SMART MIRROR / DISPLAY-HUB
+    # =====================================================================
+    {
+        "condition": ("switch.smart_mirror", "on"),
+        "affects": "energy",
+        "effect": "Smart Mirror an → Dauerstromverbrauch",
+        "hint": "Smart Mirror → laeuft den ganzen Tag, Strom sparen nachts",
+    },
+    {
+        "condition": ("switch.display", "on"),
+        "affects": "energy",
+        "effect": "Info-Display an → Stromverbrauch",
+        "hint": "Display laeuft → nachts ausschalten sinnvoll",
+    },
+
+    # =====================================================================
+    # 50. WAESCHESTAENDER / TROCKNEN
+    # =====================================================================
+    {
+        "condition": ("binary_sensor.waeschestaender", "on"),
+        "affects": "climate",
+        "effect": "Waesche trocknet drinnen → Luftfeuchtigkeit steigt",
+        "hint": "Waesche drinnen → Feuchtigkeit steigt, lueften oder entfeuchten",
+    },
+    {
+        "condition": ("binary_sensor.laundry_rack", "on"),
+        "affects": "climate",
+        "effect": "Waesche trocknet drinnen → Feuchtigkeit steigt",
+        "hint": "Waesche im Raum → Luftfeuchtigkeit steigt, Schimmelgefahr",
+    },
+    {
+        "condition": ("binary_sensor.waeschestaender", "on"),
+        "affects": "fan",
+        "effect": "Waesche drinnen → Luefter oder Entfeuchter einschalten",
+        "hint": "Waesche trocknet → Entfeuchtung sinnvoll",
+    },
+
+    # =====================================================================
+    # 51. GAESTEZIMMER / GAESTEMODUS
+    # =====================================================================
+    {
+        "condition": ("input_boolean.gaeste", "on"),
+        "affects": "climate",
+        "effect": "Gaeste da → Gaestezimmer heizen/kuehlen",
+        "hint": "Gaestemodus → Gaestezimmer auf Komforttemperatur",
+    },
+    {
+        "condition": ("input_boolean.guest", "on"),
+        "affects": "climate",
+        "effect": "Gaeste da → zusaetzliche Raeume temperieren",
+        "hint": "Gaestemodus → Gaestezimmer vorbereiten",
+    },
+    {
+        "condition": ("input_boolean.gaeste", "on"),
+        "affects": "light",
+        "effect": "Gaeste da → Orientierungslicht nachts",
+        "hint": "Gaestemodus → Nachtlicht fuer Gaeste sinnvoll",
+    },
+    {
+        "condition": ("input_boolean.gaeste", "on"),
+        "affects": "notify",
+        "effect": "Gaeste da → WLAN-Zugangsdaten bereitstellen",
+        "hint": "Gaestemodus → Gaeste-WLAN aktiviert?",
+    },
+
+    # =====================================================================
+    # 52. URLAUBS- / ABWESENHEITSMODUS
+    # =====================================================================
+    {
+        "condition": ("input_boolean.urlaub", "on"),
+        "affects": "climate",
+        "effect": "Urlaubsmodus → Heizung auf Minimum/Frostschutz",
+        "hint": "Urlaub → Heizung runter, nur Frostschutz",
+    },
+    {
+        "condition": ("input_boolean.vacation", "on"),
+        "affects": "climate",
+        "effect": "Urlaubsmodus → Heizung minimal",
+        "hint": "Urlaub → Energiesparmodus aktivieren",
+    },
+    {
+        "condition": ("input_boolean.urlaub", "on"),
+        "affects": "light",
+        "effect": "Urlaubsmodus → Anwesenheitssimulation",
+        "hint": "Urlaub → Lichter simulieren Anwesenheit",
+    },
+    {
+        "condition": ("input_boolean.urlaub", "on"),
+        "affects": "cover",
+        "effect": "Urlaubsmodus → Rolllaeden automatisch offen/zu",
+        "hint": "Urlaub → Rolllaeden simulieren normalen Tagesablauf",
+    },
+    {
+        "condition": ("input_boolean.urlaub", "on"),
+        "affects": "switch",
+        "effect": "Urlaubsmodus → alle unnoetige Geraete aus",
+        "hint": "Urlaub → Standby-Geraete ausschalten, Strom sparen",
+    },
+    {
+        "condition": ("input_boolean.urlaub", "on"),
+        "affects": "alarm_control_panel",
+        "effect": "Urlaubsmodus → Alarm durchgehend scharf",
+        "hint": "Urlaub → Alarm muss permanent aktiv sein",
+    },
+
+    # =====================================================================
+    # 53. SONNENEINSTRAHLUNG / BESCHATTUNG / BLENDUNG
+    # =====================================================================
+    {
+        "condition": ("sensor.solar_radiation", "on"),
+        "affects": "cover",
+        "effect": "Starke Sonneneinstrahlung → Beschattung aktivieren",
+        "hint": "Sonne stark → Rolllaeden/Jalousien teilweise schliessen",
+    },
+    {
+        "condition": ("sensor.sonneneinstrahlung", "on"),
+        "affects": "cover",
+        "effect": "Sonneneinstrahlung hoch → automatische Beschattung",
+        "hint": "Sonne blendet → Beschattung anpassen",
+    },
+    {
+        "condition": ("sensor.illuminance", "on"),
+        "affects": "light",
+        "effect": "Helligkeit aussen hoch → Kunstlicht unnoetig",
+        "hint": "Hell draussen → Kunstlicht ausschalten",
+    },
+    {
+        "condition": ("sensor.helligkeit", "on"),
+        "affects": "light",
+        "effect": "Ausreichend Tageslicht → Lampen aus",
+        "hint": "Genug Tageslicht → Lampen koennen aus",
+    },
+    {
+        "condition": ("sensor.illuminance", "on"),
+        "affects": "cover",
+        "effect": "Daemmerung → Rolllaeden schliessen",
+        "hint": "Wird dunkel → Rolllaeden runter fuer Sichtschutz",
+    },
+
+    # =====================================================================
+    # 54. KINDERZIMMER / KINDERSICHERHEIT
+    # =====================================================================
+    {
+        "condition": ("binary_sensor.kinder", "on"),
+        "affects": "notify",
+        "effect": "Kind ist wach / Bewegung im Kinderzimmer",
+        "hint": "Kind wach → Babyfon/Kinderzimmer beobachten",
+    },
+    {
+        "condition": ("binary_sensor.child", "on"),
+        "affects": "notify",
+        "effect": "Kind-Sensor → Kind ist aktiv",
+        "hint": "Kind wach → Eltern informieren",
+    },
+    {
+        "condition": ("binary_sensor.kinder", "on"),
+        "affects": "media_player",
+        "effect": "Kind schlaeft → Lautstaerke im Haus reduzieren",
+        "hint": "Kind schlaeft → leise sein",
+    },
+    {
+        "condition": ("switch.kindersicherung", "off"),
+        "affects": "alarm_control_panel",
+        "effect": "Kindersicherung deaktiviert → Gefahr fuer Kinder",
+        "hint": "Kindersicherung aus → sofort aktivieren",
+    },
+    {
+        "condition": ("switch.child_lock", "off"),
+        "affects": "alarm_control_panel",
+        "effect": "Kindersicherung aus → Kinder in Gefahr",
+        "hint": "Kindersicherung deaktiviert → pruefen",
+    },
+
+    # =====================================================================
+    # 55. HOMEOFFICE / ARBEITSZIMMER
+    # =====================================================================
+    {
+        "condition": ("input_boolean.homeoffice", "on"),
+        "affects": "climate",
+        "effect": "Homeoffice aktiv → Buero auf Komforttemperatur",
+        "hint": "Homeoffice → Buero-Temperatur angenehm halten",
+    },
+    {
+        "condition": ("input_boolean.homeoffice", "on"),
+        "affects": "light",
+        "effect": "Homeoffice → Arbeitslicht mit guter Farbtemperatur",
+        "hint": "Homeoffice → Tageslicht-Farbtemperatur fuer Konzentration",
+    },
+    {
+        "condition": ("input_boolean.homeoffice", "on"),
+        "affects": "notify",
+        "effect": "Homeoffice → Meeting-Modus, Klingel leiser?",
+        "hint": "Homeoffice → Stoerungen minimieren, Klingel stumm?",
+    },
+    {
+        "condition": ("binary_sensor.webcam", "on"),
+        "affects": "light",
+        "effect": "Webcam aktiv → gute Beleuchtung fuer Videokonferenz",
+        "hint": "Videocall → Licht im Gesicht fuer gutes Bild",
+    },
+    {
+        "condition": ("binary_sensor.webcam", "on"),
+        "affects": "notify",
+        "effect": "Videokonferenz → Hintergrundgeraeusche vermeiden",
+        "hint": "Videocall → leise sein, Staubsauger/Musik aus",
+    },
+    {
+        "condition": ("input_boolean.meeting", "on"),
+        "affects": "media_player",
+        "effect": "Meeting aktiv → alle Medien stumm",
+        "hint": "Meeting → Musik/TV aus",
+    },
+    {
+        "condition": ("input_boolean.meeting", "on"),
+        "affects": "vacuum",
+        "effect": "Meeting aktiv → Saugroboter nicht starten",
+        "hint": "Meeting → Staubsauger aus, zu laut",
+    },
+
+    # =====================================================================
+    # 56. RAUMDUFT / AROMA / LUFTERFRISCHER
+    # =====================================================================
+    {
+        "condition": ("switch.diffuser", "on"),
+        "affects": "energy",
+        "effect": "Aroma-Diffuser an → Stromverbrauch",
+        "hint": "Diffuser laeuft → Stromverbrauch",
+    },
+    {
+        "condition": ("switch.duft", "on"),
+        "affects": "notify",
+        "effect": "Raumduft aktiv → bei Gaesten/Allergikern beachten",
+        "hint": "Duft aktiv → Allergiker beachten",
+    },
+
+    # =====================================================================
+    # 57. ELEKTROZAUN / GARTENTOR / SCHRANKE
+    # =====================================================================
+    {
+        "condition": ("cover.gartentor", "open"),
+        "affects": "alarm_control_panel",
+        "effect": "Gartentor offen → ungesicherter Zugang",
+        "hint": "Gartentor offen → Grundstueck nicht gesichert",
+    },
+    {
+        "condition": ("cover.gate", "open"),
+        "affects": "alarm_control_panel",
+        "effect": "Tor offen → ungesicherter Zugang",
+        "hint": "Tor offen → Sicherheit pruefen",
+    },
+    {
+        "condition": ("cover.schranke", "open"),
+        "affects": "notify",
+        "effect": "Schranke offen → Zufahrt frei",
+        "hint": "Schranke offen → wer kommt?",
+    },
+    {
+        "condition": ("switch.elektrozaun", "off"),
+        "affects": "alarm_control_panel",
+        "effect": "Elektrozaun aus → Grundstueck nicht gesichert",
+        "hint": "Elektrozaun deaktiviert → Sicherheit reduziert",
+    },
+
+    # =====================================================================
+    # 58. WASSERVERBRAUCH / DURCHFLUSS
+    # =====================================================================
+    {
+        "condition": ("sensor.water_consumption", "on"),
+        "affects": "notify",
+        "effect": "Ungewoehnlich hoher Wasserverbrauch → Leck moeglich",
+        "hint": "Wasserverbrauch hoch → Leck oder Hahn offen vergessen?",
+    },
+    {
+        "condition": ("sensor.wasserverbrauch", "on"),
+        "affects": "notify",
+        "effect": "Hoher Wasserverbrauch → Ursache pruefen",
+        "hint": "Viel Wasser verbraucht → Leck oder vergessener Hahn?",
+    },
+    {
+        "condition": ("sensor.durchfluss", "on"),
+        "affects": "alarm_control_panel",
+        "effect": "Durchfluss bei Abwesenheit → moeglicherweise Leck",
+        "hint": "Wasser fliesst aber niemand da → Leck?",
+    },
+
+    # =====================================================================
+    # 59. HEIZOEL / PELLET / GAS-TANK
+    # =====================================================================
+    {
+        "condition": ("sensor.heizoel", "on"),
+        "affects": "notify",
+        "effect": "Heizoel-Fuellstand niedrig → nachbestellen",
+        "hint": "Heizoel wird knapp → rechtzeitig bestellen",
+    },
+    {
+        "condition": ("sensor.oil_level", "on"),
+        "affects": "notify",
+        "effect": "Oel-Fuellstand → rechtzeitig nachbestellen",
+        "hint": "Heizoel → Bestellzeitpunkt beachten",
+    },
+    {
+        "condition": ("sensor.pellet", "on"),
+        "affects": "notify",
+        "effect": "Pellet-Vorrat → rechtzeitig nachfuellen",
+        "hint": "Pellets werden knapp → nachbestellen",
+    },
+    {
+        "condition": ("sensor.gastank", "on"),
+        "affects": "notify",
+        "effect": "Gas-Tank Fuellstand niedrig → nachfuellen lassen",
+        "hint": "Gastank wird leer → Gaslieferung bestellen",
+    },
+    {
+        "condition": ("sensor.gas_tank", "on"),
+        "affects": "notify",
+        "effect": "Gas-Tank Fuellstand → rechtzeitig auffuellen",
+        "hint": "Gastank niedrig → Lieferung organisieren",
+    },
+
+    # =====================================================================
+    # 60. PHOTOVOLTAIK DETAILS / WECHSELRICHTER
+    # =====================================================================
+    {
+        "condition": ("sensor.inverter", "on"),
+        "affects": "energy",
+        "effect": "Wechselrichter-Status beeinflusst PV-Produktion",
+        "hint": "Wechselrichter → PV-Anlage Status pruefen",
+    },
+    {
+        "condition": ("sensor.wechselrichter", "on"),
+        "affects": "energy",
+        "effect": "Wechselrichter → PV-Produktion und Eigenverbrauch",
+        "hint": "PV-Wechselrichter → Produktionsleistung beachten",
+    },
+    {
+        "condition": ("binary_sensor.inverter", "off"),
+        "affects": "notify",
+        "effect": "Wechselrichter offline → PV-Anlage produziert nicht",
+        "hint": "Wechselrichter ausgefallen → PV-Anlage steht still",
+    },
+    {
+        "condition": ("sensor.grid_power", "on"),
+        "affects": "energy",
+        "effect": "Netzbezug → Strom wird teuer eingekauft",
+        "hint": "Netzbezug hoch → Eigenverbrauch optimieren",
+    },
+
+    # =====================================================================
+    # 61. GESUNDHEIT / WELLNESS / FITNESS
+    # =====================================================================
+    {
+        "condition": ("sensor.blutdruck", "on"),
+        "affects": "notify",
+        "effect": "Blutdruck gemessen → Wert beachten",
+        "hint": "Blutdruckmessung → Werte im Blick behalten",
+    },
+    {
+        "condition": ("sensor.blood_pressure", "on"),
+        "affects": "notify",
+        "effect": "Blutdruck → Gesundheitsdaten tracken",
+        "hint": "Blutdruckwert → aufmerksam bleiben",
+    },
+    {
+        "condition": ("sensor.waage", "on"),
+        "affects": "notify",
+        "effect": "Koerperwaage → Gewicht getrackt",
+        "hint": "Gewicht gemessen → Trend beobachten",
+    },
+    {
+        "condition": ("sensor.scale", "on"),
+        "affects": "notify",
+        "effect": "Koerperwaage → Gewichtsdaten",
+        "hint": "Gewicht → Gesundheitstracking",
+    },
+    {
+        "condition": ("switch.laufband", "on"),
+        "affects": "energy",
+        "effect": "Laufband an → Stromverbrauch",
+        "hint": "Laufband laeuft → Stromverbrauch beachten",
+    },
+    {
+        "condition": ("switch.treadmill", "on"),
+        "affects": "energy",
+        "effect": "Laufband/Fitnessgeraet → Stromverbrauch",
+        "hint": "Fitnessgeraet an → Strom",
+    },
+
+    # =====================================================================
+    # 62. KUEHLKETTE / MEDIKAMENTE
+    # =====================================================================
+    {
+        "condition": ("sensor.medikamenten_kuehl", "on"),
+        "affects": "notify",
+        "effect": "Medikamenten-Kuehlschrank Temperatur → kritisch fuer Medikamente",
+        "hint": "Medikamenten-Kuehlung → Temperatur muss stimmen",
+    },
+    {
+        "condition": ("sensor.medicine_fridge", "on"),
+        "affects": "notify",
+        "effect": "Medikamenten-Kuehlschrank → Temperatur ueberwachen",
+        "hint": "Medikamente → Kuehlung sicherstellen",
+    },
+
+    # =====================================================================
+    # 63. GEWAECHSHAUS → TEMPERATUR / BEWAESSERUNG / LUEFTUNG
+    # =====================================================================
+    {
+        "condition": ("sensor.gewaechshaus_temp", "on"),
+        "affects": "climate",
+        "effect": "Gewaechshaus-Temperatur → Belueftung oder Heizung",
+        "hint": "Gewaechshaus → Temperatur regulieren fuer Pflanzen",
+    },
+    {
+        "condition": ("sensor.greenhouse_temp", "on"),
+        "affects": "climate",
+        "effect": "Gewaechshaus → Temperatur fuer Pflanzen optimieren",
+        "hint": "Gewaechshaus → Heizung/Lueftung anpassen",
+    },
+    {
+        "condition": ("switch.gewaechshaus_heizung", "on"),
+        "affects": "energy",
+        "effect": "Gewaechshaus-Heizung → Energieverbrauch",
+        "hint": "Gewaechshaus wird geheizt → Energieverbrauch",
+    },
+    {
+        "condition": ("switch.gewaechshaus_lueftung", "on"),
+        "affects": "climate",
+        "effect": "Gewaechshaus-Lueftung → Temperatur und Feuchtigkeit regulieren",
+        "hint": "Gewaechshaus Luefter → Klima regulieren",
+    },
+    {
+        "condition": ("binary_sensor.gewaechshaus_fenster", "on"),
+        "affects": "climate",
+        "effect": "Gewaechshaus Fenster offen → Temperatur sinkt",
+        "hint": "Gewaechshaus offen → Frost kann Pflanzen schaeden",
+    },
+
+    # =====================================================================
+    # 64. TIEFGARAGE / PARKHAUS / STELLPLATZ
+    # =====================================================================
+    {
+        "condition": ("binary_sensor.tiefgarage", "on"),
+        "affects": "fan",
+        "effect": "Bewegung in Tiefgarage → CO-Abzug sicherstellen",
+        "hint": "Auto in Tiefgarage → Abgasabzug pruefen",
+    },
+    {
+        "condition": ("sensor.tiefgarage_co", "on"),
+        "affects": "fan",
+        "effect": "CO in Tiefgarage → Lueftung auf Maximum",
+        "hint": "Abgase in Tiefgarage → Lueftung verstaerken",
+    },
+    {
+        "condition": ("binary_sensor.stellplatz", "on"),
+        "affects": "notify",
+        "effect": "Stellplatz belegt/frei → Parkinfo",
+        "hint": "Stellplatz → Parkinformation",
+    },
+
+    # =====================================================================
+    # 65. SCHIMMELWARNUNG / TAUPUNKT
+    # =====================================================================
+    {
+        "condition": ("sensor.taupunkt", "on"),
+        "affects": "climate",
+        "effect": "Taupunkt erreicht → Kondenswasser, Schimmelgefahr",
+        "hint": "Taupunkt → Schimmelgefahr, sofort lueften oder heizen",
+    },
+    {
+        "condition": ("sensor.dew_point", "on"),
+        "affects": "climate",
+        "effect": "Taupunkt-Warnung → Kondensation an Waenden moeglich",
+        "hint": "Taupunkt → Lueften und Heizen gegen Schimmel",
+    },
+    {
+        "condition": ("binary_sensor.mold", "on"),
+        "affects": "climate",
+        "effect": "Schimmelrisiko hoch → Raumklima verbessern",
+        "hint": "Schimmelrisiko → Temperatur hoch, Feuchtigkeit runter",
+    },
+    {
+        "condition": ("binary_sensor.schimmel", "on"),
+        "affects": "climate",
+        "effect": "Schimmelwarnung → sofort handeln",
+        "hint": "Schimmelgefahr → lueften, heizen, entfeuchten",
+    },
+
+    # =====================================================================
+    # 66. WASSERDRUCK / HEIZUNGSDRUCK
+    # =====================================================================
+    {
+        "condition": ("sensor.heizungsdruck", "on"),
+        "affects": "notify",
+        "effect": "Heizungsdruck zu niedrig → Wasser nachfuellen",
+        "hint": "Heizungsdruck niedrig → Heizung nachfuellen",
+    },
+    {
+        "condition": ("sensor.heating_pressure", "on"),
+        "affects": "notify",
+        "effect": "Heizungsdruck → System pruefen",
+        "hint": "Heizungsdruck → Wasser nachfuellen noetig?",
+    },
+    {
+        "condition": ("sensor.wasserdruck", "on"),
+        "affects": "notify",
+        "effect": "Wasserdruck anomal → Rohrproblem moeglich",
+        "hint": "Wasserdruck ungewoehnlich → Leck oder Rohrproblem?",
+    },
+
+    # =====================================================================
+    # 67. WARMWASSER / BOILER / DURCHLAUFERHITZER
+    # =====================================================================
+    {
+        "condition": ("switch.boiler", "on"),
+        "affects": "energy",
+        "effect": "Boiler heizt → hoher Energieverbrauch",
+        "hint": "Warmwasser-Boiler heizt → Stromverbrauch",
+    },
+    {
+        "condition": ("switch.durchlauferhitzer", "on"),
+        "affects": "energy",
+        "effect": "Durchlauferhitzer an → sehr hoher Momentanverbrauch",
+        "hint": "Durchlauferhitzer → kurzfristig hoher Stromverbrauch",
+    },
+    {
+        "condition": ("sensor.warmwasser_temp", "on"),
+        "affects": "notify",
+        "effect": "Warmwasser-Temperatur → Legionellen-Schutz beachten",
+        "hint": "Warmwasser → bei <60°C Legionellen-Risiko",
+    },
+    {
+        "condition": ("sensor.hot_water_temp", "on"),
+        "affects": "notify",
+        "effect": "Warmwasser-Temperatur → Hygiene sicherstellen",
+        "hint": "Warmwasser-Temp → Legionellen-Schutz ab 60°C",
+    },
+
+    # =====================================================================
+    # 68. FUSSBODENHEIZUNG → TRAEGHEIT / ENERGIE
+    # =====================================================================
+    {
+        "condition": ("climate.fussbodenheizung", "heat"),
+        "affects": "energy",
+        "effect": "Fussbodenheizung aktiv → traege Regelung, vorausplanen",
+        "hint": "Fussbodenheizung → reagiert langsam, frueh einschalten",
+    },
+    {
+        "condition": ("climate.floor_heating", "heat"),
+        "affects": "energy",
+        "effect": "Fussbodenheizung heizt → langsame Reaktion beachten",
+        "hint": "Fussbodenheizung → braucht Stunden zum Aufheizen",
+    },
+    {
+        "condition": ("climate.fussbodenheizung", "heat"),
+        "affects": "binary_sensor",
+        "effect": "Fussbodenheizung + Fenster lange offen → viel Energieverlust",
+        "hint": "Fussbodenheizung → Fenster kurz lueften, nicht kippen",
+    },
+
+    # =====================================================================
+    # 69. SMARTE VENTILE / HEIZKOERPER-THERMOSTATE
+    # =====================================================================
+    {
+        "condition": ("climate.thermostat", "heat"),
+        "affects": "binary_sensor",
+        "effect": "Thermostat heizt → Fenster offen ist Energieverschwendung",
+        "hint": "Thermostat heizt + Fenster offen → Energie wird verschwendet",
+    },
+    {
+        "condition": ("climate.heizkoerper", "heat"),
+        "affects": "energy",
+        "effect": "Heizkoerper-Thermostat aktiv → Energieverbrauch",
+        "hint": "Heizkoerper heizt → Energieverbrauch beachten",
+    },
+    {
+        "condition": ("climate.thermostat", "off"),
+        "affects": "notify",
+        "effect": "Thermostat aus bei Kaelte → Frostgefahr",
+        "hint": "Thermostat aus + kalt → Frostschutz beachten",
+    },
+
+    # =====================================================================
+    # 70. NOTRUF / PANIKKNOPF / MEDIZINISCHER ALARM
+    # =====================================================================
+    {
+        "condition": ("binary_sensor.panik", "on"),
+        "affects": "alarm_control_panel",
+        "effect": "Panikknopf gedrueckt → sofortige Hilfe noetig",
+        "hint": "PANIKKNOPF → sofort reagieren, Hilfe rufen",
+    },
+    {
+        "condition": ("binary_sensor.panic", "on"),
+        "affects": "alarm_control_panel",
+        "effect": "Panic button pressed → immediate help needed",
+        "hint": "PANIK → sofortige Reaktion noetig",
+    },
+    {
+        "condition": ("binary_sensor.notfall", "on"),
+        "affects": "notify",
+        "effect": "Notfall-Sensor → medizinischer Notfall moeglich",
+        "hint": "NOTFALL → sofort pruefen und helfen",
+    },
+    {
+        "condition": ("binary_sensor.emergency", "on"),
+        "affects": "notify",
+        "effect": "Emergency sensor triggered → immediate attention",
+        "hint": "NOTFALL → sofortige Aufmerksamkeit",
+    },
+    {
+        "condition": ("binary_sensor.sturz", "on"),
+        "affects": "notify",
+        "effect": "Sturzerkennung → Person gestuerzt, Hilfe noetig",
+        "hint": "Sturz erkannt → sofort nach Person sehen",
+    },
+    {
+        "condition": ("binary_sensor.fall", "on"),
+        "affects": "notify",
+        "effect": "Fall detection → person needs help",
+        "hint": "Sturz → sofortige Hilfe, Person pruefen",
+    },
 ]
 
 
