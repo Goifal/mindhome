@@ -259,20 +259,48 @@ class HomeAssistantClient:
                 for k in expired:
                     del _dep_check_cache[k]
 
-            # State aus service ableiten
+            # State intelligent aus service + data ableiten
+            data_dict = data or {}
             state_val = "on"
-            if "off" in service:
+            if "off" in service or "stop" in service:
                 state_val = "off"
             elif "open" in service:
                 state_val = "on"
             elif "close" in service:
                 state_val = "off"
+            elif domain == "climate":
+                # Klima: hvac_mode ist der eigentliche State
+                hvac = data_dict.get("hvac_mode", "")
+                if hvac:
+                    state_val = hvac  # "heat", "cool", "off", "auto"
+                elif "temperature" in data_dict:
+                    state_val = "heat"  # set_temperature impliziert Heizen
+            elif domain == "cover":
+                # Cover: Position → on/off
+                pos = data_dict.get("position")
+                if pos is not None:
+                    try:
+                        state_val = "off" if int(pos) < 20 else "on"
+                    except (ValueError, TypeError):
+                        pass
+            elif domain == "media_player":
+                vol = data_dict.get("volume_level")
+                if vol is not None:
+                    state_val = "on"  # Volume-Set = Geraet aktiv
 
             from .state_change_log import StateChangeLog
             states = await self.get_states() or []
+
+            # Action-Args zusammenbauen fuer praeziseres Matching
+            action_args = {"entity_id": entity_id, "state": state_val}
+            if "temperature" in data_dict:
+                action_args["temperature"] = data_dict["temperature"]
+            if "offset" in data_dict:
+                action_args["offset"] = data_dict["offset"]
+
             hints = StateChangeLog.check_action_dependencies(
                 f"set_{domain}",
-                {"entity_id": entity_id, "state": state_val},
+                action_args,
                 states,
             )
             if hints:
