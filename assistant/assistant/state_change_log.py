@@ -2567,6 +2567,1395 @@ DEVICE_DEPENDENCIES = [
         "hint": "Zone-Eintritt erkannt → Benachrichtigung senden",
         "severity": "info",
     },
+
+    # =================================================================
+    # BEWEGUNG — DIE haeufigste Smart-Home-Automatisierung
+    # =================================================================
+
+    # Motion → Licht einschalten
+    {
+        "role": "motion", "state": "on",
+        "affects": "light", "same_room": True,
+        "effect": "Bewegung erkannt → Licht einschalten",
+        "hint": "Bewegung im Raum → Licht einschalten",
+        "severity": "info",
+    },
+    # Motion → Kamera aufzeichnen
+    {
+        "role": "motion", "state": "on",
+        "affects": "camera", "same_room": True,
+        "effect": "Bewegung erkannt → Kamera startet Aufzeichnung",
+        "hint": "Bewegung → Kamera-Aufzeichnung starten",
+        "severity": "info",
+    },
+    # Motion → Benachrichtigung (bei Abwesenheit besonders relevant)
+    {
+        "role": "motion", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Bewegung erkannt → Benachrichtigung sinnvoll wenn niemand da",
+        "hint": "Bewegung + niemand zuhause → Benachrichtigung senden",
+        "severity": "info",
+    },
+    # Motion → Klimaanlage/Heizung (Raum wird genutzt)
+    {
+        "role": "motion", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Bewegung → Raum wird genutzt, Klima auf Komfort",
+        "hint": "Bewegung im Raum → Klima auf Komfort-Temperatur",
+        "severity": "info",
+    },
+    # Motion → Musik/Medien (Raum wird betreten)
+    {
+        "role": "motion", "state": "on",
+        "affects": "media_player", "same_room": True,
+        "effect": "Bewegung → Person betritt Raum, Medien ggf. fortsetzen",
+        "hint": "Raum betreten → Musik/Medien fortsetzen wenn gewuenscht",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # RAUMBELEGUNG ON — Raum wird betreten/belegt
+    # =================================================================
+
+    {
+        "role": "occupancy", "state": "on",
+        "affects": "light", "same_room": True,
+        "effect": "Raum belegt → Licht einschalten wenn dunkel",
+        "hint": "Raum wird genutzt → Licht an wenn noetig",
+        "severity": "info",
+    },
+    {
+        "role": "occupancy", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Raum belegt → Klima auf Komfort-Temperatur",
+        "hint": "Raum wird genutzt → Heizung/Kuehlung auf Komfort",
+        "severity": "info",
+    },
+    {
+        "role": "occupancy", "state": "on",
+        "affects": "fan", "same_room": True,
+        "effect": "Raum belegt → Ventilator bei Bedarf einschalten",
+        "hint": "Raum wird genutzt → Lueftung/Ventilator anpassen",
+        "severity": "info",
+    },
+    {
+        "role": "occupancy", "state": "on",
+        "affects": "media_player", "same_room": True,
+        "effect": "Raum belegt → Medien ggf. fortsetzen",
+        "hint": "Raum wird genutzt → Musik/Medien bei Bedarf starten",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # TUER/TOR/GARAGE — erweiterte Trigger
+    # =================================================================
+
+    # Tuer oeffnet → Licht
+    {
+        "role": "door_contact", "state": "on",
+        "affects": "light", "same_room": True,
+        "effect": "Tuer geoeffnet → Licht im Flur/Raum einschalten",
+        "hint": "Tuer offen → Licht einschalten (Flur/Eingang)",
+        "severity": "info",
+    },
+    # Tuer oeffnet → Kamera
+    {
+        "role": "door_contact", "state": "on",
+        "affects": "camera", "same_room": True,
+        "effect": "Tuer geoeffnet → Kamera aufzeichnen",
+        "hint": "Tuer geoeffnet → Kamera-Aufzeichnung starten",
+        "severity": "info",
+    },
+    # Tuer oeffnet → Benachrichtigung
+    {
+        "role": "door_contact", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Tuer geoeffnet → Benachrichtigung bei Abwesenheit",
+        "hint": "Tuer geoeffnet → Benachrichtigung wenn niemand zuhause",
+        "severity": "info",
+    },
+    # Tuer oeffnet → Lock-Inkonsistenz pruefen
+    {
+        "role": "door_contact", "state": "on",
+        "affects": "lock", "same_room": True,
+        "effect": "Tuer offen → Schloss-Status sollte 'unlocked' sein",
+        "hint": "Tuer offen aber Schloss zeigt gesperrt → Inkonsistenz pruefen",
+        "severity": "info",
+    },
+
+    # Garagentor → Licht
+    {
+        "role": "garage_door", "state": "open",
+        "affects": "light", "same_room": True,
+        "effect": "Garagentor offen → Garagenbeleuchtung einschalten",
+        "hint": "Garagentor offen → Licht in Garage an",
+        "severity": "info",
+    },
+    # Garagentor → Kamera
+    {
+        "role": "garage_door", "state": "open",
+        "affects": "camera", "same_room": False,
+        "effect": "Garagentor offen → Kamera aufzeichnen",
+        "hint": "Garagentor oeffnet → Kamera-Aufzeichnung",
+        "severity": "info",
+    },
+    # Garagentor → Benachrichtigung
+    {
+        "role": "garage_door", "state": "open",
+        "affects": "notify", "same_room": False,
+        "effect": "Garagentor offen → Benachrichtigung",
+        "hint": "Garagentor geoeffnet → Benachrichtigung senden",
+        "severity": "info",
+    },
+    # Garagentor → EV-Charger (Auto kann jetzt laden)
+    {
+        "role": "garage_door", "state": "open",
+        "affects": "ev_charger", "same_room": False,
+        "effect": "Garagentor offen → Auto kann angeschlossen werden",
+        "hint": "Garage offen → E-Auto anschliessen zum Laden",
+        "severity": "info",
+    },
+
+    # Tor/Einfahrt → Kamera
+    {
+        "role": "gate", "state": "open",
+        "affects": "camera", "same_room": False,
+        "effect": "Tor offen → Kamera aufzeichnen wer kommt",
+        "hint": "Tor geoeffnet → Einfahrt-Kamera aufzeichnen",
+        "severity": "info",
+    },
+    # Tor → Licht (Einfahrtbeleuchtung)
+    {
+        "role": "gate", "state": "open",
+        "affects": "light", "same_room": False,
+        "effect": "Tor offen → Einfahrtbeleuchtung einschalten",
+        "hint": "Tor offen → Einfahrt-Beleuchtung an",
+        "severity": "info",
+    },
+    # Tor → Benachrichtigung
+    {
+        "role": "gate", "state": "open",
+        "affects": "notify", "same_room": False,
+        "effect": "Tor geoeffnet → Benachrichtigung",
+        "hint": "Tor geoeffnet → Benachrichtigung senden (Besucher?)",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # SCHLOSS — erweiterte Trigger
+    # =================================================================
+
+    # Lock aufgesperrt → Kamera (wer hat aufgesperrt?)
+    {
+        "role": "lock", "state": "unlocked",
+        "affects": "camera", "same_room": False,
+        "effect": "Schloss entriegelt → Kamera pruefen wer aufgesperrt hat",
+        "hint": "Schloss entriegelt → Kamera-Aufzeichnung, Person identifizieren",
+        "severity": "info",
+    },
+    # Lock aufgesperrt → Licht (Eingang beleuchten)
+    {
+        "role": "lock", "state": "unlocked",
+        "affects": "light", "same_room": True,
+        "effect": "Schloss entriegelt → Eingangslicht einschalten",
+        "hint": "Tuer entriegelt → Eingangslicht an",
+        "severity": "info",
+    },
+    # Lock abgesperrt → Bestätigung
+    {
+        "role": "lock", "state": "locked",
+        "affects": "notify", "same_room": False,
+        "effect": "Schloss verriegelt → Bestaetigung",
+        "hint": "Tuer abgesperrt → Sicherheits-Bestaetigung",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # ALARM — fehlende triggered-Aktionen (KRITISCH!)
+    # =================================================================
+
+    # Alarm ausgeloest → Sirene MUSS erklingen!
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "siren", "same_room": False,
+        "effect": "Alarm ausgeloest → Sirene muss erklingen",
+        "hint": "ALARM AUSGELOEST → Sirene aktivieren!",
+        "severity": "critical",
+    },
+    # Alarm ausgeloest → ALLE Tueren verriegeln
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "lock", "same_room": False,
+        "effect": "Alarm ausgeloest → alle Tueren verriegeln",
+        "hint": "ALARM → alle Schloesser verriegeln, Einbrecher einschliessen",
+        "severity": "high",
+    },
+    # Alarm ausgeloest → Kameras aufzeichnen
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "camera", "same_room": False,
+        "effect": "Alarm ausgeloest → alle Kameras aufzeichnen",
+        "hint": "ALARM → alle Kameras auf Aufzeichnung, Beweissicherung",
+        "severity": "high",
+    },
+    # Alarm ausgeloest → Garagentor schliessen
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "garage_door", "same_room": False,
+        "effect": "Alarm ausgeloest → Garagentor schliessen",
+        "hint": "ALARM → Garagentor schliessen, Fluchtweg blockieren",
+        "severity": "high",
+    },
+    # Alarm ausgeloest → Tor schliessen
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "gate", "same_room": False,
+        "effect": "Alarm ausgeloest → Tor/Einfahrt schliessen",
+        "hint": "ALARM → Tor schliessen",
+        "severity": "high",
+    },
+    # Alarm ausgeloest → Rolllaeden hoch (Sichtbarkeit fuer Nachbarn/Polizei)
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "blinds", "same_room": False,
+        "effect": "Alarm ausgeloest → Rolllaeden/Jalousien oeffnen",
+        "hint": "ALARM → Beschattung oeffnen, Sichtbarkeit fuer Nachbarn/Polizei",
+        "severity": "high",
+    },
+    # Alarm ausgeloest → Shutter hoch
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "shutter", "same_room": False,
+        "effect": "Alarm ausgeloest → Rollladen hoch fuer Sichtbarkeit",
+        "hint": "ALARM → Rollladen hoch, Sichtbarkeit fuer Nachbarn",
+        "severity": "high",
+    },
+    # Alarm deaktiviert → Benachrichtigung
+    {
+        "role": "alarm", "state": "disarmed",
+        "affects": "notify", "same_room": False,
+        "effect": "Alarm deaktiviert → Bestaetigung senden",
+        "hint": "Alarm deaktiviert → Bestaetigung, wer hat deaktiviert?",
+        "severity": "info",
+    },
+    # Alarm deaktiviert → Willkommens-Szenario
+    {
+        "role": "alarm", "state": "disarmed",
+        "affects": "light", "same_room": False,
+        "effect": "Alarm deaktiviert (Ankunft) → Willkommens-Beleuchtung",
+        "hint": "Alarm deaktiviert → Licht einschalten (Willkommen)",
+        "severity": "info",
+    },
+    {
+        "role": "alarm", "state": "disarmed",
+        "affects": "climate", "same_room": False,
+        "effect": "Alarm deaktiviert (Ankunft) → Klima auf Komfort",
+        "hint": "Alarm deaktiviert → Heizung/Kuehlung auf Komfort-Temperatur",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # FENSTER — erweiterte Auswirkungen
+    # =================================================================
+
+    # Fenster offen → Luftreiniger sinnlos
+    {
+        "role": "window_contact", "state": "on",
+        "affects": "air_purifier", "same_room": True,
+        "effect": "Fenster offen + Luftreiniger an → Energieverschwendung",
+        "hint": "Fenster offen → Luftreiniger sinnlos, neue Luft stroemt ein",
+        "severity": "high",
+    },
+    # Fenster offen → Befeuchter/Entfeuchter sinnlos
+    {
+        "role": "window_contact", "state": "on",
+        "affects": "humidifier", "same_room": True,
+        "effect": "Fenster offen + Befeuchter → feuchte Luft geht raus",
+        "hint": "Fenster offen → Befeuchter sinnlos, Feuchtigkeit geht verloren",
+        "severity": "info",
+    },
+    {
+        "role": "window_contact", "state": "on",
+        "affects": "dehumidifier", "same_room": True,
+        "effect": "Fenster offen + Entfeuchter → arbeitet gegen Aussenluft",
+        "hint": "Fenster offen → Entfeuchter sinnlos, neue Feuchtigkeit kommt rein",
+        "severity": "info",
+    },
+    # Fenster offen → Laerm von draussen
+    {
+        "role": "window_contact", "state": "on",
+        "affects": "noise", "same_room": True,
+        "effect": "Fenster offen → Strassenlaerm kommt rein",
+        "hint": "Fenster offen → Aussenlaerm im Raum, ggf. Medien lauter",
+        "severity": "info",
+    },
+    # Fenster offen → Licht aendert sich (Tageslicht)
+    {
+        "role": "window_contact", "state": "on",
+        "affects": "light_level", "same_room": True,
+        "effect": "Fenster offen → Lichverhaeltnisse aendern sich",
+        "hint": "Fenster offen → Tageslicht/Sonneneinstrahlung aendert sich",
+        "severity": "info",
+    },
+    # Fenster offen → Energie-Verschwendung bei HVAC
+    {
+        "role": "window_contact", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Fenster offen + HVAC laeuft → Energieverschwendung",
+        "hint": "Fenster offen + Heizung/Kuehlung → Energiekosten steigen",
+        "severity": "info",
+    },
+    # Fenster offen → PM2.5/Feinstaub kommt rein
+    {
+        "role": "window_contact", "state": "on",
+        "affects": "air_quality", "same_room": True,
+        "effect": "Fenster offen → Aussenluft-Qualitaet beeinflusst Innenraum",
+        "hint": "Fenster offen → Luftqualitaet aendert sich (Pollen, Feinstaub)",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # RAUMTEMPERATUR — umfassende Interaktionen
+    # =================================================================
+
+    # Raumtemperatur → Beschattung
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "blinds", "same_room": True,
+        "effect": "Raumtemperatur hoch → Beschattung senken",
+        "hint": "Raum zu warm → Jalousien/Rollladen schliessen gegen Sonne",
+        "severity": "info",
+    },
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "shutter", "same_room": True,
+        "effect": "Raumtemperatur hoch → Rollladen runter",
+        "hint": "Raum zu warm → Rollladen schliessen gegen Aufheizung",
+        "severity": "info",
+    },
+    # Raumtemperatur → Fenster (Lueften)
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Raumtemperatur unangenehm → Fenster zum Lueften",
+        "hint": "Raum zu warm/stickig → Fenster oeffnen zum Lueften",
+        "severity": "info",
+    },
+    # Raumtemperatur → Ventilator
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "fan", "same_room": True,
+        "effect": "Raumtemperatur hoch → Ventilator einschalten",
+        "hint": "Raum zu warm → Ventilator an fuer Kuehlung",
+        "severity": "info",
+    },
+    # Raumtemperatur → Heizung anpassen
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "heating", "same_room": True,
+        "effect": "Raumtemperatur beeinflusst Heizungs-Regelung",
+        "hint": "Raumtemperatur → Heizung anpassen (hoch=runterregeln, niedrig=hochdrehen)",
+        "severity": "info",
+    },
+    # Raumtemperatur → Kuehlung anpassen
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "cooling", "same_room": True,
+        "effect": "Raumtemperatur beeinflusst Kuehlungs-Regelung",
+        "hint": "Raumtemperatur → Kuehlung anpassen (hoch=mehr kuehlen, ok=ausschalten)",
+        "severity": "info",
+    },
+    # Raumtemperatur → Lueftung
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "ventilation", "same_room": True,
+        "effect": "Raumtemperatur → Lueftung anpassen",
+        "hint": "Raumtemperatur → Lueftung fuer Waermetausch nutzen",
+        "severity": "info",
+    },
+    # Raumtemperatur → Thermostat
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "thermostat", "same_room": True,
+        "effect": "Ist-Temperatur beeinflusst Thermostat-Regelung",
+        "hint": "Raumtemperatur → Thermostat-Soll abgleichen",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # ENTERTAINMENT — erweiterte Interaktionen
+    # =================================================================
+
+    # TV → Klima (TV erzeugt Waerme)
+    {
+        "role": "tv", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Fernseher erzeugt Waerme → Raumtemperatur steigt",
+        "hint": "TV an → erzeugt Abwaerme, Raum wird waermer",
+        "severity": "info",
+    },
+    # TV → Energie
+    {
+        "role": "tv", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Fernseher verbraucht Strom",
+        "hint": "TV an → Stromverbrauch",
+        "severity": "info",
+    },
+    # Gaming → Klima (Gaming-PC erzeugt viel Waerme)
+    {
+        "role": "gaming", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Gaming-PC/Konsole erzeugt starke Waerme",
+        "hint": "Gaming → PC/Konsole erzeugt viel Abwaerme, Raum wird deutlich waermer",
+        "severity": "info",
+    },
+    # Gaming → Beschattung (Blendschutz)
+    {
+        "role": "gaming", "state": "on",
+        "affects": "blinds", "same_room": True,
+        "effect": "Gaming → Blendschutz am Bildschirm noetig",
+        "hint": "Gaming → Jalousien/Rollladen fuer Blendschutz",
+        "severity": "info",
+    },
+    # Gaming → Energie (hoher Verbrauch)
+    {
+        "role": "gaming", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Gaming-PC/Konsole → hoher Stromverbrauch",
+        "hint": "Gaming → hoher Stromverbrauch (300-700W)",
+        "severity": "info",
+    },
+    # Receiver → Media Player (Audio-Routing)
+    {
+        "role": "receiver", "state": "on",
+        "affects": "media_player", "same_room": True,
+        "effect": "AV-Receiver an → Audio-Ausgabe ueber Receiver",
+        "hint": "Receiver an → Audio wird ueber Receiver ausgegeben",
+        "severity": "info",
+    },
+    # Receiver → TV (sollten zusammen an sein)
+    {
+        "role": "receiver", "state": "on",
+        "affects": "tv", "same_room": True,
+        "effect": "AV-Receiver an → TV sollte auch an sein",
+        "hint": "Receiver an → TV auch einschalten",
+        "severity": "info",
+    },
+    # Media Player → Klima (Raum wird genutzt)
+    {
+        "role": "media_player", "state": "playing",
+        "affects": "climate", "same_room": True,
+        "effect": "Medien spielen → Raum wird genutzt, Klima anpassen",
+        "hint": "Medien laufen → Komfort-Temperatur halten",
+        "severity": "info",
+    },
+    # Speaker → Nachbar-Laerm (Fenster)
+    {
+        "role": "speaker", "state": "playing",
+        "affects": "noise", "same_room": True,
+        "effect": "Lautsprecher spielt → Laermpegel im Raum steigt",
+        "hint": "Lautsprecher laut → Laermpegel steigt, Fenster ggf. schliessen",
+        "severity": "info",
+    },
+    # Speaker → Bett (zu laut zum Schlafen)
+    {
+        "role": "speaker", "state": "playing",
+        "affects": "bed_occupancy", "same_room": False,
+        "effect": "Lautsprecher spielt → koennte Schlafende stoeren",
+        "hint": "Lautsprecher spielt + jemand schlaeft → Lautstaerke reduzieren",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # LAERM — Reaktionen
+    # =================================================================
+
+    # Laerm hoch → Medien leiser
+    {
+        "role": "noise", "state": "on",
+        "affects": "media_player", "same_room": True,
+        "effect": "Hoher Laermpegel → Medien koennten die Quelle sein",
+        "hint": "Laermpegel hoch → Medien-Lautstaerke pruefen/reduzieren",
+        "severity": "info",
+    },
+    # Laerm hoch → Fenster schliessen
+    {
+        "role": "noise", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Hoher Laermpegel → Fenster schliessen gegen Laerm",
+        "hint": "Laerm von draussen → Fenster schliessen",
+        "severity": "info",
+    },
+    # Laerm hoch → Speaker leiser
+    {
+        "role": "noise", "state": "on",
+        "affects": "speaker", "same_room": True,
+        "effect": "Hoher Laermpegel → Lautsprecher koennten Quelle sein",
+        "hint": "Laermpegel hoch → Lautsprecher leiser stellen",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # VIBRATION — erweiterte Erkennung
+    # =================================================================
+
+    # Vibration → Kamera (was passiert?)
+    {
+        "role": "vibration", "state": "on",
+        "affects": "camera", "same_room": True,
+        "effect": "Vibration erkannt → Kamera pruefen was passiert",
+        "hint": "Vibration erkannt → Kamera-Aufzeichnung pruefen",
+        "severity": "info",
+    },
+    # Vibration → Benachrichtigung
+    {
+        "role": "vibration", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Vibration erkannt → ungewoehnliche Erschuetterung melden",
+        "hint": "Vibration erkannt → Benachrichtigung senden",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # NETZ/ENERGIE — erweiterte Optimierung
+    # =================================================================
+
+    # Hoher Netzbezug → EV-Charger drosseln/stoppen
+    {
+        "role": "grid_consumption", "state": "on",
+        "affects": "ev_charger", "same_room": False,
+        "effect": "Hoher Netzbezug + EV laedt → teurer Strom",
+        "hint": "Hoher Netzbezug → Wallbox drosseln, spaeter bei Solar laden",
+        "severity": "info",
+    },
+    # Hoher Netzbezug → Waschmaschine verschieben
+    {
+        "role": "grid_consumption", "state": "on",
+        "affects": "washing_machine", "same_room": False,
+        "effect": "Hoher Netzbezug → Waschmaschine spaeter starten",
+        "hint": "Netzbezug hoch → Waschmaschine auf Solar-Zeiten verschieben",
+        "severity": "info",
+    },
+    # Hoher Netzbezug → allgemein Verbraucher reduzieren
+    {
+        "role": "grid_consumption", "state": "on",
+        "affects": "heating", "same_room": False,
+        "effect": "Hoher Netzbezug → Heizung drosseln wenn moeglich",
+        "hint": "Netzbezug hoch → Heizung temporaer reduzieren",
+        "severity": "info",
+    },
+    {
+        "role": "grid_consumption", "state": "on",
+        "affects": "cooling", "same_room": False,
+        "effect": "Hoher Netzbezug → Kuehlung drosseln wenn moeglich",
+        "hint": "Netzbezug hoch → Kuehlung temporaer reduzieren",
+        "severity": "info",
+    },
+    # Netzeinspeisung → Geraete einschalten die Strom brauchen
+    {
+        "role": "grid_feed", "state": "on",
+        "affects": "boiler", "same_room": False,
+        "effect": "Einspeisung → Boiler mit Ueberschuss heizen",
+        "hint": "Einspeisung → Warmwasser-Boiler mit Ueberschuss aufheizen",
+        "severity": "info",
+    },
+    {
+        "role": "grid_feed", "state": "on",
+        "affects": "pool", "same_room": False,
+        "effect": "Einspeisung → Pool mit Ueberschuss heizen",
+        "hint": "Einspeisung → Pool-Heizung mit Ueberschuss betreiben",
+        "severity": "info",
+    },
+    {
+        "role": "grid_feed", "state": "on",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "Einspeisung → Waermepumpe mit Ueberschuss betreiben",
+        "hint": "Einspeisung → Waermepumpe jetzt laufen lassen (thermisch speichern)",
+        "severity": "info",
+    },
+    {
+        "role": "grid_feed", "state": "on",
+        "affects": "dishwasher", "same_room": False,
+        "effect": "Einspeisung → Spuelmaschine mit Ueberschuss starten",
+        "hint": "Einspeisung → Spuelmaschine jetzt starten (gratis Strom)",
+        "severity": "info",
+    },
+    {
+        "role": "grid_feed", "state": "on",
+        "affects": "dryer", "same_room": False,
+        "effect": "Einspeisung → Trockner mit Ueberschuss starten",
+        "hint": "Einspeisung → Trockner jetzt starten (gratis Strom)",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # LICHT (als Trigger) — erweiterte Szenarien
+    # =================================================================
+
+    # Licht aus → Kamera braucht Nachtsicht
+    {
+        "role": "light", "state": "off",
+        "affects": "camera", "same_room": True,
+        "effect": "Licht aus → Kamera wechselt auf Nachtsicht/IR",
+        "hint": "Licht aus → Kamera nutzt Nachtsicht-Modus",
+        "severity": "info",
+    },
+    # Licht an → Energie
+    {
+        "role": "light", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Licht eingeschaltet → Stromverbrauch",
+        "hint": "Licht an → Stromverbrauch beachten",
+        "severity": "info",
+    },
+    # Licht an → Blinds (Kunstlicht bei offenen Jalousien nachts = Einsehbarkeit)
+    {
+        "role": "light", "state": "on",
+        "affects": "blinds", "same_room": True,
+        "effect": "Licht an nachts + Jalousien offen → Raum einsehbar",
+        "hint": "Licht an abends → Jalousien schliessen fuer Privatsphaere",
+        "severity": "info",
+    },
+    {
+        "role": "light", "state": "on",
+        "affects": "shutter", "same_room": True,
+        "effect": "Licht an nachts + Rollladen offen → Raum einsehbar",
+        "hint": "Licht an abends → Rollladen runter fuer Privatsphaere",
+        "severity": "info",
+    },
+    {
+        "role": "light", "state": "on",
+        "affects": "curtain", "same_room": True,
+        "effect": "Licht an nachts + Vorhaenge offen → Raum einsehbar",
+        "hint": "Licht an abends → Vorhaenge zuziehen fuer Privatsphaere",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # WETTER → GERAETE — weitere Szenarien
+    # =================================================================
+
+    # Regen → Pool abdecken
+    {
+        "role": "rain", "state": "on",
+        "affects": "pool", "same_room": False,
+        "effect": "Regen → Pool abdecken (Verschmutzung, Chemie verduennt)",
+        "hint": "Regen → Pool-Abdeckung schliessen, Wasser-Chemie schuetzen",
+        "severity": "info",
+    },
+    # Regen → Dachfenster schliessen (Shutter als Dachfenster)
+    {
+        "role": "rain", "state": "on",
+        "affects": "blinds", "same_room": False,
+        "effect": "Regen → Jalousien/Markisen einfahren",
+        "hint": "Regen → Aussen-Jalousien einfahren, Beschaedigungsgefahr",
+        "severity": "high",
+    },
+
+    # Wind → Shutter (Rollladen bei Sturm einfahren statt rausfahren)
+    {
+        "role": "wind_speed", "state": "on",
+        "affects": "shutter", "same_room": False,
+        "effect": "Starker Wind → Rollladen einfahren (Beschaedigungsgefahr)",
+        "hint": "Sturm → Rollladen einfahren, nicht draussen lassen",
+        "severity": "high",
+    },
+    # Wind → Blinds
+    {
+        "role": "wind_speed", "state": "on",
+        "affects": "blinds", "same_room": False,
+        "effect": "Starker Wind → Jalousien einfahren (Beschaedigung)",
+        "hint": "Sturm → Jalousien einfahren, Lamellenbruch verhindern",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # PRESENCE ON — Ankunft-Szenarien
+    # =================================================================
+
+    # Ankunft → Schloss entriegeln
+    {
+        "role": "presence", "state": "on",
+        "affects": "lock", "same_room": False,
+        "effect": "Person kommt → Tuer entriegeln",
+        "hint": "Ankunft → Tuer entriegeln fuer Bewohner",
+        "severity": "info",
+    },
+    # Ankunft → Alarm deaktivieren
+    {
+        "role": "presence", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "effect": "Person kommt → Alarm deaktivieren",
+        "hint": "Ankunft erkannt → Alarm deaktivieren",
+        "severity": "info",
+    },
+    # Ankunft → Medien
+    {
+        "role": "presence", "state": "on",
+        "affects": "media_player", "same_room": False,
+        "effect": "Person kommt → Willkommens-Musik oder Nachrichten",
+        "hint": "Ankunft → Lieblingsmusik/Nachrichten abspielen",
+        "severity": "info",
+    },
+    # Ankunft → Blinds oeffnen
+    {
+        "role": "presence", "state": "on",
+        "affects": "blinds", "same_room": False,
+        "effect": "Person kommt → Beschattung oeffnen bei Tageslicht",
+        "hint": "Ankunft tagsueber → Rollladen/Jalousien oeffnen",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # ABWESENHEIT — noch mehr Geraete pruefen
+    # =================================================================
+
+    # Niemand da + Heizluefter an Steckdose
+    {
+        "role": "presence", "state": "off",
+        "affects": "heating", "same_room": False,
+        "effect": "Niemand zuhause → Heizung auf Eco/Abwesenheit",
+        "hint": "Alle weg → Heizung auf Absenktemperatur",
+        "severity": "info",
+    },
+    # Niemand da + Klimaanlage
+    {
+        "role": "presence", "state": "off",
+        "affects": "cooling", "same_room": False,
+        "effect": "Niemand zuhause → Kuehlung auf Eco/Abwesenheit",
+        "hint": "Alle weg → Kuehlung auf Absenktemperatur oder aus",
+        "severity": "info",
+    },
+    # Niemand da + Ventilation
+    {
+        "role": "presence", "state": "off",
+        "affects": "ventilation", "same_room": False,
+        "effect": "Niemand zuhause → Lueftung auf Minimum",
+        "hint": "Alle weg → Lueftung auf Abwesenheits-Modus",
+        "severity": "info",
+    },
+    # Niemand da + Blinds/Shutter (Einbruchschutz)
+    {
+        "role": "presence", "state": "off",
+        "affects": "blinds", "same_room": False,
+        "effect": "Niemand zuhause → Beschattung fuer Einbruchschutz",
+        "hint": "Alle weg → Rollladen runter als Einbruchschutz",
+        "severity": "info",
+    },
+    {
+        "role": "presence", "state": "off",
+        "affects": "shutter", "same_room": False,
+        "effect": "Niemand zuhause → Rollladen als Einbruchschutz",
+        "hint": "Alle weg → Rollladen runter als Einbruchschutz",
+        "severity": "info",
+    },
+    # Niemand da + Wasser-Hauptventil
+    {
+        "role": "presence", "state": "off",
+        "affects": "valve", "same_room": False,
+        "effect": "Laenger weg → Wasser-Hauptventil schliessen",
+        "hint": "Laenger weg (Urlaub) → Wasser-Hauptventil schliessen, Wasserschaden verhindern",
+        "severity": "info",
+    },
+    # Niemand da + Gartenbeleuchtung
+    {
+        "role": "presence", "state": "off",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Niemand zuhause → Gartenbeleuchtung aus oder Simulation",
+        "hint": "Alle weg → Gartenbeleuchtung aus (oder Anwesenheits-Simulation)",
+        "severity": "info",
+    },
+    # Niemand da + Kamera (Ueberwachung aktivieren)
+    {
+        "role": "presence", "state": "off",
+        "affects": "camera", "same_room": False,
+        "effect": "Niemand zuhause → Kameras auf Aufzeichnung",
+        "hint": "Alle weg → Kameras auf Daueraufzeichnung/Bewegungserkennung",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # BETT-SZENARIEN — erweitert
+    # =================================================================
+
+    # Im Bett → Shutter runter
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "shutter", "same_room": True,
+        "effect": "Im Bett → Rollladen schliessen fuer Dunkelheit",
+        "hint": "Schlafenszeit → Rollladen runter, Raum abdunkeln",
+        "severity": "info",
+    },
+    # Im Bett → Thermostat Nacht-Temperatur
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "thermostat", "same_room": True,
+        "effect": "Im Bett → Thermostat auf Nacht-Temperatur",
+        "hint": "Schlafenszeit → Heizung auf Nacht-Temperatur (kuehler zum Schlafen)",
+        "severity": "info",
+    },
+    # Im Bett → TV/PC aus
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "tv", "same_room": False,
+        "effect": "Im Bett → TV sollte aus sein",
+        "hint": "Schlafenszeit → TV ausschalten",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "pc", "same_room": False,
+        "effect": "Im Bett → PC sollte herunterfahren",
+        "hint": "Schlafenszeit → PC herunterfahren/Standby",
+        "severity": "info",
+    },
+    # Im Bett → Ventilation leiser (kein Laerm)
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "ventilation", "same_room": True,
+        "effect": "Im Bett → Lueftung auf leise/Nacht-Modus",
+        "hint": "Schlafenszeit → Lueftung auf Silent/Nacht-Modus",
+        "severity": "info",
+    },
+    # Aufstehen (bed_occupancy off) → Morgenroutine
+    {
+        "role": "bed_occupancy", "state": "off",
+        "affects": "light", "same_room": True,
+        "effect": "Aufgestanden → Licht sanft einschalten",
+        "hint": "Aufgestanden → Licht langsam an (Sonnenaufgangs-Simulation)",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "off",
+        "affects": "blinds", "same_room": True,
+        "effect": "Aufgestanden → Jalousien oeffnen",
+        "hint": "Aufgestanden → Jalousien/Rollladen oeffnen, Tageslicht rein",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "off",
+        "affects": "shutter", "same_room": True,
+        "effect": "Aufgestanden → Rollladen hoch",
+        "hint": "Aufgestanden → Rollladen hoch, Tageslicht rein",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "off",
+        "affects": "climate", "same_room": True,
+        "effect": "Aufgestanden → Klima auf Tages-Komfort",
+        "hint": "Aufgestanden → Heizung/Kuehlung auf Tages-Temperatur",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "off",
+        "affects": "coffee_machine", "same_room": False,
+        "effect": "Aufgestanden → Kaffeemaschine aufheizen",
+        "hint": "Aufgestanden → Kaffeemaschine einschalten",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # STUHL-BELEGUNG — Arbeitsplatz-Szenarien
+    # =================================================================
+
+    # Am Schreibtisch → Vakuum stoppen (Meeting/Arbeit)
+    {
+        "role": "chair_occupancy", "state": "on",
+        "affects": "vacuum", "same_room": True,
+        "effect": "Am Schreibtisch → Staubsauger stoert bei Arbeit",
+        "hint": "Am Schreibtisch → Staubsauger pausieren (Arbeit/Meeting)",
+        "severity": "info",
+    },
+    # Am Schreibtisch → Blinds (Blendschutz Monitor)
+    {
+        "role": "chair_occupancy", "state": "on",
+        "affects": "blinds", "same_room": True,
+        "effect": "Am Schreibtisch → Blendschutz fuer Monitor",
+        "hint": "Am Schreibtisch → Jalousien fuer Blendschutz am Monitor",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # AUTO / FAHRZEUG — erweitert
+    # =================================================================
+
+    # Auto zuhause → EV-Charger (laden wenn Solar)
+    {
+        "role": "car", "state": "home",
+        "affects": "ev_charger", "same_room": False,
+        "effect": "Auto zuhause → kann geladen werden",
+        "hint": "Auto geparkt → Wallbox starten wenn Solar verfuegbar",
+        "severity": "info",
+    },
+    # Auto weg → Alarm scharf schalten (wenn letztes Familienmitglied)
+    {
+        "role": "car", "state": "not_home",
+        "affects": "alarm", "same_room": False,
+        "effect": "Auto weg → moeglicherweise niemand mehr zuhause",
+        "hint": "Auto weg → Alarm pruefen/scharfschalten wenn alle weg",
+        "severity": "info",
+    },
+    # Auto weg → Garagentor schliessen
+    {
+        "role": "car", "state": "not_home",
+        "affects": "light", "same_room": False,
+        "effect": "Auto weg → Garagenbeleuchtung aus",
+        "hint": "Auto weg → Garage-Licht ausschalten",
+        "severity": "info",
+    },
+    # Auto-Batterie → Solar (laden mit Ueberschuss)
+    {
+        "role": "car_battery", "state": "on",
+        "affects": "solar", "same_room": False,
+        "effect": "Auto-Batterie-Stand → Solar-Ladestrategie anpassen",
+        "hint": "Auto-Batterie niedrig → bei naechstem Solar-Ueberschuss laden",
+        "severity": "info",
+    },
+    # Auto-Batterie → Notify (Batterie niedrig)
+    {
+        "role": "car_battery", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Auto-Batterie niedrig → Warnung senden",
+        "hint": "Auto-Batterie niedrig → an Laden erinnern",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # KAMERA — als Trigger
+    # =================================================================
+
+    # Kamera erkennt Bewegung → Alarm/Notify
+    {
+        "role": "camera", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "effect": "Kamera erkennt Aktivitaet → Alarm pruefen",
+        "hint": "Kamera-Bewegung → Alarm-Status pruefen",
+        "severity": "info",
+    },
+    {
+        "role": "camera", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Kamera erkennt Aktivitaet → Benachrichtigung",
+        "hint": "Kamera → Bewegungs-Benachrichtigung mit Bild senden",
+        "severity": "info",
+    },
+    # Kamera → Gartenbeleuchtung (nachts Licht an bei Bewegung)
+    {
+        "role": "camera", "state": "on",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Kamera erkennt Bewegung draussen → Licht an fuer besseres Bild",
+        "hint": "Kamera-Bewegung → Gartenbeleuchtung fuer bessere Aufnahmen",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # BOILER / WARMWASSER
+    # =================================================================
+
+    # Boiler → Wassertemperatur
+    {
+        "role": "boiler", "state": "on",
+        "affects": "water_temp", "same_room": False,
+        "effect": "Boiler heizt → Wassertemperatur steigt",
+        "hint": "Boiler heizt → Warmwasser wird vorbereitet",
+        "severity": "info",
+    },
+    # Wassertemperatur → Boiler (zu niedrig → nachheizen)
+    {
+        "role": "water_temp", "state": "on",
+        "affects": "boiler", "same_room": False,
+        "effect": "Wassertemperatur niedrig → Boiler muss nachheizen",
+        "hint": "Warmwasser zu kalt → Boiler nachheizen",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # PUMPE — erweiterte Szenarien
+    # =================================================================
+
+    {
+        "role": "pump", "state": "on",
+        "affects": "water_consumption", "same_room": False,
+        "effect": "Pumpe laeuft → Wasserverbrauch/-zirkulation",
+        "hint": "Pumpe aktiv → Wasserverbrauch/-druck beobachten",
+        "severity": "info",
+    },
+    {
+        "role": "pump", "state": "on",
+        "affects": "noise", "same_room": True,
+        "effect": "Pumpe laeuft → Geraeuschentwicklung",
+        "hint": "Pumpe laeuft → Geraeusch im Raum, nachts ggf. stoerend",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # TIMER / AUTOMATION — Interaktionen
+    # =================================================================
+
+    # Timer abgelaufen → Benachrichtigung (z.B. Waschmaschine, Kochen)
+    {
+        "role": "timer", "state": "off",
+        "affects": "notify", "same_room": False,
+        "effect": "Timer abgelaufen → Erinnerung",
+        "hint": "Timer fertig → Erinnerung senden (Kochen, Waschmaschine, etc.)",
+        "severity": "info",
+    },
+    # Timer abgelaufen → Media Player (akustisches Signal)
+    {
+        "role": "timer", "state": "off",
+        "affects": "media_player", "same_room": False,
+        "effect": "Timer abgelaufen → akustisches Signal",
+        "hint": "Timer fertig → Ton/Ansage abspielen",
+        "severity": "info",
+    },
+    # Timer abgelaufen → Licht (visuelles Signal)
+    {
+        "role": "timer", "state": "off",
+        "affects": "light", "same_room": False,
+        "effect": "Timer abgelaufen → visuelles Signal",
+        "hint": "Timer fertig → Licht blinken/Farbe aendern als Signal",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # GERAETE-GESUNDHEIT / UPDATE
+    # =================================================================
+
+    # Update verfuegbar → Automation koennte betroffen sein
+    {
+        "role": "update", "state": "on",
+        "affects": "automation", "same_room": False,
+        "effect": "Update verfuegbar → nach Update Automatisierungen pruefen",
+        "hint": "Update pending → nach Installation Automatisierungen testen",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # STECKDOSEN / RELAY — erweitert
+    # =================================================================
+
+    # Steckdose an + Abwesenheit → vergessener Verbraucher
+    {
+        "role": "outlet", "state": "on",
+        "affects": "presence", "same_room": False,
+        "effect": "Steckdose aktiv → Verbraucher laeuft",
+        "hint": "Steckdose mit Verbrauch → Geraet laeuft, bei Abwesenheit pruefen",
+        "severity": "info",
+    },
+    # Relay schaltet → Benachrichtigung
+    {
+        "role": "relay", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Relay geschaltet → Geraet wurde aktiviert",
+        "hint": "Relay geschaltet → verbundenes Geraet aktiviert",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # DIMMER / FARBLICHT — Szenarien
+    # =================================================================
+
+    # Dimmer gedimmt → Stimmungslicht / Filmabend
+    {
+        "role": "dimmer", "state": "on",
+        "affects": "media_player", "same_room": True,
+        "effect": "Licht gedimmt → Filmabend/Stimmung",
+        "hint": "Licht gedimmt → Filmabend-Atmosphaere erkannt",
+        "severity": "info",
+    },
+    # Dimmer gedimmt → Blinds (Abdunkelung fuer Stimmung)
+    {
+        "role": "dimmer", "state": "on",
+        "affects": "blinds", "same_room": True,
+        "effect": "Licht gedimmt → Beschattung fuer Stimmung",
+        "hint": "Licht gedimmt → Jalousien ggf. schliessen fuer Atmosphaere",
+        "severity": "info",
+    },
+    # Farblicht → Stimmungs-Kontext
+    {
+        "role": "color_light", "state": "on",
+        "affects": "media_player", "same_room": True,
+        "effect": "Farblicht aktiv → Stimmungsbeleuchtung",
+        "hint": "Farblicht → Raum-Atmosphaere, Medien anpassen",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # RAUCHMELDER — erweiterte Reaktionen
+    # =================================================================
+
+    # Rauch → Heizung AUS (koennte Brand anheizen)
+    {
+        "role": "smoke", "state": "on",
+        "affects": "heating", "same_room": False,
+        "effect": "Rauch → Heizung ausschalten, Brand nicht foerdern",
+        "hint": "Rauch → Heizung AUS, Brand nicht verstaerken",
+        "severity": "critical",
+    },
+    # Rauch → Gas-Ventil schliessen
+    {
+        "role": "smoke", "state": "on",
+        "affects": "valve", "same_room": False,
+        "effect": "Rauch → Gas-Ventil sofort schliessen",
+        "hint": "Rauch → Gas abstellen, Explosionsgefahr minimieren",
+        "severity": "critical",
+    },
+    # Rauch → Tueren entriegeln (Fluchtweg!)
+    {
+        "role": "smoke", "state": "on",
+        "affects": "lock", "same_room": False,
+        "effect": "Rauch/Brand → alle Tueren entriegeln fuer Flucht",
+        "hint": "BRAND → Tueren entriegeln, Fluchtweg frei machen!",
+        "severity": "critical",
+    },
+    # Rauch → Garage oeffnen (Fluchtweg)
+    {
+        "role": "smoke", "state": "on",
+        "affects": "garage_door", "same_room": False,
+        "effect": "Rauch/Brand → Garagentor oeffnen fuer Flucht",
+        "hint": "BRAND → Garagentor oeffnen als Fluchtweg",
+        "severity": "critical",
+    },
+    # Rauch → Sirene
+    {
+        "role": "smoke", "state": "on",
+        "affects": "siren", "same_room": False,
+        "effect": "Rauch → Sirene aktivieren fuer Warnung",
+        "hint": "RAUCH → Sirene aktivieren, alle warnen",
+        "severity": "critical",
+    },
+    # Rauch → Notify (sofort alle informieren)
+    {
+        "role": "smoke", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Rauch → sofort alle Bewohner benachrichtigen",
+        "hint": "RAUCH → sofort Push/Anruf an alle Bewohner",
+        "severity": "critical",
+    },
+
+    # =================================================================
+    # CO-MELDER — erweiterte Reaktionen
+    # =================================================================
+
+    # CO → Tueren/Fenster oeffnen (lueften!)
+    {
+        "role": "co", "state": "on",
+        "affects": "lock", "same_room": False,
+        "effect": "CO → Tueren entriegeln, Flucht und Lueftung",
+        "hint": "CO → Tueren entriegeln, raus und lueften!",
+        "severity": "critical",
+    },
+    # CO → Heizung AUS (koennte Quelle sein - Gastherme)
+    {
+        "role": "co", "state": "on",
+        "affects": "heating", "same_room": False,
+        "effect": "CO → Heizung aus, koennte CO-Quelle sein (Gastherme)",
+        "hint": "CO → Heizung AUS, Gastherme koennte Quelle sein",
+        "severity": "critical",
+    },
+    # CO → Boiler AUS (koennte Quelle sein)
+    {
+        "role": "co", "state": "on",
+        "affects": "boiler", "same_room": False,
+        "effect": "CO → Boiler aus, koennte CO-Quelle sein",
+        "hint": "CO → Boiler AUS, Gas-Boiler koennte Quelle sein",
+        "severity": "critical",
+    },
+    # CO → Notify
+    {
+        "role": "co", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "CO → sofort alle warnen",
+        "hint": "CO → SOFORT alle Bewohner warnen, LEBENSGEFAHR",
+        "severity": "critical",
+    },
+    # CO → Sirene
+    {
+        "role": "co", "state": "on",
+        "affects": "siren", "same_room": False,
+        "effect": "CO → Sirene aktivieren",
+        "hint": "CO → Sirene aktivieren, alle warnen",
+        "severity": "critical",
+    },
+    # CO → Licht (Fluchtweg beleuchten)
+    {
+        "role": "co", "state": "on",
+        "affects": "light", "same_room": False,
+        "effect": "CO → Fluchtweg-Beleuchtung einschalten",
+        "hint": "CO → alle Lichter an fuer Fluchtweg",
+        "severity": "critical",
+    },
+
+    # =================================================================
+    # GAS-MELDER — erweiterte Reaktionen
+    # =================================================================
+
+    # Gas → Fenster oeffnen (aber NICHT elektrisch! Manuell oeffnen)
+    {
+        "role": "gas", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Gas → sofort alle warnen, Haus verlassen",
+        "hint": "GAS → SOFORT alle warnen, Haus verlassen, NICHT schalten!",
+        "severity": "critical",
+    },
+    # Gas → Heizung AUS (Quelle koennte Gastherme sein)
+    {
+        "role": "gas", "state": "on",
+        "affects": "heating", "same_room": False,
+        "effect": "Gas → Heizung aus, koennte Gas-Leck-Quelle sein",
+        "hint": "GAS → Heizung AUS falls sicher moeglich",
+        "severity": "critical",
+    },
+    # Gas → Boiler AUS
+    {
+        "role": "gas", "state": "on",
+        "affects": "boiler", "same_room": False,
+        "effect": "Gas → Boiler aus, koennte Gas-Leck-Quelle sein",
+        "hint": "GAS → Boiler AUS falls sicher moeglich",
+        "severity": "critical",
+    },
+    # Gas → Licht NICHT schalten (Funke!) — bereits als relay, nochmal explizit
+    {
+        "role": "gas", "state": "on",
+        "affects": "light", "same_room": False,
+        "effect": "Gas → Licht NICHT ein/ausschalten, Funkengefahr",
+        "hint": "GAS → Licht NICHT schalten! Funke = Explosionsgefahr!",
+        "severity": "critical",
+    },
+    # Gas → Sirene
+    {
+        "role": "gas", "state": "on",
+        "affects": "siren", "same_room": False,
+        "effect": "Gas → Sirene aktivieren (wenn batteriebetrieben/sicher)",
+        "hint": "GAS → Sirene aktivieren wenn sicher (batteriebetrieben)",
+        "severity": "critical",
+    },
+
+    # =================================================================
+    # WASSERLECK — erweiterte Reaktionen
+    # =================================================================
+
+    # Wasserleck → Pumpe stoppen
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "pump", "same_room": False,
+        "effect": "Wasserleck → Pumpe stoppen, kein Wasser mehr foerdern",
+        "hint": "Wasserleck → Pumpe sofort stoppen",
+        "severity": "high",
+    },
+    # Wasserleck → Boiler pruefen
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "boiler", "same_room": True,
+        "effect": "Wasserleck in Naehe Boiler → koennte Quelle sein",
+        "hint": "Wasserleck → Boiler als Quelle pruefen",
+        "severity": "high",
+    },
+    # Wasserleck → Benachrichtigung (nochmal explizit direkt)
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Wasserleck → sofort benachrichtigen",
+        "hint": "WASSERLECK → sofort Benachrichtigung an alle!",
+        "severity": "high",
+    },
+    # Wasserleck → Heizung pruefen (Heizkoerper undicht?)
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "heating", "same_room": True,
+        "effect": "Wasserleck → Heizkoerper/Fussbodenheizung als Quelle?",
+        "hint": "Wasserleck → Heizung als Leck-Quelle pruefen",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # SABOTAGE / TAMPER — erweitert
+    # =================================================================
+
+    {
+        "role": "tamper", "state": "on",
+        "affects": "camera", "same_room": True,
+        "effect": "Sabotage erkannt → Kamera-Aufzeichnung starten",
+        "hint": "Sabotage erkannt → Kamera-Beweis sichern",
+        "severity": "high",
+    },
+    {
+        "role": "tamper", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Sabotage erkannt → sofort benachrichtigen",
+        "hint": "Sabotage → sofort Benachrichtigung senden",
+        "severity": "high",
+    },
+    {
+        "role": "tamper", "state": "on",
+        "affects": "siren", "same_room": False,
+        "effect": "Sabotage erkannt → Sirene aktivieren",
+        "hint": "Sabotage erkannt → Sirene als Abschreckung",
+        "severity": "high",
+    },
+    {
+        "role": "tamper", "state": "on",
+        "affects": "light", "same_room": False,
+        "effect": "Sabotage erkannt → alle Lichter an",
+        "hint": "Sabotage → Beleuchtung an fuer Abschreckung",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # PROBLEM-SENSOR → erweiterte Auswirkungen
+    # =================================================================
+
+    {
+        "role": "problem", "state": "on",
+        "affects": "camera", "same_room": True,
+        "effect": "Problem bei Geraet → Kamera-Aufnahme fuer Diagnose",
+        "hint": "Geraete-Problem → Kamera-Aufnahme fuer Fehlersuche",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # GENERIC_SENSOR / GENERIC_SWITCH — Catch-All
+    # =================================================================
+
+    # Generic Sensor hat Wert → Benachrichtigung wenn ausserhalb Norm
+    {
+        "role": "generic_sensor", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Sensor-Wert aendert sich → pruefen ob im Normalbereich",
+        "hint": "Sensor-Aenderung → Wert pruefen, ggf. benachrichtigen",
+        "severity": "info",
+    },
+    {
+        "role": "generic_sensor", "state": "on",
+        "affects": "automation", "same_room": False,
+        "effect": "Sensor-Wert aendert sich → Automatisierung reagieren lassen",
+        "hint": "Sensor-Aenderung → abhaengige Automatisierungen pruefen",
+        "severity": "info",
+    },
+
+    # Generic Switch geschaltet → Energieverbrauch + Benachrichtigung
+    {
+        "role": "generic_switch", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Schalter aktiviert → Verbraucher laeuft",
+        "hint": "Schalter an → angeschlossener Verbraucher aktiv",
+        "severity": "info",
+    },
+    {
+        "role": "generic_switch", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Schalter aktiviert → Status-Aenderung",
+        "hint": "Schalter geschaltet → Status-Aenderung melden",
+        "severity": "info",
+    },
+    {
+        "role": "generic_switch", "state": "off",
+        "affects": "notify", "same_room": False,
+        "effect": "Schalter deaktiviert → Status-Aenderung",
+        "hint": "Schalter ausgeschaltet → Status-Aenderung melden",
+        "severity": "info",
+    },
 ]
 
 
