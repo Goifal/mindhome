@@ -58,6 +58,7 @@ DEVICE_DEPENDENCIES = [
     {
         "role": "window_contact", "state": "on",
         "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
         "effect": "Fenster offen bei Abwesenheit → Einbruchsrisiko",
         "hint": "Fenster offen → Sicherheitsrisiko bei Abwesenheit",
     },
@@ -82,12 +83,14 @@ DEVICE_DEPENDENCIES = [
     {
         "role": "door_contact", "state": "on",
         "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
         "effect": "Tuer offen → Sicherheitsrisiko bei Abwesenheit",
         "hint": "Haustuer steht offen → Sicherheit pruefen",
     },
     {
         "role": "garage_door", "state": "open",
         "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
         "effect": "Garagentor offen → Sicherheitsrisiko",
         "hint": "Garage offen → Sicherheit pruefen",
     },
@@ -100,6 +103,7 @@ DEVICE_DEPENDENCIES = [
     {
         "role": "gate", "state": "open",
         "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
         "effect": "Tor offen → ungesicherter Zugang zum Grundstueck",
         "hint": "Tor offen → Grundstueck nicht gesichert",
     },
@@ -149,21 +153,9 @@ DEVICE_DEPENDENCIES = [
     # =====================================================================
     {
         "role": "thermostat", "state": "heat",
-        "affects": "energy", "same_room": False,
-        "effect": "Heizung aktiv → Energieverbrauch steigt",
-        "hint": "Heizung aktiv → Energieverbrauch",
-    },
-    {
-        "role": "thermostat", "state": "heat",
         "affects": "window_contact", "same_room": True,
         "effect": "Thermostat heizt + Fenster offen → Energieverschwendung",
         "hint": "Heizung an + Fenster offen → Energie wird verschwendet",
-    },
-    {
-        "role": "thermostat", "state": "cool",
-        "affects": "energy", "same_room": False,
-        "effect": "Kuehlung aktiv → Energieverbrauch steigt",
-        "hint": "Kuehlung aktiv → Stromverbrauch",
     },
     {
         "role": "thermostat", "state": "off",
@@ -172,34 +164,10 @@ DEVICE_DEPENDENCIES = [
         "hint": "Thermostat aus + kalt → Frostschutz beachten",
     },
     {
-        "role": "heating", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Heizung aktiv → Energieverbrauch",
-        "hint": "Heizung laeuft → Energieverbrauch",
-    },
-    {
-        "role": "cooling", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Kuehlung aktiv → Stromverbrauch",
-        "hint": "Klimaanlage laeuft → hoher Stromverbrauch",
-    },
-    {
-        "role": "heat_pump", "state": "heat",
-        "affects": "energy", "same_room": False,
-        "effect": "Waermepumpe heizt → Stromverbrauch je nach COP",
-        "hint": "Waermepumpe aktiv → Stromverbrauch beachten",
-    },
-    {
         "role": "heat_pump", "state": "heat",
         "affects": "notify", "same_room": False,
         "effect": "Waermepumpe nachts → Laermbelaestigung Nachbarn",
         "hint": "Waermepumpe nachts → Nachbarn koennten sich beschweren",
-    },
-    {
-        "role": "floor_heating", "state": "heat",
-        "affects": "energy", "same_room": False,
-        "effect": "Fussbodenheizung aktiv → traege Regelung, vorausplanen",
-        "hint": "Fussbodenheizung → reagiert langsam, braucht Stunden",
     },
     {
         "role": "floor_heating", "state": "heat",
@@ -212,22 +180,6 @@ DEVICE_DEPENDENCIES = [
         "affects": "window_contact", "same_room": True,
         "effect": "Heizkoerper heizt + Fenster offen → Energieverschwendung",
         "hint": "Heizkoerper an + Fenster offen → Energie geht verloren",
-    },
-    {
-        "role": "boiler", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Warmwasser-Boiler heizt → hoher Energieverbrauch",
-        "hint": "Boiler heizt → Stromverbrauch",
-    },
-
-    # =====================================================================
-    # 4. LICHT → ENERGIE
-    # =====================================================================
-    {
-        "role": "light", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Stromverbrauch durch Beleuchtung",
-        "hint": "Licht an → Stromverbrauch",
     },
 
     # =====================================================================
@@ -373,12 +325,14 @@ DEVICE_DEPENDENCIES = [
     {
         "role": "vibration", "state": "on",
         "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
         "effect": "Vibration erkannt → Einbruchsversuch moeglich",
         "hint": "Vibration an Tuer/Fenster → Einbruchsversuch?",
     },
     {
         "role": "lock", "state": "unlocked",
         "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
         "effect": "Schloss offen → Sicherheitsrisiko bei Abwesenheit",
         "hint": "Tuer nicht abgeschlossen → Sicherheit pruefen",
     },
@@ -509,18 +463,6 @@ DEVICE_DEPENDENCIES = [
         "hint": "Herd an → Brandgefahr wenn unbeaufsichtigt",
     },
     {
-        "role": "oven", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Herd/Backofen an → hoher Stromverbrauch",
-        "hint": "Herd laeuft → hoher Energieverbrauch",
-    },
-    {
-        "role": "coffee_machine", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Kaffeemaschine an → Kaffee bald fertig",
-        "hint": "Kaffeemaschine laeuft → Kaffee bald fertig",
-    },
-    {
         "role": "fridge", "state": "on",
         "affects": "notify", "same_room": False,
         "effect": "Kuehlschrank offen → Lebensmittel verderben",
@@ -608,33 +550,9 @@ DEVICE_DEPENDENCIES = [
     },
     {
         "role": "fan", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Ventilator/Luefter an → Stromverbrauch",
-        "hint": "Ventilator laeuft → Stromverbrauch",
-    },
-    {
-        "role": "fan", "state": "on",
         "affects": "climate", "same_room": True,
         "effect": "Ventilator an → gefuehlte Temperatur sinkt",
         "hint": "Ventilator → kuehlt nicht, aber gefuehlt kuehler",
-    },
-    {
-        "role": "dehumidifier", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Entfeuchter an → Stromverbrauch",
-        "hint": "Entfeuchter laeuft → Stromverbrauch beachten",
-    },
-    {
-        "role": "humidifier", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Befeuchter an → Stromverbrauch",
-        "hint": "Luftbefeuchter laeuft → Stromverbrauch",
-    },
-    {
-        "role": "air_purifier", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Luftreiniger an → Stromverbrauch",
-        "hint": "Luftreiniger laeuft → Stromverbrauch beachten",
     },
 
     # =====================================================================
