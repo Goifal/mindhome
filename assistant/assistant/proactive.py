@@ -1626,7 +1626,7 @@ class ProactiveManager:
             text = await self.generate_evening_briefing()
             if text:
                 await emit_proactive(text, "evening_briefing", LOW)
-                logger.info("Evening Briefing geliefert: %s", text[:80])
+                logger.info("Evening Briefing geliefert: %s", text[:500])
         except Exception as e:
             logger.debug("Evening Briefing Fehler: %s", e)
 

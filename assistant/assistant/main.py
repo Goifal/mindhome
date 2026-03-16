@@ -2014,7 +2014,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                             logger.info(
                                                 "Stream-Reasoning erkannt ('%s...'), "
                                                 "Streaming unterdrueckt",
-                                                buf_text[:60],
+                                                buf_text[:500],
                                             )
                                             return
                                     return  # Noch im Buffer, warten

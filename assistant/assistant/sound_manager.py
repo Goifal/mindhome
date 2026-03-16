@@ -147,7 +147,7 @@ class SoundManager:
             )
             if success:
                 logger.info(
-                    "Alexa-TTS via notify.%s: '%s'", service_name, text[:50],
+                    "Alexa-TTS via notify.%s: '%s'", service_name, text[:500],
                 )
                 return True
         except Exception as e:

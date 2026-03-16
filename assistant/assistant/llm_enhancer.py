@@ -478,7 +478,7 @@ class ProactiveSuggester:
             # Aktion aus dem relevantesten Pattern
             top_pattern = sorted_patterns[0] if sorted_patterns else {}
 
-            logger.info("Proaktiver Vorschlag generiert: '%s'", content[:80])
+            logger.info("Proaktiver Vorschlag generiert: '%s'", content[:500])
             return {
                 "suggestion": content,
                 "action": top_pattern.get("action", ""),

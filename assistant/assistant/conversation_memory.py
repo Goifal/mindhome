@@ -252,7 +252,7 @@ class ConversationMemory:
                 await self._cleanup_old_questions()
 
             await self.redis.hset(_KEY_OPEN_QUESTIONS, q_id, json.dumps(entry))
-            logger.info("Offene Frage gespeichert: %s", question[:50])
+            logger.info("Offene Frage gespeichert: %s", question[:500])
             q_display = question[:60] + "..." if len(question) > 60 else question
             return {"success": True, "message": f"Frage gemerkt: '{q_display}'"}
         except Exception as e:
