@@ -8721,6 +8721,247 @@ DEVICE_DEPENDENCIES = [
         "hint": "Heizdecke ausgeschaltet → Energieverbrauch normalisiert",
         "severity": "info",
     },
+
+    # =================================================================
+    # 49. BESCHATTUNG → SOLAR-PV-ERTRAG (Verschattung von Panels)
+    # =================================================================
+
+    # Blinds/Jalousie geschlossen → PV-Ertrag kann sinken (Dachfenster-Rollladen)
+    {
+        "role": "blinds", "state": "closed",
+        "affects": "solar", "same_room": False,
+        "effect": "Beschattung aktiv → kann PV-Panels verschatten, Ertrag sinkt",
+        "hint": "Rollladen/Jalousie zu → PV-Ertrag pruefen, Panels moeglicherweise verschattet",
+        "severity": "info",
+    },
+    {
+        "role": "shutter", "state": "closed",
+        "affects": "solar", "same_room": False,
+        "effect": "Rollladen geschlossen → kann PV-Panels verschatten",
+        "hint": "Rollladen zu → PV-Ertrag pruefen, Panels koennten verschattet sein",
+        "severity": "info",
+    },
+    {
+        "role": "awning", "state": "open",
+        "affects": "solar", "same_room": False,
+        "effect": "Markise ausgefahren → kann PV-Panels auf Dach/Terrasse verschatten",
+        "hint": "Markise draussen → PV-Ertrag sinkt moeglicherweise durch Verschattung",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # 50. WAERMEPUMPE ↔ FUSSBODENHEIZUNG (direkte Interaktion)
+    # =================================================================
+
+    # Waermepumpe → Fussbodenheizung (Vorlauftemperatur)
+    {
+        "role": "heat_pump", "state": "heat",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "Waermepumpe heizt → Vorlauftemperatur fuer Fussbodenheizung",
+        "hint": "Waermepumpe → steuert Fussbodenheizung ueber Vorlauftemperatur",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "off",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "Waermepumpe aus → Fussbodenheizung wird kalt (traege, erst nach Stunden)",
+        "hint": "Waermepumpe aus → Fussbodenheizung kuehlt langsam ab, Puffer nutzen",
+        "severity": "info",
+    },
+    # Fussbodenheizung → Waermepumpe (Ruecklauftemperatur)
+    {
+        "role": "floor_heating", "state": "heat",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "Fussbodenheizung aktiv → Waermepumpe muss Vorlauf liefern",
+        "hint": "Fussbodenheizung heizt → Waermepumpe-Effizienz (COP) beachten",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # 51. VORHANG → KLIMA / ENERGIE (Isolation, Kaeltebruecke)
+    # =================================================================
+
+    {
+        "role": "curtain", "state": "closed",
+        "affects": "climate", "same_room": True,
+        "effect": "Vorhang zu → isoliert Fenster, weniger Waermeverlust",
+        "hint": "Vorhang zu → isoliert gegen Kaelte am Fenster, weniger Heizenergie noetig",
+        "severity": "info",
+    },
+    {
+        "role": "curtain", "state": "closed",
+        "affects": "energy", "same_room": True,
+        "effect": "Vorhang zu → zusaetzliche Isolation, Energieeinsparung",
+        "hint": "Vorhang zu → Heiz-/Kuehlverlust reduziert durch Fenster-Isolation",
+        "severity": "info",
+    },
+    {
+        "role": "curtain", "state": "closed",
+        "affects": "heating", "same_room": True,
+        "effect": "Vorhang zu → weniger Heizenergie noetig (Kaeltebruecke reduziert)",
+        "hint": "Vorhang vor Fenster → Heizkoerper braucht weniger Leistung",
+        "severity": "info",
+    },
+    {
+        "role": "curtain", "state": "closed",
+        "affects": "cooling", "same_room": True,
+        "effect": "Vorhang zu → weniger Sonneneinstrahlung, Kuehlung entlastet",
+        "hint": "Vorhang zu → Sonnenhitze wird geblockt, Klimaanlage arbeitet weniger",
+        "severity": "info",
+    },
+    {
+        "role": "curtain", "state": "open",
+        "affects": "climate", "same_room": True,
+        "effect": "Vorhang offen → Fenster-Kaeltebruecke aktiv, Waermeverlust hoeher",
+        "hint": "Vorhang offen → Fenster strahlt Kaelte/Waerme ab, Klima beeinflusst",
+        "severity": "info",
+    },
+    {
+        "role": "curtain", "state": "open",
+        "affects": "solar", "same_room": False,
+        "effect": "Vorhang offen → keine Verschattung, PV-Ertrag nicht beeinflusst",
+        "hint": "Vorhang offen → maximales Tageslicht und PV-Ertrag (keine Verschattung)",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # 52. FUSSBODENHEIZUNG + KUEHLUNG = GEGENEINANDER
+    # =================================================================
+
+    {
+        "role": "floor_heating", "state": "heat",
+        "affects": "cooling", "same_room": True,
+        "effect": "Fussbodenheizung + Kuehlung gleichzeitig → arbeiten gegeneinander",
+        "hint": "Fussbodenheizung UND Kuehlung → Energieverschwendung, gegeneinander!",
+        "severity": "high",
+    },
+    {
+        "role": "radiator", "state": "heat",
+        "affects": "cooling", "same_room": True,
+        "effect": "Heizkoerper + Kuehlung gleichzeitig → arbeiten gegeneinander",
+        "hint": "Heizkoerper UND Klimaanlage → Energieverschwendung, gegeneinander!",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # 53. SAUNA / WALLBOX / WAERMEPUMPE — NETZUEBERLAST-KOMBINATIONEN
+    # =================================================================
+
+    {
+        "role": "sauna", "state": "on",
+        "affects": "ev_charger", "same_room": False,
+        "effect": "Sauna (6-10kW) + Wallbox (11-22kW) → extreme Netzlast!",
+        "hint": "Sauna + Wallbox gleichzeitig → Ueberlastgefahr, Sicherung koennte fliegen!",
+        "severity": "high",
+    },
+    {
+        "role": "sauna", "state": "on",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "Sauna (6-10kW) + Waermepumpe (2-5kW) → hohe Gesamtlast",
+        "hint": "Sauna + Waermepumpe gleichzeitig → hohe Netzlast, Tarif-Spitze beachten",
+        "severity": "info",
+    },
+    {
+        "role": "ev_charger", "state": "on",
+        "affects": "sauna", "same_room": False,
+        "effect": "Wallbox laedt → Sauna starten = extreme Netzlast",
+        "hint": "Wallbox + Sauna → Ueberlastgefahr, nacheinander statt gleichzeitig!",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # 54. DUNSTABZUG / LUEFTUNG ↔ KAMIN (Unterdruck-Gefahr)
+    # =================================================================
+    # (fireplace → ventilation existiert bereits, aber fan → fireplace fehlt)
+
+    {
+        "role": "fan", "state": "on",
+        "affects": "fireplace", "same_room": True,
+        "effect": "Abluft-Ventilator + Kamin → Unterdruck zieht Rauch ins Haus",
+        "hint": "Ventilator/Dunstabzug an + Kamin → GEFAHR, Rauch wird ins Haus gezogen!",
+        "severity": "critical",
+    },
+    {
+        "role": "ventilation", "state": "on",
+        "affects": "fireplace", "same_room": False,
+        "effect": "Lueftungsanlage + Kamin → Unterdruck stoert Kaminzug",
+        "hint": "KWL/Lueftung an + Kamin → Unterdruck, Rauch und CO koennen ins Haus!",
+        "severity": "critical",
+    },
+
+    # =================================================================
+    # 55. AQUARIUM ↔ STROMAUSFALL / NETZWERK
+    # =================================================================
+
+    {
+        "role": "aquarium", "state": "on",
+        "affects": "connectivity", "same_room": False,
+        "effect": "Aquarium → bei Stromausfall/Offline sterben Fische",
+        "hint": "Aquarium → Strom-/Netzwerk-Unterbrechung kritisch fuer Fische!",
+        "severity": "high",
+    },
+    {
+        "role": "connectivity", "state": "off",
+        "affects": "aquarium", "same_room": False,
+        "effect": "Verbindung verloren → Aquarium-Steuerung moeglicherweise offline",
+        "hint": "Netzwerk offline → Aquarium-Filter/Heizung/Licht pruefen!",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # 56. HEIZDECKE + ABWESENHEIT (Brandgefahr — inverse Richtung)
+    # =================================================================
+
+    {
+        "role": "presence", "state": "off",
+        "affects": "electric_blanket", "same_room": False,
+        "effect": "Alle weg + Heizdecke an → Brandgefahr",
+        "hint": "Alle weg + Heizdecke noch an → AUSSCHALTEN, Brandgefahr!",
+        "severity": "critical",
+    },
+
+    # =================================================================
+    # 59. WAERMEPUMPE KUEHLEN → FUSSBODENHEIZUNG (Kuehlbetrieb)
+    # =================================================================
+
+    {
+        "role": "heat_pump", "state": "cool",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "Waermepumpe kuehlt → Fussbodenheizung wird zur Flaechenkuehlung",
+        "hint": "Waermepumpe kuehlt → Fussbodenheizung als Flaechenkuehlung, Taupunkt beachten!",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "cool",
+        "affects": "humidity", "same_room": False,
+        "effect": "Waermepumpe kuehlt via Fussboden → Kondensation/Taupunkt-Gefahr",
+        "hint": "Flaechenkuehlung via Fussboden → Taupunkt beachten, Kondenswasser vermeiden!",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # 60. CURTAIN ↔ KAMERA (Privatsphaere / Sicht)
+    # =================================================================
+
+    {
+        "role": "curtain", "state": "open",
+        "affects": "camera", "same_room": True,
+        "effect": "Vorhang offen → Raum von aussen einsehbar, Kamera sieht mehr",
+        "hint": "Vorhang offen → Aussen-Kamera sieht durch Fenster, Innen-Privatsphaere beachten",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # 61. WALLBOX + WAERMEPUMPE + SAUNA — Dreifach-Ueberlast
+    # =================================================================
+
+    {
+        "role": "heat_pump", "state": "on",
+        "affects": "ev_charger", "same_room": False,
+        "effect": "Waermepumpe + Wallbox gleichzeitig → hohe Netzlast",
+        "hint": "Waermepumpe + Wallbox → Netzlast hoch, Tarif-Spitze beachten",
+        "severity": "info",
+    },
 ]
 
 
