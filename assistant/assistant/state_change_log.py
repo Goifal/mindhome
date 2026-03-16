@@ -1385,6 +1385,214 @@ DEVICE_DEPENDENCIES = [
         "hint": "Adblocker deaktiviert → Netzwerk ungeschuetzt",
         "severity": "info",
     },
+
+    # =====================================================================
+    # ERGAENZUNG: Fehlende Rollen und Kreuz-Beziehungen
+    # =====================================================================
+
+    # --- Kuehlung + Fenster = Energieverschwendung (wie Heizung) ---
+    {
+        "role": "cooling", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Kuehlung aktiv + Fenster offen → Energieverschwendung",
+        "hint": "Klimaanlage an + Fenster offen → Energie wird verschwendet",
+        "severity": "high",
+    },
+    {
+        "role": "cooling", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Kuehlung aktiv → hoher Stromverbrauch",
+        "hint": "Klimaanlage laeuft → hoher Stromverbrauch",
+        "severity": "info",
+    },
+
+    # --- Heizung (nicht Thermostat) + Fenster ---
+    {
+        "role": "heating", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Heizung aktiv + Fenster offen → Energieverschwendung",
+        "hint": "Heizung an + Fenster offen → Energie wird verschwendet",
+        "severity": "high",
+    },
+    {
+        "role": "heating", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Heizung aktiv → Energieverbrauch",
+        "hint": "Heizung laeuft → Energieverbrauch",
+        "severity": "info",
+    },
+
+    # --- Luftreiniger + Fenster = ineffizient ---
+    {
+        "role": "air_purifier", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Luftreiniger aktiv + Fenster offen → Reinigung sinnlos",
+        "hint": "Luftreiniger an + Fenster offen → ineffizient, Fenster zu",
+        "severity": "high",
+    },
+    {
+        "role": "air_purifier", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Luftreiniger aktiv → Stromverbrauch",
+        "hint": "Luftreiniger laeuft → Stromverbrauch",
+        "severity": "info",
+    },
+
+    # --- Entfeuchter + Fenster = ineffizient ---
+    {
+        "role": "dehumidifier", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Entfeuchter aktiv + Fenster offen → Luftfeuchtigkeit stroemt nach",
+        "hint": "Entfeuchter an + Fenster offen → ineffizient, Fenster zu",
+        "severity": "high",
+    },
+    {
+        "role": "dehumidifier", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Entfeuchter an → Stromverbrauch",
+        "hint": "Entfeuchter laeuft → Stromverbrauch",
+        "severity": "info",
+    },
+
+    # --- Befeuchter + Fenster = ineffizient ---
+    {
+        "role": "humidifier", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Befeuchter aktiv + Fenster offen → Feuchtigkeit entweicht",
+        "hint": "Befeuchter an + Fenster offen → ineffizient, Fenster zu",
+        "severity": "high",
+    },
+    {
+        "role": "humidifier", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Befeuchter an → Stromverbrauch",
+        "hint": "Befeuchter laeuft → Stromverbrauch",
+        "severity": "info",
+    },
+
+    # --- Boiler ---
+    {
+        "role": "boiler", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Warmwasser-Boiler heizt → hoher Energieverbrauch",
+        "hint": "Boiler heizt → Stromverbrauch",
+        "severity": "info",
+    },
+    {
+        "role": "boiler", "state": "on",
+        "affects": "solar", "same_room": False,
+        "effect": "Boiler heizt → bei PV-Ueberschuss ideal",
+        "hint": "Boiler → bei Solarueberschuss heizen spart Geld",
+        "severity": "info",
+    },
+
+    # --- Kaffeemaschine ---
+    {
+        "role": "coffee_machine", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Kaffeemaschine an → Kaffee wird zubereitet",
+        "hint": "Kaffeemaschine laeuft → Kaffee bald fertig",
+        "severity": "info",
+    },
+    {
+        "role": "coffee_machine", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Kaffeemaschine heizt → hoher Kurzzeit-Verbrauch",
+        "hint": "Kaffeemaschine → hoher Momentanverbrauch beim Aufheizen",
+        "severity": "info",
+    },
+
+    # --- Frost-Schutz: Bewaesserung + Pool ---
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Frost → Bewaesserung kann Rohre beschaedigen",
+        "hint": "Frost + Bewaesserung → Rohrbruchgefahr, Bewaesserung stoppen",
+        "severity": "high",
+    },
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "pool", "same_room": False,
+        "effect": "Frost → Pool-Pumpe muss laufen gegen Frostschaden",
+        "hint": "Frost + Pool → Pumpe muss laufen, Frostschaden vermeiden",
+        "severity": "high",
+    },
+
+    # --- Solar → Eigenverbrauch optimieren ---
+    {
+        "role": "solar", "state": "on",
+        "affects": "ev_charger", "same_room": False,
+        "effect": "PV produziert → E-Auto laden sinnvoll",
+        "hint": "Solarueberschuss → E-Auto laden optimiert Eigenverbrauch",
+        "severity": "info",
+    },
+    {
+        "role": "solar", "state": "on",
+        "affects": "washing_machine", "same_room": False,
+        "effect": "PV produziert → energieintensive Geraete starten",
+        "hint": "Solarueberschuss → Waschmaschine/Trockner starten",
+        "severity": "info",
+    },
+
+    # --- Waermepumpe + Fenster offen ---
+    {
+        "role": "heat_pump", "state": "heat",
+        "affects": "window_contact", "same_room": False,
+        "effect": "Waermepumpe heizt + Fenster offen → teure Energieverschwendung",
+        "hint": "Waermepumpe an + Fenster offen → hohe Energieverschwendung",
+        "severity": "high",
+    },
+    {
+        "role": "heat_pump", "state": "heat",
+        "affects": "energy", "same_room": False,
+        "effect": "Waermepumpe heizt → Stromverbrauch je nach COP",
+        "hint": "Waermepumpe aktiv → Stromverbrauch",
+        "severity": "info",
+    },
+
+    # --- Kamera + Alarm ---
+    {
+        "role": "alarm", "state": "armed_away",
+        "affects": "camera", "same_room": False,
+        "effect": "Alarm scharf → Kameras sollten aufzeichnen",
+        "hint": "Alarm scharf (abwesend) → Kamera-Aufzeichnung pruefen",
+        "severity": "info",
+    },
+
+    # --- Presence + Alarm (vergessen scharf zu stellen) ---
+    {
+        "role": "presence", "state": "off",
+        "affects": "alarm", "same_room": False,
+        "requires_state": {"disarmed"},
+        "effect": "Niemand zuhause + Alarm nicht scharf → Sicherheitsluecke",
+        "hint": "Alle abwesend → Alarm sollte scharf gestellt werden",
+        "severity": "high",
+    },
+
+    # --- Waschmaschine/Trockner + Abwesenheit ---
+    {
+        "role": "washing_machine", "state": "on",
+        "affects": "presence", "same_room": False,
+        "effect": "Waschmaschine laeuft + niemand zuhause → Wasserschaden-Risiko",
+        "hint": "Waschmaschine laeuft unbeaufsichtigt → Wasserschaden moeglich",
+        "severity": "info",
+    },
+    {
+        "role": "dryer", "state": "on",
+        "affects": "presence", "same_room": False,
+        "effect": "Trockner laeuft + niemand zuhause → Brandrisiko",
+        "hint": "Trockner laeuft unbeaufsichtigt → Brandgefahr moeglich",
+        "severity": "info",
+    },
+
+    # --- Licht + Tageslicht-Sensor ---
+    {
+        "role": "light_level", "state": "on",
+        "affects": "blinds", "same_room": True,
+        "effect": "Hohe Helligkeit → Beschattung sinnvoll",
+        "hint": "Starkes Tageslicht → Rollladen/Jalousie gegen Blendung",
+        "severity": "info",
+    },
 ]
 
 
