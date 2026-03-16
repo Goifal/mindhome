@@ -121,7 +121,7 @@ class ConditionalCommands:
                             dep_note = dep.get("hint", dep.get("effect", ""))
                             break
         except Exception as _dep_err:
-            logger.debug("Conditional Dependency-Check: %s", _dep_err)
+            logger.warning("Conditional Dependency-Check fehlgeschlagen: %s", _dep_err)
 
         cond_id = str(uuid.uuid4())[:8]
 
@@ -158,11 +158,19 @@ class ConditionalCommands:
         time_str = f"{ttl_hours} Stunde{'n' if ttl_hours > 1 else ''}"
         shot_str = "einmalig" if one_shot else "dauerhaft"
 
-        return {
+        msg = f"Bedingung '{label}' erstellt ({shot_str}, gültig für {time_str})."
+        if dep_note:
+            logger.warning("Conditional '%s' hat Dependency-Warnung: %s", label, dep_note)
+            msg += f" Hinweis: {dep_note}"
+
+        result = {
             "success": True,
-            "message": f"Bedingung '{label}' erstellt ({shot_str}, gültig für {time_str}).",
+            "message": msg,
             "conditional_id": cond_id,
         }
+        if dep_note:
+            result["dependency_warning"] = dep_note
+        return result
 
     async def check_event(self, entity_id: str, new_state: str, old_state: str = "",
                           attributes: Optional[dict] = None) -> list[dict]:
