@@ -939,6 +939,372 @@ DEVICE_DEPENDENCIES = [
         "effect": "Ventil geschlossen → Durchfluss gestoppt",
         "hint": "Ventil zu → kein Durchfluss, gewollt?",
     },
+
+    # =====================================================================
+    # 25. TEMPERATUR-SENSOREN → KLIMA / WARNUNG
+    # =====================================================================
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Raumtemperatur beeinflusst Heizung/Kuehlung",
+        "hint": "Raumtemperatur → Heizung/Kuehlung anpassen",
+    },
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "climate", "same_room": False,
+        "effect": "Aussentemperatur beeinflusst Heizstrategie und Beschattung",
+        "hint": "Aussentemperatur → beeinflusst Heizung, Beschattung, Bewaesserung",
+    },
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "blinds", "same_room": False,
+        "effect": "Aussentemperatur hoch → Beschattung sinnvoll",
+        "hint": "Heiss draussen → Rolllaeden/Jalousien schliessen",
+    },
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Aussentemperatur beeinflusst Bewaesserungsbedarf",
+        "hint": "Heiss → Pflanzen brauchen mehr Wasser",
+    },
+    {
+        "role": "water_temp", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Wassertemperatur → Legionellen-Schutz ab 60°C beachten",
+        "hint": "Warmwasser-Temp → Legionellen-Risiko unter 60°C",
+    },
+    {
+        "role": "water_temp", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Warmwasser-Temperatur beeinflusst Boiler-Energieverbrauch",
+        "hint": "Wassertemperatur → Energieverbrauch fuer Warmwasser",
+    },
+    {
+        "role": "soil_temp", "state": "on",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Bodentemperatur beeinflusst Pflanzenwachstum",
+        "hint": "Bodentemperatur → Bewaesserung/Frostschutz anpassen",
+    },
+    {
+        "role": "pressure", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Luftdruckveraenderung → Wetterwechsel kommt",
+        "hint": "Luftdruck faellt → Schlechtwetter im Anmarsch",
+    },
+
+    # =====================================================================
+    # 26. STROM-DETAILS → ENERGIE / WARNUNG
+    # =====================================================================
+    {
+        "role": "current", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Stromstaerke ungewoehnlich hoch → Ueberlast moeglich",
+        "hint": "Hohe Stromstaerke → Sicherung koennte ausloesen",
+    },
+    {
+        "role": "voltage", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Spannung ausserhalb Norm → Netzproblem",
+        "hint": "Spannung anomal → Netzstabiliaet pruefen",
+    },
+    {
+        "role": "frequency", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Netzfrequenz abweichend → Netzinstabilitaet",
+        "hint": "Netzfrequenz → Stabilitaet des Stromnetzes",
+    },
+    {
+        "role": "power_factor", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Schlechter Leistungsfaktor → ineffiziente Geraete",
+        "hint": "Leistungsfaktor schlecht → Blindleistung, ineffizient",
+    },
+    {
+        "role": "energy", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Energieverbrauch ungewoehnlich → Ursache pruefen",
+        "hint": "Energieverbrauch hoch → welches Geraet verbraucht soviel?",
+    },
+
+    # =====================================================================
+    # 27. LADEGERAETE / AKKUS → ENERGIE
+    # =====================================================================
+    {
+        "role": "charger", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Ladegeraet aktiv → Stromverbrauch, bei Vollladung abschalten",
+        "hint": "Ladegeraet → bei vollem Akku Stecker ziehen",
+    },
+    {
+        "role": "battery_charging", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Batterie laedt → Stromverbrauch bis voll",
+        "hint": "Akku laedt → Stromverbrauch waehrend Ladung",
+    },
+
+    # =====================================================================
+    # 28. SITZ- / STUHLBELEGUNG → LICHT / KLIMA
+    # =====================================================================
+    {
+        "role": "chair_occupancy", "state": "on",
+        "affects": "light", "same_room": True,
+        "effect": "Stuhl belegt → Person im Raum, Licht sinnvoll",
+        "hint": "Stuhl belegt → jemand sitzt hier, Licht an lassen",
+    },
+    {
+        "role": "chair_occupancy", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Stuhl belegt → Raum ist besetzt, Klima halten",
+        "hint": "Jemand sitzt → Raumklima beibehalten",
+    },
+    {
+        "role": "chair_occupancy", "state": "off",
+        "affects": "light", "same_room": True,
+        "effect": "Stuhl leer → Person hat Raum eventuell verlassen",
+        "hint": "Stuhl leer → noch jemand im Raum?",
+    },
+
+    # =====================================================================
+    # 29. COMPUTER / DRUCKER / IT → ENERGIE
+    # =====================================================================
+    {
+        "role": "pc", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "PC/Computer an → Stromverbrauch",
+        "hint": "Computer laeuft → Stromverbrauch beachten",
+    },
+    {
+        "role": "pc", "state": "on",
+        "affects": "light", "same_room": True,
+        "effect": "PC an → Bildschirmarbeit, Licht anpassen",
+        "hint": "PC aktiv → Licht fuer Bildschirmarbeit anpassen",
+    },
+    {
+        "role": "pc", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "PC an → erzeugt Abwaerme im Raum",
+        "hint": "Computer → Abwaerme beeinflusst Raumtemperatur",
+    },
+    {
+        "role": "printer", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Drucker an → Standby-Verbrauch wenn nicht genutzt",
+        "hint": "Drucker an → Stromverbrauch, nach Nutzung ausschalten",
+    },
+    {
+        "role": "printer", "state": "on",
+        "affects": "fan", "same_room": True,
+        "effect": "3D-Drucker → Daempfe moeglich, Lueftung sinnvoll",
+        "hint": "3D-Drucker druckt → Lueftung wegen Daempfe",
+    },
+
+    # =====================================================================
+    # 30. RECEIVER / HIFI → LAUTSTAERKE / ENERGIE
+    # =====================================================================
+    {
+        "role": "receiver", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "AV-Receiver an → Stromverbrauch",
+        "hint": "Receiver laeuft → Stromverbrauch beachten",
+    },
+    {
+        "role": "receiver", "state": "on",
+        "affects": "light", "same_room": True,
+        "effect": "AV-Receiver an → Heimkino-Beleuchtung anpassen",
+        "hint": "Receiver an → Heimkino-Modus, Licht dimmen",
+    },
+
+    # =====================================================================
+    # 31. TELEFON → BENACHRICHTIGUNG / LAUTSTAERKE
+    # =====================================================================
+    {
+        "role": "phone", "state": "on",
+        "affects": "media_player", "same_room": True,
+        "effect": "Telefonat → Medien leiser/stumm",
+        "hint": "Telefonat → Medien stumm schalten",
+    },
+    {
+        "role": "phone", "state": "on",
+        "affects": "vacuum", "same_room": False,
+        "effect": "Telefonat → Staubsauger stoeren",
+        "hint": "Telefonat → Saugroboter pausieren",
+    },
+
+    # =====================================================================
+    # 32. SIRENE → WARNUNG
+    # =====================================================================
+    {
+        "role": "siren", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Sirene aktiv → Alarm wurde ausgeloest",
+        "hint": "Sirene heult → ALARM aktiv, sofort reagieren",
+    },
+    {
+        "role": "siren", "state": "on",
+        "affects": "light", "same_room": False,
+        "effect": "Sirene → Lichter an zur Orientierung/Abschreckung",
+        "hint": "Sirene → alle Lichter an",
+    },
+
+    # =====================================================================
+    # 33. MOTOR / RELAY / AKTOR → ENERGIE / WARTUNG
+    # =====================================================================
+    {
+        "role": "motor", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Motor/Antrieb aktiv → Stromverbrauch",
+        "hint": "Motor laeuft → Stromverbrauch",
+    },
+    {
+        "role": "relay", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Relais geschaltet → angeschlossenes Geraet aktiv",
+        "hint": "Relais an → was haengt dran?",
+    },
+
+    # =====================================================================
+    # 34. SIGNAL / GESCHWINDIGKEIT / NETZWERK-QUALITAET
+    # =====================================================================
+    {
+        "role": "signal_strength", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Signalstaerke schwach → Verbindungsprobleme moeglich",
+        "hint": "Schwaches Signal → Geraet koennte ausfallen",
+    },
+    {
+        "role": "speedtest", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Internet-Geschwindigkeit → Streaming/Cloud betroffen",
+        "hint": "Internet langsam → Streaming/Downloads beeintraechtigt",
+    },
+
+    # =====================================================================
+    # 35. WIND-RICHTUNG → BESCHATTUNG / KOMFORT
+    # =====================================================================
+    {
+        "role": "wind_direction", "state": "on",
+        "affects": "awning", "same_room": False,
+        "effect": "Windrichtung → Markisen-Position anpassen",
+        "hint": "Windrichtung → Markise auf Windseite einfahren",
+    },
+    {
+        "role": "wind_direction", "state": "on",
+        "affects": "window_contact", "same_room": False,
+        "effect": "Windrichtung → Fenster auf Windseite schliessen bei Sturm",
+        "hint": "Wind von dieser Seite → Fenster pruefen",
+    },
+
+    # =====================================================================
+    # 36. RUNNING / STATUS → BENACHRICHTIGUNG
+    # =====================================================================
+    {
+        "role": "running", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Geraet laeuft → Stromverbrauch aktiv",
+        "hint": "Geraet in Betrieb → Energieverbrauch",
+    },
+    {
+        "role": "running", "state": "off",
+        "affects": "notify", "same_room": False,
+        "effect": "Geraet gestoppt → Aufgabe fertig?",
+        "hint": "Geraet fertig → Ergebnis pruefen",
+    },
+
+    # =====================================================================
+    # 37. DIMMER / FARBLICHT → STIMMUNG / ENERGIE
+    # =====================================================================
+    {
+        "role": "dimmer", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Gedimmtes Licht → reduzierter Stromverbrauch",
+        "hint": "Licht gedimmt → weniger Verbrauch als volle Helligkeit",
+    },
+    {
+        "role": "color_light", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Farblicht an → Stromverbrauch",
+        "hint": "RGB-Licht an → Stromverbrauch beachten",
+    },
+
+    # =====================================================================
+    # 38. GESCHWINDIGKEIT / ENTFERNUNG / GEWICHT → KONTEXT
+    # =====================================================================
+    {
+        "role": "speed", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Geschwindigkeit → Bewegung erkannt",
+        "hint": "Geschwindigkeit gemessen → etwas bewegt sich",
+    },
+    {
+        "role": "distance", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Entfernung → Annaeherung oder Entfernung",
+        "hint": "Entfernung aendert sich → jemand naehert sich oder geht weg",
+    },
+    {
+        "role": "weight", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Gewicht gemessen → Fuellstand oder Koerpergewicht",
+        "hint": "Gewicht → Fuellstand pruefen oder Gesundheitsdaten",
+    },
+
+    # =====================================================================
+    # 39. AUTO-STANDORT → SICHERHEIT / KOMFORT
+    # =====================================================================
+    {
+        "role": "car_location", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Auto-Standort → Person unterwegs oder zuhause",
+        "hint": "Auto-Position → Ankunftszeit schaetzen",
+    },
+    {
+        "role": "car_location", "state": "on",
+        "affects": "climate", "same_room": False,
+        "effect": "Auto naehert sich → Haus vorheizen/kuehlen",
+        "hint": "Auto auf dem Heimweg → Haus vorbereiten",
+    },
+
+    # =====================================================================
+    # 40. TIMER / ZAEHLER → BENACHRICHTIGUNG
+    # =====================================================================
+    {
+        "role": "timer", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Timer laeuft → Erinnerung wenn abgelaufen",
+        "hint": "Timer aktiv → nicht vergessen",
+    },
+    {
+        "role": "counter", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Zaehler → Grenzwert beobachten",
+        "hint": "Zaehlerstand → Limit erreicht?",
+    },
+
+    # =====================================================================
+    # 41. SZENE / AUTOMATION → KONTEXT
+    # =====================================================================
+    {
+        "role": "scene", "state": "on",
+        "affects": "light", "same_room": False,
+        "effect": "Szene aktiviert → mehrere Geraete aendern sich",
+        "hint": "Szene aktiv → Geraete wurden automatisch gesetzt",
+    },
+    {
+        "role": "automation", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Automation aktiv → laeuft im Hintergrund",
+        "hint": "Automation laeuft → Geraete werden automatisch gesteuert",
+    },
+
+    # =====================================================================
+    # 42. ADBLOCKER → NETZWERK
+    # =====================================================================
+    {
+        "role": "adblocker", "state": "off",
+        "affects": "notify", "same_room": False,
+        "effect": "Adblocker/DNS-Filter aus → Werbung und Tracker aktiv",
+        "hint": "Adblocker deaktiviert → Netzwerk ungeschuetzt",
+    },
 ]
 
 
