@@ -7462,6 +7462,644 @@ DEVICE_DEPENDENCIES = [
         "hint": "Sirene → Stromverbrauch waehrend Alarm",
         "severity": "info",
     },
+
+    # =================================================================
+    # SICHERHEITSKETTEN — Rauch/CO/Gas/Wasser → Fluchtweg/Warnung
+    # =================================================================
+    # Rauch → Rollladen/Shutter hoch (Fluchtweg!)
+    {
+        "role": "smoke", "state": "on",
+        "affects": "shutter", "same_room": False,
+        "effect": "Rauch → Rollladen HOCH fuer Fluchtwege",
+        "hint": "BRAND → alle Rollladen hoch, Fluchtwege freimachen!",
+        "severity": "critical",
+    },
+    {
+        "role": "smoke", "state": "on",
+        "affects": "speaker", "same_room": False,
+        "effect": "Rauch → Warndurchsage ueber Lautsprecher",
+        "hint": "BRAND → Lautsprecher-Durchsage: Feueralarm!",
+        "severity": "critical",
+    },
+    # CO → Rollladen hoch + Durchsage
+    {
+        "role": "co", "state": "on",
+        "affects": "blinds", "same_room": False,
+        "effect": "CO erkannt → Rollladen HOCH fuer Flucht/Lueftung",
+        "hint": "CO → Rollladen hoch, Fenster oeffnen, RAUS!",
+        "severity": "critical",
+    },
+    {
+        "role": "co", "state": "on",
+        "affects": "shutter", "same_room": False,
+        "effect": "CO erkannt → Rollladen HOCH fuer Flucht/Lueftung",
+        "hint": "CO → alle Rollladen hoch, Fluchtwege frei!",
+        "severity": "critical",
+    },
+    {
+        "role": "co", "state": "on",
+        "affects": "speaker", "same_room": False,
+        "effect": "CO erkannt → Warndurchsage",
+        "hint": "CO → Lautsprecher-Durchsage: CO-Alarm, Haus verlassen!",
+        "severity": "critical",
+    },
+    # Gas → Rollladen hoch + Schloss auf + Durchsage + Lueftung
+    {
+        "role": "gas", "state": "on",
+        "affects": "lock", "same_room": False,
+        "effect": "Gas erkannt → Tueren entriegeln fuer Flucht",
+        "hint": "GAS → Tueren sofort entriegeln, Fluchtweg!",
+        "severity": "critical",
+    },
+    {
+        "role": "gas", "state": "on",
+        "affects": "blinds", "same_room": False,
+        "effect": "Gas erkannt → Rollladen hoch fuer Flucht/Lueftung",
+        "hint": "GAS → Rollladen hoch, Lueftung maximieren!",
+        "severity": "critical",
+    },
+    {
+        "role": "gas", "state": "on",
+        "affects": "shutter", "same_room": False,
+        "effect": "Gas erkannt → Rollladen hoch fuer Flucht/Lueftung",
+        "hint": "GAS → alle Rollladen hoch!",
+        "severity": "critical",
+    },
+    {
+        "role": "gas", "state": "on",
+        "affects": "speaker", "same_room": False,
+        "effect": "Gas erkannt → Warndurchsage",
+        "hint": "GAS → Durchsage: Gas-Alarm, kein Feuer/Funke, sofort raus!",
+        "severity": "critical",
+    },
+    # Wasserleck → Sirene + Schloss + Pumpe + Geraete stoppen
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "siren", "same_room": False,
+        "effect": "Wasserleck → Sirene/Warnung aktivieren",
+        "hint": "Wasserleck → akustische Warnung",
+        "severity": "high",
+    },
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "lock", "same_room": False,
+        "effect": "Wasserleck → ggf. Zugang fuer Handwerker",
+        "hint": "Wasserleck → Tuer ggf. oeffnen fuer Notdienst",
+        "severity": "info",
+    },
+    # Sabotage → Kamera + Sirene + Licht
+    {
+        "role": "tamper", "state": "on",
+        "affects": "camera", "same_room": False,
+        "effect": "Sabotage erkannt → Kamera-Aufnahme starten",
+        "hint": "Sabotage → alle Kameras aufnehmen lassen",
+        "severity": "high",
+    },
+    # Vibration → Kamera + Licht
+    {
+        "role": "vibration", "state": "on",
+        "affects": "camera", "same_room": False,
+        "effect": "Vibration → Kamera pruefen",
+        "hint": "Vibration an Tuer/Fenster → Kamera auf Bereich richten",
+        "severity": "info",
+    },
+    {
+        "role": "vibration", "state": "on",
+        "affects": "light", "same_room": False,
+        "effect": "Vibration → Licht an (Abschreckung)",
+        "hint": "Vibration → Aussenbeleuchtung einschalten",
+        "severity": "info",
+    },
+    # Sirene → Kamera + Lock + Rollladen + Garage
+    {
+        "role": "siren", "state": "on",
+        "affects": "camera", "same_room": False,
+        "effect": "Sirene aktiv → Kameras aufnehmen",
+        "hint": "Alarm → alle Kameras aufnehmen lassen",
+        "severity": "high",
+    },
+    {
+        "role": "siren", "state": "on",
+        "affects": "lock", "same_room": False,
+        "effect": "Sirene aktiv → Tueren verriegeln",
+        "hint": "Alarm → alle Tueren abschliessen",
+        "severity": "high",
+    },
+    {
+        "role": "siren", "state": "on",
+        "affects": "blinds", "same_room": False,
+        "effect": "Sirene aktiv → Rollladen runter (Einbruchschutz)",
+        "hint": "Alarm → Rollladen runter, Zugang erschweren",
+        "severity": "high",
+    },
+    {
+        "role": "siren", "state": "on",
+        "affects": "shutter", "same_room": False,
+        "effect": "Sirene aktiv → Rollladen runter (Einbruchschutz)",
+        "hint": "Alarm → Rollladen/Shutter schliessen",
+        "severity": "high",
+    },
+    {
+        "role": "siren", "state": "on",
+        "affects": "garage_door", "same_room": False,
+        "effect": "Sirene aktiv → Garagentor schliessen",
+        "hint": "Alarm → Garage sofort schliessen",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # WAERMEPUMPE / HEIZKOERPER / FUSSBODENHEIZUNG — erweitert
+    # =================================================================
+    {
+        "role": "heat_pump", "state": "on",
+        "affects": "noise", "same_room": False,
+        "effect": "Waermepumpe an → Aussengeraet macht Laerm",
+        "hint": "Waermepumpe → Kompressor-Laerm, ggf. Nachbarn beachten",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Waermepumpe an → hoher Energieverbrauch",
+        "hint": "Waermepumpe → 2-5 kW Stromverbrauch",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "on",
+        "affects": "humidity", "same_room": False,
+        "effect": "Waermepumpe an → beeinflusst Luftfeuchtigkeit",
+        "hint": "Waermepumpe → trocknet Luft beim Heizen",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "on",
+        "affects": "climate", "same_room": False,
+        "effect": "Waermepumpe an → zentrale Klimaregelung aktiv",
+        "hint": "Waermepumpe → heizt oder kuehlt das Haus zentral",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "on",
+        "affects": "water_temp", "same_room": False,
+        "effect": "Waermepumpe an → Warmwasser wird aufbereitet",
+        "hint": "Waermepumpe → Warmwasser-Temperatur steigt",
+        "severity": "info",
+    },
+    {
+        "role": "floor_heating", "state": "heat",
+        "affects": "climate", "same_room": True,
+        "effect": "Fussbodenheizung an → Raumklima wird beeinflusst",
+        "hint": "Fussbodenheizung → traege aber gleichmaessige Waerme",
+        "severity": "info",
+    },
+    {
+        "role": "floor_heating", "state": "heat",
+        "affects": "humidity", "same_room": True,
+        "effect": "Fussbodenheizung an → trocknet Luft leicht",
+        "hint": "Fussbodenheizung → Luftfeuchtigkeit sinkt",
+        "severity": "info",
+    },
+    {
+        "role": "radiator", "state": "heat",
+        "affects": "climate", "same_room": True,
+        "effect": "Heizkoerper an → Raumklima aendert sich",
+        "hint": "Heizkoerper → schnelle punktuelle Waerme",
+        "severity": "info",
+    },
+    {
+        "role": "radiator", "state": "heat",
+        "affects": "humidity", "same_room": True,
+        "effect": "Heizkoerper an → trocknet Luft aus",
+        "hint": "Heizkoerper → Luftfeuchtigkeit sinkt, ggf. Befeuchter noetig",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # ROLLLADEN / JALOUSIE / MARKISE — Energie / Laerm / Temperatur
+    # =================================================================
+    {
+        "role": "blinds", "state": "closed",
+        "affects": "energy", "same_room": True,
+        "effect": "Rollladen zu → Waermeisolierung verbessert",
+        "hint": "Rollladen zu → weniger Heiz-/Kuehlverlust durch Fenster",
+        "severity": "info",
+    },
+    {
+        "role": "blinds", "state": "closed",
+        "affects": "noise", "same_room": True,
+        "effect": "Rollladen zu → Laermdaemmung verbessert",
+        "hint": "Rollladen zu → weniger Aussenlaerm",
+        "severity": "info",
+    },
+    {
+        "role": "shutter", "state": "closed",
+        "affects": "energy", "same_room": True,
+        "effect": "Rollladen/Shutter zu → Waermeisolierung verbessert",
+        "hint": "Rollladen zu → Energieeinsparung bei Heizung/Kuehlung",
+        "severity": "info",
+    },
+    {
+        "role": "shutter", "state": "closed",
+        "affects": "noise", "same_room": True,
+        "effect": "Rollladen/Shutter zu → Laermdaemmung",
+        "hint": "Rollladen zu → deutlich leiser im Raum",
+        "severity": "info",
+    },
+    {
+        "role": "awning", "state": "open",
+        "affects": "light_level", "same_room": True,
+        "effect": "Markise ausgefahren → weniger Sonneneinstrahlung",
+        "hint": "Markise → Beschattung, weniger Blendung",
+        "severity": "info",
+    },
+    {
+        "role": "awning", "state": "open",
+        "affects": "energy", "same_room": True,
+        "effect": "Markise ausgefahren → Kuehlung wird entlastet",
+        "hint": "Markise → weniger Sonnenhitze, Klima spart Energie",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # WETTER → erweiterte Geraete-Beziehungen
+    # =================================================================
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "heating", "same_room": False,
+        "effect": "Aussentemperatur beeinflusst Heizbedarf",
+        "hint": "Kalt draussen → Heizung muss mehr arbeiten",
+        "severity": "info",
+    },
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "cooling", "same_room": False,
+        "effect": "Aussentemperatur beeinflusst Kuehlbedarf",
+        "hint": "Heiss draussen → Kuehlung muss mehr arbeiten",
+        "severity": "info",
+    },
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "ev_charger", "same_room": False,
+        "effect": "Kaelte beeinflusst E-Auto-Laden",
+        "hint": "Frost → Batterie laedt langsamer, Vorkonditionierung noetig",
+        "severity": "info",
+    },
+    {
+        "role": "rain", "state": "on",
+        "affects": "garage_door", "same_room": False,
+        "effect": "Regen → Garagentor schliessen",
+        "hint": "Regen → Garage schliessen gegen Naesse",
+        "severity": "info",
+    },
+    {
+        "role": "rain", "state": "on",
+        "affects": "gate", "same_room": False,
+        "effect": "Regen → Tor schliessen",
+        "hint": "Regen → Tor zu, Einfahrt schuetzen",
+        "severity": "info",
+    },
+    {
+        "role": "wind_speed", "state": "on",
+        "affects": "garage_door", "same_room": False,
+        "effect": "Starker Wind → Garagentor sichern",
+        "hint": "Sturm → Garagentor schliessen",
+        "severity": "info",
+    },
+    {
+        "role": "wind_speed", "state": "on",
+        "affects": "gate", "same_room": False,
+        "effect": "Starker Wind → Tor sichern",
+        "hint": "Sturm → Tor schliessen gegen Windschaden",
+        "severity": "info",
+    },
+    {
+        "role": "dew_point", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Taupunkt erreicht → Kondensation an Fenstern",
+        "hint": "Taupunkt → Fenster besser zu, sonst Kondenswasser/Schimmel",
+        "severity": "info",
+    },
+    {
+        "role": "soil_moisture", "state": "on",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Bodenfeuchte beeinflusst Bewaesserung",
+        "hint": "Boden feucht genug → Bewaesserung nicht noetig",
+        "severity": "info",
+    },
+    {
+        "role": "water_temp", "state": "on",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "Wassertemperatur beeinflusst Waermepumpe",
+        "hint": "Warmwasser-Temperatur → Waermepumpe regelt nach",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # SCENE / TIMER / AUTOMATION → Geraete-Steuerung
+    # =================================================================
+    {
+        "role": "scene", "state": "on",
+        "affects": "shutter", "same_room": True,
+        "effect": "Szene aktiviert → Rollladen werden gesteuert",
+        "hint": "Szene → Rollladen-Position wird angepasst",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "tv", "same_room": True,
+        "effect": "Szene aktiviert → TV wird gesteuert",
+        "hint": "Szene → TV an/aus je nach Szene",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "speaker", "same_room": True,
+        "effect": "Szene aktiviert → Lautsprecher wird gesteuert",
+        "hint": "Szene → Musik/Lautstaerke angepasst",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "fan", "same_room": True,
+        "effect": "Szene aktiviert → Ventilator wird gesteuert",
+        "hint": "Szene → Ventilator an/aus",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "color_light", "same_room": True,
+        "effect": "Szene aktiviert → Farblichter werden gesetzt",
+        "hint": "Szene → Ambiente-Beleuchtung angepasst",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "dimmer", "same_room": True,
+        "effect": "Szene aktiviert → Dimmer wird gesetzt",
+        "hint": "Szene → Helligkeit angepasst",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "heating", "same_room": True,
+        "effect": "Szene aktiviert → Heizung wird angepasst",
+        "hint": "Szene → Heizung auf Szene-Temperatur",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "cooling", "same_room": True,
+        "effect": "Szene aktiviert → Kuehlung wird angepasst",
+        "hint": "Szene → Kuehlung auf Szene-Temperatur",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "media_player", "same_room": True,
+        "effect": "Szene aktiviert → Medien werden gesteuert",
+        "hint": "Szene → Medienwiedergabe angepasst",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "curtain", "same_room": True,
+        "effect": "Szene aktiviert → Vorhaenge werden gesteuert",
+        "hint": "Szene → Vorhaenge auf/zu je nach Szene",
+        "severity": "info",
+    },
+    # Timer → Geraete
+    {
+        "role": "timer", "state": "off",
+        "affects": "heating", "same_room": True,
+        "effect": "Timer abgelaufen → Heizung anpassen",
+        "hint": "Timer → Heizung ein/ausschalten nach Zeitplan",
+        "severity": "info",
+    },
+    {
+        "role": "timer", "state": "off",
+        "affects": "cooling", "same_room": True,
+        "effect": "Timer abgelaufen → Kuehlung anpassen",
+        "hint": "Timer → Kuehlung nach Zeitplan",
+        "severity": "info",
+    },
+    {
+        "role": "timer", "state": "off",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Timer abgelaufen → Bewaesserung starten/stoppen",
+        "hint": "Timer → Bewaesserung nach Zeitplan",
+        "severity": "info",
+    },
+    {
+        "role": "timer", "state": "off",
+        "affects": "blinds", "same_room": True,
+        "effect": "Timer abgelaufen → Rollladen anpassen",
+        "hint": "Timer → Rollladen nach Zeitplan hoch/runter",
+        "severity": "info",
+    },
+    {
+        "role": "timer", "state": "off",
+        "affects": "shutter", "same_room": True,
+        "effect": "Timer abgelaufen → Rollladen/Shutter anpassen",
+        "hint": "Timer → Rollladen nach Zeitplan",
+        "severity": "info",
+    },
+    {
+        "role": "timer", "state": "off",
+        "affects": "ev_charger", "same_room": False,
+        "effect": "Timer abgelaufen → Laden starten/stoppen",
+        "hint": "Timer → E-Auto nach Stromtarif-Zeitplan laden",
+        "severity": "info",
+    },
+    {
+        "role": "timer", "state": "off",
+        "affects": "boiler", "same_room": False,
+        "effect": "Timer abgelaufen → Boiler an/aus",
+        "hint": "Timer → Boiler nach Zeitplan steuern",
+        "severity": "info",
+    },
+    {
+        "role": "timer", "state": "off",
+        "affects": "ventilation", "same_room": True,
+        "effect": "Timer abgelaufen → Lueftung anpassen",
+        "hint": "Timer → Lueftung nach Zeitplan",
+        "severity": "info",
+    },
+    # Automation → Geraete
+    {
+        "role": "automation", "state": "on",
+        "affects": "light", "same_room": False,
+        "effect": "Automation aktiv → steuert Licht",
+        "hint": "Automation → Licht wird automatisch gesteuert",
+        "severity": "info",
+    },
+    {
+        "role": "automation", "state": "on",
+        "affects": "climate", "same_room": False,
+        "effect": "Automation aktiv → steuert Klima",
+        "hint": "Automation → Klima wird automatisch geregelt",
+        "severity": "info",
+    },
+    {
+        "role": "automation", "state": "on",
+        "affects": "blinds", "same_room": False,
+        "effect": "Automation aktiv → steuert Rollladen",
+        "hint": "Automation → Rollladen automatisch",
+        "severity": "info",
+    },
+    {
+        "role": "automation", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "effect": "Automation aktiv → steuert Alarm",
+        "hint": "Automation → Alarm wird automatisch scharf/unscharf",
+        "severity": "info",
+    },
+    {
+        "role": "automation", "state": "on",
+        "affects": "lock", "same_room": False,
+        "effect": "Automation aktiv → steuert Schloss",
+        "hint": "Automation → Tuerschloss automatisch",
+        "severity": "info",
+    },
+    {
+        "role": "automation", "state": "on",
+        "affects": "camera", "same_room": False,
+        "effect": "Automation aktiv → steuert Kameras",
+        "hint": "Automation → Kamera-Aufnahme automatisch",
+        "severity": "info",
+    },
+    {
+        "role": "automation", "state": "on",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Automation aktiv → steuert Bewaesserung",
+        "hint": "Automation → Bewaesserung automatisch nach Plan",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # TÜRKLINGEL / INTERCOM / TELEFON — Interaktionen
+    # =================================================================
+    {
+        "role": "intercom", "state": "on",
+        "affects": "door_contact", "same_room": False,
+        "effect": "Intercom → Tuer wird evtl. geoeffnet",
+        "hint": "Intercom-Oeffnung → Tuer geht auf",
+        "severity": "info",
+    },
+    {
+        "role": "phone", "state": "on",
+        "affects": "noise", "same_room": True,
+        "effect": "Telefonat → Laerm reduzieren",
+        "hint": "Telefonat → alle Laermquellen leiser/aus",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # WEITERE FEHLENDE BEZIEHUNGEN
+    # =================================================================
+    # Batterie niedrig → Warnung
+    {
+        "role": "battery", "state": "on",
+        "affects": "lock", "same_room": False,
+        "effect": "Batterie niedrig → Smart-Lock Batterie pruefen",
+        "hint": "Batterie fast leer → Schloss-Batterie tauschen bevor es ausfaellt!",
+        "severity": "high",
+    },
+    {
+        "role": "battery", "state": "on",
+        "affects": "camera", "same_room": False,
+        "effect": "Batterie niedrig → Kamera-Batterie pruefen",
+        "hint": "Batterie fast leer → Kamera-Akku laden/tauschen!",
+        "severity": "high",
+    },
+    # Schloss → Anwesenheit
+    {
+        "role": "lock", "state": "unlocked",
+        "affects": "presence", "same_room": False,
+        "effect": "Schloss entriegelt → jemand kommt/geht",
+        "hint": "Tuer wird aufgeschlossen → Anwesenheit pruefen",
+        "severity": "info",
+    },
+    # Licht → Energie / Waerme
+    {
+        "role": "light", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Licht an → erzeugt leichte Waerme",
+        "hint": "Licht → minimale Abwaerme (bei Gluehbirnen mehr)",
+        "severity": "info",
+    },
+    # Licht → Kamera (bessere Sicht)
+    # Bett → Telefon
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "phone", "same_room": True,
+        "effect": "Im Bett → Telefon auf Nachtmodus",
+        "hint": "Schlafenszeit → Telefon auf leise/DND",
+        "severity": "info",
+    },
+    # Stuhl → PC / Ventilator / Energie
+    {
+        "role": "chair_occupancy", "state": "on",
+        "affects": "pc", "same_room": True,
+        "effect": "Am Schreibtisch → PC relevant",
+        "hint": "Arbeitsplatz besetzt → PC/Monitor bereit",
+        "severity": "info",
+    },
+    {
+        "role": "chair_occupancy", "state": "on",
+        "affects": "fan", "same_room": True,
+        "effect": "Am Schreibtisch → Ventilator sinnvoll",
+        "hint": "Arbeitsplatz besetzt → Ventilator an bei Waerme",
+        "severity": "info",
+    },
+    {
+        "role": "chair_occupancy", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Arbeitsplatz besetzt → Energieverbrauch steigt",
+        "hint": "Arbeiten → PC, Monitor, Licht = mehr Strom",
+        "severity": "info",
+    },
+    # Connectivity → Automation / Media
+    {
+        "role": "connectivity", "state": "off",
+        "affects": "automation", "same_room": False,
+        "effect": "Verbindung weg → Automationen offline",
+        "hint": "Verbindung unterbrochen → Cloud-Automationen funktionieren nicht",
+        "severity": "high",
+    },
+    {
+        "role": "connectivity", "state": "off",
+        "affects": "media_player", "same_room": False,
+        "effect": "Verbindung weg → Streaming unterbrochen",
+        "hint": "Verbindung weg → kein Streaming, nur lokale Medien",
+        "severity": "info",
+    },
+    # Auto-Standort → Licht / Alarm
+    {
+        "role": "car_location", "state": "on",
+        "affects": "light", "same_room": False,
+        "effect": "Auto naehert sich → Willkommenslicht",
+        "hint": "Auto kommt nach Hause → Einfahrt/Eingang beleuchten",
+        "severity": "info",
+    },
+    {
+        "role": "car_location", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "effect": "Auto-Standort → Alarm anpassen",
+        "hint": "Auto zuhause/weg → Alarm entsprechend scharf/unscharf",
+        "severity": "info",
+    },
+    # EV Charger → Solar-Eigenverbrauch
+    {
+        "role": "ev_charger", "state": "on",
+        "affects": "solar", "same_room": False,
+        "effect": "Wallbox laedt → Solar-Eigenverbrauch steigt",
+        "hint": "E-Auto laden → nutzt Solarstrom optimal",
+        "severity": "info",
+    },
+    # Car battery → EV Charger
+    # Running → Energy
+    # Update → Automation
+    # Problem → Automation
 ]
 
 
