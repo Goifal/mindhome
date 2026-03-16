@@ -755,6 +755,30 @@ class WellnessAdvisor:
             logger.debug("Wellness-Nudge ohne Callback: %s", message)
             return
 
+        # Device-Dependency-Check: Suggestion validieren
+        # z.B. "Fenster oeffnen" nicht vorschlagen wenn Heizung laeuft
+        try:
+            if self.ha and any(
+                kw in message.lower()
+                for kw in ["fenster", "lueft", "frischluft", "window"]
+            ):
+                from .state_change_log import StateChangeLog, DEVICE_DEPENDENCIES
+                states = await self.ha.get_states() or []
+                state_dict = {
+                    s["entity_id"]: s.get("state", "")
+                    for s in states if "entity_id" in s
+                }
+                scl = StateChangeLog.__new__(StateChangeLog)
+                conflicts = scl.detect_conflicts(state_dict)
+                climate_active = any(
+                    c.get("affected_active") and "heiz" in c.get("effect", "").lower()
+                    for c in conflicts
+                )
+                if climate_active:
+                    message += " (Hinweis: Heizung laeuft — Fenster nur kurz oeffnen)"
+        except Exception:
+            pass
+
         try:
             await self._notify_callback(nudge_type, message, urgency)
             logger.info("Wellness [%s/%s]: %s", nudge_type, urgency, message)

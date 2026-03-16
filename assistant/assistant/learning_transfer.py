@@ -195,6 +195,30 @@ class LearningTransfer:
             }
 
             if transferable_attrs:
+                # Device-Dependency-Check: Transfer nur wenn Raeume kompatibel
+                _skip_transfer = False
+                try:
+                    from .state_change_log import StateChangeLog
+                    import assistant.main as main_module
+                    if hasattr(main_module, "brain") and domain == "climate":
+                        _states = await main_module.brain.ha.get_states() or []
+                        # Pruefen ob Zielraum offene Fenster hat (Klima-Transfer sinnlos)
+                        for s in _states:
+                            _eid = s.get("entity_id", "")
+                            if (StateChangeLog._get_entity_role(_eid) == "window_contact"
+                                    and s.get("state") == "on"
+                                    and StateChangeLog._get_entity_room(_eid) == target_room.lower()):
+                                _skip_transfer = True
+                                logger.debug(
+                                    "Transfer %s->%s (%s) uebersprungen: Fenster offen in Zielraum",
+                                    source_room, target_room, domain,
+                                )
+                                break
+                except Exception:
+                    pass
+                if _skip_transfer:
+                    continue
+
                 transfer = {
                     "source_room": source_room,
                     "target_room": target_room,

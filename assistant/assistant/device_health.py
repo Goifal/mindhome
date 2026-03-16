@@ -377,6 +377,29 @@ class DeviceHealthMonitor:
         if not await self._check_cooldown(entity_id):
             return None
 
+        # Device-Dependency-Check: Unterdruecke erwartbare Ineffizienz
+        # z.B. Heizung erreicht Ziel nicht weil Fenster offen = kein Alarm
+        try:
+            from .state_change_log import StateChangeLog
+            _role = StateChangeLog._get_entity_role(entity_id)
+            _room = StateChangeLog._get_entity_room(entity_id)
+            if _role in ("thermostat", "climate") and _room:
+                import assistant.main as main_module
+                if hasattr(main_module, "brain"):
+                    _states = await main_module.brain.ha.get_states() or []
+                    for s in _states:
+                        _s_eid = s.get("entity_id", "")
+                        if (StateChangeLog._get_entity_role(_s_eid) == "window_contact"
+                                and s.get("state") == "on"
+                                and StateChangeLog._get_entity_room(_s_eid) == _room):
+                            logger.debug(
+                                "HVAC-Ineffizienz %s unterdrueckt: Fenster offen in %s",
+                                entity_id, _room,
+                            )
+                            return None
+        except Exception as _dep_err:
+            logger.debug("Device-Health Dependency-Check: %s", _dep_err)
+
         name = attrs.get("friendly_name", entity_id)
         action_de = "heizt" if hvac_action == "heating" else "kuehlt"
 

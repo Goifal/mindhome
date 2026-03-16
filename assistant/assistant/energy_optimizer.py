@@ -233,6 +233,30 @@ class EnergyOptimizer:
         if comparison:
             recs.append(comparison)
 
+        # Device-Dependency-Kontext: Konflikte die Energieverbrauch beeinflussen
+        try:
+            from .state_change_log import StateChangeLog
+            states = await self.ha.get_states() if self.ha else []
+            if states:
+                state_dict = {
+                    s["entity_id"]: s.get("state", "")
+                    for s in states if "entity_id" in s
+                }
+                scl = StateChangeLog.__new__(StateChangeLog)
+                conflicts = scl.detect_conflicts(state_dict)
+                energy_relevant = [
+                    c for c in conflicts
+                    if c.get("affected_active") and any(
+                        kw in c.get("effect", "").lower()
+                        for kw in ["heiz", "kuehl", "energie", "strom", "ineffizient"]
+                    )
+                ]
+                for c in energy_relevant[:2]:
+                    room = f" ({c.get('trigger_room', '')})" if c.get("trigger_room") else ""
+                    recs.append(f"Energiehinweis: {c['hint']}{room}")
+        except Exception as _dep_err:
+            logger.debug("Energy Dependency-Kontext: %s", _dep_err)
+
         return recs
 
     # ------------------------------------------------------------------

@@ -241,10 +241,36 @@ class SpontaneousObserver:
 
             if abs(diff_pct) >= 15:
                 title = await self._get_title_for_present()
+
+                # Device-Dependency-Kontext: Erklaerung fuer Abweichung
+                _dep_context = ""
+                try:
+                    from .state_change_log import StateChangeLog
+                    import assistant.main as main_module
+                    if hasattr(main_module, "brain"):
+                        _states = await main_module.brain.ha.get_states() or []
+                        _state_dict = {
+                            s["entity_id"]: s.get("state", "")
+                            for s in _states if "entity_id" in s
+                        }
+                        _scl = StateChangeLog.__new__(StateChangeLog)
+                        _conflicts = _scl.detect_conflicts(_state_dict)
+                        _energy = [
+                            c for c in _conflicts
+                            if c.get("affected_active") and any(
+                                kw in c.get("effect", "").lower()
+                                for kw in ["heiz", "kuehl", "energie", "ineffizient"]
+                            )
+                        ]
+                        if _energy and diff_pct > 0:
+                            _dep_context = f" Moeglicherweise weil: {_energy[0].get('hint', '')}."
+                except Exception:
+                    pass
+
                 if diff_pct > 0:
                     message = (
                         f"{title}, der Energieverbrauch liegt heute {diff_pct:.0f}% "
-                        f"ueber dem gleichen Tag letzte Woche."
+                        f"ueber dem gleichen Tag letzte Woche.{_dep_context}"
                     )
                 else:
                     message = (

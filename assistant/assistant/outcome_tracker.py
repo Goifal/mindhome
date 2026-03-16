@@ -356,13 +356,29 @@ class OutcomeTracker:
         if not self.redis:
             return
 
-        entry = json.dumps({
+        # Device-Dependency-Kontext: War ein Konflikt aktiv bei dieser Aktion?
+        _dep_influenced = False
+        try:
+            from .state_change_log import StateChangeLog
+            import assistant.main as main_module
+            if hasattr(main_module, "brain"):
+                _states = await main_module.brain.ha.get_states() or []
+                _hints = StateChangeLog.check_action_dependencies(action_type, {}, _states)
+                if _hints:
+                    _dep_influenced = True
+        except Exception:
+            pass
+
+        _entry_data = {
             "action_type": action_type,
             "outcome": outcome,
             "person": person,
             "room": room,
             "timestamp": datetime.now().isoformat(),
-        }, ensure_ascii=False)
+        }
+        if _dep_influenced:
+            _entry_data["dependency_influenced"] = True
+        entry = json.dumps(_entry_data, ensure_ascii=False)
 
         # Ergebnis-Liste (max N Eintraege)
         await self.redis.lpush("mha:outcome:results", entry)
