@@ -3956,6 +3956,1002 @@ DEVICE_DEPENDENCIES = [
         "hint": "Schalter ausgeschaltet → Status-Aenderung melden",
         "severity": "info",
     },
+
+    # #################################################################
+    # PARITAETS-REGELN: Curtain = Blinds = Shutter (gleiche Funktion!)
+    # Curtain hatte nur 1 Trigger, Blinds 20 — das muss gleich sein
+    # #################################################################
+
+    # --- Curtain: alle Trigger die Blinds hat, aber Curtain fehlt ---
+    {
+        "role": "alarm", "state": "armed_away",
+        "affects": "curtain", "same_room": False,
+        "effect": "Alarm scharf → Vorhaenge schliessen (Sichtschutz)",
+        "hint": "Alarm aktiviert → Vorhaenge zuziehen",
+        "severity": "info",
+    },
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "curtain", "same_room": False,
+        "effect": "Alarm ausgeloest → Vorhaenge oeffnen fuer Sichtbarkeit",
+        "hint": "ALARM → Vorhaenge oeffnen, Sichtbarkeit fuer Nachbarn",
+        "severity": "high",
+    },
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "curtain", "same_room": True,
+        "effect": "Im Bett → Vorhaenge zuziehen fuer Dunkelheit",
+        "hint": "Schlafenszeit → Vorhaenge zuziehen, Raum abdunkeln",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "off",
+        "affects": "curtain", "same_room": True,
+        "effect": "Aufgestanden → Vorhaenge oeffnen",
+        "hint": "Aufgestanden → Vorhaenge oeffnen, Tageslicht rein",
+        "severity": "info",
+    },
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "curtain", "same_room": True,
+        "effect": "Raumtemperatur hoch → Vorhaenge gegen Sonneneinstrahlung",
+        "hint": "Raum zu warm → Vorhaenge zuziehen gegen Sonne",
+        "severity": "info",
+    },
+    {
+        "role": "media_player", "state": "playing",
+        "affects": "curtain", "same_room": True,
+        "effect": "Medien spielen → Vorhaenge fuer Filmabend",
+        "hint": "Film/Medien → Vorhaenge zuziehen fuer Atmosphaere",
+        "severity": "info",
+    },
+    {
+        "role": "tv", "state": "on",
+        "affects": "curtain", "same_room": True,
+        "effect": "TV an → Vorhaenge gegen Blendung",
+        "hint": "TV an → Vorhaenge zuziehen gegen Spiegelungen",
+        "severity": "info",
+    },
+    {
+        "role": "projector", "state": "on",
+        "affects": "curtain", "same_room": True,
+        "effect": "Beamer an → Vorhaenge MUESSEN zu fuer Bild",
+        "hint": "Beamer an → Vorhaenge zuziehen, sonst kein gutes Bild",
+        "severity": "info",
+    },
+    {
+        "role": "gaming", "state": "on",
+        "affects": "curtain", "same_room": True,
+        "effect": "Gaming → Vorhaenge gegen Blendung",
+        "hint": "Gaming → Vorhaenge fuer Blendschutz am Monitor",
+        "severity": "info",
+    },
+    {
+        "role": "presence", "state": "off",
+        "affects": "curtain", "same_room": False,
+        "effect": "Niemand zuhause → Vorhaenge als Sichtschutz",
+        "hint": "Alle weg → Vorhaenge zuziehen als Einbruchschutz",
+        "severity": "info",
+    },
+    {
+        "role": "presence", "state": "on",
+        "affects": "curtain", "same_room": False,
+        "effect": "Ankunft → Vorhaenge oeffnen bei Tageslicht",
+        "hint": "Ankunft → Vorhaenge oeffnen wenn Tag",
+        "severity": "info",
+    },
+    {
+        "role": "light_level", "state": "on",
+        "affects": "curtain", "same_room": True,
+        "effect": "Hohe Helligkeit → Vorhaenge als Blendschutz",
+        "hint": "Starkes Licht → Vorhaenge zuziehen fuer Blendschutz",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "curtain", "same_room": False,
+        "effect": "Szene aktiviert → Vorhaenge werden angepasst",
+        "hint": "Szene → Vorhaenge anpassen",
+        "severity": "info",
+    },
+    {
+        "role": "uv_index", "state": "on",
+        "affects": "curtain", "same_room": False,
+        "effect": "Hoher UV-Index → Vorhaenge fuer Moebel-/Bodenschutz",
+        "hint": "UV-Index hoch → Vorhaenge zuziehen, Moebel/Boeden schuetzen",
+        "severity": "info",
+    },
+    {
+        "role": "solar_radiation", "state": "on",
+        "affects": "curtain", "same_room": False,
+        "effect": "Starke Sonneneinstrahlung → Vorhaenge zuziehen",
+        "hint": "Starke Sonne → Vorhaenge gegen Aufheizung und Blendung",
+        "severity": "info",
+    },
+    {
+        "role": "smoke", "state": "on",
+        "affects": "curtain", "same_room": False,
+        "effect": "Rauch → Vorhaenge oeffnen fuer Fluchtweg-Sicht",
+        "hint": "RAUCH → Vorhaenge oeffnen, Fluchtweg sichtbar machen",
+        "severity": "critical",
+    },
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "curtain", "same_room": False,
+        "effect": "Aussentemperatur hoch → Vorhaenge gegen Waerme",
+        "hint": "Hitze draussen → Vorhaenge zuziehen gegen Aufheizung",
+        "severity": "info",
+    },
+    {
+        "role": "chair_occupancy", "state": "on",
+        "affects": "curtain", "same_room": True,
+        "effect": "Am Schreibtisch → Vorhaenge als Blendschutz",
+        "hint": "Am Schreibtisch → Vorhaenge fuer Monitor-Blendschutz",
+        "severity": "info",
+    },
+
+    # #################################################################
+    # PARITAETS-REGELN: floor_heating / radiator = heating
+    # Diese werden wie eigenstaendige Heizungen behandelt
+    # #################################################################
+
+    # --- floor_heating: muss gleiche Affected-Regeln haben wie heating ---
+    {
+        "role": "presence", "state": "off",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "Niemand zuhause → Fussbodenheizung auf Absenkung",
+        "hint": "Alle weg → Fussbodenheizung auf Absenktemperatur",
+        "severity": "info",
+    },
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "floor_heating", "same_room": True,
+        "effect": "Raumtemperatur → Fussbodenheizung anpassen",
+        "hint": "Raumtemperatur → Fussbodenheizung hoch/runterregeln",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "floor_heating", "same_room": True,
+        "effect": "Im Bett → Fussbodenheizung auf Nacht-Temperatur",
+        "hint": "Schlafenszeit → Fussbodenheizung auf Nacht-Modus",
+        "severity": "info",
+    },
+    {
+        "role": "smoke", "state": "on",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "Rauch → Fussbodenheizung aus",
+        "hint": "Rauch → Fussbodenheizung AUS",
+        "severity": "critical",
+    },
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "floor_heating", "same_room": True,
+        "effect": "Wasserleck → Fussbodenheizung als Quelle pruefen",
+        "hint": "Wasserleck → Fussbodenheizung koennte undicht sein",
+        "severity": "high",
+    },
+
+    # --- radiator: gleiche Affected-Regeln ---
+    {
+        "role": "presence", "state": "off",
+        "affects": "radiator", "same_room": False,
+        "effect": "Niemand zuhause → Heizkoerper auf Absenkung",
+        "hint": "Alle weg → Heizkoerper auf Absenktemperatur",
+        "severity": "info",
+    },
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "radiator", "same_room": True,
+        "effect": "Raumtemperatur → Heizkoerper anpassen",
+        "hint": "Raumtemperatur → Heizkoerper-Ventil anpassen",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "radiator", "same_room": True,
+        "effect": "Im Bett → Heizkoerper auf Nacht-Temperatur",
+        "hint": "Schlafenszeit → Heizkoerper auf Nacht-Modus",
+        "severity": "info",
+    },
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "radiator", "same_room": True,
+        "effect": "Wasserleck → Heizkoerper als Quelle pruefen",
+        "hint": "Wasserleck → Heizkoerper koennte undicht sein",
+        "severity": "high",
+    },
+
+    # #################################################################
+    # DIMMER / COLOR_LIGHT — als Affected (bisher 0!)
+    # #################################################################
+
+    {
+        "role": "media_player", "state": "playing",
+        "affects": "dimmer", "same_room": True,
+        "effect": "Medien spielen → Licht dimmen fuer Atmosphaere",
+        "hint": "Film/Medien → Licht dimmen",
+        "severity": "info",
+    },
+    {
+        "role": "tv", "state": "on",
+        "affects": "dimmer", "same_room": True,
+        "effect": "TV an → Licht dimmen",
+        "hint": "TV an → Dimmer runter fuer besseres Bild",
+        "severity": "info",
+    },
+    {
+        "role": "projector", "state": "on",
+        "affects": "dimmer", "same_room": True,
+        "effect": "Beamer an → Licht dimmen oder aus",
+        "hint": "Beamer → Dimmer ganz runter fuer optimales Bild",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "dimmer", "same_room": True,
+        "effect": "Im Bett → Licht dimmen fuer Schlaf",
+        "hint": "Schlafenszeit → Dimmer langsam auf 0",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "off",
+        "affects": "dimmer", "same_room": True,
+        "effect": "Aufgestanden → Licht langsam heller",
+        "hint": "Aufgestanden → Dimmer langsam hoch (Sonnenaufgangs-Simulation)",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "dimmer", "same_room": False,
+        "effect": "Szene aktiviert → Dimmer-Level anpassen",
+        "hint": "Szene → Dimmer auf Szenen-Level",
+        "severity": "info",
+    },
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "dimmer", "same_room": False,
+        "effect": "Alarm → alle Lichter auf Maximum",
+        "hint": "ALARM → Dimmer auf Maximum, volle Helligkeit",
+        "severity": "high",
+    },
+    {
+        "role": "presence", "state": "off",
+        "affects": "dimmer", "same_room": False,
+        "effect": "Niemand zuhause → Dimmer aus",
+        "hint": "Alle weg → alle Dimmer ausschalten",
+        "severity": "info",
+    },
+    {
+        "role": "occupancy", "state": "off",
+        "affects": "dimmer", "same_room": True,
+        "effect": "Raum leer → Dimmer ausschalten",
+        "hint": "Niemand im Raum → Dimmer aus",
+        "severity": "info",
+    },
+    {
+        "role": "occupancy", "state": "on",
+        "affects": "dimmer", "same_room": True,
+        "effect": "Raum belegt → Dimmer einschalten",
+        "hint": "Raum wird genutzt → Dimmer auf angenehmes Level",
+        "severity": "info",
+    },
+    {
+        "role": "motion", "state": "on",
+        "affects": "dimmer", "same_room": True,
+        "effect": "Bewegung → Dimmer einschalten",
+        "hint": "Bewegung im Raum → Dimmer an",
+        "severity": "info",
+    },
+
+    # --- color_light ---
+    {
+        "role": "scene", "state": "on",
+        "affects": "color_light", "same_room": False,
+        "effect": "Szene aktiviert → Farblicht anpassen",
+        "hint": "Szene → Farblicht auf Szenen-Farbe/Helligkeit",
+        "severity": "info",
+    },
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "color_light", "same_room": False,
+        "effect": "Alarm → Farblicht rot als Warnung",
+        "hint": "ALARM → Farblicht auf ROT, visuelle Warnung",
+        "severity": "high",
+    },
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "color_light", "same_room": True,
+        "effect": "Im Bett → Farblicht warm/dunkel oder aus",
+        "hint": "Schlafenszeit → Farblicht warm/gedimmt oder aus",
+        "severity": "info",
+    },
+    {
+        "role": "media_player", "state": "playing",
+        "affects": "color_light", "same_room": True,
+        "effect": "Medien → Farblicht als Ambilight/Stimmung",
+        "hint": "Film/Medien → Farblicht als Ambilight passend zum Inhalt",
+        "severity": "info",
+    },
+    {
+        "role": "presence", "state": "off",
+        "affects": "color_light", "same_room": False,
+        "effect": "Niemand zuhause → Farblicht aus",
+        "hint": "Alle weg → Farblicht ausschalten",
+        "severity": "info",
+    },
+    {
+        "role": "occupancy", "state": "off",
+        "affects": "color_light", "same_room": True,
+        "effect": "Raum leer → Farblicht aus",
+        "hint": "Niemand im Raum → Farblicht aus",
+        "severity": "info",
+    },
+    {
+        "role": "motion", "state": "on",
+        "affects": "color_light", "same_room": True,
+        "effect": "Bewegung → Farblicht einschalten",
+        "hint": "Bewegung im Raum → Farblicht an",
+        "severity": "info",
+    },
+
+    # #################################################################
+    # GARDEN_LIGHT — erweiterte Trigger (bisher nur 3)
+    # #################################################################
+
+    {
+        "role": "motion", "state": "on",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Bewegung draussen → Gartenbeleuchtung einschalten",
+        "hint": "Bewegung im Garten → Gartenbeleuchtung an (Sicherheit)",
+        "severity": "info",
+    },
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Alarm → Gartenbeleuchtung an fuer Abschreckung",
+        "hint": "ALARM → Gartenbeleuchtung an, Einbrecher abschrecken",
+        "severity": "high",
+    },
+    {
+        "role": "alarm", "state": "armed_away",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Alarm scharf → Gartenbeleuchtung als Anwesenheits-Simulation",
+        "hint": "Alarm scharf → Gartenbeleuchtung zeitgesteuert als Simulation",
+        "severity": "info",
+    },
+    {
+        "role": "doorbell", "state": "on",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Klingel → Eingangsbeleuchtung einschalten",
+        "hint": "Klingel → Aussenbeleuchtung an fuer Besucher",
+        "severity": "info",
+    },
+    {
+        "role": "light_level", "state": "on",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Lichtsensor dunkel → Gartenbeleuchtung an",
+        "hint": "Daemmerung → Gartenbeleuchtung einschalten",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Schlafenszeit → Gartenbeleuchtung aus (Energiesparen)",
+        "hint": "Alle schlafen → Gartenbeleuchtung aus",
+        "severity": "info",
+    },
+    {
+        "role": "tamper", "state": "on",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Sabotage → Gartenbeleuchtung an fuer Abschreckung",
+        "hint": "Sabotage → Gartenbeleuchtung an, Einbrecher abschrecken",
+        "severity": "high",
+    },
+
+    # #################################################################
+    # PROJECTOR — als Affected (bisher 0)
+    # #################################################################
+
+    {
+        "role": "light_level", "state": "on",
+        "affects": "projector", "same_room": True,
+        "effect": "Hohe Helligkeit im Raum → Beamer-Bild schlecht",
+        "hint": "Zu hell fuer Beamer → Beschattung schliessen",
+        "severity": "info",
+    },
+    {
+        "role": "presence", "state": "off",
+        "affects": "projector", "same_room": False,
+        "effect": "Niemand zuhause → Beamer ausschalten",
+        "hint": "Alle weg → Beamer ausschalten",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "projector", "same_room": False,
+        "effect": "Schlafenszeit → Beamer aus",
+        "hint": "Schlafenszeit → Beamer ausschalten",
+        "severity": "info",
+    },
+
+    # #################################################################
+    # FEHLENDE GERAETE-INTERAKTIONEN
+    # #################################################################
+
+    # Doorbell → TV (Kamerabild auf TV anzeigen)
+    {
+        "role": "doorbell", "state": "on",
+        "affects": "tv", "same_room": False,
+        "effect": "Klingel → Kamerabild auf TV anzeigen",
+        "hint": "Klingel → Tuerkamera-Bild auf dem Fernseher anzeigen",
+        "severity": "info",
+    },
+
+    # Doorbell → Intercom (Gegensprechanlage aktivieren)
+    {
+        "role": "doorbell", "state": "on",
+        "affects": "intercom", "same_room": False,
+        "effect": "Klingel → Gegensprechanlage aktivieren",
+        "hint": "Klingel → Gegensprechanlage oeffnen, mit Besucher sprechen",
+        "severity": "info",
+    },
+
+    # Intercom → Media Player (Medien pausieren waehrend Gespraech)
+    {
+        "role": "intercom", "state": "on",
+        "affects": "media_player", "same_room": False,
+        "effect": "Gegensprechanlage aktiv → Medien pausieren",
+        "hint": "Gegensprechanlage → Medien leiser/pausieren",
+        "severity": "info",
+    },
+
+    # Oven → Ventilation (Dunstabzug einschalten beim Kochen!)
+    {
+        "role": "oven", "state": "on",
+        "affects": "ventilation", "same_room": True,
+        "effect": "Herd/Ofen an → Dunstabzug/Lueftung einschalten",
+        "hint": "Kochen → Dunstabzug einschalten fuer Daempfe/Geruche",
+        "severity": "info",
+    },
+    # Oven → Fenster (Lueften nach dem Kochen)
+    {
+        "role": "oven", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Herd an → nach dem Kochen lueften",
+        "hint": "Kochen → Fenster fuer Lueftung nach dem Kochen",
+        "severity": "info",
+    },
+
+    # Dryer → Humidity (Trockner erhoet Luftfeuchtigkeit im Raum)
+    {
+        "role": "dryer", "state": "on",
+        "affects": "humidity", "same_room": True,
+        "effect": "Trockner laeuft → Luftfeuchtigkeit im Raum steigt",
+        "hint": "Trockner → Luftfeuchtigkeit steigt, ggf. lueften",
+        "severity": "info",
+    },
+    # Dryer → Climate (Trockner erzeugt Waerme)
+    {
+        "role": "dryer", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Trockner erzeugt Waerme und Feuchtigkeit",
+        "hint": "Trockner → Raum wird waermer und feuchter",
+        "severity": "info",
+    },
+    # Dryer → Noise (Trockner ist laut)
+    {
+        "role": "dryer", "state": "on",
+        "affects": "noise", "same_room": True,
+        "effect": "Trockner laeuft → Laerm",
+        "hint": "Trockner → lautes Geraeusch im Raum",
+        "severity": "info",
+    },
+
+    # Washing Machine → Noise
+    {
+        "role": "washing_machine", "state": "on",
+        "affects": "noise", "same_room": True,
+        "effect": "Waschmaschine laeuft → Laerm (besonders Schleudern)",
+        "hint": "Waschmaschine → Laerm, besonders beim Schleudern",
+        "severity": "info",
+    },
+
+    # Dishwasher → Humidity
+    {
+        "role": "dishwasher", "state": "on",
+        "affects": "humidity", "same_room": True,
+        "effect": "Spuelmaschine → Dampf erhoet Luftfeuchtigkeit",
+        "hint": "Spuelmaschine → Dampf, Luftfeuchtigkeit steigt",
+        "severity": "info",
+    },
+    # Dishwasher → Noise
+    {
+        "role": "dishwasher", "state": "on",
+        "affects": "noise", "same_room": True,
+        "effect": "Spuelmaschine laeuft → Geraeusch",
+        "hint": "Spuelmaschine → Geraeusch im Raum",
+        "severity": "info",
+    },
+
+    # Vacuum → Noise (Sauger ist LAUT)
+    {
+        "role": "vacuum", "state": "cleaning",
+        "affects": "noise", "same_room": True,
+        "effect": "Staubsauger saugt → starker Laerm",
+        "hint": "Staubsauger → laut, Meeting/Telefonat stoert",
+        "severity": "info",
+    },
+    # Vacuum → Bed Occupancy (nicht saugen wenn jemand schlaeft)
+    {
+        "role": "vacuum", "state": "cleaning",
+        "affects": "bed_occupancy", "same_room": False,
+        "effect": "Staubsauger + jemand schlaeft → stoerend",
+        "hint": "Staubsauger → stoert Schlafende, erst nach dem Aufstehen",
+        "severity": "info",
+    },
+
+    # Heat Pump → Noise (Waermepumpe kann laut sein - Nachbarn!)
+    {
+        "role": "heat_pump", "state": "heat",
+        "affects": "noise", "same_room": False,
+        "effect": "Waermepumpe laeuft → Aussengeraet-Laerm",
+        "hint": "Waermepumpe → Aussengeraet laut, nachts Nachbarschaft-Ruhe beachten",
+        "severity": "info",
+    },
+
+    # Air Purifier → Noise (Luftreiniger kann laut sein)
+    {
+        "role": "air_purifier", "state": "on",
+        "affects": "noise", "same_room": True,
+        "effect": "Luftreiniger laeuft → Geraeusch im Raum",
+        "hint": "Luftreiniger → Geraeusch, nachts auf Silent-Modus",
+        "severity": "info",
+    },
+    # Air Purifier → Bed (nachts leise)
+    {
+        "role": "air_purifier", "state": "on",
+        "affects": "bed_occupancy", "same_room": True,
+        "effect": "Luftreiniger + Schlafen → Silent-Modus",
+        "hint": "Schlafenszeit → Luftreiniger auf Silent-Modus",
+        "severity": "info",
+    },
+
+    # Fan → Noise (Ventilator erzeugt Geraeusch)
+    {
+        "role": "fan", "state": "on",
+        "affects": "noise", "same_room": True,
+        "effect": "Ventilator laeuft → Geraeusch",
+        "hint": "Ventilator → Geraeusch im Raum",
+        "severity": "info",
+    },
+    # Fan → Bed (nachts leise)
+    {
+        "role": "fan", "state": "on",
+        "affects": "bed_occupancy", "same_room": True,
+        "effect": "Ventilator + Schlafen → leise Stufe",
+        "hint": "Schlafenszeit → Ventilator auf niedrigste Stufe",
+        "severity": "info",
+    },
+
+    # Router offline → NAS nicht erreichbar
+    {
+        "role": "router", "state": "off",
+        "affects": "nas", "same_room": False,
+        "effect": "Router offline → NAS ueber Netzwerk nicht erreichbar",
+        "hint": "Router down → NAS nicht erreichbar, Backups unterbrochen",
+        "severity": "high",
+    },
+
+    # Awning → Presence (bei Abwesenheit einfahren)
+    {
+        "role": "presence", "state": "off",
+        "affects": "awning", "same_room": False,
+        "effect": "Niemand zuhause → Markise einfahren (Wetter-Risiko)",
+        "hint": "Alle weg → Markise einfahren, Sturmschaden verhindern",
+        "severity": "info",
+    },
+
+    # PC → Fan (PC erzeugt Waerme → Ventilator hilft)
+    {
+        "role": "pc", "state": "on",
+        "affects": "fan", "same_room": True,
+        "effect": "PC laeuft → Waermeentwicklung, Ventilator sinnvoll",
+        "hint": "PC an → Raum wird waermer, Ventilator einschalten",
+        "severity": "info",
+    },
+    # PC → Noise
+    {
+        "role": "pc", "state": "on",
+        "affects": "noise", "same_room": True,
+        "effect": "PC laeuft → Luefter-Geraeusch",
+        "hint": "PC → Luefter-Geraeusch im Raum",
+        "severity": "info",
+    },
+
+    # Server → Climate (Serverraum braucht Kuehlung!)
+    {
+        "role": "server", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Server laeuft → erzeugt Waerme, Kuehlung noetig",
+        "hint": "Server an → Raum-Kuehlung sicherstellen",
+        "severity": "info",
+    },
+
+    # NAS → Energy
+    {
+        "role": "nas", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "NAS laeuft → Stromverbrauch",
+        "hint": "NAS an → Dauerstromverbraucher",
+        "severity": "info",
+    },
+
+    # Irrigation → Energy (Pumpe braucht Strom)
+    {
+        "role": "irrigation", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Bewaesserung → Pumpe verbraucht Strom",
+        "hint": "Bewaesserung → Strom fuer Pumpe/Ventile",
+        "severity": "info",
+    },
+
+    # Doorbell → Lock (Tuer oeffnen fuer erwarteten Besucher)
+    {
+        "role": "doorbell", "state": "on",
+        "affects": "lock", "same_room": False,
+        "effect": "Klingel → Tuer ggf. oeffnen fuer Besucher",
+        "hint": "Klingel → Tuer fuer erwarteten Besucher entriegeln",
+        "severity": "info",
+    },
+
+    # Smoke → PC/Server herunterfahren (Datenverlust verhindern)
+    {
+        "role": "smoke", "state": "on",
+        "affects": "pc", "same_room": False,
+        "effect": "Rauch → PC herunterfahren, Datenverlust minimieren",
+        "hint": "RAUCH → PC/Server sicher herunterfahren",
+        "severity": "high",
+    },
+    {
+        "role": "smoke", "state": "on",
+        "affects": "server", "same_room": False,
+        "effect": "Rauch → Server herunterfahren, Datenverlust verhindern",
+        "hint": "RAUCH → Server sicher herunterfahren, Backups schuetzen",
+        "severity": "high",
+    },
+
+    # Water Leak → Fussbodenheizung (erhoehtes Risiko bei Leck)
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Wasserleck → Bewaesserung stoppen als Vorsicht",
+        "hint": "Wasserleck → Bewaesserung sofort stoppen, koennte Quelle sein",
+        "severity": "high",
+    },
+
+    # Boiler → Climate (Warmwasser-Bereitung erzeugt Abwaerme)
+    {
+        "role": "boiler", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Boiler heizt → Waerme-Abstrahlung in den Raum",
+        "hint": "Boiler → erzeugt Abwaerme im Heizungsraum",
+        "severity": "info",
+    },
+
+    # Coffee Machine → Energy
+    {
+        "role": "coffee_machine", "state": "on",
+        "affects": "water_consumption", "same_room": False,
+        "effect": "Kaffeemaschine verbraucht Wasser",
+        "hint": "Kaffeemaschine → Wasserverbrauch beachten, Tank nachfuellen",
+        "severity": "info",
+    },
+
+    # Siren → Media Player (Medien stoppen bei Alarm)
+    {
+        "role": "siren", "state": "on",
+        "affects": "media_player", "same_room": False,
+        "effect": "Sirene heult → Medien sofort stoppen",
+        "hint": "Sirene → Medien stoppen, Sirene muss gehoert werden",
+        "severity": "high",
+    },
+
+    # Siren → Speaker (Lautsprecher-Durchsage)
+    {
+        "role": "siren", "state": "on",
+        "affects": "speaker", "same_room": False,
+        "effect": "Sirene → Lautsprecher fuer Evakuierungs-Durchsage",
+        "hint": "Sirene → Lautsprecher fuer Warn-Durchsage nutzen",
+        "severity": "high",
+    },
+
+    # Alarm armed → vacuum stoppen (Bewegungsmelder Fehlalarm!)
+    {
+        "role": "alarm", "state": "armed_away",
+        "affects": "vacuum", "same_room": False,
+        "effect": "Alarm scharf → Staubsauger stoppen (loest Bewegungsmelder aus!)",
+        "hint": "Alarm scharf → Saugroboter stoppen, loest sonst Alarm aus",
+        "severity": "high",
+    },
+    {
+        "role": "alarm", "state": "armed_night",
+        "affects": "vacuum", "same_room": False,
+        "effect": "Nacht-Alarm → Staubsauger stoppen",
+        "hint": "Nacht-Alarm → Saugroboter stoppen, loest sonst Alarm aus",
+        "severity": "high",
+    },
+
+    # Presence off → Receiver aus
+    {
+        "role": "presence", "state": "off",
+        "affects": "receiver", "same_room": False,
+        "effect": "Niemand zuhause → AV-Receiver ausschalten",
+        "hint": "Alle weg → Receiver ausschalten (Standby-Verbrauch)",
+        "severity": "info",
+    },
+    # Presence off → Gaming aus
+    {
+        "role": "presence", "state": "off",
+        "affects": "gaming", "same_room": False,
+        "effect": "Niemand zuhause → Spielkonsole aus",
+        "hint": "Alle weg → Gaming-Konsole/PC ausschalten",
+        "severity": "info",
+    },
+    # Presence off → Projector aus
+    {
+        "role": "presence", "state": "off",
+        "affects": "projector", "same_room": False,
+        "effect": "Niemand zuhause → Beamer ausschalten",
+        "hint": "Alle weg → Beamer ausschalten",
+        "severity": "info",
+    },
+    # Presence off → Speaker aus
+    {
+        "role": "presence", "state": "off",
+        "affects": "speaker", "same_room": False,
+        "effect": "Niemand zuhause → Lautsprecher ausschalten",
+        "hint": "Alle weg → Lautsprecher aus",
+        "severity": "info",
+    },
+    # Presence off → Air Purifier (Eco oder aus)
+    {
+        "role": "presence", "state": "off",
+        "affects": "air_purifier", "same_room": False,
+        "effect": "Niemand zuhause → Luftreiniger auf Eco/Aus",
+        "hint": "Alle weg → Luftreiniger auf Eco oder aus",
+        "severity": "info",
+    },
+    # Presence off → Dehumidifier
+    {
+        "role": "presence", "state": "off",
+        "affects": "dehumidifier", "same_room": False,
+        "effect": "Niemand zuhause → Entfeuchter weiter laufen lassen (Schimmel!)",
+        "hint": "Alle weg → Entfeuchter NICHT ausschalten, Schimmelschutz!",
+        "severity": "info",
+    },
+    # Presence off → Humidifier aus
+    {
+        "role": "presence", "state": "off",
+        "affects": "humidifier", "same_room": False,
+        "effect": "Niemand zuhause → Befeuchter aus",
+        "hint": "Alle weg → Befeuchter ausschalten",
+        "severity": "info",
+    },
+    # Presence off → Boiler (Warmwasser reduzieren)
+    {
+        "role": "presence", "state": "off",
+        "affects": "boiler", "same_room": False,
+        "effect": "Niemand zuhause → Warmwasser-Temperatur absenken",
+        "hint": "Alle weg → Boiler auf Absenkung, spart Energie",
+        "severity": "info",
+    },
+
+    # Occupancy off → erweitert
+    {
+        "role": "occupancy", "state": "off",
+        "affects": "outlet", "same_room": True,
+        "effect": "Raum leer → Standby-Steckdosen aus",
+        "hint": "Niemand im Raum → Standby-Steckdosen abschalten",
+        "severity": "info",
+    },
+    {
+        "role": "occupancy", "state": "off",
+        "affects": "blinds", "same_room": True,
+        "effect": "Raum leer → Beschattung neutral stellen",
+        "hint": "Niemand im Raum → Beschattung auf Energieoptimierung",
+        "severity": "info",
+    },
+    {
+        "role": "occupancy", "state": "on",
+        "affects": "blinds", "same_room": True,
+        "effect": "Raum belegt → Beschattung fuer Komfort",
+        "hint": "Raum wird genutzt → Beschattung fuer Blendschutz/Komfort",
+        "severity": "info",
+    },
+
+    # Licht-Level (Daemmerung) → Gartenbeleuchtung, Aussenbeleuchtung
+    {
+        "role": "light_level", "state": "on",
+        "affects": "shutter", "same_room": True,
+        "effect": "Lichtverhaeltnisse aendern sich → Rollladen anpassen",
+        "hint": "Lichtsensor → Rollladen nach Tageslicht anpassen",
+        "severity": "info",
+    },
+
+    # Solar Radiation → Cooling (Sonne heizt auf → Kuehlung noetig)
+    {
+        "role": "solar_radiation", "state": "on",
+        "affects": "cooling", "same_room": False,
+        "effect": "Starke Sonneneinstrahlung → Kuehlung noetig",
+        "hint": "Starke Sonne → Raeume heizen sich auf, Kuehlung starten",
+        "severity": "info",
+    },
+    {
+        "role": "solar_radiation", "state": "on",
+        "affects": "climate", "same_room": False,
+        "effect": "Starke Sonneneinstrahlung → Klima-Anpassung",
+        "hint": "Starke Sonne → Klimaanlage gegensteuern",
+        "severity": "info",
+    },
+
+    # Outdoor Temp → Thermostat (Aussentemperatur beeinflusst Heiz-Bedarf)
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "thermostat", "same_room": False,
+        "effect": "Aussentemperatur beeinflusst Heiz-/Kuehlbedarf",
+        "hint": "Aussentemperatur → Thermostat-Soll anpassen",
+        "severity": "info",
+    },
+    # Outdoor Temp → Heat Pump (Effizienz abhaengig von Aussentemp)
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "Aussentemperatur beeinflusst Waermepumpen-Effizienz",
+        "hint": "Aussentemperatur → Waermepumpen-Leistung anpassen",
+        "severity": "info",
+    },
+    # Outdoor Temp → Window (Lueften nur sinnvoll wenn draussen kuehler/waermer)
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "window_contact", "same_room": False,
+        "effect": "Aussentemperatur → Lueften sinnvoll oder nicht",
+        "hint": "Aussentemperatur → Lueften nur wenn draussen angenehmer als drinnen",
+        "severity": "info",
+    },
+    # Outdoor Temp → Ventilation
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "ventilation", "same_room": False,
+        "effect": "Aussentemperatur beeinflusst Lueftungs-Strategie",
+        "hint": "Aussentemperatur → Lueftung: Bypass wenn draussen kuehler",
+        "severity": "info",
+    },
+    # Outdoor Temp → Garden Light (Frost → Wegbeleuchtung wegen Glaette)
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Frost → Gartenbeleuchtung fuer Sicherheit auf Wegen",
+        "hint": "Frost → Gartenbeleuchtung an fuer Glaette-Erkennung",
+        "severity": "info",
+    },
+
+    # Humidity → Ventilation (hohe Luftfeuchtigkeit → belueften)
+    {
+        "role": "humidity", "state": "on",
+        "affects": "ventilation", "same_room": True,
+        "effect": "Hohe Luftfeuchtigkeit → Lueftung fuer Abtransport",
+        "hint": "Luftfeuchtigkeit hoch → Lueftung einschalten",
+        "severity": "info",
+    },
+
+    # CO2 → Notify (CO2 zu hoch → warnen)
+    {
+        "role": "co2", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "CO2-Wert hoch → Bewohner informieren",
+        "hint": "CO2 zu hoch → Lueften empfohlen, Konzentration sinkt",
+        "severity": "info",
+    },
+
+    # VOC → Window (fluechtige Stoffe → lueften)
+    {
+        "role": "voc", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "VOC hoch → Lueften noetig",
+        "hint": "VOC/fluechtige Stoffe hoch → Fenster oeffnen, lueften",
+        "severity": "high",
+    },
+    {
+        "role": "voc", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "VOC hoch → Bewohner warnen",
+        "hint": "VOC zu hoch → Lueften empfohlen",
+        "severity": "info",
+    },
+
+    # Radon → Notify
+    {
+        "role": "radon", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Radon-Wert hoch → Gesundheitswarnung",
+        "hint": "Radon zu hoch → Lueften, laenger nicht im Keller aufhalten",
+        "severity": "high",
+    },
+    {
+        "role": "radon", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Radon hoch → Fenster oeffnen",
+        "hint": "Radon → Kellerfenster oeffnen zum Lueften",
+        "severity": "high",
+    },
+
+    # PM2.5 / PM10 → Notify, Ventilation, Air Purifier
+    {
+        "role": "pm25", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Feinstaub PM2.5 hoch → Gesundheitswarnung",
+        "hint": "Feinstaub hoch → Fenster schliessen, Luftreiniger an",
+        "severity": "info",
+    },
+    {
+        "role": "pm25", "state": "on",
+        "affects": "air_purifier", "same_room": True,
+        "effect": "Feinstaub PM2.5 hoch → Luftreiniger einschalten",
+        "hint": "Feinstaub → Luftreiniger auf hohe Stufe",
+        "severity": "info",
+    },
+    {
+        "role": "pm10", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Feinstaub PM10 hoch → Warnung",
+        "hint": "Feinstaub PM10 hoch → Fenster zu, Luftreiniger an",
+        "severity": "info",
+    },
+    {
+        "role": "pm10", "state": "on",
+        "affects": "air_purifier", "same_room": True,
+        "effect": "Feinstaub PM10 hoch → Luftreiniger einschalten",
+        "hint": "Feinstaub → Luftreiniger einschalten",
+        "severity": "info",
+    },
+    {
+        "role": "air_quality", "state": "on",
+        "affects": "air_purifier", "same_room": True,
+        "effect": "Luftqualitaet schlecht → Luftreiniger einschalten",
+        "hint": "Schlechte Luft → Luftreiniger auf hohe Stufe",
+        "severity": "info",
+    },
+    {
+        "role": "air_quality", "state": "on",
+        "affects": "ventilation", "same_room": True,
+        "effect": "Luftqualitaet schlecht → Lueftung anpassen",
+        "hint": "Schlechte Luft → Lueftung auf Frischluft-Modus",
+        "severity": "info",
+    },
+    {
+        "role": "air_quality", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Luftqualitaet schlecht → Bewohner informieren",
+        "hint": "Luftqualitaet schlecht → Lueften oder Luftreiniger",
+        "severity": "info",
+    },
+
+    # Pressure → Climate (Luftdruckabfall = Wetterumschwung)
+    {
+        "role": "pressure", "state": "on",
+        "affects": "climate", "same_room": False,
+        "effect": "Luftdruck-Aenderung → Wetterumschwung, Klima anpassen",
+        "hint": "Luftdruck faellt → Wetter wird schlechter, vorsorglich handeln",
+        "severity": "info",
+    },
+    {
+        "role": "pressure", "state": "on",
+        "affects": "window_contact", "same_room": False,
+        "effect": "Starker Luftdruckabfall → Sturm moeglich, Fenster schliessen",
+        "hint": "Luftdruck faellt stark → Sturm moeglich, Fenster sichern",
+        "severity": "info",
+    },
 ]
 
 
