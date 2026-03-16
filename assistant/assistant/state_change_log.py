@@ -47,232 +47,7 @@ LOG_TTL_SECONDS = 6 * 3600  # 6 Stunden
 DEVICE_DEPENDENCIES = [
 
     # =====================================================================
-    # 1. FENSTER / TUEREN → KLIMA / ENERGIE / SICHERHEIT
-    # =====================================================================
-    {
-        "role": "window_contact", "state": "on",
-        "affects": "climate", "same_room": True,
-        "effect": "Heizung/Kuehlung ineffizient bei offenem Fenster",
-        "hint": "Fenster offen → Heizenergie geht verloren",
-    },
-    {
-        "role": "window_contact", "state": "on",
-        "affects": "alarm", "same_room": False,
-        "requires_state": {"armed_away", "armed_night"},
-        "effect": "Fenster offen bei Abwesenheit → Einbruchsrisiko",
-        "hint": "Fenster offen → Sicherheitsrisiko bei Abwesenheit",
-    },
-    {
-        "role": "window_contact", "state": "on",
-        "affects": "fan", "same_room": True,
-        "effect": "Fenster offen + Ventilator → Durchzug",
-        "hint": "Fenster offen + Ventilator → Durchzug, Tueren knallen",
-    },
-    {
-        "role": "window_contact", "state": "on",
-        "affects": "ventilation", "same_room": False,
-        "effect": "Fenster offen + KWL → Lueftungseffizienz sinkt",
-        "hint": "Fenster offen → KWL arbeitet ineffizient, Fenster zu fuer optimale Lueftung",
-    },
-    {
-        "role": "door_contact", "state": "on",
-        "affects": "climate", "same_room": True,
-        "effect": "Waermeverlust durch offene Tuer",
-        "hint": "Tuer offen → beeinflusst Raumtemperatur",
-    },
-    {
-        "role": "door_contact", "state": "on",
-        "affects": "alarm", "same_room": False,
-        "requires_state": {"armed_away", "armed_night"},
-        "effect": "Tuer offen → Sicherheitsrisiko bei Abwesenheit",
-        "hint": "Haustuer steht offen → Sicherheit pruefen",
-    },
-    {
-        "role": "garage_door", "state": "open",
-        "affects": "alarm", "same_room": False,
-        "requires_state": {"armed_away", "armed_night"},
-        "effect": "Garagentor offen → Sicherheitsrisiko",
-        "hint": "Garage offen → Sicherheit pruefen",
-    },
-    {
-        "role": "garage_door", "state": "open",
-        "affects": "climate", "same_room": False,
-        "effect": "Garagentor offen → Kaelte zieht in angrenzende Raeume",
-        "hint": "Garage offen → beeinflusst angrenzende Raeume",
-    },
-    {
-        "role": "gate", "state": "open",
-        "affects": "alarm", "same_room": False,
-        "requires_state": {"armed_away", "armed_night"},
-        "effect": "Tor offen → ungesicherter Zugang zum Grundstueck",
-        "hint": "Tor offen → Grundstueck nicht gesichert",
-    },
-
-    # =====================================================================
-    # 2. ROLLLADEN / JALOUSIE / MARKISE → KLIMA / LICHT
-    # =====================================================================
-    {
-        "role": "blinds", "state": "open",
-        "affects": "climate", "same_room": True,
-        "effect": "Sonneneinstrahlung erhoeht Raumtemperatur / Waermeverlust nachts",
-        "hint": "Rollladen offen → beeinflusst Raumklima",
-    },
-    {
-        "role": "blinds", "state": "closed",
-        "affects": "light", "same_room": True,
-        "effect": "Kein Tageslicht bei geschlossenem Rollladen",
-        "hint": "Rollladen zu → Kunstlicht noetig",
-    },
-    {
-        "role": "shutter", "state": "open",
-        "affects": "climate", "same_room": True,
-        "effect": "Sonneneinstrahlung beeinflusst Raumklima",
-        "hint": "Rollladen offen → Raumklima beeinflusst",
-    },
-    {
-        "role": "shutter", "state": "closed",
-        "affects": "light", "same_room": True,
-        "effect": "Kein Tageslicht bei geschlossenem Rollladen",
-        "hint": "Rollladen zu → Kunstlicht noetig",
-    },
-    {
-        "role": "awning", "state": "open",
-        "affects": "climate", "same_room": False,
-        "effect": "Markise ausgefahren → Beschattung aktiv, Raum kuehler",
-        "hint": "Markise draussen → schuetzt vor Sonneneinstrahlung",
-    },
-    {
-        "role": "curtain", "state": "closed",
-        "affects": "light", "same_room": True,
-        "effect": "Vorhang zu → weniger Tageslicht",
-        "hint": "Vorhang zu → Kunstlicht noetig",
-    },
-
-    # =====================================================================
-    # 3. KLIMA / HEIZUNG / KUEHLUNG → ENERGIE / FENSTER
-    # =====================================================================
-    {
-        "role": "thermostat", "state": "heat",
-        "affects": "window_contact", "same_room": True,
-        "effect": "Thermostat heizt + Fenster offen → Energieverschwendung",
-        "hint": "Heizung an + Fenster offen → Energie wird verschwendet",
-    },
-    {
-        "role": "thermostat", "state": "off",
-        "affects": "notify", "same_room": False,
-        "effect": "Thermostat aus bei Kaelte → Frostgefahr",
-        "hint": "Thermostat aus + kalt → Frostschutz beachten",
-    },
-    {
-        "role": "heat_pump", "state": "heat",
-        "affects": "notify", "same_room": False,
-        "effect": "Waermepumpe nachts → Laermbelaestigung Nachbarn",
-        "hint": "Waermepumpe nachts → Nachbarn koennten sich beschweren",
-    },
-    {
-        "role": "floor_heating", "state": "heat",
-        "affects": "window_contact", "same_room": True,
-        "effect": "Fussbodenheizung + Fenster offen → viel Energieverlust",
-        "hint": "Fussbodenheizung → Fenster kurz lueften, nicht kippen",
-    },
-    {
-        "role": "radiator", "state": "heat",
-        "affects": "window_contact", "same_room": True,
-        "effect": "Heizkoerper heizt + Fenster offen → Energieverschwendung",
-        "hint": "Heizkoerper an + Fenster offen → Energie geht verloren",
-    },
-
-    # =====================================================================
-    # 5. PRAESENZ / BEWEGUNG → LICHT / KLIMA / MEDIA / SICHERHEIT
-    # =====================================================================
-    {
-        "role": "motion", "state": "on",
-        "affects": "alarm", "same_room": False,
-        "requires_state": {"armed_away", "armed_night"},
-        "effect": "Bewegung bei aktivem Alarm → moeglicher Einbruch",
-        "hint": "Bewegung bei scharfem Alarm → Einbruch-Warnung",
-    },
-    {
-        "role": "presence", "state": "off",
-        "affects": "climate", "same_room": False,
-        "effect": "Niemand zuhause → Heizung/Kuehlung unnoetig",
-        "hint": "Abwesend → Energie sparen moeglich",
-    },
-    {
-        "role": "presence", "state": "off",
-        "affects": "light", "same_room": False,
-        "effect": "Niemand zuhause → Licht unnoetig",
-        "hint": "Abwesend → Licht sollte aus sein",
-    },
-    {
-        "role": "presence", "state": "off",
-        "affects": "media_player", "same_room": False,
-        "effect": "Niemand zuhause → Medien laufen umsonst",
-        "hint": "Abwesend → Medien sollten aus sein",
-    },
-    {
-        "role": "presence", "state": "off",
-        "affects": "outlet", "same_room": False,
-        "effect": "Niemand zuhause → Standby-Geraete laufen",
-        "hint": "Abwesend → Standby-Geraete ausschalten",
-    },
-    {
-        "role": "occupancy", "state": "off",
-        "affects": "light", "same_room": True,
-        "effect": "Raum leer → Licht unnoetig",
-        "hint": "Raum leer → Licht brennt umsonst",
-    },
-    {
-        "role": "occupancy", "state": "off",
-        "affects": "climate", "same_room": True,
-        "effect": "Raum leer → Heizung/Kuehlung unnoetig",
-        "hint": "Raum leer → Energie sparen moeglich",
-    },
-    {
-        "role": "occupancy", "state": "off",
-        "affects": "media_player", "same_room": True,
-        "effect": "Raum leer → Medien spielen fuer niemanden",
-        "hint": "Raum leer → Medien laufen umsonst",
-    },
-    {
-        "role": "occupancy", "state": "off",
-        "affects": "fan", "same_room": True,
-        "effect": "Raum leer → Ventilator unnoetig",
-        "hint": "Raum leer → Ventilator laeuft umsonst",
-    },
-    {
-        "role": "bed_occupancy", "state": "on",
-        "affects": "light", "same_room": True,
-        "effect": "Im Bett → Lichter sollten aus sein",
-        "hint": "Bett belegt → Lichter ausschalten",
-    },
-    {
-        "role": "bed_occupancy", "state": "on",
-        "affects": "media_player", "same_room": False,
-        "effect": "Im Bett → Medien leiser oder aus",
-        "hint": "Schlafenszeit → Medien runterdrehen",
-    },
-    {
-        "role": "bed_occupancy", "state": "on",
-        "affects": "climate", "same_room": True,
-        "effect": "Im Bett → Schlaftemperatur einstellen (kuehler)",
-        "hint": "Schlafenszeit → Temperatur fuer Schlaf anpassen",
-    },
-    {
-        "role": "bed_occupancy", "state": "on",
-        "affects": "lock", "same_room": False,
-        "effect": "Im Bett → Tueren sollten abgeschlossen sein",
-        "hint": "Schlafenszeit → Tueren abschliessen",
-    },
-    {
-        "role": "bed_occupancy", "state": "on",
-        "affects": "blinds", "same_room": True,
-        "effect": "Im Bett → Rolllaeden sollten zu sein",
-        "hint": "Schlafenszeit → Rolllaeden schliessen",
-    },
-
-    # =====================================================================
-    # 6. SICHERHEIT — RAUCH / GAS / CO / WASSER / EINBRUCH
+    # 1. SICHERHEIT — RAUCH / GAS / CO / WASSER / EINBRUCH (immer aktiv)
     # =====================================================================
     {
         "role": "smoke", "state": "on",
@@ -323,46 +98,10 @@ DEVICE_DEPENDENCIES = [
         "hint": "Sabotage erkannt → Geraet wurde manipuliert",
     },
     {
-        "role": "vibration", "state": "on",
+        "role": "oven", "state": "on",
         "affects": "alarm", "same_room": False,
-        "requires_state": {"armed_away", "armed_night"},
-        "effect": "Vibration erkannt → Einbruchsversuch moeglich",
-        "hint": "Vibration an Tuer/Fenster → Einbruchsversuch?",
-    },
-    {
-        "role": "lock", "state": "unlocked",
-        "affects": "alarm", "same_room": False,
-        "requires_state": {"armed_away", "armed_night"},
-        "effect": "Schloss offen → Sicherheitsrisiko bei Abwesenheit",
-        "hint": "Tuer nicht abgeschlossen → Sicherheit pruefen",
-    },
-    {
-        "role": "lock", "state": "unlocked",
-        "affects": "notify", "same_room": False,
-        "effect": "Schloss offen nachts → Warnung",
-        "hint": "Tuer nachts nicht abgeschlossen → Hinweis geben",
-    },
-
-    # =====================================================================
-    # 7. ALARM → LICHT / KAMERA / BENACHRICHTIGUNG
-    # =====================================================================
-    {
-        "role": "alarm", "state": "armed_away",
-        "affects": "light", "same_room": False,
-        "effect": "Alarm scharf (abwesend) → Praesenz simulieren",
-        "hint": "Alarm scharf → Licht-Simulation gegen Einbruch",
-    },
-    {
-        "role": "alarm", "state": "armed_away",
-        "affects": "blinds", "same_room": False,
-        "effect": "Alarm scharf (abwesend) → Rolllaeden als Schutz",
-        "hint": "Alarm scharf → Rolllaeden runter fuer Sichtschutz",
-    },
-    {
-        "role": "alarm", "state": "armed_night",
-        "affects": "lock", "same_room": False,
-        "effect": "Nacht-Alarm → alle Tueren abgeschlossen",
-        "hint": "Nachtalarm → Schloss pruefen",
+        "effect": "Herd an + niemand in Kueche → Brandgefahr",
+        "hint": "Herd an → Brandgefahr wenn unbeaufsichtigt",
     },
     {
         "role": "alarm", "state": "triggered",
@@ -378,117 +117,88 @@ DEVICE_DEPENDENCIES = [
     },
 
     # =====================================================================
-    # 8. MEDIEN / ENTERTAINMENT → LICHT / ROLLLADEN
+    # 2. SICHERHEIT — nur bei scharfem Alarm (requires_state)
     # =====================================================================
     {
-        "role": "media_player", "state": "playing",
-        "affects": "light", "same_room": True,
-        "effect": "Medien spielen → Kino-Modus (Licht dimmen) sinnvoll",
-        "hint": "Film/Musik laeuft → Licht anpassen",
+        "role": "window_contact", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
+        "effect": "Fenster offen bei Abwesenheit → Einbruchsrisiko",
+        "hint": "Fenster offen → Sicherheitsrisiko bei Abwesenheit",
     },
     {
-        "role": "media_player", "state": "playing",
-        "affects": "blinds", "same_room": True,
-        "effect": "Medien spielen → Rollladen gegen Blendung",
-        "hint": "TV/Film laeuft → Blendung durch Rollladen vermeiden",
+        "role": "door_contact", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
+        "effect": "Tuer offen → Sicherheitsrisiko bei Abwesenheit",
+        "hint": "Haustuer steht offen → Sicherheit pruefen",
     },
     {
-        "role": "tv", "state": "on",
-        "affects": "light", "same_room": True,
-        "effect": "TV an → Licht anpassen fuer besseres Bild",
-        "hint": "TV an → Licht dimmen sinnvoll",
+        "role": "garage_door", "state": "open",
+        "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
+        "effect": "Garagentor offen → Sicherheitsrisiko",
+        "hint": "Garage offen → Sicherheit pruefen",
     },
     {
-        "role": "tv", "state": "on",
-        "affects": "blinds", "same_room": True,
-        "effect": "TV an → Blendung auf Bildschirm vermeiden",
-        "hint": "TV an → Rollladen gegen Blendung",
+        "role": "gate", "state": "open",
+        "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
+        "effect": "Tor offen → ungesicherter Zugang zum Grundstueck",
+        "hint": "Tor offen → Grundstueck nicht gesichert",
     },
     {
-        "role": "projector", "state": "on",
-        "affects": "light", "same_room": True,
-        "effect": "Beamer an → Raum muss komplett dunkel sein",
-        "hint": "Beamer an → alles abdunkeln noetig",
+        "role": "motion", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
+        "effect": "Bewegung bei aktivem Alarm → moeglicher Einbruch",
+        "hint": "Bewegung bei scharfem Alarm → Einbruch-Warnung",
     },
     {
-        "role": "projector", "state": "on",
-        "affects": "blinds", "same_room": True,
-        "effect": "Beamer an → Rollladen komplett runter",
-        "hint": "Beamer an → komplette Abdunklung noetig",
+        "role": "vibration", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
+        "effect": "Vibration erkannt → Einbruchsversuch moeglich",
+        "hint": "Vibration an Tuer/Fenster → Einbruchsversuch?",
     },
     {
-        "role": "gaming", "state": "on",
-        "affects": "light", "same_room": True,
-        "effect": "Gaming aktiv → Licht anpassen fuer Bildschirm",
-        "hint": "Gaming-Modus → Licht dimmen sinnvoll",
+        "role": "lock", "state": "unlocked",
+        "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
+        "effect": "Schloss offen → Sicherheitsrisiko bei Abwesenheit",
+        "hint": "Tuer nicht abgeschlossen → Sicherheit pruefen",
     },
+
+    # =====================================================================
+    # 3. ENERGIEVERSCHWENDUNG — widersprüchliche Zustaende
+    # =====================================================================
     {
-        "role": "speaker", "state": "playing",
+        "role": "thermostat", "state": "heat",
         "affects": "window_contact", "same_room": True,
-        "effect": "Musik laut + Fenster offen → Nachbarn stoeren",
-        "hint": "Musik laut + Fenster offen → Laermbelaestigung moeglich",
+        "effect": "Thermostat heizt + Fenster offen → Energieverschwendung",
+        "hint": "Heizung an + Fenster offen → Energie wird verschwendet",
+    },
+    {
+        "role": "floor_heating", "state": "heat",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Fussbodenheizung + Fenster offen → viel Energieverlust",
+        "hint": "Fussbodenheizung → Fenster kurz lueften, nicht kippen",
+    },
+    {
+        "role": "radiator", "state": "heat",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Heizkoerper heizt + Fenster offen → Energieverschwendung",
+        "hint": "Heizkoerper an + Fenster offen → Energie geht verloren",
+    },
+    {
+        "role": "rain", "state": "on",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Regen → Bewaesserung unnoetig, Wasserverschwendung",
+        "hint": "Es regnet → Bewaesserung stoppen",
     },
 
     # =====================================================================
-    # 9. HAUSHALTSGERAETE → BENACHRICHTIGUNG / SICHERHEIT / ENERGIE
-    # =====================================================================
-    {
-        "role": "washing_machine", "state": "idle",
-        "affects": "notify", "same_room": False,
-        "effect": "Waschmaschine fertig → Waesche rausholen",
-        "hint": "Waschmaschine fertig → User benachrichtigen",
-    },
-    {
-        "role": "dryer", "state": "idle",
-        "affects": "notify", "same_room": False,
-        "effect": "Trockner fertig → Waesche rausholen",
-        "hint": "Trockner fertig → User benachrichtigen",
-    },
-    {
-        "role": "dishwasher", "state": "idle",
-        "affects": "notify", "same_room": False,
-        "effect": "Geschirrspueler fertig → ausraeumen",
-        "hint": "Geschirrspueler fertig → User benachrichtigen",
-    },
-    {
-        "role": "oven", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Backofen/Herd an → nicht vergessen",
-        "hint": "Backofen laeuft → nicht vergessen auszumachen",
-    },
-    {
-        "role": "oven", "state": "on",
-        "affects": "alarm", "same_room": False,
-        "effect": "Herd an + niemand in Kueche → Brandgefahr",
-        "hint": "Herd an → Brandgefahr wenn unbeaufsichtigt",
-    },
-    {
-        "role": "fridge", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Kuehlschrank offen → Lebensmittel verderben",
-        "hint": "Kuehlschrank steht offen → sofort schliessen",
-    },
-    {
-        "role": "freezer", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Gefrierschrank Temperatur zu hoch → Lebensmittel tauen",
-        "hint": "Gefrierschrank zu warm → Lebensmittel in Gefahr",
-    },
-    {
-        "role": "vacuum", "state": "cleaning",
-        "affects": "motion", "same_room": True,
-        "effect": "Saugroboter kann Bewegungsmelder ausloesen",
-        "hint": "Saugroboter aktiv → Bewegungsmelder ignorieren",
-    },
-    {
-        "role": "vacuum", "state": "cleaning",
-        "affects": "alarm", "same_room": False,
-        "effect": "Saugroboter loest Bewegungsmelder aus → kein Einbruch",
-        "hint": "Saugroboter aktiv → Fehlalarm vermeiden",
-    },
-
-    # =====================================================================
-    # 10. WETTER → ROLLLADEN / MARKISE / FENSTER / BEWAESSERUNG
+    # 4. SCHADENSPRAEVENTION — Wetter / Wind / Regen
     # =====================================================================
     {
         "role": "wind_speed", "state": "on",
@@ -509,30 +219,6 @@ DEVICE_DEPENDENCIES = [
         "hint": "Regen → Markise einfahren",
     },
     {
-        "role": "rain", "state": "on",
-        "affects": "irrigation", "same_room": False,
-        "effect": "Regen → Bewaesserung unnoetig, Wasserverschwendung",
-        "hint": "Es regnet → Bewaesserung stoppen",
-    },
-    {
-        "role": "rain", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Regen → Waesche draussen? Dachfenster offen?",
-        "hint": "Regen → Waesche reinholen, Fenster pruefen",
-    },
-    {
-        "role": "uv_index", "state": "on",
-        "affects": "blinds", "same_room": False,
-        "effect": "UV-Index hoch → Beschattung sinnvoll",
-        "hint": "Starke UV-Strahlung → Rolllaeden/Jalousien als Schutz",
-    },
-    {
-        "role": "solar_radiation", "state": "on",
-        "affects": "blinds", "same_room": False,
-        "effect": "Starke Sonneneinstrahlung → Beschattung aktivieren",
-        "hint": "Sonne stark → Beschattung anpassen",
-    },
-    {
         "role": "rain_sensor", "state": "on",
         "affects": "window_contact", "same_room": False,
         "effect": "Regen erkannt → offene Fenster schliessen",
@@ -540,23 +226,7 @@ DEVICE_DEPENDENCIES = [
     },
 
     # =====================================================================
-    # 11. LUEFTUNG / DUNSTABZUG / KAMIN → FENSTER (UNTERDRUCK!)
-    # =====================================================================
-    {
-        "role": "ventilation", "state": "on",
-        "affects": "window_contact", "same_room": False,
-        "effect": "Lueftungsanlage aktiv → Fenster zu halten fuer Effizienz",
-        "hint": "KWL laeuft → Fenster zu fuer optimale Lueftung",
-    },
-    {
-        "role": "fan", "state": "on",
-        "affects": "climate", "same_room": True,
-        "effect": "Ventilator an → gefuehlte Temperatur sinkt",
-        "hint": "Ventilator → kuehlt nicht, aber gefuehlt kuehler",
-    },
-
-    # =====================================================================
-    # 12. LUFTQUALITAET → LUEFTUNG / FENSTER / GESUNDHEIT
+    # 5. GESUNDHEIT — Luftqualitaet / Schimmel / Radon
     # =====================================================================
     {
         "role": "co2", "state": "on",
@@ -583,642 +253,45 @@ DEVICE_DEPENDENCIES = [
         "hint": "Feinstaub hoch → Fenster zu lassen",
     },
     {
-        "role": "air_quality", "state": "on",
-        "affects": "window_contact", "same_room": False,
-        "effect": "Luftqualitaet draussen schlecht → Fenster geschlossen",
-        "hint": "Luftqualitaet draussen schlecht → Fenster zu",
-    },
-    {
         "role": "dew_point", "state": "on",
         "affects": "climate", "same_room": True,
-        "effect": "Taupunkt erreicht → Kondenswasser, Schimmelgefahr",
-        "hint": "Taupunkt → Schimmelgefahr, sofort lueften oder heizen",
-    },
-    {
-        "role": "humidity", "state": "on",
-        "affects": "fan", "same_room": True,
-        "effect": "Luftfeuchtigkeit hoch → Lueftung noetig",
-        "hint": "Feuchtigkeit hoch → Luefter/Fenster oeffnen",
-    },
-    {
-        "role": "humidity", "state": "on",
-        "affects": "climate", "same_room": True,
-        "effect": "Hohe Feuchtigkeit → Schimmelgefahr",
-        "hint": "Hohe Luftfeuchtigkeit → Lueften oder Entfeuchten",
+        "effect": "Taupunkt erreicht → Schimmelgefahr",
+        "hint": "Taupunkt → Schimmelgefahr, heizen oder lueften",
     },
     {
         "role": "radon", "state": "on",
         "affects": "ventilation", "same_room": False,
-        "effect": "Radon-Wert hoch → Lueftung wichtig",
-        "hint": "Radon hoch → unbedingt lueften, gesundheitsgefaehrdend",
+        "effect": "Radon-Wert hoch → Gesundheitsgefahr, sofort lueften",
+        "hint": "Radon hoch → DRINGEND lueften, Gesundheitsgefahr",
     },
 
     # =====================================================================
-    # 13. ENERGIE / SOLAR / BATTERIE / WALLBOX
+    # 6. FEHLALARM-VERMEIDUNG — Vacuum / Saugroboter
     # =====================================================================
     {
-        "role": "solar", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "PV produziert → Eigenverbrauch optimieren",
-        "hint": "PV-Produktion → Geraete jetzt einschalten fuer Eigenverbrauch",
+        "role": "vacuum", "state": "cleaning",
+        "affects": "motion", "same_room": True,
+        "effect": "Saugroboter kann Bewegungsmelder ausloesen",
+        "hint": "Saugroboter aktiv → Bewegungsmelder ignorieren",
     },
     {
-        "role": "grid_feed", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Strom wird eingespeist → Eigenverbrauch erhoehen",
-        "hint": "Einspeisung → besser selbst verbrauchen",
+        "role": "vacuum", "state": "cleaning",
+        "affects": "alarm", "same_room": False,
+        "effect": "Saugroboter loest Bewegungsmelder aus → kein Einbruch",
+        "hint": "Saugroboter aktiv → Fehlalarm vermeiden",
     },
-    {
-        "role": "grid_consumption", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Netzbezug hoch → Strom wird teuer eingekauft",
-        "hint": "Netzbezug hoch → Eigenverbrauch optimieren",
-    },
-    {
-        "role": "ev_charger", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Wallbox laedt → sehr hoher Stromverbrauch (11-22kW)",
-        "hint": "E-Auto laedt → hoher Stromverbrauch",
-    },
+
+    # =====================================================================
+    # 7. INFRASTRUKTUR — Netz-Ueberlast
+    # =====================================================================
     {
         "role": "ev_charger", "state": "on",
         "affects": "heat_pump", "same_room": False,
-        "effect": "Wallbox + Waermepumpe gleichzeitig → moegliche Netzueberlast",
-        "hint": "Wallbox + Waermepumpe → Ueberlastgefahr",
-    },
-    {
-        "role": "battery", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Batterie-Warnung → Geraet bald offline",
-        "hint": "Batterie schwach → Batterie wechseln bevor Geraet ausfaellt",
-    },
-    {
-        "role": "outlet", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Smarte Steckdose an → Standby-Verbrauch moeglich",
-        "hint": "Steckdose aktiv → Standby-Verbrauch pruefen",
-    },
-    {
-        "role": "power_meter", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Hoher Verbrauch erkannt → Geraet pruefen",
-        "hint": "Ungewoehnlich hoher Verbrauch → Defekt oder vergessen?",
-    },
-
-    # =====================================================================
-    # 14. TUERKLINGEL / BRIEFKASTEN / PAKET
-    # =====================================================================
-    {
-        "role": "doorbell", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Tuerklingel → jemand steht vor der Tuer",
-        "hint": "Klingel → Besucher an der Tuer",
-    },
-    {
-        "role": "doorbell", "state": "on",
-        "affects": "light", "same_room": False,
-        "effect": "Klingel nachts → Aussenlicht an",
-        "hint": "Klingel → Eingangsbereich beleuchten",
-    },
-    {
-        "role": "doorbell", "state": "on",
-        "affects": "camera", "same_room": False,
-        "effect": "Klingel → Kamerabild anzeigen/aufnehmen",
-        "hint": "Klingel → Tuerkamera aktivieren",
-    },
-    {
-        "role": "intercom", "state": "on",
-        "affects": "camera", "same_room": False,
-        "effect": "Gegensprechanlage aktiv → Kamera zeigen",
-        "hint": "Gegensprech → wer steht vor der Tuer?",
-    },
-
-    # =====================================================================
-    # 15. NETZWERK / CONNECTIVITY → GERAETE-AUSFALL
-    # =====================================================================
-    {
-        "role": "router", "state": "off",
-        "affects": "notify", "same_room": False,
-        "effect": "Router offline → alle WLAN-Geraete ohne Verbindung",
-        "hint": "Router offline → Internet und WLAN-Geraete betroffen",
-    },
-    {
-        "role": "connectivity", "state": "off",
-        "affects": "notify", "same_room": False,
-        "effect": "Verbindung verloren → Geraet nicht erreichbar",
-        "hint": "Geraet offline → Verbindung pruefen",
-    },
-    {
-        "role": "server", "state": "off",
-        "affects": "notify", "same_room": False,
-        "effect": "Server/NAS offline → Dienste nicht verfuegbar",
-        "hint": "Server offline → Backups und Dienste betroffen",
-    },
-    {
-        "role": "nas", "state": "off",
-        "affects": "notify", "same_room": False,
-        "effect": "NAS offline → Backups und Medien nicht verfuegbar",
-        "hint": "NAS offline → Datensicherung betroffen",
-    },
-
-    # =====================================================================
-    # 16. GARTEN / BEWAESSERUNG / POOL
-    # =====================================================================
-    {
-        "role": "irrigation", "state": "on",
-        "affects": "water_consumption", "same_room": False,
-        "effect": "Bewaesserung laeuft → Wasserverbrauch",
-        "hint": "Bewaesserung an → Wasserverbrauch beachten",
-    },
-    {
-        "role": "soil_moisture", "state": "on",
-        "affects": "irrigation", "same_room": True,
-        "effect": "Boden trocken → Bewaesserung noetig",
-        "hint": "Boden trocken → Pflanzen brauchen Wasser",
-    },
-    {
-        "role": "pool", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Pool-Technik an → Stromverbrauch",
-        "hint": "Pool-Pumpe/Heizung laeuft → Energieverbrauch beachten",
-    },
-    {
-        "role": "garden_light", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Gartenbeleuchtung an → Stromverbrauch nachts",
-        "hint": "Gartenlicht brennt → Lichtverschmutzung, Insekten",
-    },
-
-    # =====================================================================
-    # 17. FAHRZEUGE / GARAGE
-    # =====================================================================
-    {
-        "role": "car", "state": "not_home",
-        "affects": "garage_door", "same_room": False,
-        "effect": "Auto weg + Garage offen → vergessen zu schliessen",
-        "hint": "Auto weg, Garage offen → schliessen vergessen?",
-    },
-    {
-        "role": "car_battery", "state": "on",
-        "affects": "ev_charger", "same_room": False,
-        "effect": "Auto-Akku niedrig → laden sinnvoll",
-        "hint": "E-Auto Akku niedrig → aufladen",
-    },
-
-    # =====================================================================
-    # 18. NOTFALL / PANIK / STURZERKENNUNG
-    # =====================================================================
-    {
-        "role": "problem", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Geraete-Problem erkannt → Wartung noetig",
-        "hint": "Problem/Stoerung → Geraet pruefen",
-    },
-
-    # =====================================================================
-    # 19. VERBRAUCH / FUELLSTAENDE
-    # =====================================================================
-    {
-        "role": "water_consumption", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Hoher Wasserverbrauch → Leck oder Hahn vergessen?",
-        "hint": "Wasserverbrauch hoch → Ursache pruefen",
-    },
-    {
-        "role": "gas_consumption", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Gasverbrauch → Heizung/Warmwasser aktiv",
-        "hint": "Gasverbrauch → Heizkosten beachten",
-    },
-
-    # =====================================================================
-    # 20. LICHT-SENSOR / HELLIGKEIT → LICHT / ROLLLADEN
-    # =====================================================================
-    {
-        "role": "light_level", "state": "on",
-        "affects": "light", "same_room": True,
-        "effect": "Helligkeit → Kunstlicht anpassen",
-        "hint": "Genug Tageslicht → Lampen koennen aus",
-    },
-    {
-        "role": "light_level", "state": "on",
-        "affects": "blinds", "same_room": True,
-        "effect": "Daemmerung/Helligkeit → Rolllaeden anpassen",
-        "hint": "Lichtverhaeltnisse → Beschattung optimieren",
-    },
-
-    # =====================================================================
-    # 21. KAMERA / UEBERWACHUNG
-    # =====================================================================
-    {
-        "role": "camera", "state": "on",
-        "affects": "light", "same_room": True,
-        "effect": "Kamera aktiv → gute Beleuchtung fuer Aufnahmen",
-        "hint": "Kamera nimmt auf → Licht fuer besseres Bild",
-    },
-
-    # =====================================================================
-    # 22. UPDATE / WARTUNG
-    # =====================================================================
-    {
-        "role": "update", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Update verfuegbar → Geraet aktualisieren",
-        "hint": "Update verfuegbar → Firmware/Software aktualisieren",
-    },
-
-    # =====================================================================
-    # 23. LAERM / NOISE → KOMFORT
-    # =====================================================================
-    {
-        "role": "noise", "state": "on",
-        "affects": "notify", "same_room": True,
-        "effect": "Laermpegel hoch → Quelle pruefen",
-        "hint": "Laut im Raum → was verursacht den Laerm?",
-    },
-
-    # =====================================================================
-    # 24. PUMPE / VENTIL / MOTOR → ENERGIE / WARTUNG
-    # =====================================================================
-    {
-        "role": "pump", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Pumpe laeuft → Dauerstromverbrauch",
-        "hint": "Pumpe aktiv → Stromverbrauch",
-    },
-    {
-        "role": "valve", "state": "off",
-        "affects": "notify", "same_room": False,
-        "effect": "Ventil geschlossen → Durchfluss gestoppt",
-        "hint": "Ventil zu → kein Durchfluss, gewollt?",
-    },
-
-    # =====================================================================
-    # 25. TEMPERATUR-SENSOREN → KLIMA / WARNUNG
-    # =====================================================================
-    {
-        "role": "indoor_temp", "state": "on",
-        "affects": "climate", "same_room": True,
-        "effect": "Raumtemperatur beeinflusst Heizung/Kuehlung",
-        "hint": "Raumtemperatur → Heizung/Kuehlung anpassen",
-    },
-    {
-        "role": "outdoor_temp", "state": "on",
-        "affects": "climate", "same_room": False,
-        "effect": "Aussentemperatur beeinflusst Heizstrategie und Beschattung",
-        "hint": "Aussentemperatur → beeinflusst Heizung, Beschattung, Bewaesserung",
-    },
-    {
-        "role": "outdoor_temp", "state": "on",
-        "affects": "blinds", "same_room": False,
-        "effect": "Aussentemperatur hoch → Beschattung sinnvoll",
-        "hint": "Heiss draussen → Rolllaeden/Jalousien schliessen",
-    },
-    {
-        "role": "outdoor_temp", "state": "on",
-        "affects": "irrigation", "same_room": False,
-        "effect": "Aussentemperatur beeinflusst Bewaesserungsbedarf",
-        "hint": "Heiss → Pflanzen brauchen mehr Wasser",
-    },
-    {
-        "role": "water_temp", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Wassertemperatur → Legionellen-Schutz ab 60°C beachten",
-        "hint": "Warmwasser-Temp → Legionellen-Risiko unter 60°C",
-    },
-    {
-        "role": "water_temp", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Warmwasser-Temperatur beeinflusst Boiler-Energieverbrauch",
-        "hint": "Wassertemperatur → Energieverbrauch fuer Warmwasser",
-    },
-    {
-        "role": "soil_temp", "state": "on",
-        "affects": "irrigation", "same_room": False,
-        "effect": "Bodentemperatur beeinflusst Pflanzenwachstum",
-        "hint": "Bodentemperatur → Bewaesserung/Frostschutz anpassen",
-    },
-    {
-        "role": "pressure", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Luftdruckveraenderung → Wetterwechsel kommt",
-        "hint": "Luftdruck faellt → Schlechtwetter im Anmarsch",
-    },
-
-    # =====================================================================
-    # 26. STROM-DETAILS → ENERGIE / WARNUNG
-    # =====================================================================
-    {
-        "role": "current", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Stromstaerke ungewoehnlich hoch → Ueberlast moeglich",
-        "hint": "Hohe Stromstaerke → Sicherung koennte ausloesen",
-    },
-    {
-        "role": "voltage", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Spannung ausserhalb Norm → Netzproblem",
-        "hint": "Spannung anomal → Netzstabiliaet pruefen",
-    },
-    {
-        "role": "frequency", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Netzfrequenz abweichend → Netzinstabilitaet",
-        "hint": "Netzfrequenz → Stabilitaet des Stromnetzes",
-    },
-    {
-        "role": "power_factor", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Schlechter Leistungsfaktor → ineffiziente Geraete",
-        "hint": "Leistungsfaktor schlecht → Blindleistung, ineffizient",
-    },
-    {
-        "role": "energy", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Energieverbrauch ungewoehnlich → Ursache pruefen",
-        "hint": "Energieverbrauch hoch → welches Geraet verbraucht soviel?",
-    },
-
-    # =====================================================================
-    # 27. LADEGERAETE / AKKUS → ENERGIE
-    # =====================================================================
-    {
-        "role": "charger", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Ladegeraet aktiv → Stromverbrauch, bei Vollladung abschalten",
-        "hint": "Ladegeraet → bei vollem Akku Stecker ziehen",
-    },
-    {
-        "role": "battery_charging", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Batterie laedt → Stromverbrauch bis voll",
-        "hint": "Akku laedt → Stromverbrauch waehrend Ladung",
-    },
-
-    # =====================================================================
-    # 28. SITZ- / STUHLBELEGUNG → LICHT / KLIMA
-    # =====================================================================
-    {
-        "role": "chair_occupancy", "state": "on",
-        "affects": "light", "same_room": True,
-        "effect": "Stuhl belegt → Person im Raum, Licht sinnvoll",
-        "hint": "Stuhl belegt → jemand sitzt hier, Licht an lassen",
-    },
-    {
-        "role": "chair_occupancy", "state": "on",
-        "affects": "climate", "same_room": True,
-        "effect": "Stuhl belegt → Raum ist besetzt, Klima halten",
-        "hint": "Jemand sitzt → Raumklima beibehalten",
-    },
-    {
-        "role": "chair_occupancy", "state": "off",
-        "affects": "light", "same_room": True,
-        "effect": "Stuhl leer → Person hat Raum eventuell verlassen",
-        "hint": "Stuhl leer → noch jemand im Raum?",
-    },
-
-    # =====================================================================
-    # 29. COMPUTER / DRUCKER / IT → ENERGIE
-    # =====================================================================
-    {
-        "role": "pc", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "PC/Computer an → Stromverbrauch",
-        "hint": "Computer laeuft → Stromverbrauch beachten",
-    },
-    {
-        "role": "pc", "state": "on",
-        "affects": "light", "same_room": True,
-        "effect": "PC an → Bildschirmarbeit, Licht anpassen",
-        "hint": "PC aktiv → Licht fuer Bildschirmarbeit anpassen",
-    },
-    {
-        "role": "pc", "state": "on",
-        "affects": "climate", "same_room": True,
-        "effect": "PC an → erzeugt Abwaerme im Raum",
-        "hint": "Computer → Abwaerme beeinflusst Raumtemperatur",
-    },
-    {
-        "role": "printer", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Drucker an → Standby-Verbrauch wenn nicht genutzt",
-        "hint": "Drucker an → Stromverbrauch, nach Nutzung ausschalten",
-    },
-    {
-        "role": "printer", "state": "on",
-        "affects": "fan", "same_room": True,
-        "effect": "3D-Drucker → Daempfe moeglich, Lueftung sinnvoll",
-        "hint": "3D-Drucker druckt → Lueftung wegen Daempfe",
-    },
-
-    # =====================================================================
-    # 30. RECEIVER / HIFI → LAUTSTAERKE / ENERGIE
-    # =====================================================================
-    {
-        "role": "receiver", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "AV-Receiver an → Stromverbrauch",
-        "hint": "Receiver laeuft → Stromverbrauch beachten",
-    },
-    {
-        "role": "receiver", "state": "on",
-        "affects": "light", "same_room": True,
-        "effect": "AV-Receiver an → Heimkino-Beleuchtung anpassen",
-        "hint": "Receiver an → Heimkino-Modus, Licht dimmen",
-    },
-
-    # =====================================================================
-    # 31. TELEFON → BENACHRICHTIGUNG / LAUTSTAERKE
-    # =====================================================================
-    {
-        "role": "phone", "state": "on",
-        "affects": "media_player", "same_room": True,
-        "effect": "Telefonat → Medien leiser/stumm",
-        "hint": "Telefonat → Medien stumm schalten",
-    },
-    {
-        "role": "phone", "state": "on",
-        "affects": "vacuum", "same_room": False,
-        "effect": "Telefonat → Staubsauger stoeren",
-        "hint": "Telefonat → Saugroboter pausieren",
-    },
-
-    # =====================================================================
-    # 32. SIRENE → WARNUNG
-    # =====================================================================
-    {
-        "role": "siren", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Sirene aktiv → Alarm wurde ausgeloest",
-        "hint": "Sirene heult → ALARM aktiv, sofort reagieren",
-    },
-    {
-        "role": "siren", "state": "on",
-        "affects": "light", "same_room": False,
-        "effect": "Sirene → Lichter an zur Orientierung/Abschreckung",
-        "hint": "Sirene → alle Lichter an",
-    },
-
-    # =====================================================================
-    # 33. MOTOR / RELAY / AKTOR → ENERGIE / WARTUNG
-    # =====================================================================
-    {
-        "role": "motor", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Motor/Antrieb aktiv → Stromverbrauch",
-        "hint": "Motor laeuft → Stromverbrauch",
-    },
-    {
-        "role": "relay", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Relais geschaltet → angeschlossenes Geraet aktiv",
-        "hint": "Relais an → was haengt dran?",
-    },
-
-    # =====================================================================
-    # 34. SIGNAL / GESCHWINDIGKEIT / NETZWERK-QUALITAET
-    # =====================================================================
-    {
-        "role": "signal_strength", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Signalstaerke schwach → Verbindungsprobleme moeglich",
-        "hint": "Schwaches Signal → Geraet koennte ausfallen",
-    },
-    {
-        "role": "speedtest", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Internet-Geschwindigkeit → Streaming/Cloud betroffen",
-        "hint": "Internet langsam → Streaming/Downloads beeintraechtigt",
-    },
-
-    # =====================================================================
-    # 35. WIND-RICHTUNG → BESCHATTUNG / KOMFORT
-    # =====================================================================
-    {
-        "role": "wind_direction", "state": "on",
-        "affects": "awning", "same_room": False,
-        "effect": "Windrichtung → Markisen-Position anpassen",
-        "hint": "Windrichtung → Markise auf Windseite einfahren",
-    },
-    {
-        "role": "wind_direction", "state": "on",
-        "affects": "window_contact", "same_room": False,
-        "effect": "Windrichtung → Fenster auf Windseite schliessen bei Sturm",
-        "hint": "Wind von dieser Seite → Fenster pruefen",
-    },
-
-    # =====================================================================
-    # 36. RUNNING / STATUS → BENACHRICHTIGUNG
-    # =====================================================================
-    {
-        "role": "running", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Geraet laeuft → Stromverbrauch aktiv",
-        "hint": "Geraet in Betrieb → Energieverbrauch",
-    },
-    {
-        "role": "running", "state": "off",
-        "affects": "notify", "same_room": False,
-        "effect": "Geraet gestoppt → Aufgabe fertig?",
-        "hint": "Geraet fertig → Ergebnis pruefen",
-    },
-
-    # =====================================================================
-    # 37. DIMMER / FARBLICHT → STIMMUNG / ENERGIE
-    # =====================================================================
-    {
-        "role": "dimmer", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Gedimmtes Licht → reduzierter Stromverbrauch",
-        "hint": "Licht gedimmt → weniger Verbrauch als volle Helligkeit",
-    },
-    {
-        "role": "color_light", "state": "on",
-        "affects": "energy", "same_room": False,
-        "effect": "Farblicht an → Stromverbrauch",
-        "hint": "RGB-Licht an → Stromverbrauch beachten",
-    },
-
-    # =====================================================================
-    # 38. GESCHWINDIGKEIT / ENTFERNUNG / GEWICHT → KONTEXT
-    # =====================================================================
-    {
-        "role": "speed", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Geschwindigkeit → Bewegung erkannt",
-        "hint": "Geschwindigkeit gemessen → etwas bewegt sich",
-    },
-    {
-        "role": "distance", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Entfernung → Annaeherung oder Entfernung",
-        "hint": "Entfernung aendert sich → jemand naehert sich oder geht weg",
-    },
-    {
-        "role": "weight", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Gewicht gemessen → Fuellstand oder Koerpergewicht",
-        "hint": "Gewicht → Fuellstand pruefen oder Gesundheitsdaten",
-    },
-
-    # =====================================================================
-    # 39. AUTO-STANDORT → SICHERHEIT / KOMFORT
-    # =====================================================================
-    {
-        "role": "car_location", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Auto-Standort → Person unterwegs oder zuhause",
-        "hint": "Auto-Position → Ankunftszeit schaetzen",
-    },
-    {
-        "role": "car_location", "state": "on",
-        "affects": "climate", "same_room": False,
-        "effect": "Auto naehert sich → Haus vorheizen/kuehlen",
-        "hint": "Auto auf dem Heimweg → Haus vorbereiten",
-    },
-
-    # =====================================================================
-    # 40. TIMER / ZAEHLER → BENACHRICHTIGUNG
-    # =====================================================================
-    {
-        "role": "timer", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Timer laeuft → Erinnerung wenn abgelaufen",
-        "hint": "Timer aktiv → nicht vergessen",
-    },
-    {
-        "role": "counter", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Zaehler → Grenzwert beobachten",
-        "hint": "Zaehlerstand → Limit erreicht?",
-    },
-
-    # =====================================================================
-    # 41. SZENE / AUTOMATION → KONTEXT
-    # =====================================================================
-    {
-        "role": "scene", "state": "on",
-        "affects": "light", "same_room": False,
-        "effect": "Szene aktiviert → mehrere Geraete aendern sich",
-        "hint": "Szene aktiv → Geraete wurden automatisch gesetzt",
-    },
-    {
-        "role": "automation", "state": "on",
-        "affects": "notify", "same_room": False,
-        "effect": "Automation aktiv → laeuft im Hintergrund",
-        "hint": "Automation laeuft → Geraete werden automatisch gesteuert",
-    },
-
-    # =====================================================================
-    # 42. ADBLOCKER → NETZWERK
-    # =====================================================================
-    {
-        "role": "adblocker", "state": "off",
-        "affects": "notify", "same_room": False,
-        "effect": "Adblocker/DNS-Filter aus → Werbung und Tracker aktiv",
-        "hint": "Adblocker deaktiviert → Netzwerk ungeschuetzt",
+        "effect": "Wallbox + Waermepumpe gleichzeitig → Netzueberlast moeglich",
+        "hint": "Wallbox laedt + Waermepumpe → Sicherung/Netzueberlast pruefen",
     },
 ]
+
 
 
 class StateChangeLog:
