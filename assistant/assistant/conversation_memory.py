@@ -11,6 +11,7 @@ Nutzt Redis fuer persistente Speicherung.
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 _KEY_PROJECTS = "mha:memory:projects"               # Hash: project_id -> JSON
 _KEY_OPEN_QUESTIONS = "mha:memory:open_questions"    # Hash: question_id -> JSON
 _KEY_DAILY_SUMMARY = "mha:memory:summary:"           # + YYYY-MM-DD -> JSON
+_KEY_FOLLOWUPS = "mha:memory:followups"              # Hash: followup_id -> JSON
 
 # Defaults
 _DEFAULT_MAX_PROJECTS = 20
@@ -408,6 +410,234 @@ class ConversationMemory:
             if s:
                 summaries.append(s)
         return summaries
+
+    # ------------------------------------------------------------------
+    # Follow-Up Tracking (Neugier & Nachfragen)
+    # ------------------------------------------------------------------
+
+    # Trigger-Muster: Deutsche Phrasen die auf zukuenftige Ereignisse hindeuten
+    _FOLLOWUP_PATTERNS = [
+        # (regex_pattern, vorgeschlagenes_topic, ask_after_default)
+        (r"(?i)\b(arzt|zahnarzt|facharzt)termin\b.*?\b(morgen|uebermorgen|naechste woche)\b",
+         "Arzttermin", "tomorrow"),
+        (r"(?i)\b(paket|lieferung|sendung)\b.*?\b(kommt|erwartet|unterwegs)\b",
+         "Paket-Lieferung", "tomorrow"),
+        (r"(?i)\b(bewerbungs?gespraech|vorstellungsgespraech|interview)\b",
+         "Bewerbungsgespraech", "tomorrow"),
+        (r"(?i)\b(pruefung|klausur|examen|test)\b.*?\b(morgen|naechste woche|bald)\b",
+         "Pruefung", "tomorrow"),
+        (r"(?i)\b(reparatur|handwerker|techniker)\b.*?\b(kommt|morgen|naechste woche)\b",
+         "Reparatur/Handwerker", "tomorrow"),
+        (r"(?i)\b(reise|urlaub|flug)\b.*?\b(morgen|naechste woche|bald)\b",
+         "Reise/Urlaub", "tomorrow"),
+        (r"(?i)\b(meeting|besprechung|termin)\b.*?\b(morgen|naechste woche)\b",
+         "Termin/Meeting", "tomorrow"),
+        (r"(?i)\b(geburtstag|jubilaeum|feier)\b.*?\b(morgen|naechste woche|bald)\b",
+         "Geburtstag/Feier", "tomorrow"),
+        (r"(?i)\bwarte\s+(auf|noch)\b",
+         "Wartet auf etwas", "next_conversation"),
+        (r"(?i)\b(muss|sollte|will)\b.*?\b(morgen|spaeter|nachher)\b.*?\b(erledigen|machen|kaufen|anrufen)\b",
+         "Aufgabe geplant", "next_conversation"),
+    ]
+
+    async def add_followup(self, topic: str, context: str,
+                           ask_after: str = "next_conversation") -> dict:
+        """Speichert eine Follow-Up-Frage fuer spaetere Nachverfolgung.
+
+        Args:
+            topic: Thema der Nachfrage (z.B. "Arzttermin", "Paket")
+            context: Kontext in dem das Thema aufkam
+            ask_after: Wann nachfragen — "next_conversation", "tomorrow"
+                       oder ISO-Datetime (z.B. "2025-01-15T10:00:00")
+        """
+        if not self.redis or not self.enabled:
+            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
+
+        if not topic or not topic.strip():
+            return {"success": False, "message": "Follow-Up Thema darf nicht leer sein."}
+
+        topic = topic.strip()
+
+        # ask_after in konkreten Zeitpunkt umrechnen
+        due_at = self._resolve_ask_after(ask_after)
+
+        import secrets
+        followup_id = f"fu_{datetime.now().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(3)}"
+        entry = {
+            "id": followup_id,
+            "topic": topic,
+            "context": context,
+            "ask_after": ask_after,
+            "due_at": due_at,
+            "status": "pending",
+            "created_at": datetime.now().isoformat(),
+        }
+
+        try:
+            await self.redis.hset(_KEY_FOLLOWUPS, followup_id, json.dumps(entry))
+            logger.info("Follow-Up gespeichert: %s (faellig: %s)", topic, due_at)
+            return {"success": True, "message": f"Follow-Up gemerkt: '{topic}' (nachfragen: {ask_after})"}
+        except Exception as e:
+            logger.error("Follow-Up speichern fehlgeschlagen: %s", e)
+            return {"success": False, "message": str(e)}
+
+    async def get_pending_followups(self) -> list[dict]:
+        """Gibt alle faelligen Follow-Ups zurueck (basierend auf ask_after Timing).
+
+        Ein Follow-Up ist faellig wenn:
+        - ask_after == "next_conversation" → immer faellig
+        - ask_after == "tomorrow" → faellig ab dem naechsten Tag
+        - ask_after ist ISO-Datetime → faellig ab diesem Zeitpunkt
+        """
+        if not self.redis or not self.enabled:
+            return []
+
+        try:
+            raw = await self.redis.hgetall(_KEY_FOLLOWUPS)
+            now = datetime.now()
+            pending = []
+
+            for val in raw.values():
+                val_str = val.decode() if isinstance(val, bytes) else val
+                entry = json.loads(val_str)
+
+                if entry.get("status") != "pending":
+                    continue
+
+                due_at = entry.get("due_at", "")
+                if not due_at:
+                    # Kein Faelligkeitsdatum → sofort faellig
+                    pending.append(entry)
+                    continue
+
+                try:
+                    due_dt = datetime.fromisoformat(due_at)
+                    if now >= due_dt:
+                        pending.append(entry)
+                except (ValueError, TypeError):
+                    # Ungueltige Zeitangabe → sicherheitshalber anzeigen
+                    pending.append(entry)
+
+            # Aelteste zuerst
+            pending.sort(key=lambda f: f.get("created_at", ""))
+            return pending
+        except Exception as e:
+            logger.debug("Follow-Ups laden fehlgeschlagen: %s", e)
+            return []
+
+    async def complete_followup(self, topic: str) -> dict:
+        """Markiert ein Follow-Up als erledigt.
+
+        Args:
+            topic: Thema (Suche per Teilstring, wie bei Projekten)
+        """
+        if not self.redis or not self.enabled:
+            return {"success": False, "message": "Konversationsgedaechtnis nicht verfuegbar."}
+
+        entry = await self._find_followup(topic)
+        if not entry:
+            return {"success": False, "message": f"Follow-Up zu '{topic}' nicht gefunden."}
+
+        entry["status"] = "done"
+        entry["completed_at"] = datetime.now().isoformat()
+
+        try:
+            await self.redis.hset(_KEY_FOLLOWUPS, entry["id"], json.dumps(entry))
+            return {"success": True, "message": f"Follow-Up '{entry['topic']}' als erledigt markiert."}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    async def extract_followup_triggers(self, text: str) -> list[dict]:
+        """Erkennt Phrasen im Text die auf zukuenftige Ereignisse hindeuten.
+
+        Sucht nach Mustern wie "Arzttermin morgen", "Paket kommt",
+        "Bewerbungsgespraech", "Pruefung naechste Woche" etc.
+
+        Args:
+            text: Der zu analysierende Text
+
+        Returns:
+            Liste von vorgeschlagenen Follow-Ups mit topic, context, ask_after
+        """
+        if not text or not text.strip():
+            return []
+
+        suggestions = []
+        seen_topics = set()
+
+        for pattern, topic, ask_after in self._FOLLOWUP_PATTERNS:
+            match = re.search(pattern, text)
+            if match and topic not in seen_topics:
+                seen_topics.add(topic)
+                # Kontext: den gematchten Satz extrahieren
+                # Finde den Satz der den Match enthaelt
+                start = max(0, match.start() - 40)
+                end = min(len(text), match.end() + 40)
+                context_snippet = text[start:end].strip()
+                if start > 0:
+                    context_snippet = "..." + context_snippet
+                if end < len(text):
+                    context_snippet = context_snippet + "..."
+
+                suggestions.append({
+                    "topic": topic,
+                    "context": context_snippet,
+                    "ask_after": ask_after,
+                    "matched_text": match.group(0),
+                })
+
+        return suggestions
+
+    def _resolve_ask_after(self, ask_after: str) -> str:
+        """Wandelt ask_after in einen konkreten ISO-Zeitpunkt um."""
+        now = datetime.now()
+
+        if ask_after == "next_conversation":
+            # Sofort faellig — beim naechsten Gespraech nachfragen
+            return now.isoformat()
+
+        if ask_after == "tomorrow":
+            # Morgen frueh um 8:00 Uhr
+            tomorrow = now + timedelta(days=1)
+            due = tomorrow.replace(hour=8, minute=0, second=0, microsecond=0)
+            return due.isoformat()
+
+        # Versuche als ISO-Datetime zu parsen
+        try:
+            dt = datetime.fromisoformat(ask_after)
+            return dt.isoformat()
+        except (ValueError, TypeError):
+            # Fallback: sofort faellig
+            logger.warning("Ungueltiges ask_after Format: %s, verwende 'jetzt'", ask_after)
+            return now.isoformat()
+
+    async def _find_followup(self, topic: str) -> Optional[dict]:
+        """Findet ein Follow-Up per Topic (exakt oder Teilstring)."""
+        if not self.redis:
+            return None
+        try:
+            raw = await self.redis.hgetall(_KEY_FOLLOWUPS)
+            topic_lower = topic.lower()
+            # Exakte Suche zuerst
+            for val in raw.values():
+                val_str = val.decode() if isinstance(val, bytes) else val
+                entry = json.loads(val_str)
+                if entry.get("status") != "pending":
+                    continue
+                if entry.get("topic", "").lower() == topic_lower:
+                    return entry
+            # Teilstring-Suche
+            for val in raw.values():
+                val_str = val.decode() if isinstance(val, bytes) else val
+                entry = json.loads(val_str)
+                if entry.get("status") != "pending":
+                    continue
+                if topic_lower in entry.get("topic", "").lower():
+                    return entry
+            return None
+        except Exception as e:
+            logger.debug("Follow-Up Suche fehlgeschlagen: %s", e)
+            return None
 
     # ------------------------------------------------------------------
     # Kontext fuer LLM / Context Builder

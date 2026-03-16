@@ -14,6 +14,7 @@ Phase 10: Diagnostik + Wartungs-Erinnerungen.
 """
 
 import asyncio
+import collections
 import json
 import logging
 import random
@@ -186,6 +187,60 @@ class ProactiveManager:
                 prio = _PRIORITY_MAP.get(info.get("priority", "low"), LOW)
                 desc = info.get("description", event_name)
                 self.event_handlers[event_name] = (prio, desc)
+
+    # ------------------------------------------------------------------
+    # LED Status-Indikator: Systemzustand als Lichtfarbe
+    # ------------------------------------------------------------------
+
+    # Mapping: Status -> (RGB, Brightness in %)
+    _STATUS_LED_MAP = {
+        "healthy":  {"rgb": (0, 255, 0),     "brightness_pct": 30},
+        "warning":  {"rgb": (255, 165, 0),   "brightness_pct": 50},
+        "alert":    {"rgb": (255, 0, 0),     "brightness_pct": 100},
+        "listening": {"rgb": (0, 100, 255),  "brightness_pct": 60},
+        "thinking": {"rgb": (128, 0, 255),   "brightness_pct": 40, "effect": "slow_pulse"},
+        "degraded": {"rgb": (255, 255, 0),   "brightness_pct": 40},
+    }
+
+    async def update_status_light(self, ha_client, status: str):
+        """Setzt die Status-LED auf die Farbe fuer den aktuellen Systemzustand.
+
+        Liest die Entity-ID der Status-LED aus der Konfiguration:
+        settings.yaml → status_led_entity (z.B. "light.status_led").
+        Wenn keine Entity konfiguriert ist, wird nichts gemacht (graceful skip).
+
+        Args:
+            ha_client: HomeAssistant-Client mit call_service()
+            status: Einer von "healthy", "warning", "alert", "listening",
+                    "thinking", "degraded"
+        """
+        entity_id = settings.get("status_led_entity", None)
+        if not entity_id:
+            return
+
+        led_config = self._STATUS_LED_MAP.get(status)
+        if not led_config:
+            logger.warning("Unbekannter Status-LED-Zustand: %s", status)
+            return
+
+        rgb = led_config["rgb"]
+        brightness_pct = led_config["brightness_pct"]
+
+        service_data = {
+            "entity_id": entity_id,
+            "rgb_color": list(rgb),
+            "brightness_pct": brightness_pct,
+        }
+
+        # "thinking" unterstuetzt einen Puls-Effekt (wenn die LED das kann)
+        if led_config.get("effect"):
+            service_data["effect"] = led_config["effect"]
+
+        try:
+            await ha_client.call_service("light", "turn_on", service_data)
+            logger.debug("Status-LED '%s' auf %s gesetzt", entity_id, status)
+        except Exception as e:
+            logger.debug("Status-LED Update fehlgeschlagen: %s", e)
 
     def _is_quiet_hours(self) -> bool:
         """Prüft ob gerade Quiet Hours aktiv sind (z.B. 22:00-07:00)."""

@@ -483,6 +483,188 @@ class CorrectionMemory:
         except Exception as e:
             logger.debug("Correction memory queue push failed: %s", e)
 
+    # --- Expliziter Teaching Mode ---
+    # Erlaubt dem User, direkt Bedeutungen beizubringen:
+    # "Wenn ich 'Filmabend' sage, meine ich: Wohnzimmer-Licht dimmen, TV an, Rollos runter"
+
+    async def teach(self, phrase: str, meaning: str, person: str = "default") -> str:
+        """Speichert eine explizite Lehre: Phrase -> Bedeutung.
+
+        Beispiel: teach("Filmabend", "Wohnzimmer-Licht dimmen, TV an, Rollos runter")
+        """
+        if not self.enabled or not self.redis:
+            return "Teaching nicht verfuegbar (Redis nicht verbunden)."
+
+        phrase_normalized = phrase.strip().lower()
+        if not phrase_normalized or not meaning.strip():
+            return "Phrase und Bedeutung duerfen nicht leer sein."
+
+        # Injection-Schutz
+        clean_meaning = _sanitize(meaning, max_len=500)
+        if not clean_meaning:
+            return "Bedeutung wurde als unsicher erkannt und blockiert."
+
+        teaching = {
+            "phrase": phrase.strip(),
+            "phrase_normalized": phrase_normalized,
+            "meaning": clean_meaning,
+            "person": person,
+            "taught_at": datetime.now().isoformat(),
+            "times_used": 0,
+        }
+
+        redis_key = f"mha:teaching:{phrase_normalized}"
+        try:
+            await self.redis.set(
+                redis_key,
+                json.dumps(teaching, ensure_ascii=False),
+            )
+            # Phrase in Index-Set speichern fuer list_teachings()
+            await self.redis.sadd("mha:teaching:index", phrase_normalized)
+            # 1 Jahr TTL
+            await self.redis.expire(redis_key, 365 * 86400)
+        except Exception as e:
+            logger.warning("Teaching-Speicherung fehlgeschlagen: %s", e)
+            return "Fehler beim Speichern."
+
+        logger.info("Teaching gespeichert: '%s' -> '%s' (Person: %s)",
+                     phrase_normalized, clean_meaning[:60], person)
+        return f"Verstanden! Wenn du '{phrase.strip()}' sagst, werde ich: {clean_meaning}"
+
+    async def get_teaching(self, text: str) -> str | None:
+        """Prueft ob eine gelernte Phrase im Text vorkommt (Fuzzy/Substring-Match).
+
+        'mach mal Filmabend' matched 'Filmabend'.
+        Gibt die zugehoerige Bedeutung zurueck oder None.
+        """
+        if not self.enabled or not self.redis:
+            return None
+
+        text_lower = text.strip().lower()
+        if not text_lower:
+            return None
+
+        # Alle bekannten Phrasen aus dem Index laden
+        try:
+            phrases = await self.redis.smembers("mha:teaching:index")
+        except Exception as e:
+            logger.warning("Teaching-Index Lesen fehlgeschlagen: %s", e)
+            return None
+
+        if not phrases:
+            return None
+
+        # Substring-Match: Laengste Phrase zuerst pruefen (greedy)
+        matched_phrase = None
+        for phrase in sorted(phrases, key=len, reverse=True):
+            if phrase in text_lower:
+                matched_phrase = phrase
+                break
+
+        if not matched_phrase:
+            return None
+
+        # Teaching laden
+        redis_key = f"mha:teaching:{matched_phrase}"
+        try:
+            raw = await self.redis.get(redis_key)
+            if not raw:
+                return None
+            teaching = json.loads(raw)
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning("Teaching Lesen fehlgeschlagen: %s", e)
+            return None
+
+        # Usage-Counter erhoehen (fire-and-forget)
+        asyncio.create_task(self.increment_teaching_usage(matched_phrase))
+
+        return teaching.get("meaning")
+
+    async def list_teachings(self, person: str = "default") -> list[dict]:
+        """Gibt alle gelernten Phrasen mit Bedeutungen zurueck.
+
+        Format: [{"phrase": "Filmabend", "meaning": "...", "taught_at": "...", "times_used": 3}]
+        """
+        if not self.enabled or not self.redis:
+            return []
+
+        try:
+            phrases = await self.redis.smembers("mha:teaching:index")
+        except Exception as e:
+            logger.warning("Teaching-Index Lesen fehlgeschlagen: %s", e)
+            return []
+
+        if not phrases:
+            return []
+
+        teachings = []
+        for phrase in sorted(phrases):
+            redis_key = f"mha:teaching:{phrase}"
+            try:
+                raw = await self.redis.get(redis_key)
+                if not raw:
+                    # Verwaister Index-Eintrag — aufraeumen
+                    await self.redis.srem("mha:teaching:index", phrase)
+                    continue
+                teaching = json.loads(raw)
+            except (json.JSONDecodeError, Exception):
+                continue
+
+            # Person-Filter: nur passende oder globale Eintraege
+            teaching_person = teaching.get("person", "default")
+            if person != "default" and teaching_person != "default" and teaching_person != person:
+                continue
+
+            teachings.append({
+                "phrase": teaching.get("phrase", phrase),
+                "meaning": teaching.get("meaning", ""),
+                "taught_at": teaching.get("taught_at", ""),
+                "times_used": teaching.get("times_used", 0),
+            })
+
+        return teachings
+
+    async def forget_teaching(self, phrase: str) -> bool:
+        """Entfernt eine gelernte Phrase. Gibt True zurueck wenn gefunden und geloescht."""
+        if not self.enabled or not self.redis:
+            return False
+
+        phrase_normalized = phrase.strip().lower()
+        redis_key = f"mha:teaching:{phrase_normalized}"
+
+        try:
+            deleted = await self.redis.delete(redis_key)
+            await self.redis.srem("mha:teaching:index", phrase_normalized)
+        except Exception as e:
+            logger.warning("Teaching-Loeschung fehlgeschlagen: %s", e)
+            return False
+
+        if deleted:
+            logger.info("Teaching geloescht: '%s'", phrase_normalized)
+            return True
+        return False
+
+    async def increment_teaching_usage(self, phrase: str):
+        """Zaehlt wie oft ein Teaching verwendet wurde."""
+        if not self.redis:
+            return
+
+        phrase_normalized = phrase.strip().lower()
+        redis_key = f"mha:teaching:{phrase_normalized}"
+
+        try:
+            raw = await self.redis.get(redis_key)
+            if not raw:
+                return
+            teaching = json.loads(raw)
+            teaching["times_used"] = teaching.get("times_used", 0) + 1
+            await self.redis.set(
+                redis_key,
+                json.dumps(teaching, ensure_ascii=False),
+            )
+        except Exception as e:
+            logger.debug("Teaching-Usage Update fehlgeschlagen: %s", e)
+
     def format_rules_for_prompt(self, rules: list[dict]) -> str:
         """Formatiert Regeln als Prompt-Abschnitt (Feature 7: Prompt Self-Refinement)."""
         if not rules:

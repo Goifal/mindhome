@@ -757,6 +757,305 @@ class AnticipationEngine:
             logger.error("Fehler bei Anticipation-Feedback: %s", e)
 
     # ------------------------------------------------------------------
+    # Feature: Predictive Pre-Execution (Auto-Execute bei Idle)
+    # ------------------------------------------------------------------
+
+    def __init_pre_execution_state(self):
+        """Lazy-Init fuer Pre-Execution Tracking-State."""
+        if not hasattr(self, "_pre_executed"):
+            # {pattern_hash: datetime} — Cooldown-Tracking
+            self._pre_executed: dict[str, datetime] = {}
+
+    async def auto_execute_ready_patterns(self, brain):
+        """Fuehrt Muster mit hoher Confidence automatisch aus (Idle-Pre-Execution).
+
+        Bedingungen:
+        - Confidence >= 0.95
+        - Aktueller Kontext (Zeit, Wochentag, Wetter) passt
+        - Autonomy-Level >= 3
+        - Pattern wurde nicht in den letzten 30 Min bereits ausgefuehrt (Cooldown)
+
+        Args:
+            brain: Brain-Instanz mit task_registry und autonomy
+        """
+        self.__init_pre_execution_state()
+
+        # Autonomy-Level pruefen (brain.autonomy.level oder Fallback)
+        autonomy_level = getattr(getattr(brain, "autonomy", None), "level", 0)
+        if autonomy_level < 3:
+            logger.debug("Auto-Execute uebersprungen: Autonomy-Level %d < 3", autonomy_level)
+            return
+
+        patterns = await self.detect_patterns()
+        if not patterns:
+            return
+
+        now = datetime.now()
+        current_weather = await self._get_current_weather()
+
+        # Abgelaufene Cooldowns entfernen (aelter als 30 Min)
+        expired = [k for k, ts in self._pre_executed.items() if (now - ts).total_seconds() > 1800]
+        for k in expired:
+            del self._pre_executed[k]
+
+        for pattern in patterns:
+            if pattern["confidence"] < 0.95:
+                continue
+
+            # Kontext-Match pruefen: Zeit, Wochentag, Wetter
+            if not self._pattern_matches_current_context(pattern, now, current_weather):
+                continue
+
+            # Cooldown-Check (30 Min)
+            import hashlib as _hl
+            p_desc = pattern.get("description", "")[:200]
+            p_hash = _hl.sha256(p_desc.encode()).hexdigest()[:16]
+
+            if p_hash in self._pre_executed:
+                logger.debug("Auto-Execute Cooldown aktiv fuer: %s", p_desc)
+                continue
+
+            # Aktion bestimmen
+            action = pattern.get("action") or pattern.get("follow_action", "")
+            args = pattern.get("args") or pattern.get("follow_args", {})
+            if not action:
+                continue
+
+            # Task erstellen und ausfuehren
+            try:
+                task_registry = getattr(brain, "_task_registry", None) or getattr(brain, "task_registry", None)
+                if task_registry is None:
+                    logger.warning("Auto-Execute: Kein task_registry auf brain gefunden")
+                    return
+
+                # Coroutine fuer die Ausfuehrung bauen
+                async def _execute_action(a=action, ar=args):
+                    """Wrapper fuer pre-executed Pattern-Aktion."""
+                    if hasattr(brain, "execute_action"):
+                        await brain.execute_action(a, ar)
+                    elif hasattr(brain, "ha") and hasattr(brain.ha, "call_service"):
+                        await brain.ha.call_service(a, **ar if isinstance(ar, dict) else {})
+
+                task_registry.create_task(
+                    _execute_action(),
+                    name=f"anticipation:pre_exec:{action}",
+                )
+
+                # Cooldown setzen
+                self._pre_executed[p_hash] = now
+
+                logger.info(
+                    "Auto-Execute: '%s' ausgefuehrt (Confidence: %.0f%%, Autonomy: %d)",
+                    p_desc, pattern["confidence"] * 100, autonomy_level,
+                )
+
+            except Exception as e:
+                logger.error("Auto-Execute fehlgeschlagen fuer '%s': %s", p_desc, e)
+
+    def _pattern_matches_current_context(self, pattern: dict, now: datetime,
+                                         current_weather: str) -> bool:
+        """Prueft ob ein Pattern zum aktuellen Kontext (Zeit, Wochentag, Wetter) passt.
+
+        Args:
+            pattern: Das erkannte Muster
+            now: Aktuelle Zeit
+            current_weather: Aktuelle Wetter-Condition
+        """
+        p_type = pattern.get("type", "")
+
+        if p_type == "time":
+            # Wochentag und Stunde muessen passen
+            return (pattern.get("weekday") == now.weekday()
+                    and pattern.get("hour") == now.hour)
+
+        elif p_type == "context":
+            ctx = pattern.get("context", "")
+            if ctx.startswith("time_cluster:"):
+                cluster = ctx.split(":")[1]
+                hour = now.hour
+                current_cluster = (
+                    "morning" if 5 <= hour < 12
+                    else "afternoon" if 12 <= hour < 17
+                    else "evening" if 17 <= hour < 22
+                    else "night"
+                )
+                return cluster == current_cluster
+            elif ctx.startswith("weather:"):
+                pattern_weather = ctx.split(":")[1]
+                return current_weather == pattern_weather
+
+        elif p_type == "causal_chain":
+            # Kausale Ketten: Trigger-Kontext pruefen
+            trigger = pattern.get("trigger", "")
+            if trigger.startswith("hour:"):
+                try:
+                    return int(trigger.split(":")[1]) == now.hour
+                except (ValueError, IndexError):
+                    pass
+            elif trigger and current_weather:
+                return trigger == current_weather
+
+        # Sequenz-Muster: kein zeitbasierter Kontext, nicht auto-ausfuehrbar
+        return False
+
+    # ------------------------------------------------------------------
+    # Feature: Habit Drift Detection
+    # ------------------------------------------------------------------
+
+    async def detect_habit_drift(self) -> list[dict]:
+        """Erkennt Veraenderungen in Gewohnheiten (Drift) ueber die letzten 14 Tage.
+
+        Vergleicht Muster der letzten 7 Tage mit den vorherigen 7 Tagen.
+        Erkennt:
+        - Neue Muster (tauchen auf)
+        - Verschwundene Muster (fallen weg)
+        - Zeitverschiebungen > 30 Min
+
+        Returns:
+            Liste von Drift-Beschreibungen mit type, action, message etc.
+        """
+        if not self.redis:
+            return []
+
+        try:
+            now = datetime.now()
+            # Alle Eintraege laden
+            raw_entries = await self.redis.lrange("mha:action_log", 0, 999)
+            if len(raw_entries) < 10:
+                return []
+
+            entries = [json.loads(e.decode() if isinstance(e, bytes) else e) for e in raw_entries]
+
+            # In zwei Zeitraeume aufteilen
+            recent_start = now - timedelta(days=7)
+            previous_start = now - timedelta(days=14)
+
+            recent_entries = []
+            previous_entries = []
+
+            for entry in entries:
+                try:
+                    ts = datetime.fromisoformat(entry.get("timestamp", ""))
+                except (ValueError, TypeError):
+                    continue
+                if ts >= recent_start:
+                    recent_entries.append(entry)
+                elif ts >= previous_start:
+                    previous_entries.append(entry)
+
+            if not previous_entries:
+                return []  # Zu wenig historische Daten
+
+            drifts: list[dict] = []
+
+            # --- Aktionen und deren Haeufigkeit/Zeitpunkte aggregieren ---
+            recent_actions = self._aggregate_action_stats(recent_entries)
+            previous_actions = self._aggregate_action_stats(previous_entries)
+
+            all_actions = set(recent_actions.keys()) | set(previous_actions.keys())
+
+            for action in all_actions:
+                r_stats = recent_actions.get(action)
+                p_stats = previous_actions.get(action)
+
+                # Verschwundene Muster: War vorher da, jetzt nicht mehr
+                if p_stats and not r_stats:
+                    drifts.append({
+                        "type": "disappeared",
+                        "action": action,
+                        "old_count": p_stats["count"],
+                        "message": f"Du machst seit einer Woche kein {action} mehr",
+                    })
+                    continue
+
+                # Neue Muster: Jetzt da, vorher nicht
+                if r_stats and not p_stats:
+                    drifts.append({
+                        "type": "new",
+                        "action": action,
+                        "new_count": r_stats["count"],
+                        "message": f"Neu seit einer Woche: {action} ({r_stats['count']}x)",
+                    })
+                    continue
+
+                # Zeitverschiebung: Durchschnittszeit vergleichen
+                if r_stats and p_stats:
+                    r_avg_hour = r_stats["avg_hour"]
+                    p_avg_hour = p_stats["avg_hour"]
+
+                    # Differenz in Minuten (Stunden als Float)
+                    diff_minutes = abs(r_avg_hour - p_avg_hour) * 60
+
+                    # Zirkulaere Differenz beruecksichtigen (23:00 vs 01:00 = 2h)
+                    diff_minutes_alt = (24 * 60) - diff_minutes
+                    diff_minutes = min(diff_minutes, diff_minutes_alt)
+
+                    if diff_minutes > 30:
+                        old_h = int(p_avg_hour)
+                        old_m = int((p_avg_hour - old_h) * 60)
+                        new_h = int(r_avg_hour)
+                        new_m = int((r_avg_hour - new_h) * 60)
+                        old_time = f"{old_h:02d}:{old_m:02d}"
+                        new_time = f"{new_h:02d}:{new_m:02d}"
+
+                        # Richtung bestimmen
+                        if r_avg_hour > p_avg_hour:
+                            direction = "spaeter"
+                        else:
+                            direction = "frueher"
+
+                        drifts.append({
+                            "type": "time_shift",
+                            "action": action,
+                            "old_time": old_time,
+                            "new_time": new_time,
+                            "shift_minutes": round(diff_minutes),
+                            "message": f"Du gehst seit einer Woche {direction} ins Bett"
+                            if "schlaf" in action.lower() or "light" in action.lower()
+                            else f"{action} hat sich um {round(diff_minutes)} Min verschoben ({old_time} → {new_time})",
+                        })
+
+            return drifts
+
+        except Exception as e:
+            logger.error("Fehler bei Habit-Drift-Detection: %s", e)
+            return []
+
+    @staticmethod
+    def _aggregate_action_stats(entries: list[dict]) -> dict[str, dict]:
+        """Aggregiert Aktions-Statistiken: Haeufigkeit und Durchschnittszeit.
+
+        Returns:
+            {action: {"count": int, "avg_hour": float}} — avg_hour als Dezimal (z.B. 22.5 = 22:30)
+        """
+        action_data: dict[str, dict] = defaultdict(lambda: {"count": 0, "hours": []})
+
+        for entry in entries:
+            action = entry.get("action", "")
+            if not action:
+                continue
+            hour = entry.get("hour", 0)
+            # Feinere Zeit aus Timestamp extrahieren
+            try:
+                ts = datetime.fromisoformat(entry.get("timestamp", ""))
+                precise_hour = ts.hour + ts.minute / 60.0
+            except (ValueError, TypeError):
+                precise_hour = float(hour)
+
+            action_data[action]["count"] += 1
+            action_data[action]["hours"].append(precise_hour)
+
+        # Durchschnittliche Stunde berechnen
+        result = {}
+        for action, data in action_data.items():
+            if data["count"] < 2:
+                continue  # Einzelereignisse ignorieren
+            avg_hour = sum(data["hours"]) / len(data["hours"])
+            result[action] = {"count": data["count"], "avg_hour": avg_hour}
+
+        return result
+
+    # ------------------------------------------------------------------
     # Hintergrund-Loop
     # ------------------------------------------------------------------
 
