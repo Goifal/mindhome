@@ -9528,24 +9528,39 @@ class StateChangeLog:
             scl = StateChangeLog.__new__(StateChangeLog)
             conflicts = scl.detect_conflicts(state_dict)
 
-            if target_entity and conflicts:
+            # Nur aktive Konflikte (betroffenes Geraet ist aktiv)
+            active = [c for c in conflicts if c.get("affected_active")]
+
+            if target_entity and active:
+                # Relevante Konflikte: target ist Trigger ODER betroffene Rolle
+                target_role = StateChangeLog._get_entity_role(target_entity)
                 relevant = [
-                    c for c in conflicts
-                    if target_entity in c.get("entities", [])
+                    c for c in active
+                    if c["trigger_entity"] == target_entity
+                    or c.get("affected_role") == target_role
                 ]
+                # Severity-Sortierung: critical zuerst
+                _sev = {"critical": 0, "high": 1, "info": 2}
+                relevant.sort(key=lambda c: _sev.get(c.get("severity", "info"), 2))
                 for c in relevant[:3]:
-                    room_info = f" ({c.get('room', '')})" if c.get("room") else ""
-                    hints.append(f"{c['hint']}{room_info}")
-            elif not target_entity and conflicts:
+                    room_info = f" ({c.get('trigger_room', '')})" if c.get("trigger_room") else ""
+                    sev = c.get("severity", "info")
+                    prefix = "KRITISCH: " if sev == "critical" else "WICHTIG: " if sev == "high" else ""
+                    hints.append(f"{prefix}{c['hint']}{room_info}")
+            elif not target_entity and active:
                 # Ohne target_entity: Domain-basiert filtern
                 domain = action_function.replace("set_", "").replace("_room", "")
                 relevant = [
-                    c for c in conflicts
+                    c for c in active
                     if domain in c.get("affected_role", "") or domain in c.get("trigger_role", "")
                 ]
+                _sev = {"critical": 0, "high": 1, "info": 2}
+                relevant.sort(key=lambda c: _sev.get(c.get("severity", "info"), 2))
                 for c in relevant[:3]:
-                    room_info = f" ({c.get('room', '')})" if c.get("room") else ""
-                    hints.append(f"{c['hint']}{room_info}")
+                    room_info = f" ({c.get('trigger_room', '')})" if c.get("trigger_room") else ""
+                    sev = c.get("severity", "info")
+                    prefix = "KRITISCH: " if sev == "critical" else "WICHTIG: " if sev == "high" else ""
+                    hints.append(f"{prefix}{c['hint']}{room_info}")
         except Exception as e:
             logger.debug("check_action_dependencies Fehler: %s", e)
         return hints

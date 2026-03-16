@@ -3642,20 +3642,12 @@ class FunctionExecutor:
             # ── Dependency-basierte Konflikte via StateChangeLog ──
             try:
                 _states = await _get_states()
-                state_dict = {s["entity_id"]: s.get("state", "") for s in _states if "entity_id" in s}
-                target_entity = args.get("entity_id", "")
-                new_state_val = args.get("state", args.get("action", ""))
-                if target_entity and new_state_val:
-                    state_dict[target_entity] = str(new_state_val).lower()
-                _scl = StateChangeLog.__new__(StateChangeLog)
-                conflicts = _scl.detect_conflicts(state_dict)
-                if target_entity and conflicts:
-                    relevant = [
-                        c for c in conflicts
-                        if target_entity in c.get("entities", [])
-                    ]
-                    if relevant:
-                        return relevant[0]["hint"]
+                dep_hints = StateChangeLog.check_action_dependencies(
+                    func_name, args, _states,
+                )
+                if dep_hints:
+                    # Maximal 2 Hints um das LLM nicht zu ueberladen
+                    return " | ".join(dep_hints[:2])
             except Exception:
                 pass
 

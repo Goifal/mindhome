@@ -98,6 +98,28 @@ def api_activate_scene(scene_id):
     with get_db_session() as session:
         scene = session.get(LearnedScene, scene_id)
         if not scene: return jsonify({"error": "Not found"}), 404
+
+        # Pre-Activation Conflict Check: Pruefen ob Szenen-States
+        # Konflikte mit aktuellem Haus-Zustand erzeugen
+        warnings = []
+        try:
+            from assistant.state_change_log import StateChangeLog
+            ha = _ha()
+            if ha:
+                current_states = ha.get_states() or []
+                for si in (scene.states or []):
+                    eid = si.get("entity_id", "")
+                    ts = si.get("state", "")
+                    if eid and ts:
+                        hints = StateChangeLog.check_action_dependencies(
+                            f"set_{eid.split('.')[0]}",
+                            {"entity_id": eid, "state": ts},
+                            current_states,
+                        )
+                        warnings.extend(hints[:1])
+        except Exception as e:
+            logger.debug("Scene conflict check: %s", e)
+
         for si in (scene.states or []):
             eid = si.get("entity_id","")
             ts = si.get("state","")
@@ -108,7 +130,12 @@ def api_activate_scene(scene_id):
                 elif ts == "off": _ha().call_service(domain, "turn_off", entity_id=eid)
         scene.last_activated = datetime.now(timezone.utc)
         session.commit()
-        return jsonify({"success": True})
+
+        result = {"success": True}
+        if warnings:
+            # Maximal 3 Warnungen, dedupliziert
+            result["warnings"] = list(dict.fromkeys(warnings))[:3]
+        return jsonify(result)
 
 
 @scenes_bp.route("/api/scenes/<int:scene_id>", methods=["DELETE"])
