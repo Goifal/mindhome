@@ -23,6 +23,7 @@ from typing import Any, Optional
 import yaml
 
 from .config import settings, yaml_config
+from .constants import SELF_AUTOMATION_PENDING_TTL
 from .ha_client import HomeAssistantClient
 from .ollama_client import OllamaClient
 
@@ -108,7 +109,7 @@ class SelfAutomation:
 
         # Pending Automations (warten auf Bestaetigung)
         self._pending: dict[str, dict] = {}
-        self._pending_ttl_seconds = 300  # 5 Minuten Timeout
+        self._pending_ttl_seconds = SELF_AUTOMATION_PENDING_TTL
 
         # Audit-Log (In-Memory + Redis wenn verfuegbar)
         from collections import deque
@@ -790,6 +791,53 @@ REGELN:
             return {"valid": False, "reason": "Automation hat keine Aktionen."}
         if not automation.get("trigger"):
             return {"valid": False, "reason": "Automation hat keinen Trigger."}
+
+        # 5. Device-Dependency-Check: Pruefen ob Trigger+Actions Konflikte erzeugen
+        try:
+            from .state_change_log import DEVICE_DEPENDENCIES, StateChangeLog
+            actions = automation.get("action", [])
+            if isinstance(actions, dict):
+                actions = [actions]
+            triggers = automation.get("trigger", [])
+            if isinstance(triggers, dict):
+                triggers = [triggers]
+            # Sammle alle beteiligten Rollen
+            trigger_entities = []
+            for t in triggers:
+                eid = t.get("entity_id", "")
+                if eid:
+                    trigger_entities.append(eid)
+            action_entities = []
+            for a in actions:
+                eid = a.get("target", {}).get("entity_id", "") or a.get("entity_id", "")
+                if eid:
+                    action_entities.append(eid)
+            # Pruefen ob Trigger-Entity + Action-Entity einen bekannten Konflikt bilden
+            conflict_warnings = []
+            for t_eid in trigger_entities:
+                t_role = StateChangeLog._get_entity_role(t_eid)
+                t_room = StateChangeLog._get_entity_room(t_eid)
+                for dep in DEVICE_DEPENDENCIES:
+                    if dep["role"] == t_role:
+                        for a_eid in action_entities:
+                            a_domain = a_eid.split(".")[0] if "." in a_eid else ""
+                            a_role = StateChangeLog._get_entity_role(a_eid)
+                            if a_domain == dep.get("affects") or a_role == dep.get("affects"):
+                                if dep.get("same_room") and t_room:
+                                    a_room = StateChangeLog._get_entity_room(a_eid)
+                                    if a_room != t_room:
+                                        continue
+                                conflict_warnings.append(dep.get("hint", dep.get("effect", "")))
+            if conflict_warnings:
+                warnings_str = "; ".join(conflict_warnings[:3])
+                return {
+                    "valid": True,
+                    "reason": "",
+                    "dependency_warnings": conflict_warnings[:3],
+                    "dependency_note": f"Moegliche Konflikte: {warnings_str}",
+                }
+        except Exception as _dep_err:
+            logger.debug("Automation Dependency-Check: %s", _dep_err)
 
         return {"valid": True, "reason": ""}
 

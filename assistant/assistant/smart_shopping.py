@@ -20,6 +20,15 @@ from typing import Optional
 import redis.asyncio as aioredis
 
 from .config import yaml_config
+from .constants import (
+    SHOPPING_MIN_PURCHASES,
+    SHOPPING_REMINDER_DAYS_BEFORE,
+    SHOPPING_REMINDER_COOLDOWN_H,
+    SHOPPING_CONSUMPTION_MAX_ENTRIES,
+    SHOPPING_CONSUMPTION_TTL,
+    SHOPPING_CONFIDENCE_DATAPOINTS,
+    SHOPPING_LOW_STOCK_THRESHOLD,
+)
 from .ha_client import HomeAssistantClient
 
 logger = logging.getLogger(__name__)
@@ -30,10 +39,10 @@ _KEY_PREDICTIONS = "mha:shopping:predictions"         # Hash
 _KEY_SHOPPING_DAYS = "mha:shopping:shopping_days"     # Hash (weekday -> count)
 _KEY_LAST_REMINDER = "mha:shopping:last_reminder:"    # + item_name_lower
 
-# Defaults
-_DEFAULT_MIN_PURCHASES = 2         # Mindestens 2 Kaeufe bevor Vorhersage
-_DEFAULT_REMINDER_DAYS_BEFORE = 1  # 1 Tag vor erwartetem Verbrauch erinnern
-_DEFAULT_REMINDER_COOLDOWN_H = 24  # Erinnerung max alle 24h pro Artikel
+# Defaults (aus constants.py)
+_DEFAULT_MIN_PURCHASES = SHOPPING_MIN_PURCHASES
+_DEFAULT_REMINDER_DAYS_BEFORE = SHOPPING_REMINDER_DAYS_BEFORE
+_DEFAULT_REMINDER_COOLDOWN_H = SHOPPING_REMINDER_COOLDOWN_H
 
 
 class SmartShopping:
@@ -81,15 +90,14 @@ class SmartShopping:
 
         try:
             await self.redis.rpush(key, entry)
-            # Max 50 Eintraege pro Artikel (aelteste entfernen)
-            await self.redis.ltrim(key, -50, -1)
-            # TTL: 1 Jahr
-            await self.redis.expire(key, 365 * 86400)
+            # Max N Eintraege pro Artikel (aelteste entfernen)
+            await self.redis.ltrim(key, -SHOPPING_CONSUMPTION_MAX_ENTRIES, -1)
+            await self.redis.expire(key, SHOPPING_CONSUMPTION_TTL)
 
             # Einkaufstag protokollieren (fuer Wochentag-Muster)
             weekday = str(now.weekday())  # 0=Mo, 6=So
             await self.redis.hincrby(_KEY_SHOPPING_DAYS, weekday, 1)
-            await self.redis.expire(_KEY_SHOPPING_DAYS, 365 * 86400)
+            await self.redis.expire(_KEY_SHOPPING_DAYS, SHOPPING_CONSUMPTION_TTL)
 
             # Prognose aktualisieren
             prediction = await self._calculate_prediction(item_name)
@@ -145,7 +153,7 @@ class SmartShopping:
             next_expected = last_purchase + timedelta(days=avg_days)
 
             # Confidence: mehr Datenpunkte = hoeher, max bei 10+
-            confidence = min(1.0, len(intervals) / 10)
+            confidence = min(1.0, len(intervals) / SHOPPING_CONFIDENCE_DATAPOINTS)
 
             return {
                 "item": item_name,
@@ -202,7 +210,7 @@ class SmartShopping:
         for pred in predictions:
             try:
                 next_date = datetime.fromisoformat(pred["next_expected"])
-                if next_date <= threshold and pred.get("confidence", 0) >= 0.3:
+                if next_date <= threshold and pred.get("confidence", 0) >= SHOPPING_LOW_STOCK_THRESHOLD:
                     days_until = (next_date - now).days
                     running_low.append({
                         **pred,

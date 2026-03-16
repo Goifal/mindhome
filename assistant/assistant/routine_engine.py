@@ -61,7 +61,7 @@ class RoutineEngine:
         self.briefing_enabled = mb_cfg.get("enabled", True)
         self.briefing_modules = mb_cfg.get("modules", [
             "greeting", "weather", "calendar", "house_status", "travel",
-            "personal_memory",
+            "personal_memory", "device_conflicts",
         ])
         self.weekday_style = mb_cfg.get("weekday_style", "kurz")
         self.weekend_style = mb_cfg.get("weekend_style", "ausfuehrlich")
@@ -95,7 +95,7 @@ class RoutineEngine:
         self.briefing_enabled = mb_cfg.get("enabled", True)
         self.briefing_modules = mb_cfg.get("modules", [
             "greeting", "weather", "calendar", "house_status", "travel",
-            "personal_memory",
+            "personal_memory", "device_conflicts",
         ])
         self.weekday_style = mb_cfg.get("weekday_style", "kurz")
         self.weekend_style = mb_cfg.get("weekend_style", "ausfuehrlich")
@@ -234,9 +234,32 @@ class RoutineEngine:
                 return await self.get_travel_briefing()
             elif module == "personal_memory":
                 return await self._get_personal_memory_briefing(person)
+            elif module == "device_conflicts":
+                return await self._get_device_conflicts_briefing()
         except Exception as e:
             logger.debug("Briefing-Modul '%s' fehlgeschlagen: %s", module, e)
         return ""
+
+    async def _get_device_conflicts_briefing(self) -> str:
+        """Prueft DEVICE_DEPENDENCIES gegen aktuelle States fuer das Briefing."""
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return ""
+            state_dict = {s["entity_id"]: s.get("state", "") for s in states if "entity_id" in s}
+            from .state_change_log import StateChangeLog
+            scl = StateChangeLog.__new__(StateChangeLog)
+            conflicts = scl.detect_conflicts(state_dict)
+            if not conflicts:
+                return ""
+            lines = [f"Aktuelle Geraete-Konflikte ({len(conflicts)}):"]
+            for c in conflicts[:5]:
+                room_info = f" ({c['room']})" if c.get("room") else ""
+                lines.append(f"- {c['hint']}{room_info}")
+            return "\n".join(lines)
+        except Exception as e:
+            logger.debug("Device-Conflicts Briefing Fehler: %s", e)
+            return ""
 
     async def _get_personal_memory_briefing(self, person: str) -> str:
         """Liefert relevante Erinnerungen und anstehende Daten fuer das Briefing."""
@@ -1119,6 +1142,23 @@ class RoutineEngine:
                             "critical": True,
                         })
 
+        # Device-Dependency Konflikte (naechtliche Sicherheitsrelevanz)
+        try:
+            state_dict = {s["entity_id"]: s.get("state", "") for s in states if "entity_id" in s}
+            from .state_change_log import StateChangeLog
+            scl = StateChangeLog.__new__(StateChangeLog)
+            conflicts = scl.detect_conflicts(state_dict)
+            for c in conflicts[:3]:
+                room_info = f" ({c['room']})" if c.get("room") else ""
+                issues.append({
+                    "type": "device_conflict",
+                    "name": c.get("hint", "Geraete-Konflikt"),
+                    "message": f"{c['hint']}{room_info}",
+                    "critical": False,
+                })
+        except Exception as e:
+            logger.debug("Goodnight Device-Conflict Check Fehler: %s", e)
+
         return issues
 
     async def _get_tomorrow_preview(self) -> str:
@@ -1791,3 +1831,193 @@ class RoutineEngine:
                 migrated, len(birthdays),
             )
         return migrated
+
+    # ------------------------------------------------------------------
+    # Multi-Day Planning: Vorausplanung fuer die naechsten N Tage
+    # ------------------------------------------------------------------
+
+    async def plan_ahead(
+        self,
+        days: int,
+        calendar_events: list,
+        ha_client,
+    ) -> list[dict]:
+        """Plant Vorbereitungen fuer die naechsten N Tage basierend auf Kalender-Events.
+
+        Analysiert Kalender-Eintraege und generiert Vorbereitungsaufgaben:
+        - Gaeste kommen → Gaestezimmer vorbereiten (Temperatur, Reinigung)
+        - Frueher Termin → frueheren Wecker vorschlagen
+        - Urlaub/Ferien → Urlaubs-Checkliste ausloesen
+        - Geburtstag → Feier-Vorbereitung vorschlagen
+
+        Kann taeglich vom Proactive System aufgerufen werden.
+
+        Args:
+            days: Anzahl Tage in die Zukunft (z.B. 7)
+            calendar_events: Liste von Kalender-Events, jeweils dict mit
+                             "summary", "start" (ISO-Str oder datetime),
+                             "end" (optional), "description" (optional)
+            ha_client: HomeAssistant-Client fuer Aktionen
+
+        Returns:
+            Liste von Vorbereitungs-Plaenen pro Tag/Event
+        """
+        if not calendar_events:
+            return []
+
+        now = datetime.now(tz=_TZ)
+        plans: list[dict] = []
+
+        for event in calendar_events:
+            summary = event.get("summary", "")
+            description = event.get("description", "")
+            combined_text = f"{summary} {description}".lower()
+
+            # Start-Zeitpunkt parsen
+            start_raw = event.get("start", "")
+            if isinstance(start_raw, datetime):
+                event_start = start_raw if start_raw.tzinfo else start_raw.replace(tzinfo=_TZ)
+            elif isinstance(start_raw, str) and start_raw:
+                try:
+                    event_start = datetime.fromisoformat(start_raw)
+                    if event_start.tzinfo is None:
+                        event_start = event_start.replace(tzinfo=_TZ)
+                except (ValueError, TypeError):
+                    logger.debug("plan_ahead: Ungueliges Datum '%s', uebersprungen", start_raw)
+                    continue
+            else:
+                continue
+
+            # Nur Events innerhalb des Planungshorizonts
+            delta_days = (event_start.date() - now.date()).days
+            if delta_days < 0 or delta_days > days:
+                continue
+
+            event_date = event_start.strftime("%Y-%m-%d")
+            preparations: list[dict] = []
+
+            # --- Gaeste / Besuch erkennen ---
+            guest_keywords = [
+                "gast", "gaeste", "besuch", "besucher", "einladung",
+                "dinner", "abendessen", "feier", "party", "guest",
+            ]
+            if any(kw in combined_text for kw in guest_keywords):
+                # Gaestezimmer vorheizen (4h vorher)
+                preparations.append({
+                    "action": "set_climate",
+                    "entity": "climate.gaestezimmer",
+                    "target": 21,
+                    "when": "4h before",
+                    "description": "Gaestezimmer auf 21°C vorheizen",
+                })
+                # Reinigung einplanen (am Morgen des Tages)
+                preparations.append({
+                    "action": "notify",
+                    "message": "Gaeste kommen heute — Gaestezimmer vorbereiten",
+                    "when": "morning_of_day",
+                    "description": "Erinnerung: Gaestezimmer vorbereiten",
+                })
+                # Wohnzimmer auch angenehm temperieren
+                preparations.append({
+                    "action": "set_climate",
+                    "entity": "climate.wohnzimmer",
+                    "target": 22,
+                    "when": "2h before",
+                    "description": "Wohnzimmer auf 22°C fuer Gaeste",
+                })
+
+            # --- Frueher Termin (vor 8:00) → frueherer Wecker ---
+            early_keywords = ["meeting", "termin", "besprechung", "arzt", "flug", "zug"]
+            if event_start.hour < 8 and event_start.hour > 0:
+                is_early_event = any(kw in combined_text for kw in early_keywords) or True
+                if is_early_event:
+                    # Wecker 90 Minuten vor dem Termin vorschlagen
+                    wake_time = event_start - timedelta(minutes=90)
+                    preparations.append({
+                        "action": "suggest_alarm",
+                        "time": wake_time.strftime("%H:%M"),
+                        "when": "evening_before",
+                        "description": (
+                            f"Frueher Termin um {event_start.strftime('%H:%M')} — "
+                            f"Wecker auf {wake_time.strftime('%H:%M')} empfohlen"
+                        ),
+                    })
+                    # Morgenroutine frueher starten
+                    preparations.append({
+                        "action": "set_wakeup_time",
+                        "time": wake_time.strftime("%H:%M"),
+                        "when": "evening_before",
+                        "description": "Aufwach-Sequenz frueher starten",
+                    })
+
+            # --- Urlaub / Ferien erkennen ---
+            vacation_keywords = [
+                "urlaub", "ferien", "vacation", "holiday", "verreisen",
+                "abwesenheit", "away", "reise",
+            ]
+            if any(kw in combined_text for kw in vacation_keywords):
+                # Urlaubs-Checkliste: Heizung absenken
+                preparations.append({
+                    "action": "set_climate_all",
+                    "target": 16,
+                    "when": "on_departure",
+                    "description": "Alle Raeume auf 16°C Absenktemperatur",
+                })
+                # Anwesenheitssimulation starten
+                preparations.append({
+                    "action": "start_vacation_simulation",
+                    "when": "on_departure",
+                    "description": "Anwesenheitssimulation aktivieren",
+                })
+                # Fenster-Check
+                preparations.append({
+                    "action": "check_windows",
+                    "when": "1h before departure",
+                    "description": "Alle Fenster geschlossen? Sicherheitscheck",
+                })
+                # Erinnerung: Muell, Post, etc.
+                preparations.append({
+                    "action": "notify",
+                    "message": "Urlaubs-Checkliste: Muell, Post umleiten, Kuehlschrank",
+                    "when": "1d before",
+                    "description": "Urlaubs-Vorbereitungs-Erinnerung",
+                })
+
+            # --- Geburtstag erkennen ---
+            birthday_keywords = [
+                "geburtstag", "birthday", "geb.", "bday",
+            ]
+            if any(kw in combined_text for kw in birthday_keywords):
+                preparations.append({
+                    "action": "notify",
+                    "message": f"Geburtstag: {summary} — Geschenk und Feier vorbereiten",
+                    "when": "2d before",
+                    "description": "Erinnerung: Geburtstagsgeschenk besorgen",
+                })
+                preparations.append({
+                    "action": "notify",
+                    "message": f"Heute ist Geburtstag: {summary}",
+                    "when": "morning_of_day",
+                    "description": "Geburtstags-Erinnerung am Morgen",
+                })
+                # Festliche Beleuchtung vorschlagen
+                preparations.append({
+                    "action": "set_scene",
+                    "scene": "celebration",
+                    "when": "morning_of_day",
+                    "description": "Festliche Beleuchtung aktivieren",
+                })
+
+            # Nur Events mit Vorbereitungen aufnehmen
+            if preparations:
+                plans.append({
+                    "day": event_date,
+                    "event": summary,
+                    "preparations": preparations,
+                })
+
+        logger.info(
+            "plan_ahead: %d Vorbereitungen fuer %d Tage generiert",
+            len(plans), days,
+        )
+        return plans

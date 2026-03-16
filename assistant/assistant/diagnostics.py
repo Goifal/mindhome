@@ -662,6 +662,146 @@ class DiagnosticsEngine:
 
         return report
 
+    async def get_user_facing_status(self) -> dict | None:
+        """Gibt eine benutzerfreundliche Statusmeldung bei Degradation zurueck.
+
+        Prueft alle kritischen Subsysteme und kommuniziert Probleme in
+        natuerlicher deutscher Sprache (Jarvis-Persoenlichkeit).
+
+        Returns:
+            None wenn alles gesund ist, sonst dict mit:
+                message: Benutzerfreundliche deutsche Nachricht
+                severity: "info" oder "warning"
+        """
+        import aiohttp
+        import asyncio
+
+        issues: list[tuple[str, str]] = []  # (message, severity)
+
+        # --- Ollama Response-Time pruefen ---
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                start = asyncio.get_event_loop().time()
+                async with session.get(f"{settings.ollama_url}/api/tags") as resp:
+                    elapsed = asyncio.get_event_loop().time() - start
+                    if resp.status != 200:
+                        issues.append((
+                            "Ich bin gerade etwas langsamer im Denken — mein Sprachmodell ist ausgelastet",
+                            "warning",
+                        ))
+                    elif elapsed > 5.0:
+                        issues.append((
+                            "Ich bin gerade etwas langsamer im Denken — mein Sprachmodell ist ausgelastet",
+                            "warning",
+                        ))
+                    elif elapsed > 2.0:
+                        issues.append((
+                            "Meine Antworten koennten gerade etwas langsamer sein — Ollama ist ausgelastet",
+                            "info",
+                        ))
+        except asyncio.TimeoutError:
+            issues.append((
+                "Ich bin gerade etwas langsamer im Denken — mein Sprachmodell ist ausgelastet",
+                "warning",
+            ))
+        except Exception:
+            issues.append((
+                "Mein Sprachmodell ist gerade nicht erreichbar — ich arbeite mit Einschraenkungen",
+                "warning",
+            ))
+
+        # --- Redis-Konnektivitaet pruefen ---
+        try:
+            import redis.asyncio as aioredis
+            r = aioredis.from_url(settings.redis_url, socket_timeout=3)
+            try:
+                await r.ping()
+            finally:
+                await r.aclose()
+        except Exception:
+            issues.append((
+                "Mein Kurzzeitgedaechtnis ist gerade eingeschraenkt",
+                "warning",
+            ))
+
+        # --- Home Assistant Erreichbarkeit pruefen ---
+        try:
+            ha_ok = await self.ha.is_available()
+            if not ha_ok:
+                issues.append((
+                    "Ich habe gerade keinen Zugriff auf die Haussteuerung — Home Assistant antwortet nicht",
+                    "warning",
+                ))
+        except Exception:
+            issues.append((
+                "Ich habe gerade keinen Zugriff auf die Haussteuerung — Home Assistant antwortet nicht",
+                "warning",
+            ))
+
+        # --- Speicherplatz pruefen ---
+        try:
+            usage = shutil.disk_usage("/")
+            free_pct = (usage.free / usage.total) * 100
+            if free_pct < 5:
+                issues.append((
+                    "Mir geht der Speicherplatz aus — eventuell sollten wir aufraeumen",
+                    "warning",
+                ))
+            elif free_pct < 10:
+                issues.append((
+                    "Der Speicherplatz wird knapp — wir sollten bald aufraeumen",
+                    "info",
+                ))
+        except Exception:
+            pass
+
+        # --- Arbeitsspeicher pruefen ---
+        try:
+            meminfo_path = Path("/proc/meminfo")
+            if meminfo_path.exists():
+                meminfo = {}
+                with open(meminfo_path) as f:
+                    for line in f:
+                        parts = line.split(":")
+                        if len(parts) == 2:
+                            key = parts[0].strip()
+                            val = parts[1].strip().split()[0]
+                            meminfo[key] = int(val)
+                total = meminfo.get("MemTotal", 0)
+                available = meminfo.get("MemAvailable", 0)
+                if total > 0:
+                    used_pct = ((total - available) / total) * 100
+                    if used_pct > 95:
+                        issues.append((
+                            "Der Arbeitsspeicher ist fast voll — ich koennte instabil werden",
+                            "warning",
+                        ))
+                    elif used_pct > 90:
+                        issues.append((
+                            "Der Arbeitsspeicher wird knapp — Leistung koennte eingeschraenkt sein",
+                            "info",
+                        ))
+        except Exception:
+            pass
+
+        # Alles gesund → None
+        if not issues:
+            return None
+
+        # Schwerwiegendstes Problem zuerst (warning > info)
+        warning_issues = [i for i in issues if i[1] == "warning"]
+        if warning_issues:
+            # Bei mehreren Warnings: kombinierte Nachricht
+            if len(warning_issues) > 1:
+                messages = [i[0] for i in warning_issues]
+                combined = messages[0] + ". Ausserdem: " + ". ".join(messages[1:])
+                return {"message": combined, "severity": "warning"}
+            return {"message": warning_issues[0][0], "severity": "warning"}
+
+        # Nur Info-Level Issues
+        return {"message": issues[0][0], "severity": "info"}
+
     def health_status(self) -> str:
         """Gibt den eigenen Status zurueck."""
         if not self.enabled:

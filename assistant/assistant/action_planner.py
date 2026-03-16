@@ -326,6 +326,28 @@ class ActionPlanner:
 
                 valid_steps.append((step, func_name, func_args))
 
+            # Device-Dependency-Validierung: Gesamten Plan pruefen
+            if valid_steps:
+                try:
+                    from .state_change_log import StateChangeLog
+                    import assistant.main as main_module
+                    if hasattr(main_module, "brain"):
+                        _states = await main_module.brain.ha.get_states() or []
+                        for _vs_step, _vs_fn, _vs_args in valid_steps:
+                            _dep_hints = StateChangeLog.check_action_dependencies(
+                                _vs_fn, _vs_args, _states,
+                            )
+                            if _dep_hints:
+                                plan.confirmation_reasons.extend(_dep_hints)
+                        if plan.confirmation_reasons:
+                            plan.needs_confirmation = True
+                            logger.info(
+                                "Planner: %d Dependency-Konflikte erkannt",
+                                len(plan.confirmation_reasons),
+                            )
+                except Exception as _dep_err:
+                    logger.debug("Planner Dependency-Check: %s", _dep_err)
+
             # Phase 2: Ausfuehrung — parallel oder sequentiell (Narration)
             use_parallel = len(valid_steps) > 1 and not (self.narration_enabled and self.step_delay > 0)
 

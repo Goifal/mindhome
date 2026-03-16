@@ -1162,9 +1162,9 @@ const HELP_TEXTS = {
   'models.deep_min_words': {title:'Deep ab Wörtern', text:'Ab wie vielen Wörtern automatisch das Deep-Modell genutzt wird.'},
   'models.options.temperature': {title:'Kreativitaet', text:'Wie kreativ die Antworten sein sollen.', detail:'0 = deterministisch, 0.7 = Standard, 2.0 = sehr kreativ'},
   'models.options.max_tokens': {title:'Max. Antwortlänge', text:'Maximale Länge einer Antwort in Tokens (~0.75 Wörter pro Token).'},
-  'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster für das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. 2048 empfohlen für 4B Modelle.'},
-  'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster für das Smart-Modell (Gespräche).', detail:'4096 = Standard. Mehr Kontext = besseres Gesprächsgedächtnis, aber mehr VRAM.'},
-  'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster für das Deep-Modell (komplexe Aufgaben).', detail:'MoE-Modelle (z.B. Qwen3.5-27B) sind VRAM-effizient und vertragen 8192+.'},
+  'ollama.num_ctx_fast': {title:'Kontext Fast-Modell', text:'Kontextfenster für das Fast-Modell (kleine Befehle).', detail:'Kleiner = spart VRAM und ist schneller. MoE-Modelle (Qwen3.5) vertragen groessere Fenster bei wenig VRAM.'},
+  'ollama.num_ctx_smart': {title:'Kontext Smart-Modell', text:'Kontextfenster für das Smart-Modell (Gespräche).', detail:'Mehr Kontext = besseres Gesprächsgedächtnis. Qwen3.5 MoE unterstuetzt bis 262K.'},
+  'ollama.num_ctx_deep': {title:'Kontext Deep-Modell', text:'Kontextfenster für das Deep-Modell (komplexe Aufgaben).', detail:'Qwen3.5 MoE unterstuetzt bis 262K. Groessere Fenster brauchen mehr VRAM, sind aber bei MoE effizient.'},
   'ollama.keep_alive': {title:'Keep-Alive', text:'Wie lange das Modell nach dem letzten Request im VRAM bleibt.', detail:'Länger = schnellere Antworten (kein Nachladen), aber mehr Strom im Idle. "5m" = 5 Minuten, "-1" = nie entladen, "0" = sofort entladen. Bei aktiver Nutzung empfohlen: "5m" oder länger.'},
   'ollama.flash_attn': {title:'Flash Attention', text:'Beschleunigt die Inferenz bei neueren GPUs (RTX 30xx+).', detail:'Flash Attention reduziert VRAM-Verbrauch und beschleunigt die Token-Generierung. Erfordert CUDA-fähige GPU. Bei Problemen deaktivieren.'},
   'ollama.num_gpu': {title:'GPU-Layer', text:'Wie viele Modell-Layer auf die GPU geladen werden.', detail:'Automatisch = Ollama berechnet anhand des freien VRAMs wie viele Layer passen (beste Option für grosse Modelle). 99 = alles auf GPU erzwingen (kann bei grossen Modellen fehlschlagen). 0 = nur CPU.'},
@@ -1185,6 +1185,18 @@ const HELP_TEXTS = {
   'model_profiles.default.think_temperature': {title:'Think-Temperatur (Default)', text:'Temperatur im Thinking-Modus. Empfohlen: 0.6 (fokussierter als normal).'},
   'model_profiles.default.think_top_p': {title:'Think Top-P (Default)', text:'Top-P im Thinking-Modus. Empfohlen: 0.95 (breiter als normal).'},
   'model_profiles.default.character_hint': {title:'JARVIS Character-Hint', text:'Modell-spezifische Prompt-Verstaerkung gegen typische LLM-Schwaechen.', detail:'Wird als Prio-1-Sektion in den System-Prompt injiziert. Hier kannst du modellspezifische Anweisungen hinterlegen, z.B. "Niemals mit Natürlich! anfangen" für Modelle die dazu neigen. Leer = kein Extra-Hint.'},
+  // === LLM ENHANCER ===
+  'llm_enhancer.enabled': {title:'LLM Enhancer', text:'Hauptschalter fuer alle vier Enhancer-Features.', detail:'Wenn deaktiviert, arbeitet Jarvis nur mit dem Basis-LLM-Call — schneller, aber weniger intelligent. Einzelne Features koennen separat deaktiviert werden.'},
+  'llm_enhancer.smart_intent.enabled': {title:'Smart Intent', text:'Erkennt versteckte Absichten hinter vagen Aussagen.', detail:'"Mir ist kalt" wird als Wunsch erkannt die Heizung hochzudrehen. Nutzt das Fast-Modell fuer minimale Latenz (~100-300ms).'},
+  'llm_enhancer.smart_intent.min_confidence': {title:'Smart Intent Konfidenz', text:'Ab welcher Sicherheit eine erkannte Absicht ausgefuehrt wird.', detail:'0.65 = Standard. Niedrigere Werte: Jarvis handelt oefter, kann aber falsch liegen. Hoehere Werte: nur bei sehr eindeutigen Faellen.'},
+  'llm_enhancer.conversation_summary.enabled': {title:'Conversation Summary', text:'LLM-basierte Gespraechs-Zusammenfassung fuer besseres Gedaechtnis.', detail:'Statt einfacher Text-Kuerzung generiert das Fast-Modell eine intelligente Zusammenfassung des bisherigen Gespraechs.'},
+  'llm_enhancer.conversation_summary.min_messages': {title:'Min. Nachrichten', text:'Ab wie vielen Nachrichten eine Zusammenfassung erstellt wird.', detail:'4 = Standard. Bei 2 wird schon nach dem ersten Austausch zusammengefasst — besseres Gedaechtnis, aber mehr LLM-Calls.'},
+  'llm_enhancer.proactive_suggestions.enabled': {title:'Proactive Suggestions', text:'Jarvis schlaegt Automationen basierend auf Nutzungsmustern vor.', detail:'Erkennt wiederkehrende Muster (z.B. taegliches Licht-Ausschalten um 22 Uhr) und fragt ob eine Automation erstellt werden soll. Nutzt das Smart-Modell.'},
+  'llm_enhancer.proactive_suggestions.min_patterns': {title:'Min. Muster', text:'Wie viele Wiederholungen noetig sind fuer einen Vorschlag.', detail:'1 = schon nach einmaligem Muster. Hoehere Werte vermeiden Vorschlaege bei Zufallsmustern.'},
+  'llm_enhancer.proactive_suggestions.max_per_day': {title:'Max. Vorschlaege/Tag', text:'Wie oft Jarvis pro Tag mit Vorschlaegen kommen darf.', detail:'5 = Standard. Zu viele Vorschlaege wirken aufdringlich.'},
+  'llm_enhancer.response_rewriter.enabled': {title:'Response Rewriter', text:'Formuliert technische Antworten in natuerlichen Jarvis-Stil um.', detail:'Statt "Temperatur: 21.5°C" sagt Jarvis "Im Wohnzimmer sind es angenehme 21,5 Grad." Nutzt das Fast-Modell. Uebersprungen bei Kurzantworten ("Erledigt").'},
+  'llm_enhancer.response_rewriter.min_response_length': {title:'Min. Antwortlaenge', text:'Antworten unter dieser Zeichenzahl werden nicht umformuliert.', detail:'15 = Standard. "Erledigt" (8 Zeichen) braucht kein Rewriting, laengere Saetze schon.'},
+  'llm_enhancer.response_rewriter.max_response_length': {title:'Max. Antwortlaenge', text:'Antworten ueber dieser Zeichenzahl werden nicht umformuliert.', detail:'500 = Standard. Lange Antworten sind bereits ausfuehrlich genug und wuerden beim Rewriting zu lange dauern.'},
   'planner.max_iterations': {title:'Max. Planungsschritte', text:'Wie viele Planungsrunden der Action Planner maximal durchläuft.', detail:'8 = Standard. Komplexe Aufgaben wie "Mach alles fertig für morgen" brauchen mehr Schritte. Bei Timeout-Problemen reduzieren.'},
   'planner.max_tokens': {title:'Planner Antwortlänge', text:'Maximale Tokens pro Planungsschritt.', detail:'512 = Standard. Erhöhen wenn der Planner Plaene abschneidet.'},
   'models.fast_keywords': {title:'Fast-Keywords', text:'Wörter die das schnelle Modell aktivieren.'},
@@ -2934,9 +2946,9 @@ function renderPersonality() {
     fRange('models.deep_min_words', 'Deep ab Wörtern', 5, 50, 1, {5:'5',10:'10',15:'15',20:'20',25:'25',30:'30',35:'35',40:'40',45:'45',50:'50'}) +
     fRange('models.options.temperature', 'Kreativitaet (Temperatur)', 0, 2, 0.1, {0:'Exakt',0.5:'Konservativ',0.7:'Standard',1:'Kreativ',1.5:'Sehr kreativ',2:'Maximum'}) +
     fRange('models.options.max_tokens', 'Antwortlänge (Max Tokens)', 64, 4096, 64) +
-    fRange('ollama.num_ctx_fast', 'Kontext Fast-Modell', 1024, 16384, 1024, {1024:'1K',2048:'2K',4096:'4K',8192:'8K',12288:'12K',16384:'16K'}) +
-    fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 32768, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',24576:'24K',32768:'32K'}) +
-    fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 65536, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',32768:'32K',49152:'48K',65536:'64K'}) +
+    fRange('ollama.num_ctx_fast', 'Kontext Fast-Modell', 1024, 65536, 1024, {1024:'1K',2048:'2K',4096:'4K',8192:'8K',16384:'16K',32768:'32K',65536:'64K'}) +
+    fRange('ollama.num_ctx_smart', 'Kontext Smart-Modell', 2048, 131072, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',32768:'32K',65536:'64K',131072:'128K'}) +
+    fRange('ollama.num_ctx_deep', 'Kontext Deep-Modell', 2048, 131072, 1024, {2048:'2K',4096:'4K',8192:'8K',16384:'16K',32768:'32K',65536:'64K',131072:'128K'}) +
     '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">GPU-Performance</div>' +
     fSelect('ollama.keep_alive', 'Keep-Alive (Modell im VRAM halten)', [
       {v:'0',l:'Sofort entladen (spart Strom)'},
@@ -2960,11 +2972,12 @@ function renderPersonality() {
     fToggle('latency_optimization.knowledge_fast_path', 'Wissensfragen Fast-Path') +
     fInfo('Bei reinen Wissensfragen ("Was ist die Hauptstadt von Frankreich?") wird der komplette Subsystem-Gather (Mood, Security, Sensoren etc.) uebersprungen und direkt das LLM gefragt. Spart ~500-2000ms pro Wissensfrage. Deaktivieren wenn Wissensfragen auch Haus-Kontext beruecksichtigen sollen.') +
     fSelect('latency_optimization.think_control', 'Think-Modus Steuerung', [
-      {v:'auto',l:'Auto — Thinking nur bei Gespräch + Reasoning (empfohlen)'},
-      {v:'always_off',l:'Immer aus — Schnellste Antworten, weniger Qualitaet'},
-      {v:'always_on',l:'Immer an — Beste Qualitaet, langsamere Antworten'}
+      {v:'smart_off',l:'Smart aus — Thinking nur fuer Deep-Tier (empfohlen)'},
+      {v:'auto',l:'Auto — Modell entscheidet selbst'},
+      {v:'off',l:'Immer aus — Schnellste Antworten, weniger Qualitaet'},
+      {v:'on',l:'Immer an — Beste Qualitaet, langsamere Antworten'}
     ]) +
-    fInfo('Qwen3.5 hat einen internen "Denk-Modus" der 200-2000 extra Tokens generiert bevor die Antwort kommt (2-10s). "Auto" deaktiviert das für einfache Befehle (Licht an, Temperatur?) und aktiviert es nur bei Reasoning. "Immer aus" spart maximal Zeit, kann aber bei komplexen Fragen schlechtere Antworten geben.') +
+    fInfo('Qwen3.5 hat einen internen "Denk-Modus" der 500-2000 extra Tokens generiert bevor die Antwort kommt (2-10s). "Smart aus" deaktiviert Thinking fuer normale Gespraeche (Smart-Tier) und laesst es fuer komplexe Aufgaben (Deep-Tier) aktiv — beste Balance aus Geschwindigkeit und Qualitaet. "Immer aus" spart maximal Zeit, kann aber bei komplexen Fragen schlechtere Antworten geben.') +
     fRange('latency_optimization.upgrade_signal_threshold', 'Deep-Upgrade Schwelle', 1, 10, 1, {1:'1 (oft Deep)',3:'3',5:'5 (Standard)',7:'7',10:'10 (selten Deep)'}) +
     fInfo('Bestimmt ab wie vielen Kontext-Signalen (Problemlösung, What-If, kritische Sicherheit) vom Smart-Modell (9B, schnell) auf das Deep-Modell (27B, langsam) gewechselt wird. Niedrig = oft Deep (3-20s langsamer, bessere Analyse). Hoch = selten Deep (schneller, reicht für die meisten Anfragen).') +
     fRange('latency_optimization.refinement_skip_max_chars', 'Refinement ueberspringen bis (Zeichen)', 0, 500, 10, {0:'Nie (immer Refinement)',80:'80',120:'120 (Standard)',200:'200',300:'300',500:'500 (fast immer skip)'}) +
@@ -2976,6 +2989,35 @@ function renderPersonality() {
       {v:'llm',l:'LLM-Zusammenfassung — Besser, aber 500-2000ms langsamer'}
     ]) +
     fInfo('Wenn der Gesprächsverlauf zu lang wird, müssen ältere Nachrichten gekürzt werden. "Text-Kürzung" schneidet ältere Nachrichten auf 80 Zeichen ab — sofort und ohne extra LLM-Call. "LLM-Zusammenfassung" generiert eine intelligente Zusammenfassung, braucht aber einen zusätzlichen LLM-Call (500-2000ms).')
+  ) +
+  sectionWrap('&#10024;', 'LLM Enhancer',
+    fInfo('Macht Jarvis intelligenter durch gezielte LLM-Nutzung. Jedes Feature nutzt einen separaten LLM-Call — mehr Features = bessere Antworten, aber hoehere Latenz und GPU-Last. Einzeln deaktivierbar.') +
+    fToggle('llm_enhancer.enabled', 'LLM Enhancer aktiviert') +
+    fInfo('Hauptschalter: Deaktiviert alle vier Enhancer-Features auf einmal. Wenn aus, arbeitet Jarvis nur mit dem Basis-LLM-Call — schneller, aber weniger intelligent.') +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Implizite Absichtserkennung</div>' +
+    fToggle('llm_enhancer.smart_intent.enabled', 'Smart Intent aktiviert') +
+    fInfo('Erkennt versteckte Absichten hinter vagen Aussagen. Beispiel: "Mir ist kalt" erkennt Jarvis als Wunsch die Heizung hochzudrehen, statt nur "Das tut mir leid" zu antworten. Nutzt das Fast-Modell fuer minimale Latenz.') +
+    fRange('llm_enhancer.smart_intent.min_confidence', 'Mindest-Konfidenz', 0.3, 0.95, 0.05, {0.3:'0.3 (oft)',0.5:'0.5',0.65:'0.65 (Standard)',0.8:'0.8',0.95:'0.95 (selten)'}) +
+    fInfo('Ab welcher Konfidenz eine erkannte Absicht ausgefuehrt wird. Niedrig = Jarvis handelt oefter eigenstaendig, kann aber auch mal falsch liegen. Hoch = nur bei sehr eindeutigen Faellen.') +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Gespraechs-Zusammenfassung</div>' +
+    fToggle('llm_enhancer.conversation_summary.enabled', 'Conversation Summary aktiviert') +
+    fInfo('Generiert nach laengeren Gespraechen eine LLM-basierte Zusammenfassung statt einfacher Text-Kuerzung. Jarvis erinnert sich besser an den Gespraechskontext. Nutzt das Fast-Modell.') +
+    fRange('llm_enhancer.conversation_summary.min_messages', 'Ab Nachrichten zusammenfassen', 2, 10, 1, {2:'2',4:'4 (Standard)',6:'6',8:'8',10:'10'}) +
+    fInfo('Wie viele Nachrichten im Gespraech sein muessen bevor eine Zusammenfassung erstellt wird. Niedrig = fruehe Zusammenfassung (besseres Gedaechtnis, mehr LLM-Calls). Hoch = spaetere Zusammenfassung (weniger Calls).') +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Proaktive Vorschlaege</div>' +
+    fToggle('llm_enhancer.proactive_suggestions.enabled', 'Proactive Suggestions aktiviert') +
+    fInfo('Jarvis analysiert Nutzungsmuster und schlaegt von sich aus Verbesserungen vor — z.B. "Du schaltest jeden Abend um 22 Uhr das Licht aus. Soll ich eine Automation dafuer erstellen?" Nutzt das Smart-Modell.') +
+    fRange('llm_enhancer.proactive_suggestions.min_patterns', 'Mindest-Muster', 1, 5, 1, {1:'1 (Standard)',2:'2',3:'3',5:'5'}) +
+    fInfo('Wie viele Wiederholungen eines Musters noetig sind bevor ein Vorschlag gemacht wird. Niedrig = schnellere Vorschlaege, kann aber bei Zufallsmustern nerven.') +
+    fRange('llm_enhancer.proactive_suggestions.max_per_day', 'Max. Vorschlaege pro Tag', 1, 20, 1, {1:'1',3:'3',5:'5 (Standard)',10:'10',20:'20'}) +
+    fInfo('Begrenzt wie oft Jarvis pro Tag mit Vorschlaegen kommt. Zu viele Vorschlaege koennen als aufdringlich empfunden werden.') +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Antwort-Umformulierung</div>' +
+    fToggle('llm_enhancer.response_rewriter.enabled', 'Response Rewriter aktiviert') +
+    fInfo('Formuliert kurze, technische Antworten in natuerlicheren Jarvis-Stil um. Statt "Temperatur: 21.5°C" sagt Jarvis z.B. "Im Wohnzimmer sind es angenehme 21,5 Grad." Nutzt das Fast-Modell. Sehr kurze Antworten wie "Erledigt" werden uebersprungen.') +
+    fRange('llm_enhancer.response_rewriter.min_response_length', 'Min. Antwortlaenge (Zeichen)', 5, 50, 5, {5:'5',10:'10',15:'15 (Standard)',25:'25',50:'50'}) +
+    fInfo('Antworten unter dieser Laenge werden nicht umformuliert. "Erledigt" (8 Zeichen) braucht kein Rewriting, aber "Temperatur Wohnzimmer: 21.5" (27 Zeichen) schon.') +
+    fRange('llm_enhancer.response_rewriter.max_response_length', 'Max. Antwortlaenge (Zeichen)', 100, 1000, 50, {100:'100',250:'250',500:'500 (Standard)',750:'750',1000:'1000'}) +
+    fInfo('Antworten ueber dieser Laenge werden nicht umformuliert — sie sind bereits ausfuehrlich genug. Sehr lange Antworten wuerden beim Rewriting auch lange dauern.')
   ) +
   sectionWrap('&#129504;', 'Action Planner',
     fInfo('Der Action Planner fuehrt komplexe Multi-Step Anfragen aus (z.B. "Mach alles fertig für morgen"). Er plant iterativ mit dem Deep-Modell und fuehrt Tool-Calls parallel aus.') +

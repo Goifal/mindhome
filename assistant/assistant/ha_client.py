@@ -58,6 +58,10 @@ class HomeAssistantClient:
         self._states_cache_ts: float = 0.0
         self._STATES_CACHE_TTL = 5.0  # Sekunden (von 2s erhoeht — HA-States aendern sich selten innerhalb 5s)
         self._states_lock: asyncio.Lock = asyncio.Lock()
+        # MindHome API Caches (presence, energy, automations etc.)
+        self._mindhome_cache: dict[str, tuple[float, Any]] = {}
+        self._mindhome_cache_lock: asyncio.Lock = asyncio.Lock()
+        self._MINDHOME_CACHE_TTL = 5.0  # Sekunden
 
     def _get_lock(self) -> asyncio.Lock:
         """Gibt den Session-Lock zurueck."""
@@ -243,25 +247,39 @@ class HomeAssistantClient:
         """MindHome System-Status."""
         return await self._get_mindhome("/api/health")
 
+    async def _get_mindhome_cached(self, path: str) -> Any:
+        """MindHome GET mit kurzem Cache (5s) gegen redundante Aufrufe im selben Context-Build."""
+        async with self._mindhome_cache_lock:
+            now = time.monotonic()
+            cached = self._mindhome_cache.get(path)
+            if cached and (now - cached[0]) < self._MINDHOME_CACHE_TTL:
+                return cached[1]
+            result = await self._get_mindhome(path)
+            if result is not None:
+                self._mindhome_cache[path] = (now, result)
+            else:
+                self._mindhome_cache.pop(path, None)
+            return result
+
     async def get_presence(self) -> Optional[dict]:
-        """Anwesenheitsdaten von MindHome."""
-        return await self._get_mindhome("/api/persons")
+        """Anwesenheitsdaten von MindHome (cached)."""
+        return await self._get_mindhome_cached("/api/persons")
 
     async def get_energy(self) -> Optional[dict]:
-        """Energie-Daten von MindHome."""
-        return await self._get_mindhome("/api/energy/summary")
+        """Energie-Daten von MindHome (cached)."""
+        return await self._get_mindhome_cached("/api/energy/summary")
 
     async def get_comfort(self) -> Optional[dict]:
-        """Komfort-Daten von MindHome."""
-        return await self._get_mindhome("/api/health/comfort")
+        """Komfort-Daten von MindHome (cached)."""
+        return await self._get_mindhome_cached("/api/health/comfort")
 
     async def get_security(self) -> Optional[dict]:
-        """Sicherheits-Status von MindHome."""
-        return await self._get_mindhome("/api/security/dashboard")
+        """Sicherheits-Status von MindHome (cached)."""
+        return await self._get_mindhome_cached("/api/security/dashboard")
 
     async def get_patterns(self) -> Optional[dict]:
-        """Erkannte Muster von MindHome."""
-        return await self._get_mindhome("/api/patterns")
+        """Erkannte Muster von MindHome (cached)."""
+        return await self._get_mindhome_cached("/api/patterns")
 
     async def get_health_dashboard(self) -> Optional[dict]:
         """Gesundheits-Dashboard von MindHome."""

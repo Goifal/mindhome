@@ -99,6 +99,30 @@ class ConditionalCommands:
             }
 
         ttl_hours = max(1, min(168, ttl_hours))  # 1h bis 7 Tage
+
+        # Device-Dependency-Check: Pruefen ob Trigger+Aktion Konflikte erzeugen
+        dep_note = ""
+        try:
+            from .state_change_log import DEVICE_DEPENDENCIES, StateChangeLog
+            # Trigger-Entity extrahieren (Format: "entity_id:state")
+            _trigger_eid = ""
+            _trigger_state = ""
+            if trigger_type == "state_change" and ":" in trigger_value:
+                _trigger_eid, _trigger_state = trigger_value.rsplit(":", 1)
+            elif trigger_type == "state_attribute" and "|" in trigger_value:
+                _trigger_eid = trigger_value.split("|")[0]
+
+            if _trigger_eid:
+                _trigger_role = StateChangeLog._get_entity_role(_trigger_eid)
+                _action_domain = action_function.replace("set_", "").replace("_room", "").replace("_all", "")
+                for dep in DEVICE_DEPENDENCIES:
+                    if dep["role"] == _trigger_role and dep.get("state") == _trigger_state:
+                        if _action_domain == dep.get("affects") or action_function == dep.get("affects"):
+                            dep_note = dep.get("hint", dep.get("effect", ""))
+                            break
+        except Exception as _dep_err:
+            logger.debug("Conditional Dependency-Check: %s", _dep_err)
+
         cond_id = str(uuid.uuid4())[:8]
 
         if not label:
@@ -117,6 +141,9 @@ class ConditionalCommands:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "executed_count": 0,
         }
+
+        if dep_note:
+            conditional["dependency_warning"] = dep_note
 
         key = f"{KEY_PREFIX}{cond_id}"
         ttl_seconds = ttl_hours * 3600

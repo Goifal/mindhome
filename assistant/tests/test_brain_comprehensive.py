@@ -53,9 +53,9 @@ class TestEstimateTokens:
 
     def test_german_text_more_tokens(self):
         from assistant.brain import _estimate_tokens
-        # 1.4 chars per token → 14 chars ≈ 10 tokens
+        # 1.8 chars per token (konservativ fuer deutschen BPE-Tokenizer)
         result = _estimate_tokens("Überraschend!")
-        assert result == int(len("Überraschend!") / 1.4)
+        assert result == int(len("Überraschend!") / 1.8)
 
 
 class TestAuditLog:

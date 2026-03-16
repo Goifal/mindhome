@@ -28,6 +28,14 @@ KEY_DAILY_ENERGY = "mha:energy:daily:"
 KEY_LAST_PRICE_ALERT = "mha:energy:last_price_alert"
 KEY_PRICE_HISTORY = "mha:energy:price_history"
 
+# Standard flexible Lasten — konfigurierbar ueber config.yaml (energy.flexible_loads)
+DEFAULT_FLEXIBLE_LOADS: dict[str, dict] = {
+    "waschmaschine": {"kwh": 1.5, "duration_h": 2.0, "entities": ["switch.waschmaschine"]},
+    "trockner": {"kwh": 3.0, "duration_h": 2.5, "entities": ["switch.trockner"]},
+    "spuelmaschine": {"kwh": 1.2, "duration_h": 2.0, "entities": ["switch.spuelmaschine"]},
+    "e_auto": {"kwh": 11.0, "duration_h": 3.0, "entities": ["switch.wallbox"]},
+}
+
 
 class EnergyOptimizer:
     """Intelligentes Energiemanagement."""
@@ -53,6 +61,12 @@ class EnergyOptimizer:
         self.price_high = thresholds.get("price_high_cent", 35)
         self.solar_high_watts = thresholds.get("solar_high_watts", 2000)
         self.anomaly_percent = thresholds.get("anomaly_increase_percent", 30)
+
+        # Flexible Lasten fuer Lastverschiebung (konfigurierbar)
+        self.flexible_loads: dict[str, dict] = {
+            **DEFAULT_FLEXIBLE_LOADS,
+            **energy_cfg.get("flexible_loads", {}),
+        }
 
         # F-056: Essentielle Geraete die nie abgeschaltet werden duerfen
         self.essential_entities = set(energy_cfg.get("essential_entities", [
@@ -233,7 +247,238 @@ class EnergyOptimizer:
         if comparison:
             recs.append(comparison)
 
+        # Device-Dependency-Kontext: Konflikte die Energieverbrauch beeinflussen
+        try:
+            from .state_change_log import StateChangeLog
+            states = await self.ha.get_states() if self.ha else []
+            if states:
+                state_dict = {
+                    s["entity_id"]: s.get("state", "")
+                    for s in states if "entity_id" in s
+                }
+                scl = StateChangeLog.__new__(StateChangeLog)
+                conflicts = scl.detect_conflicts(state_dict)
+                energy_relevant = [
+                    c for c in conflicts
+                    if c.get("affected_active") and any(
+                        kw in c.get("effect", "").lower()
+                        for kw in ["heiz", "kuehl", "energie", "strom", "ineffizient"]
+                    )
+                ]
+                for c in energy_relevant[:2]:
+                    room = f" ({c.get('trigger_room', '')})" if c.get("trigger_room") else ""
+                    recs.append(f"Energiehinweis: {c['hint']}{room}")
+        except Exception as _dep_err:
+            logger.debug("Energy Dependency-Kontext: %s", _dep_err)
+
         return recs
+
+    # ------------------------------------------------------------------
+    # Lastverschiebung / Energie-Arbitrage
+    # ------------------------------------------------------------------
+
+    def calculate_load_shift_savings(self, current_price: float, avg_price: float,
+                                     estimated_kwh: float) -> float:
+        """Berechnet Ersparnis in Cent wenn eine Last in guenstigere Zeit verschoben wird.
+
+        Args:
+            current_price: Aktueller Strompreis in ct/kWh
+            avg_price: Durchschnittspreis in ct/kWh (Referenz)
+            estimated_kwh: Typischer Verbrauch des Geraets in kWh
+
+        Returns:
+            Ersparnis in Cent (positiv = guenstiger als Durchschnitt)
+        """
+        price_diff = avg_price - current_price  # positiv = jetzt guenstiger
+        return round(price_diff * estimated_kwh, 1)
+
+    async def get_optimal_schedule(self, ha_client: HomeAssistantClient) -> list[dict]:
+        """Analysiert aktuelle Strompreise und schlaegt guenstige Zeitfenster fuer flexible Lasten vor.
+
+        Nutzt bestehende Preis-Sensoren und identifiziert Fenster die unter dem
+        Durchschnittspreis liegen. Gibt Empfehlungen fuer jedes flexible Geraet zurueck.
+
+        Returns:
+            Liste von Empfehlungen mit device, suggestion, savings_estimate_ct, optimal_window
+        """
+        if not self.enabled:
+            return []
+
+        states = await ha_client.get_states()
+        if not states:
+            return []
+
+        # Aktuellen Preis ermitteln (normalisiert auf ct/kWh)
+        price_raw = self._find_sensor_value(states, self.price_sensor, ["price", "strom", "electricity"])
+        if price_raw is None:
+            return []
+
+        # Einheit normalisieren (gleiche Logik wie get_energy_report)
+        price_unit = self._find_sensor_unit(states, self.price_sensor, ["price", "strom", "electricity"])
+        price_unit_lower = (price_unit or "").lower().replace(" ", "")
+        if "eur/mwh" in price_unit_lower or "€/mwh" in price_unit_lower:
+            current_price = price_raw / 10.0
+        elif "eur/kwh" in price_unit_lower or "€/kwh" in price_unit_lower:
+            current_price = price_raw * 100.0
+        elif price_raw > 100:
+            current_price = price_raw / 10.0
+        elif price_raw < 1:
+            current_price = price_raw * 100.0
+        else:
+            current_price = price_raw
+
+        # Durchschnittspreis aus Preishistorie oder Schwellwert-Mittel
+        avg_price = await self._get_avg_price(current_price)
+
+        schedule: list[dict] = []
+        now = datetime.now()
+
+        for device_key, load_info in self.flexible_loads.items():
+            estimated_kwh = load_info["kwh"]
+            duration_h = load_info["duration_h"]
+            savings_ct = self.calculate_load_shift_savings(current_price, avg_price, estimated_kwh)
+
+            # Geraetename fuer Anzeige (Grossbuchstabe)
+            display_name = device_key.replace("_", "-").capitalize()
+            if device_key == "e_auto":
+                display_name = "E-Auto"
+
+            if current_price < avg_price:
+                # Jetzt ist guenstig — sofort starten empfehlen
+                discount_pct = ((avg_price - current_price) / avg_price) * 100 if avg_price > 0 else 0
+                end_time = now + timedelta(hours=duration_h)
+                window = f"{now.strftime('%H:%M')}-{end_time.strftime('%H:%M')}"
+                schedule.append({
+                    "device": display_name,
+                    "suggestion": f"Jetzt starten — Strom ist {discount_pct:.0f}% guenstiger als Durchschnitt",
+                    "savings_estimate_ct": abs(savings_ct),
+                    "optimal_window": window,
+                })
+            else:
+                # Jetzt teuer — guenstigeres Fenster vorschlagen
+                # Heuristik: Nachtstunden (1:00-5:00) und Mittagsstunden (12:00-14:00) sind oft guenstig
+                cheap_windows = self._estimate_cheap_windows(now, duration_h)
+                if cheap_windows:
+                    window = cheap_windows[0]
+                    schedule.append({
+                        "device": display_name,
+                        "suggestion": f"Besser spaeter starten — aktuell {current_price:.1f} ct/kWh "
+                                      f"(Durchschnitt {avg_price:.1f} ct/kWh)",
+                        "savings_estimate_ct": abs(savings_ct),
+                        "optimal_window": window,
+                    })
+
+        return schedule
+
+    async def get_solar_surplus_actions(self, ha_client: HomeAssistantClient) -> list[dict]:
+        """Empfehlungen bei Solar-Ueberschuss: Welche Geraete jetzt gestartet werden koennten.
+
+        Priorisiert nach Verbrauch — groesste Verbraucher zuerst, damit der
+        Ueberschuss maximal genutzt wird.
+
+        Returns:
+            Liste von Aktions-Empfehlungen mit device, message, power_kw
+        """
+        if not self.enabled:
+            return []
+
+        states = await ha_client.get_states()
+        if not states:
+            return []
+
+        solar = self._find_sensor_value(states, self.solar_sensor, ["solar", "pv", "photovoltaik"])
+        consumption = self._find_sensor_value(states, self.consumption_sensor,
+                                              ["consumption", "verbrauch", "power"])
+
+        if solar is None or consumption is None:
+            return []
+
+        # Ueberschuss berechnen (in kW)
+        surplus_w = solar - consumption
+        if surplus_w <= 0:
+            return []
+
+        surplus_kw = surplus_w / 1000.0
+
+        actions: list[dict] = []
+
+        # Nach Verbrauch sortieren (groesste zuerst fuer maximale Eigenverbrauchsquote)
+        sorted_loads = sorted(self.flexible_loads.items(),
+                              key=lambda x: x[1]["kwh"] / max(x[1]["duration_h"], 0.1),
+                              reverse=True)
+
+        remaining_kw = surplus_kw
+        for device_key, load_info in sorted_loads:
+            # Durchschnittliche Leistung des Geraets in kW
+            avg_power_kw = load_info["kwh"] / max(load_info["duration_h"], 0.1)
+
+            display_name = device_key.replace("_", "-").capitalize()
+            if device_key == "e_auto":
+                display_name = "E-Auto"
+
+            if remaining_kw >= avg_power_kw * 0.5:
+                # Genuegend Ueberschuss fuer dieses Geraet (mind. 50% der Leistung)
+                actions.append({
+                    "device": display_name,
+                    "message": f"Solarueberschuss von {surplus_kw:.1f} kW — "
+                               f"gute Zeit fuer {display_name}"
+                               f" ({avg_power_kw:.1f} kW Verbrauch)",
+                    "power_kw": round(avg_power_kw, 1),
+                })
+                remaining_kw -= avg_power_kw
+
+            if remaining_kw <= 0:
+                break
+
+        return actions
+
+    # ------------------------------------------------------------------
+    # Hilfsfunktionen fuer Lastverschiebung
+    # ------------------------------------------------------------------
+
+    async def _get_avg_price(self, fallback_price: float) -> float:
+        """Ermittelt den Durchschnittspreis aus Redis-Historie oder Schwellwerten.
+
+        Wenn keine Historie verfuegbar, wird der Mittelwert von price_low und price_high
+        als Annaeherung verwendet.
+        """
+        if self.redis:
+            try:
+                raw = await self.redis.get(KEY_PRICE_HISTORY)
+                if raw:
+                    history = json.loads(raw)
+                    if isinstance(history, list) and history:
+                        return sum(history) / len(history)
+            except Exception as e:
+                logger.debug("Preishistorie nicht verfuegbar: %s", e)
+
+        # Fallback: Mittelwert der konfigurierten Schwellwerte
+        return (self.price_low + self.price_high) / 2.0
+
+    @staticmethod
+    def _estimate_cheap_windows(now: datetime, duration_h: float) -> list[str]:
+        """Schaetzt guenstige Zeitfenster basierend auf typischen Preis-Mustern.
+
+        Typische guenstige Zeiten (dynamische Tarife):
+        - Nachts: 01:00-05:00 (niedrige Nachfrage)
+        - Mittags: 12:00-14:00 (hohe Solar-Einspeisung drueckt Preise)
+
+        Returns:
+            Liste von Zeitfenster-Strings (z.B. ["14:00-16:00"])
+        """
+        windows = []
+        # Guenstige Slots (Stunde, Prioritaet)
+        cheap_slots = [(13, 1), (12, 2), (14, 3), (2, 4), (3, 5), (1, 6)]
+
+        for start_hour, _prio in cheap_slots:
+            slot_start = now.replace(hour=start_hour, minute=0, second=0, microsecond=0)
+            # Wenn Slot heute schon vorbei, naechsten Tag nehmen
+            if slot_start <= now:
+                slot_start += timedelta(days=1)
+            slot_end = slot_start + timedelta(hours=duration_h)
+            windows.append(f"{slot_start.strftime('%H:%M')}-{slot_end.strftime('%H:%M')}")
+
+        return windows
 
     # ------------------------------------------------------------------
     # Kostentracking

@@ -2702,6 +2702,107 @@ class PersonalityEngine:
         else:
             return "alter_freund"
 
+    @staticmethod
+    def get_personality_drift(days_active: int, interaction_stats: dict) -> dict:
+        """Berechnet zeitbasierte Persoenlichkeits-Modifikatoren.
+
+        Je laenger Jarvis aktiv ist, desto mehr entwickelt sich die
+        Persoenlichkeit weiter — unabhaengig von der reinen Interaktionszahl.
+        Beruecksichtigt auch die Qualitaet der Interaktionen.
+
+        Args:
+            days_active: Anzahl Tage seit Ersteinrichtung
+            interaction_stats: Dict mit Interaktions-Metriken:
+                - total_interactions: Gesamtzahl Interaktionen
+                - positive_ratio: Anteil positiver Interaktionen (0.0-1.0)
+                - avg_mood: Durchschnittliche Stimmung (0.0-1.0)
+                - correction_rate: Wie oft der User korrigiert (0.0-1.0)
+
+        Returns:
+            Dict mit Persoenlichkeits-Modifikatoren:
+                formality_modifier: Aenderung der Formalitaet (negativ = lockerer)
+                humor_boost: Zusaetzlicher Humor-Faktor
+                verbosity_modifier: Aenderung der Wortmenge (negativ = kuerzer)
+                traits: Liste aktiver Persoenlichkeits-Traits
+        """
+        # Basis-Werte
+        formality_mod = 0.0
+        humor_boost = 0.0
+        verbosity_mod = 0.0
+        traits: list[str] = []
+
+        # Interaktions-Statistiken extrahieren (mit sicheren Defaults)
+        total_interactions = interaction_stats.get("total_interactions", 0)
+        positive_ratio = interaction_stats.get("positive_ratio", 0.5)
+        avg_mood = interaction_stats.get("avg_mood", 0.5)
+        correction_rate = interaction_stats.get("correction_rate", 0.1)
+
+        # Korrektur-Rate daempft die Drift — wenn User oft korrigiert,
+        # bleibt Jarvis vorsichtiger und formeller
+        correction_damping = max(0.3, 1.0 - correction_rate * 2)
+
+        # --- Stufe 1: Ab 30 Tagen — Etwas lockerer, merkt sich mehr ---
+        if days_active >= 30:
+            formality_mod -= 0.05 * correction_damping
+            humor_boost += 0.05
+            traits.append("remembers_references")
+
+            # Positive Interaktionen beschleunigen die Lockerheit
+            if positive_ratio > 0.7:
+                formality_mod -= 0.03
+                humor_boost += 0.05
+
+        # --- Stufe 2: Ab 90 Tagen — Insider-Witze, kuerzere Antworten ---
+        if days_active >= 90:
+            formality_mod -= 0.05 * correction_damping
+            humor_boost += 0.1
+            verbosity_mod -= 0.05
+            traits.append("uses_insider_references")
+            traits.append("shorter_responses")
+
+            # Viele Interaktionen verstaerken Vertrautheit
+            if total_interactions > 500:
+                verbosity_mod -= 0.05
+                traits.append("skips_obvious_context")
+
+        # --- Stufe 3: Ab 180 Tagen — Philosophisch, zeigt echte Anteilnahme ---
+        if days_active >= 180:
+            formality_mod -= 0.05 * correction_damping
+            humor_boost += 0.05
+            traits.append("occasionally_philosophical")
+            traits.append("shows_genuine_care")
+
+            # Bei guter durchschnittlicher Stimmung: waermerer Ton
+            if avg_mood > 0.6:
+                humor_boost += 0.05
+                traits.append("warm_undertone")
+
+        # --- Stufe 4: Ab 365 Tagen — Alter Freund, antizipiert Stil ---
+        if days_active >= 365:
+            formality_mod -= 0.05 * correction_damping
+            humor_boost += 0.05
+            verbosity_mod -= 0.05
+            traits.append("anticipates_style")
+            traits.append("old_friend_tone")
+
+            # Langzeit-Nutzer mit vielen positiven Interaktionen:
+            # Maximale Vertrautheit
+            if total_interactions > 2000 and positive_ratio > 0.8:
+                traits.append("deep_familiarity")
+                humor_boost += 0.05
+
+        # Werte auf sinnvolle Bereiche begrenzen
+        formality_mod = max(-0.3, min(0.0, formality_mod))
+        humor_boost = min(0.4, humor_boost)
+        verbosity_mod = max(-0.2, min(0.0, verbosity_mod))
+
+        return {
+            "formality_modifier": round(formality_mod, 2),
+            "humor_boost": round(humor_boost, 2),
+            "verbosity_modifier": round(verbosity_mod, 2),
+            "traits": traits,
+        }
+
     # ------------------------------------------------------------------
     # System Prompt Builder
     # ------------------------------------------------------------------

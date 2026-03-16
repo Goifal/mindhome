@@ -1106,17 +1106,22 @@ class SemanticMemory:
             # fact_id direkt aus search_by_topic (wenn vorhanden)
             fact_id = fact.get("fact_id", "")
 
-            # Fallback: Ueber Redis nach fact_id suchen
+            # Fallback: Ueber Redis nach fact_id suchen (Pipeline statt N+1)
             if not fact_id and self.redis:
                 try:
-                    all_ids = await self.redis.smembers("mha:facts:all")
-                    for fid in all_ids:
-                        fdata = await self.redis.hget(f"mha:fact:{fid}", "content")
-                        if fdata:
-                            fdata_str = fdata if isinstance(fdata, str) else fdata.decode()
-                            if fdata_str == fact.get("content", ""):
-                                fact_id = fid if isinstance(fid, str) else fid.decode()
-                                break
+                    all_ids = list(await self.redis.smembers("mha:facts:all"))
+                    if all_ids:
+                        pipe = self.redis.pipeline()
+                        for fid in all_ids:
+                            pipe.hget(f"mha:fact:{fid}", "content")
+                        contents = await pipe.execute()
+                        target = fact.get("content", "")
+                        for fid, fdata in zip(all_ids, contents):
+                            if fdata:
+                                fdata_str = fdata if isinstance(fdata, str) else fdata.decode()
+                                if fdata_str == target:
+                                    fact_id = fid if isinstance(fid, str) else fid.decode()
+                                    break
                 except Exception as e:
                     logger.debug("Redis fact_id Lookup fehlgeschlagen: %s", e)
 

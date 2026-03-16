@@ -107,6 +107,9 @@ class InsightEngine:
         self.max_calendars = cfg.get("max_calendars", 3)
         self.max_temp_snapshots = cfg.get("max_temp_snapshots", 6)
 
+        # Wetter-Aktions-Cooldown: verhindert wiederholte Vorschlaege innerhalb 60 Min
+        self._weather_action_cooldown: dict[str, datetime] = {}
+
     async def initialize(
         self,
         redis_client: Optional[aioredis.Redis] = None,
@@ -425,6 +428,7 @@ class InsightEngine:
             (self.check_night_security, self._check_night_security),
             (self.check_heating_vs_sun, self._check_heating_vs_sun),
             (self.check_forgotten_devices, self._check_forgotten_devices),
+            (True, self._check_device_dependency_conflicts),  # DEVICE_DEPENDENCIES
         ]
 
     async def _run_all_checks(self) -> list[dict]:
@@ -449,6 +453,33 @@ class InsightEngine:
                 logger.warning("Check %s fehlgeschlagen: %s", method.__name__, e)
 
         return insights
+
+    async def _check_device_dependency_conflicts(self, data: dict) -> Optional[dict]:
+        """Prueft aktive Device-Dependency-Konflikte via DEVICE_DEPENDENCIES."""
+        try:
+            from .state_change_log import StateChangeLog
+            states = data.get("states", [])
+            if not states:
+                return None
+            state_dict = {
+                s["entity_id"]: s.get("state", "")
+                for s in states if "entity_id" in s
+            }
+            scl = StateChangeLog.__new__(StateChangeLog)
+            conflicts = scl.detect_conflicts(state_dict)
+            active = [c for c in conflicts if c.get("affected_active")]
+            if not active:
+                return None
+            hints = [c.get("hint", "") for c in active[:3]]
+            return {
+                "check": "device_dependency_conflicts",
+                "message": f"{len(active)} Geraete-Konflikt(e): {'; '.join(hints)}",
+                "urgency": "medium" if len(active) < 3 else "high",
+                "data": {"conflicts": active[:5], "count": len(active)},
+            }
+        except Exception as e:
+            logger.debug("Device-Dependency-Insight Fehler: %s", e)
+            return None
 
     async def _check_weather_windows(self, data: dict) -> Optional[dict]:
         """Regen/Sturm in Forecast + Fenster offen."""
@@ -1621,6 +1652,270 @@ class InsightEngine:
                 "hour": now.hour,
             },
         }
+
+    # ------------------------------------------------------------------
+    # Wetter-Aktions-Vorschlaege: konkrete Handlungsempfehlungen
+    # ------------------------------------------------------------------
+
+    def _weather_action_on_cooldown(self, action_key: str) -> bool:
+        """Prueft ob eine Wetter-Aktion im 60-Minuten-Cooldown ist."""
+        last = self._weather_action_cooldown.get(action_key)
+        if last is None:
+            return False
+        return (datetime.now() - last).total_seconds() < 3600
+
+    def _set_weather_action_cooldown(self, action_key: str) -> None:
+        """Setzt Cooldown fuer eine Wetter-Aktion (60 Min)."""
+        self._weather_action_cooldown[action_key] = datetime.now()
+        # Abgelaufene Eintraege aufraeumen (aelter als 2h)
+        cutoff = datetime.now() - timedelta(hours=2)
+        expired = [k for k, v in self._weather_action_cooldown.items() if v < cutoff]
+        for k in expired:
+            del self._weather_action_cooldown[k]
+
+    async def get_weather_action_suggestions(self, ha_client) -> list[dict]:
+        """Gibt konkrete, aktionierbare Wetter-Vorschlaege zurueck.
+
+        Analysiert aktuelles Wetter, Forecast, Cover-Positionen und
+        Fenstersensoren und leitet daraus strukturierte Handlungsempfehlungen ab.
+
+        Returns:
+            Liste von Suggestion-Dicts mit action, entity/message, target,
+            reason, urgency (critical/high/medium/low).
+        """
+        suggestions: list[dict] = []
+
+        try:
+            states = await ha_client.get_states()
+            if not states:
+                logger.debug("Wetter-Aktions-Vorschlaege: keine HA-States verfuegbar")
+                return suggestions
+        except Exception as e:
+            logger.warning("Wetter-Aktions-Vorschlaege: HA-States Fehler: %s", e)
+            return suggestions
+
+        # -- Daten aus States extrahieren --
+        weather_data: dict = {}
+        forecast: list[dict] = []
+        covers: list[dict] = []
+        open_windows: list[dict] = []
+        indoor_temps: list[float] = []
+
+        for s in states:
+            eid = s.get("entity_id", "")
+            state = s.get("state", "")
+            attrs = s.get("attributes", {})
+
+            # Wetter-Entity (erste gefundene)
+            if eid.startswith("weather.") and not weather_data:
+                weather_data = {
+                    "condition": state,
+                    "temp": attrs.get("temperature"),
+                    "humidity": attrs.get("humidity"),
+                    "wind_speed": attrs.get("wind_speed"),
+                }
+                fc_list = attrs.get("forecast", [])
+                if fc_list:
+                    forecast = fc_list[:8]
+
+            # Cover-Entities (Markise, Rollladen etc.)
+            elif eid.startswith("cover."):
+                position = attrs.get("current_position")
+                covers.append({
+                    "entity_id": eid,
+                    "name": attrs.get("friendly_name", eid),
+                    "state": state,
+                    "position": position,
+                    "is_open": state == "open" or (position is not None and position > 20),
+                })
+
+            # Fenstersensoren
+            elif (eid.startswith("binary_sensor.") and
+                  any(kw in eid for kw in ("window", "fenster"))):
+                if state == "on":
+                    open_windows.append({
+                        "entity_id": eid,
+                        "name": attrs.get("friendly_name", eid),
+                    })
+
+            # Innentemperatur aus Climate-Entities
+            elif eid.startswith("climate.") and state != "unavailable":
+                current = attrs.get("current_temperature")
+                if current is not None:
+                    try:
+                        indoor_temps.append(float(current))
+                    except (ValueError, TypeError):
+                        pass
+
+        # -- Forecast analysieren --
+        rain_forecast: Optional[dict] = None
+        storm_forecast: Optional[dict] = None
+        cold_night_forecast: Optional[dict] = None
+        hours_until_rain: float = 0
+        hours_until_storm: float = 0
+
+        now = datetime.now()
+
+        for fc in forecast:
+            condition = str(fc.get("condition", "")).lower()
+            fc_time = fc.get("datetime", "")
+            precipitation = fc.get("precipitation", 0) or 0
+            wind_speed = fc.get("wind_speed", 0) or 0
+            templow = fc.get("templow")
+
+            # Zeitdifferenz berechnen
+            hours_ahead = 0.0
+            if fc_time:
+                try:
+                    fc_dt = datetime.fromisoformat(fc_time.replace("Z", "+00:00"))
+                    fc_local = fc_dt.astimezone().replace(tzinfo=None)
+                    hours_ahead = (fc_local - now).total_seconds() / 3600
+                except (ValueError, TypeError):
+                    pass
+
+            # Regen erkennen
+            if not rain_forecast and (condition in _RAIN_CONDITIONS or precipitation > 2):
+                rain_forecast = fc
+                hours_until_rain = hours_ahead
+
+            # Sturm erkennen (Wind > 60 km/h oder Sturm-Condition)
+            if not storm_forecast and (
+                condition in _STORM_CONDITIONS or wind_speed > 60
+            ):
+                storm_forecast = fc
+                hours_until_storm = hours_ahead
+
+            # Kalte Nacht erkennen (Temperatur < 5°C)
+            if not cold_night_forecast and templow is not None and templow < 5:
+                cold_night_forecast = fc
+
+        # -- Vorschlag 1: Regen erwartet + Markise/Cover ausgefahren --
+        if rain_forecast:
+            open_covers = [c for c in covers if c["is_open"]]
+            for cover in open_covers:
+                action_key = f"rain_cover:{cover['entity_id']}"
+                if self._weather_action_on_cooldown(action_key):
+                    continue
+
+                # Zeitangabe fuer Reason
+                if hours_until_rain <= 0:
+                    time_hint = "Regen aktuell"
+                elif hours_until_rain < 1:
+                    time_hint = "Regen in Kürze erwartet"
+                else:
+                    time_hint = f"Regen in {int(hours_until_rain)}h erwartet"
+
+                suggestions.append({
+                    "action": "set_cover",
+                    "entity": cover["entity_id"],
+                    "target": "close",
+                    "reason": time_hint,
+                    "urgency": "high" if hours_until_rain < 1 else "medium",
+                })
+                self._set_weather_action_cooldown(action_key)
+
+        # -- Vorschlag 2: Sturm erwartet + Fenster offen --
+        if storm_forecast and open_windows:
+            action_key = "storm_windows_open"
+            if not self._weather_action_on_cooldown(action_key):
+                window_names = [w["name"] for w in open_windows[:4]]
+                windows_str = ", ".join(window_names)
+
+                if hours_until_storm <= 0:
+                    time_hint = "Sturm aktiv"
+                elif hours_until_storm < 1:
+                    time_hint = "Sturm in Kürze"
+                else:
+                    time_hint = f"Sturm in {int(hours_until_storm)}h"
+
+                suggestions.append({
+                    "action": "notify",
+                    "message": f"{time_hint} — Fenster noch offen: {windows_str}",
+                    "urgency": "critical" if hours_until_storm < 1 else "high",
+                })
+                self._set_weather_action_cooldown(action_key)
+
+                # Auch offene Covers bei Sturm einfahren
+                open_covers = [c for c in covers if c["is_open"]]
+                for cover in open_covers:
+                    cover_key = f"storm_cover:{cover['entity_id']}"
+                    if self._weather_action_on_cooldown(cover_key):
+                        continue
+                    suggestions.append({
+                        "action": "set_cover",
+                        "entity": cover["entity_id"],
+                        "target": "close",
+                        "reason": f"{time_hint} — {cover['name']} einfahren",
+                        "urgency": "critical" if hours_until_storm < 1 else "high",
+                    })
+                    self._set_weather_action_cooldown(cover_key)
+
+        # -- Vorschlag 3: Kalte Nacht (<5°C) + Covers offen → Daemmung --
+        if cold_night_forecast:
+            open_covers = [c for c in covers if c["is_open"]]
+            for cover in open_covers:
+                action_key = f"cold_night_cover:{cover['entity_id']}"
+                if self._weather_action_on_cooldown(action_key):
+                    continue
+
+                templow = cold_night_forecast.get("templow", "?")
+                suggestions.append({
+                    "action": "set_cover",
+                    "entity": cover["entity_id"],
+                    "target": "close",
+                    "reason": f"Nacht wird kalt ({templow}°C) — Rollladen schliessen fuer Daemmung",
+                    "urgency": "low",
+                })
+                self._set_weather_action_cooldown(action_key)
+
+        # -- Vorschlag 4: Starke Sonne + Innentemperatur steigt → Suedseiten-Covers --
+        current_condition = str(weather_data.get("condition", "")).lower()
+        outdoor_temp = weather_data.get("temp")
+
+        if (current_condition in ("sunny", "partlycloudy") and
+                outdoor_temp is not None and outdoor_temp > 24 and
+                indoor_temps):
+            avg_indoor = sum(indoor_temps) / len(indoor_temps)
+
+            # Innen > 25°C bei Sonne = Beschattung sinnvoll
+            if avg_indoor > 25:
+                # Suedseiten-Covers finden (Heuristik: 'sued', 'south', 'terrasse',
+                # 'balkon', 'markise' im Namen)
+                south_keywords = ("sued", "south", "terrasse", "balkon", "markise",
+                                  "wintergarten", "wohnzimmer")
+                open_covers = [
+                    c for c in covers
+                    if c["is_open"] and any(
+                        kw in c["entity_id"].lower() or kw in c["name"].lower()
+                        for kw in south_keywords
+                    )
+                ]
+
+                # Falls keine explizit suedlichen Covers, alle offenen vorschlagen
+                if not open_covers:
+                    open_covers = [c for c in covers if c["is_open"]]
+
+                for cover in open_covers:
+                    action_key = f"sun_heat_cover:{cover['entity_id']}"
+                    if self._weather_action_on_cooldown(action_key):
+                        continue
+
+                    suggestions.append({
+                        "action": "set_cover",
+                        "entity": cover["entity_id"],
+                        "target": "close",
+                        "reason": (
+                            f"Sonne bei {outdoor_temp:.0f}°C — "
+                            f"Innentemperatur {avg_indoor:.0f}°C, Beschattung empfohlen"
+                        ),
+                        "urgency": "medium" if avg_indoor < 28 else "high",
+                    })
+                    self._set_weather_action_cooldown(action_key)
+
+        logger.debug(
+            "Wetter-Aktions-Vorschlaege: %d Vorschlaege generiert", len(suggestions)
+        )
+        return suggestions
 
     async def get_status(self) -> dict:
         """Gibt den aktuellen Status der Engine zurueck."""

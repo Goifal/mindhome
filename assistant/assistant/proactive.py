@@ -14,6 +14,7 @@ Phase 10: Diagnostik + Wartungs-Erinnerungen.
 """
 
 import asyncio
+import collections
 import json
 import logging
 import random
@@ -52,6 +53,12 @@ CRITICAL = "critical"  # Immer melden (Alarm, Rauch, Wasser)
 HIGH = "high"          # Melden wenn wach
 MEDIUM = "medium"      # Melden wenn passend
 LOW = "low"            # Melden wenn entspannt
+
+# Domains fuer State-Change-Logging (Modul-Level statt pro Aufruf)
+_LOG_DOMAINS = ("light.", "switch.", "climate.", "cover.", "media_player.",
+                "binary_sensor.fenster", "binary_sensor.window",
+                "binary_sensor.door", "binary_sensor.tuer",
+                "alarm_control_panel.")
 
 
 class ProactiveManager:
@@ -186,6 +193,198 @@ class ProactiveManager:
                 prio = _PRIORITY_MAP.get(info.get("priority", "low"), LOW)
                 desc = info.get("description", event_name)
                 self.event_handlers[event_name] = (prio, desc)
+
+        # Salience Scoring: Notification-Historie fuer Fatigue-Berechnung
+        # Speichert Zeitstempel der letzten Benachrichtigungen (maxlen begrenzt Speicher)
+        self._notification_timestamps: collections.deque[float] = collections.deque(maxlen=200)
+        # Ignorierte Events pro Typ: zaehlt wie oft User aehnliche Events ignoriert hat
+        self._dismissed_event_types: collections.Counter = collections.Counter()
+
+    # ------------------------------------------------------------------
+    # Attention / Salience Scoring
+    # ------------------------------------------------------------------
+
+    # Schweregrad-Gewichtung pro Prioritaet
+    _SEVERITY_SCORES = {
+        CRITICAL: 1.0,
+        HIGH: 0.8,
+        MEDIUM: 0.5,
+        LOW: 0.25,
+    }
+
+    # Aktivitaets-Schwellwerte: hoeher = schwieriger zu unterbrechen
+    _ACTIVITY_THRESHOLDS = {
+        "sleeping": 0.9,        # Schlaf: nur bei sehr hoher Salienz unterbrechen
+        "in_call": 0.85,        # Telefonat/Videocall: fast nie unterbrechen
+        "watching": 0.7,        # Film/TV: erhoehter Schwellwert
+        "focused": 0.65,        # Konzentriertes Arbeiten
+        "guests": 0.6,          # Gaeste da: zurueckhaltend
+        "relaxing": 0.4,        # Entspannung: moderate Schwelle
+        "idle": 0.2,            # Nichts los: fast alles durchlassen
+        "away": 0.5,            # Abwesend: mittel (manche Events relevant)
+        "unknown": 0.3,         # Unbekannt: eher durchlassen
+    }
+
+    def calculate_salience(self, event: dict, user_activity: str) -> float:
+        """Berechnet wie unterbrechungswuerdig ein Event ist (0.0 - 1.0).
+
+        Faktoren:
+        - Event-Schweregrad (critical > high > medium > low)
+        - Benutzer-Aktivitaet (sleeping = hohe Schwelle, idle = niedrige)
+        - Tageszeit (nachts hoehere Schwelle fuer unwichtige Events)
+        - Notification Fatigue (viele Meldungen → reduzierte Salienz)
+        - Ignorier-Historie (oft ignorierte Event-Typen → reduzierte Salienz)
+
+        Args:
+            event: Event-Dict mit mindestens "event_type" und optional "urgency"
+            user_activity: Aktuelle Aktivitaet des Users (sleeping, watching, idle, ...)
+
+        Returns:
+            Score 0.0-1.0 — der Aufrufer entscheidet ueber den Schwellwert
+        """
+        event_type = event.get("event_type", "")
+        urgency = event.get("urgency", MEDIUM)
+
+        # 1. Basis-Score aus Schweregrad
+        base_score = self._SEVERITY_SCORES.get(urgency, 0.3)
+
+        # 2. Tageszeit-Modifikator: nachts (22-7) sind LOW/MEDIUM weniger salient
+        hour = datetime.now().hour
+        time_modifier = 1.0
+        if self._quiet_start > self._quiet_end:
+            is_night = hour >= self._quiet_start or hour < self._quiet_end
+        else:
+            is_night = self._quiet_start <= hour < self._quiet_end
+        if is_night and urgency in (LOW, MEDIUM):
+            time_modifier = 0.5  # Nachtabsenkung fuer unwichtige Events
+
+        # 3. Notification Fatigue: je mehr Meldungen kuerzlich, desto weniger salient
+        fatigue = self._notification_fatigue_score()
+
+        # 4. Ignorier-Abzug: Wenn der User diesen Event-Typ oft ignoriert hat
+        dismiss_count = self._dismissed_event_types.get(event_type, 0)
+        # Jedes Ignorieren reduziert Salienz um 5%, max 40% Reduktion
+        dismiss_penalty = max(0.6, 1.0 - dismiss_count * 0.05)
+
+        # 5. Aktivitaets-Relevanz: inverse Schwelle = wie leicht durchzukommen
+        # Hohe Schwelle = schwer durchzukommen = Salienz wird relativ betrachtet
+        activity_threshold = self._ACTIVITY_THRESHOLDS.get(user_activity, 0.3)
+        # Je hoeher die Schwelle, desto mehr wird der Score gedaempft
+        # (aber CRITICAL bleibt immer hoch)
+        if urgency == CRITICAL:
+            activity_modifier = 1.0  # CRITICAL ignoriert Aktivitaet
+        else:
+            # Invertierte Daempfung: hohe Schwelle = staerkere Reduktion
+            activity_modifier = max(0.3, 1.0 - activity_threshold * 0.5)
+
+        # Endgueltiger Score: alle Faktoren kombinieren
+        score = base_score * time_modifier * fatigue * dismiss_penalty * activity_modifier
+
+        # Auf 0.0-1.0 begrenzen
+        return max(0.0, min(1.0, round(score, 3)))
+
+    def _notification_fatigue_score(self) -> float:
+        """Berechnet Ermuedungs-Multiplikator basierend auf kuerzlichen Benachrichtigungen.
+
+        Zaehlt wie viele Notifications in der letzten Stunde gesendet wurden
+        und gibt einen Multiplikator zurueck:
+        - 1.0 = keine Ermuedung (0-2 Notifications/Stunde)
+        - 0.7 = leichte Ermuedung (3-5 Notifications)
+        - 0.5 = moderate Ermuedung (6-10 Notifications)
+        - 0.3 = starke Ermuedung (>10 Notifications) — Unterbrechungen reduzieren
+
+        Returns:
+            Multiplikator 0.3-1.0 fuer Salienz-Berechnung
+        """
+        now = time.time()
+        one_hour_ago = now - 3600
+
+        # Zaehle Notifications der letzten Stunde
+        recent_count = sum(1 for ts in self._notification_timestamps if ts > one_hour_ago)
+
+        if recent_count <= 2:
+            return 1.0    # Keine Ermuedung
+        elif recent_count <= 5:
+            return 0.7    # Leichte Ermuedung
+        elif recent_count <= 10:
+            return 0.5    # Moderate Ermuedung
+        else:
+            return 0.3    # Starke Ermuedung — nur Wichtiges durchlassen
+
+    def record_notification_sent(self, event_type: str = ""):
+        """Registriert eine gesendete Notification fuer Fatigue-Tracking.
+
+        Wird vom Notification-System aufgerufen wenn eine Meldung tatsaechlich
+        zugestellt wurde.
+
+        Args:
+            event_type: Event-Typ (fuer zukuenftige Event-spezifische Fatigue)
+        """
+        self._notification_timestamps.append(time.time())
+
+    def record_notification_dismissed(self, event_type: str):
+        """Registriert dass der User eine Notification ignoriert/dismissed hat.
+
+        Erhoehte Dismiss-Zaehler fuehren zu reduzierter Salienz fuer diesen Event-Typ.
+
+        Args:
+            event_type: Der Event-Typ der ignoriert wurde
+        """
+        self._dismissed_event_types[event_type] += 1
+
+    # ------------------------------------------------------------------
+    # LED Status-Indikator: Systemzustand als Lichtfarbe
+    # ------------------------------------------------------------------
+
+    # Mapping: Status -> (RGB, Brightness in %)
+    _STATUS_LED_MAP = {
+        "healthy":  {"rgb": (0, 255, 0),     "brightness_pct": 30},
+        "warning":  {"rgb": (255, 165, 0),   "brightness_pct": 50},
+        "alert":    {"rgb": (255, 0, 0),     "brightness_pct": 100},
+        "listening": {"rgb": (0, 100, 255),  "brightness_pct": 60},
+        "thinking": {"rgb": (128, 0, 255),   "brightness_pct": 40, "effect": "slow_pulse"},
+        "degraded": {"rgb": (255, 255, 0),   "brightness_pct": 40},
+    }
+
+    async def update_status_light(self, ha_client, status: str):
+        """Setzt die Status-LED auf die Farbe fuer den aktuellen Systemzustand.
+
+        Liest die Entity-ID der Status-LED aus der Konfiguration:
+        settings.yaml → status_led_entity (z.B. "light.status_led").
+        Wenn keine Entity konfiguriert ist, wird nichts gemacht (graceful skip).
+
+        Args:
+            ha_client: HomeAssistant-Client mit call_service()
+            status: Einer von "healthy", "warning", "alert", "listening",
+                    "thinking", "degraded"
+        """
+        entity_id = settings.get("status_led_entity", None)
+        if not entity_id:
+            return
+
+        led_config = self._STATUS_LED_MAP.get(status)
+        if not led_config:
+            logger.warning("Unbekannter Status-LED-Zustand: %s", status)
+            return
+
+        rgb = led_config["rgb"]
+        brightness_pct = led_config["brightness_pct"]
+
+        service_data = {
+            "entity_id": entity_id,
+            "rgb_color": list(rgb),
+            "brightness_pct": brightness_pct,
+        }
+
+        # "thinking" unterstuetzt einen Puls-Effekt (wenn die LED das kann)
+        if led_config.get("effect"):
+            service_data["effect"] = led_config["effect"]
+
+        try:
+            await ha_client.call_service("light", "turn_on", service_data)
+            logger.debug("Status-LED '%s' auf %s gesetzt", entity_id, status)
+        except Exception as e:
+            logger.debug("Status-LED Update fehlgeschlagen: %s", e)
 
     def _is_quiet_hours(self) -> bool:
         """Prüft ob gerade Quiet Hours aktiv sind (z.B. 22:00-07:00)."""
@@ -463,11 +662,7 @@ class ProactiveManager:
             return
 
         # State-Change-Log: Relevante Aenderungen mit Quelle protokollieren
-        _log_domains = ("light.", "switch.", "climate.", "cover.", "media_player.",
-                        "binary_sensor.fenster", "binary_sensor.window",
-                        "binary_sensor.door", "binary_sensor.tuer",
-                        "alarm_control_panel.")
-        if any(entity_id.startswith(d) for d in _log_domains):
+        if any(entity_id.startswith(d) for d in _LOG_DOMAINS):
             try:
                 if hasattr(self.brain, "state_change_log"):
                     friendly = new_state.get("attributes", {}).get(
@@ -478,13 +673,13 @@ class ProactiveManager:
                         friendly_name=friendly,
                     )
             except Exception as _scl_err:
-                logger.debug("State-Change-Log Fehler: %s", _scl_err)
+                logger.warning("State-Change-Log Fehler: %s", _scl_err)
 
         # Event-basierte Wetter-Sensoren: Sofort-Reaktion auf kritische Änderungen
         try:
             await self._handle_weather_event(entity_id, new_val, old_val)
         except Exception as _we:
-            logger.debug("Weather-Event-Handler Fehler: %s", _we)
+            logger.warning("Weather-Event-Handler Fehler: %s", _we)
 
         # Alarmsystem
         if entity_id.startswith("alarm_control_panel.") and new_val == "triggered":
@@ -670,6 +865,12 @@ class ProactiveManager:
         if entity_id.startswith("sensor."):
             await self._check_appliance_power(entity_id, new_val, old_val)
 
+        # Device-Dependency Konflikte: Rollen-basierte Erkennung
+        try:
+            await self._check_device_dependency_conflict(entity_id, new_val, old_val)
+        except Exception as _ddc_err:
+            logger.debug("Device-Dependency-Conflict Fehler: %s", _ddc_err)
+
         # Feature 2: Manual Override Detection für Covers
         # Ignoriere: unavailable/unknown (offline/online), opening/closing (Bewegungs-Abschlüsse)
         _non_physical = {"unavailable", "unknown", ""}
@@ -816,6 +1017,91 @@ class ProactiveManager:
             if any(p.lower() in eid for p in patterns):
                 return appliance
         return None
+
+    async def _check_device_dependency_conflict(self, entity_id: str, new_val: str, old_val: str):
+        """Prueft ob State-Aenderung einen Device-Dependency-Konflikt ausloest.
+
+        Nutzt DEVICE_DEPENDENCIES aus state_change_log.py mit Rollen-basiertem
+        Matching. Meldet nur HIGH/MEDIUM-Konflikte (CRITICAL wie Rauch/Wasser
+        werden bereits direkt in _handle_state_change behandelt).
+        """
+        from .state_change_log import StateChangeLog, DEVICE_DEPENDENCIES
+
+        role = StateChangeLog._get_entity_role(entity_id)
+        if not role:
+            return
+
+        # Nur Regeln pruefen die durch diese Rolle getriggert werden
+        matching_deps = [d for d in DEVICE_DEPENDENCIES if d["role"] == role and d["state"] == new_val]
+        if not matching_deps:
+            return
+
+        # Cooldown: max 1 Dependency-Notification pro Entity pro 30 Min
+        redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
+        if redis_client:
+            cooldown_key = f"mha:dep_conflict:{entity_id}"
+            already = await redis_client.get(cooldown_key)
+            if already:
+                return
+
+        entity_room = StateChangeLog._get_entity_room(entity_id)
+
+        # Aktuelle States holen
+        all_states = await self.brain.ha.get_states()
+        if not all_states:
+            return
+
+        state_dict = {s["entity_id"]: s.get("state", "") for s in all_states if "entity_id" in s}
+        entity_roles = {eid: StateChangeLog._get_entity_role(eid) for eid in state_dict}
+        entity_rooms = {eid: StateChangeLog._get_entity_room(eid) for eid in state_dict}
+
+        found_conflicts = []
+        for dep in matching_deps:
+            affects_domain = dep.get("affects", "")
+            same_room = dep.get("same_room", False)
+
+            # Finde betroffene Entities
+            for eid, st in state_dict.items():
+                e_role = entity_roles.get(eid, "")
+                e_domain = eid.split(".")[0] if "." in eid else ""
+                if e_domain == affects_domain or e_role == affects_domain:
+                    if same_room and entity_room and entity_rooms.get(eid, "") != entity_room:
+                        continue
+                    # Konflikt gefunden
+                    room_info = f" ({entity_room})" if entity_room else ""
+                    found_conflicts.append({
+                        "hint": dep.get("hint", dep.get("effect", "")),
+                        "effect": dep.get("effect", ""),
+                        "room": entity_room,
+                        "room_info": room_info,
+                        "trigger": entity_id,
+                        "affected": eid,
+                    })
+                    break  # Ein Treffer pro Regel reicht
+
+        if not found_conflicts:
+            return
+
+        # Cooldown setzen (30 Minuten)
+        if redis_client:
+            await redis_client.set(cooldown_key, "1", ex=1800)
+
+        # Sicherheits-relevante Rollen → HIGH, Rest → MEDIUM
+        safety_roles = {
+            "smoke", "co", "gas", "water_leak", "flood",
+            "window_contact", "door_contact",
+        }
+        urgency = HIGH if role in safety_roles else MEDIUM
+
+        hints = [c["hint"] for c in found_conflicts[:3]]
+        await self._notify("device_dependency_conflict", urgency, {
+            "entity": entity_id,
+            "role": role,
+            "new_state": new_val,
+            "conflicts": found_conflicts[:3],
+            "hints": hints,
+            "message": "; ".join(hints),
+        })
 
     async def _check_appliance_power(self, entity_id: str, new_val: str, old_val: str):
         """Appliance-Erkennung: Setzt idle-Marker bei Power-Drop, bestaetigt nach Wartezeit."""
@@ -5905,8 +6191,17 @@ class ProactiveManager:
     # Notfall-Protokolle
     # ------------------------------------------------------------------
 
+    # Erlaubte Notfall-Protokollnamen (Whitelist)
+    _VALID_EMERGENCY_PROTOCOLS = frozenset({"fire", "intrusion", "water_leak", "gas_leak", "co_alarm"})
+
     async def _execute_emergency_protocol(self, protocol_name: str):
         """Fuehrt ein konfiguriertes Notfall-Protokoll aus.
+
+        Sicherheits-Massnahmen:
+        - Nur vordefinierte Protokollnamen erlaubt (Whitelist)
+        - Erlaubte Domains/Services beschraenkt (keine beliebigen HA-Calls)
+        - Vollstaendiges Audit-Logging jeder Aktion
+        - Autonomie-Check: Bei Level 1 werden nur Notifications gesendet
 
         Protokolle werden in settings.yaml definiert unter emergency_protocols.
         Beispiel:
@@ -5917,19 +6212,49 @@ class ProactiveManager:
                   - {domain: lock, service: unlock, target: all}
                   - {domain: notify, service: notify, data: {message: "FEUERALARM!"}}
         """
+        # Whitelist-Check: Nur bekannte Protokollnamen erlaubt
+        if protocol_name not in self._VALID_EMERGENCY_PROTOCOLS:
+            logger.warning(
+                "SECURITY: Unbekannter Notfall-Protokollname '%s' abgelehnt",
+                protocol_name,
+            )
+            return
+
         protocol = self._emergency_protocols.get(protocol_name)
         if not protocol:
-            logger.debug("Kein Notfall-Protokoll für '%s' konfiguriert", protocol_name)
+            logger.debug("Kein Notfall-Protokoll fuer '%s' konfiguriert", protocol_name)
             return
 
         actions = protocol.get("actions", [])
         if not actions:
             return
 
-        logger.warning("NOTFALL-PROTOKOLL '%s' wird ausgeführt (%d Aktionen)",
-                        protocol_name, len(actions))
+        # Autonomie-Check: Bei Level 1 nur benachrichtigen, nicht handeln
+        _autonomy = getattr(self.brain, "autonomy", None)
+        _auto_lvl = _autonomy.level if _autonomy is not None else 2
+        if _auto_lvl < 2:
+            logger.warning(
+                "NOTFALL-PROTOKOLL '%s': Autonomie-Level %d — nur Notification, keine Aktionen",
+                protocol_name, _auto_lvl,
+            )
+            await self._notify(f"emergency_{protocol_name}", CRITICAL, {
+                "protocol": protocol_name,
+                "message": f"Notfall '{protocol_name}' erkannt. Autonomie-Level zu niedrig fuer automatische Aktionen.",
+                "actions_blocked": len(actions),
+            })
+            return
+
+        # Erlaubte Domains/Services fuer Emergency (keine beliebigen Calls)
+        _ALLOWED_EMERGENCY_DOMAINS = {
+            "light", "lock", "switch", "cover", "notify",
+            "alarm_control_panel", "siren", "fan",
+        }
+
+        logger.warning("NOTFALL-PROTOKOLL '%s' wird ausgefuehrt (%d Aktionen, Autonomie: %d)",
+                        protocol_name, len(actions), _auto_lvl)
 
         executed = []
+        blocked = []
         for action in actions:
             domain = action.get("domain", "")
             service = action.get("service", "")
@@ -5939,9 +6264,17 @@ class ProactiveManager:
             if not domain or not service:
                 continue
 
+            # Domain-Whitelist pruefen
+            if domain not in _ALLOWED_EMERGENCY_DOMAINS:
+                logger.warning(
+                    "SECURITY: Emergency-Aktion mit Domain '%s' blockiert (nicht erlaubt)",
+                    domain,
+                )
+                blocked.append(f"{domain}.{service}")
+                continue
+
             try:
                 if target == "all":
-                    # Alle Entities dieser Domain
                     states = await self.brain.ha.get_states()
                     for s in (states or []):
                         eid = s.get("entity_id", "")
@@ -5963,9 +6296,12 @@ class ProactiveManager:
             except Exception as e:
                 logger.error("Notfall-Aktion fehlgeschlagen: %s.%s -> %s", domain, service, e)
 
-        if executed:
-            logger.warning("Notfall-Protokoll '%s': %d Aktionen ausgeführt: %s",
-                            protocol_name, len(executed), executed)
+        # Audit-Log
+        logger.warning(
+            "NOTFALL-PROTOKOLL '%s' abgeschlossen: %d ausgefuehrt, %d blockiert. "
+            "Ausgefuehrt: %s | Blockiert: %s",
+            protocol_name, len(executed), len(blocked), executed, blocked,
+        )
 
     # ------------------------------------------------------------------
     # Phase 17: Threat Assessment Loop

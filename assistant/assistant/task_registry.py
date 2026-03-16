@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 class TaskRegistry:
     """Verwaltet alle Background-Tasks des Assistants."""
 
+    # Maximale Anzahl gleichzeitig aktiver Tasks — verhindert Resource-Exhaustion
+    MAX_ACTIVE_TASKS = 200
+
     def __init__(self):
         self._tasks: dict[str, asyncio.Task] = {}
         self._shutting_down = False
@@ -50,6 +53,20 @@ class TaskRegistry:
                     coro.close()
                     return existing
 
+        # Backpressure: abgeschlossene Tasks aufraeumen und Limit pruefen
+        self._cleanup_done_tasks()
+        active_count = sum(1 for t in self._tasks.values() if not t.done())
+        if active_count >= self.MAX_ACTIVE_TASKS:
+            logger.warning(
+                "TaskRegistry Backpressure: %d aktive Tasks (Limit %d) — "
+                "Task '%s' abgelehnt",
+                active_count, self.MAX_ACTIVE_TASKS, name,
+            )
+            coro.close()
+            raise RuntimeError(
+                f"TaskRegistry limit reached ({active_count}/{self.MAX_ACTIVE_TASKS})"
+            )
+
         task = asyncio.create_task(coro, name=name)
         self._tasks[name] = task
         task.add_done_callback(lambda t: self._on_task_done(t, name))
@@ -67,6 +84,12 @@ class TaskRegistry:
                 "Background-Task '%s' fehlgeschlagen: %s",
                 name, exc, exc_info=exc,
             )
+
+    def _cleanup_done_tasks(self) -> None:
+        """Entfernt abgeschlossene Tasks aus dem Registry."""
+        done_names = [n for n, t in self._tasks.items() if t.done()]
+        for n in done_names:
+            del self._tasks[n]
 
     def cancel(self, name: str) -> bool:
         """Bricht einen einzelnen Task ab."""

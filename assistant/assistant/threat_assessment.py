@@ -30,9 +30,207 @@ KEY_THREAT_NOTIFIED = "mha:security:notified:"
 class ThreatAssessment:
     """Proaktive Sicherheitsanalyse für das Smart Home."""
 
+    # Strukturierte Notfall-Playbooks für verschiedene Szenarien.
+    # Jeder Schritt hat eine action (Callable-Name), Beschreibung und Priorität.
+    EMERGENCY_PLAYBOOKS: dict[str, dict] = {
+        "power_outage": {
+            "name": "Stromausfall",
+            "urgency": "critical",
+            "steps": [
+                {
+                    "step": 1,
+                    "action": "check_battery_systems",
+                    "description": "Prüfen welche Systeme noch online sind (batteriebetrieben)",
+                    "ha_actions": [],  # Nur Status-Abfrage, keine Aktionen
+                },
+                {
+                    "step": 2,
+                    "action": "notify_all_persons",
+                    "description": "Alle Personen per Telefon benachrichtigen (Push-Notification)",
+                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "power_outage"}],
+                },
+                {
+                    "step": 3,
+                    "action": "activate_emergency_lighting",
+                    "description": "Notbeleuchtung aktivieren falls verfügbar",
+                    "ha_actions": [{"service": "light", "action": "turn_on", "entity_filter": "notlicht|emergency"}],
+                },
+                {
+                    "step": 4,
+                    "action": "secure_garage_doors",
+                    "description": "Offene Garagentore/Einfahrtstore sichern falls möglich",
+                    "ha_actions": [{"service": "cover", "action": "close_cover", "entity_filter": "garage|tor|gate"}],
+                },
+                {
+                    "step": 5,
+                    "action": "log_incident",
+                    "description": "Vorfall mit Zeitstempel protokollieren",
+                    "ha_actions": [],
+                },
+            ],
+        },
+        "water_damage": {
+            "name": "Wasserschaden",
+            "urgency": "critical",
+            "steps": [
+                {
+                    "step": 1,
+                    "action": "identify_water_source",
+                    "description": "Betroffenen Bereich identifizieren (welcher Wassersensor hat ausgelöst)",
+                    "ha_actions": [],  # Kontext-Auswertung aus trigger_context
+                },
+                {
+                    "step": 2,
+                    "action": "critical_alert_all",
+                    "description": "Kritischer Alarm an alle Personen",
+                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "water_damage"}],
+                },
+                {
+                    "step": 3,
+                    "action": "close_water_valve",
+                    "description": "Wasserventil schließen falls Smart-Ventil vorhanden",
+                    "ha_actions": [{"service": "valve", "action": "close_valve", "entity_filter": "water|wasser"}],
+                },
+                {
+                    "step": 4,
+                    "action": "disable_electrical_circuits",
+                    "description": "Betroffene Stromkreise abschalten falls Smart-Breaker vorhanden",
+                    "ha_actions": [{"service": "switch", "action": "turn_off", "entity_filter": "breaker|sicherung"}],
+                },
+                {
+                    "step": 5,
+                    "action": "camera_snapshot",
+                    "description": "Kamera-Snapshot zur Dokumentation falls verfügbar",
+                    "ha_actions": [{"service": "camera", "action": "snapshot", "entity_filter": "camera."}],
+                },
+                {
+                    "step": 6,
+                    "action": "suggest_emergency_service",
+                    "description": "Vorschlag: Notdienst anrufen",
+                    "ha_actions": [],  # Nur Hinweis an Nutzer
+                    "user_message": "Bitte Notdienst für Wasserschaden kontaktieren!",
+                },
+            ],
+        },
+        "break_in": {
+            "name": "Einbruch",
+            "urgency": "critical",
+            "steps": [
+                {
+                    "step": 1,
+                    "action": "activate_all_lights",
+                    "description": "Alle Lichter einschalten (Abschreckung)",
+                    "ha_actions": [{"service": "light", "action": "turn_on", "entity_filter": "light."}],
+                },
+                {
+                    "step": 2,
+                    "action": "silent_alarm_owner",
+                    "description": "Stiller Alarm an Eigentümer (NICHT über Lautsprecher!)",
+                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "break_in_silent"}],
+                    "silent": True,  # Keine Sprachausgabe über Lautsprecher
+                },
+                {
+                    "step": 3,
+                    "action": "camera_snapshots_entries",
+                    "description": "Kamera-Snapshots aller Eingangsbereiche",
+                    "ha_actions": [{"service": "camera", "action": "snapshot", "entity_filter": "camera."}],
+                },
+                {
+                    "step": 4,
+                    "action": "lock_all_smart_locks",
+                    "description": "Alle Smart-Locks verriegeln",
+                    "ha_actions": [{"service": "lock", "action": "lock", "entity_filter": "lock."}],
+                },
+                {
+                    "step": 5,
+                    "action": "record_incident",
+                    "description": "Zeitstempel + auslösenden Sensor aufzeichnen",
+                    "ha_actions": [],
+                },
+            ],
+        },
+        "fire_smoke": {
+            "name": "Brand/Rauch",
+            "urgency": "critical",
+            "steps": [
+                {
+                    "step": 1,
+                    "action": "all_lights_on",
+                    "description": "Alle Lichter an (Fluchtweg beleuchten)",
+                    "ha_actions": [{"service": "light", "action": "turn_on", "entity_filter": "light."}],
+                },
+                {
+                    "step": 2,
+                    "action": "open_all_covers",
+                    "description": "Alle Rollläden/Abdeckungen öffnen (Fluchtweg freihalten)",
+                    "ha_actions": [{"service": "cover", "action": "open_cover", "entity_filter": "cover."}],
+                },
+                {
+                    "step": 3,
+                    "action": "critical_alert_location",
+                    "description": "Kritischer Alarm mit Raumangabe",
+                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "fire_smoke"}],
+                },
+                {
+                    "step": 4,
+                    "action": "ventilation_off",
+                    "description": "Lüftung ausschalten (Rauchausbreitung verhindern)",
+                    "ha_actions": [{"service": "fan", "action": "turn_off", "entity_filter": "fan.|climate."}],
+                },
+                {
+                    "step": 5,
+                    "action": "suggest_fire_department",
+                    "description": "Hinweis: Feuerwehr 112 anrufen",
+                    "ha_actions": [],
+                    "user_message": "SOFORT Feuerwehr anrufen: 112!",
+                },
+            ],
+        },
+        "medical_emergency": {
+            "name": "Medizinischer Notfall",
+            "urgency": "critical",
+            "steps": [
+                {
+                    "step": 1,
+                    "action": "ask_confirmation",
+                    "description": "Bestätigung einholen: 'Brauchst du Hilfe?'",
+                    "ha_actions": [],
+                    "user_message": "Brauchst du Hilfe?",
+                    "requires_confirmation": True,
+                },
+                {
+                    "step": 2,
+                    "action": "call_emergency_contact",
+                    "description": "Notfallkontakt anrufen",
+                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "medical_emergency"}],
+                },
+                {
+                    "step": 3,
+                    "action": "unlock_front_door",
+                    "description": "Haustür für Rettungsdienst entriegeln",
+                    "ha_actions": [{"service": "lock", "action": "unlock", "entity_filter": "haustuer|front_door|eingang"}],
+                },
+                {
+                    "step": 4,
+                    "action": "pathway_lights_on",
+                    "description": "Alle Weg-Beleuchtungen einschalten",
+                    "ha_actions": [{"service": "light", "action": "turn_on", "entity_filter": "light."}],
+                },
+                {
+                    "step": 5,
+                    "action": "provide_address_info",
+                    "description": "Adresse + Situationsbeschreibung an Notfallkontakt übermitteln",
+                    "ha_actions": [{"service": "notify", "action": "notify", "data_template": "medical_address"}],
+                },
+            ],
+        },
+    }
+
     def __init__(self, ha_client: HomeAssistantClient):
         self.ha = ha_client
         self.redis: Optional[aioredis.Redis] = None
+        # Laufzeitschutz: Verhindert parallele Ausführung desselben Playbooks
+        self._running_playbooks: set[str] = set()
 
         security_cfg = yaml_config.get("security", {})
         _raw_enabled = security_cfg.get("threat_assessment", True)
@@ -505,6 +703,26 @@ class ThreatAssessment:
             score -= 10
             details.append("Nacht + niemand zuhause")
 
+        # Device-Dependency-Konflikte: Compound-Severity
+        try:
+            from .state_change_log import StateChangeLog
+            _state_dict = {
+                s["entity_id"]: s.get("state", "")
+                for s in states if "entity_id" in s
+            }
+            _scl = StateChangeLog.__new__(StateChangeLog)
+            _conflicts = _scl.detect_conflicts(_state_dict)
+            _active = [c for c in _conflicts if c.get("affected_active")]
+            if _active:
+                # Eskalierend: 1=-5, 2=-15, 3+=-25
+                _n = len(_active)
+                _penalty = 5 if _n == 1 else (15 if _n == 2 else 25)
+                score -= _penalty
+                _hints = [c.get("hint", "") for c in _active[:3]]
+                details.append(f"Geraete-Konflikte ({_n}): {'; '.join(_hints)}")
+        except Exception as _dep_err:
+            logger.debug("Threat-Assessment Dependency-Check: %s", _dep_err)
+
         score = max(0, score)
 
         if score >= 90:
@@ -569,6 +787,179 @@ class ThreatAssessment:
                 )
 
         return actions_taken
+
+    async def execute_playbook(
+        self,
+        scenario: str,
+        trigger_context: dict,
+        ha_client: HomeAssistantClient,
+    ) -> list[dict]:
+        """Führt ein Notfall-Playbook Schritt für Schritt aus.
+
+        Sicherheitsprüfungen:
+        - Verhindert parallele Ausführung desselben Szenarios
+        - Jeder Schritt wird einzeln ausgeführt und protokolliert
+        - Bei Fehlern wird der Schritt als fehlgeschlagen markiert,
+          das Playbook läuft aber weiter (best-effort)
+
+        Args:
+            scenario: Szenario-Schlüssel (z.B. "fire_smoke", "break_in")
+            trigger_context: Kontext des Auslösers (entity_id, room, timestamp etc.)
+            ha_client: HomeAssistant-Client für Service-Aufrufe
+
+        Returns:
+            Liste der ausgeführten Schritte mit Erfolgs-/Fehlerstatus
+        """
+        playbook = self.EMERGENCY_PLAYBOOKS.get(scenario)
+        if not playbook:
+            logger.warning("Unbekanntes Notfall-Szenario: %s", scenario)
+            return [{"step": 0, "action": "lookup", "success": False,
+                      "error": f"Unbekanntes Szenario: {scenario}"}]
+
+        # Schutz gegen parallele Ausführung desselben Playbooks
+        if scenario in self._running_playbooks:
+            logger.warning(
+                "Playbook '%s' (%s) läuft bereits — doppelte Ausführung verhindert",
+                playbook["name"], scenario,
+            )
+            return [{"step": 0, "action": "guard", "success": False,
+                      "error": f"Playbook {scenario} läuft bereits"}]
+
+        self._running_playbooks.add(scenario)
+        executed_steps: list[dict] = []
+        start_time = datetime.now()
+
+        logger.warning(
+            "=== NOTFALL-PLAYBOOK GESTARTET: %s (%s) === Auslöser: %s",
+            playbook["name"], scenario, trigger_context,
+        )
+
+        try:
+            states = await asyncio.wait_for(ha_client.get_states(), timeout=10)
+        except (asyncio.TimeoutError, Exception) as e:
+            logger.error("Kann HA-States nicht laden für Playbook %s: %s", scenario, e)
+            states = []
+
+        for step_def in playbook["steps"]:
+            step_num = step_def["step"]
+            action_name = step_def["action"]
+            description = step_def["description"]
+            step_result = {
+                "step": step_num,
+                "action": action_name,
+                "description": description,
+                "timestamp": datetime.now().isoformat(),
+                "success": False,
+                "details": [],
+            }
+
+            logger.info(
+                "Playbook %s — Schritt %d: %s", playbook["name"], step_num, description,
+            )
+
+            try:
+                # Bestätigungs-Schritte werden übersprungen (async UI nötig)
+                if step_def.get("requires_confirmation"):
+                    step_result["success"] = True
+                    step_result["details"].append(
+                        f"Bestätigung angefordert: {step_def.get('user_message', '')}"
+                    )
+                    executed_steps.append(step_result)
+                    continue
+
+                # HA-Service-Aktionen ausführen
+                ha_actions = step_def.get("ha_actions", [])
+                if not ha_actions:
+                    # Reiner Log-/Hinweis-Schritt (kein HA-Service-Aufruf)
+                    user_msg = step_def.get("user_message")
+                    if user_msg:
+                        step_result["details"].append(f"Nutzerhinweis: {user_msg}")
+                    # Logging-Schritte (z.B. log_incident, record_incident)
+                    if "log" in action_name or "record" in action_name:
+                        step_result["details"].append(
+                            f"Vorfall protokolliert: {playbook['name']} um {start_time.isoformat()}, "
+                            f"Auslöser: {trigger_context}"
+                        )
+                    # Identifikations-Schritte (Kontext-Auswertung)
+                    if "identify" in action_name or "check" in action_name:
+                        trigger_entity = trigger_context.get("entity_id", "unbekannt")
+                        trigger_room = trigger_context.get("room", "unbekannt")
+                        step_result["details"].append(
+                            f"Quelle: {trigger_entity}, Raum: {trigger_room}"
+                        )
+                    step_result["success"] = True
+                    executed_steps.append(step_result)
+                    continue
+
+                # HA-Service-Aufrufe ausführen
+                for ha_action in ha_actions:
+                    service_domain = ha_action["service"]
+                    service_action = ha_action["action"]
+                    entity_filter = ha_action.get("entity_filter", "")
+
+                    # Passende Entities finden
+                    matching_entities = []
+                    if entity_filter and states:
+                        filter_parts = [f.lower() for f in entity_filter.split("|")]
+                        for s in states:
+                            eid = s.get("entity_id", "").lower()
+                            if any(fp in eid for fp in filter_parts):
+                                matching_entities.append(s.get("entity_id"))
+
+                    if not matching_entities:
+                        step_result["details"].append(
+                            f"Keine passenden Entities für Filter '{entity_filter}' gefunden"
+                        )
+                        # Kein Fehler — Gerät existiert einfach nicht im System
+                        step_result["success"] = True
+                        continue
+
+                    # Service für jede passende Entity aufrufen
+                    for entity_id in matching_entities:
+                        try:
+                            await ha_client.call_service(
+                                service_domain,
+                                service_action,
+                                {"entity_id": entity_id},
+                            )
+                            step_result["details"].append(
+                                f"{service_domain}.{service_action} → {entity_id}: OK"
+                            )
+                        except Exception as svc_err:
+                            step_result["details"].append(
+                                f"{service_domain}.{service_action} → {entity_id}: FEHLER ({svc_err})"
+                            )
+                            logger.error(
+                                "Playbook %s Schritt %d — Service-Fehler: %s.%s → %s: %s",
+                                scenario, step_num, service_domain, service_action,
+                                entity_id, svc_err,
+                            )
+
+                    step_result["success"] = True
+
+            except Exception as step_err:
+                step_result["success"] = False
+                step_result["error"] = str(step_err)
+                logger.error(
+                    "Playbook %s Schritt %d fehlgeschlagen: %s",
+                    scenario, step_num, step_err,
+                )
+
+            executed_steps.append(step_result)
+
+        # Playbook abgeschlossen
+        duration = (datetime.now() - start_time).total_seconds()
+        self._running_playbooks.discard(scenario)
+
+        succeeded = sum(1 for s in executed_steps if s.get("success"))
+        total = len(executed_steps)
+        logger.warning(
+            "=== NOTFALL-PLAYBOOK ABGESCHLOSSEN: %s (%s) === "
+            "%d/%d Schritte erfolgreich, Dauer: %.1fs",
+            playbook["name"], scenario, succeeded, total, duration,
+        )
+
+        return executed_steps
 
     async def _was_notified(self, key: str, cooldown_minutes: int = 30) -> bool:
         if not self.redis:

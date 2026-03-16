@@ -28,6 +28,10 @@ from .constants import (
 )
 
 logger = logging.getLogger(__name__)
+_metrics_logger = logging.getLogger(__name__ + ".metrics")
+
+# Maximale Groesse des Think-Tag Buffers bevor Content geflusht wird
+_THINK_BUFFER_MAX_CHARS = 100_000
 
 # Regex zum Entfernen von LLM Think-Bloecken (<think>...</think>)
 _THINK_PATTERN = re.compile(r"<think>[\s\S]*?</think>\s*", re.DOTALL)
@@ -62,6 +66,35 @@ _GERMAN_MARKERS = [
     # Allgemein
     "bereits", "aktuell", "guten", "herr", "frau",
 ]
+
+
+def _log_ollama_metrics(result: dict, model: str, endpoint: str = "chat") -> None:
+    """Loggt Ollama-Metriken (Token-Counts, Latenzen) aus der API-Response."""
+    prompt_tokens = result.get("prompt_eval_count")
+    eval_tokens = result.get("eval_count")
+    total_ns = result.get("total_duration")
+    prompt_ns = result.get("prompt_eval_duration")
+    eval_ns = result.get("eval_duration")
+    load_ns = result.get("load_duration")
+
+    if prompt_tokens is None and eval_tokens is None:
+        return  # Keine Metriken in Response (z.B. bei Fehler)
+
+    total_ms = round(total_ns / 1e6, 1) if total_ns else None
+    prompt_ms = round(prompt_ns / 1e6, 1) if prompt_ns else None
+    eval_ms = round(eval_ns / 1e6, 1) if eval_ns else None
+    load_ms = round(load_ns / 1e6, 1) if load_ns else None
+
+    # Tokens/s berechnen
+    eval_tps = round(eval_tokens / (eval_ns / 1e9), 1) if eval_tokens and eval_ns else None
+
+    _metrics_logger.info(
+        "ollama_%s model=%s prompt_tokens=%s eval_tokens=%s "
+        "total_ms=%s prompt_ms=%s eval_ms=%s load_ms=%s eval_tps=%s",
+        endpoint, model,
+        prompt_tokens, eval_tokens,
+        total_ms, prompt_ms, eval_ms, load_ms, eval_tps,
+    )
 
 
 def strip_think_tags(text: str) -> str:
@@ -256,12 +289,8 @@ class OllamaClient:
         from .config import yaml_config
         ollama_cfg = yaml_config.get("ollama") or {}
 
-        # Wenn alle Tiers das gleiche Modell nutzen: einheitlichen num_ctx verwenden
-        # damit Ollama nicht staendig zwischen verschiedenen ctx-Groessen wechselt
-        _all_same = (settings.model_fast == settings.model_smart == settings.model_deep)
-        if _all_same:
-            # Hoechsten konfigurierten Wert nehmen (smart als Standard)
-            return int(ollama_cfg.get("num_ctx_smart", ollama_cfg.get("num_ctx", self._DEFAULT_NUM_CTX)))
+        # Auch wenn alle Tiers das gleiche Modell nutzen, tier-spezifischen
+        # num_ctx respektieren — Ollama laedt ohnehin mit dem groessten ctx.
 
         # Tier-basiertes Matching (praeziser als Modellname wenn Tiers verschieden)
         if tier == "fast":
@@ -367,7 +396,15 @@ class OllamaClient:
         model = model or settings.model_smart
         profile = get_model_profile(model)
 
-        # Thinking Mode bestimmen (via Model Profile)
+        # Thinking Mode bestimmen (via Model Profile + settings.yaml)
+        # Konfigurierbar via latency_optimization.think_control:
+        #   "auto"  = Modell entscheidet (Default)
+        #   "off"   = Thinking komplett deaktiviert
+        #   "smart_off" = Thinking nur fuer Smart-Tier aus (Fast immer aus, Deep auto)
+        #   "on"    = Thinking immer aktiviert
+        from .config import yaml_config as _yaml_cfg
+        _think_cfg = (_yaml_cfg.get("latency_optimization") or {}).get("think_control", "smart_off")
+
         if think is not None:
             think_enabled = think
         elif model == settings.model_fast:
@@ -375,8 +412,16 @@ class OllamaClient:
         elif tools and not profile.supports_think_with_tools:
             # Modell kann Think+Tools nicht gleichzeitig
             think_enabled = False
+        elif _think_cfg in ("off", "always_off"):
+            think_enabled = False
+        elif _think_cfg in ("on", "always_on"):
+            think_enabled = True
+        elif _think_cfg == "smart_off" and tier == "smart":
+            # Smart-Tier: Thinking deaktivieren — spart 500-2000 Reasoning-Tokens
+            # und halbiert die Latenz. Deep-Tier behaelt Thinking fuer komplexe Aufgaben.
+            think_enabled = False
         else:
-            think_enabled = None  # Ollama/Modell entscheidet
+            think_enabled = None  # Modell entscheidet
 
         payload = {
             "model": model,
@@ -431,6 +476,7 @@ class OllamaClient:
                     return result
 
                 ollama_breaker.record_success()
+                _log_ollama_metrics(result, model, "chat")
 
                 # Think-Tags aus der Antwort strippen (Sicherheitsnetz)
                 msg = result.get("message", {})
@@ -478,10 +524,19 @@ class OllamaClient:
         model = model or settings.model_smart
         profile = get_model_profile(model)
 
-        # Thinking Mode (gleiche Logik wie chat(), via Model Profile)
+        # Thinking Mode (gleiche Logik wie chat(), via Model Profile + settings.yaml)
+        from .config import yaml_config as _yaml_cfg
+        _think_cfg = (_yaml_cfg.get("latency_optimization") or {}).get("think_control", "smart_off")
+
         if think is not None:
             think_enabled = think
         elif model == settings.model_fast:
+            think_enabled = False
+        elif _think_cfg in ("off", "always_off"):
+            think_enabled = False
+        elif _think_cfg in ("on", "always_on"):
+            think_enabled = True
+        elif _think_cfg == "smart_off" and tier == "smart":
             think_enabled = False
         else:
             think_enabled = None
@@ -526,6 +581,8 @@ class OllamaClient:
                     try:
                         data = _json.loads(line)
                     except (ValueError, _json.JSONDecodeError):
+                        logger.debug("Ollama Stream: Malformed JSON chunk uebersprungen: %s",
+                                     line[:200] if isinstance(line, str) else line[:200])
                         continue
 
                     content = data.get("message", {}).get("content", "")
@@ -537,8 +594,12 @@ class OllamaClient:
                     _think_buffer += content
 
                     # Guard against unbounded buffer growth
-                    if len(_think_buffer) > 100_000:
-                        logger.warning("_think_buffer exceeded 100k chars, flushing")
+                    if len(_think_buffer) > _THINK_BUFFER_MAX_CHARS:
+                        logger.warning("_think_buffer exceeded 100k chars, flushing content")
+                        # Content retten statt verwerfen — nur Think-Tags strippen
+                        _think_buffer = strip_think_tags(_think_buffer)
+                        if _think_buffer:
+                            yield _think_buffer
                         _think_buffer = ""
                         in_think_block = False
 
@@ -648,6 +709,7 @@ class OllamaClient:
                     return ""
                 result = await resp.json()
                 ollama_breaker.record_success()
+                _log_ollama_metrics(result, model, "generate")
                 text = result.get("response", "")
                 return strip_think_tags(text)
         except asyncio.TimeoutError:

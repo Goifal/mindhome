@@ -180,14 +180,14 @@ Bestehendes Rezept:
 {recipe_text}"""
 
 
-MAX_TIMERS_PER_SESSION = 10  # Bug #117: Limit active timers per session
+from .constants import MAX_TIMERS_PER_SESSION, COOKING_SESSION_TTL
 
 
 class CookingAssistant:
     """Koch-Assistent mit Schritt-für-Schritt Fuehrung."""
 
     REDIS_SESSION_KEY = "mha:cooking:session"
-    REDIS_SESSION_TTL = 6 * 3600  # 6h — Session überlebt Neustart
+    REDIS_SESSION_TTL = COOKING_SESSION_TTL
 
     def __init__(self, ollama_client, semantic_memory=None):
         self.ollama = ollama_client

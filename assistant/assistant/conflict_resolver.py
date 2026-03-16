@@ -427,6 +427,23 @@ class ConflictResolver:
         """Loest einen erkannten Konflikt."""
         strategy = domain_cfg.get("strategy", "trust_priority")
 
+        # Device-Dependency-Check: Pruefen ob eine Seite Konflikte ausloest
+        dep_hints_a = []
+        dep_hints_b = []
+        try:
+            from .state_change_log import StateChangeLog
+            import assistant.main as main_module
+            if hasattr(main_module, "brain"):
+                _states = await main_module.brain.ha.get_states() or []
+                dep_hints_a = StateChangeLog.check_action_dependencies(
+                    command_a.get("function", ""), command_a.get("args", {}), _states,
+                )
+                dep_hints_b = StateChangeLog.check_action_dependencies(
+                    function_name_b, args_b, _states,
+                )
+        except Exception as _dep_err:
+            logger.debug("Dependency-Check in ConflictResolver: %s", _dep_err)
+
         trust_a = self.autonomy.get_trust_level(person_a)
         trust_b = self.autonomy.get_trust_level(person_b)
         trust_name_a = TRUST_LEVEL_NAMES.get(trust_a, "Unbekannt")
@@ -444,6 +461,18 @@ class ConflictResolver:
             "strategy": strategy,
             "timestamp": datetime.now().isoformat(),
         }
+
+        # Dependency-Hinweise an Resolution anfuegen
+        if dep_hints_a or dep_hints_b:
+            resolution["dependency_hints"] = {
+                "person_a": dep_hints_a,
+                "person_b": dep_hints_b,
+            }
+            # Wenn nur eine Seite Konflikte hat, bevorzuge die andere
+            if dep_hints_a and not dep_hints_b:
+                resolution["dependency_recommendation"] = person_b
+            elif dep_hints_b and not dep_hints_a:
+                resolution["dependency_recommendation"] = person_a
 
         # Strategie 1: Trust-Prioritaet
         if strategy == "trust_priority" and self._use_trust_priority:

@@ -107,6 +107,7 @@ from .state_change_log import StateChangeLog
 from .learning_transfer import LearningTransfer
 from .dialogue_state import DialogueStateManager
 from .climate_model import ClimateModel
+from .llm_enhancer import LLMEnhancer
 from .predictive_maintenance import PredictiveMaintenance
 from .websocket import emit_thinking, emit_speaking, emit_action, emit_proactive, emit_progress, emit_workshop
 
@@ -124,16 +125,23 @@ SECURITY_CONFIRM_TTL = REDIS_SECURITY_CONFIRM_TTL
 def _estimate_tokens(text: str) -> int:
     """Schaetzt BPE-Tokens für deutschen Text.
 
-    Konservative Schaetzung: ~1.4 chars/token für deutsche BPE-Tokenizer
-    (Umlaute, Komposita, Sonderzeichen brauchen mehr Tokens als Englisch).
-    Vorher: // 2, was ~25-50% zu optimistisch war und zu stillem
-    Kontext-Truncation durch Ollama fuehrte.
+    Konservative Schaetzung: ~1.8 chars/token für deutsche BPE-Tokenizer.
+    Deutsche Texte haben Umlaute (ä/ö/ü → multi-byte), Komposita
+    (Heizungssteuerung → viele Sub-Tokens) und Sonderzeichen, die alle
+    mehr Tokens pro Wort brauchen als Englisch.
+
+    Fruehere Werte:
+      // 2   → ~25-50% zu optimistisch → stilles Kontext-Truncation
+      / 1.4  → immer noch ~25% zu optimistisch für deutschen Text
+
+    1.8 ist empirisch besser kalibriert und laesst Sicherheitspuffer.
+    Idealerweise durch echte prompt_eval_count Werte aus Ollama validieren.
     """
-    return int(len(text) / 1.4)
+    return int(len(text) / 1.8)
 
 
-def _audit_log(action: str, details: dict = None):
-    """Schreibt einen Audit-Eintrag (append-only JSONL)."""
+def _audit_log_sync(action: str, details: dict = None):
+    """Schreibt einen Audit-Eintrag (append-only JSONL) — blocking I/O."""
     try:
         _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         entry = {
@@ -145,6 +153,16 @@ def _audit_log(action: str, details: dict = None):
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as exc:
         logger.warning("Audit-Log Fehler: %s", exc)
+
+
+def _audit_log(action: str, details: dict = None):
+    """Audit-Eintrag non-blocking schreiben (via Thread-Pool)."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, _audit_log_sync, action, details)
+    except RuntimeError:
+        # Kein laufender Event-Loop — synchron schreiben
+        _audit_log_sync(action, details)
 
 # Phase 7.5: Szenen-Intelligenz — Reasoning Framework statt Lookup-Tabelle
 def _build_scene_intelligence_prompt() -> str:
@@ -250,6 +268,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.anticipation = AnticipationEngine()
         self.inner_state = InnerStateEngine()  # B5: JARVIS-eigene Emotionen
         self.intent_tracker = IntentTracker(self.ollama)
+        self.llm_enhancer = LLMEnhancer(self.ollama)
 
         # Phase 9: Stimme & Akustik
         self.tts_enhancer = TTSEnhancer()
@@ -951,7 +970,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             stream_error = True
                             continue
                         collected.append(token)
-                        await stream_callback(token)
+                        try:
+                            await stream_callback(token)
+                        except Exception as _cb_err:
+                            logger.warning("stream_callback Fehler: %s", _cb_err)
+                            stream_error = True
+                            break
                     if not stream_error and collected:
                         return {
                             "text": "".join(collected),
@@ -1101,16 +1125,30 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         Wird im Gesprächsmodus genutzt, wenn die volle History nicht ins
         Token-Budget passt. So bleibt der Kontext erhalten, auch bei langen Gespraechen.
+
+        Nutzt den LLM Enhancer fuer bessere Zusammenfassungen mit Fakten-Extraktion.
         """
         if not messages:
             return None
+
+        # LLM Enhancer: Verbesserte Zusammenfassung
+        if self.llm_enhancer.enabled and self.llm_enhancer.summarizer.enabled:
+            try:
+                summary = await self.llm_enhancer.summarizer.summarize_for_context(
+                    messages, person=self._current_person or "",
+                )
+                if summary:
+                    return summary
+            except Exception as e:
+                logger.debug("LLM Enhancer Summary fehlgeschlagen, nutze Fallback: %s", e)
+
+        # Fallback: Einfaches LLM-Summary
         try:
             lines = []
             for m in messages:
                 role = "User" if m.get("role") == "user" else "Jarvis"
                 lines.append(f"{role}: {m.get('content', '')}")
             conversation_text = "\n".join(lines)
-            # Kurzes LLM-Summary mit dem schnellen Modell
             prompt = (
                 "Fasse das folgende Gespraech in 2-3 Saetzen zusammen. "
                 "Behalte die wichtigsten Themen, Fragen und Entscheidungen. "
@@ -2371,6 +2409,27 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # ----- Ende schnelle Shortcuts -----
 
+        # ----- LLM Enhancer: Smart Intent Recognition -----
+        # Erkennt implizite Absichten ("Mir ist kalt" -> Heizung hoch)
+        # Wird als Kontext-Hinweis ans LLM weitergegeben, nicht direkt ausgefuehrt.
+        _implicit_intent = None
+        if self.llm_enhancer.enabled and self.llm_enhancer.smart_intent.enabled:
+            try:
+                _hour = datetime.now().hour
+                if 5 <= _hour < 12:
+                    _tod = "Morgen"
+                elif 12 <= _hour < 17:
+                    _tod = "Nachmittag"
+                elif 17 <= _hour < 22:
+                    _tod = "Abend"
+                else:
+                    _tod = "Nacht"
+                _implicit_intent = await self.llm_enhancer.smart_intent.recognize(
+                    text, room=room or "", time_of_day=_tod,
+                )
+            except Exception as _ie:
+                logger.debug("Smart Intent Recognition Fehler: %s", _ie)
+
         # Phase 9: "listening" Sound abspielen wenn Verarbeitung startet
         self._task_registry.create_task(
             self.sound_manager.play_event_sound("listening", room=room),
@@ -2907,6 +2966,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 f"Fuehre die passende Aktion aus (gleiche Funktion, gleicher Raum, anderer State)."
             )
             sections.append(("last_action", _action_text, 1))
+
+        # LLM Enhancer: Impliziter Intent als Kontext-Hinweis
+        if _implicit_intent and _implicit_intent.get("action") not in (None, "none"):
+            _intent_text = (
+                f"\n\nIMPLIZITER INTENT ERKANNT: Der User sagt '{text}' — "
+                f"das deutet auf: {_implicit_intent.get('intent', '')} "
+                f"(Aktion: {_implicit_intent.get('action', '')}, "
+                f"Confidence: {_implicit_intent.get('confidence', 0):.0%}).\n"
+                f"Fuehre die passende Aktion aus ODER frage kurz nach "
+                f"wenn die Confidence unter 75% liegt."
+            )
+            sections.append(("implicit_intent", _intent_text, 1))
 
         # Phase 18: Implizite Voraussetzungen (z.B. "Entspannen" → Rollladen, Licht, Musik)
         try:
@@ -3618,7 +3689,9 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # BUG-17: Validate tool_calls structure — Ollama may return malformed entries
             tool_calls = [
                 tc for tc in raw_tool_calls
-                if isinstance(tc, dict) and "function" in tc
+                if isinstance(tc, dict)
+                and isinstance(tc.get("function"), dict)
+                and tc["function"].get("name")
             ]
 
             # Tools die Daten zurueckgeben und eine LLM-formatierte Antwort brauchen
@@ -4765,6 +4838,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     logger.debug("Mood [%s]: Vorschlag-Anhang gekürzt (%d -> %d Zeichen)",
                                  _current_mood, len(response_text), len(_cleaned))
                 response_text = _cleaned
+
+        # LLM Enhancer: Response Rewriting fuer natuerlichere Antworten
+        # Nur bei laengeren Antworten (nicht bei "Erledigt.") und nicht bei Shortcuts
+        if (response_text and self.llm_enhancer.enabled
+                and self.llm_enhancer.rewriter.enabled
+                and profile and profile.category != "device_command"):
+            try:
+                _rewritten = await self.llm_enhancer.rewriter.rewrite(
+                    response=response_text,
+                    user_text=text,
+                    person=person or "",
+                    mood=_current_mood,
+                    sarcasm_level=self.personality.sarcasm_level,
+                    category=profile.category if profile else "",
+                )
+                if _rewritten and _rewritten != response_text:
+                    response_text = _rewritten
+                    logger.debug("LLM Rewriter: Response umgeschrieben")
+            except Exception as _rw_err:
+                logger.debug("LLM Rewriter fehlgeschlagen: %s", _rw_err)
 
         # Phase 9: Warning-Sound bei Warnungen im Response
         if response_text and any(w in response_text.lower() for w in [
@@ -10175,7 +10268,8 @@ Regeln:
             self._remember_exchange("[proaktiv: Antizipation]", text)
             logger.info("Anticipation auto-execute: %s (confidence: %d%%, success: %s)", desc, pct, _success)
         else:
-            # Vorschlagen — mit Confidence-Kontext im JARVIS-Stil
+            # Vorschlagen — LLM Enhancer fuer natuerlichere Formulierung
+            # Template-Vorschlag als Fallback
             if mode == "suggest":
                 if pct >= 90:
                     text = f"{title}, wenn ich darf — {desc}. Das machst du mit {pct}%iger Regelmaessigkeit."
@@ -10189,6 +10283,22 @@ Regeln:
                     )
                 else:
                     text = f"Mir ist aufgefallen: {desc}. Soll ich das uebernehmen?"
+
+            # LLM Enhancer: Proaktive Vorschlaege via LLM natuerlicher formulieren
+            if (self.llm_enhancer.enabled
+                    and self.llm_enhancer.proactive.enabled):
+                try:
+                    llm_suggestion = await self.llm_enhancer.proactive.generate_suggestion(
+                        patterns=[suggestion],
+                        person=person or "",
+                        room=suggestion.get("room", ""),
+                    )
+                    if llm_suggestion and llm_suggestion.get("suggestion"):
+                        text = llm_suggestion["suggestion"]
+                        logger.info("LLM Enhancer: Proaktiver Vorschlag verfeinert")
+                except Exception as _ps_err:
+                    logger.debug("LLM proaktiver Vorschlag fehlgeschlagen: %s", _ps_err)
+
             await emit_proactive(text, "anticipation_suggest", "low")
             logger.info("Anticipation suggestion: %s (%s, %d%%)", desc, mode, pct)
 
