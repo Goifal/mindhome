@@ -14,6 +14,14 @@ import math
 from typing import Optional
 
 from .config import yaml_config
+from .constants import (
+    CLIMATE_TEMP_MIN,
+    CLIMATE_TEMP_MAX,
+    CLIMATE_COMFORT_DEFAULT,
+    CLIMATE_VACATION_TARGET,
+    CLIMATE_COVER_HEAT_FACTOR,
+    CLIMATE_DEFAULT_ENERGY_PRICE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,15 +123,15 @@ class ClimateModel:
         if not self.enabled:
             return {"error": "Climate Model deaktiviert"}
 
-        if state.current_temp < 5 or state.current_temp > 35:
+        if state.current_temp < CLIMATE_TEMP_MIN or state.current_temp > CLIMATE_TEMP_MAX:
             logger.warning(
-                "Temperatur ausserhalb des normalen Bereichs (5-35°C) in %s: %.1f°C",
-                state.room, state.current_temp,
+                "Temperatur ausserhalb des normalen Bereichs (%.0f-%.0f°C) in %s: %.1f°C",
+                CLIMATE_TEMP_MIN, CLIMATE_TEMP_MAX, state.room, state.current_temp,
             )
-        if state.target_temp < 5 or state.target_temp > 35:
+        if state.target_temp < CLIMATE_TEMP_MIN or state.target_temp > CLIMATE_TEMP_MAX:
             logger.warning(
-                "Zieltemperatur ausserhalb des normalen Bereichs (5-35°C) in %s: %.1f°C",
-                state.room, state.target_temp,
+                "Zieltemperatur ausserhalb des normalen Bereichs (%.0f-%.0f°C) in %s: %.1f°C",
+                CLIMATE_TEMP_MIN, CLIMATE_TEMP_MAX, state.room, state.target_temp,
             )
 
         duration = min(duration_minutes, self.max_simulation_minutes)
@@ -146,7 +154,7 @@ class ClimateModel:
         if changes:
             if "set_target" in changes:
                 target = changes["set_target"]
-                if not (5 <= target <= 35):
+                if not (CLIMATE_TEMP_MIN <= target <= CLIMATE_TEMP_MAX):
                     logger.warning("Temperature %.1f°C is outside recommended range (5-35°C)", target)
             if changes.get("close_windows"):
                 sim_state.windows_open = 0
@@ -307,7 +315,7 @@ class ClimateModel:
     def estimate_comfort_time(
         self,
         state: RoomThermalState,
-        comfort_temp: float = 21.0,
+        comfort_temp: float = CLIMATE_COMFORT_DEFAULT,
     ) -> dict:
         """Schaetzt wie lange es dauert bis die Komforttemperatur erreicht ist.
 
@@ -399,14 +407,14 @@ class ClimateModel:
         p = params or {}
         room = p.get("room", "wohnzimmer")
         current_temp = p.get("current_temp", 21.5)
-        outdoor_temp = p.get("outdoor_temp", 5.0)
-        target_temp = p.get("target_temp", 21.0)
+        outdoor_temp = p.get("outdoor_temp", CLIMATE_TEMP_MIN)
+        target_temp = p.get("target_temp", CLIMATE_COMFORT_DEFAULT)
         critical_temp = p.get("critical_temp", 17.0)
 
         # Szenario-spezifische Anpassungen
         if scenario == "vacation_3days":
             duration_hours = 72
-            target_temp = 16.0
+            target_temp = CLIMATE_VACATION_TARGET
 
         thermal = self._get_params(room)
         step_minutes = 10  # Groessere Schritte fuer Langzeit-Simulation
@@ -426,7 +434,7 @@ class ClimateModel:
         heating_active = scenario not in ("heating_off",)
         windows_open = 1 if scenario == "windows_open" else 0
         # Geschlossene Rolladen reduzieren Waermeverlust um ca. 30%
-        cover_factor = 0.7 if scenario == "all_covers_closed" else 1.0
+        cover_factor = CLIMATE_COVER_HEAT_FACTOR if scenario == "all_covers_closed" else 1.0
 
         for minute in range(step_minutes, total_minutes + step_minutes, step_minutes):
             delta = outdoor_temp - temp
@@ -526,7 +534,7 @@ class ClimateModel:
         self,
         scenario: str,
         duration_hours: int,
-        price_per_kwh: float = 0.30,
+        price_per_kwh: float = CLIMATE_DEFAULT_ENERGY_PRICE,
         params: dict = None,
     ) -> dict:
         """Schaetzt Energieverbrauch und Kosten fuer ein Szenario.
@@ -549,15 +557,15 @@ class ClimateModel:
 
         p = params or {}
         room = p.get("room", "wohnzimmer")
-        outdoor_temp = p.get("outdoor_temp", 5.0)
+        outdoor_temp = p.get("outdoor_temp", CLIMATE_TEMP_MIN)
         thermal = self._get_params(room)
 
         # Typische Heizleistung in kW (vereinfacht aus thermischen Parametern)
         # heating_power_per_min in °C/min → umgerechnet auf kW
         base_heating_kw = 3.0  # Typische Heizleistung fuer einen Raum
 
-        # Normalbetrieb: Heizung haelt 21°C, Anteil der Zeit aktiv
-        normal_target = 21.0
+        # Normalbetrieb: Heizung haelt Komforttemperatur, Anteil der Zeit aktiv
+        normal_target = CLIMATE_COMFORT_DEFAULT
         normal_delta = normal_target - outdoor_temp
         # Heizanteil: wie viel % der Zeit muss geheizt werden
         normal_duty = min(1.0, max(0.0, normal_delta * thermal["heat_loss_coefficient"] /
@@ -568,7 +576,7 @@ class ClimateModel:
         if scenario == "heating_off":
             scenario_kwh = 0.0
         elif scenario == "vacation_3days":
-            vacation_target = 16.0
+            vacation_target = CLIMATE_VACATION_TARGET
             vacation_delta = vacation_target - outdoor_temp
             vacation_duty = min(1.0, max(0.0, vacation_delta * thermal["heat_loss_coefficient"] /
                                          thermal["heating_power_per_min"])) if vacation_delta > 0 else 0.0
@@ -580,7 +588,7 @@ class ClimateModel:
             scenario_kwh = base_heating_kw * window_duty * duration_hours
         elif scenario == "all_covers_closed":
             # Rolladen reduzieren Waermeverlust um ~30%
-            cover_duty = min(1.0, max(0.0, normal_duty * 0.7))
+            cover_duty = min(1.0, max(0.0, normal_duty * CLIMATE_COVER_HEAT_FACTOR))
             scenario_kwh = base_heating_kw * cover_duty * duration_hours
         else:
             scenario_kwh = normal_kwh

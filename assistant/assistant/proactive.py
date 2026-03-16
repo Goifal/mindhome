@@ -54,6 +54,12 @@ HIGH = "high"          # Melden wenn wach
 MEDIUM = "medium"      # Melden wenn passend
 LOW = "low"            # Melden wenn entspannt
 
+# Domains fuer State-Change-Logging (Modul-Level statt pro Aufruf)
+_LOG_DOMAINS = ("light.", "switch.", "climate.", "cover.", "media_player.",
+                "binary_sensor.fenster", "binary_sensor.window",
+                "binary_sensor.door", "binary_sensor.tuer",
+                "alarm_control_panel.")
+
 
 class ProactiveManager:
     """Verwaltet proaktive Meldungen basierend auf HA-Events."""
@@ -656,11 +662,7 @@ class ProactiveManager:
             return
 
         # State-Change-Log: Relevante Aenderungen mit Quelle protokollieren
-        _log_domains = ("light.", "switch.", "climate.", "cover.", "media_player.",
-                        "binary_sensor.fenster", "binary_sensor.window",
-                        "binary_sensor.door", "binary_sensor.tuer",
-                        "alarm_control_panel.")
-        if any(entity_id.startswith(d) for d in _log_domains):
+        if any(entity_id.startswith(d) for d in _LOG_DOMAINS):
             try:
                 if hasattr(self.brain, "state_change_log"):
                     friendly = new_state.get("attributes", {}).get(
@@ -671,13 +673,13 @@ class ProactiveManager:
                         friendly_name=friendly,
                     )
             except Exception as _scl_err:
-                logger.debug("State-Change-Log Fehler: %s", _scl_err)
+                logger.warning("State-Change-Log Fehler: %s", _scl_err)
 
         # Event-basierte Wetter-Sensoren: Sofort-Reaktion auf kritische Änderungen
         try:
             await self._handle_weather_event(entity_id, new_val, old_val)
         except Exception as _we:
-            logger.debug("Weather-Event-Handler Fehler: %s", _we)
+            logger.warning("Weather-Event-Handler Fehler: %s", _we)
 
         # Alarmsystem
         if entity_id.startswith("alarm_control_panel.") and new_val == "triggered":

@@ -110,13 +110,15 @@ class MemoryManager:
             return []
 
         entries = await self.redis.lrange("mha:conversations", 0, limit - 1)
+        _loads = json.loads  # Lokale Referenz fuer Hot Loop
         result = []
         for e in entries:
             try:
-                result.append(json.loads(e))
+                result.append(_loads(e))
             except (json.JSONDecodeError, TypeError):
                 continue
-        return result[::-1]  # Aelteste zuerst
+        result.reverse()  # In-place statt [::-1] Kopie
+        return result
 
     async def set_context(self, key: str, value: str, ttl: int = 3600):
         """Speichert einen Kontext-Wert mit TTL."""
@@ -138,11 +140,13 @@ class MemoryManager:
         try:
             archive_key = f"mha:archive:{date}"
             entries = await self.redis.lrange(archive_key, 0, -1)
+            _loads = json.loads
             result = []
             for e in entries:
+                if not e:
+                    continue
                 try:
-                    if e:
-                        result.append(json.loads(e))
+                    result.append(_loads(e))
                 except (json.JSONDecodeError, TypeError):
                     continue
             return result

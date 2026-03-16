@@ -220,3 +220,39 @@ GATHER_MEGA_TIMEOUT: Final[int] = 45   # brain.py mega-gather
 GATHER_CONTEXT_TIMEOUT: Final[int] = 15  # context_builder.py
 GATHER_ACTION_TIMEOUT: Final[int] = 120  # action_planner.py
 GATHER_SHUTDOWN_TIMEOUT: Final[int] = 30  # task_registry.py shutdown
+
+# ============================================================
+# Cooking Assistant
+# ============================================================
+
+MAX_TIMERS_PER_SESSION: Final[int] = 10
+COOKING_SESSION_TTL: Final[int] = 6 * 3600  # 6h
+
+# ============================================================
+# Self Automation
+# ============================================================
+
+SELF_AUTOMATION_PENDING_TTL: Final[int] = 300  # 5 Min Timeout
+
+# ============================================================
+# Smart Shopping
+# ============================================================
+
+SHOPPING_MIN_PURCHASES: Final[int] = 2
+SHOPPING_REMINDER_DAYS_BEFORE: Final[int] = 1
+SHOPPING_REMINDER_COOLDOWN_H: Final[int] = 24
+SHOPPING_CONSUMPTION_MAX_ENTRIES: Final[int] = 50
+SHOPPING_CONSUMPTION_TTL: Final[int] = 365 * 86400  # 1 Jahr
+SHOPPING_CONFIDENCE_DATAPOINTS: Final[int] = 10
+SHOPPING_LOW_STOCK_THRESHOLD: Final[float] = 0.3
+
+# ============================================================
+# Climate Model
+# ============================================================
+
+CLIMATE_TEMP_MIN: Final[float] = 5.0
+CLIMATE_TEMP_MAX: Final[float] = 35.0
+CLIMATE_COMFORT_DEFAULT: Final[float] = 21.0
+CLIMATE_VACATION_TARGET: Final[float] = 16.0
+CLIMATE_COVER_HEAT_FACTOR: Final[float] = 0.7
+CLIMATE_DEFAULT_ENERGY_PRICE: Final[float] = 0.30  # EUR/kWh

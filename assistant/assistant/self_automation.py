@@ -23,6 +23,7 @@ from typing import Any, Optional
 import yaml
 
 from .config import settings, yaml_config
+from .constants import SELF_AUTOMATION_PENDING_TTL
 from .ha_client import HomeAssistantClient
 from .ollama_client import OllamaClient
 
@@ -108,7 +109,7 @@ class SelfAutomation:
 
         # Pending Automations (warten auf Bestaetigung)
         self._pending: dict[str, dict] = {}
-        self._pending_ttl_seconds = 300  # 5 Minuten Timeout
+        self._pending_ttl_seconds = SELF_AUTOMATION_PENDING_TTL
 
         # Audit-Log (In-Memory + Redis wenn verfuegbar)
         from collections import deque
