@@ -6984,6 +6984,181 @@ DEVICE_DEPENDENCIES = [
         "hint": "Router online → Drucker erreichbar",
         "severity": "info",
     },
+
+    # =================================================================
+    # LETZTE LUECKEN — fehlende Kreuz-Beziehungen
+    # =================================================================
+
+    # Waermepumpe → Netzbezug / Raumtemperatur
+    {
+        "role": "heat_pump", "state": "on",
+        "affects": "grid_consumption", "same_room": False,
+        "effect": "Waermepumpe an → Netzbezug steigt deutlich",
+        "hint": "Waermepumpe aktiv → hoher Stromverbrauch (2-5 kW)",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "off",
+        "affects": "grid_consumption", "same_room": False,
+        "effect": "Waermepumpe aus → Netzbezug sinkt deutlich",
+        "hint": "Waermepumpe aus → deutlich weniger Strom",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "on",
+        "affects": "indoor_temp", "same_room": False,
+        "effect": "Waermepumpe an → Raumtemperatur wird geregelt",
+        "hint": "Waermepumpe aktiv → heizt oder kuehlt je nach Modus",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "off",
+        "affects": "indoor_temp", "same_room": False,
+        "effect": "Waermepumpe aus → Temperaturregelung stoppt",
+        "hint": "Waermepumpe aus → Temperatur driftet ohne Regelung",
+        "severity": "info",
+    },
+
+    # Fussbodenheizung / Radiator off → Temperatur / Energie
+    {
+        "role": "floor_heating", "state": "off",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Fussbodenheizung aus → Boden und Raum kuehlen ab",
+        "hint": "Fussbodenheizung aus → Temperatur sinkt langsam (traege)",
+        "severity": "info",
+    },
+    {
+        "role": "floor_heating", "state": "off",
+        "affects": "energy", "same_room": False,
+        "effect": "Fussbodenheizung aus → Energie gespart",
+        "hint": "Fussbodenheizung aus → kein Energieverbrauch",
+        "severity": "info",
+    },
+    {
+        "role": "radiator", "state": "off",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Heizkoerper aus → Raum kuehlt ab",
+        "hint": "Heizkoerper aus → Temperatur sinkt",
+        "severity": "info",
+    },
+    {
+        "role": "radiator", "state": "off",
+        "affects": "energy", "same_room": False,
+        "effect": "Heizkoerper aus → Energie gespart",
+        "hint": "Heizkoerper aus → kein Energieverbrauch",
+        "severity": "info",
+    },
+
+    # Thermostat → Heizung / Kuehlung
+    {
+        "role": "thermostat", "state": "on",
+        "affects": "heating", "same_room": True,
+        "effect": "Thermostat aktiv → Heizung wird gesteuert",
+        "hint": "Thermostat regelt → Heizung folgt Solltemperatur",
+        "severity": "info",
+    },
+    {
+        "role": "thermostat", "state": "on",
+        "affects": "cooling", "same_room": True,
+        "effect": "Thermostat aktiv → Kuehlung wird gesteuert",
+        "hint": "Thermostat regelt → Kuehlung folgt Solltemperatur",
+        "severity": "info",
+    },
+    {
+        "role": "thermostat", "state": "off",
+        "affects": "heating", "same_room": True,
+        "effect": "Thermostat aus → Heizung ohne Regelung",
+        "hint": "Thermostat aus → Heizung laeuft ungeregelt oder stoppt",
+        "severity": "info",
+    },
+    {
+        "role": "thermostat", "state": "off",
+        "affects": "cooling", "same_room": True,
+        "effect": "Thermostat aus → Kuehlung ohne Regelung",
+        "hint": "Thermostat aus → Kuehlung laeuft ungeregelt oder stoppt",
+        "severity": "info",
+    },
+
+    # Schloss verriegelt → Alarm / Notify
+    {
+        "role": "lock", "state": "locked",
+        "affects": "alarm", "same_room": False,
+        "effect": "Schloss verriegelt → Sicherheit erhoet",
+        "hint": "Schloss zu → Alarm kann scharf gestellt werden",
+        "severity": "info",
+    },
+
+    # Gas-Leck → Gasventil schliessen
+    {
+        "role": "gas", "state": "on",
+        "affects": "valve", "same_room": False,
+        "effect": "Gas erkannt → Gasventil SOFORT schliessen",
+        "hint": "Gas-Leck → Hauptventil sofort zu, Explosionsgefahr!",
+        "severity": "critical",
+    },
+
+    # Auto zuhause → Licht
+    {
+        "role": "car", "state": "home",
+        "affects": "light", "same_room": False,
+        "effect": "Auto kommt an → Einfahrt/Garage beleuchten",
+        "hint": "Auto zuhause → Willkommenslicht einschalten",
+        "severity": "info",
+    },
+
+    # NAS off → Server / Media
+    {
+        "role": "nas", "state": "off",
+        "affects": "server", "same_room": False,
+        "effect": "NAS offline → Server hat keinen Netzwerkspeicher",
+        "hint": "NAS offline → Backups/Daten nicht verfuegbar fuer Server",
+        "severity": "info",
+    },
+
+    # Intercom → Speaker (leiser/pausieren)
+    {
+        "role": "intercom", "state": "on",
+        "affects": "speaker", "same_room": True,
+        "effect": "Gegensprechanlage aktiv → Lautsprecher stoert",
+        "hint": "Intercom → Lautsprecher pausieren/leiser fuer Gespraech",
+        "severity": "info",
+    },
+
+    # Solar → Batterie laden
+    {
+        "role": "solar", "state": "on",
+        "affects": "battery_charging", "same_room": False,
+        "effect": "Solaranlage produziert → Batterie laden",
+        "hint": "Solar aktiv → Ueberschuss in Batterie speichern",
+        "severity": "info",
+    },
+
+    # Lichtsensor → Dimmer
+    {
+        "role": "light_level", "state": "on",
+        "affects": "dimmer", "same_room": True,
+        "effect": "Helligkeit hoch → Dimmer runterregeln",
+        "hint": "Viel Tageslicht → Dimmer runter, Strom sparen",
+        "severity": "info",
+    },
+
+    # Stuhlbelegung off → Klima
+    {
+        "role": "chair_occupancy", "state": "off",
+        "affects": "climate", "same_room": True,
+        "effect": "Stuhl leer → Raum evtl. ungenutzt",
+        "hint": "Arbeitsplatz verlassen → Klima ggf. absenken",
+        "severity": "info",
+    },
+
+    # Bett verlassen → Thermostat
+    {
+        "role": "bed_occupancy", "state": "off",
+        "affects": "thermostat", "same_room": True,
+        "effect": "Aufgestanden → Thermostat auf Tagestemperatur",
+        "hint": "Bett verlassen → Heizung kann auf Tagestemperatur hochfahren",
+        "severity": "info",
+    },
 ]
 
 
