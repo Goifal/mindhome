@@ -2109,7 +2109,7 @@ workshop:
   - repair_standard
 latency_optimization:
   knowledge_fast_path: true
-  think_control: auto
+  think_control: smart_off    # auto | off | smart_off | on
   upgrade_signal_threshold: 5
   refinement_skip_max_chars: 120
   tools_cache_ttl: 60

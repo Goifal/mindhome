@@ -396,7 +396,15 @@ class OllamaClient:
         model = model or settings.model_smart
         profile = get_model_profile(model)
 
-        # Thinking Mode bestimmen (via Model Profile)
+        # Thinking Mode bestimmen (via Model Profile + settings.yaml)
+        # Konfigurierbar via latency_optimization.think_control:
+        #   "auto"  = Modell entscheidet (Default)
+        #   "off"   = Thinking komplett deaktiviert
+        #   "smart_off" = Thinking nur fuer Smart-Tier aus (Fast immer aus, Deep auto)
+        #   "on"    = Thinking immer aktiviert
+        from .config import yaml_config as _yaml_cfg
+        _think_cfg = (_yaml_cfg.get("latency_optimization") or {}).get("think_control", "smart_off")
+
         if think is not None:
             think_enabled = think
         elif model == settings.model_fast:
@@ -404,12 +412,16 @@ class OllamaClient:
         elif tools and not profile.supports_think_with_tools:
             # Modell kann Think+Tools nicht gleichzeitig
             think_enabled = False
-        elif tier == "smart":
+        elif _think_cfg == "off":
+            think_enabled = False
+        elif _think_cfg == "on":
+            think_enabled = True
+        elif _think_cfg == "smart_off" and tier == "smart":
             # Smart-Tier: Thinking deaktivieren — spart 500-2000 Reasoning-Tokens
             # und halbiert die Latenz. Deep-Tier behaelt Thinking fuer komplexe Aufgaben.
             think_enabled = False
         else:
-            think_enabled = None  # Deep-Tier: Modell entscheidet
+            think_enabled = None  # Modell entscheidet
 
         payload = {
             "model": model,
@@ -512,12 +524,19 @@ class OllamaClient:
         model = model or settings.model_smart
         profile = get_model_profile(model)
 
-        # Thinking Mode (gleiche Logik wie chat(), via Model Profile)
+        # Thinking Mode (gleiche Logik wie chat(), via Model Profile + settings.yaml)
+        from .config import yaml_config as _yaml_cfg
+        _think_cfg = (_yaml_cfg.get("latency_optimization") or {}).get("think_control", "smart_off")
+
         if think is not None:
             think_enabled = think
         elif model == settings.model_fast:
             think_enabled = False
-        elif tier == "smart":
+        elif _think_cfg == "off":
+            think_enabled = False
+        elif _think_cfg == "on":
+            think_enabled = True
+        elif _think_cfg == "smart_off" and tier == "smart":
             think_enabled = False
         else:
             think_enabled = None
