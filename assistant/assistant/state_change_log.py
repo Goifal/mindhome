@@ -8723,6 +8723,194 @@ DEVICE_DEPENDENCIES = [
     },
 
     # =================================================================
+    # 48. KWL (LUEFTUNGSANLAGE) ALS HEIZ-/KUEHLSYSTEM
+    # =================================================================
+    # Viele KWL-Anlagen (z.B. Zehnder, Vallox, Helios) koennen ueber
+    # Waermetauscher, Nachheizregister oder Sole-EWT aktiv heizen und kuehlen.
+    # Diese Abhaengigkeiten fehlen wenn KWL nur als "Lueftung" betrachtet wird.
+
+    # --- KWL HEIZT → Fenster offen = Energieverschwendung ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "window_contact", "same_room": False,
+        "effect": "KWL heizt ueber Nachheizregister + Fenster offen → Waerme geht verloren",
+        "hint": "KWL heizt → Fenster offen = teure Heizenergie geht raus!",
+        "severity": "high",
+    },
+    # --- KWL KUEHLT → Fenster offen = Energieverschwendung ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "window_contact", "same_room": False,
+        "effect": "KWL kuehlt + Fenster offen → kuehle Luft entweicht",
+        "hint": "KWL kuehlt → Fenster offen = Kuehlenergie wird verschwendet!",
+        "severity": "high",
+    },
+
+    # --- KWL HEIZT → Energie ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "energy", "same_room": False,
+        "effect": "KWL im Heizmodus → erhoehter Energieverbrauch (Nachheizregister/WP)",
+        "hint": "KWL heizt → Stromverbrauch steigt durch Nachheizregister",
+        "severity": "info",
+    },
+    # --- KWL KUEHLT → Energie ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "energy", "same_room": False,
+        "effect": "KWL im Kuehlmodus → erhoehter Energieverbrauch",
+        "hint": "KWL kuehlt → Stromverbrauch steigt",
+        "severity": "info",
+    },
+
+    # --- KWL HEIZT + separate Kuehlung = gegeneinander ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "cooling", "same_room": False,
+        "effect": "KWL heizt + Klimaanlage kuehlt → arbeiten gegeneinander",
+        "hint": "KWL heizt UND Kuehlung laeuft → Energieverschwendung, gegeneinander!",
+        "severity": "high",
+    },
+    # --- KWL KUEHLT + separate Heizung = gegeneinander ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "heating", "same_room": False,
+        "effect": "KWL kuehlt + Heizung heizt → arbeiten gegeneinander",
+        "hint": "KWL kuehlt UND Heizung laeuft → Energieverschwendung, gegeneinander!",
+        "severity": "high",
+    },
+    # --- KWL KUEHLT + Heizkoerper = gegeneinander ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "radiator", "same_room": False,
+        "effect": "KWL kuehlt + Heizkoerper an → arbeiten gegeneinander",
+        "hint": "KWL kuehlt UND Heizkoerper an → widerspricht sich!",
+        "severity": "high",
+    },
+    # --- KWL KUEHLT + Fussbodenheizung = gegeneinander ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "KWL kuehlt + Fussbodenheizung an → arbeiten gegeneinander",
+        "hint": "KWL kuehlt UND Fussbodenheizung heizt → widerspricht sich!",
+        "severity": "high",
+    },
+    # --- KWL HEIZT + Fussbodenheizung = doppelt ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "KWL heizt + Fussbodenheizung heizt → ggf. doppelt",
+        "hint": "KWL heizt + Fussbodenheizung → doppelte Heizung, Temperatur pruefen",
+        "severity": "info",
+    },
+    # --- KWL HEIZT + Heizkoerper = doppelt ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "radiator", "same_room": False,
+        "effect": "KWL heizt + Heizkoerper an → doppelte Heizquelle",
+        "hint": "KWL heizt + Heizkoerper → ggf. Heizkoerper runterdrehen",
+        "severity": "info",
+    },
+
+    # --- KWL HEIZT/KUEHLT → Raumtemperatur ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "indoor_temp", "same_room": False,
+        "effect": "KWL heizt → Raumtemperatur steigt ueber Zuluft",
+        "hint": "KWL im Heizmodus → Raumtemperatur steigt (ueber warme Zuluft)",
+        "severity": "info",
+    },
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "indoor_temp", "same_room": False,
+        "effect": "KWL kuehlt → Raumtemperatur sinkt ueber Zuluft",
+        "hint": "KWL im Kuehlmodus → Raumtemperatur sinkt (ueber kuehle Zuluft)",
+        "severity": "info",
+    },
+
+    # --- KWL KUEHLT → Luftfeuchtigkeit / Taupunkt ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "humidity", "same_room": False,
+        "effect": "KWL kuehlt → Kondensation moeglich, Luftfeuchtigkeit aendert sich",
+        "hint": "KWL kuehlt → Kondensat im Geraet moeglich, Ablauf pruefen",
+        "severity": "info",
+    },
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "dew_point", "same_room": False,
+        "effect": "KWL kuehlt Zuluft → Taupunkt-Unterschreitung am Auslass moeglich",
+        "hint": "KWL Kuehlung → Taupunkt beachten, Kondenswasser an Auslaessen!",
+        "severity": "high",
+    },
+
+    # --- KWL HEIZT → Luftfeuchtigkeit sinkt ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "humidity", "same_room": False,
+        "effect": "KWL heizt Zuluft → trocknet Raumluft aus",
+        "hint": "KWL heizt → Luft wird trockener, ggf. Befeuchter noetig",
+        "severity": "info",
+    },
+
+    # --- KWL HEIZT/KUEHLT → Thermostat (Sollwert-Konflikt) ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "thermostat", "same_room": False,
+        "effect": "KWL heizt → Thermostat sieht erhoehte Temperatur, regelt runter",
+        "hint": "KWL heizt → Thermostat ggf. runterregeln, Raumthermostat beachten",
+        "severity": "info",
+    },
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "thermostat", "same_room": False,
+        "effect": "KWL kuehlt → Thermostat sieht niedrigere Temperatur, koennte hochregeln",
+        "hint": "KWL kuehlt → Thermostat koennte Heizung anfordern, Regelkonflikte moeglich!",
+        "severity": "high",
+    },
+
+    # --- KWL HEIZT/KUEHLT + Solar-Ueberschuss ---
+    {
+        "role": "solar", "state": "on",
+        "affects": "ventilation", "same_room": False,
+        "effect": "PV-Ueberschuss → KWL Heiz-/Kuehlbetrieb mit Solar betreiben",
+        "hint": "Solarueberschuss → KWL Nachheizregister/Kuehlung jetzt nutzen",
+        "severity": "info",
+    },
+
+    # --- KWL HEIZT/KUEHLT + Waermepumpe ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "KWL heizt ueber WP-Anbindung → Waermepumpe liefert Vorlauf",
+        "hint": "KWL Heizmodus → Waermepumpe wird als Waermequelle genutzt",
+        "severity": "info",
+    },
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "KWL kuehlt ueber WP-Anbindung → Waermepumpe im Kuehlbetrieb",
+        "hint": "KWL Kuehlmodus → Waermepumpe liefert Kuehlung, Energieverbrauch steigt",
+        "severity": "info",
+    },
+
+    # --- Heizung/Kuehlung → KWL (inverse: andere Systeme beeinflussen KWL) ---
+    {
+        "role": "heating", "state": "on",
+        "affects": "ventilation", "same_room": False,
+        "effect": "Heizung laeuft → KWL-Waermerueckgewinnung effektiver",
+        "hint": "Heizung an → KWL-WRG nutzt Abluft-Waerme, Effizienz steigt",
+        "severity": "info",
+    },
+    {
+        "role": "cooling", "state": "on",
+        "affects": "ventilation", "same_room": False,
+        "effect": "Kuehlung laeuft → KWL sollte nicht gegenheizenl",
+        "hint": "Klimaanlage kuehlt → KWL-Nachheizregister muss aus sein!",
+        "severity": "info",
+    },
+
+    # =================================================================
     # 49. BESCHATTUNG → SOLAR-PV-ERTRAG (Verschattung von Panels)
     # =================================================================
 
