@@ -61,7 +61,7 @@ class RoutineEngine:
         self.briefing_enabled = mb_cfg.get("enabled", True)
         self.briefing_modules = mb_cfg.get("modules", [
             "greeting", "weather", "calendar", "house_status", "travel",
-            "personal_memory",
+            "personal_memory", "device_conflicts",
         ])
         self.weekday_style = mb_cfg.get("weekday_style", "kurz")
         self.weekend_style = mb_cfg.get("weekend_style", "ausfuehrlich")
@@ -95,7 +95,7 @@ class RoutineEngine:
         self.briefing_enabled = mb_cfg.get("enabled", True)
         self.briefing_modules = mb_cfg.get("modules", [
             "greeting", "weather", "calendar", "house_status", "travel",
-            "personal_memory",
+            "personal_memory", "device_conflicts",
         ])
         self.weekday_style = mb_cfg.get("weekday_style", "kurz")
         self.weekend_style = mb_cfg.get("weekend_style", "ausfuehrlich")
@@ -234,9 +234,32 @@ class RoutineEngine:
                 return await self.get_travel_briefing()
             elif module == "personal_memory":
                 return await self._get_personal_memory_briefing(person)
+            elif module == "device_conflicts":
+                return await self._get_device_conflicts_briefing()
         except Exception as e:
             logger.debug("Briefing-Modul '%s' fehlgeschlagen: %s", module, e)
         return ""
+
+    async def _get_device_conflicts_briefing(self) -> str:
+        """Prueft DEVICE_DEPENDENCIES gegen aktuelle States fuer das Briefing."""
+        try:
+            states = await self.ha.get_states()
+            if not states:
+                return ""
+            state_dict = {s["entity_id"]: s.get("state", "") for s in states if "entity_id" in s}
+            from .state_change_log import StateChangeLog
+            scl = StateChangeLog.__new__(StateChangeLog)
+            conflicts = scl.detect_conflicts(state_dict)
+            if not conflicts:
+                return ""
+            lines = [f"Aktuelle Geraete-Konflikte ({len(conflicts)}):"]
+            for c in conflicts[:5]:
+                room_info = f" ({c['room']})" if c.get("room") else ""
+                lines.append(f"- {c['hint']}{room_info}")
+            return "\n".join(lines)
+        except Exception as e:
+            logger.debug("Device-Conflicts Briefing Fehler: %s", e)
+            return ""
 
     async def _get_personal_memory_briefing(self, person: str) -> str:
         """Liefert relevante Erinnerungen und anstehende Daten fuer das Briefing."""
@@ -1118,6 +1141,23 @@ class RoutineEngine:
                             "message": f"{name} ist noch an!",
                             "critical": True,
                         })
+
+        # Device-Dependency Konflikte (naechtliche Sicherheitsrelevanz)
+        try:
+            state_dict = {s["entity_id"]: s.get("state", "") for s in states if "entity_id" in s}
+            from .state_change_log import StateChangeLog
+            scl = StateChangeLog.__new__(StateChangeLog)
+            conflicts = scl.detect_conflicts(state_dict)
+            for c in conflicts[:3]:
+                room_info = f" ({c['room']})" if c.get("room") else ""
+                issues.append({
+                    "type": "device_conflict",
+                    "name": c.get("hint", "Geraete-Konflikt"),
+                    "message": f"{c['hint']}{room_info}",
+                    "critical": False,
+                })
+        except Exception as e:
+            logger.debug("Goodnight Device-Conflict Check Fehler: %s", e)
 
         return issues
 

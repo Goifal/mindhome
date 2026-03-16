@@ -670,6 +670,12 @@ class ProactiveManager:
         if entity_id.startswith("sensor."):
             await self._check_appliance_power(entity_id, new_val, old_val)
 
+        # Device-Dependency Konflikte: Rollen-basierte Erkennung
+        try:
+            await self._check_device_dependency_conflict(entity_id, new_val, old_val)
+        except Exception as _ddc_err:
+            logger.debug("Device-Dependency-Conflict Fehler: %s", _ddc_err)
+
         # Feature 2: Manual Override Detection für Covers
         # Ignoriere: unavailable/unknown (offline/online), opening/closing (Bewegungs-Abschlüsse)
         _non_physical = {"unavailable", "unknown", ""}
@@ -816,6 +822,91 @@ class ProactiveManager:
             if any(p.lower() in eid for p in patterns):
                 return appliance
         return None
+
+    async def _check_device_dependency_conflict(self, entity_id: str, new_val: str, old_val: str):
+        """Prueft ob State-Aenderung einen Device-Dependency-Konflikt ausloest.
+
+        Nutzt DEVICE_DEPENDENCIES aus state_change_log.py mit Rollen-basiertem
+        Matching. Meldet nur HIGH/MEDIUM-Konflikte (CRITICAL wie Rauch/Wasser
+        werden bereits direkt in _handle_state_change behandelt).
+        """
+        from .state_change_log import StateChangeLog, DEVICE_DEPENDENCIES
+
+        role = StateChangeLog._get_entity_role(entity_id)
+        if not role:
+            return
+
+        # Nur Regeln pruefen die durch diese Rolle getriggert werden
+        matching_deps = [d for d in DEVICE_DEPENDENCIES if d["role"] == role and d["state"] == new_val]
+        if not matching_deps:
+            return
+
+        # Cooldown: max 1 Dependency-Notification pro Entity pro 30 Min
+        redis_client = getattr(getattr(self.brain, "memory", None), "redis", None)
+        if redis_client:
+            cooldown_key = f"mha:dep_conflict:{entity_id}"
+            already = await redis_client.get(cooldown_key)
+            if already:
+                return
+
+        entity_room = StateChangeLog._get_entity_room(entity_id)
+
+        # Aktuelle States holen
+        all_states = await self.brain.ha.get_states()
+        if not all_states:
+            return
+
+        state_dict = {s["entity_id"]: s.get("state", "") for s in all_states if "entity_id" in s}
+        entity_roles = {eid: StateChangeLog._get_entity_role(eid) for eid in state_dict}
+        entity_rooms = {eid: StateChangeLog._get_entity_room(eid) for eid in state_dict}
+
+        found_conflicts = []
+        for dep in matching_deps:
+            affects_domain = dep.get("affects", "")
+            same_room = dep.get("same_room", False)
+
+            # Finde betroffene Entities
+            for eid, st in state_dict.items():
+                e_role = entity_roles.get(eid, "")
+                e_domain = eid.split(".")[0] if "." in eid else ""
+                if e_domain == affects_domain or e_role == affects_domain:
+                    if same_room and entity_room and entity_rooms.get(eid, "") != entity_room:
+                        continue
+                    # Konflikt gefunden
+                    room_info = f" ({entity_room})" if entity_room else ""
+                    found_conflicts.append({
+                        "hint": dep.get("hint", dep.get("effect", "")),
+                        "effect": dep.get("effect", ""),
+                        "room": entity_room,
+                        "room_info": room_info,
+                        "trigger": entity_id,
+                        "affected": eid,
+                    })
+                    break  # Ein Treffer pro Regel reicht
+
+        if not found_conflicts:
+            return
+
+        # Cooldown setzen (30 Minuten)
+        if redis_client:
+            await redis_client.set(cooldown_key, "1", ex=1800)
+
+        # Sicherheits-relevante Rollen → HIGH, Rest → MEDIUM
+        safety_roles = {
+            "smoke", "co", "gas", "water_leak", "flood",
+            "window_contact", "door_contact",
+        }
+        urgency = HIGH if role in safety_roles else MEDIUM
+
+        hints = [c["hint"] for c in found_conflicts[:3]]
+        await self._notify("device_dependency_conflict", urgency, {
+            "entity": entity_id,
+            "role": role,
+            "new_state": new_val,
+            "conflicts": found_conflicts[:3],
+            "hints": hints,
+            "message": "; ".join(hints),
+        })
 
     async def _check_appliance_power(self, entity_id: str, new_val: str, old_val: str):
         """Appliance-Erkennung: Setzt idle-Marker bei Power-Drop, bestaetigt nach Wartezeit."""

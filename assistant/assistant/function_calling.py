@@ -3491,8 +3491,9 @@ class FunctionExecutor:
     async def _check_consequences(self, func_name: str, args: dict) -> Optional[str]:
         """Prueft vor Ausfuehrung ob die Aktion im Kontext sinnvoll ist.
 
-        Statische Regeln — kein LLM-Overhead. Blockiert NICHT,
-        gibt nur einen Hinweis-String zurück.
+        Nutzt Entity-Annotation-Rollen fuer praezises Matching.
+        Beruecksichtigt Raum-Zuordnung (same_room).
+        Blockiert NICHT — gibt nur einen Hinweis-String zurueck.
 
         Returns:
             Hinweis-String oder None
@@ -3502,107 +3503,156 @@ class FunctionExecutor:
             return None
 
         try:
+            from .state_change_log import StateChangeLog
             hour = datetime.now().hour
-            states = None  # Lazy-load, einmal pro Request
+            states_raw = None  # Lazy-Load
 
             async def _get_states():
-                nonlocal states
-                if states is None:
-                    states = await self.ha.get_states() or []
-                return states
+                nonlocal states_raw
+                if states_raw is None:
+                    states_raw = await self.ha.get_states() or []
+                return states_raw
 
-            # Regel: Heizung hoch + Fenster offen
-            if func_name == "set_climate":
+            def _role(entity_id: str) -> str:
+                return StateChangeLog._get_entity_role(entity_id)
+
+            def _room(entity_id: str) -> str:
+                return StateChangeLog._get_entity_room(entity_id)
+
+            def _entities_by_role(all_states: list, role: str, state_val: str = None) -> list[dict]:
+                """Findet alle Entities mit bestimmter Rolle (und optionalem State)."""
+                result = []
+                for s in all_states:
+                    eid = s.get("entity_id", "")
+                    if _role(eid) == role:
+                        if state_val is None or s.get("state") == state_val:
+                            result.append(s)
+                return result
+
+            def _friendly(s: dict) -> str:
+                return s.get("attributes", {}).get("friendly_name", s.get("entity_id", ""))
+
+            target_room = (args.get("room") or "").lower()
+
+            # ── Regel: Heizung/Klima + Fenster offen (room-aware) ──
+            if func_name in ("set_climate", "set_climate_room"):
                 _states = await _get_states()
-                open_windows = [
-                    s.get("attributes", {}).get("friendly_name", s["entity_id"])
-                    for s in _states
-                    if s.get("entity_id", "").startswith(("binary_sensor.fenster", "binary_sensor.window"))
-                    and s.get("state") == "on"
-                ]
-                if open_windows:
-                    room = args.get("room", "")
-                    windows_str = ", ".join(open_windows[:2])
-                    return f"Fenster {windows_str} offen — Heizung wird ineffizient."
+                open_windows = _entities_by_role(_states, "window_contact", "on")
+                if target_room:
+                    room_windows = [s for s in open_windows if _room(s["entity_id"]) == target_room]
+                    if room_windows:
+                        names = ", ".join(_friendly(s) for s in room_windows[:2])
+                        return f"Fenster {names} im {target_room.capitalize()} offen — Heizung wird ineffizient."
+                elif open_windows:
+                    names = ", ".join(_friendly(s) for s in open_windows[:2])
+                    return f"Fenster {names} offen — Heizung wird ineffizient."
 
-            # Regel: Medien laut + spät nachts
+            # ── Regel: Heizung hoch bei extremer Kaelte draussen ──
+            if func_name in ("set_climate", "set_climate_room"):
+                temp_arg = args.get("temperature")
+                if temp_arg is not None:
+                    try:
+                        target_temp = float(temp_arg)
+                        if target_temp >= 24:
+                            _states = await _get_states()
+                            outdoor = _entities_by_role(_states, "outdoor_temperature")
+                            for s in outdoor:
+                                try:
+                                    outside = float(s.get("state", 0))
+                                    if outside <= -5:
+                                        return (
+                                            f"Bei {outside}\u00b0C Aussentemperatur wird die "
+                                            f"Heizung auf {target_temp}\u00b0C Muehe haben."
+                                        )
+                                except (ValueError, TypeError):
+                                    pass
+                    except (ValueError, TypeError):
+                        pass
+
+            # ── Regel: Medien laut + spaet nachts ──
             if func_name == "play_media" and (hour >= 22 or hour < 6):
-                return f"Es ist {hour} Uhr — Lautstärke beachten."
+                return f"Es ist {hour} Uhr — Lautstaerke beachten."
 
-            # Regel: Alarm scharf + Fenster offen
+            # ── Regel: Alarm scharf + Fenster/Tuer offen ──
             if func_name == "arm_security_system":
                 _states = await _get_states()
-                open_windows = [
-                    s.get("attributes", {}).get("friendly_name", s["entity_id"])
-                    for s in _states
-                    if s.get("entity_id", "").startswith(("binary_sensor.fenster", "binary_sensor.window"))
-                    and s.get("state") == "on"
-                ]
-                if open_windows:
-                    windows_str = ", ".join(open_windows[:3])
-                    return f"Fenster {windows_str} noch offen."
+                open_openings = (
+                    _entities_by_role(_states, "window_contact", "on")
+                    + _entities_by_role(_states, "door_contact", "on")
+                )
+                if open_openings:
+                    names = ", ".join(_friendly(s) for s in open_openings[:3])
+                    return f"{names} noch offen — Alarm kann nicht sicher geschaltet werden."
 
-            # Regel: Alle Lichter aus + jemand noch aktiv
+            # ── Regel: Alle Lichter aus + jemand noch aktiv ──
             if func_name == "set_light_all":
                 state = str(args.get("state", "")).lower()
                 if state == "off" and 8 <= hour <= 23:
-                    # Prüfen ob Aktivität erkannt
                     import assistant.main as main_module
                     if hasattr(main_module, "brain") and hasattr(main_module.brain, "activity"):
                         activity = main_module.brain.activity.current_activity
                         if activity in ("focused", "working", "watching"):
                             return "Jemand scheint noch aktiv zu sein."
 
-            # Regel: Heizung hoch bei extremer Kälte draußen → Warnung
-            if func_name in ("set_climate", "set_climate_room"):
-                temp_arg = args.get("temperature")
-                if temp_arg is not None:
-                    try:
-                        target = float(temp_arg)
-                        if target >= 24:
-                            states = await self.ha.get_states()
-                            for s in (states or []):
-                                eid = s.get("entity_id", "")
-                                if "outdoor" in eid and "temperature" in eid:
-                                    try:
-                                        outside = float(s.get("state", 0))
-                                        if outside <= -5:
-                                            return (
-                                                f"Bei {outside}°C Aussentemperatur wird die "
-                                                f"Heizung auf {target}°C Mühe haben."
-                                            )
-                                    except (ValueError, TypeError):
-                                        pass
-                    except (ValueError, TypeError):
-                        pass
+            # ── Regel: Licht aus + Bewegung im selben Raum ──
+            if func_name == "set_light":
+                state = str(args.get("state", "")).lower()
+                if state == "off" and target_room:
+                    _states = await _get_states()
+                    motion_sensors = _entities_by_role(_states, "motion", "on")
+                    for s in motion_sensors:
+                        if _room(s["entity_id"]) == target_room:
+                            return f"Im {target_room.capitalize()} wurde gerade Bewegung erkannt."
 
-            # Regel: Rollladen runter bei Sturm → Warnung
+            # ── Regel: Rollladen oeffnen bei Sturm ──
             if func_name in ("set_cover", "set_cover_all"):
                 position = args.get("position")
                 action = str(args.get("action", "")).lower()
                 if position is not None or action in ("open", "up"):
-                    states = await self.ha.get_states()
-                    for s in (states or []):
-                        eid = s.get("entity_id", "")
-                        if "wind" in eid and "speed" in eid:
-                            try:
-                                wind = float(s.get("state", 0))
-                                if wind >= 60:  # km/h
-                                    return f"Windgeschwindigkeit {wind} km/h — Rollläden besser oben lassen."
-                            except (ValueError, TypeError):
-                                pass
+                    _states = await _get_states()
+                    wind_sensors = _entities_by_role(_states, "wind_speed")
+                    for s in wind_sensors:
+                        try:
+                            wind = float(s.get("state", 0))
+                            if wind >= 60:
+                                return f"Windgeschwindigkeit {wind} km/h — Rolllaeden besser geschlossen lassen."
+                        except (ValueError, TypeError):
+                            pass
 
-            # Regel: Licht aus im spezifischen Raum + Bewegung erkannt
-            if func_name == "set_light":
-                state = str(args.get("state", "")).lower()
-                room = args.get("room", "").lower()
-                if state == "off" and room:
-                    states = await self.ha.get_states()
-                    for s in (states or []):
-                        eid = s.get("entity_id", "")
-                        if (eid.startswith("binary_sensor.motion") or eid.startswith("binary_sensor.bewegung")):
-                            if room in eid.lower() and s.get("state") == "on":
-                                return f"Im {room.capitalize()} wurde gerade Bewegung erkannt."
+            # ── Regel: Bewaesserung bei Regen ──
+            if func_name in ("set_switch",):
+                eid_arg = str(args.get("entity_id", "")).lower()
+                if "irrigation" in eid_arg or "bewaesserung" in eid_arg:
+                    _states = await _get_states()
+                    rain_sensors = _entities_by_role(_states, "rain", "on")
+                    if rain_sensors:
+                        return "Es regnet gerade — Bewaesserung ist unnoetig."
+
+            # ── Regel: Garagentor oeffnen nachts ──
+            if func_name in ("set_cover",):
+                eid_arg = str(args.get("entity_id", "")).lower()
+                if "garage" in eid_arg and (hour >= 23 or hour < 5):
+                    return f"Es ist {hour} Uhr — Garagentor oeffnen um diese Zeit?"
+
+            # ── Dependency-basierte Konflikte via StateChangeLog ──
+            try:
+                _states = await _get_states()
+                state_dict = {s["entity_id"]: s.get("state", "") for s in _states if "entity_id" in s}
+                target_entity = args.get("entity_id", "")
+                new_state_val = args.get("state", args.get("action", ""))
+                if target_entity and new_state_val:
+                    state_dict[target_entity] = str(new_state_val).lower()
+                _scl = StateChangeLog.__new__(StateChangeLog)
+                conflicts = _scl.detect_conflicts(state_dict)
+                if target_entity and conflicts:
+                    relevant = [
+                        c for c in conflicts
+                        if target_entity in c.get("entities", [])
+                    ]
+                    if relevant:
+                        return relevant[0]["hint"]
+            except Exception:
+                pass
 
             return None
         except Exception as e:
