@@ -29,6 +29,17 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
+# ── Zentrale Device-Dependency Pruefung fuer call_service ──────────
+# Domains die physische Geraete steuern (nicht TTS, Automationen etc.)
+_ACTION_DOMAINS = frozenset({
+    "light", "climate", "cover", "switch", "lock",
+    "alarm_control_panel", "media_player", "vacuum",
+    "fan", "humidifier", "water_heater",
+})
+# Rate-Limiter: gleiche Entity nicht oefter als alle 30s pruefen
+_dep_check_cache: dict[str, float] = {}
+_DEP_CHECK_INTERVAL = 30.0
+
 # Retry-Konfiguration
 MAX_RETRIES = 3
 RETRY_BACKOFF_BASE = 1.5  # Sekunden: 1.5, 3.0, 4.5
@@ -198,6 +209,11 @@ class HomeAssistantClient:
                 domain, service, data,
             )
 
+        # ── Zentrale Device-Dependency Pruefung ──────────────────
+        # Nur fuer physische Geraete-Domains, rate-limited pro Entity
+        if domain in _ACTION_DOMAINS:
+            await self._check_dependency_conflicts(domain, service, data)
+
         result = await self._post_ha(
             f"/api/services/{domain}/{service}", data or {}
         )
@@ -214,6 +230,59 @@ class HomeAssistantClient:
         return await self._post_ha(
             f"/api/services/{domain}/{service}?return_response", data or {}
         )
+
+    async def _check_dependency_conflicts(
+        self, domain: str, service: str, data: Optional[dict] = None,
+    ) -> None:
+        """Zentraler Device-Dependency Check fuer ALLE call_service Aufrufe.
+
+        Prueft ob die geplante Aktion einen Konflikt mit dem aktuellen
+        Haus-Zustand erzeugt. Nur Logging — blockiert nie.
+        Rate-Limited: gleiche Entity maximal alle 30s pruefen.
+        """
+        try:
+            entity_id = (data or {}).get("entity_id", "")
+            if not entity_id:
+                return
+
+            # Rate-Limiter: nicht staendig die gleiche Entity pruefen
+            now = time.monotonic()
+            last_check = _dep_check_cache.get(entity_id, 0.0)
+            if now - last_check < _DEP_CHECK_INTERVAL:
+                return
+            _dep_check_cache[entity_id] = now
+
+            # Cache aufraeumen (max 200 Eintraege)
+            if len(_dep_check_cache) > 200:
+                cutoff = now - _DEP_CHECK_INTERVAL * 2
+                expired = [k for k, v in _dep_check_cache.items() if v < cutoff]
+                for k in expired:
+                    del _dep_check_cache[k]
+
+            # State aus service ableiten
+            state_val = "on"
+            if "off" in service:
+                state_val = "off"
+            elif "open" in service:
+                state_val = "on"
+            elif "close" in service:
+                state_val = "off"
+
+            from .state_change_log import StateChangeLog
+            states = await self.get_states() or []
+            hints = StateChangeLog.check_action_dependencies(
+                f"set_{domain}",
+                {"entity_id": entity_id, "state": state_val},
+                states,
+            )
+            if hints:
+                logger.info(
+                    "Dependency-Konflikt: %s.%s(%s) → %s",
+                    domain, service, entity_id, hints[0],
+                )
+        except Exception:
+            # Dependency-Check darf NIEMALS die Aktion verhindern
+            pass
 
     async def fire_event(
         self, event_type: str, event_data: Optional[dict] = None
