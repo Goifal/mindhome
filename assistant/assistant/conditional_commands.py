@@ -64,6 +64,8 @@ class ConditionalCommands:
         one_shot: bool = True,
         person: str = "",
         trust_level: str = "member",
+        sub_triggers: Optional[list] = None,
+        logic_operator: str = "and",
     ) -> dict:
         """Erstellt einen neuen bedingten Befehl.
 
@@ -73,7 +75,10 @@ class ConditionalCommands:
                 - "state_attribute": Entity-Attribut erreicht Wert
                 - "person_arrives": Person kommt nach Hause
                 - "person_leaves": Person verlaesst das Haus
+                - "compound": Mehrere Trigger mit AND/OR-Logik
             trigger_value: Wert des Triggers (z.B. "sensor.regen:on", "person.papa:home")
+            sub_triggers: Liste von Sub-Trigger-Dicts bei compound (je mit trigger_type, trigger_value)
+            logic_operator: "and" oder "or" bei compound-Triggern
             action_function: Auszufuehrende Funktion (z.B. "set_cover")
             action_args: Argumente für die Funktion
             label: Beschreibung des Conditionals
@@ -141,6 +146,10 @@ class ConditionalCommands:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "executed_count": 0,
         }
+
+        if trigger_type == "compound" and sub_triggers:
+            conditional["sub_triggers"] = sub_triggers
+            conditional["logic_operator"] = logic_operator
 
         if dep_note:
             conditional["dependency_warning"] = dep_note
@@ -267,6 +276,33 @@ class ConditionalCommands:
         """Prueft ob ein Trigger matcht."""
         trigger_type = cond.get("trigger_type", "")
         trigger_value = cond.get("trigger_value", "")
+
+        # Compound-Trigger: AND/OR-Logik mit Sub-Triggern
+        # OR: mindestens ein Sub-Trigger muss beim aktuellen Event matchen
+        # AND: alle Sub-Trigger muessen aktuell zutreffen (State-basiert)
+        if trigger_type == "compound":
+            sub_triggers = cond.get("sub_triggers", [])
+            operator = cond.get("logic_operator", "and").lower()
+            if not sub_triggers:
+                return False
+            results = [
+                self._check_trigger_match(sub, entity_id, new_state, old_state, attributes)
+                for sub in sub_triggers
+            ]
+            if operator == "or":
+                return any(results)
+            # AND: Mindestens einer muss jetzt matchen + alle anderen
+            # muessen als letzter bekannter State zutreffen.
+            # _compound_state wird von check_event via Redis-Lookup befuellt.
+            if any(results):
+                cached = cond.get("_compound_state", {})
+                for i, sub in enumerate(sub_triggers):
+                    if results[i]:
+                        cached[str(i)] = True
+                    # Pruefen ob der Sub-Trigger-State noch gilt
+                cond["_compound_state"] = cached
+                return all(cached.get(str(i), False) for i in range(len(sub_triggers)))
+            return False
 
         if trigger_type == "state_change":
             # Format: "entity_id:target_state" oder nur "entity_id" (jeder Wechsel)

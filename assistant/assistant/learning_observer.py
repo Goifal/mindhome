@@ -119,7 +119,7 @@ class LearningObserver:
             # Aktion aufzeichnen — mit Person-Prefix wenn bekannt
             action_key = f"{entity_id}:{new_state}"
             person_prefix = f"{person}:" if person else ""
-            time_slot = f"{hour:02d}:{(minute // 15) * 15:02d}"  # 15-Min-Slots
+            time_slot = f"{hour:02d}:{(minute // 5) * 5:02d}"  # 5-Min-Slots
 
             # F-053: Cycle detection — skip entities+timeslots that have already been
             # automated via a previous suggestion. Without this, the automation fires

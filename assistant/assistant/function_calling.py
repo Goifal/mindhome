@@ -1588,8 +1588,12 @@ def _get_assistant_tools_static() -> list:
                     },
                     "action": {
                         "type": "string",
-                        "enum": ["play", "pause", "stop", "next", "previous", "volume", "volume_up", "volume_down"],
-                        "description": "Medien-Aktion. 'volume' = Lautstärke auf Wert setzen, 'volume_up' = lauter (+10%), 'volume_down' = leiser (-10%)",
+                        "enum": ["play", "pause", "stop", "next", "previous", "volume", "volume_up", "volume_down", "source"],
+                        "description": "Medien-Aktion. 'volume' = Lautstärke auf Wert setzen, 'volume_up' = lauter (+10%), 'volume_down' = leiser (-10%), 'source' = Eingangsquelle wechseln (z.B. HDMI, TV, Bluetooth)",
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "Eingangsquelle fuer action='source' (z.B. 'HDMI1', 'TV', 'Bluetooth', 'AUX')",
                     },
                     "query": {
                         "type": "string",
@@ -5354,6 +5358,7 @@ class FunctionExecutor:
         "effect", "color_name", "transition",
         "temperature", "target_temp_high", "target_temp_low", "hvac_mode",
         "fan_mode", "swing_mode", "preset_mode",
+        "humidity", "target_humidity", "mode",
         "position", "tilt_position",
         "volume_level", "media_content_id", "media_content_type", "source",
         "message", "title", "data",
@@ -5365,10 +5370,10 @@ class FunctionExecutor:
     # Confirmation-Flow laufen, nicht ueber das generische call_service.
     _CALL_SERVICE_ALLOWED_DOMAINS = frozenset({
         "light", "switch", "climate", "cover", "fan",
-        "media_player", "scene",
+        "media_player", "scene", "humidifier",
         "input_boolean", "input_number", "input_select", "input_text",
         "notify", "number", "select", "button",
-        "vacuum",
+        "vacuum", "homeassistant", "group",
         "shopping_list", "calendar", "timer", "counter",
     })
 
@@ -5484,6 +5489,22 @@ class FunctionExecutor:
             direction = "lauter" if action == "volume_up" else "leiser" if action == "volume_down" else ""
             msg = f"Lautstärke {direction} auf {int(volume_pct)}%" if direction else f"Lautstärke auf {int(volume_pct)}%"
             return {"success": success, "message": msg}
+
+        # Source/Input-Switching
+        if action == "source":
+            source_name = args.get("source", "")
+            if not source_name:
+                # Verfuegbare Quellen auflisten
+                state = await self.ha.get_state(entity_id)
+                sources = (state or {}).get("attributes", {}).get("source_list", [])
+                if sources:
+                    return {"success": True, "message": f"Verfuegbare Quellen: {', '.join(sources)}"}
+                return {"success": False, "message": "Keine Quelle angegeben und keine Quellenliste verfuegbar"}
+            success = await self.ha.call_service(
+                "media_player", "select_source",
+                {"entity_id": entity_id, "source": source_name},
+            )
+            return {"success": success, "message": f"Quelle gewechselt: {source_name}"}
 
         service_map = {
             "play": "media_play",

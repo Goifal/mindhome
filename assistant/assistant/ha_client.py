@@ -209,6 +209,19 @@ class HomeAssistantClient:
                 domain, service, data,
             )
 
+        # ── Unavailable-Check: Geraet erreichbar? ──────────────────
+        _eid = (data or {}).get("entity_id", "")
+        if _eid and domain in _ACTION_DOMAINS:
+            try:
+                _state = await self.get_state(_eid)
+                if _state and _state.get("state") == "unavailable":
+                    logger.warning(
+                        "Geraet nicht erreichbar: %s (state=unavailable), Aktion %s.%s wird trotzdem versucht",
+                        _eid, domain, service,
+                    )
+            except Exception:
+                pass
+
         # ── Zentrale Device-Dependency Pruefung ──────────────────
         # Nur fuer physische Geraete-Domains, rate-limited pro Entity.
         # Ueberspringen wenn FunctionExecutor bereits geprueft hat
