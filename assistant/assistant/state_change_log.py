@@ -27,8 +27,15 @@ LOG_TTL_SECONDS = 6 * 3600  # 6 Stunden
 
 # Geraete-Abhaengigkeiten: Welche Zustaende sich gegenseitig beeinflussen
 # Prefix-Match: "binary_sensor.fenster" matcht auch "binary_sensor.fenster_kueche"
+#
+# WICHTIG: Diese Regeln steuern NICHTS. Sie geben JARVIS rein kognitives
+# Verstaendnis darueber welche Geraetezustaende sich gegenseitig beeinflussen,
+# damit er dem User intelligente Hinweise geben kann.
 DEVICE_DEPENDENCIES = [
-    # === FENSTER / TUEREN → KLIMA ===
+
+    # =====================================================================
+    # 1. FENSTER / TUEREN → KLIMA / ENERGIE / SICHERHEIT
+    # =====================================================================
     {
         "condition": ("binary_sensor.fenster", "on"),
         "affects": "climate",
