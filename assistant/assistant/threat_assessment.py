@@ -505,6 +505,26 @@ class ThreatAssessment:
             score -= 10
             details.append("Nacht + niemand zuhause")
 
+        # Device-Dependency-Konflikte: Compound-Severity
+        try:
+            from .state_change_log import StateChangeLog
+            _state_dict = {
+                s["entity_id"]: s.get("state", "")
+                for s in states if "entity_id" in s
+            }
+            _scl = StateChangeLog.__new__(StateChangeLog)
+            _conflicts = _scl.detect_conflicts(_state_dict)
+            _active = [c for c in _conflicts if c.get("affected_active")]
+            if _active:
+                # Eskalierend: 1=-5, 2=-15, 3+=-25
+                _n = len(_active)
+                _penalty = 5 if _n == 1 else (15 if _n == 2 else 25)
+                score -= _penalty
+                _hints = [c.get("hint", "") for c in _active[:3]]
+                details.append(f"Geraete-Konflikte ({_n}): {'; '.join(_hints)}")
+        except Exception as _dep_err:
+            logger.debug("Threat-Assessment Dependency-Check: %s", _dep_err)
+
         score = max(0, score)
 
         if score >= 90:

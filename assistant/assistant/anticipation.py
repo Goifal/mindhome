@@ -681,6 +681,25 @@ class AnticipationEngine:
                 else:
                     suggestion["mode"] = "ask"
 
+                # Device-Dependency-Check: Vorschlag validieren
+                try:
+                    from .state_change_log import StateChangeLog
+                    import assistant.main as main_module
+                    if hasattr(main_module, "brain"):
+                        _states = await main_module.brain.ha.get_states() or []
+                        _fn = suggestion.get("function", "")
+                        _args = suggestion.get("args", {})
+                        _dep_hints = StateChangeLog.check_action_dependencies(_fn, _args, _states)
+                        if _dep_hints:
+                            suggestion["dependency_warnings"] = _dep_hints
+                            # Modus herabstufen: auto→suggest, suggest→ask
+                            if suggestion["mode"] == "auto":
+                                suggestion["mode"] = "suggest"
+                            elif suggestion["mode"] == "suggest":
+                                suggestion["mode"] = "ask"
+                except Exception:
+                    pass
+
                 suggestions.append(suggestion)
 
                 # Cooldown setzen (1 Stunde)

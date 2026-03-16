@@ -1583,6 +1583,63 @@ class StateChangeLog:
             "NIEMALS eine Aktion des Users wegen eines Konflikts."
         )
 
+    @staticmethod
+    def check_action_dependencies(
+        action_function: str,
+        action_args: dict,
+        ha_states: list[dict],
+    ) -> list[str]:
+        """Prueft ob eine geplante Aktion Device-Dependency-Konflikte ausloest.
+
+        Wiederverwendbare Methode fuer alle Module (action_planner, protocol_engine,
+        conflict_resolver, self_automation, conditional_commands).
+
+        Args:
+            action_function: Funktionsname (z.B. "set_climate", "set_light")
+            action_args: Argumente der Funktion
+            ha_states: Aktuelle HA-States als Liste von State-Dicts
+
+        Returns:
+            Liste von Hinweis-Strings. Leer wenn keine Konflikte.
+        """
+        hints = []
+        try:
+            state_dict = {
+                s["entity_id"]: s.get("state", "")
+                for s in ha_states
+                if "entity_id" in s
+            }
+            # Hypothetischen neuen State eintragen
+            target_entity = action_args.get("entity_id", "")
+            new_state_val = action_args.get("state", action_args.get("action", ""))
+            if target_entity and new_state_val:
+                state_dict[target_entity] = str(new_state_val).lower()
+
+            scl = StateChangeLog.__new__(StateChangeLog)
+            conflicts = scl.detect_conflicts(state_dict)
+
+            if target_entity and conflicts:
+                relevant = [
+                    c for c in conflicts
+                    if target_entity in c.get("entities", [])
+                ]
+                for c in relevant[:3]:
+                    room_info = f" ({c.get('room', '')})" if c.get("room") else ""
+                    hints.append(f"{c['hint']}{room_info}")
+            elif not target_entity and conflicts:
+                # Ohne target_entity: Domain-basiert filtern
+                domain = action_function.replace("set_", "").replace("_room", "")
+                relevant = [
+                    c for c in conflicts
+                    if domain in c.get("affected_role", "") or domain in c.get("trigger_role", "")
+                ]
+                for c in relevant[:3]:
+                    room_info = f" ({c.get('room', '')})" if c.get("room") else ""
+                    hints.append(f"{c['hint']}{room_info}")
+        except Exception as e:
+            logger.debug("check_action_dependencies Fehler: %s", e)
+        return hints
+
     def format_for_prompt(self, n: int = 10) -> str:
         """Formatiert die letzten Aenderungen als LLM-Kontext.
 

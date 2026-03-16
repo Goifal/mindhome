@@ -425,6 +425,7 @@ class InsightEngine:
             (self.check_night_security, self._check_night_security),
             (self.check_heating_vs_sun, self._check_heating_vs_sun),
             (self.check_forgotten_devices, self._check_forgotten_devices),
+            (True, self._check_device_dependency_conflicts),  # DEVICE_DEPENDENCIES
         ]
 
     async def _run_all_checks(self) -> list[dict]:
@@ -449,6 +450,33 @@ class InsightEngine:
                 logger.warning("Check %s fehlgeschlagen: %s", method.__name__, e)
 
         return insights
+
+    async def _check_device_dependency_conflicts(self, data: dict) -> Optional[dict]:
+        """Prueft aktive Device-Dependency-Konflikte via DEVICE_DEPENDENCIES."""
+        try:
+            from .state_change_log import StateChangeLog
+            states = data.get("states", [])
+            if not states:
+                return None
+            state_dict = {
+                s["entity_id"]: s.get("state", "")
+                for s in states if "entity_id" in s
+            }
+            scl = StateChangeLog.__new__(StateChangeLog)
+            conflicts = scl.detect_conflicts(state_dict)
+            active = [c for c in conflicts if c.get("affected_active")]
+            if not active:
+                return None
+            hints = [c.get("hint", "") for c in active[:3]]
+            return {
+                "check": "device_dependency_conflicts",
+                "message": f"{len(active)} Geraete-Konflikt(e): {'; '.join(hints)}",
+                "urgency": "medium" if len(active) < 3 else "high",
+                "data": {"conflicts": active[:5], "count": len(active)},
+            }
+        except Exception as e:
+            logger.debug("Device-Dependency-Insight Fehler: %s", e)
+            return None
 
     async def _check_weather_windows(self, data: dict) -> Optional[dict]:
         """Regen/Sturm in Forecast + Fenster offen."""

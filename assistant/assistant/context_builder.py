@@ -296,6 +296,29 @@ class ContextBuilder:
             # Warnungen
             context["alerts"] = self._extract_alerts(states)
 
+            # Device-Dependency-Konflikte als LLM-Kontext
+            try:
+                from .state_change_log import StateChangeLog
+                _state_dict = {
+                    s["entity_id"]: s.get("state", "")
+                    for s in states if "entity_id" in s
+                }
+                _scl = StateChangeLog.__new__(StateChangeLog)
+                _conflicts = _scl.detect_conflicts(_state_dict)
+                if _conflicts:
+                    _active = [c for c in _conflicts if c.get("affected_active")]
+                    if _active:
+                        context["device_conflicts"] = [
+                            {
+                                "hint": c.get("hint", ""),
+                                "effect": c.get("effect", ""),
+                                "room": c.get("trigger_room", ""),
+                            }
+                            for c in _active[:5]
+                        ]
+            except Exception as _dc_err:
+                logger.debug("Device-Conflict-Kontext: %s", _dc_err)
+
             # MCU-JARVIS: Anomalie-Kontext — ungewöhnliche Zustaende erkennen
             if yaml_config.get("mcu_intelligence", {}).get("anomaly_detection", True):
                 anomalies = self._detect_anomalies(states)

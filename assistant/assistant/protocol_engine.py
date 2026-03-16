@@ -168,6 +168,21 @@ class ProtocolEngine:
         if not steps:
             return {"success": False, "message": "Protokoll hat keine Schritte."}
 
+        # Device-Dependency-Validierung: Pruefen ob Schritte Konflikte erzeugen
+        dep_warnings = []
+        try:
+            from .state_change_log import StateChangeLog
+            import assistant.main as main_module
+            if hasattr(main_module, "brain"):
+                _states = await main_module.brain.ha.get_states() or []
+                for _step in steps:
+                    _tool = _step.get("tool", "")
+                    _args = _step.get("args", {})
+                    _hints = StateChangeLog.check_action_dependencies(_tool, _args, _states)
+                    dep_warnings.extend(_hints)
+        except Exception as _dep_err:
+            logger.debug("Protocol Dependency-Check: %s", _dep_err)
+
         # Vor Ausfuehrung: Aktuellen Zustand snapshotten fuer praezises Undo
         live_undo_steps = await self._snapshot_undo_steps(steps)
 
@@ -184,6 +199,13 @@ class ProtocolEngine:
                     errors.append(f"{tool}: {result}")
             except Exception as e:
                 errors.append(f"{tool}: {e}")
+
+        # Dependency-Warnings an Ergebnis anfuegen
+        if dep_warnings:
+            for _ex in executed:
+                if isinstance(_ex, dict):
+                    _ex.setdefault("dependency_warnings", dep_warnings[:3])
+                    break
 
         # Live-Undo-Steps im Protokoll aktualisieren (ueberschreibt Defaults)
         if live_undo_steps:
