@@ -6832,6 +6832,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         formatted = await self._safe_format(message, "low")
         await self._speak_and_emit(formatted)
         logger.info("Learning -> Vorschlag: %s", formatted)
+        try:
+            entity = alert.get("entity_id", "")
+            pattern = alert.get("pattern", "")
+            await self.ha.log_activity(
+                "suggestion", "learning_pattern",
+                f"Muster erkannt: {message[:150]}",
+                arguments={"entity_id": entity, "pattern": pattern},
+            )
+        except Exception:
+            pass
 
     async def _polish_learning_suggestion(self, message: str, alert: dict) -> str:
         """Poliert Learning-Vorschlaege mit LLM fuer natuerliche Variation."""
@@ -10267,6 +10277,15 @@ Regeln:
             await emit_proactive(text, "anticipation_auto", "medium")
             self._remember_exchange("[proaktiv: Antizipation]", text)
             logger.info("Anticipation auto-execute: %s (confidence: %d%%, success: %s)", desc, pct, _success)
+            try:
+                await self.ha.log_activity(
+                    "automation", "anticipation_auto",
+                    f"Antizipation: {desc} (Confidence: {pct}%)",
+                    arguments={"action": action, "confidence": pct, "person": person or ""},
+                    result="Erfolg" if _success else "Fehlgeschlagen",
+                )
+            except Exception:
+                pass
         else:
             # Vorschlagen — LLM Enhancer fuer natuerlichere Formulierung
             # Template-Vorschlag als Fallback
@@ -10316,6 +10335,14 @@ Regeln:
         await self._speak_and_emit(formatted)
         self._remember_exchange("[proaktiv: Insight]", formatted)
         logger.info("Insight zugestellt [%s/%s]: %s", check, urgency, message[:80])
+        try:
+            await self.ha.log_activity(
+                "proactive", f"insight_{check}",
+                f"Insight: {message[:150]}",
+                arguments={"check": check, "urgency": urgency},
+            )
+        except Exception:
+            pass
 
     async def _handle_intent_reminder(self, reminder: dict):
         """Callback für Intent-Erinnerungen."""

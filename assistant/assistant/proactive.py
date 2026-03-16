@@ -1126,6 +1126,14 @@ class ProactiveManager:
             "hints": hints,
             "message": "; ".join(hints),
         })
+        try:
+            await self.brain.ha.log_activity(
+                "anomaly", "device_dependency_conflict",
+                f"Geraetekonflikt: {entity_id} ({role}) → {'; '.join(hints[:2])}",
+                arguments={"entity_id": entity_id, "role": role, "conflicts": len(found_conflicts)},
+            )
+        except Exception:
+            pass
 
     async def _check_appliance_power(self, entity_id: str, new_val: str, old_val: str):
         """Appliance-Erkennung: Setzt idle-Marker bei Power-Drop, bestaetigt nach Wartezeit."""
@@ -3272,6 +3280,15 @@ class ProactiveManager:
                     "Batch-Summary gesendet (%d Items, id: %s): %s",
                     len(items), notification_id, text,
                 )
+                try:
+                    event_types = list({i.get("event_type", "") for i in items})
+                    await self.brain.ha.log_activity(
+                        "proactive", "batch_summary",
+                        f"Proaktive Meldung: {text[:150]}",
+                        arguments={"items": len(items), "event_types": event_types[:5]},
+                    )
+                except Exception:
+                    pass
 
         except Exception as e:
             logger.error("Batch-Summary Fehler: %s", e)
@@ -5310,6 +5327,15 @@ class ProactiveManager:
             await self._notify("co2_ventilation", LOW, {
                 "message": f"CO2 hoch ({int(high_co2_rooms[0][1])} ppm) — Rolllaeden geoeffnet + bitte lüften!",
             })
+            try:
+                rooms_info = [(r, int(v)) for r, v in high_co2_rooms[:3]]
+                await self.brain.ha.log_activity(
+                    "proactive", "co2_ventilation",
+                    f"CO2-Lueftung: {int(high_co2_rooms[0][1])} ppm — Rolllaeden geoeffnet",
+                    arguments={"rooms": rooms_info},
+                )
+            except Exception:
+                pass
 
     # Feature 16: Privacy-Modus (Abendlicher Sichtschutz)
     async def _cover_privacy_mode(self, states, sun, cover_profiles, auto_level, redis_client, cycle_acted=None):
@@ -5638,6 +5664,14 @@ class ProactiveManager:
                     await self._notify("vacuum_paused_arrival", LOW, {
                         "message": "Saugroboter pausiert — jemand ist nachhause gekommen",
                     })
+                    try:
+                        await self.brain.ha.log_activity(
+                            "vacuum_auto", "vacuum_paused",
+                            f"Staubsauger pausiert — Ankunft erkannt ({len(interrupted)} Roboter)",
+                            arguments={"interrupted_floors": interrupted},
+                        )
+                    except Exception:
+                        pass
 
                 # Fall 2: Niemand zuhause + unterbrochene Reinigung → Fortsetzen
                 if not anyone_home and guard_cfg.get("resume_on_departure"):
@@ -5677,6 +5711,14 @@ class ProactiveManager:
                         await self._notify("vacuum_resumed", LOW, {
                             "message": "Saugroboter setzt Reinigung fort — alle sind wieder weg",
                         })
+                        try:
+                            await self.brain.ha.log_activity(
+                                "vacuum_auto", "vacuum_resumed",
+                                f"Staubsauger Reinigung fortgesetzt ({len(floors)} Roboter)",
+                                arguments={"floors": floors},
+                            )
+                        except Exception:
+                            pass
 
                 # Fall 3: Alle Vacuums fertig (docked) → Alarm zurückschalten
                 if all_docked and not cleaning_robots:

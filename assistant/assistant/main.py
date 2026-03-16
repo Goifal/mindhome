@@ -300,6 +300,13 @@ async def _boot_announcement(brain_instance: "AssistantBrain", health_data: dict
         if hasattr(brain_instance, "sound_manager"):
             await brain_instance.sound_manager.speak_response(msg)
         logger.info("Boot-Sequenz: %s", msg)
+        try:
+            await brain_instance.ha.log_activity(
+                "system", "boot",
+                f"System gestartet: {msg[:150]}",
+            )
+        except Exception:
+            pass
 
     except Exception as e:
         logger.warning("Boot-Sequenz fehlgeschlagen: %s", e)

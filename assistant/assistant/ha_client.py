@@ -396,13 +396,12 @@ class HomeAssistantClient:
         """
         payload = {
             "action_type": action_type,
+            "reason": reason[:200] if reason else "",
             "actions": [{
                 "function": function,
                 "arguments": arguments or {},
                 "result": {"success": True, "message": result[:500] if result else ""},
             }],
-            "user_text": "",
-            "response": reason[:200] if reason else "",
         }
         try:
             resp = await self.mindhome_post("/api/action-log", payload, retries=0, timeout=10)
