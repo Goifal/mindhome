@@ -103,6 +103,7 @@ from .proactive_planner import ProactiveSequencePlanner
 from .seasonal_insight import SeasonalInsightEngine
 from .calendar_intelligence import CalendarIntelligence
 from .explainability import ExplainabilityEngine
+from .state_change_log import StateChangeLog
 from .learning_transfer import LearningTransfer
 from .dialogue_state import DialogueStateManager
 from .climate_model import ClimateModel
@@ -328,6 +329,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Intelligenz-Features: Quick Wins + Medium Effort
         self.calendar_intelligence = CalendarIntelligence()
         self.explainability = ExplainabilityEngine()
+        self.state_change_log = StateChangeLog()
         self.learning_transfer = LearningTransfer()
         self.dialogue_state = DialogueStateManager()
         self.climate_model = ClimateModel()
@@ -738,6 +740,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         await asyncio.gather(
             _safe_init("CalendarIntelligence", self.calendar_intelligence.initialize(redis_client=self.memory.redis)),
             _safe_init("Explainability", self.explainability.initialize(redis_client=self.memory.redis)),
+            _safe_init("StateChangeLog", self.state_change_log.initialize(redis_client=self.memory.redis)),
             _safe_init("LearningTransfer", self.learning_transfer.initialize(redis_client=self.memory.redis)),
             _safe_init("PredictiveMaintenance", self.predictive_maintenance.initialize(redis_client=self.memory.redis)),
             _safe_init("OutcomeTracker", self.outcome_tracker.initialize(
@@ -1968,6 +1971,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                         entity_id),
                                     name="mark_jarvis_action",
                                 )
+                                self.state_change_log.mark_jarvis_action(entity_id)
 
                         return self._result(response_text, actions=all_actions, model="device_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
             except Exception as e:
@@ -3059,6 +3063,76 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             )
             sections.append(("anomalies", anomaly_text, 3))
 
+        # State-Change-Log: Letzte Geraete-Aenderungen mit Quelle
+        try:
+            _scl_text = self.state_change_log.format_for_prompt(10)
+            if _scl_text:
+                sections.append(("state_changes", _scl_text, 3))
+        except Exception:
+            logger.debug("State-Change-Log Prompt fehlgeschlagen", exc_info=True)
+
+        # Geraete-Konflikte + Automations-Kontext: States einmalig laden
+        _causal_states = None
+        try:
+            _causal_states = await self.get_states_cached()
+        except Exception:
+            logger.debug("States fuer Kausal-Kontext laden fehlgeschlagen", exc_info=True)
+
+        # Geraete-Konflikte: Physikalische Abhaengigkeiten erkennen
+        if _causal_states:
+            try:
+                _state_dict = {
+                    s.get("entity_id"): s.get("state", "")
+                    for s in _causal_states
+                    if s.get("entity_id")
+                }
+                _conflict_text = self.state_change_log.format_conflicts_for_prompt(
+                    _state_dict
+                )
+                if _conflict_text:
+                    sections.append(("device_conflicts", _conflict_text, 3))
+            except Exception:
+                logger.debug("Geraete-Konflikte Prompt fehlgeschlagen", exc_info=True)
+
+        # HA-Automations-Kontext: Welche Automationen existieren/kuerzlich feuerten
+        if _causal_states:
+            try:
+                _auto_list = [
+                    s for s in _causal_states
+                    if s.get("entity_id", "").startswith("automation.")
+                ]
+                _auto_text = self.state_change_log.format_automations_for_prompt(
+                    _auto_list
+                )
+                if _auto_text:
+                    sections.append(("automations", _auto_text, 4))
+            except Exception:
+                logger.debug("HA-Automations-Kontext Prompt fehlgeschlagen", exc_info=True)
+
+        # Decision History: Letzte JARVIS-Entscheidungen
+        try:
+            _recent_decisions = self.explainability.explain_last(5)
+            if _recent_decisions:
+                _dec_lines = []
+                for _d in _recent_decisions:
+                    _age = time.time() - _d.get("timestamp", 0)
+                    if _age < 1800:  # Nur letzte 30 Min
+                        _dec_lines.append(
+                            f"- {_d.get('time_str', '?')}: {_d.get('action', '?')} "
+                            f"(Grund: {_d.get('reason', '?')}, "
+                            f"Trigger: {_d.get('trigger', '?')})"
+                        )
+                if _dec_lines:
+                    _dec_text = (
+                        "\n\nMEINE LETZTEN ENTSCHEIDUNGEN:\n"
+                        + "\n".join(_dec_lines)
+                        + "\nNutze diese Info wenn der User fragt warum du "
+                        "etwas getan hast."
+                    )
+                    sections.append(("decisions", _dec_text, 3))
+        except Exception:
+            logger.debug("Decision-History Prompt fehlgeschlagen", exc_info=True)
+
         # Experiential Memory: "Letztes Mal als du das gemacht hast..."
         if experiential_hint:
             sections.append(("experiential", f"\n\n{experiential_hint}", 3))
@@ -4019,6 +4093,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 self.learning_observer.mark_jarvis_action(entity_id),
                                 name="mark_jarvis_action",
                             )
+                            self.state_change_log.mark_jarvis_action(entity_id)
 
                             # Conflict F: Mark entity ownership in Redis so the
                             # addon can skip automations on recently-controlled

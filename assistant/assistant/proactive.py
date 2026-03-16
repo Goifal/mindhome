@@ -462,6 +462,24 @@ class ProactiveManager:
         if new_val == old_val:
             return
 
+        # State-Change-Log: Relevante Aenderungen mit Quelle protokollieren
+        _log_domains = ("light.", "switch.", "climate.", "cover.", "media_player.",
+                        "binary_sensor.fenster", "binary_sensor.window",
+                        "binary_sensor.door", "binary_sensor.tuer",
+                        "alarm_control_panel.")
+        if any(entity_id.startswith(d) for d in _log_domains):
+            try:
+                if hasattr(self.brain, "state_change_log"):
+                    friendly = new_state.get("attributes", {}).get(
+                        "friendly_name", entity_id
+                    )
+                    await self.brain.state_change_log.log_change(
+                        entity_id, old_val, new_val, new_state,
+                        friendly_name=friendly,
+                    )
+            except Exception as _scl_err:
+                logger.debug("State-Change-Log Fehler: %s", _scl_err)
+
         # Event-basierte Wetter-Sensoren: Sofort-Reaktion auf kritische Änderungen
         try:
             await self._handle_weather_event(entity_id, new_val, old_val)
