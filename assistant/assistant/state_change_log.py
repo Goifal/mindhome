@@ -4952,6 +4952,759 @@ DEVICE_DEPENDENCIES = [
         "hint": "Luftdruck faellt stark → Sturm moeglich, Fenster sichern",
         "severity": "info",
     },
+
+    # #################################################################
+    # LETZTE LUECKEN — systematisch geschlossen
+    # #################################################################
+
+    # === indoor_temp: wird von VIELEN Geraeten beeinflusst ===
+    # (bisher nur fridge!)
+    {
+        "role": "heating", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Heizung an → Raumtemperatur steigt",
+        "hint": "Heizung laeuft → Raumtemperatur steigt",
+        "severity": "info",
+    },
+    {
+        "role": "cooling", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Kuehlung an → Raumtemperatur sinkt",
+        "hint": "Kuehlung laeuft → Raumtemperatur sinkt",
+        "severity": "info",
+    },
+    {
+        "role": "floor_heating", "state": "heat",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Fussbodenheizung heizt → Raumtemperatur steigt",
+        "hint": "Fussbodenheizung → Raumtemperatur steigt (langsam, traege)",
+        "severity": "info",
+    },
+    {
+        "role": "radiator", "state": "heat",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Heizkoerper heizt → Raumtemperatur steigt",
+        "hint": "Heizkoerper → Raumtemperatur steigt",
+        "severity": "info",
+    },
+    {
+        "role": "thermostat", "state": "heat",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Thermostat heizt → Raumtemperatur steigt zum Soll",
+        "hint": "Thermostat heizt → Temperatur steigt Richtung Soll-Wert",
+        "severity": "info",
+    },
+    {
+        "role": "thermostat", "state": "cool",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Thermostat kuehlt → Raumtemperatur sinkt zum Soll",
+        "hint": "Thermostat kuehlt → Temperatur sinkt Richtung Soll-Wert",
+        "severity": "info",
+    },
+    {
+        "role": "window_contact", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Fenster offen → Aussenluft beeinflusst Raumtemperatur",
+        "hint": "Fenster offen → Raumtemperatur naehert sich Aussentemperatur",
+        "severity": "info",
+    },
+    {
+        "role": "oven", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Herd/Ofen an → Kueche wird waermer",
+        "hint": "Kochen → Kueche heizt sich auf",
+        "severity": "info",
+    },
+    {
+        "role": "pc", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "PC laeuft → Abwaerme erhoet Raumtemperatur",
+        "hint": "PC → Raum wird waermer durch Abwaerme",
+        "severity": "info",
+    },
+    {
+        "role": "server", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Server → starke Waerme-Entwicklung im Raum",
+        "hint": "Server → Raum heizt sich auf, Kuehlung sicherstellen",
+        "severity": "info",
+    },
+    {
+        "role": "dryer", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Trockner → Abwaerme erhoet Raumtemperatur",
+        "hint": "Trockner → Raum wird waermer",
+        "severity": "info",
+    },
+    {
+        "role": "solar_radiation", "state": "on",
+        "affects": "indoor_temp", "same_room": False,
+        "effect": "Sonneneinstrahlung → Raeume heizen sich auf",
+        "hint": "Starke Sonne → Raeume werden waermer (Suedseite besonders)",
+        "severity": "info",
+    },
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "indoor_temp", "same_room": False,
+        "effect": "Aussentemperatur beeinflusst Innentemperatur",
+        "hint": "Aussentemperatur → wirkt auf Innentemperatur (besonders bei schlechter Daemmung)",
+        "severity": "info",
+    },
+    {
+        "role": "blinds", "state": "open",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Jalousien offen → Sonneneinstrahlung heizt Raum auf",
+        "hint": "Jalousien offen bei Sonne → Raum heizt sich auf",
+        "severity": "info",
+    },
+    {
+        "role": "shutter", "state": "open",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Rollladen offen → Sonne kann Raum aufheizen",
+        "hint": "Rollladen offen → Sonneneinstrahlung heizt Raum auf",
+        "severity": "info",
+    },
+
+    # === soil_moisture: Regen beeinflusst Bodenfeuchtigkeit! ===
+    {
+        "role": "rain", "state": "on",
+        "affects": "soil_moisture", "same_room": False,
+        "effect": "Regen → Bodenfeuchtigkeit steigt natuerlich",
+        "hint": "Regen → Boden wird feucht, Bewaesserung unnoetig",
+        "severity": "info",
+    },
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "soil_moisture", "same_room": False,
+        "effect": "Hitze → Boden trocknet schneller aus",
+        "hint": "Hitze → Boden trocknet aus, oefter bewaessern",
+        "severity": "info",
+    },
+    {
+        "role": "wind_speed", "state": "on",
+        "affects": "soil_moisture", "same_room": False,
+        "effect": "Wind → Boden trocknet schneller",
+        "hint": "Wind → Verdunstung steigt, Boden trocknet",
+        "severity": "info",
+    },
+
+    # === grid_consumption: wird von Grossverbrauchern beeinflusst ===
+    {
+        "role": "heat_pump", "state": "heat",
+        "affects": "grid_consumption", "same_room": False,
+        "effect": "Waermepumpe laeuft → Netzbezug steigt",
+        "hint": "Waermepumpe → hoher Netzbezug (2-5 kW)",
+        "severity": "info",
+    },
+    {
+        "role": "oven", "state": "on",
+        "affects": "grid_consumption", "same_room": False,
+        "effect": "Herd/Ofen an → Netzbezug steigt stark",
+        "hint": "Herd/Ofen → hoher Netzbezug (2-4 kW)",
+        "severity": "info",
+    },
+    {
+        "role": "dryer", "state": "on",
+        "affects": "grid_consumption", "same_room": False,
+        "effect": "Trockner laeuft → Netzbezug steigt",
+        "hint": "Trockner → hoher Netzbezug (2-3 kW)",
+        "severity": "info",
+    },
+    {
+        "role": "washing_machine", "state": "on",
+        "affects": "grid_consumption", "same_room": False,
+        "effect": "Waschmaschine laeuft → Netzbezug steigt",
+        "hint": "Waschmaschine → Netzbezug (0.5-2 kW)",
+        "severity": "info",
+    },
+    {
+        "role": "dishwasher", "state": "on",
+        "affects": "grid_consumption", "same_room": False,
+        "effect": "Spuelmaschine laeuft → Netzbezug steigt",
+        "hint": "Spuelmaschine → Netzbezug (1-2 kW)",
+        "severity": "info",
+    },
+    {
+        "role": "boiler", "state": "on",
+        "affects": "grid_consumption", "same_room": False,
+        "effect": "Boiler heizt → Netzbezug steigt",
+        "hint": "Boiler → hoher Netzbezug wenn elektrisch (2-6 kW)",
+        "severity": "info",
+    },
+    {
+        "role": "solar", "state": "on",
+        "affects": "grid_consumption", "same_room": False,
+        "effect": "Solar erzeugt → Netzbezug sinkt/wird negativ",
+        "hint": "Solar → Netzbezug sinkt, Eigenverbrauch steigt",
+        "severity": "info",
+    },
+
+    # === air_quality: wird von vielen Quellen beeinflusst ===
+    {
+        "role": "oven", "state": "on",
+        "affects": "air_quality", "same_room": True,
+        "effect": "Kochen → Luftqualitaet sinkt (Daempfe, Fett, Gerueche)",
+        "hint": "Kochen → Luftqualitaet sinkt, Dunstabzug/Lueften noetig",
+        "severity": "info",
+    },
+    {
+        "role": "smoke", "state": "on",
+        "affects": "air_quality", "same_room": True,
+        "effect": "Rauch → Luftqualitaet drastisch verschlechtert",
+        "hint": "Rauch → Luftqualitaet katastrophal",
+        "severity": "high",
+    },
+    {
+        "role": "co", "state": "on",
+        "affects": "air_quality", "same_room": True,
+        "effect": "CO → Luftqualitaet lebensgefaehrlich",
+        "hint": "CO → Luftqualitaet lebensgefaehrlich!",
+        "severity": "critical",
+    },
+    {
+        "role": "voc", "state": "on",
+        "affects": "air_quality", "same_room": True,
+        "effect": "VOC hoch → Luftqualitaet verschlechtert",
+        "hint": "VOC → Luftqualitaet sinkt (Farben, Klebstoffe, Reiniger)",
+        "severity": "info",
+    },
+    {
+        "role": "ventilation", "state": "on",
+        "affects": "air_quality", "same_room": True,
+        "effect": "Lueftung an → Luftqualitaet verbessert sich",
+        "hint": "Lueftung → Luftqualitaet steigt durch Frischluft",
+        "severity": "info",
+    },
+    {
+        "role": "air_purifier", "state": "on",
+        "affects": "air_quality", "same_room": True,
+        "effect": "Luftreiniger an → Luftqualitaet verbessert sich",
+        "hint": "Luftreiniger → Luftqualitaet steigt (Feinstaub, Pollen)",
+        "severity": "info",
+    },
+
+    # === smoke: kann von mehreren Quellen ausgeloest werden ===
+    {
+        "role": "dryer", "state": "on",
+        "affects": "smoke", "same_room": True,
+        "effect": "Trockner laeuft → Flusen koennen Rauch ausloesen",
+        "hint": "Trockner + Rauch → Flusensieb pruefen, Brandgefahr!",
+        "severity": "high",
+    },
+    {
+        "role": "heating", "state": "on",
+        "affects": "smoke", "same_room": True,
+        "effect": "Heizung laeuft → bei Defekt Rauch moeglich",
+        "hint": "Heizung + Rauch → Heizungsdefekt? Sofort ausschalten",
+        "severity": "high",
+    },
+
+    # === water_temp: wird von mehreren Quellen beeinflusst ===
+    {
+        "role": "solar", "state": "on",
+        "affects": "water_temp", "same_room": False,
+        "effect": "Solarthermie → Wassertemperatur steigt",
+        "hint": "Solar → Warmwasser wird durch Sonne aufgeheizt",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "heat",
+        "affects": "water_temp", "same_room": False,
+        "effect": "Waermepumpe → Wassertemperatur steigt",
+        "hint": "Waermepumpe → Warmwasser wird aufbereitet",
+        "severity": "info",
+    },
+
+    # === gate: braucht mehr Trigger (wie garage_door) ===
+    {
+        "role": "presence", "state": "off",
+        "affects": "gate", "same_room": False,
+        "effect": "Niemand zuhause → Tor sollte geschlossen sein",
+        "hint": "Alle weg → Tor schliessen",
+        "severity": "high",
+    },
+    {
+        "role": "car", "state": "not_home",
+        "affects": "gate", "same_room": False,
+        "effect": "Auto weg → Tor/Einfahrt schliessen",
+        "hint": "Auto weg → Tor schliessen",
+        "severity": "info",
+    },
+    {
+        "role": "car", "state": "home",
+        "affects": "gate", "same_room": False,
+        "effect": "Auto kommt → Tor oeffnen",
+        "hint": "Auto naehert sich → Einfahrtstor oeffnen",
+        "severity": "info",
+    },
+    {
+        "role": "car_location", "state": "on",
+        "affects": "gate", "same_room": False,
+        "effect": "Auto naehert sich → Tor oeffnen vorbereiten",
+        "hint": "Auto naehert sich → Einfahrtstor oeffnen",
+        "severity": "info",
+    },
+    {
+        "role": "zone", "state": "on",
+        "affects": "gate", "same_room": False,
+        "effect": "Person naehert sich → Tor oeffnen",
+        "hint": "Person kommt → Tor/Einfahrt oeffnen",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "gate", "same_room": False,
+        "effect": "Schlafenszeit → Tor sollte geschlossen sein",
+        "hint": "Alle schlafen → Tor schliessen",
+        "severity": "info",
+    },
+
+    # === door_contact: mehr Trigger (Sicherheit/Komfort) ===
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "door_contact", "same_room": False,
+        "effect": "Alarm → alle Tueren pruefen",
+        "hint": "ALARM → Tuer-Status pruefen, Eindringling?",
+        "severity": "high",
+    },
+    {
+        "role": "presence", "state": "off",
+        "affects": "door_contact", "same_room": False,
+        "effect": "Niemand zuhause → Tueren sollten geschlossen sein",
+        "hint": "Alle weg → offene Tueren pruefen",
+        "severity": "info",
+    },
+    {
+        "role": "rain", "state": "on",
+        "affects": "door_contact", "same_room": False,
+        "effect": "Regen → offene Tueren (Terrasse/Balkon) schliessen",
+        "hint": "Regen → Terrassen-/Balkontuer schliessen",
+        "severity": "info",
+    },
+    {
+        "role": "wind_speed", "state": "on",
+        "affects": "door_contact", "same_room": False,
+        "effect": "Starker Wind → Tueren koennen zuschlagen",
+        "hint": "Sturm → Tueren sichern, Zuschlag-Gefahr",
+        "severity": "info",
+    },
+
+    # === doorbell: mehr Trigger ===
+    {
+        "role": "motion", "state": "on",
+        "affects": "doorbell", "same_room": True,
+        "effect": "Bewegung am Eingang → Person naehert sich",
+        "hint": "Bewegung am Eingang → Besucher kommt, Klingel erwartet",
+        "severity": "info",
+    },
+    {
+        "role": "presence", "state": "off",
+        "affects": "doorbell", "same_room": False,
+        "effect": "Niemand zuhause → Klingel-Benachrichtigung wichtiger",
+        "hint": "Alle weg + Klingel → Benachrichtigung besonders wichtig (Paket?)",
+        "severity": "info",
+    },
+
+    # === server: mehr Trigger ===
+    {
+        "role": "router", "state": "off",
+        "affects": "server", "same_room": False,
+        "effect": "Router offline → Server nicht erreichbar",
+        "hint": "Router down → Server ueber Netzwerk nicht erreichbar",
+        "severity": "high",
+    },
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "server", "same_room": True,
+        "effect": "Wasserleck im Serverraum → Hardware-Gefahr",
+        "hint": "Wasserleck + Server → Server-Hardware in Gefahr!",
+        "severity": "high",
+    },
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "server", "same_room": True,
+        "effect": "Raumtemperatur hoch + Server → Ueberhitzungsgefahr",
+        "hint": "Server-Raum zu warm → Kuehlung pruefen, Ueberhitzung!",
+        "severity": "high",
+    },
+
+    # === motion: mehr Trigger ===
+    {
+        "role": "alarm", "state": "armed_away",
+        "affects": "motion", "same_room": False,
+        "effect": "Alarm scharf → Bewegung = Einbruch!",
+        "hint": "Alarm scharf + Bewegung → moeglicherweise Einbruch!",
+        "severity": "high",
+    },
+    {
+        "role": "presence", "state": "off",
+        "affects": "motion", "same_room": False,
+        "effect": "Niemand zuhause + Bewegung → verdaechtig",
+        "hint": "Alle weg + Bewegung → verdaechtig, pruefen!",
+        "severity": "high",
+    },
+
+    # === receiver: mehr Trigger ===
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "receiver", "same_room": False,
+        "effect": "Alarm → Receiver ausschalten",
+        "hint": "ALARM → Receiver aus, nicht ablenken lassen",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "receiver", "same_room": False,
+        "effect": "Schlafenszeit → Receiver ausschalten",
+        "hint": "Schlafenszeit → Receiver ausschalten",
+        "severity": "info",
+    },
+
+    # === gaming: mehr Trigger ===
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "gaming", "same_room": False,
+        "effect": "Schlafenszeit → Gaming beenden",
+        "hint": "Schlafenszeit → Konsole/PC ausschalten",
+        "severity": "info",
+    },
+    {
+        "role": "alarm", "state": "armed_away",
+        "affects": "gaming", "same_room": False,
+        "effect": "Alarm scharf → Gaming sollte aus sein",
+        "hint": "Alle weg → Gaming-Geraete aus",
+        "severity": "info",
+    },
+
+    # === oven: mehr Trigger ===
+    {
+        "role": "timer", "state": "off",
+        "affects": "oven", "same_room": False,
+        "effect": "Timer abgelaufen → Herd/Ofen pruefen (Essen fertig?)",
+        "hint": "Koch-Timer abgelaufen → Herd/Ofen pruefen, Essen fertig!",
+        "severity": "info",
+    },
+    {
+        "role": "smoke", "state": "on",
+        "affects": "oven", "same_room": True,
+        "effect": "Rauch → Herd/Ofen pruefen ob er die Quelle ist",
+        "hint": "Rauch + Herd an → Essen angebrannt? Herd ausschalten!",
+        "severity": "high",
+    },
+
+    # === coffee_machine: mehr Trigger ===
+    {
+        "role": "timer", "state": "off",
+        "affects": "coffee_machine", "same_room": False,
+        "effect": "Timer → Kaffeemaschine einschalten",
+        "hint": "Kaffee-Timer → Kaffeemaschine starten",
+        "severity": "info",
+    },
+    {
+        "role": "alarm", "state": "disarmed",
+        "affects": "coffee_machine", "same_room": False,
+        "effect": "Alarm deaktiviert (Ankunft) → Kaffeemaschine starten",
+        "hint": "Ankunft → Kaffeemaschine aufheizen lassen",
+        "severity": "info",
+    },
+
+    # === humidifier: mehr Trigger ===
+    {
+        "role": "humidity", "state": "on",
+        "affects": "humidifier", "same_room": True,
+        "effect": "Luftfeuchtigkeit niedrig → Befeuchter einschalten",
+        "hint": "Luftfeuchtigkeit zu niedrig → Befeuchter einschalten",
+        "severity": "info",
+    },
+    {
+        "role": "heating", "state": "on",
+        "affects": "humidifier", "same_room": True,
+        "effect": "Heizung trocknet Luft → Befeuchter sinnvoll",
+        "hint": "Heizung trocknet Luft → Befeuchter einschalten",
+        "severity": "info",
+    },
+
+    # === scene: als Affected (wird aktiviert durch Trigger) ===
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "scene", "same_room": False,
+        "effect": "Im Bett → Gute-Nacht-Szene aktivieren",
+        "hint": "Schlafenszeit → Gute-Nacht-Szene starten",
+        "severity": "info",
+    },
+    {
+        "role": "bed_occupancy", "state": "off",
+        "affects": "scene", "same_room": False,
+        "effect": "Aufgestanden → Morgen-Szene aktivieren",
+        "hint": "Aufgestanden → Morgen-Szene starten",
+        "severity": "info",
+    },
+    {
+        "role": "presence", "state": "on",
+        "affects": "scene", "same_room": False,
+        "effect": "Ankunft → Willkommens-Szene aktivieren",
+        "hint": "Ankunft → Willkommens-Szene starten",
+        "severity": "info",
+    },
+    {
+        "role": "presence", "state": "off",
+        "affects": "scene", "same_room": False,
+        "effect": "Alle weg → Abwesenheits-Szene aktivieren",
+        "hint": "Alle weg → Abwesenheits-Szene (Eco, Sicherheit)",
+        "severity": "info",
+    },
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "scene", "same_room": False,
+        "effect": "Alarm → Alarm-Szene aktivieren (alles an, Lockdown)",
+        "hint": "ALARM → Alarm-Szene: alle Lichter an, Kameras an, Lockdown",
+        "severity": "high",
+    },
+
+    # === freezer/fridge: Problem-Erkennung ===
+    {
+        "role": "problem", "state": "on",
+        "affects": "freezer", "same_room": True,
+        "effect": "Problem → Gefrierschrank pruefen (Kompressor?)",
+        "hint": "Geraete-Problem → Gefrierschrank-Temperatur pruefen!",
+        "severity": "high",
+    },
+    {
+        "role": "problem", "state": "on",
+        "affects": "fridge", "same_room": True,
+        "effect": "Problem → Kuehlschrank pruefen (Kompressor?)",
+        "hint": "Geraete-Problem → Kuehlschrank-Temperatur pruefen!",
+        "severity": "high",
+    },
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "freezer", "same_room": True,
+        "effect": "Raumtemperatur hoch → Gefrierschrank arbeitet haerter",
+        "hint": "Raum zu warm → Gefrierschrank muss mehr kuehlen",
+        "severity": "info",
+    },
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "fridge", "same_room": True,
+        "effect": "Raumtemperatur hoch → Kuehlschrank arbeitet haerter",
+        "hint": "Raum zu warm → Kuehlschrank muss mehr kuehlen, Energieverbrauch steigt",
+        "severity": "info",
+    },
+
+    # === pump: mehr Trigger ===
+    {
+        "role": "irrigation", "state": "on",
+        "affects": "pump", "same_room": False,
+        "effect": "Bewaesserung → Pumpe laeuft",
+        "hint": "Bewaesserung gestartet → Pumpe laeuft",
+        "severity": "info",
+    },
+    {
+        "role": "pool", "state": "on",
+        "affects": "pump", "same_room": False,
+        "effect": "Pool aktiv → Pumpe fuer Umwaelzung/Filterung",
+        "hint": "Pool → Pumpe laeuft fuer Wasserumwaelzung",
+        "severity": "info",
+    },
+
+    # === water_leak: mehr Verursacher ===
+    {
+        "role": "boiler", "state": "on",
+        "affects": "water_leak", "same_room": True,
+        "effect": "Boiler aktiv → Leck moeglich (Druckventil, Korrosion)",
+        "hint": "Boiler + Wasserleck → Boiler als Quelle pruefen",
+        "severity": "info",
+    },
+    {
+        "role": "irrigation", "state": "on",
+        "affects": "water_leak", "same_room": False,
+        "effect": "Bewaesserung laeuft → Leck in Leitung moeglich",
+        "hint": "Bewaesserung + Wasserleck → Leitung/Ventil pruefen",
+        "severity": "info",
+    },
+    {
+        "role": "pool", "state": "on",
+        "affects": "water_leak", "same_room": False,
+        "effect": "Pool-System → Leck moeglich",
+        "hint": "Pool + Wasserleck → Pool-Leitungen pruefen",
+        "severity": "info",
+    },
+
+    # === solar: wird von Wetter beeinflusst ===
+    {
+        "role": "solar_radiation", "state": "on",
+        "affects": "solar", "same_room": False,
+        "effect": "Sonneneinstrahlung → Solar-Ertrag steigt/faellt",
+        "hint": "Sonneneinstrahlung → PV-Ertrag aendert sich",
+        "severity": "info",
+    },
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "solar", "same_room": False,
+        "effect": "Aussentemperatur → PV-Effizienz (hoch=schlechter)",
+        "hint": "Hitze → PV-Module werden ineffizienter",
+        "severity": "info",
+    },
+
+    # === light_level: wird von Beschattung beeinflusst ===
+    {
+        "role": "blinds", "state": "closed",
+        "affects": "light_level", "same_room": True,
+        "effect": "Jalousien geschlossen → weniger Licht im Raum",
+        "hint": "Jalousien zu → Raum wird dunkler, Kunstlicht noetig",
+        "severity": "info",
+    },
+    {
+        "role": "shutter", "state": "closed",
+        "affects": "light_level", "same_room": True,
+        "effect": "Rollladen geschlossen → Raum wird dunkel",
+        "hint": "Rollladen zu → kein Tageslicht, Kunstlicht an",
+        "severity": "info",
+    },
+    {
+        "role": "curtain", "state": "closed",
+        "affects": "light_level", "same_room": True,
+        "effect": "Vorhaenge geschlossen → weniger Licht",
+        "hint": "Vorhaenge zu → Raum wird dunkler",
+        "severity": "info",
+    },
+    {
+        "role": "solar_radiation", "state": "on",
+        "affects": "light_level", "same_room": False,
+        "effect": "Sonneneinstrahlung → Lichtverhaeltnisse aendern sich",
+        "hint": "Sonneneinstrahlung → Raeume werden heller",
+        "severity": "info",
+    },
+
+    # === outdoor_temp: Kontext-Quellen ===
+    {
+        "role": "solar_radiation", "state": "on",
+        "affects": "outdoor_temp", "same_room": False,
+        "effect": "Sonneneinstrahlung → Aussentemperatur steigt",
+        "hint": "Starke Sonne → Aussentemperatur steigt",
+        "severity": "info",
+    },
+    {
+        "role": "wind_speed", "state": "on",
+        "affects": "outdoor_temp", "same_room": False,
+        "effect": "Wind → gefuehlte Aussentemperatur sinkt (Windchill)",
+        "hint": "Wind → Windchill, fuehlt sich kaelter an",
+        "severity": "info",
+    },
+
+    # === phone: mehr Trigger (Telefon als Kontext) ===
+    {
+        "role": "phone", "state": "on",
+        "affects": "tv", "same_room": True,
+        "effect": "Telefonat → TV leiser fuer Gespraech",
+        "hint": "Telefon klingelt → TV leiser stellen",
+        "severity": "info",
+    },
+    {
+        "role": "phone", "state": "on",
+        "affects": "speaker", "same_room": True,
+        "effect": "Telefonat → Lautsprecher leiser",
+        "hint": "Telefon klingelt → Lautsprecher leiser",
+        "severity": "info",
+    },
+    {
+        "role": "phone", "state": "on",
+        "affects": "doorbell", "same_room": False,
+        "effect": "Im Telefonat → Klingel-Lautstaerke anpassen",
+        "hint": "Im Telefonat → Klingel ggf. stumm schalten",
+        "severity": "info",
+    },
+
+    # === router: als Affected (Stromausfall, Problem) ===
+    {
+        "role": "problem", "state": "on",
+        "affects": "router", "same_room": True,
+        "effect": "Problem → Router pruefen (Netzwerk-Ausfall?)",
+        "hint": "Netzwerk-Problem → Router neustarten?",
+        "severity": "info",
+    },
+
+    # === Kühlschrank / Gefrierschrank Tür offen ===
+    {
+        "role": "fridge", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Kuehlschrank-Tuer offen → Benachrichtigung",
+        "hint": "Kuehlschrank-Tuer zu lange offen → Warnung, Lebensmittel!",
+        "severity": "info",
+    },
+    {
+        "role": "freezer", "state": "on",
+        "affects": "notify", "same_room": False,
+        "effect": "Gefrierschrank-Tuer offen → Benachrichtigung",
+        "hint": "Gefrierschrank-Tuer zu lange offen → Warnung!",
+        "severity": "info",
+    },
+
+    # === NAS als Affected ===
+    {
+        "role": "problem", "state": "on",
+        "affects": "nas", "same_room": True,
+        "effect": "Problem → NAS pruefen (Festplatte defekt?)",
+        "hint": "NAS-Problem → Festplatten-Status pruefen!",
+        "severity": "high",
+    },
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "nas", "same_room": True,
+        "effect": "Wasserleck + NAS → Hardware in Gefahr",
+        "hint": "Wasserleck → NAS in Gefahr, Datenverlust!",
+        "severity": "high",
+    },
+    {
+        "role": "indoor_temp", "state": "on",
+        "affects": "nas", "same_room": True,
+        "effect": "Raumtemperatur hoch → NAS Ueberhitzungsgefahr",
+        "hint": "Raum zu warm → NAS-Temperatur pruefen",
+        "severity": "info",
+    },
+
+    # === Charger (Ladegeraet) als Affected ===
+    {
+        "role": "solar", "state": "on",
+        "affects": "charger", "same_room": False,
+        "effect": "Solar → Geraete mit Solarstrom laden",
+        "hint": "Solarueberschuss → Geraete jetzt laden (gratis Strom)",
+        "severity": "info",
+    },
+
+    # === Motor als Affected ===
+    {
+        "role": "problem", "state": "on",
+        "affects": "motor", "same_room": True,
+        "effect": "Problem → Motor pruefen (Blockierung?)",
+        "hint": "Motor-Problem → Blockierung/Ueberlast pruefen",
+        "severity": "info",
+    },
+
+    # === Intercom: Alarm-Kontext ===
+    {
+        "role": "alarm", "state": "triggered",
+        "affects": "intercom", "same_room": False,
+        "effect": "Alarm → Gegensprechanlage fuer Kommunikation mit Polizei",
+        "hint": "ALARM → Gegensprechanlage bereit fuer Polizei/Sicherheitsdienst",
+        "severity": "info",
+    },
+
+    # === Relay: mehr Trigger ===
+    {
+        "role": "smoke", "state": "on",
+        "affects": "relay", "same_room": False,
+        "effect": "Rauch → Relay NICHT schalten (Funke!)",
+        "hint": "Rauch → Relays NICHT schalten",
+        "severity": "high",
+    },
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "relay", "same_room": True,
+        "effect": "Wasserleck → Relay ausschalten (Kurzschluss!)",
+        "hint": "Wasserleck → Relays in Naehe abschalten, Kurzschluss-Gefahr",
+        "severity": "high",
+    },
 ]
 
 
