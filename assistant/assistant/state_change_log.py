@@ -1925,6 +1925,572 @@ DEVICE_DEPENDENCIES = [
         "hint": "Auto geparkt + Garage offen → Tor schliessen",
         "severity": "info",
     },
+
+    # =================================================================
+    # SICHERHEIT — Alarm-System Interaktionen
+    # =================================================================
+
+    # Alarm scharf → Garagentor/Tor sollte zu sein
+    {
+        "role": "alarm", "state": "armed_away",
+        "affects": "garage_door", "same_room": False,
+        "effect": "Alarm scharf → Garagentor sollte geschlossen sein",
+        "hint": "Alarm aktiviert + Garagentor offen → Sicherheitsluecke",
+        "severity": "high",
+    },
+    {
+        "role": "alarm", "state": "armed_away",
+        "affects": "gate", "same_room": False,
+        "effect": "Alarm scharf → Tor/Einfahrt sollte geschlossen sein",
+        "hint": "Alarm aktiviert + Tor offen → Einfahrt sichern",
+        "severity": "high",
+    },
+    # Alarm scharf → Fenster zu
+    {
+        "role": "alarm", "state": "armed_away",
+        "affects": "window_contact", "same_room": False,
+        "effect": "Alarm scharf → offene Fenster sind Sicherheitsluecke",
+        "hint": "Alarm aktiviert + Fenster offen → Einbruchgefahr",
+        "severity": "high",
+    },
+    # Alarm scharf → Herd sollte aus sein
+    {
+        "role": "alarm", "state": "armed_away",
+        "affects": "oven", "same_room": False,
+        "effect": "Alarm scharf (niemand da) + Herd an → Brandgefahr",
+        "hint": "Haus verlassen + Herd an → BRANDGEFAHR, Herd ausschalten",
+        "severity": "critical",
+    },
+    # Alarm scharf → Steckdosen mit Verbrauchern pruefen
+    {
+        "role": "alarm", "state": "armed_away",
+        "affects": "outlet", "same_room": False,
+        "effect": "Alarm scharf → unbeaufsichtigte Steckdosen-Verbraucher pruefen",
+        "hint": "Haus verlassen → Buegeleisen, Heizluefter etc. an Steckdosen pruefen",
+        "severity": "info",
+    },
+    # Alarm Nachtmodus → Garagentor sollte zu sein
+    {
+        "role": "alarm", "state": "armed_night",
+        "affects": "garage_door", "same_room": False,
+        "effect": "Nacht-Alarm → Garagentor sollte geschlossen sein",
+        "hint": "Nachtmodus + Garagentor offen → Garage schliessen",
+        "severity": "high",
+    },
+    # Alarm Nachtmodus → Tor/Einfahrt zu
+    {
+        "role": "alarm", "state": "armed_night",
+        "affects": "gate", "same_room": False,
+        "effect": "Nacht-Alarm → Tor sollte geschlossen sein",
+        "hint": "Nachtmodus + Tor offen → Tor schliessen",
+        "severity": "high",
+    },
+    # Alarm Nachtmodus → Fenster Erdgeschoss (same_room=False weil global)
+    {
+        "role": "alarm", "state": "armed_night",
+        "affects": "window_contact", "same_room": False,
+        "effect": "Nacht-Alarm → Erdgeschoss-Fenster sollten zu sein",
+        "hint": "Nachtmodus + Fenster offen → Erdgeschoss-Fenster schliessen",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # LICHT — Auswirkungen auf andere Geraete
+    # =================================================================
+
+    # Licht an im Raum → Kamera-Nachtsicht deaktivieren
+    {
+        "role": "light", "state": "on",
+        "affects": "camera", "same_room": True,
+        "effect": "Licht an → Kamera wechselt von Nachtsicht zu normal",
+        "hint": "Licht + Kamera im Raum → Nachtsicht nicht noetig",
+        "severity": "info",
+    },
+    # Licht an nachts draussen → Kamera-Qualitaet besser
+    {
+        "role": "garden_light", "state": "on",
+        "affects": "camera", "same_room": False,
+        "effect": "Gartenbeleuchtung an → Aussen-Kameras sehen besser",
+        "hint": "Gartenbeleuchtung → Kamera-Sicht verbessert",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # KLIMA — erweiterte Szenarien
+    # =================================================================
+
+    # Kamin/Ofen an → Rauchmelder kann ansprechen (kein Fehlalarm)
+    {
+        "role": "oven", "state": "on",
+        "affects": "smoke", "same_room": True,
+        "effect": "Herd/Ofen an + Rauchmelder → koennte Kochen sein, kein Brand",
+        "hint": "Herd an + Rauchmelder → wahrscheinlich Kochen, kein Fehlalarm",
+        "severity": "info",
+    },
+    # Heizung an + Fenster offen + Luftqualitaet schlecht → Lueften noetig trotz Heizung
+    {
+        "role": "co2", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "CO2 hoch → Lueften noetig, auch wenn Heizung laeuft",
+        "hint": "CO2 hoch → kurz Stosslueften, auch bei Heizung",
+        "severity": "high",
+    },
+    # Luftfeuchtigkeit hoch + Fenster auf → Lueften hilft (oder schadet bei Regen)
+    {
+        "role": "humidity", "state": "on",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Hohe Luftfeuchtigkeit → Fenster auf oder Entfeuchter an",
+        "hint": "Luftfeuchtigkeit hoch → Lueften oder Entfeuchter nutzen",
+        "severity": "info",
+    },
+    {
+        "role": "humidity", "state": "on",
+        "affects": "dehumidifier", "same_room": True,
+        "effect": "Hohe Luftfeuchtigkeit → Entfeuchter sollte laufen",
+        "hint": "Luftfeuchtigkeit hoch → Entfeuchter einschalten",
+        "severity": "info",
+    },
+    # Taupunkt erreicht → Schimmelgefahr
+    {
+        "role": "dew_point", "state": "on",
+        "affects": "ventilation", "same_room": False,
+        "effect": "Taupunkt nahe Wandtemperatur → Schimmelgefahr, belueften",
+        "hint": "Taupunkt kritisch → Schimmelgefahr, Lueftung an oder Fenster auf",
+        "severity": "high",
+    },
+    # Aussentemperatur heiss → Rollladen/Jalousie runter
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "shutter", "same_room": False,
+        "effect": "Aussentemperatur hoch → Beschattung sinnvoll",
+        "hint": "Hitze draussen → Rollladen schliessen gegen Aufheizung",
+        "severity": "info",
+    },
+    # Aussentemperatur heiss → Markise raus
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "awning", "same_room": False,
+        "effect": "Aussentemperatur hoch → Markise ausfahren",
+        "hint": "Hitze draussen → Markise ausfahren fuer Beschattung",
+        "severity": "info",
+    },
+    # Frost → Bewaesserung AUS (Frostschaeden an Leitungen)
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "valve", "same_room": False,
+        "effect": "Frost → Wasserventile/Aussenleitungen schuetzen",
+        "hint": "Frost → Aussenwasser-Ventile schliessen, Leitungsschaeden verhindern",
+        "severity": "high",
+    },
+    # Frost → Pool-Pumpe muss laufen (Frostschutz)
+    {
+        "role": "outdoor_temp", "state": "on",
+        "affects": "pump", "same_room": False,
+        "effect": "Frost → Pool-Pumpe muss laufen, sonst Frostschaden",
+        "hint": "Frost → Pool-Pumpe laufen lassen, Frostschutz",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # ENERGIE-OPTIMIERUNG — erweitert
+    # =================================================================
+
+    # Solar-Ueberschuss → Klimaanlage/Waermepumpe vorheizen/vorkuehlen
+    {
+        "role": "solar", "state": "on",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "PV-Ueberschuss → Waermepumpe mit Solarstrom betreiben",
+        "hint": "Solarueberschuss → Waermepumpe jetzt laufen lassen (thermischer Speicher)",
+        "severity": "info",
+    },
+    {
+        "role": "solar", "state": "on",
+        "affects": "cooling", "same_room": False,
+        "effect": "PV-Ueberschuss → Klimaanlage mit Solarstrom vorkuehlen",
+        "hint": "Solarueberschuss → jetzt vorkuehlen, spart abends Netzstrom",
+        "severity": "info",
+    },
+    {
+        "role": "solar", "state": "on",
+        "affects": "dishwasher", "same_room": False,
+        "effect": "PV-Ueberschuss → Spuelmaschine mit Solarstrom starten",
+        "hint": "Solarueberschuss → Spuelmaschine jetzt starten",
+        "severity": "info",
+    },
+    {
+        "role": "solar", "state": "on",
+        "affects": "dryer", "same_room": False,
+        "effect": "PV-Ueberschuss → Trockner mit Solarstrom starten",
+        "hint": "Solarueberschuss → Trockner jetzt starten",
+        "severity": "info",
+    },
+
+    # Netzeinspeisung hoch → Eigenverbrauch steigern
+    {
+        "role": "grid_feed", "state": "on",
+        "affects": "ev_charger", "same_room": False,
+        "effect": "Hohe Einspeisung → E-Auto laden statt einspeisen",
+        "hint": "Hohe Einspeisung → Wallbox starten, Eigenverbrauch steigern",
+        "severity": "info",
+    },
+    {
+        "role": "grid_feed", "state": "on",
+        "affects": "washing_machine", "same_room": False,
+        "effect": "Hohe Einspeisung → Waschmaschine starten statt einspeisen",
+        "hint": "Hohe Einspeisung → Waschmaschine jetzt starten",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # KOMFORT — erweitert
+    # =================================================================
+
+    # Vacuum → Presence (nicht saugen wenn Meeting/Arbeit)
+    {
+        "role": "vacuum", "state": "cleaning",
+        "affects": "presence", "same_room": False,
+        "effect": "Staubsauger laeuft + jemand zuhause → koennte stoeren",
+        "hint": "Staubsauger laeuft + jemand zuhause → stoert evtl. bei Arbeit/Meeting",
+        "severity": "info",
+    },
+    # Vacuum → Tueren auf (damit Sauger durchkommt)
+    {
+        "role": "vacuum", "state": "cleaning",
+        "affects": "door_contact", "same_room": False,
+        "effect": "Staubsauger saugt → Zimmertueren sollten offen sein",
+        "hint": "Saugroboter saugt → Tueren offen lassen damit er durchkommt",
+        "severity": "info",
+    },
+
+    # Waschmaschine/Trockner laufen + Abwesenheit → kein Problem wenn kurz
+    {
+        "role": "washing_machine", "state": "on",
+        "affects": "water_leak", "same_room": True,
+        "effect": "Waschmaschine laeuft → Wasserleck moeglich",
+        "hint": "Waschmaschine laeuft → Wasserleck-Sensoren beobachten",
+        "severity": "info",
+    },
+    {
+        "role": "dishwasher", "state": "on",
+        "affects": "water_leak", "same_room": True,
+        "effect": "Spuelmaschine laeuft → Wasserleck moeglich",
+        "hint": "Spuelmaschine laeuft → Wasserleck-Sensoren beobachten",
+        "severity": "info",
+    },
+
+    # Kaffeemaschine fertig → Morgenroutine
+    {
+        "role": "coffee_machine", "state": "idle",
+        "affects": "notify", "same_room": False,
+        "effect": "Kaffeemaschine fertig → Kaffee ist bereit",
+        "hint": "Kaffee ist fertig",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # MULTIMEDIA — Raum-Interaktionen
+    # =================================================================
+
+    # Media Player / TV laut + Fenster offen → Nachbarn stoeren
+    {
+        "role": "media_player", "state": "playing",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Medien laut + Fenster offen → Nachbarn koennten sich stoeren",
+        "hint": "Medien laut + Fenster offen → Laermbelaestigung moeglich",
+        "severity": "info",
+    },
+    # TV an → Receiver sollte auch an sein
+    {
+        "role": "tv", "state": "on",
+        "affects": "receiver", "same_room": True,
+        "effect": "TV an → AV-Receiver sollte auch an sein fuer Sound",
+        "hint": "TV an → Receiver auch einschalten fuer Sound",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # NETZWERK — erweiterte Auswirkungen
+    # =================================================================
+
+    # Router offline → Automatisierungen betroffen
+    {
+        "role": "router", "state": "off",
+        "affects": "automation", "same_room": False,
+        "effect": "Router offline → Cloud-Automatisierungen funktionieren nicht",
+        "hint": "Router down → Cloud-Automatisierungen offline",
+        "severity": "high",
+    },
+    # Router offline → Sprachassistent offline
+    {
+        "role": "router", "state": "off",
+        "affects": "media_player", "same_room": False,
+        "effect": "Router offline → Streaming/Sprachassistent nicht verfuegbar",
+        "hint": "Router down → Streaming/Alexa/Google nicht erreichbar",
+        "severity": "info",
+    },
+    # Server offline → Automatisierungen betroffen
+    {
+        "role": "server", "state": "off",
+        "affects": "automation", "same_room": False,
+        "effect": "Server offline → lokale Automatisierungen gestoppt",
+        "hint": "Server down → Automatisierungen laufen nicht mehr",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # SICHERHEIT — Nacht-Szenarien
+    # =================================================================
+
+    # Nachts Bewegung + alle im Bett → verdaechtig (bed_occupancy → motion)
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "motion", "same_room": False,
+        "effect": "Alle im Bett + Bewegung erkannt → verdaechtig",
+        "hint": "Alle schlafen + Bewegung → verdaechtig, Alarm pruefen",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # ABWESENHEIT — erweiterte Prüfungen
+    # =================================================================
+
+    # Niemand zuhause + Kaffee/Buegeleisen an
+    {
+        "role": "presence", "state": "off",
+        "affects": "coffee_machine", "same_room": False,
+        "effect": "Niemand zuhause + Kaffeemaschine an → vergessen auszuschalten",
+        "hint": "Alle weg + Kaffeemaschine noch an → ausschalten",
+        "severity": "info",
+    },
+    # Niemand zuhause + TV an (von oben: tv → presence existiert, aber auch Richtung presence → tv)
+    {
+        "role": "presence", "state": "off",
+        "affects": "tv", "same_room": False,
+        "effect": "Niemand zuhause + TV laeuft → vergessen auszuschalten",
+        "hint": "Alle weg + TV laeuft → TV vergessen, ausschalten",
+        "severity": "info",
+    },
+    # Niemand zuhause + PC an
+    {
+        "role": "presence", "state": "off",
+        "affects": "pc", "same_room": False,
+        "effect": "Niemand zuhause + PC laeuft → vergessen oder gewollt",
+        "hint": "Alle weg + PC laeuft → PC herunterfahren oder Standby",
+        "severity": "info",
+    },
+    # Niemand zuhause + Ventilator/Lueftung laeuft
+    {
+        "role": "presence", "state": "off",
+        "affects": "fan", "same_room": False,
+        "effect": "Niemand zuhause + Ventilator laeuft → Energieverschwendung",
+        "hint": "Alle weg + Ventilator noch an → ausschalten",
+        "severity": "info",
+    },
+    # Niemand zuhause + Vacuum → OK, erwuenscht
+    {
+        "role": "presence", "state": "off",
+        "affects": "vacuum", "same_room": False,
+        "effect": "Niemand zuhause → perfekte Zeit fuer Staubsauger",
+        "hint": "Alle weg → idealer Zeitpunkt zum Saugen",
+        "severity": "info",
+    },
+    # Niemand zuhause + Bewässerung → OK aber prüfen
+    {
+        "role": "presence", "state": "off",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Niemand zuhause + Bewaesserung → laeuft automatisch",
+        "hint": "Alle weg + Bewaesserung laeuft → planmaessig, Wasserleck beobachten",
+        "severity": "info",
+    },
+    # Ankunft (presence on) → Klima/Licht vorbereiten
+    {
+        "role": "presence", "state": "on",
+        "affects": "climate", "same_room": False,
+        "effect": "Jemand kommt → Klima auf Komforttemperatur",
+        "hint": "Ankunft erkannt → Heizung/Kuehlung auf Komfort stellen",
+        "severity": "info",
+    },
+    {
+        "role": "presence", "state": "on",
+        "affects": "light", "same_room": False,
+        "effect": "Jemand kommt → Beleuchtung einschalten wenn dunkel",
+        "hint": "Ankunft erkannt → Licht an wenn dunkel draussen",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # GERAETE-GESUNDHEIT
+    # =================================================================
+
+    # Kuehlschrank/Gefrierschrank Temperatur hoch → Lebensmittel-Risiko
+    {
+        "role": "fridge", "state": "on",
+        "affects": "indoor_temp", "same_room": True,
+        "effect": "Kuehlschrank → Abwaerme erhoet Raumtemperatur",
+        "hint": "Kuehlschrank-Abwaerme → Raum wird etwas waermer",
+        "severity": "info",
+    },
+
+    # Drucker → Luftqualitaet (Feinstaub)
+    {
+        "role": "printer", "state": "on",
+        "affects": "air_quality", "same_room": True,
+        "effect": "Laserdrucker → Feinstaub-Emission im Raum",
+        "hint": "Laserdrucker druckt → Feinstaub, Lueften empfohlen",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # WETTER → GERAETE — erweitert
+    # =================================================================
+
+    # Regen → Gartenbeleuchtung evtl. unnoetig
+    {
+        "role": "rain", "state": "on",
+        "affects": "garden_light", "same_room": False,
+        "effect": "Regen → Gartenbeleuchtung evtl. unnoetig (niemand draussen)",
+        "hint": "Regen → Gartenbeleuchtung ausschalten, niemand draussen",
+        "severity": "info",
+    },
+    # Regen → Dachfenster/Velux schliessen
+    {
+        "role": "rain", "state": "on",
+        "affects": "shutter", "same_room": False,
+        "effect": "Regen → Dachfenster/Oberlichter schliessen",
+        "hint": "Regen → Dachfenster und Oberlichter schliessen",
+        "severity": "high",
+    },
+    # UV-Index hoch → Markise ausfahren
+    {
+        "role": "uv_index", "state": "on",
+        "affects": "awning", "same_room": False,
+        "effect": "Hoher UV-Index → Markise ausfahren fuer Sonnenschutz",
+        "hint": "UV-Index hoch → Markise ausfahren, Sonnenschutz",
+        "severity": "info",
+    },
+    # UV-Index hoch → Shutter/Rollladen
+    {
+        "role": "uv_index", "state": "on",
+        "affects": "shutter", "same_room": False,
+        "effect": "Hoher UV-Index → Beschattung fuer Moebel/Boeden",
+        "hint": "UV-Index hoch → Rollladen runter, Moebel/Boeden schuetzen",
+        "severity": "info",
+    },
+    # Sonneneinstrahlung → Markise
+    {
+        "role": "solar_radiation", "state": "on",
+        "affects": "awning", "same_room": False,
+        "effect": "Starke Sonneneinstrahlung → Markise ausfahren",
+        "hint": "Starke Sonne → Markise raus fuer Beschattung",
+        "severity": "info",
+    },
+    # Sonneneinstrahlung → Shutter/Rollladen
+    {
+        "role": "solar_radiation", "state": "on",
+        "affects": "shutter", "same_room": False,
+        "effect": "Starke Sonneneinstrahlung → Beschattung",
+        "hint": "Starke Sonne → Rollladen fuer Kuehlung und Blendschutz",
+        "severity": "info",
+    },
+
+    # Windrichtung → welche Seite Fenster/Markisen schliessen
+    {
+        "role": "wind_direction", "state": "on",
+        "affects": "blinds", "same_room": False,
+        "effect": "Windrichtung → relevante Seite fuer Beschattung/Schutz",
+        "hint": "Wind aus Richtung X → windexponierte Seite schuetzen",
+        "severity": "info",
+    },
+    {
+        "role": "wind_direction", "state": "on",
+        "affects": "shutter", "same_room": False,
+        "effect": "Windrichtung → Rollladen auf der Windseite schliessen",
+        "hint": "Windrichtung beachten → windexponierte Rollladen runter",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # POOL — erweiterte Szenarien
+    # =================================================================
+
+    # Pool-Pumpe + Frost (nochmal als Trigger von pool statt outdoor_temp)
+    {
+        "role": "pool", "state": "on",
+        "affects": "outdoor_temp", "same_room": False,
+        "effect": "Pool aktiv → Aussentemperatur fuer Frostschutz beobachten",
+        "hint": "Pool → bei Frost muss Pumpe laufen, Leitungsschutz",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # SPEZIELLE SZENARIEN
+    # =================================================================
+
+    # Scene aktiviert → mehrere Geraete betroffen
+    {
+        "role": "scene", "state": "on",
+        "affects": "climate", "same_room": False,
+        "effect": "Szene aktiviert → Klima passt sich an",
+        "hint": "Szene gestartet → Klima/Beleuchtung werden angepasst",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "blinds", "same_room": False,
+        "effect": "Szene aktiviert → Beschattung passt sich an",
+        "hint": "Szene gestartet → Rollladen/Jalousien werden angepasst",
+        "severity": "info",
+    },
+    {
+        "role": "scene", "state": "on",
+        "affects": "media_player", "same_room": False,
+        "effect": "Szene aktiviert → Medien werden angepasst",
+        "hint": "Szene gestartet → Musik/Medien werden gestartet/gestoppt",
+        "severity": "info",
+    },
+
+    # Gegensprechanlage → Tueroeffner/Schloss
+    {
+        "role": "intercom", "state": "on",
+        "affects": "lock", "same_room": False,
+        "effect": "Gegensprechanlage aktiv → Tuer oeffnen moeglich",
+        "hint": "Gegensprechanlage → Person identifiziert, Tuer oeffnen?",
+        "severity": "info",
+    },
+
+    # Sirene → Alarm muss aktiv sein (sonst Fehlkonfiguration)
+    {
+        "role": "siren", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "effect": "Sirene aktiv → Alarm-System sollte ausgeloest haben",
+        "hint": "Sirene heult → Alarm pruefen, ggf. Fehlalarm bestaetigen",
+        "severity": "high",
+    },
+
+    # Problem-Sensor → betroffenes Geraet pruefen
+    {
+        "role": "problem", "state": "on",
+        "affects": "automation", "same_room": False,
+        "effect": "Problem erkannt → Automatisierungen koennten betroffen sein",
+        "hint": "Geraete-Problem → abhaengige Automatisierungen pruefen",
+        "severity": "info",
+    },
+
+    # Connectivity → Geraete offline
+    {
+        "role": "connectivity", "state": "off",
+        "affects": "camera", "same_room": False,
+        "effect": "Verbindung verloren → Geraete/Kameras moeglicherweise offline",
+        "hint": "Verbindung unterbrochen → Kamera/Geraete nicht erreichbar",
+        "severity": "high",
+    },
+    {
+        "role": "connectivity", "state": "off",
+        "affects": "alarm", "same_room": False,
+        "effect": "Verbindung verloren → Alarm-System moeglicherweise offline",
+        "hint": "Verbindung unterbrochen → Alarm-System pruefen",
+        "severity": "high",
+    },
 ]
 
 
