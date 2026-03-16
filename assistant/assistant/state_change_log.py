@@ -1593,6 +1593,338 @@ DEVICE_DEPENDENCIES = [
         "hint": "Starkes Tageslicht → Rollladen/Jalousie gegen Blendung",
         "severity": "info",
     },
+
+    # =================================================================
+    # SICHERHEIT / BRANDSCHUTZ — fehlende Szenarien
+    # =================================================================
+
+    # Herd/Ofen an + niemand zuhause = Brandgefahr
+    {
+        "role": "oven", "state": "on",
+        "affects": "presence", "same_room": False,
+        "effect": "Herd/Ofen an + niemand zuhause → Brandgefahr",
+        "hint": "Herd laeuft unbeaufsichtigt → BRANDGEFAHR",
+        "severity": "critical",
+    },
+
+    # Wasserleck → Hauptventil schliessen
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "valve", "same_room": False,
+        "effect": "Wasserleck → Hauptventil sofort schliessen",
+        "hint": "Wasserleck erkannt → Wasserventil schliessen",
+        "severity": "critical",
+    },
+    # Wasserleck → Waschmaschine/Spueler koennten Quelle sein
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "washing_machine", "same_room": True,
+        "effect": "Wasserleck in Naehe Waschmaschine → moeglicherweise Quelle",
+        "hint": "Wasserleck → Waschmaschine als Quelle pruefen",
+        "severity": "high",
+    },
+    {
+        "role": "water_leak", "state": "on",
+        "affects": "dishwasher", "same_room": True,
+        "effect": "Wasserleck in Naehe Spuelmaschine → moeglicherweise Quelle",
+        "hint": "Wasserleck → Spuelmaschine als Quelle pruefen",
+        "severity": "high",
+    },
+
+    # Rauch → Lueftung/Ventilation AUS (Feuer nicht anfachen!)
+    {
+        "role": "smoke", "state": "on",
+        "affects": "ventilation", "same_room": False,
+        "effect": "Rauch → Lueftungsanlage aus, Feuer nicht anfachen",
+        "hint": "Rauch erkannt → Lueftung sofort AUS, Feuer nicht verbreiten",
+        "severity": "critical",
+    },
+
+    # Gas-Leck → KEINE Schaltaktionen (Funke!)
+    {
+        "role": "gas", "state": "on",
+        "affects": "relay", "same_room": False,
+        "effect": "Gas erkannt → keine Schaltaktionen, Funkengefahr",
+        "hint": "Gas erkannt → NICHT schalten, Funkengefahr → Explosionsrisiko",
+        "severity": "critical",
+    },
+    {
+        "role": "gas", "state": "on",
+        "affects": "ventilation", "same_room": False,
+        "effect": "Gas erkannt → Lueftung aus (elektrische Motoren = Funke)",
+        "hint": "Gas → Lueftung AUS, elektrischer Funke = Explosionsgefahr",
+        "severity": "critical",
+    },
+
+    # =================================================================
+    # SICHERHEIT — Abwesenheit / Vergessen
+    # =================================================================
+
+    # Niemand zuhause + Tueren nicht abgeschlossen
+    {
+        "role": "presence", "state": "off",
+        "affects": "lock", "same_room": False,
+        "effect": "Niemand zuhause + Tueren nicht abgeschlossen → unsicher",
+        "hint": "Alle weg → Tueren sollten abgeschlossen sein",
+        "severity": "high",
+    },
+    # Niemand zuhause + Garagentor offen
+    {
+        "role": "presence", "state": "off",
+        "affects": "garage_door", "same_room": False,
+        "effect": "Niemand zuhause + Garagentor offen → vergessen zu schliessen",
+        "hint": "Alle weg → Garagentor sollte geschlossen sein",
+        "severity": "high",
+    },
+    # Niemand zuhause + Fenster offen
+    {
+        "role": "presence", "state": "off",
+        "affects": "window_contact", "same_room": False,
+        "effect": "Niemand zuhause + Fenster offen → Einbruch/Wetter-Risiko",
+        "hint": "Alle weg → offene Fenster schliessen",
+        "severity": "high",
+    },
+    # Niemand zuhause + Herd an (nochmal explizit anders herum)
+    {
+        "role": "presence", "state": "off",
+        "affects": "oven", "same_room": False,
+        "effect": "Niemand zuhause + Herd an → Brandgefahr",
+        "hint": "Alle weg + Herd an → BRANDGEFAHR, sofort ausschalten",
+        "severity": "critical",
+    },
+
+    # Kamera offline + Alarm scharf = blinder Fleck
+    {
+        "role": "camera", "state": "off",
+        "affects": "alarm", "same_room": False,
+        "requires_state": {"armed_away", "armed_night"},
+        "effect": "Kamera offline bei scharfem Alarm → Sicherheitsluecke",
+        "hint": "Kamera offline + Alarm scharf → blinder Fleck in Ueberwachung",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # NETZWERK — Auswirkungen auf Smart-Home
+    # =================================================================
+
+    # Router offline → Alarm/Kameras/Automationen betroffen
+    {
+        "role": "router", "state": "off",
+        "affects": "alarm", "same_room": False,
+        "effect": "Router offline → Alarm-System moeglicherweise nicht erreichbar",
+        "hint": "Router down → Alarmsystem pruefen, kein Remote-Zugriff",
+        "severity": "high",
+    },
+    {
+        "role": "router", "state": "off",
+        "affects": "camera", "same_room": False,
+        "effect": "Router offline → Kameras nicht erreichbar, keine Aufzeichnung",
+        "hint": "Router down → Kameras offline, Ueberwachung unterbrochen",
+        "severity": "high",
+    },
+    # Server/NAS offline → Kamera-Aufzeichnung / Medien
+    {
+        "role": "server", "state": "off",
+        "affects": "camera", "same_room": False,
+        "effect": "Server offline → Kamera-Aufzeichnung (NVR) gestoppt",
+        "hint": "Server down → keine Kamera-Aufzeichnung moeglich",
+        "severity": "high",
+    },
+    {
+        "role": "nas", "state": "off",
+        "affects": "media_player", "same_room": False,
+        "effect": "NAS offline → Medienbibliothek nicht verfuegbar",
+        "hint": "NAS down → Filme/Musik/Fotos nicht abrufbar",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # KLIMA — widersprüchliche / fehlende Szenarien
+    # =================================================================
+
+    # Thermostat kuehlt + Fenster offen (nicht nur heat!)
+    {
+        "role": "thermostat", "state": "cool",
+        "affects": "window_contact", "same_room": True,
+        "effect": "Klimaanlage kuehlt + Fenster offen → Energieverschwendung",
+        "hint": "Kuehlung an + Fenster offen → Energie wird verschwendet",
+        "severity": "high",
+    },
+    # Heizung + Kuehlung gleichzeitig = gegeneinander arbeiten
+    {
+        "role": "heating", "state": "on",
+        "affects": "cooling", "same_room": True,
+        "effect": "Heizung + Kuehlung gleichzeitig → arbeiten gegeneinander",
+        "hint": "Heizung UND Kuehlung laufen → Energieverschwendung, gegeneinander",
+        "severity": "high",
+    },
+    # Waermepumpe kuehlt + Fenster offen
+    {
+        "role": "heat_pump", "state": "cool",
+        "affects": "window_contact", "same_room": False,
+        "effect": "Waermepumpe kuehlt + Fenster offen → Energieverschwendung",
+        "hint": "Waermepumpe kuehlt + Fenster offen → Energie wird verschwendet",
+        "severity": "high",
+    },
+
+    # Humidity niedrig + Heizung = trockene Luft
+    {
+        "role": "heating", "state": "on",
+        "affects": "humidity", "same_room": True,
+        "effect": "Heizung trocknet Luft aus → Luftfeuchtigkeit sinkt",
+        "hint": "Heizung an → Luft wird trocken, Befeuchter oder Lueften sinnvoll",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # WETTER — fehlende Szenarien
+    # =================================================================
+
+    # Wind → Fenster schliessen (Sturm)
+    {
+        "role": "wind_speed", "state": "on",
+        "affects": "window_contact", "same_room": False,
+        "effect": "Starker Wind → offene Fenster koennen zuschlagen/beschaedigen",
+        "hint": "Sturm → Fenster schliessen, Beschaedigungsgefahr",
+        "severity": "high",
+    },
+    # Wind → Bewaesserung ineffizient (Sprinkler verweht)
+    {
+        "role": "wind_speed", "state": "on",
+        "affects": "irrigation", "same_room": False,
+        "effect": "Wind → Sprinkler-Wasser verweht, Bewaesserung ineffizient",
+        "hint": "Wind + Bewaesserung → Wasser verweht, spaeter bewaessern",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # KOMFORT — fehlende Szenarien
+    # =================================================================
+
+    # Tuerklingel → Medien leiser/pausieren
+    {
+        "role": "doorbell", "state": "on",
+        "affects": "media_player", "same_room": False,
+        "effect": "Tuerklingel → Medien leiser damit man hoert",
+        "hint": "Klingel → Medien pausieren/leiser, damit man die Tuer hoert",
+        "severity": "info",
+    },
+    # Im Bett → Alarm scharf (Nachtmodus)
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "alarm", "same_room": False,
+        "effect": "Im Bett → Nacht-Alarm sinnvoll",
+        "hint": "Schlafenszeit → Alarm auf Nachtmodus stellen",
+        "severity": "info",
+    },
+    # Im Bett → Klingel leiser/stumm
+    {
+        "role": "bed_occupancy", "state": "on",
+        "affects": "doorbell", "same_room": False,
+        "effect": "Im Bett → Tuerklingel sollte stumm/leiser sein",
+        "hint": "Schlafenszeit → Klingel stumm schalten",
+        "severity": "info",
+    },
+    # Projector → braucht Lueftung (wird heiss)
+    {
+        "role": "projector", "state": "on",
+        "affects": "climate", "same_room": True,
+        "effect": "Beamer erzeugt Waerme → Raumtemperatur steigt",
+        "hint": "Beamer an → erzeugt Abwaerme, Raum wird waermer",
+        "severity": "info",
+    },
+    # TV an + Anwesenheit aus → vergessen auszuschalten
+    {
+        "role": "tv", "state": "on",
+        "affects": "presence", "same_room": False,
+        "effect": "TV laeuft + niemand zuhause → vergessen auszuschalten",
+        "hint": "TV an + niemand zuhause → TV vergessen, ausschalten",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # ENERGIE — fehlende Szenarien
+    # =================================================================
+
+    # EV-Charger + hoher Netzbezug → teurer Strom
+    {
+        "role": "ev_charger", "state": "on",
+        "affects": "grid_consumption", "same_room": False,
+        "effect": "E-Auto laedt vom Netz → teurer Strom statt Solar",
+        "hint": "Wallbox laedt ohne Solar → teurer Netzbezug, besser bei Sonne laden",
+        "severity": "info",
+    },
+    # Solar → Boiler aufheizen (Ueberschuss nutzen)
+    {
+        "role": "solar", "state": "on",
+        "affects": "boiler", "same_room": False,
+        "effect": "PV-Ueberschuss → Boiler aufheizen statt einspeisen",
+        "hint": "Solarueberschuss → Warmwasser heizen lohnt sich",
+        "severity": "info",
+    },
+    # Solar → Pool-Heizung
+    {
+        "role": "solar", "state": "on",
+        "affects": "pool", "same_room": False,
+        "effect": "PV-Ueberschuss → Pool heizen sinnvoll",
+        "hint": "Solarueberschuss → Pool heizen statt einspeisen",
+        "severity": "info",
+    },
+    # Batterie-Speicher niedrig + hoher Verbrauch
+    {
+        "role": "battery", "state": "on",
+        "affects": "energy", "same_room": False,
+        "effect": "Hausspeicher-Batterie niedrig → bald Netzbezug noetig",
+        "hint": "Batterie fast leer → energieintensive Geraete verschieben",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # GERAETE-KETTEN / APPLIANCE-WORKFLOWS
+    # =================================================================
+
+    # Waschmaschine fertig → Trockner bereit
+    {
+        "role": "washing_machine", "state": "idle",
+        "affects": "dryer", "same_room": False,
+        "effect": "Waschmaschine fertig → Waesche in Trockner umraeumen",
+        "hint": "Waschmaschine fertig → Waesche in den Trockner",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # GARTEN — fehlende Szenarien
+    # =================================================================
+
+    # Bewaesserung + Bodenfeuchtigkeit hoch → Ueberbewässerung
+    {
+        "role": "irrigation", "state": "on",
+        "affects": "soil_moisture", "same_room": True,
+        "effect": "Bewaesserung laeuft + Boden bereits feucht → Ueberwaesserung",
+        "hint": "Boden schon feucht → Bewaesserung stoppen, Pflanzenschaden",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # FAHRZEUGE — fehlende Szenarien
+    # =================================================================
+
+    # Auto naehert sich → Garagentor, Heizung/Kuehlung vorbereiten
+    {
+        "role": "car_location", "state": "on",
+        "affects": "garage_door", "same_room": False,
+        "effect": "Auto naehert sich → Garagentor oeffnen vorbereiten",
+        "hint": "Auto kommt → Garage oeffnen, Haus vorbereiten",
+        "severity": "info",
+    },
+    # Auto zuhause + Garage offen seit langem
+    {
+        "role": "car", "state": "home",
+        "affects": "garage_door", "same_room": False,
+        "effect": "Auto zuhause + Garagentor offen → vergessen zu schliessen",
+        "hint": "Auto geparkt + Garage offen → Tor schliessen",
+        "severity": "info",
+    },
 ]
 
 
