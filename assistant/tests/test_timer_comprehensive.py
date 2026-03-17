@@ -440,10 +440,12 @@ class TestCreateReminder:
 
     @pytest.mark.asyncio
     async def test_successful_reminder_today(self, tm_redis):
-        # Use a time 30 mins from now
-        future = datetime.now(_TZ) + timedelta(minutes=30)
+        # Use a fixed time far from midnight to avoid midnight-wrap failures
+        fixed_now = datetime.now(_TZ).replace(hour=14, minute=0, second=0, microsecond=0)
+        future = fixed_now + timedelta(minutes=30)
         time_str = future.strftime("%H:%M")
-        result = await tm_redis.create_reminder(time_str, "Meeting")
+        with patch("assistant.timer_manager._now", return_value=fixed_now):
+            result = await tm_redis.create_reminder(time_str, "Meeting")
         assert result["success"] is True
         assert "reminder_id" in result
         assert "Meeting" in result["message"]

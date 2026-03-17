@@ -30,11 +30,22 @@ logger = logging.getLogger(__name__)
 _EMPHASIS_WORDS = [
     "warnung", "achtung", "vorsicht", "offen", "alarm",
     "notfall", "gefahr", "sofort",
+    # Device-Dependency Conflict Keywords
+    "kritisch", "wichtig", "ineffizient", "waermeverlust",
+    "energieverlust", "rauch", "kohlenmonoxid", "gasaustritt",
 ]
 _EMPHASIS_PATTERNS = {
     word: re.compile(re.escape(word), re.IGNORECASE)
     for word in _EMPHASIS_WORDS
 }
+
+# Pattern fuer Device-Dependency Conflict Hints im Text erkennen
+# (z.B. "KRITISCH: Rauch erkannt" oder "WICHTIG: Fenster offen")
+_CONFLICT_HINT_PATTERN = re.compile(
+    r"(?:KRITISCH|WICHTIG):\s|ineffizient|waermeverlust|energieverlust"
+    r"|rauch\s*erkannt|kohlenmonoxid|gasaustritt|fenster.*offen.*heiz",
+    re.IGNORECASE,
+)
 
 # Englische Titel/Anreden die vom deutschen TTS falsch ausgesprochen werden.
 # Diese werden im SSML mit <lang xml:lang="en-US"> gewrappt damit die
@@ -244,6 +255,12 @@ class TTSEnhancer:
         """
         if not message_type:
             message_type = self.classify_message(text)
+
+        # Device-Dependency Conflict Hints erkennen:
+        # Wenn der Text Conflict-Keywords enthaelt, message_type auf
+        # "warning" hochstufen damit TTS Pausen und Emphasis einfuegt
+        if message_type == "confirmation" and _CONFLICT_HINT_PATTERN.search(text):
+            message_type = "warning"
 
         if self.prosody_variation:
             speed = self.speed_map.get(message_type, 100)

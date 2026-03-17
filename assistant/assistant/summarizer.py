@@ -440,8 +440,19 @@ Format: Fliesstext, kurze Saetze."""
             time = conv.get("timestamp", "")[:16]  # YYYY-MM-DDTHH:MM
             parts.append(f"[{time}] {role}: {conv.get('content', '')}")
 
+        # Aktive Geraete-Konflikte des Tages einbinden
+        try:
+            from .state_change_log import StateChangeLog
+            conflict_summary = StateChangeLog.format_conflicts_for_prompt()
+            if conflict_summary:
+                parts.append("\nGeraete-Konflikte des Tages:")
+                parts.append(conflict_summary.replace("\n\nAKTIVE GERAETE-KONFLIKTE:\n", "").split("\nErwaehne")[0].strip())
+        except Exception:
+            pass
+
         parts.append("\nFasse zusammen: Was wurde besprochen? "
-                     "Welche Aktionen? Stimmung? Besonderheiten?")
+                     "Welche Aktionen? Stimmung? Besonderheiten? "
+                     "Gab es Geraete-Konflikte (z.B. offene Fenster bei laufender Heizung)?")
         parts.append("Maximal 200 Woerter.")
 
         return "\n".join(parts)

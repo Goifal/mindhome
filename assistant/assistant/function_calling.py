@@ -1588,8 +1588,12 @@ def _get_assistant_tools_static() -> list:
                     },
                     "action": {
                         "type": "string",
-                        "enum": ["play", "pause", "stop", "next", "previous", "volume", "volume_up", "volume_down"],
-                        "description": "Medien-Aktion. 'volume' = Lautstärke auf Wert setzen, 'volume_up' = lauter (+10%), 'volume_down' = leiser (-10%)",
+                        "enum": ["play", "pause", "stop", "next", "previous", "volume", "volume_up", "volume_down", "source"],
+                        "description": "Medien-Aktion. 'volume' = Lautstärke auf Wert setzen, 'volume_up' = lauter (+10%), 'volume_down' = leiser (-10%), 'source' = Eingangsquelle wechseln (z.B. HDMI, TV, Bluetooth)",
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "Eingangsquelle fuer action='source' (z.B. 'HDMI1', 'TV', 'Bluetooth', 'AUX')",
                     },
                     "query": {
                         "type": "string",
@@ -3450,7 +3454,13 @@ class FunctionExecutor:
             # Phase 18: Pre-Execution Consequence Check
             consequence_hint = await self._check_consequences(function_name, arguments)
 
-            result = await handler(arguments)
+            # Zentralen ha_client Dependency-Check fuer diesen Call
+            # ueberspringen — _check_consequences hat bereits geprueft
+            self.ha._skip_dep_check = True
+            try:
+                result = await handler(arguments)
+            finally:
+                self.ha._skip_dep_check = False
 
             # Phase 18: Consequence-Hint an Ergebnis anfuegen
             # WICHTIG: Hint ist rein informativ — Aktion wurde BEREITS ausgefuehrt.
@@ -3642,20 +3652,12 @@ class FunctionExecutor:
             # ── Dependency-basierte Konflikte via StateChangeLog ──
             try:
                 _states = await _get_states()
-                state_dict = {s["entity_id"]: s.get("state", "") for s in _states if "entity_id" in s}
-                target_entity = args.get("entity_id", "")
-                new_state_val = args.get("state", args.get("action", ""))
-                if target_entity and new_state_val:
-                    state_dict[target_entity] = str(new_state_val).lower()
-                _scl = StateChangeLog.__new__(StateChangeLog)
-                conflicts = _scl.detect_conflicts(state_dict)
-                if target_entity and conflicts:
-                    relevant = [
-                        c for c in conflicts
-                        if target_entity in c.get("entities", [])
-                    ]
-                    if relevant:
-                        return relevant[0]["hint"]
+                dep_hints = StateChangeLog.check_action_dependencies(
+                    func_name, args, _states,
+                )
+                if dep_hints:
+                    # Maximal 2 Hints um das LLM nicht zu ueberladen
+                    return " | ".join(dep_hints[:2])
             except Exception:
                 pass
 
@@ -5356,6 +5358,7 @@ class FunctionExecutor:
         "effect", "color_name", "transition",
         "temperature", "target_temp_high", "target_temp_low", "hvac_mode",
         "fan_mode", "swing_mode", "preset_mode",
+        "humidity", "target_humidity", "mode",
         "position", "tilt_position",
         "volume_level", "media_content_id", "media_content_type", "source",
         "message", "title", "data",
@@ -5367,10 +5370,10 @@ class FunctionExecutor:
     # Confirmation-Flow laufen, nicht ueber das generische call_service.
     _CALL_SERVICE_ALLOWED_DOMAINS = frozenset({
         "light", "switch", "climate", "cover", "fan",
-        "media_player", "scene",
+        "media_player", "scene", "humidifier",
         "input_boolean", "input_number", "input_select", "input_text",
         "notify", "number", "select", "button",
-        "vacuum",
+        "vacuum", "homeassistant", "group",
         "shopping_list", "calendar", "timer", "counter",
     })
 
@@ -5486,6 +5489,22 @@ class FunctionExecutor:
             direction = "lauter" if action == "volume_up" else "leiser" if action == "volume_down" else ""
             msg = f"Lautstärke {direction} auf {int(volume_pct)}%" if direction else f"Lautstärke auf {int(volume_pct)}%"
             return {"success": success, "message": msg}
+
+        # Source/Input-Switching
+        if action == "source":
+            source_name = args.get("source", "")
+            if not source_name:
+                # Verfuegbare Quellen auflisten
+                state = await self.ha.get_state(entity_id)
+                sources = (state or {}).get("attributes", {}).get("source_list", [])
+                if sources:
+                    return {"success": True, "message": f"Verfuegbare Quellen: {', '.join(sources)}"}
+                return {"success": False, "message": "Keine Quelle angegeben und keine Quellenliste verfuegbar"}
+            success = await self.ha.call_service(
+                "media_player", "select_source",
+                {"entity_id": entity_id, "source": source_name},
+            )
+            return {"success": success, "message": f"Quelle gewechselt: {source_name}"}
 
         service_map = {
             "play": "media_play",

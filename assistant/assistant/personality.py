@@ -987,6 +987,52 @@ class PersonalityEngine:
 
         return None
 
+    def check_opinion_with_context(
+        self, action: str, args: dict, ha_states: list[dict] = None,
+        mood: str = "",
+    ) -> Optional[str]:
+        """Kombiniert Opinion-Rules mit Device-Dependency-Konflikten.
+
+        Wenn sowohl eine Opinion-Rule als auch ein Dependency-Konflikt
+        fuer die gleiche Aktion zutreffen, wird die Opinion verstaerkt.
+        Wenn nur ein Dependency-Konflikt existiert, wird ein eigener
+        Kommentar generiert.
+
+        Args:
+            action: Funktionsname (z.B. "set_climate")
+            args: Argumente der Funktion
+            ha_states: Aktuelle HA-States (optional)
+            mood: Aktueller Mood-String
+
+        Returns:
+            Kommentar-String oder None
+        """
+        # Basis-Opinion pruefen
+        opinion = self.check_opinion(action, args, mood=mood)
+
+        # Dependency-Konflikte pruefen (wenn States vorhanden)
+        dep_hint = None
+        if ha_states:
+            try:
+                from .state_change_log import StateChangeLog
+                hints = StateChangeLog.check_action_dependencies(
+                    action, args, ha_states,
+                )
+                if hints:
+                    dep_hint = hints[0]
+            except Exception:
+                pass
+
+        if opinion and dep_hint:
+            # Beides: Opinion + Dependency → verstaerkter Kommentar
+            return f"{opinion} {dep_hint}"
+        elif dep_hint and not opinion and self.opinion_intensity >= 1:
+            # Nur Dependency-Konflikt → eigener Hinweis
+            title = get_person_title()
+            return f"Zur Kenntnis, {title}: {dep_hint}"
+        else:
+            return opinion
+
     def check_pushback(self, func_name: str, func_args: dict) -> Optional[dict]:
         """Prüft ob Jarvis VOR einer Aktion warnen oder Bestätigung verlangen soll.
 

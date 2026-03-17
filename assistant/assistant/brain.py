@@ -1968,6 +1968,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 success=True, action=_confirm_action,
                                 room=func_args.get("room", ""),
                             )
+
+                            # Post-Action Conflict Check: Sofort neue Konflikte
+                            # erkennen die durch DIESE Aktion entstanden sind
+                            try:
+                                _post_states = await self.ha.get_states() or []
+                                _post_hints = StateChangeLog.check_action_dependencies(
+                                    func_name, func_args, _post_states,
+                                )
+                                if _post_hints:
+                                    _hint_text = _post_hints[0]
+                                    response_text = f"{response_text} {_hint_text}"
+                            except Exception:
+                                pass
                         else:
                             response_text = self.personality.get_varied_confirmation(
                                 success=False,
@@ -4206,6 +4219,23 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         else:
                             response_text = conflict_msg
 
+                    # Post-Action Dependency Check: Sofort neue Konflikte
+                    # erkennen die durch DIESE Aktion entstanden sind
+                    if _success and not conflict_msg:
+                        try:
+                            _post_states = await self.ha.get_states() or []
+                            _post_dep_hints = StateChangeLog.check_action_dependencies(
+                                func_name, final_args, _post_states,
+                            )
+                            if _post_dep_hints:
+                                _dep_hint = _post_dep_hints[0]
+                                if response_text:
+                                    response_text = f"{response_text} {_dep_hint}"
+                                else:
+                                    response_text = _dep_hint
+                        except Exception:
+                            pass
+
                     if func_name in QUERY_TOOLS:
                         has_query_results = True
 
@@ -4221,9 +4251,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             response_text = pushback_msg
 
                     # Phase 6: Opinion Check — Jarvis kommentiert Aktionen
-                    # Nur wenn kein Pushback-Kommentar (sonst doppelt)
+                    # Nutzt check_opinion_with_context() fuer kombinierte
+                    # Opinion-Rules + Device-Dependency Bewertung
                     if not pushback_msg:
-                        opinion = self.personality.check_opinion(func_name, final_args)
+                        try:
+                            _opinion_states = await self.ha.get_states() or []
+                        except Exception:
+                            _opinion_states = []
+                        opinion = self.personality.check_opinion_with_context(
+                            func_name, final_args,
+                            ha_states=_opinion_states,
+                        )
                         if opinion:
                             logger.info("Jarvis Meinung: '%s'", opinion)
                             if response_text:

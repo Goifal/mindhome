@@ -1287,9 +1287,25 @@ class ContextBuilder:
         room_speakers = multi_room_cfg.get("room_speakers", {})
         now = datetime.now(timezone.utc)
 
-        # Aktive Räume basierend auf Motion-Sensoren
+        # Occupancy-Sensoren (haben Vorrang, da zuverlaessiger als Motion)
+        room_occupancy = multi_room_cfg.get("room_occupancy_sensors", {})
+
+        # Aktive Räume basierend auf Motion- und Occupancy-Sensoren
         active_rooms = []
         for room_name, sensor_id in (room_sensors or {}).items():
+            # Occupancy-Sensor hat Vorrang (erkennt auch stille Anwesenheit)
+            occ_id = room_occupancy.get(room_name)
+            if occ_id:
+                for state in states:
+                    if state.get("entity_id") == occ_id and state.get("state") == "on":
+                        active_rooms.append(room_name)
+                        break
+                else:
+                    # Kein Occupancy-Match, weiter mit Motion-Fallback
+                    pass
+                if room_name in active_rooms:
+                    continue
+
             for state in states:
                 if state.get("entity_id") == sensor_id:
                     if state.get("state") == "on":

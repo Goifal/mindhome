@@ -119,7 +119,7 @@ class LearningObserver:
             # Aktion aufzeichnen — mit Person-Prefix wenn bekannt
             action_key = f"{entity_id}:{new_state}"
             person_prefix = f"{person}:" if person else ""
-            time_slot = f"{hour:02d}:{(minute // 15) * 15:02d}"  # 15-Min-Slots
+            time_slot = f"{hour:02d}:{(minute // 5) * 5:02d}"  # 5-Min-Slots
 
             # F-053: Cycle detection — skip entities+timeslots that have already been
             # automated via a previous suggestion. Without this, the automation fires
@@ -175,6 +175,18 @@ class LearningObserver:
             if already_suggested:
                 return
 
+            # Konflikt-Check: Wuerde die Automatisierung Geraete-Konflikte erzeugen?
+            conflict_hint = ""
+            try:
+                from .state_change_log import StateChangeLog
+                hints = StateChangeLog.check_action_dependencies(
+                    entity_id, {"entity_id": entity_id, "state": new_state}, {}
+                )
+                if hints:
+                    conflict_hint = hints[0]
+            except Exception:
+                pass
+
             # Als vorgeschlagen markieren (7 Tage Cooldown)
             await self.redis.setex(suggested_key, 7 * 86400, "1")
 
@@ -189,6 +201,8 @@ class LearningObserver:
                 f"um {time_slot} Uhr {action_de}. "
                 f"Soll ich das automatisieren?"
             )
+            if conflict_hint:
+                message += f" Beachte: {conflict_hint}"
 
             logger.info("Learning: Muster erkannt - %s um %s (%dx, Person: %s)",
                         action_key, time_slot, count, person or "global")

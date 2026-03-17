@@ -8721,6 +8721,435 @@ DEVICE_DEPENDENCIES = [
         "hint": "Heizdecke ausgeschaltet → Energieverbrauch normalisiert",
         "severity": "info",
     },
+
+    # =================================================================
+    # 48. KWL (LUEFTUNGSANLAGE) ALS HEIZ-/KUEHLSYSTEM
+    # =================================================================
+    # Viele KWL-Anlagen (z.B. Zehnder, Vallox, Helios) koennen ueber
+    # Waermetauscher, Nachheizregister oder Sole-EWT aktiv heizen und kuehlen.
+    # Diese Abhaengigkeiten fehlen wenn KWL nur als "Lueftung" betrachtet wird.
+
+    # --- KWL HEIZT → Fenster offen = Energieverschwendung ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "window_contact", "same_room": False,
+        "effect": "KWL heizt ueber Nachheizregister + Fenster offen → Waerme geht verloren",
+        "hint": "KWL heizt → Fenster offen = teure Heizenergie geht raus!",
+        "severity": "high",
+    },
+    # --- KWL KUEHLT → Fenster offen = Energieverschwendung ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "window_contact", "same_room": False,
+        "effect": "KWL kuehlt + Fenster offen → kuehle Luft entweicht",
+        "hint": "KWL kuehlt → Fenster offen = Kuehlenergie wird verschwendet!",
+        "severity": "high",
+    },
+
+    # --- KWL HEIZT → Energie ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "energy", "same_room": False,
+        "effect": "KWL im Heizmodus → erhoehter Energieverbrauch (Nachheizregister/WP)",
+        "hint": "KWL heizt → Stromverbrauch steigt durch Nachheizregister",
+        "severity": "info",
+    },
+    # --- KWL KUEHLT → Energie ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "energy", "same_room": False,
+        "effect": "KWL im Kuehlmodus → erhoehter Energieverbrauch",
+        "hint": "KWL kuehlt → Stromverbrauch steigt",
+        "severity": "info",
+    },
+
+    # --- KWL HEIZT + separate Kuehlung = gegeneinander ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "cooling", "same_room": False,
+        "effect": "KWL heizt + Klimaanlage kuehlt → arbeiten gegeneinander",
+        "hint": "KWL heizt UND Kuehlung laeuft → Energieverschwendung, gegeneinander!",
+        "severity": "high",
+    },
+    # --- KWL KUEHLT + separate Heizung = gegeneinander ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "heating", "same_room": False,
+        "effect": "KWL kuehlt + Heizung heizt → arbeiten gegeneinander",
+        "hint": "KWL kuehlt UND Heizung laeuft → Energieverschwendung, gegeneinander!",
+        "severity": "high",
+    },
+    # --- KWL KUEHLT + Heizkoerper = gegeneinander ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "radiator", "same_room": False,
+        "effect": "KWL kuehlt + Heizkoerper an → arbeiten gegeneinander",
+        "hint": "KWL kuehlt UND Heizkoerper an → widerspricht sich!",
+        "severity": "high",
+    },
+    # --- KWL KUEHLT + Fussbodenheizung = gegeneinander ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "KWL kuehlt + Fussbodenheizung an → arbeiten gegeneinander",
+        "hint": "KWL kuehlt UND Fussbodenheizung heizt → widerspricht sich!",
+        "severity": "high",
+    },
+    # --- KWL HEIZT + Fussbodenheizung = doppelt ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "KWL heizt + Fussbodenheizung heizt → ggf. doppelt",
+        "hint": "KWL heizt + Fussbodenheizung → doppelte Heizung, Temperatur pruefen",
+        "severity": "info",
+    },
+    # --- KWL HEIZT + Heizkoerper = doppelt ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "radiator", "same_room": False,
+        "effect": "KWL heizt + Heizkoerper an → doppelte Heizquelle",
+        "hint": "KWL heizt + Heizkoerper → ggf. Heizkoerper runterdrehen",
+        "severity": "info",
+    },
+
+    # --- KWL HEIZT/KUEHLT → Raumtemperatur ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "indoor_temp", "same_room": False,
+        "effect": "KWL heizt → Raumtemperatur steigt ueber Zuluft",
+        "hint": "KWL im Heizmodus → Raumtemperatur steigt (ueber warme Zuluft)",
+        "severity": "info",
+    },
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "indoor_temp", "same_room": False,
+        "effect": "KWL kuehlt → Raumtemperatur sinkt ueber Zuluft",
+        "hint": "KWL im Kuehlmodus → Raumtemperatur sinkt (ueber kuehle Zuluft)",
+        "severity": "info",
+    },
+
+    # --- KWL KUEHLT → Luftfeuchtigkeit / Taupunkt ---
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "humidity", "same_room": False,
+        "effect": "KWL kuehlt → Kondensation moeglich, Luftfeuchtigkeit aendert sich",
+        "hint": "KWL kuehlt → Kondensat im Geraet moeglich, Ablauf pruefen",
+        "severity": "info",
+    },
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "dew_point", "same_room": False,
+        "effect": "KWL kuehlt Zuluft → Taupunkt-Unterschreitung am Auslass moeglich",
+        "hint": "KWL Kuehlung → Taupunkt beachten, Kondenswasser an Auslaessen!",
+        "severity": "high",
+    },
+
+    # --- KWL HEIZT → Luftfeuchtigkeit sinkt ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "humidity", "same_room": False,
+        "effect": "KWL heizt Zuluft → trocknet Raumluft aus",
+        "hint": "KWL heizt → Luft wird trockener, ggf. Befeuchter noetig",
+        "severity": "info",
+    },
+
+    # --- KWL HEIZT/KUEHLT → Thermostat (Sollwert-Konflikt) ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "thermostat", "same_room": False,
+        "effect": "KWL heizt → Thermostat sieht erhoehte Temperatur, regelt runter",
+        "hint": "KWL heizt → Thermostat ggf. runterregeln, Raumthermostat beachten",
+        "severity": "info",
+    },
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "thermostat", "same_room": False,
+        "effect": "KWL kuehlt → Thermostat sieht niedrigere Temperatur, koennte hochregeln",
+        "hint": "KWL kuehlt → Thermostat koennte Heizung anfordern, Regelkonflikte moeglich!",
+        "severity": "high",
+    },
+
+    # --- KWL HEIZT/KUEHLT + Solar-Ueberschuss ---
+    {
+        "role": "solar", "state": "on",
+        "affects": "ventilation", "same_room": False,
+        "effect": "PV-Ueberschuss → KWL Heiz-/Kuehlbetrieb mit Solar betreiben",
+        "hint": "Solarueberschuss → KWL Nachheizregister/Kuehlung jetzt nutzen",
+        "severity": "info",
+    },
+
+    # --- KWL HEIZT/KUEHLT + Waermepumpe ---
+    {
+        "role": "ventilation", "state": "heat",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "KWL heizt ueber WP-Anbindung → Waermepumpe liefert Vorlauf",
+        "hint": "KWL Heizmodus → Waermepumpe wird als Waermequelle genutzt",
+        "severity": "info",
+    },
+    {
+        "role": "ventilation", "state": "cool",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "KWL kuehlt ueber WP-Anbindung → Waermepumpe im Kuehlbetrieb",
+        "hint": "KWL Kuehlmodus → Waermepumpe liefert Kuehlung, Energieverbrauch steigt",
+        "severity": "info",
+    },
+
+    # --- Heizung/Kuehlung → KWL (inverse: andere Systeme beeinflussen KWL) ---
+    {
+        "role": "heating", "state": "on",
+        "affects": "ventilation", "same_room": False,
+        "effect": "Heizung laeuft → KWL-Waermerueckgewinnung effektiver",
+        "hint": "Heizung an → KWL-WRG nutzt Abluft-Waerme, Effizienz steigt",
+        "severity": "info",
+    },
+    {
+        "role": "cooling", "state": "on",
+        "affects": "ventilation", "same_room": False,
+        "effect": "Kuehlung laeuft → KWL sollte nicht gegenheizenl",
+        "hint": "Klimaanlage kuehlt → KWL-Nachheizregister muss aus sein!",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # 49. BESCHATTUNG → SOLAR-PV-ERTRAG (Verschattung von Panels)
+    # =================================================================
+
+    # Blinds/Jalousie geschlossen → PV-Ertrag kann sinken (Dachfenster-Rollladen)
+    {
+        "role": "blinds", "state": "closed",
+        "affects": "solar", "same_room": False,
+        "effect": "Beschattung aktiv → kann PV-Panels verschatten, Ertrag sinkt",
+        "hint": "Rollladen/Jalousie zu → PV-Ertrag pruefen, Panels moeglicherweise verschattet",
+        "severity": "info",
+    },
+    {
+        "role": "shutter", "state": "closed",
+        "affects": "solar", "same_room": False,
+        "effect": "Rollladen geschlossen → kann PV-Panels verschatten",
+        "hint": "Rollladen zu → PV-Ertrag pruefen, Panels koennten verschattet sein",
+        "severity": "info",
+    },
+    {
+        "role": "awning", "state": "open",
+        "affects": "solar", "same_room": False,
+        "effect": "Markise ausgefahren → kann PV-Panels auf Dach/Terrasse verschatten",
+        "hint": "Markise draussen → PV-Ertrag sinkt moeglicherweise durch Verschattung",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # 50. WAERMEPUMPE ↔ FUSSBODENHEIZUNG (direkte Interaktion)
+    # =================================================================
+
+    # Waermepumpe → Fussbodenheizung (Vorlauftemperatur)
+    {
+        "role": "heat_pump", "state": "heat",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "Waermepumpe heizt → Vorlauftemperatur fuer Fussbodenheizung",
+        "hint": "Waermepumpe → steuert Fussbodenheizung ueber Vorlauftemperatur",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "off",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "Waermepumpe aus → Fussbodenheizung wird kalt (traege, erst nach Stunden)",
+        "hint": "Waermepumpe aus → Fussbodenheizung kuehlt langsam ab, Puffer nutzen",
+        "severity": "info",
+    },
+    # Fussbodenheizung → Waermepumpe (Ruecklauftemperatur)
+    {
+        "role": "floor_heating", "state": "heat",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "Fussbodenheizung aktiv → Waermepumpe muss Vorlauf liefern",
+        "hint": "Fussbodenheizung heizt → Waermepumpe-Effizienz (COP) beachten",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # 51. VORHANG → KLIMA / ENERGIE (Isolation, Kaeltebruecke)
+    # =================================================================
+
+    {
+        "role": "curtain", "state": "closed",
+        "affects": "climate", "same_room": True,
+        "effect": "Vorhang zu → isoliert Fenster, weniger Waermeverlust",
+        "hint": "Vorhang zu → isoliert gegen Kaelte am Fenster, weniger Heizenergie noetig",
+        "severity": "info",
+    },
+    {
+        "role": "curtain", "state": "closed",
+        "affects": "energy", "same_room": True,
+        "effect": "Vorhang zu → zusaetzliche Isolation, Energieeinsparung",
+        "hint": "Vorhang zu → Heiz-/Kuehlverlust reduziert durch Fenster-Isolation",
+        "severity": "info",
+    },
+    {
+        "role": "curtain", "state": "closed",
+        "affects": "heating", "same_room": True,
+        "effect": "Vorhang zu → weniger Heizenergie noetig (Kaeltebruecke reduziert)",
+        "hint": "Vorhang vor Fenster → Heizkoerper braucht weniger Leistung",
+        "severity": "info",
+    },
+    {
+        "role": "curtain", "state": "closed",
+        "affects": "cooling", "same_room": True,
+        "effect": "Vorhang zu → weniger Sonneneinstrahlung, Kuehlung entlastet",
+        "hint": "Vorhang zu → Sonnenhitze wird geblockt, Klimaanlage arbeitet weniger",
+        "severity": "info",
+    },
+    {
+        "role": "curtain", "state": "open",
+        "affects": "climate", "same_room": True,
+        "effect": "Vorhang offen → Fenster-Kaeltebruecke aktiv, Waermeverlust hoeher",
+        "hint": "Vorhang offen → Fenster strahlt Kaelte/Waerme ab, Klima beeinflusst",
+        "severity": "info",
+    },
+    {
+        "role": "curtain", "state": "open",
+        "affects": "solar", "same_room": False,
+        "effect": "Vorhang offen → keine Verschattung, PV-Ertrag nicht beeinflusst",
+        "hint": "Vorhang offen → maximales Tageslicht und PV-Ertrag (keine Verschattung)",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # 52. FUSSBODENHEIZUNG + KUEHLUNG = GEGENEINANDER
+    # =================================================================
+
+    {
+        "role": "floor_heating", "state": "heat",
+        "affects": "cooling", "same_room": True,
+        "effect": "Fussbodenheizung + Kuehlung gleichzeitig → arbeiten gegeneinander",
+        "hint": "Fussbodenheizung UND Kuehlung → Energieverschwendung, gegeneinander!",
+        "severity": "high",
+    },
+    {
+        "role": "radiator", "state": "heat",
+        "affects": "cooling", "same_room": True,
+        "effect": "Heizkoerper + Kuehlung gleichzeitig → arbeiten gegeneinander",
+        "hint": "Heizkoerper UND Klimaanlage → Energieverschwendung, gegeneinander!",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # 53. SAUNA / WALLBOX / WAERMEPUMPE — NETZUEBERLAST-KOMBINATIONEN
+    # =================================================================
+
+    {
+        "role": "sauna", "state": "on",
+        "affects": "ev_charger", "same_room": False,
+        "effect": "Sauna (6-10kW) + Wallbox (11-22kW) → extreme Netzlast!",
+        "hint": "Sauna + Wallbox gleichzeitig → Ueberlastgefahr, Sicherung koennte fliegen!",
+        "severity": "high",
+    },
+    {
+        "role": "sauna", "state": "on",
+        "affects": "heat_pump", "same_room": False,
+        "effect": "Sauna (6-10kW) + Waermepumpe (2-5kW) → hohe Gesamtlast",
+        "hint": "Sauna + Waermepumpe gleichzeitig → hohe Netzlast, Tarif-Spitze beachten",
+        "severity": "info",
+    },
+    {
+        "role": "ev_charger", "state": "on",
+        "affects": "sauna", "same_room": False,
+        "effect": "Wallbox laedt → Sauna starten = extreme Netzlast",
+        "hint": "Wallbox + Sauna → Ueberlastgefahr, nacheinander statt gleichzeitig!",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # 54. DUNSTABZUG / LUEFTUNG ↔ KAMIN (Unterdruck-Gefahr)
+    # =================================================================
+    # (fireplace → ventilation existiert bereits, aber fan → fireplace fehlt)
+
+    {
+        "role": "fan", "state": "on",
+        "affects": "fireplace", "same_room": True,
+        "effect": "Abluft-Ventilator + Kamin → Unterdruck zieht Rauch ins Haus",
+        "hint": "Ventilator/Dunstabzug an + Kamin → GEFAHR, Rauch wird ins Haus gezogen!",
+        "severity": "critical",
+    },
+    {
+        "role": "ventilation", "state": "on",
+        "affects": "fireplace", "same_room": False,
+        "effect": "Lueftungsanlage + Kamin → Unterdruck stoert Kaminzug",
+        "hint": "KWL/Lueftung an + Kamin → Unterdruck, Rauch und CO koennen ins Haus!",
+        "severity": "critical",
+    },
+
+    # =================================================================
+    # 55. AQUARIUM ↔ STROMAUSFALL / NETZWERK
+    # =================================================================
+
+    {
+        "role": "aquarium", "state": "on",
+        "affects": "connectivity", "same_room": False,
+        "effect": "Aquarium → bei Stromausfall/Offline sterben Fische",
+        "hint": "Aquarium → Strom-/Netzwerk-Unterbrechung kritisch fuer Fische!",
+        "severity": "high",
+    },
+    {
+        "role": "connectivity", "state": "off",
+        "affects": "aquarium", "same_room": False,
+        "effect": "Verbindung verloren → Aquarium-Steuerung moeglicherweise offline",
+        "hint": "Netzwerk offline → Aquarium-Filter/Heizung/Licht pruefen!",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # 56. HEIZDECKE + ABWESENHEIT (Brandgefahr — inverse Richtung)
+    # =================================================================
+
+    {
+        "role": "presence", "state": "off",
+        "affects": "electric_blanket", "same_room": False,
+        "effect": "Alle weg + Heizdecke an → Brandgefahr",
+        "hint": "Alle weg + Heizdecke noch an → AUSSCHALTEN, Brandgefahr!",
+        "severity": "critical",
+    },
+
+    # =================================================================
+    # 59. WAERMEPUMPE KUEHLEN → FUSSBODENHEIZUNG (Kuehlbetrieb)
+    # =================================================================
+
+    {
+        "role": "heat_pump", "state": "cool",
+        "affects": "floor_heating", "same_room": False,
+        "effect": "Waermepumpe kuehlt → Fussbodenheizung wird zur Flaechenkuehlung",
+        "hint": "Waermepumpe kuehlt → Fussbodenheizung als Flaechenkuehlung, Taupunkt beachten!",
+        "severity": "info",
+    },
+    {
+        "role": "heat_pump", "state": "cool",
+        "affects": "humidity", "same_room": False,
+        "effect": "Waermepumpe kuehlt via Fussboden → Kondensation/Taupunkt-Gefahr",
+        "hint": "Flaechenkuehlung via Fussboden → Taupunkt beachten, Kondenswasser vermeiden!",
+        "severity": "high",
+    },
+
+    # =================================================================
+    # 60. CURTAIN ↔ KAMERA (Privatsphaere / Sicht)
+    # =================================================================
+
+    {
+        "role": "curtain", "state": "open",
+        "affects": "camera", "same_room": True,
+        "effect": "Vorhang offen → Raum von aussen einsehbar, Kamera sieht mehr",
+        "hint": "Vorhang offen → Aussen-Kamera sieht durch Fenster, Innen-Privatsphaere beachten",
+        "severity": "info",
+    },
+
+    # =================================================================
+    # 61. WALLBOX + WAERMEPUMPE + SAUNA — Dreifach-Ueberlast
+    # =================================================================
+
+    {
+        "role": "heat_pump", "state": "on",
+        "affects": "ev_charger", "same_room": False,
+        "effect": "Waermepumpe + Wallbox gleichzeitig → hohe Netzlast",
+        "hint": "Waermepumpe + Wallbox → Netzlast hoch, Tarif-Spitze beachten",
+        "severity": "info",
+    },
 ]
 
 
@@ -8944,11 +9373,35 @@ class StateChangeLog:
                     "same_room": same_room,
                     "effect": dep["effect"],
                     "hint": dep["hint"],
+                    "severity": dep.get("severity", "info"),
                 })
         return conflicts
 
+    # Severity-Rangfolge fuer Sortierung (niedrigerer Wert = hoehere Prioritaet)
+    _SEVERITY_ORDER = {"critical": 0, "high": 1, "info": 2}
+    # Maximale Anzahl Konflikte im Prompt (critical immer dabei)
+    _MAX_CONFLICTS = 12
+    # Generische Loesungsvorschlaege basierend auf Trigger-Rolle
+    _RESOLUTIONS = {
+        "window_contact": "Fenster schliessen",
+        "door_contact": "Tuer schliessen",
+        "smoke": "Raum lueften, Quelle pruefen",
+        "co_detector": "Sofort lueften, Gebaeude verlassen",
+        "gas_detector": "Gas abstellen, lueften, Gebaeude verlassen",
+        "water_leak": "Wasserzufuhr pruefen",
+        "motion": "Bewegungsmelder pruefen",
+        "presence": "Anwesenheit pruefen",
+    }
+
     def format_conflicts_for_prompt(self, states: dict) -> str:
         """Formatiert aktive Geraete-Konflikte als LLM-Kontext.
+
+        Optimierungen gegenueber der Basisversion:
+        1. Severity-Sortierung: critical → high → info
+        2. Semantische Gruppierung: gleicher Hint aus mehreren Raeumen
+           wird zu einer Zeile mit Raum-Liste zusammengefasst
+        3. Max-Limit: Maximal _MAX_CONFLICTS Eintraege, critical immer
+           enthalten, Rest nach Severity aufgefuellt
 
         Args:
             states: Dict entity_id -> state-string
@@ -8972,35 +9425,92 @@ class StateChangeLog:
         except ImportError:
             _sanitize_for_prompt = None
 
-        lines = []
-        seen = set()
+        # --- Schritt 1: Deduplizierung (trigger_entity + affected_role) ---
+        seen_entity_keys: set[tuple[str, str]] = set()
+        deduped: list[dict] = []
         for c in active_conflicts:
-            # Raum-Info in Hinweis einbauen wenn vorhanden
-            room = c.get("trigger_room", "")
-            if room and _sanitize_for_prompt:
-                room = _sanitize_for_prompt(room, 50, "conflict_room")
-            room_info = f" [{room}]" if room else ""
+            key = (c["trigger_entity"], c["affected_role"])
+            if key in seen_entity_keys:
+                continue
+            seen_entity_keys.add(key)
+            deduped.append(c)
+
+        # --- Schritt 2: Severity-Sortierung ---
+        sev_order = self._SEVERITY_ORDER
+        deduped.sort(key=lambda c: sev_order.get(c.get("severity", "info"), 2))
+
+        # --- Schritt 3: Semantische Gruppierung ---
+        # Gleicher Hint + gleicher Effect → Raeume zusammenfassen
+        # Key: (hint, effect, severity) → {"rooms": [...], "trigger_role": str}
+        from collections import OrderedDict
+        grouped: OrderedDict[tuple[str, str, str], dict] = OrderedDict()
+        for c in deduped:
             hint = c.get("hint", "")
             effect = c.get("effect", "")
+            severity = c.get("severity", "info")
             if _sanitize_for_prompt:
                 hint = _sanitize_for_prompt(hint, 200, "conflict_hint")
                 effect = _sanitize_for_prompt(effect, 200, "conflict_effect")
             if not hint:
                 continue
-            key = (c["trigger_entity"], c["affected_role"])
-            if key in seen:
-                continue
-            seen.add(key)
-            lines.append(f"- {hint}{room_info} ({effect})")
+            room = c.get("trigger_room", "")
+            if room and _sanitize_for_prompt:
+                room = _sanitize_for_prompt(room, 50, "conflict_room")
+            group_key = (hint, effect, severity)
+            if group_key not in grouped:
+                grouped[group_key] = {
+                    "rooms": [],
+                    "trigger_role": c.get("trigger_role", ""),
+                    "affected_role": c.get("affected_role", ""),
+                }
+            if room and room not in grouped[group_key]["rooms"]:
+                grouped[group_key]["rooms"].append(room)
+
+        if not grouped:
+            return ""
+
+        # --- Schritt 4: Max-Limit mit Critical-Garantie ---
+        all_entries = list(grouped.items())
+        # Critical immer dabei
+        critical_entries = [
+            e for e in all_entries if e[0][2] == "critical"
+        ]
+        other_entries = [
+            e for e in all_entries if e[0][2] != "critical"
+        ]
+        # Auffuellen bis _MAX_CONFLICTS (critical zuerst, dann Rest)
+        max_other = max(0, self._MAX_CONFLICTS - len(critical_entries))
+        selected = critical_entries + other_entries[:max_other]
+
+        # --- Schritt 5: Formatierung mit Loesungsvorschlaegen ---
+        lines: list[str] = []
+        for (hint, effect, severity), group_data in selected:
+            rooms = group_data["rooms"]
+            trigger_role = group_data["trigger_role"]
+            if rooms:
+                room_info = f" [{', '.join(rooms)}]"
+            else:
+                room_info = ""
+            sev_prefix = ""
+            if severity == "critical":
+                sev_prefix = "KRITISCH: "
+            elif severity == "high":
+                sev_prefix = "WICHTIG: "
+            resolution = self._RESOLUTIONS.get(trigger_role, "")
+            res_info = f" → Loesung: {resolution}" if resolution else ""
+            lines.append(f"- {sev_prefix}{hint}{room_info} ({effect}){res_info}")
 
         if not lines:
             return ""
 
         return (
-            "\n\nAKTIVE GERAETE-KONFLIKTE (rein informativ):\n"
+            "\n\nAKTIVE GERAETE-KONFLIKTE:\n"
             + "\n".join(lines)
-            + "\nWeise den User beilaeufig auf diese Konflikte hin, "
-            "wenn er nach Energie, Heizung oder Raumklima fragt. "
+            + "\nErwaehne relevante Konflikte PROAKTIV wenn der User "
+            "eine betroffene Aktion ausfuehrt oder ein betroffenes "
+            "Geraet anspricht — nicht erst wenn er explizit fragt. "
+            "Bei KRITISCH-Konflikten IMMER sofort erwaehnen. "
+            "Halte es kurz und sachlich (1 Satz). "
             "WICHTIG: Diese Konflikte sind nur Hinweise — verweigere "
             "NIEMALS eine Aktion des Users wegen eines Konflikts."
         )
@@ -9040,24 +9550,39 @@ class StateChangeLog:
             scl = StateChangeLog.__new__(StateChangeLog)
             conflicts = scl.detect_conflicts(state_dict)
 
-            if target_entity and conflicts:
+            # Nur aktive Konflikte (betroffenes Geraet ist aktiv)
+            active = [c for c in conflicts if c.get("affected_active")]
+
+            if target_entity and active:
+                # Relevante Konflikte: target ist Trigger ODER betroffene Rolle
+                target_role = StateChangeLog._get_entity_role(target_entity)
                 relevant = [
-                    c for c in conflicts
-                    if target_entity in c.get("entities", [])
+                    c for c in active
+                    if c["trigger_entity"] == target_entity
+                    or c.get("affected_role") == target_role
                 ]
+                # Severity-Sortierung: critical zuerst
+                _sev = {"critical": 0, "high": 1, "info": 2}
+                relevant.sort(key=lambda c: _sev.get(c.get("severity", "info"), 2))
                 for c in relevant[:3]:
-                    room_info = f" ({c.get('room', '')})" if c.get("room") else ""
-                    hints.append(f"{c['hint']}{room_info}")
-            elif not target_entity and conflicts:
+                    room_info = f" ({c.get('trigger_room', '')})" if c.get("trigger_room") else ""
+                    sev = c.get("severity", "info")
+                    prefix = "KRITISCH: " if sev == "critical" else "WICHTIG: " if sev == "high" else ""
+                    hints.append(f"{prefix}{c['hint']}{room_info}")
+            elif not target_entity and active:
                 # Ohne target_entity: Domain-basiert filtern
                 domain = action_function.replace("set_", "").replace("_room", "")
                 relevant = [
-                    c for c in conflicts
+                    c for c in active
                     if domain in c.get("affected_role", "") or domain in c.get("trigger_role", "")
                 ]
+                _sev = {"critical": 0, "high": 1, "info": 2}
+                relevant.sort(key=lambda c: _sev.get(c.get("severity", "info"), 2))
                 for c in relevant[:3]:
-                    room_info = f" ({c.get('room', '')})" if c.get("room") else ""
-                    hints.append(f"{c['hint']}{room_info}")
+                    room_info = f" ({c.get('trigger_room', '')})" if c.get("trigger_room") else ""
+                    sev = c.get("severity", "info")
+                    prefix = "KRITISCH: " if sev == "critical" else "WICHTIG: " if sev == "high" else ""
+                    hints.append(f"{prefix}{c['hint']}{room_info}")
         except Exception as e:
             logger.debug("check_action_dependencies Fehler: %s", e)
         return hints
