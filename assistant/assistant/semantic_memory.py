@@ -202,19 +202,9 @@ class SemanticMemory:
             logger.error("store_fact: Weder ChromaDB noch Redis verfuegbar — Fakt verworfen")
             return False
 
-        chroma_ok = True
-        if self.chroma_collection:
-            try:
-                await asyncio.to_thread(
-                    self.chroma_collection.add,
-                    documents=[fact.content],
-                    metadatas=[fact.to_dict()],
-                    ids=[fact.fact_id],
-                )
-            except Exception as e:
-                chroma_ok = False
-                logger.error("Fehler beim Speichern in ChromaDB: %s (Redis-Speicherung wird trotzdem versucht)", e)
-
+        # Redis zuerst schreiben (atomic Pipeline, billiger) — dann ChromaDB.
+        # Bei Redis-Fehler: kein ChromaDB-Write → keine verwaisten Eintraege.
+        # Bei ChromaDB-Fehler: Fakt ist trotzdem via Redis-Fallback querybar.
         redis_ok = True
         if self.redis:
             try:
@@ -234,20 +224,21 @@ class SemanticMemory:
                 pipe.sadd("mha:facts:all", fact.fact_id)
                 await pipe.execute()
             except Exception as e:
-                logger.error("Fehler beim Redis-Index (Fakt in ChromaDB aber nicht indexiert): %s", e)
+                logger.error("Fehler beim Redis-Index: %s — ChromaDB-Write uebersprungen", e)
                 redis_ok = False
-                # Rollback: ChromaDB-Eintrag loeschen um verwaiste Eintraege zu vermeiden
-                if chroma_ok and self.chroma_collection:
-                    try:
-                        await asyncio.to_thread(
-                            self.chroma_collection.delete, ids=[fact.fact_id]
-                        )
-                        logger.info("ChromaDB-Rollback erfolgreich fuer Fakt: %s", fact.fact_id)
-                    except Exception as rollback_err:
-                        logger.error(
-                            "ChromaDB-Rollback fehlgeschlagen fuer Fakt %s: %s",
-                            fact.fact_id, rollback_err,
-                        )
+
+        chroma_ok = True
+        if self.chroma_collection and redis_ok:
+            try:
+                await asyncio.to_thread(
+                    self.chroma_collection.add,
+                    documents=[fact.content],
+                    metadatas=[fact.to_dict()],
+                    ids=[fact.fact_id],
+                )
+            except Exception as e:
+                chroma_ok = False
+                logger.error("Fehler beim Speichern in ChromaDB: %s (Fakt via Redis weiterhin verfuegbar)", e)
 
         # Bei person-Fakten Relationship Cache aktualisieren
         if redis_ok and fact.category == "person":
@@ -519,7 +510,10 @@ class SemanticMemory:
                 return
 
             # Stichprobe: Maximal 100 Fakten pruefen (Performance)
-            check_ids = list(redis_ids_set)[:100]
+            # random.sample statt [:100] — deckt ueber mehrere Runs ALLE Fakten ab
+            import random
+            _all_ids = list(redis_ids_set)
+            check_ids = random.sample(_all_ids, min(100, len(_all_ids)))
             orphaned_redis = 0
             reindexed = 0
 

@@ -475,8 +475,8 @@ class ProactiveManager:
         if redis:
             try:
                 await redis.setex(f"mha:critical:{event_id}", 300, "pending")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Critical Alert Redis-Write fehlgeschlagen: %s", e)
 
         for attempt in range(max_retries + 1):
             volume = min(1.0, 0.7 + attempt * 0.1)
@@ -503,8 +503,8 @@ class ProactiveManager:
                         if ack and ack == b"acked":
                             logger.info("Critical Alert %s acknowledged nach %d Versuchen", event_id, attempt + 1)
                             return
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Critical Alert ACK-Check fehlgeschlagen: %s", e)
 
         logger.warning("Critical Alert %s: Kein ACK nach %d Versuchen", event_id, max_retries + 1)
 
