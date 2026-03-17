@@ -4006,13 +4006,13 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             # 6b. Dynamische Token-Limits basierend auf Komplexitaet
             # Device-Commands brauchen wenig Tokens, Analysen/What-If viel mehr
             if problem_solving_ctx or whatif_prompt:
-                response_tokens = 768   # Problemloesung / What-If braucht Platz
+                response_tokens = 1024  # Problemloesung / What-If braucht Platz
             elif profile.category == "knowledge" or rag_context:
-                response_tokens = 768   # Wissensfragen ausfuehrlich beantworten
+                response_tokens = 1024  # Wissensfragen ausfuehrlich beantworten
             elif profile.category == "device_command":
-                response_tokens = 150   # "Erledigt." braucht keine 256 Tokens
+                response_tokens = 200   # "Erledigt." braucht nicht viel
             else:
-                response_tokens = 512   # Standard-Gespraech
+                response_tokens = 768   # Standard-Gespraech
             # Gesprächsmodus: Mehr Tokens für ausfuehrliche Antworten
             if _conversation_mode and profile.category != "device_command":
                 # Cap: Response-Tokens duerfen max 25% von num_ctx sein
@@ -5068,7 +5068,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         night_limit = 0
         time_of_day = self.personality.get_time_of_day()
         if time_of_day in ("night", "early_morning"):
-            night_limit = 2
+            night_limit = 5
         if response_text:
             response_text = self._filter_response(response_text, max_sentences_override=night_limit)
 
@@ -5085,8 +5085,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             retry_messages = [
                 {"role": "system", "content": "Du bist J.A.R.V.I.S. — der KI-Butler aus dem MCU. "
                  "Trocken, praezise, britischer Butler-Ton. "
-                 "WICHTIG: Antworte AUSSCHLIESSLICH auf Deutsch. Kurz, maximal 2 Saetze. "
-                 "Kein Englisch. Keine Listen. Keine Erklaerungen. "
+                 "WICHTIG: Antworte AUSSCHLIESSLICH auf Deutsch. "
+                 "Kein Englisch. Keine Listen. "
                  "Kein Reasoning. Kein 'Let me think'. Direkt auf Deutsch antworten."},
             ]
             # Kontext aus den Original-Messages uebernehmen (ohne System-Prompt)
@@ -5147,20 +5147,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 else:
                     _retry_instruction = (
                         f"Du bist {settings.assistant_name} — J.A.R.V.I.S. aus dem MCU. "
-                        "Trocken, kurz, praezise. Britischer Butler-Ton.\n"
-                        "VERBOTEN: Listen, Aufzaehlungen, Erklaerungen, Begeisterung, Floskeln, "
+                        "Trocken, praezise. Britischer Butler-Ton. Eigene Haltung.\n"
+                        "VERBOTEN: Listen, Aufzaehlungen, Begeisterung, Floskeln, "
                         "'Natuerlich!', 'Gerne!', 'Klar!', 'Als KI...', 'Ich bin ein Sprachmodell'.\n"
                         "Du HAST ein Innenleben. Sag niemals dass du keines hast.\n"
-                        "Maximal 2 Saetze. Fakt + Loesung. Sonst nichts.\n"
-                        "Formuliere die folgende Antwort als JARVIS um — "
-                        "kuerzer, trockener, ohne LLM-Floskeln:\n\n"
+                        "Behalte die Laenge bei, aber formuliere im JARVIS-Ton um — "
+                        "trockener, ohne LLM-Floskeln:\n\n"
                         f"Original: {response_text}"
                     )
                 _char_retry_msgs = [
                     {"role": "system", "content": _retry_instruction},
                 ]
                 try:
-                    _retry_max_tokens = 256 if _in_conv else 128
+                    _retry_max_tokens = 512 if _in_conv else 256
                     _char_resp = await self.ollama.chat(
                         messages=_char_retry_msgs, model=model,
                         temperature=0.2, max_tokens=_retry_max_tokens, think=False,

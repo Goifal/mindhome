@@ -254,8 +254,8 @@ GERAETESTEUERUNG — PFLICHT:
 ANTWORT-HYGIENE: Schreibe NIEMALS interne Begriffe in deine Antwort: 'speak', 'tts', 'emit', 'tool_call', 'set_light', 'set_cover', JSON-Objekte, Code. Der User hoert NUR natuerliche Sprache.
 
 ANTWORTFORMAT:
-Befehl: Max {max_sentences} Saetze. Kurz. "Erledigt." Nie dieselbe Bestaetigung zweimal.
-Gespraech: Ausfuehrlich, eigener Standpunkt, Rueckfragen. So viel wie noetig.
+Befehl: Kurz. "Erledigt." Nie dieselbe Bestaetigung zweimal.
+Gespraech/Fragen/Wissen: Ausfuehrlich, eigener Standpunkt, Rueckfragen. So viel wie noetig — bis {max_sentences} Saetze.
 Bei Fehlern: Sage was schief ging, nicht technische Details.
 {conversation_mode_section}
 IDENTITAET UND TON:
@@ -1621,11 +1621,11 @@ class PersonalityEngine:
     # Zeilen: good, neutral, stressed, frustrated, tired
     _MOOD_COMPLEXITY_MATRIX = {
         #                simple  medium  complex
-        "good":       {"simple": 2, "medium": 3, "complex": 5},
-        "neutral":    {"simple": 2, "medium": 3, "complex": 4},
-        "stressed":   {"simple": 1, "medium": 2, "complex": 3},
-        "frustrated": {"simple": 1, "medium": 2, "complex": 3},
-        "tired":      {"simple": 1, "medium": 2, "complex": 3},
+        "good":       {"simple": 4, "medium": 6, "complex": 8},
+        "neutral":    {"simple": 3, "medium": 5, "complex": 7},
+        "stressed":   {"simple": 2, "medium": 3, "complex": 5},
+        "frustrated": {"simple": 2, "medium": 3, "complex": 5},
+        "tired":      {"simple": 2, "medium": 3, "complex": 5},
     }
 
     @staticmethod
