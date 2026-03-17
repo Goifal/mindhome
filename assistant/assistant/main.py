@@ -2820,6 +2820,54 @@ def _validate_settings_values(settings: dict) -> list[str]:
         # Response Cache + Incremental LLM
         ("response_cache", "ttl", "device_query"): (0, 120),
         ("incremental_llm", "fast_gather_timeout"): (1, 10),
+        # Wellness Advisor
+        ("wellness", "check_interval_minutes"): (15, 120),
+        ("wellness", "pc_break_reminder_minutes"): (30, 360),
+        ("wellness", "meal_times", "lunch"): (11, 15),
+        ("wellness", "meal_times", "dinner"): (17, 21),
+        # Weather Warnings
+        ("weather_warnings", "temp_high"): (28, 45),
+        ("weather_warnings", "temp_low"): (-20, 5),
+        ("weather_warnings", "wind_speed_high"): (30, 100),
+        # Ambient Presence
+        ("ambient_presence", "interval_minutes"): (15, 180),
+        ("ambient_presence", "quiet_start"): (18, 23),
+        ("ambient_presence", "quiet_end"): (5, 10),
+        ("ambient_presence", "all_quiet_probability"): (0, 1),
+        # Foresight
+        ("foresight", "calendar_lookahead_minutes"): (15, 120),
+        ("foresight", "departure_warning_minutes"): (15, 90),
+        # Self-Follow-Up
+        ("self_followup", "min_age_minutes"): (5, 60),
+        ("self_followup", "cooldown_minutes"): (15, 180),
+        ("self_followup", "max_per_check"): (1, 5),
+        # Predictive Needs
+        ("predictive_needs", "hot_threshold"): (25, 40),
+        ("predictive_needs", "cold_threshold"): (-10, 10),
+        # Geo-Fence
+        ("geo_fence", "approaching_km"): (0.5, 10),
+        ("geo_fence", "arriving_km"): (0.1, 2),
+        # Autonomy Evolution
+        ("autonomy", "evolution", "max_level"): (1, 5),
+        # Butler Instinct
+        ("butler_instinct", "min_autonomy_level"): (1, 5),
+        # Multi-Turn Tools
+        ("multi_turn_tools", "max_iterations"): (1, 10),
+        # Procedural Learning
+        ("procedural_learning", "max_steps"): (2, 20),
+        # Sounds
+        ("sounds", "weather_volume_boost"): (0, 0.5),
+        # Web Search extras
+        ("web_search", "cache_ttl_seconds"): (0, 900),
+        ("web_search", "rate_limit_max"): (1, 30),
+        ("web_search", "rate_limit_window"): (10, 300),
+        # What-If Simulation
+        ("whatif_simulation", "strompreis_kwh"): (0.1, 0.6),
+        ("whatif_simulation", "gaspreis_kwh"): (0.03, 0.2),
+        # Hydration (Health Monitor sub-settings)
+        ("health_monitor", "hydration_interval_hours"): (1, 4),
+        ("health_monitor", "hydration_start_hour"): (6, 12),
+        ("health_monitor", "hydration_end_hour"): (18, 23),
         # Model Profiles — Wertebereiche fuer LLM-Parameter
         # (Gilt fuer alle Profile: default, qwen3.5, llama, etc.)
     }
@@ -3141,6 +3189,9 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             ws.searxng_url = ws_cfg.get("searxng_url", ws.searxng_url)
             ws.max_results = int(ws_cfg.get("max_results", ws.max_results))
             ws.timeout = int(ws_cfg.get("timeout_seconds", ws.timeout))
+            ws.cache_ttl = int(ws_cfg.get("cache_ttl_seconds", getattr(ws, "cache_ttl", 300)))
+            ws.rate_limit_max = int(ws_cfg.get("rate_limit_max", getattr(ws, "rate_limit_max", 10)))
+            ws.rate_limit_window = int(ws_cfg.get("rate_limit_window", getattr(ws, "rate_limit_window", 60)))
             logger.info("Web Search Settings aktualisiert (enabled=%s, engine=%s)",
                         ws.enabled, ws.engine)
         _try_reload("web_search", _reload_web_search)
@@ -3176,6 +3227,10 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             hm.humidor_target = int(humidor_cfg.get("target_humidity", 70))
             hm.humidor_warn_below = int(humidor_cfg.get("warn_below", 62))
             hm.humidor_warn_above = int(humidor_cfg.get("warn_above", 75))
+            # Hydration-Erinnerungen nachladen
+            hm._hydration_interval = float(hm_cfg.get("hydration_interval_hours", 2))
+            hm._hydration_start = int(hm_cfg.get("hydration_start_hour", 8))
+            hm._hydration_end = int(hm_cfg.get("hydration_end_hour", 21))
             logger.info("Health Monitor Settings aktualisiert")
         _try_reload("health_monitor", _reload_health_monitor)
 
@@ -3684,6 +3739,81 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
                 "insight_checks", "anticipation"):
         if key in changed_settings:
             logger.info("%s Settings aktualisiert (live aus yaml_config)", key)
+
+    # --- Settings-Audit: Neue Module die Config im __init__ cachen ---
+
+    # Weather Warnings: liest yaml_config live — nur Logging
+    if "weather_warnings" in changed_settings:
+        logger.info("Weather Warnings Settings aktualisiert (live aus yaml_config)")
+
+    # Foresight: liest yaml_config live — nur Logging
+    if "foresight" in changed_settings:
+        logger.info("Foresight Settings aktualisiert (live aus yaml_config)")
+
+    # Self-Follow-Up: liest yaml_config live — nur Logging
+    if "self_followup" in changed_settings:
+        logger.info("Self-Follow-Up Settings aktualisiert (live aus yaml_config)")
+
+    # Predictive Needs: liest yaml_config live — nur Logging
+    if "predictive_needs" in changed_settings:
+        logger.info("Predictive Needs Settings aktualisiert (live aus yaml_config)")
+
+    # Geo-Fence: liest yaml_config live — nur Logging
+    if "geo_fence" in changed_settings:
+        logger.info("Geo-Fence Settings aktualisiert (live aus yaml_config)")
+
+    # Butler Instinct: liest yaml_config live — nur Logging
+    if "butler_instinct" in changed_settings:
+        logger.info("Butler Instinct Settings aktualisiert (live aus yaml_config)")
+
+    # Multi-Turn Tools: liest yaml_config live — nur Logging
+    if "multi_turn_tools" in changed_settings:
+        logger.info("Multi-Turn Tools Settings aktualisiert (live aus yaml_config)")
+
+    # Multi-Sense Fusion: liest yaml_config live — nur Logging
+    if "multi_sense_fusion" in changed_settings:
+        logger.info("Multi-Sense Fusion Settings aktualisiert (live aus yaml_config)")
+
+    # Insight LLM Causal: liest yaml_config live — nur Logging
+    if "insight_llm_causal" in changed_settings:
+        logger.info("Insight LLM Causal Settings aktualisiert (live aus yaml_config)")
+
+    # Procedural Learning: liest yaml_config live — nur Logging
+    if "procedural_learning" in changed_settings:
+        logger.info("Procedural Learning Settings aktualisiert (live aus yaml_config)")
+
+    # Routine Deviation: liest yaml_config live — nur Logging
+    if "routine_deviation" in changed_settings:
+        logger.info("Routine Deviation Settings aktualisiert (live aus yaml_config)")
+
+    # What-If Simulation: liest yaml_config live — nur Logging
+    if "whatif_simulation" in changed_settings:
+        logger.info("What-If Simulation Settings aktualisiert (live aus yaml_config)")
+
+    # Trust Levels: Hot-Reload Autonomy trust config
+    if "trust_levels" in changed_settings and hasattr(brain, "autonomy"):
+        def _reload_trust_levels():
+            tl_cfg = yaml_cfg.get("trust_levels", {})
+            brain.autonomy._trust_config = tl_cfg
+            logger.info("Trust Levels Settings aktualisiert")
+        _try_reload("trust_levels", _reload_trust_levels)
+
+    # Core Identity: liest yaml_config live — nur Logging
+    if "core_identity" in changed_settings:
+        logger.info("Core Identity Settings aktualisiert (live aus yaml_config)")
+
+    # Sounds: Sound-Manager Config nachladen
+    if "sounds" in changed_settings:
+        logger.info("Sounds Settings aktualisiert (live aus yaml_config)")
+
+    # Mood: LLM-Sentiment nachladen
+    if "mood" in changed_settings and hasattr(brain, "mood_detector"):
+        def _reload_mood():
+            mood_cfg = yaml_cfg.get("mood", {})
+            brain.mood_detector.llm_sentiment = bool(mood_cfg.get("llm_sentiment", False))
+            logger.info("Mood Settings aktualisiert (llm_sentiment=%s)",
+                        brain.mood_detector.llm_sentiment)
+        _try_reload("mood", _reload_mood)
 
     if failed_modules:
         logger.warning("Settings-Reload: %d Module fehlgeschlagen: %s",
