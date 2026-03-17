@@ -1921,7 +1921,7 @@ const HELP_TEXTS = {
   'adaptive_thresholds.enabled': {title:'Lernende Schwellwerte', text:'Passt Parameter automatisch an basierend auf Outcome-Daten. Nur innerhalb enger Grenzen, nur zur Laufzeit.'},
   'adaptive_thresholds.auto_adjust': {title:'Auto-Anpassung', text:'Erlaubt automatische Anpassung ohne User-Bestätigung (innerhalb enger Grenzen).'},
   'adaptive_thresholds.analysis_interval_hours': {title:'Analyse-Intervall', text:'Wie oft die Schwellwert-Analyse läuft (in Stunden). 168 = woechentlich.'},
-  // === SESSION 4-7: Fortgeschrittene Features ===
+  // === Fortgeschrittene Features ===
   'context_compaction.threshold': {title:'Kompaktierungs-Schwelle', text:'Ab diesem Anteil des Token-Budgets wird der Kontext zusammengefasst. 0.70 = bei 70% Auslastung. Niedrigerer Wert = frueheres Kompaktieren.'},
   'context_compaction.prefer_llm': {title:'LLM-Kompaktierung bevorzugen', text:'Nutzt das LLM für intelligente Zusammenfassungen statt einfacher Abschneidung. Besser aber langsamer.'},
   'pre_compaction_flush.enabled': {title:'Pre-Compaction Flush', text:'Sichert Fakten aus Nachrichten in das Langzeitgedaechtnis BEVOR sie kompaktiert werden. Verhindert Informationsverlust.'},
@@ -5092,12 +5092,12 @@ function renderSecurity() {
     ]) +
     fText('ocr.languages', 'OCR-Sprachen', 'Tesseract Sprachcodes, z.B. deu+eng')
   ) +
-  // --- Phase 17: Notfall-Protokolle ---
+  // --- Notfall-Protokolle ---
   sectionWrap('&#127752;', 'Notfall-Protokolle',
     fInfo('Bei CRITICAL Events (Rauch, Einbruch, Wasser) werden automatisch Aktionen ausgeführt. Jedes Protokoll kann einzeln aktiviert werden. Geräte werden über die Rollenzuweisung zugeordnet.') +
     '<div id="emergencyProtocolsContainer" style="color:var(--text-muted);font-size:12px;padding:8px;">Lade Notfall-Protokolle...</div>'
   ) +
-  // --- Phase 17: Interrupt-Queue ---
+  // --- Interrupt-Queue ---
   sectionWrap('&#9889;', 'Interrupt-Queue',
     fInfo('CRITICAL-Meldungen unterbrechen sofort alle laufenden Aktionen (TTS, Streaming). Ohne Interrupt geht die Meldung den normalen Weg über das LLM.') +
     fToggle('interrupt_queue.enabled', 'Interrupt-Queue aktiviert') +
@@ -5496,7 +5496,7 @@ async function regenerateRecoveryKey() {
   } catch (e) { toast('Fehler: ' + e.message, 'error'); }
 }
 
-// ---- Tab: KI-Autonomie (Phase 13.1 / 13.2 / 13.4) ----
+// ---- Tab: KI-Autonomie ----
 let SNAPSHOTS = [];
 
 function renderAutonomie() {
@@ -5644,7 +5644,7 @@ function renderAutonomie() {
   sectionWrap('&#128736;', 'Automationen &amp; Rollback',
     fInfo('Automationen erstellen und verwalten, Config-Selbstmodifikation und Rollback-Sicherung. Alles was mit automatischen Änderungen und deren Absicherung zu tun hat.') +
 
-    fSubheading('Self-Automation (Phase 13.2)') +
+    fSubheading('Self-Automation') +
     fToggle('self_automation.enabled', 'Self-Automation aktiv') +
     fNum('self_automation.max_per_day', 'Max. Automationen pro Tag', 1, 20) +
     fModelSelect('self_automation.model', 'Modell für Automations-Erstellung') +
@@ -5652,7 +5652,7 @@ function renderAutonomie() {
     fSubheading('Automationen — Übersicht') +
     '<div id="automations-panel"><div class="muted" style="padding:8px">Lade Automationen...</div></div>' +
 
-    fSubheading('Config-Selbstmodifikation (Phase 13.1)') +
+    fSubheading('Config-Selbstmodifikation') +
     '<div style="display:flex;flex-direction:column;gap:8px;">' +
     '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">' +
       '<span style="color:var(--success);">&#9989;</span><span style="font-size:13px;">easter_eggs.yaml</span>' +
@@ -10392,7 +10392,7 @@ async function confirmFactoryReset() {
 
 
 // ══════════════════════════════════════════════════════════════
-// Deklarative Analyse-Tools (Phase 13.3)
+// Deklarative Analyse-Tools
 // ══════════════════════════════════════════════════════════════
 
 let _declTools = [];
@@ -11355,7 +11355,7 @@ function renderIntelligence() {
     fNum('observation_loop.interval_hours', 'Prüf-Intervall (Stunden)', 1, 12) +
     fNum('observation_loop.max_daily', 'Max. Beobachtungen pro Tag', 1, 5)
   ) +
-  // --- Session 6: Fortgeschrittene Intelligenz ---
+  // --- Fortgeschrittene Intelligenz ---
   '<div class="cat-header">&#129504; Fortgeschrittene Intelligenz</div>' +
   sectionWrap('&#129504;', 'Background Reasoning',
     fInfo('Wenn niemand mit Jarvis spricht, analysiert er im Hintergrund den Haus-Status mit dem Smart-Modell. Insights werden beim nächsten User-Kontakt beiläufig eingewoben. GPU-Contention-Guard: Analyse wird übersprungen wenn ein User-Request aktiv ist.') +
