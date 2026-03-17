@@ -11272,7 +11272,7 @@ function renderIntelligence() {
     fToggle('next_step_hints.enabled', 'Think-Ahead aktiv')
   ) +
   // --- Antizipation & Erkennung ---
-  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#128268; Antizipation &amp; Erkennung</div>' +
+  '<div class="cat-header">&#128268; Antizipation &amp; Mustererkennung</div>' +
   sectionWrap('&#128279;', 'Kausalketten-Erkennung',
     fInfo('Jarvis erkennt wiederkehrende Handlungsketten: Wenn du 3x hintereinander "Licht an, Heizung hoch, Musik an" machst, schlägt er beim nächsten Mal die gesamte Kette vor.') +
     fNum('anticipation.causal_chain_window_min', 'Erkennungsfenster (Minuten)', 5, 30) +
@@ -11313,7 +11313,7 @@ function renderIntelligence() {
     fNum('seasonal_insights.min_history_months', 'Min. Historie (Monate)', 1, 12)
   ) +
   // --- Medium Effort Features ---
-  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#9889; Medium Effort Features</div>' +
+  '<div class="cat-header">&#9889; Kontext &amp; Vorhersage</div>' +
   sectionWrap('&#128172;', 'Dialogführung',
     fInfo('Echte Gesprächsführung: Jarvis merkt sich besprochene Geräte und Räume und loest Referenzen auf ("Mach es aus" → letztes besprochenes Licht). Klärungsfragen bei Mehrdeutigkeit ("Welches Licht?").') +
     fToggle('dialogue.enabled', 'Dialogführung aktiv') +
@@ -11344,7 +11344,7 @@ function renderIntelligence() {
     fNum('predictive_maintenance.battery_drain_alert_pct_per_week', 'Batterie-Drain Warnung (%/Woche)', 1, 20, 1)
   ) +
   // --- Proaktive Intelligenz ---
-  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#129504; Proaktive Intelligenz</div>' +
+  '<div class="cat-header">&#129504; Proaktive Intelligenz</div>' +
   sectionWrap('&#9888;', 'Konsequenz-Bewusstsein',
     fInfo('Vor jeder Aktion prüft Jarvis ob sie im aktuellen Kontext sinnvoll ist. Z.B. "Heizung hoch bei offenem Fenster", "Rollladen runter bei Sturm", "Alle Lichter aus obwohl jemand aktiv ist". Blockiert nie — gibt nur Hinweise.') +
     fToggle('consequence_checks.enabled', 'Konsequenz-Checks aktiv')
@@ -11356,7 +11356,7 @@ function renderIntelligence() {
     fNum('observation_loop.max_daily', 'Max. Beobachtungen pro Tag', 1, 5)
   ) +
   // --- Session 6: Fortgeschrittene Intelligenz ---
-  '<div style="margin:24px 0 8px;padding:12px 16px;background:var(--bg-card);border-radius:8px;border-left:3px solid var(--accent);font-weight:600;font-size:14px;">&#129504; Fortgeschrittene Intelligenz (Session 6)</div>' +
+  '<div class="cat-header">&#129504; Fortgeschrittene Intelligenz</div>' +
   sectionWrap('&#129504;', 'Background Reasoning',
     fInfo('Wenn niemand mit Jarvis spricht, analysiert er im Hintergrund den Haus-Status mit dem Smart-Modell. Insights werden beim nächsten User-Kontakt beiläufig eingewoben. GPU-Contention-Guard: Analyse wird übersprungen wenn ein User-Request aktiv ist.') +
     fToggle('background_reasoning.enabled', 'Background Reasoning aktiv') +
