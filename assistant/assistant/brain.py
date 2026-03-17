@@ -890,6 +890,50 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             logger.debug("Raum-Erkennung fehlgeschlagen: %s", e)
             return None
 
+    async def _get_room_state_summary(self, room: str) -> str:
+        """Baut kompakten Geraetestatus fuer einen Raum (fuer Smart Intent Kontext).
+
+        Returns:
+            z.B. "Heizung: 21°C (Soll 22°C), Licht: an (40%), Rollladen: 80%"
+        """
+        states = await self.get_states_cached()
+        if not states:
+            return ""
+        room_lower = room.lower()
+        parts = []
+        for s in states:
+            eid = s.get("entity_id", "")
+            name = (s.get("attributes", {}).get("friendly_name", "") or "").lower()
+            if room_lower not in eid and room_lower not in name:
+                continue
+            attrs = s.get("attributes", {})
+            state_val = s.get("state", "")
+            if state_val in ("unavailable", "unknown"):
+                continue
+            if eid.startswith("climate."):
+                current = attrs.get("current_temperature", "?")
+                target = attrs.get("temperature", "")
+                mode = state_val
+                hint = f"Heizung: {current}°C"
+                if target:
+                    hint += f" (Soll {target}°C)"
+                if mode != "off":
+                    hint += f", Modus {mode}"
+                parts.append(hint)
+            elif eid.startswith("light.") and state_val == "on":
+                brightness = attrs.get("brightness")
+                pct = f" ({round(brightness / 255 * 100)}%)" if brightness else ""
+                parts.append(f"Licht: an{pct}")
+            elif eid.startswith("cover."):
+                pos = attrs.get("current_position", "")
+                parts.append(f"Rollladen: {pos}%" if pos else f"Rollladen: {state_val}")
+            elif eid.startswith("sensor.") and "temperature" in eid:
+                unit = attrs.get("unit_of_measurement", "°C")
+                parts.append(f"Temperatur: {state_val}{unit}")
+            if len(parts) >= 5:
+                break
+        return ", ".join(parts)
+
     async def _speak_and_emit(
         self,
         text: str,
@@ -2611,8 +2655,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     _tod = "Abend"
                 else:
                     _tod = "Nacht"
+                # Raum-Geraetestatus fuer kontextbewusste Intent-Erkennung
+                _room_state = ""
+                if room:
+                    try:
+                        _room_state = await self._get_room_state_summary(room)
+                    except Exception:
+                        pass
                 _implicit_intent = await self.llm_enhancer.smart_intent.recognize(
                     text, room=room or "", time_of_day=_tod,
+                    room_state=_room_state,
                 )
             except Exception as _ie:
                 logger.debug("Smart Intent Recognition Fehler: %s", _ie)

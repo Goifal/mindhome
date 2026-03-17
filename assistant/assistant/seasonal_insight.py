@@ -287,11 +287,11 @@ class SeasonalInsightEngine:
                             ),
                         },
                     ],
-                    model=settings.model_fast,
+                    model=settings.model_smart,
                     temperature=0.5,
                     max_tokens=500,
                     think=False,
-                    tier="fast",
+                    tier="smart",
                 ),
                 timeout=5.0,
             )

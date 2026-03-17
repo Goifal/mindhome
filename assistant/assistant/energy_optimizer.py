@@ -303,7 +303,14 @@ class EnergyOptimizer:
 
         try:
             from .config import settings
-            context_parts = []
+            from datetime import datetime as _dt
+            _now = _dt.now()
+            _hour = _now.hour
+            _DAY_NAMES = {0: "Montag", 1: "Dienstag", 2: "Mittwoch", 3: "Donnerstag",
+                          4: "Freitag", 5: "Samstag", 6: "Sonntag"}
+            context_parts = [
+                f"Zeit: {_DAY_NAMES.get(_now.weekday(), '')} {_now.strftime('%H:%M')}",
+            ]
             if price is not None:
                 context_parts.append(f"Strompreis: {price:.1f} ct/kWh")
             if solar is not None:

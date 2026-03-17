@@ -68,7 +68,7 @@ Antworte NUR mit einem JSON-Objekt. Kein Kommentar.
 
 Raum: {room}
 Tageszeit: {time_of_day}
-Text: {text}
+{room_state}Text: {text}
 
 JSON:"""
 
@@ -151,7 +151,8 @@ class SmartIntentRecognizer:
         return False
 
     async def recognize(self, text: str, room: str = "",
-                        time_of_day: str = "") -> Optional[dict]:
+                        time_of_day: str = "",
+                        room_state: str = "") -> Optional[dict]:
         """Erkennt implizite Absichten im Text.
 
         Returns:
@@ -179,10 +180,14 @@ class SmartIntentRecognizer:
             else:
                 time_of_day = "Nacht"
 
+        # Raum-Status aufbereiten (Klima, Licht, Rollladen)
+        _state_line = f"Aktueller Raum-Status: {room_state}\n" if room_state else ""
+
         prompt = IMPLICIT_INTENT_PROMPT.format(
             text=safe_text,
             room=room or "unbekannt",
             time_of_day=time_of_day,
+            room_state=_state_line,
         )
 
         try:
