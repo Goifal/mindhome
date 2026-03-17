@@ -96,6 +96,7 @@ _ACTIVITY_LOGGERS = {
     "assistant.anticipation", "assistant.ha_client", "assistant.function_calling",
     "assistant.insight_engine", "assistant.learning_observer",
     "assistant.situation_model", "assistant.personality",
+    "assistant.latency_tracker", "assistant.response_cache",
     "mindhome-assistant",
 }
 
@@ -114,6 +115,8 @@ _ACTIVITY_MODULE_LABELS = {
     "assistant.learning_observer": "Lernen",
     "assistant.situation_model": "Situation",
     "assistant.personality": "Persönlichkeit",
+    "assistant.latency_tracker": "Latenz",
+    "assistant.response_cache": "Cache",
     "mindhome-assistant": "System",
 }
 
@@ -2814,6 +2817,9 @@ def _validate_settings_values(settings: dict) -> list[str]:
         ("dynamic_few_shot", "max_examples_in_prompt"): (1, 10),
         # Self-Learning (B12)
         ("self_learning", "cooldown_minutes"): (5, 120),
+        # Response Cache + Incremental LLM
+        ("response_cache", "ttl", "device_query"): (0, 120),
+        ("incremental_llm", "fast_gather_timeout"): (1, 10),
         # Model Profiles — Wertebereiche fuer LLM-Parameter
         # (Gilt fuer alle Profile: default, qwen3.5, llama, etc.)
     }
@@ -3656,6 +3662,21 @@ def _reload_all_modules(yaml_cfg: dict, changed_settings: dict):
             si.min_history_months = int(si_cfg.get("min_history_months", 2))
             logger.info("SeasonalInsight Settings aktualisiert")
         _try_reload("seasonal_insights", _reload_seasonal)
+
+    # Response Cache: enabled + TTL nachladen
+    if "response_cache" in changed_settings and hasattr(brain, "response_cache"):
+        def _reload_response_cache():
+            rc_cfg = yaml_cfg.get("response_cache", {})
+            brain.response_cache.configure(
+                enabled=rc_cfg.get("enabled", True),
+                ttl_overrides=rc_cfg.get("ttl", {}),
+            )
+            logger.info("ResponseCache Settings aktualisiert (enabled=%s)", rc_cfg.get("enabled", True))
+        _try_reload("response_cache", _reload_response_cache)
+
+    # Incremental LLM: liest yaml_config live in brain.process() — nur Logging
+    if "incremental_llm" in changed_settings:
+        logger.info("incremental_llm Settings aktualisiert (live aus yaml_config)")
 
     # Phase 18 Personality/Intelligence: lesen yaml_config live — nur Logging
     for key in ("memorable_interactions", "running_gag_evolution", "escalating_concern",

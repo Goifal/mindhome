@@ -31,7 +31,7 @@ const _searchIndex = [
   // KI-Modelle & Stil (tab-personality)
   {tab:'tab-personality', title:'KI-Modelle & Stil', keywords:'modell llm ollama fast smart deep openai', icon:'&#127917;'},
   {tab:'tab-personality', title:'GPU-Performance', keywords:'flash attention gpu vram keep alive performance speed latenz', icon:'&#9889;'},
-  {tab:'tab-personality', title:'Latenz-Optimierung', keywords:'latenz optimierung think modus upgrade deep smart refinement cache fast path geschwindigkeit', icon:'&#9889;'},
+  {tab:'tab-personality', title:'Latenz-Optimierung', keywords:'latenz optimierung think modus upgrade deep smart refinement cache fast path geschwindigkeit response cache ttl incremental gather timeout', icon:'&#9889;'},
   // Jarvis-Features (tab-jarvis)
   {tab:'tab-jarvis', title:'Progressive Antworten', keywords:'denkt laut zwischen-meldungen verarbeitung', icon:'&#128172;'},
   {tab:'tab-jarvis', title:'MCU-Intelligenz', keywords:'proaktiv mitdenken ingenieur diagnose anomalie kreuz-referenz implizit', icon:'&#129504;'},
@@ -2988,7 +2988,17 @@ function renderPersonality() {
       {v:'truncate',l:'Text-Kürzung — Schnell, kein LLM-Call (empfohlen)'},
       {v:'llm',l:'LLM-Zusammenfassung — Besser, aber 500-2000ms langsamer'}
     ]) +
-    fInfo('Wenn der Gesprächsverlauf zu lang wird, müssen ältere Nachrichten gekürzt werden. "Text-Kürzung" schneidet ältere Nachrichten auf 80 Zeichen ab — sofort und ohne extra LLM-Call. "LLM-Zusammenfassung" generiert eine intelligente Zusammenfassung, braucht aber einen zusätzlichen LLM-Call (500-2000ms).')
+    fInfo('Wenn der Gesprächsverlauf zu lang wird, müssen ältere Nachrichten gekürzt werden. "Text-Kürzung" schneidet ältere Nachrichten auf 80 Zeichen ab — sofort und ohne extra LLM-Call. "LLM-Zusammenfassung" generiert eine intelligente Zusammenfassung, braucht aber einen zusätzlichen LLM-Call (500-2000ms).') +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Response Cache</div>' +
+    fToggle('response_cache.enabled', 'Antwort-Cache aktiviert') +
+    fInfo('Cached LLM-Antworten fuer wiederkehrende Status-Abfragen (z.B. "Wie warm ist es?"). Wenn die gleiche Frage innerhalb des TTL-Fensters erneut gestellt wird, kommt die Antwort sofort aus dem Cache statt ueber das LLM. Spart 2-8 Sekunden. Nur Status-Abfragen werden gecacht — Befehle wie "Licht an" niemals.') +
+    fRange('response_cache.ttl.device_query', 'Cache-Dauer Status-Abfragen (Sekunden)', 0, 120, 5, {0:'Aus',15:'15s',30:'30s',45:'45s (Standard)',60:'1 Min',120:'2 Min'}) +
+    fInfo('Wie lange gecachte Status-Antworten gueltig bleiben. Kurz = aktuellere Daten, mehr LLM-Calls. Lang = schnellere Antworten, aber Werte koennen veraltet sein. 45s ist ein guter Kompromiss — Temperaturen aendern sich nicht in 45 Sekunden.') +
+    '<div style="margin:16px 0 8px;font-weight:600;font-size:13px;">Inkrementeller LLM-Start</div>' +
+    fToggle('incremental_llm.enabled', 'Fast-Gather fuer einfache Befehle') +
+    fInfo('Bei einfachen Geraetebefehlen ("Licht an") und Status-Abfragen ("Wie warm?") wird der Kontext-Gather mit kurzerem Timeout ausgefuehrt. Subsysteme die nicht rechtzeitig antworten (Anticipation, Patterns, Insights) werden uebersprungen — das LLM startet frueher. Spart 500-1500ms bei einfachen Anfragen.') +
+    fRange('incremental_llm.fast_gather_timeout', 'Fast-Gather Timeout (Sekunden)', 1.0, 10.0, 0.5, {1.0:'1s (aggressiv)',2.0:'2s',3.0:'3s (Standard)',5.0:'5s',10.0:'10s (konservativ)'}) +
+    fInfo('Maximale Wartezeit auf Kontext-Daten bei einfachen Befehlen. Niedrig = schnellere Antworten, aber weniger Kontext (Anticipation, gelernte Muster etc. fehlen moeglicherweise). 3s reicht fuer Haus-Status und Raumprofil — die wichtigsten Daten fuer Geraetebefehle.')
   ) +
   sectionWrap('&#10024;', 'LLM Enhancer',
     fInfo('Macht Jarvis intelligenter durch gezielte LLM-Nutzung. Jedes Feature nutzt einen separaten LLM-Call — mehr Features = bessere Antworten, aber hoehere Latenz und GPU-Last. Einzeln deaktivierbar.') +
