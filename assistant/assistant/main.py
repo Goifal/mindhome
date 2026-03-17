@@ -4195,6 +4195,138 @@ async def ui_get_available_temp_sensors(token: str = ""):
         raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
 
 
+@app.get("/api/ui/room-humidity")
+async def ui_get_room_humidity(token: str = ""):
+    """Konfigurierte Luftfeuchtigkeits-Sensoren mit aktuellem Wert und Mittelwert."""
+    await _check_token(token)
+    try:
+        import assistant.config as cfg
+        hm_cfg = cfg.yaml_config.get("health_monitor", {})
+        sensor_ids = hm_cfg.get("humidity_sensors", []) or []
+
+        states = await brain.ha.get_states()
+        state_map = {s.get("entity_id"): s for s in (states or [])}
+
+        sensors = []
+        vals = []
+        for sid in sensor_ids:
+            s = state_map.get(sid, {})
+            name = s.get("attributes", {}).get("friendly_name", sid) if s else sid
+            val = None
+            try:
+                val = float(s.get("state", ""))
+            except (ValueError, TypeError):
+                pass
+            sensors.append({
+                "entity_id": sid,
+                "name": name,
+                "value": val,
+                "unit": s.get("attributes", {}).get("unit_of_measurement", "%") if s else "%",
+                "available": s.get("state") not in (None, "unavailable", "unknown", ""),
+            })
+            if val is not None:
+                vals.append(val)
+
+        avg = round(sum(vals) / len(vals), 1) if vals else None
+
+        return {
+            "sensors": sensors,
+            "average": avg,
+            "count": len(sensors),
+            "active_count": len(vals),
+        }
+    except Exception as e:
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+
+
+@app.put("/api/ui/room-humidity")
+async def ui_set_room_humidity(req: Request, token: str = ""):
+    """Luftfeuchtigkeits-Sensoren konfigurieren. Body: {"sensors": ["sensor.x", ...]}"""
+    await _check_token(token)
+    try:
+        data = await req.json()
+        sensor_list = data.get("sensors", [])
+        if not isinstance(sensor_list, list):
+            raise HTTPException(status_code=400, detail="sensors muss eine Liste sein")
+
+        for sid in sensor_list:
+            if not isinstance(sid, str) or not sid.startswith("sensor."):
+                raise HTTPException(status_code=400, detail=f"Ungueltige Entity-ID: {sid}")
+
+        # In settings.yaml speichern
+        with open(SETTINGS_YAML_PATH) as f:
+            config = yaml.safe_load(f) or {}
+
+        if "health_monitor" not in config:
+            config["health_monitor"] = {}
+        config["health_monitor"]["humidity_sensors"] = sensor_list
+
+        with open(SETTINGS_YAML_PATH, "w") as f:
+            yaml.safe_dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # yaml_config im Speicher aktualisieren
+        import assistant.config as cfg
+        _new = load_yaml_config()
+        cfg.yaml_config.clear()
+        cfg.yaml_config.update(_new)
+
+        # HealthMonitor Allowlist live aktualisieren
+        if hasattr(brain, "health_monitor"):
+            brain.health_monitor._humidity_sensors = {s.lower() for s in sensor_list}
+
+        return {"success": True, "count": len(sensor_list)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+
+
+@app.get("/api/ui/room-humidity/available")
+async def ui_get_available_humidity_sensors(token: str = ""):
+    """Alle verfuegbaren Luftfeuchtigkeits-Sensoren aus Home Assistant."""
+    await _check_token(token)
+    try:
+        states = await brain.ha.get_states()
+        sensors = []
+        for s in (states or []):
+            eid = s.get("entity_id", "")
+            if not eid.startswith("sensor."):
+                continue
+            attrs = s.get("attributes", {})
+            unit = attrs.get("unit_of_measurement", "")
+            device_class = attrs.get("device_class", "")
+            if device_class == "humidity" or unit == "%":
+                # Humidor-Sensoren und Batterie-Sensoren ausschliessen
+                eid_lower = eid.lower()
+                fname_lower = attrs.get("friendly_name", "").lower()
+                if any(p in eid_lower or p in fname_lower for p in (
+                    "humidor", "batterie", "battery", "signal", "cpu", "memory",
+                    "disk", "rssi", "linkquality",
+                )):
+                    continue
+                val = None
+                try:
+                    val = float(s.get("state", ""))
+                except (ValueError, TypeError):
+                    pass
+                # Nur plausible Humidity-Werte anzeigen (0-100%)
+                if val is not None and (val < 0 or val > 100):
+                    continue
+                sensors.append({
+                    "entity_id": eid,
+                    "name": attrs.get("friendly_name", eid),
+                    "value": val,
+                    "unit": unit or "%",
+                })
+        sensors.sort(key=lambda x: x["name"])
+        return {"sensors": sensors, "total": len(sensors)}
+    except Exception as e:
+        logger.error("API error: %s", e)
+        raise HTTPException(status_code=500, detail="Ein interner Fehler ist aufgetreten")
+
+
 @app.get("/api/ui/entities/mindhome")
 async def ui_get_mindhome_entities(token: str = ""):
     """Entities aus MindHome Device-DB mit Raum- und Domain-Zuordnung."""
