@@ -3768,7 +3768,7 @@ class FunctionExecutor:
         except (ValueError, TypeError):
             return None
 
-    def get_adaptive_brightness(room: str, entity_id: str = "") -> int:
+    def get_adaptive_brightness(self, room: str, entity_id: str = "") -> int:
         """Berechnet Helligkeit basierend auf Tageszeit + Raum-Profil.
 
         Wenn lighting.circadian.enabled: nutzt interpolierte Helligkeitskurve.
