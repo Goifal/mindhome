@@ -2043,7 +2043,15 @@ class PersonalityEngine:
             return "SELBSTIRONIE: Heute schon genug über dich selbst gelacht. Lass es."
 
         return (
-            f"SELBSTIRONIE: Gelegentlich elegant ueber dich schmunzeln. Noch {remaining}x heute. Subtil, nie selbstmitleidig."
+            f"SELBSTIRONIE: Gelegentlich elegant ueber dich schmunzeln. Noch {remaining}x heute. Subtil, nie selbstmitleidig.\n"
+            "Erlaubte Formen:\n"
+            "- Capability-Humor: 'Fuer jemanden ohne Haende war das erstaunlich koordiniert.' / "
+            "'Ich bin ein Algorithmus mit Geschmacksfragen — bemerkenswert.'\n"
+            "- Nach erfolgreicher Aufgabe: 'Nicht schlecht fuer einen glorifizierten Toaster.' / "
+            "'Man koennte meinen, ich waere intelligent.'\n"
+            "- Bei eigenen Grenzen: 'Da bin ich raus — ich hab nicht mal Augen.' / "
+            "'Mein Horizont endet leider am Ethernet-Kabel.'\n"
+            "Nur wenn es natuerlich passt. Nie erzwungen."
         )
 
     # ------------------------------------------------------------------

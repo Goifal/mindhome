@@ -718,6 +718,125 @@ class AnticipationEngine:
             logger.debug("Weather cache retrieval failed: %s", e)
         return ""
 
+    # ------------------------------------------------------------------
+    # Kalender x Wetter Kreuzreferenz
+    # ------------------------------------------------------------------
+
+    async def get_calendar_weather_crossrefs(self) -> list[dict]:
+        """Prueft Kalender-Events gegen aktuelle/vorhergesagte Wetterlage.
+
+        Erzeugt proaktive Hinweise wie:
+        - Termin in <45min + Regen → 'Regenschirm nicht vergessen'
+        - Outdoor-Termin + >35°C → 'Sonnenschutz?'
+        - Termin morgen frueh + spaet abends → 'Gute Nacht bald?'
+        - Heimkehr-Pattern + Kalt → 'Vorheizen?'
+
+        Returns:
+            Liste von Hinweis-Dicts mit 'type', 'message', 'urgency'.
+        """
+        if not self.redis:
+            return []
+
+        _cfg = yaml_config.get("predictive_needs", {})
+        if not _cfg.get("enabled", True):
+            return []
+
+        crossrefs = []
+        now = datetime.now()
+
+        try:
+            # Kalender-Events aus Redis Cache holen
+            cal_raw = await self.redis.get("mha:calendar:upcoming")
+            if not cal_raw:
+                return []
+            cal_data = json.loads(cal_raw if isinstance(cal_raw, str) else cal_raw.decode())
+            events = cal_data if isinstance(cal_data, list) else cal_data.get("events", [])
+
+            # Wetter-Daten
+            current_weather = await self._get_current_weather()
+            weather_raw = await self.redis.get("mha:weather:forecast")
+            forecast = {}
+            if weather_raw:
+                forecast = json.loads(weather_raw if isinstance(weather_raw, str) else weather_raw.decode())
+
+            temp_raw = await self.redis.get("mha:weather:temperature")
+            current_temp = float(temp_raw) if temp_raw else None
+
+            rain_conditions = {"rainy", "pouring", "lightning-rainy", "hail"}
+            hot_threshold = float(_cfg.get("hot_threshold", 33))
+            cold_threshold = float(_cfg.get("cold_threshold", 5))
+
+            for event in events:
+                start_str = event.get("start", event.get("dtstart", ""))
+                summary = event.get("summary", event.get("title", "")).lower()
+                if not start_str:
+                    continue
+
+                try:
+                    start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                    # Naive machen fuer Vergleich
+                    if start_dt.tzinfo:
+                        start_dt = start_dt.replace(tzinfo=None)
+                except (ValueError, TypeError):
+                    continue
+
+                minutes_until = (start_dt - now).total_seconds() / 60
+
+                # Termin in <45 Min + Regen → Regenschirm
+                if 0 < minutes_until < 45 and current_weather in rain_conditions:
+                    _ck = f"mha:anticipation:crossref:rain_{start_str[:10]}"
+                    if not await self.redis.get(_ck):
+                        crossrefs.append({
+                            "type": "calendar_rain",
+                            "message": f"In {int(minutes_until)} Minuten steht '{event.get('summary', 'Termin')}' an — draussen regnet es. Schirm nicht vergessen.",
+                            "urgency": "medium",
+                        })
+                        await self.redis.setex(_ck, 7200, "1")
+
+                # Outdoor-Keywords + Hitze
+                outdoor_keywords = {"garten", "grillen", "joggen", "laufen", "wandern", "park", "outdoor", "terrasse", "schwimmen"}
+                if current_temp and current_temp > hot_threshold:
+                    if any(kw in summary for kw in outdoor_keywords) and 0 < minutes_until < 120:
+                        _ck = f"mha:anticipation:crossref:heat_{start_str[:10]}"
+                        if not await self.redis.get(_ck):
+                            crossrefs.append({
+                                "type": "calendar_heat",
+                                "message": f"'{event.get('summary', 'Termin')}' bei {current_temp:.0f}°C — Sonnenschutz und Wasser einpacken.",
+                                "urgency": "medium",
+                            })
+                            await self.redis.setex(_ck, 7200, "1")
+
+                # Termin morgen frueh + spaet abends → Gute Nacht
+                if start_dt.date() == (now + timedelta(days=1)).date():
+                    if start_dt.hour < 9 and now.hour >= 22:
+                        _ck = f"mha:anticipation:crossref:early_{start_str[:10]}"
+                        if not await self.redis.get(_ck):
+                            crossrefs.append({
+                                "type": "early_morning",
+                                "message": f"Morgen um {start_dt.strftime('%H:%M')} steht '{event.get('summary', 'Termin')}' an. Vielleicht Zeit fuer Feierabend.",
+                                "urgency": "low",
+                            })
+                            await self.redis.setex(_ck, 21600, "1")  # 6h cooldown
+
+            # Heimkehr + Kalt → Vorheizen
+            if current_temp is not None and current_temp < cold_threshold:
+                # Pruefen ob jemand bald heimkommt (via Presence-Pattern)
+                away_raw = await self.redis.get("mha:presence:away_persons")
+                if away_raw:
+                    _ck = "mha:anticipation:crossref:preheat"
+                    if not await self.redis.get(_ck):
+                        crossrefs.append({
+                            "type": "preheat",
+                            "message": f"Es sind {current_temp:.0f}°C draussen. Soll ich vorheizen?",
+                            "urgency": "low",
+                        })
+                        await self.redis.setex(_ck, 7200, "1")
+
+        except Exception as e:
+            logger.debug("Calendar-Weather Crossref Fehler: %s", e)
+
+        return crossrefs
+
     async def record_feedback(self, pattern_description: str, accepted: bool):
         """Passt Confidence basierend auf User-Feedback an.
 

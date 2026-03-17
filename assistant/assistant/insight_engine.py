@@ -110,6 +110,11 @@ class InsightEngine:
         # Wetter-Aktions-Cooldown: verhindert wiederholte Vorschlaege innerhalb 60 Min
         self._weather_action_cooldown: dict[str, datetime] = {}
 
+        # LLM-basierte Kausalanalyse
+        _llm_causal_cfg = yaml_config.get("insight_llm_causal", {})
+        self._llm_causal_enabled = _llm_causal_cfg.get("enabled", True)
+        self._llm_causal_cooldown = _llm_causal_cfg.get("cooldown_seconds", 1800)
+
     async def initialize(
         self,
         redis_client: Optional[aioredis.Redis] = None,
@@ -490,6 +495,7 @@ class InsightEngine:
             (self.check_heating_vs_sun, self._check_heating_vs_sun),
             (self.check_forgotten_devices, self._check_forgotten_devices),
             (True, self._check_device_dependency_conflicts),  # DEVICE_DEPENDENCIES
+            (self._llm_causal_enabled, self._check_llm_causal),  # LLM-basierte Kausalanalyse
         ]
 
     async def _run_all_checks(self) -> list[dict]:
@@ -514,6 +520,146 @@ class InsightEngine:
                 logger.warning("Check %s fehlgeschlagen: %s", method.__name__, e)
 
         return insights
+
+    async def _check_llm_causal(self, data: dict) -> Optional[dict]:
+        """LLM-basierte Kausalanalyse: Findet ungewoehnliche Korrelationen.
+
+        Gibt dem LLM eine kompakte Daten-Zusammenfassung und fragt nach
+        EINER ungewoehnlichen Korrelation die kein Mensch als Regel kodiert haette.
+        """
+        if not self._ollama:
+            return None
+
+        # Eigener Cooldown (laenger als Standard wegen LLM-Kosten)
+        if self.redis:
+            _ck = "mha:insight:llm_causal_last"
+            last = await self.redis.get(_ck)
+            if last:
+                return None
+
+        # Kompakte Daten-Summary erstellen
+        summary_parts = []
+
+        # Temperaturen
+        temps = data.get("temperatures", {})
+        if temps:
+            temp_lines = [f"  {k}: {v}°C" for k, v in list(temps.items())[:8]]
+            summary_parts.append("Temperaturen:\n" + "\n".join(temp_lines))
+
+        # Offene Fenster/Tueren
+        if data.get("open_windows"):
+            summary_parts.append(f"Offene Fenster: {len(data['open_windows'])}")
+        if data.get("open_doors"):
+            summary_parts.append(f"Offene Tueren: {len(data['open_doors'])}")
+
+        # Wetter
+        weather = data.get("weather")
+        if weather:
+            w_state = weather.get("state", "")
+            w_temp = weather.get("attributes", {}).get("temperature", "?")
+            summary_parts.append(f"Wetter: {w_state}, {w_temp}°C")
+
+        # Anwesende
+        if data.get("persons_home"):
+            summary_parts.append(f"Anwesend: {', '.join(p.get('name', '?') for p in data['persons_home'][:5])}")
+        if data.get("persons_away"):
+            summary_parts.append(f"Abwesend: {len(data['persons_away'])} Personen")
+
+        # Alarm
+        if data.get("alarm_state"):
+            summary_parts.append(f"Alarm: {data['alarm_state'].get('state', '?')}")
+
+        # Kalender
+        if data.get("calendar_events"):
+            events = data["calendar_events"][:3]
+            cal_lines = [f"  {e.get('summary', '?')} ({e.get('start', '?')})" for e in events]
+            summary_parts.append("Naechste Termine:\n" + "\n".join(cal_lines))
+
+        # Lichter an
+        if data.get("lights_on"):
+            summary_parts.append(f"Lichter an: {len(data['lights_on'])}")
+
+        # Klima
+        if data.get("climate"):
+            climate_lines = []
+            for c in data["climate"][:4]:
+                eid = c.get("entity_id", "?")
+                cur = c.get("attributes", {}).get("current_temperature", "?")
+                target = c.get("attributes", {}).get("temperature", "?")
+                climate_lines.append(f"  {eid}: {cur}°C (Ziel: {target}°C)")
+            summary_parts.append("Klima:\n" + "\n".join(climate_lines))
+
+        if len(summary_parts) < 3:
+            return None  # Zu wenig Daten fuer sinnvolle Analyse
+
+        data_summary = "\n".join(summary_parts)
+
+        try:
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist ein Smart-Home-Analyst. Analysiere die Hausdaten und finde "
+                                "EINE ungewoehnliche Korrelation oder ein Problem das kein Mensch "
+                                "als einfache Regel kodiert haette. Denke ueber Zusammenhaenge nach: "
+                                "Wetter + offene Fenster + Heizung, Termine + Anwesenheit + Sicherheit, "
+                                "Energiemuster + Tageszeit + Verhalten.\n"
+                                "Antworte mit EINEM kurzen Satz (max 100 Woerter). "
+                                "Wenn alles normal ist, antworte NUR mit 'NICHTS'."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": f"Aktuelle Hausdaten:\n{data_summary}",
+                        },
+                    ],
+                    model_tier="fast",
+                    temperature=0.3,
+                    max_tokens=200,
+                ),
+                timeout=8.0,
+            )
+
+            content = ""
+            if isinstance(response, dict):
+                msg = response.get("message", {})
+                content = msg.get("content", "") if isinstance(msg, dict) else str(msg)
+            elif hasattr(response, "message"):
+                content = getattr(response.message, "content", str(response.message))
+
+            content = content.strip()
+
+            # Think-Tags entfernen
+            if "<think>" in content:
+                think_end = content.find("</think>")
+                if think_end != -1:
+                    content = content[think_end + 8:].strip()
+
+            if not content or content.upper() == "NICHTS" or len(content) < 10:
+                # Cooldown trotzdem setzen
+                if self.redis:
+                    await self.redis.setex(_ck, self._llm_causal_cooldown, "1")
+                return None
+
+            # Cooldown setzen
+            if self.redis:
+                await self.redis.setex(_ck, self._llm_causal_cooldown, "1")
+
+            return {
+                "check": "llm_causal",
+                "message": content,
+                "urgency": "medium",
+                "data": {"source": "llm_causal_analysis", "summary_length": len(data_summary)},
+            }
+
+        except asyncio.TimeoutError:
+            logger.debug("LLM Causal Check Timeout")
+        except Exception as e:
+            logger.debug("LLM Causal Check Fehler: %s", e)
+
+        return None
 
     async def _check_device_dependency_conflicts(self, data: dict) -> Optional[dict]:
         """Prueft aktive Device-Dependency-Konflikte via DEVICE_DEPENDENCIES."""

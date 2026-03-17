@@ -4524,10 +4524,126 @@ class FunctionExecutor:
             direction = "kaelter auf "
         return {"success": success, "message": f"{room} {direction}{temp}°C"}
 
+    # Standard Mood-Szenen: Multi-Device-Orchestrierung fuer natuerliche Kommandos
+    # wie "Mach es gemuetlich" oder "Filmabend". Konfigurierbar via scenes.mood_scenes.
+    _DEFAULT_MOOD_SCENES = {
+        "gemuetlich": {
+            "label": "Gemuetlich",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 30, "color_temp_kelvin": 2700}},
+                {"domain": "cover", "service": "close_cover", "data": {}},
+            ],
+            "climate_offset": 1.0,
+        },
+        "filmabend": {
+            "label": "Filmabend",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 10, "color_temp_kelvin": 2200}},
+                {"domain": "cover", "service": "close_cover", "data": {}},
+                {"domain": "media_player", "service": "turn_on", "data": {}},
+            ],
+        },
+        "party": {
+            "label": "Party",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 100, "rgb_color": [255, 100, 50]}},
+                {"domain": "cover", "service": "close_cover", "data": {}},
+            ],
+        },
+        "konzentration": {
+            "label": "Konzentration",
+            "actions": [
+                {"domain": "light", "service": "turn_on", "data": {"brightness_pct": 80, "color_temp_kelvin": 5000}},
+            ],
+        },
+        "gute_nacht": {
+            "label": "Gute Nacht",
+            "actions": [
+                {"domain": "light", "service": "turn_off", "data": {}},
+                {"domain": "cover", "service": "close_cover", "data": {}},
+            ],
+            "climate_offset": -2.0,
+        },
+    }
+
     async def _exec_activate_scene(self, args: dict) -> dict:
         scene = args.get("scene")
         if not scene:
             return {"success": False, "message": "Keine Szene angegeben"}
+
+        # Mood-Scene Check: natuerliche Sprache → Multi-Device-Orchestrierung
+        scene_lower = scene.lower().replace(" ", "_").replace("-", "_")
+        mood_scenes_cfg = yaml_config.get("scenes", {}).get("mood_scenes", {})
+        mood_scenes = {**self._DEFAULT_MOOD_SCENES, **mood_scenes_cfg}
+
+        # Fuzzy-Match: "gemuetlich", "cozy", "chillen" etc.
+        _mood_aliases = {
+            "cozy": "gemuetlich", "chill": "gemuetlich", "chillen": "gemuetlich",
+            "relax": "gemuetlich", "entspannung": "gemuetlich", "romantic": "gemuetlich",
+            "romantisch": "gemuetlich", "film": "filmabend", "kino": "filmabend",
+            "movie": "filmabend", "feiern": "party", "feier": "party",
+            "fokus": "konzentration", "focus": "konzentration", "arbeit": "konzentration",
+            "schlafen": "gute_nacht", "nacht": "gute_nacht", "bett": "gute_nacht",
+        }
+        mood_key = _mood_aliases.get(scene_lower, scene_lower)
+
+        if mood_key in mood_scenes:
+            mood = mood_scenes[mood_key]
+            actions_done = []
+            room = args.get("room", "")
+
+            for action in mood.get("actions", []):
+                domain = action["domain"]
+                service = action["service"]
+                data = dict(action.get("data", {}))
+
+                # Entities fuer diesen Domain finden
+                try:
+                    states = await self.ha.get_states()
+                    for s in (states or []):
+                        eid = s.get("entity_id", "")
+                        if not eid.startswith(f"{domain}."):
+                            continue
+                        # Raum-Filter wenn angegeben
+                        if room and room.lower() not in eid.lower():
+                            _area = s.get("attributes", {}).get("area", "")
+                            if room.lower() not in (_area or "").lower():
+                                continue
+                        # Cover-Sicherheitspruefung
+                        if domain == "cover" and hasattr(self, '_is_safe_cover'):
+                            if not await self._is_safe_cover(eid, s):
+                                continue
+                        svc_data = {**data, "entity_id": eid}
+                        await self.ha.call_service(domain, service, svc_data)
+                except Exception as e:
+                    logger.debug("Mood-Scene %s/%s Fehler: %s", domain, service, e)
+
+                actions_done.append(f"{domain}.{service}")
+
+            # Optionaler Klima-Offset
+            if "climate_offset" in mood:
+                try:
+                    offset = float(mood["climate_offset"])
+                    states = await self.ha.get_states()
+                    for s in (states or []):
+                        eid = s.get("entity_id", "")
+                        if eid.startswith("climate."):
+                            current_temp = s.get("attributes", {}).get("temperature")
+                            if current_temp is not None:
+                                new_temp = float(current_temp) + offset
+                                await self.ha.call_service(
+                                    "climate", "set_temperature",
+                                    {"entity_id": eid, "temperature": new_temp},
+                                )
+                except Exception as e:
+                    logger.debug("Mood-Scene Klima-Offset Fehler: %s", e)
+
+            return {
+                "success": True,
+                "message": f"Stimmung '{mood.get('label', mood_key)}' aktiviert ({', '.join(actions_done)})",
+            }
+
+        # Fallback: Standard HA-Scene aktivieren
         entity_id = await self._find_entity("scene", scene)
         if not entity_id:
             # Versuche direkt mit scene.name
@@ -8893,8 +9009,6 @@ class FunctionExecutor:
                             "score": _score,
                         })
 
-            await redis_client.aclose()
-
             # Nach Relevanz sortieren
             matches.sort(key=lambda m: m["score"], reverse=True)
             matches = matches[:15]  # Max 15 Treffer
@@ -8918,20 +9032,22 @@ class FunctionExecutor:
             _action_matches = []
             try:
                 redis_client2 = aioredis.from_url(_redis_url, decode_responses=True)
-                raw_actions = await redis_client2.lrange("mha:action_outcomes", 0, 499)
-                await redis_client2.aclose()
-                for raw in raw_actions:
-                    try:
-                        import json
-                        a = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
-                        _action_str = json.dumps(a.get("args", {}), ensure_ascii=False).lower()
-                        if any(w in _action_str or w in a.get("action", "").lower() for w in query_words):
-                            _action_matches.append(
-                                f"[{a.get('timestamp', '?')}] Aktion: {a.get('action', '?')} "
-                                f"Args: {json.dumps(a.get('args', {}), ensure_ascii=False)[:150]}"
-                            )
-                    except (json.JSONDecodeError, TypeError):
-                        continue
+                try:
+                    raw_actions = await redis_client2.lrange("mha:action_outcomes", 0, 499)
+                    for raw in raw_actions:
+                        try:
+                            import json
+                            a = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+                            _action_str = json.dumps(a.get("args", {}), ensure_ascii=False).lower()
+                            if any(w in _action_str or w in a.get("action", "").lower() for w in query_words):
+                                _action_matches.append(
+                                    f"[{a.get('timestamp', '?')}] Aktion: {a.get('action', '?')} "
+                                    f"Args: {json.dumps(a.get('args', {}), ensure_ascii=False)[:150]}"
+                                )
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+                finally:
+                    await redis_client2.aclose()
             except Exception:
                 pass
 
@@ -8946,8 +9062,9 @@ class FunctionExecutor:
             }
 
         except Exception as e:
-            await redis_client.aclose()
             return {"success": False, "message": f"Suche fehlgeschlagen: {e}"}
+        finally:
+            await redis_client.aclose()
 
     # ── C9: Automation-Debugging ──────────────────────────────
 

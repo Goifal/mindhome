@@ -6648,6 +6648,20 @@ class ProactiveManager:
                             actions = await self.brain.threat_assessment.escalate_threat(threat)
                             if actions:
                                 logger.info("Threat Eskalation: %s", ", ".join(actions))
+                                # B6-ext: Erste Krise als Beziehungs-Milestone
+                                try:
+                                    _redis = self.brain.memory.redis if self.brain.memory else None
+                                    if _redis:
+                                        _first = await _redis.set(
+                                            "mha:relationship:first_crisis", "1",
+                                            ex=365 * 86400, nx=True,
+                                        )
+                                        if _first:
+                                            await self.brain.personality.record_milestone(
+                                                "system", "Erste Krise gemeinsam gemeistert",
+                                            )
+                                except Exception:
+                                    pass
                         except Exception as esc_err:
                             logger.warning("Threat Eskalation fehlgeschlagen: %s", esc_err)
             except Exception as e:

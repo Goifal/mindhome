@@ -771,6 +771,40 @@ class ThreatAssessment:
             except Exception as e:
                 logger.warning("Eskalation Lichter fehlgeschlagen: %s", e)
 
+        # Stufe 2: Rollladen/Covers schliessen bei Einbruch-Verdacht
+        _dyn_cfg = yaml_config.get("dynamic_emergency", {})
+        if _dyn_cfg.get("enabled", True) and threat_type in (
+            "door_open_empty", "lock_open_empty", "glass_break", "intrusion",
+        ):
+            try:
+                states = await self.ha.get_states()
+                for s in (states or []):
+                    eid = s.get("entity_id", "")
+                    # Rollaeden schliessen (sicher, reversibel)
+                    if eid.startswith("cover.") and s.get("state") == "open":
+                        await self.ha.call_service("cover", "close_cover", {"entity_id": eid})
+                if any(s.get("entity_id", "").startswith("cover.") and s.get("state") == "open"
+                       for s in (states or [])):
+                    actions_taken.append("Alle Rollaeden geschlossen")
+            except Exception as e:
+                logger.warning("Eskalation Covers fehlgeschlagen: %s", e)
+
+            # Stufe 3: Sirene — NUR mit Bestaetigung (F-009 respektiert)
+            _confirm_actions = _dyn_cfg.get("require_confirmation_for", ["lock", "siren"])
+            if "siren" not in _confirm_actions:
+                try:
+                    for s in (states or []):
+                        eid = s.get("entity_id", "")
+                        if eid.startswith("siren.") and s.get("state") != "on":
+                            await self.ha.call_service("siren", "turn_on", {"entity_id": eid})
+                    actions_taken.append("Sirene aktiviert")
+                except Exception as e:
+                    logger.warning("Eskalation Sirene fehlgeschlagen: %s", e)
+            else:
+                actions_taken.append(
+                    "WARNUNG: Sirene verfuegbar — Sprachbestaetigung erforderlich"
+                )
+
         # F-009: Bei offenen Türen + niemand da: NUR WARNUNG, keine Auto-Verriegelung
         # Automatisches Verriegeln kann Bewohner aussperren bei Fehlalarmen
         if threat_type in ("door_open_empty", "lock_open_empty"):

@@ -245,6 +245,171 @@ class SelfAutomation:
             ),
         }
 
+    async def generate_procedure(
+        self,
+        description: str,
+        person: str = "",
+    ) -> dict:
+        """Generiert eine Multi-Step-Prozedur (Sequenz) aus natuerlicher Sprache.
+
+        Zerlegt Kommandos wie 'Filmabend' in eine Kette von Aktionen mit Delays:
+        [{dim_light, 0s}, {close_covers, 2s}, {tv_on, 5s}]
+
+        Erzeugt eine HA-Automation mit sequence: Block.
+        """
+        if not self._check_rate_limit():
+            return {
+                "success": False,
+                "message": f"Tageslimit erreicht ({self._max_per_day}/Tag).",
+            }
+
+        _proc_cfg = yaml_config.get("procedural_learning", {})
+        if not _proc_cfg.get("enabled", True):
+            return {"success": False, "message": "Prozedurale Automationen sind deaktiviert."}
+
+        max_steps = int(_proc_cfg.get("max_steps", 10))
+
+        if not self._ollama:
+            return {"success": False, "message": "LLM nicht verfuegbar."}
+
+        # LLM zerlegt die Beschreibung in Schritte
+        try:
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist ein Smart-Home-Experte. Der User beschreibt eine Szene/Prozedur. "
+                                "Zerlege sie in einzelne Home-Assistant Service-Calls.\n"
+                                f"Max {max_steps} Schritte. Antworte NUR als JSON-Array:\n"
+                                '[{"domain": "light", "service": "turn_on", '
+                                '"data": {"brightness_pct": 30}, "delay_seconds": 0, '
+                                '"description": "Licht dimmen"}]\n'
+                                "Erlaubte Domains: light, cover, climate, media_player, switch, scene, "
+                                "input_boolean, fan, siren.\n"
+                                "VERBOTEN: lock, alarm_control_panel, automation.\n"
+                                "Gib sinnvolle Delays zwischen den Schritten (0-10 Sekunden)."
+                            ),
+                        },
+                        {"role": "user", "content": description},
+                    ],
+                    model_tier="fast",
+                    temperature=0.2,
+                    max_tokens=800,
+                ),
+                timeout=15.0,
+            )
+
+            content = ""
+            if isinstance(response, dict):
+                msg = response.get("message", {})
+                content = msg.get("content", "") if isinstance(msg, dict) else str(msg)
+            elif hasattr(response, "message"):
+                content = getattr(response.message, "content", str(response.message))
+
+            content = content.strip()
+            # Think-Tags entfernen
+            if "<think>" in content:
+                think_end = content.find("</think>")
+                if think_end != -1:
+                    content = content[think_end + 8:].strip()
+
+            # JSON extrahieren
+            import json as _json
+            # Finde das JSON-Array im Antworttext
+            start = content.find("[")
+            end = content.rfind("]")
+            if start == -1 or end == -1:
+                return {"success": False, "message": "LLM konnte keine Schritte generieren."}
+
+            steps = _json.loads(content[start:end + 1])
+            if not isinstance(steps, list) or len(steps) == 0:
+                return {"success": False, "message": "Keine gueltige Schrittliste generiert."}
+
+            # Schritte validieren + limitieren
+            _forbidden_domains = {"lock", "alarm_control_panel", "automation"}
+            validated_steps = []
+            for step in steps[:max_steps]:
+                domain = step.get("domain", "")
+                if domain in _forbidden_domains:
+                    continue  # Sicherheit: verbotene Domains ueberspringen
+                if not step.get("service"):
+                    continue
+                validated_steps.append(step)
+
+            if not validated_steps:
+                return {"success": False, "message": "Keine gueltigen Schritte nach Validierung."}
+
+            # HA-Automation mit sequence: Block erstellen
+            sequence = []
+            for step in validated_steps:
+                delay = int(step.get("delay_seconds", 0))
+                if delay > 0:
+                    sequence.append({"delay": {"seconds": delay}})
+                svc_call = {
+                    "service": f"{step['domain']}.{step['service']}",
+                    "data": step.get("data", {}),
+                }
+                # Entity-ID dynamisch: Target alle Geraete im Domain
+                # (alternativ koennte man Room-Filter einbauen)
+                svc_call["target"] = {"entity_id": f"{step['domain']}.all"}
+                sequence.append(svc_call)
+
+            automation = {
+                "alias": f"jarvis_procedure_{description[:30].replace(' ', '_').lower()}",
+                "trigger": [{"platform": "event", "event_type": "jarvis_procedure_trigger",
+                             "event_data": {"procedure": description[:50]}}],
+                "action": sequence,
+                "mode": "single",
+                "description": f"Prozedur erstellt von {settings.assistant_name}: {description}",
+            }
+
+            # Sicherheits-Validierung
+            validation = self._validate_automation(automation)
+            if not validation["valid"]:
+                self._audit("blocked", description, person, automation, validation["reason"])
+                return {"success": False, "message": f"Sicherheitscheck: {validation['reason']}"}
+
+            pending_id = str(uuid.uuid4())[:8]
+
+            # Vorschau
+            step_descs = [s.get("description", f"{s.get('domain', '?')}.{s.get('service', '?')}")
+                          for s in validated_steps]
+            preview = f"Prozedur '{description}': " + " → ".join(step_descs)
+            yaml_preview = yaml.safe_dump(
+                automation, allow_unicode=True, default_flow_style=False, sort_keys=False,
+            )
+
+            with self._pending_lock:
+                self._pending[pending_id] = {
+                    "automation": automation,
+                    "description": description,
+                    "person": person,
+                    "created": datetime.now().isoformat(),
+                    "method": "procedure_llm",
+                }
+
+            self._audit("proposed_procedure", description, person, automation)
+
+            return {
+                "success": True,
+                "pending_id": pending_id,
+                "preview": preview,
+                "yaml_preview": yaml_preview,
+                "steps": len(validated_steps),
+                "message": (
+                    f"Prozedur mit {len(validated_steps)} Schritten: {preview}. "
+                    f"Soll ich das aktivieren?"
+                ),
+            }
+
+        except asyncio.TimeoutError:
+            return {"success": False, "message": "LLM Timeout bei Prozedur-Generierung."}
+        except Exception as e:
+            logger.warning("Prozedur-Generierung Fehler: %s", e)
+            return {"success": False, "message": f"Fehler: {e}"}
+
     async def confirm_automation(self, pending_id: str) -> dict:
         """
         Bestaetigt und deployed eine pending Automation.
