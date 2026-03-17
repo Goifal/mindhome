@@ -375,38 +375,60 @@ async function typeText(el, text, speed) {
   for (const ch of text) { el.textContent += ch; await sleep(speed); }
 }
 
+// MCU-style decode/scramble text effect
+async function decodeText(el, text, speed) {
+  const glyphs = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:/-';
+  el.textContent = '';
+  el.style.opacity = '1';
+  let resolved = '';
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === ' ' || text[i] === '.') { resolved += text[i]; el.textContent = resolved; await sleep(speed * 0.5); continue; }
+    for (let j = 0; j < 3; j++) {
+      el.textContent = resolved + glyphs[Math.floor(Math.random() * glyphs.length)];
+      await sleep(speed * 0.3);
+    }
+    resolved += text[i];
+    el.textContent = resolved;
+  }
+}
+
 function playBootSound() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    // Ton 1: Tiefer Sweep (0-1.5s)
+    // Ton 1: Tiefer Sweep — Arc Reactor Ignition (0-2s)
     const o1 = ctx.createOscillator(), g1 = ctx.createGain();
     o1.type = 'sine';
-    o1.frequency.setValueAtTime(80, ctx.currentTime);
-    o1.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 1.5);
+    o1.frequency.setValueAtTime(60, ctx.currentTime);
+    o1.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.8);
+    o1.frequency.exponentialRampToValueAtTime(120, ctx.currentTime + 2);
     g1.gain.setValueAtTime(0, ctx.currentTime);
-    g1.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.3);
-    g1.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.5);
+    g1.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.3);
+    g1.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 1.5);
+    g1.gain.linearRampToValueAtTime(0, ctx.currentTime + 2);
     o1.connect(g1).connect(ctx.destination);
-    o1.start(); o1.stop(ctx.currentTime + 1.5);
-    // Ton 2: Hoher Ping (1.5s)
-    const o2 = ctx.createOscillator(), g2 = ctx.createGain();
-    o2.type = 'sine';
-    o2.frequency.setValueAtTime(880, ctx.currentTime + 1.5);
-    g2.gain.setValueAtTime(0, ctx.currentTime + 1.5);
-    g2.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 1.55);
-    g2.gain.linearRampToValueAtTime(0, ctx.currentTime + 2.5);
-    o2.connect(g2).connect(ctx.destination);
-    o2.start(ctx.currentTime + 1.5); o2.stop(ctx.currentTime + 2.5);
-    // Ton 3: Confirmation-Chime (3s)
-    const o3 = ctx.createOscillator(), g3 = ctx.createGain();
-    o3.type = 'triangle';
-    o3.frequency.setValueAtTime(660, ctx.currentTime + 3);
-    o3.frequency.setValueAtTime(880, ctx.currentTime + 3.15);
-    g3.gain.setValueAtTime(0, ctx.currentTime + 3);
-    g3.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 3.05);
-    g3.gain.linearRampToValueAtTime(0, ctx.currentTime + 3.8);
-    o3.connect(g3).connect(ctx.destination);
-    o3.start(ctx.currentTime + 3); o3.stop(ctx.currentTime + 3.8);
+    o1.start(); o1.stop(ctx.currentTime + 2);
+    // Ton 2: System-Ping Cascade (1s, 1.4s, 1.8s)
+    [1, 1.4, 1.8].forEach((t, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(660 + i * 110, ctx.currentTime + t);
+      g.gain.setValueAtTime(0, ctx.currentTime + t);
+      g.gain.linearRampToValueAtTime(0.08, ctx.currentTime + t + 0.03);
+      g.gain.linearRampToValueAtTime(0, ctx.currentTime + t + 0.5);
+      o.connect(g).connect(ctx.destination);
+      o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.5);
+    });
+    // Ton 3: Confirmation Chord (3.5s)
+    [660, 880, 1100].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(f, ctx.currentTime + 3.5);
+      g.gain.setValueAtTime(0, ctx.currentTime + 3.5);
+      g.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 3.55);
+      g.gain.linearRampToValueAtTime(0, ctx.currentTime + 4.3);
+      o.connect(g).connect(ctx.destination);
+      o.start(ctx.currentTime + 3.5); o.stop(ctx.currentTime + 4.3);
+    });
   } catch(e) { /* Audio nicht verfügbar */ }
 }
 
@@ -414,28 +436,87 @@ async function playBootSequence() {
   const screen = document.getElementById('bootScreen');
   const textEl = document.getElementById('bootText');
   const sysEl = document.getElementById('bootSystems');
+  const logoEl = document.getElementById('bootLogo');
+  const subEl = document.getElementById('bootSub');
+  const progBar = document.getElementById('bootProgBar');
+  const progPct = document.getElementById('bootProgPct');
+  const dataL = document.getElementById('bootDataL');
+  const dataR = document.getElementById('bootDataR');
+  const crosshair = screen.querySelector('.boot-crosshair');
+  const rings = screen.querySelectorAll('.boot-r');
+
   screen.style.display = 'flex';
   playBootSound();
 
-  const systems = ['LLM', 'HA', 'Redis', 'Memory', 'TTS'];
+  function setProg(p) { progBar.style.width = p + '%'; progPct.textContent = p + '%'; }
+
+  // Ambient data readouts
+  dataL.textContent = 'SYS.CORE v4.2.1\nPROTOCOL: INIT\nENCRYPT: AES-256\nNET.LINK: PENDING\nMEMORY: 0/\u221E';
+  dataR.textContent = 'QUANTUM.BRIDGE\nNEURAL.NET: STANDBY\nLATENCY: --ms\nUPTIME: 00:00:00\nBUILD: 2024.12';
+
+  // Phase 1: Core ignition — rings activate one by one
+  await sleep(300);
+  setProg(3);
+  for (let i = 0; i < rings.length - 1; i++) { // -1 to skip crosshair
+    rings[i].classList.add('active');
+    setProg(3 + (i + 1) * 4);
+    await sleep(80 + Math.random() * 60);
+  }
+  // Crosshair fades in
+  if (crosshair) { crosshair.style.opacity = '1'; crosshair.style.transition = 'opacity 0.5s ease'; }
+  setProg(38);
+
+  // Phase 2: Logo decode
+  await sleep(200);
+  await decodeText(logoEl, 'J.A.R.V.I.S.', 40);
+  setProg(50);
+  await sleep(150);
+  subEl.style.opacity = '1';
+  subEl.textContent = 'MIND HOME ASSISTANT';
+  setProg(55);
+
+  // Phase 3: Status text
+  await sleep(200);
+  await typeText(textEl, 'SUBSYSTEM INITIALIZATION...', 30);
+  setProg(60);
+
+  // Phase 4: Systems come online with natural jitter
+  const systems = [
+    { label: 'LLM ENGINE', pct: 68 },
+    { label: 'HOME ASSISTANT', pct: 74 },
+    { label: 'REDIS CACHE', pct: 80 },
+    { label: 'MEMORY CORE', pct: 85 },
+    { label: 'VOICE SYNTH', pct: 90 },
+    { label: 'SECURITY', pct: 95 },
+  ];
   sysEl.innerHTML = systems.map((s, i) =>
-    `<div class="boot-sys" style="animation-delay:${0.8 + i * 0.3}s" id="bootSys${i}"><span class="sys-dot"></span>${s}</div>`
+    `<div class="boot-sys" id="bootSys${i}"><span class="sys-dot"></span>${s.label}</div>`
   ).join('');
 
-  await typeText(textEl, 'INITIALIZING...', 60);
-  await sleep(600);
   for (let i = 0; i < systems.length; i++) {
-    await sleep(300);
     const el = document.getElementById('bootSys' + i);
-    if (el) el.classList.add('online');
+    if (el) {
+      el.classList.add('visible');
+      await sleep(120 + Math.random() * 180);
+      el.classList.add('online');
+      setProg(systems[i].pct);
+    }
   }
-  await sleep(300);
-  textEl.textContent = '';
-  await typeText(textEl, 'ALL SYSTEMS ONLINE', 40);
-  await sleep(800);
 
+  // Update ambient data
+  dataL.textContent = 'SYS.CORE v4.2.1\nPROTOCOL: ACTIVE\nENCRYPT: AES-256\nNET.LINK: SECURE\nMEMORY: READY';
+  dataR.textContent = 'QUANTUM.BRIDGE\nNEURAL.NET: ONLINE\nLATENCY: <2ms\nUPTIME: 00:00:04\nBUILD: 2024.12';
+
+  // Phase 5: Complete
+  setProg(100);
+  await sleep(200);
+  textEl.textContent = '';
+  await typeText(textEl, 'ALL SYSTEMS OPERATIONAL', 30);
+  await sleep(900);
+
+  // Fade out
   screen.classList.add('fade-out');
-  await sleep(500);
+  await sleep(600);
   screen.style.display = 'none';
   screen.classList.remove('fade-out');
 }
