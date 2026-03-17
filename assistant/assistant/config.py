@@ -139,6 +139,10 @@ def get_model_profile(model_name: str) -> ModelProfile:
 settings = Settings()
 yaml_config = load_yaml_config()
 
+# J6: Settings-Validierung beim Start
+from .settings_validator import validate_settings
+_settings_warnings = validate_settings(yaml_config)
+
 # settings.yaml ueberschreibt .env fuer bestimmte Werte
 _yaml_name = yaml_config.get("assistant", {}).get("name")
 if _yaml_name:

@@ -8360,6 +8360,76 @@ async def root():
     }
 
 
+# ----- J2: Redis Data Backup — Runtime-Daten exportieren -----
+
+@app.get("/api/admin/redis-backup", tags=["admin"])
+async def redis_backup(token: str = Header(None, alias="X-Auth-Token")):
+    """Exportiert alle mha:* Runtime-Daten aus Redis als JSON.
+
+    Sichert gelernte Patterns, Fakten, Scores, Mood-States, Korrekturen etc.
+    PIN-geschuetzt via Auth-Token.
+    """
+    await _check_token(token)
+
+    redis = brain.memory.redis
+    if not redis:
+        raise HTTPException(status_code=503, detail="Redis nicht verfuegbar")
+
+    from datetime import datetime as _dt
+
+    backup = {
+        "backup_timestamp": _dt.now().isoformat(),
+        "version": "1.0",
+        "keys": {},
+    }
+
+    cursor = 0
+    key_count = 0
+    _MAX_KEYS = 5000  # Sicherheitslimit
+
+    while key_count < _MAX_KEYS:
+        cursor, keys = await redis.scan(cursor=cursor, match="mha:*", count=200)
+        for key in keys:
+            key_count += 1
+            if key_count > _MAX_KEYS:
+                break
+            try:
+                key_type = await redis.type(key)
+                if key_type == "string":
+                    val = await redis.get(key)
+                    backup["keys"][key] = {"type": "string", "value": val}
+                elif key_type == "list":
+                    val = await redis.lrange(key, 0, -1)
+                    backup["keys"][key] = {"type": "list", "value": val}
+                elif key_type == "hash":
+                    val = await redis.hgetall(key)
+                    backup["keys"][key] = {"type": "hash", "value": val}
+                elif key_type == "set":
+                    val = list(await redis.smembers(key))
+                    backup["keys"][key] = {"type": "set", "value": val}
+                elif key_type == "zset":
+                    val = await redis.zrange(key, 0, -1, withscores=True)
+                    backup["keys"][key] = {"type": "zset", "value": val}
+            except Exception as e:
+                backup["keys"][key] = {"type": "error", "value": str(e)}
+
+        if cursor == 0:
+            break
+
+    backup["key_count"] = key_count
+
+    _audit_log("redis_backup", {"key_count": key_count})
+    logger.info("Redis-Backup erstellt: %d Keys exportiert", key_count)
+
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=backup,
+        headers={
+            "Content-Disposition": f'attachment; filename="redis_backup_{_dt.now().strftime("%Y%m%d_%H%M%S")}.json"',
+        },
+    )
+
+
 # ----- Kubernetes-ready Health Probes -----
 
 @app.get("/healthz", tags=["probes"])

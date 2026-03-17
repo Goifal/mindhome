@@ -70,6 +70,7 @@ from .self_automation import SelfAutomation
 from .self_optimization import SelfOptimization
 from .outcome_tracker import OutcomeTracker
 from .correction_memory import CorrectionMemory
+from .person_preferences import PersonPreferences
 from .response_quality import ResponseQualityTracker
 from .error_patterns import ErrorPatternTracker
 from .self_report import SelfReport
@@ -372,6 +373,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Self-Improvement: Geschlossene Feedback-Loops
         self.outcome_tracker = OutcomeTracker()
         self.correction_memory = CorrectionMemory()
+        self.person_preferences = PersonPreferences(self.memory.redis)
         self.response_quality = ResponseQualityTracker()
         self.error_patterns = ErrorPatternTracker()
         self.self_report = SelfReport()
@@ -382,6 +384,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Aktuelle Person (gesetzt in process(), nutzbar für Executor-Methoden)
         self._current_person: str = ""
+        self._speaker_confidence: float = 1.0  # G4: Confidence der Speaker-Erkennung
 
         # MCU-JARVIS: Letzter Kontext für Cross-Referenzierung
         self._last_context: dict = {}
@@ -1412,12 +1415,26 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Erfolgreiche Anfrage loescht den Retry-Speicher
         self._last_failed_query = None
 
-        # Silence-Trigger: Wenn User "Filmabend", "Meditation" etc. sagt,
-        # Activity-Override setzen damit proaktive Meldungen unterdrueckt werden
+        # Silence-Trigger: Wenn User "Filmabend", "Meditation", "Sei still" etc. sagt,
+        # Activity-Override setzen damit proaktive Meldungen unterdrueckt werden.
+        # D2: Optionale Dauer-Erkennung: "Sei still fuer 30 Minuten"
         silence_activity = self.activity.check_silence_trigger(text)
         if silence_activity:
-            self.activity.set_manual_override(silence_activity)
-            logger.info("Silence-Trigger: %s (aus Text: '%s')", silence_activity, text[:500])
+            _silence_duration = 120  # Default: 2 Stunden
+            _dur_match = re.search(
+                r"(?:fuer|für|nächste|naechste)\s+(\d+)\s*"
+                r"(?:min(?:uten?)?|h(?:ours?)?|stunden?)",
+                text.lower(),
+            )
+            if _dur_match:
+                _val = int(_dur_match.group(1))
+                # "h/stunde" → Minuten umrechnen
+                if any(u in _dur_match.group(0) for u in ("stunde", "hour", " h")):
+                    _val *= 60
+                _silence_duration = max(5, min(_val, 480))  # 5min..8h
+            self.activity.set_manual_override(silence_activity, duration_minutes=_silence_duration)
+            logger.info("Silence-Trigger: %s für %d min (aus Text: '%s')",
+                        silence_activity, _silence_duration, text[:500])
 
         # Phase 9: Speaker Recognition — Person ermitteln wenn nicht angegeben
         # Voice-Metadaten aufbereiten (WPM aus Text + Dauer berechnen)
@@ -1456,6 +1473,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             )
             if identified.get("person") and not identified.get("fallback"):
                 person = identified["person"]
+                self._speaker_confidence = identified.get("confidence", 0.0)
                 logger.info("Speaker erkannt: %s (Confidence: %.2f, Methode: %s)",
                             person, identified.get("confidence", 0),
                             identified.get("method", "unknown"))
@@ -1927,6 +1945,27 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # Pronomen-Aufloesung: "Mach es/das wieder aus/an" → letzte Aktion invertieren
         # Muss VOR _detect_device_command kommen, da sonst kein Raum/Geraet erkannt wird.
         device_cmd = None
+
+        # C4: Raum-Referenz: "Dort auch", "Im Bad auch", "Hier auch"
+        # Wiederholt die letzte Aktion in einem anderen Raum.
+        _room_repeat = re.match(
+            r"^(?:bitte\s+)?(?:(?:dort|da|hier|drüben)\s+auch"
+            r"|(?:im|in der|in dem|ins?)\s+(\w+)\s+auch"
+            r"|das(?:selbe)?\s+(?:im|in der|in dem)\s+(\w+))"
+            r"\s*[.!]?$",
+            text.lower().strip(),
+        )
+        if _room_repeat and self._last_executed_action and self._last_executed_action.startswith("set_"):
+            _la = self._last_executed_action
+            _la_args = dict(self._last_executed_action_args or {})
+            _target_room = _room_repeat.group(1) or _room_repeat.group(2) or (room or "")
+            if _target_room:
+                _la_args["room"] = _target_room
+            logger.info(
+                "Raum-Referenz: '%s' -> %s(%s) (letzte Aktion in anderem Raum)",
+                text, _la, _la_args,
+            )
+            device_cmd = {"function": _la, "args": _la_args}
         _pronoun_match = re.match(
             r"^(?:bitte\s+)?(?:mach|schalt|dreh|fahr)\w*\s+"
             r"(?:es|das|die|den|ihn|sie)\s+"
@@ -3078,6 +3117,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         if mood_hint:
             sections.append(("mood", f"\n\nEMOTIONALE LAGE: {mood_hint}", 1))
 
+        # H1: Per-Person Preferences als Kontext
+        if person and profile.need_house_status:
+            try:
+                _prefs_hint = await self.person_preferences.get_context_hint(person)
+                if _prefs_hint:
+                    sections.append(("person_prefs", f"\n\n{_prefs_hint}\n"
+                                     "Verwende diese Werte als Default wenn der User keine "
+                                     "expliziten Werte angibt.", 2))
+            except Exception as _pp_err:
+                logger.debug("PersonPrefs-Hint fehlgeschlagen: %s", _pp_err)
+
         if sec_score and sec_score.get("level") in ("warning", "critical"):
             details = ", ".join(sec_score.get("details", []))
             sec_text = (
@@ -4002,6 +4052,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                     "args": func_args,
                                     "person": person or "",
                                     "room": room or "",
+                                    "speaker_confidence": self._speaker_confidence,
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                     "reason": validation.reason,
                                 }
@@ -6839,6 +6890,71 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         except Exception as e:
             logger.debug("Kontext-Kette Topic-Extraktion fehlgeschlagen: %s", e)
 
+        # F2: Implizite Kalender-Erkennung
+        # Erkennt Zeitangaben in User-Text wie "Schwester kommt Samstag",
+        # "Morgen gehen wir ins Kino", "Am Freitag ist Elternabend".
+        try:
+            await self._detect_implicit_calendar_event(user_text, person)
+        except Exception as e:
+            logger.debug("Implizite Kalender-Erkennung fehlgeschlagen: %s", e)
+
+    # F2: Regex fuer Zeitangaben (kompiliert)
+    _CALENDAR_PATTERNS = re.compile(
+        r"\b(?:"
+        r"(?:am |naechsten? |nächsten? |kommenden? |letzten? )?"
+        r"(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)"
+        r"|(?:morgen|uebermorgen|übermorgen)"
+        r"|(?:am |den )\d{1,2}\.\s*(?:\d{1,2}\.)?"
+        r"|(?:naechste|nächste|kommende|diese)\s+woche"
+        r")\b",
+        re.IGNORECASE,
+    )
+    _CALENDAR_VERBS = re.compile(
+        r"\b(?:kommt|kommen|besucht|besuchen|gehen wir|fahren wir|treffen|"
+        r"ist (?:bei uns|eingeladen)|haben (?:termin|besuch)|feier)",
+        re.IGNORECASE,
+    )
+
+    async def _detect_implicit_calendar_event(self, text: str, person: str):
+        """F2: Erkennt implizite Kalender-Events aus natuerlicher Sprache."""
+        if len(text.split()) < 4:
+            return
+        # Braucht sowohl Zeitangabe als auch ein Event-Verb
+        if not self._CALENDAR_PATTERNS.search(text):
+            return
+        if not self._CALENDAR_VERBS.search(text):
+            return
+
+        logger.info("F2: Moegliches Kalender-Event erkannt: '%s'", text[:100])
+
+        # LLM extrahiert Event-Details
+        prompt = (
+            "Extrahiere aus diesem Satz ein Kalender-Event. "
+            "Antworte NUR im Format:\n"
+            "TITEL: <kurzer Titel>\n"
+            "WANN: <Tag und ggf. Uhrzeit>\n"
+            "Falls kein Event erkennbar: KEIN_EVENT\n\n"
+            f"Satz: {text[:300]}"
+        )
+        try:
+            result = await self.ollama.generate(
+                prompt=prompt, temperature=0.1, max_tokens=80,
+            )
+            if result and "KEIN_EVENT" not in result:
+                # Als Fakt speichern (Kategorie: intent) damit es im Kontext auftaucht
+                from .semantic_memory import SemanticFact
+                fact = SemanticFact(
+                    content=f"Geplantes Event: {result.strip()}",
+                    category="intent",
+                    person=person,
+                    confidence=0.7,
+                    source_conversation=f"Implizit aus: {text[:100]}",
+                )
+                await self.memory.semantic.store_fact(fact)
+                logger.info("F2: Kalender-Event als Fakt gespeichert: %s", result.strip()[:80])
+        except Exception as e:
+            logger.debug("F2: LLM-Extraktion fehlgeschlagen: %s", e)
+
     # Gueltige Urgency-Level in der Silence Matrix
     _VALID_URGENCIES = {"critical", "high", "medium", "low"}
 
@@ -7331,6 +7447,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     person, pending["person"],
                 )
                 return None  # Stille Ablehnung, weiter im normalen Flow
+
+            # G4: Speaker-Confidence-Check fuer Security-Aktionen
+            # Bei niedriger Confidence (<0.8) wird die Bestaetigung verweigert
+            # und eine verbale Identifikation verlangt.
+            _orig_confidence = pending.get("speaker_confidence", 1.0)
+            _confirm_confidence = self._speaker_confidence
+            _min_security_confidence = 0.80
+            if _orig_confidence < _min_security_confidence or _confirm_confidence < _min_security_confidence:
+                logger.warning(
+                    "Security-Confirmation abgelehnt: Speaker-Confidence zu niedrig "
+                    "(original=%.2f, confirm=%.2f, min=%.2f)",
+                    _orig_confidence, _confirm_confidence, _min_security_confidence,
+                )
+                return (
+                    f"Entschuldigung, ich bin mir nicht sicher genug wer gerade spricht "
+                    f"(Confidence: {min(_orig_confidence, _confirm_confidence):.0%}). "
+                    f"Bitte sag mir deinen Namen, damit ich die Aktion bestaetigen kann."
+                )
 
             # Ausfuehren
             func_name = pending.get("function")

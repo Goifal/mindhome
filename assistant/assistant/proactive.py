@@ -130,6 +130,7 @@ class ProactiveManager:
         self._mb_enabled = mb_cfg.get("enabled", True)
         self._mb_window_start = int(mb_cfg.get("window_start_hour", 6))
         self._mb_window_end = int(mb_cfg.get("window_end_hour", 10))
+        self._mb_adaptive = mb_cfg.get("adaptive_time", True)  # D1: Lerne Aufwach-Zeit
         self._mb_triggered_today = False
         self._mb_last_date = ""
 
@@ -1610,12 +1611,29 @@ class ProactiveManager:
         return f"{title}, du hattest vorhin '{topic}' erwaehnt — soll ich daran erinnern?"
 
     async def _check_morning_briefing(self, motion_entity: str = ""):
-        """Phase 7.1: Prüft ob Morning Briefing bei erster Bewegung am Morgen geliefert werden soll."""
+        """Phase 7.1: Prüft ob Morning Briefing bei erster Bewegung am Morgen geliefert werden soll.
+
+        D1: Adaptive Briefing-Zeit — lernt die typische Aufwach-Zeit und passt
+        das Zeitfenster automatisch an (+/- 1 Stunde um den Durchschnitt).
+        """
         if not self._mb_enabled:
             return
 
         now = datetime.now()
         today = now.strftime("%Y-%m-%d")
+
+        # D1: Adaptives Zeitfenster aus gelernter Aufwach-Zeit
+        window_start = self._mb_window_start
+        window_end = self._mb_window_end
+        if self._mb_adaptive and hasattr(self, "brain") and self.brain.memory.redis:
+            try:
+                raw = await self.brain.memory.redis.get("mha:briefing:avg_wakeup_hour")
+                if raw:
+                    avg_hour = float(raw)
+                    window_start = max(4, int(avg_hour) - 1)
+                    window_end = min(12, int(avg_hour) + 2)
+            except Exception:
+                pass  # Fallback auf Config-Werte
 
         # Reset am neuen Tag — lock prevents double-trigger from concurrent motion events
         async with self._state_lock:
@@ -1628,11 +1646,28 @@ class ProactiveManager:
                 return
 
             # Innerhalb des Morgen-Fensters?
-            if not (self._mb_window_start <= now.hour < self._mb_window_end):
+            if not (window_start <= now.hour < window_end):
                 return
 
             # Claim trigger slot before releasing lock
             self._mb_triggered_today = True
+
+        # D1: Aufwach-Zeit lernen (EMA über 7 Tage)
+        if self._mb_adaptive and hasattr(self, "brain") and self.brain.memory.redis:
+            try:
+                _redis = self.brain.memory.redis
+                _current_hour = now.hour + now.minute / 60.0
+                _raw = await _redis.get("mha:briefing:avg_wakeup_hour")
+                if _raw:
+                    _avg = float(_raw)
+                    _alpha = 0.15  # EMA-Faktor: ~7 Tage Glaettung
+                    _new_avg = _avg * (1 - _alpha) + _current_hour * _alpha
+                else:
+                    _new_avg = _current_hour
+                await _redis.setex("mha:briefing:avg_wakeup_hour", 30 * 86400, str(round(_new_avg, 2)))
+                logger.debug("D1: Aufwach-Zeit gelernt: %.1f → avg=%.1f", _current_hour, _new_avg)
+            except Exception as _e:
+                logger.debug("D1: Aufwach-Zeit Tracking fehlgeschlagen: %s", _e)
 
         # Aufwach-Sequenz: Wenn Schlafzimmer-Sensor → stufenweises Aufwachen vor Briefing
         wakeup_done = False
