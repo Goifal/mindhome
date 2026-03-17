@@ -47,6 +47,11 @@ ACTION_DOMAIN_MAP = {
     "security_alert": "security",
     "pause_reminder": "notification",
     "learn_preferences": "automation",
+    "set_light": "light",
+    "set_cover": "cover",
+    "set_climate": "climate",
+    "play_media": "media",
+    "get_active_intents": "notification",
 }
 
 # Welches Level fuer welche Aktion noetig ist
@@ -65,6 +70,11 @@ ACTION_PERMISSIONS = {
     "adjust_temperature_small": 3,  # +/- 1 Grad
     "adjust_light_auto": 3,
     "pause_reminder": 3,
+    "set_light": 3,          # Licht schalten (Anticipation)
+    "set_cover": 3,          # Rolllaeden steuern (Anticipation)
+    "set_climate": 3,        # Klima steuern (Anticipation)
+    "play_media": 3,         # Medien abspielen (Anticipation)
+    "get_active_intents": 2, # Intents abfragen (nur Info)
 
     # Level 4: Vertrauter - Routinen anpassen
     "modify_routine": 4,
@@ -335,13 +345,18 @@ class AutonomyManager:
         """Gibt das Trust-Level einer Person zurueck.
 
         Args:
-            person: Name der Person (case-insensitive)
+            person: Name der Person (case-insensitive).
+                    Leerer String oder "global" = Owner-Kontext
+                    (Anticipation-Patterns ohne erkannte Person laufen
+                    im Kontext des Hauptnutzers, nicht als Gast).
 
         Returns:
             Trust-Level: 0 (Gast), 1 (Mitbewohner), 2 (Owner)
         """
-        if not person:
-            return self._default_trust
+        if not person or person.lower() == "global":
+            # Kein identifizierter Nutzer oder globales Pattern:
+            # Im Einpersonen-Haushalt ist das der Owner, kein Gast.
+            return 2
 
         person_lower = person.lower()
 
