@@ -49,11 +49,21 @@ class SeasonalInsightEngine:
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self._notify_callback = None
+        self._ollama = None
+        self._ha = None  # HomeAssistantClient fuer Haus-Status in LLM-Prompts
 
         cfg = yaml_config.get("seasonal_insights", {})
         self.enabled = cfg.get("enabled", True)
         self.check_interval = cfg.get("check_interval_hours", 24) * 3600
         self.min_history_months = cfg.get("min_history_months", 2)
+
+    def set_ollama(self, ollama_client):
+        """Setzt den OllamaClient fuer LLM-basierte Saisontipps."""
+        self._ollama = ollama_client
+
+    def set_ha(self, ha_client):
+        """Setzt den HA-Client fuer Haus-Status-Kontext."""
+        self._ha = ha_client
 
     async def initialize(
         self,
@@ -160,7 +170,11 @@ class SeasonalInsightEngine:
         return None
 
     async def _check_seasonal_transition(self, current_season: str, title: str) -> Optional[str]:
-        """Erkennt Saisonwechsel und gibt Tipps."""
+        """Erkennt Saisonwechsel und gibt kontextsensitive Tipps.
+
+        Nutzt optional LLM + HA-Status fuer situationsbezogene Vorschlaege.
+        Fallback auf statische Templates wenn LLM nicht verfuegbar.
+        """
         if not self.redis:
             return None
 
@@ -174,7 +188,16 @@ class SeasonalInsightEngine:
 
         season_label = _SEASON_LABELS.get(current_season, current_season)
 
-        # Typische Tipps pro Saison
+        # LLM-basierter kontextsensitiver Tipp (mit HA-Status)
+        llm_tip = await self._llm_seasonal_tip(current_season, season_label, title)
+        if llm_tip:
+            try:
+                await self.redis.setex(flag_key, 180 * 86400, "1")
+            except Exception as e:
+                logger.debug("Redis seasonal flag set failed: %s", e)
+            return llm_tip
+
+        # Fallback: Statische Tipps
         tips = {
             "fruehling": (
                 f"{title}, der {season_label} naht. "
@@ -197,12 +220,96 @@ class SeasonalInsightEngine:
         tip = tips.get(current_season)
         if tip:
             try:
-                # Flag setzen: 180 Tage (damit naechste Saison wieder triggert)
                 await self.redis.setex(flag_key, 180 * 86400, "1")
             except Exception as e:
                 logger.debug("Redis seasonal flag set failed: %s", e)
 
         return tip
+
+    async def _llm_seasonal_tip(self, season: str, season_label: str, title: str) -> Optional[str]:
+        """Generiert einen kontextsensitiven Saisontipp via LLM.
+
+        Berücksichtigt den aktuellen Haus-Status (Heizung, Rolladen, etc.)
+        fuer relevantere Vorschlaege.
+        """
+        cfg = yaml_config.get("seasonal_insights", {})
+        if not cfg.get("llm_tips", True) or not self._ollama:
+            return None
+
+        # Haus-Kontext sammeln (optional, verbessert Relevanz)
+        house_context = ""
+        if self._ha:
+            try:
+                states = await self._ha.get_states()
+                if states:
+                    # Relevante Haus-Infos fuer Saisonwechsel
+                    climate_states = []
+                    cover_states = []
+                    for s in states:
+                        eid = s.get("entity_id", "")
+                        if eid.startswith("climate."):
+                            mode = s.get("state", "off")
+                            temp = s.get("attributes", {}).get("temperature", "")
+                            name = s.get("attributes", {}).get("friendly_name", eid)
+                            climate_states.append(f"{name}: {mode}" + (f" ({temp}°C)" if temp else ""))
+                        elif eid.startswith("cover."):
+                            pos = s.get("attributes", {}).get("current_position", "")
+                            name = s.get("attributes", {}).get("friendly_name", eid)
+                            if pos:
+                                cover_states.append(f"{name}: {pos}%")
+                    if climate_states:
+                        house_context += f"Heizung/Klima: {', '.join(climate_states[:5])}\n"
+                    if cover_states:
+                        house_context += f"Rolladen: {', '.join(cover_states[:5])}\n"
+            except Exception:
+                pass
+
+        try:
+            from .config import settings
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S., ein trocken-britischer Smart-Home-Butler. "
+                                "Generiere einen Saisonwechsel-Hinweis mit konkreten Vorschlaegen "
+                                "basierend auf dem aktuellen Haus-Status. 2-3 Saetze, Butler-Ton. "
+                                "Frage am Ende ob du die Anpassungen vornehmen sollst."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Saisonwechsel: Es wird {season_label}.\n"
+                                f"Anrede: {title}\n"
+                                f"{house_context or 'Kein Haus-Status verfuegbar.'}"
+                            ),
+                        },
+                    ],
+                    model=settings.model_smart,
+                    temperature=0.5,
+                    max_tokens=500,
+                    think=False,
+                    tier="smart",
+                ),
+                timeout=5.0,
+            )
+            content = (response.get("message", {}).get("content", "") or "").strip()
+            if "<think>" in content:
+                think_end = content.find("</think>")
+                if think_end != -1:
+                    content = content[think_end + 8:].strip()
+
+            if content and len(content) > 20:
+                return content
+
+        except asyncio.TimeoutError:
+            pass
+        except Exception as e:
+            logger.debug("Seasonal LLM-Tipp Fehler: %s", e)
+
+        return None
 
     async def _check_year_over_year(self, current_month: int, title: str) -> Optional[str]:
         """Vergleicht Aktionen mit Vorjahres-Monat."""

@@ -10,9 +10,12 @@ Das GENERAL-Profil aktiviert alle Subsysteme → identisch zum bisherigen
 Verhalten. Wenn kein Profil uebergeben wird, aendert sich nichts.
 """
 
+import asyncio
+import json
 import logging
 import re
 from dataclasses import dataclass
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -233,7 +236,105 @@ _IMPLICIT_COMMAND_PATTERNS = re.compile(
 
 
 class PreClassifier:
-    """Klassifiziert Anfragen fuer selektive Subsystem-Aktivierung."""
+    """Klassifiziert Anfragen fuer selektive Subsystem-Aktivierung.
+
+    Primaer: Regex/Keyword-basiert (schnell, deterministisch).
+    Fallback: LLM-Klassifikation fuer laengere Texte die im GENERAL landen.
+    """
+
+    def __init__(self):
+        self._ollama = None
+        self._last_category: str = ""  # Letzte Klassifikation fuer Kontext
+
+    def set_ollama(self, ollama_client):
+        """Setzt den OllamaClient fuer LLM-basierte Klassifikation."""
+        self._ollama = ollama_client
+        logger.info("PreClassifier: LLM-Fallback aktiviert")
+
+    async def classify_async(self, text: str) -> RequestProfile:
+        """Async-Version von classify() mit optionalem LLM-Fallback.
+
+        Versucht zuerst Regex/Keyword-Klassifikation. Falls GENERAL und
+        Text > 10 Woerter: LLM-Fallback fuer praezisere Klassifikation.
+        """
+        profile = self.classify(text)
+
+        # LLM-Fallback nur bei GENERAL und laengeren Texten
+        if (
+            profile.category == "general"
+            and self._ollama
+            and len(text.split()) > 10
+        ):
+            from .config import yaml_config
+            cfg = yaml_config.get("pre_classifier", {})
+            if cfg.get("llm_fallback", True):
+                llm_profile = await self._llm_classify(text)
+                if llm_profile:
+                    self._last_category = llm_profile.category
+                    return llm_profile
+
+        self._last_category = profile.category
+        return profile
+
+    async def _llm_classify(self, text: str) -> Optional[RequestProfile]:
+        """LLM-basierte Klassifikation als Fallback fuer unklare Texte.
+
+        Nutzt das Fast-Modell mit hartem Timeout. Bei Fehler → None (= GENERAL bleibt).
+        """
+        try:
+            from .config import settings
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Klassifiziere den Text in GENAU eine Kategorie. "
+                                "Antworte NUR mit dem Kategorie-Namen, kein anderer Text.\n"
+                                "Kategorien:\n"
+                                "- device_command: Geraetebefehl (Licht, Heizung, Rollladen, Steckdose steuern)\n"
+                                "- device_query: Geraetestatus abfragen (Temperatur, ob etwas an/aus ist)\n"
+                                "- knowledge: Wissensfrage (Erklaerung, Rezept, Info ohne Smart-Home-Bezug)\n"
+                                "- memory: Erinnerungsfrage (was weisst du, erinnerst du dich)\n"
+                                "- general: Alles andere (Smalltalk, komplexe Anfragen)\n"
+                                + (f"Vorherige Anfrage war: {self._last_category}. "
+                                   "Beruecksichtige das bei mehrdeutigen Folge-Anfragen.\n"
+                                   if self._last_category else "")
+                            ),
+                        },
+                        {"role": "user", "content": text[:300]},
+                    ],
+                    model=settings.model_fast,
+                    temperature=0.0,
+                    max_tokens=20,
+                    think=False,
+                    tier="fast",
+                ),
+                timeout=2.0,  # Hartes Timeout — darf Pre-Classification nicht verlangsamen
+            )
+            content = (response.get("message", {}).get("content", "") or "").strip().lower()
+            # Think-Tags entfernen
+            if "<think>" in content:
+                think_end = content.find("</think>")
+                if think_end != -1:
+                    content = content[think_end + 8:].strip()
+
+            profile_map = {
+                "device_command": PROFILE_DEVICE_FAST,
+                "device_query": PROFILE_DEVICE_QUERY,
+                "knowledge": PROFILE_KNOWLEDGE,
+                "memory": PROFILE_MEMORY,
+                "general": PROFILE_GENERAL,
+            }
+            matched = profile_map.get(content)
+            if matched:
+                logger.debug("PreClassifier LLM-Fallback: %s -> %s", text[:50], content)
+                return matched
+        except asyncio.TimeoutError:
+            logger.debug("PreClassifier LLM-Fallback Timeout")
+        except Exception as e:
+            logger.debug("PreClassifier LLM-Fallback Fehler: %s", e)
+        return None
 
     def classify(self, text: str) -> RequestProfile:
         """

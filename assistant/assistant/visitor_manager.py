@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from .config import get_person_title
+
 _LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 from .config import yaml_config
@@ -46,6 +48,7 @@ class VisitorManager:
         self.ha = ha_client
         self.camera = camera_manager
         self.redis = None
+        self._ollama = None
         self._notify_callback = None
         self.executor = None
 
@@ -70,6 +73,11 @@ class VisitorManager:
     def set_executor(self, executor):
         """Setzt FunctionExecutor fuer Tuer-Aktionen."""
         self.executor = executor
+
+    def set_ollama(self, ollama_client):
+        """Setzt den OllamaClient fuer LLM-basierte Besucher-Nachrichten."""
+        self._ollama = ollama_client
+        logger.info("VisitorManager: LLM-Rewrite aktiviert")
 
     # ------------------------------------------------------------------
     # Bekannte Besucher verwalten
@@ -333,14 +341,78 @@ class VisitorManager:
 
         # Empfehlung formulieren
         if result["auto_unlocked"]:
-            result["recommendation"] = "Tuer wurde automatisch geoeffnet (erwarteter Besuch)."
+            raw_rec = "Tuer wurde automatisch geoeffnet (erwarteter Besuch)."
+            if expected:
+                names = [e.get("name", "?") for e in expected]
+                raw_rec = f"Tuer wurde automatisch geoeffnet fuer {', '.join(names)}."
         elif result["expected"]:
             names = [e.get("name", "?") for e in expected]
-            result["recommendation"] = f"Erwarteter Besuch: {', '.join(names)}."
+            raw_rec = f"Erwarteter Besuch: {', '.join(names)}."
         else:
-            result["recommendation"] = ""
+            raw_rec = ""
+
+        # LLM-Rewrite fuer natuerlichere Besucher-Nachricht
+        if raw_rec:
+            result["recommendation"] = await self._llm_rewrite_doorbell(
+                raw_rec, camera_description,
+            )
+        else:
+            result["recommendation"] = raw_rec
 
         return result
+
+    async def _llm_rewrite_doorbell(self, message: str,
+                                     camera_desc: str = "") -> str:
+        """Schreibt die Tuerklingel-Nachricht via LLM natuerlicher um.
+
+        Nutzt Kamera-Beschreibung als Kontext fuer persoenlichere Meldung.
+        Fallback auf Original bei Fehler oder wenn LLM deaktiviert.
+        """
+        if not self._ollama:
+            return message
+        from .config import yaml_config as _yc
+        if not _yc.get("visitor_management", {}).get("llm_rewrite", True):
+            return message
+        try:
+            from .config import settings
+            from .ollama_client import strip_think_tags
+            title = get_person_title()
+            camera_hint = f"\nKamera zeigt: {camera_desc}" if camera_desc else ""
+            from datetime import datetime as _dt
+            _hour = _dt.now().hour
+            if 22 <= _hour or _hour < 6:
+                _time_hint = f"Nacht ({_hour}:00 Uhr)"
+            elif 6 <= _hour < 12:
+                _time_hint = f"Vormittag ({_hour}:00 Uhr)"
+            elif 12 <= _hour < 18:
+                _time_hint = f"Nachmittag ({_hour}:00 Uhr)"
+            else:
+                _time_hint = f"Abend ({_hour}:00 Uhr)"
+            prompt = (
+                "Du bist JARVIS, ein britischer Smart-Home-Butler. "
+                f"Melde dem Bewohner ({title}) was an der Haustuer los ist. "
+                "1-2 Saetze, Butler-Ton. Behalte alle Namen und Fakten bei. "
+                "Sei persoenlich, nicht roboterhaft. "
+                "Passe den Ton an die Uhrzeit an (nachts dringlicher).\n\n"
+                f"Uhrzeit: {_time_hint}\n"
+                f"Situation: {message}{camera_hint}\n\n"
+                "Meldung:"
+            )
+            response = await asyncio.wait_for(
+                self._ollama.generate(
+                    prompt=prompt,
+                    model=settings.model_fast,
+                    temperature=0.5,
+                    max_tokens=300,
+                ),
+                timeout=3.0,
+            )
+            text = strip_think_tags(response or "").strip()
+            if text and len(text) > 10:
+                return text
+        except Exception as e:
+            logger.debug("VisitorManager LLM-Rewrite fehlgeschlagen: %s", e)
+        return message
 
     async def grant_entry(self, door: str = "haustuer") -> dict:
         """'Lass ihn/sie rein' — Tuer entriegeln nach Klingel-Event.

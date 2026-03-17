@@ -211,7 +211,7 @@ Schreibe den Bericht in der Ich-Form. Nicht zu formell, aber respektvoll."""
                 model=self._model,
                 prompt=prompt,
                 temperature=0.6,
-                max_tokens=300,
+                max_tokens=500,
             )
             text = response.strip()
             if text and len(text) > 20:

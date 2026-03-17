@@ -248,13 +248,45 @@ class SpontaneousObserver:
             if not snapshot:
                 return None
 
+            # Kontext anreichern: Zeit + Wochentag + Aktivitaet
+            now = datetime.now()
+            _DAY_NAMES = {0: "Montag", 1: "Dienstag", 2: "Mittwoch", 3: "Donnerstag",
+                          4: "Freitag", 5: "Samstag", 6: "Sonntag"}
+            _hour = now.hour
+            if 5 <= _hour < 10:
+                _tod = "Morgen"
+            elif 10 <= _hour < 17:
+                _tod = "Nachmittag"
+            elif 17 <= _hour < 22:
+                _tod = "Abend"
+            else:
+                _tod = "Nacht"
+            day_name = _DAY_NAMES.get(now.weekday(), "")
+
+            activity_hint = ""
+            if self.activity:
+                try:
+                    act_result = await self.activity.detect_activity()
+                    act = act_result.get("activity", "")
+                    if act and act != "unknown":
+                        _ACT_DE = {"relaxing": "entspannt", "focused": "arbeitet",
+                                   "sleeping": "schlaeft", "away": "abwesend",
+                                   "cooking": "kocht", "watching": "schaut fern",
+                                   "guests": "hat Besuch"}
+                        activity_hint = f"\nAktivitaet: {_ACT_DE.get(act, act)}"
+                except Exception:
+                    pass
+
             prompt = (
                 "Du bist ein Smart-Home-Assistent. Hier sind aktuelle Hausdaten:\n\n"
+                f"Zeitpunkt: {_tod}, {day_name} {now.strftime('%H:%M')}"
+                f"{activity_hint}\n\n"
                 f"{snapshot}\n\n"
                 "Nenne EINE interessante, nicht offensichtliche Beobachtung in 1-2 Saetzen auf Deutsch. "
+                "Beruecksichtige den zeitlichen Kontext (was ist fuer diese Uhrzeit/Wochentag ungewoehnlich?). "
                 "Sei spezifisch und nuetzlich. Antworte NUR mit der Beobachtung, ohne Einleitung."
             )
-            response = await self._ollama.generate(prompt, max_tokens=100)
+            response = await self._ollama.generate(prompt, max_tokens=300)
             if response and len(response.strip()) > 20:
                 return {
                     "type": "llm_observation",

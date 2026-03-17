@@ -2114,6 +2114,15 @@ latency_optimization:
   refinement_skip_max_chars: 120
   tools_cache_ttl: 60
   conv_summary_mode: truncate
+# Response Cache: Gecachte LLM-Antworten fuer wiederkehrende Status-Queries
+response_cache:
+  enabled: true
+  ttl:
+    device_query: 45           # Sekunden — Status-Abfragen (Temperatur, Licht-Status)
+# Inkrementeller LLM-Start: Bei Device-Commands kuerzerer Gather-Timeout
+incremental_llm:
+  enabled: true
+  fast_gather_timeout: 3.0     # Sekunden — max. Wartezeit auf Kontext bei einfachen Befehlen
 # ── Session 6: Fortgeschrittene Intelligenz ──────────────────
 # B4: Background Reasoning — Idle-Analyse mit Smart-Modell
 background_reasoning:

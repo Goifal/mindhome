@@ -162,11 +162,27 @@ class MoodDetector:
             return None
 
         try:
+            # Tageszeit als Kontext — "bin muede" um 7 Uhr vs 23 Uhr
+            _hour = datetime.now().hour
+            if 5 <= _hour < 10:
+                _time_hint = "Fruehmorgens"
+            elif 10 <= _hour < 13:
+                _time_hint = "Vormittag"
+            elif 13 <= _hour < 17:
+                _time_hint = "Nachmittag"
+            elif 17 <= _hour < 22:
+                _time_hint = "Abend"
+            else:
+                _time_hint = "Nacht"
+
             messages = [
                 {
                     "role": "system",
                     "content": (
                         "Du analysierst die Stimmung eines Smart-Home-Nutzers. "
+                        f"Tageszeit: {_time_hint} ({_hour}:00 Uhr). "
+                        "Beruecksichtige die Uhrzeit bei der Bewertung "
+                        "(z.B. 'muede' am Morgen vs. spaet abends).\n"
                         "Antworte NUR mit einem JSON-Objekt, kein anderer Text.\n"
                         "Format: {\"sentiment\": \"...\", \"intensity\": 0.0-1.0, \"nuance\": \"...\"}\n"
                         "sentiment: gut|neutral|gestresst|frustriert|muede|aufgeregt|besorgt\n"
@@ -181,7 +197,7 @@ class MoodDetector:
                     messages=messages,
                     model=settings.model_fast,
                     temperature=0.1,
-                    max_tokens=80,
+                    max_tokens=150,
                     think=False,
                     tier="fast",
                 ),

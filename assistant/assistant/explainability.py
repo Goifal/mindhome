@@ -28,6 +28,7 @@ class ExplainabilityEngine:
 
     def __init__(self):
         self.redis: Optional[aioredis.Redis] = None
+        self._ollama = None
 
         cfg = yaml_config.get("explainability", {})
         self.enabled = cfg.get("enabled", True)
@@ -37,6 +38,10 @@ class ExplainabilityEngine:
 
         # In-Memory Decision Log (FIFO)
         self._decisions: deque[dict] = deque(maxlen=self.max_history)
+
+    def set_ollama(self, ollama_client):
+        """Setzt den OllamaClient fuer LLM-basierte Erklaerungen."""
+        self._ollama = ollama_client
 
     async def initialize(self, redis_client: Optional[aioredis.Redis] = None):
         """Initialisiert mit Redis."""
@@ -186,6 +191,72 @@ class ExplainabilityEngine:
             parts.append(f"Zeitpunkt: {time_str}")
 
         return ". ".join(parts) + "."
+
+    async def format_explanation_llm(self, decision: dict) -> str:
+        """Formuliert eine Erklaerung via LLM im Butler-Stil.
+
+        Natuerlichere Erklaerungen als das Template-basierte format_explanation().
+        Fallback auf Template-Version wenn LLM nicht verfuegbar.
+        """
+        cfg = yaml_config.get("explainability", {})
+        if not cfg.get("llm_explanations", True) or not self._ollama:
+            return self.format_explanation(decision)
+
+        action = decision.get("action", "Unbekannte Aktion")
+        reason = decision.get("reason", "Kein Grund angegeben")
+        trigger = decision.get("trigger", "unknown")
+        confidence = decision.get("confidence", 1.0)
+        time_str = decision.get("time_str", "")
+
+        try:
+            import asyncio
+            from .config import settings, get_person_title
+            title = get_person_title()
+
+            response = await asyncio.wait_for(
+                self._ollama.chat(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Du bist J.A.R.V.I.S., ein trocken-britischer Smart-Home-Butler. "
+                                "Erklaere dem Benutzer warum du eine Aktion ausgefuehrt hast. "
+                                "1-2 Saetze, souveraen und knapp. Keine Aufzaehlungen."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Erklaere warum du '{action}' gemacht hast.\n"
+                                f"Grund: {reason}\n"
+                                f"Ausloeser: {trigger}\n"
+                                f"Zeitpunkt: {time_str}\n"
+                                f"Konfidenz: {confidence:.0%}\n"
+                                f"Anrede: {title}"
+                            ),
+                        },
+                    ],
+                    model=settings.model_fast,
+                    temperature=0.4,
+                    max_tokens=500,
+                    think=False,
+                    tier="fast",
+                ),
+                timeout=4.0,
+            )
+            content = (response.get("message", {}).get("content", "") or "").strip()
+            if "<think>" in content:
+                think_end = content.find("</think>")
+                if think_end != -1:
+                    content = content[think_end + 8:].strip()
+
+            if content and len(content) > 10:
+                return content
+
+        except Exception as e:
+            logger.debug("Explainability LLM Fehler: %s", e)
+
+        return self.format_explanation(decision)
 
     def get_explanation_prompt_hint(self) -> str:
         """Gibt einen Prompt-Hinweis fuer Erklaerbarkeit zurueck.

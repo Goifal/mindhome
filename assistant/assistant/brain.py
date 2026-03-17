@@ -92,6 +92,8 @@ from .tts_enhancer import TTSEnhancer
 from .brain_callbacks import BrainCallbacksMixin
 from .brain_humanizers import BrainHumanizersMixin
 from .pre_classifier import PreClassifier
+from .response_cache import ResponseCache
+from .latency_tracker import latency_tracker
 from .circuit_breaker import registry as cb_registry, ollama_breaker, ha_breaker
 from .constants import REDIS_SECURITY_CONFIRM_KEY, REDIS_SECURITY_CONFIRM_TTL, ENTITY_CATALOG_REFRESH_INTERVAL, ERROR_BACKOFF_LONG, ERROR_BACKOFF_SHORT
 from .task_registry import TaskRegistry
@@ -379,6 +381,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.self_report = SelfReport()
         self.adaptive_thresholds = AdaptiveThresholds()
 
+        # Latenz-Optimierung: Semantic Response Cache + Latency Tracker
+        self.response_cache = ResponseCache()
+        self.latency_tracker = latency_tracker
+
         # Letzte fehlgeschlagene Anfrage für Retry bei "Ja"
         self._last_failed_query: Optional[str] = None
 
@@ -553,6 +559,15 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Autonomy Evolution: Redis für Interaktions-Tracking
         self.autonomy.set_redis(self.memory.redis)
+
+        # Response Cache + Latency Tracker: Redis-Verbindung setzen
+        self.response_cache.set_redis(self.memory.redis)
+        _rcache_cfg = cfg.yaml_config.get("response_cache", {})
+        self.response_cache.configure(
+            enabled=_rcache_cfg.get("enabled", True),
+            ttl_overrides=_rcache_cfg.get("ttl", {}),
+        )
+        self.latency_tracker.set_redis(self.memory.redis)
 
         # Mood Detector initialisieren
         await self.mood.initialize(redis_client=self.memory.redis)
@@ -750,6 +765,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self.wellness_advisor.executor = self.executor
         self.insight_engine.set_notify_callback(self._handle_insight)
 
+        # LLM-Integration: Ollama-Client an Module weiterreichen
+        self.pre_classifier.set_ollama(self.ollama)
+        self.wellness_advisor.set_ollama(self.ollama)
+        self.energy_optimizer.set_ollama(self.ollama)
+        self.explainability.set_ollama(self.ollama)
+        self.seasonal_insight.set_ollama(self.ollama)
+        self.seasonal_insight.set_ha(self.ha)
+        self.time_awareness.set_ollama(self.ollama)
+        self.music_dj.set_ollama(self.ollama)
+        self.visitor_manager.set_ollama(self.ollama)
+        self.learning_observer.set_ollama(self.ollama)
+
         if "WellnessAdvisor" not in _degraded_modules:
             await _safe_init("WellnessAdvisor.start", self.wellness_advisor.start())
 
@@ -878,6 +905,50 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             logger.debug("Raum-Erkennung fehlgeschlagen: %s", e)
             return None
 
+    async def _get_room_state_summary(self, room: str) -> str:
+        """Baut kompakten Geraetestatus fuer einen Raum (fuer Smart Intent Kontext).
+
+        Returns:
+            z.B. "Heizung: 21°C (Soll 22°C), Licht: an (40%), Rollladen: 80%"
+        """
+        states = await self.get_states_cached()
+        if not states:
+            return ""
+        room_lower = room.lower()
+        parts = []
+        for s in states:
+            eid = s.get("entity_id", "")
+            name = (s.get("attributes", {}).get("friendly_name", "") or "").lower()
+            if room_lower not in eid and room_lower not in name:
+                continue
+            attrs = s.get("attributes", {})
+            state_val = s.get("state", "")
+            if state_val in ("unavailable", "unknown"):
+                continue
+            if eid.startswith("climate."):
+                current = attrs.get("current_temperature", "?")
+                target = attrs.get("temperature", "")
+                mode = state_val
+                hint = f"Heizung: {current}°C"
+                if target:
+                    hint += f" (Soll {target}°C)"
+                if mode != "off":
+                    hint += f", Modus {mode}"
+                parts.append(hint)
+            elif eid.startswith("light.") and state_val == "on":
+                brightness = attrs.get("brightness")
+                pct = f" ({round(brightness / 255 * 100)}%)" if brightness else ""
+                parts.append(f"Licht: an{pct}")
+            elif eid.startswith("cover."):
+                pos = attrs.get("current_position", "")
+                parts.append(f"Rollladen: {pos}%" if pos else f"Rollladen: {state_val}")
+            elif eid.startswith("sensor.") and "temperature" in eid:
+                unit = attrs.get("unit_of_measurement", "°C")
+                parts.append(f"Temperatur: {state_val}{unit}")
+            if len(parts) >= 5:
+                break
+        return ", ".join(parts)
+
     async def _speak_and_emit(
         self,
         text: str,
@@ -996,6 +1067,18 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             d["_emitted"] = True
         if extra:
             d.update(extra)
+
+        # Latency Tracking: Trace abschliessen (wenn aktiv)
+        _ltrace = getattr(self, "_active_ltrace", None)
+        if _ltrace:
+            durations = self.latency_tracker.record(_ltrace)
+            d["_latency_ms"] = durations
+            self._active_ltrace = None
+            # Async flush in Background (fire-and-forget)
+            self._task_registry.create_task(
+                self.latency_tracker.flush_to_redis(),
+                name="latency_flush",
+            )
         return d
 
     async def _llm_with_cascade(
@@ -1019,6 +1102,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 if stream_callback:
                     collected: list[str] = []
                     stream_error = False
+                    _first_token_marked = False
                     async for token in self.ollama.stream_chat(
                         messages=messages, model=current,
                         max_tokens=max_tokens, think=think,
@@ -1027,6 +1111,12 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         if token in ("[STREAM_TIMEOUT]", "[STREAM_ERROR]"):
                             stream_error = True
                             continue
+                        # Latency: Erstes Token markieren
+                        if not _first_token_marked:
+                            _lt = getattr(self, "_active_ltrace", None)
+                            if _lt:
+                                _lt.mark("llm_first_token")
+                            _first_token_marked = True
                         collected.append(token)
                         try:
                             await stream_callback(token)
@@ -1034,6 +1124,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             logger.warning("stream_callback Fehler: %s", _cb_err)
                             stream_error = True
                             break
+                    # Latency: LLM fertig
+                    _lt = getattr(self, "_active_ltrace", None)
+                    if _lt:
+                        _lt.mark("llm_complete")
                     if not stream_error and collected:
                         return {
                             "text": "".join(collected),
@@ -1050,6 +1144,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                         ),
                         timeout=timeout,
                     )
+                    # Latency: Non-Streaming — first_token ≈ complete
+                    _lt = getattr(self, "_active_ltrace", None)
+                    if _lt:
+                        _lt.mark("llm_first_token")
+                        _lt.mark("llm_complete")
                     if "error" not in response:
                         msg = response.get("message", {})
                         return {
@@ -1216,7 +1315,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             summary = await self.ollama.generate(
                 prompt=prompt,
                 model=self.model_router.model_fast,
-                max_tokens=200,
+                max_tokens=500,
             )
             return summary.strip() if summary else None
         except Exception as e:
@@ -1295,6 +1394,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         self._request_from_pipeline = (
             voice_metadata.get("source") == "ha_assist_pipeline" if voice_metadata else False
         )
+
+        # Latency Tracking: Trace starten
+        _ltrace = self.latency_tracker.begin()
+        self._active_ltrace = _ltrace
 
         # STT Text-Normalisierung: Typische Whisper-Fehler korrigieren
         text = self._normalize_stt_text(text)
@@ -1799,7 +1902,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 self.ollama.chat(
                                     messages=feedback_messages,
                                     model=self.model_router.model_fast,
-                                    temperature=0.4, max_tokens=150, think=False,
+                                    temperature=0.4, max_tokens=300, think=False,
                                 ),
                                 timeout=3.0,
                             )
@@ -1909,7 +2012,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 self.ollama.chat(
                                     messages=feedback_messages,
                                     model=self.model_router.model_fast,
-                                    temperature=0.4, max_tokens=150, think=False,
+                                    temperature=0.4, max_tokens=300, think=False,
                                 ),
                                 timeout=3.0,
                             )
@@ -2329,6 +2432,44 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             except Exception as e:
                 logger.warning("Morning-Briefing-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
 
+        # Catch-Up-Shortcut: "Was hab ich verpasst?" / "Was ist passiert?"
+        if self._is_catchup_request(text):
+            logger.info("Catch-Up-Shortcut: '%s'", text)
+            try:
+                # Arrival-Status aus proactive nutzen (aggregiert Events seit letzter Interaktion)
+                catchup_parts = []
+                if hasattr(self, 'proactive') and hasattr(self.proactive, '_build_arrival_status'):
+                    arrival = await self.proactive._build_arrival_status(person or "")
+                    if arrival:
+                        catchup_parts.append(arrival)
+                # Ergaenzend: Letzte Insights
+                if self.memory and self.memory.redis:
+                    recent_insights = await self.memory.redis.lrange("mha:insights:recent", 0, 4)
+                    if recent_insights:
+                        import json as _json
+                        insight_texts = []
+                        for raw in recent_insights:
+                            try:
+                                ins = _json.loads(raw if isinstance(raw, str) else raw.decode())
+                                insight_texts.append(f"- {ins.get('message', '')}")
+                            except Exception:
+                                continue
+                        if insight_texts:
+                            catchup_parts.append("Erkenntnisse:\n" + "\n".join(insight_texts[:3]))
+                if catchup_parts:
+                    catchup_text = "\n\n".join(catchup_parts)
+                    catchup_text = self._filter_response(catchup_text)
+                    if catchup_text:
+                        self._remember_exchange(text, catchup_text)
+                        tts_data = self.tts_enhancer.enhance(catchup_text, message_type="briefing")
+                        if stream_callback:
+                            await stream_callback(catchup_text)
+                        else:
+                            await self._speak_and_emit(catchup_text, room=room, tts_data=tts_data)
+                        return self._result(catchup_text, model="catchup_shortcut", room=room, tts=tts_data, **{"_emitted": not stream_callback})
+            except Exception as e:
+                logger.warning("Catch-Up-Shortcut fehlgeschlagen: %s — Fallback auf LLM", e)
+
         # Evening-Briefing-Shortcut: "Abendbriefing" / "Ist alles zu?" / "Sicherheitscheck"
         if self._is_evening_briefing_request(text):
             logger.info("Evening-Briefing-Shortcut: '%s'", text)
@@ -2599,8 +2740,16 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     _tod = "Abend"
                 else:
                     _tod = "Nacht"
+                # Raum-Geraetestatus fuer kontextbewusste Intent-Erkennung
+                _room_state = ""
+                if room:
+                    try:
+                        _room_state = await self._get_room_state_summary(room)
+                    except Exception:
+                        pass
                 _implicit_intent = await self.llm_enhancer.smart_intent.recognize(
                     text, room=room or "", time_of_day=_tod,
+                    room_state=_room_state,
                 )
             except Exception as _ie:
                 logger.debug("Smart Intent Recognition Fehler: %s", _ie)
@@ -2625,8 +2774,27 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     await emit_progress("context", _prog_msg)
 
         # 0. Pre-Classification: Bestimmt welche Subsysteme gebraucht werden
-        profile = self.pre_classifier.classify(text)
+        profile = await self.pre_classifier.classify_async(text)
         logger.info("Pre-Classification: %s", profile.category)
+        _ltrace.mark("pre_classify")
+
+        # 0a. Response Cache: Gecachte Antwort fuer wiederkehrende Status-Queries
+        _cached = await self.response_cache.get(text, profile.category, room=room)
+        if _cached and not stream_callback:
+            _ltrace.mark("context_gather")
+            _ltrace.mark("llm_first_token")
+            _ltrace.mark("llm_complete")
+            _durations = self.latency_tracker.record(_ltrace)
+            logger.info("Response Cache HIT — %dms total (ueberspringe LLM)", _durations.get("total", 0))
+            _cached_response = _cached["response"]
+            _cached_tts = _cached.get("tts")
+            self._remember_exchange(text, _cached_response)
+            if _cached_tts:
+                await self._speak_and_emit(_cached_response, room=room, tts_data=_cached_tts)
+            return self._result(
+                _cached_response, model=_cached.get("model", "cache"),
+                room=room, tts=_cached_tts, emitted=bool(_cached_tts),
+            )
 
         # 0b. Intent vorab bestimmen (rein pattern-basiert, kein I/O)
         intent_type = self._classify_intent(text)
@@ -2693,8 +2861,20 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         # MEGA-PARALLEL GATHER: Context Build, alle Subsysteme, Running Gag,
         # Continuity und What-If laufen gleichzeitig statt nacheinander.
         # Spart 500ms-1.5s Latenz gegenueber der seriellen Ausfuehrung.
+        #
+        # Inkrementeller Modus: Bei einfachen Device-Commands/Queries wird
+        # der mega-gather mit kurzerem Timeout ausgefuehrt. Tasks die nicht
+        # rechtzeitig fertig werden, werden gedroppt — der LLM bekommt
+        # den verfuegbaren Kontext und startet frueher.
         # ----------------------------------------------------------------
-        ctx_timeout = float((cfg.yaml_config.get("context") or {}).get("api_timeout", 10))
+        _base_ctx_timeout = float((cfg.yaml_config.get("context") or {}).get("api_timeout", 10))
+        _incremental_cfg = cfg.yaml_config.get("incremental_llm", {})
+        _incremental_enabled = _incremental_cfg.get("enabled", True)
+        _fast_gather_timeout = float(_incremental_cfg.get("fast_gather_timeout", 3.0))
+        _is_fast_profile = profile.category in ("device_command", "device_query")
+        ctx_timeout = _fast_gather_timeout if (_incremental_enabled and _is_fast_profile) else _base_ctx_timeout
+        if _is_fast_profile and _incremental_enabled:
+            logger.info("Incremental LLM: Fast-Gather (%.1fs timeout) fuer %s", ctx_timeout, profile.category)
 
         async def _safe_security_score():
             try:
@@ -2723,6 +2903,11 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Phase 17: Situation Delta (was hat sich seit letztem Gespraech geaendert?)
         _mega_tasks.append(("situation_delta", self._get_situation_delta()))
+
+        # Multi-Sense Fusion: Kamera + Audio + Sensoren kombinieren
+        _fusion_cfg = cfg.yaml_config.get("multi_sense_fusion", {})
+        if _fusion_cfg.get("enabled", True):
+            _mega_tasks.append(("sensor_fusion", self._fuse_sensor_signals()))
 
         # Kontext-Kette: Relevante vergangene Gespraeche laden
         _mega_tasks.append(("conv_memory", self._get_conversation_memory(text)))
@@ -2783,7 +2968,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         # Individuelle Timeouts pro Task: Wenn ein einzelner Task haengt,
         # gehen die anderen Ergebnisse nicht verloren (statt alles-oder-nichts).
-        async def _with_timeout(key: str, coro, timeout: float = 30):
+        # Inkrementeller Modus: Bei Fast-Profile kuerzerer Timeout fuer alle Tasks.
+        _per_task_timeout = _fast_gather_timeout if (_incremental_enabled and _is_fast_profile) else 30
+
+        async def _with_timeout(key: str, coro, timeout: float = _per_task_timeout):
             try:
                 return await asyncio.wait_for(coro, timeout=timeout)
             except asyncio.TimeoutError:
@@ -2797,6 +2985,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             return_exceptions=True,
         )
         _result_map = dict(zip(_mega_keys, _mega_results))
+        _ltrace.mark("context_gather")
         # Exception-Handling erfolgt individuell pro Key (context, gag, etc.)
         # und via _safe_get() fuer Subsysteme — kein generischer Filter hier,
         # damit spezifische Fehlermeldungen (z.B. "Context Build Timeout") erhalten bleiben.
@@ -2865,6 +3054,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         correction_ctx = _safe_get("correction_ctx")
         learned_rules = _safe_get("learned_rules") or []
         pending_learnings = _safe_get("pending_learnings")
+        sensor_fusion_ctx = _safe_get("sensor_fusion")
         emotional_ctx = _safe_get("emotional_ctx")  # B10: Emotionale Kontinuitaet
 
         context["mood"] = mood_result
@@ -3034,6 +3224,24 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                             person, "Erstes Gespraech mit JARVIS",
                         ),
                         name="b6_first_contact",
+                    )
+
+                # B6-ext: Interaktions-Meilensteine (50/200/500/1000)
+                _ic_key = f"mha:relationship:interaction_count:{person.lower()}"
+                _ic = await self.memory.redis.incr(_ic_key)
+                await self.memory.redis.expire(_ic_key, 365 * 86400)
+                _ic_milestones = {
+                    50: "50 Interaktionen — Bekanntschaft",
+                    200: "200 Interaktionen — Vertraut",
+                    500: "500 Interaktionen — Freund",
+                    1000: "1000 Interaktionen — Familie",
+                }
+                if _ic in _ic_milestones:
+                    self._task_registry.create_task(
+                        self.personality.record_milestone(
+                            person, _ic_milestones[_ic],
+                        ),
+                        name=f"b6_milestone_{_ic}",
                     )
         except Exception:
             pass
@@ -3449,6 +3657,10 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     "soll ich da weitermachen?' Nur wenn es passt."
                 )
             sections.append(("continuity", cont_text, 3))
+
+        # Multi-Sense Fusion: Kombinierte Sensor-Erkenntnisse
+        if sensor_fusion_ctx:
+            sections.append(("sensor_fusion", f"\n\nMULTI-SENSE:\n{sensor_fusion_ctx}", 4))
 
         # Konversations-Gedaechtnis++: Projekte, offene Fragen, Zusammenfassungen
         conv_memory_ctx = _safe_get("conv_memory_extended", "")
@@ -4406,6 +4618,8 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
                     # Post-Action Dependency Check: Sofort neue Konflikte
                     # erkennen die durch DIESE Aktion entstanden sind
+                    # Frischer State (nach Aktion) — wird auch fuer Opinion wiederverwendet
+                    _post_states = []
                     if _success and not conflict_msg:
                         try:
                             _post_states = await self.ha.get_states() or []
@@ -4439,13 +4653,14 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     # Nutzt check_opinion_with_context() fuer kombinierte
                     # Opinion-Rules + Device-Dependency Bewertung
                     if not pushback_msg:
-                        try:
-                            _opinion_states = await self.ha.get_states() or []
-                        except Exception:
-                            _opinion_states = []
+                        if not _post_states:
+                            try:
+                                _post_states = await self.ha.get_states() or []
+                            except Exception:
+                                _post_states = []
                         opinion = self.personality.check_opinion_with_context(
                             func_name, final_args,
-                            ha_states=_opinion_states,
+                            ha_states=_post_states,
                         )
                         if opinion:
                             logger.info("Jarvis Meinung: '%s'", opinion)
@@ -4673,7 +4888,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                                 messages=feedback_messages,
                                 model=model,
                                 temperature=0.2,
-                                max_tokens=120,
+                                max_tokens=300,
                                 think=False,
                             ),
                             timeout=15.0,
@@ -4880,7 +5095,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             try:
                 retry_resp = await self.ollama.chat(
                     messages=retry_messages, model=model, temperature=0.3,
-                    max_tokens=128, think=False,
+                    max_tokens=256, think=False,
                 )
                 retry_text = retry_resp.get("message", {}).get("content", "")
                 if retry_text:
@@ -5291,6 +5506,20 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 ),
                 name="record_correction_memorable",
             )
+            # B6-ext: Erste Korrektur als Beziehungs-Milestone tracken
+            if person:
+                _corr_key = f"mha:relationship:first_correction:{person.lower()}"
+                try:
+                    _first_corr = await self.memory.redis.set(_corr_key, "1", ex=365 * 86400, nx=True)
+                    if _first_corr:
+                        self._task_registry.create_task(
+                            self.personality.record_milestone(
+                                person, "Erste Korrektur akzeptiert",
+                            ),
+                            name="b6_first_correction",
+                        )
+                except Exception:
+                    pass
 
         # Phase 18: Seasonal Action Logging (für Vorjahres-Vergleich)
         for action in executed_actions:
@@ -5547,6 +5776,17 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                 response_text = self.personality.get_varied_confirmation(success=True)
 
         result = self._result(response_text, actions=executed_actions, model=model, room=context.get("room"), tts=tts_data)
+
+        # Response Cache: Erfolgreiche Antworten fuer Status-Queries cachen
+        if response_text and profile.category in ("device_query",):
+            self._task_registry.create_task(
+                self.response_cache.put(
+                    text, profile.category, response_text, model,
+                    room=room, tts=tts_data,
+                ),
+                name="response_cache_put",
+            )
+
         # WebSocket + Sprachausgabe ueber HA-Speaker
         # Bei Streaming sendet main.py via emit_stream_end — hier KEIN emit_speaking
         # (verhindert doppelte Chat-Nachrichten), aber TTS-Ausgabe trotzdem starten
@@ -5745,7 +5985,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     ],
                     model=settings.model_fast,
                     think=False,
-                    max_tokens=80,
+                    max_tokens=200,
                     tier="fast",
                 ),
                 timeout=3.0,
@@ -7171,7 +7411,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
                     ],
                     model=settings.model_fast,
                     think=False,
-                    max_tokens=80,
+                    max_tokens=200,
                     tier="fast",
                 ),
                 timeout=3.0,
@@ -7864,7 +8104,7 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
             "welche muster", "erkannte muster",
         ]):
             report = await self.learning_observer.get_learning_report()
-            report_text = self.learning_observer.format_learning_report(report)
+            report_text = await self.learning_observer.format_learning_report_llm(report)
             return report_text
 
         # Feature 2: Protokoll-Erkennung — "Filmabend", "Protokoll Filmabend"
@@ -9071,6 +9311,19 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
         return any(kw in t for kw in _keywords)
 
     @staticmethod
+    def _is_catchup_request(text: str) -> bool:
+        """Erkennt ob der User ein 'Was hab ich verpasst?' Catch-Up will."""
+        t = text.lower().strip().rstrip("?!.")
+        _keywords = [
+            "was hab ich verpasst", "was habe ich verpasst",
+            "was ist passiert", "was war los", "was ging ab",
+            "catch me up", "update mich", "bring mich auf stand",
+            "was lief", "was gab es neues", "gibt es neuigkeiten",
+            "was ist seit", "was hat sich getan",
+        ]
+        return any(kw in t for kw in _keywords)
+
+    @staticmethod
     def _is_house_status_request(text: str) -> bool:
         """Erkennt ob der User einen Haus-Status will (nur Hausdaten, kein volles Briefing)."""
         t = text.lower().strip().rstrip("?!.")
@@ -9735,20 +9988,234 @@ class AssistantBrain(BrainHumanizersMixin, BrainCallbacksMixin):
 
         data_block = "\n".join(data_lines) if data_lines else "Keine Live-Daten verfuegbar."
 
+        # Pre-Calculations: Einfache Berechnungen VOR dem LLM-Call
+        precalc_lines = []
+        _whatif_cfg = cfg.yaml_config.get("whatif_simulation", {})
+        _strompreis = float(_whatif_cfg.get("strompreis_kwh", 0.30))
+        _gaspreis = float(_whatif_cfg.get("gaspreis_kwh", 0.08))
+
+        try:
+            # Thermische Schaetzung: Wenn Fenster-offen-Szenario
+            _window_keywords = ["fenster", "window", "lueften", "lüften"]
+            if any(kw in text_lower for kw in _window_keywords) and temps:
+                # Aussen-Temperatur aus Wetter
+                if weather_s:
+                    t_outside = weather_s.get("attributes", {}).get("temperature")
+                    if t_outside is not None:
+                        t_outside = float(t_outside)
+                        # Durchschnitts-Innentemperatur
+                        indoor_vals = []
+                        for v_str in temps.values():
+                            try:
+                                indoor_vals.append(float(v_str.split("°C")[0]))
+                            except (ValueError, IndexError):
+                                continue
+                        if indoor_vals:
+                            t_inside = sum(indoor_vals) / len(indoor_vals)
+                            # Newton Abkuehlung: dT = (T_aussen - T_innen) * k * h
+                            # k=0.5 bei offenem Fenster (hoher Luftaustausch)
+                            for hours in [1, 2]:
+                                delta = (t_outside - t_inside) * 0.5 * hours
+                                new_temp = t_inside + delta
+                                precalc_lines.append(
+                                    f"Fenster offen {hours}h: ~{t_inside:.0f}°C → ~{new_temp:.1f}°C "
+                                    f"(Aussen: {t_outside:.0f}°C)"
+                                )
+
+            # Energie-Schaetzung: Gesamtverbrauch
+            if energy:
+                total_watts = 0
+                for v_str in energy.values():
+                    try:
+                        parts = v_str.split()
+                        val = float(parts[0])
+                        unit = parts[1] if len(parts) > 1 else ""
+                        if "kw" in unit.lower() and "kwh" not in unit.lower():
+                            total_watts += val * 1000
+                        elif "w" == unit.lower() or "watt" in unit.lower():
+                            total_watts += val
+                    except (ValueError, IndexError):
+                        continue
+                if total_watts > 0:
+                    daily_kwh = (total_watts / 1000) * 24
+                    daily_cost = daily_kwh * _strompreis
+                    precalc_lines.append(
+                        f"Aktueller Verbrauch: ~{total_watts:.0f}W = ~{daily_kwh:.1f} kWh/Tag "
+                        f"= ~{daily_cost:.2f} EUR/Tag"
+                    )
+                    # Abwesenheits-Kosten (14 Tage)
+                    _away_keywords = ["verreise", "urlaub", "weg bin", "abwesend", "2 wochen", "eine woche"]
+                    if any(kw in text_lower for kw in _away_keywords):
+                        # Standby schaetzen: 10-20% vom aktuellen Verbrauch
+                        standby_pct = 0.15
+                        away_daily = daily_kwh * standby_pct
+                        away_cost_14d = away_daily * 14 * _strompreis
+                        precalc_lines.append(
+                            f"Standby bei Abwesenheit (~{standby_pct*100:.0f}%): "
+                            f"~{away_daily:.1f} kWh/Tag = ~{away_cost_14d:.2f} EUR/14 Tage"
+                        )
+
+        except Exception as e:
+            logger.debug("Was-waere-wenn Pre-Calculation Fehler: %s", e)
+
+        precalc_block = ""
+        if precalc_lines:
+            precalc_block = "\n\nVORBERECHNUNGEN (bereits berechnet, nutze diese Werte):\n" + "\n".join(
+                f"  → {l}" for l in precalc_lines
+            )
+
         return f"""
 
 WAS-WAERE-WENN SIMULATION:
 Der User stellt eine hypothetische Frage. Nutze die ECHTEN Hausdaten für deine Antwort:
 
-{data_block}
+{data_block}{precalc_block}
 
 Regeln:
+- Nutze die Vorberechnungen wenn vorhanden — sie basieren auf echten Daten
 - Rechne mit echten Werten wenn verfuegbar (Temperaturen, Verbrauch, Geraete-Status)
-- Bei Energiefragen: Nutze reale Verbrauchsdaten, Strompreis ~0.30 EUR/kWh, Gas ~0.08 EUR/kWh
+- Bei Energiefragen: Strompreis {_strompreis:.2f} EUR/kWh, Gas {_gaspreis:.2f} EUR/kWh
 - Bei Abwesenheit: Pruefe offene Fenster/Tueren, Alarm-Status, aktive Geraete
 - Bei Kosten: Rechne konkret mit den vorhandenen Daten
 - Sei ehrlich wenn du schaetzen musst: "Basierend auf deinem aktuellen Verbrauch..."
 - Maximal 5 Punkte, klar strukturiert."""
+
+    # ------------------------------------------------------------------
+    # Multi-Sense Fusion: Kamera + Audio + Sensoren kombinieren
+    # ------------------------------------------------------------------
+
+    async def _fuse_sensor_signals(self) -> Optional[str]:
+        """Kombiniert Signale aus verschiedenen Sensorquellen.
+
+        Fusion nur wenn >=2 Quellen gleichzeitig Daten liefern.
+        Erzeugt kombinierte Schlussfolgerungen wie:
+        - Tuerklingel(Audio) + Person(Kamera) + Besuch(Kalender) → 'Der Handwerker ist da'
+        - Glasbruch(Audio) + Bewegung(Sensor) + Niemand(Presence) → Sofort-Alarm
+        """
+        _fusion_cfg = cfg.yaml_config.get("multi_sense_fusion", {})
+        if not _fusion_cfg.get("enabled", True):
+            return None
+
+        signals = {}
+        signal_count = 0
+
+        try:
+            # Audio-Events der letzten 5 Minuten
+            if self.ambient_audio:
+                recent_audio = self.ambient_audio.get_recent_events(limit=5)
+                if recent_audio:
+                    from datetime import datetime, timedelta
+                    now = datetime.now()
+                    recent = []
+                    for ev in recent_audio:
+                        ts_str = ev.get("timestamp", "")
+                        try:
+                            ts = datetime.fromisoformat(ts_str)
+                            if (now - ts).total_seconds() < 300:  # 5 Min
+                                recent.append(ev)
+                        except (ValueError, TypeError):
+                            recent.append(ev)  # Kein Timestamp → nehmen
+                    if recent:
+                        signals["audio"] = recent
+                        signal_count += 1
+
+            # Motion/Presence Sensoren aus HA-States
+            states = await self.get_states_cached()
+            if states:
+                motion_active = []
+                presence_home = []
+                presence_away = []
+                for s in states:
+                    eid = s.get("entity_id", "")
+                    state = s.get("state", "")
+                    if ("motion" in eid or "occupancy" in eid) and state == "on":
+                        name = s.get("attributes", {}).get("friendly_name", eid)
+                        motion_active.append(name)
+                    elif eid.startswith("person."):
+                        if state == "home":
+                            presence_home.append(s.get("attributes", {}).get("friendly_name", eid))
+                        else:
+                            presence_away.append(s.get("attributes", {}).get("friendly_name", eid))
+                if motion_active:
+                    signals["motion"] = motion_active
+                    signal_count += 1
+                signals["presence_home"] = presence_home
+                signals["presence_away"] = presence_away
+
+            # Kalender-Events (naechste 2h)
+            if self.memory and self.memory.redis:
+                cal_raw = await self.memory.redis.get("mha:calendar:upcoming")
+                if cal_raw:
+                    import json as _json
+                    cal = _json.loads(cal_raw if isinstance(cal_raw, str) else cal_raw.decode())
+                    events = cal if isinstance(cal, list) else cal.get("events", [])
+                    if events:
+                        signals["calendar"] = events[:3]
+                        signal_count += 1
+
+        except Exception as e:
+            logger.debug("Sensor Fusion Datensammlung Fehler: %s", e)
+            return None
+
+        # Fusion NUR wenn >=2 Quellen aktiv
+        if signal_count < 2:
+            return None
+
+        # Fusion-Regeln anwenden
+        fusion_insights = []
+
+        audio_events = signals.get("audio", [])
+        motion = signals.get("motion", [])
+        calendar = signals.get("calendar", [])
+        nobody_home = len(signals.get("presence_home", [])) == 0
+
+        audio_types = {ev.get("event_type", ev.get("type", "")) for ev in audio_events}
+
+        # Tuerklingel + Kalender-Besuch → "Der Besuch ist da"
+        if ("doorbell" in audio_types or "klingel" in audio_types):
+            visitor_names = []
+            for ev in calendar:
+                summary = ev.get("summary", "").lower()
+                if any(kw in summary for kw in ["besuch", "handwerker", "termin", "lieferung", "gast"]):
+                    visitor_names.append(ev.get("summary", "Besuch"))
+            if visitor_names:
+                fusion_insights.append(
+                    f"Tuerklingel + Kalender-Termin: '{visitor_names[0]}' ist vermutlich da."
+                )
+            elif motion:
+                fusion_insights.append(
+                    f"Tuerklingel + Bewegung ({motion[0]}): Jemand steht vor der Tuer."
+                )
+
+        # Glasbruch/Alarm-Sound + Bewegung + Niemand da → Einbruch-Verdacht
+        alarm_sounds = {"glass_break", "glasbruch", "alarm", "crash"}
+        if audio_types & alarm_sounds and motion and nobody_home:
+            fusion_insights.append(
+                f"ALARM: {', '.join(audio_types & alarm_sounds)} erkannt + "
+                f"Bewegung ({', '.join(motion[:2])}) + Haus leer → Einbruch-Verdacht!"
+            )
+
+        # Hund/Tier + Garten-Bewegung → "Jemand im Garten"
+        animal_sounds = {"dog_bark", "hund", "bark", "cat"}
+        if audio_types & animal_sounds and motion:
+            garden_motion = [m for m in motion if any(kw in m.lower() for kw in
+                            ["garten", "terrasse", "aussen", "outdoor", "garden"])]
+            if garden_motion:
+                fusion_insights.append(
+                    f"Tier-Geraeusch + Bewegung im Garten ({garden_motion[0]}): Jemand oder etwas im Garten."
+                )
+
+        # Bewegung + Niemand da + kein Kalender-Besuch → Unbekannte Aktivitaet
+        if motion and nobody_home and not calendar:
+            fusion_insights.append(
+                f"Bewegung erkannt ({', '.join(motion[:2])}) aber niemand zuhause. "
+                "Pruefen empfohlen."
+            )
+
+        if not fusion_insights:
+            return None
+
+        return "\n".join(f"- {ins}" for ins in fusion_insights)
 
     # ------------------------------------------------------------------
     # Phase 17: Situation Model (Delta zwischen Gespraechen)
@@ -10590,6 +11057,7 @@ Regeln:
                         self.inner_state.on_action_failure(action, "anticipation_failed"),
                         name="inner_state_anticipation_failure",
                     )
+            text = await self._safe_format(text, "medium")
             await emit_proactive(text, "anticipation_auto", "medium")
             self._remember_exchange("[proaktiv: Antizipation]", text)
             logger.info("Anticipation auto-execute: %s (confidence: %d%%, success: %s)", desc, pct, _success)
@@ -10730,7 +11198,7 @@ Regeln:
                 else:
                     # Fallback: Alter Bericht via Learning Observer
                     lo_report = await self.learning_observer.get_learning_report()
-                    report_text = self.learning_observer.format_learning_report(lo_report)
+                    report_text = await self.learning_observer.format_learning_report_llm(lo_report)
                     if report_text and lo_report.get("total_observations", 0) > 0:
                         title = get_person_title()
                         message = f"{title}, hier ist dein woechentlicher Lern-Bericht:\n{report_text}"
@@ -10940,6 +11408,61 @@ Regeln:
             except Exception as e:
                 logger.debug("Entity-Katalog Background-Refresh Fehler: %s", e)
                 await asyncio.sleep(ERROR_BACKOFF_SHORT)
+
+    # ── Deferred Responses — "Ich melde mich in X Minuten" ────────
+
+    async def defer_response(self, task_description: str, coro, person: str = "", room: str = ""):
+        """Startet eine Hintergrund-Aufgabe und meldet das Ergebnis proaktiv.
+
+        Gibt sofort eine Bestaetigung zurueck ('Ich pruefe das, Moment.')
+        und speichert das Ergebnis in Redis wenn fertig.
+        Das proactive System liefert es dann aus.
+        """
+        import uuid
+        task_id = f"deferred_{uuid.uuid4().hex[:8]}"
+
+        async def _run_deferred():
+            try:
+                result = await coro
+                result_text = str(result) if result else "Erledigt."
+                if self.memory and self.memory.redis:
+                    import json
+                    payload = json.dumps({
+                        "task_id": task_id,
+                        "description": task_description,
+                        "result": result_text[:2000],
+                        "person": person,
+                        "room": room,
+                    })
+                    await self.memory.redis.lpush("mha:deferred:results", payload)
+                    await self.memory.redis.ltrim("mha:deferred:results", 0, 9)
+                    await self.memory.redis.expire("mha:deferred:results", 1800)
+                    logger.info("Deferred Task '%s' abgeschlossen: %s", task_id, task_description)
+            except Exception as e:
+                logger.warning("Deferred Task '%s' fehlgeschlagen: %s", task_id, e)
+
+        self._task_registry.create_task(_run_deferred(), name=f"deferred_{task_id}")
+        return task_id
+
+    async def get_deferred_results(self) -> list[dict]:
+        """Holt fertige Deferred-Ergebnisse aus Redis (fuer proactive Auslieferung)."""
+        if not self.memory or not self.memory.redis:
+            return []
+        try:
+            import json
+            results = []
+            while True:
+                raw = await self.memory.redis.rpop("mha:deferred:results")
+                if not raw:
+                    break
+                entry = json.loads(raw if isinstance(raw, str) else raw.decode())
+                results.append(entry)
+                if len(results) >= 3:
+                    break
+            return results
+        except Exception as e:
+            logger.debug("Deferred Results Fehler: %s", e)
+            return []
 
     # ── B4: Background Reasoning — Idle-Loop ──────────────────────
 
@@ -11365,7 +11888,7 @@ Regeln:
                     messages=messages,
                     model=self.model_router.model_fast,
                     temperature=0.4,
-                    max_tokens=100,
+                    max_tokens=300,
                     think=False,
                 ),
                 timeout=5.0,
@@ -11422,7 +11945,7 @@ Regeln:
                 ],
                 model=self.model_router.model_fast,
                 temperature=0.5,
-                max_tokens=80,
+                max_tokens=200,
             )
             text = response.get("message", {}).get("content", "")
             return text.strip() if text.strip() else fast_response

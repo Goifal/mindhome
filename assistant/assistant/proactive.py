@@ -475,8 +475,8 @@ class ProactiveManager:
         if redis:
             try:
                 await redis.setex(f"mha:critical:{event_id}", 300, "pending")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Critical Alert Redis-Write fehlgeschlagen: %s", e)
 
         for attempt in range(max_retries + 1):
             volume = min(1.0, 0.7 + attempt * 0.1)
@@ -503,8 +503,8 @@ class ProactiveManager:
                         if ack and ack == b"acked":
                             logger.info("Critical Alert %s acknowledged nach %d Versuchen", event_id, attempt + 1)
                             return
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Critical Alert ACK-Check fehlgeschlagen: %s", e)
 
         logger.warning("Critical Alert %s: Kein ACK nach %d Versuchen", event_id, max_retries + 1)
 
@@ -1956,7 +1956,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=300,
+                max_tokens=500,
             )
             text = validate_notification(
                 response.get("message", {}).get("content", "")
@@ -2616,7 +2616,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=100,
+                max_tokens=300,
             )
 
             text = validate_notification(
@@ -2898,7 +2898,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=120,
+                max_tokens=300,
             )
             return validate_notification(
                 response.get("message", {}).get("content", f"Alles ruhig, {get_person_title(person_name)}.")
@@ -3066,7 +3066,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=100,
+                max_tokens=300,
             )
             text = validate_notification(
                 response.get("message", {}).get("content", "").strip()
@@ -3463,7 +3463,7 @@ class ProactiveManager:
                 ],
                 model=settings.model_notify,
                 think=False,
-                max_tokens=250,
+                max_tokens=500,
             )
 
             text = validate_notification(
@@ -3728,7 +3728,7 @@ class ProactiveManager:
                     ],
                     model=settings.model_fast,
                     think=False,
-                    max_tokens=100,
+                    max_tokens=300,
                     tier="fast",
                 ),
                 timeout=3.0,
@@ -3768,7 +3768,7 @@ class ProactiveManager:
                     ],
                     model=settings.model_notify,
                     think=False,
-                    max_tokens=120,
+                    max_tokens=300,
                 ),
                 timeout=5.0,
             )
@@ -3806,7 +3806,7 @@ class ProactiveManager:
                     ],
                     model=settings.model_notify,
                     think=False,
-                    max_tokens=120,
+                    max_tokens=300,
                 ),
                 timeout=5.0,
             )
@@ -6648,6 +6648,20 @@ class ProactiveManager:
                             actions = await self.brain.threat_assessment.escalate_threat(threat)
                             if actions:
                                 logger.info("Threat Eskalation: %s", ", ".join(actions))
+                                # B6-ext: Erste Krise als Beziehungs-Milestone
+                                try:
+                                    _redis = self.brain.memory.redis if self.brain.memory else None
+                                    if _redis:
+                                        _first = await _redis.set(
+                                            "mha:relationship:first_crisis", "1",
+                                            ex=365 * 86400, nx=True,
+                                        )
+                                        if _first:
+                                            await self.brain.personality.record_milestone(
+                                                "system", "Erste Krise gemeinsam gemeistert",
+                                            )
+                                except Exception:
+                                    pass
                         except Exception as esc_err:
                             logger.warning("Threat Eskalation fehlgeschlagen: %s", esc_err)
             except Exception as e:

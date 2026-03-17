@@ -268,6 +268,15 @@ class TTSEnhancer:
         else:
             speed = 100
             pitch = "0%"
+
+        # Urgency-basierte Overrides: Critical = schneller + tiefer (dringlicher)
+        if urgency == "critical":
+            speed = max(speed, 115)   # Mindestens 115% — schnell, dringlich
+            pitch = "-15%"            # Tiefer — ernst, autoritaer
+        elif urgency == "high":
+            speed = max(speed, 108)   # Etwas schneller als normal
+            pitch = "-8%"             # Leicht tiefer
+
         volume = self.get_volume(activity=activity, message_type=message_type, urgency=urgency)
 
         if self.ssml_enabled:

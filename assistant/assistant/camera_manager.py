@@ -160,7 +160,7 @@ class CameraManager:
                 messages=[{"role": "user", "content": prompt, "images": [image_b64]}],
                 model=self.vision_model,
                 temperature=0.3,
-                max_tokens=150,
+                max_tokens=300,
             )
 
             if "error" not in response:

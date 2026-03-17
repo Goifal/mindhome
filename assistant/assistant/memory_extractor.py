@@ -131,6 +131,12 @@ class MemoryExtractor:
         if not self.enabled or not self._should_extract(user_text, assistant_response):
             return []
 
+        # Embedding-basierte Duplikat-Pruefung: Wenn der User-Text semantisch
+        # sehr aehnlich zu kuerzlich extrahierten Fakten ist, LLM-Call sparen.
+        if await self._is_duplicate_input(user_text, person):
+            logger.debug("Memory-Extraktion uebersprungen: Input zu aehnlich zu kuerzlichen Fakten")
+            return []
+
         # Konversation formatieren
         conversation = self._format_conversation(
             user_text, assistant_response, person, context
@@ -173,6 +179,40 @@ class MemoryExtractor:
             )
 
         return stored_facts
+
+    async def _is_duplicate_input(self, user_text: str, person: str) -> bool:
+        """Prueft ob der User-Text semantisch zu aehnlich zu kuerzlich gespeicherten Fakten ist.
+
+        Nutzt Sentence-Transformer Embeddings fuer schnellen Vergleich.
+        Spart unnoetige LLM-Calls wenn der User wiederholt Aehnliches sagt.
+        """
+        try:
+            from .embeddings import get_embedding, cosine_similarity
+
+            # Letzte Fakten fuer diese Person aus Semantic Memory holen
+            if not self.semantic:
+                return False
+            recent_facts = await self.semantic.search(user_text, person=person, limit=3)
+            if not recent_facts:
+                return False
+
+            user_emb = get_embedding(user_text.lower().strip())
+            if user_emb is None:
+                return False
+
+            for fact in recent_facts:
+                fact_text = fact.get("content", "") if isinstance(fact, dict) else getattr(fact, "content", "")
+                if not fact_text:
+                    continue
+                fact_emb = get_embedding(fact_text.lower().strip())
+                if fact_emb is not None:
+                    similarity = cosine_similarity(user_emb, fact_emb)
+                    if similarity >= 0.92:  # Sehr hohe Aehnlichkeit = Duplikat
+                        return True
+        except Exception as e:
+            logger.debug("Duplikat-Pruefung fehlgeschlagen: %s", e)
+
+        return False
 
     def _should_extract(self, user_text: str, assistant_response: str) -> bool:
         """Prueeft ob eine Extraktion sinnvoll ist.
